@@ -87,8 +87,7 @@ def build_gateway_from_config(permission_spec: Any = None) -> ModelGateway | Non
                         _existing.add(_p.model_profile_id)
         except Exception:
             logger.warning(
-                "Worker auto-config: env-var profile discovery failed; "
-                "continuing with explicit config only",
+                "Worker auto-config: env-var profile discovery failed; continuing with explicit config only",
                 exc_info=True,
             )
 
@@ -115,8 +114,7 @@ def build_gateway_from_config(permission_spec: Any = None) -> ModelGateway | Non
                 )
             except Exception:
                 logger.warning(
-                    "Worker: failed to build scoped SecretsManager; "
-                    "falling back to EnvSecretsManager (no path gating)",
+                    "Worker: failed to build scoped SecretsManager; falling back to EnvSecretsManager (no path gating)",
                     exc_info=True,
                 )
                 secrets_manager = EnvSecretsManager()
@@ -145,9 +143,7 @@ def _redact_secrets(message: str, refs: list[str]) -> str:
 _UNSET: Any = object()
 
 
-def _invoke_gateway_for_job(
-    gateway: ModelGateway, job: JobSpec
-) -> tuple[str | None, list[dict[str, Any]] | None]:
+def _invoke_gateway_for_job(gateway: ModelGateway, job: JobSpec) -> tuple[str | None, list[dict[str, Any]] | None]:
     """Call the model for a generation job.
 
     Returns a ``(content, tool_calls)`` tuple: the generated text and the
@@ -298,9 +294,7 @@ def create_app(
             if _psk:
                 auth = request.headers.get("Authorization", "")
                 if not check_bearer_token(auth, _psk):
-                    return JSONResponse(
-                        status_code=401, content={"error": "unauthorized"}
-                    )
+                    return JSONResponse(status_code=401, content={"error": "unauthorized"})
         return await call_next(request)
 
     @application.get("/healthz")
@@ -359,9 +353,7 @@ def create_app(
                 # NOT stall the worker event loop for the full model latency
                 # (every other blocking op in this handler already uses
                 # to_thread; this model call was the lone miss).
-                model_response, model_tool_calls = await asyncio.to_thread(
-                    _invoke_gateway_for_job, gw, job
-                )
+                model_response, model_tool_calls = await asyncio.to_thread(_invoke_gateway_for_job, gw, job)
                 _model_call_success = model_response is not None
             except Exception as _exc:
                 model_response = None
@@ -369,15 +361,14 @@ def create_app(
                 _model_call_error = str(_exc)
                 logger.warning(
                     "Worker model call failed for job %s: %s",
-                    job.job_id, _exc,
+                    job.job_id,
+                    _exc,
                 )
         _model_call_duration_ms = (time.monotonic() - _model_call_start) * 1000
         # Feed the model-call duration (converted to seconds) into the shared
         # clock-time tracker so an anomalously-slow model call vs its learned
         # per-profile baseline is detectable.
-        default_tracker().check_then_record(
-            f"model:{job.model_profile or 'default'}", _model_call_duration_ms / 1000.0
-        )
+        default_tracker().check_then_record(f"model:{job.model_profile or 'default'}", _model_call_duration_ms / 1000.0)
         # Record the model call in the performance repository if wired.
         _model_perf_repo = getattr(application.state, "model_perf_repo", None)
         if _model_perf_repo is not None and is_generation_work_type(job.work_type):
@@ -415,7 +406,8 @@ def create_app(
             except Exception as _rec_exc:
                 logger.debug(
                     "Worker model perf recording failed for %s: %s",
-                    job.job_id, _rec_exc,
+                    job.job_id,
+                    _rec_exc,
                 )
 
         # Dispatch the model's STRUCTURED tool_calls. When a DynamicDispatcher is
@@ -436,8 +428,7 @@ def create_app(
             calls = structured_tool_calls_to_calls(model_tool_calls)
             if len(calls) > MAX_CALLS_PER_REQUEST:
                 logger.warning(
-                    "Worker /jobs/execute: model returned %d tool call(s) which exceeds "
-                    "cap %d — all dropped (job %s)",
+                    "Worker /jobs/execute: model returned %d tool call(s) which exceeds cap %d — all dropped (job %s)",
                     len(calls),
                     MAX_CALLS_PER_REQUEST,
                     job.job_id,
@@ -451,9 +442,7 @@ def create_app(
                         len(calls),
                         job.job_id,
                     )
-                    tool_calls_detected = [
-                        {"kind": c.kind, "name": c.name, "args": c.args} for c in calls
-                    ]
+                    tool_calls_detected = [{"kind": c.kind, "name": c.name, "args": c.args} for c in calls]
                 else:
                     dispatch_results = await _dispatcher.dispatch_all(calls)
                     ok_count = sum(1 for r in dispatch_results if r.ok)
@@ -536,7 +525,22 @@ def create_app(
 
     @application.post("/jobs/return-review")
     async def return_review_job(job: JobSpec) -> dict[str, Any]:
-        return {"status": "ack", "job_id": job.job_id, "detail": "Return review queued for daemon reviewer"}
+        # S2 fix: was a silent ack {"status":"ack"} that stranded
+        # claims forever. Worker review dispatch is not built — return
+        # 501 so the caller (EventLoop) can detect the failure and
+        # release the claim rather than silently stranding it.
+        raise HTTPException(
+            status_code=501,
+            detail={
+                "reason": "not_implemented",
+                "description": (
+                    "/jobs/return-review has no backing review playbook yet. "
+                    "Return reviews are handled in-process by the EventLoop "
+                    "(ReturnReviewer / LangGraphReflexiveReviewer / ConsensusReviewer)."
+                ),
+                "job_id": job.job_id,
+            },
+        )
 
     @application.post("/jobs/validate")
     async def validate_job(job: JobSpec) -> dict[str, Any]:

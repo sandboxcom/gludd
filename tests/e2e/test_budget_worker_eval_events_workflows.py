@@ -54,6 +54,7 @@ from general_ludd.worker.heartbeat import handle_ping, make_ping
 
 # ── Budget: BudgetEnvelope E2E ──────────────────────────────────────────────
 
+
 class TestBudgetEnvelopeE2E:
     def test_envelope_deduct_and_exhaust(self):
         env = BudgetEnvelope(name="agent:opus", limit=5.0)
@@ -117,6 +118,7 @@ class TestBudgetEnvelopeE2E:
 
 # ── Budget: PerAgentEnvelope E2E ────────────────────────────────────────────
 
+
 class TestPerAgentEnvelopeE2E:
     def test_unconfigured_agent_always_allowed(self):
         pa = PerAgentEnvelope()
@@ -152,6 +154,7 @@ class TestPerAgentEnvelopeE2E:
 
 # ── Budget: PerTaskEnvelope E2E ─────────────────────────────────────────────
 
+
 class TestPerTaskEnvelopeE2E:
     def test_default_limit_creates_implicit_envelope(self):
         pt = PerTaskEnvelope(default_limit=1.0)
@@ -183,6 +186,7 @@ class TestPerTaskEnvelopeE2E:
 
 # ── Budget: PerToolEnvelope E2E ─────────────────────────────────────────────
 
+
 class TestPerToolEnvelopeE2E:
     def test_unconfigured_tool_always_allowed(self):
         pt = PerToolEnvelope()
@@ -208,6 +212,7 @@ class TestPerToolEnvelopeE2E:
 
 
 # ── Budget: BudgetManager E2E ───────────────────────────────────────────────
+
 
 class TestBudgetManagerE2E:
     def test_check_all_allows_when_nothing_configured(self):
@@ -269,6 +274,7 @@ class TestBudgetManagerE2E:
 
 # ── Budget: CreditTracker E2E ───────────────────────────────────────────────
 
+
 class TestCreditTrackerE2E:
     def test_construction_defaults(self):
         ct = CreditTracker()
@@ -313,10 +319,12 @@ class TestCreditTrackerE2E:
 
 # ── Worker E2E ──────────────────────────────────────────────────────────────
 
+
 class TestWorkerAppE2E:
     @pytest.fixture
     def unauthed_client(self):
         import os as _os
+
         _os.environ["GLUDD_PSK_DISABLE"] = "1"
         app = create_app(gateway=None, dispatcher=None)
         return TestClient(app)
@@ -335,40 +343,59 @@ class TestWorkerAppE2E:
 
     def test_validate_job_returns_501(self, unauthed_client):
         from general_ludd.schemas.job import JobSpec
+
         job = JobSpec(
-            job_id="j-1", todo_id="t-1", queue="default",
-            playbook="validate", work_type="analysis", prompt_text="test",
+            job_id="j-1",
+            todo_id="t-1",
+            queue="default",
+            playbook="validate",
+            work_type="analysis",
+            prompt_text="test",
         )
         resp = unauthed_client.post("/jobs/validate", json=job.model_dump())
         assert resp.status_code == 501
 
     def test_policy_validate_returns_501(self, unauthed_client):
         from general_ludd.schemas.job import JobSpec
+
         job = JobSpec(
-            job_id="j-2", todo_id="t-2", queue="default",
-            playbook="policy-validate", work_type="analysis", prompt_text="test",
+            job_id="j-2",
+            todo_id="t-2",
+            queue="default",
+            playbook="policy-validate",
+            work_type="analysis",
+            prompt_text="test",
         )
         resp = unauthed_client.post("/jobs/policy-validate", json=job.model_dump())
         assert resp.status_code == 501
 
     def test_reload_request_returns_501(self, unauthed_client):
         from general_ludd.schemas.job import JobSpec
+
         job = JobSpec(
-            job_id="j-3", todo_id="t-3", queue="default",
-            playbook="reload-request", work_type="analysis", prompt_text="test",
+            job_id="j-3",
+            todo_id="t-3",
+            queue="default",
+            playbook="reload-request",
+            work_type="analysis",
+            prompt_text="test",
         )
         resp = unauthed_client.post("/jobs/reload-request", json=job.model_dump())
         assert resp.status_code == 501
 
     def test_return_review_returns_ack(self, unauthed_client):
         from general_ludd.schemas.job import JobSpec
+
         job = JobSpec(
-            job_id="j-4", todo_id="t-4", queue="default",
-            playbook="return-review", work_type="review", prompt_text="test",
+            job_id="j-4",
+            todo_id="t-4",
+            queue="default",
+            playbook="return-review",
+            work_type="review",
+            prompt_text="test",
         )
         resp = unauthed_client.post("/jobs/return-review", json=job.model_dump())
-        assert resp.status_code == 200
-        assert resp.json()["status"] == "ack"
+        assert resp.status_code == 501
 
 
 class TestWorkerHeartbeatE2E:
@@ -386,6 +413,7 @@ class TestWorkerHeartbeatE2E:
 
 
 # ── Eval: Harness + Model E2E ───────────────────────────────────────────────
+
 
 class TestEvalHarnessE2E:
     def test_harness_no_evaluator_reports_failure(self):
@@ -411,7 +439,8 @@ class TestEvalHarnessE2E:
         mock_gw.call_model.return_value = MagicMock(content="patch output")
         evaluator = ModelEvaluator(gateway=mock_gw, profile_id="sonnet", dry_run=False)
         case = EvalCase(
-            id="c2", description="add tests",
+            id="c2",
+            description="add tests",
             input_files={"a.py": "x=1"},
             expected_patch="patch output",
             assertions={"patch_contains": "patch"},
@@ -436,9 +465,14 @@ class TestEvalHarnessE2E:
         mock_gw.call_model.return_value = MagicMock(content="yy")
         evaluator = ModelEvaluator(gateway=mock_gw, profile_id="sonnet", dry_run=True)
         harness = EvalHarness(evaluator=evaluator)
-        cases = [EvalCase(
-            id="c4", description="d", input_files={}, expected_patch="zz",
-        )]
+        cases = [
+            EvalCase(
+                id="c4",
+                description="d",
+                input_files={},
+                expected_patch="zz",
+            )
+        ]
         harness.run_benchmark(cases)
         assert len(harness.last_results) == 1
 
@@ -448,7 +482,8 @@ class TestModelEvaluatorE2E:
         mock_gw = MagicMock()
         evaluator = ModelEvaluator(gateway=mock_gw, profile_id="sonnet", dry_run=True)
         case = EvalCase(
-            id="d1", description="make tests",
+            id="d1",
+            description="make tests",
             input_files={"x.py": "pass"},
             expected_patch="patch",
         )
@@ -468,6 +503,7 @@ class TestModelEvaluatorE2E:
 
 
 # ── Eval: Scorers E2E ───────────────────────────────────────────────────────
+
 
 class TestEvalScorersE2E:
     def test_patch_similarity_identical(self):
@@ -503,15 +539,17 @@ class TestEvalScorersE2E:
         assert r["line_count_min"] is False
 
     def test_composite_eval_score_perfect(self):
-        case = EvalCase(id="p1", description="", input_files={},
-                        expected_patch="orig", assertions={"patch_contains": "orig"})
+        case = EvalCase(
+            id="p1", description="", input_files={}, expected_patch="orig", assertions={"patch_contains": "orig"}
+        )
         r = composite_eval_score(case, "orig", tokens_used=100, duration_ms=500)
         assert r.passed is True
         assert r.score == pytest.approx(1.0)
 
     def test_composite_eval_score_total_mismatch(self):
-        case = EvalCase(id="p2", description="", input_files={},
-                        expected_patch="good", assertions={"patch_contains": "good"})
+        case = EvalCase(
+            id="p2", description="", input_files={}, expected_patch="good", assertions={"patch_contains": "good"}
+        )
         r = composite_eval_score(case, "bad zzz", tokens_used=0, duration_ms=0)
         assert r.passed is False
         assert "low_similarity" in r.errors[0]
@@ -519,6 +557,7 @@ class TestEvalScorersE2E:
 
 
 # ── Events: EventBus E2E ────────────────────────────────────────────────────
+
 
 class TestEventBusE2E:
     def test_subscribe_and_publish_sync(self):
@@ -621,6 +660,7 @@ class TestEventBusE2E:
 
 # ── Events: HookSystem E2E ──────────────────────────────────────────────────
 
+
 class TestHookSystemE2E:
     def test_register_callback_and_fire(self):
         hs = HookSystem()
@@ -654,6 +694,7 @@ class TestHookSystemE2E:
 
         def lo(p):
             order.append("lo")
+
         def hi(p):
             order.append("hi")
 
@@ -669,6 +710,7 @@ class TestHookSystemE2E:
 
         def failer(p):
             raise RuntimeError("boom")
+
         def okay(p):
             ok_called.append(True)
 
@@ -727,6 +769,7 @@ class TestHookSystemE2E:
 
 # ── Events: Event Types E2E ─────────────────────────────────────────────────
 
+
 class TestEventTypesE2E:
     def test_custom_event(self):
         evt = CustomEvent(name="my.event", payload={"k": "v"})
@@ -735,8 +778,7 @@ class TestEventTypesE2E:
         assert evt.payload["k"] == "v"
 
     def test_event_base_has_fields(self):
-        evt = Event(type=EventType.CUSTOM, payload={}, source="src",
-                     correlation_id="corr-1")
+        evt = Event(type=EventType.CUSTOM, payload={}, source="src", correlation_id="corr-1")
         assert evt.event_id
         assert evt.timestamp > 0
         assert evt.source == "src"
@@ -754,6 +796,7 @@ class TestEventTypesE2E:
 
 # ── Cross-Subsystem: Budget + Events E2E ────────────────────────────────────
 
+
 class TestCrossSubsystemBudgetEventsE2E:
     def test_budget_spend_triggers_event(self):
         bus = EventBus()
@@ -764,13 +807,20 @@ class TestCrossSubsystemBudgetEventsE2E:
         mgr.per_agent.set_limit("sonnet", 5.0)
         result = mgr.check_all(agent_type="sonnet", amount=2.0)
         assert result.allowed is True
-        bus.publish(CustomEvent(name="budget.charged", payload={
-            "agent": "sonnet", "amount": 2.0,
-        }))
+        bus.publish(
+            CustomEvent(
+                name="budget.charged",
+                payload={
+                    "agent": "sonnet",
+                    "amount": 2.0,
+                },
+            )
+        )
         assert len(events) == 1
 
 
 # ── E2E: EventBus + HookSystem integration ──────────────────────────────────
+
 
 class TestEventBusHookSystemIntegration:
     def test_hook_fire_mirrors_to_event_bus(self):

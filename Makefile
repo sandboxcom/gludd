@@ -4485,6 +4485,13 @@ coverage-json:
 	@mkdir -p .gate-logs
 	@$(UV) run python scripts/audit_coverage.py --json-file=coverage.json --threshold=$(THRESHOLD) --source=$(SOURCE)
 
+coverage-report-from-data:
+	@mkdir -p .gate-logs
+	@$(UV) run python scripts/generate_coverage_report.py
+
+coverage-branch-stats:
+	@$(UV) run python scripts/parse_branch_coverage.py
+
 # Targeted coverage check on key files (user-requested coverage report).
 coverage-key-files:
 	@PYYAML_FORCE_LIBYAML=0 $(UV) run python -m pytest \

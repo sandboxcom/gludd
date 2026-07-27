@@ -75,7 +75,7 @@ class TestWorkerE2E:
                 "work_type": "review",
             },
         )
-        assert resp.status_code in (200, 202)
+        assert resp.status_code == 501
 
     def test_validate_endpoint_returns_501_not_implemented(self, client):
         # W3.8: /jobs/validate has no backing playbook — must return 501, not fake-success.
@@ -101,9 +101,7 @@ class TestWorkerE2E:
         import os
 
         repo_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        conf_path = os.path.join(
-            repo_root, "src", "general_ludd", "worker", "gunicorn_conf.py"
-        )
+        conf_path = os.path.join(repo_root, "src", "general_ludd", "worker", "gunicorn_conf.py")
         assert os.path.exists(conf_path)
         with open(conf_path) as f:
             content = f.read()

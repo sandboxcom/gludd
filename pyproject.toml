@@ -1,6 +1,6 @@
 [project]
 name = "general-ludd-agent"
-version = "0.1.0-beta.2"
+version = "0.1.0-beta.3"
 description = "General Ludd Agent — the black swan agentic coding system with Ansible runners and multi-model AI agents"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -185,6 +185,7 @@ filterwarnings = [
 ]
 
 [tool.coverage.run]
+branch = true
 source = ["general_ludd"]
 omit = ["tests/*"]
 

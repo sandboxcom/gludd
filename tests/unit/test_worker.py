@@ -73,11 +73,14 @@ class TestWorkerApp:
     @pytest.mark.asyncio
     async def test_worker_rejects_unknown_playbook(self, transport):
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.post("/jobs/execute", json={
-                "job_id": "JOB-001",
-                "playbook": "nonexistent.yml",
-                "queue": "core",
-            })
+            resp = await client.post(
+                "/jobs/execute",
+                json={
+                    "job_id": "JOB-001",
+                    "playbook": "nonexistent.yml",
+                    "queue": "core",
+                },
+            )
             assert resp.status_code == 400
             assert "Unknown playbook" in resp.json()["detail"]
 
@@ -90,12 +93,15 @@ class TestWorkerApp:
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.post("/jobs/execute", json={
-                "job_id": "JOB-EXE",
-                "todo_id": "TODO-EXE",
-                "playbook": "noop.yml",
-                "queue": "core",
-            })
+            resp = await client.post(
+                "/jobs/execute",
+                json={
+                    "job_id": "JOB-EXE",
+                    "todo_id": "TODO-EXE",
+                    "playbook": "noop.yml",
+                    "queue": "core",
+                },
+            )
             assert resp.status_code == 200
             data = resp.json()
             assert data["exit_code"] == 0
@@ -107,7 +113,8 @@ class TestWorkerApp:
     async def test_worker_writes_task_return_with_artifacts(self, mock_get_runner: MagicMock, app: Any) -> None:
         tmp = tempfile.mkdtemp()
         adapter = _make_adapter(
-            tmp, "JOB-ART",
+            tmp,
+            "JOB-ART",
             events=[{"event": "runner_on_ok"}],
             artifacts=["artifact1.log"],
         )
@@ -115,12 +122,15 @@ class TestWorkerApp:
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.post("/jobs/execute", json={
-                "job_id": "JOB-ART",
-                "todo_id": "TODO-ART",
-                "playbook": "noop.yml",
-                "queue": "core",
-            })
+            resp = await client.post(
+                "/jobs/execute",
+                json={
+                    "job_id": "JOB-ART",
+                    "todo_id": "TODO-ART",
+                    "playbook": "noop.yml",
+                    "queue": "core",
+                },
+            )
             data = resp.json()
             assert data["exit_code"] == 0
             assert data["artifacts"] is not None
@@ -138,11 +148,14 @@ class TestWorkerApp:
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.post("/jobs/execute", json={
-                "job_id": "JOB-EVT",
-                "playbook": "noop.yml",
-                "queue": "core",
-            })
+            resp = await client.post(
+                "/jobs/execute",
+                json={
+                    "job_id": "JOB-EVT",
+                    "playbook": "noop.yml",
+                    "queue": "core",
+                },
+            )
             data = resp.json()
             assert len(data["events"]) == 2
 
@@ -155,12 +168,15 @@ class TestWorkerApp:
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.post("/jobs/execute", json={
-                "job_id": "JOB-VAR",
-                "playbook": "noop.yml",
-                "queue": "core",
-                "budget_context": {"priority": "high"},
-            })
+            resp = await client.post(
+                "/jobs/execute",
+                json={
+                    "job_id": "JOB-VAR",
+                    "playbook": "noop.yml",
+                    "queue": "core",
+                    "budget_context": {"priority": "high"},
+                },
+            )
             assert resp.status_code == 200
             adapter.write_vars.assert_called_once()
             call_kwargs = adapter.write_vars.call_args
@@ -169,27 +185,34 @@ class TestWorkerApp:
     @pytest.mark.asyncio
     async def test_worker_redacts_secret_aliases_in_logs(self, transport, caplog):
         import logging
+
         with caplog.at_level(logging.INFO, logger="general_ludd.worker.app"):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.post("/jobs/execute", json={
-                    "job_id": "JOB-SEC",
-                    "playbook": "noop.yml",
-                    "queue": "core",
-                    "vars_namespace_refs": ["secret/db_password"],
-                })
-                assert resp.status_code == 200
+                resp = await client.post(
+                    "/jobs/execute",
+                    json={
+                        "job_id": "JOB-SEC",
+                        "playbook": "noop.yml",
+                        "queue": "core",
+                        "vars_namespace_refs": ["secret/db_password"],
+                    },
+                )
+            assert resp.status_code == 200
             for record in caplog.records:
                 assert "secret/db_password" not in record.getMessage()
 
     @pytest.mark.asyncio
     async def test_worker_correlation_ids_in_responses(self, transport):
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.post("/jobs/execute", json={
-                "job_id": "JOB-CORR",
-                "todo_id": "TODO-CORR",
-                "playbook": "noop.yml",
-                "queue": "core",
-            })
+            resp = await client.post(
+                "/jobs/execute",
+                json={
+                    "job_id": "JOB-CORR",
+                    "todo_id": "TODO-CORR",
+                    "playbook": "noop.yml",
+                    "queue": "core",
+                },
+            )
             data = resp.json()
             assert data["job_id"] == "JOB-CORR"
             assert data["todo_id"] == "TODO-CORR"
@@ -197,22 +220,28 @@ class TestWorkerApp:
     @pytest.mark.asyncio
     async def test_worker_return_review_endpoint(self, transport):
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.post("/jobs/return-review", json={
-                "job_id": "JOB-003",
-                "playbook": "return_review.yml",
-                "queue": "model",
-            })
-            assert resp.status_code == 200
+            resp = await client.post(
+                "/jobs/return-review",
+                json={
+                    "job_id": "JOB-003",
+                    "playbook": "return_review.yml",
+                    "queue": "model",
+                },
+            )
+            assert resp.status_code == 501
 
     @pytest.mark.asyncio
     async def test_worker_validate_endpoint_returns_501_not_implemented(self, transport):
         # W3.8: /jobs/validate has no backing playbook — must return 501, not fake-success.
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.post("/jobs/validate", json={
-                "job_id": "JOB-004",
-                "playbook": "noop.yml",
-                "queue": "qa",
-            })
+            resp = await client.post(
+                "/jobs/validate",
+                json={
+                    "job_id": "JOB-004",
+                    "playbook": "noop.yml",
+                    "queue": "qa",
+                },
+            )
             assert resp.status_code == 501
             data = resp.json()
             assert data["detail"]["reason"] == "not_implemented"
@@ -220,6 +249,7 @@ class TestWorkerApp:
     @pytest.mark.asyncio
     async def test_worker_gunicorn_config_exists(self):
         import importlib
+
         mod = importlib.import_module("general_ludd.worker.gunicorn_conf")
         assert mod.worker_class == "uvicorn_worker.UvicornWorker"
         assert mod.workers == 2
@@ -227,18 +257,21 @@ class TestWorkerApp:
 
     def test_gunicorn_conf_max_requests(self):
         import importlib
+
         mod = importlib.import_module("general_ludd.worker.gunicorn_conf")
         assert mod.max_requests == 1000
         assert mod.max_requests_jitter == 50
 
     def test_gunicorn_on_reload(self):
         import importlib
+
         mod = importlib.import_module("general_ludd.worker.gunicorn_conf")
         arbiter = MagicMock()
         mod.on_reload(arbiter)
 
     def test_gunicorn_post_fork(self):
         import importlib
+
         mod = importlib.import_module("general_ludd.worker.gunicorn_conf")
         worker = MagicMock()
         worker.pid = 12345
@@ -247,6 +280,7 @@ class TestWorkerApp:
 
     def test_gunicorn_pre_exec(self):
         import importlib
+
         mod = importlib.import_module("general_ludd.worker.gunicorn_conf")
         worker = MagicMock()
         worker.pid = 12345
@@ -257,7 +291,9 @@ class TestModelPerformanceRecording:
     @pytest.mark.asyncio
     @patch("general_ludd.worker.app._invoke_gateway_for_job")
     async def test_records_successful_model_call(
-        self, mock_invoke: MagicMock, app: Any,
+        self,
+        mock_invoke: MagicMock,
+        app: Any,
     ) -> None:
         mock_profile = MagicMock()
         mock_profile.provider = "test"
@@ -275,15 +311,18 @@ class TestModelPerformanceRecording:
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.post("/jobs/execute", json={
-                "job_id": "JOB-PERF",
-                "todo_id": "TODO-PERF",
-                "playbook": "noop.yml",
-                "queue": "model",
-                "work_type": "code",
-                "model_profile": "test-model",
-                "prompt_text": "write a function",
-            })
+            resp = await client.post(
+                "/jobs/execute",
+                json={
+                    "job_id": "JOB-PERF",
+                    "todo_id": "TODO-PERF",
+                    "playbook": "noop.yml",
+                    "queue": "model",
+                    "work_type": "code",
+                    "model_profile": "test-model",
+                    "prompt_text": "write a function",
+                },
+            )
             assert resp.status_code == 200
             app.state.model_perf_repo.record_call_sync.assert_called_once_with(
                 service="test",
@@ -304,7 +343,9 @@ class TestModelPerformanceRecording:
     @pytest.mark.asyncio
     @patch("general_ludd.worker.app._invoke_gateway_for_job")
     async def test_records_failed_model_call(
-        self, mock_invoke: MagicMock, app: Any,
+        self,
+        mock_invoke: MagicMock,
+        app: Any,
     ) -> None:
         mock_profile = MagicMock()
         mock_profile.provider = "test"
@@ -322,15 +363,18 @@ class TestModelPerformanceRecording:
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.post("/jobs/execute", json={
-                "job_id": "JOB-PERF-FAIL",
-                "todo_id": "TODO-PERF-FAIL",
-                "playbook": "noop.yml",
-                "queue": "model",
-                "work_type": "code",
-                "model_profile": "test-model",
-                "prompt_text": "write a function",
-            })
+            resp = await client.post(
+                "/jobs/execute",
+                json={
+                    "job_id": "JOB-PERF-FAIL",
+                    "todo_id": "TODO-PERF-FAIL",
+                    "playbook": "noop.yml",
+                    "queue": "model",
+                    "work_type": "code",
+                    "model_profile": "test-model",
+                    "prompt_text": "write a function",
+                },
+            )
             assert resp.status_code == 200
             app.state.model_perf_repo.record_call_sync.assert_called_once()
             _args, kwargs = app.state.model_perf_repo.record_call_sync.call_args

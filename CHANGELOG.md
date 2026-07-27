@@ -2,6 +2,30 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/); this project adheres to semantic versioning.
 
+## [0.1.0-beta.3] — 2026-07-26
+
+### Added
+- NF.1–NF.10 feature wave: Chat CLI, Unikernel sandbox, Binary RE, Radio engineer, E2E test gen, OS expert, STS tokens, Multitasking enforcement, Language expert, Stop false-completion fix
+- Governance collection: elections, international_relations, legal_systems, public_finance
+- enforce-tdd.ts plugin: real-time editor block
+- Phase J+K+L: Terraform HTTP backend + Workload-aware deployment + SearX model search
+- Prompt profiles system (config/prompt_profiles/)
+- Agentic memory embedding store + hybrid search (S53.31–S53.32)
+- PaaS IAM least-privilege roles (AWS/GCP/Azure, S53.33)
+- OPA policies for Terraform + IAM validation (S53.34)
+
+### Fixed
+- macOS binary crash (ansible data file collection)
+- CI binary smoke tests (version subcommand syntax)
+- enforce-multitask.ts env-disable escape hatch restored
+- verify-enforcement parser false-positive runtime failures
+- enforce-make.ts parens matcher narrowed
+- enforce-stop.ts disengage bypass fix
+- enforce-verified-claims.ts evidence regex narrowed
+- CI PENDING removed from EVIDENCE_PATTERNS
+- NSIS BUILDDIR path resolution fix
+- Root directory cleanup + deploy key removal
+
 ## [Unreleased]
 
 ### Added

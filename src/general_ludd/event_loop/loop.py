@@ -1088,6 +1088,24 @@ class EventLoop:
             await self._dispatch_review_job(tr)
         self._tick_metrics["returns_reviewed"] = len(claimed)
 
+    async def _release_review_claim(self, tr: Any, reason: str = "") -> None:
+        # S2: release a review claim back to 'created' so the task return
+        # does not strand at 'claimed_for_review' forever. Optionally
+        # block the associated todo when the release is due to a failure.
+        if self._active_session is not None:
+            with contextlib.suppress(Exception):
+                tr.status = "created"
+            if hasattr(tr, "updated_at"):
+                with contextlib.suppress(Exception):
+                    tr.updated_at = datetime.now(UTC)
+            with contextlib.suppress(Exception):
+                await self._active_session.flush()
+            logger.warning(
+                "Released review claim for return %s: %s",
+                getattr(tr, "return_id", "?"),
+                reason or "unknown",
+            )
+
     async def _dispatch_review_job(self, tr: Any) -> None:
         # H4 (W3.2): when a gateway-backed reviewer is wired, review in-process
         # and route the decision through apply_decision. Failure escalates the
@@ -1112,26 +1130,10 @@ class EventLoop:
                     timeout=in_process_timeout,
                 )
             except TimeoutError:
-                logger.warning(
-                    "In-process review for return %s (job_id=REVIEW-%s) timed out "
-                    "after %.0fs; releasing claim and blocking todo",
-                    tr.return_id,
-                    tr.return_id,
-                    in_process_timeout,
+                await self._release_review_claim(
+                    tr,
+                    f"in-process review timeout after {in_process_timeout:.0f}s",
                 )
-                if self._active_session is not None:
-                    with contextlib.suppress(Exception):
-                        tr.status = "created"
-                    if hasattr(tr, "updated_at"):
-                        with contextlib.suppress(Exception):
-                            tr.updated_at = datetime.now(UTC)
-                    with contextlib.suppress(Exception):
-                        await self._active_session.flush()
-                if self._todo_repo is not None:
-                    with contextlib.suppress(Exception):
-                        todo = await self._todo_repo.get_by_id(tr.todo_id)
-                        if todo is not None:
-                            await self._todo_repo.transition(tr.todo_id, TodoStatus.BLOCKED, todo.version)
             return
         project_id_val = getattr(tr, "project_id", None)
         if not isinstance(project_id_val, str):
@@ -1163,7 +1165,7 @@ class EventLoop:
             )
             review_playbook_timeout = float(review_cfg.get("playbook_timeout", 600.0))
             try:
-                await asyncio.wait_for(
+                runner_result = await asyncio.wait_for(
                     self._bounded_to_thread(
                         self._runner.run_playbook,
                         playbook_name="return_review.yml",
@@ -1171,35 +1173,29 @@ class EventLoop:
                     ),
                     timeout=review_playbook_timeout,
                 )
+                if runner_result:
+                    rc = runner_result.get("rc", 0)
+                    if rc != 0:
+                        await self._release_review_claim(
+                            tr,
+                            f"playbook rc={rc} (job_id={job.job_id})",
+                        )
+                    else:
+                        logger.info(
+                            "Review playbook completed for return %s (job_id=%s)",
+                            getattr(tr, "return_id", "?"),
+                            job.job_id,
+                        )
             except TimeoutError:
-                # The subprocess-backed playbook is unbounded without this
-                # guard, and tr was already flipped 'created'->
-                # 'claimed_for_review' by claim_unreviewed's guarded UPDATE
-                # (db/repository.py) before dispatch. A silent timeout here
-                # would leave it stuck at 'claimed_for_review' forever — no
-                # reaper re-claims that status. Release the claim back to
-                # 'created' and transition the associated todo to BLOCKED
-                # so it does not silently stall.
-                logger.warning(
-                    "Review playbook for return %s (job_id=%s) timed out "
-                    "after %.0fs; releasing claim and blocking todo",
-                    tr.return_id,
-                    job.job_id,
-                    review_playbook_timeout,
+                await self._release_review_claim(
+                    tr,
+                    f"playbook timeout after {review_playbook_timeout:.0f}s (job_id={job.job_id})",
                 )
-                if self._active_session is not None:
-                    with contextlib.suppress(Exception):
-                        tr.status = "created"
-                    if hasattr(tr, "updated_at"):
-                        with contextlib.suppress(Exception):
-                            tr.updated_at = datetime.now(UTC)
-                    with contextlib.suppress(Exception):
-                        await self._active_session.flush()
-                if self._todo_repo is not None:
-                    with contextlib.suppress(Exception):
-                        todo = await self._todo_repo.get_by_id(tr.todo_id)
-                        if todo is not None:
-                            await self._todo_repo.transition(tr.todo_id, TodoStatus.BLOCKED, todo.version)
+            except Exception:
+                await self._release_review_claim(
+                    tr,
+                    f"playbook failed (job_id={job.job_id})",
+                )
             return
         if self._http_client is None:
             return
@@ -1212,28 +1208,19 @@ class EventLoop:
                 ),
                 timeout=review_http_timeout,
             )
-            await self._persist_review_response(tr, resp)
+            status = getattr(resp, "status_code", 200)
+            if status >= 400:
+                await self._release_review_claim(
+                    tr,
+                    f"HTTP {status} from worker (job_id={job.job_id})",
+                )
+            else:
+                await self._persist_review_response(tr, resp)
         except TimeoutError:
-            logger.warning(
-                "Review HTTP dispatch for return %s (job_id=%s) timed out "
-                "after %.0fs; releasing claim and blocking todo",
-                tr.return_id,
-                job.job_id,
-                review_http_timeout,
+            await self._release_review_claim(
+                tr,
+                f"HTTP timeout after {review_http_timeout:.0f}s (job_id={job.job_id})",
             )
-            if self._active_session is not None:
-                with contextlib.suppress(Exception):
-                    tr.status = "created"
-                if hasattr(tr, "updated_at"):
-                    with contextlib.suppress(Exception):
-                        tr.updated_at = datetime.now(UTC)
-                with contextlib.suppress(Exception):
-                    await self._active_session.flush()
-            if self._todo_repo is not None:
-                with contextlib.suppress(Exception):
-                    todo = await self._todo_repo.get_by_id(tr.todo_id)
-                    if todo is not None:
-                        await self._todo_repo.transition(tr.todo_id, TodoStatus.BLOCKED, todo.version)
 
     def _resolve_repo_root(self, project_id: str | None) -> str | None:
         """Resolve the repository root for a project.

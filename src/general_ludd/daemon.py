@@ -1542,6 +1542,20 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                         _p.model_name,
                     )
 
+        if model_profiles:
+            # model_gateway already set above
+            pass
+        else:
+            # S1 fix: model gateway is unconfigured — set a flag so /readyz
+            # can report NOT ready and the dispatcher fails-loud instead of
+            # silently completing every task with the noop executor.
+            app.state._model_unconfigured = True
+            logger.warning(
+                "No model_profiles loaded — model gateway is unconfigured. "
+                "All agent dispatch will fail until model profiles are "
+                "provided via GLUDD_CONFIG_DIR / config/model_profiles/*.yml."
+            )
+
         if getattr(app.state, "eval_harness", None) is None:
             app.state.eval_harness = EvalHarness(model="sonnet")
 

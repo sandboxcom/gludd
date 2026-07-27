@@ -42,6 +42,7 @@ class DispatchStatus(str):
 
     __hash__ = str.__hash__
 
+
 # Default wall-clock budget for a whole dispatch_many batch.
 DEFAULT_DISPATCH_TIMEOUT = 1800.0  # 30 minutes
 
@@ -60,7 +61,12 @@ ExecutorFn = Callable[[AgentTask], Coroutine[None, None, str]]
 
 
 async def _noop_executor(task: AgentTask) -> str:
-    return ""
+    logger.warning(
+        "Task %s dispatched with noop executor — model gateway is unconfigured. "
+        "Task will be marked FAILED, not silently completed.",
+        task.task_id,
+    )
+    return "__NOOP_EXECUTOR_UNCONFIGURED__"
 
 
 class AgentDispatcher:
@@ -95,27 +101,16 @@ class AgentDispatcher:
         self._task_dispatch_counts: dict[str, int] = {}
         self._spiral_lock = asyncio.Lock()
         self._sts_injector: object | None = None
-        model_call_limit = (
-            orchestration_guard.max_concurrent_model_calls
-            if orchestration_guard is not None
-            else 10
-        )
-        self._model_call_semaphore = asyncio.Semaphore(
-            max(model_call_limit, 1)
-        )
+        model_call_limit = orchestration_guard.max_concurrent_model_calls if orchestration_guard is not None else 10
+        self._model_call_semaphore = asyncio.Semaphore(max(model_call_limit, 1))
+
     @property
     def active_count(self) -> int:
         return self._active_count
 
-    async def get_active_tasks_for_project(
-        self, project_id: str
-    ) -> list[AgentTask]:
+    async def get_active_tasks_for_project(self, project_id: str) -> list[AgentTask]:
         async with self._lock:
-            return [
-                t
-                for t in self._active_tasks.values()
-                if t.project_id == project_id
-            ]
+            return [t for t in self._active_tasks.values() if t.project_id == project_id]
 
     async def _get_semaphore(self, agent_name: str) -> asyncio.BoundedSemaphore:
         async with self._lock:
@@ -160,9 +155,7 @@ class AgentDispatcher:
             )
         return None
 
-    def _check_capability_escalation(
-        self, task: AgentTask, invoker: str
-    ) -> AgentTaskResult | None:
+    def _check_capability_escalation(self, task: AgentTask, invoker: str) -> AgentTaskResult | None:
         if self._orchestration_guard is None:
             return None
         if not self._orchestration_guard.enforce_capability_escalation:
@@ -204,9 +197,7 @@ class AgentDispatcher:
             )
         return None
 
-    async def _check_rate_limiter(
-        self, task: AgentTask
-    ) -> AgentTaskResult | None:
+    async def _check_rate_limiter(self, task: AgentTask) -> AgentTaskResult | None:
         if self._orchestration_guard is None:
             return None
         max_per_window = self._orchestration_guard.max_dispatches_per_window
@@ -216,9 +207,7 @@ class AgentDispatcher:
         now = time.monotonic()
         cutoff = now - window_s
         self._rate_limiter_timestamps.append(now)
-        self._rate_limiter_timestamps[:] = [
-            ts for ts in self._rate_limiter_timestamps if ts > cutoff
-        ]
+        self._rate_limiter_timestamps[:] = [ts for ts in self._rate_limiter_timestamps if ts > cutoff]
         if len(self._rate_limiter_timestamps) > max_per_window:
             return AgentTaskResult(
                 task_id=task.task_id,
@@ -232,9 +221,7 @@ class AgentDispatcher:
             )
         return None
 
-    async def _check_spiral(
-        self, task: AgentTask
-    ) -> AgentTaskResult | None:
+    async def _check_spiral(self, task: AgentTask) -> AgentTaskResult | None:
         if self._orchestration_guard is None:
             return None
         max_redispatch = self._orchestration_guard.max_redispatch_count
@@ -263,12 +250,15 @@ class AgentDispatcher:
     async def dispatch_one(self, task: AgentTask) -> AgentTaskResult:
         config = self._registry.get(task.agent_name)
         if config is None:
-            self._record_if_wired(task.task_id, {
-                "type": "task_failed",
-                "timestamp": datetime.now(UTC).isoformat(),
-                "agent_name": task.agent_name,
-                "reason": f"Agent '{task.agent_name}' not found in registry",
-            })
+            self._record_if_wired(
+                task.task_id,
+                {
+                    "type": "task_failed",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "agent_name": task.agent_name,
+                    "reason": f"Agent '{task.agent_name}' not found in registry",
+                },
+            )
             return AgentTaskResult(
                 task_id=task.task_id,
                 agent_name=task.agent_name,
@@ -277,12 +267,15 @@ class AgentDispatcher:
             )
 
         if not config.enabled:
-            self._record_if_wired(task.task_id, {
-                "type": "task_failed",
-                "timestamp": datetime.now(UTC).isoformat(),
-                "agent_name": task.agent_name,
-                "reason": f"Agent '{task.agent_name}' is disabled",
-            })
+            self._record_if_wired(
+                task.task_id,
+                {
+                    "type": "task_failed",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "agent_name": task.agent_name,
+                    "reason": f"Agent '{task.agent_name}' is disabled",
+                },
+            )
             return AgentTaskResult(
                 task_id=task.task_id,
                 agent_name=task.agent_name,
@@ -294,12 +287,15 @@ class AgentDispatcher:
             is_paused = getattr(self._pause_controller, "is_paused", None)
             silenced = bool(is_paused and is_paused("project", task.project_id))
             if silenced:
-                self._record_if_wired(task.task_id, {
-                    "type": "task_blocked",
-                    "timestamp": datetime.now(UTC).isoformat(),
-                    "agent_name": task.agent_name,
-                    "reason": "Project is paused",
-                })
+                self._record_if_wired(
+                    task.task_id,
+                    {
+                        "type": "task_blocked",
+                        "timestamp": datetime.now(UTC).isoformat(),
+                        "agent_name": task.agent_name,
+                        "reason": "Project is paused",
+                    },
+                )
                 return AgentTaskResult(
                     task_id=task.task_id,
                     agent_name=task.agent_name,
@@ -326,20 +322,20 @@ class AgentDispatcher:
                 return escalation_result
         if not invoker or not self._registry.can_invoke(invoker, task.agent_name):
             denied = invoker or "<empty>"
-            self._record_if_wired(task.task_id, {
-                "type": "task_failed",
-                "timestamp": datetime.now(UTC).isoformat(),
-                "agent_name": task.agent_name,
-                "reason": f"Permission denied: '{denied}' is not permitted to dispatch '{task.agent_name}'",
-            })
+            self._record_if_wired(
+                task.task_id,
+                {
+                    "type": "task_failed",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "agent_name": task.agent_name,
+                    "reason": f"Permission denied: '{denied}' is not permitted to dispatch '{task.agent_name}'",
+                },
+            )
             return AgentTaskResult(
                 task_id=task.task_id,
                 agent_name=task.agent_name,
                 status="failed",
-                output=(
-                    f"Permission denied: '{denied}' is not permitted "
-                    f"to dispatch '{task.agent_name}'"
-                ),
+                output=(f"Permission denied: '{denied}' is not permitted to dispatch '{task.agent_name}'"),
             )
 
         # --- D11 orchestration guards ---
@@ -356,11 +352,7 @@ class AgentDispatcher:
         if spiral_result is not None:
             return spiral_result
 
-        if (
-            config.bind_tools_on_dispatch
-            and self._mcp_tool_registry is not None
-            and task.tools is None
-        ):
+        if config.bind_tools_on_dispatch and self._mcp_tool_registry is not None and task.tools is None:
             try:
                 list_tools_fn = getattr(self._mcp_tool_registry, "list_tools", None)
                 mcp_tools = list_tools_fn() if list_tools_fn is not None else []
@@ -390,13 +382,16 @@ class AgentDispatcher:
                         await sts_enrich(task)
                 if self._run_recorder is not None:
                     with contextlib.suppress(Exception):
-                        self._run_recorder.record(task.task_id, {
-                            "type": "task_started",
-                            "timestamp": datetime.now(UTC).isoformat(),
-                            "agent_name": task.agent_name,
-                            "description": task.description,
-                            "project_id": task.project_id,
-                        })
+                        self._run_recorder.record(
+                            task.task_id,
+                            {
+                                "type": "task_started",
+                                "timestamp": datetime.now(UTC).isoformat(),
+                                "agent_name": task.agent_name,
+                                "description": task.description,
+                                "project_id": task.project_id,
+                            },
+                        )
                 # Watch the in-flight task so the StallWatchdog's sweeper can flag
                 # it if it hangs past its expected time; nullcontext when no
                 # watchdog is injected. watch() auto-finishes on block exit.
@@ -412,15 +407,39 @@ class AgentDispatcher:
                 # Record the completed duration so the per-agent baseline learns
                 # (and an anomalously-slow run is judged against the prior window).
                 self._tracker.check_then_record(task.agent_name, duration)
+                # S1 fix: the noop executor silently returned "" and
+                # the task was marked "completed" — a silently-broken
+                # shipped feature. Now the noop executor returns a
+                # distinguishable sentinel, and we fail-loud instead.
+                used_noop = isinstance(output, str) and output.startswith("__NOOP_EXECUTOR_UNCONFIGURED__")
                 if self._run_recorder is not None:
                     with contextlib.suppress(Exception):
-                        self._run_recorder.record(task.task_id, {
-                            "type": "task_completed",
-                            "timestamp": datetime.now(UTC).isoformat(),
-                            "agent_name": task.agent_name,
-                            "output": output,
-                            "duration_seconds": duration,
-                        })
+                        self._run_recorder.record(
+                            task.task_id,
+                            {
+                                "type": "task_completed",
+                                "timestamp": datetime.now(UTC).isoformat(),
+                                "agent_name": task.agent_name,
+                                "output": output,
+                                "duration_seconds": duration,
+                            },
+                        )
+                if used_noop:
+                    logger.error(
+                        "Task %s executed by noop executor — model gateway is unconfigured. Marking FAILED.",
+                        task.task_id,
+                    )
+                    return AgentTaskResult(
+                        task_id=task.task_id,
+                        agent_name=task.agent_name,
+                        status="failed",
+                        output=(
+                            "Executor unconfigured: model gateway is not available. "
+                            "Set GLUDD_CONFIG_DIR to a directory containing "
+                            "config/model_profiles/*.yml and restart the daemon."
+                        ),
+                        duration_seconds=duration,
+                    )
                 return AgentTaskResult(
                     task_id=task.task_id,
                     agent_name=task.agent_name,
@@ -446,13 +465,16 @@ class AgentDispatcher:
                 logger.exception("Task %s failed", task.task_id)
                 if self._run_recorder is not None:
                     with contextlib.suppress(Exception):
-                        self._run_recorder.record(task.task_id, {
-                            "type": "task_failed",
-                            "timestamp": datetime.now(UTC).isoformat(),
-                            "agent_name": task.agent_name,
-                            "error": sanitize_error_message(str(exc)),
-                            "duration_seconds": duration,
-                        })
+                        self._run_recorder.record(
+                            task.task_id,
+                            {
+                                "type": "task_failed",
+                                "timestamp": datetime.now(UTC).isoformat(),
+                                "agent_name": task.agent_name,
+                                "error": sanitize_error_message(str(exc)),
+                                "duration_seconds": duration,
+                            },
+                        )
                 return AgentTaskResult(
                     task_id=task.task_id,
                     agent_name=task.agent_name,
@@ -488,10 +510,7 @@ class AgentDispatcher:
                 if not f.done():
                     f.cancel()
             await asyncio.gather(*futures, return_exceptions=True)
-            return [
-                self._result_from_future(task, fut)
-                for task, fut in zip(tasks, futures, strict=True)
-            ]
+            return [self._result_from_future(task, fut) for task, fut in zip(tasks, futures, strict=True)]
         out: list[AgentTaskResult] = []
         for task, res in zip(tasks, results, strict=True):
             if isinstance(res, AgentTaskResult):
@@ -512,9 +531,7 @@ class AgentDispatcher:
     # D.7.3 quiesce / resume at dispatch boundary
     # ------------------------------------------------------------------
 
-    async def quiesce_project(
-        self, project_id: str, timeout: float = 30.0
-    ) -> list[AgentTaskResult]:
+    async def quiesce_project(self, project_id: str, timeout: float = 30.0) -> list[AgentTaskResult]:
         """Drain and cancel in-flight tasks for *project_id*.
 
         Returns the final result for each task that was cancelled or already
@@ -523,11 +540,7 @@ class AgentDispatcher:
         method drains the ones already past that gate.
         """
         async with self._lock:
-            tasks = [
-                t
-                for t in self._active_tasks.values()
-                if t.project_id == project_id
-            ]
+            tasks = [t for t in self._active_tasks.values() if t.project_id == project_id]
         if not tasks:
             return []
         results: list[AgentTaskResult] = []
@@ -574,9 +587,7 @@ class AgentDispatcher:
         return re_enqueued
 
     @staticmethod
-    def _result_from_future(
-        task: AgentTask, fut: asyncio.Future[AgentTaskResult]
-    ) -> AgentTaskResult:
+    def _result_from_future(task: AgentTask, fut: asyncio.Future[AgentTaskResult]) -> AgentTaskResult:
         if fut.done() and not fut.cancelled():
             exc = fut.exception()
             if exc is None:
