@@ -43,14 +43,47 @@ class EvidenceResult:
 
 class EvidenceChecker:
     def check_claim(self, claim: str, sources: list[str]) -> EvidenceResult:
-        if sources:
-            return EvidenceResult(supported=True, claim=claim, sources=sources, missing_sources=[])
+        # S9: require per-claim source matching — at least one source fragment
+        # must plausibly relate to the claim text (share a module/function name,
+        # file stem, or numeric value). Pooling ALL file:line fragments from
+        # every tool output into every claim makes one unrelated path validate
+        # all claims.
+        if not sources:
+            return EvidenceResult(
+                supported=False,
+                claim=claim,
+                sources=[],
+                missing_sources=["no source provided"],
+            )
+        matching_sources = self._match_sources_to_claim(claim, sources)
+        if matching_sources:
+            return EvidenceResult(supported=True, claim=claim, sources=matching_sources)
         return EvidenceResult(
             supported=False,
             claim=claim,
-            sources=[],
-            missing_sources=["no source provided"],
+            sources=sources,
+            missing_sources=["no source matched claim text"],
         )
+
+    @staticmethod
+    def _match_sources_to_claim(claim: str, sources: list[str]) -> list[str]:
+        """Return sources that plausibly relate to *claim*.
+
+        A source matches if any word token from its path/file stem appears
+        in the claim text (case-insensitive), or if a numeric token from
+        the claim matches a numeric token in the source path.
+        """
+        import re as _re
+
+        claim_lower = claim.lower()
+        claim_tokens = set(_re.findall(r"[a-zA-Z0-9]+", claim_lower))
+        matching: list[str] = []
+        for src in sources:
+            src_lower = src.lower()
+            src_tokens = set(_re.findall(r"[a-zA-Z0-9]+", src_lower))
+            if claim_tokens & src_tokens:
+                matching.append(src)
+        return matching
 
     def audit_response(self, response_text: str, tool_outputs: list[str]) -> list[EvidenceResult]:
         results: list[EvidenceResult] = []
@@ -72,7 +105,7 @@ class EvidenceChecker:
 
 
 def _split_sentences(text: str) -> list[str]:
-    parts = re.split(r'(?<=[.!?])\s+', text)
+    parts = re.split(r"(?<=[.!?])\s+", text)
     return [p for p in parts if p.strip()]
 
 

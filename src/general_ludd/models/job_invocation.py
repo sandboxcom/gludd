@@ -127,6 +127,7 @@ def invoke_model_for_generation(
     # capabilities bundle (ContextCompactor + TokenWindowManager). The system
     # turn is the skill body; the user turn is the task prompt.
     from general_ludd.agents.capabilities import AgentCapabilities
+    from general_ludd.agents.registry import default_registry
 
     # OPT-IN aggressive SLM compaction. Default OFF → model_gateway is not passed,
     # so AgentCapabilities uses the plain ContextCompactor path and behavior is
@@ -137,13 +138,15 @@ def invoke_model_for_generation(
         model_gateway=gateway if use_slm_compaction else None,
         use_slm_compaction=use_slm_compaction,
         compaction_level=compaction_level,
+        # S22: pass the real agent registry so agent-dispatch tools are
+        # available on the generation path. A bare AgentRegistry() starts
+        # empty; default_registry() populates real agents. Without this,
+        # every production generation job runs with zero agent tools.
+        agent_registry=default_registry(),
     )
     system_prompt = skill_body or ""
     history = [{"role": "user", "content": prompt_text}]
-    messages = [
-        m for m in caps.prepare_messages(system_prompt, history)
-        if m["content"].strip()
-    ]
+    messages = [m for m in caps.prepare_messages(system_prompt, history) if m["content"].strip()]
     try:
         response = gateway.call_model(
             profile_id,
@@ -216,6 +219,7 @@ def _record_generation_benchmark(
             # for the test path only needs to capture the call.
             import asyncio as _asyncio
             import inspect as _inspect
+
             result = recorder.create(
                 model_profile_id=model_profile,
                 work_type=work_type,

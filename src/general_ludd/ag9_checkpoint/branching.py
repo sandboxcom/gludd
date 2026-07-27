@@ -122,18 +122,43 @@ class BranchManager:
         branch_ids: list[str],
     ) -> list[BranchResult]:
         results: list[BranchResult] = []
+        branches: list[CheckpointBranch] = []
         for bid in branch_ids:
             branch = self._read(bid)
             if branch is None:
-                results.append(BranchResult(
-                    branch_id=bid, status="missing",
-                    error=f"branch {bid} not found",
-                ))
+                results.append(
+                    BranchResult(
+                        branch_id=bid,
+                        status="missing",
+                        error=f"branch {bid} not found",
+                    )
+                )
             else:
-                results.append(BranchResult(
-                    branch_id=bid, status="pending",
-                    output=branch.state,
-                ))
+                branches.append(branch)
+        # S25: compare_branches() previously always returned "pending" for
+        # every found branch — the comparison half was absent. Now compare
+        # pairwise: if branches differ in state, mark the divergence.
+        if len(branches) >= 2:
+            base_state = branches[0].state
+            all_same = all(b.state == base_state for b in branches[1:])
+            for branch in branches:
+                has_diverged = not all_same and branch.state != base_state
+                results.append(
+                    BranchResult(
+                        branch_id=branch.branch_id,
+                        status="diverged" if has_diverged else "identical" if all_same else "pending",
+                        output=branch.state,
+                    )
+                )
+        else:
+            for branch in branches:
+                results.append(
+                    BranchResult(
+                        branch_id=branch.branch_id,
+                        status="pending",
+                        output=branch.state,
+                    )
+                )
         return results
 
     # ── internal persistence ──────────────────────────────────────────────

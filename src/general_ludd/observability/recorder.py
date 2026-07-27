@@ -20,9 +20,29 @@ logger = logging.getLogger(__name__)
 
 
 def compute_scores_from_trace(trace: ExecutionTrace, success: bool) -> dict[str, float]:
-    """Compute benchmark scores from an execution trace."""
+    """Compute benchmark scores from an execution trace.
+
+    Args:
+        trace: The execution trace object with token counts and metrics.
+        success: Whether the overall task succeeded.
+
+    Returns:
+        Dict with completion, code_quality, instruction, and token_efficiency scores.
+    """
     completion_score = 1.0 if success else 0.0
-    code_quality_score = 0.5
+    # S19: code_quality_score was hardcoded 0.5 regardless of real test results.
+    # When test_results are available on the trace, derive a real quality score;
+    # otherwise, fall back to a neutral 0.5.
+    test_results: dict[str, object] | None = getattr(trace, "test_results", None)
+    if test_results and isinstance(test_results, dict):
+        total = test_results.get("total", 0)
+        passed = test_results.get("passed", 0)
+        if isinstance(total, (int, float)) and isinstance(passed, (int, float)) and total > 0:
+            code_quality_score = passed / total
+        else:
+            code_quality_score = 0.5
+    else:
+        code_quality_score = 0.5
     instruction_score = 1.0 if success else 0.5
 
     total_input = trace.total_input_tokens

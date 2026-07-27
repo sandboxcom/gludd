@@ -42,10 +42,10 @@ dependencies = [
     "langchain-openai>=0.3.0",
     "watchdog>=0.1.0-beta.2",
     "fs>=0.1.0-beta.2",
-    "rich>=0.1.0-beta.2",
+    "rich>=13.0.0",
     "diskcache>=0.1.0-beta.2",
-    "prompt_toolkit>=0.1.0-beta.2",
-    "pygments>=0.1.0-beta.2",
+    "prompt_toolkit>=3.0.0",
+    "pygments>=2.0.0",
     "croniter>=0.1.0-beta.2",
 ]
 

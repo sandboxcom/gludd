@@ -13,9 +13,7 @@ class QualityGateChecker:
     def __init__(self, config: QualityGateConfig | None = None) -> None:
         self.config = config or QualityGateConfig()
 
-    def check_python_coverage(
-        self, coverage_percent: float, branch_percent: float | None = None
-    ) -> dict[str, object]:
+    def check_python_coverage(self, coverage_percent: float, branch_percent: float | None = None) -> dict[str, object]:
         checks: list[dict[str, object]] = []
         result: dict[str, object] = {
             "gate": "python_coverage",
@@ -29,34 +27,38 @@ class QualityGateChecker:
 
         if coverage_percent < py.line_coverage_min_percent:
             result["passed"] = False
-            checks.append({
-                "check": "line_coverage",
-                "actual": coverage_percent,
-                "required": py.line_coverage_min_percent,
-                "status": "failed",
-            })
+            checks.append(
+                {
+                    "check": "line_coverage",
+                    "actual": coverage_percent,
+                    "required": py.line_coverage_min_percent,
+                    "status": "failed",
+                }
+            )
         else:
-            checks.append({
-                "check": "line_coverage",
-                "actual": coverage_percent,
-                "required": py.line_coverage_min_percent,
-                "status": "passed",
-            })
+            checks.append(
+                {
+                    "check": "line_coverage",
+                    "actual": coverage_percent,
+                    "required": py.line_coverage_min_percent,
+                    "status": "passed",
+                }
+            )
 
         if branch_percent is not None and branch_percent < py.branch_coverage_min_percent:
             result["passed"] = False
-            checks.append({
-                "check": "branch_coverage",
-                "actual": branch_percent,
-                "required": py.branch_coverage_min_percent,
-                "status": "failed",
-            })
+            checks.append(
+                {
+                    "check": "branch_coverage",
+                    "actual": branch_percent,
+                    "required": py.branch_coverage_min_percent,
+                    "status": "failed",
+                }
+            )
 
         return result
 
-    def check_molecule_coverage(
-        self, covered: int, required: int
-    ) -> dict[str, object]:
+    def check_molecule_coverage(self, covered: int, required: int) -> dict[str, object]:
         mol = self.config.molecule
         if not mol.enabled:
             return {"gate": "molecule_coverage", "passed": True, "skipped": True}
@@ -76,7 +78,9 @@ class QualityGateChecker:
         }
 
     def enforce(self, gate_results: list[dict[str, object]]) -> dict[str, object]:
-        all_passed = all(g.get("passed", True) for g in gate_results)
+        # S20: fail-closed — a gate dict missing the "passed" key is treated as
+        # FAILED, not PASSED. Mirrors preflight.py:379 default of False.
+        all_passed = all(g.get("passed", False) for g in gate_results)
         return {
             "all_passed": all_passed,
             "gates": gate_results,

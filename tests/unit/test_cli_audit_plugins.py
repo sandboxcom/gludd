@@ -88,7 +88,6 @@ class TestAuditPluginsHandler:
     """Handler behaviour: adapter invocation + output."""
 
     def test_calls_runner_with_correct_playbook_name(self):
-        from general_ludd.ansible.runner import AnsibleRunnerAdapter
         from general_ludd.cli_audit_plugins import _cmd_audit_plugins
 
         mock_adapter = MagicMock()

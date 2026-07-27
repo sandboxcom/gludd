@@ -3,6 +3,7 @@
 PSK-gated centrally by the daemon's ``auth_and_stats_middleware`` (every
 ``/admin/*`` path is challenged). This router does NOT re-check the PSK.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -54,6 +55,7 @@ def _get_issuer_spec(app: FastAPI) -> PermissionSpec:
     if spec is not None:
         return spec
     from general_ludd.security.permissions import default_spec
+
     return default_spec("primary")
 
 
@@ -68,6 +70,7 @@ def _get_human_spec(app: FastAPI) -> PermissionSpec:
     if spec is not None:
         return spec
     from general_ludd.security.permissions import default_human_spec
+
     role = getattr(app.state, "_default_human_role", None) or "human-operator"
     # Try config/permissions/<role>.yml first (operator overrides).
     config_dir = getattr(app.state, "_config_dir", None) or "."
@@ -75,8 +78,20 @@ def _get_human_spec(app: FastAPI) -> PermissionSpec:
     if path.exists():
         try:
             return PermissionSpecParser.parse_file(path)
-        except Exception:
-            pass
+        except Exception as exc:
+            # S13: fail-closed — a YAML typo in a narrower operator override must
+            # not silently fall back to the built-in default (which includes
+            # net:egress:any). Log the error and re-raise so the misconfiguration
+            # is caught at startup, not silently widened.
+            logger = logging.getLogger(__name__)
+            logger.error(
+                "Failed to parse permission spec %s — refusing to fall back to "
+                "the permissive built-in default. Fix the YAML and restart. "
+                "Error: %s",
+                path,
+                exc,
+            )
+            raise
     return default_human_spec(role)
 
 
@@ -106,9 +121,7 @@ def _esc_counter(app: FastAPI) -> int:
     return int(counter[0])
 
 
-async def _file_human_todo_for_escalation(
-    app: FastAPI, esc_row: dict[str, object]
-) -> str | None:
+async def _file_human_todo_for_escalation(app: FastAPI, esc_row: dict[str, object]) -> str | None:
     """File a HumanTodo(category=permission_escalation) for a pending escalation.
 
     Returns the human_todo_id, or None if no DB session factory is wired
@@ -266,15 +279,13 @@ def _is_strict_subset_of_both(
         capabilities=requested_caps,
         subject=PermissionSubject.STS_TOKEN,
     )
-    return (
-        PermissionSpecParser.is_subset(req, human_spec)
-        and PermissionSpecParser.is_subset(req, agent_spec)
-    )
+    return PermissionSpecParser.is_subset(req, human_spec) and PermissionSpecParser.is_subset(req, agent_spec)
 
 
 def _perms_dir(app: FastAPI) -> Path:
     """Return the permissions directory Path, creating it if needed."""
     import os
+
     config_dir = getattr(app.state, "_config_dir", None) or os.getcwd()
     perms = Path(config_dir) / "permissions"
     perms.mkdir(parents=True, exist_ok=True)
@@ -291,9 +302,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         if not subject_agent_id or not requested_yaml:
             return JSONResponse(
                 status_code=400,
-                content={
-                    "error": "subject_agent_id and requested_spec_yaml are required"
-                },
+                content={"error": "subject_agent_id and requested_spec_yaml are required"},
             )
         try:
             subject_spec = PermissionSpecParser.parse(requested_yaml)
@@ -328,18 +337,20 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     async def admin_sts_active() -> object:
         issuer = _get_issuer(app)
         tokens = issuer.list_active()
-        return {"tokens": [
-            {
-                "token_id": t.token_id,
-                "issuer_agent_id": t.issuer_agent_id,
-                "subject_agent_id": t.subject_agent_id,
-                "issued_at": t.issued_at,
-                "expires_at": t.expires_at,
-                "last_used_at": t.last_used_at,
-                "use_count": t.use_count,
-            }
-            for t in tokens
-        ]}
+        return {
+            "tokens": [
+                {
+                    "token_id": t.token_id,
+                    "issuer_agent_id": t.issuer_agent_id,
+                    "subject_agent_id": t.subject_agent_id,
+                    "issued_at": t.issued_at,
+                    "expires_at": t.expires_at,
+                    "last_used_at": t.last_used_at,
+                    "use_count": t.use_count,
+                }
+                for t in tokens
+            ]
+        }
 
     @app.post("/admin/sts/revoke")
     async def admin_sts_revoke(req: dict[str, object]) -> object:
@@ -368,6 +379,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         import yaml
 
         from general_ludd.security.permissions import default_spec
+
         if request.method == "PUT":
             req = await request.json()
             spec_yaml = cast(str, req.get("spec_yaml"))
@@ -448,25 +460,19 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             return JSONResponse(
                 status_code=400,
                 content={
-                    "error": (
-                        "agent_id, current_spec_yaml, "
-                        "requested_additional_capabilities, reason are required"
-                    ),
+                    "error": ("agent_id, current_spec_yaml, requested_additional_capabilities, reason are required"),
                 },
             )
         # Validation: at least 3 distinct approaches documented.
         approaches = {
-            str(a.get("approach", "")).strip()
-            for a in alternatives
-            if isinstance(a, dict) and a.get("approach")
+            str(a.get("approach", "")).strip() for a in alternatives if isinstance(a, dict) and a.get("approach")
         }
         if len(approaches) < 3:
             return JSONResponse(
                 status_code=422,
                 content={
                     "error": (
-                        "insufficient alternatives_tried — agent must "
-                        "document at least 3 distinct approaches attempted"
+                        "insufficient alternatives_tried — agent must document at least 3 distinct approaches attempted"
                     ),
                     "distinct_approaches_count": len(approaches),
                 },
@@ -480,10 +486,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         agent_spec = _get_issuer_spec(app)
         auto = _is_strict_subset_of_both(requested_caps, human_spec, agent_spec)
         status = "auto_approved" if auto else "pending"
-        decided_reason = (
-            "requested capabilities are within human+agent intersection; auto-granted"
-            if auto else None
-        )
+        decided_reason = "requested capabilities are within human+agent intersection; auto-granted" if auto else None
 
         esc_id = _esc_counter(app)
         row: dict[str, object] = {

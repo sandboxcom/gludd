@@ -39,9 +39,7 @@ class ReturnReviewer:
         self._budget_guard = budget_guard
         self._adversarial_detector = adversarial_detector
         self._estimation_tracker = estimation_tracker
-        self._conversations: dict[str, Conversation] = (
-            conversations if conversations is not None else {}
-        )
+        self._conversations: dict[str, Conversation] = conversations if conversations is not None else {}
 
     def get_conversations(self) -> dict[str, Conversation]:
         return dict(self._conversations)
@@ -79,11 +77,9 @@ class ReturnReviewer:
                     decision="blocked",
                     confidence=1.0,
                     audit_notes=[
-                        f"Blocked by adversarial scan: {len(adversarial_findings)} "
-                        "high-confidence finding(s)",
+                        f"Blocked by adversarial scan: {len(adversarial_findings)} high-confidence finding(s)",
                         *[
-                            f"{f['category']}/{f['pattern_id']}: "
-                            f"{str(f.get('match_text', ''))[:120]}"
+                            f"{f['category']}/{f['pattern_id']}: {str(f.get('match_text', ''))[:120]}"
                             for f in adversarial_findings
                         ],
                     ],
@@ -92,22 +88,15 @@ class ReturnReviewer:
 
         prior_context = ""
         if conv.messages:
-            prior_context = "\n\n".join(
-                f"[{m.role}]: {m.content}" for m in conv.get_context()
-            )
-        review_prompt_text = (
-            f"Review return {task_return.return_id} for todo {todo_id}"
-        )
+            prior_context = "\n\n".join(f"[{m.role}]: {m.content}" for m in conv.get_context())
+        review_prompt_text = f"Review return {task_return.return_id} for todo {todo_id}"
 
         if adversarial_findings:
             non_critical = "\n".join(
-                f"  - [{f['category']}] {f['description']}: "
-                f"{str(f.get('match_text', ''))[:100]}"
+                f"  - [{f['category']}] {f['description']}: {str(f.get('match_text', ''))[:100]}"
                 for f in adversarial_findings
             )
-            review_prompt_text += (
-                f"\n\nADVERSARIAL SCAN FINDINGS (non-critical, review with scrutiny):\n{non_critical}"
-            )
+            review_prompt_text += f"\n\nADVERSARIAL SCAN FINDINGS (non-critical, review with scrutiny):\n{non_critical}"
 
         conv.add_message("user", review_prompt_text)
         prompt = self._registry.render(
@@ -130,27 +119,27 @@ class ReturnReviewer:
                 audit_notes=audit,
                 adversarial_findings=adversarial_findings,
             )
-            conv.add_message(
-                "assistant", json.dumps(decision.model_dump(mode="json"))
-            )
+            conv.add_message("assistant", json.dumps(decision.model_dump(mode="json")))
             return decision
         parsed = self._parse_model_output(raw_output, task_return)
         if parsed is not None:
-            parsed = parsed.model_copy(
-                update={"adversarial_findings": adversarial_findings}
-            )
+            parsed = parsed.model_copy(update={"adversarial_findings": adversarial_findings})
             evidence_notes = self._audit_evidence(parsed, artifacts)
             if evidence_notes:
-                parsed = parsed.model_copy(
-                    update={"audit_notes": [*parsed.audit_notes, *evidence_notes]}
-                )
+                parsed = parsed.model_copy(update={"audit_notes": [*parsed.audit_notes, *evidence_notes]})
 
             if self._estimation_tracker is not None:
                 from general_ludd.review.estimation_tracker import TaskActual
+
+                # S11: extract real actuals from the task_return when available.
+                # Falls back to zeros when cost/time/LOC are unpopulated —
+                # record_estimate() must be called on dispatch for variance
+                # detection to work.
+                actual_cost = getattr(task_return, "cost_estimate", 0.0) or 0.0
                 actual = TaskActual(
                     todo_id=task_return.todo_id or task_return.return_id,
-                    actual_cost_usd=0.0,
-                    actual_time_minutes=0.0,
+                    actual_cost_usd=float(actual_cost),
+                    actual_time_minutes=float(task_return.duration_seconds or 0.0) / 60.0,
                     actual_loc=0,
                     exit_code=task_return.exit_code,
                 )
@@ -166,9 +155,7 @@ class ReturnReviewer:
                         }
                     )
 
-            conv.add_message(
-                "assistant", json.dumps(parsed.model_dump(mode="json"))
-            )
+            conv.add_message("assistant", json.dumps(parsed.model_dump(mode="json")))
             return parsed
         logger.warning(
             "Invalid model output for return %s, falling back to failed",
@@ -179,19 +166,13 @@ class ReturnReviewer:
             matched_todo_id=task_return.todo_id,
             decision="failed",
             confidence=0.0,
-            audit_notes=[
-                "Model output was not valid JSON or did not match TaskDecision schema"
-            ],
+            audit_notes=["Model output was not valid JSON or did not match TaskDecision schema"],
             adversarial_findings=adversarial_findings,
         )
-        conv.add_message(
-            "assistant", json.dumps(fallback.model_dump(mode="json"))
-        )
+        conv.add_message("assistant", json.dumps(fallback.model_dump(mode="json")))
         return fallback
 
-    def _audit_evidence(
-        self, decision: TaskDecision, artifacts: list[str]
-    ) -> list[str]:
+    def _audit_evidence(self, decision: TaskDecision, artifacts: list[str]) -> list[str]:
         """Flag unsupported factual claims in the model's audit notes.
 
         Uses EvidenceChecker to scan the review's own audit_notes for factual
@@ -206,9 +187,7 @@ class ReturnReviewer:
             results = checker.audit_response(claim_text, artifacts)
             for res in results:
                 if not res.supported:
-                    notes.append(
-                        f"evidence: unsupported claim in review — {res.claim[:120]}"
-                    )
+                    notes.append(f"evidence: unsupported claim in review — {res.claim[:120]}")
         return notes
 
     def _call_model(self, prompt: str) -> tuple[str | None, str | None]:
@@ -237,9 +216,7 @@ class ReturnReviewer:
             )
             return None, str(exc)
 
-    def _parse_model_output(
-        self, raw: Any, task_return: TaskReturn
-    ) -> TaskDecision | None:
+    def _parse_model_output(self, raw: Any, task_return: TaskReturn) -> TaskDecision | None:
         if isinstance(raw, TaskDecision):
             return raw
         if not isinstance(raw, str):

@@ -14,7 +14,6 @@ import argparse
 import ast
 import json
 import sys
-import textwrap
 from pathlib import Path
 
 
@@ -41,6 +40,24 @@ def _to_assert_expr(raw: str) -> str | None:
     return raw
 
 
+def _fixture_sig_for_scenario(
+    scenario_name: str,
+) -> tuple[str, list[str]]:
+    """Return ``(fixture_signature, imports_extra)`` for a scenario name.
+
+    - crud_lifecycle / auth_flow → uses ``test_client`` (FastAPI TestClient).
+    - daemon_restart → uses ``_run_cli`` (CLI runner fixture).
+    - Others → uses ``tmp_path`` (standard pytest fixture).
+    """
+    api_scenarios = {"crud_lifecycle", "auth_flow", "timeout_handling", "concurrent_edits"}
+    cli_scenarios = {"daemon_restart"}
+    if scenario_name in api_scenarios:
+        return ("test_client", ["from tests.conftest import test_client  # noqa: E402"])
+    if scenario_name in cli_scenarios:
+        return ("_run_cli", ["from tests.conftest import _run_cli  # noqa: E402"])
+    return ("tmp_path", [])
+
+
 def _emit_test_file(scenario: dict, output_dir: Path, prefix: str, module: str = "") -> dict:
     name = scenario["name"]
     filename = f"{prefix}{_sanitize_filename(name)}.py"
@@ -50,12 +67,17 @@ def _emit_test_file(scenario: dict, output_dir: Path, prefix: str, module: str =
 
     mod_stem = Path(module).stem if module else "target_module"
 
+    fixture_sig, extra_imports = _fixture_sig_for_scenario(name)
+
     lines: list[str] = ["import pytest", ""]
 
     if coverage_targets:
         target_imports = ", ".join(coverage_targets)
         lines.append(f"# coverage target imports from {mod_stem}")
         lines.append(f"from {mod_stem} import {target_imports}")
+        lines.append("")
+    lines.extend(extra_imports)
+    if extra_imports:
         lines.append("")
     lines.append("")
 
@@ -67,7 +89,7 @@ def _emit_test_file(scenario: dict, output_dir: Path, prefix: str, module: str =
         exp = step.get("expected_result", "")
         assertions = step.get("assertions", [])
 
-        lines.append(f"def {func_name}(tmp_path):")
+        lines.append(f"def {func_name}({fixture_sig}):")
         lines.append(f'    """{exp}"""')
         # AAA structure — Arrange / Act / Assert
         lines.append("    # Arrange")
@@ -96,13 +118,11 @@ def _emit_test_file(scenario: dict, output_dir: Path, prefix: str, module: str =
     with open(filepath, "w") as fh:
         fh.write(content)
 
-    return {"file": str(filepath), "scenario": name, "step_count": len(steps)}
+    return {"file": str(filepath), "scenario": name, "step_count": len(steps), "fixture": fixture_sig}
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Generate pytest test files from validated E2E scenarios"
-    )
+    parser = argparse.ArgumentParser(description="Generate pytest test files from validated E2E scenarios")
     parser.add_argument("--scenarios-file", required=True, help="Path to validated_scenarios.json")
     parser.add_argument("--output-dir", required=True, help="Directory for generated test files")
     parser.add_argument("--manifest", help="Path for generated_tests.json manifest")

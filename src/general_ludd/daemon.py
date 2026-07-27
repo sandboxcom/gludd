@@ -2257,7 +2257,18 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     _projected_cost_usd = token_cost_usd(_project_model, _project_in, _project_out)
 
             async def _gateway_executor(task: AgentTask) -> str:
-                profile_id = "default"
+                # S10: route to the best-cost profile via ModelPerformanceRouter
+                # when data exists; fall back to "default" for cold start.
+                _perf_router = getattr(app.state, "_model_performance_router", None)
+                if _perf_router is not None:
+                    try:
+                        profile_id = _perf_router.select_cost_effective_profile(
+                            task_type=task.agent_name or "generation",
+                        )
+                    except Exception:
+                        profile_id = "default"
+                else:
+                    profile_id = "default"
                 budget_manager = getattr(app.state, "_budget_manager", None)
 
                 _saved_env: dict[str, str] = {}

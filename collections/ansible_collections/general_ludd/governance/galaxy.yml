@@ -4,20 +4,30 @@ name: governance
 version: 0.1.0
 readme: README.md
 description: >
-  Governance capabilities for agents -- decision-maker profiles, influence
-  network mapping, jurisdictional role lookup, and proclivity assessment
-  for heads of state, ministers, legislators, judges, regulators, military
-  leaders, diplomats, bureaucrats, and local officials.
+  Human governance systems collection — roles and modules that enable agents to
+  navigate the institutions, records, and instruments by which populations are
+  administered across 12 domains: borders, governing bodies, tax systems,
+  currencies, conflicts, treaties, civic services, decision-makers, information
+  classification, postal/delivery, military service, and licenses/permits.
 license:
   - MIT
 authors:
   - Agentic Harness Agent <agent@harness.local>
 tags:
   - governance
-  - policy
+  - borders
+  - governing_bodies
+  - tax
+  - currency
+  - conflicts
+  - treaties
+  - civic_services
   - decision_makers
-  - influence
-  - lobbying
+  - classification
+  - postal
+  - military
+  - licenses
+  - permits
   - jurisdiction
   - political
 dependencies: {}

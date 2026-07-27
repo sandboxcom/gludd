@@ -43,9 +43,7 @@ logger = logging.getLogger(__name__)
 class _CheckAllLimitsGuard(Protocol):
     """Structural type for budget guards exposing ``check_all_limits``."""
 
-    def check_all_limits(
-        self, estimated_cost: float = 0.0
-    ) -> dict[str, bool | str | float]: ...
+    def check_all_limits(self, estimated_cost: float = 0.0) -> dict[str, bool | str | float]: ...
 
 
 # DoS cap: /admin/models/call accepts a caller-supplied max_tokens int that is
@@ -60,11 +58,7 @@ def _workspace_root(app: FastAPI) -> str:
     Prefers GLUDD_WORKSPACE, then the daemon's configured workspace root, then
     the current working directory. Pure env/attr read — no I/O, no blocking.
     """
-    return (
-        os.environ.get("GLUDD_WORKSPACE")
-        or getattr(app.state, "_workspace_root", None)
-        or os.getcwd()
-    )
+    return os.environ.get("GLUDD_WORKSPACE") or getattr(app.state, "_workspace_root", None) or os.getcwd()
 
 
 def _allowed_code_roots(app: FastAPI) -> list[str]:
@@ -207,9 +201,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     async def admin_models_discover_searx(request: Request) -> dict[str, object]:
         discoverer = getattr(app.state, "_searx_model_discoverer", None)
         if discoverer is None:
-            raise HTTPException(
-                status_code=503, detail="SearX model discoverer not wired"
-            )
+            raise HTTPException(status_code=503, detail="SearX model discoverer not wired")
         body = await _parse_request_body(request)
         query = cast(str, body.get("query", "LLM"))
         added = discoverer.discover_now(query)
@@ -224,9 +216,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         profiles = getattr(app.state, "_discovered_profiles", None)
         if profiles is None:
             return {"profiles": []}
-        return {
-            "profiles": [_serialize_discovered_profile(p, include_enabled=True) for p in profiles]
-        }
+        return {"profiles": [_serialize_discovered_profile(p, include_enabled=True) for p in profiles]}
 
     @app.get("/admin/observability/comparison")
     async def admin_observability_comparison(
@@ -393,8 +383,26 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 "fallback": decision.fallback,
                 "reason": decision.reason,
             }
-        except Exception:
-            pass
+        except Exception as exc:
+            # S26: distinguish a router crash from genuine cold-start fallback.
+            # A broken router looks like "insufficient_historical_data" —
+            # now it surfaces as "router_error" so operators can tell the
+            # difference.
+            logger.warning(
+                "AdaptiveRouter.route failed for task_type=%s path=%s: %s",
+                task_type.value,
+                path,
+                exc,
+            )
+            recommendation = {
+                "selected_prompt_profile_id": None,
+                "selected_model_profile_id": "default",
+                "composite_score": 0.0,
+                "estimated_cost_usd": 0.0,
+                "sample_count": 0,
+                "fallback": True,
+                "reason": f"router_error: {exc!r}",
+            }
 
         return {
             "path": path,
@@ -451,14 +459,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         response_format = body.get("response_format")
         response_schema = body.get("response_schema")
         _wants_json = (
-            (isinstance(response_format, str) and response_format.strip().lower() == "json")
-            or response_schema is not None
-        )
+            isinstance(response_format, str) and response_format.strip().lower() == "json"
+        ) or response_schema is not None
         if _wants_json:
-            _nudge = (
-                "Respond ONLY with a single valid JSON value and no surrounding "
-                "prose or Markdown code fences."
-            )
+            _nudge = "Respond ONLY with a single valid JSON value and no surrounding prose or Markdown code fences."
             if response_schema is not None:
                 try:
                     _schema_json = json.dumps(response_schema, sort_keys=True)
@@ -484,10 +488,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             requested_max_output_tokens = None
         if requested_max_output_tokens is not None and requested_max_output_tokens <= 0:
             requested_max_output_tokens = None
-        if (
-            requested_max_output_tokens is not None
-            and requested_max_output_tokens > _MAX_MODELS_CALL_MAX_TOKENS
-        ):
+        if requested_max_output_tokens is not None and requested_max_output_tokens > _MAX_MODELS_CALL_MAX_TOKENS:
             raise HTTPException(
                 status_code=413,
                 detail="max_tokens exceeds maximum allowed count",
@@ -496,9 +497,12 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         # B5: budget gate — fail-closed when guard exhausted or degraded startup.
         _BUDGET_UNSET = object()  # sentinel: attr absent (degraded startup)
         _budget_guard = getattr(app.state, "_budget_guard", _BUDGET_UNSET)
-        _fail_closed_degraded = os.environ.get(
-            "GLUDD_BUDGET_FAIL_CLOSED_DEGRADED", ""
-        ).strip().lower() in {"1", "true", "yes", "on"}
+        _fail_closed_degraded = os.environ.get("GLUDD_BUDGET_FAIL_CLOSED_DEGRADED", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
         if _budget_guard is _BUDGET_UNSET and _fail_closed_degraded:
             raise HTTPException(
                 status_code=503,
@@ -514,18 +518,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 _verdict = cast(_CheckAllLimitsGuard, _budget_guard).check_all_limits(estimated_cost=0.0)
             except Exception as _exc:
                 logger.warning("budget check raised: %s", _exc, exc_info=True)
-                raise HTTPException(
-                    status_code=503, detail="budget check failed"
-                ) from _exc
+                raise HTTPException(status_code=503, detail="budget check failed") from _exc
             if not isinstance(_verdict, dict) or not _verdict.get("allowed", False):
-                _reason = (
-                    _verdict.get("reason", "budget exhausted")
-                    if isinstance(_verdict, dict)
-                    else "non-dict"
-                )
-                raise HTTPException(
-                    status_code=429, detail=f"budget exhausted: {_reason}"
-                )
+                _reason = _verdict.get("reason", "budget exhausted") if isinstance(_verdict, dict) else "non-dict"
+                raise HTTPException(status_code=429, detail=f"budget exhausted: {_reason}")
 
         # Resolve the gateway — use app.state if available, else build a minimal one
         gateway: ModelGateway | None = getattr(app.state, "_model_gateway", None)
@@ -560,6 +556,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             try:
                 from general_ludd.schemas.benchmark import TaskType
                 from general_ludd.scoring.router import AdaptiveRouter
+
                 try:
                     task_type = TaskType(route_task_type)
                 except ValueError:
@@ -592,6 +589,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         try:
             import asyncio
             import functools
+
             response = await asyncio.to_thread(
                 functools.partial(
                     gateway.call_model,
@@ -643,9 +641,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
         messages = body.get("messages")
         if not isinstance(messages, list) or not messages:
-            raise HTTPException(
-                status_code=422, detail="messages must be a non-empty list"
-            )
+            raise HTTPException(status_code=422, detail="messages must be a non-empty list")
 
         profile_id: str | None = cast(str | None, body.get("profile_id"))
         work_type: str | None = cast(str | None, body.get("work_type"))
@@ -654,18 +650,19 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             quality_threshold = float(cast(float | int | str, body.get("quality_threshold", 0.6)))
         except (TypeError, ValueError) as exc:
             logger.warning("invalid numeric parameter in workflow request: %s", exc, exc_info=True)
-            raise HTTPException(
-                status_code=422, detail="invalid numeric parameter"
-            ) from exc
+            raise HTTPException(status_code=422, detail="invalid numeric parameter") from exc
         enable_graph = bool(body.get("enable_graph", True))
 
         # B5: budget gate — mirror /admin/models/call exactly (fail-closed when
         # the guard is exhausted or startup degraded).
         _BUDGET_UNSET = object()  # sentinel: attr absent (degraded startup)
         _budget_guard = getattr(app.state, "_budget_guard", _BUDGET_UNSET)
-        _fail_closed_degraded = os.environ.get(
-            "GLUDD_BUDGET_FAIL_CLOSED_DEGRADED", ""
-        ).strip().lower() in {"1", "true", "yes", "on"}
+        _fail_closed_degraded = os.environ.get("GLUDD_BUDGET_FAIL_CLOSED_DEGRADED", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
         if _budget_guard is _BUDGET_UNSET and _fail_closed_degraded:
             raise HTTPException(
                 status_code=503,
@@ -681,18 +678,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 _verdict = cast(_CheckAllLimitsGuard, _budget_guard).check_all_limits(estimated_cost=0.0)
             except Exception as _exc:
                 logger.warning("budget check raised: %s", _exc, exc_info=True)
-                raise HTTPException(
-                    status_code=503, detail="budget check failed"
-                ) from _exc
+                raise HTTPException(status_code=503, detail="budget check failed") from _exc
             if not isinstance(_verdict, dict) or not _verdict.get("allowed", False):
-                _reason = (
-                    _verdict.get("reason", "budget exhausted")
-                    if isinstance(_verdict, dict)
-                    else "non-dict"
-                )
-                raise HTTPException(
-                    status_code=429, detail=f"budget exhausted: {_reason}"
-                )
+                _reason = _verdict.get("reason", "budget exhausted") if isinstance(_verdict, dict) else "non-dict"
+                raise HTTPException(status_code=429, detail=f"budget exhausted: {_reason}")
 
         # Resolve the gateway — use app.state if available, else build a minimal
         # one (same construction path as /admin/models/call).
@@ -729,9 +718,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
         _gateway = gateway
 
-        async def _call_model_fn(
-            profile_id: str, messages: list[dict[str, str]], **kwargs: object
-        ) -> ModelResponse:
+        async def _call_model_fn(profile_id: str, messages: list[dict[str, str]], **kwargs: object) -> ModelResponse:
             # Forward extra kwargs (e.g. work_type, used for token-cost capture at
             # the gateway billing chokepoint) through to call_model so the
             # LangGraphGateway generation path is metered like every other path.

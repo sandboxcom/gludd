@@ -2577,7 +2577,16 @@ chat-eval:
 	@$(UV) run python -m general_ludd.cli chat --eval "$(PROMPT)" $(if $(MODEL),--model $(MODEL)) $(if $(API_BASE),--api-base $(API_BASE)) $(if $(API_KEY),--api-key $(API_KEY))
 
 test-chat:
-	@$(UV) run python -m pytest tests/unit/test_chat_session.py tests/unit/test_chat_formatter.py tests/integration/test_chat_cli.py -v
+	@$(UV) run python -m pytest \
+		tests/unit/test_chat_session.py \
+		tests/unit/test_chat_formatter.py \
+		tests/unit/test_chat_streaming.py \
+		tests/unit/test_chat_context_window.py \
+		tests/unit/test_chat_history.py \
+		tests/unit/test_chat_history_model.py \
+		tests/unit/test_chat_export.py \
+		tests/integration/test_chat_cli.py \
+		-v
 
 # Isolated single-file pytest: unique basetemp so concurrent agent runs never
 # collide (the #40 fix). Usage: make test-iso TESTFILE=tests/... ID=<uniq>
@@ -5618,3 +5627,73 @@ kill-worktree-e2e:
 .PHONY: migrate-test-env-writes
 migrate-test-env-writes:
 	@$(UV) run python scripts/migrate_test_env_writes.py
+
+# ── E2E Test Generation Pipeline ─────────────────────────────────────────────
+
+# e2e-test-gen-pipeline: full 5-stage pipeline (analyze → generate → validate → write → verify)
+# Usage: make e2e-test-gen-pipeline MODULE=src/general_ludd/agents/test_generation/code_path_analyzer.py ARTIFACT_DIR=/tmp/e2e-gen-artifacts
+#
+# Stages:
+#   1. analyze_code_paths  → module_symbols.json
+#   2. generate_scenarios  → scenarios.json
+#   3. validate_scenarios  → validated_scenarios.json
+#   4. write_e2e_tests     → test_e2e_generated_*.py files + generated_tests.json
+#   5. verify_coverage     → coverage_report.json
+e2e-test-gen-pipeline:
+	@[ -n "$(MODULE)" ] || { echo "Usage: make e2e-test-gen-pipeline MODULE=path/to/module.py [ARTIFACT_DIR=/tmp/e2e-gen-artifacts]"; exit 1; }
+	@ARTIFACT_DIR="$(or $(ARTIFACT_DIR),/tmp/e2e-gen-artifacts)"; \
+	ROLES_BASE="collections/ansible_collections/general_ludd/e2e_test_gen/roles"; \
+	mkdir -p "$$ARTIFACT_DIR"; \
+	echo "=== Stage 1/5: analyze_code_paths ==="; \
+	$(UV) run python "$$ROLES_BASE/analyze_code_paths/files/analyze_code_paths.py" \
+		--target-module "$(MODULE)" \
+		--output "$$ARTIFACT_DIR/module_symbols.json"; \
+	echo "=== Stage 2/5: generate_scenarios ==="; \
+	$(UV) run python "$$ROLES_BASE/generate_scenarios/files/generate_scenarios.py" \
+		--symbols-file "$$ARTIFACT_DIR/module_symbols.json" \
+		--output "$$ARTIFACT_DIR/scenarios.json"; \
+	echo "=== Stage 3/5: validate_scenarios ==="; \
+	$(UV) run python "$$ROLES_BASE/validate_scenarios/files/validate_scenarios.py" \
+		--scenarios-file "$$ARTIFACT_DIR/scenarios.json" \
+		--output "$$ARTIFACT_DIR/validated_scenarios.json" \
+		--mock; \
+	echo "=== Stage 4/5: write_e2e_tests ==="; \
+	$(UV) run python "$$ROLES_BASE/write_e2e_tests/files/write_e2e_tests.py" \
+		--scenarios-file "$$ARTIFACT_DIR/validated_scenarios.json" \
+		--output-dir "$$ARTIFACT_DIR/generated_tests" \
+		--manifest "$$ARTIFACT_DIR/generated_tests.json"; \
+	echo "=== Stage 5/5: verify_coverage ==="; \
+	$(UV) run python "$$ROLES_BASE/verify_coverage/files/verify_coverage.py" \
+		--test-dir "$$ARTIFACT_DIR/generated_tests" \
+		--source-module "$(MODULE)" \
+		--output "$$ARTIFACT_DIR/coverage_report.json" \
+		--scenarios-file "$$ARTIFACT_DIR/validated_scenarios.json" \
+		--symbols-file "$$ARTIFACT_DIR/module_symbols.json" \
+		--threshold 0; \
+	echo "=== Pipeline complete ==="; \
+	echo "Artifacts in $$ARTIFACT_DIR/:"; \
+	for f in "$$ARTIFACT_DIR"/*.json; do \
+		[ -f "$$f" ] && echo "  $$f"; \
+	done; \
+	echo "Generated tests in $$ARTIFACT_DIR/generated_tests/"
+
+# e2e-test-gen-pipeline-dogfood: run the pipeline on its own core modules
+# Validates the tool by analyzing its own source and generating E2E tests for it
+e2e-test-gen-pipeline-dogfood:
+	@TOOL_DIR="/tmp/e2e-gen-dogfood"; mkdir -p "$$TOOL_DIR"; \
+	FAILED=""; \
+	for MODULE in \
+		src/general_ludd/agents/test_generation/code_path_analyzer.py \
+		src/general_ludd/agents/test_generation/scenario_generator.py; do \
+		MODULE_STEM=$$(basename "$$MODULE" .py); \
+		ARTIFACT_DIR="$$TOOL_DIR/$$MODULE_STEM"; \
+		echo "=== Dogfooding: $$MODULE ==="; \
+		$(MAKE) --no-print-directory e2e-test-gen-pipeline MODULE="$$MODULE" ARTIFACT_DIR="$$ARTIFACT_DIR" \
+			|| { echo "FAILED: $$MODULE"; FAILED="$$FAILED $$MODULE"; }; \
+	done; \
+	if [ -n "$$FAILED" ]; then \
+		echo "Dogfood failures:$$FAILED"; exit 1; \
+	fi; \
+	echo "Dogfood complete — all modules passed"
+
+.PHONY: e2e-test-gen-pipeline e2e-test-gen-pipeline-dogfood

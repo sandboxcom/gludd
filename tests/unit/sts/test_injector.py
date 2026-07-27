@@ -10,7 +10,6 @@ from general_ludd.agents.dispatcher import AgentDispatcher
 from general_ludd.agents.registry import AgentRegistry
 from general_ludd.agents.types import AgentTask
 from general_ludd.sts.injector import SubagentTokenInjector
-import general_ludd.db.models
 
 # ------------------------------------------------------------------ helpers
 

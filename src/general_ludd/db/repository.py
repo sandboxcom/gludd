@@ -2621,16 +2621,22 @@ class ModelPerformanceRepository:
     # ── helpers ─────────────────────────────────────────────────────────
 
     def _resolve_session(self) -> AsyncSession:
-        """Return a usable async session, raising when none is available."""
-        if self._session_factory is not None and self._session is None:
-            raise RuntimeError(
-                "ModelPerformanceRepository._resolve_session requires a "
-                "concrete AsyncSession. Use session_factory only for lazy "
-                "creation via an explicit session= override."
-            )
-        if self._session is None:
-            raise RuntimeError("ModelPerformanceRepository: no session configured and no session= override provided.")
-        return self._session
+        """Return a usable async session, creating one from the factory if needed.
+
+        S28: previously raised RuntimeError when session_factory was present but
+        no concrete session was provided — making every production record_call_sync()
+        silently fail (bare except swallowed RuntimeError). Now lazily creates a
+        session from the factory when one is available.
+        """
+        if self._session is not None:
+            return self._session
+        if self._session_factory is not None:
+            session = self._session_factory()
+            self._session = session
+            return session
+        raise RuntimeError(
+            "ModelPerformanceRepository._resolve_session: no session configured and no session_factory available."
+        )
 
 
 class SlurmJobRepository:
