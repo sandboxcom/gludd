@@ -593,6 +593,38 @@ def _ensure_gludd_dir_exists():
 # *any* test creates an async engine (which creates aiosqlite connections).
 
 
+@pytest.fixture(autouse=True)
+def _reset_httpx_and_abtest_runner():
+    """Reset ``httpx.get`` and ``run_candidate_in_subprocess`` around every test.
+
+    Prevents async mock contamination across xdist workers: tests patch
+    ``httpx.get`` or ``general_ludd.abtest.compare.run_candidate_in_subprocess``
+    via ``patch()`` context-managers / decorators, but setup-method-level
+    patching, ``start()``/``stop()`` mismatches, or teardown exceptions can
+    leak mock objects into sibling tests on the same worker. Snapshotting both
+    references before and restoring after every test ensures a clean slate
+    regardless of per-test cleanup discipline.
+
+    ``httpx.get`` is the target because ~100+ test sites across the suite
+    mock it (cli, e2e, connector SSRF, skills, TUI, etc.).  The
+    ``run_candidate_in_subprocess`` reference inside ``abtest.compare`` is
+    the import that tests actually patch (NOT the ``runner`` module source),
+    so it is the reference that must be reset.
+    """
+    import httpx
+
+    _orig_httpx_get = httpx.get
+
+    import general_ludd.abtest.compare as _ab_compare
+
+    _orig_run_candidate = _ab_compare.run_candidate_in_subprocess
+
+    yield
+
+    httpx.get = _orig_httpx_get
+    _ab_compare.run_candidate_in_subprocess = _orig_run_candidate
+
+
 @pytest.fixture(autouse=True, scope="session")
 def _patch_aiosqlite_worker_for_closed_loop_teardown():
     try:
