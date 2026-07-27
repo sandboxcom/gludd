@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from general_ludd.abtest.compare import ABVerdict, decide, run_ab
 from general_ludd.abtest.runner import Result
 from general_ludd.abtest.workloads import Workload, import_module_workload
 
 
-def _mk_result(
-    ok=True, crashed=False, timed_out=False, exit_code=0, duration_s=1.0, signal=None
-):
+def _mk_result(ok=True, crashed=False, timed_out=False, exit_code=0, duration_s=1.0, signal=None):
     return Result(
         ok=ok,
         crashed=crashed,

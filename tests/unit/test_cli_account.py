@@ -152,7 +152,7 @@ class TestCmdCreate:
         args.json = True
 
         body = {"account_id": "acct-123", "provider": "aws"}
-        with patch("general_ludd.cli_account._http", return_value=body):
+        with patch("general_ludd.cli_account._http", new=Mock(return_value=body)):
             _cmd_create(args)
         captured = capsys.readouterr()
         assert "acct-123" in captured.out
