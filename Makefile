@@ -2160,6 +2160,21 @@ ci-cooldown-status:
 ci-observability:
 	@$(PYTHON) scripts/ci_observability.py $(or $(BRANCH),master)
 
+# ci-poll-until-terminal: poll ci-verdict-safe until GREEN or RED, with delay.
+# Usage: make ci-poll-until-terminal BRANCH=development [DELAY=60]
+ci-poll-until-terminal:
+	@while true; do \
+	  if $(MAKE) --no-print-directory ci-verdict-safe BRANCH=$(or $(BRANCH),development) 2>/dev/null; then \
+	    break; \
+	  fi; \
+	  RC=$$?; \
+	  if [ $$RC -ne 3 ]; then \
+	    echo "ci-verdict-safe exit=$$RC (non-cooldown)"; \
+	    break; \
+	  fi; \
+	  sleep $(or $(DELAY),60); \
+	done
+
 # ci-dashboard: one-shot compact CI run listing. Prints one line per recent run
 # with status, conclusion, branch, age, and SHA. No polling — pure read-once.
 # Usage: make ci-dashboard [LIMIT=10] [BRANCH=development]

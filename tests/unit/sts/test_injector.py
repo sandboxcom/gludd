@@ -10,8 +10,10 @@ from general_ludd.agents.dispatcher import AgentDispatcher
 from general_ludd.agents.registry import AgentRegistry
 from general_ludd.agents.types import AgentTask
 from general_ludd.sts.injector import SubagentTokenInjector
+import general_ludd.db.models
 
 # ------------------------------------------------------------------ helpers
+
 
 def _make_task(**overrides: object) -> AgentTask:
     defaults: dict[str, object] = {
@@ -45,6 +47,7 @@ def _make_dispatcher(
 
 def _make_registry() -> AgentRegistry:
     from general_ludd.agents.types import AgentConfig, AgentPermission, AgentType
+
     registry = AgentRegistry()
     orchestrator = AgentConfig(
         name="orchestrator",
@@ -79,6 +82,7 @@ def _make_registry() -> AgentRegistry:
 
 # ------------------------------------------------------------------ minter
 
+
 class _FakeMinter:
     def __init__(self, role_id: str = "role-test", secret_id: str = "sec-test"):
         self._role_id = role_id
@@ -95,6 +99,7 @@ class _FakeCredentials:
 
 
 # ------------------------------------------------------------------ tests
+
 
 class TestSubagentTokenInjectorEnrich:
     """P5: SubagentTokenInjector.enrich() mints + stores + injects on dispatch."""
@@ -113,9 +118,7 @@ class TestSubagentTokenInjectorEnrich:
             "P5 gap: enrich() must set GLUDD_STS_ROLE_ID on task.env so the "
             "executor can propagate it to the subagent process"
         )
-        assert task.env["GLUDD_STS_SECRET_ID"] == "sec-a", (
-            "P5 gap: enrich() must set GLUDD_STS_SECRET_ID on task.env"
-        )
+        assert task.env["GLUDD_STS_SECRET_ID"] == "sec-a", "P5 gap: enrich() must set GLUDD_STS_SECRET_ID on task.env"
 
     @pytest.mark.asyncio
     async def test_enrich_stores_token_record(self) -> None:
@@ -145,8 +148,7 @@ class TestSubagentTokenInjectorEnrich:
 
         record = store.store.call_args[0][0]
         assert record.parent_agent_id == "parent-agent", (
-            "P5 gap: enrich() must use invoker_name as parent_agent_id "
-            "for audit attribution"
+            "P5 gap: enrich() must use invoker_name as parent_agent_id for audit attribution"
         )
 
     @pytest.mark.asyncio
@@ -192,8 +194,7 @@ class TestDispatchOneStsInjection:
 
         assert result.status == "completed"
         assert task.env.get("GLUDD_STS_ROLE_ID") == "role-inj", (
-            "P5 gap: dispatch_one() must call injector.enrich() so STS env vars "
-            "are set before the executor runs"
+            "P5 gap: dispatch_one() must call injector.enrich() so STS env vars are set before the executor runs"
         )
         assert task.env.get("GLUDD_STS_SECRET_ID") == "sec-inj"
 
@@ -207,8 +208,7 @@ class TestDispatchOneStsInjection:
 
         assert result.status == "completed"
         assert "GLUDD_STS_ROLE_ID" not in task.env, (
-            "P5 gap: when sts_injector is None, dispatch_one() must still work "
-            "(STS is optional infrastructure)"
+            "P5 gap: when sts_injector is None, dispatch_one() must still work (STS is optional infrastructure)"
         )
 
     @pytest.mark.asyncio

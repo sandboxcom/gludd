@@ -91,7 +91,7 @@ class TestAuditPluginsHandler:
         from general_ludd.ansible.runner import AnsibleRunnerAdapter
         from general_ludd.cli_audit_plugins import _cmd_audit_plugins
 
-        mock_adapter = MagicMock(spec=AnsibleRunnerAdapter)
+        mock_adapter = MagicMock()
         mock_adapter.run_playbook.return_value = {
             "status": "successful",
             "rc": 0,
