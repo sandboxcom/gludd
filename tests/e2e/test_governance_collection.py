@@ -33,6 +33,7 @@ def _load_module_util(name: str):
     spec = importlib.util.spec_from_file_location(f"e2e_gov_{name}", path)
     assert spec is not None and spec.loader is not None, f"{name}.py spec failed"
     mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
     spec.loader.exec_module(mod)
     return mod
 
