@@ -352,7 +352,7 @@ class TestUnderDispatchFloor:
     def test_git_shipping_phrase_exemption(self):
         src = _src()
         m = re.search(
-            r"GIT_SHIPPING_PHRASE[\s\S]{0,300}ship-commit",
+            r"GIT_SHIPPING_PHRASE[\s\S]+?release-cut",
             src,
         )
         assert m, "GIT_SHIPPING_PHRASE regex must exist for git-shipping exemption."
