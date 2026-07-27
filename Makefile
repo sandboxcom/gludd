@@ -740,6 +740,18 @@ check-opencode-integrity:
 check-plugin-hooks:
 	@$(PYTHON) scripts/check_plugin_hooks.py
 
+check-plugin-registration:
+	@$(UV) run python3 scripts/check_plugin_registration.py
+
+check-plugin-order:
+	@$(UV) run python3 scripts/check_plugin_order.py
+
+check-plugin-overlap:
+	@$(UV) run python3 scripts/check_plugin_overlap.py
+
+check-ratchet-population:
+	@$(UV) run python3 scripts/check_ratchet_population.py
+
 # Codified live boot smoke: launches `opencode serve`, waits for the
 # listening line, scans the boot log for the plugin-crash signatures
 # (N.event / H.config / H.dispose / failed to load plugin / Plugin.add).
@@ -5591,5 +5603,3 @@ kill-worktree-e2e:
 .PHONY: migrate-test-env-writes
 migrate-test-env-writes:
 	@$(UV) run python scripts/migrate_test_env_writes.py
-
-

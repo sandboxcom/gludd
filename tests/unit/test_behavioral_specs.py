@@ -6,6 +6,7 @@ Verifies:
 3. Each enforcement mechanism has at least one corresponding structural test.
 4. New plugins required by the specs exist and are structurally valid.
 """
+
 import json
 import re
 from pathlib import Path
@@ -23,6 +24,7 @@ OPENCODE_JSON = ROOT / "opencode.json"
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
+
 
 def read_specs() -> str:
     if not SPECS_PATH.exists():
@@ -49,13 +51,14 @@ def spec_has_mechanism(spec_id: str, specs_text: str) -> bool:
     idx = specs_text.find(f"### {spec_id}")
     if idx == -1:
         return False
-    block = specs_text[idx:idx + 600]
+    block = specs_text[idx : idx + 600]
     # Matches: **Enforcement:** plugins, Makefile, AGENTS.md, scripts, test-quality
     _pat = r"\*\*Enforcement:\*\*\s*(`.+?`|enforce-|Makefile|AGENTS\.md|scripts/|plugin|test-quality\b)"
     return bool(re.search(_pat, block))
 
 
 # ── Spec existence tests ─────────────────────────────────────────────────────
+
 
 class TestSpecsExist:
     """Verify specs exist in BEHAVIORAL_SPECS.md (deduplicated + expanded)."""
@@ -69,9 +72,34 @@ class TestSpecsExist:
 
     def test_all_expected_groups_present(self):
         ids = set(spec_ids(read_specs()))
-        prefixes = ["P", "B", "O", "T", "D", "S", "E", "M", "G", "R",
-                     "W", "F", "C", "Q", "X", "A", "N", "K", "U", "Z",
-                     "H", "V", "J", "L", "Y", "I"]
+        prefixes = [
+            "P",
+            "B",
+            "O",
+            "T",
+            "D",
+            "S",
+            "E",
+            "M",
+            "G",
+            "R",
+            "W",
+            "F",
+            "C",
+            "Q",
+            "X",
+            "A",
+            "N",
+            "K",
+            "U",
+            "Z",
+            "H",
+            "V",
+            "J",
+            "L",
+            "Y",
+            "I",
+        ]
         for prefix in prefixes:
             count = sum(1 for s in ids if s.startswith(prefix))
             assert count >= 20, f"Group {prefix} has {count} specs, expected >=20"
@@ -82,6 +110,7 @@ class TestSpecsExist:
 
 
 # ── Enforcement mechanism tests ──────────────────────────────────────────────
+
 
 class TestEnforcementMechanisms:
     """Every spec must have an enforcement mechanism."""
@@ -102,7 +131,7 @@ class TestEnforcementMechanisms:
             idx = text.find(f"### {sid}")
             if idx == -1:
                 continue
-            block = text[idx:idx + 600]
+            block = text[idx : idx + 600]
             has_ref = bool(re.search(r"(enforce-|Makefile|AGENTS\.md|scripts/|`[a-z_-]+`)", block))
             assert has_ref, f"{sid} missing mechanism reference: {block[:200]}"
 
@@ -113,7 +142,7 @@ class TestEnforcementMechanisms:
             idx = text.find(f"### {sid}")
             if idx == -1:
                 continue
-            block = text[idx:idx + 500]
+            block = text[idx : idx + 500]
             has_ref = bool(re.search(r"(enforce-|Makefile|AGENTS\.md|scripts/)", block))
             assert has_ref, f"{sid} missing mechanism reference"
 
@@ -124,7 +153,7 @@ class TestEnforcementMechanisms:
             idx = text.find(f"### {sid}")
             if idx == -1:
                 continue
-            block = text[idx:idx + 600]
+            block = text[idx : idx + 600]
             has_ref = bool(re.search(r"(enforce-objective|AGENTS\.md|Makefile|TASKS\.md|SESSION\.md)", block))
             assert has_ref, f"{sid} missing mechanism reference"
 
@@ -135,7 +164,7 @@ class TestEnforcementMechanisms:
             idx = text.find(f"### {sid}")
             if idx == -1:
                 continue
-            block = text[idx:idx + 600]
+            block = text[idx : idx + 600]
             # Broad match: enforcement mechanisms
             _pat = r"(enforce-|Makefile|AGENTS|scripts/|\.github|plugin|test-quality|pyproject)"
             has_ref = bool(re.search(_pat, block))
@@ -148,7 +177,7 @@ class TestEnforcementMechanisms:
             idx = text.find(f"### {sid}")
             if idx == -1:
                 continue
-            block = text[idx:idx + 600]
+            block = text[idx : idx + 600]
             has_ref = bool(re.search(r"(Makefile|AGENTS\.md|scripts/|agent-worktree|enforce-)", block))
             assert has_ref, f"{sid} missing mechanism reference"
 
@@ -159,7 +188,7 @@ class TestEnforcementMechanisms:
             idx = text.find(f"### {sid}")
             if idx == -1:
                 continue
-            block = text[idx:idx + 600]
+            block = text[idx : idx + 600]
             has_ref = bool(re.search(r"(enforce-|Makefile|AGENTS\.md|scripts/|ci-verdict|_push-rate)", block))
             assert has_ref, f"{sid} missing mechanism reference"
 
@@ -170,7 +199,7 @@ class TestEnforcementMechanisms:
             idx = text.find(f"### {sid}")
             if idx == -1:
                 continue
-            block = text[idx:idx + 600]
+            block = text[idx : idx + 600]
             has_ref = bool(re.search(r"(enforce-|Makefile|AGENTS\.md|scripts/|_gate-fresh|secrets)", block))
             assert has_ref, f"{sid} missing mechanism reference"
 
@@ -181,7 +210,7 @@ class TestEnforcementMechanisms:
             idx = text.find(f"### {sid}")
             if idx == -1:
                 continue
-            block = text[idx:idx + 600]
+            block = text[idx : idx + 600]
             has_ref = bool(re.search(r"(Makefile|AGENTS\.md|scripts/|enforce-|gate)", block))
             assert has_ref, f"{sid} missing mechanism reference"
 
@@ -192,7 +221,7 @@ class TestEnforcementMechanisms:
             idx = text.find(f"### {sid}")
             if idx == -1:
                 continue
-            block = text[idx:idx + 600]
+            block = text[idx : idx + 600]
             has_ref = bool(re.search(r"(AGENTS\.md|COST-EFFICIENCY|enforce-deadline|task_watchdog|Makefile)", block))
             assert has_ref, f"{sid} missing mechanism reference"
 
@@ -203,7 +232,7 @@ class TestEnforcementMechanisms:
             idx = text.find(f"### {sid}")
             if idx == -1:
                 continue
-            block = text[idx:idx + 600]
+            block = text[idx : idx + 600]
             has_ref = bool(re.search(r"(AGENTS\.md|enforce-verified|Makefile|Self-Audit)", block))
             assert has_ref, f"{sid} missing mechanism reference"
 
@@ -214,7 +243,7 @@ class TestEnforcementMechanisms:
             idx = text.find(f"### {sid}")
             if idx == -1:
                 continue
-            block = text[idx:idx + 600]
+            block = text[idx : idx + 600]
             has_ref = bool(re.search(r"(enforce-|AGENTS\.md|scripts/|Makefile|ruff)", block))
             assert has_ref, f"{sid} missing mechanism reference"
 
@@ -225,7 +254,7 @@ class TestEnforcementMechanisms:
             idx = text.find(f"### {sid}")
             if idx == -1:
                 continue
-            block = text[idx:idx + 600]
+            block = text[idx : idx + 600]
             has_ref = bool(re.search(r"(AGENTS\.md|enforce-|Makefile|SESSION|TASKS|BUGS)", block))
             assert has_ref, f"{sid} missing mechanism reference"
 
@@ -236,7 +265,7 @@ class TestEnforcementMechanisms:
             idx = text.find(f"### {sid}")
             if idx == -1:
                 continue
-            block = text[idx:idx + 600]
+            block = text[idx : idx + 600]
             has_ref = bool(re.search(r"(AGENTS\.md|enforce-|Makefile)", block))
             assert has_ref, f"{sid} missing mechanism reference"
 
@@ -247,7 +276,7 @@ class TestEnforcementMechanisms:
             idx = text.find(f"### {sid}")
             if idx == -1:
                 continue
-            block = text[idx:idx + 600]
+            block = text[idx : idx + 600]
             has_ref = bool(re.search(r"(AGENTS\.md|enforce-|Makefile|tests/|scripts/|plugin)", block))
             assert has_ref, f"{sid} missing mechanism reference"
 
@@ -258,7 +287,7 @@ class TestEnforcementMechanisms:
             idx = text.find(f"### {sid}")
             if idx == -1:
                 continue
-            block = text[idx:idx + 600]
+            block = text[idx : idx + 600]
             has_ref = bool(re.search(r"(AGENTS\.md|enforce-|Makefile|scripts/|plugin)", block))
             assert has_ref, f"{sid} missing mechanism reference"
 
@@ -269,7 +298,7 @@ class TestEnforcementMechanisms:
             idx = text.find(f"### {sid}")
             if idx == -1:
                 continue
-            block = text[idx:idx + 600]
+            block = text[idx : idx + 600]
             has_ref = bool(re.search(r"(AGENTS\.md|enforce-|Makefile|scripts/|plugin)", block))
             assert has_ref, f"{sid} missing mechanism reference"
 
@@ -280,7 +309,7 @@ class TestEnforcementMechanisms:
             idx = text.find(f"### {sid}")
             if idx == -1:
                 continue
-            block = text[idx:idx + 600]
+            block = text[idx : idx + 600]
             has_ref = bool(re.search(r"(AGENTS\.md|enforce-|Makefile|scripts/|plugin)", block))
             assert has_ref, f"{sid} missing mechanism reference"
 
@@ -291,7 +320,7 @@ class TestEnforcementMechanisms:
             idx = text.find(f"### {sid}")
             if idx == -1:
                 continue
-            block = text[idx:idx + 600]
+            block = text[idx : idx + 600]
             has_ref = bool(re.search(r"(AGENTS\.md|enforce-|Makefile|scripts/|plugin)", block))
             assert has_ref, f"{sid} missing mechanism reference"
 
@@ -302,12 +331,13 @@ class TestEnforcementMechanisms:
             idx = text.find(f"### {sid}")
             if idx == -1:
                 continue
-            block = text[idx:idx + 600]
+            block = text[idx : idx + 600]
             has_ref = bool(re.search(r"(AGENTS\.md|enforce-|Makefile|scripts/|plugin)", block))
             assert has_ref, f"{sid} missing mechanism reference"
 
 
 # ── Plugin existence tests ───────────────────────────────────────────────────
+
 
 class TestPluginExistence:
     """Required enforcement plugins exist on disk."""
@@ -416,65 +446,72 @@ class TestPluginExistence:
             # Check that the plugin's path appears in the registered plugins
             expected_suffix = f".opencode/plugin/{f.name}"
             found = any(expected_suffix in pp for pp in plugin_paths)
-            assert found, (
-                f"{f.name} not registered in opencode.json plugin list"
-            )
+            assert found, f"{f.name} not registered in opencode.json plugin list"
 
 
 # ── Plugin structural tests ──────────────────────────────────────────────────
 
+
 class TestPluginStructure:
     """Every plugin must follow the enforcement plugin pattern."""
 
-    @pytest.mark.parametrize("plugin_file", [
-        f for f in PLUGIN_DIR.glob("enforce-*.ts") if f.name != "enforce-depth.ts"
-    ])
+    @pytest.mark.parametrize(
+        "plugin_file", [f for f in PLUGIN_DIR.glob("enforce-*.ts") if f.name != "enforce-depth.ts"]
+    )
     def test_plugin_has_subagent_guard(self, plugin_file):
         content = plugin_file.read_text()
         assert "isSubagent" in content, f"{plugin_file.name} missing isSubagent guard"
 
-    @pytest.mark.parametrize("plugin_file", [
-        f for f in PLUGIN_DIR.glob("enforce-*.ts") if f.name != "enforce-depth.ts"
-    ])
+    @pytest.mark.parametrize(
+        "plugin_file", [f for f in PLUGIN_DIR.glob("enforce-*.ts") if f.name != "enforce-depth.ts"]
+    )
     def test_plugin_has_fail_open(self, plugin_file):
         content = plugin_file.read_text()
         has_fail_open = "fail-open" in content.lower() or "fail open" in content.lower()
         has_try_catch = "try {" in content or "} catch" in content
         assert has_fail_open or has_try_catch, f"{plugin_file.name} missing fail-open pattern"
 
-    @pytest.mark.parametrize("plugin_file", [
-        f for f in PLUGIN_DIR.glob("enforce-*.ts") if f.name != "enforce-depth.ts"
-    ])
+    @pytest.mark.parametrize(
+        "plugin_file", [f for f in PLUGIN_DIR.glob("enforce-*.ts") if f.name != "enforce-depth.ts"]
+    )
     def test_plugin_has_disable_env_var(self, plugin_file):
         content = plugin_file.read_text()
         # Multiple different patterns for disable checks
         has_disable = bool(
-            re.search(r"GLUDD_\w+_ENFORCE\s*(!==|===|==)\s*['\"]0['\"]", content) or
-            re.search(r"ENFORCE\s*=\s*process\.env\.['\"\w]+\s*!==\s*['\"]0['\"]", content) or
-            "ENFORCE" in content
+            re.search(r"GLUDD_\w+_ENFORCE\s*(!==|===|==)\s*['\"]0['\"]", content)
+            or re.search(r"ENFORCE\s*=\s*process\.env\.['\"\w]+\s*!==\s*['\"]0['\"]", content)
+            or "ENFORCE" in content
         )
         assert has_disable, f"{plugin_file.name} missing disable env var check"
 
-    @pytest.mark.parametrize("plugin_file", [
-        f for f in PLUGIN_DIR.glob("enforce-*.ts")
-        if f.name not in ("enforce-depth.ts",)
-        and "enforce-tdd.test" not in f.name
-        and "enforce-multitask.test" not in f.name
-        and "enforce-depth.test" not in f.name
-    ])
+    @pytest.mark.parametrize(
+        "plugin_file",
+        [
+            f
+            for f in PLUGIN_DIR.glob("enforce-*.ts")
+            if f.name not in ("enforce-depth.ts",)
+            and "enforce-tdd.test" not in f.name
+            and "enforce-multitask.test" not in f.name
+            and "enforce-depth.test" not in f.name
+        ],
+    )
     def test_plugin_exports_default(self, plugin_file):
         content = plugin_file.read_text()
         assert "export default" in content or "satisfies Plugin" in content, (
             f"{plugin_file.name} missing default export / satisfies Plugin"
         )
 
-    @pytest.mark.parametrize("plugin_file", [
-        f for f in PLUGIN_DIR.glob("enforce-*.ts")
-        if f.name not in ("enforce-depth.ts",)
-        and "enforce-tdd.test" not in f.name
-        and "enforce-multitask.test" not in f.name
-        and "enforce-depth.test" not in f.name
-    ])
+    @pytest.mark.parametrize(
+        "plugin_file",
+        [
+            f
+            for f in PLUGIN_DIR.glob("enforce-*.ts")
+            if f.name not in ("enforce-depth.ts",)
+            and "enforce-tdd.test" not in f.name
+            and "enforce-multitask.test" not in f.name
+            and "enforce-depth.test" not in f.name
+        ],
+    )
     def test_plugin_hot_reload_capable(self, plugin_file):
         content = plugin_file.read_text()
         has_hot = "loadHotModule" in content or "hot_reload" in content
@@ -482,6 +519,7 @@ class TestPluginStructure:
 
 
 # ── Plugin-specific behavioral tests ─────────────────────────────────────────
+
 
 class TestEnforceObjective:
     """Enforce-objective.ts v2: now BLOCKING, not advisory."""
@@ -555,10 +593,9 @@ class TestEnforceStop:
 
     def test_stop_checks_ci_state(self):
         content = (PLUGIN_DIR / "enforce-stop.ts").read_text()
-        assert (
-            "ci-verdict" in content or "ci_verdict" in content
-            or "ciVerdict" in content or "CI" in content
-        ), "CI state check missing"
+        assert "ci-verdict" in content or "ci_verdict" in content or "ciVerdict" in content or "CI" in content, (
+            "CI state check missing"
+        )
 
     def test_stop_checks_release_completeness(self):
         content = (PLUGIN_DIR / "enforce-stop.ts").read_text()
@@ -566,24 +603,21 @@ class TestEnforceStop:
 
     def test_stop_detects_status_summaries(self):
         content = (PLUGIN_DIR / "enforce-stop.ts").read_text()
-        assert (
-            "STATUS_SUMMARY" in content or "statusSummary" in content
-            or "status_summary" in content.lower()
-        ), "status summary detection missing"
+        assert "STATUS_SUMMARY" in content or "statusSummary" in content or "status_summary" in content.lower(), (
+            "status summary detection missing"
+        )
 
     def test_stop_has_qa_response_patterns(self):
         content = (PLUGIN_DIR / "enforce-stop.ts").read_text()
-        assert (
-            "QA_RESPONSE" in content or "qaResponse" in content
-            or "qa_response" in content.lower()
-        ), "QA response patterns missing"
+        assert "QA_RESPONSE" in content or "qaResponse" in content or "qa_response" in content.lower(), (
+            "QA response patterns missing"
+        )
 
     def test_stop_has_bolded_header_detection(self):
         content = (PLUGIN_DIR / "enforce-stop.ts").read_text()
-        assert (
-            "bold" in content.lower() or "**" in content
-            or "header" in content.lower()
-        ), "bolded header detection missing"
+        assert "bold" in content.lower() or "**" in content or "header" in content.lower(), (
+            "bolded header detection missing"
+        )
 
 
 class TestEnforceMultitask:
@@ -611,10 +645,9 @@ class TestEnforceMultitask:
 
     def test_multitask_has_message_boundary_detection(self):
         content = (PLUGIN_DIR / "enforce-multitask.ts").read_text()
-        assert (
-            "text.complete" in content or "messageBoundary" in content
-            or "MSG_GAP" in content
-        ), "message boundary detection missing"
+        assert "text.complete" in content or "messageBoundary" in content or "MSG_GAP" in content, (
+            "message boundary detection missing"
+        )
 
 
 class TestEnforceTdd:
@@ -626,10 +659,9 @@ class TestEnforceTdd:
 
     def test_tdd_has_allowlist(self):
         content = (PLUGIN_DIR / "enforce-tdd.ts").read_text()
-        assert (
-            "init" in content.lower() or "ALLOWLIST" in content
-            or "allowlist" in content.lower()
-        ), "TDD allowlist missing"
+        assert "init" in content.lower() or "ALLOWLIST" in content or "allowlist" in content.lower(), (
+            "TDD allowlist missing"
+        )
 
     def test_tdd_scoped_to_src_general_ludd(self):
         content = (PLUGIN_DIR / "enforce-tdd.ts").read_text()
@@ -641,6 +673,7 @@ class TestEnforceTdd:
 
 
 # ── Makefile guard tests ─────────────────────────────────────────────────────
+
 
 class TestMakefileGuards:
     """Makefile has required guard targets."""
@@ -734,8 +767,25 @@ class TestMakefileGuards:
         content = MAKEFILE_PATH.read_text()
         assert "collect-check:" in content, "collect-check target missing"
 
+    def test_check_plugin_registration_exists(self):
+        content = MAKEFILE_PATH.read_text()
+        assert "check-plugin-registration:" in content, "check-plugin-registration target missing (AA056)"
+
+    def test_check_plugin_order_exists(self):
+        content = MAKEFILE_PATH.read_text()
+        assert "check-plugin-order:" in content, "check-plugin-order target missing (AA077)"
+
+    def test_check_plugin_overlap_exists(self):
+        content = MAKEFILE_PATH.read_text()
+        assert "check-plugin-overlap:" in content, "check-plugin-overlap target missing (AA097)"
+
+    def test_check_ratchet_population_exists(self):
+        content = MAKEFILE_PATH.read_text()
+        assert "check-ratchet-population:" in content, "check-ratchet-population target missing (AA091)"
+
 
 # ── AGENTS.md policy tests ───────────────────────────────────────────────────
+
 
 class TestAgentsMdPolicies:
     """AGENTS.md has required policy sections."""
@@ -794,6 +844,7 @@ class TestAgentsMdPolicies:
 
 # ── CI workflow tests ────────────────────────────────────────────────────────
 
+
 class TestCiWorkflow:
     """CI workflow has required discipline enforcement."""
 
@@ -807,6 +858,7 @@ class TestCiWorkflow:
 
 
 # ── Spec-to-test coverage mapping ────────────────────────────────────────────
+
 
 class TestSpecCoverage:
     """Every spec group has structural tests in this file."""
@@ -899,6 +951,7 @@ class TestSpecCoverage:
 
 # ── Script existence tests ───────────────────────────────────────────────────
 
+
 class TestScriptsExist:
     """Required enforcement scripts exist."""
 
@@ -911,6 +964,10 @@ class TestScriptsExist:
         "scripts/check_tdd_compliance.py",
         "scripts/check_disk_usage.py",
         "scripts/check_node_v26_compat.py",
+        "scripts/check_plugin_registration.py",
+        "scripts/check_plugin_order.py",
+        "scripts/check_plugin_overlap.py",
+        "scripts/check_ratchet_population.py",
     ]
 
     @pytest.mark.parametrize("script_path", SCRIPTS)
@@ -922,6 +979,7 @@ class TestScriptsExist:
 
 # ── Anti-essay plugin spec tests ─────────────────────────────────────────────
 
+
 class TestAntiEssayPluginSpecs:
     """Verify the anti-essay plugin meets E01-E20 requirements."""
 
@@ -930,8 +988,9 @@ class TestAntiEssayPluginSpecs:
         if not p.exists():
             pytest.skip("enforce-anti-essay.ts not yet created")
         content = p.read_text()
-        assert "word" in content.lower() or "length" in content.lower() or "count" in content.lower(), \
+        assert "word" in content.lower() or "length" in content.lower() or "count" in content.lower(), (
             "anti-essay plugin does not track word count"
+        )
 
     def test_anti_essay_checks_tool_calls(self):
         p = PLUGIN_DIR / "enforce-anti-essay.ts"
@@ -950,6 +1009,7 @@ class TestAntiEssayPluginSpecs:
 
 # ── Branch discipline plugin spec tests ──────────────────────────────────────
 
+
 class TestBranchDisciplinePluginSpecs:
     """Verify the branch-discipline plugin meets B01-B25 requirements."""
 
@@ -965,11 +1025,13 @@ class TestBranchDisciplinePluginSpecs:
         if not p.exists():
             pytest.skip("enforce-branch-discipline.ts not yet created")
         content = p.read_text()
-        assert "deny" in content or "block" in content.lower() or "permissionDecision" in content, \
+        assert "deny" in content or "block" in content.lower() or "permissionDecision" in content, (
             "branch discipline plugin must block wrong-branch operations"
+        )
 
 
 # ── Test integrity plugin spec tests ─────────────────────────────────────────
+
 
 class TestTestIntegrityPluginSpecs:
     """Verify the test-integrity plugin meets T01-T30 requirements."""
@@ -979,19 +1041,22 @@ class TestTestIntegrityPluginSpecs:
         if not p.exists():
             pytest.skip("enforce-test-integrity.ts not yet created")
         content = p.read_text()
-        assert "skip" in content.lower() or "xfail" in content.lower(), \
+        assert "skip" in content.lower() or "xfail" in content.lower(), (
             "test integrity plugin does not detect skip/xfail"
+        )
 
     def test_test_integrity_blocks_continue_on_error(self):
         p = PLUGIN_DIR / "enforce-test-integrity.ts"
         if not p.exists():
             pytest.skip("enforce-test-integrity.ts not yet created")
         content = p.read_text()
-        assert "continue-on-error" in content or "continueOnError" in content or "continue_on_error" in content, \
+        assert "continue-on-error" in content or "continueOnError" in content or "continue_on_error" in content, (
             "test integrity plugin does not detect continue-on-error"
+        )
 
 
 # ── Completion check ─────────────────────────────────────────────────────────
+
 
 def test_spec_count_is_at_least_1000():
     """Guardrail: BEHAVIORAL_SPECS.md should have at least 1000 specs."""
