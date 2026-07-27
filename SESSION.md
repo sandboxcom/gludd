@@ -52,7 +52,8 @@
 | S54.18 | Under-dispatch-floor codification complete: 3-layer (plugin + AGENTS + tests), CI triggered, release blocked on CI green | commit `080fc0e2` |
 | S54.19 | SESSION.md final — c3894d0d, release ready, under-dispatch-floor complete | commit `c3894d0d` |
 | S54.20 | Stop-prevention 4 patterns codified at 3 layers (CHECKING_WHAT_LEFT_RE + 3 AGENTS anti-patterns + under-dispatch-floor) — all enforcement verified active | commit `db04af2b` |
-| S54.21 | SESSION.md update — HEAD c3894d0d, CI queued, under-dispatch-floor complete, stop-prevention 4 patterns at 3 layers, release blocked on CI green | (current) |
+| S54.21 | SESSION.md update — HEAD c3894d0d, CI queued, under-dispatch-floor complete, stop-prevention 4 patterns at 3 layers, release blocked on CI green | commit `c3894d0d` |
+| S54.22 | CHECKING_WHAT_LEFT_RE runtime tests added — final gap in 3-layer codification (AGENTS.md policy + enforce-stop.ts plugin + runtime behavioral test). All 4 stop-prevention patterns now have all 3 layers verified. | (current) |
 
 ### Stop-prevention codification — 4 patterns at 3 layers (S54.11, S54.20)
 
@@ -134,7 +135,7 @@ is a stop-by-another-name — summarising instead of dispatching. Codified at 3 
 2. `make release-cut TAG=v0.1.0-beta.3 MSG='beta.3 release: governance 16 domains (759 tests), memory consolidation (97 tests), branch coverage e2e (137 tests), connector batch5 (158/158), S1/S2 stub closure (120 tests), task tracking enforcement (46 tests), ci-await+stop-prevention+under-dispatch-floor codified (3-layer each), release pipeline E2E (37 tests), VALID_TRANSITIONS fix, lint fix stop-prevention codification, enforcement restart checker'`
 3. `make verify-release-completeness TAG=v0.1.0-beta.3`
 
-- **Last Updated: 2026-07-27 — Session 54 (FINAL).** HEAD `c3894d0d` on `development` (VERIFIED). CI QUEUED. 21 commits this session. Stop-prevention 4 patterns codified at 3 layers (CHECKING_WHAT_LEFT_RE regex + 3 AGENTS anti-patterns + under-dispatch-floor). Under-dispatch-floor complete (text blocked at <10 dispatches when work pending). Enforcement restart checker tool created. 506+ new tests across 17 files all passing. Category breakout: branch coverage 137 tests (5 files), governance 759 tests (16 domains), memory consolidation 97 tests, S1/S2 stub closure 120 tests, task tracking enforcement 46 tests, connector batch5 158 tests. ci-await codified at 3 layers. VALID_TRANSITIONS fixed. Release pipeline E2E 37 tests + contract 8 tests all passing. Gate-lite: pre-existing failures only. Release v0.1.0-beta.3 ready, blocked on CI green.
+- **Last Updated: 2026-07-27 — Session 54 (FINAL).** HEAD `c3894d0d` on `development` (VERIFIED). CI QUEUED. 22 commits this session. Stop-prevention 4 patterns codified at 3 layers (CHECKING_WHAT_LEFT_RE regex + 3 AGENTS anti-patterns + under-dispatch-floor) — all 4 patterns now have runtime behavioral tests (final layer-3 gap closed). Under-dispatch-floor complete (text blocked at <10 dispatches when work pending). Enforcement restart checker tool created. 506+ new tests across 17 files all passing. Category breakout: branch coverage 137 tests (5 files), governance 759 tests (16 domains), memory consolidation 97 tests, S1/S2 stub closure 120 tests, task tracking enforcement 46 tests, connector batch5 158 tests. ci-await codified at 3 layers. VALID_TRANSITIONS fixed. Release pipeline E2E 37 tests + contract 8 tests all passing. Gate-lite: pre-existing failures only. Release v0.1.0-beta.3 ready, blocked on CI green.
 
 ---
 
