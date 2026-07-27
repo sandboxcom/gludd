@@ -419,5 +419,5 @@ class TestTodoRepositoryTransition:
         mock_result.scalar_one_or_none.return_value = todo_mock
         session.execute.return_value = mock_result
         repo = TodoRepository(session)
-        with pytest.raises(InvalidTransitionError, match="not a valid transition"):
+        with pytest.raises(InvalidTransitionError, match="Invalid transition"):
             await repo.transition("TODO-001", new_status=TodoStatus.BACKLOG, expected_version=1)

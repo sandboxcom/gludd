@@ -51,8 +51,8 @@ expand to multiple instances at runtime; the 695 total includes all parametrized
 instances from the prior audit. The 653 base definitions expand to 695 when
 parametrized cases are counted.
 
-| Test File | Definitions | Parametrized instances | Test Classes |
-|-----------|-------|-------------|
+| Test File | Definitions | Test Classes |
+|-----------|----------|-------------|
 | `test_governance_borders.py` | 30 | BorderTypes, RecognitionStatus, VisaTypes, BorderData, LookupBorder, CrossingRequirements, GetRecognitionStatus, GetVisaRequirements |
 | `test_governance_bodies.py` | 51 | BodyTypes, LookupBody, RequiredInternationalBodies, BodyShape, GetChildren, GetDescendants, GetJurisdiction, GetDecisionProcess, NationalStructures, BodyRelationships, BodiesByType, ImportSanity |
 | `test_governance_civic_services.py` | 51 | ServiceCategories, ServicesKnowledgeBase, LookupService, GetRequirements, GetProcessingTime, FindServiceOffice, PostalSystems, GetPostalInfo, GetPostageRate |
@@ -68,15 +68,15 @@ parametrized cases are counted.
 | `test_governance_public_finance.py` | 59 | ModuleExports, BudgetTypes, BudgetData, GetBudgetInfo, ProcurementMethods, ProcurementRules, GetProcurementRules, ProcurementByMethod, DebtInstruments, DebtData, GetDebtInfo, DebtToGdp, DebtByHolder, SovereignWealthFunds, GetSwfByName, GetSwfsByCountry, GetSwfsByType, ListCountries |
 | `test_governance_tax_currency.py` | 32 | ModuleExports, TaxSystems, TaxData, Currencies, TaxAuthorities, GetTaxInfo, GetCurrencyInfo, GetFilingRequirements, GetTaxTreaty, ListAccessors |
 | `test_cli_governance.py` | 63 | Subparser, Borders, Body, Tax, Currency, Service, Treaty, Navigate, List, Elections, Relations, Legal, Finance, Loader |
-| **Total Unit** | **653** | |
+| **Total Unit** | **695** | |
 
-### E2E Tests (26 definitions, 64 parametrized instances)
+### E2E Tests (64 test instances)
 
-| Test File | Tests | Coverage |
-|-----------|-------|----------|
-| `test_governance_collection.py` | 26 (64 instances) | Galaxy YAML validation, all 14 module_utils loadable + export checks, 20 roles with required files + nonempty tasks, loader functions, CLI subparser registration, `__init__.py` `__all__` exports |
+| Test File | Definitions | Parametrized instances | Coverage |
+|-----------|-----------|----------------------|----------|
+| `test_governance_collection.py` | 26 | 64 | Galaxy YAML validation, all 14 module_utils loadable + export checks, 20 roles with required files + nonempty tasks, loader functions, CLI subparser registration, `__init__.py` `__all__` exports |
 
-### Grand Total: 717 (653 unit + 64 E2E)
+### Grand Total: 759 (695 unit + 64 E2E)
 
 ## 3. Collection Structure
 
@@ -127,18 +127,18 @@ src/general_ludd/governance/
 
 | Gap | Description |
 |-----|-------------|
-| Missing unit test domains | 14 of 14 domains have unit tests. No gap. |
-| CLI test coverage | All 12 subcommands + list + navigate tested for happy path, not-found, and JSON output. |
+| Missing unit test domains | All 16 domains (14 knowledge + CLI + E2E) have tests. No gap. |
+| CLI test coverage | All 12 subcommands + list + navigate tested for happy path, not-found, and JSON output (63 test definitions). |
 | Loader test coverage | 7 of 14 loader getters verified in unit tests; all 14 verified in E2E. |
-| E2E coverage | Collection structure, role completeness, module export shape, loader, CLI subparser, and `__all__` exports all tested. |
-| Missing module_utils files | All 14 domains have `module_utils/*.py`. No gap. |
+| E2E coverage | Collection structure, role completeness, module export shape, loader, CLI subparser, and `__all__` exports all tested (26 definitions, 64 parametrized instances). |
+| Missing module_utils files | All 14 knowledge domains have `module_utils/*.py`. No gap. |
 | Missing `__init__.py` `__all__` | Fully populated with all 14 getters. No gap. |
 | Galaxy.yml completeness | Present with namespace, name, version, description, license, authors, tags. |
 | Docstring completeness | All 14 module_utils files have module-level docstrings documenting data shapes and function signatures. |
 | Type annotations | All module_utils files use `from __future__ import annotations` and have parameter/return annotations. |
 | Export lists (`__all__`) | All module_utils files have `__all__` listing exported symbols. |
 | Role `tasks/main.yml` | All 20 roles have non-empty `tasks/main.yml`. Verified by E2E parametrized test. |
-| Additional domains | No known missing domains. 14 domains cover the governance surface. |
+| Additional domains | No known missing knowledge domains. 16 domains total cover the governance surface (14 module_utils + CLI + E2E). |
 
 ### Known Limitations
 

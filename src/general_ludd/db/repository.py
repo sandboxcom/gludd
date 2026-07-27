@@ -101,6 +101,7 @@ VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
     TodoStatus.BLOCKED_ON_HUMAN: {TodoStatus.QUEUED, TodoStatus.CANCELLED},
     TodoStatus.FAILED: {TodoStatus.QUEUED},
     TodoStatus.BUDGET_EXCEEDED: {TodoStatus.QUEUED, TodoStatus.FAILED},
+    TodoStatus.CANCELLED: set(),
     TodoStatus.COMPLETE: set(),
 }
 
