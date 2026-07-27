@@ -629,7 +629,7 @@ class _AsyncIter:
         try:
             return next(self._items)
         except StopIteration:
-            raise StopAsyncIteration
+            raise StopAsyncIteration from None
 
 
 class TestStreamResponseSuccess:
