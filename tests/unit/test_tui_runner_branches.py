@@ -175,9 +175,13 @@ class TestMakeLayoutBranches:
             "selected_cat": 0,
             "depth": 0,
         }
-        with patch("httpx.get", return_value=MagicMock(status_code=200)):
-            with patch("rich.live.Live"), patch("rich.console.Console"), patch("sys.stdin.fileno", side_effect=OSError):
-                pass
+        with (
+            patch("httpx.get", return_value=MagicMock(status_code=200)),
+            patch("rich.live.Live"),
+            patch("rich.console.Console"),
+            patch("sys.stdin.fileno", side_effect=OSError),
+        ):
+            pass
 
     def test_edit_view_depth_positive(self, helper):
         item = MagicMock()
@@ -189,14 +193,22 @@ class TestMakeLayoutBranches:
             "selected_cat": 0,
             "depth": 1,
         }
-        with patch("httpx.get", return_value=MagicMock(status_code=200)):
-            with patch("rich.live.Live"), patch("rich.console.Console"), patch("sys.stdin.fileno", side_effect=OSError):
-                pass
+        with (
+            patch("httpx.get", return_value=MagicMock(status_code=200)),
+            patch("rich.live.Live"),
+            patch("rich.console.Console"),
+            patch("sys.stdin.fileno", side_effect=OSError),
+        ):
+            pass
 
     def test_config_view(self, helper):
-        with patch("httpx.get", return_value=MagicMock(status_code=200)):
-            with patch("rich.live.Live"), patch("rich.console.Console"), patch("sys.stdin.fileno", side_effect=OSError):
-                pass
+        with (
+            patch("httpx.get", return_value=MagicMock(status_code=200)),
+            patch("rich.live.Live"),
+            patch("rich.console.Console"),
+            patch("sys.stdin.fileno", side_effect=OSError),
+        ):
+            pass
 
 
 class TestTuiInputHandlingBranches:
@@ -262,9 +274,13 @@ class TestDaemonDetectionAtStartup:
 
     def test_daemon_running_reads_pid_file(self, helper):
         helper._is_daemon_pid_alive.return_value = True
-        with patch("httpx.get", side_effect=Exception("should not be called")):
-            with patch("rich.live.Live"), patch("rich.console.Console"), patch("sys.stdin.fileno", side_effect=OSError):
-                pass
+        with (
+            patch("httpx.get", side_effect=Exception("should not be called")),
+            patch("rich.live.Live"),
+            patch("rich.console.Console"),
+            patch("sys.stdin.fileno", side_effect=OSError),
+        ):
+            pass
 
     def test_daemon_not_running_healthcheck_fails(self, helper):
         helper._is_daemon_pid_alive.return_value = False
@@ -314,6 +330,10 @@ class TestLoopControlFlowBranches:
         return h
 
     def test_model_mgr_initialization(self, helper):
-        with patch("httpx.get", return_value=MagicMock(status_code=200)):
-            with patch("rich.live.Live"), patch("rich.console.Console"), patch("sys.stdin.fileno", side_effect=OSError):
-                pass
+        with (
+            patch("httpx.get", return_value=MagicMock(status_code=200)),
+            patch("rich.live.Live"),
+            patch("rich.console.Console"),
+            patch("sys.stdin.fileno", side_effect=OSError),
+        ):
+            pass
