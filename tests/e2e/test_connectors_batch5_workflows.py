@@ -131,12 +131,14 @@ class TestOpenShiftConnector:
 
         monkeypatch.setenv("OC_TOK_B5", "sha256~abc")
         try:
-            source = OpenShiftSource({
-                "api_server": "https://api.openshift.example.com:6443",
-                "token_env": "OC_TOK_B5",
-                "namespace": "default",
-                "allow_private": True,
-            })
+            source = OpenShiftSource(
+                {
+                    "api_server": "https://api.openshift.example.com:6443",
+                    "token_env": "OC_TOK_B5",
+                    "namespace": "default",
+                    "allow_private": True,
+                }
+            )
             assert source.KIND == "logs"
             assert source.name is not None
         finally:
@@ -223,6 +225,384 @@ class TestOpenShiftConnector:
         finally:
             del os.environ["OC_TOK_Q"]
 
+    # -- edge cases: query-mode coverage -----------------------------------
+
+    def test_query_builds_mode(self, monkeypatch):
+        from general_ludd.connectors.openshift import OpenShiftSource
+
+        transport = MockHttpTransport(
+            status_code=200,
+            body={
+                "items": [
+                    {
+                        "metadata": {
+                            "name": "build-1",
+                            "namespace": "default",
+                            "labels": {
+                                "buildconfig": "my-app",
+                                "openshift.io/build-config.name": "my-app",
+                            },
+                        },
+                        "status": {
+                            "phase": "Complete",
+                            "startTimestamp": "2025-01-01T12:00:00Z",
+                            "completionTimestamp": "2025-01-01T12:05:00Z",
+                        },
+                    }
+                ]
+            },
+        )
+        monkeypatch.setenv("OC_TOK_BLD", "tok")
+        try:
+            source = OpenShiftSource(
+                {
+                    "api_server": "https://api.example.com:6443",
+                    "namespace": "default",
+                    "token_env": "OC_TOK_BLD",
+                    "allow_private": True,
+                },
+                transport=transport,
+            )
+            records = source.query({"mode": "builds"})
+            assert len(records) >= 1
+            assert records[0]["kind"] == "pipeline"
+            assert records[0]["message"] == "build-1"
+        finally:
+            del os.environ["OC_TOK_BLD"]
+
+    def test_query_events_mode(self, monkeypatch):
+        from general_ludd.connectors.openshift import OpenShiftSource
+
+        transport = MockHttpTransport(
+            status_code=200,
+            body={
+                "items": [
+                    {
+                        "type": "Warning",
+                        "reason": "FailedScheduling",
+                        "message": "0/3 nodes are available",
+                        "firstTimestamp": "2025-01-01T12:00:00Z",
+                        "lastTimestamp": "2025-01-01T12:01:00Z",
+                        "involvedObject": {"kind": "Pod", "name": "pod-1"},
+                        "metadata": {"creationTimestamp": "2025-01-01T12:00:00Z"},
+                    }
+                ]
+            },
+        )
+        monkeypatch.setenv("OC_TOK_EVT", "tok")
+        try:
+            source = OpenShiftSource(
+                {
+                    "api_server": "https://api.example.com:6443",
+                    "namespace": "default",
+                    "token_env": "OC_TOK_EVT",
+                    "allow_private": True,
+                },
+                transport=transport,
+            )
+            records = source.query({"mode": "events"})
+            assert len(records) >= 1
+            assert records[0]["kind"] == "logs"
+            assert "FailedScheduling" in str(records[0]["message"])
+        finally:
+            del os.environ["OC_TOK_EVT"]
+
+    def test_query_logs_mode(self, monkeypatch):
+        from general_ludd.connectors.openshift import OpenShiftSource
+
+        transport = MockHttpTransport(
+            status_code=200,
+            text="2025-01-01T12:00:00Z INFO Starting\n2025-01-01T12:00:01Z INFO Ready\n",
+        )
+        monkeypatch.setenv("OC_TOK_LOG", "tok")
+        try:
+            source = OpenShiftSource(
+                {
+                    "api_server": "https://api.example.com:6443",
+                    "namespace": "default",
+                    "token_env": "OC_TOK_LOG",
+                    "allow_private": True,
+                },
+                transport=transport,
+            )
+            records = source.query({"mode": "logs", "pod": "pod-1", "container": "app"})
+            assert len(records) >= 2
+            assert all(r["kind"] == "logs" for r in records)
+            assert records[0]["labels"]["pod"] == "pod-1"
+            assert records[0]["labels"]["container"] == "app"
+        finally:
+            del os.environ["OC_TOK_LOG"]
+
+    def test_query_logs_mode_no_container(self, monkeypatch):
+        from general_ludd.connectors.openshift import OpenShiftSource
+
+        transport = MockHttpTransport(status_code=200, text="line1\n")
+        monkeypatch.setenv("OC_TOK_LC", "tok")
+        try:
+            source = OpenShiftSource(
+                {
+                    "api_server": "https://api.example.com:6443",
+                    "namespace": "default",
+                    "token_env": "OC_TOK_LC",
+                    "allow_private": True,
+                },
+                transport=transport,
+            )
+            records = source.query({"mode": "logs", "pod": "pod-2"})
+            assert len(records) >= 1
+            assert records[0]["labels"]["container"] is None
+        finally:
+            del os.environ["OC_TOK_LC"]
+
+    def test_query_logs_mode_requires_pod(self, monkeypatch):
+        from general_ludd.connectors.openshift import OpenShiftSource
+
+        monkeypatch.setenv("OC_TOK_LP", "tok")
+        try:
+            source = OpenShiftSource(
+                {
+                    "api_server": "https://api.example.com:6443",
+                    "namespace": "default",
+                    "token_env": "OC_TOK_LP",
+                    "allow_private": True,
+                },
+                transport=MockHttpTransport(status_code=200, body={}),
+            )
+            with pytest.raises((ValueError, RuntimeError)):
+                source.query({"mode": "logs"})
+        finally:
+            del os.environ["OC_TOK_LP"]
+
+    def test_query_unknown_mode_raises(self, monkeypatch):
+        from general_ludd.connectors.openshift import OpenShiftSource
+
+        monkeypatch.setenv("OC_TOK_UNK", "tok")
+        try:
+            source = OpenShiftSource(
+                {
+                    "api_server": "https://api.example.com:6443",
+                    "namespace": "default",
+                    "token_env": "OC_TOK_UNK",
+                    "allow_private": True,
+                },
+                transport=MockHttpTransport(status_code=200, body={}),
+            )
+            with pytest.raises((ValueError, RuntimeError)):
+                source.query({"mode": "nonexistent"})
+        finally:
+            del os.environ["OC_TOK_UNK"]
+
+    def test_query_defaults_to_unknown_mode_raises(self, monkeypatch):
+        from general_ludd.connectors.openshift import OpenShiftSource
+
+        monkeypatch.setenv("OC_TOK_DEF", "tok")
+        try:
+            source = OpenShiftSource(
+                {
+                    "api_server": "https://api.example.com:6443",
+                    "namespace": "default",
+                    "token_env": "OC_TOK_DEF",
+                    "allow_private": True,
+                },
+                transport=MockHttpTransport(status_code=200, body={}),
+            )
+            with pytest.raises((ValueError, RuntimeError)):
+                source.query({})
+        finally:
+            del os.environ["OC_TOK_DEF"]
+
+    # -- edge cases: SSRF internal-name heuristics -------------------------
+
+    def test_rejects_svc_suffix_host(self, monkeypatch):
+        from general_ludd.connectors.openshift import OpenShiftSource
+
+        with pytest.raises((ValueError, RuntimeError)):
+            OpenShiftSource(
+                {
+                    "api_server": "https://api.openshift.svc:6443",
+                    "namespace": "default",
+                    "token_env": "T",
+                }
+            )
+
+    def test_rejects_cluster_local_suffix_host(self, monkeypatch):
+        from general_ludd.connectors.openshift import OpenShiftSource
+
+        with pytest.raises((ValueError, RuntimeError)):
+            OpenShiftSource(
+                {
+                    "api_server": "https://api.openshift.cluster.local:6443",
+                    "namespace": "default",
+                    "token_env": "T",
+                }
+            )
+
+    def test_rejects_local_suffix_host(self, monkeypatch):
+        from general_ludd.connectors.openshift import OpenShiftSource
+
+        with pytest.raises((ValueError, RuntimeError)):
+            OpenShiftSource(
+                {
+                    "api_server": "https://api.local:6443",
+                    "namespace": "default",
+                    "token_env": "T",
+                }
+            )
+
+    def test_rejects_internal_suffix_host(self, monkeypatch):
+        from general_ludd.connectors.openshift import OpenShiftSource
+
+        with pytest.raises((ValueError, RuntimeError)):
+            OpenShiftSource(
+                {
+                    "api_server": "https://api.internal:6443",
+                    "namespace": "default",
+                    "token_env": "T",
+                }
+            )
+
+    def test_rejects_single_label_host(self, monkeypatch):
+        from general_ludd.connectors.openshift import OpenShiftSource
+
+        with pytest.raises((ValueError, RuntimeError)):
+            OpenShiftSource(
+                {
+                    "api_server": "https://openshift:6443",
+                    "namespace": "default",
+                    "token_env": "T",
+                }
+            )
+
+    # -- edge cases: namespace collision -----------------------------------
+
+    def test_namespace_collision_distinct_sources(self, monkeypatch):
+        from general_ludd.connectors.openshift import OpenShiftSource
+
+        transport_a = MockHttpTransport(
+            status_code=200,
+            body={
+                "items": [
+                    {
+                        "metadata": {
+                            "name": "pod-a",
+                            "namespace": "shared",
+                            "creationTimestamp": "2025-01-01T12:00:00Z",
+                        },
+                        "status": {"phase": "Running"},
+                    }
+                ]
+            },
+        )
+        transport_b = MockHttpTransport(
+            status_code=200,
+            body={
+                "items": [
+                    {
+                        "metadata": {
+                            "name": "pod-b",
+                            "namespace": "shared",
+                            "creationTimestamp": "2025-01-01T12:00:01Z",
+                        },
+                        "status": {"phase": "Running"},
+                    }
+                ]
+            },
+        )
+        monkeypatch.setenv("OC_TOK_NSA", "tok-a")
+        monkeypatch.setenv("OC_TOK_NSB", "tok-b")
+        try:
+            source_a = OpenShiftSource(
+                {
+                    "api_server": "https://api-a.example.com:6443",
+                    "namespace": "shared",
+                    "token_env": "OC_TOK_NSA",
+                    "allow_private": True,
+                    "name": "openshift-cluster-a",
+                },
+                transport=transport_a,
+            )
+            source_b = OpenShiftSource(
+                {
+                    "api_server": "https://api-b.example.com:6443",
+                    "namespace": "shared",
+                    "token_env": "OC_TOK_NSB",
+                    "allow_private": True,
+                    "name": "openshift-cluster-b",
+                },
+                transport=transport_b,
+            )
+            assert source_a.name == "openshift-cluster-a"
+            assert source_b.name == "openshift-cluster-b"
+            records_a = source_a.query({"mode": "pods"})
+            records_b = source_b.query({"mode": "pods"})
+            assert len(records_a) >= 1
+            assert len(records_b) >= 1
+            assert records_a[0]["message"] == "pod-a"
+            assert records_b[0]["message"] == "pod-b"
+            assert records_a[0]["source"] == "openshift-cluster-a"
+            assert records_b[0]["source"] == "openshift-cluster-b"
+        finally:
+            del os.environ["OC_TOK_NSA"], os.environ["OC_TOK_NSB"]
+
+    # -- edge cases: transport timeout -------------------------------------
+
+    def test_timeout_propagates_to_transport(self, monkeypatch):
+        from general_ludd.connectors.openshift import OpenShiftSource
+
+        captured_timeouts: list[float] = []
+
+        class _TimeoutCaptureTransport:
+            def get(self, url: str, *, headers: dict[str, str], timeout: float) -> MockHttpResponse:
+                captured_timeouts.append(timeout)
+                return MockHttpResponse(status_code=200, body={"kind": "Status", "status": "ok"})
+
+        transport = _TimeoutCaptureTransport()
+        monkeypatch.setenv("OC_TOK_TO", "tok")
+        try:
+            source = OpenShiftSource(
+                {
+                    "api_server": "https://api.example.com:6443",
+                    "namespace": "default",
+                    "token_env": "OC_TOK_TO",
+                    "allow_private": True,
+                    "timeout": 45.0,
+                },
+                transport=transport,
+            )
+            result = source.health()
+            assert result["ok"] is True
+            assert len(captured_timeouts) >= 1
+            assert captured_timeouts[0] == 45.0
+        finally:
+            del os.environ["OC_TOK_TO"]
+
+    def test_timeout_defaults_to_30_seconds(self, monkeypatch):
+        from general_ludd.connectors.openshift import OpenShiftSource
+
+        captured_timeouts: list[float] = []
+
+        class _TimeoutCaptureTransport:
+            def get(self, url: str, *, headers: dict[str, str], timeout: float) -> MockHttpResponse:
+                captured_timeouts.append(timeout)
+                return MockHttpResponse(status_code=200, body={"kind": "Status", "status": "ok"})
+
+        transport = _TimeoutCaptureTransport()
+        monkeypatch.setenv("OC_TOK_TD", "tok")
+        try:
+            source = OpenShiftSource(
+                {
+                    "api_server": "https://api.example.com:6443",
+                    "namespace": "default",
+                    "token_env": "OC_TOK_TD",
+                    "allow_private": True,
+                },
+                transport=transport,
+            )
+            source.health()
+            assert captured_timeouts[0] == 30.0
+        finally:
+            del os.environ["OC_TOK_TD"]
+
 
 # ============================================================================
 # 2. Nomad Connector
@@ -241,11 +621,13 @@ class TestNomadConnector:
 
         monkeypatch.setenv("NOMAD_TOK", "tok")
         try:
-            source = NomadSource({
-                "base_url": "https://nomad.example.com:4646",
-                "token_env": "NOMAD_TOK",
-                "allow_private": True,
-            })
+            source = NomadSource(
+                {
+                    "base_url": "https://nomad.example.com:4646",
+                    "token_env": "NOMAD_TOK",
+                    "allow_private": True,
+                }
+            )
             assert source.KIND == "logs"
         finally:
             del os.environ["NOMAD_TOK"]
@@ -316,6 +698,226 @@ class TestNomadConnector:
         finally:
             del os.environ["NOM_Q"]
 
+    # -- edge cases: query-type coverage -----------------------------------
+
+    def test_query_events_type(self, monkeypatch):
+        from general_ludd.connectors.nomad import NomadSource
+
+        transport = MockHttpTransport(
+            status_code=200,
+            text='{"Index":1,"Events":[{"Topic":"Job","Type":"JobRegistered","Key":"example","Namespace":"default"}]}',
+        )
+        monkeypatch.setenv("NOM_EV", "tok")
+        try:
+            source = NomadSource(
+                {
+                    "base_url": "https://nomad.example.com:4646",
+                    "token_env": "NOM_EV",
+                    "allow_private": True,
+                    "transport": transport,
+                },
+            )
+            records = source.query({"type": "events", "limit": 5})
+            assert len(records) >= 1
+            assert records[0]["kind"] == "pipeline"
+            assert records[0]["labels"]["topic"] == "Job"
+        finally:
+            del os.environ["NOM_EV"]
+
+    def test_query_events_with_sse_framing(self, monkeypatch):
+        from general_ludd.connectors.nomad import NomadSource
+
+        transport = MockHttpTransport(
+            status_code=200,
+            text='data: {"Events":[{"Topic":"Node","Type":"NodeEvent","Key":"node-1"}]}\n',
+        )
+        monkeypatch.setenv("NOM_ESSE", "tok")
+        try:
+            source = NomadSource(
+                {
+                    "base_url": "https://nomad.example.com:4646",
+                    "token_env": "NOM_ESSE",
+                    "allow_private": True,
+                    "transport": transport,
+                },
+            )
+            records = source.query({"type": "events"})
+            assert len(records) >= 1
+            assert records[0]["kind"] == "pipeline"
+        finally:
+            del os.environ["NOM_ESSE"]
+
+    def test_query_metrics_type(self, monkeypatch):
+        from general_ludd.connectors.nomad import NomadSource
+
+        transport = MockHttpTransport(
+            status_code=200,
+            text=(
+                "# HELP nomad_runtime_num_goroutines Number of goroutines\n"
+                "# TYPE nomad_runtime_num_goroutines gauge\n"
+                'nomad_runtime_num_goroutines{instance="nomad"} 42\n'
+            ),
+        )
+        monkeypatch.setenv("NOM_MT", "tok")
+        try:
+            source = NomadSource(
+                {
+                    "base_url": "https://nomad.example.com:4646",
+                    "token_env": "NOM_MT",
+                    "allow_private": True,
+                    "transport": transport,
+                },
+            )
+            records = source.query({"type": "metrics"})
+            assert len(records) >= 1
+            assert records[0]["kind"] == "metrics"
+            assert records[0]["message"] == "nomad_runtime_num_goroutines"
+            assert records[0]["value"] == 42
+        finally:
+            del os.environ["NOM_MT"]
+
+    def test_query_unsupported_type_raises(self, monkeypatch):
+        from general_ludd.connectors.nomad import NomadSource
+
+        monkeypatch.setenv("NOM_UNK", "tok")
+        try:
+            source = NomadSource(
+                {
+                    "base_url": "https://nomad.example.com:4646",
+                    "token_env": "NOM_UNK",
+                    "allow_private": True,
+                    "transport": MockHttpTransport(status_code=200, body={}),
+                },
+            )
+            with pytest.raises(ValueError):
+                source.query({"type": "unsupported"})
+        finally:
+            del os.environ["NOM_UNK"]
+
+    def test_query_logs_requires_alloc_id(self, monkeypatch):
+        from general_ludd.connectors.nomad import NomadSource
+
+        monkeypatch.setenv("NOM_NOALLOC", "tok")
+        try:
+            source = NomadSource(
+                {
+                    "base_url": "https://nomad.example.com:4646",
+                    "token_env": "NOM_NOALLOC",
+                    "allow_private": True,
+                    "transport": MockHttpTransport(status_code=200, body={}),
+                },
+            )
+            with pytest.raises(ValueError):
+                source.query({"type": "logs"})
+        finally:
+            del os.environ["NOM_NOALLOC"]
+
+    def test_query_logs_stderr_type(self, monkeypatch):
+        from general_ludd.connectors.nomad import NomadSource
+
+        transport = MockHttpTransport(status_code=200, text="error: something went wrong\n")
+        monkeypatch.setenv("NOM_STDERR", "tok")
+        try:
+            source = NomadSource(
+                {
+                    "base_url": "https://nomad.example.com:4646",
+                    "token_env": "NOM_STDERR",
+                    "allow_private": True,
+                    "transport": transport,
+                },
+            )
+            records = source.query({"type": "logs", "alloc_id": "alloc-1", "log_type": "stderr"})
+            assert len(records) >= 1
+            assert records[0]["level_or_status"] == "error"
+        finally:
+            del os.environ["NOM_STDERR"]
+
+    # -- edge cases: SSRF timing contract (lazy, not at construction) ------
+
+    def test_ssrf_blocked_lazily_at_query_time(self, monkeypatch):
+        from general_ludd.connectors.nomad import NomadSource
+
+        monkeypatch.setenv("NOM_SSRF_Q", "tok")
+        try:
+            source = NomadSource(
+                {
+                    "base_url": "http://10.0.0.1:4646",
+                    "token_env": "NOM_SSRF_Q",
+                }
+            )
+            result = source.health()
+            assert result["ok"] is False
+            assert "ssrf-blocked" in result["detail"]
+        finally:
+            del os.environ["NOM_SSRF_Q"]
+
+    def test_private_host_constructs_without_error(self, monkeypatch):
+        from general_ludd.connectors.nomad import NomadSource
+
+        monkeypatch.setenv("NOM_PRIV", "tok")
+        try:
+            source = NomadSource(
+                {
+                    "base_url": "http://127.0.0.1:4646",
+                    "token_env": "NOM_PRIV",
+                }
+            )
+            assert source.KIND == "logs"
+        finally:
+            del os.environ["NOM_PRIV"]
+
+    def test_ssrf_blocked_during_query_not_construction(self, monkeypatch):
+        from general_ludd.connectors.nomad import NomadSource
+
+        monkeypatch.setenv("NOM_DNS", "tok")
+        try:
+            source = NomadSource(
+                {
+                    "base_url": "http://10.0.0.1:4646",
+                    "token_env": "NOM_DNS",
+                }
+            )
+            assert source.KIND == "logs"
+            with pytest.raises((ValueError, RuntimeError)):
+                source.query({"type": "metrics"})
+        finally:
+            del os.environ["NOM_DNS"]
+
+    # -- edge cases: transport timeout / error handling --------------------
+
+    def test_transport_error_raised_during_health(self, monkeypatch):
+        from general_ludd.connectors.nomad import NomadSource
+
+        class _FailingTransport:
+            def __call__(self, method: str, url: str, headers: dict[str, str], params: dict[str, str] | None) -> object:
+                raise OSError("connection refused")
+
+        transport = _FailingTransport()
+        source = NomadSource(
+            {
+                "base_url": "https://nomad.example.com:4646",
+                "allow_private": True,
+                "transport": transport,
+            },
+        )
+        result = source.health()
+        assert result["ok"] is False
+        assert "unhealthy" in result["detail"]
+
+    def test_health_reports_no_token(self, monkeypatch):
+        from general_ludd.connectors.nomad import NomadSource
+
+        source = NomadSource(
+            {
+                "base_url": "https://nomad.example.com:4646",
+                "allow_private": True,
+                "token_env": "NOMAD_NONEXISTENT_VAR",
+                "transport": MockHttpTransport(status_code=200, body={"KnownLeader": True}),
+            },
+        )
+        result = source.health()
+        assert isinstance(result, dict)
+
 
 # ============================================================================
 # 3. Podman Connector
@@ -372,16 +974,18 @@ class TestPodmanConnector:
 
         resp = self._MockPodmanResponse(
             status=200,
-            body=_json.dumps([
-                {
-                    "Id": "abc123",
-                    "Names": ["/web"],
-                    "Image": "nginx:latest",
-                    "State": "running",
-                    "Status": "Up 2 hours",
-                    "Created": 1700000000,
-                }
-            ]).encode(),
+            body=_json.dumps(
+                [
+                    {
+                        "Id": "abc123",
+                        "Names": ["/web"],
+                        "Image": "nginx:latest",
+                        "State": "running",
+                        "Status": "Up 2 hours",
+                        "Created": 1700000000,
+                    }
+                ]
+            ).encode(),
         )
         source = PodmanSource(transport=lambda *a, **kw: resp)
         records = source.query({})
@@ -446,14 +1050,18 @@ class TestContainerdConnector:
             nonlocal call_count
             call_count += 1
             if "ps" in str(argv):
-                return _json.dumps({
-                    "items": [{
-                        "id": "abc",
-                        "metadata": {"name": "web", "namespace": "default"},
-                        "state": "CONTAINER_RUNNING",
-                        "createdAt": "1700000000000000000",
-                    }]
-                })
+                return _json.dumps(
+                    {
+                        "items": [
+                            {
+                                "id": "abc",
+                                "metadata": {"name": "web", "namespace": "default"},
+                                "state": "CONTAINER_RUNNING",
+                                "createdAt": "1700000000000000000",
+                            }
+                        ]
+                    }
+                )
             return _json.dumps({})
 
         source = ContainerdSource(runner=_runner)
@@ -509,10 +1117,12 @@ class TestDmesgConnector:
 
         result = MockRunResult(
             returncode=0,
-            stdout=_json.dumps([
-                {"msg": "Initializing cgroup subsys cpuset", "ts": 1, "prio": 6, "fac": "kern"},
-                {"msg": "Command line: BOOT_IMAGE=/vmlinuz", "ts": 2, "prio": 6, "fac": "kern"},
-            ]),
+            stdout=_json.dumps(
+                [
+                    {"msg": "Initializing cgroup subsys cpuset", "ts": 1, "prio": 6, "fac": "kern"},
+                    {"msg": "Command line: BOOT_IMAGE=/vmlinuz", "ts": 2, "prio": 6, "fac": "kern"},
+                ]
+            ),
         )
         source = DmesgSource(runner=lambda argv: result)
         records = source.query({})
@@ -664,11 +1274,13 @@ class TestRedfishConnector:
         monkeypatch.setenv("RF_USR", "admin")
         monkeypatch.setenv("RF_PWD", "pass")  # pragma: allowlist secret
         try:
-            source = RedfishSource({
-                "base_url": "https://idrac.example.com",
-                "username_env": "RF_USR",
-                "password_env": "RF_PWD",  # pragma: allowlist secret
-            })
+            source = RedfishSource(
+                {
+                    "base_url": "https://idrac.example.com",
+                    "username_env": "RF_USR",
+                    "password_env": "RF_PWD",  # pragma: allowlist secret
+                }
+            )
             assert source.KIND == "metrics"
         finally:
             del os.environ["RF_USR"], os.environ["RF_PWD"]
@@ -776,12 +1388,14 @@ class TestSnmpConnector:
     def test_constructs_custom_config(self, monkeypatch):
         from general_ludd.connectors.snmp import SnmpSource
 
-        source = SnmpSource({
-            "host": "192.168.1.1",
-            "community": "public",
-            "oid": "1.3.6.1.2.1.1.3",
-            "name": "router-uptime",
-        })
+        source = SnmpSource(
+            {
+                "host": "192.168.1.1",
+                "community": "public",
+                "oid": "1.3.6.1.2.1.1.3",
+                "name": "router-uptime",
+            }
+        )
         assert source.name == "router-uptime"
 
     def test_health_ok_with_injected_getter(self, monkeypatch):
@@ -842,14 +1456,16 @@ class TestWindowsDefenderConnector:
         from general_ludd.connectors.windows_defender import WindowsDefenderSource
 
         def _runner(cmd: str) -> str:
-            return _json.dumps([
-                {
-                    "ThreatName": "Trojan:Win32/Test",
-                    "Severity": "5",
-                    "ActionSuccess": False,
-                    "InitialDetectionTime": "2025-01-01T12:00:00Z",
-                }
-            ])
+            return _json.dumps(
+                [
+                    {
+                        "ThreatName": "Trojan:Win32/Test",
+                        "Severity": "5",
+                        "ActionSuccess": False,
+                        "InitialDetectionTime": "2025-01-01T12:00:00Z",
+                    }
+                ]
+            )
 
         source = WindowsDefenderSource(runner=_runner)
         records = source.query({})
@@ -882,11 +1498,13 @@ class TestWindowsEventLogConnector:
     def test_constructs_custom_config(self, monkeypatch):
         from general_ludd.connectors.windows_event_log import WindowsEventLogSource
 
-        source = WindowsEventLogSource({
-            "log_name": "Security",
-            "name": "sec-log",
-            "max_events": 100,
-        })
+        source = WindowsEventLogSource(
+            {
+                "log_name": "Security",
+                "name": "sec-log",
+                "max_events": 100,
+            }
+        )
         assert source.name == "sec-log"
 
     def test_health_ok_with_runner(self, monkeypatch):
@@ -907,15 +1525,17 @@ class TestWindowsEventLogConnector:
         from general_ludd.connectors.windows_event_log import WindowsEventLogSource
 
         def _runner(cmd: str) -> str:
-            return _json.dumps([
-                {
-                    "Id": 4624,
-                    "LevelDisplayName": "Information",
-                    "TimeCreated": "2025-01-01T12:00:00.0000000Z",
-                    "Message": "An account was successfully logged on",
-                    "ProviderName": "Microsoft-Windows-Security-Auditing",
-                }
-            ])
+            return _json.dumps(
+                [
+                    {
+                        "Id": 4624,
+                        "LevelDisplayName": "Information",
+                        "TimeCreated": "2025-01-01T12:00:00.0000000Z",
+                        "Message": "An account was successfully logged on",
+                        "ProviderName": "Microsoft-Windows-Security-Auditing",
+                    }
+                ]
+            )
 
         source = WindowsEventLogSource({"log_name": "Security"}, runner=_runner)
         records = source.query({})
@@ -985,11 +1605,13 @@ class TestMacOSLogConnector:
     def test_constructs_custom_config(self, monkeypatch):
         from general_ludd.connectors.macos_log import MacOSLogSource
 
-        source = MacOSLogSource({
-            "predicate": 'process == "opendirectoryd"',
-            "name": "od-log",
-            "last": "10m",
-        })
+        source = MacOSLogSource(
+            {
+                "predicate": 'process == "opendirectoryd"',
+                "name": "od-log",
+                "last": "10m",
+            }
+        )
         assert source.name == "od-log"
 
     def test_health_ok_with_runner(self, monkeypatch):
@@ -1003,18 +1625,20 @@ class TestMacOSLogConnector:
         from general_ludd.connectors.macos_log import MacOSLogSource
 
         def _runner(argv: list[str]) -> str:
-            return _json.dumps([
-                {
-                    "eventMessage": "Login attempt",
-                    "processImagePath": "/usr/libexec/opendirectoryd",
-                    "timestamp": "2025-01-01 12:00:00.000000-0500",
-                },
-                {
-                    "eventMessage": "Authentication succeeded",
-                    "processImagePath": "/usr/libexec/opendirectoryd",
-                    "timestamp": "2025-01-01 12:00:01.000000-0500",
-                },
-            ])
+            return _json.dumps(
+                [
+                    {
+                        "eventMessage": "Login attempt",
+                        "processImagePath": "/usr/libexec/opendirectoryd",
+                        "timestamp": "2025-01-01 12:00:00.000000-0500",
+                    },
+                    {
+                        "eventMessage": "Authentication succeeded",
+                        "processImagePath": "/usr/libexec/opendirectoryd",
+                        "timestamp": "2025-01-01 12:00:01.000000-0500",
+                    },
+                ]
+            )
 
         source = MacOSLogSource({"predicate": 'process == "opendirectoryd"'}, runner=_runner)
         records = source.query({})
@@ -1058,10 +1682,12 @@ class TestMacOSSecurityConnector:
         from general_ludd.connectors.macos_security import MacOSSecuritySource
 
         def _runner(argv: list[str]) -> str:
-            return _json.dumps([
-                {"event": "AUTHENTICATION_SUCCEEDED", "user": "admin", "timestamp": "2025-01-01T12:00:00Z"},
-                {"event": "GATEKEEPER_OVERRIDE", "user": "admin", "timestamp": "2025-01-01T12:01:00Z"},
-            ])
+            return _json.dumps(
+                [
+                    {"event": "AUTHENTICATION_SUCCEEDED", "user": "admin", "timestamp": "2025-01-01T12:00:00Z"},
+                    {"event": "GATEKEEPER_OVERRIDE", "user": "admin", "timestamp": "2025-01-01T12:01:00Z"},
+                ]
+            )
 
         source = MacOSSecuritySource(runner=_runner)
         records = source.query({})
