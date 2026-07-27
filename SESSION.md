@@ -8,9 +8,9 @@
 
 ## Current Gate Status (2026-07-27)
 <!-- gate:begin -->
-- lint: not re-run on HEAD 88a8f559
-- typecheck: not re-run on HEAD
-- gate: not re-run on HEAD
+- lint: not re-run on HEAD c3894d0d
+- typecheck: not re-run on HEAD c3894d0d
+- gate: not re-run on HEAD c3894d0d
 
 <!-- gate:end -->
 
@@ -21,10 +21,12 @@
 - **HEAD: `c3894d0d`** on `development` branch (VERIFIED on sandboxcom)
 - **Version: 0.1.0-beta.3** (pyproject.toml, __init__.py, README.md, CHANGELOG)
 - **Push status: PUSHED + VERIFIED** — `c3894d0d` on sandboxcom/development
-- **CI: TRIGGERED** — CI run triggered on HEAD `c3894d0d`
+- **CI: QUEUED** — CI run triggered on HEAD `c3894d0d`
 - **Release readiness: v0.1.0-beta.3 READY, blocked on CI green**
 - **Gate-lite: pre-existing failures only** — lint 0, typecheck ≤ baseline, collect OK
 - **Working tree: CLEAN**
+- **Stop-prevention: 4 patterns codified at 3 layers** — CHECKING_WHAT_LEFT_RE + 3 AGENTS anti-patterns + under-dispatch-floor, all enforcement verified active
+- **Under-dispatch-floor: complete** — text blocked at <10 dispatches when work pending
 
 ### Completed this session
 
@@ -49,22 +51,23 @@
 | S54.17 | Under-dispatch-floor enforcement: text blocked when <10 dispatches and work pending | commit `dd6dae1f` |
 | S54.18 | Under-dispatch-floor codification complete: 3-layer (plugin + AGENTS + tests), CI triggered, release blocked on CI green | commit `080fc0e2` |
 | S54.19 | SESSION.md final — c3894d0d, release ready, under-dispatch-floor complete | commit `c3894d0d` |
+| S54.20 | Stop-prevention 4 patterns codified at 3 layers (CHECKING_WHAT_LEFT_RE + 3 AGENTS anti-patterns + under-dispatch-floor) — all enforcement verified active | commit `db04af2b` |
+| S54.21 | SESSION.md update — HEAD c3894d0d, CI queued, under-dispatch-floor complete, stop-prevention 4 patterns at 3 layers, release blocked on CI green | (current) |
 
-### Stop-prevention codification (S54.11)
+### Stop-prevention codification — 4 patterns at 3 layers (S54.11, S54.20)
 
-The `enforce-stop.ts` `CHECKING_WHAT_LEFT_RE` regex now mechanically detects and blanks
-"let me [check/see/look/survey] what's [left/remaining/pending]" phrasing — a
-well-known dispatch-avoidance pattern. Three additional forbidden anti-patterns
-codified in AGENTS.md Anti-Stop Patterns:
-1. "Let me check what's left" / "Let me see what remains" — surveying is dispatch avoidance
-2. Pause Between Dispatch Waves — text-only between waves is a stop-by-another-name
-3. Subagents-Returned Summary — summarizing results instead of dispatching next wave
+Four distinct stop-prevention anti-patterns now mechanically enforced in `enforce-stop.ts`:
+
+1. **CHECKING_WHAT_LEFT_RE regex**: "let me [check/see/look/survey] what's [left/remaining/pending]" — surveying is dispatch avoidance. Blanked at text.complete.
+2. **Pause Between Dispatch Waves**: text-only between waves is a stop-by-another-name. Blocked when <10 dispatches and pending work exists.
+3. **Subagents-Returned Summary**: summarizing results instead of dispatching next wave. Blanked at text.complete.
+4. **Under-Dispatch Floor**: responses with 0 dispatches while work is pending. Blocked at text.complete.
 
 | Layer | Mechanism | Status |
 |-------|-----------|--------|
-| AGENTS.md | 3 new anti-patterns in Anti-Stop Patterns section | DONE |
-| Plugin | `CHECKING_WHAT_LEFT_RE` regex in enforce-stop.ts text.complete hook | DONE |
-| Runtime tests | 2 new behavioral tests in test_hook_runtime.py | DONE |
+| AGENTS.md | 4 anti-patterns in Anti-Stop Patterns section + Under-Dispatch Floor section | DONE |
+| Plugin | `CHECKING_WHAT_LEFT_RE` regex + under-dispatch-floor count check in enforce-stop.ts text.complete hook | DONE |
+| Runtime tests | 2 behavioral tests in test_hook_runtime.py + structural pin on under-dispatch-floor AGENTS section | DONE |
 
 ### Enforcement restart checker (S54.13)
 
@@ -101,7 +104,7 @@ Run via `make check-plugin-restart-needed`.
 | Release pipeline contract | 8 | ALL PASSING |
 | VALID_TRANSITIONS state machine | — | FIXED (commit `6fbf5f73`) |
 
-### Under-dispatch-floor codification (S54.16-S54.17)
+### Under-dispatch-floor codification (S54.16-S54.18)
 
 The `enforce-stop.ts` text.complete hook now mechanically detects and blanks text-only
 responses when fewer than 10 dispatches have been made and pending work exists (TASKS.md
@@ -111,17 +114,19 @@ is a stop-by-another-name — summarising instead of dispatching. Codified at 3 
 | Layer | Mechanism | Status |
 |-------|-----------|--------|
 | AGENTS.md | Under-Dispatch Floor anti-pattern ("stop-by-another-name with <10 dispatches") | DONE (bab26266) |
-| Plugin | `enforce-stop.ts` text.complete: text blocked when <10 dispatches and pending work exists | DONE (dd6dae1f) |
+| Plugin | `enforce-stop.ts` text.complete: text blocked when <10 dispatches and pending work exists | DONE (dd6dae1f, 080fc0e2) |
 | Runtime tests | Structural pin on AGENTS.md under-dispatch-floor section + enforcement behavior | DONE |
 
 ### Pre-release blockers (2026-07-27)
 
 | Blocker | Status |
 |---------|--------|
-| CI green on development HEAD `c3894d0d` | TRIGGERED |
+| CI green on development HEAD `c3894d0d` | QUEUED |
 | Local gate green | PRE-EXISTING FAILURES ONLY |
 | `make release-cut TAG=v0.1.0-beta.3` | BLOCKED on CI green |
 | `make verify-release-completeness` 12/12 | BLOCKED on release-cut |
+| Stop-prevention 4 patterns at 3 layers | COMPLETE (S54.20) |
+| Under-dispatch-floor enforcement | COMPLETE (S54.18) |
 
 ### Next
 
@@ -129,7 +134,7 @@ is a stop-by-another-name — summarising instead of dispatching. Codified at 3 
 2. `make release-cut TAG=v0.1.0-beta.3 MSG='beta.3 release: governance 16 domains (759 tests), memory consolidation (97 tests), branch coverage e2e (137 tests), connector batch5 (158/158), S1/S2 stub closure (120 tests), task tracking enforcement (46 tests), ci-await+stop-prevention+under-dispatch-floor codified (3-layer each), release pipeline E2E (37 tests), VALID_TRANSITIONS fix, lint fix stop-prevention codification, enforcement restart checker'`
 3. `make verify-release-completeness TAG=v0.1.0-beta.3`
 
-- **Last Updated: 2026-07-27 — Session 54 (FINAL).** HEAD `c3894d0d` on `development` (VERIFIED). CI TRIGGERED. 19 commits this session. Under-dispatch-floor codified at 3 layers (AGENTS.md policy + enforce-stop.ts plugin + runtime tests). Stop-prevention verified active (CHECKING_WHAT_LEFT_RE regex + 3 AGENTS anti-patterns + 2 runtime tests). Enforcement restart checker tool created. 506+ new tests across 17 files all passing. Category breakout: branch coverage 137 tests (5 files), governance 759 tests (16 domains), memory consolidation 97 tests, S1/S2 stub closure 120 tests, task tracking enforcement 46 tests, connector batch5 158 tests. ci-await codified at 3 layers. VALID_TRANSITIONS fixed. Release pipeline E2E 37 tests + contract 8 tests all passing. Gate-lite: pre-existing failures only. Release v0.1.0-beta.3 ready, blocked on CI green.
+- **Last Updated: 2026-07-27 — Session 54 (FINAL).** HEAD `c3894d0d` on `development` (VERIFIED). CI QUEUED. 21 commits this session. Stop-prevention 4 patterns codified at 3 layers (CHECKING_WHAT_LEFT_RE regex + 3 AGENTS anti-patterns + under-dispatch-floor). Under-dispatch-floor complete (text blocked at <10 dispatches when work pending). Enforcement restart checker tool created. 506+ new tests across 17 files all passing. Category breakout: branch coverage 137 tests (5 files), governance 759 tests (16 domains), memory consolidation 97 tests, S1/S2 stub closure 120 tests, task tracking enforcement 46 tests, connector batch5 158 tests. ci-await codified at 3 layers. VALID_TRANSITIONS fixed. Release pipeline E2E 37 tests + contract 8 tests all passing. Gate-lite: pre-existing failures only. Release v0.1.0-beta.3 ready, blocked on CI green.
 
 ---
 
