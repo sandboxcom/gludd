@@ -27,7 +27,7 @@ class TestS3PipelineGateRespectsConfig:
         cfg.floor = 2
         cfg.target = 5
         cfg.gate_debounce_s = 60.0
-        cfg.max_worktrees = 4
+        cfg.max_worktrees = 5
         cfg.dispatch_interval_s = 1.0
         cfg.integrate_interval_s = 1.0
         cfg.gate_poll_interval_s = 0.5
@@ -50,7 +50,7 @@ class TestS3PipelineGateRespectsConfig:
         cfg.floor = 2
         cfg.target = 5
         cfg.gate_debounce_s = 60.0
-        cfg.max_worktrees = 4
+        cfg.max_worktrees = 5
         cfg.dispatch_interval_s = 1.0
         cfg.integrate_interval_s = 1.0
         cfg.gate_poll_interval_s = 0.5
@@ -82,7 +82,7 @@ class TestS3PipelineGateRespectsConfig:
 
         import asyncio
 
-        result = asyncio.get_event_loop().run_until_complete(ctrl._gate_lane._gate_fn())
+        result = asyncio.run(ctrl._gate_lane._gate_fn())
         assert result is True
 
 

@@ -158,7 +158,7 @@ class TestCmdCreate:
         assert "acct-123" in captured.out
 
     def test_text_output(self, capsys):
-        args = MagicMock()
+        args = argparse.Namespace()
         args.daemon_url = "http://localhost:8000"
         args.provider = "aws"
         args.budget = 10.0
