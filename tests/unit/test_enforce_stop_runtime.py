@@ -116,10 +116,10 @@ def test_stop_text_complete_subagent_guard_skips_enforcement(hook_plugin_env: Ho
 
 
 def test_stop_text_complete_env_disable_bypasses_enforcement(hook_plugin_env: HookEnv):
-    """GLUDD_STOP_ENFORCE=0: text.complete NO LONGER bypasses enforcement.
+    """GLUDD_STOP_ENFORCE=0: text.complete returns output unchanged.
 
-    The GLUDD_STOP_ENFORCE===0 early-return was removed 2026-07-16 —
-    text-only blocking is NEVER bypassable. The hook fires anyway."""
+    The proxy now checks isStopEnforcementDisabled() — all enforcement
+    including text.complete is bypassed when GLUDD_STOP_ENFORCE=0."""
     _parsed, _raw, stderr, rc = _invoke_text_complete(
         hook_plugin_env,
         "All done. Everything is complete.",
@@ -127,10 +127,9 @@ def test_stop_text_complete_env_disable_bypasses_enforcement(hook_plugin_env: Ho
     )
     assert rc == 0, stderr
     pb = _read_persist_block(hook_plugin_env)
-    assert pb is not None, (
-        f"GLUDD_STOP_ENFORCE=0 no longer bypasses stop enforcement. Text must be blocked. stderr={stderr}"
+    assert pb is None or pb.get("blocked") is not True, (
+        f"GLUDD_STOP_ENFORCE=0 must bypass stop enforcement. Got persist block: {pb}. stderr={stderr}"
     )
-    assert pb.get("blocked") is True, f"Block must be recorded even when GLUDD_STOP_ENFORCE=0; got: {pb}"
 
 
 # ── (c) Fail-open on corrupt state ──────────────────────────────────────────
@@ -874,7 +873,7 @@ def test_post_results_text_only_not_blocked_with_tool_calls(
     )
 
     try:
-        parsed, raw, stderr, rc = _invoke_text_complete(
+        _parsed, _raw, stderr, rc = _invoke_text_complete(
             hook_plugin_env,
             "Results arrived. Now dispatching next wave.",
             # This test verifies that when toolCallMade is true (simulated

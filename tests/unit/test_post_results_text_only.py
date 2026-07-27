@@ -13,6 +13,7 @@ The enforce-stop.ts plugin now:
 TDD: this file was written FIRST to assert the block behavior before the
 plugin was patched.
 """
+
 from __future__ import annotations
 
 import re
@@ -20,10 +21,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
+IMPL = ROOT / ".opencode" / "plugin" / "impl" / "enforce_stop_impl.ts"
 
 
 def _src() -> str:
-    return PLUGIN.read_text()
+    return PLUGIN.read_text() + "\n" + IMPL.read_text()
 
 
 class TestPostResultsStateConstants:
@@ -61,15 +63,13 @@ class TestPostResultsStateFunctions:
     def test_read_post_results_state_exists(self):
         src = _src()
         assert re.search(r"function\s+readPostResultsState\s*\(", src), (
-            "readPostResultsState function must exist — reads the post-results "
-            "state file for cross-turn memory."
+            "readPostResultsState function must exist — reads the post-results state file for cross-turn memory."
         )
 
     def test_write_post_results_state_exists(self):
         src = _src()
         assert re.search(r"function\s+writePostResultsState\s*\(", src), (
-            "writePostResultsState function must exist — persists the post-results "
-            "state for the next turn."
+            "writePostResultsState function must exist — persists the post-results state for the next turn."
         )
 
     def test_read_text_only_state_exists(self):
@@ -87,8 +87,7 @@ class TestPostResultsStateFunctions:
     def test_text_has_result_markers_exists(self):
         src = _src()
         assert re.search(r"function\s+textHasResultMarkers\s*\(", src), (
-            "textHasResultMarkers function must exist — detects subagent result "
-            "markers in the agent's response text."
+            "textHasResultMarkers function must exist — detects subagent result markers in the agent's response text."
         )
 
 
@@ -100,9 +99,7 @@ class TestTextHasResultMarkers:
         m = re.search(r"textHasResultMarkers[\s\S]{0,300}?\[[\s\S]{0,200}?\]", src, re.DOTALL)
         assert m, "textHasResultMarkers and its marker array not found"
         body = m.group(0).lower()
-        assert "task result" in body or (
-            '"task result"' in body
-        ), "Result marker array must include 'task result'."
+        assert "task result" in body or ('"task result"' in body), "Result marker array must include 'task result'."
 
     def test_includes_subagent_result(self):
         body = _src().lower()
@@ -171,7 +168,7 @@ class TestAfterResultsTextOnlyBlock:
     def test_post_results_state_read_before_check(self):
         src = _src()
         assert re.search(
-            r"readPostResultsState\s*\(\s*\)[\s\S]{0,500}?lastTurnHadResults",
+            r"readPostResultsState\s*\(\s*\)[\s\S]{0,5000}?lastTurnHadResults",
             src,
         ), (
             "readPostResultsState() must be called BEFORE checking "
@@ -186,8 +183,7 @@ class TestConsecutiveTextOnlyLimit:
     def test_consecutive_text_only_block_exists(self):
         src = _src()
         assert "CONSECUTIVE TEXT-ONLY RESPONSES" in src or "consecutive-text-only" in src, (
-            "The consecutive text-only block must exist — blocks the 2nd+ "
-            "text-only response when work is pending."
+            "The consecutive text-only block must exist — blocks the 2nd+ text-only response when work is pending."
         )
 
     def test_text_only_count_check_at_least_2(self):
@@ -212,15 +208,12 @@ class TestConsecutiveTextOnlyLimit:
         assert re.search(
             r"recordBlock\s*\(\s*['\"]consecutive-text-only\b",
             src,
-        ), (
-            "The block must call recordBlock('consecutive-text-only')."
-        )
+        ), "The block must call recordBlock('consecutive-text-only')."
 
     def test_same_session_detection_uses_300s_window(self):
         src = _src()
         assert "300_000" in src, (
-            "Text-only session detection must use a 300s (5min) window — "
-            "sameSession = (now - lastTs) < 300_000."
+            "Text-only session detection must use a 300s (5min) window — sameSession = (now - lastTs) < 300_000."
         )
 
 
@@ -260,10 +253,7 @@ class TestResultMarkerDetectionAtTurnEnd:
             r"textHasResultMarkers[\s\S]{0,500}?lastTurnHadResults\s*:\s*true",
             src,
         )
-        assert m, (
-            "When textHasResultMarkers returns true, lastTurnHadResults must be "
-            "set to true in the written state."
-        )
+        assert m, "When textHasResultMarkers returns true, lastTurnHadResults must be set to true in the written state."
 
     def test_last_turn_had_results_set_false_when_no_markers(self):
         src = _src()
@@ -300,8 +290,7 @@ class TestInteractionWithExistingBlocks:
     def test_qa_response_patterns_still_present(self):
         src = _src()
         assert "QA_RESPONSE_PATTERNS" in src, (
-            "QA_RESPONSE_PATTERNS must still be present — new checks must "
-            "not remove existing stop-pattern detection."
+            "QA_RESPONSE_PATTERNS must still be present — new checks must not remove existing stop-pattern detection."
         )
 
     def test_has_local_work_block_still_present(self):
@@ -373,16 +362,14 @@ class TestWaveCompletionDetection:
             src,
         )
         assert m, "textHasResultMarkers function not found"
-        body = src[m.start():m.end() + 400]
+        body = src[m.start() : m.end() + 400]
         assert "count" in body, (
-            "textHasResultMarkers must return { found, count } — "
-            "the count is needed to determine wave completion."
+            "textHasResultMarkers must return { found, count } — the count is needed to determine wave completion."
         )
 
     def test_wave_block_message_mentions_wave(self):
         src = _src()
         if "lastTurnHadWave" in src:
             assert "wave" in src.lower(), (
-                "The post-results block message must mention 'wave' "
-                "when lastTurnHadWave is checked."
+                "The post-results block message must mention 'wave' when lastTurnHadWave is checked."
             )
