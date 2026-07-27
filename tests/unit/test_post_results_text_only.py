@@ -301,6 +301,102 @@ class TestInteractionWithExistingBlocks:
         )
 
 
+class TestUnderDispatchFloor:
+    """The text.complete hook must block text when <10 dispatches and work is pending."""
+
+    def test_under_dispatch_floor_section_exists(self):
+        src = _src()
+        assert "UNDER-DISPATCH FLOOR" in src, (
+            "enforce_stop_impl.ts must contain an UNDER-DISPATCH FLOOR section "
+            "- blocks text when dispatchCount is 1-9 and work is pending."
+        )
+
+    def test_dispatch_count_range_check(self):
+        src = _src()
+        m = re.search(
+            r"turnState\.dispatchCount\s*>\s*0[\s\S]{0,200}turnState\.dispatchCount\s*<\s*10",
+            src,
+        )
+        assert m, (
+            "The under-dispatch-floor block must check dispatchCount > 0 AND "
+            "dispatchCount < 10 (agents with 1-9 dispatches while work pending)."
+        )
+
+    def test_under_dispatch_floor_uses_record_block(self):
+        src = _src()
+        assert re.search(
+            r'recordBlock\s*\(\s*["\']under-dispatch-floor["\']',
+            src,
+        ), "The block must call recordBlock('under-dispatch-floor')."
+
+    def test_under_dispatch_floor_uses_record_blanked_response(self):
+        src = _src()
+        assert re.search(
+            r'recordBlankedResponse\s*\(\s*["\']under-dispatch-floor["\']',
+            src,
+        ), "The block must call recordBlankedResponse('under-dispatch-floor')."
+
+    def test_under_dispatch_floor_block_message_contains_floor_number(self):
+        src = _src()
+        assert "Floor is 10" in src, (
+            "The block message must state 'Floor is 10' so the agent knows exactly how many dispatches are required."
+        )
+
+    def test_under_dispatch_floor_block_message_contains_dispatch_count(self):
+        src = _src()
+        assert re.search(
+            r"String\s*\(\s*turnState\.dispatchCount\s*\)[\s\S]{0,500}Floor is 10",
+            src,
+        ), "The block message must include turnState.dispatchCount so the agent sees its current (insufficient) count."
+
+    def test_git_shipping_phrase_exemption(self):
+        src = _src()
+        m = re.search(
+            r"GIT_SHIPPING_PHRASE[\s\S]{0,300}ship-commit",
+            src,
+        )
+        assert m, "GIT_SHIPPING_PHRASE regex must exist for git-shipping exemption."
+        body = m.group(0).lower()
+        for phrase in ["ship-commit", "git-commit", "batch-push", "release-cut"]:
+            assert phrase in body, (
+                f"GIT_SHIPPING_PHRASE must include '{phrase}' — git operations that legitimately have <10 dispatches."
+            )
+
+    def test_git_shipping_phrase_tested_before_block(self):
+        src = _src()
+        m = re.search(
+            r"GIT_SHIPPING_PHRASE[\s\S]{0,500}recordBlock\s*\(.under-dispatch-floor",
+            src,
+        )
+        assert m, (
+            "GIT_SHIPPING_PHRASE must gate the under-dispatch block — "
+            "the .test(text) call must precede recordBlock('under-dispatch-floor')."
+        )
+
+    def test_under_dispatch_floor_checks_pending_work(self):
+        src = _src()
+        assert "workState.hasPendingWork" in src or "forceDispatchDirective" in src, (
+            "The under-dispatch-floor block must check workState.hasPendingWork — only fires when work is pending."
+        )
+
+    def test_under_dispatch_floor_exempts_has_work_artifact(self):
+        src = _src()
+        assert "hasWorkArtifact" in src, (
+            "The under-dispatch-floor block must respect hasWorkArtifact — already-codified results should not block."
+        )
+
+    def test_under_dispatch_floor_before_consecutive_text_only(self):
+        src = _src()
+        idxUnder = src.find("UNDER-DISPATCH FLOOR")
+        idxConsec = src.find("CONSECUTIVE TEXT-ONLY RESPONSES")
+        assert idxUnder >= 0, "UNDER-DISPATCH FLOOR section not found"
+        assert idxConsec >= 0, "CONSECUTIVE TEXT-ONLY RESPONSES section not found"
+        assert idxUnder < idxConsec, (
+            "UNDER-DISPATCH FLOOR must appear BEFORE CONSECUTIVE TEXT-ONLY "
+            "RESPONSES so the dispatch-floor check fires first."
+        )
+
+
 class TestWaveCompletionDetection:
     """Wave-completion detection: ≥3 result markers in one turn = lastTurnHadWave."""
 
