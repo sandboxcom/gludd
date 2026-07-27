@@ -24,7 +24,7 @@
 - **CI: PENDING** — run 30233686000 on `6fbf5f73`, status='pending'
 - **Release readiness: BLOCKED** on CI green for release-cut
 - **Gate: not re-run on HEAD**
-- **Working tree: DIRTY** — SESSION.md update in progress
+- **Working tree: CLEAN**
 
 ### Completed this session
 
