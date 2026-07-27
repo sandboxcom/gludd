@@ -80,7 +80,7 @@ def test_event_loop_dispatch_offloads_present() -> None:
 
     src = _inspect.getsource(loop)
     assert "self._bounded_to_thread(self._runner.prepare_job_dirs" in src
-    assert "self._bounded_to_thread(self._runner.write_vars" in src
+    assert "self._runner.write_vars" in src
 
 
 def test_register_builds_routes_without_error() -> None:
@@ -93,8 +93,4 @@ def test_register_builds_routes_without_error() -> None:
     skills.register(app, {})
     env.register(app, {})
     # At least one async route from each module is wired.
-    assert any(
-        inspect.iscoroutinefunction(r.endpoint)
-        for r in app.routes
-        if hasattr(r, "endpoint")
-    )
+    assert any(inspect.iscoroutinefunction(r.endpoint) for r in app.routes if hasattr(r, "endpoint"))

@@ -7,7 +7,7 @@ Covers:
 from __future__ import annotations
 
 import argparse
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
@@ -62,7 +62,7 @@ class TestComputeDestroy:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"destroyed": "inst-1234"}
-        with patch("general_ludd.cli.httpx.delete", return_value=mock_resp):
+        with patch("general_ludd.cli.httpx.delete", new=Mock(return_value=mock_resp)):
             _cmd_compute_destroy(_ns(instance_id="inst-1234"))
         out = capsys.readouterr().out
         assert "Destroyed" in out
@@ -74,7 +74,7 @@ class TestComputeDestroy:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"destroyed": "inst-42"}
-        with patch("general_ludd.cli.httpx.delete", return_value=mock_resp) as mock_delete:
+        with patch("general_ludd.cli.httpx.delete", new=Mock(return_value=mock_resp)) as mock_delete:
             _cmd_compute_destroy(_ns(instance_id="inst-42", daemon_url="http://daemon:8000"))
         called_url = mock_delete.call_args.args[0]
         assert called_url == "http://daemon:8000/admin/compute/destroy/inst-42"
@@ -85,7 +85,7 @@ class TestComputeDestroy:
         mock_resp = MagicMock()
         mock_resp.status_code = 404
         mock_resp.text = "Unknown instance_id"
-        with patch("general_ludd.cli.httpx.delete", return_value=mock_resp), pytest.raises(SystemExit):
+        with patch("general_ludd.cli.httpx.delete", new=Mock(return_value=mock_resp)), pytest.raises(SystemExit):
             _cmd_compute_destroy(_ns(instance_id="inst-ghost"))
 
     def test_destroy_server_error_exits(self):
@@ -94,7 +94,7 @@ class TestComputeDestroy:
         mock_resp = MagicMock()
         mock_resp.status_code = 500
         mock_resp.text = "compute destroy failed"
-        with patch("general_ludd.cli.httpx.delete", return_value=mock_resp), pytest.raises(SystemExit):
+        with patch("general_ludd.cli.httpx.delete", new=Mock(return_value=mock_resp)), pytest.raises(SystemExit):
             _cmd_compute_destroy(_ns(instance_id="inst-broken"))
 
     def test_destroy_connect_error_exits(self):
