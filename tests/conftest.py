@@ -27,6 +27,7 @@ or per-test ``os.environ`` patches:
    so the daemon's CIDR allowlist (a real security control) can stay armed
    during tests instead of 403-ing the in-process transport.
 """
+
 from __future__ import annotations
 
 import functools
@@ -36,6 +37,7 @@ import os
 import shutil
 import socket
 import sys
+import unittest.mock as _mock_mod
 from contextlib import suppress
 from pathlib import Path
 
@@ -49,6 +51,23 @@ import yaml as _yaml_mod
 for _name in ("CSafeLoader", "CSafeDumper", "CParser"):
     _yaml_mod.__dict__.pop(_name, None)
 del _yaml_mod, _name
+
+# Python 3.14: unittest.mock._is_async_obj triggers RecursionError when
+# creating NonCallableMock(spec_set=_CODE_ATTRS) because
+# inspect.iscoroutinefunction -> _has_code_flag -> _unwrap_partialmethod
+# enters infinite recursion on mock objects.
+# Workaround: wrap _is_async_obj to catch RecursionError.
+_orig_is_async_obj = _mock_mod._is_async_obj
+
+
+def _safe_is_async_obj(obj: object) -> bool:
+    try:
+        return _orig_is_async_obj(obj)
+    except RecursionError:
+        return False
+
+
+_mock_mod._is_async_obj = _safe_is_async_obj
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _SCRIPTS_DIR = _REPO_ROOT / "scripts"
@@ -176,9 +195,7 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
         return
     for item in items:
         if item.nodeid in entries:
-            item.add_marker(
-                pytest.mark.xfail(strict=True, reason=entries[item.nodeid])
-            )
+            item.add_marker(pytest.mark.xfail(strict=True, reason=entries[item.nodeid]))
 
 
 @pytest.fixture(autouse=True)
@@ -236,21 +253,23 @@ def _testclient_presents_loopback_host():
         _testclient_mod.TestClient.__init__ = original_init  # type: ignore[method-assign]
 
 
-_LEAKY_ENV_VARS: frozenset[str] = frozenset({
-    "AWS_ACCESS_KEY_ID",
-    "GLUDD_PSK",
-    "GLUDD_REQUIRE_AUTH",
-    "GLUDD_ALLOW_NO_AUTH",
-    "GLUDD_WEB_FETCH_ALLOWED_DOMAINS",
-    "DELETION_REASON",
-    "GLUDD_DELETION_GATE_THRESHOLD",
-    "GL_CONFIG_DIR",
-    "DATABASE_URL",
-    "GLUDD_MT_BACKLOG",
-    "GLUDD_XDIST_TRACE_LOG",
-    "ZAI_API_KEY",
-    "ZAI_BASE_URL",
-})
+_LEAKY_ENV_VARS: frozenset[str] = frozenset(
+    {
+        "AWS_ACCESS_KEY_ID",
+        "GLUDD_PSK",
+        "GLUDD_REQUIRE_AUTH",
+        "GLUDD_ALLOW_NO_AUTH",
+        "GLUDD_WEB_FETCH_ALLOWED_DOMAINS",
+        "DELETION_REASON",
+        "GLUDD_DELETION_GATE_THRESHOLD",
+        "GL_CONFIG_DIR",
+        "DATABASE_URL",
+        "GLUDD_MT_BACKLOG",
+        "GLUDD_XDIST_TRACE_LOG",
+        "ZAI_API_KEY",
+        "ZAI_BASE_URL",
+    }
+)
 
 
 @pytest.fixture(autouse=True)
@@ -351,6 +370,7 @@ def _reset_process_registry():
     the CI_GREEN_PLAN_2026-07-01.md A2 fix that was claimed-but-never-landed.
     """
     import general_ludd.process.registry as pr
+
     original = pr._DEFAULT_REGISTRY
     pr._DEFAULT_REGISTRY = None
     yield
@@ -370,6 +390,7 @@ def _reset_language_parsers():
     every test in the suite.
     """
     import general_ludd.code_intelligence.extractor as ex
+
     ex._LANGUAGE_PARSERS.clear()
     yield
     ex._LANGUAGE_PARSERS.clear()
@@ -385,6 +406,7 @@ def _reset_worker_runner():
     from test_worker_d09_d10_d35.py + test_worker_tool_dispatch.py.
     """
     import general_ludd.worker.app as wapp
+
     original = wapp._runner
     wapp._runner = None
     yield
@@ -411,28 +433,36 @@ def _reset_observability_singletons(monkeypatch: pytest.MonkeyPatch) -> None:
     exporter or the leak simply moves one layer deeper.
     """
     import general_ludd.integrity.scanner as scanner
+
     monkeypatch.setattr(scanner, "_INTEGRITY_KEY", None, raising=False)
 
     import general_ludd.observability.token_cost as tc
+
     monkeypatch.setattr(tc, "_shared_tracker", None, raising=False)
 
     import general_ludd.observability.timing as timing
+
     monkeypatch.setattr(timing, "_default_tracker", None, raising=False)
 
     from prometheus_client import CollectorRegistry
 
     import general_ludd.observability.metrics_exporter as me
+
     monkeypatch.setattr(me, "_metrics_exporter", None, raising=False)
     monkeypatch.setattr(me, "_current_trace_id", {}, raising=False)
-    monkeypatch.setattr(
-        me, "_REGISTRY", CollectorRegistry(auto_describe=False), raising=False
-    )
+    monkeypatch.setattr(me, "_REGISTRY", CollectorRegistry(auto_describe=False), raising=False)
 
 
-_A3_DENYLIST_PREFIXES: frozenset[str] = frozenset({
-    "live_pkg_", "livepkg", "rbpkg", "smg_",
-    "capability_policy", "fs_write_policy",
-})
+_A3_DENYLIST_PREFIXES: frozenset[str] = frozenset(
+    {
+        "live_pkg_",
+        "livepkg",
+        "rbpkg",
+        "smg_",
+        "capability_policy",
+        "fs_write_policy",
+    }
+)
 
 
 def _snapshot_sys_modules_and_path() -> tuple[dict[str, object], list[str]]:
@@ -442,9 +472,7 @@ def _snapshot_sys_modules_and_path() -> tuple[dict[str, object], list[str]]:
     return dict(sys.modules), list(sys.path)
 
 
-def _restore_sys_modules_and_path(
-    snap_modules: dict[str, object], snap_path: list[str]
-) -> None:
+def _restore_sys_modules_and_path(snap_modules: dict[str, object], snap_path: list[str]) -> None:
     """Restore sys.path verbatim; evict denylisted test-injected sys.modules keys;
     restore any replaced modules from the snapshot."""
     import sys
@@ -501,12 +529,8 @@ def _port_open(host: str, port: int, timeout: float = 0.2) -> bool:
         return False
 
 
-SLURM_AVAILABLE: bool = (
-    os.environ.get("SLURM_AVAILABLE") == "1" or shutil.which("sbatch") is not None
-)
-POSTGRES_AVAILABLE: bool = (
-    os.environ.get("POSTGRES_AVAILABLE") == "1" or _port_open("127.0.0.1", 5432)
-)
+SLURM_AVAILABLE: bool = os.environ.get("SLURM_AVAILABLE") == "1" or shutil.which("sbatch") is not None
+POSTGRES_AVAILABLE: bool = os.environ.get("POSTGRES_AVAILABLE") == "1" or _port_open("127.0.0.1", 5432)
 
 requires_slurm = pytest.mark.skipif(
     not SLURM_AVAILABLE,
@@ -586,17 +610,13 @@ def _patch_aiosqlite_worker_for_closed_loop_teardown():
                 result = function()
                 if future and not future.done():
                     with suppress(RuntimeError):
-                        future.get_loop().call_soon_threadsafe(
-                            _ac.set_result, future, result
-                        )
+                        future.get_loop().call_soon_threadsafe(_ac.set_result, future, result)
                 if result is _ac._STOP_RUNNING_SENTINEL:
                     break
             except BaseException as e:
                 if future and not future.done():
                     with suppress(RuntimeError):
-                        future.get_loop().call_soon_threadsafe(
-                            _ac.set_exception, future, e
-                        )
+                        future.get_loop().call_soon_threadsafe(_ac.set_exception, future, e)
 
     _ac._connection_worker_thread = _safe_worker
     yield
