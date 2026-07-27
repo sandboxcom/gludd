@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from general_ludd.abtest.compare import ABVerdict, decide, run_ab
 from general_ludd.abtest.runner import Result
