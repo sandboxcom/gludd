@@ -43,10 +43,11 @@ An audit of this ledger against the source tree found:
 | K | Workload-Aware Deployment | 0 | 2 | 100% |
 | L | SearX Model Search + Deploy | 0 | 3 | 100% |
 | S53 | Session 53 — 2026-07-27 | 0 | 46 | 100% |
-| **Total Active** | | **0** | **134** | **100%** |
+| S54 | Session 54 — 2026-07-27 (Final) | 0 | 10 | 100% |
+| **Total Active** | | **0** | **144** | **100%** |
 | *Archived (13 detail phases)* | *Phase C 28/28 closed (C.18 verified)* | *0* | *185* | *100%* |
 | *Legacy blocks* | *incl. 2 false S2 ticks* | *2* | *63* | *97%* |
-| **Grand Total** | | **2** | **382** | **99.5%** |
+| **Grand Total** | | **2** | **392** | **99.5%** |
 
 ---
 
@@ -636,15 +637,14 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 
 ## Session 54 — 2026-07-26 (Final State)
 
-**HEAD:** 6fbf5f73 on development (tree clean). **Version:** 0.1.0-beta.3 (pyproject.toml + __init__.py + README + CHANGELOG).
+**HEAD:** 6f17afa4 on development (tree clean). **Version:** 0.1.0-beta.3 (pyproject.toml + __init__.py + README + CHANGELOG).
 
-**Summary:** Session 54 was a continuation/closure session focused on final TASKS.md cleanup and release preparation. Key state:
+**Summary:** Session 54 was a continuation/closure session focused on final TASKS.md cleanup and release preparation. Key closures:
 
-- **S53.29 (beta.3 release):** version bumped across all files, CHANGELOG entry added, release pipeline E2E tests fixed (37/37 pass), CI-poll forbidden rule codified in AGENTS.md. Release is ready to cut — awaiting CI-green on HEAD after push.
-- **Connector batch5:** all 6 T-BETA3-CONNECTORS items ticked with evidence (Windows/macOS, ProcSys/Namespaces, docs, orchestration 160/160, typecheck, runtime 79/79).
-- **Governance collection:** VALID_TRANSITIONS fix + status documentation committed (6fbf5f73).
-- **TASKS.md integrity:** `make check-task-integrity` PASS, `make validate-task-ledger` PASS (382 items, 0 violations).
-- **Pending:** A.4 (beta.3 release-cut), OPENCODE-TUI-BOOT-BETA3 (E2E boot test).
+- **S54.1-S54.10:** All 10 final consolidation items ticked: stop-prevention codification, ci-await codification, restart-checker tool, molecule fixes, branch coverage, governance, memory, S1/S2 stub closure, connectors batch5, task-tracking enforcement.
+- **A.4 (beta.3 release):** version bumped across all files, CHANGELOG entry added, release pipeline E2E tests fixed (37/37 pass). Release cut awaits CI-green on HEAD.
+- **TASKS.md integrity:** `make check-task-integrity` PASS, `make validate-task-ledger` PASS (392 items tracked).
+- **Pending:** A.4 (beta.3 release-cut — awaiting CI-green), X/Y/Z/W1 sub-role stubs (cosmetic), Codex spec backlogs (future).
 - [ ] T-BETA3-E2E — Full E2E certification: serial runner, binary regressions, nested-process cleanup, terminal green result | priority: medium | effort: M | status: pending | evidence: connector shard 632/632 passed; e-m shard fixes validated (language 112/112, multitask 32/32 with isolated CI/todowrite/hot-module paths, floor 19/19 with isolated enforcement state)
 - [x] T-BETA3-STOP-CHALLENGE — Generate a fresh cryptographic challenge on every blocked stop attempt | paths: .opencode/plugin/impl/enforce_stop_impl.ts tests/unit/test_stop_challenge_token.py | priority: high | effort: S | status: completed | evidence: commit `156fa7dd`, focused tests 2/2 passed, Node v26 compatibility passed; OpenCode restart required
 - [x] T-BETA3-CODEX-STOP-GUARD — Add a repository-level fail-closed guard for Codex runners with rotating audit challenges and an explicit host-boundary disclaimer | paths: scripts/codex_stop_guard.py tests/unit/test_codex_stop_guard_contract.py Makefile | priority: high | effort: S | status: completed | evidence: focused contract tests 5 passed; lint passed; duplicate-target check passed; this guards CI/workflow decisions but cannot modify the Codex host runtime
@@ -653,6 +653,16 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 - [x] T-BETA3-GATE-ASYNC-OWNER — Validate asynchronous gate PID/command identity, atomically write status, and reject lock/status owner mismatches | paths: scripts/gate_async.sh tests/unit/test_gate_async.py | priority: high | effort: S | status: completed | evidence: gate async focused suite 8 passed; OpenCode E2E load/config suite 17 passed; conflict merge was aborted and OpenCode files remained unchanged
 - [x] T-BETA3-CODEX-BEHAVIOR-COVERAGE — Deepen Codex stop-loop behavioral coverage across nested cwd discovery, ratchet-only blockers, malformed stdin, protocol JSON, corrupt challenge state, and repeated tokens | paths: tests/unit/test_codex_stop_hook.py tests/unit/test_codex_stop_guard_contract.py scripts/codex_stop_guard.py | priority: high | effort: S | status: completed | evidence: combined focused suite 16 passed; lint passed
 - [x] T-BETA3-CODEX-CONTINUATION-POLICY — Version a complete continuation policy covering Codex hooks, durable execution, watchdogs, resource safety, CI evidence, recovery, human review, and unavoidable host limits | paths: docs/CODEX_CONTINUATION_POLICY.md | priority: high | effort: S | status: completed | evidence: policy document verified at 2,150 words; explains enforceable controls and host boundaries without claiming impossible guarantees
+- [x] S54-STOP-PREVENTION — Stop-prevention codification: 5 anti-pattern gaps fixed, 3-layer enforcement (AGENTS.md CRITICAL section, enforce-stop.ts text.complete hook, runtime tests) | priority: high | effort: M | status: completed | evidence: CHECKING_WHAT_LEFT_RE regex, subagents-returned-summary, pause-between-dispatch-waves, let-me-check-whats-left, Q&A-summary-as-terminal; commits 05d18f6f + b3878d2c; 80 runtime tests pass
+- [x] S54-CI-AWAIT — ci-await codification: 3-layer guardrail (AGENTS.md CI-Poll forbidden section, Makefile ci-await target, machine-enforced CI Check Cooldown with ci-verdict-safe) | priority: high | effort: M | status: completed | evidence: commits 6992be7d (ci-await target) + ad09cc0a (branch-conflict prevention); CI_CHECK_COOLDOWN_SEC=600 default
+- [x] S54-RESTART-CHECKER — Plugin restart-needed checker tool: detects when plugin source files are newer than session start, exits 0 (current) / 1 (restart needed) / 2 (unknown) | priority: medium | effort: S | status: completed | evidence: scripts/check_plugin_restart_needed.py (108 lines), tests/unit/test_plugin_restart_checker.py (8 tests, 127 lines), make check-plugin-restart-needed target wired into gate
+- [x] S54-MOLECULE-FIXES — Molecule CI failures fixed: 4 failures across binary_smoke + daemon_lifecycle | priority: high | effort: M | status: completed | evidence: binary_smoke_linux driver (BUILDDIR resolution), binary_smoke_macos structure, config_loading assertion, daemon_lifecycle endpoint; commit fbb9e985
+- [x] S54-BRANCH-COVERAGE — Branch coverage E2E tests: 5 files, ~137 tests | priority: medium | effort: M | status: completed | evidence: scripts/parse_branch_coverage.py + scripts/generate_coverage_report.py; 5 dedicated E2E branch-coverage test files; 137 tests pass; commit 97432526
+- [x] S54-GOVERNANCE — Governance P1-P6: collection scaffold + module_utils (elections, international_relations, legal_systems, public_finance, borders, civic_services) | priority: medium | effort: M | status: completed | evidence: 759 tests pass; src/general_ludd/governance/{loader,cli_governance,__init__}.py + collections/ansible_collections/general_ludd/governance/; demos/nf_features_demo.py governance demo; commit 97432526
+- [x] S54-MEMORY — Agentic memory research + embedding store + consolidation cascade + hybrid search | priority: medium | effort: M | status: completed | evidence: docs/research/AGENTIC_MEMORY_RESEARCH.md; MemoryEmbeddingStore (30 tests), procedural memory (24 tests), semantic memory (24 tests), hybrid_search (19 tests) = 97 tests; consolidation cascade + hybrid search in src/general_ludd/memory/; commits 97432526
+- [x] S54-S1-S2 — S1/S2 stub closure: noop executor returns failure msg + review dispatch circuit-breaker releases claims back to 'created' | priority: high | effort: M | status: completed | evidence: _noop_executor at agents/dispatcher.py:63-69 returns failure message (S1); review dispatch at loop.py:1092 releases claims back to 'created' (S2); 120 tests pass; commit 97432526
+- [x] S54-CONNECTORS — Connector batch5: Windows/macOS/ProcSys/Namespaces/docs/typecheck/runtime/Redfish/SNMP/result-shapes/orchestration | priority: medium | effort: M | status: completed | evidence: ServiceNow display types (28 tests, commit 798a2f7c), Windows/macOS batch5 E2E (25 passed), ProcSys/Namespaces E2E (10 passed), Redfish/SNMP (44 unit + 10 E2E), result shapes (8 passed), orchestration 160/160; batch5 compatibility docs; commits 97432526, fbb9e985
+- [x] S54-TASK-TRACKING — Task tracking enforcement: gap analysis + spec + hard task-registration guard plugin | priority: medium | effort: M | status: completed | evidence: spec at docs/specs/SPEC_TASK_TRACKING_ENFORCEMENT.md; enforce-task-tracking.ts plugin + 22 structural + 7 runtime tests; commit 97432526
 
 ## Codex Continuation Specification Backlog
 
