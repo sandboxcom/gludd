@@ -4518,6 +4518,10 @@ coverage-report-from-data:
 	@mkdir -p .gate-logs
 	@$(UV) run python scripts/generate_coverage_report.py
 
+coverage-branch-json:
+	@mkdir -p .gate-logs
+	@$(UV) run python scripts/gen_branch_coverage_json.py
+
 coverage-branch-stats:
 	@$(UV) run python scripts/parse_branch_coverage.py
 
