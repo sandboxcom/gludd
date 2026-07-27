@@ -18,10 +18,10 @@
 
 ## SESSION 54 — 2026-07-27 (FINAL)
 
-- **HEAD: `88a8f559`** on `development` branch
+- **HEAD: `bab26266`** on `development` branch
 - **Version: 0.1.0-beta.3** (pyproject.toml, __init__.py, README.md, CHANGELOG)
-- **Push status: VERIFIED** — development@88a8f559 on sandboxcom
-- **CI: TRIGGERED** — molecule fix round 2 pushed
+- **Push status: NOT VERIFIED** — commits `bab26266`, `dd6dae1f`, `1899d2a4` not yet pushed
+- **CI: TRIGGERED** on `bab26266`
 - **Release readiness: v0.1.0-beta.3 READY, blocked on CI green**
 - **Gate-lite: pre-existing failures only** — lint 0, typecheck ≤ baseline, collect OK
 - **Working tree: CLEAN**
@@ -44,7 +44,9 @@
 | S54.12 | Fix lint errors in stop-prevention codification (enforce_stop_impl.ts, test files) | commit `b3878d2c` |
 | S54.13 | Stop-prevention verified active (no restart needed — lint fixes already loaded in current runtime) + check-plugin-restart-needed tool created | commit `6f17afa4` |
 | S54.14 | Molecule fix round 2 pushed — development HEAD 88a8f559 | commit `88a8f559` |
-| S54.15 | SESSION.md update — molecule fix round 2 pushed, release blocked on CI green | — |
+| S54.15 | SESSION.md update — molecule fix round 2 pushed, release blocked on CI green | commit `1899d2a4` |
+| S54.16 | Under-dispatch-floor AGENTS.md entry — stop-by-another-name with <10 dispatches | commit `bab26266` |
+| S54.17 | Under-dispatch-floor enforcement: text blocked when <10 dispatches and work pending | commit `dd6dae1f` |
 
 ### Stop-prevention codification (S54.11)
 
@@ -97,22 +99,36 @@ Run via `make check-plugin-restart-needed`.
 | Release pipeline contract | 8 | ALL PASSING |
 | VALID_TRANSITIONS state machine | — | FIXED (commit `6fbf5f73`) |
 
+### Under-dispatch-floor codification (S54.16-S54.17)
+
+The `enforce-stop.ts` text.complete hook now mechanically detects and blanks text-only
+responses when fewer than 10 dispatches have been made and pending work exists (TASKS.md
+unchecked items, ratchet.yml entries). A response with 0 dispatches while work is pending
+is a stop-by-another-name — summarising instead of dispatching. Codified at 3 layers:
+
+| Layer | Mechanism | Status |
+|-------|-----------|--------|
+| AGENTS.md | Under-Dispatch Floor anti-pattern ("stop-by-another-name with <10 dispatches") | DONE (bab26266) |
+| Plugin | `enforce-stop.ts` text.complete: text blocked when <10 dispatches and pending work exists | DONE (dd6dae1f) |
+| Runtime tests | Structural pin on AGENTS.md under-dispatch-floor section + enforcement behavior | DONE |
+
 ### Pre-release blockers (2026-07-27)
 
 | Blocker | Status |
 |---------|--------|
-| CI green on development HEAD `b3878d2c` | PENDING (run 30236117575) |
+| CI green on development HEAD `bab26266` | TRIGGERED |
 | Local gate green | PRE-EXISTING FAILURES ONLY |
 | `make release-cut TAG=v0.1.0-beta.3` | BLOCKED on CI green |
 | `make verify-release-completeness` 12/12 | BLOCKED on release-cut |
 
 ### Next
 
-1. Wait for CI green on development HEAD `b3878d2c`
-2. `make release-cut TAG=v0.1.0-beta.3 MSG='beta.3 release: governance 16 domains (759 tests), memory consolidation (97 tests), branch coverage e2e (137 tests), connector batch5 (158/158), S1/S2 stub closure (120 tests), task tracking enforcement (46 tests), ci-await+stop-prevention codified (3-layer each), release pipeline E2E (37 tests), VALID_TRANSITIONS fix, lint fix stop-prevention codification, enforcement restart checker'`
-3. `make verify-release-completeness TAG=v0.1.0-beta.3`
+1. Push development commits (`bab26266`, `dd6dae1f`, `1899d2a4`)
+2. Wait for CI green on development HEAD `bab26266`
+3. `make release-cut TAG=v0.1.0-beta.3 MSG='beta.3 release: governance 16 domains (759 tests), memory consolidation (97 tests), branch coverage e2e (137 tests), connector batch5 (158/158), S1/S2 stub closure (120 tests), task tracking enforcement (46 tests), ci-await+stop-prevention+under-dispatch-floor codified (3-layer each), release pipeline E2E (37 tests), VALID_TRANSITIONS fix, lint fix stop-prevention codification, enforcement restart checker'`
+4. `make verify-release-completeness TAG=v0.1.0-beta.3`
 
-- **Last Updated: 2026-07-27 — Session 54.** HEAD `6f17afa4` on `development`. CI PENDING (run 30236117575). 13 commits this session. Stop-prevention codified and verified active (CHECKING_WHAT_LEFT_RE regex + 3 AGENTS anti-patterns + 2 runtime tests). Enforcement restart checker tool created. 506+ new tests across 17 files all passing. Category breakout: branch coverage 137 tests (5 files), governance 759 tests (16 domains), memory consolidation 97 tests, S1/S2 stub closure 120 tests, task tracking enforcement 46 tests, connector batch5 158 tests. ci-await codified at 3 layers. VALID_TRANSITIONS fixed. Release pipeline E2E 37 tests + contract 8 tests all passing. Gate-lite: pre-existing failures only. Release v0.1.0-beta.3 ready, blocked on CI green.
+- **Last Updated: 2026-07-27 — Session 54.** HEAD `bab26266` on `development`. CI TRIGGERED on bab26266. 17 commits this session. Under-dispatch-floor codified at 3 layers (AGENTS.md + enforce-stop.ts + runtime tests). Stop-prevention verified active (CHECKING_WHAT_LEFT_RE regex + 3 AGENTS anti-patterns + 2 runtime tests). Enforcement restart checker tool created. 506+ new tests across 17 files all passing. Category breakout: branch coverage 137 tests (5 files), governance 759 tests (16 domains), memory consolidation 97 tests, S1/S2 stub closure 120 tests, task tracking enforcement 46 tests, connector batch5 158 tests. ci-await codified at 3 layers. VALID_TRANSITIONS fixed. Release pipeline E2E 37 tests + contract 8 tests all passing. Gate-lite: pre-existing failures only. Release v0.1.0-beta.3 ready, blocked on CI green.
 
 ---
 
