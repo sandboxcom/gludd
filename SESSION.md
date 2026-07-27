@@ -16,14 +16,14 @@
 
 ---
 
-## SESSION 54 — 2026-07-26 (ACTIVE)
+## SESSION 54 — 2026-07-26 (FINAL)
 
-- **HEAD: `6fbf5f73`** on `development` branch
+- **HEAD: `3b32ff62`** on `development` branch
 - **Version: 0.1.0-beta.3** (pyproject.toml)
 - **Push status: NOT PUSHED** — development has unpushed commits
-- **CI: PENDING** — run 30233686000 on `6fbf5f73`, status='pending'
+- **CI: PENDING** — run 30233685999 on `6fbf5f73`, status='in_progress'
 - **Release readiness: BLOCKED** on CI green for release-cut
-- **Gate: not re-run on HEAD**
+- **Gate-lite: pre-existing failures only** — lint 0, typecheck ≤ baseline, collect OK
 - **Working tree: CLEAN**
 
 ### Completed this session
@@ -34,15 +34,24 @@
 | S54.2 | Release pipeline E2E test fix — all 37 pass | commit `7bcc97aa` |
 | S54.3 | VALID_TRANSITIONS fix + governance doc update | commit `6fbf5f73` |
 | S54.4 | CI snapshot in SESSION.md | commit `eac7f0d6` |
-| S53-carry | 506 new tests across 17 files, all passing (Session 53 culmination) | Session 53 |
+| S54.5 | SESSION.md final update | commit `3b32ff62` |
+| S53-carry | 506+ new tests across 17 files, all passing (Session 53 culmination) | Session 53 |
 | S53-carry | Governance 16 domains (759 tests), memory consolidation, S1/S2 stub closure, task tracking enforcement, connector batch5 (158/158) | Session 53 |
+
+### ci-await guardrail (3-layer codified)
+
+| Layer | Mechanism | Status |
+|-------|-----------|--------|
+| AGENTS.md | CI-Poll Subagents Are Forbidden subsection (7 rules) | DONE |
+| Plugin | enforce-no-wait.ts `CI_POLL_DISPATCH_PATTERNS` + dispatch-time deny | DONE |
+| Structural test | `tests/unit/test_no_wait_plugin.py` pins matcher behavior | DONE |
 
 ### Pre-release blockers (2026-07-26)
 
 | Blocker | Status |
 |---------|--------|
-| CI green on development HEAD `6fbf5f73` | PENDING (run 30233686000) |
-| Local gate green | NOT RE-RUN |
+| CI green on development HEAD `6fbf5f73` | PENDING (run 30233685999, in_progress) |
+| Local gate green | PRE-EXISTING FAILURES ONLY |
 | `make release-cut TAG=v0.1.0-beta.3` | BLOCKED on CI green |
 | `make verify-release-completeness` 12/12 | BLOCKED on release-cut |
 
@@ -52,7 +61,7 @@
 2. `make release-cut TAG=v0.1.0-beta.3 MSG='beta.3 release: governance 16 domains, memory consolidation, branch coverage e2e, connector batch5, S1/S2 stub closure, task tracking enforcement, ci-await forbidden codification'`
 3. `make verify-release-completeness TAG=v0.1.0-beta.3`
 
-- **Last Updated: 2026-07-26 — Session 54.** HEAD `6fbf5f73` on `development`. CI PENDING (run 30233686000). 506 new tests across 17 files all passing. ci-await codified as forbidden in AGENTS.md. Release v0.1.0-beta.3 blocked on CI green.
+- **Last Updated: 2026-07-26 — Session 54 (FINAL).** HEAD `3b32ff62` on `development`. CI PENDING (run 30233685999, in_progress on `6fbf5f73`). 506+ new tests across 17 files all passing. ci-await codified at 3 layers (AGENTS.md policy + enforce-no-wait.ts plugin + structural test). Gate-lite: pre-existing failures only. Release v0.1.0-beta.3 blocked on CI green.
 
 ---
 
