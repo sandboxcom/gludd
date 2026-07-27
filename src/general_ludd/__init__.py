@@ -12,8 +12,8 @@ import warnings
 # Provide a stub ``pkg_resources`` module that exposes a no-op
 # ``declare_namespace`` so ``fs`` can import without error.
 _FAKE_PKG_RESOURCES = type(sys)("pkg_resources")
-_FAKE_PKG_RESOURCES.declare_namespace = lambda _name: None
-sys.modules.setdefault("pkg_resources", _FAKE_PKG_RESOURCES)
+object.__setattr__(_FAKE_PKG_RESOURCES, "declare_namespace", lambda _name: None)
+sys.modules["pkg_resources"] = _FAKE_PKG_RESOURCES
 del _FAKE_PKG_RESOURCES
 
 _annotated_patch_mod = importlib.import_module("general_ludd.compat.annotated_types")

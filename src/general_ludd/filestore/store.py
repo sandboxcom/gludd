@@ -142,13 +142,15 @@ class FileStore:
                 seen.add(entry.name)
                 full_path = join(path, entry.name).lstrip("/")
                 info = fs.getinfo(full_path, namespaces=["details"])
-                entries.append({
-                    "name": entry.name,
-                    "path": full_path,
-                    "is_dir": entry.is_dir,
-                    "size": info.size,
-                    "modified": info.modified.isoformat() if info.modified else None,
-                })
+                entries.append(
+                    {
+                        "name": entry.name,
+                        "path": full_path,
+                        "is_dir": entry.is_dir,
+                        "size": info.size,
+                        "modified": info.modified.isoformat() if info.modified else None,
+                    }
+                )
 
         if self._overlay_fs is not None:
             _add_from(self._overlay_fs, path)
