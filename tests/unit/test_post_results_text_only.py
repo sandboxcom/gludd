@@ -469,3 +469,126 @@ class TestWaveCompletionDetection:
             assert "wave" in src.lower(), (
                 "The post-results block message must mention 'wave' when lastTurnHadWave is checked."
             )
+
+
+# ── CHECKING_WHAT_LEFT_RE — Python-side regex mirror for structural matching ──
+_CHECKING_WHAT_LEFT_PATTERN = re.compile(
+    r"(?:let me\s+(?:just\s+)?(?:check|see|look|survey|find out)\s+"
+    r"(?:what.?s?\s+(?:left|remaining|pending|still|else)"
+    r"|how\s+much\s+(?:work|is left|remains)"
+    r"|if.+work|whether.+work)"
+    r"|i.?ll\s+(?:check|see|look)\s+(?:what.?s?\s+(?:left|remaining|pending)|how\s+much)"
+    r"|(?:checking|seeing|looking|surveying)\s+"
+    r"(?:what.?s?\s+(?:left|remaining|pending)|how\s+much)"
+    r"|hold\s+on,?\s+let\s+me\s+check"
+    r"|wait,?\s+let\s+me\s+check"
+    r"|let\s+me\s+(?:first\s+)?(?:check|see|look)\s+(?:if|whether|what))",
+    re.IGNORECASE,
+)
+
+
+class TestCheckingWhatLeftRe:
+    """CHECKING_WHAT_LEFT_RE must be defined, used, match phrases, and use recordBlock."""
+
+    def test_checking_what_left_re_defined(self):
+        src = _src()
+        assert "CHECKING_WHAT_LEFT_RE" in src, (
+            "CHECKING_WHAT_LEFT_RE must be defined in enforce_stop_impl.ts — "
+            "detects 'let me check what's left' and similar survey-before-action "
+            "phrases that are stop-adjacent. Codified in AGENTS.md line 801."
+        )
+
+    def test_checking_what_left_re_used_in_text_complete(self):
+        src = _src()
+        assert re.search(
+            r"CHECKING_WHAT_LEFT_RE\s*\.\s*test\s*\(\s*text\s*\)",
+            src,
+        ), (
+            "CHECKING_WHAT_LEFT_RE.test(text) must be called in text.complete hook — "
+            "only the actual invocation at block time counts as 'used'."
+        )
+
+    def test_checking_what_left_re_matches_common_phrases(self):
+        matches = [
+            "let me check what's left",
+            "let me see what remains",
+            "let me look what's pending",
+            "checking what's left",
+            "looking what's pending",
+            "let me just check what's still left",
+            "hold on, let me check",
+            "wait, let me check",
+            "let me first check whether",
+            "I'll check what's pending",
+            "let me check how much work is left",
+        ]
+        non_matches = [
+            "dispatch subagents now",
+            "fix the bug and commit",
+            "running tests now",
+            "committed abc1234, pushing",
+            "let me fix that bug",
+        ]
+        for phrase in matches:
+            assert _CHECKING_WHAT_LEFT_PATTERN.search(phrase), f"CHECKING_WHAT_LEFT_RE must match: {phrase!r}"
+        for phrase in non_matches:
+            assert not _CHECKING_WHAT_LEFT_PATTERN.search(phrase), f"CHECKING_WHAT_LEFT_RE must NOT match: {phrase!r}"
+
+    def test_checking_what_left_block_uses_record_block(self):
+        src = _src()
+        assert re.search(
+            r'recordBlock\s*\(\s*["\']checking-whats-left["\']',
+            src,
+        ), (
+            "The checking-whats-left block must call recordBlock('checking-whats-left') "
+            "so the block-reason audit file is machine-readable."
+        )
+
+    def test_checking_what_left_block_uses_log_false_done_block(self):
+        src = _src()
+        assert re.search(
+            r"logFalseDoneBlock\s*\([^)]*['\"]checking-whats-left['\"]",
+            src,
+        ), (
+            "The checking-whats-left block must call logFalseDoneBlock(..., 'checking-whats-left') "
+            "so the false-done block audit file is machine-readable."
+        )
+
+    def test_checking_what_left_block_gated_by_disengage(self):
+        src = _src()
+        assert re.search(
+            r"!\s*disengaged\s*&&\s*CHECKING_WHAT_LEFT_RE\s*\.\s*test\s*\(\s*text\s*\)",
+            src,
+        ), "The checking-whats-left block must gate on !disengaged — the disengage signal must bypass the check."
+
+    def test_checking_what_left_block_gated_by_has_tool_call_intent(self):
+        src = _src()
+        assert re.search(
+            r"CHECKING_WHAT_LEFT_RE\s*\.\s*test\s*\(\s*text\s*\)\s*&&\s*!\s*hasToolCallIntent",
+            src,
+        ), (
+            "The checking-whats-left block must also check !hasToolCallIntent — "
+            "if the response also has tool calls, it's not a pause."
+        )
+
+    def test_checking_what_left_block_clears_output(self):
+        src = _src()
+        m = re.search(
+            r"CHECKING_WHAT_LEFT_RE[\s\S]{0,500}?clearBlockedOutput\s*\(\s*output\s*\)",
+            src,
+        )
+        assert m, (
+            "The checking-whats-left block must call clearBlockedOutput(output) — "
+            "the outgoing text must be cleared before the block message is returned."
+        )
+
+    def test_checking_what_left_block_sets_turn_state_blocked(self):
+        src = _src()
+        m = re.search(
+            r"CHECKING_WHAT_LEFT_RE[\s\S]{0,500}?turnState\s*\.\s*blocked\s*=\s*true",
+            src,
+        )
+        assert m, (
+            "The checking-whats-left block must set turnState.blocked = true "
+            "so downstream checks know the response is already blocked."
+        )
