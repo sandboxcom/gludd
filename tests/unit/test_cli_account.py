@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
@@ -172,7 +172,7 @@ class TestCmdCreate:
             "budget_limit": 10.0,
             "ephemeral": False,
         }
-        with patch("general_ludd.cli_account._http", return_value=body):
+        with patch("general_ludd.cli_account._http", new=Mock(return_value=body)):
             _cmd_create(args)
         captured = capsys.readouterr()
         assert "acct-123" in captured.out
@@ -186,7 +186,7 @@ class TestCmdCleanup:
         args.json = True
 
         body = {"deleted": [{"provider": "aws", "account_id": "acct-1"}], "kept": []}
-        with patch("general_ludd.cli_account._http", return_value=body):
+        with patch("general_ludd.cli_account._http", new=Mock(return_value=body)):
             _cmd_cleanup(args)
         captured = capsys.readouterr()
         assert "acct-1" in captured.out
@@ -200,7 +200,7 @@ class TestCmdCleanup:
             "deleted": [{"provider": "aws", "account_id": "acct-1", "deleted": True}],
             "kept": [{"provider": "gcp", "account_id": "acct-2"}],
         }
-        with patch("general_ludd.cli_account._http", return_value=body):
+        with patch("general_ludd.cli_account._http", new=Mock(return_value=body)):
             _cmd_cleanup(args)
         captured = capsys.readouterr()
         assert "1" in captured.out
