@@ -304,7 +304,6 @@ class TodoModel(Base):
 
     events: Mapped[list[TodoEventModel]] = relationship(
         back_populates="todo",
-        order_by=lambda: TodoEventModel.id,
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
