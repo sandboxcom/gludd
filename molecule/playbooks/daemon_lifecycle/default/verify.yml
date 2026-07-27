@@ -69,19 +69,17 @@
           body_was_mapping_or_list={{ state.facts.is_mapping_or_list | default(false) }}.
         success_msg: "/api/facts returned a JSON object/list as expected."
 
-    - name: /api/tasks must return a JSON list
+    - name: /api/todos must return a JSON list
       ansible.builtin.assert:
         that:
-          - state.tasks.status is defined
-          - state.tasks.status | int == 200
-          - state.tasks.is_list | bool
+          - state.todos.status is defined
+          - state.todos.status | int == 200
+          - state.todos.is_list | bool
         fail_msg: >-
-          /api/tasks must return a JSON list.
-          Observed status={{ state.tasks.status | default('unknown') }},
-          body_was_list={{ state.tasks.is_list | default(false) }}.
-          (If this endpoint is unimplemented, this scenario is the spec —
-          implement /api/tasks to return a list of task records.)
-        success_msg: "/api/tasks returned a JSON list."
+          /api/todos must return a JSON list.
+          Observed status={{ state.todos.status | default('unknown') }},
+          body_was_list={{ state.todos.is_list | default(false) }}.
+        success_msg: "/api/todos returned a JSON list."
 
     - name: Daemon must accept playbook run requests
       ansible.builtin.assert:

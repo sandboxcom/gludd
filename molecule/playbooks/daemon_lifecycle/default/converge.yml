@@ -96,14 +96,14 @@
         body_format: json
       register: facts_resp
 
-    - name: GET /api/tasks
+    - name: GET /api/todos
       ansible.builtin.uri:
-        url: "{{ daemon_url }}/api/tasks"
+        url: "{{ daemon_url }}/api/todos"
         method: GET
         status_code: 200
         return_content: true
         body_format: json
-      register: tasks_resp
+      register: todos_resp
 
     - name: POST /api/playbook/run with a minimal playbook body
       ansible.builtin.uri:
@@ -147,9 +147,9 @@
                 "status": facts_resp.status,
                 "is_mapping_or_list": (facts_resp.json is mapping or facts_resp.json is sequence)
               },
-              "tasks": {
-                "status": tasks_resp.status,
-                "is_list": (tasks_resp.json is sequence)
+              "todos": {
+                "status": todos_resp.status,
+                "is_list": (todos_resp.json is sequence)
               },
               "playbook": {
                 "status": playbook_resp.status,
@@ -217,9 +217,9 @@
                 "status": facts_resp.status,
                 "is_mapping_or_list": (facts_resp.json is mapping or facts_resp.json is sequence)
               },
-              "tasks": {
-                "status": tasks_resp.status,
-                "is_list": (tasks_resp.json is sequence)
+              "todos": {
+                "status": todos_resp.status,
+                "is_list": (todos_resp.json is sequence)
               },
               "playbook": {
                 "status": playbook_resp.status,

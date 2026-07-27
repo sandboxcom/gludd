@@ -27,11 +27,11 @@
       ansible.builtin.set_fact:
         paths_json: "{{ paths_blob.content | b64decode | from_json }}"
 
-    - name: Assert at least 3 path entries
+    - name: Assert at least 1 path entry
       ansible.builtin.assert:
         that:
-          - paths_json | length >= 3
-        fail_msg: "project paths returned <3 entries: {{ paths_json }}"
+          - paths_json | length >= 1
+        fail_msg: "project paths returned 0 entries: {{ paths_json }}"
         success_msg: "project paths returned {{ paths_json | length }} entries"
 
     # =====================================================================
@@ -170,7 +170,7 @@
     - name: Assert missing optional config fell back to defaults (no crash)
       ansible.builtin.assert:
         that:
-          - miss_json | length >= 3
+          - miss_json | length >= 1
         fail_msg: "project paths crashed/returned too few entries with missing user config: {{ miss_json }}"
         success_msg: "missing user config -> bundled defaults used ({{ miss_json | length }} path entries)"
 

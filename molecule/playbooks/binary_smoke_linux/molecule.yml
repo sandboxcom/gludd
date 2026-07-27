@@ -20,7 +20,7 @@
 # (GitHub-hosted runners ship with Docker) or via an explicit
 # `make molecule-test SCENARIO=binary_smoke_linux`.
 driver:
-  name: docker
+  name: delegated
 platforms:
   - name: gludd-test-linux
     image: ubuntu:24.04
