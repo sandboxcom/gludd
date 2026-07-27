@@ -53,7 +53,7 @@ class TestScenarioValidatorBasics:
         validator = ScenarioValidator(researcher=None)
         scenarios = [_make_scenario("crud_lifecycle"), _make_scenario("auth_flow")]
         valid, discarded, queries = _run(validator, scenarios)
-        assert set(valid) == set(scenarios)
+        assert len(valid) == len(scenarios) and all(s in scenarios for s in valid)
         assert discarded == []
         assert queries == []
 
@@ -65,8 +65,11 @@ class TestScenarioValidatorBasics:
         assert queries == []
 
     def test_researcher_validate_returns_all_when_exception(self):
-        bogus = MagicMock()
-        bogus.research.side_effect = RuntimeError("research broken")
+        class _BogusResearcher:
+            def research(self, query, categories=None, time_range=None, max_results=None):
+                raise RuntimeError("research broken")
+
+        bogus = _BogusResearcher()
         validator = ScenarioValidator(researcher=bogus)
         scenarios = [_make_scenario("crud")]
         valid, discarded, queries = _run(validator, scenarios)
@@ -149,8 +152,11 @@ class TestDispatchResearch:
         assert result == {"results": [1, 2]}
 
     def test_research_method_dispatched(self):
-        mock = MagicMock()
-        mock.research.return_value = {"findings": [1, 2, 3]}
+        class _ResearchOnly:
+            def research(self, query, categories=None, time_range=None, max_results=None):
+                return {"findings": [1, 2, 3]}
+
+        mock = _ResearchOnly()
         validator = ScenarioValidator(researcher=mock)
         result = asyncio.run(validator._dispatch_research("test query"))
         assert result == {"findings": [1, 2, 3]}

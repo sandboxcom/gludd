@@ -65,13 +65,16 @@ function getEffectiveFloor(): { floor: number; waveWidth: number; target: number
       return { floor: FLOOR, waveWidth: WAVE_WIDTH, target: TARGET, throttled: false }
     }
     const load = typeof raw.load === "number" ? raw.load : 0
-    const throttleFloor = typeof raw.floor === "number" && raw.floor > 0 ? raw.floor : FLOOR
+    const throttleFloor = typeof raw.floor === "number" && raw.floor >= 0 ? raw.floor : FLOOR
     const effectiveFloor = Math.min(FLOOR, throttleFloor)
-    const ratio = effectiveFloor / FLOOR
     console.warn(
       `LOAD THROTTLE ACTIVE: load=${load.toFixed(2)}, age=${Math.round(age / 1000)}s, ` +
       `throttle_floor=${throttleFloor}, effective_floor=${effectiveFloor}, normal_floor=${FLOOR}`
     )
+    if (effectiveFloor === 0) {
+      return { floor: 0, waveWidth: 0, target: 0, throttled: true }
+    }
+    const ratio = effectiveFloor / FLOOR
     return {
       floor: effectiveFloor,
       waveWidth: Math.max(2, Math.round(WAVE_WIDTH * ratio)),
