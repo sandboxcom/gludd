@@ -14,6 +14,14 @@ import {
   writeJsonFile,
   getProjectRoot,
   isStateFileMtimeStale,
+  isInPressureRelease,
+  isInInlineRecovery,
+  getPressureReleaseFloor,
+  decrementPressureReleaseTurns,
+  recordEmptyDispatch,
+  recordSuccessfulDispatch,
+  readDispatchOutcomes,
+  writeDispatchOutcomes,
 } from "../lib/shared.ts"
 const nodeRequire = typeof require === "function" ? require : createRequire(import.meta.url)
 function spawn(...args: any[]): any {
@@ -306,7 +314,12 @@ const defaultImpl: HotModule = {
       // STREAK message wins over UNDER-FLOOR. Without this ordering, a call 3
       // edit after 2 reads would incorrectly surface UNDER-FLOOR instead of
       // CONSECUTIVE NON-DISPATCH STREAK (2026-07-18 bug).
-      if (!disengaged) {
+      //
+      // PRESSURE-RELEASE: skip grinding block when in pressure-release or
+      // inline-recovery mode. The agent needs inline tools to recover from
+      // empty/failed dispatches.
+      const pressureActive = isInPressureRelease() || isInInlineRecovery()
+      if (!disengaged && !pressureActive) {
         if (!isReadTool(tool)) {
           if (_state.consecutiveNonDispatchStartTs === 0) {
             _state.consecutiveNonDispatchStartTs = now
@@ -352,12 +365,17 @@ const defaultImpl: HotModule = {
       // Fallback for the first-edit-with-zero-dispatches case where the streak
       // counter (above) is still below threshold. When the streak has already
       // hit threshold, the streak block wins.
+      //
+      // PRESSURE-RELEASE: when active, use the lowered floor (default 2)
+      // instead of the normal MIN_DISPATCHES (10). The agent can proceed
+      // with limited inline work to recover from empty/failed dispatches.
       const _isUnderFloorRead = lt === "read" || lt === "grep" || lt === "glob"
       const _isUnderFloorMutation = lt === "edit" || lt === "write" || lt === "bash"
+      const _effectiveFloor = getPressureReleaseFloor(MIN_DISPATCHES)
       if (
         !disengaged &&
         hasPendingWork() &&
-        _state.thisMessageDispatches < MIN_DISPATCHES &&
+        _state.thisMessageDispatches < _effectiveFloor &&
         (_isUnderFloorMutation || (_isUnderFloorRead && _state.sessionDispatchTotal > 0))
       ) {
         writeState(_state)
@@ -365,8 +383,8 @@ const defaultImpl: HotModule = {
           permissionDecision: "deny" as const,
           message: [
             "UNDER-FLOOR HARD BLOCK: ONLY " + String(_state.thisMessageDispatches) + " DISPATCHES.",
-            "Floor is 10. DISPATCH " + String(MIN_DISPATCHES) + " SUBAGENTS NOW OR YOU ARE BLOCKED.",
-            "You have " + String(_state.thisMessageDispatches) + "; need " + String(MIN_DISPATCHES) + ". ALL tools (read/grep/glob/edit/write/bash) are blocked when below floor and dispatches have been made this session.",
+            "Floor is " + String(_effectiveFloor) + ". DISPATCH " + String(_effectiveFloor) + " SUBAGENTS NOW OR YOU ARE BLOCKED.",
+            "You have " + String(_state.thisMessageDispatches) + "; need " + String(_effectiveFloor) + ". ALL tools (read/grep/glob/edit/write/bash) are blocked when below floor and dispatches have been made this session.",
             "consecutive non-dispatch calls: " + String(_state.consecutiveNonDispatch),
             "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
             "Run 'make disengage-enforcement' to bypass.",
@@ -440,8 +458,26 @@ async function handleTextComplete(_input: unknown, output: unknown): Promise<unk
     const hasResultMarker = /(?:task result|subagent result|workflow result)/i.test(text)
     if (hasResultMarker) {
       _state.estimatedInFlight = Math.max(0, _state.estimatedInFlight - 1)
+      // PRESSURE-RELEASE detection: when subagent results arrive, check if
+      // they indicate empty/failed outcomes. Short text after a result marker
+      // OR failure/error/empty keywords signal a dispatch that produced no
+      // useful work. After 3 consecutive empty dispatches, pressure-release
+      // mode activates automatically.
+      const isShortResult = text.length < 200
+      const isEmptyPattern = /(?:failed|error|empty|no result|nothing|unable|cannot|could not|unsuccessful)/i.test(text)
+      const isSummaryWithNoDispatches = _state.thisMessageDispatches === 0 && hasResultMarker
+      if (isEmptyPattern || isShortResult || isSummaryWithNoDispatches) {
+        recordEmptyDispatch()
+      } else {
+        recordSuccessfulDispatch()
+      }
     }
-    if (_state.thisMessageDispatches > 0 && _state.thisMessageDispatches < MIN_DISPATCHES) {
+    // PRESSURE-RELEASE: decrement turn counters at every message boundary.
+    // This is the canonical boundary signal — text.complete fires at the
+    // end of every assistant response.
+    decrementPressureReleaseTurns()
+    const _tef = getPressureReleaseFloor(MIN_DISPATCHES)
+    if (_state.thisMessageDispatches > 0 && _state.thisMessageDispatches < _tef) {
       const dispatched = _state.thisMessageDispatches
       handleMessageBoundary(_state)
       // MT.1: escalate when under-floor waves keep happening
@@ -557,11 +593,21 @@ export default (({ }) => {
     const hasResultMarker = /(?:task result|subagent result|workflow result)/i.test(text)
     if (hasResultMarker) {
       _state.estimatedInFlight = Math.max(0, _state.estimatedInFlight - 1)
+      const isShortResult = text.length < 200
+      const isEmptyPattern = /(?:failed|error|empty|no result|nothing|unable|cannot|could not|unsuccessful)/i.test(text)
+      const isSummaryWithNoDispatches = _state.thisMessageDispatches === 0 && hasResultMarker
+      if (isEmptyPattern || isShortResult || isSummaryWithNoDispatches) {
+        recordEmptyDispatch()
+      } else {
+        recordSuccessfulDispatch()
+      }
     }
-    // Block: current message had < MIN_DISPATCHES but >0 dispatches
+    decrementPressureReleaseTurns()
+    const _pef = getPressureReleaseFloor(MIN_DISPATCHES)
+    // Block: current message had < effective floor but >0 dispatches
     // AND pending work exists. thisMessageDispatches is the live count
     // for the message that just completed (all tool calls have fired).
-    if (_state.thisMessageDispatches > 0 && _state.thisMessageDispatches < MIN_DISPATCHES) {
+    if (_state.thisMessageDispatches > 0 && _state.thisMessageDispatches < _pef) {
       const dispatched = _state.thisMessageDispatches
       // Close the message boundary BEFORE returning the blanked text (T21):
       // the blanked message is OVER — its stale dispatch count must not

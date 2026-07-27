@@ -297,6 +297,188 @@ export function isStateFileMtimeStale(stateFilePath: string): boolean {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// DISPATCH-OUTCOMES STATE — shared pressure-release mechanism
+//
+// When subagents return empty/failed repeatedly, the agent deadlocks:
+// can't dispatch usefully AND can't work inline (blocked by streaks).
+// The pressure-release mode detects this and temporarily relaxes
+// enforcement: floor drops to 2, streaks skip for N turns.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const DISPATCH_OUTCOMES_FILE =
+  process.env.GLUDD_DISPATCH_OUTCOMES_FILE || "/tmp/gludd-dispatch-outcomes.json"
+
+export interface DispatchOutcomesState {
+  pid: number
+  consecutiveEmptyDispatches: number
+  consecutiveDispatchAttempts: number
+  pressureReleaseActive: boolean
+  pressureReleaseTurnsRemaining: number
+  pressureReleaseFloor: number
+  normalFloor: number
+  inlineRecoveryTurnsRemaining: number
+  lastDispatchTs: number
+  lastStateChangeTs: number
+  ts: number
+}
+
+export function freshDispatchOutcomes(): DispatchOutcomesState {
+  return {
+    pid: process.pid,
+    consecutiveEmptyDispatches: 0,
+    consecutiveDispatchAttempts: 0,
+    pressureReleaseActive: false,
+    pressureReleaseTurnsRemaining: 0,
+    pressureReleaseFloor: 2,
+    normalFloor: 10,
+    inlineRecoveryTurnsRemaining: 0,
+    lastDispatchTs: 0,
+    lastStateChangeTs: Date.now(),
+    ts: Date.now(),
+  }
+}
+
+export function readDispatchOutcomes(): DispatchOutcomesState {
+  try {
+    if (isStateFileMtimeStale(DISPATCH_OUTCOMES_FILE)) {
+      return freshDispatchOutcomes()
+    }
+    if (!fs.existsSync(DISPATCH_OUTCOMES_FILE)) return freshDispatchOutcomes()
+    const raw = JSON.parse(fs.readFileSync(DISPATCH_OUTCOMES_FILE, "utf8"))
+    const storedPid = typeof raw.pid === "number" ? raw.pid : 0
+    if (storedPid > 0 && storedPid !== process.pid) {
+      return freshDispatchOutcomes()
+    }
+    return {
+      pid: process.pid,
+      consecutiveEmptyDispatches: typeof raw.consecutiveEmptyDispatches === "number" ? raw.consecutiveEmptyDispatches : 0,
+      consecutiveDispatchAttempts: typeof raw.consecutiveDispatchAttempts === "number" ? raw.consecutiveDispatchAttempts : 0,
+      pressureReleaseActive: !!raw.pressureReleaseActive,
+      pressureReleaseTurnsRemaining: typeof raw.pressureReleaseTurnsRemaining === "number" ? raw.pressureReleaseTurnsRemaining : 0,
+      pressureReleaseFloor: typeof raw.pressureReleaseFloor === "number" ? raw.pressureReleaseFloor : 2,
+      normalFloor: typeof raw.normalFloor === "number" ? raw.normalFloor : 10,
+      inlineRecoveryTurnsRemaining: typeof raw.inlineRecoveryTurnsRemaining === "number" ? raw.inlineRecoveryTurnsRemaining : 0,
+      lastDispatchTs: typeof raw.lastDispatchTs === "number" ? raw.lastDispatchTs : 0,
+      lastStateChangeTs: typeof raw.lastStateChangeTs === "number" ? raw.lastStateChangeTs : Date.now(),
+      ts: Date.now(),
+    }
+  } catch {
+    return freshDispatchOutcomes()
+  }
+}
+
+export function writeDispatchOutcomes(partial: Partial<DispatchOutcomesState>): void {
+  try {
+    const current = readDispatchOutcomes()
+    const merged: DispatchOutcomesState = { ...current, ...partial, ts: Date.now() }
+    const tmp = DISPATCH_OUTCOMES_FILE + ".tmp"
+    fs.writeFileSync(tmp, JSON.stringify(merged), "utf8")
+    fs.renameSync(tmp, DISPATCH_OUTCOMES_FILE)
+  } catch { /* fail-open */ }
+}
+
+export function isInPressureRelease(): boolean {
+  try {
+    const s = readDispatchOutcomes()
+    if (!s.pressureReleaseActive) return false
+    if (s.pressureReleaseTurnsRemaining <= 0) return false
+    return true
+  } catch { return false }
+}
+
+export function isInInlineRecovery(): boolean {
+  try {
+    const s = readDispatchOutcomes()
+    if (!s.pressureReleaseActive) return false
+    if (s.inlineRecoveryTurnsRemaining <= 0) return false
+    return true
+  } catch { return false }
+}
+
+export function getPressureReleaseFloor(normalFloor: number): number {
+  try {
+    const s = readDispatchOutcomes()
+    if (s.pressureReleaseActive && s.pressureReleaseTurnsRemaining > 0) {
+      return Math.max(2, s.pressureReleaseFloor)
+    }
+  } catch {}
+  return normalFloor
+}
+
+/**
+ * Call at every message boundary (text.complete). Decrements pressure-release
+ * and inline-recovery turn counters. When both reach 0, deactivates the mode.
+ */
+export function decrementPressureReleaseTurns(): void {
+  try {
+    const s = readDispatchOutcomes()
+    if (!s.pressureReleaseActive) return
+    s.pressureReleaseTurnsRemaining = Math.max(0, s.pressureReleaseTurnsRemaining - 1)
+    s.inlineRecoveryTurnsRemaining = Math.max(0, s.inlineRecoveryTurnsRemaining - 1)
+    if (s.pressureReleaseTurnsRemaining <= 0 && s.inlineRecoveryTurnsRemaining <= 0) {
+      s.pressureReleaseActive = false
+      s.consecutiveEmptyDispatches = 0
+      s.consecutiveDispatchAttempts = 0
+      s.lastStateChangeTs = Date.now()
+      console.warn(
+        `PRESSURE-RELEASE EXPIRED: returning to normal enforcement ` +
+        `(floor=${s.normalFloor}). consecutiveEmptyDispatches reset.`
+      )
+    }
+    writeDispatchOutcomes(s)
+  } catch {}
+}
+
+/**
+ * Record a dispatch attempt. If 3+ consecutive attempts all returned empty,
+ * activate pressure-release mode: floor drops to 2, streaks skip for 3 turns,
+ * inline recovery allowed for 5 turns.
+ */
+export function recordDispatchAttempt(): void {
+  try {
+    const s = readDispatchOutcomes()
+    s.lastDispatchTs = Date.now()
+    s.consecutiveDispatchAttempts++
+    writeDispatchOutcomes(s)
+  } catch {}
+}
+
+/**
+ * Record that a dispatch returned empty/failed. Increments the empty counter.
+ * When 3 consecutive empties are reached, activates pressure-release mode.
+ */
+export function recordEmptyDispatch(): void {
+  try {
+    const s = readDispatchOutcomes()
+    s.consecutiveEmptyDispatches++
+    if (s.consecutiveEmptyDispatches >= 3 && !s.pressureReleaseActive) {
+      s.pressureReleaseActive = true
+      s.pressureReleaseTurnsRemaining = 3
+      s.inlineRecoveryTurnsRemaining = 5
+      s.consecutiveEmptyDispatches = 0
+      s.lastStateChangeTs = Date.now()
+      console.warn(
+        `PRESSURE-RELEASE ACTIVATED: ${s.consecutiveDispatchAttempts} dispatches, ` +
+        `3+ consecutive empty results. Floor lowered to ${s.pressureReleaseFloor} for 3 turns, ` +
+        `inline recovery allowed for 5 turns.`
+      )
+    }
+    writeDispatchOutcomes(s)
+  } catch {}
+}
+
+/**
+ * Reset empty-dispatch tracking when a dispatch returns useful results.
+ */
+export function recordSuccessfulDispatch(): void {
+  try {
+    const s = readDispatchOutcomes()
+    s.consecutiveEmptyDispatches = 0
+    writeDispatchOutcomes(s)
+  } catch {}
+}
+
 export function getProjectRoot(): string {
   const key = _projectRootCacheKey()
   if (_cachedRoot !== null && _cachedRootKey === key) return _cachedRoot

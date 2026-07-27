@@ -108,6 +108,13 @@ const QA_RESPONSE_PATTERNS = /(?:completed in this session|done since the (?:cra
 
 const SUBAGENT_TEXT_MARKERS = /(?:task_id|task_result|agent\s+result|subagent\s+result|task\s+completed|generated|completed successfully|exit code)/i
 
+// ── SUBAGENT_DEFICIT (2026-07-27) ──────────────────────────────────────────
+// Agent sends text summarizing "Agent 1 did X, Agent 2 did Y..." while
+// dispatching fewer than 10 subagents in the SAME message. The text is a
+// stop-by-another-name — listing subagent results instead of refilling the
+// floor. Blanked when dispatchCount < 10 AND hasPendingWork is true.
+const SUBAGENT_DEFICIT_RE = /\b(?:agent|subagent|task)\s+\d+\s+(?:completed|finished|did|fixed|found|wrote|added|removed|updated|reported|returned|resolved|processed|handled|investigated|checked|audited|reviewed|implemented|created|tested|verified|deployed|patched|refactored|cleaned|merged|built|generated|produced|says|indicates|confirms|shows|began|started|noted)\b/i
+
 const STOP_PATTERN_PHRASES = /\b(?:shall\s+i\s+continue|should\s+i\s+proceed|want\s+me\s+to\b[^?!.]*)/i
 const PERMISSION_SEEKING_RE = /(?:want me to\s+(?:proceed|continue|dispatch|write|fix|move|start|do|run|create|add|update|implement|handle|begin|work|go ahead)|should i\s+(?:proceed|continue|fix|dispatch|start|move|go ahead)|shall i\s+(?:proceed|continue|fix|start)|^proceed\?$)/im
 
@@ -719,7 +726,7 @@ function hasRealPendingWork(): WorkState {
     testFailures ||
     repoPending ||
     multitaskingBacklogOpen
-  const hasPendingWork = projectWorkOpen || (underFloor && projectWorkOpen)
+  const hasPendingWork = projectWorkOpen || underFloor
   const healthScore = computeHealthScore({
     gateStatusRed, gateStale, ciVerdictPendingOrRed, ciVerdictUnknown,
     tasksMdUnchecked, bugsOpen, repoPending, multitaskingBacklogOpen, underFloor,
@@ -1143,12 +1150,47 @@ const defaultImpl: HotModule = {
       }
     }
 
+    // ── SUBAGENT_DEFICIT (2026-07-27) ──────────────────────────────────────
+    // Agent mentions subagent results ("Agent 1 did X, Agent 2 did Y...")
+    // while dispatching fewer than 10 subagents. The text is a summary recapping
+    // results instead of refilling the floor. Blank it regardless of evidence.
+    // Fires for 0 dispatches (text-only summary of results) AND 1-9 dispatches
+    // (partial refill with result-recap text).
+    // Must fire BEFORE the generic UNDER-DISPATCH FLOOR check — this is the
+    // more specific check (subagent-deficit text AND under-dispatch).
+    if (
+      (workState.hasPendingWork || workState.hasLocalWork || forceDispatchDirective) &&
+      SUBAGENT_DEFICIT_RE.test(text) &&
+      turnState.dispatchCount < AGENT_FLOOR_DEFAULT &&
+      !hasWorkArtifact
+    ) {
+      recordBlock("subagent-deficit")
+      recordBlankedResponse("subagent-deficit", text)
+      writePersistBlock(true, "subagent-deficit")
+
+      return {
+        text: [
+          "⛔ SUBAGENT DEFICIT BLOCKED — DISPATCH 10 SUBAGENTS, DON'T SUMMARIZE.",
+          "",
+          `Current message has only ${turnState.dispatchCount} dispatch(es) ` +
+          `(floor is ${AGENT_FLOOR_DEFAULT}).`,
+          `Text mentions subagent results but the wave is not yet full.`,
+          "",
+          "Do NOT send a text summary of subagent results between waves.",
+          "Instead, DISPATCH MORE SUBAGENTS via the Task tool.",
+          "",
+          `PENDING: ${workState.tasksMdUncheckedCount} tasks.`,
+        ].join("\n"),
+      }
+    }
+
     // ── UNDER-DISPATCH FLOOR (2026-07-27) ─────────────────────────────────
     // The agent can send text + a few bash/read calls with <10 dispatches,
     // bypassing the text-only and status-summary blocks. This check ensures
     // that when work is pending and the current message has fewer than 10
     // subagent dispatches, the text is blanked with a dispatch directive.
     // Fires for messages with 1–9 dispatches (not text-only, not zero).
+    // Specific SUBAGENT_DEFICIT check (above) fires first for subagent-result text.
     if (
       (workState.hasPendingWork || workState.hasLocalWork || forceDispatchDirective) &&
       turnState.dispatchCount > 0 &&

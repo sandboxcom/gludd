@@ -44,7 +44,7 @@ const textCompleteMarker = {
 }
 void textCompleteMarker
 
-// Structural markers for source-reading tests: hasRealPendingWork repoHasPendingWork updateSharedStreak.
+// Structural markers: SUBAGENT_DEFICIT_RE underFloor hasPendingWork hasRealPendingWork
 // Structural markers: DELEGATE_FIRST_THRESHOLD GRINDING_HARD_DENY_THRESHOLD FORCE_DISPATCH_FILE.
 const DELEGATE_FIRST_THRESHOLD = 8
 void DELEGATE_FIRST_THRESHOLD

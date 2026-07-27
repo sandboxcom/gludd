@@ -3,7 +3,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 import { createRequire } from "node:module"
-import { isSubagent, isDisengaged, reportAlive, readJsonFile, writeJsonFile, isDispatchTool, isReadTool, ALIVE_PATH, DISENGAGE_PATH, updateSharedStreak, writeHeartbeat, getProjectRoot, getSessionStartMtimeMs } from "../lib/shared.ts"
+import { isSubagent, isDisengaged, reportAlive, readJsonFile, writeJsonFile, isDispatchTool, isReadTool, ALIVE_PATH, DISENGAGE_PATH, updateSharedStreak, writeHeartbeat, getProjectRoot, getSessionStartMtimeMs, isInPressureRelease, isInInlineRecovery, readDispatchOutcomes } from "../lib/shared.ts"
 const nodeRequire = typeof require === "function" ? require : createRequire(import.meta.url)
 function execSync(...args: any[]): Buffer {
   return nodeRequire("node:child_" + "process").execSync(...args)
@@ -369,6 +369,12 @@ const defaultImpl: HotModule = {
         _consecutiveReadsInResultPhase = 0
         return
       }
+      // PRESSURE-RELEASE: skip ALL grinding blocks when in pressure-release
+      // or inline-recovery mode. The agent needs inline tools to recover from
+      // empty/failed dispatches. Streaks and read limits are bypassed;
+      // only the wave-width ceiling (above) remains active to enforce the
+      // concurrent-agent cap.
+      const pressureRelief = isInPressureRelease() || isInInlineRecovery()
       updateSharedStreak(tool, STREAK_PLUGIN_NAME)
       // ── Message boundary detection (5s inter-call timeout) ───────────
       const isNewMessage = _lastCallTs > 0 && (now - _lastCallTs) > MESSAGE_BOUNDARY_MS
@@ -452,6 +458,9 @@ const defaultImpl: HotModule = {
       if (isReadTool(tool)) {
         _thisMessageTotalCalls++
         _readStreak++
+        // PRESSURE-RELEASE: skip all read-grinding and result-phase blocks.
+        // The agent needs to read files to recover from empty/failed dispatches.
+        if (pressureRelief) return
         // Session-start read grinding
         if (_isInSessionStartWindow()) {
           if (_readStreak > SESSION_START_READ_DENY) {
@@ -593,6 +602,12 @@ const defaultImpl: HotModule = {
         return
       }
       // ── Streak increment + floor breach ──────────────────────────────
+      // PRESSURE-RELEASE: skip floor breach entirely. The agent needs
+      // inline mutations to recover from empty/failed dispatches.
+      if (pressureRelief) {
+        _streakCount = 0
+        return
+      }
       _streakCount++
       const effectiveMax = _isInSessionStartWindow() ? SESSION_START_STREAK_MAX : MAX_STREAK
       // FLOOR BREACH is gated by _streakCount > MAX_STREAK in normal sessions.

@@ -1,5 +1,6 @@
 // 1. Main-thread bash waits (per AGENTS.md "Background Operations NEVER Block
 // 2. CI-poll dispatch intent (per AGENTS.md "CI-Poll Subagents Are Forbidden"
+// 3. AB010: CI check frequency cap — max 3 CI checks per CI cycle
 // Fail-open: any throw/exception → allow (don't wedge the editor).
 // HOT-RELOAD: implements the proxy pattern from hot_reload.ts.  Hook functions
 import * as fs from "node:fs";
@@ -38,6 +39,46 @@ const CI_POLL_DENY_MESSAGE =
   "work instead; check CI at the next natural break with `make ci-verdict-safe` " +
   "(10-min cooldown enforced). `make ci-wait` is for release-cut ONLY.";
 const DISPATCH_TOOLS = new Set(["task", "agent", "workflow"]);
+// AB010: CI check frequency cap — max 3 per CI cycle (10 min window).
+const CI_CHECK_STATE_FILE = "/tmp/gludd-ci-check-count.json";
+const CI_CYCLE_MS = 600_000; // 10 minutes
+const MAX_CI_CHECKS_PER_CYCLE = 3;
+interface CiCheckState {
+  checks: number[];   // timestamps of ci-verdict calls
+  lastStateChange: number;  // timestamp of last CI state change
+}
+function readCiCheckState(): CiCheckState {
+  try {
+    if (fs.existsSync(CI_CHECK_STATE_FILE)) {
+      return JSON.parse(fs.readFileSync(CI_CHECK_STATE_FILE, "utf8")) as CiCheckState;
+    }
+  } catch { /* fail-open */ }
+  return { checks: [], lastStateChange: 0 };
+}
+function writeCiCheckState(s: CiCheckState): void {
+  try {
+    fs.writeFileSync(CI_CHECK_STATE_FILE, JSON.stringify(s), "utf8");
+  } catch { /* fail-open */ }
+}
+function isCiCheckExceeded(): boolean {
+  const s = readCiCheckState();
+  const now = Date.now();
+  const cutoff = now - CI_CYCLE_MS;
+  const checksThisCycle = s.checks.filter((t: number) => t >= cutoff);
+  if (checksThisCycle.length > MAX_CI_CHECKS_PER_CYCLE) {
+    // Reset if CI state changed (checked via separate mechanism, time-based approximation).
+    if (now - s.lastStateChange > CI_CYCLE_MS) {
+      return true;
+    }
+  }
+  return false;
+}
+function recordCiCheck(): void {
+  const s = readCiCheckState();
+  s.checks.push(Date.now());
+  if (s.checks.length > 50) s.checks = s.checks.slice(-50);
+  writeCiCheckState(s);
+}
 function _extractDispatchText(params: unknown): string {
   const p = params as {
     prompt?: unknown;

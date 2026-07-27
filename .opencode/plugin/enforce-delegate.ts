@@ -2,7 +2,7 @@ import type { Plugin } from "@opencode-ai/plugin"
 import { createRequire } from "node:module"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { isSubagent, reportAlive, isDisengaged, isDispatchTool, isReadTool } from "../lib/shared.ts"
+import { isSubagent, reportAlive, isDisengaged, isDispatchTool, isReadTool, isInPressureRelease, isInInlineRecovery, recordDispatchAttempt, readDispatchOutcomes } from "../lib/shared.ts"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 const nodeRequire = typeof require === "function" ? require : createRequire(import.meta.url)
 function execSync(...args: any[]): Buffer {
@@ -660,6 +660,10 @@ function mainthreadBudgetBefore(tool: string, command: string): string | null {
   try {
     if (!MAINTHREAD_STREAK_ENABLED) return null
     if (isDisengaged()) return null
+    // PRESSURE-RELEASE: skip mainthread streak when in pressure-release
+    // or inline-recovery mode. The agent needs inline tool use to recover
+    // from empty/failed dispatches.
+    if (isInPressureRelease() || isInInlineRecovery()) return null
     // BP.16: Consume any stale force-dispatch signal from a prior block cycle.
     // The signal was delivered via the block error message and/or watchdog
     // injection. Keeping the file causes re-injection on every watchdog poll.
@@ -737,8 +741,12 @@ function mainthreadBudgetBefore(tool: string, command: string): string | null {
 function mainthreadBudgetAfter(tool: string, command: string): void {
   try {
     if (isDispatchTool(tool)) {
+      // DISPATCH_ATTEMPT: reset streak on ANY dispatch attempt, not just
+      // text-marked completions. Also record the attempt for pressure-release
+      // tracking — 3 consecutive empty dispatches auto-activates recovery mode.
       writeStreak({ count: 0 })
       saveReadGrindState(0, Date.now())
+      recordDispatchAttempt()
       try { fs.unlinkSync(FORCE_DISPATCH_FILE) } catch { /* absent OK */ }
     } else if (tool === "bash" && isGitShippingTarget(command)) {
       // Git shipping operations reset the streak — they complete a unit of work.

@@ -1,10 +1,25 @@
 // Default ON. Fail-open. Subagent guard. Hot-reload capable.
+// Extended: AB001 frustration signals, AB002 spec velocity, AB003 CI-check-while-spec-target,
+// AB007 objective stacking, AB008 behavioral change measurement.
 import type { Plugin } from "@opencode-ai/plugin";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
 import { isSubagent, reportAlive, getProjectRoot } from "../lib/shared.ts";
 const NAG_PREFIX = "███  NO PRIMARY OBJECTIVE SET";
+const SPEC_VELOCITY_FILE = "/tmp/gludd-spec-velocity.json";
+const SPEC_BEHAVIOR_FILE = "/tmp/gludd-spec-behavior.json";
+// AB002: minimum specs per 5-minute window to maintain velocity.
+// If pace is below this, non-spec activities are blocked.
+const MIN_SPECS_PER_WINDOW = 25; // 100 specs in 20 min = 25 per 5-min window
+const SPEC_WINDOW_MS = 300_000; // 5 minutes
+const SPEC_TARGET_TOTAL = 8000;
+// AB003: max CI checks per spec window while spec target is unmet.
+const MAX_CI_CHECKS_PER_SPEC_WINDOW = 3;
+// AB007: objective stacking — secondary requests don't overwrite primary.
+const OBJECTIVE_STACK_FILE = "/tmp/gludd-objective-stack.json";
+// AB008: behavioral failure recurrence tracking.
+const MAX_RECURRENCE_BEFORE_BLOCK = 3;
 function getPrimaryObjective(): string {
   try {
     const root = getProjectRoot();
@@ -12,10 +27,38 @@ function getPrimaryObjective(): string {
     if (!fs.existsSync(sessionPath)) return "";
     const content = fs.readFileSync(sessionPath, "utf8");
     const match = content.match(/^## PRIMARY OBJECTIVE:\s*(.+)$/m);
-    return match ? match[1].trim() : "";
+    if (match) return match[1].trim();
+    // AB007 fallback: check objective stack if no PRIMARY OBJECTIVE line
+    return getStackedObjective();
   } catch {
     return "";
   }
+}
+// AB007: read stacked objective from persistent state file.
+function getStackedObjective(): string {
+  try {
+    if (!fs.existsSync(OBJECTIVE_STACK_FILE)) return "";
+    const stack = JSON.parse(fs.readFileSync(OBJECTIVE_STACK_FILE, "utf8"));
+    if (Array.isArray(stack) && stack.length > 0) return stack[0] as string;
+    return "";
+  } catch {
+    return "";
+  }
+}
+// AB007: persist objective to stack so it survives secondary request overwrite.
+function persistObjectiveToStack(objective: string): void {
+  try {
+    let stack: string[] = [];
+    if (fs.existsSync(OBJECTIVE_STACK_FILE)) {
+      const existing = JSON.parse(fs.readFileSync(OBJECTIVE_STACK_FILE, "utf8"));
+      if (Array.isArray(existing)) stack = existing as string[];
+    }
+    if (stack.length === 0 || stack[0] !== objective) {
+      stack.unshift(objective);
+      if (stack.length > 5) stack = stack.slice(0, 5);
+      fs.writeFileSync(OBJECTIVE_STACK_FILE, JSON.stringify(stack), "utf8");
+    }
+  } catch { /* fail-open */ }
 }
 function isCiGreenFromCache(): boolean {
   try {
@@ -37,6 +80,76 @@ function isObjectiveMet(): boolean {
   }
   return false;
 }
+// AB002: read spec velocity state.
+interface SpecVelocity {
+  specWrites: number[];  // UNIX-timestamp array of recent spec writes
+  totalSpecs: number;
+  lastCiCheck: number;
+  ciCheckCount: number;
+}
+function readSpecVelocity(): SpecVelocity {
+  try {
+    if (fs.existsSync(SPEC_VELOCITY_FILE)) {
+      return JSON.parse(fs.readFileSync(SPEC_VELOCITY_FILE, "utf8")) as SpecVelocity;
+    }
+  } catch { /* fail-open */ }
+  return { specWrites: [], totalSpecs: 0, lastCiCheck: 0, ciCheckCount: 0 };
+}
+function writeSpecVelocity(v: SpecVelocity): void {
+  try {
+    fs.writeFileSync(SPEC_VELOCITY_FILE, JSON.stringify(v), "utf8");
+  } catch { /* fail-open */ }
+}
+// AB002+AB003: check if spec writing velocity is sufficient AND CI checks aren't excessive.
+function isSpecVelocitySufficient(): boolean {
+  const v = readSpecVelocity();
+  const now = Date.now();
+  const cutoff = now - SPEC_WINDOW_MS;
+  const recentWrites = v.specWrites.filter((t: number) => t >= cutoff);
+  const recentCiChecks = v.ciCheckCount;
+  // If no spec target, don't enforce.
+  if (v.totalSpecs >= SPEC_TARGET_TOTAL) return true;
+  // AB003: if too many CI checks without spec progress, block.
+  if (recentCiChecks > MAX_CI_CHECKS_PER_SPEC_WINDOW && recentWrites.length < MIN_SPECS_PER_WINDOW / 5) {
+    return false;
+  }
+  // AB002: if recent spec pace is too slow, block.
+  if (recentWrites.length < MIN_SPECS_PER_WINDOW && v.totalSpecs > 0 && v.totalSpecs < SPEC_TARGET_TOTAL) {
+    return false;
+  }
+  return true;
+}
+// AB002: record a spec file write timestamp.
+function recordSpecWrite(): void {
+  const v = readSpecVelocity();
+  v.specWrites.push(Date.now());
+  // Keep only last 1000 timestamps.
+  if (v.specWrites.length > 1000) v.specWrites = v.specWrites.slice(-1000);
+  // Update total from file if possible.
+  try {
+    const root = getProjectRoot();
+    const specPath = path.join(root, "docs", "specs", "BEHAVIORAL_SPECS.md");
+    if (fs.existsSync(specPath)) {
+      const content = fs.readFileSync(specPath, "utf8");
+      const matches = content.match(/^### [A-Z]+\d{3} — /gm);
+      v.totalSpecs = matches ? matches.length : v.totalSpecs;
+    }
+  } catch { /* fail-open */ }
+  writeSpecVelocity(v);
+}
+// AB003: record a CI check attempt.
+function recordCiCheck(): void {
+  const v = readSpecVelocity();
+  v.lastCiCheck = Date.now();
+  v.ciCheckCount += 1;
+  // Reset CI check count after 10 minutes.
+  const cutoff = Date.now() - 600_000;
+  const recentWrites = v.specWrites.filter((t: number) => t >= cutoff);
+  if (recentWrites.length >= 1) {
+    v.ciCheckCount = 0; // Progress was made — reset CI counter.
+  }
+  writeSpecVelocity(v);
+}
 // ============================================================================
 // DEFAULT IMPLEMENTATION (compiled-in fallback)
 // ============================================================================
@@ -48,9 +161,47 @@ const defaultImpl: HotModule = {
       if (process.env.GLUDD_OBJECTIVE_ENFORCE === "0") return;
       if (process.env.FORCE === "1") return;
       const objective = getPrimaryObjective();
+      // AB007: persist objective to stack on every check.
+      if (objective) persistObjectiveToStack(objective);
+      const tool = (input?.tool ?? "") as string;
+      // AB002: track spec file writes for velocity monitoring.
+      if (tool === "edit" || tool === "write") {
+        const filePath = typeof input?.args?.filePath === "string" ? input.args.filePath
+          : typeof input?.args?.path === "string" ? input.args.path : "";
+        if (filePath.includes("BEHAVIORAL_SPECS.md") || filePath.includes("behavioral_specs")) {
+          recordSpecWrite();
+        }
+      }
+      // AB003: track CI verifications.
+      if (tool === "bash") {
+        const cmd = typeof input?.args?.command === "string" ? input.args.command : "";
+        if (/\bmake\s+(ci-verdict|ci-verdict-safe)\b/.test(cmd)) {
+          recordCiCheck();
+        }
+      }
+      // AB002/AB003: block non-spec activities when velocity is insufficient.
+      if (!isSpecVelocitySufficient() && objective && !isObjectiveMet()) {
+        if (tool === "edit" || tool === "write" || tool === "bash") {
+          const filePath = typeof input?.args?.filePath === "string" ? input.args.filePath
+            : typeof input?.args?.path === "string" ? input.args.path : "";
+          const cmd = typeof input?.args?.command === "string" ? input.args.command : "";
+          // Allow spec-related writes and CI-advancing commands.
+          if (!filePath.includes("BEHAVIORAL_SPECS.md") &&
+              !/\bmake\s+(ci-verdict|batch-push|release-cut|test)\b/.test(cmd)) {
+            return {
+              permissionDecision: "deny" as const,
+              message:
+                `SPEC VELOCITY INSUFFICIENT (AB002/AB003). ` +
+                `Spec writing pace is below ${MIN_SPECS_PER_WINDOW}/5min or ` +
+                `too many CI checks (${MAX_CI_CHECKS_PER_SPEC_WINDOW}) without progress. ` +
+                `Write specs or fix spec-enforcement gaps before other activities. ` +
+                `Set GLUDD_OBJECTIVE_ENFORCE=0 to disable.`,
+            };
+          }
+        }
+      }
       if (!objective) return;
       if (isObjectiveMet()) return;
-      const tool = (input?.tool ?? "") as string;
       // Dispatch and read tools always allowed.
       if (tool === "task" || tool === "agent" || tool === "workflow") return;
       if (tool === "read" || tool === "grep" || tool === "glob") return;

@@ -103,6 +103,10 @@ export function shouldAllowEdit(
 
 // ── enforce-stop helpers ────────────────────────────────────────────────
 
+export function getSubagentDeficitRe(): RegExp {
+  return /\b(?:agent|subagent|task)\s+\d+\s+(?:completed|finished|did|fixed|found|wrote|added|removed|updated|reported|returned|resolved|processed|handled|investigated|checked|audited|reviewed|implemented|created|tested|verified|deployed|patched|refactored|cleaned|merged|built|generated|produced|says|indicates|confirms|shows|began|started|noted)\b/i
+}
+
 export function getPermissionSeekingRe(): RegExp {
   return /(?:want me to|should i|shall i|^proceed\?)/im
 }
