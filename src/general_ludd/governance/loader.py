@@ -140,6 +140,21 @@ def get_licenses_permits() -> ModuleType:
     return _get_module("licenses_permits")
 
 
+def get_jurisdictions() -> ModuleType:
+    """Return the ``jurisdictions`` knowledge module."""
+    return _get_module("jurisdictions")
+
+
+def get_classification_markings() -> ModuleType:
+    """Return the ``classification_markings`` knowledge module."""
+    return _get_module("classification_markings")
+
+
+def get_authority_registry() -> ModuleType:
+    """Return the ``authority_registry`` knowledge module."""
+    return _get_module("authority_registry")
+
+
 def clear_cache() -> None:
     """Clear the module cache (useful for tests)."""
     for name in list(_GOVERNANCE_MODULE_UTILS_CACHE):

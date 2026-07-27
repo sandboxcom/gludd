@@ -21,13 +21,21 @@ import sys
 from typing import Any, TextIO
 
 from general_ludd.governance.loader import (
+    get_authority_registry,
     get_borders,
     get_civic_services,
+    get_classification_markings,
     get_conflicts_treaties,
+    get_decision_makers,
     get_elections_voting,
     get_governing_bodies,
+    get_info_classification,
     get_international_relations,
+    get_jurisdictions,
     get_legal_systems,
+    get_licenses_permits,
+    get_military_service,
+    get_postal_delivery,
     get_public_finance,
     get_tax_currency,
 )
@@ -122,8 +130,10 @@ def _cmd_tax(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     result: dict[str, Any] = {
-        "country": code, "found": True,
-        "currency_code": country_data.get("currency", ""), **country_data
+        "country": code,
+        "found": True,
+        "currency_code": country_data.get("currency", ""),
+        **country_data,
     }
     authority = tax_mod.TAX_AUTHORITIES.get(code)
     if authority:
@@ -164,8 +174,7 @@ def _cmd_service(args: argparse.Namespace) -> None:
     if original_svc.lower() != svc_name:
         result["original_query"] = original_svc
         result["notes"] = (
-            f"Mapped '{original_svc}' to nearest service '{svc_name}'."
-            " For US healthcare visit healthcare.gov"
+            f"Mapped '{original_svc}' to nearest service '{svc_name}'. For US healthcare visit healthcare.gov"
         )
     _print_result(result, json_output=args.json)
 
@@ -240,16 +249,28 @@ def _navigate_query(query: str, *, json_output: bool = False) -> None:
                 results.append({"domain": "borders", "match": name, "data": entry})
         # If no direct match, return all borders as available
         if not results:
-            results.append({
-                "domain": "borders",
-                "hint": "Try: " + ", ".join(sorted(borders.BORDER_DATA)[:5]),
-                "available_count": len(borders.BORDER_DATA),
-            })
+            results.append(
+                {
+                    "domain": "borders",
+                    "hint": "Try: " + ", ".join(sorted(borders.BORDER_DATA)[:5]),
+                    "available_count": len(borders.BORDER_DATA),
+                }
+            )
 
     # ── Governing body keywords ──
     body_keywords = {
-        "government", "body", "council", "parliament", "assembly",
-        "organization", "union", "un ", "eu ", "nato", "wto", "who",
+        "government",
+        "body",
+        "council",
+        "parliament",
+        "assembly",
+        "organization",
+        "union",
+        "un ",
+        "eu ",
+        "nato",
+        "wto",
+        "who",
     }
     if any(kw in query for kw in body_keywords) or any(
         org in query for org in ("united nations", "european union", "african union")
@@ -260,28 +281,43 @@ def _navigate_query(query: str, *, json_output: bool = False) -> None:
             if any(word in haystack for word in query.split() if len(word) > 2):
                 results.append({"domain": "bodies", "match": body["name"], "data": body})
         if not results:
-            results.append({
-                "domain": "bodies",
-                "hint": "Try: " + ", ".join(b["name"] for b in bodies.INTERNATIONAL_BODIES[:5]),
-                "available_count": len(bodies.INTERNATIONAL_BODIES),
-            })
+            results.append(
+                {
+                    "domain": "bodies",
+                    "hint": "Try: " + ", ".join(b["name"] for b in bodies.INTERNATIONAL_BODIES[:5]),
+                    "available_count": len(bodies.INTERNATIONAL_BODIES),
+                }
+            )
 
     # ── Tax / currency keywords ──
     tax_keywords = {"tax", "vat", "gst", "irs", "revenue", "duty", "tariff"}
     currency_keywords = {
-        "currency", "dollar", "euro", "pound", "yen", "rupee",
-        "cad", "usd", "eur", "gbp", "jpy", "inr", "aud",
+        "currency",
+        "dollar",
+        "euro",
+        "pound",
+        "yen",
+        "rupee",
+        "cad",
+        "usd",
+        "eur",
+        "gbp",
+        "jpy",
+        "inr",
+        "aud",
     }
     if any(kw in query for kw in tax_keywords) or any(kw in query for kw in currency_keywords):
         tax_cur = get_tax_currency()
         for code, record in tax_cur.TAX_CURRENCY.items():
-            haystack = " ".join([
-                code.lower(),
-                str(record.get("name", "")).lower(),
-                str(record.get("currency_code", "")).lower(),
-                str(record.get("currency_name", "")).lower(),
-                str(record.get("tax_authority", "")).lower(),
-            ])
+            haystack = " ".join(
+                [
+                    code.lower(),
+                    str(record.get("name", "")).lower(),
+                    str(record.get("currency_code", "")).lower(),
+                    str(record.get("currency_name", "")).lower(),
+                    str(record.get("tax_authority", "")).lower(),
+                ]
+            )
             if any(word in haystack for word in query.split() if len(word) > 2):
                 results.append({"domain": "tax_currency", "match": code, "data": record})
 
@@ -294,11 +330,13 @@ def _navigate_query(query: str, *, json_output: bool = False) -> None:
             if any(word in haystack for word in query.split() if len(word) > 3):
                 results.append({"domain": "treaties", "match": treaty["name"], "data": treaty})
         if not results:
-            results.append({
-                "domain": "treaties",
-                "hint": "Try: " + ", ".join(t["name"] for t in ct.TREATY_DATABASE[:5]),
-                "available_count": len(ct.TREATY_DATABASE),
-            })
+            results.append(
+                {
+                    "domain": "treaties",
+                    "hint": "Try: " + ", ".join(t["name"] for t in ct.TREATY_DATABASE[:5]),
+                    "available_count": len(ct.TREATY_DATABASE),
+                }
+            )
 
     # ── Civic service keywords ──
     civic_keywords = {"service", "healthcare", "passport", "postal", "license", "vote", "voting", "registration"}
@@ -307,25 +345,24 @@ def _navigate_query(query: str, *, json_output: bool = False) -> None:
         for svc_id, svc_def in civic.SERVICES.items():
             for country_code, svc_info in svc_def.get("countries", {}).items():
                 haystack = (
-                    svc_id.lower() + " "
-                    + str(svc_info.get("issuing_body", "")).lower() + " "
+                    svc_id.lower()
+                    + " "
+                    + str(svc_info.get("issuing_body", "")).lower()
+                    + " "
                     + str(svc_def.get("category", "")).lower()
                 )
                 if any(word in haystack for word in query.split() if len(word) > 3):
-                    results.append({
-                        "domain": "civic_services",
-                        "match": (
-                            f"{svc_def.get('issuing_body', svc_id)}"
-                            f" ({country_code})"
-                        ),
-                        "data": {
-                            "country": country_code,
-                            "service_id": svc_id,
-                            "issuing_body": svc_info.get(
-                                "issuing_body", ""
-                            ),
-                        },
-                    })
+                    results.append(
+                        {
+                            "domain": "civic_services",
+                            "match": (f"{svc_def.get('issuing_body', svc_id)} ({country_code})"),
+                            "data": {
+                                "country": country_code,
+                                "service_id": svc_id,
+                                "issuing_body": svc_info.get("issuing_body", ""),
+                            },
+                        }
+                    )
 
     # ── No results ──
     if not results:
@@ -356,10 +393,14 @@ def _cmd_elections(args: argparse.Namespace) -> None:
         sys.exit(1)
     # Add human-readable body names for common countries
     body_names = {
-        "gb": "House of Commons", "us": "House of Representatives / Senate",
-        "ca": "House of Commons", "au": "House of Representatives / Senate",
-        "de": "Bundestag", "fr": "National Assembly",
-        "jp": "House of Representatives", "in": "Lok Sabha",
+        "gb": "House of Commons",
+        "us": "House of Representatives / Senate",
+        "ca": "House of Commons",
+        "au": "House of Representatives / Senate",
+        "de": "Bundestag",
+        "fr": "National Assembly",
+        "jp": "House of Representatives",
+        "in": "Lok Sabha",
     }
     result["legislative_body"] = body_names.get(args.country.lower(), "")
     _print_result(result, json_output=args.json)
@@ -373,8 +414,9 @@ def _cmd_relations(args: argparse.Namespace) -> None:
         if not matches:
             print(f"No alliance found for '{args.alliance}'.", file=sys.stderr)
             sys.exit(1)
-        _print_result({"query": args.alliance, "found": True, "count": len(matches), "alliances": matches},
-                      json_output=args.json)
+        _print_result(
+            {"query": args.alliance, "found": True, "count": len(matches), "alliances": matches}, json_output=args.json
+        )
         return
     if args.sanctions:
         result = ir_mod.lookup_sanctions(args.sanctions)
