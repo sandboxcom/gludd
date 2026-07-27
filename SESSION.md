@@ -6,31 +6,69 @@
 
 ---
 
-## Current Gate Status (2026-07-24)
 ## Current Gate Status (2026-07-26)
 <!-- gate:begin -->
-- lint PASS 0
-- verify-feature-claims PASS
-- hot-reload PASS
-- verify-hot-reload PASS
-- check-status-table PASS
-- env-writes PASS
-- hook-runtime
+- lint: not re-run on HEAD
+- typecheck: not re-run on HEAD
+- gate: not re-run on HEAD
 
 <!-- gate:end -->
 
 ---
 
-## SESSION 53 — 2026-07-25
+## SESSION 53 — 2026-07-26 (ACTIVE)
 
-- **HEAD: `d99624cc`** on `master` branch (VERIFIED on sandboxcom)
-- **Version: 0.1.0-beta.1** (RELEASED — all 12 artifacts verified)
-- **Push status: PUSHED + VERIFIED** — master@d99624cc on sandboxcom
-- **CI: GREEN** — run 30145571826 conclusion: success (all gates, all builds, release job)
-- **Release: PUBLISHED** — https://github.com/sandboxcom/gludd/releases/tag/v0.1.0-beta.1
-- **Artifacts: 21 assets, 12/12 categories verified** (verify-release-completeness ALL 16 CHECKS PASSED)
-- **Gate: PASSED** — all phases green
-- **Working tree: CLEAN**
+- **HEAD: `7ae1bcbf`** on `development` branch
+- **Version: 0.1.0-beta.5** (pyproject.toml; next release: v0.1.0-beta.2)
+- **Push status: NOT PUSHED** — development has unpushed commits
+- **CI: NOT CHECKED** — HEAD `7ae1bcbf` on development, no CI run triggered
+- **Release readiness: BLOCKED** on CI green for release-cut
+- **Gate: not re-run on HEAD**
+- **Working tree: DIRTY** — TASKS.md, SESSION.md, Makefile, README.md, pyproject.toml, src/general_ludd/__init__.py, agents/dispatcher.py, daemon.py, event_loop/loop.py, worker/app.py + untracked coverage artifacts
+
+### Wave closed this session
+
+Commit `97432526`: e2e branch coverage suite + governance P1-P6 + memory consolidation + enforce-task-tracking plugin + D.5/E.11 closure. Commit `7ae1bcbf`: fix CI secrets baseline.
+
+### Items completed (ticked in TASKS.md)
+
+| Item | Description | Evidence |
+|------|-------------|----------|
+| D.5 | Compute discovery + auto-select | 27 tests pass, already complete |
+| E.11 | task_decisions.created_at retention wired into loop.py | ix_task_decisions_created_at index + retention policy |
+| S53.32 | Memory consolidation cascade + hybrid search | MemoryEmbeddingStore + consolidation modules |
+| S53.37 | Task tracking enforcement gap analysis + spec | docs/design/TASK_TRACKING_ENFORCEMENT_SPEC.md |
+| S53.38 | enforce-task-tracking.ts plugin | .opencode/plugin/enforce-task-tracking.ts + tests |
+| S53.40 | S1/S2 stub closure | noop executor failure msg + review dispatch circuit-breaker |
+| S53.41 | Branch coverage e2e tests (5 files, ~137 tests) | scripts/parse_branch_coverage.py + 5 test files |
+| S53.42 | Governance P1-P6 collection scaffold + module_utils | src/general_ludd/governance/ + 6 knowledge domains |
+
+### Remaining open items
+
+| Item | Status |
+|------|--------|
+| S53.29 — Cut v0.1.0-beta.2 release | BLOCKED on CI green |
+| T-BETA3-CONNECTORS-BATCH5-ORCHESTRATION | pending |
+| A.4 — Cut v0.1.0-beta.1 release with all 12 artifacts | re-opened (v0.1.0-beta.1 incomplete — 1/12 artifacts) |
+
+### Pre-release blockers (2026-07-26)
+
+| Blocker | Status |
+|---------|--------|
+| Push development commits to remote | NOT PUSHED |
+| CI green on development HEAD `7ae1bcbf` | NO RUN |
+| Local gate green | NOT RE-RUN |
+| `make release-cut TAG=v0.1.0-beta.2` | BLOCKED on CI green |
+| `make verify-release-completeness` 12/12 | BLOCKED on release-cut |
+
+### Next
+
+1. Commit TASKS.md + SESSION.md updates
+2. Push development to remote
+3. Wait for CI green
+4. Cut v0.1.0-beta.2 via `make release-cut`
+
+- **Last Updated: 2026-07-26 — Session 53.** HEAD `7ae1bcbf` on `development`. 2 commits since prior state (97432526: wave close, 7ae1bcbf: CI secrets fix). TASKS.md updated: 5 items ticked, 3 items added. Release blocked on CI green.
 
 ### Release v0.1.0-beta.1 — SHIPPED
 

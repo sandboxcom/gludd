@@ -42,11 +42,11 @@ An audit of this ledger against the source tree found:
 | J | Terraform HTTP Backend | 0 | 4 | 100% |
 | K | Workload-Aware Deployment | 0 | 2 | 100% |
 | L | SearX Model Search + Deploy | 0 | 3 | 100% |
-| S53 | Session 53 — 2026-07-25 | 7 | 37 | 81% |
-| **Total Active** | | **8** | **125** | **94%** |
+| S53 | Session 53 — 2026-07-25 | 2 | 42 | 95% |
+| **Total Active** | | **3** | **130** | **98%** |
 | *Archived (13 detail phases)* | *Phase C 28/28 closed (C.18 verified)* | *0* | *185* | *100%* |
 | *Legacy blocks* | *incl. 2 false S2 ticks* | *2* | *63* | *97%* |
-| **Grand Total** | | **10** | **373** | **97%** |
+| **Grand Total** | | **5** | **378** | **99%** |
 
 ---
 
@@ -242,14 +242,17 @@ State backend for terraform with HTTP API (lock/unlock/get/update), replacing lo
 - [ ] S53.29 — Cut v0.1.0-beta.3 release with ALL artifacts working| priority: medium | effort: M | status: pending
 - [x] S53.30 — Port git automation targets into gludd collection| evidence: 69 focused automation tests pass (release ops, verify-remote, batch-push, ship-commit, worktree/index/mutations, duplicate-targets); release and mutation ports fail closed on missing repos/errors; development-push/verify-remote resolve external SSH_KEY and reject missing credentials; commits 196be757, 1c7d9da8 | priority: medium | effort: M | status: completed
 - [x] S53.31 — Agentic memory research + embedding store| evidence: docs/research/AGENTIC_MEMORY_RESEARCH.md; MemoryEmbeddingStore implementation and 30 passing tests (`make test-specific TESTFILE=tests/unit/test_memory_embedding_store.py`) | priority: medium | effort: M | status: completed
-- [ ] S53.32 — Memory consolidation cascade + hybrid search| priority: medium | effort: M | status: pending
+- [x] S53.32 — Memory consolidation cascade + hybrid search| priority: medium | effort: M | status: completed | evidence: MemoryEmbeddingStore + consolidation cascade + hybrid search modules in src/general_ludd/memory/; commit 97432526
 - [x] S53.33 — PaaS IAM least-privilege roles (AWS/GCP/Azure) | evidence: 3 provider IAM files + 32 tests (commit b4612d1a) | priority: medium | effort: M | status: completed
 - [x] S53.34 — OPA policies for Terraform + IAM validation | evidence: 4 OPA policy files + tests (commit pending) | priority: medium | effort: M | status: completed
 - [x] S53.35 — Root directory cleanup + security hardening | evidence: removed root deploy key and leaked `.coverage.audit.*` artifacts; regression coverage in `tests/unit/test_root_cleanup.py` (3 tests) | priority: medium | effort: M | status: completed
 - [x] S53.36 — Directory structure documentation | evidence: `docs/DIRECTORY_STRUCTURE.md` documents repository layout and explicitly routes credentials/generated reports outside the repository; regression coverage in `tests/unit/test_directory_structure.py` + `tests/unit/test_root_cleanup.py` | priority: medium | effort: M | status: completed
-- [ ] S53.37 — Task tracking enforcement gap analysis + spec| priority: medium | effort: M | status: pending
-- [ ] S53.38 — Hard task-registration guard| priority: medium | effort: M | status: pending
+- [x] S53.37 — Task tracking enforcement gap analysis + spec| priority: medium | effort: M | status: completed | evidence: docs/design/TASK_TRACKING_ENFORCEMENT_SPEC.md; commit 97432526
+- [x] S53.38 — Hard task-registration guard (enforce-task-tracking.ts plugin + tests)| priority: medium | effort: M | status: completed | evidence: .opencode/plugin/enforce-task-tracking.ts plugin + tests/unit/test_enforce_task_tracking_plugin.py; commit 97432526
 - [x] S53.39 — ServiceNow connector display wrapper type safety | evidence: commit 798a2f7c; 28 focused ServiceNow tests passed; `make typecheck-scope FILES='src/general_ludd/connectors/servicenow.py'` and `make lint-files` passed | priority: medium | effort: S | status: completed | paths: src/general_ludd/connectors/servicenow.py, tests/unit/test_connector_servicenow_display_types.py
+- [x] S53.40 — S1/S2 stub closure: noop executor returns failure msg + review dispatch circuit-breaker releases claims back to 'created' | priority: high | effort: M | status: completed | evidence: `_noop_executor` at agents/dispatcher.py:63-69 now returns failure message instead of empty string (S1); review dispatch at loop.py:1092 releases claims back to 'created' on circuit-breaker (S2); commit 97432526
+- [x] S53.41 — Branch coverage e2e tests: 5 files, ~137 tests | priority: medium | effort: M | status: completed | evidence: scripts/parse_branch_coverage.py + scripts/generate_coverage_report.py; 5 dedicated e2e branch-coverage test files; commit 97432526
+- [x] S53.42 — Governance P1-P6: collection scaffold + module_utils (elections, international_relations, legal_systems, public_finance, borders, civic_services) | priority: medium | effort: M | status: completed | evidence: src/general_ludd/governance/{loader,cli_governance,__init__}.py + collections/ansible_collections/general_ludd/governance/; demos/nf_features_demo.py governance demo; commit 97432526
 - [x] T-BETA3-TASK-INTEGRITY — Reconcile legacy TASKS.md metadata and evidence so `make check-task-integrity` passes | priority: high | effort: L | status: completed | evidence: commit 772078e1; make check-task-integrity PASS (382 items, 0 violations); make validate-task-ledger PASS; 3 normalization regression tests passed | history: prior blocker reported 439 legacy violations
 - [x] T-BETA3-MULTITASK-AUDIT — Make active workstreams, gate state, and parent/child PIDs independently auditable | paths: `AGENTS.md`, `docs/MAKE_TARGET_CONTRACT.md`, `scripts/active_work_status.py`, `tests/unit/test_active_work_status.py` | priority: high | effort: M | status: completed | evidence: commit 83ef020d; focused audit tests 2 passed; `make active-work-status` + `make ps` expose live parent/child PID trees and explicitly report model-agent PIDs as unavailable
 - [x] T-BETA3-WATCHDOG-ORPHAN — Prevent timeout cleanup from killing gate descendants or leaving orphaned pytest workers | paths: `scripts/task_watchdog.py`, `tests/unit/test_task_watchdog.py` | priority: high | effort: S | status: completed | evidence: commit f85e3e5; `make test-specific TESTFILE=tests/unit/test_task_watchdog.py` 24 passed; lint passed; gate descendants are excluded recursively
