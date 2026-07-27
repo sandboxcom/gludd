@@ -115,7 +115,12 @@ class NomadSource:
 
     KIND = "logs"
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        config: dict[str, Any],
+        *,
+        transport: _Transport | None = None,
+    ) -> None:
         cfg = config or {}
         base_url = cfg.get("base_url")
         if not base_url:
@@ -130,10 +135,14 @@ class NomadSource:
         self._host = parsed.hostname
         self._allow_private = bool(cfg.get("allow_private", False))
         self._token_env = cfg.get("token_env")
-        transport = cfg.get("transport")
+        config_transport = cfg.get("transport")
         self._transport: _Transport = cast(
             _Transport,
-            transport if transport is not None else _urllib_transport,
+            transport
+            if transport is not None
+            else config_transport
+            if config_transport is not None
+            else _urllib_transport,
         )
 
     # -- SSRF + auth ----------------------------------------------------------
@@ -142,8 +151,7 @@ class NomadSource:
             return
         if _host_is_private(self._host):
             raise NomadSSRFError(
-                f"refusing internal/private host {self._host!r}; "
-                "set allow_private=True to permit (Nomad is internal)"
+                f"refusing internal/private host {self._host!r}; set allow_private=True to permit (Nomad is internal)"
             )
 
     def _headers(self) -> dict[str, str]:
@@ -174,9 +182,7 @@ class NomadSource:
         return {"ok": True, "detail": f"nomad ok (HTTP {resp.status_code})"}
 
     # -- normalizers ----------------------------------------------------------
-    def _alloc_log_records(
-        self, alloc_id: str, log_type: str, text: str
-    ) -> list[dict[str, Any]]:
+    def _alloc_log_records(self, alloc_id: str, log_type: str, text: str) -> list[dict[str, Any]]:
         records: list[dict[str, Any]] = []
         level = "error" if log_type == "stderr" else "info"
         for line in text.splitlines():

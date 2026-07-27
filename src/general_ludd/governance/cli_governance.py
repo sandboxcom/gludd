@@ -377,6 +377,234 @@ def _navigate_query(query: str, *, json_output: bool = False) -> None:
     _print_result({"query": query, "results": results, "count": len(results)}, json_output=json_output)
 
 
+def _cmd_jurisdictions(args: argparse.Namespace) -> None:
+    """``gludd governance jurisdictions <code>`` — jurisdiction lookup."""
+    jurisd = get_jurisdictions()
+    if args.subdivisions:
+        result = jurisd.get_subdivisions(args.code)
+        if not result:
+            print(f"No subdivisions found for '{args.code.upper()}'.", file=sys.stderr)
+            sys.exit(1)
+        _print_result(
+            {"code": args.code.upper(), "found": True, "count": len(result), "subdivisions": result},
+            json_output=args.json,
+        )
+        return
+    result = jurisd.get_jurisdiction(args.code)
+    if result is None:
+        print(f"No jurisdiction found for '{args.code}'.", file=sys.stderr)
+        sys.exit(1)
+    parents = jurisd.get_parents(args.code)
+    if parents:
+        result["parents"] = list(parents)
+    _print_result({"found": True, **result}, json_output=args.json)
+
+
+def _cmd_classification(args: argparse.Namespace) -> None:
+    """``gludd governance classification <system>`` — classification markings."""
+    cm = get_classification_markings()
+    if args.caveat:
+        result = cm.resolve_caveat(args.caveat)
+        if result is None:
+            print(f"No caveat found for '{args.caveat}'.", file=sys.stderr)
+            sys.exit(1)
+        _print_result({"caveat": args.caveat, "found": True, **result}, json_output=args.json)
+        return
+    if args.banner:
+        banner = cm.get_banner_line(args.system, args.banner)
+        if banner is None:
+            print(f"No banner line for level '{args.banner}' in system '{args.system}'.", file=sys.stderr)
+            sys.exit(1)
+        _print_result(
+            {"system": args.system, "level": args.banner, "banner": banner, "found": True}, json_output=args.json
+        )
+        return
+    systems = cm.list_systems()
+    caveats = cm.list_caveats(args.system if args.system else None)
+    _print_result({"systems": systems, "caveats": caveats, "found": True}, json_output=args.json)
+
+
+def _cmd_authority(args: argparse.Namespace) -> None:
+    """``gludd governance authority <query>`` — issuing authority lookup."""
+    ar = get_authority_registry()
+    if args.code:
+        result = ar.get_authority(args.code)
+        if result is None:
+            print(f"No authority found for '{args.code}'.", file=sys.stderr)
+            sys.exit(1)
+        _print_result({"code": args.code, "found": True, **result}, json_output=args.json)
+        return
+    if args.instrument:
+        authorities = ar.authorities_by_instrument(args.instrument)
+        if not authorities:
+            print(f"No authorities issue '{args.instrument}'.", file=sys.stderr)
+            sys.exit(1)
+        _print_result(
+            {"instrument": args.instrument, "found": True, "count": len(authorities), "authorities": authorities},
+            json_output=args.json,
+        )
+        return
+    all_authorities = {
+        code: {"name": v["name"], "jurisdiction": v["jurisdiction"]} for code, v in ar.AUTHORITY_INSTRUMENTS.items()
+    }
+    _print_result({"count": len(all_authorities), "authorities": all_authorities, "found": True}, json_output=args.json)
+
+
+def _cmd_info_classification(args: argparse.Namespace) -> None:
+    """``gludd governance info-class <country>`` — info classification and FOIA."""
+    ic = get_info_classification()
+    if args.foia:
+        result = ic.get_foia_procedure(args.country)
+        if result is None:
+            print(f"No FOIA procedure found for '{args.country.upper()}'.", file=sys.stderr)
+            sys.exit(1)
+        _print_result({"country": args.country.upper(), "found": True, **result}, json_output=args.json)
+        return
+    if args.source:
+        result = ic.find_official_source(args.source, args.country)
+        if result is None:
+            print(f"No source '{args.source}' found for '{args.country.upper()}'.", file=sys.stderr)
+            sys.exit(1)
+        _print_result({"country": args.country.upper(), "found": True, **result}, json_output=args.json)
+        return
+    if args.equiv:
+        parts = args.equiv.split(",")
+        if len(parts) == 3:
+            ok = ic.check_clearance_equiv(parts[0].strip(), parts[1].strip(), parts[2].strip())
+            _print_result(
+                {
+                    "level": parts[0].strip(),
+                    "country_a": parts[1].strip(),
+                    "country_b": parts[2].strip(),
+                    "equivalent": ok,
+                    "found": True,
+                },
+                json_output=args.json,
+            )
+            return
+        print("Use: --equiv <level>,<country_a>,<country_b>", file=sys.stderr)
+        sys.exit(1)
+    result = ic.get_classification_system(args.country)
+    if result is None:
+        print(f"No classification system found for '{args.country.upper()}'.", file=sys.stderr)
+        sys.exit(1)
+    _print_result({"country": args.country.upper(), "found": True, **result}, json_output=args.json)
+
+
+def _cmd_decision_makers(args: argparse.Namespace) -> None:
+    """``gludd governance decision-makers <country>`` — decision-maker lookup."""
+    dm = get_decision_makers()
+    if args.person:
+        info = dm.get_decision_authority(args.person)
+        if info is None:
+            print(f"No decision-maker found for '{args.person}'.", file=sys.stderr)
+            sys.exit(1)
+        proclivity = dm.assess_proclivity(args.person, args.topic or "taxation")
+        _print_result(
+            {"person_id": args.person, "found": True, "authority": info, "proclivity": proclivity},
+            json_output=args.json,
+        )
+        return
+    if args.topic:
+        results = dm.find_decision_maker(args.topic)
+        if not results:
+            print(f"No decision-makers found for topic '{args.topic}'.", file=sys.stderr)
+            sys.exit(1)
+        _print_result(
+            {"topic": args.topic, "found": True, "count": len(results), "profiles": results}, json_output=args.json
+        )
+        return
+    result = dm.lookup_decision_makers(args.country)
+    _print_result(result, json_output=args.json)
+
+
+def _cmd_postal(args: argparse.Namespace) -> None:
+    """``gludd governance postal <query>`` — postal code and courier lookup."""
+    pd = get_postal_delivery()
+    if args.courier:
+        url = pd.get_courier_tracking_url(args.courier, args.tracking or "TRACKING123")
+        if url is None:
+            print(f"No courier found for '{args.courier}'.", file=sys.stderr)
+            sys.exit(1)
+        _print_result({"courier": args.courier, "tracking_url": url, "found": True}, json_output=args.json)
+        return
+    if args.customs:
+        result = pd.get_customs_declaration_format(args.country)
+        if result is None:
+            print(f"No customs format found for '{args.country.upper()}'.", file=sys.stderr)
+            sys.exit(1)
+        _print_result({"country": args.country.upper(), "found": True, **result}, json_output=args.json)
+        return
+    result = pd.get_postal_code_pattern(args.country)
+    if result is None:
+        print(f"No postal code pattern found for '{args.country}'.", file=sys.stderr)
+        sys.exit(1)
+    _print_result({"country": args.country, "found": True, **result}, json_output=args.json)
+
+
+def _cmd_military(args: argparse.Namespace) -> None:
+    """``gludd governance military <country>`` — military service lookup."""
+    ms = get_military_service()
+    if args.branches:
+        branches = ms.get_military_branches(args.country)
+        if branches is None:
+            print(f"No military branches found for '{args.country.upper()}'.", file=sys.stderr)
+            sys.exit(1)
+        _print_result({"country": args.country.upper(), "found": True, "branches": branches}, json_output=args.json)
+        return
+    if args.benefits:
+        benefits = ms.get_veteran_benefits(args.country, args.benefits if args.benefits != "all" else None)
+        if benefits is None:
+            print(f"No veteran benefits found for '{args.country.upper()}'.", file=sys.stderr)
+            sys.exit(1)
+        _print_result({"country": args.country.upper(), "found": True, **benefits}, json_output=args.json)
+        return
+    if args.conscription:
+        conscripts = ms.list_mandatory_service_countries()
+        _print_result(
+            {"mandatory_conscription_countries": conscripts, "count": len(conscripts), "found": True},
+            json_output=args.json,
+        )
+        return
+    result = ms.get_conscription_info(args.country)
+    if result is None:
+        print(f"No conscription data found for '{args.country.upper()}'.", file=sys.stderr)
+        sys.exit(1)
+    _print_result({"country": args.country.upper(), "found": True, **result}, json_output=args.json)
+
+
+def _cmd_licenses(args: argparse.Namespace) -> None:
+    """``gludd governance licenses <country>`` — license and permit lookup."""
+    lp = get_licenses_permits()
+    if args.export_control:
+        parts = args.export_control.split(",")
+        if len(parts) == 2:
+            result = lp.get_export_license_requirements(parts[0].strip(), parts[1].strip())
+            if result is None:
+                print(f"No export control data for '{args.export_control}'.", file=sys.stderr)
+                sys.exit(1)
+            _print_result({"found": True, **result}, json_output=args.json)
+            return
+        print("Use: --export-control <country>,<goods_category>", file=sys.stderr)
+        sys.exit(1)
+    if args.license_type:
+        result = lp.get_license_info(args.license_type, args.country)
+        if result is None:
+            print(
+                f"No license info for type '{args.license_type}' in '{args.country.upper()}'. "
+                f"Available: {', '.join(lp.list_professions_for_country(args.country))}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        _print_result(result, json_output=args.json)
+        return
+    professions = lp.list_professions_for_country(args.country)
+    _print_result(
+        {"country": args.country.upper(), "found": True, "professions": professions, "count": len(professions)},
+        json_output=args.json,
+    )
+
+
 def _cmd_elections(args: argparse.Namespace) -> None:
     """``gludd governance elections <country>`` — elections and voting info."""
     ev = get_elections_voting()
