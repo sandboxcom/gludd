@@ -111,6 +111,14 @@ const SUBAGENT_TEXT_MARKERS = /(?:task_id|task_result|agent\s+result|subagent\s+
 const STOP_PATTERN_PHRASES = /\b(?:shall\s+i\s+continue|should\s+i\s+proceed|want\s+me\s+to\b[^?!.]*)/i
 const PERMISSION_SEEKING_RE = /(?:want me to\s+(?:proceed|continue|dispatch|write|fix|move|start|do|run|create|add|update|implement|handle|begin|work|go ahead)|should i\s+(?:proceed|continue|fix|dispatch|start|move|go ahead)|shall i\s+(?:proceed|continue|fix|start)|^proceed\?$)/im
 
+// ── INVESTIGATION-BEFORE-ACTION patterns (2026-07-26) ────────────────────────
+// "Let me check what's left", "let me see what remains", "I'll check what's pending",
+// "checking what's remaining" — these are stop-adjacent: the agent pauses dispatch
+// to survey work instead of dispatching immediately. A survey-response with 0
+// dispatches after subagent results arrive is structurally a pause, even if the
+// agent frames it as "checking."
+const CHECKING_WHAT_LEFT_RE = /(?:let me\s+(?:just\s+)?(?:check|see|look|survey|find out)\s+(?:what.?s?\s+(?:left|remaining|pending|still|else)|how\s+much\s+(?:work|is left|remains)|if.+work|whether.+work)|i.?ll\s+(?:check|see|look)\s+(?:what.?s?\s+(?:left|remaining|pending)|how\s+much)|(?:checking|seeing|looking|surveying)\s+(?:what.?s?\s+(?:left|remaining|pending)|how\s+much)|hold\s+on,?\s+let\s+me\s+check|wait,?\s+let\s+me\s+check|let\s+me\s+(?:first\s+)?(?:check|see|look)\s+(?:if|whether|what))/i
+
 // ── STATUS-SUMMARY detection (2026-07-15) ───────────────────────────────────
 // ROOT CAUSE: a status summary containing commit hashes or "CI: PENDING"
 // matches EVIDENCE_PATTERNS, so every text.complete check gated on
@@ -1228,6 +1236,34 @@ const defaultImpl: HotModule = {
             "DISPATCH A TOOL CALL NOW. Do not send a text-only summary.",
           ].join("\n"),
         }
+      }
+    }
+
+    // ── CHECKING WHAT'S LEFT: "let me check what's left", "let me see what remains" ─
+    // These are stop-adjacent — the agent pauses dispatch to survey work instead of
+    // dispatching immediately. "Checking" with 0 dispatches after subagent results
+    // is a pause, even if the agent frames it as investigation.
+    if (!disengaged && CHECKING_WHAT_LEFT_RE.test(text) && !hasToolCallIntent) {
+      recordBlock("checking-whats-left")
+      logFalseDoneBlock("checking-whats-left", text)
+      writePersistBlock(true, "checking-whats-left")
+      clearBlockedOutput(output)
+      turnState.blocked = true
+
+      return {
+        text: [
+          "⛔ CHECKING-WHAT'S-LEFT BLOCKED — DO NOT PAUSE TO SURVEY.",
+          "",
+          "You are checking/surveying what work remains instead of dispatching.",
+          "The correct action after results arrive is to DISPATCH THE NEXT WAVE —",
+          "not to pause and survey. Surveying is a stop-by-another-name.",
+          "",
+          `PENDING WORK: ${workState.tasksMdUncheckedCount} unchecked tasks, ` +
+          `${workState.ratchetEntries} ratchet entries, ` +
+          `gate ${workState.gateStatusRed ? "RED" : workState.gateStatusMissing ? "MISSING" : "OK"}.`,
+          "",
+          "DISPATCH SUBAGENTS NOW. Do not survey — act.",
+        ].join("\n"),
       }
     }
 
