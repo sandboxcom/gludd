@@ -5,9 +5,9 @@ import { looksLikeStatusSummary } from "../lib/plugin_test_exports.ts"
 
 const COMPLETION_VERBATIM = /\b(?:all done|all tasks complete|ready for review)\b/i
 const COMPLETION_WORDS_RE = /\b(?:committed|done|completed|passed|working|green)\b/
-const COMPLETION_SMELL_RE = /\b(?:complete|done|finished|ready|passed|green|RED|beta|alpha)\b/i
+const COMPLETION_SMELL_RE = /\b(?:complete|done|finished|ready|passed|green|RED|beta|alpha|committed|pushed|continuing)\b/i
 const STOP_PATTERN_PHRASES = /\b(?:shall\s+i|should\s+i|want\s+me\s+to)\b/i
-const QA_RESPONSE_PATTERNS = /(?:completed in this session|summary|done|changed|left|remains)/i
+const QA_RESPONSE_PATTERNS = /(?:completed in this session|summary of what was done|here.?s what was done|done since the crash|everything committed|\*\*What changed\?\*\*|completed|summary|done|changed|left|remains)/i
 
 function hasStructuredEvidence(_text: string): boolean { return false }
 function recordBlock(_reason: string): void {}
