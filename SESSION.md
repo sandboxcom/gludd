@@ -18,18 +18,22 @@
 
 ## SESSION 55 — 2026-07-27 (IN PROGRESS)
 
-- **HEAD: `bad42def`** on `development` branch
+- **HEAD: `ed97bb58`** on `development` branch
 - **Version: 0.1.0-beta.3** (pyproject.toml, __init__.py)
-- **Push status: NOT PUSHED** — development has unpushed commits
-- **CI: CI FIX ROUND 3 COMMITTED** — awaiting push to trigger CI
+- **Push status: PUSHED (NO FORCE)** — CI fix round 3 pushed clean to sandboxcom, CI triggered
+- **CI: TRIGGERED** — CI run triggered on HEAD `ed97bb58`
 - **Release readiness: BLOCKED** — CI not green, FORCE bypass removed from ci_push_guard.py
-- **Gate: not re-run on HEAD bad42def**
-- **Working tree: CLEAN** — cleanup completed (0 stale worktrees, clean-tmp removed 1 file, disk 76% OK)
+- **Gate: not re-run on HEAD ed97bb58**
+- **Working tree: DIRTY** — `scripts/_hook_test_dirty_temp2.txt` untracked
 
 ### Key changes this session
 
+- **CI fix round 3 pushed clean (NO FORCE)** (commits `ed97bb58`, `37558b8e`, `3477bcdd`, `bad42def`): CI triggered on development HEAD. Bool casts + YAMLError regex + healthz endpoint + GLUDD_ALLOW_NO_AUTH fixes landed.
+- **NF10 fix + behavioral specs enforcement** (commit `ed97bb58`): Fixes `test_enforce_stop_mixed_response.py` _src() + opencode.json order fix
+- **NF10 implementation complete** (commit `37558b8e`): test_enforce_stop_mixed_response.py _src() to include plugin_test_exports.ts for getStatusSummaryRe detection
+- **os_expert coverage gaps** (commit `3477bcdd`): tests for kernel_config, os_detection, syscall_analysis
 - **FORCE=1 bypass removed from ci_push_guard.py** (commit `2fc342c4`): CI-busy check now always blocks. The bypass was a policy violation — removing it ensures CI cannot be skipped via env var.
-- **CI fix round 3 committed** (commit `bad42def`): CI failure diagnosis and fixes applied, awaiting push to trigger CI.
+- **CI fix round 3 committed** (commit `bad42def`): CI failure diagnosis and fixes applied.
 - **Feature work landed** (commit `3de4ab80`): NF10 + NF8 spec implementations, governance modules, e2e test gen tests, enforce-task-tracking extension
 - **Feature work landed** (`082f94b2`, `1666b936`, `1bec3754`): language expert, radio engineer, OS expert features
 - **enforce-stop regex fixes** (commit `c1e111eb`): COMPLETION_SMELL_RE missing committed/pushed/continuing, QA_RESPONSE_PATTERNS too narrow
@@ -44,7 +48,10 @@
 
 | Hash | Message |
 |------|---------|
-| `bad42def` | CI fix round 3 committed, awaiting push |
+| `ed97bb58` | NF10 fix + behavioral specs enforcement scripts + language expert checks + opencode.json order fix |
+| `37558b8e` | complete NF10 implementation — fix test_enforce_stop_mixed_response.py _src() to include plugin_test_exports.ts |
+| `3477bcdd` | fix os_expert coverage gaps — add tests for kernel_config, os_detection, syscall_analysis |
+| `bad42def` | fix CI failures round 3 — bool casts + YAMLError regex + healthz endpoint + GLUDD_ALLOW_NO_AUTH |
 | `3de4ab80` | NF10 + NF8 spec implementations + governance modules + e2e test gen tests + enforce-task-tracking extension |
 | `2fc342c4` | remove FORCE=1 bypass from ci_push_guard.py — CI-busy check now always blocks |
 | `082f94b2` | implement language expert feature |
@@ -56,18 +63,18 @@
 
 | Item | Status |
 |------|--------|
-| CI green on development HEAD | BLOCKED on push (CI fix round 3 committed, needs push to trigger) |
+| CI green on development HEAD `ed97bb58` | TRIGGERED (awaiting verdict) |
 | `make release-cut TAG=v0.1.0-beta.3` | BLOCKED on CI green |
 | `make verify-release-completeness` 12/12 | BLOCKED on release-cut |
+| Clean up untracked `scripts/_hook_test_dirty_temp2.txt` | pending |
 
 ### Next
 
-1. Push development to trigger CI with CI fix round 3
-2. Wait for CI green on development HEAD `bad42def`
-3. `make release-cut TAG=v0.1.0-beta.3` when CI green
-4. `make verify-release-completeness TAG=v0.1.0-beta.3`
+1. Wait for CI green on development HEAD `ed97bb58`
+2. `make release-cut TAG=v0.1.0-beta.3` when CI green
+3. `make verify-release-completeness TAG=v0.1.0-beta.3`
 
-- **Last Updated: 2026-07-27 — Session 55 (IN PROGRESS).** HEAD `bad42def` on `development`. Cleanup done (0 worktrees, clean-tmp, disk 76%). CI fix round 3 committed, awaiting push. FORCE=1 bypass removed from ci_push_guard.py. Feature work landed (NF10, NF8, governance modules, e2e test gen, language/radio/OS experts). enforce-stop regex fixes landed. Release blocked on CI green.
+- **Last Updated: 2026-07-27 — Session 55 (IN PROGRESS).** HEAD `ed97bb58` on `development`. CI fix round 3 pushed clean (NO FORCE), CI triggered. FORCE=1 bypass removed from ci_push_guard.py. Feature work landed (NF10, NF8, governance modules, e2e test gen, language/radio/OS experts, os_expert coverage). enforce-stop regex fixes landed. Release blocked on CI green.
 
 ---
 
