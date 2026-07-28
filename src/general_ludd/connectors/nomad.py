@@ -135,6 +135,10 @@ class NomadSource:
             _Transport,
             transport if transport is not None else _urllib_transport,
         )
+        # Reject an unsafe configured endpoint before the connector can enter
+        # the runtime.  _get() repeats this check to protect against DNS
+        # rebinding between construction and a later request.
+        self._guard_ssrf()
 
     # -- SSRF + auth ----------------------------------------------------------
     def _guard_ssrf(self) -> None:

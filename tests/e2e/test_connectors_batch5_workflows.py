@@ -266,8 +266,12 @@ class TestNomadConnector:
         monkeypatch.setenv("NOM_H", "tok")
         try:
             source = NomadSource(
-                {"base_url": "https://nomad.example.com:4646", "token_env": "NOM_H", "allow_private": True},
-                transport=transport,
+                {
+                    "base_url": "https://nomad.example.com:4646",
+                    "token_env": "NOM_H",
+                    "allow_private": True,
+                    "transport": transport,
+                },
             )
             result = source.health()
             assert result["ok"] is True
@@ -281,8 +285,12 @@ class TestNomadConnector:
         monkeypatch.setenv("NOM_H2", "tok")
         try:
             source = NomadSource(
-                {"base_url": "https://nomad.example.com:4646", "token_env": "NOM_H2", "allow_private": True},
-                transport=transport,
+                {
+                    "base_url": "https://nomad.example.com:4646",
+                    "token_env": "NOM_H2",
+                    "allow_private": True,
+                    "transport": transport,
+                },
             )
             result = source.health()
             assert result["ok"] is False
@@ -294,26 +302,23 @@ class TestNomadConnector:
 
         transport = MockHttpTransport(
             status_code=200,
-            body=[
-                {
-                    "ID": "alloc-1",
-                    "JobID": "web",
-                    "TaskGroup": "web-group",
-                    "DesiredStatus": "run",
-                    "ClientStatus": "running",
-                    "CreateTime": 1700000000000000000,
-                }
-            ],
+            text="web task ready\n",
         )
         monkeypatch.setenv("NOM_Q", "tok")
         try:
             source = NomadSource(
-                {"base_url": "https://nomad.example.com:4646", "token_env": "NOM_Q", "allow_private": True},
-                transport=transport,
+                {
+                    "base_url": "https://nomad.example.com:4646",
+                    "token_env": "NOM_Q",
+                    "allow_private": True,
+                    "transport": transport,
+                },
             )
-            records = source.query({})
-            assert len(records) >= 1
+            records = source.query({"type": "logs", "alloc_id": "alloc-1"})
+            assert len(records) == 1
             assert records[0]["kind"] == "logs"
+            assert records[0]["message"] == "web task ready"
+            assert records[0]["labels"]["alloc_id"] == "alloc-1"
         finally:
             del os.environ["NOM_Q"]
 
