@@ -306,7 +306,7 @@ help:
 	@echo "  release-deploy TAG=.. MSG=..  Auto-deploy: merge dev->master, push, tag, wait for CI"
 	@echo "  release-delete TAG=.. Delete GitHub Release + local + remote git tags"
 	@echo "  verify-release-artifact       TAG=..  Confirm a release has published assets (exit 0 = shipped)"
-	@echo "  verify-release-completeness   TAG=..  Verify ALL expected artifacts present (8+ categories)"
+	@echo "  verify-release-completeness   TAG=..  Verify ALL 12 required artifact categories present"
 	@echo ""
 	@echo "  --- Build + Deploy ---"
 	@echo "  dist                  Build distribution tarball"

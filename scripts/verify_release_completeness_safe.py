@@ -16,6 +16,10 @@ import sys
 import time
 from pathlib import Path
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
 STATE_FILE = Path("/tmp/gludd-verify-artifact-cooldown.json")
 DEFAULT_COOLDOWN_S = 600  # 10 minutes
 
@@ -57,14 +61,19 @@ def main() -> int:
             print("Use FORCE=1 to bypass cooldown.")
             return 3  # Distinct exit code: throttled
 
-    # Would call verify_release_completeness here in production
+    from verify_release_completeness import check_completeness, _resolve_repo
+
+    repo = _resolve_repo()
+    verdict_code = check_completeness(tag, repo)
+    verdict_str = "PASS" if verdict_code == 0 else "FAIL"
+
     state["last_check_epoch"] = now
     state["last_tag"] = tag
-    state["last_verdict"] = "PASS"  # Stub — real implementation calls gh release view
+    state["last_verdict"] = verdict_str
     write_state(state)
 
-    print(f"verify-release-completeness-safe: throttled check for {tag or 'current'} — PASS (throttled)")
-    return 0
+    print(f"verify-release-completeness-safe: throttled check for {tag or 'current'} — {verdict_str}")
+    return verdict_code
 
 
 if __name__ == "__main__":

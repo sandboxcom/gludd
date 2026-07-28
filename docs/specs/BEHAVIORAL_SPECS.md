@@ -1036,8 +1036,8 @@ Total: 4000 specs across 26 groups.
 
 ### AC004 — release-completeness-12-categories
 **Category:** Release Discipline
-**Enforcement:** `scripts/verify_release_completeness.py` extended
-**Behavior:** Every release MUST have artifacts in all 12 categories: binary-linux, binary-macos, sbom-spdx, sbom-cyclonedx, checksums-sha256, container-image-amd64, container-image-arm64, provenance-attestation, install-sh, systemd-service, release-notes, changelog. `make verify-release-completeness` now validates all 12 categories (was 10). Any zero-size asset counts as MISSING. Version-stamped asset names must match the tag (e.g., `gludd-v1.0.0-linux-amd64` for tag `v1.0.0`). Categories can be extended via `config/release_artifact_categories.yml` without modifying the script.
+**Enforcement:** `scripts/verify_release_completeness.py` `EXPECTED_CATEGORIES` dict (12 entries, structurally pinned)
+**Behavior:** Every release MUST have artifacts in all 12 REQUIRED categories (no optional/exception list — user mandate 2026-07-24, TASKS CP.11/RL.4): linux-x86_64 binary, linux-aarch64 binary, macos-arm64 binary, windows-x86_64 binary, .deb (amd64), .rpm (x86_64), .dmg (macOS), .exe installer (Windows), checksums, SBOM, LICENSE, THIRD_PARTY_LICENSES. PLUS four additional checks: minimum asset count (>=12), prerelease-flag-vs-tag-shape, version-stamped asset names, no zero-size assets. A `len(EXPECTED_CATEGORIES) == 12` structural assertion fires at import time to catch regressions. Category changes require modifying the dict in `verify_release_completeness.py` (no external YAML config).
 
 ### AC005 — prerelease-flag-vs-tag-shape
 **Category:** Release Discipline
