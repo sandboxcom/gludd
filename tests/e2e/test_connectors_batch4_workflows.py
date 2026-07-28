@@ -495,6 +495,7 @@ class TestZendeskConnector:
     def test_constructs_with_valid_config(self, monkeypatch):
         from general_ludd.connectors.zendesk import ZendeskSource
 
+        monkeypatch.setenv("ZD_EMAIL_B4", "agent@example.com")
         monkeypatch.setenv("ZD_TOK_B4", "tok")
         try:
             source = ZendeskSource({
@@ -504,43 +505,57 @@ class TestZendeskConnector:
             })
             assert source.KIND == "tickets"
         finally:
-            del os.environ["ZD_TOK_B4"]
+            del os.environ["ZD_EMAIL_B4"], os.environ["ZD_TOK_B4"]
 
     def test_rejects_private_host(self):
         from general_ludd.connectors.zendesk import ZendeskSource
 
-        with pytest.raises((ValueError, RuntimeError)):
-            ZendeskSource({"subdomain": "x", "token_env": "T", "base_url": "http://127.0.0.1"})
+        with pytest.raises(ValueError, match=r"private|loopback"):
+            ZendeskSource({
+                "subdomain": "127.0.0.1",
+                "email_env": "ZD_EMAIL_PRIVATE",
+                "token_env": "ZD_TOKEN_PRIVATE",
+            })
 
     def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.zendesk import ZendeskSource
 
         transport = MockHttpResponseTransport(status_code=200, body={"tickets": []})
+        monkeypatch.setenv("ZD_EMAIL", "agent@example.com")
         monkeypatch.setenv("ZD_TOK", "tok")
         try:
             source = ZendeskSource(
-                {"subdomain": "test", "token_env": "ZD_TOK"},
+                {
+                    "subdomain": "test",
+                    "email_env": "ZD_EMAIL",
+                    "token_env": "ZD_TOK",
+                },
                 transport=transport,
             )
             result = source.health()
             assert result["ok"] is True
         finally:
-            del os.environ["ZD_TOK"]
+            del os.environ["ZD_EMAIL"], os.environ["ZD_TOK"]
 
     def test_health_not_ok_on_error(self, monkeypatch):
         from general_ludd.connectors.zendesk import ZendeskSource
 
         transport = MockHttpResponseTransport(status_code=500, body={})
+        monkeypatch.setenv("ZD_EMAIL_2", "agent@example.com")
         monkeypatch.setenv("ZD_TOK_2", "tok")
         try:
             source = ZendeskSource(
-                {"subdomain": "test", "token_env": "ZD_TOK_2"},
+                {
+                    "subdomain": "test",
+                    "email_env": "ZD_EMAIL_2",
+                    "token_env": "ZD_TOK_2",
+                },
                 transport=transport,
             )
             result = source.health()
             assert result["ok"] is False
         finally:
-            del os.environ["ZD_TOK_2"]
+            del os.environ["ZD_EMAIL_2"], os.environ["ZD_TOK_2"]
 
     def test_query_returns_records(self, monkeypatch):
         from general_ludd.connectors.zendesk import ZendeskSource
@@ -558,17 +573,22 @@ class TestZendeskConnector:
                 ]
             },
         )
+        monkeypatch.setenv("ZD_EMAIL_Q", "agent@example.com")
         monkeypatch.setenv("ZD_T_Q", "tok")
         try:
             source = ZendeskSource(
-                {"subdomain": "test", "token_env": "ZD_T_Q"},
+                {
+                    "subdomain": "test",
+                    "email_env": "ZD_EMAIL_Q",
+                    "token_env": "ZD_T_Q",
+                },
                 transport=transport,
             )
             records = source.query({})
             assert len(records) >= 1
             assert records[0]["kind"] == "tickets"
         finally:
-            del os.environ["ZD_T_Q"]
+            del os.environ["ZD_EMAIL_Q"], os.environ["ZD_T_Q"]
 
 
 # ============================================================================

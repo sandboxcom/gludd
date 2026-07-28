@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) Zendesk E2E omitted half of its authentication contract
+
+- **What**: Connector batch 4 stopped in Zendesk health construction because the E2E supplied only `token_env`; its SSRF check had also been passing for that missing-credential error instead of exercising host rejection.
+- **Root cause**: The broad E2E treated Zendesk like a bearer-token connector. Zendesk's legacy API-token flow requires an account subdomain, verified-user email, and token; the connector deliberately names both secret-bearing environment variables. Generic exception assertions allowed the SSRF false positive to survive.
+- **Fix applied**: Every operational Zendesk E2E now supplies isolated email and token environment variables, and the SSRF case supplies a complete credential configuration before requiring a private/loopback rejection. Canonical unit coverage remains the source of truth for missing-variable and authorization-header behavior.
+- **Long-lived user evidence**: Developers have reported for years that Zendesk token authentication fails unless the username is formatted from the email and `/token` suffix ([Stack Overflow, 2021](https://stackoverflow.com/questions/69343685/zendesk-anyone-knows-how-to-authenticate-in-zendesk-api)); Zendesk community users separately report integration failures when the account subdomain is missing or wrong ([Zendesk Community, 2022](https://community.zendesk.com/fid-20/tid-9067)). Zendesk has since announced that Support API tokens are being phased out, so OAuth migration must be handled explicitly rather than weakening the present connector's credential contract ([Zendesk announcement](https://support.zendesk.com/hc/en-us/articles/10840968198042-Announcing-the-removal-of-API-tokens-as-an-authentication-method-for-api-requests)).
+- **Lesson**: Security tests must reach the security boundary they name. Complete prerequisite configuration and narrow exception matching prevent an unrelated validation error from masquerading as SSRF coverage.
+
 ### 2026-07-28 — (resolved) ServiceNow E2E conflated connector name with instance identity
 
 - **What**: The warning-clean serial E2E run stopped after 1,379 passes because one ServiceNow construction test expected the configured instance identifier inside `source.name`; its next normalization check likewise expected the incident number inside the human-readable `message`.
