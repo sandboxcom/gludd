@@ -6,7 +6,6 @@ git_automation: issue_ingestor, repo, locking, types, pr_delivery
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import tempfile
@@ -15,21 +14,10 @@ from unittest import mock
 
 import pytest
 
-# ── os_expert imports ──────────────────────────────────────────────────────
-from general_ludd.os_expert.os_events import OS_EVENT_MAP, OSEventSource
-from general_ludd.os_expert.security_architectures import (
-    SECURITY_ARCHITECTURES,
-    SecurityArchitecture,
-    SecurityLayer,
-)
-from general_ludd.os_expert.logging_systems import LOGGING_SYSTEMS, LoggingSystem
-from general_ludd.os_expert.system_buses import SYSTEM_BUSES, SystemBus
-from general_ludd.os_expert.package_management import PACKAGE_MANAGERS, PackageManager
-
 # ── git_automation imports ─────────────────────────────────────────────────
 from general_ludd.git_automation.issue_ingestor import GitHubIssueIngestor
 from general_ludd.git_automation.locking import git_repo_lock
-from general_ludd.git_automation.pr_delivery import PRDelivery, _SAFE_REF, _validate_ref
+from general_ludd.git_automation.pr_delivery import _SAFE_REF, PRDelivery, _validate_ref
 from general_ludd.git_automation.repo import (
     GitAutomation,
     _reject_clone_url,
@@ -46,7 +34,17 @@ from general_ludd.git_automation.types import (
     WorktreeInfo,
     WorktreeResult,
 )
+from general_ludd.os_expert.logging_systems import LOGGING_SYSTEMS, LoggingSystem
 
+# ── os_expert imports ──────────────────────────────────────────────────────
+from general_ludd.os_expert.os_events import OS_EVENT_MAP, OSEventSource
+from general_ludd.os_expert.package_management import PACKAGE_MANAGERS, PackageManager
+from general_ludd.os_expert.security_architectures import (
+    SECURITY_ARCHITECTURES,
+    SecurityArchitecture,
+    SecurityLayer,
+)
+from general_ludd.os_expert.system_buses import SYSTEM_BUSES, SystemBus
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # os_expert  E2E
@@ -582,14 +580,12 @@ class TestGitAutomationLockingE2E:
 
     def test_git_repo_lock_reentrant(self, git_repo: tuple[GitAutomation, str]) -> None:
         _, d = git_repo
-        with git_repo_lock(d):
-            with git_repo_lock(d):
-                assert True  # nested acquisition must not deadlock
+        with git_repo_lock(d), git_repo_lock(d):
+            assert True  # nested acquisition must not deadlock
 
     def test_git_repo_lock_missing_git_dir(self) -> None:
-        with tempfile.TemporaryDirectory() as d:
-            with git_repo_lock(d):
-                assert True
+        with tempfile.TemporaryDirectory() as d, git_repo_lock(d):
+            assert True
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

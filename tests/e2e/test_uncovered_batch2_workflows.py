@@ -8,15 +8,9 @@ networking, observe, quantization, runner, commands, compat, governance_cli.
 
 from __future__ import annotations
 
-import json
-import os
-import subprocess
 import tempfile
-import threading
-import time
-from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -181,7 +175,7 @@ class TestRetrievalSearcher:
 
         with tempfile.TemporaryDirectory() as tmp:
             cache_dir = Path(tmp) / "cache"
-            cash_dir.mkdir()
+            cache_dir.mkdir()
             import diskcache
 
             cache = diskcache.Cache(str(cache_dir))

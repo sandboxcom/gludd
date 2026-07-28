@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # dispatch.dynamic_dispatcher
@@ -19,13 +16,8 @@ import pytest
 class TestDispatchParseToolCalls:
     def test_import(self):
         from general_ludd.dispatch.dynamic_dispatcher import (
-            PRIVILEGED_KINDS,
             UNRESTRICTED_ROLE,
-            DispatchResult,
-            DynamicDispatcher,
-            ToolCall,
             parse_tool_calls,
-            structured_tool_calls_to_calls,
         )
 
         assert parse_tool_calls is not None
@@ -247,7 +239,7 @@ class TestDynamicDispatcher:
         from general_ludd.dispatch.dynamic_dispatcher import UNRESTRICTED_ROLE
 
         assert UNRESTRICTED_ROLE is not None
-        assert UNRESTRICTED_ROLE is not "unrestricted"
+        assert UNRESTRICTED_ROLE != "unrestricted"
 
     def test_privileged_kinds_all_present(self):
         from general_ludd.dispatch.dynamic_dispatcher import PRIVILEGED_KINDS
@@ -280,7 +272,7 @@ class TestDynamicDispatcher:
 
 class TestVariableStore:
     def test_import(self):
-        from general_ludd.dispatch.variable_store import VariableStore, apply_results
+        from general_ludd.dispatch.variable_store import VariableStore
 
         assert VariableStore is not None
 
@@ -411,15 +403,7 @@ class TestVariableStore:
 class TestPromptEvaluator:
     def test_import(self):
         from general_ludd.log_analysis.prompt_evaluator import (
-            ab_compare,
-            analyze_cot_quality,
             classify_prompt,
-            detect_context_waste,
-            extract_prompts,
-            generate_report,
-            measure_prompt_efficiency,
-            parse_conversation_log,
-            recommend_improvements,
         )
 
         assert classify_prompt is not None
@@ -593,7 +577,13 @@ class TestPromptEvaluator:
             {
                 "prompt_id": "test-1",
                 "classification": "coding",
-                "efficiency": {"tokens_in": 42, "tokens_out": 20, "task_completed": True, "steps_taken": 1, "errors": 0},
+                "efficiency": {
+                    "tokens_in": 42,
+                    "tokens_out": 20,
+                    "task_completed": True,
+                    "steps_taken": 1,
+                    "errors": 0,
+                },
                 "cot_quality": {"reasoning_depth": 5, "decision_quality": 6, "dead_ends": 0, "score": 8},
                 "context_waste": [],
                 "recommendations": ["Looks good"],
@@ -618,9 +608,7 @@ class TestPromptEvaluator:
 class TestServiceDiscoveryPipeline:
     def test_imports(self):
         from general_ludd.service_discovery.pipeline import (
-            DiscoveryReport,
             ServiceDiscoveryPipeline,
-            _extract_service_name,
         )
 
         assert ServiceDiscoveryPipeline is not None

@@ -2,12 +2,7 @@
 
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
-from unittest.mock import MagicMock
-
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # ssl.algorithms
@@ -17,14 +12,7 @@ class TestSSLAlgorithms:
     def test_imports(self):
         from general_ludd.ssl.algorithms import (
             KNOWN_ALGORITHMS,
-            AlgorithmEval,
-            AlgorithmInfo,
             AlgorithmStatus,
-            AlgorithmType,
-            ComparisonResult,
-            compare_algorithms,
-            compliance_check,
-            evaluate_algorithm,
         )
 
         assert len(KNOWN_ALGORITHMS) > 20
@@ -167,13 +155,7 @@ class TestSSLAlgorithms:
 class TestSSLCertificate:
     def test_import(self):
         from general_ludd.ssl.certificate import (
-            build_chain,
-            generate_csr,
             generate_key,
-            parse_cert,
-            self_sign,
-            sign_csr,
-            verify_chain,
         )
 
         assert generate_key is not None
@@ -384,14 +366,6 @@ class TestSSLCompliance:
     def test_imports(self):
         from general_ludd.ssl.compliance import (
             FIPS_140_3,
-            HIPAA,
-            PCI_DSS,
-            SOC2,
-            ComplianceProfile,
-            ComplianceResult,
-            check_compliance,
-            get_profile,
-            list_profiles,
         )
 
         assert FIPS_140_3 is not None
@@ -475,12 +449,6 @@ class TestSSLCompliance:
 
     def test_all_profiles_valid(self):
         from general_ludd.ssl.compliance import (
-            FIPS_140_3,
-            HIPAA,
-            ISO_27001,
-            PCI_DSS,
-            SOC2,
-            FedRAMP,
             get_profile,
         )
 
@@ -505,7 +473,7 @@ class TestSSLCompliance:
 
 class TestSSLASN1:
     def test_import(self):
-        from general_ludd.ssl.asn1 import encode_der, lookup_oid, parse_der
+        from general_ludd.ssl.asn1 import parse_der
 
         assert parse_der is not None
 
@@ -600,7 +568,7 @@ class TestSSLASN1:
 
 class TestSSLHSM:
     def test_import(self):
-        from general_ludd.ssl.hsm import HSMConfig, HSMKey, _MockHSMSession
+        from general_ludd.ssl.hsm import HSMConfig
 
         assert HSMConfig is not None
 
@@ -677,11 +645,6 @@ class TestSSLCertManager:
     def test_import(self):
         from general_ludd.ssl_agent.cert_manager import (
             CertManager,
-            KeyPair,
-            algorithm_evaluate,
-            ca_jurisdiction_lookup,
-            cert_parse,
-            generate_key_pair,
         )
 
         assert CertManager is not None
@@ -733,7 +696,6 @@ class TestSSLCertManager:
         from general_ludd.ssl_agent.cert_manager import (
             generate_csr,
             generate_key_pair,
-            cert_parse,
             self_sign_cert,
         )
 
@@ -862,7 +824,7 @@ class TestSSLCertManager:
 
 class TestSSLCertAgentFlow:
     def test_import(self):
-        from general_ludd.ssl_agent.agent_flow import SSLCertAgent, ssl_agent_flow
+        from general_ludd.ssl_agent.agent_flow import ssl_agent_flow
 
         assert ssl_agent_flow is not None
 
@@ -925,7 +887,6 @@ class TestSSLCertAgentFlow:
 class TestNotificationDispatcher:
     def test_import(self):
         from general_ludd.notifications.dispatcher import (
-            NOTIFICATION_TEMPLATE,
             NotificationDispatcher,
         )
 

@@ -15,19 +15,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from general_ludd.dogfood.orchestrator import run_smoke_and_validate
-from general_ludd.dogfood.runner import (
-    DogfoodConfig,
-    DogfoodRunner,
-    SmokeTaskResult,
-    _validate_task_name,
-)
-from general_ludd.dogfood.sprint_parser import SprintItem, parse_sprint_markdown
-from general_ludd.dogfood.validator import (
-    BypassFinding,
-    DogfoodValidationResult,
-    DogfoodValidator,
-)
 from general_ludd.ag15_benchmarks.benchmark_harness import (
     BenchmarkResult,
     BenchmarkSuite,
@@ -36,11 +23,26 @@ from general_ludd.ag15_benchmarks.benchmark_harness import (
 )
 from general_ludd.ag15_benchmarks.gaia import (
     load_tasks as load_gaia_tasks,
+)
+from general_ludd.ag15_benchmarks.gaia import (
     score_result as score_gaia,
 )
 from general_ludd.ag15_benchmarks.swe_bench import (
     load_tasks as load_swe_bench_tasks,
+)
+from general_ludd.ag15_benchmarks.swe_bench import (
     score_result as score_swe_bench,
+)
+from general_ludd.dogfood.orchestrator import run_smoke_and_validate
+from general_ludd.dogfood.runner import (
+    DogfoodConfig,
+    DogfoodRunner,
+    SmokeTaskResult,
+    _validate_task_name,
+)
+from general_ludd.dogfood.sprint_parser import parse_sprint_markdown
+from general_ludd.dogfood.validator import (
+    DogfoodValidator,
 )
 from general_ludd.entity.graph import (
     Association,
@@ -48,13 +50,7 @@ from general_ludd.entity.graph import (
     EntityNode,
 )
 from general_ludd.entity.research_patterns import (
-    AcquisitionInfo,
-    CompaniesHouseRecord,
     EntityResearchResult,
-    ExtractedDomain,
-    ExtractedIP,
-    FundingRound,
-    SECFiling,
     detect_acquisitions,
     detect_funding_rounds,
     extract_domains,
@@ -63,7 +59,6 @@ from general_ludd.entity.research_patterns import (
     parse_sec_filing,
     research_entity,
 )
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Dogfood — runner + config
@@ -388,7 +383,7 @@ class TestBenchmarkHarness:
 
     def test_report_json_serializable(self):
         suite = BenchmarkSuite(agent_name="reporter")
-        task = BenchmarkTask(task_id="x", description="d")
+        BenchmarkTask(task_id="x", description="d")
         suite.results.append(BenchmarkResult(
             benchmark="swe-bench", task_id="x", score=1.0,
             agent_name="reporter", duration_ms=100.0, attempts=1,
@@ -400,7 +395,7 @@ class TestBenchmarkHarness:
 
     def test_report_writes_to_file(self):
         suite = BenchmarkSuite()
-        task = BenchmarkTask(task_id="f", description="d")
+        BenchmarkTask(task_id="f", description="d")
         suite.results.append(BenchmarkResult(
             benchmark="gaia", task_id="f", score=0.0,
             agent_name="a", duration_ms=50.0, attempts=1,
