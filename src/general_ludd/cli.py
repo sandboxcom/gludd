@@ -368,9 +368,16 @@ def _add_smoke_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.ArgumentParser]]:
+    from general_ludd import __version__
+
     parser = argparse.ArgumentParser(
         prog="gludd",
         description="General Ludd Agent — the black swan agentic coding system",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
     parser.set_defaults(func=None)
     sub = parser.add_subparsers(dest="command")
@@ -388,7 +395,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     daemon_parser.set_defaults(func=_cmd_daemon)
 
     add_parser = sub.add_parser("add", help="Add a todo to the queue")
-    add_parser.add_argument("title", help="Todo title")
+    add_parser.add_argument("title", metavar="TITLE", help="Todo title")
     add_parser.add_argument("--queue", default="core")
     add_parser.add_argument("--priority", default="medium")
     add_parser.add_argument("--work-type", default="code")

@@ -7,6 +7,7 @@ error recovery, route registration, and config handling.
 from __future__ import annotations
 
 import sys
+from collections import deque
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -112,6 +113,8 @@ class TestDaemonStartupSequence:
 
     def test_daemon_state_per_app_isolation(self):
         import general_ludd.daemon as dm
+
+        legacy_state = dm._daemon_state
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app1 = dm.create_daemon_app(tick_interval=0.01)
             app2 = dm.create_daemon_app(tick_interval=0.01)
@@ -120,6 +123,14 @@ class TestDaemonStartupSequence:
         assert daemon_state1 is not daemon_state2
         assert daemon_state1 is not dm._daemon_state
         assert daemon_state2 is not dm._daemon_state
+        assert dm._daemon_state is legacy_state
+
+        daemon_state1["todos"].append({"todo_id": "APP-1"})
+        assert list(daemon_state2["todos"]) == []
+
+        dm._daemon_state["todos"].append({"todo_id": "LEGACY"})
+        assert list(daemon_state1["todos"]) == [{"todo_id": "APP-1"}]
+        assert list(daemon_state2["todos"]) == [{"todo_id": "LEGACY"}]
 
     def test_startup_config_includes_project_path(self, monkeypatch, tmp_path):
         proj_dir = tmp_path / "myproject" / ".gludd"
@@ -140,7 +151,9 @@ class TestDaemonStartupSequence:
         assert "todos" in ds
         assert "tick_metrics" in ds
         assert "quality_gate" in ds
-        assert ds["todos"] == []
+        assert isinstance(ds["todos"], deque)
+        assert ds["todos"].maxlen == 1000
+        assert list(ds["todos"]) == []
 
     def test_app_state_has_required_attrs(self):
         import general_ludd.daemon as dm
@@ -203,8 +216,10 @@ class TestDaemonHealthEndpoints:
 
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
-            app.state._event_loop_task = DoneTask()
             with TestClient(app) as client:
+                # Lifespan startup installs the real task, so substitute the
+                # terminal task only after startup has completed.
+                app.state._event_loop_task = DoneTask()
                 data = client.get("/healthz").json()
         assert data["status"] == "degraded"
         assert "event_loop" in data["reason"]
@@ -214,6 +229,9 @@ class TestDaemonHealthEndpoints:
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
             with TestClient(app) as client:
+                # Exercise the not-initialized branch after lifespan startup,
+                # which otherwise installs a live event-loop task.
+                app.state._event_loop_task = None
                 resp = client.get("/readyz")
                 assert resp.status_code == 503
                 data = resp.json()
@@ -417,6 +435,7 @@ class TestAuthMiddleware:
             app = dm.create_daemon_app(tick_interval=0.01)
             with TestClient(app) as client:
                 assert client.get("/healthz").status_code == 200
+                app.state._event_loop_task = None
                 assert client.get("/readyz").status_code == 503
                 assert client.get("/docs").status_code == 200
                 assert client.get("/openapi.json").status_code == 200
@@ -585,8 +604,8 @@ class TestCidrMiddleware:
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
-            app.state._allowed_cidr = []
             with TestClient(app) as client:
+                app.state._allowed_cidr = []
                 resp = client.get("/healthz")
                 assert resp.status_code == 200
 
@@ -594,8 +613,8 @@ class TestCidrMiddleware:
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
-            app.state._allowed_cidr = ["10.0.0.0/8"]
             with TestClient(app) as client:
+                app.state._allowed_cidr = ["10.0.0.0/8"]
                 resp = client.get("/healthz")
                 assert resp.status_code == 403
                 data = resp.json()
@@ -606,8 +625,8 @@ class TestCidrMiddleware:
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
-            app.state._allowed_cidr = ["127.0.0.0/8"]
             with TestClient(app) as client:
+                app.state._allowed_cidr = ["127.0.0.0/8"]
                 resp = client.get("/healthz")
                 assert resp.status_code == 200
 

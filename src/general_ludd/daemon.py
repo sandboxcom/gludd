@@ -9,6 +9,7 @@ import os
 import sys
 import threading
 import time
+from collections import ChainMap
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -295,10 +296,12 @@ class LangGraphModelCallError(Exception):
 # quality_gate cannot bleed across FastAPI instances in one process. The
 # authoritative store is ``app.state.daemon_state`` (set by the factory).
 # This module-level name exists ONLY as a migration shim for legacy callers
-# (scripts/dogfood.py, test fixtures); it starts unset and is rebound to the
-# most recently created app's dict by ``create_daemon_app()``.
+# (scripts/dogfood.py, test fixtures). It is a stable proxy whose first map is
+# switched to the most recently created app's dict by ``create_daemon_app()``.
+# Keeping the proxy identity stable preserves ``from daemon import
+# _daemon_state`` callers without aliasing any app's authoritative state.
 # New code MUST NOT access this global — use explicit injection instead.
-_daemon_state: Any = None
+_daemon_state: ChainMap[str, Any] = ChainMap({})
 
 
 def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
@@ -2797,11 +2800,16 @@ def create_daemon_app(
         "quality_gate": {},
     }
     app.state.daemon_state = daemon_state
-    # Rebind the module-level name so legacy observers (scripts/dogfood.py, test
-    # fixtures that read ``daemon_mod._daemon_state``) see this app's state. The
-    # per-app dict on ``app.state.daemon_state`` remains the authoritative store.
+    # Point the stable compatibility proxy at the latest app. This preserves
+    # legacy mapping operations while keeping the proxy distinct from every
+    # app-owned authoritative state dict. Older integrations sometimes replace
+    # the shim outright while resetting test/process state; recover a proxy in
+    # that case instead of letting their assignment break app construction.
     global _daemon_state
-    _daemon_state = daemon_state
+    if isinstance(_daemon_state, ChainMap):
+        _daemon_state.maps[:] = [daemon_state]
+    else:
+        _daemon_state = ChainMap(daemon_state)
     app.state.tick_interval = tick_interval
     app.state.event_loop = None
     app.state.log_level = log_level
