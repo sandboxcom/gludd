@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import errno
 import fcntl
+import json
 import os
 import pty
 import re
@@ -19,8 +20,11 @@ import signal
 import struct
 import subprocess
 import termios
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -41,8 +45,309 @@ def _compact(text: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "", text)
 
 
-class _Tui:
+def _message_text(message: dict[str, Any]) -> str:
+    content = message.get("content", "")
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    return " ".join(
+        str(part.get("text", ""))
+        for part in content
+        if isinstance(part, dict) and part.get("type") == "text"
+    )
+
+
+class _DeterministicProvider:
+    """Local OpenAI-compatible provider for repeatable TUI tool loops."""
+
     def __init__(self) -> None:
+        self.requests: list[dict[str, Any]] = []
+        self._state_lock = threading.Lock()
+        self._main_calls = 0
+        provider = self
+
+        class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def do_GET(self) -> None:
+                provider._write_json(
+                    self,
+                    {
+                        "object": "list",
+                        "data": [
+                            {
+                                "id": "deterministic",
+                                "object": "model",
+                                "owned_by": "gludd-tests",
+                            }
+                        ],
+                    },
+                )
+
+            def do_POST(self) -> None:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = json.loads(self.rfile.read(length) or b"{}")
+                provider.requests.append(body)
+                response = provider._response_for(body)
+                if body.get("stream", False):
+                    provider._write_stream(self, response)
+                else:
+                    provider._write_completion(self, response)
+
+            def log_message(self, _format: str, *_args: object) -> None:
+                return
+
+        self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self._thread = threading.Thread(
+            target=self._server.serve_forever,
+            name="gludd-opencode-tui-provider",
+            daemon=True,
+        )
+        self._thread.start()
+
+    @property
+    def config_content(self) -> str:
+        port = self._server.server_address[1]
+        return json.dumps(
+            {
+                "model": "tui-e2e/deterministic",
+                "small_model": "tui-e2e/deterministic",
+                "agent": {
+                    "build": {
+                        "model": "tui-e2e/deterministic",
+                    }
+                },
+                "provider": {
+                    "tui-e2e": {
+                        "npm": "@ai-sdk/openai-compatible",
+                        "name": "Gludd deterministic TUI provider",
+                        "options": {
+                            "baseURL": f"http://127.0.0.1:{port}/v1",
+                            "apiKey": "test-only",
+                        },
+                        "models": {
+                            "deterministic": {
+                                "name": "Deterministic",
+                                "limit": {"context": 200_000, "output": 4_096},
+                            }
+                        },
+                    }
+                },
+            }
+        )
+
+    def close(self) -> None:
+        self._server.shutdown()
+        self._server.server_close()
+        self._thread.join(timeout=5)
+
+    @property
+    def main_calls(self) -> int:
+        return self._main_calls
+
+    def _response_for(self, body: dict[str, Any]) -> dict[str, Any]:
+        messages = body.get("messages", [])
+        if not isinstance(messages, list):
+            return {"text": "TUI E2E"}
+        if any(
+            isinstance(message, dict)
+            and message.get("role") == "system"
+            and "title generator" in _message_text(message).lower()
+            for message in messages
+        ):
+            return {"text": "TUI permission verification"}
+
+        with self._state_lock:
+            step = self._main_calls
+            self._main_calls += 1
+        responses = [
+            self._tool(
+                "read",
+                {"filePath": str(ROOT / "pyproject.toml")},
+                "call_read_project_name",
+            ),
+            {"text": "general-ludd-agent"},
+            self._tool(
+                "grep",
+                {
+                    "pattern": r"authors\s*=",
+                    "path": str(ROOT),
+                    "include": "pyproject.toml",
+                },
+                "call_grep_authors",
+            ),
+            self._tool(
+                "read",
+                {"filePath": str(ROOT / "pyproject.toml")},
+                "call_read_authors",
+            ),
+            {"text": "General Ludd Team"},
+            self._tool(
+                "bash",
+                {"command": "make version", "description": "Print project version"},
+                "call_make_version",
+            ),
+            {"text": "0.1.0-beta.3"},
+            self._tool(
+                "bash",
+                {"command": "pwd", "description": "Print working directory"},
+                "call_denied_pwd",
+            ),
+            {"text": "The command was denied by the configured permission rule."},
+        ]
+        if step < len(responses):
+            return responses[step]
+        return {"text": f"Unexpected deterministic provider turn {step}"}
+
+    @staticmethod
+    def _tool(
+        name: str,
+        arguments: dict[str, Any],
+        call_id: str,
+    ) -> dict[str, Any]:
+        return {
+            "tool": {
+                "id": call_id,
+                "name": name,
+                "arguments": json.dumps(arguments),
+            }
+        }
+
+    @staticmethod
+    def _write_headers(handler: BaseHTTPRequestHandler, content_type: str) -> None:
+        handler.send_response(200)
+        handler.send_header("Content-Type", content_type)
+        handler.send_header("Cache-Control", "no-cache")
+        handler.send_header("Connection", "close")
+        handler.end_headers()
+        handler.close_connection = True
+
+    @classmethod
+    def _write_json(cls, handler: BaseHTTPRequestHandler, payload: dict[str, Any]) -> None:
+        encoded = json.dumps(payload).encode("utf-8")
+        handler.send_response(200)
+        handler.send_header("Content-Type", "application/json")
+        handler.send_header("Content-Length", str(len(encoded)))
+        handler.send_header("Connection", "close")
+        handler.end_headers()
+        handler.wfile.write(encoded)
+        handler.close_connection = True
+
+    @classmethod
+    def _write_stream(cls, handler: BaseHTTPRequestHandler, response: dict[str, Any]) -> None:
+        cls._write_headers(handler, "text/event-stream")
+        chunks = cls._stream_chunks(response)
+        for chunk in chunks:
+            handler.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
+        handler.wfile.write(b"data: [DONE]\n\n")
+        handler.wfile.flush()
+
+    @staticmethod
+    def _stream_chunks(response: dict[str, Any]) -> list[dict[str, Any]]:
+        base = {
+            "id": "chatcmpl-gludd-tui",
+            "object": "chat.completion.chunk",
+            "created": int(time.time()),
+            "model": "deterministic",
+        }
+        if "tool" in response:
+            tool = response["tool"]
+            return [
+                {
+                    **base,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {
+                                "role": "assistant",
+                                "tool_calls": [
+                                    {
+                                        "index": 0,
+                                        "id": tool["id"],
+                                        "type": "function",
+                                        "function": {
+                                            "name": tool["name"],
+                                            "arguments": tool["arguments"],
+                                        },
+                                    }
+                                ],
+                            },
+                            "finish_reason": None,
+                        }
+                    ],
+                },
+                {
+                    **base,
+                    "choices": [
+                        {"index": 0, "delta": {}, "finish_reason": "tool_calls"}
+                    ],
+                },
+            ]
+        return [
+            {
+                **base,
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {"role": "assistant", "content": response["text"]},
+                        "finish_reason": None,
+                    }
+                ],
+            },
+            {
+                **base,
+                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+            },
+        ]
+
+    @classmethod
+    def _write_completion(
+        cls,
+        handler: BaseHTTPRequestHandler,
+        response: dict[str, Any],
+    ) -> None:
+        message: dict[str, Any] = {"role": "assistant", "content": response.get("text")}
+        finish_reason = "stop"
+        if "tool" in response:
+            tool = response["tool"]
+            message["content"] = None
+            message["tool_calls"] = [
+                {
+                    "id": tool["id"],
+                    "type": "function",
+                    "function": {
+                        "name": tool["name"],
+                        "arguments": tool["arguments"],
+                    },
+                }
+            ]
+            finish_reason = "tool_calls"
+        cls._write_json(
+            handler,
+            {
+                "id": "chatcmpl-gludd-tui",
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": "deterministic",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": message,
+                        "finish_reason": finish_reason,
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                    "total_tokens": 2,
+                },
+            },
+        )
+
+
+class _Tui:
+    def __init__(self, config_content: str) -> None:
         self.master_fd, slave_fd = pty.openpty()
         fcntl.ioctl(
             slave_fd,
@@ -52,6 +357,7 @@ class _Tui:
         env = os.environ.copy()
         env["TERM"] = "xterm-256color"
         env["OPENCODE_DISABLE_AUTOUPDATE"] = "true"
+        env["OPENCODE_CONFIG_CONTENT"] = config_content
         # The test targets OpenCode's permission engine. Project plugins have
         # their own suites and intentionally skip delegated/subagent contexts.
         env["OPENCODE_SUBAGENT"] = "1"
@@ -102,7 +408,7 @@ class _Tui:
             f"rc={self.proc.poll()}\n--- TUI tail ---\n{rendered[-6000:]}"
         )
 
-    def prompt(self, text: str, expected: str) -> str:
+    def prompt(self, text: str, expected: str | None = None) -> str:
         before = len(self.raw)
         prior_exits = _plain(bytes(self.raw)).count('message="exiting loop"')
         os.write(self.master_fd, text.encode("utf-8") + b"\r")
@@ -123,10 +429,11 @@ class _Tui:
                 f"--- TUI tail ---\n{rendered[-6000:]}"
             )
         segment = _plain(bytes(self.raw[before:]))
-        assert _compact(expected) in _compact(segment), (
-            f"Expected answer {expected!r} was not rendered for the prompt\n"
-            f"--- prompt segment ---\n{segment[-6000:]}"
-        )
+        if expected is not None:
+            assert _compact(expected) in _compact(segment), (
+                f"Expected answer {expected!r} was not rendered for the prompt\n"
+                f"--- prompt segment ---\n{segment[-6000:]}"
+            )
         time.sleep(1)
         self._drain()
         return segment
@@ -150,13 +457,13 @@ class _Tui:
 @pytest.mark.xdist_group("opencode-tui-permissions")
 def test_tui_handles_multiple_permissioned_tool_prompts() -> None:
     """A persistent TUI can read, grep, and run an allowed Make target."""
-    tui = _Tui()
+    provider = _DeterministicProvider()
+    tui = _Tui(provider.config_content)
     try:
-        tui.wait_for("OpenCode", timeout=30)
+        tui.wait_for("Ask anything...", timeout=30)
         read_segment = tui.prompt(
             "Use the read tool to inspect pyproject.toml, then reply with only "
             "the value of project.name.",
-            "general-ludd-agent",
         )
         assert "permission=read" in read_segment
         assert "action.action=allow" in read_segment
@@ -166,7 +473,6 @@ def test_tui_handles_multiple_permissioned_tool_prompts() -> None:
             "Use the grep tool to locate the exact `authors =` declaration in "
             "pyproject.toml, then use the read tool on that matching line and "
             "reply with only the author name, not its line number.",
-            "General Ludd Team",
         )
         assert "permission=grep" in grep_segment
         assert "action.action=allow" in grep_segment
@@ -174,7 +480,6 @@ def test_tui_handles_multiple_permissioned_tool_prompts() -> None:
         bash_segment = tui.prompt(
             "Use the bash tool to run make version, then reply with only the "
             "version value printed by that command.",
-            "0.1.0-beta.3",
         )
         assert "permission=bash" in bash_segment
         assert "action.action=allow" in bash_segment
@@ -182,9 +487,10 @@ def test_tui_handles_multiple_permissioned_tool_prompts() -> None:
         denied_segment = tui.prompt(
             "Use the bash tool to run pwd exactly once. If OpenCode denies the "
             "command, explain that briefly.",
-            "action.action=deny",
         )
         assert "permission=bash" in denied_segment
         assert "action.action=deny" in denied_segment
+        assert provider.main_calls == 9
     finally:
         tui.close()
+        provider.close()
