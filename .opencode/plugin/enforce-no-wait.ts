@@ -60,7 +60,7 @@ const defaultImpl: HotModule = {
     try {
       if (process.env.GLUDD_NO_WAIT_ENFORCE === "0") return;
       if (input.tool === "bash") {
-        const cmd: string = String(input.args?.command ?? input.command ?? "");
+        const cmd: string = String(input.args?.command ?? "");
         if (cmd) {
           for (const pattern of WAIT_PATTERNS) {
             if (pattern.test(cmd)) {

@@ -38,6 +38,9 @@ const PRODUCTIVE_TOOLS = new Set(["edit", "write"])
 const STAGNANT_STATE_FILE =
   process.env.GLUDD_STAGNANT_STATE || "/tmp/gludd-stagnant-streak.json"
 const MAX_STAGNANT_CALLS = parseInt(process.env.GLUDD_STAGNANT_MAX || "5", 10)
+const ENFORCE =
+  process.env.GLUDD_NO_CI_POLL_ENFORCE !== "0"
+  && process.env.GLUDD_STAGNANT_ENFORCE !== "0"
 
 function readPollStreak(): number {
   const data = readJsonFile<{ count?: number }>(POLL_STATE_FILE, { count: 0 })
@@ -62,6 +65,7 @@ const defaultImpl: HotModule = {
     if (isSubagent()) return
     reportAlive("enforce-no-ci-poll")
     try {
+      if (!ENFORCE) return
       const ctx = input as Record<string, unknown>
       const tool = ctx?.tool as string
 

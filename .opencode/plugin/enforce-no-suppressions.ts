@@ -1,4 +1,6 @@
-// Per AGENTS.md "No Lint-Suppression Comments" policy: `# noqa`, `# type: ignore`,
+// Per AGENTS.md "No Lint-Suppression Comments" policy: `# noqa`, `# type: ignore`.
+// This guard is intentionally hard-coded ON; suppression comments bypass the
+// quality gate itself, so a per-plugin disable switch would defeat the policy.
 // Layer map (see AGENTS.md "Meta-Rule: Guardrail Policy"):
 // 3. Agent prompt       — AGENTS.md "No Lint-Suppression Comments" section
 // HOT-RELOAD: implements the proxy pattern from hot_reload.ts.  Hook functions

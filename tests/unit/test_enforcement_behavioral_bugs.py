@@ -18,7 +18,16 @@ PLUGIN_DIR = ROOT / ".opencode" / "plugin"
 def _read_plugin(name: str) -> str:
     path = PLUGIN_DIR / name
     assert path.exists(), f"Plugin {name} not found at {path}"
-    return path.read_text()
+    source = path.read_text()
+    implementation = {
+        "enforce-make.ts": "enforce_make_impl.ts",
+        "enforce-stop.ts": "enforce_stop_impl.ts",
+    }.get(name)
+    if implementation is not None:
+        impl_path = PLUGIN_DIR / "impl" / implementation
+        assert impl_path.exists(), f"Plugin implementation missing at {impl_path}"
+        source += "\n" + impl_path.read_text()
+    return source
 
 
 # ── Bug 1: enforce-stop.ts — execSync is used (not undefined es) ──────────────
@@ -136,31 +145,15 @@ class TestBug6_EnforceVerifiedClaimsArgs:
 # ── Bug 7: enforce-deletion-gate.ts — uses camelCase not snake_case ───────────
 
 class TestBug7_EnforceDeletionGateCamelCase:
-    """Lines 107-114 use snake_case (file_path, old_string); opencode uses camelCase."""
+    """OpenCode camelCase is canonical; legacy snake_case remains compatible."""
 
-    def test_edit_args_use_camelCase_not_snake_case(self):
+    def test_edit_args_prefer_camelCase_with_compatibility_fallback(self):
         src = _read_plugin("enforce-deletion-gate.ts")
-        assert "file_path" not in src, (
-            "BUG STILL PRESENT: file_path is snake_case; opencode's edit tool "
-            "uses camelCase filePath."
-        )
-        assert "old_string" not in src, (
-            "BUG STILL PRESENT: old_string is snake_case; opencode's edit tool "
-            "uses camelCase oldString."
-        )
-        assert "new_string" not in src, (
-            "BUG STILL PRESENT: new_string is snake_case; opencode's edit tool "
-            "uses camelCase newString."
-        )
-        assert "filePath" in src, (
-            "edit tool args must use camelCase filePath."
-        )
-        assert "oldString" in src, (
-            "edit tool args must use camelCase oldString."
-        )
-        assert "newString" in src, (
-            "edit tool args must use camelCase newString."
-        )
+        assert "args.filePath || args.file_path" in src
+        assert "args.oldString !== undefined" in src
+        assert "countLines(args.old_string ??" in src
+        assert "args.newString !== undefined" in src
+        assert "countLines(args.new_string ??" in src
 
 
 # ── Bug 8: enforce-deadline.ts — BLOCK mode skips dispatch tools ──────────────
