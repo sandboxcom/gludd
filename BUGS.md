@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) Windows WMI E2E imported a nonexistent class and arbitrary-query API
+
+- **What**: Connector batch 5 reached Windows WMI and imported `WindowsWmiSource`, which the module does not export. Its fixtures also configured an ignored arbitrary `query` string and returned JSON directly from a string callback instead of exercising the public `WinWmiSource` alias, the target allowlist, and the list-argv runner triple.
+- **Root cause**: The broad E2E invented a generic WQL execution surface. Production deliberately maps safe target names such as `cpu`, `disk`, and `bios` to fixed CIM classes or filters, then invokes PowerShell through `(argv) -> (returncode, stdout, stderr)`.
+- **Fix applied**: Tests now import the actual public source alias, pin default and custom identities, record exact health and processor argv, model exit 127 distinctly, select the allowlisted `cpu` target, and verify processor message, source, WMI class, core count, and clock-speed normalization.
+- **Long-lived user evidence**: Microsoft documents `Get-CimInstance -ClassName` and recommends `Win32_Processor` for processor inventory ([Get-CimInstance reference](https://learn.microsoft.com/en-us/powershell/module/cimcmdlets/get-ciminstance), [computer-inventory guide](https://learn.microsoft.com/en-us/powershell/scripting/samples/collecting-information-about-computers)). Its WMI guide demonstrates that identical calls can fail with access denied when the caller lacks rights ([Working with WMI](https://learn.microsoft.com/en-us/powershell/scripting/learn/ps101/07-working-with-wmi)); PowerShell users have also tracked missing `Get-CimInstance` instance-path capabilities since 2021 ([PowerShell issue #15247](https://github.com/PowerShell/PowerShell/issues/15247)).
+- **Lesson**: WMI E2E should validate the product's constrained target vocabulary rather than create an undocumented arbitrary-query API. Public class names, shell-free argv, exit status, and CIM result normalization form one contract.
+
 ### 2026-07-28 — (resolved) Windows Event Log E2E bypassed channel and runner contracts
 
 - **What**: Connector batch 5 reached Windows Event Log and called its required-config constructor without an argument. Other cases configured ignored `log_name`/`max_events` keys and used string-returning callbacks, although production accepts `channel` plus per-query `count` and requires a list-argv runner returning `(returncode, stdout, stderr)`.

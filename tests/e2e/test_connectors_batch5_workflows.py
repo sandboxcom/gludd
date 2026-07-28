@@ -1206,43 +1206,110 @@ class TestWindowsEventLogConnector:
 
 class TestWindowsWmiConnector:
     def test_constructs_with_defaults(self):
-        from general_ludd.connectors.windows_wmi import WindowsWmiSource
+        from general_ludd.connectors.windows_wmi import WinWmiSource
 
-        source = WindowsWmiSource()
+        source = WinWmiSource()
         assert source.KIND == "metrics"
+        assert source.name == "windows_wmi"
 
     def test_constructs_custom_config(self):
-        from general_ludd.connectors.windows_wmi import WindowsWmiSource
+        from general_ludd.connectors.windows_wmi import WinWmiSource
 
-        source = WindowsWmiSource({"name": "wmi-cpu", "query": "SELECT * FROM Win32_Processor"})
+        source = WinWmiSource({"name": "wmi-cpu"})
         assert source.name == "wmi-cpu"
 
     def test_health_ok_with_runner(self):
-        from general_ludd.connectors.windows_wmi import WindowsWmiSource
+        from general_ludd.connectors.windows_wmi import WinWmiSource
 
-        source = WindowsWmiSource(runner=lambda query: _json.dumps([{"Name": "CPU0"}]))
+        calls: list[list[str]] = []
+
+        def _runner(argv: list[str]) -> tuple[int, str, str]:
+            calls.append(list(argv))
+            return (
+                0,
+                _json.dumps([{
+                    "Caption": "Microsoft Windows Server 2022 Standard",
+                    "Version": "10.0.20348",
+                }]),
+                "",
+            )
+
+        source = WinWmiSource(runner=_runner)
         result = source.health()
         assert result["ok"] is True
+        assert "Windows Server 2022 Standard" in result["detail"]
+        assert calls == [[
+            "powershell",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Get-CimInstance -ClassName Win32_OperatingSystem | "
+            "Select-Object Caption,Version | ConvertTo-Json",
+        ]]
 
     def test_health_not_ok_when_runner_unavailable(self):
-        from general_ludd.connectors.windows_wmi import WindowsWmiSource
+        from general_ludd.connectors.windows_wmi import WinWmiSource
 
-        source = WindowsWmiSource()
+        calls: list[list[str]] = []
+
+        def _runner(argv: list[str]) -> tuple[int, str, str]:
+            calls.append(list(argv))
+            return (127, "", "powershell not found")
+
+        source = WinWmiSource(runner=_runner)
         result = source.health()
-        assert isinstance(result, dict)
+        assert result == {
+            "ok": False,
+            "detail": "powershell not found",
+        }
+        assert calls == [[
+            "powershell",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Get-CimInstance -ClassName Win32_OperatingSystem | "
+            "Select-Object Caption,Version | ConvertTo-Json",
+        ]]
 
     def test_query_returns_wmi_results(self):
-        from general_ludd.connectors.windows_wmi import WindowsWmiSource
+        from general_ludd.connectors.windows_wmi import WinWmiSource
 
-        def _runner(query: str) -> str:
-            if "Win32_Processor" in query:
-                return _json.dumps([{"Name": "Intel Core i7", "NumberOfCores": 8, "MaxClockSpeed": 3600}])
-            return _json.dumps([])
+        calls: list[list[str]] = []
 
-        source = WindowsWmiSource({"query": "SELECT * FROM Win32_Processor"}, runner=_runner)
-        records = source.query({})
-        assert len(records) >= 1
+        def _runner(argv: list[str]) -> tuple[int, str, str]:
+            calls.append(list(argv))
+            return (
+                0,
+                _json.dumps([{
+                    "Caption": "Intel64 Family 6",
+                    "Name": "Intel Core i7",
+                    "DeviceID": "CPU0",
+                    "NumberOfCores": 8,
+                    "NumberOfLogicalProcessors": 16,
+                    "MaxClockSpeed": 3600,
+                }]),
+                "",
+            )
+
+        source = WinWmiSource({"name": "wmi-cpu"}, runner=_runner)
+        records = source.query({"target": "cpu"})
+        assert calls == [[
+            "powershell",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Get-CimInstance -ClassName Win32_Processor | "
+            "ConvertTo-Json -Depth 3",
+        ]]
+        assert len(records) == 1
         assert records[0]["kind"] == "metrics"
+        assert records[0]["source"] == "wmi-cpu"
+        assert records[0]["message"] == (
+            "Processor: Intel64 Family 6 Intel Core i7"
+        )
+        assert records[0]["labels"]["wmi_class"] == "Win32_Processor"
+        assert records[0]["labels"]["numberofcores"] == 8
+        assert records[0]["labels"]["maxclockspeed"] == 3600
 
 
 # ============================================================================
