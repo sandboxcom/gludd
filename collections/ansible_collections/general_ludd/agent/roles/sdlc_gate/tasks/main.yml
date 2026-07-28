@@ -109,6 +109,7 @@
 # ══════════════════════════════════════════════════════════════════════════════
 
 - name: "[check_stage_entry] Check entry gate conditions"
+  when: operation == 'check_stage_entry'
   block:
 
     - name: "[check_stage_entry] Check previous stage token exists (when stage > 0)"
@@ -175,13 +176,12 @@
         dest: "{{ artifact_dir }}/sdlc_entry_{{ stage }}.json"
         mode: "0644"
 
-  when: operation == 'check_stage_entry'
-
 # ══════════════════════════════════════════════════════════════════════════════
 # OPERATION: check_stage_exit — verify exit gate for a stage
 # ══════════════════════════════════════════════════════════════════════════════
 
 - name: "[check_stage_exit] Check exit gate conditions"
+  when: operation == 'check_stage_exit'
   block:
 
     # -- Check primary role artifacts exist --
@@ -230,11 +230,11 @@
     - name: "[check_stage_exit] Stat evidence bundle artifacts"
       ansible.builtin.stat:
         path: >-
-          {%- if '{{' in (item.path | default('')) -%}
-          {{ artifact_dir + '/' + item.artifact }}
-          {%- else -%}
-          {{ item.path | default(artifact_dir + '/' + item.artifact) }}
-          {%- endif -%}
+          {{
+            (artifact_dir + '/' + item.artifact)
+            if ('{{' in (item.path | default('')))
+            else (item.path | default(artifact_dir + '/' + item.artifact))
+          }}
       register: _sg_evidence_stats
       loop: "{{ (_sg_evidence_bundles[stage].required | default([])) }}"
       loop_control:
@@ -398,13 +398,14 @@
         - fail_closed | bool
         - not (_sg_exit_gate_passed | bool)
 
-  when: operation == 'check_stage_exit'
-
 # ══════════════════════════════════════════════════════════════════════════════
 # OPERATION: advance_stage — mark stage complete, produce token, emit event
 # ══════════════════════════════════════════════════════════════════════════════
 
 - name: "[advance_stage] Advance to next stage"
+  when:
+    - operation == 'advance_stage'
+    - _sg_exit_gate_passed | default(false) | bool
   block:
 
     # First run the exit gate check — can't advance if exit gate fails
@@ -478,15 +479,12 @@
         dest: "{{ artifact_dir }}/sdlc_advance_{{ stage }}.json"
         mode: "0644"
 
-  when:
-    - operation == 'advance_stage'
-    - _sg_exit_gate_passed | default(false) | bool
-
 # ══════════════════════════════════════════════════════════════════════════════
 # OPERATION: audit_token_chain — walk the validation token chain
 # ══════════════════════════════════════════════════════════════════════════════
 
 - name: "[audit_token_chain] Audit validation token chain"
+  when: operation == 'audit_token_chain'
   block:
 
     - name: "[audit_token_chain] Build expected token list from config"
@@ -571,13 +569,12 @@
         dest: "{{ artifact_dir }}/sdlc_token_chain_audit.json"
         mode: "0644"
 
-  when: operation == 'audit_token_chain'
-
 # ══════════════════════════════════════════════════════════════════════════════
 # OPERATION: list_stages — enumerate all stages and their status
 # ══════════════════════════════════════════════════════════════════════════════
 
 - name: "[list_stages] List all pipeline stages"
+  when: operation == 'list_stages'
   block:
 
     - name: "[list_stages] Stat entry gate artifacts for every stage"
@@ -656,13 +653,12 @@
         dest: "{{ artifact_dir }}/sdlc_stage_list.json"
         mode: "0644"
 
-  when: operation == 'list_stages'
-
 # ══════════════════════════════════════════════════════════════════════════════
 # OPERATION: validate_pipeline — end-to-end pipeline health check
 # ══════════════════════════════════════════════════════════════════════════════
 
 - name: "[validate_pipeline] Validate full pipeline health"
+  when: operation == 'validate_pipeline'
   block:
 
     - name: "[validate_pipeline] Assert SDLC config is parseable"
@@ -741,8 +737,6 @@
           } | to_nice_json }}
         dest: "{{ artifact_dir }}/sdlc_pipeline_health.json"
         mode: "0644"
-
-  when: operation == 'validate_pipeline'
 
 # ── Report completion ────────────────────────────────────────────────────────
 

@@ -643,12 +643,13 @@ For each role: **inputs/vars · connector KINDs pulled · correlation/join strat
 
 Two layers, matching the existing module → daemon-API split:
 
-1. **New Ansible module `gludd_observe`**
+1. **Implemented Ansible module `gludd_observe`**
    (`collections/.../plugins/modules/gludd_observe.py`) — a thin wrapper, built
    exactly like `gludd_db.py`:
-   - `argument_spec`: `op` (choices: `query`, `correlate`, `timeline`, `topology`,
-     `sources`), plus op-specific params (`kinds`, `window`, `filters`, `anchor`,
-     `records`, …), `daemon_url`, `psk` (`no_log=True`), `timeout`, `role`.
+   - `argument_spec`: `op` (choices: `query_sources`, `correlate_incident`,
+     `timeline`, `topology`), plus op-specific params (`kinds`, `window`,
+     `spec`, `seed`, `start`, `end`, …), `daemon_url`, `psk` (`no_log=True`),
+     `timeout`, `role`.
    - First does the **capability gate** before any network call, copying the
      `gludd_db.py` idiom verbatim:
      ```python
@@ -659,9 +660,9 @@ Two layers, matching the existing module → daemon-API split:
          module.fail_json(**error_result(f"observe denied by policy: {exc}", role=...))
          return
      ```
-   - Uses `GluddClient(base_url, psk, timeout)` to POST to the matching
-     `/admin/observe/<op>` endpoint, maps `_status`/`_error` to
-     `ok_result`/`error_result` (same as `gludd_db.py`).
+   - Uses `GluddClient(base_url, psk, timeout)` to discover named sources at
+     `/api/observe/sources` and query them at `/api/observe/query`, then delegates
+     merging/correlation/topology to the existing `GluddObserve` facade.
 2. **Roles call the module** in their `block:` with
    `role: "{{ capability_role }}"` and `no_log: "{{ psk | length > 0 }}"`, then
    `set_fact` on the registered result and `ansible.builtin.copy` the artifact —
@@ -669,45 +670,31 @@ Two layers, matching the existing module → daemon-API split:
 
 ### 3.2 Capability-policy grants to add
 
-Add six entries to `_builtin_table()` in `module_utils/capability_policy.py`.
-These read-only analysis roles need **network to the local daemon** and
-**facts read**, but (by default) **no db write, no fs write, no secrets** —
-honoring default-DENY. Concrete additions:
+Six entries now exist in `_builtin_table()` in
+`module_utils/capability_policy.py`. These read-only analysis roles need only
+**network to the local daemon**; they receive no db, filesystem, or secret
+grant, honoring default-DENY. The direct-module test identity has the same
+local-only network grant.
 
 ```python
-"incident_triage": CapabilityPolicy(
-    role="incident_triage",
-    facts_prefixes=["ludd.incidents", "ludd.traces"],
-    network_hosts=["localhost", "127.0.0.1"]),
-"latency_regression": CapabilityPolicy(
-    role="latency_regression",
-    facts_prefixes=["ludd.metrics", "ludd.traces"],
-    network_hosts=["localhost", "127.0.0.1"]),
-"error_spike_root_cause": CapabilityPolicy(
-    role="error_spike_root_cause",
-    facts_prefixes=["ludd.logs", "ludd.events"],
-    network_hosts=["localhost", "127.0.0.1"]),
-"deploy_correlator": CapabilityPolicy(
-    role="deploy_correlator",
-    facts_prefixes=["ludd.pipeline", "ludd.metrics"],
-    network_hosts=["localhost", "127.0.0.1"],
-    db_ops=["todo_create"]),          # ONLY when enable_writeback files a follow-up
-"saturation_capacity": CapabilityPolicy(
-    role="saturation_capacity",
-    facts_prefixes=["ludd.infra", "ludd.metrics"],
-    network_hosts=["localhost", "127.0.0.1"]),
-"security_signal": CapabilityPolicy(
-    role="security_signal",
-    facts_prefixes=["ludd.security", "ludd.events"],
-    network_hosts=["localhost", "127.0.0.1"],
-    secret_prefixes=["audit/"]),      # mirrors security_auditor's audit grant
+for role in (
+    "observe_incident_triage",
+    "observe_latency_regression",
+    "observe_error_spike_rca",
+    "observe_deploy_correlator",
+    "observe_saturation_capacity",
+    "observe_security_signal",
+    "molecule_observe_probe",
+):
+    table[role] = CapabilityPolicy(
+        role=role,
+        network_hosts=["localhost", "127.0.0.1"],
+    )
 ```
 
-Note the principle the existing comment in `capability_policy.py` already
-codifies: *"Adding a new db op to a role REQUIRES extending its grant here — the
-wiring unit test enforces this."* So `deploy_correlator`'s `todo_create` and
-`security_signal`'s `audit/` secret prefix are the *only* elevated grants, and
-both are minimal.
+No observe identity receives database, filesystem, or secret access. If a future
+role adds write-back, its narrowly scoped grant and a denial-first wiring test
+must land together; the beta.3 module is strictly read-only.
 
 ### 3.3 Daemon-side connector registry wiring
 

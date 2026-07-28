@@ -8,13 +8,12 @@
 #      and group them on a shared trace_id.
 #   3. Summarize the largest correlated group (the blast radius) into an artifact.
 #
-# Facade interface (DEFERRED WIRING — gludd_observe module, #73 next wave)
+# Facade interface (wired by general_ludd.agent.gludd_observe)
 #   The role calls a thin Ansible module `general_ludd.agent.gludd_observe`
 #   that constructs GluddObserve over the daemon's ConnectorRegistry and invokes:
 #       op=correlate_incident  -> GluddObserve.correlate_incident(seed, kinds, by, window_s)
 #   returning ansible_facts.gludd_observe.groups = { join_value: [records...] }.
-#   Until that module lands the logic is exercised in check mode + unit tests
-#   (tests/unit/test_observe_facade.py).
+#   The module adapter and facade behavior are covered by focused unit tests.
 
 - name: Validate incident seed present
   ansible.builtin.fail:

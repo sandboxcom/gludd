@@ -5,7 +5,7 @@
 # 1) FAN OUT: launch every call in this batch async + poll:0. Each returns an
 #    ansible_job_id immediately (the promise). register accumulates results
 #    across the loop in _apd_launch.results (one entry per call, same order).
-- name: "Launch batch {{ _apd_batch_idx }} async (poll:0 -> ajob ids)"
+- name: "Launch async calls (poll:0 -> ajob ids) for batch {{ _apd_batch_idx }}"
   general_ludd.agent.gludd_model_call:
     prompt: "{{ _apd_call.prompt }}"
     model_profile: "{{ _apd_call.model_profile | default(omit) }}"
@@ -53,7 +53,7 @@
 #    check aggregate register.results inside loop+until; Ansible only builds
 #    that aggregate after the loop completes, so such a condition burns every
 #    retry for every item.
-- name: "Barrier-join batch {{ _apd_batch_idx }} (await promises)"
+- name: "Barrier-join promises for batch {{ _apd_batch_idx }}"
   ansible.builtin.async_status:
     jid: "{{ _apd_jid }}"
   loop: "{{ _apd_wait_jids }}"

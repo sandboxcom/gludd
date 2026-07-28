@@ -7,7 +7,7 @@
 #   3. A host group at/above signal_min_group_size is a suspicious cluster.
 #   4. Write ranked clusters to an artifact.
 #
-# Facade interface (DEFERRED WIRING — gludd_observe module, #73 next wave)
+# Facade interface (wired by general_ludd.agent.gludd_observe)
 #   op=query_sources -> GluddObserve.query_sources(kinds, spec, start, end)
 #   op=correlate     -> normalize.correlate(records, by)
 #       returning ansible_facts.gludd_observe.groups = { host: [records...] }

@@ -24,13 +24,14 @@
     ci_commit_sha: "{{ ci_commit_sha | default('HEAD') }}"
 
 - name: Push branch if requested
-  ansible.builtin.command:
-    cmd: "git push {{ ci_push_remote | default('origin') }} {{ ci_branch }}"
-    chdir: "{{ repo_path | default('.') }}"
+  general_ludd.agent.gludd_git:
+    path: "{{ repo_path | default('.') }}"
+    op: push
+    remote: "{{ ci_push_remote | default('origin') }}"
+    branch: "{{ ci_branch }}"
   when: ci_push | bool
   register: _push_result
-  failed_when: _push_result.rc != 0
-  changed_when: true
+  failed_when: not (_push_result.result.success | default(false) | bool)
 
 - name: Poll CI status endpoint (uri path)
   ansible.builtin.uri:
