@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) Windows Event Log E2E bypassed channel and runner contracts
+
+- **What**: Connector batch 5 reached Windows Event Log and called its required-config constructor without an argument. Other cases configured ignored `log_name`/`max_events` keys and used string-returning callbacks, although production accepts `channel` plus per-query `count` and requires a list-argv runner returning `(returncode, stdout, stderr)`.
+- **Root cause**: The broad E2E modeled a generic log adapter instead of the connector's explicit Get-WinEvent boundary. It could not prove channel scoping, list-log health, FilterHashtable construction, exit status, or the distinction between an event's message and numeric ID.
+- **Fix applied**: Default construction now supplies an explicit empty config and pins the System identity. Custom configuration uses `channel`; health cases record exact list argv and distinguish success from exit 127; query records the exact FilterHashtable command, returns a runner triple, and verifies message, numeric event value, provider, machine, channel, and event ID labels.
+- **Long-lived user evidence**: Microsoft documents `Get-WinEvent -ListLog`, `-FilterHashtable`, and `-MaxEvents`, warns that non-administrators may be unable to retrieve some logs, and recommends server-side hashtable filtering for large logs ([Get-WinEvent reference](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.diagnostics/get-winevent), [FilterHashtable guide](https://learn.microsoft.com/en-us/powershell/scripting/samples/creating-get-winevent-queries-with-filterhashtable)). Users have reported “no events found” behavior for more than a decade ([Stack Overflow, 2014](https://stackoverflow.com/questions/26680036/powershell-catch-get-winevent-no-events-were-found-get-winevent)); PowerShell users also documented misleading remote errors caused by insufficient Event Log Reader permissions ([PowerShell issue #18965](https://github.com/PowerShell/PowerShell/issues/18965)).
+- **Lesson**: Windows-log E2E must preserve the channel, backend, list argv, and runner triple together. An unavailable or unauthorized collector is not an empty log, and normalized message/value fields must retain their distinct event semantics.
+
 ### 2026-07-28 — (resolved) Windows Defender E2E returned JSON instead of runner results
 
 - **What**: Connector batch 5 reached Windows Defender and its health fake returned a JSON string from a one-argument string callback. The connector requires a list-argv runner returning `(returncode, stdout, stderr)`, so tuple unpacking failed inside fail-soft health. Its query fixture also supplied threat data while selecting the default computer-status operation.

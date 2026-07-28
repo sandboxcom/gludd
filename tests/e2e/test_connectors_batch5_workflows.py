@@ -1090,52 +1090,113 @@ class TestWindowsEventLogConnector:
     def test_constructs_with_defaults(self):
         from general_ludd.connectors.windows_event_log import WindowsEventLogSource
 
-        source = WindowsEventLogSource()
+        source = WindowsEventLogSource({})
         assert source.KIND == "logs"
+        assert source.name == "wineventlog:System"
 
     def test_constructs_custom_config(self):
         from general_ludd.connectors.windows_event_log import WindowsEventLogSource
 
         source = WindowsEventLogSource({
-            "log_name": "Security",
+            "backend": "powershell",
+            "channel": "Security",
             "name": "sec-log",
-            "max_events": 100,
         })
         assert source.name == "sec-log"
 
     def test_health_ok_with_runner(self):
         from general_ludd.connectors.windows_event_log import WindowsEventLogSource
 
-        source = WindowsEventLogSource(runner=lambda cmd: _json.dumps([{"Id": "1"}]))
+        calls: list[list[str]] = []
+
+        def _runner(argv: list[str]) -> tuple[int, str, str]:
+            calls.append(list(argv))
+            return (0, "LogName : System", "")
+
+        source = WindowsEventLogSource({}, runner=_runner)
         result = source.health()
-        assert result["ok"] is True
+        assert result == {
+            "ok": True,
+            "source": "wineventlog:System",
+            "detail": "ok",
+            "channel": "System",
+        }
+        assert calls == [[
+            "powershell",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Get-WinEvent -ListLog 'System'",
+        ]]
 
     def test_health_not_ok_when_runner_unavailable(self):
         from general_ludd.connectors.windows_event_log import WindowsEventLogSource
 
-        source = WindowsEventLogSource()
+        calls: list[list[str]] = []
+
+        def _runner(argv: list[str]) -> tuple[int, str, str]:
+            calls.append(list(argv))
+            return (127, "", "powershell not found")
+
+        source = WindowsEventLogSource({}, runner=_runner)
         result = source.health()
-        assert isinstance(result, dict)
+        assert result == {
+            "ok": False,
+            "source": "wineventlog:System",
+            "detail": "powershell not found",
+            "channel": "System",
+        }
+        assert calls == [[
+            "powershell",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Get-WinEvent -ListLog 'System'",
+        ]]
 
     def test_query_returns_events(self):
         from general_ludd.connectors.windows_event_log import WindowsEventLogSource
 
-        def _runner(cmd: str) -> str:
-            return _json.dumps([
-                {
+        calls: list[list[str]] = []
+
+        def _runner(argv: list[str]) -> tuple[int, str, str]:
+            calls.append(list(argv))
+            return (
+                0,
+                _json.dumps([{
                     "Id": 4624,
                     "LevelDisplayName": "Information",
-                    "TimeCreated": "2025-01-01T12:00:00.0000000Z",
+                    "TimeCreated": "2025-01-01T12:00:00+00:00",
                     "Message": "An account was successfully logged on",
                     "ProviderName": "Microsoft-Windows-Security-Auditing",
-                }
-            ])
+                    "LogName": "Security",
+                    "MachineName": "WIN-HOST-01",
+                }]),
+                "",
+            )
 
-        source = WindowsEventLogSource({"log_name": "Security"}, runner=_runner)
+        source = WindowsEventLogSource({"channel": "Security"}, runner=_runner)
         records = source.query({})
-        assert len(records) >= 1
+        assert calls == [[
+            "powershell",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Get-WinEvent -FilterHashtable @{LogName='Security'} "
+            "-MaxEvents 100 | ConvertTo-Json -Depth 5",
+        ]]
+        assert len(records) == 1
         assert records[0]["kind"] == "logs"
-        assert "4624" in str(records[0]["message"])
+        assert records[0]["message"] == (
+            "An account was successfully logged on"
+        )
+        assert records[0]["value"] == 4624.0
+        assert records[0]["labels"] == {
+            "provider": "Microsoft-Windows-Security-Auditing",
+            "id": "4624",
+            "machine": "WIN-HOST-01",
+            "channel": "Security",
+        }
 
 
 # ============================================================================
