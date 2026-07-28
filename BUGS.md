@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) Monday connector queried an API field removed in 2023
+
+- **What**: Connector batch 4 first exposed invalid nonnumeric board IDs in its construction fixture; after restoring valid board scope, the current-API `items_page` response produced zero records because production still queried and parsed the removed `boards.items` field.
+- **Root cause**: The connector and canonical unit fixtures predated Monday API version `2023-10`. They neither used `items_page` nor followed its cursor through `next_items_page`, despite exposing a `max_pages` configuration that claimed pagination support. The broad E2E had the current response envelope but stale board-ID and normalized-kind assertions.
+- **Fix applied**: Board fixtures now use valid numeric IDs and the stable `tasks` taxonomy. Production queries `boards.items_page`, parses its nested items, follows each board cursor with `next_items_page`, preserves the originating board ID on every page, and stops at the configured page bound. Unit coverage pins the current response shape, cursor continuation, and page limit.
+- **Long-lived user evidence**: Monday announced that `boards.items` would be removed and replaced by `items_page` in API version `2023-10` ([official breaking-change notice](https://developer.monday.com/api-reference/changelog/removing-the-deprecated-items-field-on-boards-queries-replace-with-items-page)); its current guide requires `items_page` followed by cursor-based `next_items_page` for complete board retrieval ([official board-items guide](https://developer.monday.com/api-reference/docs/querying-board-items)). Board-ID coercion has also caused years of integration failures as Monday evolved its GraphQL ID types ([Monday Community, 2022](https://community.monday.com/t/board-ids-are-now-too-big-for-an-integer-check-your-databases-and-update-your-apps/29844), [Monday Community, 2024](https://community.monday.com/t/type-mismatch-on-variable-boardid-and-argument-board-id-int-id/79930)).
+- **Lesson**: Provider deprecation notices must become executable compatibility tests before their removal date. A pagination option is not implemented unless a multi-page test proves cursor traversal and its termination bound.
+
 ### 2026-07-28 — (resolved) Asana E2E omitted project scope and asserted undocumented aliases
 
 - **What**: Connector batch 4 reached Asana and its valid-construction case failed because it supplied a workspace and user alias but no required project GID; health and query fixtures omitted the project as well.

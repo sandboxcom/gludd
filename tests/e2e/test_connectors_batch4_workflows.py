@@ -1488,8 +1488,8 @@ class TestMondayConnector:
     def test_config_requires_token_env(self):
         from general_ludd.connectors.monday import MondaySource
 
-        with pytest.raises((ValueError, RuntimeError)):
-            MondaySource({})
+        with pytest.raises(ValueError, match="token_env"):
+            MondaySource({"board_ids": [1]})
 
     def test_constructs_with_valid_config(self, monkeypatch):
         from general_ludd.connectors.monday import MondaySource
@@ -1498,9 +1498,10 @@ class TestMondayConnector:
         try:
             source = MondaySource({
                 "token_env": "MON_TOK",
-                "board_ids": ["b1", "b2"],
+                "board_ids": [1, 2],
             })
-            assert source.KIND == "items"
+            assert source.KIND == "tasks"
+            assert source.board_ids == [1, 2]
         finally:
             del os.environ["MON_TOK"]
 
@@ -1513,7 +1514,10 @@ class TestMondayConnector:
         )
         monkeypatch.setenv("MON_H", "tok")
         try:
-            source = MondaySource({"token_env": "MON_H"}, transport=transport)
+            source = MondaySource(
+                {"token_env": "MON_H", "board_ids": [1]},
+                transport=transport,
+            )
             result = source.health()
             assert result["ok"] is True
         finally:
@@ -1525,7 +1529,10 @@ class TestMondayConnector:
         transport = MockHttpResponseTransport(status_code=401, body={})
         monkeypatch.setenv("MON_H2", "tok")
         try:
-            source = MondaySource({"token_env": "MON_H2"}, transport=transport)
+            source = MondaySource(
+                {"token_env": "MON_H2", "board_ids": [1]},
+                transport=transport,
+            )
             result = source.health()
             assert result["ok"] is False
         finally:
@@ -1558,10 +1565,13 @@ class TestMondayConnector:
         )
         monkeypatch.setenv("MON_Q", "tok")
         try:
-            source = MondaySource({"token_env": "MON_Q"}, transport=transport)
+            source = MondaySource(
+                {"token_env": "MON_Q", "board_ids": [1]},
+                transport=transport,
+            )
             records = source.query({})
             assert len(records) >= 1
-            assert records[0]["kind"] == "items"
+            assert records[0]["kind"] == "tasks"
         finally:
             del os.environ["MON_Q"]
 
