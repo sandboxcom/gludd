@@ -876,7 +876,13 @@ class TestSplunkConnector:
 
         transport = MockHttpTransport(default_status=200, default_body={"results": []})
         monkeypatch.setenv("SPLUNK_TOKEN", "test-token")
-        src = SplunkSource({"token_env": "SPLUNK_TOKEN"}, transport=cast(Any, transport))
+        src = SplunkSource(
+            {
+                "base_url": "https://splunk.example.com",
+                "token_env": "SPLUNK_TOKEN",
+            },
+            transport=cast(Any, transport),
+        )
         result = src.health()
         assert isinstance(result, dict)
 
@@ -896,7 +902,13 @@ class TestSplunkConnector:
             },
         )
         monkeypatch.setenv("SPLUNK_TOKEN", "test-token")
-        src = SplunkSource({"token_env": "SPLUNK_TOKEN"}, transport=cast(Any, transport))
+        src = SplunkSource(
+            {
+                "base_url": "https://splunk.example.com",
+                "token_env": "SPLUNK_TOKEN",
+            },
+            transport=cast(Any, transport),
+        )
         records = src.query({"search": "error"})
         assert isinstance(records, list)
         assert len(records) >= 1
