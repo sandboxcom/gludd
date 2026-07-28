@@ -1,4 +1,5 @@
 """V2.1: Gateway-backed executor for AgentDispatcher."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -14,12 +15,14 @@ from general_ludd.models.gateway import ModelGateway, ModelProfile, ModelRespons
 def _register_invoker(reg: AgentRegistry, name: str = "build") -> str:
     """Register a PRIMARY invoker permitted to dispatch any target. Required now
     that the dispatcher fails CLOSED on an empty invoker_name (task #50)."""
-    reg.register(AgentConfig(
-        name=name,
-        type=AgentType.PRIMARY,
-        description="d",
-        permissions=AgentPermission(can_dispatch_subagents=True, allowed_subagents=["*"]),
-    ))
+    reg.register(
+        AgentConfig(
+            name=name,
+            type=AgentType.PRIMARY,
+            description="d",
+            permissions=AgentPermission(can_dispatch_subagents=True, allowed_subagents=["*"]),
+        )
+    )
     return name
 
 
@@ -27,19 +30,22 @@ class TestGatewayBackedExecutor:
     def test_noop_executor_returns_empty_string(self):
         task = AgentTask(task_id="t1", agent_name="c", description="d", prompt="p")
         import asyncio
+
         r = asyncio.run(_noop_executor(task))
         assert r == ""
 
     def test_gateway_executor_calls_model(self):
         profile = ModelProfile(
-            model_profile_id="m1", provider="openai",
-            provider_package="lp", provider_class_hint="COAI",
-            model_name="gt", enabled=True,
+            model_profile_id="m1",
+            provider="openai",
+            provider_package="lp",
+            provider_class_hint="COAI",
+            model_name="gt",
+            enabled=True,
+            api_metered=False,
         )
         gateway = ModelGateway(profiles=[profile])
-        gateway.call_model_with_retry = MagicMock(
-            return_value=ModelResponse(content="generated code")
-        )
+        gateway.call_model_with_retry = MagicMock(return_value=ModelResponse(content="generated code"))
         r = gateway.call_model_with_retry("m1", [{"role": "user", "content": "p"}])
         assert r.content == "generated code"
         gateway.call_model_with_retry.assert_called_once()
@@ -49,23 +55,38 @@ class TestGatewayBackedExecutor:
         reg = AgentRegistry()
         reg.register(AgentConfig(name="g", type=AgentType.SUBAGENT, description="d"))
         invoker = _register_invoker(reg)
-        gw = ModelGateway(profiles=[ModelProfile(
-            model_profile_id="m1", provider="openai",
-            provider_package="lp", provider_class_hint="COAI",
-            model_name="gt", enabled=True,
-        )])
-        gw.call_model_with_retry = MagicMock(
-            return_value=ModelResponse(content="result")
+        gw = ModelGateway(
+            profiles=[
+                ModelProfile(
+                    model_profile_id="m1",
+                    provider="openai",
+                    provider_package="lp",
+                    provider_class_hint="COAI",
+                    model_name="gt",
+                    enabled=True,
+                    api_metered=False,
+                )
+            ]
         )
+        gw.call_model_with_retry = MagicMock(return_value=ModelResponse(content="result"))
+
         async def ex(task: AgentTask) -> str:
             r = gw.call_model_with_retry(
-                "m1", [{"role": "user", "content": task.prompt}],
+                "m1",
+                [{"role": "user", "content": task.prompt}],
             )
             return r.content
+
         d = AgentDispatcher(registry=reg, executor=ex)
-        r = await d.dispatch_one(AgentTask(
-            task_id="t3", agent_name="g", description="d", prompt="p", invoker_name=invoker,
-        ))
+        r = await d.dispatch_one(
+            AgentTask(
+                task_id="t3",
+                agent_name="g",
+                description="d",
+                prompt="p",
+                invoker_name=invoker,
+            )
+        )
         assert r.status == "completed"
         assert r.output == "result"
 
@@ -75,8 +96,14 @@ class TestGatewayBackedExecutor:
         reg.register(AgentConfig(name="g", type=AgentType.SUBAGENT, description="d"))
         invoker = _register_invoker(reg)
         d = AgentDispatcher(registry=reg)
-        r = await d.dispatch_one(AgentTask(
-            task_id="t4", agent_name="g", description="d", prompt="p", invoker_name=invoker,
-        ))
+        r = await d.dispatch_one(
+            AgentTask(
+                task_id="t4",
+                agent_name="g",
+                description="d",
+                prompt="p",
+                invoker_name=invoker,
+            )
+        )
         assert r.status == "completed"
         assert r.output == ""

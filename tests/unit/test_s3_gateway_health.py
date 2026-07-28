@@ -32,6 +32,7 @@ def _profile(
     return ModelProfile(
         model_profile_id=pid,
         enabled=True,
+        api_metered=False,
         provider="openai",
         provider_package="langchain-openai",
         provider_class_hint="ChatOpenAI",
@@ -46,9 +47,7 @@ def _gateway(*profiles: ModelProfile) -> ModelGateway:
     reg = ProviderRegistry()
     reg.register_provider("openai", "langchain-openai", "ChatOpenAI")
     fake = MagicMock()
-    fake.secrets.kv.v2.read_secret_version.return_value = {
-        "data": {"data": {"value": "sk-test"}}
-    }
+    fake.secrets.kv.v2.read_secret_version.return_value = {"data": {"data": {"value": "sk-test"}}}
     secrets = SecretsManager(
         client=fake,
         aliases={"openai_key": SecretAlias("openai_key", "keys/openai", "secret")},
@@ -104,9 +103,10 @@ class TestPrimaryHealthGateBeforeTryCallModel:
         gw = _gateway(pri, fb)
         gw._health_tracker = _FakeHealthTracker(unhealthy={"pri"})
 
-        with patch.object(gw, "_try_call_model") as spy, \
-             patch.object(gw, "_walk_fallbacks",
-                          return_value=(_fake_resp("fb"), None, [])):
+        with (
+            patch.object(gw, "_try_call_model") as spy,
+            patch.object(gw, "_walk_fallbacks", return_value=(_fake_resp("fb"), None, [])),
+        ):
             result = gw.call_model_with_fallback("pri", _MSG)
 
         assert result is not None
@@ -139,9 +139,10 @@ class TestPrimaryHealthGateBeforeTryCallModel:
         gw = _gateway(pri, fb)
         gw._health_tracker = None
 
-        with patch.object(gw, "_try_call_model", return_value=None), \
-             patch.object(gw, "_walk_fallbacks",
-                          return_value=(_fake_resp("fb ok"), None, [])):
+        with (
+            patch.object(gw, "_try_call_model", return_value=None),
+            patch.object(gw, "_walk_fallbacks", return_value=(_fake_resp("fb ok"), None, [])),
+        ):
             result = gw.call_model_with_fallback("pri", _MSG)
 
         assert result.content == "fb ok"
@@ -157,7 +158,8 @@ class TestBudgetThreadedThroughTryCallModel:
 
         with patch.object(gw, "call_model", return_value=_fake_resp("ok")) as spy:
             gw.call_model_with_fallback(
-                "pri", _MSG,
+                "pri",
+                _MSG,
                 estimated_cost=1.23,
                 budget_remaining=45.0,
             )
@@ -173,7 +175,8 @@ class TestBudgetThreadedThroughTryCallModel:
 
         with patch.object(gw, "call_model", return_value=_fake_resp("ok")) as spy:
             gw.call_model_with_fallback(
-                "pri", _MSG,
+                "pri",
+                _MSG,
                 estimated_cost=5.0,
                 budget_remaining=100.0,
                 extra_kwarg="val",
@@ -189,12 +192,17 @@ class TestBudgetThreadedThroughTryCallModel:
         gw = _gateway(p)
         gw._health_tracker = None
 
-        with patch.object(
-            gw, "call_model",
-            side_effect=BudgetExceededError("over budget"),
-        ), pytest.raises(BudgetExceededError, match="over budget"):
+        with (
+            patch.object(
+                gw,
+                "call_model",
+                side_effect=BudgetExceededError("over budget"),
+            ),
+            pytest.raises(BudgetExceededError, match="over budget"),
+        ):
             gw.call_model_with_fallback(
-                "pri", _MSG,
+                "pri",
+                _MSG,
                 estimated_cost=200.0,
                 budget_remaining=1.0,
             )
@@ -205,11 +213,11 @@ class TestBudgetThreadedThroughTryCallModel:
         gw = _gateway(pri, fb)
         gw._health_tracker = None
 
-        with patch.object(gw, "_try_call_model", return_value=None), \
-             patch.object(gw, "_walk_fallbacks") as walk_spy:
+        with patch.object(gw, "_try_call_model", return_value=None), patch.object(gw, "_walk_fallbacks") as walk_spy:
             walk_spy.return_value = (_fake_resp("fb"), None, [])
             gw.call_model_with_fallback(
-                "pri", _MSG,
+                "pri",
+                _MSG,
                 estimated_cost=7.77,
                 budget_remaining=42.0,
             )
@@ -284,10 +292,14 @@ class TestTryCallModelHealthGate:
         gw = _gateway(p)
         gw._health_tracker = None
 
-        with patch.object(
-            gw, "call_model",
-            side_effect=BudgetExceededError("no money"),
-        ), pytest.raises(BudgetExceededError, match="no money"):
+        with (
+            patch.object(
+                gw,
+                "call_model",
+                side_effect=BudgetExceededError("no money"),
+            ),
+            pytest.raises(BudgetExceededError, match="no money"),
+        ):
             gw._try_call_model("pri", _MSG)
 
 
@@ -300,9 +312,10 @@ class TestHealthGateConsistency:
         gw = _gateway(p)
         gw._health_tracker = _FakeHealthTracker(unhealthy={"pri"})
 
-        with patch.object(
-            gw._health_tracker, "is_healthy", return_value=False
-        ) as spy, pytest.raises(CircuitBreakerOpenError):
+        with (
+            patch.object(gw._health_tracker, "is_healthy", return_value=False) as spy,
+            pytest.raises(CircuitBreakerOpenError),
+        ):
             gw.call_model("pri", _MSG)
 
         spy.assert_called_once_with("pri", admit_probe=False)
@@ -324,11 +337,10 @@ class TestHealthGateConsistency:
         gw = _gateway(pri)
         gw._health_tracker = _FakeHealthTracker(unhealthy=set())
 
-        with patch.object(
-            gw._health_tracker, "is_healthy", wraps=gw._health_tracker.is_healthy
-        ) as spy, \
-             patch.object(gw, "_try_call_model",
-                          return_value=_fake_resp("ok")):
+        with (
+            patch.object(gw._health_tracker, "is_healthy", wraps=gw._health_tracker.is_healthy) as spy,
+            patch.object(gw, "_try_call_model", return_value=_fake_resp("ok")),
+        ):
             gw.call_model_with_fallback("pri", _MSG)
 
         spy.assert_called()

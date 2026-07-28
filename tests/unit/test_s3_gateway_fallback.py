@@ -33,6 +33,7 @@ def _profile(
     return ModelProfile(
         model_profile_id=pid,
         enabled=True,
+        api_metered=False,
         provider="openai",
         provider_package="langchain-openai",
         provider_class_hint="ChatOpenAI",
@@ -47,9 +48,7 @@ def _gateway(*profiles: ModelProfile) -> ModelGateway:
     reg = ProviderRegistry()
     reg.register_provider("openai", "langchain-openai", "ChatOpenAI")
     fake = MagicMock()
-    fake.secrets.kv.v2.read_secret_version.return_value = {
-        "data": {"data": {"value": "sk-test"}}
-    }
+    fake.secrets.kv.v2.read_secret_version.return_value = {"data": {"data": {"value": "sk-test"}}}
     secrets = SecretsManager(
         client=fake,
         aliases={"openai_key": SecretAlias("openai_key", "keys/openai", "secret")},
@@ -97,10 +96,13 @@ class TestFallbackSkipsOverBudgetProvider:
                 raise BudgetExceededError("over budget for over")
             return _fake_resp(f"from {profile_id}")
 
-        with patch.object(gw, "call_model", side_effect=fake_try) as spy, \
-             pytest.raises(BudgetExceededError, match="over budget for over"):
+        with (
+            patch.object(gw, "call_model", side_effect=fake_try) as spy,
+            pytest.raises(BudgetExceededError, match="over budget for over"),
+        ):
             gw._walk_fallbacks(
-                ["over", "ok"], _MSG,
+                ["over", "ok"],
+                _MSG,
                 estimated_cost=5.0,
                 budget_remaining=50.0,
             )
@@ -121,7 +123,8 @@ class TestFallbackSkipsOverBudgetProvider:
 
         with patch.object(gw, "call_model", side_effect=fake_try):
             result = gw._walk_fallbacks(
-                ["fb1", "fb2"], _MSG,
+                ["fb1", "fb2"],
+                _MSG,
                 estimated_cost=5.0,
                 budget_remaining=50.0,
             )
@@ -151,7 +154,8 @@ class TestBudgetPrecheckBeforeFallbackAttempt:
 
         with patch.object(gw, "call_model", side_effect=fake_call) as spy:
             result = gw._walk_fallbacks(
-                ["expensive", "cheap"], _MSG,
+                ["expensive", "cheap"],
+                _MSG,
                 estimated_cost=5.0,
                 budget_remaining=50.0,
             )
@@ -171,7 +175,8 @@ class TestBudgetPrecheckBeforeFallbackAttempt:
 
         with patch.object(gw, "call_model") as spy:
             result = gw._walk_fallbacks(
-                ["fb"], _MSG,
+                ["fb"],
+                _MSG,
                 estimated_cost=100.0,
                 budget_remaining=5.0,
             )
@@ -189,7 +194,8 @@ class TestBudgetPrecheckBeforeFallbackAttempt:
         expected = _fake_resp("within budget")
         with patch.object(gw, "call_model", return_value=expected) as spy:
             result = gw._walk_fallbacks(
-                ["fb"], _MSG,
+                ["fb"],
+                _MSG,
                 estimated_cost=5.0,
                 budget_remaining=50.0,
             )
@@ -234,7 +240,8 @@ class TestHealthCheckTimeoutDoesNotBlock:
 
         with patch.object(gw, "call_model", return_value=fake_resp_ok) as spy:
             result = gw._walk_fallbacks(
-                ["hung", "ok"], _MSG,
+                ["hung", "ok"],
+                _MSG,
                 estimated_cost=5.0,
                 budget_remaining=50.0,
             )
@@ -255,7 +262,8 @@ class TestHealthCheckTimeoutDoesNotBlock:
         expected = _fake_resp("healthy fast")
         with patch.object(gw, "call_model", return_value=expected) as spy:
             result = gw._walk_fallbacks(
-                ["fb"], _MSG,
+                ["fb"],
+                _MSG,
                 estimated_cost=5.0,
                 budget_remaining=50.0,
             )
@@ -279,7 +287,8 @@ class TestBudgetParamsFlowToFallbackCalls:
 
         with patch.object(gw, "call_model", return_value=expected) as spy:
             gw._walk_fallbacks(
-                ["fb"], _MSG,
+                ["fb"],
+                _MSG,
                 estimated_cost=7.77,
                 budget_remaining=42.0,
             )
@@ -294,11 +303,11 @@ class TestBudgetParamsFlowToFallbackCalls:
         gw = _gateway(pri, fb)
         gw._health_tracker = None
 
-        with patch.object(gw, "_try_call_model", return_value=None), \
-             patch.object(gw, "_walk_fallbacks") as walk_spy:
+        with patch.object(gw, "_try_call_model", return_value=None), patch.object(gw, "_walk_fallbacks") as walk_spy:
             walk_spy.return_value = (_fake_resp("ok"), None, [])
             gw.call_model_with_fallback(
-                "pri", _MSG,
+                "pri",
+                _MSG,
                 estimated_cost=3.33,
                 budget_remaining=66.6,
             )
