@@ -1498,7 +1498,7 @@ class TestVictoriaMetricsConnector:
         transport = MockHttpTransport(default_status=200, default_body={"data": {"result": []}})
         src = VictoriaMetricsSource({"base_url": "https://vm.example.com/"}, transport=cast(Any, transport))
         result = src.health()
-        assert isinstance(result, dict)
+        assert result["ok"] is True
 
     def test_query_returns_records(self):
         from general_ludd.connectors.victoriametrics import VictoriaMetricsSource
@@ -1518,8 +1518,10 @@ class TestVictoriaMetricsConnector:
         )
         src = VictoriaMetricsSource({"base_url": "https://vm.example.com/"}, transport=cast(Any, transport))
         records = src.query({"query": "cpu_usage"})
-        assert isinstance(records, list)
-        assert len(records) >= 2
+        assert len(records) == 2
+        assert records[0]["message"] == "cpu_usage"
+        assert records[0]["value"] == 42.5
+        assert records[1]["value"] == 43.1
 
 
 class TestOpenTsdbConnector:
