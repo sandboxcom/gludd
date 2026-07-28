@@ -38,7 +38,7 @@ _TIMEOUT_RC = 124
 def _json_safe(obj: Any) -> Any:
     """Coerce a structure to JSON/pickle-safe primitives.
 
-    Used to ferry an AnsibleResult dump out of a fork child: dicts/lists recurse,
+    Used to ferry an AnsibleResult dump out of an isolated child: dicts/lists recurse,
     JSON scalars pass through, and anything else (an ansible object embedded in an
     event's result payload) is replaced by its ``repr`` so the queue.put never
     fails on an unpicklable leaf.
@@ -72,6 +72,43 @@ def _env_default_timeout() -> float:
     except ValueError:
         return _DEFAULT_PLAYBOOK_TIMEOUT
     return val if val > 0 else _DEFAULT_PLAYBOOK_TIMEOUT
+
+
+def _execute_core_in_child(
+    runner: Any,
+    queue: Any,
+    exec_kwargs: dict[str, Any],
+) -> None:
+    """Execute one playbook in a spawn-compatible child process."""
+    import contextlib
+
+    # Install the seccomp filter before setsid() or any playbook work so a
+    # compromised playbook cannot unshare/mount/setns out of the sandbox.
+    if runner._seccomp_filter is not None:
+        try:
+            applied = runner._seccomp_filter.apply()
+            if not applied:
+                logger.warning(
+                    "seccomp filter not applied (fail-open); playbook "
+                    "child runs without syscall filtering"
+                )
+        except Exception:
+            logger.warning(
+                "seccomp filter apply raised; continuing unfiltered",
+                exc_info=True,
+            )
+
+    # Lead a process group so timeout handling can kill this child and every
+    # Ansible worker it creates.
+    with contextlib.suppress(AttributeError, OSError):  # non-POSIX: no-op
+        os.setsid()
+    try:
+        result = runner._execute_with_core(**exec_kwargs)
+        payload = _json_safe(result.model_dump())
+        queue.put(("ok", payload))
+    except BaseException as exc:  # report any failure (including SystemExit)
+        queue.put(("err", f"{type(exc).__name__}: {exc}"))
+
 
 try:
     from ansible.parsing.dataloader import DataLoader
@@ -361,7 +398,7 @@ class CoreAnsibleRunner:
         timeout: float,
         **exec_kwargs: Any,
     ) -> AnsibleResult:
-        """Run ``_execute_with_core`` in a fork child bounded by ``timeout``.
+        """Run ``_execute_with_core`` in an isolated child bounded by ``timeout``.
 
         The child puts its serialized AnsibleResult on a queue. The parent joins
         with a deadline; on expiry it terminate()s then kill()s the child and
@@ -371,65 +408,51 @@ class CoreAnsibleRunner:
         if timeout is None or timeout <= 0:
             return self._execute_with_core(**exec_kwargs)
 
-        # Prefer a fork context so the child inherits the already-imported
-        # ansible modules and this object's state without re-pickling them.
+        # Never fork the daemon directly: Python 3.14 warns because forking a
+        # multi-threaded process can deadlock. A module-level target makes the
+        # runner spawn-picklable while preserving a killable process boundary.
         try:
-            ctx = multiprocessing.get_context("fork")
-        except ValueError:  # pragma: no cover - platforms without fork
-            # No fork available (e.g. Windows / spawn-only). Fall back to inline
-            # execution rather than failing — the timeout cannot be enforced via
-            # a killable child here, but correctness is preserved.
+            ctx = multiprocessing.get_context("spawn")
+        except ValueError:  # pragma: no cover - runtimes without spawn
+            # Fall back to inline execution rather than failing. The timeout
+            # cannot be enforced via a killable child, but correctness remains.
             logger.warning(
-                "fork start method unavailable; running playbook without a "
+                "spawn start method unavailable; running playbook without a "
                 "killable timeout child"
             )
             return self._execute_with_core(**exec_kwargs)
 
         queue: Any = ctx.Queue()
 
-        def _target() -> None:
-            import contextlib
-
-            # OpenShell P2 transfer: install the seccomp syscall filter FIRST,
-            # before setsid() or any playbook work, so a compromised playbook
-            # cannot unshare/mount/setns its way out of the sandbox. Fail-open:
-            # apply() returns False (never raises) on macOS / no-seccomp kernels.
-            if self._seccomp_filter is not None:
-                try:
-                    applied = self._seccomp_filter.apply()
-                    if not applied:
-                        logger.warning(
-                            "seccomp filter not applied (fail-open); playbook "
-                            "child runs without syscall filtering"
-                        )
-                except Exception:
-                    logger.warning(
-                        "seccomp filter apply raised; continuing unfiltered",
-                        exc_info=True,
-                    )
-
-            # Become a process-group leader so a timeout can SIGKILL the whole
-            # group (this child + any ansible worker processes it forks).
-            with contextlib.suppress(AttributeError, OSError):  # non-POSIX: no-op
-                os.setsid()
-            try:
-                result = self._execute_with_core(**exec_kwargs)
-                # Sanitize before crossing the process boundary: event payloads
-                # can carry arbitrary (non-picklable) ansible objects, which
-                # would make queue.put raise and the child die "without a
-                # result". JSON round-trip coerces every leaf to a picklable
-                # primitive (unserializable values become their repr).
-                payload = _json_safe(result.model_dump())
-                queue.put(("ok", payload))
-            except BaseException as exc:  # report any failure (incl. SystemExit) up
-                queue.put(("err", f"{type(exc).__name__}: {exc}"))
-
         # NOT daemon=True: ansible's PlaybookExecutor forks its own task-worker
         # processes, and a daemonic parent cannot have children (Python forbids
         # it), which would silently no-op the play. We instead kill the whole
         # process GROUP on timeout to reap any worker children too.
-        proc = ctx.Process(target=_target, daemon=False)
-        proc.start()
+        proc = ctx.Process(
+            target=_execute_core_in_child,
+            args=(self, queue, exec_kwargs),
+            daemon=False,
+        )
+        try:
+            proc.start()
+        except Exception as exc:
+            logger.error(
+                "Failed to start playbook timeout child: %s",
+                type(exc).__name__,
+            )
+            try:
+                queue.close()
+                queue.join_thread()
+            except (AttributeError, OSError, ValueError):
+                pass
+            return AnsibleResult(
+                status="failed",
+                rc=1,
+                error=(
+                    "failed to start playbook timeout child: "
+                    f"{type(exc).__name__}"
+                ),
+            )
 
         # Track this child (and its setsid process group) in the managed-process
         # registry so the admin API can inspect/signal it. Registration must
@@ -725,7 +748,7 @@ class CoreAnsibleRunner:
         from ansible.vars.manager import VariableManager
 
         # Ensure the collection/plugin loader is initialized in THIS process.
-        # When the run is bounded in a fork child, the child must (re)install the
+        # When the run is bounded in an isolated child, it must (re)install the
         # AnsibleCollectionFinder on its own sys.meta_path or ansible.builtin.*
         # module resolution fails ("couldn't resolve module/action"). Idempotent.
         try:

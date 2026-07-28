@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) serial integration emitted Python 3.14 and schema deprecations
+
+- **What**: The first fully green serial integration run still emitted 39 warnings: 37 calls to `os.fork()` from a multi-threaded Python 3.14 process and two renderer fixtures declaring superseded JSON Schema draft-07.
+- **Root cause**: The playbook timeout boundary explicitly selected multiprocessing's `fork` context and used a nested worker, even though the daemon is multi-threaded. Separately, two current integration fixtures copied a legacy schema dialect despite testing only basic keywords that are unchanged in 2020-12.
+- **Fix applied**: Bounded playbooks now use a spawn context with a module-level, picklable worker while retaining process-group timeout teardown and seccomp setup. Real sleep/kill tests still return rc 124, and all 44 formerly warning-producing role tests pass with `DeprecationWarning` promoted to an error. The renderer fixtures now declare 2020-12; the dedicated legacy-compatibility test remains and captures its intentional warning explicitly.
+- **Long-lived user evidence**: CPython changed non-macOS POSIX multiprocessing away from `fork` because the method is incompatible with multi-threaded processes, while macOS already defaults to `spawn` ([Python 3.14 multiprocessing notes](https://github.com/python/cpython/blob/main/Doc/whatsnew/3.14.rst)). JSON Schema users likewise report multi-year interoperability drift between draft-07 and 2020-12 and recommend an explicit current dialect ([MCP SEP-834 issue](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/834)).
+- **Lesson**: A green test result with runtime deprecations is not release-green. Process isolation must use a thread-safe start method, and active fixtures must model the current protocol while legacy behavior stays isolated in an explicit compatibility test.
+
 ### 2026-07-28 — (resolved) generated E2E rejected legitimate short service names
 
 - **What**: A generated service-discovery E2E asserted that the two-character title `Ab` must be discarded, while the original unit contract and production pipeline intentionally preserve names such as `GE`.

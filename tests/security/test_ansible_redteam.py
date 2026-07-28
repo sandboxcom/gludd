@@ -19,7 +19,7 @@ Three confirmed findings, fixed and pinned here:
 
   HIGH      No playbook timeout + ignored process_isolation.  pb_exec.run() had
             no wall-clock bound and process_isolation was stored-and-ignored.
-            FIX: execution is bounded in a killable fork child (rc 124 on
+            FIX: execution is bounded in a killable spawned child (rc 124 on
             expiry, GLUDD_PLAYBOOK_TIMEOUT default 300s); isolation is honored
             or the run fails closed when requested-but-unsupported.
 """
@@ -329,8 +329,7 @@ class TestExtravarsWrappedUnsafe:
 def _sleep_forever_exec(**kwargs: Any) -> Any:
     """Module-level stub for _execute_with_core that sleeps past any bound.
 
-    Defined at module scope so a fork child inherits it cleanly (a MagicMock
-    would not survive the fork as a callable target).
+    Defined at module scope so a spawned child can import it cleanly.
     """
     import time as _t
 
@@ -341,11 +340,77 @@ def _sleep_forever_exec(**kwargs: Any) -> Any:
 
 
 class TestPlaybookTimeout:
+    def test_spawn_target_serializes_success_result(self):
+        from general_ludd.ansible import core_runner as cr
+        from general_ludd.ansible.core_runner import AnsibleResult
+
+        runner = MagicMock()
+        runner._seccomp_filter = None
+        runner._execute_with_core.return_value = AnsibleResult(
+            status="successful",
+            rc=0,
+        )
+        queue = MagicMock()
+
+        with patch.object(cr.os, "setsid"):
+            cr._execute_core_in_child(runner, queue, {"playbook_path": "/tmp/x.yml"})
+
+        runner._execute_with_core.assert_called_once_with(playbook_path="/tmp/x.yml")
+        kind, payload = queue.put.call_args.args[0]
+        assert kind == "ok"
+        assert payload["status"] == "successful"
+        assert payload["rc"] == 0
+
+    def test_timeout_worker_uses_spawn_safe_module_target(self):
+        """Timeout isolation must not fork a potentially multi-threaded daemon."""
+        from general_ludd.ansible import core_runner as cr
+        from general_ludd.ansible.core_runner import AnsibleResult, CoreAnsibleRunner
+
+        queue = MagicMock()
+        queue.get_nowait.return_value = (
+            "ok",
+            AnsibleResult(status="successful", rc=0).model_dump(),
+        )
+        process = MagicMock()
+        process.pid = None
+        process.is_alive.return_value = False
+        context = MagicMock()
+        context.Queue.return_value = queue
+        context.Process.return_value = process
+
+        runner = CoreAnsibleRunner()
+        with patch.object(cr, "_HAS_ANSIBLE_CORE", True), patch.object(
+            cr.multiprocessing, "get_context", return_value=context
+        ) as get_context:
+            result = runner.run_playbook("/tmp/x.yml", timeout=1.0)
+
+        get_context.assert_called_once_with("spawn")
+        target = context.Process.call_args.kwargs["target"]
+        assert target.__module__ == cr.__name__
+        assert "<locals>" not in target.__qualname__
+        assert result.status == "successful"
+
+    def test_unpicklable_runner_state_fails_closed(self):
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
+
+        runner = CoreAnsibleRunner()
+        runner._collected_events = [lambda: None]
+
+        result = runner._run_with_timeout(
+            timeout=1.0,
+            playbook_path="/tmp/x.yml",
+        )
+
+        assert result.status == "failed"
+        assert result.rc != 0
+        assert result.error is not None
+        assert "start playbook timeout child" in result.error
+
     def test_sleeping_playbook_killed_and_returns_failed(self, tmp_path):
         """A sleeping playbook is killed and returns failed (rc 124) within bound.
 
         Uses a real ansible playbook whose task sleeps for 60s; the 3s wall-clock
-        bound must terminate the fork child and return rc 124 long before that.
+        bound must terminate the spawned child and return rc 124 long before that.
         """
         pytest.importorskip("ansible")
         from general_ludd.ansible.core_runner import CoreAnsibleRunner
@@ -381,7 +446,7 @@ class TestPlaybookTimeout:
 
         A stubbed _execute_with_core that sleeps past the bound must be killed
         and yield rc 124 within the deadline (no dependence on module/collection
-        resolution inside the fork child).
+        resolution inside the isolated child).
         """
         from general_ludd.ansible import core_runner as cr
         from general_ludd.ansible.core_runner import CoreAnsibleRunner
@@ -508,7 +573,7 @@ class TestProcessIsolationRouting:
                 runner, "_execute_with_core",
                 return_value=AnsibleResult(status="successful", rc=0),
             ),
-            patch.dict(os.environ, {"GLUDD_PLAYBOOK_TIMEOUT": "0"}, clear=False),
+            patch.dict(os.environ, {"GLUDD_PLAYBOOK_TIMEOUT": ""}, clear=False),
             patch("general_ludd.ansible.core_runner.ansible_runner") as mock_ar,
         ):
             result = runner.run_playbook("/tmp/whatever.yml")
@@ -556,7 +621,7 @@ class TestProcessIsolationRouting:
                 runner, "_execute_with_core",
                 return_value=AnsibleResult(status="successful", rc=0),
             ),
-            patch.dict(os.environ, {"GLUDD_PLAYBOOK_TIMEOUT": "0"}, clear=False),
+            patch.dict(os.environ, {"GLUDD_PLAYBOOK_TIMEOUT": ""}, clear=False),
         ):
             result = runner.run_playbook("/tmp/whatever.yml")
         assert result.status == "successful"
