@@ -20,10 +20,17 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
+IMPLEMENTATION = (
+    ROOT
+    / ".opencode"
+    / "plugin"
+    / "impl"
+    / "enforce_stop_impl.ts"
+)
 
 
 def _src() -> str:
-    return PLUGIN.read_text()
+    return IMPLEMENTATION.read_text(encoding="utf-8")
 
 
 class TestPostResultsStateConstants:
