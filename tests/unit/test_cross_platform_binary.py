@@ -102,7 +102,11 @@ class TestSpecPlatformCompatibility:
         build time. But ansible core (executor API) MUST NOT be excluded —
         gludd drives ansible.runner/core_runner/templating at runtime.
         """
-        excludes_match = re.search(r"excludes\s*=\s*\[([^\]]*)\]", spec_text, re.DOTALL)
+        excludes_match = re.search(
+            r"^[ ]{4}excludes\s*=\s*\[([^\]]*)\]",
+            spec_text,
+            re.MULTILINE | re.DOTALL,
+        )
         assert excludes_match, "Spec must have an excludes= list"
         excludes_body = excludes_match.group(1)
 
@@ -223,8 +227,8 @@ class TestBuildYmlPlatformCoverage:
         assert re.search(r"^  windows\s*:", build_yml_text, re.MULTILINE), (
             "build.yml must define a 'windows:' build job"
         )
-        assert "runs-on: windows-latest" in build_yml_text, (
-            "windows job must run on windows-latest"
+        assert "runs-on: windows-2022" in build_yml_text, (
+            "windows job must use the pinned windows-2022 release image"
         )
         # Windows job MUST set PYTHONUTF8=1 to work around the cp1252 locale
         # issue that breaks ansible.cli at pyinstaller build time.
@@ -300,23 +304,18 @@ class TestBuildYmlPlatformCoverage:
                 f"build.yml must upload an artifact named {platform_pattern!r}"
             )
 
-    def test_continue_on_error_is_true(self, build_yml_text: str):
-        """Build jobs have continue-on-error: true (non-blocking).
+    def test_build_jobs_fail_closed(self, build_yml_text: str):
+        """Required platform build jobs are release-blocking.
 
-        The platform build jobs are deliberately non-blocking so that a
-        regression on one platform does not sink the release for the others.
-        The release job has its own pre-publish gate that catches missing
-        artifacts.
+        A green release must prove every platform built and smoke-tested its
+        required artifact set.
         """
-        # For each platform build job, assert that continue-on-error: true
-        # appears in the job body. We split the YAML into per-job chunks at
-        # top-level two-space-indented keys.
         for job_name in self.EXPECTED_BUILD_JOBS:
             job_body = self._extract_job_body(build_yml_text, job_name)
             assert job_body is not None, f"could not extract job body for {job_name!r}"
-            assert re.search(r"continue-on-error\s*:\s*true", job_body), (
-                f"build job {job_name!r} must set continue-on-error: true "
-                f"so a single-platform regression does not sink the release"
+            assert not re.search(r"continue-on-error\s*:\s*true", job_body), (
+                f"build job {job_name!r} must fail closed so a platform "
+                "regression blocks release publication"
             )
 
     @staticmethod

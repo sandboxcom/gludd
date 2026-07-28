@@ -99,7 +99,7 @@ class TestPK11Sha256Checksums:
     SHA256_PATTERNS: tuple[str, ...] = (
         r"sha256sum\b",
         r"shasum\s+-a\s+256",
-        r"certutil\s+-hashfile.*SHA256",
+        r"Get-FileHash\b.*-Algorithm\s+SHA256\b",
     )
 
     @pytest.mark.parametrize(
@@ -115,7 +115,7 @@ class TestPK11Sha256Checksums:
         assert any(
             re.search(p, combined) for p in self.SHA256_PATTERNS
         ), (
-            f"build.yml job '{job_name}' has no sha256sum/shasum/certutil "
+            f"build.yml job '{job_name}' has no supported checksum "
             f"step producing a .sha256 checksum"
         )
 

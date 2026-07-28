@@ -1,9 +1,8 @@
-"""CP.12: every upload-artifact step MUST have `if: always()`.
+"""CP.12: diagnostic uploads survive failures; release uploads do not.
 
-Ensures partial failures (a build step that exits non-zero before the upload)
-still upload whatever was produced, so CI artifacts are never silently lost.
-Without `if: always()`, a failed preceding step skips the upload entirely,
-making it impossible to diagnose the failure from the partial artifact.
+Coverage and Molecule diagnostics use ``if: always()`` so a red job retains
+evidence. Platform release assets upload only after every build and smoke step
+succeeds, preventing partial binaries from entering the release fan-in.
 
 The test parses .github/workflows/build.yml with yaml.safe_load and walks
 every job's steps; any step using `actions/upload-artifact` MUST carry an
@@ -45,8 +44,8 @@ def _upload_artifact_steps(data: dict) -> list[tuple[str, dict]]:
     return out
 
 
-class TestUploadArtifactAlwaysPresent:
-    """Every actions/upload-artifact step MUST have `if: always()` (CP.12)."""
+class TestUploadArtifactConditions:
+    """Artifact conditions distinguish diagnostics from release assets."""
 
     def test_at_least_one_upload_artifact_step_exists(self):
         steps = _upload_artifact_steps(_load_workflow())
@@ -55,26 +54,31 @@ class TestUploadArtifactAlwaysPresent:
             "if there are none, this test is vacuously true and meaningless."
         )
 
-    def test_every_upload_artifact_has_if_always(self):
+    def test_diagnostic_uploads_have_if_always(self):
         data = _load_workflow()
         steps = _upload_artifact_steps(data)
-        violations = []
-        for job_name, step in steps:
-            cond = step.get("if")
-            if cond is None:
-                violations.append(
-                    f"  job '{job_name}': upload-artifact step missing 'if:' "
-                    f"condition entirely (needs `if: always()`)"
-                )
-                continue
-            if "always()" not in str(cond):
-                violations.append(
-                    f"  job '{job_name}': upload-artifact step has "
-                    f"'if: {cond}' — must contain 'always()' so partial "
-                    f"failures still upload"
-                )
+        diagnostic_jobs = {"test-shard", "coverage", "molecule"}
+        violations = [
+            job_name
+            for job_name, step in steps
+            if job_name in diagnostic_jobs
+            and "always()" not in str(step.get("if", ""))
+        ]
         assert not violations, (
-            "upload-artifact steps missing `if: always()` (CP.12) — "
-            "partial failures will NOT upload artifacts for diagnosis:\n"
-            + "\n".join(violations)
+            "diagnostic uploads missing if: always(): " + ", ".join(violations)
+        )
+
+    def test_platform_release_assets_upload_only_on_success(self):
+        data = _load_workflow()
+        steps = _upload_artifact_steps(data)
+        platform_jobs = {"linux", "macos", "windows", "termux"}
+        violations = [
+            f"{job_name}: {step.get('if')!r}"
+            for job_name, step in steps
+            if job_name in platform_jobs
+            and str(step.get("if", "success()")) != "success()"
+        ]
+        assert not violations, (
+            "platform release assets must not upload after failed smoke/build "
+            "steps: " + ", ".join(violations)
         )
