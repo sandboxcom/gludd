@@ -54,7 +54,7 @@ def test_no_child_process_directly():
 
 
 def test_is_subagent_final_report_declared_before_use():
-    stop_file = PLUGIN_DIR / "enforce-stop.ts"
+    stop_file = PLUGIN_DIR / "impl" / "enforce_stop_impl.ts"
     text = stop_file.read_text()
     lines = text.splitlines()
     first_use = None
