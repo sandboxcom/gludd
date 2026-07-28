@@ -123,7 +123,15 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             # must never cause an authentication or network call.
             resolve_accelerator(gpu_type, gpu_count)
         except (TypeError, ValueError) as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from None
+            logger.warning(
+                "invalid Azure accelerator preflight request: %s",
+                exc,
+                exc_info=True,
+            )
+            raise HTTPException(
+                status_code=422,
+                detail="invalid Azure accelerator preflight request",
+            ) from None
         try:
             preflight = build_default_azure_preflight(
                 cast("str | None", req.get("subscription_id"))
@@ -135,7 +143,15 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 location=region,
             )
         except (RuntimeError, ValueError) as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
+            logger.warning(
+                "Azure accelerator preflight unavailable: %s",
+                exc,
+                exc_info=True,
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="Azure accelerator preflight unavailable",
+            ) from exc
         except Exception as exc:
             logger.warning("Azure accelerator preflight failed: %s", exc)
             raise HTTPException(
@@ -256,7 +272,15 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                     location=config.region or "eastus",
                 )
             except (RuntimeError, ValueError) as exc:
-                raise HTTPException(status_code=503, detail=str(exc)) from exc
+                logger.warning(
+                    "Azure accelerator preflight unavailable: %s",
+                    exc,
+                    exc_info=True,
+                )
+                raise HTTPException(
+                    status_code=503,
+                    detail="Azure accelerator preflight unavailable",
+                ) from exc
             except Exception as exc:
                 logger.warning("Azure accelerator preflight failed: %s", exc)
                 raise HTTPException(
@@ -336,7 +360,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 logger.warning("ephemeral account creation failed: %s", exc, exc_info=True)
                 raise HTTPException(
                     status_code=500,
-                    detail={"error": "ephemeral account creation failed", "cause": str(exc)},
+                    detail={"error": "ephemeral account creation failed"},
                 ) from exc
 
         try:
