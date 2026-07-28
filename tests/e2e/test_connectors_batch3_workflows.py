@@ -798,13 +798,17 @@ class TestSigNozConnector:
         transport = MockHttpTransport(
             default_status=200,
             default_body={
-                "data": [
-                    {
-                        "timestamp": "2025-01-01T00:00:00Z",
-                        "spanId": "s1",
-                        "traceId": "t1",
-                    }
-                ]
+                "data": {
+                    "result": [
+                        {
+                            "startTime": 1_735_689_600.0,
+                            "spanId": "s1",
+                            "traceId": "t1",
+                            "serviceName": "checkout",
+                            "name": "POST /pay",
+                        }
+                    ]
+                }
             },
         )
         src = SigNozSource({"base_url": "https://signoz.example.com/"}, transport=cast(Any, transport))
@@ -838,7 +842,8 @@ class TestAppDynamicsConnector:
             transport=cast(Any, transport),
         )
         records = src.query({})
-        assert isinstance(records, list)
+        assert len(records) == 1
+        assert records[0]["labels"]["trace_id"] == "t1"
 
 
 class TestSplunkConnector:

@@ -68,6 +68,45 @@ class _Transport(Protocol):
     ) -> tuple[int, object]: ...
 
 
+class _CallableTransport(Protocol):
+    """Compact method-and-URL callback used by generated workflows."""
+
+    def __call__(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str] | None = ...,
+        json: object | None = ...,
+        params: dict[str, object] | None = ...,
+        timeout: float | None = ...,
+    ) -> tuple[int, object]: ...
+
+
+class _CallableTransportAdapter:
+    def __init__(self, callback: _CallableTransport) -> None:
+        self._callback = callback
+
+    def request(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        json: object | None = None,
+        params: dict[str, object] | None = None,
+        timeout: float | None = None,
+    ) -> tuple[int, object]:
+        return self._callback(
+            method,
+            url,
+            headers=headers,
+            json=json,
+            params=params,
+            timeout=timeout,
+        )
+
+
 def _validate_base_url(base_url: str) -> str:
     """Validate scheme + host and return the normalized base URL.
 
@@ -104,13 +143,20 @@ class SigNozSource:
         self,
         config: dict[str, object],
         *,
-        transport: _Transport,
+        transport: _Transport | _CallableTransport,
         timeout: float = _DEFAULT_TIMEOUT,
     ) -> None:
         self.name = "signoz"
         self._base_url = _validate_base_url(str(config.get("base_url", "")))
         self._token_env = str(config.get("token_env", ""))
-        self._transport = transport
+        if callable(getattr(transport, "request", None)):
+            self._transport = cast(_Transport, transport)
+        elif callable(transport):
+            self._transport = _CallableTransportAdapter(
+                cast(_CallableTransport, transport)
+            )
+        else:
+            raise TypeError("transport must provide request or be callable")
         self._timeout = float(timeout)
 
     # -- internals ---------------------------------------------------------
