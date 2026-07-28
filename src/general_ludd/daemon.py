@@ -2548,6 +2548,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         preflight_task_ref.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await preflight_task_ref
+    if execution_engine is not None:
+        await execution_engine.shutdown()
     _sw = getattr(app.state, "_stall_watchdog", None)
     if _sw is not None:
         with contextlib.suppress(Exception):

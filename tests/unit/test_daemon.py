@@ -46,6 +46,7 @@ def transport(app):
 class TestDaemonApp:
     def test_create_daemon_app_returns_fastapi(self):
         from fastapi import FastAPI
+
         app = create_daemon_app()
         assert isinstance(app, FastAPI)
 
@@ -91,12 +92,15 @@ class TestDaemonApp:
     @pytest.mark.asyncio
     async def test_add_todo_endpoint(self, transport):
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.post("/api/todos", json={
-                "title": "Fix the login bug",
-                "queue": "core",
-                "priority": "high",
-                "work_type": "code",
-            })
+            resp = await client.post(
+                "/api/todos",
+                json={
+                    "title": "Fix the login bug",
+                    "queue": "core",
+                    "priority": "high",
+                    "work_type": "code",
+                },
+            )
             assert resp.status_code == 201
             data = resp.json()
             assert data["todo_id"].startswith("TODO-")
@@ -165,9 +169,7 @@ class TestDaemonStartupConfig:
     def test_create_app_with_config_dir_loads_config(self, tmp_path):
         config_dir = tmp_path / "config"
         config_dir.mkdir()
-        (config_dir / "model_routing.yml").write_text(
-            "default_profile: test_prof\nrole_routing:\n  coder: test_prof\n"
-        )
+        (config_dir / "model_routing.yml").write_text("default_profile: test_prof\nrole_routing:\n  coder: test_prof\n")
         app = create_daemon_app(config_dir=str(config_dir))
         assert app.state._config_dir == str(config_dir)
 
@@ -180,9 +182,7 @@ class TestDaemonStartupConfig:
 
         config_dir = tmp_path / "config"
         config_dir.mkdir()
-        (config_dir / "model_routing.yml").write_text(
-            "default_profile: my_profile\n"
-        )
+        (config_dir / "model_routing.yml").write_text("default_profile: my_profile\n")
         cfg = load_startup_config(config_dir=str(config_dir))
         assert cfg["model_routing"].default_profile == "my_profile"
 
@@ -191,9 +191,7 @@ class TestDaemonStartupConfig:
 
         config_dir = tmp_path / "config"
         config_dir.mkdir()
-        (config_dir / "general-ludd.yml").write_text(
-            "database:\n  url: postgresql://localhost/gludd\n"
-        )
+        (config_dir / "general-ludd.yml").write_text("database:\n  url: postgresql://localhost/gludd\n")
         cfg = load_startup_config(config_dir=str(config_dir))
         assert cfg["user_config"].database["url"] == "postgresql://localhost/gludd"
 
@@ -209,9 +207,7 @@ class TestDaemonStartupConfig:
 
         config_dir = tmp_path / "config"
         config_dir.mkdir()
-        (config_dir / "binary_paths.yml").write_text(
-            "binary_paths:\n  terraform: /usr/local/bin/terraform\n"
-        )
+        (config_dir / "binary_paths.yml").write_text("binary_paths:\n  terraform: /usr/local/bin/terraform\n")
         cfg = load_startup_config(config_dir=str(config_dir))
         assert cfg["binary_paths"] is not None
 
@@ -233,9 +229,7 @@ class TestDaemonStartupConfig:
         config_dir.mkdir()
         ansible_dir = config_dir / "ansible"
         ansible_dir.mkdir()
-        (ansible_dir / "isolation.yml").write_text(
-            "process_isolation:\n  enabled: true\n  executable: docker\n"
-        )
+        (ansible_dir / "isolation.yml").write_text("process_isolation:\n  enabled: true\n  executable: docker\n")
         cfg = load_startup_config(config_dir=str(config_dir))
         assert cfg["process_isolation"] is not None
 
@@ -246,6 +240,7 @@ def _lifespan_patches(mock_loop):
     from unittest.mock import AsyncMock as _AsyncMock
     from unittest.mock import MagicMock as _MagicMock
     from unittest.mock import patch as _patch
+
     stack = _contextlib.ExitStack()
     cm = _MagicMock()
     _mock_session = _MagicMock()
@@ -263,15 +258,17 @@ def _lifespan_patches(mock_loop):
     stack.enter_context(_patch("general_ludd.daemon.is_sqlite_url", return_value=False))
     stack.enter_context(_patch("general_ludd.daemon.AnsibleRunnerAdapter", return_value=_MagicMock()))
     stack.enter_context(_patch("general_ludd.daemon._get_or_create_subsystems", return_value={"bus": _MagicMock()}))
-    stack.enter_context(_patch(
-        "general_ludd.daemon._get_or_create_extended_subsystems",
-        return_value={
-            "projects": _MagicMock(),
-            "skill_registry": _MagicMock(),
-            "adaptive_router": _MagicMock(),
-            "metrics_collector": _MagicMock(),
-        },
-    ))
+    stack.enter_context(
+        _patch(
+            "general_ludd.daemon._get_or_create_extended_subsystems",
+            return_value={
+                "projects": _MagicMock(),
+                "skill_registry": _MagicMock(),
+                "adaptive_router": _MagicMock(),
+                "metrics_collector": _MagicMock(),
+            },
+        )
+    )
     stack.enter_context(_patch("general_ludd.daemon._restore_persisted_projects", new_callable=_AsyncMock))
     stack.enter_context(_patch("general_ludd.daemon.build_secrets_resolver", return_value=_MagicMock()))
     stack.enter_context(_patch("general_ludd.daemon.PromptRegistry", return_value=_MagicMock()))
@@ -284,6 +281,7 @@ def _lifespan_patches(mock_loop):
     # and is directly awaitable; a bare AsyncMock instance is NOT awaitable
     # (only calling it returns a coroutine), so use a resolved Future here.
     import asyncio as _asyncio
+
     def _completed_task(coro):
         coro.close()
         done_task = _asyncio.get_running_loop().create_future()
@@ -303,6 +301,7 @@ class TestDaemonLifespan:
             from fastapi import FastAPI
 
             from general_ludd.daemon import _lifespan
+
             app = FastAPI()
             app.state.tick_interval = 0.01
             app.state.event_loop = None
@@ -319,6 +318,7 @@ class TestDaemonLifespan:
             from fastapi import FastAPI
 
             from general_ludd.daemon import _lifespan
+
             app = FastAPI()
             app.state.tick_interval = 0.01
             app.state.event_loop = None
@@ -333,6 +333,7 @@ class TestDaemonLifespan:
             from fastapi import FastAPI
 
             from general_ludd.daemon import _lifespan
+
             app = FastAPI()
             app.state.tick_interval = 0.01
             app.state.event_loop = None
@@ -345,6 +346,7 @@ class TestExtendedSubsystemsWiring:
         from fastapi import FastAPI
 
         from general_ludd.daemon import _get_or_create_extended_subsystems
+
         app = FastAPI()
         ext = _get_or_create_extended_subsystems(app)
         assert "skill_registry" in ext
@@ -354,6 +356,7 @@ class TestExtendedSubsystemsWiring:
         from fastapi import FastAPI
 
         from general_ludd.daemon import _get_or_create_extended_subsystems
+
         app = FastAPI()
         ext1 = _get_or_create_extended_subsystems(app)
         ext2 = _get_or_create_extended_subsystems(app)
@@ -474,9 +477,7 @@ class TestExtendedSubsystemsWiring:
 
         router = ext.get("adaptive_router")
         assert router is not None, "AdaptiveRouter should be built when session_factory provided"
-        assert router._quantization_map is not None, (
-            "CA-T9: router._quantization_map must not be None"
-        )
+        assert router._quantization_map is not None, "CA-T9: router._quantization_map must not be None"
         assert "test-model" in router._quantization_map, (
             "CA-T9: router._quantization_map must reflect the pre-assigned tracker's data"
         )
@@ -605,11 +606,74 @@ class TestExtendedSubsystemsWiring:
                     "ModelGateway._budget_guard must be a live RunBudgetGuard instance"
                 )
 
+    @pytest.mark.asyncio
+    async def test_daemon_shutdown_drains_execution_engine_background_tasks(self):
+        """Lifespan teardown must call execution_engine.shutdown() to drain background tasks."""
+        from unittest.mock import AsyncMock
+
+        from general_ludd.models.gateway import ModelProfile
+
+        mock_loop = MagicMock()
+        mock_loop.run_forever = AsyncMock()
+
+        mock_engine = MagicMock()
+        mock_engine.shutdown = AsyncMock()
+        mock_engine._verify_sandbox = MagicMock(return_value=None)
+        mock_engine._projected_cost = MagicMock(return_value=0.0)
+        mock_engine._budget_pre_check = MagicMock(return_value=None)
+        mock_engine._record_metrics = MagicMock()
+        mock_engine.defer_commit = MagicMock()
+        mock_engine.execute_async = AsyncMock()
+
+        mock_gateway = MagicMock()
+        mock_gateway._profiles = MagicMock()
+        mock_gateway._profiles.values.return_value = []
+
+        with _lifespan_patches(mock_loop):
+            with (
+                patch("general_ludd.daemon.ExecutionEngine", return_value=mock_engine),
+                patch("general_ludd.daemon.ModelGateway", return_value=mock_gateway),
+                patch("general_ludd.daemon.SemanticSearcher", return_value=MagicMock()),
+                patch("general_ludd.daemon.ModelEvaluator", return_value=MagicMock()),
+                patch("general_ludd.daemon.EvalHarness", return_value=MagicMock()),
+                patch("general_ludd.daemon.DeploymentHealthChecker", return_value=MagicMock()),
+                patch("general_ludd.daemon.SelfHealingRouter", return_value=MagicMock()),
+                patch("general_ludd.daemon.ProviderRegistry"),
+                patch("general_ludd.daemon.migrate_profile_secrets", return_value={"migrated": 0, "skipped": []}),
+            ):
+                from fastapi import FastAPI
+
+                from general_ludd.daemon import _lifespan
+
+                app = FastAPI()
+                app.state.tick_interval = 0.01
+                app.state.event_loop = None
+                app.state._receiver_buffer = MagicMock()
+                app.state._startup_config = {
+                    "model_profiles": [
+                        ModelProfile(
+                            model_profile_id="test-prof",
+                            provider="openai",
+                            model_name="gpt-4o-mini",
+                            credential_alias="OPENAI_API_KEY",
+                        )
+                    ],
+                }
+                app.state._health_tracker = MagicMock()
+
+                async with _lifespan(app):
+                    pass
+
+                assert mock_engine.shutdown.await_count == 1, (
+                    "execution_engine.shutdown() must be called exactly once during teardown"
+                )
+
 
 class TestDirectDispatch:
     @pytest.mark.asyncio
     async def test_event_loop_with_runner_dispatches_directly(self):
         from general_ludd.event_loop.loop import EventLoop
+
         mock_runner = MagicMock()
         mock_runner.prepare_job_dirs.return_value = {
             "root": "/tmp/test",
@@ -633,6 +697,7 @@ class TestDirectDispatch:
     @pytest.mark.asyncio
     async def test_event_loop_with_runner_dispatches_review_directly(self):
         from general_ludd.event_loop.loop import EventLoop
+
         mock_runner = MagicMock()
         mock_runner.prepare_job_dirs.return_value = {
             "root": "/tmp/test",
@@ -655,6 +720,7 @@ class TestDirectDispatch:
     @pytest.mark.asyncio
     async def test_event_loop_without_runner_falls_back_to_http(self):
         from general_ludd.event_loop.loop import EventLoop
+
         http_client = AsyncMock()
         http_client.post.return_value = MagicMock(status_code=202)
         loop = EventLoop(worker_base_url="http://worker:8000", http_client=http_client)
@@ -671,6 +737,7 @@ class TestDirectDispatch:
     @pytest.mark.asyncio
     async def test_event_loop_without_runner_review_falls_back_to_http(self):
         from general_ludd.event_loop.loop import EventLoop
+
         http_client = AsyncMock()
         http_client.post.return_value = MagicMock(status_code=202)
         loop = EventLoop(worker_base_url="http://worker:8000", http_client=http_client)
@@ -728,12 +795,8 @@ class TestApiStatusNoDbLeak:
             resp = await client.get("/api/status")
         assert resp.status_code == 200
         data = resp.json()
-        assert "db_url" not in data, (
-            "SEC-8: db_url must not be exposed in /api/status response"
-        )
-        assert "db_engine" not in data, (
-            "SEC-8: db_engine must not be exposed in /api/status response"
-        )
+        assert "db_url" not in data, "SEC-8: db_url must not be exposed in /api/status response"
+        assert "db_engine" not in data, "SEC-8: db_engine must not be exposed in /api/status response"
 
     @pytest.mark.asyncio
     async def test_api_status_retains_required_fields(self, transport):
@@ -785,6 +848,7 @@ class TestDegradedGuard:
         app.state._degraded = "x" * 500
         resp = _check_degraded(app)
         import json
+
         body = json.loads(resp.body)
         assert len(body["reason"]) <= 200
 
@@ -792,6 +856,7 @@ class TestDegradedGuard:
     async def test_dispatch_returns_503_when_degraded(self):
         """POST /api/dispatch must return 503 when _degraded is set."""
         import os
+
         with patch.dict(os.environ, {"GLUDD_ALLOW_NO_AUTH": "1"}):
             app = create_daemon_app(tick_interval=999.0)
         app.state._degraded = "lifespan boom"
@@ -809,6 +874,7 @@ class TestDegradedGuard:
     async def test_self_update_plan_returns_503_when_degraded(self):
         """POST /admin/self-update/plan must return 503 when _degraded is set."""
         import os
+
         with patch.dict(os.environ, {"GLUDD_ALLOW_NO_AUTH": "1"}):
             app = create_daemon_app(tick_interval=999.0)
         app.state._degraded = "lifespan boom"
@@ -826,6 +892,7 @@ class TestDegradedGuard:
     async def test_self_update_enqueue_returns_503_when_degraded(self):
         """POST /admin/self-update/enqueue must return 503 when _degraded is set."""
         import os
+
         with patch.dict(os.environ, {"GLUDD_ALLOW_NO_AUTH": "1"}):
             app = create_daemon_app(tick_interval=999.0)
         app.state._degraded = "lifespan boom"
@@ -843,6 +910,7 @@ class TestDegradedGuard:
     async def test_spend_configure_returns_503_when_degraded(self):
         """POST /api/spend/configure must return 503 when _degraded is set."""
         import os
+
         with patch.dict(os.environ, {"GLUDD_ALLOW_NO_AUTH": "1"}):
             app = create_daemon_app(tick_interval=999.0)
         app.state._degraded = "lifespan boom"
@@ -860,6 +928,7 @@ class TestDegradedGuard:
     async def test_healthy_dispatch_not_blocked(self):
         """Sanity: when _degraded is absent, dispatch proceeds to real handling."""
         import os
+
         with patch.dict(os.environ, {"GLUDD_ALLOW_NO_AUTH": "1"}):
             app = create_daemon_app(tick_interval=999.0)
         # No _degraded — the dispatcher should handle the request (likely error,
@@ -872,9 +941,7 @@ class TestDegradedGuard:
             )
         # Should not be blocked as degraded; any non-503-degraded response is fine.
         body = resp.json()
-        assert body.get("error") != "degraded", (
-            "Healthy daemon must not return degraded error from /api/dispatch"
-        )
+        assert body.get("error") != "degraded", "Healthy daemon must not return degraded error from /api/dispatch"
 
 
 class TestIngestAuthGuard:
@@ -917,9 +984,7 @@ class TestIngestAuthGuard:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("path", _INGEST_ROUTES)
-    async def test_ingest_route_fail_closed_without_token(
-        self, path, _app_no_ingest_token, monkeypatch
-    ):
+    async def test_ingest_route_fail_closed_without_token(self, path, _app_no_ingest_token, monkeypatch):
         """Without GLUDD_INGEST_TOKEN the receiver must fail-closed (503), never
         expose an open relay.  A 200/404/422 here would mean auth was skipped."""
         # Ensure the env var is absent for the request evaluation too
@@ -939,15 +1004,12 @@ class TestIngestAuthGuard:
         )
         body = resp.json()
         assert body.get("error") == "ingest_disabled", (
-            f"GUARD: {path} fail-closed response must carry error=ingest_disabled, "
-            f"got: {body}"
+            f"GUARD: {path} fail-closed response must carry error=ingest_disabled, got: {body}"
         )
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("path", _INGEST_ROUTES)
-    async def test_ingest_route_rejects_bad_token(
-        self, path, _app_with_ingest_token, monkeypatch
-    ):
+    async def test_ingest_route_rejects_bad_token(self, path, _app_with_ingest_token, monkeypatch):
         """A wrong ingest token must return 401 Unauthorized, never 200/404."""
         monkeypatch.setenv("GLUDD_INGEST_TOKEN", "test-ingest-secret")
         transport = ASGITransport(app=_app_with_ingest_token)
