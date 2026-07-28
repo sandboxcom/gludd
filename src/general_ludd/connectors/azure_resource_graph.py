@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Callable, Mapping
+from typing import cast
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._protocols import HttpResponse
@@ -175,6 +176,7 @@ class AzureResourceGraphSource:
         self._timeout: float = float(str(config.get("timeout", 30.0)))
 
         transport = config.get("transport")
+        self._transport: Transport
         if http_get is not None and transport is not None:
             raise ValueError("provide http_get or config['transport'], not both")
         if http_get is not None:
@@ -184,7 +186,7 @@ class AzureResourceGraphSource:
                 transport = _default_transport
             if not callable(transport):
                 raise TypeError("config['transport'] must be callable")
-            self._transport = transport
+            self._transport = cast(Transport, transport)
 
     # -- internals ---------------------------------------------------------------------
 

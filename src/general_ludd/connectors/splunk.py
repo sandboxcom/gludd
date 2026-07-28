@@ -232,9 +232,7 @@ class SplunkSource:
         ):
             self._transport = cast(HttpTransport, transport)
         elif callable(transport):
-            self._transport = _CallableTransportAdapter(
-                cast(CallableHttpTransport, transport)
-            )
+            self._transport = _CallableTransportAdapter(transport)
         else:
             raise TypeError("transport must provide get/post or be callable")
         self._timeout = float(timeout)

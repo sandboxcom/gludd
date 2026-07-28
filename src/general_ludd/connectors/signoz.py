@@ -152,9 +152,7 @@ class SigNozSource:
         if callable(getattr(transport, "request", None)):
             self._transport = cast(_Transport, transport)
         elif callable(transport):
-            self._transport = _CallableTransportAdapter(
-                cast(_CallableTransport, transport)
-            )
+            self._transport = _CallableTransportAdapter(transport)
         else:
             raise TypeError("transport must provide request or be callable")
         self._timeout = float(timeout)

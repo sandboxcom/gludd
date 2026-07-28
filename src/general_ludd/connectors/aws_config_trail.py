@@ -233,14 +233,15 @@ class AwsConfigTrailSource:
             else default_resource_type_raw
         )
         # Injectable factory wins; otherwise attempt a guarded boto3 factory.
+        self._client_factory: ClientFactory | None
         if aws_client is not None and "client_factory" in config:
             raise ValueError("provide aws_client or client_factory, not both")
         if aws_client is not None:
             self._client_factory = _factory_from_callback(aws_client)
         elif "client_factory" in config:
             factory_val = config["client_factory"]
-            self._client_factory: ClientFactory | None = (
-                factory_val if callable(factory_val) else None
+            self._client_factory = (
+                cast(ClientFactory, factory_val) if callable(factory_val) else None
             )
         else:
             self._client_factory = _default_factory(self._region, self._timeout)

@@ -222,14 +222,13 @@ class AppDynamicsSource:
             raise ConnectorConfigError("config['application'] is required")
         self._token: str = _resolve_secret(config, "token_env")
         self.timeout: float = float(cast(float | int | str | bool, config.get("timeout", DEFAULT_TIMEOUT)))
+        self._transport: HttpTransport
         if transport is None:
             self._transport = _HttpxTransport()
         elif callable(getattr(transport, "get", None)):
             self._transport = cast(HttpTransport, transport)
         elif callable(transport):
-            self._transport = _CallableTransportAdapter(
-                cast(CallableHttpTransport, transport)
-            )
+            self._transport = _CallableTransportAdapter(transport)
         else:
             raise TypeError("transport must provide get or be callable")
 

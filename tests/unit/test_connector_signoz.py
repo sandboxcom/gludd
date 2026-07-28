@@ -183,7 +183,7 @@ def test_callable_transport_compatibility(monkeypatch: pytest.MonkeyPatch) -> No
             "base_url": "https://signoz.example.com",
             "token_env": "SIGNOZ_TOKEN",
         },
-        transport=transport,  # type: ignore[arg-type]
+        transport=transport,
     )
 
     records = src.query({"start": 1_700_000_000, "end": 1_700_000_010})

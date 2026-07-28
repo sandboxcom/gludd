@@ -170,7 +170,7 @@ def test_callable_transport_compatibility(monkeypatch: pytest.MonkeyPatch) -> No
         calls.append({"method": method, "url": url, **kwargs})
         return 200, METRIC_PAYLOAD
 
-    src = AppDynamicsSource(_config(), transport=transport)  # type: ignore[arg-type]
+    src = AppDynamicsSource(_config(), transport=transport)
 
     records = src.query({"metric_path": "Overall Application Performance"})
 
@@ -190,7 +190,7 @@ def test_callable_transport_wraps_list_payload(
     ) -> tuple[int, object]:
         return 200, METRIC_PAYLOAD["data"]
 
-    src = AppDynamicsSource(_config(), transport=transport)  # type: ignore[arg-type]
+    src = AppDynamicsSource(_config(), transport=transport)
 
     records = src.query({"metric_path": "Overall Application Performance"})
 
@@ -209,7 +209,7 @@ def test_callable_transport_scalar_payload_is_empty(
     ) -> tuple[int, object]:
         return 200, "unexpected"
 
-    src = AppDynamicsSource(_config(), transport=transport)  # type: ignore[arg-type]
+    src = AppDynamicsSource(_config(), transport=transport)
 
     assert src.query({"metric_path": "Overall Application Performance"}) == []
 

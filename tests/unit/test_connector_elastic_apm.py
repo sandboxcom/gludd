@@ -131,7 +131,7 @@ def test_tuple_transport_compatibility() -> None:
 
     src = ElasticApmSource(
         {"base_url": "https://es.example.com"},
-        transport=transport,  # type: ignore[arg-type]
+        transport=transport,
     )
 
     records = src.query({})

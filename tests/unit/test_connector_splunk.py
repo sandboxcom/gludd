@@ -279,7 +279,7 @@ def test_callable_transport_compatibility() -> None:
 
     src = SplunkSource(
         GOOD_CONFIG,
-        transport=transport,  # type: ignore[arg-type]
+        transport=transport,
         env=dict(ENV),
     )
 

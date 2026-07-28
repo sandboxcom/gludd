@@ -127,6 +127,7 @@ class TestContract:
         rows = src.query({"mode": "cloudtrail"})
 
         assert len(rows) == 1
+        assert rows[0]["kind"] == "infra"
         assert rows[0]["message"] == "RunInstances"
         assert calls[0][0] == "lookup_events"
         assert calls[0][1]["service_name"] == "cloudtrail"

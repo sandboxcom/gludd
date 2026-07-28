@@ -120,6 +120,7 @@ def test_subscription_id_and_http_get_compatibility(
 
     assert src._subscriptions == [SUB]
     assert len(records) == 2
+    assert records[0]["kind"] == "infra"
     assert calls == [
         (
             "POST",
