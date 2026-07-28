@@ -49,7 +49,7 @@ def _load_private_key(key_pem: bytes) -> Any:
     return serialization.load_pem_private_key(key_pem, password=None)
 
 
-def _signature_algorithm(private_key: Any) -> hashes.HashAlgorithm | None:
+def _signature_algorithm(private_key: Any) -> hashes.SHA256 | None:
     if isinstance(private_key, ed25519.Ed25519PrivateKey):
         return None
     return hashes.SHA256()
