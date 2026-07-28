@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) Containerd E2E invented an alias and stale crictl payload
+
+- **What**: Connector batch 5 reached Containerd and expected a configured `name` to replace its stable source identity. The remaining fake runners omitted the required timeout keyword, and the query fixture returned `items` although current crictl container JSON is consumed from `containers`.
+- **Root cause**: The broad E2E treated Containerd as a generic aliasable connector and modeled an approximate command callback rather than the connector's shell-free `runner(argv, timeout=...)` boundary. Its payload mixed unrelated collection envelopes and therefore could not exercise container normalization.
+- **Fix applied**: Construction now pins the stable `containerd` identity separately from a custom confined runtime endpoint. Runners accept and verify the timeout, health pins the exact version argv, and query coverage supplies a realistic `containers` envelope, selects the explicit `ps` operation, and verifies normalized message and pod label.
+- **Long-lived user evidence**: Kubernetes recommends configuring an explicit crictl runtime endpoint because probing defaults adds delays, and documents Containerd's Unix socket plus `crictl ps -a` workflow ([Kubernetes crictl guide](https://kubernetes.io/docs/tasks/debug/debug-cluster/crictl/), [cri-tools documentation](https://github.com/kubernetes-sigs/cri-tools/blob/master/docs/crictl.md)). Users have reported endpoint-precedence confusion and connections reaching the wrong runtime socket for years ([cri-tools issue #1157](https://github.com/kubernetes-sigs/cri-tools/issues/1157)); current Kubernetes reports still show CRI-version/socket mismatches at the same endpoint ([Kubernetes issue #131164](https://github.com/kubernetes/kubernetes/issues/131164)).
+- **Lesson**: Command-backed E2E must pin argv, timeout, endpoint, and wire envelope together. Stable connector identity is not a substitute for runtime-endpoint scope.
+
 ### 2026-07-28 — (resolved) Podman E2E bypassed configuration and hid query outages
 
 - **What**: Connector batch 5 reached Podman after the Nomad correction and failed because five cases passed an unsupported `transport=` constructor keyword. Its final case also expected a failed container-list request to become an empty result.

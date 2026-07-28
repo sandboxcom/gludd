@@ -420,13 +420,23 @@ class TestContainerdConnector:
     def test_constructs_custom_config(self):
         from general_ludd.connectors.containerd import ContainerdSource
 
-        source = ContainerdSource({"name": "cri-prod", "runtime_endpoint": "/run/containerd/containerd.sock"})
-        assert source.name == "cri-prod"
+        source = ContainerdSource({"runtime_endpoint": "/var/run/containerd/custom.sock"})
+        assert source.name == "containerd"
+        assert source.config.runtime_endpoint == "/var/run/containerd/custom.sock"
 
     def test_health_ok_with_injected_runner(self):
         from general_ludd.connectors.containerd import ContainerdSource
 
-        def _runner(argv: list[str]) -> str:
+        def _runner(argv: list[str], *, timeout: float) -> str:
+            assert argv == [
+                "crictl",
+                "--runtime-endpoint",
+                "unix:///run/containerd/containerd.sock",
+                "version",
+                "-o",
+                "json",
+            ]
+            assert timeout == 10.0
             return _json.dumps({"items": [{"id": "c1"}]})
 
         source = ContainerdSource(runner=_runner)
@@ -436,36 +446,43 @@ class TestContainerdConnector:
     def test_health_not_ok_when_runner_fails(self):
         from general_ludd.connectors.containerd import ContainerdSource
 
-        def _runner(argv: list[str]) -> str:
+        def _runner(argv: list[str], *, timeout: float) -> str:
             raise RuntimeError("no containerd")
 
         source = ContainerdSource(runner=_runner)
         result = source.health()
         assert result["ok"] is False
 
-    def test_query_returns_pods(self):
+    def test_query_returns_containers(self):
         from general_ludd.connectors.containerd import ContainerdSource
 
         call_count = 0
 
-        def _runner(argv: list[str]) -> str:
+        def _runner(argv: list[str], *, timeout: float) -> str:
             nonlocal call_count
             call_count += 1
-            if "ps" in str(argv):
-                return _json.dumps({
-                    "items": [{
-                        "id": "abc",
-                        "metadata": {"name": "web", "namespace": "default"},
-                        "state": "CONTAINER_RUNNING",
-                        "createdAt": "1700000000000000000",
-                    }]
-                })
-            return _json.dumps({})
+            assert argv[-4:] == ["ps", "-a", "-o", "json"]
+            assert timeout == 10.0
+            return _json.dumps({
+                "containers": [{
+                    "id": "abc",
+                    "metadata": {"name": "web"},
+                    "labels": {
+                        "io.kubernetes.pod.name": "web-pod",
+                        "io.kubernetes.pod.namespace": "default",
+                    },
+                    "state": "CONTAINER_RUNNING",
+                    "createdAt": 1700000000,
+                }]
+            })
 
         source = ContainerdSource(runner=_runner)
-        records = source.query({})
-        assert len(records) >= 1
+        records = source.query({"what": "ps"})
+        assert call_count == 1
+        assert len(records) == 1
         assert records[0]["kind"] == "logs"
+        assert records[0]["message"] == "container web state=CONTAINER_RUNNING"
+        assert records[0]["labels"]["pod"] == "web-pod"
 
     def test_query_empty_without_runner(self):
         from general_ludd.connectors.containerd import ContainerdSource
