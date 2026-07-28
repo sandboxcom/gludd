@@ -1677,6 +1677,7 @@ check-disk:
 # Read-only system load diagnostic (AGENTS.md System-Load Gate Before Dispatch Waves).
 # Prints 1m load avg, CPU count, and verdict (OK / WARN / CRITICAL). Exit 0 always.
 check-system-load:
+	@chmod +x scripts/check_system_load.py
 	@uv run python scripts/check_system_load.py
 
 # Disk headroom check — run BEFORE any heavy op (gate, agent dispatch) so we
