@@ -18,20 +18,25 @@
 
 ## SESSION 57 — 2026-07-28 (CURRENT)
 
-- **HEAD: `7d8d007c`** on `development` branch
+- **HEAD: `3b7dc660`** on `development` branch
 - **Version: 0.1.0-beta.3** (pyproject.toml, __init__.py)
-- **Push status: NOT PUSHED** — 10 local commits since last remote sync (fb43601f..7d8d007c)
-- **CI on development: NO RUN** for HEAD 7d8d007c
-- **Release readiness: BLOCKED** — pending push + CI green on development; release-cut requires CI green
-- **Gate: not re-run on HEAD 7d8d007c**
-- **Working tree: CLEAN**
+- **Push status: NOT PUSHED** — 11 local commits since last remote sync (ed95614f..3b7dc660)
+- **CI on development: run 30331174113** — Molecule Tests FAILED, Build and Release in_progress
+- **Release readiness: BLOCKED** — pending CI green + push (restart cap hit); release-cut requires CI green
+- **Gate-background: quality checks PASS** — lint 0, typecheck 0, collect 0, hook-runtime pass
+- **Working tree: CLEAN** (after 3b7dc660 commit)
 - **ratchet.yml: 0 entries** (no known-unfixed work tracked)
 
-### Key changes — Wave 3 (6 new commits since Wave 2 HEAD 219c929d)
+### Key changes — Waves 3-4 (11 commits since remote tip)
 
 | Hash | Message |
 |------|---------|
-| `7d8d007c` | fix: (HEAD) |
+| `3b7dc660` | codify: System-Load Gate Before Dispatch Waves — AGENTS.md CRITICAL section, Makefile zombie-process kill patterns, SESSION.md incident doc (HEAD) |
+| `3d164a42` | fix: SIM117 — combine nested with statements in test_daemon.py |
+| `aeabcf07` | fix: thread budget_guard + chat_model through make_langgraph_tool_loop |
+| `35412c63` | Merge branch 'fix/langgraph-budget-bypass' into development |
+| `6904c7db` | fix: mypy type errors in capabilities.py + secret pragma for detect-secrets |
+| `7d8d007c` | fix: |
 | `128f035a` | fix: |
 | `a7ef2ed5` | fix: lint errors — import order, unused imports, SIM115 context manager, SIM117 nested with |
 | `7289bef1` | beta.3 wave 3: NEEDS_MORE_WORK requeue + PSK authz capability guard + engine sync cleanup + sandbox async gating + budget precheck fixes + typecheck fix + TASKS/SESSION update |
@@ -42,19 +47,21 @@
 
 | Item | Status |
 |------|--------|
-| Push 10 commits to remote | NOT PUSHED |
-| CI green on development HEAD `7d8d007c` | NO RUN |
+| Push 11 commits to remote | NOT PUSHED |
+| CI green on development HEAD `3b7dc660` | Molecule FAILED, Build-and-Release in_progress (run 30331174113) |
+| Fix Molecule test failures | PENDING |
 | `make release-cut TAG=v0.1.0-beta.3` | BLOCKED on CI green |
 | `make verify-release-completeness` 12/12 | BLOCKED on release-cut |
 
 ### Next
 
-1. Push 10 development commits to remote
-2. CI green on HEAD `7d8d007c`
-3. `make release-cut TAG=v0.1.0-beta.3` when CI green
-4. `make verify-release-completeness TAG=v0.1.0-beta.3`
+1. Fix Molecule test failures surfacing in CI run 30331174113
+2. Push 11 development commits to remote
+3. CI green on HEAD `3b7dc660`
+4. `make release-cut TAG=v0.1.0-beta.3` when CI green
+5. `make verify-release-completeness TAG=v0.1.0-beta.3`
 
-- **Last Updated: 2026-07-28 — Session 57.** HEAD `7d8d007c` on `development`. 10 unpushed commits (fb43601f..7d8d007c). Wave 3 landed: NEEDS_MORE_WORK requeue sweep, PSK authz capability guard, engine sync cleanup, sandbox async gating, budget precheck fixes, typecheck fix, lint fix (a7ef2ed5). Working tree CLEAN. CI NO RUN for HEAD. beta.3 release blocked on CI green.
+- **Last Updated: 2026-07-28 — Session 57.** HEAD `3b7dc660` on `development`. 11 unpushed commits (ed95614f..3b7dc660). New since prior HEAD (7d8d007c): 5 commits — mypy type fix (6904c7db), langgraph budget bypass merge (35412c63/aeabcf07), SIM117 lint fix (3d164a42), system-load gate codification (3b7dc660). Gate-background quality checks PASS (lint 0, typecheck 0, collect 0, hook-runtime pass). CI run 30331174113: Molecule Tests FAILED, Build and Release in_progress. beta.3 release blocked on CI green.
 
 ### System-load incident (2026-07-28)
 
@@ -62,9 +69,11 @@
 saturating all CPU cores. Load average spiked past 4x CPU count. Every subagent
 crawled; the orchestrator stalled waiting for results. Root cause: no pre-dispatch
 load check — the agent dispatched at full capacity onto an already-overloaded
-machine. Codified fix: CRITICAL System-Load Gate Before Dispatch Waves section in
-AGENTS.md mandates checking `make check-system-load` before every dispatch wave,
-capping at ≤5 subagents when load > 2x CPU, and halting entirely when > 3x CPU.
+machine. Codified fix (commit `3b7dc660`): CRITICAL System-Load Gate Before Dispatch Waves
+section in AGENTS.md + Makefile zombie-process kill patterns + this SESSION.md
+incident doc. Mandates checking `make check-system-load` before every dispatch
+wave, capping at ≤5 subagents when load > 2x CPU, and halting entirely when > 3x
+CPU.
 
 ---
 

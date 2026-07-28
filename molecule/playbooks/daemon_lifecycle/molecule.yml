@@ -26,3 +26,19 @@ provisioner:
     verify: default/verify.yml
 verifier:
   name: ansible
+# The converge playbook is inherently non-idempotent: it starts a daemon,
+# exercises it, sends SIGTERM, and verifies cleanup. Re-running converge
+# would start a new daemon, kill it again, and always report changed.
+scenario:
+  test_sequence:
+    - dependency
+    - cleanup
+    - destroy
+    - syntax
+    - create
+    - prepare
+    - converge
+    - side_effect
+    - verify
+    - cleanup
+    - destroy

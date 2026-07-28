@@ -117,7 +117,7 @@ _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-wor
         verify-enforcement \
 ci-view ci-rerun ci-trigger ci-active ci-job-log ci-shards-log-context \
         ci-busy-check ci-safe-push pre-push-check push-guarded ci-await \
-log-agent-result disk-guard disk-check check-disk disk tmp-gludd-usage tmp-gludd-clean-ci-shards \
+log-agent-result disk-guard disk-check check-disk check-system-load disk tmp-gludd-usage tmp-gludd-clean-ci-shards \
         tmp-gludd-worktree-usage clean-worktree-venvs clean-worktree-caches \
         searx-up searx-down searx-test searx-start searx-stop searx-status searx-install \
         networking-role-lint networking-role-syntax test-scapy-adapter networking-validate \
@@ -362,6 +362,7 @@ help:
 	@echo "  disk-guard            Check disk usage + clean caches if above threshold (default 95%)"
 	@echo "  disk-check            Check disk usage only, exit 1 if above threshold"
 	@echo "  check-disk            Pre-commit check: fails if /tmp/gludd-* >100MB or disk >90%"
+	@echo "  check-system-load     Read-only system load diagnostic (1m avg, CPU count, verdict)"
 	@echo "  disk                  Print disk usage + gludd footprint"
 	@echo "  tmp-gludd-usage       Print largest /tmp/gludd-* entries sorted by size"
 	@echo "  tmp-gludd-worktree-usage  Print largest generated entries under /tmp/gludd-worktrees"
@@ -1672,6 +1673,11 @@ disk-check:
 # Pre-commit disk check: fail if /tmp/gludd-* >100MB or disk >90%.
 check-disk:
 	@uv run python scripts/check_disk_usage.py
+
+# Read-only system load diagnostic (AGENTS.md System-Load Gate Before Dispatch Waves).
+# Prints 1m load avg, CPU count, and verdict (OK / WARN / CRITICAL). Exit 0 always.
+check-system-load:
+	@uv run python scripts/check_system_load.py
 
 # Disk headroom check — run BEFORE any heavy op (gate, agent dispatch) so we
 # never silently refill the volume. Prints % used + free on the data volume.
