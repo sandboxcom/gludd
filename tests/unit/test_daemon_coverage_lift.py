@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import copy
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -19,10 +20,18 @@ from general_ludd.secrets.env import EnvSecretsManager
 def _preserve_daemon_state():
     if _daemon_state is None:
         yield
-    else:
-        snapshot = list(_daemon_state["todos"])
+        return
+
+    missing = object()
+    original = _daemon_state.get("todos", missing)
+    snapshot = copy.deepcopy(original) if original is not missing else missing
+    try:
         yield
-        _daemon_state["todos"] = snapshot
+    finally:
+        if snapshot is missing:
+            _daemon_state.pop("todos", None)
+        else:
+            _daemon_state["todos"] = snapshot
 
 
 @pytest.fixture
