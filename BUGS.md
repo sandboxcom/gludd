@@ -4,6 +4,30 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) event-loop E2E created orphaned tenant and audit rows
+
+- **What**: The resumed serial E2E tail enabled SQLite foreign keys, then created todos for a project that the fixture never inserted and created blocker-history events for todos that did not exist. The same file also passed database-managed `updated_at` through the public create payload to simulate old blockers, which the hardened repository correctly rejected.
+- **Root cause**: The broad workflow fixture predated tenant foreign keys, immutable audit fields, and the event-to-todo relationship. Its synthetic rows no longer represented states the production database can contain.
+- **Fix applied**: The file-local engine now seeds its declared E2E project. Blocker events always receive real parent todos, and age-sensitive cases create through the repository before backdating the persisted fixture object. Foreign-key enforcement and immutable-field validation remain enabled throughout all 105 tests.
+- **Long-lived user evidence**: SQLAlchemy users have repeatedly found that SQLite relationships appeared valid only because foreign-key enforcement was not enabled per connection; maintainers explicitly direct users to the dialect's foreign-key recipe ([discussion #7974](https://github.com/sqlalchemy/sqlalchemy/discussions/7974)). A separate multi-year report demonstrates the same `FOREIGN KEY constraint failed` class when dependent rows and transaction ordering are inconsistent ([discussion #6123](https://github.com/sqlalchemy/sqlalchemy/discussions/6123)).
+- **Lesson**: Database E2E fixtures must be valid members of the production relational model. Never disable a constraint or forge repository-managed fields to make a test state constructible.
+
+### 2026-07-28 — (resolved) pending-work enforcement tests modeled a forbidden bypass
+
+- **What**: Stop-enforcement E2E expected `GLUDD_STOP_ENFORCE=0` to permit a text-only response while tracked work remained, contradicting the hardened invariant that fundamental pending-work checks are non-bypassable. A structural companion read only the small plugin proxy and therefore failed to inspect the real implementation module.
+- **Root cause**: The test retained the pre-hardening meaning of the environment toggle and assumed each plugin lived in one source file after enforcement code moved behind a lean proxy.
+- **Fix applied**: Runtime E2E now requires tracked work to block completion even when heuristic stop enforcement is disabled. The structural checker explicitly loads and combines the proxy and implementation sources, verifies the implementation exists, and keeps all 22 nothing-dropped assertions active.
+- **Long-lived user evidence**: Agent users report that hook blocks can make the model stop instead of repair and retry ([Claude Code issue #24327](https://github.com/anthropics/claude-code/issues/24327)), while others report blocks being surfaced without actually preventing tool execution ([issue #26923](https://github.com/anthropics/claude-code/issues/26923)). These opposite failure modes make executable fail-closed tests essential.
+- **Lesson**: An operational tuning flag may disable heuristics, but it must never erase the authoritative pending-work gate. Structural tests must follow the actual module boundary instead of treating a proxy as the whole implementation.
+
+### 2026-07-28 — (resolved) dogfood and benchmark E2E blurred validation categories and run identity
+
+- **What**: Dogfood E2E combined a shell metacharacter with a path separator, making a precise rejection category order-dependent, while traversal detection itself ran after the generic separator check. The benchmark workflow also instantiated a suite without its required run-level agent identity and expected a manually added result to supply that report identity.
+- **Root cause**: One fixture tested two invalid-name dimensions at once, and validation ordering hid the more actionable traversal diagnosis. The benchmark case conflated per-result provenance with suite/run ownership.
+- **Fix applied**: Traversal is rejected before generic path separators, with isolated fixtures for traversal and shell metacharacters. Benchmark E2E supplies the suite's required agent name and keeps result identity distinct, while the full focused dogfood/benchmark matrix passes 181 tests.
+- **Long-lived user evidence**: Ansible users have documented malformed templated task arguments being silently ignored, allowing a customer playbook to pass while producing wrong output ([ansible/ansible#79862](https://github.com/ansible/ansible/issues/79862)). Evaluation users likewise report that shared result metadata becomes ambiguous when model aliases change ([openai/evals#1166](https://github.com/openai/evals/issues/1166)); LM Evaluation Harness preserves model/run metadata for reproducibility ([interface guide](https://github.com/EleutherAI/lm-evaluation-harness/blob/main/docs/interface.md)).
+- **Lesson**: Security validation cases should isolate one hazard and return the most actionable diagnosis. Evaluation reports need explicit run identity; individual observations cannot implicitly redefine their owning suite.
+
 ### 2026-07-28 — (resolved) delegation E2E treated terminal shipping as inline grinding
 
 - **What**: The full serial E2E reached 1,890 passes and then expected the delegation streak guard to reject `make git-commit` at its mutation threshold. Production intentionally exempts terminal git shipping so completed, already-gated work cannot be trapped behind a delegation requirement. The companion structural unit checker also searched only the first 800 characters of a TypeScript function and failed when comments moved the required lint exemption beyond that arbitrary window.
