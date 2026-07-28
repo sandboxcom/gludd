@@ -24,6 +24,7 @@ from sqlalchemy.pool import StaticPool
 from general_ludd.db.models import (
     Base,
     BucketLeaseModel,
+    ProjectModel,
     TodoEventModel,
     TodoModel,
 )
@@ -89,6 +90,10 @@ async def async_engine():
     engine = _make_async_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        session.add(ProjectModel(project_id=_E2E_PROJECT, name="E2E workflows"))
+        await session.commit()
     yield engine
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
@@ -962,11 +967,11 @@ class TestBlockerDetector:
     @pytest.mark.asyncio
     async def test_scan_blocked_on_human_finds_stale(self, db_session: AsyncSession):
         repo = TodoRepository(db_session)
-        await repo.create({
+        todo = await repo.create({
             "todo_id": "TODO-BH-1", "title": "blocked task", "queue": "core",
             "priority": 5, "work_type": "code", "status": TodoStatus.BLOCKED_ON_HUMAN.value,
-            "updated_at": _now_minus(30),
         })
+        todo.updated_at = _now_minus(30)
         await db_session.commit()
 
         detector = BlockerDetector(
@@ -979,11 +984,11 @@ class TestBlockerDetector:
     @pytest.mark.asyncio
     async def test_scan_stale_under_threshold_not_surfaced(self, db_session: AsyncSession):
         repo = TodoRepository(db_session)
-        await repo.create({
+        todo = await repo.create({
             "todo_id": "TODO-BH-2", "title": "fresh block", "queue": "core",
             "priority": 5, "work_type": "code", "status": TodoStatus.BLOCKED_ON_HUMAN.value,
-            "updated_at": _now_minus(2),  # only 2h — under 24h threshold
         })
+        todo.updated_at = _now_minus(2)  # only 2h — under 24h threshold
         await db_session.commit()
 
         detector = BlockerDetector(
@@ -998,11 +1003,11 @@ class TestBlockerDetector:
         htrepo = HumanTodoRepository(db_session)
         repo = TodoRepository(db_session)
 
-        await repo.create({
+        todo = await repo.create({
             "todo_id": "TODO-PERM", "title": "cred task", "queue": "core",
             "priority": 5, "work_type": "code", "status": TodoStatus.BLOCKED_ON_HUMAN.value,
-            "updated_at": _now_minus(6),  # 6h — above 4h threshold
         })
+        todo.updated_at = _now_minus(6)  # 6h — above 4h threshold
         await htrepo.create(
             agent_id="agent-1", title="cred request", body="need aws creds",
             category="permission_escalation", parent_agent_todo_id="TODO-PERM",
@@ -1103,14 +1108,20 @@ class TestBlockerDetector:
 
     @pytest.mark.asyncio
     async def test_chronic_blockers_below_threshold_returns_empty(self, db_session: AsyncSession):
+        repo = TodoRepository(db_session)
         detector = BlockerDetector(
             session=db_session,
             config=RemediationConfig(min_chronic_incidents=5),
         )
         # only 2 events
         for i in range(2):
+            todo_id = f"TODO-LOW-{i}"
+            await repo.create({
+                "todo_id": todo_id, "title": f"low incident {i}", "queue": "core",
+                "priority": 5, "work_type": "code", "status": TodoStatus.BLOCKED_ON_HUMAN.value,
+            })
             db_session.add(TodoEventModel(
-                todo_id=f"TODO-LOW-{i}", event_type="status_changed",
+                todo_id=todo_id, event_type="status_changed",
                 new_status=TodoStatus.BLOCKED_ON_HUMAN.value,
                 created_at=_now_minus(1), reason="input needed",
             ))
@@ -1332,11 +1343,11 @@ class TestIntegrationWorkflows:
     @pytest.mark.asyncio
     async def test_detect_then_dispatch(self, db_session: AsyncSession):
         repo = TodoRepository(db_session)
-        await repo.create({
+        todo = await repo.create({
             "todo_id": "TODO-FULL", "title": "test full flow", "queue": "core",
             "priority": 5, "work_type": "code", "status": TodoStatus.BLOCKED_ON_HUMAN.value,
-            "updated_at": _now_minus(30),
         })
+        todo.updated_at = _now_minus(30)
         await db_session.commit()
 
         detector = BlockerDetector(
@@ -1362,12 +1373,12 @@ class TestIntegrationWorkflows:
             repo = TodoRepository(s)
             await _seed_queued(s, repo, "TODO-INT-1")
             # Also create a blocked task
-            await repo.create({
+            blocked = await repo.create({
                 "todo_id": "TODO-INT-BLK", "title": "blocked integration",
                 "queue": "core", "priority": 5, "work_type": "code",
                 "status": TodoStatus.BLOCKED_ON_HUMAN.value,
-                "updated_at": _now_minus(30),
             })
+            blocked.updated_at = _now_minus(30)
             await s.commit()
 
         loop = EventLoop(
