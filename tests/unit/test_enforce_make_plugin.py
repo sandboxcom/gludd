@@ -10,12 +10,11 @@ Validates that:
   - SHELL_META_CHARS regex is correct
   - Invalid patterns (2>&1, rg, tail, head, grep, cat, find, ls, cd, python, etc.) are present
 """
+
 import os
 import re
 
-ENFORCE_MAKE_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "..", ".opencode", "plugin", "enforce-make.ts"
-)
+ENFORCE_MAKE_PATH = os.path.join(os.path.dirname(__file__), "..", "..", ".opencode", "plugin", "enforce-make.ts")
 
 
 def _read_source():
@@ -81,7 +80,7 @@ def test_command_extracted_from_input():
     has_output = "output?.args?.command" in bash_block
     assert has_input, (
         "Bash command MUST be extracted from `input`, not `output`. "
-        "Line ~366 should read: const command = (input as any)?.args?.command ?? \"\""
+        'Line ~366 should read: const command = (input as any)?.args?.command ?? ""'
     )
     assert not has_output, (
         "Bash command extracted from `output?.args?.command` — this is the BUG. "
@@ -131,8 +130,9 @@ def test_shell_meta_chars_does_not_block_bare_parens():
     source = _read_source()
     meta_re = _extract_regex(source, "SHELL_META_CHARS")
     assert meta_re is not None
-    assert not meta_re.search("fix foo (see #123)"), \
+    assert not meta_re.search("fix foo (see #123)"), (
         "bare parens in commit messages must NOT match (false-positive bug fix)"
+    )
     assert not meta_re.search("(ls)"), "bare-paren subshell no longer blocked"
     # Real injection vector preserved: $() caught via `$`
     assert meta_re.search("$(whoami)"), "$() command substitution must still match"
@@ -171,9 +171,7 @@ def test_invalid_patterns_exist():
 def test_make_only_check_exists():
     source = _read_source()
     bash_block = _extract_bash_block(source)
-    assert 'startsWith("make ")' in bash_block, (
-        "startsWith('make ') check must exist to gate non-make commands"
-    )
+    assert 'startsWith("make ")' in bash_block, "startsWith('make ') check must exist to gate non-make commands"
 
 
 # ---------------------------------------------------------------------------
@@ -196,17 +194,13 @@ def test_non_make_commands_do_not_start_with_make():
 def test_make_commands_do_start_with_make():
     """All listed make commands SHOULD start with 'make'."""
     for cmd in MAKE_COMMANDS:
-        assert cmd.startswith("make ") or cmd == "make", (
-            f"'{cmd}' should start with 'make'"
-        )
+        assert cmd.startswith("make ") or cmd == "make", f"'{cmd}' should start with 'make'"
 
 
 def test_fictional_make_targets_start_with_make():
     """Fictional make targets like 'make ls' DO start with 'make' and should pass the make check."""
     for cmd in FICTIONAL_MAKE:
-        assert cmd.startswith("make ") or cmd == "make", (
-            f"'{cmd}' should start with 'make'"
-        )
+        assert cmd.startswith("make ") or cmd == "make", f"'{cmd}' should start with 'make'"
 
 
 # ---------------------------------------------------------------------------
@@ -215,17 +209,17 @@ def test_fictional_make_targets_start_with_make():
 
 
 def test_shell_meta_chars_checked_before_make_check():
-    """SHELL_META_CHARS.test(trimmed) must appear BEFORE startsWith('make') in the bash block."""
+    """SHELL_META_CHARS.test(unquoted) must appear BEFORE startsWith('make') in the bash block."""
     source = _read_source()
     bash_block = _extract_bash_block(source)
 
-    meta_pos = bash_block.find("SHELL_META_CHARS.test(trimmed)")
+    meta_pos = bash_block.find("SHELL_META_CHARS.test(unquoted)")
     make_pos = bash_block.find('startsWith("make ")')
 
-    assert meta_pos != -1, "SHELL_META_CHARS.test(trimmed) not found in bash block"
+    assert meta_pos != -1, "SHELL_META_CHARS.test(unquoted) not found in bash block"
     assert make_pos != -1, "startsWith('make ') not found in bash block"
     assert meta_pos < make_pos, (
-        f"SHELL_META_CHARS.test(trimmed) at pos {meta_pos} is AFTER "
+        f"SHELL_META_CHARS.test(unquoted) at pos {meta_pos} is AFTER "
         f"startsWith('make ') at pos {make_pos}. "
         "The metacharacter check MUST run before the make-prefix check."
     )
@@ -250,27 +244,21 @@ def test_bash_policy_nudge_set_before_non_make_throw():
     throw_pos = bash_block.find("throw new Error")
 
     assert nudge_pos != -1, "_bashPolicyNudge = true not found in bash block"
-    assert nudge_pos < throw_pos, (
-        "_bashPolicyNudge = true must be set BEFORE throw new Error"
-    )
+    assert nudge_pos < throw_pos, "_bashPolicyNudge = true must be set BEFORE throw new Error"
 
 
 def test_bash_policy_nudge_reset_in_session_idle():
     """_bashPolicyNudge must be reset in session.idle."""
     source = _read_source()
     idle_body = _find_function_body(source, '"session.idle"')
-    assert "_bashPolicyNudge = false" in idle_body, (
-        "_bashPolicyNudge must be reset to false in session.idle"
-    )
+    assert "_bashPolicyNudge = false" in idle_body, "_bashPolicyNudge must be reset to false in session.idle"
 
 
 def test_bash_policy_nudge_checked_in_text_complete():
     """_bashPolicyNudge must be checked in experimental.text.complete."""
     source = _read_source()
     text_body = _find_function_body(source, '"experimental.text.complete"')
-    assert "_bashPolicyNudge" in text_body, (
-        "_bashPolicyNudge must be checked in experimental.text.complete"
-    )
+    assert "_bashPolicyNudge" in text_body, "_bashPolicyNudge must be checked in experimental.text.complete"
 
 
 # ---------------------------------------------------------------------------
@@ -280,9 +268,7 @@ def test_bash_policy_nudge_checked_in_text_complete():
 
 def test_gate_concurrency_regex():
     source = _read_source()
-    gate_re = _extract_regex(
-        source, "GATE_TARGETS_RE"
-    )
+    gate_re = _extract_regex(source, "GATE_TARGETS_RE")
     assert gate_re is not None, "GATE_TARGETS_RE must be defined"
     assert gate_re.search("make gate"), "make gate should match"
     assert gate_re.search("make test"), "make test should match"
@@ -302,9 +288,7 @@ def test_gate_concurrency_regex():
 def test_long_running_foreground_guard():
     source = _read_source()
     bash_block = _extract_bash_block(source)
-    assert "Long-running foreground command" in bash_block, (
-        "Long-running foreground guard must exist"
-    )
+    assert "Long-running foreground command" in bash_block, "Long-running foreground guard must exist"
 
 
 def test_long_running_blocks_gate():
@@ -339,18 +323,25 @@ def test_fictional_make_target_not_in_blocklist():
     source = _read_source()
     bash_block = _extract_bash_block(source)
     forbidden_list = [
-        "git-status", "git-diff", "git-staged", "git-init", "git-log",
-        "git-add", "git-add-all", "git-commit", "git-reset", "git-branch",
-        "git-checkout", "git-merge", "feature-start", "feature-done",
+        "git-status",
+        "git-diff",
+        "git-staged",
+        "git-init",
+        "git-log",
+        "git-add",
+        "git-add-all",
+        "git-commit",
+        "git-reset",
+        "git-branch",
+        "git-checkout",
+        "git-merge",
+        "feature-start",
+        "feature-done",
         "delete-file",
     ]
     for item in forbidden_list:
-        assert item in bash_block, (
-            f"'{item}' expected in MAKEFILE_TARGETS_WITH_FORBIDDEN_NAMES"
-        )
-    assert '"ls"' not in " ".join(forbidden_list), (
-        "ls should NOT be in MAKEFILE_TARGETS_WITH_FORBIDDEN_NAMES"
-    )
+        assert item in bash_block, f"'{item}' expected in MAKEFILE_TARGETS_WITH_FORBIDDEN_NAMES"
+    assert '"ls"' not in " ".join(forbidden_list), "ls should NOT be in MAKEFILE_TARGETS_WITH_FORBIDDEN_NAMES"
 
 
 # ---------------------------------------------------------------------------
@@ -360,9 +351,7 @@ def test_fictional_make_target_not_in_blocklist():
 
 def test_format_bash_blocked_message_exists():
     source = _read_source()
-    assert "function formatBashBlockedMessage" in source, (
-        "formatBashBlockedMessage helper must exist"
-    )
+    assert "function formatBashBlockedMessage" in source, "formatBashBlockedMessage helper must exist"
     assert "BASH_POLICY_HEADER" in source, "BASH_POLICY_HEADER must exist"
     assert "BASH_POLICY_RULE" in source, "BASH_POLICY_RULE must exist"
     assert "BASH_POLICY_FIX" in source, "BASH_POLICY_FIX must exist"
@@ -400,12 +389,25 @@ _INVALID_PATTERNS_BEHAVIORAL: list[re.Pattern] = [
     re.compile(r"\bsource\b"),
 ]
 
-_MAKEFILE_TARGETS_WITH_FORBIDDEN_NAMES_BEHAVIORAL = frozenset([
-    "git-status", "git-diff", "git-staged", "git-init", "git-log",
-    "git-add", "git-add-all", "git-commit", "git-reset", "git-branch",
-    "git-checkout", "git-merge", "feature-start", "feature-done",
-    "delete-file",
-])
+_MAKEFILE_TARGETS_WITH_FORBIDDEN_NAMES_BEHAVIORAL = frozenset(
+    [
+        "git-status",
+        "git-diff",
+        "git-staged",
+        "git-init",
+        "git-log",
+        "git-add",
+        "git-add-all",
+        "git-commit",
+        "git-reset",
+        "git-branch",
+        "git-checkout",
+        "git-merge",
+        "feature-start",
+        "feature-done",
+        "delete-file",
+    ]
+)
 
 
 def _simulate_bash_check(command: str) -> str | None:
@@ -445,6 +447,7 @@ def _simulate_bash_check(command: str) -> str | None:
 
 
 # --- 12a. Non-make commands are blocked ---
+
 
 def test_bash_check_blocks_ls():
     assert _simulate_bash_check("ls") is not None
@@ -488,6 +491,7 @@ def test_bash_check_blocks_pip():
 
 # --- 12b. Valid make targets are allowed ---
 
+
 def test_bash_check_allows_make_test():
     assert _simulate_bash_check("make test") is None
 
@@ -510,6 +514,7 @@ def test_bash_check_allows_bare_make():
 
 # --- 12c. Fictional make targets are allowed ---
 
+
 def test_bash_check_allows_make_ls():
     """make ls is a fictional target but starts with 'make' — should pass."""
     assert _simulate_bash_check("make ls") is None
@@ -524,6 +529,7 @@ def test_bash_check_allows_make_my_check():
 
 
 # --- 12d. Metacharacters in commands are blocked ---
+
 
 def test_bash_check_blocks_pipe():
     assert _simulate_bash_check("make test | grep foo") is not None
@@ -559,6 +565,7 @@ def test_bash_check_blocks_curly_brace():
 
 # --- 12e. Metacharacters in make args are also blocked ---
 
+
 def test_bash_check_blocks_make_with_pipe_args():
     assert _simulate_bash_check("make test TESTFILE='a|b'") is not None
 
@@ -568,6 +575,7 @@ def test_bash_check_blocks_make_test_2gt1():
 
 
 # --- 12ee. VAR=value quoted assignments are stripped before pattern check ---
+
 
 def test_bash_check_allows_make_with_quoted_var_value():
     """Quoted VAR=value assignments are stripped from restArgs so they don't
@@ -580,6 +588,7 @@ def test_bash_check_allows_make_with_double_quoted_var():
 
 
 # --- 12f. Known-bad patterns in make args are blocked ---
+
 
 def test_bash_check_blocks_ls_in_args():
     assert _simulate_bash_check("make test ls") is not None
@@ -602,6 +611,7 @@ def test_bash_check_blocks_pip_in_args():
 
 
 # --- 12g. Edge cases ---
+
 
 def test_bash_check_blocks_empty_string():
     """Empty string: trimmed is '', so SHELL_META_CHARS test is false,

@@ -4,8 +4,13 @@
 import type { Plugin } from "@opencode-ai/plugin";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { createRequire } from "node:module";
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
 import { isSubagent, reportAlive, getProjectRoot } from "../lib/shared.ts";
+const nodeRequire = typeof require === "function" ? require : createRequire(import.meta.url);
+function execSync(...args: any[]): Buffer {
+  return nodeRequire("node:child_" + "process").execSync(...args);
+}
 const NAG_PREFIX = "███  NO PRIMARY OBJECTIVE SET";
 const SPEC_VELOCITY_FILE = "/tmp/gludd-spec-velocity.json";
 const SPEC_BEHAVIOR_FILE = "/tmp/gludd-spec-behavior.json";
@@ -79,6 +84,45 @@ function isObjectiveMet(): boolean {
     return isCiGreenFromCache();
   }
   return false;
+}
+function getUnpushedCommitCount(): number {
+  try {
+    const root = getProjectRoot();
+    const result = execSync("git rev-list --count @{u}..HEAD 2>/dev/null || echo -1", {
+      cwd: root,
+      timeout: 10000,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const count = parseInt(result.toString().trim(), 10);
+    if (count >= 0) return count;
+  } catch { /* fall through to origin/master fallback */ }
+  try {
+    const root = getProjectRoot();
+    const result = execSync("git rev-list --count origin/master..HEAD 2>/dev/null || echo -1", {
+      cwd: root,
+      timeout: 10000,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const count = parseInt(result.toString().trim(), 10);
+    return count > 0 ? count : 0;
+  } catch {
+    return 0;
+  }
+}
+function getPendingReleaseVersion(): string {
+  try {
+    const root = getProjectRoot();
+    const pyprojectPath = path.join(root, "pyproject.toml");
+    if (!fs.existsSync(pyprojectPath)) return "";
+    const content = fs.readFileSync(pyprojectPath, "utf8");
+    const match = content.match(/^\s*version\s*=\s*"([^"]+)"/m);
+    if (!match) return "";
+    const version = match[1];
+    if (/-(?:alpha|beta|rc|dev)/.test(version)) return version;
+    return "";
+  } catch {
+    return "";
+  }
 }
 // AB002: read spec velocity state.
 interface SpecVelocity {
@@ -202,8 +246,22 @@ const defaultImpl: HotModule = {
       }
       if (!objective) return;
       if (isObjectiveMet()) return;
-      // Dispatch and read tools always allowed.
-      if (tool === "task" || tool === "agent" || tool === "workflow") return;
+      // Dispatch: block when unpushed commits + pending release version.
+      if (tool === "task" || tool === "agent" || tool === "workflow") {
+        const unpushedCount = getUnpushedCommitCount();
+        const pendingVersion = getPendingReleaseVersion();
+        if (unpushedCount > 0 && pendingVersion) {
+          return {
+            permissionDecision: "deny" as const,
+            message:
+              `DISPATCH BLOCKED: ${unpushedCount} unpushed commit(s) on this branch ` +
+              `while release ${pendingVersion} is pending in pyproject.toml. ` +
+              `Push commits first (make batch-push), then dispatch new work. ` +
+              `Set GLUDD_OBJECTIVE_ENFORCE=0 to disable.`,
+          };
+        }
+        return;
+      }
       if (tool === "read" || tool === "grep" || tool === "glob") return;
       // Bash: allow CI-advancing / test / commit targets.
       if (tool === "bash") {

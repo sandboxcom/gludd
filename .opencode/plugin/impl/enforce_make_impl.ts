@@ -399,11 +399,14 @@ const defaultImpl: HotModule = {
           const trimmed = command.replace(/^\S*\$\s*/, "").trim()
 
           if (MAKE_ENFORCE) {
-            // Scan the FULL command for shell metacharacters first — pipes,
-            // chaining, subshells, etc. anywhere in the line are forbidden.
-            if (SHELL_META_CHARS.test(trimmed)) {
+            // Strip single- and double-quoted content before checking for
+            // shell metacharacters — a |, ;, or && inside MSG='...' or
+            // VAR="..." is literal text in a commit message, not a shell
+            // operator. The remaining (unquoted) portion is the real risk.
+            const unquoted = trimmed.replace(/'[^']*'/g, "").replace(/"[^"]*"/g, "")
+            if (SHELL_META_CHARS.test(unquoted)) {
               _bashPolicyNudge = true
-              const matched = trimmed.match(SHELL_META_CHARS)
+              const matched = unquoted.match(SHELL_META_CHARS)
               throw new Error(
                 formatBashBlockedMessage(
                   trimmed,
@@ -411,6 +414,8 @@ const defaultImpl: HotModule = {
                   `Pipes (|), chaining (&&, ||, ;), command substitution ($()), backticks (\`), ` +
                   `variable expansion ($), and brace expansion ({}) are not allowed. ` +
                   `Bare parens () are permitted (commit messages may contain them). ` +
+                  `Quoted content (MSG='...', VAR="...") is exempt — metacharacters inside ` +
+                  `single/double quotes are literal, not shell operators. ` +
                   `Create a Makefile target instead.`
                 )
               )

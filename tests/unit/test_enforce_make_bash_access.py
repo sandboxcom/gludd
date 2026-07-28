@@ -12,12 +12,11 @@ Covers gaps not in test_enforce_make_plugin.py:
   - `make` bare (no target) edge cases
   - Forbidden builtins in false-positive-safe positions
 """
+
 import os
 import re
 
-ENFORCE_MAKE_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "..", ".opencode", "plugin", "enforce-make.ts"
-)
+ENFORCE_MAKE_PATH = os.path.join(os.path.dirname(__file__), "..", "..", ".opencode", "plugin", "enforce-make.ts")
 
 
 def _read_source():
@@ -75,16 +74,27 @@ _INVALID_PATTERNS: list[re.Pattern] = [
     re.compile(r"\bsource\b"),
 ]
 
-_MAKEFILE_TARGETS_WITH_FORBIDDEN_NAMES = frozenset([
-    "git-status", "git-diff", "git-staged", "git-init", "git-log",
-    "git-add", "git-add-all", "git-commit", "git-reset", "git-branch",
-    "git-checkout", "git-merge", "feature-start", "feature-done",
-    "delete-file",
-])
-
-_VAR_ASSIGN_RE = re.compile(
-    r"[A-Za-z_][A-Za-z0-9_]*=('[^']*'|\"[^\"]*\"|\S*)"
+_MAKEFILE_TARGETS_WITH_FORBIDDEN_NAMES = frozenset(
+    [
+        "git-status",
+        "git-diff",
+        "git-staged",
+        "git-init",
+        "git-log",
+        "git-add",
+        "git-add-all",
+        "git-commit",
+        "git-reset",
+        "git-branch",
+        "git-checkout",
+        "git-merge",
+        "feature-start",
+        "feature-done",
+        "delete-file",
+    ]
 )
+
+_VAR_ASSIGN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=('[^']*'|\"[^\"]*\"|\S*)")
 
 
 def simulate_bash_check(command: str) -> str | None:
@@ -180,18 +190,14 @@ def test_make_enforce_guards_both_metachar_and_prefix_checks():
     bash_block = _find_function_body(source, 'if (input.tool === "bash")')
 
     make_enforce_guard_pos = bash_block.find("MAKE_ENFORCE")
-    meta_check_pos = bash_block.find("SHELL_META_CHARS.test(trimmed)")
+    meta_check_pos = bash_block.find("SHELL_META_CHARS.test(unquoted)")
     prefix_check_pos = bash_block.find('startsWith("make ")')
 
     assert make_enforce_guard_pos != -1, "MAKE_ENFORCE guard must exist"
     assert meta_check_pos != -1, "SHELL_META_CHARS check must exist"
     assert prefix_check_pos != -1, "startsWith check must exist"
-    assert make_enforce_guard_pos < meta_check_pos, (
-        "MAKE_ENFORCE guard must appear before SHELL_META_CHARS check"
-    )
-    assert make_enforce_guard_pos < prefix_check_pos, (
-        "MAKE_ENFORCE guard must appear before startsWith check"
-    )
+    assert make_enforce_guard_pos < meta_check_pos, "MAKE_ENFORCE guard must appear before SHELL_META_CHARS check"
+    assert make_enforce_guard_pos < prefix_check_pos, "MAKE_ENFORCE guard must appear before startsWith check"
 
 
 # ===========================================================================
@@ -469,9 +475,7 @@ def test_allows_make_with_dot_target():
 
 
 def test_allows_make_with_multiple_vars():
-    assert simulate_bash_check(
-        "make test TESTFILE=tests/unit/test_foo.py NO_XDIST=1"
-    ) is None
+    assert simulate_bash_check("make test TESTFILE=tests/unit/test_foo.py NO_XDIST=1") is None
 
 
 def test_allows_make_with_colon_target():
@@ -501,9 +505,7 @@ def test_invalid_patterns_count_matches():
     """Count of patterns in source matches our list (23 patterns)."""
     source = _read_source()
     re.findall(r"/\\b\w+(?:[>&<]?\s?|\d>&1)\)?\\b/", source)
-    assert len(_INVALID_PATTERNS) == 23, (
-        f"Expected 23 invalid patterns, got {len(_INVALID_PATTERNS)}"
-    )
+    assert len(_INVALID_PATTERNS) == 23, f"Expected 23 invalid patterns, got {len(_INVALID_PATTERNS)}"
     assert len(_INVALID_PATTERNS) >= 20, "Must have at least 20 invalid patterns"
 
 
@@ -516,9 +518,5 @@ def test_session_idle_resets_make_turn_state():
     """session.idle must reset _makeTurnState.dispatchCount and .toolCallMade."""
     source = _read_source()
     idle_body = _find_function_body(source, '"session.idle"')
-    assert "_makeTurnState.dispatchCount" in idle_body, (
-        "session.idle must reset dispatchCount"
-    )
-    assert "_makeTurnState.toolCallMade" in idle_body, (
-        "session.idle must reset toolCallMade"
-    )
+    assert "_makeTurnState.dispatchCount" in idle_body, "session.idle must reset dispatchCount"
+    assert "_makeTurnState.toolCallMade" in idle_body, "session.idle must reset toolCallMade"
