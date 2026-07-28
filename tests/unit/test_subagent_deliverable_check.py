@@ -27,6 +27,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
+_SUBAGENT_GUARD_RE = re.compile(
+    r'if\s*\(\s*(?:process\.env\.OPENCODE_SUBAGENT\s*===?\s*"1"|'
+    r"isSubagent\(\))\s*\)\s*return"
+)
 
 
 def _read_plugin() -> str:
@@ -65,10 +69,7 @@ class TestRegisteredInHashes:
 class TestStructuralPattern:
     def test_is_subagent_guard_present(self):
         src = _read_plugin()
-        guard = re.search(
-            r'if\s*\(\s*process\.env\.OPENCODE_SUBAGENT\s*===?\s*"1"\s*\)\s*return',
-            src,
-        )
+        guard = _SUBAGENT_GUARD_RE.search(src)
         assert guard is not None, "OPENCODE_SUBAGENT guard missing"
 
     def test_check_only_patterns_regex_exists(self):
@@ -117,10 +118,7 @@ class TestStructuralPattern:
 
     def test_subagent_guard_returns_not_throws(self):
         src = _read_plugin()
-        guard = re.search(
-            r'if\s*\(\s*process\.env\.OPENCODE_SUBAGENT\s*===?\s*"1"\s*\)\s*return',
-            src,
-        )
+        guard = _SUBAGENT_GUARD_RE.search(src)
         assert guard is not None
         guard_text = guard.group(0)
         assert "throw" not in guard_text, "subagent guard must return, not throw"
@@ -145,7 +143,10 @@ class TestWarningNotBlock:
 class TestEnvVarKnob:
     def test_env_disabled(self):
         src = _read_plugin()
-        m = re.search(r'GLUDD_DELIVERABLE_ENFORCE\s*!==?\s*"0"', src)
+        m = re.search(
+            r'GLUDD_DELIVERABLE_ENFORCE[^\n]*!==?\s*"0"',
+            src,
+        )
         assert m is not None, "GLUDD_DELIVERABLE_ENFORCE env var check missing"
 
     def test_enabled_check_before_work(self):
@@ -187,11 +188,11 @@ class TestRegexMatches:
 
 class TestCoveredInContextIsolation:
     def test_listed_in_tool_before_plugins(self):
-        """enforce-deliverable.ts must be in the PLUGINS_WITH_TOOL_BEFORE
-        list in test_subagent_context_isolation.py so its OPENCODE_SUBAGENT
-        guard is verified."""
+        """The context-isolation audit must discover tool hooks dynamically."""
         iso_test = ROOT / "tests" / "unit" / "test_subagent_context_isolation.py"
         content = iso_test.read_text()
-        assert "enforce-deliverable" in content, (
-            "enforce-deliverable not listed in test_subagent_context_isolation.py"
+        assert "_enforce_plugins()" in content
+        assert '"tool.execute.before"' in content
+        assert "PLUGINS_WITH_TOOL_BEFORE = sorted" in content, (
+            "context-isolation coverage must be generated from the live plugin inventory"
         )
