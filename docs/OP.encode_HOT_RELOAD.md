@@ -82,9 +82,9 @@ This runs `scripts/build_hot_modules.js`, which:
 6. **Preserves hook methods:** exports each function directly from the transpiled `defaultImpl` runtime object; it does not reconstruct function bodies with regular expressions
 7. **Validates before publish:** parses and loads a namespaced candidate, rejects zero-hook or invalid modules, then atomically renames the candidate to `/tmp/gludd-hot-*.js`
 
-Only plugins with a `defaultImpl` object produce hot modules. Plugins without
-the proxy pattern are reported as skipped and continue to use their compiled-in
-behavior.
+Only plugins with a `defaultImpl` object—directly or in their thin proxy's
+implementation module—produce hot modules. Plugins without the proxy pattern
+are reported as skipped and continue to use their compiled-in behavior.
 
 ### 3. Verifying hot modules
 
