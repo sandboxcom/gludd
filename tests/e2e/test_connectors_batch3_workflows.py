@@ -1125,7 +1125,7 @@ class TestMysqlStatsConnector:
         cursor = MockDbCursor([{"Variable_name": "Uptime", "Value": "3600"}])
         src = MysqlStatsSource(cursor=cursor)  # type: ignore[arg-type]
         result = src.health()
-        assert isinstance(result, dict)
+        assert result["ok"] is True
 
     def test_query_returns_records(self):
         from general_ludd.connectors.mysql_stats import MysqlStatsSource
@@ -1138,8 +1138,10 @@ class TestMysqlStatsConnector:
         )
         src = MysqlStatsSource(cursor=cursor)  # type: ignore[arg-type]
         records = src.query()
-        assert isinstance(records, list)
-        assert len(records) >= 1
+        assert len(records) == 2
+        assert records[0]["message"] == "global status Threads_connected"
+        assert records[0]["value"] == 4.0
+        assert records[1]["value"] == 1024.0
 
 
 class TestCassandraStatsConnector:
