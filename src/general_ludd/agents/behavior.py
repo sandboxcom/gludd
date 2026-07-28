@@ -178,6 +178,16 @@ class BehaviorRenderer:
         sections: list[str] = ["# Agent Behavior Configuration"]
         sections.append("")
 
+        if behavior.role or behavior.goal or behavior.backstory:
+            sections.append("## Role Context")
+            if behavior.role:
+                sections.append(f"Role: {behavior.role}")
+            if behavior.goal:
+                sections.append(f"Goal: {behavior.goal}")
+            if behavior.backstory:
+                sections.append(f"Backstory: {behavior.backstory}")
+            sections.append("")
+
         sections.append("## Task Completion")
         if behavior.completion_policy == "complete_all":
             sections.append(
