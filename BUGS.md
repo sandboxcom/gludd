@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) SNMP E2E bypassed environment credentials and the getter protocol
+
+- **What**: Connector batch 5 reached SNMP and called a required-config constructor with no arguments. Its operational cases supplied an ignored inline `community`, a singular `oid`, and an obsolete three-argument getter, while the failure case never reached the getter because no community was resolved.
+- **Root cause**: The broad E2E modeled a generic SNMP wrapper instead of the connector's secret-safe direct-mode boundary: community strings are resolved only through `community_env`, OIDs are lists, and the injected getter receives `(host, port, community, oids, timeout)`.
+- **Fix applied**: Empty configuration now proves a fail-closed missing-host health result. Valid, health, failure, and query cases resolve credentials from a test environment variable, pin the exact five-argument call, verify numeric normalization, require failure-detail scrubbing, and prove the community is redacted from both labels and raw records.
+- **Long-lived user evidence**: Net-SNMP documents community, timeout, and retry as distinct command inputs ([snmpcmd manual](https://www.net-snmp.org/docs/man/snmpcmd.html)). Users have reported since 2007 that an invalid community is deliberately discarded by the agent and therefore appears to the caller as an ordinary timeout ([Net-SNMP users thread](https://sourceforge.net/p/net-snmp/mailman/net-snmp-users/thread/c64ae3380708170132h12fd45a8x74ebf45630607306%40mail.gmail.com/)); later reports identify wrong communities, UDP filtering, protocol version, and source-address policy as recurring causes of the same symptom ([2013 timeout thread](https://sourceforge.net/p/net-snmp/mailman/net-snmp-users/thread/E9166036307C68448E801F00DFB6ECD4545E8B10%40BAZV442.manor.ch/)).
+- **Lesson**: SNMP E2E must exercise the credential-resolution and getter boundaries exactly. A health failure is meaningful only after prerequisites are present, and community values must remain secret even when upstream errors echo them.
+
 ### 2026-07-28 — (resolved) Redfish E2E assumed mandatory URL and wrong transport shape
 
 - **What**: Connector batch 5 reached Redfish and expected construction without `base_url` to fail, although the connector provides a loopback default that remains blocked unless internal access is explicitly allowed. Its remaining tests reused a method-explicit HTTP fake, while Redfish injects `transport(url, headers=..., timeout=..., verify=...)` returning `status` and text-backed JSON.

@@ -861,51 +861,116 @@ class TestRedfishConnector:
 
 
 class TestSnmpConnector:
-    def test_constructs_with_no_config(self):
+    def test_constructs_with_empty_config(self):
         from general_ludd.connectors.snmp import SnmpSource
 
-        source = SnmpSource()
+        source = SnmpSource({})
         assert source.KIND == "metrics"
         assert source.name == "snmp"
+        assert source.health() == {
+            "ok": False,
+            "detail": "snmp mode requires host",
+        }
 
-    def test_constructs_custom_config(self):
+    def test_constructs_custom_config(self, monkeypatch):
         from general_ludd.connectors.snmp import SnmpSource
 
+        monkeypatch.setenv("SNMP_E2E_COMMUNITY", "private-community")
         source = SnmpSource({
-            "host": "192.168.1.1",
-            "community": "public",
-            "oid": "1.3.6.1.2.1.1.3",
+            "host": "router.example",
+            "community_env": "SNMP_E2E_COMMUNITY",
+            "oids": ["1.3.6.1.2.1.1.3.0"],
             "name": "router-uptime",
         })
         assert source.name == "router-uptime"
+        assert source.host == "router.example"
+        assert source.oids == ["1.3.6.1.2.1.1.3.0"]
 
-    def test_health_ok_with_injected_getter(self):
+    def test_health_ok_with_injected_getter(self, monkeypatch):
         from general_ludd.connectors.snmp import SnmpSource
 
-        source = SnmpSource(getter=lambda host, community, oid: (None, None))
+        calls: list[tuple[str, int, str, list[str], float]] = []
+        monkeypatch.setenv("SNMP_E2E_COMMUNITY", "private-community")
+
+        def _getter(
+            host: str,
+            port: int,
+            community: str,
+            oids: list[str],
+            timeout: float,
+        ) -> list[tuple[str, object]]:
+            calls.append((host, port, community, oids, timeout))
+            return []
+
+        source = SnmpSource(
+            {
+                "host": "router.example",
+                "community_env": "SNMP_E2E_COMMUNITY",
+            },
+            getter=_getter,
+        )
         result = source.health()
-        assert isinstance(result, dict)
+        assert result == {"ok": True, "detail": "snmp getter reachable"}
+        assert calls == [
+            ("router.example", 161, "private-community", [], 5.0)
+        ]
 
-    def test_health_not_ok_when_getter_fails(self):
+    def test_health_not_ok_when_getter_fails(self, monkeypatch):
         from general_ludd.connectors.snmp import SnmpSource
+
+        community = "private-community"
+        monkeypatch.setenv("SNMP_E2E_COMMUNITY", community)
 
         def _fail(*_: object, **__: object) -> object:
-            raise OSError("timeout")
+            raise OSError(f"timeout for {community}")
 
-        source = SnmpSource({"host": "192.168.1.1"}, getter=_fail)
+        source = SnmpSource(
+            {
+                "host": "router.example",
+                "community_env": "SNMP_E2E_COMMUNITY",
+            },
+            getter=_fail,
+        )
         result = source.health()
         assert result["ok"] is False
+        assert community not in result["detail"]
+        assert "***redacted***" in result["detail"]
 
-    def test_query_returns_records(self):
-        from general_ludd.connectors.snmp import SnmpSource
+    def test_query_returns_records(self, monkeypatch):
+        from general_ludd.connectors.snmp import COMMUNITY_REDACTED, SnmpSource
 
-        def _getter(host: str, community: str, oid: str) -> tuple[object, object]:
-            return ("1.3.6.1.2.1.1.3.0", "12345678")
+        calls: list[tuple[str, int, str, list[str], float]] = []
+        community = "private-community"
+        oid = "1.3.6.1.2.1.1.3.0"
+        monkeypatch.setenv("SNMP_E2E_COMMUNITY", community)
 
-        source = SnmpSource({"host": "192.168.1.1"}, getter=_getter)
-        records = source.query({"oid": "1.3.6.1.2.1.1.3"})
-        assert len(records) >= 1
+        def _getter(
+            host: str,
+            port: int,
+            secret: str,
+            oids: list[str],
+            timeout: float,
+        ) -> list[tuple[str, object]]:
+            calls.append((host, port, secret, oids, timeout))
+            return [(oid, "12345678")]
+
+        source = SnmpSource(
+            {
+                "host": "router.example",
+                "community_env": "SNMP_E2E_COMMUNITY",
+            },
+            getter=_getter,
+        )
+        records = source.query({"oids": [oid]})
+        assert calls == [
+            ("router.example", 161, community, [oid], 5.0)
+        ]
+        assert len(records) == 1
         assert records[0]["kind"] == "metrics"
+        assert records[0]["value"] == 12345678.0
+        assert records[0]["labels"]["community"] == COMMUNITY_REDACTED
+        assert records[0]["raw"]["community"] == COMMUNITY_REDACTED
+        assert community not in repr(records)
 
 
 # ============================================================================
