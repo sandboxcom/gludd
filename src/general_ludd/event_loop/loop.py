@@ -4073,6 +4073,15 @@ class EventLoop:
             cfg = self._daemon_state.get("remediation_config") if self._daemon_state is not None else None
             if not isinstance(cfg, RemediationConfig):
                 cfg = RemediationConfig()
+
+            # NEEDS_MORE_WORK → QUEUED requeue sweep: cycle eligible work
+            # back into the pipeline before filing human-todos.
+            nmw_requeued = await self._todo_repo.requeue_needs_more_work(
+                cooldown_hours=cfg.needs_more_work_cooldown_hours,
+                max_run_count=cfg.max_requeues_before_chronic,
+            )
+            self._tick_metrics["remediation_nmw_requeued"] = nmw_requeued
+
             human_todo_repo = HumanTodoRepository(self._active_session)
             detector = BlockerDetector(
                 todo_repo=self._todo_repo,
