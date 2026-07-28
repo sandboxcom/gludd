@@ -808,7 +808,7 @@ test-opencode-boot-e2e:
 gate-fast: lint typecheck collect-check
 	@echo "=== GATE-FAST: PASS ==="
 
-gate: check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-hook-invoke check-plugin-imports check-node-v26-compat check-duplicate-targets check-task-integrity
+gate: check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-hook-invoke check-plugin-imports check-node-v26-compat check-duplicate-targets check-task-integrity check-no-prompt-prone-edit-tools
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
