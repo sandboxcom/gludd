@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) Ingest-format E2E invented generic content detection
+
+- **What**: Connector batch 5 reached ingest-format parsing and imported a nonexistent private `_detect_format` helper, then expected it to classify arbitrary JSON, plain text, and CSV. The module instead exposes three public, protocol-specific parsers for Fluent Forward, decoded Beats/Lumberjack events, and GELF.
+- **Root cause**: The broad E2E inferred a generic file-ingestion utility from the module name without checking its public exports or normalized-record contract. That bypassed tag, timestamp, host, severity, label, raw-payload, malformed-input, size, and chunk-handling behavior.
+- **Fix applied**: E2E now sends one realistic payload through each public parser and pins normalized source, singular `log` kind, message, severity, and protocol labels. Generic content sniffing and unsupported CSV/plain parsing are no longer presented as product behavior.
+- **Long-lived user evidence**: Fluentd documents that Forward receives structured JSON or MessagePack event streams and preserves the incoming tag ([Forward input protocol](https://docs.fluentd.org/input/forward)); Elastic documents that Beats sends events using Lumberjack over TCP ([Logstash output](https://www.elastic.co/docs/reference/beats/heartbeat/logstash-output)); and Graylog defines GELF's required fields, numeric syslog level, and chunk header ([GELF format](https://go2docs.graylog.org/current/getting_in_log_data/gelf_format.html)). Operators have reported incomplete GELF chunk aggregation and numeric-level incompatibilities since 2020 ([Graylog community](https://community.graylog.org/t/processbufferprocessor-unable-to-process-message-java-lang-nullpointerexception/17291)), while UDP load-balancing users have documented chunk loss since 2018 when related datagrams reach different servers ([Graylog community](https://community.graylog.org/t/udp-load-balancer-for-graylog-gelf-udp/6728)).
+- **Lesson**: Ingestion E2E must exercise declared wire formats through public parsers. Adding guessed format detection would hide protocol failures and create an undocumented surface unrelated to the connector's structured log-shipping responsibility.
+
 ### 2026-07-28 — (resolved) StatsD E2E invented dispatch and prefix-stripping APIs
 
 - **What**: Connector batch 5 reached StatsD parsing and imported nonexistent `_dispatch` and `_strip_name` helpers. It also expected verbose type names in a `metric_type` label and a string sample rate, while the normalized contract stores the protocol code in `level_or_status`, preserves metric names, and parses rates as floats.

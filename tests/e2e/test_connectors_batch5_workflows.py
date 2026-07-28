@@ -1644,20 +1644,60 @@ class TestStatsdParseConnector:
 
 
 class TestIngestFormatsConnector:
-    def test_detect_json_returns_true_for_json(self):
-        from general_ludd.connectors.ingest_formats import _detect_format
+    def test_parses_fluent_forward_json_events(self):
+        from general_ludd.connectors.ingest_formats import parse_fluent_forward
 
-        fmt = _detect_format('{"key": "value"}')
-        assert fmt == "json"
+        payload = _json.dumps([
+            "app.logs",
+            [[1700000000, {"message": "ready", "level": "info", "host": "web1"}]],
+        ]).encode()
+        records = parse_fluent_forward(payload)
 
-    def test_detect_plain_returns_true_for_plain(self):
-        from general_ludd.connectors.ingest_formats import _detect_format
+        assert len(records) == 1
+        assert records[0]["source"] == "app.logs"
+        assert records[0]["kind"] == "log"
+        assert records[0]["message"] == "ready"
+        assert records[0]["level_or_status"] == "info"
+        assert records[0]["labels"] == {
+            "tag": "app.logs",
+            "level": "info",
+            "host": "web1",
+        }
 
-        fmt = _detect_format("just plain text here")
-        assert fmt == "plain"
+    def test_parses_decoded_beats_lumberjack_events(self):
+        from general_ludd.connectors.ingest_formats import parse_beats_lumberjack
 
-    def test_detect_csv_returns_true_for_csv(self):
-        from general_ludd.connectors.ingest_formats import _detect_format
+        records = parse_beats_lumberjack([{
+            "@timestamp": "2025-01-01T12:00:00Z",
+            "message": "service started",
+            "host": {"name": "node-a"},
+            "agent": {"type": "filebeat"},
+            "log": {"level": "notice"},
+        }])
 
-        fmt = _detect_format("col1,col2,col3\nval1,val2,val3")
-        assert fmt == "csv"
+        assert len(records) == 1
+        assert records[0]["source"] == "beats"
+        assert records[0]["kind"] == "log"
+        assert records[0]["message"] == "service started"
+        assert records[0]["level_or_status"] == "notice"
+        assert records[0]["labels"] == {"host": "node-a", "beat": "filebeat"}
+
+    def test_parses_gelf_json_payload(self):
+        from general_ludd.connectors.ingest_formats import parse_gelf
+
+        payload = _json.dumps({
+            "version": "1.1",
+            "host": "api-1",
+            "short_message": "request failed",
+            "timestamp": 1735732800.0,
+            "level": 3,
+            "_facility": "payments",
+        }).encode()
+        records = parse_gelf(payload)
+
+        assert len(records) == 1
+        assert records[0]["source"] == "api-1"
+        assert records[0]["kind"] == "log"
+        assert records[0]["message"] == "request failed"
+        assert records[0]["level_or_status"] == "error"
+        assert records[0]["labels"] == {"host": "api-1", "facility": "payments"}
