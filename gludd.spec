@@ -1,4 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
+import sys
+
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 block_cipher = None
@@ -22,10 +24,45 @@ datas = [
 
 # Also collect ansible submodules that aren't auto-detected by the static
 # analyzer (module_utils, plugins, etc. are imported dynamically).
-_hidden_ansible = collect_submodules('ansible.module_utils')
+_ABSENT_ANSIBLE_SUBMODULES = {
+    'ansible.module_utils.distro.__main__',
+    'ansible.module_utils.distro.distro',
+}
+
+
+def _is_collectable_ansible_submodule(name):
+    return name not in _ABSENT_ANSIBLE_SUBMODULES
+
+
+_hidden_ansible = collect_submodules(
+    'ansible.module_utils',
+    filter=_is_collectable_ansible_submodule,
+)
 _hidden_ansible += collect_submodules('ansible.plugins')
 _hidden_ansible += collect_submodules('ansible.template')
 _hidden_ansible += collect_submodules('ansible.galaxy')
+
+# PyInstaller's dependency hooks inspect conditional Windows modules even on
+# POSIX hosts. Excluding those branches on non-Windows builds avoids attempts
+# to resolve user32/shell32/ole32 while retaining them in Windows artifacts.
+_platform_excludes = []
+if sys.platform != "win32":
+    _platform_excludes = [
+        'appdirs',
+        'asyncio.windows_events',
+        'asyncio.windows_utils',
+        'click._winconsole',
+        'dateutil.tz.win',
+        'filelock._windows',
+        'mcp.os.win32',
+        'multiprocessing.popen_spawn_win32',
+        'platformdirs.windows',
+        'prompt_toolkit.input.win32',
+        'prompt_toolkit.output.conemu',
+        'prompt_toolkit.output.win32',
+        'prompt_toolkit.output.windows10',
+        'prompt_toolkit.win32_types',
+    ]
 
 a = Analysis(
     ['src/general_ludd/cli.py'],
@@ -67,7 +104,19 @@ a = Analysis(
     # (ansible.runner/core_runner/templating), never the CLI. Bundling ansible.cli
     # makes pyinstaller import it at build time, and ansible.cli.initialize_locale()
     # hard-fails on Windows' cp1252 locale ("Ansible requires UTF-8; Detected 1252").
-    excludes=['pytest', 'mypy', 'ruff', 'pre_commit', 'molecule', 'ansible_lint', 'ansible.cli'],
+    excludes=[
+        'pytest',
+        'mypy',
+        'ruff',
+        'pre_commit',
+        'molecule',
+        'ansible_lint',
+        'ansible.cli',
+        # The application uses stdlib sqlite3 and psycopg 3. SQLAlchemy's
+        # generic hook otherwise probes these absent legacy/optional drivers.
+        'pysqlite2',
+        'MySQLdb',
+    ] + _platform_excludes,
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
