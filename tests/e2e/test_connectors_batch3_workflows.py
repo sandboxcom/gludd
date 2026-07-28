@@ -1610,7 +1610,7 @@ class TestGraphiteConnector:
         transport = MockHttpTransport(default_status=200, default_body=[{"target": "cpu", "datapoints": []}])
         src = GraphiteSource({"base_url": "https://graphite.example.com/"}, transport=cast(Any, transport))
         result = src.health()
-        assert isinstance(result, dict)
+        assert result["ok"] is True
 
     def test_query_returns_records(self):
         from general_ludd.connectors.graphite import GraphiteSource
@@ -1626,8 +1626,10 @@ class TestGraphiteConnector:
         )
         src = GraphiteSource({"base_url": "https://graphite.example.com/"}, transport=cast(Any, transport))
         records = src.query({"query": "cpu"})
-        assert isinstance(records, list)
-        assert len(records) >= 2
+        assert len(records) == 2
+        assert records[0]["message"] == "servers.server1.cpu.user"
+        assert records[0]["value"] == 42.5
+        assert records[1]["value"] == 43.1
 
 
 class TestThanosConnector:
