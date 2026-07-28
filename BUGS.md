@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) legacy dispatcher E2E bypassed the capability boundary
+
+- **What**: A legacy E2E batch expected `skill` and `mcp` handlers to execute with `role=None`, even though both kinds are explicitly privileged and the production dispatcher correctly returned `capability_denied`.
+- **Root cause**: The handler-mechanics tests predated fail-closed role enforcement. They unintentionally relied on an absent identity as authorization, while a neighboring security test and the canonical integration suite already required missing roles to be denied.
+- **Fix applied**: Handler-error, async, sync, and fan-out mechanics now opt into the explicit `UNRESTRICTED_ROLE` test sentinel. The missing-role MCP contract now asserts denial, preserving both code-path coverage and least privilege without weakening production authorization.
+- **Long-lived user evidence**: MCP implementers have repeatedly asked for tool-level authorization and scope enforcement in the multi-user authorization discussion ([modelcontextprotocol discussion #234](https://github.com/modelcontextprotocol/modelcontextprotocol/discussions/234)). The durable boundary is that a tool call needs an affirmative identity/scope decision; missing identity cannot silently inherit privilege.
+- **Lesson**: Tests for handler mechanics must explicitly authorize the handler. An omitted principal is a negative security case, not a convenient unrestricted default.
+
 ### 2026-07-28 — (resolved) TEMPR date ranges leaked stale documents from non-temporal retrievers
 
 - **What**: A date-bounded TEMPR query could return documents outside the requested window when semantic, BM25, or graph retrieval also contributed to reciprocal-rank fusion.

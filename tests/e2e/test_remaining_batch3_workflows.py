@@ -159,42 +159,64 @@ class TestDynamicDispatcher:
         assert "unknown_kind" in str(result.error)
 
     async def test_dispatch_handler_error(self):
-        from general_ludd.dispatch.dynamic_dispatcher import DynamicDispatcher, ToolCall
+        from general_ludd.dispatch.dynamic_dispatcher import (
+            UNRESTRICTED_ROLE,
+            DynamicDispatcher,
+            ToolCall,
+        )
 
         def failing(name, args):
             raise RuntimeError("boom")
 
-        dd = DynamicDispatcher(skill_handler=failing)
+        dd = DynamicDispatcher(skill_handler=failing, role=UNRESTRICTED_ROLE)
         call = ToolCall(kind="skill", name="x")
         result = await dd.dispatch(call)
         assert result.ok is False
         assert result.error == "handler_error"
 
     async def test_dispatch_async_handler(self):
-        from general_ludd.dispatch.dynamic_dispatcher import DynamicDispatcher, ToolCall
+        from general_ludd.dispatch.dynamic_dispatcher import (
+            UNRESTRICTED_ROLE,
+            DynamicDispatcher,
+            ToolCall,
+        )
 
         async def async_handler(name, args):
             return f"async:{name}"
 
-        dd = DynamicDispatcher(skill_handler=async_handler)
+        dd = DynamicDispatcher(skill_handler=async_handler, role=UNRESTRICTED_ROLE)
         call = ToolCall(kind="skill", name="test")
         result = await dd.dispatch(call)
         assert result.ok is True
         assert result.output == "async:test"
 
     async def test_dispatch_sync_handler(self):
-        from general_ludd.dispatch.dynamic_dispatcher import DynamicDispatcher, ToolCall
+        from general_ludd.dispatch.dynamic_dispatcher import (
+            UNRESTRICTED_ROLE,
+            DynamicDispatcher,
+            ToolCall,
+        )
 
-        dd = DynamicDispatcher(mcp_handler=lambda n, a: f"result:{n}")
+        dd = DynamicDispatcher(
+            mcp_handler=lambda n, a: f"result:{n}",
+            role=UNRESTRICTED_ROLE,
+        )
         call = ToolCall(kind="mcp", name="get")
         result = await dd.dispatch(call)
         assert result.ok is True
         assert result.output == "result:get"
 
     async def test_dispatch_all(self):
-        from general_ludd.dispatch.dynamic_dispatcher import DynamicDispatcher, ToolCall
+        from general_ludd.dispatch.dynamic_dispatcher import (
+            UNRESTRICTED_ROLE,
+            DynamicDispatcher,
+            ToolCall,
+        )
 
-        dd = DynamicDispatcher(mcp_handler=lambda n, a: f"got:{n}")
+        dd = DynamicDispatcher(
+            mcp_handler=lambda n, a: f"got:{n}",
+            role=UNRESTRICTED_ROLE,
+        )
         calls = [
             ToolCall(kind="mcp", name="a"),
             ToolCall(kind="mcp", name="b"),
@@ -212,13 +234,14 @@ class TestDynamicDispatcher:
         assert result.ok is False
         assert result.error == "capability_denied"
 
-    async def test_none_role_allow_non_privileged(self):
+    async def test_none_role_denies_mcp(self):
         from general_ludd.dispatch.dynamic_dispatcher import DynamicDispatcher, ToolCall
 
         dd = DynamicDispatcher(mcp_handler=lambda n, a: n, role=None)
         call = ToolCall(kind="mcp", name="get")
         result = await dd.dispatch(call)
-        assert result.ok is True
+        assert result.ok is False
+        assert result.error == "capability_denied"
 
     async def test_unrestricted_role_allow_all(self):
         from general_ludd.dispatch.dynamic_dispatcher import (
