@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import warnings
+from unittest.mock import patch
+
 from general_ludd.infra.compute import (
     ComputeConfig,
     ComputeProvider,
@@ -9,6 +12,20 @@ from general_ludd.infra.compute import (
     InferenceEngine,
 )
 from general_ludd.infra.terraform import TerraformGenerator
+
+
+def test_generate_vsphere_is_warning_free_without_pyvmomi() -> None:
+    config = ComputeConfig(
+        provider=ComputeProvider.VMWARE,
+        gpu_type=GPUType.A100_80,
+        model_name="test-model",
+    )
+
+    with patch("importlib.util.find_spec", return_value=None), warnings.catch_warnings():
+        warnings.simplefilter("error")
+        hcl = TerraformGenerator().generate(config)
+
+    assert 'source  = "hashicorp/vsphere"' in hcl
 
 
 def test_materialize_azure_a100_stack_with_cost_bounded_ttl(tmp_path) -> None:

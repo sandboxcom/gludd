@@ -96,7 +96,6 @@ class TestTerraformGeneratorVsphere:
         hcl = gen._generate_vsphere(config)
         assert "allow_unverified_ssl = true" in hcl
 
-
 class TestPyvmomiLazyImport:
     def test_pyvmomi_not_imported_at_module_top_level(self):
         source = TERRAFORM_PY.read_text()

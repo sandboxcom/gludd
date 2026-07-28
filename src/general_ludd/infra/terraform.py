@@ -817,26 +817,9 @@ class TerraformGenerator:
         """)
 
     def _generate_vsphere(self, config: ComputeConfig, **kwargs: str) -> str:
-        # Lazy-import pyvmomi so it is NOT a hard top-level dependency; the
-        # vSphere provider only needs the SDK for direct vAPI calls (inventory
-        # discovery, customization spec validation), which Terraform itself
-        # does not require at plan/apply time.
-        import importlib.util
-
-        pyvmomi_available = importlib.util.find_spec("pyvmomi") is not None
-        if not pyvmomi_available:
-            # Terraform generation still proceeds — pyvmomi is only required
-            # for live vSphere API calls during the deploy step, not for HCL
-            # emission. Surface the requirement loudly so callers know.
-            import warnings
-
-            warnings.warn(
-                "pyvmomi is not installed; vSphere live-API features "
-                "(inventory discovery, customization spec validation) are "
-                "disabled. HCL generation proceeds normally.",
-                stacklevel=2,
-            )
-
+        # HCL generation is independent of pyvmomi. Live inventory discovery
+        # owns its optional-SDK diagnostic in ``infra.discovery`` so offline
+        # generation remains deterministic and warning-free.
         image = _container_image(config)
         user_data = _user_data_script(config)
         datacenter = kwargs.get("datacenter", "DC0")

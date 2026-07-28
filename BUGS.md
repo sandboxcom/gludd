@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) offline vSphere HCL generation warned about an unrelated optional SDK
+
+- **What**: The complete serial E2E run emitted two `UserWarning` messages because VMware/vSphere Terraform generation checked for `pyvmomi`, even though HCL emission neither imports nor calls that SDK.
+- **Root cause**: An optional live-inventory prerequisite check was placed inside the pure Terraform renderer. The actual inventory-discovery boundary already owns its missing-SDK diagnostic, so the renderer duplicated it for an operation that succeeds without pyvmomi.
+- **Fix applied**: Pure vSphere HCL generation no longer probes or warns about pyvmomi. A warnings-as-errors regression forces generation to remain clean when the SDK is absent; live inventory discovery retains its scoped diagnostic.
+- **Long-lived user evidence**: VMware users distinguish pyVmomi as Python bindings for direct vSphere API automation ([long-running Stack Overflow discussion](https://stackoverflow.com/questions/21326448/what-is-the-difference-between-pysphere-and-pyvmomi)), while the Terraform vSphere provider is distributed and initialized as its own Terraform plugin ([provider community repository](https://github.com/vmware/terraform-provider-vsphere)).
+- **Lesson**: Optional-dependency warnings belong at the operation that actually needs the dependency. Emitting them during unrelated offline generation creates false alarms and makes warning-clean release gates impossible.
+
 ### 2026-07-28 — (resolved) commit-lock E2E invoked a retired plugin registration API
 
 - **What**: The complete serial E2E run stopped after 981 passes because its Node harness called `default(api)` and expected callback registration side effects; the current OpenCode plugin contract asynchronously returns a map containing `tool.execute.before` and `tool.execute.after`.
