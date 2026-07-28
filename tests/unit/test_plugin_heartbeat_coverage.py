@@ -57,6 +57,22 @@ def _registered_plugins() -> list[tuple[str, Path]]:
 PLUGINS = _registered_plugins()
 
 
+def _effective_source(plugin_path: Path) -> str:
+    """Return the entrypoint plus any split runtime implementation."""
+    entrypoint = plugin_path.read_text(encoding="utf-8")
+    implementation_sources = []
+    for relative in re.findall(
+        r"""from\s+["'](\./impl/[^"']+)["']""",
+        entrypoint,
+    ):
+        implementation_path = plugin_path.parent / relative
+        if implementation_path.is_file():
+            implementation_sources.append(
+                implementation_path.read_text(encoding="utf-8")
+            )
+    return "\n".join([entrypoint, *implementation_sources])
+
+
 @pytest.mark.parametrize(
     "plugin_name, plugin_path",
     PLUGINS,
@@ -69,7 +85,7 @@ def test_plugin_has_heartbeat(plugin_name: str, plugin_path: Path) -> None:
     defining `_reportAlive` locally. Both patterns are accepted.
     """
     assert plugin_path.exists(), f"plugin file referenced in opencode.json missing: {plugin_path}"
-    src = plugin_path.read_text()
+    src = _effective_source(plugin_path)
 
     # 1. Definition OR import present
     has_def = bool(_REPORT_ALIVE_DEF.search(src))
@@ -109,7 +125,7 @@ def test_all_registered_plugins_have_heartbeats() -> None:
         if not path.exists():
             missing.append(f"{name} (file missing: {path})")
             continue
-        src = path.read_text()
+        src = _effective_source(path)
         has_def = bool(_REPORT_ALIVE_DEF.search(src))
         has_import = bool(_REPORT_ALIVE_IMPORT.search(src))
         if not has_def and not has_import:
