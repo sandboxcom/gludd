@@ -157,11 +157,12 @@ def _write_isolated_config(tmp_path: Path) -> Path:
 def isolated_daemon(tmp_path: Path):
     """Start a real `gludd daemon` on a free port; yield (base_url, proc); stop it.
 
-    Skips the test if gunicorn is unavailable OR the daemon fails to become
+    Fails the test if gunicorn is unavailable OR the daemon fails to become
     healthy within the readiness window.
     """
-    if not _GUNICORN_AVAILABLE:
-        pytest.skip("gunicorn is not importable — cannot start the daemon")
+    assert _GUNICORN_AVAILABLE, (
+        "gunicorn is a required release dependency for `gludd daemon`"
+    )
 
     config_dir = _write_isolated_config(tmp_path)
     port = find_free_port()
@@ -191,7 +192,7 @@ def isolated_daemon(tmp_path: Path):
                 out, err = proc.communicate(timeout=5)
             except Exception:
                 out, err = "<no output>", "<no stderr>"
-            pytest.skip(
+            pytest.fail(
                 f"daemon did not become healthy on {base_url} within 40s\n"
                 f"stdout={out!r}\nstderr={err!r}"
             )
@@ -443,8 +444,9 @@ class TestErrorHandling:
 
     def test_port_conflict_graceful(self, tmp_path: Path):
         """Starting a second daemon on an occupied port fails cleanly (no traceback)."""
-        if not _GUNICORN_AVAILABLE:
-            pytest.skip("gunicorn is not importable — cannot start the daemon")
+        assert _GUNICORN_AVAILABLE, (
+            "gunicorn is a required release dependency for `gludd daemon`"
+        )
 
         config_dir = _write_isolated_config(tmp_path)
         port = find_free_port()
@@ -461,7 +463,12 @@ class TestErrorHandling:
         )
         try:
             if not wait_for_url(f"http://127.0.0.1:{port}/healthz", timeout=40.0):
-                pytest.skip("first daemon did not become healthy; cannot test conflict")
+                first.terminate()
+                out, err = first.communicate(timeout=10)
+                pytest.fail(
+                    "first daemon did not become healthy; cannot test conflict\n"
+                    f"stdout={out!r}\nstderr={err!r}"
+                )
 
             # Second daemon on the SAME port — must fail cleanly and quickly.
             second = subprocess.run(
