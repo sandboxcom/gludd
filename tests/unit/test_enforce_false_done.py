@@ -262,7 +262,14 @@ class TestPluginSourceInSync:
 
     def _src(self):
         plugin = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
-        return plugin.read_text()
+        implementation = (
+            ROOT
+            / ".opencode"
+            / "plugin"
+            / "impl"
+            / "enforce_stop_impl.ts"
+        )
+        return plugin.read_text() + "\n" + implementation.read_text()
 
     def test_completion_verbatim_exists(self):
         src = self._src()

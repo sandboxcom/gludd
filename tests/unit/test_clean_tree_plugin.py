@@ -24,13 +24,32 @@ EXPECTED_DISPATCH_TOOLS = {"task", "agent", "workflow"}
 
 def _plugin_source() -> str:
     assert PLUGIN_PATH.exists(), f"Plugin missing at {PLUGIN_PATH}"
-    return PLUGIN_PATH.read_text()
+    helpers = ROOT / ".opencode" / "lib" / "plugin_test_exports.ts"
+    return PLUGIN_PATH.read_text() + helpers.read_text()
 
 
 def _extract_dispatch_tools(src: str) -> set[str]:
     block = re.search(
         r'DISPATCH_TOOLS[^=]*=\s*Object\.freeze\(\[(.*?)\]\)', src, re.DOTALL
     )
+    if block is None and "isDispatchTool" in src:
+        shared = (
+            ROOT / ".opencode" / "lib" / "shared.ts"
+        ).read_text()
+        block = re.search(
+            r'DISPATCH_TOOLS[^=]*=\s*Object\.freeze\(\[(.*?)\]\)',
+            shared,
+            re.DOTALL,
+        )
+    if block is None and "getDispatchTools" in src:
+        helpers = (
+            ROOT / ".opencode" / "lib" / "plugin_test_exports.ts"
+        ).read_text()
+        block = re.search(
+            r"function\s+getDispatchTools\(\).*?return\s*\[(.*?)\]",
+            helpers,
+            re.DOTALL,
+        )
     assert block, "DISPATCH_TOOLS export not found in plugin source"
     return set(re.findall(r'"([^"]+)"', block.group(1)))
 

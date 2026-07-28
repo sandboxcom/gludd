@@ -16,7 +16,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-verified-claims.ts"
+CLASSIFIER_HELPERS = ROOT / ".opencode" / "lib" / "plugin_test_exports.ts"
 OPENCODE_JSON = ROOT / "opencode.json"
+
+
+def _effective_source() -> str:
+    """Return the plugin entrypoint plus its imported classifier helpers."""
+    return PLUGIN.read_text() + "\n" + CLASSIFIER_HELPERS.read_text()
 
 
 # ============================================================================
@@ -33,7 +39,7 @@ class TestPluginFileExists:
             "Without it every false-completion incident (alpha.3 ship, 12 inert "
             "features, the uncommitted '✅ Landed') is unguarded in opencode sessions."
         )
-        src = PLUGIN.read_text()
+        src = _effective_source()
         assert "DONE_WORDS" in src, (
             "enforce-verified-claims.ts must contain DONE_WORDS — the false-done word list."
         )
@@ -86,7 +92,7 @@ class TestEnforcementDefaultIsOn:
         )
 
     def test_should_block_function_exists(self):
-        src = PLUGIN.read_text()
+        src = _effective_source()
         assert "shouldBlock" in src, (
             "Plugin must define shouldBlock() — the classification function "
             "that checks DONE_WORDS against EVIDENCE_PATTERNS."
@@ -376,7 +382,7 @@ class TestPluginSourceMatchesPythonPort:
     """
 
     def _src(self):
-        return PLUGIN.read_text()
+        return _effective_source()
 
     def test_detection_constants_in_sync(self):
         src = self._src()
@@ -450,7 +456,7 @@ class TestPredicateNarrowedToTerminalClaims:
         the old enforce-stop.ts and has been replaced by the simpler
         shouldBlock() function in enforce-verified-claims.ts.
         """
-        src = PLUGIN.read_text()
+        src = _effective_source()
         assert "shouldBlock" in src, (
             "Plugin must define shouldBlock() — the classification function."
         )
@@ -468,7 +474,10 @@ class TestPredicateNarrowedToTerminalClaims:
         language like 'wrapping', 'finishing', 'conclusion' would cause
         false positives on legitimate interim status reports.
         """
-        src = PLUGIN.read_text().lower()
+        helpers = CLASSIFIER_HELPERS.read_text().lower()
+        start = helpers.index("const done_words")
+        end = helpers.index("const evidence_patterns", start)
+        src = helpers[start:end]
         for phrase in ["wrapping", "finishing", "closing", "conclusion", "summary"]:
             # DONE_WORDS is a string array — these summary words should
             # not appear inside string literals in the DONE_WORDS block.

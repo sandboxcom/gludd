@@ -110,7 +110,7 @@ def test_multitask_min_dispatches_hardcoded_10():
     """
     src = _read(MULTITASK_TS)
     m = re.search(
-        r'export const MIN_DISPATCHES\s*=\s*parseInt\(\s*'
+        r'const MIN_DISPATCHES\s*=\s*parseInt\(\s*'
         r'(?:process\.env\.\w+\s*\|\|\s*)+'
         r'"(\d+)"',
         src, re.DOTALL)
@@ -129,7 +129,7 @@ def test_multitask_min_dispatches_per_wave_hardcoded_10():
     """
     src = _read(MULTITASK_TS)
     m = re.search(
-        r'export const MIN_DISPATCHES\s*=\s*parseInt\(\s*'
+        r'const MIN_DISPATCHES\s*=\s*parseInt\(\s*'
         r'(?:process\.env\.\w+\s*\|\|\s*)+'
         r'"(\d+)"',
         src, re.DOTALL)
@@ -144,7 +144,7 @@ def test_multitask_per_message_threshold_is_10():
     """The per-message MIN_DISPATCHES must be 10, which is the threshold."""
     src = _read(MULTITASK_TS)
     m = re.search(
-        r'export const MIN_DISPATCHES\s*=\s*parseInt\(\s*'
+        r'const MIN_DISPATCHES\s*=\s*parseInt\(\s*'
         r'(?:process\.env\.\w+\s*\|\|\s*)+'
         r'"(\d+)"',
         src, re.DOTALL)

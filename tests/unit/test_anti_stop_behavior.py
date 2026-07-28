@@ -13,6 +13,12 @@ MAKEFILE = ROOT / "Makefile"
 AGENTS_MD = ROOT / "AGENTS.md"
 ENFORCE_MAKE = ROOT / ".opencode" / "plugin" / "enforce-make.ts"
 ENFORCE_STOP = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
+ENFORCE_MAKE_IMPL = (
+    ROOT / ".opencode" / "plugin" / "impl" / "enforce_make_impl.ts"
+)
+ENFORCE_STOP_IMPL = (
+    ROOT / ".opencode" / "plugin" / "impl" / "enforce_stop_impl.ts"
+)
 ENFORCE_FLOOR = ROOT / ".opencode" / "plugin" / "enforce-floor.ts"
 ENFORCE_DELEGATE = ROOT / ".opencode" / "plugin" / "enforce-delegate.ts"
 TEST_COMMIT_GATE = ROOT / "tests" / "unit" / "test_commit_gate_freshness.py"
@@ -28,6 +34,10 @@ def _recipe(target: str) -> str:
     if next_target == -1:
         return content[start:]
     return content[start:next_target]
+
+
+def _plugin_source(wrapper: Path, implementation: Path) -> str:
+    return wrapper.read_text() + implementation.read_text()
 
 
 class TestBatchPushTarget:
@@ -49,29 +59,29 @@ class TestForegroundBlockGuardrail:
     """enforce-make.ts MUST block long foreground commands."""
 
     def test_foreground_block_exists(self):
-        content = ENFORCE_MAKE.read_text()
+        content = _plugin_source(ENFORCE_MAKE, ENFORCE_MAKE_IMPL)
         assert "gate-background" in content or "Long-running foreground" in content, (
             "enforce-make.ts must contain foreground-block guardrail"
         )
 
     def test_blocks_make_gate(self):
-        content = ENFORCE_MAKE.read_text()
+        content = _plugin_source(ENFORCE_MAKE, ENFORCE_MAKE_IMPL)
         assert '"gate"' in content or "'gate'" in content or "isGate" in content, (
             "Foreground block must target 'make gate'"
         )
 
     def test_blocks_make_test_unit(self):
-        content = ENFORCE_MAKE.read_text()
+        content = _plugin_source(ENFORCE_MAKE, ENFORCE_MAKE_IMPL)
         assert "test-unit" in content, "Foreground block must target 'make test-unit'"
 
     def test_blocks_make_qa(self):
-        content = ENFORCE_MAKE.read_text()
+        content = _plugin_source(ENFORCE_MAKE, ENFORCE_MAKE_IMPL)
         assert '"qa"' in content or "'qa'" in content or "isQa" in content, (
             "Foreground block must target 'make qa'"
         )
 
     def test_mentions_alternative(self):
-        content = ENFORCE_MAKE.read_text()
+        content = _plugin_source(ENFORCE_MAKE, ENFORCE_MAKE_IMPL)
         assert "gate-background" in content, "Block message must mention gate-background alternative"
 
 
@@ -79,25 +89,25 @@ class TestStopPatternEnforcer:
     """enforce-stop.ts MUST default to blocking (not advisory)."""
 
     def test_blocking_default(self):
-        content = ENFORCE_STOP.read_text()
+        content = _plugin_source(ENFORCE_STOP, ENFORCE_STOP_IMPL)
         assert 'permissionDecision: "deny"' in content, (
             "enforce-stop.ts must have hard-deny permissionDecision blocks"
         )
 
     def test_has_ratchet_stop_audit(self):
-        content = ENFORCE_STOP.read_text()
+        content = _plugin_source(ENFORCE_STOP, ENFORCE_STOP_IMPL)
         assert "ratchet" in content.lower(), (
             "enforce-stop.ts must have ratchet-based stop audit"
         )
 
     def test_has_deferral_patterns(self):
-        content = ENFORCE_STOP.read_text()
+        content = _plugin_source(ENFORCE_STOP, ENFORCE_STOP_IMPL)
         assert "SUBAGENT_TEXT_MARKERS" in content, (
             "enforce-stop.ts must detect deferral/subagent-result patterns"
         )
 
     def test_has_question_tool_block(self):
-        content = ENFORCE_STOP.read_text()
+        content = _plugin_source(ENFORCE_STOP, ENFORCE_STOP_IMPL)
         assert '"question"' in content or "'question'" in content, (
             "enforce-stop.ts must block the question tool"
         )
@@ -133,13 +143,13 @@ class TestAgentFloorEnforcement:
         assert '"10"' in content, "enforce-delegate.ts FLOOR must default to 10"
 
     def test_enforce_stop_defaults_to_ten(self):
-        content = ENFORCE_STOP.read_text()
+        content = _plugin_source(ENFORCE_STOP, ENFORCE_STOP_IMPL)
         assert '"10"' in content, "enforce-stop.ts FLOOR must default to 10"
 
-    def test_settings_json_floor_is_five(self):
+    def test_settings_json_floor_is_ten(self):
         settings = (ROOT / ".claude" / "settings.json").read_text()
-        assert '"CLAUDE_AGENT_FLOOR": "5"' in settings, (
-            ".claude/settings.json must set CLAUDE_AGENT_FLOOR to 5"
+        assert '"CLAUDE_AGENT_FLOOR": "10"' in settings, (
+            ".claude/settings.json must set CLAUDE_AGENT_FLOOR to 10"
         )
 
 

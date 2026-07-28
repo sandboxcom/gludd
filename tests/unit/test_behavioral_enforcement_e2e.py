@@ -19,10 +19,32 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
+PLUGIN_IMPL_DIR = PLUGIN_DIR / "impl"
 
-ENFORCE_MAKE = PLUGIN_DIR / "enforce-make.ts"
-ENFORCE_MULTITASK = PLUGIN_DIR / "enforce-multitask.ts"
-ENFORCE_STOP = PLUGIN_DIR / "enforce-stop.ts"
+
+class _PluginSource:
+    """Read a proxy plugin together with its split implementation module."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+
+    def exists(self) -> bool:
+        return self.path.exists()
+
+    def read_text(self) -> str:
+        content = self.path.read_text()
+        impl_name = (
+            self.path.stem.replace("-", "_") + "_impl.ts"
+        )
+        impl_path = PLUGIN_IMPL_DIR / impl_name
+        if impl_path.exists():
+            content = impl_path.read_text() + content
+        return content
+
+
+ENFORCE_MAKE = _PluginSource(PLUGIN_DIR / "enforce-make.ts")
+ENFORCE_MULTITASK = _PluginSource(PLUGIN_DIR / "enforce-multitask.ts")
+ENFORCE_STOP = _PluginSource(PLUGIN_DIR / "enforce-stop.ts")
 
 
 # ── Helper: fail-open pattern check ─────────────────────────────────────────
@@ -122,10 +144,12 @@ class TestBareCommandBlocked:
         m = re.search(r"SHELL_META_CHARS\s*=\s*/([^/]+)/", src)
         assert m, "SHELL_META_CHARS regex not found"
         regex_body = m.group(1)
-        for ch in ["|", ";", "&", "(", ")", "{", "}", "$", "`", "\\", "!"]:
+        for ch in ["|", ";", "&", "{", "}", "$", "`", "\\", "!"]:
             assert ch in regex_body, (
                 f"SHELL_META_CHARS missing '{ch}' — metacharacter bypass gap"
             )
+        assert "Bare parens are NOT forbidden" in src
+        assert "$()" in src
 
     def test_metacharacter_block_throws(self):
         """Metacharacter match must throw Error (hard block)."""
@@ -168,14 +192,17 @@ class TestInsufficientDispatchesBlocked:
         )
 
     def test_min_dispatches_constant_defined(self):
-        """MIN_DISPATCHES must be exported and default to 5."""
+        """MIN_DISPATCHES must be defined and default to the configured floor."""
         src = ENFORCE_MULTITASK.read_text()
         m = re.search(
-            r"export\s+const\s+MIN_DISPATCHES\s*=\s*parseInt\s*\([^)]*GLUDD_MULTITASK_MIN_DISPATCHES[^)]*\|\|\s*[\"'](\d+)[\"']",
+            r"(?:export\s+)?const\s+MIN_DISPATCHES\s*=\s*parseInt\s*\((.*?)\n\s*\)",
             src,
+            re.DOTALL,
         )
-        assert m, "export const MIN_DISPATCHES not found"
-        default = int(m.group(1))
+        assert m, "const MIN_DISPATCHES not found"
+        quoted_numbers = re.findall(r'["\'](\d+)["\']', m.group(1))
+        assert quoted_numbers, "MIN_DISPATCHES default not found"
+        default = int(quoted_numbers[-1])
         assert default >= 2, (
             f"MIN_DISPATCHES default is {default}, expected >= 2 — floor "
             "cannot be 0 or 1"
@@ -184,8 +211,10 @@ class TestInsufficientDispatchesBlocked:
     def test_dispatch_tools_defined(self):
         """DISPATCH_TOOLS must recognize task/agent/workflow."""
         src = ENFORCE_MULTITASK.read_text()
+        shared = (ROOT / ".opencode" / "lib" / "shared.ts").read_text()
+        assert "isDispatchTool" in src
         for tool in ["task", "agent", "workflow"]:
-            assert f'"{tool}"' in src, (
+            assert f'"{tool}"' in shared, (
                 f'DISPATCH_TOOLS missing "{tool}" — dispatch tool unaccounted'
             )
 
@@ -303,7 +332,7 @@ class TestSubagentContextIsolation:
         tc_pos = src.find('"experimental.text.complete"')
         assert tc_pos >= 0, "text.complete hook not in enforce-make.ts"
         after_tc = src[tc_pos:tc_pos + 600]
-        assert "OPENCODE_SUBAGENT" in after_tc, (
+        assert "OPENCODE_SUBAGENT" in after_tc or "isSubagent()" in after_tc, (
             "enforce-make.ts text.complete must skip for subagents"
         )
 
@@ -330,7 +359,15 @@ class TestSubagentContextIsolation:
         """When OPENCODE_SUBAGENT=1, the tool.execute.before must return early."""
         src = ENFORCE_MULTITASK.read_text()
         subagent_line = next(
-            (line_ for line_ in src.splitlines() if "OPENCODE_SUBAGENT" in line_ and "return" in line_.lower()),
+            (
+                line_
+                for line_ in src.splitlines()
+                if (
+                    "OPENCODE_SUBAGENT" in line_
+                    or "isSubagent()" in line_
+                )
+                and "return" in line_.lower()
+            ),
             None,
         )
         assert subagent_line is not None, (
@@ -349,7 +386,7 @@ class TestSubagentContextIsolation:
         src = ENFORCE_STOP.read_text()
         tool_before = src.find('"tool.execute.before"')
         asserted_after = src[tool_before:tool_before + 300]
-        assert "OPENCODE_SUBAGENT" in asserted_after, (
+        assert "OPENCODE_SUBAGENT" in asserted_after or "isSubagent()" in asserted_after, (
             "tool.execute.before in enforce-stop.ts must check OPENCODE_SUBAGENT"
         )
 
@@ -358,7 +395,7 @@ class TestSubagentContextIsolation:
         src = ENFORCE_STOP.read_text()
         tc_pos = src.find('"experimental.text.complete"')
         asserted_after = src[tc_pos:tc_pos + 500]
-        assert "OPENCODE_SUBAGENT" in asserted_after, (
+        assert "OPENCODE_SUBAGENT" in asserted_after or "isSubagent()" in asserted_after, (
             "text.complete in enforce-stop.ts must check OPENCODE_SUBAGENT"
         )
 
@@ -368,7 +405,7 @@ class TestSubagentContextIsolation:
         st_pos = src.find('"experimental.chat.system.transform"')
         if st_pos >= 0:
             after_st = src[st_pos:st_pos + 500]
-            assert "OPENCODE_SUBAGENT" in after_st, (
+            assert "OPENCODE_SUBAGENT" in after_st or "isSubagent()" in after_st, (
                 "enforce-stop.ts system.transform must guard against "
                 "subagent contamination"
             )
@@ -520,13 +557,19 @@ class TestEnforcementLayersIntact:
     def test_all_plugins_use_same_dispatch_tool_names(self):
         """All plugins must recognize task/agent/workflow as dispatch tools."""
         dispatch_set = {"task", "agent", "workflow"}
+        shared = (ROOT / ".opencode" / "lib" / "shared.ts").read_text()
         for name, path_obj in [
             ("enforce-multitask.ts", ENFORCE_MULTITASK),
             ("enforce-make.ts", ENFORCE_MAKE),
             ("enforce-stop.ts", ENFORCE_STOP),
         ]:
             src = path_obj.read_text()
-            found = {t for t in dispatch_set if f'"{t}"' in src}
+            source_of_truth = src + shared if "isDispatchTool" in src else src
+            found = {
+                tool
+                for tool in dispatch_set
+                if f'"{tool}"' in source_of_truth
+            }
             assert found == dispatch_set, (
                 f"{name} missing dispatch tools: {dispatch_set - found}"
             )
@@ -550,11 +593,12 @@ class TestEnforcementLayersIntact:
         enforce-make.ts uses throw (caught by runtime), so it doesn't need
         a separate disengage path — the runtime is the fail-open wrapper."""
         disengage_file = "/tmp/gludd-watchdog-disengage.json"
+        shared_src = (ROOT / ".opencode" / "lib" / "shared.ts").read_text()
 
         # enforce-multitask uses permissionDecision:deny — must have disengage
         mt_src = ENFORCE_MULTITASK.read_text()
-        assert disengage_file in mt_src, (
-            "enforce-multitask.ts must support disengage via watchdog file"
+        assert "isDisengaged" in mt_src and disengage_file in shared_src, (
+            "enforce-multitask.ts must use the shared watchdog disengage mechanism"
         )
 
         # enforce-stop uses permissionDecision:deny — must have disengage

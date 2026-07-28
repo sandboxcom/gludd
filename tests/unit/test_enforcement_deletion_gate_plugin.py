@@ -300,7 +300,7 @@ class TestThresholdHandling:
         src = _src()
         before_idx = src.find("tool.execute.before")
         after = src[before_idx:] if before_idx > 0 else src
-        assert "linesRemoved > threshold" in after
+        assert re.search(r"lines(?:Removed|_removed)\s*>\s*threshold", after)
 
     def test_reason_trimmed_before_use(self):
         src = _src()

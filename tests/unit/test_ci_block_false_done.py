@@ -16,6 +16,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
+PLUGIN_IMPL = (
+    ROOT
+    / ".opencode"
+    / "plugin"
+    / "impl"
+    / "enforce_stop_impl.ts"
+)
 
 # ── Python mirror of the plugin's CI check logic ──────────────────────────
 
@@ -79,7 +86,7 @@ class TestCiBlockExistsInPlugin:
     """The enforce-stop.ts plugin must contain the CI RED/PENDING block code."""
 
     def _src(self):
-        return PLUGIN.read_text()
+        return PLUGIN_IMPL.read_text() + PLUGIN.read_text()
 
     def test_ci_red_block_message_exists(self):
         src = self._src()
@@ -292,7 +299,7 @@ class TestCiBlockPluginIntegrity:
     """The CI RED block must not regress."""
 
     def test_ci_block_present_in_text_complete_hook(self):
-        src = PLUGIN.read_text()
+        src = PLUGIN_IMPL.read_text() + PLUGIN.read_text()
         # The CI RED block must be inside the text.complete handler
         txt_complete_start = src.index('"experimental.text.complete"')
         txt_complete_section = src[txt_complete_start:]
@@ -302,7 +309,7 @@ class TestCiBlockPluginIntegrity:
 
     def test_ci_block_has_disengage_escape_hatch(self):
         """The disengage-enforcement signal should still work when CI is RED."""
-        src = PLUGIN.read_text()
+        src = PLUGIN_IMPL.read_text() + PLUGIN.read_text()
         assert "disengage" in src.lower(), (
             "Plugin must still reference disengage enforcement escape hatch."
         )

@@ -1,6 +1,6 @@
 """Structural pin for the enforce-objective plugin.
 
-Verifies the plugin exists, is registered, exports helpers, has env-disable,
+Verifies the plugin exists, is registered, defines local helpers, has env-disable,
 subagent guard, fail-open, hot-reload, and objective-detection logic.
 """
 from __future__ import annotations
@@ -56,27 +56,31 @@ class TestPluginStructure:
 
 
 class TestHelperFunctions:
-    def test_getPrimaryObjective_exported(self):
+    def test_getPrimaryObjective_defined_locally(self):
         src = _plugin_source()
-        assert "export function getPrimaryObjective" in src
+        assert "function getPrimaryObjective" in src
+        assert "export function getPrimaryObjective" not in src
 
-    def test_isObjectiveMet_exported(self):
+    def test_isObjectiveMet_defined_locally(self):
         src = _plugin_source()
-        assert "export function isObjectiveMet" in src
+        assert "function isObjectiveMet" in src
+        assert "export function isObjectiveMet" not in src
 
-    def test_isCiGreenFromCache_exported(self):
+    def test_isCiGreenFromCache_defined_locally(self):
         src = _plugin_source()
-        assert "export function isCiGreenFromCache" in src
+        assert "function isCiGreenFromCache" in src
+        assert "export function isCiGreenFromCache" not in src
 
-    def test_nag_prefix_exported(self):
+    def test_nag_prefix_defined_locally(self):
         src = _plugin_source()
-        assert "export const NAG_PREFIX" in src
+        assert "const NAG_PREFIX" in src
+        assert "export const NAG_PREFIX" not in src
         assert "NO PRIMARY OBJECTIVE SET" in src
 
     def test_getPrimaryObjective_reads_session_md(self):
         src = _plugin_source()
-        pidx = src.index("export function getPrimaryObjective")
-        end = src.find("export function", pidx + 1)
+        pidx = src.index("function getPrimaryObjective")
+        end = src.find("\nfunction ", pidx + 1)
         if end == -1:
             end = len(src)
         body = src[pidx:end]

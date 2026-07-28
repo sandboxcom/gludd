@@ -40,19 +40,16 @@ class TestMultitaskDeadFloorBreach:
         when thisMessageDispatches > 0 (uses local `s` var, not `_state`)."""
         src = _src(MULTITASK_PATH)
 
-        # The zeroStreak reset path in handleMessageBoundary: when thisMessageDispatches
-        # !== 0 (i.e. the message had dispatches), zeroStreak = 0
-        reset_pattern = re.compile(
-            r"function\s+handleMessageBoundary\(s:\s*MultitaskState\)[^{]*\{.*?"
-            r"s\.prevMessageDispatches\s*=\s*s\.thisMessageDispatches\s*;?\s*"
-            r"if\s*\(\s*s\.thisMessageDispatches\s*===\s*0\s*\)\s*\{.*?"
-            r"s\.zeroStreak\+\+.*?\}\s*else\s*\{.*?"
-            r"s\.zeroStreak\s*=\s*0.*?\}",
-            re.DOTALL,
-        )
-        assert reset_pattern.search(src), (
-            "handleMessageBoundary zeroStreak reset-on-dispatch logic not found "
-            "(state var is `s` post-refactoring, not `_state`)"
+        start = src.index("function handleMessageBoundary")
+        end = src.index("function spawnGateRefresh", start)
+        body = src[start:end]
+        prev = body.index("s.prevMessageDispatches = s.thisMessageDispatches")
+        zero_branch = body.index("if (s.thisMessageDispatches === 0)")
+        increment = body.index("s.zeroStreak++", zero_branch)
+        reset = body.index("s.zeroStreak = 0", increment)
+        assert prev < zero_branch < increment < reset, (
+            "handleMessageBoundary must record the wave, increment zeroStreak "
+            "for an empty wave, and reset it after a dispatch wave"
         )
 
     def test_floor_breach_uses_direct_thisMessageDispatches_check(self):
@@ -156,47 +153,17 @@ class TestTaskFileReadInputShape:
 class TestBugsMDOpenWorkDetection:
     """BUGS.md incident resolution should check the heading body, not just heading text."""
 
-    def test_incident_filter_only_checks_heading_line(self):
-        """BUG: The resolved/fixed filter is applied to the heading line only."""
+    def test_incident_filter_checks_entire_incident_section(self):
+        """FIX VERIFICATION: resolution markers are read from the full section."""
         src = _src(FLOOR_PATH)
-
-        # Find the BUGS.md detection block
-        match = re.search(
-            r"const bugsMd.*?const openIncidents.*?\.filter\(.*?\)",
-            src,
-            re.DOTALL,
-        )
-        assert match, "BUGS.md openWorkExists detection not found"
-        block = match.group(0)
-
-        # The filters run on individual lines from the heading regex match
-        # The heading regex matches line-by-line (split then filter)
-        header_filter = re.search(
-            r"\.filter\(\s*l\s*=>\s*/\^###\\s\+\\d\{4\}-\\d\{2\}-\\d\{2\}\\s\+\[-—\].*?\)",
-            block,
-            re.DOTALL,
-        )
-        assert header_filter, "Heading filter not found"
-
-        # But the second filter only checks the SAME line (l) for resolved/fixed
-        # This misses sub-header status markers. Search full src since it is a
-        # chained .filter() after the first one (outside the block capture).
-        second_filter = re.search(
-            r"\.filter\(\s*l\s*=>\s*!/\\b\(resolved\|fixed\|closed\|wontfix\|duplicate\)\\b/i",
-            src,
-            re.DOTALL,
-        )
-        assert second_filter, "Status filter not found"
-
-        # FAIL: The correct behavior is to check the incident body (the lines
-        # between this heading and the next heading) for resolution markers,
-        # not just the heading line itself.
-        raise AssertionError(
-            "BUG: BUGS.md incident resolution detection only checks heading text. "
-            "If a resolved incident lists its status on a sub-line instead of the "
-            "heading, it is falsely counted as open. The filter should scan the "
-            "incident body (between headings) for resolution markers."
-        )
+        start = src.index("function countOpenBugIncidents")
+        end = src.index("function openWorkExists", start)
+        body = src[start:end]
+        assert "incidentSections" in body
+        assert 'current.join("\\n")' in body
+        assert ".filter(incident =>" in body
+        assert ".test(incident)" in body
+        assert "countOpenBugIncidents(fs.readFileSync(bugsMd" in src
 
 
 # ===============================================================================
@@ -256,37 +223,14 @@ class TestRunningGateIsPending:
 
 
 class TestGitIndexMtimeFalsePositive:
-    """Git index mtime comparison produces false-positive pending work."""
+    """Git index mtime comparison was replaced with porcelain status."""
 
-    def test_index_mtime_compared_to_ref_mtime(self):
-        """BUG: index mtime drifts from ref mtime after git status refresh."""
+    def test_index_mtime_comparison_removed(self):
+        """FIX VERIFICATION: pending work uses git status, never mtimes."""
         src = _src(FLOOR_PATH)
-
-        match = re.search(
-            r"const idxMtime\s*=\s*fs\.statSync\(index\)\.mtimeMs\s*\n"
-            r"\s*const refMtime\s*=\s*fs\.statSync\(headRef\)\.mtimeMs",
-            src,
-            re.DOTALL,
-        )
-        assert match, "Index/ref mtime comparison not found"
-
-        # The comparison with threshold 2000ms is there
-        threshold_match = re.search(
-            r"Math\.abs\(idxMtime\s*-\s*refMtime\)\s*>\s*2000",
-            src,
-        )
-        assert threshold_match, "Mtime threshold (2000) not found"
-
-        # FAIL: mtime-based comparison is unreliable; git status refreshes index
-        raise AssertionError(
-            "BUG: git index mtime comparison in openWorkExists produces false "
-            "positives. Running 'git status' refreshes the index, changing its "
-            "mtime, while refs/heads/master mtime only changes on commits. After "
-            "'git status' on a clean tree, the mtime difference exceeds 2000ms, "
-            "and openWorkExists falsely reports pending work. The index/ref check "
-            "should be replaced with git status --porcelain (already present in "
-            "the next try-catch block) or removed."
-        )
+        assert "idxMtime" not in src
+        assert "refMtime" not in src
+        assert "git status --porcelain" in src
 
 
 # ===============================================================================
@@ -297,16 +241,13 @@ class TestGitIndexMtimeFalsePositive:
 
 
 class TestDispatchTypo:
-    """Console.warn message has a typo: 'DISPTACH' should be 'DISPATCH'."""
+    """Console.warn message spells DISPATCH correctly."""
 
-    def test_disptach_typo_in_refill_warning(self):
-        """BUG: 'DISPTACH' typo in console.warn message."""
+    def test_dispatch_spelling_in_refill_warning(self):
+        """FIX VERIFICATION: the historical DISPTACH typo stays removed."""
         src = _src(FLOOR_PATH)
-
-        assert "DISPTACH" in src, "Typo 'DISPTACH' not found in source"
-
-        # FAIL: should use "DISPATCH" not "DISPTACH"
         assert "DISPTACH" not in src, (
             "BUG: Typo 'DISPTACH' in refill-needed console.warn message. "
             "Should be 'DISPATCH'."
         )
+        assert "DISPATCH" in src
