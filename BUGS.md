@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) feature-claim gate emitted implicit-inventory warnings
+
+- **What**: Every otherwise-green `verify-feature-claims` gate phase emitted Ansible's `No inventory was parsed` and `provided hosts list is empty` warnings.
+- **Root cause**: The Make target invoked a localhost-only playbook without declaring an inventory, forcing Ansible to fall back to its special implicit host.
+- **Fix applied**: `verify-feature-claims` now supplies the explicit inline inventory `-i localhost,` and `-c local`, avoiding both the no-inventory warnings and an accidental SSH attempt to the developer workstation. The playbook pins `ansible_python_interpreter` to `ansible_playbook_python`, eliminating interpreter-discovery noise without hard-coding a machine-specific path. Structural unit regressions pin the warning-free local command contract.
+- **Long-lived user evidence**: Ansible users have reported the same pair of warnings for years when no usable inventory is supplied, including Homebrew/pip installations where `/etc/ansible/hosts` does not exist ([Ansible forum thread](https://forum.ansible.com/t/getting-error-warning-unable-to-parse-etc-ansible-hosts-as-an-inventory-source/28875)).
+- **Lesson**: Local control-plane playbooks still need an explicit inventory. A green verification phase must not normalize recurring infrastructure warnings.
+
 ### 2026-07-28 — (resolved) serial integration emitted Python 3.14 and schema deprecations
 
 - **What**: The first fully green serial integration run still emitted 39 warnings: 37 calls to `os.fork()` from a multi-threaded Python 3.14 process and two renderer fixtures declaring superseded JSON Schema draft-07.
