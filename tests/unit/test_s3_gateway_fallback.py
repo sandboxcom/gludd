@@ -33,7 +33,8 @@ def _profile(
     return ModelProfile(
         model_profile_id=pid,
         enabled=True,
-        api_metered=False,
+        cost_per_input_token=1e-6,
+        cost_per_output_token=1e-6,
         provider="openai",
         provider_package="langchain-openai",
         provider_class_hint="ChatOpenAI",
