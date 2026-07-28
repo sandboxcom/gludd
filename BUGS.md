@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) Shared HTTP fake omitted Bugsnag's object-style request method
+
+- **What**: Connector batch 4 reached Bugsnag health and returned `ok: false` because the shared response transport was callable but had no `request(...)` method.
+- **Root cause**: The test helper modeled only the function-style transport used by several connectors. Bugsnag injects an object-style transport with `request(method, url, ...)`; its fail-soft health boundary caught the resulting `AttributeError`, so the assertion saw only an apparently unhealthy service.
+- **Fix applied**: The shared response transport now implements `request(...)` with the same method, URL, headers, parameters, timeout, and response behavior as its callable surface. Focused tests exercise both Bugsnag's real protocol and the other connectors' existing callable protocol.
+- **Long-lived user evidence**: Pytest maintainers and users have discussed for years how unconstrained or partial test doubles can drift from the real interface and recommend spec-constrained or deliberately interface-complete substitutes ([pytest issue #4576](https://github.com/pytest-dev/pytest/issues/4576)); Python users encountering missing mocked methods likewise report `AttributeError` when the replacement does not expose the dependency's actual method surface ([Stack Overflow discussion](https://stackoverflow.com/questions/15928447/trying-to-mock-method-in-object-gives-attributeerror)).
+- **Lesson**: A shared fake must implement every injected protocol it claims to serve. Fail-soft production code makes exact fake interfaces especially important because accidental test-double exceptions otherwise resemble legitimate health failures.
+
 ### 2026-07-28 — (resolved) Zendesk E2E omitted half of its authentication contract
 
 - **What**: Connector batch 4 stopped in Zendesk health construction because the E2E supplied only `token_env`; its SSRF check had also been passing for that missing-credential error instead of exercising host rejection.

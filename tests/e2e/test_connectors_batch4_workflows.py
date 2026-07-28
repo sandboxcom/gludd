@@ -101,7 +101,7 @@ class MockHttpResponseTransport:
         url: str,
         *,
         headers: dict[str, str] | None = None,
-        params: dict[str, str] | None = None,
+        params: dict[str, object] | None = None,
         json: object = None,
         auth: tuple[str, str] | None = None,
         timeout: float = 30.0,
@@ -119,6 +119,26 @@ class MockHttpResponseTransport:
         resp = MockHttpResponse(self._status, self._body)
         resp.headers = dict(self._headers)
         return resp
+
+    def request(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        params: dict[str, object] | None = None,
+        timeout: float = 30.0,
+        **kwargs: object,
+    ) -> MockHttpResponse:
+        """Expose the object-style transport protocol used by Bugsnag."""
+        return self(
+            method,
+            url,
+            headers=headers,
+            params=params,
+            timeout=timeout,
+            **kwargs,
+        )
 
 
 def _make_http_get(status: int = 200, body: object = None):
