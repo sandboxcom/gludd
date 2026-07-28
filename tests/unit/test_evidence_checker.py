@@ -42,6 +42,24 @@ class TestCheckClaim:
         assert r1.supported is True
         assert r2.supported is False
 
+    def test_parent_directory_source_is_rejected(self):
+        checker = EvidenceChecker()
+        result = checker.check_claim(
+            "The credentials are valid",
+            sources=["../secrets.txt:1"],
+        )
+        assert result.supported is False
+        assert result.missing_sources == ["no valid source provided"]
+
+    def test_non_reference_source_is_rejected(self):
+        checker = EvidenceChecker()
+        result = checker.check_claim(
+            "The deployment is green",
+            sources=["trust me"],
+        )
+        assert result.supported is False
+        assert result.missing_sources == ["no valid source provided"]
+
 
 class TestAuditResponse:
     def test_exempt_patterns_not_flagged(self):
@@ -89,3 +107,33 @@ class TestAuditResponse:
             sources=["src/main.py:42"],
         )
         assert result.supported is True
+
+    def test_path_tokens_are_matched_after_plural_normalization(self):
+        checker = EvidenceChecker()
+        results = checker.audit_response(
+            "The tests are passing.",
+            tool_outputs=["test_output.txt:42: test suite completed"],
+        )
+        assert len(results) == 1
+        assert results[0].supported is True
+        assert results[0].sources == ["test_output.txt:42"]
+
+    def test_unrelated_tool_path_does_not_support_claim(self):
+        checker = EvidenceChecker()
+        results = checker.audit_response(
+            "The deployment is green.",
+            tool_outputs=["File docs/changelog.md:7 modified"],
+        )
+        assert len(results) == 1
+        assert results[0].supported is False
+
+    def test_inline_path_supports_only_its_own_claim(self):
+        checker = EvidenceChecker()
+        results = checker.audit_response(
+            "Fixed in src/foo/bar.py:42. The tests are passing.",
+            tool_outputs=["File src/foo/bar.py:42 modified"],
+        )
+        assert len(results) == 2
+        assert results[0].supported is True
+        assert results[0].sources == ["src/foo/bar.py:42"]
+        assert results[1].supported is False
