@@ -97,8 +97,8 @@ class MockHttpResponseTransport:
 
     def __call__(
         self,
-        method: str,
-        url: str,
+        method_or_url: str,
+        url: str | None = None,
         *,
         headers: dict[str, str] | None = None,
         params: dict[str, object] | None = None,
@@ -107,9 +107,11 @@ class MockHttpResponseTransport:
         timeout: float = 30.0,
         **kwargs: object,
     ) -> MockHttpResponse:
+        method = method_or_url if url is not None else "GET"
+        request_url = url if url is not None else method_or_url
         self.calls.append({
             "method": method,
-            "url": url,
+            "url": request_url,
             "headers": headers,
             "params": params,
             "json": json,

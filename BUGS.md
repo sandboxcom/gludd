@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) Shared HTTP fake could not model Graylog's URL-only GET callback
+
+- **What**: Connector batch 4 reached Graylog health but the injected fake raised `TypeError` because Graylog calls its GET transport as `transport(url, ...)`, while the helper required `transport(method, url, ...)`.
+- **Root cause**: The shared helper had been expanded for object-style `request(...)` clients but still treated every callable client as method-explicit. Graylog deliberately injects a GET-only callback, so its URL is the sole positional argument and request options are keyword-only.
+- **Fix applied**: The callable surface now accepts either `(method, url, ...)` or `(url, ...)`, normalizes URL-only calls to method `GET`, and records the resolved method and URL consistently. The existing object-style `request(...)` adapter continues through the same response path.
+- **Long-lived user evidence**: Graylog community users routinely exercise the API through direct `requests.get(url, ...)` and `requests.post(url, ...)` calls and report that method, authentication, and header details materially change the result ([Graylog Community Python API thread](https://community.graylog.org/t/api-test-call-with-python/33193), [405-method discussion](https://community.graylog.org/t/graylog-rest-api-request-post-fehler-code-405/24603)). A fake must therefore preserve the particular callable contract used by the connector rather than inventing an extra positional method.
+- **Lesson**: Shared transports need explicit adapters for the protocols they serve. A GET-only callback and a generic request object are both valid, but they are not the same Python call signature.
+
 ### 2026-07-28 — (resolved) Rollbar E2E skipped its transport and confused items with occurrences
 
 - **What**: Connector batch 4 first stopped before Rollbar configuration validation because two construction tests omitted its required transport; after that correction, the query test returned no records because it put occurrence `instances` under the list-items response.
