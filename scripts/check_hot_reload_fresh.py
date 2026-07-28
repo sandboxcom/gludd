@@ -99,9 +99,46 @@ def is_stale_content(content: str) -> list[str]:
 
 def has_default_impl(src: Path) -> bool:
     try:
-        return "defaultImpl" in src.read_text(encoding="utf-8")
+        return bool(
+            re.search(
+                r"\b(?:const|let|var)\s+defaultImpl\b",
+                src.read_text(encoding="utf-8"),
+            )
+        )
     except OSError:
         return False
+
+
+def implementation_source(src: Path) -> Path:
+    """Resolve a top-level loader shim to its defaultImpl-bearing module."""
+    if has_default_impl(src):
+        return src
+    try:
+        content = src.read_text(encoding="utf-8")
+    except OSError:
+        return src
+    match = re.search(
+        r"""import\s+impl\s+from\s+["']\./impl/([^"']+\.ts)["']\s*;?""",
+        content,
+    )
+    if not match:
+        return src
+    candidate = src.parent / "impl" / match.group(1)
+    return candidate if has_default_impl(candidate) else src
+
+
+def hot_module_name(src: Path, default: str) -> str:
+    """Return the exact name used by the plugin's loadHotModule proxy."""
+    try:
+        names = set(
+            re.findall(
+                r"""loadHotModule\(\s*["']([^"']+)["']""",
+                src.read_text(encoding="utf-8"),
+            )
+        )
+    except OSError:
+        return default
+    return next(iter(names)) if len(names) == 1 else default
 
 
 def find_stale(
@@ -122,18 +159,19 @@ def find_stale(
 
     for name in plugins:
         src = plugin_dir / f"{name}.ts"
-        hot = out_dir / f"gludd-hot-{name}.js"
+        source = implementation_source(src)
+        hot = out_dir / f"gludd-hot-{hot_module_name(source, name)}.js"
 
         if not src.exists():
             continue
 
-        if not has_default_impl(src):
+        if not has_default_impl(source):
             continue
 
         if not hot.exists():
             continue
 
-        src_mtime = src.stat().st_mtime
+        src_mtime = source.stat().st_mtime
         hot_mtime = hot.stat().st_mtime
         if hot_mtime < src_mtime:
             problems.append(
@@ -167,8 +205,9 @@ def main(argv: list[str] | None = None) -> int:
     existing = 0
     for name in plugins:
         src = plugin_dir / f"{name}.ts"
-        hot = out_dir / f"gludd-hot-{name}.js"
-        if src.exists() and hot.exists() and has_default_impl(src):
+        source = implementation_source(src)
+        hot = out_dir / f"gludd-hot-{hot_module_name(source, name)}.js"
+        if src.exists() and hot.exists() and has_default_impl(source):
             existing += 1
 
     fresh = existing - len(problems)

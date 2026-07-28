@@ -153,6 +153,50 @@ class TestHotModuleBuild:
         finally:
             self._cleanup()
 
+    def test_builder_uses_each_proxy_lookup_name(self):
+        """Generated filenames must match the names passed to loadHotModule()."""
+        self._cleanup()
+        try:
+            subprocess.run(
+                ["node", str(BUILD_SCRIPT)],
+                cwd=str(ROOT),
+                capture_output=True,
+                text=True,
+                timeout=30,
+                env={**os.environ, "GLUDD_HOT_MODULE_PREFIX": HOT_PROXY_PREFIX},
+                check=True,
+            )
+            for plugin_name in _CONVERTED_PLUGINS:
+                calls = set(_parse_load_hot_module_calls(_plugin_source(plugin_name)))
+                assert len(calls) == 1, (
+                    f"{plugin_name}: expected one proxy lookup name, got {calls}"
+                )
+                lookup_name = next(iter(calls))
+                assert Path(f"{HOT_PROXY_PREFIX}{lookup_name}.js").exists(), (
+                    f"{plugin_name}: builder output does not match "
+                    f"loadHotModule({lookup_name!r})"
+                )
+        finally:
+            self._cleanup()
+
+    def test_builder_follows_thin_proxy_implementation_modules(self):
+        """Top-level loader shims must not hide their hot-reload implementations."""
+        self._cleanup()
+        try:
+            subprocess.run(
+                ["node", str(BUILD_SCRIPT)],
+                cwd=str(ROOT),
+                capture_output=True,
+                text=True,
+                timeout=30,
+                env={**os.environ, "GLUDD_HOT_MODULE_PREFIX": HOT_PROXY_PREFIX},
+                check=True,
+            )
+            assert Path(f"{HOT_PROXY_PREFIX}enforce-make.js").exists()
+            assert Path(f"{HOT_PROXY_PREFIX}enforce-stop.js").exists()
+        finally:
+            self._cleanup()
+
     def test_built_modules_are_valid_javascript(self):
         """Every generated hot module must be parseable JavaScript."""
         self._cleanup()
@@ -190,7 +234,7 @@ class TestHotModuleBuild:
                 env={**os.environ, "GLUDD_HOT_MODULE_PREFIX": HOT_PROXY_PREFIX},
                 check=True,
             )
-            hot = Path(f"{HOT_PROXY_PREFIX}enforce-multitask.js")
+            hot = Path(f"{HOT_PROXY_PREFIX}multitask.js")
             probe = subprocess.run(
                 [
                     "node",
@@ -211,6 +255,39 @@ class TestHotModuleBuild:
                 "text.complete",
                 "tool.execute.before",
             ]
+        finally:
+            self._cleanup()
+
+    def test_verified_claims_hot_module_preserves_imported_helpers(self):
+        """A generated fallback must retain local helper-module behavior."""
+        self._cleanup()
+        try:
+            subprocess.run(
+                ["node", str(BUILD_SCRIPT)],
+                cwd=str(ROOT),
+                capture_output=True,
+                text=True,
+                timeout=30,
+                env={**os.environ, "GLUDD_HOT_MODULE_PREFIX": HOT_PROXY_PREFIX},
+                check=True,
+            )
+            hot = Path(f"{HOT_PROXY_PREFIX}verified-claims.js")
+            script = (
+                f"const m = require({json.dumps(str(hot))});"
+                "Promise.resolve(m['tool.execute.before']({"
+                "tool:'bash',args:{command:'make git-commit MSG=\"all done\"'}"
+                "})).then(() => process.stdout.write('allowed'))."
+                "catch(e => process.stdout.write(e.permissionDecision || 'error'));"
+            )
+            probe = subprocess.run(
+                ["node", "-e", script],
+                cwd=str(ROOT),
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=True,
+            )
+            assert probe.stdout == "deny"
         finally:
             self._cleanup()
 
@@ -462,6 +539,7 @@ class TestRealPluginHotModules:
         try:
             env = os.environ.copy()
             env["OPENCODE_SUBAGENT"] = ""
+            env["GLUDD_HOT_MODULE_PREFIX"] = HOT_PROXY_REAL_PREFIX + "missing-"
             proc = subprocess.run(
                 ["node", "--experimental-strip-types", str(tmp)],
                 capture_output=True, text=True, timeout=15,

@@ -5,30 +5,67 @@
 import type { Plugin } from "@opencode-ai/plugin";
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
 import { isSubagent, reportAlive } from "../lib/shared.ts";
-import { shouldAllowEdit } from "../lib/plugin_test_exports.ts";
 
 const DENY_MESSAGE =
   "Lint-suppression comments forbidden. Fix the underlying issue. " +
   "See AGENTS.md Guardrail Integrity Policy.";
 
+const SUPPRESSION_PATTERNS = [
+  /#\s*noqa/,
+  /#\s*type:\s*ignore/,
+  /#\s*pylint:/,
+  /#\s*fmt:\s*(?:off|skip|on)/,
+  /#\s*isort:\s*skip/,
+];
+
+const ALLOWLIST_PATHS = [
+  "src/general_ludd/security/fix_not_disable.py",
+  "tests/unit/test_type_safety_guardrails.py",
+];
+
+function isSuppressionComment(text: unknown): boolean {
+  if (typeof text !== "string" || text.length === 0) return false;
+  return SUPPRESSION_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function isAllowlistedPath(filePath: unknown): boolean {
+  if (typeof filePath !== "string" || filePath.length === 0) return false;
+  const normalized = filePath.replaceAll("\\", "/");
+  return ALLOWLIST_PATHS.some(
+    (allowed) => normalized === allowed || normalized.endsWith(`/${allowed}`),
+  );
+}
+
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input, output) => {
     if (isSubagent()) return;
     reportAlive("enforce-no-suppressions");
-    if (process.env.GLUDD_NO_SUPPRESSIONS_ENFORCE === "0") return;
     if (input?.tool !== "edit" && input?.tool !== "write") return;
+
+    // Keep the runtime hook self-contained. Hot modules are built from this
+    // fallback body without external imports, so imported helper calls would
+    // become undefined and silently disable enforcement after a hot reload.
     try {
-      const filePath: string = output?.args?.filePath ?? output?.args?.path ?? "";
-      const writeContent: string = output?.args?.content ?? "";
-      const editNew: string = output?.args?.newString ?? "";
-      const text = writeContent || editNew;
+      const rawPath = output?.args?.filePath ?? output?.args?.path;
+      if (isAllowlistedPath(rawPath)) {
+        return;
+      }
+
+      const rawWrite = output?.args?.content;
+      const rawEdit = output?.args?.newString;
+      const text = typeof rawWrite === "string" && rawWrite.length > 0
+        ? rawWrite
+        : typeof rawEdit === "string"
+          ? rawEdit
+          : "";
       if (!text) return;
-      const verdict = shouldAllowEdit(filePath, text);
-      if (!verdict.allow) {
-        return { permissionDecision: "deny", message: verdict.reason ?? DENY_MESSAGE };
+
+      if (isSuppressionComment(text)) {
+        return { permissionDecision: "deny", message: DENY_MESSAGE };
       }
     } catch {
-      // Fail-open: never wedge the editor on a plugin error.
+      // Fail open: allow a malformed editor payload rather than wedge the process.
+      return;
     }
   },
 };

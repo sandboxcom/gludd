@@ -6,6 +6,12 @@ const vm = require("node:vm");
 const { spawnSync } = require("node:child_process");
 
 const PLUGIN_DIR = path.resolve(__dirname, "..", ".opencode", "plugin");
+const PLUGIN_TEST_EXPORTS = path.resolve(
+  PLUGIN_DIR,
+  "..",
+  "lib",
+  "plugin_test_exports.ts",
+);
 const OUT_DIR = "/tmp";
 const HOT_PREFIX = process.env.GLUDD_HOT_MODULE_PREFIX || path.join(OUT_DIR, "gludd-hot-");
 
@@ -44,21 +50,93 @@ function tsToJs(content) {
   return require("./ts_to_js.js").tsToJs(content);
 }
 
+function hotModuleName(content, sourceName) {
+  const names = new Set(
+    [...content.matchAll(/loadHotModule\(\s*["']([^"']+)["']/g)]
+      .map((match) => match[1]),
+  );
+  if (names.size !== 1) {
+    throw new Error(
+      `${sourceName}: expected exactly one loadHotModule lookup name, found ${[...names].join(", ") || "none"}`,
+    );
+  }
+  return [...names][0];
+}
+
+function importedTestHelperPrelude(content) {
+  const match = content.match(
+    /import\s*\{([^}]*)\}\s*from\s*["']\.\.\/lib\/plugin_test_exports\.ts["']\s*;?/,
+  );
+  if (!match) return "";
+
+  const bindings = match[1]
+    .split(",")
+    .map((binding) => binding.trim())
+    .filter(Boolean)
+    .map((binding) => {
+      const [imported, local = imported] = binding.split(/\s+as\s+/);
+      return { imported: imported.trim(), local: local.trim() };
+    });
+  const helperJs = tsToJs(fs.readFileSync(PLUGIN_TEST_EXPORTS, "utf8"));
+  const returned = bindings
+    .map(({ imported, local }) => (
+      imported === local ? imported : `${local}: ${imported}`
+    ))
+    .join(", ");
+  const locals = bindings.map(({ local }) => local).join(", ");
+
+  return [
+    "const __pluginTestExports = (() => {",
+    helperJs,
+    `return { ${returned} };`,
+    "})();",
+    `const { ${locals} } = __pluginTestExports;`,
+    "",
+  ].join("\n");
+}
+
+function hasDefaultImpl(content) {
+  return /\b(?:const|let|var)\s+defaultImpl\b/.test(content);
+}
+
+function implementationSource(srcPath, content) {
+  if (hasDefaultImpl(content)) return { path: srcPath, content };
+  const match = content.match(
+    /import\s+impl\s+from\s+["']\.\/impl\/([^"']+\.ts)["']\s*;?/,
+  );
+  if (!match) return null;
+  const implPath = path.resolve(path.dirname(srcPath), "impl", match[1]);
+  if (!fs.existsSync(implPath)) return null;
+  const implContent = fs.readFileSync(implPath, "utf8");
+  return hasDefaultImpl(implContent)
+    ? { path: implPath, content: implContent }
+    : null;
+}
+
 function buildPlugin(name) {
   const srcPath = path.join(PLUGIN_DIR, `${name}.ts`);
-  const outPath = `${HOT_PREFIX}${name}.js`;
 
   if (!fs.existsSync(srcPath)) {
     console.log(`  SKIP ${name}: source not found`);
     return false;
   }
 
-  let content = fs.readFileSync(srcPath, "utf8");
-
-  if (!content.includes("defaultImpl")) {
+  const entryContent = fs.readFileSync(srcPath, "utf8");
+  const source = implementationSource(srcPath, entryContent);
+  if (!source) {
     console.log(`  SKIP ${name}: not yet converted to proxy pattern (no defaultImpl)`);
     return false;
   }
+  const content = source.content;
+
+  let lookupName;
+  try {
+    lookupName = hotModuleName(content, name);
+  } catch (e) {
+    console.error(`  FAIL ${name}: ${e.message}`);
+    return false;
+  }
+  const outPath = `${HOT_PREFIX}${lookupName}.js`;
 
   const js = tsToJs(content);
   if (!/\bdefaultImpl\s*=/.test(js)) {
@@ -68,7 +146,8 @@ function buildPlugin(name) {
 
   let out = `// Hot-reload module for ${name}\n`;
   out += `// Generated ${new Date().toISOString()}\n`;
-  out += `// Overrides compiled-in defaultImpl hooks.  Edit ${name}.ts, run make hot-reload-plugins,\n`;
+  out += `// Source ${path.relative(path.resolve(__dirname, ".."), source.path)}\n`;
+  out += `// Overrides compiled-in defaultImpl hooks. Run make hot-reload-plugins after edits,\n`;
   out += `// and the next hook invocation picks up changes without restart.\n\n`;
 
   // Inject shared utility stubs — hot modules are eval'd via new Function()
@@ -76,6 +155,7 @@ function buildPlugin(name) {
   out += `// === shared utility stubs (sandbox context) ===\n`;
   out += `var _fs = require("node:fs");\n`;
   out += `var _path = require("node:path");\n`;
+  out += `var createRequire = require("node:module").createRequire;\n`;
   out += `function isSubagent() {\n`;
   out += `  if (process.env.OPENCODE_SUBAGENT === "1") return true;\n`;
   out += `  try { return _fs.existsSync("/tmp/gludd-subagent-" + process.pid + ".json"); } catch (e) { return false; }\n`;
@@ -155,6 +235,7 @@ function buildPlugin(name) {
 }
 `;
   out += `// === end shared stubs ===\n\n`;
+  out += importedTestHelperPrelude(content);
 
   // Include everything from the js output EXCEPT the export default block.
   // This gives hooks access to all module-level vars/functions/consts.
@@ -277,7 +358,7 @@ function main() {
     const srcPath = path.join(PLUGIN_DIR, `${name}.ts`);
     if (
       fs.existsSync(srcPath)
-      && fs.readFileSync(srcPath, "utf8").includes("defaultImpl")
+      && implementationSource(srcPath, fs.readFileSync(srcPath, "utf8"))
     ) {
       expected++;
     }

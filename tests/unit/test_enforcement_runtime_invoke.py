@@ -25,6 +25,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
 PLUGINS_DIR = ROOT / ".opencode" / "plugins"
+PLUGIN_TEST_EXPORTS = ROOT / ".opencode" / "lib" / "plugin_test_exports.ts"
 
 _tmp_counter = 0
 
@@ -89,14 +90,18 @@ def _factory_load_code(plugin_rel: str) -> str:
     return f"const mod = await import('{abs_path}')\nconst plugin = await mod.default({{}})\n"
 
 
+def _helper_load_code() -> str:
+    """TS code to import named helpers kept outside the plugin loader directory."""
+    return f"const mod = await import('{PLUGIN_TEST_EXPORTS}')\n"
+
+
 def _pluginapi_load_code(plugin_rel: str) -> str:
-    """TS code to import a PluginAPI-pattern plugin; returns the registered fn."""
+    """TS code to import the async hook-map plugin; exposes its before hook."""
     abs_path = str(PLUGIN_DIR / plugin_rel)
     return f"""\
-let registered = null
-const api = {{ tool: {{ execute: {{ before(fn) {{ registered = fn }}, after(fn) {{}} }} }} }}
 const mod = await import('{abs_path}')
-mod.default(api)
+const hooks = await mod.default(undefined, undefined)
+const registered = hooks['tool.execute.before']
 """
 
 
@@ -390,7 +395,7 @@ console.log(JSON.stringify(r ?? {allowed: true}))
 
 def test_no_suppression_blocks_noqa():
     """enforce-no-suppressions identifies # noqa as suppression."""
-    code = _factory_load_code("enforce-no-suppressions.ts") + """\
+    code = _helper_load_code() + """\
 const isSupp = mod.isSuppressionComment('# noqa')
 const verdict = mod.shouldAllowEdit('src/foo.py', '# noqa')
 console.log(JSON.stringify({isSupp, allow: verdict.allow}))
@@ -402,7 +407,7 @@ console.log(JSON.stringify({isSupp, allow: verdict.allow}))
 
 def test_no_suppression_allows_plain_comment():
     """Plain comment passes through."""
-    code = _factory_load_code("enforce-no-suppressions.ts") + """\
+    code = _helper_load_code() + """\
 const verdict = mod.shouldAllowEdit('src/foo.py', '# regular comment')
 console.log(JSON.stringify({allow: verdict.allow}))
 """
@@ -412,7 +417,7 @@ console.log(JSON.stringify({allow: verdict.allow}))
 
 def test_no_suppression_allowlisted_path():
     """Allowlisted path allows # noqa."""
-    code = _factory_load_code("enforce-no-suppressions.ts") + """\
+    code = _helper_load_code() + """\
 const verdict = mod.shouldAllowEdit('src/general_ludd/security/fix_not_disable.py', '# noqa')
 console.log(JSON.stringify({allow: verdict.allow}))
 """
@@ -422,7 +427,7 @@ console.log(JSON.stringify({allow: verdict.allow}))
 
 def test_verified_claims_no_evidence_blocked():
     """shouldBlock('everything committed') returns true."""
-    code = _factory_load_code("enforce-verified-claims.ts") + """\
+    code = _helper_load_code() + """\
 console.log(JSON.stringify({shouldBlock: mod.shouldBlock('everything committed')}))
 """
     result = _run_ts(code)
@@ -431,7 +436,7 @@ console.log(JSON.stringify({shouldBlock: mod.shouldBlock('everything committed')
 
 def test_verified_claims_with_hash_allowed():
     """shouldBlock('commit abc12345') returns false (hash is evidence)."""
-    code = _factory_load_code("enforce-verified-claims.ts") + """\
+    code = _helper_load_code() + """\
 console.log(JSON.stringify({shouldBlock: mod.shouldBlock('commit abc12345')}))
 """
     result = _run_ts(code)
@@ -918,13 +923,13 @@ console.log(JSON.stringify(r ?? {allowed: true}))
 # ===========================================================================
 
 
-def test_all_done_words_exported():
-    """verify enforce-verified-claims exports DONE_WORDS array."""
-    code = _factory_load_code("enforce-verified-claims.ts") + """\
+def test_verified_claims_classifier_contract():
+    """Verify the external test helper preserves classifier behavior."""
+    code = _helper_load_code() + """\
 console.log(JSON.stringify({
-    hasDoneWords: Array.isArray(mod.DONE_WORDS) && mod.DONE_WORDS.length > 0,
-    hasEvidence: Array.isArray(mod.EVIDENCE_PATTERNS) && mod.EVIDENCE_PATTERNS.length > 0,
-    hasNotDone: Array.isArray(mod.NOT_DONE_PHRASES),
+    hasDoneWords: mod.shouldBlock('all done and fixed'),
+    hasEvidence: !mod.shouldBlock('all done abc1234'),
+    hasNotDone: !mod.shouldBlock('working on the fix'),
 }))
 """
     result = _run_ts(code)
@@ -934,15 +939,15 @@ console.log(JSON.stringify({
 
 
 def test_clean_tree_exports():
-    """verify enforce-clean-tree exports expected symbols."""
-    code = _factory_load_code("enforce-clean-tree.ts") + """\
+    """Verify clean-tree helpers remain outside the plugin loader directory."""
+    code = _helper_load_code() + """\
 console.log(JSON.stringify({
     hasGetStatus: typeof mod.getGitStatus === 'function',
     hasIsDirty: typeof mod.isTreeDirty === 'function',
     hasCountDirty: typeof mod.countDirtyFiles === 'function',
     hasBuildDeny: typeof mod.buildDenyMessage === 'function',
-    hasDispatchTools: Array.isArray(mod.DISPATCH_TOOLS) && mod.DISPATCH_TOOLS.length === 3,
-    hasPrefix: typeof mod.DENY_MESSAGE_PREFIX === 'string',
+    hasDispatchTools: Array.isArray(mod.getDispatchTools()) && mod.getDispatchTools().length === 3,
+    hasPrefix: typeof mod.getDenyMessagePrefix() === 'string',
     getStatusResult: typeof mod.getGitStatus() === 'string',
     isDirtyResult: typeof mod.isTreeDirty() === 'boolean',
 }))

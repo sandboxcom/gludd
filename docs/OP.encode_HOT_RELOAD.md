@@ -69,9 +69,18 @@ This runs `scripts/build_hot_modules.js`, which:
 
 1. Reads each `.opencode/plugin/enforce-*.ts` source file
 2. **Transpiles TypeScript:** uses esbuild's TypeScript parser and keeps the small fallback transformer only for environments where esbuild cannot transform the source
-3. **Transforms to CommonJS:** rewrites `import * as X from "node:Y"` → `var X = require("node:Y")`
-4. **Preserves hook methods:** exports each function directly from the transpiled `defaultImpl` runtime object; it does not reconstruct function bodies with regular expressions
-5. **Validates before publish:** parses and loads a namespaced candidate, rejects zero-hook or invalid modules, then atomically renames the candidate to `/tmp/gludd-hot-*.js`
+3. **Uses the proxy's real lookup name:** derives the output filename from the
+   single literal passed to `loadHotModule()`. A source file named
+   `enforce-verified-claims.ts` therefore publishes
+   `/tmp/gludd-hot-verified-claims.js`, exactly where its proxy looks.
+4. **Preserves local helper imports:** transpiles the dedicated
+   `.opencode/lib/plugin_test_exports.ts` helper module into an isolated scope
+   when a fallback imports it, so generated hooks cannot fail open with an
+   undefined classifier.
+5. **Transforms to CommonJS:** rewrites Node imports into runtime-compatible
+   `require()` calls.
+6. **Preserves hook methods:** exports each function directly from the transpiled `defaultImpl` runtime object; it does not reconstruct function bodies with regular expressions
+7. **Validates before publish:** parses and loads a namespaced candidate, rejects zero-hook or invalid modules, then atomically renames the candidate to `/tmp/gludd-hot-*.js`
 
 Only plugins with a `defaultImpl` object produce hot modules. Plugins without
 the proxy pattern are reported as skipped and continue to use their compiled-in
@@ -89,6 +98,8 @@ make check-hot-reload-fresh     # exits 1 if any hot module is stale or broken
 - Hot module mtime >= source `.ts` mtime (not stale)
 - Node's JavaScript parser accepts the complete module
 - No bare ESM exports/imports or captured `ReferenceError` output remains
+- The checked artifact name is the proxy's `loadHotModule()` name rather than
+  an independently inferred source filename
 
 The parser check matters because esbuild legitimately emits expressions such as
 `fn ? await fn(...) : void 0`. A previous regex interpreted `: void` as a
@@ -122,8 +133,9 @@ now decided by the JavaScript parser instead of an ambiguous token pattern.
 - The long-running type-import discussion in
   [evanw/esbuild#1525](https://github.com/evanw/esbuild/issues/1525) shows that
   even parser-backed transpilation has runtime-import edge cases. Gludd
-  therefore validates the exact generated CommonJS candidate with Node before
-  atomically publishing it.
+  therefore carries required local runtime helpers into the generated module
+  and validates the exact CommonJS candidate with Node before atomically
+  publishing it.
 
 ### 6. The stale backup problem (`make restore-opencode`)
 
