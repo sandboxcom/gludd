@@ -269,6 +269,16 @@ class TestHelpCommand:
         assert "COMMANDS" in result.stdout
         assert "gludd" in result.stdout
 
+    def test_top_level_smoke_and_nested_alias_both_execute(self):
+        """The release CLI exposes `smoke` without breaking `test smoke`."""
+        top_level = run_gludd(["smoke", "list", "--json"], timeout=30)
+        nested = run_gludd(["test", "smoke", "list", "--json"], timeout=30)
+
+        assert top_level.returncode == 0, top_level.stderr
+        assert nested.returncode == 0, nested.stderr
+        assert top_level.stdout.strip()
+        assert top_level.stdout == nested.stdout
+
     @pytest.mark.parametrize("subcommand", EXPECTED_SUBCOMMANDS)
     def test_subcommand_help(self, subcommand: str):
         """`gludd <subcommand> --help` exits 0 and prints a usage line."""
