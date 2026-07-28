@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) language workflow fixtures contradicted encoding and Soundex standards
+
+- **What**: The language E2E tried to add two `Path.glob()` iterators, then required at least 20 Soundex mapping entries even though American Soundex encodes exactly 18 consonants. Companion charset tests incorrectly required UTF-16/UTF-32 to be ASCII-compatible, while the mojibake catalogue omitted the common UTF-8-copyright-as-Latin-1 signature `Â©`.
+- **Root cause**: Broad workflow assertions used arbitrary size/boolean expectations instead of exact standards-backed contracts, and the corpus fixture treated lazy iterators as concatenable sequences.
+- **Fix applied**: Corpus discovery now uses one explicit comprehension across both suffix patterns. Soundex E2E pins all six official mapping groups and their 18 letters. Charset coverage pins UTF-16BE/LE and UTF-32BE/LE as the exact non-ASCII-compatible members, and the ISO-8859-1 mojibake signatures now include `Â©`. The combined language workflow and collection suite passes 268/268 serially.
+- **Long-lived user evidence**: The National Archives publishes the six Soundex groups and confirms that vowels plus H/W/Y are not coded ([Soundex guide](https://www.archives.gov/research/census/soundex)); Apache users spent years resolving H/W separator behavior and variant ambiguity ([CODEC-199](https://issues.apache.org/jira/browse/CODEC-199)). Users continue to confuse Unicode code-point inclusion with byte-level ASCII compatibility for UTF-16 ([Stack Overflow, 2020–2024](https://stackoverflow.com/questions/61848142/is-utf-16-a-superset-of-ascii-if-yes-why-is-utf-16-incompatible-with-ascii-acc)), and a long-lived Python report demonstrates the same `Â…` mojibake produced when UTF-8 bytes are decoded as Latin-1 ([Stack Overflow, 2014–2020](https://stackoverflow.com/questions/24790258/encoding-issue-of-a-character-in-utf-8)).
+- **Lesson**: Reference-data tests should encode the exact normative table and representation semantics. Arbitrary minimum counts can demand invalid data, and Unicode repertoire compatibility must not be confused with byte-for-byte ASCII compatibility.
+
 ### 2026-07-28 — (resolved) cloud IAM E2E rejected required AWS scope and missed broken policy rendering
 
 - **What**: Cross-cloud IAM E2E rejected every AWS `Resource: "*"` even though EC2 Describe actions require it, while the OPA rule encoded the same false assumption. At the same time, the AWS module read `policy.json` with `file()` and tried to replace `__OPERATOR_ROLE_ARN__`, but the document actually contained `${operator_role_arn}` plus an entirely unrendered `${operator_region}`. Its GPU instance-type condition was attached to `iam:PassRole` instead of EC2. GCP checks also treated explanatory comments and descriptions as live role/permission grants.
