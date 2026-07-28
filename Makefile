@@ -89,7 +89,7 @@ _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-wor
         container-build container-run container-push \
          file-executable build-executable deb-package deb-install-deps rpm-package macos-dmg windows-installer release-artifacts dist-clean bundle-binaries bundle-ripgrep \
         sast sbom pip-audit security security-backlog-gate \
-        audit-messages qa validate collect-check gate gate-refresh gate-lite smoke install-hooks \
+        audit-messages qa validate collect-check gate gate-refresh gate-lite smoke install-hooks feature-spec-inventory \
         status-snapshot audit-evidence deps-audit dogfood-features ruff-audit check-make-help \
         skill-install skill-list bootstrap-skills scan-tool-usage \
          scan-secrets scan-secrets-baseline clean-untracked clean-hooks clean-plugins \
@@ -177,6 +177,7 @@ help:
 	@echo "  check-make-help       Verify every public Makefile target is listed by make help"
 	@echo "  codemod-lean-enforcement-plugins Extract bulky enforcement implementations from counted plugin entrypoints"
 	@echo "  check-no-prompt-prone-edit-tools  Enforce make-target-only edit workflow"
+	@echo "  feature-spec-inventory  Inventory all Gludd feature specs + OpenCode behavioral specs (FORMAT=human|json)"
 	@echo "  write-text-b64        Write FILE from base64 TEXT_B64 without shell quoting loss"
 	@echo "  replace-text-b64      Exact old/new base64 replacement via scripts/replace_text.py"
 	@echo "  mkdir-p               Create an allowed workspace or /tmp/gludd-* directory"
@@ -871,6 +872,12 @@ verify-release-completeness-safe:
 # with no matching enforcement code. >5 unimplemented specs exits non-zero.
 audit-spec-implementation-age:
 	@$(UV) run python3 scripts/audit_spec_implementation_age.py
+
+# Comprehensive, recursive documentation inventory. This does not treat
+# docs/features.yml as an allow-list. FORMAT=human (default) prints a concise
+# report; FORMAT=json emits every record, alias, source, and evidence path.
+feature-spec-inventory:
+	@$(UV) run python3 scripts/feature_spec_inventory.py --format $(or $(FORMAT),human)
 
 # AB032 — check-ratchet-staleness: flags ratchet entries older than 30 days
 # without any fix attempt. Non-zero exit if any entry exceeds the threshold.
