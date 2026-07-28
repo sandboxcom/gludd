@@ -51,6 +51,7 @@ import {
   readJsonFile,
   writeJsonFile,
   getProjectRoot,
+  spawnGateRefreshIfStale,
 } from "../../lib/shared.ts"
 import { loadHotModule, type HotModule } from "../../lib/hot_reload.ts"
 
@@ -271,18 +272,7 @@ function getSessionBlockCount(): number {
 // ── Spot gate refresh (background) ──────────────────────────────────────────
 
 function spawnGateRefresh(): void {
-  try {
-    const gatePath = path.join(process.cwd(), ".gate-status")
-    if (!fs.existsSync(gatePath)) return
-    const stat = fs.statSync(gatePath)
-    if ((Date.now() - stat.mtimeMs) <= 300_000) return
-    const child = spawn("make", ["gate-refresh"], {
-      cwd: process.cwd(),
-      detached: true,
-      stdio: "ignore",
-    })
-    child.unref()
-  } catch {}
+  spawnGateRefreshIfStale(getProjectRoot(), spawn)
 }
 
 // ── Persist block flag ──────────────────────────────────────────────────────

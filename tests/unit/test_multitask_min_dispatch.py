@@ -1,7 +1,8 @@
 """Tests for enforce-multitask.ts MIN_DISPATCHES enforcement.
 
-Rewritten 2026-07-14 to match the 2026-07-13 plugin rewrite:
-- No text.complete hook (removed from opencode >=1.17.9)
+Rewritten 2026-07-14 and updated for the hot-reload proxy contract:
+- experimental.text.complete closes the canonical message boundary
+- no bare text.complete key is returned to opencode >=1.17.9
 - No session.idle hook
 - Single tool.execute.before hook with 5s-inter-call message boundary detection
 - UNDER-FLOOR HARD BLOCK (replaced FLOOR BREACH + INSUFFICIENT DISPATCHES)
@@ -598,6 +599,12 @@ class TestTasksMdGate:
             "hasPendingWork must detect unchecked checkboxes"
         )
 
+    def test_runtime_state_paths_are_overridable(self):
+        src = _plugin_source()
+        fn = src.split("function hasPendingWork")[1].split("\n}", 1)[0]
+        assert "process.env.GLUDD_WATCHDOG_CI_FILE" in fn
+        assert "process.env.GLUDD_TODOWRITE_STATE" in fn
+
     def test_under_floor_gated_on_pending_work(self):
         src = _plugin_source()
         exec_section = src.split('"tool.execute.before"')[1]
@@ -690,7 +697,7 @@ class TestDisengageEscape:
 
     def test_disengage_max_default_in_shared(self):
         shared = _shared_source()
-        assert "3_600_000" in shared, "Disengage max default (1h) must exist in shared.ts"
+        assert "300_000" in shared, "Disengage max default (5m) must exist in shared.ts"
 
 
 class TestEstimatedInFlight:
@@ -735,21 +742,26 @@ class TestMessageBoundaryDetection:
 
 
 class TestSpawnGateRefresh:
-    """Fire-and-forget gate refresh when .gate-status is stale."""
+    """Singleflight fire-and-forget refresh when .gate-status is stale."""
 
     def test_gate_refresh_function_present(self):
         src = _plugin_source()
         assert "spawnGateRefresh" in src, "spawnGateRefresh function must exist"
+        assert "spawnGateRefreshIfStale(getProjectRoot(), spawn)" in src
 
     def test_gate_refresh_checks_mtime(self):
-        src = _plugin_source()
-        assert "300_000" in src, "Gate refresh threshold must be 300s (5 min)"
+        shared = (
+            Path(__file__).parents[2] / ".opencode" / "lib" / "shared.ts"
+        ).read_text()
+        assert "GATE_REFRESH_STALE_MS = 300_000" in shared
 
     def test_gate_refresh_is_fire_and_forget(self):
-        src = _plugin_source()
-        handler = src.split("function spawnGateRefresh")[1].split("\n}", 1)[0]
-        assert "unref()" in handler, "Spawned process must be unref'd"
-        assert "detached: true" in handler, "Spawned process must be detached"
+        shared = (
+            Path(__file__).parents[2] / ".opencode" / "lib" / "shared.ts"
+        ).read_text()
+        assert "child.unref()" in shared
+        assert "detached: true" in shared
+        assert 'fs.openSync(leasePath, "wx"' in shared
 
 
 class TestHookRegistration:
@@ -759,10 +771,14 @@ class TestHookRegistration:
         src = _plugin_source()
         assert '"tool.execute.before"' in src, "tool.execute.before must be registered"
 
-    def test_no_text_complete_hook(self):
+    def test_experimental_text_complete_hook_registered(self):
         src = _plugin_source()
-        assert '"experimental.text.complete"' not in src, (
-            "text.complete hook removed in 2026-07-13 rewrite"
+        assert '"experimental.text.complete"' in src
+
+    def test_no_bare_text_complete_proxy_hook(self):
+        proxy = _plugin_source().split("PROXY PLUGIN (hot-reload aware)", 1)[1]
+        assert re.search(r'(?<!experimental\.)"text\.complete"\s*:', proxy) is None, (
+            "opencode >=1.17.9 rejects the bare text.complete hook key"
         )
 
     def test_no_session_idle_hook(self):

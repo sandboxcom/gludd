@@ -14,6 +14,7 @@ import {
   writeJsonFile,
   getProjectRoot,
   isStateFileMtimeStale,
+  spawnGateRefreshIfStale,
 } from "../lib/shared.ts"
 const nodeRequire = typeof require === "function" ? require : createRequire(import.meta.url)
 function spawn(...args: any[]): any {
@@ -121,7 +122,8 @@ function hasPendingWork(): boolean {
       if (/test REQUIRED/.test(content) || /smoke REQUIRED/.test(content)) return true
     }
 
-    const ciCachePath = "/tmp/gludd-watchdog-ci.json"
+    const ciCachePath =
+      process.env.GLUDD_WATCHDOG_CI_FILE || "/tmp/gludd-watchdog-ci.json"
     if (fs.existsSync(ciCachePath)) {
       const ciData = JSON.parse(fs.readFileSync(ciCachePath, "utf8"))
       const rawLastCheck: number = ciData.last_ci_check || 0
@@ -131,7 +133,8 @@ function hasPendingWork(): boolean {
     }
 
     try {
-      const todowritePath = "/tmp/gludd-todowrite-state.json"
+      const todowritePath =
+        process.env.GLUDD_TODOWRITE_STATE || "/tmp/gludd-todowrite-state.json"
       if (fs.existsSync(todowritePath)) {
         const tdData = JSON.parse(fs.readFileSync(todowritePath, "utf8"))
         const items: any[] = Array.isArray(tdData.items) ? tdData.items : []
@@ -178,19 +181,7 @@ function handleMessageBoundary(s: MultitaskState): void {
   s.thisMessageDispatches = 0
 }
 function spawnGateRefresh(): void {
-  try {
-    const root = getProjectRoot()
-    const gatePath = path.join(root, ".gate-status")
-    if (!fs.existsSync(gatePath)) return
-    const stat = fs.statSync(gatePath)
-    if ((Date.now() - stat.mtimeMs) <= 300_000) return
-    const child = spawn("make", ["gate-refresh"], {
-      cwd: root,
-      detached: true,
-      stdio: "ignore",
-    })
-    child.unref()
-  } catch {  }
+  spawnGateRefreshIfStale(getProjectRoot(), spawn)
 }
 let _state: MultitaskState = (() => {
   const s = readState()

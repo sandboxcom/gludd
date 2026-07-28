@@ -26,6 +26,11 @@ or per-test ``os.environ`` patches:
    is (``127.0.0.1``) instead of the un-parseable pseudo-host ``"testclient"``,
    so the daemon's CIDR allowlist (a real security control) can stay armed
    during tests instead of 403-ing the in-process transport.
+
+5. Disables OpenCode's background gate-refresh autospawn inside tests. Tests
+   invoke plugin constructors in fresh Node processes; those constructors must
+   not start an unrelated full release gate. The singleflight contract test
+   explicitly opts back in with a fake spawner.
 """
 from __future__ import annotations
 
@@ -194,6 +199,12 @@ def _allow_no_auth_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     if not os.environ.get("GLUDD_PSK", "").strip():
         monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
+
+
+@pytest.fixture(autouse=True)
+def _disable_gate_refresh_autospawn(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep plugin-construction tests from launching background release gates."""
+    monkeypatch.setenv("GLUDD_GATE_REFRESH_AUTOSPAWN", "0")
 
 
 @pytest.fixture(autouse=True, scope="session")
