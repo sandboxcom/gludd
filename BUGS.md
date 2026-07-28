@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) macOS unified-log E2E injected above the command boundary
+
+- **What**: The final connector-batch class passed an unsupported `executor=` callback that returned already-parsed dictionaries; its empty-result case invoked the default runner and therefore could touch the host's real unified log.
+- **Root cause**: The E2E modeled a removed high-level abstraction instead of `runner(argv) -> (returncode, stdout, stderr)`. That bypassed list-argv construction, predicate validation, NDJSON decoding, return-code behavior, and the `log stats` health probe. Its canned payload also used `message` rather than Apple's NDJSON `eventMessage` field.
+- **Fix applied**: Health injects a runner and pins the exact `log stats` argv. Query serializes realistic `eventMessage`/`messageType` records to NDJSON, verifies the complete safe list argv and normalized message, and the empty case uses a controlled nonzero runner result. No E2E reads the host log database.
+- **Long-lived user evidence**: Apple developers have repeatedly reported that unified-log visibility, privacy, and process scope differ from traditional file logs ([Apple Developer Forums OSLog guidance](https://developer.apple.com/forums/thread/705868), [OSLogStore scope discussion](https://developer.apple.com/forums/thread/697734)); users handling archived unified logs likewise rely on the `log show` command surface ([Ask Different](https://apple.stackexchange.com/questions/357179/unified-logs-macos-high-sierra)). Tests must therefore control the command boundary rather than assume host visibility or permissions.
+- **Lesson**: Platform command connectors are deterministic only when tests inject the lowest supported boundary and model the real wire format. A default runner in E2E is hidden host I/O, even when an empty result happens to make the assertion pass.
+
 ### 2026-07-28 — (resolved) Parca E2E assumed defaults and omitted its POST transport protocol
 
 - **What**: Connector batch 4 reached Parca and called a no-argument constructor, despite its required guarded base URL. Its nominal health case asserted only that some dictionary was returned and reused a fake with no object-style `post(...)` method, so it could not prove a successful QueryRange probe.

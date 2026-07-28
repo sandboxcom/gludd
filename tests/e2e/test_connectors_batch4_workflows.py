@@ -14,6 +14,7 @@ Targets:
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field
 
@@ -1716,44 +1717,75 @@ class TestMacUnifiedLogConnector:
     def test_constructs_custom_config(self):
         from general_ludd.connectors.mac_unified_log import MacUnifiedLogSource
 
-        source = MacUnifiedLogSource({"predicate": 'process == "sshd"', "name": "ssh-audit"})
+        source = MacUnifiedLogSource({"name": "ssh-audit"})
         assert source.name == "ssh-audit"
 
-    def test_health_ok_with_injected_executor(self):
+    def test_health_ok_with_injected_runner(self):
         from general_ludd.connectors.mac_unified_log import MacUnifiedLogSource
 
-        def _executor(**kw: object) -> list[dict[str, object]]:
-            return [{"timestamp": "2025-01-01T12:00:00Z", "message": "test"}]
+        calls: list[list[str]] = []
 
-        source = MacUnifiedLogSource(executor=_executor)
+        def _runner(argv: list[str]) -> tuple[int, str, str]:
+            calls.append(list(argv))
+            return (0, "", "")
+
+        source = MacUnifiedLogSource(runner=_runner)
         result = source.health()
         assert result["ok"] is True
+        assert calls == [["log", "stats"]]
 
     def test_query_returns_records(self):
         from general_ludd.connectors.mac_unified_log import MacUnifiedLogSource
 
-        def _executor(**kw: object) -> list[dict[str, object]]:
-            return [
+        calls: list[list[str]] = []
+        stdout = "\n".join(
+            json.dumps(record)
+            for record in [
                 {
                     "timestamp": "2025-01-01T12:00:00Z",
-                    "message": "Connection from 1.2.3.4",
+                    "eventMessage": "Connection from 1.2.3.4",
+                    "messageType": "Info",
                     "processImagePath": "/usr/sbin/sshd",
                 },
                 {
                     "timestamp": "2025-01-01T12:01:00Z",
-                    "message": "Accepted publickey",
+                    "eventMessage": "Accepted publickey",
+                    "messageType": "Info",
                     "processImagePath": "/usr/sbin/sshd",
                 },
             ]
+        )
 
-        source = MacUnifiedLogSource(executor=_executor)
-        records = source.query({})
-        assert len(records) >= 2
+        def _runner(argv: list[str]) -> tuple[int, str, str]:
+            calls.append(list(argv))
+            return (0, stdout, "")
+
+        source = MacUnifiedLogSource(runner=_runner)
+        records = source.query(
+            {"last": "1m", "predicate": 'process == "sshd"'}
+        )
+        assert len(records) == 2
         assert records[0]["kind"] == "logs"
+        assert records[0]["message"] == "Connection from 1.2.3.4"
+        assert calls == [
+            [
+                "log",
+                "show",
+                "--style",
+                "ndjson",
+                "--last",
+                "1m",
+                "--predicate",
+                'process == "sshd"',
+            ]
+        ]
 
-    def test_query_empty_without_executor(self):
+    def test_query_empty_on_runner_error(self):
         from general_ludd.connectors.mac_unified_log import MacUnifiedLogSource
 
-        source = MacUnifiedLogSource()
+        def _runner(argv: list[str]) -> tuple[int, str, str]:
+            return (1, "", "log unavailable")
+
+        source = MacUnifiedLogSource(runner=_runner)
         records = source.query({})
         assert records == []
