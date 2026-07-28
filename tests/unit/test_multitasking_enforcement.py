@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
 ENFORCE_FLOOR = PLUGIN_DIR / "enforce-floor.ts"
 ENFORCE_STOP = PLUGIN_DIR / "enforce-stop.ts"
+ENFORCE_STOP_IMPL = PLUGIN_DIR / "impl" / "enforce_stop_impl.ts"
 
 
 def _floor_src() -> str:
@@ -34,7 +35,7 @@ def _floor_src() -> str:
 
 
 def _stop_src() -> str:
-    return ENFORCE_STOP.read_text()
+    return ENFORCE_STOP.read_text() + "\n" + ENFORCE_STOP_IMPL.read_text()
 
 
 # ============================================================================
