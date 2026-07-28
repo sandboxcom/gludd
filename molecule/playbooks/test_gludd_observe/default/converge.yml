@@ -1,0 +1,105 @@
+---
+- name: Converge - exercise gludd_observe cross-source workflows
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8898', true) }}"
+    daemon_url: "http://127.0.0.1:{{ mock_port }}"
+  tasks:
+    - name: Reset mock daemon request evidence
+      ansible.builtin.uri:
+        url: "{{ daemon_url }}/__requests/reset"
+        method: POST
+        status_code: 200
+
+    - name: Query and correlate records from every source kind
+      general_ludd.agent.gludd_observe:
+        op: query_sources
+        role: molecule_observe_probe
+        kinds:
+          - logs
+          - metrics
+        spec:
+          service: checkout
+        start: 90.0
+        end: 130.0
+        correlate_by: trace_id
+        daemon_url: "{{ daemon_url }}"
+      register: observe_query
+
+    - name: Build a bounded telemetry timeline
+      general_ludd.agent.gludd_observe:
+        op: timeline
+        role: molecule_observe_probe
+        window:
+          - logs
+          - metrics
+        spec:
+          service: checkout
+        start: 100.0
+        end: 120.0
+        daemon_url: "{{ daemon_url }}"
+      register: observe_timeline
+
+    - name: Build service and host topology
+      general_ludd.agent.gludd_observe:
+        op: topology
+        role: molecule_observe_probe
+        kinds:
+          - logs
+          - metrics
+        spec:
+          service: checkout
+        daemon_url: "{{ daemon_url }}"
+      register: observe_topology
+
+    - name: Correlate an incident around its trace
+      general_ludd.agent.gludd_observe:
+        op: correlate_incident
+        role: molecule_observe_probe
+        kinds:
+          - logs
+          - metrics
+        seed:
+          source: pagerduty
+          kind: incidents
+          ts: 105.0
+          level_or_status: critical
+          message: checkout alert
+          value: null
+          labels:
+            trace_id: T7
+            service: checkout
+            host: web-01
+          raw: {}
+        by: trace_id
+        window_s: 30.0
+        spec:
+          service: checkout
+        daemon_url: "{{ daemon_url }}"
+      register: observe_incident
+
+    - name: Read exact HTTP request evidence
+      ansible.builtin.uri:
+        url: "{{ daemon_url }}/__requests"
+        method: GET
+        return_content: true
+        status_code: 200
+      register: observe_requests
+
+    - name: Persist deterministic verification input
+      ansible.builtin.copy:
+        content: >-
+          {{
+            {
+              'query': observe_query.ansible_facts.gludd_observe,
+              'timeline': observe_timeline.ansible_facts.gludd_observe,
+              'topology': observe_topology.ansible_facts.gludd_observe,
+              'incident': observe_incident.ansible_facts.gludd_observe,
+              'requests': observe_requests.json.requests
+            } | to_nice_json
+          }}
+        dest: "/tmp/gludd-mock-{{ mock_port }}-observe.json"
+        mode: "0644"
+      changed_when: false

@@ -14,10 +14,15 @@ shape matches what each module parses:
   GET  /api/facts                     -> 200 work/todos/models/history/...  (gludd_facts)
   GET  /api/metrics                   -> 200 agents/usage/cost/rankings     (gludd_metrics)
   GET  /api/traces                    -> 200 recent/by_phase/otel status    (gludd_traces)
+  GET  /api/observe/sources           -> 200 registered source metadata     (gludd_observe discovery)
+  POST /api/observe/query             -> 200 normalized telemetry records   (gludd_observe workflows)
   GET  /api/messages                  -> 200 {"messages":[...]}             (gludd_message receive)
   POST /api/messages                  -> 201 created message                (gludd_message send)
   POST /api/messages/<id>/ack         -> 200 {"acked":true}                 (gludd_message ack)
-  POST /admin/models/call             -> 200 {"text":..,"usage":..}         (gludd_model_call / gludd_agent_run / gludd_langchain_generate / gludd_langgraph_decision)
+  POST /admin/models/call             -> 200 {"text":..,"usage":..}         (gludd_model_call /
+                                                                            gludd_agent_run /
+                                                                            gludd_langchain_generate /
+                                                                            gludd_langgraph_decision)
   POST /admin/models/workflow         -> 200 {"content":..,"quality_score":..} (gludd_langgraph_workflow)
   GET  /api/todos/<id>                 -> 200 todo record                    (gludd_db todo_get)
   PATCH /api/todos/<id>               -> 200 {"status":..}                  (gludd_db todo_update_status)
@@ -36,9 +41,11 @@ shape matches what each module parses:
   GET  /api/environment               -> 200 consolidated env brief          (gludd_environment snapshot)
   GET  /api/environment/advise        -> 200 per-work-type advice block      (gludd_environment advice merge)
   GET  /admin/processes               -> 200 {"processes":[...],"count":N}    (gludd_process list / gludd_proc_monitor)
-  GET  /admin/processes/<pid>/stats   -> 200 psutil-shaped stats snapshot     (gludd_process status / gludd_proc_monitor)
+  GET  /admin/processes/<pid>/stats   -> 200 psutil-shaped stats snapshot     (gludd_process status /
+                                                                               gludd_proc_monitor)
   POST /admin/processes/<pid>/signal  -> 200 {"ok":true,"pid":..,"signal":..} (gludd_process signal)
-  GET  /admin/ornith/pairs            -> 200 {"pairs":[...],"count":N}        (gludd_ornith pairs — rejected training pairs)
+  GET  /admin/ornith/pairs            -> 200 {"pairs":[...],"count":N}        (gludd_ornith pairs —
+                                                                               rejected training pairs)
   GET  /process-audit                  -> 200 guardrail_health/plugin_footprint/.. (gludd_audit)
   POST /api/human-todos               -> 201 created human-todo               (gludd_human_todo present)
 
@@ -63,11 +70,10 @@ import json
 import os
 import sys
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
-
 
 # ---------------------------------------------------------------------------
 # In-memory request log
@@ -260,7 +266,7 @@ ACCOUNTING_SNAPSHOT = [
 ]
 
 
-FEATURES_SNAPSHOT = [
+FEATURES_SNAPSHOT: list[dict[str, Any]] = [
     {
         "id": "FEAT-0001",
         "project_id": None,
@@ -300,6 +306,79 @@ SPEND_SNAPSHOT = {
     "window_seconds": 86400,
     "window_label": "24h",
     "period_start": "2026-06-15T00:00:00Z",
+}
+
+
+# Cross-source observability snapshots consumed by the REAL gludd_observe
+# collection module. The third source intentionally fails so the Molecule
+# scenario proves that one unhealthy connector does not abort healthy fan-out.
+OBSERVE_SOURCES = [
+    {"name": "loki", "kind": "logs", "family": "pull"},
+    {"name": "prometheus", "kind": "metrics", "family": "pull"},
+    {"name": "broken-logs", "kind": "logs", "family": "pull"},
+]
+
+OBSERVE_RECORDS = {
+    "loki": [
+        {
+            "source": "loki",
+            "kind": "logs",
+            "ts": 100.0,
+            "level_or_status": "info",
+            "message": "checkout request accepted",
+            "value": None,
+            "labels": {
+                "trace_id": "T7",
+                "service": "checkout",
+                "host": "web-01",
+            },
+            "raw": {},
+        },
+        {
+            "source": "loki",
+            "kind": "logs",
+            "ts": 120.0,
+            "level_or_status": "info",
+            "message": "checkout request completed",
+            "value": None,
+            "labels": {
+                "trace_id": "T7",
+                "service": "checkout",
+                "host": "web-02",
+            },
+            "raw": {},
+        },
+    ],
+    "prometheus": [
+        {
+            "source": "prometheus",
+            "kind": "metrics",
+            "ts": 105.0,
+            "level_or_status": "ok",
+            "message": "checkout latency",
+            "value": 0.21,
+            "labels": {
+                "trace_id": "T7",
+                "service": "checkout",
+                "host": "web-01",
+            },
+            "raw": {},
+        },
+        {
+            "source": "prometheus",
+            "kind": "metrics",
+            "ts": 110.0,
+            "level_or_status": "ok",
+            "message": "checkout database latency",
+            "value": 0.08,
+            "labels": {
+                "trace_id": "T7",
+                "service": "checkout",
+                "host": "db-01",
+            },
+            "raw": {},
+        },
+    ],
 }
 
 
@@ -413,7 +492,7 @@ ENVIRONMENT_SNAPSHOT = {
 _WORKFLOW_WORK_TYPES = ("feature", "bugfix", "refactor", "review")
 
 
-def _advice_response(work_type: str) -> dict:
+def _advice_response(work_type: str) -> dict[str, Any]:
     """Per-work-type advice block, shaped like routers/environment.py AdviceBrief.
 
     use_workflow follows the real advisor's workflow set so the agent_orchestrate
@@ -453,7 +532,7 @@ def _advice_response(work_type: str) -> dict:
     }
 
 
-def _schedule_response(payload: dict) -> dict:
+def _schedule_response(payload: dict[str, Any]) -> dict[str, Any]:
     """Return a concurrency-safe batched plan for the submitted work items.
 
     Implements a minimal real scheduler so the mock genuinely exercises the
@@ -470,7 +549,7 @@ def _schedule_response(payload: dict) -> dict:
         return {"batches": []}
 
     # Build index by id.
-    by_id: dict[str, dict] = {it["id"]: it for it in items}
+    by_id: dict[str, dict[str, Any]] = {it["id"]: it for it in items}
 
     # Topological depth: max depth among depends_on predecessors + 1.
     depths: dict[str, int] = {}
@@ -544,7 +623,7 @@ DISPATCH_RECENT = [
 ]
 
 
-def _dispatch_response(payload: dict) -> dict:
+def _dispatch_response(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "result": {
             "id": "dispatch-mock-new",
@@ -557,7 +636,7 @@ def _dispatch_response(payload: dict) -> dict:
     }
 
 
-def _model_call_response(payload: dict) -> dict:
+def _model_call_response(payload: dict[str, Any]) -> dict[str, Any]:
     # The langgraph/langchain decision module sends response_format="json" (and an
     # options list) and parses resp["text"] as JSON {"decision":..,"rationale":..}.
     # For those requests return a JSON-string text the decision module can parse
@@ -574,7 +653,7 @@ def _model_call_response(payload: dict) -> dict:
     }
 
 
-def _workflow_response(payload: dict) -> dict:
+def _workflow_response(payload: dict[str, Any]) -> dict[str, Any]:
     # Mirrors POST /admin/models/workflow: the daemon runs a generate->review->retry
     # LangGraph loop server-side and returns the best content + quality metadata.
     # gludd_langgraph_workflow parses content/model/prompt_profile/quality_score/
@@ -589,7 +668,7 @@ def _workflow_response(payload: dict) -> dict:
     }
 
 
-def _message_created(payload: dict) -> dict:
+def _message_created(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": "MSG-MOCK-0001",
         "sender": payload.get("sender"),
@@ -600,7 +679,7 @@ def _message_created(payload: dict) -> dict:
     }
 
 
-def _todo_record(todo_id: str) -> dict:
+def _todo_record(todo_id: str) -> dict[str, Any]:
     return {
         "id": todo_id,
         "title": "mock todo",
@@ -625,7 +704,7 @@ _STREAM_DISPATCH_COUNTER = 0
 _STREAM_DISPATCH_LOCK = threading.Lock()
 
 
-def _stream_dispatch_response(payload: dict) -> dict:
+def _stream_dispatch_response(payload: dict[str, Any]) -> dict[str, Any]:
     """Canned stream-dispatch response (task_id + clone_path).
 
     Each call returns a DISTINCT task_id so the dual-dispatch path
@@ -695,9 +774,9 @@ MODEL_PERFORMANCE_SNAPSHOT = {
 }
 
 
-def _ranking_response(task_type: str) -> dict:
+def _ranking_response(task_type: str) -> dict[str, Any]:
     """Return rankings filtered by task_type, sorted by composite_score descending."""
-    all_rankings = [
+    all_rankings: list[dict[str, Any]] = [
         {
             "model_profile_id": "mock-profile",
             "prompt_profile_id": "default",
@@ -730,10 +809,11 @@ def _ranking_response(task_type: str) -> dict:
         },
     ]
     q = (task_type or "").strip().lower()
-    if q:
-        filtered = [r for r in all_rankings if r["task_type"] == q]
-    else:
-        filtered = list(all_rankings)
+    filtered = (
+        [r for r in all_rankings if r["task_type"] == q]
+        if q
+        else list(all_rankings)
+    )
     filtered.sort(key=lambda r: r["composite_score"], reverse=True)
     return {"rankings": filtered, "task_type": task_type}
 
@@ -800,7 +880,7 @@ ORNITH_PAIRS_SNAPSHOT = [
 ]
 
 
-def _ornith_pairs_response(status_csv: str, limit: int) -> dict:
+def _ornith_pairs_response(status_csv: str, limit: int) -> dict[str, Any]:
     """Return Ornith training pairs filtered by the comma-separated statuses."""
     statuses = {s.strip() for s in (status_csv or "").split(",") if s.strip()}
     if not statuses:
@@ -809,7 +889,7 @@ def _ornith_pairs_response(status_csv: str, limit: int) -> dict:
     return {"pairs": filtered[:limit], "count": len(filtered)}
 
 
-def _human_todo_created(payload: dict) -> dict:
+def _human_todo_created(payload: dict[str, Any]) -> dict[str, Any]:
     """Shape mirrors POST /api/human-todos response (HumanTodoModel dict)."""
     return {
         "id": "HTODO-MOCK-0001",
@@ -851,7 +931,7 @@ MANAGED_PROCESSES = [
 ]
 
 
-def _managed_processes() -> list[dict]:
+def _managed_processes() -> list[dict[str, Any]]:
     procs = [dict(p) for p in MANAGED_PROCESSES]
     if _MANAGED_PID_OVERRIDE > 0 and procs:
         procs[0]["pid"] = _MANAGED_PID_OVERRIDE
@@ -859,7 +939,7 @@ def _managed_processes() -> list[dict]:
     return procs
 
 
-def _process_stats(pid: int) -> dict:
+def _process_stats(pid: int) -> dict[str, Any]:
     """psutil-shaped stats snapshot for one managed process (canned)."""
     return {
         "pid": pid,
@@ -880,7 +960,7 @@ def _process_stats(pid: int) -> dict:
     }
 
 
-def _signal_response(pid: int, payload: dict) -> dict:
+def _signal_response(pid: int, payload: dict[str, Any]) -> dict[str, Any]:
     """Acknowledge a signal delivery (gludd_process action=signal)."""
     return {
         "ok": True,
@@ -904,10 +984,10 @@ def _pid_from_proc_path(path: str) -> int | None:
 
 class MockDaemonHandler(BaseHTTPRequestHandler):
     # Silence default request logging to stderr noise; route to logfile if set.
-    def log_message(self, fmt: str, *args: object) -> None:  # noqa: A003
+    def log_message(self, fmt: str, *args: object) -> None:
         sys.stderr.write("[mock-daemon] " + (fmt % args) + "\n")
 
-    def _send_json(self, status: int, body: dict) -> None:
+    def _send_json(self, status: int, body: dict[str, Any]) -> None:
         raw = json.dumps(body).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -922,18 +1002,19 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _read_body(self) -> dict:
+    def _read_body(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length", 0) or 0)
         if length <= 0:
             return {}
         raw = self.rfile.read(length)
         try:
-            return json.loads(raw.decode("utf-8"))
+            parsed: Any = json.loads(raw.decode("utf-8"))
+            return parsed if isinstance(parsed, dict) else {}
         except json.JSONDecodeError:
             return {}
 
     # ---- GET --------------------------------------------------------------
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         path = urlparse(self.path).path
         _record_request("GET", path)
         if path == "/__requests":
@@ -965,6 +1046,14 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             self._send_json(200, dict(METRICS_SNAPSHOT))
         elif path == "/api/traces":
             self._send_json(200, dict(TRACES_SNAPSHOT))
+        elif path == "/api/observe/sources":
+            self._send_json(
+                200,
+                {
+                    "sources": list(OBSERVE_SOURCES),
+                    "count": len(OBSERVE_SOURCES),
+                },
+            )
         elif path == "/api/messages":
             self._send_json(200, {"messages": [
                 {"id": "MSG-MOCK-IN-1", "sender": "planner", "topic": "standup", "status": "unread"},
@@ -975,7 +1064,14 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
         elif path == "/api/resource-preferences":
             self._send_json(200, {"preference": "mock-profile", "value": "mock-profile"})
         elif path == "/api/features":
-            self._send_json(200, {"features": list(FEATURES_SNAPSHOT), "total": len(FEATURES_SNAPSHOT), "filtered": False})
+            self._send_json(
+                200,
+                {
+                    "features": list(FEATURES_SNAPSHOT),
+                    "total": len(FEATURES_SNAPSHOT),
+                    "filtered": False,
+                },
+            )
         elif path == "/api/spend":
             self._send_json(200, dict(SPEND_SNAPSHOT))
         elif path == "/api/accounting":
@@ -1040,15 +1136,45 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             })
         # ---- GitHub API mock routes (gha_usage role) ------------------------
         elif path == "/repos/mock-org/mock-repo/actions/runs":
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             self._send_json(200, {
                 "total_count": 5,
                 "workflow_runs": [
-                    {"id": 1, "name": "gate", "conclusion": "success", "status": "completed", "created_at": now.isoformat()},
-                    {"id": 2, "name": "pytest", "conclusion": "success", "status": "completed", "created_at": now.isoformat()},
-                    {"id": 3, "name": "lint", "conclusion": "success", "status": "completed", "created_at": (now - timedelta(hours=2)).isoformat()},
-                    {"id": 4, "name": "typecheck", "conclusion": "failure", "status": "completed", "created_at": (now - timedelta(hours=6)).isoformat()},
-                    {"id": 5, "name": "deploy", "conclusion": "success", "status": "completed", "created_at": (now - timedelta(hours=22)).isoformat()},
+                    {
+                        "id": 1,
+                        "name": "gate",
+                        "conclusion": "success",
+                        "status": "completed",
+                        "created_at": now.isoformat(),
+                    },
+                    {
+                        "id": 2,
+                        "name": "pytest",
+                        "conclusion": "success",
+                        "status": "completed",
+                        "created_at": now.isoformat(),
+                    },
+                    {
+                        "id": 3,
+                        "name": "lint",
+                        "conclusion": "success",
+                        "status": "completed",
+                        "created_at": (now - timedelta(hours=2)).isoformat(),
+                    },
+                    {
+                        "id": 4,
+                        "name": "typecheck",
+                        "conclusion": "failure",
+                        "status": "completed",
+                        "created_at": (now - timedelta(hours=6)).isoformat(),
+                    },
+                    {
+                        "id": 5,
+                        "name": "deploy",
+                        "conclusion": "success",
+                        "status": "completed",
+                        "created_at": (now - timedelta(hours=22)).isoformat(),
+                    },
                 ],
             })
         elif path == "/repos/mock-org/mock-repo/actions/workflows":
@@ -1072,7 +1198,7 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             self._send_json(404, {"detail": f"no mock route for GET {path}"})
 
     # ---- POST -------------------------------------------------------------
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         path = urlparse(self.path).path
         _record_request("POST", path)
         payload = self._read_body()
@@ -1100,6 +1226,18 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             self._send_json(200, resp)
         elif path == "/api/schedule":
             self._send_json(200, _schedule_response(payload))
+        elif path == "/api/observe/query":
+            source = payload.get("source")
+            if source == "broken-logs":
+                self._send_json(503, {"detail": "mock backend unavailable"})
+            elif source in OBSERVE_RECORDS:
+                records = OBSERVE_RECORDS[source]
+                self._send_json(
+                    200,
+                    {"records": list(records), "count": len(records)},
+                )
+            else:
+                self._send_json(404, {"detail": f"unknown observe source: {source}"})
         elif path == "/api/dispatch":
             self._send_json(200, _dispatch_response(payload))
         elif path == "/admin/stream/dispatch":
@@ -1133,7 +1271,7 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             self._send_json(404, {"detail": f"no mock route for POST {path}"})
 
     # ---- PATCH ------------------------------------------------------------
-    def do_PATCH(self) -> None:  # noqa: N802
+    def do_PATCH(self) -> None:
         path = urlparse(self.path).path
         _record_request("PATCH", path)
         payload = self._read_body()

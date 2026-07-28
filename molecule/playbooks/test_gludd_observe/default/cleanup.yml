@@ -1,0 +1,23 @@
+---
+- name: Cleanup - stop namespaced gludd_observe mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8898', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8898', true) }}.pid"
+  tasks:
+    - name: Stop mock daemon if it is running
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove namespaced Molecule artifacts
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ pidfile }}"
+        - "/tmp/gludd-mock-{{ mock_port }}.log"
+        - "/tmp/gludd-mock-{{ mock_port }}-observe.json"
