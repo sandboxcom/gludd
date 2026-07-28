@@ -255,9 +255,13 @@ class TestArgoWorkflowsConnector:
         from general_ludd.connectors.argo_workflows import ArgoWorkflowsSource
 
         transport = MockHttpTransport(default_status=200, default_body={"items": []})
-        src = ArgoWorkflowsSource({"namespace": "argo"}, http_get=transport.__call__)  # type: ignore[arg-type]
+        src = ArgoWorkflowsSource(
+            {"base_url": "https://argo.example.com", "namespace": "argo"},
+            http_get=transport.__call__,  # type: ignore[arg-type]
+        )
         result = src.health()
-        assert isinstance(result, dict)
+        assert result["ok"] is True
+        assert transport.calls[0]["url"] == "https://argo.example.com/api/v1/workflows/argo"
 
     def test_query_returns_records(self):
         from general_ludd.connectors.argo_workflows import ArgoWorkflowsSource
@@ -273,9 +277,13 @@ class TestArgoWorkflowsConnector:
                 ]
             },
         )
-        src = ArgoWorkflowsSource({"namespace": "argo"}, http_get=transport.__call__)  # type: ignore[arg-type]
+        src = ArgoWorkflowsSource(
+            {"base_url": "https://argo.example.com", "namespace": "argo"},
+            http_get=transport.__call__,  # type: ignore[arg-type]
+        )
         records = src.query({})
-        assert isinstance(records, list)
+        assert len(records) == 1
+        assert records[0]["level_or_status"] == "Succeeded"
 
 
 class TestAwsPipelineConnector:

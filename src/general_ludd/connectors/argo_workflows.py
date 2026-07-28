@@ -37,6 +37,7 @@ from general_ludd.security.ssrf import is_url_blocked
 logger = logging.getLogger(__name__)
 
 Transport = Callable[[str, str, Mapping[str, str], float], "tuple[int, bytes]"]
+HttpGet = Callable[[str, dict[str, str]], "tuple[int, object]"]
 
 # Argo workflow status.phase -> normalized status (passed through verbatim; this
 # map documents the recognized set and provides a stable default for unknowns).
@@ -109,12 +110,43 @@ def _httpx_transport(method: str, url: str, headers: Mapping[str, str], timeout:
     return resp.status_code, resp.content
 
 
+def _adapt_http_get(http_get: HttpGet) -> Transport:
+    """Adapt the generated workflow's compact GET transport to the full contract."""
+
+    def transport(
+        method: str,
+        url: str,
+        headers: Mapping[str, str],
+        _timeout: float,
+    ) -> tuple[int, bytes]:
+        if method != "GET":
+            raise ValueError(f"http_get cannot perform {method} requests")
+        status, body = http_get(url, dict(headers))
+        if isinstance(body, bytes):
+            encoded = body
+        elif isinstance(body, str):
+            encoded = body.encode("utf-8")
+        else:
+            encoded = json.dumps(body).encode("utf-8")
+        return status, encoded
+
+    return transport
+
+
 class ArgoWorkflowsSource:
     """Normalizes Argo Workflows into gludd pipeline events."""
 
     KIND = "pipeline"
 
-    def __init__(self, config: Mapping[str, object], transport: Transport | None = None) -> None:
+    def __init__(
+        self,
+        config: Mapping[str, object],
+        transport: Transport | None = None,
+        *,
+        http_get: HttpGet | None = None,
+    ) -> None:
+        if transport is not None and http_get is not None:
+            raise ValueError("transport and http_get are mutually exclusive")
         self._config = dict(config)
         self.name = str(self._config.get("name", "argo_workflows"))
         self.allow_private = bool(self._config.get("allow_private", False))
@@ -123,7 +155,7 @@ class ArgoWorkflowsSource:
         self.timeout = float(cast(float | int | str | bool, self._config.get("timeout", 10.0)))
         self._token_env = str(self._config.get("token_env", "ARGO_TOKEN"))
         self._token = os.environ.get(self._token_env, "")
-        self._transport: Transport = transport or _httpx_transport
+        self._transport: Transport = transport or (_adapt_http_get(http_get) if http_get else _httpx_transport)
 
     # -- internals ---------------------------------------------------------
     def _headers(self) -> dict[str, str]:
