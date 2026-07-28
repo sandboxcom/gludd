@@ -364,8 +364,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         events = audit.query(agent_id=agent_id, since=since, capability=capability)
         return {"events": events}
 
-    @app.get("/admin/perm/spec/{agent_type}")
-    @app.put("/admin/perm/spec/{agent_type}")
+    @app.api_route("/admin/perm/spec/{agent_type}", methods=["GET", "PUT"])
     async def admin_perm_spec_get(agent_type: str, request: Request) -> object:
         import yaml
 
