@@ -58,11 +58,15 @@ def _message_text(message: dict[str, Any]) -> str:
     )
 
 
-class _DeterministicProvider:
+class DeterministicProvider:
     """Local OpenAI-compatible provider for repeatable TUI tool loops."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        responses: list[dict[str, Any]] | None = None,
+    ) -> None:
         self.requests: list[dict[str, Any]] = []
+        self._responses = responses
         self._state_lock = threading.Lock()
         self._main_calls = 0
         provider = self
@@ -161,14 +165,14 @@ class _DeterministicProvider:
         with self._state_lock:
             step = self._main_calls
             self._main_calls += 1
-        responses = [
-            self._tool(
+        responses = self._responses or [
+            self.tool_call(
                 "read",
                 {"filePath": str(ROOT / "pyproject.toml")},
                 "call_read_project_name",
             ),
             {"text": "general-ludd-agent"},
-            self._tool(
+            self.tool_call(
                 "grep",
                 {
                     "pattern": r"authors\s*=",
@@ -177,19 +181,19 @@ class _DeterministicProvider:
                 },
                 "call_grep_authors",
             ),
-            self._tool(
+            self.tool_call(
                 "read",
                 {"filePath": str(ROOT / "pyproject.toml")},
                 "call_read_authors",
             ),
             {"text": "General Ludd Team"},
-            self._tool(
+            self.tool_call(
                 "bash",
                 {"command": "make version", "description": "Print project version"},
                 "call_make_version",
             ),
             {"text": "0.1.0-beta.3"},
-            self._tool(
+            self.tool_call(
                 "bash",
                 {"command": "pwd", "description": "Print working directory"},
                 "call_denied_pwd",
@@ -201,7 +205,7 @@ class _DeterministicProvider:
         return {"text": f"Unexpected deterministic provider turn {step}"}
 
     @staticmethod
-    def _tool(
+    def tool_call(
         name: str,
         arguments: dict[str, Any],
         call_id: str,
@@ -457,7 +461,7 @@ class _Tui:
 @pytest.mark.xdist_group("opencode-tui-permissions")
 def test_tui_handles_multiple_permissioned_tool_prompts() -> None:
     """A persistent TUI can read, grep, and run an allowed Make target."""
-    provider = _DeterministicProvider()
+    provider = DeterministicProvider()
     tui = _Tui(provider.config_content)
     try:
         tui.wait_for("Ask anything...", timeout=30)
