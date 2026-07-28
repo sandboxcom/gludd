@@ -98,6 +98,7 @@ try:
     )
 except ImportError:
     import sys
+
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "module_utils"))
     from gludd import GluddClient, error_result, ok_result  # type: ignore[import]
 
@@ -133,11 +134,7 @@ def main() -> None:
     if module.check_mode:
         module.exit_json(
             **ok_result(
-                {
-                    "ansible_facts": {
-                        "gludd_proc_monitor": {"processes": [], "count": 0}
-                    }
-                },
+                {"ansible_facts": {"gludd_proc_monitor": {"processes": [], "count": 0}}},
                 changed=False,
             )
         )
@@ -145,37 +142,24 @@ def main() -> None:
 
     client = GluddClient(
         base_url=daemon_url,
-        psk=psk or os.environ.get("GLUDD_PSK", ""),
+        psk=psk,
         timeout=timeout,
     )
 
     if pid > 0:
         resp = client.get(f"/admin/processes/{pid}/stats")
         if _is_error(resp):
-            module.fail_json(
-                **error_result(
-                    f"failed to reach daemon for process {pid} stats: "
-                    f"{resp.get('_error')}"
-                )
-            )
+            module.fail_json(**error_result(f"failed to reach daemon for process {pid} stats: {resp.get('_error')}"))
             return
         status = _status(resp)
         if status < 200 or status >= 300:
             detail = resp.get("detail") or resp.get("_raw") or "no detail"
-            module.fail_json(
-                **error_result(
-                    f"daemon returned HTTP {status} for process {pid} stats: {detail}"
-                )
-            )
+            module.fail_json(**error_result(f"daemon returned HTTP {status} for process {pid} stats: {detail}"))
             return
         stats = {k: v for k, v in resp.items() if not k.startswith("_")}
         module.exit_json(
             **ok_result(
-                {
-                    "ansible_facts": {
-                        "gludd_proc_monitor": {"processes": [stats], "count": 1}
-                    }
-                },
+                {"ansible_facts": {"gludd_proc_monitor": {"processes": [stats], "count": 1}}},
                 changed=False,
             )
         )
@@ -184,29 +168,17 @@ def main() -> None:
     # pid == 0 -> enumerate all managed processes, then fetch each alive one's stats.
     listing = client.get("/admin/processes")
     if _is_error(listing):
-        module.fail_json(
-            **error_result(
-                f"failed to reach daemon for process list: {listing.get('_error')}"
-            )
-        )
+        module.fail_json(**error_result(f"failed to reach daemon for process list: {listing.get('_error')}"))
         return
     status = _status(listing)
     if status < 200 or status >= 300:
         detail = listing.get("detail") or listing.get("_raw") or "no detail"
-        module.fail_json(
-            **error_result(
-                f"daemon returned HTTP {status} for process list: {detail}"
-            )
-        )
+        module.fail_json(**error_result(f"daemon returned HTTP {status} for process list: {detail}"))
         return
 
     procs = listing.get("processes") or []
     if not isinstance(procs, list):
-        module.fail_json(
-            **error_result(
-                "unexpected daemon output (expected 'processes' to be a list)"
-            )
-        )
+        module.fail_json(**error_result("unexpected daemon output (expected 'processes' to be a list)"))
         return
 
     collected: list[dict] = []
@@ -221,10 +193,7 @@ def main() -> None:
         stats_resp = client.get(f"/admin/processes/{epid}/stats")
         if _is_error(stats_resp):
             module.fail_json(
-                **error_result(
-                    f"failed to reach daemon for process {epid} stats: "
-                    f"{stats_resp.get('_error')}"
-                )
+                **error_result(f"failed to reach daemon for process {epid} stats: {stats_resp.get('_error')}")
             )
             return
         sstatus = _status(stats_resp)
@@ -233,15 +202,9 @@ def main() -> None:
             continue
         if sstatus < 200 or sstatus >= 300:
             detail = stats_resp.get("detail") or stats_resp.get("_raw") or "no detail"
-            module.fail_json(
-                **error_result(
-                    f"daemon returned HTTP {sstatus} for process {epid} stats: {detail}"
-                )
-            )
+            module.fail_json(**error_result(f"daemon returned HTTP {sstatus} for process {epid} stats: {detail}"))
             return
-        collected.append(
-            {k: v for k, v in stats_resp.items() if not k.startswith("_")}
-        )
+        collected.append({k: v for k, v in stats_resp.items() if not k.startswith("_")})
 
     module.exit_json(
         **ok_result(

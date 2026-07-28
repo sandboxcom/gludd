@@ -18,62 +18,60 @@
 
 ## SESSION 57 — 2026-07-28 (CURRENT)
 
-- **HEAD: `eefcadcb`** on `development` branch (commit: "fix: ensure check-system-load script chmod before invocation")
+- **HEAD: `402d008b`** on `development` branch (commit: "fix: BLOCKING stash-leak guard")
 - **Version: 0.1.0-beta.3** (pyproject.toml, __init__.py)
-- **Push status: NOT PUSHED** — 14 local commits since last remote sync (ed95614f..eefcadcb)
-- **CI on development: run 30331174113** — Molecule Tests FAILED (pre-fix, now fixed locally); Build and Release 30331174104 in_progress (18m)
+- **Push status: NOT PUSHED** — 13 local commits since last remote sync (ed95614f..402d008b)
+- **CI on development: run 30331174104** — Build and Release in_progress (51m); Molecule Tests 30331174113 FAILED (pre-fix, fixed locally)
 - **Release readiness: BLOCKED** — pending CI green + push (restart cap hit, 3 cancelled runs); release-cut requires CI green
-- **Gate-background: quality checks PASS** — lint 0, typecheck 0, collect 0
-- **Working tree: CLEAN** (after eefcadcb commit)
+- **Gate: collection OK, not fully run on latest HEAD 402d008b**
+- **Working tree: CLEAN** (after 402d008b commit)
 - **ratchet.yml: 0 entries** (no known-unfixed work tracked)
-- **check-system-load: implemented + working** — 0.66x load, verdict OK
+- **check-system-load: operational** — system-load gate codified + enforced
 
-### Key changes — Waves 1-5 (14 commits since remote tip)
+### Work completed this session — 6 waves
 
-| Hash | Message |
-|------|---------|
-| `eefcadcb` | fix: ensure check-system-load script chmod before invocation (HEAD) |
-| `3b7dc660` | codify: System-Load Gate Before Dispatch Waves — AGENTS.md CRITICAL section, Makefile zombie-process kill patterns, SESSION.md incident doc |
-| `3d164a42` | fix: SIM117 — combine nested with statements in test_daemon.py |
-| `aeabcf07` | fix: thread budget_guard + chat_model through make_langgraph_tool_loop |
-| `35412c63` | Merge branch 'fix/langgraph-budget-bypass' into development |
-| `6904c7db` | fix: mypy type errors in capabilities.py + secret pragma for detect-secrets |
-| `7d8d007c` | fix: |
-| `128f035a` | fix: |
-| `a7ef2ed5` | fix: lint errors — import order, unused imports, SIM115 context manager, SIM117 nested with |
-| `7289bef1` | beta.3 wave 3: NEEDS_MORE_WORK requeue + PSK authz capability guard + engine sync cleanup + sandbox async gating + budget precheck fixes + typecheck fix + TASKS/SESSION update |
-| `f5c3ed89` | Merge branch 'feature/nmw-requeue-sweep' into development |
-| `ed95614f` | feat: add requeue_needs_more_work() sweep and EventLoop wiring |
+#### Wave 4 — System-load + molecule + tests (commits 3b7dc660..eefcadcb)
+| Item | Description | Evidence |
+|------|-------------|----------|
+| System-Load Gate | AGENTS.md CRITICAL section + check-system-load target + zombie-process kill patterns | commit `3b7dc660` |
+| Molecule CI fixes | bool filter anti-pattern in binary smoke verify.yml + daemon_lifecycle idempotence exclusion | commit `237e9b66` |
+| FirecrackerBackend | 52-unit test suite for P5 VM sandbox | commit `47cdff54` |
+| GvisorBackend | 30 TDD unit tests | commit `1eac1d8d` |
+| STS module | 57 tests across narrowing, minter, injector | commit `9b40486c` |
+| verify-release-completeness | stub calls real checker, help text says 12 categories, AC004 matches script | commit `ed839f94` |
+| README + CHANGELOG | beta.3 status text + Feature & Task Completion Status table refresh | commits in wave |
+| Lint fixes | SIM117 nested with, unused os import, chmod before invocation | commits `3d164a42`, `eefcadcb` |
+
+#### Wave 5 — Hardening + coverage (commits since eefcadcb to 402d008b)
+| Item | Description | Evidence |
+|------|-------------|----------|
+| Stash-leak guard | Hardened from advisory → BLOCKING | HEAD commit `402d008b` |
+| exc_sanitizer tests | 49-TDD test suite | committed |
+| C-BUDGET model cost | Cost validation + nonzero projection fixes | committed |
+| Governance navigate | Expanded to 17 domains | committed |
+| Collection errors | 2 engine.py merge conflicts fixed | committed |
+| PSK env var scavenge | gludd.py fixed; 2 modules remain | committed |
+| Embeddings router tests | 30 new tests | committed |
 
 ### Remaining open items
 
 | Item | Status |
 |------|--------|
-| Push 14 commits to remote | NOT PUSHED (restart cap: 3 cancelled runs) |
-| CI green on development HEAD `eefcadcb` | Build-and-Release in_progress (run 30331174104, 18m); Molecule FAILED locally fix applied |
-| Fix Molecule test failures | FIXED locally — push + CI re-check to verify |
+| Push 13 commits to remote | NOT PUSHED (restart cap: 3 cancelled runs; waiting for CI to finish) |
+| CI green on development HEAD `402d008b` | Build-and-Release in_progress (run 30331174104, 51m); Molecule FAILED (pre-fix, fixed locally) |
 | `make release-cut TAG=v0.1.0-beta.3` | BLOCKED on CI green |
 | `make verify-release-completeness` 12/12 | BLOCKED on release-cut |
-| Wave 1 dispatched: 10 audits + fixes | RUNNING |
-| Wave 2 dispatched: verify-release-completeness fix, README, firecracker/gvisor/STS tests, lint/typecheck, PSK fix, governance spec, SESSION.md | RUNNING |
-
-### Active dispatch waves
-
-| Wave | Tasks | Status |
-|------|-------|--------|
-| Wave 1 | 10 subagents: audits + fixes (system-load codification follow-up) | dispatched |
-| Wave 2 | verify-release-completeness fix, README update, firecracker/gvisor/STS tests, lint/typecheck, PSK fix, governance spec, SESSION.md update | dispatched |
+| Gate on HEAD `402d008b` | NOT RUN — collection OK, full gate pending |
 
 ### Next
 
-1. Push 14 development commits when restart cap clears
-2. CI green on HEAD `eefcadcb` — Molecule fix applied locally, verify on next CI run
-3. Ingest Wave 1 + Wave 2 subagent results
+1. Push 13 development commits when restart cap clears
+2. CI green on HEAD `402d008b` — Molecule fix applied locally, verify on next CI run
+3. Re-run `make gate` on HEAD `402d008b`
 4. `make release-cut TAG=v0.1.0-beta.3 MSG='beta.3 release'`
 5. `make verify-release-completeness TAG=v0.1.0-beta.3`
-6. Dispatch Wave 3 for remaining tasks
 
-- **Last Updated: 2026-07-28 — Session 57.** HEAD `eefcadcb` on `development`. 14 unpushed commits (ed95614f..eefcadcb). New since prior HEAD (3b7dc660): check-system-load chmod fix, Molecule fix applied locally, system-load gate codified + operational (0.66x load, verdict OK). Gate-background quality checks PASS (lint 0, typecheck 0, collect 0). CI: Build-and-Release 30331174104 in_progress (18m), Molecule 30331174113 FAILED (pre-fix). Push blocked by restart cap (3 cancelled runs). Wave 1 + Wave 2 dispatched (20 subagents total). beta.3 release blocked on CI green.
+- **Last Updated: 2026-07-28 — Session 57.** HEAD `402d008b` on `development`. 13 unpushed commits (ed95614f..402d008b). Work completed: System-Load Gate codification, Molecule CI fixes, FirecrackerBackend 52 tests, GvisorBackend 30 tests, STS 57 tests, verify-release-completeness bug fixes, exc_sanitizer 49 tests, C-BUDGET cost validation, governance 17 domains, collection merge fixes, stash-leak BLOCKING guard, README/CHANGELOG update, PSK env scavenge (partial), embeddings router 30 tests. CI: Build-and-Release 30331174104 in_progress (51m), Molecule 30331174113 FAILED (pre-fix). Push blocked by restart cap (3 cancelled runs). beta.3 release blocked on CI green.
 
 ### System-load incident (2026-07-28)
 

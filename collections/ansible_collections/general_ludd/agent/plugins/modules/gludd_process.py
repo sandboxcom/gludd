@@ -138,6 +138,7 @@ try:
     )
 except ImportError:
     import sys
+
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "module_utils"))
     from gludd import GluddClient, error_result, ok_result  # type: ignore[import]
 
@@ -199,7 +200,7 @@ def main() -> None:
 
     client = GluddClient(
         base_url=daemon_url,
-        psk=psk or os.environ.get("GLUDD_PSK", ""),
+        psk=psk,
         timeout=timeout,
     )
 
@@ -208,9 +209,7 @@ def main() -> None:
         resp = client.get("/admin/processes")
         status = resp.get("_status", 0)
         if resp.get("_error") or status < 200 or status >= 300:
-            module.fail_json(
-                **error_result(_error_from_response(resp, "failed to list processes"))
-            )
+            module.fail_json(**error_result(_error_from_response(resp, "failed to list processes")))
             return
         processes = resp.get("processes", [])
         count = resp.get("count", len(processes) if isinstance(processes, list) else 0)
@@ -232,26 +231,18 @@ def main() -> None:
     # ---------------------------------------------------------------- status
     if action == "status":
         if pid <= 0:
-            module.fail_json(
-                **error_result("action=status requires a positive 'pid'")
-            )
+            module.fail_json(**error_result("action=status requires a positive 'pid'"))
             return
         resp = client.get(f"/admin/processes/{pid}/stats")
         status = resp.get("_status", 0)
         if resp.get("_error") or status < 200 or status >= 300:
-            module.fail_json(
-                **error_result(
-                    _error_from_response(resp, f"failed to get stats for pid {pid}")
-                )
-            )
+            module.fail_json(**error_result(_error_from_response(resp, f"failed to get stats for pid {pid}")))
             return
         stats = {k: v for k, v in resp.items() if not k.startswith("_")}
         module.exit_json(
             **ok_result(
                 {
-                    "ansible_facts": {
-                        "gludd_process": {"stats": stats}
-                    },
+                    "ansible_facts": {"gludd_process": {"stats": stats}},
                     "pid": pid,
                 },
                 changed=False,
@@ -262,19 +253,12 @@ def main() -> None:
     # ---------------------------------------------------------------- signal
     # action == "signal"
     if pid <= 0:
-        module.fail_json(
-            **error_result("action=signal requires a positive 'pid'")
-        )
+        module.fail_json(**error_result("action=signal requires a positive 'pid'"))
         return
 
     if signal_name not in ALLOWED_SIGNALS:
         allowed = ", ".join(sorted(ALLOWED_SIGNALS))
-        module.fail_json(
-            **error_result(
-                f"signal '{signal_name}' is not permitted; "
-                f"allowed signals: {allowed}"
-            )
-        )
+        module.fail_json(**error_result(f"signal '{signal_name}' is not permitted; allowed signals: {allowed}"))
         return
 
     # Check mode — describe the change, do NOT deliver the signal.
@@ -300,13 +284,7 @@ def main() -> None:
     )
     status = resp.get("_status", 0)
     if resp.get("_error") or status < 200 or status >= 300:
-        module.fail_json(
-            **error_result(
-                _error_from_response(
-                    resp, f"failed to send {signal_name} to pid {pid}"
-                )
-            )
-        )
+        module.fail_json(**error_result(_error_from_response(resp, f"failed to send {signal_name} to pid {pid}")))
         return
 
     module.exit_json(
