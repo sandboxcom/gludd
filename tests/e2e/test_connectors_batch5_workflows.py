@@ -1466,30 +1466,76 @@ class TestMacOSSecurityConnector:
     def test_health_ok_with_runner(self):
         from general_ludd.connectors.macos_security import MacOSSecuritySource
 
-        source = MacOSSecuritySource(runner=lambda argv: _json.dumps([{"event": "AUTHENTICATION_SUCCEEDED"}]))
-        result = source.health()
-        assert result["ok"] is True
+        calls: list[list[str]] = []
 
-    def test_query_returns_security_events(self):
+        def _runner(argv: list[str]) -> tuple[int, str, str]:
+            calls.append(list(argv))
+            return (
+                0,
+                "System Integrity Protection status: enabled.",
+                "",
+            )
+
+        source = MacOSSecuritySource(runner=_runner)
+        result = source.health()
+        assert result == {
+            "ok": True,
+            "detail": "csrutil responded",
+        }
+        assert calls == [["csrutil", "status"]]
+
+    def test_query_returns_security_posture_records(self):
         from general_ludd.connectors.macos_security import MacOSSecuritySource
 
-        def _runner(argv: list[str]) -> str:
-            return _json.dumps([
-                {"event": "AUTHENTICATION_SUCCEEDED", "user": "admin", "timestamp": "2025-01-01T12:00:00Z"},
-                {"event": "GATEKEEPER_OVERRIDE", "user": "admin", "timestamp": "2025-01-01T12:01:00Z"},
-            ])
+        calls: list[list[str]] = []
+
+        def _runner(argv: list[str]) -> tuple[int, str, str]:
+            calls.append(list(argv))
+            if argv == ["csrutil", "status"]:
+                return (
+                    0,
+                    "System Integrity Protection status: enabled.\n"
+                    "Filesystem Protections: enabled\n",
+                    "",
+                )
+            if argv == ["spctl", "--status"]:
+                return (0, "assessments enabled", "")
+            return (127, "", "unexpected command")
+
+        source = MacOSSecuritySource(
+            {"name": "mac-sec-audit"},
+            runner=_runner,
+        )
+        records = [
+            *source.query({"target": "sip"}),
+            *source.query({"target": "gatekeeper"}),
+        ]
+        assert calls == [
+            ["csrutil", "status"],
+            ["spctl", "--status"],
+        ]
+        assert len(records) == 2
+        assert all(r["kind"] == "logs" for r in records)
+        assert records[0]["source"] == "mac-sec-audit"
+        assert records[0]["level_or_status"] == "enabled"
+        assert records[0]["message"] == "SIP: enabled"
+        assert records[0]["labels"]["Filesystem Protections"] == "enabled"
+        assert records[1]["level_or_status"] == "enabled"
+        assert records[1]["labels"]["gatekeeper"] == "enabled"
+
+    def test_query_empty_on_nonzero_exit(self):
+        from general_ludd.connectors.macos_security import MacOSSecuritySource
+
+        calls: list[list[str]] = []
+
+        def _runner(argv: list[str]) -> tuple[int, str, str]:
+            calls.append(list(argv))
+            return (1, "", "permission denied")
 
         source = MacOSSecuritySource(runner=_runner)
         records = source.query({})
-        assert len(records) >= 2
-        assert all(r["kind"] == "logs" for r in records)
-
-    def test_query_empty_without_runner(self):
-        from general_ludd.connectors.macos_security import MacOSSecuritySource
-
-        source = MacOSSecuritySource()
-        records = source.query({})
         assert records == []
+        assert calls == [["csrutil", "status"]]
 
 
 # ============================================================================

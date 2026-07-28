@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) macOS Security E2E modeled events instead of posture commands
+
+- **What**: Connector batch 5 reached macOS Security and its health/query callbacks returned JSON event arrays. The connector actually reports security posture from `csrutil`, `spctl`, XProtect metadata, and `tccutil` through a list-argv runner triple. Its no-runner case also invoked the host's real security tools and treated whatever happened as deterministic E2E.
+- **Root cause**: The broad E2E conflated a security-state connector with an event-log collector and bypassed `(argv) -> (returncode, stdout, stderr)`. It therefore proved neither SIP/Gatekeeper command selection nor their text normalization and exit behavior.
+- **Fix applied**: Health records exact `csrutil status` argv and a full runner result. Query explicitly selects SIP and Gatekeeper, routes realistic text per exact command, verifies enabled posture and component labels, and models a controlled nonzero exit without touching host security state.
+- **Long-lived user evidence**: Apple documents SIP as a root-restricting integrity control and Gatekeeper as the trusted-execution layer ([SIP overview](https://support.apple.com/102149), [Gatekeeper security guide](https://support.apple.com/guide/security/sec5599b66df/web)). Users have relied on `csrutil status` for a decade while still encountering protection layers beyond SIP ([Ask Different, 2015](https://apple.stackexchange.com/questions/209015/why-cant-i-change-a-restricted-system-file-after-doing-csrutil-disable)); developers likewise report Gatekeeper outcomes that disagree with successful signing, notarization, and `spctl` assessment ([Apple Developer Forums, 2020](https://developer.apple.com/forums/thread/133637)).
+- **Lesson**: Security-posture E2E must test each supported command and parser, not fabricate generic events. SIP, Gatekeeper, XProtect, and TCC are distinct controls, and an unavailable command must never be mistaken for a benign posture.
+
 ### 2026-07-28 — (resolved) macOS log E2E used the wrong export and bypassed the command boundary
 
 - **What**: Connector batch 5 reached macOS unified logging and imported nonexistent `MacOSLogSource` instead of public `MacosLogSource`. It configured ignored `last`, returned JSON directly from its callbacks, and expected a query with no runner to look like an empty log.
