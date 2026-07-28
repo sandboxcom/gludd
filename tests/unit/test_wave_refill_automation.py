@@ -153,22 +153,20 @@ class TestRefillLogicInDefaultImpl:
 
 
 class TestRefillLogicInProxy:
-    """Verify the refill injection also exists in proxy plugin's experimental.text.complete."""
+    """Verify the thin proxy delegates refill behavior to one effective implementation."""
 
-    def test_proxy_has_refill_check(self):
+    def test_proxy_delegates_refill_check_to_effective_impl(self):
         src = _plugin_source()
-        # Count occurrences — should appear at least 2x (defaultImpl + proxy)
-        count = src.count("FLOOR LOW: only")
-        assert count >= 2, (
-            f"FLOOR LOW warning should appear in both defaultImpl and proxy; found {count} occurrences"
+        assert 'loadHotModule("multitask", defaultImpl)' in src
+        assert (
+            'impl["experimental.text.complete"] ?? impl["text.complete"]'
+            in src
         )
 
-    def test_proxy_has_estimated_in_flight_lt_5(self):
+    def test_refill_logic_has_single_source(self):
         src = _plugin_source()
-        count = src.count("_state.estimatedInFlight < 5")
-        assert count >= 2, (
-            f"estimatedInFlight < 5 check should appear in both defaultImpl and proxy; found {count}"
-        )
+        assert src.count("FLOOR LOW: only") == 1
+        assert src.count("_state.estimatedInFlight < 5") == 1
 
 
 class TestRefillDoesNotFireWhenPoolHigh:
