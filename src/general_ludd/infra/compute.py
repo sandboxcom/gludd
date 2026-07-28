@@ -75,6 +75,12 @@ class ComputeConfig(BaseModel):
     container_image: str | None = None
     api_key_alias: str | None = None
     deploy_type: str = "vm"
+    # Azure VM login is key-only. Terraform expands this path locally; the
+    # private key is never read or copied into state.
+    ssh_public_key_path: str = "~/.ssh/id_ed25519.pub"
+    # Optional price-sheet rate. When provided, the deployment TTL is shortened
+    # so max_cost_usd remains a hard upper bound.
+    hourly_rate_usd: float | None = None
     # Secure default: the inference endpoint (:8000) is UNAUTHENTICATED, so the
     # ingress CIDR defaults to loopback-only ("closed — configure me") rather than
     # the whole internet. Set allowed_cidr="0.0.0.0/0" explicitly for a public
@@ -124,6 +130,13 @@ class ComputeConfig(BaseModel):
     def _cost_positive(cls, v: float) -> float:
         if v <= 0:
             raise ValueError("max_cost_usd must be positive")
+        return v
+
+    @field_validator("hourly_rate_usd")
+    @classmethod
+    def _hourly_rate_positive(cls, v: float | None) -> float | None:
+        if v is not None and v <= 0:
+            raise ValueError("hourly_rate_usd must be positive")
         return v
 
     @field_validator("timeout_minutes")
@@ -187,6 +200,15 @@ class ComputeConfig(BaseModel):
                 f"Invalid characters in allowed_cidr {v!r}: only "
                 "[0-9a-fA-F.:,/] are allowed"
             )
+        return v
+
+    @field_validator("ssh_public_key_path")
+    @classmethod
+    def _safe_ssh_public_key_path(cls, v: str) -> str:
+        if not v or not re.match(r"^[A-Za-z0-9._~/-]+$", v):
+            raise ValueError("ssh_public_key_path contains invalid characters")
+        if ".." in v.split("/"):
+            raise ValueError("ssh_public_key_path must not contain '..'")
         return v
 
     @field_validator("guided_decoding_backend", mode="before")

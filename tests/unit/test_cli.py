@@ -152,6 +152,29 @@ class TestCLIParsing:
             assert args.model == "llama-7b"
             assert args.engine == "vllm"
 
+    def test_compute_azure_preflight_parses_accelerator_shape(self):
+        with patch(
+            "sys.argv",
+            [
+                "gludd",
+                "compute",
+                "azure-preflight",
+                "--gpu",
+                "a100_80",
+                "--gpu-count",
+                "2",
+                "--region",
+                "westus3",
+            ],
+        ), patch("general_ludd.cli._cmd_compute_azure_preflight") as mock_cmd:
+            main()
+
+        args = mock_cmd.call_args[0][0]
+        assert args.gpu == "a100_80"
+        assert args.gpu_count == 2
+        assert args.region == "westus3"
+        assert args.daemon_url == "http://localhost:8000"
+
 
 class TestClientCommands:
     @pytest.mark.asyncio

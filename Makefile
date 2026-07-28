@@ -107,7 +107,7 @@ _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-wor
         build-sandbox-image verify-sandbox-image clean-sandbox-images \
         vm-image-build vm-image-list vm-image-clean \
         verify-feature-claims audit-coverage gate-audit coverage-json \
-        tf-cache-setup tf-init tf-validate tf-cache-warm tf-versions-check tf-clean \
+        tf-cache-setup tf-init tf-init-local tf-validate tf-cache-warm tf-versions-check tf-clean test-opa-policies \
         deck deck-serve deck-preview deck-data deck-honesty \
         script-count strip-enforce-stop test-hooks-live test-hook-runtime test-opencode-e2e \
         verify-enforcement \
@@ -124,7 +124,7 @@ log-agent-result disk-guard disk-check check-disk disk tmp-gludd-usage tmp-gludd
          subagent-init subagent-cleanup \
          chat chat-eval test-chat \
 git-tag-delete git-tag-move release-deploy append-text write-text-b64 replace-text-b64 mkdir-p replace-lines _no-raw-git-guard \
-         git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head provider-smoke check-no-prompt-prone-edit-tools add-target edit-target edit-makefile-target validate-makefile \
+         git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head provider-smoke provider-harness azure-harness check-no-prompt-prone-edit-tools add-target edit-target edit-makefile-target validate-makefile \
          azure-event-guard-start azure-event-guard-stop azure-event-guard-check azure-event-guard-status \
          codex-system-skill-read
 
@@ -204,6 +204,10 @@ help:
 	@echo "  test-count            Count collected tests"
 	@echo "  test-failures         Show test failures"
 	@echo   provider-smoke        Run gludd smoke PROVIDER=aws SMOKE_TEST=ec2-a100 ARGS=--json
+	@echo "  provider-harness      Non-provisioning provider preflight (PROVIDER=azure, LIVE=1 is read-only)"
+	@echo "  azure-harness         Azure A100/H100 SKU + quota harness (dry-run by default)"
+	@echo "  tf-init-local         State-free init for an Azure release stack (no backend)"
+	@echo "  test-opa-policies     Execute the Azure/AWS/GCP IAM Rego policy tests"
 	@echo "  test-and-commit       Run tests then commit if green (MSG='msg')"
 	@echo "  audit-coverage        Run coverage audit: pytest --cov + per-file threshold check"
 	@echo "  test-live-zai         Live GLM model test (requires API key)"
@@ -1749,6 +1753,19 @@ provider-smoke:
 	@test -n "$(PROVIDER)" || { echo Usage: make provider-smoke PROVIDER=aws SMOKE_TEST=ec2-a100 ARGS=--json; exit 1; }
 	@test -n "$(SMOKE_TEST)" || { echo Usage: make provider-smoke PROVIDER=aws SMOKE_TEST=ec2-a100 ARGS=--json; exit 1; }
 	@$(UV) run gludd smoke "$(PROVIDER)" "$(SMOKE_TEST)" $(ARGS)
+
+# Azure accelerator harness. Dry-run is local-only; LIVE=1 performs read-only
+# Azure Compute SKU and quota calls and never creates or deletes resources.
+provider-harness:
+	@test "$(PROVIDER)" = "azure" || { echo "Usage: make provider-harness PROVIDER=azure [LIVE=1]"; exit 1; }
+	@$(UV) run python scripts/provider_smoke_harness.py "$(PROVIDER)" $(if $(filter 1 true yes,$(LIVE)),--live,)
+
+azure-harness:
+	@$(MAKE) --no-print-directory provider-harness PROVIDER=azure LIVE=$(LIVE)
+
+test-opa-policies:
+	@command -v opa >/dev/null 2>&1 || { echo "opa MISSING — install OPA to run policy tests"; exit 1; }
+	@opa test $(OPA_ARGS) config/opa/iam_policy.rego config/opa/iam_policy_test.rego
 
 # --- Azure Event Guard ---
 # Monitors Azure Activity Log for expensive resource creation, duplicate names,
@@ -5121,6 +5138,15 @@ tf-init: tf-cache-setup
 	@test -n "$(STACK)" || { echo "Usage: make tf-init STACK=stacks/<name>"; exit 2; }
 	@test -d $(TF_ROOT)/$(STACK) || { echo "No such stack: $(TF_ROOT)/$(STACK)"; exit 2; }
 	@cd $(TF_ROOT)/$(STACK) && $(TF) init
+
+# Initialise only the two beta.3 Azure accelerator stacks without contacting
+# the daemon-backed HTTP state service.  Removing the generated .terraform
+# metadata prevents an earlier backend-enabled init from leaking into this
+# state-free validation path.
+tf-init-local: tf-cache-setup
+	@case "$(STACK)" in stacks/azure-vllm|stacks/azure-llamacpp) ;; *) echo "Usage: make tf-init-local STACK=stacks/azure-vllm|stacks/azure-llamacpp"; exit 2;; esac
+	@rm -rf "$(TF_ROOT)/$(STACK)/.terraform"
+	@cd "$(TF_ROOT)/$(STACK)" && TF_PLUGIN_CACHE_DIR="$(TF_PLUGIN_CACHE)" terraform init -backend=false
 
 # Validates a single stack against the shared cache.
 #   make tf-validate STACK=stacks/aws-vllm

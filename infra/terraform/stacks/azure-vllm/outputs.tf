@@ -4,6 +4,6 @@ output "compute_instance_id" {
 }
 
 output "compute_public_ip" {
-  description = "Private IP address of the inference server NIC."
-  value       = azurerm_network_interface.inference.private_ip_address
+  description = "Public IP address of the inference server."
+  value       = azurerm_public_ip.inference.ip_address
 }

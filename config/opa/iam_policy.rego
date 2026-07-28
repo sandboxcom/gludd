@@ -62,7 +62,7 @@ aws_least_privilege_valid if {
 
 # ============================================================================
 # Azure IAM least-privilege validation.
-# Input: input.azure_role_assignments — list of {role_definition_name}
+# Input: input.azure_role_assignments — list of {role_definition_name, scope}
 # ============================================================================
 
 forbidden_azure_roles := {

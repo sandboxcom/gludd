@@ -9,6 +9,9 @@ import stat
 from pathlib import Path
 
 TMP_GLOBS = (
+    "gludd-audit-e2e-*",
+    "gludd-collect-output.txt",
+    "gludd-gate-refresh-test.log",
     "gludd-iso-*",
     "gludd-winfix*-gate.log",
     "gludd-test-gate.txt",
@@ -67,17 +70,24 @@ def _make_writable_tree(path: Path) -> None:
         with contextlib.suppress(OSError):
             os.chmod(root_path, stat.S_IRWXU)
         for name in dirs:
+            child = root_path / name
+            if child.is_symlink():
+                continue
             with contextlib.suppress(OSError):
-                os.chmod(root_path / name, stat.S_IRWXU)
+                os.chmod(child, stat.S_IRWXU)
         for name in files:
+            child = root_path / name
+            if child.is_symlink():
+                continue
             with contextlib.suppress(OSError):
-                os.chmod(root_path / name, stat.S_IRUSR | stat.S_IWUSR)
+                os.chmod(child, stat.S_IRUSR | stat.S_IWUSR)
 
 
 def _retry_with_chmod(func, path_str: str, _exc_info) -> None:
     path = Path(path_str)
-    with contextlib.suppress(OSError):
-        os.chmod(path, stat.S_IRWXU)
+    if not path.is_symlink():
+        with contextlib.suppress(OSError):
+            os.chmod(path, stat.S_IRWXU)
     func(path_str)
 
 

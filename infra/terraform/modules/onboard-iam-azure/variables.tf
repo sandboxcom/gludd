@@ -22,3 +22,10 @@ variable "identity_name" {
   type        = string
   default     = "gludd-compute-operator"
 }
+
+variable "operator_principal_id" {
+  description = "Optional object id of an existing app/service principal. Defaults to the managed identity created by this module."
+  type        = string
+  default     = null
+  nullable    = true
+}
