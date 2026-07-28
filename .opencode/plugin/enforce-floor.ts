@@ -10,10 +10,9 @@ function execSync(...args: any[]): Buffer {
 }
 // Floor+ceiling enforcement guardrail. FAIL-OPEN: any error -> do nothing.
 //
-// opencode ≥1.17.9 removed text.complete. This version is self-contained in
-// tool.execute.before: message boundaries detected via 5s inter-call timeout,
-// result-processing grace via time-since-last-dispatch, streak tracking in
-// tool.execute.before module-level state.
+// opencode ≥1.17.9 removed the bare text.complete hook. Enforcement remains
+// self-contained in tool.execute.before; experimental.text.complete is a
+// pass-through observability boundary only.
 // Live overrides
 function _tunable(overridePath: string, envVar: string, dflt: string): number {
   let base = parseInt(process.env[envVar] || dflt, 10)
@@ -31,7 +30,7 @@ const TARGET = Math.min(
 )
 const FLOOR_ENFORCE = process.env.GLUDD_FLOOR_ENFORCE !== "0"
 const STREAK_PLUGIN_NAME = "enforce-floor"
-// Shared state filenames used through shared.ts: gludd-tool-streak.json, gludd-watchdog-disengage.json.
+// Shared streak and disengage state are resolved exclusively through shared.ts.
 // ── Time-based message boundary detection ──────────────────────────────────
 // Inter-call gap that marks a new agent message. Env-tunable so e2e tests can
 // drive the real boundary logic without 5s sleeps; production default unchanged.
@@ -159,14 +158,16 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
       }
     } catch {}
     try {
-      const ciCachePath = "/tmp/gludd-watchdog-ci.json"
+      const ciCachePath =
+        process.env.GLUDD_WATCHDOG_CI_FILE || "/tmp/gludd-watchdog-ci.json"
       if (fs.existsSync(ciCachePath)) {
         const ciData = JSON.parse(fs.readFileSync(ciCachePath, "utf8"))
         const lastCheck = ciData.last_ci_check || 0
         const lastStatus = ciData.last_ci_status || ""
         if (Date.now() - lastCheck < 120_000 && lastStatus && lastStatus !== "SUCCESS") return true
       }
-      const stopStatePath = "/tmp/gludd-stop-state.json"
+      const stopStatePath =
+        process.env.GLUDD_STOP_STATE_FILE || "/tmp/gludd-stop-state.json"
       if (fs.existsSync(stopStatePath)) {
         const state = JSON.parse(fs.readFileSync(stopStatePath, "utf8"))
         if (state.ciVerdictPendingOrRed) return true
@@ -577,14 +578,14 @@ const defaultImpl: HotModule = {
   },
 }
 // ============================================================================
-// PROXY PLUGIN (hot-reload aware — tool.execute.before only)
+// PROXY PLUGIN (hot-reload aware)
 // ============================================================================
 export default (({ }) => {
   try {
     fs.appendFileSync(
       "/tmp/gludd-plugin-loaded.log",
       `${new Date().toISOString()} LOADED enforce-floor ` +
-      `tool.execute.before (self-contained; no text.complete) ` +
+      `tool.execute.before + experimental.text.complete ` +
       `pid=${process.pid}\n`,
       "utf8",
     )
@@ -612,6 +613,7 @@ export default (({ }) => {
       return fn ? await fn(input, output) : undefined
     },
     "experimental.text.complete": async (input: unknown, output: unknown) => {
+      if (isSubagent()) return output
       const impl = loadHotModule("floor", defaultImpl)
       const fn = impl["experimental.text.complete"]
       return fn ? await fn(input, output) : output
