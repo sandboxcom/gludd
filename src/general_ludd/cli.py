@@ -1340,6 +1340,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "searx": searx_parser,
         "test-bg": test_bg_parser,
         "test": test_parser,
+        "smoke": smoke_parser,
         "chat": chat_parser,
         "pause": pause_parser,
         "resume": resume_parser,

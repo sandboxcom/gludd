@@ -116,13 +116,18 @@ class TestConsolidatedTestSubcommands:
             f"found: {subcmds}"
         )
 
-    def test_smoke_not_standalone(self) -> None:
-        """Standalone smoke should NOT be a top-level command."""
-        subcmds = _get_subcommands()
-        assert "smoke" not in subcmds, (
-            f"smoke should NOT be a standalone top-level command, "
-            f"found: {subcmds}"
-        )
+    def test_smoke_compatibility_entry_point_matches_namespaced_command(self) -> None:
+        """The documented ``smoke`` entry point remains compatible with ``test smoke``."""
+        from general_ludd.cli import _cmd_smoke, build_parser
+
+        parser, _ = build_parser()
+        standalone = parser.parse_args(["smoke", "aws", "metadata"])
+        namespaced = parser.parse_args(["test", "smoke", "aws", "metadata"])
+
+        assert standalone.func is _cmd_smoke
+        assert namespaced.func is _cmd_smoke
+        assert (standalone.provider, standalone.test) == ("aws", "metadata")
+        assert (namespaced.provider, namespaced.test) == ("aws", "metadata")
 
 
 class TestModulesStillImportable:

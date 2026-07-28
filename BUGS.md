@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) consolidation test contradicted the documented smoke entry point
+
+- **What**: Focused CLI validation found a unit assertion demanding removal of top-level `gludd smoke`, while the parser, provider Make harness, workflow guide, and smoke-test guide all intentionally expose that spelling alongside `gludd test smoke`.
+- **Root cause**: A broad command-consolidation test treated every namespaced command as an exclusive migration. Smoke was actually retained as a documented compatibility entry point, using the same argument builder and handler as the namespaced form; its parser was also accidentally omitted from the returned `subcommand_map`.
+- **Fix applied**: The regression now parses both forms, proves they dispatch to `_cmd_smoke`, and verifies identical provider/test argument values. The documented compatibility parser is restored to `subcommand_map`, keeping programmatic parser consumers aligned with actual CLI behavior.
+- **Long-lived user evidence**: CLI users explicitly retain old aliases for backwards compatibility when command names evolve ([Stack Overflow user discussion](https://stackoverflow.com/questions/76281967/how-do-i-hide-an-alias-of-a-command-line-parameter-using-system-commandline)); current Codex users likewise ask release notes to say whether legacy aliases remain accepted ([Codex issue #21682](https://github.com/openai/codex/issues/21682)).
+- **Lesson**: Namespacing and compatibility are independent decisions. Tests must derive removal expectations from an explicit product contract, especially when scripts and user documentation still depend on the older entry point.
+
 ### 2026-07-28 — (resolved) self-test E2E invoked a removed top-level command
 
 - **What**: The complete serial E2E run stopped after 660 passes because two legacy parser tests invoked `gludd selftest`, although the supported command is the namespaced `gludd test self`.
