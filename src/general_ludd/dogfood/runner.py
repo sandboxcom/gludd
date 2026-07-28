@@ -29,10 +29,10 @@ def _validate_task_name(task_name: str) -> str:
     """
     if not isinstance(task_name, str) or not task_name:
         raise ValueError("task_name must be a non-empty string")
-    if "/" in task_name or "\\" in task_name:
-        raise ValueError(f"task_name must not contain path separators: {task_name!r}")
     if ".." in task_name:
         raise ValueError(f"task_name must not contain traversal: {task_name!r}")
+    if "/" in task_name or "\\" in task_name:
+        raise ValueError(f"task_name must not contain path separators: {task_name!r}")
     if task_name.startswith("-"):
         raise ValueError(f"task_name must not start with a dash: {task_name!r}")
     if any(ch in _SHELL_META_CHARS for ch in task_name):

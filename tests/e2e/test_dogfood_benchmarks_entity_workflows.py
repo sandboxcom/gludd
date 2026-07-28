@@ -110,7 +110,7 @@ class TestTaskNameHardening:
 
     def test_rejects_shell_metachar(self):
         with pytest.raises(ValueError, match="shell metachar"):
-            _validate_task_name("foo;rm -rf /")
+            _validate_task_name("foo;bar")
 
 
 class TestDogfoodRunnerSeeding:
@@ -394,7 +394,7 @@ class TestBenchmarkHarness:
         assert report["benchmarks"]["swe-bench"]["resolved_count"] == 1
 
     def test_report_writes_to_file(self):
-        suite = BenchmarkSuite()
+        suite = BenchmarkSuite(agent_name="a")
         BenchmarkTask(task_id="f", description="d")
         suite.results.append(BenchmarkResult(
             benchmark="gaia", task_id="f", score=0.0,
