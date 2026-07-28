@@ -1011,7 +1011,7 @@ class TestZipkinConnector:
         transport = MockHttpTransport(default_status=200, default_body=[])
         src = ZipkinSource({"base_url": "https://zipkin.example.com/"}, transport=cast(Any, transport))
         result = src.health()
-        assert isinstance(result, dict)
+        assert result["ok"] is True
 
     def test_query_returns_records(self):
         from general_ludd.connectors.zipkin import ZipkinSource
@@ -1019,18 +1019,25 @@ class TestZipkinConnector:
         transport = MockHttpTransport(
             default_status=200,
             default_body=[
-                {
-                    "traceId": "trace1",
-                    "id": "span1",
-                    "name": "get",
-                    "timestamp": 1700000000000,
-                }
+                [
+                    {
+                        "traceId": "trace1",
+                        "id": "span1",
+                        "name": "get",
+                        "timestamp": 1700000000000,
+                        "duration": 250,
+                        "kind": "SERVER",
+                        "localEndpoint": {"serviceName": "checkout"},
+                    }
+                ]
             ],
         )
         src = ZipkinSource({"base_url": "https://zipkin.example.com/"}, transport=cast(Any, transport))
         records = src.query({})
-        assert isinstance(records, list)
-        assert len(records) >= 1
+        assert len(records) == 1
+        assert records[0]["message"] == "get"
+        assert records[0]["value"] == 250
+        assert records[0]["labels"]["service"] == "checkout"
 
 
 class TestTempoConnector:
