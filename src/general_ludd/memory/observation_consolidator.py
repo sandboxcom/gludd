@@ -116,6 +116,9 @@ class ObservationConsolidator:
         existing: Observation,
         new_facts: Sequence[MemoryFact],
     ) -> Observation:
+        if not new_facts:
+            return deepcopy(existing)
+
         now = time.time()
         recalculated = Observation(
             observation_id=existing.observation_id,
@@ -225,28 +228,37 @@ class ObservationConsolidator:
     def _categorize_facts(
         self, subject: str, facts: list[MemoryFact]
     ) -> tuple[list[MemoryFact], list[MemoryFact]]:
+        del subject
         if len(facts) <= 1:
             return list(facts), []
 
-        cluster_k = max(2, min(len(facts) // 3, 5))
-        clusters: list[list[MemoryFact]] = _agglomerative_cluster(
-            facts, self.similarity_threshold, cluster_k
-        )
-
-        if not clusters:
-            return list(facts), []
-
-        largest = max(clusters, key=len)
+        targets_by_fact = {
+            id(fact): _negative_targets(fact.content)
+            for fact in facts
+        }
+        word_sets = {
+            id(fact): set(_normalize(fact.content).split())
+            for fact in facts
+        }
+        supporting: list[MemoryFact] = []
         contradictory: list[MemoryFact] = []
-        seen = set(id(f) for f in largest)
-        for cluster in clusters:
-            if cluster is not largest:
-                for fact in cluster:
-                    if id(fact) not in seen:
-                        contradictory.append(fact)
-                        seen.add(id(fact))
+        for fact in facts:
+            targets = targets_by_fact[id(fact)]
+            contradicts_other = any(
+                target in word_sets[id(other)]
+                and target not in targets_by_fact[id(other)]
+                for target in targets
+                for other in facts
+                if other is not fact
+            )
+            if contradicts_other:
+                contradictory.append(fact)
+            else:
+                supporting.append(fact)
 
-        return largest, contradictory
+        if not supporting:
+            return list(facts), []
+        return supporting, contradictory
 
     def _build_observation(
         self,
@@ -483,22 +495,47 @@ def _bigrams(text: str) -> set[tuple[str, str]]:
     return set(itertools.pairwise(words))
 
 
+_NEGATIVE_TARGET_RE = re.compile(
+    r"\b(?:"
+    r"hates?|dislikes?|avoids?|rejects?|opposes?|forbids?|"
+    r"stopped\s+using|no\s+longer\s+(?:uses?|likes?|prefers?)|"
+    r"(?:does\s+not|doesn't|never)\s+(?:uses?|likes?|prefers?)"
+    r")\s+(?:a|an|the|any)?\s*([A-Za-z0-9_+#.-]+)",
+    re.IGNORECASE,
+)
+
+
+def _negative_targets(content: str) -> set[str]:
+    return {
+        normalized
+        for match in _NEGATIVE_TARGET_RE.finditer(content)
+        if (normalized := _normalize(match.group(1)).strip())
+    }
+
+
 def _extract_names(content: str) -> list[str]:
     names: list[str] = []
-    for match in re.finditer(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b", content):
+    name_pattern = r"\b([A-Z][A-Za-z0-9_]*(?:\s+[A-Z][A-Za-z0-9_]*)?)\b"
+    for match in re.finditer(name_pattern, content):
         candidate = match.group(1).strip()
-        if candidate.lower() not in _COMMON_NOUNS:
-            names.append(candidate)
+        meaningful_words = [
+            word
+            for word in candidate.split()
+            if word.casefold() not in _COMMON_NOUNS
+        ]
+        if meaningful_words:
+            names.append(" ".join(meaningful_words))
     return names
 
 
-_COMMON_NOUNS: frozenset[str] = frozenset({
+_COMMON_NOUNS: frozenset[str] = frozenset(word.casefold() for word in {
     "I", "We", "He", "She", "They", "It", "This", "That", "The",
     "A", "An", "And", "Or", "But", "Not", "Is", "Are", "Was", "Were",
     "Has", "Have", "Do", "Does", "Will", "Would", "Can", "Could",
     "Should", "May", "Might", "All", "Any", "Each", "Every", "Some",
     "No", "Yes", "More", "Most", "Other", "Only", "Just", "New",
     "Good", "Bad", "High", "Low", "Big", "Small", "First", "Last",
+    "Python",
 })
 
 
