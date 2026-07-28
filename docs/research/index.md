@@ -11,6 +11,7 @@ Research documents for model routing, enumeration, compaction, and RAG.
 | [Model Routing Prior Art](model_routing_prior_art.md) | Model routing prior art |
 | [RAG Routing Research](RAG_ROUTING_RESEARCH_2026-06-23.md) | RAG routing research 2026-06-23 |
 | [Compaction Models](compaction_models.md) | Compaction models |
+| [ML/AI Expert-System Research](ML_AI_EXPERT_SYSTEM_RESEARCH_2026-07-28.md) | Deep ML/AI resource map and evidence base for the expert collection and safe self-improvement |
 
 ### Model Weights
 
