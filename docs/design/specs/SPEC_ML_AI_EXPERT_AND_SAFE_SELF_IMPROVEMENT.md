@@ -154,15 +154,21 @@ collections/ansible_collections/general_ludd/ml_ai_expert/
 │   ├── outcome_learn/
 │   ├── data_engineering/
 │   ├── model_adaptation/
+│   ├── adapter_audit/
 │   ├── adapter_route/
 │   ├── retrieval_engineering/
+│   ├── retrieval_control/
 │   ├── reasoning_verify/
+│   ├── process_verify/
 │   ├── vision_analyze/
 │   ├── image_generate/
 │   ├── image_edit/
+│   ├── media_verify/
 │   ├── math_solve/
 │   ├── theorem_prove/
 │   ├── science_discovery/
+│   ├── research_reproduce/
+│   ├── evolution_curate/
 │   ├── eval_design/
 │   ├── safety_review/
 │   ├── answer_synthesize/
@@ -197,15 +203,21 @@ budget, network destination, promotion right, or secret.
 | `outcome_learn` | Exposure, intervention, outcome, and confounder records | Causal/uncertainty report and bounded candidate-memory proposals | Outcome-ledger read and candidate-memory write only |
 | `data_engineering` | Data resources and target logical schema | Validated dataset manifest and conversion artifacts | Project dataset read/write |
 | `model_adaptation` | Base/adapter/dataset/eval manifests | Isolated candidate adapter and training report | Authorized accelerator/model read; candidate workspace write |
+| `adapter_audit` | Frozen base/adapter/runtime manifests and capability suites | Trainability, activation, merge-equivalence, and forgetting report | Read-only model/eval sandbox; no training, merge, route, or promotion write |
 | `adapter_route` | Request features and approved adapter registry | Reproducible base/adapter route decision | Registry/model gateway read |
 | `retrieval_engineering` | Corpus/query/eval manifests | Versioned index and retrieval report | Project knowledge-store read/write |
+| `retrieval_control` | Atomic claims, search ledger, coverage, and budget | Typed next-query/source action or evidence-sufficiency stop record | Approved query dispatch and search-ledger append only |
 | `reasoning_verify` | Subproblem DAG and candidate derivation | Checkable steps, tool artifacts, and verification state | Declared solvers only |
+| `process_verify` | Frozen reasoning graph and verifier suite | First-error, calibration, perturbation, and hacking-resistance report | Read-only candidate and verifier access; no generator or reward mutation |
 | `vision_analyze` | Media ingredients and question | Spatial/temporal observations with locators | Media decode and approved vision tools |
 | `image_generate` | Prompt/conditions/policy | New media artifact plus provenance manifest | Authorized image backend and artifact write |
 | `image_edit` | Source asset, region/instruction, policy | Edited artifact and ingredient graph | Authorized image backend and artifact write |
+| `media_verify` | Source/condition/output transform graph and edit intent | Geometry, requested-change, protected-region, artifact, and provenance report | Read-only media transforms/checkers; no generation or publication |
 | `math_solve` | Formalized mathematical problem | Exact/numeric result with assumptions and checks | Calculator/CAS/SMT sandbox |
 | `theorem_prove` | Natural/formal statement and pinned environment | Kernel result and proof artifact | Formal prover sandbox |
 | `science_discovery` | Domain, hypothesis, data, preregistration | Proposal or bounded computational experiment | Project sandbox; no physical action by default |
+| `research_reproduce` | Paper claims, repository, data, environment, and rubric | Executed artifacts and claim-by-claim reproduction report | Isolated computational sandbox; no physical action, promotion, or source-policy write |
+| `evolution_curate` | Candidate lineage, outcomes, capabilities, and budgets | Pareto archive, regression debt, parent-selection, and stop report | Read-only candidate/eval archive; no candidate, evaluator, or champion mutation |
 | `eval_design` | Capability claim and risk | Versioned suite/card/threshold proposal | Eval registry write, no promotion |
 | `safety_review` | Proposed plan/artifacts | Allow, constrain, review, or deny record | Policy read and approval request |
 | `answer_synthesize` | Admitted claims/evidence/artifacts | Private-CoT-safe user report | No mutation or new external action |
@@ -237,17 +249,23 @@ initial skill set is:
 | `outcome_learning` | Exposure logging, causal attribution, delayed outcomes, and feedback-loop controls | `outcome_learn`, `eval_design` |
 | `dataset_contract` | Schema, formats, lineage, quality, split rules | `data_engineering`, `eval_design` |
 | `peft_experiment` | LoRA/QLoRA/DoRA/adapter comparison checklist | `model_adaptation` |
+| `adapter_equivalence` | Trainability, activation, dtype, merge/hotswap, and forgetting audit | `adapter_audit`, `model_adaptation`, `adapter_route` |
 | `adapter_route` | Compatibility, composition, serving, rollback checklist | `adapter_route` |
 | `hybrid_retrieval` | Lexical/dense/graph/fusion/reranker workflow | `retrieval_engineering` |
+| `evidence_sufficiency` | Atomic-claim coverage, information-gain query choice, saturation, and stop protocol | `retrieval_control`, `web_research`, `independent_verify` |
 | `verifiable_reasoning` | Externalized assumptions, tools, proof state | `reasoning_verify`, `math_solve` |
+| `process_verifier_audit` | Error localization, calibration, metamorphic checks, and reward-hacking resistance | `process_verify`, `eval_design` |
 | `private_reasoning_boundary` | Produce concise verification records without raw private CoT | All model-backed roles |
 | `vision_evidence` | Regions, timestamps, OCR/caption lineage | `vision_analyze` |
 | `image_generation` | Pipeline components, seeds, safety, provenance | `image_generate` |
 | `image_editing` | Ingredients, masks, transformations, identity/rights | `image_edit` |
+| `media_transform_trace` | Orientation, coordinate, mask, color, crop/resize, latent, and compositing invariants | `image_edit`, `vision_analyze`, `media_verify` |
 | `formal_proof` | Natural/formal translation and kernel validation | `theorem_prove` |
 | `scientific_method` | Hypothesis, controls, units, statistics, replication | `science_discovery` |
+| `scientific_reproduction` | Environment restoration, execution, output extraction, and claim/result reconciliation | `research_reproduce`, `independent_verify` |
 | `evaluation_card` | Claims, cases, metrics, slices, thresholds, limits | `eval_design`, `independent_verify` |
 | `safe_self_improvement` | Candidate isolation and promotion evidence | Self-improvement roles |
+| `evolution_lineage` | Multi-generation Pareto archive, regression debt, evaluator-cohort, and stopping protocol | `evolution_curate`, `improvement_propose`, `independent_verify` |
 
 The existing `Skill` model MUST be extended with `schema_version`,
 `input_schema`, `output_schema`, `required_capabilities`, `resource_profile`,
@@ -871,6 +889,40 @@ self-approved promotions are blocked in 100% of fixtures; every live selection
 pointer resolves to one accepted promotion record; the kill switch is tested in
 each release.
 
+### MLSI.13 — Multi-generation improvement archive and regression-debt gate
+
+**Status:** Not implemented
+
+**Contract:** Maintain every self-improvement candidate as an immutable lineage
+node containing parent/root/champion digests, exact diff and environment,
+proposal/evidence/evaluation/approval links, full capability/safety/resource
+vector, known regressions, and terminal state. `evolution_curate` preserves a
+bounded Pareto-diverse archive and may recommend parents or stopping, but cannot
+edit candidates, evaluators, metrics, policy, or champion state. Evaluate each
+generation against its parent, current champion, and root on frozen old/new/
+transfer/adversarial suites; carry unresolved regression debt forward visibly
+and forbid promotion of a local gain that violates any hard invariant. When an
+evaluator or benchmark revision changes, create a new immutable cohort and
+backtest retained nodes rather than rewriting historical fitness. The open-ended
+archives in [Darwin Gödel Machine](https://arxiv.org/abs/2505.22954) and
+machine-gradable evaluator boundary in
+[AlphaEvolve](https://storage.googleapis.com/deepmind-media/DeepMind.com/Blog/alphaevolve-a-gemini-powered-coding-agent-for-designing-advanced-algorithms/AlphaEvolve.pdf)
+are experimental patterns, not authority for recursive live modification.
+
+**Primary seams:** Self-improvement harness, experiment/evaluation registries,
+artifact/provenance stores, candidate scheduler, and promotion controller.
+
+**Acceptance:** Fixtures cover local benchmark gain with root capability loss,
+safety/resource regression, ancestor-only useful capability, duplicate/cyclic or
+broken lineage, archive collapse to one family, novelty without quality,
+benchmark contamination/overfit, evaluator/rubric revision, incomparable metric,
+stale parent, rejected ancestor, hidden regression debt, runaway depth/branch/
+cost, stagnation, restart, and rollback. Archive pruning preserves champion,
+last-known-good, Pareto boundary, required ancestors, negative evidence, and
+audit lineage; deterministic replay returns the same cohort/rank/stop record;
+no number of successful generations can relax human approval or the
+`MLCONT.31` promotion protocol.
+
 ## 6. Reusable core-system specifications
 
 ### MLCORE.1 — Typed evidence broker
@@ -1099,6 +1151,36 @@ executed stages; mandatory attributes are present in 100% of spans; privacy test
 prove prompts, secrets, and protected evidence are absent unless an authorized
 debug policy explicitly opts in.
 
+### MLCORE.16 — Typed transformation and equivalence protocol
+
+**Status:** Not implemented
+
+**Contract:** Introduce one immutable manifest for any operation that changes an
+artifact representation while claiming to preserve all or part of its meaning.
+Record input/output digests, ordered algorithm/library/environment revisions,
+parameters, randomness, dtype/quantization, shape and coordinate/token/module
+maps, expected irreversible loss, declared invariants, equivalence level
+(`byte_exact`, `numerically_bounded`, `task_equivalent`, or `derived_candidate`),
+tolerances, and independent checker results. Use it for adapter merge/unmerge and
+tokenizer changes, image orientation/crop/resize/color/mask/latent transforms,
+dataset conversion, retrieval chunk/embed/index migrations, and scientific
+result extraction. This adapts the invariant checks exposed by current
+[PEFT troubleshooting](https://huggingface.co/docs/peft/developer_guides/troubleshooting)
+and image-transform pipelines into a shared Gludd contract rather than assuming
+that a successful conversion preserved behavior.
+
+**Primary seams:** Artifact store, run recorder, adapter/media/dataset/retrieval
+protocols, provenance API, and independent verifier topology.
+
+**Acceptance:** Table-driven conformance fixtures cover exact copy, lossy dtype
+cast, quantize/dequantize, adapter merge, tokenizer/embedding resize, EXIF
+orientation, crop/pad/resize and mask interpolation, color/alpha conversion,
+dataset schema cast, embedding-dimension change, chunker/parser revision, and
+paper table/figure extraction. Missing maps/checkers, undeclared loss,
+out-of-tolerance results, nondeterministic order, stale environment, and
+round-trip failure cannot claim equivalence or replace an accepted artifact;
+every derived output resolves its full transform graph and failed checks.
+
 ## 7. Deep capability specifications
 
 ### 7.1 Collection, role, and skill control plane
@@ -1272,6 +1354,33 @@ useful, atomic selection pointers, canary, and prior-version rollback.
 **Acceptance:** Load/unload/switch/merge concurrency tests show no request uses a
 partial or wrong adapter; per-request lineage is complete; rollback completes in
 60 seconds without reloading the base.
+
+### MLPEFT.9 — Adapter trainability, activation, merge, and forgetting audit
+
+**Status:** Not implemented
+
+**Contract:** Before training and every load, hotswap, composition, merge, or
+unmerge, have `adapter_audit` freeze and compare base/adapter/runtime state:
+targeted and actually executed modules, trainable parameter and optimizer
+identities, update/delta norms, active/available/merged adapters per layer,
+irregular layer state, dtype and quantization casts, device/offload, train/eval
+mode, tokenizer/vocabulary/chat template, embeddings and task heads, compile
+state, and deterministic logits/task outputs. Emit an `MLCORE.16` equivalence
+manifest and run old-task, new-task, transfer, safety, calibration, and resource
+suites so PEFT efficiency cannot hide a silent no-op, merge drift, or capability
+forgetting. Current [PEFT status/troubleshooting guidance](https://huggingface.co/docs/peft/developer_guides/troubleshooting)
+and [model-merging constraints](https://huggingface.co/docs/peft/developer_guides/model_merging)
+are adapter inputs, not substitutes for measured equivalence.
+
+**Acceptance:** Fixtures cover a stale optimizer reference that performs no
+update, a configured target module never reached in forward execution, wrong or
+disabled adapter, irregular per-layer active state, missing classification head
+or resized embedding, dropout/sampling mismatch, fp32-adapter to bf16-base merge,
+quantized merge/dequantize/requantize, compiled hotswap limit, target shape/rank
+mismatch, sequential-task forgetting, and base/active/merged output divergence.
+Every unexpected state or tolerance/capability regression blocks publication and
+serving; a supported case reproduces the declared logits and capability vector
+before and after merge/unmerge or hotswap.
 
 ### 7.3 Dataset and format system
 
@@ -1480,6 +1589,33 @@ abstention, injection resistance, latency, tokens, network, storage, and cost.
 and per-source results with confidence intervals; no end-answer metric can waive
 a failed security, identity, freshness, or retrieval gate.
 
+### MLRET.11 — Evidence-sufficiency-controlled agentic retrieval
+
+**Status:** Not implemented
+
+**Contract:** Let `retrieval_control` iteratively choose a typed next action
+(`query`, `reformulate`, `switch_source`, `follow_relation`, `fetch`,
+`seek_counterevidence`, or `stop`) from unresolved atomic claims, observed coverage,
+source independence, retrieval failures, expected information gain, saturation,
+and remaining budget. Search snippets/ranks are discovery leads, not admitted
+evidence. Stop only when every required claim is supported, contradicted, or
+explicitly `unknown`, or when a predeclared saturation/budget rule fires; preserve
+why another query was or was not useful. Evaluate the controller separately from
+retrievers and synthesis with both live time-sliced sources and a fixed,
+human-verified corpus such as
+[BrowseComp-Plus](https://arxiv.org/abs/2508.06600), whose controlled documents
+and hard negatives expose black-box search and end-answer confounding.
+
+**Acceptance:** Fixed-corpus and recorded-live fixtures require query
+decomposition, exact identifier search, vocabulary expansion, alternate-source
+selection, citation snowballing, negative evidence, and return to a previously
+unresolved claim. Duplicate/rephrased loops, premature fluent answers, snippet-
+only support, popularity capture, poisoned expansion terms, dynamic rank changes,
+hidden missing positives, source outage, and exhausted budgets produce typed
+coverage/stop states. Replay reconstructs every action and cost; adding useless
+queries cannot improve the score; no end-answer success can hide missed gold
+evidence, unsupported claims, or a controller that failed to terminate.
+
 ### 7.5 Verifiable reasoning, mathematics, and science
 
 ### MLREAS.1 — Private reasoning boundary
@@ -1580,6 +1716,60 @@ statistics, negative results, and independent replication status.
 fixtures report executable correctness and reproducibility; an automated review
 or novelty score alone can never establish discovery or authorize a physical
 action.
+
+### MLREAS.9 — Process-verifier robustness and search separation
+
+**Status:** Not implemented
+
+**Contract:** Treat every process reward model, step judge, critic, and
+first-error detector as a versioned candidate verifier, never as proof or its own
+promotion authority. `process_verify` evaluates stable step semantics, first-error
+localization, calibration/selective risk, domain transfer, harmless
+metamorphisms, logic/unit/premise corruption, right-answer/wrong-process cases,
+and adversarially optimized trajectories against deterministic execution,
+solver, proof-kernel, citation, or authorized human checks. Separate the
+generator's development verifier from the hidden promotion verifier and prevent
+the generator from observing or updating promotion rewards. This combines the
+data-efficient opportunity in [ThinkPRM](https://arxiv.org/abs/2504.16828) with
+the demonstrated proxy vulnerability in
+[Reward Under Attack](https://arxiv.org/abs/2603.06621).
+
+**Acceptance:** ProcessBench/PRM-BiasBench-style fixtures perturb style,
+verbosity, ordering, redundant steps, copied critiques, false premises, units,
+arithmetic, code results, proofs, circular reasoning, and the first invalid step.
+The suite reports error-side/success-side precision and recall, calibration,
+abstention, domain slices, exact-check disagreement, best-of-N selection lift,
+compute, and attack success. Near-perfect proxy reward with a wrong checked
+answer, reward inflation under optimization, train/promotion-verifier leakage,
+or low-confidence transfer blocks automatic use; no test requires retaining or
+exposing provider-private chain-of-thought.
+
+### MLREAS.10 — Executable research reproduction and claim reconciliation
+
+**Status:** Not implemented
+
+**Contract:** Have `research_reproduce` turn a paper, repository, data package,
+declared environment, and claim/rubric into a pinned execution DAG. Resolve
+dependencies and licenses, build without undeclared host state, run the exact
+subset, capture commands/configs/seeds/raw outputs/checkpoints/logs/resource
+usage, extract tables/figures/statistics through `MLCORE.16`, and compare every
+target claim with the reproduced value and tolerance. Distinguish artifact
+availability, successful execution, numerical reproduction, independent
+replication, statistical validity, and scientific truth. Use hierarchical
+author-reviewed tasks such as
+[PaperBench](https://openai.com/index/paperbench/) and cross-format
+[REPRO-Bench](https://arxiv.org/abs/2507.18901); an automated rubric judge remains
+a fallible evaluator.
+
+**Acceptance:** Fixtures cover missing/private data, ambiguous license,
+unresolvable or mutable dependency, Lean/mathlib toolchain mismatch, hidden
+network download, undeclared manual step, platform nondeterminism, seed
+instability, timeout/OOM, partial checkpoint, cherry-picked task subset, unit or
+statistical mismatch, stale cached output, extraction error, and paper/code/data
+contradiction. A green subprocess or plausible report cannot mark a claim
+reproduced unless the authoritative outputs match; partial runs preserve
+claim-level `matched`, `mismatched`, `not_run`, and `unknown` states and never
+authorize physical, biomedical, chemical, environmental, or human-subject action.
 
 ### 7.6 Multimodal vision, photo generation, and editing
 
@@ -1684,6 +1874,32 @@ task-specific metrics and human review where needed.
 signals, not one promotion score; golden cases run on at least two seeds where
 stochastic; safety/provenance regressions block promotion regardless of
 preference score.
+
+### MLMEDIA.9 — Geometry-preserving media transform and edit verification
+
+**Status:** Not implemented
+
+**Contract:** Represent EXIF orientation, pixel/aspect coordinates, crop, pad,
+resize, resample, mask polarity/threshold/blur/dilate, alpha, ICC/colorspace,
+control extraction, VAE/latent scale, batch ordering, and final compositing as an
+invertible or explicitly lossy `MLCORE.16` transform graph. Map requested and
+protected regions through every stage. `media_verify`, configured independently
+from generation/editing, measures requested-change success, protected-region
+preservation, boundary/seam/histogram artifacts, identity/text/count/spatial
+constraints, and provenance against original pixels and derived annotations.
+Model/VLM judgments are only signals because
+[EditInspector](https://arxiv.org/abs/2506.09988) finds that current evaluators
+can miss artifacts and hallucinate edit-induced changes.
+
+**Acceptance:** Golden fixtures cover rotated/mirrored EXIF inputs, non-square
+aspect ratios, coordinate-origin and off-by-one errors, mask polarity and empty/
+full/out-of-bounds masks, antialiased/soft masks, crop-and-resize versus pad,
+latent divisibility, alpha and wide-gamut conversion, batch permutation,
+strength endpoints, ControlNet/reference transforms, protected text/face/detail,
+post-composite seams, and cross-backend outputs. Every output region maps back to
+source/condition coordinates; undeclared resampling or color loss fails
+provenance; an edit that scores well semantically but alters protected content,
+or merely pastes a mismatched region, cannot pass.
 
 ## 8. Continual research and governed capability evolution
 
@@ -2301,6 +2517,27 @@ An implementation unit is complete only when all applicable gates below pass.
   graceful loss before registry admission.
 - Run the artifact-transition conformance matrix for every newly promotable
   artifact class and every multi-artifact dependency bundle.
+- Run declared metamorphic and equivalence checks for every representation
+  transform, including adapter merge/load, media geometry, dataset conversion,
+  retrieval serialization, and executable-research materialization.
+- Report PEFT results separately for retained base capabilities, new-task
+  quality, transfer slices, activation/route correctness, and merged-versus-live
+  adapter equivalence.
+- Evaluate agentic retrieval at the controller-action level: unresolved atomic
+  claims, counterevidence sought, marginal information gain, reformulations,
+  backend switches, loop/saturation state, and justified stop decisions.
+- Evaluate process verifiers independently from generators and search policy
+  against exact checks, metamorphic corruptions, style shortcuts, calibration
+  shifts, and hidden promotion attacks.
+- Score media edits separately for requested-region success, protected-region
+  preservation, geometry/mask alignment, artifact introduction, provenance, and
+  semantic consistency.
+- Reproduce computational research against pinned environments and report
+  executable completion, artifact agreement, claim agreement, replication, and
+  truth status as distinct outcomes.
+- Compare every evolved generation with its parent, current champion, and
+  immutable root baseline under frozen evaluator cohorts; report accumulated
+  regression debt rather than only the latest aggregate score.
 
 ### 9.2 Security and privacy
 
@@ -2314,6 +2551,9 @@ An implementation unit is complete only when all applicable gates below pass.
 - High-risk actions and promotions require separate human authority.
 - Candidates cannot read hidden evaluations or write source policy, metrics,
   evaluators, approvals, promotion state, or their own resource accounting.
+- Candidate generators, search policies, and process verifiers cannot observe
+  hidden-promotion rewards or mutate the independent exact-check/verifier path;
+  all evaluator roles remain read-only.
 - Forum/practitioner content, outcome records, and candidate memories remain
   untrusted data subject to poisoning, privacy, consent, and retention policy.
 - New-source discovery cannot create accounts/secrets, install code, expand
@@ -2335,6 +2575,10 @@ An implementation unit is complete only when all applicable gates below pass.
 - Every mutable artifact class uses the `MLCONT.31` state machine; compatible
   multi-artifact changes promote and roll back as one immutable dependency
   bundle, never as independently visible partial revisions.
+- A representation migration or destructive source retirement occurs only
+  after `MLCORE.16` proves its declared equivalence level. Until then, preserve
+  the original input plus the complete transform graph and expose only the
+  prior authoritative representation.
 
 ### 9.4 Quality and coverage
 
@@ -2394,6 +2638,13 @@ An implementation unit is complete only when all applicable gates below pass.
 | Discovered source lacks clear owner, terms, robots permission, or safe network path | Quarantine the candidate; do not expand the registry, credentials, or allowlist |
 | Autonomous cycle overlaps, repeats, or competes with release work | Deduplicate or checkpoint/pause it; preserve provenance and never double spend or delay the release reservation |
 | One member of a promotion dependency bundle fails | Leave all authoritative pointers on the prior compatible generation and retain the failed candidate evidence |
+| Adapter appears to train/load but targets do not execute, weights do not update, routing is inactive, or merge equivalence fails | Reject or quarantine the adapter, retain base/champion pointers, and preserve activation, optimizer-identity, dtype, and forgetting evidence |
+| Media transform cannot map regions exactly or changes a protected region | Reject the output, retain the original asset and transform graph, and report geometry/protected-region failure |
+| Agentic retrieval repeats, saturates, or stops with unresolved required claims | Stop within the declared bound, return partial/abstained with the evidence-state ledger, and never infer coverage from answer fluency |
+| Process verifier rewards a candidate that fails an exact check or adversarial robustness probe | Disable the candidate verifier for promotion, reject the scored candidate, and preserve the attack/calibration trace |
+| Research execution succeeds but reported claims do not match reproduced artifacts | Mark the claim `mismatched`, preserve both outputs, and never label the work reproduced |
+| Descendant improves a local metric but regresses the root/champion baseline or changes its evaluator | Record regression debt, reject promotion, and keep the immutable lineage/evaluator cohort |
+| Representation transform cannot prove its declared invariant | Keep the result as a non-authoritative derived candidate; retain the source and do not move any pointer |
 
 ## 11. Delivery order
 
@@ -2401,12 +2652,13 @@ Implementation MUST land on `development` through small, independently tested
 feature branches in this order:
 
 1. typed schemas, project/tenant isolation, untrusted-content boundary, source
-   policy, and role/skill control plane (`MLCORE.1`, `.2`, `.8`–`.10`,
-   `MLARCH.1`–`.6`);
+   policy, role/skill control plane, and transformation/equivalence protocol
+   (`MLCORE.1`, `.2`, `.8`–`.10`, `.16`, `MLARCH.1`–`.6`);
 2. logical datasets, format adapters, lineage, privacy, and conversion
    (`MLDATA.1`–`.7`);
 3. Internet sources, safe fetch/parse, evidence broker, hybrid/graph retrieval,
-   provenance, and evaluation (`MLRET.1`–`.10`, `MLAI.4`–`.6`, `MLCORE.3`,
+   provenance, evidence-sufficiency control, and evaluation
+   (`MLRET.1`–`.11`, `MLAI.4`–`.6`, `MLCORE.3`,
     `.4`, `.11`);
 4. source-registry refresh, deep-research replay, signal/gap/negative-evidence
    ledgers, new-source onboarding, citation/temporal/forum evaluation, candidate
@@ -2414,20 +2666,23 @@ feature branches in this order:
    (`MLCONT.1`–`.8`, `.15`, `.16`, `.19`, `.21`–`.24`, `.28`–`.30`);
 5. collection intake, decomposition, synthesis, calibration, tools, verifier,
    routing, and reporting (`MLAI.1`–`.3`, `.7`–`.15`);
-6. private-reasoning boundary, exact tools, mathematics, formal proof, and
-   bounded scientific experiments (`MLREAS.1`–`.8`);
+6. private-reasoning boundary, exact tools, mathematics, formal proof,
+   process-verifier robustness, and executable scientific reproduction
+   (`MLREAS.1`–`.10`);
 7. media ingredients, vision, generation/editing, conditioning, safety,
-   provenance, and evaluation (`MLMEDIA.1`–`.8`);
+   provenance, geometry-preserving transforms, and evaluation
+   (`MLMEDIA.1`–`.9`);
 8. human-governed agendas, core/collection/role/skill proposal generation,
    isolated candidate materialization, outcome attribution, candidate memory,
    progressive role/skill rollout, unified artifact lifecycle, and authority
    separation (`MLCONT.7`, `.9`–`.11`, `.13`, `.20`, `.25`–`.27`, `.31`);
 9. immutable experiment/outcome infrastructure, isolated workspace, and PEFT
-   artifact/training foundations (`MLSI.1`–`.5`, `MLCORE.5`–`.7`, `.13`–`.15`,
-   `MLPEFT.1`–`.5`);
+   artifact/training foundations and adapter activation/equivalence auditing
+   (`MLSI.1`–`.5`, `MLCORE.5`–`.7`, `.13`–`.15`,
+   `MLPEFT.1`–`.5`, `.9`);
 10. adapter composition/routing/serving plus evaluation-driven promotion, ZDD
     rollout, rollback, drift, reward-hacking controls, privacy, and authority
-    (`MLCONT.12`, `.14`, `.17`, `.18`, `MLPEFT.6`–`.8`, `MLSI.6`–`.12`,
+     (`MLCONT.12`, `.14`, `.17`, `.18`, `MLPEFT.6`–`.8`, `MLSI.6`–`.13`,
     `MLCORE.12`);
 11. shadow evaluation and a disabled-by-default canary before any production
    authority is granted.
@@ -2456,6 +2711,20 @@ For each atomic ID, its implementation record MUST contain:
 - candidate-source discovery/probe/onboarding, unattended-cycle replay, and
   artifact-class transition/dependency-bundle conformance evidence where those
   contracts apply;
+- representation-transform manifests and declared byte/numerical/task/derived
+  equivalence evidence;
+- adapter target execution, trainable-parameter identity, update-norm,
+  activation/route, merge/load, dtype/quantization, and forgetting evidence;
+- retrieval-controller action/stop replay with unresolved-claim,
+  counterevidence, marginal-gain, saturation, and loop evidence;
+- process-verifier exact-check, metamorphic-corruption, shortcut, calibration,
+  generator/search-separation, and hidden-promotion evidence;
+- media coordinate/mask/color/latent/composite transform traces plus
+  requested-region and protected-region results;
+- executable-research environment/artifact digests and distinct completion,
+  claim-match, replication, and truth-state results;
+- multi-generation lineage, evaluator-cohort, parent/champion/root comparison,
+  diversity, and regression-debt evidence;
 - rollout/rollback evidence when behavior can affect a running system;
 - documentation and source-registry changes;
 - commit, branch, CI run, and artifact digests; and

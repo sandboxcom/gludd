@@ -226,6 +226,7 @@ are separate concerns.
 | [AdapterHub](https://arxiv.org/abs/2007.07779) and [Adapters library](https://arxiv.org/abs/2311.11077) | 2020/2023 | Mature composable adapter abstractions; evaluate rather than build a second tuning library |
 | [Hugging Face PEFT](https://huggingface.co/docs/peft/en/index) | Living docs/code | Preferred optional adapter for LoRA, QLoRA, DoRA, IA3, prompt methods, merging, and hotswapping |
 | [PEFT checkpoint format](https://huggingface.co/docs/peft/main/developer_guides/checkpoint) | Living docs | Adapter weights alone are incomplete; config and exact base revision are required; prefer `safetensors` over pickle-backed `.bin` |
+| [PEFT troubleshooting](https://huggingface.co/docs/peft/developer_guides/troubleshooting) and [model-status APIs](https://huggingface.co/docs/peft/en/package_reference/peft_model) | Living official docs | Trainability can silently fail through stale parameter references, task heads/embeddings need explicit treatment, and active/merged/available state is observable per model and layer |
 | [safetensors](https://github.com/huggingface/safetensors) | Mature code | Non-executable tensor format; still validate dimensions, dtype, metadata, size, and digest |
 | [LoRAHub](https://arxiv.org/abs/2307.13269) and [code](https://github.com/sail-sg/lorahub) | 2023/2024 | Few-shot adapter composition can trade tokens for adapter search, but did not universally beat in-context learning |
 | [X-LoRA](https://arxiv.org/abs/2402.07148) | 2024 | Token/layer-level mixture of adapter experts; routing adds a new model with its own evaluation and failure surface |
@@ -246,6 +247,16 @@ surprising behavior while switching multiple adapters, and
 merged-versus-active-adapter differences. Current PEFT documentation also warns
 that QDoRA has reported incompatibility with DeepSpeed ZeRO-2. These are
 practitioner/maintainer signals, not evidence that every combination fails.
+More recent reports show that a merge may change with adapter/base dtype
+([issue 2502](https://github.com/huggingface/peft/issues/2502)), that quantized
+merge expectations remain easy to misread
+([issue 2105](https://github.com/huggingface/peft/issues/2105)), and that a
+configured target can execute without the expected LoRA path before a later
+shape failure ([issue 2556](https://github.com/huggingface/peft/issues/2556)).
+Consequently an adapter audit must prove target execution, optimizer parameter
+identity, nonzero updates, activation/routing state, old-capability retention,
+and live-versus-merged task equivalence; a successful save/load call is not an
+acceptance test.
 
 ### 6.2 Dataset representations, streaming, and interchange
 
@@ -289,6 +300,8 @@ monotonically increasing resident memory in a data-loader workload.
 | [Corrective RAG](https://arxiv.org/abs/2401.15884) | 2024 | Retrieval-quality evaluator and corrective actions |
 | [From Local to Global: GraphRAG](https://arxiv.org/abs/2404.16130) and [Microsoft GraphRAG](https://github.com/microsoft/graphrag) | 2024 | Community summaries for corpus-level questions; expensive indexing and provenance need explicit budgets |
 | [BRIGHT](https://arxiv.org/abs/2407.12883) | 2024 | Reasoning-intensive retrieval remains difficult even when documents are available |
+| [BrowseComp-Plus](https://arxiv.org/abs/2508.06600) | 2025 | A fixed, human-verified corpus with hard negatives separates retrieval/reasoning quality from opaque live-search drift |
+| [DeepResearch Bench](https://arxiv.org/abs/2506.11763) | 2025 | Long-form research evaluation must inspect information seeking, citation use, and synthesis rather than only final-answer preference |
 | [RAGAS](https://arxiv.org/abs/2309.15217) and [code](https://github.com/explodinggradients/ragas) | 2023 | Retrieval/generation metrics; model-graded scores require calibration |
 | [BEIR](https://arxiv.org/abs/2104.08663) | 2021 | Heterogeneous zero-shot retrieval benchmark |
 | [MTEB](https://arxiv.org/abs/2210.07316) | 2022 | Broad embedding evaluation across tasks and languages |
@@ -369,6 +382,16 @@ Discovery is a reproducible protocol: expand synonyms/identifiers, search
 independent indexes, deduplicate by stable identifiers and content, follow
 backward/forward citations, inspect corrections and negative evidence, stop at a
 declared saturation/budget rule, and publish the complete query/source ledger.
+For adaptive retrieval, the stop rule is an evaluated controller output rather
+than a prompt instruction. Its state tracks unresolved atomic claims, missing
+source classes, counterevidence attempts, marginal information gain, repeated
+queries/results, backend switches, and remaining budget. Evaluate each action
+and stop decision both on a fixed corpus such as BrowseComp-Plus and on a
+time-stamped live-search slice; otherwise backend changes are confounded with
+controller improvement. Graph/vector migrations likewise need typed transform
+manifests: [GraphRAG issue 392](https://github.com/microsoft/graphrag/issues/392)
+shows a production-facing embedding-dimension mismatch that a generic
+“index built” status would not detect.
 
 ## 8. Reasoning, planning, agents, and tools
 
@@ -408,6 +431,8 @@ tests. A prompt that says “stop” is not a control plane.
 | [Reasoning models do not always say what they think](https://www.anthropic.com/research/reasoning-models-dont-say-think) | 2025 | Hidden-hint experiments show that visible reasoning cannot be the sole safety monitor |
 | [OpenAI CoT monitorability evaluation](https://openai.com/index/evaluating-chain-of-thought-monitorability/) | 2025 | Monitorability is an empirical model/property to track, not an assumed invariant |
 | [ProcessBench](https://arxiv.org/abs/2412.06559) | 2024 | Evaluate whether a verifier locates the first erroneous math step |
+| [ThinkPRM](https://arxiv.org/abs/2504.16828) | 2025 | Process verification can itself use test-time reasoning; the verifier's search cost, calibration, and failure modes remain separate evaluation targets |
+| [Reward Under Attack](https://arxiv.org/abs/2603.06621) | 2026 | Adversarially optimized solutions can receive near-perfect process reward while retaining very low ground-truth correctness, exposing exploitable style and proxy shortcuts |
 | [Program-Aided Language Models](https://arxiv.org/abs/2211.10435) and [Faithful CoT](https://arxiv.org/abs/2211.12588) | 2022 | Prefer inspectable programs and solver outputs for exact subproblems |
 
 Gludd should allow a provider's private reasoning channel to remain private.
@@ -423,6 +448,12 @@ Process supervision is admissible only when a step has a stable externally
 checkable meaning. For open-ended prose, process reward models can learn style
 or evaluator preferences. Outcome checks, formal solvers, execution, unit
 tests, citations, and independent review remain the promotion authority.
+The generator/search policy and development process verifier must therefore be
+separated from a hidden promotion verifier and deterministic oracle. Robustness
+tests mutate presentation style, verbosity, step boundaries, irrelevant
+reasoning, operand/sign/order details, and logically equivalent derivations
+while holding correctness labels fixed. A verifier that scores the proxy well
+but fails these attacks is not permitted to select or promote candidates.
 
 ## 9. Evaluation, calibration, and reproducibility
 
@@ -540,6 +571,7 @@ not a win if it changes task correctness or safety beyond the declared bound.
 | [Promptbreeder](https://arxiv.org/abs/2309.16797) | 2023 | Evolutionary self-referential prompt adaptation |
 | [Voyager](https://arxiv.org/abs/2305.16291) | 2023 | Curriculum, skill library, and iterative environment feedback |
 | [Darwin Gödel Machine](https://arxiv.org/abs/2505.22954) and [code](https://github.com/jennyzzt/dgm) | 2025 | Archive-based code-agent evolution with empirical benchmarks, sandboxing, and oversight |
+| [AlphaEvolve technical report](https://storage.googleapis.com/deepmind-media/DeepMind.com/Blog/alphaevolve-a-gemini-powered-coding-agent-for-designing-advanced-algorithms/AlphaEvolve.pdf) | 2025 | Evolution is practical when evaluators are machine-gradeable and supplied by the operator; evaluator validity remains outside the generator |
 | [Continual learning survey](https://arxiv.org/abs/2302.00487) | 2023 | Stability/plasticity, replay, regularization, and architectural methods |
 | [Avalanche](https://avalanche.continualai.org/) | Mature code | Optional continual-learning experiment library |
 
@@ -554,6 +586,10 @@ do **not** justify unconstrained recursive self-modification. Gludd must:
 - use deterministic checks before model judges;
 - forbid candidate access to hidden tests and promotion policy;
 - require a statistically meaningful win with zero safety regressions;
+- compare every descendant with its parent, current champion, and immutable root
+  baseline under frozen and newly added evaluator cohorts;
+- preserve full lineage, diversity, rejected branches, evaluator revisions, and
+  cumulative regression debt rather than only the latest winner;
 - canary the candidate under bounded traffic;
 - roll back automatically on outcome or resource regression; and
 - retain operator authority and a global kill switch.
@@ -882,6 +918,8 @@ transcription output is derived evidence and must link to the original region.
 | [InstructPix2Pix](https://arxiv.org/abs/2211.09800) and [code](https://github.com/timothybrooks/instruct-pix2pix) | 2022 | Instruction-driven editing; retain original, mask/region, instruction, and output |
 | [Segment Anything](https://arxiv.org/abs/2304.02643), [Grounding DINO](https://arxiv.org/abs/2303.05499) | 2023 | Optional region/grounding tools; predictions are derived annotations |
 | [FID](https://arxiv.org/abs/1706.08500), [CLIPScore](https://arxiv.org/abs/2104.08718), [GenEval](https://arxiv.org/abs/2310.11513) | 2017/2021/2023 | Distribution, alignment, and compositional metrics; none measures all quality or safety dimensions |
+| [EditInspector](https://arxiv.org/abs/2506.09988) | 2025 | Existing edit evaluators can miss artifacts and hallucinate changes; requested edits and unintended changes require independent region-aware inspection |
+| [Diffusers inpainting guide](https://huggingface.co/docs/diffusers/main/en/using-diffusers/inpaint) | Living official docs | Mask convention, image dimensions, crop/resize, strength, scheduler, and preprocessing materially determine the edited region and result |
 | [C2PA specification](https://spec.c2pa.org/specifications/) | Living standard | Sign and validate creation/edit lineage when supported; missing or stripped credentials do not prove an asset is authentic |
 
 Image generation and editing need separate operations. Generation creates a new
@@ -896,10 +934,15 @@ configuration-complete.
 Long-lived implementation issues include Diffusers
 [per-image seed recovery issue 208](https://github.com/huggingface/diffusers/issues/208)
 and [Kohya-style LoRA compatibility issue 4348](https://github.com/huggingface/diffusers/issues/4348).
+Inpainting reports also show output changes caused by mask/postprocessing paths
+([issue 6101](https://github.com/huggingface/diffusers/issues/6101)) and
+strength/noise behavior that degrades or unexpectedly changes a source
+([issue 8450](https://github.com/huggingface/diffusers/issues/8450)).
 Forum users continue to encounter model/LoRA/workflow incompatibilities and
 deprecated parameter guidance. This supports explicit pipeline-component
-compatibility matrices and golden-image tolerances rather than a generic
-“supports LoRA” flag.
+compatibility matrices, a coordinate/EXIF/crop/resize/mask/color/latent/composite
+transform graph, and separate requested-region/protected-region checks rather
+than a generic “supports LoRA” flag or one whole-image score.
 
 ## 14A. Mathematics, theorem proving, and scientific discovery
 
@@ -941,6 +984,8 @@ must trust the full build/kernel exit state, not a model or one UI message.
 | [ScienceAgentBench](https://arxiv.org/abs/2410.05080) | 2024 | 102 expert-validated data-driven tasks across four disciplines |
 | [BLADE](https://arxiv.org/abs/2408.09667) | 2024 | Open-ended data-driven science evaluation |
 | [CORE-Bench](https://arxiv.org/abs/2407.16791) and [RE-Bench](https://arxiv.org/abs/2411.15114) | 2024 | Computational reproducibility and research-engineering benchmarks |
+| [PaperBench](https://openai.com/index/paperbench/) | 2025 | Reproducing 20 ICML papers is decomposed into thousands of rubric items; completion requires artifact-level inspection rather than a plausible paper summary |
+| [REPRO-Bench](https://arxiv.org/abs/2507.18901) | 2025 | Cross-format social-science reproduction exposes failures in setup, data, code, and result reconciliation even when agents can execute tools |
 
 Gludd may propose hypotheses, literature maps, simulations, analysis plans, and
 bounded computational experiments. It may not claim discovery from novelty
@@ -950,6 +995,11 @@ qualified human approval, and the relevant institutional/safety process.
 Negative results, preregistered analyses, units, controls, uncertainty,
 multiple-testing corrections, raw data, environment, and replication attempts
 are first-class artifacts.
+An executable research record must distinguish environment/build success,
+workflow completion, artifact/table/figure agreement, claim agreement,
+independent replication, and external truth. The role reconstructs a pinned
+dependency/data/execution DAG and reconciles every reported claim with produced
+artifacts; it cannot promote “process exited zero” into “paper reproduced.”
 
 A persistent
 [AI Scientist installation/use thread](https://www.reddit.com/r/learnmachinelearning/comments/1fuw2yb/)
@@ -1014,6 +1064,13 @@ recurring failure classes that benchmark-only design misses.
 | [Crossref retraction retrieval discussion](https://community.crossref.org/t/help-how-can-i-collect-retractions-marked-by-crossmark/4166) | 2023-09 | Users needed to traverse update records and cursor results to associate a retraction with the original DOI | Refresh resolves update relationships in both directions and tests pagination/cursor recovery |
 | [MLflow model-stage deprecation RFC](https://github.com/mlflow/mlflow/issues/10336) | 2023-11 | Fixed lifecycle stages became too inflexible and were replaced by aliases, tags, environment separation, and copy semantics | Gludd owns immutable promotion evidence and treats external registry labels as versioned adapter state, never the sole authority |
 | [Production RAG index-staleness discussion](https://www.reddit.com/r/Rag/comments/1uw9v3e/how_are_you_handling_index_staleness_in/) | 2026-07 | Practitioners distinguish query-sampled answer metrics from source-to-index reconciliation and deletion coverage | Track source/index watermarks, tombstones, dependency invalidation, untouched content coverage, and as-of snapshot replay |
+| [PEFT dtype-sensitive merge issue](https://github.com/huggingface/peft/issues/2502) | 2025-04 | Adapter/base precision changed merged outputs in a reported setup | Freeze dtype/quantization state and test live-versus-merged logits plus task tolerances |
+| [PEFT target-execution/shape issue](https://github.com/huggingface/peft/issues/2556) | 2025-06 | A target path could run without the expected adapter contribution before a later merge mismatch | Prove target execution, optimizer identity, update norms, layer status, and merge/load behavior |
+| [Diffusers ControlNet inpaint mismatch](https://github.com/huggingface/diffusers/issues/6101) | 2023-12 | Mask/postprocessing differences produced unexpected inpaint behavior | Persist every geometry/mask transform and test requested and protected regions independently |
+| [Diffusers inpaint strength issue](https://github.com/huggingface/diffusers/issues/8450) | 2024-08 | Reported strength/noise behavior changed source fidelity and quality | Record scheduler/noise/strength semantics and reject unintended protected-region drift |
+| [GraphRAG embedding-dimension mismatch](https://github.com/microsoft/graphrag/issues/392) | 2024-07 | Querying failed when stored and configured embedding dimensions diverged | Bind derived indexes to model/shape/schema digests and require transform compatibility before pointer movement |
+| [Lake toolchain update issue](https://github.com/leanprover/lake/issues/180) | 2023-09 | Dependency update behavior could leave an incompatible Lean toolchain | Pin the complete theorem/research environment and trust only its full build/kernel result |
+| [Process-reward hacking discussion](https://www.reddit.com/r/LocalLLaMA/comments/1inckfk/) | 2025-02 | Users question whether learned reward/process signals measure correctness or exploitable presentation | Separate generator and promotion verifier; add exact, metamorphic, calibration, and adversarial checks |
 
 ### 16.1 Failure themes that persist across years
 
@@ -1051,6 +1108,16 @@ recurring failure classes that benchmark-only design misses.
     the history needed for replay and temporal answers.
 20. Outcomes observed after deployment may have been caused by the deployed
     system itself; feedback-aware evaluation is required before “learning.”
+21. A transformation that parses, loads, or exits successfully may still change
+    semantics; equivalence level, map, tolerance, and checker must be explicit.
+22. Adaptive retrieval needs an evidence-state controller and tested stop
+    decision; answer fluency cannot establish sufficient search coverage.
+23. Process-verifier rewards are attackable proxies; generator/search policy,
+    development verifier, deterministic oracle, and promotion verifier must be
+    independently evaluated and authorized.
+24. A latest-generation gain can hide root-capability regression, evaluator
+    drift, or a collapsed archive; multi-generation lineage and debt are
+    promotion inputs.
 
 ## 17. Existing Gludd capability map
 
@@ -1080,6 +1147,7 @@ systems.
 | `ansible/paths.py::resolve_collections_paths` | Project/user/bundled collection precedence | The ML/AI expert should be a normal bundled `general_ludd.ml_ai_expert` collection, overridable through the existing project tier |
 | `models/model_registry.py` and `models/quantization.py` | Model revision downloads and quantization metadata | No adapter artifact/base-compatibility registry, merge state, or adapter routing contract exists |
 | Generic artifact/run/eval/sandbox seams | Isolation, recording, and evaluation foundations | Source search found no dedicated dataset-format, PEFT-training, image generation/editing, or formal-proof subsystem; add adapters instead of hiding these jobs in prompts |
+| Existing serialization/conversion paths | Concrete seams for files, datasets, embeddings, adapters, media, and research artifacts | No shared typed transform manifest declares source/result digests, coordinate/schema/module maps, equivalence level, tolerance, or executable checker |
 
 ## 18. Mature dependency decisions
 
@@ -1137,6 +1205,13 @@ systems.
 | Atomic citation gating reduces unsupported synthesis | Blinded claim-level support/completeness/independence evaluation with locator, retraction, and temporal adversarial cases |
 | Candidate knowledge snapshots reduce stale or mixed-version answers | Concurrent update/query and as-of replay tests over insert/update/delete/retraction/parser/embedding changes |
 | Exposure-aware outcome learning beats naive success copying | Randomized or identified logged replay; compare causal calibration, false learning, feedback amplification, transfer, and rollback |
+| Typed transform manifests prevent silent semantic drift | Mutation corpus across adapter merge/load, embedding dimensions, dataset formats, media geometry, and research artifacts; require invariant-specific checkers to reject every incompatible transform |
+| Adapter activation/equivalence audit catches false-success PEFT runs | Seeded inactive-target, stale-optimizer, dtype, quantization, task-head, route, merge, and forgetting faults; measure detection and false rejection against known-good adapters |
+| Evidence-sufficiency control improves deep retrieval efficiently | Fixed-corpus and time-sliced live replay; score controller actions, unresolved claims, counterevidence recall, stop accuracy, loops, answer support, latency, and cost |
+| Adversarial process-verifier separation reduces proxy exploitation | Generate correctness-preserving style changes and subtle logical corruptions; compare development and hidden verifiers against deterministic ground truth and adaptive attacks |
+| Geometry-aware edit verification prevents unintended media changes | Synthetic and real edit corpus with exact transform maps and protected regions; measure requested-edit success, protected-region drift, artifacts, provenance, and replay |
+| Claim reconciliation prevents false scientific reproduction | Seed environment/setup, code, data, table, figure, and narrative mismatches across PaperBench/REPRO-Bench-style tasks; require distinct completion and claim-state labels |
+| Multi-generation archive controls outperform latest-only evolution | Replay branching improvements with evaluator additions and seeded root regressions; compare detection, diversity, regression debt, champion quality, and rollback |
 
 ## 20. Research refresh and provenance protocol
 
