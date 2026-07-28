@@ -2542,6 +2542,13 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
+    exec_engine = execution_engine if execution_engine is not None else getattr(app.state, "_execution_engine", None)
+    if exec_engine is not None:
+        try:
+            await exec_engine.shutdown()
+            logger.info("ExecutionEngine shutdown: background tasks drained")
+        except Exception as exc:
+            logger.warning("ExecutionEngine shutdown failed: %s", exc)
     preflight_task_ref = getattr(app.state, "_preflight_task", None)
     if preflight_task_ref is not None:
         preflight_task_ref.cancel()

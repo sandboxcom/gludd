@@ -119,9 +119,7 @@ class PermissionSpec:
                 return cap
         return None
 
-    def is_denied(
-        self, resource: str, action: str, path: str | None = None
-    ) -> bool:
+    def is_denied(self, resource: str, action: str, path: str | None = None) -> bool:
         """True iff ``action`` on ``resource`` (optionally ``path``) is denied.
 
         A ``denied`` :class:`Capability` matches — and therefore BLOCKS the
@@ -147,15 +145,9 @@ class PermissionSpec:
                 patterns = d.constraints.get("openbao_paths")
                 prefix = d.constraints.get("path_prefix")
                 if isinstance(patterns, list) and patterns:
-                    if not any(
-                        fnmatch.fnmatchcase(path, str(p)) for p in patterns
-                    ):
+                    if not any(fnmatch.fnmatchcase(path, str(p)) for p in patterns):
                         continue
-                elif (
-                    isinstance(prefix, str)
-                    and prefix
-                    and not fnmatch.fnmatchcase(path, prefix)
-                ):
+                elif isinstance(prefix, str) and prefix and not fnmatch.fnmatchcase(path, prefix):
                     continue
             return True
         return False
@@ -383,9 +375,7 @@ class PermissionSpecParser:
             capabilities=capabilities,
             denied=denied,
             max_sts_ttl_seconds=int(data.get("max_sts_ttl_seconds", 3600)),
-            max_subagent_permissions=str(
-                data.get("max_subagent_permissions", "same_or_fewer")
-            ),
+            max_subagent_permissions=str(data.get("max_subagent_permissions", "same_or_fewer")),
             subject=subject,
         )
 
@@ -406,26 +396,17 @@ class PermissionSpecParser:
                 )
                 continue
             if not cap.actions:
-                errors.append(
-                    f"capability '{cap.resource}' must declare at least one action"
-                )
+                errors.append(f"capability '{cap.resource}' must declare at least one action")
             required = _RESOURCE_CONSTRAINTS[family]
             for key in required:
                 if family == "net:":
-                    if not any(
-                        k in cap.constraints
-                        for k in ("allowed_hosts", "allowed_ports")
-                    ):
+                    if not any(k in cap.constraints for k in ("allowed_hosts", "allowed_ports")):
                         errors.append(
-                            f"net capability '{cap.resource}' must include at "
-                            f"least one of allowed_hosts/allowed_ports"
+                            f"net capability '{cap.resource}' must include at least one of allowed_hosts/allowed_ports"
                         )
                         break
                 elif key not in cap.constraints:
-                    errors.append(
-                        f"capability '{cap.resource}' is missing required "
-                        f"constraint '{key}'"
-                    )
+                    errors.append(f"capability '{cap.resource}' is missing required constraint '{key}'")
         for d in spec.denied:
             for cap in spec.capabilities:
                 if cap.resource != d.resource:
@@ -458,9 +439,7 @@ class PermissionSpecParser:
             family = PermissionSpecParser._family(r.resource)
             if family is None:
                 return False
-            if not PermissionSpecParser._constraints_narrower(
-                r.constraints, issuer_cap.constraints, family
-            ):
+            if not PermissionSpecParser._constraints_narrower(r.constraints, issuer_cap.constraints, family):
                 return False
         return True
 
@@ -518,14 +497,10 @@ class PermissionSpecParser:
             actions = sorted(set(cap_a.actions) & set(cap_b.actions))
             if not actions:
                 continue
-            constraints = PermissionSpecParser._intersect_constraints(
-                cap_a.constraints, cap_b.constraints, family
-            )
+            constraints = PermissionSpecParser._intersect_constraints(cap_a.constraints, cap_b.constraints, family)
             if constraints is None:
                 continue
-            out_caps.append(
-                Capability(resource=cap_a.resource, actions=actions, constraints=constraints)
-            )
+            out_caps.append(Capability(resource=cap_a.resource, actions=actions, constraints=constraints))
 
         denied_union: list[Capability] = []
         seen_denied: set[tuple[str, tuple[str, ...]]] = set()
@@ -681,12 +656,57 @@ class PermissionSpecParser:
         return False
 
 
+# ── PSK admin spec ─────────────────────────────────────────────────────────
+
+
+def _psk_admin_default_spec() -> PermissionSpec:
+    return PermissionSpec(
+        agent_type="psk_admin",
+        capabilities=[
+            Capability(resource="admin:sts", actions=["issue", "revoke", "list", "audit"]),
+            Capability(resource="admin:permissions", actions=["read", "write"]),
+            Capability(resource="admin:account", actions=["delete"]),
+            Capability(resource="admin:deploy", actions=["write"]),
+            Capability(
+                resource="secret:openbao",
+                actions=["read", "write", "list", "delete"],
+                constraints={"openbao_paths": ["*"]},
+            ),
+            Capability(
+                resource="file:",
+                actions=["read", "write"],
+                constraints={"path_prefix": "/"},
+            ),
+            Capability(
+                resource="net:egress:any",
+                actions=["connect"],
+                constraints={"allowed_hosts": ["*"]},
+            ),
+        ],
+        max_sts_ttl_seconds=3600,
+    )
+
+
+def psk_admin_default_spec() -> PermissionSpec:
+    return _psk_admin_default_spec()
+
+
+def check_capability(spec: PermissionSpec, resource: str, action: str) -> bool:
+    for cap in spec.capabilities:
+        if cap.resource == resource and action in cap.actions:
+            if not spec.is_denied(resource, action):
+                return True
+    return False
+
+
 __all__ = [
     "Capability",
     "PermissionDeniedError",
     "PermissionSpec",
     "PermissionSpecParser",
     "PermissionSubject",
+    "check_capability",
     "default_human_spec",
     "default_spec",
+    "psk_admin_default_spec",
 ]
