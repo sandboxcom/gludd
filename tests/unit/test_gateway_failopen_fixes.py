@@ -33,12 +33,14 @@ def _make_gateway() -> tuple[ModelGateway, ProviderRegistry]:
     primary = ModelProfile(
         model_profile_id="primary",
         enabled=True,
+        api_metered=False,
         provider="openai",
         model_name="gpt-4",
     )
     fallback = ModelProfile(
         model_profile_id="fallback",
         enabled=True,
+        api_metered=False,
         provider="openai",
         model_name="gpt-4-fb",
     )
@@ -57,11 +59,14 @@ class TestSSRFRejectionPropagates:
         # NOT be swallowed into a silent None (which would fall open to the next
         # fallback profile and mask the egress block).
         gw, _ = _make_gateway()
-        with patch.object(
-            gw,
-            "call_model",
-            side_effect=SSRFRejectionError("SSRF guard: refusing blocked URL"),
-        ), pytest.raises(SSRFRejectionError):
+        with (
+            patch.object(
+                gw,
+                "call_model",
+                side_effect=SSRFRejectionError("SSRF guard: refusing blocked URL"),
+            ),
+            pytest.raises(SSRFRejectionError),
+        ):
             gw._try_call_model("primary", [{"role": "user", "content": "hi"}])
 
     def test_try_call_model_still_swallows_plain_value_error(self):
@@ -69,10 +74,7 @@ class TestSSRFRejectionPropagates:
         # ValueError still returns None (routes to a fallback).
         gw, _ = _make_gateway()
         with patch.object(gw, "call_model", side_effect=ValueError("boom")):
-            assert (
-                gw._try_call_model("primary", [{"role": "user", "content": "hi"}])
-                is None
-            )
+            assert gw._try_call_model("primary", [{"role": "user", "content": "hi"}]) is None
 
 
 class TestWalkFallbacksBudgetPropagates:
@@ -81,14 +83,15 @@ class TestWalkFallbacksBudgetPropagates:
         # swallowed by the bare ``except Exception`` and continued past (which
         # would spend beyond the per-profile budget ceiling).
         gw, _ = _make_gateway()
-        with patch.object(
-            gw,
-            "_call_fallback",
-            side_effect=BudgetExceededError("over budget"),
-        ), pytest.raises(BudgetExceededError):
-            gw._walk_fallbacks(
-                ["fallback"], [{"role": "user", "content": "hi"}]
-            )
+        with (
+            patch.object(
+                gw,
+                "_call_fallback",
+                side_effect=BudgetExceededError("over budget"),
+            ),
+            pytest.raises(BudgetExceededError),
+        ):
+            gw._walk_fallbacks(["fallback"], [{"role": "user", "content": "hi"}])
 
     def test_walk_fallbacks_still_swallows_generic_exception(self):
         # Non-budget failures still fall through to the next fallback / return
@@ -98,9 +101,7 @@ class TestWalkFallbacksBudgetPropagates:
         gw, _ = _make_gateway()
         err = RuntimeError("transient")
         with patch.object(gw, "_call_fallback", side_effect=err):
-            resp, last_exc, attempts = gw._walk_fallbacks(
-                ["fallback"], [{"role": "user", "content": "hi"}]
-            )
+            resp, last_exc, attempts = gw._walk_fallbacks(["fallback"], [{"role": "user", "content": "hi"}])
         assert resp is None
         assert last_exc is err
         assert attempts == [{"profile_id": "fallback", "reason": "transient"}]
@@ -128,9 +129,7 @@ class TestWalkFallbacksSSRFPropagates:
                 raise SSRFRejectionError("SSRF guard: refusing blocked URL")
             return object()
 
-        with patch.object(
-            gw, "_call_fallback", side_effect=fake_call_fallback
-        ), pytest.raises(SSRFRejectionError):
+        with patch.object(gw, "_call_fallback", side_effect=fake_call_fallback), pytest.raises(SSRFRejectionError):
             gw._walk_fallbacks(["fb1", "fb2"], _MSG)
 
         assert called == ["fb1"]
@@ -155,12 +154,8 @@ class TestCallModelWithFallbackSSRFPropagates:
                 raise SSRFRejectionError("SSRF guard: refusing blocked URL")
             return object()
 
-        with patch.object(
-            gw, "call_model", side_effect=fake_call_model
-        ), pytest.raises(SSRFRejectionError):
-            gw.call_model_with_fallback(
-                "primary", _MSG, fallback_profiles=["fallback"]
-            )
+        with patch.object(gw, "call_model", side_effect=fake_call_model), pytest.raises(SSRFRejectionError):
+            gw.call_model_with_fallback("primary", _MSG, fallback_profiles=["fallback"])
 
         assert called == ["primary"]
         assert "fallback" not in called
@@ -180,12 +175,8 @@ class TestCallModelWithFallbackSSRFPropagates:
                 raise SSRFRejectionError("SSRF guard: refusing blocked URL")
             return object()
 
-        with patch.object(
-            gw, "call_model", side_effect=fake_call_model
-        ), pytest.raises(SSRFRejectionError):
-            gw.call_model_with_fallback(
-                "primary", _MSG, fallback_profiles=["fb1", "fb2"]
-            )
+        with patch.object(gw, "call_model", side_effect=fake_call_model), pytest.raises(SSRFRejectionError):
+            gw.call_model_with_fallback("primary", _MSG, fallback_profiles=["fb1", "fb2"])
 
         assert called == ["primary", "fb1"]
         assert "fb2" not in called
@@ -205,9 +196,7 @@ class TestCallModelWithFallbackSSRFPropagates:
             return sentinel
 
         with patch.object(gw, "call_model", side_effect=fake_call_model):
-            result = gw.call_model_with_fallback(
-                "primary", _MSG, fallback_profiles=["fallback"]
-            )
+            result = gw.call_model_with_fallback("primary", _MSG, fallback_profiles=["fallback"])
 
         assert result is sentinel
         assert called == ["primary", "fallback"]
