@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import os
 import threading
 import time
@@ -479,17 +478,11 @@ class TestMarkStale:
 
 class TestObservationStore:
     @pytest.fixture(autouse=True)
-    def _cleanup(self):
-        yield
-        for path in (
-            "/tmp/test_obs_store.json",
-            "/tmp/test_obs_store.json.tmp",
-        ):
-            with contextlib.suppress(FileNotFoundError):
-                os.remove(path)
+    def _isolated_store_path(self, tmp_path):
+        self.store_path = str(tmp_path / "observations.json")
 
     def test_put_and_get(self):
-        store = ObservationStore(store_path="/tmp/test_obs_store.json")
+        store = ObservationStore(store_path=self.store_path)
         obs = Observation(
             observation_id="o1", subject="User", statement="likes Python",
             created_at=1.0, updated_at=1.0, confidence=0.5,
@@ -501,7 +494,7 @@ class TestObservationStore:
         assert retrieved.statement == "likes Python"
 
     def test_put_all(self):
-        store = ObservationStore(store_path="/tmp/test_obs_store.json")
+        store = ObservationStore(store_path=self.store_path)
         obs_list = [
             Observation(observation_id=f"o{i}", subject="S", statement=f"s{i}",
                         created_at=float(i), updated_at=float(i))
@@ -511,7 +504,7 @@ class TestObservationStore:
         assert store.count == 5
 
     def test_get_by_subject(self):
-        store = ObservationStore(store_path="/tmp/test_obs_store.json")
+        store = ObservationStore(store_path=self.store_path)
         store.put(Observation(
             observation_id="a", subject="Alice", statement="uses Python",
             created_at=1.0, updated_at=1.0,
@@ -528,7 +521,7 @@ class TestObservationStore:
         assert len(alice) == 2
 
     def test_freshness_filtering(self):
-        store = ObservationStore(store_path="/tmp/test_obs_store.json")
+        store = ObservationStore(store_path=self.store_path)
         store.put(Observation(
             observation_id="fresh", subject="User", statement="a",
             created_at=1.0, updated_at=1.0, stale=False,
@@ -542,7 +535,7 @@ class TestObservationStore:
         assert store.get_fresh()[0].observation_id == "fresh"
 
     def test_confidence_filtering(self):
-        store = ObservationStore(store_path="/tmp/test_obs_store.json")
+        store = ObservationStore(store_path=self.store_path)
         store.put(Observation(
             observation_id="low", subject="User", statement="a",
             created_at=1.0, updated_at=1.0, confidence=0.2,
@@ -556,7 +549,7 @@ class TestObservationStore:
         assert result[0].observation_id == "high"
 
     def test_delete(self):
-        store = ObservationStore(store_path="/tmp/test_obs_store.json")
+        store = ObservationStore(store_path=self.store_path)
         store.put(Observation(
             observation_id="to_delete", subject="User", statement="x",
             created_at=1.0, updated_at=1.0,
@@ -566,7 +559,7 @@ class TestObservationStore:
         assert store.delete("nonexistent") is False
 
     def test_list_all(self):
-        store = ObservationStore(store_path="/tmp/test_obs_store.json")
+        store = ObservationStore(store_path=self.store_path)
         for i in range(3):
             store.put(Observation(
                 observation_id=f"o{i}", subject="S", statement=f"s{i}",
@@ -575,7 +568,7 @@ class TestObservationStore:
         assert len(store.list_all()) == 3
 
     def test_clear(self):
-        store = ObservationStore(store_path="/tmp/test_obs_store.json")
+        store = ObservationStore(store_path=self.store_path)
         store.put(Observation(
             observation_id="o1", subject="S", statement="s",
             created_at=1.0, updated_at=1.0,
@@ -584,7 +577,7 @@ class TestObservationStore:
         assert store.count == 0
 
     def test_persistence_round_trip(self):
-        store1 = ObservationStore(store_path="/tmp/test_obs_store.json")
+        store1 = ObservationStore(store_path=self.store_path)
         obs = Observation(
             observation_id="persist-1", subject="User", statement="round trip",
             evidence=[EvidenceRef(fact_id="f1", quote="the quote", timestamp=1.0)],
@@ -593,7 +586,7 @@ class TestObservationStore:
         )
         store1.put(obs)
 
-        store2 = ObservationStore(store_path="/tmp/test_obs_store.json")
+        store2 = ObservationStore(store_path=self.store_path)
         retrieved = store2.get("persist-1")
         assert retrieved is not None
         assert retrieved.statement == "round trip"
@@ -602,13 +595,13 @@ class TestObservationStore:
         assert retrieved.contradictions == ["nope"]
 
     def test_persistence_empty_store_survives(self):
-        store = ObservationStore(store_path="/tmp/test_obs_store.json")
+        store = ObservationStore(store_path=self.store_path)
         store.clear()
-        store2 = ObservationStore(store_path="/tmp/test_obs_store.json")
+        store2 = ObservationStore(store_path=self.store_path)
         assert store2.count == 0
 
     def test_persistence_corrupted_file_handled(self):
-        path = "/tmp/test_obs_store.json"
+        path = self.store_path
         with open(path, "w") as fh:
             fh.write("not valid json {{{")
         store = ObservationStore(store_path=path)

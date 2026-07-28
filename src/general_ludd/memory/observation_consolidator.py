@@ -256,9 +256,49 @@ class ObservationConsolidator:
             else:
                 supporting.append(fact)
 
-        if not supporting:
-            return list(facts), []
-        return supporting, contradictory
+        if contradictory:
+            if not supporting:
+                return list(facts), []
+            return supporting, contradictory
+
+        # A later state-changing or preference claim supersedes different
+        # choices in the same scope.  Explicit transitions such as "switched
+        # to Vue" and exclusive preferences such as "prefers Angular" are
+        # otherwise all positive sentences, so negative-word matching alone
+        # cannot identify the displaced claims.
+        claims = [
+            (index, fact, _choice_claim(fact.content))
+            for index, fact in enumerate(facts)
+        ]
+        decisive = [
+            (index, fact, claim)
+            for index, fact, claim in claims
+            if claim is not None and claim[2]
+        ]
+        if decisive:
+            _, anchor_fact, anchor_claim = max(
+                decisive,
+                key=lambda item: (item[1].timestamp, item[0]),
+            )
+            anchor_scope, anchor_target, _ = anchor_claim
+            displaced = [
+                fact
+                for _, fact, claim in claims
+                if (
+                    fact is not anchor_fact
+                    and claim is not None
+                    and claim[0] == anchor_scope
+                    and claim[1] != anchor_target
+                )
+            ]
+            if displaced:
+                displaced_ids = {id(fact) for fact in displaced}
+                supporting = [
+                    fact for fact in facts if id(fact) not in displaced_ids
+                ]
+                return supporting, displaced
+
+        return list(facts), []
 
     def _build_observation(
         self,
@@ -472,7 +512,10 @@ class ObservationStore:
                 "stale": obs.stale,
                 "contradictions": obs.contradictions,
             }
-        tmp = self._path + ".tmp"
+        tmp = (
+            f"{self._path}.tmp.{os.getpid()}."
+            f"{threading.get_ident()}"
+        )
         with open(tmp, "w") as fh:
             json.dump(out, fh, indent=2, default=str)
         os.replace(tmp, self._path)
@@ -505,12 +548,76 @@ _NEGATIVE_TARGET_RE = re.compile(
 )
 
 
+_CHOICE_PATTERNS: tuple[tuple[re.Pattern[str], bool], ...] = (
+    (
+        re.compile(
+            r"\b(?:switched|moved|migrated)\s+to\s+"
+            r"(?:a|an|the)?\s*([A-Za-z0-9_+#.-]+)",
+            re.IGNORECASE,
+        ),
+        True,
+    ),
+    (
+        re.compile(
+            r"\breplaced\s+[A-Za-z0-9_+#.-]+\s+with\s+"
+            r"(?:a|an|the)?\s*([A-Za-z0-9_+#.-]+)",
+            re.IGNORECASE,
+        ),
+        True,
+    ),
+    (
+        re.compile(
+            r"\bprefers?\s+(?:a|an|the)?\s*([A-Za-z0-9_+#.-]+)",
+            re.IGNORECASE,
+        ),
+        True,
+    ),
+    (
+        re.compile(
+            r"\b(?:uses?|chooses?|selects?|adopts?|picks?)\s+"
+            r"(?:a|an|the)?\s*([A-Za-z0-9_+#.-]+)",
+            re.IGNORECASE,
+        ),
+        False,
+    ),
+)
+
+_CHOICE_SCOPES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("frontend", re.compile(r"\b(?:front\s*end|frontend|ui|web)\b")),
+    ("backend", re.compile(r"\b(?:back\s*end|backend|server(?:-side)?)\b")),
+    ("testing", re.compile(r"\b(?:test|tests|testing|unit\s+test)\b")),
+    ("database", re.compile(r"\b(?:database|datastore|storage)\b")),
+    ("deployment", re.compile(r"\b(?:deploy|deployment|production)\b")),
+)
+
+
 def _negative_targets(content: str) -> set[str]:
     return {
         normalized
         for match in _NEGATIVE_TARGET_RE.finditer(content)
         if (normalized := _normalize(match.group(1)).strip())
     }
+
+
+def _choice_claim(content: str) -> tuple[str, str, bool] | None:
+    """Return ``(scope, target, decisive)`` for a technology-choice claim."""
+    normalized_content = _normalize(content)
+    scope = next(
+        (
+            scope_name
+            for scope_name, scope_pattern in _CHOICE_SCOPES
+            if scope_pattern.search(normalized_content)
+        ),
+        "general",
+    )
+    for pattern, decisive in _CHOICE_PATTERNS:
+        match = pattern.search(content)
+        if match is None:
+            continue
+        target = _normalize(match.group(1)).strip()
+        if target:
+            return scope, target, decisive
+    return None
 
 
 def _extract_names(content: str) -> list[str]:
