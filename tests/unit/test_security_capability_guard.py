@@ -10,7 +10,7 @@ Verifies:
 from __future__ import annotations
 
 import pytest
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.testclient import TestClient
 
 from general_ludd.security.capability_guard import RequireCapability
@@ -122,24 +122,60 @@ class TestRequireCapabilityIntegration:
     @pytest.fixture
     def app(self):
         app = FastAPI()
+        guard = RequireCapability(resource="admin:sts", action="revoke")
 
-        @app.post("/admin/sts/revoke")
+        @app.post("/admin/sts/revoke", dependencies=[Depends(guard)])
         async def sts_revoke():
             return {"revoked": True}
-
-        app.dependency_overrides[RequireCapability] = lambda resource, action: RequireCapability(
-            resource=resource, action=action
-        )
 
         return app
 
     def test_no_auth_spec_returns_403(self, app):
         client = TestClient(app, raise_server_exceptions=False)
-        app._psk = "test-key"
-
-        @app.middleware("http")
-        async def no_auth_middleware(request: Request, call_next):
-            return await call_next(request)
 
         resp = client.post("/admin/sts/revoke", content=b"{}")
-        assert resp.status_code == 403  # no auth_spec on request.state
+
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == {
+            "error": "forbidden: no_auth_spec",
+            "required": "admin:sts:revoke",
+        }
+
+    def test_insufficient_capability_returns_403(self, app):
+        @app.middleware("http")
+        async def restricted_auth(request: Request, call_next):
+            request.state.auth_spec = PermissionSpec(
+                agent_type="restricted",
+                capabilities=[
+                    Capability(resource="admin:sts", actions=["list"]),
+                ],
+            )
+            return await call_next(request)
+
+        client = TestClient(app, raise_server_exceptions=False)
+
+        resp = client.post("/admin/sts/revoke", content=b"{}")
+
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == {
+            "error": "forbidden: insufficient_capability",
+            "required": "admin:sts:revoke",
+        }
+
+    def test_matching_capability_allows_request(self, app):
+        @app.middleware("http")
+        async def authorized(request: Request, call_next):
+            request.state.auth_spec = PermissionSpec(
+                agent_type="operator",
+                capabilities=[
+                    Capability(resource="admin:sts", actions=["revoke"]),
+                ],
+            )
+            return await call_next(request)
+
+        client = TestClient(app, raise_server_exceptions=False)
+
+        resp = client.post("/admin/sts/revoke", content=b"{}")
+
+        assert resp.status_code == 200
+        assert resp.json() == {"revoked": True}
