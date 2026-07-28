@@ -143,27 +143,17 @@ class ToolCallLoop:
         """
         registry = self._mcp_registry
         if registry is None:
-            raise MCPTransportError(
-                "MCP tool registry unavailable; refusing ungated tool call "
-                f"{tc_name!r}"
-            )
+            raise MCPTransportError(f"MCP tool registry unavailable; refusing ungated tool call {tc_name!r}")
         tool = registry.get_tool(tc_name)
         if tool is None:
             # Distinguish ambiguous (same name on multiple servers) from unknown.
             if tc_name in registry.tool_names():
                 raise MCPTransportError(
-                    f"Tool {tc_name!r} is ambiguous across multiple servers; "
-                    f"supply an explicit server_id"
+                    f"Tool {tc_name!r} is ambiguous across multiple servers; supply an explicit server_id"
                 )
-            raise MCPTransportError(
-                f"Tool {tc_name!r} is not a registered MCP tool (capability "
-                f"gate); refusing call"
-            )
+            raise MCPTransportError(f"Tool {tc_name!r} is not a registered MCP tool (capability gate); refusing call")
         if not tool.server_id:
-            raise MCPTransportError(
-                f"Tool {tc_name!r} is not a registered MCP tool (capability "
-                f"gate); refusing call"
-            )
+            raise MCPTransportError(f"Tool {tc_name!r} is not a registered MCP tool (capability gate); refusing call")
         return tool.server_id
 
     def is_available(self) -> bool:
@@ -182,9 +172,7 @@ class ToolCallLoop:
             check_dispatch(self._role, "mcp")
 
         work_type = getattr(job, "work_type", "code") or "code"
-        effective_max_iterations = self._work_type_max_iterations.get(
-            work_type, self._max_iterations
-        )
+        effective_max_iterations = self._work_type_max_iterations.get(work_type, self._max_iterations)
 
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_prompt},
@@ -202,19 +190,21 @@ class ToolCallLoop:
             for t in tools
         ]
         # C15 defect 3: name -> input_schema map for per-call arg validation.
-        schema_by_name: dict[str, dict[str, Any]] = {
-            t.name: (t.input_schema or {}) for t in tools
-        }
+        schema_by_name: dict[str, dict[str, Any]] = {t.name: (t.input_schema or {}) for t in tools}
 
         cumulative_tokens = 0
         for iteration in range(effective_max_iterations):
             if self._budget_guard is not None:
-                from general_ludd.budget_guard_check import budget_pre_check
-                denial = budget_pre_check(self._budget_guard)
+                from general_ludd.budget_guard_check import budget_pre_check, compute_projected_cost_usd
+
+                projected = compute_projected_cost_usd(self._gateway, self._budget_guard)
+                denial = budget_pre_check(self._budget_guard, projected_cost=projected)
                 if denial is not None:
                     logger.warning(
                         "ToolCallLoop budget denied for job %s at iteration %d: %s",
-                        job.job_id, iteration + 1, denial,
+                        job.job_id,
+                        iteration + 1,
+                        denial,
                     )
                     raise ToolLoopExhausted(
                         f"Tool call loop budget exhausted at iteration "
@@ -224,7 +214,9 @@ class ToolCallLoop:
 
             if self._compaction_level is not None:
                 messages = self._compact_history(
-                    messages, goal=user_prompt, open_round_start=open_round_start,
+                    messages,
+                    goal=user_prompt,
+                    open_round_start=open_round_start,
                 )
 
             try:
@@ -235,7 +227,9 @@ class ToolCallLoop:
             except TimeoutError as err:
                 logger.warning(
                     "ToolCallLoop iteration %d timed out after %.0fs for job %s",
-                    iteration + 1, self._per_iteration_timeout, job.job_id,
+                    iteration + 1,
+                    self._per_iteration_timeout,
+                    job.job_id,
                 )
                 raise ToolLoopExhausted(
                     f"Tool call loop iteration {iteration + 1} timed out "
@@ -252,7 +246,9 @@ class ToolCallLoop:
             if cumulative_tokens > self._max_total_tokens:
                 logger.warning(
                     "ToolCallLoop token limit exceeded for job %s: %d > %d",
-                    job.job_id, cumulative_tokens, self._max_total_tokens,
+                    job.job_id,
+                    cumulative_tokens,
+                    self._max_total_tokens,
                 )
                 raise ToolLoopExhausted(
                     f"Tool call loop total tokens {cumulative_tokens} exceeded "
@@ -260,13 +256,12 @@ class ToolCallLoop:
                 )
 
             if self._adversarial_detector is not None and content:
-                scan_result = self._adversarial_detector.scan_text(
-                    content, file_path=f"tool_loop:{job.job_id}"
-                )
+                scan_result = self._adversarial_detector.scan_text(content, file_path=f"tool_loop:{job.job_id}")
                 if scan_result.blocked:
                     logger.warning(
                         "ToolCallLoop adversarial scan blocked output for job %s: %s",
-                        job.job_id, scan_result.summary,
+                        job.job_id,
+                        scan_result.summary,
                     )
                     raise ToolLoopExhausted(
                         f"Tool call loop output blocked by adversarial scan "
@@ -287,34 +282,40 @@ class ToolCallLoop:
                 rejected = tool_calls[MAX_TOOL_CALLS_PER_RESPONSE:]
                 open_round_start = len(messages)
                 for tc in rejected:
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc.get("id", ""),
-                        "content": (
-                            f"Tool call rejected: this response exceeded the "
-                            f"per-response tool-call cap of "
-                            f"{MAX_TOOL_CALLS_PER_RESPONSE}. Do not retry; issue "
-                            f"fewer tool calls per turn."
-                        ),
-                    })
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc.get("id", ""),
+                            "content": (
+                                f"Tool call rejected: this response exceeded the "
+                                f"per-response tool-call cap of "
+                                f"{MAX_TOOL_CALLS_PER_RESPONSE}. Do not retry; issue "
+                                f"fewer tool calls per turn."
+                            ),
+                        }
+                    )
                 if rejected:
                     logger.warning(
-                        "ToolCallLoop capped tool calls for job %s: %d requested, "
-                        "%d executed, %d rejected",
-                        job.job_id, len(tool_calls), len(accepted), len(rejected),
+                        "ToolCallLoop capped tool calls for job %s: %d requested, %d executed, %d rejected",
+                        job.job_id,
+                        len(tool_calls),
+                        len(accepted),
+                        len(rejected),
                     )
                 for tc in accepted:
                     tc_name = tc.get("function", {}).get("name", "")
                     tc_args = tc.get("function", {}).get("arguments", "{}")
                     if isinstance(tc_args, str):
                         import json as _json
+
                         try:
                             tc_args = _json.loads(tc_args)
                         except _json.JSONDecodeError:
                             logger.warning(
-                                "Malformed tool-call arguments for %r (job %s); "
-                                "using empty args. Raw: %.200r",
-                                tc_name, job.job_id, tc_args,
+                                "Malformed tool-call arguments for %r (job %s); using empty args. Raw: %.200r",
+                                tc_name,
+                                job.job_id,
+                                tc_args,
                             )
                             tc_args = {}
                     if not isinstance(tc_args, dict):
@@ -324,48 +325,52 @@ class ToolCallLoop:
                     # tool call so a role that lacks the "mcp" capability can
                     # never reach call_tool from inside the round loop. role=None
                     # preserves the pre-existing ungated behaviour.
-                    if self._role is not None and not role_may_dispatch(
-                        self._role, "mcp"
-                    ):
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tc.get("id", ""),
-                            "content": (
-                                f"Tool call denied: role {self._role!r} lacks the "
-                                f"capability to dispatch MCP tool calls "
-                                f"(capability_denied). Do not retry."
-                            ),
-                        })
+                    if self._role is not None and not role_may_dispatch(self._role, "mcp"):
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tc.get("id", ""),
+                                "content": (
+                                    f"Tool call denied: role {self._role!r} lacks the "
+                                    f"capability to dispatch MCP tool calls "
+                                    f"(capability_denied). Do not retry."
+                                ),
+                            }
+                        )
                         logger.warning(
-                            "ToolCallLoop per-call capability denied for role %r "
-                            "on tool %r (job %s)",
-                            self._role, tc_name, job.job_id,
+                            "ToolCallLoop per-call capability denied for role %r on tool %r (job %s)",
+                            self._role,
+                            tc_name,
+                            job.job_id,
                         )
                         continue
                     # C15 defect 3 (arg schema validation): reject args that do
                     # not conform to the tool's input_schema BEFORE the auditor
                     # gate and BEFORE call_tool. An empty schema is a no-op.
-                    schema_err = _validate_tool_args(
-                        tc_args, schema_by_name.get(tc_name, {})
-                    )
+                    schema_err = _validate_tool_args(tc_args, schema_by_name.get(tc_name, {}))
                     if schema_err is not None:
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tc.get("id", ""),
-                            "content": (
-                                f"Tool call rejected: arguments are not valid for "
-                                f"{tc_name!r}: {schema_err}. Fix the arguments and "
-                                f"retry."
-                            ),
-                        })
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tc.get("id", ""),
+                                "content": (
+                                    f"Tool call rejected: arguments are not valid for "
+                                    f"{tc_name!r}: {schema_err}. Fix the arguments and "
+                                    f"retry."
+                                ),
+                            }
+                        )
                         logger.info(
                             "ToolCallLoop rejected invalid args for %r (job %s): %s",
-                            tc_name, job.job_id, schema_err,
+                            tc_name,
+                            job.job_id,
+                            schema_err,
                         )
                         continue
                     if self._auditor is not None:
                         situation = self._auditor.audit(
-                            tc_name, tc_args,
+                            tc_name,
+                            tc_args,
                             task_context=user_prompt[:500],
                             work_type=getattr(job, "work_type", ""),
                             capture_situation=True,
@@ -374,67 +379,80 @@ class ToolCallLoop:
                             if self._situation_store is not None:
                                 with contextlib.suppress(Exception):
                                     self._situation_store.save(situation)
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": tc.get("id", ""),
-                                "content": (
-                                    f"Tool call blocked by auditor: {situation.classification}. "
-                                    f"{situation.reason} "
-                                    f"Do not retry this call. Use a different approach."
-                                ),
-                            })
+                            messages.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": tc.get("id", ""),
+                                    "content": (
+                                        f"Tool call blocked by auditor: {situation.classification}. "
+                                        f"{situation.reason} "
+                                        f"Do not retry this call. Use a different approach."
+                                    ),
+                                }
+                            )
                             logger.info(
                                 "Blocked tool call %r for job %s: %s",
-                                tc_name, job.job_id, situation.classification,
+                                tc_name,
+                                job.job_id,
+                                situation.classification,
                             )
                             continue
                     try:
                         server_id = self._resolve_server_id(tc_name)
                         result = await asyncio.wait_for(
                             self._mcp_client.call_tool(
-                                server_id, tc_name, tc_args,
+                                server_id,
+                                tc_name,
+                                tc_args,
                             ),
                             timeout=self._per_tool_timeout,
                         )
                         if self._auditor is not None:
                             self._auditor.record_success(tc_name, tc_args, result)
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tc.get("id", ""),
-                            "content": str(result),
-                        })
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tc.get("id", ""),
+                                "content": str(result),
+                            }
+                        )
                     except TimeoutError:
                         if self._auditor is not None:
                             self._auditor.record_error(
-                                tc_name, tc_args,
+                                tc_name,
+                                tc_args,
                                 f"timeout after {self._per_tool_timeout}s",
                             )
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tc.get("id", ""),
-                            "content": (
-                                f"Tool error: {tc_name!r} timed out after "
-                                f"{self._per_tool_timeout}s"
-                            ),
-                        })
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tc.get("id", ""),
+                                "content": (f"Tool error: {tc_name!r} timed out after {self._per_tool_timeout}s"),
+                            }
+                        )
                         logger.warning(
                             "Tool %r timed out after %ss for job %s",
-                            tc_name, self._per_tool_timeout, job.job_id,
+                            tc_name,
+                            self._per_tool_timeout,
+                            job.job_id,
                         )
                     except Exception as exc:
                         if self._auditor is not None:
                             self._auditor.record_error(tc_name, tc_args, str(exc))
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tc.get("id", ""),
-                            "content": f"Tool error: {exc}",
-                        })
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tc.get("id", ""),
+                                "content": f"Tool error: {exc}",
+                            }
+                        )
                 continue
             return content
 
         logger.warning(
             "Tool call loop reached max iterations (%d) for job %s",
-            effective_max_iterations, job.job_id,
+            effective_max_iterations,
+            job.job_id,
         )
         raise ToolLoopExhausted(
             f"Tool call loop reached max iterations ({effective_max_iterations}) "
@@ -484,7 +502,10 @@ class ToolCallLoop:
         return [*compacted_prefix, *trailing]
 
     async def _call_model(
-        self, job: JobSpec, system_prompt: str, user_prompt: str,
+        self,
+        job: JobSpec,
+        system_prompt: str,
+        user_prompt: str,
     ) -> ModelResponse:
         profile_id = job.model_profile or "default"
         messages: list[dict[str, Any]] = []
@@ -493,7 +514,9 @@ class ToolCallLoop:
         if user_prompt:
             messages.append({"role": "user", "content": user_prompt})
         return await asyncio.to_thread(
-            self._gateway.call_model, profile_id, messages=messages,
+            self._gateway.call_model,
+            profile_id,
+            messages=messages,
             work_type=job.work_type,
             # S-1 (task #25): scope secret resolution to this job's project so
             # the tool-loop model call resolves credentials through the project's
@@ -502,7 +525,9 @@ class ToolCallLoop:
         )
 
     async def _call_with_tools(
-        self, job: JobSpec, messages: list[dict[str, Any]],
+        self,
+        job: JobSpec,
+        messages: list[dict[str, Any]],
         tool_schemas: list[dict[str, Any]],
     ) -> ModelResponse:
         profile_id = job.model_profile or "default"

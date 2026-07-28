@@ -35,9 +35,50 @@ class _RemainingGuard(Protocol):
     def remaining(self, now: float | None = ...) -> float: ...
 
 
-def budget_pre_check(
-    guard: object, projected_cost: float = 0.0
-) -> str | None:
+def compute_projected_cost_usd(gateway: object, budget_guard: object | None = None) -> float:
+    """Compute a per-call USD cost projection from the default model profile.
+
+    Derives the projection from the model gateway's default profile (model
+    name, max input/output tokens) and the guard's ``token_cost_usd`` when
+    available, falling back to the static pricing table otherwise.  Returns
+    0.0 when no gateway is available so callers that lack one stay compatible
+    with the prior reactive-only semantics.
+
+    The projection is capped at 1 000 input tokens to keep it conservative.
+    """
+    if gateway is None:
+        return 0.0
+
+    try:
+        profile = gateway.get_profile("default")
+    except Exception:
+        logger.debug("compute_projected_cost_usd: gateway.get_profile failed")
+        return 0.0
+
+    if profile is None:
+        return 0.0
+
+    try:
+        model = str(getattr(profile, "model_name", "__default__") or "__default__")
+        proj_in = min(int(getattr(profile, "max_input_tokens", 1000) or 1000), 1000)
+        proj_out = int(getattr(profile, "max_output_tokens", 0) or 0)
+    except (TypeError, ValueError):
+        logger.debug("compute_projected_cost_usd: profile attribute coercion failed")
+        return 0.0
+
+    guard_cost = getattr(budget_guard, "token_cost_usd", None)
+    if callable(guard_cost):
+        try:
+            return float(guard_cost(model, proj_in, proj_out))
+        except Exception:
+            logger.debug("compute_projected_cost_usd: guard.token_cost_usd raised; falling back to static table")
+
+    from general_ludd.infra.pricing import token_cost_usd as _static
+
+    return float(_static(model, proj_in, proj_out))
+
+
+def budget_pre_check(guard: object, projected_cost: float = 0.0) -> str | None:
     """Run a non-mutating budget pre-check against *guard*.
 
     Args:
@@ -67,9 +108,7 @@ def budget_pre_check(
             return f"budget check raised: {exc}"
 
         if not isinstance(verdict, dict):
-            logger.warning(
-                "budget_pre_check: check_all_limits returned non-dict: %r", verdict
-            )
+            logger.warning("budget_pre_check: check_all_limits returned non-dict: %r", verdict)
             return "budget check returned non-dict"
 
         if not verdict.get("allowed", False):

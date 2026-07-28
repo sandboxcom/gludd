@@ -14,9 +14,10 @@ from pathlib import Path
 from typing import cast
 
 import yaml
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from general_ludd.security.capability_guard import RequireCapability
 from general_ludd.security.permissions import (
     Capability,
     PermissionDeniedError,
@@ -110,6 +111,18 @@ def _get_esc_store(app: FastAPI) -> list[dict[str, object]]:
         store = []
         app.state._escalation_store = store
     return store
+
+
+def _is_self_review(reviewer: str, agent_id: str) -> bool:
+    """True iff ``reviewer`` matches ``agent_id`` (self-approval attempt).
+
+    Case-insensitive + whitespace-stripped so casing tricks and leading/
+    trailing space cannot bypass the check. An empty/whitespace-only
+    ``reviewer`` is always treated as self-review (fail-closed).
+    """
+    if not reviewer or not reviewer.strip():
+        return True
+    return reviewer.strip().casefold() == agent_id.strip().casefold()
 
 
 def _esc_counter(app: FastAPI) -> int:
@@ -352,7 +365,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             ]
         }
 
-    @app.post("/admin/sts/revoke")
+    @app.post("/admin/sts/revoke", dependencies=[Depends(RequireCapability(resource="admin:sts", action="revoke"))])
     async def admin_sts_revoke(req: dict[str, object]) -> object:
         token_id = cast(str, req.get("token_id"))
         if not token_id:
@@ -435,7 +448,11 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     async def admin_perm_spec_get(agent_type: str, request: Request) -> object:
         return await _admin_perm_spec(agent_type, request)
 
-    @app.put("/admin/perm/spec/{agent_type}", operation_id="admin_perm_spec_put")
+    @app.put(
+        "/admin/perm/spec/{agent_type}",
+        dependencies=[Depends(RequireCapability(resource="admin:permissions", action="write"))],
+        operation_id="admin_perm_spec_put",
+    )
     async def admin_perm_spec_put(agent_type: str, request: Request) -> object:
         return await _admin_perm_spec(agent_type, request)
 
@@ -595,15 +612,16 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 content={"error": f"escalation already {row['status']}"},
             )
         human_reviewer = cast(str | None, req.get("human_reviewer"))
-        if not human_reviewer or human_reviewer == row["agent_id"]:
+        agent_id = cast(str, row["agent_id"])
+        if _is_self_review(human_reviewer or "", agent_id):
             return JSONResponse(
                 status_code=403,
                 content={
                     "error": "self_approval_forbidden",
                     "detail": (
                         "Permission escalation requires a reviewer different from "
-                        "the requesting agent. Provide a human_reviewer that is "
-                        "not the agent_id."
+                        f"the requesting agent ({agent_id}). Provide a "
+                        "human_reviewer that is not the agent_id."
                     ),
                 },
             )
@@ -676,15 +694,16 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 content={"error": "reason is required to deny an escalation"},
             )
         human_reviewer = cast(str | None, req.get("human_reviewer"))
-        if not human_reviewer or human_reviewer == row["agent_id"]:
+        agent_id = cast(str, row["agent_id"])
+        if _is_self_review(human_reviewer or "", agent_id):
             return JSONResponse(
                 status_code=403,
                 content={
                     "error": "self_denial_forbidden",
                     "detail": (
                         "Permission escalation denial requires a reviewer different "
-                        "from the requesting agent. Provide a human_reviewer that is "
-                        "not the agent_id."
+                        f"from the requesting agent ({agent_id}). Provide a "
+                        "human_reviewer that is not the agent_id."
                     ),
                 },
             )

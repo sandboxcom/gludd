@@ -116,9 +116,10 @@ def invoke_model_for_generation(
             job_id,
         )
         return None, None
-    from general_ludd.budget_guard_check import budget_pre_check
+    from general_ludd.budget_guard_check import budget_pre_check, compute_projected_cost_usd
 
-    denial = budget_pre_check(budget_guard)
+    projected = compute_projected_cost_usd(gateway, budget_guard)
+    denial = budget_pre_check(budget_guard, projected_cost=projected)
     if denial is not None:
         logger.warning("Budget denied for job %s: %s", job_id, denial)
         return None, None

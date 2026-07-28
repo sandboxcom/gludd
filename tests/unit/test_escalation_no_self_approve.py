@@ -5,6 +5,7 @@ POST /admin/perm/escalations/{id}/deny both reject requests where the
 caller attempts to self-approve (human_reviewer matches agent_id) or
 omits human_reviewer entirely.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -63,10 +64,7 @@ def _build_app(
 
 
 def _alternatives(n: int) -> list[dict[str, str]]:
-    return [
-        {"approach": f"approach-{i}", "outcome": f"outcome-{i}"}
-        for i in range(n)
-    ]
+    return [{"approach": f"approach-{i}", "outcome": f"outcome-{i}"} for i in range(n)]
 
 
 def _cap_to_dict(cap: Capability) -> dict[str, Any]:
@@ -79,13 +77,17 @@ def _cap_to_dict(cap: Capability) -> dict[str, Any]:
 
 def _spec_to_yaml(spec: PermissionSpec) -> str:
     import yaml as _yaml
-    return _yaml.safe_dump({
-        "agent_type": spec.agent_type,
-        "subject": spec.subject.value,
-        "capabilities": [_cap_to_dict(c) for c in spec.capabilities],
-        "denied": [_cap_to_dict(c) for c in spec.denied],
-        "max_sts_ttl_seconds": spec.max_sts_ttl_seconds,
-    }, sort_keys=False)
+
+    return _yaml.safe_dump(
+        {
+            "agent_type": spec.agent_type,
+            "subject": spec.subject.value,
+            "capabilities": [_cap_to_dict(c) for c in spec.capabilities],
+            "denied": [_cap_to_dict(c) for c in spec.denied],
+            "max_sts_ttl_seconds": spec.max_sts_ttl_seconds,
+        },
+        sort_keys=False,
+    )
 
 
 def _post_escalation(
@@ -171,6 +173,39 @@ def test_approve_rejects_empty_reviewer() -> None:
     assert a_resp.json()["error"] == "self_approval_forbidden"
 
 
+def test_approve_rejects_whitespace_only_reviewer() -> None:
+    app = _build_app()
+    client = TestClient(app)
+    resp = _post_escalation(client)
+    esc_id = resp.json()["id"]
+
+    a_resp = _approve(client, esc_id, reason="ok", human_reviewer="   ")
+    assert a_resp.status_code == 403, a_resp.text
+    assert a_resp.json()["error"] == "self_approval_forbidden"
+
+
+def test_approve_rejects_case_variant_self_approve() -> None:
+    app = _build_app()
+    client = TestClient(app)
+    resp = _post_escalation(client, agent_id="Agent-Self")
+    esc_id = resp.json()["id"]
+
+    a_resp = _approve(client, esc_id, reason="ok", human_reviewer="agent-self")
+    assert a_resp.status_code == 403, a_resp.text
+    assert a_resp.json()["error"] == "self_approval_forbidden"
+
+
+def test_approve_rejects_padded_self_approve() -> None:
+    app = _build_app()
+    client = TestClient(app)
+    resp = _post_escalation(client, agent_id="agent-self")
+    esc_id = resp.json()["id"]
+
+    a_resp = _approve(client, esc_id, reason="ok", human_reviewer=" agent-self ")
+    assert a_resp.status_code == 403, a_resp.text
+    assert a_resp.json()["error"] == "self_approval_forbidden"
+
+
 def test_approve_allows_different_reviewer() -> None:
     app = _build_app()
     client = TestClient(app)
@@ -217,7 +252,29 @@ def test_deny_rejects_empty_reviewer() -> None:
     resp = _post_escalation(client)
     esc_id = resp.json()["id"]
 
-    d_resp = _deny(client, esc_id, reason="no", human_reviewer="")
+    d_resp = _deny(client, esc_id, reason="not needed")
+    assert d_resp.status_code == 403, d_resp.text
+    assert d_resp.json()["error"] == "self_denial_forbidden"
+
+
+def test_deny_rejects_whitespace_only_reviewer() -> None:
+    app = _build_app()
+    client = TestClient(app)
+    resp = _post_escalation(client)
+    esc_id = resp.json()["id"]
+
+    d_resp = _deny(client, esc_id, reason="no", human_reviewer="\t  ")
+    assert d_resp.status_code == 403, d_resp.text
+    assert d_resp.json()["error"] == "self_denial_forbidden"
+
+
+def test_deny_rejects_case_variant_self_deny() -> None:
+    app = _build_app()
+    client = TestClient(app)
+    resp = _post_escalation(client, agent_id="Agent-Self-Denier")
+    esc_id = resp.json()["id"]
+
+    d_resp = _deny(client, esc_id, reason="no", human_reviewer="agent-self-denier")
     assert d_resp.status_code == 403, d_resp.text
     assert d_resp.json()["error"] == "self_denial_forbidden"
 
@@ -271,3 +328,294 @@ def test_auto_approved_not_affected() -> None:
     resp = client.post("/admin/perm/escalation-request", json=body)
     assert resp.status_code == 201
     assert resp.json()["status"] == "auto_approved"
+
+
+# ---------------------------------------------------------------------------
+# Human-todo self-resolution rejection
+# ---------------------------------------------------------------------------
+
+_HTODO_APP: FastAPI | None = None
+_HTODO_CLIENT: TestClient | None = None
+
+
+def _htodo_setup(human_spec: PermissionSpec | None = None) -> TestClient:
+    """Build an app with the human-todo router registered and a mock DB session."""
+    global _HTODO_APP, _HTODO_CLIENT
+    from unittest.mock import AsyncMock, MagicMock
+
+    app = FastAPI()
+    from general_ludd.db.repository import HumanTodoRepository
+
+    mock_repo = MagicMock(spec=HumanTodoRepository)
+    mock_session = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+
+    async def _mock_create(**kw: Any) -> Any:
+        from general_ludd.db.models import HumanTodoModel
+
+        return HumanTodoModel(
+            id="HTODO-TEST001",
+            agent_id=kw.get("agent_id", "agent-001"),
+            title=kw.get("title", "test"),
+            body=kw.get("body", ""),
+            category=kw.get("category", "permission_escalation"),
+            priority=kw.get("priority", "high"),
+            status="open",
+            tags=kw.get("tags", "[]"),
+        )
+
+    from general_ludd.db.repository import TodoRepository
+
+    mock_todo_repo = MagicMock(spec=TodoRepository)
+
+    app.state._session_factory = lambda: mock_session
+    app.state._escalation_store = []
+    app.state._escalation_counter = [0]
+    app.state._sts_issuer_spec = _agent_spec()
+    app.state._human_spec = human_spec or _human_viewer_spec()
+
+    from general_ludd.routers import human_todos as htd
+    from general_ludd.routers import security as sec
+
+    sec.register(app, {})
+    htd.register(app, {})
+
+    _HTODO_APP = app
+    _HTODO_CLIENT = TestClient(app)
+    return _HTODO_CLIENT
+
+
+def test_human_todo_done_rejects_self_resolution() -> None:
+    """PATCH human-todo to done with human_resolver == agent_id is rejected."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    app = FastAPI()
+    from general_ludd.routers import human_todos as htd
+    from general_ludd.routers import security as sec
+
+    sec.register(app, {})
+    htd.register(app, {})
+
+    from general_ludd.db.repository import HumanTodoRepository, TodoRepository
+
+    mock_session = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+
+    mock_repo = MagicMock(spec=HumanTodoRepository)
+    mock_todo_repo = MagicMock(spec=TodoRepository)
+
+    app.state._session_factory = lambda: mock_session
+    app.state._escalation_store = []
+    app.state._escalation_counter = [0]
+    app.state._sts_issuer_spec = _agent_spec()
+    app.state._human_spec = _human_viewer_spec()
+
+    from general_ludd.db.models import HumanTodoModel
+    from datetime import datetime
+
+    row = HumanTodoModel(
+        id="HTODO-TEST001",
+        agent_id="agent-001",
+        title="Test escalation",
+        body="needs approval",
+        category="permission_escalation",
+        priority="high",
+        status="open",
+        tags='["escalation:1"]',
+        created_at=datetime(2025, 1, 1),
+        updated_at=datetime(2025, 1, 1),
+    )
+    mock_repo.get = AsyncMock(return_value=row)
+
+    with patch("general_ludd.routers.human_todos.HumanTodoRepository", return_value=mock_repo):
+        with patch("general_ludd.routers.human_todos.TodoRepository", return_value=mock_todo_repo):
+            client = TestClient(app)
+            resp = client.patch(
+                "/api/human-todos/HTODO-TEST001",
+                json={
+                    "status": "done",
+                    "human_resolver": "agent-001",
+                    "human_resolution": "I approve my own request",
+                },
+            )
+    assert resp.status_code == 403, resp.text
+    body = resp.json()
+    assert "self_resolution_forbidden" in body["detail"]
+
+
+def test_human_todo_dismissed_rejects_self_resolution() -> None:
+    """PATCH human-todo to dismissed with human_resolver == agent_id is rejected."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    app = FastAPI()
+    from general_ludd.routers import human_todos as htd
+    from general_ludd.routers import security as sec
+
+    sec.register(app, {})
+    htd.register(app, {})
+
+    from general_ludd.db.repository import HumanTodoRepository, TodoRepository
+
+    mock_session = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+
+    mock_repo = MagicMock(spec=HumanTodoRepository)
+    mock_todo_repo = MagicMock(spec=TodoRepository)
+
+    app.state._session_factory = lambda: mock_session
+    app.state._escalation_store = []
+    app.state._escalation_counter = [0]
+    app.state._sts_issuer_spec = _agent_spec()
+    app.state._human_spec = _human_viewer_spec()
+
+    from general_ludd.db.models import HumanTodoModel
+    from datetime import datetime
+
+    row = HumanTodoModel(
+        id="HTODO-TEST002",
+        agent_id="agent-002",
+        title="Test escalation",
+        body="needs approval",
+        category="permission_escalation",
+        priority="high",
+        status="open",
+        tags='["escalation:2"]',
+        created_at=datetime(2025, 1, 1),
+        updated_at=datetime(2025, 1, 1),
+    )
+    mock_repo.get = AsyncMock(return_value=row)
+
+    with patch("general_ludd.routers.human_todos.HumanTodoRepository", return_value=mock_repo):
+        with patch("general_ludd.routers.human_todos.TodoRepository", return_value=mock_todo_repo):
+            client = TestClient(app)
+            resp = client.patch(
+                "/api/human-todos/HTODO-TEST002",
+                json={
+                    "status": "dismissed",
+                    "human_resolver": "agent-002",
+                    "human_resolution": "Not needed",
+                },
+            )
+    assert resp.status_code == 403, resp.text
+    body = resp.json()
+    assert "self_resolution_forbidden" in body["detail"]
+
+
+def test_human_todo_done_allows_different_resolver() -> None:
+    """PATCH human-todo to done with different human_resolver is allowed."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    app = FastAPI()
+    from general_ludd.routers import human_todos as htd
+    from general_ludd.routers import security as sec
+
+    sec.register(app, {})
+    htd.register(app, {})
+
+    from general_ludd.db.repository import HumanTodoRepository, TodoRepository
+
+    mock_session = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+
+    mock_repo = MagicMock(spec=HumanTodoRepository)
+    mock_todo_repo = MagicMock(spec=TodoRepository)
+
+    app.state._session_factory = lambda: mock_session
+    app.state._escalation_store = []
+    app.state._escalation_counter = [0]
+    app.state._sts_issuer_spec = _agent_spec()
+    app.state._human_spec = _human_viewer_spec()
+
+    from general_ludd.db.models import HumanTodoModel
+    from datetime import datetime
+
+    row = HumanTodoModel(
+        id="HTODO-TEST003",
+        agent_id="agent-003",
+        title="Test escalation",
+        body="needs approval",
+        category="permission_escalation",
+        priority="high",
+        status="open",
+        tags='["escalation:3"]',
+        created_at=datetime(2025, 1, 1),
+        updated_at=datetime(2025, 1, 1),
+    )
+    mock_repo.get = AsyncMock(return_value=row)
+    mock_repo.mark_done = AsyncMock(return_value=row)
+
+    with patch("general_ludd.routers.human_todos.HumanTodoRepository", return_value=mock_repo):
+        with patch("general_ludd.routers.human_todos.TodoRepository", return_value=mock_todo_repo):
+            client = TestClient(app)
+            resp = client.patch(
+                "/api/human-todos/HTODO-TEST003",
+                json={
+                    "status": "done",
+                    "human_resolver": "alice-operator",
+                    "human_resolution": "Approved",
+                },
+            )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "open"
+
+
+def test_human_todo_case_insensitive_self_resolution() -> None:
+    """Case-insensitive match also rejects self-resolution."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    app = FastAPI()
+    from general_ludd.routers import human_todos as htd
+    from general_ludd.routers import security as sec
+
+    sec.register(app, {})
+    htd.register(app, {})
+
+    from general_ludd.db.repository import HumanTodoRepository, TodoRepository
+
+    mock_session = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+
+    mock_repo = MagicMock(spec=HumanTodoRepository)
+    mock_todo_repo = MagicMock(spec=TodoRepository)
+
+    app.state._session_factory = lambda: mock_session
+    app.state._escalation_store = []
+    app.state._escalation_counter = [0]
+    app.state._sts_issuer_spec = _agent_spec()
+    app.state._human_spec = _human_viewer_spec()
+
+    from general_ludd.db.models import HumanTodoModel
+    from datetime import datetime
+
+    row = HumanTodoModel(
+        id="HTODO-TEST004",
+        agent_id="Agent-004",
+        title="Test escalation",
+        body="needs approval",
+        category="permission_escalation",
+        priority="high",
+        status="open",
+        tags='["escalation:4"]',
+        created_at=datetime(2025, 1, 1),
+        updated_at=datetime(2025, 1, 1),
+    )
+    mock_repo.get = AsyncMock(return_value=row)
+
+    with patch("general_ludd.routers.human_todos.HumanTodoRepository", return_value=mock_repo):
+        with patch("general_ludd.routers.human_todos.TodoRepository", return_value=mock_todo_repo):
+            client = TestClient(app)
+            resp = client.patch(
+                "/api/human-todos/HTODO-TEST004",
+                json={
+                    "status": "done",
+                    "human_resolver": "agent-004",
+                    "human_resolution": "I'm the same agent",
+                },
+            )
+    assert resp.status_code == 403, resp.text
+    assert "self_resolution_forbidden" in resp.json()["detail"]

@@ -115,6 +115,7 @@ class RemediationSettings(BaseModel):
     chronic_lookback_days: int = 7
     min_chronic_incidents: int = 5
     retry_delay_hours: int = 4
+    needs_more_work_cooldown_hours: int = 24
 
 
 class _YamlSettingsSource(PydanticBaseSettingsSource):
@@ -333,6 +334,7 @@ class UserConfig(BaseSettings):
             env_key = f"GLUDD_{field_name.upper()}"
             if env_key in os.environ:
                 import json as _json
+
                 raw = os.environ[env_key]
                 try:
                     merged[field_name] = _json.loads(raw)

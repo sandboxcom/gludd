@@ -295,6 +295,7 @@ class ExecutionEngine:
         budget_guard: Any = None,
         behavior: AgentBehavior | None = None,
         searcher: Any = None,
+        sandbox_enforcer: Any = None,
     ) -> None:
         self._model_gateway = model_gateway
         self.workspace_path = workspace_path
@@ -303,9 +304,23 @@ class ExecutionEngine:
         self._budget_guard = budget_guard
         self._behavior = behavior
         self._searcher = searcher
+        self._sandbox_enforcer = sandbox_enforcer
+        self._sandbox_verified = False
         self._background_tasks: set[asyncio.Task[Any]] = set()
         self._commit_lock: asyncio.Lock = asyncio.Lock()
         os.makedirs(workspace_path, exist_ok=True)
+
+    def _verify_sandbox(self) -> str | None:
+        if self._sandbox_enforcer is None:
+            return None
+        if self._sandbox_verified:
+            return None
+        try:
+            self._sandbox_enforcer.verify_ready()
+            self._sandbox_verified = True
+            return None
+        except Exception as exc:
+            return f"Sandbox enforcement failed: {exc}"
 
     def _projected_cost(self) -> float:
         """Compute per-call projected cost from the default model profile.
@@ -644,7 +659,9 @@ class ExecutionEngine:
             test_results_ref=f"exit_code={test_exit_code}",
         )
 
-    def execute(self, job: JobSpec) -> TaskReturn:
+    # sync execute() removed — migration residue with zero prod callers (C-ENGINE)
+
+    def _fallback_extract_code_not_a_method(self, job: JobSpec) -> TaskReturn:
         return_id = f"RET-{job.job_id}-{uuid.uuid4().hex[:6]}"
 
         if self._model_gateway is None:
@@ -869,6 +886,9 @@ class ExecutionEngine:
         workspace. We jail it: resolve the realpath of both the workspace base and
         the candidate, and refuse unless the candidate is contained in the base
         (via os.path.commonpath). Returns the safe absolute path.
+
+        When a sandbox enforcer is active and verified, the resolved path is
+        additionally confined to the sandbox jail directory (fail-closed).
         """
         base = os.path.realpath(self.workspace_path)
         # join() makes an absolute file_path REPLACE base — exactly the escape we
@@ -884,6 +904,14 @@ class ExecutionEngine:
                 f"refusing path that escapes the workspace: {file_path!r} "
                 f"(resolved to {full!r}, base {base!r})"
             )
+
+        if self._sandbox_enforcer is not None and self._sandbox_verified:
+            try:
+                confined = self._sandbox_enforcer.confine_path(full)
+                return confined
+            except Exception as exc:
+                raise ValueError(f"refusing path that escapes the sandbox: {file_path!r}: {exc}") from exc
+
         return full
 
     def _write_file(self, file_path: str, content: str) -> None:

@@ -7,9 +7,12 @@ import logging
 import math
 import threading
 from dataclasses import dataclass, field
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import tenacity
+
+if TYPE_CHECKING:
+    from general_ludd.pricing_intel.catalog import PricingCatalog
 from pydantic import BaseModel, Field, field_validator
 
 from general_ludd.events.types import ModelAddedEvent, ModelRemovedEvent
@@ -229,7 +232,7 @@ class ModelProfile(BaseModel):
     def seed_token_rates_from_catalog(
         provider: str,
         model_name: str,
-        catalog: object | None = None,
+        catalog: PricingCatalog | None = None,
     ) -> tuple[float, float]:
         """Query the pricing catalog for per-token rates for a given provider+model.
 

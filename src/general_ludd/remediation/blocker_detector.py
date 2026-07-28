@@ -66,18 +66,19 @@ class RemediationConfig:
     min_chronic_incidents: int = 5
     # Delay (hours) used by RemediationDispatcher.schedule_retry.
     retry_delay_hours: int = 4
+    # Minimum hours a todo must have been in NEEDS_MORE_WORK before it is
+    # eligible for the NMW→QUEUED requeue sweep. Shorter than the
+    # human-input threshold so work cycles back automatically before a
+    # human-todo is filed.
+    needs_more_work_cooldown_hours: int = 24
 
 
 # ─── findings ────────────────────────────────────────────────────────────────
 
 
-BLOCKER_KINDS: frozenset[str] = frozenset(
-    {"human_input", "permission_escalation", "resource_contention", "unknown"}
-)
+BLOCKER_KINDS: frozenset[str] = frozenset({"human_input", "permission_escalation", "resource_contention", "unknown"})
 
-REMEDIATION_KINDS: frozenset[str] = frozenset(
-    {"dispatch_agent", "schedule_retry", "file_human_todo", "no_action"}
-)
+REMEDIATION_KINDS: frozenset[str] = frozenset({"dispatch_agent", "schedule_retry", "file_human_todo", "no_action"})
 
 
 @dataclass(frozen=True)
@@ -128,9 +129,7 @@ def _safe_datetime(value: object) -> datetime | None:
     return None
 
 
-def _classify_blocker(
-    human_todo: HumanTodoModel | None, *, is_chronic_requeue: bool
-) -> tuple[str, str]:
+def _classify_blocker(human_todo: HumanTodoModel | None, *, is_chronic_requeue: bool) -> tuple[str, str]:
     """Return ``(blocker_kind, suggested_remediation)`` for one finding.
 
     Classification precedence:
@@ -179,9 +178,7 @@ class BlockerDetector:
         # runs itself (event-log lookups for chronic analysis). May be None
         # in tests that inject mocks for everything.
         self._session = session
-        self._clock: Callable[[], datetime] = (
-            clock if clock is not None else (lambda: datetime.now(UTC))
-        )
+        self._clock: Callable[[], datetime] = clock if clock is not None else (lambda: datetime.now(UTC))
 
     @property
     def config(self) -> RemediationConfig:
@@ -200,15 +197,11 @@ class BlockerDetector:
         findings.extend(await self._scan_stale_human_todos(now, project_id))
         return findings
 
-    async def _scan_blocked_on_human(
-        self, now: datetime, project_id: str | None
-    ) -> list[BlockedTask]:
+    async def _scan_blocked_on_human(self, now: datetime, project_id: str | None) -> list[BlockedTask]:
         if self._todo_repo is None:
             return []
         try:
-            todos = await self._todo_repo.list_by_status(
-                TodoStatus.BLOCKED_ON_HUMAN, project_id=project_id
-            )
+            todos = await self._todo_repo.list_by_status(TodoStatus.BLOCKED_ON_HUMAN, project_id=project_id)
         except Exception as exc:
             logger.warning("BlockerDetector: list_by_status failed: %s", exc)
             return []
@@ -235,17 +228,13 @@ class BlockerDetector:
                     blocker_kind=kind2,
                     blocker_summary=summary,
                     suggested_remediation=rem2,
-                    linked_human_todo_id=(
-                        str(getattr(linked, "id", "")) if linked is not None else None
-                    ),
+                    linked_human_todo_id=(str(getattr(linked, "id", "")) if linked is not None else None),
                     task_type=str(getattr(todo, "work_type", "") or ""),
                 )
             )
         return out
 
-    async def _scan_chronic_requeues(
-        self, now: datetime, project_id: str | None
-    ) -> list[BlockedTask]:
+    async def _scan_chronic_requeues(self, now: datetime, project_id: str | None) -> list[BlockedTask]:
         """Surface todos whose run_count exceeds the chronic threshold.
 
         Looks across QUEUED / BLOCKED / BLOCKED_ON_HUMAN — i.e. todos that
@@ -297,9 +286,7 @@ class BlockerDetector:
             )
         return out
 
-    async def _scan_stale_human_todos(
-        self, now: datetime, project_id: str | None
-    ) -> list[BlockedTask]:
+    async def _scan_stale_human_todos(self, now: datetime, project_id: str | None) -> list[BlockedTask]:
         """Open human-todos past the per-category threshold.
 
         These are escalated via ``file_human_todo`` — the dispatcher files a
@@ -322,11 +309,7 @@ class BlockerDetector:
                 continue
             age = now - created_at
             category = getattr(ht, "category", "") or ""
-            kind = (
-                "permission_escalation"
-                if category == "permission_escalation"
-                else "human_input"
-            )
+            kind = "permission_escalation" if category == "permission_escalation" else "human_input"
             threshold_h = self._threshold_hours_for_kind(kind)
             if age < timedelta(hours=threshold_h):
                 continue
@@ -341,11 +324,7 @@ class BlockerDetector:
             # Permission escalations get a scheduled retry (the operator may
             # have just approved); all other categories get a fresh
             # high-priority reminder.
-            rem = (
-                "schedule_retry"
-                if category == "permission_escalation"
-                else "file_human_todo"
-            )
+            rem = "schedule_retry" if category == "permission_escalation" else "file_human_todo"
             out.append(
                 BlockedTask(
                     todo_id=todo_id,
@@ -365,9 +344,7 @@ class BlockerDetector:
     # chronic
     # ------------------------------------------------------------------
 
-    async def chronic_blockers(
-        self, lookback_days: int | None = None
-    ) -> list[ChronicBlocker]:
+    async def chronic_blockers(self, lookback_days: int | None = None) -> list[ChronicBlocker]:
         """Group recent blocked-task incidents by (task_type, blocker_kind).
 
         Uses the ``todo_events`` audit trail: every BLOCKED_ON_HUMAN
@@ -435,10 +412,8 @@ class BlockerDetector:
                     task_type=tt,
                     blocker_kind=bk,
                     incident_count=len(evs),
-                    first_seen=_safe_datetime(getattr(evs[0], "created_at", None))
-                    or self._clock(),
-                    last_seen=_safe_datetime(getattr(evs[-1], "created_at", None))
-                    or self._clock(),
+                    first_seen=_safe_datetime(getattr(evs[0], "created_at", None)) or self._clock(),
+                    last_seen=_safe_datetime(getattr(evs[-1], "created_at", None)) or self._clock(),
                     recent_todo_ids=[str(e.todo_id) for e in evs[-5:]],
                 )
             )
@@ -472,9 +447,7 @@ class BlockerDetector:
                 return ht if isinstance(ht, HumanTodoModel) else None
         return None
 
-    def _summary_for(
-        self, todo: Any, linked: HumanTodoModel | None, kind: str
-    ) -> str:
+    def _summary_for(self, todo: Any, linked: HumanTodoModel | None, kind: str) -> str:
         title = str(getattr(todo, "title", "") or "")[:80]
         if linked is not None:
             return (

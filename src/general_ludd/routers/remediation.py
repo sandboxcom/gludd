@@ -49,9 +49,7 @@ from general_ludd.remediation.reporter import chronic_blocker_report
 logger = logging.getLogger(__name__)
 
 
-PSK_BYPASS_ROUTES = frozenset(
-    {"/admin/remediation/scan", "/admin/remediation/remediate"}
-)
+PSK_BYPASS_ROUTES = frozenset({"/admin/remediation/scan", "/admin/remediation/remediate"})
 
 
 def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | None:
@@ -111,6 +109,7 @@ def _config_to_dict(cfg: RemediationConfig) -> dict[str, object]:
         "chronic_lookback_days": cfg.chronic_lookback_days,
         "min_chronic_incidents": cfg.min_chronic_incidents,
         "retry_delay_hours": cfg.retry_delay_hours,
+        "needs_more_work_cooldown_hours": cfg.needs_more_work_cooldown_hours,
     }
 
 
@@ -130,9 +129,7 @@ def _get_remediation_config(daemon_state: dict[str, object]) -> RemediationConfi
     return cfg if isinstance(cfg, RemediationConfig) else RemediationConfig()
 
 
-def _build_detector(
-    app: FastAPI, project_id: str | None, config: RemediationConfig | None = None
-) -> BlockerDetector:
+def _build_detector(app: FastAPI, project_id: str | None, config: RemediationConfig | None = None) -> BlockerDetector:
     factory = _get_session_factory(app)
     if factory is None:
         raise HTTPException(
@@ -154,9 +151,7 @@ def _build_detector(
 _T = TypeVar("_T")
 
 
-async def _run_with_session(
-    app: FastAPI, coro_factory: Callable[..., Awaitable[_T]]
-) -> _T:
+async def _run_with_session(app: FastAPI, coro_factory: Callable[..., Awaitable[_T]]) -> _T:
     """Open a fresh session from app.state._session_factory, run, commit."""
     factory = _get_session_factory(app)
     if factory is None:
@@ -190,6 +185,7 @@ class RemediationConfigResponse(BaseModel):
     chronic_lookback_days: int
     min_chronic_incidents: int
     retry_delay_hours: int
+    needs_more_work_cooldown_hours: int
 
 
 def register(app: FastAPI, daemon_state: dict[str, object]) -> None:
@@ -253,9 +249,7 @@ def register(app: FastAPI, daemon_state: dict[str, object]) -> None:
             remediation_repo = RemediationActionRepository(session)
 
             if x_idempotency_key is not None:
-                existing = await remediation_repo.find_by_idempotency_key(
-                    x_idempotency_key
-                )
+                existing = await remediation_repo.find_by_idempotency_key(x_idempotency_key)
                 if existing:
                     return {
                         "project_id": project_id,
@@ -281,12 +275,8 @@ def register(app: FastAPI, daemon_state: dict[str, object]) -> None:
             cutoff = datetime.now(UTC) - window
             actions: list[dict[str, object]] = []
             for blocked in findings:
-                action_kind: str = (
-                    str(blocked.suggested_remediation) if blocked.suggested_remediation else "no_action"
-                )
-                is_duplicate = await remediation_repo.exists_recent_by_action(
-                    blocked.todo_id, action_kind, cutoff
-                )
+                action_kind: str = str(blocked.suggested_remediation) if blocked.suggested_remediation else "no_action"
+                is_duplicate = await remediation_repo.exists_recent_by_action(blocked.todo_id, action_kind, cutoff)
                 if is_duplicate:
                     actions.append(
                         {
@@ -299,9 +289,7 @@ def register(app: FastAPI, daemon_state: dict[str, object]) -> None:
                         }
                     )
                     continue
-                a = await dispatcher.remediate(
-                    blocked, idempotency_key=x_idempotency_key
-                )
+                a = await dispatcher.remediate(blocked, idempotency_key=x_idempotency_key)
                 actions.append(_action_to_dict(a))
 
             return {
@@ -352,17 +340,13 @@ def register(app: FastAPI, daemon_state: dict[str, object]) -> None:
         """Return the audit trail of past remediation actions."""
         factory = _get_session_factory(app)
         if factory is None:
-            raise HTTPException(
-                status_code=503, detail="session factory not wired"
-            )
+            raise HTTPException(status_code=503, detail="session factory not wired")
         async with factory() as session:
             repo = RemediationActionRepository(session)
             if since is not None:
                 rows = await repo.list_since(since, project_id=project_id)
             else:
-                rows = await repo.list_for_project(
-                    project_id=project_id, limit=limit
-                )
+                rows = await repo.list_for_project(project_id=project_id, limit=limit)
             return {
                 "project_id": project_id,
                 "since": since.isoformat() if since else None,

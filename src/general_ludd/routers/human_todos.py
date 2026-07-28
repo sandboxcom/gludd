@@ -217,9 +217,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             return _human_todo_to_dict(row)
 
     @app.patch("/api/human-todos/{human_todo_id}")
-    async def api_patch_human_todo(
-        human_todo_id: str, req: PatchHumanTodoRequest
-    ) -> dict[str, object]:
+    async def api_patch_human_todo(human_todo_id: str, req: PatchHumanTodoRequest) -> dict[str, object]:
         factory = _get_session_factory(app)
         if factory is None:
             raise HTTPException(status_code=503, detail="No database available")
@@ -237,33 +235,43 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             if target not in {"done", "dismissed", "in_progress", "open", "superseded"}:
                 raise HTTPException(status_code=422, detail=f"invalid status {target!r}")
             try:
+                # A-ESCALATION-SELF-APPROVE: reject self-resolution. An agent
+                # cannot mark its own human-todo as done/dismissed — the
+                # resolver must be a different identity.
+                if (
+                    target in {"done", "dismissed"}
+                    and req.human_resolver
+                    and req.human_resolver.strip().casefold() == row.agent_id.strip().casefold()
+                ):
+                    raise HTTPException(
+                        status_code=403,
+                        detail=(
+                            "self_resolution_forbidden: human_resolver"
+                            f" '{req.human_resolver}' matches the requesting"
+                            f" agent_id '{row.agent_id}'. A human-todo may"
+                            " only be resolved by a different identity."
+                        ),
+                    )
                 if target == "done":
                     if not req.human_resolver or not req.human_resolution:
                         raise HTTPException(
                             status_code=422,
                             detail="done requires human_resolver and human_resolution",
                         )
-                    row = await repo.mark_done(
-                        human_todo_id, req.human_resolver, req.human_resolution
-                    )
+                    row = await repo.mark_done(human_todo_id, req.human_resolver, req.human_resolution)
                 elif target == "dismissed":
                     if not req.human_resolver or not req.human_resolution:
                         raise HTTPException(
                             status_code=422,
                             detail="dismissed requires human_resolver and human_resolution (reason)",
                         )
-                    row = await repo.dismiss(
-                        human_todo_id, req.human_resolver, req.human_resolution
-                    )
+                    row = await repo.dismiss(human_todo_id, req.human_resolver, req.human_resolution)
                 elif target == "in_progress":
                     row = await repo.mark_in_progress(human_todo_id)
                 else:
                     raise HTTPException(
                         status_code=422,
-                        detail=(
-                            "PATCH may only move to done/dismissed/in_progress; "
-                            f"got {target!r}"
-                        ),
+                        detail=(f"PATCH may only move to done/dismissed/in_progress; got {target!r}"),
                     )
             except InvalidTransitionError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -275,16 +283,11 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             # QUEUED (resume; the resolution text is delivered as human_input
             # on the next dispatch via the parent's tags). ``dismissed`` →
             # CANCELLED (the agent should try a different approach).
-            if (
-                row.parent_agent_todo_id is not None
-                and row.status in {"done", "dismissed"}
-            ):
+            if row.parent_agent_todo_id is not None and row.status in {"done", "dismissed"}:
                 todo_repo = TodoRepository(session)
                 parent = await todo_repo.get_by_id(row.parent_agent_todo_id)
                 if parent is not None:
-                    target_todo_status = (
-                        TodoStatus.QUEUED if row.status == "done" else TodoStatus.CANCELLED
-                    )
+                    target_todo_status = TodoStatus.QUEUED if row.status == "done" else TodoStatus.CANCELLED
                     try:
                         await todo_repo.transition(
                             row.parent_agent_todo_id,
@@ -310,6 +313,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                     from general_ludd.routers.security import (
                         _sync_escalation_from_human_todo,
                     )
+
                     try:
                         _tags = _json2.loads(row.tags or "[]")
                     except Exception:

@@ -195,9 +195,10 @@ class ReturnReviewer:
             profile_id = self._router.resolve_role("return_review")
             if profile_id is not None:
                 self._model_profile_id = profile_id
-        from general_ludd.budget_guard_check import budget_pre_check
+        from general_ludd.budget_guard_check import budget_pre_check, compute_projected_cost_usd
 
-        denial = budget_pre_check(self._budget_guard)
+        projected = compute_projected_cost_usd(self._gateway, self._budget_guard)
+        denial = budget_pre_check(self._budget_guard, projected_cost=projected)
         if denial is not None:
             logger.warning("Budget pre-check denied in reviewer: %s", denial)
             return None, f"Budget denied: {denial}"

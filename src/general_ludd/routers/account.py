@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from general_ludd.account.backup import (
@@ -36,6 +36,7 @@ from general_ludd.account.ephemeral import (
     EphemeralAccountManager,
 )
 from general_ludd.routers._util import get_session_factory as _get_session_factory
+from general_ludd.security.capability_guard import RequireCapability
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +89,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             raise HTTPException(status_code=500, detail=f"backup failed: {exc}") from exc
         return payload
 
-    @app.delete("/api/account")
+    @app.delete("/api/account", dependencies=[Depends(RequireCapability(resource="admin:account", action="delete"))])
     async def api_account_delete(req: DeleteRequest) -> dict[str, object]:
         """Permanently delete all user-scoped data.
 
@@ -121,9 +122,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         except ValueError as exc:
             raise HTTPException(
                 status_code=422,
-                detail=(
-                    f"{exc}; supported services: {sorted(SUPPORTED_SERVICES)}"
-                ),
+                detail=(f"{exc}; supported services: {sorted(SUPPORTED_SERVICES)}"),
             ) from exc
         return {
             "service": service.lower().strip().replace(" ", "").replace("_", "-").replace("z.ai", "zai"),
@@ -144,10 +143,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         if req.provider not in SUPPORTED_PROVIDERS:
             raise HTTPException(
                 status_code=422,
-                detail=(
-                    f"unsupported provider {req.provider!r}; "
-                    f"supported: {sorted(SUPPORTED_PROVIDERS)}"
-                ),
+                detail=(f"unsupported provider {req.provider!r}; supported: {sorted(SUPPORTED_PROVIDERS)}"),
             )
         if not req.ephemeral:
             raise HTTPException(
@@ -169,9 +165,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except Exception as exc:
             logger.exception("ephemeral account creation failed")
-            raise HTTPException(
-                status_code=500, detail=f"create failed: {exc}"
-            ) from exc
+            raise HTTPException(status_code=500, detail=f"create failed: {exc}") from exc
         return {
             "account_id": creds.account_id,
             "provider": creds.provider,
@@ -188,9 +182,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         per-account provider failures are recorded in the per-account result
         dict and the sweep continues.
         """
-        mgr: EphemeralAccountManager | None = getattr(
-            app.state, "_ephemeral_account_manager", None
-        )
+        mgr: EphemeralAccountManager | None = getattr(app.state, "_ephemeral_account_manager", None)
         if mgr is None:
             raise HTTPException(
                 status_code=503,
@@ -200,6 +192,4 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             return mgr.cleanup_expired()
         except Exception as exc:
             logger.exception("ephemeral cleanup failed")
-            raise HTTPException(
-                status_code=500, detail=f"cleanup failed: {exc}"
-            ) from exc
+            raise HTTPException(status_code=500, detail=f"cleanup failed: {exc}") from exc

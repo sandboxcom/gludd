@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from typing import cast
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from general_ludd.infra.fix_approval import FixApprovalError, FixApprovalManager
@@ -27,6 +27,7 @@ from general_ludd.models.deployment_health import (
     DeploymentStatus,
     SelfHealingRouter,
 )
+from general_ludd.security.capability_guard import RequireCapability
 
 logger = logging.getLogger(__name__)
 
@@ -131,9 +132,7 @@ def _dict_to_finding(d: dict[str, object]) -> Finding:
 
 
 def _get_health_checker(app: FastAPI) -> DeploymentHealthChecker | None:
-    router: SelfHealingRouter | None = getattr(
-        app.state, "_deployment_health_router", None
-    )
+    router: SelfHealingRouter | None = getattr(app.state, "_deployment_health_router", None)
     if router is None:
         return None
     return router.health_checker
@@ -152,9 +151,7 @@ def _status_to_dict(s: DeploymentStatus) -> dict[str, object]:
 def register(app: FastAPI, daemon_state: dict[str, object]) -> None:
     # One approval manager per app, held on app.state so state survives across
     # requests (suggest-fix -> approve/reject) and is isolated per app instance.
-    fix_manager: FixApprovalManager | None = getattr(
-        app.state, "_fix_approval_manager", None
-    )
+    fix_manager: FixApprovalManager | None = getattr(app.state, "_fix_approval_manager", None)
     if fix_manager is None:
         fix_manager = FixApprovalManager()
         app.state._fix_approval_manager = fix_manager
@@ -189,6 +186,7 @@ def register(app: FastAPI, daemon_state: dict[str, object]) -> None:
 
     @app.post(
         "/admin/deployments/{deployment_id}/remediate",
+        dependencies=[Depends(RequireCapability(resource="admin:deploy", action="write"))],
         response_model=None,
     )
     async def post_force_remediate(deployment_id: str) -> dict[str, object]:
@@ -331,11 +329,10 @@ def register(app: FastAPI, daemon_state: dict[str, object]) -> None:
 
     @app.post(
         "/admin/deployments/fixes/{fix_id}/approve",
+        dependencies=[Depends(RequireCapability(resource="admin:deploy", action="write"))],
         response_model=None,
     )
-    async def post_approve_fix(
-        fix_id: str, body: FixDecisionRequest | None = None
-    ) -> dict[str, object]:
+    async def post_approve_fix(fix_id: str, body: FixDecisionRequest | None = None) -> dict[str, object]:
         """Approve a parked fix and return its merged config to apply.
 
         With ``{"retry": true}`` and a redeploy hook wired on
@@ -367,18 +364,14 @@ def register(app: FastAPI, daemon_state: dict[str, object]) -> None:
                     result["retry_error"] = str(exc)
             else:
                 result["retried"] = False
-                result["note"] = (
-                    "no redeploy hook wired; apply merged_config to redeploy"
-                )
+                result["note"] = "no redeploy hook wired; apply merged_config to redeploy"
         return result
 
     @app.post(
         "/admin/deployments/fixes/{fix_id}/reject",
         response_model=None,
     )
-    async def post_reject_fix(
-        fix_id: str, body: FixDecisionRequest | None = None
-    ) -> dict[str, object]:
+    async def post_reject_fix(fix_id: str, body: FixDecisionRequest | None = None) -> dict[str, object]:
         """Reject a parked fix, recording an optional ``reason``."""
         decision = body or FixDecisionRequest()
         try:

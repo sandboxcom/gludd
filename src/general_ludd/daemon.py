@@ -282,6 +282,7 @@ def _remediation_config_from_uc(uc: Any) -> RemediationConfig:
         chronic_lookback_days=rs.chronic_lookback_days,
         min_chronic_incidents=rs.min_chronic_incidents,
         retry_delay_hours=rs.retry_delay_hours,
+        needs_more_work_cooldown_hours=rs.needs_more_work_cooldown_hours,
     )
 
 
@@ -3005,6 +3006,10 @@ def create_daemon_app(
 
                 if claimed_project_id:
                     request.state.project_id = claimed_project_id
+
+                from general_ludd.security.permissions import _psk_admin_default_spec
+
+                request.state.auth_spec = _psk_admin_default_spec()
         # When the daemon failed its lifespan init it runs _degraded: spend /
         # budget / dispatch enforcement infrastructure is inert. Mutating calls
         # to the dispatch + self-update + spend-configure surface must fail
