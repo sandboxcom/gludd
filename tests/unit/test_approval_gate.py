@@ -6,6 +6,7 @@ from general_ludd.approval.gate import (
     ApprovalDecision,
     ApprovalGate,
     ApprovalRequest,
+    ApprovalResult,
 )
 
 
@@ -23,3 +24,18 @@ def test_request_approval_returns_pending_by_default() -> None:
     assert result.decision == ApprovalDecision.PENDING
     assert result.reviewer == ""
     assert result.comment == ""
+
+
+def test_legacy_check_contract_maps_aliases_to_pending_result() -> None:
+    gate = ApprovalGate()
+    request = ApprovalRequest(
+        action="deploy",
+        target="production",
+        by="agent-7",
+    )
+
+    result = gate.check(request)
+
+    assert request.resource_id == "production"
+    assert request.requester == "agent-7"
+    assert result == ApprovalResult(allowed=False, reason="pending")
