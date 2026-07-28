@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-HOT_RELOAD = ROOT / ".opencode" / "plugin" / "hot_reload.ts"
+HOT_RELOAD = ROOT / ".opencode" / "lib" / "hot_reload.ts"
 HOT_PREFIX = f"/tmp/gludd-hot-{os.getpid()}-hot-reload-module-"
 
 pytestmark = pytest.mark.xdist_group("hot_reload_module")

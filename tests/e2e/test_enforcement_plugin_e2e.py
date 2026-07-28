@@ -28,7 +28,9 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-pytestmark = pytest.mark.xdist_group("enforcement_plugin_state_files")
+# This suite and test_enforcement_e2e.py mutate the same canonical /tmp state
+# files, so they must share one xdist group rather than race on separate workers.
+pytestmark = pytest.mark.xdist_group("enforcement_state_files")
 
 STATE_FILES = [
     "/tmp/gludd-mainthread-streak.json",
@@ -778,7 +780,9 @@ class TestPluginSourceContract:
         assert "gludd-watchdog-disengage.json" in shared
 
     def test_delegate_first_threshold_correct(self):
-        src = (ROOT / ".opencode/plugin/enforce-stop.ts").read_text()
+        src = (
+            ROOT / ".opencode/plugin/impl/enforce_stop_impl.ts"
+        ).read_text()
         m = re.search(r"const\s+DELEGATE_FIRST_THRESHOLD\s*=\s*(\d+)", src)
         assert m, "DELEGATE_FIRST_THRESHOLD not found"
         assert int(m.group(1)) == 8, f"Expected 8, got {m.group(1)}"

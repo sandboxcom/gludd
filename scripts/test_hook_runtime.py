@@ -67,6 +67,11 @@ def _run_ts(ts_code: str, env_override: dict | None = None, timeout: int = 15):
         # Point plugins at a per-process nonexistent path unless a test
         # explicitly overrides it.
         env["GLUDD_DISENGAGE_PATH"] = f"/tmp/gludd-disengage-hermetic-{os.getpid()}.json"
+        # Never load a live session's /tmp/gludd-hot-*.js overrides. Hook
+        # runtime tests measure the checked-in implementation in isolation.
+        env["GLUDD_HOT_MODULE_PREFIX"] = (
+            f"/tmp/gludd-hook-runtime-{os.getpid()}-hot-"
+        )
         if env_override:
             env.update(env_override)
         proc = subprocess.run(
@@ -111,6 +116,16 @@ const plugin = await mod.default({{}})
 const result = await {call_code}
 console.log(JSON.stringify(result ?? null))
 """
+
+
+def test_runtime_harness_uses_hermetic_hot_module_prefix():
+    """Live hot modules must never alter deterministic hook-runtime results."""
+    result = _run_ts(
+        "console.log(JSON.stringify({prefix: "
+        "process.env.GLUDD_HOT_MODULE_PREFIX || ''}))"
+    )
+    expected = f"/tmp/gludd-hook-runtime-{os.getpid()}-hot-"
+    assert result == {"prefix": expected}
 
 
 def _pluginapi_code(plugin_rel_path: str, call_code: str) -> str:

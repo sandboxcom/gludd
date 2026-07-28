@@ -1,6 +1,6 @@
 """Verify the hot-reload proxy pattern across all enforcement plugins.
 
-The pattern (from hot_reload.ts docs): each enforce-*.ts plugin is a thin proxy
+The pattern (from .opencode/lib/hot_reload.ts docs): each enforce-*.ts plugin is a thin proxy
 wrapper that delegates to /tmp/gludd-hot-<name>.js on every hook invocation,
 falling back to compiled-in defaultImpl if the hot file is absent or broken.
 
@@ -26,7 +26,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
-HOT_RELOAD_TS = PLUGIN_DIR / "hot_reload.ts"
+HOT_RELOAD_TS = ROOT / ".opencode" / "lib" / "hot_reload.ts"
 BUILD_SCRIPT = ROOT / "scripts" / "build_hot_modules.js"
 MAKEFILE = ROOT / "Makefile"
 HOT_PROXY_PREFIX = f"/tmp/gludd-hot-{os.getpid()}-hot-reload-proxy-"
@@ -94,7 +94,9 @@ class TestProxyPatternInConvertedPlugins:
         src = HOT_RELOAD_TS.read_text()
         assert "export function loadHotModule" in src, "missing exported loadHotModule"
         assert "hotCache" in src, "missing mtime-based cache (hotCache)"
-        assert "return defaults" in src, "missing fail-open return defaults on error"
+        assert "return withJsonHookKeys(defaults)" in src, (
+            "missing fail-open return of normalized defaults on error"
+        )
 
     def test_unconverted_plugins_documented(self):
         """Plugins without defaultImpl are not yet converted — catalog them."""

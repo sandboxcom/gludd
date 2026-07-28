@@ -180,8 +180,6 @@ const defaultImpl: HotModule = {
   },
 }
 
-export const TASK_TRACKING_FILE_EXPORT = TASK_TRACKING_FILE
-
 export default (({ }) => {
   return {
     "tool.execute.before": async (input: any, _output: any) => {
