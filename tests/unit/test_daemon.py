@@ -629,44 +629,44 @@ class TestExtendedSubsystemsWiring:
         mock_gateway._profiles = MagicMock()
         mock_gateway._profiles.values.return_value = []
 
-        with _lifespan_patches(mock_loop):
-            with (
-                patch("general_ludd.daemon.ExecutionEngine", return_value=mock_engine),
-                patch("general_ludd.daemon.ModelGateway", return_value=mock_gateway),
-                patch("general_ludd.daemon.SemanticSearcher", return_value=MagicMock()),
-                patch("general_ludd.daemon.ModelEvaluator", return_value=MagicMock()),
-                patch("general_ludd.daemon.EvalHarness", return_value=MagicMock()),
-                patch("general_ludd.daemon.DeploymentHealthChecker", return_value=MagicMock()),
-                patch("general_ludd.daemon.SelfHealingRouter", return_value=MagicMock()),
-                patch("general_ludd.daemon.ProviderRegistry"),
-                patch("general_ludd.daemon.migrate_profile_secrets", return_value={"migrated": 0, "skipped": []}),
-            ):
-                from fastapi import FastAPI
+        with (
+            _lifespan_patches(mock_loop),
+            patch("general_ludd.daemon.ExecutionEngine", return_value=mock_engine),
+            patch("general_ludd.daemon.ModelGateway", return_value=mock_gateway),
+            patch("general_ludd.daemon.SemanticSearcher", return_value=MagicMock()),
+            patch("general_ludd.daemon.ModelEvaluator", return_value=MagicMock()),
+            patch("general_ludd.daemon.EvalHarness", return_value=MagicMock()),
+            patch("general_ludd.daemon.DeploymentHealthChecker", return_value=MagicMock()),
+            patch("general_ludd.daemon.SelfHealingRouter", return_value=MagicMock()),
+            patch("general_ludd.daemon.ProviderRegistry"),
+            patch("general_ludd.daemon.migrate_profile_secrets", return_value={"migrated": 0, "skipped": []}),
+        ):
+            from fastapi import FastAPI
 
-                from general_ludd.daemon import _lifespan
+            from general_ludd.daemon import _lifespan
 
-                app = FastAPI()
-                app.state.tick_interval = 0.01
-                app.state.event_loop = None
-                app.state._receiver_buffer = MagicMock()
-                app.state._startup_config = {
-                    "model_profiles": [
-                        ModelProfile(
-                            model_profile_id="test-prof",
-                            provider="openai",
-                            model_name="gpt-4o-mini",
-                            credential_alias="OPENAI_API_KEY",
-                        )
-                    ],
-                }
-                app.state._health_tracker = MagicMock()
+            app = FastAPI()
+            app.state.tick_interval = 0.01
+            app.state.event_loop = None
+            app.state._receiver_buffer = MagicMock()
+            app.state._startup_config = {
+                "model_profiles": [
+                    ModelProfile(
+                        model_profile_id="test-prof",
+                        provider="openai",
+                        model_name="gpt-4o-mini",
+                        credential_alias="OPENAI_API_KEY",
+                    )
+                ],
+            }
+            app.state._health_tracker = MagicMock()
 
-                async with _lifespan(app):
-                    pass
+            async with _lifespan(app):
+                pass
 
-                assert mock_engine.shutdown.await_count == 1, (
-                    "execution_engine.shutdown() must be called exactly once during teardown"
-                )
+            assert mock_engine.shutdown.await_count == 1, (
+                "execution_engine.shutdown() must be called exactly once during teardown"
+            )
 
 
 class TestDirectDispatch:
