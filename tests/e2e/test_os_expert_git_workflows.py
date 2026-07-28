@@ -309,10 +309,15 @@ class TestGitAutomationRepoE2E:
         assert ga.changed_files() == []
 
     def test_create_and_delete_branch(self, git_repo: tuple[GitAutomation, str]) -> None:
-        ga, _ = git_repo
+        ga, d = git_repo
         ga.create_branch("feature/e2e-test")
         branches = ga.list_branches()
         assert "feature/e2e-test" in branches
+        # create_branch intentionally checks out the new branch. Git refuses
+        # to delete the currently checked-out branch, and delete_branch
+        # preserves that safety boundary instead of switching implicitly.
+        assert not ga.delete_branch("feature/e2e-test")
+        ga._run_git("checkout", "master", "--", _cwd=d)
         assert ga.delete_branch("feature/e2e-test")
 
     def test_merge_branch_ff(self, git_repo: tuple[GitAutomation, str]) -> None:
