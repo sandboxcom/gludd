@@ -687,12 +687,12 @@ jobs:
 
   windows:
     needs: [version, gate]  # test-shard runs in parallel (continue-on-error, non-blocking)
-    runs-on: windows-latest
+    # PyInstaller artifacts are OS-specific. Pin the stable image rather than
+    # inheriting windows-latest image migrations during a release.
+    runs-on: windows-2022
     timeout-minutes: 30
-    # Safety net while the Windows pyinstaller build is stabilized: keep it
-    # NON-BLOCKING so a tag still produces a Release with the linux/macos/termux
-    # artifacts. Re-make it blocking once Windows builds reliably.
-    continue-on-error: true
+    # Windows zip + NSIS installer are required release artifacts. Fail closed:
+    # a green pipeline must prove both were built and smoke-tested.
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -703,52 +703,85 @@ jobs:
       PYTHONUTF8: "1"
       PYTHONIOENCODING: "utf-8"
     steps:
-      - uses: actions/checkout@d632683dd7b4114ad314bca15554477b0e69a2e4  # v4.2.0 (node20)
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
         with:
           ref: ${{ github.sha }}
-      - uses: astral-sh/setup-uv@v5  # node20
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
+        with:
+          python-version: "3.12"
       - name: Inject version
         shell: pwsh
         run: |
           (Get-Content src/general_ludd/__init__.py) -replace '__version__ = ".*"', "__version__ = ""$env:VERSION""" | Set-Content src/general_ludd/__init__.py
           (Get-Content pyproject.toml) -replace '^version = ".*"', "version = ""$env:VERSION""" | Set-Content pyproject.toml
       - name: Build executable
+        shell: pwsh
         run: |
-          uv sync
-          uv run pyinstaller gludd.spec --clean --noconfirm
+          uv sync --python 3.12
+          uv run --python 3.12 pyinstaller gludd.spec --clean --noconfirm
+      - name: Smoke test binary
+        shell: pwsh
+        run: |
+          $versionOutput = & .\dist\gludd.exe version 2>&1
+          $versionExit = $LASTEXITCODE
+          $versionOutput | Write-Host
+          if ($versionExit -ne 0) {
+            throw "gludd.exe version failed with exit code $versionExit"
+          }
+          if (($versionOutput -join "`n") -notmatch [regex]::Escape($env:VERSION)) {
+            throw "gludd.exe version output does not contain $env:VERSION"
+          }
+          $helpOutput = & .\dist\gludd.exe --help 2>&1
+          $helpExit = $LASTEXITCODE
+          $helpOutput | Select-Object -First 5 | Write-Host
+          if ($helpExit -ne 0) {
+            throw "gludd.exe --help failed with exit code $helpExit"
+          }
+          $smokeOutput = ($versionOutput + $helpOutput) -join "`n"
+          if ($smokeOutput -match "Traceback|Missing base YAML definition file") {
+            throw "gludd.exe smoke test emitted a crash signature"
+          }
       - name: Package zip
         shell: pwsh
         run: |
-          mkdir -p dist/release
+          New-Item -ItemType Directory -Force -Path dist/release | Out-Null
           Copy-Item dist/gludd.exe dist/release/gludd.exe
           Copy-Item -r config dist/release/config
           Copy-Item -r templates dist/release/templates
           Copy-Item -r playbooks dist/release/playbooks
-          Compress-Archive -Path dist/release/* -DestinationPath "dist/gludd-$env:VERSION-windows-x86_64.zip"
-          certutil -hashfile "dist/gludd-$env:VERSION-windows-x86_64.zip" SHA256 > "dist/gludd-$env:VERSION-windows-x86_64.zip.sha256"
+          $zipPath = "dist/gludd-$env:VERSION-windows-x86_64.zip"
+          Compress-Archive -Path dist/release/* -DestinationPath $zipPath
+          $zipHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$zipHash  $(Split-Path -Leaf $zipPath)" | Set-Content -LiteralPath "$zipPath.sha256" -Encoding ascii
       - name: Build NSIS installer
         shell: pwsh
         run: |
-          choco install nsis -y --no-progress
+          choco install nsis --version=3.12.0 -y --no-progress
+          if ($LASTEXITCODE -ne 0) {
+            throw "Chocolatey failed to install NSIS 3.12.0 (exit $LASTEXITCODE)"
+          }
           New-Item -ItemType Directory -Force -Path dist/windows | Out-Null
           Copy-Item dist/gludd.exe dist/windows/gludd.exe
-          & "C:\Program Files (x86)\NSIS\Bin\makensis.exe" -DVERSION="$env:VERSION" -DBUILDDIR=".." dist/windows/gludd.nsi
-          certutil -hashfile "dist/gludd-$env:VERSION-setup-x86_64.exe" SHA256 > "dist/gludd-$env:VERSION-setup-x86_64.exe.sha256"
-      - if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
+          $makensis = (Get-Command makensis.exe -ErrorAction Stop).Source
+          & $makensis /WX "/DVERSION=$env:VERSION" "/DBUILDDIR=.." dist/windows/gludd.nsi
+          if ($LASTEXITCODE -ne 0) {
+            throw "makensis failed with exit code $LASTEXITCODE"
+          }
+          $installerPath = "dist/gludd-$env:VERSION-setup-x86_64.exe"
+          if (-not (Test-Path -LiteralPath $installerPath)) {
+            throw "makensis did not produce $installerPath"
+          }
+          $installerHash = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$installerHash  $(Split-Path -Leaf $installerPath)" | Set-Content -LiteralPath "$installerPath.sha256" -Encoding ascii
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: gludd-windows-x86_64
+          if-no-files-found: error
           path: |
             dist/gludd-${{ env.VERSION }}-windows-x86_64.zip
             dist/gludd-${{ env.VERSION }}-windows-x86_64.zip.sha256
             dist/gludd-${{ env.VERSION }}-setup-x86_64.exe
             dist/gludd-${{ env.VERSION }}-setup-x86_64.exe.sha256
-      - name: Smoke test binary (informational)
-        shell: pwsh
-        continue-on-error: true
-        run: |
-          .\dist\gludd.exe version 2>&1 | Write-Host
-          .\dist\gludd.exe --help 2>&1 | Select-Object -First 5 | Write-Host
 
   termux:
     needs: [version, gate]  # test-shard runs in parallel (continue-on-error, non-blocking)
