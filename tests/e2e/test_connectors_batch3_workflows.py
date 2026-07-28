@@ -1636,10 +1636,16 @@ class TestThanosConnector:
     def test_health_ok(self):
         from general_ludd.connectors.thanos import ThanosSource
 
-        transport = MockHttpTransport(default_status=200, default_body={"data": {"result": []}})
+        transport = MockHttpTransport(
+            default_status=200,
+            default_body={
+                "status": "success",
+                "data": {"resultType": "scalar", "result": [1700000000, "1"]},
+            },
+        )
         src = ThanosSource({"base_url": "https://thanos.example.com/"}, transport=cast(Any, transport))
         result = src.health()
-        assert isinstance(result, dict)
+        assert result["ok"] is True
 
     def test_query_returns_records(self):
         from general_ludd.connectors.thanos import ThanosSource
@@ -1647,7 +1653,9 @@ class TestThanosConnector:
         transport = MockHttpTransport(
             default_status=200,
             default_body={
+                "status": "success",
                 "data": {
+                    "resultType": "vector",
                     "result": [
                         {
                             "metric": {"__name__": "up", "job": "node"},
@@ -1659,5 +1667,7 @@ class TestThanosConnector:
         )
         src = ThanosSource({"base_url": "https://thanos.example.com/"}, transport=cast(Any, transport))
         records = src.query({"query": "up"})
-        assert isinstance(records, list)
-        assert len(records) >= 1
+        assert len(records) == 1
+        assert records[0]["message"] == 'up{job="node"}'
+        assert records[0]["value"] == 1.0
+        assert records[0]["labels"]["job"] == "node"
