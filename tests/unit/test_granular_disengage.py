@@ -8,7 +8,6 @@ isDisengaged() supports single-use mode.
 from __future__ import annotations
 
 import contextlib
-import json
 import os
 import re
 import subprocess
@@ -43,7 +42,7 @@ class TestDisengageNextTarget:
         )
 
     def test_target_writes_disengage_file(self):
-        """The recipe writes to the watchdog disengage JSON with expires: 1."""
+        """The recipe writes the dedicated single-use disengage marker."""
         content = _read(MAKEFILE)
         # locate the disengage-next recipe block
         match = re.search(
@@ -52,16 +51,13 @@ class TestDisengageNextTarget:
         )
         assert match is not None, "disengage-next recipe block not found"
         recipe = match.group(1)
-        assert "/tmp/gludd-watchdog-disengage.json" in recipe, (
-            "disengage-next must write to /tmp/gludd-watchdog-disengage.json"
-        )
-        assert '"expires": 1' in recipe or "'expires': 1" in recipe, (
-            "disengage-next must set expires: 1 for single-use mode"
+        assert "/tmp/gludd-disengage-next" in recipe, (
+            "disengage-next must write to /tmp/gludd-disengage-next"
         )
 
     def test_target_runnable(self):
-        """make disengage-next executes and writes the single-use file."""
-        target = "/tmp/gludd-watchdog-disengage.json"
+        """make disengage-next executes and writes the single-use marker."""
+        target = "/tmp/gludd-disengage-next"
         with contextlib.suppress(FileNotFoundError):
             os.remove(target)
         try:
@@ -73,9 +69,11 @@ class TestDisengageNextTarget:
                 cwd=str(ROOT),
             )
             assert result.returncode == 0, result.stderr
-            assert Path(target).exists(), "disengage-next did not write the file"
-            data = json.loads(Path(target).read_text())
-            assert data.get("expires") == 1
+            marker = Path(target)
+            assert marker.exists(), "disengage-next did not write the marker"
+            assert marker.read_text(encoding="utf-8").strip(), (
+                "disengage-next marker must include its creation timestamp"
+            )
         finally:
             with contextlib.suppress(FileNotFoundError):
                 os.remove(target)
@@ -120,20 +118,22 @@ class TestDisengageAuditLogging:
 
 
 class TestSharedTsSingleUse:
-    """shared.ts isDisengaged() supports expires: 1 single-use mode."""
+    """shared.ts isDisengaged() supports the dedicated single-use marker."""
 
     def test_single_use_branch_exists(self):
-        """isDisengaged() checks for expires === 1."""
+        """isDisengaged() checks the dedicated marker path."""
         content = _read(SHARED_TS)
-        assert "expires" in content, (
-            "isDisengaged() has no single-use (expires) branch"
+        assert "DISENGAGE_NEXT_PATH" in content, (
+            "isDisengaged() has no dedicated single-use marker branch"
         )
 
     def test_single_use_deletes_file(self):
-        """The single-use branch unlinks the disengage file after reading."""
+        """The single-use branch unlinks its marker after reading."""
         content = _read(SHARED_TS)
-        # must delete the file so enforcement re-arms on the next call
-        assert "unlinkSync" in content or "rmSync" in content, (
+        assert re.search(
+            r"(?:unlinkSync|rmSync)\(DISENGAGE_NEXT_PATH",
+            content,
+        ), (
             "single-use disengage must delete the file after reading"
         )
 
