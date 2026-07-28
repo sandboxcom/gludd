@@ -142,6 +142,25 @@ class MockHttpResponseTransport:
             **kwargs,
         )
 
+    def get(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        params: dict[str, object] | None = None,
+        timeout: float = 30.0,
+        **kwargs: object,
+    ) -> MockHttpResponse:
+        """Expose the object-style GET protocol used by profiling connectors."""
+        return self(
+            "GET",
+            url,
+            headers=headers,
+            params=params,
+            timeout=timeout,
+            **kwargs,
+        )
+
 
 def _make_http_get(status: int = 200, body: object = None):
     """Factory: tuple-returning http_get for CircleCI/nagios-style connectors."""
@@ -1582,18 +1601,18 @@ class TestMondayConnector:
 
 
 class TestPyroscopeConnector:
-    def test_constructs_with_no_config(self):
+    def test_config_requires_base_url(self):
         from general_ludd.connectors.pyroscope import PyroscopeSource
 
-        source = PyroscopeSource()
-        assert source.KIND == "metrics"
-        assert source.name == "pyroscope"
+        with pytest.raises(ValueError, match="base_url"):
+            PyroscopeSource({})
 
     def test_constructs_custom_config(self):
         from general_ludd.connectors.pyroscope import PyroscopeSource
 
         source = PyroscopeSource({"base_url": "https://pyroscope.example.com", "name": "pyro-prod"})
         assert source.name == "pyro-prod"
+        assert source.KIND == "traces"
 
     def test_health_ok_with_transport(self):
         from general_ludd.connectors.pyroscope import PyroscopeSource

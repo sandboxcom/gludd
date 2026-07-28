@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) Pyroscope E2E bypassed required endpoint configuration and GET protocol
+
+- **What**: Connector batch 4 reached Pyroscope and called a no-argument constructor, even though the connector is deliberately config-driven and requires a guarded base URL. Its health transport would then have failed because the shared fake lacked the connector's object-style `get(...)` method.
+- **Root cause**: The broad E2E treated profiling connectors as default local daemons, asserted the generic `metrics` kind, and reused a fake that only modeled callable and generic `request(...)` transports. Pyroscope models continuous profiles as `traces` and depends on an explicit endpoint so SSRF policy is evaluated before any request.
+- **Fix applied**: The construction case now narrowly requires `base_url`, the valid custom configuration pins kind `traces`, and the shared HTTP fake exposes an object-style `get(...)` adapter that records the same URL, headers, parameters, and timeout as its other supported protocols.
+- **Long-lived user evidence**: Grafana's current Pyroscope API documentation identifies an explicit render endpoint and required query routing rather than an implicit local default ([Grafana Pyroscope server API](https://grafana.com/docs/pyroscope/latest/reference-server-api/)). Operators have also documented multi-year failures when load balancers route Pyroscope endpoint paths to the wrong service, producing 405 responses ([Grafana Pyroscope issue #3392](https://github.com/grafana/pyroscope/issues/3392)); explicit endpoint configuration and an interface-accurate fake keep that routing observable.
+- **Lesson**: A network connector must not invent a local endpoint when none was configured. Shared test doubles are reusable only when they implement the exact injected protocol, including method shape and request metadata.
+
 ### 2026-07-28 — (resolved) Monday connector queried an API field removed in 2023
 
 - **What**: Connector batch 4 first exposed invalid nonnumeric board IDs in its construction fixture; after restoring valid board scope, the current-API `items_page` response produced zero records because production still queried and parsed the removed `boards.items` field.
