@@ -112,8 +112,7 @@ def test_no_exports_ts_files_anywhere_under_plugin_dir() -> None:
     crash opencode if auto-discovered — either at the top level or in a
     subdirectory if a future opencode version recurses.
     """
-    if not PLUGIN_DIR.is_dir():
-        pytest.skip(".opencode/plugin/ not present")
+    assert PLUGIN_DIR.is_dir(), "Required .opencode/plugin directory is missing"
     exports_files = sorted(PLUGIN_DIR.rglob("*_exports.ts"))
     assert not exports_files, (
         "Companion _exports.ts files must live OUTSIDE .opencode/plugin/ "
@@ -158,9 +157,6 @@ def test_opencode_json_plugin_entries_resolve() -> None:
     )
 
 
-@pytest.mark.skipif(
-    not PLUGIN_DIR.is_dir(), reason=".opencode/plugin/ not present"
-)
 def test_no_orphan_ts_files_in_plugin_dir() -> None:
     """Every top-level .ts in .opencode/plugin/ should be in opencode.json.
 
@@ -355,8 +351,7 @@ class TestNamedExportsAreFunctions:
         Files without a default export crash opencode's auto-discovery loader
         because the framework calls the default export as a plugin.
         """
-        if not TOP_LEVEL_TS:
-            pytest.skip("no top-level .ts files in .opencode/plugin/")
+        assert TOP_LEVEL_TS, "Required .opencode/plugin directory has no top-level plugins"
         missing: list[str] = []
         for ts_file in TOP_LEVEL_TS:
             if "export default" not in ts_file.read_text():

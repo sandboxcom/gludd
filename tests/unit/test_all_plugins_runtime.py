@@ -30,6 +30,7 @@ PLUGIN_TO_TEST = {
     "enforce-deletion-gate": ["test_enforcement_deletion_gate_plugin.py"],
     "enforce-enhancement-ratio": ["test_enhancement_ratio_plugin.py"],
     "enforce-floor": ["test_enforcement_floor_plugin.py"],
+    "enforce-floor-v2": ["test_enforce_floor_v2_plugin.py"],
     "enforce-make": ["test_enforce_make_plugin.py", "test_enforce_make_subagent.py"],
     "enforce-multitask": ["test_multitask_plugin.py"],
     "enforce-no-suppressions": ["test_no_suppression_comments_plugin.py"],
@@ -53,6 +54,16 @@ PLUGIN_TO_TEST = {
     "enforce-worktree": ["test_behavioral_specs.py"],
     "enforce-audit": ["test_behavioral_specs.py"],
     "enforce-context": ["test_behavioral_specs.py"],
+    "enforce-deliverable": [
+        "test_subagent_deliverable_check.py",
+        "test_terse_prompt_enforcement.py",
+    ],
+    "enforce-no-ci-poll": [
+        "test_ci_poll_limiter_plugin.py",
+        "test_stagnant_tool_detection.py",
+    ],
+    "enforce-release-deadline": ["test_release_deadline_plugin.py"],
+    "enforce-task-tracking": ["test_enforce_task_tracking_plugin.py"],
     "hot_reload": [
         "test_hot_reload_safe_merge.py",
         "test_hot_reload_code.py",
