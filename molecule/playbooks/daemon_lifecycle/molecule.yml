@@ -22,6 +22,7 @@ provisioner:
     # Isolate this scenario from any host daemon on the default 8000 port.
     GLUDD_DAEMON_LIFECYCLE_PORT: "8767"
   playbooks:
+    prepare: default/prepare.yml
     converge: default/converge.yml
     verify: default/verify.yml
 verifier:

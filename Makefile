@@ -1390,11 +1390,11 @@ clean-worktree-caches: clean-worktree-venvs
 	@rm -rf /tmp/gludd-worktrees/*/.pytest_cache /tmp/gludd-worktrees/*/.mypy_cache /tmp/gludd-worktrees/*/.ruff_cache 2>/dev/null || true
 	@echo "clean-worktree-caches done"
 molecule-clean:
-	@echo "Removing stray molecule/<scenario> runtime dirs (any dir directly under molecule/ that is NOT playbooks, roles, internal_tools, mock_daemon, library)..."
+	@echo "Removing stray molecule/<scenario> runtime dirs (preserving the canonical default scenario and source directories)..."
 	@for d in molecule/*/; do \
 		s=$$(basename "$$d"); \
 		case "$$s" in \
-			playbooks|roles|internal_tools|mock_daemon|library) ;; \
+			playbooks|roles|internal_tools|mock_daemon|library|default) ;; \
 			*) echo "  Removing stray: $$d"; rm -rf "$$d" ;; \
 		esac; \
 	done
@@ -1403,13 +1403,23 @@ molecule-clean:
 molecule-test:
 	@if [ -z "$(SCENARIO)" ]; then echo "Usage: make molecule-test SCENARIO=noop|prompt_eval|runtime_validate"; exit 1; fi
 	@echo "Running molecule scenario: $(SCENARIO)"
-	@rm -rf "molecule/$(SCENARIO)"; \
+	@ANSIBLE_STATE_DIR=$$(mktemp -d "/tmp/gludd-molecule-$(SCENARIO).XXXXXX"); \
+	cleanup() { \
+		rm -rf "molecule/$(SCENARIO)"; \
+		rm -rf "$$ANSIBLE_STATE_DIR"; \
+	}; \
+	trap cleanup EXIT INT TERM; \
+	rm -rf "molecule/$(SCENARIO)"; \
 	mkdir -p "molecule/$(SCENARIO)"; \
 	cp "molecule/playbooks/$(SCENARIO)/molecule.yml" "molecule/$(SCENARIO)/"; \
 	cp -r "molecule/playbooks/$(SCENARIO)/default" "molecule/$(SCENARIO)/default"; \
-	$(UV) run molecule test -s "$(SCENARIO)"; \
+	ANSIBLE_HOME="$$ANSIBLE_STATE_DIR" $(UV) run molecule reset -s "$(SCENARIO)"; \
+	RESET_CODE=$$?; \
+	if [ $$RESET_CODE -ne 0 ]; then \
+		exit $$RESET_CODE; \
+	fi; \
+	ANSIBLE_HOME="$$ANSIBLE_STATE_DIR" $(UV) run molecule test -s "$(SCENARIO)"; \
 	EXIT_CODE=$$?; \
-	rm -rf "molecule/$(SCENARIO)"; \
 	exit $$EXIT_CODE
 
 git-status:

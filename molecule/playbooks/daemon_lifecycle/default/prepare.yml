@@ -1,0 +1,10 @@
+---
+- name: Prepare daemon lifecycle scenario
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Confirm the isolated daemon port is configured
+      ansible.builtin.assert:
+        that:
+          - lookup('env', 'GLUDD_DAEMON_LIFECYCLE_PORT') | length > 0

@@ -1,0 +1,34 @@
+---
+- name: Prepare macOS binary smoke inputs
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    binary_path: "{{ lookup('env', 'GLUDD_BINARY_PATH') | default(project_dir + '/dist/gludd', true) }}"
+  tasks:
+    - name: Confirm the project directory is available
+      ansible.builtin.assert:
+        that:
+          - project_dir | length > 0
+          - project_dir != "None"
+
+    - name: Build the macOS executable when no override exists
+      ansible.builtin.command:
+        argv:
+          - make
+          - build-executable
+        chdir: "{{ project_dir }}"
+        creates: "{{ binary_path }}"
+      when: lookup('env', 'GLUDD_BINARY_PATH') | length == 0
+
+    - name: Confirm the smoke executable exists
+      ansible.builtin.stat:
+        path: "{{ binary_path }}"
+      register: binary_stat
+
+    - name: Require an executable smoke input
+      ansible.builtin.assert:
+        that:
+          - binary_stat.stat.exists | bool
+          - binary_stat.stat.executable | bool
