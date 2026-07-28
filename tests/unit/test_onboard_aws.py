@@ -298,6 +298,15 @@ class TestIAMPolicyDocument:
                         f"{resources!r}"
                     )
 
+    def test_policy_placeholders_are_rendered_by_terraform(self) -> None:
+        policy_text = POLICY_JSON.read_text()
+        main_tf = MAIN_TF.read_text()
+        assert "${operator_role_arn}" in policy_text
+        assert "${operator_region}" in policy_text
+        assert "templatefile(" in main_tf
+        assert "operator_role_arn = aws_iam_role.compute_operator.arn" in main_tf
+        assert "operator_region   = var.region" in main_tf
+
     def test_outputs_export_role_arn_and_profile(self) -> None:
         outputs_tf = (MODULE_DIR / "outputs.tf").read_text()
         for needle in ("role_arn", "instance_profile_arn", "instance_profile_name"):

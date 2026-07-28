@@ -3,7 +3,7 @@ package hottentot.iam
 import future.keywords.if
 
 # ============================================================================
-# AWS tests (7)
+# AWS tests (9)
 # ============================================================================
 
 test_aws_valid_policy_passes if {
@@ -28,6 +28,33 @@ test_aws_wildcard_resource_denied if {
     violation := deny_aws_wildcard_resource with input as {
         "aws_policy": {"statements": [
             {"sid": "BadResource", "effect": "Allow", "action": ["ec2:RunInstances"], "resource": ["*"]},
+        ]}
+    }
+    count(violation) == 1
+}
+
+test_aws_describe_wildcard_resource_required if {
+    aws_least_privilege_valid with input as {
+        "aws_policy": {"statements": [
+            {
+                "sid": "Ec2Describe",
+                "effect": "Allow",
+                "action": ["ec2:DescribeInstances", "ec2:DescribeVolumes"],
+                "resource": ["*"],
+            },
+        ]}
+    }
+}
+
+test_aws_mixed_wildcard_resource_denied if {
+    violation := deny_aws_wildcard_resource with input as {
+        "aws_policy": {"statements": [
+            {
+                "sid": "MixedActions",
+                "effect": "Allow",
+                "action": ["ec2:DescribeInstances", "ec2:RunInstances"],
+                "resource": ["*"],
+            },
         ]}
     }
     count(violation) == 1

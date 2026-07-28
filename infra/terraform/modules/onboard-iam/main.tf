@@ -70,10 +70,10 @@ resource "aws_iam_instance_profile" "compute_operator" {
 # ---------------------------------------------------------------------------
 # Policy — the least-privilege security boundary.
 # ---------------------------------------------------------------------------
-# policy.json carries the full allow+deny document. The only runtime-substituted
-# value is the operator role ARN, injected via replace() into the
-# IamPassRoleSelfOnly statement so PassRole is scoped to THIS role only
-# (cannot be used to escalate other roles).
+# policy.json carries the full allow+deny document. templatefile() renders the
+# operator role ARN and requested region into the IamPassRoleSelfOnly and EC2
+# statements so PassRole is scoped to THIS role and compute is scoped to the
+# selected deployment region.
 #
 # Allowlist rationale (per-action, mapped to the gludd feature that uses it):
 #   ec2:RunInstances            — _generate_aws aws_instance resource creation
@@ -107,13 +107,12 @@ resource "aws_iam_instance_profile" "compute_operator" {
 # privilege. Add it back ONLY if a gludd feature actually calls the SSM API.
 
 locals {
-  # Read the policy JSON and substitute the operator role ARN for the
-  # PassRole resource scope. The placeholder is documented in policy.json.
-  policy_document = replace(
-    file("${path.module}/policy.json"),
-    "__OPERATOR_ROLE_ARN__",
-    aws_iam_role.compute_operator.arn,
-  )
+  # Keep the source policy statically valid JSON while rendering both runtime
+  # values through Terraform's standard templatefile boundary.
+  policy_document = templatefile("${path.module}/policy.json", {
+    operator_role_arn = aws_iam_role.compute_operator.arn
+    operator_region   = var.region
+  })
 }
 
 resource "aws_iam_policy" "compute_least_priv" {

@@ -21,11 +21,26 @@ deny_aws_wildcard_action contains msg if {
     msg := sprintf("AWS statement %s has wildcard action '%s'", [stmt.sid, action])
 }
 
+aws_actions_requiring_wildcard_resource := {
+    "ec2:DescribeInstances",
+    "ec2:DescribeInstanceStatus",
+    "ec2:DescribeImages",
+    "ec2:DescribeSecurityGroups",
+    "ec2:DescribeSubnets",
+    "ec2:DescribeVpcs",
+    "ec2:DescribeVolumes",
+}
+
 deny_aws_wildcard_resource contains msg if {
     stmt := aws_allow_statements[_]
     resource := stmt.resource[_]
     resource == "*"
-    msg := sprintf("AWS statement %s has wildcard resource '*'", [stmt.sid])
+    action := stmt.action[_]
+    not action in aws_actions_requiring_wildcard_resource
+    msg := sprintf(
+        "AWS statement %s has wildcard resource '*' for resource-scopable action '%s'",
+        [stmt.sid, action],
+    )
 }
 
 iam_escalation_actions := {
