@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -62,3 +63,41 @@ def test_bump_fails_closed_when_owned_field_is_missing(tmp_path: Path) -> None:
         bump_versions(tmp_path, "0.1.0-beta.3")
 
     assert (pyproject.read_text(), init.read_text()) == before
+
+
+def test_repository_dependencies_are_not_gludd_release_versions() -> None:
+    """A release bump must never rewrite third-party dependency constraints."""
+    root = Path(__file__).resolve().parents[2]
+    project = tomllib.loads((root / "pyproject.toml").read_text())
+    groups = {
+        "dependencies": project["project"]["dependencies"],
+        **project["project"]["optional-dependencies"],
+        **{
+            f"dependency-group:{name}": requirements
+            for name, requirements in project["dependency-groups"].items()
+        },
+    }
+
+    contaminated = [
+        f"{group}: {requirement}"
+        for group, requirements in groups.items()
+        for requirement in requirements
+        if ">=0.1.0-beta." in requirement
+    ]
+
+    assert not contaminated, (
+        "third-party dependency floors were replaced by a Gludd release "
+        f"version: {contaminated}"
+    )
+
+
+def test_repository_declares_starlette_testclient_backend() -> None:
+    """Starlette 1.3 deprecates its legacy httpx TestClient backend."""
+    root = Path(__file__).resolve().parents[2]
+    project = tomllib.loads((root / "pyproject.toml").read_text())
+    dev_requirements = {
+        *project["project"]["optional-dependencies"]["dev"],
+        *project["dependency-groups"]["dev"],
+    }
+
+    assert any(requirement.startswith("httpx2>=") for requirement in dev_requirements)
