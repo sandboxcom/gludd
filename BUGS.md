@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) Slack E2E supplied a partial transport implementation
+
+- **What**: The focused connector batch stopped while constructing Slack because its shared response transport exposed only `get`, while Slack requires an HTTP transport with both `get` and `post`.
+- **Root cause**: The E2E reused a helper originally named for GET-only connectors even though the Slack workflow covers GET-based health/history and POST-based webhook/API notifications. Its failure transport repeated the same incomplete surface, so neither object satisfied the declared runtime-checkable protocol.
+- **Fix applied**: The shared fake now models both GET and POST with identical canned-response recording, and Slack's failure double raises consistently from either method. The focused Slack workflow consequently tests all four operational paths through the real transport boundary.
+- **Long-lived user evidence**: Pytest users warn that unconstrained mocks can silently accept API shapes the real object would reject and recommend interface specs for this reason ([pytest issue #4576](https://github.com/pytest-dev/pytest/issues/4576)); Python users similarly report that fake request methods must accept the original interface's arguments to remain substitutable ([Stack Overflow discussion](https://stackoverflow.com/questions/35732487/how-do-i-mock-a-method-that-uses-requests-get-in-my-class)).
+- **Lesson**: A fake for a bidirectional integration must implement the complete injected protocol even when a particular test calls only one method. Constructor validation is valuable because it exposes partial doubles before they create false-positive behavior tests.
+
 ### 2026-07-28 — (resolved) GCP boolean metric values were stringified before numeric normalization
 
 - **What**: The focused connector batch stopped when `_point_value({"boolValue": True})` raised `ValueError` instead of producing the normalized metric value `1.0`.

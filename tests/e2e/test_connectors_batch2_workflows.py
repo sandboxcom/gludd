@@ -79,12 +79,16 @@ def _make_get_transport(
     status: int = 200,
     body: object = None,
 ):
-    """Factory returning a .get(url, ...) -> _FakeResponse transport."""
+    """Factory returning a GET/POST-capable response-object transport."""
     class Transport:
         def __init__(self) -> None:
             self.calls: list[dict[str, object]] = []
 
         def get(self, url: str, **kwargs: object) -> _FakeResponse:
+            self.calls.append({"url": url, "kwargs": kwargs})
+            return _fake_response(status, body)
+
+        def post(self, url: str, **kwargs: object) -> _FakeResponse:
             self.calls.append({"url": url, "kwargs": kwargs})
             return _fake_response(status, body)
 
@@ -960,7 +964,10 @@ class TestSlackConnector:
         from general_ludd.connectors.slack import SlackSource
 
         class FailingTransport:
-            def get(self, **kwargs: object) -> _FakeResponse:
+            def get(self, url: str, **kwargs: object) -> _FakeResponse:
+                raise ConnectionError("timeout")
+
+            def post(self, url: str, **kwargs: object) -> _FakeResponse:
                 raise ConnectionError("timeout")
 
         source = SlackSource(
