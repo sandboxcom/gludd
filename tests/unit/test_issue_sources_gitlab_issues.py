@@ -225,6 +225,17 @@ def test_http_response_protocol():
     assert hasattr(HTTPResponse, "__protocol_attrs__")
 
 
+def test_protocol_metadata_is_scoped_to_each_protocol_class():
+    from general_ludd.issue_sources.gitlab_issues import HTTPResponse, HTTPTransport
+
+    protocol_meta = type(HTTPResponse)
+    assert "__protocol_attrs__" not in protocol_meta.__dict__
+    assert HTTPResponse.__dict__["__protocol_attrs__"] == frozenset(
+        {"status_code", "json"}
+    )
+    assert HTTPTransport.__dict__["__protocol_attrs__"] == frozenset({"__call__"})
+
+
 def test_http_response_satisfies():
     from general_ludd.issue_sources.gitlab_issues import HTTPResponse
     class R:

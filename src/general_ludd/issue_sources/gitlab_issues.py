@@ -26,7 +26,7 @@ Normalized issue dict shape (``fetch_issues``)::
 from __future__ import annotations
 
 import os
-from typing import Any, Protocol, cast, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlparse
 
 from general_ludd.security.ssrf import host_is_blocked
@@ -79,30 +79,19 @@ class HTTPTransport(Protocol):
     ) -> HTTPResponse: ...
 
 
-_PROTOCOL_ATTRS = {
-    "HTTPResponse": frozenset({"status_code", "json"}),
-    "HTTPTransport": frozenset({"__call__"}),
-}
-
-
-def _protocol_attrs(cls: type[Any]) -> frozenset[str]:
-    return cast(
-        frozenset[str],
-        cls.__dict__.get("_gludd_protocol_attrs", _PROTOCOL_ATTRS.get(cls.__name__, frozenset())),
-    )
-
-
-def _set_protocol_attrs(cls: type[Any], value: object) -> None:
-    type.__setattr__(cls, "_gludd_protocol_attrs", value)
-
-
-_protocol_meta = type(HTTPResponse)
-if not hasattr(_protocol_meta, "__protocol_attrs__"):
-    type.__setattr__(
-        _protocol_meta,
-        "__protocol_attrs__",
-        property(_protocol_attrs, _set_protocol_attrs),
-    )
+# Keep compatibility metadata local to these two protocols.  Mutating their
+# shared private ``typing._ProtocolMeta`` would affect every Protocol imported
+# later in the process (including framework/runtime protocols).
+type.__setattr__(
+    HTTPResponse,
+    "__protocol_attrs__",
+    frozenset({"status_code", "json"}),
+)
+type.__setattr__(
+    HTTPTransport,
+    "__protocol_attrs__",
+    frozenset({"__call__"}),
+)
 
 
 def _is_internal_host(host: str) -> bool:
