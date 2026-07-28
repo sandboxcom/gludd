@@ -175,6 +175,25 @@ class TestRunWithToolsLangGraph:
         assert result == "all done"
         graph.ainvoke.assert_called_once()
 
+    def test_mcp_input_schema_is_preserved_on_structured_tool(self):
+        mcp = self._mock_mcp_client_with_tools("search")
+        schema = {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        }
+        mcp.list_tools.return_value[0].input_schema = schema
+        loop = LangGraphAgentLoop(
+            model_gateway=MagicMock(),
+            chat_model=MagicMock(),
+            mcp_client=mcp,
+            mcp_registry=_make_registry_with_tools("search"),
+        )
+
+        tools = asyncio.run(loop._build_langchain_tools())
+
+        assert tools[0].args_schema == schema
+
     def test_final_ai_content_extracted(self):
         mcp = self._mock_mcp_client_with_tools("search")
         reg = _make_registry_with_tools("search")
