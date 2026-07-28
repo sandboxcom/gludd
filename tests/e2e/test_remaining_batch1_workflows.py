@@ -810,7 +810,7 @@ class TestCollectionsImporter:
             collection.mkdir()
             policies = collection / "plugins" / "terraform" / "policies"
             policies.mkdir(parents=True)
-            (policies / "bad.rego").write_text("deny = true")
+            (policies / "bad.rego").write_text("package test\n\ndeny = true\n")
             importer = TerraformCollectionImporter(collection)
             issues = importer._validate_rego_policies()
             assert len(issues) == 1
