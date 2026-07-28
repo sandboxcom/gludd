@@ -199,6 +199,26 @@ class TestMakeLanggraphToolLoop:
         with pytest.raises(ValueError, match="unknown role"):
             caps.make_langgraph_tool_loop(model_gateway=MagicMock(), role="nonexistent-role")
 
+    def test_passes_budget_guard_through(self):
+        caps = AgentCapabilities()
+        budget_guard = MagicMock()
+        loop = caps.make_langgraph_tool_loop(
+            model_gateway=MagicMock(),
+            role="operator",
+            budget_guard=budget_guard,
+        )
+        assert loop._budget_guard is budget_guard
+
+    def test_passes_chat_model_through(self):
+        caps = AgentCapabilities()
+        chat_model = MagicMock()
+        loop = caps.make_langgraph_tool_loop(
+            model_gateway=MagicMock(),
+            role="operator",
+            chat_model=chat_model,
+        )
+        assert loop._chat_model is chat_model
+
 
 class TestMakeGraphGateway:
     def test_returns_langgraph_gateway(self):
