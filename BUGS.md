@@ -20,6 +20,14 @@ All premature-stop incidents and process failures are tracked here.
 - **Long-lived user evidence**: pytest-xdist users reported that verbose distributed output produces tens of megabytes and makes CI logs painful or unusable ([pytest-xdist issue #877](https://github.com/pytest-dev/pytest-xdist/issues/877)). The release gate now treats bounded diagnostic output as a resource-safety invariant.
 - **Lesson**: “Observable” does not mean “unbounded.” A release gate should stream enough evidence to identify the first root failure without exhausting the terminal, log service, context window, or disk.
 
+### 2026-07-28 — (resolved) Slurm cost-monitor E2E used impossible job identifiers
+
+- **What**: The real serial integration gate stopped in the Slurm cost-cap lifecycle because its fixtures used names such as `job-001` where the adapter requires a scheduler-issued numeric job ID.
+- **Root cause**: The tests predated the shell-injection/job-ID validator and modeled human-readable labels rather than values returned by `sbatch`. One lifecycle assertion was also vacuous (`is_alive() or True`), so it could not prove that the monitor thread remained active.
+- **Fix applied**: The suite now uses realistic numeric IDs, continues to exercise invalid-ID rejection elsewhere, and makes the lifecycle test keep a running job alive before asserting the thread state.
+- **Long-lived user evidence**: Slurm users have repeatedly encountered `Invalid job id specified` when passing a job name instead of the numeric ID ([slurm-users, 2018](https://lists.schedmd.com/pipermail/slurm-users/2018-March/000762.html)); a recent Slurm REST report likewise shows a real `sbatch` response as a numeric ID before querying it ([Stack Overflow, 2025](https://stackoverflow.com/questions/79773406/slurm-restful-api-slurm-v0-0-42-job-job-id-always-responds-with-error-invali)). The E2E fixtures now mirror the scheduler contract rather than inventing a label syntax.
+- **Lesson**: Security hardening should expose stale fixtures, not be weakened to accept impossible identifiers. Lifecycle assertions must also be capable of failing.
+
 ### 2026-07-25 — (resolved) macOS binary crashes with "Missing base YAML definition file (bad install?)"
 
 - **What**: The gludd binary published in v0.1.0-beta.1 crashed immediately on macOS with: `ansible.errors.AnsibleError: Missing base YAML definition file (bad install?): /Users/.../ansible/config/base.yml`. The binary couldn't start, making the release unusable on macOS.
