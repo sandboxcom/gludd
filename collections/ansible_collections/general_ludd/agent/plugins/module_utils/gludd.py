@@ -6,8 +6,11 @@ Every module that talks to the daemon imports this module.  It provides:
   - LOCAL_TRANSPORT: direct in-process call path (same venv only)
   - error_result / ok_result: uniform return helpers
 
-PSK is read from the ``psk`` parameter (marked no_log) or from the
-``GLUDD_PSK`` environment variable.  Never log it.
+PSK is read from the ``psk`` parameter (marked no_log).  GluddClient
+does NOT fall back to the ``GLUDD_PSK`` env var — the caller must
+pass the PSK explicitly so a module that omits the psk param cannot
+silently scavenge admin credentials from the process environment.
+Never log the PSK.
 
 Usage in a module
 -----------------
@@ -19,7 +22,7 @@ Usage in a module
 
     client = GluddClient(
         base_url=module.params["daemon_url"],
-        psk=module.params.get("psk") or os.environ.get("GLUDD_PSK", ""),
+        psk=module.params["psk"],
         timeout=module.params.get("timeout", 30),
     )
     resp = client.get("/api/todos")
@@ -28,7 +31,6 @@ Usage in a module
 from __future__ import annotations
 
 import json
-import os
 import re
 import urllib.error
 import urllib.parse
@@ -46,6 +48,7 @@ DEFAULT_TIMEOUT = 30  # seconds
 # ---------------------------------------------------------------------------
 # Return-value helpers
 # ---------------------------------------------------------------------------
+
 
 def ok_result(data: dict[str, Any], changed: bool = False) -> dict[str, Any]:
     """Return a successful Ansible-style result dict."""
@@ -116,6 +119,7 @@ def parse_structured(
 # HTTP transport (no third-party deps — urllib only so ansible modules work)
 # ---------------------------------------------------------------------------
 
+
 class GluddClient:
     """Thin HTTP client for the general_ludd daemon API.
 
@@ -145,7 +149,7 @@ class GluddClient:
 
     def _headers(self) -> dict[str, str]:
         headers: dict[str, str] = {"Content-Type": "application/json", "Accept": "application/json"}
-        psk = self._psk or os.environ.get("GLUDD_PSK", "")
+        psk = self._psk
         if psk:
             # The daemon middleware authenticates on "Authorization: Bearer <psk>".
             # X-PSK is also sent for any future/legacy header-based check.
@@ -207,6 +211,7 @@ class GluddClient:
 # Local (in-process) transport — same venv only
 # ---------------------------------------------------------------------------
 
+
 def local_model_call(
     prompt: str,
     model_profile: str | None = None,
@@ -219,6 +224,7 @@ def local_model_call(
     """
     try:
         from general_ludd.models.gateway import ModelGateway  # type: ignore[import]
+
         gw = ModelGateway()
         text = gw.call_model(
             prompt=prompt,

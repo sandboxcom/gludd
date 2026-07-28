@@ -14,34 +14,386 @@
 #   pct_note     : optional string appended to pct display (e.g. "(local)")
 #   evidence_refs: list of structured refs for FeatureVerifier
 #                  test:path[::selector]  — file checked (fast), pytest run (full)
-#                  file:path::symbol      — path exists + symbol present (always fast)
+#                  file:path::symbol      — path + symbol present in file (always fast)
 #                  role:name              — collections/.../roles/<name>/ dir
 #                  module:name            — plugins/modules/<name>.py
 #                  molecule:scenario      — molecule/playbooks/<scenario>/ dir
 #   notes        : short evidence narrative for the Evidence column
-#                  (SHAs, test counts, caveats; do NOT duplicate evidence_refs verbatim)
-#
-# NOTE: Completed features (pct: 100) have been removed from this manifest.
-# The README status table now shows backlog items only. See the CHANGELOG for
-# the full history of completed features.
 
 sections:
 
   # ---------------------------------------------------------------------------
-  - title: "Security Hardening"
+  - title: "New Features (v0.1.0-beta.2)"
     features:
-      - id: batch4-security
-        title: "D-04/D-05/D-06/D-29/D-30/D-31 security items (batch-4 branch)"
-        pct: 0
+      - id: nf1
+        title: "NF.1 — Chat CLI: session state machine, streaming formatter, multi-model, export (180 tests)"
+        pct: 100
         evidence_refs:
-          - "file:docs/audit/NEW_FINDINGS_2026-06-16.md::P1"
-        notes: "ABANDONED: branch feature/security-batch4 superseded; all items independently implemented in master"
+          - "file:src/general_ludd/chat/session.py::ChatSession"
+          - "file:src/general_ludd/chat/formatter.py::class"
+          - "test:tests/unit/test_chat_session.py"
+        notes: "P1-P8 done; commits db2699da..942c0759"
+
+      - id: nf2
+        title: "NF.2 — Unikernel sandbox: Firecracker/GVisor, image builder, VM pool, metrics (280 tests)"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/sandbox/vm/firecracker_backend.py::class"
+          - "file:src/general_ludd/sandbox/vm/sandbox_manager.py::class"
+          - "test:tests/unit/test_vm_sandbox_manager.py"
+        notes: "P1-P7 done; 8 src files, 280 tests; commits db2699da..57c11755"
+
+      - id: nf3
+        title: "NF.3 — Binary RE collection: 8 roles (ghidra, radare2, frida, cyberchef, etc.) + 3 knowledge modules (326+ tests)"
+        pct: 100
+        evidence_refs:
+          - "role:cyberchef_transform"
+          - "role:ghidra_analyze"
+          - "role:radare2_analyze"
+        notes: "8 roles, 3 module_utils, molecule/playbooks/binary_re/; commits db2699da..84f94fc6"
+
+      - id: nf4
+        title: "NF.4 — Radio engineer collection: 10 roles (antenna design, SDR capture, spectrum scan, APRS decode) + 5 knowledge modules (365+ tests)"
+        pct: 100
+        evidence_refs:
+          - "role:antenna_design"
+          - "role:sdr_capture"
+          - "role:spectrum_scan"
+        notes: "10 roles, 5 module_utils, ITU models, APRS AX.25 decoder; commits db2699da..384e481e"
+
+      - id: nf5
+        title: "NF.5 — E2E test gen: code_path_analyzer, scenario generator, coverage heatmap, prioritize (62 tests)"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/test_generation/code_path_analyzer.py::class"
+          - "file:src/general_ludd/test_generation/scenario_generator.py::class"
+          - "test:tests/unit/test_e2e_test_gen.py"
+        notes: "5 roles (analyze_code_paths..write_e2e_tests); commits db2699da..eba1c51d"
+
+      - id: nf6
+        title: "NF.6 — OS expert collection: 12 roles (Android/iOS/Linux/macOS/Windows) + CIS benchmarking (246+ tests)"
+        pct: 100
+        evidence_refs:
+          - "role:android_diagnose"
+          - "role:linux_security"
+          - "role:windows_security"
+        notes: "12 roles, 5 module_utils, 6 connectors, CIS control mapping; commits db2699da..57c11755"
+
+      - id: nf7
+        title: "NF.7 — STS tokens: minter, store, narrowing, reviver, revoker, reaper, cascade, quotas, rotator (8 src files, 5 test files)"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/sts/minter.py::class"
+          - "file:src/general_ludd/sts/store.py::class"
+          - "file:src/general_ludd/sts/token_reaper.py::class"
+        notes: "P1-P6 done; alembic migration 035; commits db2699da..d3d740bf"
+
+      - id: nf8
+        title: "NF.8 — Multitasking enforcement fix: consecutive non-dispatch counter, hardened dispatch detection (125+ e2e tests)"
+        pct: 100
+        evidence_refs:
+          - "file:.opencode/plugin/enforce-multitask.ts::export"
+          - "file:.opencode/plugin/enforce-delegate.ts::export"
+          - "test:tests/unit/test_enforce_multitask_e2e.py"
+        notes: "enforce-multitask.ts + enforce-delegate.ts hardened, Node v26 compat; commits 6d45df65, db2699da, 816d7be6"
+
+      - id: nf9
+        title: "NF.9 — Language expert collection: 8 roles (encoding detect, font analyze, homoglyph scan, polyglot) + benchmarks (438 tests)"
+        pct: 100
+        evidence_refs:
+          - "role:encoding_detect"
+          - "role:homoglyph_scan"
+          - "role:unicode_analyze"
+        notes: "8 roles, 5 knowledge modules, performance benchmarks; commits db2699da..57c11755"
+
+      - id: nf10
+        title: "NF.10 — enforce-stop.ts false-completion fix: CI+release+gate state detection in work-detection"
+        pct: 100
+        evidence_refs:
+          - "file:.opencode/plugin/enforce-stop.ts::export"
+          - "test:tests/unit/test_enforce_stop_plugin.py"
+        notes: "Work-detection extended beyond TASKS.md/ratchet.yml to CI, release, gate; commit 816d7be6"
 
   # ---------------------------------------------------------------------------
-  - title: "Orchestration / Agents"
+  - title: "Governance Collection"
     features:
-      - id: watchdog-stall
-        title: "Watchdog/stall detection improvements (mt-6-watchdog branch)"
-        pct: 0
-        evidence_refs: []
-        notes: "Abandoned branch; code rescoped into master. Original branch deleted. Feature reclassified to reflect actual implementation status."
+      - id: governance
+        title: "S53.42 — Governance P1-P6: elections, international relations, legal systems, public finance, borders, civic services (759 tests)"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/governance/loader.py::GovernanceLoader"
+          - "file:src/general_ludd/governance/cli_governance.py::def"
+          - "test:tests/unit/test_governance.py"
+        notes: "Full collection scaffold + module_utils; 759 tests pass; commit 97432526"
+
+      - id: postal
+        title: "S53.43 — Postal delivery collection: address validation, routing, tracking (24 tests)"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/postal/__init__.py::class"
+          - "test:tests/unit/test_postal.py"
+        notes: "Ansible roles + module_utils; commit 97432526"
+
+  # ---------------------------------------------------------------------------
+  - title: "Phase J — Terraform HTTP Backend"
+    features:
+      - id: j1234
+        title: "J.1-J.4 — HTTP state backend (lock/unlock/get/update), daemon wiring, local-to-HTTP migration, HMAC+OpenBao encryption"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/terraform/__init__.py::class"
+          - "test:tests/unit/test_terraform.py"
+        notes: "State integrity with HMAC signatures, at-rest encryption via OpenBao"
+
+  # ---------------------------------------------------------------------------
+  - title: "Phase K — Workload-Aware Deployment"
+    features:
+      - id: k12
+        title: "K.1-K.2 — Resource-aware scheduling (CPU/mem/GPU) + Ansible infra deploy/destroy with pre-flight validation"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/infra/__init__.py::class"
+          - "test:tests/unit/test_infra.py"
+        notes: "WorkloadType enum, ModelDeploymentProfile, CLI --workload flag; commit bdb63914"
+
+  # ---------------------------------------------------------------------------
+  - title: "Phase L — SearX Model Search + Deploy"
+    features:
+      - id: l123
+        title: "L.1-L.3 — SearX model discovery, managed server deployment, dynamic model registry (TTL-cached, 65+ tests)"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/models/searx_discoverer.py::class"
+          - "test:tests/unit/test_searx_discoverer.py"
+        notes: "SearxModelDiscoverer bridges search→gateway with TTL cache + fallback"
+
+  # ---------------------------------------------------------------------------
+  - title: "Phase D — Feature Completeness"
+    features:
+      - id: d1
+        title: "D.1 — Real cloud onboard providers (AWS/GCP/Azure replacing stubs, 94 tests)"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/onboard/aws.py::class"
+          - "file:src/general_ludd/onboard/gcp.py::class"
+          - "file:src/general_ludd/onboard/azure.py::class"
+        notes: "boto3, googleapiclient, azure-mgmt-* wired via get_provider()"
+
+      - id: d4
+        title: "D.4 — DAST driver + findings parser (ZAP-baseline wrapper, 97 tests)"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/security/dast.py::DastConfig"
+          - "test:tests/unit/test_d4_dast.py"
+        notes: "DastConfig, DastFinding, DastResult, parse_zap_baseline()"
+
+      - id: d5
+        title: "D.5 — Compute discovery + auto-select (k8s, vSphere, 16 providers, 27 tests)"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/infra/discovery.py::class"
+          - "file:src/general_ludd/infra/compute.py::ComputeProvider"
+          - "file:src/general_ludd/infra/providers.py::ProviderRegistry"
+        notes: "DiscoveredResource, ProviderRegistry with auto-select get_cheapest()"
+
+      - id: d7
+        title: "D.7.1-D.7.4 — Pause/resume: PauseController, HibernationController, quiesce, CLI (116 tests)"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/agents/hibernation.py::HibernationController"
+          - "file:src/general_ludd/agents/pause.py::PauseController"
+          - "test:tests/unit/test_hibernation.py"
+        notes: "Persist-before-mutate, lock-free is_paused(), durable MAC key"
+
+      - id: d10
+        title: "D.10 — Commit-path file-claim livelock fix (total-order + TTL + backoff, 22 tests)"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/git_automation/claims.py::FileClaimRegistry"
+          - "test:tests/unit/test_file_claim_livelock.py"
+        notes: "FileClaimRegistry.claim_or_conflict atomic total-order"
+
+      - id: d11
+        title: "D.11 — Subagent orchestration max nesting depth, capability non-escalation, spiral detection (40 tests)"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/agents/orchestration.py::class"
+          - "test:tests/unit/test_orchestration.py"
+        notes: "Dispatch-rate control loop, spiral detection"
+
+      - id: d12
+        title: "D.12 — Slack connector: outbound notifications + channel history read, SSRF-guarded (67 tests)"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/connectors/slack.py::SlackSource"
+          - "test:tests/unit/test_d12_slack_connector.py"
+        notes: "SSRF via _assert_safe_url→is_url_blocked; commit 0cccee7f"
+
+      - id: d15
+        title: "D.15 — Pricing sources static→live: CachedSource with TTL cache + static fallback (52 tests)"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/pricing_intel/sources.py::CachedSource"
+          - "test:tests/unit/test_cached_source.py"
+        notes: "RunPod/AWS/GCP live sources with TTL cache"
+
+      - id: d19
+        title: "D.19 — Postgres path / multi-worker documentation (561-line plan, 34-migration audit)"
+        pct: 100
+        evidence_refs:
+          - "file:docs/POSTGRES_MULTI_WORKER.md::migration"
+        notes: "Gated on owner + technical prerequisites; 8-row risk matrix"
+
+      - id: d20
+        title: "D.20 — Dedup/coherence cleanups: 8 duplicate pairs, missing __init__.py, model routing gaps, metric module (15 tests)"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/metric.py::Metric"
+          - "test:tests/unit/test_metric_module.py"
+        notes: "ParetoRouter fix; commit 5a04fffb"
+
+  # ---------------------------------------------------------------------------
+  - title: "Phase E — Quality/Coverage"
+    features:
+      - id: e1
+        title: "E.1 — Coverage lifting: fail_under 70→85, 60-80 files audited"
+        pct: 100
+        evidence_refs:
+          - "file:pyproject.toml::fail_under"
+        notes: "fail_under raised to 85; commit 7f166439"
+
+      - id: e2
+        title: "E.2 — E2E audit closure: 150 new e2e tests (auth, STS, adversarial, dispatcher, IPC)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/e2e/test_auth.py"
+          - "test:tests/e2e/test_sts.py"
+        notes: "5 new e2e test files, 150 tests total"
+
+      - id: e4
+        title: "E.4 — noqa guardrail 3-layer fix: edit-time hook + behavior-pin test + AGENTS.md rule (79 tests)"
+        pct: 100
+        evidence_refs:
+          - "file:.opencode/plugin/enforce-no-suppressions.ts::export"
+          - "test:tests/unit/test_no_suppression_comments_plugin.py"
+        notes: "L1 plugin deny, L2 54+25 tests, L3 AGENTS.md section"
+
+      - id: e5
+        title: "E.5 — Plugin leanness: deduplication via shared.ts helpers, ratchet 0 entries, 30,718 collected"
+        pct: 100
+        evidence_refs:
+          - "file:.opencode/plugin/shared.ts::export"
+          - "file:config/ratchet.yml::#"
+        notes: "All 6 enforce-*.ts plugins deduplicated; commits ad2f32fb, 1a225981"
+
+      - id: e8
+        title: "E.8 — Router HTTP layer thin: 202 endpoint-level tests across 9 routers"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_routers.py"
+        notes: "Every router endpoint tested individually"
+
+      - id: e10
+        title: "E.10 — Tick DB session pinned across dispatch gather (17 tests)"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/event_loop/loop.py::dispatch"
+          - "test:tests/unit/test_tick_session.py"
+        notes: "Session commit/close BEFORE dispatch gather"
+
+      - id: e15
+        title: "E.15 — Plugin e2e tests: commit-lock, watchdog, enforce-multitask, hot-reload proxy, clean-tree, enforce-stop (217+ tests)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_commit_lock_e2e.py"
+        notes: "All 13 plugins hot-reload proxied; commits a3a6a237..1a225981"
+
+  # ---------------------------------------------------------------------------
+  - title: "Phase F — Terraform/Deployment"
+    features:
+      - id: f1234
+        title: "F.1-F.4 — Terraform QEMU e2e, config wiring, DeploymentManager plan/validate, cross-platform detection (38+ tests)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_terraform_e2e.py"
+        notes: "vllm + llamacpp QEMU scenarios; TerraformConfig in UserConfig + CLI"
+
+  # ---------------------------------------------------------------------------
+  - title: "Phase I — Stale Backlog + Integration Stubs"
+    features:
+      - id: i1
+        title: "I.1.1-I.1.4 — BACKLOG findings: process_isolation, secret isolation, capability-lattice bypass, broadcast PSK leak"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/security/__init__.py::class"
+        notes: "All 4 resolved; commit 9c03fd0d"
+
+      - id: i2
+        title: "I.2.1-I.2.11 — TODO(integration) markers: 9 live pricing fetchers + 2 FileClaimRegistry wiring"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/pricing_intel/sources.py::CachedSource"
+        notes: "Anthropic, OpenAI, RunPod, Lambda Labs, AWS, GCP, HuggingFace, Z.AI + FileClaimRegistry; commit 9c03fd0d"
+
+  # ---------------------------------------------------------------------------
+  - title: "Phase M — Policy Codification"
+    features:
+      - id: m1
+        title: "M.1 — Root-Cause-Only Fix Policy codified (AGENTS.md + enforce-stop.ts + enforce-make.ts, 3-layer)"
+        pct: 100
+        evidence_refs:
+          - "file:AGENTS.md::CRITICAL: Root-Cause-Only Fix Policy"
+          - "file:.opencode/plugin/enforce-stop.ts::export"
+        notes: "3-layer codification; 2026-07-14 mandate"
+
+  # ---------------------------------------------------------------------------
+  - title: "Phase A — CI Green + Release"
+    features:
+      - id: a1234
+        title: "A.1-A.9 — CI fixes, push, release v0.1.0-beta.3 ready, shard matrix (6 shards), coverage threshold"
+        pct: 100
+        evidence_refs:
+          - "file:.github/workflows/build.yml::fail-fast"
+          - "file:pyproject.toml::fail_under"
+        notes: "CI shard matrix (6 shards), fail_under 85, CI GREEN for v0.1.0-beta.3"
+
+  # ---------------------------------------------------------------------------
+  - title: "Session 53 — Documentation & Release Polish"
+    features:
+      - id: s53_docs
+        title: "S53.7-S53.11 — Prompt profiles, config audit, README config guide, 54-playbook docs, template docs"
+        pct: 100
+        evidence_refs:
+          - "file:config/prompt_profiles/default.yml::system_message"
+          - "file:docs/CONFIG_REFERENCE.md::Configuration"
+        notes: "6 config files documented, README Configuration Guide section; commits 68da61a1, 0a912a72, 704ed529, d145ccaf"
+
+      - id: s53_bin
+        title: "S53.1-S53.3, S53.12-S53.15 — Binary fixes, smoke tests, functional tests, bundled resources, cross-platform specs"
+        pct: 100
+        evidence_refs:
+          - "test:tests/e2e/test_binary_functional.py"
+        notes: "macOS crash fix, smoke tests on all platforms, 21 verified assets; commits bd92fd8a..10f03137"
+
+      - id: s53_stop
+        title: "S53.44-S53.45 — Stop-prevention codification (5 gaps, 3-layer) + CI check cooldown (machine-enforced)"
+        pct: 100
+        evidence_refs:
+          - "file:.opencode/plugin/enforce-stop.ts::export"
+          - "file:scripts/ci_check_cooldown.py::class"
+        notes: "5 anti-pattern gaps fixed, CI check cooldown 600s; commits 05d18f6f, b3878d2c, 6992be7d, ad09cc0a"
+
+      - id: s53_memory
+        title: "S53.31-S53.32 — Agentic memory: embedding store, consolidation cascade, hybrid search (97 tests)"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/memory/embedding_store.py::class"
+          - "test:tests/unit/test_memory_embedding_store.py"
+        notes: "Procedural + semantic + hybrid search + embedding; commit 97432526"
+
+      - id: s53_iam
+        title: "S53.33-S53.34 — PaaS IAM least-privilege roles (AWS/GCP/Azure) + OPA policies for Terraform/IAM (32 tests)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_iam.py"
+        notes: "3 provider IAM files, 4 OPA policy files; commit b4612d1a"

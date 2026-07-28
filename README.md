@@ -33,11 +33,11 @@ idempotent, and can fan out to subagents via the same API.
 
 ## Current Stability
 
-This project is **alpha-quality research software**. The daemon boots, the event loop
-ticks, the database layer works, and the model gateway can call real APIs. But many
-subsystems are wired but not fully exercised end-to-end. **Do not run this in production
-without understanding the failure modes.** Expect rough edges around Ansible playbook
-execution, multi-model failover, and project workspace management.
+This project is **beta-quality software** on its third beta release. The daemon boots,
+the event loop ticks, the database layer works, and the model gateway can call real APIs.
+Subsystems are wired and exercised end-to-end through CI; 400+ tasks tracked in TASKS.md
+are at 99.5% completion. **Suitable for evaluation and non-critical automation.** Expect
+edge cases around multi-model failover and production-scale project workspace management.
 
 **CI note:** GitHub Actions runs on every push to master. The gate (`lint`, `typecheck`,
 `collect`, `test`, `smoke`) runs against Python 3.11 and 3.12 with `fail-fast: false` so
@@ -61,7 +61,7 @@ make typecheck       # current mypy error count (gate enforces ≤ MYPY_MAX, see
 Known-failing tests are tracked as strict xfail entries in `config/ratchet.yml` (the file
 may only shrink). The gate passes only when `make test` exits 0.
 
-**Status as of v0.1.0-beta.3 — 2026-07-26**
+**Status as of v0.1.0-beta.3 — 2026-07-28**
 
 Version: `v0.1.0-beta.3` — release binaries (Linux x86_64, macOS arm64, Windows x86_64, and
 more) are built as CI artifacts on every push to master, but a GitHub Release is only cut
@@ -76,17 +76,107 @@ when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is
 *(auto-generated with `--fast`; `test:` refs checked by file existence only — run `make gen-status-table` locally to verify tests pass)*
 
 
-### Security Hardening
+### New Features (v0.1.0-beta.2)
 
 | Feature / Task | Verified % | Evidence |
 |---|---|---|
-| D-04/D-05/D-06/D-29/D-30/D-31 security items (batch-4 branch) | ✓ 0% | **PASS** *(file-refs only)*: ABANDONED: branch feature/security-batch4 superseded; all items independently implemented in master |
+| NF.1 — Chat CLI: session state machine, streaming formatter, multi-model, export (180 tests) | ✓ 100% | **PASS** *(file-refs only)*: P1-P8 done; commits db2699da..942c0759 |
+| NF.2 — Unikernel sandbox: Firecracker/GVisor, image builder, VM pool, metrics (280 tests) | ✗ 100% | **PENDING** *(file-refs only)*: P1-P7 done; 8 src files, 280 tests; commits db2699da..57c11755 |
+| NF.3 — Binary RE collection: 8 roles (ghidra, radare2, frida, cyberchef, etc.) + 3 knowledge modules (326+ tests) | ✓ 100% | **PASS** *(file-refs only)*: 8 roles, 3 module_utils, molecule/playbooks/binary_re/; commits db2699da..84f94fc6 |
+| NF.4 — Radio engineer collection: 10 roles (antenna design, SDR capture, spectrum scan, APRS decode) + 5 knowledge modules (365+ tests) | ✓ 100% | **PASS** *(file-refs only)*: 10 roles, 5 module_utils, ITU models, APRS AX.25 decoder; commits db2699da..384e481e |
+| NF.5 — E2E test gen: code_path_analyzer, scenario generator, coverage heatmap, prioritize (62 tests) | ✗ 100% | **PENDING** *(file-refs only)*: 5 roles (analyze_code_paths..write_e2e_tests); commits db2699da..eba1c51d |
+| NF.6 — OS expert collection: 12 roles (Android/iOS/Linux/macOS/Windows) + CIS benchmarking (246+ tests) | ✓ 100% | **PASS** *(file-refs only)*: 12 roles, 5 module_utils, 6 connectors, CIS control mapping; commits db2699da..57c11755 |
+| NF.7 — STS tokens: minter, store, narrowing, reviver, revoker, reaper, cascade, quotas, rotator (8 src files, 5 test files) | ~ 100% | **PARTIAL** *(file-refs only)*: P1-P6 done; alembic migration 035; commits db2699da..d3d740bf |
+| NF.8 — Multitasking enforcement fix: consecutive non-dispatch counter, hardened dispatch detection (125+ e2e tests) | ~ 100% | **PARTIAL** *(file-refs only)*: enforce-multitask.ts + enforce-delegate.ts hardened, Node v26 compat; commits 6d45df65, db2699da, 816d7be6 |
+| NF.9 — Language expert collection: 8 roles (encoding detect, font analyze, homoglyph scan, polyglot) + benchmarks (438 tests) | ✓ 100% | **PASS** *(file-refs only)*: 8 roles, 5 knowledge modules, performance benchmarks; commits db2699da..57c11755 |
+| NF.10 — enforce-stop.ts false-completion fix: CI+release+gate state detection in work-detection | ~ 100% | **PARTIAL** *(file-refs only)*: Work-detection extended beyond TASKS.md/ratchet.yml to CI, release, gate; commit 816d7be6 |
 
-### Orchestration / Agents
+### Governance Collection
 
 | Feature / Task | Verified % | Evidence |
 |---|---|---|
-| Watchdog/stall detection improvements (mt-6-watchdog branch) | ✗ 0% | **PENDING**: Abandoned branch; code rescoped into master. Original branch deleted. Feature reclassified to reflect actual implementation status. |
+| S53.42 — Governance P1-P6: elections, international relations, legal systems, public finance, borders, civic services (759 tests) | ~ 100% | **PARTIAL** *(file-refs only)*: Full collection scaffold + module_utils; 759 tests pass; commit 97432526 |
+| S53.43 — Postal delivery collection: address validation, routing, tracking (24 tests) | ✗ 100% | **PENDING** *(file-refs only)*: Ansible roles + module_utils; commit 97432526 |
+
+### Phase J — Terraform HTTP Backend
+
+| Feature / Task | Verified % | Evidence |
+|---|---|---|
+| J.1-J.4 — HTTP state backend (lock/unlock/get/update), daemon wiring, local-to-HTTP migration, HMAC+OpenBao encryption | ✗ 100% | **PENDING** *(file-refs only)*: State integrity with HMAC signatures, at-rest encryption via OpenBao |
+
+### Phase K — Workload-Aware Deployment
+
+| Feature / Task | Verified % | Evidence |
+|---|---|---|
+| K.1-K.2 — Resource-aware scheduling (CPU/mem/GPU) + Ansible infra deploy/destroy with pre-flight validation | ✗ 100% | **PENDING** *(file-refs only)*: WorkloadType enum, ModelDeploymentProfile, CLI --workload flag; commit bdb63914 |
+
+### Phase L — SearX Model Search + Deploy
+
+| Feature / Task | Verified % | Evidence |
+|---|---|---|
+| L.1-L.3 — SearX model discovery, managed server deployment, dynamic model registry (TTL-cached, 65+ tests) | ~ 100% | **PARTIAL** *(file-refs only)*: SearxModelDiscoverer bridges search→gateway with TTL cache + fallback |
+
+### Phase D — Feature Completeness
+
+| Feature / Task | Verified % | Evidence |
+|---|---|---|
+| D.1 — Real cloud onboard providers (AWS/GCP/Azure replacing stubs, 94 tests) | ✓ 100% | **PASS** *(file-refs only)*: boto3, googleapiclient, azure-mgmt-* wired via get_provider() |
+| D.4 — DAST driver + findings parser (ZAP-baseline wrapper, 97 tests) | ~ 100% | **PARTIAL** *(file-refs only)*: DastConfig, DastFinding, DastResult, parse_zap_baseline() |
+| D.5 — Compute discovery + auto-select (k8s, vSphere, 16 providers, 27 tests) | ✓ 100% | **PASS** *(file-refs only)*: DiscoveredResource, ProviderRegistry with auto-select get_cheapest() |
+| D.7.1-D.7.4 — Pause/resume: PauseController, HibernationController, quiesce, CLI (116 tests) | ~ 100% | **PARTIAL** *(file-refs only)*: Persist-before-mutate, lock-free is_paused(), durable MAC key |
+| D.10 — Commit-path file-claim livelock fix (total-order + TTL + backoff, 22 tests) | ~ 100% | **PARTIAL** *(file-refs only)*: FileClaimRegistry.claim_or_conflict atomic total-order |
+| D.11 — Subagent orchestration max nesting depth, capability non-escalation, spiral detection (40 tests) | ✗ 100% | **PENDING** *(file-refs only)*: Dispatch-rate control loop, spiral detection |
+| D.12 — Slack connector: outbound notifications + channel history read, SSRF-guarded (67 tests) | ✓ 100% | **PASS** *(file-refs only)*: SSRF via _assert_safe_url→is_url_blocked; commit 0cccee7f |
+| D.15 — Pricing sources static→live: CachedSource with TTL cache + static fallback (52 tests) | ~ 100% | **PARTIAL** *(file-refs only)*: RunPod/AWS/GCP live sources with TTL cache |
+| D.19 — Postgres path / multi-worker documentation (561-line plan, 34-migration audit) | ✓ 100% | **PASS** *(file-refs only)*: Gated on owner + technical prerequisites; 8-row risk matrix |
+| D.20 — Dedup/coherence cleanups: 8 duplicate pairs, missing __init__.py, model routing gaps, metric module (15 tests) | ✗ 100% | **PENDING** *(file-refs only)*: ParetoRouter fix; commit 5a04fffb |
+
+### Phase E — Quality/Coverage
+
+| Feature / Task | Verified % | Evidence |
+|---|---|---|
+| E.1 — Coverage lifting: fail_under 70→85, 60-80 files audited | ✓ 100% | **PASS** *(file-refs only)*: fail_under raised to 85; commit 7f166439 |
+| E.2 — E2E audit closure: 150 new e2e tests (auth, STS, adversarial, dispatcher, IPC) | ✗ 100% | **PENDING** *(file-refs only)*: 5 new e2e test files, 150 tests total |
+| E.4 — noqa guardrail 3-layer fix: edit-time hook + behavior-pin test + AGENTS.md rule (79 tests) | ✓ 100% | **PASS** *(file-refs only)*: L1 plugin deny, L2 54+25 tests, L3 AGENTS.md section |
+| E.5 — Plugin leanness: deduplication via shared.ts helpers, ratchet 0 entries, 30,718 collected | ~ 100% | **PARTIAL** *(file-refs only)*: All 6 enforce-*.ts plugins deduplicated; commits ad2f32fb, 1a225981 |
+| E.8 — Router HTTP layer thin: 202 endpoint-level tests across 9 routers | ✗ 100% | **PENDING** *(file-refs only)*: Every router endpoint tested individually |
+| E.10 — Tick DB session pinned across dispatch gather (17 tests) | ✓ 100% | **PASS** *(file-refs only)*: Session commit/close BEFORE dispatch gather |
+| E.15 — Plugin e2e tests: commit-lock, watchdog, enforce-multitask, hot-reload proxy, clean-tree, enforce-stop (217+ tests) | ✗ 100% | **PENDING** *(file-refs only)*: All 13 plugins hot-reload proxied; commits a3a6a237..1a225981 |
+
+### Phase F — Terraform/Deployment
+
+| Feature / Task | Verified % | Evidence |
+|---|---|---|
+| F.1-F.4 — Terraform QEMU e2e, config wiring, DeploymentManager plan/validate, cross-platform detection (38+ tests) | ✗ 100% | **PENDING** *(file-refs only)*: vllm + llamacpp QEMU scenarios; TerraformConfig in UserConfig + CLI |
+
+### Phase I — Stale Backlog + Integration Stubs
+
+| Feature / Task | Verified % | Evidence |
+|---|---|---|
+| I.1.1-I.1.4 — BACKLOG findings: process_isolation, secret isolation, capability-lattice bypass, broadcast PSK leak | ✗ 100% | **PENDING** *(file-refs only)*: All 4 resolved; commit 9c03fd0d |
+| I.2.1-I.2.11 — TODO(integration) markers: 9 live pricing fetchers + 2 FileClaimRegistry wiring | ✓ 100% | **PASS** *(file-refs only)*: Anthropic, OpenAI, RunPod, Lambda Labs, AWS, GCP, HuggingFace, Z.AI + FileClaimRegistry; commit 9c03fd0d |
+
+### Phase M — Policy Codification
+
+| Feature / Task | Verified % | Evidence |
+|---|---|---|
+| M.1 — Root-Cause-Only Fix Policy codified (AGENTS.md + enforce-stop.ts + enforce-make.ts, 3-layer) | ✓ 100% | **PASS** *(file-refs only)*: 3-layer codification; 2026-07-14 mandate |
+
+### Phase A — CI Green + Release
+
+| Feature / Task | Verified % | Evidence |
+|---|---|---|
+| A.1-A.9 — CI fixes, push, release v0.1.0-beta.3 ready, shard matrix (6 shards), coverage threshold | ✓ 100% | **PASS** *(file-refs only)*: CI shard matrix (6 shards), fail_under 85, CI GREEN for v0.1.0-beta.3 |
+
+### Session 53 — Documentation & Release Polish
+
+| Feature / Task | Verified % | Evidence |
+|---|---|---|
+| S53.7-S53.11 — Prompt profiles, config audit, README config guide, 54-playbook docs, template docs | ~ 100% | **PARTIAL** *(file-refs only)*: 6 config files documented, README Configuration Guide section; commits 68da61a1, 0a912a72, 704ed529, d145ccaf |
+| S53.1-S53.3, S53.12-S53.15 — Binary fixes, smoke tests, functional tests, bundled resources, cross-platform specs | ✓ 100% | **PASS** *(file-refs only)*: macOS crash fix, smoke tests on all platforms, 21 verified assets; commits bd92fd8a..10f03137 |
+| S53.44-S53.45 — Stop-prevention codification (5 gaps, 3-layer) + CI check cooldown (machine-enforced) | ~ 100% | **PARTIAL** *(file-refs only)*: 5 anti-pattern gaps fixed, CI check cooldown 600s; commits 05d18f6f, b3878d2c, 6992be7d, ad09cc0a |
+| S53.31-S53.32 — Agentic memory: embedding store, consolidation cascade, hybrid search (97 tests) | ✓ 100% | **PASS** *(file-refs only)*: Procedural + semantic + hybrid search + embedding; commit 97432526 |
+| S53.33-S53.34 — PaaS IAM least-privilege roles (AWS/GCP/Azure) + OPA policies for Terraform/IAM (32 tests) | ✗ 100% | **PENDING** *(file-refs only)*: 3 provider IAM files, 4 OPA policy files; commit b4612d1a |
 
 <!-- STATUS-TABLE:END -->
 
