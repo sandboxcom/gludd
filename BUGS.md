@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) legacy binary E2E rejected the supported version flag
+
+- **What**: The complete serial E2E run stopped because one legacy black-box test required `gludd --version` to fail, while the current CLI and a second E2E suite intentionally support it and returned `gludd 0.1.0-beta.3`.
+- **Root cause**: The older test had frozen an implementation limitation as a product contract. When top-level version support was added, its module commentary and negative assertion were not updated with the newer CLI lifecycle tests.
+- **Fix applied**: The black-box test now requires a zero exit code, the beta.3 release version, a Gludd identifier, and no traceback. The existing `gludd version` subcommand contract remains independently tested.
+- **Long-lived user evidence**: Python CLI users consistently treat `--version` as a standard flag and `argparse` provides a dedicated version action that prints and exits successfully ([long-running Stack Overflow discussion](https://stackoverflow.com/questions/12123568/python-argparse-required-true-but-version-functionality)).
+- **Lesson**: Tests must distinguish intentional product constraints from temporary parser gaps. When a standard compatibility feature lands, every duplicated CLI contract must advance together.
+
 ### 2026-07-28 — (resolved) callable connector adapters failed the strict type gate
 
 - **What**: The combined connector cherry-picks passed their isolated runtime suites but failed the repository-wide strict type gate in two waves, totaling 20 errors across eleven connectors.

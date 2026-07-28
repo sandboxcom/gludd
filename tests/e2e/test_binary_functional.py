@@ -7,9 +7,8 @@ entrypoint — the goal is to exercise the binary exactly as an operator would.
 Adaptations to the actual CLI surface (the task spec assumed a slightly
 different shape; assertions match reality):
 
-* ``gludd version`` is the version subcommand. The top-level parser does NOT
-  define a ``--version`` flag, so ``gludd --version`` exits non-zero — both
-  behaviors are asserted below.
+* Both the ``gludd version`` subcommand and standard top-level ``--version``
+  flag report the packaged release version.
 * The health endpoint is ``/healthz`` (not ``/health``).
 * ``gludd daemon`` runs gunicorn in the FOREGROUND; there is no
   ``daemon start`` / ``daemon stop`` subcommand. Start = spawn the subprocess;
@@ -224,15 +223,12 @@ class TestVersionCommand:
         assert match, f"no semver-like token in stdout: {result.stdout!r}"
         assert "general-ludd-agent" in result.stdout
 
-    def test_version_flag_not_supported(self):
-        """The top-level parser has no --version flag; it exits non-zero cleanly.
-
-        This pins the current behavior so that *adding* --version support later
-        is a conscious, tested change rather than a silent drift.
-        """
+    def test_version_flag_outputs_release_version(self):
+        """The standard top-level flag reports the packaged release version."""
         result = run_gludd(["--version"], timeout=20)
-        assert result.returncode != 0
-        # argparse emits an error message, never a Python traceback.
+        assert result.returncode == 0, f"stderr: {result.stderr!r}"
+        assert "0.1.0-beta.3" in result.stdout
+        assert "gludd" in result.stdout.lower()
         assert "Traceback (most recent call last)" not in result.stderr
 
 
