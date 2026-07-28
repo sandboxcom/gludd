@@ -58,6 +58,12 @@ class MockDispatcher:
     async def get_active_tasks_for_project(self, project_id):
         return [t for t in self._tasks if t.project_id == project_id]
 
+    async def get_active_tasks_by_agent_name(self, agent_name):
+        return [t for t in self._tasks if t.agent_name == agent_name]
+
+    async def get_active_tasks_by_task_id(self, task_id):
+        return [t for t in self._tasks if t.task_id == task_id]
+
     async def quiesce_project(self, project_id, timeout=30.0):
         self.quiesce_project_calls.append(project_id)
         return []

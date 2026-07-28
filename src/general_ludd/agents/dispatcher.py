@@ -112,6 +112,17 @@ class AgentDispatcher:
         async with self._lock:
             return [t for t in self._active_tasks.values() if t.project_id == project_id]
 
+    async def get_active_tasks_by_agent_name(self, agent_name: str) -> list[AgentTask]:
+        """Return a lock-consistent snapshot of tasks owned by ``agent_name``."""
+        async with self._lock:
+            return [task for task in self._active_tasks.values() if task.agent_name == agent_name]
+
+    async def get_active_tasks_by_task_id(self, task_id: str) -> list[AgentTask]:
+        """Return the active task matching ``task_id``, if one exists."""
+        async with self._lock:
+            task = self._active_tasks.get(task_id)
+            return [task] if task is not None else []
+
     async def _get_semaphore(self, agent_name: str) -> asyncio.BoundedSemaphore:
         async with self._lock:
             if agent_name not in self._semaphores:
