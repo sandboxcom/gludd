@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) Trello E2E leaked the provider noun into Gludd's normalized kind
+
+- **What**: Connector batch 4 stopped because Trello construction and record assertions expected kind `cards`, while the implemented cross-connector contract reports `tasks`.
+- **Root cause**: The broad E2E copied Trello's API resource name into Gludd's normalized taxonomy. Trello calls each board object a card, but describes cards as units that can represent tasks, ideas, and information; Gludd normalizes Trello, Asana, and Monday work items to the stable `tasks` kind while retaining the original card in `raw`.
+- **Fix applied**: The Trello E2E now requires `tasks` at both the source and normalized-record boundaries, matching canonical Trello unit coverage and the connector's documented task-source contract.
+- **Long-lived user evidence**: Trello users have relied on the provider-specific `/boards/{board_id}/cards` resource for more than a decade ([Stack Overflow, 2013](https://stackoverflow.com/questions/17827304/get-list-of-cards-based-on-board-trello-api)); Atlassian's own community learning material explains that a card is the smallest Trello unit and may represent a task, idea, or information ([Atlassian Community](https://community.atlassian.com/learning/lesson/start-navigating-trello)). That distinction is why provider resource names belong in raw data while Gludd's `kind` stays semantic and cross-provider.
+- **Lesson**: Normalized kinds describe equivalent work across providers; provider nouns describe wire resources. E2E tests must preserve that boundary rather than forcing every upstream vocabulary term into the shared envelope.
+
 ### 2026-07-28 — (resolved) Notion E2E treated provider identity as a user alias
 
 - **What**: Connector batch 4 stopped because the Notion construction test expected an arbitrary config `name` to replace the normalized source identity.

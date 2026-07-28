@@ -1230,7 +1230,7 @@ class TestTrelloConnector:
                 "token_env": "TRELLO_TOKEN",
                 "board_id": "board1",
             })
-            assert source.KIND == "cards"
+            assert source.KIND == "tasks"
         finally:
             del os.environ["TRELLO_KEY"], os.environ["TRELLO_TOKEN"]
 
@@ -1290,7 +1290,7 @@ class TestTrelloConnector:
             )
             records = source.query({})
             assert len(records) >= 1
-            assert records[0]["kind"] == "cards"
+            assert records[0]["kind"] == "tasks"
             assert "Fix bug" in str(records[0]["message"])
         finally:
             del os.environ["TK3"], os.environ["TT3"]
