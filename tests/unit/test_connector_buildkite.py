@@ -68,6 +68,38 @@ def test_query_normalizes_builds() -> None:
     assert set(first) == {"ts", "source", "kind", "level_or_status", "message", "value", "labels", "raw"}
 
 
+def test_http_get_compatibility_accepts_decoded_json() -> None:
+    calls: list[tuple[str, dict[str, str]]] = []
+
+    def http_get(url: str, headers: dict[str, str]) -> tuple[int, object]:
+        calls.append((url, headers))
+        return 200, CANNED_BUILDS
+
+    src = BuildkiteSource(_config(), http_get=http_get)
+
+    events = src.query()
+
+    assert len(events) == 2
+    assert events[0]["level_or_status"] == "passed"
+    assert calls == [
+        (
+            "https://api.buildkite.com/v2/organizations/acme/pipelines/api/builds",
+            {"Accept": "application/json"},
+        )
+    ]
+
+
+def test_transport_and_http_get_are_mutually_exclusive() -> None:
+    transport = _FakeTransport(200, b"[]")
+
+    with pytest.raises(ValueError, match=r"transport.*http_get"):
+        BuildkiteSource(
+            _config(),
+            transport=transport,
+            http_get=lambda _url, _headers: (200, []),
+        )
+
+
 def test_query_ts_falls_back_to_created_at() -> None:
     transport = _FakeTransport(200, json.dumps(CANNED_BUILDS).encode())
     src = BuildkiteSource(_config(), transport=transport)
