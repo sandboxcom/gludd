@@ -144,6 +144,32 @@ console.log(JSON.stringify(result ?? null))
 """
 
 
+_RUNTIME_SMOKE_CALL = """(async () => {
+  const hooks = Object.entries(plugin).filter(([, value]) => typeof value === 'function')
+  if (hooks.length === 0) {
+    throw new Error('plugin exposes no callable hooks')
+  }
+  const [hookName, hook] = hooks[0]
+  const input = {
+    tool: 'read',
+    args: {path: 'TASKS.md'},
+    sessionID: 'runtime-smoke',
+    sessionId: 'runtime-smoke',
+    text: 'runtime smoke',
+    messages: [],
+    event: {type: 'runtime-smoke'},
+  }
+  const output = {
+    text: 'runtime smoke',
+    output: {text: 'runtime smoke'},
+    message: {},
+    parts: [],
+  }
+  await hook(input, output)
+  return {loaded: true, hook: hookName}
+})()"""
+
+
 def _clean_state_files(*paths: str):
     """Remove state files before/after tests."""
     for p in paths:
@@ -2880,7 +2906,7 @@ def test_watchdog_plugin_loads_report_alive():
     alive_path = f"/tmp/gludd-test-alive-{os.getpid()}-1.json"
     _clean_state_files(alive_path)
     code = f"""\
-const mod = await import('{WATCHDOG_PATH}')
+const mod = await import('{_OPENCODE_DIR}/plugins/watchdog.ts')
 const plugin = await mod.default({{}})
 const keys = Object.keys(plugin)
 console.log(JSON.stringify({{ ok: true, keys }}))
@@ -3121,6 +3147,182 @@ console.log(JSON.stringify({{
     assert result["repoCommit"] == True
     assert result["empty"] == False
     assert result["noTarget"] == False
+
+
+# ---------------------------------------------------------------------------
+# enforce-anti-essay.ts  —  runtime load + hook invocation
+# ---------------------------------------------------------------------------
+
+
+def test_anti_essay_runtime_smoke():
+    code = _factory_plugin_code("enforce-anti-essay.ts", "first hook", _RUNTIME_SMOKE_CALL)
+    result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+    assert result["loaded"] is True and result["hook"]
+
+
+# ---------------------------------------------------------------------------
+# enforce-audit.ts  —  runtime load + hook invocation
+# ---------------------------------------------------------------------------
+
+
+def test_audit_runtime_smoke():
+    code = _factory_plugin_code("enforce-audit.ts", "first hook", _RUNTIME_SMOKE_CALL)
+    result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+    assert result["loaded"] is True and result["hook"]
+
+
+# ---------------------------------------------------------------------------
+# enforce-batch-push.ts  —  runtime load + hook invocation
+# ---------------------------------------------------------------------------
+
+
+def test_batch_push_runtime_smoke():
+    code = _factory_plugin_code("enforce-batch-push.ts", "first hook", _RUNTIME_SMOKE_CALL)
+    result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+    assert result["loaded"] is True and result["hook"]
+
+
+# ---------------------------------------------------------------------------
+# enforce-branch-discipline.ts  —  runtime load + hook invocation
+# ---------------------------------------------------------------------------
+
+
+def test_branch_discipline_runtime_smoke():
+    code = _factory_plugin_code("enforce-branch-discipline.ts", "first hook", _RUNTIME_SMOKE_CALL)
+    result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+    assert result["loaded"] is True and result["hook"]
+
+
+# ---------------------------------------------------------------------------
+# enforce-context.ts  —  runtime load + hook invocation
+# ---------------------------------------------------------------------------
+
+
+def test_context_runtime_smoke():
+    code = _factory_plugin_code("enforce-context.ts", "first hook", _RUNTIME_SMOKE_CALL)
+    result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+    assert result["loaded"] is True and result["hook"]
+
+
+# ---------------------------------------------------------------------------
+# enforce-deliverable.ts  —  runtime load + hook invocation
+# ---------------------------------------------------------------------------
+
+
+def test_deliverable_runtime_smoke():
+    code = _factory_plugin_code("enforce-deliverable.ts", "first hook", _RUNTIME_SMOKE_CALL)
+    result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+    assert result["loaded"] is True and result["hook"]
+
+
+# ---------------------------------------------------------------------------
+# enforce-depth.ts  —  runtime load + hook invocation
+# ---------------------------------------------------------------------------
+
+
+def test_depth_runtime_smoke():
+    code = _factory_plugin_code("enforce-depth.ts", "first hook", _RUNTIME_SMOKE_CALL)
+    result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+    assert result["loaded"] is True and result["hook"]
+
+
+# ---------------------------------------------------------------------------
+# enforce-floor-v2.ts  —  runtime load + hook invocation
+# ---------------------------------------------------------------------------
+
+
+def test_floor_v2_runtime_smoke():
+    code = _factory_plugin_code("enforce-floor-v2.ts", "first hook", _RUNTIME_SMOKE_CALL)
+    result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+    assert result["loaded"] is True and result["hook"]
+
+
+# ---------------------------------------------------------------------------
+# enforce-no-ci-poll.ts  —  runtime load + hook invocation
+# ---------------------------------------------------------------------------
+
+
+def test_no_ci_poll_runtime_smoke():
+    code = _factory_plugin_code("enforce-no-ci-poll.ts", "first hook", _RUNTIME_SMOKE_CALL)
+    result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+    assert result["loaded"] is True and result["hook"]
+
+
+# ---------------------------------------------------------------------------
+# enforce-no-suppressions.ts  —  runtime load + hook invocation
+# ---------------------------------------------------------------------------
+
+
+def test_no_suppressions_runtime_smoke():
+    code = _factory_plugin_code("enforce-no-suppressions.ts", "first hook", _RUNTIME_SMOKE_CALL)
+    result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+    assert result["loaded"] is True and result["hook"]
+
+
+# ---------------------------------------------------------------------------
+# enforce-objective.ts  —  runtime load + hook invocation
+# ---------------------------------------------------------------------------
+
+
+def test_objective_runtime_smoke():
+    code = _factory_plugin_code("enforce-objective.ts", "first hook", _RUNTIME_SMOKE_CALL)
+    result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+    assert result["loaded"] is True and result["hook"]
+
+
+# ---------------------------------------------------------------------------
+# enforce-release-deadline.ts  —  runtime load + hook invocation
+# ---------------------------------------------------------------------------
+
+
+def test_release_deadline_runtime_smoke():
+    code = _factory_plugin_code("enforce-release-deadline.ts", "first hook", _RUNTIME_SMOKE_CALL)
+    result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+    assert result["loaded"] is True and result["hook"]
+
+
+# ---------------------------------------------------------------------------
+# enforce-task-tracking.ts  —  runtime load + hook invocation
+# ---------------------------------------------------------------------------
+
+
+def test_task_tracking_runtime_smoke():
+    code = _factory_plugin_code("enforce-task-tracking.ts", "first hook", _RUNTIME_SMOKE_CALL)
+    result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+    assert result["loaded"] is True and result["hook"]
+
+
+# ---------------------------------------------------------------------------
+# enforce-tdd.ts  —  runtime load + hook invocation
+# ---------------------------------------------------------------------------
+
+
+def test_tdd_runtime_smoke():
+    code = _factory_plugin_code("enforce-tdd.ts", "first hook", _RUNTIME_SMOKE_CALL)
+    result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+    assert result["loaded"] is True and result["hook"]
+
+
+# ---------------------------------------------------------------------------
+# enforce-test-integrity.ts  —  runtime load + hook invocation
+# ---------------------------------------------------------------------------
+
+
+def test_test_integrity_runtime_smoke():
+    code = _factory_plugin_code("enforce-test-integrity.ts", "first hook", _RUNTIME_SMOKE_CALL)
+    result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+    assert result["loaded"] is True and result["hook"]
+
+
+# ---------------------------------------------------------------------------
+# enforce-worktree.ts  —  runtime load + hook invocation
+# ---------------------------------------------------------------------------
+
+
+def test_worktree_runtime_smoke():
+    code = _factory_plugin_code("enforce-worktree.ts", "first hook", _RUNTIME_SMOKE_CALL)
+    result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+    assert result["loaded"] is True and result["hook"]
 
 
 # ---------------------------------------------------------------------------
