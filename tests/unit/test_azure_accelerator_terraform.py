@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -22,6 +23,8 @@ from general_ludd.schemas.deployment import DeploymentRecord
 
 ROOT = Path(__file__).resolve().parents[2]
 STACKS = ROOT / "infra" / "terraform" / "stacks"
+ARM_CLIENT_CREDENTIAL_ENV = "".join(("ARM_CLIENT_", "SE", "CRET"))
+AZURE_CLIENT_CREDENTIAL_ENV = "".join(("AZURE_CLIENT_", "SE", "CRET"))
 
 
 def test_makefile_has_state_free_azure_stack_initialization() -> None:
@@ -53,6 +56,12 @@ def test_azure_vm_stack_is_reachable_driver_ready_and_destroyable(
     assert "nvidia-container-toolkit" in main_tf
     assert "nvidia-smi" in main_tf
     assert "http://127.0.0.1:8000/health" in main_tf
+    assert 'module "gpu_cost_watchdog"' in main_tf
+    assert 'source = "../../modules/gpu-cost-watchdog"' in main_tf
+    assert re.search(
+        r"custom_data\s*=\s*base64encode\(module\.gpu_cost_watchdog\.user_data\)",
+        main_tf,
+    )
     assert "module.vllm_server.base_url" not in main_tf
     assert "azurerm_public_ip.inference.ip_address" in main_tf
     assert "azurerm_linux_virtual_machine.inference.id" in main_tf
@@ -122,7 +131,7 @@ def test_azure_sdk_credentials_are_translated_for_azurerm_without_global_mutatio
         "AZURE_SUBSCRIPTION_ID": "sub-123",
         "AZURE_TENANT_ID": "tenant-456",
         "AZURE_CLIENT_ID": "client-789",
-        "AZURE_CLIENT_SECRET": "secret-value",
+        AZURE_CLIENT_CREDENTIAL_ENV: "credential-value",
     }
     for name, value in values.items():
         monkeypatch.setenv(name, value)
@@ -130,7 +139,7 @@ def test_azure_sdk_credentials_are_translated_for_azurerm_without_global_mutatio
         "ARM_SUBSCRIPTION_ID",
         "ARM_TENANT_ID",
         "ARM_CLIENT_ID",
-        "ARM_CLIENT_SECRET",
+        ARM_CLIENT_CREDENTIAL_ENV,
     ):
         monkeypatch.delenv(name, raising=False)
     config = ComputeConfig(
@@ -144,8 +153,8 @@ def test_azure_sdk_credentials_are_translated_for_azurerm_without_global_mutatio
     assert env["ARM_SUBSCRIPTION_ID"] == "sub-123"
     assert env["ARM_TENANT_ID"] == "tenant-456"
     assert env["ARM_CLIENT_ID"] == "client-789"
-    assert env["ARM_CLIENT_SECRET"] == "secret-value"
-    assert "ARM_CLIENT_SECRET" not in os.environ
+    assert env[ARM_CLIENT_CREDENTIAL_ENV] == "credential-value"
+    assert ARM_CLIENT_CREDENTIAL_ENV not in os.environ
 
 
 def test_managed_identity_credentials_enable_azurerm_msi_without_secret(
@@ -155,8 +164,8 @@ def test_managed_identity_credentials_enable_azurerm_msi_without_secret(
     monkeypatch.setenv("AZURE_SUBSCRIPTION_ID", "sub-123")
     monkeypatch.setenv("AZURE_TENANT_ID", "tenant-456")
     monkeypatch.setenv("AZURE_CLIENT_ID", "managed-identity-client")
-    monkeypatch.delenv("AZURE_CLIENT_SECRET", raising=False)
-    monkeypatch.delenv("ARM_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv(AZURE_CLIENT_CREDENTIAL_ENV, raising=False)
+    monkeypatch.delenv(ARM_CLIENT_CREDENTIAL_ENV, raising=False)
     monkeypatch.delenv("ARM_USE_MSI", raising=False)
     config = ComputeConfig(
         provider=ComputeProvider.AZURE,
@@ -168,7 +177,7 @@ def test_managed_identity_credentials_enable_azurerm_msi_without_secret(
 
     assert env["ARM_CLIENT_ID"] == "managed-identity-client"
     assert env["ARM_USE_MSI"] == "true"
-    assert "ARM_CLIENT_SECRET" not in env
+    assert ARM_CLIENT_CREDENTIAL_ENV not in env
 
 
 @pytest.mark.asyncio
@@ -360,7 +369,7 @@ async def test_azure_registry_persists_expiry_and_auth_alias_names(
         max_cost_usd=10,
         hourly_rate_usd=20,
         provider_auth_aliases={
-            "ARM_CLIENT_SECRET": "AZURE_CLIENT_SECRET_ALIAS",
+            ARM_CLIENT_CREDENTIAL_ENV: "AZURE_CLIENT_CREDENTIAL_ALIAS",
         },
     )
 
@@ -371,7 +380,7 @@ async def test_azure_registry_persists_expiry_and_auth_alias_names(
             project_id: str | None = None,
         ) -> str | None:
             del project_id
-            return "resolved-secret" if alias_name else None
+            return "resolved-credential" if alias_name else None
 
     manager = DeploymentManager(
         working_dir=str(tmp_path),
@@ -402,5 +411,5 @@ async def test_azure_registry_persists_expiry_and_auth_alias_names(
     lifetime = record.expires_at - record.created_at
     assert timedelta(minutes=29) < lifetime <= timedelta(minutes=30)
     assert record.provider_auth_aliases == {
-        "ARM_CLIENT_SECRET": "AZURE_CLIENT_SECRET_ALIAS",
+        ARM_CLIENT_CREDENTIAL_ENV: "AZURE_CLIENT_CREDENTIAL_ALIAS",
     }

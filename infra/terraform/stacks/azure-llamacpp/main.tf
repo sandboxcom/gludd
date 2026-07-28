@@ -13,6 +13,15 @@ provider "azurerm" {
   features {}
 }
 
+module "gpu_cost_watchdog" {
+  source = "../../modules/gpu-cost-watchdog"
+
+  max_cost_usd    = var.max_cost_usd
+  timeout_minutes = var.timeout_minutes
+  region          = var.region
+  cloud           = "azure"
+}
+
 module "vllm_server" {
   source = "../../modules/llamacpp-server"
 
@@ -234,6 +243,7 @@ resource "azurerm_linux_virtual_machine" "inference" {
   priority              = var.use_spot ? "Spot" : "Regular"
   eviction_policy       = var.use_spot ? "Delete" : null
   max_bid_price         = var.use_spot ? -1 : null
+  custom_data           = base64encode(module.gpu_cost_watchdog.user_data)
   tags                  = local.common_tags
 
   admin_ssh_key {

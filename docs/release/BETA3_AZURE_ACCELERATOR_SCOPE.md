@@ -232,6 +232,20 @@ retries failed cleanup on later ticks. When `hourly_rate_usd` is supplied,
 the expiry is shortened to the earlier of the requested lifetime or
 `max_cost_usd / hourly_rate_usd`.
 
+Both Azure VM stacks also compose the existing `gpu-cost-watchdog` module into
+the VM's cloud-init `custom_data`. That installs and starts the on-host
+cost/TTL service at first boot using the same `max_cost_usd`,
+`timeout_minutes`, and region inputs as the deployment registry. The on-host
+watchdog is a fast safety layer; the registry reaper's Terraform destroy
+remains the authoritative cleanup because merely powering off a VM can leave it
+allocated and billable, while even a deallocated VM retains chargeable disks
+and related resources. Those recurring operator surprises are documented in
+[Microsoft Q&A: VM not shutting down properly](https://learn.microsoft.com/en-us/answers/questions/1521795/issue-with-azure-vm-not-shutting-down-properly)
+and the user report
+[stopped VMs still charging for disks months later](https://learn.microsoft.com/en-us/answers/questions/2157013/i-stopped-two-vms-on-azure-and-didnt-realize-until).
+Gludd therefore tests the in-VM watchdog wiring and retains full resource-group
+destroy as the money-leak boundary.
+
 This prevents a failed replacement from displacing a healthy registered
 endpoint, but it is not a claim that Azure guarantees capacity or that an
 evicted Spot VM has uninterrupted service.
