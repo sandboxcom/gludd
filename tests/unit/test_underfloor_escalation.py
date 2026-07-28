@@ -54,7 +54,8 @@ class TestUnderFloorCounterIncrement:
     def test_increment_in_handle_message_boundary(self):
         src = _src()
         m = re.search(
-            r"function\s+handleMessageBoundary\(.*?\).*?\{([^}]+?)\}",
+            r"function\s+handleMessageBoundary\(.*?\).*?\{(.*?)"
+            r"\n\}\nfunction\s+spawnGateRefresh",
             src,
             re.DOTALL,
         )
@@ -110,12 +111,13 @@ class TestUnderFloorEscalationWarning:
         """The THIN WAVE BLOCKED path must include escalation when underFloorCount >= 3."""
         src = _src()
         m = re.search(
-            r"THIN WAVE BLOCKED.*?handleMessageBoundary",
+            r"if\s*\(_state\.thisMessageDispatches\s*>\s*0.*?"
+            r"THIN WAVE BLOCKED.*?\n\s*}\n\s*handleMessageBoundary",
             src,
             re.DOTALL,
         )
-        assert m, "THIN WAVE BLOCKED + handleMessageBoundary not found together"
-        block_region = src[m.start():m.start() + 1500]
+        assert m, "THIN WAVE BLOCKED branch not found"
+        block_region = m.group(0)
         assert "underFloorCount" in block_region, (
             "Escalation must be checked in THIN WAVE BLOCKED path"
         )
