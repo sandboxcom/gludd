@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) immutable path-entry E2E expected the wrong exception contract
+
+- **What**: The complete serial E2E run stopped after 846 passes because an immutability test expected a generic `ValueError` when assigning to a frozen `CollectionsPathEntry`; the object correctly raised `dataclasses.FrozenInstanceError`.
+- **Root cause**: The broad E2E duplicated the canonical unit contract with the wrong exception type. `FrozenInstanceError` is Python's explicit immutable-dataclass assignment signal and the focused Ansible path suite already asserted it.
+- **Fix applied**: The E2E now requires the precise `FrozenInstanceError`, preserving production immutability and matching the canonical unit test instead of weakening the implementation.
+- **Long-lived user evidence**: Python users testing frozen dataclasses confirm that assignment raises `FrozenInstanceError` and recommend asserting the exact exception when that distinction matters ([Stack Overflow discussion](https://stackoverflow.com/questions/56362040/python-dataclasses-frozeninstanceerror-a-subclass-of-attributeerror/56369405)).
+- **Lesson**: Duplicated E2E contracts must assert domain-specific failure types consistently; a test expecting an unrelated exception is not evidence that correct production behavior should change.
+
 ### 2026-07-28 — (resolved) consolidation test contradicted the documented smoke entry point
 
 - **What**: Focused CLI validation found a unit assertion demanding removal of top-level `gludd smoke`, while the parser, provider Make harness, workflow guide, and smoke-test guide all intentionally expose that spelling alongside `gludd test smoke`.
