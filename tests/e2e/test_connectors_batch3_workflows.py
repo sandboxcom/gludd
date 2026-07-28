@@ -1158,20 +1158,23 @@ class TestCassandraStatsConnector:
         cursor = MockDbCursor([])
         src = CassandraStatsSource(cursor=cursor)  # type: ignore[arg-type]
         result = src.health()
-        assert isinstance(result, dict)
+        assert result["ok"] is True
 
     def test_query_returns_records(self):
         from general_ludd.connectors.cassandra_stats import CassandraStatsSource
 
         cursor = MockDbCursor(
             [
-                {"name": "ReadLatency", "value": 1.5},
-                {"name": "WriteLatency", "value": 2.0},
+                {"metric": "ReadLatency", "value": 1.5},
+                {"metric": "WriteLatency", "value": 2.0},
             ]
         )
         src = CassandraStatsSource(cursor=cursor)  # type: ignore[arg-type]
         records = src.query()
-        assert isinstance(records, list)
+        assert len(records) == 2
+        assert records[0]["message"] == "ReadLatency"
+        assert records[0]["value"] == 1.5
+        assert records[0]["labels"]["command"] == "compactionstats"
 
 
 class TestClickhouseStatsConnector:

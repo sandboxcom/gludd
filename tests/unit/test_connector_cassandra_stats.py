@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+import pytest
+
 from general_ludd.connectors.cassandra_stats import (
     CassandraRow,
     CassandraStatsSource,
@@ -113,6 +115,31 @@ class TestCassandraStatsSource:
     def test_constructs_with_custom_name(self):
         src = CassandraStatsSource({"name": "my-cass"})
         assert src.name == "my-cass"
+
+    def test_adapts_iterable_database_cursor(self):
+        class Cursor:
+            def __init__(self) -> None:
+                self.calls: list[str] = []
+
+            def execute(self, command: str) -> None:
+                self.calls.append(command)
+
+            def __iter__(self):
+                return iter([{"metric": "read_latency", "value": 1.5}])
+
+        cursor = Cursor()
+        src = CassandraStatsSource(cursor=cursor)
+
+        records = src.query()
+
+        assert cursor.calls == ["compactionstats", "tablestats", "tpstats"]
+        assert len(records) == 3
+        assert records[0]["message"] == "read_latency"
+        assert records[0]["value"] == 1.5
+
+    def test_rejects_executor_and_cursor_together(self):
+        with pytest.raises(ValueError, match="executor or cursor"):
+            CassandraStatsSource(executor=self._make_rows([]), cursor=object())
 
     def test_health_ok_when_executor_works(self):
         rows: list[CassandraRow] = [{"metric": "tpstats_active", "value": 5}]
