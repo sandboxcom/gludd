@@ -23,7 +23,7 @@ _IMPL = ROOT / ".opencode" / "plugin" / "impl" / "enforce_stop_impl.ts"
 
 def _src() -> str:
     """Read plugin source including impl file if it exists."""
-    s = _src()
+    s = PLUGIN.read_text()
     if _IMPL.exists():
         s += "\n" + _IMPL.read_text()
     return s
