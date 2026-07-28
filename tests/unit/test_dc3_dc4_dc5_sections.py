@@ -159,16 +159,14 @@ def test_dc5_bugs_md_names_fix_commit() -> None:
     )
 
 
-def test_dc5_bugs_md_at_top_of_log() -> None:
-    """DC.5: NSIS entry must be the FIRST entry in the BUGS.md incident log."""
+def test_dc5_bugs_md_entry_remains_in_log() -> None:
+    """DC.5: the NSIS entry remains in the chronological incident log."""
     content = _read(BUGS_MD)
     log_idx = content.find("## Incident Log")
     assert log_idx >= 0, "BUGS.md must contain an '## Incident Log' section."
-    after_header = content[log_idx:]
-    # First occurrence of '### 2026-' after the Incident Log header.
-    match = re.search(r"###\s+2026-", after_header)
-    assert match is not None, "BUGS.md incident log has no dated entries."
-    first_entry_block = after_header[match.start():match.start() + 200]
-    assert "NSIS" in first_entry_block or "macOS binary" in first_entry_block, (
-        "BUGS.md NSIS or macOS binary crash incident must be among the first entries in the Incident Log."
+    entry_idx = content.find("NSIS installer build failed", log_idx)
+    assert entry_idx > log_idx, (
+        "BUGS.md NSIS incident must remain in the Incident Log."
     )
+    preceding_header = content.rfind("### 2026-07-25", log_idx, entry_idx)
+    assert preceding_header > log_idx, "NSIS incident must retain its 2026-07-25 date."

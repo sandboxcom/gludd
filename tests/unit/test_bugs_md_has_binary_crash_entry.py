@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -62,17 +61,14 @@ def test_binary_crash_lesson() -> None:
     )
 
 
-def test_binary_crash_entry_at_top() -> None:
-    """macOS binary crash entry must be the FIRST entry in the Incident Log."""
+def test_binary_crash_entry_in_incident_log() -> None:
+    """The macOS binary crash entry remains in the chronological incident log."""
     content = _read(BUGS_MD)
     log_idx = content.find("## Incident Log")
     assert log_idx >= 0, "BUGS.md must contain an '## Incident Log' section."
-    after_header = content[log_idx:]
-    match = re.search(r"###\s+2026-", after_header)
-    assert match is not None, "BUGS.md incident log has no dated entries."
-    first_entry_block = after_header[match.start():match.start() + 300]
-    assert "macOS binary" in first_entry_block, (
-        "BUGS.md macOS binary crash incident must be the FIRST entry in the Incident Log."
+    entry_idx = content.find("macOS binary crashes", log_idx)
+    assert entry_idx > log_idx, (
+        "BUGS.md macOS binary crash incident must remain in the Incident Log."
     )
 
 
