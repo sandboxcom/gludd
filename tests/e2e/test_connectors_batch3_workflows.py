@@ -1047,7 +1047,7 @@ class TestTempoConnector:
         transport = MockHttpTransport(default_status=200, default_body={"traces": []})
         src = TempoSource({"base_url": "https://tempo.example.com/"}, transport=cast(Any, transport))
         result = src.health()
-        assert isinstance(result, dict)
+        assert result["ok"] is True
 
     def test_query_returns_records(self):
         from general_ludd.connectors.tempo import TempoSource
@@ -1058,19 +1058,20 @@ class TestTempoConnector:
                 "traces": [
                     {
                         "traceID": "t1",
-                        "batches": [
-                            {
-                                "resource": {"service.name": "api"},
-                                "spans": [{"spanID": "s1", "name": "get"}],
-                            }
-                        ],
+                        "rootServiceName": "api",
+                        "rootTraceName": "GET /orders",
+                        "durationMs": 42,
+                        "startTimeUnixNano": "1700000000000000000",
                     }
                 ]
             },
         )
         src = TempoSource({"base_url": "https://tempo.example.com/"}, transport=cast(Any, transport))
         records = src.query({})
-        assert isinstance(records, list)
+        assert len(records) == 1
+        assert records[0]["message"] == "GET /orders"
+        assert records[0]["value"] == 42
+        assert records[0]["labels"]["service"] == "api"
 
 
 # ============================================================================
