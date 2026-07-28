@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) synchronous Alembic stamp received an async SQLite driver
+
+- **What**: The full serial E2E suite reached database bootstrap and `stamp_head()` raised SQLAlchemy `MissingGreenlet`. The application supplied `sqlite+aiosqlite://`, while the bundled Alembic environment constructs a synchronous engine and attempted asynchronous driver I/O without SQLAlchemy's async bridge.
+- **Root cause**: Application and migration connection URLs were treated as interchangeable even though `alembic/env.py` deliberately uses synchronous `engine_from_config`. The failure had been hidden because the narrow gate mocked `command.stamp` and did not execute it against the async application URL.
+- **Fix applied**: `stamp_head()` now maps only `sqlite+aiosqlite:` to the equivalent synchronous `sqlite:` URL for the duration of the Alembic command, restores the caller's async configuration in a `finally` block, and leaves every other dialect unchanged. Unit tests pin both success and failure restoration, and the real empty-database stamp E2E now passes.
+- **Long-lived user evidence**: Alembic documents that it has no direct async API and requires either an async-aware environment or an explicit `run_sync` bridge ([Alembic asyncio cookbook](https://alembic.sqlalchemy.org/en/latest/cookbook.html#using-asyncio-with-alembic)). Users have continued to encounter programmatic `command.stamp()` failures inside running event loops, including a 2024 discussion where maintainers emphasized that stamping performs database I/O and must cross a sync/async boundary explicitly ([Alembic discussion #1515](https://github.com/sqlalchemy/alembic/discussions/1515)); Apple Silicon users have also reported migration-time greenlet failures since 2022 ([SQLAlchemy issue #7714](https://github.com/sqlalchemy/sqlalchemy/issues/7714)).
+- **Lesson**: A synchronous migration environment must never receive an async DBAPI URL. Database bootstrap E2E must execute the real Alembic command against the application's configured URL, and temporary adapter changes must be restored even when migration I/O fails.
+
 ### 2026-07-28 — (resolved) Ingest-format E2E invented generic content detection
 
 - **What**: Connector batch 5 reached ingest-format parsing and imported a nonexistent private `_detect_format` helper, then expected it to classify arbitrary JSON, plain text, and CSV. The module instead exposes three public, protocol-specific parsers for Fluent Forward, decoded Beats/Lumberjack events, and GELF.
