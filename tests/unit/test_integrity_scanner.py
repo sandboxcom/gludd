@@ -281,3 +281,132 @@ class TestSignVerify:
         monkeypatch.delenv("GL_INTEGRITY_KEY", raising=False)
         with pytest.raises(IntegrityKeyError):
             sign_change_openbao(path="/tmp/x", signer="s", reason="r")
+
+
+# ---------------------------------------------------------------------------
+# C-INTEGRITY: pipe-join field-boundary-shift forgery
+# ---------------------------------------------------------------------------
+class TestPipeCollisionForgery:
+    """The four sign/verify functions used ``"|".join(...)`` without escaping,
+    length-prefix, or scheme tags, so an attacker can shift field boundaries
+    (e.g. ``file_path="config", change_type="app|modified"`` vs
+    ``file_path="config|app", change_type="modified"`` produce identical HMAC
+    payloads).  These tests prove the collision EXISTS before the fix and is
+    ELIMINATED after it."""
+
+    def _setup_key(self, monkeypatch):
+        monkeypatch.setenv("GL_INTEGRITY_KEY", "forgery-test-key")
+
+    def test_sign_change_pipe_collision_no_longer_forges(self, monkeypatch):
+        """After the JSON fix two different field arrangements must NOT produce
+        the same HMAC signature."""
+        self._setup_key(monkeypatch)
+        c1 = ChangeRecord(
+            file_path="config",
+            change_type="app|modified",
+            old_hash="aaa",
+            new_hash="bbb",
+            detected_at="2026-01-01T00:00:00",
+        )
+        c2 = ChangeRecord(
+            file_path="config|app",
+            change_type="modified",
+            old_hash="aaa",
+            new_hash="bbb",
+            detected_at="2026-01-01T00:00:00",
+        )
+        s1 = sign_change(c1, reason="ok", signer="admin")
+        s2 = sign_change(c2, reason="ok", signer="admin")
+        assert s1["signature"] != s2["signature"], (
+            "Pipe-join collision: different field arrangements produced identical HMAC — the fix is not active"
+        )
+
+    def test_pipe_collision_reproduces_identical_hmac(self, monkeypatch):
+        """Document the bug: under raw pipe-join, the two arrangements ARE
+        identical because serialization discards field boundaries."""
+        self._setup_key(monkeypatch)
+        parts_a = ["config", "app|modified", "aaa", "bbb", "2026-01-01T00:00:00"]
+        parts_b = ["config|app", "modified", "aaa", "bbb", "2026-01-01T00:00:00"]
+        joined_a = "|".join(parts_a)
+        joined_b = "|".join(parts_b)
+        assert joined_a == joined_b, (
+            "Sanity check: pipe-join on these inputs should produce identical payloads — the collision is real"
+        )
+
+    def test_openbao_pipe_collision_no_longer_forges(self, monkeypatch):
+        """After the fix, sign_change_openbao must use distinct JSON payloads
+        for different field arrangements."""
+        self._setup_key(monkeypatch)
+        s1 = sign_change_openbao(
+            path="a|b",
+            signer="c",
+            reason="approved",
+            old_hash="old",
+            new_hash="new",
+        )
+        s2 = sign_change_openbao(
+            path="a",
+            signer="b|c",
+            reason="approved",
+            old_hash="old",
+            new_hash="new",
+        )
+        assert s1["signature"] != s2["signature"], (
+            "OpenBao pipe-join collision: different field arrangements produced identical HMAC — the fix is not active"
+        )
+
+    def test_scheme_tag_blocks_cross_scheme_replay(self, monkeypatch):
+        """A signature produced by sign_change MUST NOT verify under
+        verify_openbao_signature (and vice-versa), because each scheme now
+        tags its payload with a distinct scheme identifier."""
+        self._setup_key(monkeypatch)
+        change = ChangeRecord(
+            file_path="/tmp/x",
+            change_type="modified",
+            old_hash="aaa",
+            new_hash="bbb",
+            detected_at="2026-01-01T00:00:00",
+        )
+        signed = sign_change(change, reason="ok", signer="admin")
+        assert signed["signature"]
+        # sign_change → verify_openbao_signature must be rejected
+        assert verify_openbao_signature(signed) is False, (
+            "Cross-scheme replay: sign_change sig verified by verify_openbao_signature"
+        )
+        # sign_change_openbao → verify_signature must be rejected
+        openbao_signed = sign_change_openbao(
+            path="/tmp/x",
+            signer="admin",
+            reason="ok",
+            old_hash="aaa",
+            new_hash="new",
+        )
+        assert openbao_signed["signature"]
+        assert verify_signature(openbao_signed) is False, (
+            "Cross-scheme replay: sign_change_openbao sig verified by verify_signature"
+        )
+
+    def test_verify_signature_roundtrip_still_works(self, monkeypatch):
+        """Sanity: the fix must not break self-consistent round-trips."""
+        self._setup_key(monkeypatch)
+        change = ChangeRecord(
+            file_path="/tmp/x",
+            change_type="modified",
+            old_hash="aaa",
+            new_hash="bbb",
+            detected_at="2026-01-01T00:00:00",
+        )
+        signed = sign_change(change, reason="ok", signer="admin")
+        assert verify_signature(signed) is True
+
+    def test_verify_openbao_signature_roundtrip_still_works(self, monkeypatch):
+        """Sanity: the fix must not break self-consistent round-trips."""
+        self._setup_key(monkeypatch)
+        signed = sign_change_openbao(
+            path="/tmp/x",
+            signer="admin",
+            reason="approved",
+            old_hash="old",
+            new_hash="new",
+        )
+        assert verify_openbao_signature(signed) is True

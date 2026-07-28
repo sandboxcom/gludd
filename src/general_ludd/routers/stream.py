@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 import subprocess
 import uuid
@@ -131,8 +132,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 raise HTTPException(
                     status_code=422,
                     detail=(
-                        f"processor.tool {tool!r} not supported; expected one of "
-                        f"{sorted(SUPPORTED_PROCESSOR_TOOLS)}"
+                        f"processor.tool {tool!r} not supported; expected one of {sorted(SUPPORTED_PROCESSOR_TOOLS)}"
                     ),
                 )
             if tool in {"whisper.cpp", "ffmpeg"}:
@@ -140,10 +140,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 if not _SAFE_BINARY_RE.match(str(binary)):
                     raise HTTPException(
                         status_code=422,
-                        detail=(
-                            f"processor.binary {binary!r} contains unsafe characters; "
-                            f"expected [a-zA-Z0-9_./-]+"
-                        ),
+                        detail=(f"processor.binary {binary!r} contains unsafe characters; expected [a-zA-Z0-9_./-]+"),
                     )
                 extra_args = req.processor.get("args", "")
                 try:
@@ -159,9 +156,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             cloner.materialize_processor(clone_path, processor=dict(req.processor))
 
         if not req.wait_for_completion:
-            return await _enqueue_clone(
-                app, task_id, req, clone_path
-            )
+            return await _enqueue_clone(app, task_id, req, clone_path)
         return await _run_clone_sync(task_id, req, clone_path)
 
     async def _enqueue_clone(
@@ -175,8 +170,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         if factory is None:
             # Degraded (no DB) — still report the clone so a caller can run it.
             logger.warning(
-                "stream/dispatch: no session_factory; returning queued clone "
-                "without DB persistence (task_id=%s)",
+                "stream/dispatch: no session_factory; returning queued clone without DB persistence (task_id=%s)",
                 task_id,
             )
             return {
@@ -189,10 +183,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         todo_data: dict[str, object] = {
             "todo_id": task_id,
             "title": f"stream_chunk:{req.role}:{task_id}",
-            "description": (
-                f"Server-side stream dispatch for role {req.role!r} "
-                f"(clone_path={clone_path})"
-            ),
+            "description": (f"Server-side stream dispatch for role {req.role!r} (clone_path={clone_path})"),
             "queue": "core",
             "priority": req.priority,
             "work_type": req.work_type,
@@ -225,9 +216,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
         args = ["ansible-playbook", "run-clone.yml"]
         try:
-            proc = await asyncio.to_thread(
-                _run_subprocess, args, str(clone_path), timeout
-            )
+            proc = await asyncio.to_thread(_run_subprocess, args, str(clone_path), timeout)
             try:
                 stdout, stderr = await asyncio.to_thread(proc.communicate, timeout=timeout)
             except Exception as exc:
@@ -239,13 +228,14 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             if proc.returncode != 0:
                 logger.warning(
                     "stream clone %s exited rc=%s stderr=%s",
-                    task_id, proc.returncode, stderr.decode(errors="replace")[:500],
+                    task_id,
+                    proc.returncode,
+                    stderr.decode(errors="replace")[:500],
                 )
                 raise HTTPException(
                     status_code=502,
                     detail=(
-                        f"stream clone execution failed (rc={proc.returncode}): "
-                        f"{stderr.decode(errors='replace')[:300]}"
+                        f"stream clone execution failed (rc={proc.returncode}): {stderr.decode(errors='replace')[:300]}"
                     ),
                 )
         except FileNotFoundError as exc:

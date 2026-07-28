@@ -6,9 +6,12 @@ registry, public API surface, and cross-process safety on POSIX.
 
 from __future__ import annotations
 
+import multiprocessing
 import os
+import subprocess
 import tempfile
 import threading
+import time
 from unittest.mock import patch
 
 import pytest
@@ -89,9 +92,11 @@ class TestBreakIfStale:
 
 class TestFileLock:
     def test_yields_on_non_posix(self) -> None:
-        with patch.object(locking, "_HAVE_FCNTL", False), \
-                tempfile.TemporaryDirectory() as tmpdir, \
-                locking._file_lock(tmpdir, "key", timeout=1.0, stale_after=60.0):
+        with (
+            patch.object(locking, "_HAVE_FCNTL", False),
+            tempfile.TemporaryDirectory() as tmpdir,
+            locking._file_lock(tmpdir, "key", timeout=1.0, stale_after=60.0),
+        ):
             assert True
 
     def test_reentrant_nested_acquire_skips_reflock(self) -> None:
@@ -107,8 +112,10 @@ class TestFileLock:
     def test_missing_git_dir_during_open_uses_inprocess_only(self) -> None:
         key = "missing-during-open"
         locking._file_lock_depth.pop(key, None)
-        with patch.object(locking.os, "open", side_effect=FileNotFoundError), \
-                locking._file_lock("/tmp/gludd-missing-git-dir", key, timeout=1.0, stale_after=60.0):
+        with (
+            patch.object(locking.os, "open", side_effect=FileNotFoundError),
+            locking._file_lock("/tmp/gludd-missing-git-dir", key, timeout=1.0, stale_after=60.0),
+        ):
             assert locking._file_lock_depth.get(key, 0) == 0
 
     def test_times_out_on_contended_lock(self) -> None:
@@ -127,8 +134,10 @@ class TestFileLock:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 key = "timeout-test"
                 locking._file_lock_depth.pop(key, None)
-                with pytest.raises(TimeoutError, match="timed out"), \
-                        locking._file_lock(git_dir, key, timeout=0.1, stale_after=300.0):
+                with (
+                    pytest.raises(TimeoutError, match="timed out"),
+                    locking._file_lock(git_dir, key, timeout=0.1, stale_after=300.0),
+                ):
                     pass
             finally:
                 with locking.contextlib.suppress(OSError):
@@ -152,8 +161,8 @@ class TestGitRepoLock:
 
     def test_no_dot_git_directory_uses_inprocess_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, locking.git_repo_lock(tmpdir, timeout=1.0, stale_after=60.0):
-                key = locking._normalize(tmpdir)
-                assert key in locking._repo_locks
+            key = locking._normalize(tmpdir)
+            assert key in locking._repo_locks
 
 
 class TestAsyncGitRepoLock:

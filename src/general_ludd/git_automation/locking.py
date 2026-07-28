@@ -45,6 +45,7 @@ import contextlib
 import errno
 import logging
 import os
+import subprocess
 import threading
 import time
 from collections.abc import Iterator
@@ -121,14 +122,39 @@ except ImportError:  # pragma: no cover - non-POSIX fallback
 def _git_dir(repo_path: str) -> str | None:
     """Return the ``.git`` directory for ``repo_path`` if one exists.
 
-    Only returns a directory we can place a lock file in. If there is no
-    ``.git`` directory (not yet initialized, or a bare/worktree gitfile we do
-    not want to special-case), returns ``None`` and the caller falls back to the
-    in-process lock alone — the common in-daemon race is still serialized.
+    When ``repo_path`` is the root of a regular checkout, returns ``<repo>/.git``
+    (a directory). When ``repo_path`` is inside a git worktree, ``.git`` is a
+    FILE containing ``gitdir: <path>`` — in that case we shell out to
+    ``git rev-parse --git-common-dir`` (via bare ``subprocess.run``, NOT through
+    ``_run_git`` in ``repo.py`` which takes ``git_repo_lock`` and would recurse)
+    to resolve the shared ``.git`` directory so the cross-process lock file lands
+    there and is shared by all worktrees.
+
+    If no ``.git`` exists yet (uninitialised) or the rev-parse fails, returns
+    ``None`` and the caller falls back to the in-process lock alone.
     """
     git_dir = os.path.join(repo_path, ".git")
     if os.path.isdir(git_dir):
         return git_dir
+    if os.path.isfile(git_dir):
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "--git-common-dir"],
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                common_dir = result.stdout.strip()
+                common_dir = os.path.realpath(os.path.join(repo_path, common_dir))
+                if os.path.isdir(common_dir):
+                    return common_dir
+        except (OSError, subprocess.TimeoutExpired):
+            logger.debug(
+                "git rev-parse --git-common-dir failed for %s; cross-process lock will not be available",
+                repo_path,
+            )
     return None
 
 
@@ -148,8 +174,7 @@ def _break_if_stale(lock_path: str, stale_after: float) -> None:
     age = time.time() - mtime
     if age > stale_after:
         logger.warning(
-            "breaking stale git lock %s (age %.0fs > %.0fs); previous holder "
-            "presumed crashed",
+            "breaking stale git lock %s (age %.0fs > %.0fs); previous holder presumed crashed",
             lock_path,
             age,
             stale_after,
@@ -272,11 +297,14 @@ def git_repo_lock(
     Raises ``TimeoutError`` if the cross-process lock cannot be acquired within
     ``timeout`` seconds.
     """
-    key = _normalize(repo_path)
+    git_dir = _git_dir(repo_path)
+    if git_dir is not None:
+        key = _normalize(git_dir)
+    else:
+        key = _normalize(repo_path)
     inproc = _get_inprocess_lock(key)
     inproc.acquire()
     try:
-        git_dir = _git_dir(repo_path)
         if git_dir is None:
             # No .git directory to anchor a cross-process lock; the in-process
             # lock alone still serializes the in-daemon race (the common case).

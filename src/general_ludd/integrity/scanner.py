@@ -172,9 +172,7 @@ class FileIntegrityScanner:
         """Persist the versioned MAC sidecar and the signed high-water-mark."""
         mac = self._store_mac_versioned(serialized, counter, key)
         self._mac_path.write_text(json.dumps({"mac": mac, "counter": counter}))
-        self._hwm_path.write_text(
-            json.dumps({"hwm": counter, "mac": self._hwm_mac(counter, key)})
-        )
+        self._hwm_path.write_text(json.dumps({"hwm": counter, "mac": self._hwm_mac(counter, key)}))
 
     def _read_current_counter_best_effort(self, key: str) -> int:
         """Counter recorded in the on-disk MAC sidecar, or 0 if absent/legacy.
@@ -276,8 +274,7 @@ class FileIntegrityScanner:
             ) from exc
         if not isinstance(data, dict):
             raise IntegrityStoreError(
-                f"integrity hash store has an unexpected shape ({self._store}); "
-                "expected a JSON object of path->hash"
+                f"integrity hash store has an unexpected shape ({self._store}); expected a JSON object of path->hash"
             )
         return {str(k): str(v) for k, v in data.items()}
 
@@ -407,9 +404,7 @@ class FileIntegrityScanner:
         _INTEGRITY_KEY = None
         key = _get_integrity_key()  # rebaseline requires a key; fail closed if unset
         if not self._store.exists():
-            raise IntegrityStoreError(
-                f"cannot rebaseline: no integrity hash store on disk ({self._store})"
-            )
+            raise IntegrityStoreError(f"cannot rebaseline: no integrity hash store on disk ({self._store})")
         raw = self._store.read_text()
         hashes = self._parse_store(raw)  # still refuse to re-sign a corrupt store
         prev = max(
@@ -485,33 +480,39 @@ class FileIntegrityScanner:
         previously = set(old_hashes.keys())
 
         for fp in scanned - previously:
-            changes.append({
-                "type": "new",
-                "file": fp,
-                "new_hash": new_hashes.get(fp, ""),
-                "old_hash": None,
-                "detected_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                "approved": False,
-            })
-        for fp in scanned & previously:
-            if old_hashes[fp] != new_hashes.get(fp, ""):
-                changes.append({
-                    "type": "modified",
+            changes.append(
+                {
+                    "type": "new",
                     "file": fp,
-                    "old_hash": old_hashes[fp],
                     "new_hash": new_hashes.get(fp, ""),
+                    "old_hash": None,
                     "detected_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
                     "approved": False,
-                })
+                }
+            )
+        for fp in scanned & previously:
+            if old_hashes[fp] != new_hashes.get(fp, ""):
+                changes.append(
+                    {
+                        "type": "modified",
+                        "file": fp,
+                        "old_hash": old_hashes[fp],
+                        "new_hash": new_hashes.get(fp, ""),
+                        "detected_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                        "approved": False,
+                    }
+                )
         for fp in previously - scanned:
-            changes.append({
-                "type": "removed",
-                "file": fp,
-                "old_hash": old_hashes[fp],
-                "new_hash": None,
-                "detected_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                "approved": False,
-            })
+            changes.append(
+                {
+                    "type": "removed",
+                    "file": fp,
+                    "old_hash": old_hashes[fp],
+                    "new_hash": None,
+                    "detected_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "approved": False,
+                }
+            )
 
         self._save_hashes(new_hashes)
         return {"scanned": len(files), "files": files, "changes": changes}
@@ -599,8 +600,18 @@ class FileWatcher:
 
 
 def sign_change(change: ChangeRecord, reason: str, signer: str) -> dict[str, object]:
-    parts = [change.file_path, change.change_type, str(change.old_hash), str(change.new_hash), change.detected_at]
-    payload = "|".join(parts)
+    payload = json.dumps(
+        {
+            "scheme": "gl-integrity-v1",
+            "file_path": change.file_path,
+            "change_type": change.change_type,
+            "old_hash": str(change.old_hash),
+            "new_hash": str(change.new_hash),
+            "detected_at": change.detected_at,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     key = _get_integrity_key()
     sig = hmac.new(key.encode(), payload.encode(), hashlib.sha256).hexdigest()
     result = asdict(change)
@@ -612,14 +623,18 @@ def sign_change(change: ChangeRecord, reason: str, signer: str) -> dict[str, obj
 
 
 def verify_signature(signed: dict[str, object]) -> bool:
-    parts = [
-        signed.get("file_path", ""),
-        signed.get("change_type", ""),
-        signed.get("old_hash", ""),
-        signed.get("new_hash", ""),
-        signed.get("detected_at", ""),
-    ]
-    payload = "|".join(str(p) for p in parts)
+    payload = json.dumps(
+        {
+            "scheme": "gl-integrity-v1",
+            "file_path": str(signed.get("file_path", "")),
+            "change_type": str(signed.get("change_type", "")),
+            "old_hash": str(signed.get("old_hash", "")),
+            "new_hash": str(signed.get("new_hash", "")),
+            "detected_at": str(signed.get("detected_at", "")),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     # Mirror verify_openbao_signature: a missing key means we cannot verify, so
     # return False (tamper-equivalent) rather than raising. GL_INTEGRITY_KEY must
     # be provisioned for a meaningful verify.
@@ -658,7 +673,19 @@ def sign_change_openbao(
     router is responsible for enforcing that match before calling this function.
     """
     ts = time.strftime("%Y-%m-%dT%H:%M:%S")
-    payload = "|".join([path, signer, reason, str(old_hash), str(new_hash), ts])
+    payload = json.dumps(
+        {
+            "scheme": "gl-integrity-openbao-v1",
+            "path": path,
+            "signer": signer,
+            "reason": reason,
+            "old_hash": str(old_hash),
+            "new_hash": str(new_hash),
+            "timestamp": ts,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     key = _get_integrity_key()
     sig = hmac.new(key.encode(), payload.encode(), hashlib.sha256).hexdigest()
     result: dict[str, object] = {
@@ -689,15 +716,19 @@ def verify_openbao_signature(signed: dict[str, object]) -> bool:
     Returns ``False`` (not an exception) on any mismatch so callers can
     distinguish tamper-detected from signing errors.
     """
-    parts = [
-        str(signed.get("path", "")),
-        str(signed.get("signer", "")),
-        str(signed.get("reason", "")),
-        str(signed.get("old_hash")),
-        str(signed.get("new_hash")),
-        str(signed.get("timestamp", "")),
-    ]
-    payload = "|".join(parts)
+    payload = json.dumps(
+        {
+            "scheme": "gl-integrity-openbao-v1",
+            "path": str(signed.get("path", "")),
+            "signer": str(signed.get("signer", "")),
+            "reason": str(signed.get("reason", "")),
+            "old_hash": str(signed.get("old_hash")),
+            "new_hash": str(signed.get("new_hash")),
+            "timestamp": str(signed.get("timestamp", "")),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     try:
         key = _get_integrity_key()
     except IntegrityKeyError:

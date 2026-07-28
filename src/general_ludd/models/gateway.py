@@ -61,7 +61,6 @@ class _SecretsResolver(Protocol):
     def resolve(self, alias_name: str) -> str | None: ...
 
 
-
 class _HealthTrackerProtocol(Protocol):
     def is_healthy(self, model_id: str, admit_probe: bool = ...) -> bool: ...
     def record_success(self, model_id: str) -> None: ...
@@ -118,9 +117,7 @@ class _MetricsCollectorProtocol(Protocol):
         error: str | None = None,
     ) -> None: ...
 
-    def record_failover(
-        self, from_profile: str, to_profile: str, error: str = ""
-    ) -> None: ...
+    def record_failover(self, from_profile: str, to_profile: str, error: str = "") -> None: ...
 
 
 class _EventBusProtocol(Protocol):
@@ -228,6 +225,37 @@ class ModelProfile(BaseModel):
             raise ValueError("must be finite non-negative")
         return v
 
+    @staticmethod
+    def seed_token_rates_from_catalog(
+        provider: str,
+        model_name: str,
+        catalog: object | None = None,
+    ) -> tuple[float, float]:
+        """Query the pricing catalog for per-token rates for a given provider+model.
+
+        Returns ``(cost_per_input_token, cost_per_output_token)`` where each value
+        is in USD-per-token (the catalog stores USD-per-1K and we divide by 1000).
+
+        When ``catalog`` is None or the lookup misses, returns ``(0.0, 0.0)`` —
+        callers must NOT treat zero as "free" but as "unpriced" and may fall back
+        to operator-configured rates.
+        """
+        if catalog is None:
+            return 0.0, 0.0
+        try:
+            price = catalog.model_price(provider, model_name)
+        except Exception:
+            return 0.0, 0.0
+        if price is None:
+            return 0.0, 0.0
+        if not isinstance(getattr(price, "input_usd_per_1k", None), (int, float)):
+            return 0.0, 0.0
+        if not isinstance(getattr(price, "output_usd_per_1k", None), (int, float)):
+            return 0.0, 0.0
+        inp_per_token = float(price.input_usd_per_1k) / 1000.0
+        out_per_token = float(price.output_usd_per_1k) / 1000.0
+        return inp_per_token, out_per_token
+
     @field_validator("run_budget_usd")
     @classmethod
     def _non_negative_budget_float(cls, v: float) -> float:
@@ -263,9 +291,7 @@ class ModelResponse:
     correlation_id: str | None = None
 
 
-def _attach_correlation_id(
-    response: ModelResponse, correlation_id: str | None
-) -> ModelResponse:
+def _attach_correlation_id(response: ModelResponse, correlation_id: str | None) -> ModelResponse:
     """Stamp ``correlation_id`` onto ``response`` when the caller supplied one.
 
     A tiny helper so every return point in ``call_model_with_retry`` (primary
@@ -291,18 +317,13 @@ def _redact_url_in_exception(exc: BaseException, url: str) -> None:
     if not url:
         return
     try:
-        new_args = tuple(
-            arg.replace(url, "[REDACTED_URL]") if isinstance(arg, str) else arg
-            for arg in exc.args
-        )
+        new_args = tuple(arg.replace(url, "[REDACTED_URL]") if isinstance(arg, str) else arg for arg in exc.args)
         exc.args = new_args
     except Exception:
         pass
 
 
-def _enrich_all_down_message(
-    exc: BaseException, attempts: list[dict[str, str]]
-) -> None:
+def _enrich_all_down_message(exc: BaseException, attempts: list[dict[str, str]]) -> None:
     """Rewrite ``exc``'s message in place to enumerate every attempted
     provider profile and why each one failed — WITHOUT changing the
     exception's type. Callers that pattern-match on the concrete exception
@@ -411,11 +432,13 @@ def _extract_tool_calls(raw_response: object) -> list[dict[str, object]] | None:
             # rather than emit a call the loop would reject as unregistered.
             continue
 
-        normalized.append({
-            "id": call_id or "",
-            "type": "function",
-            "function": {"name": name, "arguments": args},
-        })
+        normalized.append(
+            {
+                "id": call_id or "",
+                "type": "function",
+                "function": {"name": name, "arguments": args},
+            }
+        )
 
     return normalized or None
 
@@ -498,9 +521,7 @@ class ModelGateway:
             if lock is None:
                 lock = threading.Lock()
                 self._cache_key_locks[cache_key] = lock
-            self._cache_key_lock_refs[cache_key] = (
-                self._cache_key_lock_refs.get(cache_key, 0) + 1
-            )
+            self._cache_key_lock_refs[cache_key] = self._cache_key_lock_refs.get(cache_key, 0) + 1
             return lock
 
     def _cache_key_unref(self, cache_key: str) -> None:
@@ -542,21 +563,16 @@ class ModelGateway:
         if registry is not None and not registry.is_installed(provider_name):
             registry.install_provider(provider_name)
             raise ImportError(
-                f"Provider '{provider_name}' is not installed. "
-                "A dependency update todo has been created."
+                f"Provider '{provider_name}' is not installed. A dependency update todo has been created."
             )
-        job_secrets = self._resolver_for_project(
-            str(project_id) if project_id else None
-        )
+        job_secrets = self._resolver_for_project(str(project_id) if project_id else None)
         api_key: str | None = None
         if job_secrets and profile.credential_alias:
             api_key = job_secrets.resolve(profile.credential_alias)
         if registry is not None:
             provider_cls = registry.get_provider_class(provider_name)
         else:
-            raise ValueError(
-                f"No provider registry configured for '{profile_id}'"
-            )
+            raise ValueError(f"No provider registry configured for '{profile_id}'")
         init_kwargs: dict[str, object] = {"model": profile.model_name}
         if api_key:
             init_kwargs["api_key"] = api_key
@@ -567,8 +583,7 @@ class ModelGateway:
 
                 if not is_safe_fetch_url(base_url):
                     raise SSRFRejectionError(
-                        f"SSRF guard: refusing blocked api_base_alias URL "
-                        f"(redacted) for profile '{profile_id}'"
+                        f"SSRF guard: refusing blocked api_base_alias URL (redacted) for profile '{profile_id}'"
                     )
                 init_kwargs["base_url"] = base_url
         chat_model = provider_cls(**init_kwargs)
@@ -582,8 +597,7 @@ class ModelGateway:
                 )
             else:
                 logger.warning(
-                    "Provider class %s does not support bind_tools — "
-                    "tools=%r will be ignored for profile=%s",
+                    "Provider class %s does not support bind_tools — tools=%r will be ignored for profile=%s",
                     type(chat_model).__name__,
                     tools,
                     profile_id,
@@ -632,9 +646,7 @@ class ModelGateway:
         # estimate_cost min()s it against profile.max_output_tokens, so the
         # estimate stays upper-bounded and the under-report protection holds.
         server_cost = (
-            self.estimate_cost(profile, messages, requested_max_output_tokens)
-            if messages is not None
-            else None
+            self.estimate_cost(profile, messages, requested_max_output_tokens) if messages is not None else None
         )
         if server_cost is not None and isinstance(server_cost, (int, float)) and math.isfinite(server_cost):
             effective_cost = max(estimated_cost, server_cost)
@@ -684,15 +696,10 @@ class ModelGateway:
             input_chars += len(content)
         approx_input_tokens = input_chars // 4
         if requested_max_output_tokens is not None and requested_max_output_tokens > 0:
-            approx_output_tokens = min(
-                requested_max_output_tokens, profile.max_output_tokens
-            )
+            approx_output_tokens = min(requested_max_output_tokens, profile.max_output_tokens)
         else:
             approx_output_tokens = profile.max_output_tokens
-        return (
-            approx_input_tokens * profile.cost_per_input_token
-            + approx_output_tokens * profile.cost_per_output_token
-        )
+        return approx_input_tokens * profile.cost_per_input_token + approx_output_tokens * profile.cost_per_output_token
 
     def list_profiles(self) -> list[ModelProfile]:
         return list(self._profiles.values())
@@ -713,18 +720,14 @@ class ModelGateway:
             raise ValueError(f"Profile '{profile_id}' not found")
 
         if self._pause_controller is not None and self._pause_controller.is_paused("model", profile_id):
-            raise ModelPausedError(
-                f"Model profile '{profile_id}' is paused — call refused"
-            )
+            raise ModelPausedError(f"Model profile '{profile_id}' is paused — call refused")
 
         if (
             not _skip_health_check
             and self._health_tracker is not None
             and not self._health_tracker.is_healthy(profile_id, admit_probe=False)
         ):
-            raise CircuitBreakerOpenError(
-                f"Profile '{profile_id}' circuit is open; refusing call"
-            )
+            raise CircuitBreakerOpenError(f"Profile '{profile_id}' circuit is open; refusing call")
 
         # requested_max_output_tokens (D-21 over-conservatism fix): when a caller
         # knows it will cap the model's output (e.g. the /admin/models/call
@@ -749,9 +752,7 @@ class ModelGateway:
 
         cache_key: str | None = None
         if self._response_cache is not None:
-            cache_key = _make_cache_key(
-                profile_id, messages, model_name=profile.model_name, **kwargs
-            )
+            cache_key = _make_cache_key(profile_id, messages, model_name=profile.model_name, **kwargs)
             cached = self._response_cache.get(cache_key)
             if cached is not None:
                 logger.debug("Cache hit for profile=%s key=%s", profile_id, cache_key[:12])
@@ -774,15 +775,11 @@ class ModelGateway:
                             cache_key[:12],
                         )
                         return ModelResponse(**cast(dict[str, Any], cached))
-                    return self._invoke_and_bill(
-                        profile, profile_id, messages, cache_key, **kwargs
-                    )
+                    return self._invoke_and_bill(profile, profile_id, messages, cache_key, **kwargs)
             finally:
                 self._cache_key_unref(cache_key)
 
-        return self._invoke_and_bill(
-            profile, profile_id, messages, None, **kwargs
-        )
+        return self._invoke_and_bill(profile, profile_id, messages, None, **kwargs)
 
     def _resolver_for_project(self, project_id: str | None) -> _SecretsResolver | None:
         """Return the secrets resolver scoped to ``project_id`` when possible.
@@ -847,9 +844,7 @@ class ModelGateway:
         # Pop ``project_id`` HERE (like ``work_type`` below) so it is never
         # forwarded to the provider constructor via ``init_kwargs.update(kwargs)``.
         _project_id = kwargs.pop("project_id", None)
-        job_secrets = self._resolver_for_project(
-            str(_project_id) if _project_id else None
-        )
+        job_secrets = self._resolver_for_project(str(_project_id) if _project_id else None)
 
         api_key: str | None = None
         if job_secrets and profile.credential_alias:
@@ -889,16 +884,12 @@ class ModelGateway:
 
                 if not is_safe_fetch_url(base_url):
                     raise SSRFRejectionError(
-                        f"SSRF guard: refusing blocked api_base_alias URL "
-                        f"(redacted) for profile '{profile_id}'"
+                        f"SSRF guard: refusing blocked api_base_alias URL (redacted) for profile '{profile_id}'"
                     )
                 init_kwargs["base_url"] = base_url
-        _resolved_base_url: str | None = cast(
-            str | None, init_kwargs.get("base_url")
-        )
+        _resolved_base_url: str | None = cast(str | None, init_kwargs.get("base_url"))
         extra_body: dict[str, object] = kwargs.pop("extra_body", {})
-        for key in ("guided_json", "guided_regex", "guided_choice",
-                      "guided_grammar", "guided_whitespace_pattern"):
+        for key in ("guided_json", "guided_regex", "guided_choice", "guided_grammar", "guided_whitespace_pattern"):
             val = kwargs.pop(key, None)
             if val is not None:
                 extra_body[key] = val
@@ -934,9 +925,7 @@ class ModelGateway:
         # streaming is expected from large-context models).
         import httpx as _httpx
 
-        init_kwargs["request_timeout"] = _httpx.Timeout(
-            connect=10.0, read=60.0, write=60.0, pool=10.0
-        )
+        init_kwargs["request_timeout"] = _httpx.Timeout(connect=10.0, read=60.0, write=60.0, pool=10.0)
 
         init_kwargs.update(kwargs)
 
@@ -959,8 +948,7 @@ class ModelGateway:
                 )
             else:
                 logger.warning(
-                    "Provider class %s does not support bind_tools — "
-                    "tools=%r will be ignored for profile=%s",
+                    "Provider class %s does not support bind_tools — tools=%r will be ignored for profile=%s",
                     type(chat_model).__name__,
                     tools,
                     profile_id,
@@ -1032,16 +1020,9 @@ class ModelGateway:
         #   (a negative cost would CREDIT the budget guard and bypass the ceiling)
         # - accept OpenAI-style key names as fallbacks so whole provider families
         #   are not silently metered at $0
-        input_tokens = _coerce_token_count(
-            usage.get("input_tokens", usage.get("prompt_tokens", 0))
-        )
-        output_tokens = _coerce_token_count(
-            usage.get("output_tokens", usage.get("completion_tokens", 0))
-        )
-        cost = (
-            input_tokens * profile.cost_per_input_token
-            + output_tokens * profile.cost_per_output_token
-        )
+        input_tokens = _coerce_token_count(usage.get("input_tokens", usage.get("prompt_tokens", 0)))
+        output_tokens = _coerce_token_count(usage.get("output_tokens", usage.get("completion_tokens", 0)))
+        cost = input_tokens * profile.cost_per_input_token + output_tokens * profile.cost_per_output_token
 
         logger.debug(
             "Model call complete: profile=%s, input_tokens=%s, output_tokens=%s, cost=%.6f",
@@ -1134,9 +1115,7 @@ class ModelGateway:
         # would replay the truncated text as if it were the full response on
         # every identical future request. The marker lives in the provider's
         # LangChain AIMessage metadata, not on ModelResponse, so read it there.
-        finish_reason = (
-            getattr(raw_response, "response_metadata", None) or {}
-        ).get("finish_reason")
+        finish_reason = (getattr(raw_response, "response_metadata", None) or {}).get("finish_reason")
         if (
             self._response_cache is not None
             and cache_key is not None
@@ -1274,8 +1253,7 @@ class ModelGateway:
             # type used when all fallbacks are exhausted so callers get a
             # consistent, informative signal.
             raise RuntimeError(
-                f"call_model_with_retry: profile '{profile_id}' is unhealthy "
-                "and no fallback profiles are configured"
+                f"call_model_with_retry: profile '{profile_id}' is unhealthy and no fallback profiles are configured"
             )
 
         _retryable_exc_types: tuple[type[BaseException], ...] = (
@@ -1351,9 +1329,7 @@ class ModelGateway:
                 return False
             # Kind-aware hard cap: overload kinds use the dedicated overload
             # budget; transient kinds use the caller's max_retries.
-            effective_cap = (
-                policy._overload_max_retries if kind in _OVERLOAD_KINDS else max_retries
-            )
+            effective_cap = policy._overload_max_retries if kind in _OVERLOAD_KINDS else max_retries
             if _attempt_counter[0] > effective_cap:
                 return False
             decision = policy.decide(kind, _attempt_counter[0])
@@ -1420,7 +1396,8 @@ class ModelGateway:
                     try:
                         result = await asyncio.to_thread(
                             self.call_model,
-                            profile_id, messages,
+                            profile_id,
+                            messages,
                             _skip_health_check=True,
                             **kwargs,
                         )
@@ -1458,7 +1435,8 @@ class ModelGateway:
         fallback_ids = list(profile.fallback_profiles)
         result, last_fb_exc, attempts = await asyncio.to_thread(
             self._walk_fallbacks,
-            fallback_ids, messages,
+            fallback_ids,
+            messages,
             from_profile_id=profile_id,
             from_error=_last_exc[0],
             **kwargs,
@@ -1521,10 +1499,7 @@ class ModelGateway:
         """
         sem = self._fallback_semaphore(fb_id)
         if not sem.acquire(timeout=5.0):
-            raise RuntimeError(
-                f"fallback capacity exhausted for '{fb_id}' "
-                f"(all {sem._value + 1} slots occupied)"
-            )
+            raise RuntimeError(f"fallback capacity exhausted for '{fb_id}' (all {sem._value + 1} slots occupied)")
         try:
             result = self.call_model(fb_id, messages, **kwargs)
         finally:
@@ -1550,7 +1525,9 @@ class ModelGateway:
         """
         try:
             self._failover_log.record_failover(
-                from_profile_id, to_profile_id, error,
+                from_profile_id,
+                to_profile_id,
+                error,
                 exception_type=exception_type,
             )
         except Exception:  # pragma: no cover - defensive; must never break the call
@@ -1624,16 +1601,16 @@ class ModelGateway:
                 and not math.isinf(estimated_cost)
                 and not self.check_budget(fb_id, estimated_cost, budget_remaining, messages=messages)
             ):
-                attempts.append({
-                    "profile_id": fb_id,
-                    "reason": (
-                        f"budget exceeded before attempt "
-                        f"(estimated={estimated_cost}, remaining={budget_remaining})"
-                    ),
-                })
+                attempts.append(
+                    {
+                        "profile_id": fb_id,
+                        "reason": (
+                            f"budget exceeded before attempt (estimated={estimated_cost}, remaining={budget_remaining})"
+                        ),
+                    }
+                )
                 last_exc = BudgetExceededError(
-                    f"Fallback '{fb_id}' estimated cost {estimated_cost} "
-                    f"exceeds remaining budget {budget_remaining}"
+                    f"Fallback '{fb_id}' estimated cost {estimated_cost} exceeds remaining budget {budget_remaining}"
                 )
                 continue
             if prev_id is not None:
@@ -1686,12 +1663,14 @@ class ModelGateway:
             return
 
         kind = TimeoutClassifier.classify(exc)
-        self._health_tracker.record_event(TimeoutEvent(
-            model_id=profile_id,
-            kind=kind,
-            timestamp=_time.monotonic(),
-            duration_s=0.0,
-        ))
+        self._health_tracker.record_event(
+            TimeoutEvent(
+                model_id=profile_id,
+                kind=kind,
+                timestamp=_time.monotonic(),
+                duration_s=0.0,
+            )
+        )
 
     def call_model_by_role(
         self,
@@ -1709,8 +1688,7 @@ class ModelGateway:
         # provider. Fail fast instead.
         if self._health_tracker is not None and not self._health_tracker.is_healthy(profile_id):
             raise RuntimeError(
-                f"profile '{profile_id}' (role '{role_name}') circuit is open; "
-                "refusing to call unhealthy provider"
+                f"profile '{profile_id}' (role '{role_name}') circuit is open; refusing to call unhealthy provider"
             )
         return self.call_model(profile_id, messages, **kwargs)
 
@@ -1730,8 +1708,7 @@ class ModelGateway:
         # provider. Fail fast instead.
         if self._health_tracker is not None and not self._health_tracker.is_healthy(profile_id):
             raise RuntimeError(
-                f"profile '{profile_id}' (pattern '{pattern}') circuit is open; "
-                "refusing to call unhealthy provider"
+                f"profile '{profile_id}' (pattern '{pattern}') circuit is open; refusing to call unhealthy provider"
             )
         return self.call_model(profile_id, messages, **kwargs)
 
@@ -1741,10 +1718,7 @@ class ModelGateway:
         messages: list[dict[str, str]],
         **kwargs: Any,
     ) -> ModelResponse | None:
-        if (
-            self._health_tracker is not None
-            and not self._health_tracker.is_healthy(profile_id)
-        ):
+        if self._health_tracker is not None and not self._health_tracker.is_healthy(profile_id):
             return None
         try:
             return self.call_model(profile_id, messages, **kwargs)
@@ -1770,10 +1744,7 @@ class ModelGateway:
         # S.3: gate primary on health tracker before attempting call,
         # using _try_call_model which has its own built-in health gate
         # and properly threads budget params through to call_model.
-        primary_healthy = (
-            self._health_tracker is None
-            or self._health_tracker.is_healthy(profile_id)
-        )
+        primary_healthy = self._health_tracker is None or self._health_tracker.is_healthy(profile_id)
         _call_kwargs: dict[str, Any] = {
             "estimated_cost": estimated_cost,
             "budget_remaining": budget_remaining,
@@ -1784,9 +1755,7 @@ class ModelGateway:
                 result = self._try_call_model(profile_id, messages, **_call_kwargs)
                 if result is not None:
                     return result
-                primary_exc = RuntimeError(
-                    f"Primary '{profile_id}' returned None (health or provider error)"
-                )
+                primary_exc = RuntimeError(f"Primary '{profile_id}' returned None (health or provider error)")
             except SSRFRejectionError:
                 raise
             except BudgetExceededError:
@@ -1808,7 +1777,8 @@ class ModelGateway:
 
         # D-04: route fallback walk through _walk_fallbacks (health-gated)
         result, last_exc, fallback_attempts = self._walk_fallbacks(
-            fallback_ids, messages,
+            fallback_ids,
+            messages,
             from_profile_id=profile_id,
             from_error=primary_exc,
             **_call_kwargs,
@@ -1819,22 +1789,16 @@ class ModelGateway:
 
         # If primary was tripped AND all fallbacks open/failed -> clear error
         if not primary_healthy:
-            cb_error = CircuitBreakerOpenError(
-                f"All circuits open for fallback chain '{profile_id}'"
-            )
+            cb_error = CircuitBreakerOpenError(f"All circuits open for fallback chain '{profile_id}'")
             _enrich_all_down_message(cb_error, all_attempts)
             raise cb_error
 
         if last_exc is not None:
-            cb_error = CircuitBreakerOpenError(
-                f"All profiles in fallback chain failed for '{profile_id}'"
-            )
+            cb_error = CircuitBreakerOpenError(f"All profiles in fallback chain failed for '{profile_id}'")
             _enrich_all_down_message(cb_error, all_attempts)
             raise cb_error from last_exc
 
-        cb_error = CircuitBreakerOpenError(
-            f"All profiles in fallback chain failed for '{profile_id}'"
-        )
+        cb_error = CircuitBreakerOpenError(f"All profiles in fallback chain failed for '{profile_id}'")
         _enrich_all_down_message(cb_error, all_attempts)
         raise cb_error
 
@@ -1892,9 +1856,7 @@ class ModelGateway:
         if not eligible:
             return None
 
-        eligible.sort(
-            key=lambda p: p.cost_per_input_token + p.cost_per_output_token
-        )
+        eligible.sort(key=lambda p: p.cost_per_input_token + p.cost_per_output_token)
         return eligible[0]
 
     def add_profile(
