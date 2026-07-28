@@ -108,6 +108,18 @@ def test_class_attrs() -> None:
     assert src.name == "entra_signin"
 
 
+def test_legacy_class_name_preserves_token_contract(token: str) -> None:
+    from general_ludd.connectors.entra_signin import EntraSigninSource
+
+    transport = RecordingTransport([FakeResponse(200, _body(CANNED[:1]))])
+    source = EntraSigninSource({"token_env": TOKEN_ENV}, transport=transport)
+
+    rows = source.query({})
+
+    assert rows[0]["raw"]["id"] == "si-1"
+    assert transport.calls[0]["headers"]["Authorization"] == f"Bearer {token}"
+
+
 def test_requires_token_env() -> None:
     with pytest.raises(ValueError, match="token_env"):
         EntraSignInSource({}, transport=lambda *a, **k: None)

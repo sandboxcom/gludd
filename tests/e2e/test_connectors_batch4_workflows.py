@@ -293,7 +293,7 @@ class TestOktaConnector:
 
 
 class TestEntraSigninConnector:
-    def test_config_requires_tenant_id(self):
+    def test_config_requires_token_env(self):
         from general_ludd.connectors.entra_signin import EntraSigninSource
 
         with pytest.raises((ValueError, RuntimeError)):
@@ -302,55 +302,53 @@ class TestEntraSigninConnector:
     def test_constructs_with_valid_config(self, monkeypatch):
         from general_ludd.connectors.entra_signin import EntraSigninSource
 
-        monkeypatch.setenv("ENTRA_CLIENT_ID", "cid")
-        monkeypatch.setenv("ENTRA_SECRET", "sec")  # pragma: allowlist secret
+        monkeypatch.setenv("ENTRA_GRAPH_TOKEN", "graph-token")
         try:
             source = EntraSigninSource({
-                "tenant_id": "test-tenant-id",
-                "client_id_env": "ENTRA_CLIENT_ID",
-                "secret_env": "ENTRA_SECRET",  # pragma: allowlist secret
+                "token_env": "ENTRA_GRAPH_TOKEN",
             })
             assert source.name is not None
         finally:
-            del os.environ["ENTRA_CLIENT_ID"], os.environ["ENTRA_SECRET"]
+            del os.environ["ENTRA_GRAPH_TOKEN"]
 
     def test_rejects_private_host(self):
         from general_ludd.connectors.entra_signin import EntraSigninSource
 
         with pytest.raises((ValueError, RuntimeError)):
-            EntraSigninSource({"tenant_id": "x", "base_url": "http://127.0.0.1"})
+            EntraSigninSource({
+                "token_env": "ENTRA_GRAPH_TOKEN",
+                "base_url": "http://127.0.0.1",
+            })
 
     def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.entra_signin import EntraSigninSource
 
         transport = MockHttpResponseTransport(status_code=200, body={"value": []})
-        monkeypatch.setenv("ENTRA_CID", "cid")
-        monkeypatch.setenv("ENTRA_SEC", "sec")
+        monkeypatch.setenv("ENTRA_GRAPH_TOKEN", "graph-token")
         try:
             source = EntraSigninSource(
-                {"tenant_id": "tid", "client_id_env": "ENTRA_CID", "secret_env": "ENTRA_SEC"},
+                {"token_env": "ENTRA_GRAPH_TOKEN"},
                 transport=transport,
             )
             result = source.health()
             assert isinstance(result, dict)
         finally:
-            del os.environ["ENTRA_CID"], os.environ["ENTRA_SEC"]
+            del os.environ["ENTRA_GRAPH_TOKEN"]
 
     def test_health_not_ok_on_error(self, monkeypatch):
         from general_ludd.connectors.entra_signin import EntraSigninSource
 
         transport = MockHttpResponseTransport(status_code=401, body={})
-        monkeypatch.setenv("ENTRA_CI", "c")
-        monkeypatch.setenv("ENTRA_SE", "s")
+        monkeypatch.setenv("ENTRA_GRAPH_TOKEN", "graph-token")
         try:
             source = EntraSigninSource(
-                {"tenant_id": "tid", "client_id_env": "ENTRA_CI", "secret_env": "ENTRA_SE"},
+                {"token_env": "ENTRA_GRAPH_TOKEN"},
                 transport=transport,
             )
             result = source.health()
             assert result.get("ok") is False
         finally:
-            del os.environ["ENTRA_CI"], os.environ["ENTRA_SE"]
+            del os.environ["ENTRA_GRAPH_TOKEN"]
 
     def test_query_returns_records(self, monkeypatch):
         from general_ludd.connectors.entra_signin import EntraSigninSource
@@ -369,18 +367,17 @@ class TestEntraSigninConnector:
                 ]
             },
         )
-        monkeypatch.setenv("ENTRA_CID_Q", "cid")
-        monkeypatch.setenv("ENTRA_SEC_Q", "sec")
+        monkeypatch.setenv("ENTRA_GRAPH_TOKEN", "graph-token")
         try:
             source = EntraSigninSource(
-                {"tenant_id": "tid", "client_id_env": "ENTRA_CID_Q", "secret_env": "ENTRA_SEC_Q"},
+                {"token_env": "ENTRA_GRAPH_TOKEN"},
                 transport=transport,
             )
             records = source.query({})
             assert len(records) >= 1
             assert records[0]["kind"] in ("logs", "events")
         finally:
-            del os.environ["ENTRA_CID_Q"], os.environ["ENTRA_SEC_Q"]
+            del os.environ["ENTRA_GRAPH_TOKEN"]
 
 
 # ============================================================================
