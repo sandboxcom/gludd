@@ -2579,6 +2579,53 @@ The `enforce-delegate.ts` read-grind detector is separately tunable per session 
 
 For focused investigation work, raise the deny threshold: `GLUDD_READ_GRIND_DENY_COUNT=20`. A dispatch always resets the counter to 0 regardless of the threshold.
 
+## CRITICAL: System-Load Gate Before Dispatch Waves
+
+**Before EVERY dispatch wave, check the system load average. If the 1-minute load
+average exceeds 2x the CPU count, kill background processes and trim the wave
+before dispatching.** A saturated machine runs subagents at a crawl — each
+subagent competes for the same CPU slices, cumulative latency explodes, and the
+orchestrator stalls waiting for results that will never arrive on time.
+
+### The rule
+
+1. **Check load before dispatch.** Run `make check-system-load` (or the
+   equivalent) before composing a dispatch wave. The command must return the
+   1-minute load average and CPU count.
+2. **If load > 2x CPU count: KILL, don't add.** Kill background gate processes
+   (`make gate-kill`), exit polling subagents, and trim the wave to ≤5
+   subagents. Do NOT dispatch at full capacity — you are adding load to an
+   already-saturated machine. Each subagent spawns its own CPU-intensive work;
+   piling more on top of an overloaded system makes ALL of them slower.
+3. **If load > 3x CPU count: HALT dispatch entirely.** Run `make clean-tmp`,
+   `make gate-kill`, and wait for the load to drop below 2x before dispatching
+   anything. A machine at 3x+ CPU count is thrashing — subagents will time out
+   or produce garbage output.
+4. **Recovery:** Once load drops below 2x CPU, resume dispatching at reduced
+   capacity (≤5 agents) for one wave, then return to normal (10 agents) after
+   confirming load stays low for 60+ seconds.
+5. **Background gate + subagents = multiplicative load.** A `make gate` runs
+   pytest with `-n auto` (all cores). A single gate + 10 subagents = every
+   CPU core oversubscribed 2-3x. Never run a background gate AND a full
+   dispatch wave simultaneously — pause one or cap the other.
+
+### Enforcement
+
+- **Prompt** — this section (proactive instruction for every agent reading
+  AGENTS.md).
+- **Future plugin** — a `tool.execute.before` matcher on Task/agent/workflow
+  dispatch that checks `/proc/loadavg` (Linux) or `sysctl -n vm.loadavg`
+  (macOS) and denies dispatch when load exceeds threshold.
+- **Make target** — `make check-system-load` (prints load + CPU count + verdict).
+
+### Incident history
+
+- **2026-07-28:** 30+ subagents + background gate simultaneously bogged down
+  the hardware. Load average spiked past 4x CPU count. Every subagent ran in
+  slow motion; the orchestrator appeared hung. Root cause: no pre-dispatch load
+  check — the agent dispatched at full capacity onto an already-saturated
+  machine. This section is the codified fix.
+
 ## Pipeline Orchestration Model
 
 The goal is a **continuous, pipelined** stream of subagent batches — not a

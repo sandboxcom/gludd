@@ -56,6 +56,16 @@
 
 - **Last Updated: 2026-07-28 — Session 57.** HEAD `7d8d007c` on `development`. 10 unpushed commits (fb43601f..7d8d007c). Wave 3 landed: NEEDS_MORE_WORK requeue sweep, PSK authz capability guard, engine sync cleanup, sandbox async gating, budget precheck fixes, typecheck fix, lint fix (a7ef2ed5). Working tree CLEAN. CI NO RUN for HEAD. beta.3 release blocked on CI green.
 
+### System-load incident (2026-07-28)
+
+30+ subagents + background gate (`make gate-background`) ran simultaneously,
+saturating all CPU cores. Load average spiked past 4x CPU count. Every subagent
+crawled; the orchestrator stalled waiting for results. Root cause: no pre-dispatch
+load check — the agent dispatched at full capacity onto an already-overloaded
+machine. Codified fix: CRITICAL System-Load Gate Before Dispatch Waves section in
+AGENTS.md mandates checking `make check-system-load` before every dispatch wave,
+capping at ≤5 subagents when load > 2x CPU, and halting entirely when > 3x CPU.
+
 ---
 
 ## SESSION 55 — 2026-07-27 (SUPERSEDED by Session 56)

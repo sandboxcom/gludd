@@ -1270,7 +1270,7 @@ kill-stale:
 	PARENTS=$$(ps -axo ppid= | tr -s ' ' '\n' | grep -E '^[0-9]+$$' | sort -u); \
 	echo "[kill-stale] self=$$SELF parent=$$PARENT — reaping orphaned gludd scratch and daemon trees"; \
 	ps -axo pid=,ppid=,command= | \
-	grep -E "molecule/mock_daemon|\.claude/worktrees/agent-[^ ]*/\.venv/bin/python|general_ludd\.cli tui|gludd-gate-basetemp|pytest tests/|ansible-playbook|/Users/shawnwilson/gludd/\.venv/bin/gunicorn general_ludd\.daemon:create_daemon_app" | \
+	grep -E "molecule/mock_daemon|\.claude/worktrees/agent-[^ ]*/\.venv/bin/python|general_ludd\.cli tui|gludd-gate-basetemp|pytest tests/|ansible-playbook|/Users/shawnwilson/gludd/\.venv/bin/gunicorn general_ludd\.daemon:create_daemon_app|exec\(eval\(sys\.stdin\.readline\(\)\)\)" | \
 	grep -v -E 'grep |kill-stale|ps-gludd' | \
 	while read -r pid ppid rest; do \
 		cmd=$$(echo "$$rest" | cut -c1-70); \
@@ -1330,12 +1330,12 @@ kill-all-stale:
 	@pkill -9 -f '/Users/shawnwilson/gludd/.venv/bin/detect-secrets scan' 2>/dev/null || true
 	@pkill -9 -f '/Users/shawnwilson/gludd/.venv/bin/python.*from multiprocessing.resource_tracker' 2>/dev/null || true
 	@pkill -9 -f '/Users/shawnwilson/gludd/.venv/bin/python.*from multiprocessing.spawn' 2>/dev/null || true
-	@pkill -9 -f 'sys;exec(eval(sys.stdin' 2>/dev/null || true
+	@pkill -9 -f 'sys\.stdin\.readline' 2>/dev/null || true
 	@echo "--- kill-stale (orphan cleanup) ---"
 	@SELF=$$$$; PARENT=$$(ps -o ppid= -p $$SELF 2>/dev/null | tr -d ' '); \
 	PARENTS=$$(ps -axo ppid= | tr -s ' ' '\n' | grep -E '^[0-9]+$$' | sort -u); \
 	ps -axo pid=,ppid=,command= | \
-	grep -E "molecule/mock_daemon|\.claude/worktrees/agent-[^ ]*/\.venv/bin/python|general_ludd\.cli tui|gludd-gate-basetemp|pytest tests/|ansible-playbook|/Users/shawnwilson/gludd/\.venv/bin/gunicorn general_ludd\.daemon:create_daemon_app" | \
+	grep -E "molecule/mock_daemon|\.claude/worktrees/agent-[^ ]*/\.venv/bin/python|general_ludd\.cli tui|gludd-gate-basetemp|pytest tests/|ansible-playbook|/Users/shawnwilson/gludd/\.venv/bin/gunicorn general_ludd\.daemon:create_daemon_app|exec\(eval\(sys\.stdin\.readline\(\)\)\)" | \
 	grep -v -E 'grep |kill-stale|ps-gludd' | \
 	while read -r pid ppid rest; do \
 		{ [ "$$pid" = "$$SELF" ] || [ "$$pid" = "$$PARENT" ]; } && continue; \
@@ -6560,4 +6560,7 @@ e2e-test-gen-pipeline-dogfood:
 	fi; \
 	echo "Dogfood complete — all modules passed"
 
-.PHONY: e2e-test-gen-pipeline e2e-test-gen-pipeline-dogfood
+collect-specific:
+	@$(UV) run python -m pytest $(or $(TESTFILES),tests/) --co -q 2>&1
+
+.PHONY: e2e-test-gen-pipeline e2e-test-gen-pipeline-dogfood collect-specific
