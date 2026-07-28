@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) commit-lock E2E invoked a retired plugin registration API
+
+- **What**: The complete serial E2E run stopped after 981 passes because its Node harness called `default(api)` and expected callback registration side effects; the current OpenCode plugin contract asynchronously returns a map containing `tool.execute.before` and `tool.execute.after`.
+- **Root cause**: The commit-lock plugin had migrated to the repository-wide returned-hook-map API, but this isolated E2E kept a hand-built callback-registration stub. The import succeeded, leaving `_beforeHook` undefined and testing the obsolete harness instead of enforcement behavior.
+- **Fix applied**: Every scenario now awaits the real plugin factory and invokes the returned before/after hooks directly, retaining lock acquisition, denial, stale recovery, release, disable, and subagent-isolation coverage.
+- **Long-lived user evidence**: OpenCode users rely on `tool.execute.before` and `tool.execute.after` as the supported interception surface and report behavioral gaps specifically against those hooks ([OpenCode issue #17412](https://github.com/anomalyco/opencode/issues/17412)); compatibility requests also map external pre/post-tool hooks onto these same names ([OpenCode issue #12472](https://github.com/anomalyco/opencode/issues/12472)).
+- **Lesson**: Plugin E2E must exercise the exported runtime contract directly. A local adapter that emulates a retired registration API can make healthy enforcement appear broken.
+
 ### 2026-07-28 — (resolved) immutable path-entry E2E expected the wrong exception contract
 
 - **What**: The complete serial E2E run stopped after 846 passes because an immutability test expected a generic `ValueError` when assigning to a frozen `CollectionsPathEntry`; the object correctly raised `dataclasses.FrozenInstanceError`.
