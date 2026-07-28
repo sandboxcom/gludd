@@ -247,14 +247,14 @@ Tasks created from the release pipeline failures that prevented v0.1.0-beta.1 de
 
 - [x] DC.1 — AGENTS.md: "CI Wait Productivity" section with concrete dispatch examples (fix tests, write structural tests, update docs, investigate slow shards). | priority: medium | fix: add section after "Background Operations NEVER Block Dispatch" | verify: test_agents_md_section.py | status: completed | evidence: commit a3f283ed. AGENTS.md DC.1 section added. Verified by test_operational_discipline_sections.py (8 tests).
 - [x] DC.2 — AGENTS.md: "Polling CI Is Not Work" section: checking ci-status > 3 times in a row is a stop pattern. | priority: high | fix: add section | verify: test_agents_md_section.py | status: completed | evidence: commit a3f283ed. AGENTS.md DC.2 section added. Verified by test_operational_discipline_sections.py.
-- [ ] DC.3 — AGENTS.md: "Git Operations Are Not Grinding" section: git-add, git-commit, git-push are terminal actions that reset the streak counter. | priority: high | fix: add section referencing RP.13 allowlist | verify: test_agents_md_section.py | status: pending
-- [ ] DC.4 — AGENTS.md: "Plugin Hook Invocation Validation" section: document make check-plugin-hook-invoke as mandatory before plugin commits. | priority: medium | fix: already partially added, verify complete | verify: test_agents_md_section.py | status: pending
-- [ ] DC.5 — BUGS.md: Session 52 incident log documenting all 12 behavioral failures with timestamps. | priority: medium | fix: add incident entries | verify: test_bugs_md_entries.py | status: pending
-- [ ] DC.6 — SESSION.md: Session 52 state update with all fixes committed, restart requirement noted. | priority: medium | fix: update SESSION.md | verify: manual review | status: pending
-- [ ] DC.7 — Release pipeline documentation: document the full release-cut → CI → verify-release-completeness flow. | priority: low | fix: docs/RELEASE_RUNBOOK.md update | verify: manual review | status: pending
-- [ ] DC.8 — Enforcement plugin architecture documentation: document how plugins interact, hot-reload pattern, fail-open behavior. | priority: low | fix: docs/ENFORCEMENT_ARCHITECTURE.md | verify: manual review | status: pending
+- [ ] DC.3 — AGENTS.md: "Git Operations Are Not Grinding" section: git-add, git-commit, git-push are terminal actions that reset the streak counter. | priority: high | effort: S | fix: add section referencing RP.13 allowlist | verify: test_agents_md_section.py | status: pending
+- [ ] DC.4 — AGENTS.md: "Plugin Hook Invocation Validation" section: document make check-plugin-hook-invoke as mandatory before plugin commits. | priority: medium | effort: S | fix: already partially added, verify complete | verify: test_agents_md_section.py | status: pending
+- [ ] DC.5 — BUGS.md: Session 52 incident log documenting all 12 behavioral failures with timestamps. | priority: medium | effort: S | fix: add incident entries | verify: test_bugs_md_entries.py | status: pending
+- [ ] DC.6 — SESSION.md: Session 52 state update with all fixes committed, restart requirement noted. | priority: medium | effort: S | fix: update SESSION.md | verify: manual review | status: pending
+- [ ] DC.7 — Release pipeline documentation: document the full release-cut → CI → verify-release-completeness flow. | priority: low | effort: S | fix: docs/RELEASE_RUNBOOK.md update | verify: manual review | status: pending
+- [ ] DC.8 — Enforcement plugin architecture documentation: document how plugins interact, hot-reload pattern, fail-open behavior. | priority: low | effort: S | fix: docs/ENFORCEMENT_ARCHITECTURE.md | verify: manual review | status: pending
 - [x] DC.9 — TASKS.md: mark completed RP/BP/TQ/SC items with evidence (commit hashes, test counts). | priority: low | fix: update status fields | verify: grep for unchecked items | status: completed | evidence: Session 53 bulk TASKS.md update — 50+ items ticked (A.4, RP.10-24, BP.3-20, CP.5-20, PK.6-15, SC.7/10, OD.1-10, DC.1-2, TQ.15). All entries include commit hashes + test counts.
-- [ ] DC.10 — Makefile: add make tasks-list target that extracts Current Session tasks from TASKS.md. | priority: low | fix: already partially implemented (567e78f5), verify works | verify: make tasks-list shows items | status: pending
+- [ ] DC.10 — Makefile: add make tasks-list target that extracts Current Session tasks from TASKS.md. | priority: low | effort: S | fix: already partially implemented (567e78f5), verify works | verify: make tasks-list shows items | status: pending
 
 ---
 
@@ -368,7 +368,7 @@ Tasks created from the release pipeline failures that prevented v0.1.0-beta.1 de
 - [x] RL.1 — Release-cut is the only sanctioned release command: never push tags manually. Use make release-cut which runs all gates. | priority: critical | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_release_cut_only.py | status: completed | evidence: feature exists per Session 53 audit
 - [x] RL.2 — CI green required before tag: make release-cut runs require-ci-green as step 0. Aborts if CI is not green on HEAD. | priority: critical | fix: already implemented, verify | verify: test_ci_green_before_tag.py | status: completed | evidence: feature exists per Session 53 audit
 - [x] RL.3 — README status table must match version: make check-readme-status verifies README "Status as of" matches pyproject.toml version. | priority: high | fix: already implemented, verify | verify: test_readme_status_check.py | status: completed | evidence: feature exists per Session 53 audit
-- [ ] RL.4 — All 12 artifact categories required: verify-release-completeness checks all 12. No category is optional. | priority: critical | fix: revert "optional" gate change, fix .rpm and .exe builds | verify: make verify-release-completeness exits 0 | status: in_progress
+- [ ] RL.4 — All 12 artifact categories required: verify-release-completeness checks all 12. No category is optional. | priority: critical | effort: L | fix: revert "optional" gate change, fix .rpm and .exe builds | verify: make verify-release-completeness exits 0 | status: in_progress
 - [x] RL.5 — Tag push triggers release job: the Build and Release workflow runs on v* tag pushes. Tag = release trigger. | priority: high | fix: already configured in build.yml, verify | verify: test_tag_triggers_release.py | status: completed | evidence: feature exists per Session 53 audit
 - [x] RL.6 — Release artifacts verified post-publish: the release job runs verify-release-completeness as a blocking step. | priority: critical | fix: already implemented in build.yml, verify | verify: test_release_verification_step.py | status: completed | evidence: feature exists per Session 53 audit
 - [x] RL.7 — Green release branch immutable: once a release branch's remote tip is CI-GREEN, no new commits may land on it. | priority: high | fix: enforced by check_green_branch_guard.py, verify | verify: test_green_branch_guard.py | status: completed | evidence: feature exists per Session 53 audit
@@ -376,7 +376,7 @@ Tasks created from the release pipeline failures that prevented v0.1.0-beta.1 de
 - [x] RL.9 — Release-recut for artifact retries: if the Build-and-Release job fails, use make release-recut to re-trigger. | priority: medium | fix: already implemented, verify | verify: test_release_recut.py | status: completed | evidence: feature exists per Session 53 audit
 - [x] RL.10 — Draft release fallback: make release-create builds a single binary and publishes a DRAFT. Cannot produce full 12-artifact matrix. | priority: low | fix: already implemented, verify documentation | verify: test_draft_fallback.py | status: completed | evidence: feature exists per Session 53 audit
 - [x] RL.11 — Version bump before release: pyproject.toml, __init__.py, CHANGELOG.md must all be bumped to the release version. | priority: high | fix: already part of release-cut, verify | verify: test_version_bump.py | status: completed | evidence: feature exists per Session 53 audit
-- [ ] RL.12 — Pre-publish gate checks staged assets: before publishing, the release job verifies all 12 asset categories exist locally. | priority: critical | fix: already implemented in build.yml, verify (revert optional change) | verify: test_pre_publish_gate.py
+- [ ] RL.12 — Pre-publish gate checks staged assets: before publishing, the release job verifies all 12 asset categories exist locally. | priority: critical | effort: M | fix: already implemented in build.yml, verify (revert optional change) | verify: test_pre_publish_gate.py | status: pending
 - [x] RL.13 — Post-deploy smoke test: the release job runs a smoke test on the published Linux binary. | priority: medium | fix: already implemented in build.yml, verify | verify: test_post_deploy_smoke.py | status: completed | evidence: feature exists per Session 53 audit
 - [x] RL.14 — SHA256SUMS aggregate: the release job generates a SHA256SUMS file aggregating all checksums. | priority: low | fix: already implemented in build.yml, verify | verify: test_sha256sums.py | status: completed | evidence: feature exists per Session 53 audit
 - [x] RL.15 — Release evidence format: marking A.4 complete requires: CI run URL, conclusion=success, artifact URL, asset count, verify-release-completeness PASS. | priority: critical | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_release_evidence_format.py | status: completed | evidence: feature exists per Session 53 audit
@@ -871,26 +871,26 @@ Tasks created from the release pipeline failures that prevented v0.1.0-beta.1 de
 
 ## Phase SS — Subagent Task Templates (20 specs)
 
-- [ ] SS.1 — Fix-one-test-file template: subagent reads one failing test, understands the assertion, fixes the code, runs the test, commits. | priority: high | fix: document template | verify: test_fix_template.py
-- [ ] SS.2 — Write-structural-test template: subagent reads the source file, writes a test verifying structure/behavior, runs it. | priority: high | fix: document template | verify: test_write_test_template.py
-- [ ] SS.3 — Research-and-report template: subagent investigates a question, returns ≤5 bullet points + file pointers. | priority: medium | fix: document template | verify: test_research_template.py
-- [ ] SS.4 — Commit-and-push template: subagent runs make git-add + make git-commit + make git-push-sandboxcom. Resets streak. | priority: high | fix: document template | verify: test_commit_template.py
-- [ ] SS.5 — CI-monitor template: subagent polls make ci-view every 60s, reports when terminal. | priority: medium | fix: document template | verify: test_monitor_template.py
-- [ ] SS.6 — Gate-runner template: subagent runs make gate-background, polls status, reports result. | priority: medium | fix: document template | verify: test_gate_runner_template.py
-- [ ] SS.7 — Lint-fixer template: subagent runs make lint-fix, reviews changes, commits. | priority: low | fix: document template | verify: test_lint_fixer_template.py
-- [ ] SS.8 — Coverage-gap-fixer template: subagent identifies untested module, writes test, verifies coverage improves. | priority: medium | fix: document template | verify: test_coverage_template.py
-- [ ] SS.9 — Worktree-merge template: subagent merges a worktree branch into development, cleans up. | priority: medium | fix: document template | verify: test_merge_template.py
-- [ ] SS.10 — Debug-CI-failure template: subagent reads ci-faillog, identifies root cause, fixes code, commits. | priority: high | fix: document template | verify: test_debug_template.py
-- [ ] SS.11 — Documentation-update template: subagent updates SESSION.md/TASKS.md/BUGS.md with current state. | priority: low | fix: document template | verify: test_docs_template.py
-- [ ] SS.12 — Refactor template: subagent reads a module, identifies improvement, applies, tests, commits. | priority: medium | fix: document template | verify: test_refactor_template.py
-- [ ] SS.13 — Security-audit template: subagent scans for vulnerabilities, reports findings, fixes issues. | priority: medium | fix: document template | verify: test_security_template.py
-- [ ] SS.14 — Dead-code-removal template: subagent finds unused imports/classes, removes them, verifies tests pass. | priority: low | fix: document template | verify: test_dead_code_template.py
-- [ ] SS.15 — Feature-implementation template: subagent writes failing test first (TDD), then implements, then verifies. | priority: high | fix: document template | verify: test_feature_template.py
-- [ ] SS.16 — Ansible-role template: subagent creates ansible role with tasks/handlers/templates, adds molecule tests. | priority: medium | fix: document template | verify: test_ansible_template.py
-- [ ] SS.17 — Plugin-fix template: subagent fixes a plugin .ts file, runs check-plugin-hook-invoke, commits. | priority: high | fix: document template | verify: test_plugin_fix_template.py
-- [ ] SS.18 — Release-verification template: subagent runs verify-release-completeness, reports pass/fail per category. | priority: high | fix: document template | verify: test_release_verify_template.py
-- [ ] SS.19 — Enforcement-test template: subagent writes a test verifying a specific enforcement behavior. | priority: medium | fix: document template | verify: test_enforcement_test_template.py
-- [ ] SS.20 — Cleanup template: subagent runs make clean-tmp, removes stale worktrees, frees disk. | priority: low | fix: document template | verify: test_cleanup_template.py
+- [ ] SS.1 — Fix-one-test-file template: subagent reads one failing test, understands the assertion, fixes the code, runs the test, commits. | priority: high | effort: S | fix: document template | verify: test_fix_template.py | status: pending
+- [ ] SS.2 — Write-structural-test template: subagent reads the source file, writes a test verifying structure/behavior, runs it. | priority: high | effort: S | fix: document template | verify: test_write_test_template.py | status: pending
+- [ ] SS.3 — Research-and-report template: subagent investigates a question, returns ≤5 bullet points + file pointers. | priority: medium | effort: S | fix: document template | verify: test_research_template.py | status: pending
+- [ ] SS.4 — Commit-and-push template: subagent runs make git-add + make git-commit + make git-push-sandboxcom. Resets streak. | priority: high | effort: S | fix: document template | verify: test_commit_template.py | status: pending
+- [ ] SS.5 — CI-monitor template: subagent polls make ci-view every 60s, reports when terminal. | priority: medium | effort: S | fix: document template | verify: test_monitor_template.py | status: pending
+- [ ] SS.6 — Gate-runner template: subagent runs make gate-background, polls status, reports result. | priority: medium | effort: S | fix: document template | verify: test_gate_runner_template.py | status: pending
+- [ ] SS.7 — Lint-fixer template: subagent runs make lint-fix, reviews changes, commits. | priority: low | effort: S | fix: document template | verify: test_lint_fixer_template.py | status: pending
+- [ ] SS.8 — Coverage-gap-fixer template: subagent identifies untested module, writes test, verifies coverage improves. | priority: medium | effort: S | fix: document template | verify: test_coverage_template.py | status: pending
+- [ ] SS.9 — Worktree-merge template: subagent merges a worktree branch into development, cleans up. | priority: medium | effort: S | fix: document template | verify: test_merge_template.py | status: pending
+- [ ] SS.10 — Debug-CI-failure template: subagent reads ci-faillog, identifies root cause, fixes code, commits. | priority: high | effort: S | fix: document template | verify: test_debug_template.py | status: pending
+- [ ] SS.11 — Documentation-update template: subagent updates SESSION.md/TASKS.md/BUGS.md with current state. | priority: low | effort: S | fix: document template | verify: test_docs_template.py | status: pending
+- [ ] SS.12 — Refactor template: subagent reads a module, identifies improvement, applies, tests, commits. | priority: medium | effort: S | fix: document template | verify: test_refactor_template.py | status: pending
+- [ ] SS.13 — Security-audit template: subagent scans for vulnerabilities, reports findings, fixes issues. | priority: medium | effort: S | fix: document template | verify: test_security_template.py | status: pending
+- [ ] SS.14 — Dead-code-removal template: subagent finds unused imports/classes, removes them, verifies tests pass. | priority: low | effort: S | fix: document template | verify: test_dead_code_template.py | status: pending
+- [ ] SS.15 — Feature-implementation template: subagent writes failing test first (TDD), then implements, then verifies. | priority: high | effort: S | fix: document template | verify: test_feature_template.py | status: pending
+- [ ] SS.16 — Ansible-role template: subagent creates ansible role with tasks/handlers/templates, adds molecule tests. | priority: medium | effort: S | fix: document template | verify: test_ansible_template.py | status: pending
+- [ ] SS.17 — Plugin-fix template: subagent fixes a plugin .ts file, runs check-plugin-hook-invoke, commits. | priority: high | effort: S | fix: document template | verify: test_plugin_fix_template.py | status: pending
+- [ ] SS.18 — Release-verification template: subagent runs verify-release-completeness, reports pass/fail per category. | priority: high | effort: S | fix: document template | verify: test_release_verify_template.py | status: pending
+- [ ] SS.19 — Enforcement-test template: subagent writes a test verifying a specific enforcement behavior. | priority: medium | effort: S | fix: document template | verify: test_enforcement_test_template.py | status: pending
+- [ ] SS.20 — Cleanup template: subagent runs make clean-tmp, removes stale worktrees, frees disk. | priority: low | effort: S | fix: document template | verify: test_cleanup_template.py | status: pending
 
 ---
 
@@ -1385,7 +1385,7 @@ Tasks created from the release pipeline failures that prevented v0.1.0-beta.1 de
 - [x] D.2 — Wire run_project_gate into review/reconcile path for external projects | priority: high | effort: medium | status: completed | evidence: 24 tests pass, run_project_gate wired into review/reconcile path
 - [x] D.3 — Generalize self-improve APPLY path to external projects (split SelfApply vs ExternalApply) | priority: high | effort: large | status: completed | evidence: 11 tests pass, external apply
 - [x] D.4 — DAST driver + findings parser (ZAP-baseline wrapper + Finding model) | priority: medium | effort: medium | status: completed | evidence: 97 tests pass (test_d4_dast.py) — DastConfig, DastFinding, DastResult, parse_zap_baseline(), is_loopback(), is_blocked_target() all implemented
-- [x] D.5 — Compute discovery + auto-select (Slice 1 k8s dispatch ✅ + Slice 2 vSphere params ✅; Slice 3 auto-select ✅) | priority: low | effort: large | status: completed | evidence: Wave 34
+- [x] D.5 — Compute discovery + auto-select (Slice 1 k8s dispatch ✅ + Slice 2 vSphere params ✅; Slice 3 auto-select ✅) | priority: low | effort: large | status: completed | evidence: 27 tests pass in tests/unit/test_compute_discovery.py, covering local/Kubernetes probes, resource parsing, failure isolation, and A100 selection
 - [x] D.6 — Wire OrchestrationPlanner (#54) or delete module + tests with rationale | priority: low | effort: small | status: completed | evidence: decision: delete — OrchestrationPlanner module and 23 tests to be removed per design review; rationale: unused dead code, no production callers
 - [x] D.7.1 — Pause/resume: persist-before-mutate + lock-free is_paused + router ordering | priority: high | effort: medium | status: completed | evidence: 34 tests pass (16 new + 18 existing) across test_pause_resume.py, test_pause_persist_ordering.py, test_pause_concurrency.py, test_pause_router.py. PauseController already implements persist-before-mutate with lock-free is_paused() via frozenset rebinding. Router ordering verified via pause → persist → resume lifecycle tests.
 - [x] D.7.2 — Pause/resume: construct + wire HibernationController with durable MAC key | priority: high | effort: medium | status: completed | evidence: HibernationController in src/general_ludd/agents/hibernation.py:486, durable MAC key in _load_hibernate_mac_key (mirrors PauseStore fail-closed pattern), daemon wiring at daemon.py:1333-1342. 47 tests pass: 10 test_hibernation_durable_key + 4 test_daemon_hibernation_wiring + 33 test_agent_hibernation.
@@ -1420,7 +1420,7 @@ Tasks created from the release pipeline failures that prevented v0.1.0-beta.1 de
 - [x] E.8 — Router HTTP layer thin: 9 routers touched only by generic registration smoke test, write endpoint-level tests | priority: medium | effort: large | status: completed | evidence: 202 endpoint-level tests across 9 routers
 - [x] E.9 — Skip-smell cleanup: hook-liveness CI-skip sites, 74 stale pytest.skip stubs, 4 failover xfails, dogfood_todo_site stub | priority: medium | effort: large | status: completed | evidence: Waves 13-14 closure
 - [x] E.10 — Tick DB session pinned across dispatch gather: commit/close session BEFORE dispatch gather | priority: high | effort: medium | status: completed | evidence: 17 tests pass
-- [x] E.11 — task_decisions.created_at unindexed: alembic migration adding index + retention policy | priority: high | effort: small | status: completed | evidence: Wave 34
+- [x] E.11 — task_decisions.created_at unindexed: alembic migration adding index + retention policy | priority: high | effort: small | status: completed | evidence: 7 tests pass in tests/unit/test_e11_created_at_index.py, covering model metadata, migration upgrade/downgrade, and indexed query plan
 - [x] E.12 — Event-loop/repository perf batch: N+1 queries, missing composite index, full-table scans, per-lease N+1, no retention for task_returns/task_decisions | priority: low | effort: medium | status: completed | evidence: Waves 13-14 closure
 - [x] E.13 — Nag-free subagent output test: verify DELEGATE-FIRST/READ-GRINDING nag text is NOT injected into subagent task_result output | priority: medium | effort: small | status: completed | evidence: 10 tests pass, verified all nag texts guarded by OPENCODE_SUBAGENT
 - [x] E.14 — Enforcement e2e tests: no-wait + no-suppressions plugin verification | priority: low | effort: small | status: completed | evidence: 45 e2e tests across test_no_wait_e2e.py + test_no_suppressions_e2e.py, commit 23b915b6
@@ -1979,41 +1979,41 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 
 [ -] MAIN-WORKTREE-RESTRICT: codify + enforce that main checkout is read-only except TASKS.md/AGENTS.md/config — all code work happens in isolated worktrees
 | priority: critical | status: in_progress
-- [ ] Add AGENTS.md rule: every task requires worktree; creation requires TASK.md entry; cleanup after merge | priority: critical | status: pending
-- [ ] Extend enforce-worktree.ts to block Write/Edit on main checkout for non-metadata files | priority: critical | status: pending
-- [ ] Create test: verify main-worktree write blocking | priority: critical | status: pending
-- [ ] Create first worktree with TASK.md entry for CI push guard fix | priority: critical | status: pending
-- [ ] Wait for CI green on tag v0.1.0-beta.1 | priority: high | status: in_progress
+- [ ] L54.1 — Add AGENTS.md rule: every task requires worktree; creation requires TASK.md entry; cleanup after merge | priority: critical | status: pending
+- [ ] L54.2 — Extend enforce-worktree.ts to block Write/Edit on main checkout for non-metadata files | priority: critical | status: pending
+- [ ] L54.3 — Create test: verify main-worktree write blocking | priority: critical | status: pending
+- [ ] L54.4 — Create first worktree with TASK.md entry for CI push guard fix | priority: critical | status: pending
+- [ ] L54.5 — Wait for CI green on tag v0.1.0-beta.1 | priority: high | status: in_progress
   | evidence: run 30070191190 pending
  (updated)
 
 ### CRITICAL — Active (1 in_progress, 12 pending)
-- [ ] CI-green on tag v0.1.0-beta.1 (SHA e6b97c0a): run 30069656965 in_progress | test: make ci-verdict BRANCH=v0.1.0-beta.1
-- [ ] Release artifacts: verify 12 categories via make verify-release-completeness | status: no release yet, CI must complete first
-- [ ] TDD: write test_ci_push_guard.py — headSha matching, duplicate detection, FORCE bypass
-- [ ] TDD: write test_check_ci_integrity.py — baseline match, drift, missing file
-- [ ] TDD: write test_check_gate_parity.py — rewrite from deleted lint-broken version
-- [ ] TDD: write test_pipeline_status.py — stale gate, dead PID, missing file
-- [ ] TDD: write test_bump_version.py — version replacement across files
-- [ ] TDD: write test_check_version_consistency.py — mismatch detect, match pass
-- [ ] TDD: write test_ci_run_summary.py — JSON parse, failure grouping, exit codes
-- [ ] TDD: write test_gate_local.py — 6 phases, .gate-status, terminal marker
-- [ ] TDD: write test_write_text_escaping.py — $(cmd) roundtrip
+- [ ] L54.6 — CI-green on tag v0.1.0-beta.1 (SHA e6b97c0a): run 30069656965 in_progress | test: make ci-verdict BRANCH=v0.1.0-beta.1
+- [ ] L54.7 — Release artifacts: verify 12 categories via make verify-release-completeness | status: no release yet, CI must complete first
+- [ ] L54.8 — TDD: write test_ci_push_guard.py — headSha matching, duplicate detection, FORCE bypass
+- [ ] L54.9 — TDD: write test_check_ci_integrity.py — baseline match, drift, missing file
+- [ ] L54.10 — TDD: write test_check_gate_parity.py — rewrite from deleted lint-broken version
+- [ ] L54.11 — TDD: write test_pipeline_status.py — stale gate, dead PID, missing file
+- [ ] L54.12 — TDD: write test_bump_version.py — version replacement across files
+- [ ] L54.13 — TDD: write test_check_version_consistency.py — mismatch detect, match pass
+- [ ] L54.14 — TDD: write test_ci_run_summary.py — JSON parse, failure grouping, exit codes
+- [ ] L54.15 — TDD: write test_gate_local.py — 6 phases, .gate-status, terminal marker
+- [ ] L54.16 — TDD: write test_write_text_escaping.py — $(cmd) roundtrip
 
 ### HIGH — Enforcement (needs opencode restart)
-- [ ] Restart opencode to activate 13 enforcement plugins
-- [ ] Extend check-tdd-compliance to scripts/ directory (blocks 9 violations above)
-- [ ] ci-busy-check headSha fix: only block push when CI matches current remote tip
+- [ ] L54.17 — Restart opencode to activate 13 enforcement plugins
+- [ ] L54.18 — Extend check-tdd-compliance to scripts/ directory (blocks 9 violations above)
+- [ ] L54.19 — ci-busy-check headSha fix: only block push when CI matches current remote tip
 
 ### HIGH — Pipeline / Gate
-- [ ] check-gate-parity: add 4 missing CI phases to gate-refresh
-- [ ] Fix write-text $ escaping: stdin piping
-- [ ] pipeline-health: auto-restart when gate stale >5 min
+- [ ] L54.20 — check-gate-parity: add 4 missing CI phases to gate-refresh
+- [ ] L54.21 — Fix write-text $ escaping: stdin piping
+- [ ] L54.22 — pipeline-health: auto-restart when gate stale >5 min
 
 ### MEDIUM — Version / Release
-- [ ] check-version-consistency: wire into release-cut step 0
-- [ ] release-create: add sbom + shasum to fallback path
-- [ ] sync-task-ledger target: actually write to TASKS.md (currently stub)
+- [ ] L54.23 — check-version-consistency: wire into release-cut step 0
+- [ ] L54.24 — release-create: add sbom + shasum to fallback path
+- [ ] L54.25 — sync-task-ledger target: actually write to TASKS.md (currently stub)
 
 ### COMPLETED this session (24 items)
 - [x] Restore 23 zero-byte plugin files | e8b6891b
@@ -2043,24 +2043,24 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 - [x] TASKS.md updated with current session | df9f3738
 
 ### CRITICAL — Active
-- [ ] check_task_ledger.py enforcement: blocks commits when TASKS.md stale/missing | test: tests/unit/test_check_task_ledger.py | status: impl+test written, needs commit
-- [ ] CI-green on tag v0.1.0-beta.1 (SHA e20afacd): run 30069080389 pending | test: make ci-verdict BRANCH=v0.1.0-beta.1
-- [ ] Release artifacts: verify 12 categories via make verify-release-completeness | status: draft w/ 1 macOS binary
+- [ ] L54.26 — check_task_ledger.py enforcement: blocks commits when TASKS.md stale/missing | test: tests/unit/test_check_task_ledger.py | status: impl+test written, needs commit
+- [ ] L54.27 — CI-green on tag v0.1.0-beta.1 (SHA e20afacd): run 30069080389 pending | test: make ci-verdict BRANCH=v0.1.0-beta.1
+- [ ] L54.28 — Release artifacts: verify 12 categories via make verify-release-completeness | status: draft w/ 1 macOS binary
 
 ### HIGH — Enforcement (needs opencode restart)
-- [ ] Restart opencode to activate 13 enforcement plugins (zero-byte at session start, fixed+committed)
-- [ ] Extend check-tdd-compliance to scripts/ directory
-- [ ] ci-busy-check headSha fix: only block push when CI matches current remote tip
+- [ ] L54.29 — Restart opencode to activate 13 enforcement plugins (zero-byte at session start, fixed+committed)
+- [ ] L54.30 — Extend check-tdd-compliance to scripts/ directory
+- [ ] L54.31 — ci-busy-check headSha fix: only block push when CI matches current remote tip
 
 ### HIGH — Pipeline / Gate
-- [ ] check-gate-parity: add 4 missing CI phases to gate-refresh
-- [ ] Fix write-text $ escaping: stdin piping
-- [ ] pipeline-health: auto-restart when gate stale >5 min
+- [ ] L54.32 — check-gate-parity: add 4 missing CI phases to gate-refresh
+- [ ] L54.33 — Fix write-text $ escaping: stdin piping
+- [ ] L54.34 — pipeline-health: auto-restart when gate stale >5 min
 
 ### MEDIUM — Version / Release
-- [ ] check-version-consistency: wire into release-cut step 0
-- [ ] release-create: add sbom + shasum to fallback path
-- [ ] sync-task-ledger target: actually write current task state to TASKS.md
+- [ ] L54.35 — check-version-consistency: wire into release-cut step 0
+- [ ] L54.36 — release-create: add sbom + shasum to fallback path
+- [ ] L54.37 — sync-task-ledger target: actually write current task state to TASKS.md
 
 ### COMPLETED this session
 - [x] Restore 23 zero-byte plugin files | e8b6891b

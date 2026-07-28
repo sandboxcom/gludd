@@ -19,6 +19,10 @@ class TestIdPattern:
     def test_hyphenated_ids_supported(self) -> None:
         assert ID_PATTERN.findall("FIX-3 — hotfix id") == ["FIX-3"]
 
+    def test_session_scoped_ids_supported(self) -> None:
+        assert ID_PATTERN.findall("S54.A1 — release task") == ["S54.A1"]
+        assert ID_PATTERN.findall("S54.C10.2 — nested task") == ["S54.C10.2"]
+
     def test_does_not_match_plain_text(self) -> None:
         assert not ID_PATTERN.findall("description with 1.2 value")
 
@@ -80,6 +84,11 @@ class TestExtractTasks:
         _checked, unchecked = extract_tasks_content(content)
         assert len(unchecked) == 1
         assert unchecked[0]["ids"] == ["W.1", "W.2"]
+
+    def test_parses_session_scoped_primary_id(self) -> None:
+        content = "- [ ] S54.A1 — Release task | status: pending\n"
+        _checked, unchecked = extract_tasks_content(content)
+        assert unchecked[0]["ids"] == ["S54.A1"]
 
 
 class TestValidateAgainstRealTas:

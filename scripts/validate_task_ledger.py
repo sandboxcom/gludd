@@ -24,8 +24,14 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
-ID_PATTERN = re.compile(r"\b([A-Z]{1,3}\d*(?:\.\d+(?:\.\d+)*|-\d+))\b")
-PRIMARY_ID_PATTERN = re.compile(r"^-\s*\[[ x]\]\s+([A-Z]{1,3}\d*(?:\.\d+(?:\.\d+)*|-\d+))\b")
+ID_TOKEN = (
+    r"[A-Z]{1,3}\d*"
+    r"(?:(?:\.(?:[A-Z]{1,3}\d*|\d+))+|-\d+)"
+)
+ID_PATTERN = re.compile(rf"\b({ID_TOKEN})\b")
+PRIMARY_ID_PATTERN = re.compile(
+    rf"^-\s*\[[ x]\]\s+({ID_TOKEN})\b"
+)
 EPOCH_PATTERN = re.compile(r"epoch\s+(\d{10,})")
 STALE_SECONDS = 24 * 3600
 
