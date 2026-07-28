@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) Prometheus scrape E2E doubles violated the transport contract
+
+- **What**: The complete serial E2E run stopped after 1,106 passes because the Prometheus scrape health test received `ok: false` from an otherwise successful response double.
+- **Root cause**: Five local transports declared `get(self, **kwargs)` while `PromScrapeSource` and its transport protocol call `get(url, *, headers=..., timeout=...)`. Python rejected the required positional URL before the fake response could be returned; health correctly converted that transport failure into an unhealthy result.
+- **Fix applied**: Every Prometheus scrape E2E transport now implements the complete protocol signature, including the positional URL and keyword-only headers and timeout. This keeps the doubles interchangeable with the production transport and exposes future call-contract drift.
+- **Long-lived user evidence**: Python users have reported this exact failure mode for more than a decade: a fake with a narrower signature raises `TypeError` when the system passes the real interface's arguments, and the durable fix is for the fake to accept the same arguments as the original ([Stack Overflow discussion](https://stackoverflow.com/questions/35732487/how-do-i-mock-a-method-that-uses-requests-get-in-my-class)).
+- **Lesson**: A transport double must implement the protocol it stands in for. A permissive-looking `**kwargs` method is still incompatible when the real contract includes required positional arguments.
+
 ### 2026-07-28 — (resolved) offline vSphere HCL generation warned about an unrelated optional SDK
 
 - **What**: The complete serial E2E run emitted two `UserWarning` messages because VMware/vSphere Terraform generation checked for `pyvmomi`, even though HCL emission neither imports nor calls that SDK.

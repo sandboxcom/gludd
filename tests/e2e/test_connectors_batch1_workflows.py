@@ -949,7 +949,13 @@ class TestPromScrapeConnector:
         from general_ludd.connectors.prom_scrape import PromScrapeSource
 
         class QuietTransport:
-            def get(self, **kwargs: object) -> object:
+            def get(
+                self,
+                url: str,
+                *,
+                headers: dict[str, str] | None = None,
+                timeout: float | None = None,
+            ) -> object:
                 return _MockResponse(200, "up 1\n")
 
         source = PromScrapeSource(
@@ -962,7 +968,13 @@ class TestPromScrapeConnector:
         from general_ludd.connectors.prom_scrape import PromScrapeSource
 
         class OkTransport:
-            def get(self, **kwargs: object) -> object:
+            def get(
+                self,
+                url: str,
+                *,
+                headers: dict[str, str] | None = None,
+                timeout: float | None = None,
+            ) -> object:
                 return _MockResponse(200, "up 1\n")
 
         source = PromScrapeSource(
@@ -975,7 +987,13 @@ class TestPromScrapeConnector:
         from general_ludd.connectors.prom_scrape import PromScrapeSource
 
         class ErrTransport:
-            def get(self, **kwargs: object) -> object:
+            def get(
+                self,
+                url: str,
+                *,
+                headers: dict[str, str] | None = None,
+                timeout: float | None = None,
+            ) -> object:
                 return _MockResponse(500, "")
 
         source = PromScrapeSource(
@@ -988,7 +1006,13 @@ class TestPromScrapeConnector:
         from general_ludd.connectors.prom_scrape import PromScrapeSource
 
         class MetricsTransport:
-            def get(self, **kwargs: object) -> object:
+            def get(
+                self,
+                url: str,
+                *,
+                headers: dict[str, str] | None = None,
+                timeout: float | None = None,
+            ) -> object:
                 return _MockResponse(
                     200,
                     "# HELP up Whether up\n"
@@ -1009,7 +1033,13 @@ class TestPromScrapeConnector:
         from general_ludd.connectors.prom_scrape import PromScrapeSource
 
         class MetricsTransport:
-            def get(self, **kwargs: object) -> object:
+            def get(
+                self,
+                url: str,
+                *,
+                headers: dict[str, str] | None = None,
+                timeout: float | None = None,
+            ) -> object:
                 return _MockResponse(
                     200,
                     "node_cpu_seconds_total 100\n"
