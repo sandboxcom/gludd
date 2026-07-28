@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) single-line conversation text was mistaken for a file path
+
+- **What**: `parse_conversation_log()` accepted either a path or inline log text, but returned no entries for valid single-line XML or role-prefixed conversations.
+- **Root cause**: The discriminator treated every string without a newline as a path. Inline `<user>…</user>` content therefore took the nonexistent-file branch before the parser could inspect its structure.
+- **Fix applied**: String inputs with recognized conversation tags, role prefixes, or line breaks are now parsed as inline content; explicit `Path` values and unstructured single-line strings retain fail-closed file semantics. Unit regressions cover both single-line XML and fallback formats, and the legacy E2E parser contract now passes.
+- **Long-lived user evidence**: Python users have discussed the ambiguity of APIs that accept both path-like and stream/content-like inputs for nearly a decade, including the need to distinguish the two contracts explicitly rather than relying on broad string duck typing ([Stack Overflow, 2017](https://stackoverflow.com/questions/41413998/how-to-differentiate-a-file-like-object-from-a-file-path-like-object)).
+- **Lesson**: Dual-form parser inputs need a documented structural discriminator. Formatting details such as the presence of a newline cannot stand in for input type.
+
 ### 2026-07-28 — (resolved) legacy dispatcher E2E bypassed the capability boundary
 
 - **What**: A legacy E2E batch expected `skill` and `mcp` handlers to execute with `role=None`, even though both kinds are explicitly privileged and the production dispatcher correctly returned `capability_denied`.
