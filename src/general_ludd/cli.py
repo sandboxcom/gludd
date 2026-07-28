@@ -995,21 +995,19 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     codeintel_search.add_argument("--daemon-url", default="http://localhost:8000")
     codeintel_search.set_defaults(func=_cmd_code_search)
 
-    # quantization removed from CLI — should be a tunable daemon subsystem.
-    # Code retained below for programmatic use.
-    # quant_parser = sub.add_parser("quantization", help="Model quantization detection")
-    # quant_parser.set_defaults(func=None)
-    # quant_sub = quant_parser.add_subparsers(dest="quantization_command")
-    # quant_list = quant_sub.add_parser("list", help="List known quantization info")
-    # quant_list.add_argument("--daemon-url", default="http://localhost:8000")
-    # quant_list.set_defaults(func=_cmd_quantization_list)
-    # quant_detect = quant_sub.add_parser("detect", help="Detect quantization for a model")
-    # quant_detect.add_argument("--model-id", required=True, help="Model ID to detect")
-    # quant_detect.add_argument("--daemon-url", default="http://localhost:8000")
-    # quant_detect.set_defaults(func=_cmd_quantization_detect)
-    # quant_drift = quant_sub.add_parser("drift-check", help="Check for quantization drift")
-    # quant_drift.add_argument("--daemon-url", default="http://localhost:8000")
-    # quant_drift.set_defaults(func=_cmd_quantization_drift_check)
+    quant_parser = sub.add_parser("quantization", help="Model quantization detection")
+    quant_parser.set_defaults(func=None)
+    quant_sub = quant_parser.add_subparsers(dest="quantization_command")
+    quant_list = quant_sub.add_parser("list", help="List known quantization info")
+    quant_list.add_argument("--daemon-url", default="http://localhost:8000")
+    quant_list.set_defaults(func=_cmd_quantization_list)
+    quant_detect = quant_sub.add_parser("detect", help="Detect quantization for a model")
+    quant_detect.add_argument("--model-id", required=True, help="Model ID to detect")
+    quant_detect.add_argument("--daemon-url", default="http://localhost:8000")
+    quant_detect.set_defaults(func=_cmd_quantization_detect)
+    quant_drift = quant_sub.add_parser("drift-check", help="Check for quantization drift")
+    quant_drift.add_argument("--daemon-url", default="http://localhost:8000")
+    quant_drift.set_defaults(func=_cmd_quantization_drift_check)
 
     slurm_parser = sub.add_parser("slurm", help="Slurm job management")
     slurm_parser.set_defaults(func=None)
@@ -4165,7 +4163,15 @@ def _cmd_quantization_list(args: argparse.Namespace) -> None:
     data = _http_call("GET", f"{args.daemon_url}/admin/quantization", timeout=10.0)
     if data is None:
         return
-    models = data.get("profiles", data.get("models", []))
+    raw_models = data.get("profiles", data.get("models", []))
+    if isinstance(raw_models, dict):
+        models = [
+            {"model_id": model_id, **profile}
+            for model_id, profile in raw_models.items()
+            if isinstance(profile, dict)
+        ]
+    else:
+        models = raw_models
     if models:
         for m in models:
             prec = m.get("precision", "unknown")
@@ -4183,8 +4189,10 @@ def _cmd_quantization_detect(args: argparse.Namespace) -> None:
     if data is None:
         return
     mid = data.get("model_id", "?")
-    prec = data.get("precision", "unknown")
-    conf = data.get("confidence", 0)
+    best = data.get("best")
+    profile = best if isinstance(best, dict) else data
+    prec = profile.get("precision", "unknown")
+    conf = profile.get("confidence", 0)
     print(f"  {mid}  prec={prec}  conf={conf:.2f}")
 
 
@@ -4193,8 +4201,9 @@ def _cmd_quantization_drift_check(args: argparse.Namespace) -> None:
     if data is None:
         return
     if data.get("drift_detected"):
-        print(f"Drift detected in {len(data.get('drifted_models', []))} model(s)")
-        for m in data.get("drifted_models", []):
+        changes = data.get("changes", data.get("drifted_models", []))
+        print(f"Drift detected in {len(changes)} model(s)")
+        for m in changes:
             print(f"  {m.get('model_id')}: {m.get('old_precision')} -> {m.get('new_precision')}")
     else:
         print("No drift detected.")

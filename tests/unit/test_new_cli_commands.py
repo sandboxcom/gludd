@@ -378,6 +378,25 @@ class TestQuantizationCli:
             out = capsys.readouterr().out
             assert "test-model" in out
 
+    def test_quantization_list_reads_backend_model_mapping(self, capsys):
+        with patch("general_ludd.cli.httpx.get") as mock_req:
+            mock_req.return_value = MagicMock(
+                status_code=200,
+                text="",
+                json=lambda: {
+                    "models": {
+                        "test-model": {
+                            "precision": "bf16",
+                            "confidence": 0.95,
+                        },
+                    },
+                },
+            )
+            _parse(["quantization", "list"])
+            out = capsys.readouterr().out
+            assert "test-model" in out
+            assert "prec=bf16" in out
+
     def test_quantization_detect(self, capsys):
         with patch("general_ludd.cli.httpx.post") as mock_req:
             mock_req.return_value = MagicMock(
@@ -389,6 +408,22 @@ class TestQuantizationCli:
             out = capsys.readouterr().out
             assert "test-model" in out
 
+    def test_quantization_detect_reads_backend_best_profile(self, capsys):
+        with patch("general_ludd.cli.httpx.post") as mock_req:
+            mock_req.return_value = MagicMock(
+                status_code=200,
+                text="",
+                json=lambda: {
+                    "model_id": "test-model",
+                    "best": {"precision": "bf16", "confidence": 0.97},
+                },
+            )
+            _parse(["quantization", "detect", "--model-id", "test-model"])
+            out = capsys.readouterr().out
+            assert "test-model" in out
+            assert "prec=bf16" in out
+            assert "conf=0.97" in out
+
     def test_quantization_drift_check(self, capsys):
         with patch("general_ludd.cli.httpx.post") as mock_req:
             mock_req.return_value = MagicMock(
@@ -399,6 +434,26 @@ class TestQuantizationCli:
             _parse(["quantization", "drift-check"])
             out = capsys.readouterr().out
             assert "No drift" in out
+
+    def test_quantization_drift_check_reads_backend_changes(self, capsys):
+        with patch("general_ludd.cli.httpx.post") as mock_req:
+            mock_req.return_value = MagicMock(
+                status_code=200,
+                text="",
+                json=lambda: {
+                    "drift_detected": True,
+                    "changes": [{
+                        "model_id": "test-model",
+                        "old_precision": "fp16",
+                        "new_precision": "int8",
+                    }],
+                    "models_checked": 1,
+                },
+            )
+            _parse(["quantization", "drift-check"])
+            out = capsys.readouterr().out
+            assert "Drift detected in 1 model(s)" in out
+            assert "test-model: fp16 -> int8" in out
 
     def test_quantization_detect_missing_model(self):
         import pytest
