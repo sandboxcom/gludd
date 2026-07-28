@@ -8,6 +8,10 @@ OPENCODE_DB ?= ~/.local/share/opencode/opencode.db
 VERIFY_POLLS ?= 30
 GLUDD_TASK_TIMEOUT ?= 300
 GATE_POLL_INTERVAL ?= 60
+GATE_STATUS_FILE ?= .gate-status
+GATE_RELEASE_PYTEST ?= $(UV) run python -m pytest
+GATE_RELEASE_MAKE ?= $(MAKE)
+GATE_RELEASE_WORKERS ?= 2
 
 _MULTIWORD_VALUE_GOALS := \
     copy-file feature-done feature-start git-add git-branch git-checkout git-cherry-pick-list \
@@ -2654,16 +2658,81 @@ branches-unmerged:
 ci-greenness:
 	@gh run list -R sandboxcom/gludd -L 20 --json conclusion,status 2>/dev/null | $(PYTHON) -c "import sys,json; r=json.load(sys.stdin); done=[x for x in r if x.get('status')=='completed']; g=[x for x in done if x.get('conclusion')=='success']; total=len(done); print('CI greenness (last %d completed runs): %d GREEN, %d not-green = %d%%.' % (total, len(g), total-len(g), (100*len(g)//total if total else 0))); print('  -> Do NOT call CI \"reliable/green\" without quoting this ratio.')" || echo "ci-greenness-failed"
 
+.PHONY: gate-full gate-all gate-release-phases
 gate-full: gate-refresh
-	@echo "=== GATE PHASE: integration ==="; \
-	printf "integration " >> .gate-status; \
-	echo run python -m pytest tests/integration/ -q --no-header -n 2 --maxprocesses=2 > /tmp/gludd-gate-integration.log 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL" >> .gate-status && tail -20 /tmp/gludd-gate-integration.log); \
-	echo "=== GATE PHASE: e2e ==="; \
-	printf "e2e " >> .gate-status; \
-	echo run python -m pytest tests/e2e/ -q --no-header > /tmp/gludd-gate-e2e.log 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL" >> .gate-status && tail -20 /tmp/gludd-gate-e2e.log); \
-	echo "=== GATE PHASE: molecule ==="; \
-	printf "molecule " >> .gate-status; \
-	/Library/Developer/CommandLineTools/usr/bin/make --no-print-directory molecule-test > /tmp/gludd-gate-molecule.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && tail -20 /tmp/gludd-gate-molecule.log)
+	@$(MAKE) --no-print-directory gate-release-phases
+
+# Release-only phases shared by gate-full and gate-all. Commands intentionally
+# stream directly to the caller: a silent redirected test is not observable
+# release evidence. The prior terminal marker is removed before work starts so
+# any interruption or phase failure cannot leave a stale green status behind.
+gate-release-phases:
+	@set -eu; \
+	status="$(GATE_STATUS_FILE)"; \
+	if [ ! -f "$$status" ]; then \
+		echo "ERROR: $$status is missing; run the base gate before release phases." >&2; \
+		exit 1; \
+	fi; \
+	status_tmp="$${status}.release.$$$$"; \
+	sed -e '/^=== GATE: PASSED ===$$/d' -e '/^=== GATE: FAILED ===$$/d' "$$status" > "$$status_tmp"; \
+	mv "$$status_tmp" "$$status"; \
+	failed_written=0; \
+	trap 'exit 130' INT TERM; \
+	trap 'rc=$$?; if [ "$$rc" -ne 0 ] && [ "$$failed_written" -eq 0 ]; then printf "=== GATE: FAILED ===\n" >> "$$status"; fi' EXIT; \
+	start_phase() { \
+		phase="$$1"; \
+		echo "=== GATE RELEASE PHASE: $$phase ==="; \
+		printf "%s RUN\n" "$$phase" >> "$$status"; \
+	}; \
+	pass_phase() { \
+		printf "%s PASS 0\n" "$$1" >> "$$status"; \
+	}; \
+	fail_phase() { \
+		phase="$$1"; rc="$$2"; detail="$$3"; \
+		printf "%s FAIL %s %s\n" "$$phase" "$$rc" "$$detail" >> "$$status"; \
+		printf "=== GATE: FAILED ===\n" >> "$$status"; \
+		failed_written=1; \
+		exit "$$rc"; \
+	}; \
+	case "$(GATE_RELEASE_WORKERS)" in \
+		1|2) ;; \
+		*) \
+			echo "ERROR: GATE_RELEASE_WORKERS must be 1 or 2." >&2; \
+			fail_phase configuration 2 invalid-worker-cap; \
+			;; \
+	esac; \
+	start_phase integration; \
+	if $(GATE_RELEASE_PYTEST) tests/integration/ -q --no-header -n "$(GATE_RELEASE_WORKERS)" --dist loadgroup; then \
+		pass_phase integration; \
+	else \
+		rc=$$?; fail_phase integration "$$rc" command-failed; \
+	fi; \
+	start_phase e2e; \
+	if $(GATE_RELEASE_PYTEST) tests/e2e/ -q --no-header -n 1 --dist loadgroup; then \
+		pass_phase e2e; \
+	else \
+		rc=$$?; fail_phase e2e "$$rc" command-failed; \
+	fi; \
+	start_phase molecule; \
+	found_scenario=0; \
+	for scenario_dir in molecule/playbooks/*/; do \
+		if [ ! -d "$$scenario_dir" ]; then continue; fi; \
+		found_scenario=1; \
+		scenario=$$(basename "$$scenario_dir"); \
+		echo "--- GATE MOLECULE SCENARIO: $$scenario ---"; \
+		if $(GATE_RELEASE_MAKE) --no-print-directory molecule-test SCENARIO="$$scenario"; then \
+			echo "--- GATE MOLECULE PASS: $$scenario ---"; \
+		else \
+			rc=$$?; fail_phase molecule "$$rc" "scenario=$$scenario"; \
+		fi; \
+	done; \
+	if [ "$$found_scenario" -ne 1 ]; then \
+		echo "ERROR: no Molecule scenarios found under molecule/playbooks/." >&2; \
+		fail_phase molecule 2 no-scenarios; \
+	fi; \
+	pass_phase molecule; \
+	printf "=== GATE: PASSED ===\n" >> "$$status"; \
+	echo "=== GATE RELEASE PHASES: PASSED ==="
 
 test-atomic-validate:
 	@echo "test-atomic-validate: verify atomic target creation with tempfile validation"
@@ -4034,18 +4103,7 @@ audit-untested-code:
 	@$(UV) run python scripts/audit_untested_code.py
 
 gate-all: gate-refresh
-	@echo "=== GATE PHASE: integration ==="; \
-	printf "integration " >> .gate-status; \
-	echo run python -m pytest tests/integration/ -q --no-header -n 2 --maxprocesses=2 > /tmp/gludd-gate-integration.log 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL" >> .gate-status && tail -20 /tmp/gludd-gate-integration.log); \
-	echo "=== GATE PHASE: e2e ==="; \
-	printf "e2e " >> .gate-status; \
-	echo run python -m pytest tests/e2e/ -q --no-header > /tmp/gludd-gate-e2e.log 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL" >> .gate-status && tail -20 /tmp/gludd-gate-e2e.log); \
-	echo "=== GATE PHASE: molecule ==="; \
-	printf "molecule " >> .gate-status; \
-	for shard in 1 2 3 4 5 6; do \
-		/Library/Developer/CommandLineTools/usr/bin/make --no-print-directory molecule-test-shard SHARD=$shard > /tmp/gludd-gate-mol$shard.log 2>&1 || touch /tmp/gludd-gate-mol-failed; \
-	done; \
-	if [ -f /tmp/gludd-gate-mol-failed ]; then rm -f /tmp/gludd-gate-mol-failed; echo "FAIL" >> .gate-status; else echo "PASS" >> .gate-status; fi
+	@$(MAKE) --no-print-directory gate-release-phases
 
 check-test-quality:
 	@$(UV) run python scripts/check_test_quality.py
