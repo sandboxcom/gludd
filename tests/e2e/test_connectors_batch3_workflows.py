@@ -1311,15 +1311,19 @@ class TestAzureResourceGraphConnector:
         with pytest.raises((ValueError, RuntimeError)):
             AzureResourceGraphSource({"base_url": "http://127.0.0.1/"})
 
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.azure_resource_graph import AzureResourceGraphSource
 
         transport = MockHttpTransport(default_status=200, default_body={"data": []})
-        src = AzureResourceGraphSource({"subscription_id": "sub-1"}, http_get=transport.__call__)  # type: ignore[arg-type]
+        monkeypatch.setenv("AZURE_GRAPH_TOKEN", "test-token")
+        src = AzureResourceGraphSource(
+            {"subscription_id": "sub-1", "token_env": "AZURE_GRAPH_TOKEN"},
+            http_get=transport.__call__,
+        )
         result = src.health()
-        assert isinstance(result, dict)
+        assert result["ok"] is True
 
-    def test_query_returns_records(self):
+    def test_query_returns_records(self, monkeypatch):
         from general_ludd.connectors.azure_resource_graph import AzureResourceGraphSource
 
         transport = MockHttpTransport(
@@ -1330,14 +1334,23 @@ class TestAzureResourceGraphConnector:
                         "id": "/subscriptions/sub-1/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm1",
                         "name": "vm1",
                         "type": "microsoft.compute/virtualmachines",
+                        "resourceGroup": "rg",
+                        "location": "eastus",
+                        "properties": {"provisioningState": "Succeeded"},
                     }
                 ]
             },
         )
-        src = AzureResourceGraphSource({"subscription_id": "sub-1"}, http_get=transport.__call__)  # type: ignore[arg-type]
+        monkeypatch.setenv("AZURE_GRAPH_TOKEN", "test-token")
+        src = AzureResourceGraphSource(
+            {"subscription_id": "sub-1", "token_env": "AZURE_GRAPH_TOKEN"},
+            http_get=transport.__call__,
+        )
         records = src.query({"query": "Resources"})
-        assert isinstance(records, list)
-        assert len(records) >= 1
+        assert len(records) == 1
+        assert records[0]["level_or_status"] == "Succeeded"
+        assert records[0]["labels"]["resourceGroup"] == "rg"
+        assert records[0]["labels"]["location"] == "eastus"
 
 
 class TestAwsConfigTrailConnector:
