@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) event-loop workflow E2E bypassed backend and lifecycle boundaries
+
+- **What**: The workflow suite compared a SQLite-round-tripped naive lease timestamp directly with aware UTC, created stale todos outside the loop's project scope, expected a recovered todo to remain queued even though the same tick immediately reclaimed it, and manually inserted a task into the private background set without installing the production completion callback.
+- **Root cause**: The E2E encoded storage-independent timezone behavior, cross-tenant mutation, an intermediate phase state, and internal collection mutation as if each were a public runtime guarantee.
+- **Fix applied**: Lease assertions normalize SQLite's lost timezone metadata to UTC. Stuck/live fixtures carry the loop's project ID; recovery now proves requeue plus same-tick reclaim through active status, version advancement, and claimed-todo evidence. Shutdown tasks register through `_track_background_task`, so cancellation and callback-driven removal are exercised together. All 41 workflows pass.
+- **Long-lived user evidence**: SQLAlchemy users continue to report timezone metadata being absent after database round-trip, with maintainers noting that returned datetime behavior depends on the driver ([discussion #11791](https://github.com/sqlalchemy/sqlalchemy/discussions/11791)). Celery operators have reported stuck workers and missed heartbeats for more than a decade ([celery/celery#2906](https://github.com/celery/celery/issues/2906)), including regressions after reconnect and shutdown changes ([discussion #7276](https://github.com/celery/celery/discussions/7276)). CPython users likewise document that cancellation and done-callback timing can diverge unless the underlying task is actually awaited ([cpython#105836](https://github.com/python/cpython/issues/105836)).
+- **Lesson**: Workflow E2E must assert durable outcomes at the correct phase boundary, preserve tenant scope, normalize backend-specific timestamp representation, and use the real task-registration lifecycle instead of mutating bookkeeping internals.
+
 ### 2026-07-28 — (resolved) event-loop E2E created orphaned tenant and audit rows
 
 - **What**: The resumed serial E2E tail enabled SQLite foreign keys, then created todos for a project that the fixture never inserted and created blocker-history events for todos that did not exist. The same file also passed database-managed `updated_at` through the public create payload to simulate old blockers, which the hardened repository correctly rejected.
