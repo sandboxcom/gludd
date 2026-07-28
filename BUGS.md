@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) Dmesg E2E expected host access to fail silently
+
+- **What**: Connector batch 5 reached Dmesg and expected a query without an injected command runner to return an empty list. Its nominal payload also used approximate `ts`/`prio`/`fac` fields and a top-level list rather than pinning the documented JSON envelope and command boundary.
+- **Root cause**: The broad E2E treated absence of a runner as “no kernel messages,” even though the connector deliberately requires dependency injection so tests and restricted runtimes never read the host kernel ring buffer implicitly. The loose fixture could pass without proving `dmesg --json` argv or normalized priority/facility behavior.
+- **Fix applied**: The no-runner case now requires an explicit `RuntimeError`. The successful case records and pins the exact list argv, models the `dmesg` JSON envelope with canonical fields, and verifies message, level, facility, and record count.
+- **Long-lived user evidence**: The current dmesg manual documents `--json`, notes its timestamp/priority semantics, and explicitly states that reading the kernel ring buffer can fail with permission denied ([dmesg(1)](https://man7.org/linux/man-pages/man1/dmesg.1.html)). Users have reported permission failures caused by `kernel.dmesg_restrict` for nearly a decade ([Unix & Linux, 2017](https://unix.stackexchange.com/questions/390184/dmesg-read-kernel-buffer-failed-permission-denied)), while other operations require elevated capabilities even when ordinary reads are enabled ([Unix & Linux, 2022](https://unix.stackexchange.com/questions/724719/dmesg-c-read-kernel-buffer-failed-operation-not-permitted/724735)).
+- **Lesson**: Missing host privileges or dependencies are not empty telemetry. Command-backed tests must inject the runner, pin argv and wire format, and keep availability failures observable.
+
 ### 2026-07-28 — (resolved) Containerd E2E invented an alias and stale crictl payload
 
 - **What**: Connector batch 5 reached Containerd and expected a configured `name` to replace its stable source identity. The remaining fake runners omitted the required timeout keyword, and the query fixture returned `items` although current crictl container JSON is consumed from `containers`.

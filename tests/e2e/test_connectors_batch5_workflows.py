@@ -530,24 +530,46 @@ class TestDmesgConnector:
     def test_query_returns_log_entries(self):
         from general_ludd.connectors.dmesg import DmesgSource
 
+        calls: list[list[str]] = []
         result = MockRunResult(
             returncode=0,
-            stdout=_json.dumps([
-                {"msg": "Initializing cgroup subsys cpuset", "ts": 1, "prio": 6, "fac": "kern"},
-                {"msg": "Command line: BOOT_IMAGE=/vmlinuz", "ts": 2, "prio": 6, "fac": "kern"},
-            ]),
+            stdout=_json.dumps({
+                "dmesg": [
+                    {
+                        "msg": "Initializing cgroup subsys cpuset",
+                        "timestamp": {"usec": 1},
+                        "priority": 6,
+                        "facility": "kern",
+                    },
+                    {
+                        "msg": "Command line: BOOT_IMAGE=/vmlinuz",
+                        "timestamp": {"usec": 2},
+                        "priority": 6,
+                        "facility": "kern",
+                    },
+                ]
+            }),
         )
-        source = DmesgSource(runner=lambda argv: result)
-        records = source.query({})
-        assert len(records) >= 2
-        assert all(r["kind"] == "logs" for r in records)
 
-    def test_query_empty_when_no_runner(self):
+        def _runner(argv: list[str]) -> MockRunResult:
+            calls.append(argv)
+            return result
+
+        source = DmesgSource(runner=_runner)
+        records = source.query({})
+        assert calls == [["dmesg", "--json"]]
+        assert len(records) == 2
+        assert all(r["kind"] == "logs" for r in records)
+        assert records[0]["message"] == "Initializing cgroup subsys cpuset"
+        assert records[0]["level_or_status"] == "info"
+        assert records[0]["labels"]["facility"] == "kern"
+
+    def test_query_requires_injected_runner(self):
         from general_ludd.connectors.dmesg import DmesgSource
 
         source = DmesgSource()
-        records = source.query({})
-        assert records == []
+        with pytest.raises(RuntimeError, match="no runner injected"):
+            source.query({})
 
     def test_rejects_flag_injection(self):
         from general_ludd.connectors.dmesg import DmesgSource
