@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) Redfish E2E assumed mandatory URL and wrong transport shape
+
+- **What**: Connector batch 5 reached Redfish and expected construction without `base_url` to fail, although the connector provides a loopback default that remains blocked unless internal access is explicitly allowed. Its remaining tests reused a method-explicit HTTP fake, while Redfish injects `transport(url, headers=..., timeout=..., verify=...)` returning `status` and text-backed JSON.
+- **Root cause**: The broad E2E generalized another connector's required-URL and httpx-like response contracts onto Redfish. It neither proved the fail-closed default nor exercised Redfish's URL-only transport, TLS verification flag, Basic-auth header, service-root status, or thermal resource normalization.
+- **Fix applied**: Default construction now requires a blocked-loopback health result. Valid configuration pins the stable identity and endpoint. Dedicated Redfish transports record the exact URL/timeout/TLS/header boundary, return the production response type, distinguish 200 from 500 health, and verify three normalized temperature/fan metrics from an explicit thermal query.
+- **Long-lived user evidence**: DMTF specifies `/redfish/v1/` as the service root and requires Basic authentication over TLS ([Redfish specification](https://www.dmtf.org/sites/default/files/standards/documents/DSP0266_1.20.0.html)). BMC operators have reported long-lived TLS protocol failures even with trusted custom certificates ([Dell community, 2016](https://www.dell.com/community/en/conversations/systems-management-general/idrac-redfish-often-get-an-exception-the-server-committed-a-protocol-violation/647f69e5f4ccf8a8de6f8359)) and firmware changes that reject mismatched Host headers ([Dell community, 2022](https://www.dell.com/community/en/conversations/systems-management-general/idrac9-6000-and-redfish/647f9dc9f4ccf8a8de23c724)).
+- **Lesson**: Hardware-management E2E must preserve the provider's exact URL-only transport and TLS/auth metadata. A safe default may construct successfully while remaining operationally blocked until the operator opts into an internal BMC.
+
 ### 2026-07-28 — (resolved) Linux-namespace E2E bypassed procfs parsing
 
 - **What**: Connector batch 5 reached Linux namespaces and passed a nonexistent high-level `reader=` callback that returned already-structured namespace data. Health asserted only that some dictionary was returned, and query could not prove any `/proc/<pid>/ns` behavior.

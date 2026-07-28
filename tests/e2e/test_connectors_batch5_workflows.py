@@ -734,73 +734,84 @@ class TestLinuxNamespacesConnector:
 
 
 class TestRedfishConnector:
-    def test_config_requires_base_url(self):
+    def test_default_config_is_fail_closed(self):
         from general_ludd.connectors.redfish import RedfishSource
 
-        with pytest.raises((ValueError, RuntimeError)):
-            RedfishSource({})
+        source = RedfishSource()
+        assert source.config.base_url == "https://127.0.0.1"
+        assert source.health() == {
+            "ok": False,
+            "detail": "host validation failed",
+        }
 
-    def test_constructs_with_valid_config(self, monkeypatch):
+    def test_constructs_with_valid_config(self):
         from general_ludd.connectors.redfish import RedfishSource
 
-        monkeypatch.setenv("RF_USR", "admin")
-        monkeypatch.setenv("RF_PWD", "pass")  # pragma: allowlist secret
-        try:
-            source = RedfishSource({
-                "base_url": "https://idrac.example.com",
-                "username_env": "RF_USR",
-                "password_env": "RF_PWD",  # pragma: allowlist secret
+        source = RedfishSource({
+            "base_url": "https://idrac.example.com",
+            "username_env": "RF_USR",
+            "password_env": "RF_PWD",  # pragma: allowlist secret
+        })
+        assert source.KIND == "metrics"
+        assert source.name == "redfish"
+        assert source.config.base_url == "https://idrac.example.com"
+
+    def test_health_ok(self):
+        from general_ludd.connectors.redfish import RedfishSource, TransportResponse
+
+        calls: list[dict[str, object]] = []
+
+        def _transport(
+            url: str,
+            *,
+            headers: dict[str, str],
+            timeout: float,
+            verify: bool,
+        ) -> TransportResponse:
+            calls.append({
+                "url": url,
+                "headers": headers,
+                "timeout": timeout,
+                "verify": verify,
             })
-            assert source.KIND == "metrics"
-        finally:
-            del os.environ["RF_USR"], os.environ["RF_PWD"]
+            return TransportResponse(200, _json.dumps({"@odata.id": "/redfish/v1/"}))
 
-    def test_health_ok(self, monkeypatch):
-        from general_ludd.connectors.redfish import RedfishSource
+        source = RedfishSource(
+            {
+                "base_url": "https://idrac.example.com",
+                "username_env": "RF_U",
+                "password_env": "RF_P",
+            },  # pragma: allowlist secret
+            transport=_transport,
+            env={"RF_U": "a", "RF_P": "p"},  # pragma: allowlist secret
+        )
+        result = source.health()
+        assert result == {"ok": True, "detail": "service root 200"}
+        assert calls[0]["url"] == "https://idrac.example.com/redfish/v1/"
+        assert calls[0]["timeout"] == 10.0
+        assert calls[0]["verify"] is True
+        assert "Authorization" in calls[0]["headers"]
 
-        transport = MockHttpTransport(status_code=200, body={"@odata.id": "/redfish/v1/"})
-        monkeypatch.setenv("RF_U", "a")
-        monkeypatch.setenv("RF_P", "p")
-        try:
-            source = RedfishSource(
-                {
-                    "base_url": "https://idrac.example.com",
-                    "username_env": "RF_U",
-                    "password_env": "RF_P",
-                },  # pragma: allowlist secret
-                transport=transport,
-            )
-            result = source.health()
-            assert result["ok"] is True
-        finally:
-            del os.environ["RF_U"], os.environ["RF_P"]
+    def test_health_not_ok_on_error(self):
+        from general_ludd.connectors.redfish import RedfishSource, TransportResponse
 
-    def test_health_not_ok_on_error(self, monkeypatch):
-        from general_ludd.connectors.redfish import RedfishSource
+        source = RedfishSource(
+            {
+                "base_url": "https://idrac.example.com",
+                "username_env": "RF_U2",
+                "password_env": "RF_P2",
+            },  # pragma: allowlist secret
+            transport=lambda *args, **kwargs: TransportResponse(500, "{}"),
+            env={"RF_U2": "a", "RF_P2": "p"},  # pragma: allowlist secret
+        )
+        result = source.health()
+        assert result == {"ok": False, "detail": "service root HTTP 500"}
 
-        transport = MockHttpTransport(status_code=500, body={})
-        monkeypatch.setenv("RF_U2", "a")
-        monkeypatch.setenv("RF_P2", "p")
-        try:
-            source = RedfishSource(
-                {
-                    "base_url": "https://idrac.example.com",
-                    "username_env": "RF_U2",
-                    "password_env": "RF_P2",
-                },  # pragma: allowlist secret
-                transport=transport,
-            )
-            result = source.health()
-            assert result["ok"] is False
-        finally:
-            del os.environ["RF_U2"], os.environ["RF_P2"]
+    def test_query_returns_thermal_data(self):
+        from general_ludd.connectors.redfish import RedfishSource, TransportResponse
 
-    def test_query_returns_thermal_data(self, monkeypatch):
-        from general_ludd.connectors.redfish import RedfishSource
-
-        transport = MockHttpTransport(
-            status_code=200,
-            body={
+        calls: list[str] = []
+        body = {
                 "@odata.id": "/redfish/v1/Chassis/1/Thermal",
                 "Temperatures": [
                     {
@@ -822,24 +833,26 @@ class TestRedfishConnector:
                         "Status": {"Health": "OK"},
                     },
                 ],
-            },
+            }
+
+        def _transport(url: str, **kwargs: object) -> TransportResponse:
+            calls.append(url)
+            return TransportResponse(200, _json.dumps(body))
+
+        source = RedfishSource(
+            {
+                "base_url": "https://idrac.example.com",
+                "username_env": "RF_Q",
+                "password_env": "RF_PQ",
+            },  # pragma: allowlist secret
+            transport=_transport,
+            env={"RF_Q": "a", "RF_PQ": "p"},  # pragma: allowlist secret
         )
-        monkeypatch.setenv("RF_Q", "a")
-        monkeypatch.setenv("RF_PQ", "p")
-        try:
-            source = RedfishSource(
-                {
-                    "base_url": "https://idrac.example.com",
-                    "username_env": "RF_Q",
-                    "password_env": "RF_PQ",
-                },  # pragma: allowlist secret
-                transport=transport,
-            )
-            records = source.query({})
-            assert len(records) >= 1
-            assert records[0]["kind"] == "metrics"
-        finally:
-            del os.environ["RF_Q"], os.environ["RF_PQ"]
+        records = source.query({"what": "thermal"})
+        assert calls == ["https://idrac.example.com/redfish/v1/Chassis/1/Thermal"]
+        assert len(records) == 3
+        assert all(record["kind"] == "metrics" for record in records)
+        assert [record["value"] for record in records] == [45.0, 22.0, 4500.0]
 
 
 # ============================================================================
