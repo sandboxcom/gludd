@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) callable connector adapters failed the strict type gate
+
+- **What**: The first combined connector cherry-pick passed its isolated runtime suites but failed the repository-wide strict type gate with 11 errors across six connectors.
+- **Root cause**: Conditional constructor branches let mypy infer each `_transport` attribute from the first concrete implementation instead of its protocol, several callbacks retained now-redundant casts, and the AWS client factory was left as an untyped callable. The TDD checker also failed to recognize the repository's established `test_connector_<module>.py` convention.
+- **Fix applied**: Transport and factory attributes now carry their protocol types explicitly, callable branches rely on valid narrowing instead of redundant casts, and callback tests no longer need argument suppressions. The TDD checker recognizes connector-prefixed unit files, with a scratch-repository regression proving the staged-source/staged-test contract.
+- **Long-lived user evidence**: Mypy's own type-checker documentation explains that an explicit left-hand-side type supplies the context needed for correct expression inference, while otherwise it falls back to subexpression types ([mypy Type Checker notes](https://github.com/python/mypy/wiki/Type-Checker)). Users continue to report ambiguous callable-union inference across type checkers ([mypy issue #19143](https://github.com/python/mypy/issues/19143)).
+- **Lesson**: Injectable adapters need an explicit protocol-typed storage boundary. Runtime compatibility tests and repository-wide static checks are complementary release gates, and the TDD guard must understand established test naming rather than force duplicate files.
+
 ### 2026-07-28 — (resolved) feature-claim gate emitted implicit-inventory warnings
 
 - **What**: Every otherwise-green `verify-feature-claims` gate phase emitted Ansible's `No inventory was parsed` and `provided hosts list is empty` warnings.

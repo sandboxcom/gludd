@@ -203,6 +203,7 @@ class SentrySource:
         selected_transport = (
             transport if transport is not None else configured_transport
         )
+        self._transport: Transport
         if selected_transport is None:
             self._transport = _UrllibTransport()
         elif callable(getattr(selected_transport, "get", None)):

@@ -168,7 +168,7 @@ class TestQuery:
             calls.append({"method": method, "url": url, **kwargs})
             return 200, CANNED
 
-        src = PagerDutySource(_cfg(), transport=transport)  # type: ignore[arg-type]
+        src = PagerDutySource(_cfg(), transport=transport)
 
         records = src.query({"statuses": ["triggered"]})
 

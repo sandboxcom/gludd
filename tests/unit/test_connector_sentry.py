@@ -211,6 +211,7 @@ class TestQuery:
         records = src.query({})
 
         assert len(records) == 1
+        assert records[0]["kind"] == "logs"
         assert calls[0]["method"] == "GET"
         assert "/api/0/projects/myorg/myproject/issues/" in calls[0]["url"]
 

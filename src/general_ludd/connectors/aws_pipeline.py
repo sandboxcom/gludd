@@ -202,13 +202,16 @@ class AwsPipelineSource:
         factory = config.get("client_factory")
         if aws_client is not None and callable(factory):
             raise ValueError("client_factory and aws_client are mutually exclusive")
+        self._client_factory: ClientFactory
         if aws_client is not None:
             self._client_factory = lambda _service: cast(
                 _AwsClient, _CallbackAwsClient(aws_client)
             )
         else:
             self._client_factory = (
-                factory if callable(factory) else self._default_client_factory
+                cast(ClientFactory, factory)
+                if callable(factory)
+                else self._default_client_factory
             )
 
         pipeline_part = self.pipeline or "unknown"

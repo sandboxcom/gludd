@@ -202,7 +202,7 @@ def test_callable_transport_compatibility(monkeypatch: pytest.MonkeyPatch) -> No
         calls.append({"method": method, "url": url, **kwargs})
         return 200, CANNED_ALERTS
 
-    src = OpsgenieSource(_config(), transport=transport)  # type: ignore[arg-type]
+    src = OpsgenieSource(_config(), transport=transport)
 
     records = src.query({"limit": 25})
 

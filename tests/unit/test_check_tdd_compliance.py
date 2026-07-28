@@ -111,6 +111,47 @@ def test_source_and_test_both_staged_is_ok(scratch_repo: Path):
     assert "valid test coverage" in proc.stdout or "no source files" in proc.stdout or "no checkable" in proc.stdout
 
 
+def test_connector_prefix_test_name_is_recognized(scratch_repo: Path):
+    """Established ``test_connector_<module>`` files satisfy the TDD guard."""
+    r = scratch_repo
+    connector_dir = r / "src" / "general_ludd" / "connectors"
+    connector_dir.mkdir()
+    src_file = connector_dir / "widget.py"
+    test_file = r / "tests" / "unit" / "test_connector_widget.py"
+
+    src_file.write_text("def value():\n    return 1\n")
+    test_file.write_text(
+        "from general_ludd.connectors.widget import value\n\n"
+        "def test_value():\n    assert value() == 1\n"
+    )
+    _stage_all(r)
+    subprocess.run(
+        ["git", "commit", "-m", "base"],
+        cwd=str(r),
+        capture_output=True,
+        check=True,
+    )
+
+    src_file.write_text("def value():\n    return 2\n")
+    test_file.write_text(
+        "from general_ludd.connectors.widget import value\n\n"
+        "def test_value():\n    assert value() == 2\n\n"
+        "def test_positive():\n    assert value() > 0\n"
+    )
+    subprocess.run(
+        ["git", "add", str(src_file), str(test_file)],
+        cwd=str(r),
+        capture_output=True,
+        check=True,
+    )
+
+    proc = _run_checker(r)
+    assert proc.returncode == 0, (
+        f"expected connector-prefixed test to pass, got "
+        f"{proc.returncode}\n{proc.stdout}\n{proc.stderr}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Enhancement 2 — import-only stub detection
 # ---------------------------------------------------------------------------

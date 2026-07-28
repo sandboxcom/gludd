@@ -164,14 +164,13 @@ class OpsgenieSource:
         self.token_env = str(self.config.get("token_env", "OPSGENIE_API_KEY"))
         self.timeout = float(str(self.config.get("timeout", DEFAULT_TIMEOUT)))
         self.default_limit = int(str(self.config.get("limit", DEFAULT_LIMIT)))
+        self._transport: HttpTransport
         if transport is None:
             self._transport = _DefaultTransport()
         elif callable(getattr(transport, "get", None)):
             self._transport = cast(HttpTransport, transport)
         elif callable(transport):
-            self._transport = _CallableTransportAdapter(
-                cast(CallableHttpTransport, transport)
-            )
+            self._transport = _CallableTransportAdapter(transport)
         else:
             raise TypeError("transport must provide get or be callable")
 

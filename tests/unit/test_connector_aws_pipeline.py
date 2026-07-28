@@ -190,6 +190,7 @@ class TestQueryNormalization:
         records = src.query({})
 
         assert len(records) == 3
+        assert records[0]["kind"] == "pipeline"
         assert calls == [
             ("list_pipeline_executions", {"pipelineName": "build-pipeline"})
         ]

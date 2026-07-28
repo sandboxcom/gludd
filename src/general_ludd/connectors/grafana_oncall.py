@@ -126,7 +126,7 @@ class GrafanaOnCallSource:
         if transport is not None and callable(transport) and not callable(
             getattr(transport, "handle_request", None)
         ):
-            callback = cast(CallableTransport, transport)
+            callback = transport
 
             def handler(request: httpx.Request) -> httpx.Response:
                 status, body = callback(

@@ -222,7 +222,7 @@ class TestSendNotification:
                 "token_env": "SLACK_TOKEN",
                 "webhook_url": "https://hooks.slack.com/xxx",
             },
-            transport=transport,  # type: ignore[arg-type]
+            transport=transport,
             env=env,
         )
 

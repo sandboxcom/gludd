@@ -137,7 +137,7 @@ def test_callable_transport_compatibility(monkeypatch):
 
     src = GrafanaOnCallSource(
         {"base_url": _PUBLIC_BASE},
-        transport=transport,  # type: ignore[arg-type]
+        transport=transport,
     )
 
     records = src.query({"state": "firing"})
