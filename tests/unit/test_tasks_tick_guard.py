@@ -76,8 +76,7 @@ class TestCheckTasksTicks:
 
     def test_real_tasks_file_passes(self):
         tasks_path = Path(__file__).parent.parent.parent / "TASKS.md"
-        if not tasks_path.exists():
-            pytest.skip("TASKS.md not found")
+        assert tasks_path.exists(), "TASKS.md is required by the task tick guard"
         lines = tasks_path.read_text().splitlines()
         result = check_tasks_ticks(lines)
         assert result["passed"], (
