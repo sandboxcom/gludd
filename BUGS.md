@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) Linux-namespace E2E bypassed procfs parsing
+
+- **What**: Connector batch 5 reached Linux namespaces and passed a nonexistent high-level `reader=` callback that returned already-structured namespace data. Health asserted only that some dictionary was returned, and query could not prove any `/proc/<pid>/ns` behavior.
+- **Root cause**: The broad E2E injected above the implementation's real boundaries. The connector reads a namespace directory and its symlink targets (or uses a list-argv runner for command-backed operations); it does not accept pre-parsed process objects.
+- **Fix applied**: Health now intercepts the exact `/proc/self/ns/pid` readlink and requires the successful health contract. Query injects the class's directory-list and readlink boundaries, pins every path, models real `type:[inode]` targets, and verifies two normalized namespace records without touching host procfs.
+- **Long-lived user evidence**: Linux documents `/proc/<pid>/ns` as one entry per manipulable namespace and specifies that readlink returns a namespace type plus inode identifier ([proc_pid_ns(5)](https://www.man7.org/linux/man-pages/man5/proc_pid_ns.5.html), [namespaces(7)](https://man7.org/linux/man-pages/man7/namespaces.7.html)). Users have reported for years that some namespace links can disappear or become unreadable as processes and permissions change ([Unix & Linux, 2018](https://unix.stackexchange.com/questions/450721/linux-processes-without-certain-namespaces), [2024 proc symlink permissions](https://unix.stackexchange.com/questions/782242/permission-denied-when-accessing-symbol-link-in-proc-pid)).
+- **Lesson**: Namespace E2E must inject at directory and symlink boundaries, not after parsing. Exact procfs paths and kernel-formatted targets are part of the observable contract.
+
 ### 2026-07-28 — (resolved) Proc/sys E2E used a nonexistent bulk-reader API
 
 - **What**: Connector batch 5 reached proc/sys and passed an unsupported `file_reader=` keyword, configured an ignored `paths` list, called `query({})` without a selector, and expected missing kernel files to be silently skipped.

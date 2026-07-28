@@ -660,7 +660,7 @@ class TestLinuxNamespacesConnector:
 
         source = LinuxNamespacesSource()
         assert source.KIND == "metrics"
-        assert source.name is not None
+        assert source.name == "linux_namespaces"
 
     def test_constructs_custom_name(self):
         from general_ludd.connectors.linux_namespaces import LinuxNamespacesSource
@@ -668,32 +668,64 @@ class TestLinuxNamespacesConnector:
         source = LinuxNamespacesSource({"name": "ns-monitor"})
         assert source.name == "ns-monitor"
 
-    def test_health_ok_with_reader(self):
+    def test_health_ok_with_proc_namespace(self, monkeypatch):
+        from general_ludd.connectors import linux_namespaces as namespaces_mod
         from general_ludd.connectors.linux_namespaces import LinuxNamespacesSource
 
-        source = LinuxNamespacesSource(reader=lambda pid: {"namespaces": ["net", "pid"]})
+        paths: list[str] = []
+
+        def _readlink(path: str) -> str:
+            paths.append(path)
+            return "pid:[4026531836]"
+
+        monkeypatch.setattr(namespaces_mod.os, "readlink", _readlink)
+        source = LinuxNamespacesSource()
         result = source.health()
-        assert isinstance(result, dict)
+        assert result == {
+            "ok": True,
+            "detail": "namespace support confirmed via /proc",
+        }
+        assert paths == ["/proc/self/ns/pid"]
 
-    def test_query_returns_namespace_info(self):
+    def test_query_returns_namespace_info(self, monkeypatch):
         from general_ludd.connectors.linux_namespaces import LinuxNamespacesSource
 
-        def _reader(pid: int | str) -> dict[str, object]:
-            return {
-                pid: {
-                    "NSpid": [str(pid)],
-                    "NStgid": ["1"],
-                    "namespaces": [
-                        {"type": "net", "inode": 4026531992},
-                        {"type": "pid", "inode": 4026531836},
-                    ],
-                }
-            }
+        listed: list[str] = []
+        linked: list[str] = []
 
-        source = LinuxNamespacesSource(reader=_reader)
-        records = source.query({"pid": 1})
-        assert len(records) >= 1
-        assert records[0]["kind"] == "metrics"
+        def _list_dir(path: str) -> list[str]:
+            listed.append(path)
+            return ["net", "pid"]
+
+        def _readlink(path: str) -> str:
+            linked.append(path)
+            return {
+                "/proc/1/ns/net": "net:[4026531992]",
+                "/proc/1/ns/pid": "pid:[4026531836]",
+            }[path]
+
+        monkeypatch.setattr(
+            LinuxNamespacesSource,
+            "_list_dir",
+            staticmethod(_list_dir),
+        )
+        monkeypatch.setattr(
+            LinuxNamespacesSource,
+            "_readlink",
+            staticmethod(_readlink),
+        )
+
+        source = LinuxNamespacesSource()
+        records = source.query({"target": "namespaces", "pid": 1})
+        assert listed == ["/proc/1/ns"]
+        assert linked == ["/proc/1/ns/net", "/proc/1/ns/pid"]
+        assert len(records) == 2
+        assert [record["labels"]["ns_type"] for record in records] == [
+            "net",
+            "pid",
+        ]
+        assert records[0]["labels"]["target"] == "net:[4026531992]"
+        assert all(record["kind"] == "metrics" for record in records)
 
 
 # ============================================================================
