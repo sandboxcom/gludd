@@ -11,14 +11,17 @@ path so the CLI can access them without requiring the collection to be on
 from __future__ import annotations
 
 from general_ludd.governance.loader import (
+    get_authority_registry,
     get_borders,
     get_civic_services,
+    get_classification_markings,
     get_conflicts_treaties,
     get_decision_makers,
     get_elections_voting,
     get_governing_bodies,
     get_info_classification,
     get_international_relations,
+    get_jurisdictions,
     get_legal_systems,
     get_licenses_permits,
     get_military_service,
@@ -28,14 +31,17 @@ from general_ludd.governance.loader import (
 )
 
 __all__ = [
+    "get_authority_registry",
     "get_borders",
     "get_civic_services",
+    "get_classification_markings",
     "get_conflicts_treaties",
     "get_decision_makers",
     "get_elections_voting",
     "get_governing_bodies",
     "get_info_classification",
     "get_international_relations",
+    "get_jurisdictions",
     "get_legal_systems",
     "get_licenses_permits",
     "get_military_service",

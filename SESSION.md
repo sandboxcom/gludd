@@ -18,20 +18,22 @@
 
 ## SESSION 57 — 2026-07-28 (CURRENT)
 
-- **HEAD: `3b7dc660`** on `development` branch
+- **HEAD: `eefcadcb`** on `development` branch (commit: "fix: ensure check-system-load script chmod before invocation")
 - **Version: 0.1.0-beta.3** (pyproject.toml, __init__.py)
-- **Push status: NOT PUSHED** — 11 local commits since last remote sync (ed95614f..3b7dc660)
-- **CI on development: run 30331174113** — Molecule Tests FAILED, Build and Release in_progress
-- **Release readiness: BLOCKED** — pending CI green + push (restart cap hit); release-cut requires CI green
-- **Gate-background: quality checks PASS** — lint 0, typecheck 0, collect 0, hook-runtime pass
-- **Working tree: CLEAN** (after 3b7dc660 commit)
+- **Push status: NOT PUSHED** — 14 local commits since last remote sync (ed95614f..eefcadcb)
+- **CI on development: run 30331174113** — Molecule Tests FAILED (pre-fix, now fixed locally); Build and Release 30331174104 in_progress (18m)
+- **Release readiness: BLOCKED** — pending CI green + push (restart cap hit, 3 cancelled runs); release-cut requires CI green
+- **Gate-background: quality checks PASS** — lint 0, typecheck 0, collect 0
+- **Working tree: CLEAN** (after eefcadcb commit)
 - **ratchet.yml: 0 entries** (no known-unfixed work tracked)
+- **check-system-load: implemented + working** — 0.66x load, verdict OK
 
-### Key changes — Waves 3-4 (11 commits since remote tip)
+### Key changes — Waves 1-5 (14 commits since remote tip)
 
 | Hash | Message |
 |------|---------|
-| `3b7dc660` | codify: System-Load Gate Before Dispatch Waves — AGENTS.md CRITICAL section, Makefile zombie-process kill patterns, SESSION.md incident doc (HEAD) |
+| `eefcadcb` | fix: ensure check-system-load script chmod before invocation (HEAD) |
+| `3b7dc660` | codify: System-Load Gate Before Dispatch Waves — AGENTS.md CRITICAL section, Makefile zombie-process kill patterns, SESSION.md incident doc |
 | `3d164a42` | fix: SIM117 — combine nested with statements in test_daemon.py |
 | `aeabcf07` | fix: thread budget_guard + chat_model through make_langgraph_tool_loop |
 | `35412c63` | Merge branch 'fix/langgraph-budget-bypass' into development |
@@ -47,21 +49,31 @@
 
 | Item | Status |
 |------|--------|
-| Push 11 commits to remote | NOT PUSHED |
-| CI green on development HEAD `3b7dc660` | Molecule FAILED, Build-and-Release in_progress (run 30331174113) |
-| Fix Molecule test failures | PENDING |
+| Push 14 commits to remote | NOT PUSHED (restart cap: 3 cancelled runs) |
+| CI green on development HEAD `eefcadcb` | Build-and-Release in_progress (run 30331174104, 18m); Molecule FAILED locally fix applied |
+| Fix Molecule test failures | FIXED locally — push + CI re-check to verify |
 | `make release-cut TAG=v0.1.0-beta.3` | BLOCKED on CI green |
 | `make verify-release-completeness` 12/12 | BLOCKED on release-cut |
+| Wave 1 dispatched: 10 audits + fixes | RUNNING |
+| Wave 2 dispatched: verify-release-completeness fix, README, firecracker/gvisor/STS tests, lint/typecheck, PSK fix, governance spec, SESSION.md | RUNNING |
+
+### Active dispatch waves
+
+| Wave | Tasks | Status |
+|------|-------|--------|
+| Wave 1 | 10 subagents: audits + fixes (system-load codification follow-up) | dispatched |
+| Wave 2 | verify-release-completeness fix, README update, firecracker/gvisor/STS tests, lint/typecheck, PSK fix, governance spec, SESSION.md update | dispatched |
 
 ### Next
 
-1. Fix Molecule test failures surfacing in CI run 30331174113
-2. Push 11 development commits to remote
-3. CI green on HEAD `3b7dc660`
-4. `make release-cut TAG=v0.1.0-beta.3` when CI green
+1. Push 14 development commits when restart cap clears
+2. CI green on HEAD `eefcadcb` — Molecule fix applied locally, verify on next CI run
+3. Ingest Wave 1 + Wave 2 subagent results
+4. `make release-cut TAG=v0.1.0-beta.3 MSG='beta.3 release'`
 5. `make verify-release-completeness TAG=v0.1.0-beta.3`
+6. Dispatch Wave 3 for remaining tasks
 
-- **Last Updated: 2026-07-28 — Session 57.** HEAD `3b7dc660` on `development`. 11 unpushed commits (ed95614f..3b7dc660). New since prior HEAD (7d8d007c): 5 commits — mypy type fix (6904c7db), langgraph budget bypass merge (35412c63/aeabcf07), SIM117 lint fix (3d164a42), system-load gate codification (3b7dc660). Gate-background quality checks PASS (lint 0, typecheck 0, collect 0, hook-runtime pass). CI run 30331174113: Molecule Tests FAILED, Build and Release in_progress. beta.3 release blocked on CI green.
+- **Last Updated: 2026-07-28 — Session 57.** HEAD `eefcadcb` on `development`. 14 unpushed commits (ed95614f..eefcadcb). New since prior HEAD (3b7dc660): check-system-load chmod fix, Molecule fix applied locally, system-load gate codified + operational (0.66x load, verdict OK). Gate-background quality checks PASS (lint 0, typecheck 0, collect 0). CI: Build-and-Release 30331174104 in_progress (18m), Molecule 30331174113 FAILED (pre-fix). Push blocked by restart cap (3 cancelled runs). Wave 1 + Wave 2 dispatched (20 subagents total). beta.3 release blocked on CI green.
 
 ### System-load incident (2026-07-28)
 

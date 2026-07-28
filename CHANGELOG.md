@@ -21,6 +21,10 @@ All notable changes to this project are documented here. Format follows [Keep a 
 - postal_delivery module: 24 tests
 - D.5 compute discovery verified, E.11 retention wired
 - Release pipeline contract structural + behavioral tests
+- NEEDS_MORE_WORK requeue sweep with EventLoop wiring (beta.3 wave 3)
+- PSK authorization capability guard
+- Sandbox async gating
+- System-load gate before dispatch waves: codified in AGENTS.md + check-system-load target
 
 ### Fixed
 - macOS binary crash (ansible data file collection)
@@ -36,6 +40,12 @@ All notable changes to this project are documented here. Format follows [Keep a 
 - NSIS BUILDDIR path resolution fix
 - Root directory cleanup + deploy key removal
 - enforce-session-start.ts isTaskFileRead input shape fix
+- Molecule CI failures fixed
+- Mypy type errors in capabilities.py
+- Budget precheck: thread budget_guard + chat_model through make_langgraph_tool_loop
+- Lint fixes: SIM115, SIM117, import order, unused imports
+- Detect-secrets secret pragma added
+- Engine sync cleanup
 
 ## [0.1.0-beta.2] — 2026-07-15 — Sessions 34-36: feature collections (binary RE, radio, OS expert, language expert), STS token system, multitasking enforcement hardening
 

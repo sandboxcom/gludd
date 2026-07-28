@@ -1,8 +1,9 @@
 """Unit tests for ``gludd governance`` CLI subcommand.
 
-Tests cover all 7 subcommands (borders, body, tax, currency, service, treaty,
-navigate) plus the ``list`` command, subparser registration, JSON output mode,
-and error handling.
+Tests cover all 15 subcommands (borders, body, tax, currency, service, treaty,
+navigate, elections, relations, legal, finance, jurisdictions, classification,
+authority, info-class, decision-makers, postal, military, licenses) plus the
+``list`` command, subparser registration, JSON output mode, and error handling.
 """
 
 from __future__ import annotations
@@ -16,14 +17,22 @@ from typing import Any
 import pytest
 
 from general_ludd.governance.cli_governance import (
+    _cmd_authority,
     _cmd_body,
     _cmd_borders,
+    _cmd_classification,
     _cmd_currency,
+    _cmd_decision_makers,
     _cmd_elections,
     _cmd_finance,
+    _cmd_info_classification,
+    _cmd_jurisdictions,
     _cmd_legal,
+    _cmd_licenses,
     _cmd_list,
+    _cmd_military,
     _cmd_navigate,
+    _cmd_postal,
     _cmd_relations,
     _cmd_service,
     _cmd_tax,
@@ -82,8 +91,28 @@ class TestGovernanceSubparser:
         top = argparse.ArgumentParser(prog="gludd")
         sub = top.add_subparsers(dest="command")
         add_governance_subparser(sub)
-        for name in ("borders", "body", "tax", "currency", "service", "treaty",
-                      "navigate", "list", "elections", "relations", "legal", "finance"):
+        for name in (
+            "borders",
+            "body",
+            "tax",
+            "currency",
+            "service",
+            "treaty",
+            "navigate",
+            "list",
+            "elections",
+            "relations",
+            "legal",
+            "finance",
+            "jurisdictions",
+            "classification",
+            "authority",
+            "info-class",
+            "decision-makers",
+            "postal",
+            "military",
+            "licenses",
+        ):
             if name == "service":
                 ns = top.parse_args(["governance", name, "healthcare", "US"])
             elif name not in ("list",):
@@ -312,9 +341,17 @@ class TestGovernanceList:
     def test_list_shows_all_domains(self):
         args = argparse.Namespace(json=False)
         output = _run_with_stdout(_cmd_list, args)
-        for domain in ("borders", "governing_bodies", "treaties", "tax_currency",
-                       "civic_services", "elections_voting", "international_relations",
-                       "legal_systems", "public_finance"):
+        for domain in (
+            "borders",
+            "governing_bodies",
+            "treaties",
+            "tax_currency",
+            "civic_services",
+            "elections_voting",
+            "international_relations",
+            "legal_systems",
+            "public_finance",
+        ):
             assert domain in output.lower()
 
     def test_list_json_output(self):
@@ -458,6 +495,259 @@ class TestGovernanceFinance:
         assert data["country"] == "GB"
 
 
+# ── jurisdictions ────────────────────────────────────────────────────────────────
+
+
+class TestGovernanceJurisdictions:
+    def test_jurisdictions_us(self):
+        args = argparse.Namespace(code="US", subdivisions=False, json=False)
+        output = _run_with_stdout(_cmd_jurisdictions, args)
+        assert "US" in output
+
+    def test_jurisdictions_subdivisions(self):
+        args = argparse.Namespace(code="US", subdivisions=True, json=False)
+        output = _run_with_stdout(_cmd_jurisdictions, args)
+        assert "US" in output
+
+    def test_jurisdictions_not_found_exits(self):
+        args = argparse.Namespace(code="ZZ", subdivisions=False, json=False)
+        rc = _run_with_stderr_exit(_cmd_jurisdictions, args)
+        assert rc == 1
+
+    def test_jurisdictions_json_output(self):
+        args = argparse.Namespace(code="GB", subdivisions=False, json=True)
+        output = _run_with_stdout(_cmd_jurisdictions, args)
+        data = json.loads(output)
+        assert data["found"] is True
+
+
+# ── classification ───────────────────────────────────────────────────────────────
+
+
+class TestGovernanceClassification:
+    def test_classification_list_systems(self):
+        args = argparse.Namespace(system="", banner=None, caveat=None, json=False)
+        output = _run_with_stdout(_cmd_classification, args)
+        assert "systems" in output.lower()
+
+    def test_classification_us_system(self):
+        args = argparse.Namespace(system="US", banner=None, caveat=None, json=False)
+        output = _run_with_stdout(_cmd_classification, args)
+        assert "systems" in output.lower()
+
+    def test_classification_banner_lookup(self):
+        args = argparse.Namespace(system="US", banner="secret", caveat=None, json=False)
+        output = _run_with_stdout(_cmd_classification, args)
+        assert "secret" in output.lower()
+
+    def test_classification_caveat_lookup(self):
+        args = argparse.Namespace(system="", banner=None, caveat="NOFORN", json=False)
+        output = _run_with_stdout(_cmd_classification, args)
+        assert "NOFORN" in output
+
+    def test_classification_banner_not_found_exits(self):
+        args = argparse.Namespace(system="ZZ", banner="nonexistent_level", caveat=None, json=False)
+        rc = _run_with_stderr_exit(_cmd_classification, args)
+        assert rc == 1
+
+    def test_classification_json_output(self):
+        args = argparse.Namespace(system="UK", banner=None, caveat=None, json=True)
+        output = _run_with_stdout(_cmd_classification, args)
+        data = json.loads(output)
+        assert data["found"] is True
+
+
+# ── authority ────────────────────────────────────────────────────────────────────
+
+
+class TestGovernanceAuthority:
+    def test_authority_list(self):
+        args = argparse.Namespace(query="", code=None, instrument=None, json=False)
+        output = _run_with_stdout(_cmd_authority, args)
+        assert "Us-Dos" in output
+
+    def test_authority_code_lookup(self):
+        args = argparse.Namespace(query="", code="US-DOS", instrument=None, json=False)
+        output = _run_with_stdout(_cmd_authority, args)
+        assert "Department of State" in output
+
+    def test_authority_instrument_lookup(self):
+        args = argparse.Namespace(query="", code=None, instrument="passport", json=False)
+        output = _run_with_stdout(_cmd_authority, args)
+        assert "authorities" in output.lower()
+
+    def test_authority_not_found_exits(self):
+        args = argparse.Namespace(query="", code="ZZ-NONEXISTENT", instrument=None, json=False)
+        rc = _run_with_stderr_exit(_cmd_authority, args)
+        assert rc == 1
+
+    def test_authority_json_output(self):
+        args = argparse.Namespace(query="", code="UK-HMPO", instrument=None, json=True)
+        output = _run_with_stdout(_cmd_authority, args)
+        data = json.loads(output)
+        assert data["found"] is True
+
+
+# ── info-class ───────────────────────────────────────────────────────────────────
+
+
+class TestGovernanceInfoClassification:
+    def test_info_class_us(self):
+        args = argparse.Namespace(country="US", foia=False, source=None, equiv=None, json=False)
+        output = _run_with_stdout(_cmd_info_classification, args)
+        assert "US" in output
+
+    def test_info_class_foia(self):
+        args = argparse.Namespace(country="US", foia=True, source=None, equiv=None, json=False)
+        output = _run_with_stdout(_cmd_info_classification, args)
+        assert "FOIA" in output or "Freedom" in output
+
+    def test_info_class_source(self):
+        args = argparse.Namespace(country="US", foia=False, source="court", equiv=None, json=False)
+        output = _run_with_stdout(_cmd_info_classification, args)
+        assert "court" in output.lower()
+
+    def test_info_class_equiv(self):
+        args = argparse.Namespace(country="US", foia=False, source=None, equiv="SECRET,US,GB", json=False)
+        output = _run_with_stdout(_cmd_info_classification, args)
+        assert "equivalent" in output.lower()
+
+    def test_info_class_not_found_exits(self):
+        args = argparse.Namespace(country="ZZ", foia=False, source=None, equiv=None, json=False)
+        rc = _run_with_stderr_exit(_cmd_info_classification, args)
+        assert rc == 1
+
+    def test_info_class_json_output(self):
+        args = argparse.Namespace(country="GB", foia=False, source=None, equiv=None, json=True)
+        output = _run_with_stdout(_cmd_info_classification, args)
+        data = json.loads(output)
+        assert data["found"] is True
+
+
+# ── decision-makers ──────────────────────────────────────────────────────────────
+
+
+class TestGovernanceDecisionMakers:
+    def test_decision_makers_us(self):
+        args = argparse.Namespace(country="US", person=None, topic=None, json=False)
+        output = _run_with_stdout(_cmd_decision_makers, args)
+        assert "US" in output
+
+    def test_decision_makers_person_lookup(self):
+        args = argparse.Namespace(country="US", person="us-sen-01", topic=None, json=False)
+        output = _run_with_stdout(_cmd_decision_makers, args)
+        assert "proclivity" in output.lower()
+
+    def test_decision_makers_topic(self):
+        args = argparse.Namespace(country="US", person=None, topic="healthcare", json=False)
+        output = _run_with_stdout(_cmd_decision_makers, args)
+        assert "profiles" in output.lower()
+
+    def test_decision_makers_not_found_exits(self):
+        args = argparse.Namespace(country="ZZ", person=None, topic=None, json=False)
+        rc = _run_with_stderr_exit(_cmd_decision_makers, args)
+        assert rc == 1
+
+    def test_decision_makers_json_output(self):
+        args = argparse.Namespace(country="GB", person=None, topic=None, json=True)
+        output = _run_with_stdout(_cmd_decision_makers, args)
+        data = json.loads(output)
+        assert data["found"] is True
+
+
+# ── postal ───────────────────────────────────────────────────────────────────────
+
+
+class TestGovernancePostal:
+    def test_postal_us(self):
+        args = argparse.Namespace(country="US", courier=None, tracking=None, customs=False, json=False)
+        output = _run_with_stdout(_cmd_postal, args)
+        assert "US" in output
+
+    def test_postal_courier(self):
+        args = argparse.Namespace(country="US", courier="usps", tracking="123456789", customs=False, json=False)
+        output = _run_with_stdout(_cmd_postal, args)
+        assert "tracking" in output.lower() and "usps" in output.lower()
+
+    def test_postal_customs(self):
+        args = argparse.Namespace(country="US", courier=None, tracking=None, customs=True, json=False)
+        output = _run_with_stdout(_cmd_postal, args)
+        assert "US" in output
+
+    def test_postal_not_found_exits(self):
+        args = argparse.Namespace(country="ZZ", courier=None, tracking=None, customs=False, json=False)
+        rc = _run_with_stderr_exit(_cmd_postal, args)
+        assert rc == 1
+
+    def test_postal_json_output(self):
+        args = argparse.Namespace(country="GB", courier=None, tracking=None, customs=False, json=True)
+        output = _run_with_stdout(_cmd_postal, args)
+        data = json.loads(output)
+        assert data["found"] is True
+
+
+# ── military ─────────────────────────────────────────────────────────────────────
+
+
+class TestGovernanceMilitary:
+    def test_military_us(self):
+        args = argparse.Namespace(country="US", branches=False, benefits=None, conscription=False, json=False)
+        output = _run_with_stdout(_cmd_military, args)
+        assert "US" in output
+
+    def test_military_branches(self):
+        args = argparse.Namespace(country="US", branches=True, benefits=None, conscription=False, json=False)
+        output = _run_with_stdout(_cmd_military, args)
+        assert "Army" in output or "Navy" in output or "Air Force" in output
+
+    def test_military_conscription(self):
+        args = argparse.Namespace(country="US", branches=False, benefits=None, conscription=True, json=False)
+        output = _run_with_stdout(_cmd_military, args)
+        assert "mandatory_conscription" in output.lower()
+
+    def test_military_not_found_exits(self):
+        args = argparse.Namespace(country="ZZ", branches=False, benefits=None, conscription=False, json=False)
+        rc = _run_with_stderr_exit(_cmd_military, args)
+        assert rc == 1
+
+    def test_military_json_output(self):
+        args = argparse.Namespace(country="GB", branches=False, benefits=None, conscription=False, json=True)
+        output = _run_with_stdout(_cmd_military, args)
+        data = json.loads(output)
+        assert data["found"] is True
+
+
+# ── licenses ─────────────────────────────────────────────────────────────────────
+
+
+class TestGovernanceLicenses:
+    def test_licenses_us(self):
+        args = argparse.Namespace(country="US", license_type=None, export_control=None, json=False)
+        output = _run_with_stdout(_cmd_licenses, args)
+        assert "US" in output
+
+    def test_licenses_driving(self):
+        args = argparse.Namespace(country="US", license_type="driving", export_control=None, json=False)
+        output = _run_with_stdout(_cmd_licenses, args)
+        assert "driving" in output.lower()
+
+    def test_licenses_export_control(self):
+        args = argparse.Namespace(country="US", license_type=None, export_control="US,military_items", json=False)
+        output = _run_with_stdout(_cmd_licenses, args)
+        assert "US" in output
+
+    def test_licenses_not_found_exits(self):
+        args = argparse.Namespace(country="ZZ", license_type=None, export_control=None, json=False)
+        rc = _run_with_stderr_exit(_cmd_licenses, args)
+        assert rc == 1
+
+    def test_licenses_json_output(self):
+        args = argparse.Namespace(country="GB", license_type=None, export_control=None, json=True)
+        output = _run_with_stdout(_cmd_licenses, args)
+        data = json.loads(output)
+        assert data["found"] is True
+
+
 # ── Loader ──────────────────────────────────────────────────────────────────────
 
 
@@ -510,3 +800,84 @@ class TestGovernanceLoader:
         pf_mod = get_public_finance()
         assert hasattr(pf_mod, "lookup_budget")
         assert hasattr(pf_mod, "COUNTRY_BUDGETS")
+
+    def test_loader_imports_jurisdictions(self):
+        from general_ludd.governance.loader import get_jurisdictions
+
+        jurisd = get_jurisdictions()
+        assert hasattr(jurisd, "get_jurisdiction")
+        assert hasattr(jurisd, "JURISDICTION_CODES")
+
+    def test_loader_imports_classification_markings(self):
+        from general_ludd.governance.loader import get_classification_markings
+
+        cm = get_classification_markings()
+        assert hasattr(cm, "list_systems")
+        assert hasattr(cm, "BANNER_FORMATS")
+
+    def test_loader_imports_authority_registry(self):
+        from general_ludd.governance.loader import get_authority_registry
+
+        ar = get_authority_registry()
+        assert hasattr(ar, "get_authority")
+        assert hasattr(ar, "AUTHORITY_INSTRUMENTS")
+
+    def test_loader_imports_info_classification(self):
+        from general_ludd.governance.loader import get_info_classification
+
+        ic = get_info_classification()
+        assert hasattr(ic, "get_classification_system")
+
+    def test_loader_imports_decision_makers(self):
+        from general_ludd.governance.loader import get_decision_makers
+
+        dm = get_decision_makers()
+        assert hasattr(dm, "lookup_decision_makers")
+
+    def test_loader_imports_postal_delivery(self):
+        from general_ludd.governance.loader import get_postal_delivery
+
+        pd = get_postal_delivery()
+        assert hasattr(pd, "get_postal_code_pattern")
+
+    def test_loader_imports_military_service(self):
+        from general_ludd.governance.loader import get_military_service
+
+        ms = get_military_service()
+        assert hasattr(ms, "get_conscription_info")
+
+    def test_loader_imports_licenses_permits(self):
+        from general_ludd.governance.loader import get_licenses_permits
+
+        lp = get_licenses_permits()
+        assert hasattr(lp, "get_license_info")
+
+    def test_loader_imports_conflicts_treaties(self):
+        from general_ludd.governance.loader import get_conflicts_treaties
+
+        ct = get_conflicts_treaties()
+        assert hasattr(ct, "lookup_treaties")
+        assert hasattr(ct, "TREATY_DATABASE")
+
+
+# ── Package-level exports ────────────────────────────────────────────────────────
+
+
+class TestGovernancePackageExports:
+    def test_jurisdictions_importable_from_package(self):
+        from general_ludd.governance import get_jurisdictions
+
+        jurisd = get_jurisdictions()
+        assert hasattr(jurisd, "get_jurisdiction")
+
+    def test_classification_markings_importable_from_package(self):
+        from general_ludd.governance import get_classification_markings
+
+        cm = get_classification_markings()
+        assert hasattr(cm, "list_systems")
+
+    def test_authority_registry_importable_from_package(self):
+        from general_ludd.governance import get_authority_registry
+
+        ar = get_authority_registry()
+        assert hasattr(ar, "get_authority")
