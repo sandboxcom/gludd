@@ -404,7 +404,8 @@ class TestServiceNowConnector:
                 "pass_env": "SN_PASS_B4",
             })
             assert source.KIND == "tickets"
-            assert "dev12345" in str(source.name)
+            assert source.name == "servicenow"
+            assert source.instance == "dev12345"
         finally:
             del os.environ["SN_USER_B4"], os.environ["SN_PASS_B4"]
 
@@ -473,7 +474,8 @@ class TestServiceNowConnector:
             records = source.query({})
             assert len(records) >= 1
             assert records[0]["kind"] == "tickets"
-            assert "INC001" in str(records[0]["message"])
+            assert records[0]["message"] == "Server down"
+            assert records[0]["labels"]["number"] == "INC001"
         finally:
             del os.environ["SN_U3"], os.environ["SN_P3"]
 

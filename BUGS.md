@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) ServiceNow E2E conflated connector name with instance identity
+
+- **What**: The warning-clean serial E2E run stopped after 1,379 passes because one ServiceNow construction test expected the configured instance identifier inside `source.name`; its next normalization check likewise expected the incident number inside the human-readable `message`.
+- **Root cause**: The broad E2E mixed distinct fields twice: `name` identifies the connector type while `instance` identifies the configured tenant, and `message` carries `short_description` while `labels.number` carries the stable incident number. Canonical unit coverage already pins all four fields separately.
+- **Fix applied**: The E2E now requires the stable connector name and independently verifies `source.instance`; normalized records separately require the `short_description` message and incident-number label. No production identity or record-source contract was changed.
+- **Long-lived user evidence**: ServiceNow users describe the instance ID as the unique subdomain used in REST URLs such as `https://{instanceId}.service-now.com`, distinct from the integration itself ([ServiceNow Community discussion](https://www.servicenow.com/community/developer-forum/rest-api-urls-subdomain-instanceid-developer-and-paid-accounts/m-p/2639250)); instance-to-instance guides likewise vary the endpoint identifier while retaining the same ServiceNow integration pattern ([ServiceNow Community guide](https://www.servicenow.com/community/developer-articles/servicenow-to-servicenow-integration-step-by-step-guide/ta-p/2305317)).
+- **Lesson**: Connector identity, tenant identity, human-readable summary, and ticket identifier must remain separate. Stable source names support aggregation, instance fields carry endpoint routing, messages remain useful to people, and labels preserve machine-stable incident numbers.
+
 ### 2026-07-28 — (resolved) Cassandra E2E returned one metric for every logical command
 
 - **What**: The focused connector batch produced three `valid_metric` records where a row-filtering E2E expected one, because Cassandra intentionally queries `compactionstats`, `tablestats`, and `tpstats`.
