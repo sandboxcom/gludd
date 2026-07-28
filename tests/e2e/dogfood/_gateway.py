@@ -1,4 +1,5 @@
 """Gateway factory for e2e harness -- live zai or offline mock."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -44,6 +45,7 @@ def build_gateway(
         credential_alias="zai_api_key",
         api_base_alias="zai_api_base",
         enabled=True,
+        api_metered=False,
         run_budget_usd=1.0,
     )
     gw = ModelGateway(profiles=[profile], secrets_manager=secrets)

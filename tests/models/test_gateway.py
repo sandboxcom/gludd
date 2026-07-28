@@ -1,4 +1,5 @@
 """tests/models/test_gateway.py — security batch 4 gateway tests."""
+
 from __future__ import annotations
 
 import pytest
@@ -7,16 +8,19 @@ import pytest
 class TestModelProfile:
     def test_max_failover_retries_defaults_to_3(self):
         from general_ludd.models.gateway import ModelProfile
+
         p = ModelProfile(model_profile_id="test")
         assert p.max_failover_retries == 3
 
     def test_max_failover_retries_settable(self):
         from general_ludd.models.gateway import ModelProfile
+
         p = ModelProfile(model_profile_id="test", max_failover_retries=5)
         assert p.max_failover_retries == 5
 
     def test_minimal_construction_preserves_defaults(self):
         from general_ludd.models.gateway import ModelProfile
+
         p = ModelProfile(model_profile_id="test")
         assert p.model_profile_id == "test"
         assert isinstance(p.role_names, list)
@@ -28,11 +32,13 @@ class TestModelProfile:
 
     def test_empty_id_raises(self):
         from general_ludd.models.gateway import ModelProfile
+
         with pytest.raises(ValueError, match="model_profile_id must not be empty"):
             ModelProfile(model_profile_id="   ")
 
     def test_negative_fallback_max_concurrency_raises(self):
         from general_ludd.models.gateway import ModelProfile
+
         with pytest.raises(ValueError):
             ModelProfile(model_profile_id="test", fallback_max_concurrency=0)
 
@@ -42,12 +48,14 @@ class TestSecurityBatch4Gateway:
 
     def _make_gw(self, *, health_tracker=None, profiles=None):
         from general_ludd.models.gateway import ModelGateway, ModelProfile
+
         if profiles is None:
             p = ModelProfile(
                 model_profile_id="primary",
                 provider="openai",
                 model_name="gpt-4",
                 enabled=True,
+                api_metered=False,
                 fallback_profiles=["fallback"],
             )
             p2 = ModelProfile(
@@ -55,6 +63,7 @@ class TestSecurityBatch4Gateway:
                 provider="openai",
                 model_name="gpt-3.5",
                 enabled=True,
+                api_metered=False,
             )
             profiles = [p, p2]
         return ModelGateway(profiles=profiles, health_tracker=health_tracker)
@@ -62,13 +71,14 @@ class TestSecurityBatch4Gateway:
     def test_tripped_circuit_skipped(self):
         """A tripped primary circuit is not called."""
         from unittest.mock import MagicMock, patch
+
         tracker = MagicMock()
         tracker.is_healthy.return_value = False
         gw = self._make_gw(health_tracker=tracker)
         resp = MagicMock()
         with (
-            patch.object(gw, 'call_model', return_value=resp) as mock_call,
-            patch.object(gw, '_walk_fallbacks', return_value=(resp, None, [])),
+            patch.object(gw, "call_model", return_value=resp) as mock_call,
+            patch.object(gw, "_walk_fallbacks", return_value=(resp, None, [])),
         ):
             result = gw.call_model_with_fallback("primary", [])
         # call_model should NOT have been called for primary (tripped)
@@ -81,11 +91,13 @@ class TestSecurityBatch4Gateway:
         from unittest.mock import MagicMock, patch
 
         from general_ludd.models.gateway import CircuitBreakerOpenError
+
         tracker = MagicMock()
         tracker.is_healthy.return_value = False
         gw = self._make_gw(health_tracker=tracker)
-        with patch.object(gw, '_walk_fallbacks', return_value=(None, None, [])):
+        with patch.object(gw, "_walk_fallbacks", return_value=(None, None, [])):
             import pytest
+
             with pytest.raises(CircuitBreakerOpenError, match=r"All circuits open for fallback chain"):
                 gw.call_model_with_fallback("primary", [])
 
@@ -94,9 +106,11 @@ class TestSecurityBatch4Gateway:
         from unittest.mock import patch
 
         from general_ludd.models.gateway import BudgetExceededError
+
         gw = self._make_gw()
-        with patch.object(gw, 'call_model', side_effect=BudgetExceededError("over budget limit reached")):
+        with patch.object(gw, "call_model", side_effect=BudgetExceededError("over budget limit reached")):
             import pytest
+
             with pytest.raises(BudgetExceededError, match="over budget"):
                 gw._try_call_model("primary", [])
 
@@ -105,8 +119,10 @@ class TestSecurityBatch4Gateway:
         from unittest.mock import patch
 
         from general_ludd.models.gateway import BudgetExceededError
+
         gw = self._make_gw()
-        with patch.object(gw, 'call_model', side_effect=BudgetExceededError("over budget limit reached")):
+        with patch.object(gw, "call_model", side_effect=BudgetExceededError("over budget limit reached")):
             import pytest
+
             with pytest.raises(BudgetExceededError, match="over budget"):
                 gw.call_model_with_fallback("primary", [])

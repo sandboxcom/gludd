@@ -105,6 +105,7 @@ def _make_todo_data(**overrides):
 # 1. TodoRepository
 # ---------------------------------------------------------------------------
 
+
 class TestTodoRepositoryCRUD:
     async def test_create_and_get_by_id(self, db_session: AsyncSession):
         repo = TodoRepository(db_session)
@@ -342,14 +343,24 @@ class TestTodoRepositoryCRUD:
         past = datetime.now(UTC) - timedelta(hours=1)
         future = datetime.now(UTC) + timedelta(hours=1)
 
-        await repo.create(_make_todo_data(
-            todo_id="DUE-1", status=TodoStatus.SCHEDULED.value,
-            scheduled_at=past, schedule_paused=False, title="Due"
-        ))
-        await repo.create(_make_todo_data(
-            todo_id="DUE-2", status=TodoStatus.SCHEDULED.value,
-            scheduled_at=future, schedule_paused=False, title="Not Yet"
-        ))
+        await repo.create(
+            _make_todo_data(
+                todo_id="DUE-1",
+                status=TodoStatus.SCHEDULED.value,
+                scheduled_at=past,
+                schedule_paused=False,
+                title="Due",
+            )
+        )
+        await repo.create(
+            _make_todo_data(
+                todo_id="DUE-2",
+                status=TodoStatus.SCHEDULED.value,
+                scheduled_at=future,
+                schedule_paused=False,
+                title="Not Yet",
+            )
+        )
 
         due = await repo.list_due_scheduled(now=datetime.now(UTC))
         assert len(due) >= 1
@@ -360,15 +371,18 @@ class TestTodoRepositoryCRUD:
 # 2. AgentMessageRepository
 # ---------------------------------------------------------------------------
 
+
 class TestAgentMessageRepository:
     async def test_send_and_get(self, db_session: AsyncSession):
         repo = AgentMessageRepository(db_session)
-        msg = await repo.send({
-            "sender": "orchestrator",
-            "recipient": "worker-1",
-            "topic": "test",
-            "body": "hello world",
-        })
+        msg = await repo.send(
+            {
+                "sender": "orchestrator",
+                "recipient": "worker-1",
+                "topic": "test",
+                "body": "hello world",
+            }
+        )
         assert msg.id.startswith("MSG-")
 
         loaded = await repo.get_by_id(msg.id)
@@ -422,26 +436,36 @@ class TestAgentMessageRepository:
 
     async def test_ack_cross_project_denied(self, db_session: AsyncSession):
         repo = AgentMessageRepository(db_session)
-        msg = await repo.send({
-            "sender": "s", "recipient": "agent-a", "topic": "t",
-            "body": "x", "project_id": "proj-x"
-        })
+        msg = await repo.send(
+            {"sender": "s", "recipient": "agent-a", "topic": "t", "body": "x", "project_id": "proj-x"}
+        )
 
         result = await repo.ack(msg.id, project_id="proj-y")
         assert result is None
 
     async def test_purge_expired(self, db_session: AsyncSession):
         repo = AgentMessageRepository(db_session)
-        await repo.send({
-            "sender": "s", "recipient": "agent-a", "topic": "t",
-            "body": "old", "ttl_seconds": 0,
-        })
-        await repo.send({
-            "sender": "s", "recipient": "agent-a", "topic": "t",
-            "body": "fresh", "ttl_seconds": 86400,
-        })
+        await repo.send(
+            {
+                "sender": "s",
+                "recipient": "agent-a",
+                "topic": "t",
+                "body": "old",
+                "ttl_seconds": 0,
+            }
+        )
+        await repo.send(
+            {
+                "sender": "s",
+                "recipient": "agent-a",
+                "topic": "t",
+                "body": "fresh",
+                "ttl_seconds": 86400,
+            }
+        )
 
         import asyncio
+
         await asyncio.sleep(1)
         purged = await repo.purge_expired()
         assert purged >= 1
@@ -458,14 +482,8 @@ class TestAgentMessageRepository:
 
     async def test_inbox_filters_project(self, db_session: AsyncSession):
         repo = AgentMessageRepository(db_session)
-        await repo.send({
-            "sender": "s", "recipient": "agent-a", "topic": "t",
-            "body": "proj-x", "project_id": "proj-x"
-        })
-        await repo.send({
-            "sender": "s", "recipient": "agent-a", "topic": "t",
-            "body": "proj-y", "project_id": "proj-y"
-        })
+        await repo.send({"sender": "s", "recipient": "agent-a", "topic": "t", "body": "proj-x", "project_id": "proj-x"})
+        await repo.send({"sender": "s", "recipient": "agent-a", "topic": "t", "body": "proj-y", "project_id": "proj-y"})
 
         inbox_x = await repo.inbox("agent-a", project_id="proj-x")
         assert len(inbox_x) >= 1
@@ -476,6 +494,7 @@ class TestAgentMessageRepository:
 # ---------------------------------------------------------------------------
 # 3. ModelRouter
 # ---------------------------------------------------------------------------
+
 
 class TestModelRouter:
     def test_resolve_role_exact_match(self):
@@ -572,6 +591,7 @@ class TestModelRouter:
 # 4. ModelGateway — budget, failover, error classification
 # ---------------------------------------------------------------------------
 
+
 class TestModelGatewayBudget:
     def test_estimate_cost_basic(self):
         from general_ludd.models.gateway import ModelGateway, ModelProfile
@@ -618,6 +638,7 @@ class TestModelGatewayBudget:
 
     def test_check_budget_nonexistent_profile(self):
         from general_ludd.models.gateway import ModelGateway
+
         gw = ModelGateway()
         assert not gw.check_budget("nonexistent", 1.0, 100.0)
 
@@ -632,7 +653,7 @@ class TestModelGatewayBudget:
     def test_is_available(self):
         from general_ludd.models.gateway import ModelGateway, ModelProfile
 
-        profile = ModelProfile(model_profile_id="test", model_name="test-model", enabled=True)
+        profile = ModelProfile(model_profile_id="test", model_name="test-model", enabled=True, api_metered=False)
         gw = ModelGateway(profiles=[profile])
         assert gw.is_available("test")
         assert not gw.is_available("off")
@@ -721,25 +742,30 @@ class TestModelFailoverChain:
 class TestModelGatewayErrors:
     def test_coerce_token_count_bool(self):
         from general_ludd.models.gateway import _coerce_token_count
+
         assert _coerce_token_count(True) == 0
         assert _coerce_token_count(False) == 0
 
     def test_coerce_token_count_valid(self):
         from general_ludd.models.gateway import _coerce_token_count
+
         assert _coerce_token_count(100) == 100
         assert _coerce_token_count(50.7) == 50
 
     def test_coerce_token_count_non_finite(self):
         from general_ludd.models.gateway import _coerce_token_count
+
         assert _coerce_token_count(float("nan")) == 0
         assert _coerce_token_count(float("inf")) == 0
 
     def test_coerce_token_count_non_numeric(self):
         from general_ludd.models.gateway import _coerce_token_count
+
         assert _coerce_token_count("abc") == 0
 
     def test_ssrf_rejection_error(self):
         from general_ludd.models.gateway import SSRFRejectionError
+
         err = SSRFRejectionError("blocked")
         assert isinstance(err, ValueError)
         assert isinstance(err, SSRFRejectionError)
@@ -747,18 +773,21 @@ class TestModelGatewayErrors:
 
     def test_model_paused_error(self):
         from general_ludd.models.gateway import ModelPausedError
+
         err = ModelPausedError("paused")
         assert not isinstance(err, ValueError)
         assert isinstance(err, ModelPausedError)
 
     def test_circuit_breaker_open_error(self):
         from general_ludd.models.gateway import CircuitBreakerOpenError
+
         err = CircuitBreakerOpenError("all open")
         assert not isinstance(err, ValueError)
         assert isinstance(err, CircuitBreakerOpenError)
 
     def test_budget_exceeded_error(self):
         from general_ludd.models.gateway import BudgetExceededError
+
         err = BudgetExceededError("over budget")
         assert isinstance(err, ValueError)
         assert isinstance(err, BudgetExceededError)
@@ -767,6 +796,7 @@ class TestModelGatewayErrors:
 # ---------------------------------------------------------------------------
 # 5. Planning — PlanArtifact
 # ---------------------------------------------------------------------------
+
 
 class TestPlanArtifact:
     def test_create_minimal(self):
@@ -859,6 +889,7 @@ class TestPlanArtifact:
 # 6. Planning — RepoMap
 # ---------------------------------------------------------------------------
 
+
 class TestRepoMap:
     def test_code_symbol_creation(self):
         sym = CodeSymbol(
@@ -913,14 +944,24 @@ class TestRepoMap:
     def test_repo_map_get_top_symbols(self):
         rm = RepoMap()
         for i in range(10):
-            rm.add_symbol(CodeSymbol(
-                name=f"sym_{i}", kind="function",
-                file_path="src/mod.py", line_start=i, line_end=i + 2,
-            ))
-        rm.add_symbol(CodeSymbol(
-            name="MyClass", kind="class",
-            file_path="src/mod.py", line_start=100, line_end=120,
-        ))
+            rm.add_symbol(
+                CodeSymbol(
+                    name=f"sym_{i}",
+                    kind="function",
+                    file_path="src/mod.py",
+                    line_start=i,
+                    line_end=i + 2,
+                )
+            )
+        rm.add_symbol(
+            CodeSymbol(
+                name="MyClass",
+                kind="class",
+                file_path="src/mod.py",
+                line_start=100,
+                line_end=120,
+            )
+        )
         top = rm.get_top_symbols(n=5)
         assert len(top) <= 5
         assert top[0].kind == "class"
@@ -980,8 +1021,7 @@ from pathlib import Path
             os.makedirs(pkg_dir)
             Path(os.path.join(pkg_dir, "__init__.py")).write_text("# pkg init\n")
             Path(os.path.join(pkg_dir, "core.py")).write_text(
-                "def calculate(x):\n    return x * 2\n\n"
-                "class Processor:\n    def run(self):\n        pass\n"
+                "def calculate(x):\n    return x * 2\n\nclass Processor:\n    def run(self):\n        pass\n"
             )
             repo_map = builder.build_from_directory(tmpdir)
             assert repo_map.file_count >= 1
@@ -1005,6 +1045,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # 7. Database Session Lifecycle
 # ---------------------------------------------------------------------------
+
 
 class TestDatabaseSessionLifecycle:
     async def test_engine_creation_and_disposal(self):

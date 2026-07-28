@@ -35,6 +35,8 @@ class TestModelGatewayE2E:
             provider_class_hint="ChatOpenAI",
             model_name="gpt-expensive",
             api_metered=True,
+            cost_per_input_token=0.01,
+            cost_per_output_token=0.01,
             run_budget_usd=10.0,
             enabled=True,
         )
@@ -95,6 +97,7 @@ class TestModelGatewayE2E:
             provider_class_hint="ChatOpenAI",
             model_name="local-model",
             enabled=True,
+            api_metered=False,
         )
         gw2 = ModelGateway(profiles=[enabled])
         assert gw2.is_available("local_llm_enabled")
