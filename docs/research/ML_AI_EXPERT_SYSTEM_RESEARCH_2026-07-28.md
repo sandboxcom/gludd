@@ -209,6 +209,73 @@ tools, routing, and small adapters. Weight updates require a separately
 authorized training plane, dataset lineage, licensing review, privacy checks,
 held-out evaluation, and artifact rollback.
 
+### 6.1 PEFT, adapters, composition, and routing
+
+Parameter-efficient adaptation is not one feature. Training method, checkpoint
+format, base-model compatibility, composition, routing, serving, and rollback
+are separate concerns.
+
+| Resource | Date | Evidence and Gludd consequence |
+|---|---:|---|
+| [LoRA](https://arxiv.org/abs/2106.09685) | 2021 | Low-rank weight updates; rank, target modules, alpha, base revision, and merge state are material experiment inputs |
+| [QLoRA](https://arxiv.org/abs/2305.14314) | 2023 | 4-bit quantized base plus LoRA; report quantizer, compute dtype, double quantization, paged optimizer, and peak memory |
+| [DoRA](https://arxiv.org/abs/2402.09353) and [official code](https://github.com/NVlabs/DoRA) | 2024 | Decomposes magnitude and direction; reported gains do not remove its runtime and layer-support constraints |
+| [AdaLoRA](https://arxiv.org/abs/2303.10512) | 2023 | Allocates rank by importance; final per-layer ranks belong in the artifact manifest |
+| [IA3](https://arxiv.org/abs/2205.05638) | 2022 | Learned activation rescaling offers another small adapter family |
+| [Prefix-Tuning](https://arxiv.org/abs/2101.00190) and [Prompt Tuning](https://arxiv.org/abs/2104.08691) | 2021 | Prompt parameters have different serving and composition semantics from weight adapters |
+| [AdapterHub](https://arxiv.org/abs/2007.07779) and [Adapters library](https://arxiv.org/abs/2311.11077) | 2020/2023 | Mature composable adapter abstractions; evaluate rather than build a second tuning library |
+| [Hugging Face PEFT](https://huggingface.co/docs/peft/en/index) | Living docs/code | Preferred optional adapter for LoRA, QLoRA, DoRA, IA3, prompt methods, merging, and hotswapping |
+| [PEFT checkpoint format](https://huggingface.co/docs/peft/main/developer_guides/checkpoint) | Living docs | Adapter weights alone are incomplete; config and exact base revision are required; prefer `safetensors` over pickle-backed `.bin` |
+| [safetensors](https://github.com/huggingface/safetensors) | Mature code | Non-executable tensor format; still validate dimensions, dtype, metadata, size, and digest |
+| [LoRAHub](https://arxiv.org/abs/2307.13269) and [code](https://github.com/sail-sg/lorahub) | 2023/2024 | Few-shot adapter composition can trade tokens for adapter search, but did not universally beat in-context learning |
+| [X-LoRA](https://arxiv.org/abs/2402.07148) | 2024 | Token/layer-level mixture of adapter experts; routing adds a new model with its own evaluation and failure surface |
+| [Instance-level dynamic LoRA composition](https://aclanthology.org/2024.findings-emnlp.326/) | 2024 | Input-specific composition makes route decisions part of provenance |
+| [S-LoRA](https://arxiv.org/abs/2311.03285) and [Punica](https://arxiv.org/abs/2310.18547) | 2023 | Multi-tenant adapter serving can share a base, but scheduler/KV/adapter memory and isolation must be measured |
+| [vLLM LoRA serving](https://docs.vllm.ai/en/stable/features/lora/) | Living docs | Optional production backend; ranks, target modules, formats, lineage, dynamic-load authority, and mixed-MoE layouts must be validated before load |
+
+Adapters MUST be keyed by the digest of the base weights, architecture,
+tokenizer, vocabulary, chat template, quantization configuration, and target
+module map. A matching human-readable model name is insufficient. Merge and
+unmerge equivalence needs an executable tolerance test; composition and routing
+need held-out evaluation against the base and every constituent adapter.
+
+Operational reports reinforce the need for compatibility checks:
+[PEFT issue 1802](https://github.com/huggingface/peft/issues/1802) documents
+surprising behavior while switching multiple adapters, and
+[PEFT issue 1226](https://github.com/huggingface/peft/issues/1226) records
+merged-versus-active-adapter differences. Current PEFT documentation also warns
+that QDoRA has reported incompatibility with DeepSpeed ZeRO-2. These are
+practitioner/maintainer signals, not evidence that every combination fails.
+
+### 6.2 Dataset representations, streaming, and interchange
+
+| Resource/format | Best use | Required cautions |
+|---|---|---|
+| [Hugging Face Datasets paper](https://arxiv.org/abs/2109.02846), [library](https://github.com/huggingface/datasets), and [loading docs](https://huggingface.co/docs/datasets/loading) | Versioned dataset interface, transforms, memory mapping, and streaming | Pin library/PyArrow versions, code revision, builder config, split, and transform fingerprint |
+| [Apache Arrow format](https://arrow.apache.org/docs/format/index.html) | Typed columnar in-memory/interchange representation | Arrow IPC file and stream formats differ; preserve extension metadata and schema |
+| [Apache Parquet format](https://parquet.apache.org/docs/file-format/) | Durable compressed columnar shards and predicate pushdown | Record schema, row-group/shard policy, compression, logical types, and statistics exposure |
+| [JSON Lines](https://jsonlines.org/) | Reviewable append/stream interchange and fixtures | Enforce UTF-8, one valid JSON value per line, schema, record size, and canonical hashing |
+| [WebDataset](https://github.com/webdataset/webdataset) | Sequential tar shards for large multimodal training streams | Index member names, byte digests, sample grouping, shard sizes, and shuffle semantics |
+| [Hugging Face dataset cards](https://huggingface.co/docs/hub/datasets-cards) and [Datasheets for Datasets](https://arxiv.org/abs/1803.09010) | Intended use, composition, collection, preprocessing, licensing, and limitations | A card is mandatory metadata, not proof that the data is safe or correct |
+| [Croissant](https://mlcommons.org/working-groups/data/croissant/) | Portable dataset metadata and resource descriptions | Use as interchange; Gludd retains its authoritative policy and lineage IDs |
+| [DVC](https://dvc.org/doc) and [lakeFS](https://docs.lakefs.io/) | Optional large-artifact/data version backends | Git pointers are not content provenance unless remote object digests and retention are verified |
+
+Gludd should standardize a logical record/dataset manifest and make formats
+adapters. JSONL is the reviewable small-data baseline; Parquet is the default
+large tabular artifact; Arrow is the in-process/cache representation; WebDataset
+is optional for large sequential multimodal streams. Format conversion MUST
+preserve record IDs, split, schema, nullability, label semantics, ordering
+contract, and provenance rather than merely preserving values that happen to
+deserialize.
+
+Persistent issues show why conformance tests are necessary:
+[datasets issue 2377](https://github.com/huggingface/datasets/issues/2377)
+explains that a Datasets Arrow stream is not automatically a Feather/Arrow IPC
+file; [issue 5053](https://github.com/huggingface/datasets/issues/5053) records
+an intermittent JSON streaming parse failure; and
+[issue 4883](https://github.com/huggingface/datasets/issues/4883) records
+monotonically increasing resident memory in a data-loader workload.
+
 ## 7. Retrieval, RAG, memory, and knowledge
 
 | Resource | Date | What the expert must retain |
@@ -244,6 +311,65 @@ The expert must score at least:
 Generation metrics may not mask a failed retriever. Gold evidence IDs must be
 evaluated before answer style.
 
+### 7.2 Vector, sparse, graph, hybrid, and reranking depth
+
+| Layer | Primary resources | Design boundary |
+|---|---|---|
+| Lexical | BM25; PostgreSQL [full-text search](https://www.postgresql.org/docs/current/textsearch.html) | Exact terms, identifiers, filters, and deterministic offline fallback |
+| Learned sparse | [SPLADE](https://arxiv.org/abs/2107.05720) and [SPLADE v2](https://arxiv.org/abs/2109.10086) | Optional model; sparse vocabulary, regularization, latency, and license belong in the model card |
+| Dense | [DPR](https://arxiv.org/abs/2004.04906), [FAISS](https://github.com/facebookresearch/faiss), [pgvector](https://github.com/pgvector/pgvector) | Approximate search needs recall measurement against an exact subset |
+| Late interaction | [ColBERTv2](https://arxiv.org/abs/2112.01488) | Stronger token-level matching with larger index/compute surface |
+| Hybrid fusion | [Hybrid-fusion analysis](https://arxiv.org/abs/2210.11934) and pgvector's official hybrid example | RRF is not universally best; tune fusion only on development data and preserve component ranks |
+| Cross-encoder reranking | [Sentence Transformers CrossEncoder](https://www.sbert.net/examples/cross_encoder/applications/README.html) | Rerank a bounded candidate set; never hide first-stage recall or exceed latency budget |
+| Graph retrieval | [GraphRAG paper](https://arxiv.org/abs/2404.16130), [Microsoft GraphRAG](https://github.com/microsoft/graphrag), RDF/OWL standards | Graph extraction is model-derived evidence; retain source spans and do not equate graph edges with truth |
+| Production store | PostgreSQL full text + pgvector first; external vector/graph systems only through adapters | Structured authoritative state must override stale derived indexes |
+
+The retriever should use query classification, metadata/source filters, lexical
+and dense candidates, version-aware graph traversal, score/rank fusion, bounded
+reranking, neighbor/section expansion, and diversity control. Each stage emits
+its own candidate IDs and scores. A graph edge, embedding similarity, or
+reranker score is a retrieval signal—not claim verification.
+
+A 2026 practitioner post describes a
+[stale vector index contradicting current relational state](https://www.reddit.com/r/LocalLLaMA/comments/1r69w5y/rag_failure_in_production_our_vector_store_served/);
+longer-running threads likewise emphasize
+[document CRUD/index synchronization](https://www.reddit.com/r/LocalLLaMA/comments/1cfrqlz/)
+and retrieval latency as corpora grow. The specification therefore makes
+source-of-truth revision, index watermarks, tombstones, and reconciliation
+blocking correctness controls.
+
+### 7.3 Web research, search, and resource discovery
+
+The expert requires a source registry with ordered, policy-aware fallbacks. No
+single search engine or scholarly graph has complete coverage.
+
+| Source class | Preferred source | Fallbacks and boundary |
+|---|---|---|
+| General web discovery | Self-hosted [SearXNG API](https://docs.searxng.org/dev/search_api.html) | Configured vendor search APIs; direct site search; never scrape a search UI as an implicit fallback |
+| Historical web | [Internet Archive CDX API](https://archive.org/developers/wayback-cdx-server.html) | [Common Crawl index](https://index.commoncrawl.org/) and WARC; archive results are historical, not current |
+| Web-scale/bulk | [Common Crawl URL index](https://commoncrawl.org/url-index) | Fetch only selected WARC records; bulk jobs use columnar index and separate budgets |
+| Scholarly identity/DOI | [Crossref REST](https://www.crossref.org/documentation/retrieve-metadata/rest-api/) | DataCite, publisher record; compare rather than overwrite conflicting metadata |
+| Scholarly graph | [OpenAlex](https://docs.openalex.org/) | [Semantic Scholar API](https://api.semanticscholar.org/api-docs/), Crossref references, OpenCitations |
+| Preprints/peer review | [arXiv API](https://info.arxiv.org/help/api/index.html), [OpenReview API](https://docs.openreview.net/) | Venue proceedings and author repositories; preserve version/review state |
+| Biomedicine | [NCBI E-utilities](https://www.ncbi.nlm.nih.gov/books/NBK25501/) and [Europe PMC API](https://europepmc.org/RestfulWebService) | PubMed Central open text; never infer clinical validity from index presence |
+| Computer science | [DBLP API](https://dblp.org/faq/How+to+use+the+dblp+search+API.html), ACL/CVF/PMLR proceedings | OpenAlex/Semantic Scholar; verify canonical venue and version |
+| Code/issues | [GitHub REST search](https://docs.github.com/en/rest/search/search) and repository APIs | GitLab/forge APIs; pin commit/tag and retain issue state/timestamps |
+| Questions/practice | [Stack Exchange API](https://api.stackexchange.com/docs) and named forums | Practitioner signal only; preserve score/date/accepted-answer status and corroborate material claims |
+| Retractions/corrections | [Crossref relations](https://www.crossref.org/documentation/retrieve-metadata/rest-api/rest-api-filters/) and Retraction Watch | Publisher/venue notice; retraction state overrides ranking popularity |
+
+The broker MUST honor [RFC 9309](https://www.ietf.org/rfc/rfc9309.html), service
+terms, licenses, authentication, `Retry-After`, rate and concurrency headers,
+and cache validators. Crossref documents public/polite concurrency limits;
+OpenAlex uses request/credit limits; public SearXNG instances may disable JSON;
+Common Crawl explicitly asks clients not to parallelize index queries. Provider
+availability and result ordering are therefore recorded observations, not hidden
+implementation details.
+
+Discovery is a reproducible protocol: expand synonyms/identifiers, search
+independent indexes, deduplicate by stable identifiers and content, follow
+backward/forward citations, inspect corrections and negative evidence, stop at a
+declared saturation/budget rule, and publish the complete query/source ledger.
+
 ## 8. Reasoning, planning, agents, and tools
 
 | Resource | Date | Evidence and caveat |
@@ -271,6 +397,32 @@ evaluated before answer style.
 **Design implication:** Gludd needs explicit state machines, typed tool schemas,
 iteration ceilings, idempotency keys, capability checks, and terminal-state
 tests. A prompt that says “stop” is not a control plane.
+
+### 8.1 Process supervision, verifiable reasoning, and private-CoT-safe output
+
+| Resource | Date | Design use |
+|---|---:|---|
+| [Let's Verify Step by Step](https://arxiv.org/abs/2305.20050) and [PRM800K](https://github.com/openai/prm800k) | 2023 | Process labels can improve selected math tasks; step feedback quality and transfer must be evaluated |
+| [Faithful Chain-of-Thought Reasoning](https://arxiv.org/abs/2211.12588) | 2022 | Translate to an executable symbolic program and use a deterministic solver where possible |
+| [Measuring Faithfulness in Chain-of-Thought](https://arxiv.org/abs/2307.13702) | 2023 | A written chain is not necessarily the causal reasoning process |
+| [Reasoning models do not always say what they think](https://www.anthropic.com/research/reasoning-models-dont-say-think) | 2025 | Hidden-hint experiments show that visible reasoning cannot be the sole safety monitor |
+| [OpenAI CoT monitorability evaluation](https://openai.com/index/evaluating-chain-of-thought-monitorability/) | 2025 | Monitorability is an empirical model/property to track, not an assumed invariant |
+| [ProcessBench](https://arxiv.org/abs/2412.06559) | 2024 | Evaluate whether a verifier locates the first erroneous math step |
+| [Program-Aided Language Models](https://arxiv.org/abs/2211.10435) and [Faithful CoT](https://arxiv.org/abs/2211.12588) | 2022 | Prefer inspectable programs and solver outputs for exact subproblems |
+
+Gludd should allow a provider's private reasoning channel to remain private.
+The user-facing product is a **verification record**, not a claim to reveal
+internal cognition: assumptions, subproblem DAG, evidence, tool inputs/outputs,
+proof/check status, concise derivation, alternatives, and limitations. Raw
+private chain-of-thought MUST NOT be required, persisted, logged, placed in
+training data, or exposed through an API. If a provider returns reasoning-like
+content, treat it as sensitive untrusted model output and retain only a
+policy-authorized diagnostic artifact.
+
+Process supervision is admissible only when a step has a stable externally
+checkable meaning. For open-ended prose, process reward models can learn style
+or evaluator preferences. Outcome checks, formal solvers, execution, unit
+tests, citations, and independent review remain the promotion authority.
 
 ## 9. Evaluation, calibration, and reproducibility
 
@@ -446,6 +598,97 @@ Multimodal evidence needs modality-specific parsers, hashes, timestamps, spatial
 or temporal citations, accessibility metadata, and adversarial tests. OCR or
 transcription output is derived evidence and must link to the original region.
 
+### 14.1 Photo generation, editing, control, and media provenance
+
+| Resource | Date | Capability and boundary |
+|---|---:|---|
+| [DALL-E 2/unCLIP](https://arxiv.org/abs/2204.06125) and [Imagen](https://arxiv.org/abs/2205.11487) | 2022 | Text-image generation references; reported prompt alignment is model/data specific |
+| [Latent Diffusion](https://arxiv.org/abs/2112.10752) and [SDXL](https://arxiv.org/abs/2307.01952) | 2021/2023 | Latent generation and larger cascaded pipeline; record VAE, text encoders, scheduler, and resolution |
+| [Hugging Face Diffusers](https://github.com/huggingface/diffusers) | Mature code | Preferred optional generation/editing adapter; Gludd owns policy, provenance, and evaluation |
+| [DreamBooth](https://arxiv.org/abs/2208.12242) | 2022 | Subject-driven personalization; consent, memorization, and identity misuse require explicit review |
+| [ControlNet](https://arxiv.org/abs/2302.05543) and [official code](https://github.com/lllyasviel/ControlNet) | 2023 | Spatial conditioning from edges/depth/pose; condition extraction is a versioned transformation |
+| [T2I-Adapter](https://arxiv.org/abs/2302.08453) | 2023 | Lightweight control adapters |
+| [IP-Adapter](https://arxiv.org/abs/2308.06721) | 2023 | Image-prompt adapter; reference-image rights and identity risks remain |
+| [InstructPix2Pix](https://arxiv.org/abs/2211.09800) and [code](https://github.com/timothybrooks/instruct-pix2pix) | 2022 | Instruction-driven editing; retain original, mask/region, instruction, and output |
+| [Segment Anything](https://arxiv.org/abs/2304.02643), [Grounding DINO](https://arxiv.org/abs/2303.05499) | 2023 | Optional region/grounding tools; predictions are derived annotations |
+| [FID](https://arxiv.org/abs/1706.08500), [CLIPScore](https://arxiv.org/abs/2104.08718), [GenEval](https://arxiv.org/abs/2310.11513) | 2017/2021/2023 | Distribution, alignment, and compositional metrics; none measures all quality or safety dimensions |
+| [C2PA specification](https://spec.c2pa.org/specifications/) | Living standard | Sign and validate creation/edit lineage when supported; missing or stripped credentials do not prove an asset is authentic |
+
+Image generation and editing need separate operations. Generation creates a new
+asset from prompts/conditions; editing preserves an ingredient graph and
+declared region/operation intent. Both must record model and component digests,
+adapter weights/scales, scheduler, seed/generator state, dimensions, precision,
+device/backend, safety decisions, input ingredient digests, and output pixel
+digest. Exact pixels are not guaranteed across all hardware/backends; the
+manifest must say whether replay is byte-exact, numerically bounded, or merely
+configuration-complete.
+
+Long-lived implementation issues include Diffusers
+[per-image seed recovery issue 208](https://github.com/huggingface/diffusers/issues/208)
+and [Kohya-style LoRA compatibility issue 4348](https://github.com/huggingface/diffusers/issues/4348).
+Forum users continue to encounter model/LoRA/workflow incompatibilities and
+deprecated parameter guidance. This supports explicit pipeline-component
+compatibility matrices and golden-image tolerances rather than a generic
+“supports LoRA” flag.
+
+## 14A. Mathematics, theorem proving, and scientific discovery
+
+### 14A.1 Mathematics and formal proof
+
+| Resource | Date | Design use |
+|---|---:|---|
+| [Minerva](https://arxiv.org/abs/2206.14858) | 2022 | Quantitative reasoning model; generated derivations still require checking |
+| [Lean 4](https://github.com/leanprover/lean4), [mathlib4](https://github.com/leanprover-community/mathlib4) | Mature code | Preferred formal-proof adapter for an initial implementation; pin toolchain and library commit |
+| [LeanDojo](https://arxiv.org/abs/2306.15626) and [code](https://github.com/lean-dojo/LeanDojo) | 2023 | Reproducible Lean environments and theorem-proving interaction |
+| [miniF2F](https://arxiv.org/abs/2109.00110), [ProofNet](https://arxiv.org/abs/2302.12433), [PutnamBench](https://arxiv.org/abs/2407.11214) | 2021–2024 | Formal-math benchmark slices; track statement translations and duplicates |
+| [AlphaGeometry](https://www.nature.com/articles/s41586-023-06747-5) and [official code](https://github.com/google-deepmind/alphageometry) | 2024 | Neural proposal plus symbolic deduction for geometry |
+| [AlphaProof/AlphaGeometry 2 report](https://deepmind.google/blog/ai-solves-imo-problems-at-silver-medal-level/) | 2024 | Formal proof can certify a result, but compute and manual formalization remain important |
+| [DeepSeek-Prover](https://arxiv.org/abs/2405.14333) and [code](https://github.com/deepseek-ai/DeepSeek-Prover-V1.5) | 2024 | Open theorem-proving model and data-generation reference |
+| [SymPy](https://www.sympy.org/), [SageMath](https://www.sagemath.org/), [Z3](https://github.com/Z3Prover/z3) | Mature code | Exact algebra, number theory, optimization/SMT tools; record assumptions and versions |
+
+The role must distinguish numeric calculation, symbolic manipulation, informal
+derivation, counterexample search, and formal proof. Only a kernel-accepted proof
+may be labeled `formally_verified`; successful numeric tests or a plausible
+natural-language proof are weaker evidence. Translation between natural and
+formal statements is a separate, human-reviewable artifact.
+
+Lean/mathlib versions move together: the official
+[dependency guide](https://github.com/leanprover-community/mathlib4/wiki/Using-mathlib4-as-a-dependency)
+requires a matching Lean toolchain. Lean
+[issue 4190](https://github.com/leanprover/lean4/issues/4190) also shows how a
+misleading local “No goals” message can coexist with errors elsewhere. Gludd
+must trust the full build/kernel exit state, not a model or one UI message.
+
+### 14A.2 Scientific discovery and experimentation
+
+| Resource | Date | Evidence and caution |
+|---|---:|---|
+| [AlphaFold](https://www.nature.com/articles/s41586-021-03819-2) | 2021 | Domain-specific scientific prediction with confidence estimates; prediction is not experimental validation |
+| [FunSearch](https://www.nature.com/articles/s41586-023-06924-6) | 2023 | LLM proposals plus executable evaluator and evolutionary search |
+| [ChemCrow](https://arxiv.org/abs/2304.05376) | 2023 | Chemistry tool use improved tasks; paper reports that GPT-4 evaluation could not distinguish clearly wrong baselines, supporting expert/deterministic checks |
+| [Coscientist](https://www.nature.com/articles/s41586-023-06792-0) | 2023 | Semi-autonomous chemistry planning and laboratory control under a bounded setup |
+| [AI Scientist](https://arxiv.org/abs/2408.06292) and [code](https://github.com/SakanaAI/AI-Scientist) | 2024 | End-to-end ML research loop; automated review is not independent scientific validation |
+| [ScienceAgentBench](https://arxiv.org/abs/2410.05080) | 2024 | 102 expert-validated data-driven tasks across four disciplines |
+| [BLADE](https://arxiv.org/abs/2408.09667) | 2024 | Open-ended data-driven science evaluation |
+| [CORE-Bench](https://arxiv.org/abs/2407.16791) and [RE-Bench](https://arxiv.org/abs/2411.15114) | 2024 | Computational reproducibility and research-engineering benchmarks |
+
+Gludd may propose hypotheses, literature maps, simulations, analysis plans, and
+bounded computational experiments. It may not claim discovery from novelty
+scores, automated reviews, or one successful run. Physical, biomedical,
+chemical, environmental, or human-subject actions require domain policy,
+qualified human approval, and the relevant institutional/safety process.
+Negative results, preregistered analyses, units, controls, uncertainty,
+multiple-testing corrections, raw data, environment, and replication attempts
+are first-class artifacts.
+
+A persistent
+[AI Scientist installation/use thread](https://www.reddit.com/r/learnmachinelearning/comments/1fuw2yb/)
+asks whether users can reproduce the system outside its demonstrated fields;
+discussion of the original release also disputes equating an automated review
+threshold with a strong paper. The Gludd consequence is strict separation of
+hypothesis generation, experiment execution, statistical analysis, independent
+review, and real-world validation.
+
 ## 15. Production ML and observability
 
 | Project/resource | Reuse decision |
@@ -486,6 +729,15 @@ recurring failure classes that benchmark-only design misses.
 | [Best evaluations for reasoning and instruction following](https://www.reddit.com/r/LocalLLaMA/comments/16txkg8/) | 2023-09 | Users cannot infer which benchmark answers their deployment question | Evaluation registry must map a capability claim to a justified task suite |
 | [Prompt injection with production agent access](https://www.reddit.com/r/cybersecurity/comments/1sx66fe/how_is_your_org_handling_prompt_injection_now/) | 2026-05 | Practitioner concern remains despite filters and OWASP guidance | Defense in depth plus least privilege; regex is never the sole control |
 | [Agent framework comparison: debug latency](https://www.reddit.com/r/AI_Agents/comments/1tp335p/i_compared_8_opensource_ai_agent_frameworks_so/) | 2026-06 | Framework feature lists hide abstraction and debugging cost | Measure failure diagnosis time and trace completeness before dependency adoption |
+| [PEFT multiple-adapter switching issue](https://github.com/huggingface/peft/issues/1802) | 2024-06 | Active and merged adapters produced surprising differences | Validate base/adapter state, active set, merge state, and golden outputs before serving |
+| [PEFT merged-versus-enabled issue](https://github.com/huggingface/peft/issues/1226) | 2023-10 | Enabled adapter and merged adapter behavior differed in a reported configuration | Merge equivalence is a testable property, never assumed |
+| [HF Datasets Arrow/Feather mismatch](https://github.com/huggingface/datasets/issues/2377) | 2021-01 | Users treated a streaming Arrow representation as an Arrow IPC/Feather file | Format adapters declare exact variant and run cross-reader conformance |
+| [HF Datasets memory growth](https://github.com/huggingface/datasets/issues/4883) | 2022-08 | Resident memory increased in a data-loader workload | Stream tests measure peak RSS, file descriptors, cache, and cleanup |
+| [SearXNG JSON API discussion](https://github.com/searxng/searxng/discussions/1789) | 2022-09 | JSON is disabled unless the instance enables the format | Preflight source capabilities and fall back explicitly |
+| [Diffusers per-image seed issue](https://github.com/huggingface/diffusers/issues/208) | 2022-07 | Reproducing images in batched generation needed per-image generator state | Record generator/seed per output, not one request-level seed |
+| [Lean “No goals” diagnostic issue](https://github.com/leanprover/lean4/issues/4190) | 2024-05 | A local success-looking message could distract from errors elsewhere | Formal proof status comes only from the complete pinned build/kernel result |
+| [Stale vector index production incident](https://www.reddit.com/r/LocalLLaMA/comments/1r69w5y/rag_failure_in_production_our_vector_store_served/) | 2026-02 | Derived embeddings contradicted current structured state | Track index watermarks/tombstones and prioritize authoritative current state |
+| [AI Scientist reproducibility question](https://www.reddit.com/r/learnmachinelearning/comments/1fuw2yb/) | 2024-10 | Users struggled to reproduce the demonstrated system in other fields | Domain transfer and setup reproducibility are explicit evaluation gates |
 
 ### 16.1 Failure themes that persist across years
 
@@ -500,6 +752,13 @@ recurring failure classes that benchmark-only design misses.
    combined.
 7. Benchmark selection and prompt formatting materially change conclusions.
 8. Security controls remain incomplete when agents receive broad permissions.
+9. Adapter/checkpoint names conceal base-model and serving incompatibilities.
+10. Dataset “format” names conceal variants, schemas, streaming semantics, and
+    memory behavior.
+11. Media seeds are insufficient provenance without the full pipeline and
+    component state.
+12. Formal or experimental verification must be read from the authoritative
+    checker, not a plausible explanation or partial UI message.
 
 ## 17. Existing Gludd capability map
 
@@ -525,6 +784,10 @@ systems.
 | `security/capability_lattice.py` | Default-deny dispatch/self-modification checks | Current self-improvement roles are broad; new capabilities must separate research, experiment, propose, promote, and deploy |
 | `physics/mechanistic_interpretability.py` | Existing interpretability primitives | Expose through the collection; do not duplicate |
 | `config/ai_sdlc.yml` and `agent.sdlc_gate` | Evidence-token and lifecycle-stage pattern | Extend with dataset/model/eval/promotion evidence rather than creating a competing lifecycle |
+| `skills/skill.py`, `loader.py`, and `registry.py` | Existing skill discovery, tools, triggers, model profile, project precedence | Skill metadata lacks input/output schema, capabilities, budgets, evidence policy, and eval suite; a skill body must remain guidance rather than authority |
+| `ansible/paths.py::resolve_collections_paths` | Project/user/bundled collection precedence | The ML/AI expert should be a normal bundled `general_ludd.ml_ai_expert` collection, overridable through the existing project tier |
+| `models/model_registry.py` and `models/quantization.py` | Model revision downloads and quantization metadata | No adapter artifact/base-compatibility registry, merge state, or adapter routing contract exists |
+| Generic artifact/run/eval/sandbox seams | Isolation, recording, and evaluation foundations | Source search found no dedicated dataset-format, PEFT-training, image generation/editing, or formal-proof subsystem; add adapters instead of hiding these jobs in prompts |
 
 ## 18. Mature dependency decisions
 
@@ -542,6 +805,20 @@ systems.
 | Experiment metadata | Extend Gludd IDs/events; optional MLflow/OpenLineage export | Gludd remains authoritative while avoiding custom external-platform clones |
 | Prompt/program optimization | Benchmark upstream DSPy; reuse current local seam only as fallback | Mature upstream project already solves the general optimization problem |
 | Distributed training/serving | Adapt PyTorch FSDP/DeepSpeed/vLLM/KServe/Ray as chosen per environment | Never implement custom collectives or serving schedulers |
+| Parameter-efficient tuning | Hugging Face PEFT first, AdapterHub optional | Reuse LoRA/QLoRA/DoRA/IA3/prompt adapter implementations; Gludd owns manifests, policy, experiments, and promotion |
+| Adapter serving | Existing model gateway plus optional vLLM; evaluate S-LoRA/Punica patterns | Keep one authoritative compatibility/routing layer and avoid a custom GPU kernel runtime |
+| Tensor artifacts | `safetensors` by default | Avoid executable pickle checkpoints; still validate shape/dtype/digest/size |
+| Dataset interface | Hugging Face Datasets optional with Arrow/Parquet/JSONL/WebDataset adapters | Keep a Gludd logical dataset manifest and deterministic JSONL fallback |
+| Large tabular processing | PyArrow/Polars/DuckDB adapters selected by workload | Do not write a columnar engine; require bounded memory and cross-format conformance |
+| Web metasearch | Existing/self-hosted SearXNG first | Preserve privacy/control and multiple engines; vendor APIs remain policy-configured fallbacks |
+| Web archives/bulk discovery | Internet Archive and Common Crawl adapters | Use indexes before content and isolate bulk resource budgets |
+| Learned retrieval/reranking | Sentence Transformers, FAISS/pgvector, optional ColBERT/SPLADE | Do not write embedding, ANN, or cross-encoder frameworks |
+| Graph analysis | PostgreSQL/RDF/NetworkX for bounded local work; GraphRAG/graph-store adapters only when evaluated | Graph-derived facts retain source spans; no mandatory graph database |
+| Image generation/editing | Hugging Face Diffusers adapter | Reuse pipelines/schedulers/LoRA/ControlNet; Gludd supplies authorization, provenance, reproducibility, safety, and evals |
+| Media provenance | C2PA SDK/tool adapter | Use the standard signature/manifest model; missing credentials remain `unknown`, not `authentic` |
+| Symbolic mathematics | SymPy/SageMath/Z3 adapters | Prefer exact tools over model arithmetic and retain assumptions/tool proofs |
+| Formal theorem proving | Lean 4 + pinned mathlib/LeanDojo first | Trust the kernel; other provers join through the same protocol |
+| Scientific workflows | Existing scientific Python/R tools inside isolated project environments | Gludd orchestrates and records; it does not replace domain solvers, laboratory safety, or peer review |
 
 ## 19. Design hypotheses to test, not assume
 

@@ -102,6 +102,139 @@ write only inside its project workspace and artifact store. The promotion plane
 may change a live selection pointer only through an authorized, audited,
 reversible operation.
 
+### 2.1 Collection filesystem contract
+
+The bundled collection MUST use the existing project/user/bundled Ansible
+precedence and ship at:
+
+```text
+collections/ansible_collections/general_ludd/ml_ai_expert/
+├── galaxy.yml
+├── README.md
+├── plugins/
+│   ├── modules/                 # thin typed adapters, never prompt-only policy
+│   └── module_utils/
+│       ├── contracts.py         # answer/evidence/handoff/resource schemas
+│       ├── datasets.py          # logical dataset + format adapter protocols
+│       ├── adapters.py          # PEFT artifact/compatibility protocols
+│       └── verification.py      # proof/check/evaluation result protocols
+├── roles/
+│   ├── expert_orchestrate/
+│   ├── web_research/
+│   ├── literature_research/
+│   ├── data_engineering/
+│   ├── model_adaptation/
+│   ├── adapter_route/
+│   ├── retrieval_engineering/
+│   ├── reasoning_verify/
+│   ├── vision_analyze/
+│   ├── image_generate/
+│   ├── image_edit/
+│   ├── math_solve/
+│   ├── theorem_prove/
+│   ├── science_discovery/
+│   ├── eval_design/
+│   ├── safety_review/
+│   ├── answer_synthesize/
+│   └── independent_verify/
+└── tests/
+    ├── unit/
+    ├── integration/
+    └── molecule/
+```
+
+Project-local roles may extend or intentionally shadow the collection through
+the existing precedence contract. They may not weaken hard security,
+provenance, holdout, or promotion policy.
+
+### 2.2 Role execution contracts
+
+Roles are typed execution units. Skills are reusable instructions and method
+knowledge. A skill may help a role plan, but it cannot grant a tool, capability,
+budget, network destination, promotion right, or secret.
+
+| Role | Input | Output | Minimum capabilities |
+|---|---|---|---|
+| `expert_orchestrate` | Question, project, user constraints | Bounded role DAG and answer envelope | Registry read and dispatch only |
+| `web_research` | Query plan and source policy | Query ledger and evidence IDs | Search/fetch approved public sources |
+| `literature_research` | Concepts, identifiers, date/venue rules | Deduplicated evidence graph and review log | Scholarly metadata/full-text adapters |
+| `data_engineering` | Data resources and target logical schema | Validated dataset manifest and conversion artifacts | Project dataset read/write |
+| `model_adaptation` | Base/adapter/dataset/eval manifests | Isolated candidate adapter and training report | Authorized accelerator/model read; candidate workspace write |
+| `adapter_route` | Request features and approved adapter registry | Reproducible base/adapter route decision | Registry/model gateway read |
+| `retrieval_engineering` | Corpus/query/eval manifests | Versioned index and retrieval report | Project knowledge-store read/write |
+| `reasoning_verify` | Subproblem DAG and candidate derivation | Checkable steps, tool artifacts, and verification state | Declared solvers only |
+| `vision_analyze` | Media ingredients and question | Spatial/temporal observations with locators | Media decode and approved vision tools |
+| `image_generate` | Prompt/conditions/policy | New media artifact plus provenance manifest | Authorized image backend and artifact write |
+| `image_edit` | Source asset, region/instruction, policy | Edited artifact and ingredient graph | Authorized image backend and artifact write |
+| `math_solve` | Formalized mathematical problem | Exact/numeric result with assumptions and checks | Calculator/CAS/SMT sandbox |
+| `theorem_prove` | Natural/formal statement and pinned environment | Kernel result and proof artifact | Formal prover sandbox |
+| `science_discovery` | Domain, hypothesis, data, preregistration | Proposal or bounded computational experiment | Project sandbox; no physical action by default |
+| `eval_design` | Capability claim and risk | Versioned suite/card/threshold proposal | Eval registry write, no promotion |
+| `safety_review` | Proposed plan/artifacts | Allow, constrain, review, or deny record | Policy read and approval request |
+| `answer_synthesize` | Admitted claims/evidence/artifacts | Private-CoT-safe user report | No mutation or new external action |
+| `independent_verify` | Frozen answer/candidate manifest | Verification report | Read-only evidence/tools; separately configured evaluator |
+
+Every role receives an idempotency key, deadline, resource profile, capability
+token, input schema version, and policy revision. Every role returns a typed
+terminal state: `succeeded`, `partial`, `abstained`, `blocked`, `failed`, or
+`cancelled`.
+
+### 2.3 Skill package contract
+
+The collection installs guidance through Gludd's existing `SkillRegistry`. The
+initial skill set is:
+
+| Skill | Purpose | Typical role consumers |
+|---|---|---|
+| `ml_question_triage` | Domain/risk/input clarification | `expert_orchestrate`, `safety_review` |
+| `ml_method_select` | Baselines, assumptions, method cards | `expert_orchestrate`, `math_solve` |
+| `web_evidence_search` | Reproducible query/source/snowballing protocol | Research roles |
+| `dataset_contract` | Schema, formats, lineage, quality, split rules | `data_engineering`, `eval_design` |
+| `peft_experiment` | LoRA/QLoRA/DoRA/adapter comparison checklist | `model_adaptation` |
+| `adapter_route` | Compatibility, composition, serving, rollback checklist | `adapter_route` |
+| `hybrid_retrieval` | Lexical/dense/graph/fusion/reranker workflow | `retrieval_engineering` |
+| `verifiable_reasoning` | Externalized assumptions, tools, proof state | `reasoning_verify`, `math_solve` |
+| `private_reasoning_boundary` | Produce concise verification records without raw private CoT | All model-backed roles |
+| `vision_evidence` | Regions, timestamps, OCR/caption lineage | `vision_analyze` |
+| `image_generation` | Pipeline components, seeds, safety, provenance | `image_generate` |
+| `image_editing` | Ingredients, masks, transformations, identity/rights | `image_edit` |
+| `formal_proof` | Natural/formal translation and kernel validation | `theorem_prove` |
+| `scientific_method` | Hypothesis, controls, units, statistics, replication | `science_discovery` |
+| `evaluation_card` | Claims, cases, metrics, slices, thresholds, limits | `eval_design`, `independent_verify` |
+| `safe_self_improvement` | Candidate isolation and promotion evidence | Self-improvement roles |
+
+The existing `Skill` model MUST be extended with `schema_version`,
+`input_schema`, `output_schema`, `required_capabilities`, `resource_profile`,
+`evidence_policy`, `evaluation_suite`, `version`, and `content_digest`.
+Unknown fields fail validation. Remote skills remain untrusted until source,
+signature/digest, policy, schema, and capability review pass.
+
+### 2.4 Handoff envelope
+
+No role passes free-form text as the sole handoff. The envelope is:
+
+```yaml
+handoff_id: uuid
+parent_run_id: uuid
+from_role: string
+to_role: string
+schema_version: 1
+objective: string
+inputs: [{artifact_id: string, digest: sha256}]
+claims: [claim_id]
+evidence: [evidence_id]
+assumptions: [string]
+required_checks: [string]
+capability_token_id: string
+resource_profile_id: string
+policy_revision: sha256
+deadline: timestamp
+idempotency_key: string
+```
+
+The receiver resolves IDs from authoritative stores and rejects missing,
+cross-tenant, digest-mismatched, expired, unauthorized, or cyclic handoffs.
+
 ## 3. Shared contracts
 
 ### 3.1 Answer and claim schema
@@ -181,9 +314,53 @@ and one retry per failed source. Tool time, model tokens, wall-clock time,
 storage, and monetary cost MUST each have explicit hard limits. Reaching a limit
 produces a partial answer or abstention; it MUST NOT start an unbounded loop.
 
+### 3.5 Internet source registry and fallbacks
+
+Each source adapter declares source class, authoritative identifiers, trust
+label, supported operations, authentication, terms/license, robots behavior,
+rate/concurrency limits, cache policy, freshness, maximum object size, parser,
+health state, and fallback group.
+
+| Need | Primary | Ordered fallback |
+|---|---|---|
+| General web discovery | Project SearXNG | Approved search API; named-site search; no implicit HTML scraping |
+| Historical page | Internet Archive CDX | Common Crawl CDX/URL index |
+| DOI/metadata | Crossref | DataCite; publisher record |
+| Scholarly graph | OpenAlex | Semantic Scholar; OpenCitations; Crossref references |
+| Preprint/review | arXiv/OpenReview | Venue proceedings; author repository |
+| Biomedicine | PubMed/Europe PMC | PMC open text; publisher metadata |
+| Computer science | DBLP and canonical proceedings | OpenAlex/Semantic Scholar |
+| Code and issues | Canonical forge API | Archived repository snapshot |
+| Retraction/correction | Publisher/Crossref relationship | Retraction Watch/venue notice |
+
+Fallbacks are explicit trace events. A fallback may broaden coverage but may not
+silently upgrade trust, freshness, peer-review state, license, or claim
+verification. A cached or archived page is labeled with its observation date.
+
+### 3.6 Operation resource profiles
+
+Defaults are safe ceilings, not utilization targets:
+
+| Profile | Default hard ceiling |
+|---|---|
+| `research_standard` | 12 queries, 40 documents, 2 concurrent fetches, 32k admitted tokens, 15 minutes |
+| `retrieval_build` | 100k records or 2 GiB input, 2 workers, 4 GiB RAM, 30 minutes |
+| `retrieval_query` | 200 lexical + 200 dense candidates, 500 graph nodes/2 hops, rerank 50, admit 20 |
+| `dataset_preview` | 100k records or 2 GiB, 4 GiB RAM, 30 minutes, no accelerator |
+| `peft_preview` | 1,000 examples, rank at most 16, trainable parameters at most 2%, one accelerator, 60 minutes |
+| `media_standard` | Four outputs, 1024×1024 maximum each, two control/reference assets, 15 minutes |
+| `formal_proof` | 1,000 prover actions, 4 GiB RAM, 10 minutes per theorem |
+| `science_compute` | 4 CPU cores, 8 GiB RAM, 10 GiB artifacts, 60 minutes, no physical device |
+
+Larger profiles require an explicit project policy and admission-control
+decision. No role can increase its own profile. Admission accounts for release
+priority and total system resources before work starts.
+
 ## 4. Expert collection specifications
 
 ### MLAI.1 — Versioned expert collection skeleton
+
+**Status:** Not implemented
 
 **Contract:** Add a `general_ludd.ml_ai_expert` collection manifest, role
 registry, prompt assets, schemas, source policy, benchmark registry, and
@@ -200,6 +377,8 @@ at least 85%.
 
 ### MLAI.2 — Question, domain, and risk intake
 
+**Status:** Not implemented
+
 **Contract:** Normalize the question, identify ML/AI subdomains, classify risk,
 record assumptions, and choose `answer`, `clarify`, `abstain`, or `block` before
 retrieval or tool execution. High-risk recommendations require the applicable
@@ -214,6 +393,8 @@ same risk decision in at least 98% of paired cases.
 
 ### MLAI.3 — Claim and task decomposition
 
+**Status:** Not implemented
+
 **Contract:** Decompose a request into atomic factual claims, calculations,
 experiments, design decisions, and missing inputs. Preserve a dependency DAG and
 assign every leaf an evidence or tool requirement.
@@ -225,6 +406,8 @@ represented; no executable leaf lacks a tool/evidence plan; cyclic dependency
 fixtures fail deterministically.
 
 ### MLAI.4 — Evidence acquisition and source policy
+
+**Status:** Not implemented
 
 **Contract:** Search the configured primary, official, scholarly, code, and
 practitioner sources through adapters. Apply domain allow/deny rules, robots and
@@ -241,6 +424,8 @@ the answer trace rather than disappearing.
 
 ### MLAI.5 — Claim-level provenance ledger
 
+**Status:** Not implemented
+
 **Contract:** Persist the exact source version and locator supporting or
 contradicting each material claim. Compute evidence IDs from normalized metadata
 and content digest. A citation displayed to a user MUST resolve to the ledger
@@ -254,6 +439,8 @@ least 0.95 on the frozen citation suite; fabricated or stale-mismatched citation
 are zero; replay after a source changes still loads the original digest.
 
 ### MLAI.6 — Retrieval pipeline and independent retrieval evaluation
+
+**Status:** Not implemented
 
 **Contract:** Provide lexical, dense, hybrid, metadata-filtered, and reranked
 retrieval behind one protocol. Evaluate parsing, chunking, indexing, candidate
@@ -269,6 +456,8 @@ score cannot mark a failed retrieval gate green.
 
 ### MLAI.7 — Evidence-grounded synthesis
 
+**Status:** Not implemented
+
 **Contract:** Generate answers only from the claim DAG, admitted evidence, and
 tool artifacts. Separate observations, inferences, measurements, and
 recommendations. Surface credible disagreement and negative results.
@@ -283,6 +472,8 @@ tests.
 
 ### MLAI.8 — Calibrated confidence and abstention
 
+**Status:** Not implemented
+
 **Contract:** Estimate claim and answer confidence using held-out calibration
 data, evidence sufficiency, verifier agreement, and retrieval quality. Abstain or
 return partial status when minimum evidence is absent.
@@ -295,6 +486,8 @@ fixtures never receive `verified`; calibration metrics are split by domain and
 risk.
 
 ### MLAI.9 — Tool-backed solution derivation
+
+**Status:** Not implemented
 
 **Contract:** Route exact computation, code execution, data analysis, search,
 and benchmark tasks to declared tools. Validate inputs/outputs against schemas,
@@ -311,6 +504,8 @@ and artifact digests.
 
 ### MLAI.10 — Independent answer verification
 
+**Status:** Not implemented
+
 **Contract:** Verify citations, calculations, code/tests, contradiction
 handling, policy compliance, and answer completeness with deterministic checks
 first and a separately configured model only where semantic judgment is needed.
@@ -325,6 +520,8 @@ authorize a high-risk answer.
 
 ### MLAI.11 — Evidence-, cost-, and risk-aware routing
 
+**Status:** Not implemented
+
 **Contract:** Select roles, models, retrieval methods, and tools using measured
 task quality, current health, cost, latency, context fit, risk, and capability.
 Route decisions MUST be reproducible and fail closed when no candidate satisfies
@@ -338,6 +535,8 @@ decisions; budget and capability violations are zero in adversarial tests; a
 10,000-decision simulation never selects an unhealthy or unauthorized route.
 
 ### MLAI.12 — Domain expert role packs
+
+**Status:** Not implemented
 
 **Contract:** Ship independently versioned packs for foundations/statistics,
 classical ML, deep learning, NLP, computer vision, reinforcement learning,
@@ -354,6 +553,8 @@ gold questions including one negative or “method not appropriate” case.
 
 ### MLAI.13 — Freshness, correction, and retraction handling
 
+**Status:** Not implemented
+
 **Contract:** Revalidate mutable sources, retain versions, ingest DOI
 relations/corrections/retractions where available, and prevent superseded
 evidence from silently supporting a fresh answer.
@@ -368,6 +569,8 @@ new integrity warning.
 
 ### MLAI.14 — Multimodal evidence and accessibility
 
+**Status:** Not implemented
+
 **Contract:** Admit text, tables, figures, images, audio, and video only through
 modality adapters that retain source location and transformation lineage.
 Generated captions/transcripts are derived evidence and cannot replace the
@@ -381,6 +584,8 @@ locator, transformation model/version, and accessible text alternative for
 100% of admitted artifacts; unsupported modalities cause a typed abstention.
 
 ### MLAI.15 — Reproducible expert report
+
+**Status:** Not implemented
 
 **Contract:** Emit a human-readable answer plus machine-readable evidence,
 experiment, routing, and verification manifests. A replay mode MUST reconstruct
@@ -399,6 +604,8 @@ destroying provenance links.
 
 ### MLSI.1 — Isolated `gludd-self` project workspace
 
+**Status:** Not implemented
+
 **Contract:** Route every self-improvement change through a dedicated project
 workspace with its own branch, environment, artifacts, budget, and capability
 profile. The running checkout and imported live modules are read-only.
@@ -411,6 +618,8 @@ targeting the running tree; concurrent experiments receive unique namespaces;
 discarding an experiment leaves champion files and processes unchanged.
 
 ### MLSI.2 — Immutable observation and outcome ledger
+
+**Status:** Not implemented
 
 **Contract:** Record candidate inputs from real outcomes: request class,
 revision, model/tool versions, sanitized trajectory, deterministic checks,
@@ -426,6 +635,8 @@ ID; tenant, secret, and retention-policy fixtures remain isolated/redacted.
 
 ### MLSI.3 — Evidence-backed candidate proposals
 
+**Status:** Not implemented
+
 **Contract:** Generate a bounded candidate only after a recurring failure,
 measured opportunity, or approved feature request crosses its declared trigger.
 The proposal states causal hypothesis, affected surface, expected gain, risks,
@@ -440,6 +651,8 @@ coalesce; no proposal directly changes champion state.
 
 ### MLSI.4 — Generic champion/challenger experiment protocol
 
+**Status:** Not implemented
+
 **Contract:** Extract a reusable protocol from the compaction arena: immutable
 champion, isolated challenger, declared metrics, paired cases, resource budgets,
 and a typed outcome. Candidate iteration may use train/dev cases only.
@@ -453,6 +666,8 @@ stochastic behavior unless determinism is proven and recorded.
 
 ### MLSI.5 — Frozen holdout and adversarial evaluator
 
+**Status:** Not implemented
+
 **Contract:** Freeze train, development, holdout, and adversarial splits with
 content digests before candidate iteration. Candidate processes cannot read
 holdout prompts, expected outputs, judge keys, or adversarial labels.
@@ -465,6 +680,8 @@ holdout is opened only by the independent evaluation process after candidate
 freeze.
 
 ### MLSI.6 — Statistical promotion gate
+
+**Status:** Not implemented
 
 **Contract:** Promote only when all deterministic gates pass, there are no
 declared safety/regression failures, and the paired held-out quality improvement
@@ -481,6 +698,8 @@ or inconclusive intervals produce `reject` or `needs_review`, never `promote`.
 
 ### MLSI.7 — Zero-downtime shadow and canary rollout
 
+**Status:** Not implemented
+
 **Contract:** After offline promotion approval, run the challenger in
 non-authoritative shadow mode, then canary it through a versioned selection
 pointer. Use additive schemas and dual-read/write compatibility where state
@@ -494,6 +713,8 @@ healthy observation windows are required before each traffic increase; a mixed
 old/new compatibility suite remains green throughout rollout.
 
 ### MLSI.8 — Automatic and operator rollback
+
+**Status:** Not implemented
 
 **Contract:** Preserve the prior champion and provide automatic rollback on
 safety, correctness, availability, cost, or latency thresholds plus an audited
@@ -509,6 +730,8 @@ under a declared version and new requests select the restored champion.
 
 ### MLSI.9 — Reward-hacking and judge-bias controls
 
+**Status:** Not implemented
+
 **Contract:** Separate candidate author, semantic judge, deterministic oracle,
 and promotion authority. Blind candidate identity/order, swap presentation order,
 use multiple judge families for material semantic decisions, and monitor style
@@ -522,6 +745,8 @@ from the biased judge; order-swap decision disagreement is reported and blocks
 automatic promotion above 5%.
 
 ### MLSI.10 — Contamination, privacy, license, and poisoning controls
+
+**Status:** Not implemented
 
 **Contract:** Track origin and license of training/evaluation examples, scan
 overlap across all splits and candidate context, enforce retention and deletion,
@@ -538,6 +763,8 @@ overlap.
 
 ### MLSI.11 — Resource-aware experiment scheduler
 
+**Status:** Not implemented
+
 **Contract:** Allocate CPU, memory, accelerator, disk, token, network, wall-time,
 and monetary budgets before an experiment starts. Namespace processes, cap
 parallelism, expose progress and heartbeats, and stop cleanly at a budget.
@@ -551,6 +778,8 @@ the hard system guard; runs longer than ten seconds emit progress or a heartbeat
 at least every 30 seconds.
 
 ### MLSI.12 — Auditable promotion authority and kill switch
+
+**Status:** Not implemented
 
 **Contract:** Promotion is a first-class, signed/audited action containing
 candidate digest, evidence manifest, threshold policy, evaluator identities,
@@ -569,6 +798,8 @@ each release.
 
 ### MLCORE.1 — Typed evidence broker
 
+**Status:** Not implemented
+
 **Contract:** Introduce one protocol for discovery, fetch, parse, normalize,
 version, and citation location across web, scholarly, repository, local, and
 artifact sources. Adapters return typed failures and never raw policy decisions.
@@ -580,6 +811,8 @@ content produces the same digest; timeouts, parse failures, and policy denials
 remain distinguishable in traces.
 
 ### MLCORE.2 — Declarative source-policy registry
+
+**Status:** Not implemented
 
 **Contract:** Store source class, trust label, allowed domains/schemes/types,
 freshness, rate, size, license, integrity, and corroboration requirements in a
@@ -594,6 +827,8 @@ of evidence records include the policy revision that admitted them.
 
 ### MLCORE.3 — Hybrid retrieval and reranking protocol
 
+**Status:** Not implemented
+
 **Contract:** Provide lexical, vector, filter, fusion, and reranker adapters with
 stable query/result schemas, explicit score semantics, and an offline evaluator.
 No one backend becomes a core dependency.
@@ -606,6 +841,8 @@ network or accelerator access.
 
 ### MLCORE.4 — Versioned evaluation registry
 
+**Status:** Not implemented
+
 **Contract:** Register evaluation suites, cases, slices, metrics, rubrics,
 oracles, datasets, and owners by immutable digest. Suites declare intended use,
 limitations, license, contamination policy, and minimum sample size.
@@ -617,6 +854,8 @@ cannot compare incompatible metric versions without an explicit migration;
 every reported aggregate links to per-case records.
 
 ### MLCORE.5 — Calibration and selective prediction service
+
+**Status:** Not implemented
 
 **Contract:** Offer reusable reliability diagrams, ECE/Brier/selective-risk
 metrics, threshold fitting, abstention policies, and domain/risk slices. Never
@@ -631,6 +870,8 @@ marks confidence stale and disables automatic high-risk use.
 
 ### MLCORE.6 — Immutable experiment registry
 
+**Status:** Not implemented
+
 **Contract:** Record parameters, inputs, environment, code, models, artifacts,
 metrics, and lineage behind an adapter protocol compatible with local storage
 and mature trackers such as MLflow. Gludd policy remains authoritative.
@@ -642,6 +883,8 @@ material input produces a new digest; optional tracker failure does not erase
 the local authoritative record.
 
 ### MLCORE.7 — Sanitized trajectory dataset builder
+
+**Status:** Not implemented
 
 **Contract:** Convert agent/tool traces into versioned datasets while preserving
 action/result relationships, redacting secrets and personal data, applying
@@ -657,6 +900,8 @@ class distributions and excluded-record counts are reported.
 
 ### MLCORE.8 — Untrusted-content boundary
 
+**Status:** Not implemented
+
 **Contract:** Tag evidence, memories, tool output, critiques, and external
 messages as untrusted data from ingestion through prompt rendering. Instructions
 inside data cannot acquire tool, routing, approval, or persistence authority.
@@ -671,6 +916,8 @@ the generator.
 
 ### MLCORE.9 — Project- and tenant-namespaced knowledge stores
 
+**Status:** Not implemented
+
 **Contract:** Namespace research indexes, embeddings, procedures, experiments,
 and caches by project and tenant with explicit, audited sharing rules. Remove
 implicit user-global knowledge paths from production defaults.
@@ -683,6 +930,8 @@ cache keys include tenant, project, policy revision, and content digest; an
 export/import operation preserves ownership and provenance.
 
 ### MLCORE.10 — Capability- and risk-aware action router
+
+**Status:** Not implemented
 
 **Contract:** Resolve requested action, data sensitivity, risk, tool capability,
 agent delegation, and approval into an allow/deny/clarify decision before model
@@ -697,6 +946,8 @@ cannot exceed the intersection of parent authority and project policy.
 
 ### MLCORE.11 — Provenance and replay API
 
+**Status:** Not implemented
+
 **Contract:** Expose authenticated APIs to resolve answer, claim, evidence,
 artifact, experiment, evaluation, and promotion lineage and to request an
 authorized replay. Raw secrets and protected holdout content remain inaccessible.
@@ -708,6 +959,8 @@ graph; authorization tests cover tenant, role, holdout, and deleted data; replay
 reports exact and non-exact components before execution.
 
 ### MLCORE.12 — Drift and feedback-loop monitor
+
+**Status:** Not implemented
 
 **Contract:** Monitor input, retrieval, model, outcome, calibration, cost, and
 feedback distributions by meaningful slice. Detect feedback loops where model
@@ -723,6 +976,8 @@ change automatically.
 
 ### MLCORE.13 — Resource-aware work scheduler
 
+**Status:** Not implemented
+
 **Contract:** Provide shared admission control, priority, namespace, concurrency,
 deadline, cancellation, and resource accounting for research, evaluation, and
 experiments. Release work remains higher priority than background research.
@@ -735,6 +990,8 @@ background expert refreshes; cancellations release leases/resources; per-project
 and system caps remain enforced during concurrent stress.
 
 ### MLCORE.14 — Mature-tool adapter and dependency policy
+
+**Status:** Not implemented
 
 **Contract:** Define a common lifecycle for optional OSS adapters: evidence of
 need, maintained project evaluation, license/security review, version pin,
@@ -750,6 +1007,8 @@ do not emit unresolved informational noise.
 
 ### MLCORE.15 — GenAI/ML observability semantics
 
+**Status:** Not implemented
+
 **Contract:** Extend tracing with question/claim/evidence/retrieval/model/tool/
 evaluation/promotion spans aligned where practical with OpenTelemetry GenAI
 semantic conventions. Record tokens, latency, cost, cache, errors, model/version,
@@ -763,11 +1022,597 @@ executed stages; mandatory attributes are present in 100% of spans; privacy test
 prove prompts, secrets, and protected evidence are absent unless an authorized
 debug policy explicitly opts in.
 
-## 7. Cross-cutting acceptance gates
+## 7. Deep capability specifications
+
+### 7.1 Collection, role, and skill control plane
+
+### MLARCH.1 — Collection structure and precedence
+
+**Status:** Not implemented
+
+**Contract:** Implement the filesystem contract in section 2.1 as the bundled
+`general_ludd.ml_ai_expert` collection and resolve project/user/bundled
+overrides through the existing collection precedence.
+
+**Acceptance:** Role/FQCN resolution tests cover all three tiers, deliberate
+shadowing, missing tiers, and concurrent project switches; a project override
+cannot replace hard policy or verifier modules.
+
+### MLARCH.2 — Typed role registry
+
+**Status:** Not implemented
+
+**Contract:** Register every section 2.2 role with input/output schema,
+capabilities, allowed children, terminal states, default resource profile, and
+independence class.
+
+**Acceptance:** Unknown roles/fields/states and capability escalation fail
+closed; registry snapshots replay identical route decisions; every role has unit
+and Molecule coverage.
+
+### MLARCH.3 — Versioned skill metadata
+
+**Status:** Not implemented
+
+**Contract:** Extend `Skill` and its loader with the section 2.3 metadata while
+preserving project precedence. Skill text is guidance-only and all requested
+tools/capabilities are intersected with role and project policy.
+
+**Acceptance:** Strict schema, digest, remote-skill injection, missing variable,
+cross-project shadow, and unauthorized-tool tests pass; legacy skills migrate
+additively and continue to load with an explicit legacy version.
+
+### MLARCH.4 — Bounded orchestration state machine
+
+**Status:** Not implemented
+
+**Contract:** `expert_orchestrate` constructs a DAG of roles and checks with
+explicit iteration, branching, deadline, token, action, and cost ceilings.
+Transitions are code-controlled rather than inferred from prose.
+
+**Acceptance:** Property tests prove no cycles, orphan nodes, post-terminal
+actions, or ceiling overruns; repeated-state/action/output triples terminate
+with a typed loop-detected result.
+
+### MLARCH.5 — Typed handoff and artifact resolution
+
+**Status:** Not implemented
+
+**Contract:** Use the section 2.4 envelope for every delegation. Resolve content
+by ID/digest from authoritative stores instead of embedding opaque free-form
+state.
+
+**Acceptance:** Missing, expired, tampered, cross-tenant, cyclic, replayed, and
+over-budget envelopes are rejected in 100% of fixtures; idempotent replay
+returns the prior terminal result.
+
+### MLARCH.6 — Independent verifier topology
+
+**Status:** Not implemented
+
+**Contract:** Configure generator, deterministic checker, semantic judge, safety
+reviewer, and promotion authority as distinct independence classes. No route may
+collapse them into one sole model/process for high-risk work.
+
+**Acceptance:** Topology validation blocks shared sole-judge configurations;
+failure of any required independent component yields `unverified` or
+`needs_review`, never an automatic answer/promotion.
+
+### 7.2 Parameter-efficient adaptation and adapter routing
+
+### MLPEFT.1 — Base and adapter compatibility manifest
+
+**Status:** Not implemented
+
+**Contract:** Key every adapter to base-weight, config, architecture, tokenizer,
+vocabulary, chat-template, quantization, target-module-map, library, and
+environment digests.
+
+**Acceptance:** One-field mutation fixtures are rejected; no mutable branch name
+or human model label satisfies compatibility; accepted loads reproduce a golden
+logit/output tolerance suite.
+
+### MLPEFT.2 — PEFT method experiment planner
+
+**Status:** Not implemented
+
+**Contract:** Compare no-adaptation, prompting/RAG, LoRA, QLoRA, DoRA, and other
+approved PEFT methods under identical splits and budgets before selecting one.
+Full fine-tuning is a separately authorized profile.
+
+**Acceptance:** Plans missing a baseline, method-specific parameters, memory
+estimate, held-out suite, license/privacy check, or rollback are rejected; the
+default preview obeys section 3.6.
+
+### MLPEFT.3 — Isolated adapter training runner
+
+**Status:** Not implemented
+
+**Contract:** Run PEFT through an optional Hugging Face PEFT adapter inside a
+candidate workspace, pinned environment, dataset manifest, resource cgroup, and
+continuous progress reporting.
+
+**Acceptance:** Timeout/OOM/cancellation leaves the base and champion unchanged;
+peak CPU/RAM/VRAM/disk, examples, tokens, optimizer state, checkpoints, and
+warnings are captured; no live-tree import reload occurs.
+
+### MLPEFT.4 — QLoRA and DoRA compatibility checks
+
+**Status:** Not implemented
+
+**Contract:** Validate quantizer, dtype, hardware kernels, sharding/ZeRO/FSDP,
+supported layer types, offload, merge, and serving backend before QLoRA, QDoRA,
+or DoRA execution.
+
+**Acceptance:** Maintained incompatible fixtures—including the declared
+QDoRA/ZeRO-2 case—fail preflight; supported matrices run smoke, resume, merge,
+unmerge, and inference-equivalence tests.
+
+### MLPEFT.5 — Safe adapter artifact registry
+
+**Status:** Not implemented
+
+**Contract:** Store adapters in `safetensors` by default with config, model/data
+cards, signatures/digests, origin, license, metrics, base dependencies, status,
+and deletion/retention policy. Pickle-backed weights are denied by default.
+
+**Acceptance:** Truncated, oversized, malformed, executable, wrong-shape,
+wrong-dtype, unsigned-when-required, revoked, or incompatible artifacts never
+load; registry events are append-only and tenant scoped.
+
+### MLPEFT.6 — Adapter composition evaluation
+
+**Status:** Not implemented
+
+**Contract:** Treat stacking, fusion, weighted merge, LoRAHub-like search, and
+mixture-of-adapter experts as new candidates with explicit composition graph,
+weights/router, order, and constituent digests.
+
+**Acceptance:** Every composition is evaluated against base and each constituent
+on in-domain, out-of-domain, conflict, and safety slices; weight/order changes
+produce new artifact IDs; no circular composition is allowed.
+
+### MLPEFT.7 — Request-level adapter router
+
+**Status:** Not implemented
+
+**Contract:** Route only among compatible, approved adapters using task/domain,
+risk, measured quality, calibration, health, latency, and memory. Preserve base
+fallback and expose the route decision.
+
+**Acceptance:** A frozen 10,000-request simulation is deterministic and never
+selects incompatible/revoked/cross-tenant adapters; uncertain or out-of-domain
+requests use base/abstain rather than an arbitrary specialist.
+
+### MLPEFT.8 — Multi-adapter serving and rollback
+
+**Status:** Not implemented
+
+**Contract:** Serve approved adapters through the existing model gateway with an
+optional vLLM backend and bounded adapter/KV memory, homogeneous batching where
+useful, atomic selection pointers, canary, and prior-version rollback.
+
+**Acceptance:** Load/unload/switch/merge concurrency tests show no request uses a
+partial or wrong adapter; per-request lineage is complete; rollback completes in
+60 seconds without reloading the base.
+
+### 7.3 Dataset and format system
+
+### MLDATA.1 — Logical dataset manifest
+
+**Status:** Not implemented
+
+**Contract:** Define dataset, resource, shard, record-ID, feature/label schema,
+split, ordering, license, consent, sensitivity, lineage, transformation, and
+quality metadata independently of storage format.
+
+**Acceptance:** Every admitted record resolves to source resource and
+transformation digests; unknown fields/types, duplicate IDs, absent licenses,
+and cross-tenant lineage fail closed.
+
+### MLDATA.2 — JSONL, Arrow, Parquet, and WebDataset adapters
+
+**Status:** Not implemented
+
+**Contract:** Implement conformance adapters for JSONL, exact Arrow variant,
+Parquet, and optional WebDataset while preserving logical schema and IDs.
+
+**Acceptance:** Round trips preserve values, nullability, logical types,
+record/split IDs, ordering contract, and digests; cross-reader fixtures detect
+Arrow IPC stream/file and encoding mismatches.
+
+### MLDATA.3 — Streaming and sharding
+
+**Status:** Not implemented
+
+**Contract:** Stream with bounded buffers, deterministic shard enumeration,
+checkpoint/resume, seeded shuffle semantics, backpressure, cancellation, and
+per-shard validation.
+
+**Acceptance:** Multi-terabyte synthetic manifests run bounded previews without
+full materialization; RSS/file-descriptor ceilings hold; interrupted runs resume
+without loss or duplication.
+
+### MLDATA.4 — Schema and data-quality gates
+
+**Status:** Not implemented
+
+**Contract:** Validate types, ranges, units, nulls, referential constraints,
+duplicates, encoding, corrupt media, label consistency, distribution/slice
+statistics, and declared business rules before training/evaluation.
+
+**Acceptance:** Seeded violations are detected at least 99% with false-positive
+rate at most 1% on the conformance suite; invalid records are quarantined with
+reason and lineage, never silently coerced.
+
+### MLDATA.5 — Deduplication and contamination graph
+
+**Status:** Not implemented
+
+**Contract:** Scan exact, normalized, semantic, code, and media near-duplicates
+across source, train, development, holdout, adversarial, model context, and
+known benchmark sets.
+
+**Acceptance:** All seeded exact and above-threshold near duplicates are found;
+uncertain pairs are reviewable; contaminated cases are excluded or disclosed
+before metrics run.
+
+### MLDATA.6 — Privacy, license, and deletion lineage
+
+**Status:** Not implemented
+
+**Contract:** Enforce consent/use purpose, data classification, tenant,
+retention, deletion, license compatibility, and export restrictions at record,
+resource, derivative dataset, checkpoint, and adapter levels.
+
+**Acceptance:** A deletion request computes the full derivative impact graph;
+blocked records never enter a candidate; deletion/retraining exceptions require
+an authorized auditable policy decision.
+
+### MLDATA.7 — Dataset conversion and reproducible export
+
+**Status:** Not implemented
+
+**Contract:** Convert/export by immutable manifest with source/target format
+versions, code/environment digest, shard plan, compression, checksums, rejected
+records, and validation report.
+
+**Acceptance:** Two deterministic conversions produce identical record and
+logical dataset digests; format-specific byte differences are explained; failed
+publishing cannot replace the prior accepted dataset pointer.
+
+### 7.4 Web research, retrieval, graphs, and rerankers
+
+### MLRET.1 — Policy-aware Internet source registry
+
+**Status:** Not implemented
+
+**Contract:** Implement section 3.5 as a versioned registry of adapters,
+operations, identifiers, trust, terms, robots, rate/concurrency, cache,
+freshness, parser, health, and fallbacks.
+
+**Acceptance:** Every network request resolves one policy revision and source
+entry; unregistered destinations, silent fallback, trust upgrades, and ignored
+`Retry-After`/robots rules are blocked in 100% of fixtures.
+
+### MLRET.2 — Reproducible multi-source search
+
+**Status:** Not implemented
+
+**Contract:** Expand identifiers/synonyms, query at least two independent
+eligible indexes for material research, record raw ranked results, deduplicate,
+and stop by budget or declared saturation.
+
+**Acceptance:** Replay with stored responses reconstructs identical result IDs
+and ranks; query/source omissions and failures remain visible; BrowseComp,
+FRAMES, and Deep Research Bench adapters report per-source coverage and cost.
+
+### MLRET.3 — Safe fetch, archive, and parser chain
+
+**Status:** Not implemented
+
+**Contract:** Fetch through SSRF/robots/terms/type/size/deadline controls, retain
+original bytes and HTTP validators, optionally resolve archived versions, and
+parse through versioned HTML/PDF/code/media adapters.
+
+**Acceptance:** Private/link-local/rebinding/redirect-chain/zip-bomb/parser-bomb
+fixtures are blocked; every extracted span maps to byte/source locator; parser
+fallback never overwrites the original.
+
+### MLRET.4 — Scholarly discovery and snowballing
+
+**Status:** Not implemented
+
+**Contract:** Resolve DOI/arXiv/venue/repository identities; traverse bounded
+backward/forward citations, versions, reviews, corrections, retractions, code,
+datasets, and negative/replication evidence.
+
+**Acceptance:** A gold 100-work graph has at least 0.98 identity precision and
+0.95 relation recall; duplicate preprint/published versions coalesce but remain
+separately addressable; retractions cannot be sole verified support.
+
+### MLRET.5 — Structure-preserving ingestion
+
+**Status:** Not implemented
+
+**Contract:** Preserve document/page/section/table/figure/code/citation
+structure, stable chunk IDs, neighbors, source revision, permissions, language,
+timestamps, and authoritative structured fields before indexing.
+
+**Acceptance:** Gold HTML/PDF/notebook/repository fixtures retain at least 0.98
+section/locator fidelity; parsing failures quarantine the document; derived rich
+text never overrides newer authoritative structured state.
+
+### MLRET.6 — Hybrid candidate retrieval
+
+**Status:** Not implemented
+
+**Contract:** Run eligible metadata filters, lexical/BM25, dense, learned sparse,
+and optional late-interaction retrievers; retain component ranks/scores and
+combine through a versioned fusion policy.
+
+**Acceptance:** Exact lexical-only mode remains available; approximate-index
+recall is checked against exact search; the gold corpus meets recall@10 at least
+0.90 and reports each component plus fusion ablations.
+
+### MLRET.7 — Provenance-preserving graph retrieval
+
+**Status:** Not implemented
+
+**Contract:** Build entities/relations/communities only as derived,
+source-spanned records; support bounded traversal and graph-plus-text retrieval
+without treating extraction confidence as truth.
+
+**Acceptance:** Every edge resolves to one or more evidence locators; traversal
+obeys tenant/permission/time filters, 500-node/two-hop default, and cycle limits;
+edge deletion/revision propagates to indexes.
+
+### MLRET.8 — Bounded reranking and context assembly
+
+**Status:** Not implemented
+
+**Contract:** Rerank a bounded candidate set using deterministic features,
+cross-encoders, or separately configured model judges, then expand neighbors and
+assemble evidence under diversity and token constraints.
+
+**Acceptance:** Candidate-to-score mapping is permutation-safe; reranking cannot
+recover a missed gold document or hide first-stage failure; top-50/default,
+latency, memory, and model-version limits are enforced.
+
+### MLRET.9 — Index freshness, tombstones, and reconciliation
+
+**Status:** Not implemented
+
+**Contract:** Track source revision, ingestion/index watermarks, pending
+updates, tombstones, cache expiry, and authoritative-state reconciliation across
+lexical, vector, graph, and summary indexes.
+
+**Acceptance:** Create/update/delete fault injection converges every index to the
+same revision; stale derived content is suppressed when authoritative state is
+newer; unresolved lag is visible and prevents high-risk verified answers.
+
+### MLRET.10 — Retrieval and web-research evaluation suite
+
+**Status:** Not implemented
+
+**Contract:** Evaluate discovery coverage, identity precision, parser fidelity,
+recall/precision/MRR/nDCG, freshness, citation entailment, contradiction,
+abstention, injection resistance, latency, tokens, network, storage, and cost.
+
+**Acceptance:** Frozen normal/adversarial/live-refresh suites publish per-stage
+and per-source results with confidence intervals; no end-answer metric can waive
+a failed security, identity, freshness, or retrieval gate.
+
+### 7.5 Verifiable reasoning, mathematics, and science
+
+### MLREAS.1 — Private reasoning boundary
+
+**Status:** Not implemented
+
+**Contract:** Never require, expose, log, or train on raw provider-private
+chain-of-thought. Produce a verification record containing assumptions,
+subproblems, evidence, tools, concise derivation, checks, alternatives, and
+limitations.
+
+**Acceptance:** Trace/API/log/dataset scans contain zero seeded private-reasoning
+canaries; users receive sufficient checkable evidence; provider reasoning fields
+are discarded or separately encrypted only under authorized diagnostic policy.
+
+### MLREAS.2 — Checkable reasoning artifact graph
+
+**Status:** Not implemented
+
+**Contract:** Represent each externally meaningful step as typed claim,
+calculation, program, proof obligation, tool result, or inference with
+dependencies and verifier state.
+
+**Acceptance:** Cycles, missing premises, unsupported conclusions, altered tool
+digests, and contradictory terminal claims fail validation; replay resolves the
+same dependency graph without a hidden prose transcript.
+
+### MLREAS.3 — Process-supervision experiment
+
+**Status:** Not implemented
+
+**Contract:** Admit process reward models/step labels only as candidate scoring
+signals with dataset lineage, step semantics, annotator/judge agreement,
+faithfulness interventions, and outcome checks.
+
+**Acceptance:** Process scoring is ablated against outcome-only and deterministic
+checks; seeded style/verbosity/reward-hacking steps cannot promote a worse
+answer; low-agreement domains disable automatic use.
+
+### MLREAS.4 — Exact tool and solver router
+
+**Status:** Not implemented
+
+**Contract:** Route arithmetic, units, symbolic algebra, optimization,
+statistics, code, SAT/SMT, and formal proof to approved deterministic tools with
+typed inputs, assumptions, precision/tolerance, and complete outputs.
+
+**Acceptance:** A 500-case cross-domain suite matches reference results;
+floating-point and timeout states are explicit; model text can never override a
+nonzero solver/checker status.
+
+### MLREAS.5 — Mathematical solution role
+
+**Status:** Not implemented
+
+**Contract:** Classify numeric, symbolic, proof, counterexample, estimation, and
+modeling problems; state domains/assumptions; attempt independent methods; and
+label evidence as tested, derived, or formally verified.
+
+**Acceptance:** Unit/domain/edge-case and adversarial benchmark slices report
+exact-answer, derivation-check, calibration, and counterexample rates; no
+numeric sampling is labeled proof.
+
+### MLREAS.6 — Formal theorem-proving role
+
+**Status:** Not implemented
+
+**Contract:** Pin prover/toolchain/library, preserve natural-to-formal
+translation, run bounded tactic/proof search, and trust only the full formal
+kernel/build result.
+
+**Acceptance:** Lean/mathlib version mismatch and “No goals with other errors”
+fixtures fail; accepted proofs rebuild from a clean environment; translations
+require review when semantic equivalence is not mechanically established.
+
+### MLREAS.7 — Scientific hypothesis and preregistration
+
+**Status:** Not implemented
+
+**Contract:** Separate observation, literature claim, hypothesis, prediction,
+experiment, analysis, result, interpretation, and replication. Require units,
+controls, power/sample rationale, exclusions, multiple-testing policy, risks,
+and stopping rule before execution.
+
+**Acceptance:** Missing controls/units/outcomes, post-hoc threshold changes, data
+leakage, and unsafe physical/biomedical/chemical actions are blocked; plans
+produce an immutable preregistration digest.
+
+### MLREAS.8 — Bounded scientific experiment and replication
+
+**Status:** Not implemented
+
+**Contract:** Execute only approved computational experiments in isolated,
+pinned environments; retain raw inputs/outputs, code, seeds, environment,
+statistics, negative results, and independent replication status.
+
+**Acceptance:** CORE-Bench, RE-Bench, ScienceAgentBench, and project-domain
+fixtures report executable correctness and reproducibility; an automated review
+or novelty score alone can never establish discovery or authorize a physical
+action.
+
+### 7.6 Multimodal vision, photo generation, and editing
+
+### MLMEDIA.1 — Typed media ingredient manifest
+
+**Status:** Not implemented
+
+**Contract:** Represent image/audio/video/document ingredients with original
+bytes digest, MIME/codec, dimensions/duration, color/sample metadata, source,
+rights/consent, capture/import time, regions/timestamps, transformations, and
+derived annotations.
+
+**Acceptance:** Unsupported/corrupt/polyglot/oversized/decompression-bomb files
+are rejected; every derivative resolves to immutable ingredients and transform
+versions; tenant and rights policy applies transitively.
+
+### MLMEDIA.2 — Vision evidence role
+
+**Status:** Not implemented
+
+**Contract:** Route OCR, captioning, detection, segmentation, visual QA, and
+document/table understanding through declared adapters and emit spatial/page/
+time locators with confidence and transformation lineage.
+
+**Acceptance:** A versioned 100-case suite reports task-specific metrics and
+calibration; generated captions/OCR never replace original evidence; absent or
+ambiguous visual support yields partial/abstained claims.
+
+### MLMEDIA.3 — Photo generation role
+
+**Status:** Not implemented
+
+**Contract:** Generate new assets through an optional Diffusers/provider adapter
+using recorded model/component/adapter/scheduler/seed/device/precision/prompt/
+condition state and pre-execution safety/rights policy.
+
+**Acceptance:** Default jobs obey four-output/1024px/15-minute limits; every
+output has a unique per-image generator state and pixel digest; denied content
+and unauthorized model/adapter loads never execute.
+
+### MLMEDIA.4 — Photo editing role
+
+**Status:** Not implemented
+
+**Contract:** Treat edit, inpaint, outpaint, variation, restoration, upscale,
+background/region replacement, and instruction edit as distinct operations with
+source ingredient, mask/region, intent, preservation constraints, and output.
+
+**Acceptance:** Golden edits measure requested change and protected-region/
+identity preservation separately; empty/invalid masks and implicit whole-image
+changes fail; original assets remain immutable.
+
+### MLMEDIA.5 — Conditioning and media-adapter router
+
+**Status:** Not implemented
+
+**Contract:** Validate and route LoRA, DreamBooth, ControlNet, T2I-Adapter,
+IP-Adapter, reference image, pose/depth/edge, and multimodal tower adapters only
+against compatible base pipelines and declared purposes.
+
+**Acceptance:** Base/component/shape/scale/format mismatches fail preflight;
+composition order and weights are new candidate IDs; router replay is
+deterministic and cross-tenant/identity misuse fixtures are blocked.
+
+### MLMEDIA.6 — Media safety and identity/rights review
+
+**Status:** Not implemented
+
+**Contract:** Apply policy for sexual/minor content, graphic harm, deception,
+impersonation/deepfakes, biometric identity, copyrighted/trademarked material,
+private imagery, location metadata, and domain-specific high-risk media before
+generation/edit and before publication.
+
+**Acceptance:** Maintained red-team suites achieve policy-required recall,
+including transformed/encoded prompts and reference images; uncertain
+identity/rights cases require review; safety model output is not the only
+control.
+
+### MLMEDIA.7 — C2PA-compatible provenance and disclosure
+
+**Status:** Not implemented
+
+**Contract:** Emit and validate C2PA-compatible ingredient/action manifests when
+the format/backend supports them, plus an external signed Gludd manifest. Record
+credential validation state without claiming that missing metadata proves
+authenticity.
+
+**Acceptance:** Tamper, stripped metadata, unknown signer, expired/revoked
+credential, transformed export, and sidecar-loss fixtures return correct states;
+pixel/ingredient/action digests remain resolvable after ZDD migration.
+
+### MLMEDIA.8 — Multimodal generation/edit evaluation
+
+**Status:** Not implemented
+
+**Contract:** Evaluate prompt/condition alignment, composition/counting/text,
+edit instruction success, preservation, visual quality, diversity, factuality,
+bias, accessibility, safety, provenance, latency, memory, and cost with
+task-specific metrics and human review where needed.
+
+**Acceptance:** FID/CLIPScore/GenEval-like metrics are reported as partial
+signals, not one promotion score; golden cases run on at least two seeds where
+stochastic; safety/provenance regressions block promotion regardless of
+preference score.
+
+## 8. Cross-cutting acceptance gates
 
 An implementation unit is complete only when all applicable gates below pass.
 
-### 7.1 Evaluation design
+### 8.1 Evaluation design
 
 - Freeze train, development, holdout, and adversarial splits by digest.
 - Run deterministic oracles before model judges.
@@ -781,7 +1626,7 @@ An implementation unit is complete only when all applicable gates below pass.
   explicitly defines another predeclared rule.
 - Preserve negative results and rejected candidates.
 
-### 7.2 Security and privacy
+### 8.2 Security and privacy
 
 - All network access passes SSRF, domain, scheme, size, content-type, timeout,
   and rate policy.
@@ -792,7 +1637,7 @@ An implementation unit is complete only when all applicable gates below pass.
 - Dataset licenses, retention, deletion, and training permission are enforced.
 - High-risk actions and promotions require separate human authority.
 
-### 7.3 Zero-downtime delivery
+### 8.3 Zero-downtime delivery
 
 - Add schemas, tables, fields, and APIs compatibly before switching readers.
 - Feature flags default off; shadow output is non-authoritative.
@@ -801,7 +1646,7 @@ An implementation unit is complete only when all applicable gates below pass.
 - The previous champion remains runnable until post-rollout observation passes.
 - Rollback is exercised under load and requires no destructive migration.
 
-### 7.4 Quality and coverage
+### 8.4 Quality and coverage
 
 - New or changed code aggregate line coverage is at least 85%.
 - Every individual new or changed source file is at least 75%.
@@ -812,7 +1657,7 @@ An implementation unit is complete only when all applicable gates below pass.
 - Warnings, dependency-update informational messages, and deprecations have an
   actionable remediation or a dated, owned policy record.
 
-## 8. Failure behavior
+## 9. Failure behavior
 
 | Failure | Required behavior |
 |---|---|
@@ -829,30 +1674,51 @@ An implementation unit is complete only when all applicable gates below pass.
 | Canary breach | Roll back within 60 seconds and open an incident with trace/evidence IDs |
 | Optional OSS adapter fails | Use declared local fallback or return typed unavailable state |
 | Provenance store unavailable | Do not issue a verified answer or promote a candidate |
+| Adapter/base/component mismatch | Refuse load before allocating serving state; retain current selection pointer |
+| Adapter route uncertain or out of domain | Use approved base/fallback or abstain; never select by name similarity |
+| Dataset format/schema drift | Quarantine affected shards and keep prior accepted dataset pointer |
+| Streaming conversion interrupted | Preserve checkpoint and temporary namespace; never publish a partial manifest |
+| Search API rate limited/unavailable | Honor headers, record failure, use declared fallback within the same trust policy |
+| Derived index newer/older than authoritative state | Reconcile by source revision; suppress contradictory stale derived content |
+| Raw/private reasoning returned | Prevent ordinary logging/API/dataset persistence and retain only allowed verification record |
+| Formal prover emits partial-success text with errors | Trust full kernel/build failure and mark proof unverified |
+| Media component/LoRA mismatch | Fail preflight without changing loaded champion pipeline |
+| Media provenance missing or stripped | Return `unknown provenance`; never infer authentic or synthetic |
+| Scientific result lacks replication/independent review | Label preliminary; do not claim discovery or authorize physical action |
 
-## 9. Delivery order
+## 10. Delivery order
 
 Implementation MUST land on `development` through small, independently tested
 feature branches in this order:
 
-1. typed schemas, project/tenant isolation, untrusted-content boundary, and
-   source policy (`MLCORE.1`, `.2`, `.8`, `.9`, `.10`);
-2. evidence broker, hybrid retrieval, provenance, and retrieval evaluation
-   (`MLAI.4`–`.6`, `MLCORE.3`, `.4`, `.11`);
-3. collection skeleton, intake, decomposition, synthesis, calibration, tools,
-   verifier, routing, and reporting (`MLAI.1`–`.3`, `.7`–`.15`);
-4. immutable experiment/outcome infrastructure and isolated workspace
-   (`MLSI.1`–`.5`, `MLCORE.5`–`.7`, `.13`–`.15`);
-5. promotion, ZDD rollout, rollback, bias, privacy, and authority controls
-   (`MLSI.6`–`.12`, `MLCORE.12`);
-6. shadow evaluation and a disabled-by-default canary before any production
+1. typed schemas, project/tenant isolation, untrusted-content boundary, source
+   policy, and role/skill control plane (`MLCORE.1`, `.2`, `.8`–`.10`,
+   `MLARCH.1`–`.6`);
+2. logical datasets, format adapters, lineage, privacy, and conversion
+   (`MLDATA.1`–`.7`);
+3. Internet sources, safe fetch/parse, evidence broker, hybrid/graph retrieval,
+   provenance, and evaluation (`MLRET.1`–`.10`, `MLAI.4`–`.6`, `MLCORE.3`,
+   `.4`, `.11`);
+4. collection intake, decomposition, synthesis, calibration, tools, verifier,
+   routing, and reporting (`MLAI.1`–`.3`, `.7`–`.15`);
+5. private-reasoning boundary, exact tools, mathematics, formal proof, and
+   bounded scientific experiments (`MLREAS.1`–`.8`);
+6. media ingredients, vision, generation/editing, conditioning, safety,
+   provenance, and evaluation (`MLMEDIA.1`–`.8`);
+7. immutable experiment/outcome infrastructure, isolated workspace, and PEFT
+   artifact/training foundations (`MLSI.1`–`.5`, `MLCORE.5`–`.7`, `.13`–`.15`,
+   `MLPEFT.1`–`.5`);
+8. adapter composition/routing/serving plus promotion, ZDD rollout, rollback,
+   bias, privacy, and authority (`MLPEFT.6`–`.8`, `MLSI.6`–`.12`,
+   `MLCORE.12`);
+9. shadow evaluation and a disabled-by-default canary before any production
    authority is granted.
 
 Shared infrastructure has one writer at a time. A feature lands on one branch
 first and is then merged; it must not be independently recreated on multiple
 branches.
 
-## 10. Required implementation evidence
+## 11. Required implementation evidence
 
 For each atomic ID, its implementation record MUST contain:
 
