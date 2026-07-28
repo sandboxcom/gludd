@@ -11,6 +11,7 @@ from collections import deque
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from general_ludd import __version__
@@ -110,6 +111,20 @@ class TestDaemonStartupSequence:
         assert "/metrics" in routes
         assert "/api/facts" in routes
         assert "/admin/config/reload" in routes
+
+    def test_openapi_operation_ids_are_unique(self):
+        import general_ludd.daemon as dm
+
+        with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
+            app = dm.create_daemon_app(tick_interval=0.01)
+
+        operation_ids = [
+            operation["operationId"]
+            for path_item in app.openapi()["paths"].values()
+            for method, operation in path_item.items()
+            if method in {"delete", "get", "patch", "post", "put"}
+        ]
+        assert len(operation_ids) == len(set(operation_ids))
 
     def test_daemon_state_per_app_isolation(self):
         import general_ludd.daemon as dm
@@ -335,6 +350,26 @@ class TestDaemonShutdown:
                 acquired = lock.acquire(blocking=False)
                 assert acquired
                 lock.release()
+
+    @pytest.mark.skipif(
+        not (Path("/proc/self/fd").exists() or Path("/dev/fd").exists()),
+        reason="platform does not expose a process file-descriptor directory",
+    )
+    def test_repeated_lifespans_release_database_descriptors(self):
+        import general_ludd.daemon as dm
+
+        fd_dir = Path("/proc/self/fd")
+        if not fd_dir.exists():
+            fd_dir = Path("/dev/fd")
+        baseline = len(list(fd_dir.iterdir()))
+
+        with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
+            for _ in range(3):
+                app = dm.create_daemon_app(tick_interval=0.01)
+                with TestClient(app):
+                    assert app.state._db_engine is not None
+
+        assert len(list(fd_dir.iterdir())) <= baseline + 2
 
 
 # ── CLI commands (no daemon needed) ─────────────────────────────────────────

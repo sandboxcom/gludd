@@ -2533,6 +2533,18 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             # ~15s waiting on the subprocess to exit; run it off the event
             # loop so shutdown doesn't freeze the loop for that long.
             await asyncio.to_thread(_writer_process_ref.stop)
+    # Retrieval services each own a diskcache connection (database, WAL, and
+    # shared-memory descriptors). Close every app-scoped owner explicitly so
+    # repeated lifespan cycles do not rely on garbage collection for release.
+    _searx_client_ref = getattr(app.state, "_searx_client", None)
+    if _searx_client_ref is not None:
+        with contextlib.suppress(Exception):
+            await _searx_client_ref.close()
+    for _cache_owner_attr in ("_codebase_indexer", "_research_index", "_local_memory"):
+        _cache_owner = getattr(app.state, _cache_owner_attr, None)
+        if _cache_owner is not None:
+            with contextlib.suppress(Exception):
+                _cache_owner.close()
     if engine is not None:
         await engine.dispose()
     _embedding_session_ref = getattr(app.state, "_embedding_session", None)

@@ -18,6 +18,12 @@ Two release-contract tests failed in a serial process:
 The wider CLI/daemon E2E file also contained setup that assigned readiness and
 CIDR state before `TestClient` entered lifespan. Startup correctly replaced
 those values, so the tests were not exercising their named runtime branches.
+OpenAPI generation also warned about duplicate operation IDs because two route
+handlers each registered several HTTP methods in one `api_route` declaration.
+Repeated lifespan cycles leaked the diskcache handles owned by code retrieval,
+SearX retrieval, research indexing, and local agent memory. Each app left nine
+SQLite database/WAL/shared-memory descriptors open, so coverage instrumentation
+could exhaust the process descriptor limit before the serial file completed.
 
 ## Repair and ZDD properties
 
@@ -38,6 +44,14 @@ The CLI also exposes the conventional `--version` alias and a stable `TITLE`
 metavariable. The Rego fixture is syntactically valid so an installed OPA binary
 does not add an environment-dependent parser error to the static reassignment
 contract.
+
+The permission-spec and Terraform-state handlers now register each HTTP method
+with its dedicated FastAPI decorator. Runtime behavior remains in the shared
+handler while OpenAPI receives one deterministic operation ID per method.
+
+Daemon shutdown now closes every app-scoped retrieval and memory cache owner
+before disposing the SQLAlchemy engine. A three-lifespan regression contract
+checks the process descriptor count directly on supported Unix platforms.
 
 ## Long-lived user-forum evidence
 
@@ -61,6 +75,11 @@ contract.
   a recurring compatibility need while standard `dataclasses` still lack a
   direct field-alias facility. Explicit normalization in `__post_init__` keeps
   both public names working without replacing the canonical data model.
+- FastAPI issue
+  [#4740](https://github.com/fastapi/fastapi/issues/4740), opened in March 2022,
+  reproduces the exact duplicate-operation-ID warning for one route declared
+  with multiple methods. Separate method decorators avoid depending on which
+  member of the method set FastAPI selects while generating an ID.
 
 ## Regression contracts
 
@@ -70,4 +89,7 @@ contract.
   check result.
 - Post-lifespan degraded, readiness, and CIDR behavior.
 - CLI version/help behavior and environment-independent Rego validation.
-
+- Unique OpenAPI operation IDs with unchanged permission and Terraform route
+  behavior.
+- Explicit diskcache teardown with bounded descriptors across repeated daemon
+  lifespans.
