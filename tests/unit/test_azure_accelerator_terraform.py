@@ -68,6 +68,43 @@ def test_azure_vm_stack_is_reachable_driver_ready_and_destroyable(
     assert "azurerm_linux_virtual_machine.inference.id" in stack_tf
 
 
+@pytest.mark.parametrize("stack_name", ["azure-vllm", "azure-llamacpp"])
+def test_azure_stack_split_keeps_one_owner_per_release_resource(
+    stack_name: str,
+) -> None:
+    """Pin the semantic resolution of the beta.3 stack integration conflicts."""
+
+    stack_dir = STACKS / stack_name
+    main_tf = (stack_dir / "main.tf").read_text()
+    infrastructure_tf = (stack_dir / "infrastructure.tf").read_text()
+    outputs_tf = (stack_dir / "outputs.tf").read_text()
+    stack_tf = "\n".join((main_tf, infrastructure_tf, outputs_tf))
+
+    declarations = (
+        'module "gpu_cost_watchdog"',
+        'resource "azurerm_resource_group" "inference"',
+        'resource "azurerm_network_interface" "inference"',
+        'resource "azurerm_network_interface_security_group_association" "inference"',
+        'resource "azurerm_linux_virtual_machine" "inference"',
+        'resource "azurerm_virtual_machine_extension" "nvidia_driver"',
+        'resource "azurerm_virtual_machine_extension" "accelerator_bootstrap"',
+        'output "instance_id"',
+        'output "endpoint_url"',
+        'output "resource_group_name"',
+    )
+    for declaration in declarations:
+        assert stack_tf.count(declaration) == 1, declaration
+
+    assert 'module "gpu_cost_watchdog"' in main_tf
+    assert 'resource "azurerm_linux_virtual_machine" "inference"' in main_tf
+    assert 'resource "azurerm_resource_group" "inference"' not in main_tf
+    assert 'resource "azurerm_virtual_machine_extension"' not in main_tf
+    assert 'output "instance_id"' not in main_tf
+    assert 'resource "azurerm_resource_group" "inference"' in infrastructure_tf
+    assert 'resource "azurerm_virtual_machine_extension"' in infrastructure_tf
+    assert 'output "instance_id"' in outputs_tf
+
+
 @pytest.mark.parametrize(
     ("engine", "stack_name"),
     [
