@@ -62,6 +62,7 @@ class TestConsensusReviewWiring:
 
         todo_repo = AsyncMock()
         session = AsyncMock()
+        session.add = MagicMock()
         session.flush = AsyncMock()
         db_result = MagicMock()
         db_result.scalars.return_value.all.return_value = []
@@ -101,6 +102,7 @@ class TestConsensusReviewWiring:
 
         todo_repo = AsyncMock()
         session = AsyncMock()
+        session.add = MagicMock()
         session.flush = AsyncMock()
         db_result = MagicMock()
         db_result.scalars.return_value.all.return_value = []
@@ -136,6 +138,7 @@ class TestConsensusReviewWiring:
 
         todo_repo = AsyncMock()
         session = AsyncMock()
+        session.add = MagicMock()
         session.flush = AsyncMock()
         db_result = MagicMock()
         db_result.scalars.return_value.all.return_value = []
@@ -190,6 +193,7 @@ class TestConsensusReviewWiring:
 
         todo_repo = AsyncMock()
         session = AsyncMock()
+        session.add = MagicMock()
         session.flush = AsyncMock()
         db_result = MagicMock()
         db_result.scalars.return_value.all.return_value = []
@@ -300,6 +304,7 @@ class TestConsensusReviewWiring:
 
         todo_repo = AsyncMock()
         session = AsyncMock()
+        session.add = MagicMock()
         session.flush = AsyncMock()
         db_result = MagicMock()
         db_result.scalars.return_value.all.return_value = []
@@ -347,6 +352,7 @@ class TestConsensusReviewWiring:
 
         todo_repo = AsyncMock()
         session = AsyncMock()
+        session.add = MagicMock()
         session.flush = AsyncMock()
         db_result = MagicMock()
         db_result.scalars.return_value.all.return_value = []

@@ -17,6 +17,7 @@ def test_import():
 async def test_store_and_get():
     """store() inserts a record; get() retrieves it by agent_id."""
     mock_session = AsyncMock()
+    mock_session.add = MagicMock()
     mock_session_factory = MagicMock()
     mock_session_factory.begin.return_value.__aenter__.return_value = mock_session
     mock_session_factory.return_value.__aenter__.return_value = mock_session
