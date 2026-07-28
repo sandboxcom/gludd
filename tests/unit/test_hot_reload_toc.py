@@ -193,8 +193,8 @@ def test_reload_code_module_is_serialized_by_lock(tmp_path: Path) -> None:
 
 
 def test_reload_lock_is_non_blocking(tmp_path: Path) -> None:
-    """When a reload is in progress (lock held), a concurrent caller must get
-    a ReloadBusyError or a failed ReloadResult — not block indefinitely.
+    """With a short acquisition timeout, a concurrent caller must get a
+    ReloadBusyError or a failed ReloadResult — not block indefinitely.
 
     We hold the lock from a test-side thread and verify the second caller
     returns immediately with failure.
@@ -206,7 +206,10 @@ def test_reload_lock_is_non_blocking(tmp_path: Path) -> None:
             return 1
         """,
     )
-    reloader = HotReloader(config_dir=str(tmp_path / "config"))
+    reloader = HotReloader(
+        config_dir=str(tmp_path / "config"),
+        reload_timeout_s=0.1,
+    )
 
     candidate = tmp_path / "candidate_leaf_busy.py"
     candidate.write_text("def value():\n    return 7\n")
