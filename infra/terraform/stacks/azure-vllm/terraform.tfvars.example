@@ -11,9 +11,14 @@ model           = "meta-llama/Meta-Llama-3-8B-Instruct"
 gpus            = 1
 extra_args      = ""
 region          = "eastus"
-instance_type   = "Standard_NC4as_T4_v3"
+instance_type   = "Standard_NC24ads_A100_v4"
 max_cost_usd    = 10
 timeout_minutes = 60
+allowed_cidr    = "203.0.113.10/32"
+ssh_public_key_path = "~/.ssh/id_ed25519.pub"
+disk_size_gb    = 100
+use_spot        = true
+deployment_name = "gludd-example-a100"
 
 # Stack-only inputs (referenced by the stack's provider data sources, not by
 # the module). Documented here so a full deployment is one -var-file away.

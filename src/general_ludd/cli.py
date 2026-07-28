@@ -605,6 +605,32 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     compute_unregister.add_argument("--daemon-url", default="http://localhost:8000")
     compute_unregister.set_defaults(func=_cmd_compute_unregister)
 
+    compute_azure_preflight = compute_sub.add_parser(
+        "azure-preflight",
+        help="Read-only Azure accelerator SKU and quota preflight",
+    )
+    compute_azure_preflight.add_argument(
+        "--gpu",
+        required=True,
+        help="Azure accelerator type (a100_40, a100_80, h100, or t4)",
+    )
+    compute_azure_preflight.add_argument(
+        "--gpu-count",
+        type=int,
+        default=1,
+        help="Exact accelerator count requested",
+    )
+    compute_azure_preflight.add_argument(
+        "--region",
+        default="eastus",
+        help="Azure region used for SKU and quota checks",
+    )
+    compute_azure_preflight.add_argument(
+        "--daemon-url",
+        default="http://localhost:8000",
+    )
+    compute_azure_preflight.set_defaults(func=_cmd_compute_azure_preflight)
+
     compute_launch = compute_sub.add_parser("launch", help="Launch a GPU compute instance")
     compute_launch.add_argument("--provider", required=True, help="Cloud provider (aws, azure, gcp, runpod, etc.)")
     compute_launch.add_argument("--gpu", required=True, help="GPU type (t4, a100_80, h100, etc.)")
@@ -613,7 +639,46 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     compute_launch.add_argument("--deploy-type", default="vm", help="Deploy type (vm or containerapp)")
     compute_launch.add_argument("--gpu-count", type=int, default=1, help="Number of GPUs")
     compute_launch.add_argument("--max-cost", type=float, default=10.0, help="Max cost in USD")
+    compute_launch.add_argument(
+        "--timeout-minutes",
+        type=float,
+        default=60.0,
+        help="Hard deployment lifetime before automatic teardown",
+    )
+    compute_launch.add_argument(
+        "--disk-size-gb",
+        type=int,
+        default=100,
+        help="OS disk size for the inference worker",
+    )
+    compute_launch.add_argument(
+        "--container-image",
+        default=None,
+        help="Optional serving image override",
+    )
+    compute_launch.add_argument(
+        "--hourly-rate",
+        type=float,
+        default=None,
+        help="Known USD/hour rate used to shorten the hard TTL to the spend ceiling",
+    )
     compute_launch.add_argument("--no-spot", action="store_true", help="Disable spot instances")
+    compute_launch.add_argument(
+        "--allowed-cidr",
+        default="127.0.0.1/32",
+        help="CIDR allowed to reach SSH and inference (secure default: loopback only)",
+    )
+    compute_launch.add_argument(
+        "--ssh-public-key-path",
+        default="~/.ssh/id_ed25519.pub",
+        help="Public SSH key used by Azure VM provisioning",
+    )
+    compute_launch.add_argument(
+        "--max-concurrent",
+        type=int,
+        default=4,
+        help="Scheduler concurrency registered for the new endpoint",
+    )
     compute_launch.add_argument("--engine", default="vllm", help="Inference engine (vllm or llamacpp)")
     compute_launch.add_argument("--workload-type", default="",
                                choices=["batch_inference", "realtime_api", "fine_tuning",
@@ -2396,6 +2461,22 @@ def _cmd_compute_unregister(args: argparse.Namespace) -> None:
         _handle_connection_error(exc, args.daemon_url)
 
 
+def _cmd_compute_azure_preflight(args: argparse.Namespace) -> None:
+    data = _http_call(
+        "POST",
+        f"{args.daemon_url}/admin/compute/azure/preflight",
+        json={
+            "gpu_type": args.gpu,
+            "gpu_count": args.gpu_count,
+            "region": args.region,
+        },
+        timeout=60.0,
+        ok_codes=(200,),
+    )
+    if data is not None:
+        print(json.dumps(data, indent=2))
+
+
 def _cmd_compute_launch(args: argparse.Namespace) -> None:
     payload: dict[str, Any] = {
         "provider": args.provider,
@@ -2404,7 +2485,14 @@ def _cmd_compute_launch(args: argparse.Namespace) -> None:
         "deploy_type": args.deploy_type,
         "gpu_count": args.gpu_count,
         "max_cost_usd": args.max_cost,
+        "timeout_minutes": args.timeout_minutes,
+        "disk_size_gb": args.disk_size_gb,
+        "container_image": args.container_image,
+        "hourly_rate_usd": args.hourly_rate,
         "spot": not args.no_spot,
+        "allowed_cidr": args.allowed_cidr,
+        "ssh_public_key_path": args.ssh_public_key_path,
+        "max_concurrent": args.max_concurrent,
         "engine": args.engine,
         "workload_type": args.workload_type,
     }

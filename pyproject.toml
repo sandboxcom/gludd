@@ -105,13 +105,14 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.sdist]
-include = ["src/general_ludd", "LICENSE", "THIRD_PARTY_LICENSES.md", "README.md"]
+include = ["src/general_ludd", "infra/terraform", "LICENSE", "THIRD_PARTY_LICENSES.md", "README.md"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/general_ludd"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "THIRD_PARTY_LICENSES.md" = "general_ludd/THIRD_PARTY_LICENSES.md"
+"infra/terraform" = "general_ludd/terraform_assets"
 
 [tool.ruff]
 target-version = "py311"

@@ -15,6 +15,7 @@ datas = [
     ('config', 'config'),
     ('templates', 'templates'),
     ('playbooks', 'playbooks'),
+    ('infra/terraform', 'general_ludd/terraform_assets'),
     ('LICENSE', '.'),
     ('THIRD_PARTY_LICENSES.md', '.'),
 ] + _ansible_datas
