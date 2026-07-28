@@ -443,10 +443,17 @@ class TestCharsetMapBehavioral:
 
     def test_encoding_alias_resolution_ascii_compatible(self) -> None:
         from src.general_ludd.language.charset_map import ALL_ENCODINGS
-        for enc in ALL_ENCODINGS:
-            assert enc["is_ascii_compatible"], (
-                f"{enc['name']} should be ASCII-compatible"
-            )
+        incompatible = {
+            enc["name"]
+            for enc in ALL_ENCODINGS
+            if not enc["is_ascii_compatible"]
+        }
+        assert incompatible == {
+            "UTF-16-BE",
+            "UTF-16-LE",
+            "UTF-32-BE",
+            "UTF-32-LE",
+        }
 
     def test_encoding_name_uniqueness(self) -> None:
         from src.general_ludd.language.charset_map import ALL_ENCODINGS

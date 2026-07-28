@@ -256,7 +256,7 @@ CHARDET_CONFIDENCE_THRESHOLDS: dict[str, float] = {
 MOJIBAKE_SIGNATURES: dict[str, list[str]] = {
     "UTF-8 viewed as ISO-8859-1": [
         "\u00c3\u00a9", "\u00c3\u00a1", "\u00c3\u00b3",
-        "\u00c3\u00ba", "\u00c3\u00b1", "\u00c2\u00bf",
+        "\u00c3\u00ba", "\u00c3\u00b1", "\u00c2\u00bf", "\u00c2\u00a9",
     ],
     "ISO-8859-1 viewed as UTF-8": [
         "\ufffd", "\ufffd\ufffd",

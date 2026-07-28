@@ -267,7 +267,11 @@ class TestCorpusWorkflows:
 
     def test_frequency_analysis_on_scratch(self, polyglot_tmpdir: str) -> None:
         root_p = Path(polyglot_tmpdir)
-        files = [str(p) for p in root_p.glob("*.py") + root_p.glob("*.js")]
+        files = [
+            str(path)
+            for pattern in ("*.py", "*.js")
+            for path in root_p.glob(pattern)
+        ]
         analyzer = CorpusAnalyzer(files)
         freq = analyzer.frequency_analysis(top_n=5)
         assert freq["total_chars"] > 0
@@ -529,7 +533,26 @@ class TestPhoneticWorkflows:
         assert "UNICODE" in CMU_DICT_SUBSET
 
     def test_soundex_mapping_coverage(self) -> None:
-        assert len(SOUNDEX_MAPPING) >= 20
+        assert SOUNDEX_MAPPING == {
+            "b": "1",
+            "f": "1",
+            "p": "1",
+            "v": "1",
+            "c": "2",
+            "g": "2",
+            "j": "2",
+            "k": "2",
+            "q": "2",
+            "s": "2",
+            "x": "2",
+            "z": "2",
+            "d": "3",
+            "t": "3",
+            "l": "4",
+            "m": "5",
+            "n": "5",
+            "r": "6",
+        }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
