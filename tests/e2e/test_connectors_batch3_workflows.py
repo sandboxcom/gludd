@@ -691,7 +691,13 @@ class TestGrafanaOnCallConnector:
 
         transport = MockHttpTransport(default_status=200, default_body={"results": []})
         monkeypatch.setenv("GRAFANA_ONCALL_TOKEN", "test-token")
-        src = GrafanaOnCallSource({"token_env": "GRAFANA_ONCALL_TOKEN"}, transport=cast(Any, transport))
+        src = GrafanaOnCallSource(
+            {
+                "base_url": "https://8.8.8.8",
+                "token_env": "GRAFANA_ONCALL_TOKEN",
+            },
+            transport=cast(Any, transport),
+        )
         result = src.health()
         assert isinstance(result, dict)
 
@@ -713,7 +719,13 @@ class TestGrafanaOnCallConnector:
             },
         )
         monkeypatch.setenv("GRAFANA_ONCALL_TOKEN", "test-token")
-        src = GrafanaOnCallSource({"token_env": "GRAFANA_ONCALL_TOKEN"}, transport=cast(Any, transport))
+        src = GrafanaOnCallSource(
+            {
+                "base_url": "https://8.8.8.8",
+                "token_env": "GRAFANA_ONCALL_TOKEN",
+            },
+            transport=cast(Any, transport),
+        )
         records = src.query({})
         assert isinstance(records, list)
         assert len(records) >= 1
