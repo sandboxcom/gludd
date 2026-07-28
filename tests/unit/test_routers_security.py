@@ -258,13 +258,17 @@ class TestRegister:
         daemon_state: dict[str, object] = {}
         register(app, daemon_state)
         all_routes = [r for r in app.routes if hasattr(r, "methods")]
-        spec_route = next(
-            (r for r in all_routes if r.path == "/admin/perm/spec/{agent_type}"),
-            None,
-        )
-        assert spec_route is not None
-        assert "GET" in spec_route.methods
-        assert "PUT" in spec_route.methods
+        spec_routes = [
+            r for r in all_routes
+            if r.path == "/admin/perm/spec/{agent_type}"
+        ]
+        assert spec_routes
+        methods = {
+            method
+            for route in spec_routes
+            for method in route.methods
+        }
+        assert {"GET", "PUT"} <= methods
 
     def test_escalation_approve_endpoint_post_registered(self):
         from general_ludd.routers.security import register
