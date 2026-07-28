@@ -333,6 +333,66 @@ class TestGovernanceNavigate:
         assert data["count"] >= 1
         assert "results" in data
 
+    def test_navigate_elections_query(self):
+        args = argparse.Namespace(query="election fptp runoff ballot", json=False)
+        output = _run_with_stdout(_cmd_navigate, args)
+        assert "elections_voting" in output.lower()
+
+    def test_navigate_diplomatic_query(self):
+        args = argparse.Namespace(query="diplomatic relations embassy alliances", json=False)
+        output = _run_with_stdout(_cmd_navigate, args)
+        assert "international_relations" in output.lower()
+
+    def test_navigate_legal_query(self):
+        args = argparse.Namespace(query="court judge appeal legal constitution", json=False)
+        output = _run_with_stdout(_cmd_navigate, args)
+        assert "legal_systems" in output.lower()
+
+    def test_navigate_finance_query(self):
+        args = argparse.Namespace(query="budget debt fiscal expenditure", json=False)
+        output = _run_with_stdout(_cmd_navigate, args)
+        assert "public_finance" in output.lower()
+
+    def test_navigate_jurisdiction_query(self):
+        args = argparse.Namespace(query="jurisdiction iso code subdivision territory", json=False)
+        output = _run_with_stdout(_cmd_navigate, args)
+        assert "jurisdictions" in output.lower()
+
+    def test_navigate_classification_query(self):
+        args = argparse.Namespace(query="classification secret clearance caveat noforn", json=False)
+        output = _run_with_stdout(_cmd_navigate, args)
+        assert "classification_markings" in output.lower()
+
+    def test_navigate_authority_query(self):
+        args = argparse.Namespace(query="authority issuer department of state", json=False)
+        output = _run_with_stdout(_cmd_navigate, args)
+        assert "authority_registry" in output.lower()
+
+    def test_navigate_info_class_query(self):
+        args = argparse.Namespace(query="foia freedom of information gazette", json=False)
+        output = _run_with_stdout(_cmd_navigate, args)
+        assert "info_classification" in output.lower()
+
+    def test_navigate_decision_makers_query(self):
+        args = argparse.Namespace(query="politician senator congress minister", json=False)
+        output = _run_with_stdout(_cmd_navigate, args)
+        assert "decision_makers" in output.lower()
+
+    def test_navigate_postal_query(self):
+        args = argparse.Namespace(query="postal courier tracking dhl fedex shipping", json=False)
+        output = _run_with_stdout(_cmd_navigate, args)
+        assert "postal_delivery" in output.lower()
+
+    def test_navigate_military_query(self):
+        args = argparse.Namespace(query="military army navy conscription veteran", json=False)
+        output = _run_with_stdout(_cmd_navigate, args)
+        assert "military_service" in output.lower()
+
+    def test_navigate_licenses_query(self):
+        args = argparse.Namespace(query="driver professional license permit certification", json=False)
+        output = _run_with_stdout(_cmd_navigate, args)
+        assert "licenses_permits" in output.lower()
+
 
 # ── list ───────────────────────────────────────────────────────────────────────
 

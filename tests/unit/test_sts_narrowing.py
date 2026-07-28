@@ -243,7 +243,7 @@ class TestPolicyFragment:
         fragment = PolicyFragment(path="x/*", capabilities=frozenset({"read"}))
         try:
             fragment.path = "y/*"  # type: ignore[misc]
-            assert False, "PolicyFragment should be frozen"
+            raise AssertionError("PolicyFragment should be frozen")
         except Exception:
             pass
 

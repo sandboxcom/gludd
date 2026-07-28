@@ -364,11 +364,357 @@ def _navigate_query(query: str, *, json_output: bool = False) -> None:
                         }
                     )
 
+    # ── Elections / voting keywords ──
+    elections_keywords = {
+        "election",
+        "vote",
+        "ballot",
+        "electoral",
+        "polling",
+        "referendum",
+        "fptp",
+        "runoff",
+        "proportional",
+        "instant runoff",
+        "compulsory voting",
+    }
+    if any(kw in query for kw in elections_keywords):
+        ev = get_elections_voting()
+        for sys_type, sys_info in ev.ELECTION_SYSTEMS.items():
+            haystack = sys_type.lower() + " " + str(sys_info.get("description", "")).lower()
+            if any(word in haystack for word in query.split() if len(word) > 2):
+                results.append({"domain": "elections_voting", "match": sys_type, "data": sys_info})
+        for country_code, data in ev.ELECTION_DATA.items():
+            haystack = country_code.lower() + " " + str(data.get("name", "")).lower()
+            if any(word in haystack for word in query.split() if len(word) > 2):
+                results.append({"domain": "elections_voting", "match": country_code, "data": data})
+        if not results:
+            results.append(
+                {
+                    "domain": "elections_voting",
+                    "hint": "Try: " + ", ".join(sorted(ev.ELECTION_DATA.keys())[:5]),
+                    "available_count": len(ev.ELECTION_DATA),
+                }
+            )
+
+    # ── International relations keywords ──
+    ir_keywords = {
+        "diplomacy",
+        "diplomatic",
+        "embassy",
+        "sanction",
+        "trade agreement",
+        "visa waiver",
+        "foreign policy",
+        "un member",
+        "alliance",
+    }
+    if any(kw in query for kw in ir_keywords) or any(
+        org in query for org in ("five eyes", "g7", "g20", "nonaligned", "quad")
+    ):
+        ir_mod = get_international_relations()
+        for code, data in ir_mod.DIPLOMATIC_RELATIONS.items():
+            haystack = (
+                code.lower() + " " + str(data.get("name", "")).lower() + " " + " ".join(data.get("alliances", []))
+            )
+            if any(word in haystack.lower() for word in query.split() if len(word) > 2):
+                results.append({"domain": "international_relations", "match": code, "data": data})
+        if not results:
+            results.append(
+                {
+                    "domain": "international_relations",
+                    "hint": "Try: " + ", ".join(sorted(ir_mod.DIPLOMATIC_RELATIONS.keys())[:5]),
+                    "available_count": len(ir_mod.DIPLOMATIC_RELATIONS),
+                }
+            )
+
+    # ── Legal systems keywords ──
+    legal_keywords = {
+        "law",
+        "legal",
+        "court",
+        "judge",
+        "appeal",
+        "constitution",
+        "charter",
+        "rights",
+        "habeas",
+        "trial",
+        "common law",
+        "civil law",
+        "supreme court",
+    }
+    if any(kw in query for kw in legal_keywords):
+        ls_mod = get_legal_systems()
+        for code, data in ls_mod.COURT_HIERARCHIES.items():
+            haystack = code.lower() + " " + str(data.get("name", "")).lower() + " " + str(data.get("system_type", ""))
+            if any(word in haystack.lower() for word in query.split() if len(word) > 2):
+                results.append({"domain": "legal_systems", "match": code, "data": data})
+        if not results:
+            results.append(
+                {
+                    "domain": "legal_systems",
+                    "hint": "Try: " + ", ".join(sorted(ls_mod.COURT_HIERARCHIES.keys())[:5]),
+                    "available_count": len(ls_mod.COURT_HIERARCHIES),
+                }
+            )
+
+    # ── Public finance keywords ──
+    finance_keywords = {
+        "budget",
+        "debt",
+        "pension",
+        "fiscal",
+        "expenditure",
+        "sovereign debt",
+        "government spending",
+        "public finance",
+    }
+    if any(kw in query for kw in finance_keywords):
+        pf_mod = get_public_finance()
+        for code, data in pf_mod.COUNTRY_BUDGETS.items():
+            haystack = code.lower() + " " + str(data.get("country", "")).lower()
+            if any(word in haystack.lower() for word in query.split() if len(word) > 2):
+                results.append({"domain": "public_finance", "match": code, "data": data})
+        if not results:
+            results.append(
+                {
+                    "domain": "public_finance",
+                    "hint": "Try: " + ", ".join(sorted(pf_mod.COUNTRY_BUDGETS.keys())[:5]),
+                    "available_count": len(pf_mod.COUNTRY_BUDGETS),
+                }
+            )
+
+    # ── Jurisdictions keywords ──
+    jurisd_keywords = {
+        "jurisdiction",
+        "iso code",
+        "subdivision",
+        "territory",
+        "region code",
+        "fips",
+        "gleif",
+    }
+    if any(kw in query for kw in jurisd_keywords):
+        jurisd = get_jurisdictions()
+        for code, data in jurisd.JURISDICTION_CODES.items():
+            haystack = code.lower() + " " + str(data.get("name", "")).lower()
+            if any(word in haystack for word in query.split() if len(word) > 1):
+                results.append({"domain": "jurisdictions", "match": code, "data": data})
+        if not results:
+            results.append(
+                {
+                    "domain": "jurisdictions",
+                    "hint": "Try: " + ", ".join(sorted(jurisd.JURISDICTION_CODES.keys())[:5]),
+                    "available_count": len(jurisd.JURISDICTION_CODES),
+                }
+            )
+
+    # ── Classification markings keywords ──
+    class_keywords = {
+        "classification",
+        "classified",
+        "clearance",
+        "secret",
+        "top secret",
+        "banner",
+        "portion",
+        "marking",
+        "declass",
+        "caveat",
+        "noforn",
+        "cosmic",
+    }
+    if any(kw in query for kw in class_keywords):
+        cm = get_classification_markings()
+        for system in cm.BANNER_FORMATS:
+            results.append({"domain": "classification_markings", "match": system, "data": {"system": system}})
+        if not results:
+            results.append(
+                {
+                    "domain": "classification_markings",
+                    "hint": "Try: " + ", ".join(sorted(cm.BANNER_FORMATS.keys())),
+                    "available_count": len(cm.BANNER_FORMATS),
+                }
+            )
+
+    # ── Authority registry keywords ──
+    authority_keywords = {
+        "authority",
+        "issuer",
+        "issuing",
+        "consulate",
+        "passport office",
+        "department of",
+        "ministry of",
+    }
+    if any(kw in query for kw in authority_keywords):
+        ar = get_authority_registry()
+        for code, data in ar.AUTHORITY_INSTRUMENTS.items():
+            haystack = code.lower() + " " + str(data.get("name", "")).lower()
+            if any(word in haystack.lower() for word in query.split() if len(word) > 2):
+                results.append({"domain": "authority_registry", "match": code, "data": data})
+        if not results:
+            results.append(
+                {
+                    "domain": "authority_registry",
+                    "hint": "Try: " + ", ".join(sorted(ar.AUTHORITY_INSTRUMENTS.keys())[:5]),
+                    "available_count": len(ar.AUTHORITY_INSTRUMENTS),
+                }
+            )
+
+    # ── Info classification keywords ──
+    info_cls_keywords = {
+        "foia",
+        "freedom of information",
+        "info access",
+        "official source",
+        "gazette",
+        "information access",
+    }
+    if any(kw in query for kw in info_cls_keywords):
+        ic = get_info_classification()
+        for country, data in ic.CLASSIFICATION_BY_COUNTRY.items():
+            haystack = country.lower() + " " + str(data.get("system", "")).lower()
+            if any(word in haystack.lower() for word in query.split() if len(word) > 1):
+                results.append({"domain": "info_classification", "match": country, "data": data})
+        if not results:
+            results.append(
+                {
+                    "domain": "info_classification",
+                    "hint": "Try: " + ", ".join(sorted(ic.CLASSIFICATION_BY_COUNTRY.keys())[:5]),
+                    "available_count": len(ic.CLASSIFICATION_BY_COUNTRY),
+                }
+            )
+
+    # ── Decision makers keywords ──
+    dm_keywords = {
+        "decision maker",
+        "official",
+        "politician",
+        "senator",
+        "representative",
+        "minister",
+        "legislator",
+        "proclivity",
+        "congress",
+        "parliament member",
+        "president",
+        "prime minister",
+        "chief justice",
+    }
+    if any(kw in query for kw in dm_keywords):
+        dm = get_decision_makers()
+        for country_code, officials in dm.DECISION_MAKERS.items():
+            for official in officials:
+                haystack = (
+                    country_code.lower()
+                    + " "
+                    + official.get("role", "").lower()
+                    + " "
+                    + official.get("institution", "").lower()
+                )
+                if any(word in haystack.lower() for word in query.split() if len(word) > 2):
+                    results.append(
+                        {"domain": "decision_makers", "match": f"{country_code}: {official['role']}", "data": official}
+                    )
+        if not results:
+            results.append(
+                {
+                    "domain": "decision_makers",
+                    "hint": "Try: " + ", ".join(sorted(dm.DECISION_MAKERS.keys())[:5]),
+                    "available_count": len(dm.DECISION_MAKERS),
+                }
+            )
+
+    # ── Postal / delivery keywords ──
+    postal_keywords = {
+        "postal",
+        "postage",
+        "mail",
+        "zip code",
+        "courier",
+        "tracking",
+        "customs declaration",
+        "shipping",
+        "fedex",
+        "usps",
+        "dhl",
+        "ups",
+    }
+    if any(kw in query for kw in postal_keywords):
+        pd = get_postal_delivery()
+        for country, data in pd.POSTAL_CODE_PATTERNS.items():
+            haystack = country.lower() + " " + str(data.get("name", "")).lower()
+            if any(word in haystack.lower() for word in query.split() if len(word) > 1):
+                results.append({"domain": "postal_delivery", "match": country, "data": data})
+        if not results:
+            results.append(
+                {
+                    "domain": "postal_delivery",
+                    "hint": "Try: " + ", ".join(sorted(pd.POSTAL_CODE_PATTERNS.keys())[:5]),
+                    "available_count": len(pd.POSTAL_CODE_PATTERNS),
+                }
+            )
+
+    # ── Military service keywords ──
+    military_keywords = {
+        "military",
+        "army",
+        "navy",
+        "conscription",
+        "draft",
+        "veteran",
+        "service branch",
+        "armed forces",
+        "air force",
+        "marine",
+    }
+    if any(kw in query for kw in military_keywords):
+        ms = get_military_service()
+        for country, data in ms.CONSCRIPTION_DATA.items():
+            haystack = country.lower() + " " + str(data.get("name", "")).lower()
+            if any(word in haystack.lower() for word in query.split() if len(word) > 2):
+                results.append({"domain": "military_service", "match": country, "data": data})
+        if not results:
+            results.append(
+                {
+                    "domain": "military_service",
+                    "hint": "Try: " + ", ".join(sorted(ms.CONSCRIPTION_DATA.keys())[:5]),
+                    "available_count": len(ms.CONSCRIPTION_DATA),
+                }
+            )
+
+    # ── Licenses / permits keywords ──
+    licenses_keywords = {
+        "driver",
+        "driving license",
+        "professional license",
+        "export control",
+        "export license",
+        "permit",
+        "certification",
+        "medical license",
+    }
+    if any(kw in query for kw in licenses_keywords):
+        lp = get_licenses_permits()
+        for lic_type in lp.LICENSE_TYPES:
+            results.append({"domain": "licenses_permits", "match": lic_type, "data": {"license_type": lic_type}})
+        if not results:
+            results.append(
+                {
+                    "domain": "licenses_permits",
+                    "hint": "Try: " + ", ".join(sorted(lp.LICENSE_TYPES)[:5]),
+                    "available_count": len(lp.LICENSE_TYPES),
+                }
+            )
+
     # ── No results ──
     if not results:
         print(
             "No governance data matched your query. Try keywords like:\n"
             "  border, body, tax, currency, treaty, service,\n"
+            "  election, embassy, court, budget, classification, military,\n"
             "  or specific names like 'Schengen', 'UN', 'NATO', 'Paris Agreement'.",
             file=sys.stderr,
         )

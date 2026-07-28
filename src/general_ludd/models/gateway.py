@@ -13,7 +13,7 @@ import tenacity
 
 if TYPE_CHECKING:
     from general_ludd.pricing_intel.catalog import PricingCatalog
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from general_ludd.events.types import ModelAddedEvent, ModelRemovedEvent
 from general_ludd.models.failover import ModelFailoverChain
@@ -265,6 +265,27 @@ class ModelProfile(BaseModel):
         if not math.isfinite(v) or v < 0:
             raise ValueError("must be finite non-negative")
         return v
+
+    @model_validator(mode="after")
+    def _reject_zero_cost_for_enabled_metered(self) -> "ModelProfile":
+        if self.enabled and self.api_metered:
+            if self.cost_per_input_token == 0.0 and self.cost_per_output_token == 0.0:
+                raise ValueError(
+                    "enabled + api_metered profile must have non-zero cost: "
+                    f"profile_id={self.model_profile_id} has zero cost "
+                    "per input AND output tokens"
+                )
+            if self.cost_per_input_token == 0.0:
+                raise ValueError(
+                    "enabled + api_metered profile must have non-zero cost: "
+                    f"profile_id={self.model_profile_id} has zero cost per input token"
+                )
+            if self.cost_per_output_token == 0.0:
+                raise ValueError(
+                    "enabled + api_metered profile must have non-zero cost: "
+                    f"profile_id={self.model_profile_id} has zero cost per output token"
+                )
+        return self
 
 
 @dataclass

@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 import logging
+from typing import ClassVar
 from unittest.mock import patch
 
 import pytest
 
+from general_ludd.connectors._errors import (
+    ConnectorConfigError,
+    SSRFError,
+)
 from general_ludd.connectors.exc_sanitizer import (
     sanitize_exc_for_health,
     sanitize_exc_for_query,
     sanitize_exc_message,
     sanitize_str,
-)
-from general_ludd.connectors._errors import (
-    ConnectorConfigError,
-    SSRFError,
 )
 
 
@@ -151,6 +152,8 @@ class TestReExportedFunctions:
     def test_re_exports_match_originals(self) -> None:
         from general_ludd.connectors._errors import (
             sanitize_exc_message as _orig_exc,
+        )
+        from general_ludd.connectors._errors import (
             sanitize_str as _orig_str,
         )
 
@@ -213,7 +216,7 @@ class TestNestedAndChainedExceptions:
 
 
 class TestSecurityCriticalNoLeak:
-    COMMON_CREDENTIAL_PATTERNS = [
+    COMMON_CREDENTIAL_PATTERNS: ClassVar[list[str]] = [
         "api_key=abc123def456ghi789",
         "api key: super-secret-key-12345",
         "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.abc.def",

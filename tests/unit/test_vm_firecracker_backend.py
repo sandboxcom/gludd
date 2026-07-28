@@ -8,10 +8,8 @@ _spawn_firecracker.
 from __future__ import annotations
 
 import http.client
-import os
 import socket
 import subprocess
-import time
 from pathlib import Path
 from unittest import mock
 
@@ -19,7 +17,6 @@ import pytest
 
 from general_ludd.security.permissions import PermissionSpec
 from general_ludd.security.sandboxes import (
-    Finding,
     SandboxHandle,
     SandboxTarget,
 )
@@ -30,7 +27,6 @@ from general_ludd.security.sandboxes.vm.firecracker_backend import (
     _spawn_firecracker,
     _wait_for_socket,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -132,10 +128,7 @@ class TestWaitForSocket:
 
         def fake_socket(family: int, sock_type: int) -> mock.MagicMock:
             s = mock.MagicMock()
-            if len(fake_socks) < len(connect_success):
-                can_connect = connect_success.pop(0)
-            else:
-                can_connect = True
+            can_connect = connect_success.pop(0) if len(fake_socks) < len(connect_success) else True
             if not can_connect:
                 s.connect.side_effect = OSError()
             fake_socks.append(s)

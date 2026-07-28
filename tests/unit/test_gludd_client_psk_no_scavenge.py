@@ -13,7 +13,6 @@ docs/design/specs/SPEC_SECURITY_WAVE1.md.
 from __future__ import annotations
 
 import importlib.util
-import os
 from pathlib import Path
 from types import ModuleType
 from typing import Any

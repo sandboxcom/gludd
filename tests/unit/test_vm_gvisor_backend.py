@@ -23,8 +23,8 @@ from general_ludd.security.sandboxes import (
     SandboxTarget,
 )
 from general_ludd.security.sandboxes.vm.gvisor_backend import (
-    GvisorBackend,
     _RUNSC_TERMINATE_GRACE_S,
+    GvisorBackend,
     _spawn_runsc,
 )
 
