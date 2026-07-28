@@ -1,13 +1,3 @@
-output "compute_instance_id" {
-  description = "Azure VM resource id of the deployed compute instance."
-  value       = azurerm_linux_virtual_machine.inference.id
-}
-
-output "compute_public_ip" {
-  description = "Public IP address of the inference server."
-  value       = azurerm_public_ip.inference.ip_address
-}
-
 output "instance_id" {
   description = "Azure resource id of the accelerator VM."
   value       = azurerm_linux_virtual_machine.inference.id
@@ -24,7 +14,7 @@ output "instance_ip" {
 }
 
 output "base_url" {
-  description = "OpenAI-compatible vLLM endpoint."
+  description = "OpenAI-compatible llama.cpp endpoint."
   value       = "http://${azurerm_public_ip.inference.ip_address}:8000/v1"
 }
 

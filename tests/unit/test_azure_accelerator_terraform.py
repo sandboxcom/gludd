@@ -39,32 +39,33 @@ def test_makefile_has_state_free_azure_stack_initialization() -> None:
 def test_azure_vm_stack_is_reachable_driver_ready_and_destroyable(
     stack_name: str,
 ) -> None:
-    main_tf = (STACKS / stack_name / "main.tf").read_text()
-    assert 'resource "azurerm_resource_group"' in main_tf
-    assert 'resource "azurerm_virtual_network"' in main_tf
-    assert 'resource "azurerm_subnet"' in main_tf
-    assert 'resource "azurerm_public_ip"' in main_tf
-    assert 'resource "azurerm_network_security_group"' in main_tf
-    assert 'resource "azurerm_virtual_machine_extension" "nvidia_driver"' in main_tf
+    stack_dir = STACKS / stack_name
+    stack_tf = "\n".join(path.read_text() for path in sorted(stack_dir.glob("*.tf")))
+    assert 'resource "azurerm_resource_group"' in stack_tf
+    assert 'resource "azurerm_virtual_network"' in stack_tf
+    assert 'resource "azurerm_subnet"' in stack_tf
+    assert 'resource "azurerm_public_ip"' in stack_tf
+    assert 'resource "azurerm_network_security_group"' in stack_tf
+    assert 'resource "azurerm_virtual_machine_extension" "nvidia_driver"' in stack_tf
     assert (
         'resource "azurerm_virtual_machine_extension" "accelerator_bootstrap"'
-        in main_tf
+        in stack_tf
     )
-    assert 'publisher            = "Microsoft.HpcCompute"' in main_tf
-    assert 'type                 = "NvidiaGpuDriverLinux"' in main_tf
-    assert "depends_on = [azurerm_virtual_machine_extension.nvidia_driver]" in main_tf
-    assert "nvidia-container-toolkit" in main_tf
-    assert "nvidia-smi" in main_tf
-    assert "http://127.0.0.1:8000/health" in main_tf
-    assert 'module "gpu_cost_watchdog"' in main_tf
-    assert 'source = "../../modules/gpu-cost-watchdog"' in main_tf
+    assert 'publisher                  = "Microsoft.HpcCompute"' in stack_tf
+    assert 'type                       = "NvidiaGpuDriverLinux"' in stack_tf
+    assert "depends_on = [azurerm_virtual_machine_extension.nvidia_driver]" in stack_tf
+    assert "nvidia-container-toolkit" in stack_tf
+    assert "nvidia-smi" in stack_tf
+    assert "http://127.0.0.1:8000/health" in stack_tf
+    assert 'module "gpu_cost_watchdog"' in stack_tf
+    assert 'source = "../../modules/gpu-cost-watchdog"' in stack_tf
     assert re.search(
         r"custom_data\s*=\s*base64encode\(module\.gpu_cost_watchdog\.user_data\)",
-        main_tf,
+        stack_tf,
     )
-    assert "module.vllm_server.base_url" not in main_tf
-    assert "azurerm_public_ip.inference.ip_address" in main_tf
-    assert "azurerm_linux_virtual_machine.inference.id" in main_tf
+    assert "module.vllm_server.base_url" not in stack_tf
+    assert "azurerm_public_ip.inference.ip_address" in stack_tf
+    assert "azurerm_linux_virtual_machine.inference.id" in stack_tf
 
 
 @pytest.mark.parametrize(
