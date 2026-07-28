@@ -2307,14 +2307,7 @@ release-list:
 # Confirm a published GitHub Release + list its downloadable assets.
 release-view:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-view TAG=v0.1.0-alpha.1"; exit 1; }
-	@gh release view "$(TAG)" -R sandboxcom/gludd --json tagName,name,isDraft,isPrerelease,publishedAt,url,assets 2>&1 | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); \
-		st = '📝 DRAFT' if d.get('isDraft') else ('📦 prerelease' if d.get('isPrerelease') else '📦 release'); \
-		print('RELEASE %s  [%s]' % (d.get('tagName','?'), st)); \
-		print('  url:      %s' % d.get('url','')); \
-		print('  published:%s' % d.get('publishedAt','-')); \
-		a=d.get('assets',[]); \
-		print('  ASSETS (%d):' % len(a)); \
-		[print('   - %-40s %8.1f MB' % (x['name'], x['size']/1048576.0)) for x in a]" 2>&1 || echo "release-view-failed"
+	@$(PYTHON) scripts/release_view.py "$(TAG)"
 
 # Verify a GitHub Release has published assets (exit 0 only if non-draft + assets >= 1).
 # A tag is NOT a release. This is the machine-enforceable definition of "shipped."
