@@ -73,7 +73,19 @@ def _default_runner(node_id: str) -> int:
         return 1
     try:
         result = subprocess.run(
-            ["uv", "run", "pytest", safe_node, "-q", "--no-header", "--tb=no"],
+            [
+                "uv",
+                "run",
+                "pytest",
+                safe_node,
+                "-q",
+                "--no-header",
+                "--tb=no",
+                "-n",
+                "2",
+                "--maxprocesses",
+                "2",
+            ],
             capture_output=True,
             timeout=120,
         )

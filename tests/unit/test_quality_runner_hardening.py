@@ -96,6 +96,7 @@ def test_default_runner_uses_argv_list_no_shell(monkeypatch: Any) -> None:
     assert isinstance(argv, list)
     assert argv[0:3] == ["uv", "run", "pytest"]
     assert "tests/unit/test_x.py::test_ok" in argv
+    assert argv[-4:] == ["-n", "2", "--maxprocesses", "2"]
     assert all(isinstance(tok, str) for tok in argv)
     assert spy.kwargs.get("shell", False) is False
 

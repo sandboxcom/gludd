@@ -43,6 +43,7 @@ if TYPE_CHECKING:
         HibernationController,
         HibernationHandle,
     )
+    from general_ludd.agents.types import AgentTask
 
 PauseKind = Literal["project", "model", "task", "agent", "infra"]
 
@@ -101,6 +102,11 @@ class PauseController:
         # cannot lose an update or persist a torn view.
         self._lock = threading.Lock()
         self._records: dict[tuple[str, str], PauseRecord] = {}
+        # ``resume()`` must durably remove a pause before work restarts, but
+        # rehydration is asynchronous and happens immediately afterward. Keep
+        # the removed record transiently so ``resume_rehydrate()`` can consume
+        # its handles without leaving the entity marked paused.
+        self._resumed_records: dict[tuple[str, str], PauseRecord] = {}
         # Hot-path membership — read by is_paused() WITHOUT the lock.  Each is
         # a frozenset that is only ever REBOUND (never mutated in place) under
         # self._lock, after a successful persist.  Attribute rebinding is an
@@ -273,7 +279,7 @@ class PauseController:
             return QuiesceNoopResult()
         from general_ludd.agents.hibernation import AgentEnvironmentSnapshot
 
-        tasks: list[object] = []
+        tasks: list[AgentTask] = []
         if kind == "agent":
             tasks = await dispatcher.get_active_tasks_by_agent_name(target_id)
         elif kind == "task":
@@ -317,7 +323,9 @@ class PauseController:
 
         Returns a 3-tuple ``(snapshots, status, errors)``.
         """
-        record = self.get(kind, target_id)
+        key = (kind, target_id)
+        with self._lock:
+            record = self._records.get(key) or self._resumed_records.get(key)
         if record is None:
             return [], "clean", []
         if dispatcher is None or hibernation is None:
@@ -342,6 +350,9 @@ class PauseController:
         if snapshots:
             await dispatcher.resume_project(target_id, snapshots)
         status = "clean" if not errors else "degraded"
+        if not errors:
+            with self._lock:
+                self._resumed_records.pop(key, None)
         return list(snapshots), status, errors
 
     def _record_quiesce(
@@ -433,6 +444,7 @@ class PauseController:
             candidate[key] = record
             self._persist(candidate)  # raises -> in-RAM state stays untouched
             self._records = candidate
+            self._resumed_records.pop(key, None)
             self._rebind_add(kind, target_id)
             return record
 
@@ -461,6 +473,8 @@ class PauseController:
             del candidate[key]
             self._persist(candidate)  # raises -> in-RAM state stays untouched
             self._records = candidate
+            if record.agent_handles:
+                self._resumed_records[key] = record
             self._rebind_discard(kind, target_id)
             return record
 

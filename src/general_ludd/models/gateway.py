@@ -267,7 +267,7 @@ class ModelProfile(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def _reject_zero_cost_for_enabled_metered(self) -> "ModelProfile":
+    def _reject_zero_cost_for_enabled_metered(self) -> ModelProfile:
         if self.enabled and self.api_metered:
             if self.cost_per_input_token == 0.0 and self.cost_per_output_token == 0.0:
                 raise ValueError(

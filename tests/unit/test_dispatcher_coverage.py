@@ -473,7 +473,48 @@ class TestGetActiveTasksForProject:
 
 
 # ---------------------------------------------------------------------------
-# 8. Per-agent concurrency cap (max_concurrent semaphore)
+# 8. Entity-scoped active-task queries
+# ---------------------------------------------------------------------------
+
+
+class TestGetActiveTasksForEntity:
+    def test_queries_filter_by_agent_name_and_task_id(self) -> None:
+        """Pause/resume can resolve an active entity without reading internals."""
+        seen: dict[str, list[str]] = {}
+
+        async def _observe(task: AgentTask) -> str:
+            by_agent = await dispatcher.get_active_tasks_by_agent_name("worker")
+            by_task = await dispatcher.get_active_tasks_by_task_id(task.task_id)
+            missing = await dispatcher.get_active_tasks_by_task_id("missing")
+            seen["agent"] = [item.task_id for item in by_agent]
+            seen["task"] = [item.task_id for item in by_task]
+            seen["missing"] = [item.task_id for item in missing]
+            return "ok"
+
+        registry = _make_registry()
+        registry.register(_subagent_config("worker"))
+        invoker = _register_trusted_invoker(registry)
+        dispatcher = AgentDispatcher(registry, executor=_observe)
+        task = AgentTask(
+            task_id="entity-1",
+            agent_name="worker",
+            description="d",
+            prompt="p",
+            invoker_name=invoker,
+        )
+
+        result = asyncio.run(dispatcher.dispatch_one(task))
+
+        assert result.status == "completed"
+        assert seen == {
+            "agent": ["entity-1"],
+            "task": ["entity-1"],
+            "missing": [],
+        }
+
+
+# ---------------------------------------------------------------------------
+# 9. Per-agent concurrency cap (max_concurrent semaphore)
 # ---------------------------------------------------------------------------
 
 

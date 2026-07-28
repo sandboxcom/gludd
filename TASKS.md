@@ -58,20 +58,20 @@ An audit of this ledger against the source tree found:
 
 ## S56-W2 — Session 56 Wave 2 Dispatches (2026-07-27)
 
-- [x] S56-W2.1 — C-BUDGET nonzero projection: fix zero-rates path so cost projection returns nonzero values (commit `219c929d`)| priority: high | effort: M | status: completed
-- [x] S56-W2.2 — Engine shutdown + NEEDS_MORE_WORK requeue: graceful shutdown path + requeue on partial completion (commit `219c929d`)| priority: high | effort: M | status: completed
-- [x] S56-W2.3 — Sandbox executor wiring + typecheck fix (commit `219c929d`)| priority: medium | effort: M | status: completed
-- [x] S56-W2.4 — Git-automation worktree locking: `git-common-dir` for shared flock (commit `edc6cf3b`)| priority: high | effort: M | status: completed
-- [x] S56-W2.5 — Security: scrub child process env in stream dispatch + sandbox executor (commit `fb43601f`)| priority: high | effort: M | status: completed
-- [x] S56-W2.6 — CI concurrency: key on commit SHA to prevent run eviction (commit `d1d7953e`)| priority: high | effort: M | status: completed
-- [x] S56-W2.7 — Gate fix + task registration + pre-release cleanup (commits `cc7f31f0`, `3fa14748`, `8e2f6311`)| priority: high | effort: M | status: completed
+- [x] S56-W2.1 — C-BUDGET nonzero projection: fix zero-rates path so cost projection returns nonzero values (commit `219c929d`) | evidence: commit `219c929d` | priority: high | effort: M | status: completed
+- [x] S56-W2.2 — Engine shutdown + NEEDS_MORE_WORK requeue: graceful shutdown path + requeue on partial completion (commit `219c929d`) | evidence: commit `219c929d` | priority: high | effort: M | status: completed
+- [x] S56-W2.3 — Sandbox executor wiring + typecheck fix (commit `219c929d`) | evidence: commit `219c929d` | priority: medium | effort: M | status: completed
+- [x] S56-W2.4 — Git-automation worktree locking: `git-common-dir` for shared flock (commit `edc6cf3b`) | evidence: commit `edc6cf3b` | priority: high | effort: M | status: completed
+- [x] S56-W2.5 — Security: scrub child process env in stream dispatch + sandbox executor (commit `fb43601f`) | evidence: commit `fb43601f` | priority: high | effort: M | status: completed
+- [x] S56-W2.6 — CI concurrency: key on commit SHA to prevent run eviction (commit `d1d7953e`) | evidence: commit `d1d7953e` | priority: high | effort: M | status: completed
+- [x] S56-W2.7 — Gate fix + task registration + pre-release cleanup (commits `cc7f31f0`, `3fa14748`, `8e2f6311`) | evidence: commits `cc7f31f0`, `3fa14748`, `8e2f6311` | priority: high | effort: M | status: completed
 
 ## S57-W3 — Session 57 Wave 3 Dispatches (2026-07-28)
 
-- [x] S57-W3.1 — NEEDS_MORE_WORK requeue sweep: `requeue_needs_more_work()` + EventLoop wiring (commits `ed95614f`, `f5c3ed89`)| priority: high | effort: M | status: completed
-- [x] S57-W3.2 — PSK authz capability guard + engine sync cleanup + sandbox async gating + budget precheck fixes + typecheck fix (commit `7289bef1`)| priority: high | effort: M | status: completed
-- [x] S57-W3.3 — Lint fix: import order, unused imports, SIM115, SIM117 (commit `a7ef2ed5`)| priority: high | effort: S | status: completed
-- [x] S57-W3.4 — Fix commits (commits `128f035a`, `7d8d007c`)| priority: medium | effort: S | status: completed
+- [x] S57-W3.1 — NEEDS_MORE_WORK requeue sweep: `requeue_needs_more_work()` + EventLoop wiring (commits `ed95614f`, `f5c3ed89`) | evidence: commits `ed95614f`, `f5c3ed89` | priority: high | effort: M | status: completed
+- [x] S57-W3.2 — PSK authz capability guard + engine sync cleanup + sandbox async gating + budget precheck fixes + typecheck fix (commit `7289bef1`) | evidence: commit `7289bef1` | priority: high | effort: M | status: completed
+- [x] S57-W3.3 — Lint fix: import order, unused imports, SIM115, SIM117 (commit `a7ef2ed5`) | evidence: commit `a7ef2ed5` | priority: high | effort: S | status: completed
+- [x] S57-W3.4 — Fix commits (commits `128f035a`, `7d8d007c`) | evidence: commits `128f035a`, `7d8d007c` | priority: medium | effort: S | status: completed
 
 ## Active — In Progress (items being worked on right now)
 
@@ -310,27 +310,27 @@ State backend for terraform with HTTP API (lock/unlock/get/update), replacing lo
 
 ## S57-W4 — Session 57 Wave 4 Dispatches (2026-07-28)
 
-- [x] S57-W4.1 — System-Load Gate codification: AGENTS.md CRITICAL section + check-system-load target (commits `3b7dc660`, `31bd9a56`)| priority: high | effort: M | status: completed
-- [x] S57-W4.2 — Molecule CI fixes: bool filter anti-pattern in binary smoke verify.yml + daemon_lifecycle idempotence exclusion (commit `237e9b66`)| priority: high | effort: M | status: completed
-- [x] S57-W4.3 — FirecrackerBackend tests: 52-unit test suite for P5 VM sandbox, zero-to-green coverage (commit `47cdff54`)| priority: medium | effort: M | status: completed
-- [x] S57-W4.4 — GvisorBackend tests: 30 TDD unit tests (commit `1eac1d8d`)| priority: medium | effort: M | status: completed
-- [x] S57-W4.5 — STS module tests: 57 tests across narrowing, minter, injector (commit `9b40486c`)| priority: medium | effort: M | status: completed
-- [x] S57-W4.6 — verify-release-completeness bug fixes: stub calls real checker, help text says 12 categories, AC004 matches script (commit `ed839f94`)| priority: high | effort: S | status: completed
-- [x] S57-W4.7 — README status table update: beta.3 status text + Feature & Task Completion Status table refresh | priority: medium | effort: S | status: completed
-- [x] S57-W4.8 — CHANGELOG update for v0.1.0-beta.3 | priority: medium | effort: S | status: completed
-- [x] S57-W4.9 — Lint fix: SIM117 nested with statements, unused os import, chmod before invocation (commits `3d164a42`, `52f7349c`, `eefcadcb`)| priority: medium | effort: S | status: completed
+- [x] S57-W4.1 — System-Load Gate codification: AGENTS.md CRITICAL section + check-system-load target (commits `3b7dc660`, `31bd9a56`) | evidence: commits `3b7dc660`, `31bd9a56` | priority: high | effort: M | status: completed
+- [x] S57-W4.2 — Molecule CI fixes: bool filter anti-pattern in binary smoke verify.yml + daemon_lifecycle idempotence exclusion (commit `237e9b66`) | evidence: commit `237e9b66` | priority: high | effort: M | status: completed
+- [x] S57-W4.3 — FirecrackerBackend tests: 52-unit test suite for P5 VM sandbox, zero-to-green coverage (commit `47cdff54`) | evidence: commit `47cdff54` | priority: medium | effort: M | status: completed
+- [x] S57-W4.4 — GvisorBackend tests: 30 TDD unit tests (commit `1eac1d8d`) | evidence: commit `1eac1d8d` | priority: medium | effort: M | status: completed
+- [x] S57-W4.5 — STS module tests: 57 tests across narrowing, minter, injector (commit `9b40486c`) | evidence: commit `9b40486c` | priority: medium | effort: M | status: completed
+- [x] S57-W4.6 — verify-release-completeness bug fixes: stub calls real checker, help text says 12 categories, AC004 matches script (commit `ed839f94`) | evidence: commit `ed839f94` | priority: high | effort: S | status: completed
+- [x] S57-W4.7 — README status table update: beta.3 status text + Feature & Task Completion Status table refresh | evidence: `README.md`; `make verify-feature-claims` PASS | priority: medium | effort: S | status: completed
+- [x] S57-W4.8 — CHANGELOG update for v0.1.0-beta.3 | evidence: commit `482adb96`; `CHANGELOG.md` | priority: medium | effort: S | status: completed
+- [x] S57-W4.9 — Lint fix: SIM117 nested with statements, unused os import, chmod before invocation (commits `3d164a42`, `52f7349c`, `eefcadcb`) | evidence: commits `3d164a42`, `52f7349c`, `eefcadcb` | priority: medium | effort: S | status: completed
 
 ---
 
 ## S57-W5 — Session 57 Wave 5 Dispatches (2026-07-28)
 
-- [x] S57-W5.1 — Stash-leak guard hardened: advisory → BLOCKING (HEAD commit `402d008b`)| priority: high | effort: M | status: completed
-- [x] S57-W5.2 — exc_sanitizer tests: 49-TDD unit test suite (committed)| priority: medium | effort: M | status: completed
-- [x] S57-W5.3 — C-BUDGET model cost validation + nonzero projection fixes (committed)| priority: high | effort: M | status: completed
-- [x] S57-W5.4 — Governance navigate expansion to 17 domains (committed)| priority: medium | effort: M | status: completed
-- [x] S57-W5.5 — Collection engine.py merge conflicts fixed: 2 engine.py merge conflicts resolved (committed)| priority: high | effort: S | status: completed
-- [x] S57-W5.6 — PSK env var scavenge: gludd.py fixed; 2 modules remain (committed)| priority: high | effort: M | status: completed
-- [x] S57-W5.7 — Embeddings router tests: 30 new tests (committed)| priority: medium | effort: M | status: completed
+- [x] S57-W5.1 — Stash-leak guard hardened: advisory → BLOCKING (HEAD commit `402d008b`) | evidence: commits `402d008b`, `b200c362` | priority: high | effort: M | status: completed
+- [x] S57-W5.2 — exc_sanitizer tests: 49-TDD unit test suite (committed) | evidence: commit `76eceaf1`; `tests/unit/test_exc_sanitizer.py` | priority: medium | effort: M | status: completed
+- [x] S57-W5.3 — C-BUDGET model cost validation + nonzero projection fixes (committed) | evidence: commits `8bb83e11`, `1b6e132f` | priority: high | effort: M | status: completed
+- [x] S57-W5.4 — Governance navigate expansion to 17 domains (committed) | evidence: commit `a177536a`; `src/general_ludd/governance/cli_governance.py` | priority: medium | effort: M | status: completed
+- [x] S57-W5.5 — Collection engine.py merge conflicts fixed: 2 engine.py merge conflicts resolved (committed) | evidence: commit `fd0f23a9` | priority: high | effort: S | status: completed
+- [x] S57-W5.6 — PSK env var scavenge: gludd.py fixed; 2 modules remain (committed) | evidence: commit `91270014` | priority: high | effort: M | status: completed
+- [x] S57-W5.7 — Embeddings router tests: 30 new tests (committed) | evidence: commit `76eceaf1`; `tests/unit/test_embeddings_router.py` | priority: medium | effort: M | status: completed
 
 ---
 
