@@ -1,4 +1,4 @@
-"""Tests for `gludd payment` CLI subcommand (src/general_ludd/cli_payment.py).
+"""Tests for the programmatic payment command tree (``cli_payment.py``).
 
 Covers parser registration/wiring plus each subcommand's behavior against a
 FakeVault (no real OpenBao/SecretsManager involved). ``_open_vault`` imports
@@ -11,32 +11,38 @@ from __future__ import annotations
 
 import argparse
 import re
-import sys
 from typing import Any
-from unittest.mock import patch
 
 import pytest
 
 import general_ludd.cli_payment as cli_payment
 import general_ludd.secrets.manager as secrets_manager_mod
 import general_ludd.secrets.payment_vault as payment_vault_mod
-from general_ludd.cli import build_parser, main
+from general_ludd.cli import build_parser
 from general_ludd.secrets.payment_vault import PaymentVaultError, redact_card_number
 
 _VISA = "4111111111111111"
 
 
 def _run(args: list[str]) -> int:
-    """Invoke the real CLI entrypoint and capture the exit code.
+    """Invoke the retained programmatic command tree and capture its exit code.
 
-    Success paths in cli_payment.py fall off the end of the function without
-    calling sys.exit(0), so this does NOT assume SystemExit is always raised.
+    Payment handling is intentionally absent from the public ``gludd`` CLI and
+    reached through prompting.  The parser/handlers remain available for
+    programmatic integrations and are exercised here without weakening that
+    public-interface boundary.
     """
-    with patch.object(sys, "argv", ["gludd", "payment", *args]):
-        try:
-            main()
-        except SystemExit as exc:
-            return int(exc.code) if exc.code is not None else 0
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command")
+    cli_payment.register(subparsers)
+    try:
+        parsed = parser.parse_args(["payment", *args])
+        handler = getattr(parsed, "func", None)
+        if handler is None:
+            parser.error("a payment subcommand is required")
+        handler(parsed)
+    except SystemExit as exc:
+        return int(exc.code) if exc.code is not None else 0
     return 0
 
 
@@ -186,9 +192,9 @@ def _payment_subactions() -> argparse._SubParsersAction[argparse.ArgumentParser]
 
 
 class TestRegister:
-    def test_command_registered_on_top_level_parser(self) -> None:
+    def test_command_is_not_exposed_by_public_cli(self) -> None:
         _parser, subcommand_map = build_parser()
-        assert "payment" in subcommand_map
+        assert "payment" not in subcommand_map
 
     def test_all_five_subcommands_registered(self) -> None:
         sub_action = _payment_subactions()
