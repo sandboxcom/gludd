@@ -429,7 +429,7 @@ class TestSlackConnector:
             transport=cast(Any, transport),
         )
         result = src.health()
-        assert isinstance(result, dict)
+        assert result["ok"] is True
         assert "ok" in result
 
     def test_send_notification_webhook_ok(self, monkeypatch):
@@ -941,14 +941,22 @@ class TestElasticApmConnector:
         transport = MockHttpTransport(
             default_status=200,
             default_body={
-                "data": [
-                    {
-                        "id": "tx1",
-                        "duration": 250,
-                        "outcome": "success",
-                        "timestamp": "2025-01-01T00:00:00Z",
-                    }
-                ]
+                "hits": {
+                    "hits": [
+                        {
+                            "_id": "tx1",
+                            "_source": {
+                                "@timestamp": "2025-01-01T00:00:00Z",
+                                "transaction": {
+                                    "id": "tx1",
+                                    "name": "checkout",
+                                    "duration": {"us": 250},
+                                },
+                                "event": {"outcome": "success"},
+                            },
+                        }
+                    ]
+                }
             },
         )
         src = ElasticApmSource(
@@ -956,8 +964,9 @@ class TestElasticApmConnector:
             transport=cast(Any, transport),
         )
         records = src.query({})
-        assert isinstance(records, list)
-        assert len(records) >= 1
+        assert len(records) == 1
+        assert records[0]["level_or_status"] == "success"
+        assert records[0]["value"] == 250.0
 
 
 # ============================================================================
