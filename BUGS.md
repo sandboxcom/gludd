@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) StatsD E2E invented dispatch and prefix-stripping APIs
+
+- **What**: Connector batch 5 reached StatsD parsing and imported nonexistent `_dispatch` and `_strip_name` helpers. It also expected verbose type names in a `metric_type` label and a string sample rate, while the normalized contract stores the protocol code in `level_or_status`, preserves metric names, and parses rates as floats.
+- **Root cause**: The broad E2E modeled a network receiver/aggregator instead of this module's intentionally pure parser. Production exposes `parse_line()` and `query({"lines": ...})`, has no port or transport, and preserves raw StatsD semantics for downstream aggregation.
+- **Fix applied**: Tests now use the public source and parser, pin pure-parser health, strict versus skip-on-malformed behavior, counter/gauge/timer codes, float sample rates, DogStatsD tags, value-less tags, gauge deltas, exact metric-name preservation, and multi-line ordering.
+- **Long-lived user evidence**: Mature StatsD documentation distinguishes counters, gauges, timers, sets, sample rates, and signed gauge deltas ([data types](https://statsd.readthedocs.io/en/latest/types.html), [wire examples](https://statsd-metrics.readthedocs.io/en/latest/metrics.html)). Operators have reported years-old production loss from StatsD cardinality and throughput saturation ([r/devops discussion](https://www.reddit.com/r/devops/comments/boksr9)); Datadog users also report missing tags when enrichment timing differs from packet ingestion ([datadog-agent issue #5667](https://github.com/DataDog/datadog-agent/issues/5667)).
+- **Lesson**: A parse-only connector must not silently grow receiver, aggregation, or name-rewriting behavior through E2E assumptions. Protocol codes, tags, rates, deltas, raw lines, and malformed-input policy are the durable boundary.
+
 ### 2026-07-28 — (resolved) macOS Security E2E modeled events instead of posture commands
 
 - **What**: Connector batch 5 reached macOS Security and its health/query callbacks returned JSON event arrays. The connector actually reports security posture from `csrutil`, `spctl`, XProtect metadata, and `tccutil` through a list-argv runner triple. Its no-runner case also invoked the host's real security tools and treated whatever happened as deterministic E2E.

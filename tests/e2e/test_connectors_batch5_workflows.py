@@ -1549,72 +1549,93 @@ class TestStatsdParseConnector:
 
         source = StatsdParseSource()
         assert source.KIND == "metrics"
+        assert source.name == "statsd_parse"
+        assert source.health() == {
+            "ok": True,
+            "detail": "pure parser (no transport)",
+        }
 
     def test_constructs_custom_config(self):
+        from general_ludd.connectors.statsd_parse import (
+            StatsdParseError,
+            StatsdParseSource,
+        )
+
+        source = StatsdParseSource({
+            "name": "statsd-parser",
+            "strict": True,
+        })
+        assert source.name == "statsd-parser"
+        with pytest.raises(StatsdParseError, match="missing ':'"):
+            source.query({"lines": ["malformed"]})
+
+    def test_parse_line_parses_counter(self):
         from general_ludd.connectors.statsd_parse import StatsdParseSource
 
-        source = StatsdParseSource({"name": "statsd-parser", "port": 9125})
-        assert source.name == "statsd-parser"
+        record = StatsdParseSource().parse_line("app.requests:1|c")
+        assert record["message"] == "app.requests"
+        assert record["value"] == 1.0
+        assert record["level_or_status"] == "c"
+        assert record["labels"] == {}
 
-    def test_dispatch_parses_counter(self):
-        from general_ludd.connectors.statsd_parse import _dispatch
+    def test_parse_line_parses_gauge(self):
+        from general_ludd.connectors.statsd_parse import StatsdParseSource
 
-        records = _dispatch("app.requests:1|c")
-        assert len(records) >= 1
-        assert records[0]["message"] == "app.requests"
-        assert records[0]["value"] == 1
-        assert records[0]["labels"]["metric_type"] == "counter"
+        record = StatsdParseSource().parse_line("app.memory:512.5|g")
+        assert record["value"] == 512.5
+        assert record["level_or_status"] == "g"
 
-    def test_dispatch_parses_gauge(self):
-        from general_ludd.connectors.statsd_parse import _dispatch
+    def test_parse_line_parses_timer(self):
+        from general_ludd.connectors.statsd_parse import StatsdParseSource
 
-        records = _dispatch("app.memory:512.5|g")
-        assert len(records) >= 1
-        assert records[0]["value"] == 512.5
-        assert records[0]["labels"]["metric_type"] == "gauge"
+        record = StatsdParseSource().parse_line("app.latency:42.5|ms")
+        assert record["value"] == 42.5
+        assert record["level_or_status"] == "ms"
 
-    def test_dispatch_parses_timer(self):
-        from general_ludd.connectors.statsd_parse import _dispatch
+    def test_parse_line_parses_with_tags(self):
+        from general_ludd.connectors.statsd_parse import StatsdParseSource
 
-        records = _dispatch("app.latency:42.5|ms")
-        assert len(records) >= 1
-        assert records[0]["value"] == 42.5
-        assert records[0]["labels"]["metric_type"] == "timer"
+        record = StatsdParseSource().parse_line(
+            "app.errors:5|c|#host:web1,region:us-east,canary"
+        )
+        assert record["labels"] == {
+            "host": "web1",
+            "region": "us-east",
+            "canary": "",
+        }
 
-    def test_dispatch_parses_with_tags(self):
-        from general_ludd.connectors.statsd_parse import _dispatch
+    def test_parse_line_parses_sampling_rate(self):
+        from general_ludd.connectors.statsd_parse import StatsdParseSource
 
-        records = _dispatch("app.errors:5|c|#host:web1,region:us-east")
-        assert len(records) >= 1
-        assert records[0]["labels"].get("host") == "web1"
-        assert records[0]["labels"].get("region") == "us-east"
+        record = StatsdParseSource().parse_line("app.hits:10|c|@0.1")
+        assert record["value"] == 10.0
+        assert record["labels"]["sample_rate"] == 0.1
 
-    def test_dispatch_parses_sampling_rate(self):
-        from general_ludd.connectors.statsd_parse import _dispatch
+    def test_query_skips_invalid_line_by_default(self):
+        from general_ludd.connectors.statsd_parse import StatsdParseSource
 
-        records = _dispatch("app.hits:10|c|@0.1")
-        assert len(records) >= 1
-        assert records[0]["value"] == 10
-        assert records[0]["labels"]["sample_rate"] == "0.1"
-
-    def test_dispatch_returns_empty_for_invalid(self):
-        from general_ludd.connectors.statsd_parse import _dispatch
-
-        records = _dispatch("invalid without colon")
+        records = StatsdParseSource().query({
+            "lines": ["invalid without colon"]
+        })
         assert records == []
 
-    def test_strip_name_drops_prefix(self):
-        from general_ludd.connectors.statsd_parse import _strip_name
+    def test_metric_name_and_gauge_delta_are_preserved(self):
+        from general_ludd.connectors.statsd_parse import StatsdParseSource
 
-        result = _strip_name("stats.gauges.app.requests")
-        assert "app" in result
+        record = StatsdParseSource().parse_line(
+            "stats.gauges.app.requests:+5|g"
+        )
+        assert record["message"] == "stats.gauges.app.requests"
+        assert record["value"] == 5.0
+        assert record["labels"]["delta"] == "+"
 
     def test_query_parses_multiple_lines(self):
         from general_ludd.connectors.statsd_parse import StatsdParseSource
 
         source = StatsdParseSource()
         records = source.query({"lines": ["app.hits:5|c", "app.mem:512|g"]})
-        assert len(records) >= 2
+        assert len(records) == 2
+        assert [r["level_or_status"] for r in records] == ["c", "g"]
 
 
 # ============================================================================
