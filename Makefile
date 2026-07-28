@@ -29,7 +29,7 @@ _NO_UV_SYNC_GOALS := \
     worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
     release-worktree-guard status-claim-guard workflow-state workflow-gate commit-ready gha-ready merge-ready \
     git-where repo-status git-status git-remote-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom verify-remote \
-    git-branch git-checkout git-add git-merge git-merge-nc git-merge-abort git-rebase-abort git-rebase-continue git-rebase-skip \
+    git-branch git-checkout git-add git-merge git-merge-nc git-merge-abort git-rebase-abort git-rebase-continue git-rebase-skip git-uncommit-last \
     git-cherry-pick git-cherry-pick-list git-cherry-pick-continue git-cherry-pick-skip git-cherry-pick-abort \
     ci-remotes ci-diff-since-remote ci-head-compare ci-remote-head-guard ci-trigger ci-shards-log-context \
     git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head git-push-current-head-to-master-nv \
@@ -58,7 +58,7 @@ endif
 PYTEST_VERBOSITY ?= -v
 
 .PHONY: \
-        init sync install-pip lint lint-files lint-fix test test-unit test-unit-shards test-specific test-files test-count test-integration test-e2e \
+        init sync install-pip lint lint-files lint-fix test test-unit test-unit-shards test-specific test-files test-count test-integration test-e2e bisect-test-collection-polluter \
          test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg test-bg-runner \
          test-games game-audit gen-mcp-tools gen-mcp-tool-ref mcp-docs-check \
         typecheck setup-dirs setup-venv clean healthcheck \
@@ -66,7 +66,7 @@ PYTEST_VERBOSITY ?= -v
         ansible-syntax ansible-lint-playbooks ansible-collection-test playbook-list \
         git-status git-init git-add git-commit git-log git-diff git-reset \
         git-branch git-checkout git-merge git-staged git-stash git-stash-pop \
-        git-merge-abort git-rebase-abort git-rebase-continue git-rebase-skip git-reset-hard git-cherry-pick git-cherry-pick-list \
+        git-merge-abort git-rebase-abort git-rebase-continue git-rebase-skip git-reset-hard git-uncommit-last git-cherry-pick git-cherry-pick-list \
         submodule-init submodule-update submodule-status submodule-pin \
         repo-status repo-diff repo-staged repo-log \
         feature-start feature-done test-and-commit preflight \
@@ -197,6 +197,7 @@ help:
 	@echo "  test-opencode-e2e     .opencode/ plugin load+invocation tests"
 	@echo "  test-specific         Single test (TESTFILE=path::TestClass::test_name)"
 	@echo "  test-files            Multiple tests (TESTFILES=tests/unit/a.py tests/unit/b.py)"
+	@echo "  bisect-test-collection-polluter  Minimize pytest import pollution (CANDIDATE_DIR=tests/unit START=0 LIMIT=0)"
 	@echo "  ci-shards-log-context Show local shard log context (LOG=.gate-logs/ci.log PATTERN=FAILED)"
 	@echo "  task                  Run CMD with timeout (CMD=make test-unit, GLUDD_TASK_TIMEOUT=300)"
 	@echo "  test-count            Count collected tests"
@@ -227,6 +228,7 @@ help:
 	@echo "  git-add-all           Stage all changes"
 	@echo "  git-commit MSG='...'  Commit staged changes"
 	@echo "  git-reset FILES='...' Reset to ref (soft by default)"
+	@echo "  git-uncommit-last CONFIRM=1  Uncommit local HEAD while preserving all files"
 	@echo "  git-branch MSG='...'  Create branch"
 	@echo "  git-checkout MSG='...' Switch branch"
 	@echo "  git-merge MSG='...'   Merge branch with --no-ff"
@@ -682,6 +684,13 @@ test-xdist-trace:
 test-xdist-trace-summary:
 	@$(UV) run python scripts/summarize_xdist_trace.py $(or $(LOG),/tmp/gludd-xdist-progress.log)
 
+bisect-test-collection-polluter:
+	@$(UV) run python scripts/bisect_pytest_collection_polluter.py \
+		--candidate-dir "$(or $(CANDIDATE_DIR),tests/unit)" \
+		--target "$(or $(SENTINEL_TEST),tests/controllers/test_pause_slice3_capture.py::test_endpoint_pause_project_captures_resources_from_request)" \
+		--start "$(or $(START),0)" \
+		--limit "$(or $(LIMIT),0)"
+
 test-count-e2e:
 	@find tests/e2e -name 'test_*.py' | wc -l | xargs echo "e2e test files:"
 	@find tests/e2e -name 'test_*.py' -exec grep -c 'def test_' {} + | awk -F: '{sum+=$$2} END {print "e2e test functions:", sum}'
@@ -802,7 +811,9 @@ gate: check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-t
 	@printf "hook-runtime " >> .gate-status
 	@mkdir -p .gate-logs
 	@$(MAKE) --no-print-directory test-hook-runtime > .gate-logs/hook-runtime.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/hook-runtime.log)
-	$(MAKE) --no-print-directory test-opencode-e2e > .gate-logs/opencode-e2e.log 2>&1 \&\& echo "PASS" >> .gate-status || \(echo "FAIL" >> .gate-status \&\& touch .gate-failed \&\& tail -30 .gate-logs/opencode-e2e.log\); \
+	@echo "=== GATE PHASE: opencode-e2e ==="
+	@printf "opencode-e2e " >> .gate-status
+	@$(MAKE) --no-print-directory test-opencode-e2e > .gate-logs/opencode-e2e.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/opencode-e2e.log)
 	@echo "=== GATE PHASE: verify-enforcement ==="
 	@printf "verify-enforcement " >> .gate-status
 	@$(MAKE) --no-print-directory verify-enforcement > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed)
@@ -3217,10 +3228,10 @@ dist-path-check:
 	HITS=$$(grep -rIl -e '/Users/' -e 'Mac.localdomain' $$DIRS 2>/dev/null || true); \
 	if [ -n "$$HITS" ]; then echo "LEAKED LOCAL PATHS in tarball:"; echo "$$HITS"; exit 1; else echo "Tarball dir(s) path-clean."; fi
 
-# gate-refresh: re-run fast gate phases (lint, typecheck, collect) and write a
-# fresh .gate-status with current timestamp. Test/smoke lines are PRESERVED from
-# the prior full gate run. This lets the agent prove partial gate green to
-# unblock commits while the gate-background test phase is still running.
+# gate-refresh: re-run the non-sharded CI gate phases and write a fresh
+# .gate-status with current timestamp. Test/smoke lines are PRESERVED from the
+# prior full gate run. This lets the agent prove partial gate green to unblock
+# commits while the gate-background test phase is still running.
 # Does NOT run the full test suite — that's what gate-background is for.
 .PHONY: gate-refresh
 gate-refresh:
@@ -3237,6 +3248,34 @@ gate-refresh:
 		echo "PASS 0" >> .gate-status; \
 	else \
 		echo "FAIL $$($(UV) run ruff check src tests --output-format concise 2>&1 | grep -c .)" >> .gate-status && touch .gate-failed; \
+	fi; \
+	echo "=== GATE PHASE: verify-feature-claims ==="; \
+	printf "verify-feature-claims " >> .gate-status; \
+	if $(MAKE) --no-print-directory verify-feature-claims; then \
+		echo "PASS" >> .gate-status; \
+	else \
+		echo "FAIL" >> .gate-status && touch .gate-failed; \
+	fi; \
+	echo "=== GATE PHASE: hot-reload ==="; \
+	printf "hot-reload " >> .gate-status; \
+	if $(MAKE) --no-print-directory hot-reload-plugins; then \
+		echo "PASS" >> .gate-status; \
+	else \
+		echo "FAIL" >> .gate-status && touch .gate-failed; \
+	fi; \
+	echo "=== GATE PHASE: verify-hot-reload ==="; \
+	printf "verify-hot-reload " >> .gate-status; \
+	if $(MAKE) --no-print-directory check-hot-reload-fresh; then \
+		echo "PASS" >> .gate-status; \
+	else \
+		echo "FAIL" >> .gate-status && touch .gate-failed; \
+	fi; \
+	echo "=== GATE PHASE: check-status-table ==="; \
+	printf "check-status-table " >> .gate-status; \
+	if $(MAKE) --no-print-directory check-status-table; then \
+		echo "PASS" >> .gate-status; \
+	else \
+		echo "FAIL" >> .gate-status && touch .gate-failed; \
 	fi; \
 	echo "=== GATE PHASE: env-writes ==="; \
 	printf "env-writes " >> .gate-status; \
@@ -3447,6 +3486,28 @@ git-reset:
 		exit 1; \
 	fi
 	@git reset -- $(FILES)
+
+git-uncommit-last:
+	@if [ "$(CONFIRM)" != "1" ]; then \
+		echo "Usage: make git-uncommit-last CONFIRM=1 [DRY_RUN=1]"; \
+		exit 1; \
+	fi
+	@parents=$$(git rev-list --parents -n 1 HEAD); \
+	parent_count=$$(printf '%s\n' "$$parents" | awk '{print NF - 1}'); \
+	if [ "$$parent_count" -ne 1 ]; then \
+		echo "Refusing to uncommit a root or merge commit"; \
+		exit 1; \
+	fi; \
+	if git branch -r --contains HEAD | grep -q .; then \
+		echo "Refusing to uncommit a commit contained by a remote-tracking branch"; \
+		exit 1; \
+	fi; \
+	if [ "$(DRY_RUN)" = "1" ]; then \
+		echo "Would run: git reset --mixed HEAD^"; \
+	else \
+		git reset --mixed HEAD^; \
+		echo "Uncommitted local HEAD; all file changes were preserved"; \
+	fi
 
 git-restore:
 	@if [ -z "$(FILES)" ]; then \
@@ -5496,7 +5557,15 @@ kill-project-pid:
 	@[ -n "$(PID)" ] || { echo "Usage: make kill-project-pid PID=pid"; exit 1; }
 	@cmd=$$(/bin/ps -p "$(PID)" -o command=); \
 	case "$$cmd" in \
-		*"/Users/shawnwilson/gludd"*|*"make search"*|*"grep -R"*) /bin/kill "$(PID)" ;; \
+		*"/Users/shawnwilson/gludd"*|*"make search"*|*"grep -R"*) \
+			/bin/kill -TERM "$(PID)" 2>/dev/null || true; \
+			elapsed=0; \
+			while [ $$elapsed -lt 2 ] && /bin/kill -0 "$(PID)" 2>/dev/null; do \
+				/bin/sleep 1; elapsed=$$((elapsed + 1)); \
+			done; \
+			if /bin/kill -0 "$(PID)" 2>/dev/null; then \
+				/bin/kill -KILL "$(PID)" 2>/dev/null || true; \
+			fi ;; \
 		*) echo "Refusing to kill unrelated process: $$cmd"; exit 1 ;; \
 	esac
 
