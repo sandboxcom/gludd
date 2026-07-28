@@ -18,7 +18,10 @@ from typing import Any
 
 import pytest
 
-from general_ludd.connectors.gcp_observability import GcpObservabilitySource
+from general_ludd.connectors.gcp_observability import (
+    GcpObservabilitySource,
+    _point_value,
+)
 
 
 class FakeResponse:
@@ -407,6 +410,11 @@ def test_query_metrics_int64_and_distribution_values(
         }
     )
     assert rows[0]["value"] == 42.0
+
+
+@pytest.mark.parametrize(("raw", "expected"), [(True, 1.0), (False, 0.0)])
+def test_point_value_normalizes_boolean_metrics(raw: bool, expected: float) -> None:
+    assert _point_value({"boolValue": raw}) == expected
 
 
 # --------------------------------------------------------------------------- #

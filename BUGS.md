@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) GCP boolean metric values were stringified before numeric normalization
+
+- **What**: The focused connector batch stopped when `_point_value({"boolValue": True})` raised `ValueError` instead of producing the normalized metric value `1.0`.
+- **Root cause**: The boolean branch called `float(str(raw))`, turning the typed JSON boolean into the non-numeric string `"True"`. Python can convert a boolean object directly to `1.0` or `0.0`, but its float parser correctly rejects those words as numeric literals.
+- **Fix applied**: GCP boolean points now map explicitly to `1.0` and `0.0`. A parametrized canonical unit regression covers both values, while the existing E2E assertion pins the external normalization contract.
+- **Long-lived user evidence**: Python users have reported the exact `float("True")` failure for years and distinguish it from the valid `float(True) == 1.0` conversion ([Stack Overflow discussion](https://stackoverflow.com/questions/46701095/why-dont-inttrue-and-floattrue-work-in-python)); the underlying numeric relationship is also documented in a separate long-running user discussion ([Stack Overflow discussion](https://stackoverflow.com/questions/57600928/what-happens-when-a-float-is-cast-to-from-a-boolean-at-the-first-principle-level)).
+- **Lesson**: Preserve JSON scalar types through normalization. Stringification is appropriate for numeric strings such as Cloud Monitoring `int64Value`, but it destroys the direct numeric semantics of typed booleans.
+
 ### 2026-07-28 — (resolved) SearX HTTP replacements omitted the bound client argument
 
 - **What**: The focused SearX workflow stopped at its first health probe because the class-level replacement for `httpx.Client.get` raised `TypeError`; the connector correctly converted that transport exception into `ok: false`.

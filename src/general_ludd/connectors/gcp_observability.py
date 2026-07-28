@@ -298,7 +298,7 @@ def _point_value(value: dict[str, object]) -> float | None:
         if key in value and value[key] is not None:
             raw = value[key]
             if isinstance(raw, bool):
-                return float(str(raw))
+                return 1.0 if raw else 0.0
             return float(str(raw))
     dist = value.get("distributionValue")
     if isinstance(dist, dict) and dist.get("mean") is not None:
