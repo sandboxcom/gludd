@@ -41,6 +41,55 @@ class HttpTransport(Protocol):
     ) -> HttpResponse: ...
 
 
+class CallableHttpTransport(Protocol):
+    """Compact method-and-URL callback used by generated workflows."""
+
+    def __call__(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str] | None = ...,
+        params: Mapping[str, object] | None = ...,
+        timeout: float | None = ...,
+    ) -> tuple[int, object]: ...
+
+
+class _CallbackResponse:
+    def __init__(self, status_code: int, body: object) -> None:
+        self.status_code = int(status_code)
+        self._body = body
+
+    @property
+    def text(self) -> str:
+        return self._body if isinstance(self._body, str) else str(self._body)
+
+    def json(self) -> object:
+        return self._body
+
+
+class _CallableTransportAdapter:
+    def __init__(self, callback: CallableHttpTransport) -> None:
+        self._callback = callback
+
+    def get(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        params: Mapping[str, object] | None = None,
+        timeout: float | None = None,
+    ) -> HttpResponse:
+        status, body = self._callback(
+            "GET",
+            url,
+            headers=headers,
+            params=params,
+            timeout=timeout,
+        )
+        return _CallbackResponse(status, body)
+
+
 def _validate_base_url(base_url: str) -> str:
     if is_url_blocked(base_url, scheme_allowlist=("http", "https")):
         parsed = urlparse(base_url)
@@ -105,7 +154,7 @@ class OpsgenieSource:
         self,
         config: dict[str, object],
         *,
-        transport: HttpTransport | None = None,
+        transport: HttpTransport | CallableHttpTransport | None = None,
     ) -> None:
         self.config = dict(config)
         self.name = str(self.config.get("name", "opsgenie"))
@@ -115,7 +164,16 @@ class OpsgenieSource:
         self.token_env = str(self.config.get("token_env", "OPSGENIE_API_KEY"))
         self.timeout = float(str(self.config.get("timeout", DEFAULT_TIMEOUT)))
         self.default_limit = int(str(self.config.get("limit", DEFAULT_LIMIT)))
-        self._transport: HttpTransport = transport or _DefaultTransport()
+        if transport is None:
+            self._transport = _DefaultTransport()
+        elif callable(getattr(transport, "get", None)):
+            self._transport = cast(HttpTransport, transport)
+        elif callable(transport):
+            self._transport = _CallableTransportAdapter(
+                cast(CallableHttpTransport, transport)
+            )
+        else:
+            raise TypeError("transport must provide get or be callable")
 
     # -- internals --------------------------------------------------------
 
