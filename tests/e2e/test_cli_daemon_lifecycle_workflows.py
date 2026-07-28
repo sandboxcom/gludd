@@ -6,7 +6,6 @@ error recovery, route registration, and config handling.
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -664,8 +663,8 @@ class TestErrorRecovery:
                 assert client.get("/healthz").status_code == 200
                 assert client.get("/docs").status_code == 200
 
-    def test_degraded_guard_blocks_dispatch_on_degraded(self):
-        os.environ["GLUDD_ALLOW_NO_AUTH"] = "1"
+    def test_degraded_guard_blocks_dispatch_on_degraded(self, monkeypatch):
+        monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()), patch(
             "general_ludd.daemon.ensure_tables",

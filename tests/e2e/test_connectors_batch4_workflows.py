@@ -154,10 +154,10 @@ class TestOktaConnector:
         with pytest.raises(ValueError):
             OktaSource({"org_url": "http://10.0.0.1", "token_env": "OKTA_TOKEN"})
 
-    def test_constructs_with_valid_config(self):
+    def test_constructs_with_valid_config(self, monkeypatch):
         from general_ludd.connectors.okta import OktaSource
 
-        os.environ["OKTA_TEST_TOKEN_B4"] = "test-token-abc"
+        monkeypatch.setenv("OKTA_TEST_TOKEN_B4", "test-token-abc")
         try:
             source = OktaSource(
                 {"org_url": "https://example.okta.com", "token_env": "OKTA_TEST_TOKEN_B4"},
@@ -168,10 +168,10 @@ class TestOktaConnector:
         finally:
             del os.environ["OKTA_TEST_TOKEN_B4"]
 
-    def test_constructs_custom_name_and_timeout(self):
+    def test_constructs_custom_name_and_timeout(self, monkeypatch):
         from general_ludd.connectors.okta import OktaSource
 
-        os.environ["OKTA_TOK_B4"] = "tok"
+        monkeypatch.setenv("OKTA_TOK_B4", "tok")
         try:
             source = OktaSource({
                 "org_url": "https://my.okta.com",
@@ -184,11 +184,11 @@ class TestOktaConnector:
         finally:
             del os.environ["OKTA_TOK_B4"]
 
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.okta import OktaSource
 
         transport = MockHttpResponseTransport(status_code=200, body=[{"id": "e1"}])
-        os.environ["OKTA_TOK_H"] = "tok"
+        monkeypatch.setenv("OKTA_TOK_H", "tok")
         try:
             source = OktaSource(
                 {"org_url": "https://okta.example.com", "token_env": "OKTA_TOK_H"},
@@ -199,11 +199,11 @@ class TestOktaConnector:
         finally:
             del os.environ["OKTA_TOK_H"]
 
-    def test_health_not_ok_on_bad_status(self):
+    def test_health_not_ok_on_bad_status(self, monkeypatch):
         from general_ludd.connectors.okta import OktaSource
 
         transport = MockHttpResponseTransport(status_code=500, body={})
-        os.environ["OKTA_TOK_H2"] = "tok"
+        monkeypatch.setenv("OKTA_TOK_H2", "tok")
         try:
             source = OktaSource(
                 {"org_url": "https://ok.example.com", "token_env": "OKTA_TOK_H2"},
@@ -214,13 +214,13 @@ class TestOktaConnector:
         finally:
             del os.environ["OKTA_TOK_H2"]
 
-    def test_health_handles_transport_error(self):
+    def test_health_handles_transport_error(self, monkeypatch):
         from general_ludd.connectors.okta import OktaSource
 
         def _fail(*_: object, **__: object) -> MockHttpResponse:
             raise OSError("timeout")
 
-        os.environ["OKTA_H3"] = "tok"
+        monkeypatch.setenv("OKTA_H3", "tok")
         try:
             source = OktaSource(
                 {"org_url": "https://ok.example.com", "token_env": "OKTA_H3"},
@@ -231,7 +231,7 @@ class TestOktaConnector:
         finally:
             del os.environ["OKTA_H3"]
 
-    def test_query_returns_normalized_records(self):
+    def test_query_returns_normalized_records(self, monkeypatch):
         from general_ludd.connectors.okta import OktaSource
 
         transport = MockHttpResponseTransport(
@@ -247,7 +247,7 @@ class TestOktaConnector:
                 }
             ],
         )
-        os.environ["OKTA_Q1"] = "tok"
+        monkeypatch.setenv("OKTA_Q1", "tok")
         try:
             source = OktaSource(
                 {"org_url": "https://ok.example.com", "token_env": "OKTA_Q1"},
@@ -260,7 +260,7 @@ class TestOktaConnector:
         finally:
             del os.environ["OKTA_Q1"]
 
-    def test_query_paginates_via_link_header(self):
+    def test_query_paginates_via_link_header(self, monkeypatch):
         from general_ludd.connectors.okta import OktaSource
 
         call_count = [0]
@@ -275,7 +275,7 @@ class TestOktaConnector:
                 resp.headers = {"Link": '<https://ok.example.com/api/v1/logs?after=2>; rel="next"'}
             return resp
 
-        os.environ["OKTA_PG"] = "tok"
+        monkeypatch.setenv("OKTA_PG", "tok")
         try:
             source = OktaSource(
                 {"org_url": "https://ok.example.com", "token_env": "OKTA_PG", "max_pages": 5},
@@ -299,11 +299,11 @@ class TestEntraSigninConnector:
         with pytest.raises((ValueError, RuntimeError)):
             EntraSigninSource({})
 
-    def test_constructs_with_valid_config(self):
+    def test_constructs_with_valid_config(self, monkeypatch):
         from general_ludd.connectors.entra_signin import EntraSigninSource
 
-        os.environ["ENTRA_CLIENT_ID"] = "cid"
-        os.environ["ENTRA_SECRET"] = "sec"  # pragma: allowlist secret
+        monkeypatch.setenv("ENTRA_CLIENT_ID", "cid")
+        monkeypatch.setenv("ENTRA_SECRET", "sec")  # pragma: allowlist secret
         try:
             source = EntraSigninSource({
                 "tenant_id": "test-tenant-id",
@@ -320,12 +320,12 @@ class TestEntraSigninConnector:
         with pytest.raises((ValueError, RuntimeError)):
             EntraSigninSource({"tenant_id": "x", "base_url": "http://127.0.0.1"})
 
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.entra_signin import EntraSigninSource
 
         transport = MockHttpResponseTransport(status_code=200, body={"value": []})
-        os.environ["ENTRA_CID"] = "cid"
-        os.environ["ENTRA_SEC"] = "sec"
+        monkeypatch.setenv("ENTRA_CID", "cid")
+        monkeypatch.setenv("ENTRA_SEC", "sec")
         try:
             source = EntraSigninSource(
                 {"tenant_id": "tid", "client_id_env": "ENTRA_CID", "secret_env": "ENTRA_SEC"},
@@ -336,12 +336,12 @@ class TestEntraSigninConnector:
         finally:
             del os.environ["ENTRA_CID"], os.environ["ENTRA_SEC"]
 
-    def test_health_not_ok_on_error(self):
+    def test_health_not_ok_on_error(self, monkeypatch):
         from general_ludd.connectors.entra_signin import EntraSigninSource
 
         transport = MockHttpResponseTransport(status_code=401, body={})
-        os.environ["ENTRA_CI"] = "c"
-        os.environ["ENTRA_SE"] = "s"
+        monkeypatch.setenv("ENTRA_CI", "c")
+        monkeypatch.setenv("ENTRA_SE", "s")
         try:
             source = EntraSigninSource(
                 {"tenant_id": "tid", "client_id_env": "ENTRA_CI", "secret_env": "ENTRA_SE"},
@@ -352,7 +352,7 @@ class TestEntraSigninConnector:
         finally:
             del os.environ["ENTRA_CI"], os.environ["ENTRA_SE"]
 
-    def test_query_returns_records(self):
+    def test_query_returns_records(self, monkeypatch):
         from general_ludd.connectors.entra_signin import EntraSigninSource
 
         transport = MockHttpResponseTransport(
@@ -369,8 +369,8 @@ class TestEntraSigninConnector:
                 ]
             },
         )
-        os.environ["ENTRA_CID_Q"] = "cid"
-        os.environ["ENTRA_SEC_Q"] = "sec"
+        monkeypatch.setenv("ENTRA_CID_Q", "cid")
+        monkeypatch.setenv("ENTRA_SEC_Q", "sec")
         try:
             source = EntraSigninSource(
                 {"tenant_id": "tid", "client_id_env": "ENTRA_CID_Q", "secret_env": "ENTRA_SEC_Q"},
@@ -395,11 +395,11 @@ class TestServiceNowConnector:
         with pytest.raises((ValueError, RuntimeError)):
             ServiceNowSource({})
 
-    def test_constructs_with_valid_config(self):
+    def test_constructs_with_valid_config(self, monkeypatch):
         from general_ludd.connectors.servicenow import ServiceNowSource
 
-        os.environ["SN_USER_B4"] = "admin"
-        os.environ["SN_PASS_B4"] = "pass"
+        monkeypatch.setenv("SN_USER_B4", "admin")
+        monkeypatch.setenv("SN_PASS_B4", "pass")
         try:
             source = ServiceNowSource({
                 "instance": "dev12345",
@@ -417,12 +417,12 @@ class TestServiceNowConnector:
         with pytest.raises((ValueError, RuntimeError)):
             ServiceNowSource({"instance": "x", "base_url": "http://10.0.0.1"})
 
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.servicenow import ServiceNowSource
 
         transport = MockHttpResponseTransport(status_code=200, body={"result": []})
-        os.environ["SN_U"] = "u"
-        os.environ["SN_P"] = "p"
+        monkeypatch.setenv("SN_U", "u")
+        monkeypatch.setenv("SN_P", "p")
         try:
             source = ServiceNowSource(
                 {"instance": "dev", "user_env": "SN_U", "pass_env": "SN_P"},
@@ -433,12 +433,12 @@ class TestServiceNowConnector:
         finally:
             del os.environ["SN_U"], os.environ["SN_P"]
 
-    def test_health_not_ok_on_error(self):
+    def test_health_not_ok_on_error(self, monkeypatch):
         from general_ludd.connectors.servicenow import ServiceNowSource
 
         transport = MockHttpResponseTransport(status_code=500, body={})
-        os.environ["SN_U2"] = "u"
-        os.environ["SN_P2"] = "p"
+        monkeypatch.setenv("SN_U2", "u")
+        monkeypatch.setenv("SN_P2", "p")
         try:
             source = ServiceNowSource(
                 {"instance": "dev", "user_env": "SN_U2", "pass_env": "SN_P2"},
@@ -449,7 +449,7 @@ class TestServiceNowConnector:
         finally:
             del os.environ["SN_U2"], os.environ["SN_P2"]
 
-    def test_query_returns_normalized_records(self):
+    def test_query_returns_normalized_records(self, monkeypatch):
         from general_ludd.connectors.servicenow import ServiceNowSource
 
         transport = MockHttpResponseTransport(
@@ -466,8 +466,8 @@ class TestServiceNowConnector:
                 ]
             },
         )
-        os.environ["SN_U3"] = "u"
-        os.environ["SN_P3"] = "p"
+        monkeypatch.setenv("SN_U3", "u")
+        monkeypatch.setenv("SN_P3", "p")
         try:
             source = ServiceNowSource(
                 {"instance": "dev", "user_env": "SN_U3", "pass_env": "SN_P3"},
@@ -493,10 +493,10 @@ class TestZendeskConnector:
         with pytest.raises((ValueError, RuntimeError)):
             ZendeskSource({})
 
-    def test_constructs_with_valid_config(self):
+    def test_constructs_with_valid_config(self, monkeypatch):
         from general_ludd.connectors.zendesk import ZendeskSource
 
-        os.environ["ZD_TOK_B4"] = "tok"
+        monkeypatch.setenv("ZD_TOK_B4", "tok")
         try:
             source = ZendeskSource({
                 "subdomain": "mycompany",
@@ -513,11 +513,11 @@ class TestZendeskConnector:
         with pytest.raises((ValueError, RuntimeError)):
             ZendeskSource({"subdomain": "x", "token_env": "T", "base_url": "http://127.0.0.1"})
 
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.zendesk import ZendeskSource
 
         transport = MockHttpResponseTransport(status_code=200, body={"tickets": []})
-        os.environ["ZD_TOK"] = "tok"
+        monkeypatch.setenv("ZD_TOK", "tok")
         try:
             source = ZendeskSource(
                 {"subdomain": "test", "token_env": "ZD_TOK"},
@@ -528,11 +528,11 @@ class TestZendeskConnector:
         finally:
             del os.environ["ZD_TOK"]
 
-    def test_health_not_ok_on_error(self):
+    def test_health_not_ok_on_error(self, monkeypatch):
         from general_ludd.connectors.zendesk import ZendeskSource
 
         transport = MockHttpResponseTransport(status_code=500, body={})
-        os.environ["ZD_TOK_2"] = "tok"
+        monkeypatch.setenv("ZD_TOK_2", "tok")
         try:
             source = ZendeskSource(
                 {"subdomain": "test", "token_env": "ZD_TOK_2"},
@@ -543,7 +543,7 @@ class TestZendeskConnector:
         finally:
             del os.environ["ZD_TOK_2"]
 
-    def test_query_returns_records(self):
+    def test_query_returns_records(self, monkeypatch):
         from general_ludd.connectors.zendesk import ZendeskSource
 
         transport = MockHttpResponseTransport(
@@ -559,7 +559,7 @@ class TestZendeskConnector:
                 ]
             },
         )
-        os.environ["ZD_T_Q"] = "tok"
+        monkeypatch.setenv("ZD_T_Q", "tok")
         try:
             source = ZendeskSource(
                 {"subdomain": "test", "token_env": "ZD_T_Q"},
@@ -680,21 +680,21 @@ class TestRollbarConnector:
         with pytest.raises((ValueError, RuntimeError)):
             RollbarSource({})
 
-    def test_constructs_with_valid_config(self):
+    def test_constructs_with_valid_config(self, monkeypatch):
         from general_ludd.connectors.rollbar import RollbarSource
 
-        os.environ["ROLLBAR_TOK"] = "tok"
+        monkeypatch.setenv("ROLLBAR_TOK", "tok")
         try:
             source = RollbarSource({"token_env": "ROLLBAR_TOK", "name": "my-rollbar"})
             assert source.name == "my-rollbar"
         finally:
             del os.environ["ROLLBAR_TOK"]
 
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.rollbar import RollbarSource
 
         transport = MockHttpResponseTransport(status_code=200, body={"result": []})
-        os.environ["RB_TOK"] = "tok"
+        monkeypatch.setenv("RB_TOK", "tok")
         try:
             source = RollbarSource({"token_env": "RB_TOK"}, transport=transport)
             result = source.health()
@@ -702,11 +702,11 @@ class TestRollbarConnector:
         finally:
             del os.environ["RB_TOK"]
 
-    def test_health_not_ok_on_error(self):
+    def test_health_not_ok_on_error(self, monkeypatch):
         from general_ludd.connectors.rollbar import RollbarSource
 
         transport = MockHttpResponseTransport(status_code=500, body={})
-        os.environ["RB_TOK2"] = "tok"
+        monkeypatch.setenv("RB_TOK2", "tok")
         try:
             source = RollbarSource({"token_env": "RB_TOK2"}, transport=transport)
             result = source.health()
@@ -714,7 +714,7 @@ class TestRollbarConnector:
         finally:
             del os.environ["RB_TOK2"]
 
-    def test_query_returns_records(self):
+    def test_query_returns_records(self, monkeypatch):
         from general_ludd.connectors.rollbar import RollbarSource
 
         transport = MockHttpResponseTransport(
@@ -733,7 +733,7 @@ class TestRollbarConnector:
                 }
             },
         )
-        os.environ["RB_Q"] = "tok"
+        monkeypatch.setenv("RB_Q", "tok")
         try:
             source = RollbarSource({"token_env": "RB_Q"}, transport=transport)
             records = source.query({})
@@ -766,10 +766,10 @@ class TestGraylogConnector:
         with pytest.raises((ValueError, RuntimeError)):
             GraylogSource({"base_url": "http://127.0.0.1", "token_env": "G_T"})
 
-    def test_constructs_with_valid_config(self):
+    def test_constructs_with_valid_config(self, monkeypatch):
         from general_ludd.connectors.graylog import GraylogSource
 
-        os.environ["GL_TOK"] = "tok"
+        monkeypatch.setenv("GL_TOK", "tok")
         try:
             source = GraylogSource(
                 {"base_url": "https://graylog.example.com", "token_env": "GL_TOK"},
@@ -779,11 +779,11 @@ class TestGraylogConnector:
         finally:
             del os.environ["GL_TOK"]
 
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.graylog import GraylogSource
 
         transport = MockHttpResponseTransport(status_code=200, body={"messages": []})
-        os.environ["GL_H"] = "tok"
+        monkeypatch.setenv("GL_H", "tok")
         try:
             source = GraylogSource(
                 {"base_url": "https://gl.example.com", "token_env": "GL_H"},
@@ -794,11 +794,11 @@ class TestGraylogConnector:
         finally:
             del os.environ["GL_H"]
 
-    def test_health_not_ok_on_error(self):
+    def test_health_not_ok_on_error(self, monkeypatch):
         from general_ludd.connectors.graylog import GraylogSource
 
         transport = MockHttpResponseTransport(status_code=500, body={})
-        os.environ["GL_H2"] = "tok"
+        monkeypatch.setenv("GL_H2", "tok")
         try:
             source = GraylogSource(
                 {"base_url": "https://gl.example.com", "token_env": "GL_H2"},
@@ -809,7 +809,7 @@ class TestGraylogConnector:
         finally:
             del os.environ["GL_H2"]
 
-    def test_query_returns_normalized_records(self):
+    def test_query_returns_normalized_records(self, monkeypatch):
         from general_ludd.connectors.graylog import GraylogSource
 
         transport = MockHttpResponseTransport(
@@ -827,7 +827,7 @@ class TestGraylogConnector:
                 ]
             },
         )
-        os.environ["GL_Q"] = "tok"
+        monkeypatch.setenv("GL_Q", "tok")
         try:
             source = GraylogSource(
                 {"base_url": "https://gl.example.com", "token_env": "GL_Q"},
@@ -976,24 +976,24 @@ class TestLinearConnector:
         with pytest.raises((ValueError, RuntimeError)):
             LinearSource({})
 
-    def test_constructs_with_valid_config(self):
+    def test_constructs_with_valid_config(self, monkeypatch):
         from general_ludd.connectors.linear import LinearSource
 
-        os.environ["LIN_TOK"] = "lin-api-key"
+        monkeypatch.setenv("LIN_TOK", "lin-api-key")
         try:
             source = LinearSource({"token_env": "LIN_TOK", "team_id": "TEAM1"})
             assert source.KIND == "issues"
         finally:
             del os.environ["LIN_TOK"]
 
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.linear import LinearSource
 
         transport = MockHttpResponseTransport(
             status_code=200,
             body={"data": {"viewer": {"id": "u1", "name": "Test User"}}},
         )
-        os.environ["LIN_H"] = "tok"
+        monkeypatch.setenv("LIN_H", "tok")
         try:
             source = LinearSource({"token_env": "LIN_H"}, transport=transport)
             result = source.health()
@@ -1001,11 +1001,11 @@ class TestLinearConnector:
         finally:
             del os.environ["LIN_H"]
 
-    def test_health_not_ok_on_401(self):
+    def test_health_not_ok_on_401(self, monkeypatch):
         from general_ludd.connectors.linear import LinearSource
 
         transport = MockHttpResponseTransport(status_code=401, body={"errors": [{"message": "unauthorized"}]})
-        os.environ["LIN_H2"] = "tok"
+        monkeypatch.setenv("LIN_H2", "tok")
         try:
             source = LinearSource({"token_env": "LIN_H2"}, transport=transport)
             result = source.health()
@@ -1013,7 +1013,7 @@ class TestLinearConnector:
         finally:
             del os.environ["LIN_H2"]
 
-    def test_query_returns_normalized_issues(self):
+    def test_query_returns_normalized_issues(self, monkeypatch):
         from general_ludd.connectors.linear import LinearSource
 
         transport = MockHttpResponseTransport(
@@ -1039,7 +1039,7 @@ class TestLinearConnector:
                 }
             },
         )
-        os.environ["LIN_Q"] = "tok"
+        monkeypatch.setenv("LIN_Q", "tok")
         try:
             source = LinearSource({"token_env": "LIN_Q", "team_id": "T1"}, transport=transport)
             records = source.query({})
@@ -1049,13 +1049,13 @@ class TestLinearConnector:
         finally:
             del os.environ["LIN_Q"]
 
-    def test_query_handles_transport_error(self):
+    def test_query_handles_transport_error(self, monkeypatch):
         from general_ludd.connectors.linear import LinearSource
 
         def _fail(*_: object, **__: object) -> MockHttpResponse:
             raise OSError("network down")
 
-        os.environ["LIN_ERR"] = "tok"
+        monkeypatch.setenv("LIN_ERR", "tok")
         try:
             source = LinearSource({"token_env": "LIN_ERR"}, transport=_fail)
             records = source.query({})
@@ -1076,20 +1076,20 @@ class TestNotionConnector:
         with pytest.raises((ValueError, RuntimeError)):
             NotionSource({})
 
-    def test_config_requires_database_id(self):
+    def test_config_requires_database_id(self, monkeypatch):
         from general_ludd.connectors.notion import NotionSource
 
-        os.environ["NOT_TOK"] = "secret"
+        monkeypatch.setenv("NOT_TOK", "secret")
         try:
             with pytest.raises((ValueError, RuntimeError)):
                 NotionSource({"token_env": "NOT_TOK"})
         finally:
             del os.environ["NOT_TOK"]
 
-    def test_constructs_with_valid_config(self):
+    def test_constructs_with_valid_config(self, monkeypatch):
         from general_ludd.connectors.notion import NotionSource
 
-        os.environ["NOT_TOK"] = "secret"
+        monkeypatch.setenv("NOT_TOK", "secret")
         try:
             source = NotionSource({
                 "token_env": "NOT_TOK",
@@ -1100,11 +1100,11 @@ class TestNotionConnector:
         finally:
             del os.environ["NOT_TOK"]
 
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.notion import NotionSource
 
         transport = MockHttpResponseTransport(status_code=200, body={"results": []})
-        os.environ["NOT_H"] = "s"
+        monkeypatch.setenv("NOT_H", "s")
         try:
             source = NotionSource(
                 {"token_env": "NOT_H", "database_id": "db1"},
@@ -1115,11 +1115,11 @@ class TestNotionConnector:
         finally:
             del os.environ["NOT_H"]
 
-    def test_health_not_ok_on_error(self):
+    def test_health_not_ok_on_error(self, monkeypatch):
         from general_ludd.connectors.notion import NotionSource
 
         transport = MockHttpResponseTransport(status_code=403, body={})
-        os.environ["NOT_H2"] = "s"
+        monkeypatch.setenv("NOT_H2", "s")
         try:
             source = NotionSource(
                 {"token_env": "NOT_H2", "database_id": "db1"},
@@ -1130,7 +1130,7 @@ class TestNotionConnector:
         finally:
             del os.environ["NOT_H2"]
 
-    def test_query_returns_pages(self):
+    def test_query_returns_pages(self, monkeypatch):
         from general_ludd.connectors.notion import NotionSource
 
         transport = MockHttpResponseTransport(
@@ -1149,7 +1149,7 @@ class TestNotionConnector:
                 ]
             },
         )
-        os.environ["NOT_Q"] = "s"
+        monkeypatch.setenv("NOT_Q", "s")
         try:
             source = NotionSource(
                 {"token_env": "NOT_Q", "database_id": "db1"},
@@ -1174,11 +1174,11 @@ class TestTrelloConnector:
         with pytest.raises((ValueError, RuntimeError)):
             TrelloSource({})
 
-    def test_constructs_with_valid_config(self):
+    def test_constructs_with_valid_config(self, monkeypatch):
         from general_ludd.connectors.trello import TrelloSource
 
-        os.environ["TRELLO_KEY"] = "key"
-        os.environ["TRELLO_TOKEN"] = "tok"
+        monkeypatch.setenv("TRELLO_KEY", "key")
+        monkeypatch.setenv("TRELLO_TOKEN", "tok")
         try:
             source = TrelloSource({
                 "key_env": "TRELLO_KEY",
@@ -1189,12 +1189,12 @@ class TestTrelloConnector:
         finally:
             del os.environ["TRELLO_KEY"], os.environ["TRELLO_TOKEN"]
 
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.trello import TrelloSource
 
         transport = MockHttpResponseTransport(status_code=200, body=[])
-        os.environ["TK"] = "k"
-        os.environ["TT"] = "t"
+        monkeypatch.setenv("TK", "k")
+        monkeypatch.setenv("TT", "t")
         try:
             source = TrelloSource(
                 {"key_env": "TK", "token_env": "TT", "board_id": "b1"},
@@ -1205,12 +1205,12 @@ class TestTrelloConnector:
         finally:
             del os.environ["TK"], os.environ["TT"]
 
-    def test_health_not_ok_on_error(self):
+    def test_health_not_ok_on_error(self, monkeypatch):
         from general_ludd.connectors.trello import TrelloSource
 
         transport = MockHttpResponseTransport(status_code=404, body="not found")
-        os.environ["TK2"] = "k"
-        os.environ["TT2"] = "t"
+        monkeypatch.setenv("TK2", "k")
+        monkeypatch.setenv("TT2", "t")
         try:
             source = TrelloSource(
                 {"key_env": "TK2", "token_env": "TT2", "board_id": "bad"},
@@ -1221,7 +1221,7 @@ class TestTrelloConnector:
         finally:
             del os.environ["TK2"], os.environ["TT2"]
 
-    def test_query_returns_cards(self):
+    def test_query_returns_cards(self, monkeypatch):
         from general_ludd.connectors.trello import TrelloSource
 
         transport = MockHttpResponseTransport(
@@ -1236,8 +1236,8 @@ class TestTrelloConnector:
                 }
             ],
         )
-        os.environ["TK3"] = "k"
-        os.environ["TT3"] = "t"
+        monkeypatch.setenv("TK3", "k")
+        monkeypatch.setenv("TT3", "t")
         try:
             source = TrelloSource(
                 {"key_env": "TK3", "token_env": "TT3", "board_id": "b1"},
@@ -1263,10 +1263,10 @@ class TestAirtableConnector:
         with pytest.raises((ValueError, RuntimeError)):
             AirtableSource({})
 
-    def test_constructs_with_valid_config(self):
+    def test_constructs_with_valid_config(self, monkeypatch):
         from general_ludd.connectors.airtable import AirtableSource
 
-        os.environ["AT_TOK"] = "tok"
+        monkeypatch.setenv("AT_TOK", "tok")
         try:
             source = AirtableSource({
                 "token_env": "AT_TOK",
@@ -1277,11 +1277,11 @@ class TestAirtableConnector:
         finally:
             del os.environ["AT_TOK"]
 
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.airtable import AirtableSource
 
         transport = MockHttpResponseTransport(status_code=200, body={"records": []})
-        os.environ["AT_H"] = "tok"
+        monkeypatch.setenv("AT_H", "tok")
         try:
             source = AirtableSource(
                 {"token_env": "AT_H", "base_id": "app1"},
@@ -1292,11 +1292,11 @@ class TestAirtableConnector:
         finally:
             del os.environ["AT_H"]
 
-    def test_health_not_ok_on_error(self):
+    def test_health_not_ok_on_error(self, monkeypatch):
         from general_ludd.connectors.airtable import AirtableSource
 
         transport = MockHttpResponseTransport(status_code=403, body={})
-        os.environ["AT_H2"] = "tok"
+        monkeypatch.setenv("AT_H2", "tok")
         try:
             source = AirtableSource(
                 {"token_env": "AT_H2", "base_id": "app1"},
@@ -1307,7 +1307,7 @@ class TestAirtableConnector:
         finally:
             del os.environ["AT_H2"]
 
-    def test_query_returns_records(self):
+    def test_query_returns_records(self, monkeypatch):
         from general_ludd.connectors.airtable import AirtableSource
 
         transport = MockHttpResponseTransport(
@@ -1322,7 +1322,7 @@ class TestAirtableConnector:
                 ]
             },
         )
-        os.environ["AT_Q"] = "tok"
+        monkeypatch.setenv("AT_Q", "tok")
         try:
             source = AirtableSource(
                 {"token_env": "AT_Q", "base_id": "app1"},
@@ -1347,10 +1347,10 @@ class TestAsanaConnector:
         with pytest.raises((ValueError, RuntimeError)):
             AsanaSource({})
 
-    def test_constructs_with_valid_config(self):
+    def test_constructs_with_valid_config(self, monkeypatch):
         from general_ludd.connectors.asana import AsanaSource
 
-        os.environ["ASANA_TOK"] = "tok"
+        monkeypatch.setenv("ASANA_TOK", "tok")
         try:
             source = AsanaSource({
                 "token_env": "ASANA_TOK",
@@ -1361,11 +1361,11 @@ class TestAsanaConnector:
         finally:
             del os.environ["ASANA_TOK"]
 
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.asana import AsanaSource
 
         transport = MockHttpResponseTransport(status_code=200, body={"data": []})
-        os.environ["AS_H"] = "tok"
+        monkeypatch.setenv("AS_H", "tok")
         try:
             source = AsanaSource(
                 {"token_env": "AS_H"},
@@ -1376,11 +1376,11 @@ class TestAsanaConnector:
         finally:
             del os.environ["AS_H"]
 
-    def test_health_not_ok_on_error(self):
+    def test_health_not_ok_on_error(self, monkeypatch):
         from general_ludd.connectors.asana import AsanaSource
 
         transport = MockHttpResponseTransport(status_code=500, body={})
-        os.environ["AS_H2"] = "tok"
+        monkeypatch.setenv("AS_H2", "tok")
         try:
             source = AsanaSource(
                 {"token_env": "AS_H2"},
@@ -1391,7 +1391,7 @@ class TestAsanaConnector:
         finally:
             del os.environ["AS_H2"]
 
-    def test_query_returns_tasks(self):
+    def test_query_returns_tasks(self, monkeypatch):
         from general_ludd.connectors.asana import AsanaSource
 
         transport = MockHttpResponseTransport(
@@ -1409,7 +1409,7 @@ class TestAsanaConnector:
                 ]
             },
         )
-        os.environ["AS_Q"] = "tok"
+        monkeypatch.setenv("AS_Q", "tok")
         try:
             source = AsanaSource(
                 {"token_env": "AS_Q"},
@@ -1434,10 +1434,10 @@ class TestMondayConnector:
         with pytest.raises((ValueError, RuntimeError)):
             MondaySource({})
 
-    def test_constructs_with_valid_config(self):
+    def test_constructs_with_valid_config(self, monkeypatch):
         from general_ludd.connectors.monday import MondaySource
 
-        os.environ["MON_TOK"] = "tok"
+        monkeypatch.setenv("MON_TOK", "tok")
         try:
             source = MondaySource({
                 "token_env": "MON_TOK",
@@ -1447,14 +1447,14 @@ class TestMondayConnector:
         finally:
             del os.environ["MON_TOK"]
 
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.monday import MondaySource
 
         transport = MockHttpResponseTransport(
             status_code=200,
             body={"data": {"me": {"id": "u1"}}},
         )
-        os.environ["MON_H"] = "tok"
+        monkeypatch.setenv("MON_H", "tok")
         try:
             source = MondaySource({"token_env": "MON_H"}, transport=transport)
             result = source.health()
@@ -1462,11 +1462,11 @@ class TestMondayConnector:
         finally:
             del os.environ["MON_H"]
 
-    def test_health_not_ok_on_error(self):
+    def test_health_not_ok_on_error(self, monkeypatch):
         from general_ludd.connectors.monday import MondaySource
 
         transport = MockHttpResponseTransport(status_code=401, body={})
-        os.environ["MON_H2"] = "tok"
+        monkeypatch.setenv("MON_H2", "tok")
         try:
             source = MondaySource({"token_env": "MON_H2"}, transport=transport)
             result = source.health()
@@ -1474,7 +1474,7 @@ class TestMondayConnector:
         finally:
             del os.environ["MON_H2"]
 
-    def test_query_returns_items(self):
+    def test_query_returns_items(self, monkeypatch):
         from general_ludd.connectors.monday import MondaySource
 
         transport = MockHttpResponseTransport(
@@ -1499,7 +1499,7 @@ class TestMondayConnector:
                 }
             },
         )
-        os.environ["MON_Q"] = "tok"
+        monkeypatch.setenv("MON_Q", "tok")
         try:
             source = MondaySource({"token_env": "MON_Q"}, transport=transport)
             records = source.query({})

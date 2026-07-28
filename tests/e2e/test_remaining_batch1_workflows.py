@@ -656,10 +656,10 @@ class TestRendererMaxBytes:
 
         assert _max_bytes() == 1024 * 1024
 
-    def test_max_bytes_env_set_valid(self):
+    def test_max_bytes_env_set_valid(self, monkeypatch):
         from general_ludd.renderers.runner import _max_bytes
 
-        os.environ["GLUDD_RENDER_MAX_BYTES"] = "512"
+        monkeypatch.setenv("GLUDD_RENDER_MAX_BYTES", "512")
         try:
             assert _max_bytes() == 512
         finally:

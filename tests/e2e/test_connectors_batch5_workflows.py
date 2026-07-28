@@ -126,10 +126,10 @@ class TestOpenShiftConnector:
         with pytest.raises((ValueError, RuntimeError)):
             OpenShiftSource({"api_server": "http://127.0.0.1:6443", "token_env": "T"})
 
-    def test_constructs_with_valid_config(self):
+    def test_constructs_with_valid_config(self, monkeypatch):
         from general_ludd.connectors.openshift import OpenShiftSource
 
-        os.environ["OC_TOK_B5"] = "sha256~abc"
+        monkeypatch.setenv("OC_TOK_B5", "sha256~abc")
         try:
             source = OpenShiftSource({
                 "api_server": "https://api.openshift.example.com:6443",
@@ -142,11 +142,11 @@ class TestOpenShiftConnector:
         finally:
             del os.environ["OC_TOK_B5"]
 
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.openshift import OpenShiftSource
 
         transport = MockHttpTransport(status_code=200, body={"kind": "Status", "status": "ok"})
-        os.environ["OC_TOK_H"] = "tok"
+        monkeypatch.setenv("OC_TOK_H", "tok")
         try:
             source = OpenShiftSource(
                 {"api_server": "https://api.example.com:6443", "token_env": "OC_TOK_H", "allow_private": True},
@@ -157,11 +157,11 @@ class TestOpenShiftConnector:
         finally:
             del os.environ["OC_TOK_H"]
 
-    def test_health_not_ok_on_error(self):
+    def test_health_not_ok_on_error(self, monkeypatch):
         from general_ludd.connectors.openshift import OpenShiftSource
 
         transport = MockHttpTransport(status_code=401, body={})
-        os.environ["OC_TOK_H2"] = "tok"
+        monkeypatch.setenv("OC_TOK_H2", "tok")
         try:
             source = OpenShiftSource(
                 {"api_server": "https://api.example.com:6443", "token_env": "OC_TOK_H2", "allow_private": True},
@@ -172,7 +172,7 @@ class TestOpenShiftConnector:
         finally:
             del os.environ["OC_TOK_H2"]
 
-    def test_query_returns_pods(self):
+    def test_query_returns_pods(self, monkeypatch):
         from general_ludd.connectors.openshift import OpenShiftSource
 
         transport = MockHttpTransport(
@@ -196,7 +196,7 @@ class TestOpenShiftConnector:
                 ]
             },
         )
-        os.environ["OC_TOK_Q"] = "tok"
+        monkeypatch.setenv("OC_TOK_Q", "tok")
         try:
             source = OpenShiftSource(
                 {"api_server": "https://api.example.com:6443", "token_env": "OC_TOK_Q", "allow_private": True},
@@ -221,10 +221,10 @@ class TestNomadConnector:
         with pytest.raises((ValueError, RuntimeError)):
             NomadSource({})
 
-    def test_constructs_with_valid_config(self):
+    def test_constructs_with_valid_config(self, monkeypatch):
         from general_ludd.connectors.nomad import NomadSource
 
-        os.environ["NOMAD_TOK"] = "tok"
+        monkeypatch.setenv("NOMAD_TOK", "tok")
         try:
             source = NomadSource({
                 "base_url": "https://nomad.example.com:4646",
@@ -241,11 +241,11 @@ class TestNomadConnector:
         with pytest.raises((ValueError, RuntimeError)):
             NomadSource({"base_url": "http://10.0.0.1:4646", "token_env": "T"})
 
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.nomad import NomadSource
 
         transport = MockHttpTransport(status_code=200, body={"KnownLeader": True})
-        os.environ["NOM_H"] = "tok"
+        monkeypatch.setenv("NOM_H", "tok")
         try:
             source = NomadSource(
                 {"base_url": "https://nomad.example.com:4646", "token_env": "NOM_H", "allow_private": True},
@@ -256,11 +256,11 @@ class TestNomadConnector:
         finally:
             del os.environ["NOM_H"]
 
-    def test_health_not_ok_on_error(self):
+    def test_health_not_ok_on_error(self, monkeypatch):
         from general_ludd.connectors.nomad import NomadSource
 
         transport = MockHttpTransport(status_code=500, body={})
-        os.environ["NOM_H2"] = "tok"
+        monkeypatch.setenv("NOM_H2", "tok")
         try:
             source = NomadSource(
                 {"base_url": "https://nomad.example.com:4646", "token_env": "NOM_H2", "allow_private": True},
@@ -271,7 +271,7 @@ class TestNomadConnector:
         finally:
             del os.environ["NOM_H2"]
 
-    def test_query_returns_records(self):
+    def test_query_returns_records(self, monkeypatch):
         from general_ludd.connectors.nomad import NomadSource
 
         transport = MockHttpTransport(
@@ -287,7 +287,7 @@ class TestNomadConnector:
                 }
             ],
         )
-        os.environ["NOM_Q"] = "tok"
+        monkeypatch.setenv("NOM_Q", "tok")
         try:
             source = NomadSource(
                 {"base_url": "https://nomad.example.com:4646", "token_env": "NOM_Q", "allow_private": True},
@@ -644,11 +644,11 @@ class TestRedfishConnector:
         with pytest.raises((ValueError, RuntimeError)):
             RedfishSource({})
 
-    def test_constructs_with_valid_config(self):
+    def test_constructs_with_valid_config(self, monkeypatch):
         from general_ludd.connectors.redfish import RedfishSource
 
-        os.environ["RF_USR"] = "admin"
-        os.environ["RF_PWD"] = "pass"  # pragma: allowlist secret
+        monkeypatch.setenv("RF_USR", "admin")
+        monkeypatch.setenv("RF_PWD", "pass")  # pragma: allowlist secret
         try:
             source = RedfishSource({
                 "base_url": "https://idrac.example.com",
@@ -659,12 +659,12 @@ class TestRedfishConnector:
         finally:
             del os.environ["RF_USR"], os.environ["RF_PWD"]
 
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.redfish import RedfishSource
 
         transport = MockHttpTransport(status_code=200, body={"@odata.id": "/redfish/v1/"})
-        os.environ["RF_U"] = "a"
-        os.environ["RF_P"] = "p"
+        monkeypatch.setenv("RF_U", "a")
+        monkeypatch.setenv("RF_P", "p")
         try:
             source = RedfishSource(
                 {
@@ -679,12 +679,12 @@ class TestRedfishConnector:
         finally:
             del os.environ["RF_U"], os.environ["RF_P"]
 
-    def test_health_not_ok_on_error(self):
+    def test_health_not_ok_on_error(self, monkeypatch):
         from general_ludd.connectors.redfish import RedfishSource
 
         transport = MockHttpTransport(status_code=500, body={})
-        os.environ["RF_U2"] = "a"
-        os.environ["RF_P2"] = "p"
+        monkeypatch.setenv("RF_U2", "a")
+        monkeypatch.setenv("RF_P2", "p")
         try:
             source = RedfishSource(
                 {
@@ -699,7 +699,7 @@ class TestRedfishConnector:
         finally:
             del os.environ["RF_U2"], os.environ["RF_P2"]
 
-    def test_query_returns_thermal_data(self):
+    def test_query_returns_thermal_data(self, monkeypatch):
         from general_ludd.connectors.redfish import RedfishSource
 
         transport = MockHttpTransport(
@@ -728,8 +728,8 @@ class TestRedfishConnector:
                 ],
             },
         )
-        os.environ["RF_Q"] = "a"
-        os.environ["RF_PQ"] = "p"
+        monkeypatch.setenv("RF_Q", "a")
+        monkeypatch.setenv("RF_PQ", "p")
         try:
             source = RedfishSource(
                 {

@@ -15,7 +15,6 @@ Targets:
 
 from __future__ import annotations
 
-import os
 import time
 from dataclasses import dataclass, field
 from typing import Any, cast
@@ -412,11 +411,11 @@ class TestSlackConnector:
 
             SlackSource({}, transport=cast(HttpTransport, object()))
 
-    def test_health_returns_dict(self):
+    def test_health_returns_dict(self, monkeypatch):
         from general_ludd.connectors.slack import SlackSource
 
         transport = MockHttpTransport(default_status=200, default_body={"ok": True})
-        os.environ["SLACK_TEST_TOKEN"] = "xoxb-test"
+        monkeypatch.setenv("SLACK_TEST_TOKEN", "xoxb-test")
         src = SlackSource(
             {"base_url": "https://slack.com/api", "token_env": "SLACK_TEST_TOKEN"},
             transport=cast(Any, transport),
@@ -425,11 +424,11 @@ class TestSlackConnector:
         assert isinstance(result, dict)
         assert "ok" in result
 
-    def test_send_notification_webhook_ok(self):
+    def test_send_notification_webhook_ok(self, monkeypatch):
         from general_ludd.connectors.slack import SlackSource
 
         transport = MockHttpTransport(default_status=200, default_body="ok")
-        os.environ["SLACK_TEST_TOKEN"] = "xoxb-test"
+        monkeypatch.setenv("SLACK_TEST_TOKEN", "xoxb-test")
         src = SlackSource(
             {
                 "base_url": "https://slack.com/api",
@@ -441,11 +440,11 @@ class TestSlackConnector:
         result = src.send_notification("hello")
         assert result["ok"] is True
 
-    def test_send_notification_fail_soft(self):
+    def test_send_notification_fail_soft(self, monkeypatch):
         from general_ludd.connectors.slack import SlackSource
 
         transport = MockHttpTransport(default_status=500, default_body={})
-        os.environ["SLACK_TEST_TOKEN"] = "xoxb-test"
+        monkeypatch.setenv("SLACK_TEST_TOKEN", "xoxb-test")
         src = SlackSource(
             {
                 "base_url": "https://slack.com/api",
@@ -457,10 +456,10 @@ class TestSlackConnector:
         result = src.send_notification("hello")
         assert result["ok"] is False
 
-    def test_read_channel_history_requires_channel_id(self):
+    def test_read_channel_history_requires_channel_id(self, monkeypatch):
         from general_ludd.connectors.slack import SlackSource
 
-        os.environ["SLACK_TEST_TOKEN"] = "xoxb-test"
+        monkeypatch.setenv("SLACK_TEST_TOKEN", "xoxb-test")
         src = SlackSource(
             {"base_url": "https://slack.com/api", "token_env": "SLACK_TEST_TOKEN"},
             transport=cast(Any, MockHttpTransport()),
@@ -470,7 +469,7 @@ class TestSlackConnector:
 
 
 class TestPagerDutyConnector:
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.pagerduty import PagerDutySource
 
         transport = MockHttpTransport(default_status=200, default_body={"incidents": []})
@@ -478,11 +477,11 @@ class TestPagerDutyConnector:
             {"token_env": "PD_TOKEN"},
             transport=cast(Any, transport),
         )
-        os.environ["PD_TOKEN"] = "test-token"
+        monkeypatch.setenv("PD_TOKEN", "test-token")
         result = src.health()
         assert isinstance(result, dict)
 
-    def test_query_returns_records(self):
+    def test_query_returns_records(self, monkeypatch):
         from general_ludd.connectors.pagerduty import PagerDutySource
 
         transport = MockHttpTransport(
@@ -501,7 +500,7 @@ class TestPagerDutyConnector:
                 ]
             },
         )
-        os.environ["PD_TOKEN"] = "test-token"
+        monkeypatch.setenv("PD_TOKEN", "test-token")
         src = PagerDutySource(
             {"token_env": "PD_TOKEN"},
             transport=cast(Any, transport),
@@ -522,16 +521,16 @@ class TestPagerDutyConnector:
 
 
 class TestOpsgenieConnector:
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.opsgenie import OpsgenieSource
 
         transport = MockHttpTransport(default_status=200, default_body={"data": []})
-        os.environ["OPSGENIE_TOKEN"] = "test-key"
+        monkeypatch.setenv("OPSGENIE_TOKEN", "test-key")
         src = OpsgenieSource({"token_env": "OPSGENIE_TOKEN"}, transport=cast(Any, transport))
         result = src.health()
         assert isinstance(result, dict)
 
-    def test_query_returns_records(self):
+    def test_query_returns_records(self, monkeypatch):
         from general_ludd.connectors.opsgenie import OpsgenieSource
 
         transport = MockHttpTransport(
@@ -548,7 +547,7 @@ class TestOpsgenieConnector:
                 ]
             },
         )
-        os.environ["OPSGENIE_TOKEN"] = "test-key"
+        monkeypatch.setenv("OPSGENIE_TOKEN", "test-key")
         src = OpsgenieSource({"token_env": "OPSGENIE_TOKEN"}, transport=cast(Any, transport))
         records = src.query({})
         assert isinstance(records, list)
@@ -623,16 +622,16 @@ class TestDatadogConnector:
 
 
 class TestSentryConnector:
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.sentry import SentrySource
 
         transport = MockHttpTransport(default_status=200, default_body=[{"id": "1"}])
-        os.environ["SENTRY_TOKEN"] = "test-auth"
+        monkeypatch.setenv("SENTRY_TOKEN", "test-auth")
         src = SentrySource({"token_env": "SENTRY_TOKEN"}, transport=cast(Any, transport))
         result = src.health()
         assert isinstance(result, dict)
 
-    def test_query_issues(self):
+    def test_query_issues(self, monkeypatch):
         from general_ludd.connectors.sentry import SentrySource
 
         transport = MockHttpTransport(
@@ -648,7 +647,7 @@ class TestSentryConnector:
                 }
             ],
         )
-        os.environ["SENTRY_TOKEN"] = "test-auth"
+        monkeypatch.setenv("SENTRY_TOKEN", "test-auth")
         src = SentrySource({"token_env": "SENTRY_TOKEN"}, transport=cast(Any, transport))
         records = src.query({"mode": "issues"})
         assert isinstance(records, list)
@@ -665,16 +664,16 @@ class TestSentryConnector:
 
 
 class TestGrafanaOnCallConnector:
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.grafana_oncall import GrafanaOnCallSource
 
         transport = MockHttpTransport(default_status=200, default_body={"results": []})
-        os.environ["GRAFANA_ONCALL_TOKEN"] = "test-token"
+        monkeypatch.setenv("GRAFANA_ONCALL_TOKEN", "test-token")
         src = GrafanaOnCallSource({"token_env": "GRAFANA_ONCALL_TOKEN"}, transport=cast(Any, transport))
         result = src.health()
         assert isinstance(result, dict)
 
-    def test_query_returns_records(self):
+    def test_query_returns_records(self, monkeypatch):
         from general_ludd.connectors.grafana_oncall import GrafanaOnCallSource
 
         transport = MockHttpTransport(
@@ -691,7 +690,7 @@ class TestGrafanaOnCallConnector:
                 ]
             },
         )
-        os.environ["GRAFANA_ONCALL_TOKEN"] = "test-token"
+        monkeypatch.setenv("GRAFANA_ONCALL_TOKEN", "test-token")
         src = GrafanaOnCallSource({"token_env": "GRAFANA_ONCALL_TOKEN"}, transport=cast(Any, transport))
         records = src.query({})
         assert isinstance(records, list)
@@ -699,23 +698,23 @@ class TestGrafanaOnCallConnector:
 
 
 class TestHoneycombConnector:
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.honeycomb import HoneycombSource
 
         transport = MockHttpTransport(default_status=200, default_body={"data": []})
-        os.environ["HONEYCOMB_KEY"] = "test-key"
+        monkeypatch.setenv("HONEYCOMB_KEY", "test-key")
         src = HoneycombSource({"api_key_env": "HONEYCOMB_KEY", "dataset": "prod"}, transport=cast(Any, transport))
         result = src.health()
         assert isinstance(result, dict)
 
-    def test_query_returns_records(self):
+    def test_query_returns_records(self, monkeypatch):
         from general_ludd.connectors.honeycomb import HoneycombSource
 
         transport = MockHttpTransport(
             default_status=200,
             default_body={"data": [{"id": "e1", "timestamp": "2025-01-01T00:00:00Z"}]},
         )
-        os.environ["HONEYCOMB_KEY"] = "test-key"
+        monkeypatch.setenv("HONEYCOMB_KEY", "test-key")
         src = HoneycombSource({"api_key_env": "HONEYCOMB_KEY", "dataset": "prod"}, transport=cast(Any, transport))
         records = src.query({})
         assert isinstance(records, list)
@@ -751,11 +750,11 @@ class TestSigNozConnector:
 
 
 class TestAppDynamicsConnector:
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.appdynamics import AppDynamicsSource
 
         transport = MockHttpTransport(default_status=200, default_body={"items": []})
-        os.environ["APPD_TOKEN"] = "test-token"
+        monkeypatch.setenv("APPD_TOKEN", "test-token")
         src = AppDynamicsSource(
             {"token_env": "APPD_TOKEN", "base_url": "https://appd.example.com/"},
             transport=cast(Any, transport),
@@ -763,14 +762,14 @@ class TestAppDynamicsConnector:
         result = src.health()
         assert isinstance(result, dict)
 
-    def test_query_returns_records(self):
+    def test_query_returns_records(self, monkeypatch):
         from general_ludd.connectors.appdynamics import AppDynamicsSource
 
         transport = MockHttpTransport(
             default_status=200,
             default_body={"items": [{"name": "cpu", "value": 75.0, "timestamp": "2025-01-01T00:00:00Z"}]},
         )
-        os.environ["APPD_TOKEN"] = "test-token"
+        monkeypatch.setenv("APPD_TOKEN", "test-token")
         src = AppDynamicsSource(
             {"token_env": "APPD_TOKEN", "base_url": "https://appd.example.com/"},
             transport=cast(Any, transport),
@@ -780,16 +779,16 @@ class TestAppDynamicsConnector:
 
 
 class TestSplunkConnector:
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.splunk import SplunkSource
 
         transport = MockHttpTransport(default_status=200, default_body={"results": []})
-        os.environ["SPLUNK_TOKEN"] = "test-token"
+        monkeypatch.setenv("SPLUNK_TOKEN", "test-token")
         src = SplunkSource({"token_env": "SPLUNK_TOKEN"}, transport=cast(Any, transport))
         result = src.health()
         assert isinstance(result, dict)
 
-    def test_query_returns_records(self):
+    def test_query_returns_records(self, monkeypatch):
         from general_ludd.connectors.splunk import SplunkSource
 
         transport = MockHttpTransport(
@@ -804,7 +803,7 @@ class TestSplunkConnector:
                 ]
             },
         )
-        os.environ["SPLUNK_TOKEN"] = "test-token"
+        monkeypatch.setenv("SPLUNK_TOKEN", "test-token")
         src = SplunkSource({"token_env": "SPLUNK_TOKEN"}, transport=cast(Any, transport))
         records = src.query({"search": "error"})
         assert isinstance(records, list)
@@ -1082,11 +1081,11 @@ class TestClickhouseStatsConnector:
 
 
 class TestCloudflareConnector:
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.cloudflare import CloudflareSource
 
         transport = MockHttpTransport(default_status=200, default_body={"success": True, "result": []})
-        os.environ["CF_TOKEN"] = "test-token"
+        monkeypatch.setenv("CF_TOKEN", "test-token")
         src = CloudflareSource(
             {"account_id": "abc123", "token_env": "CF_TOKEN"},
             transport=cast(Any, transport),
@@ -1094,7 +1093,7 @@ class TestCloudflareConnector:
         result = src.health()
         assert isinstance(result, dict)
 
-    def test_query_returns_records(self):
+    def test_query_returns_records(self, monkeypatch):
         from general_ludd.connectors.cloudflare import CloudflareSource
 
         transport = MockHttpTransport(
@@ -1111,7 +1110,7 @@ class TestCloudflareConnector:
                 ],
             },
         )
-        os.environ["CF_TOKEN"] = "test-token"
+        monkeypatch.setenv("CF_TOKEN", "test-token")
         src = CloudflareSource(
             {"account_id": "abc123", "token_env": "CF_TOKEN"},
             transport=cast(Any, transport),
@@ -1120,10 +1119,10 @@ class TestCloudflareConnector:
         assert isinstance(records, list)
         assert len(records) >= 1
 
-    def test_ssrf_rejects_internal(self):
+    def test_ssrf_rejects_internal(self, monkeypatch):
         from general_ludd.connectors.cloudflare import CloudflareSource
 
-        os.environ["CF_TOKEN"] = "test-token"
+        monkeypatch.setenv("CF_TOKEN", "test-token")
         with pytest.raises((ValueError, RuntimeError)):
             CloudflareSource(
                 {"account_id": "abc123", "token_env": "CF_TOKEN", "base_url": "http://10.0.0.1/"},
@@ -1397,7 +1396,7 @@ class TestOpenTsdbConnector:
 
 
 class TestInfluxDBConnector:
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.influxdb import InfluxDBSource
 
         transport = MockHttpTransport(default_status=200, default_body={"data": []})
@@ -1405,11 +1404,11 @@ class TestInfluxDBConnector:
             {"base_url": "https://influx.example.com/", "token_env": "INFLUX_TOKEN"},
             transport=cast(Any, transport),
         )
-        os.environ["INFLUX_TOKEN"] = "test-token"
+        monkeypatch.setenv("INFLUX_TOKEN", "test-token")
         result = src.health()
         assert isinstance(result, dict)
 
-    def test_query_returns_records(self):
+    def test_query_returns_records(self, monkeypatch):
         from general_ludd.connectors.influxdb import InfluxDBSource
 
         transport = MockHttpTransport(
@@ -1424,7 +1423,7 @@ class TestInfluxDBConnector:
                 ]
             },
         )
-        os.environ["INFLUX_TOKEN"] = "test-token"
+        monkeypatch.setenv("INFLUX_TOKEN", "test-token")
         src = InfluxDBSource(
             {"base_url": "https://influx.example.com/", "token_env": "INFLUX_TOKEN"},
             transport=cast(Any, transport),

@@ -17,7 +17,7 @@ _MULTIWORD_VALUE_GOALS := \
     copy-file feature-done feature-start git-add git-branch git-checkout git-cherry-pick-list \
     git-commit git-commit-file git-commit-files git-merge git-reset git-restore git-tag-move \
     git-tag-push lint-files lint-fix-files release-cut release-deploy release-upload-assets \
-    replace-all-text replace-lines replace-text search ship-commit test-and-commit test-ci-shards-parallel \
+    fix-test-env-writes replace-all-text replace-lines replace-text search ship-commit test-and-commit test-ci-shards-parallel \
     test-ci-shards-parallel-bg test-files ci-shards-log-context
 _FIRST_MAKE_GOAL := $(firstword $(MAKECMDGOALS))
 _EXTRA_MAKE_GOALS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
@@ -63,7 +63,7 @@ PYTEST_VERBOSITY ?= -v
 
 .PHONY: \
         init sync install-pip lint lint-files lint-fix test test-unit test-unit-shards test-specific test-files test-count test-integration test-e2e bisect-test-collection-polluter \
-         test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg test-bg-runner \
+         test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg test-bg-runner fix-test-env-writes \
          test-games game-audit gen-mcp-tools gen-mcp-tool-ref mcp-docs-check \
         typecheck setup-dirs setup-venv clean healthcheck \
         bootstrap skeleton version check-uv check-pytest \
@@ -167,6 +167,7 @@ help:
 	@echo "  gate-async            Launch gate detached (non-blocking); writes .gate-status"
 	@echo "  gate-status           Print current .gate-status (RUNNING/PASS/FAIL)"
 	@echo "  collect-check         Fast collection-error gate"
+	@echo "  fix-test-env-writes   Convert bare test env writes (FILES='tests/...')"
 	@echo "  test-nodeids          Print bounded pytest node-id slice (START/LIMIT/TESTPATH)"
 	@echo "  test-xdist-trace      Run pytest with durable xdist worker/node/resource trace"
 	@echo "  test-xdist-trace-summary  Summarize /tmp/gludd-xdist-progress.log unfinished tests"
@@ -4079,6 +4080,10 @@ check-opa-iam:
 # --- Test env-write lint: forbid bare os.environ[...] = in tests/ (use monkeypatch.setenv) ---
 check-test-env-writes:
 	@$(UV) run python scripts/check_test_env_writes.py tests
+
+fix-test-env-writes:
+	@test -n "$(FILES)" || { echo "Usage: make fix-test-env-writes FILES='tests/path.py ...'"; exit 2; }
+	@$(UV) run python scripts/fix_test_env_writes.py $(FILES)
 
 # --- TDD compliance: new/modified source files require corresponding tests ---
 # Blocks commit if source files in src/general_ludd/ lack test files with imports + test_* functions.
