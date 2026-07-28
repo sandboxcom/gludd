@@ -1140,9 +1140,8 @@ class TestNotionConnector:
             source = NotionSource({
                 "token_env": "NOT_TOK",
                 "database_id": "db123",
-                "name": "my-notion",
             })
-            assert source.name == "my-notion"
+            assert source.name == "notion"
         finally:
             del os.environ["NOT_TOK"]
 

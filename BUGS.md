@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) Notion E2E treated provider identity as a user alias
+
+- **What**: Connector batch 4 stopped because the Notion construction test expected an arbitrary config `name` to replace the normalized source identity.
+- **Root cause**: The E2E generalized a customization supported by some connectors onto Notion. Notion's connector identity is intentionally stable as `notion`; the configured `database_id` selects the upstream data set, while individual page identity and titles remain in normalized records.
+- **Fix applied**: The valid construction case now supplies only the documented token and database configuration and requires the stable `notion` source name, matching canonical unit and normalization coverage.
+- **Long-lived user evidence**: Notion users have spent years distinguishing a database's display name from the stable ID required by the API ([Stack Overflow database-ID discussion](https://stackoverflow.com/questions/67728038/where-to-find-database-id-for-my-database-in-notion), [Notion community 404 discussion](https://www.reddit.com/r/Notion/comments/1kx10kd/notion_api_keeps_giving_me_404_error_even_though/)). Recent users also warn that Notion's new database/data-source hierarchy changes target identifiers without changing the integration's identity ([Notion community migration discussion](https://www.reddit.com/r/Notion/comments/1n67scl)).
+- **Lesson**: Connector identity, upstream target identity, and user-visible object names are separate fields. Tests must not turn an undocumented alias into public behavior.
+
 ### 2026-07-28 — (resolved) Linear E2E bypassed normalized taxonomy and team scope
 
 - **What**: Connector batch 4 first stopped because the Linear E2E expected kind `issues` instead of canonical `tickets`; its health cases then omitted required `team_id`, and its final query case expected a transport outage to be silently converted into an empty result.
