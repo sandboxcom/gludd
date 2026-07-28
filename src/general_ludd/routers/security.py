@@ -667,7 +667,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             app,
             row,
             status="done",
-            resolver=human_reviewer,
+            resolver=human_reviewer or "",
             reason=reason,
         )
         return {
@@ -715,7 +715,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             app,
             row,
             status="dismissed",
-            resolver=human_reviewer,
+            resolver=human_reviewer or "",
             reason=str(reason),
         )
         return {"id": esc_id, "status": "denied", "decided_reason": reason}

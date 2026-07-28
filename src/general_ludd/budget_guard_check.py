@@ -35,7 +35,13 @@ class _RemainingGuard(Protocol):
     def remaining(self, now: float | None = ...) -> float: ...
 
 
-def compute_projected_cost_usd(gateway: object, budget_guard: object | None = None) -> float:
+class _GatewayProfile(Protocol):
+    """Structural type for a model gateway exposing ``get_profile``."""
+
+    def get_profile(self, name: str) -> object | None: ...
+
+
+def compute_projected_cost_usd(gateway: _GatewayProfile | None, budget_guard: object | None = None) -> float:
     """Compute a per-call USD cost projection from the default model profile.
 
     Derives the projection from the model gateway's default profile (model

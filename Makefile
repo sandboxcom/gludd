@@ -1319,6 +1319,55 @@ kill-gate-force:
 	@rm -rf /tmp/gludd-gate-[A-Za-z0-9]* 2>/dev/null || true
 	@echo "[kill-gate-force] lock + tmp dirs removed"
 
+# Combined kill-everything: stray pytest/gate workers, stale orphans, gate locks,
+# and any running gunicorn daemon tree. A single target to avoid streak blocks.
+kill-all-stale:
+	@echo "=== kill-all-stale: combining kill-stray + kill-stale + kill-gate-force + daemon kill ==="
+	@echo "--- kill-stray ---"
+	@pkill -9 -f 'gludd-gate-basetemp' 2>/dev/null || true
+	@pkill -9 -f 'pytest tests/' 2>/dev/null || true
+	@pkill -9 -f 'make gate' 2>/dev/null || true
+	@pkill -9 -f '/Users/shawnwilson/gludd/.venv/bin/detect-secrets scan' 2>/dev/null || true
+	@pkill -9 -f '/Users/shawnwilson/gludd/.venv/bin/python.*from multiprocessing.resource_tracker' 2>/dev/null || true
+	@pkill -9 -f '/Users/shawnwilson/gludd/.venv/bin/python.*from multiprocessing.spawn' 2>/dev/null || true
+	@echo "--- kill-stale (orphan cleanup) ---"
+	@SELF=$$$$; PARENT=$$(ps -o ppid= -p $$SELF 2>/dev/null | tr -d ' '); \
+	PARENTS=$$(ps -axo ppid= | tr -s ' ' '\n' | grep -E '^[0-9]+$$' | sort -u); \
+	ps -axo pid=,ppid=,command= | \
+	grep -E "molecule/mock_daemon|\.claude/worktrees/agent-[^ ]*/\.venv/bin/python|general_ludd\.cli tui|gludd-gate-basetemp|pytest tests/|ansible-playbook|/Users/shawnwilson/gludd/\.venv/bin/gunicorn general_ludd\.daemon:create_daemon_app" | \
+	grep -v -E 'grep |kill-stale|ps-gludd' | \
+	while read -r pid ppid rest; do \
+		{ [ "$$pid" = "$$SELF" ] || [ "$$pid" = "$$PARENT" ]; } && continue; \
+		if [ "$$ppid" != "1" ]; then echo "  SKIP (live parent $$ppid): $$pid"; continue; fi; \
+		case "$$rest" in \
+			*"/Users/shawnwilson/gludd/.venv/bin/gunicorn general_ludd.daemon:create_daemon_app()"*) \
+				CHILDREN=$$(/usr/bin/pgrep -P "$$pid" 2>/dev/null || true); \
+				for child in $$CHILDREN; do kill -TERM "$$child" 2>/dev/null; done; \
+				kill -TERM "$$pid" 2>/dev/null; sleep 0.5; \
+				for child in $$CHILDREN; do kill -KILL "$$child" 2>/dev/null; done; \
+				kill -KILL "$$pid" 2>/dev/null; \
+				echo "  KILLED daemon tree: $$pid"; \
+				continue; \
+				;; \
+		esac; \
+		if echo "$$PARENTS" | grep -qx "$$pid"; then echo "  SKIP (orphan with live children): $$pid"; continue; fi; \
+		kill -TERM "$$pid" 2>/dev/null; sleep 0.2; kill -KILL "$$pid" 2>/dev/null; \
+		echo "  KILLED stale orphan: $$pid"; \
+	done; \
+	echo "--- kill-gate-force ---"; \
+	HOLDER=$$(cat /tmp/gludd-gate.lock 2>/dev/null || echo ""); \
+	if [ -n "$$HOLDER" ] && kill -0 "$$HOLDER" 2>/dev/null; then \
+		kill -TERM "$$HOLDER" 2>/dev/null || true; sleep 1; \
+		kill -KILL "$$HOLDER" 2>/dev/null || true; \
+	fi; \
+	rm -f /tmp/gludd-gate.lock /tmp/gludd-gate.lock.*.tmp; \
+	rm -rf /tmp/gludd-gate-[A-Za-z0-9]* 2>/dev/null || true; \
+	echo "--- kill daemon tree (dist/gludd daemon + gunicorn) ---"; \
+	pkill -9 -f 'dist/gludd daemon' 2>/dev/null || true; \
+	pkill -9 -f '/Users/shawnwilson/gludd/.venv/bin/gunicorn' 2>/dev/null || true; \
+	echo "=== kill-all-stale: complete ==="
+	@echo "[kill-all-stale] done"
+
 ship-async:
 	@bash scripts/ship_async.sh $(REF) $(TARGET)
 

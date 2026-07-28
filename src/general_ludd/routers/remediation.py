@@ -364,6 +364,7 @@ def register(app: FastAPI, daemon_state: dict[str, object]) -> None:
         return RemediationConfigResponse(
             human_input_block_hours=cfg.human_input_block_hours,
             permission_escalation_block_hours=cfg.permission_escalation_block_hours,
+            needs_more_work_cooldown_hours=cfg.needs_more_work_cooldown_hours,
             max_requeues_before_chronic=cfg.max_requeues_before_chronic,
             chronic_lookback_days=cfg.chronic_lookback_days,
             min_chronic_incidents=cfg.min_chronic_incidents,

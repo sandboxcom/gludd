@@ -9,7 +9,7 @@ import os
 import re
 import subprocess
 import uuid
-from typing import Any
+from typing import Any, cast
 
 from general_ludd.agents.behavior import AgentBehavior, BehaviorRenderer
 from general_ludd.git_automation.repo import GitAutomation
@@ -758,7 +758,7 @@ class ExecutionEngine:
         if self._sandbox_enforcer is not None and self._sandbox_verified:
             try:
                 confined = self._sandbox_enforcer.confine_path(full)
-                return confined
+                return cast(str, confined)
             except Exception as exc:
                 raise ValueError(f"refusing path that escapes the sandbox: {file_path!r}: {exc}") from exc
 

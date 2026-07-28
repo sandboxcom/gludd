@@ -113,6 +113,7 @@ class TestStreamDispatchChildEnvIsScrubbed:
         """With mock secrets in os.environ, child env must exclude them."""
         from general_ludd.routers.stream import _run_subprocess
 
+        # pragma: allowlist secret
         seeds = {"ZAI_API_KEY": "sk-test-secret", "DATABASE_URL": "pg://bad"}
         monkeypatch.setattr(os, "environ", {**os.environ, **seeds})
 

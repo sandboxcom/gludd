@@ -344,6 +344,7 @@ class TestModelProfileRatesNonzeroByDefault:
 
         catalog = PricingCatalog()
         ac = AutoConfigurator()
+        # pragma: allowlist secret
         profiles = ac.auto_configure_from_env(
             environ={"OPENAI_API_KEY": "sk-not-a-real-key"},
             catalog=catalog,
