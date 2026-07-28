@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) Syslog-file E2E bypassed the connector's confinement-root contract
+
+- **What**: Connector batch 4 stopped while constructing `SyslogFileSource` because the E2E supplied a log-file `path` in constructor configuration instead of the mandatory confinement `root`.
+- **Root cause**: The test encoded an older single-file model. The implemented connector deliberately separates the trusted root configured at construction from the relative file selected per query, then resolves real paths to reject `..` and symlink escapes. The old health cases also checked file existence even though health correctly reports root-directory usability.
+- **Fix applied**: Every E2E now uses pytest-managed temporary roots. Construction and health verify the root contract; query cases create files inside that root and pass only a confined relative filename. The missing-health case points at a missing root rather than an arbitrary absent log file.
+- **Long-lived user evidence**: Python users have repeatedly documented that making a path absolute and resolving symlinks are distinct security-relevant operations ([Stack Overflow discussion](https://stackoverflow.com/questions/42513056/how-to-get-absolute-path-of-a-pathlib-path-object)); users specifically call out `resolve()` as the operation that removes `..` components and follows symlinks ([long-running pathlib discussion](https://stackoverflow.com/questions/32358767/normalize-non-existing-path-using-pathlib-only)).
+- **Lesson**: File connectors must configure an explicit trust boundary, not merely a target path. E2E tests should exercise root health and per-query confinement separately so an unsafe absolute-path shortcut cannot become the de facto contract.
+
 ### 2026-07-28 — (resolved) Shared HTTP fake could not model Graylog's URL-only GET callback
 
 - **What**: Connector batch 4 reached Graylog health but the injected fake raised `TypeError` because Graylog calls its GET transport as `transport(url, ...)`, while the helper required `transport(method, url, ...)`.

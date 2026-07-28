@@ -894,71 +894,52 @@ class TestGraylogConnector:
 
 
 class TestSyslogFileConnector:
-    def test_config_requires_path(self):
+    def test_config_requires_root(self):
         from general_ludd.connectors.syslog_file import SyslogFileSource
 
         with pytest.raises((ValueError, RuntimeError)):
             SyslogFileSource({})
 
-    def test_constructs_with_valid_config(self):
+    def test_constructs_with_valid_config(self, tmp_path):
         from general_ludd.connectors.syslog_file import SyslogFileSource
 
-        source = SyslogFileSource({"path": "/var/log/syslog", "name": "syslog-prod"})
+        source = SyslogFileSource({"root": str(tmp_path), "name": "syslog-prod"})
         assert source.name == "syslog-prod"
         assert source.KIND == "logs"
 
-    def test_health_ok_when_file_readable(self):
-        import tempfile
-
+    def test_health_ok_when_root_readable(self, tmp_path):
         from general_ludd.connectors.syslog_file import SyslogFileSource
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".log", delete=False) as f:
-            f.write("Jan  1 12:00:00 host test message\n")
-            tmp = f.name
-        try:
-            source = SyslogFileSource({"path": tmp})
-            result = source.health()
-            assert result["ok"] is True
-        finally:
-            os.unlink(tmp)
+        source = SyslogFileSource({"root": str(tmp_path)})
+        result = source.health()
+        assert result["ok"] is True
 
-    def test_health_not_ok_when_file_missing(self):
+    def test_health_not_ok_when_root_missing(self, tmp_path):
         from general_ludd.connectors.syslog_file import SyslogFileSource
 
-        source = SyslogFileSource({"path": "/nonexistent/syslog_xyz.log"})
+        source = SyslogFileSource({"root": str(tmp_path / "missing")})
         result = source.health()
         assert result["ok"] is False
 
-    def test_query_reads_lines(self):
-        import tempfile
-
+    def test_query_reads_lines(self, tmp_path):
         from general_ludd.connectors.syslog_file import SyslogFileSource
 
         content = "Jan  1 12:00:00 host1 message one\nJan  1 12:01:00 host2 message two\n"
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".log", delete=False) as f:
-            f.write(content)
-            tmp = f.name
-        try:
-            source = SyslogFileSource({"path": tmp})
-            records = source.query({})
-            assert len(records) == 2
-            assert records[0]["kind"] == "logs"
-        finally:
-            os.unlink(tmp)
+        log_path = tmp_path / "syslog.log"
+        log_path.write_text(content)
+        source = SyslogFileSource({"root": str(tmp_path)})
+        records = source.query({"path": log_path.name})
+        assert len(records) == 2
+        assert records[0]["kind"] == "logs"
 
-    def test_query_empty_on_empty_file(self):
-        import tempfile
-
+    def test_query_empty_on_empty_file(self, tmp_path):
         from general_ludd.connectors.syslog_file import SyslogFileSource
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".log", delete=False) as f:
-            tmp = f.name
-        try:
-            source = SyslogFileSource({"path": tmp})
-            records = source.query({})
-            assert records == []
-        finally:
-            os.unlink(tmp)
+        log_path = tmp_path / "empty.log"
+        log_path.write_text("")
+        source = SyslogFileSource({"root": str(tmp_path)})
+        records = source.query({"path": log_path.name})
+        assert records == []
 
 
 # ============================================================================
