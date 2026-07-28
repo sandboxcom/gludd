@@ -111,12 +111,11 @@ class TestSearXConnector:
         with pytest.raises(ConnectorConfigError):
             SearXConnector({"base_url": ""})
 
-    def test_rejects_loopback_host(self):
-        from general_ludd.connectors._errors import ConnectorConfigError
+    def test_allows_loopback_host_for_local_instance(self):
         from general_ludd.connectors.searx import SearXConnector
 
-        with pytest.raises(ConnectorConfigError, match="blocked"):
-            SearXConnector({"base_url": "http://127.0.0.1/searx"})
+        conn = SearXConnector({"base_url": "http://127.0.0.1/searx"})
+        assert conn.base_url == "http://127.0.0.1/searx"
 
     def test_rejects_metadata_ip(self):
         from general_ludd.connectors._errors import ConnectorConfigError

@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) SearX E2E contradicted local-instance support
+
+- **What**: The complete serial E2E run stopped after 1,134 passes because one broad test required `127.0.0.1` SearX endpoints to be rejected, while the canonical connector suite and local-server factory intentionally support loopback instances.
+- **Root cause**: The E2E copied the generic connector SSRF expectation without preserving SearX's narrow local-instance exception. The module security note also described all loopback hosts as rejected even though the implementation, `from_local_server`, and focused tests deliberately allow only `localhost` and `127.0.0.1`.
+- **Fix applied**: The E2E now proves an explicit loopback SearX URL remains usable, while the adjacent metadata-address rejection still pins the SSRF boundary. The module security note now accurately distinguishes the local exception from blocked private and metadata hosts.
+- **Long-lived user evidence**: Self-hosted SearXNG users routinely bind the service to loopback and access its JSON API there; a multi-year SearXNG discussion shows `127.0.0.1:8080` as the deployment endpoint ([SearXNG discussion #3542](https://github.com/searxng/searxng/discussions/3542)), and users have described locally installed SearX on `localhost` in long-running issue reports ([SearX issue #3042](https://github.com/searx/searx/issues/3042)).
+- **Lesson**: SSRF policy must reflect an integration's deployment model without widening the exception. SearX permits two explicit loopback names for a local service and continues to reject arbitrary private and metadata destinations.
+
 ### 2026-07-28 — (resolved) Prometheus scrape E2E doubles violated the transport contract
 
 - **What**: The complete serial E2E run stopped after 1,106 passes because the Prometheus scrape health test received `ok: false` from an otherwise successful response double.
