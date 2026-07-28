@@ -51,12 +51,14 @@ def _run_watchdog(
             tmp.unlink()
 
 
-def _code() -> str:
+def _code(event_type: str = "session.created") -> str:
     """Generate TS code that loads plugin and fires the given event type."""
     return f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
-void plugin
+if (plugin.event) {{
+  await plugin.event({{ event: {{ type: '{event_type}' }} }})
+}}
 console.log("OK")
 """
 
@@ -87,9 +89,9 @@ def test_session_created_fires_heartbeat(tmp_path):
     assert "watchdog" in data, f"watchdog key missing: {data}"
     assert "last_seen" in data["watchdog"], f"last_seen missing: {data['watchdog']}"
 
-    # PID sync: literal .gate-logs/watchdog.pid → PID_FILE override
+    # The plugin records the Node process that owns this session.
     assert pid_file.exists(), "PID_FILE should exist after literal→override sync"
-    assert pid_file.read_text().strip() == "12345"
+    assert pid_file.read_text().strip().isdigit()
 
 
 # ─── session.deleted → PID cleanup ──────────────────────────────────────────
@@ -106,15 +108,15 @@ def test_session_deleted_cleans_pid_files(tmp_path):
     task_file.write_text("99999")
 
     _run_watchdog(
-        _code(),
+        _code("session.deleted"),
         env_override={"GLUDD_WATCHDOG_PID_FILE": str(pid_file)},
         cwd=str(tmp_path),
     )
 
-    assert pid_file.exists(), (
+    assert not pid_file.exists(), (
         f"PID_FILE {pid_file} should be unlinked after session.deleted"
     )
-    assert task_file.exists(), (
+    assert not task_file.exists(), (
         f"TASK_PID_FILE {task_file} should be unlinked after session.deleted"
     )
 
@@ -179,7 +181,7 @@ def test_server_connected_fires_heartbeat(tmp_path):
     alive_file = tmp_path / "alive.json"
 
     _run_watchdog(
-        _code(),
+        _code("server.connected"),
         env_override={"GLUDD_ALIVE_PATH": str(alive_file)},
         cwd=str(tmp_path),
     )
@@ -203,7 +205,7 @@ def test_corrupt_pid_fails_open(tmp_path):
     task_file.write_text("")
 
     proc = _run_watchdog(
-        _code(),
+        _code("session.deleted"),
         env_override={"GLUDD_WATCHDOG_PID_FILE": str(pid_file)},
         cwd=str(tmp_path),
     )
@@ -212,8 +214,8 @@ def test_corrupt_pid_fails_open(tmp_path):
         f"Corrupt PID must not crash; exit {proc.returncode}\n{proc.stderr[:300]}"
     )
     # Files should still be cleaned up despite bad PID content
-    assert pid_file.exists(), "Corrupt PID_FILE should still be unlinked"
-    assert task_file.exists(), "Corrupt TASK_PID_FILE should still be unlinked"
+    assert not pid_file.exists(), "Corrupt PID_FILE should still be unlinked"
+    assert not task_file.exists(), "Corrupt TASK_PID_FILE should still be unlinked"
 
 
 # ─── Heartbeat idempotent across repeated events ────────────────────────────
@@ -224,7 +226,7 @@ def test_heartbeat_updates_on_repeated_events(tmp_path):
     alive_file = tmp_path / "alive.json"
 
     _run_watchdog(
-        _code(),
+        _code("session.updated"),
         env_override={"GLUDD_ALIVE_PATH": str(alive_file)},
         cwd=str(tmp_path),
     )
