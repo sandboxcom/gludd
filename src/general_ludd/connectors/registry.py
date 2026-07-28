@@ -139,7 +139,16 @@ class ConnectorRegistry:
             # itself incur network/secret side effects; rejecting it here keeps
             # those side effects from firing just for the instance to be
             # discarded by the post-construction _SourceLike check below.
-            if config.get("factory") is None:
+            # Explicit factory maps may intentionally contain factory functions,
+            # which cannot expose instance methods at function scope.  Concrete
+            # classes, however, are safe to validate before construction no
+            # matter how they were selected.  Non-callables also take this path
+            # so they are classified as discovery failures.
+            if (
+                config.get("factory") is None
+                or isinstance(factory, type)
+                or not callable(factory)
+            ):
                 _validate_source_class(factory)
         except Exception as exc:  # discovery failure — skip, never abort
             self._errors.append({"name": name, "error": f"discovery: {exc}"})
