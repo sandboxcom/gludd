@@ -183,9 +183,10 @@ class TestImportKey:
 class TestSessionClose:
     def test_close_clears_keys(self) -> None:
         config = HSMConfig(module_path="/fake.so", slot_id=0)
-        session = create_mock_session(config)
+        session = _MockHSMSession(config)
         session.close()
-        assert len(session.list_keys()) == 0
+        assert session.closed is True
+        assert session._keys == {}
 
     def test_close_sets_closed_flag(self) -> None:
         config = HSMConfig(module_path="/fake.so", slot_id=0)
@@ -200,7 +201,11 @@ class TestSessionClose:
         session.close()
         session.close()
         assert session.closed is True
-        assert len(session.list_keys()) == 0
+        try:
+            session.list_keys()
+            raise AssertionError("expected RuntimeError")
+        except RuntimeError:
+            pass
 
     def test_sign_after_close_raises(self) -> None:
         config = HSMConfig(module_path="/fake.so", slot_id=0)
@@ -208,8 +213,8 @@ class TestSessionClose:
         session.close()
         try:
             sign_with_hsm_key(session, "rsa-2048-001", b"data")
-            raise AssertionError("expected KeyError")
-        except KeyError:
+            raise AssertionError("expected RuntimeError")
+        except RuntimeError:
             pass
 
 
