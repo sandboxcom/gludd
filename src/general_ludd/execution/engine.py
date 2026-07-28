@@ -7,6 +7,7 @@ import contextlib
 import logging
 import os
 import re
+import shlex
 import subprocess
 import uuid
 from typing import Any
@@ -820,11 +821,6 @@ class ExecutionEngine:
     def _apply_unified_diff(self, diff_text: str) -> list[str]:
         import tempfile
 
-        # Containment jail (model-supplied diff): refuse to apply ANY hunk whose
-        # source (---) OR target (+++) escapes the workspace via absolute or ../
-        # path. We validate every header path BEFORE invoking patch, so a single
-        # escaping path aborts the whole diff rather than letting patch write
-        # outside the workspace.
         targets = self._diff_target_paths(diff_text)
         if not targets:
             return []
@@ -834,41 +830,63 @@ class ExecutionEngine:
             except ValueError as exc:
                 logger.warning("Refusing diff with escaping target: %s", exc)
                 return []
-        # Run patch confined to the REALPATH jail base — the same path the jail
-        # check above resolved against — so a symlinked workspace can't make
-        # patch's working directory diverge from what we validated.
         jail = os.path.realpath(self.workspace_path)
         diff_path: str | None = None
         try:
             with tempfile.NamedTemporaryFile(mode="w", suffix=".diff", delete=False) as f:
                 f.write(diff_text)
                 diff_path = f.name
-            # argv is list-form (never a shell string): diff_path and jail are
-            # caller/LLM-adjacent, so list-form keeps them out of shell parsing.
-            result = subprocess.run(
-                [
-                    "patch",
-                    "-p1",
-                    "-d",
-                    jail,
-                    "-i",
-                    diff_path,
-                    "--force",
-                    "--no-backup-if-mismatch",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            # Only report files as changed when patch actually succeeded; a
-            # rejected/failed patch must not be advertised as an applied change.
-            if result.returncode != 0:
-                logger.warning(
-                    "patch exited %s; treating diff as not applied: %s",
-                    result.returncode,
-                    (result.stderr or result.stdout)[:500],
+
+            sandboxed = self._sandbox_enforcer is not None and self._sandbox_verified
+            if sandboxed:
+                cmd = shlex.join(
+                    [
+                        "patch",
+                        "-p1",
+                        "-d",
+                        jail,
+                        "-i",
+                        diff_path,
+                        "--force",
+                        "--no-backup-if-mismatch",
+                    ]
                 )
-                return []
+                sandbox_result = self._sandbox_enforcer.execute(cmd)
+                returncode = sandbox_result.returncode
+                stderr_text = sandbox_result.stderr or ""
+                stdout_text = sandbox_result.stdout or ""
+                was_killed = sandbox_result.was_killed
+                if returncode != 0:
+                    logger.warning(
+                        "patch exited %s (sandboxed, killed=%s); %s",
+                        returncode,
+                        was_killed,
+                        (stderr_text or stdout_text)[:500],
+                    )
+                    return []
+            else:
+                result = subprocess.run(
+                    [
+                        "patch",
+                        "-p1",
+                        "-d",
+                        jail,
+                        "-i",
+                        diff_path,
+                        "--force",
+                        "--no-backup-if-mismatch",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if result.returncode != 0:
+                    logger.warning(
+                        "patch exited %s; treating diff as not applied: %s",
+                        result.returncode,
+                        (result.stderr or result.stdout)[:500],
+                    )
+                    return []
             return self._diff_changed_files(diff_text)
         except Exception as exc:
             logger.warning("Failed to apply diff: %s", exc)

@@ -27,6 +27,21 @@ from general_ludd.models.failover import ModelFailoverChain
 from general_ludd.security.capability_lattice import _BUILTIN as _KNOWN_ROLES
 
 
+def _resolve_chat_model(model_gateway: object) -> object:
+    """Resolve a LangChain chat model from the gateway at construction time.
+
+    Early binding avoids deferring resolution to call time (``None`` in
+    the prior code path), so the LangGraph loop always has a model.
+    """
+    get_chat_model = getattr(model_gateway, "get_chat_model", None)
+    if callable(get_chat_model):
+        try:
+            return get_chat_model("default")
+        except Exception:
+            return None
+    return None
+
+
 class AgentCapabilities:
     def __init__(
         self,
@@ -68,11 +83,7 @@ class AgentCapabilities:
 
             # Use the level's preserve_recent when an aggression rung is set,
             # else the ctor default.
-            preserve = (
-                compaction_level.preserve_recent
-                if compaction_level is not None
-                else preserve_recent_count
-            )
+            preserve = compaction_level.preserve_recent if compaction_level is not None else preserve_recent_count
             self._slm_summarize_fn = make_slm_summarize_fn(model_gateway, "compactor")
             self._slm_compactor = SLMCompactor(
                 summarize_fn=self._slm_summarize_fn,
@@ -86,9 +97,7 @@ class AgentCapabilities:
             fallback_profiles=fallback_profiles or [],
         )
 
-    def prepare_messages(
-        self, system_prompt: str, history: list[dict[str, str]]
-    ) -> list[dict[str, str]]:
+    def prepare_messages(self, system_prompt: str, history: list[dict[str, str]]) -> list[dict[str, str]]:
         """Compact the conversation history via ContextCompactor.
 
         Attempts to fit the prompt within the configured token budget by
@@ -143,9 +152,7 @@ class AgentCapabilities:
         compacted = self.compactor.compact(msgs)
         return [{"role": m.role, "content": m.content} for m in compacted]
 
-    def within_budget(
-        self, agent_name: str, prompt: str, max_tokens: int | None = None
-    ) -> bool:
+    def within_budget(self, agent_name: str, prompt: str, max_tokens: int | None = None) -> bool:
         cap = max_tokens if max_tokens is not None else self.token_window.get_remaining_budget(agent_name)
         return self.token_window.check_budget(agent_name, prompt, cap)
 
@@ -202,6 +209,9 @@ class AgentCapabilities:
         role: str,
         mcp_client: object = None,
         mcp_registry: object = None,
+        budget_guard: object = None,
+        adversarial_detector: object = None,
+        max_total_tokens: int | None = None,
     ) -> LangGraphAgentLoop:
         """Build a LangGraphAgentLoop backed by ``create_react_agent``.
 
@@ -218,21 +228,22 @@ class AgentCapabilities:
         from the capability lattice are accepted.
         """
         if not role or not isinstance(role, str) or not role.strip():
-            raise ValueError(
-                f"make_langgraph_tool_loop: role is required, got {role!r}"
-            )
+            raise ValueError(f"make_langgraph_tool_loop: role is required, got {role!r}")
         role = role.strip()
         if role not in _KNOWN_ROLES:
             raise ValueError(
-                f"make_langgraph_tool_loop: unknown role {role!r}; "
-                f"valid roles: {sorted(_KNOWN_ROLES.keys())}"
+                f"make_langgraph_tool_loop: unknown role {role!r}; valid roles: {sorted(_KNOWN_ROLES.keys())}"
             )
+        chat_model = _resolve_chat_model(model_gateway)
         return LangGraphAgentLoop(
             model_gateway=model_gateway,
-            chat_model=None,
+            chat_model=chat_model,
             mcp_client=mcp_client,
             mcp_registry=cast(MCPToolRegistry | None, mcp_registry),
             role=role,
+            budget_guard=budget_guard,
+            adversarial_detector=adversarial_detector,
+            max_total_tokens=max_total_tokens,
         )
 
     def make_graph_gateway(
@@ -250,9 +261,7 @@ class AgentCapabilities:
         from general_ludd.models.langgraph_gateway import LangGraphGateway
         from general_ludd.scoring.engine import PromptScoringEngine
 
-        scoring = PromptScoringEngine(
-            model_gateway=model_gateway, benchmark_repo=benchmark_repo
-        )
+        scoring = PromptScoringEngine(model_gateway=model_gateway, benchmark_repo=benchmark_repo)
         return LangGraphGateway(
             call_model_fn=getattr(model_gateway, "call_model", None),
             adaptive_router=adaptive_router,

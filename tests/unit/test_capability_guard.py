@@ -12,7 +12,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.testclient import TestClient
 
 from general_ludd.security.capability_guard import RequireCapability
@@ -126,22 +126,52 @@ class TestRequireCapabilityIntegration:
         app = FastAPI()
 
         @app.post("/admin/sts/revoke")
-        async def sts_revoke():
+        async def sts_revoke(
+            _: None = Depends(RequireCapability(resource="admin:sts", action="revoke")),
+        ):
             return {"revoked": True}
-
-        app.dependency_overrides[RequireCapability] = lambda resource, action: RequireCapability(
-            resource=resource, action=action
-        )
 
         return app
 
     def test_no_auth_spec_returns_403(self, app):
         client = TestClient(app, raise_server_exceptions=False)
-        app._psk = "test-key"
+
+        resp = client.post("/admin/sts/revoke")
+        assert resp.status_code == 403
+
+    def test_missing_capability_returns_403(self, app):
+        client = TestClient(app, raise_server_exceptions=False)
+
+        spec = PermissionSpec(
+            agent_type="test",
+            capabilities=[
+                Capability(resource="admin:account", actions=["read"]),
+            ],
+        )
 
         @app.middleware("http")
-        async def no_auth_middleware(request: Request, call_next):
+        async def auth_middleware(request: Request, call_next):
+            request.state.auth_spec = spec
             return await call_next(request)
 
-        resp = client.post("/admin/sts/revoke", content=b"{}")
-        assert resp.status_code == 403  # no auth_spec on request.state
+        resp = client.post("/admin/sts/revoke")
+        assert resp.status_code == 403
+
+    def test_granted_capability_passes(self, app):
+        client = TestClient(app)
+
+        spec = PermissionSpec(
+            agent_type="test",
+            capabilities=[
+                Capability(resource="admin:sts", actions=["revoke"]),
+            ],
+        )
+
+        @app.middleware("http")
+        async def auth_middleware(request: Request, call_next):
+            request.state.auth_spec = spec
+            return await call_next(request)
+
+        resp = client.post("/admin/sts/revoke")
+        assert resp.status_code == 200
+        assert resp.json() == {"revoked": True}

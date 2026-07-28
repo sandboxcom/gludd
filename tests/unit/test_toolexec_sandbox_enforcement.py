@@ -7,12 +7,15 @@ layer with path confinement, network restrictions, and resource limits.
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
+import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from general_ludd.execution.engine import ExecutionEngine
 from general_ludd.sandbox.enforcer import (
     MaxOutputExceededError,
     PathEscapeError,
@@ -20,7 +23,7 @@ from general_ludd.sandbox.enforcer import (
     SandboxEnforcer,
     SandboxNotAvailableError,
 )
-from general_ludd.sandbox.process_executor import ProcessLimits
+from general_ludd.sandbox.process_executor import ProcessLimits, ProcessResult
 
 
 class TestSandboxEnforcerPathConfinement:
@@ -77,9 +80,12 @@ class TestSandboxEnforcerPathConfinement:
             enforcer.confine_path(str(tmp_path / "x"))
 
     def test_confine_path_unverified_passes_when_fail_open(self, tmp_path: Path) -> None:
-        enforcer = SandboxEnforcer(SandboxConfig(
-            jail_dir=str(tmp_path), fail_open=True,
-        ))
+        enforcer = SandboxEnforcer(
+            SandboxConfig(
+                jail_dir=str(tmp_path),
+                fail_open=True,
+            )
+        )
         result = enforcer.confine_path(str(tmp_path / "x"))
         assert result == str(tmp_path / "x")
 
@@ -88,12 +94,14 @@ class TestSandboxEnforcerResourceLimits:
     """Resource limits enforcement via ProcessLimits."""
 
     def test_default_limits_are_applied(self, tmp_path: Path) -> None:
-        enforcer = SandboxEnforcer(SandboxConfig(
-            jail_dir=str(tmp_path),
-            memory_mb=256,
-            cpu_seconds=120,
-            max_processes=30,
-        ))
+        enforcer = SandboxEnforcer(
+            SandboxConfig(
+                jail_dir=str(tmp_path),
+                memory_mb=256,
+                cpu_seconds=120,
+                max_processes=30,
+            )
+        )
         enforcer.verify_ready()
         limits = enforcer._limits
         assert limits.memory_mb == 256
@@ -149,9 +157,12 @@ class TestSandboxEnforcerFailClosed:
             enforcer.execute("echo hello")
 
     def test_execute_unverified_warns_fail_open(self, tmp_path: Path) -> None:
-        enforcer = SandboxEnforcer(SandboxConfig(
-            jail_dir=str(tmp_path), fail_open=True,
-        ))
+        enforcer = SandboxEnforcer(
+            SandboxConfig(
+                jail_dir=str(tmp_path),
+                fail_open=True,
+            )
+        )
         result = enforcer.execute("echo hello")
         assert result.returncode == 0
         assert "hello" in result.stdout
@@ -164,9 +175,12 @@ class TestSandboxEnforcerFailClosed:
 
     def test_verify_ready_nonexistent_dir_warns_fail_open(self, tmp_path: Path) -> None:
         nonexistent = str(tmp_path / "does-not-exist")
-        enforcer = SandboxEnforcer(SandboxConfig(
-            jail_dir=nonexistent, fail_open=True,
-        ))
+        enforcer = SandboxEnforcer(
+            SandboxConfig(
+                jail_dir=nonexistent,
+                fail_open=True,
+            )
+        )
         enforcer.verify_ready()
         assert enforcer.is_ready
 
@@ -183,11 +197,17 @@ class TestSandboxEnforcerMaxOutput:
     def test_max_output_bytes_enforced_fail_closed(self, tmp_path: Path) -> None:
         long_str = "x" * 2000
         subprocess.CompletedProcess(
-            args="echo", returncode=0, stdout=long_str, stderr="",
+            args="echo",
+            returncode=0,
+            stdout=long_str,
+            stderr="",
         )
-        enforcer = SandboxEnforcer(SandboxConfig(
-            jail_dir=str(tmp_path), max_output_bytes=100,
-        ))
+        enforcer = SandboxEnforcer(
+            SandboxConfig(
+                jail_dir=str(tmp_path),
+                max_output_bytes=100,
+            )
+        )
         enforcer.verify_ready()
         with (
             patch.object(subprocess, "Popen") as mock_popen,
@@ -202,9 +222,13 @@ class TestSandboxEnforcerMaxOutput:
 
     def test_max_output_enforced_fail_open(self, tmp_path: Path) -> None:
         long_str = "x" * 2000
-        enforcer = SandboxEnforcer(SandboxConfig(
-            jail_dir=str(tmp_path), max_output_bytes=100, fail_open=True,
-        ))
+        enforcer = SandboxEnforcer(
+            SandboxConfig(
+                jail_dir=str(tmp_path),
+                max_output_bytes=100,
+                fail_open=True,
+            )
+        )
         enforcer.verify_ready()
         with (
             patch.object(subprocess, "Popen") as mock_popen,
@@ -267,14 +291,14 @@ class TestSandboxEnforcerExecute:
         assert result.returncode != 0
 
     def test_execute_limits_applied_in_child(self, tmp_path: Path) -> None:
-        enforcer = SandboxEnforcer(SandboxConfig(
-            jail_dir=str(tmp_path),
-            memory_mb=100,
-        ))
+        enforcer = SandboxEnforcer(
+            SandboxConfig(
+                jail_dir=str(tmp_path),
+                memory_mb=100,
+            )
+        )
         enforcer.verify_ready()
-        with patch.object(
-            enforcer._executor.__class__, "_apply_limits"
-        ) as mock_limits:
+        with patch.object(enforcer._executor.__class__, "_apply_limits") as mock_limits:
             enforcer._apply_sandbox_preexec(enforcer._limits)
             mock_limits.assert_called_once_with(enforcer._limits)
 
@@ -454,7 +478,8 @@ class TestLangGraphAgentSandboxIntegration:
     )
     @pytest.mark.asyncio
     async def test_tool_execution_path_escape_blocked_by_sandbox(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         from general_ludd.execution.langgraph_agent import LangGraphAgentLoop
 
@@ -553,3 +578,147 @@ class TestSandboxEnforcerSecurityPolicy:
         assert policy.read_only_root is True
         assert policy.privileged is False
         assert policy.no_new_privileges is True
+
+
+class TestExecutionEngineSandboxIntegration:
+    """A-TOOLEXEC-UNSANDBOXED: ExecutionEngine._apply_unified_diff sandboxed."""
+
+    @staticmethod
+    def _make_unified_diff(file_name: str = "src/main.py") -> str:
+        return f"--- a/{file_name}\n+++ b/{file_name}\n@@ -1 +1 @@\n-print('hello')\n+print('hello world')\n"
+
+    def test_diff_applied_through_sandbox_when_enforcer_active(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        jail = tmp_path / "jail"
+        jail.mkdir()
+        workspace = jail
+        (workspace / "src").mkdir()
+        (workspace / "src" / "main.py").write_text("print('hello')\n")
+
+        enforcer = SandboxEnforcer(SandboxConfig(jail_dir=str(jail)))
+        enforcer.verify_ready()
+
+        engine = ExecutionEngine(
+            model_gateway=MagicMock(),
+            workspace_path=str(workspace),
+            sandbox_enforcer=enforcer,
+        )
+        engine._sandbox_verified = True
+
+        execute_calls: list[str] = []
+        orig_execute = enforcer.execute
+
+        def _capture(cmd: str, **kw: object) -> ProcessResult:
+            execute_calls.append(cmd)
+            return orig_execute(cmd, **kw)
+
+        with patch.object(enforcer, "execute", side_effect=_capture):
+            diff_text = self._make_unified_diff("src/main.py")
+            changed = engine._apply_unified_diff(diff_text)
+
+        assert len(execute_calls) == 1, f"Expected 1 sandboxed execute call, got {len(execute_calls)}"
+        cmd = execute_calls[0]
+        assert "patch" in cmd
+        assert "-p1" in cmd
+        assert changed, "Expected diff to be applied through sandbox"
+
+    def test_diff_falls_back_to_subprocess_when_no_enforcer(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        workspace = tmp_path / "ws"
+        workspace.mkdir()
+        (workspace / "src").mkdir()
+        (workspace / "src" / "main.py").write_text("print('hello')\n")
+
+        engine = ExecutionEngine(
+            model_gateway=MagicMock(),
+            workspace_path=str(workspace),
+        )
+
+        with patch("subprocess.run", wraps=subprocess.run) as mock_run:
+            diff_text = self._make_unified_diff("src/main.py")
+            changed = engine._apply_unified_diff(diff_text)
+            assert mock_run.called, "subprocess.run should be called when no enforcer"
+            assert changed, "Diff should be applied"
+
+    def test_diff_blocked_when_sandbox_not_verified_and_fail_closed(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        jail = tmp_path / "jail"
+        jail.mkdir()
+        workspace = tmp_path / "ws"
+        workspace.mkdir()
+        (workspace / "src").mkdir()
+        (workspace / "src" / "main.py").write_text("print('hello')\n")
+
+        enforcer = SandboxEnforcer(SandboxConfig(jail_dir=str(jail)))
+
+        engine = ExecutionEngine(
+            model_gateway=MagicMock(),
+            workspace_path=str(workspace),
+            sandbox_enforcer=enforcer,
+        )
+
+        with pytest.raises(SandboxNotAvailableError):
+            engine._apply_unified_diff(self._make_unified_diff("src/main.py"))
+
+    def test_diff_path_escape_blocked_even_with_sandbox_active(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        jail = tmp_path / "jail"
+        jail.mkdir()
+        workspace = tmp_path / "ws"
+        workspace.mkdir()
+
+        enforcer = SandboxEnforcer(SandboxConfig(jail_dir=str(jail)))
+        enforcer.verify_ready()
+
+        engine = ExecutionEngine(
+            model_gateway=MagicMock(),
+            workspace_path=str(workspace),
+            sandbox_enforcer=enforcer,
+        )
+        engine._sandbox_verified = True
+
+        diff_text = "--- a/../etc/passwd\n+++ b/../etc/passwd\n@@ -1 +1 @@\n-root:x:0:0\n+root:x:0:0:hacked\n"
+        changed = engine._apply_unified_diff(diff_text)
+        assert changed == [], "Escape path should be blocked before sandbox execute"
+
+    def test_sandbox_execute_receives_correct_argv(self, tmp_path: Path) -> None:
+        jail = tmp_path / "jail"
+        jail.mkdir()
+        workspace = jail
+        (workspace / "src").mkdir()
+        (workspace / "src" / "main.py").write_text("print('hello')\n")
+
+        enforcer = SandboxEnforcer(SandboxConfig(jail_dir=str(jail)))
+        enforcer.verify_ready()
+
+        engine = ExecutionEngine(
+            model_gateway=MagicMock(),
+            workspace_path=str(workspace),
+            sandbox_enforcer=enforcer,
+        )
+        engine._sandbox_verified = True
+
+        captured_cmd: str | None = None
+
+        def _capture(cmd: str, **kw: object) -> ProcessResult:
+            nonlocal captured_cmd
+            captured_cmd = cmd
+            return ProcessResult(returncode=0, stdout="stdout ok", stderr="")
+
+        with patch.object(enforcer, "execute", side_effect=_capture):
+            engine._apply_unified_diff(self._make_unified_diff("src/main.py"))
+
+        assert captured_cmd is not None, "Sandbox execute was not called"
+        parsed = shlex.split(captured_cmd)
+        assert parsed[0] == "patch"
+        assert "-p1" in parsed
+        assert "--force" in parsed
+        assert "--no-backup-if-mismatch" in parsed

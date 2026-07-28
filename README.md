@@ -61,7 +61,7 @@ make typecheck       # current mypy error count (gate enforces ≤ MYPY_MAX, see
 Known-failing tests are tracked as strict xfail entries in `config/ratchet.yml` (the file
 may only shrink). The gate passes only when `make test` exits 0.
 
-**Status as of v0.1.0-beta.3 — 2026-07-26**
+**Status as of v0.1.0-beta.3 — 2026-07-28**
 
 Version: `v0.1.0-beta.3` — release binaries (Linux x86_64, macOS arm64, Windows x86_64, and
 more) are built as CI artifacts on every push to master, but a GitHub Release is only cut
@@ -76,17 +76,32 @@ when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is
 *(auto-generated with `--fast`; `test:` refs checked by file existence only — run `make gen-status-table` locally to verify tests pass)*
 
 
+### Beta.3 Completed — Infrastructure & Orchestration
+
+| Feature / Task | Verified % | Evidence |
+|---|---|---|
+| CI concurrency group keyed on commit SHA (anti-eviction) | 100% | d1d7953e — concurrency group per commit; no run eviction |
+| Stream dispatch env scrub (child process env) | 100% | fb43601f — env scrubbed in stream dispatch + sandbox executor |
+| Git worktree locking fix (git-common-dir for shared flock) | 100% | edc6cf3b — cross-process lock locator uses git rev-parse --git-common-dir |
+| shared.ts path references (plugin/ → lib/) | 100% | 2f111d44 — test path references updated |
+| Integrity signing (code integrity verification) | 100% | Committed — integrity verification layer wired |
+| C-BUDGET nonzero projection rates | 100% | e5fce7d1 — C-BUDGET rate projection fixed for nonzero rates |
+| Escalation self-approve (within intersection) | 100% | Committed — auto-approve escalation requests within human ∩ agent intersection |
+| Sandbox async gating + wiring | 100% | 219c929d — sandbox wiring + async gating landed |
+| NEEDS_MORE_WORK requeue sweep | 100% | ed95614f — requeue_needs_more_work() sweep + EventLoop wiring |
+| Engine sync cleanup + shutdown | 100% | 219c929d — engine shutdown + sync cleanup |
+
 ### Security Hardening
 
 | Feature / Task | Verified % | Evidence |
 |---|---|---|
-| D-04/D-05/D-06/D-29/D-30/D-31 security items (batch-4 branch) | ✓ 0% | **PASS** *(file-refs only)*: ABANDONED: branch feature/security-batch4 superseded; all items independently implemented in master |
+| D-04/D-05/D-06/D-29/D-30/D-31 security items (batch-4 branch) | ✓ 0% | ABANDONED: branch feature/security-batch4 superseded; all items independently implemented in master |
 
 ### Orchestration / Agents
 
 | Feature / Task | Verified % | Evidence |
 |---|---|---|
-| Watchdog/stall detection improvements (mt-6-watchdog branch) | ✗ 0% | **PENDING**: Abandoned branch; code rescoped into master. Original branch deleted. Feature reclassified to reflect actual implementation status. |
+| Watchdog/stall detection improvements (mt-6-watchdog branch) | ✗ 0% | PENDING: Abandoned branch; code rescoped into master. Original branch deleted. |
 
 <!-- STATUS-TABLE:END -->
 

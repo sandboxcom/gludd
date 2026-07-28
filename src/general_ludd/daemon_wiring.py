@@ -214,14 +214,32 @@ def make_collection_handler(
         # — reject it before embedding.
         if not re.match(_FQCN_RE, name):
             raise ValueError(
-                f"collection module name must be a dotted FQCN "
-                f"(e.g. 'ansible.builtin.command'), got {name!r}"
+                f"collection module name must be a dotted FQCN (e.g. 'ansible.builtin.command'), got {name!r}"
             )
 
         # Copy so dispatch metadata can be peeled without mutating caller state.
         task_args = dict(args)
         timeout = task_args.pop("_timeout", None)
         hosts = task_args.pop("_hosts", "localhost")
+
+        # A-COLLECTION-HANDLER-UNWRAP: wrap every task-arg value Ansible-unsafe
+        # BEFORE it is embedded in the transient playbook YAML so Jinja carried
+        # in a caller-supplied argument (e.g.  {{ lookup('pipe','id') }}) is
+        # never re-templated by the ansible executor.
+        from general_ludd.ansible.unsafe import wrap_unsafe
+
+        task_args = {k: wrap_unsafe(v) for k, v in task_args.items()}
+
+        # When ansible is available use AnsibleDumper so AnsibleUnsafeText
+        # values are serialised with the !unsafe YAML tag.  Fall back to
+        # standard safe_dump when ansible is not installed (the values are
+        # plain strings and SSTI is not a threat).
+        try:
+            from ansible.parsing.yaml.dumper import AnsibleDumper  # pragma: no cover
+
+            _dumper = AnsibleDumper  # pragma: no cover
+        except ImportError:  # pragma: no cover
+            _dumper = yaml.Dumper  # pragma: no cover
 
         playbook = [
             {
@@ -234,9 +252,7 @@ def make_collection_handler(
             }
         ]
 
-        dispatch_dir = os.path.join(
-            runner_adapter.private_data_dir, "dispatch_playbooks"
-        )
+        dispatch_dir = os.path.join(runner_adapter.private_data_dir, "dispatch_playbooks")
         os.makedirs(dispatch_dir, exist_ok=True)
         playbook_path = os.path.join(dispatch_dir, f"{uuid.uuid4().hex}.yml")
 
@@ -244,7 +260,11 @@ def make_collection_handler(
         # does not block on disk I/O under concurrent dispatch.
         def _write_playbook() -> None:
             with open(playbook_path, "w") as f:
-                yaml.safe_dump(playbook, f, default_flow_style=False)
+                # A-COLLECTION-HANDLER-UNWRAP: yaml.dump (not safe_dump) so the
+                # custom Dumper class is honoured.  AnsibleDumper outputs the
+                # !unsafe tag for wrapped values; the plain Dumper fallback
+                # serialises plain-str task_args identically to safe_dump.
+                yaml.dump(playbook, f, Dumper=_dumper, default_flow_style=False)
 
         await asyncio.to_thread(_write_playbook)
 

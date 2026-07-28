@@ -2570,6 +2570,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             await asyncio.to_thread(_writer_process_ref.stop)
     if engine is not None:
         await engine.dispose()
+    _exec_engine = getattr(app.state, "_execution_engine", None)
+    if _exec_engine is not None:
+        await _exec_engine.shutdown()
     _embedding_session_ref = getattr(app.state, "_embedding_session", None)
     if _embedding_session_ref is not None:
         with contextlib.suppress(Exception):

@@ -254,6 +254,55 @@ class PauseController:
         status = "clean" if not errors else "degraded"
         return handles, status, errors
 
+    async def quiesce_entity(
+        self,
+        kind: PauseKind,
+        target_id: str,
+        dispatcher: AgentDispatcher | None = None,
+        hibernation: HibernationController | None = None,
+    ) -> tuple[list[HibernationHandle], str, list[str]] | QuiesceNoopResult:
+        """Quiesce a single agent or task before pausing, capturing depth.
+
+        Finds the active task matching ``(kind, target_id)`` in the
+        dispatcher, dehydrates it with its current depth, and returns the
+        handle.  Used by agent-level and task-level pause so a resumed
+        entity continues at its prior depth — closing the recursion-guard
+        bypass where a resumed agent would restart at depth 0.
+        """
+        if dispatcher is None or hibernation is None:
+            return QuiesceNoopResult()
+        from general_ludd.agents.hibernation import AgentEnvironmentSnapshot
+
+        tasks: list[AgentTask] = []
+        if kind == "agent":
+            tasks = await dispatcher.get_active_tasks_by_agent_name(target_id)
+        elif kind == "task":
+            tasks = await dispatcher.get_active_tasks_by_task_id(target_id)
+
+        handles: list[HibernationHandle] = []
+        errors: list[str] = []
+        for task in tasks:
+            try:
+                snap = AgentEnvironmentSnapshot(
+                    task_id=task.task_id,
+                    agent_name=task.agent_name,
+                    parent_task_id=task.parent_task_id,
+                    invoker_name=task.invoker_name,
+                    depth=getattr(task, "depth", 0),
+                    messages=getattr(task, "messages", []),
+                    scratch={
+                        "description": getattr(task, "description", ""),
+                        "prompt": getattr(task, "prompt", ""),
+                        "project_id": getattr(task, "project_id", "") or "",
+                    },
+                )
+                handle = await hibernation._store.dehydrate_async(snap)
+                handles.append(handle)
+            except Exception as exc:
+                errors.append(f"{task.task_id}: {exc}")
+        status = "clean" if not errors else "degraded"
+        return handles, status, errors
+
     async def resume_rehydrate(
         self,
         kind: PauseKind,
