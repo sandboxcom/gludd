@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) Asana E2E omitted project scope and asserted undocumented aliases
+
+- **What**: Connector batch 4 reached Asana and its valid-construction case failed because it supplied a workspace and user alias but no required project GID; health and query fixtures omitted the project as well.
+- **Root cause**: The broad E2E modeled a generic workspace connector instead of the implemented Asana project-task source. Its token-validation case also passed an empty mapping, so missing project scope—not missing `token_env`—satisfied an overly broad exception assertion.
+- **Fix applied**: The token test now supplies project scope and narrowly requires `token_env` validation. Every valid and operational case supplies `project_gid`, construction requires the stable `asana` identity, and the test separately pins the configured project GID.
+- **Long-lived user evidence**: Asana developers use the project-scoped `/projects/{project_gid}/tasks` endpoint and have reported pagination behavior on that exact resource ([Asana Forum](https://forum.asana.com/t/get-tasks-from-a-project-returns-different-number-of-tasks-depending-on-page-limit-provided/907008)); another years-old forum thread explicitly notes that project endpoints require a project GID and documents how even My Tasks must be resolved to a project-like GID first ([Asana Forum](https://forum.asana.com/t/my-tasks-fetching-custom-sections/134890)).
+- **Lesson**: Broad validation tests must satisfy earlier prerequisites so they reach the named boundary. Provider scope and stable source identity cannot be replaced by unrelated workspace fields or undocumented aliases.
+
 ### 2026-07-28 — (resolved) Airtable E2E omitted mandatory table scope from operational cases
 
 - **What**: Connector batch 4 reached Airtable health and failed during construction because the E2E supplied a base ID and token environment but no table name.

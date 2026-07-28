@@ -1401,8 +1401,8 @@ class TestAsanaConnector:
     def test_config_requires_token_env(self):
         from general_ludd.connectors.asana import AsanaSource
 
-        with pytest.raises((ValueError, RuntimeError)):
-            AsanaSource({})
+        with pytest.raises(ValueError, match="token_env"):
+            AsanaSource({"project_gid": "project1"})
 
     def test_constructs_with_valid_config(self, monkeypatch):
         from general_ludd.connectors.asana import AsanaSource
@@ -1411,10 +1411,10 @@ class TestAsanaConnector:
         try:
             source = AsanaSource({
                 "token_env": "ASANA_TOK",
-                "workspace_gid": "ws1",
-                "name": "my-asana",
+                "project_gid": "project1",
             })
-            assert source.name == "my-asana"
+            assert source.name == "asana"
+            assert source.project_gid == "project1"
         finally:
             del os.environ["ASANA_TOK"]
 
@@ -1425,7 +1425,7 @@ class TestAsanaConnector:
         monkeypatch.setenv("AS_H", "tok")
         try:
             source = AsanaSource(
-                {"token_env": "AS_H"},
+                {"token_env": "AS_H", "project_gid": "project1"},
                 transport=transport,
             )
             result = source.health()
@@ -1440,7 +1440,7 @@ class TestAsanaConnector:
         monkeypatch.setenv("AS_H2", "tok")
         try:
             source = AsanaSource(
-                {"token_env": "AS_H2"},
+                {"token_env": "AS_H2", "project_gid": "project1"},
                 transport=transport,
             )
             result = source.health()
@@ -1469,7 +1469,7 @@ class TestAsanaConnector:
         monkeypatch.setenv("AS_Q", "tok")
         try:
             source = AsanaSource(
-                {"token_env": "AS_Q"},
+                {"token_env": "AS_Q", "project_gid": "project1"},
                 transport=transport,
             )
             records = source.query({})
