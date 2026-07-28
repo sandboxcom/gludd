@@ -1,0 +1,206 @@
+---
+# Converge: smoke-test the gludd binary on localhost (no Docker required).
+#
+# Resolves the binary from dist/gludd or download, then exercises:
+#   1. gludd version            -> SemVer
+#   2. gludd --help             -> subcommand listing
+#   3. gludd project paths      -> bundled path resolution
+#   4. ERROR: gludd --invalid-flag -> non-zero, clean argparse error
+#   5. start gludd daemon (backgrounded) + poll /healthz up to 30s
+#   6. POST /api/todos          -> daemon accepts a trivial job
+#   7. ERROR: second gludd daemon on the occupied port -> graceful failure
+#
+# All captured outputs land under {{ _smoke_out_dir }} so verify.yml can read
+# them back without re-invoking the binary.
+- name: Converge — gludd binary smoke (localhost)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    _smoke_out_dir: /tmp/gludd-binary-smoke-linux
+    _daemon_port: "{{ lookup('env', 'GLUDD_SMOKE_PORT') | default('18001', true) }}"
+    _daemon_url: "http://127.0.0.1:{{ _daemon_port }}"
+    _project_root: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') | default(playbook_dir | dirname | dirname | dirname | dirname, true) }}"
+    _local_binary: "{{ _project_root }}/dist/gludd"
+    _override_binary: "{{ lookup('env', 'GLUDD_BINARY_PATH') }}"
+    _resolved_binary: "{{ _override_binary if _override_binary | length > 0 else _local_binary }}"
+  tasks:
+    - name: Ensure smoke output dir exists
+      ansible.builtin.file:
+        path: "{{ _smoke_out_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Stat candidate binary
+      ansible.builtin.stat:
+        path: "{{ _resolved_binary }}"
+      register: _bin_stat
+
+    - name: Set effective binary path
+      ansible.builtin.set_fact:
+        _binary: "{{ _resolved_binary if _bin_stat.stat.exists else '' }}"
+
+    - name: Fail clearly when no binary is available
+      ansible.builtin.fail:
+        msg: >-
+          No gludd binary found at {{ _resolved_binary }}.
+          Build via `make build-executable` or set GLUDD_BINARY_PATH.
+      when: _binary | length == 0
+
+    - name: Make binary executable
+      ansible.builtin.file:
+        path: "{{ _binary }}"
+        mode: "0755"
+
+    - name: Record binary path for verify.yml
+      ansible.builtin.copy:
+        content: "{{ _binary }}\n"
+        dest: "{{ _smoke_out_dir }}/binary_path.txt"
+        mode: "0644"
+
+    - name: Run `gludd version`
+      ansible.builtin.command:
+        argv:
+          - "{{ _binary }}"
+          - version
+      register: _version_out
+      changed_when: false
+      failed_when: false
+
+    - name: Run `gludd --help`
+      ansible.builtin.command:
+        argv:
+          - "{{ _binary }}"
+          - --help
+      register: _help_out
+      changed_when: false
+      failed_when: false
+
+    - name: Run `gludd project paths`
+      ansible.builtin.command:
+        argv:
+          - "{{ _binary }}"
+          - project
+          - paths
+      register: _paths_out
+      changed_when: false
+      failed_when: false
+
+    - name: Run `gludd --invalid-flag` (expect non-zero, clean error)
+      ansible.builtin.command:
+        argv:
+          - "{{ _binary }}"
+          - --invalid-flag
+      register: _bad_flag
+      changed_when: false
+      failed_when: false
+
+    - name: Write captured CLI outputs
+      ansible.builtin.copy:
+        content: "{{ item.body }}\n"
+        dest: "{{ _smoke_out_dir }}/{{ item.name }}"
+        mode: "0644"
+      loop:
+        - {name: version.stdout.txt, body: "{{ _version_out.stdout }}"}
+        - {name: version.stderr.txt, body: "{{ _version_out.stderr }}"}
+        - {name: version.rc.txt, body: "{{ _version_out.rc }}"}
+        - {name: help.stdout.txt, body: "{{ _help_out.stdout }}"}
+        - {name: help.stderr.txt, body: "{{ _help_out.stderr }}"}
+        - {name: help.rc.txt, body: "{{ _help_out.rc }}"}
+        - {name: paths.stdout.txt, body: "{{ _paths_out.stdout }}"}
+        - {name: paths.stderr.txt, body: "{{ _paths_out.stderr }}"}
+        - {name: paths.rc.txt, body: "{{ _paths_out.rc }}"}
+        - {name: bad_flag.stdout.txt, body: "{{ _bad_flag.stdout }}"}
+        - {name: bad_flag.stderr.txt, body: "{{ _bad_flag.stderr }}"}
+        - {name: bad_flag.rc.txt, body: "{{ _bad_flag.rc }}"}
+
+    - name: Kill any pre-existing smoke daemon on {{ _daemon_port }}
+      ansible.builtin.shell: |
+        set -e
+        pids=$(lsof -ti tcp:{{ _daemon_port }} || true)
+        if [ -n "$pids" ]; then kill $pids 2>/dev/null || true; sleep 1; fi
+      args:
+        executable: /bin/sh
+      changed_when: false
+      failed_when: false
+
+    - name: Start daemon in background on port {{ _daemon_port }}
+      ansible.builtin.shell: |
+        set -e
+        export GLUDD_ALLOW_NO_AUTH=1
+        nohup {{ _binary | quote }} daemon \
+          --host 127.0.0.1 \
+          --port {{ _daemon_port }} \
+          --log-level info \
+          > {{ _smoke_out_dir }}/daemon.stdout.log 2> {{ _smoke_out_dir }}/daemon.stderr.log &
+        echo $! > {{ _smoke_out_dir }}/daemon.pid
+      args:
+        executable: /bin/sh
+      register: _daemon_start
+      changed_when: true
+
+    - name: Poll /healthz until daemon is ready
+      ansible.builtin.uri:
+        url: "{{ _daemon_url }}/healthz"
+        method: GET
+        return_content: true
+        status_code: [200, 503]
+        timeout: 3
+      register: _health_resp
+      until: _health_resp.status == 200
+      retries: 30
+      delay: 1
+      failed_when: false
+
+    - name: Write health response
+      ansible.builtin.copy:
+        content: "{{ {'status': _health_resp.status, 'body': _health_resp.content | default('')} | to_nice_json }}\n"
+        dest: "{{ _smoke_out_dir }}/health.json"
+        mode: "0644"
+
+    - name: Submit a trivial job (POST /api/todos)
+      ansible.builtin.uri:
+        url: "{{ _daemon_url }}/api/todos"
+        method: POST
+        body_format: json
+        body:
+          title: "binary-smoke-linux-noop"
+          work_type: "noop"
+          queue: "core"
+          priority: "medium"
+        status_code: [200, 201]
+        return_content: true
+      register: _job_submit
+      retries: 5
+      delay: 2
+      until: _job_submit.status in [200, 201]
+
+    - name: Persist job submission result
+      ansible.builtin.copy:
+        content: "{{ _job_submit.json | default({}) | to_nice_json }}"
+        dest: "{{ _smoke_out_dir }}/job_submit.json"
+        mode: "0644"
+
+    - name: Run a second daemon on the occupied port (expect graceful failure)
+      ansible.builtin.shell: |
+        {{ _binary | quote }} daemon --host 127.0.0.1 --port {{ _daemon_port }} > {{ _smoke_out_dir }}/port_clash.out 2>&1
+        echo "EXIT_RC=$?"
+      args:
+        executable: /bin/sh
+      register: _port_clash
+      changed_when: false
+      failed_when: false
+
+    - name: Persist port-clash result
+      ansible.builtin.copy:
+        content: |
+          rc_block={{ _port_clash.stdout }}
+          stderr={{ _port_clash.stderr }}
+        dest: "{{ _smoke_out_dir }}/port_clash.txt"
+        mode: "0644"
+
+    - name: Write daemon stderr log (for verify back-compat filename)
+      ansible.builtin.copy:
+        content: "{{ lookup('file', _smoke_out_dir + '/daemon.stderr.log', errors='ignore') | default('') }}"
+        dest: "{{ _smoke_out_dir }}/daemon.stderr.log"
+        mode: "0644"

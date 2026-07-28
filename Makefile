@@ -2466,6 +2466,28 @@ ci-poll-until-terminal:
 	  sleep $(or $(DELAY),60); \
 	done
 
+# ci-poll-sha: poll ci-verdict for a specific SHA until terminal (GREEN/RED).
+# Usage: make ci-poll-sha SHA=<full-sha> [DELAY=30] [MAX_ITER=20]
+ci-poll-sha:
+	@N=0; MAX=$(or $(MAX_ITER),20); DELAY=$(or $(DELAY),30); SHA=$(or $(SHA),$$(git rev-parse HEAD)); \
+	while [ $$N -lt $$MAX ]; do \
+	  N=$$((N + 1)); \
+	  echo "=== poll $$N/$$MAX $$(date -u +%H:%M:%S) ==="; \
+	  if $(MAKE) --no-print-directory ci-verdict SHA=$$SHA 2>/dev/null; then \
+	    echo "CI GREEN: SHA $$SHA"; exit 0; \
+	  fi; \
+	  RC=$$?; \
+	  if [ $$RC -eq 1 ]; then \
+	    echo "CI RED (exited 1)"; exit 1; \
+	  elif [ $$RC -eq 2 ]; then \
+	    echo "CI PENDING (polling again in $$DELAY s)"; \
+	  else \
+	    echo "ci-verdict exit=$$RC (unexpected)"; \
+	  fi; \
+	  if [ $$N -lt $$MAX ]; then sleep $$DELAY; fi; \
+	done; \
+	echo "POLL EXHAUSTED after $$MAX iterations"; exit 1
+
 # ci-dashboard: one-shot compact CI run listing. Prints one line per recent run
 # with status, conclusion, branch, age, and SHA. No polling — pure read-once.
 # Usage: make ci-dashboard [LIMIT=10] [BRANCH=development]

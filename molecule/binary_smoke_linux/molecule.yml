@@ -1,0 +1,45 @@
+---
+# Molecule scenario: smoke-test the BUILT gludd binary inside a Linux container.
+#
+# Runs the PyInstaller single-file bundle (dist/gludd, from `make
+# build-executable`) inside an ubuntu:24.04 container to verify the binary:
+#   - boots with no import / missing-file errors,
+#   - answers `version` / `--help` / `project paths`,
+#   - starts its daemon and serves `/healthz`,
+#   - accepts a job via POST /api/todos,
+#   - exits cleanly on an invalid flag and on a port clash.
+#
+# NOTE on driver choice: gludd's CLI has no `--version` flag (use the `version`
+# subcommand), no `daemon start` subcommand (use `daemon`), exposes health at
+# `/healthz` (not `/health`), and has no `/api/playbook/run` endpoint (jobs are
+# submitted via POST /api/todos). This scenario adapts the generic task brief
+# to those real surfaces so the smoke test is functional.
+#
+# Runs on localhost (connection: local) — the binary-under-test is the macOS
+# binary from dist/gludd. No Docker required.
+driver:
+  name: default
+platforms: []
+provisioner:
+  name: ansible
+  config_options:
+    defaults:
+      gathering: explicit
+      host_key_checking: false
+  env:
+    ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_PROJECT_DIRECTORY}/collections"
+  playbooks:
+    prepare: default/prepare.yml
+    converge: default/converge.yml
+    verify: default/verify.yml
+verifier:
+  name: ansible
+scenario:
+  test_sequence:
+    - dependency
+    - syntax
+    - create
+    - prepare
+    - converge
+    - verify
+    - destroy

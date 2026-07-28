@@ -33,6 +33,8 @@ a = Analysis(
     datas=datas,
     hiddenimports=[
         'general_ludd',
+        'general_ludd.compat',
+        'general_ludd.compat.annotated_types',
         'general_ludd.cli',
         'general_ludd.daemon',
         'general_ludd.worker.app',
