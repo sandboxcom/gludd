@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -81,14 +81,14 @@ class TestOrnithTrainingData:
     """Tests for ornith training data module."""
 
     def test_training_data_imports(self):
-        from general_ludd.ornith.training_data import OrnithTrainingData
+        from general_ludd.ornith.training_data import TrainingDataCollector
 
-        assert OrnithTrainingData is not None
+        assert TrainingDataCollector is not None
 
     def test_training_data_constructs(self):
-        from general_ludd.ornith.training_data import OrnithTrainingData
+        from general_ludd.ornith.training_data import TrainingDataCollector
 
-        td = OrnithTrainingData()
+        td = TrainingDataCollector(MagicMock())
         assert td is not None
 
 
@@ -103,9 +103,8 @@ class TestOrnithSandbox:
     def test_sandbox_constructs(self):
         from general_ludd.ornith.sandbox import OrnithSandbox
 
-        with tempfile.TemporaryDirectory() as tmp:
-            sandbox = OrnithSandbox(Path(tmp))
-            assert sandbox is not None
+        with OrnithSandbox() as sandbox:
+            assert sandbox.temp_dir.exists()
 
 
 class TestOrnithOutcomeObserver:
@@ -119,16 +118,22 @@ class TestOrnithOutcomeObserver:
     def test_observer_constructs(self):
         from general_ludd.ornith.outcome_observer import OutcomeObserver
 
-        observer = OutcomeObserver()
+        observer = OutcomeObserver(MagicMock())
         assert observer is not None
 
-    def test_observer_record_and_summary(self):
+    def test_observer_registers_event_listeners(self):
         from general_ludd.ornith.outcome_observer import OutcomeObserver
 
-        observer = OutcomeObserver()
-        observer.record("task-1", "success", {"score": 0.9})
-        summary = observer.summary()
-        assert summary["task-1"]["outcome"] == "success"
+        observer = OutcomeObserver(MagicMock())
+        gate_listener = AsyncMock()
+        review_listener = AsyncMock()
+        revert_listener = AsyncMock()
+        observer.subscribe_gate(gate_listener)
+        observer.subscribe_review(review_listener)
+        observer.subscribe_revert(revert_listener)
+        assert observer._gate_listeners == [gate_listener]
+        assert observer._review_listeners == [review_listener]
+        assert observer._revert_listeners == [revert_listener]
 
 
 class TestOrnithTrainingRepo:
@@ -206,14 +211,11 @@ class TestRetrievalIndexer:
 
         assert CodebaseIndexer is not None
 
-    def test_tokenize_splits_words(self):
+    def test_tokenize_preserves_code_identifiers(self):
         from general_ludd.retrieval.indexer import _tokenize
 
         tokens = _tokenize("hello_world test_function")
-        assert "hello" in tokens
-        assert "world" in tokens
-        assert "test" in tokens
-        assert "function" in tokens
+        assert tokens == ["hello_world", "test_function"]
 
     def test_tokenize_empty_returns_empty(self):
         from general_ludd.retrieval.indexer import _tokenize
@@ -240,15 +242,20 @@ class TestSearXClient:
     """Tests for SearX API client."""
 
     def test_searx_client_imports(self):
-        from general_ludd.retrieval.searx_client import SearXClient
+        from general_ludd.retrieval.searx_client import SearxNGClient
 
-        assert SearXClient is not None
+        assert SearxNGClient is not None
 
-    def test_searx_client_constructs(self):
-        from general_ludd.retrieval.searx_client import SearXClient
+    async def test_searx_client_constructs(self):
+        from general_ludd.retrieval.searx_client import SearxNGClient
 
-        client = SearXClient(base_url="http://localhost:8888")
-        assert client is not None
+        with tempfile.TemporaryDirectory() as tmp:
+            client = SearxNGClient(
+                base_url="http://localhost:8888",
+                cache_dir=tmp,
+            )
+            assert client is not None
+            await client.close()
 
 
 class TestResearchIndex:
@@ -273,9 +280,9 @@ class TestAgenticContext:
     """Tests for agentic context retrieval."""
 
     def test_agentic_context_imports(self):
-        from general_ludd.retrieval.agentic_context import AgenticContextRetriever
+        from general_ludd.retrieval.agentic_context import AgenticContextInjector
 
-        assert AgenticContextRetriever is not None
+        assert AgenticContextInjector is not None
 
 
 # ============================================================================
@@ -287,62 +294,87 @@ class TestReceiverRouter:
     """Tests for receiver message router."""
 
     def test_router_imports(self):
-        from general_ludd.receiver.router import ReceiverRouter
+        from general_ludd.receiver.router import register
 
-        assert ReceiverRouter is not None
+        assert callable(register)
 
     def test_router_constructs(self):
-        from general_ludd.receiver.router import ReceiverRouter
+        from fastapi import FastAPI
 
-        router = ReceiverRouter()
-        assert router is not None
+        from general_ludd.receiver.router import register
 
-    def test_router_route_dispatches(self):
-        from general_ludd.receiver.router import ReceiverRouter
+        app = FastAPI()
+        state = {}
+        register(app, state)
+        paths = {route.path for route in app.routes}
+        assert "/ingest/webhook" in paths
+        assert "/v1/logs" in paths
 
-        router = ReceiverRouter()
-        handler_called = []
-        router.register("ping", lambda payload: handler_called.append(payload))
-        router.route({"type": "ping", "data": "hello"})
-        assert handler_called == ["hello"]
+    def test_router_ingests_authenticated_webhook(self, monkeypatch):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
 
-    def test_router_unknown_type_noop(self):
-        from general_ludd.receiver.router import ReceiverRouter
+        from general_ludd.receiver import router as receiver_router
 
-        router = ReceiverRouter()
-        router.route({"type": "unknown_event"})
+        monkeypatch.setenv(receiver_router.INGEST_TOKEN_ENV, "e2e-ingest-token")
+        app = FastAPI()
+        state = {}
+        receiver_router.register(app, state)
+        response = TestClient(app).post(
+            "/ingest/webhook",
+            json={"message": "hello", "host": "receiver-e2e"},
+            headers={"Authorization": "Bearer e2e-ingest-token"},
+        )
+        assert response.status_code == 202
+        assert state["receiver_buffer"].drain()[0]["join"]["host"] == "receiver-e2e"
+
+    def test_router_without_token_fails_closed(self, monkeypatch):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from general_ludd.receiver import router as receiver_router
+
+        monkeypatch.delenv(receiver_router.INGEST_TOKEN_ENV, raising=False)
+        app = FastAPI()
+        receiver_router.register(app, {})
+        response = TestClient(app).post(
+            "/ingest/webhook",
+            json={"message": "blocked"},
+        )
+        assert response.status_code == 503
+        assert response.json()["error"] == "ingest_disabled"
 
 
 class TestReceiverBuffer:
     """Tests for message buffer."""
 
     def test_buffer_imports(self):
-        from general_ludd.receiver.buffer import MessageBuffer
+        from general_ludd.receiver.buffer import ReceiverBuffer
 
-        assert MessageBuffer is not None
+        assert ReceiverBuffer is not None
 
     def test_buffer_constructs(self):
-        from general_ludd.receiver.buffer import MessageBuffer
+        from general_ludd.receiver.buffer import ReceiverBuffer
 
-        buf = MessageBuffer(max_size=10)
-        assert buf is not None
+        buf = ReceiverBuffer(maxlen=10)
+        assert buf.maxlen == 10
 
     def test_buffer_append_drain(self):
-        from general_ludd.receiver.buffer import MessageBuffer
+        from general_ludd.receiver.buffer import ReceiverBuffer
 
-        buf = MessageBuffer(max_size=5)
+        buf = ReceiverBuffer(maxlen=5)
         for i in range(3):
-            buf.append({"id": i})
+            assert buf.offer({"id": i}) is True
         items = buf.drain()
         assert len(items) == 3
         assert buf.drain() == []
 
     def test_buffer_overflow_drops_oldest(self):
-        from general_ludd.receiver.buffer import MessageBuffer
+        from general_ludd.receiver.buffer import ReceiverBuffer
 
-        buf = MessageBuffer(max_size=3)
+        buf = ReceiverBuffer(maxlen=3)
         for i in range(5):
-            buf.append({"id": i})
+            assert buf.offer({"id": i}) is True
         items = buf.drain()
         assert len(items) == 3
         assert items[0]["id"] == 2
@@ -352,21 +384,24 @@ class TestReceiverParsers:
     """Tests for message parsers."""
 
     def test_parsers_imports(self):
-        from general_ludd.receiver.parsers import parse_message
+        from general_ludd.receiver.parsers import parse_otlp_logs
 
-        assert parse_message is not None
+        assert parse_otlp_logs is not None
 
     def test_parse_valid_json(self):
-        from general_ludd.receiver.parsers import parse_message
+        from general_ludd.receiver.parsers import parse_otlp_logs
 
-        result = parse_message(b'{"type": "event", "data": 1}')
-        assert result["type"] == "event"
+        payload = (
+            b'{"resourceLogs":[{"scopeLogs":[{"logRecords":'
+            b'[{"body":{"stringValue":"receiver event"}}]}]}]}'
+        )
+        result = parse_otlp_logs(payload)
+        assert result[0]["message"] == "receiver event"
 
     def test_parse_invalid_json(self):
-        from general_ludd.receiver.parsers import parse_message
+        from general_ludd.receiver.parsers import parse_otlp_logs
 
-        result = parse_message(b"not json")
-        assert result is None
+        assert parse_otlp_logs(b"not json") == []
 
 
 # ============================================================================
@@ -378,45 +413,45 @@ class TestOnboardAWS:
     """Tests for AWS cloud on-boarding."""
 
     def test_aws_onboard_imports(self):
-        from general_ludd.onboard.aws import AWSOnboarder
+        from general_ludd.onboard.aws import AWSOnboardProvider
 
-        assert AWSOnboarder is not None
+        assert AWSOnboardProvider is not None
 
     def test_aws_onboarder_constructs(self):
-        from general_ludd.onboard.aws import AWSOnboarder
+        from general_ludd.onboard.aws import AWSOnboardProvider
 
-        onboarder = AWSOnboarder(region="us-east-1")
-        assert onboarder is not None
+        onboarder = AWSOnboardProvider()
+        assert callable(onboarder.create_role_instructions)
 
 
 class TestOnboardGCP:
     """Tests for GCP cloud on-boarding."""
 
     def test_gcp_onboard_imports(self):
-        from general_ludd.onboard.gcp import GCPOnboarder
+        from general_ludd.onboard.gcp import GCPOnboardProvider
 
-        assert GCPOnboarder is not None
+        assert GCPOnboardProvider is not None
 
     def test_gcp_onboarder_constructs(self):
-        from general_ludd.onboard.gcp import GCPOnboarder
+        from general_ludd.onboard.gcp import GCPOnboardProvider
 
-        onboarder = GCPOnboarder(project_id="test-project")
-        assert onboarder is not None
+        onboarder = GCPOnboardProvider(project_id="test-project")
+        assert onboarder.project_id == "test-project"
 
 
 class TestOnboardAzure:
     """Tests for Azure cloud on-boarding."""
 
     def test_azure_onboard_imports(self):
-        from general_ludd.onboard.azure import AzureOnboarder
+        from general_ludd.onboard.azure import AzureOnboardProvider
 
-        assert AzureOnboarder is not None
+        assert AzureOnboardProvider is not None
 
     def test_azure_onboarder_constructs(self):
-        from general_ludd.onboard.azure import AzureOnboarder
+        from general_ludd.onboard.azure import AzureOnboardProvider
 
-        onboarder = AzureOnboarder(subscription_id="sub-123", tenant_id="tenant-456")
-        assert onboarder is not None
+        onboarder = AzureOnboardProvider(subscription_id="sub-123")
+        assert onboarder.subscription_id == "sub-123"
 
 
 # ============================================================================
@@ -428,19 +463,19 @@ class TestAg2Lifecycle:
     """Tests for agent lifecycle types and hooks."""
 
     def test_types_imports(self):
-        from general_ludd.ag2_lifecycle.types import AgentLifecyclePhase
+        from general_ludd.ag2_lifecycle.types import Message
 
-        assert AgentLifecyclePhase is not None
+        assert Message is not None
 
     def test_hooks_imports(self):
-        from general_ludd.ag2_lifecycle.hooks import LifecycleHooks
+        from general_ludd.ag2_lifecycle.hooks import LifecycleHookSystem
 
-        assert LifecycleHooks is not None
+        assert LifecycleHookSystem is not None
 
     def test_lifecycle_hooks_constructs(self):
-        from general_ludd.ag2_lifecycle.hooks import LifecycleHooks
+        from general_ludd.ag2_lifecycle.hooks import LifecycleHookSystem
 
-        hooks = LifecycleHooks()
+        hooks = LifecycleHookSystem()
         assert hooks is not None
 
 
@@ -448,19 +483,19 @@ class TestAg13Dspy:
     """Tests for dspy optimizer and registry."""
 
     def test_optimizer_imports(self):
-        from general_ludd.ag13_dspy.optimizer import DspyOptimizer
+        from general_ludd.ag13_dspy.optimizer import PromptOptimizer
 
-        assert DspyOptimizer is not None
+        assert PromptOptimizer is not None
 
     def test_registry_imports(self):
-        from general_ludd.ag13_dspy.registry import DspyRegistry
+        from general_ludd.ag13_dspy.registry import PromptRegistry
 
-        assert DspyRegistry is not None
+        assert PromptRegistry is not None
 
     def test_registry_constructs(self):
-        from general_ludd.ag13_dspy.registry import DspyRegistry
+        from general_ludd.ag13_dspy.registry import PromptRegistry
 
-        reg = DspyRegistry()
+        reg = PromptRegistry()
         assert reg is not None
 
 
@@ -468,26 +503,36 @@ class TestAg16Orchestration:
     """Tests for orchestration and conversation modules."""
 
     def test_orchestrator_imports(self):
-        from general_ludd.ag16_orchestration.orchestrator import Orchestrator
+        from general_ludd.ag16_orchestration.orchestrator import ChatOrchestrator
 
-        assert Orchestrator is not None
+        assert ChatOrchestrator is not None
 
     def test_conversation_imports(self):
-        from general_ludd.ag16_orchestration.conversation import ConversationManager
+        from general_ludd.ag16_orchestration.conversation import Conversation
 
-        assert ConversationManager is not None
+        assert Conversation is not None
 
     def test_orchestrator_constructs(self):
-        from general_ludd.ag16_orchestration.orchestrator import Orchestrator
+        from general_ludd.ag16_orchestration.conversation import (
+            Conversation,
+            MaxTurnsTermination,
+            RoundRobinSelector,
+        )
+        from general_ludd.ag16_orchestration.orchestrator import ChatOrchestrator
 
-        orchestrator = Orchestrator()
-        assert orchestrator is not None
+        conversation = Conversation(participants=["agent"])
+        orchestrator = ChatOrchestrator(
+            conversation,
+            RoundRobinSelector(),
+            MaxTurnsTermination(1),
+        )
+        assert orchestrator.conversation is conversation
 
     def test_conversation_manager_constructs(self):
-        from general_ludd.ag16_orchestration.conversation import ConversationManager
+        from general_ludd.ag16_orchestration.conversation import Conversation
 
-        mgr = ConversationManager()
-        assert mgr is not None
+        conversation = Conversation(participants=["agent"])
+        assert conversation.turn_count == 0
 
 
 class TestAg8NamedPasses:
@@ -509,15 +554,16 @@ class TestAg9Checkpoint:
     """Tests for checkpoint branching."""
 
     def test_branching_imports(self):
-        from general_ludd.ag9_checkpoint.branching import CheckpointManager
+        from general_ludd.ag9_checkpoint.branching import BranchManager
 
-        assert CheckpointManager is not None
+        assert BranchManager is not None
 
     def test_checkpoint_manager_constructs(self):
-        from general_ludd.ag9_checkpoint.branching import CheckpointManager
+        from general_ludd.ag9_checkpoint.branching import BranchManager
 
-        cm = CheckpointManager()
-        assert cm is not None
+        with tempfile.TemporaryDirectory() as tmp:
+            manager = BranchManager(tmp)
+            assert manager.list_branches() == []
 
 
 # ============================================================================
@@ -529,46 +575,53 @@ class TestModelWeightsSchema:
     """Tests for model weights schema."""
 
     def test_schema_imports(self):
-        from general_ludd.model_weights.schema import ModelWeights
+        from general_ludd.model_weights.schema import ModelWeightSchema
 
-        assert ModelWeights is not None
+        assert ModelWeightSchema is not None
 
     def test_model_weights_constructs(self):
-        from general_ludd.model_weights.schema import ModelWeights
+        from general_ludd.model_weights.schema import ModelWeightSchema
+        from general_ludd.schemas.benchmark import TaskRole
 
-        weights = ModelWeights(model_name="test-model", weights={"a": 0.5, "b": 1.0})
-        assert weights.model_name == "test-model"
-        assert weights.weights == {"a": 0.5, "b": 1.0}
+        weight = ModelWeightSchema(
+            model_id="test-model",
+            task_role=TaskRole.PLANNER,
+            weight=0.5,
+        )
+        assert weight.model_id == "test-model"
+        assert weight.weight == 0.5
 
 
 class TestModelWeightsLoader:
     """Tests for model weights loader."""
 
     def test_loader_imports(self):
-        from general_ludd.model_weights.loader import load_weights
+        from general_ludd.model_weights.loader import load_seed_data
 
-        assert load_weights is not None
+        assert load_seed_data is not None
 
-    def test_load_weights_nonexistent(self):
-        from general_ludd.model_weights.loader import load_weights
+    def test_load_weights_seed_data(self):
+        from general_ludd.model_weights.loader import load_seed_data
+        from general_ludd.model_weights.store import ModelWeightStore
 
-        result = load_weights(Path("/nonexistent/weights.json"))
-        assert result is None
+        result = load_seed_data()
+        assert isinstance(result, ModelWeightStore)
+        assert result.all_weights()
 
 
 class TestModelWeightsStore:
     """Tests for model weights store."""
 
     def test_store_imports(self):
-        from general_ludd.model_weights.store import ModelWeightsStore
+        from general_ludd.model_weights.store import ModelWeightStore
 
-        assert ModelWeightsStore is not None
+        assert ModelWeightStore is not None
 
     def test_store_constructs(self):
-        from general_ludd.model_weights.store import ModelWeightsStore
+        from general_ludd.model_weights.store import ModelWeightStore
 
-        store = ModelWeightsStore()
-        assert store is not None
+        store = ModelWeightStore()
+        assert store.all_weights() == []
 
 
 # ============================================================================
@@ -602,8 +655,10 @@ class TestWorkspace:
     def test_workspace_constructs(self):
         from general_ludd.projects.workspace import ProjectWorkspace
 
-        ws = ProjectWorkspace(name="test-ws", root=Path("/tmp/ws"))
-        assert ws.name == "test-ws"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = ProjectWorkspace("test-ws", base_dir=tmp)
+            assert ws.project_id == "test-ws"
+            assert ws.root == Path(tmp) / "test-ws"
 
 
 # ============================================================================
@@ -615,26 +670,29 @@ class TestRoutingRoles:
     """Tests for routing role weights and roles."""
 
     def test_weights_imports(self):
-        from general_ludd.routing_roles.weights import compute_role_weight
+        from general_ludd.routing_roles.weights import weights_for
 
-        assert compute_role_weight is not None
+        assert weights_for is not None
 
     def test_compute_role_weight_returns_number(self):
-        from general_ludd.routing_roles.weights import compute_role_weight
+        from general_ludd.routing_roles.weights import RoleWeights, weights_for
+        from general_ludd.schemas.benchmark import TaskType
 
-        weight = compute_role_weight("builder", {"current_load": 0.5})
-        assert isinstance(weight, (int, float))
+        weight = weights_for(TaskType.FEATURE)
+        assert isinstance(weight, RoleWeights)
+        assert weight.cost + weight.quality == 1.0
 
     def test_roles_imports(self):
-        from general_ludd.routing_roles.roles import get_available_roles
+        from general_ludd.routing_roles.roles import TaskRole
 
-        assert get_available_roles is not None
+        assert TaskRole is not None
 
     def test_get_available_roles_returns_list(self):
-        from general_ludd.routing_roles.roles import get_available_roles
+        from general_ludd.routing_roles.roles import TaskRole
 
-        roles = get_available_roles()
+        roles = list(TaskRole)
         assert isinstance(roles, list)
+        assert roles
 
 
 # ============================================================================
@@ -653,24 +711,23 @@ class TestSslCertManager:
     def test_cert_manager_constructs(self):
         from general_ludd.ssl_agent.cert_manager import CertManager
 
-        with tempfile.TemporaryDirectory() as tmp:
-            mgr = CertManager(cert_dir=Path(tmp))
-            assert mgr is not None
+        mgr = CertManager()
+        assert mgr._known_oids
 
 
 class TestSslAgentFlow:
     """Tests for SSL agent flow."""
 
     def test_agent_flow_imports(self):
-        from general_ludd.ssl_agent.agent_flow import SslAgentFlow
+        from general_ludd.ssl_agent.agent_flow import SSLCertAgent
 
-        assert SslAgentFlow is not None
+        assert SSLCertAgent is not None
 
     def test_agent_flow_constructs(self):
-        from general_ludd.ssl_agent.agent_flow import SslAgentFlow
+        from general_ludd.ssl_agent.agent_flow import SSLCertAgent
 
-        flow = SslAgentFlow()
-        assert flow is not None
+        agent = SSLCertAgent()
+        assert agent._model_call_count == 0
 
 
 # ============================================================================
@@ -682,32 +739,30 @@ class TestSystemRlimit:
     """Tests for system resource limits."""
 
     def test_rlimit_imports(self):
-        from general_ludd.system.rlimit import set_resource_limits
+        from general_ludd.system.rlimit import apply_limits
 
-        assert set_resource_limits is not None
+        assert apply_limits is not None
 
 
 class TestSystemMonitor:
     """Tests for system monitor."""
 
     def test_monitor_imports(self):
-        from general_ludd.system.monitor import SystemMonitor
+        from general_ludd.system.monitor import get_load_average
 
-        assert SystemMonitor is not None
+        assert get_load_average is not None
 
     def test_monitor_constructs(self):
-        from general_ludd.system.monitor import SystemMonitor
+        from general_ludd.system.monitor import get_cpu_count
 
-        monitor = SystemMonitor()
-        assert monitor is not None
+        assert get_cpu_count() >= 1
 
     def test_monitor_snapshot_returns_dict(self):
-        from general_ludd.system.monitor import SystemMonitor
+        from general_ludd.system.monitor import get_load_average
 
-        monitor = SystemMonitor()
-        snapshot = monitor.snapshot()
-        assert isinstance(snapshot, dict)
-        assert "cpu_percent" in snapshot or "memory" in snapshot
+        snapshot = get_load_average()
+        assert len(snapshot) == 3
+        assert all(isinstance(load, float) and load >= 0.0 for load in snapshot)
 
 
 # ============================================================================
@@ -719,29 +774,29 @@ class TestHardwareProbe:
     """Tests for hardware probe."""
 
     def test_probe_imports(self):
-        from general_ludd.hardware.probe import HardwareProbe
+        from general_ludd.hardware.probe import probe_hardware
 
-        assert HardwareProbe is not None
+        assert probe_hardware is not None
 
     def test_probe_constructs(self):
-        from general_ludd.hardware.probe import HardwareProbe
+        from general_ludd.hardware.probe import HardwareProfile, probe_hardware
 
-        probe = HardwareProbe()
-        assert probe is not None
+        profile = probe_hardware()
+        assert isinstance(profile, HardwareProfile)
 
     def test_probe_gpu_info(self):
-        from general_ludd.hardware.probe import HardwareProbe
+        from general_ludd.hardware.probe import probe_hardware
 
-        probe = HardwareProbe()
-        gpu_info = probe.gpu_info()
-        assert isinstance(gpu_info, dict)
+        profile = probe_hardware()
+        assert isinstance(profile.to_dict(), dict)
+        assert profile.total_memory_gb >= 0.0
 
     def test_probe_cpu_info(self):
-        from general_ludd.hardware.probe import HardwareProbe
+        from general_ludd.hardware.probe import probe_hardware
 
-        probe = HardwareProbe()
-        cpu_info = probe.cpu_info()
-        assert isinstance(cpu_info, dict)
+        profile = probe_hardware()
+        assert profile.cpu_count >= 1
+        assert profile.recommended_workers >= 1
 
 
 # ============================================================================
@@ -773,15 +828,19 @@ class TestNetworkingScapy:
     """Tests for scapy networking adapter."""
 
     def test_scapy_adapter_imports(self):
-        from general_ludd.networking.scapy_adapter import ScapyAdapter
+        from general_ludd.networking.scapy_adapter import PacketSummary
 
-        assert ScapyAdapter is not None
+        assert PacketSummary is not None
 
     def test_scapy_adapter_constructs(self):
-        from general_ludd.networking.scapy_adapter import ScapyAdapter
+        from general_ludd.networking.scapy_adapter import PacketSummary
 
-        adapter = ScapyAdapter()
-        assert adapter is not None
+        packet = PacketSummary(
+            src_ip="192.0.2.1",
+            dst_ip="198.51.100.2",
+            protocol="TCP",
+        )
+        assert packet.protocol == "TCP"
 
 
 # ============================================================================
@@ -793,15 +852,15 @@ class TestObserveFacade:
     """Tests for observe facade."""
 
     def test_facade_imports(self):
-        from general_ludd.observe.facade import ObserveFacade
+        from general_ludd.observe.facade import GluddObserve
 
-        assert ObserveFacade is not None
+        assert GluddObserve is not None
 
     def test_facade_constructs(self):
-        from general_ludd.observe.facade import ObserveFacade
+        from general_ludd.observe.facade import GluddObserve
 
-        facade = ObserveFacade()
-        assert facade is not None
+        facade = GluddObserve({})
+        assert facade.errors == []
 
 
 # ============================================================================
@@ -853,16 +912,16 @@ class TestCommandsMake:
     """Tests for make command wrapper."""
 
     def test_make_imports(self):
-        from general_ludd.commands.make import MakeCommand
+        from general_ludd.commands.make import MakeRunner
 
-        assert MakeCommand is not None
+        assert MakeRunner is not None
 
     def test_make_command_constructs(self):
-        from general_ludd.commands.make import MakeCommand
+        from general_ludd.commands.make import MakeRunner
 
-        cmd = MakeCommand("test-target")
-        assert cmd is not None
-        assert cmd.target == "test-target"
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = MakeRunner(cwd=tmp)
+            assert runner._cwd == Path(tmp).resolve()
 
 
 # ============================================================================
@@ -874,14 +933,25 @@ class TestCompatAnnotatedTypes:
     """Tests for annotated types compatibility."""
 
     def test_annotated_types_imports(self):
-        from general_ludd.compat.annotated_types import is_annotated
+        from general_ludd.compat.annotated_types import (
+            apply_annotated_types_runtime_patch,
+        )
 
-        assert is_annotated is not None
+        assert apply_annotated_types_runtime_patch is not None
 
     def test_is_annotated_returns_bool(self):
-        from general_ludd.compat.annotated_types import is_annotated
+        import annotated_types
 
-        assert isinstance(is_annotated(int), bool)
+        from general_ludd.compat.annotated_types import (
+            apply_annotated_types_runtime_patch,
+        )
+
+        apply_annotated_types_runtime_patch()
+        assert getattr(
+            annotated_types.GroupedMetadata,
+            "__general_ludd_safe_grouped_metadata__",
+            False,
+        ) is True
 
 
 # ============================================================================
@@ -893,12 +963,17 @@ class TestGovernanceCLI:
     """Tests for governance CLI module."""
 
     def test_cli_governance_imports(self):
-        from general_ludd.governance.cli_governance import build_parser
+        from general_ludd.governance.cli_governance import add_governance_subparser
 
-        assert build_parser is not None
+        assert add_governance_subparser is not None
 
     def test_build_parser_returns_parser(self):
-        from general_ludd.governance.cli_governance import build_parser
+        import argparse
 
-        parser = build_parser()
-        assert parser is not None
+        from general_ludd.governance.cli_governance import add_governance_subparser
+
+        parser = argparse.ArgumentParser()
+        add_governance_subparser(parser.add_subparsers())
+        args = parser.parse_args(["governance", "tax", "US"])
+        assert args.governance_command == "tax"
+        assert callable(args.func)
