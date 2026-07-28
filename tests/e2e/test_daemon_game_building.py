@@ -26,6 +26,7 @@ or:
 
 from __future__ import annotations
 
+import asyncio
 import ast
 import importlib.util
 import os
@@ -69,7 +70,7 @@ _HAS_DEEPSEEK_PROVIDER = importlib.util.find_spec("langchain_openai") is not Non
 
 _DS_BASE_URL = "https://api.deepseek.com/v1"
 _PROJECT_ID = "proj-game-e2e"
-_SNAKE_MODULE = '''```python
+_SNAKE_MODULE = """```python
 import random
 
 
@@ -148,13 +149,11 @@ class Snake:
             "game_over": self.game_over,
             "length": len(self.snake),
         }
-```'''
+```"""
 
 
 def _project_manager_stub() -> SimpleNamespace:
-    return SimpleNamespace(
-        select_project=lambda: SimpleNamespace(project_id=_PROJECT_ID)
-    )
+    return SimpleNamespace(select_project=lambda: SimpleNamespace(project_id=_PROJECT_ID))
 
 
 class _FakeDeepSeekGateway:
@@ -175,6 +174,7 @@ class _FakeDeepSeekGateway:
 # ---------------------------------------------------------------------------
 # Gateway builder (DeepSeek)
 # ---------------------------------------------------------------------------
+
 
 def _build_deepseek_gateway() -> Any:
     if not DEEPSEEK_KEY or not _HAS_DEEPSEEK_PROVIDER:
@@ -260,6 +260,7 @@ SNAKE_PROMPT = textwrap.dedent("""\
 # Async session factory (SQLite in-memory with ALL tables)
 # ---------------------------------------------------------------------------
 
+
 async def _make_session_factory() -> Any:
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
     from sqlalchemy.pool import StaticPool
@@ -280,6 +281,7 @@ async def _make_session_factory() -> Any:
 # ---------------------------------------------------------------------------
 # No-op runner: records calls, skips Ansible subprocess
 # ---------------------------------------------------------------------------
+
 
 class _NoopRunner:
     def __init__(self, workspace_root: str) -> None:
@@ -307,6 +309,7 @@ class _NoopRunner:
 # ---------------------------------------------------------------------------
 # Code extraction helpers
 # ---------------------------------------------------------------------------
+
 
 def _extract_code_blocks(text: str) -> dict[str, str]:
     pattern = re.compile(r"```(\w*)\n(.*?)```", re.DOTALL)
@@ -374,16 +377,38 @@ def _parse_ast(source: str) -> dict[str, Any]:
 # interface instead of hardcoded names.
 
 _TICK_NAMES: tuple[str, ...] = (
-    "tick", "step", "update", "advance", "next_frame", "next_turn",
-    "frame", "turn", "simulate", "do_tick",
+    "tick",
+    "step",
+    "update",
+    "advance",
+    "next_frame",
+    "next_turn",
+    "frame",
+    "turn",
+    "simulate",
+    "do_tick",
 )
 _INPUT_NAMES: tuple[str, ...] = (
-    "input", "handle_input", "send_input", "set_direction", "direction",
-    "action", "key", "press", "set_input", "on_input",
+    "input",
+    "handle_input",
+    "send_input",
+    "set_direction",
+    "direction",
+    "action",
+    "key",
+    "press",
+    "set_input",
+    "on_input",
 )
 _STATE_NAMES: tuple[str, ...] = (
-    "render_state", "get_state", "state", "to_dict", "as_dict",
-    "snapshot", "serialize", "export_state",
+    "render_state",
+    "get_state",
+    "state",
+    "to_dict",
+    "as_dict",
+    "snapshot",
+    "serialize",
+    "export_state",
 )
 
 
@@ -427,10 +452,9 @@ def _discover_game_class(mod: Any, preferred: str | None = None) -> type | None:
                 return obj
     return max(
         candidates,
-        key=lambda kv: len([
-            m for m in inspect.getmembers(kv[1], predicate=inspect.isfunction)
-            if not m[0].startswith("_")
-        ]),
+        key=lambda kv: len(
+            [m for m in inspect.getmembers(kv[1], predicate=inspect.isfunction) if not m[0].startswith("_")]
+        ),
     )
 
 
@@ -445,13 +469,11 @@ def _instantiate_game(cls: type, hints: list[tuple[Any, ...]] | None = None) -> 
 
     sig = inspect.signature(cls.__init__)
     params = [
-        p for p in sig.parameters.values()
-        if p.name != "self"
-        and p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+        p
+        for p in sig.parameters.values()
+        if p.name != "self" and p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
     ]
-    n_required = sum(
-        1 for p in params if p.default is inspect.Parameter.empty
-    )
+    n_required = sum(1 for p in params if p.default is inspect.Parameter.empty)
 
     candidates: list[tuple[Any, ...]] = []
     if hints:
@@ -527,6 +549,7 @@ def _get_state_dict(instance: Any) -> dict[str, Any]:
 # generated game actually tracks a body, food, and a score — not just that
 # it has a tick() method that mutates SOMETHING.
 
+
 def _is_coord_pair(value: Any) -> bool:
     """True if ``value`` looks like a single [x, y] coordinate pair."""
     if isinstance(value, (list, tuple)) and len(value) == 2:
@@ -575,11 +598,7 @@ def _find_food_attribute(state: dict[str, Any], exclude: str | None = None) -> s
             continue
         if _is_coord_pair(value):
             return name
-        if (
-            isinstance(value, (list, tuple))
-            and len(value) == 1
-            and _is_coord_pair(value[0])
-        ):
+        if isinstance(value, (list, tuple)) and len(value) == 1 and _is_coord_pair(value[0]):
             return name
     return None
 
@@ -677,10 +696,7 @@ def _verify_snake_features(mod: Any) -> list[str]:
                 input_fn(direction)
                 break
             except Exception as exc:
-                failures.append(
-                    f"input method {input_found[0]!r} raised on {direction!r}: "
-                    f"{type(exc).__name__}: {exc}"
-                )
+                failures.append(f"input method {input_found[0]!r} raised on {direction!r}: {type(exc).__name__}: {exc}")
                 break
 
     # Feature: snake state must track BODY segments (list of coord pairs),
@@ -690,19 +706,14 @@ def _verify_snake_features(mod: Any) -> list[str]:
     body_name = _find_body_attribute(state)
     if body_name is None:
         failures.append(
-            "no body-like attribute found (list of >=1 coordinate pairs); "
-            "snake state must track body segments"
+            "no body-like attribute found (list of >=1 coordinate pairs); snake state must track body segments"
         )
     if _find_food_attribute(state, exclude=body_name) is None:
         failures.append(
-            "no food-like attribute found (single [x,y] pair or 1-element list); "
-            "snake state must track food position"
+            "no food-like attribute found (single [x,y] pair or 1-element list); snake state must track food position"
         )
     if _find_score_attribute(state) is None:
-        failures.append(
-            "no score-like numeric attribute found; "
-            "snake must track score/length"
-        )
+        failures.append("no score-like numeric attribute found; snake must track score/length")
 
     failures.extend(run_lifecycle_checks("snake", mod))
 
@@ -712,6 +723,7 @@ def _verify_snake_features(mod: Any) -> list[str]:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestDaemonGameBuilding:
     """Full daemon pipeline: claim → dispatch → execute → verify."""
@@ -744,10 +756,10 @@ class TestDaemonGameBuilding:
         ws = tmp_path / "workspace"
         ws.mkdir()
         subprocess.run(["git", "init", str(ws)], check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.email", "test@general-ludd.local"],
-                       cwd=ws, check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.name", "Test Agent"],
-                       cwd=ws, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@general-ludd.local"], cwd=ws, check=True, capture_output=True
+        )
+        subprocess.run(["git", "config", "user.name", "Test Agent"], cwd=ws, check=True, capture_output=True)
 
         engine = ExecutionEngine(
             model_gateway=gateway,
@@ -779,17 +791,19 @@ class TestDaemonGameBuilding:
         print("\n--- Step 5: Create 'Build Snake game' todo via TodoRepository ---")
         async with session_factory() as session:
             repo = TodoRepository(session)
-            todo_row = await repo.create({
-                "title": "Build a Snake game in Python",
-                "description": SNAKE_PROMPT,
-                "status": _TodoStatus_enum.QUEUED.value,
-                "queue": "core",
-                "work_type": "code",
-                "model_profile": "deepseek_coder",
-                "prompt_profile": "snake_build.md.j2",
-                "created_by": "test",
-                "project_id": _PROJECT_ID,
-            })
+            todo_row = await repo.create(
+                {
+                    "title": "Build a Snake game in Python",
+                    "description": SNAKE_PROMPT,
+                    "status": _TodoStatus_enum.QUEUED.value,
+                    "queue": "core",
+                    "work_type": "code",
+                    "model_profile": "deepseek_coder",
+                    "prompt_profile": "snake_build.md.j2",
+                    "created_by": "test",
+                    "project_id": _PROJECT_ID,
+                }
+            )
             await session.commit()
             todo_id = todo_row.todo_id
             todo_version = todo_row.version
@@ -800,16 +814,18 @@ class TestDaemonGameBuilding:
         from general_ludd.schemas.todo import TodoStatus as _TS
 
         metrics = await loop.tick()
-        print(f"  Tick completed: phases={metrics['phases_completed']}, "
-              f"todos_dispatched={metrics.get('todos_dispatched', 0)}, "
-              f"duration_ms={metrics['tick_duration_ms']:.0f}")
+        print(
+            f"  Tick completed: phases={metrics['phases_completed']}, "
+            f"todos_dispatched={metrics.get('todos_dispatched', 0)}, "
+            f"duration_ms={metrics['tick_duration_ms']:.0f}"
+        )
 
         # Debug: inspect tick state after the loop
         claimed_todos = loop._tick_state.get("claimed_todos", [])
         print(f"  claimed_todos from _tick_state: {[getattr(t, 'todo_id', t) for t in claimed_todos]}")
         for ct in claimed_todos:
-            tid = getattr(ct, 'todo_id', ct)
-            tstat = getattr(ct, 'status', '?')
+            tid = getattr(ct, "todo_id", ct)
+            tstat = getattr(ct, "status", "?")
             print(f"    claimed todo {tid}: status={tstat}")
 
         # ---------------------------------------------------------------- Step 7
@@ -823,9 +839,11 @@ class TestDaemonGameBuilding:
             print(f"  Todo status after tick: {post_tick_status} (was QUEUED), version={post_tick_version}")
 
         if post_tick_status != _TS.ACTIVE.value:
-            print(f"  WARNING: Todo not claimed ({post_tick_status!r}). "
-                  f"claim_runnable returned {len(claimed_todos)} todo(s). "
-                  f"todos_dispatched={metrics.get('todos_dispatched', 0)}")
+            print(
+                f"  WARNING: Todo not claimed ({post_tick_status!r}). "
+                f"claim_runnable returned {len(claimed_todos)} todo(s). "
+                f"todos_dispatched={metrics.get('todos_dispatched', 0)}"
+            )
             # Still check if runner was dispatched despite claim failure
             if runner.vars_written:
                 print("  BUT runner DID receive vars — dispatch happened")
@@ -834,9 +852,7 @@ class TestDaemonGameBuilding:
         else:
             print("  PASS: Todo was claimed (QUEUED → ACTIVE)")
 
-        assert runner.vars_written, (
-            "No runner vars written — _dispatch_execute_job did not fire"
-        )
+        assert runner.vars_written, "No runner vars written — _dispatch_execute_job did not fire"
         print(f"  Runner vars_written count: {len(runner.vars_written)}")
         print(f"  Runner prepare_calls: {runner.prepare_calls}")
         print(f"  Runner run_calls: {runner.run_calls}")
@@ -846,9 +862,7 @@ class TestDaemonGameBuilding:
         vars_entry = runner.vars_written[0]
         job_vars = vars_entry.get("job_vars", {})
         model_response = job_vars.get("model_response")
-        assert model_response, (
-            "model_response is empty — invoke_model_for_generation did not call DeepSeek"
-        )
+        assert model_response, "model_response is empty — invoke_model_for_generation did not call DeepSeek"
         print(f"  model_response length: {len(model_response)} chars")
         print("  PASS: Model was called and returned content")
 
@@ -864,7 +878,7 @@ class TestDaemonGameBuilding:
             model_profile="deepseek_coder",
         )
 
-        result = engine.execute(job)
+        result = asyncio.run(engine.execute_async(job))
         print(f"  TaskReturn: return_id={result.return_id}")
         print(f"  exit_code={result.exit_code}")
         print(f"  summary={result.result_summary[:300]}")
@@ -875,21 +889,24 @@ class TestDaemonGameBuilding:
         py_file_names = [f.name for f in all_py_files]
         print(f"  Python files in workspace: {py_file_names}")
 
-        code_written = any(
-            "snake" in f.name.lower() or "game" in f.name.lower()
-            for f in all_py_files
-        ) or len(all_py_files) > 1  # at least one generated file beyond the empty dir
+        code_written = (
+            any("snake" in f.name.lower() or "game" in f.name.lower() for f in all_py_files) or len(all_py_files) > 1
+        )  # at least one generated file beyond the empty dir
         print(f"  Code was written: {code_written}")
 
         # ---------------------------------------------------------------- Step 9
         print("\n--- Step 9: Verify code was committed to git ---")
         log_result = subprocess.run(
             ["git", "log", "--oneline", "-3"],
-            cwd=ws, capture_output=True, text=True,
+            cwd=ws,
+            capture_output=True,
+            text=True,
         )
         branch_result = subprocess.run(
             ["git", "branch"],
-            cwd=ws, capture_output=True, text=True,
+            cwd=ws,
+            capture_output=True,
+            text=True,
         )
         print(f"  Git log:\n{log_result.stdout}")
         print(f"  Git branches:\n{branch_result.stdout}")
@@ -931,17 +948,18 @@ class TestDaemonGameBuilding:
             print(f"  Source length: {len(game_source)} chars")
 
             ast_result = _parse_ast(game_source)
-            print(f"  AST parseable: {ast_result['parseable']}, "
-                  f"has_class: {ast_result['has_class']}, "
-                  f"error: {ast_result.get('error')}")
+            print(
+                f"  AST parseable: {ast_result['parseable']}, "
+                f"has_class: {ast_result['has_class']}, "
+                f"error: {ast_result.get('error')}"
+            )
 
             snake_failures: list[str] = []
             if ast_result["parseable"]:
                 module_name = f"snake_game_{todo_id.replace('-', '_').lower()}"
                 try:
                     mod = _load_generated_module(game_source, module_name, tmp_path)
-                    print(f"  Module imported; top-level names: "
-                          f"{[n for n in dir(mod) if not n.startswith('_')][:12]}")
+                    print(f"  Module imported; top-level names: {[n for n in dir(mod) if not n.startswith('_')][:12]}")
                     snake_failures = _verify_snake_features(mod)
                 except Exception as exc:
                     tb_tail = traceback.format_exc()[-500:]
@@ -971,16 +989,16 @@ class TestDaemonGameBuilding:
                         for k, v in state_dbg.items():
                             length = len(v) if hasattr(v, "__len__") else "n/a"
                             value_repr = repr(v)[:200]
-                            dump_lines.append(
-                                f"{k} ({type(v).__name__}, len={length}): {value_repr}"
-                            )
+                            dump_lines.append(f"{k} ({type(v).__name__}, len={length}): {value_repr}")
                         (debug_dir / "last_state.txt").write_text("\n".join(dump_lines))
                         print(f"  DEBUG: source + state dumped to {debug_dir}")
                 except Exception as exc:
                     print(f"  DEBUG dump failed: {type(exc).__name__}: {exc}")
             else:
-                print("\n  SUCCESS: generated module satisfies all Snake features "
-                      "(class present, tickable, state advances, no crashes).")
+                print(
+                    "\n  SUCCESS: generated module satisfies all Snake features "
+                    "(class present, tickable, state advances, no crashes)."
+                )
 
         # ---------------------------------------------------------------- REPORT
         print("\n" + "=" * 70)
@@ -1002,15 +1020,16 @@ class TestDaemonGameBuilding:
             f"runner.vars_written={bool(runner.vars_written)}"
         )
         assert runner.vars_written, "Runner was not dispatched"
-        assert not snake_failures, (
-            "Generated Snake game does not satisfy the required features:\n  - "
-            + "\n  - ".join(snake_failures)
+        assert not snake_failures, "Generated Snake game does not satisfy the required features:\n  - " + "\n  - ".join(
+            snake_failures
         )
 
         # Check claim status (may fail if claim_runnable didn't pick up for infrastructure reasons)
         if post_tick_status != _TS.ACTIVE.value:
-            print(f"  NOTE: Todo not claimed by event loop tick (status={post_tick_status!r}). "
-                  f"This may be a macOS sandbox or session isolation issue.")
+            print(
+                f"  NOTE: Todo not claimed by event loop tick (status={post_tick_status!r}). "
+                f"This may be a macOS sandbox or session isolation issue."
+            )
         else:
             print("  PASS: Full claim pipeline verified (QUEUED → ACTIVE → dispatched)")
 
@@ -1034,10 +1053,10 @@ class TestDaemonGameBuilding:
         ws = tmp_path / "game-workspace"
         ws.mkdir()
         subprocess.run(["git", "init", str(ws)], check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.email", "test@general-ludd.local"],
-                       cwd=ws, check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.name", "Test Agent"],
-                       cwd=ws, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@general-ludd.local"], cwd=ws, check=True, capture_output=True
+        )
+        subprocess.run(["git", "config", "user.name", "Test Agent"], cwd=ws, check=True, capture_output=True)
 
         engine = ExecutionEngine(model_gateway=gateway, workspace_path=str(ws))
 
@@ -1045,9 +1064,13 @@ class TestDaemonGameBuilding:
         prompt_registry = PromptRegistry()
         prompt_registry.register("snake_build.md.j2", SNAKE_PROMPT)
 
-        loop = EventLoop(session=None, model_gateway=gateway, runner=runner,
-                         prompt_registry=prompt_registry,
-                         project_manager=_project_manager_stub())
+        loop = EventLoop(
+            session=None,
+            model_gateway=gateway,
+            runner=runner,
+            prompt_registry=prompt_registry,
+            project_manager=_project_manager_stub(),
+        )
         loop._session_factory = session_factory
         loop._total_ticks = 1
         loop._tick_state = {}
@@ -1055,17 +1078,19 @@ class TestDaemonGameBuilding:
 
         async with session_factory() as session:
             repo = TodoRepository(session)
-            todo_row = await repo.create({
-                "title": "Build a Snake game",
-                "description": SNAKE_PROMPT,
-                "status": _TS.QUEUED.value,
-                "queue": "core",
-                "work_type": "code",
-                "model_profile": "deepseek_coder",
-                "prompt_profile": "snake_build.md.j2",
-                "created_by": "test",
-                "project_id": _PROJECT_ID,
-            })
+            todo_row = await repo.create(
+                {
+                    "title": "Build a Snake game",
+                    "description": SNAKE_PROMPT,
+                    "status": _TS.QUEUED.value,
+                    "queue": "core",
+                    "work_type": "code",
+                    "model_profile": "deepseek_coder",
+                    "prompt_profile": "snake_build.md.j2",
+                    "created_by": "test",
+                    "project_id": _PROJECT_ID,
+                }
+            )
             await session.commit()
             todo_id = todo_row.todo_id
 
@@ -1089,10 +1114,16 @@ class TestDaemonGameBuilding:
         print(f"  model_response: {len(model_response)} chars")
 
         print("\n--- Running ExecutionEngine ---")
-        job = JobSpec(job_id="EXEC-SNAKE-FULL", todo_id=todo_id, playbook="validate_task.yml",
-                      queue="core", work_type="code", prompt_text=SNAKE_PROMPT,
-                      model_profile="deepseek_coder")
-        result = engine.execute(job)
+        job = JobSpec(
+            job_id="EXEC-SNAKE-FULL",
+            todo_id=todo_id,
+            playbook="validate_task.yml",
+            queue="core",
+            work_type="code",
+            prompt_text=SNAKE_PROMPT,
+            model_profile="deepseek_coder",
+        )
+        result = asyncio.run(engine.execute_async(job))
         print(f"  exit_code={result.exit_code}, artifacts={result.artifacts}")
 
         py_files = sorted(ws.glob("*.py"))
@@ -1150,27 +1181,39 @@ class TestDaemonGameBuilding:
 
         async with session_factory() as session:
             repo = TodoRepository(session)
-            await repo.create({
-                "title": "Build a Snake game",
-                "description": SNAKE_PROMPT,
-                "status": _TS.QUEUED.value,
-                "queue": "core",
-                "work_type": "code",
-                "model_profile": "deepseek_coder",
-                "prompt_profile": "snake_build.md.j2",
-                "created_by": "test",
-                "project_id": _PROJECT_ID,
-            })
+            await repo.create(
+                {
+                    "title": "Build a Snake game",
+                    "description": SNAKE_PROMPT,
+                    "status": _TS.QUEUED.value,
+                    "queue": "core",
+                    "work_type": "code",
+                    "model_profile": "deepseek_coder",
+                    "prompt_profile": "snake_build.md.j2",
+                    "created_by": "test",
+                    "project_id": _PROJECT_ID,
+                }
+            )
             await session.commit()
 
         from general_ludd.self_improve.harness import SelfImprovementHarness
 
-        with patch.object(SelfImprovementHarness, "run_gap_analysis", return_value=[
-            {"type": "missing_tests", "file": "src/mod.py", "severity": "high",
-             "message": "no tests"},
-        ]), patch.object(SelfImprovementHarness, "generate_fix_todos", return_value=[
-            {"title": "Add tests for mod.py", "work_type": "test", "priority": "high"},
-        ]):
+        with (
+            patch.object(
+                SelfImprovementHarness,
+                "run_gap_analysis",
+                return_value=[
+                    {"type": "missing_tests", "file": "src/mod.py", "severity": "high", "message": "no tests"},
+                ],
+            ),
+            patch.object(
+                SelfImprovementHarness,
+                "generate_fix_todos",
+                return_value=[
+                    {"title": "Add tests for mod.py", "work_type": "test", "priority": "high"},
+                ],
+            ),
+        ):
             metrics = await loop.tick()
 
         assert runner.vars_written, "Game-build todo should have been dispatched"
@@ -1180,6 +1223,4 @@ class TestDaemonGameBuilding:
             f"_total_ticks={loop._total_ticks}, "
             f"metrics={ {k: v for k, v in metrics.items() if 'self_improve' in k} }"
         )
-        assert metrics.get("self_improve_todos_persisted") == 1, (
-            "Self-improvement todo was not persisted"
-        )
+        assert metrics.get("self_improve_todos_persisted") == 1, "Self-improvement todo was not persisted"

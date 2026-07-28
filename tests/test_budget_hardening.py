@@ -1,6 +1,8 @@
 """Tests for budget-gating hardening (default-DENY) across engine, reviewer, job_invocation, and B5 router."""
+
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
@@ -8,6 +10,7 @@ from unittest.mock import MagicMock, patch
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _exhausted_guard(reason: str = "daily limit reached") -> MagicMock:
     g = MagicMock()
@@ -62,9 +65,11 @@ def _try_charge_denied_guard() -> MagicMock:
 # engine._budget_pre_check
 # ---------------------------------------------------------------------------
 
+
 class TestBudgetPreCheck:
     def _engine(self, guard=None):
         from general_ludd.execution.engine import ExecutionEngine
+
         return ExecutionEngine(workspace_path="/tmp/test-engine-budget", budget_guard=guard)
 
     def test_none_guard_is_allowed(self):
@@ -113,29 +118,36 @@ class TestBudgetPreCheck:
 # engine.execute() integration
 # ---------------------------------------------------------------------------
 
+
 class TestEngineExecuteBudgetGate:
     def _job(self):
         from general_ludd.schemas.job import JobSpec
+
         return JobSpec(
-            job_id="JOB-001", todo_id="TODO-001",
-            playbook="code", queue="core",
-            prompt_text="write hello world", work_type="code",
+            job_id="JOB-001",
+            todo_id="TODO-001",
+            playbook="code",
+            queue="core",
+            prompt_text="write hello world",
+            work_type="code",
         )
 
     def test_execute_denied_when_exhausted(self, tmp_path):
         from general_ludd.execution.engine import ExecutionEngine
+
         eng = ExecutionEngine(
             model_gateway=MagicMock(),
             workspace_path=str(tmp_path),
             budget_guard=_exhausted_guard("run limit"),
         )
-        result = eng.execute(self._job())
+        result = asyncio.run(eng.execute_async(self._job()))
         assert result.exit_code == 1
         assert "Budget" in result.result_summary
         assert "run limit" in result.result_summary
 
     def test_execute_proceeds_with_headroom(self, tmp_path):
         from general_ludd.execution.engine import ExecutionEngine
+
         gw = MagicMock()
         resp = MagicMock()
         resp.content = ""
@@ -145,11 +157,12 @@ class TestEngineExecuteBudgetGate:
             workspace_path=str(tmp_path),
             budget_guard=_headroom_guard(),
         )
-        eng.execute(self._job())
+        asyncio.run(eng.execute_async(self._job()))
         gw.call_model.assert_called_once()
 
     def test_execute_proceeds_no_guard(self, tmp_path):
         from general_ludd.execution.engine import ExecutionEngine
+
         gw = MagicMock()
         resp = MagicMock()
         resp.content = ""
@@ -159,7 +172,7 @@ class TestEngineExecuteBudgetGate:
             workspace_path=str(tmp_path),
             budget_guard=None,
         )
-        eng.execute(self._job())
+        asyncio.run(eng.execute_async(self._job()))
         gw.call_model.assert_called_once()
 
 
@@ -167,10 +180,12 @@ class TestEngineExecuteBudgetGate:
 # reviewer._call_model budget gate
 # ---------------------------------------------------------------------------
 
+
 class TestReviewerCallModelBudgetGate:
     def _reviewer(self, guard=None):
         from general_ludd.prompts.registry import PromptRegistry
         from general_ludd.review.reviewer import ReturnReviewer
+
         gw = MagicMock()
         pr = MagicMock(spec=PromptRegistry)
         return ReturnReviewer(gateway=gw, prompt_registry=pr, budget_guard=guard)
@@ -218,6 +233,7 @@ class TestReviewerCallModelBudgetGate:
 # invoke_model_for_generation budget gate
 # ---------------------------------------------------------------------------
 
+
 class TestInvokeModelForGenerationBudgetGate:
     def _gw(self):
         gw = MagicMock()
@@ -226,53 +242,73 @@ class TestInvokeModelForGenerationBudgetGate:
 
     def test_exhausted_guard_returns_none(self):
         from general_ludd.models.job_invocation import invoke_model_for_generation
+
         result = invoke_model_for_generation(
             self._gw(),
-            job_id="J1", work_type="code",
-            model_profile="default", prompt_text="do stuff",
-            skill_body=None, budget_guard=_exhausted_guard(),
+            job_id="J1",
+            work_type="code",
+            model_profile="default",
+            prompt_text="do stuff",
+            skill_body=None,
+            budget_guard=_exhausted_guard(),
         )
         assert result == (None, None)
 
     def test_no_guard_proceeds(self):
         from general_ludd.models.job_invocation import invoke_model_for_generation
+
         gw = self._gw()
         result = invoke_model_for_generation(
             gw,
-            job_id="J1", work_type="code",
-            model_profile="default", prompt_text="do stuff",
-            skill_body=None, budget_guard=None,
+            job_id="J1",
+            work_type="code",
+            model_profile="default",
+            prompt_text="do stuff",
+            skill_body=None,
+            budget_guard=None,
         )
         assert result[0] == "generated text"
 
     def test_headroom_guard_proceeds(self):
         from general_ludd.models.job_invocation import invoke_model_for_generation
+
         gw = self._gw()
         result = invoke_model_for_generation(
             gw,
-            job_id="J1", work_type="code",
-            model_profile="default", prompt_text="do stuff",
-            skill_body=None, budget_guard=_headroom_guard(),
+            job_id="J1",
+            work_type="code",
+            model_profile="default",
+            prompt_text="do stuff",
+            skill_body=None,
+            budget_guard=_headroom_guard(),
         )
         assert result[0] == "generated text"
 
     def test_missing_allowed_key_returns_none(self):
         from general_ludd.models.job_invocation import invoke_model_for_generation
+
         result = invoke_model_for_generation(
             self._gw(),
-            job_id="J1", work_type="code",
-            model_profile="default", prompt_text="do stuff",
-            skill_body=None, budget_guard=_missing_allowed_guard(),
+            job_id="J1",
+            work_type="code",
+            model_profile="default",
+            prompt_text="do stuff",
+            skill_body=None,
+            budget_guard=_missing_allowed_guard(),
         )
         assert result == (None, None)
 
     def test_nondict_returns_none(self):
         from general_ludd.models.job_invocation import invoke_model_for_generation
+
         result = invoke_model_for_generation(
             self._gw(),
-            job_id="J1", work_type="code",
-            model_profile="default", prompt_text="do stuff",
-            skill_body=None, budget_guard=_nondict_guard(),
+            job_id="J1",
+            work_type="code",
+            model_profile="default",
+            prompt_text="do stuff",
+            skill_body=None,
+            budget_guard=_nondict_guard(),
         )
         assert result == (None, None)
 
@@ -280,6 +316,7 @@ class TestInvokeModelForGenerationBudgetGate:
 # ---------------------------------------------------------------------------
 # routers/models.py B5 budget gate (/admin/models/call)
 # ---------------------------------------------------------------------------
+
 
 class TestB5ModelCallBudgetGate:
     """Tests for the /admin/models/call budget gate using FastAPI TestClient."""
@@ -381,6 +418,7 @@ class TestB5ModelCallBudgetGate:
 # `system`, `response_format`, and `options` to this endpoint — assert the
 # system prompt reaches the gateway and the extras never 422.)
 # ---------------------------------------------------------------------------
+
 
 class TestModelCallSystemPrompt:
     """The handler must forward an optional `system` field as a system message
@@ -527,9 +565,7 @@ class TestBudgetPreCheckRealInstances:
         assert result is not None, "expected denial string, got None"
         assert isinstance(result, str)
         # The real check_all_limits returns reason containing "run budget exceeded"
-        assert "budget" in result.lower() or "exceeded" in result.lower(), (
-            f"unexpected denial reason: {result!r}"
-        )
+        assert "budget" in result.lower() or "exceeded" in result.lower(), f"unexpected denial reason: {result!r}"
 
     def test_real_run_budget_guard_none_proceeds(self):
         """None guard → budget_pre_check returns None (no budget configured)."""
@@ -609,6 +645,7 @@ class TestBudgetPreCheckRealInstances:
 
         class WeirdGuard:
             """Has neither check_all_limits nor would_exceed."""
+
             def some_other_method(self) -> bool:
                 return True
 
@@ -718,12 +755,14 @@ class TestBudgetPreCheckRealInstances:
 # projection; the engine path must do the same.
 # ---------------------------------------------------------------------------
 
+
 class TestEngineBudgetPreCheckProjectedCost:
     """Engine pre-check must compute a positive projected_cost from the
     default model profile and thread it into the guard's check_all_limits."""
 
     def _profile(self):
         from general_ludd.models.gateway import ModelProfile
+
         # claude-3-5-sonnet-20241022 is in infra.pricing.PRICING, so the
         # static fallback yields a deterministic positive projection.
         return ModelProfile(
@@ -758,6 +797,7 @@ class TestEngineBudgetPreCheckProjectedCost:
 
     def test_projected_cost_is_positive_when_gateway_has_profile(self):
         from general_ludd.execution.engine import ExecutionEngine
+
         eng = ExecutionEngine(
             model_gateway=self._gateway(),
             workspace_path="/tmp/test-proj-positive",
@@ -774,6 +814,7 @@ class TestEngineBudgetPreCheckProjectedCost:
         estimate and correctly denies.
         """
         from general_ludd.execution.engine import ExecutionEngine
+
         gw = self._gateway()
         guard = self._reactive_guard()
         eng = ExecutionEngine(
@@ -792,6 +833,7 @@ class TestEngineBudgetPreCheckProjectedCost:
         """Projected cost under budget proceeds; the projection is still
         forwarded to the guard (not silently 0.0)."""
         from general_ludd.execution.engine import ExecutionEngine
+
         gw = self._gateway()
         guard = MagicMock()
         guard.check_all_limits.return_value = {"allowed": True, "reason": "ok"}
@@ -809,6 +851,7 @@ class TestEngineBudgetPreCheckProjectedCost:
         """No gateway ⇒ projection falls back to 0.0 (no regression for
         legacy callers that construct ExecutionEngine without a gateway)."""
         from general_ludd.execution.engine import ExecutionEngine
+
         eng = ExecutionEngine(
             model_gateway=None,
             workspace_path="/tmp/test-proj-no-gw",
@@ -820,6 +863,7 @@ class TestEngineBudgetPreCheckProjectedCost:
 # ---------------------------------------------------------------------------
 # budget_guard_check.budget_pre_check — projected_cost plumbing
 # ---------------------------------------------------------------------------
+
 
 class TestBudgetPreCheckProjectedCostPlumbing:
     """The standalone budget_pre_check helper must accept and forward a

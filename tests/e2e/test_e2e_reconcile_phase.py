@@ -8,6 +8,7 @@ reconcile (tick) → verify COMPLETE status.
 All tests mock external dependencies (ModelGateway, AnsibleRunnerAdapter)
 to keep runtime < 10s.
 """
+
 from __future__ import annotations
 
 import json
@@ -54,6 +55,7 @@ async def _create_test_infra():
 
     import general_ludd.daemon as daemon_mod
     from general_ludd.routers.todos import register as reg_todos
+
     if daemon_mod._daemon_state is None:
         daemon_mod._daemon_state = {"todos": [], "tick_metrics": {}, "quality_gate": {}}
     daemon_mod._daemon_state["todos"] = []
@@ -100,31 +102,37 @@ class TestReconcilePhaseE2E:
             assert db_todo is not None
 
         mock_gateway = MagicMock()
-        mock_gateway.call_model = MagicMock(return_value=MagicMock(
-            content="FILE: src/e2e_hello.py\nprint('reconcile e2e')\n"
-        ))
+        mock_gateway.call_model = MagicMock(
+            return_value=MagicMock(content="FILE: src/e2e_hello.py\nprint('reconcile e2e')\n")
+        )
 
         mock_review_gateway = MagicMock()
-        mock_review_gateway.call_model = MagicMock(return_value=MagicMock(
-            content=json.dumps({
-                "decision": "complete",
-                "confidence": 0.95,
-                "evidence_refs": ["artifact:src/e2e_hello.py"],
-            })
-        ))
+        mock_review_gateway.call_model = MagicMock(
+            return_value=MagicMock(
+                content=json.dumps(
+                    {
+                        "decision": "complete",
+                        "confidence": 0.95,
+                        "evidence_refs": ["artifact:src/e2e_hello.py"],
+                    }
+                )
+            )
+        )
 
         mock_registry = MagicMock()
         mock_registry.render = MagicMock(return_value="Review this task")
 
         reviewer = ReturnReviewer(
-            gateway=mock_review_gateway, prompt_registry=mock_registry,
+            gateway=mock_review_gateway,
+            prompt_registry=mock_registry,
         )
 
         from general_ludd.execution.engine import ExecutionEngine
 
         with tempfile.TemporaryDirectory() as ws:
             engine_exec = ExecutionEngine(
-                model_gateway=mock_gateway, workspace_path=ws,
+                model_gateway=mock_gateway,
+                workspace_path=ws,
             )
 
             loop = EventLoop(
@@ -135,10 +143,7 @@ class TestReconcilePhaseE2E:
             )
 
             async def patched_dispatch(todo_item, **_kwargs):
-                task_return_repo = (
-                    _kwargs.get("_task_return_repo_override")
-                    or loop._task_return_repo
-                )
+                task_return_repo = _kwargs.get("_task_return_repo_override") or loop._task_return_repo
                 job = JobSpec(
                     job_id=f"EXEC-{todo_item.todo_id}",
                     todo_id=todo_item.todo_id,
@@ -147,23 +152,22 @@ class TestReconcilePhaseE2E:
                     work_type="code",
                     prompt_text=todo_item.title,
                 )
-                result = engine_exec.execute(job)
+                result = await engine_exec.execute_async(job)
                 if task_return_repo is not None:
-                    await task_return_repo.create(data={
-                        "return_id": result.return_id,
-                        "project_id": _PROJECT_ID,
-                        "todo_id": result.todo_id,
-                        "job_id": result.job_id,
-                        "playbook": result.playbook,
-                        "queue": result.queue,
-                        "exit_code": result.exit_code,
-                        "result_summary": result.result_summary,
-                    })
-                    job_session = _kwargs.get("_session_override")
-                    todo_repo = (
-                        TodoRepository(job_session) if job_session is not None
-                        else loop._todo_repo
+                    await task_return_repo.create(
+                        data={
+                            "return_id": result.return_id,
+                            "project_id": _PROJECT_ID,
+                            "todo_id": result.todo_id,
+                            "job_id": result.job_id,
+                            "playbook": result.playbook,
+                            "queue": result.queue,
+                            "exit_code": result.exit_code,
+                            "result_summary": result.result_summary,
+                        }
                     )
+                    job_session = _kwargs.get("_session_override")
+                    todo_repo = TodoRepository(job_session) if job_session is not None else loop._todo_repo
                     if todo_repo is not None:
                         await todo_repo.update(
                             todo_item.todo_id,
@@ -179,11 +183,7 @@ class TestReconcilePhaseE2E:
                 claimed_todo = await TodoRepository(session).get_by_id(todo_id)
                 assert claimed_todo is not None
 
-                result = await session.execute(
-                    select(TaskReturnModel).where(
-                        TaskReturnModel.todo_id == todo_id
-                    )
-                )
+                result = await session.execute(select(TaskReturnModel).where(TaskReturnModel.todo_id == todo_id))
                 returns = list(result.scalars().all())
                 assert len(returns) >= 1
                 task_return = returns[0]
@@ -244,31 +244,35 @@ class TestReconcilePhaseE2E:
         todo_id = todo["todo_id"]
 
         mock_gateway = MagicMock()
-        mock_gateway.call_model = MagicMock(return_value=MagicMock(
-            content="FILE: src/incomplete.py\n# TODO\n"
-        ))
+        mock_gateway.call_model = MagicMock(return_value=MagicMock(content="FILE: src/incomplete.py\n# TODO\n"))
 
         mock_review_gateway = MagicMock()
-        mock_review_gateway.call_model = MagicMock(return_value=MagicMock(
-            content=json.dumps({
-                "decision": "needs_more_work",
-                "confidence": 0.6,
-                "evidence_refs": [],
-            })
-        ))
+        mock_review_gateway.call_model = MagicMock(
+            return_value=MagicMock(
+                content=json.dumps(
+                    {
+                        "decision": "needs_more_work",
+                        "confidence": 0.6,
+                        "evidence_refs": [],
+                    }
+                )
+            )
+        )
 
         mock_registry = MagicMock()
         mock_registry.render = MagicMock(return_value="Review this")
 
         reviewer = ReturnReviewer(
-            gateway=mock_review_gateway, prompt_registry=mock_registry,
+            gateway=mock_review_gateway,
+            prompt_registry=mock_registry,
         )
 
         from general_ludd.execution.engine import ExecutionEngine
 
         with tempfile.TemporaryDirectory() as ws:
             engine_exec = ExecutionEngine(
-                model_gateway=mock_gateway, workspace_path=ws,
+                model_gateway=mock_gateway,
+                workspace_path=ws,
             )
 
             loop = EventLoop(
@@ -279,10 +283,7 @@ class TestReconcilePhaseE2E:
             )
 
             async def patched_dispatch(todo_item, **_kwargs):
-                task_return_repo = (
-                    _kwargs.get("_task_return_repo_override")
-                    or loop._task_return_repo
-                )
+                task_return_repo = _kwargs.get("_task_return_repo_override") or loop._task_return_repo
                 job = JobSpec(
                     job_id=f"EXEC-{todo_item.todo_id}",
                     todo_id=todo_item.todo_id,
@@ -291,23 +292,22 @@ class TestReconcilePhaseE2E:
                     work_type="code",
                     prompt_text=todo_item.title,
                 )
-                result = engine_exec.execute(job)
+                result = await engine_exec.execute_async(job)
                 if task_return_repo is not None:
-                    await task_return_repo.create(data={
-                        "return_id": result.return_id,
-                        "project_id": _PROJECT_ID,
-                        "todo_id": result.todo_id,
-                        "job_id": result.job_id,
-                        "playbook": result.playbook,
-                        "queue": result.queue,
-                        "exit_code": result.exit_code,
-                        "result_summary": result.result_summary,
-                    })
-                    job_session = _kwargs.get("_session_override")
-                    todo_repo = (
-                        TodoRepository(job_session) if job_session is not None
-                        else loop._todo_repo
+                    await task_return_repo.create(
+                        data={
+                            "return_id": result.return_id,
+                            "project_id": _PROJECT_ID,
+                            "todo_id": result.todo_id,
+                            "job_id": result.job_id,
+                            "playbook": result.playbook,
+                            "queue": result.queue,
+                            "exit_code": result.exit_code,
+                            "result_summary": result.result_summary,
+                        }
                     )
+                    job_session = _kwargs.get("_session_override")
+                    todo_repo = TodoRepository(job_session) if job_session is not None else loop._todo_repo
                     if todo_repo is not None:
                         await todo_repo.update(
                             todo_item.todo_id,
@@ -320,11 +320,7 @@ class TestReconcilePhaseE2E:
             await loop.tick()
 
             async with factory() as session:
-                result = await session.execute(
-                    select(TaskReturnModel).where(
-                        TaskReturnModel.todo_id == todo_id
-                    )
-                )
+                result = await session.execute(select(TaskReturnModel).where(TaskReturnModel.todo_id == todo_id))
                 returns = list(result.scalars().all())
                 assert len(returns) >= 1
                 task_return = returns[0]
@@ -381,31 +377,35 @@ class TestReconcilePhaseE2E:
         todo_id = todo["todo_id"]
 
         mock_gateway = MagicMock()
-        mock_gateway.call_model = MagicMock(return_value=MagicMock(
-            content="FILE: src/idempotent.py\nprint('done')\n"
-        ))
+        mock_gateway.call_model = MagicMock(return_value=MagicMock(content="FILE: src/idempotent.py\nprint('done')\n"))
 
         mock_review_gateway = MagicMock()
-        mock_review_gateway.call_model = MagicMock(return_value=MagicMock(
-            content=json.dumps({
-                "decision": "complete",
-                "confidence": 0.95,
-                "evidence_refs": ["artifact:src/idempotent.py"],
-            })
-        ))
+        mock_review_gateway.call_model = MagicMock(
+            return_value=MagicMock(
+                content=json.dumps(
+                    {
+                        "decision": "complete",
+                        "confidence": 0.95,
+                        "evidence_refs": ["artifact:src/idempotent.py"],
+                    }
+                )
+            )
+        )
 
         mock_registry = MagicMock()
         mock_registry.render = MagicMock(return_value="Review this")
 
         reviewer = ReturnReviewer(
-            gateway=mock_review_gateway, prompt_registry=mock_registry,
+            gateway=mock_review_gateway,
+            prompt_registry=mock_registry,
         )
 
         from general_ludd.execution.engine import ExecutionEngine
 
         with tempfile.TemporaryDirectory() as ws:
             engine_exec = ExecutionEngine(
-                model_gateway=mock_gateway, workspace_path=ws,
+                model_gateway=mock_gateway,
+                workspace_path=ws,
             )
 
             loop = EventLoop(
@@ -416,10 +416,7 @@ class TestReconcilePhaseE2E:
             )
 
             async def patched_dispatch(todo_item, **_kwargs):
-                task_return_repo = (
-                    _kwargs.get("_task_return_repo_override")
-                    or loop._task_return_repo
-                )
+                task_return_repo = _kwargs.get("_task_return_repo_override") or loop._task_return_repo
                 job = JobSpec(
                     job_id=f"EXEC-{todo_item.todo_id}",
                     todo_id=todo_item.todo_id,
@@ -428,23 +425,22 @@ class TestReconcilePhaseE2E:
                     work_type="code",
                     prompt_text=todo_item.title,
                 )
-                result = engine_exec.execute(job)
+                result = await engine_exec.execute_async(job)
                 if task_return_repo is not None:
-                    await task_return_repo.create(data={
-                        "return_id": result.return_id,
-                        "project_id": _PROJECT_ID,
-                        "todo_id": result.todo_id,
-                        "job_id": result.job_id,
-                        "playbook": result.playbook,
-                        "queue": result.queue,
-                        "exit_code": result.exit_code,
-                        "result_summary": result.result_summary,
-                    })
-                    job_session = _kwargs.get("_session_override")
-                    todo_repo = (
-                        TodoRepository(job_session) if job_session is not None
-                        else loop._todo_repo
+                    await task_return_repo.create(
+                        data={
+                            "return_id": result.return_id,
+                            "project_id": _PROJECT_ID,
+                            "todo_id": result.todo_id,
+                            "job_id": result.job_id,
+                            "playbook": result.playbook,
+                            "queue": result.queue,
+                            "exit_code": result.exit_code,
+                            "result_summary": result.result_summary,
+                        }
                     )
+                    job_session = _kwargs.get("_session_override")
+                    todo_repo = TodoRepository(job_session) if job_session is not None else loop._todo_repo
                     if todo_repo is not None:
                         await todo_repo.update(
                             todo_item.todo_id,
@@ -457,11 +453,7 @@ class TestReconcilePhaseE2E:
             await loop.tick()
 
             async with factory() as session:
-                result = await session.execute(
-                    select(TaskReturnModel).where(
-                        TaskReturnModel.todo_id == todo_id
-                    )
-                )
+                result = await session.execute(select(TaskReturnModel).where(TaskReturnModel.todo_id == todo_id))
                 returns = list(result.scalars().all())
                 task_return = returns[0]
 

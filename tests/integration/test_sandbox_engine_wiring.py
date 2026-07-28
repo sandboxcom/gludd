@@ -9,6 +9,7 @@ Verifies fail-closed sandbox enforcement before tool execution:
 
 from __future__ import annotations
 
+import asyncio
 import os
 import tempfile
 from pathlib import Path
@@ -46,7 +47,7 @@ class TestSandboxEngineWiring:
             prompt_text="test",
         )
 
-        result = engine.execute(job)
+        result = asyncio.run(engine.execute_async(job))
         assert result.exit_code == 1
         assert "Sandbox enforcement failed" in result.result_summary
 
@@ -75,7 +76,7 @@ class TestSandboxEngineWiring:
             prompt_text="test",
         )
 
-        result = engine.execute(job)
+        result = asyncio.run(engine.execute_async(job))
         assert result.exit_code == 1
         assert "No changes parsed" in result.result_summary
 
@@ -98,7 +99,7 @@ class TestSandboxEngineWiring:
             prompt_text="test",
         )
 
-        result = engine.execute(job)
+        result = asyncio.run(engine.execute_async(job))
         assert result.exit_code == 1
         assert "No changes parsed" in result.result_summary
 
@@ -132,7 +133,7 @@ class TestSandboxEngineWiring:
             prompt_text="write a script",
         )
 
-        result = engine.execute(job)
+        result = asyncio.run(engine.execute_async(job))
         assert result.exit_code == 1
 
         written_path = enforcer.confine_path(str(workspace / "script.py"))
@@ -168,7 +169,7 @@ class TestSandboxEngineWiring:
             prompt_text="escape attempt",
         )
 
-        result = engine.execute(job)
+        result = asyncio.run(engine.execute_async(job))
         assert result.exit_code == 1
         assert "No changes parsed" in result.result_summary
 
@@ -201,7 +202,7 @@ class TestSandboxEngineWiring:
             prompt_text="absolute path escape",
         )
 
-        result = engine.execute(job)
+        result = asyncio.run(engine.execute_async(job))
         assert result.exit_code == 1
         assert "No changes parsed" in result.result_summary
 
@@ -256,9 +257,9 @@ class TestSandboxEngineWiring:
             prompt_text="first call",
         )
 
-        result1 = engine.execute(job)
+        result1 = asyncio.run(engine.execute_async(job))
         assert engine._sandbox_verified is True
 
-        result2 = engine.execute(job)
+        result2 = asyncio.run(engine.execute_async(job))
         assert result2.exit_code == 1
         assert "No changes parsed" in result2.result_summary

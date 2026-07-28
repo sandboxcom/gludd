@@ -47,6 +47,7 @@ def _reactive_guard():
 
     g = MagicMock()
     g.check_all_limits.side_effect = _check
+    g.token_cost_usd = None
     return g
 
 
@@ -83,7 +84,7 @@ def test_budget_pre_check_nonzero_projection_blocks_over_cap_call_job_invocation
     guard = _reactive_guard()
 
     with patch(
-        "general_ludd.models.job_invocation.budget_pre_check",
+        "general_ludd.budget_guard_check.budget_pre_check",
         wraps=budget_pre_check,
     ) as mock_bpc:
         content, tc = invoke_model_for_generation(
@@ -110,6 +111,7 @@ def test_budget_pre_check_nonzero_projection_blocks_over_cap_call_tool_loop() ->
     Constructs a ToolCallLoop with a reactive guard and verifies the
     per-iteration budget check forwards a strictly positive estimate.
     """
+    from general_ludd.budget_guard_check import compute_projected_cost_usd
     from general_ludd.execution.tool_loop import ToolCallLoop
 
     gw = _make_gateway()
@@ -121,19 +123,16 @@ def test_budget_pre_check_nonzero_projection_blocks_over_cap_call_tool_loop() ->
     )
 
     with patch(
-        "general_ludd.execution.tool_loop.budget_pre_check",
+        "general_ludd.budget_guard_check.budget_pre_check",
         wraps=budget_pre_check,
     ) as mock_bpc:
-        denial = budget_pre_check(guard, projected_cost=_compute_for(gw, guard))
+        projected = compute_projected_cost_usd(gw, guard)
+        assert projected > 0.0, f"projected_cost was {projected}, expected positive"
+        denial = budget_pre_check(guard, projected_cost=projected)
 
+    assert denial is not None, "expected denial for positive projected cost"
     assert mock_bpc.call_count > 0
-    projected = mock_bpc.call_args.kwargs.get("projected_cost", 0.0)
-
-
-def _compute_for(gw, guard) -> float:
-    from general_ludd.budget_guard_check import compute_projected_cost_usd
-
-    return compute_projected_cost_usd(gw, guard)
+    assert mock_bpc.call_args.kwargs.get("projected_cost", 0.0) > 0.0
 
 
 def test_budget_pre_check_nonzero_projection_blocks_over_cap_call_tool_loop_direct() -> None:
@@ -172,7 +171,7 @@ def test_budget_pre_check_nonzero_projection_blocks_over_cap_call_reviewer() -> 
     )
 
     with patch(
-        "general_ludd.review.reviewer.budget_pre_check",
+        "general_ludd.budget_guard_check.budget_pre_check",
         wraps=budget_pre_check,
     ) as mock_bpc:
         content, error = reviewer._call_model("test prompt")

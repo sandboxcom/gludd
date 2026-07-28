@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import tempfile
 from unittest.mock import MagicMock, patch
 
@@ -122,7 +123,9 @@ class TestBuildSystemPromptWithRetrieval:
         job = _make_job(prompt_text="implement agent pooling")
 
         prompt = _build_system_prompt(
-            job, searcher=mock_searcher, workspace_path="/tmp",
+            job,
+            searcher=mock_searcher,
+            workspace_path="/tmp",
         )
 
         assert "Relevant Codebase Context:" in prompt
@@ -164,12 +167,11 @@ class TestExecutionEngineRetrieval:
         )
         job = _make_job(prompt_text="fix the login form")
 
-        with patch(
-            "general_ludd.execution.engine._is_git_repo", return_value=False
-        ), patch(
-            "general_ludd.execution.engine._run_tests", return_value=(0, "ok")
+        with (
+            patch("general_ludd.execution.engine._is_git_repo", return_value=False),
+            patch("general_ludd.execution.engine._run_tests", return_value=(0, "ok")),
         ):
-            result = engine.execute(job)
+            result = asyncio.run(engine.execute_async(job))
 
         assert result.exit_code == 0
         mock_searcher.search.assert_called_once_with("fix the login form", top_k=5)
@@ -188,12 +190,11 @@ class TestExecutionEngineRetrieval:
         )
         job = _make_job()
 
-        with patch(
-            "general_ludd.execution.engine._is_git_repo", return_value=False
-        ), patch(
-            "general_ludd.execution.engine._run_tests", return_value=(0, "ok")
+        with (
+            patch("general_ludd.execution.engine._is_git_repo", return_value=False),
+            patch("general_ludd.execution.engine._run_tests", return_value=(0, "ok")),
         ):
-            result = engine.execute(job)
+            result = asyncio.run(engine.execute_async(job))
 
         assert result.exit_code == 0
         system_prompt_content = mock_gateway.call_model.call_args[1]["messages"][0]["content"]

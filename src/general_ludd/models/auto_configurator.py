@@ -5,7 +5,10 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from general_ludd.pricing_intel.catalog import PricingCatalog
 
 from general_ludd.models.gateway import ModelProfile
 from general_ludd.models.provider_presets import (
@@ -34,7 +37,7 @@ class AutoConfigurator:
     def auto_configure_from_env(
         self,
         environ: dict[str, str] | None = None,
-        catalog: object | None = None,
+        catalog: PricingCatalog | None = None,
     ) -> list[dict[str, object]]:
         """Build one ModelProfile dict per provider whose credential env var is set.
 
@@ -121,7 +124,7 @@ class AutoConfigurator:
     def auto_configure_profiles(
         self,
         environ: dict[str, str] | None = None,
-        catalog: object | None = None,
+        catalog: PricingCatalog | None = None,
     ) -> list[ModelProfile]:
         """Like ``auto_configure_from_env`` but returns ModelProfile objects.
 

@@ -74,7 +74,9 @@ class CreateAccountRequest(BaseModel):
 
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
-    @app.post("/api/account/backup")
+    @app.post(
+        "/api/account/backup", dependencies=[Depends(RequireCapability(resource="admin:account", action="backup"))]
+    )
     async def api_account_backup(req: BackupRequest) -> dict[str, object]:
         """Export all user-scoped data as JSON (returned in the body)."""
         factory = _get_session_factory(app)
@@ -130,7 +132,9 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             "notice": notice,
         }
 
-    @app.post("/api/account/create")
+    @app.post(
+        "/api/account/create", dependencies=[Depends(RequireCapability(resource="admin:account", action="create"))]
+    )
     async def api_account_create(req: CreateAccountRequest) -> dict[str, object]:
         """Provision a cloud account (optionally ephemeral).
 
@@ -174,7 +178,9 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             "ephemeral": True,
         }
 
-    @app.post("/api/account/cleanup")
+    @app.post(
+        "/api/account/cleanup", dependencies=[Depends(RequireCapability(resource="admin:account", action="cleanup"))]
+    )
     async def api_account_cleanup() -> dict[str, object]:
         """Sweep all ephemeral accounts past their retention window.
 

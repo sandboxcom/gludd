@@ -36,11 +36,15 @@ def _init_git_repo(path: str) -> None:
     subprocess.run(["git", "init", path], check=True, capture_output=True)
     subprocess.run(
         ["git", "config", "user.email", "agent@test"],
-        cwd=path, check=True, capture_output=True,
+        cwd=path,
+        check=True,
+        capture_output=True,
     )
     subprocess.run(
         ["git", "config", "user.name", "Test Agent"],
-        cwd=path, check=True, capture_output=True,
+        cwd=path,
+        check=True,
+        capture_output=True,
     )
     (Path(path) / "README.md").write_text("# Test\n")
     subprocess.run(["git", "add", "."], cwd=path, check=True, capture_output=True)
@@ -59,6 +63,7 @@ async def _create_test_infra():
     factory = async_sessionmaker(engine, expire_on_commit=False)
 
     from general_ludd.routers.todos import register as reg_todos
+
     daemon_state: dict[str, object] = {"todos": []}
 
     app = FastAPI()
@@ -107,9 +112,7 @@ class TestFullPipelineE2E:
 
             mock_gateway = MagicMock()
             code = "print('hello from gludd')\n"
-            mock_gateway.call_model = MagicMock(return_value=MagicMock(
-                content=f"```\nFILE: src/hello.py\n{code}\n```"
-            ))
+            mock_gateway.call_model = MagicMock(return_value=MagicMock(content=f"```\nFILE: src/hello.py\n{code}\n```"))
 
             # Layer-2 evidence gate: a `complete` decision must carry a
             # machine-verifiable evidence ref or the reconcile phase (correctly)
@@ -117,22 +120,24 @@ class TestFullPipelineE2E:
             # workspace during dispatch, so an `artifact:src/hello.py` ref is
             # genuinely verifiable once repo_root resolves to the workspace.
             mock_review_gateway = MagicMock()
-            mock_review_gateway.call_model = MagicMock(return_value=MagicMock(
-                content=(
-                    '{"decision": "complete", "confidence": 0.95, '
-                    '"evidence_refs": ["artifact:src/hello.py"]}'
+            mock_review_gateway.call_model = MagicMock(
+                return_value=MagicMock(
+                    content=('{"decision": "complete", "confidence": 0.95, "evidence_refs": ["artifact:src/hello.py"]}')
                 )
-            ))
+            )
             mock_registry = MagicMock()
             mock_registry.render = MagicMock(return_value="Review this")
 
             reviewer = ReturnReviewer(
-                gateway=mock_review_gateway, prompt_registry=mock_registry,
+                gateway=mock_review_gateway,
+                prompt_registry=mock_registry,
             )
 
             from general_ludd.execution.engine import ExecutionEngine
+
             engine_exec = ExecutionEngine(
-                model_gateway=mock_gateway, workspace_path=ws,
+                model_gateway=mock_gateway,
+                workspace_path=ws,
             )
 
             # repo_root resolves to the workspace so the gate can verify the
@@ -157,23 +162,22 @@ class TestFullPipelineE2E:
                     prompt_text=todo_item.title,
                     project_id=todo_item.project_id,
                 )
-                result = engine_exec.execute(job)
+                result = await engine_exec.execute_async(job)
                 if task_return_repo is not None:
-                    await task_return_repo.create(data={
-                        "return_id": result.return_id,
-                        "todo_id": result.todo_id,
-                        "job_id": result.job_id,
-                        "playbook": result.playbook,
-                        "queue": result.queue,
-                        "exit_code": result.exit_code,
-                        "result_summary": result.result_summary,
-                        "project_id": todo_item.project_id,
-                    })
-                    job_session = _kwargs.get("_session_override")
-                    todo_repo = (
-                        TodoRepository(job_session) if job_session is not None
-                        else loop._todo_repo
+                    await task_return_repo.create(
+                        data={
+                            "return_id": result.return_id,
+                            "todo_id": result.todo_id,
+                            "job_id": result.job_id,
+                            "playbook": result.playbook,
+                            "queue": result.queue,
+                            "exit_code": result.exit_code,
+                            "result_summary": result.result_summary,
+                            "project_id": todo_item.project_id,
+                        }
                     )
+                    job_session = _kwargs.get("_session_override")
+                    todo_repo = TodoRepository(job_session) if job_session is not None else loop._todo_repo
                     if todo_repo is not None:
                         await todo_repo.update(
                             todo_item.todo_id,
@@ -189,9 +193,7 @@ class TestFullPipelineE2E:
                 claimed_todo = await TodoRepository(session).get_by_id(todo_id)
                 assert claimed_todo is not None
 
-                result = await session.execute(
-                    select(TaskReturnModel).where(TaskReturnModel.todo_id == todo_id)
-                )
+                result = await session.execute(select(TaskReturnModel).where(TaskReturnModel.todo_id == todo_id))
                 returns = list(result.scalars().all())
                 assert len(returns) >= 1
                 task_return = returns[0]
@@ -230,14 +232,13 @@ class TestFullPipelineE2E:
                 assert final_todo.status == "complete"
 
             branches_result = subprocess.run(
-                ["git", "branch"], cwd=ws, capture_output=True, text=True,
+                ["git", "branch"],
+                cwd=ws,
+                capture_output=True,
+                text=True,
             )
-            branch_list = [
-                b.strip().lstrip("* ") for b in branches_result.stdout.splitlines()
-            ]
-            gludd_branches = [
-                b for b in branch_list if b.startswith("gludd/")
-            ]
+            branch_list = [b.strip().lstrip("* ") for b in branches_result.stdout.splitlines()]
+            gludd_branches = [b for b in branch_list if b.startswith("gludd/")]
             assert len(gludd_branches) >= 1
 
             hello_path = Path(ws) / "src" / "hello.py"

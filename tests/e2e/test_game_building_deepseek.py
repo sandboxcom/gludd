@@ -25,6 +25,7 @@ or:
 
 from __future__ import annotations
 
+import asyncio
 import ast
 import contextlib
 import importlib.util
@@ -87,8 +88,6 @@ _HAS_LANGCHAIN_OPENAI = importlib.util.find_spec("langchain_openai") is not None
 _LIVE_SKIP_REASON = _SKIP_REASON if not _DEEPSEEK_KEY else _PROVIDER_SKIP_REASON
 
 
-
-
 # ---------------------------------------------------------------------------
 # Observability data collector
 # ---------------------------------------------------------------------------
@@ -116,16 +115,17 @@ def _compute_obs_summary() -> dict[str, Any]:
 
     games_imported = sum(1 for g in _OBSERVABILITY_DATA.values() if g.get("imported"))
     games_verified = sum(
-        1 for g in _OBSERVABILITY_DATA.values()
-        if g.get("checks_passed", 0) == g.get("checks_total", 0)
+        1 for g in _OBSERVABILITY_DATA.values() if g.get("checks_passed", 0) == g.get("checks_total", 0)
     )
     total_tokens_in = sum(g.get("tokens_in", 0) for g in _OBSERVABILITY_DATA.values())
     total_tokens_out = sum(g.get("tokens_out", 0) for g in _OBSERVABILITY_DATA.values())
     total_latency_ms = sum(
-        (g.get("phases", {}).get("model_call", 0) +
-         g.get("phases", {}).get("extract_code", 0) +
-         g.get("phases", {}).get("ast_parse", 0) +
-         g.get("phases", {}).get("game_verify", 0))
+        (
+            g.get("phases", {}).get("model_call", 0)
+            + g.get("phases", {}).get("extract_code", 0)
+            + g.get("phases", {}).get("ast_parse", 0)
+            + g.get("phases", {}).get("game_verify", 0)
+        )
         for g in _OBSERVABILITY_DATA.values()
     )
 
@@ -182,6 +182,7 @@ def _init_game_obs(game_id: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Gateway builder (DeepSeek-specific)
 # ---------------------------------------------------------------------------
+
 
 def _build_deepseek_gateway() -> Any:
     if "gateway" in _GATEWAY_CACHE:
@@ -951,6 +952,7 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
 # Verification helpers
 # ---------------------------------------------------------------------------
 
+
 def _extract_code_blocks(text: str) -> dict[str, str]:
     """Extract fenced code blocks from model output. Returns {lang: content}."""
     pattern = re.compile(r"```(\w*)\n(.*?)```", re.DOTALL)
@@ -1027,36 +1029,82 @@ def _parse_ast(source: str) -> dict[str, Any]:
 # the discovered interface instead of hardcoded names.
 
 _TICK_NAMES: tuple[str, ...] = (
-    "tick", "step", "update", "advance", "next_frame", "next_turn",
-    "frame", "turn", "simulate", "do_tick",
+    "tick",
+    "step",
+    "update",
+    "advance",
+    "next_frame",
+    "next_turn",
+    "frame",
+    "turn",
+    "simulate",
+    "do_tick",
 )
 _INPUT_NAMES: tuple[str, ...] = (
-    "input", "handle_input", "send_input", "set_direction", "direction",
-    "action", "key", "press", "set_input", "on_input",
+    "input",
+    "handle_input",
+    "send_input",
+    "set_direction",
+    "direction",
+    "action",
+    "key",
+    "press",
+    "set_input",
+    "on_input",
 )
 _STATE_NAMES: tuple[str, ...] = (
-    "render_state", "get_state", "state", "to_dict", "as_dict",
-    "snapshot", "serialize", "export_state",
+    "render_state",
+    "get_state",
+    "state",
+    "to_dict",
+    "as_dict",
+    "snapshot",
+    "serialize",
+    "export_state",
 )
 _REVEAL_NAMES: tuple[str, ...] = ("reveal", "click", "open", "dig", "uncover")
 _FLAG_NAMES: tuple[str, ...] = ("flag", "mark", "toggle_flag", "set_flag")
 _MOVE_NAMES: tuple[str, ...] = (
-    "move", "play", "make_move", "do_move", "submit_move",
+    "move",
+    "play",
+    "make_move",
+    "do_move",
+    "submit_move",
 )
 _THROW_NAMES: tuple[str, ...] = ("throw", "shoot", "fire", "launch", "toss")
 _FLIP_NAMES: tuple[str, ...] = ("flip", "select", "reveal_card", "turn", "pick")
 _GUESS_NAMES: tuple[str, ...] = ("guess", "try_letter", "guess_letter", "submit", "attempt")
 _START_NAMES: tuple[str, ...] = (
-    "start", "begin", "play", "launch", "run", "resume", "new_game", "start_game",
+    "start",
+    "begin",
+    "play",
+    "launch",
+    "run",
+    "resume",
+    "new_game",
+    "start_game",
 )
 _RESTART_NAMES: tuple[str, ...] = (
-    "restart", "reset", "new_game", "start_new", "reinitialize", "reset_game",
+    "restart",
+    "reset",
+    "new_game",
+    "start_new",
+    "reinitialize",
+    "reset_game",
 )
 
 _SYNONYM_GROUPS: tuple[tuple[str, ...], ...] = (
-    _TICK_NAMES, _INPUT_NAMES, _STATE_NAMES, _REVEAL_NAMES,
-    _FLAG_NAMES, _MOVE_NAMES, _THROW_NAMES, _FLIP_NAMES, _GUESS_NAMES,
-    _START_NAMES, _RESTART_NAMES,
+    _TICK_NAMES,
+    _INPUT_NAMES,
+    _STATE_NAMES,
+    _REVEAL_NAMES,
+    _FLAG_NAMES,
+    _MOVE_NAMES,
+    _THROW_NAMES,
+    _FLIP_NAMES,
+    _GUESS_NAMES,
+    _START_NAMES,
+    _RESTART_NAMES,
 )
 
 
@@ -1101,15 +1149,15 @@ def _discover_game_class(mod: Any, preferred: str | None = None) -> type | None:
                 return obj
     return max(
         candidates,
-        key=lambda kv: len([
-            m for m in inspect.getmembers(kv[1], predicate=inspect.isfunction)
-            if not m[0].startswith("_")
-        ]),
+        key=lambda kv: len(
+            [m for m in inspect.getmembers(kv[1], predicate=inspect.isfunction) if not m[0].startswith("_")]
+        ),
     )
 
 
 def _instantiate_game_generic(
-    cls: type, hints: list[tuple[Any, ...]] | None = None,
+    cls: type,
+    hints: list[tuple[Any, ...]] | None = None,
 ) -> Any:
     """Instantiate ``cls`` by trying common constructor signatures.
 
@@ -1121,18 +1169,26 @@ def _instantiate_game_generic(
 
     sig = inspect.signature(cls.__init__)
     params = [
-        p for p in sig.parameters.values()
-        if p.name != "self"
-        and p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+        p
+        for p in sig.parameters.values()
+        if p.name != "self" and p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
     ]
     n_required = sum(1 for p in params if p.default is inspect.Parameter.empty)
 
     candidates: list[tuple[Any, ...]] = []
     if hints:
         candidates.extend(hints)
-    candidates.extend([
-        (), (10,), (20,), (10, 10), (20, 20), (40, 100), (10, 10, 10),
-    ])
+    candidates.extend(
+        [
+            (),
+            (10,),
+            (20,),
+            (10, 10),
+            (20, 20),
+            (40, 100),
+            (10, 10, 10),
+        ]
+    )
     seen: set[tuple[Any, ...]] = set()
     last_exc: Exception | None = None
     for args in candidates:
@@ -1276,9 +1332,7 @@ def _find_body_attribute(state: dict[str, Any]) -> tuple[str, list[Any]] | None:
     return max(candidates, key=lambda kv: len(kv[1]))
 
 
-def _find_food_attribute(
-    state: dict[str, Any], exclude: str | None = None
-) -> tuple[str, Any] | None:
+def _find_food_attribute(state: dict[str, Any], exclude: str | None = None) -> tuple[str, Any] | None:
     """Find an attribute that looks like food: a single coord pair OR a
     list/tuple containing exactly one coord pair.  ``exclude`` is the body
     attribute name so we don't match a length-1 body as food (ambiguous
@@ -1288,11 +1342,7 @@ def _find_food_attribute(
             continue
         if _is_coord_pair(value):
             return name, value
-        if (
-            isinstance(value, (list, tuple))
-            and len(value) == 1
-            and _is_coord_pair(value[0])
-        ):
+        if isinstance(value, (list, tuple)) and len(value) == 1 and _is_coord_pair(value[0]):
             return name, value
     return None
 
@@ -1503,19 +1553,12 @@ def _verify_snake_features(mod: Any) -> list[str]:
     body_attr = _find_body_attribute(state)
     if body_attr is None:
         failures.append(
-            "no body-like attribute found (list of >=1 coordinate pairs); "
-            "snake state must track body segments"
+            "no body-like attribute found (list of >=1 coordinate pairs); snake state must track body segments"
         )
     if _find_food_attribute(state, exclude=body_attr[0] if body_attr else None) is None:
-        failures.append(
-            "no food-like attribute found (single [x,y] pair); "
-            "snake state must track food position"
-        )
+        failures.append("no food-like attribute found (single [x,y] pair); snake state must track food position")
     if _find_score_attribute(state) is None:
-        failures.append(
-            "no score-like numeric attribute found; "
-            "snake must track score/length"
-        )
+        failures.append("no score-like numeric attribute found; snake must track score/length")
     failures.extend(run_lifecycle_checks("snake", mod))
     return failures
 
@@ -1542,22 +1585,16 @@ def _verify_tetris_features(mod: Any) -> list[str]:
             tick[1]()
             after_y = _find_piece_y(_get_state_dict(instance))
             if after_y is not None and after_y != before_y + 1:
-                failures.append(
-                    f"gravity moved active piece by {after_y - before_y!r} rows; expected exactly one"
-                )
+                failures.append(f"gravity moved active piece by {after_y - before_y!r} rows; expected exactly one")
         except Exception as exc:
             failures.append(f"gravity tick raised: {type(exc).__name__}: {exc}")
     state = _get_state_dict(instance)
     if _find_board_attribute(state) is None:
         failures.append(
-            "no 2D board/grid attribute found (list of >=3 equal-length rows); "
-            "tetris state must track the playfield"
+            "no 2D board/grid attribute found (list of >=3 equal-length rows); tetris state must track the playfield"
         )
     if _find_score_attribute(state) is None:
-        failures.append(
-            "no score-like numeric attribute found; "
-            "tetris must track score/lines cleared"
-        )
+        failures.append("no score-like numeric attribute found; tetris must track score/lines cleared")
     failures.extend(run_lifecycle_checks("tetris", mod))
     return failures
 
@@ -1583,27 +1620,19 @@ def _verify_skifree_features(mod: Any) -> list[str]:
     failures.extend(_check_tick_advances_state(instance))
     state = _get_state_dict(instance)
     if _find_position_attribute(state, "x") is None:
-        failures.append(
-            "no x-axis position attribute found; skifree must track skier x"
-        )
+        failures.append("no x-axis position attribute found; skifree must track skier x")
     if _find_position_attribute(state, "y") is None:
-        failures.append(
-            "no y-axis position attribute found; skifree must track skier y"
-        )
+        failures.append("no y-axis position attribute found; skifree must track skier y")
     if _find_game_over_attribute(state) is None:
-        failures.append(
-            "no crashed/over boolean attribute found; skifree must track crash state"
-        )
+        failures.append("no crashed/over boolean attribute found; skifree must track crash state")
     has_obstacle_list = any(
-        isinstance(v, list) and len(v) >= 1
+        isinstance(v, list)
+        and len(v) >= 1
         and all(_is_coord_pair(item) for item in v if not isinstance(item, (int, float)))
         for v in state.values()
     )
     if not has_obstacle_list:
-        failures.append(
-            "no obstacle-list attribute found (trees/rocks); "
-            "skifree must track obstacle positions"
-        )
+        failures.append("no obstacle-list attribute found (trees/rocks); skifree must track obstacle positions")
     failures.extend(run_lifecycle_checks("skifree", mod))
     return failures
 
@@ -1646,22 +1675,19 @@ def _verify_minesweeper_features(mod: Any) -> list[str]:
         try:
             result = reveal[1](0, 0)
             if isinstance(result, str) and result not in (
-                "ok", "mine", "already_revealed", "out_of_bounds",
+                "ok",
+                "mine",
+                "already_revealed",
+                "out_of_bounds",
             ):
                 failures.append(f"reveal returned unexpected value: {result!r}")
         except Exception as exc:
             failures.append(f"reveal(0,0) raised: {type(exc).__name__}: {exc}")
     state = _get_state_dict(instance)
     if _find_board_attribute(state) is None:
-        failures.append(
-            "no 2D grid attribute found (list of >=3 equal-length rows); "
-            "minesweeper must track cell grid"
-        )
+        failures.append("no 2D grid attribute found (list of >=3 equal-length rows); minesweeper must track cell grid")
     if _find_callable_attr(instance, _FLAG_NAMES) is None:
-        failures.append(
-            "no flag-like method found (flag/mark/toggle_flag/set_flag); "
-            "minesweeper must support flagging"
-        )
+        failures.append("no flag-like method found (flag/mark/toggle_flag/set_flag); minesweeper must support flagging")
     # Prove the documented terminal path by revealing an actual mine rather
     # than an arbitrary corner that may be safe in a random board.
     if reveal is not None:
@@ -1710,8 +1736,7 @@ def _verify_checkers_features(mod: Any) -> list[str]:
     board = _find_board_attribute(state)
     if board is None:
         failures.append(
-            "no 2D board attribute found (list of >=3 equal-length rows); "
-            "checkers must track the 8x8 board"
+            "no 2D board attribute found (list of >=3 equal-length rows); checkers must track the 8x8 board"
         )
     elif len(board[1]) < 8 or any(len(row) < 8 for row in board[1]):
         failures.append(
@@ -1719,9 +1744,7 @@ def _verify_checkers_features(mod: Any) -> list[str]:
             f"(got {len(board[1])}x{len(board[1][0])}); checkers requires 8x8"
         )
     if _find_player_attribute(state) is None:
-        failures.append(
-            "no current-player-like attribute found; checkers must track whose turn"
-        )
+        failures.append("no current-player-like attribute found; checkers must track whose turn")
     failures.extend(run_lifecycle_checks("checkers", mod))
     return failures
 
@@ -1759,29 +1782,20 @@ def _verify_banana_features(mod: Any) -> list[str]:
         else:
             throw_keys = ("trajectory", "hit", "hit_type", "winner", "distance")
             if not any(k in result for k in throw_keys):
-                failures.append(
-                    f"throw dict lacks all of {throw_keys}; "
-                    f"got keys {sorted(result.keys())}"
-                )
+                failures.append(f"throw dict lacks all of {throw_keys}; got keys {sorted(result.keys())}")
             traj = result.get("trajectory")
             if traj is not None and not isinstance(traj, list):
-                failures.append(
-                    f"throw trajectory must be a list, got {type(traj).__name__!r}"
-                )
+                failures.append(f"throw trajectory must be a list, got {type(traj).__name__!r}")
     state = _get_state_dict(instance)
     if _find_player_attribute(state) is None:
-        failures.append(
-            "no current-player-like attribute found; banana must track turn"
-        )
+        failures.append("no current-player-like attribute found; banana must track turn")
     has_skyline = any(
-        isinstance(v, list) and len(v) >= 3
-        and all(isinstance(h, (int, float)) and not isinstance(h, bool) for h in v)
+        isinstance(v, list) and len(v) >= 3 and all(isinstance(h, (int, float)) and not isinstance(h, bool) for h in v)
         for v in state.values()
     )
     if not has_skyline:
         failures.append(
-            "no skyline-like attribute found (list of >=3 building heights); "
-            "banana must track the city skyline"
+            "no skyline-like attribute found (list of >=3 building heights); banana must track the city skyline"
         )
     failures.extend(run_lifecycle_checks("banana", mod))
     return failures
@@ -2168,8 +2182,7 @@ def _run_single_check(instance: Any, check_id: str, class_name: str) -> bool:
                             return result.get("valid", False)
                         return result is True or result == "valid"
         # Strategy 2: try common opening diagonal moves
-        for from_sq, to_sq in [("a3", "b4"), ("c3", "b4"), ("c3", "d4"),
-                                ("a1", "b2"), ("b2", "a3"), ("b2", "c3")]:
+        for from_sq, to_sq in [("a3", "b4"), ("c3", "b4"), ("c3", "d4"), ("a1", "b2"), ("b2", "a3"), ("b2", "c3")]:
             try:
                 result = instance.move(from_sq, to_sq)
             except Exception:
@@ -2527,10 +2540,11 @@ def _run_single_check(instance: Any, check_id: str, class_name: str) -> bool:
         if getattr(instance, "game_over", False):
             return True
         cards = getattr(instance, "cards", [])
-        all_matched = all(
-            (c.get("matched", False) if isinstance(c, dict) else getattr(c, "matched", False))
-            for c in cards
-        ) if cards else False
+        all_matched = (
+            all((c.get("matched", False) if isinstance(c, dict) else getattr(c, "matched", False)) for c in cards)
+            if cards
+            else False
+        )
         return all_matched
 
     # -- Tic Tac Toe --
@@ -2804,9 +2818,12 @@ def _stress_tick_game(instance: Any, game_id: str, count: int) -> dict[str, Any]
 
 def _stress_minesweeper(instance: Any, count: int) -> dict[str, Any]:
     import random as _random
+
     result: dict[str, Any] = {
-        "interactions_completed": 0, "crashed": False,
-        "ended_gracefully": False, "exception": None,
+        "interactions_completed": 0,
+        "crashed": False,
+        "ended_gracefully": False,
+        "exception": None,
     }
     try:
         gw = getattr(instance, "grid_w", 10)
@@ -2833,9 +2850,12 @@ def _stress_minesweeper(instance: Any, count: int) -> dict[str, Any]:
 
 def _stress_checkers(instance: Any, count: int) -> dict[str, Any]:
     import random as _random
+
     result: dict[str, Any] = {
-        "interactions_completed": 0, "crashed": False,
-        "ended_gracefully": False, "exception": None,
+        "interactions_completed": 0,
+        "crashed": False,
+        "ended_gracefully": False,
+        "exception": None,
     }
     cols = "abcdefgh"
     try:
@@ -2865,9 +2885,12 @@ def _stress_checkers(instance: Any, count: int) -> dict[str, Any]:
 
 def _stress_banana(instance: Any, count: int) -> dict[str, Any]:
     import random as _random
+
     result: dict[str, Any] = {
-        "interactions_completed": 0, "crashed": False,
-        "ended_gracefully": False, "exception": None,
+        "interactions_completed": 0,
+        "crashed": False,
+        "ended_gracefully": False,
+        "exception": None,
     }
     try:
         for i in range(count):
@@ -2893,9 +2916,12 @@ def _stress_banana(instance: Any, count: int) -> dict[str, Any]:
 
 def _stress_maze_runner(instance: Any, count: int) -> dict[str, Any]:
     import random as _random
+
     result: dict[str, Any] = {
-        "interactions_completed": 0, "crashed": False,
-        "ended_gracefully": False, "exception": None,
+        "interactions_completed": 0,
+        "crashed": False,
+        "ended_gracefully": False,
+        "exception": None,
     }
     directions = ["up", "down", "left", "right"]
     try:
@@ -2922,9 +2948,12 @@ def _stress_maze_runner(instance: Any, count: int) -> dict[str, Any]:
 def _stress_word_guesser(instance: Any, count: int) -> dict[str, Any]:
     import random as _random
     import string as _string
+
     result: dict[str, Any] = {
-        "interactions_completed": 0, "crashed": False,
-        "ended_gracefully": False, "exception": None,
+        "interactions_completed": 0,
+        "crashed": False,
+        "ended_gracefully": False,
+        "exception": None,
     }
     try:
         for i in range(count):
@@ -2949,9 +2978,12 @@ def _stress_word_guesser(instance: Any, count: int) -> dict[str, Any]:
 
 def _stress_memory_match(instance: Any, count: int) -> dict[str, Any]:
     import random as _random
+
     result: dict[str, Any] = {
-        "interactions_completed": 0, "crashed": False,
-        "ended_gracefully": False, "exception": None,
+        "interactions_completed": 0,
+        "crashed": False,
+        "ended_gracefully": False,
+        "exception": None,
     }
     try:
         cards = getattr(instance, "cards", [])
@@ -2978,9 +3010,12 @@ def _stress_memory_match(instance: Any, count: int) -> dict[str, Any]:
 
 def _stress_tic_tac_toe(instance: Any, count: int) -> dict[str, Any]:
     import random as _random
+
     result: dict[str, Any] = {
-        "interactions_completed": 0, "crashed": False,
-        "ended_gracefully": False, "exception": None,
+        "interactions_completed": 0,
+        "crashed": False,
+        "ended_gracefully": False,
+        "exception": None,
     }
     try:
         for i in range(count):
@@ -3098,6 +3133,7 @@ def _call_deepseek(gateway: Any, prompt: str) -> dict[str, Any]:
 # Tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.skipif(not _DEEPSEEK_KEY or not _HAS_LANGCHAIN_OPENAI, reason=_LIVE_SKIP_REASON)
 class TestDeepSeekGameBuilding:
     """Build each game via DeepSeek API and verify it works headlessly."""
@@ -3196,9 +3232,9 @@ class TestDeepSeekGameBuilding:
 
         obs = _init_game_obs(game_id)
 
-        print(f"\n\n{'='*70}")
+        print(f"\n\n{'=' * 70}")
         print(f"BUILDING: {game_id} ({class_name})")
-        print(f"{'='*70}")
+        print(f"{'=' * 70}")
 
         # Step 1: Call DeepSeek
         print(f"\n--- Step 1: Calling DeepSeek for {game_id} ---")
@@ -3277,14 +3313,16 @@ class TestDeepSeekGameBuilding:
             errors = test_results["errors"]
             detail = errors[:2] if errors else "unknown"
             self._record_gap(
-                game_id, "import",
+                game_id,
+                "import",
                 f"Module failed to import: {detail}",
             )
         elif not test_results["instantiated"]:
             errors = test_results["errors"]
             detail = errors[:2] if errors else "unknown"
             self._record_gap(
-                game_id, "instantiation",
+                game_id,
+                "instantiation",
                 f"Class {class_name} failed to instantiate: {detail}",
             )
         elif failed > len(checks) * 0.5:
@@ -3301,7 +3339,9 @@ class TestDeepSeekGameBuilding:
             feature_dir.mkdir(exist_ok=True)
             try:
                 feature_mod = _load_generated_module(
-                    source, f"{game_id}_feature_check", feature_dir,
+                    source,
+                    f"{game_id}_feature_check",
+                    feature_dir,
                 )
                 feature_failures = verify_features(game_id, feature_mod)
             except Exception as exc:
@@ -3317,22 +3357,21 @@ class TestDeepSeekGameBuilding:
             for fail in feature_failures:
                 print(f"    - {fail}")
             self._record_gap(
-                game_id, "features",
+                game_id,
+                "features",
                 f"{len(feature_failures)} feature failures: " + "; ".join(feature_failures[:3]),
             )
         else:
             print("  All required features verified.")
 
-        print(f"\n{'-'*70}")
-        print(f"RESULT: {game_id} — {passed}/{len(checks)} checks passed, "
-              f"{len(feature_failures)} feature failures")
+        print(f"\n{'-' * 70}")
+        print(f"RESULT: {game_id} — {passed}/{len(checks)} checks passed, {len(feature_failures)} feature failures")
 
         # Hard assertion: the model's output MUST satisfy the feature floor.
         # This is the contract the user cares about — the game may be
         # written differently each time, but it must implement the features.
-        assert not feature_failures, (
-            f"{game_id}: required features not satisfied:\n  - "
-            + "\n  - ".join(feature_failures)
+        assert not feature_failures, f"{game_id}: required features not satisfied:\n  - " + "\n  - ".join(
+            feature_failures
         )
 
     # ---- Gap tracking ----
@@ -3347,6 +3386,7 @@ class TestDeepSeekGameBuilding:
 # Pipeline Gap Analysis
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.skipif(not _DEEPSEEK_KEY or not _HAS_LANGCHAIN_OPENAI, reason=_LIVE_SKIP_REASON)
 class TestGameBuildingGapAnalysis:
     """After running all game-building tests, analyze gludd's pipeline for gaps."""
@@ -3357,9 +3397,9 @@ class TestGameBuildingGapAnalysis:
         if not gaps:
             print("\nNo gaps recorded yet — run game-building tests first")
         else:
-            print("\n\n" + "="*70)
+            print("\n\n" + "=" * 70)
             print("GAME-BUILDING GAP REPORT")
-            print("="*70)
+            print("=" * 70)
             print(f"\nTotal gaps found: {len(gaps)}")
 
             by_category: dict[str, list[dict]] = {}
@@ -3381,9 +3421,9 @@ class TestGameBuildingGapAnalysis:
         assert out_path.parent == tmp_path
         assert not (_REPO_ROOT / ".game-audit-report.json").exists()
 
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("PIPELINE IMPROVEMENT RECOMMENDATIONS")
-        print("="*70)
+        print("=" * 70)
         print("""
 1. ITERATIVE CODE GENERATION: The ExecutionEngine only does single-shot generation.
    For complex tasks like game-building, the model needs multiple attempts with
@@ -3426,6 +3466,7 @@ class TestGameBuildingGapAnalysis:
 # ---------------------------------------------------------------------------
 # Full Pipeline Tests — gludd's ExecutionEngine + EventLoop wired to DeepSeek
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.skipif(not _DEEPSEEK_KEY or not _HAS_LANGCHAIN_OPENAI, reason=_LIVE_SKIP_REASON)
 class TestDeepSeekFullPipeline:
@@ -3480,7 +3521,9 @@ class TestDeepSeekFullPipeline:
             self.vars_written.append({"job_id": job_id, "job_vars": dict(job_vars)})
 
         def run_playbook(
-            self, playbook_name: str, private_data_dir: str,
+            self,
+            playbook_name: str,
+            private_data_dir: str,
             env: dict[str, str] | None = None,
         ) -> None:
             self.run_calls.append(playbook_name)
@@ -3503,11 +3546,15 @@ class TestDeepSeekFullPipeline:
         subprocess.run(["git", "init", str(ws)], check=True, capture_output=True)
         subprocess.run(
             ["git", "config", "user.email", "test@general-ludd.local"],
-            cwd=ws, check=True, capture_output=True,
+            cwd=ws,
+            check=True,
+            capture_output=True,
         )
         subprocess.run(
             ["git", "config", "user.name", "Test Agent"],
-            cwd=ws, check=True, capture_output=True,
+            cwd=ws,
+            check=True,
+            capture_output=True,
         )
 
         (ws / "snake_game.py").write_text("# placeholder\n")
@@ -3515,7 +3562,9 @@ class TestDeepSeekFullPipeline:
         subprocess.run(["git", "add", "."], cwd=ws, check=True, capture_output=True)
         subprocess.run(
             ["git", "commit", "-m", "initial workspace"],
-            cwd=ws, check=True, capture_output=True,
+            cwd=ws,
+            check=True,
+            capture_output=True,
         )
 
         # 2. Create gateway
@@ -3542,7 +3591,7 @@ class TestDeepSeekFullPipeline:
         print("\n\n" + "=" * 70)
         print("FULL PIPELINE TEST A: ExecutionEngine.execute() via DeepSeek")
         print("=" * 70)
-        result = engine.execute(job)
+        result = asyncio.run(engine.execute_async(job))
 
         print("\n  TaskReturn:")
         print(f"    return_id    = {result.return_id}")
@@ -3555,20 +3604,22 @@ class TestDeepSeekFullPipeline:
         # 6. Check files written
         all_files = sorted(ws.glob("**/*"))
         code_files = [
-            str(f.relative_to(ws))
-            for f in all_files
-            if f.suffix == ".py" or f.suffix == ".md" or f.suffix == ".txt"
+            str(f.relative_to(ws)) for f in all_files if f.suffix == ".py" or f.suffix == ".md" or f.suffix == ".txt"
         ]
         print(f"\n  Workspace files: {code_files}")
 
         # 7. Check git status
         log_result = subprocess.run(
             ["git", "log", "--oneline", "-5"],
-            cwd=ws, capture_output=True, text=True,
+            cwd=ws,
+            capture_output=True,
+            text=True,
         )
         branch_result = subprocess.run(
             ["git", "branch"],
-            cwd=ws, capture_output=True, text=True,
+            cwd=ws,
+            capture_output=True,
+            text=True,
         )
         print(f"  Git log:\n{log_result.stdout}")
         print(f"  Git branches:\n{branch_result.stdout}")
@@ -3581,16 +3632,10 @@ class TestDeepSeekFullPipeline:
         print(f"  Files changed:            {result.artifacts}")
         print(f"  Test exit code:           {result.exit_code}")
 
-        has_git_artifact = bool(
-            result.artifacts
-            and any("commit:" in str(a) for a in result.artifacts)
-        )
+        has_git_artifact = bool(result.artifacts and any("commit:" in str(a) for a in result.artifacts))
         print(f"  Has commit in artifacts:  {has_git_artifact}")
 
-        code_generated = (
-            has_git_artifact
-            or (result.artifacts and len(result.artifacts) > 1)
-        )
+        code_generated = has_git_artifact or (result.artifacts and len(result.artifacts) > 1)
         print(f"  Code was generated:       {code_generated}")
 
         has_game_file = any("snake" in str(f).lower() for f in code_files)
@@ -3665,8 +3710,7 @@ class TestDeepSeekFullPipeline:
         print("FULL PIPELINE TEST B: EventLoop._dispatch_execute_job_isolated")
         print("=" * 70)
         print(f"[LOOP] dispatching {todo.todo_id} via real EventLoop dispatch")
-        print(f"[LOOP] model_profile={todo.model_profile!r} "
-              f"prompt_profile={todo.prompt_profile!r}")
+        print(f"[LOOP] model_profile={todo.model_profile!r} prompt_profile={todo.prompt_profile!r}")
 
         await loop._dispatch_execute_job_isolated(todo)
 
@@ -3675,12 +3719,8 @@ class TestDeepSeekFullPipeline:
         print(f"[LOOP] vars_written    = {len(runner.vars_written)}")
 
         # ---- Assertions (wiring) ----
-        assert runner.vars_written, (
-            "LOOP: write_vars never called — dispatch is broken"
-        )
-        assert runner.prepare_calls, (
-            "LOOP: prepare_job_dirs never called — dispatch is broken"
-        )
+        assert runner.vars_written, "LOOP: write_vars never called — dispatch is broken"
+        assert runner.prepare_calls, "LOOP: prepare_job_dirs never called — dispatch is broken"
 
         vars_entry = runner.vars_written[0]
         job_vars = vars_entry.get("job_vars", {})
@@ -3691,15 +3731,10 @@ class TestDeepSeekFullPipeline:
         print(f"[LOOP] job_id          = {job_id!r}")
         print(f"[LOOP] prompt_text[:200] = {str(prompt_text)[:200]!r}")
 
-        assert job_id.startswith("EXEC-"), (
-            f"LOOP: job_id should start with EXEC-, got {job_id!r}"
-        )
-        assert prompt_text, (
-            "LOOP: prompt_text is empty — PromptRegistry wiring failed"
-        )
+        assert job_id.startswith("EXEC-"), f"LOOP: job_id should start with EXEC-, got {job_id!r}"
+        assert prompt_text, "LOOP: prompt_text is empty — PromptRegistry wiring failed"
         assert model_response, (
-            "LOOP: model_response is empty — DeepSeek was never called "
-            "(invoke_model_for_generation returned None)"
+            "LOOP: model_response is empty — DeepSeek was never called (invoke_model_for_generation returned None)"
         )
 
         response_text = str(model_response)
@@ -3743,8 +3778,7 @@ class TestDeepSeekFullPipeline:
                 checks = test_results.get("checks", {})
                 passed = sum(1 for c in checks.values() if c["passed"])
                 failed = len(checks) - passed
-                print(f"[LOOP] game checks:        {passed}/{len(checks)} passed, "
-                      f"{failed} failed")
+                print(f"[LOOP] game checks:        {passed}/{len(checks)} passed, {failed} failed")
                 if test_results["errors"]:
                     for err in test_results["errors"]:
                         print(f"[LOOP] ERROR: {err[:200]}")
@@ -3752,10 +3786,8 @@ class TestDeepSeekFullPipeline:
                 print("[LOOP] WARNING: model output does not parse as valid Python")
         else:
             print("[LOOP] WARNING: could not extract Python module from model output")
-            print(f"[LOOP] Raw output contains 'class': "
-                  f"{'class ' in response_text or 'class:' in response_text}")
-            print(f"[LOOP] Raw output contains '```': "
-                  f"{'```' in response_text}")
+            print(f"[LOOP] Raw output contains 'class': {'class ' in response_text or 'class:' in response_text}")
+            print(f"[LOOP] Raw output contains '```': {'```' in response_text}")
 
         # ---- Gap analysis ----
         print("\n" + "-" * 70)
@@ -3795,6 +3827,7 @@ class TestDeepSeekFullPipeline:
 # Game Persistence Tests — extended-play stress testing
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.skipif(not _DEEPSEEK_KEY or not _HAS_LANGCHAIN_OPENAI, reason=_LIVE_SKIP_REASON)
 class TestGamePersistence:
     """Extended-play stress tests: each game must survive 500 ticks/interactions.
@@ -3823,9 +3856,9 @@ class TestGamePersistence:
         if not obs:
             obs = _init_game_obs(game_id)
 
-        print(f"\n\n{'='*70}")
+        print(f"\n\n{'=' * 70}")
         print(f"PERSISTENCE TEST: {game_id} ({class_name}) — {interaction_count} interactions")
-        print(f"{'='*70}")
+        print(f"{'=' * 70}")
 
         # Step 1: Call DeepSeek
         print(f"\n--- Step 1: Calling DeepSeek for {game_id} ---")
@@ -3883,29 +3916,33 @@ class TestGamePersistence:
         # Gap detection
         if not results["module_imported"]:
             self._record_persistence_gap(
-                game_id, "import",
+                game_id,
+                "import",
                 f"Module failed to import during persistence test: {results['errors'][:2]}",
             )
         elif not results["instantiated"]:
             self._record_persistence_gap(
-                game_id, "instantiation",
+                game_id,
+                "instantiation",
                 f"Class {class_name} failed to instantiate: {results['errors'][:2]}",
             )
         elif crashed:
             self._record_persistence_gap(
-                game_id, "persistence_crash",
+                game_id,
+                "persistence_crash",
                 f"Crashed at interaction {interactions}: {stress.get('exception', 'unknown')}",
             )
         elif not render_ok:
             self._record_persistence_gap(
-                game_id, "render_state",
+                game_id,
+                "render_state",
                 f"render_state() failed after {interactions} interactions: "
                 f"{stress.get('render_state_error', 'unknown')}",
             )
 
         status = "CRASHED" if crashed else ("ENDED" if ended else "OK")
         print(f"\n  PERSISTENCE STATUS: {status}")
-        print(f"{'-'*70}")
+        print(f"{'-' * 70}")
 
     # ---- Snake ----
     def test_persistence_snake(self, gateway, tmp_path):

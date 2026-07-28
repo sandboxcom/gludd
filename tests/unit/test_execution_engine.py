@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import tempfile
 from unittest.mock import MagicMock, patch
 
@@ -79,12 +80,9 @@ class TestExecutionEngine:
     def test_execute_parses_file_write_blocks(self):
         mock_gateway = MagicMock()
         diff_output = (
-            "```\n--- a/src/main.py\n+++ b/src/main.py\n"
-            "@@ -1 +1 @@\n-print('hello')\n+print('hello world')\n```"
+            "```\n--- a/src/main.py\n+++ b/src/main.py\n@@ -1 +1 @@\n-print('hello')\n+print('hello world')\n```"
         )
-        mock_gateway.call_model = MagicMock(
-            return_value=MagicMock(content=diff_output)
-        )
+        mock_gateway.call_model = MagicMock(return_value=MagicMock(content=diff_output))
         engine = self._make_engine(mock_gateway)
 
         job = JobSpec(
@@ -97,15 +95,13 @@ class TestExecutionEngine:
             project_id="proj-1",
         )
 
-        result = engine.execute(job)
+        result = asyncio.run(engine.execute_async(job))
         assert result.job_id == "JOB-001"
         assert result.todo_id == "TODO-001"
 
     def test_malformed_output_returns_failed_task_return(self):
         mock_gateway = MagicMock()
-        mock_gateway.call_model = MagicMock(return_value=MagicMock(
-            content="I cannot generate code for this request."
-        ))
+        mock_gateway.call_model = MagicMock(return_value=MagicMock(content="I cannot generate code for this request."))
         engine = self._make_engine(mock_gateway)
 
         job = JobSpec(
@@ -117,15 +113,13 @@ class TestExecutionEngine:
             prompt_text="Make a change",
         )
 
-        result = engine.execute(job)
+        result = asyncio.run(engine.execute_async(job))
         assert result.exit_code != 0
 
     def test_execute_writes_files_to_workspace(self):
         mock_gateway = MagicMock()
         code = "def hello():\n    return 'world'\n"
-        mock_gateway.call_model = MagicMock(return_value=MagicMock(
-            content=f"```\nFILE: src/hello.py\n{code}\n```"
-        ))
+        mock_gateway.call_model = MagicMock(return_value=MagicMock(content=f"```\nFILE: src/hello.py\n{code}\n```"))
         engine = self._make_engine(mock_gateway)
 
         job = JobSpec(
@@ -137,7 +131,7 @@ class TestExecutionEngine:
             prompt_text="Create hello.py",
         )
 
-        result = engine.execute(job)
+        result = asyncio.run(engine.execute_async(job))
         assert result.job_id == "JOB-003"
 
     def test_no_model_output_produces_failure(self):
@@ -154,7 +148,7 @@ class TestExecutionEngine:
             prompt_text="Do something",
         )
 
-        result = engine.execute(job)
+        result = asyncio.run(engine.execute_async(job))
         assert result.exit_code != 0
 
     def test_fallback_extracts_python_fenced_block_without_file_markers(self):
@@ -162,9 +156,9 @@ class TestExecutionEngine:
         the fallback auto-assigns a path and writes the code."""
         mock_gateway = MagicMock()
         code = "def hello():\n    return 'world'\n"
-        mock_gateway.call_model = MagicMock(return_value=MagicMock(
-            content=f"Here is the code:\n\n```python\n{code}\n```"
-        ))
+        mock_gateway.call_model = MagicMock(
+            return_value=MagicMock(content=f"Here is the code:\n\n```python\n{code}\n```")
+        )
         engine = self._make_engine(mock_gateway)
 
         job = JobSpec(
@@ -176,19 +170,18 @@ class TestExecutionEngine:
             prompt_text="Create a hello function",
         )
 
-        result = engine.execute(job)
+        result = asyncio.run(engine.execute_async(job))
         assert result.exit_code != 1, (
-            f"Expected exit_code != 1 (fallback should extract code), "
-            f"got {result.exit_code}: {result.result_summary}"
+            f"Expected exit_code != 1 (fallback should extract code), got {result.exit_code}: {result.result_summary}"
         )
         assert result.job_id == "JOB-FB1"
 
     def test_fallback_not_triggered_when_no_code_blocks(self):
         """No fenced blocks + no FILE markers should still fail (no fallback)."""
         mock_gateway = MagicMock()
-        mock_gateway.call_model = MagicMock(return_value=MagicMock(
-            content="I cannot generate any code for this request."
-        ))
+        mock_gateway.call_model = MagicMock(
+            return_value=MagicMock(content="I cannot generate any code for this request.")
+        )
         engine = self._make_engine(mock_gateway)
 
         job = JobSpec(
@@ -200,7 +193,7 @@ class TestExecutionEngine:
             prompt_text="Make a change",
         )
 
-        result = engine.execute(job)
+        result = asyncio.run(engine.execute_async(job))
         assert result.exit_code != 0
 
     def test_fallback_uses_default_filename_when_no_existing_py(self):
@@ -210,9 +203,7 @@ class TestExecutionEngine:
 
         mock_gateway = MagicMock()
         code = "print('hello world')"
-        mock_gateway.call_model = MagicMock(return_value=MagicMock(
-            content=f"```python\n{code}\n```"
-        ))
+        mock_gateway.call_model = MagicMock(return_value=MagicMock(content=f"```python\n{code}\n```"))
         empty_workspace = tempfile.mkdtemp()
         engine = self._make_engine(mock_gateway, workspace=empty_workspace)
 
@@ -225,14 +216,10 @@ class TestExecutionEngine:
             prompt_text="Write a hello world printer",
         )
 
-        result = engine.execute(job)
-        assert result.exit_code != 1, (
-            f"Expected exit_code != 1, got {result.exit_code}: {result.result_summary}"
-        )
+        result = asyncio.run(engine.execute_async(job))
+        assert result.exit_code != 1, f"Expected exit_code != 1, got {result.exit_code}: {result.result_summary}"
         generated_path = os.path.join(empty_workspace, "write-a-hello-world-printer.py")
-        assert os.path.isfile(generated_path), (
-            f"Expected generated file at {generated_path}"
-        )
+        assert os.path.isfile(generated_path), f"Expected generated file at {generated_path}"
         with open(generated_path) as f:
             assert f.read() == code
 
@@ -242,9 +229,7 @@ class TestExecutionEngine:
 
         mock_gateway = MagicMock()
         code = "x = 1\n"
-        mock_gateway.call_model = MagicMock(return_value=MagicMock(
-            content=f"```python\n{code}\n```"
-        ))
+        mock_gateway.call_model = MagicMock(return_value=MagicMock(content=f"```python\n{code}\n```"))
         engine = self._make_engine(mock_gateway)
 
         job = JobSpec(
@@ -258,20 +243,15 @@ class TestExecutionEngine:
 
         platform_logger = logging.getLogger("general_ludd.execution.engine")
         with patch.object(platform_logger, "warning", wraps=platform_logger.warning) as mock_warning:
-            result = engine.execute(job)
+            result = asyncio.run(engine.execute_async(job))
 
         assert result.exit_code != 1
-        warning_texts = [
-            str(a) for call in mock_warning.mock_calls if call.args for a in call.args
-        ]
-        assert any("no FILE:" in t for t in warning_texts), \
-            f"Expected FILE: marker warning, got: {warning_texts}"
+        warning_texts = [str(a) for call in mock_warning.mock_calls if call.args for a in call.args]
+        assert any("no FILE:" in t for t in warning_texts), f"Expected FILE: marker warning, got: {warning_texts}"
 
     def test_skill_body_included_in_prompt(self):
         mock_gateway = MagicMock()
-        mock_gateway.call_model = MagicMock(return_value=MagicMock(
-            content="```\nFILE: x.py\nprint('ok')\n```"
-        ))
+        mock_gateway.call_model = MagicMock(return_value=MagicMock(content="```\nFILE: x.py\nprint('ok')\n```"))
         engine = self._make_engine(mock_gateway)
 
         job = JobSpec(
@@ -284,7 +264,7 @@ class TestExecutionEngine:
             skill_body="Use TDD patterns",
         )
 
-        engine.execute(job)
+        asyncio.run(engine.execute_async(job))
         mock_gateway.call_model.assert_called_once()
         call_kwargs = mock_gateway.call_model.call_args
         prompt_arg = str(call_kwargs)

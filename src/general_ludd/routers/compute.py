@@ -4,7 +4,7 @@ import logging
 import os
 from typing import cast
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 
 from general_ludd.infra.compute import (
     ComputeConfig,
@@ -17,6 +17,7 @@ from general_ludd.infra.deployment import DeploymentManager
 from general_ludd.infra.model_deploy_check import Finding
 from general_ludd.infra.utilization import UtilizationTracker
 from general_ludd.models.deployment_health import DeploymentHealthChecker
+from general_ludd.security.capability_guard import RequireCapability
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,7 @@ def _get_or_create_extended_subsystems(app: FastAPI) -> dict[str, object]:
     from general_ludd.daemon import (
         _get_or_create_extended_subsystems as _daemon_ext,
     )
+
     return _daemon_ext(app)
 
 
@@ -123,8 +125,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         if not endpoint_id or not url:
             raise HTTPException(status_code=422, detail="endpoint_id and url required")
         ep = cast(UtilizationTracker, ext["utilization"]).register_endpoint(
-            endpoint_id=endpoint_id, url=url,
-            model=cast(str, req.get("model", "")), gpu_type=cast(str, req.get("gpu_type", "")),
+            endpoint_id=endpoint_id,
+            url=url,
+            model=cast(str, req.get("model", "")),
+            gpu_type=cast(str, req.get("gpu_type", "")),
             gpu_count=cast(int, req.get("gpu_count", 1)),
             max_concurrent=cast(int, req.get("max_concurrent", 4)),
         )
@@ -182,8 +186,11 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             engine = InferenceEngine.VLLM
 
         config = ComputeConfig(
-            provider=provider, gpu_type=gpu_type, model_name=model_name,
-            engine=engine, region=cast("str | None", req.get("region")),
+            provider=provider,
+            gpu_type=gpu_type,
+            model_name=model_name,
+            engine=engine,
+            region=cast("str | None", req.get("region")),
             spot=cast(bool, req.get("spot", True)),
             max_cost_usd=cast(float, req.get("max_cost_usd", 10.0)),
             timeout_minutes=cast(float, req.get("timeout_minutes", 60.0)),
@@ -206,11 +213,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 detail={
                     "error": "deploy refused: critical misconfiguration detected",
                     "misconfig": [_finding_to_dict(f) for f in critical],
-                    "remediations": [
-                        remediations[i]
-                        for i, f in enumerate(findings)
-                        if id(f) in crit_idx
-                    ],
+                    "remediations": [remediations[i] for i, f in enumerate(findings) if id(f) in crit_idx],
                     "hint": "resolve the misconfig or resubmit with force=true",
                 },
             )
@@ -233,6 +236,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         ):
             try:
                 from general_ludd.account.ephemeral import maybe_create_ephemeral_for_deploy
+
                 _meta: dict[str, object] = {}
                 _new_mgr, creds = maybe_create_ephemeral_for_deploy(
                     provider=str(provider),
@@ -250,9 +254,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                     }
                     # Attach the ephemeral stamp so the EventLoop reconcile
                     # phase can find it after the task completes.
-                    app.state._compute_deployments_ephemeral = getattr(
-                        app.state, "_compute_deployments_ephemeral", {}
-                    )
+                    app.state._compute_deployments_ephemeral = getattr(app.state, "_compute_deployments_ephemeral", {})
             except Exception as exc:
                 logger.warning("ephemeral account creation failed: %s", exc, exc_info=True)
                 raise HTTPException(
@@ -270,9 +272,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             try:
                 checker = _get_health_checker(app)
                 if checker is not None:
-                    checker.record_failure(
-                        model_name, exc, kind="deploy_failure"
-                    )
+                    checker.record_failure(model_name, exc, kind="deploy_failure")
             except Exception:  # pragma: no cover - defensive
                 logger.debug("failed to record deploy failure", exc_info=True)
             raise HTTPException(
@@ -295,6 +295,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         max_cost = cast(float, req.get("max_cost_usd", 10.0))
         if max_cost and max_cost > 0:
             from general_ludd.infra.slurm import SlurmAdapter, SlurmJobConfig, SlurmJobMonitor
+
             try:
                 adapter = SlurmAdapter()
                 slurm_config = SlurmJobConfig(
@@ -334,7 +335,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             "findings": [_finding_to_dict(f) for f in findings],
         }
 
-    @app.delete("/admin/compute/destroy/{instance_id}")
+    @app.delete(
+        "/admin/compute/destroy/{instance_id}",
+        dependencies=[Depends(RequireCapability(resource="admin:compute", action="destroy"))],
+    )
     async def admin_compute_destroy(instance_id: str) -> dict[str, object]:
         mgr = _get_deployment_manager()
         # W2.3 (C5): destroy refuses an instance_id with no deployment record.
@@ -364,14 +368,16 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 elif isinstance(m, dict):
                     metrics_list.append(m)
                 else:
-                    metrics_list.append({
-                        "gpu_sm_util_pct": getattr(m, "gpu_sm_util_pct", 0.0),
-                        "gpu_mem_util_pct": getattr(m, "gpu_mem_util_pct", 0.0),
-                        "gpu_temp_c": getattr(m, "gpu_temp_c", 0.0),
-                        "power_draw_w": getattr(m, "power_draw_w", 0.0),
-                        "memory_used_mb": getattr(m, "memory_used_mb", 0.0),
-                        "memory_total_mb": getattr(m, "memory_total_mb", 0.0),
-                    })
+                    metrics_list.append(
+                        {
+                            "gpu_sm_util_pct": getattr(m, "gpu_sm_util_pct", 0.0),
+                            "gpu_mem_util_pct": getattr(m, "gpu_mem_util_pct", 0.0),
+                            "gpu_temp_c": getattr(m, "gpu_temp_c", 0.0),
+                            "power_draw_w": getattr(m, "power_draw_w", 0.0),
+                            "memory_used_mb": getattr(m, "memory_used_mb", 0.0),
+                            "memory_total_mb": getattr(m, "memory_total_mb", 0.0),
+                        }
+                    )
         ext = _get_or_create_extended_subsystems(app)
         util = cast(UtilizationTracker, ext["utilization"])
         endpoints = util.list_endpoints()
