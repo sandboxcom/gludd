@@ -4,6 +4,22 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) commit gate printed the intended checker instead of executing it
+
+- **What**: `make git-commit` accepted commit `06e9a9fa` while `.gate-status` ended in `=== GATE: FAILED ===` and contained `verify-hot-reload FAIL` plus `env-writes FAIL`.
+- **Why guardrail failed**: `check-gate-fresh` was implemented as `@echo run python scripts/gate_fresh_check.py check .gate-status`. The recipe printed an intended command and returned success without executing the checker. The checker itself did not implement the advertised `check` command, considered a file green if a `PASSED` marker appeared anywhere, and did not enforce its documented 30-minute freshness window. After that no-op, `git-commit` also suppressed every pre-commit failure with `2>/dev/null || true` and swept all unstaged files into the index.
+- **Fix applied**: The Make target now executes `gate_fresh_check.py check`; the checker requires the final terminal verdict to be `PASSED`, rejects any phase-level `FAIL`, and rejects files older than 30 minutes. `git-commit` now propagates pre-commit failures and operates only on NUL-delimited staged paths; it never stages unrelated worktree changes. Behavioral tests prove red, stale, mixed-marker, literal-echo, hook-suppression, and staging-sweep cases fail closed.
+- **Long-lived user evidence**: GitHub users have reported the same false-green class for years: skipped dependencies can be treated as successful by merge automation ([community discussion #26733](https://github.com/orgs/community/discussions/26733)), and users still need explicit fan-in jobs that reject failed, cancelled, or skipped dependencies ([discussion #28864](https://github.com/orgs/community/discussions/28864)). The local gate now follows that fail-closed principle rather than treating “a command was mentioned” as “the command passed.”
+- **Lesson**: A guard recipe must execute a checked program and have a behavioral negative test. Structural assertions that merely find a target name or `.gate-status` string cannot distinguish enforcement from theater.
+
+### 2026-07-28 — (resolved) broad E2E failure emitted more than 200 MB of assertion output
+
+- **What**: A parallel E2E diagnostic encountered connector failures that included live macOS unified-log records in assertion diffs. The tool returned more than 210 MB while only reaching part of the suite.
+- **Root cause**: The release-phase pytest commands were fail-closed but had no `--maxfail` ceiling and used pytest's short traceback mode, which still renders arbitrarily large object diffs. Parallel execution also violated the daemon/global-state isolation assumed by these E2E tests.
+- **Fix applied**: The release gate keeps E2E serial (`-n 1`) and now bounds both integration and E2E diagnostics with `--maxfail=1 --tb=line`. The gate still fails on the first defect, streams the exact failing node, and must be rerun to green after each repair.
+- **Long-lived user evidence**: pytest-xdist users reported that verbose distributed output produces tens of megabytes and makes CI logs painful or unusable ([pytest-xdist issue #877](https://github.com/pytest-dev/pytest-xdist/issues/877)). The release gate now treats bounded diagnostic output as a resource-safety invariant.
+- **Lesson**: “Observable” does not mean “unbounded.” A release gate should stream enough evidence to identify the first root failure without exhausting the terminal, log service, context window, or disk.
+
 ### 2026-07-25 — (resolved) macOS binary crashes with "Missing base YAML definition file (bad install?)"
 
 - **What**: The gludd binary published in v0.1.0-beta.1 crashed immediately on macOS with: `ansible.errors.AnsibleError: Missing base YAML definition file (bad install?): /Users/.../ansible/config/base.yml`. The binary couldn't start, making the release unusable on macOS.

@@ -108,6 +108,20 @@ def test_release_phase_recipe_contains_real_bounded_commands() -> None:
     assert "echo run python" not in recipe
 
 
+def test_release_pytest_phases_bound_failure_output() -> None:
+    """One root failure must not dump hundreds of megabytes of assertion data."""
+    recipe = _target_block("gate-release-phases")
+    integration_line = next(
+        line for line in recipe.splitlines() if "tests/integration/" in line
+    )
+    e2e_line = next(line for line in recipe.splitlines() if "tests/e2e/" in line)
+
+    for line in (integration_line, e2e_line):
+        assert "--maxfail=1" in line
+        assert "--tb=line" in line
+    assert "-n 1" in e2e_line
+
+
 def test_release_phases_stream_live_output_and_record_terminal_success(
     tmp_path: Path,
 ) -> None:

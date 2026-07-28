@@ -2703,13 +2703,13 @@ gate-release-phases:
 			;; \
 	esac; \
 	start_phase integration; \
-	if $(GATE_RELEASE_PYTEST) tests/integration/ -q --no-header -n "$(GATE_RELEASE_WORKERS)" --dist loadgroup; then \
+	if $(GATE_RELEASE_PYTEST) tests/integration/ -q --no-header --maxfail=1 --tb=line -n "$(GATE_RELEASE_WORKERS)" --dist loadgroup; then \
 		pass_phase integration; \
 	else \
 		rc=$$?; fail_phase integration "$$rc" command-failed; \
 	fi; \
 	start_phase e2e; \
-	if $(GATE_RELEASE_PYTEST) tests/e2e/ -q --no-header -n 1 --dist loadgroup; then \
+	if $(GATE_RELEASE_PYTEST) tests/e2e/ -q --no-header --maxfail=1 --tb=line -n 1 --dist loadgroup; then \
 		pass_phase e2e; \
 	else \
 		rc=$$?; fail_phase e2e "$$rc" command-failed; \
@@ -3431,9 +3431,9 @@ git-commit: _gate-fresh-check _commit-lock-acquire
 	@echo "Running pre-commit collection check..."
 	@$(MAKE) --no-print-directory collect-check
 	@echo "Gate fresh and green. Running pre-commit directly on staged files..."
-	@# pre-commit-directly: run pre-commit on staged-only, auto-stage fixes, commit -n.
-	@git diff --cached --name-only | xargs -r pre-commit run --files 2>/dev/null || true
-	@git diff --name-only | xargs -r git add 2>/dev/null || true
+	@# Fail closed on hook errors and preserve unstaged user work. If a hook edits
+	@# a file, stage that explicit file and rerun instead of sweeping the worktree.
+	@git diff --cached --name-only -z | xargs -0 -r $(UV) run pre-commit run --files
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
 commit-no-verify: _gate-fresh-check _commit-lock-acquire
@@ -5912,7 +5912,7 @@ pipeline-health: pipeline-status
 	@true
 
 check-gate-fresh:
-	@echo run python scripts/gate_fresh_check.py check .gate-status
+	@$(UV) run python scripts/gate_fresh_check.py check .gate-status
 
 check-version-consistency:
 	@$(UV) run python scripts/check_version_consistency.py
