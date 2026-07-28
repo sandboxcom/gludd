@@ -169,6 +169,14 @@ def test_git_remote_targets_use_worktree_safe_ssh_key_path() -> None:
     assert "/Users/shawnwilson/gludd/sandboxcom_github_rsa" in makefile
 
 
+def test_git_remote_bootstrap_uses_authenticated_https() -> None:
+    remote_block = _target_block("git-remote-sandboxcom")
+    assert "gh auth setup-git" in remote_block
+    assert "https://github.com/sandboxcom/gludd.git" in remote_block
+    assert "git remote set-url sandboxcom" in remote_block
+    assert "sandboxcom_github_rsa" not in remote_block
+
+
 def test_local_ci_replica_shards_refuse_dirty_tree_by_default() -> None:
     for target in [
         "test-ci-shard",

@@ -1927,9 +1927,14 @@ clean-untracked:
 	@echo "Cleaned up reinvention-of-wheel files"
 
 git-remote-sandboxcom:
-	@chmod 600 sandboxcom_github_rsa
-	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git remote add sandboxcom git@github.com:sandboxcom/gludd.git 2>/dev/null || true
-	@echo "Remote sandboxcom configured"
+	@command -v gh >/dev/null 2>&1 || { echo "gh is required for authenticated HTTPS git access"; exit 1; }
+	@gh auth setup-git
+	@if git remote get-url sandboxcom >/dev/null 2>&1; then \
+		git remote set-url sandboxcom https://github.com/sandboxcom/gludd.git; \
+	else \
+		git remote add sandboxcom https://github.com/sandboxcom/gludd.git; \
+	fi
+	@echo "Remote sandboxcom configured via authenticated HTTPS"
 
 # -- Push gate: prevent CI thrash (cancelled runs, push storms, excessive pushes) --
 
