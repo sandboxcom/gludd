@@ -36,6 +36,53 @@ from general_ludd.stream import (
 
 logger = logging.getLogger(__name__)
 
+# Playbook env allowlist — subprocess children must never inherit daemon
+# secrets (ZAI_API_KEY, AWS_*, DATABASE_URL, GLUDD_PSK, …).  Mirrors
+# AnsibleCoreRunner._PLAYBOOK_ENV_ALLOWLIST.
+_STREAM_PLAYBOOK_ENV_ALLOWLIST: frozenset[str] = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "TMPDIR",
+        "TEMP",
+        "TMP",
+        "GLUDD_PLAYBOOK_TIMEOUT",
+        "ANSIBLE_CONFIG",
+        "ANSIBLE_ROLES_PATH",
+        "ANSIBLE_COLLECTIONS_PATHS",
+        "ANSIBLE_COLLECTIONS_PATH",
+        "ANSIBLE_LIBRARY",
+        "ANSIBLE_MODULE_UTILS",
+        "ANSIBLE_FILTER_PLUGINS",
+        "ANSIBLE_CALLBACK_PLUGINS",
+        "ANSIBLE_LOOKUP_PLUGINS",
+        "ANSIBLE_STRATEGY_PLUGINS",
+        "ANSIBLE_CACHE_PLUGINS",
+        "ANSIBLE_CONNECTION_PLUGINS",
+        "ANSIBLE_VARS_PLUGINS",
+        "ANSIBLE_HOST_KEY_CHECKING",
+        "ANSIBLE_STDOUT_CALLBACK",
+        "ANSIBLE_RETRY_FILES_ENABLED",
+        "ANSIBLE_FORCE_COLOR",
+        "ANSIBLE_NOCOLOR",
+        "ANSIBLE_VERBOSITY",
+        "PYTHONPATH",
+        "PYTHONDONTWRITEBYTECODE",
+        "VIRTUAL_ENV",
+        "SSH_AUTH_SOCK",
+        "SSH_AGENT_PID",
+        "TERM",
+        "COLUMNS",
+        "LINES",
+    }
+)
+
 # Role names are directory names under collection_root/roles/ — restrict to a
 # simple identifier so a caller cannot smuggle path-traversal segments (e.g.
 # "../../../etc") through into a filesystem join / shutil.copytree source.
@@ -77,6 +124,10 @@ def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | Non
     return getattr(app.state, "_session_factory", None)
 
 
+def _scrub_child_env() -> dict[str, str]:
+    return {k: v for k, v in os.environ.items() if k in _STREAM_PLAYBOOK_ENV_ALLOWLIST}
+
+
 # Indirection seam for tests: tests monkeypatch this to stub the subprocess so
 # the wait_for_completion path can be exercised without ansible on PATH.
 def _run_subprocess(args: list[str], cwd: str, timeout: float) -> subprocess.Popen[bytes]:
@@ -85,6 +136,7 @@ def _run_subprocess(args: list[str], cwd: str, timeout: float) -> subprocess.Pop
         cwd=cwd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        env=_scrub_child_env(),
     )
 
 

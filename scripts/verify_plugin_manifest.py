@@ -26,14 +26,10 @@ SEARCH_DIRS = [
     WORKSPACE / ".opencode" / "plugins",
 ]
 
-GUARD_BALLOT = (
-    "process.env.OPENCODE_SUBAGENT"
-)
+GUARD_BALLOT = "process.env.OPENCODE_SUBAGENT"
 ISUBAGENT_CALL_RE = re.compile(r"\b_isSubagent\(\)")
 ISUBAGENT_SHARED_CALL_RE = re.compile(r"\bisSubagent\(\)")
-ISUBAGENT_FUNC_RE = re.compile(
-    r"function\s+_isSubagent\s*\(\s*\)\s*:\s*\w+\s*\{"
-)
+ISUBAGENT_FUNC_RE = re.compile(r"function\s+_isSubagent\s*\(\s*\)\s*:\s*\w+\s*\{")
 ISUBAGENT_RECURSION_RE = re.compile(
     r"function\s+_isSubagent\s*\(.*?\)\s*:.*?\{[^}]*if\s*\(\s*_isSubagent\s*\(\s*\)\s*\)"
 )
@@ -46,13 +42,10 @@ HOOK_ALIAS: dict[str, str] = {
 
 PLUGIN_FILE_RE = re.compile(r"\.opencode/(?:plugin|plugins)/[\w-]+\.ts")
 
-# Non-plugin helper modules. They live in .opencode/lib/ since the E.5 refactor;
-# the legacy .opencode/plugin/ paths stay listed so older trees still resolve.
+# Non-plugin helper modules. They live in .opencode/lib/ since the E.5 refactor.
 UTILITY_FILES = {
     ".opencode/lib/hot_reload.ts",
     ".opencode/lib/shared.ts",
-    ".opencode/plugin/hot_reload.ts",
-    ".opencode/plugin/shared.ts",
 }
 
 
@@ -98,7 +91,7 @@ def _hook_types_in_file(filepath: Path) -> set[str]:
 
     if re.search(r'"tool\.execute\.before"', src):
         hooks.add("tool.execute.before")
-    if re.search(r'api\.tool\.execute\.before\s*\(', src):
+    if re.search(r"api\.tool\.execute\.before\s*\(", src):
         hooks.add("tool.execute.before")
     if re.search(r'"experimental\.text\.complete"', src):
         hooks.add("experimental.text.complete")
@@ -220,17 +213,14 @@ def run() -> tuple[int, list[str]]:
             if present is None:
                 continue
             if not present:
-                issues.append(
-                    f"MISSING-GUARD: {plugin_rel} registers {label} "
-                    f"but has no OPENCODE_SUBAGENT guard"
-                )
+                issues.append(f"MISSING-GUARD: {plugin_rel} registers {label} but has no OPENCODE_SUBAGENT guard")
 
         # --- Recurrence bug: _isSubagent() calls itself ---
         if _is_subagent_recursion_bug(fpath):
             issues.append(
                 f"RECURSION-BUG: {plugin_rel} _isSubagent() calls "
                 f"_isSubagent() — replace with "
-                f"process.env.OPENCODE_SUBAGENT === \"1\""
+                f'process.env.OPENCODE_SUBAGENT === "1"'
             )
 
     # --- Print table ---
@@ -264,9 +254,7 @@ def run() -> tuple[int, list[str]]:
             src = ""
         if ISUBAGENT_FUNC_RE.search(src):
             bug = _is_subagent_recursion_bug(WORKSPACE / plugin_rel)
-            rows.append(
-                (fname, "_isSubagent() function (no self-call)", "OK" if not bug else "RECURSION")
-            )
+            rows.append((fname, "_isSubagent() function (no self-call)", "OK" if not bug else "RECURSION"))
 
     for fname, check, status in rows:
         marker = "OK" if status == "OK" else "FAIL"

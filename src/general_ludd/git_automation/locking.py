@@ -298,10 +298,7 @@ def git_repo_lock(
     ``timeout`` seconds.
     """
     git_dir = _git_dir(repo_path)
-    if git_dir is not None:
-        key = _normalize(git_dir)
-    else:
-        key = _normalize(repo_path)
+    key = _normalize(git_dir) if git_dir is not None else _normalize(repo_path)
     inproc = _get_inprocess_lock(key)
     inproc.acquire()
     try:
