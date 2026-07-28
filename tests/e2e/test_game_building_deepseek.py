@@ -25,8 +25,8 @@ or:
 
 from __future__ import annotations
 
-import asyncio
 import ast
+import asyncio
 import contextlib
 import importlib.util
 import json

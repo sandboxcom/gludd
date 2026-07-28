@@ -15,8 +15,6 @@ from __future__ import annotations
 from typing import cast
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from general_ludd.budget_guard_check import budget_pre_check
 from general_ludd.models.gateway import ModelGateway, ModelProfile
 
@@ -87,7 +85,7 @@ def test_budget_pre_check_nonzero_projection_blocks_over_cap_call_job_invocation
         "general_ludd.budget_guard_check.budget_pre_check",
         wraps=budget_pre_check,
     ) as mock_bpc:
-        content, tc = invoke_model_for_generation(
+        content, _tc = invoke_model_for_generation(
             gw,
             job_id="test-job-1",
             work_type="code",
@@ -116,7 +114,7 @@ def test_budget_pre_check_nonzero_projection_blocks_over_cap_call_tool_loop() ->
 
     gw = _make_gateway()
     guard = _reactive_guard()
-    loop = ToolCallLoop(
+    ToolCallLoop(
         model_gateway=gw,
         budget_guard=guard,
         mcp_client=None,

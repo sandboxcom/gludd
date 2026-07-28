@@ -11,17 +11,13 @@ from __future__ import annotations
 
 import asyncio
 import os
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
-
-import pytest
 
 from general_ludd.execution.engine import ExecutionEngine
 from general_ludd.sandbox.enforcer import (
     SandboxConfig,
     SandboxEnforcer,
-    SandboxNotAvailableError,
 )
 from general_ludd.schemas.job import JobSpec
 
@@ -138,7 +134,8 @@ class TestSandboxEngineWiring:
 
         written_path = enforcer.confine_path(str(workspace / "script.py"))
         assert os.path.isfile(written_path)
-        assert open(written_path).read() == file_content
+        with open(written_path) as f:
+            assert f.read() == file_content
 
     def test_sandbox_blocks_path_escape_from_model(self, tmp_path: Path) -> None:
         jail = tmp_path / "jail"
@@ -257,7 +254,7 @@ class TestSandboxEngineWiring:
             prompt_text="first call",
         )
 
-        result1 = asyncio.run(engine.execute_async(job))
+        asyncio.run(engine.execute_async(job))
         assert engine._sandbox_verified is True
 
         result2 = asyncio.run(engine.execute_async(job))
