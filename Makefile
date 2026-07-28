@@ -1330,6 +1330,7 @@ kill-all-stale:
 	@pkill -9 -f '/Users/shawnwilson/gludd/.venv/bin/detect-secrets scan' 2>/dev/null || true
 	@pkill -9 -f '/Users/shawnwilson/gludd/.venv/bin/python.*from multiprocessing.resource_tracker' 2>/dev/null || true
 	@pkill -9 -f '/Users/shawnwilson/gludd/.venv/bin/python.*from multiprocessing.spawn' 2>/dev/null || true
+	@pkill -9 -f 'sys;exec(eval(sys.stdin' 2>/dev/null || true
 	@echo "--- kill-stale (orphan cleanup) ---"
 	@SELF=$$$$; PARENT=$$(ps -o ppid= -p $$SELF 2>/dev/null | tr -d ' '); \
 	PARENTS=$$(ps -axo ppid= | tr -s ' ' '\n' | grep -E '^[0-9]+$$' | sort -u); \
