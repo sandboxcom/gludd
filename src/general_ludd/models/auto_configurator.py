@@ -34,6 +34,7 @@ class AutoConfigurator:
     def auto_configure_from_env(
         self,
         environ: dict[str, str] | None = None,
+        catalog: object | None = None,
     ) -> list[dict[str, object]]:
         """Build one ModelProfile dict per provider whose credential env var is set.
 
@@ -43,8 +44,14 @@ class AutoConfigurator:
         (PROVIDER_FLAGSHIP_MODELS) and preset connection metadata. Profiles are
         ``enabled=True`` so the daemon's ModelGateway can call them immediately.
 
+        Token rates are seeded from the pricing catalog when available; when
+        the catalog is None or the model is absent from it, rates default to 0.0
+        (operator must then set explicit per-token rates for budget caps to fire).
+
         Args:
             environ: environment mapping to inspect. Defaults to ``os.environ``.
+            catalog: Optional :class:`~general_ludd.pricing_intel.PricingCatalog`
+                     for seeding per-token rates from live/static pricing data.
 
         Returns:
             List of profile dicts (valid kwargs for ``ModelProfile(**d)``).
@@ -61,11 +68,16 @@ class AutoConfigurator:
             flagship = PROVIDER_FLAGSHIP_MODELS.get(provider_name, "")
             if not flagship:
                 logger.warning(
-                    "Auto-config: provider '%s' has credential but no flagship "
-                    "model entry; skipping",
+                    "Auto-config: provider '%s' has credential but no flagship model entry; skipping",
                     provider_name,
                 )
                 continue
+
+            cost_in, cost_out = ModelProfile.seed_token_rates_from_catalog(
+                provider_name,
+                flagship,
+                catalog,
+            )
 
             profile_id = f"{provider_name}-{_safe_profile_id(flagship)}"
             profiles.append(
@@ -75,8 +87,7 @@ class AutoConfigurator:
                     "model_name": flagship,
                     "display_name": f"{preset['display_name']} {flagship}",
                     "description": (
-                        f"Auto-configured from {credential_env_var}; flagship "
-                        f"model for {preset['display_name']}."
+                        f"Auto-configured from {credential_env_var}; flagship model for {preset['display_name']}."
                     ),
                     "api_base_alias": preset["api_base_alias"],
                     "credential_alias": preset["credential_alias"],
@@ -84,24 +95,23 @@ class AutoConfigurator:
                     "provider_class_hint": preset["provider_class"],
                     "context_window": 8192,
                     "max_output_tokens": 2048,
-                    "cost_per_input_token": 0.0,
-                    "cost_per_output_token": 0.0,
+                    "cost_per_input_token": cost_in,
+                    "cost_per_output_token": cost_out,
                     "role_names": ["coder", "reviewer"],
                     "quality_class": "medium",
                     "latency_class": "medium",
-                    "api_metered": True,
+                    "api_metered": cost_in > 0.0 or cost_out > 0.0,
                     "resource_profile": "ai_heavy",
                     "enabled": True,
                     "auto_discovered": True,
                     "auto_discovered_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                    "is_free": False,
+                    "is_free": cost_in == 0.0 and cost_out == 0.0,
                 }
             )
 
         if profiles:
             logger.info(
-                "Auto-config: generated %d profile(s) from environment "
-                "credentials: %s",
+                "Auto-config: generated %d profile(s) from environment credentials: %s",
                 len(profiles),
                 [p["provider"] for p in profiles],
             )
@@ -111,6 +121,7 @@ class AutoConfigurator:
     def auto_configure_profiles(
         self,
         environ: dict[str, str] | None = None,
+        catalog: object | None = None,
     ) -> list[ModelProfile]:
         """Like ``auto_configure_from_env`` but returns ModelProfile objects.
 
@@ -118,7 +129,7 @@ class AutoConfigurator:
         this helper returns those directly so the gateway construction site
         stays unchanged when an operator relies on env-var auto-config.
         """
-        return [ModelProfile.model_validate(p) for p in self.auto_configure_from_env(environ)]
+        return [ModelProfile.model_validate(p) for p in self.auto_configure_from_env(environ, catalog=catalog)]
 
     def generate_profiles(
         self,

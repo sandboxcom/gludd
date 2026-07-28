@@ -10,6 +10,7 @@ Tests that verify:
 These tests do NOT rely on Node's --experimental-strip-types (which has known
 bugs in v26 with try/catch inside arrow functions with inline types).
 """
+
 from __future__ import annotations
 
 import json
@@ -33,7 +34,9 @@ class TestPluginFilesSyntax:
             for f in sorted(d.glob("*.ts")):
                 result = subprocess.run(
                     ["node", "--check", str(f)],
-                    capture_output=True, text=True, cwd=str(ROOT),
+                    capture_output=True,
+                    text=True,
+                    cwd=str(ROOT),
                 )
                 if result.returncode != 0:
                     errors.append(f"{f.name}: node --check failed\n{result.stderr}")
@@ -62,8 +65,6 @@ class TestPluginRegistration:
         # Shared helpers live in .opencode/lib/ (E.5 refactor); they are not
         # plugins and are never registered in opencode.json.
         utilities = {
-            ".opencode/plugin/hot_reload.ts",
-            ".opencode/plugin/shared.ts",
             ".opencode/lib/hot_reload.ts",
             ".opencode/lib/shared.ts",
         }
@@ -107,9 +108,9 @@ class TestSubagentGuards:
         # so plugins import it as "../lib/shared.ts". Accept any path ending in
         # shared.ts so the guard check does not silently stop matching on a move.
         guard_imported = re.compile(r'import\s+\{[^}]*isSubagent[^}]*\}\s+from\s+"[^"]*shared\.ts"')
-        guard_called = re.compile(r'\bisSubagent\(\)')
+        guard_called = re.compile(r"\bisSubagent\(\)")
         guard_inline = re.compile(r'process\.env\.OPENCODE_SUBAGENT\s*===?\s*"1"')
-        _is_subagent_defined = re.compile(r'function\s+_isSubagent\s*\(\s*\)')
+        _is_subagent_defined = re.compile(r"function\s+_isSubagent\s*\(\s*\)")
 
         for plugin in enforcement_plugins:
             src = plugin.read_text()
@@ -117,8 +118,7 @@ class TestSubagentGuards:
             has_import = bool(guard_imported.search(src))
             has_inline = bool(_is_subagent_defined.search(src) and guard_inline.search(src))
             assert has_import or has_inline, (
-                f"{plugin.name}: no isSubagent guard — "
-                f"must either import from shared.ts or define _isSubagent() inline"
+                f"{plugin.name}: no isSubagent guard — must either import from shared.ts or define _isSubagent() inline"
             )
             # Must actually CALL the guard
             has_call = bool(guard_called.search(src)) or bool(guard_inline.search(src))
@@ -133,12 +133,8 @@ class TestCleanTreeFix:
         assert 'import { createRequire } from "node:module"' in src, (
             "enforce-clean-tree.ts must use the shared createRequire wrapper"
         )
-        assert '"node:child_" + "process"' in src, (
-            "enforce-clean-tree.ts must avoid a static child-process import"
-        )
-        assert 'require("node:child_process")' not in src, (
-            "enforce-clean-tree.ts still uses direct CJS require()"
-        )
+        assert '"node:child_" + "process"' in src, "enforce-clean-tree.ts must avoid a static child-process import"
+        assert 'require("node:child_process")' not in src, "enforce-clean-tree.ts still uses direct CJS require()"
 
 
 class TestEnforceStopFix:
@@ -147,9 +143,7 @@ class TestEnforceStopFix:
     def test_enforce_stop_no_bare_satisfies(self):
         src = (ROOT / ".opencode" / "plugin" / "enforce-stop.ts").read_text()
         # Node v26 strip-types supports the TypeScript `satisfies` operator.
-        assert "satisfies Plugin" in src, (
-            "enforce-stop.ts: export should retain `satisfies Plugin` typing"
-        )
+        assert "satisfies Plugin" in src, "enforce-stop.ts: export should retain `satisfies Plugin` typing"
 
     def test_enforce_stop_ends_correctly(self):
         src = (ROOT / ".opencode" / "plugin" / "enforce-stop.ts").read_text()
@@ -161,9 +155,7 @@ class TestEnforceStopFix:
     def test_enforce_stop_uses_simple_export(self):
         src = (ROOT / ".opencode" / "plugin" / "enforce-stop.ts").read_text()
         # Must use async () => not async ({ }) =>
-        assert "async () =>" in src, (
-            "enforce-stop.ts: export default must use async () =>, not async ({ }) =>"
-        )
+        assert "async () =>" in src, "enforce-stop.ts: export default must use async () =>, not async ({ }) =>"
         assert "async ({ }) =>" not in src, (
             "enforce-stop.ts: still has async ({ }) => — Node type stripper breaks on this"
         )
@@ -174,10 +166,10 @@ class TestDeletionGateFix:
 
     def test_deletion_gate_uses_correct_import(self):
         src = (ROOT / ".opencode" / "plugin" / "enforce-deletion-gate.ts").read_text()
-        assert '@opencode-ai/plugin' in src, (
+        assert "@opencode-ai/plugin" in src, (
             "enforce-deletion-gate.ts must import from @opencode-ai/plugin, not @opencode/core"
         )
-        assert '@opencode/core' not in src, (
+        assert "@opencode/core" not in src, (
             "enforce-deletion-gate.ts still imports from @opencode/core — use @opencode-ai/plugin"
         )
 
@@ -193,7 +185,9 @@ class TestPluginCompilation:
         script = ROOT / "scripts" / "compile_plugins_for_test.mjs"
         result = subprocess.run(
             ["node", str(script)],
-            capture_output=True, text=True, cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            cwd=str(ROOT),
         )
         assert result.returncode == 0, f"Compilation failed: {result.stderr[:500]}"
         out_dir = Path("/tmp/gludd-plugin-js")

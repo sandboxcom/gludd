@@ -6,9 +6,13 @@ registry, public API surface, and cross-process safety on POSIX.
 
 from __future__ import annotations
 
+import multiprocessing
 import os
+import subprocess
 import tempfile
 import threading
+import time
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -67,6 +71,65 @@ class TestGitDir:
             assert locking._git_dir(tmpdir) is None
 
 
+class TestGitDirWorktree:
+    def test_resolves_worktree_to_common_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            main_repo = os.path.join(tmpdir, "main")
+            os.mkdir(main_repo)
+            subprocess.run(["git", "init"], cwd=main_repo, check=True, capture_output=True)
+            subprocess.run(
+                ["git", "config", "user.email", "test@example.com"],
+                cwd=main_repo,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "Test"],
+                cwd=main_repo,
+                check=True,
+                capture_output=True,
+            )
+            Path(main_repo, "empty").touch()
+            subprocess.run(
+                ["git", "add", "."],
+                cwd=main_repo,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "commit", "-m", "init"],
+                cwd=main_repo,
+                check=True,
+                capture_output=True,
+            )
+            wt_path = os.path.join(tmpdir, "wt")
+            subprocess.run(
+                ["git", "worktree", "add", wt_path],
+                cwd=main_repo,
+                check=True,
+                capture_output=True,
+            )
+            try:
+                resolved = locking._git_dir(wt_path)
+                assert resolved is not None
+                expected = os.path.join(main_repo, ".git")
+                assert resolved == expected
+                assert os.path.isdir(resolved)
+            finally:
+                subprocess.run(
+                    ["git", "worktree", "remove", "--force", wt_path],
+                    cwd=main_repo,
+                    capture_output=True,
+                )
+
+    def test_returns_none_when_rev_parse_fails_in_nongit_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            git_file = os.path.join(tmpdir, ".git")
+            with open(git_file, "w") as f:
+                f.write("gitdir: /nonexistent/path\n")
+            assert locking._git_dir(tmpdir) is None
+
+
 class TestBreakIfStale:
     def test_keeps_fresh_lock(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -89,9 +152,11 @@ class TestBreakIfStale:
 
 class TestFileLock:
     def test_yields_on_non_posix(self) -> None:
-        with patch.object(locking, "_HAVE_FCNTL", False), \
-                tempfile.TemporaryDirectory() as tmpdir, \
-                locking._file_lock(tmpdir, "key", timeout=1.0, stale_after=60.0):
+        with (
+            patch.object(locking, "_HAVE_FCNTL", False),
+            tempfile.TemporaryDirectory() as tmpdir,
+            locking._file_lock(tmpdir, "key", timeout=1.0, stale_after=60.0),
+        ):
             assert True
 
     def test_reentrant_nested_acquire_skips_reflock(self) -> None:
@@ -107,8 +172,10 @@ class TestFileLock:
     def test_missing_git_dir_during_open_uses_inprocess_only(self) -> None:
         key = "missing-during-open"
         locking._file_lock_depth.pop(key, None)
-        with patch.object(locking.os, "open", side_effect=FileNotFoundError), \
-                locking._file_lock("/tmp/gludd-missing-git-dir", key, timeout=1.0, stale_after=60.0):
+        with (
+            patch.object(locking.os, "open", side_effect=FileNotFoundError),
+            locking._file_lock("/tmp/gludd-missing-git-dir", key, timeout=1.0, stale_after=60.0),
+        ):
             assert locking._file_lock_depth.get(key, 0) == 0
 
     def test_times_out_on_contended_lock(self) -> None:
@@ -127,8 +194,10 @@ class TestFileLock:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 key = "timeout-test"
                 locking._file_lock_depth.pop(key, None)
-                with pytest.raises(TimeoutError, match="timed out"), \
-                        locking._file_lock(git_dir, key, timeout=0.1, stale_after=300.0):
+                with (
+                    pytest.raises(TimeoutError, match="timed out"),
+                    locking._file_lock(git_dir, key, timeout=0.1, stale_after=300.0),
+                ):
                     pass
             finally:
                 with locking.contextlib.suppress(OSError):
@@ -138,7 +207,8 @@ class TestFileLock:
 
 class TestGitRepoLock:
     def test_acquires_and_releases_inprocess_lock(self) -> None:
-        key = locking._normalize(".")
+        git_dir = locking._git_dir(".")
+        key = locking._normalize(git_dir) if git_dir is not None else locking._normalize(".")
         with locking.git_repo_lock(".", timeout=1.0, stale_after=60.0):
             rlock = locking._repo_locks.get(key)
             assert rlock is not None
@@ -152,8 +222,122 @@ class TestGitRepoLock:
 
     def test_no_dot_git_directory_uses_inprocess_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, locking.git_repo_lock(tmpdir, timeout=1.0, stale_after=60.0):
-                key = locking._normalize(tmpdir)
-                assert key in locking._repo_locks
+            key = locking._normalize(tmpdir)
+            assert key in locking._repo_locks
+
+
+class TestGitRepoLockWorktree:
+    def test_git_repo_lock_uses_common_dir_inside_worktree(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            main_repo = os.path.join(tmpdir, "main")
+            os.mkdir(main_repo)
+            subprocess.run(["git", "init"], cwd=main_repo, check=True, capture_output=True)
+            subprocess.run(
+                ["git", "config", "user.email", "test@example.com"],
+                cwd=main_repo,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "Test"],
+                cwd=main_repo,
+                check=True,
+                capture_output=True,
+            )
+            Path(main_repo, "dummy").touch()
+            subprocess.run(["git", "add", "."], cwd=main_repo, check=True, capture_output=True)
+            subprocess.run(
+                ["git", "commit", "-m", "init"],
+                cwd=main_repo,
+                check=True,
+                capture_output=True,
+            )
+            wt_path = os.path.join(tmpdir, "wt")
+            subprocess.run(
+                ["git", "worktree", "add", wt_path],
+                cwd=main_repo,
+                check=True,
+                capture_output=True,
+            )
+            try:
+                with locking.git_repo_lock(wt_path, timeout=1.0, stale_after=60.0):
+                    common_key = locking._normalize(os.path.join(main_repo, ".git"))
+                    assert common_key in locking._repo_locks
+                    wt_key = locking._normalize(wt_path)
+                    main_key = locking._normalize(main_repo)
+                    assert wt_key not in locking._repo_locks
+                    if wt_key != common_key:
+                        assert main_key not in locking._repo_locks
+                    rlock = locking._repo_locks[common_key]
+                    assert isinstance(rlock, type(threading.RLock()))
+            finally:
+                subprocess.run(
+                    ["git", "worktree", "remove", "--force", wt_path],
+                    cwd=main_repo,
+                    capture_output=True,
+                )
+
+    def test_git_repo_lock_serializes_concurrent_worktree_processes(self) -> None:
+        if not locking._HAVE_FCNTL:
+            pytest.skip("fcntl not available on this platform")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            main_repo = os.path.join(tmpdir, "main")
+            os.mkdir(main_repo)
+            subprocess.run(["git", "init"], cwd=main_repo, check=True, capture_output=True)
+            subprocess.run(
+                ["git", "config", "user.email", "test@example.com"],
+                cwd=main_repo,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "Test"],
+                cwd=main_repo,
+                check=True,
+                capture_output=True,
+            )
+            Path(main_repo, "dummy").touch()
+            subprocess.run(["git", "add", "."], cwd=main_repo, check=True, capture_output=True)
+            subprocess.run(
+                ["git", "commit", "-m", "init"],
+                cwd=main_repo,
+                check=True,
+                capture_output=True,
+            )
+            wt_path = os.path.join(tmpdir, "wt")
+            subprocess.run(
+                ["git", "worktree", "add", wt_path],
+                cwd=main_repo,
+                check=True,
+                capture_output=True,
+            )
+            try:
+                manager = multiprocessing.Manager()
+                execution_order = manager.list()
+
+                def hold_lock_then_record(name: str, hold_secs: float) -> None:
+                    with locking.git_repo_lock(wt_path, timeout=10.0, stale_after=60.0):
+                        execution_order.append(name)
+                        time.sleep(hold_secs)
+
+                p1 = multiprocessing.Process(target=hold_lock_then_record, args=("first", 0.3))
+                p2 = multiprocessing.Process(target=hold_lock_then_record, args=("second", 0.1))
+
+                p1.start()
+                time.sleep(0.05)
+                p2.start()
+
+                p1.join(timeout=10)
+                p2.join(timeout=10)
+
+                assert list(execution_order) == ["first", "second"]
+            finally:
+                subprocess.run(
+                    ["git", "worktree", "remove", "--force", wt_path],
+                    cwd=main_repo,
+                    capture_output=True,
+                )
 
 
 class TestAsyncGitRepoLock:

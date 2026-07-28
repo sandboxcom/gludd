@@ -23,6 +23,8 @@ from general_ludd.schemas.queue import INITIAL_QUEUES
 
 @pytest.fixture(autouse=True)
 def _reset_daemon_state():
+    if daemon_mod._daemon_state is None:
+        daemon_mod._daemon_state = {"todos": [], "tick_metrics": {}, "quality_gate": {}}
     daemon_mod._daemon_state["todos"] = []
     daemon_mod._daemon_state["tick_metrics"] = {}
     assert "todos" in daemon_mod._daemon_state
@@ -32,9 +34,7 @@ def _make_db_config(tmp_path):
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     db_path = tmp_path / "test.db"
-    (config_dir / "general-ludd.yml").write_text(
-        f"database:\n  url: 'sqlite+aiosqlite:///{db_path}'\n"
-    )
+    (config_dir / "general-ludd.yml").write_text(f"database:\n  url: 'sqlite+aiosqlite:///{db_path}'\n")
     return str(config_dir)
 
 
@@ -83,13 +83,9 @@ class TestDaemonLifespanWithRealDB:
                 assert engine is not None
 
                 async with engine.begin() as conn:
-                    result = await conn.execute(
-                        text("SELECT COUNT(*) FROM queues")
-                    )
+                    result = await conn.execute(text("SELECT COUNT(*) FROM queues"))
                     count = result.scalar()
-                    assert count == len(INITIAL_QUEUES), (
-                        f"Expected {len(INITIAL_QUEUES)} queues, got {count}"
-                    )
+                    assert count == len(INITIAL_QUEUES), f"Expected {len(INITIAL_QUEUES)} queues, got {count}"
 
     def test_daemon_add_todo_and_list(self, tmp_path):
         config_dir = _make_db_config(tmp_path)
@@ -99,12 +95,15 @@ class TestDaemonLifespanWithRealDB:
         ):
             app = create_daemon_app(tick_interval=0.01, config_dir=config_dir)
             with TestClient(app) as client:
-                resp = client.post("/api/todos", json={
-                    "title": "Integration test todo",
-                    "queue": "core",
-                    "priority": "high",
-                    "work_type": "code",
-                })
+                resp = client.post(
+                    "/api/todos",
+                    json={
+                        "title": "Integration test todo",
+                        "queue": "core",
+                        "priority": "high",
+                        "work_type": "code",
+                    },
+                )
                 assert resp.status_code == 201
                 data = resp.json()
                 assert data["title"] == "Integration test todo"
@@ -150,9 +149,7 @@ class TestDaemonLifespanWithRealDB:
         config_dir = tmp_path / "config"
         config_dir.mkdir()
 
-        (config_dir / "general-ludd.yml").write_text(
-            "daemon:\n  tick_interval: 0.05\n"
-        )
+        (config_dir / "general-ludd.yml").write_text("daemon:\n  tick_interval: 0.05\n")
 
         with patch(
             "general_ludd.ansible.runner.AnsibleRunnerAdapter",

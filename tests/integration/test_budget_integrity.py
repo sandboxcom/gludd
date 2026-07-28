@@ -37,10 +37,15 @@ Per the audit, the "shipped-default profile" test is expected to demonstrate
 the INERT behaviour (cost 0.0, cap never fires) while the "explicit non-zero
 rates" test demonstrates the cap CAN fire only when the operator manually sets
 per-token rates that the default config does not ship with.
+
+CA-T12 EXTENSION (2026-07-27): The fix below seeds per-token rates from the
+PricingCatalog at profile-load time, so ModelProfile defaults are real non-zero
+values whenever the catalog has pricing data for the provider+model combo.
 """
 
 from __future__ import annotations
 
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -123,9 +128,9 @@ class TestProdPathCostIsZeroWithDefaultProfile:
 
         gw, patches = _make_gateway(
             budget_guard=guard,
-            cost_per_input_token=0.0,   # the SHIPPED default
+            cost_per_input_token=0.0,  # the SHIPPED default
             cost_per_output_token=0.0,  # the SHIPPED default
-            input_tokens=1_000_000,     # huge usage...
+            input_tokens=1_000_000,  # huge usage...
             output_tokens=1_000_000,
         )
 
@@ -166,9 +171,7 @@ class TestProdPathCostIsZeroWithDefaultProfile:
 
         status = budget.get_status()
         assert status["daily_spend"] == 0.0
-        assert status["paused"] is False, (
-            "INERT: daily cap never pauses because the recorded cost is $0.0."
-        )
+        assert status["paused"] is False, "INERT: daily cap never pauses because the recorded cost is $0.0."
         # A fresh check still admits despite 50 huge-usage calls.
         assert budget.check_daily_budget(0.0)["allowed"] is True
 
@@ -235,7 +238,7 @@ class TestGuardBlocksWhenRealCostReachesIt:
 
         gw, patches = _make_gateway(
             budget_guard=guard,
-            cost_per_input_token=0.00003,   # operator-configured non-zero rate
+            cost_per_input_token=0.00003,  # operator-configured non-zero rate
             cost_per_output_token=0.00006,
             input_tokens=1000,
             output_tokens=1000,
@@ -275,3 +278,134 @@ class TestGuardBlocksWhenRealCostReachesIt:
         # Second call: 0.06 + 0.06 = 0.12 > 0.10 => deferred.
         assert await guarded() == "deferred:spend_limit_exceeded"
         assert calls["n"] == 1, "the over-budget second dispatch must NOT run"
+
+
+# ---------------------------------------------------------------------------
+# CA-T12 EXTENSION: ModelProfile.seed_token_rates_from_catalog returns real
+# non-zero per-token rates when the PricingCatalog has data.
+# ---------------------------------------------------------------------------
+
+
+class TestModelProfileRatesNonzeroByDefault:
+    def test_seed_rates_from_catalog_returns_nonzero_for_known_model(self):
+        """seed_token_rates_from_catalog returns non-zero per-token rates for a
+        well-known model that exists in the static pricing tables (openai/gpt-4o)."""
+        from general_ludd.pricing_intel import PricingCatalog
+
+        catalog = PricingCatalog()
+        cost_in, cost_out = ModelProfile.seed_token_rates_from_catalog(
+            "openai",
+            "gpt-4o",
+            catalog,
+        )
+        assert cost_in > 0.0, "CA-T12: input per-token rate seeded from catalog must be > 0 for gpt-4o"
+        assert cost_out > 0.0, "CA-T12: output per-token rate seeded from catalog must be > 0 for gpt-4o"
+
+    def test_seed_rates_from_catalog_converts_per_1k_to_per_token(self):
+        """The catalog stores USD-per-1K-tokens; the seeder divides by 1000 to
+        produce per-token rates consumed by _invoke_and_bill."""
+        from general_ludd.pricing_intel import PricingCatalog
+
+        catalog = PricingCatalog()
+        # gpt-4o is $0.005/1K input, $0.015/1K output (per static table).
+        cost_in, cost_out = ModelProfile.seed_token_rates_from_catalog(
+            "openai",
+            "gpt-4o",
+            catalog,
+        )
+        assert cost_in == pytest.approx(0.000005), "0.005/1000 = 0.000005 per token"
+        assert cost_out == pytest.approx(0.000015), "0.015/1000 = 0.000015 per token"
+
+    def test_seed_rates_returns_zero_for_unknown_model(self):
+        """seed_token_rates_from_catalog returns (0.0, 0.0) for a model not in the catalog."""
+        catalog = type("FakeCatalog", (), {"model_price": lambda s, p, m: None})()
+        cost_in, cost_out = ModelProfile.seed_token_rates_from_catalog(
+            "openai",
+            "gpt-nonexistent-9999",
+            catalog,
+        )
+        assert cost_in == 0.0
+        assert cost_out == 0.0
+
+    def test_seed_rates_returns_zero_when_catalog_is_none(self):
+        """seed_token_rates_from_catalog returns (0.0, 0.0) when catalog is None."""
+        cost_in, cost_out = ModelProfile.seed_token_rates_from_catalog(
+            "openai",
+            "gpt-4o",
+            None,
+        )
+        assert cost_in == 0.0
+        assert cost_out == 0.0
+
+    def test_auto_configurator_seeds_rates_from_catalog(self):
+        """auto_configure_from_env seeds non-zero per-token rates when a catalog is provided."""
+        from general_ludd.models.auto_configurator import AutoConfigurator
+        from general_ludd.pricing_intel import PricingCatalog
+
+        catalog = PricingCatalog()
+        ac = AutoConfigurator()
+        profiles = ac.auto_configure_from_env(
+            environ={"OPENAI_API_KEY": "sk-not-a-real-key"},
+            catalog=catalog,
+        )
+        for p in profiles:
+            if p["provider"] == "openai":
+                assert float(cast("float | str", p["cost_per_input_token"])) > 0.0, (
+                    "CA-T12: auto-configured openai profile must have non-zero per-token input rate seeded from catalog"
+                )
+                assert float(cast("float | str", p["cost_per_output_token"])) > 0.0, (
+                    "CA-T12: auto-configured openai profile must have non-zero "
+                    "per-token output rate seeded from catalog"
+                )
+                assert p["is_free"] is False
+                break
+        else:
+            pytest.skip("No OpenAI profile auto-configured (no OPENAI_API_KEY env var?)")
+
+    def test_gateway_billing_with_seeded_rates(self):
+        """The _invoke_and_bill cost computation produces a non-zero cost when
+        the profile carries real per-token rates seeded from the catalog."""
+        reg = ProviderRegistry()
+        reg.register_provider("openai", "langchain-openai", "ChatOpenAI")
+
+        guard = RunBudgetGuard(run_budget_usd=200.0)
+        profile = ModelProfile(
+            model_profile_id="gpt-4o-seeded",
+            enabled=True,
+            provider="openai",
+            provider_package="langchain-openai",
+            provider_class_hint="ChatOpenAI",
+            model_name="gpt-4o",
+            cost_per_input_token=0.000005,  # $0.005/1K input
+            cost_per_output_token=0.000015,  # $0.015/1K output
+        )
+
+        gw = ModelGateway(
+            profiles=[profile],
+            provider_registry=reg,
+            budget_guard=guard,
+        )
+
+        FakeChatModel = MagicMock()
+        fake_instance = MagicMock()
+        fake_instance.invoke.return_value = MagicMock(
+            content="generated output",
+            usage_metadata={
+                "input_tokens": 500,
+                "output_tokens": 600,
+            },
+        )
+        FakeChatModel.return_value = fake_instance
+
+        with (
+            patch.object(reg, "is_installed", return_value=True),
+            patch.object(reg, "get_provider_class", return_value=FakeChatModel),
+        ):
+            resp = gw.call_model("gpt-4o-seeded", [{"role": "user", "content": "hi"}])
+
+        expected_cost = 500 * 0.000005 + 600 * 0.000015  # 0.0025 + 0.009 = 0.0115
+        assert resp.cost_estimate == pytest.approx(expected_cost)
+        assert guard.get_total_spend() == pytest.approx(expected_cost)
+        assert guard.get_total_spend() > 0.0, (
+            "CA-T12: budget guard must record non-zero spend when profile carries real per-token rates"
+        )

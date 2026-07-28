@@ -51,7 +51,7 @@ concurrency:
   # released via `make release-cut`, which is fail-closed on `require-ci-green`
   # (scripts/require_ci_green.py treats cancelled/missing runs as CI RED), so this
   # keys the group to guarantee every commit actually GETS a real run to check.
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}-${{ github.ref_name }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:

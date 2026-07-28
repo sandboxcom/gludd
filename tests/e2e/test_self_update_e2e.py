@@ -39,6 +39,8 @@ from general_ludd.self_update.model import (
 
 @pytest.fixture(autouse=True)
 def _reset_daemon_state() -> None:
+    if daemon_mod._daemon_state is None:
+        daemon_mod._daemon_state = {"todos": [], "tick_metrics": {}, "quality_gate": {}}
     daemon_mod._daemon_state["todos"] = []
     daemon_mod._daemon_state["tick_metrics"] = {}
     daemon_mod._daemon_state.pop("self_update_applies", None)
@@ -52,9 +54,7 @@ def _make_db_config(tmp_path: pytest.Path) -> tuple[str, str]:
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     db_path = tmp_path / "test.db"
-    (config_dir / "general-ludd.yml").write_text(
-        f"database:\n  url: 'sqlite+aiosqlite:///{db_path}'\n"
-    )
+    (config_dir / "general-ludd.yml").write_text(f"database:\n  url: 'sqlite+aiosqlite:///{db_path}'\n")
     return str(config_dir), str(db_path)
 
 
@@ -65,9 +65,7 @@ async def _seed_default_project(app: Any) -> None:
 
     factory = app.state._session_factory
     async with factory() as session:
-        existing = await session.execute(
-            select(ProjectModel).where(ProjectModel.project_id == "default")
-        )
+        existing = await session.execute(select(ProjectModel).where(ProjectModel.project_id == "default"))
         if existing.scalar_one_or_none() is None:
             session.add(ProjectModel(project_id="default", name="Default project"))
             await session.commit()
@@ -137,12 +135,14 @@ class _FakeWorkflow:
         health_check: Any | None = None,
         base_source_path: str | None = None,
     ) -> None:
-        self.set_code_target_calls.append({
-            "module_name": module_name,
-            "candidate_source_path": candidate_source_path,
-            "health_check": health_check,
-            "base_source_path": base_source_path,
-        })
+        self.set_code_target_calls.append(
+            {
+                "module_name": module_name,
+                "candidate_source_path": candidate_source_path,
+                "health_check": health_check,
+                "base_source_path": base_source_path,
+            }
+        )
 
     def reload_if_needed(self, apply_result: Any) -> Any:
         self.reload_calls.append(apply_result)
@@ -184,9 +184,7 @@ class _RecordingTodoRepo:
 class TestSelfUpdateRouterE2E:
     """Boot the daemon and exercise /admin/self-update/* over HTTP."""
 
-    def test_plan_config_tier_applied_writes_audit_row(
-        self, tmp_path: pytest.Path
-    ) -> None:
+    def test_plan_config_tier_applied_writes_audit_row(self, tmp_path: pytest.Path) -> None:
         config_dir, db_path = _make_db_config(tmp_path)
         with patch(
             "general_ludd.ansible.runner.AnsibleRunnerAdapter",
@@ -210,13 +208,9 @@ class TestSelfUpdateRouterE2E:
                 assert data["applied"] is True
 
                 count = _wait_for_audit_row(db_path)
-                assert count >= 1, (
-                    "expected self_update_* audit row after config-tier apply"
-                )
+                assert count >= 1, "expected self_update_* audit row after config-tier apply"
 
-    def test_plan_protected_path_refused_rollback(
-        self, tmp_path: pytest.Path
-    ) -> None:
+    def test_plan_protected_path_refused_rollback(self, tmp_path: pytest.Path) -> None:
         config_dir, _db_path = _make_db_config(tmp_path)
         protected_plan = SelfUpdatePlan(
             subsystem=Subsystem.CONFIG,
@@ -227,12 +221,15 @@ class TestSelfUpdateRouterE2E:
             rationale="routes to a protected guard file",
             confidence=0.5,
         )
-        with patch(
-            "general_ludd.ansible.runner.AnsibleRunnerAdapter",
-            return_value=MagicMock(),
-        ), patch(
-            "general_ludd.routers.self_update.classify",
-            return_value=protected_plan,
+        with (
+            patch(
+                "general_ludd.ansible.runner.AnsibleRunnerAdapter",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "general_ludd.routers.self_update.classify",
+                return_value=protected_plan,
+            ),
         ):
             app = create_daemon_app(tick_interval=300.0, config_dir=config_dir)
             with TestClient(app) as client:
@@ -248,9 +245,7 @@ class TestSelfUpdateRouterE2E:
                 assert data["outcome"] == "refused"
                 assert data["applied"] is False
 
-    def test_enqueue_persists_todo_with_self_update_queue(
-        self, tmp_path: pytest.Path
-    ) -> None:
+    def test_enqueue_persists_todo_with_self_update_queue(self, tmp_path: pytest.Path) -> None:
         config_dir, db_path = _make_db_config(tmp_path)
         with patch(
             "general_ludd.ansible.runner.AnsibleRunnerAdapter",
@@ -286,9 +281,7 @@ class TestSelfUpdateRouterE2E:
                 assert row[0] == "self_update"
                 assert "self-update" in row[1]
 
-    def test_missing_psk_returns_401(
-        self, tmp_path: pytest.Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_missing_psk_returns_401(self, tmp_path: pytest.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("GLUDD_PSK", "test-secret-key")
         config_dir, _db_path = _make_db_config(tmp_path)
         with patch(
@@ -313,9 +306,7 @@ class TestSelfUpdateLoopPathE2E:
     """Exercise self_update todo dispatch through the EventLoop."""
 
     @pytest.mark.asyncio
-    async def test_apply_code_success_transitions_complete(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_apply_code_success_transitions_complete(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from general_ludd.event_loop.loop import EventLoop
 
         daemon_state: dict[str, Any] = {}
@@ -344,9 +335,7 @@ class TestSelfUpdateLoopPathE2E:
         assert fake.reload_calls[0].reload_needed is True
 
     @pytest.mark.asyncio
-    async def test_apply_code_reload_failure_rollback_to_failed(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_apply_code_reload_failure_rollback_to_failed(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from general_ludd.event_loop.loop import EventLoop
 
         daemon_state: dict[str, Any] = {}
@@ -367,9 +356,7 @@ class TestSelfUpdateLoopPathE2E:
         assert repo.transitions == [(todo.todo_id, TodoStatus.FAILED, todo.version)]
 
     @pytest.mark.asyncio
-    async def test_apply_code_missing_tags_rollback_to_failed(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_apply_code_missing_tags_rollback_to_failed(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from general_ludd.event_loop.loop import EventLoop
 
         daemon_state: dict[str, Any] = {}
@@ -392,9 +379,7 @@ class TestSelfUpdateLoopPathE2E:
         assert repo.transitions == [(todo.todo_id, TodoStatus.FAILED, todo.version)]
 
     @pytest.mark.asyncio
-    async def test_daemon_state_tracks_successful_applies(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_daemon_state_tracks_successful_applies(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from general_ludd.event_loop.loop import EventLoop
 
         daemon_state: dict[str, Any] = {}
@@ -421,9 +406,7 @@ class TestSelfUpdateLoopPathE2E:
         assert applies[0]["ok"] is True
 
     @pytest.mark.asyncio
-    async def test_daemon_state_does_not_track_failed_applies(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_daemon_state_does_not_track_failed_applies(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from general_ludd.event_loop.loop import EventLoop
 
         daemon_state: dict[str, Any] = {}
@@ -451,16 +434,12 @@ class TestSelfUpdateLoopPathE2E:
         assert applies[0]["ok"] is False
 
     @pytest.mark.asyncio
-    async def test_apply_code_caps_daemon_state_list(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_apply_code_caps_daemon_state_list(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from general_ludd.event_loop.loop import EventLoop
 
         daemon_state: dict[str, Any] = {}
         # Seed daemon_state with 500 existing entries — one under the cap.
-        daemon_state["self_update_applies"] = [
-            {"todo_id": f"old-{i}"} for i in range(500)
-        ]
+        daemon_state["self_update_applies"] = [{"todo_id": f"old-{i}"} for i in range(500)]
         loop = EventLoop(session=None, config={}, daemon_state=daemon_state)
         loop._MAX_SELF_UPDATE_APPLIES = 500
         repo = _RecordingTodoRepo()
@@ -490,9 +469,7 @@ class TestSelfUpdateDispatchBranchE2E:
     """self_update-queue todos route through _apply_self_update_code."""
 
     @pytest.mark.asyncio
-    async def test_self_update_queue_short_circuits_to_apply_code(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_self_update_queue_short_circuits_to_apply_code(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from general_ludd.event_loop.loop import EventLoop
 
         loop = EventLoop(session=None, config={}, daemon_state={})
@@ -505,9 +482,7 @@ class TestSelfUpdateDispatchBranchE2E:
 
         monkeypatch.setattr(loop, "_apply_self_update_code", fake_apply)
         loop._runner = MagicMock()
-        loop._runner.run_playbook = MagicMock(
-            side_effect=AssertionError("runner must not be invoked for self_update")
-        )
+        loop._runner.run_playbook = MagicMock(side_effect=AssertionError("runner must not be invoked for self_update"))
         loop._http_client = None
 
         await loop._dispatch_execute_job(todo)

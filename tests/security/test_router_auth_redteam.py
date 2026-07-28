@@ -34,6 +34,8 @@ from general_ludd.security.sanitize import (
 
 @pytest.fixture(autouse=True)
 def _reset_daemon_state():
+    if daemon_mod._daemon_state is None:
+        daemon_mod._daemon_state = {"todos": [], "tick_metrics": {}, "quality_gate": {}}
     daemon_mod._daemon_state["todos"] = []
     daemon_mod._daemon_state["tick_metrics"] = {}
     # Ensure PSK/require-auth env never leaks between tests.
@@ -100,9 +102,7 @@ class TestMethodAwarePublicAllowlist:
         async with _client(app) as client:
             get_resp = await client.get("/healthz")
             assert get_resp.status_code == 200
-            post_resp = await client.post(
-                "/api/todos", json={"title": "x", "queue": "core"}
-            )
+            post_resp = await client.post("/api/todos", json={"title": "x", "queue": "core"})
             assert post_resp.status_code == 503, post_resp.text
 
 
@@ -262,9 +262,7 @@ class TestPathConfinement:
         app = create_daemon_app(tick_interval=0.01)
         app.state._workspace_root = os.getcwd()
         async with _client(app) as client:
-            resp = await client.post(
-                "/admin/code/complexity", json={"path": "/etc/passwd"}
-            )
+            resp = await client.post("/admin/code/complexity", json={"path": "/etc/passwd"})
             assert resp.status_code == 422, resp.text
 
     @pytest.mark.asyncio
@@ -272,9 +270,7 @@ class TestPathConfinement:
         app = create_daemon_app(tick_interval=0.01)
         app.state._workspace_root = os.getcwd()
         async with _client(app) as client:
-            resp = await client.post(
-                "/admin/code/suggest-model", json={"path": "/etc/passwd"}
-            )
+            resp = await client.post("/admin/code/suggest-model", json={"path": "/etc/passwd"})
             assert resp.status_code == 422, resp.text
 
     @pytest.mark.asyncio
@@ -284,18 +280,14 @@ class TestPathConfinement:
         src = tmp_path / "mod.py"
         src.write_text("def f():\n    return 1\n")
         async with _client(app) as client:
-            resp = await client.post(
-                "/admin/code/complexity", json={"path": str(src)}
-            )
+            resp = await client.post("/admin/code/complexity", json={"path": str(src)})
             assert resp.status_code == 200, resp.text
 
     @pytest.mark.asyncio
     async def test_integrity_scan_rejects_path_outside_allowed_roots(self):
         app = create_daemon_app(tick_interval=0.01)
         async with _client(app) as client:
-            resp = await client.post(
-                "/admin/integrity/scan", json={"paths": ["/etc"]}
-            )
+            resp = await client.post("/admin/integrity/scan", json={"paths": ["/etc"]})
             assert resp.status_code == 422, resp.text
 
     @pytest.mark.asyncio
@@ -313,9 +305,7 @@ class TestPathConfinement:
         (sub / "f.txt").write_text("hi")
         app = create_daemon_app(tick_interval=0.01, config_dir=str(tmp_path))
         async with _client(app) as client:
-            resp = await client.post(
-                "/admin/integrity/scan", json={"paths": [str(sub)]}
-            )
+            resp = await client.post("/admin/integrity/scan", json={"paths": [str(sub)]})
             assert resp.status_code == 200, resp.text
 
     @pytest.mark.asyncio

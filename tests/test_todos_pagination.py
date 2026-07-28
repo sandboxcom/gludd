@@ -1,4 +1,5 @@
 """Regression tests for F6b: GET /api/todos must be bounded to [1, 500]."""
+
 from __future__ import annotations
 
 import pytest
@@ -35,18 +36,19 @@ def _make_app_with_todos(n: int):
 def _clear_daemon_state():
     import collections
 
-    from general_ludd.daemon import _daemon_state
-    original = list(_daemon_state["todos"])
+    import general_ludd.daemon as dm
+
+    if dm._daemon_state is None:
+        dm._daemon_state = {"todos": [], "tick_metrics": {}, "quality_gate": {}}
+    original = list(dm._daemon_state["todos"])
     yield
-    _daemon_state["todos"] = collections.deque(original, maxlen=1000)
+    dm._daemon_state["todos"] = collections.deque(original, maxlen=1000)
 
 
 @pytest.mark.asyncio
 async def test_default_limit_caps_at_100():
     app, _ = _make_app_with_todos(150)
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as c:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         resp = await c.get("/api/todos")
     assert resp.status_code == 200
     data = resp.json()
@@ -56,9 +58,7 @@ async def test_default_limit_caps_at_100():
 @pytest.mark.asyncio
 async def test_explicit_limit_10():
     app, _ = _make_app_with_todos(50)
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as c:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         resp = await c.get("/api/todos?limit=10")
     assert resp.status_code == 200
     data = resp.json()
@@ -68,9 +68,7 @@ async def test_explicit_limit_10():
 @pytest.mark.asyncio
 async def test_overlarge_limit_capped_at_500():
     app, _ = _make_app_with_todos(600)
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as c:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         resp = await c.get("/api/todos?limit=9999")
     assert resp.status_code == 200
     data = resp.json()
@@ -80,9 +78,7 @@ async def test_overlarge_limit_capped_at_500():
 @pytest.mark.asyncio
 async def test_offset_pages_are_disjoint():
     app, _ = _make_app_with_todos(30)
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as c:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         resp1 = await c.get("/api/todos?limit=10&offset=0")
         resp2 = await c.get("/api/todos?limit=10&offset=10")
     assert resp1.status_code == 200

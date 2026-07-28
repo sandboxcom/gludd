@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 import subprocess
 import uuid
@@ -34,6 +35,53 @@ from general_ludd.stream import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Playbook env allowlist — subprocess children must never inherit daemon
+# secrets (ZAI_API_KEY, AWS_*, DATABASE_URL, GLUDD_PSK, …).  Mirrors
+# AnsibleCoreRunner._PLAYBOOK_ENV_ALLOWLIST.
+_STREAM_PLAYBOOK_ENV_ALLOWLIST: frozenset[str] = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "TMPDIR",
+        "TEMP",
+        "TMP",
+        "GLUDD_PLAYBOOK_TIMEOUT",
+        "ANSIBLE_CONFIG",
+        "ANSIBLE_ROLES_PATH",
+        "ANSIBLE_COLLECTIONS_PATHS",
+        "ANSIBLE_COLLECTIONS_PATH",
+        "ANSIBLE_LIBRARY",
+        "ANSIBLE_MODULE_UTILS",
+        "ANSIBLE_FILTER_PLUGINS",
+        "ANSIBLE_CALLBACK_PLUGINS",
+        "ANSIBLE_LOOKUP_PLUGINS",
+        "ANSIBLE_STRATEGY_PLUGINS",
+        "ANSIBLE_CACHE_PLUGINS",
+        "ANSIBLE_CONNECTION_PLUGINS",
+        "ANSIBLE_VARS_PLUGINS",
+        "ANSIBLE_HOST_KEY_CHECKING",
+        "ANSIBLE_STDOUT_CALLBACK",
+        "ANSIBLE_RETRY_FILES_ENABLED",
+        "ANSIBLE_FORCE_COLOR",
+        "ANSIBLE_NOCOLOR",
+        "ANSIBLE_VERBOSITY",
+        "PYTHONPATH",
+        "PYTHONDONTWRITEBYTECODE",
+        "VIRTUAL_ENV",
+        "SSH_AUTH_SOCK",
+        "SSH_AGENT_PID",
+        "TERM",
+        "COLUMNS",
+        "LINES",
+    }
+)
 
 # Role names are directory names under collection_root/roles/ — restrict to a
 # simple identifier so a caller cannot smuggle path-traversal segments (e.g.
@@ -76,6 +124,10 @@ def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | Non
     return getattr(app.state, "_session_factory", None)
 
 
+def _scrub_child_env() -> dict[str, str]:
+    return {k: v for k, v in os.environ.items() if k in _STREAM_PLAYBOOK_ENV_ALLOWLIST}
+
+
 # Indirection seam for tests: tests monkeypatch this to stub the subprocess so
 # the wait_for_completion path can be exercised without ansible on PATH.
 def _run_subprocess(args: list[str], cwd: str, timeout: float) -> subprocess.Popen[bytes]:
@@ -84,6 +136,7 @@ def _run_subprocess(args: list[str], cwd: str, timeout: float) -> subprocess.Pop
         cwd=cwd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        env=_scrub_child_env(),
     )
 
 
@@ -131,8 +184,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 raise HTTPException(
                     status_code=422,
                     detail=(
-                        f"processor.tool {tool!r} not supported; expected one of "
-                        f"{sorted(SUPPORTED_PROCESSOR_TOOLS)}"
+                        f"processor.tool {tool!r} not supported; expected one of {sorted(SUPPORTED_PROCESSOR_TOOLS)}"
                     ),
                 )
             if tool in {"whisper.cpp", "ffmpeg"}:
@@ -140,10 +192,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 if not _SAFE_BINARY_RE.match(str(binary)):
                     raise HTTPException(
                         status_code=422,
-                        detail=(
-                            f"processor.binary {binary!r} contains unsafe characters; "
-                            f"expected [a-zA-Z0-9_./-]+"
-                        ),
+                        detail=(f"processor.binary {binary!r} contains unsafe characters; expected [a-zA-Z0-9_./-]+"),
                     )
                 extra_args = req.processor.get("args", "")
                 try:
@@ -159,9 +208,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             cloner.materialize_processor(clone_path, processor=dict(req.processor))
 
         if not req.wait_for_completion:
-            return await _enqueue_clone(
-                app, task_id, req, clone_path
-            )
+            return await _enqueue_clone(app, task_id, req, clone_path)
         return await _run_clone_sync(task_id, req, clone_path)
 
     async def _enqueue_clone(
@@ -175,8 +222,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         if factory is None:
             # Degraded (no DB) — still report the clone so a caller can run it.
             logger.warning(
-                "stream/dispatch: no session_factory; returning queued clone "
-                "without DB persistence (task_id=%s)",
+                "stream/dispatch: no session_factory; returning queued clone without DB persistence (task_id=%s)",
                 task_id,
             )
             return {
@@ -189,10 +235,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         todo_data: dict[str, object] = {
             "todo_id": task_id,
             "title": f"stream_chunk:{req.role}:{task_id}",
-            "description": (
-                f"Server-side stream dispatch for role {req.role!r} "
-                f"(clone_path={clone_path})"
-            ),
+            "description": (f"Server-side stream dispatch for role {req.role!r} (clone_path={clone_path})"),
             "queue": "core",
             "priority": req.priority,
             "work_type": req.work_type,
@@ -225,9 +268,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
         args = ["ansible-playbook", "run-clone.yml"]
         try:
-            proc = await asyncio.to_thread(
-                _run_subprocess, args, str(clone_path), timeout
-            )
+            proc = await asyncio.to_thread(_run_subprocess, args, str(clone_path), timeout)
             try:
                 stdout, stderr = await asyncio.to_thread(proc.communicate, timeout=timeout)
             except Exception as exc:
@@ -239,13 +280,14 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             if proc.returncode != 0:
                 logger.warning(
                     "stream clone %s exited rc=%s stderr=%s",
-                    task_id, proc.returncode, stderr.decode(errors="replace")[:500],
+                    task_id,
+                    proc.returncode,
+                    stderr.decode(errors="replace")[:500],
                 )
                 raise HTTPException(
                     status_code=502,
                     detail=(
-                        f"stream clone execution failed (rc={proc.returncode}): "
-                        f"{stderr.decode(errors='replace')[:300]}"
+                        f"stream clone execution failed (rc={proc.returncode}): {stderr.decode(errors='replace')[:300]}"
                     ),
                 )
         except FileNotFoundError as exc:

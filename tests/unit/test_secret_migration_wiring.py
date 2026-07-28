@@ -13,6 +13,8 @@ from general_ludd.daemon import create_daemon_app
 
 @pytest.fixture(autouse=True)
 def _reset_daemon_state():
+    if daemon_mod._daemon_state is None:
+        daemon_mod._daemon_state = {"todos": [], "tick_metrics": {}, "quality_gate": {}}
     daemon_mod._daemon_state["todos"] = []
     daemon_mod._daemon_state["tick_metrics"] = {}
 
@@ -24,10 +26,7 @@ class TestSecretMigrationInDaemonStartup:
         profiles_dir = tmp_path / "model_profiles"
         profiles_dir.mkdir()
         (profiles_dir / "test.yml").write_text(
-            "model_profile_id: test_prof\n"
-            "credential_alias: TEST_MIGRATE_KEY\n"
-            "provider: openai\n"
-            "model_name: gpt-4\n"
+            "model_profile_id: test_prof\ncredential_alias: TEST_MIGRATE_KEY\nprovider: openai\nmodel_name: gpt-4\n"
         )
 
         config_dir = tmp_path / "config"
@@ -40,9 +39,7 @@ class TestSecretMigrationInDaemonStartup:
             mock_mgr.register_alias.return_value = None
             mock_resolver.return_value = mock_mgr
 
-            with patch(
-                "general_ludd.daemon.migrate_profile_secrets"
-            ) as mock_migrate:
+            with patch("general_ludd.daemon.migrate_profile_secrets") as mock_migrate:
                 mock_migrate.return_value = {
                     "migrated": 1,
                     "aliases": ["TEST_MIGRATE_KEY"],
@@ -61,10 +58,7 @@ class TestSecretMigrationInDaemonStartup:
                         pass
 
         profiles_arg = mock_migrate.call_args[0][1]
-        assert any(
-            p.get("credential_alias") == "TEST_MIGRATE_KEY"
-            for p in profiles_arg
-        )
+        assert any(p.get("credential_alias") == "TEST_MIGRATE_KEY" for p in profiles_arg)
 
     def test_migrate_not_called_when_env_resolver(self, tmp_path):
         with patch("general_ludd.daemon.build_secrets_resolver") as mock_resolver:
@@ -72,9 +66,7 @@ class TestSecretMigrationInDaemonStartup:
 
             mock_resolver.return_value = EnvSecretsManager()
 
-            with patch(
-                "general_ludd.daemon.migrate_profile_secrets"
-            ) as mock_migrate:
+            with patch("general_ludd.daemon.migrate_profile_secrets") as mock_migrate:
                 with patch(
                     "general_ludd.daemon.AnsibleRunnerAdapter",
                     return_value=MagicMock(),

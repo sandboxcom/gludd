@@ -21,6 +21,8 @@ from general_ludd.daemon import create_daemon_app
 
 @pytest.fixture(autouse=True)
 def _reset_daemon_state():
+    if daemon_mod._daemon_state is None:
+        daemon_mod._daemon_state = {"todos": [], "tick_metrics": {}, "quality_gate": {}}
     daemon_mod._daemon_state["todos"] = []
     daemon_mod._daemon_state["tick_metrics"] = {}
 
@@ -49,9 +51,7 @@ async def test_tui_log_rejects_oversized_entries(transport):
 async def test_rebalance_rejects_oversized_weights(transport):
     oversized = {f"proj-{i:05d}": 1.0 for i in range(501)}
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.post(
-            "/admin/projects/rebalance", json={"weights": oversized}
-        )
+        resp = await client.post("/admin/projects/rebalance", json={"weights": oversized})
     assert resp.status_code == 413
     assert "weights" in resp.json()["detail"]
 
@@ -71,9 +71,7 @@ async def test_models_call_rejects_oversized_max_tokens(transport):
 async def test_worktree_scan_rejects_oversized_watch_paths(transport):
     oversized = ",".join(f"/p{i}" for i in range(101))
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.post(
-            "/admin/worktree/scan", params={"watch_paths": oversized}
-        )
+        resp = await client.post("/admin/worktree/scan", params={"watch_paths": oversized})
     assert resp.status_code == 413
     assert "watch_paths" in resp.json()["detail"]
 
@@ -82,8 +80,6 @@ async def test_worktree_scan_rejects_oversized_watch_paths(transport):
 async def test_log_audit_rejects_oversized_log_entries(transport):
     oversized = ["line"] * 10_001
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.post(
-            "/admin/log-audit", json={"log_entries": oversized}
-        )
+        resp = await client.post("/admin/log-audit", json={"log_entries": oversized})
     assert resp.status_code == 413
     assert "log_entries" in resp.json()["detail"]

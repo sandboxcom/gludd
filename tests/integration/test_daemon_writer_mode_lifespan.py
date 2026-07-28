@@ -77,6 +77,8 @@ class _FakeWriterProcess:
 
 @pytest.fixture(autouse=True)
 def _reset_daemon_state() -> None:
+    if daemon_mod._daemon_state is None:
+        daemon_mod._daemon_state = {"todos": [], "tick_metrics": {}, "quality_gate": {}}
     daemon_mod._daemon_state["todos"] = []
     daemon_mod._daemon_state["tick_metrics"] = {}
     _FAKE_WRITER_INSTANCES.clear()
@@ -91,9 +93,7 @@ def _make_db_config(tmp_path: Path) -> str:
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     db_path = tmp_path / "test.db"
-    (config_dir / "general-ludd.yml").write_text(
-        f"database:\n  url: 'sqlite+aiosqlite:///{db_path}'\n"
-    )
+    (config_dir / "general-ludd.yml").write_text(f"database:\n  url: 'sqlite+aiosqlite:///{db_path}'\n")
     return str(config_dir)
 
 
@@ -115,10 +115,13 @@ def _patched(runner: bool = True, writer: bool = True):
 class TestInlineMode:
     def test_inline_mode_default_no_write_queue(self, tmp_path: Path) -> None:
         config_dir = _make_db_config(tmp_path)
-        with patch(
-            "general_ludd.ansible.runner.AnsibleRunnerAdapter",
-            return_value=MagicMock(),
-        ), patch("general_ludd.daemon.WriterProcess", _FakeWriterProcess):
+        with (
+            patch(
+                "general_ludd.ansible.runner.AnsibleRunnerAdapter",
+                return_value=MagicMock(),
+            ),
+            patch("general_ludd.daemon.WriterProcess", _FakeWriterProcess),
+        ):
             app = create_daemon_app(tick_interval=0.01, config_dir=config_dir)
             with TestClient(app):
                 assert getattr(app.state, "_write_queue", None) is None
@@ -127,15 +130,16 @@ class TestInlineMode:
             # No fake writer was ever constructed in inline mode.
             assert _FAKE_WRITER_INSTANCES == []
 
-    def test_inline_mode_explicit_env(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_inline_mode_explicit_env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("GLUDD_WRITER_MODE", "inline")
         config_dir = _make_db_config(tmp_path)
-        with patch(
-            "general_ludd.ansible.runner.AnsibleRunnerAdapter",
-            return_value=MagicMock(),
-        ), patch("general_ludd.daemon.WriterProcess", _FakeWriterProcess):
+        with (
+            patch(
+                "general_ludd.ansible.runner.AnsibleRunnerAdapter",
+                return_value=MagicMock(),
+            ),
+            patch("general_ludd.daemon.WriterProcess", _FakeWriterProcess),
+        ):
             app = create_daemon_app(tick_interval=0.01, config_dir=config_dir)
             with TestClient(app):
                 assert getattr(app.state, "_write_queue", None) is None
@@ -144,31 +148,31 @@ class TestInlineMode:
 
 
 class TestSubprocessMode:
-    def test_subprocess_mode_publishes_write_queue(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_subprocess_mode_publishes_write_queue(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("GLUDD_WRITER_MODE", "subprocess")
         config_dir = _make_db_config(tmp_path)
-        with patch(
-            "general_ludd.ansible.runner.AnsibleRunnerAdapter",
-            return_value=MagicMock(),
-        ), patch("general_ludd.daemon.WriterProcess", _FakeWriterProcess):
+        with (
+            patch(
+                "general_ludd.ansible.runner.AnsibleRunnerAdapter",
+                return_value=MagicMock(),
+            ),
+            patch("general_ludd.daemon.WriterProcess", _FakeWriterProcess),
+        ):
             app = create_daemon_app(tick_interval=0.01, config_dir=config_dir)
             with TestClient(app):
                 queue = getattr(app.state, "_write_queue", None)
-                assert isinstance(queue, WriteQueue), (
-                    f"expected WriteQueue, got {type(queue).__name__}: {queue!r}"
-                )
+                assert isinstance(queue, WriteQueue), f"expected WriteQueue, got {type(queue).__name__}: {queue!r}"
 
-    def test_subprocess_mode_publishes_writer_process(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_subprocess_mode_publishes_writer_process(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("GLUDD_WRITER_MODE", "subprocess")
         config_dir = _make_db_config(tmp_path)
-        with patch(
-            "general_ludd.ansible.runner.AnsibleRunnerAdapter",
-            return_value=MagicMock(),
-        ), patch("general_ludd.daemon.WriterProcess", _FakeWriterProcess):
+        with (
+            patch(
+                "general_ludd.ansible.runner.AnsibleRunnerAdapter",
+                return_value=MagicMock(),
+            ),
+            patch("general_ludd.daemon.WriterProcess", _FakeWriterProcess),
+        ):
             app = create_daemon_app(tick_interval=0.01, config_dir=config_dir)
             with TestClient(app):
                 wp = getattr(app.state, "_writer_process", None)
@@ -182,28 +186,30 @@ class TestSubprocessMode:
     ) -> None:
         monkeypatch.setenv("GLUDD_WRITER_MODE", "subprocess")
         config_dir = _make_db_config(tmp_path)
-        with patch(
-            "general_ludd.ansible.runner.AnsibleRunnerAdapter",
-            return_value=MagicMock(),
-        ), patch("general_ludd.daemon.WriterProcess", _FakeWriterProcess):
+        with (
+            patch(
+                "general_ludd.ansible.runner.AnsibleRunnerAdapter",
+                return_value=MagicMock(),
+            ),
+            patch("general_ludd.daemon.WriterProcess", _FakeWriterProcess),
+        ):
             app = create_daemon_app(tick_interval=0.01, config_dir=config_dir)
             async with daemon_mod._lifespan(app):
                 factory = app.state._session_factory
                 async with factory() as session:
                     with pytest.raises(SQLAlchemyError):
-                        await session.execute(
-                            text("CREATE TABLE t_fail (x INTEGER)")
-                        )
+                        await session.execute(text("CREATE TABLE t_fail (x INTEGER)"))
 
-    def test_subprocess_mode_teardown_stops_writer(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_subprocess_mode_teardown_stops_writer(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("GLUDD_WRITER_MODE", "subprocess")
         config_dir = _make_db_config(tmp_path)
-        with patch(
-            "general_ludd.ansible.runner.AnsibleRunnerAdapter",
-            return_value=MagicMock(),
-        ), patch("general_ludd.daemon.WriterProcess", _FakeWriterProcess):
+        with (
+            patch(
+                "general_ludd.ansible.runner.AnsibleRunnerAdapter",
+                return_value=MagicMock(),
+            ),
+            patch("general_ludd.daemon.WriterProcess", _FakeWriterProcess),
+        ):
             app = create_daemon_app(tick_interval=0.01, config_dir=config_dir)
             with TestClient(app):
                 wp = app.state._writer_process
@@ -219,10 +225,13 @@ class TestSubprocessMode:
     ) -> None:
         monkeypatch.setenv("GLUDD_WRITER_MODE", "subprocess")
         config_dir = _make_db_config(tmp_path)
-        with patch(
-            "general_ludd.ansible.runner.AnsibleRunnerAdapter",
-            return_value=MagicMock(),
-        ), patch("general_ludd.daemon.WriterProcess", _FakeWriterProcess):
+        with (
+            patch(
+                "general_ludd.ansible.runner.AnsibleRunnerAdapter",
+                return_value=MagicMock(),
+            ),
+            patch("general_ludd.daemon.WriterProcess", _FakeWriterProcess),
+        ):
             app = create_daemon_app(tick_interval=0.01, config_dir=config_dir)
             async with daemon_mod._lifespan(app):
                 queue = app.state._write_queue
@@ -245,28 +254,25 @@ class TestInvalidMode:
     ) -> None:
         monkeypatch.setenv("GLUDD_WRITER_MODE", "garbage")
         config_dir = _make_db_config(tmp_path)
-        with patch(
-            "general_ludd.ansible.runner.AnsibleRunnerAdapter",
-            return_value=MagicMock(),
-        ), patch("general_ludd.daemon.WriterProcess", _FakeWriterProcess):
+        with (
+            patch(
+                "general_ludd.ansible.runner.AnsibleRunnerAdapter",
+                return_value=MagicMock(),
+            ),
+            patch("general_ludd.daemon.WriterProcess", _FakeWriterProcess),
+        ):
             app = create_daemon_app(tick_interval=0.01, config_dir=config_dir)
             # Patch the daemon's ProjectLogAdapter.warning to verify the
             # fallback warning is emitted. caplog / handler-based capture
             # don't reliably see records emitted from the lifespan's portal
             # thread.
-            with patch.object(
-                daemon_mod.logger, "warning"
-            ) as mock_warn, TestClient(app):
+            with patch.object(daemon_mod.logger, "warning") as mock_warn, TestClient(app):
                 # Invalid mode falls back to inline: no queue, no writer.
                 assert getattr(app.state, "_write_queue", None) is None
                 assert getattr(app.state, "_writer_process", None) is None
 
-            warning_msgs = [
-                str(call) for call in mock_warn.call_args_list
-            ]
-            assert any(
-                "GLUDD_WRITER_MODE" in msg for msg in warning_msgs
-            ), warning_msgs
+            warning_msgs = [str(call) for call in mock_warn.call_args_list]
+            assert any("GLUDD_WRITER_MODE" in msg for msg in warning_msgs), warning_msgs
             assert _FAKE_WRITER_INSTANCES == []
 
 
@@ -279,9 +285,7 @@ class TestStructural:
         src = Path(daemon_mod.__file__).read_text()
         tree = ast.parse(src)
         lifespan = next(
-            node
-            for node in tree.body
-            if isinstance(node, ast.AsyncFunctionDef) and node.name == "_lifespan"
+            node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "_lifespan"
         )
 
         env_read_line: int | None = None
@@ -302,18 +306,13 @@ class TestStructural:
                     target_name = fn.id
                 elif isinstance(fn, ast.Attribute):
                     target_name = fn.attr
-                if (
-                    target_name == "init_engine_from_config"
-                    and (engine_call_line is None or node.lineno < engine_call_line)
+                if target_name == "init_engine_from_config" and (
+                    engine_call_line is None or node.lineno < engine_call_line
                 ):
                     engine_call_line = node.lineno
 
-        assert env_read_line is not None, (
-            "GLUDD_WRITER_MODE env-var read not found inside _lifespan"
-        )
-        assert engine_call_line is not None, (
-            "init_engine_from_config call not found inside _lifespan"
-        )
+        assert env_read_line is not None, "GLUDD_WRITER_MODE env-var read not found inside _lifespan"
+        assert engine_call_line is not None, "init_engine_from_config call not found inside _lifespan"
         assert env_read_line < engine_call_line, (
             f"GLUDD_WRITER_MODE read at line {env_read_line} must precede "
             f"init_engine_from_config call at line {engine_call_line}"
@@ -322,12 +321,8 @@ class TestStructural:
     def test_lifespan_references_writer_mode_branch(self) -> None:
         """The implementation must textually reference the two modes."""
         src = Path(daemon_mod.__file__).read_text()
-        assert re.search(r"GLUDD_WRITER_MODE", src), (
-            "GLUDD_WRITER_MODE not referenced in daemon.py"
-        )
-        assert re.search(r'"subprocess"', src), (
-            "subprocess mode branch not present in daemon.py"
-        )
+        assert re.search(r"GLUDD_WRITER_MODE", src), "GLUDD_WRITER_MODE not referenced in daemon.py"
+        assert re.search(r'"subprocess"', src), "subprocess mode branch not present in daemon.py"
 
 
 class TestWritesFlowThroughQueue:
@@ -339,19 +334,20 @@ class TestWritesFlowThroughQueue:
         (returning ``(True, HTTP_ENQUEUED)``) rather than the inline path."""
         monkeypatch.setenv("GLUDD_WRITER_MODE", "subprocess")
         config_dir = _make_db_config(tmp_path)
-        with patch(
-            "general_ludd.ansible.runner.AnsibleRunnerAdapter",
-            return_value=MagicMock(),
-        ), patch("general_ludd.daemon.WriterProcess", _FakeWriterProcess):
+        with (
+            patch(
+                "general_ludd.ansible.runner.AnsibleRunnerAdapter",
+                return_value=MagicMock(),
+            ),
+            patch("general_ludd.daemon.WriterProcess", _FakeWriterProcess),
+        ):
             app = create_daemon_app(tick_interval=0.01, config_dir=config_dir)
             async with daemon_mod._lifespan(app):
                 queue = app.state._write_queue
                 assert queue is not None
                 assert len(queue) == 0
 
-                enqueued, status = await enqueue_or_commit(
-                    app, topic="todo.create", payload={"title": "ship beta.3"}
-                )
+                enqueued, status = await enqueue_or_commit(app, topic="todo.create", payload={"title": "ship beta.3"})
                 assert enqueued is True
                 assert status == HTTP_ENQUEUED
                 assert len(queue) == 1
