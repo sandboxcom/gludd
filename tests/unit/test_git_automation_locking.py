@@ -207,7 +207,8 @@ class TestFileLock:
 
 class TestGitRepoLock:
     def test_acquires_and_releases_inprocess_lock(self) -> None:
-        key = locking._normalize(".")
+        git_dir = locking._git_dir(".")
+        key = locking._normalize(git_dir) if git_dir is not None else locking._normalize(".")
         with locking.git_repo_lock(".", timeout=1.0, stale_after=60.0):
             rlock = locking._repo_locks.get(key)
             assert rlock is not None
