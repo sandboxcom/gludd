@@ -125,7 +125,8 @@ log-agent-result disk-guard disk-check check-disk disk tmp-gludd-usage tmp-gludd
          chat chat-eval test-chat \
 git-tag-delete git-tag-move release-deploy append-text write-text-b64 replace-text-b64 mkdir-p replace-lines _no-raw-git-guard \
          git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head provider-smoke check-no-prompt-prone-edit-tools add-target edit-target edit-makefile-target validate-makefile \
-         azure-event-guard-start azure-event-guard-stop azure-event-guard-check azure-event-guard-status
+         azure-event-guard-start azure-event-guard-stop azure-event-guard-check azure-event-guard-status \
+         codex-system-skill-read
 
 help:
 	@echo "Usage: make [target]"
@@ -365,6 +366,7 @@ help:
 	@echo "  clean                 Remove build artifacts"
 	@echo "  dist-clean            Remove distribution artifacts"
 	@echo "  gated-merge           flock-guarded multi-branch merge with manifest (BASE/BRANCHES/MERGE_STRATEGY/MANIFEST)"
+	@echo "  codex-system-skill-read SKILL=name CODEX_SKILLS_ROOT=path  Read one installed Codex system skill"
 	@echo ""
 	@echo "  --- Complete Target Index ---"
 	@$(PYTHON) scripts/check_make_help.py --print-index
@@ -5529,6 +5531,11 @@ cat-file:
 	@[ -n "$(FILE)" ] || { echo "Usage: make cat-file FILE=path"; exit 1; }
 	@case "$(FILE)" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $(FILE)"; exit 1;; esac
 	@/bin/cat "$(FILE)"
+
+codex-system-skill-read:
+	@[ -n "$(SKILL)" ] && [ -n "$(CODEX_SKILLS_ROOT)" ] || { echo "Usage: make codex-system-skill-read SKILL=name CODEX_SKILLS_ROOT=path"; exit 1; }
+	@case "$(SKILL)" in *[!a-zA-Z0-9_-]*|'') echo "Invalid skill name: $(SKILL)"; exit 1;; esac
+	@/bin/cat "$(CODEX_SKILLS_ROOT)/.system/$(SKILL)/SKILL.md"
 
 list-files:
 	@[ -n "$(DIR)" ] || { echo "Usage: make list-files DIR=path"; exit 1; }
