@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) TEMPR date ranges leaked stale documents from non-temporal retrievers
+
+- **What**: A date-bounded TEMPR query could return documents outside the requested window when semantic, BM25, or graph retrieval also contributed to reciprocal-rank fusion.
+- **Root cause**: `date_range` was applied only inside the temporal strategy. The other three child retrievers still supplied out-of-window candidates to RRF, so fusion could reintroduce documents that the temporal strategy correctly excluded.
+- **Fix applied**: Retrieval now derives one fail-closed set of timestamped documents inside the requested inclusive range and applies it to every child result list before fusion. Documents without a parseable timestamp are excluded when an explicit range is requested. A default-weight unit regression and the original integration scenario cover the multi-strategy path.
+- **Long-lived user evidence**: A Weaviate community report reproduced the same dangerous hybrid-search behavior—an empty date window silently returned older results—and confirmed that the corrected behavior is an empty result set ([community thread, 2025](https://forum.weaviate.io/t/hybrid-search-date-filter-ignored-when-no-matching-data-in-range/20769)). Elasticsearch's compound-retriever contract likewise specifies that an RRF filter applies to every child retriever ([retriever documentation](https://www.elastic.co/guide/en/elasticsearch/reference/8.19/retriever.html#rrf-retriever)).
+- **Lesson**: Structured constraints are eligibility rules, not scoring hints. Every candidate entering rank fusion must satisfy them, and unknown metadata must fail closed.
+
 ### 2026-07-28 — (resolved) commit gate printed the intended checker instead of executing it
 
 - **What**: `make git-commit` accepted commit `06e9a9fa` while `.gate-status` ended in `=== GATE: FAILED ===` and contained `verify-hot-reload FAIL` plus `env-writes FAIL`.
