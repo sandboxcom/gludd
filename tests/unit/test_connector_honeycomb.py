@@ -237,6 +237,30 @@ class TestHealth:
         result = src.health()
         assert result["ok"] is False
 
+    def test_tuple_transport_keyword_compatibility(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HNY_TEST_KEY", "secret")
+        calls: list[dict[str, Any]] = []
+
+        def transport(
+            method: str,
+            url: str,
+            **kwargs: Any,
+        ) -> tuple[int, object]:
+            calls.append({"method": method, "url": url, **kwargs})
+            return 200, AUTH_OK_PAYLOAD
+
+        src = HoneycombSource(
+            {"dataset": "my-dataset", "api_key_env": "HNY_TEST_KEY"},
+            transport=transport,
+        )
+
+        result = src.health()
+
+        assert result["ok"] is True
+        assert calls[0]["method"] == "GET"
+
 
 # --------------------------------------------------------------------------- #
 # query() — traces / high-cardinality query result

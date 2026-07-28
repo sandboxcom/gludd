@@ -735,23 +735,52 @@ class TestHoneycombConnector:
     def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.honeycomb import HoneycombSource
 
-        transport = MockHttpTransport(default_status=200, default_body={"data": []})
+        transport = MockHttpTransport(
+            default_status=200,
+            default_body={"team": {"name": "test-team"}},
+        )
         monkeypatch.setenv("HONEYCOMB_KEY", "test-key")
         src = HoneycombSource({"api_key_env": "HONEYCOMB_KEY", "dataset": "prod"}, transport=cast(Any, transport))
         result = src.health()
-        assert isinstance(result, dict)
+        assert result["ok"] is True
 
     def test_query_returns_records(self, monkeypatch):
         from general_ludd.connectors.honeycomb import HoneycombSource
 
         transport = MockHttpTransport(
-            default_status=200,
-            default_body={"data": [{"id": "e1", "timestamp": "2025-01-01T00:00:00Z"}]},
+            responses={
+                "https://api.honeycomb.io/1/queries/prod": (
+                    201,
+                    {"id": "query-1"},
+                ),
+                "https://api.honeycomb.io/1/query_results/prod": (
+                    201,
+                    {"id": "result-1", "complete": False},
+                ),
+                "https://api.honeycomb.io/1/query_results/prod/result-1": (
+                    200,
+                    {
+                        "data": {
+                            "results": [
+                                {
+                                    "time": "2025-01-01T00:00:00Z",
+                                    "data": {
+                                        "name": "checkout",
+                                        "COUNT": 1,
+                                    },
+                                }
+                            ]
+                        }
+                    },
+                ),
+            },
         )
         monkeypatch.setenv("HONEYCOMB_KEY", "test-key")
         src = HoneycombSource({"api_key_env": "HONEYCOMB_KEY", "dataset": "prod"}, transport=cast(Any, transport))
         records = src.query({})
-        assert isinstance(records, list)
+        assert len(records) == 1
+        assert records[0]["kind"] == "traces"
+        assert records[0]["value"] == 1
 
 
 class TestSigNozConnector:
