@@ -596,10 +596,12 @@ retrieve a cached answer. A bounded run has these stages:
 1. **Scope and preregister.** Record the question, domains, synonyms, date
    horizon, source classes, inclusion/exclusion criteria, risk, expected output,
    and hard budgets before search results are visible.
-2. **Refresh the source registry.** Probe API version, supported operations,
-   authentication, terms, robots behavior, rate headers, schema fingerprint,
-   correction/retraction support, and fallback health. A missing source becomes
-   a visible coverage gap.
+2. **Refresh and extend the source registry.** Probe known adapters for API
+   version, supported operations, authentication, terms, robots behavior, rate
+   headers, schema fingerprint, correction/retraction support, and fallback
+   health. Follow typed links, citations, repository metadata, standards
+   registries, and visible coverage gaps to candidate sources, but keep them in a
+   quarantine ledger until the onboarding protocol in section 12.7 succeeds.
 3. **Search broadly and independently.** Query primary papers, standards,
    official documentation, canonical repositories and issues, practitioner
    forums, archives, and local Gludd history. Preserve every query, page/cursor,
@@ -767,6 +769,64 @@ agenda candidates. It cannot directly update live memory or behavior. A memory
 candidate is deduplicated, scoped, expiring, evidence-linked, poisoning-scanned,
 evaluated on old/new/transfer/adversarial cases, and promoted through the same
 human-authorized champion/challenger pointer used for other capabilities.
+
+### 12.7 Autonomous discovery of new Internet sources and lifecycle closure
+
+A living expert cannot rely on a permanently curated URL list. It must detect
+new source types and endpoints while preserving the distinction between
+**discovery**, **access authorization**, **evidence admission**, and **live
+promotion**. The following primary standards support interoperable discovery,
+but none makes a discovered target trustworthy:
+
+| Resource | Date/type | Design evidence and boundary |
+|---|---:|---|
+| [RFC 8288 Web Linking](https://www.rfc-editor.org/rfc/rfc8288) | 2017/standard | Typed relations expose connections among resources and service descriptions; a link is a discovery lead, not authority or proof |
+| [OpenAPI Specification](https://spec.openapis.org/oas/latest.html) | Living standard | A language-neutral HTTP interface description exposes operations and schemas for contract probing; it does not authorize credentials or establish source quality |
+| [OAI-PMH](https://www.openarchives.org/OAI/openarchivesprotocol.html) | 2002/2015 protocol | `Identify`, metadata formats, datestamps, deleted records, resumable harvesting, and optional `friends` records support scholarly-repository identification and discovery |
+| [Robots Exclusion Protocol, RFC 9309](https://www.rfc-editor.org/rfc/rfc9309) | 2022/standard | Automated clients must honor applicable rules, bounded redirects, unreachable fail-closed behavior, cache limits, and untrusted parser input; robots is not access authorization |
+| [Sitemaps protocol](https://www.sitemaps.org/protocol.html) | Living protocol | A site can enumerate canonical URLs and modification hints; timestamps are hints to validate, not truth or permission |
+| [FAIR Guiding Principles](https://www.nature.com/articles/sdata201618) | 2016/paper | Research objects should be findable, accessible, interoperable, and reusable by people and machines; FAIR guides stewardship but does not replace license, privacy, or security review |
+
+An autonomous discovery pass begins from a registered coverage gap, typed link,
+citation/reference graph, API or repository description, canonical issue/forum
+reference, standards registry, archive relationship, or source mentioned by an
+accepted paper. It resolves owner and canonical identity before scoring unique
+coverage. Mirrors, forks, syndicated copies, search wrappers, and shared upstream
+datasets remain one independence group rather than artificial corroboration.
+
+Every candidate gets a reproducible manifest containing discovery path; owner
+and canonical identity; source class and coverage claim; supported content,
+identifiers, queries, pagination, versions, deletions, corrections, and
+retractions; interface/schema/parser fingerprints; authentication and cost;
+terms, license, robots, privacy, retention, and training permission; rate and
+concurrency observations; freshness and availability; archive/fallback plan;
+network/redirect/TLS/content-type/size checks; prompt-injection and supply-chain
+risk; and the exact policy and probes used. Unknown or ambiguous fields remain
+unknown and block admission where policy requires certainty.
+
+Discovery must never create an account or secret, install executable content,
+extend an allowlist, accept terms, or grant a capability. Safe public probes run
+in a namespaced sandbox with SSRF, redirect, size, type, timeout, and rate limits.
+The candidate adapter then passes deterministic contract fixtures, security
+review, shadow/dual-read comparison, identity and pagination reconciliation, and
+human source-policy approval. Only a versioned candidate registry may be
+promoted by atomic pointer; the previous registry remains active and rollback
+ready throughout.
+
+The complete research cycle may start without a live user question on a
+registered schedule or approved event: source/standard/library change, stale
+coverage, repeated Gludd failure, evaluation/outcome regression, or a new
+issue/topic/idea signal. It remains idempotent, observable, bounded, checkpointed,
+and subordinate to release/production reservations. Its terminal output is
+evidence, a gap/agenda item, candidate source, or expert/Gludd proposal—not an
+accepted agenda, live edit, new authority, or promotion.
+
+Finally, source registries, knowledge snapshots, memories, collections, roles,
+skills, core/config/schema/API changes, model adapters, routers, and evaluation
+assets need one shared candidate state machine. Immutable dependency bundles are
+evaluated, approved, shadowed, canaried, promoted, and rolled back together.
+This closes the loop without allowing a model to reinterpret “improve itself” as
+permission to change policy, tests, evaluators, capabilities, or live state.
 
 ## 13. Interpretability and scientific diagnosis
 
@@ -1072,6 +1132,8 @@ systems.
 | Evidence-linked gap ranking beats popularity ranking | Blinded human review and executed minimum experiments; compare falsifiability, feasibility, information gain, downstream lift, and duplicate rate |
 | Explicit negative-evidence search changes conclusions safely | Paired reviews with identical positive-source budgets; measure contradiction/retraction/null-result recall and inappropriate confidence reduction |
 | Role/skill proposal generation improves the expert collection | Frozen capability suite plus unseen transfer tasks, safety/resource gates, human review burden, and successful rollback rehearsal |
+| Autonomous source discovery expands useful independent coverage safely | Time-sliced hidden-source replay; measure discovery lead time, unique accepted coverage, duplicate/mirror rate, policy/security rejection recall, operator burden, and lossless registry rollback |
+| Unattended research produces useful Gludd/expert improvements without release interference | Event/schedule replay with no user prompt; measure novel reproducible findings, proposal acceptance/outcomes, duplicate spend, bounded-resource adherence, release reservation latency, and unchanged champion state before approval |
 | Atomic citation gating reduces unsupported synthesis | Blinded claim-level support/completeness/independence evaluation with locator, retraction, and temporal adversarial cases |
 | Candidate knowledge snapshots reduce stale or mixed-version answers | Concurrent update/query and as-of replay tests over insert/update/delete/retraction/parser/embedding changes |
 | Exposure-aware outcome learning beats naive success copying | Randomized or identified logged replay; compare causal calibration, false learning, feedback amplification, transfer, and rollback |
@@ -1088,6 +1150,9 @@ Each ingested source record must store:
 - parser and parser version;
 - API/schema version, supported operations, rate-policy observation, pagination
   cursor/watermark, and health-probe result;
+- discovery path, candidate/champion lifecycle state, owner/canonical identity,
+  independence group, unique coverage claim, robots result, security probe, and
+  required source-policy/capability approval;
 - claims/evidence spans derived from the source;
 - citations and contradictory evidence;
 - screening disposition, exclusion reason, and negative/null/failed-replication
@@ -1109,12 +1174,16 @@ Each refresh is idempotent and resumable by source watermark. Registry changes
 first run in shadow against contract fixtures; an API/version migration is
 promoted only after identity, pagination, correction/retraction, rate-limit, and
 fallback behavior match the prior accepted contract or an approved migration.
+Newly discovered sources remain in a separate candidate ledger and cannot be
+queried as approved evidence until source-policy approval and the same
+shadow/reconciliation/pointer protocol complete.
 
 ## 21. Conclusion
 
 The research does not support building a static encyclopedia prompt or a
 self-editing model. It supports an evidence-oriented expert system with typed
-roles, task-specific tools, calibrated uncertainty, reproducible experiments,
+roles, autonomous but bounded discovery, candidate-source onboarding,
+task-specific tools, calibrated uncertainty, reproducible experiments,
 independent evaluation, least privilege, and reversible champion/challenger
 rollout. The companion specification converts that conclusion into stable Gludd
 feature IDs, acceptance tests, rollout phases, and implementation seams.

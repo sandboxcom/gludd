@@ -144,6 +144,7 @@ collections/ansible_collections/general_ludd/ml_ai_expert/
 ├── roles/
 │   ├── expert_orchestrate/
 │   ├── horizon_scan/
+│   ├── source_discover/
 │   ├── web_research/
 │   ├── literature_research/
 │   ├── gap_analyze/
@@ -186,6 +187,7 @@ budget, network destination, promotion right, or secret.
 |---|---|---|---|
 | `expert_orchestrate` | Question, project, user constraints | Bounded role DAG and answer envelope | Registry read and dispatch only |
 | `horizon_scan` | Versioned scope, source registry, watermark, budget | New/changed signal records and coverage report | Approved public source read; signal-ledger append only |
+| `source_discover` | Coverage gaps, typed links, citations, and approved discovery surfaces | Candidate-source manifests and probe reports | Approved public discovery/probe access; candidate ledger append only |
 | `web_research` | Query plan and source policy | Query ledger and evidence IDs | Search/fetch approved public sources |
 | `literature_research` | Concepts, identifiers, date/venue rules | Deduplicated evidence graph and review log | Scholarly metadata/full-text adapters |
 | `gap_analyze` | Claim/evidence graph, outcomes, unresolved questions | Evidence-linked gap map and uncertainty report | Read-only evidence/outcome access |
@@ -224,6 +226,7 @@ initial skill set is:
 | `ml_question_triage` | Domain/risk/input clarification | `expert_orchestrate`, `safety_review` |
 | `ml_method_select` | Baselines, assumptions, method cards | `expert_orchestrate`, `math_solve` |
 | `horizon_scanning` | Reproducible weak-signal discovery, deduplication, and change detection | `horizon_scan` |
+| `source_onboarding` | Discover, identify, probe, compare, quarantine, and evaluate candidate Internet sources | `source_discover`, `horizon_scan`, `safety_review` |
 | `web_evidence_search` | Reproducible query/source/snowballing protocol | Research roles |
 | `deep_research_replay` | Search, fetch, screening, extraction, contradiction, and synthesis ledger | Research roles, `independent_verify` |
 | `knowledge_gap_map` | Unsupported/contradicted/stale claim and outcome-gap analysis | `gap_analyze`, `research_agenda` |
@@ -380,6 +383,17 @@ label, supported operations, authentication, terms/license, robots behavior,
 rate/concurrency limits, cache policy, freshness, maximum object size, parser,
 health state, and fallback group.
 
+An Internet resource absent from the champion registry is a **candidate source**,
+not an approved source. Discovery writes a separate candidate manifest containing
+its discovery path, canonical owner/identity, source class, unique coverage claim,
+typed service or repository metadata, authentication needs, terms/license,
+robots result, privacy/retention constraints, rate/cost limits, parser/schema
+fingerprint, correction/retraction support, independence group, security probes,
+fallback/archive plan, and health evidence. Candidate discovery cannot mint a
+secret, create an account, install executable code, expand an allowlist, or grant
+a network/tool capability. Admission follows `MLCONT.29` and registry promotion
+follows `MLCONT.8`.
+
 | Need | Primary | Ordered fallback |
 |---|---|---|
 | General web discovery | Project SearXNG | Approved search API; named-site search; no implicit HTML scraping |
@@ -404,6 +418,7 @@ Defaults are safe ceilings, not utilization targets:
 |---|---|
 | `research_standard` | 12 queries, 40 documents, 2 concurrent fetches, 32k admitted tokens, 15 minutes |
 | `horizon_scan` | 60 queries, 500 metadata records, 100 full texts, 2 concurrent fetches, 128k admitted tokens, 60 minutes |
+| `source_onboarding` | 50 candidates, 10 bounded probes per candidate, 2 concurrent fetches, 60 minutes, no secret/account/package mutation |
 | `knowledge_refresh` | 100k source revisions or 2 GiB input, 2 workers, 4 GiB RAM, 30 minutes, candidate namespace only |
 | `outcome_analysis` | 100k outcome records, 2 CPU cores, 4 GiB RAM, 30 minutes, no external network or accelerator |
 | `retrieval_build` | 100k records or 2 GiB input, 2 workers, 4 GiB RAM, 30 minutes |
@@ -2169,6 +2184,93 @@ produce a typed alert with lineage and uncertainty; a green aggregate cannot
 hide a failed required slice; the audit is read-only and cannot auto-relax its
 SLO, change weights, retrain, promote, or suppress negative results.
 
+### MLCONT.29 — Autonomous new Internet source discovery and onboarding
+
+**Status:** Not implemented
+
+**Contract:** Discover sources that are absent from the champion registry by
+following typed Web links, API descriptions, repository metadata, scholarly
+citations, archive/repository discovery records, standards registries, canonical
+issue/forum references, and explicit coverage gaps. Normalize each result into
+the section 3.5 candidate-source manifest, resolve mirrors and ownership, and
+measure unique coverage, authority, independence, freshness, correction support,
+terms/license, robots policy, privacy, authentication, rate/cost limits,
+schema/parser stability, availability, archival fallback, SSRF/redirect/TLS
+risk, untrusted-content risk, and required capabilities. A candidate remains
+quarantined until sandboxed contract tests, shadow/dual-read comparison,
+security and policy review, and explicit human approval succeed; only then may
+`MLCONT.8` atomically promote the new registry revision. Discovery never grants
+network or tool authority, creates an account or secret, installs source code, or
+changes live source policy.
+
+**Acceptance:** Fixtures discover a useful OAI-PMH/OpenAPI source and distinguish
+it from a mirror, fork, search-result wrapper, paywall, abandoned endpoint, and
+already registered source; robots denial, ambiguous terms/license, private-IP or
+redirect SSRF, broken TLS, malicious metadata/instructions, schema drift,
+pagination loss, 429, authentication request, and disappearing source remain
+quarantined with typed reasons. A candidate with genuinely independent coverage
+can reach human review through a reproducible discovery/probe ledger; denial,
+timeout, failed shadow comparison, or absent approval leaves the champion
+registry and active research unchanged.
+
+### MLCONT.30 — Unattended autonomous research and improvement cycle
+
+**Status:** Not implemented
+
+**Contract:** Run registered research scopes without a live user question on a
+versioned schedule or approved event trigger, including source/standard/library
+changes, recurring Gludd failures, evaluation or outcome regressions, stale
+coverage, and new issue/topic/idea signals. Each cycle preregisters scope,
+budgets, source classes, policy, stop conditions, and outputs; invokes
+`MLCONT.1`–`.7`, `.21`–`.23`, and `.29` as applicable; and may emit evidence,
+gaps, agenda items, candidate-source manifests, or Gludd/expert improvement
+proposals. Triggers and deliveries are deduplicated and idempotent. The cycle is
+namespaced, checkpointed, heartbeat-visible, pausable, release-aware, and bounded
+by `MLCONT.19`; it cannot autonomously accept its agenda, implement a candidate,
+alter a champion, expand authority, or promote any result.
+
+**Acceptance:** An end-to-end time/event replay with no user prompt discovers one
+new topic, one recurring issue, one falsifiable idea, and one previously unknown
+Internet source; performs reproducible deep and negative-evidence research;
+deduplicates a repeated trigger; and produces reviewable source, expert, and
+Gludd proposals with complete provenance. Empty scans remain valid negative
+evidence rather than invented findings. Release contention pauses and resumes
+from the same checkpoint without duplicate spend; cancellation, restart, stale
+trigger, unavailable sources, insufficient evidence, and lack of human approval
+leave every champion pointer unchanged.
+
+### MLCONT.31 — Unified artifact promotion, dependency bundle, and rollback
+
+**Status:** Not implemented
+
+**Contract:** Apply one explicit transition protocol to source-registry adapters,
+knowledge snapshots, procedure/outcome memories, collections, roles, skills,
+Gludd core/config/schema/API changes, model adapters, routers, and evaluation
+assets:
+`proposed -> human_accepted -> materialized -> evaluated -> human_approved ->
+shadow -> canary -> champion`, with terminal `rejected`, `rolled_back`, and
+`retired` states. Every transition binds immutable artifact, dependency,
+policy, capability, evaluation, approval, compatibility, migration, and rollback
+digests. A multi-artifact improvement is one compatible dependency bundle:
+prepare and evaluate all members beside their champions, then use versioned
+compare-and-swap pointers or an atomic manifest pointer so partial promotion
+cannot expose a mixed generation. In-flight work leases its admitted bundle.
+Automatic rollback may select only a preapproved last-known-good bundle on a
+declared breach; policy, evaluator, holdout, capability, or approval changes
+always require their own human authority and cannot ride another artifact's
+approval.
+
+**Acceptance:** A table-driven conformance suite exercises every artifact class
+and every legal/illegal transition, including missing or mismatched digests,
+stale approval, skipped shadow/canary, capability smuggling, policy/holdout
+mutation, partial materialization, failed migration, concurrent promotion,
+stale compare-and-swap, mixed bundle revisions, in-flight lease, canary breach,
+control-plane restart, rollback dependency ordering, and retirement. No failing
+member changes an authoritative pointer; successful promotion exposes exactly
+one compatible generation; rollback restores the complete last-known-good
+bundle within its recovery objective while preserving provenance and rejected
+evidence.
+
 ## 9. Cross-cutting acceptance gates
 
 An implementation unit is complete only when all applicable gates below pass.
@@ -2194,6 +2296,11 @@ An implementation unit is complete only when all applicable gates below pass.
   groups, temporal validity, and evaluator uncertainty.
 - Evaluate outcome-learning candidates against no-change and champion baselines
   with exposure/assignment and missing-outcome assumptions preserved.
+- Evaluate candidate Internet sources for unique coverage, owner identity,
+  independence, policy conformance, schema correctness, adversarial safety, and
+  graceful loss before registry admission.
+- Run the artifact-transition conformance matrix for every newly promotable
+  artifact class and every multi-artifact dependency bundle.
 
 ### 9.2 Security and privacy
 
@@ -2209,6 +2316,8 @@ An implementation unit is complete only when all applicable gates below pass.
   evaluators, approvals, promotion state, or their own resource accounting.
 - Forum/practitioner content, outcome records, and candidate memories remain
   untrusted data subject to poisoning, privacy, consent, and retention policy.
+- New-source discovery cannot create accounts/secrets, install code, expand
+  destinations/capabilities, or convert discovered metadata into instructions.
 
 ### 9.3 Zero-downtime delivery
 
@@ -2223,6 +2332,9 @@ An implementation unit is complete only when all applicable gates below pass.
 - Knowledge snapshots pin in-flight requests and atomically reconcile source,
   temporal, tombstone, index, graph, cache, citation, and deletion state before
   pointer movement.
+- Every mutable artifact class uses the `MLCONT.31` state machine; compatible
+  multi-artifact changes promote and roll back as one immutable dependency
+  bundle, never as independently visible partial revisions.
 
 ### 9.4 Quality and coverage
 
@@ -2279,6 +2391,9 @@ An implementation unit is complete only when all applicable gates below pass.
 | Outcome attribution lacks overlap or identifiability | Report association/unknown with assumptions; do not create a learned live update |
 | Candidate memory helps one slice but forgets or harms another | Reject promotion, retain counterevidence, and keep champion memory pointer |
 | Role/skill candidate changes capability under content approval | Reject as authorization mismatch and open an auditable security finding |
+| Discovered source lacks clear owner, terms, robots permission, or safe network path | Quarantine the candidate; do not expand the registry, credentials, or allowlist |
+| Autonomous cycle overlaps, repeats, or competes with release work | Deduplicate or checkpoint/pause it; preserve provenance and never double spend or delay the release reservation |
+| One member of a promotion dependency bundle fails | Leave all authoritative pointers on the prior compatible generation and retain the failed candidate evidence |
 
 ## 11. Delivery order
 
@@ -2294,9 +2409,9 @@ feature branches in this order:
    provenance, and evaluation (`MLRET.1`–`.10`, `MLAI.4`–`.6`, `MLCORE.3`,
     `.4`, `.11`);
 4. source-registry refresh, deep-research replay, signal/gap/negative-evidence
-   ledgers, citation/temporal/forum evaluation, candidate knowledge snapshots,
-   bounded scheduling, and loop-health audit (`MLCONT.1`–`.8`, `.15`, `.16`,
-   `.19`, `.21`–`.24`, `.28`);
+   ledgers, new-source onboarding, citation/temporal/forum evaluation, candidate
+   knowledge snapshots, unattended bounded scheduling, and loop-health audit
+   (`MLCONT.1`–`.8`, `.15`, `.16`, `.19`, `.21`–`.24`, `.28`–`.30`);
 5. collection intake, decomposition, synthesis, calibration, tools, verifier,
    routing, and reporting (`MLAI.1`–`.3`, `.7`–`.15`);
 6. private-reasoning boundary, exact tools, mathematics, formal proof, and
@@ -2305,8 +2420,8 @@ feature branches in this order:
    provenance, and evaluation (`MLMEDIA.1`–`.8`);
 8. human-governed agendas, core/collection/role/skill proposal generation,
    isolated candidate materialization, outcome attribution, candidate memory,
-   progressive role/skill rollout, and authority separation (`MLCONT.7`,
-   `.9`–`.11`, `.13`, `.20`, `.25`–`.27`);
+   progressive role/skill rollout, unified artifact lifecycle, and authority
+   separation (`MLCONT.7`, `.9`–`.11`, `.13`, `.20`, `.25`–`.27`, `.31`);
 9. immutable experiment/outcome infrastructure, isolated workspace, and PEFT
    artifact/training foundations (`MLSI.1`–`.5`, `MLCORE.5`–`.7`, `.13`–`.15`,
    `MLPEFT.1`–`.5`);
@@ -2338,6 +2453,9 @@ For each atomic ID, its implementation record MUST contain:
 - atomic citation, temporal/as-of, forum-signal, knowledge reconciliation,
   exposure/outcome attribution, memory-forgetting, role/skill canary, and
   continual-loop SLO evidence where those contracts apply;
+- candidate-source discovery/probe/onboarding, unattended-cycle replay, and
+  artifact-class transition/dependency-bundle conformance evidence where those
+  contracts apply;
 - rollout/rollback evidence when behavior can affect a running system;
 - documentation and source-registry changes;
 - commit, branch, CI run, and artifact digests; and
