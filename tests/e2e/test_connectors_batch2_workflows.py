@@ -29,8 +29,13 @@ def _make_transport(
         def __init__(self) -> None:
             self.calls: list[dict[str, object]] = []
 
-        def __call__(self, url: str, **kwargs: object) -> tuple[int, object]:
-            self.calls.append({"url": url, "kwargs": kwargs})
+        def __call__(
+            self,
+            url: str,
+            headers: dict[str, str] | None = None,
+            **kwargs: object,
+        ) -> tuple[int, object]:
+            self.calls.append({"url": url, "headers": headers, "kwargs": kwargs})
             if raise_err:
                 raise raise_err
             return status, body

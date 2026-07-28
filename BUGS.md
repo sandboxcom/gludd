@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) CI connector callback omitted positional headers
+
+- **What**: The focused connector batch stopped in Jenkins health because the shared callable transport accepted only the URL positionally, while Jenkins and CircleCI pass both URL and headers according to their callback contract.
+- **Root cause**: The helper's `**kwargs` suggested generality but could not receive a second positional argument. This prevented every canned Jenkins and CircleCI response from being reached; fail-soft health paths obscured the signature defect by returning unhealthy results.
+- **Fix applied**: The shared callback now accepts and records the positional headers mapping in addition to URL and optional keywords. Focused Jenkins and CircleCI workflows consequently execute their intended status, normalization, filtering, auth, and error paths.
+- **Long-lived user evidence**: Python request-mocking users have encountered this exact mismatch for more than a decade and resolve it by giving the fake the same positional and keyword surface as the original method ([Stack Overflow discussion](https://stackoverflow.com/questions/35732487/how-do-i-mock-a-method-that-uses-requests-get-in-my-class)).
+- **Lesson**: `**kwargs` does not make a fake compatible with positional parameters. Callback doubles must preserve argument position as well as names and types.
+
 ### 2026-07-28 — (resolved) PagerDuty error doubles rejected the required URL argument
 
 - **What**: The focused connector batch stopped in PagerDuty's HTTP-error query test because the local transport raised `TypeError` before it could return the intended 500 response.
