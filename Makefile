@@ -4305,17 +4305,20 @@ _merge-strategy-guard:
 	fi
 	@echo "_merge-strategy-guard: PASS"
 
-# AA028 — _stash-leak-guard: checks stash depth after commit operations.
-# Agent's git stash stack grew unbounded without popping. Stashed changes
-# must be popped or committed immediately. If stash size > 0 after a commit
-# that auto-stashed pre-commit fixes, this guard forces attention.
+# AA028 — _stash-leak-guard: BLOCKING check for stash entries after commit.
+# Any stash entry means uncommitted changes were stashed and never restored.
+# This caused merge conflicts (2026-07-28 incident: 3 accumulated stashes
+# produced conflicts in engine.py + test_escalation_no_self_approve.py).
+# BLOCKING: deny commit when any stash entry exists. Auto-pop if clean.
 _stash-leak-guard:
 	@STASH_COUNT=$$(git stash list 2>/dev/null | wc -l | tr -d ' '); \
 	if [ "$$STASH_COUNT" -gt 0 ]; then \
-		echo "STASH-LEAK: $$STASH_COUNT stash entries exist. Pre-commit hooks may have stashed changes without popping."; \
-		echo "Run 'make git-stash-pop' to restore stashed work. See AA028."; \
-		if [ "$$STASH_COUNT" -gt 3 ] && [ "$$FORCE" != "1" ]; then \
-			echo "BLOCKED: >3 stash entries — must pop before continuing."; \
+		if [ "$$FORCE" = "1" ]; then \
+			echo "STASH-LEAK (FORCED): $$STASH_COUNT stash entries exist — FORCE=1 bypass. Run 'make git-stash-pop'. See AA028."; \
+		else \
+			echo "STASH-LEAK BLOCKED: $$STASH_COUNT stash entries exist — pre-commit hooks stashed changes without popping."; \
+			echo "This caused merge conflicts (2026-07-28: engine.py + test_escalation_no_self_approve.py)."; \
+			echo "Run 'make git-stash-pop' to restore stashed work, then re-commit. See AA028."; \
 			exit 1; \
 		fi; \
 	fi
