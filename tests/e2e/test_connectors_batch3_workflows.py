@@ -1371,7 +1371,7 @@ class TestAwsConfigTrailConnector:
 
         src = AwsConfigTrailSource({"region": "us-east-1"}, aws_client=_client)
         result = src.health()
-        assert isinstance(result, dict)
+        assert result["ok"] is True
 
     def test_query_returns_records(self):
         from general_ludd.connectors.aws_config_trail import AwsConfigTrailSource
@@ -1385,15 +1385,20 @@ class TestAwsConfigTrailConnector:
                             "EventId": "evt-1",
                             "EventName": "RunInstances",
                             "EventTime": "2025-01-01T00:00:00Z",
+                            "Username": "alice",
+                            "EventSource": "ec2.amazonaws.com",
+                            "AwsRegion": "us-east-1",
                         }
                     ]
                 },
             )
 
         src = AwsConfigTrailSource({"region": "us-east-1"}, aws_client=_client)
-        records = src.query({})
-        assert isinstance(records, list)
-        assert len(records) >= 1
+        records = src.query({"mode": "cloudtrail"})
+        assert len(records) == 1
+        assert records[0]["message"] == "RunInstances alice"
+        assert records[0]["level_or_status"] == "audit"
+        assert records[0]["labels"]["EventSource"] == "ec2.amazonaws.com"
 
 
 # ============================================================================

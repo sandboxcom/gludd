@@ -147,6 +147,38 @@ class _Client(Protocol):
 
 # A factory turning a service name into a client (or None when boto3 missing).
 ClientFactory = Callable[[str], _Client | None]
+AwsClientCallback = Callable[..., object]
+
+
+class _CallbackClient:
+    """Expose AWS method names over the shared callback injection contract."""
+
+    def __init__(self, service_name: str, callback: AwsClientCallback) -> None:
+        self._service_name = service_name
+        self._callback = callback
+
+    def __getattr__(self, method: str) -> Any:
+        def _call(**kwargs: object) -> object:
+            result = self._callback(
+                method,
+                service_name=self._service_name,
+                **kwargs,
+            )
+            if isinstance(result, tuple) and len(result) == 2:
+                status, body = result
+                if int(status) >= 400:
+                    raise RuntimeError(f"AWS callback failed: status {status}")
+                return body
+            return result
+
+        return _call
+
+
+def _factory_from_callback(callback: AwsClientCallback) -> ClientFactory:
+    def _factory(service_name: str) -> _Client:
+        return _CallbackClient(service_name, callback)
+
+    return _factory
 
 
 def _default_factory(region: str | None, timeout: float) -> ClientFactory | None:
@@ -180,7 +212,11 @@ class AwsConfigTrailSource:
     KIND = "infra"
     name = "aws_config_trail"
 
-    def __init__(self, config: Mapping[str, object]) -> None:
+    def __init__(
+        self,
+        config: Mapping[str, object],
+        aws_client: AwsClientCallback | None = None,
+    ) -> None:
         self._config: dict[str, object] = dict(config)
         region_raw = config.get("region")
         self._region: str | None = region_raw if isinstance(region_raw, str) else None
@@ -197,7 +233,11 @@ class AwsConfigTrailSource:
             else default_resource_type_raw
         )
         # Injectable factory wins; otherwise attempt a guarded boto3 factory.
-        if "client_factory" in config:
+        if aws_client is not None and "client_factory" in config:
+            raise ValueError("provide aws_client or client_factory, not both")
+        if aws_client is not None:
+            self._client_factory = _factory_from_callback(aws_client)
+        elif "client_factory" in config:
             factory_val = config["client_factory"]
             self._client_factory: ClientFactory | None = (
                 factory_val if callable(factory_val) else None
