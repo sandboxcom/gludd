@@ -5145,6 +5145,7 @@ tf-init: tf-cache-setup
 # state-free validation path.
 tf-init-local: tf-cache-setup
 	@case "$(STACK)" in stacks/azure-vllm|stacks/azure-llamacpp) ;; *) echo "Usage: make tf-init-local STACK=stacks/azure-vllm|stacks/azure-llamacpp"; exit 2;; esac
+	@$(PYTHON) scripts/clean_terraform_test_artifacts.py "$(TF_ROOT)/$(STACK)"
 	@rm -rf "$(TF_ROOT)/$(STACK)/.terraform"
 	@cd "$(TF_ROOT)/$(STACK)" && TF_PLUGIN_CACHE_DIR="$(TF_PLUGIN_CACHE)" terraform init -backend=false
 

@@ -29,6 +29,7 @@ def test_makefile_has_state_free_azure_stack_initialization() -> None:
     assert "tf-init-local:" in makefile
     assert "terraform init -backend=false" in makefile
     assert "stacks/azure-vllm|stacks/azure-llamacpp" in makefile
+    assert 'scripts/clean_terraform_test_artifacts.py "$(TF_ROOT)/$(STACK)"' in makefile
 
 
 @pytest.mark.parametrize("stack_name", ["azure-vllm", "azure-llamacpp"])
