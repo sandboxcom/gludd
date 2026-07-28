@@ -84,7 +84,7 @@ def compute_projected_cost_usd(gateway: _GatewayProfile | None, budget_guard: ob
     return float(_static(model, proj_in, proj_out))
 
 
-def budget_pre_check(guard: object, projected_cost: float = 0.0) -> str | None:
+def budget_pre_check(guard: Any, projected_cost: float = 0.0) -> str | None:
     """Run a non-mutating budget pre-check against *guard*.
 
     Args:

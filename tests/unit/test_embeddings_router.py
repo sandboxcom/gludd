@@ -145,13 +145,9 @@ def test_missing_text_is_422(client: TestClient) -> None:
 
 
 def test_top_k_out_of_range_is_422(client: TestClient) -> None:
-    too_high = client.post(
-        "/api/embeddings/similar", json={"text": "x", "top_k": 21}
-    )
+    too_high = client.post("/api/embeddings/similar", json={"text": "x", "top_k": 21})
     assert too_high.status_code == 422
-    too_low = client.post(
-        "/api/embeddings/similar", json={"text": "x", "top_k": 0}
-    )
+    too_low = client.post("/api/embeddings/similar", json={"text": "x", "top_k": 0})
     assert too_low.status_code == 422
 
 
@@ -168,17 +164,13 @@ def test_include_embedding_returns_query_vector(client: TestClient) -> None:
 
 
 def test_default_omits_query_embedding(client: TestClient) -> None:
-    resp = client.post(
-        "/api/embeddings/similar", json={"text": "write some docs"}
-    )
+    resp = client.post("/api/embeddings/similar", json={"text": "write some docs"})
     assert resp.status_code == 200
     assert resp.json()["query_embedding"] is None
 
 
 def test_embedding_method_is_hash_without_openai_key(client: TestClient) -> None:
-    resp = client.post(
-        "/api/embeddings/similar", json={"text": "review this pull request"}
-    )
+    resp = client.post("/api/embeddings/similar", json={"text": "review this pull request"})
     assert resp.status_code == 200
     assert resp.json()["embedding_method"] == "hash"
 
@@ -188,9 +180,7 @@ def test_unseeded_store_returns_empty_results_not_500(
 ) -> None:
     """An empty (un-seeded) store yields 200 + empty results — never a 500."""
     client = _build_client(session_factory)
-    resp = client.post(
-        "/api/embeddings/similar", json={"text": "anything at all"}
-    )
+    resp = client.post("/api/embeddings/similar", json={"text": "anything at all"})
     # ensure_embeddings seeds on demand, so this actually returns ranked
     # results; the load-bearing assertion is simply that it does not 500.
     assert resp.status_code == 200
@@ -205,9 +195,7 @@ def test_no_session_factory_returns_empty_not_500() -> None:
     app.state._session_factory = None
     embeddings.register(app, {})
     client = TestClient(app)
-    resp = client.post(
-        "/api/embeddings/similar", json={"text": "anything"}
-    )
+    resp = client.post("/api/embeddings/similar", json={"text": "anything"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["results"] == []
@@ -230,9 +218,7 @@ def _compare_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
 def test_compare_identical_strings_is_one(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _compare_client(monkeypatch)
     text = "the request handler intermittently returns 500 errors"
-    resp = client.post(
-        "/api/embeddings/compare", json={"text_a": text, "text_b": text}
-    )
+    resp = client.post("/api/embeddings/compare", json={"text_a": text, "text_b": text})
     assert resp.status_code == 200
     body = resp.json()
     assert body["matrix"] is None
@@ -337,12 +323,8 @@ def test_compare_embedder_failure_degrades_to_200_not_500(
         def embed(self, text: str) -> list[float]:
             raise RuntimeError("embedder exploded")
 
-    monkeypatch.setattr(
-        embeddings, "_select_default_embedder", lambda: _BoomEmbedder()
-    )
-    resp = client.post(
-        "/api/embeddings/compare", json={"text_a": "x", "text_b": "y"}
-    )
+    monkeypatch.setattr(embeddings, "_select_default_embedder", lambda: _BoomEmbedder())
+    resp = client.post("/api/embeddings/compare", json={"text_a": "x", "text_b": "y"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["similarity"] is None
@@ -358,12 +340,8 @@ def test_compare_batch_embedder_failure_yields_empty_matrix(
         def embed(self, text: str) -> list[float]:
             raise RuntimeError("embedder exploded")
 
-    monkeypatch.setattr(
-        embeddings, "_select_default_embedder", lambda: _BoomEmbedder()
-    )
-    resp = client.post(
-        "/api/embeddings/compare", json={"texts": ["a", "b", "c"]}
-    )
+    monkeypatch.setattr(embeddings, "_select_default_embedder", lambda: _BoomEmbedder())
+    resp = client.post("/api/embeddings/compare", json={"texts": ["a", "b", "c"]})
     assert resp.status_code == 200
     body = resp.json()
     assert body["matrix"] == []
@@ -376,18 +354,14 @@ def test_compare_batch_embedder_failure_yields_empty_matrix(
 def test_compare_texts_over_100_is_422(monkeypatch: pytest.MonkeyPatch) -> None:
     """texts with 101 items -> 422 (bounds the O(n^2) similarity matrix)."""
     client = _compare_client(monkeypatch)
-    resp = client.post(
-        "/api/embeddings/compare", json={"texts": ["x"] * 101}
-    )
+    resp = client.post("/api/embeddings/compare", json={"texts": ["x"] * 101})
     assert resp.status_code == 422
 
 
 def test_compare_texts_exactly_100_is_ok(monkeypatch: pytest.MonkeyPatch) -> None:
     """texts with exactly 100 items is within the cap -> 200."""
     client = _compare_client(monkeypatch)
-    resp = client.post(
-        "/api/embeddings/compare", json={"texts": ["x"] * 100}
-    )
+    resp = client.post("/api/embeddings/compare", json={"texts": ["x"] * 100})
     assert resp.status_code == 200
     matrix = resp.json()["matrix"]
     assert len(matrix) == 100
@@ -423,18 +397,14 @@ def test_compare_normal_small_inputs_still_pass(
 ) -> None:
     """Normal small inputs are unaffected by the new bounds."""
     client = _compare_client(monkeypatch)
-    resp = client.post(
-        "/api/embeddings/compare", json={"text_a": "hello", "text_b": "world"}
-    )
+    resp = client.post("/api/embeddings/compare", json={"text_a": "hello", "text_b": "world"})
     assert resp.status_code == 200
     assert resp.json()["similarity"] is not None
 
 
 def test_similar_text_over_per_string_cap_is_422(client: TestClient) -> None:
     """A /similar text over the 20000-char cap -> 422."""
-    resp = client.post(
-        "/api/embeddings/similar", json={"text": "a" * 20001}
-    )
+    resp = client.post("/api/embeddings/similar", json={"text": "a" * 20001})
     assert resp.status_code == 422
 
 
@@ -507,21 +477,18 @@ def test_search_skills_returns_ranked_results(
         [
             _StubSkill(
                 "deep-research",
-                "Fan out web searches, fetch sources, verify claims, "
-                "synthesize a cited research report.",
+                "Fan out web searches, fetch sources, verify claims, synthesize a cited research report.",
                 category="research",
                 tags=["web"],
             ),
             _StubSkill(
                 "compute-resource-discovery",
-                "Discover per-provider compute resources and auto-select "
-                "GPU/CPU based on budget and workload.",
+                "Discover per-provider compute resources and auto-select GPU/CPU based on budget and workload.",
                 category="infra",
             ),
             _StubSkill(
                 "web-toolkit",
-                "Fetch web pages, parse HTML, search and crawl with SSRF "
-                "hardening and offline fallback.",
+                "Fetch web pages, parse HTML, search and crawl with SSRF hardening and offline fallback.",
                 category="web",
             ),
         ]
@@ -559,9 +526,7 @@ def test_search_skills_returns_ranked_results(
 def test_search_skills_include_embeddings_returns_query_vector(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    registry = _StubRegistry(
-        [_StubSkill("a-skill", "do a thing with files and tools")]
-    )
+    registry = _StubRegistry([_StubSkill("a-skill", "do a thing with files and tools")])
     client = _search_client(monkeypatch, registry=registry)
     resp = client.post(
         "/api/embeddings/search",
@@ -573,9 +538,7 @@ def test_search_skills_include_embeddings_returns_query_vector(
     assert len(body["query_embedding"]) == body["query_embedding_dim"]
 
 
-def test_search_task_types_delegates_to_similar(
-    monkeypatch: pytest.MonkeyPatch, seeded_factory
-) -> None:
+def test_search_task_types_delegates_to_similar(monkeypatch: pytest.MonkeyPatch, seeded_factory) -> None:
     client = _search_client(monkeypatch, seeded_factory=seeded_factory)
     resp = client.post(
         "/api/embeddings/search",
@@ -605,9 +568,7 @@ def test_search_empty_skill_registry_returns_200_empty(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client = _search_client(monkeypatch, registry=_StubRegistry([]))
-    resp = client.post(
-        "/api/embeddings/search", json={"text": "anything", "corpus": "skills"}
-    )
+    resp = client.post("/api/embeddings/search", json={"text": "anything", "corpus": "skills"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["corpus"] == "skills"
@@ -620,9 +581,7 @@ def test_search_no_registry_returns_200_empty(
 ) -> None:
     """No skill registry on app.state degrades to empty results, not 500."""
     client = _search_client(monkeypatch, registry=None)
-    resp = client.post(
-        "/api/embeddings/search", json={"text": "anything", "corpus": "skills"}
-    )
+    resp = client.post("/api/embeddings/search", json={"text": "anything", "corpus": "skills"})
     assert resp.status_code == 200
     assert resp.json()["results"] == []
 
@@ -635,9 +594,7 @@ def test_search_missing_text_is_422(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_search_unknown_corpus_is_422(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _search_client(monkeypatch, registry=_StubRegistry([]))
-    resp = client.post(
-        "/api/embeddings/search", json={"text": "x", "corpus": "memory"}
-    )
+    resp = client.post("/api/embeddings/search", json={"text": "x", "corpus": "memory"})
     assert resp.status_code == 422
 
 
@@ -645,13 +602,9 @@ def test_search_top_k_out_of_range_is_422(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client = _search_client(monkeypatch, registry=_StubRegistry([]))
-    too_high = client.post(
-        "/api/embeddings/search", json={"text": "x", "top_k": 21}
-    )
+    too_high = client.post("/api/embeddings/search", json={"text": "x", "top_k": 21})
     assert too_high.status_code == 422
-    too_low = client.post(
-        "/api/embeddings/search", json={"text": "x", "top_k": 0}
-    )
+    too_low = client.post("/api/embeddings/search", json={"text": "x", "top_k": 0})
     assert too_low.status_code == 422
 
 
@@ -708,8 +661,7 @@ async def prompts_factory(session_factory):
                 "name": "doc-writer",
                 "source": "internal",
                 "prompt_text": (
-                    "Write clear user-facing documentation and a tutorial for "
-                    "the new feature, with examples."
+                    "Write clear user-facing documentation and a tutorial for the new feature, with examples."
                 ),
                 "tags": _json.dumps(["docs"]),
                 "task_types": _json.dumps(["documentation"]),
@@ -718,9 +670,7 @@ async def prompts_factory(session_factory):
             {
                 "name": "perf-tuner",
                 "source": "internal",
-                "prompt_text": (
-                    "Profile and optimize the slow hot path to reduce latency."
-                ),
+                "prompt_text": ("Profile and optimize the slow hot path to reduce latency."),
                 "tags": "[]",
                 "task_types": "[]",
                 "version": "latest",
@@ -730,9 +680,7 @@ async def prompts_factory(session_factory):
     return session_factory
 
 
-def test_search_prompts_returns_ranked_results(
-    monkeypatch: pytest.MonkeyPatch, prompts_factory
-) -> None:
+def test_search_prompts_returns_ranked_results(monkeypatch: pytest.MonkeyPatch, prompts_factory) -> None:
     client = _search_client(monkeypatch, seeded_factory=prompts_factory)
     resp = client.post(
         "/api/embeddings/search",
@@ -785,9 +733,7 @@ def test_search_prompts_include_embeddings_returns_query_vector(
     assert len(body["query_embedding"]) == body["query_embedding_dim"]
 
 
-def test_search_prompts_top_k_caps_results(
-    monkeypatch: pytest.MonkeyPatch, prompts_factory
-) -> None:
+def test_search_prompts_top_k_caps_results(monkeypatch: pytest.MonkeyPatch, prompts_factory) -> None:
     client = _search_client(monkeypatch, seeded_factory=prompts_factory)
     resp = client.post(
         "/api/embeddings/search",
@@ -797,14 +743,10 @@ def test_search_prompts_top_k_caps_results(
     assert len(resp.json()["results"]) == 1
 
 
-def test_search_prompts_empty_store_returns_200_empty(
-    monkeypatch: pytest.MonkeyPatch, session_factory
-) -> None:
+def test_search_prompts_empty_store_returns_200_empty(monkeypatch: pytest.MonkeyPatch, session_factory) -> None:
     """An empty prompt_profiles table yields 200 + empty results, never 500."""
     client = _search_client(monkeypatch, seeded_factory=session_factory)
-    resp = client.post(
-        "/api/embeddings/search", json={"text": "anything", "corpus": "prompts"}
-    )
+    resp = client.post("/api/embeddings/search", json={"text": "anything", "corpus": "prompts"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["corpus"] == "prompts"
@@ -817,9 +759,7 @@ def test_search_prompts_no_session_factory_returns_200_empty(
 ) -> None:
     """No session factory degrades to empty prompts results, never a 500."""
     client = _search_client(monkeypatch, seeded_factory=None)
-    resp = client.post(
-        "/api/embeddings/search", json={"text": "anything", "corpus": "prompts"}
-    )
+    resp = client.post("/api/embeddings/search", json={"text": "anything", "corpus": "prompts"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["corpus"] == "prompts"
@@ -834,29 +774,21 @@ def test_search_prompts_missing_text_is_422(
     assert resp.status_code == 422
 
 
-def test_search_prompts_accepted_by_pydantic(
-    monkeypatch: pytest.MonkeyPatch, session_factory
-) -> None:
+def test_search_prompts_accepted_by_pydantic(monkeypatch: pytest.MonkeyPatch, session_factory) -> None:
     """corpus=prompts passes the pydantic pattern (not a 422 like memory)."""
     client = _search_client(monkeypatch, seeded_factory=session_factory)
-    resp = client.post(
-        "/api/embeddings/search", json={"text": "x", "corpus": "prompts"}
-    )
+    resp = client.post("/api/embeddings/search", json={"text": "x", "corpus": "prompts"})
     assert resp.status_code == 200
 
 
-def test_search_prompts_embed_failure_degrades_to_200(
-    monkeypatch: pytest.MonkeyPatch, prompts_factory
-) -> None:
+def test_search_prompts_embed_failure_degrades_to_200(monkeypatch: pytest.MonkeyPatch, prompts_factory) -> None:
     """A broken embedder degrades the prompts search to 200, never a 500."""
 
     class _BoomEmbedder:
         def embed(self, text: str) -> list[float]:
             raise RuntimeError("embedder exploded")
 
-    monkeypatch.setattr(
-        embeddings, "_select_default_embedder", lambda: _BoomEmbedder()
-    )
+    monkeypatch.setattr(embeddings, "_select_default_embedder", lambda: _BoomEmbedder())
     client = _search_client(monkeypatch, seeded_factory=prompts_factory)
     resp = client.post(
         "/api/embeddings/search",
@@ -957,9 +889,7 @@ def _trace_row(
     }
 
 
-def _traces_client(
-    monkeypatch: pytest.MonkeyPatch, *, buffer: Any
-) -> TestClient:
+def _traces_client(monkeypatch: pytest.MonkeyPatch, *, buffer: Any) -> TestClient:
     """A search client with ``buffer`` published on app.state._recent_traces."""
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     app = FastAPI()
@@ -1044,9 +974,7 @@ def test_search_traces_returns_ranked_results(
 def test_search_traces_include_embeddings_returns_query_vector(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    buffer = _StubTracesBuffer(
-        [_trace_row("t1", "todo-1", "code", [("generate", "do a thing")])]
-    )
+    buffer = _StubTracesBuffer([_trace_row("t1", "todo-1", "code", [("generate", "do a thing")])])
     client = _traces_client(monkeypatch, buffer=buffer)
     resp = client.post(
         "/api/embeddings/search",
@@ -1082,9 +1010,7 @@ def test_search_traces_empty_buffer_returns_200_empty(
 ) -> None:
     """An empty trace window yields 200 + empty results, never 500."""
     client = _traces_client(monkeypatch, buffer=_StubTracesBuffer([]))
-    resp = client.post(
-        "/api/embeddings/search", json={"text": "anything", "corpus": "traces"}
-    )
+    resp = client.post("/api/embeddings/search", json={"text": "anything", "corpus": "traces"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["corpus"] == "traces"
@@ -1097,9 +1023,7 @@ def test_search_traces_no_buffer_returns_200_empty(
 ) -> None:
     """No traces buffer on app.state degrades to empty results, never a 500."""
     client = _traces_client(monkeypatch, buffer=None)
-    resp = client.post(
-        "/api/embeddings/search", json={"text": "anything", "corpus": "traces"}
-    )
+    resp = client.post("/api/embeddings/search", json={"text": "anything", "corpus": "traces"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["corpus"] == "traces"
@@ -1119,9 +1043,7 @@ def test_search_traces_accepted_by_pydantic(
 ) -> None:
     """corpus=traces passes the pydantic pattern (not a 422 like memory)."""
     client = _traces_client(monkeypatch, buffer=_StubTracesBuffer([]))
-    resp = client.post(
-        "/api/embeddings/search", json={"text": "x", "corpus": "traces"}
-    )
+    resp = client.post("/api/embeddings/search", json={"text": "x", "corpus": "traces"})
     assert resp.status_code == 200
 
 
@@ -1134,12 +1056,8 @@ def test_search_traces_embed_failure_degrades_to_200(
         def embed(self, text: str) -> list[float]:
             raise RuntimeError("embedder exploded")
 
-    monkeypatch.setattr(
-        embeddings, "_select_default_embedder", lambda: _BoomEmbedder()
-    )
-    buffer = _StubTracesBuffer(
-        [_trace_row("t1", "a", "code", [("generate", "do a thing")])]
-    )
+    monkeypatch.setattr(embeddings, "_select_default_embedder", lambda: _BoomEmbedder())
+    buffer = _StubTracesBuffer([_trace_row("t1", "a", "code", [("generate", "do a thing")])])
     client = _traces_client(monkeypatch, buffer=buffer)
     resp = client.post(
         "/api/embeddings/search",
@@ -1204,9 +1122,7 @@ async def _seed_events(factory: Any, rows: list[dict[str, Any]]) -> None:
         for row in rows:
             project_id = row["project_id"]
             if project_id not in seen:
-                await project_repo.create(
-                    {"project_id": project_id, "name": project_id}
-                )
+                await project_repo.create({"project_id": project_id, "name": project_id})
                 seen.add(project_id)
             await repo.create(
                 event_type=row["event_type"],
@@ -1255,18 +1171,14 @@ async def events_factory(session_factory):
                 "entity_type": "todo",
                 "entity_id": "todo-3",
                 "project_id": "proj-a",
-                "details": _json.dumps(
-                    {"summary": "profiled and optimized the slow hot path"}
-                ),
+                "details": _json.dumps({"summary": "profiled and optimized the slow hot path"}),
             },
         ],
     )
     return session_factory
 
 
-def _events_client(
-    monkeypatch: pytest.MonkeyPatch, *, seeded_factory: Any
-) -> TestClient:
+def _events_client(monkeypatch: pytest.MonkeyPatch, *, seeded_factory: Any) -> TestClient:
     """A search client over the offline HashEmbedder for the events corpus."""
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     app = FastAPI()
@@ -1304,9 +1216,7 @@ async def multi_project_events_factory(session_factory):
     return session_factory
 
 
-def test_search_events_scopes_to_project_id_xt8(
-    monkeypatch: pytest.MonkeyPatch, multi_project_events_factory
-) -> None:
+def test_search_events_scopes_to_project_id_xt8(monkeypatch: pytest.MonkeyPatch, multi_project_events_factory) -> None:
     # XT-8: with project_id=proj-a, only proj-a's audit event may be returned.
     client = _events_client(monkeypatch, seeded_factory=multi_project_events_factory)
     resp = client.post(
@@ -1355,9 +1265,7 @@ def test_search_events_without_project_id_returns_all_xt8(
     assert ids == {"a-todo-1", "b-todo-1"}
 
 
-def test_search_events_returns_ranked_results(
-    monkeypatch: pytest.MonkeyPatch, events_factory
-) -> None:
+def test_search_events_returns_ranked_results(monkeypatch: pytest.MonkeyPatch, events_factory) -> None:
     client = _events_client(monkeypatch, seeded_factory=events_factory)
     resp = client.post(
         "/api/embeddings/search",
@@ -1402,9 +1310,7 @@ def test_search_events_returns_ranked_results(
     assert top_md["created_at"]  # ISO timestamp present
 
 
-def test_search_events_include_embeddings_returns_query_vector(
-    monkeypatch: pytest.MonkeyPatch, events_factory
-) -> None:
+def test_search_events_include_embeddings_returns_query_vector(monkeypatch: pytest.MonkeyPatch, events_factory) -> None:
     client = _events_client(monkeypatch, seeded_factory=events_factory)
     resp = client.post(
         "/api/embeddings/search",
@@ -1416,9 +1322,7 @@ def test_search_events_include_embeddings_returns_query_vector(
     assert len(body["query_embedding"]) == body["query_embedding_dim"]
 
 
-def test_search_events_top_k_caps_results(
-    monkeypatch: pytest.MonkeyPatch, events_factory
-) -> None:
+def test_search_events_top_k_caps_results(monkeypatch: pytest.MonkeyPatch, events_factory) -> None:
     client = _events_client(monkeypatch, seeded_factory=events_factory)
     resp = client.post(
         "/api/embeddings/search",
@@ -1428,14 +1332,10 @@ def test_search_events_top_k_caps_results(
     assert len(resp.json()["results"]) == 1
 
 
-def test_search_events_empty_store_returns_200_empty(
-    monkeypatch: pytest.MonkeyPatch, session_factory
-) -> None:
+def test_search_events_empty_store_returns_200_empty(monkeypatch: pytest.MonkeyPatch, session_factory) -> None:
     """An empty audit_events table yields 200 + empty results, never 500."""
     client = _events_client(monkeypatch, seeded_factory=session_factory)
-    resp = client.post(
-        "/api/embeddings/search", json={"text": "anything", "corpus": "events"}
-    )
+    resp = client.post("/api/embeddings/search", json={"text": "anything", "corpus": "events"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["corpus"] == "events"
@@ -1448,9 +1348,7 @@ def test_search_events_no_session_factory_returns_200_empty(
 ) -> None:
     """No session factory degrades to empty events results, never a 500."""
     client = _events_client(monkeypatch, seeded_factory=None)
-    resp = client.post(
-        "/api/embeddings/search", json={"text": "anything", "corpus": "events"}
-    )
+    resp = client.post("/api/embeddings/search", json={"text": "anything", "corpus": "events"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["corpus"] == "events"
@@ -1465,29 +1363,21 @@ def test_search_events_missing_text_is_422(
     assert resp.status_code == 422
 
 
-def test_search_events_accepted_by_pydantic(
-    monkeypatch: pytest.MonkeyPatch, session_factory
-) -> None:
+def test_search_events_accepted_by_pydantic(monkeypatch: pytest.MonkeyPatch, session_factory) -> None:
     """corpus=events passes the pydantic pattern (not a 422 like memory)."""
     client = _events_client(monkeypatch, seeded_factory=session_factory)
-    resp = client.post(
-        "/api/embeddings/search", json={"text": "x", "corpus": "events"}
-    )
+    resp = client.post("/api/embeddings/search", json={"text": "x", "corpus": "events"})
     assert resp.status_code == 200
 
 
-def test_search_events_embed_failure_degrades_to_200(
-    monkeypatch: pytest.MonkeyPatch, events_factory
-) -> None:
+def test_search_events_embed_failure_degrades_to_200(monkeypatch: pytest.MonkeyPatch, events_factory) -> None:
     """A broken embedder degrades the events search to 200, never a 500."""
 
     class _BoomEmbedder:
         def embed(self, text: str) -> list[float]:
             raise RuntimeError("embedder exploded")
 
-    monkeypatch.setattr(
-        embeddings, "_select_default_embedder", lambda: _BoomEmbedder()
-    )
+    monkeypatch.setattr(embeddings, "_select_default_embedder", lambda: _BoomEmbedder())
     client = _events_client(monkeypatch, seeded_factory=events_factory)
     resp = client.post(
         "/api/embeddings/search",
@@ -1586,9 +1476,7 @@ async def high_key_event_factory(session_factory):
                 "entity_type": "todo",
                 "entity_id": "todo-noisy",
                 "project_id": "proj-noisy",
-                "details": _json.dumps(
-                    {f"k{i}": "x" for i in range(_MAX_DETAILS_KEYS * 4)}
-                ),
+                "details": _json.dumps({f"k{i}": "x" for i in range(_MAX_DETAILS_KEYS * 4)}),
             }
         ],
     )
@@ -1673,9 +1561,7 @@ def test_search_events_skips_eventless_row(
             return _StubResult(self._rows)
 
     rows = [
-        _StubEventRow(
-            event_type="", entity_type="", entity_id="", details="{}"
-        ),
+        _StubEventRow(event_type="", entity_type="", entity_id="", details="{}"),
         _StubEventRow(
             event_type="real_event",
             entity_type="todo",
@@ -1702,3 +1588,533 @@ def test_search_events_skips_eventless_row(
     names = {r["name"] for r in results}
     assert "real_event:todo-9" in names
     assert "" not in names  # the textless row was skipped
+
+
+# --- Utility function tests -------------------------------------------------
+
+
+def test_parse_json_list_valid_json_array() -> None:
+    """_parse_json_list parses a valid JSON array string."""
+    from general_ludd.routers.embeddings import _parse_json_list
+
+    assert _parse_json_list('["a", "b", "c"]') == ["a", "b", "c"]
+
+
+def test_parse_json_list_valid_python_list_passthrough() -> None:
+    """_parse_json_list passes through an already-parsed list."""
+    from general_ludd.routers.embeddings import _parse_json_list
+
+    assert _parse_json_list(["a", "b"]) == ["a", "b"]
+
+
+def test_parse_json_list_none_returns_empty() -> None:
+    """_parse_json_list degrades None to empty list."""
+    from general_ludd.routers.embeddings import _parse_json_list
+
+    assert _parse_json_list(None) == []
+
+
+def test_parse_json_list_empty_string_returns_empty() -> None:
+    """_parse_json_list degrades empty string to empty list."""
+    from general_ludd.routers.embeddings import _parse_json_list
+
+    assert _parse_json_list("") == []
+
+
+def test_parse_json_list_malformed_json_returns_empty() -> None:
+    """_parse_json_list degrades malformed JSON to empty list."""
+    from general_ludd.routers.embeddings import _parse_json_list
+
+    assert _parse_json_list("not-json{") == []
+    assert _parse_json_list("[unclosed") == []
+
+
+def test_parse_json_list_non_list_json_returns_empty() -> None:
+    """_parse_json_list degrades a JSON object to empty list (not a list)."""
+    from general_ludd.routers.embeddings import _parse_json_list
+
+    assert _parse_json_list('{"key": "value"}') == []
+
+
+def test_parse_json_list_non_string_non_list_returns_empty() -> None:
+    """_parse_json_list degrades an integer to empty list."""
+    from general_ludd.routers.embeddings import _parse_json_list
+
+    assert _parse_json_list(42) == []
+
+
+def test_trace_text_with_all_fields() -> None:
+    """_trace_text concatenates work_type + phases + span names."""
+    from general_ludd.routers.embeddings import _trace_text
+
+    trace: dict[str, object] = {
+        "work_type": "bug_fix",
+        "spans": [
+            {"phase": "generate", "name": "diagnose the defect"},
+            {"phase": "review", "name": "verify the fix is correct"},
+        ],
+    }
+    result = _trace_text(trace)
+    assert "bug_fix" in result
+    assert "generate" in result
+    assert "diagnose the defect" in result
+    assert "review" in result
+    assert "verify the fix is correct" in result
+
+
+def test_trace_text_no_work_type() -> None:
+    """_trace_text with no work_type still produces span text."""
+    from general_ludd.routers.embeddings import _trace_text
+
+    trace: dict[str, object] = {
+        "work_type": "",
+        "spans": [{"phase": "generate", "name": "do work"}],
+    }
+    result = _trace_text(trace)
+    assert "generate" in result
+    assert "do work" in result
+
+
+def test_trace_text_empty_trace_returns_empty() -> None:
+    """_trace_text with no work_type and no/empty spans returns empty string."""
+    from general_ludd.routers.embeddings import _trace_text
+
+    assert _trace_text({}) == ""
+    assert _trace_text({"work_type": "", "spans": []}) == ""
+
+
+def test_trace_text_skips_non_dict_spans() -> None:
+    """_trace_text skips span entries that are not dicts."""
+    from general_ludd.routers.embeddings import _trace_text
+
+    trace: dict[str, object] = {
+        "work_type": "code",
+        "spans": [
+            "not-a-dict",
+            {"phase": "generate", "name": "real work"},
+            42,
+        ],
+    }
+    result = _trace_text(trace)
+    assert "code" in result
+    assert "generate" in result
+    assert "real work" in result
+    assert "not-a-dict" not in result
+    assert "42" not in result
+
+
+def test_trace_text_missing_span_fields() -> None:
+    """_trace_text handles spans with missing phase/name gracefully."""
+    from general_ludd.routers.embeddings import _trace_text
+
+    trace: dict[str, object] = {
+        "work_type": "feature",
+        "spans": [
+            {"phase": "", "name": "a thing without phase"},
+            {"name": "a thing without phase key"},
+            {},
+        ],
+    }
+    result = _trace_text(trace)
+    assert "feature" in result
+    # Only the name of the first span should appear; the second span has no
+    # "phase" key at all, and the third is empty.
+    assert "a thing without phase" in result
+
+
+def test_event_text_with_all_fields() -> None:
+    """_event_text concatenates event_type + entity_type + details summary."""
+    import json as _json
+
+    from general_ludd.routers.embeddings import _event_text
+
+    class _Row:
+        event_type = "todo_failed"
+        entity_type = "todo"
+        details = _json.dumps({"error": "defect in handler", "model": "glm-4.6"})
+
+    result = _event_text(_Row)
+    assert "todo_failed" in result
+    assert "todo" in result
+    assert "error=defect in handler" in result
+    assert "model=glm-4.6" in result
+
+
+def test_event_text_empty_type_fields() -> None:
+    """_event_text with empty event_type/entity_type still produces details text."""
+    import json as _json
+
+    from general_ludd.routers.embeddings import _event_text
+
+    class _Row:
+        event_type = ""
+        entity_type = ""
+        details = _json.dumps({"summary": "something happened"})
+
+    result = _event_text(_Row)
+    assert "summary=something happened" in result
+    assert result.startswith("summary=")
+
+
+def test_event_text_all_empty_returns_empty() -> None:
+    """_event_text with no type fields and empty details returns empty string."""
+    from general_ludd.routers.embeddings import _event_text
+
+    class _Row:
+        event_type = ""
+        entity_type = ""
+        details = "{}"
+
+    assert _event_text(_Row) == ""
+
+
+# --- Traces XT-8 project_id isolation ---------------------------------------
+
+
+def test_search_traces_scopes_to_project_id_xt8(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """XT-8: with project_id set, only traces matching that project are returned."""
+    buffer_builder = type(
+        "_Buffer",
+        (),
+        {
+            "_call_args": None,
+            "snapshot": lambda self, project_id=None: (
+                setattr(type(self), "_call_args", project_id),
+                {
+                    "recent": [
+                        {
+                            "trace_id": "t1",
+                            "todo_id": "todo-1",
+                            "work_type": "bug_fix",
+                            "total_cost_usd": 0.01,
+                            "span_count": 1,
+                            "spans": [{"phase": "generate", "name": "fix defect"}],
+                        }
+                    ]
+                },
+            )[1],
+        },
+    )
+    buffer = buffer_builder()
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    app = FastAPI()
+    app.state._session_factory = None
+    app.state._skill_registry = None
+    app.state._recent_traces = buffer
+    embeddings.register(app, {})
+    client = TestClient(app)
+    resp = client.post(
+        "/api/embeddings/search",
+        json={
+            "text": "fix defect",
+            "corpus": "traces",
+            "project_id": "proj-a",
+        },
+    )
+    assert resp.status_code == 200
+    results = resp.json()["results"]
+    assert len(results) >= 1
+    # The project_id was forwarded to snapshot().
+    assert type(buffer)._call_args == "proj-a"
+
+
+def test_search_traces_without_project_id_passes_none_xt8(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """XT-8: without project_id, snapshot() is called with None (unscoped)."""
+    buffer_builder = type(
+        "_Buffer",
+        (),
+        {
+            "_call_args": None,
+            "snapshot": lambda self, project_id=None: (
+                setattr(type(self), "_call_args", project_id),
+                {"recent": []},
+            )[1],
+        },
+    )
+    buffer = buffer_builder()
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    app = FastAPI()
+    app.state._session_factory = None
+    app.state._skill_registry = None
+    app.state._recent_traces = buffer
+    embeddings.register(app, {})
+    client = TestClient(app)
+    resp = client.post(
+        "/api/embeddings/search",
+        json={"text": "anything", "corpus": "traces"},
+    )
+    assert resp.status_code == 200
+    assert type(buffer)._call_args is None
+
+
+# --- /compare validator edge cases ------------------------------------------
+
+
+def test_compare_only_text_b_is_422(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Supplying only text_b (no text_a) is rejected by the model_validator."""
+    client = _compare_client(monkeypatch)
+    resp = client.post("/api/embeddings/compare", json={"text_b": "only b"})
+    assert resp.status_code == 422
+
+
+def test_compare_texts_with_zero_items_is_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """texts with 0 items -> 422 (min_length validated, but validator requires >=2)."""
+    client = _compare_client(monkeypatch)
+    resp = client.post("/api/embeddings/compare", json={"texts": []})
+    assert resp.status_code == 422
+
+
+def test_compare_batch_with_include_embeddings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Batch form with include_embeddings=True returns the embeddings list."""
+    client = _compare_client(monkeypatch)
+    resp = client.post(
+        "/api/embeddings/compare",
+        json={"texts": ["alpha", "beta", "gamma"], "include_embeddings": True},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert isinstance(body["embeddings"], list)
+    assert len(body["embeddings"]) == 3
+    assert body["similarity"] is None
+    assert body["dim"] > 0
+
+
+# --- search-multi in main test file -----------------------------------------
+
+
+class _StubSearchMultiSkill:
+    def __init__(self, name: str, description: str, *, category: str = "", tags: list[str] | None = None) -> None:
+        self.name = name
+        self.description = description
+        self.category = category
+        self.tags = tags or []
+
+
+class _StubSearchMultiRegistry:
+    def __init__(self, skills: list[_StubSearchMultiSkill]) -> None:
+        self._skills = skills
+
+    def list_skills(self) -> list[_StubSearchMultiSkill]:
+        return list(self._skills)
+
+
+class _StubSearchMultiTraces:
+    def __init__(self, traces: list[dict[str, Any]]) -> None:
+        self._traces = traces
+
+    def snapshot(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        return {"recent": list(self._traces)}
+
+
+def test_search_multi_valid_basic_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A basic multi-corpus search with skills+task_types returns 200."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    app = FastAPI()
+    app.state._session_factory = None
+    app.state._skill_registry = _StubSearchMultiRegistry([_StubSearchMultiSkill("s1", "do a thing")])
+    app.state._recent_traces = None
+    embeddings.register(app, {})
+    client = TestClient(app)
+    resp = client.post(
+        "/api/embeddings/search-multi",
+        json={"text": "do a thing", "corpora": ["skills"], "top_k": 3},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["corpora_searched"] == ["skills"]
+    assert body["embedding_method"] == "hash"
+    assert isinstance(body["results"], list)
+
+
+def test_search_multi_every_result_has_corpus_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every merged result carries 'corpus' in its metadata."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    app = FastAPI()
+    app.state._session_factory = None
+    app.state._skill_registry = _StubSearchMultiRegistry(
+        [_StubSearchMultiSkill("web", "Fetch web pages and parse HTML")]
+    )
+    app.state._recent_traces = _StubSearchMultiTraces(
+        [
+            {
+                "trace_id": "t1",
+                "todo_id": "x",
+                "work_type": "code",
+                "total_cost_usd": 0.0,
+                "span_count": 1,
+                "spans": [{"phase": "generate", "name": "do work"}],
+            }
+        ]
+    )
+    embeddings.register(app, {})
+    client = TestClient(app)
+    resp = client.post(
+        "/api/embeddings/search-multi",
+        json={"text": "web pages work", "corpora": ["skills", "traces"], "top_k": 5},
+    )
+    assert resp.status_code == 200
+    for r in resp.json()["results"]:
+        assert "corpus" in r["metadata"]
+
+
+def test_search_multi_missing_corpora_is_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing 'corpora' field -> 422."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    app = FastAPI()
+    app.state._session_factory = None
+    app.state._skill_registry = None
+    app.state._recent_traces = None
+    embeddings.register(app, {})
+    client = TestClient(app)
+    resp = client.post(
+        "/api/embeddings/search-multi",
+        json={"text": "x"},
+    )
+    assert resp.status_code == 422
+
+
+def test_search_multi_unknown_corpus_in_list_is_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unknown corpus in corpora list -> 422 via model_validator."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    app = FastAPI()
+    app.state._session_factory = None
+    app.state._skill_registry = None
+    embeddings.register(app, {})
+    client = TestClient(app)
+    resp = client.post(
+        "/api/embeddings/search-multi",
+        json={"text": "x", "corpora": ["skills", "unknown_corpus"]},
+    )
+    assert resp.status_code == 422
+
+
+def test_search_multi_text_over_cap_is_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Multi-corpus search with text > 20000 chars -> 422."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    app = FastAPI()
+    app.state._session_factory = None
+    embeddings.register(app, {})
+    client = TestClient(app)
+    resp = client.post(
+        "/api/embeddings/search-multi",
+        json={"text": "a" * 20001, "corpora": ["skills"]},
+    )
+    assert resp.status_code == 422
+
+
+def test_search_multi_top_k_out_of_range_is_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Multi-corpus top_k <= 0 or > 20 -> 422."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    app = FastAPI()
+    app.state._session_factory = None
+    embeddings.register(app, {})
+    client = TestClient(app)
+    assert (
+        client.post("/api/embeddings/search-multi", json={"text": "x", "corpora": ["skills"], "top_k": 0}).status_code
+        == 422
+    )
+    assert (
+        client.post("/api/embeddings/search-multi", json={"text": "x", "corpora": ["skills"], "top_k": 21}).status_code
+        == 422
+    )
+
+
+def test_search_multi_empty_corpora_list_is_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Empty corpora list -> 422 (min_length=1)."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    app = FastAPI()
+    embeddings.register(app, {})
+    client = TestClient(app)
+    resp = client.post(
+        "/api/embeddings/search-multi",
+        json={"text": "x", "corpora": []},
+    )
+    assert resp.status_code == 422
+
+
+def test_search_multi_missing_text_is_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing text in multi-corpus request -> 422."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    app = FastAPI()
+    embeddings.register(app, {})
+    client = TestClient(app)
+    resp = client.post(
+        "/api/embeddings/search-multi",
+        json={"corpora": ["skills"]},
+    )
+    assert resp.status_code == 422
+
+
+# --- search-multi empty corpora resilience ----------------------------------
+
+
+def test_search_multi_all_corpora_absent_degrades_to_empty_200(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When every corpus backend is absent, multi-search returns 200 with empty results."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    app = FastAPI()
+    app.state._session_factory = None
+    app.state._skill_registry = None
+    app.state._recent_traces = None
+    embeddings.register(app, {})
+    client = TestClient(app)
+    resp = client.post(
+        "/api/embeddings/search-multi",
+        json={"text": "anything", "corpora": ["skills", "traces", "task_types", "events", "prompts"]},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["results"] == []
+    assert body["embedding_method"] == "hash"
+
+
+def test_search_multi_one_corpus_survives_when_others_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When one corpus has data and the rest are absent, the surviving corpus returns results."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    app = FastAPI()
+    app.state._session_factory = None
+    app.state._skill_registry = _StubSearchMultiRegistry(
+        [_StubSearchMultiSkill("only-survivor", "the only corpus with data")]
+    )
+    app.state._recent_traces = None
+    embeddings.register(app, {})
+    client = TestClient(app)
+    resp = client.post(
+        "/api/embeddings/search-multi",
+        json={"text": "data", "corpora": ["skills", "task_types", "events"]},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["results"]) >= 1
+    assert "skills" in body["corpora_searched"]
+    for r in body["results"]:
+        assert r["metadata"]["corpus"] == "skills"

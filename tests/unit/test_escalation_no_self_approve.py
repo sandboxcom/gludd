@@ -346,7 +346,11 @@ def _htodo_setup(human_spec: PermissionSpec | None = None) -> TestClient:
     app = FastAPI()
     from general_ludd.db.repository import HumanTodoRepository
 
+<<<<<<< Updated upstream
     MagicMock(spec=HumanTodoRepository)
+=======
+    mock_repo = MagicMock(spec=HumanTodoRepository)
+>>>>>>> Stashed changes
     mock_session = AsyncMock()
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)
     mock_session.__aexit__ = AsyncMock(return_value=None)
@@ -367,7 +371,11 @@ def _htodo_setup(human_spec: PermissionSpec | None = None) -> TestClient:
 
     from general_ludd.db.repository import TodoRepository
 
+<<<<<<< Updated upstream
     MagicMock(spec=TodoRepository)
+=======
+    mock_todo_repo = MagicMock(spec=TodoRepository)
+>>>>>>> Stashed changes
 
     app.state._session_factory = lambda: mock_session
     app.state._escalation_store = []
@@ -412,9 +420,14 @@ def test_human_todo_done_rejects_self_resolution() -> None:
     app.state._sts_issuer_spec = _agent_spec()
     app.state._human_spec = _human_viewer_spec()
 
+<<<<<<< Updated upstream
     from datetime import datetime
 
     from general_ludd.db.models import HumanTodoModel
+=======
+    from general_ludd.db.models import HumanTodoModel
+    from datetime import datetime
+>>>>>>> Stashed changes
 
     row = HumanTodoModel(
         id="HTODO-TEST001",
@@ -430,6 +443,7 @@ def test_human_todo_done_rejects_self_resolution() -> None:
     )
     mock_repo.get = AsyncMock(return_value=row)
 
+<<<<<<< Updated upstream
     with (
         patch("general_ludd.routers.human_todos.HumanTodoRepository", return_value=mock_repo),
         patch("general_ludd.routers.human_todos.TodoRepository", return_value=mock_todo_repo),
@@ -443,6 +457,19 @@ def test_human_todo_done_rejects_self_resolution() -> None:
                 "human_resolution": "I approve my own request",
             },
         )
+=======
+    with patch("general_ludd.routers.human_todos.HumanTodoRepository", return_value=mock_repo):
+        with patch("general_ludd.routers.human_todos.TodoRepository", return_value=mock_todo_repo):
+            client = TestClient(app)
+            resp = client.patch(
+                "/api/human-todos/HTODO-TEST001",
+                json={
+                    "status": "done",
+                    "human_resolver": "agent-001",
+                    "human_resolution": "I approve my own request",
+                },
+            )
+>>>>>>> Stashed changes
     assert resp.status_code == 403, resp.text
     body = resp.json()
     assert "self_resolution_forbidden" in body["detail"]
@@ -474,9 +501,14 @@ def test_human_todo_dismissed_rejects_self_resolution() -> None:
     app.state._sts_issuer_spec = _agent_spec()
     app.state._human_spec = _human_viewer_spec()
 
+<<<<<<< Updated upstream
     from datetime import datetime
 
     from general_ludd.db.models import HumanTodoModel
+=======
+    from general_ludd.db.models import HumanTodoModel
+    from datetime import datetime
+>>>>>>> Stashed changes
 
     row = HumanTodoModel(
         id="HTODO-TEST002",
@@ -492,6 +524,7 @@ def test_human_todo_dismissed_rejects_self_resolution() -> None:
     )
     mock_repo.get = AsyncMock(return_value=row)
 
+<<<<<<< Updated upstream
     with (
         patch("general_ludd.routers.human_todos.HumanTodoRepository", return_value=mock_repo),
         patch("general_ludd.routers.human_todos.TodoRepository", return_value=mock_todo_repo),
@@ -505,6 +538,19 @@ def test_human_todo_dismissed_rejects_self_resolution() -> None:
                 "human_resolution": "Not needed",
             },
         )
+=======
+    with patch("general_ludd.routers.human_todos.HumanTodoRepository", return_value=mock_repo):
+        with patch("general_ludd.routers.human_todos.TodoRepository", return_value=mock_todo_repo):
+            client = TestClient(app)
+            resp = client.patch(
+                "/api/human-todos/HTODO-TEST002",
+                json={
+                    "status": "dismissed",
+                    "human_resolver": "agent-002",
+                    "human_resolution": "Not needed",
+                },
+            )
+>>>>>>> Stashed changes
     assert resp.status_code == 403, resp.text
     body = resp.json()
     assert "self_resolution_forbidden" in body["detail"]
@@ -536,9 +582,14 @@ def test_human_todo_done_allows_different_resolver() -> None:
     app.state._sts_issuer_spec = _agent_spec()
     app.state._human_spec = _human_viewer_spec()
 
+<<<<<<< Updated upstream
     from datetime import datetime
 
     from general_ludd.db.models import HumanTodoModel
+=======
+    from general_ludd.db.models import HumanTodoModel
+    from datetime import datetime
+>>>>>>> Stashed changes
 
     row = HumanTodoModel(
         id="HTODO-TEST003",
@@ -555,6 +606,7 @@ def test_human_todo_done_allows_different_resolver() -> None:
     mock_repo.get = AsyncMock(return_value=row)
     mock_repo.mark_done = AsyncMock(return_value=row)
 
+<<<<<<< Updated upstream
     with (
         patch("general_ludd.routers.human_todos.HumanTodoRepository", return_value=mock_repo),
         patch("general_ludd.routers.human_todos.TodoRepository", return_value=mock_todo_repo),
@@ -568,6 +620,19 @@ def test_human_todo_done_allows_different_resolver() -> None:
                 "human_resolution": "Approved",
             },
         )
+=======
+    with patch("general_ludd.routers.human_todos.HumanTodoRepository", return_value=mock_repo):
+        with patch("general_ludd.routers.human_todos.TodoRepository", return_value=mock_todo_repo):
+            client = TestClient(app)
+            resp = client.patch(
+                "/api/human-todos/HTODO-TEST003",
+                json={
+                    "status": "done",
+                    "human_resolver": "alice-operator",
+                    "human_resolution": "Approved",
+                },
+            )
+>>>>>>> Stashed changes
     assert resp.status_code == 200, resp.text
     assert resp.json()["status"] == "open"
 
@@ -598,9 +663,14 @@ def test_human_todo_case_insensitive_self_resolution() -> None:
     app.state._sts_issuer_spec = _agent_spec()
     app.state._human_spec = _human_viewer_spec()
 
+<<<<<<< Updated upstream
     from datetime import datetime
 
     from general_ludd.db.models import HumanTodoModel
+=======
+    from general_ludd.db.models import HumanTodoModel
+    from datetime import datetime
+>>>>>>> Stashed changes
 
     row = HumanTodoModel(
         id="HTODO-TEST004",
@@ -616,6 +686,7 @@ def test_human_todo_case_insensitive_self_resolution() -> None:
     )
     mock_repo.get = AsyncMock(return_value=row)
 
+<<<<<<< Updated upstream
     with (
         patch("general_ludd.routers.human_todos.HumanTodoRepository", return_value=mock_repo),
         patch("general_ludd.routers.human_todos.TodoRepository", return_value=mock_todo_repo),
@@ -629,5 +700,18 @@ def test_human_todo_case_insensitive_self_resolution() -> None:
                 "human_resolution": "I'm the same agent",
             },
         )
+=======
+    with patch("general_ludd.routers.human_todos.HumanTodoRepository", return_value=mock_repo):
+        with patch("general_ludd.routers.human_todos.TodoRepository", return_value=mock_todo_repo):
+            client = TestClient(app)
+            resp = client.patch(
+                "/api/human-todos/HTODO-TEST004",
+                json={
+                    "status": "done",
+                    "human_resolver": "agent-004",
+                    "human_resolution": "I'm the same agent",
+                },
+            )
+>>>>>>> Stashed changes
     assert resp.status_code == 403, resp.text
     assert "self_resolution_forbidden" in resp.json()["detail"]
