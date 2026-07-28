@@ -132,26 +132,84 @@ def test_opa_make_target_has_container_fallback() -> None:
     )
 
 
-def test_windows_job_is_non_blocking() -> None:
-    """Guard: the windows build job must keep continue-on-error: true.
-
-    CI incident: the Windows pyinstaller build is not yet reliable. Keeping the
-    windows job non-blocking (``continue-on-error: true``) is the safety net that
-    lets a tag still publish a Release with the linux/macos/termux artifacts
-    instead of the whole release failing on Windows. Removing it makes a flaky
-    Windows build block every release.
-    """
+def test_windows_job_is_release_blocking() -> None:
+    """A green release must prove that the required Windows artifacts built."""
     wf = _load_build_workflow()
     windows = wf["jobs"].get("windows")
     assert windows is not None, (
         "CI regression: the 'windows' build job vanished from build.yml."
     )
-    assert windows.get("continue-on-error") is True, (
-        "CI regression (unstable Windows pyinstaller build blocking releases): "
-        "the windows job no longer has 'continue-on-error: true'. Restore it so "
-        "an unstable Windows build stays NON-BLOCKING and a tag still ships the "
-        "linux/macos/termux artifacts."
+    assert windows.get("continue-on-error", False) is False, (
+        "CI regression: Windows is a required beta.3 artifact producer; "
+        "continue-on-error can turn a missing zip/installer into a green pipeline"
     )
+
+
+def test_windows_job_uses_canonical_pinned_bootstrap_actions() -> None:
+    """Windows must use the same maintained action revisions as Linux.
+
+    Run 30331174104 never reached project code because its Windows-only
+    checkout revision could not be resolved. Keeping one old checkout pin and
+    a floating setup-uv tag made that job uniquely fragile while every other
+    platform used the repository's canonical, immutable Node 24 revisions.
+    """
+    wf = _load_build_workflow()
+    jobs = wf["jobs"]
+
+    def bootstrap_uses(job_name: str, action: str) -> list[str]:
+        return [
+            str(step.get("uses", ""))
+            for step in jobs[job_name].get("steps", [])
+            if str(step.get("uses", "")).startswith(f"{action}@")
+        ]
+
+    for action in ("actions/checkout", "astral-sh/setup-uv"):
+        linux_uses = bootstrap_uses("linux", action)
+        windows_uses = bootstrap_uses("windows", action)
+        assert len(linux_uses) == len(windows_uses) == 1
+        assert windows_uses == linux_uses, (
+            f"Windows {action} must match the canonical Linux immutable pin; "
+            f"got windows={windows_uses}, linux={linux_uses}. Divergent bootstrap "
+            "actions can fail before packaging and leave the release incomplete."
+        )
+
+
+def test_windows_packaging_job_is_deterministic_and_fail_closed() -> None:
+    """Pin the runner/toolchain and reject partial or untested artifacts."""
+    windows = _load_build_workflow()["jobs"]["windows"]
+    assert windows["runs-on"] == "windows-2022", (
+        "Windows packaging must pin windows-2022 instead of following the "
+        "windows-latest image migration to an unqualified toolchain"
+    )
+
+    steps = windows["steps"]
+    setup_uv = next(
+        step
+        for step in steps
+        if str(step.get("uses", "")).startswith("astral-sh/setup-uv@")
+    )
+    assert setup_uv.get("with", {}).get("python-version") == "3.12"
+
+    names = [str(step.get("name", "")) for step in steps]
+    smoke_index = names.index("Smoke test binary")
+    package_index = names.index("Package zip")
+    upload_index = next(
+        i
+        for i, step in enumerate(steps)
+        if str(step.get("uses", "")).startswith("actions/upload-artifact@")
+    )
+    assert smoke_index < package_index < upload_index
+    assert steps[smoke_index].get("continue-on-error", False) is False
+
+    upload = steps[upload_index]
+    assert upload.get("if", "success()") == "success()"
+    assert upload.get("with", {}).get("if-no-files-found") == "error"
+
+    runs = "\n".join(str(step.get("run", "")) for step in steps)
+    assert "choco install nsis --version=3.12.0" in runs
+    assert "makensis.exe" in runs and "$makensis /WX" in runs
+    assert "Get-FileHash" in runs
+    assert "certutil" not in runs
 
 
 def test_partials_gitkeep_is_tracked() -> None:

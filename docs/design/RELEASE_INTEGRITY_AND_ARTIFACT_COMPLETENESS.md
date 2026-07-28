@@ -123,9 +123,58 @@ is worse than no spec.
   passed via -DVERSION"`. Effort: S.
 - `macos-dmg` hardcodes `-macos-arm64` (`DMG_NAME`, `:2964`) regardless of host
   arch — an x86_64 mac would produce a mislabelled dmg. Effort: S.
-- `rpm-package` uses a fixed shared `/tmp/gludd-rpmbuild` (`:2950`) — concurrent
-  builds collide. Effort: S.
+- ~~`rpm-package` uses a fixed shared `/tmp/gludd-rpmbuild`~~ — **RESOLVED for
+  beta.3.** It now uses the checkout-local absolute `dist/rpmbuild` path, so
+  parallel projects and release worktrees cannot delete each other's RPM tree.
 - `dist/rpm/gludd.spec:30` has a hardcoded changelog date. Cosmetic.
+
+**R-15 — beta.3 Linux/Windows packaging incident (RESOLVED 2026-07-28).**
+
+Build-and-Release run `30331174104` exposed two distinct failure classes:
+
+- **Linux/RPM was repository-controlled.** `rpm-package` asked
+  `mkdir -p /tmp/gludd-rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}` to create the
+  RPM tree. GNU make runs recipes with `/bin/sh` unless configured otherwise;
+  Ubuntu's shell does not implement Bash brace expansion. It therefore created
+  one literal brace-named directory and the next `cp` failed because
+  `SOURCES/` did not exist. This is the exact long-lived failure demonstrated
+  in the 2018 user report
+  [“cannot create multiple directories with makefile”][make-brace-report].
+  The [GNU make shell documentation][gnu-make-shell] confirms the `/bin/sh`
+  contract. The target now creates every directory explicitly (portable POSIX
+  shell), uses the namespaced checkout-local tree, and has regression guards
+  against both brace expansion and a shared `/tmp` root.
+- **Windows was repository-controlled.** The hosted runner stopped during
+  “Getting action download info” with `Unable to resolve action
+  actions/checkout@...`; no checkout, dependency install, build, packaging, or
+  project code ran. The configured `d632...a2e4` hash does not exist: the
+  [official checkout v4.2.0 release][checkout-v420] resolves to
+  `d632683dd7b4114ad314bca15554477dd762a938`. The open `actions/checkout` issue
+  [#1562][checkout-resolution-report] documents the same error signature over
+  multiple years, which is why the raw message alone was not enough to call
+  this a bad pin; checking the official release identified the repository
+  typo. Windows also floated `setup-uv@v5` while maintained jobs used immutable
+  Node 24 pins. It now uses the repository's canonical checkout v5.0.1 and
+  setup-uv v8.2.0 hashes. The failed hosted runner was `2.336.0`, newer than the
+  [checkout v5 minimum of `2.327.1`][checkout-node24], so the selected Node 24
+  runtime is supported.
+- **Windows packaging now fails closed and is reproducible.** The job pins the
+  Windows 2022 image and Python 3.12, makes binary smoke tests blocking before
+  packaging, pins NSIS 3.12.0, promotes NSIS warnings to errors, creates
+  portable `Get-FileHash` sidecars, and makes missing uploads fatal. A required
+  Windows artifact failure can no longer be hidden by `continue-on-error` or
+  `if-no-files-found: warn`.
+
+Regression coverage lives in
+`tests/unit/test_packaging_templates_committed.py` (portable, namespaced RPM
+tree) and `tests/unit/test_ci_regression_guards.py` (canonical immutable
+Windows bootstrap actions).
+
+[make-brace-report]: https://stackoverflow.com/questions/49099682/cannot-create-multiple-directories-with-makefile/49100159
+[gnu-make-shell]: https://www.gnu.org/software/make/manual/html_node/Choosing-the-Shell.html
+[checkout-v420]: https://github.com/actions/checkout/releases/tag/v4.2.0
+[checkout-resolution-report]: https://github.com/actions/checkout/issues/1562
+[checkout-node24]: https://github.com/actions/checkout#checkout-v5
 
 **R-13 — The `/Users/` leak guard covers only the tarball (NEW, and it already
 cost us).** The only developer-path guard is

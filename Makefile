@@ -4764,18 +4764,20 @@ deb-install-deps:
 	@echo "=== Installing .deb package dependencies ==="
 	@grep '^Depends:' dist/debian/control | sed 's/^Depends: //' | tr ',' '\n' | sed 's/^ *//;s/ .*//' | xargs -r sudo apt-get install -y
 
+RPMBUILD_DIR := $(abspath dist/rpmbuild)
 rpm-package:
 	@echo "=== Building .rpm package ==="
 	@which rpmbuild >/dev/null 2>&1 || (echo "ERROR: rpmbuild not found. Install rpm-build package."; exit 1)
-	@mkdir -p dist/rpm /tmp/gludd-rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
-	@cp dist/gludd /tmp/gludd-rpmbuild/SOURCES/gludd
-	@sed "s/VERSION_PLACEHOLDER/$(VERSION)/g" dist/rpm/gludd.spec > /tmp/gludd-rpmbuild/SPECS/gludd.spec
-	@rpmbuild -bb --define "_topdir /tmp/gludd-rpmbuild" /tmp/gludd-rpmbuild/SPECS/gludd.spec
-	@RPM_FILE=$$(ls /tmp/gludd-rpmbuild/RPMS/x86_64/gludd-*.rpm 2>/dev/null | head -1); \
+	@rm -rf "$(RPMBUILD_DIR)"
+	@mkdir -p dist/rpm "$(RPMBUILD_DIR)/BUILD" "$(RPMBUILD_DIR)/BUILDROOT" "$(RPMBUILD_DIR)/RPMS" "$(RPMBUILD_DIR)/SOURCES" "$(RPMBUILD_DIR)/SPECS" "$(RPMBUILD_DIR)/SRPMS"
+	@cp dist/gludd "$(RPMBUILD_DIR)/SOURCES/gludd"
+	@sed "s/VERSION_PLACEHOLDER/$(VERSION)/g" dist/rpm/gludd.spec > "$(RPMBUILD_DIR)/SPECS/gludd.spec"
+	@rpmbuild -bb --define "_topdir $(RPMBUILD_DIR)" "$(RPMBUILD_DIR)/SPECS/gludd.spec"
+	@RPM_FILE=$$(ls "$(RPMBUILD_DIR)"/RPMS/x86_64/gludd-*.rpm 2>/dev/null | head -1); \
 	if [ -z "$$RPM_FILE" ]; then echo "ERROR: rpmbuild produced no .rpm"; exit 1; fi; \
 	cp "$$RPM_FILE" "dist/gludd-$(VERSION)-1.x86_64.rpm"; \
 	sha256sum "dist/gludd-$(VERSION)-1.x86_64.rpm" > "dist/gludd-$(VERSION)-1.x86_64.rpm.sha256"; \
-	rm -rf /tmp/gludd-rpmbuild
+	rm -rf "$(RPMBUILD_DIR)"
 	@echo "=== .rpm built: dist/gludd-$(VERSION)-1.x86_64.rpm ==="
 
 # --- macOS .dmg packaging ---
@@ -4808,8 +4810,8 @@ windows-installer:
 	@if ! command -v makensis >/dev/null 2>&1; then echo "windows-installer requires makensis (NSIS). Install: brew install makensis or apt install nsis"; exit 1; fi
 	@echo "Building $(WINDOWS_INSTALLER)..."
 	@mkdir -p dist/windows
-	@$(UV) run python -c "import shutil; shutil.copy('dist/gludd', 'dist/windows/gludd.exe')" 2>/dev/null || true
-	@makensis -DVERSION=$(VERSION) -DBUILDDIR=dist $(NSI_SCRIPT)
+	@if [ -f dist/gludd.exe ]; then cp dist/gludd.exe dist/windows/gludd.exe; elif [ -f dist/gludd ]; then cp dist/gludd dist/windows/gludd.exe; else echo "ERROR: no gludd binary found at dist/gludd.exe or dist/gludd"; exit 1; fi
+	@makensis -WX -DVERSION=$(VERSION) -DBUILDDIR=.. $(NSI_SCRIPT)
 	@shasum -a 256 dist/$(WINDOWS_INSTALLER) > dist/$(WINDOWS_INSTALLER).sha256
 	@echo "Created dist/$(WINDOWS_INSTALLER)"
 	@echo "Checksum: dist/$(WINDOWS_INSTALLER).sha256"
