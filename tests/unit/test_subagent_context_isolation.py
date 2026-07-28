@@ -56,10 +56,14 @@ def _find_guard_idx(body: str) -> int | None:
     """Return line index (0-based) of OPENCODE_SUBAGENT guard in body, or None."""
     for i, line in enumerate(body.split("\n")):
         stripped = line.strip()
-        if (
+        direct_guard = (
             stripped.startswith("if (process.env.OPENCODE_SUBAGENT === ")
             and "return" in stripped
-        ):
+        )
+        shared_guard = bool(
+            re.match(r"if\s*\(\s*isSubagent\(\)\s*\)\s*return\b", stripped)
+        )
+        if direct_guard or shared_guard:
             return i
     return None
 
@@ -91,7 +95,8 @@ def _extract_handler_style_a(src: str, hook_name: str) -> tuple[int, str] | None
     first `{` after `=>` — not just the first `{` in the snippet.
     """
     escaped = re.escape(hook_name)
-    pattern = rf'"{escaped}"'
+    pattern = rf'"{escaped}"\s*:'
+    result: tuple[int, str] | None = None
     for m in re.finditer(pattern, src):
         pos = m.end()
         after_key = src[pos:]
@@ -116,8 +121,8 @@ def _extract_handler_style_a(src: str, hook_name: str) -> tuple[int, str] | None
         if depth == 0:
             body = content_after_brace[:end].strip()
             line_no = src[: m.start()].count("\n")
-            return line_no, body
-    return None
+            result = (line_no, body)
+    return result
 
 
 def _extract_handler_style_b(src: str, hook_name: str) -> tuple[int, str] | None:
@@ -129,6 +134,7 @@ def _extract_handler_style_b(src: str, hook_name: str) -> tuple[int, str] | None
     """
     escaped = re.escape(hook_name)
     pattern = rf'api\.{escaped}\s*\(?\('
+    result: tuple[int, str] | None = None
     for m in re.finditer(pattern, src):
         pos = m.end()
         after_match = src[pos:]
@@ -149,14 +155,46 @@ def _extract_handler_style_b(src: str, hook_name: str) -> tuple[int, str] | None
         if depth == 0:
             body = after_brace[:end].strip()
             line_no = src[: m.start()].count("\n")
-            return line_no, body
+            result = (line_no, body)
+    return result
+
+
+def _extract_named_handler(src: str, hook_name: str) -> tuple[int, str] | None:
+    """Resolve an object hook whose value is a named function."""
+    escaped = re.escape(hook_name)
+    references = list(
+        re.finditer(
+            rf'"{escaped}"\s*:\s*([A-Za-z_$][\w$]*)\s*(?:,|\}})',
+            src,
+        )
+    )
+    for reference in reversed(references):
+        function_name = reference.group(1)
+        function_match = re.search(
+            rf"(?:async\s+)?function\s+{re.escape(function_name)}\b[^\n]*\{{\s*$",
+            src,
+            re.MULTILINE,
+        )
+        if function_match is None:
+            continue
+        content_after_brace = src[function_match.end():]
+        depth = 1
+        for i, char in enumerate(content_after_brace):
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    line_no = src[: function_match.start()].count("\n")
+                    return line_no, content_after_brace[:i].strip()
     return None
 
 
 def _extract_handler_body(src: str, hook_name: str) -> tuple[int, str] | None:
     """Extract handler body using both API styles. Returns (line_no, body) or None."""
-    # Guard against false matches inside curly braces of other functions
-    # by preferring style A first
+    named = _extract_named_handler(src, hook_name)
+    if named is not None:
+        return named
     result = _extract_handler_style_a(src, hook_name)
     if result is not None:
         return result
@@ -166,32 +204,19 @@ def _extract_handler_body(src: str, hook_name: str) -> tuple[int, str] | None:
 # =============================================================================
 # Which plugins have which hooks
 # =============================================================================
-# All enforce-*.ts plugins with tool.execute.before handlers
-PLUGINS_WITH_TOOL_BEFORE = [
-    "enforce-floor",        # style A; has guard
-    "enforce-make",         # style A; has guard
-    "enforce-delegate",     # style A; has guard
-    "enforce-multitask",    # style A; has guard
-    "enforce-stop",         # style A; has guard
-    "enforce-deadline",     # style A; has guard
-    "enforce-session-start",  # style A; has guard
-    "enforce-deletion-gate",  # style A; has guard
-    "enforce-no-suppressions",  # style A; has guard
-    "enforce-no-wait",      # style B; has guard
-    "enforce-commit-lock",  # style B; has guard
-    "enforce-clean-tree",   # style B; has guard
-    "enforce-enhancement-ratio",  # style A; has guard
-    "enforce-deliverable",   # style A; has guard
-]
+# Discover the complete current inventory so newly added plugins cannot escape
+# isolation checks merely because a hand-maintained list was not updated.
+PLUGINS_WITH_TOOL_BEFORE = sorted(
+    plugin.stem
+    for plugin in _enforce_plugins()
+    if '"tool.execute.before"' in _read_plugin(plugin.stem)
+)
 
-# Plugins with text.complete hooks
-PLUGINS_WITH_TEXT_COMPLETE = [
-    "enforce-floor",         # has guard
-    "enforce-make",          # has guard
-    "enforce-multitask",     # has guard
-    "enforce-stop",          # has guard
-    "enforce-verified-claims",  # has guard
-]
+PLUGINS_WITH_TEXT_COMPLETE = sorted(
+    plugin.stem
+    for plugin in _enforce_plugins()
+    if '"experimental.text.complete"' in _read_plugin(plugin.stem)
+)
 
 
 class TestStructuralGuardPresence:
@@ -322,7 +347,7 @@ class TestGuardIsFirstCheck:
 
 
 class TestGuardExactPatterns:
-    """Guard must use exact pattern: if (process.env.OPENCODE_SUBAGENT === "1") return"""
+    """Guard must use the exact env check or the shared isSubagent() helper."""
 
     def test_exact_pattern(self):
         violations = []
@@ -336,6 +361,11 @@ class TestGuardExactPatterns:
             if idx is None:
                 continue
             guard = body.split("\n")[idx].strip()
+            if re.match(
+                r"if\s*\(\s*isSubagent\(\)\s*\)\s*return\b",
+                guard,
+            ):
+                continue
             must_have = 'process.env.OPENCODE_SUBAGENT === "1"'
             if must_have not in guard:
                 violations.append(
@@ -346,7 +376,7 @@ class TestGuardExactPatterns:
                     f"{name}.ts: uses == instead of === — {guard!r}"
                 )
         assert not violations, (
-            "Guard must use EXACT pattern if (process.env.OPENCODE_SUBAGENT === \"1\") return:\n"
+            "Guard must use the exact env check or `if (isSubagent()) return`:\n"
             + "\n".join(f"  - {v}" for v in violations)
         )
 
@@ -362,6 +392,11 @@ class TestGuardExactPatterns:
             if idx is None:
                 continue
             guard = body.split("\n")[idx].strip()
+            if re.match(
+                r"if\s*\(\s*isSubagent\(\)\s*\)\s*return\b",
+                guard,
+            ):
+                continue
             if "OPENCODE_SUBAGENT" not in guard:
                 violations.append(
                     f"{name}.ts: does not reference OPENCODE_SUBAGENT: {guard!r}"
@@ -379,7 +414,7 @@ class TestGuardExactPatterns:
                     f"{name}.ts: uses !== instead of ===: {guard!r}"
                 )
         assert not violations, (
-            "Guard must use process.env.OPENCODE_SUBAGENT === \"1\":\n"
+            "Guard must use the shared helper or exact OPENCODE_SUBAGENT check:\n"
             + "\n".join(f"  - {v}" for v in violations)
         )
 
@@ -528,13 +563,14 @@ def _check_system_transform_guard(src: str, hook_key: str, plugin_name: str):
     assert brace_idx != -1, f"{plugin_name}: no opening brace after {hook_key}"
     body = body[brace_idx + 1:]
     guard_match = re.search(
-        r'if\s*\(\s*process\.env\.OPENCODE_SUBAGENT\s*===?\s*"1"\s*\)\s*return\s+output',
+        r'if\s*\(\s*(?:process\.env\.OPENCODE_SUBAGENT\s*===?\s*"1"|'
+        r"isSubagent\(\))\s*\)\s*return\s+output",
         body,
         re.MULTILINE,
     )
     assert guard_match is not None, (
         f"{plugin_name}: system.transform MISSING OPENCODE_SUBAGENT guard. "
-        f"Must have: `if (process.env.OPENCODE_SUBAGENT === \"1\") return output` "
+        f"Must use the exact env check or `if (isSubagent()) return output` "
         f"as first substantive line."
     )
 
@@ -562,8 +598,8 @@ class TestGuardNotInFilesThatDontNeedIt:
     def test_watchdog_reports_alive(self):
         """watchdog.ts reports liveness to shared alive.json (standard pattern)."""
         src = (PLUGINS_DIR / "watchdog.ts").read_text()
-        assert "gludd-plugin-alive.json" in src, (
-            "watchdog.ts must report liveness to shared alive.json"
+        assert 'reportAlive("watchdog")' in src, (
+            "watchdog.ts must report liveness through the shared reportAlive API"
         )
 
 
@@ -572,15 +608,15 @@ class TestPluginCount:
 
     def test_count_matches_and_all_covered(self):
         plugins = _enforce_plugins()
-        actual = sorted(p.stem for p in plugins)
-        tested = set(PLUGINS_WITH_TOOL_BEFORE) | {"enforce-verified-claims"}
-        untested = set(actual) - tested
-        assert not untested, (
-            f"enforce-*.ts NOT covered by any test list: {sorted(untested)}"
-        )
-        extra = tested - set(actual)
-        assert not extra, (
-            f"Listed for testing but missing from disk: {sorted(extra)}"
+        expected = {
+            plugin.stem
+            for plugin in plugins
+            if '"tool.execute.before"' in _read_plugin(plugin.stem)
+        }
+        assert set(PLUGINS_WITH_TOOL_BEFORE) == expected, (
+            "tool.execute.before isolation inventory drifted: "
+            f"expected={sorted(expected)}, "
+            f"actual={PLUGINS_WITH_TOOL_BEFORE}"
         )
 
     def test_all_plugins_have_identifiable_hooks(self):
