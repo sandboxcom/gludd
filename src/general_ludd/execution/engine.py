@@ -85,7 +85,6 @@ def validate_extra_vars_safe(
     _check_value(vars_dict, "")
 
 
-
 def _parse_fenced_blocks(text: str) -> list[dict[str, str]]:
     blocks: list[dict[str, str]] = []
     pattern = re.compile(r"```(\w*)\n(.*?)```", re.DOTALL)
@@ -113,14 +112,12 @@ def _render_skill_body(raw: str, variables: dict[str, object] | None = None) -> 
     """Render skill body via the shared renderer (W6.5: one renderer, two consumers)."""
     try:
         from general_ludd.skills.renderer import SkillRenderError, render_skill
+
         return render_skill(raw, variables)
     except SkillRenderError:
         raise
     except ImportError:
-        logger.warning(
-            "jinja2 not available — skill body will be included as raw text "
-            "(no template rendering applied)"
-        )
+        logger.warning("jinja2 not available — skill body will be included as raw text (no template rendering applied)")
         return raw
 
 
@@ -171,20 +168,17 @@ def _build_system_prompt(
     workspace_path: str | None = None,
 ) -> str:
     lines: list[str] = []
-    lines.append(
-        "You are a coding agent. Generate code changes for the following task."
-    )
+    lines.append("You are a coding agent. Generate code changes for the following task.")
     if job.skill_body:
         rendered = _render_skill_body(job.skill_body)
         lines.append(f"\nGuidelines:\n{rendered}")
     lines.append("\nOutput format:")
     lines.append("- Use fenced code blocks for code.")
-    lines.append(
-        "- Prefix each file with 'FILE: <path>' followed by the content."
-    )
+    lines.append("- Prefix each file with 'FILE: <path>' followed by the content.")
     base = "\n".join(lines)
     if behavior is not None:
         from general_ludd.retrieval.agentic_context import AgenticContextInjector
+
         renderer = BehaviorRenderer(prompt_enhancer=AgenticContextInjector())
         behavior_block = renderer.render(behavior)
         base = behavior_block + "\n\n" + base
@@ -352,14 +346,11 @@ class ExecutionEngine:
             return 0.0
         try:
             model = getattr(profile, "model_name", None) or "__default__"
-            proj_in = min(
-                int(getattr(profile, "max_input_tokens", 1000) or 1000), 1000
-            )
+            proj_in = min(int(getattr(profile, "max_input_tokens", 1000) or 1000), 1000)
             proj_out = int(getattr(profile, "max_output_tokens", 0) or 0)
         except (TypeError, ValueError):
             logger.debug(
-                "_projected_cost: profile attribute coercion failed; "
-                "using conservative defaults",
+                "_projected_cost: profile attribute coercion failed; using conservative defaults",
                 exc_info=True,
             )
             model = "__default__"
@@ -372,8 +363,7 @@ class ExecutionEngine:
                 return float(guard_cost(model, proj_in, proj_out))
             except Exception:
                 logger.debug(
-                    "_projected_cost: guard.token_cost_usd raised; "
-                    "falling back to static table",
+                    "_projected_cost: guard.token_cost_usd raised; falling back to static table",
                     exc_info=True,
                 )
         try:
@@ -382,17 +372,14 @@ class ExecutionEngine:
             return float(_static(model, proj_in, proj_out))
         except Exception:
             logger.debug(
-                "_projected_cost: pricing lookup failed; "
-                "using conservative default %.6f per 1k tokens",
+                "_projected_cost: pricing lookup failed; using conservative default %.6f per 1k tokens",
                 _UNKNOWN_MODEL_COST_PER_1K,
                 exc_info=True,
             )
 
         return (proj_in + proj_out) / 1000.0 * _UNKNOWN_MODEL_COST_PER_1K
 
-    def _budget_pre_check(
-        self, guard: Any, projected_cost: float | None = None
-    ) -> str | None:
+    def _budget_pre_check(self, guard: Any, projected_cost: float | None = None) -> str | None:
         """Run budget pre-check; return denial string or None (allowed).
 
         Fail-CLOSED: any non-dict result, missing 'allowed' key, or unknown
@@ -471,18 +458,14 @@ class ExecutionEngine:
                 return await _git_commit_async(path, message)
 
         try:
-            task: asyncio.Task[str | None] = asyncio.create_task(
-                _commit_with_lock()
-            )
+            task: asyncio.Task[str | None] = asyncio.create_task(_commit_with_lock())
             self._background_tasks.add(task)
 
             def _on_commit_done(t: asyncio.Task[str | None]) -> None:
                 self._background_tasks.discard(t)
                 exc = t.exception() if not t.cancelled() else None
                 if exc is not None:
-                    logger.error(
-                        "defer_commit: background commit failed: %s", exc
-                    )
+                    logger.error("defer_commit: background commit failed: %s", exc)
 
             task.add_done_callback(_on_commit_done)
         except RuntimeError:
@@ -499,7 +482,8 @@ class ExecutionEngine:
                 if not task.done():
                     task.cancel()
             await asyncio.gather(
-                *self._background_tasks, return_exceptions=True,
+                *self._background_tasks,
+                return_exceptions=True,
             )
             self._background_tasks.clear()
 
@@ -509,9 +493,25 @@ class ExecutionEngine:
 
         if self._model_gateway is None:
             return TaskReturn(
-                return_id=return_id, todo_id=job.todo_id, job_id=job.job_id,
-                playbook=job.playbook or "code", queue=job.queue or "core",
-                exit_code=1, result_summary="No model gateway configured",
+                return_id=return_id,
+                todo_id=job.todo_id,
+                job_id=job.job_id,
+                playbook=job.playbook or "code",
+                queue=job.queue or "core",
+                exit_code=1,
+                result_summary="No model gateway configured",
+            )
+
+        sandbox_error = self._verify_sandbox()
+        if sandbox_error is not None:
+            return TaskReturn(
+                return_id=return_id,
+                todo_id=job.todo_id,
+                job_id=job.job_id,
+                playbook=job.playbook or "code",
+                queue=job.queue or "core",
+                exit_code=1,
+                result_summary=sandbox_error,
             )
 
         is_git = _is_git_repo(self.workspace_path)
@@ -521,17 +521,23 @@ class ExecutionEngine:
             _git_create_branch(self.workspace_path, branch_name)
 
         system_prompt = _build_system_prompt(
-            job, behavior=self._behavior,
-            searcher=self._searcher, workspace_path=self.workspace_path,
+            job,
+            behavior=self._behavior,
+            searcher=self._searcher,
+            workspace_path=self.workspace_path,
         )
         user_prompt = _build_user_prompt(job)
 
         denial = self._budget_pre_check(self._budget_guard)
         if denial is not None:
             return TaskReturn(
-                return_id=return_id, todo_id=job.todo_id, job_id=job.job_id,
-                playbook=job.playbook or "code", queue=job.queue or "core",
-                exit_code=1, result_summary=f"Budget check failed: {denial}",
+                return_id=return_id,
+                todo_id=job.todo_id,
+                job_id=job.job_id,
+                playbook=job.playbook or "code",
+                queue=job.queue or "core",
+                exit_code=1,
+                result_summary=f"Budget check failed: {denial}",
             )
 
         try:
@@ -542,23 +548,33 @@ class ExecutionEngine:
             ]
             response = await asyncio.to_thread(
                 self._model_gateway.call_model,
-                profile_id, messages=messages, work_type=job.work_type or "code",
+                profile_id,
+                messages=messages,
+                work_type=job.work_type or "code",
             )
             model_output = getattr(response, "content", "") or str(response)
             self._record_metrics(job, success=True, tokens=len(model_output) // 4)
         except Exception as exc:
             self._record_metrics(job, success=False)
             return TaskReturn(
-                return_id=return_id, todo_id=job.todo_id, job_id=job.job_id,
-                playbook=job.playbook or "code", queue=job.queue or "core",
-                exit_code=1, result_summary=f"Model call failed: {exc}",
+                return_id=return_id,
+                todo_id=job.todo_id,
+                job_id=job.job_id,
+                playbook=job.playbook or "code",
+                queue=job.queue or "core",
+                exit_code=1,
+                result_summary=f"Model call failed: {exc}",
             )
 
         if not model_output or not model_output.strip():
             return TaskReturn(
-                return_id=return_id, todo_id=job.todo_id, job_id=job.job_id,
-                playbook=job.playbook or "code", queue=job.queue or "core",
-                exit_code=1, result_summary="Model returned empty output",
+                return_id=return_id,
+                todo_id=job.todo_id,
+                job_id=job.job_id,
+                playbook=job.playbook or "code",
+                queue=job.queue or "core",
+                exit_code=1,
+                result_summary="Model returned empty output",
             )
 
         changed_files: list[str] = []
@@ -584,18 +600,20 @@ class ExecutionEngine:
                 applied_changes = True
 
         if not applied_changes:
-            fallback_files, fallback_applied = self._fallback_extract_code(
-                job, blocks
-            )
+            fallback_files, fallback_applied = self._fallback_extract_code(job, blocks)
             if fallback_applied:
                 changed_files.extend(fallback_files)
                 applied_changes = True
 
         if not applied_changes:
             return TaskReturn(
-                return_id=return_id, todo_id=job.todo_id, job_id=job.job_id,
-                playbook=job.playbook or "code", queue=job.queue or "core",
-                exit_code=1, result_summary="No changes parsed from model output",
+                return_id=return_id,
+                todo_id=job.todo_id,
+                job_id=job.job_id,
+                playbook=job.playbook or "code",
+                queue=job.queue or "core",
+                exit_code=1,
+                result_summary="No changes parsed from model output",
                 artifacts=[f"raw_output:{len(model_output)} chars"],
             )
 
@@ -609,14 +627,13 @@ class ExecutionEngine:
             )
             self.defer_commit(self.workspace_path, commit_msg)
 
-        test_exit_code, test_summary = await asyncio.to_thread(
-            _run_tests, self.workspace_path
-        )
+        test_exit_code, test_summary = await asyncio.to_thread(_run_tests, self.workspace_path)
         evidence_refs: list[str] = list(changed_files[:20])
 
         if self._benchmark_recorder is not None:
             try:
                 from general_ludd.event_loop.benchmark import record_job_benchmark
+
                 task = asyncio.create_task(
                     record_job_benchmark(
                         self._benchmark_recorder,
@@ -633,17 +650,14 @@ class ExecutionEngine:
                     self._background_tasks.discard(t)
                     exc = t.exception() if not t.cancelled() else None
                     if exc is not None:
-                        logger.error(
-                            "benchmark background task failed: %s", exc
-                        )
+                        logger.error("benchmark background task failed: %s", exc)
 
                 task.add_done_callback(_on_benchmark_done)
             except RuntimeError:
                 pass  # No running event loop
 
         summary_parts: list[str] = [
-            f"Changed {len(changed_files)} file(s): "
-            f"{', '.join(changed_files[:10])}.",
+            f"Changed {len(changed_files)} file(s): {', '.join(changed_files[:10])}.",
         ]
         if not is_git:
             summary_parts.append("WARNING: Workspace is not a git repository.")
@@ -651,185 +665,19 @@ class ExecutionEngine:
         summary_parts.append(f"Tests: exit={test_exit_code}. {test_summary[:500]}")
 
         return TaskReturn(
-            return_id=return_id, todo_id=job.todo_id, job_id=job.job_id,
-            playbook=job.playbook or "code", queue=job.queue or "core",
-            exit_code=test_exit_code, result_summary=" ".join(summary_parts),
+            return_id=return_id,
+            todo_id=job.todo_id,
+            job_id=job.job_id,
+            playbook=job.playbook or "code",
+            queue=job.queue or "core",
+            exit_code=test_exit_code,
+            result_summary=" ".join(summary_parts),
             artifacts=evidence_refs,
             diff_ref=f"raw_output:{len(model_output)} chars",
             test_results_ref=f"exit_code={test_exit_code}",
         )
 
-    # sync execute() removed — migration residue with zero prod callers (C-ENGINE)
-
-    def _fallback_extract_code_not_a_method(self, job: JobSpec) -> TaskReturn:
-        return_id = f"RET-{job.job_id}-{uuid.uuid4().hex[:6]}"
-
-        if self._model_gateway is None:
-            return TaskReturn(
-                return_id=return_id, todo_id=job.todo_id, job_id=job.job_id,
-                playbook=job.playbook or "code", queue=job.queue or "core",
-                exit_code=1, result_summary="No model gateway configured",
-            )
-
-        is_git = _is_git_repo(self.workspace_path)
-
-        title_slug = _slugify(job.prompt_text or job.todo_id or "untitled")
-        branch_name = f"gludd/{job.todo_id}-{title_slug}"
-        if is_git:
-            _git_create_branch(self.workspace_path, branch_name)
-
-        system_prompt = _build_system_prompt(
-            job, behavior=self._behavior,
-            searcher=self._searcher, workspace_path=self.workspace_path,
-        )
-        user_prompt = _build_user_prompt(job)
-
-        denial = self._budget_pre_check(self._budget_guard)
-        if denial is not None:
-            return TaskReturn(
-                return_id=return_id, todo_id=job.todo_id, job_id=job.job_id,
-                playbook=job.playbook or "code", queue=job.queue or "core",
-                exit_code=1, result_summary=f"Budget check failed: {denial}",
-            )
-
-        try:
-            profile_id = getattr(job, "model_profile", None) or "default"
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
-            response = self._model_gateway.call_model(
-                profile_id, messages=messages, work_type=job.work_type or "code"
-            )
-            model_output = getattr(response, "content", "") or str(response)
-            self._record_metrics(job, success=True, tokens=len(model_output) // 4)
-        except Exception as exc:
-            self._record_metrics(job, success=False)
-            return TaskReturn(
-                return_id=return_id, todo_id=job.todo_id, job_id=job.job_id,
-                playbook=job.playbook or "code", queue=job.queue or "core",
-                exit_code=1, result_summary=f"Model call failed: {exc}",
-            )
-
-        if not model_output or not model_output.strip():
-            return TaskReturn(
-                return_id=return_id, todo_id=job.todo_id, job_id=job.job_id,
-                playbook=job.playbook or "code", queue=job.queue or "core",
-                exit_code=1, result_summary="Model returned empty output",
-            )
-
-        changed_files: list[str] = []
-        applied_changes = False
-        blocks = _parse_fenced_blocks(model_output)
-        for block in blocks:
-            content = block["content"]
-            lang = block["language"].lower()
-            if lang in ("diff", "patch"):
-                changed = self._apply_unified_diff(content)
-                changed_files.extend(changed)
-                if changed:
-                    applied_changes = True
-            else:
-                for file_path, file_content in _extract_file_paths(content):
-                    self._write_file(file_path, file_content)
-                    changed_files.append(file_path)
-                    applied_changes = True
-        for file_path, file_content in _extract_file_paths(model_output):
-            if file_path not in changed_files:
-                self._write_file(file_path, file_content)
-                changed_files.append(file_path)
-                applied_changes = True
-
-        if not applied_changes:
-            fallback_files, fallback_applied = self._fallback_extract_code(
-                job, blocks
-            )
-            if fallback_applied:
-                changed_files.extend(fallback_files)
-                applied_changes = True
-
-        commit_sha = None
-        if applied_changes and is_git:
-            commit_msg = (
-                f"[gludd] {job.todo_id}: "
-                f"{job.prompt_text or 'code change'}\n\n"
-                f"Work type: {job.work_type}\n"
-                f"Changed files: {', '.join(changed_files[:10])}"
-            )
-            commit_sha = _git_commit(self.workspace_path, commit_msg)
-
-        if not applied_changes:
-            return TaskReturn(
-                return_id=return_id, todo_id=job.todo_id, job_id=job.job_id,
-                playbook=job.playbook or "code", queue=job.queue or "core",
-                exit_code=1, result_summary="No changes parsed from model output",
-                artifacts=[f"raw_output:{len(model_output)} chars"],
-            )
-
-        test_exit_code, test_summary = _run_tests(self.workspace_path)
-        evidence_refs: list[str] = list(changed_files[:20])
-        if commit_sha:
-            evidence_refs.append(f"commit:{commit_sha}")
-            evidence_refs.append(f"branch:{_git_current_branch(self.workspace_path)}")
-
-        summary_parts: list[str] = [
-            f"Changed {len(changed_files)} file(s): "
-            f"{', '.join(changed_files[:10])}.",
-        ]
-        if not is_git:
-            summary_parts.append(
-                "WARNING: Workspace is not a git repository."
-            )
-        if commit_sha:
-            summary_parts.append(f"Committed as {commit_sha}.")
-        summary_parts.append(
-            f"Tests: exit={test_exit_code}. {test_summary[:500]}"
-        )
-
-        result = TaskReturn(
-            return_id=return_id, todo_id=job.todo_id, job_id=job.job_id,
-            playbook=job.playbook or "code", queue=job.queue or "core",
-            exit_code=test_exit_code, result_summary=" ".join(summary_parts),
-            artifacts=evidence_refs,
-            diff_ref=(
-                f"commit:{commit_sha}" if commit_sha
-                else f"raw_output:{len(model_output)} chars"
-            ),
-            test_results_ref=f"exit_code={test_exit_code}",
-        )
-
-        if self._benchmark_recorder is not None:
-            try:
-                from general_ludd.event_loop.benchmark import record_job_benchmark
-                task = asyncio.create_task(
-                    record_job_benchmark(
-                        self._benchmark_recorder,
-                        model_profile=getattr(job, "model_profile", None),
-                        prompt_profile=getattr(job, "prompt_profile", None),
-                        work_type=job.work_type or "code",
-                        success=test_exit_code == 0,
-                        input_tokens=len(model_output) // 4,
-                    )
-                )
-                self._background_tasks.add(task)
-
-                def _on_benchmark_done(t: asyncio.Task[Any]) -> None:
-                    self._background_tasks.discard(t)
-                    exc = t.exception() if not t.cancelled() else None
-                    if exc is not None:
-                        logger.error(
-                            "benchmark background task failed: %s", exc
-                        )
-
-                task.add_done_callback(_on_benchmark_done)
-            except RuntimeError:
-                pass  # No running event loop
-
-        return result
-
-    def _fallback_extract_code(
-        self, job: JobSpec, blocks: list[dict[str, str]]
-    ) -> tuple[list[str], bool]:
+    def _fallback_extract_code(self, job: JobSpec, blocks: list[dict[str, str]]) -> tuple[list[str], bool]:
         """Fallback: extract code from fenced Python blocks when no FILE: markers exist.
 
         When a model (e.g. DeepSeek) doesn't emit ``FILE: <path>`` markers but
@@ -837,9 +685,7 @@ class ExecutionEngine:
         path and writes the code so the job doesn't silently fail.
         """
         python_blocks: list[dict[str, str]] = [
-            b for b in blocks
-            if b["language"].lower() in ("python", "py", "")
-            and b["content"].strip()
+            b for b in blocks if b["language"].lower() in ("python", "py", "") and b["content"].strip()
         ]
         if not python_blocks:
             return [], False
@@ -855,17 +701,22 @@ class ExecutionEngine:
         if os.path.isdir(workspace):
             for root, dirs, files in os.walk(workspace):
                 dirs[:] = [
-                    d for d in dirs
-                    if not d.startswith(".") and d not in (
-                        "__pycache__", "node_modules", ".git", ".venv",
-                        "venv", "dist",
+                    d
+                    for d in dirs
+                    if not d.startswith(".")
+                    and d
+                    not in (
+                        "__pycache__",
+                        "node_modules",
+                        ".git",
+                        ".venv",
+                        "venv",
+                        "dist",
                     )
                 ]
                 for f in files:
                     if f.endswith(".py") and not f.startswith("."):
-                        target_path = os.path.relpath(
-                            os.path.join(root, f), workspace
-                        )
+                        target_path = os.path.relpath(os.path.join(root, f), workspace)
                         break
                 if target_path:
                     break
@@ -901,8 +752,7 @@ class ExecutionEngine:
             common = ""
         if common != base:
             raise ValueError(
-                f"refusing path that escapes the workspace: {file_path!r} "
-                f"(resolved to {full!r}, base {base!r})"
+                f"refusing path that escapes the workspace: {file_path!r} (resolved to {full!r}, base {base!r})"
             )
 
         if self._sandbox_enforcer is not None and self._sandbox_verified:
@@ -969,6 +819,7 @@ class ExecutionEngine:
 
     def _apply_unified_diff(self, diff_text: str) -> list[str]:
         import tempfile
+
         # Containment jail (model-supplied diff): refuse to apply ANY hunk whose
         # source (---) OR target (+++) escapes the workspace via absolute or ../
         # path. We validate every header path BEFORE invoking patch, so a single
@@ -989,26 +840,33 @@ class ExecutionEngine:
         jail = os.path.realpath(self.workspace_path)
         diff_path: str | None = None
         try:
-            with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".diff", delete=False
-            ) as f:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".diff", delete=False) as f:
                 f.write(diff_text)
                 diff_path = f.name
             # argv is list-form (never a shell string): diff_path and jail are
             # caller/LLM-adjacent, so list-form keeps them out of shell parsing.
             result = subprocess.run(
                 [
-                    "patch", "-p1", "-d", jail, "-i",
-                    diff_path, "--force", "--no-backup-if-mismatch",
+                    "patch",
+                    "-p1",
+                    "-d",
+                    jail,
+                    "-i",
+                    diff_path,
+                    "--force",
+                    "--no-backup-if-mismatch",
                 ],
-                capture_output=True, text=True, timeout=30,
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
             # Only report files as changed when patch actually succeeded; a
             # rejected/failed patch must not be advertised as an applied change.
             if result.returncode != 0:
                 logger.warning(
                     "patch exited %s; treating diff as not applied: %s",
-                    result.returncode, (result.stderr or result.stdout)[:500],
+                    result.returncode,
+                    (result.stderr or result.stdout)[:500],
                 )
                 return []
             return self._diff_changed_files(diff_text)

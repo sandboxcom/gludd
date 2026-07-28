@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import AsyncGenerator, Callable, Generator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from sqlalchemy import select
@@ -636,6 +636,48 @@ class TodoRepository:
         todo.updated_at = now
         await self._session.flush()
         return todo
+
+    async def requeue_needs_more_work(
+        self,
+        *,
+        cooldown_hours: int = 24,
+        max_run_count: int = 3,
+        limit: int = 10,
+    ) -> int:
+        from sqlalchemy import update as _update
+
+        cutoff = datetime.now(UTC) - timedelta(hours=cooldown_hours)
+        cap = min(limit, _DEFAULT_LIST_LIMIT)
+        stmt = (
+            select(TodoModel)
+            .where(
+                TodoModel.status == TodoStatus.NEEDS_MORE_WORK.value,
+                TodoModel.updated_at < cutoff,
+                TodoModel.run_count < max_run_count,
+            )
+            .limit(cap)
+        )
+        result = await self._session.execute(stmt)
+        todos = list(result.scalars().all())
+        requeued = 0
+        for todo in todos:
+            guard = _update(TodoModel).where(
+                TodoModel.id == todo.id,
+                TodoModel.status == TodoStatus.NEEDS_MORE_WORK.value,
+            )
+            guard = guard.values(
+                status=TodoStatus.QUEUED.value,
+                version=TodoModel.version + 1,
+                updated_at=datetime.now(UTC),
+            )
+            res = await self._session.execute(guard)
+            if (cast("CursorResult[Any]", res).rowcount or 0) == 1:
+                todo.status = TodoStatus.QUEUED.value
+                todo.version += 1
+                todo.updated_at = datetime.now(UTC)
+                requeued += 1
+        await self._session.flush()
+        return requeued
 
 
 class TaskReturnRepository:
