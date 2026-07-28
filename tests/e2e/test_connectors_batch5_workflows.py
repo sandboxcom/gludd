@@ -1319,56 +1319,130 @@ class TestWindowsWmiConnector:
 
 class TestMacOSLogConnector:
     def test_constructs_with_defaults(self):
-        from general_ludd.connectors.macos_log import MacOSLogSource
+        from general_ludd.connectors.macos_log import MacosLogSource
 
-        source = MacOSLogSource()
+        source = MacosLogSource()
         assert source.KIND == "logs"
+        assert source.name == "macos_log"
 
     def test_constructs_custom_config(self):
-        from general_ludd.connectors.macos_log import MacOSLogSource
+        from general_ludd.connectors.macos_log import MacosLogSource
 
-        source = MacOSLogSource({
-            "predicate": 'process == "opendirectoryd"',
-            "name": "od-log",
-            "last": "10m",
-        })
+        calls: list[list[str]] = []
+
+        def _runner(argv: list[str]) -> tuple[int, str, str]:
+            calls.append(list(argv))
+            return (0, "[]", "")
+
+        source = MacosLogSource(
+            {
+                "predicate": 'process == "opendirectoryd"',
+                "name": "od-log",
+                "duration": "10m",
+            },
+            runner=_runner,
+        )
         assert source.name == "od-log"
+        assert source.query({}) == []
+        assert calls == [[
+            "log",
+            "show",
+            "--style",
+            "json",
+            "--last",
+            "10m",
+            "--predicate",
+            'process == "opendirectoryd"',
+        ]]
 
     def test_health_ok_with_runner(self):
-        from general_ludd.connectors.macos_log import MacOSLogSource
+        from general_ludd.connectors.macos_log import MacosLogSource
 
-        source = MacOSLogSource(runner=lambda argv: _json.dumps([{"eventMessage": "test"}]))
+        calls: list[list[str]] = []
+
+        def _runner(argv: list[str]) -> tuple[int, str, str]:
+            calls.append(list(argv))
+            return (0, "[]", "")
+
+        source = MacosLogSource(runner=_runner)
         result = source.health()
-        assert result["ok"] is True
+        assert result == {
+            "ok": True,
+            "detail": "log tool reachable",
+        }
+        assert calls == [[
+            "log",
+            "show",
+            "--style",
+            "json",
+            "--last",
+            "1s",
+        ]]
 
     def test_query_returns_log_entries(self):
-        from general_ludd.connectors.macos_log import MacOSLogSource
+        from general_ludd.connectors.macos_log import MacosLogSource
 
-        def _runner(argv: list[str]) -> str:
-            return _json.dumps([
-                {
+        calls: list[list[str]] = []
+
+        def _runner(argv: list[str]) -> tuple[int, str, str]:
+            calls.append(list(argv))
+            return (
+                0,
+                _json.dumps([{
                     "eventMessage": "Login attempt",
+                    "messageType": "Error",
+                    "subsystem": "com.apple.opendirectoryd",
+                    "category": "authentication",
                     "processImagePath": "/usr/libexec/opendirectoryd",
+                    "processID": 123,
                     "timestamp": "2025-01-01 12:00:00.000000-0500",
-                },
-                {
+                }, {
                     "eventMessage": "Authentication succeeded",
+                    "messageType": "Default",
+                    "subsystem": "com.apple.opendirectoryd",
+                    "category": "authentication",
                     "processImagePath": "/usr/libexec/opendirectoryd",
+                    "processID": 123,
                     "timestamp": "2025-01-01 12:00:01.000000-0500",
-                },
-            ])
+                }]),
+                "",
+            )
 
-        source = MacOSLogSource({"predicate": 'process == "opendirectoryd"'}, runner=_runner)
+        source = MacosLogSource(
+            {"predicate": 'process == "opendirectoryd"'},
+            runner=_runner,
+        )
         records = source.query({})
-        assert len(records) >= 2
+        assert calls == [[
+            "log",
+            "show",
+            "--style",
+            "json",
+            "--last",
+            "5m",
+            "--predicate",
+            'process == "opendirectoryd"',
+        ]]
+        assert len(records) == 2
         assert all(r["kind"] == "logs" for r in records)
+        assert [r["level_or_status"] for r in records] == ["error", "info"]
+        assert records[0]["message"] == "Login attempt"
+        assert records[0]["labels"] == {
+            "subsystem": "com.apple.opendirectoryd",
+            "category": "authentication",
+            "process": "/usr/libexec/opendirectoryd",
+            "pid": 123,
+        }
 
-    def test_query_empty_without_runner(self):
-        from general_ludd.connectors.macos_log import MacOSLogSource
+    def test_query_requires_injected_runner(self):
+        from general_ludd.connectors.macos_log import MacosLogSource
 
-        source = MacOSLogSource()
-        records = source.query({})
-        assert records == []
+        source = MacosLogSource()
+        with pytest.raises(
+            RuntimeError,
+            match="MacosLogSource requires an injected runner",
+        ):
+            source.query({})
 
 
 # ============================================================================

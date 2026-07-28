@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) macOS log E2E used the wrong export and bypassed the command boundary
+
+- **What**: Connector batch 5 reached macOS unified logging and imported nonexistent `MacOSLogSource` instead of public `MacosLogSource`. It configured ignored `last`, returned JSON directly from its callbacks, and expected a query with no runner to look like an empty log.
+- **Root cause**: The broad E2E bypassed the connector's explicit `(argv) -> (returncode, stdout, stderr)` protocol and time-bounded `duration` option. That hid exact `log show --style json --last` behavior, predicate placement, normalized message levels, and the requirement that host access be explicitly injected.
+- **Fix applied**: Tests now use the real export, configure `duration`, record exact health and query argv, return runner triples, verify error/default level normalization and process labels, and require an explicit `RuntimeError` when query has no runner.
+- **Long-lived user evidence**: Apple describes OSLog as the historical unified-log reading interface and documents default privacy redaction for dynamic strings ([OSLog](https://developer.apple.com/documentation/OSLog), [logging privacy](https://developer.apple.com/documentation/os/generating-log-messages-from-your-code)). Developers have reported missing info/debug messages and visibility differences since 2017 ([Apple Developer Forums](https://developer.apple.com/forums/thread/82736)); archived logs can also become unreadable or expose partial metadata across OS/tool versions ([Ask Different](https://apple.stackexchange.com/questions/357179/unified-logs-macos-high-sierra)).
+- **Lesson**: Unified-log E2E must control the command runner, time window, predicate, and wire format together. No runner is an unavailable collector—not an empty log—and message visibility can legitimately vary with persistence and privacy policy.
+
 ### 2026-07-28 — (resolved) Windows WMI E2E imported a nonexistent class and arbitrary-query API
 
 - **What**: Connector batch 5 reached Windows WMI and imported `WindowsWmiSource`, which the module does not export. Its fixtures also configured an ignored arbitrary `query` string and returned JSON directly from a string callback instead of exercising the public `WinWmiSource` alias, the target allowlist, and the list-argv runner triple.
