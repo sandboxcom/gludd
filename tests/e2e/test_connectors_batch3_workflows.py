@@ -644,7 +644,7 @@ class TestSentryConnector:
             transport=cast(Any, transport),
         )
         result = src.health()
-        assert isinstance(result, dict)
+        assert result["ok"] is True
 
     def test_query_issues(self, monkeypatch):
         from general_ludd.connectors.sentry import SentrySource
@@ -1231,8 +1231,9 @@ class TestCloudflareConnector:
                 "result": [
                     {
                         "id": "log-1",
-                        "action": {"type": "login"},
+                        "action": {"type": "login", "result": "success"},
                         "actor": {"email": "user@example.com"},
+                        "resource": {"type": "account"},
                         "when": "2025-01-01T00:00:00Z",
                     }
                 ],
@@ -1244,8 +1245,10 @@ class TestCloudflareConnector:
             transport=cast(Any, transport),
         )
         records = src.query({})
-        assert isinstance(records, list)
-        assert len(records) >= 1
+        assert len(records) == 1
+        assert records[0]["message"] == "login"
+        assert records[0]["level_or_status"] == "success"
+        assert records[0]["labels"]["actor_email"] == "user@example.com"
 
     def test_ssrf_rejects_internal(self, monkeypatch):
         from general_ludd.connectors.cloudflare import CloudflareSource
