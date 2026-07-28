@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) Linear E2E bypassed normalized taxonomy and team scope
+
+- **What**: Connector batch 4 first stopped because the Linear E2E expected kind `issues` instead of canonical `tickets`; its health cases then omitted required `team_id`, and its final query case expected a transport outage to be silently converted into an empty result.
+- **Root cause**: The test copied Linear's provider noun into Gludd's `kind`, treated authentication alone as sufficient scope, and conflated health's fail-soft contract with query execution. The connector queries `team(id).issues`; health never raises, while query failures remain observable so “no tickets” cannot hide “Linear was unreachable.”
+- **Fix applied**: Construction and record assertions now require `tickets`. Validation first supplies a team so it reaches missing-token validation, every operational path carries a team ID, and the outage case explicitly requires the original transport error to propagate.
+- **Long-lived user evidence**: Linear users themselves alternate between “issues” and “tickets” when discussing the same work objects ([Linear community terminology discussion](https://www.reddit.com/r/Linear/comments/1d2lvso), [workflow discussion](https://www.reddit.com/r/Linear/comments/1h87cou)); Linear's own changelog distinguishes native issues from linked support tickets ([Linear changelog](https://linear.app/changelog/page/13)). That provider-language variation is exactly why Gludd needs a stable normalized kind.
+- **API evidence**: Linear's GraphQL examples select a team explicitly with `team(id: ...)` ([Linear developer guide](https://linear.app/developers/graphql)); its SDK examples likewise require `teamId` when creating scoped work ([Linear SDK guide](https://linear.app/developers/sdk-fetching-and-modifying-data)).
+- **Lesson**: Provider schema names belong in raw payloads and provider-specific labels, while cross-connector fields use Gludd's canonical vocabulary. Operational tests preserve provider scope, and queries must distinguish a real empty collection from an unavailable upstream.
+
 ### 2026-07-28 — (resolved) Journald E2E injected a removed high-level reader abstraction
 
 - **What**: Connector batch 4 stopped because the Journald E2E passed `reader=...`, but the connector's supported seam is `runner(argv) -> (returncode, stdout, stderr)`.

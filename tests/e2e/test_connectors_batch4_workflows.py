@@ -1010,8 +1010,8 @@ class TestLinearConnector:
     def test_config_requires_token_env(self):
         from general_ludd.connectors.linear import LinearSource
 
-        with pytest.raises((ValueError, RuntimeError)):
-            LinearSource({})
+        with pytest.raises(ValueError, match="token_env"):
+            LinearSource({"team_id": "TEAM1"})
 
     def test_constructs_with_valid_config(self, monkeypatch):
         from general_ludd.connectors.linear import LinearSource
@@ -1019,7 +1019,7 @@ class TestLinearConnector:
         monkeypatch.setenv("LIN_TOK", "lin-api-key")
         try:
             source = LinearSource({"token_env": "LIN_TOK", "team_id": "TEAM1"})
-            assert source.KIND == "issues"
+            assert source.KIND == "tickets"
         finally:
             del os.environ["LIN_TOK"]
 
@@ -1032,7 +1032,10 @@ class TestLinearConnector:
         )
         monkeypatch.setenv("LIN_H", "tok")
         try:
-            source = LinearSource({"token_env": "LIN_H"}, transport=transport)
+            source = LinearSource(
+                {"token_env": "LIN_H", "team_id": "TEAM1"},
+                transport=transport,
+            )
             result = source.health()
             assert result["ok"] is True
         finally:
@@ -1044,13 +1047,16 @@ class TestLinearConnector:
         transport = MockHttpResponseTransport(status_code=401, body={"errors": [{"message": "unauthorized"}]})
         monkeypatch.setenv("LIN_H2", "tok")
         try:
-            source = LinearSource({"token_env": "LIN_H2"}, transport=transport)
+            source = LinearSource(
+                {"token_env": "LIN_H2", "team_id": "TEAM1"},
+                transport=transport,
+            )
             result = source.health()
             assert result["ok"] is False
         finally:
             del os.environ["LIN_H2"]
 
-    def test_query_returns_normalized_issues(self, monkeypatch):
+    def test_query_returns_normalized_tickets(self, monkeypatch):
         from general_ludd.connectors.linear import LinearSource
 
         transport = MockHttpResponseTransport(
@@ -1081,12 +1087,12 @@ class TestLinearConnector:
             source = LinearSource({"token_env": "LIN_Q", "team_id": "T1"}, transport=transport)
             records = source.query({})
             assert len(records) == 1
-            assert records[0]["kind"] == "issues"
+            assert records[0]["kind"] == "tickets"
             assert "Fix login bug" in str(records[0]["message"])
         finally:
             del os.environ["LIN_Q"]
 
-    def test_query_handles_transport_error(self, monkeypatch):
+    def test_query_propagates_transport_error(self, monkeypatch):
         from general_ludd.connectors.linear import LinearSource
 
         def _fail(*_: object, **__: object) -> MockHttpResponse:
@@ -1094,9 +1100,12 @@ class TestLinearConnector:
 
         monkeypatch.setenv("LIN_ERR", "tok")
         try:
-            source = LinearSource({"token_env": "LIN_ERR"}, transport=_fail)
-            records = source.query({})
-            assert records == []
+            source = LinearSource(
+                {"token_env": "LIN_ERR", "team_id": "TEAM1"},
+                transport=_fail,
+            )
+            with pytest.raises(OSError, match="network down"):
+                source.query({})
         finally:
             del os.environ["LIN_ERR"]
 
