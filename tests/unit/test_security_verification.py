@@ -224,17 +224,20 @@ def test_opencode_permission_block_exists() -> None:
     assert "permission" in cfg, "opencode.json missing top-level `permission` block"
 
 
-@pytest.mark.parametrize("tool", ["read", "write", "edit", "glob", "grep"])
-def test_workspace_path_scoped(tool: str) -> None:
-    """Every file tool must allow the workspace prefix (and deny everything else)."""
+def test_workspace_tools_use_supported_permission_schema() -> None:
+    """Workspace tools are allowed while external paths remain deny-first."""
     cfg = json.loads(OPENCODE_JSON_PATH.read_text())
-    block = cfg.get("permission", {}).get(tool, {})
-    assert "/Users/shawnwilson/gludd/**" in block, (
-        f"tool {tool!r} does not allow /Users/shawnwilson/gludd/** workspace prefix"
-    )
-    assert block.get("*") == "deny", (
-        f"tool {tool!r} must end with `*: deny` (last-match-wins); was: {block.get('*')}"
-    )
+    permission = cfg.get("permission", {})
+    read = permission.get("read", {})
+    assert read.get("*") == "allow"
+    assert read.get("*.env") == "deny"
+    assert read.get("*.env.*") == "deny"
+    assert read.get("*.env.example") == "allow"
+    for tool in ("edit", "glob", "grep"):
+        assert permission.get(tool) == "allow"
+    assert "write" not in permission
+    external = permission.get("external_directory", {})
+    assert next(iter(external.items())) == ("*", "deny")
 
 
 def test_bash_restricted_to_make() -> None:
