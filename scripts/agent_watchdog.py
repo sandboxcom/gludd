@@ -294,6 +294,7 @@ GATE_MAX_RUNTIME_SECS = int(os.environ.get("GATE_WATCHDOG_TIMEOUT", "3600"))
 _TASKS_MD = _WORKSPACE / "TASKS.md"
 _RATCHET_YML = _WORKSPACE / "config" / "ratchet.yml"
 _GATE_STATUS = _WORKSPACE / ".gate-status"
+_CI_STATUS = _WORKSPACE / ".ci-status"
 
 _UNCHECKED_PATTERN = re.compile(r"-\s+\[\s*\]|\*\s+\[\s*\]", re.IGNORECASE)
 
@@ -2438,21 +2439,12 @@ def check_and_reset() -> dict:
         try:
             stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
             newline = chr(10)
-            ci_line = f"CI FAIL pending (run {ci_run_id}) at {stamp}" + newline
-            ci_status = _WORKSPACE / ".ci-status"
-            ci_status.parent.mkdir(parents=True, exist_ok=True)
-            ci_status.write_text(
+            _CI_STATUS.parent.mkdir(parents=True, exist_ok=True)
+            _CI_STATUS.write_text(
                 f"=== CI {stamp} ===" + newline
                 + f"CI FAIL pending (run {ci_run_id})" + newline
                 + "suggested_action: wait_for_ci" + newline
             )
-            if not gate_red:
-                gate_text = _GATE_STATUS.read_text(encoding="utf-8") if _GATE_STATUS.exists() else ""
-                if ci_line not in gate_text:
-                    separator = "" if not gate_text or gate_text.endswith(newline) else newline
-                    _GATE_STATUS.parent.mkdir(parents=True, exist_ok=True)
-                    _GATE_STATUS.write_text(f"{gate_text}{separator}{ci_line}", encoding="utf-8")
-                gate_red = True
             has_pending_work = True
         except Exception:
             pass
