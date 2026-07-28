@@ -994,37 +994,91 @@ class TestWindowsDefenderConnector:
     def test_health_ok_with_runner(self):
         from general_ludd.connectors.windows_defender import WindowsDefenderSource
 
-        source = WindowsDefenderSource(runner=lambda cmd: _json.dumps([{"ThreatName": "", "ActionSuccess": True}]))
+        calls: list[list[str]] = []
+
+        def _runner(argv: list[str]) -> tuple[int, str, str]:
+            calls.append(list(argv))
+            return (
+                0,
+                _json.dumps([{
+                    "AntivirusEnabled": True,
+                    "AMServiceEnabled": True,
+                    "AntispywareEnabled": True,
+                    "RealTimeProtectionEnabled": True,
+                }]),
+                "",
+            )
+
+        source = WindowsDefenderSource(runner=_runner)
         result = source.health()
-        assert result["ok"] is True
+        assert result == {
+            "ok": True,
+            "detail": "Get-MpComputerStatus responded",
+        }
+        assert calls == [[
+            "powershell",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Get-MpComputerStatus | Select-Object AntivirusEnabled,"
+            "AMServiceEnabled,AntispywareEnabled,RealTimeProtectionEnabled "
+            "| ConvertTo-Json",
+        ]]
 
     def test_query_returns_detections(self):
         from general_ludd.connectors.windows_defender import WindowsDefenderSource
 
-        def _runner(cmd: str) -> str:
-            return _json.dumps([
-                {
+        calls: list[list[str]] = []
+
+        def _runner(argv: list[str]) -> tuple[int, str, str]:
+            calls.append(list(argv))
+            return (
+                0,
+                _json.dumps([{
                     "ThreatName": "Trojan:Win32/Test",
-                    "Severity": "5",
-                    "ActionSuccess": False,
+                    "SeverityName": "Severe",
+                    "StatusName": "Active",
                     "InitialDetectionTime": "2025-01-01T12:00:00Z",
-                }
-            ])
+                }]),
+                "",
+            )
 
         source = WindowsDefenderSource(runner=_runner)
-        records = source.query({})
-        assert len(records) >= 1
+        records = source.query({"target": "threats"})
+        assert calls == [[
+            "powershell",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Get-MpThreatDetection | ConvertTo-Json -Depth 5",
+        ]]
+        assert len(records) == 1
         assert records[0]["kind"] == "logs"
+        assert records[0]["level_or_status"] == "severe"
+        assert records[0]["message"] == (
+            "Threat: Trojan:Win32/Test | Status: Active | Severity: Severe"
+        )
+        assert records[0]["raw"]["command"] == "Get-MpThreatDetection"
 
-    def test_query_empty_on_error(self):
+    def test_query_empty_on_nonzero_exit(self):
         from general_ludd.connectors.windows_defender import WindowsDefenderSource
 
-        def _runner(cmd: str) -> str:
-            raise RuntimeError("powershell not found")
+        calls: list[list[str]] = []
+
+        def _runner(argv: list[str]) -> tuple[int, str, str]:
+            calls.append(list(argv))
+            return (127, "", "powershell not found")
 
         source = WindowsDefenderSource(runner=_runner)
-        records = source.query({})
+        records = source.query({"target": "status"})
         assert records == []
+        assert calls == [[
+            "powershell",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Get-MpComputerStatus | ConvertTo-Json -Depth 5",
+        ]]
 
 
 # ============================================================================

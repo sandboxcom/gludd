@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) Windows Defender E2E returned JSON instead of runner results
+
+- **What**: Connector batch 5 reached Windows Defender and its health fake returned a JSON string from a one-argument string callback. The connector requires a list-argv runner returning `(returncode, stdout, stderr)`, so tuple unpacking failed inside fail-soft health. Its query fixture also supplied threat data while selecting the default computer-status operation.
+- **Root cause**: The broad E2E injected approximate PowerShell output without preserving the command-execution protocol or selecting the operation whose schema it modeled. As a result it proved neither shell-free argv, the distinct health projection, threat normalization, nor nonzero-exit behavior.
+- **Fix applied**: Health and query now record the exact PowerShell list argv and return full runner triples. Health models the selected status fields, threat query explicitly selects `threats` and uses current `SeverityName`/`StatusName` fields, and the unavailable-command case models exit 127 while requiring an empty query result.
+- **Long-lived user evidence**: Microsoft documents `Get-MpComputerStatus` as the Defender status cmdlet and `Get-MpThreatDetection` as the source of active and past detections ([status reference](https://learn.microsoft.com/en-us/powershell/module/defender/get-mpcomputerstatus), [threat reference](https://learn.microsoft.com/en-us/powershell/module/defender/get-mpthreatdetection)). Operators have reported since 2019 that Defender cmdlets can fail despite the service running because the WMI provider or module is unavailable ([Microsoft Q&A](https://learn.microsoft.com/en-us/answers/questions/3194911/get-mpcomputerstatus-throwing-error)); later Server 2019 users reported `Get-Mp*` returning no data after Defender reinstall ([2021 report](https://learn.microsoft.com/en-us/answers/questions/649621/i-uninstalled-then-reinstalled-defender-antivirus)).
+- **Lesson**: Command-backed security E2E must pin both list argv and the `(rc, stdout, stderr)` boundary. Fixtures must match the selected cmdlet, while unavailable providers remain observably different from an actual empty detection set.
+
 ### 2026-07-28 — (resolved) SNMP E2E bypassed environment credentials and the getter protocol
 
 - **What**: Connector batch 5 reached SNMP and called a required-config constructor with no arguments. Its operational cases supplied an ignored inline `community`, a singular `oid`, and an obsolete three-argument getter, while the failure case never reached the getter because no community was resolved.
