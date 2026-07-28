@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) self-test E2E invoked a removed top-level command
+
+- **What**: The complete serial E2E run stopped after 660 passes because two legacy parser tests invoked `gludd selftest`, although the supported command is the namespaced `gludd test self`.
+- **Root cause**: Self-test was deliberately moved beneath the `test` command, but one broad E2E module and three legacy unit invocations retained the old flat syntax. A separate structural regression already required `selftest` not to reappear as a top-level command.
+- **Fix applied**: All executable self-test invocations now exercise `gludd test self`, including daemon URL forwarding, success, and offline-error paths. The structural test continues to prohibit the removed top-level spelling.
+- **Long-lived user evidence**: Python CLI users have discussed nested `argparse` subcommands and their parser structure for more than a decade; the accepted pattern is a subparser hierarchy such as the one Gludd now exposes ([long-running Stack Overflow discussion](https://stackoverflow.com/questions/10448200/how-to-parse-multiple-nested-sub-commands-using-python-argparse)).
+- **Lesson**: A CLI namespace migration is complete only when every executable test invokes the canonical hierarchy; compatibility tests must not contradict an explicit removal contract.
+
 ### 2026-07-28 — (resolved) legacy binary E2E rejected the supported version flag
 
 - **What**: The complete serial E2E run stopped because one legacy black-box test required `gludd --version` to fail, while the current CLI and a second E2E suite intentionally support it and returned `gludd 0.1.0-beta.3`.
