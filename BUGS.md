@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) PagerDuty error doubles rejected the required URL argument
+
+- **What**: The focused connector batch stopped in PagerDuty's HTTP-error query test because the local transport raised `TypeError` before it could return the intended 500 response.
+- **Root cause**: Both PagerDuty failure doubles declared `get(self, **kwargs)` while the connector passes the endpoint as the transport protocol's required positional URL. The health test had appeared green only because health intentionally catches every transport exception, so it was testing the accidental signature error rather than the intended `OSError`.
+- **Fix applied**: Both doubles now accept the positional URL. The health case reaches its explicit connection failure, and the query case reaches the 500 response and verifies PagerDuty's deliberate exception contract.
+- **Long-lived user evidence**: Users debugging request fakes have reported the same positional-argument `TypeError` for over a decade; the established correction is to make the fake accept the original method's arguments ([Stack Overflow discussion](https://stackoverflow.com/questions/35732487/how-do-i-mock-a-method-that-uses-requests-get-in-my-class)).
+- **Lesson**: Fail-soft tests must prove the intended failure source. A catch-all boundary can mask an invalid test double unless the double's signature exactly matches the injected protocol.
+
 ### 2026-07-28 — (resolved) Slack E2E supplied a partial transport implementation
 
 - **What**: The focused connector batch stopped while constructing Slack because its shared response transport exposed only `get`, while Slack requires an HTTP transport with both `get` and `post`.

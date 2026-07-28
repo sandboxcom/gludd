@@ -1039,7 +1039,7 @@ class TestPagerDutySource:
         from general_ludd.connectors.pagerduty import PagerDutySource
 
         class ErrTransport:
-            def get(self, **kwargs: object) -> _FakeResponse:
+            def get(self, url: str, **kwargs: object) -> _FakeResponse:
                 raise OSError("refused")
 
         source = PagerDutySource({}, transport=ErrTransport())
@@ -1080,7 +1080,7 @@ class TestPagerDutySource:
         from general_ludd.connectors.pagerduty import PagerDutySource
 
         class ErrTransport:
-            def get(self, **kwargs: object) -> _FakeResponse:
+            def get(self, url: str, **kwargs: object) -> _FakeResponse:
                 return _fake_response(500, {})
 
         source = PagerDutySource({}, transport=ErrTransport())
