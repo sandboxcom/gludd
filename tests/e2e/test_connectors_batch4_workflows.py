@@ -713,18 +713,21 @@ class TestBugsnagConnector:
 
 
 class TestRollbarConnector:
-    def test_config_requires_project_token(self):
+    def test_config_requires_token_env(self):
         from general_ludd.connectors.rollbar import RollbarSource
 
-        with pytest.raises((ValueError, RuntimeError)):
-            RollbarSource({})
+        with pytest.raises(ValueError, match="token_env"):
+            RollbarSource({}, MockHttpResponseTransport())
 
     def test_constructs_with_valid_config(self, monkeypatch):
         from general_ludd.connectors.rollbar import RollbarSource
 
         monkeypatch.setenv("ROLLBAR_TOK", "tok")
         try:
-            source = RollbarSource({"token_env": "ROLLBAR_TOK", "name": "my-rollbar"})
+            source = RollbarSource(
+                {"token_env": "ROLLBAR_TOK", "name": "my-rollbar"},
+                MockHttpResponseTransport(),
+            )
             assert source.name == "my-rollbar"
         finally:
             del os.environ["ROLLBAR_TOK"]
@@ -760,13 +763,13 @@ class TestRollbarConnector:
             status_code=200,
             body={
                 "result": {
-                    "instances": [
+                    "items": [
                         {
                             "id": 1,
                             "title": "Error in api",
                             "status": "active",
                             "total_occurrences": 42,
-                            "first_occurrence_timestamp": 1700000000,
+                            "last_occurrence_timestamp": 1700000000,
                         }
                     ]
                 }
@@ -776,7 +779,11 @@ class TestRollbarConnector:
         try:
             source = RollbarSource({"token_env": "RB_Q"}, transport=transport)
             records = source.query({})
-            assert len(records) >= 1
+            assert len(records) == 1
+            assert records[0]["kind"] == "logs"
+            assert records[0]["message"] == "Error in api"
+            assert records[0]["value"] == 42
+            assert records[0]["ts"] == 1700000000
         finally:
             del os.environ["RB_Q"]
 

@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) Rollbar E2E skipped its transport and confused items with occurrences
+
+- **What**: Connector batch 4 first stopped before Rollbar configuration validation because two construction tests omitted its required transport; after that correction, the query test returned no records because it put occurrence `instances` under the list-items response.
+- **Root cause**: The E2E assumed a one-argument constructor and allowed Python's call-signature `TypeError` to stand in for missing-`token_env` validation. It also conflated Rollbar's `/api/1/items` collection with `/api/1/item/{id}/instances`: the connector correctly reads `result.items` and each item's `last_occurrence_timestamp`.
+- **Fix applied**: Construction paths now inject the object-style transport, and the negative case narrowly requires `token_env` validation. The query fixture now models `result.items`, pins the last-occurrence timestamp, and verifies the normalized message, count, and timestamp rather than accepting any non-empty result.
+- **Long-lived user evidence**: Rollbar users have long emphasized that server-side access tokens must stay secret and be easy to rotate ([Stack Overflow discussion](https://stackoverflow.com/questions/55773182/rollbar-logging-api-key)); other Rollbar integration users explicitly resolve the access token from an environment variable and fail when it is absent ([Stack Overflow example](https://stackoverflow.com/questions/53419870/using-rollbar-with-lumen-5-7)). Those operational constraints are what this connector's injected transport and `token_env` boundary are designed to preserve.
+- **API evidence**: Rollbar documents `/api/1/item/{item_id}/instances` as a separate occurrence-list endpoint ([Rollbar API reference](https://docs.rollbar.com/reference/get_api-1-item-item-id-instances)); its list-items response instead returns the collection under `result.items` with `last_occurrence_timestamp` ([list-items response example](https://www.withone.ai/knowledge/rollbar/conn_mod_def%3A%3AGKsdjQJ4GOA%3A%3AtlAvUI3BS_Wp1XjEohDuIA)).
+- **Lesson**: A configuration test must satisfy constructor dependencies before it can validate configuration, and an API fake must match the exact endpoint being exercised. Invocation errors and neighboring endpoint schemas must not masquerade as connector behavior.
+
 ### 2026-07-28 — (resolved) Shared HTTP fake omitted Bugsnag's object-style request method
 
 - **What**: Connector batch 4 reached Bugsnag health and returned `ok: false` because the shared response transport was callable but had no `request(...)` method.
