@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) Proc/sys E2E used a nonexistent bulk-reader API
+
+- **What**: Connector batch 5 reached proc/sys and passed an unsupported `file_reader=` keyword, configured an ignored `paths` list, called `query({})` without a selector, and expected missing kernel files to be silently skipped.
+- **Root cause**: The broad E2E modeled a bulk sysctl collector instead of the implemented confined single-selector contract: `ProcSysSource(reader=...)` reads one named selector or explicit `/proc`/`/sys` path per query. It also conflated an unavailable kernel interface with a valid empty metric set.
+- **Fix applied**: Tests now inject the documented `reader`, use realistic `/proc/loadavg` health data, issue explicit confined queries for two sysctl files, verify numeric and text normalization, and require `FileNotFoundError` to remain observable for a missing path.
+- **Long-lived user evidence**: Linux documents `/proc/loadavg`, `/proc/stat`, `/proc/meminfo`, and `/proc/sys` as kernel-dependent virtual interfaces whose availability varies with kernel configuration ([Linux procfs documentation](https://www.kernel.org/doc/html/latest/filesystems/proc.html)). The kernel's sysctl guide warns that these files expose powerful tunables as well as monitoring values ([kernel sysctl documentation](https://www.kernel.org/doc/html/v6.9/admin-guide/sysctl/kernel.html)). Users have also reported for a decade that apparent procfs permissions do not guarantee a successful read ([Unix & Linux, 2016](https://unix.stackexchange.com/questions/270607/how-can-i-check-read-permission-of-proc-files)).
+- **Lesson**: Virtual-kernel-file connectors must distinguish a missing or unreadable interface from an empty metric. E2E should exercise the exact injected reader and one confined path-selection contract at a time.
+
 ### 2026-07-28 — (resolved) Dmesg E2E expected host access to fail silently
 
 - **What**: Connector batch 5 reached Dmesg and expected a query without an injected command runner to return an empty list. Its nominal payload also used approximate `ts`/`prio`/`fac` fields and a top-level list rather than pinning the documented JSON envelope and command boundary.

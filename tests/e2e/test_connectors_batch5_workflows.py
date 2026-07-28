@@ -595,13 +595,13 @@ class TestProcSysConnector:
     def test_constructs_custom_config(self):
         from general_ludd.connectors.proc_sys import ProcSysSource
 
-        source = ProcSysSource({"name": "kernel-tune", "paths": ["net.core.somaxconn"]})
+        source = ProcSysSource({"name": "kernel-tune"})
         assert source.name == "kernel-tune"
 
-    def test_health_ok_with_injected_file_reader(self):
+    def test_health_ok_with_injected_reader(self):
         from general_ludd.connectors.proc_sys import ProcSysSource
 
-        source = ProcSysSource(file_reader=lambda path: "1024\n")
+        source = ProcSysSource(reader=lambda path: "0.10 0.20 0.30 1/100 123\n")
         result = source.health()
         assert result["ok"] is True
 
@@ -611,7 +611,7 @@ class TestProcSysConnector:
         def _reader(path: str) -> str:
             raise FileNotFoundError(f"no such file: {path}")
 
-        source = ProcSysSource(file_reader=_reader)
+        source = ProcSysSource(reader=_reader)
         result = source.health()
         assert result["ok"] is False
 
@@ -628,23 +628,25 @@ class TestProcSysConnector:
                 raise FileNotFoundError(path)
             return text
 
-        source = ProcSysSource(
-            {"paths": ["net.core.somaxconn", "kernel.hostname"]},
-            file_reader=_reader,
-        )
-        records = source.query({})
+        source = ProcSysSource(reader=_reader)
+        records = [
+            *source.query({"path": "/proc/sys/net/core/somaxconn"}),
+            *source.query({"path": "/proc/sys/kernel/hostname"}),
+        ]
         assert len(records) == 2
-        assert any("somaxconn" in str(r["message"]).lower() for r in records)
+        assert records[0]["message"] == "somaxconn"
+        assert records[0]["value"] == 4096
+        assert records[1]["message"] == "myhost"
 
-    def test_query_skips_missing_paths(self):
+    def test_query_propagates_missing_path(self):
         from general_ludd.connectors.proc_sys import ProcSysSource
 
         def _reader(path: str) -> str:
             raise FileNotFoundError(path)
 
-        source = ProcSysSource({"paths": ["net.core.somaxconn"]}, file_reader=_reader)
-        records = source.query({})
-        assert records == []
+        source = ProcSysSource(reader=_reader)
+        with pytest.raises(FileNotFoundError, match="somaxconn"):
+            source.query({"path": "/proc/sys/net/core/somaxconn"})
 
 
 # ============================================================================
