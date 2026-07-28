@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) memory stores leaked uncommitted and cross-session state
+
+- **What**: `ObservationStore` mutated its live dictionary before persistence and left that mutation visible when the write failed. Its read APIs and `MemoryBank` getters also returned stored dataclass instances directly, so a caller could silently rewrite durable observations, mental models, or facts without using a mutator. The Hindsight fallback split hyphenated identifiers, causing a search for `sess-5` to also match every `sess-*` record.
+- **Root cause**: Persistence and in-memory publication were treated as separate best-effort steps, ownership boundaries relied on callers not mutating returned objects, and tokenization discarded the punctuation that distinguishes scoped identifiers.
+- **Fix applied**: Every observation mutation now snapshots and restores in-memory state if persistence raises. Observation and memory-bank write, read, query, and recall boundaries deep-copy records. Fallback tokenization preserves compound hyphenated identifiers. Fault-injection, copy-isolation, concurrent-session, unit, and integration coverage now exercises each boundary; the focused memory matrix passes 187 tests.
+- **Long-lived user evidence**: Go users have tracked crash-safe atomic replacement and the risk of empty or lost files since 2017 ([golang/go#22397](https://github.com/golang/go/issues/22397)); Python's formerly popular `atomicwrites` project likewise documents same-filesystem temporary files, atomic replacement, and explicit flush requirements ([python-atomicwrites](https://github.com/untitaker/python-atomicwrites)). Pydantic users show how sharing a mutable nested model can unexpectedly rewrite every holder of that object ([pydantic#7507](https://github.com/pydantic/pydantic/issues/7507)), while CPython's free-threading work requires object locks and atomic transitions around shared dictionaries ([cpython#112075](https://github.com/python/cpython/issues/112075)).
+- **Lesson**: A successful mutator must publish one state to memory and disk, while a failed mutator must publish neither. Durable stores must own copies at both ingress and egress, and identifiers used as isolation keys must survive tokenization intact.
+
 ### 2026-07-28 — (resolved) language workflow fixtures contradicted encoding and Soundex standards
 
 - **What**: The language E2E tried to add two `Path.glob()` iterators, then required at least 20 Soundex mapping entries even though American Soundex encodes exactly 18 consonants. Companion charset tests incorrectly required UTF-16/UTF-32 to be ASCII-compatible, while the mojibake catalogue omitted the common UTF-8-copyright-as-Latin-1 signature `Â©`.

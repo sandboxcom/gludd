@@ -18,6 +18,7 @@ import re
 import threading
 import time
 import uuid
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -206,14 +207,14 @@ class MemoryBank:
         if not model.created_at:
             model.created_at = model.updated_at
         with self._lock:
-            self._mental_models[model.model_id] = model
-        return model
+            self._mental_models[model.model_id] = deepcopy(model)
+        return deepcopy(model)
 
     def get_mental_models(
         self, subject_filter: str | None = None
     ) -> list[MentalModel]:
         with self._lock:
-            models = list(self._mental_models.values())
+            models = [deepcopy(model) for model in self._mental_models.values()]
         if subject_filter is not None:
             fl = subject_filter.lower()
             models = [
@@ -231,7 +232,7 @@ class MemoryBank:
                 return None
             existing.content = content
             existing.updated_at = time.time()
-        return existing
+            return deepcopy(existing)
 
     def delete_mental_model(self, model_id: str) -> bool:
         with self._lock:
@@ -248,12 +249,12 @@ class MemoryBank:
         if not fact.created_at:
             fact.created_at = time.time()
         with self._lock:
-            self._facts[fact.entry_id] = fact
-        return fact
+            self._facts[fact.entry_id] = deepcopy(fact)
+        return deepcopy(fact)
 
     def get_facts(self, tag_filter: str | None = None) -> list[MemoryEntry]:
         with self._lock:
-            facts = list(self._facts.values())
+            facts = [deepcopy(fact) for fact in self._facts.values()]
         if tag_filter is not None:
             fl = tag_filter.lower()
             facts = [f for f in facts if any(fl in t.lower() for t in f.tags)]
@@ -309,7 +310,7 @@ class MemoryBank:
                 priority_boost = (model.priority - 5) * 0.04
                 score = min(1.0, score + priority_boost)
                 if score > 0:
-                    scored.append((model, score))
+                    scored.append((deepcopy(model), score))
         scored.sort(key=lambda x: x[1], reverse=True)
         return [m for m, _ in scored]
 
@@ -322,7 +323,7 @@ class MemoryBank:
                 text_blob = f"{fact.content} {fact.source} {' '.join(fact.tags)}"
                 score = _score_text(qterms, ql, text_blob)
                 if score > 0:
-                    scored.append((fact, score))
+                    scored.append((deepcopy(fact), score))
         scored.sort(key=lambda x: x[1], reverse=True)
         return [f for f, _ in scored]
 

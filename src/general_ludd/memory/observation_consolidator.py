@@ -17,6 +17,7 @@ import threading
 import time
 from collections import defaultdict
 from collections.abc import Sequence
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -331,55 +332,76 @@ class ObservationStore:
 
     def put(self, observation: Observation) -> None:
         with self._lock:
-            self._observations[observation.observation_id] = observation
-            self._persist()
+            previous = self._observations.copy()
+            self._observations[observation.observation_id] = deepcopy(observation)
+            try:
+                self._persist()
+            except BaseException:
+                self._observations = previous
+                raise
 
     def put_all(self, observations: list[Observation]) -> None:
         with self._lock:
+            previous = self._observations.copy()
             for obs in observations:
-                self._observations[obs.observation_id] = obs
-            self._persist()
+                self._observations[obs.observation_id] = deepcopy(obs)
+            try:
+                self._persist()
+            except BaseException:
+                self._observations = previous
+                raise
 
     def get(self, observation_id: str) -> Observation | None:
         with self._lock:
-            return self._observations.get(observation_id)
+            observation = self._observations.get(observation_id)
+            return deepcopy(observation)
 
     # ---------------------------------------------------------------- query
 
     def get_by_subject(self, subject: str) -> list[Observation]:
         with self._lock:
-            return [o for o in self._observations.values() if o.subject == subject]
+            return [deepcopy(o) for o in self._observations.values() if o.subject == subject]
 
     def get_fresh(self) -> list[Observation]:
         with self._lock:
-            return [o for o in self._observations.values() if not o.stale]
+            return [deepcopy(o) for o in self._observations.values() if not o.stale]
 
     def get_stale(self) -> list[Observation]:
         with self._lock:
-            return [o for o in self._observations.values() if o.stale]
+            return [deepcopy(o) for o in self._observations.values() if o.stale]
 
     def get_above_confidence(self, threshold: float) -> list[Observation]:
         with self._lock:
-            return [o for o in self._observations.values() if o.confidence >= threshold]
+            return [deepcopy(o) for o in self._observations.values() if o.confidence >= threshold]
 
     def list_all(self) -> list[Observation]:
         with self._lock:
-            return list(self._observations.values())
+            return [deepcopy(o) for o in self._observations.values()]
 
     # ---------------------------------------------------------------- mutate
 
     def delete(self, observation_id: str) -> bool:
         with self._lock:
-            existed = observation_id in self._observations
+            previous = self._observations.copy()
+            existed = observation_id in previous
             self._observations.pop(observation_id, None)
             if existed:
-                self._persist()
+                try:
+                    self._persist()
+                except BaseException:
+                    self._observations = previous
+                    raise
             return existed
 
     def clear(self) -> None:
         with self._lock:
+            previous = self._observations.copy()
             self._observations.clear()
-            self._persist()
+            try:
+                self._persist()
+            except BaseException:
+                self._observations = previous
+                raise
 
     # ---------------------------------------------------------------- persistence
 
