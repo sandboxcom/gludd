@@ -32,9 +32,21 @@ class GitHubIssueIngestor:
     async def poll_issues(self) -> list[dict[str, Any]]:
         if not self.is_configured():
             return []
-        issues = await self._fetch_labeled_issues()
+        issues: Any = await self._fetch_labeled_issues()
+        if not isinstance(issues, list):
+            logger.warning(
+                "GitHub issue fetch returned %s instead of a list",
+                type(issues).__name__,
+            )
+            return []
         new_todos: list[dict[str, Any]] = []
         for issue in issues:
+            if not isinstance(issue, dict):
+                logger.warning(
+                    "Skipping malformed GitHub issue of type %s",
+                    type(issue).__name__,
+                )
+                continue
             # GitHub's /issues endpoint returns both issues and PRs; PRs carry a
             # `pull_request` key and must never become work todos.
             if "pull_request" in issue:
@@ -48,6 +60,8 @@ class GitHubIssueIngestor:
             title = issue.get("title", "")
             body = issue.get("body", "")
             labels_raw = issue.get("labels", [])
+            if not isinstance(labels_raw, list):
+                labels_raw = []
             label_names = [
                 lbl.get("name", "") if isinstance(lbl, dict) else str(lbl)
                 for lbl in labels_raw
