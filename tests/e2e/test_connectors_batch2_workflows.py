@@ -1743,6 +1743,8 @@ class TestCassandraStatsConnector:
         from general_ludd.connectors.cassandra_stats import CassandraStatsSource
 
         def executor(command: str) -> list[dict[str, object]]:
+            if command != "compactionstats":
+                return []
             return [
                 {"metric": None, "value": 1},  # skipped
                 {"metric": "valid_metric", "value": 42},
@@ -1782,6 +1784,8 @@ class TestCassandraStatsConnector:
         from general_ludd.connectors.cassandra_stats import CassandraStatsSource
 
         def executor(command: str) -> list[dict[str, object]]:
+            if command != "compactionstats":
+                return []
             return [{"metric": "test_metric", "value": 99, "keyspace": "ks", "table": "tbl"}]
 
         source = CassandraStatsSource(executor=executor)

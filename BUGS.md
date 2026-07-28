@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) Cassandra E2E returned one metric for every logical command
+
+- **What**: The focused connector batch produced three `valid_metric` records where a row-filtering E2E expected one, because Cassandra intentionally queries `compactionstats`, `tablestats`, and `tpstats`.
+- **Root cause**: Two local executors ignored their `command` argument and returned the same row for all three metric groups. Canonical tests explicitly pin the three-command lifecycle, so the duplicated output was correct for those fakes and the single-record assertions were not.
+- **Fix applied**: The row-filtering and record-shape executors now return their canned data only for `compactionstats` and empty results for the other groups. Each test isolates its intended normalization behavior without contradicting the connector's multi-command collection contract.
+- **Long-lived user evidence**: Python users testing argument-sensitive dependencies recommend callable mock behavior that selects return values from the actual input rather than using one unconditional response ([Stack Overflow discussion](https://stackoverflow.com/questions/46651836/python-mocking-how-do-i-change-behavior-based-on-input-values)).
+- **Lesson**: A fake for a multi-command executor must model command-specific output. Otherwise aggregation behavior is mistaken for a normalization defect.
+
 ### 2026-07-28 — (resolved) CI connector callback omitted positional headers
 
 - **What**: The focused connector batch stopped in Jenkins health because the shared callable transport accepted only the URL positionally, while Jenkins and CircleCI pass both URL and headers according to their callback contract.
