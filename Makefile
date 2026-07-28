@@ -13,6 +13,15 @@ GATE_RELEASE_PYTEST ?= $(UV) run python -m pytest
 GATE_RELEASE_MAKE ?= $(MAKE)
 GATE_RELEASE_WORKERS ?= 2
 
+# TUI-aware subprocesses require a terminal type present in the base system's
+# terminfo database. Normalize missing, dumb, unknown, and host-specific values
+# (for example alacritty on minimal CI/macOS images), but preserve common usable
+# caller selections.
+ifeq (,$(filter xterm% screen% tmux% vt100 ansi,$(strip $(TERM))))
+override TERM := xterm-256color
+endif
+export TERM
+
 _MULTIWORD_VALUE_GOALS := \
     copy-file feature-done feature-start git-add git-branch git-checkout git-cherry-pick-list \
     git-commit git-commit-file git-commit-files git-merge git-reset git-restore git-tag-move \
