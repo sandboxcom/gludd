@@ -72,6 +72,11 @@
       "name": "release-view",
       "make_variables": ["TAG"],
       "behavior": "make release-view TAG=v0.1.0-beta.2"
+    },
+    {
+      "name": "feature-spec-inventory",
+      "make_variables": ["FORMAT"],
+      "behavior": "make feature-spec-inventory FORMAT=json"
     }
   ]
 }
