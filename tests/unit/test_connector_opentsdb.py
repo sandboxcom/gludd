@@ -120,6 +120,33 @@ def test_query_dps_one_record_per_point() -> None:
     assert web02[0]["value"] == 5.0
 
 
+def test_callable_tuple_transport_compatibility() -> None:
+    calls: list[tuple[str, str, object]] = []
+
+    def transport(
+        method: str, url: str, **kwargs: object
+    ) -> tuple[int, object]:
+        calls.append((method, url, kwargs.get("json")))
+        return 200, DPS_PAYLOAD
+
+    src = OpenTsdbSource(
+        {"base_url": "https://tsdb.example.com"},
+        transport=transport,
+    )
+
+    records = src.query({"start": "1h-ago", "metric": "sys.cpu.user"})
+
+    assert len(records) == 4
+    assert calls[0][0:2] == (
+        "POST",
+        "https://tsdb.example.com/api/query",
+    )
+    assert calls[0][2] == {
+        "start": "1h-ago",
+        "queries": [{"metric": "sys.cpu.user", "aggregator": "sum"}],
+    }
+
+
 def test_query_posts_to_api_query_with_body() -> None:
     t = FakeTransport(200, json.dumps(DPS_PAYLOAD))
     _src(t).query({"start": "1h-ago", "end": "now", "metric": "sys.cpu.user", "tags": {"host": "web01"}})

@@ -1531,7 +1531,7 @@ class TestOpenTsdbConnector:
         transport = MockHttpTransport(default_status=200, default_body=[])
         src = OpenTsdbSource({"base_url": "https://opentsdb.example.com/"}, transport=cast(Any, transport))
         result = src.health()
-        assert isinstance(result, dict)
+        assert result["ok"] is True
 
     def test_query_returns_records(self):
         from general_ludd.connectors.opentsdb import OpenTsdbSource
@@ -1548,9 +1548,11 @@ class TestOpenTsdbConnector:
             ],
         )
         src = OpenTsdbSource({"base_url": "https://opentsdb.example.com/"}, transport=cast(Any, transport))
-        records = src.query({"query": "sys.cpu"})
-        assert isinstance(records, list)
-        assert len(records) >= 1
+        records = src.query({"start": "1h-ago", "metric": "sys.cpu.user"})
+        assert len(records) == 1
+        assert records[0]["message"] == "sys.cpu.user"
+        assert records[0]["value"] == 42.0
+        assert records[0]["labels"]["host"] == "server1"
 
 
 class TestInfluxDBConnector:
