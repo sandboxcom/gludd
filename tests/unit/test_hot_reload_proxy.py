@@ -133,6 +133,18 @@ class TestHotModuleBuild:
             "Makefile missing hot-reload-plugins target"
         )
 
+    def test_hot_module_load_target_fails_closed(self):
+        """A missing or invalid module must make the verification target fail."""
+        match = re.search(
+            r"^test-hot-module-load:\n(?P<recipe>(?:\t.*\n?)+)",
+            MAKEFILE.read_text(),
+            re.MULTILINE,
+        )
+        assert match is not None, "Makefile missing test-hot-module-load target"
+        assert "process.exitCode = 1" in match.group("recipe"), (
+            "test-hot-module-load reports LOAD FAILED without a non-zero exit"
+        )
+
     def test_build_produces_hot_modules(self):
         self._cleanup()
         try:

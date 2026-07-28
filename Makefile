@@ -5621,7 +5621,7 @@ find-untested:
 	$(PYTHON) scripts/find_untested_modules.py
 
 test-hot-module-load:
-	@node --experimental-strip-types -e "try { const m = require('/tmp/gludd-hot-enforce-session-start.js'); console.log('LOADED OK: typeof default=' + typeof m.default + ', keys=' + Object.keys(m).join()); } catch(e) { console.log('LOAD FAILED: ' + e.message); console.log('FALLBACK: loadHotModule would use defaultImpl'); }"
+	@node --experimental-strip-types -e "try { const m = require('/tmp/gludd-hot-enforce-session-start.js'); console.log('LOADED OK: typeof default=' + typeof m.default + ', keys=' + Object.keys(m).join()); } catch(e) { console.error('LOAD FAILED: ' + e.message); console.error('FALLBACK: loadHotModule would use defaultImpl'); process.exitCode = 1; }"
 
 diag-multitask:
 	@node --experimental-strip-types _diag_multitask.ts
