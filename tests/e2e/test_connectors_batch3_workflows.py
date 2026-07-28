@@ -813,7 +813,8 @@ class TestSigNozConnector:
         )
         src = SigNozSource({"base_url": "https://signoz.example.com/"}, transport=cast(Any, transport))
         records = src.query({"mode": "traces"})
-        assert isinstance(records, list)
+        assert len(records) == 1
+        assert records[0]["labels"]["trace_id"] == "t1"
 
 
 class TestAppDynamicsConnector:
@@ -823,27 +824,50 @@ class TestAppDynamicsConnector:
         transport = MockHttpTransport(default_status=200, default_body={"items": []})
         monkeypatch.setenv("APPD_TOKEN", "test-token")
         src = AppDynamicsSource(
-            {"token_env": "APPD_TOKEN", "base_url": "https://appd.example.com/"},
+            {
+                "token_env": "APPD_TOKEN",
+                "base_url": "https://appd.example.com/",
+                "application": "checkout",
+            },
             transport=cast(Any, transport),
         )
         result = src.health()
-        assert isinstance(result, dict)
+        assert result["ok"] is True
 
     def test_query_returns_records(self, monkeypatch):
         from general_ludd.connectors.appdynamics import AppDynamicsSource
 
         transport = MockHttpTransport(
             default_status=200,
-            default_body={"items": [{"name": "cpu", "value": 75.0, "timestamp": "2025-01-01T00:00:00Z"}]},
+            default_body={
+                "data": [
+                    {
+                        "metricId": 1,
+                        "metricName": "CPU",
+                        "metricPath": "Application|CPU",
+                        "metricValues": [
+                            {
+                                "startTimeInMillis": 1_735_689_600_000,
+                                "value": 75.0,
+                            }
+                        ],
+                    }
+                ]
+            },
         )
         monkeypatch.setenv("APPD_TOKEN", "test-token")
         src = AppDynamicsSource(
-            {"token_env": "APPD_TOKEN", "base_url": "https://appd.example.com/"},
+            {
+                "token_env": "APPD_TOKEN",
+                "base_url": "https://appd.example.com/",
+                "application": "checkout",
+            },
             transport=cast(Any, transport),
         )
-        records = src.query({})
+        records = src.query({"metric_path": "Application|CPU"})
         assert len(records) == 1
-        assert records[0]["labels"]["trace_id"] == "t1"
+        assert records[0]["kind"] == "metrics"
+        assert records[0]["value"] == 75.0
 
 
 class TestSplunkConnector:
