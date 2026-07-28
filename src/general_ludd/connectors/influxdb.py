@@ -15,6 +15,7 @@ labels, raw.
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from typing import Protocol, cast, runtime_checkable
 from urllib.parse import urlsplit
 
@@ -37,6 +38,52 @@ class HttpTransport(Protocol):
     ) -> HttpResponse: ...
 
 
+CallbackTransport = Callable[..., HttpResponse | tuple[int, object]]
+
+
+class _CallbackResponse:
+    def __init__(self, status_code: int, body: object) -> None:
+        self.status_code = int(status_code)
+        self._body = body
+
+    @property
+    def text(self) -> str:
+        return self._body if isinstance(self._body, str) else str(self._body)
+
+    def json(self) -> object:
+        return self._body
+
+
+class _CallbackTransport:
+    """Adapt the shared method/url callback to InfluxDB's request protocol."""
+
+    def __init__(self, callback: CallbackTransport) -> None:
+        self._callback = callback
+
+    def request(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        params: dict[str, object] | None = None,
+        data: object = None,
+        timeout: float | None = None,
+    ) -> HttpResponse:
+        result = self._callback(
+            method,
+            url,
+            headers=headers,
+            params=params,
+            data=data,
+            timeout=timeout,
+        )
+        if isinstance(result, tuple):
+            status, body = result
+            return _CallbackResponse(status, body)
+        return result
+
+
 def _assert_public_base_url(base_url: str) -> None:
     if is_url_blocked(base_url, scheme_allowlist=("http", "https")):
         parts = urlsplit(base_url)
@@ -56,7 +103,7 @@ class InfluxDbSource:
     def __init__(
         self,
         config: dict[str, object],
-        transport: HttpTransport,
+        transport: HttpTransport | CallbackTransport,
         *,
         environ: dict[str, str] | None = None,
     ) -> None:
@@ -79,7 +126,11 @@ class InfluxDbSource:
         self._token = token
         self.org = config.get("org")
         self.database = config.get("database")
-        self._transport = transport
+        self._transport: HttpTransport = (
+            transport
+            if isinstance(transport, HttpTransport)
+            else _CallbackTransport(transport)
+        )
         self._timeout = float(cast("float | int | str", config.get("timeout", 30.0)))
 
     def _headers(self) -> dict[str, str]:
@@ -107,7 +158,7 @@ class InfluxDbSource:
         return self._normalize(resp.json())
 
     def _query_flux(self, spec: dict[str, object]) -> HttpResponse:
-        flux = spec.get("flux")
+        flux = spec.get("flux") or spec.get("query")
         if not flux:
             raise ConnectorConfigError("flux dialect requires spec['flux']")
         params: dict[str, object] = {}
@@ -170,7 +221,6 @@ class InfluxDbSource:
                     }
                 )
         return records
-
     def _normalize_influxql(self, payload: object) -> list[dict[str, object]]:
         records: list[dict[str, object]] = []
         results = (payload or {}).get("results", []) if isinstance(payload, dict) else []
@@ -200,3 +250,8 @@ class InfluxDbSource:
                         }
                     )
         return records
+
+
+InfluxDBSource = InfluxDbSource
+
+__all__ = ["InfluxDBSource", "InfluxDbSource"]

@@ -1560,13 +1560,13 @@ class TestInfluxDBConnector:
         from general_ludd.connectors.influxdb import InfluxDBSource
 
         transport = MockHttpTransport(default_status=200, default_body={"data": []})
+        monkeypatch.setenv("INFLUX_TOKEN", "test-token")
         src = InfluxDBSource(
             {"base_url": "https://influx.example.com/", "token_env": "INFLUX_TOKEN"},
             transport=cast(Any, transport),
         )
-        monkeypatch.setenv("INFLUX_TOKEN", "test-token")
         result = src.health()
-        assert isinstance(result, dict)
+        assert result["ok"] is True
 
     def test_query_returns_records(self, monkeypatch):
         from general_ludd.connectors.influxdb import InfluxDBSource
@@ -1574,11 +1574,19 @@ class TestInfluxDBConnector:
         transport = MockHttpTransport(
             default_status=200,
             default_body={
-                "data": [
+                "tables": [
                     {
-                        "_time": "2025-01-01T00:00:00Z",
-                        "_field": "cpu",
-                        "_value": 75.0,
+                        "records": [
+                            {
+                                "values": {
+                                    "_time": "2025-01-01T00:00:00Z",
+                                    "_measurement": "cpu",
+                                    "_field": "usage",
+                                    "_value": 75.0,
+                                    "host": "server1",
+                                }
+                            }
+                        ]
                     }
                 ]
             },
@@ -1589,8 +1597,10 @@ class TestInfluxDBConnector:
             transport=cast(Any, transport),
         )
         records = src.query({"query": "from(bucket: \"monitoring\")"})
-        assert isinstance(records, list)
-        assert len(records) >= 1
+        assert len(records) == 1
+        assert records[0]["message"] == "cpu"
+        assert records[0]["value"] == 75.0
+        assert records[0]["labels"]["host"] == "server1"
 
 
 class TestGraphiteConnector:
