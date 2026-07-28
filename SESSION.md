@@ -6,81 +6,55 @@
 
 ---
 
-## Current Gate Status (2026-07-27)
+## Current Gate Status (2026-07-28)
 <!-- gate:begin -->
-- lint: not re-run on HEAD 19f937e8
-- typecheck: not re-run on HEAD 19f937e8
-- gate: not re-run on HEAD 19f937e8
+- lint: fixed on HEAD 7d8d007c (commit a7ef2ed5: import order, unused imports, SIM115, SIM117)
+- typecheck: fixed on HEAD 7d8d007c (commit 7289bef1)
+- gate: not re-run on HEAD 7d8d007c
 
 <!-- gate:end -->
 
 ---
 
-## SESSION 56 — 2026-07-27 (WAVE 2)
+## SESSION 57 — 2026-07-28 (CURRENT)
 
-- **HEAD: `219c929d`** on `development` branch
+- **HEAD: `7d8d007c`** on `development` branch
 - **Version: 0.1.0-beta.3** (pyproject.toml, __init__.py)
-- **Push status: NOT PUSHED** — 7 local commits since last remote sync
-- **CI on development: IN_PROGRESS** — run 30315164350
-- **Release readiness: BLOCKED** — pending CI green on development; release-cut requires CI green
-- **Gate: not re-run on HEAD 219c929d**
-- **Working tree: DIRTY** — 1 modified file: `src/general_ludd/models/auto_configurator.py`
+- **Push status: NOT PUSHED** — 10 local commits since last remote sync (fb43601f..7d8d007c)
+- **CI on development: NO RUN** for HEAD 7d8d007c
+- **Release readiness: BLOCKED** — pending push + CI green on development; release-cut requires CI green
+- **Gate: not re-run on HEAD 7d8d007c**
+- **Working tree: CLEAN**
 - **ratchet.yml: 0 entries** (no known-unfixed work tracked)
 
-### Key changes since Wave 1
-
-9 new commits landed on development since HEAD `63d971bf` (Wave 4 baseline):
+### Key changes — Wave 3 (6 new commits since Wave 2 HEAD 219c929d)
 
 | Hash | Message |
 |------|---------|
-| `219c929d` | **beta.3 wave 2**: 10-agent dispatch — C-BUDGET nonzero projection + engine shutdown + NEEDS_MORE_WORK requeue + sandbox wiring + typecheck fix + 3 test files |
-| `e5fce7d1` | Merge branch 'feature/fix-cbudget-zero-rates' into development |
-| `edc6cf3b` | fix: git-automation worktree locking — use git-common-dir for shared flock |
-| `fb43601f` | fix(security): scrub child process env in stream dispatch and sandbox executor |
-| `2f111d44` | fix: update shared.ts path references from plugin/ to lib/ in tests |
-| `d1d7953e` | fix: key CI concurrency group on commit SHA to prevent run eviction |
-| `cc7f31f0` | beta.3: commit dirty tree (build.yml, Makefile, TASKS.md, gludd.spec, molecule/binary_smoke_linux) pre-release cleanup |
-| `3fa14748` | beta.3: gate fix (opencode-boot-smoke timeout), task registration, final pre-release cleanup |
-| `8e2f6311` | beta.3: release checklist script, observability audit (AB081-AB100), gate fix, TASKS.md update |
-
-### Wave 2 dispatches — 7 items (S56-W2.1 through S56-W2.7)
-
-| Item | Description | Evidence |
-|------|-------------|----------|
-| S56-W2.1 | C-BUDGET nonzero projection: fix zero-rates path | commit `219c929d` |
-| S56-W2.2 | Engine shutdown + NEEDS_MORE_WORK requeue | commit `219c929d` |
-| S56-W2.3 | Sandbox executor wiring + typecheck fix | commit `219c929d` |
-| S56-W2.4 | Git-automation worktree locking (git-common-dir) | commit `edc6cf3b` |
-| S56-W2.5 | Security: scrub child process env | commit `fb43601f` |
-| S56-W2.6 | CI concurrency: key on commit SHA | commit `d1d7953e` |
-| S56-W2.7 | Gate fix + task registration + pre-release cleanup | commits `cc7f31f0`, `3fa14748`, `8e2f6311` |
-
-### Prior wave carry-forward
-
-- Behavioral specs AB001-AB100: 100 enforcement specifications (AB001-AB060 from Wave 4, AB081-AB100 from Wave 1)
-- Governance P3-P6 data expansion: 759 tests pass (6 domains)
-- CI pkg_resources fix: Py3.14 stub + importlib pattern (fixed Wave 3)
-- Enforcement-plugin pressure-release deadlock: fixed Wave 4
+| `7d8d007c` | fix: (HEAD) |
+| `128f035a` | fix: |
+| `a7ef2ed5` | fix: lint errors — import order, unused imports, SIM115 context manager, SIM117 nested with |
+| `7289bef1` | beta.3 wave 3: NEEDS_MORE_WORK requeue + PSK authz capability guard + engine sync cleanup + sandbox async gating + budget precheck fixes + typecheck fix + TASKS/SESSION update |
+| `f5c3ed89` | Merge branch 'feature/nmw-requeue-sweep' into development |
+| `ed95614f` | feat: add requeue_needs_more_work() sweep and EventLoop wiring |
 
 ### Remaining open items
 
 | Item | Status |
 |------|--------|
-| CI green on development HEAD `219c929d` | IN_PROGRESS (run 30315164350) |
-| Push 7 commits to remote | NOT PUSHED |
-| Dirty working tree (`auto_configurator.py`) | PENDING commit |
+| Push 10 commits to remote | NOT PUSHED |
+| CI green on development HEAD `7d8d007c` | NO RUN |
 | `make release-cut TAG=v0.1.0-beta.3` | BLOCKED on CI green |
 | `make verify-release-completeness` 12/12 | BLOCKED on release-cut |
 
 ### Next
 
-1. Wait for CI green on run 30315164350
-2. Push 7 commits to development
-3. Commit working tree changes
-4. `make release-cut TAG=v0.1.0-beta.3` when CI green
-5. `make verify-release-completeness TAG=v0.1.0-beta.3`
+1. Push 10 development commits to remote
+2. CI green on HEAD `7d8d007c`
+3. `make release-cut TAG=v0.1.0-beta.3` when CI green
+4. `make verify-release-completeness TAG=v0.1.0-beta.3`
 
-- **Last Updated: 2026-07-27 — Session 56 (WAVE 2).** HEAD `219c929d` on `development`. 7 unpushed commits. 9 new commits since Wave 4 baseline (`63d971bf`): C-BUDGET nonzero projection fix, engine shutdown + NEEDS_MORE_WORK requeue, sandbox wiring, git-automation worktree locking (git-common-dir), security env scrub, CI concurrency SHA-keying, gate fix + task registration + pre-release cleanup. CI IN_PROGRESS (run 30315164350). Release blocked on CI green. Working tree DIRTY (1 file: `auto_configurator.py`). ratchet.yml empty.
+- **Last Updated: 2026-07-28 — Session 57.** HEAD `7d8d007c` on `development`. 10 unpushed commits (fb43601f..7d8d007c). Wave 3 landed: NEEDS_MORE_WORK requeue sweep, PSK authz capability guard, engine sync cleanup, sandbox async gating, budget precheck fixes, typecheck fix, lint fix (a7ef2ed5). Working tree CLEAN. CI NO RUN for HEAD. beta.3 release blocked on CI green.
 
 ---
 

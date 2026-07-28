@@ -68,11 +68,7 @@ class AgentCapabilities:
 
             # Use the level's preserve_recent when an aggression rung is set,
             # else the ctor default.
-            preserve = (
-                compaction_level.preserve_recent
-                if compaction_level is not None
-                else preserve_recent_count
-            )
+            preserve = compaction_level.preserve_recent if compaction_level is not None else preserve_recent_count
             self._slm_summarize_fn = make_slm_summarize_fn(model_gateway, "compactor")
             self._slm_compactor = SLMCompactor(
                 summarize_fn=self._slm_summarize_fn,
@@ -86,9 +82,7 @@ class AgentCapabilities:
             fallback_profiles=fallback_profiles or [],
         )
 
-    def prepare_messages(
-        self, system_prompt: str, history: list[dict[str, str]]
-    ) -> list[dict[str, str]]:
+    def prepare_messages(self, system_prompt: str, history: list[dict[str, str]]) -> list[dict[str, str]]:
         """Compact the conversation history via ContextCompactor.
 
         Attempts to fit the prompt within the configured token budget by
@@ -143,9 +137,7 @@ class AgentCapabilities:
         compacted = self.compactor.compact(msgs)
         return [{"role": m.role, "content": m.content} for m in compacted]
 
-    def within_budget(
-        self, agent_name: str, prompt: str, max_tokens: int | None = None
-    ) -> bool:
+    def within_budget(self, agent_name: str, prompt: str, max_tokens: int | None = None) -> bool:
         cap = max_tokens if max_tokens is not None else self.token_window.get_remaining_budget(agent_name)
         return self.token_window.check_budget(agent_name, prompt, cap)
 
@@ -202,6 +194,8 @@ class AgentCapabilities:
         role: str,
         mcp_client: object = None,
         mcp_registry: object = None,
+        budget_guard: object = None,
+        chat_model: object = None,
     ) -> LangGraphAgentLoop:
         """Build a LangGraphAgentLoop backed by ``create_react_agent``.
 
@@ -218,21 +212,19 @@ class AgentCapabilities:
         from the capability lattice are accepted.
         """
         if not role or not isinstance(role, str) or not role.strip():
-            raise ValueError(
-                f"make_langgraph_tool_loop: role is required, got {role!r}"
-            )
+            raise ValueError(f"make_langgraph_tool_loop: role is required, got {role!r}")
         role = role.strip()
         if role not in _KNOWN_ROLES:
             raise ValueError(
-                f"make_langgraph_tool_loop: unknown role {role!r}; "
-                f"valid roles: {sorted(_KNOWN_ROLES.keys())}"
+                f"make_langgraph_tool_loop: unknown role {role!r}; valid roles: {sorted(_KNOWN_ROLES.keys())}"
             )
         return LangGraphAgentLoop(
             model_gateway=model_gateway,
-            chat_model=None,
+            chat_model=chat_model,
             mcp_client=mcp_client,
             mcp_registry=cast(MCPToolRegistry | None, mcp_registry),
             role=role,
+            budget_guard=budget_guard,
         )
 
     def make_graph_gateway(
@@ -250,9 +242,7 @@ class AgentCapabilities:
         from general_ludd.models.langgraph_gateway import LangGraphGateway
         from general_ludd.scoring.engine import PromptScoringEngine
 
-        scoring = PromptScoringEngine(
-            model_gateway=model_gateway, benchmark_repo=benchmark_repo
-        )
+        scoring = PromptScoringEngine(model_gateway=model_gateway, benchmark_repo=benchmark_repo)
         return LangGraphGateway(
             call_model_fn=getattr(model_gateway, "call_model", None),
             adaptive_router=adaptive_router,

@@ -163,7 +163,7 @@ class TestStreamDispatchChildEnvIsScrubbed:
         """With mock secrets, SandboxExecutor child env must exclude them."""
         from general_ludd.sandbox_exec.executor import SandboxExecutor
 
-        seeds = {"ZAI_API_KEY": "sk-test-secret", "DATABASE_URL": "pg://bad"}
+        seeds = {"ZAI_API_KEY": "sk-test-secret", "DATABASE_URL": "pg://bad"}  # pragma: allowlist secret
         monkeypatch.setattr(os, "environ", {**os.environ, **seeds})
 
         capt_env: dict[str, str] | None = None
