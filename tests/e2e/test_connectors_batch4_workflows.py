@@ -1329,7 +1329,11 @@ class TestAirtableConnector:
         monkeypatch.setenv("AT_H", "tok")
         try:
             source = AirtableSource(
-                {"token_env": "AT_H", "base_id": "app1"},
+                {
+                    "token_env": "AT_H",
+                    "base_id": "app1",
+                    "table_name": "Tasks",
+                },
                 transport=transport,
             )
             result = source.health()
@@ -1344,7 +1348,11 @@ class TestAirtableConnector:
         monkeypatch.setenv("AT_H2", "tok")
         try:
             source = AirtableSource(
-                {"token_env": "AT_H2", "base_id": "app1"},
+                {
+                    "token_env": "AT_H2",
+                    "base_id": "app1",
+                    "table_name": "Tasks",
+                },
                 transport=transport,
             )
             result = source.health()
@@ -1370,7 +1378,11 @@ class TestAirtableConnector:
         monkeypatch.setenv("AT_Q", "tok")
         try:
             source = AirtableSource(
-                {"token_env": "AT_Q", "base_id": "app1"},
+                {
+                    "token_env": "AT_Q",
+                    "base_id": "app1",
+                    "table_name": "Tasks",
+                },
                 transport=transport,
             )
             records = source.query({})

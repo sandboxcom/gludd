@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) Airtable E2E omitted mandatory table scope from operational cases
+
+- **What**: Connector batch 4 reached Airtable health and failed during construction because the E2E supplied a base ID and token environment but no table name.
+- **Root cause**: The fixtures treated an Airtable base as the directly queryable resource. Airtable's records endpoint is scoped by both base and `tableIdOrName`; the connector validates both at construction so health and query cannot accidentally probe an ambiguous base-level URL.
+- **Fix applied**: Both health cases and the query case now supply an explicit table name, matching the valid-construction fixture and canonical Airtable unit tests.
+- **Long-lived user evidence**: Airtable community users have reported `TABLE_NOT_FOUND` errors for years when addressing the wrong or missing table inside an otherwise valid base ([Airtable Community, 2022](https://community.airtable.com/development-apis-11/how-to-access-different-tables-in-a-base-using-curl-4258)); another long-running thread documents that the table name is part of the URL and must be correctly URI encoded ([Airtable Community, 2021](https://community.airtable.com/fid-11/tid-6544)).
+- **Lesson**: Provider scope required by the wire endpoint must be present in every operational fixture. A valid token and tenant/base identifier do not make a table-scoped request well formed.
+
 ### 2026-07-28 — (resolved) Trello E2E leaked the provider noun into Gludd's normalized kind
 
 - **What**: Connector batch 4 stopped because Trello construction and record assertions expected kind `cards`, while the implemented cross-connector contract reports `tasks`.
