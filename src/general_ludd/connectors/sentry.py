@@ -89,6 +89,44 @@ class Transport(Protocol):
     ) -> _SentryResponse: ...
 
 
+class CallableTransport(Protocol):
+    """Compact method-and-URL callback used by generated workflows."""
+
+    def __call__(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str],
+        timeout: float,
+    ) -> tuple[int, object]: ...
+
+
+class _CallableTransportAdapter:
+    def __init__(self, callback: CallableTransport) -> None:
+        self._callback = callback
+
+    def get(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str],
+        timeout: float,
+    ) -> _SentryResponse:
+        status, body = self._callback(
+            "GET",
+            url,
+            headers=headers,
+            timeout=timeout,
+        )
+        encoded = (
+            body
+            if isinstance(body, (bytes, str))
+            else json.dumps(body).encode("utf-8")
+        )
+        return _SentryResponse(status=status, body=encoded)
+
+
 class _UrllibTransport:
     """Default transport backed by httpx with redirect-following disabled."""
 
@@ -124,7 +162,12 @@ class SentrySource:
     #: Connector kind — Sentry surfaces error/issue events as logs.
     KIND: str = "logs"
 
-    def __init__(self, config: dict[str, object]) -> None:
+    def __init__(
+        self,
+        config: dict[str, object],
+        *,
+        transport: Transport | CallableTransport | None = None,
+    ) -> None:
         if not isinstance(config, dict):
             raise TypeError("config must be a dict")
 
@@ -154,10 +197,22 @@ class SentrySource:
         except (TypeError, ValueError) as exc:
             raise ValueError("config['timeout'] must be a number") from exc
 
-        transport = config.get("transport")
-        if transport is None:
-            transport = _UrllibTransport()
-        self._transport: Transport = cast(Transport, transport)
+        configured_transport = config.get("transport")
+        if transport is not None and configured_transport is not None:
+            raise ValueError("config transport and transport keyword are mutually exclusive")
+        selected_transport = (
+            transport if transport is not None else configured_transport
+        )
+        if selected_transport is None:
+            self._transport = _UrllibTransport()
+        elif callable(getattr(selected_transport, "get", None)):
+            self._transport = cast(Transport, selected_transport)
+        elif callable(selected_transport):
+            self._transport = _CallableTransportAdapter(
+                cast(CallableTransport, selected_transport)
+            )
+        else:
+            raise TypeError("transport must provide get or be callable")
 
     # ------------------------------------------------------------------ #
     # Construction-time validation

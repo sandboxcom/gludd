@@ -635,7 +635,14 @@ class TestSentryConnector:
 
         transport = MockHttpTransport(default_status=200, default_body=[{"id": "1"}])
         monkeypatch.setenv("SENTRY_TOKEN", "test-auth")
-        src = SentrySource({"token_env": "SENTRY_TOKEN"}, transport=cast(Any, transport))
+        src = SentrySource(
+            {
+                "token_env": "SENTRY_TOKEN",
+                "org": "myorg",
+                "project": "myproject",
+            },
+            transport=cast(Any, transport),
+        )
         result = src.health()
         assert isinstance(result, dict)
 
@@ -656,7 +663,14 @@ class TestSentryConnector:
             ],
         )
         monkeypatch.setenv("SENTRY_TOKEN", "test-auth")
-        src = SentrySource({"token_env": "SENTRY_TOKEN"}, transport=cast(Any, transport))
+        src = SentrySource(
+            {
+                "token_env": "SENTRY_TOKEN",
+                "org": "myorg",
+                "project": "myproject",
+            },
+            transport=cast(Any, transport),
+        )
         records = src.query({"mode": "issues"})
         assert isinstance(records, list)
         assert len(records) >= 1
