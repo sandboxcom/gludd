@@ -4161,8 +4161,8 @@ windows-installer:
 	@if ! command -v makensis >/dev/null 2>&1; then echo "windows-installer requires makensis (NSIS). Install: brew install makensis or apt install nsis"; exit 1; fi
 	@echo "Building $(WINDOWS_INSTALLER)..."
 	@mkdir -p dist/windows
-	@$(UV) run python -c "import shutil; shutil.copy('dist/gludd', 'dist/windows/gludd.exe')" 2>/dev/null || true
-	@makensis -DVERSION=$(VERSION) -DBUILDDIR=dist $(NSI_SCRIPT)
+	@if [ -f dist/gludd.exe ]; then cp dist/gludd.exe dist/windows/gludd.exe; elif [ -f dist/gludd ]; then cp dist/gludd dist/windows/gludd.exe; else echo "ERROR: no gludd binary found at dist/gludd.exe or dist/gludd"; exit 1; fi
+	@makensis -WX -DVERSION=$(VERSION) -DBUILDDIR=.. $(NSI_SCRIPT)
 	@shasum -a 256 dist/$(WINDOWS_INSTALLER) > dist/$(WINDOWS_INSTALLER).sha256
 	@echo "Created dist/$(WINDOWS_INSTALLER)"
 	@echo "Checksum: dist/$(WINDOWS_INSTALLER).sha256"

@@ -128,20 +128,31 @@ is worse than no spec.
   parallel projects and release worktrees cannot delete each other's RPM tree.
 - `dist/rpm/gludd.spec:30` has a hardcoded changelog date. Cosmetic.
 
-**R-15 — beta.3 RPM packaging incident (RESOLVED 2026-07-28).**
+**R-15 — beta.3 Linux/Windows packaging incident (RESOLVED 2026-07-28).**
 
-Build-and-Release run `30331174104` exposed a repository-controlled shell
-portability and isolation failure. GNU make runs recipes with `/bin/sh` unless
-configured otherwise, while Bash-only brace expansion is not portable there.
-The long-lived user report
-[“cannot create multiple directories with makefile”][make-brace-report]
-documents the same failure mode, and the
-[GNU make shell documentation][gnu-make-shell] confirms the `/bin/sh`
-contract. The target now creates every rpmbuild directory explicitly and uses
-the checkout-local `dist/rpmbuild` tree instead of a shared `/tmp` directory.
+Build-and-Release run `30331174104` exposed two repository-controlled failures:
+
+- The RPM target used Bash-only brace expansion even though GNU make recipes
+  run with `/bin/sh` by default. The long-lived user report
+  [“cannot create multiple directories with makefile”][make-brace-report]
+  documents the same failure mode, and the
+  [GNU make shell documentation][gnu-make-shell] confirms the shell contract.
+  The target now creates each directory explicitly in the checkout-local
+  `dist/rpmbuild` tree.
+- Windows stopped before project code because its checkout action reference
+  could not be resolved. The long-running
+  [actions/checkout issue #1562][checkout-resolution-report] shows the same
+  hosted-runner signature, while checking the official release exposed the
+  repository's malformed pin. Windows now uses the same immutable checkout and
+  setup-uv revisions as Linux.
+- Windows packaging is fail-closed and reproducible: the workflow pins
+  Windows 2022, Python 3.12, and NSIS 3.12.0; runs blocking binary smoke tests
+  before packaging; treats NSIS warnings as errors; writes portable
+  `Get-FileHash` sidecars; and fails when any required upload is absent.
 
 [make-brace-report]: https://stackoverflow.com/questions/49099682/cannot-create-multiple-directories-with-makefile/49100159
 [gnu-make-shell]: https://www.gnu.org/software/make/manual/html_node/Choosing-the-Shell.html
+[checkout-resolution-report]: https://github.com/actions/checkout/issues/1562
 
 **R-13 — The `/Users/` leak guard covers only the tarball (NEW, and it already
 cost us).** The only developer-path guard is

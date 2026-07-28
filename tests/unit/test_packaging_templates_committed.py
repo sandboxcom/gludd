@@ -134,3 +134,18 @@ def test_rpm_package_build_tree_is_namespaced_to_checkout() -> None:
     block = _make_target_block("rpm-package")
     assert "RPMBUILD_DIR := $(abspath dist/rpmbuild)" in makefile
     assert "/tmp/gludd-rpmbuild" not in block
+
+
+def test_windows_installer_accepts_native_and_cross_packaging_binary_names() -> None:
+    """The Make target must package Windows output and fail on absent input."""
+    block = _make_target_block("windows-installer")
+    assert "dist/gludd.exe" in block
+    assert "dist/gludd" in block
+    assert "else echo \"ERROR: no gludd binary" in block
+    assert "-DBUILDDIR=.." in block, (
+        "NSIS changes to the script directory; BUILDDIR=.. is required for the "
+        "installer to land in dist/ where release upload expects it"
+    )
+    assert "2>/dev/null || true" not in block, (
+        "windows-installer must not hide a missing source binary and continue"
+    )
