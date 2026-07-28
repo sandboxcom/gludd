@@ -114,11 +114,14 @@ class TestOpenShiftConnector:
         with pytest.raises((ValueError, RuntimeError)):
             OpenShiftSource({})
 
-    def test_config_requires_token(self):
+    def test_config_requires_namespace(self):
         from general_ludd.connectors.openshift import OpenShiftSource
 
         with pytest.raises((ValueError, RuntimeError)):
-            OpenShiftSource({"api_server": "https://api.example.com:6443"})
+            OpenShiftSource({
+                "api_server": "https://api.example.com:6443",
+                "token_env": "OPENSHIFT_TOKEN",
+            })
 
     def test_rejects_private_host(self):
         from general_ludd.connectors.openshift import OpenShiftSource
@@ -149,7 +152,12 @@ class TestOpenShiftConnector:
         monkeypatch.setenv("OC_TOK_H", "tok")
         try:
             source = OpenShiftSource(
-                {"api_server": "https://api.example.com:6443", "token_env": "OC_TOK_H", "allow_private": True},
+                {
+                    "api_server": "https://api.example.com:6443",
+                    "token_env": "OC_TOK_H",
+                    "namespace": "default",
+                    "allow_private": True,
+                },
                 transport=transport,
             )
             result = source.health()
@@ -164,7 +172,12 @@ class TestOpenShiftConnector:
         monkeypatch.setenv("OC_TOK_H2", "tok")
         try:
             source = OpenShiftSource(
-                {"api_server": "https://api.example.com:6443", "token_env": "OC_TOK_H2", "allow_private": True},
+                {
+                    "api_server": "https://api.example.com:6443",
+                    "token_env": "OC_TOK_H2",
+                    "namespace": "default",
+                    "allow_private": True,
+                },
                 transport=transport,
             )
             result = source.health()
@@ -199,10 +212,15 @@ class TestOpenShiftConnector:
         monkeypatch.setenv("OC_TOK_Q", "tok")
         try:
             source = OpenShiftSource(
-                {"api_server": "https://api.example.com:6443", "token_env": "OC_TOK_Q", "allow_private": True},
+                {
+                    "api_server": "https://api.example.com:6443",
+                    "token_env": "OC_TOK_Q",
+                    "namespace": "default",
+                    "allow_private": True,
+                },
                 transport=transport,
             )
-            records = source.query({})
+            records = source.query({"mode": "pods"})
             assert len(records) >= 1
             assert records[0]["kind"] == "logs"
         finally:
