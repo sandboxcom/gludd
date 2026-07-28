@@ -31,10 +31,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
+PLUGIN_IMPL = ROOT / ".opencode" / "plugin" / "impl" / "enforce_stop_impl.ts"
 
 
 def _src() -> str:
-    return PLUGIN.read_text()
+    return f"{PLUGIN.read_text()}\n{PLUGIN_IMPL.read_text()}"
 
 
 class TestStrengthenedPluginPresent:
@@ -45,6 +46,7 @@ class TestStrengthenedPluginPresent:
             "every parallel subagent result is codified before the agent sends "
             "a terminal response."
         )
+        assert PLUGIN_IMPL.exists(), "The enforce-stop implementation module must exist"
 
 
 # ---------------------------------------------------------------------------
