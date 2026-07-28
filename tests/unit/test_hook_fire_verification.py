@@ -1,8 +1,9 @@
 """Verify which hooks each enforcement plugin exports in opencode 1.17.9.
 
 Loads every plugin, inspects the hook names it returns, verifies they are
-callable, and reports which hooks are dead code (text.complete, session.idle,
-event — all removed in 1.17.9 or never implemented).
+callable, and reports unsupported hook aliases (bare text.complete and
+session.idle). OpenCode 1.17.9 supports experimental.text.complete and the
+generic event hook used for lifecycle signals.
 """
 
 from __future__ import annotations
@@ -67,18 +68,22 @@ PLUGIN_PATHS = {
 }
 
 # Hooks known to be removed/unsupported in opencode >=1.17.9
-DEAD_HOOK_NAMES = {"experimental.text.complete", "text.complete", "session.idle", "event"}
+DEAD_HOOK_NAMES = {"text.complete", "session.idle"}
 # Hooks that are expected to work
 LIVE_HOOK_NAMES = {
     "tool.execute.before",
     "tool.execute.after",
     "experimental.chat.system.transform",
+    "experimental.text.complete",
+    "event",
 }
 
 # PluginAPI-style plugins: use `api.tool.execute.before(fn)` not `return { ... }`
-PLUGINAPI_PLUGINS = {"enforce-commit-lock.ts", "watchdog.ts"}
+PLUGINAPI_PLUGINS = {"watchdog.ts"}
 # Daemon-side plugins that intentionally register zero enforcement hooks
 DAEMON_PLUGINS = {"watchdog.ts"}
+# Completion-only plugins intentionally have no pre-tool interception surface.
+TEXT_COMPLETE_ONLY_PLUGINS = {"enforce-audit.ts"}
 
 
 # ── Fixture: load each plugin and return its hook table ─────────────────────
@@ -172,7 +177,7 @@ console.log(JSON.stringify({{file: '{plugin_file}', hooks: entries}}))
 
 @pytest.mark.parametrize("plugin_file", PLUGIN_FILES)
 def test_plugin_no_dead_hooks(plugin_file: str):
-    """No plugin exports hooks removed in opencode 1.17.9 (text.complete, session.idle, event)."""
+    """No plugin exports unsupported bare text.complete/session.idle hooks."""
     abs_path = PLUGIN_PATHS[plugin_file]
     if plugin_file in PLUGINAPI_PLUGINS:
         code = f"""\
@@ -189,7 +194,7 @@ const api = {{
 }}
 const mod = await import('{abs_path}')
 mod.default(api)
-const dead = hooks.filter(h => ['experimental.text.complete', 'text.complete', 'session.idle', 'event'].includes(h))
+const dead = hooks.filter(h => ['text.complete', 'session.idle'].includes(h))
 console.log(JSON.stringify({{file: '{plugin_file}', allHooks: hooks, dead}}))
 """
     else:
@@ -197,7 +202,7 @@ console.log(JSON.stringify({{file: '{plugin_file}', allHooks: hooks, dead}}))
 const mod = await import('{abs_path}')
 const plugin = await mod.default({{}})
 const keys = Object.keys(plugin ?? {{}})
-const dead = keys.filter(k => ['experimental.text.complete', 'text.complete', 'session.idle', 'event'].includes(k))
+const dead = keys.filter(k => ['text.complete', 'session.idle'].includes(k))
 console.log(JSON.stringify({{file: '{plugin_file}', allHooks: keys, dead}}))
 """
     result = _run_ts(code)
@@ -210,8 +215,8 @@ console.log(JSON.stringify({{file: '{plugin_file}', allHooks: keys, dead}}))
 
 # ── Cross-plugin consistency checks ─────────────────────────────────────────
 
-def test_all_plugins_export_tool_execute_before():
-    """tool.execute.before is the primary enforcement hook — every plugin must export it."""
+def test_all_plugins_export_their_primary_hook():
+    """Plugins expose tool interception or their explicit completion-only hook."""
     for plugin_file in PLUGIN_FILES:
         if plugin_file in DAEMON_PLUGINS:
             continue
@@ -224,17 +229,32 @@ const hooks = []
 
 const mod = await import('{abs_path}')
 mod.default(api)
-console.log(JSON.stringify({{file: '{plugin_file}', hasBefore: hooks.includes('tool.execute.before')}}))
+console.log(JSON.stringify({{
+  file: '{plugin_file}',
+  hasBefore: hooks.includes('tool.execute.before'),
+  hasTextComplete: hooks.includes('experimental.text.complete'),
+}}))
 """
         else:
             code = f"""\
 const mod = await import('{abs_path}')
 const plugin = await mod.default({{}})
-console.log(JSON.stringify({{file: '{plugin_file}', hasBefore: 'tool.execute.before' in (plugin ?? {{}})}}))
+console.log(JSON.stringify({{
+  file: '{plugin_file}',
+  hasBefore: 'tool.execute.before' in (plugin ?? {{}}),
+  hasTextComplete: 'experimental.text.complete' in (plugin ?? {{}}),
+}}))
 """
         result = _run_ts(code)
         assert result is not None
-        assert result["hasBefore"] is True, f"Plugin {plugin_file} missing tool.execute.before"
+        if plugin_file in TEXT_COMPLETE_ONLY_PLUGINS:
+            assert result["hasTextComplete"] is True, (
+                f"Completion-only plugin {plugin_file} missing experimental.text.complete"
+            )
+        else:
+            assert result["hasBefore"] is True, (
+                f"Plugin {plugin_file} missing tool.execute.before"
+            )
 
 
 def test_hook_fire_verification_table():
@@ -243,8 +263,8 @@ def test_hook_fire_verification_table():
     This is a meta-test that validates the entire hook ecosystem:
     - Every plugin loads
     - Every exported hook is callable
-    - No dead hooks (text.complete, session.idle, event)
-    - Every plugin exports tool.execute.before
+    - No unsupported hooks (bare text.complete, session.idle)
+    - Every plugin exports its declared primary enforcement hook
     """
     results = []
     all_pass = True
@@ -267,7 +287,7 @@ const api = {{
 }}
 const mod = await import('{abs_path}')
 mod.default(api)
-const dead = hooks.filter(h => ['experimental.text.complete', 'text.complete', 'session.idle', 'event'].includes(h))
+const dead = hooks.filter(h => ['text.complete', 'session.idle'].includes(h))
 console.log(JSON.stringify({{hooks, dead, deadCount: dead.length}}))
 """
             else:
@@ -281,7 +301,7 @@ for (const k of keys) {{
   callable[k] = typeof plugin[k] === 'function'
   if (typeof plugin[k] !== 'function') notCallable.push(k)
 }}
-const dead = keys.filter(k => ['experimental.text.complete', 'text.complete', 'session.idle', 'event'].includes(k))
+const dead = keys.filter(k => ['text.complete', 'session.idle'].includes(k))
 console.log(JSON.stringify({{hooks: keys, callable, notCallable, dead}}))
 """
             result = _run_ts(code)
@@ -290,9 +310,17 @@ console.log(JSON.stringify({{hooks: keys, callable, notCallable, dead}}))
             not_callable = result.get("notCallable", [])
             has_before = "tool.execute.before" in hooks
             is_daemon = plugin_file in DAEMON_PLUGINS
+            is_text_only = plugin_file in TEXT_COMPLETE_ONLY_PLUGINS
+            has_text_complete = "experimental.text.complete" in hooks
 
             row_pass = (
                 (is_daemon and len(not_callable) == 0)
+                or (
+                    is_text_only
+                    and has_text_complete
+                    and len(dead) == 0
+                    and len(not_callable) == 0
+                )
                 or (has_before and len(dead) == 0 and len(not_callable) == 0)
             )
             if not row_pass:
@@ -305,6 +333,7 @@ console.log(JSON.stringify({{hooks: keys, callable, notCallable, dead}}))
                 "deadHooks": dead,
                 "notCallable": not_callable,
                 "isDaemon": is_daemon,
+                "isTextOnly": is_text_only,
                 "pass": row_pass,
             })
         except Exception as e:
@@ -328,6 +357,9 @@ console.log(JSON.stringify({{hooks: keys, callable, notCallable, dead}}))
         if r.get("isDaemon"):
             print(f"║ {name} 0     —     0    0       PASS (daemon) ║")
             continue
+        if r.get("isTextOnly"):
+            print(f"║ {name} 1     text   0    0       PASS   ║")
+            continue
         n_hooks = str(r["hookCount"]).ljust(5)
         before = "Y" if r.get("hasToolExecuteBefore") else "N"
         before = before.ljust(6)
@@ -339,6 +371,7 @@ console.log(JSON.stringify({{hooks: keys, callable, notCallable, dead}}))
 
     assert all_pass, (
         "Hook fire verification FAILED. See table above for details. "
-        "Dead hooks (text.complete, session.idle, event) indicate pre-1.17.9 stale code. "
-        "Missing tool.execute.before indicates a broken plugin."
+        "Dead hooks (bare text.complete or session.idle) indicate pre-1.17.9 "
+        "stale code. Missing a plugin's declared primary hook indicates a "
+        "broken plugin."
     )
