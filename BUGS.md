@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) Parca E2E assumed defaults and omitted its POST transport protocol
+
+- **What**: Connector batch 4 reached Parca and called a no-argument constructor, despite its required guarded base URL. Its nominal health case asserted only that some dictionary was returned and reused a fake with no object-style `post(...)` method, so it could not prove a successful QueryRange probe.
+- **Root cause**: The broad E2E collapsed Parca into a generic local metrics source. Parca profiles are normalized as `traces`, its Connect QueryService endpoint is selected from explicit configuration, and the injected client contract is `post(url, json=..., headers=..., timeout=...)`.
+- **Fix applied**: Construction now narrowly verifies missing-`base_url` rejection, valid configuration pins kind `traces`, health requires `ok: true`, and the shared HTTP fake implements and records Parca's object-style POST protocol.
+- **Long-lived user evidence**: Parca's operator documentation exposes a configurable HTTP address (default port 7070) and optional path prefix rather than a universal implicit endpoint ([Parca project documentation](https://github.com/parca-dev/parca)). A targeted search of Parca's public issues and discussions did not surface a directly matching long-lived constructor report; the upstream configuration surface nonetheless confirms that endpoint selection is deployment-specific and must remain explicit.
+- **Lesson**: Health coverage must prove the success branch reached the transport, not merely accept any mapping returned by a fail-soft method. Profiling data belongs to the normalized tracing domain, and deployment endpoints stay explicit.
+
 ### 2026-07-28 — (resolved) Pyroscope E2E bypassed required endpoint configuration and GET protocol
 
 - **What**: Connector batch 4 reached Pyroscope and called a no-argument constructor, even though the connector is deliberately config-driven and requires a guarded base URL. Its health transport would then have failed because the shared fake lacked the connector's object-style `get(...)` method.

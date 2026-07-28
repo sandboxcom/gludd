@@ -161,6 +161,27 @@ class MockHttpResponseTransport:
             **kwargs,
         )
 
+    def post(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        params: dict[str, object] | None = None,
+        json: object = None,
+        timeout: float = 30.0,
+        **kwargs: object,
+    ) -> MockHttpResponse:
+        """Expose the object-style POST protocol used by profiling connectors."""
+        return self(
+            "POST",
+            url,
+            headers=headers,
+            params=params,
+            json=json,
+            timeout=timeout,
+            **kwargs,
+        )
+
 
 def _make_http_get(status: int = 200, body: object = None):
     """Factory: tuple-returning http_get for CircleCI/nagios-style connectors."""
@@ -1643,18 +1664,18 @@ class TestPyroscopeConnector:
 
 
 class TestParcaConnector:
-    def test_constructs_with_no_config(self):
+    def test_config_requires_base_url(self):
         from general_ludd.connectors.parca import ParcaSource
 
-        source = ParcaSource()
-        assert source.KIND == "metrics"
-        assert source.name == "parca"
+        with pytest.raises(ValueError, match="base_url"):
+            ParcaSource({})
 
     def test_constructs_custom_config(self):
         from general_ludd.connectors.parca import ParcaSource
 
         source = ParcaSource({"base_url": "https://parca.example.com", "name": "parca-prod"})
         assert source.name == "parca-prod"
+        assert source.KIND == "traces"
 
     def test_health_ok_with_transport(self):
         from general_ludd.connectors.parca import ParcaSource
@@ -1665,7 +1686,7 @@ class TestParcaConnector:
             transport=transport,
         )
         result = source.health()
-        assert isinstance(result, dict)
+        assert result["ok"] is True
 
     def test_health_not_ok_on_error(self):
         from general_ludd.connectors.parca import ParcaSource
