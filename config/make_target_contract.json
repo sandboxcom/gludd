@@ -67,6 +67,11 @@
       "name": "active-work-status",
       "make_variables": [],
       "behavior": "make active-work-status"
+    },
+    {
+      "name": "release-view",
+      "make_variables": ["TAG"],
+      "behavior": "make release-view TAG=v0.1.0-beta.2"
     }
   ]
 }
