@@ -327,6 +327,24 @@ const defaultImpl: HotModule = {
           }
         }
       }
+      // === ZERO-DISPATCH STREAK (FIRES BEFORE UNDER-FLOOR) ===
+      if (
+        !disengaged &&
+        _state.thisMessageDispatches === 0 &&
+        _state.zeroStreak >= MAX_ZERO_STREAK
+      ) {
+        writeState(_state)
+        return {
+          permissionDecision: "deny" as const,
+          message: [
+            "ZERO-DISPATCH STREAK: " + String(MAX_ZERO_STREAK) + " consecutive responses with 0 subagent dispatches.",
+            "Floor is 10. This block is UNCONDITIONAL. DISPATCH 10 AGENTS NOW.",
+            "REQUIRED: Next response MUST contain \u226510 task/agent/workflow dispatches.",
+            "No pending-work gate. No tool-type bypass. Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+            "Run 'make disengage-enforcement' to bypass.",
+          ].join("\n"),
+        }
+      }
       // === UNDER-FLOOR HARD BLOCK ===
       // Per AGENTS.md "UNDER-FLOOR HARD BLOCK (2026-07-15)": EVERY non-dispatch
       // tool call — including read/glob/grep — is blocked until the wave
@@ -360,24 +378,6 @@ const defaultImpl: HotModule = {
             "You have " + String(_state.thisMessageDispatches) + "; need " + String(MIN_DISPATCHES) + ". ALL tools (read/grep/glob/edit/write/bash) are blocked when below floor and dispatches have been made this session.",
             "consecutive non-dispatch calls: " + String(_state.consecutiveNonDispatch),
             "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
-            "Run 'make disengage-enforcement' to bypass.",
-          ].join("\n"),
-        }
-      }
-      // === ZERO-DISPATCH STREAK (FIRES BEFORE UNDER-FLOOR) ===
-      if (
-        !disengaged &&
-        _state.thisMessageDispatches === 0 &&
-        _state.zeroStreak >= MAX_ZERO_STREAK
-      ) {
-        writeState(_state)
-        return {
-          permissionDecision: "deny" as const,
-          message: [
-            "ZERO-DISPATCH STREAK: " + String(MAX_ZERO_STREAK) + " consecutive responses with 0 subagent dispatches.",
-            "Floor is 10. This block is UNCONDITIONAL. DISPATCH 10 AGENTS NOW.",
-            "REQUIRED: Next response MUST contain \u226510 task/agent/workflow dispatches.",
-            "No pending-work gate. No tool-type bypass. Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
             "Run 'make disengage-enforcement' to bypass.",
           ].join("\n"),
         }

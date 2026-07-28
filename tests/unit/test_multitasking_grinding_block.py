@@ -212,6 +212,12 @@ console.log(JSON.stringify(results));
                         f"/tmp/test-grinding-no-hot-{os.getpid()}-"
                     ),
                     "GLUDD_GATE_REFRESH_AUTOSPAWN": "0",
+                    "GLUDD_WATCHDOG_CI_FILE": (
+                        f"/tmp/test-grinding-ci-noexist-{os.getpid()}.json"
+                    ),
+                    "GLUDD_TODOWRITE_STATE": (
+                        f"/tmp/test-grinding-todos-noexist-{os.getpid()}.json"
+                    ),
                     "OPENCODE_SUBAGENT": "",
                 },
             )
