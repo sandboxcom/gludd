@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) delegation E2E treated terminal shipping as inline grinding
+
+- **What**: The full serial E2E reached 1,890 passes and then expected the delegation streak guard to reject `make git-commit` at its mutation threshold. Production intentionally exempts terminal git shipping so completed, already-gated work cannot be trapped behind a delegation requirement. The companion structural unit checker also searched only the first 800 characters of a TypeScript function and failed when comments moved the required lint exemption beyond that arbitrary window.
+- **Root cause**: The E2E selected an explicitly allowlisted shipping operation as its example of inline mutation, contradicting the canonical git-shipping contract. The unit test coupled itself to source length rather than named function boundaries.
+- **Fix applied**: Runtime E2E now proves that a real inline mutator (`make format-python`) is denied at the threshold and separately proves `make git-commit` remains available. Structural lint-exemption checks extract the complete region between named TypeScript functions, so comments cannot hide or fabricate behavior.
+- **Long-lived user evidence**: Agent users report that hook blocks around commit-time quality checks can cause the model to stop instead of repairing and retrying, making accidental terminal-action blocks operationally significant ([Claude Code issue #24327](https://github.com/anthropics/claude-code/issues/24327)). Other users report that Bash/Task hook blocks can be delivered without actually preventing execution, reinforcing the need for direct runtime allow/deny tests rather than source assumptions ([issue #26923](https://github.com/anthropics/claude-code/issues/26923)). TypeScript itself warns consumers not to depend on comments being preserved or positioned consistently ([TypeScript FAQ](https://github.com/microsoft/TypeScript/wiki/FAQ#comment-preservation-not-guaranteed)).
+- **Lesson**: Enforcement E2E must test both sides of every exception: inline mutation is blocked, while terminal validation and shipping remain reachable. Structural checkers should use semantic or named boundaries, never fixed character windows.
+
 ### 2026-07-28 — (resolved) JSON serializer collapsed every falsy value into an array
 
 - **What**: The database E2E proved that `json_dumps({})` returned `[]` instead of `{}`. The same truthiness shortcut also corrupted `0`, `false`, and the empty string, silently changing both JSON type and value at persistence boundaries.
