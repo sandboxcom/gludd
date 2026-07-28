@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) Podman E2E bypassed configuration and hid query outages
+
+- **What**: Connector batch 5 reached Podman after the Nomad correction and failed because five cases passed an unsupported `transport=` constructor keyword. Its final case also expected a failed container-list request to become an empty result.
+- **Root cause**: The broad E2E drifted from Podman's config-driven `config["transport"]` injection seam and conflated health's documented fail-soft behavior with query semantics. Returning an empty collection from a failed query would make “Podman is unavailable” indistinguishable from “Podman has no containers.”
+- **Fix applied**: All Podman E2E doubles now enter through connector configuration. Health cases continue to require structured `ok: false` results for HTTP and transport failures, while the query outage case requires the original connection error to remain observable.
+- **Long-lived user evidence**: Podman's current service documentation identifies the rootful Unix socket, explains socket activation, and warns that the API grants arbitrary-code-equivalent access, recommending against exposed TCP service endpoints ([Podman system service](https://docs.podman.io/en/latest/markdown/podman-system-service.1.html)). Operators have repeatedly reported multi-year connection-refused failures when Podman machine and its socket are unavailable or out of sync ([Podman issue #19554](https://github.com/containers/podman/issues/19554), [issue #20424](https://github.com/containers/podman/issues/20424)). Those failures must remain distinguishable from a valid empty container list.
+- **Lesson**: Connector injection tests must use the public configuration seam, and fail-soft health must not imply fail-silent data queries. Availability and emptiness are different operational states.
+
 ### 2026-07-28 — (resolved) Nomad accepted blocked endpoints until first request
 
 - **What**: The warning-clean serial E2E run reached 1,474 passes and then showed that `NomadSource` could be constructed with a private endpoint despite its default-deny SSRF contract; rejection occurred only when a request was attempted. Once that boundary was fixed, three later Nomad cases passed an unsupported `transport=` constructor keyword instead of using the connector's documented configuration seam, and the query fixture modeled an allocation-list endpoint the connector does not expose.

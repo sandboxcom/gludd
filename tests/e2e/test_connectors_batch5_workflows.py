@@ -351,7 +351,7 @@ class TestPodmanConnector:
         from general_ludd.connectors.podman import PodmanSource
 
         resp = self._MockPodmanResponse(status=200, body=_json.dumps([{"Id": "c1"}]).encode())
-        source = PodmanSource(transport=lambda *a, **kw: resp)
+        source = PodmanSource({"transport": lambda *a, **kw: resp})
         result = source.health()
         assert result["ok"] is True
 
@@ -359,7 +359,7 @@ class TestPodmanConnector:
         from general_ludd.connectors.podman import PodmanSource
 
         resp = self._MockPodmanResponse(status=500, body=b"")
-        source = PodmanSource(transport=lambda *a, **kw: resp)
+        source = PodmanSource({"transport": lambda *a, **kw: resp})
         result = source.health()
         assert result["ok"] is False
 
@@ -369,7 +369,7 @@ class TestPodmanConnector:
         def _fail(*_: object, **__: object) -> object:
             raise OSError("socket unavail")
 
-        source = PodmanSource(transport=_fail)
+        source = PodmanSource({"transport": _fail})
         result = source.health()
         assert result["ok"] is False
 
@@ -389,20 +389,20 @@ class TestPodmanConnector:
                 }
             ]).encode(),
         )
-        source = PodmanSource(transport=lambda *a, **kw: resp)
+        source = PodmanSource({"transport": lambda *a, **kw: resp})
         records = source.query({})
         assert len(records) >= 1
         assert records[0]["kind"] == "logs"
 
-    def test_query_empty_on_transport_error(self):
+    def test_query_propagates_transport_error(self):
         from general_ludd.connectors.podman import PodmanSource
 
         def _fail(*_: object, **__: object) -> object:
             raise ConnectionRefusedError("down")
 
-        source = PodmanSource(transport=_fail)
-        records = source.query({})
-        assert records == []
+        source = PodmanSource({"transport": _fail})
+        with pytest.raises(ConnectionRefusedError, match="down"):
+            source.query({})
 
 
 # ============================================================================
