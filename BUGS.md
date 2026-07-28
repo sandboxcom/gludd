@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) generated E2E rejected legitimate short service names
+
+- **What**: A generated service-discovery E2E asserted that the two-character title `Ab` must be discarded, while the original unit contract and production pipeline intentionally preserve names such as `GE`.
+- **Root cause**: The coverage-push E2E invented a minimum-length rule that was never part of the service catalog contract. Applying that assertion to production would silently erase legitimate short brands and acronyms.
+- **Fix applied**: The E2E now agrees with the established contract by preserving non-blank two-character names and explicitly testing the real rejection boundary: whitespace-only titles. Focused unit coverage pins representative short names (`GE`, `HP`, and `AI`) so a future coverage batch cannot reintroduce the false restriction.
+- **Long-lived user evidence**: Docker Compose users spent years requesting relaxation of service-name restrictions that excluded otherwise valid identifiers ([docker/compose issue #1519](https://github.com/docker/compose/issues/1519)). Discovery must not add an undocumented length filter that downstream service systems do not require.
+- **Lesson**: A coverage test cannot invent domain validation. Reject structurally empty input, but preserve valid source names unless a documented catalog constraint says otherwise.
+
 ### 2026-07-28 — (resolved) single-line conversation text was mistaken for a file path
 
 - **What**: `parse_conversation_log()` accepted either a path or inline log text, but returned no entries for valid single-line XML or role-prefixed conversations.

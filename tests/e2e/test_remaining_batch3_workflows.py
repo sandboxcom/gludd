@@ -667,7 +667,7 @@ class TestServiceDiscoveryPipeline:
         result = _extract_service_name(FakeResult())
         assert result == "ServiceX"
 
-    def test_extract_service_name_short(self):
+    def test_extract_service_name_preserves_two_character_name(self):
         from general_ludd.service_discovery.pipeline import _extract_service_name
 
         class FakeResult:
@@ -677,7 +677,18 @@ class TestServiceDiscoveryPipeline:
             engine = "g"
 
         result = _extract_service_name(FakeResult())
-        assert result is None
+        assert result == "Ab"
+
+    def test_extract_service_name_rejects_blank_title(self):
+        from general_ludd.service_discovery.pipeline import _extract_service_name
+
+        class FakeResult:
+            title = "   "
+            url = "https://blank.example.com"
+            snippet = "s"
+            engine = "g"
+
+        assert _extract_service_name(FakeResult()) is None
 
     def test_extract_service_name_long(self):
         from general_ludd.service_discovery.pipeline import _extract_service_name
