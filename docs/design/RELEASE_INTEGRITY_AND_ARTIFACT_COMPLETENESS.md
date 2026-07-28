@@ -123,9 +123,25 @@ is worse than no spec.
   passed via -DVERSION"`. Effort: S.
 - `macos-dmg` hardcodes `-macos-arm64` (`DMG_NAME`, `:2964`) regardless of host
   arch — an x86_64 mac would produce a mislabelled dmg. Effort: S.
-- `rpm-package` uses a fixed shared `/tmp/gludd-rpmbuild` (`:2950`) — concurrent
-  builds collide. Effort: S.
+- ~~`rpm-package` uses a fixed shared `/tmp/gludd-rpmbuild`~~ — **RESOLVED for
+  beta.3.** It now uses the checkout-local absolute `dist/rpmbuild` path, so
+  parallel projects and release worktrees cannot delete each other's RPM tree.
 - `dist/rpm/gludd.spec:30` has a hardcoded changelog date. Cosmetic.
+
+**R-15 — beta.3 RPM packaging incident (RESOLVED 2026-07-28).**
+
+Build-and-Release run `30331174104` exposed a repository-controlled shell
+portability and isolation failure. GNU make runs recipes with `/bin/sh` unless
+configured otherwise, while Bash-only brace expansion is not portable there.
+The long-lived user report
+[“cannot create multiple directories with makefile”][make-brace-report]
+documents the same failure mode, and the
+[GNU make shell documentation][gnu-make-shell] confirms the `/bin/sh`
+contract. The target now creates every rpmbuild directory explicitly and uses
+the checkout-local `dist/rpmbuild` tree instead of a shared `/tmp` directory.
+
+[make-brace-report]: https://stackoverflow.com/questions/49099682/cannot-create-multiple-directories-with-makefile/49100159
+[gnu-make-shell]: https://www.gnu.org/software/make/manual/html_node/Choosing-the-Shell.html
 
 **R-13 — The `/Users/` leak guard covers only the tarball (NEW, and it already
 cost us).** The only developer-path guard is

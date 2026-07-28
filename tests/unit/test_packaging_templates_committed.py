@@ -13,6 +13,17 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
+MAKEFILE = ROOT / "Makefile"
+
+
+def _make_target_block(target: str) -> str:
+    """Return one top-level Make target without depending on GNU make parsing."""
+    text = MAKEFILE.read_text(encoding="utf-8")
+    start = text.find(f"{target}:")
+    assert start >= 0, f"Makefile lost the {target} target"
+    end = text.find("\n\n", start)
+    assert end >= 0, f"Makefile target {target} is not blank-line terminated"
+    return text[start:end]
 
 
 class TestPackagingTemplatesCommitted:
@@ -107,3 +118,19 @@ class TestPackagingTemplatesCommitted:
             assert (fpath.stat().st_mode & 0o111) != 0, (
                 "dist/install.sh must be executable"
             )
+
+
+def test_rpm_package_creates_portable_rpmbuild_tree() -> None:
+    """CI uses /bin/sh, so the recipe must create each directory explicitly."""
+    block = _make_target_block("rpm-package")
+    assert "{BUILD,RPMS,SOURCES,SPECS,SRPMS}" not in block
+    for directory in ("BUILD", "BUILDROOT", "RPMS", "SOURCES", "SPECS", "SRPMS"):
+        assert f"$(RPMBUILD_DIR)/{directory}" in block
+
+
+def test_rpm_package_build_tree_is_namespaced_to_checkout() -> None:
+    """Parallel projects and releases must not share one temporary RPM tree."""
+    makefile = MAKEFILE.read_text(encoding="utf-8")
+    block = _make_target_block("rpm-package")
+    assert "RPMBUILD_DIR := $(abspath dist/rpmbuild)" in makefile
+    assert "/tmp/gludd-rpmbuild" not in block

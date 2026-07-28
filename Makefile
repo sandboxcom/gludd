@@ -4035,18 +4035,20 @@ deb-install-deps:
 	@echo "=== Installing .deb package dependencies ==="
 	@grep '^Depends:' dist/debian/control | sed 's/^Depends: //' | tr ',' '\n' | sed 's/^ *//;s/ .*//' | xargs -r sudo apt-get install -y
 
+RPMBUILD_DIR := $(abspath dist/rpmbuild)
 rpm-package:
 	@echo "=== Building .rpm package ==="
 	@which rpmbuild >/dev/null 2>&1 || (echo "ERROR: rpmbuild not found. Install rpm-build package."; exit 1)
-	@mkdir -p dist/rpm /tmp/gludd-rpmbuild/BUILD /tmp/gludd-rpmbuild/RPMS /tmp/gludd-rpmbuild/SOURCES /tmp/gludd-rpmbuild/SPECS /tmp/gludd-rpmbuild/SRPMS
-	@cp dist/gludd /tmp/gludd-rpmbuild/SOURCES/gludd
-	@sed "s/VERSION_PLACEHOLDER/$(VERSION)/g" dist/rpm/gludd.spec > /tmp/gludd-rpmbuild/SPECS/gludd.spec
-	@rpmbuild -bb --define "_topdir /tmp/gludd-rpmbuild" /tmp/gludd-rpmbuild/SPECS/gludd.spec
-	@RPM_FILE=$$(ls /tmp/gludd-rpmbuild/RPMS/x86_64/gludd-*.rpm 2>/dev/null | head -1); \
+	@rm -rf "$(RPMBUILD_DIR)"
+	@mkdir -p dist/rpm "$(RPMBUILD_DIR)/BUILD" "$(RPMBUILD_DIR)/BUILDROOT" "$(RPMBUILD_DIR)/RPMS" "$(RPMBUILD_DIR)/SOURCES" "$(RPMBUILD_DIR)/SPECS" "$(RPMBUILD_DIR)/SRPMS"
+	@cp dist/gludd "$(RPMBUILD_DIR)/SOURCES/gludd"
+	@sed "s/VERSION_PLACEHOLDER/$(VERSION)/g" dist/rpm/gludd.spec > "$(RPMBUILD_DIR)/SPECS/gludd.spec"
+	@rpmbuild -bb --define "_topdir $(RPMBUILD_DIR)" "$(RPMBUILD_DIR)/SPECS/gludd.spec"
+	@RPM_FILE=$$(ls "$(RPMBUILD_DIR)"/RPMS/x86_64/gludd-*.rpm 2>/dev/null | head -1); \
 	if [ -z "$$RPM_FILE" ]; then echo "ERROR: rpmbuild produced no .rpm"; exit 1; fi; \
 	cp "$$RPM_FILE" "dist/gludd-$(VERSION)-1.x86_64.rpm"; \
 	sha256sum "dist/gludd-$(VERSION)-1.x86_64.rpm" > "dist/gludd-$(VERSION)-1.x86_64.rpm.sha256"; \
-	rm -rf /tmp/gludd-rpmbuild
+	rm -rf "$(RPMBUILD_DIR)"
 	@echo "=== .rpm built: dist/gludd-$(VERSION)-1.x86_64.rpm ==="
 
 # --- macOS .dmg packaging ---
