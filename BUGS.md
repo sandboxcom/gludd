@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) Journald E2E injected a removed high-level reader abstraction
+
+- **What**: Connector batch 4 stopped because the Journald E2E passed `reader=...`, but the connector's supported seam is `runner(argv) -> (returncode, stdout, stderr)`.
+- **Root cause**: The E2E modeled already-parsed dictionaries and bypassed command construction, JSON-lines decoding, return-code handling, and the `journalctl --version` health probe. Its empty-result test also invoked the host's real `journalctl`, making the result platform-dependent.
+- **Fix applied**: Health now injects a runner and verifies the exact version argv. Query serializes canned journal entries as JSON lines through the runner, while the empty case returns a controlled nonzero command result. No E2E touches the host journal or binary.
+- **Long-lived user evidence**: Users driving `journalctl` from Python have repeatedly hit argument-shape errors caused by carrying shell quoting into list argv ([Stack Overflow, 2016–2022](https://stackoverflow.com/questions/37508028/reading-journalctl-output-using-python-subprocess)); another long-lived report shows that each option and value must be a distinct argv element ([Stack Overflow, 2018](https://stackoverflow.com/questions/50850694/python-subprocess-subprocess-check-output-and-journalctl-cursor)). Unix users recommend `journalctl --output=json` for machine consumption rather than scraping presentation text ([Unix & Linux discussion](https://unix.stackexchange.com/questions/418349/print-only-timestamp-and-message-in-journalctl)).
+- **Lesson**: Command-backed connector E2E must inject at the command boundary, not above it. That preserves argv safety, output parsing, exit-status behavior, and cross-platform determinism in one testable contract.
+
 ### 2026-07-28 — (resolved) Syslog-file E2E bypassed the connector's confinement-root contract
 
 - **What**: Connector batch 4 stopped while constructing `SyslogFileSource` because the E2E supplied a log-file `path` in constructor configuration instead of the mandatory confinement `root`.

@@ -961,34 +961,42 @@ class TestJournaldConnector:
         source = JournaldSource({"name": "my-journal"})
         assert source.name == "my-journal"
 
-    def test_health_ok_with_injected_reader(self):
+    def test_health_ok_with_injected_runner(self):
         from general_ludd.connectors.journald import JournaldSource
 
-        def _reader(**kw: object) -> list[dict[str, object]]:
-            return [{"MESSAGE": "test", "__REALTIME_TIMESTAMP": "1700000000000000"}]
+        def _runner(argv: list[str]) -> tuple[int, str, str]:
+            assert argv == ["journalctl", "--version"]
+            return (0, "systemd 255 (255.4)\n", "")
 
-        source = JournaldSource(reader=_reader)
+        source = JournaldSource(runner=_runner)
         result = source.health()
         assert result["ok"] is True
 
     def test_query_returns_records(self):
+        import json
+
         from general_ludd.connectors.journald import JournaldSource
 
-        def _reader(**kw: object) -> list[dict[str, object]]:
-            return [
+        entries = [
                 {"MESSAGE": "line 1", "_HOSTNAME": "host1", "__REALTIME_TIMESTAMP": "1700000000000000"},
                 {"MESSAGE": "line 2", "_HOSTNAME": "host2", "__REALTIME_TIMESTAMP": "1700000001000000"},
-            ]
+        ]
 
-        source = JournaldSource(reader=_reader)
+        def _runner(argv: list[str]) -> tuple[int, str, str]:
+            return (0, "\n".join(json.dumps(entry) for entry in entries), "")
+
+        source = JournaldSource(runner=_runner)
         records = source.query({})
         assert len(records) >= 2
         assert records[0]["kind"] == "logs"
 
-    def test_query_empty_with_no_reader(self):
+    def test_query_empty_on_runner_error(self):
         from general_ludd.connectors.journald import JournaldSource
 
-        source = JournaldSource()
+        def _runner(argv: list[str]) -> tuple[int, str, str]:
+            return (1, "", "journalctl unavailable")
+
+        source = JournaldSource(runner=_runner)
         records = source.query({})
         assert records == []
 
