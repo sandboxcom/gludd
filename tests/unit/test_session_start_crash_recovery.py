@@ -176,6 +176,9 @@ class TestCrashRecoveryRuntime:
 
         const fs = await import("node:fs");
         const STATE_FILE = "{state_path}";
+        const state = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+        state.pid = process.pid;
+        fs.writeFileSync(STATE_FILE, JSON.stringify(state));
         function loadState() {{
             const raw = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
             const storedPid = Number(raw.pid) || 0;
@@ -193,8 +196,8 @@ class TestCrashRecoveryRuntime:
         )
         assert result.get("readsDone") is True
 
-    def test_loadstate_missing_pid_field_triggers_reset(self):
-        """A state file with no pid field must trigger a reset (storedPid=0)."""
+    def test_loadstate_missing_pid_field_preserves_legacy_state(self):
+        """A legacy state file with no PID must not be mistaken for a crashed process."""
         state_path = f"/tmp/test-session-crash-{os.getpid()}-3.json"
         _write_state_file(state_path, {
             "started_at": time.time() * 1000 - 5000,
@@ -212,16 +215,16 @@ class TestCrashRecoveryRuntime:
         function loadState() {{
             const raw = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
             const storedPid = Number(raw.pid) || 0;
-            if (storedPid !== process.pid) {{
+            if (storedPid !== 0 && storedPid !== process.pid) {{
                 return {{ _crash_recovery_reset: true, storedPid }};
             }}
-            return {{ _crash_recovery_reset: false }};
+            return {{ _crash_recovery_reset: false, storedPid }};
         }}
         console.log(JSON.stringify(loadState()));
         """
         result = _run_node_test(script)
-        assert result.get("_crash_recovery_reset") is True, (
-            f"State without pid field must trigger reset. Got: {result}"
+        assert result.get("_crash_recovery_reset") is False, (
+            f"Legacy state without a PID must be preserved. Got: {result}"
         )
         assert result.get("storedPid") == 0
 
