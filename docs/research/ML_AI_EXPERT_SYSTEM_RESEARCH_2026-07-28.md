@@ -686,6 +686,88 @@ policy, relabel their failures, alter evidence, expand budgets/capabilities, or
 promote themselves. Failed and rejected candidates remain as negative evidence
 so the system does not repeatedly rediscover an attractive but invalid idea.
 
+### 12.6 Citation quality, temporal knowledge, and learning from outcomes
+
+The continual loop must distinguish three operations that are often collapsed
+into “learning”: accepting evidence, updating a derived knowledge snapshot, and
+changing behavior. Each needs a separate candidate, evaluator, authority, and
+rollback path.
+
+| Resource | Date | Design evidence and limitation |
+|---|---:|---|
+| [ALCE](https://arxiv.org/abs/2305.14627) | 2023 | Evaluates correctness and citation quality end to end; even strong systems can leave many claims incompletely supported |
+| [FActScore](https://arxiv.org/abs/2305.14251) | 2023 | Decomposes long-form generations into atomic facts and checks support; automated estimators remain model- and knowledge-source-dependent |
+| [FreshLLMs/FreshQA](https://arxiv.org/abs/2310.03214) | 2023/2024 | Tests fast-changing facts and false premises and finds strong sensitivity to retrieved evidence and ordering |
+| [Time-sensitive QA over temporal knowledge graphs](https://arxiv.org/abs/2203.00255) | 2022 | Shows that fact validity and temporal order must be represented rather than inferred from undated triples |
+| [Performative Prediction](https://proceedings.mlr.press/v119/perdomo20a.html) | 2020 | A deployed predictor can change the distribution used to evaluate it; repeated retraining is not neutral |
+| [Feedback Loops With Language Models Drive In-Context Reward Hacking](https://arxiv.org/abs/2402.06627) | 2024 | Static evaluations can miss harmful loops when model output becomes future context or feedback |
+| [Doubly robust off-policy value evaluation](https://proceedings.mlr.press/v48/jiang16.html) | 2016 | Logged outcomes may help evaluate a candidate policy, but support/overlap, variance, and model assumptions bound what can be concluded |
+| [Confident off-policy evaluation and selection](https://proceedings.mlr.press/v130/kuzborskij21a.html) | 2021 | Lower-confidence bounds can support conservative selection when propensities and coverage are valid; they do not rescue missing support |
+
+#### Citation and evidence evaluation
+
+Every externally meaningful factual claim needs:
+
+- at least one exact evidence locator and a content digest;
+- an atomic support assessment: supported, partially supported, unsupported,
+  contradicted, or unknown;
+- citation completeness: which claim clauses have no source;
+- source independence groups so mirrors, syndicated stories, repository forks,
+  and papers repeating the same dataset are not counted as corroboration;
+- primary/official evidence priority for behavior, API, security, and version
+  claims;
+- practitioner/forum status as an operational signal unless independently
+  reproduced or corroborated;
+- temporal scope and freshness at answer time; and
+- a verifier configured independently from the answer generator.
+
+Citation presence is not citation correctness. A valid URL can point to a source
+that does not entail the claim, a retracted version, an undated statement, or
+several dependent copies of one assertion. Automated entailment is a triage
+signal; consequential or low-confidence claims require deterministic checks or
+human review.
+
+#### Temporal and candidate knowledge snapshots
+
+Facts store both **observation time** (when Gludd captured the record) and
+**valid time** (when the assertion is claimed to hold). Corrections,
+supersessions, deletions, and retractions append new records and edges. An
+“as-of” answer must resolve a consistent immutable snapshot; a current answer
+must not retrieve expired evidence merely because its vector similarity is high.
+
+Ingestion writes into a candidate knowledge namespace. Before an atomic pointer
+swap, Gludd reconciles source identities, tombstones, dependent chunks,
+embeddings, graph edges, caches, citations, temporal queries, and a frozen
+retrieval/answer suite. The prior knowledge snapshot remains addressable for
+replay and rollback. This makes knowledge refresh a ZDD release, not an in-place
+reindex.
+
+#### Outcome learning without feedback capture
+
+An outcome record must separate:
+
+- request/context and eligibility;
+- selected champion/candidate and selection probability or assignment rule;
+- intervention actually delivered;
+- immediate and delayed outcomes plus observation window;
+- safety, cost, latency, abstention, override, rollback, and missing-outcome
+  states;
+- known confounders, concurrent system/source/policy changes, and exposure to
+  prior Gludd output; and
+- consent, retention, privacy, and allowed learning use.
+
+The system first asks whether the outcome is attributable. Randomized shadow or
+canary comparisons are preferred where safe; otherwise it reports support,
+overlap, sensitivity, and uncertainty for observational or off-policy estimates.
+It must never treat correlation, user compliance, engagement, repeated model
+text, or an evaluator's own prior output as ground-truth improvement.
+
+Outcome analysis may propose calibration, retrieval, procedure, role, skill, or
+agenda candidates. It cannot directly update live memory or behavior. A memory
+candidate is deduplicated, scoped, expiring, evidence-linked, poisoning-scanned,
+evaluated on old/new/transfer/adversarial cases, and promoted through the same
+human-authorized champion/challenger pointer used for other capabilities.
+
 ## 13. Interpretability and scientific diagnosis
 
 | Resource | Date | Use |
@@ -871,6 +953,7 @@ recurring failure classes that benchmark-only design misses.
 | [AI Scientist-v2 retry diagnostics issue](https://github.com/SakanaAI/AI-Scientist-v2/issues/50) | 2025-06/open | Automatic backoff masked the underlying provider/configuration error for multiple users | Retries are bounded and retain the causal exception, provider/config identity, attempt count, and terminal state |
 | [Crossref retraction retrieval discussion](https://community.crossref.org/t/help-how-can-i-collect-retractions-marked-by-crossmark/4166) | 2023-09 | Users needed to traverse update records and cursor results to associate a retraction with the original DOI | Refresh resolves update relationships in both directions and tests pagination/cursor recovery |
 | [MLflow model-stage deprecation RFC](https://github.com/mlflow/mlflow/issues/10336) | 2023-11 | Fixed lifecycle stages became too inflexible and were replaced by aliases, tags, environment separation, and copy semantics | Gludd owns immutable promotion evidence and treats external registry labels as versioned adapter state, never the sole authority |
+| [Production RAG index-staleness discussion](https://www.reddit.com/r/Rag/comments/1uw9v3e/how_are_you_handling_index_staleness_in/) | 2026-07 | Practitioners distinguish query-sampled answer metrics from source-to-index reconciliation and deletion coverage | Track source/index watermarks, tombstones, dependency invalidation, untouched content coverage, and as-of snapshot replay |
 
 ### 16.1 Failure themes that persist across years
 
@@ -902,6 +985,12 @@ recurring failure classes that benchmark-only design misses.
     evidence and compatibility adapters must outlive those labels.
 17. An idea generator is not a novelty, impact, safety, or promotion authority;
     independent evidence and human decisions remain separate.
+18. A present citation is not necessarily supportive, independent, current, or
+    correctly scoped; claim-level entailment and locator checks are separate.
+19. Capture time and fact-validity time differ; in-place replacement destroys
+    the history needed for replay and temporal answers.
+20. Outcomes observed after deployment may have been caused by the deployed
+    system itself; feedback-aware evaluation is required before “learning.”
 
 ## 17. Existing Gludd capability map
 
@@ -983,6 +1072,9 @@ systems.
 | Evidence-linked gap ranking beats popularity ranking | Blinded human review and executed minimum experiments; compare falsifiability, feasibility, information gain, downstream lift, and duplicate rate |
 | Explicit negative-evidence search changes conclusions safely | Paired reviews with identical positive-source budgets; measure contradiction/retraction/null-result recall and inappropriate confidence reduction |
 | Role/skill proposal generation improves the expert collection | Frozen capability suite plus unseen transfer tasks, safety/resource gates, human review burden, and successful rollback rehearsal |
+| Atomic citation gating reduces unsupported synthesis | Blinded claim-level support/completeness/independence evaluation with locator, retraction, and temporal adversarial cases |
+| Candidate knowledge snapshots reduce stale or mixed-version answers | Concurrent update/query and as-of replay tests over insert/update/delete/retraction/parser/embedding changes |
+| Exposure-aware outcome learning beats naive success copying | Randomized or identified logged replay; compare causal calibration, false learning, feedback amplification, transfer, and rollback |
 
 ## 20. Research refresh and provenance protocol
 

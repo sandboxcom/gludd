@@ -149,6 +149,8 @@ collections/ansible_collections/general_ludd/ml_ai_expert/
 │   ├── gap_analyze/
 │   ├── research_agenda/
 │   ├── improvement_propose/
+│   ├── knowledge_curate/
+│   ├── outcome_learn/
 │   ├── data_engineering/
 │   ├── model_adaptation/
 │   ├── adapter_route/
@@ -189,6 +191,8 @@ budget, network destination, promotion right, or secret.
 | `gap_analyze` | Claim/evidence graph, outcomes, unresolved questions | Evidence-linked gap map and uncertainty report | Read-only evidence/outcome access |
 | `research_agenda` | Signals, gaps, objectives, constraints | Ranked, diverse, human-reviewable agenda | Agenda-store write; no experiment or code mutation |
 | `improvement_propose` | Accepted agenda item and Gludd capability map | Core/collection/role/skill proposal plus eval plan | Isolated proposal workspace write only |
+| `knowledge_curate` | Candidate source/claim graph and accepted policy | Validated candidate knowledge snapshot and reconciliation report | Candidate knowledge namespace write; no live pointer |
+| `outcome_learn` | Exposure, intervention, outcome, and confounder records | Causal/uncertainty report and bounded candidate-memory proposals | Outcome-ledger read and candidate-memory write only |
 | `data_engineering` | Data resources and target logical schema | Validated dataset manifest and conversion artifacts | Project dataset read/write |
 | `model_adaptation` | Base/adapter/dataset/eval manifests | Isolated candidate adapter and training report | Authorized accelerator/model read; candidate workspace write |
 | `adapter_route` | Request features and approved adapter registry | Reproducible base/adapter route decision | Registry/model gateway read |
@@ -225,6 +229,9 @@ initial skill set is:
 | `knowledge_gap_map` | Unsupported/contradicted/stale claim and outcome-gap analysis | `gap_analyze`, `research_agenda` |
 | `research_agenda` | Novelty, impact, feasibility, risk, diversity, and negative-evidence ranking | `research_agenda` |
 | `capability_evolution` | Core/collection/role/skill proposal and compatibility protocol | `improvement_propose`, `eval_design` |
+| `citation_audit` | Atomic-claim support, entailment, completeness, independence, and locator checks | `answer_synthesize`, `independent_verify` |
+| `temporal_knowledge` | Valid-time/observation-time, supersession, staleness, and as-of queries | Research and curation roles |
+| `outcome_learning` | Exposure logging, causal attribution, delayed outcomes, and feedback-loop controls | `outcome_learn`, `eval_design` |
 | `dataset_contract` | Schema, formats, lineage, quality, split rules | `data_engineering`, `eval_design` |
 | `peft_experiment` | LoRA/QLoRA/DoRA/adapter comparison checklist | `model_adaptation` |
 | `adapter_route` | Compatibility, composition, serving, rollback checklist | `adapter_route` |
@@ -292,6 +299,11 @@ claims:
     type: fact|inference|recommendation|measurement
     support: [evidence_id]
     counterevidence: [evidence_id]
+    citation_quality:
+      support_coverage: 0.0
+      entailment: supported|partial|unsupported|contradicted|unknown
+      source_independence_groups: [string]
+      locator_valid: boolean
     confidence: 0.0
     verification: verified|partially_verified|unverified|contradicted
 limitations: [string]
@@ -313,18 +325,29 @@ publisher: string
 authors: [string]
 published_at: timestamp|null
 retrieved_at: timestamp
+observed_at: timestamp
+valid_from: timestamp|null
+valid_to: timestamp|null
+stale_after: timestamp|null
 version: string|null
 content_digest: sha256
 locator: string
 license: string|null
 integrity: active|corrected|retracted|withdrawn|unknown
 trust_label: primary|secondary|practitioner_signal|local_observation
+independence_group: string
+supersedes: [evidence_id]
+superseded_by: [evidence_id]
 project_id: string
 tenant_id: string
 ```
 
 Evidence content never enters an instruction channel. A source's reputation
 changes retrieval priority, not whether a claim is automatically true.
+`observed_at` records when Gludd captured the assertion; `valid_from` and
+`valid_to` record when the assertion is claimed to hold in its domain. Unknown
+validity remains null/unknown. A correction or later fact creates a new evidence
+record and supersession edge; it never rewrites the historical observation.
 
 ### 3.3 Experiment and promotion schema
 
@@ -381,6 +404,8 @@ Defaults are safe ceilings, not utilization targets:
 |---|---|
 | `research_standard` | 12 queries, 40 documents, 2 concurrent fetches, 32k admitted tokens, 15 minutes |
 | `horizon_scan` | 60 queries, 500 metadata records, 100 full texts, 2 concurrent fetches, 128k admitted tokens, 60 minutes |
+| `knowledge_refresh` | 100k source revisions or 2 GiB input, 2 workers, 4 GiB RAM, 30 minutes, candidate namespace only |
+| `outcome_analysis` | 100k outcome records, 2 CPU cores, 4 GiB RAM, 30 minutes, no external network or accelerator |
 | `retrieval_build` | 100k records or 2 GiB input, 2 workers, 4 GiB RAM, 30 minutes |
 | `retrieval_query` | 200 lexical + 200 dense candidates, 500 graph nodes/2 hops, rerank 50, admit 20 |
 | `dataset_preview` | 100k records or 2 GiB, 4 GiB RAM, 30 minutes, no accelerator |
@@ -1993,6 +2018,157 @@ state; adversarial requests to skip any stage, grant tools, reveal holdouts,
 rewrite policy, self-approve, or suppress rollback fail closed; denial leaves the
 champion unchanged and all useful research preserved.
 
+### MLCONT.21 — Atomic claim and citation quality gate
+
+**Status:** Not implemented
+
+**Contract:** Decompose externally meaningful answer and proposal assertions
+into atomic claims and evaluate citation locator validity, atomic entailment,
+support completeness, contradiction, source quality, source independence,
+version/integrity, and temporal scope. A citation URL or model-based entailment
+score alone never verifies a claim; consequential claims require primary or
+official evidence plus deterministic or authorized human verification when
+available.
+
+**Acceptance:** ALCE/FActScore-style fixtures include supportive, partially
+supportive, irrelevant, contradictory, circular, mirrored, stale, retracted,
+wrong-locator, and inaccessible citations; every unsupported clause remains
+visible; dependent copies count as one independence group; evaluator
+disagreement returns `partial` or `unknown`; the answer cannot report a higher
+verified-claim count than the serialized claim/citation records reproduce.
+
+### MLCONT.22 — Bitemporal validity, supersession, and as-of answers
+
+**Status:** Not implemented
+
+**Contract:** Store observation time separately from claimed valid-from/valid-to
+time, with unknown bounds explicit. Append correction, supersession,
+withdrawal, retraction, and deletion records instead of overwriting history.
+Resolve current and as-of queries against one immutable knowledge snapshot and
+prevent expired or future-invalid evidence from satisfying a present claim.
+
+**Acceptance:** Fixtures cover an undated fact, scheduled API sunset, retroactive
+correction, overlapping conflicting versions, retraction, deletion, late-arriving
+older observation, and false-premise FreshQA-style question; current/as-of
+answers select the expected versions and cite their temporal basis; rollback
+reproduces the exact former answer without resurrecting evidence outside that
+snapshot.
+
+### MLCONT.23 — Practitioner, forum, and maintainer signal lifecycle
+
+**Status:** Not implemented
+
+**Contract:** Search canonical issue trackers/discussions and approved
+practitioner forums for recurring failures, workarounds, regressions, operational
+costs, and unmet needs. Preserve thread/comment identity, author/maintainer role,
+timestamps, edits, issue state, affected versions/environment, reproducer,
+reactions only as metadata, archive/digest, and corroboration. Default these
+records to `practitioner_signal`; they may prioritize investigation but cannot
+alone verify a general technical claim.
+
+**Acceptance:** Fixtures distinguish maintainer confirmation, reproducible user
+bug, duplicate reports, bot response, anecdote, edited/deleted post, coordinated
+spam, popularity, resolved version, and still-open issue; a reproduced failure
+links a local observation without rewriting the thread; search coverage includes
+negative/closed results; likes or repetition cannot raise verification state.
+
+### MLCONT.24 — Zero-downtime candidate knowledge snapshot
+
+**Status:** Not implemented
+
+**Contract:** Apply admitted source/claim changes to a versioned candidate
+knowledge namespace, then reconcile source identities, temporal records,
+tombstones, dependent chunks, embeddings, lexical index, graph edges, caches,
+citations, access/deletion policy, and source/index watermarks. Run frozen
+retrieval, answer, injection, privacy, resource, temporal, and rollback suites
+before an authorized atomic pointer swap; retain champion and snapshot leases
+for in-flight requests and replay. Enforce the `knowledge_refresh` profile; the
+curator cannot expand it.
+
+**Acceptance:** Concurrent update/query tests never observe a mixed snapshot;
+insert/update/delete/retraction/parser/embedding/schema fixtures remove orphaned
+derived state and preserve history; failed reconciliation or evaluation leaves
+the champion pointer unchanged; in-flight champion requests finish while new
+requests select the candidate; rollback restores the prior snapshot without
+reindex or downtime.
+
+### MLCONT.25 — Exposure-aware outcome and causal-learning ledger
+
+**Status:** Not implemented
+
+**Contract:** Record eligibility/context, assignment rule and probability,
+selected revision, delivered intervention, immediate/delayed outcomes,
+observation window, missingness, safety/cost/latency, human override, concurrent
+changes, known confounders, prior Gludd-output exposure, and permitted learning
+use. Prefer randomized shadow/canary evidence when safe; otherwise report
+support/overlap, estimator assumptions, sensitivity, uncertainty, and
+non-identifiability. Enforce the `outcome_analysis` profile. Outcome analysis
+emits candidates, never live updates.
+
+**Acceptance:** Fixtures cover randomized comparison, selection bias, zero/weak
+propensity support, delayed/censored outcome, policy change, seasonality,
+duplicate user, self-generated feedback, engagement proxy, override, rollback,
+and no-effect result; causal claims appear only when the predeclared design
+identifies them; off-policy estimates fail closed on inadequate support; raw
+outcomes cannot directly mutate knowledge, procedure, role, skill, or thresholds.
+
+### MLCONT.26 — Evidence-gated procedural and outcome memory
+
+**Status:** Not implemented
+
+**Contract:** Convert repeated validated outcomes into a candidate procedure or
+calibration memory containing scope, preconditions, action, expected outcome,
+counterevidence, provenance, independence class, confidence/calibration,
+applicable versions, privacy/license, expiry, invalidation triggers, evaluation,
+and rollback. Deduplicate semantically, preserve failures, and test old, new,
+transfer, adversarial, and no-memory baselines to detect forgetting or harmful
+overgeneralization.
+
+**Acceptance:** A repeated successful procedure with independent outcomes can
+reach human review; one anecdote, poisoned feedback, self-authored outcome,
+expired version, privacy-disallowed record, or proxy-only gain cannot; tests
+detect catastrophic forgetting and domain leakage; shadow lookup records whether
+the memory would have changed an outcome; pointer rollback removes its authority
+while preserving the evidence and rejected candidate.
+
+### MLCONT.27 — Progressive role and skill revision rollout
+
+**Status:** Not implemented
+
+**Contract:** Version role and skill schemas, content, tools, capabilities,
+budgets, triggers, evidence policy, and evaluation identity as one immutable
+artifact. Install a candidate beside the champion; run static/schema/security
+checks, replay, shadow decisions, bounded canary by eligible task slice, and
+post-canary observation before pointer promotion. Existing in-flight DAGs pin
+their revision. Tool/capability expansion requires separate human authority and
+cannot ride a content-only approval.
+
+**Acceptance:** Fixtures cover compatible addition, trigger change, schema
+migration, tool addition, capability escalation, budget change, cyclic handoff,
+bad shadow route, canary regression, mid-DAG pointer change, and rollback;
+content-only changes cannot smuggle authority; champion and candidate outcomes
+are attributed by exact revision; rollback affects new DAGs without corrupting
+in-flight work.
+
+### MLCONT.28 — Continual-loop health, staleness, and anti-drift audit
+
+**Status:** Not implemented
+
+**Contract:** Publish per-scope service objectives and distributions for source
+coverage/diversity, registry health, scan/checkpoint age, source-to-index lag,
+tombstone/orphan reconciliation, claim/citation support, stale-answer rate,
+gap/agenda aging, proposal novelty/acceptance/outcome, evaluator agreement,
+human override, memory use/lift, promotion/rollback, safety, resource cost, and
+release interference. Compare against immutable baselines and detect metric
+definition, objective, source, evaluator, and selection drift.
+
+**Acceptance:** Synthetic outages, silent source loss, stale index, changed
+metric denominator, evaluator upgrade, agenda starvation, popularity capture,
+survivorship bias, rising cost, failed rollback, and release contention each
+produce a typed alert with lineage and uncertainty; a green aggregate cannot
+hide a failed required slice; the audit is read-only and cannot auto-relax its
+SLO, change weights, retrain, promote, or suppress negative results.
+
 ## 9. Cross-cutting acceptance gates
 
 An implementation unit is complete only when all applicable gates below pass.
@@ -2014,6 +2190,10 @@ An implementation unit is complete only when all applicable gates below pass.
   leak into past discovery or novelty decisions.
 - Evaluate agendas by executed information gain/outcome and human burden, not
   only whether another model liked the proposed idea.
+- Score citation support at atomic-claim level and report source-independence
+  groups, temporal validity, and evaluator uncertainty.
+- Evaluate outcome-learning candidates against no-change and champion baselines
+  with exposure/assignment and missing-outcome assumptions preserved.
 
 ### 9.2 Security and privacy
 
@@ -2027,6 +2207,8 @@ An implementation unit is complete only when all applicable gates below pass.
 - High-risk actions and promotions require separate human authority.
 - Candidates cannot read hidden evaluations or write source policy, metrics,
   evaluators, approvals, promotion state, or their own resource accounting.
+- Forum/practitioner content, outcome records, and candidate memories remain
+  untrusted data subject to poisoning, privacy, consent, and retention policy.
 
 ### 9.3 Zero-downtime delivery
 
@@ -2038,6 +2220,9 @@ An implementation unit is complete only when all applicable gates below pass.
 - Rollback is exercised under load and requires no destructive migration.
 - Source-registry, collection, role, and skill revisions use the same
   side-by-side shadow/reconcile/pointer/rollback discipline as model artifacts.
+- Knowledge snapshots pin in-flight requests and atomically reconcile source,
+  temporal, tombstone, index, graph, cache, citation, and deletion state before
+  pointer movement.
 
 ### 9.4 Quality and coverage
 
@@ -2087,6 +2272,13 @@ An implementation unit is complete only when all applicable gates below pass.
 | Candidate attempts evaluator, policy, evidence, or reward mutation | Terminate candidate, reject promotion, retain forensic artifacts, and open a security finding |
 | Post-promotion behavior/objective drift | Freeze further promotion, route to typed review, and roll back when a declared error budget is breached |
 | Research scheduler competes with release/production work | Throttle or checkpoint the scan and yield its namespace/resources without losing provenance |
+| Citation exists but does not support the atomic claim | Mark unsupported/partial, lower coverage, and block verified status for the claim |
+| Fact validity time is missing or inconsistent | Preserve `unknown` or conflict; do not substitute capture time or silently choose the newest record |
+| Forum signal is popular but uncorroborated | Keep `practitioner_signal`; prioritize reproducibility without upgrading truth status |
+| Candidate knowledge reconciliation is incomplete | Keep champion snapshot and quarantine the candidate namespace |
+| Outcome attribution lacks overlap or identifiability | Report association/unknown with assumptions; do not create a learned live update |
+| Candidate memory helps one slice but forgets or harms another | Reject promotion, retain counterevidence, and keep champion memory pointer |
+| Role/skill candidate changes capability under content approval | Reject as authorization mismatch and open an auditable security finding |
 
 ## 11. Delivery order
 
@@ -2102,7 +2294,9 @@ feature branches in this order:
    provenance, and evaluation (`MLRET.1`–`.10`, `MLAI.4`–`.6`, `MLCORE.3`,
     `.4`, `.11`);
 4. source-registry refresh, deep-research replay, signal/gap/negative-evidence
-   ledgers, and bounded scheduling (`MLCONT.1`–`.8`, `.15`, `.16`, `.19`);
+   ledgers, citation/temporal/forum evaluation, candidate knowledge snapshots,
+   bounded scheduling, and loop-health audit (`MLCONT.1`–`.8`, `.15`, `.16`,
+   `.19`, `.21`–`.24`, `.28`);
 5. collection intake, decomposition, synthesis, calibration, tools, verifier,
    routing, and reporting (`MLAI.1`–`.3`, `.7`–`.15`);
 6. private-reasoning boundary, exact tools, mathematics, formal proof, and
@@ -2110,8 +2304,9 @@ feature branches in this order:
 7. media ingredients, vision, generation/editing, conditioning, safety,
    provenance, and evaluation (`MLMEDIA.1`–`.8`);
 8. human-governed agendas, core/collection/role/skill proposal generation,
-   isolated candidate materialization, and authority separation
-   (`MLCONT.7`, `.9`–`.11`, `.13`, `.20`);
+   isolated candidate materialization, outcome attribution, candidate memory,
+   progressive role/skill rollout, and authority separation (`MLCONT.7`,
+   `.9`–`.11`, `.13`, `.20`, `.25`–`.27`);
 9. immutable experiment/outcome infrastructure, isolated workspace, and PEFT
    artifact/training foundations (`MLSI.1`–`.5`, `MLCORE.5`–`.7`, `.13`–`.15`,
    `MLPEFT.1`–`.5`);
@@ -2140,6 +2335,9 @@ For each atomic ID, its implementation record MUST contain:
 - agenda transition, separation-of-duties, approval, provenance-attestation,
   poisoning, reward-hacking, and drift evidence where capability evolution
   applies;
+- atomic citation, temporal/as-of, forum-signal, knowledge reconciliation,
+  exposure/outcome attribution, memory-forgetting, role/skill canary, and
+  continual-loop SLO evidence where those contracts apply;
 - rollout/rollback evidence when behavior can affect a running system;
 - documentation and source-registry changes;
 - commit, branch, CI run, and artifact digests; and
