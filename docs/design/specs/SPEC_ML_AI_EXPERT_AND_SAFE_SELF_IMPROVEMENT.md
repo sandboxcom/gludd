@@ -15,6 +15,15 @@ experiments, and independent verification. It also needs a safe way to turn its
 own observed failures into candidate improvements without editing or grading
 the live system in place.
 
+The same collection must run bounded continual horizon scans across papers,
+standards, official documentation, code/releases/issues, practitioner forums,
+archives, and local outcomes; reproduce its complete deep-research process;
+detect evidence-backed gaps; maintain a human-governed research agenda; and
+synthesize new Gludd core, collection, role, and skill proposals. These are
+proposal capabilities only. Any later self-improvement remains isolated,
+independently evaluated, explicitly human-authorized, zero-downtime, and
+reversible.
+
 No implementation can guarantee an answer to every possible question. The
 enforceable promise is:
 
@@ -24,7 +33,10 @@ enforceable promise is:
 4. use deterministic tools where they are more reliable than model recall;
 5. expose evidence strength, uncertainty, conflicts, and abstentions;
 6. reproduce every material experiment and cited claim; and
-7. promote self-improvements only after independent, held-out evaluation.
+7. preserve negative evidence and turn validated gaps into reviewable proposals;
+   and
+8. promote self-improvements only after independent, held-out evaluation and
+   explicit human authority.
 
 This specification does **not** authorize:
 
@@ -88,19 +100,30 @@ claim/task decomposition
  cited answer + calibration + limitations + reproducibility bundle
 ```
 
-Self-improvement uses a separate control plane:
+Continual research and self-improvement use separate control planes:
 
 ```text
-immutable outcomes -> recurring-failure proposal -> isolated candidate workspace
-     -> train/dev iteration -> frozen holdout + adversarial evaluation
-     -> blinded independent promotion decision -> shadow -> canary -> champion
-                                                   \------ rollback --------/
+source-registry refresh -> horizon scan -> immutable signal/evidence ledger
+                                  |                  |
+immutable outcomes -> knowledge-gap map -> ranked research agenda
+                                              |
+                           answer / Gludd proposal / collection proposal
+                                              |
+                                 isolated candidate workspace
+                                              |
+                 train/dev iteration -> frozen holdout + adversarial evaluation
+                                              |
+              blinded independent decision -> human approval -> shadow -> canary
+                                                                |          |
+                                                            champion <- rollback
 ```
 
 The expert plane may read approved Gludd artifacts. The experiment plane may
 write only inside its project workspace and artifact store. The promotion plane
 may change a live selection pointer only through an authorized, audited,
-reversible operation.
+reversible operation. Discovery output is evidence and a proposal, never
+permission to edit a collection, role, skill, source policy, evaluator, or live
+selection pointer.
 
 ### 2.1 Collection filesystem contract
 
@@ -120,8 +143,12 @@ collections/ansible_collections/general_ludd/ml_ai_expert/
 │       └── verification.py      # proof/check/evaluation result protocols
 ├── roles/
 │   ├── expert_orchestrate/
+│   ├── horizon_scan/
 │   ├── web_research/
 │   ├── literature_research/
+│   ├── gap_analyze/
+│   ├── research_agenda/
+│   ├── improvement_propose/
 │   ├── data_engineering/
 │   ├── model_adaptation/
 │   ├── adapter_route/
@@ -156,8 +183,12 @@ budget, network destination, promotion right, or secret.
 | Role | Input | Output | Minimum capabilities |
 |---|---|---|---|
 | `expert_orchestrate` | Question, project, user constraints | Bounded role DAG and answer envelope | Registry read and dispatch only |
+| `horizon_scan` | Versioned scope, source registry, watermark, budget | New/changed signal records and coverage report | Approved public source read; signal-ledger append only |
 | `web_research` | Query plan and source policy | Query ledger and evidence IDs | Search/fetch approved public sources |
 | `literature_research` | Concepts, identifiers, date/venue rules | Deduplicated evidence graph and review log | Scholarly metadata/full-text adapters |
+| `gap_analyze` | Claim/evidence graph, outcomes, unresolved questions | Evidence-linked gap map and uncertainty report | Read-only evidence/outcome access |
+| `research_agenda` | Signals, gaps, objectives, constraints | Ranked, diverse, human-reviewable agenda | Agenda-store write; no experiment or code mutation |
+| `improvement_propose` | Accepted agenda item and Gludd capability map | Core/collection/role/skill proposal plus eval plan | Isolated proposal workspace write only |
 | `data_engineering` | Data resources and target logical schema | Validated dataset manifest and conversion artifacts | Project dataset read/write |
 | `model_adaptation` | Base/adapter/dataset/eval manifests | Isolated candidate adapter and training report | Authorized accelerator/model read; candidate workspace write |
 | `adapter_route` | Request features and approved adapter registry | Reproducible base/adapter route decision | Registry/model gateway read |
@@ -188,7 +219,12 @@ initial skill set is:
 |---|---|---|
 | `ml_question_triage` | Domain/risk/input clarification | `expert_orchestrate`, `safety_review` |
 | `ml_method_select` | Baselines, assumptions, method cards | `expert_orchestrate`, `math_solve` |
+| `horizon_scanning` | Reproducible weak-signal discovery, deduplication, and change detection | `horizon_scan` |
 | `web_evidence_search` | Reproducible query/source/snowballing protocol | Research roles |
+| `deep_research_replay` | Search, fetch, screening, extraction, contradiction, and synthesis ledger | Research roles, `independent_verify` |
+| `knowledge_gap_map` | Unsupported/contradicted/stale claim and outcome-gap analysis | `gap_analyze`, `research_agenda` |
+| `research_agenda` | Novelty, impact, feasibility, risk, diversity, and negative-evidence ranking | `research_agenda` |
+| `capability_evolution` | Core/collection/role/skill proposal and compatibility protocol | `improvement_propose`, `eval_design` |
 | `dataset_contract` | Schema, formats, lineage, quality, split rules | `data_engineering`, `eval_design` |
 | `peft_experiment` | LoRA/QLoRA/DoRA/adapter comparison checklist | `model_adaptation` |
 | `adapter_route` | Compatibility, composition, serving, rollback checklist | `adapter_route` |
@@ -344,6 +380,7 @@ Defaults are safe ceilings, not utilization targets:
 | Profile | Default hard ceiling |
 |---|---|
 | `research_standard` | 12 queries, 40 documents, 2 concurrent fetches, 32k admitted tokens, 15 minutes |
+| `horizon_scan` | 60 queries, 500 metadata records, 100 full texts, 2 concurrent fetches, 128k admitted tokens, 60 minutes |
 | `retrieval_build` | 100k records or 2 GiB input, 2 workers, 4 GiB RAM, 30 minutes |
 | `retrieval_query` | 200 lexical + 200 dense candidates, 500 graph nodes/2 hops, rerank 50, admit 20 |
 | `dataset_preview` | 100k records or 2 GiB, 4 GiB RAM, 30 minutes, no accelerator |
@@ -1608,11 +1645,359 @@ signals, not one promotion score; golden cases run on at least two seeds where
 stochastic; safety/provenance regressions block promotion regardless of
 preference score.
 
-## 8. Cross-cutting acceptance gates
+## 8. Continual research and governed capability evolution
+
+These units operationalize the dossier's primary evidence on
+[horizon scanning](https://arxiv.org/abs/2202.13480),
+[scientific research agents](https://arxiv.org/abs/2404.07738),
+[idea-evaluation limits](https://arxiv.org/abs/2409.04109),
+[negative/missing evidence](https://www.cochrane.org/authors/handbooks-and-manuals/handbook/current/chapter-13),
+[human authority and independent assessment](https://airc.nist.gov/airmf-resources/airmf/5-sec-core/),
+[provenance](https://www.w3.org/TR/prov-o/),
+[poisoning](https://arxiv.org/abs/2302.10149),
+[reward overoptimization](https://arxiv.org/abs/2210.10760), and
+[silent drift](https://proceedings.neurips.cc/paper/2019/hash/846c260d715e5b854ffad5f70a516c88-Abstract.html).
+The persistent
+[AI Scientist rate-limit](https://github.com/SakanaAI/AI-Scientist/issues/84)
+and
+[PaperQA resumability](https://github.com/Future-House/paper-qa/issues/381)
+reports are mandatory failure fixtures, not anecdotes used to claim general
+performance.
+
+### MLCONT.1 — Versioned horizon-scan scope and cadence
+
+**Status:** Not implemented
+
+**Contract:** Define each recurring or one-shot scan by immutable scope revision:
+questions, concepts/synonyms, Gludd components, source/domain/language/time
+slices, inclusion/exclusion policy, cadence, freshness, expected outputs, risk,
+resource profile, owner, and expiry. Record the prior watermark and do not start
+a duplicate overlapping run with the same idempotency key.
+
+**Acceptance:** Unit tests reject an unversioned or unowned scope; scheduler tests
+prove exact-once logical admission across restart and duplicate delivery;
+changing scope creates a new digest without rewriting prior runs; an expired or
+disabled scope performs no fetch and records a terminal reason.
+
+### MLCONT.2 — New issue, topic, idea, and weak-signal discovery
+
+**Status:** Not implemented
+
+**Contract:** Discover new and materially changed papers, standards, official
+documentation, releases, code, issues/discussions, security advisories,
+practitioner reports, benchmarks, datasets, patents/grants when configured, and
+local Gludd outcomes. Normalize each observation into a signal with source
+identity/version, first/last seen, change digest, affected capability, source
+class, trust label, and uncertainty.
+
+**Acceptance:** Time-sliced fixtures detect a new issue, changed API, corrected
+paper, new code release, resurfaced duplicate, and deleted page exactly once;
+source and language strata appear in coverage; popularity alone cannot admit or
+rank a signal; unavailable strata remain visible missing coverage.
+
+### MLCONT.3 — Reproducible deep web, paper, code, and forum research
+
+**Status:** Not implemented
+
+**Contract:** Execute the dossier section 12.3 process as a typed state machine:
+preregister, registry refresh, search, immutable capture, identity resolution,
+screening, extraction, disconfirmation, gap mapping, hypothesis generation,
+ranking, agenda publication, and proposal. Preserve queries, cursors/pages,
+ranks, fetch/parse outcomes, inclusion/exclusion reasons, locators, hashes,
+fallbacks, and budget use.
+
+**Acceptance:** A frozen mixed web/paper/code/forum corpus reproduces the same
+admitted identities and claim graph from the run manifest; interrupted search
+resumes from durable per-source checkpoints without duplicate fetch/admission;
+429, parser failure, paywall, deletion, and archive fallback appear in the
+report; a second implementation replays the trace without provider-private CoT.
+
+### MLCONT.4 — Evidence-linked knowledge-gap detection
+
+**Status:** Not implemented
+
+**Contract:** Generate typed gaps only from unsupported, contradicted, stale,
+out-of-domain, unreplicated, low-calibration, or repeatedly failing claims and
+from missing capability/evaluation/source slices. Store the searched evidence,
+blind spots, operational consequence, uncertainty, falsifier, cheapest next
+check, expiry, and supersession graph.
+
+**Acceptance:** Fixtures distinguish unsupported from disproved, absent evidence
+from negative evidence, stale from retracted, and model uncertainty from source
+coverage; synthetic recurring failures produce one deduplicated gap; resolving,
+superseding, or invalidating a gap never erases its prior evidence.
+
+### MLCONT.5 — Transparent novelty, impact, feasibility, and risk ranking
+
+**Status:** Not implemented
+
+**Contract:** Compare every idea to nearest prior art across identity, lexical,
+semantic, citation, repository, issue/forum, and archive evidence. Report
+novelty, expected impact against declared project outcomes, feasibility,
+information gain, evidence strength, uncertainty, safety, cost, reversibility,
+and source diversity separately; expose a Pareto frontier and configurable human
+priorities rather than an opaque universal scalar.
+
+**Acceptance:** Exact and paraphrased duplicates lose novelty; an idea with high
+citation/social velocity but no project impact cannot outrank solely on
+popularity; adversarial judge-order and self-citation fixtures do not change
+deterministic dimensions; unavailable novelty sources yield `unknown`, not
+`novel`; blinded human review can reproduce the displayed ranking inputs.
+
+### MLCONT.6 — Negative, null, contradictory, and failed evidence
+
+**Status:** Not implemented
+
+**Contract:** Run explicit searches for contradiction, correction, withdrawal,
+retraction, null/negative results, failed replication, security incident,
+regression, abandoned project, and maintainer/user failure evidence. Preserve
+these records in the claim and agenda graphs with the same identity, provenance,
+screening, and freshness treatment as supporting evidence.
+
+**Acceptance:** Gold fixtures cover separate Crossmark retraction records,
+in-place correction, null result, failed replication, issue regression, and
+searched-but-not-found; the first five can lower or block a claim while the last
+only lowers coverage; deleting an unfavorable source from the current index does
+not delete its immutable evidence or increase confidence.
+
+### MLCONT.7 — Human-governed research agenda lifecycle
+
+**Status:** Not implemented
+
+**Contract:** Convert signals and gaps into a versioned agenda item containing
+question/hypothesis, evidence graph, alternatives including no change, expected
+information gain/outcome, minimum experiment, falsifier, budget, dependencies,
+risks, owner, review/expiry date, and state. Only an authorized human may accept,
+rescope, defer, reject, or close an item; automation may recommend a transition.
+
+**Acceptance:** State-machine tests reject skipped, self-approved, unsigned, and
+stale transitions; concurrent updates use compare-and-swap and retain both
+proposals; rejected/failed items remain searchable negative evidence; agenda
+ordering can be recomputed from recorded inputs without changing human decisions.
+
+### MLCONT.8 — Source-registry discovery and zero-downtime refresh
+
+**Status:** Not implemented
+
+**Contract:** Periodically revalidate each source adapter's API/schema version,
+capabilities, authentication, terms/robots, rate and concurrency observations,
+pagination/cursor semantics, freshness, corrections/retractions, parser,
+health, and fallbacks. Build a candidate registry beside the champion, replay
+contract fixtures, shadow/dual-read, reconcile, then atomically move a versioned
+pointer; retain the prior registry for rollback.
+
+**Acceptance:** Fixtures cover GitHub API version sunset, Semantic Scholar 429,
+SearXNG JSON disabled, Crossref cursor interruption/update relation, schema
+addition/removal, credential expiry, and primary/fallback disagreement; active
+research continues on the champion during refresh; failed reconciliation leaves
+the pointer unchanged; rollback is lossless and does not restart admitted runs.
+
+### MLCONT.9 — Evidence-backed Gludd core proposal synthesis
+
+**Status:** Not implemented
+
+**Contract:** Convert an accepted agenda item into a core-system proposal with
+problem/outcome, affected existing seams, source and local-outcome evidence,
+alternatives/OSS reuse decision, threat model, schemas/APIs, compatibility and
+data migration, ZDD rollout/rollback, resource model, atomic requirement IDs,
+first failing acceptance tests, evaluation plan, dependencies, and non-goals.
+The output is a proposal artifact, not a repository mutation.
+
+**Acceptance:** Schema tests reject a proposal without nearest existing seams,
+OSS comparison, negative evidence, measurable outcome, tests, rollout, or
+rollback; a fixture proposes an improvement to an existing Gludd seam without
+inventing duplicate infrastructure; no proposal role has live-tree, promotion,
+or deployment capability.
+
+### MLCONT.10 — Collection, role, and skill proposal generation
+
+**Status:** Not implemented
+
+**Contract:** Propose new or changed collection/role/skill artifacts as explicit
+versioned diffs containing input/output schemas, capabilities, tools/sources,
+resource profile, evidence policy, evaluation suite, triggers, compatibility,
+deprecation/migration, safety boundaries, and content digest. The skill body
+cannot grant authority, and project overrides cannot weaken hard policy.
+
+**Acceptance:** Golden proposals add a role, split an overloaded role, update a
+skill, and retire a skill through side-by-side compatibility; tests reject
+implicit tools, capability escalation, missing digest/eval, hidden policy
+changes, and direct incumbent edits; unchanged inputs produce the same proposal
+digest.
+
+### MLCONT.11 — Isolated candidate materialization and compatibility
+
+**Status:** Not implemented
+
+**Contract:** Materialize only a human-accepted proposal in a project-isolated,
+namespaced candidate workspace with immutable champion/proposal/source/eval
+digests, least privilege, network policy, secret isolation, storage quota,
+deadline, and cleanup. Build new schemas/artifacts beside old versions and
+exercise forward/backward/rollback compatibility before shadow use.
+
+**Acceptance:** Escape, symlink, cross-tenant, secret, network, budget, and
+champion-write fixtures fail closed; interruption leaves the champion serving
+and a resumable or safely disposable candidate; expand/migrate/contract tests
+prove old and new readers during the transition; cleanup cannot remove the
+champion or evaluation evidence.
+
+### MLCONT.12 — Evaluation-driven champion/challenger promotion
+
+**Status:** Not implemented
+
+**Contract:** Evaluate candidate core/collection/role/skill artifacts against the
+immutable champion on frozen capability, regression, transfer, adversarial,
+security, resource, and rollback suites. Use deterministic oracles first,
+independent blinded evaluators second, confidence intervals and predeclared
+thresholds; require material improvement with no safety, compatibility, or
+per-file coverage regression.
+
+**Acceptance:** Candidate identity/order swaps do not change deterministic
+outcomes; missing/timed-out cases count by the predeclared fail-closed rule;
+holdout contamination, evaluator disagreement, insignificant lift, safety
+regression, or resource breach prevents promotion; the complete per-case result
+and decision replay from immutable artifacts.
+
+### MLCONT.13 — Human authority and separation of duties
+
+**Status:** Not implemented
+
+**Contract:** Separate scanner, proposer, implementer, evaluator, policy owner,
+approver, and deployer identities/capabilities. Require explicit human approval
+for source-policy expansion, new external data/tool access, collection/role/skill
+activation, core changes, holdout replacement, threshold change, or promotion.
+No candidate or model judgment may mint, delegate, or satisfy that approval.
+
+**Acceptance:** Authorization tests reject self-approval, model-generated
+signature, expired/replayed approval, role collision forbidden by policy,
+approval for a different digest, and post-approval mutation; emergency human
+deny/stop overrides every automated recommendation; the audit proves who knew
+which artifacts before the decision.
+
+### MLCONT.14 — Pointer rollback, kill switch, and recovery
+
+**Status:** Not implemented
+
+**Contract:** Keep the last known-good core/collection/role/skill/source-registry
+revision runnable and switch authority through an atomic versioned pointer.
+Define automatic rollback on safety, correctness, latency, cost, resource,
+drift, or error-budget breach plus an independent human kill switch and bounded
+recovery procedure.
+
+**Acceptance:** Fault-injection under concurrent traffic exercises each trigger,
+stale compare-and-swap, partial migration, evaluator outage, and control-plane
+restart; rollback meets the declared recovery objective without destructive
+migration or request-schema break; the kill switch works when the candidate and
+model providers are unavailable.
+
+### MLCONT.15 — End-to-end research and evolution provenance
+
+**Status:** Not implemented
+
+**Contract:** Link signal, source snapshot, query, screening decision, claim,
+gap, idea, agenda decision, proposal, code/config/data/model artifact,
+experiment, evaluation, approval, rollout, observation, and rollback as
+immutable entity/activity/agent records. Export W3C PROV-O and
+SLSA/in-toto-compatible attestations while retaining compact Gludd IDs and
+redacting secrets/private data.
+
+**Acceptance:** A promoted and a rejected candidate each traverse back to exact
+source/eval versions and responsible identities; digest tamper, missing edge,
+wrong tenant, revoked signer, clock skew, and redaction fixtures return explicit
+invalid/incomplete states; export/import round-trips preserve derivation and ZDD
+pointer history.
+
+### MLCONT.16 — Research poisoning and indirect-instruction defenses
+
+**Status:** Not implemented
+
+**Contract:** Treat all fetched papers, pages, repositories, issues, forums,
+metadata, models, and generated critiques as untrusted data. Pin snapshots and
+hashes, compare mutable/archive views, require source diversity for consequential
+claims, detect duplicate/coordinated records and indirect prompt injection,
+quarantine suspect evidence, and keep retrieval content out of policy,
+instruction, capability, and approval channels.
+
+**Acceptance:** Split-view, frontrunning, PoisonedRAG, malicious PDF/HTML,
+repository-instruction, metadata-spoofing, coordinated-source, and stale-cache
+fixtures cannot trigger a tool/policy action or verified claim; quarantine is
+traceable and reversible; removing suspect evidence recomputes affected claims,
+gaps, and rankings without rewriting the original run.
+
+### MLCONT.17 — Reward hacking, evaluator capture, and contamination controls
+
+**Status:** Not implemented
+
+**Contract:** Prevent a candidate from reading hidden tests, modifying cases,
+labels, metrics, judge prompts/models, thresholds, policy, provenance, resource
+accounting, or promotion state. Use deterministic external checks, multiple
+independence classes, blinded order, canaries, leakage/near-duplicate scans,
+metric-component reporting, and periodic human audits; never optimize a single
+model-judge score as the promotion objective.
+
+**Acceptance:** Fixtures attempt answer-key discovery, metric tampering,
+verbosity/style gaming, self-preference, sycophancy, benchmark memorization,
+judge collusion, failure relabeling, cost hiding, and delayed trigger behavior;
+each is detected or prevents promotion; optimizing the proxy while ground-truth
+quality declines is a hard rejection with preserved evidence.
+
+### MLCONT.18 — Evidence, behavior, evaluator, and objective drift
+
+**Status:** Not implemented
+
+**Contract:** Monitor source/topic coverage, claim validity, retrieval and answer
+quality, calibration, task mix, costs/resources, safety, evaluator agreement,
+human override, proposal acceptance, and post-promotion outcomes against
+versioned baselines. Distinguish data, concept, schema, policy, objective, and
+feedback-loop drift and route each to revalidation, shadow evaluation, rollback,
+or a human agenda item rather than automatic retraining.
+
+**Acceptance:** Controlled gradual, abrupt, seasonal, benign, malign, schema,
+judge, policy, and objective shifts produce typed alerts with exemplars and
+uncertainty; low-power/no-label conditions stay `unknown`; drift detection alone
+does not mutate a model or threshold; post-promotion regression triggers
+MLCONT.14 within its recovery objective.
+
+### MLCONT.19 — Bounded, observable, release-aware research scheduling
+
+**Status:** Not implemented
+
+**Contract:** Enforce the `horizon_scan` profile and per-source quotas across
+query/fetch/token/model/CPU/RAM/accelerator/disk/network/time/money dimensions.
+Namespace every run and process, expose phase progress and heartbeats, checkpoint
+long work, cap retries/concurrency, and yield admission to higher-priority release
+and production work. A role cannot increase its own profile.
+
+**Acceptance:** Boundary tests hit each ceiling with a typed partial/cancelled
+result and intact checkpoint; 429/timeout retries honor headers and remain
+bounded; restart and duplicate delivery do not double spend; load tests show a
+release gate retains its declared resources and latency while a scan is paused
+or throttled; no orphan process, lock, cache, or temporary artifact remains.
+
+### MLCONT.20 — Safe self-evolution ceiling
+
+**Status:** Not implemented
+
+**Contract:** Allow the expert to research, answer, derive solutions, discover
+gaps, synthesize Gludd core proposals, and propose improvements to its own
+collection/roles/skills. Forbid autonomous live edits, authority expansion,
+policy/evaluator/holdout mutation, deployment, or recursive spawning outside the
+approved DAG. Progression is proposal -> human acceptance -> isolated
+implementation -> independent evaluation -> human promotion -> ZDD canary, with
+rollback available at every mutable stage.
+
+**Acceptance:** An end-to-end fixture discovers a persistent Gludd issue,
+reproduces deep research, proposes a new skill and core change, builds candidates
+in isolation, and reaches a reviewable promotion record without touching live
+state; adversarial requests to skip any stage, grant tools, reveal holdouts,
+rewrite policy, self-approve, or suppress rollback fail closed; denial leaves the
+champion unchanged and all useful research preserved.
+
+## 9. Cross-cutting acceptance gates
 
 An implementation unit is complete only when all applicable gates below pass.
 
-### 8.1 Evaluation design
+### 9.1 Evaluation design
 
 - Freeze train, development, holdout, and adversarial splits by digest.
 - Run deterministic oracles before model judges.
@@ -1625,8 +2010,12 @@ An implementation unit is complete only when all applicable gates below pass.
 - Treat missing, timed-out, or invalid cases as failures unless the metric
   explicitly defines another predeclared rule.
 - Preserve negative results and rejected candidates.
+- Evaluate horizon scanning with time-sliced replay so future evidence cannot
+  leak into past discovery or novelty decisions.
+- Evaluate agendas by executed information gain/outcome and human burden, not
+  only whether another model liked the proposed idea.
 
-### 8.2 Security and privacy
+### 9.2 Security and privacy
 
 - All network access passes SSRF, domain, scheme, size, content-type, timeout,
   and rate policy.
@@ -1636,8 +2025,10 @@ An implementation unit is complete only when all applicable gates below pass.
 - Project and tenant isolation is default deny.
 - Dataset licenses, retention, deletion, and training permission are enforced.
 - High-risk actions and promotions require separate human authority.
+- Candidates cannot read hidden evaluations or write source policy, metrics,
+  evaluators, approvals, promotion state, or their own resource accounting.
 
-### 8.3 Zero-downtime delivery
+### 9.3 Zero-downtime delivery
 
 - Add schemas, tables, fields, and APIs compatibly before switching readers.
 - Feature flags default off; shadow output is non-authoritative.
@@ -1645,8 +2036,10 @@ An implementation unit is complete only when all applicable gates below pass.
 - Canary selection uses a versioned pointer, not in-place artifact replacement.
 - The previous champion remains runnable until post-rollout observation passes.
 - Rollback is exercised under load and requires no destructive migration.
+- Source-registry, collection, role, and skill revisions use the same
+  side-by-side shadow/reconcile/pointer/rollback discipline as model artifacts.
 
-### 8.4 Quality and coverage
+### 9.4 Quality and coverage
 
 - New or changed code aggregate line coverage is at least 85%.
 - Every individual new or changed source file is at least 75%.
@@ -1657,7 +2050,7 @@ An implementation unit is complete only when all applicable gates below pass.
 - Warnings, dependency-update informational messages, and deprecations have an
   actionable remediation or a dated, owned policy record.
 
-## 9. Failure behavior
+## 10. Failure behavior
 
 | Failure | Required behavior |
 |---|---|
@@ -1685,8 +2078,17 @@ An implementation unit is complete only when all applicable gates below pass.
 | Media component/LoRA mismatch | Fail preflight without changing loaded champion pipeline |
 | Media provenance missing or stripped | Return `unknown provenance`; never infer authentic or synthetic |
 | Scientific result lacks replication/independent review | Label preliminary; do not claim discovery or authorize physical action |
+| Required horizon-scan source unavailable | Mark the affected coverage/novelty dimensions `unknown`, checkpoint, and use only declared fallbacks |
+| Research scan interrupted or rate limited | Persist causal failure and per-source cursor; resume idempotently within retry/budget limits |
+| Candidate idea appears novel only to its generator | Require nearest-prior-art search and independent/human review; retain `unknown` if coverage is inadequate |
+| Negative or retracted evidence found | Recompute dependent claims, gaps, agenda ranks, and promotion eligibility without deleting history |
+| Source-registry candidate changes identity/pagination semantics | Keep champion registry active and fail reconciliation |
+| Approval missing, expired, replayed, or for another digest | Keep the champion pointer; record denied/invalid transition |
+| Candidate attempts evaluator, policy, evidence, or reward mutation | Terminate candidate, reject promotion, retain forensic artifacts, and open a security finding |
+| Post-promotion behavior/objective drift | Freeze further promotion, route to typed review, and roll back when a declared error budget is breached |
+| Research scheduler competes with release/production work | Throttle or checkpoint the scan and yield its namespace/resources without losing provenance |
 
-## 10. Delivery order
+## 11. Delivery order
 
 Implementation MUST land on `development` through small, independently tested
 feature branches in this order:
@@ -1698,27 +2100,33 @@ feature branches in this order:
    (`MLDATA.1`–`.7`);
 3. Internet sources, safe fetch/parse, evidence broker, hybrid/graph retrieval,
    provenance, and evaluation (`MLRET.1`–`.10`, `MLAI.4`–`.6`, `MLCORE.3`,
-   `.4`, `.11`);
-4. collection intake, decomposition, synthesis, calibration, tools, verifier,
+    `.4`, `.11`);
+4. source-registry refresh, deep-research replay, signal/gap/negative-evidence
+   ledgers, and bounded scheduling (`MLCONT.1`–`.8`, `.15`, `.16`, `.19`);
+5. collection intake, decomposition, synthesis, calibration, tools, verifier,
    routing, and reporting (`MLAI.1`–`.3`, `.7`–`.15`);
-5. private-reasoning boundary, exact tools, mathematics, formal proof, and
+6. private-reasoning boundary, exact tools, mathematics, formal proof, and
    bounded scientific experiments (`MLREAS.1`–`.8`);
-6. media ingredients, vision, generation/editing, conditioning, safety,
+7. media ingredients, vision, generation/editing, conditioning, safety,
    provenance, and evaluation (`MLMEDIA.1`–`.8`);
-7. immutable experiment/outcome infrastructure, isolated workspace, and PEFT
+8. human-governed agendas, core/collection/role/skill proposal generation,
+   isolated candidate materialization, and authority separation
+   (`MLCONT.7`, `.9`–`.11`, `.13`, `.20`);
+9. immutable experiment/outcome infrastructure, isolated workspace, and PEFT
    artifact/training foundations (`MLSI.1`–`.5`, `MLCORE.5`–`.7`, `.13`–`.15`,
    `MLPEFT.1`–`.5`);
-8. adapter composition/routing/serving plus promotion, ZDD rollout, rollback,
-   bias, privacy, and authority (`MLPEFT.6`–`.8`, `MLSI.6`–`.12`,
-   `MLCORE.12`);
-9. shadow evaluation and a disabled-by-default canary before any production
+10. adapter composition/routing/serving plus evaluation-driven promotion, ZDD
+    rollout, rollback, drift, reward-hacking controls, privacy, and authority
+    (`MLCONT.12`, `.14`, `.17`, `.18`, `MLPEFT.6`–`.8`, `MLSI.6`–`.12`,
+    `MLCORE.12`);
+11. shadow evaluation and a disabled-by-default canary before any production
    authority is granted.
 
 Shared infrastructure has one writer at a time. A feature lands on one branch
 first and is then merged; it must not be independently recreated on multiple
 branches.
 
-## 11. Required implementation evidence
+## 12. Required implementation evidence
 
 For each atomic ID, its implementation record MUST contain:
 
@@ -1727,6 +2135,11 @@ For each atomic ID, its implementation record MUST contain:
 - exact evaluation suite and dataset digests;
 - coverage for every changed source file;
 - threat cases and resource-limit results;
+- research query/screening/checkpoint/coverage replay and negative-evidence
+  results where continual discovery applies;
+- agenda transition, separation-of-duties, approval, provenance-attestation,
+  poisoning, reward-hacking, and drift evidence where capability evolution
+  applies;
 - rollout/rollback evidence when behavior can affect a running system;
 - documentation and source-registry changes;
 - commit, branch, CI run, and artifact digests; and

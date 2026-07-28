@@ -558,6 +558,134 @@ do **not** justify unconstrained recursive self-modification. Gludd must:
 - roll back automatically on outcome or resource regression; and
 - retain operator authority and a global kill switch.
 
+### 12.2 Continual research, horizon scanning, and gap discovery
+
+Continual research is broader than periodically embedding new papers. It is a
+versioned, reproducible process for finding weak signals, changed evidence,
+contradictions, negative results, unresolved user problems, and newly feasible
+solutions. The following primary sources constrain the design:
+
+| Resource | Date | Design evidence and limitation |
+|---|---:|---|
+| [Bibliometric horizon-scanning methodology](https://arxiv.org/abs/2202.13480) | 2022 | Combines topic discovery, growth rates, and specialization over publications, patents, and grants; bibliometric acceleration is a signal, not proof of importance |
+| [UK Government Futures Toolkit](https://www.gov.uk/government/publications/futures-toolkit-for-policy-makers-and-analysts/the-futures-toolkit-html) | 2024 | Defines horizon scanning as systematic weak-signal collection, calls for diverse sources and original material, and uses likelihood/impact analysis with human workshops |
+| [ResearchAgent](https://arxiv.org/abs/2404.07738) | 2024 | Generates and iteratively reviews literature-grounded research ideas using publication and concept graphs; model reviewers do not establish real novelty or feasibility |
+| [Can LLMs Generate Novel Research Ideas?](https://arxiv.org/abs/2409.04109) | 2024 | A blinded study with more than 100 researchers found promising novelty ratings but weaker feasibility, poor self-evaluation, and limited idea diversity |
+| [PaperQA2](https://arxiv.org/abs/2409.13740) and [repository](https://github.com/Future-House/paper-qa) | 2024/living | Evaluates full-text retrieval, synthesis, and contradiction discovery; its reproducibility notes expose dependence on access, exact versions, and internal tools |
+| [OpenScholar](https://www.nature.com/articles/s41586-025-10072-4) | 2026 | Open scientific retrieval, citation-backed synthesis, and multi-domain expert evaluation; strong aggregate results do not remove per-claim verification needs |
+| [PRISMA 2020](https://www.prisma-statement.org/) | 2020/living | Makes search, screening, exclusions, and synthesis reportable rather than hidden behind a generated narrative |
+| [Cochrane Handbook chapter on missing evidence](https://www.cochrane.org/authors/handbooks-and-manuals/handbook/current/chapter-13) | 2024 | Negative, null, delayed, or unreported results can systematically bias conclusions; absence of located evidence is not evidence of absence |
+| [Crossmark update relationships](https://support.crossref.org/hc/en-us/articles/115000501246-Crossmark-registering-updates) | Living | Corrections, withdrawals, and retractions may be separate records linked back to the original work, so identity refresh must traverse update relations |
+| [W3C PROV-O](https://www.w3.org/TR/prov-o/) | 2013 | Standard entity/activity/agent and derivation relations for interoperable provenance |
+| [SLSA provenance](https://slsa.dev/spec/v1.2/provenance) | 2026 | Verifiable information connects an artifact to where, when, and how it was produced; research and model artifacts need analogous attestations |
+| [NIST AI RMF 1.0](https://doi.org/10.6028/NIST.AI.100-1) and [Core](https://airc.nist.gov/airmf-resources/airmf/5-sec-core/) | 2023/living | Requires explicit human/AI responsibilities, independent assessment, documented TEVV, monitoring, and accountable risk decisions |
+| [Poisoning Web-Scale Training Datasets Is Practical](https://arxiv.org/abs/2302.10149) | 2023 | Demonstrates split-view and frontrunning poisoning against mutable web data; first-seen content cannot be trusted without snapshots and hashes |
+| [Indirect prompt injection](https://arxiv.org/abs/2302.12173) | 2023 | Retrieved content can remotely alter an agent's behavior; all research text remains data, never instructions |
+| [PoisonedRAG](https://arxiv.org/abs/2402.07867) | 2024 | Small numbers of malicious knowledge records can target RAG answers; source reputation alone is insufficient |
+| [Scaling laws for reward-model overoptimization](https://arxiv.org/abs/2210.10760) | 2022 | Proxy reward can improve while ground-truth quality deteriorates |
+| [Reward tampering](https://arxiv.org/abs/1908.04734) | 2019/2021 | Formalizes incentives to alter reward functions or their inputs; a candidate must not control its evaluator or promotion record |
+| [Sleeper Agents](https://arxiv.org/abs/2401.05566) | 2024 | Backdoor behavior can persist through common safety training, so promotion needs trigger/adversarial testing and rollback rather than confidence in fine-tuning |
+| [Failing Loudly](https://proceedings.neurips.cc/paper/2019/hash/846c260d715e5b854ffad5f70a516c88-Abstract.html) | 2019 | Dataset-shift detection is necessary because learned systems can fail silently; detection does not by itself prove the shift is harmful |
+| [MLflow registry aliases](https://www.mlflow.org/docs/latest/ml/model-registry/workflow/) and [KServe canary rollout](https://kserve.github.io/archive/0.15/modelserving/v1beta1/rollout/canary/) | Living | Mature systems expose champion aliases, traffic splitting, last-good revisions, and rollback; Gludd should adapt these patterns rather than invent a serving plane |
+
+### 12.3 Reproducible deep-research loop
+
+The expert must be able to replay the process used for this dossier, not merely
+retrieve a cached answer. A bounded run has these stages:
+
+1. **Scope and preregister.** Record the question, domains, synonyms, date
+   horizon, source classes, inclusion/exclusion criteria, risk, expected output,
+   and hard budgets before search results are visible.
+2. **Refresh the source registry.** Probe API version, supported operations,
+   authentication, terms, robots behavior, rate headers, schema fingerprint,
+   correction/retraction support, and fallback health. A missing source becomes
+   a visible coverage gap.
+3. **Search broadly and independently.** Query primary papers, standards,
+   official documentation, canonical repositories and issues, practitioner
+   forums, archives, and local Gludd history. Preserve every query, page/cursor,
+   result rank, timestamp, and fallback.
+4. **Capture immutably.** Store canonical identity, exact version, content and
+   extraction hashes, archive locator, parser revision, license, and retrieval
+   outcome before synthesis.
+5. **Resolve and deduplicate.** Link DOI, arXiv, venue, repository, release,
+   issue, correction, withdrawal, and retraction identities without collapsing
+   materially different versions.
+6. **Screen transparently.** Retain inclusion, exclusion, duplicate, inaccessible,
+   and parse-failure decisions with machine-readable reasons.
+7. **Extract claim-by-claim.** Attach exact page, section, table, figure, code
+   revision, issue comment, or forum location; separate direct evidence,
+   inference, recommendation, and practitioner signal.
+8. **Seek disconfirmation.** Run explicit contradiction, failed replication,
+   null-result, retraction, security-incident, regression, and abandoned-project
+   queries. Record searched-but-not-found states without converting them into a
+   negative fact.
+9. **Map knowledge gaps.** Identify unsupported claims, contradictory clusters,
+   stale assumptions, untested boundary conditions, recurring Gludd failures,
+   missing evaluations, and under-covered source/domain/time slices.
+10. **Generate diverse hypotheses.** Produce independently seeded candidates,
+    nearest-prior-art comparisons, falsifiers, minimum experiments, and
+    alternatives including “make no change.”
+11. **Rank transparently.** Keep novelty, expected impact, feasibility,
+    evidence strength, uncertainty, safety, cost, reversibility, and source
+    diversity as separate dimensions. Citation counts and topic growth are
+    discovery signals, never authority or a single promotion score.
+12. **Publish an agenda.** Emit prioritized questions, evidence needed, owner,
+    expiry/review date, budget, stop condition, and proposed evaluation. Human
+    operators accept, defer, reject, or rescope each item.
+13. **Propose, never self-authorize.** Convert accepted items into evidence-linked
+    Gludd core, collection, role, or skill proposals in an isolated workspace.
+14. **Evaluate and roll out safely.** Use frozen holdouts, deterministic checks,
+    independent judges, adversarial cases, human authority, shadow/canary
+    observation, and a tested pointer rollback.
+
+Every stage emits a typed terminal result and heartbeat. Budget exhaustion,
+source failure, or insufficient evidence yields a partial agenda with explicit
+coverage rather than unbounded searching or a confident synthesis.
+
+### 12.4 Knowledge gaps, novelty, impact, and negative evidence
+
+A “gap” is not a phrase such as “future work should explore.” It is a typed
+record with:
+
+- the unresolved or contradicted claim and its operational consequence;
+- evidence searched, query ledger, covered source/domain/time slices, and known
+  blind spots;
+- nearest prior art and the differentiating hypothesis;
+- evidence for and against the hypothesis, including null/negative results;
+- expected information gain and impact event, each with uncertainty;
+- cheapest falsifying experiment, baseline, metrics, and stop condition;
+- safety, privacy, license, and resource constraints; and
+- owner, review/expiry date, agenda state, and all superseding records.
+
+Novelty must be tested through exact identity, lexical, semantic, citation,
+repository/code, issue/forum, and archive searches. The system must distinguish
+“not found within this recorded search” from “novel.” Impact is defined against
+project/user objectives and measurable outcomes, not journal prestige, citation
+velocity, model preference, or social engagement. Ranking presents a Pareto
+frontier and uncertainty; it must not hide trade-offs inside an opaque scalar.
+
+### 12.5 Safe collection and capability evolution
+
+The expert may propose changes to its own collection, roles, and skills, but it
+cannot grant itself authority or modify the incumbent. A proposal must include:
+
+- current artifact identity/digest and exact proposed artifact;
+- evidence graph and accepted research-agenda item;
+- input/output schemas, required capabilities, tool/source changes, and
+  migration compatibility;
+- expected improvement and falsifiable capability claim;
+- versioned unit, integration, adversarial, replay, resource, and rollback tests;
+- frozen evaluation IDs and contamination scan;
+- privacy, license, poisoning, prompt-injection, and reward-hacking review;
+- operator-visible diff, independent evaluation, approver, expiry, and rollback
+  pointer; and
+- a statement of what the candidate is forbidden to read or change.
+
+Candidates cannot access hidden test answers, write evaluators or approval
+policy, relabel their failures, alter evidence, expand budgets/capabilities, or
+promote themselves. Failed and rejected candidates remain as negative evidence
+so the system does not repeatedly rediscover an attractive but invalid idea.
+
 ## 13. Interpretability and scientific diagnosis
 
 | Resource | Date | Use |
@@ -738,6 +866,11 @@ recurring failure classes that benchmark-only design misses.
 | [Lean “No goals” diagnostic issue](https://github.com/leanprover/lean4/issues/4190) | 2024-05 | A local success-looking message could distract from errors elsewhere | Formal proof status comes only from the complete pinned build/kernel result |
 | [Stale vector index production incident](https://www.reddit.com/r/LocalLLaMA/comments/1r69w5y/rag_failure_in_production_our_vector_store_served/) | 2026-02 | Derived embeddings contradicted current structured state | Track index watermarks/tombstones and prioritize authoritative current state |
 | [AI Scientist reproducibility question](https://www.reddit.com/r/learnmachinelearning/comments/1fuw2yb/) | 2024-10 | Users struggled to reproduce the demonstrated system in other fields | Domain transfer and setup reproducibility are explicit evaluation gates |
+| [AI Scientist Semantic Scholar rate-limit issue](https://github.com/SakanaAI/AI-Scientist/issues/84) | 2024-08/open | Novelty and citation search repeatedly returned 429 responses | A novelty result is `unknown` when required sources fail; use bounded backoff, checkpoints, and declared fallback rather than silently skipping evidence |
+| [PaperQA indexing rate-limit and restart issue](https://github.com/Future-House/paper-qa/issues/381) | 2024-09/open | A small corpus hit provider limits and an interrupted run appeared to restart | Source-specific concurrency, durable cursors/checkpoints, idempotent ingestion, and visible partial progress are required |
+| [AI Scientist-v2 retry diagnostics issue](https://github.com/SakanaAI/AI-Scientist-v2/issues/50) | 2025-06/open | Automatic backoff masked the underlying provider/configuration error for multiple users | Retries are bounded and retain the causal exception, provider/config identity, attempt count, and terminal state |
+| [Crossref retraction retrieval discussion](https://community.crossref.org/t/help-how-can-i-collect-retractions-marked-by-crossmark/4166) | 2023-09 | Users needed to traverse update records and cursor results to associate a retraction with the original DOI | Refresh resolves update relationships in both directions and tests pagination/cursor recovery |
+| [MLflow model-stage deprecation RFC](https://github.com/mlflow/mlflow/issues/10336) | 2023-11 | Fixed lifecycle stages became too inflexible and were replaced by aliases, tags, environment separation, and copy semantics | Gludd owns immutable promotion evidence and treats external registry labels as versioned adapter state, never the sole authority |
 
 ### 16.1 Failure themes that persist across years
 
@@ -759,6 +892,16 @@ recurring failure classes that benchmark-only design misses.
     component state.
 12. Formal or experimental verification must be read from the authoritative
     checker, not a plausible explanation or partial UI message.
+13. Literature-search availability directly changes novelty and citation
+    conclusions; missing providers must reduce coverage, not confidence.
+14. Long research runs need source-aware rate limits, durable checkpoints, and
+    causal retry diagnostics.
+15. Negative, null, corrected, retracted, and failed-replication evidence is
+    harder to discover and must receive explicit search paths.
+16. External registry workflow labels change across releases; immutable Gludd
+    evidence and compatibility adapters must outlive those labels.
+17. An idea generator is not a novelty, impact, safety, or promotion authority;
+    independent evidence and human decisions remain separate.
 
 ## 17. Existing Gludd capability map
 
@@ -814,6 +957,10 @@ systems.
 | Web archives/bulk discovery | Internet Archive and Common Crawl adapters | Use indexes before content and isolate bulk resource budgets |
 | Learned retrieval/reranking | Sentence Transformers, FAISS/pgvector, optional ColBERT/SPLADE | Do not write embedding, ANN, or cross-encoder frameworks |
 | Graph analysis | PostgreSQL/RDF/NetworkX for bounded local work; GraphRAG/graph-store adapters only when evaluated | Graph-derived facts retain source spans; no mandatory graph database |
+| Scientific evidence synthesis | Evaluate PaperQA2/OpenScholar components behind the existing evidence broker | Reuse retrieval/evaluation methods while keeping Gludd source policy, identity, provenance, and offline fallbacks authoritative |
+| Horizon scanning | Existing source adapters plus established bibliometric/statistical libraries | Gludd owns scope, signal ledger, ranking transparency, and human agenda decisions; do not create a second crawler or opaque “trend score” |
+| Provenance exchange and attestations | W3C PROV-O plus SLSA/in-toto-compatible exports | Reuse interoperable entity/activity/agent and artifact-attestation models; Gludd retains its compact internal IDs |
+| Champion registry and rollout | Optional MLflow alias/export and KServe canary adapters | Gludd promotion evidence and human approval remain authoritative; external aliases or traffic controls never promote by themselves |
 | Image generation/editing | Hugging Face Diffusers adapter | Reuse pipelines/schedulers/LoRA/ControlNet; Gludd supplies authorization, provenance, reproducibility, safety, and evals |
 | Media provenance | C2PA SDK/tool adapter | Use the standard signature/manifest model; missing credentials remain `unknown`, not `authentic` |
 | Symbolic mathematics | SymPy/SageMath/Z3 adapters | Prefer exact tools over model arithmetic and retain assumptions/tool proofs |
@@ -832,6 +979,10 @@ systems.
 | Prompt optimization improves generalization | Separate optimizer train/dev and untouched holdout; scan for leakage and overfitting |
 | Model-based gap proposals find useful improvements | Human-blinded precision of accepted proposals plus implemented outcome lift |
 | Self-improvement promotion is net positive | Lower confidence bound above required margin, zero safety/gate regressions, and successful canary window |
+| Continual horizon scanning finds useful weak signals earlier | Time-sliced replay against later confirmed releases/issues; compare discovery lead time, precision, source diversity, analyst burden, and missed high-impact events |
+| Evidence-linked gap ranking beats popularity ranking | Blinded human review and executed minimum experiments; compare falsifiability, feasibility, information gain, downstream lift, and duplicate rate |
+| Explicit negative-evidence search changes conclusions safely | Paired reviews with identical positive-source budgets; measure contradiction/retraction/null-result recall and inappropriate confidence reduction |
+| Role/skill proposal generation improves the expert collection | Frozen capability suite plus unseen transfer tasks, safety/resource gates, human review burden, and successful rollback rehearsal |
 
 ## 20. Research refresh and provenance protocol
 
@@ -843,8 +994,12 @@ Each ingested source record must store:
 - original content hash and normalized extraction hash;
 - license/terms and allowed uses;
 - parser and parser version;
+- API/schema version, supported operations, rate-policy observation, pagination
+  cursor/watermark, and health-probe result;
 - claims/evidence spans derived from the source;
 - citations and contradictory evidence;
+- screening disposition, exclusion reason, and negative/null/failed-replication
+  classification where applicable;
 - project/tenant namespace and retention policy; and
 - the query and policy revision that admitted the source.
 
@@ -858,6 +1013,10 @@ Refresh defaults:
 
 On refresh failure, retain the last snapshot with a visible stale status. Never
 silently replace evidence or increase confidence because a source disappeared.
+Each refresh is idempotent and resumable by source watermark. Registry changes
+first run in shadow against contract fixtures; an API/version migration is
+promoted only after identity, pagination, correction/retraction, rate-limit, and
+fallback behavior match the prior accepted contract or an approved migration.
 
 ## 21. Conclusion
 
