@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-28 — (resolved) SearX HTTP replacements omitted the bound client argument
+
+- **What**: The focused SearX workflow stopped at its first health probe because the class-level replacement for `httpx.Client.get` raised `TypeError`; the connector correctly converted that transport exception into `ok: false`.
+- **Root cause**: Four E2E replacements declared `fake_get(url, **kwargs)` even though assigning a function to a class makes it a bound method. Calling `client.get(url, ...)` therefore supplies the client instance and URL as positional arguments, but the fake accepted only one.
+- **Fix applied**: Every SearX HTTP replacement now accepts both the bound client and positional URL before keyword request options. Health, error, successful search, and non-2xx search tests consequently exercise response behavior instead of an accidental signature exception.
+- **Long-lived user evidence**: Python users repeatedly encounter unexpected positional-argument counts when replacing instance methods because `self` is supplied implicitly ([Stack Overflow discussion](https://stackoverflow.com/questions/75341338/python-requests-why-do-i-get-the-error-get-takes-2-positional-arguments-but)); older mocking guidance likewise requires a fake to accept the same arguments as the original method ([Stack Overflow discussion](https://stackoverflow.com/questions/35732487/how-do-i-mock-a-method-that-uses-requests-get-in-my-class)).
+- **Lesson**: A function patched onto a class must model the bound-method signature, including the instance. Otherwise error-handling tests can pass for the wrong reason and success tests fail before exercising the transport response.
+
 ### 2026-07-28 — (resolved) SearX E2E contradicted local-instance support
 
 - **What**: The complete serial E2E run stopped after 1,134 passes because one broad test required `127.0.0.1` SearX endpoints to be rejected, while the canonical connector suite and local-server factory intentionally support loopback instances.

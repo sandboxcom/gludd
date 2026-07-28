@@ -127,7 +127,7 @@ class TestSearXConnector:
     def test_health_ok(self, monkeypatch: pytest.MonkeyPatch):
         import httpx
 
-        def fake_get(url: str, **kwargs: object) -> object:
+        def fake_get(_client: object, url: str, **kwargs: object) -> object:
             class R:
                 status_code = 200
                 content = b'{"version": "1.0"}'
@@ -143,7 +143,7 @@ class TestSearXConnector:
     def test_health_not_ok_on_error(self, monkeypatch: pytest.MonkeyPatch):
         import httpx
 
-        def fake_get(url: str, **kwargs: object) -> object:
+        def fake_get(_client: object, url: str, **kwargs: object) -> object:
             class R:
                 status_code = 500
                 content = b""
@@ -167,7 +167,7 @@ class TestSearXConnector:
             ]
         }).encode()
 
-        def fake_get(url: str, **kwargs: object) -> object:
+        def fake_get(_client: object, url: str, **kwargs: object) -> object:
             class R:
                 status_code = 200
                 content = body
@@ -187,7 +187,7 @@ class TestSearXConnector:
     def test_search_empty_on_non_2xx(self, monkeypatch: pytest.MonkeyPatch):
         import httpx
 
-        def fake_get(url: str, **kwargs: object) -> object:
+        def fake_get(_client: object, url: str, **kwargs: object) -> object:
             class R:
                 status_code = 403
                 content = b""
