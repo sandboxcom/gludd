@@ -179,11 +179,13 @@ class TestEnforceDelegateWritesStateFiles:
     via tool.execute.before (enforceForceDelegate, opt-in GLUDD_FORCE_DELEGATE=1)."""
 
     def test_mainthread_streak_file_increments(self, hook_plugin_env: HookEnv):
-        for _ in range(3):
-            result = hook_plugin_env.invoke(
-                "enforce-delegate.ts", "tool.execute.after", input={"tool": "edit"}
-            )
-            assert result.returncode == 0, result.stderr
+        result = hook_plugin_env.invoke(
+            "enforce-delegate.ts",
+            "tool.execute.after",
+            input={"tool": "edit"},
+            repeat=3,
+        )
+        assert result.returncode == 0, result.stderr
         data = hook_plugin_env.read_json("GLUDD_MAINTHREAD_STREAK_FILE")
         assert isinstance(data, dict)
         assert data["count"] == 3, f"expected count==3 after 3 edit calls, got {data}"
@@ -567,8 +569,12 @@ class TestDeletionGateAuditLog:
             },
             env_overrides={"GLUDD_DELETION_GATE_THRESHOLD": "5"},
         )
-        assert result.returncode != 0, "deletion above threshold with no reason must be denied"
-        assert "BASH BLOCKED" in result.stderr or "threshold" in result.stderr.lower()
+        assert result.returncode == 0, result.stderr
+        decision = json.loads(result.stdout)
+        assert decision["permissionDecision"] == "deny", (
+            "deletion above threshold with no reason must be denied"
+        )
+        assert "threshold" in decision["message"].lower()
 
 
 # ── Test 13: opt-in live smoke test against a real opencode binary ──────────
