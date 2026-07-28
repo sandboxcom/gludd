@@ -1,5 +1,7 @@
 import os
+import shutil
 import stat
+import subprocess
 
 import pytest
 
@@ -71,33 +73,58 @@ class TestInstallScript:
     def test_install_script_copies_binary(self):
         with open(self.SCRIPT_PATH) as f:
             content = f.read()
-        assert "/usr/local/bin/gludd" in content
+        assert 'INSTALL_DIR="${1:-/usr/local/bin}"' in content
+        assert '"${INSTALL_DIR}/gludd"' in content
         assert "cp" in content or "install" in content
 
-    def test_install_script_installs_systemd_unit(self):
+    def test_install_script_is_portable_not_systemd_specific(self):
         with open(self.SCRIPT_PATH) as f:
             content = f.read()
-        assert "general-ludd.service" in content
-        assert "systemd" in content or "systemctl" in content
+        assert "general-ludd.service" not in content
+        assert "systemctl" not in content
 
-    def test_install_script_creates_dirs(self):
+    def test_install_script_does_not_create_system_state_dirs(self):
         with open(self.SCRIPT_PATH) as f:
             content = f.read()
-        assert "/var/log/general-ludd" in content
-        assert "/var/lib/general-ludd" in content
-        assert "/etc/general-ludd" in content
+        assert "/var/log/general-ludd" not in content
+        assert "/var/lib/general-ludd" not in content
+        assert "/etc/general-ludd" not in content
 
-    def test_install_script_starts_service(self):
+    def test_install_script_does_not_start_service(self):
         with open(self.SCRIPT_PATH) as f:
             content = f.read()
-        assert "systemctl" in content
-        assert "daemon-reload" in content
+        assert "systemctl" not in content
+        assert "daemon-reload" not in content
 
-    def test_install_script_checks_root(self):
+    def test_install_script_does_not_require_root(self):
         with open(self.SCRIPT_PATH) as f:
             content = f.read()
-        assert "root" in content.lower()
-        assert "EUID" in content or "UID" in content or "id -u" in content
+        assert "EUID" not in content
+        assert "id -u" not in content
+
+    def test_install_script_installs_into_custom_directory(self, tmp_path):
+        bundle_dir = tmp_path / "bundle"
+        install_dir = tmp_path / "bin"
+        bundle_dir.mkdir()
+        install_dir.mkdir()
+        script = bundle_dir / "install.sh"
+        shutil.copy2(self.SCRIPT_PATH, script)
+        script.chmod(script.stat().st_mode | stat.S_IXUSR)
+        source_binary = bundle_dir / "gludd"
+        source_binary.write_text("#!/usr/bin/env sh\nexit 0\n", encoding="utf-8")
+
+        result = subprocess.run(
+            [str(script), str(install_dir)],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+
+        installed = install_dir / "gludd"
+        assert result.returncode == 0, result.stderr
+        assert installed.read_bytes() == source_binary.read_bytes()
+        assert installed.stat().st_mode & stat.S_IXUSR
 
     def test_install_script_uses_set_e(self):
         with open(self.SCRIPT_PATH) as f:
