@@ -21,6 +21,7 @@ Path overrides (for testing / isolated environments):
 
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -51,7 +52,6 @@ DEFAULT_PLUGINS = [
 STALE_ARTIFACT_PATTERNS = [
     re.compile(r"\bimport\s*\{[^}]*}\s*from\s*[\"']"),
     re.compile(r"\bexport\s+(default|const|function|interface)\b"),
-    re.compile(r":\s*(string|number|boolean|any|void|never)\b"),
     re.compile(r"ReferenceError\s*(is\s+not|:)"),  # only actual runtime errors, not comments
 ]
 
@@ -76,6 +76,24 @@ def is_stale_content(content: str) -> list[str]:
     for pat in STALE_ARTIFACT_PATTERNS:
         if pat.search(scannable):
             issues.append(f"  stale artifact: {pat.pattern}")
+    try:
+        result = subprocess.run(
+            ["node", "--check", "-"],
+            input=content,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        issues.append(f"  JavaScript parser unavailable: {exc}")
+    else:
+        if result.returncode != 0:
+            detail = next(
+                (line.strip() for line in result.stderr.splitlines() if line.strip()),
+                "syntax error",
+            )
+            issues.append(f"  invalid JavaScript: {detail}")
     return issues
 
 
@@ -109,7 +127,7 @@ def find_stale(
         if not src.exists():
             continue
 
-        if not has_default_impl(src) or name in ("enforce-multitask",):
+        if not has_default_impl(src):
             continue
 
         if not hot.exists():

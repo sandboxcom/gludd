@@ -44,59 +44,6 @@ function tsToJs(content) {
   return require("./ts_to_js.js").tsToJs(content);
 }
 
-function extractDefaultImplMethods(content) {
-  const methods = {};
-
-  const implMatch = content.match(/defaultImpl\s*=\s*\{/);
-  if (!implMatch) return methods;
-
-  const objStart = implMatch.index + implMatch[0].length;
-
-  // Find the end of defaultImpl by locating the next structural marker
-  // (the "PROXY" comment or "export default" that always follows defaultImpl)
-  const afterDefault = content.substring(objStart);
-  const proxyMarker = afterDefault.search(/var stdin_default\b/);
-  if (proxyMarker < 0) return methods;
-
-  // Walk backward from the proxy marker to find the closing }; of defaultImpl
-  let objEnd = objStart + proxyMarker;
-  while (objEnd > objStart && content[objEnd] !== "}") objEnd--;
-  if (objEnd <= objStart) return methods;
-
-  // Extract methods from within the defaultImpl body using positional
-  // boundaries instead of brace counting (which fails on {} in strings)
-  const bodySlice = content.substring(objStart, objEnd);
-  const methodRegex = /^(\s*)"([^"]+)"(\s*[:=])/gm;
-  const methodPositions = [];
-  let match;
-  while ((match = methodRegex.exec(bodySlice)) !== null) {
-    methodPositions.push({ name: match[2], pos: match.index + match[0].length });
-  }
-
-  for (let i = 0; i < methodPositions.length; i++) {
-    const { name, pos } = methodPositions[i];
-    const nextPos = (i + 1 < methodPositions.length) ? methodPositions[i + 1].pos : bodySlice.length;
-
-    // Find => to locate arrow function body (skip past type annotation remnants)
-    const arrowIdx = bodySlice.indexOf("=>", pos);
-    let braceIdx = -1;
-    if (arrowIdx >= 0 && arrowIdx < nextPos) {
-      braceIdx = bodySlice.indexOf("{", arrowIdx + 2);
-    }
-    if (braceIdx < 0 || braceIdx >= nextPos) {
-      braceIdx = bodySlice.indexOf("{", pos);
-    }
-    if (braceIdx < 0 || braceIdx >= nextPos) continue;
-
-    let body = bodySlice.substring(braceIdx, nextPos);
-    body = body.replace(/\n\s*"[^"]*"\s*:\s*$/, "").trimEnd();
-    body = body.replace(/,\s*$/, "").trimEnd();
-    methods[name] = body;
-  }
-
-  return methods;
-}
-
 function buildPlugin(name) {
   const srcPath = path.join(PLUGIN_DIR, `${name}.ts`);
   const outPath = `${HOT_PREFIX}${name}.js`;
@@ -114,16 +61,8 @@ function buildPlugin(name) {
   }
 
   const js = tsToJs(content);
-  const methods = extractDefaultImplMethods(js);
-
-  // Debug: show what we found
-  const hasDefaultImpl = js.includes("defaultImpl");
-  const defaultImplIdx = js.indexOf("defaultImpl");
-  const snippet = defaultImplIdx >= 0 ? js.substring(defaultImplIdx, defaultImplIdx + 200) : "(not found)";
-  console.log(`  DEBUG ${name}: defaultImpl=${hasDefaultImpl}, pos=${defaultImplIdx}, snippet=${JSON.stringify(snippet)}`);
-
-  if (Object.keys(methods).length === 0) {
-    console.log(`  SKIP ${name}: no hook methods extracted from defaultImpl`);
+  if (!/\bdefaultImpl\s*=/.test(js)) {
+    console.log(`  SKIP ${name}: transpiled output has no defaultImpl`);
     return false;
   }
 
@@ -239,65 +178,62 @@ function buildPlugin(name) {
 `;
   }
 
-  for (const [hookName, body] of Object.entries(methods)) {
-    const fnBody = body.trim();
-    // Map ...args parameters to input/output for body references
-    const mapped = fnBody.replace(
-      /^\{/,
-      "{ var input = callArgs[0] || {}; var output = callArgs[1]; "
-    );
-    out += `exports["${hookName}"] = async function(...callArgs) ${mapped};\n\n`;
-    console.log(`    hook: ${hookName} (${fnBody.length} bytes)`);
-  }
+  // Export the transpiled fallback functions directly. Reconstructing function
+  // bodies with regexes used to make the last hook absorb declarations that
+  // followed defaultImpl (notably handleTextComplete in enforce-multitask),
+  // producing a dangling `};` and invalid JavaScript. The real transpiler has
+  // already built the runtime object, so copying its functions is both simpler
+  // and preserves the exact hook signatures and behavior.
+  out += `for (const [hookName, hook] of Object.entries(defaultImpl)) {\n`;
+  out += `  if (typeof hook === "function") exports[hookName] = hook;\n`;
+  out += `}\n`;
 
-  fs.writeFileSync(outPath, out, "utf8");
-
-  // Validate the generated module. Three outcomes:
-  //   1. Parse/require failure — HARMLESS: loadHotModule() catches the error
-  //      and falls back to the compiled-in defaultImpl. Keep the file, warn.
-  //   2. Loads but exports none of the extracted hooks — DANGEROUS: the proxy
-  //      does `fn ? await fn(...) : undefined`, so an empty-export module
-  //      silently DISABLES the plugin's enforcement. Delete the file so
-  //      loadHotModule falls back to defaultImpl (missing file => defaults).
-  //   3. Loads with the expected hook exports — fully functional hot module.
-  let parseOk = true;
+  // Validate before atomically publishing the module. A malformed file must
+  // never replace the last known-good module, even though loadHotModule has a
+  // compiled-in fallback.
   try {
     new vm.Script(out, { filename: outPath });
   } catch (e) {
-    parseOk = false;
-    console.log(`  WARN ${name}: generated module has invalid JS (${e.message}) — kept; loadHotModule will fail-open to compiled-in defaultImpl`);
-  }
-  if (parseOk) {
-    const hookNames = Object.keys(methods);
-    let probe;
-    try {
-      probe = spawnSync("node", ["-e",
-        `const m = require(${JSON.stringify(outPath)}); process.stdout.write(JSON.stringify(Object.keys(m)));`,
-      ], { timeout: 10000, encoding: "utf8" });
-    } catch (e) {
-      console.log(`  WARN ${name}: require() probe crashed (${e.message}) — kept; loadHotModule will fail-open to compiled-in defaultImpl`);
-      console.log(`  BUILT ${name} → ${outPath} (${Object.keys(methods).length} hooks)`);
-      return true;
-    }
-    if (probe.status !== 0) {
-      const errLine = (probe.stderr || "").split("\n").find(l => l.trim()) || "unknown error";
-      console.log(`  WARN ${name}: generated module failed to require (${errLine.trim()}) — kept; loadHotModule will fail-open to compiled-in defaultImpl`);
-    } else {
-      let exported = [];
-      try { exported = JSON.parse(probe.stdout || "[]"); } catch (e) { exported = []; }
-      const missing = hookNames.filter(h => !exported.includes(h));
-      if (missing.length === hookNames.length) {
-        fs.unlinkSync(outPath);
-        console.log(`  SKIP ${name}: module loads but exports ZERO hooks (would silently disable enforcement) — removed; plugin falls back to compiled-in defaultImpl`);
-        return false;
-      }
-      if (missing.length > 0) {
-        console.log(`  WARN ${name}: module missing hook exports: ${missing.join(", ")}`);
-      }
-    }
+    console.error(`  FAIL ${name}: generated module has invalid JS (${e.message})`);
+    return false;
   }
 
-  console.log(`  BUILT ${name} → ${outPath} (${Object.keys(methods).length} hooks)`);
+  const candidatePath = `${outPath}.candidate-${process.pid}.js`;
+  fs.writeFileSync(candidatePath, out, "utf8");
+  let probe;
+  try {
+    probe = spawnSync("node", ["-e",
+      `const m = require(${JSON.stringify(candidatePath)}); process.stdout.write(JSON.stringify(Object.keys(m)));`,
+    ], { timeout: 10000, encoding: "utf8" });
+  } catch (e) {
+    fs.unlinkSync(candidatePath);
+    console.error(`  FAIL ${name}: require() probe crashed (${e.message})`);
+    return false;
+  }
+  if (probe.status !== 0) {
+    fs.unlinkSync(candidatePath);
+    const errLine = (probe.stderr || "").split("\n").find(l => l.trim()) || "unknown error";
+    console.error(`  FAIL ${name}: generated module failed to require (${errLine.trim()})`);
+    return false;
+  }
+
+  let exported = [];
+  try {
+    exported = JSON.parse(probe.stdout || "[]");
+  } catch {
+    exported = [];
+  }
+  if (exported.length === 0) {
+    fs.unlinkSync(candidatePath);
+    console.error(`  FAIL ${name}: generated module exports zero hooks`);
+    return false;
+  }
+
+  fs.renameSync(candidatePath, outPath);
+  for (const hookName of exported) {
+    console.log(`    hook: ${hookName}`);
+  }
+  console.log(`  BUILT ${name} → ${outPath} (${exported.length} hooks)`);
   return true;
 }
 
@@ -336,12 +272,24 @@ function main() {
   console.log("=== build_hot_modules.js ===\n");
 
   let built = 0;
+  let expected = 0;
   for (const name of PLUGINS) {
+    const srcPath = path.join(PLUGIN_DIR, `${name}.ts`);
+    if (
+      fs.existsSync(srcPath)
+      && fs.readFileSync(srcPath, "utf8").includes("defaultImpl")
+    ) {
+      expected++;
+    }
     if (buildPlugin(name)) built++;
   }
 
   console.log(`\nBuilt ${built}/${PLUGINS.length} hot-reload modules in ${OUT_DIR}/`);
   status();
+  if (built !== expected) {
+    console.error(`Hot-reload build failed: built ${built}/${expected} proxy-pattern plugins`);
+    process.exitCode = 1;
+  }
 }
 
 main();

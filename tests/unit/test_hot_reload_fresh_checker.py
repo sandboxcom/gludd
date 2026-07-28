@@ -48,6 +48,16 @@ class TestStaleArtifactDetection:
         content = "function foo(name: string) { return name; }\n"
         assert mod.is_stale_content(content) != []
 
+    def test_esbuild_void_ternary_is_valid_javascript(self):
+        mod = _load_module()
+        content = (
+            "async function invoke(hooks, name, input, output) {\n"
+            "  const fn = hooks[name];\n"
+            "  return fn ? await fn(input, output) : void 0;\n"
+            "}\n"
+        )
+        assert mod.is_stale_content(content) == []
+
     def test_surviving_export_const_is_stale(self):
         mod = _load_module()
         content = "export const FLOOR = 10;\n"

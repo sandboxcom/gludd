@@ -160,11 +160,12 @@ def test_tui_handles_multiple_permissioned_tool_prompts() -> None:
         )
         assert "permission=read" in read_segment
         assert "action.action=allow" in read_segment
-        assert "file=/Users/shawnwilson/gludd/pyproject.toml" in read_segment
+        assert f"file={ROOT / 'pyproject.toml'}" in read_segment
 
         grep_segment = tui.prompt(
-            "Use the grep tool to locate the project authors declaration in "
-            "pyproject.toml, then reply with only the author name.",
+            "Use the grep tool to locate the exact `authors =` declaration in "
+            "pyproject.toml, then use the read tool on that matching line and "
+            "reply with only the author name, not its line number.",
             "General Ludd Team",
         )
         assert "permission=grep" in grep_segment
