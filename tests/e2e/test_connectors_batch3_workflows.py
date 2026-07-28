@@ -1262,39 +1262,46 @@ class TestCloudflareConnector:
 
 
 class TestGcpAssetInventoryConnector:
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.gcp_asset_inventory import GcpAssetInventorySource
 
-        transport = MockHttpTransport(default_status=200, default_body={"assets": []})
+        transport = MockHttpTransport(default_status=200, default_body={"results": []})
+        monkeypatch.setenv("GOOGLE_OAUTH_ACCESS_TOKEN", "test-token")
         src = GcpAssetInventorySource(
             {"project_id": "my-project"},
             transport=cast(Any, transport),
         )
         result = src.health()
-        assert isinstance(result, dict)
+        assert result["ok"] is True
 
-    def test_query_returns_records(self):
+    def test_query_returns_records(self, monkeypatch):
         from general_ludd.connectors.gcp_asset_inventory import GcpAssetInventorySource
 
         transport = MockHttpTransport(
             default_status=200,
             default_body={
-                "assets": [
+                "results": [
                     {
                         "name": "//compute/instance-1",
                         "assetType": "compute.googleapis.com/Instance",
+                        "project": "projects/my-project",
+                        "location": "us-central1-a",
+                        "state": "RUNNING",
                         "updateTime": "2025-01-01T00:00:00Z",
                     }
                 ]
             },
         )
+        monkeypatch.setenv("GOOGLE_OAUTH_ACCESS_TOKEN", "test-token")
         src = GcpAssetInventorySource(
             {"project_id": "my-project"},
             transport=cast(Any, transport),
         )
         records = src.query({})
-        assert isinstance(records, list)
-        assert len(records) >= 1
+        assert len(records) == 1
+        assert records[0]["level_or_status"] == "RUNNING"
+        assert records[0]["labels"]["project"] == "projects/my-project"
+        assert records[0]["labels"]["location"] == "us-central1-a"
 
 
 class TestAzureResourceGraphConnector:
