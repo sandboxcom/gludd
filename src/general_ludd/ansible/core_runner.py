@@ -917,7 +917,17 @@ class CoreAnsibleRunner:
         if not _HAS_ANSIBLE_CORE:
             raise ImportError("ansible-core is required for templating but is not installed")
         templar = _get_templar(variables=variables)
-        result = templar.template(template_str)
+        try:
+            from ansible.template import trust_as_template
+        except ImportError:
+            # ansible-core <2.19 used a trust-by-default template model.
+            trusted_template = template_str
+        else:
+            # ansible-core 2.19 inverted the trust model. This API is explicitly
+            # trusted-only, so tag the operator-authored template while leaving
+            # variable values untrusted.
+            trusted_template = trust_as_template(template_str)
+        result = templar.template(trusted_template)
         return str(result)
 
     def resolve_variable(
