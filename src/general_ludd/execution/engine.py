@@ -456,22 +456,22 @@ class ExecutionEngine:
                 return await _git_commit_async(path, message)
 
         try:
-            task: asyncio.Task[str | None] = asyncio.create_task(
-                _commit_with_lock()
-            )
-            self._background_tasks.add(task)
-
-            def _on_commit_done(t: asyncio.Task[str | None]) -> None:
-                self._background_tasks.discard(t)
-                exc = t.exception() if not t.cancelled() else None
-                if exc is not None:
-                    logger.error(
-                        "defer_commit: background commit failed: %s", exc
-                    )
-
-            task.add_done_callback(_on_commit_done)
+            loop = asyncio.get_running_loop()
         except RuntimeError:
-            pass  # No running event loop
+            return
+
+        task: asyncio.Task[str | None] = loop.create_task(_commit_with_lock())
+        self._background_tasks.add(task)
+
+        def _on_commit_done(t: asyncio.Task[str | None]) -> None:
+            self._background_tasks.discard(t)
+            exc = t.exception() if not t.cancelled() else None
+            if exc is not None:
+                logger.error(
+                    "defer_commit: background commit failed: %s", exc
+                )
+
+        task.add_done_callback(_on_commit_done)
 
     async def shutdown(self) -> None:
         """Cancel and await all pending background tasks.
