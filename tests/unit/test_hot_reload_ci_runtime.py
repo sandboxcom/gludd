@@ -7,7 +7,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "build.yml"
-SETUP_NODE = "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
+SETUP_NODE = "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020"
 ESBUILD_INSTALL = "npm install --no-save --no-package-lock esbuild@0.28.1"
 
 
