@@ -248,13 +248,15 @@ class MemoryBank:
             fact.entry_id = uuid.uuid4().hex[:12]
         if not fact.created_at:
             fact.created_at = time.time()
+        stored = deepcopy(fact)
         with self._lock:
-            self._facts[fact.entry_id] = deepcopy(fact)
+            self._facts[fact.entry_id] = stored
         return deepcopy(fact)
 
     def get_facts(self, tag_filter: str | None = None) -> list[MemoryEntry]:
         with self._lock:
-            facts = [deepcopy(fact) for fact in self._facts.values()]
+            snapshot = tuple(self._facts.values())
+        facts = [deepcopy(fact) for fact in snapshot]
         if tag_filter is not None:
             fl = tag_filter.lower()
             facts = [f for f in facts if any(fl in t.lower() for t in f.tags)]
@@ -279,7 +281,7 @@ class MemoryBank:
         models = self._score_mental_models(qterms, ql)
         facts = self._score_facts(qterms, ql)
 
-        synthesized = self.reflect(query)
+        synthesized = self._synthesize(query, models, facts)
 
         return MemoryBankResult(
             mental_models=models,
@@ -319,11 +321,12 @@ class MemoryBank:
     ) -> list[MemoryEntry]:
         scored: list[tuple[MemoryEntry, float]] = []
         with self._lock:
-            for fact in self._facts.values():
-                text_blob = f"{fact.content} {fact.source} {' '.join(fact.tags)}"
-                score = _score_text(qterms, ql, text_blob)
-                if score > 0:
-                    scored.append((deepcopy(fact), score))
+            snapshot = tuple(self._facts.values())
+        for fact in snapshot:
+            text_blob = f"{fact.content} {fact.source} {' '.join(fact.tags)}"
+            score = _score_text(qterms, ql, text_blob)
+            if score > 0:
+                scored.append((deepcopy(fact), score))
         scored.sort(key=lambda x: x[1], reverse=True)
         return [f for f, _ in scored]
 
