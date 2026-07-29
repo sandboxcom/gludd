@@ -112,8 +112,16 @@ class TestGetTenantZeroCallSites:
 
         for py_file in SRC_DIR.rglob("*.py"):
             rel = py_file.relative_to(SRC_DIR).as_posix()
+            source = py_file.read_text()
+            # The full suite runs this late in an already large xdist worker.
+            # Avoid materialising an AST for every production module: only
+            # files containing the symbol can possibly contain a matching
+            # call.  All source files are still inspected, while peak memory
+            # stays bounded to the small candidate set.
+            if "get_tenant" not in source:
+                continue
             try:
-                tree = ast.parse(py_file.read_text(), filename=str(py_file))
+                tree = ast.parse(source, filename=str(py_file))
             except SyntaxError:
                 continue
             finder = _GetTenantCallSiteFinder()
