@@ -3458,7 +3458,7 @@ gate-refresh: _gate-run-lock-acquire
 		TEST_LOG="/tmp/gludd-gate-refresh-test.$$$$.log"; \
 		BASE_TEMP="/tmp/gludd-gate-refresh-basetemp.$$$$"; \
 		printf "test " >> .gate-status; \
-		if $(UV) run python -m pytest tests/unit/ -q --no-header -n 2 --maxprocesses=2 --basetemp="$$BASE_TEMP" > "$$TEST_LOG" 2>&1; then \
+		if $(UV) run python -m pytest tests/unit/ -q --no-header -n 2 --maxprocesses=2 --dist loadgroup --basetemp="$$BASE_TEMP" > "$$TEST_LOG" 2>&1; then \
 			echo "PASS 0" >> .gate-status; rm -f "$$TEST_LOG"; \
 		else \
 			echo "FAIL non-zero-exit" >> .gate-status && touch .gate-failed && echo "[gate-refresh] test FAILED — tail:" && tail -20 "$$TEST_LOG"; \

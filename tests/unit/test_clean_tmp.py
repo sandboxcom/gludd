@@ -32,6 +32,7 @@ def test_gate_refresh_log_cannot_be_deleted_by_concurrent_tmp_cleanup() -> None:
     assert 'TEST_LOG="/tmp/gludd-gate-refresh-test.$$$$.log"' in gate_refresh
     assert 'BASE_TEMP="/tmp/gludd-gate-refresh-basetemp.$$$$"' in gate_refresh
     assert '--basetemp="$$BASE_TEMP"' in gate_refresh
+    assert "--dist loadgroup" in gate_refresh
     assert "[gate-refresh] full log: $$TEST_LOG" in gate_refresh
     assert "> /tmp/gludd-gate-refresh-test.log" not in gate_refresh
 
