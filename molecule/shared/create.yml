@@ -1,0 +1,19 @@
+---
+- name: Create the local Molecule target
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') }}"
+  tasks:
+    - name: Require a namespaced mock-daemon port
+      ansible.builtin.assert:
+        that:
+          - mock_port | length > 0
+          - mock_port | int > 1024
+          - mock_port | int < 65536
+        fail_msg: "GLUDD_MOCK_PORT must identify this Molecule scenario"
+
+    - name: Verify the explicit localhost target
+      ansible.builtin.ping:
+      changed_when: false
