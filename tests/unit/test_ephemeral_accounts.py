@@ -19,12 +19,14 @@ behavior, not side effects.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 from general_ludd.account.ephemeral import (
     AccountCredentials,
+    CliProviderBackend,
     EphemeralAccountManager,
 )
 from general_ludd.account.lifecycle_policy import (
@@ -93,6 +95,244 @@ class FakeProviderBackend:
         store = self._state.get(provider, {})
         entry = store.get(account_id)
         return list(entry.get("resources", [])) if entry else []
+
+
+# ---------------------------------------------------------------------------
+# CLI provider backend
+# ---------------------------------------------------------------------------
+
+
+class TestCliProviderBackend:
+    def test_run_returns_text_and_decodes_requested_json(self, monkeypatch) -> None:
+        backend = CliProviderBackend()
+        calls: list[list[str]] = []
+
+        def fake_subprocess_run(
+            cmd: list[str],
+            *,
+            capture_output: bool,
+            text: bool,
+            check: bool,
+        ) -> Any:
+            assert capture_output is True
+            assert text is True
+            assert check is False
+            calls.append(cmd)
+            stdout = '{"authenticated": true}' if cmd[-1] == "json" else "aws-cli\n"
+            return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+
+        monkeypatch.setattr(
+            "general_ludd.account.ephemeral.subprocess.run",
+            fake_subprocess_run,
+        )
+
+        assert backend._run(["aws", "version"]) == "aws-cli\n"
+        assert backend._run(["aws", "json"], parse_json=True) == {
+            "authenticated": True
+        }
+        assert calls == [["aws", "version"], ["aws", "json"]]
+
+    def test_run_surfaces_process_and_output_failures(self, monkeypatch) -> None:
+        backend = CliProviderBackend()
+
+        def missing_cli(*args: Any, **kwargs: Any) -> Any:
+            raise FileNotFoundError
+
+        monkeypatch.setattr(
+            "general_ludd.account.ephemeral.subprocess.run",
+            missing_cli,
+        )
+        with pytest.raises(RuntimeError, match="missing CLI for 'aws'"):
+            backend._run(["aws", "version"])
+
+        def failed_cli(*args: Any, **kwargs: Any) -> Any:
+            return SimpleNamespace(returncode=2, stdout="", stderr="access denied")
+
+        monkeypatch.setattr(
+            "general_ludd.account.ephemeral.subprocess.run",
+            failed_cli,
+        )
+        with pytest.raises(RuntimeError, match="failed rc=2: access denied"):
+            backend._run(["aws", "iam", "get-user"])
+
+        def invalid_json(*args: Any, **kwargs: Any) -> Any:
+            return SimpleNamespace(returncode=0, stdout="not-json", stderr="")
+
+        monkeypatch.setattr(
+            "general_ludd.account.ephemeral.subprocess.run",
+            invalid_json,
+        )
+        with pytest.raises(RuntimeError, match="non-JSON output"):
+            backend._run(["az", "account", "show"], parse_json=True)
+
+    def test_create_aws_provisions_user_budget_policy_and_access_key(
+        self,
+        monkeypatch,
+    ) -> None:
+        backend = CliProviderBackend()
+        calls: list[tuple[list[str], bool]] = []
+
+        def fake_run(cmd: list[str], *, parse_json: bool = False) -> Any:
+            calls.append((cmd, parse_json))
+            if parse_json:
+                return {
+                    "AccessKey": {
+                        "AccessKeyId": "AKIA-TEST",
+                        "SecretAccessKey": "SECRET-TEST",
+                    }
+                }
+            return ""
+
+        monkeypatch.setattr(backend, "_run", fake_run)
+
+        result = backend.create_account("aws", 12.5)
+
+        account_id = result["account_id"]
+        assert account_id.startswith("aws-ephemeral-")
+        assert result["access_key_id"] == "AKIA-TEST"
+        assert result["secret_access_key"] == "SECRET-TEST"
+        assert result["budget_limit"] == 12.5
+        assert calls[0] == (
+            ["aws", "iam", "create-user", "--user-name", account_id],
+            False,
+        )
+        policy_command, parse_policy_json = calls[1]
+        assert parse_policy_json is False
+        assert policy_command[:4] == [
+            "aws",
+            "iam",
+            "create-policy",
+            "--policy-name",
+        ]
+        policy_document = policy_command[policy_command.index("--policy-document") + 1]
+        assert '"aws:RequestedAmount": "12.5"' in policy_document
+        assert calls[2] == (
+            ["aws", "iam", "create-access-key", "--user-name", account_id],
+            True,
+        )
+
+    @pytest.mark.parametrize(
+        ("provider", "command_prefix", "expects_json"),
+        [
+            (
+                "gcp",
+                ["gcloud", "iam", "service-accounts", "create"],
+                False,
+            ),
+            (
+                "azure",
+                ["az", "ad", "sp", "create-for-rbac", "--name"],
+                True,
+            ),
+        ],
+    )
+    def test_create_cloud_principal_uses_provider_cli_contract(
+        self,
+        monkeypatch,
+        provider: str,
+        command_prefix: list[str],
+        expects_json: bool,
+    ) -> None:
+        backend = CliProviderBackend()
+        calls: list[tuple[list[str], bool]] = []
+
+        def fake_run(cmd: list[str], *, parse_json: bool = False) -> Any:
+            calls.append((cmd, parse_json))
+            return {} if parse_json else ""
+
+        monkeypatch.setattr(backend, "_run", fake_run)
+
+        result = backend.create_account(provider, 7.0)
+
+        assert result["provider"] == provider
+        assert result["account_id"].startswith(f"{provider}-ephemeral-")
+        assert result["access_key_id"] == result["account_id"]
+        assert result["secret_access_key"]
+        assert result["budget_limit"] == 7.0
+        assert calls == [
+            (
+                [*command_prefix, result["account_id"]],
+                expects_json,
+            )
+        ]
+
+    @pytest.mark.parametrize(
+        ("provider", "delete_command", "active_command"),
+        [
+            (
+                "aws",
+                ["aws", "iam", "delete-user", "--user-name", "acct-1"],
+                ["aws", "iam", "get-user", "--user-name", "acct-1"],
+            ),
+            (
+                "gcp",
+                [
+                    "gcloud",
+                    "iam",
+                    "service-accounts",
+                    "delete",
+                    "--quiet",
+                    "acct-1",
+                ],
+                [
+                    "gcloud",
+                    "iam",
+                    "service-accounts",
+                    "describe",
+                    "acct-1",
+                ],
+            ),
+            (
+                "azure",
+                ["az", "ad", "app", "delete", "--id", "acct-1"],
+                ["az", "ad", "app", "show", "--id", "acct-1"],
+            ),
+        ],
+    )
+    def test_delete_and_active_checks_use_provider_cli_contracts(
+        self,
+        monkeypatch,
+        provider: str,
+        delete_command: list[str],
+        active_command: list[str],
+    ) -> None:
+        backend = CliProviderBackend()
+        calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], *, parse_json: bool = False) -> str:
+            assert parse_json is False
+            calls.append(cmd)
+            return ""
+
+        monkeypatch.setattr(backend, "_run", fake_run)
+
+        assert backend.delete_account(provider, "acct-1") == {
+            "provider": provider,
+            "account_id": "acct-1",
+            "deleted": True,
+        }
+        assert backend.is_account_active(provider, "acct-1") is True
+        assert calls == [delete_command, active_command]
+
+    def test_unsupported_and_failed_provider_operations_fail_closed(
+        self,
+        monkeypatch,
+    ) -> None:
+        backend = CliProviderBackend()
+
+        with pytest.raises(ValueError, match="unsupported provider"):
+            backend.create_account("unsupported", 1.0)
+        assert backend.delete_account("unsupported", "acct-1")["deleted"] is False
+        assert backend.is_account_active("unsupported", "acct-1") is False
+
+        def fail_run(cmd: list[str], *, parse_json: bool = False) -> Any:
+            raise RuntimeError(f"{cmd[0]} unavailable")
+
+        monkeypatch.setattr(backend, "_run", fail_run)
+        delete_result = backend.delete_account("aws", "acct-1")
+        assert delete_result["deleted"] is False
+        assert delete_result["error"] == "aws unavailable"
+        assert backend.is_account_active("aws", "acct-1") is False
 
 
 # ---------------------------------------------------------------------------
