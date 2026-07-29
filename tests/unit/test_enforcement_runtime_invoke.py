@@ -1023,9 +1023,9 @@ else {
 # ===========================================================================
 
 
-def test_watchdog_loads_and_reports_alive():
+def test_watchdog_loads_and_reports_alive(tmp_path):
     """watchdog.ts loads, reports alive, and exposes its event hook."""
-    alive_path = "/tmp/gludd-plugin-alive.json"
+    alive_path = str(tmp_path / "plugin-alive.json")
     _clean_state_files(alive_path)
     try:
         code = f"""\
@@ -1038,7 +1038,7 @@ console.log(JSON.stringify({{
   isObject: typeof plugin === "object",
 }}))
 """
-        result = _run_ts(code)
+        result = _run_ts(code, env_override={"GLUDD_ALIVE_PATH": alive_path})
         assert result["ok"] is True, f"watchdog load failed: {result}"
         assert result["keys"] == ["event"], f"watchdog should expose event hook: {result}"
         assert result["eventType"] == "function", f"watchdog event hook must be callable: {result}"
@@ -1049,9 +1049,9 @@ console.log(JSON.stringify({{
 
 
 
-def test_watchdog_subagent_loads():
+def test_watchdog_subagent_loads(tmp_path):
     """watchdog loads even with OPENCODE_SUBAGENT=1."""
-    alive_path = "/tmp/gludd-plugin-alive.json"
+    alive_path = str(tmp_path / "plugin-alive.json")
     _clean_state_files(alive_path)
     try:
         code = f"""\
@@ -1059,7 +1059,13 @@ const mod = await import('{PLUGINS_DIR}/watchdog.ts')
 const plugin = await mod.default({{}})
 console.log(JSON.stringify({{ok: true}}))
 """
-        result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+        result = _run_ts(
+            code,
+            env_override={
+                "GLUDD_ALIVE_PATH": alive_path,
+                "OPENCODE_SUBAGENT": "1",
+            },
+        )
         assert result["ok"] is True, f"watchdog subagent load failed: {result}"
     finally:
         _clean_state_files(alive_path)
