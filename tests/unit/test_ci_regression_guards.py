@@ -448,25 +448,61 @@ def test_test_shards_cap_xdist_for_nested_process_headroom() -> None:
 
 
 def test_node_heavy_unit_1a1_shard_runs_serially() -> None:
-    """Guard: plugin factory subprocess checks need exclusive runner memory.
+    """Guard: plugin syntax subprocess checks get a fresh serial test process.
 
     Hosted beta.3 run 30494011946 exhausted V8 code-range reservations when
-    Python 3.12's unit-1a1 shard ran two xdist workers.  That shard owns the
-    Node-heavy ``test_all*`` plugin checks, so it must use one worker while the
-    remaining shards retain the two-worker cap.
+    Python 3.12's unit-1a1 shard ran two xdist workers. Run 30495510250 then
+    proved serializing all 1,705 shard tests retained too much memory in one
+    process on both Python versions. The Node-heavy file must run alone.
     """
     workflow = _load_build_workflow()
-    test_steps = [
+    isolated_steps = [
         step
         for step in workflow["jobs"]["test-shard"]["steps"]
-        if str(step.get("name", "")).startswith("Test (shard ")
+        if step.get("name") == "Test Node plugin syntax in isolated process"
     ]
 
-    assert len(test_steps) == 1
-    assert str(test_steps[0].get("env", {}).get("GLUDD_XDIST")) == (
-        "${{ matrix.shard == 'unit-1a1' && '1' || '2' }}"
-    ), (
-        "CI resource regression: unit-1a1 must run one xdist worker so its "
-        "nested Node plugin checks retain V8 address-space headroom; all other "
-        "shards should remain capped at two workers."
+    assert len(isolated_steps) == 1
+    command = str(isolated_steps[0].get("run", ""))
+    assert "uv run pytest tests/unit/test_all_plugins_runtime.py" in command
+    assert "adaptive_test.py" not in command and " -n " not in command, (
+        "CI resource regression: the Node plugin syntax suite must run serially "
+        "in its own short-lived pytest process."
     )
+
+
+def test_node_plugin_syntax_suite_runs_in_fresh_pytest_process() -> None:
+    """Guard the both-Python V8 CodeRange failure from run 30495510250.
+
+    Serializing the whole unit-1a1 shard retained all 1,705 tests in one Python
+    process and still exhausted the runner before ``node --check``.  The
+    Node-heavy file must instead run in a fresh, coverage-free pytest process
+    and be excluded from the long-lived coverage process.
+    """
+    workflow = _load_build_workflow()
+    job = workflow["jobs"]["test-shard"]
+    unit_1a1 = next(
+        entry
+        for entry in job["strategy"]["matrix"]["include"]
+        if entry.get("shard") == "unit-1a1"
+    )
+    assert "*/test_all_plugins_runtime.py" in str(unit_1a1.get("exclude", "")).split()
+
+    steps = job["steps"]
+    isolated_index = next(
+        index
+        for index, step in enumerate(steps)
+        if step.get("name") == "Test Node plugin syntax in isolated process"
+    )
+    shard_index = next(
+        index
+        for index, step in enumerate(steps)
+        if str(step.get("name", "")).startswith("Test (shard ")
+    )
+    isolated = steps[isolated_index]
+
+    assert isolated_index < shard_index
+    assert isolated.get("if") == "matrix.shard == 'unit-1a1'"
+    isolated_run = str(isolated.get("run", ""))
+    assert "tests/unit/test_all_plugins_runtime.py" in isolated_run
+    assert "--cov" not in isolated_run
