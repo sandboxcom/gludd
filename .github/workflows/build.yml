@@ -307,6 +307,18 @@ jobs:
         run: |
           npm install --global opencode-ai@1.18.9
           opencode --version
+      - name: Install pinned OPA CLI
+        if: matrix.shard == 'other'
+        env:
+          OPA_VERSION: "1.18.2"
+        run: |
+          install -d "$HOME/.local/bin"
+          curl --fail --location --silent --show-error \
+            "https://openpolicyagent.org/downloads/v${OPA_VERSION}/opa_linux_amd64_static" \
+            --output "$HOME/.local/bin/opa"
+          chmod 0755 "$HOME/.local/bin/opa"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/opa" version | grep -F "Version: ${OPA_VERSION}"
       - name: Test (shard ${{ matrix.shard }}, Python ${{ matrix.python-version }})
         # Expand $TESTPATHS with bash so wildcard patterns like test_[a-e]*.py
         # are resolved by the shell before pytest sees them. An empty selection
