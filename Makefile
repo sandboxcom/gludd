@@ -87,7 +87,7 @@ PYTEST_VERBOSITY ?= -v
         agent-worktree-dev agent-merge-dev \
         development-push development-merge-to-master development-start development-status \
         git-commit-no-verify git-amend-msg \
-_commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
+_commit-lock-acquire _gate-run-lock-acquire check-clean-tree worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
         release-worktree-guard status-claim-guard workflow-state workflow-gate commit-ready gha-ready merge-ready ship-commit-files remove-workspace-file-b64 \
         molecule-version molecule-test molecule-test-all \
         collection-roles collection-modules molecule-scenarios \
@@ -808,7 +808,12 @@ test-opencode-boot-e2e:
 gate-fast: lint typecheck collect-check
 	@echo "=== GATE-FAST: PASS ==="
 
-gate: check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-hook-invoke check-plugin-imports check-node-v26-compat check-duplicate-targets check-task-integrity check-no-prompt-prone-edit-tools
+GATE_RUN_LOCK ?= /tmp/gludd-gate-run.lock
+
+_gate-run-lock-acquire:
+	@$(PYTHON) scripts/gate_run_lock.py acquire "$(GATE_RUN_LOCK)" "$$PPID"
+
+gate: _gate-run-lock-acquire check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-hook-invoke check-plugin-imports check-node-v26-compat check-duplicate-targets check-task-integrity check-no-prompt-prone-edit-tools
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
@@ -872,11 +877,14 @@ gate: check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-t
 		rm -f .gate-failed; \
 		echo "=== GATE: FAILED ==="; \
 		echo "=== GATE: FAILED ===" >> .gate-status; \
-		exit 1; \
+		RC=1; \
 	else \
 		echo "=== GATE: PASSED ==="; \
 		echo "=== GATE: PASSED ===" >> .gate-status; \
-	fi
+		RC=0; \
+	fi; \
+	if ! $(PYTHON) scripts/gate_run_lock.py release "$(GATE_RUN_LOCK)" "$$PPID"; then RC=1; fi; \
+	exit $$RC
 
 # gate-lite: LOCAL validation without the full xdist test phase that OOMs on
 # this machine under 8-worker xdist. Runs the same lint/typecheck/collect/smoke
@@ -3340,7 +3348,7 @@ dist-path-check:
 # commits while the gate-background test phase is still running.
 # Does NOT run the full test suite — that's what gate-background is for.
 .PHONY: gate-refresh
-gate-refresh:
+gate-refresh: _gate-run-lock-acquire
 	@if [ ! -f .gate-status ]; then \
 		echo "ERROR: .gate-status missing — no prior gate to refresh. Run 'make gate' first."; exit 1; \
 	fi; \
@@ -3419,11 +3427,14 @@ gate-refresh:
 		rm -f .gate-failed; \
 		echo "=== GATE-REFRESH: FAILED (fast phases) ==="; \
 		echo "=== GATE: FAILED ===" >> .gate-status; \
-		exit 1; \
+		RC=1; \
 	else \
 		echo "=== GATE-REFRESH: PASSED ==="; \
 		echo "=== GATE: PASSED ===" >> .gate-status; \
-	fi
+		RC=0; \
+	fi; \
+	if ! $(PYTHON) scripts/gate_run_lock.py release "$(GATE_RUN_LOCK)" "$$PPID"; then RC=1; fi; \
+	exit $$RC
 
 _gate-fresh-check: check-gate-fresh
 	@true

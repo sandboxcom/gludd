@@ -140,11 +140,13 @@ fi
 # basetemp dir behind at all (the rejection paths above exit before this line).
 BASETEMP=$(mktemp -d "${BASETEMP_PREFIX}-XXXXXX")
 
-# Per-invocation RC_FILE and LOG_FILE derived from the unique BASETEMP so
-# concurrent gate invocations (e.g. xdist-running the gate-concurrency tests)
-# cannot clobber each other's rc/log between write and read.
+# Per-invocation RC_FILE remains in the unique basetemp. The streamed log must
+# live OUTSIDE pytest's --basetemp because pytest clears that directory at
+# startup; putting the log there made a running gate unobservable after detach.
 RC_FILE="${BASETEMP}/rc"
-LOG_FILE="${BASETEMP}/gate.log"
+mkdir -p .gate-logs
+LOG_FILE="${GATE_LOG_FILE:-.gate-logs/gate-pytest-$$.log}"
+echo "[run_gate.sh] live log: ${LOG_FILE}"
 
 # ---------------------------------------------------------------------------
 # Run pytest (or the PYTEST_CMD stub for unit testing).
