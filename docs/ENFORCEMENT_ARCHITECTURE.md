@@ -154,6 +154,16 @@ export default (async ({ }) => {
   `enforce_stop_impl.ts` without importing it) crashed opencode at boot.
   Cross-plugin function references must be inlined. Verified by
   `make check-plugin-hook-invoke`.
+- **Live binary tests must provide their own local model.** OpenCode users have
+  reported `opencode run` hanging immediately with both hosted credentials and
+  local models ([issue #1418](https://github.com/anomalyco/opencode/issues/1418)),
+  while non-interactive pipeline users have independently reported blocked or
+  cancelled headless runs
+  ([issue #13851](https://github.com/anomalyco/opencode/issues/13851)). Therefore
+  `tests/e2e/test_opencode_binary_boot.py` runs the real OpenCode binary and real
+  plugin loader against the in-process deterministic OpenAI-compatible provider.
+  This keeps plugin/crash assertions live while eliminating external provider,
+  credential, update, and network latency from the boot gate.
 
 ---
 

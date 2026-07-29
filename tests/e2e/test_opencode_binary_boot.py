@@ -10,11 +10,14 @@ Only the actual opencode binary can verify that the plugin loading path works.
 """
 
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
 
 import pytest
+
+from tests.e2e.test_opencode_tui_permissions import DeterministicProvider
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 OPENCODE_BIN = "opencode"
@@ -34,28 +37,48 @@ CRASH_SIGNATURES = [
 ]
 
 
+def _run_with_deterministic_provider(
+    command: list[str],
+    response: str,
+) -> tuple[int, str, str]:
+    """Run a live OpenCode command against a bounded local model provider."""
+    provider = DeterministicProvider(
+        responses=[{"text": response}],
+    )
+    env = os.environ.copy()
+    env["OPENCODE_CONFIG_CONTENT"] = provider.config_content
+    env["OPENCODE_DISABLE_AUTOUPDATE"] = "true"
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=str(PROJECT_ROOT),
+            env=env,
+        )
+        assert provider.main_calls == 1, (
+            "OpenCode did not complete the deterministic smoke prompt"
+        )
+        return result.returncode, result.stdout, result.stderr
+    finally:
+        provider.close()
+
+
 def _run_opencode_run() -> tuple[int, str, str]:
     """Run ``opencode run --print-logs "exit"`` and return (exit_code, stdout, stderr)."""
-    result = subprocess.run(
+    return _run_with_deterministic_provider(
         [OPENCODE_BIN, "run", "--print-logs", "exit"],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        cwd=str(PROJECT_ROOT),
+        "The deterministic plugin smoke completed.",
     )
-    return result.returncode, result.stdout, result.stderr
 
 
 def _run_opencode_pure() -> tuple[int, str, str]:
     """Run ``opencode run --pure --print-logs "exit"`` (no external plugins)."""
-    result = subprocess.run(
+    return _run_with_deterministic_provider(
         [OPENCODE_BIN, "run", "--pure", "--print-logs", "exit"],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        cwd=str(PROJECT_ROOT),
+        "The deterministic pure-mode smoke completed.",
     )
-    return result.returncode, result.stdout, result.stderr
 
 
 class TestOpencodeBinaryBoot:
