@@ -28,7 +28,7 @@ class TestConfineExportPath:
                 "default.json",
             )
         assert result.name == "out.json"
-        assert str(result).startswith(allowed)
+        assert result.is_relative_to(Path(allowed).resolve())
 
     def test_out_path_none_returns_default_in_root(self):
         root = tempfile.gettempdir()
