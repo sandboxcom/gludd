@@ -70,6 +70,7 @@ DISENGAGE_FILES = [
 ]
 
 _GATE_STATUS_ROOT: Path | None = None  # autouse fixture overrides to tmp_path
+_STATE_ROOT: Path | None = None  # autouse fixture isolates canonical /tmp state
 
 
 def _gate_status_path() -> Path:
@@ -77,18 +78,27 @@ def _gate_status_path() -> Path:
     return root / ".gate-status"
 
 
+def _state_path(canonical: str) -> Path:
+    """Resolve a canonical plugin state path inside the active test namespace."""
+    if _STATE_ROOT is None:
+        return Path(canonical)
+    return _STATE_ROOT / Path(canonical).name
+
+
 @pytest.fixture(autouse=True)
 def _isolate_gate_status(tmp_path):
-    """Redirect .gate-status reads/writes to tmp_path so tests never pollute
-    the repo working tree. A stale green .gate-status in the repo root can
-    mask a real red gate (see test-isolation bug)."""
-    global _GATE_STATUS_ROOT
-    previous = _GATE_STATUS_ROOT
+    """Redirect gate and plugin state so live OpenCode sessions cannot race tests."""
+    global _GATE_STATUS_ROOT, _STATE_ROOT
+    previous_gate_root = _GATE_STATUS_ROOT
+    previous_state_root = _STATE_ROOT
     _GATE_STATUS_ROOT = tmp_path
+    _STATE_ROOT = tmp_path / "plugin-state"
+    _STATE_ROOT.mkdir()
     try:
         yield tmp_path
     finally:
-        _GATE_STATUS_ROOT = previous
+        _GATE_STATUS_ROOT = previous_gate_root
+        _STATE_ROOT = previous_state_root
 
 
 # --------------------------------------------------------------------------
@@ -100,7 +110,7 @@ def _clean_state_files() -> None:
     """Remove all known /tmp/gludd-* state files."""
     for f in STATE_FILES:
         try:
-            os.remove(f)
+            _state_path(f).unlink()
         except FileNotFoundError:
             pass
         except OSError:
@@ -108,13 +118,13 @@ def _clean_state_files() -> None:
 
 
 def _count_remaining_state_files() -> int:
-    return sum(1 for f in STATE_FILES if os.path.exists(f))
+    return sum(1 for f in STATE_FILES if _state_path(f).exists())
 
 
 def _read_mainthread_streak() -> int:
     """Mirror enforce-delegate.ts readStreak(): {count, ts} JSON or bare int."""
     try:
-        raw = Path("/tmp/gludd-mainthread-streak.json").read_text().strip()
+        raw = _state_path("/tmp/gludd-mainthread-streak.json").read_text().strip()
         if raw.startswith("{"):
             obj = json.loads(raw)
             return int(obj.get("count", 0))
@@ -125,8 +135,8 @@ def _read_mainthread_streak() -> int:
 
 def _write_mainthread_streak(count: int) -> None:
     """Mirror enforce-delegate.ts writeStreak(n)."""
-    p = Path("/tmp/gludd-mainthread-streak.json")
-    tmp = Path("/tmp/gludd-mainthread-streak.json.tmp")
+    p = _state_path("/tmp/gludd-mainthread-streak.json")
+    tmp = p.with_suffix(p.suffix + ".tmp")
     tmp.write_text(json.dumps({"count": count, "ts": int(time.time() * 1000)}))
     tmp.rename(p)
 
@@ -146,7 +156,7 @@ def _reset_mainthread_streak() -> None:
 def _read_tool_streak() -> dict:
     """Read shared streak state from /tmp/gludd-tool-streak.json."""
     try:
-        p = Path("/tmp/gludd-tool-streak.json")
+        p = _state_path("/tmp/gludd-tool-streak.json")
         if p.exists():
             raw = json.loads(p.read_text())
             return {
@@ -164,7 +174,7 @@ def _read_tool_streak() -> dict:
 
 def _write_tool_streak(state: dict) -> None:
     """Write shared streak state."""
-    p = Path("/tmp/gludd-tool-streak.json")
+    p = _state_path("/tmp/gludd-tool-streak.json")
     p.write_text(json.dumps(state))
 
 
@@ -204,18 +214,18 @@ def _is_streak_healthy() -> bool:
 
 def _write_floor_override(value: int) -> None:
     """Mirror enforce-floor.ts _tunable(): write integer to override file."""
-    Path("/tmp/gludd-floor-override").write_text(str(value))
+    _state_path("/tmp/gludd-floor-override").write_text(str(value))
 
 
 def _remove_floor_override() -> None:
     with contextlib.suppress(FileNotFoundError):
-        os.remove("/tmp/gludd-floor-override")
+        _state_path("/tmp/gludd-floor-override").unlink()
 
 
 def _read_floor_override(fallback: int = 7) -> int:
     """Check for floor-override file; fall back to env or default."""
     try:
-        raw = Path("/tmp/gludd-floor-override").read_text().strip()
+        raw = _state_path("/tmp/gludd-floor-override").read_text().strip()
         if raw.isdigit():
             return int(raw)
     except (FileNotFoundError, ValueError):
@@ -228,7 +238,7 @@ def _read_floor_override(fallback: int = 7) -> int:
 
 def _write_multitask_state(dispatches: int, zero_streak: int = 0) -> None:
     """Write /tmp/gludd-multitask-state.json."""
-    p = Path("/tmp/gludd-multitask-state.json")
+    p = _state_path("/tmp/gludd-multitask-state.json")
     p.write_text(json.dumps({
         "thisMessageDispatches": dispatches,
         "prevMessageDispatches": 0,
@@ -241,7 +251,7 @@ def _write_multitask_state(dispatches: int, zero_streak: int = 0) -> None:
 def _read_multitask_state() -> dict:
     """Read /tmp/gludd-multitask-state.json."""
     try:
-        p = Path("/tmp/gludd-multitask-state.json")
+        p = _state_path("/tmp/gludd-multitask-state.json")
         if p.exists():
             return json.loads(p.read_text())
     except (FileNotFoundError, ValueError, json.JSONDecodeError):
@@ -257,7 +267,7 @@ def _read_multitask_state() -> dict:
 
 def _write_session_start_state(dispatch_count: int) -> None:
     """Write /tmp/gludd-session-start.json."""
-    p = Path("/tmp/gludd-session-start.json")
+    p = _state_path("/tmp/gludd-session-start.json")
     p.write_text(json.dumps({
         "dispatches_in_session": dispatch_count,
         "session_start_ts": int(time.time() * 1000),
@@ -267,7 +277,7 @@ def _write_session_start_state(dispatch_count: int) -> None:
 
 def _read_session_start_state() -> dict:
     try:
-        p = Path("/tmp/gludd-session-start.json")
+        p = _state_path("/tmp/gludd-session-start.json")
         if p.exists():
             return json.loads(p.read_text())
     except (FileNotFoundError, ValueError, json.JSONDecodeError):
@@ -277,20 +287,20 @@ def _read_session_start_state() -> dict:
 
 def _write_disengage(until_epoch: int) -> None:
     """Write /tmp/gludd-watchdog-disengage.json."""
-    Path("/tmp/gludd-watchdog-disengage.json").write_text(
+    _state_path("/tmp/gludd-watchdog-disengage.json").write_text(
         json.dumps({"disengage_until": until_epoch})
     )
 
 
 def _remove_disengage() -> None:
     with contextlib.suppress(FileNotFoundError):
-        os.remove("/tmp/gludd-watchdog-disengage.json")
+        _state_path("/tmp/gludd-watchdog-disengage.json").unlink()
 
 
 def _is_disengaged() -> bool:
     """Mirror enforce-floor.ts / enforce-delegate.ts isDisengaged()."""
     try:
-        p = Path("/tmp/gludd-watchdog-disengage.json")
+        p = _state_path("/tmp/gludd-watchdog-disengage.json")
         if p.exists():
             d = json.loads(p.read_text())
             until = d.get("disengage_until", 0)
