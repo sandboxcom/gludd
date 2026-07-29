@@ -12,6 +12,8 @@ Covers PART 1 + PART 2 of the facts/MQ backbone:
 
 from __future__ import annotations
 
+from types import TracebackType
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -25,6 +27,24 @@ from general_ludd.db.repository import (
 
 PSK = "test-psk-secret"
 AUTH = {"Authorization": f"Bearer {PSK}"}
+
+
+class _UnavailableSession:
+    async def __aenter__(self) -> object:
+        raise ConnectionError("external database unavailable")
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> bool:
+        return False
+
+
+class _UnavailableSessionFactory:
+    def __call__(self) -> _UnavailableSession:
+        return _UnavailableSession()
 
 
 async def _make_app(monkeypatch):
@@ -122,6 +142,26 @@ class TestMessagesApi:
 
 
 class TestFactsApi:
+    @pytest.mark.asyncio
+    async def test_facts_fail_soft_when_database_unavailable(self, monkeypatch):
+        engine, _factory, client, app = await _make_app(monkeypatch)
+        app.state._session_factory = _UnavailableSessionFactory()
+        try:
+            resp = await client.get("/api/facts", headers=AUTH)
+
+            assert resp.status_code == 200, resp.text
+            assert resp.headers["content-type"].startswith("application/json")
+            data = resp.json()
+            assert data["work"] == {}
+            assert data["todos"] == {}
+            assert data["history"] == {}
+            assert data["messages"] == {}
+            assert data["metrics"]["agents"] == []
+            assert data["accounting"] == {"projects": []}
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
     @pytest.mark.asyncio
     async def test_facts_reflects_seeded_data(self, monkeypatch):
         engine, factory, client, _app = await _make_app(monkeypatch)

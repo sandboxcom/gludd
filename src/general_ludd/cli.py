@@ -1769,10 +1769,14 @@ def main() -> None:
     args.func(args)
 
 
+_DAEMON_SHUTDOWN_TIMEOUT_SECONDS = 5.0
+
+
 def _cmd_daemon(args: argparse.Namespace) -> None:
     import secrets
     import signal
     import subprocess
+    import threading
 
     log_level = args.log_level.upper()
     logging.basicConfig(level=getattr(logging, log_level), format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -1824,29 +1828,55 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
     )
 
 
-    def _terminate_child(timeout: float = 5.0) -> None:
+    shutdown_requested = threading.Event()
+    child_reaped = threading.Event()
+    received_signal: int | None = None
+
+    def _forward_signal(signum: int, frame: Any) -> None:
+        """Record and forward shutdown without waiting from signal context."""
+        nonlocal received_signal
+        if received_signal is not None:
+            return
+        received_signal = signum
         try:
             proc.terminate()
         except ProcessLookupError:
-            return
-        try:
-            proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait(timeout=timeout)
+            pass
+        finally:
+            shutdown_requested.set()
 
-    def _forward_signal(signum: int, frame: Any) -> None:
-        _terminate_child()
-        sys.exit(128 + signum)
+    def _shutdown_watchdog() -> None:
+        """Escalate outside signal context if graceful termination stalls."""
+        shutdown_requested.wait()
+        if child_reaped.is_set():
+            return
+        if child_reaped.wait(timeout=_DAEMON_SHUTDOWN_TIMEOUT_SECONDS):
+            return
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
+
+    watchdog = threading.Thread(
+        target=_shutdown_watchdog,
+        name=f"gludd-daemon-shutdown-{proc.pid}",
+        daemon=True,
+    )
+    watchdog.start()
 
     signal.signal(signal.SIGTERM, _forward_signal)
     signal.signal(signal.SIGINT, _forward_signal)
 
     try:
-        proc.wait()
-    except KeyboardInterrupt:
-        _terminate_child()
-        sys.exit(130)
+        try:
+            proc.wait()
+        except KeyboardInterrupt:
+            _forward_signal(signal.SIGINT, None)
+            proc.wait()
+    finally:
+        child_reaped.set()
+        shutdown_requested.set()
+        watchdog.join(timeout=0.25)
+    if received_signal is not None:
+        sys.exit(128 + received_signal)
     sys.exit(proc.returncode)
 
 

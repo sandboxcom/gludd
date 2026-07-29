@@ -4,8 +4,8 @@ Asserts the scenario ships the required files (molecule.yml, converge.yml,
 verify.yml) and that each playbook encodes the lifecycle phases mandated by
 the scenario spec:
 
-  start -> health probe -> /api/facts -> /api/tasks -> /api/playbook/run ->
-  /health -> SIGTERM -> clean exit -> port released.
+  start -> health probe -> /api/facts -> /api/todos -> job submission ->
+  /healthz -> SIGTERM -> clean exit -> port released.
 
 If a future refactor drops a file or renames a phase, this test fails before
 CI's ``make molecule-test-all`` runs an unverified or structurally incomplete
@@ -73,6 +73,31 @@ class TestDaemonLifecycleScenarioFiles:
             "daemon_lifecycle molecule.yml must wire verify: default/verify.yml"
         )
 
+    def test_molecule_yml_declares_localhost_inventory(self) -> None:
+        path = _SCENARIO_ROOT / "molecule.yml"
+        data = yaml.safe_load(path.read_text()) or {}
+        localhost = (
+            data.get("provisioner", {})
+            .get("inventory", {})
+            .get("hosts", {})
+            .get("all", {})
+            .get("hosts", {})
+            .get("localhost", {})
+        )
+        assert localhost.get("ansible_connection") == "local", (
+            "daemon_lifecycle must declare localhost inventory explicitly so "
+            "Ansible does not warn that the provided hosts list is empty."
+        )
+
+    def test_molecule_yml_runs_only_implemented_phases(self) -> None:
+        path = _SCENARIO_ROOT / "molecule.yml"
+        data = yaml.safe_load(path.read_text()) or {}
+        sequence = data.get("scenario", {}).get("test_sequence")
+        assert sequence == ["syntax", "prepare", "converge", "verify"], (
+            "daemon_lifecycle must run only its implemented phases so Molecule "
+            "does not warn about missing dependency/create/cleanup/destroy playbooks."
+        )
+
 
 class TestDaemonLifecycleConvergePhases:
     """converge.yml encodes every mandated lifecycle phase."""
@@ -106,25 +131,23 @@ class TestDaemonLifecycleConvergePhases:
             "responds after startup."
         )
 
-    def test_converge_calls_api_tasks(self) -> None:
+    def test_converge_calls_api_todos(self) -> None:
         text = self._converge_text()
-        assert "/api/tasks" in text, (
-            "converge.yml must GET /api/tasks — verifies the tasks facet endpoint. "
-            "(If unimplemented, this scenario is the spec that drives the contract.)"
+        assert "/api/todos" in text, (
+            "converge.yml must GET /api/todos — verifies the supported todo endpoint."
         )
 
-    def test_converge_posts_playbook_run(self) -> None:
+    def test_converge_posts_supported_job_submission(self) -> None:
         text = self._converge_text()
-        assert "/api/playbook/run" in text, (
-            "converge.yml must POST /api/playbook/run — verifies the daemon "
-            "accepts playbook-run requests."
+        assert "POST /api/todos with a minimal job body" in text, (
+            "converge.yml must POST /api/todos — verifies the daemon accepts "
+            "supported job-submission requests."
         )
 
     def test_converge_calls_health_endpoint(self) -> None:
         text = self._converge_text()
-        assert "/health" in text, (
-            "converge.yml must GET /health — distinct from /healthz; this is "
-            "the public status probe."
+        assert "GET /healthz (public status)" in text, (
+            "converge.yml must use the supported public /healthz status probe."
         )
 
     def test_converge_sends_sigterm(self) -> None:
@@ -145,6 +168,11 @@ class TestDaemonLifecycleConvergePhases:
         assert "nc -z" in text or "port" in text.lower(), (
             "converge.yml must verify the daemon port is released after shutdown."
         )
+
+    def test_converge_removes_scenario_owned_pidfile(self) -> None:
+        text = self._converge_text()
+        assert "Remove scenario-owned PID file" in text
+        assert "state: absent" in text
 
 
 class TestDaemonLifecycleVerifyAssertions:
@@ -175,10 +203,10 @@ class TestDaemonLifecycleVerifyAssertions:
             "exact mandated error message."
         )
 
-    def test_verify_asserts_playbook_run_accepted(self) -> None:
+    def test_verify_asserts_job_submission_accepted(self) -> None:
         text = self._verify_text()
-        assert "Daemon must accept playbook run requests" in text, (
-            "verify.yml must assert 'Daemon must accept playbook run requests' — "
+        assert "Daemon must accept job submission requests" in text, (
+            "verify.yml must assert 'Daemon must accept job submission requests' — "
             "exact mandated error message."
         )
 

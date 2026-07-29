@@ -55,7 +55,7 @@
           Health endpoint must return 200.
           Observed status={{ state.health.status | default('unknown') }},
           has_status_field={{ state.health.has_status_field | default(false) }}.
-        success_msg: "GET /health returned 200 with a JSON status field."
+        success_msg: "GET /healthz returned 200 with a JSON status field."
 
     - name: /api/facts must return a JSON list (or object)
       ansible.builtin.assert:
@@ -69,31 +69,27 @@
           body_was_mapping_or_list={{ state.facts.is_mapping_or_list | default(false) }}.
         success_msg: "/api/facts returned a JSON object/list as expected."
 
-    - name: /api/tasks must return a JSON list
+    - name: /api/todos must return a JSON list
       ansible.builtin.assert:
         that:
-          - state.tasks.status is defined
-          - state.tasks.status | int == 200
-          - state.tasks.is_list | bool
+          - state.todos.status is defined
+          - state.todos.status | int == 200
+          - state.todos.is_list | bool
         fail_msg: >-
-          /api/tasks must return a JSON list.
-          Observed status={{ state.tasks.status | default('unknown') }},
-          body_was_list={{ state.tasks.is_list | default(false) }}.
-          (If this endpoint is unimplemented, this scenario is the spec —
-          implement /api/tasks to return a list of task records.)
-        success_msg: "/api/tasks returned a JSON list."
+          /api/todos must return a JSON list.
+          Observed status={{ state.todos.status | default('unknown') }},
+          body_was_list={{ state.todos.is_list | default(false) }}.
+        success_msg: "/api/todos returned a JSON list."
 
-    - name: Daemon must accept playbook run requests
+    - name: Daemon must accept job submission requests
       ansible.builtin.assert:
         that:
-          - state.playbook.accepted | bool
+          - state.todo_submit.accepted | bool
         fail_msg: >-
-          Daemon must accept playbook run requests.
-          POST /api/playbook/run returned status={{ state.playbook.status | default('unknown') }}
-          (expected 200/201/202). If the endpoint is unimplemented, this
-          scenario is the spec — implement /api/playbook/run to accept a
-          minimal playbook body.
-        success_msg: "POST /api/playbook/run was accepted (2xx)."
+          Daemon must accept job submission requests.
+          POST /api/todos returned status={{ state.todo_submit.status | default('unknown') }}
+          (expected 200/201/202).
+        success_msg: "POST /api/todos was accepted (2xx)."
 
     - name: Daemon must shut down cleanly on SIGTERM
       ansible.builtin.assert:
@@ -107,7 +103,7 @@
           Inspect {{ default_logfile }} for shutdown-traceback / hang.
         success_msg: "Daemon process exited after SIGTERM."
 
-    - name: Port 8000 must be free after shutdown
+    - name: Port {{ daemon_port }} must be free after shutdown
       ansible.builtin.assert:
         that:
           - state.shutdown.port_after_shutdown is defined

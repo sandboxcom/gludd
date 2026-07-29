@@ -11,6 +11,7 @@ from typing import cast
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from general_ludd import __version__
@@ -200,11 +201,17 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             "definition_of_done": req.definition_of_done,
         }
         if factory is not None:
-            async with factory() as session:
-                repo = TodoRepository(session)
-                result = await repo.create(todo_data=todo)
-                await session.commit()
-                return _todo_to_dict(result)
+            try:
+                async with factory() as session:
+                    repo = TodoRepository(session)
+                    result = await repo.create(todo_data=todo)
+                    await session.commit()
+                    return _todo_to_dict(result)
+            except (SQLAlchemyError, ConnectionError, OSError, TimeoutError) as exc:
+                # During degraded dependency startup, preserve the accepted-job
+                # contract by using the same bounded in-memory queue as a daemon
+                # configured without an external database.
+                logger.warning("todo create database unavailable: %s", exc)
         _todos().append(todo)
         return todo
 
@@ -229,17 +236,25 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             return []
         factory = _get_session_factory(app)
         if factory is not None:
-            async with factory() as session:
-                repo = (
-                    TodoRepository.scoped(session, project_id)
-                    if project_id is not None
-                    else TodoRepository(session)
-                )
-                todos = await repo.list_all(
-                    queue=queue, status=status,
-                    limit=_limit, offset=_offset,
-                )
-                return [_todo_to_dict(t) for t in todos][:limit]
+            try:
+                async with factory() as session:
+                    repo = (
+                        TodoRepository.scoped(session, project_id)
+                        if project_id is not None
+                        else TodoRepository(session)
+                    )
+                    todos = await repo.list_all(
+                        queue=queue,
+                        status=status,
+                        limit=_limit,
+                        offset=_offset,
+                    )
+                    return [_todo_to_dict(t) for t in todos][:limit]
+            except (SQLAlchemyError, ConnectionError, OSError, TimeoutError) as exc:
+                # A configured external database may be temporarily
+                # unreachable during degraded startup. Preserve the task-list
+                # read contract by falling back to the bounded in-memory queue.
+                logger.warning("todo list database unavailable: %s", exc)
         results = list(_todos())
         if queue is not None:
             results = [t for t in results if t.get("queue") == queue]
