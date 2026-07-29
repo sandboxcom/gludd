@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -330,3 +331,198 @@ def test_gpu_metric_routes_serialize_dict_object_and_unassigned_device(
         },
     }
     assert missing.status_code == 404
+
+
+def test_azure_deploy_refuses_spend_when_preflight_is_not_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    preflight_body = {
+        "ready": False,
+        "sku_available": True,
+        "regional_quota_available": False,
+    }
+    preflight_result = SimpleNamespace(
+        ready=False,
+        as_dict=MagicMock(return_value=preflight_body),
+    )
+    preflight_check = MagicMock(return_value=preflight_result)
+    monkeypatch.setattr(
+        compute_router,
+        "resolve_accelerator",
+        MagicMock(),
+    )
+    monkeypatch.setattr(
+        compute_router,
+        "build_default_azure_preflight",
+        MagicMock(
+            return_value=SimpleNamespace(check=preflight_check),
+        ),
+    )
+    manager = MagicMock()
+    manager.deploy = AsyncMock()
+    app = FastAPI()
+    register(app, {})
+    app.state._deployment_manager = manager
+
+    response = TestClient(app).post(
+        "/admin/compute/deploy",
+        json={
+            "provider": "azure",
+            "gpu_type": "a100_80",
+            "gpu_count": 2,
+            "model_name": "org/model",
+            "region": "eastus2",
+            "subscription_id": "subscription-id",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == {
+        "error": "Azure accelerator preflight blocked deployment",
+        "preflight": preflight_body,
+    }
+    preflight_check.assert_called_once_with(
+        gpu_type=GPUType.A100_80,
+        gpu_count=2,
+        location="eastus2",
+    )
+    manager.deploy.assert_not_awaited()
+
+
+def test_deploy_failure_records_health_checker_context() -> None:
+    manager = MagicMock()
+    manager.deploy = AsyncMock(side_effect=RuntimeError("provider failed"))
+    checker = MagicMock()
+    app = FastAPI()
+    register(app, {})
+    app.state._deployment_manager = manager
+    app.state._deployment_health_router = SimpleNamespace(
+        health_checker=checker,
+    )
+
+    response = TestClient(app).post(
+        "/admin/compute/deploy",
+        json={
+            "provider": "aws",
+            "gpu_type": "a10",
+            "model_name": "org/model",
+        },
+    )
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == {
+        "error": "compute deploy failed",
+        "misconfig_findings": [],
+    }
+    checker.record_failure.assert_called_once()
+    args, kwargs = checker.record_failure.call_args
+    assert args[0] == "org/model"
+    assert isinstance(args[1], RuntimeError)
+    assert kwargs == {"kind": "deploy_failure"}
+
+
+def test_failed_endpoint_registration_rolls_back_paid_deployment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    instance = SimpleNamespace(
+        instance_id="i-unregistered",
+        provider=ComputeProvider.AWS,
+        status="running",
+        ip_address="192.0.2.20",
+        port=8000,
+        gpu_type=GPUType.A10,
+        endpoint_url="https://gpu.example/v1",
+    )
+    manager = MagicMock()
+    manager.deploy = AsyncMock(return_value=instance)
+    manager.destroy = AsyncMock()
+    util = MagicMock()
+    util.register_endpoint.side_effect = RuntimeError(
+        "scheduler registry unavailable",
+    )
+    monkeypatch.setattr(
+        compute_router,
+        "_get_or_create_extended_subsystems",
+        lambda _app: {"utilization": util},
+    )
+    app = FastAPI()
+    register(app, {})
+    app.state._deployment_manager = manager
+
+    response = TestClient(app).post(
+        "/admin/compute/deploy",
+        json={
+            "provider": "aws",
+            "gpu_type": "a10",
+            "model_name": "org/model",
+        },
+    )
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == (
+        "compute endpoint registration failed; deployment rolled back"
+    )
+    manager.destroy.assert_awaited_once_with("i-unregistered")
+    assert "i-unregistered" not in app.state._compute_deployments
+
+
+def test_deployment_listing_lazily_constructs_and_caches_manager(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created_at = datetime(2026, 7, 29, 12, 30, tzinfo=UTC)
+    manager = MagicMock()
+    manager.list_deployments.return_value = [
+        SimpleNamespace(
+            instance_id="i-persisted",
+            provider="aws",
+            model_name="org/model",
+            state="running",
+            ip_address="192.0.2.30",
+            endpoint_url="https://gpu.example/v1",
+            working_dir="/tmp/gludd-compute-i-persisted",
+            created_at=created_at,
+        )
+    ]
+    manager_factory = MagicMock(return_value=manager)
+    mkdir = MagicMock()
+    monkeypatch.setattr(compute_router, "DeploymentManager", manager_factory)
+    monkeypatch.setattr(compute_router.os, "makedirs", mkdir)
+    monkeypatch.setattr(
+        compute_router.os.path,
+        "expanduser",
+        lambda _path: "/tmp/gludd-compute-tests",
+    )
+    resolver = object()
+    app = FastAPI()
+    register(app, {})
+    app.state._secrets_resolver = resolver
+    client = TestClient(app)
+
+    first = client.get("/api/deployments")
+    second = client.get("/api/deployments")
+
+    expected = {
+        "deployments": [
+            {
+                "instance_id": "i-persisted",
+                "provider": "aws",
+                "model_name": "org/model",
+                "state": "running",
+                "ip_address": "192.0.2.30",
+                "endpoint_url": "https://gpu.example/v1",
+                "working_dir": "/tmp/gludd-compute-i-persisted",
+                "created_at": created_at.isoformat(),
+            }
+        ],
+        "count": 1,
+    }
+    assert first.json() == expected
+    assert second.json() == expected
+    manager_factory.assert_called_once_with(
+        secrets_resolver=resolver,
+        working_dir="/tmp/gludd-compute-tests/deployments",
+    )
+    mkdir.assert_called_once_with(
+        "/tmp/gludd-compute-tests/deployments",
+        exist_ok=True,
+    )
