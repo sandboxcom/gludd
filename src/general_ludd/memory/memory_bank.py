@@ -18,7 +18,6 @@ import re
 import threading
 import time
 import uuid
-from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -173,6 +172,31 @@ class MemoryBankResult:
     synthesized: str = ""
 
 
+def _copy_mental_model(model: MentalModel) -> MentalModel:
+    """Copy the flat record without the recursive ``deepcopy`` overhead."""
+    return MentalModel(
+        model_id=model.model_id,
+        subject=model.subject,
+        content=model.content,
+        priority=model.priority,
+        created_by=model.created_by,
+        created_at=model.created_at,
+        updated_at=model.updated_at,
+        tags=list(model.tags),
+    )
+
+
+def _copy_memory_entry(fact: MemoryEntry) -> MemoryEntry:
+    """Copy the flat record and its sole mutable field."""
+    return MemoryEntry(
+        entry_id=fact.entry_id,
+        content=fact.content,
+        source=fact.source,
+        created_at=fact.created_at,
+        tags=list(fact.tags),
+    )
+
+
 # === MemoryBank ==============================================================
 
 
@@ -207,14 +231,14 @@ class MemoryBank:
         if not model.created_at:
             model.created_at = model.updated_at
         with self._lock:
-            self._mental_models[model.model_id] = deepcopy(model)
-        return deepcopy(model)
+            self._mental_models[model.model_id] = _copy_mental_model(model)
+        return _copy_mental_model(model)
 
     def get_mental_models(
         self, subject_filter: str | None = None
     ) -> list[MentalModel]:
         with self._lock:
-            models = [deepcopy(model) for model in self._mental_models.values()]
+            models = [_copy_mental_model(model) for model in self._mental_models.values()]
         if subject_filter is not None:
             fl = subject_filter.lower()
             models = [
@@ -232,7 +256,7 @@ class MemoryBank:
                 return None
             existing.content = content
             existing.updated_at = time.time()
-            return deepcopy(existing)
+            return _copy_mental_model(existing)
 
     def delete_mental_model(self, model_id: str) -> bool:
         with self._lock:
@@ -248,15 +272,15 @@ class MemoryBank:
             fact.entry_id = uuid.uuid4().hex[:12]
         if not fact.created_at:
             fact.created_at = time.time()
-        stored = deepcopy(fact)
+        stored = _copy_memory_entry(fact)
         with self._lock:
             self._facts[fact.entry_id] = stored
-        return deepcopy(fact)
+        return _copy_memory_entry(fact)
 
     def get_facts(self, tag_filter: str | None = None) -> list[MemoryEntry]:
         with self._lock:
             snapshot = tuple(self._facts.values())
-        facts = [deepcopy(fact) for fact in snapshot]
+        facts = [_copy_memory_entry(fact) for fact in snapshot]
         if tag_filter is not None:
             fl = tag_filter.lower()
             facts = [f for f in facts if any(fl in t.lower() for t in f.tags)]
@@ -312,7 +336,7 @@ class MemoryBank:
                 priority_boost = (model.priority - 5) * 0.04
                 score = min(1.0, score + priority_boost)
                 if score > 0:
-                    scored.append((deepcopy(model), score))
+                    scored.append((_copy_mental_model(model), score))
         scored.sort(key=lambda x: x[1], reverse=True)
         return [m for m, _ in scored]
 
@@ -326,7 +350,7 @@ class MemoryBank:
             text_blob = f"{fact.content} {fact.source} {' '.join(fact.tags)}"
             score = _score_text(qterms, ql, text_blob)
             if score > 0:
-                scored.append((deepcopy(fact), score))
+                scored.append((_copy_memory_entry(fact), score))
         scored.sort(key=lambda x: x[1], reverse=True)
         return [f for f, _ in scored]
 

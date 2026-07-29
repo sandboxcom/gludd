@@ -5851,7 +5851,7 @@ search:
 	case "$$SEARCH_ROOT" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $$SEARCH_ROOT"; exit 1;; esac; \
 	RG=$$(command -v rg 2>/dev/null || true); \
 	if [ -n "$$RG" ]; then \
-		"$$RG" -n --glob '!.git/**' --glob '!.venv/**' --glob '!.mypy_cache/**' --glob '!.pytest_cache/**' --glob '!.gate-logs/**' -- "$(PATTERN)" "$$SEARCH_ROOT"; \
+		"$$RG" -n --glob '!.git/**' --glob '!.venv/**' --glob '!.mypy_cache/**' --glob '!.pytest_cache/**' --glob '!.gate-logs/**' -- "$(PATTERN)" "$$SEARCH_ROOT" 2>/dev/null | /usr/bin/grep .; \
 	else \
 		/usr/bin/grep -R -nH -I --exclude-dir=.git --exclude-dir=.venv --exclude-dir=.mypy_cache --exclude-dir=.pytest_cache --exclude-dir=.gate-logs -- "$(PATTERN)" "$$SEARCH_ROOT" 2>/dev/null; \
 	fi

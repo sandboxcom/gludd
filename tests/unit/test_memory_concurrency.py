@@ -315,15 +315,15 @@ class TestWriteDuringRead:
         retained = bank.retain(MemoryEntry(content="snapshot", tags=["lock"]))
         copy_started = threading.Event()
         release_copy = threading.Event()
-        real_deepcopy = memory_bank_module.deepcopy
+        real_copy_entry = memory_bank_module._copy_memory_entry
 
-        def slow_deepcopy(value):
+        def slow_copy_entry(value):
             if isinstance(value, MemoryEntry) and not copy_started.is_set():
                 copy_started.set()
                 assert release_copy.wait(timeout=2)
-            return real_deepcopy(value)
+            return real_copy_entry(value)
 
-        monkeypatch.setattr(memory_bank_module, "deepcopy", slow_deepcopy)
+        monkeypatch.setattr(memory_bank_module, "_copy_memory_entry", slow_copy_entry)
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             reader = executor.submit(bank.get_facts)

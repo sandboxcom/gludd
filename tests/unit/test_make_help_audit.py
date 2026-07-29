@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -46,6 +47,32 @@ def test_search_target_is_portable_and_avoids_xargs_match_status() -> None:
     assert "command -v rg" in section
     assert "xargs -0 grep" not in section
     assert "/usr/bin/grep -R" in section
+
+
+def test_search_target_succeeds_when_ripgrep_finds_match_before_transient_error(
+    tmp_path: Path,
+) -> None:
+    fake_rg = tmp_path / "rg"
+    fake_rg.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' './Makefile:5833:cat-file:'\n"
+        "printf '%s\\n' 'rg: transient file disappeared' >&2\n"
+        "exit 2\n",
+        encoding="utf-8",
+    )
+    fake_rg.chmod(0o755)
+    env = dict(os.environ, PATH=f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+
+    proc = subprocess.run(
+        ["make", "search", "PATTERN=^cat-file:"],
+        capture_output=True,
+        text=True,
+        timeout=15,
+        env=env,
+    )
+
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    assert "Makefile:5833:cat-file:" in proc.stdout
 
 
 def test_codex_system_skill_read_uses_explicit_root(tmp_path: Path) -> None:
