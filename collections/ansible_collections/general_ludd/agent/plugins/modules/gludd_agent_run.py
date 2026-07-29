@@ -1,5 +1,4 @@
 #!/usr/bin/python
-# -*- coding: utf-8 -*-
 # Copyright: Agentic Harness
 # SPDX-License-Identifier: MIT
 """
@@ -85,7 +84,10 @@ RETURN:
 
 from __future__ import annotations
 
+import json
 import os
+import subprocess
+import sys
 
 from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
 
@@ -129,32 +131,66 @@ def _run_local(
     model_profile: str | None,
     max_iterations: int,
 ) -> dict:
-    """Run ToolCallLoop in-process (same venv)."""
+    """Run ToolCallLoop directly when called outside an AnsiballZ process."""
     try:
-        import asyncio
-        from general_ludd.execution.tool_loop import ToolCallLoop  # type: ignore[import]
-        from general_ludd.models.gateway import ModelGateway  # type: ignore[import]
-        from general_ludd.schemas.job import JobSpec  # type: ignore[import]
-
-        import uuid as _uuid
-        gw = ModelGateway()
-        loop_runner = ToolCallLoop(model_gateway=gw, max_iterations=max_iterations)
-        job = JobSpec(
-            job_id=str(_uuid.uuid4()),
-            todo_id="agent-run",
-            playbook="noop.yml",
-            queue="default",
-            prompt_text=prompt,
-            model_profile=model_profile or "",
+        from general_ludd.execution.local_agent_runner import (  # type: ignore[import]
+            run_local,
         )
-        full_system = system_prompt or _DEFAULT_SYSTEM_PROMPT
-
-        answer = asyncio.run(loop_runner.run_with_tools(job, full_system, prompt))
-        return ok_result({"answer": answer, "tool_calls": [], "usage": {}, "iterations": 1})
+        return run_local(
+            prompt=prompt,
+            system_prompt=system_prompt or _DEFAULT_SYSTEM_PROMPT,
+            model_profile=model_profile,
+            max_iterations=max_iterations,
+        )
     except ImportError as exc:
         return error_result(f"general_ludd not importable for local run: {exc}")
-    except Exception as exc:  # noqa: BLE001
-        return error_result(f"local agent run failed: {exc}")
+
+
+def _run_local_isolated(
+    prompt: str,
+    system_prompt: str,
+    model_profile: str | None,
+    max_iterations: int,
+    timeout: int,
+) -> dict:
+    """Run the controller application without contaminating AnsiballZ imports."""
+    request = {
+        "prompt": prompt,
+        "system_prompt": system_prompt or _DEFAULT_SYSTEM_PROMPT,
+        "model_profile": model_profile,
+        "max_iterations": max_iterations,
+    }
+    try:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "general_ludd.execution.local_agent_runner",
+            ],
+            input=json.dumps(request),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return error_result(
+            f"local agent run timed out after {timeout} seconds"
+        )
+    except OSError as exc:
+        return error_result(f"local agent runner unavailable: {exc}")
+
+    if completed.returncode != 0:
+        return error_result(
+            f"local agent runner exited with status {completed.returncode}"
+        )
+    try:
+        result = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        return error_result("local agent runner returned invalid JSON")
+    if not isinstance(result, dict):
+        return error_result("local agent runner returned a non-object result")
+    return result
 
 
 def main() -> None:
@@ -187,21 +223,19 @@ def main() -> None:
     psk: str = module.params["psk"]
     timeout: int = module.params["timeout"]
 
-    # Try local first; fall back to HTTP
-    try:
-        from general_ludd.execution.tool_loop import ToolCallLoop  # noqa: F401 type: ignore[import]
-        local_available = True
-    except ImportError:
-        local_available = False
-
-    if local_available:
-        result = _run_local(prompt, system_prompt, model_profile or None, max_iterations)
-        if result.get("failed"):
-            # Fall through to HTTP
-            local_available = False
-        else:
-            module.exit_json(**result)
-            return
+    # Keep the local-first contract, but never import the controller application
+    # into the AnsiballZ payload process. Mixing those two Ansible package trees
+    # breaks module result serialization under ansible-core 2.21.
+    result = _run_local_isolated(
+        prompt,
+        system_prompt,
+        model_profile or None,
+        max_iterations,
+        timeout,
+    )
+    if not result.get("failed"):
+        module.exit_json(**result)
+        return
 
     # HTTP transport
     client = GluddClient(base_url=daemon_url, psk=psk, timeout=timeout)
