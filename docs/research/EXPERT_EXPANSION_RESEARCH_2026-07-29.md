@@ -25,6 +25,10 @@ This proposal extends the research mechanisms in
 `docs/research/RESEARCH_MECHANISMS.md`, the role execution seam described in
 `docs/design/CI_PIPELINE_MEDIC_ROLE.md`, and the deployment concerns in
 `docs/design/MODEL_SERVING_DEPLOYMENT.md`. It does not replace those designs.
+It is the domain appendix to
+[`FEATURE_EXPERT_SYSTEM_INTEROPERABILITY.md`](../specs/FEATURE_EXPERT_SYSTEM_INTEROPERABILITY.md);
+that specification's typed contracts and security/governance requirements are
+normative wherever this research uses shorter illustrative schemas.
 
 ## 2. Research method and evidence classes
 
@@ -96,12 +100,20 @@ claims:
     evidence_class: authoritative|primary_research|maintainer|operational|watchlist
     sources:
       - url: string
+        canonical_identity: string
         title: string
         publisher: string
         published_or_updated: YYYY-MM-DD|null
         retrieved: YYYY-MM-DD
         version: string|null
         license: string|null
+        representation_sha256: string
+        selectors: [object]
+        authority_scope: string
+        freshness: current|historical|stale|unknown
+        generation_origin: human|machine|mixed|unknown
+        upstream_sources: [string]
+        correlation_group: string
     confidence: 0.0
     expires_at: YYYY-MM-DD|null
     assumptions: [string]
@@ -115,6 +127,7 @@ tool_runs:
     inputs_sha256: string
     outputs_sha256: string
 uncertainties: [string]
+missing_evidence: [object]
 human_gates: [string]
 ```
 
@@ -149,8 +162,22 @@ All four collections need the same runtime controls:
    hazardous equipment, release publication, and physical execution require
    explicit scoped authorization.
 10. **Self-improvement.** Proposed source or prompt changes go through a
-    regression corpus, adversarial evaluation, provenance review, and human
-    approval before promotion.
+     regression corpus, adversarial evaluation, provenance review, and human
+     approval before promotion.
+11. **Hostile research boundary.** Search pages, papers, media, source code, and
+    tool output are untrusted data. They cannot alter goals, permissions, tools,
+    network scope, memory trust, or output destinations.
+12. **Root-source independence.** Mirrors, translations, summaries, generated
+    content, shared datasets, and repeated tool/model output retain correlation;
+    multiple URLs do not create multiple independent observations.
+13. **Typed abstention and escalation.** Missing identity, current authority,
+    calibration, capability, evidence, or safety conditions produce a
+    structured input/review/abstention outcome through a bounded,
+    authority-preserving, cycle-aware ladder.
+14. **Executable composition tests.** Each domain suite participates in the
+    signed cross-expert benchmark cases for contradictory/stale evidence,
+    partial failure, cyclic delegation, unsafe synthesis, hostile retrieval,
+    source feedback, canary, and rollback.
 
 ## 3. Git mastery, release captain, and build/helper discovery
 
@@ -322,7 +349,7 @@ rollback:
 | REL-02 | Upload retry sees an asset with the same name and different digest | Fail closed; never delete the old asset before the replacement is known-good |
 | REL-03 | Artifact ZIP loses executable bits | Detect packaging mismatch and require tar/container-preserving packaging |
 | REL-04 | Hidden security policy file was omitted by artifact defaults | Detect manifest mismatch before publication |
-| REL-05 | Reusable workflow is referenced by a mutable tag | Reject or resolve and pin an reviewed commit SHA |
+| REL-05 | Reusable workflow is referenced by a mutable tag | Reject or resolve and pin a reviewed commit SHA |
 | REL-06 | Production build differs from tested staging build | Block promotion because the digest changed |
 | REL-07 | Release page exists but one artifact is corrupt | Download, hash, report the exact asset, repair idempotently, and reverify all assets |
 | REL-08 | Deployment health is green but rollback target is unavailable | Hold traffic promotion until rollback readiness is restored |
@@ -370,16 +397,14 @@ documented gap analysis.
 
 #### Build scout acceptance tests
 
-- Discover a non-obvious helper exposed through a package manifest and map it to
-  the repository's preferred make entrypoint.
-- Reject an abandoned helper with unresolved security issues despite a high
-  search rank.
-- Detect that a proposed custom script duplicates a maintained project.
-- Statically flag a downloaded helper that executes remote content or expands an
-  unresolved destructive path.
-- Generate a command inventory without executing any discovered helper.
-- Recommend a reproducible build mechanism and demonstrate byte/digest
-  comparison across two clean builds.
+| ID | Scenario | Required result |
+|---|---|---|
+| BUILD-01 | A non-obvious helper is exposed through a package manifest | Discover it and map it to the repository's preferred make entrypoint |
+| BUILD-02 | An abandoned helper with unresolved security issues ranks first in search | Reject it and preserve the maintenance/security evidence |
+| BUILD-03 | A proposed custom script duplicates a maintained mature project | Identify the existing project and require an evidence-backed reuse/wrap decision |
+| BUILD-04 | A downloaded helper executes remote content or expands an unresolved destructive path | Flag it statically and do not execute it |
+| BUILD-05 | Repository contains helpers in manifests, CI, tools, and scripts | Generate a typed command/capability inventory without executing discovered helpers |
+| BUILD-06 | Two clean builds claim reproducibility | Compare bytes/digests plus environment manifests and reject an unexplained difference |
 
 ### 3.5 Long-lived Git and release operational findings
 
@@ -491,15 +516,14 @@ Primary references:
 
 Speech acceptance tests:
 
-- Code-switching, accented speech, overlapping speakers, low SNR, telephone
-  codecs, music, long silence, and adversarial non-speech.
-- Numbers, chemical names, Git SHAs, units, and proper nouns scored separately.
-- Streaming transcription must never rewrite committed downstream commands
-  without explicit confirmation.
-- Voice-cloning request without verifiable consent must be refused.
-- A synthesized safety warning must preserve every number, unit, and negation.
-- Cross-language speech translation must report semantic omissions separately
-  from acoustic quality.
+| ID | Scenario | Required result |
+|---|---|---|
+| SPEECH-01 | Code-switching, accent, overlap, low SNR, telephone codec, music, silence, and adversarial non-speech | Report per-slice ASR/diarization/error metrics and abstain outside calibrated slices |
+| SPEECH-02 | Transcript contains numbers, chemical names, Git SHAs, units, and proper nouns | Score each critical entity class separately and retain audio/time evidence |
+| SPEECH-03 | Streaming hypothesis changes text already consumed by a command planner | Preserve committed boundary and require explicit confirmation before downstream rewrite/effect |
+| SPEECH-04 | Voice cloning lacks verifiable, revocable speaker consent | Refuse synthesis and record the consent gate independently of model capability |
+| SPEECH-05 | Synthesized safety warning includes numbers, units, and negations | Verify semantic preservation before delivery and withhold a mismatched rendition |
+| SPEECH-06 | Cross-language translation sounds fluent but drops a condition | Report semantic omission separately from acoustic/intelligibility quality |
 
 Operational evidence:
 
@@ -552,14 +576,14 @@ routed to domain solvers and checked against analytic or experimental baselines.
 
 World-model acceptance tests:
 
-- Counterfactual interventions change only causally downstream variables.
-- Closed-loop rollouts expose divergence versus one-step prediction quality.
-- Impossible energy/mass/contact behavior is detected and labeled.
-- The planner abstains when ensemble disagreement or latent novelty exceeds a
-  configured threshold.
-- Generated training worlds do not leak evaluation scenes.
-- A real robot action requires independent safety constraints outside the
-  learned model.
+| ID | Scenario | Required result |
+|---|---|---|
+| WORLD-01 | Counterfactual intervention targets one modeled variable | Only causally downstream predictions change within declared model assumptions |
+| WORLD-02 | One-step prediction is accurate but closed-loop rollout diverges | Report horizon-dependent error and reject the long-horizon plan |
+| WORLD-03 | Generated rollout violates energy, mass, or contact constraints | Detect and label the physical inconsistency; do not treat world model as solver proof |
+| WORLD-04 | Ensemble disagreement or latent novelty exceeds calibrated threshold | Planner abstains and routes to evidence/simulator/human policy |
+| WORLD-05 | Generated training worlds overlap held-out evaluation scenes | Contamination check fails and affected evaluation cannot qualify the candidate |
+| WORLD-06 | Learned policy requests a real robot effect | Independent non-learned safety constraints and human/embodied-action gate remain mandatory |
 
 The [MuJoCo deterministic reset issue](https://github.com/google-deepmind/mujoco/issues/270)
 shows why state serialization must include solver warm-start and hidden state.
@@ -605,17 +629,13 @@ Primary references:
 
 Vision acceptance tests:
 
-- Tiny objects, occlusion, motion blur, low light, transparent/reflective
-  materials, text, unusual aspect ratios, and domain-shifted cameras.
-- Video segmentation checks identity after disappearance/re-entry and reports
-  temporal instability; SAM 2's own
-  [published limitations](https://ai.meta.com/blog/segment-anything-2-video/)
-  motivate this.
-- Image editing preserves protected regions and emits a pixel/semantic diff.
-- Generation is reproducible within documented backend tolerances and emits
-  provenance metadata.
-- VAE/precision failures producing black or saturated images are caught before
-  delivery.
+| ID | Scenario | Required result |
+|---|---|---|
+| VISION-01 | Tiny/occluded/blurred/low-light/transparent/reflective objects, text, odd aspect ratios, and shifted cameras | Report task and slice metrics; distinguish “not detected” from “not present” |
+| VISION-02 | Segmented object disappears and re-enters video | Check identity continuity and report temporal instability under documented SAM 2 limitations |
+| VISION-03 | Image edit has protected regions | Preserve them within declared pixel/semantic tolerance and emit both diffs |
+| VISION-04 | Same generation manifest is rerun on a supported backend | Match documented tolerance and emit checkpoint/adapter/seed/C2PA provenance |
+| VISION-05 | VAE or numeric precision produces black/saturated output | Deterministic quality gate blocks delivery and retains backend/precision evidence |
 
 Operational reports of
 [high CPU memory use](https://github.com/huggingface/diffusers/issues/4894),
@@ -690,15 +710,15 @@ evaluations: [string]
 
 Acceptance tests:
 
-- Merged and unmerged adapters match within an explicitly justified tolerance.
-- Switching adapters in one process cannot leak prior adapter state.
-- Quantized merge either proves parity or is marked unsupported.
-- Student gains on target tasks do not hide regression in calibration, safety,
-  languages, or base capabilities.
-- Teacher traces with invalid intermediate reasoning are rejected even when the
-  final answer is correct.
-- On-policy methods are compared at equal generation/training compute.
-- Base-model or tokenizer mismatch fails before loading.
+| ID | Scenario | Required result |
+|---|---|---|
+| DISTILL-01 | Merged and unmerged adapters receive identical inputs | Match within an explicitly justified per-output tolerance |
+| DISTILL-02 | One process switches repeatedly among adapters | No weights, caches, prompts, or behavior leak from the prior adapter |
+| DISTILL-03 | Quantized adapter merge is requested | Prove parity for that backend/precision or mark merge unsupported |
+| DISTILL-04 | Student gains on target tasks but loses calibration, safety, language, or base capability | Slice/non-compensatory gate blocks promotion |
+| DISTILL-05 | Teacher trace reaches a correct answer through invalid intermediate reasoning | Reject the trace as a training target and retain the failure |
+| DISTILL-06 | On-policy and offline methods use different generation/training compute | Normalize budgets or report the difference; no unequal-compute win claim |
+| DISTILL-07 | Adapter base model or tokenizer digest mismatches runtime | Fail before any weight is loaded or merged |
 
 The recurring PEFT reports about
 [quantized merge documentation](https://github.com/huggingface/peft/issues/2105),
@@ -763,6 +783,19 @@ validation:
 hardware: [string]
 outputs_sha256: string
 ```
+
+Simulator acceptance tests:
+
+| ID | Scenario | Required result |
+|---|---|---|
+| SIM-01 | CPU/reference and A100-class GPU backends run the same validated case | Compare invariant outputs, numeric error, convergence, determinism, resource use, and exact backend/build manifest |
+| SIM-02 | Finer mesh/timestep changes a material result materially | Mark result unconverged and withhold the engineering conclusion |
+| SIM-03 | Circuit model fails to converge from one initial condition | Report solver/initial-condition sensitivity rather than invent a waveform |
+| SIM-04 | Chemistry simulation mixes force field, protonation, or ensemble assumptions | Reject comparison until the run identities and conditions are compatible |
+| SIM-05 | Astronomy result crosses time scales or coordinate frames | Perform explicit unit/frame/time-scale transformation and round-trip validation |
+| SIM-06 | Learned world model agrees with one simulator but conflicts with experiment | Preserve conflict; experimental/applicable authority and uncertainty govern verification |
+| SIM-07 | Solver produces a plausible visualization but violates conservation or analytic invariant | Deterministic invariant blocks acceptance independent of appearance |
+| SIM-08 | Simulation proposes an embodied, hazardous, or physical effect | Require domain safety and qualified-human gate; simulation success grants no execution authority |
 
 ## 5. Materials engineering and fabrication collection
 
@@ -1211,6 +1244,12 @@ Minimum promotion policy:
 5. No capability loses more than its approved regression budget.
 6. Human specialists approve the domain-specific high-consequence suite.
 7. The prior expert version remains rollbackable.
+8. Every required XEB fixture runs with its signed oracle and exact test-node
+   collection evidence.
+9. Candidate/baseline canary policy is signed before results, representative
+   minimums are satisfied, and the exact rollback has been exercised.
+10. Generated/source-feedback lineage and hidden-evaluation contamination checks
+    pass without a critical unknown.
 
 ## 9. Implementation specifications and backlog
 
@@ -1237,6 +1276,27 @@ Minimum promotion policy:
   logs, manifests, and model/solver versions by digest.
 - **EXP-CORE-010 — Prompt-injection boundary.** Treat retrieved text and tool
   output as data, with explicit instruction/data separation.
+- **EXP-CORE-011 — Source trust and freshness policy.** Separate authority,
+  applicability, freshness, independence, factual verification, and handling
+  trust at claim level.
+- **EXP-CORE-012 — Sandboxed internet research adapter.** Enforce read-only
+  egress, SSRF/rebinding/redirect validation, content/parser budgets, query
+  redaction, typed unavailability, and immutable fetch receipts.
+- **EXP-CORE-013 — Source-feedback lineage detector.** Correlate generated,
+  mirrored, translated, summarized, shared-data, and expert-published sources
+  and prevent recursive self-corroboration.
+- **EXP-CORE-014 — Typed abstention and escalation.** Implement distinct
+  terminal abstention plus bounded, authority-preserving, cycle-aware escalation
+  and selective-risk metrics.
+- **EXP-CORE-015 — Cross-expert benchmark harness.** Execute signed XEB
+  fixtures for contradiction, stale evidence, cyclic delegation, partial
+  failure, synthesis, hostile retrieval, source feedback, canary, and rollback.
+- **EXP-CORE-016 — Signed canary and rollback controller.** Bind immutable
+  cohort/metrics/minimum-evidence policy, external telemetry, candidate
+  descendants, pre-exercised rollback, and signed recovery verification.
+- **EXP-CORE-017 — Governed regression memory.** Preserve minimized
+  reproductions, exact lineage/conditions, negative and inconclusive results,
+  hidden-evaluation boundaries, and duplicate/prior-failure links.
 
 ### Git, release, and build
 
