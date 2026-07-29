@@ -4497,9 +4497,9 @@ pip-audit:
 # Gating audit (W5.3): fail-closed on any NEW advisory. The two known,
 # adjudicated advisories are ignored with a documented rationale in
 # SECURITY.md "Known dependency advisories":
-#   - CVE-2025-69872 (diskcache): no upstream fix; mitigated by owner-only
-#     (0o700) cache dir in models/response_cache.py — attacker needs cache-dir
-#     write access, which the permission removes.
+#   - CVE-2025-69872 (diskcache): no upstream fix; every application cache uses
+#     security.safe_diskcache's non-executable MessagePack serializer in a
+#     versioned owner-only namespace and refuses legacy pickle modes.
 #   - PYSEC-2026-196 (pip): build-time installer only; pip is NOT a runtime
 #     dependency (not in pyproject) and is absent from the shipped PyInstaller
 #     binary; fixed pip 26.1.2 is used in CI/dev.

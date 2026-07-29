@@ -12,8 +12,7 @@ from email.message import Message
 from typing import IO
 from urllib.parse import urlparse
 
-import diskcache
-
+from general_ludd.security.safe_diskcache import open_safe_diskcache
 from general_ludd.security.ssrf import is_url_blocked
 
 logger = logging.getLogger(__name__)
@@ -136,9 +135,11 @@ class WebRetriever:
         # returning.  Keeping a Cache instance on every retriever leaks an idle
         # SQLite connection when callers construct a retriever for dependency
         # injection or reject a URL before the first cache operation.
-        with diskcache.Cache(self._cache_path) as cache:
+        with open_safe_diskcache(self._cache_path) as cache:
             cached = cache.get(url)
-            if cached is not None:
+            if isinstance(cached, dict) and all(
+                isinstance(key, str) for key in cached
+            ):
                 logger.debug("cache hit for %s", url)
                 return WebPageResult(**cached)
 

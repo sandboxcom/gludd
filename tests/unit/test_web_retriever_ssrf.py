@@ -25,10 +25,10 @@ import urllib.request
 from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
-import diskcache
 import pytest
 
 from general_ludd.retrieval.web import WebRetriever, _NoRedirectHandler
+from general_ludd.security.safe_diskcache import open_safe_diskcache
 
 
 class TestWebRetrieverSSRFGuard:
@@ -98,7 +98,7 @@ class TestWebRetrieverSSRFGuard:
         # a real diskcache directory, not an in-memory fixture); evict any
         # stale entry from a prior run so this test genuinely exercises the
         # fetch path (and therefore the guard) rather than a cache hit.
-        with diskcache.Cache(retriever._cache_path) as cache:
+        with open_safe_diskcache(retriever._cache_path) as cache:
             cache.delete(url)
         with patch("urllib.request.build_opener") as mock_build_opener:
             mock_build_opener.return_value.open.return_value = mock_response
@@ -165,7 +165,7 @@ class TestWebRetrieverRedirectGuard:
 
         url = "https://example.com/redirect-wiring-check"
         retriever = WebRetriever()
-        with diskcache.Cache(retriever._cache_path) as cache:
+        with open_safe_diskcache(retriever._cache_path) as cache:
             cache.delete(url)
         with patch("urllib.request.build_opener", side_effect=capturing_build_opener):
             result = retriever.fetch_web_page(url)
@@ -194,7 +194,7 @@ class TestWebRetrieverRedirectGuard:
         )
         url = "https://example.com/redirects-to-metadata"
         retriever = WebRetriever()
-        with diskcache.Cache(retriever._cache_path) as cache:
+        with open_safe_diskcache(retriever._cache_path) as cache:
             cache.delete(url)
 
         with patch("urllib.request.build_opener") as mock_build_opener:
