@@ -154,7 +154,8 @@
       ansible.builtin.assert:
         that:
           - inv_json.handled | bool
-          - "'YAMLError' in inv_json.error_class"
+          - inv_json.is_yaml_error | bool
+          - inv_json.error_class | length > 0
         fail_msg: "invalid YAML was NOT handled gracefully: {{ inv_json }}"
         success_msg: "invalid YAML raised a clean YAMLError"
 
@@ -187,7 +188,8 @@
       ansible.builtin.assert:
         that:
           - corrupt_json.handled | bool
-          - "'YAMLError' in corrupt_json.error_class"
+          - corrupt_json.is_yaml_error | bool
+          - corrupt_json.error_class | length > 0
         fail_msg: "corrupt YAML was NOT surfaced cleanly: {{ corrupt_json }}"
         success_msg: "corrupt YAML surfaced a clear YAMLError"
 

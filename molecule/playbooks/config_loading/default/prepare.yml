@@ -7,6 +7,9 @@
   gather_facts: false
   vars:
     project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    work_dir: "/tmp/gludd-config-loading"
+    path_project_dir: "{{ work_dir }}/project"
+    path_xdg_dir: "{{ work_dir }}/xdg"
   tasks:
     - name: Detect gludd binary (dist build → venv → PATH fallback)
       ansible.builtin.shell:
@@ -32,8 +35,12 @@
       ansible.builtin.debug:
         msg: "gludd binary -> {{ gludd_detect.stdout | trim }}"
 
-    - name: Ensure shared work dir exists
+    - name: Materialize all collection precedence tiers
       ansible.builtin.file:
-        path: "/tmp/gludd-config-loading"
+        path: "{{ item }}"
         state: directory
         mode: "0755"
+      loop:
+        - "{{ work_dir }}"
+        - "{{ path_project_dir }}/.gludd/collections"
+        - "{{ work_dir }}/xdg/gludd/collections"
