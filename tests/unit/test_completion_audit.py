@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+pytestmark = pytest.mark.xdist_group("completion_audit")
+
 
 class TestCompletionAudit:
     def test_audit_returns_list_of_findings(self):
