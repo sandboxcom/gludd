@@ -5,7 +5,7 @@
 - name: Verify - gludd binary smoke invariants
   hosts: all
   gather_facts: false
-  become: true
+  become: false
   vars:
     daemon_url: "http://127.0.0.1:8000"
   tasks:
@@ -43,15 +43,12 @@
       ansible.builtin.assert:
         that:
           - "'Collection search path' in cli_outputs"
-          - "gludd_paths_rc_line | default('') is search('rc=0')"
+          - "'=== project paths (rc=0) ===' in cli_outputs"
+          - "'(missing)' not in cli_outputs"
         fail_msg: >
           'gludd project paths' did not resolve bundled paths cleanly:
           {{ cli_outputs }}
         success_msg: "project paths resolved bundled collections"
-      vars:
-        # The converge persistence wraps the rc on its own line; if absent we
-        # still rely on the 'Collection search path' banner being present.
-        gludd_paths_rc_line: ""
 
     - name: Assert no Python traceback / import / missing-file errors in CLI output
       ansible.builtin.assert:
@@ -80,7 +77,7 @@
       ansible.builtin.assert:
         that:
           # rc= line is non-zero (argparse rejects unknown flags with exit 2).
-          - "bad_flag_text | regex_search('rc=([0-9]+)', '\\1') | first | int != 0"
+          - "(bad_flag_text | regex_search('rc=[1-9][0-9]*')) is not none"
           - "'Traceback' not in bad_flag_text"
           - "'ModuleNotFoundError' not in bad_flag_text"
         fail_msg: "invalid-flag did not fail cleanly: {{ bad_flag_text }}"
@@ -142,7 +139,7 @@
           # Either it exited non-zero, or it logged an address-in-use signal —
           # and either way it MUST NOT have produced an uncaught traceback.
           - >
-            (clash_text | regex_search('EXIT_RC=([0-9]+)', '\\1') | first | int != 0)
+            (clash_text | regex_search('EXIT_RC=[1-9][0-9]*')) is not none
             or ('in use' in (clash_text | lower)) or ('address already' in (clash_text | lower))
           - "'Traceback' not in clash_text"
         fail_msg: "port clash was not handled gracefully: {{ clash_text }}"
