@@ -79,21 +79,6 @@ class HTTPTransport(Protocol):
     ) -> HTTPResponse: ...
 
 
-# Keep compatibility metadata local to these two protocols.  Mutating their
-# shared private ``typing._ProtocolMeta`` would affect every Protocol imported
-# later in the process (including framework/runtime protocols).
-type.__setattr__(
-    HTTPResponse,
-    "__protocol_attrs__",
-    frozenset({"status_code", "json"}),
-)
-type.__setattr__(
-    HTTPTransport,
-    "__protocol_attrs__",
-    frozenset({"__call__"}),
-)
-
-
 def _is_internal_host(host: str) -> bool:
     """Return ``True`` if ``host`` is a literal internal/loopback target.
 

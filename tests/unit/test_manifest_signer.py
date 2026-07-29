@@ -418,6 +418,9 @@ def test_pip_bundle_includes_sig_path_on_success(mock_run: MagicMock, tmp_path: 
     from general_ludd.runtime.pip_bundle import PipBundleBuilder
 
     (tmp_path / "pkg-1.0.0-py3-none-any.whl").write_bytes(b"w")
+    sig_path = os.path.join(str(tmp_path), "MANIFEST.json.sig")
+    signer = MagicMock(spec=ManifestSigner)
+    signer.sign.return_value = SignResult(success=True, sig_path=sig_path)
 
     calls: list[dict] = []
 
@@ -435,23 +438,18 @@ def test_pip_bundle_includes_sig_path_on_success(mock_run: MagicMock, tmp_path: 
             m.stdout = "abc123\n"
             m.stderr = ""
             return m
-        if "ssh-keygen" in cmd:
-            m = MagicMock()
-            m.returncode = 0
-            m.stdout = b"-----BEGIN SSH SIGNATURE-----"
-            m.stderr = b""
-            return m
         return MagicMock()
 
     mock_run.side_effect = side_effect
 
-    result = PipBundleBuilder().build(str(tmp_path), "1.0.0")
+    result = PipBundleBuilder(signer=signer).build(str(tmp_path), "1.0.0")
 
     assert result.success is True
-    assert result.sig_path == os.path.join(str(tmp_path), "MANIFEST.json.sig")
+    assert result.sig_path == sig_path
     assert result.signature_valid is True
-    ssh_calls = [c for c in calls if "ssh-keygen" in str(c["cmd"])]
-    assert len(ssh_calls) >= 1
+    signer.sign.assert_called_once_with(
+        os.path.join(str(tmp_path), "MANIFEST.json")
+    )
 
 
 # ---------------------------------------------------------------
