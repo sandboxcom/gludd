@@ -76,6 +76,19 @@ def test_parallel_shard_runner_namespaces_gludd_state_files(tmp_path: Path, monk
         assert env[name].startswith(str(basetemp / "state")), name
 
 
+def test_parallel_shard_runner_keeps_tmpdir_outside_pytest_basetemp(
+    tmp_path: Path,
+) -> None:
+    module = _load_script("run_ci_shards_parallel.py")
+    workspace = tmp_path / "shard"
+    env = module._env_for_shard("unit-3", workspace)
+    pytest_basetemp = module._pytest_basetemp(workspace)
+
+    assert pytest_basetemp.parent == workspace
+    assert pytest_basetemp != workspace
+    assert not Path(env["TMPDIR"]).is_relative_to(pytest_basetemp)
+
+
 def test_parallel_shard_runner_passes_isolated_env_to_popen() -> None:
     source = (ROOT / "scripts" / "run_ci_shards_parallel.py").read_text(encoding="utf-8")
 
