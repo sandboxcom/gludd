@@ -66,6 +66,36 @@ for _path in (str(_SCRIPTS_DIR), str(_SRC_DIR)):
 importlib.import_module("general_ludd.routing_roles")
 
 
+def _deny_unowned_unit_gunicorn(
+    event: str,
+    args: tuple[object, ...],
+) -> None:
+    """Deny a real Gunicorn exec from a unit test at the CPython audit boundary.
+
+    Tests that exercise daemon launch semantics must mock ``Popen`` and own the
+    returned process.  A real Gunicorn launch is detached by production code,
+    so pytest cannot reap it when the worker exits.  An audit hook cannot be
+    bypassed by a test restoring or replacing ``subprocess.Popen``.
+    """
+    if event != "subprocess.Popen" or not args:
+        return
+    current_test = os.environ.get("PYTEST_CURRENT_TEST", "")
+    if not current_test.startswith("tests/unit/"):
+        return
+    try:
+        executable = os.fsdecode(os.fspath(args[0]))
+    except TypeError:
+        return
+    if Path(executable).name == "gunicorn":
+        raise RuntimeError(
+            "unit test attempted an unowned Gunicorn launch; mock "
+            "subprocess.Popen and explicitly own the fake process"
+        )
+
+
+sys.addaudithook(_deny_unowned_unit_gunicorn)
+
+
 def pytest_configure(config: pytest.Config) -> None:
     """Per-worker RLIMIT_AS backstop — DISABLED in CI.
 
