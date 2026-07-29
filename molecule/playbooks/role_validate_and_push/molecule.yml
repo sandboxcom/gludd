@@ -4,6 +4,13 @@ driver:
 platforms: []
 provisioner:
   name: ansible
+  inventory:
+    hosts:
+      all:
+        hosts:
+          localhost:
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
   env:
     ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_PROJECT_DIRECTORY}/collections"
     GLUDD_MOCK_PORT: "8804"
@@ -17,14 +24,7 @@ scenario:
   # validate_and_push: enable_push=false + enable_validate=false so no heavy
   # ops run. Uses validate_output_override for a dry-run validated_no_push path.
   test_sequence:
-    - dependency
-    - cleanup
-    - destroy
     - syntax
-    - create
     - prepare
     - converge
-    - side_effect
     - verify
-    - cleanup
-    - destroy
