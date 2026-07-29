@@ -18,7 +18,7 @@ import re
 import threading
 import time
 import uuid
-from copy import deepcopy
+from copy import copy
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -173,6 +173,20 @@ class MemoryBankResult:
     synthesized: str = ""
 
 
+def _copy_mental_model(model: MentalModel) -> MentalModel:
+    """Copy the flat record without the recursive ``deepcopy`` overhead."""
+    copied = copy(model)
+    copied.tags = model.tags.copy()
+    return copied
+
+
+def _copy_memory_entry(fact: MemoryEntry) -> MemoryEntry:
+    """Copy the flat record and its sole mutable field."""
+    copied = copy(fact)
+    copied.tags = fact.tags.copy()
+    return copied
+
+
 # === MemoryBank ==============================================================
 
 
@@ -189,6 +203,11 @@ class MemoryBank:
         self._mental_models: dict[str, MentalModel] = {}
         self._facts: dict[str, MemoryEntry] = {}
         self._lock = threading.Lock()
+        self._facts_revision = 0
+        self._ordered_facts_revision = -1
+        self._ordered_facts_cache: tuple[MemoryEntry, ...] = ()
+        self._fact_score_cache_key: tuple[str, tuple[str, ...]] | None = None
+        self._fact_score_cache: tuple[MemoryEntry, ...] = ()
 
     @property
     def config(self) -> MemoryBankConfig:
@@ -207,14 +226,14 @@ class MemoryBank:
         if not model.created_at:
             model.created_at = model.updated_at
         with self._lock:
-            self._mental_models[model.model_id] = deepcopy(model)
-        return deepcopy(model)
+            self._mental_models[model.model_id] = _copy_mental_model(model)
+        return _copy_mental_model(model)
 
     def get_mental_models(
         self, subject_filter: str | None = None
     ) -> list[MentalModel]:
         with self._lock:
-            models = [deepcopy(model) for model in self._mental_models.values()]
+            models = [_copy_mental_model(model) for model in self._mental_models.values()]
         if subject_filter is not None:
             fl = subject_filter.lower()
             models = [
@@ -232,7 +251,7 @@ class MemoryBank:
                 return None
             existing.content = content
             existing.updated_at = time.time()
-            return deepcopy(existing)
+            return _copy_mental_model(existing)
 
     def delete_mental_model(self, model_id: str) -> bool:
         with self._lock:
@@ -248,23 +267,24 @@ class MemoryBank:
             fact.entry_id = uuid.uuid4().hex[:12]
         if not fact.created_at:
             fact.created_at = time.time()
+        stored = _copy_memory_entry(fact)
         with self._lock:
-            self._facts[fact.entry_id] = deepcopy(fact)
-        return deepcopy(fact)
+            self._facts[fact.entry_id] = stored
+            self._invalidate_fact_caches()
+        return _copy_memory_entry(fact)
 
     def get_facts(self, tag_filter: str | None = None) -> list[MemoryEntry]:
-        with self._lock:
-            facts = [deepcopy(fact) for fact in self._facts.values()]
+        facts = [_copy_memory_entry(fact) for fact in self._ordered_fact_snapshot()]
         if tag_filter is not None:
             fl = tag_filter.lower()
             facts = [f for f in facts if any(fl in t.lower() for t in f.tags)]
-        facts.sort(key=lambda f: f.created_at, reverse=True)
         return facts
 
     def delete_fact(self, entry_id: str) -> bool:
         with self._lock:
             if entry_id in self._facts:
                 del self._facts[entry_id]
+                self._invalidate_fact_caches()
                 return True
             return False
 
@@ -279,7 +299,7 @@ class MemoryBank:
         models = self._score_mental_models(qterms, ql)
         facts = self._score_facts(qterms, ql)
 
-        synthesized = self.reflect(query)
+        synthesized = self._synthesize(query, models, facts)
 
         return MemoryBankResult(
             mental_models=models,
@@ -310,22 +330,60 @@ class MemoryBank:
                 priority_boost = (model.priority - 5) * 0.04
                 score = min(1.0, score + priority_boost)
                 if score > 0:
-                    scored.append((deepcopy(model), score))
+                    scored.append((_copy_mental_model(model), score))
         scored.sort(key=lambda x: x[1], reverse=True)
         return [m for m, _ in scored]
 
     def _score_facts(
         self, qterms: list[str], ql: str
     ) -> list[MemoryEntry]:
+        cache_key = (ql, tuple(qterms))
         scored: list[tuple[MemoryEntry, float]] = []
         with self._lock:
-            for fact in self._facts.values():
-                text_blob = f"{fact.content} {fact.source} {' '.join(fact.tags)}"
-                score = _score_text(qterms, ql, text_blob)
-                if score > 0:
-                    scored.append((deepcopy(fact), score))
+            cached = (
+                self._fact_score_cache
+                if cache_key == self._fact_score_cache_key
+                else None
+            )
+            if cached is None:
+                revision = self._facts_revision
+                snapshot = tuple(self._facts.values())
+        if cached is not None:
+            return [_copy_memory_entry(fact) for fact in cached]
+        for fact in snapshot:
+            text_blob = f"{fact.content} {fact.source} {' '.join(fact.tags)}"
+            score = _score_text(qterms, ql, text_blob)
+            if score > 0:
+                scored.append((fact, score))
         scored.sort(key=lambda x: x[1], reverse=True)
-        return [f for f, _ in scored]
+        ordered = tuple(fact for fact, _ in scored)
+        with self._lock:
+            if revision == self._facts_revision:
+                self._fact_score_cache_key = cache_key
+                self._fact_score_cache = ordered
+        return [_copy_memory_entry(fact) for fact in ordered]
+
+    def _ordered_fact_snapshot(self) -> tuple[MemoryEntry, ...]:
+        with self._lock:
+            revision = self._facts_revision
+            if revision == self._ordered_facts_revision:
+                return self._ordered_facts_cache
+            snapshot = tuple(self._facts.values())
+        ordered = tuple(
+            sorted(snapshot, key=lambda fact: fact.created_at, reverse=True)
+        )
+        with self._lock:
+            if revision == self._facts_revision:
+                self._ordered_facts_revision = revision
+                self._ordered_facts_cache = ordered
+        return ordered
+
+    def _invalidate_fact_caches(self) -> None:
+        self._facts_revision += 1
+        self._ordered_facts_revision = -1
+        self._ordered_facts_cache = ()
+        self._fact_score_cache_key = None
+        self._fact_score_cache = ()
 
     def _synthesize(
         self,

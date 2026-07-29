@@ -69,6 +69,24 @@ def test_health_ok_on_unshare() -> None:
     assert "unshare" in health["detail"]
 
 
+def test_health_injected_runner_does_not_probe_host_proc(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A deterministic injected probe must not inherit the host's /proc state."""
+
+    def unexpected_proc_probe(_path: str) -> str:
+        raise AssertionError("host /proc must not bypass the injected runner")
+
+    monkeypatch.setattr(
+        "general_ludd.connectors.linux_namespaces.os.readlink",
+        unexpected_proc_probe,
+    )
+    health = Connector(runner=_runner()).health()
+
+    assert health["ok"] is True
+    assert "unshare" in health["detail"]
+
+
 def test_health_not_ok_on_missing_proc_and_failed_unshare() -> None:
     src = Connector(runner=_runner(rc=127, stderr="command not found"))
     health = src.health()

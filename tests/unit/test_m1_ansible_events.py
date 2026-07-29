@@ -120,6 +120,18 @@ class TestM1CallbackRegistered:
         assert "failures" in result.stats
         assert result.stats.get("failures") == 0
 
+    def test_nonzero_executor_result_preserves_diagnostic_error(
+        self, mock_ansible_core
+    ):
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
+
+        runner = CoreAnsibleRunner()
+        with patch.object(MockPlaybookExecutor, "run", return_value=2):
+            result = runner._execute_with_core(playbook_path="/tmp/test.yml")
+
+        assert result.rc == 2
+        assert result.error == "ansible playbook execution failed with rc=2"
+
 
 class TestM1CallbackGranularity:
     def test_multiple_task_events_collected(self):

@@ -8,9 +8,7 @@ import os
 import select
 import subprocess
 import sys
-import termios
 import time
-import tty
 from types import SimpleNamespace
 from typing import Any
 
@@ -35,6 +33,15 @@ validate_daemon_spawn_args = validate_gunicorn_spawn_args
 
 
 def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
+    try:
+        import termios
+        import tty
+    except ImportError:
+        raise SystemExit(
+            "The interactive TUI requires POSIX termios/tty support; "
+            "non-TUI Gludd commands remain available on this platform."
+        ) from None
+
     from rich.console import Console
     from rich.layout import Layout
     from rich.live import Live

@@ -25,6 +25,7 @@ from unittest.mock import patch
 
 import pytest
 
+import general_ludd.memory.memory_bank as memory_bank_module
 from general_ludd.memory.hindsight_adapter import (
     HindsightMemoryAdapter,
     _InMemoryStore,
@@ -306,6 +307,75 @@ class TestRaceConditionDetection:
 
 
 class TestWriteDuringRead:
+    def test_get_facts_releases_lock_before_copying_snapshot(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A slow defensive copy must not block an unrelated bank mutation."""
+        bank = MemoryBank(MemoryBankConfig(bank_id="snapshot-lock-bank"))
+        retained = bank.retain(MemoryEntry(content="snapshot", tags=["lock"]))
+        copy_started = threading.Event()
+        release_copy = threading.Event()
+        real_copy_entry = memory_bank_module._copy_memory_entry
+
+        def slow_copy_entry(value):
+            if isinstance(value, MemoryEntry) and not copy_started.is_set():
+                copy_started.set()
+                assert release_copy.wait(timeout=2)
+            return real_copy_entry(value)
+
+        monkeypatch.setattr(memory_bank_module, "_copy_memory_entry", slow_copy_entry)
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            reader = executor.submit(bank.get_facts)
+            assert copy_started.wait(timeout=1)
+            deleter = executor.submit(bank.delete_fact, retained.entry_id)
+            try:
+                assert deleter.result(timeout=0.25) is True
+            finally:
+                release_copy.set()
+            reader.result(timeout=2)
+
+    def test_recall_scores_each_snapshot_once(self) -> None:
+        """Recall must reuse its scored snapshot instead of scanning twice."""
+        bank = MemoryBank(MemoryBankConfig(bank_id="single-score-bank"))
+        bank.retain(MemoryEntry(content="initial fact", tags=["initial"]))
+
+        with (
+            patch.object(
+                bank,
+                "_score_mental_models",
+                wraps=bank._score_mental_models,
+            ) as score_models,
+            patch.object(
+                bank,
+                "_score_facts",
+                wraps=bank._score_facts,
+            ) as score_facts,
+        ):
+            bank.recall("initial")
+
+        assert score_models.call_count == 1
+        assert score_facts.call_count == 1
+
+    def test_repeated_recall_reuses_scores_until_facts_change(self) -> None:
+        bank = MemoryBank(MemoryBankConfig(bank_id="recall-cache-bank"))
+        bank.retain(MemoryEntry(content="initial fact", tags=["initial"]))
+
+        with patch.object(
+            memory_bank_module,
+            "_score_text",
+            wraps=memory_bank_module._score_text,
+        ) as score_text:
+            first = bank.recall("initial")
+            second = bank.recall("initial")
+            assert score_text.call_count == 1
+            assert first.facts[0] is not second.facts[0]
+
+            bank.retain(MemoryEntry(content="unrelated fact", tags=["other"]))
+            bank.recall("initial")
+
+        assert score_text.call_count == 3
+
     def test_reader_sees_consistent_snapshot(self):
         store = ObservationStore(store_path="/tmp/gludd-test-observations-wdr.json")
         store.clear()

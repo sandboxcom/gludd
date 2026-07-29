@@ -7,8 +7,13 @@ import fnmatch
 import shlex
 from pathlib import Path
 
+ISOLATED_TESTS = ("tests/unit/test_all_plugins_runtime.py",)
+
 SHARDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
-    "unit-1a1": (("tests/unit/test_a[a-m]*.py",), ("*/test_*_e2e.py",)),
+    "unit-1a1": (
+        ("tests/unit/test_a[a-m]*.py",),
+        ("*/test_*_e2e.py", "*/test_all_plugins_runtime.py"),
+    ),
     "unit-1a2": (
         ("tests/unit/test_a[n-z]*.py", "tests/unit/test_a[0-9]*.py"),
         ("*/test_*_e2e.py",),

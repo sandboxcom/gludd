@@ -58,7 +58,22 @@ def test_local_shard_patterns_match_workflow_matrix() -> None:
     assert workflow_shards == module.SHARDS
 
 
-def test_every_unit_test_file_has_exactly_one_shard() -> None:
+def test_local_unit_1a1_excludes_isolated_node_runtime_suite() -> None:
+    module = _load_script("ci_named_shard_files")
+    workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "build.yml").read_text())
+    unit_1a1 = next(
+        item
+        for item in workflow["jobs"]["test-shard"]["strategy"]["matrix"]["include"]
+        if item["shard"] == "unit-1a1"
+    )
+
+    assert "tests/unit/test_all_plugins_runtime.py" not in module.expand_shard("unit-1a1")
+    assert "*/test_all_plugins_runtime.py" in module.SHARDS["unit-1a1"][1]
+    assert module.ISOLATED_TESTS == ("tests/unit/test_all_plugins_runtime.py",)
+    assert tuple(str(unit_1a1["isolated_testpaths"]).split()) == module.ISOLATED_TESTS
+
+
+def test_every_unit_test_file_has_exactly_one_execution_lane() -> None:
     module = _load_script("ci_named_shard_files")
     selected: dict[str, set[str]] = {}
     for shard in EXPECTED_SHARDS:
@@ -70,6 +85,7 @@ def test_every_unit_test_file_has_exactly_one_shard() -> None:
             else:
                 files.add(token)
         selected[shard] = files
+    selected["isolated"] = set(module.ISOLATED_TESTS)
 
     for path in sorted((ROOT / "tests" / "unit").rglob("test_*.py")):
         relative = path.relative_to(ROOT).as_posix()
@@ -147,6 +163,21 @@ def test_serial_pytest_command_uses_adaptive_runner_and_isolated_basetemp(
     assert f"--basetemp={tmp_path / 'pytest'}" in command
 
 
+def test_serial_runner_uses_a_fresh_non_coverage_process_for_isolated_tests() -> None:
+    module = _load_script("run_ci_shards_serial")
+
+    command = module._isolated_pytest_command([])
+
+    assert command == [
+        sys.executable,
+        "-m",
+        "pytest",
+        "tests/unit/test_all_plugins_runtime.py",
+        "-v",
+    ]
+    assert all(not argument.startswith("--cov") for argument in command)
+
+
 def test_serial_runner_continues_after_a_failed_shard(
     tmp_path: Path,
     monkeypatch,
@@ -188,6 +219,40 @@ def test_serial_runner_continues_after_a_failed_shard(
 
     assert result == 1
     assert launched == ["unit-1a1", "unit-1a2"]
+
+
+def test_serial_runner_records_isolated_failure_and_continues_shards(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-shards"
+    module.COVERAGE_JSON = tmp_path / "coverage.json"
+    module.COVERAGE_AUDIT = tmp_path / "logs" / "coverage.json"
+    shard_launched = False
+
+    def fake_run(command: list[str], *, env=None) -> int:
+        nonlocal shard_launched
+        if "tests/unit/test_all_plugins_runtime.py" in command:
+            return 7
+        if "adaptive_test.py" in " ".join(command):
+            shard_launched = True
+        return 0
+
+    monkeypatch.setattr(module, "_run_command", fake_run)
+    monkeypatch.setattr(module, "expand_shard", lambda shard: [f"tests/{shard}.py"])
+    monkeypatch.setattr(
+        module,
+        "_env_for_shard",
+        lambda shard, basetemp: {"COVERAGE_FILE": str(basetemp / ".coverage")},
+    )
+    monkeypatch.setattr(module, "_save_shard_coverage", lambda *args: True)
+    monkeypatch.setattr(module, "_aggregate_coverage", lambda: 0)
+
+    result = module.run(["unit-1a1"], [])
+
+    assert result == 7
+    assert shard_launched is True
 
 
 def test_serial_runner_fails_closed_when_coverage_erase_fails(

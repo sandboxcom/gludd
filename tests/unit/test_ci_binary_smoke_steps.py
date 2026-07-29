@@ -216,11 +216,25 @@ class TestLinuxDaemonSmokeTest:
         assert combined.strip(), (
             "build.yml linux daemon smoke test step has no run block"
         )
-        assert "daemon start" in combined or "daemon" in combined.lower(), (
-            "linux daemon smoke test must start the daemon"
+        assert "daemon start" not in combined, (
+            "linux daemon smoke test uses the removed `daemon start` syntax; "
+            "the current CLI starts with the bare `gludd daemon` command"
         )
-        assert re.search(r"/health\b", combined) or "curl" in combined, (
-            "linux daemon smoke test must hit a /health endpoint to verify boot"
+        assert re.search(r"(?m)^\s*\./dist/gludd daemon\s*&\s*$", combined), (
+            "linux daemon smoke test must run the actual packaged CLI as "
+            "`./dist/gludd daemon &`"
+        )
+        assert "curl -fsS http://127.0.0.1:8000/healthz" in combined, (
+            "linux daemon smoke test must fail closed against the canonical "
+            "`/healthz` endpoint"
+        )
+        assert 'if ! kill -0 "$DAEMON_PID"' in combined, (
+            "linux daemon smoke test must reject a process that exits before "
+            "the health probe succeeds"
+        )
+        assert re.search(r'if \[ "\$healthy" -ne 1 \]; then.*?exit 1', combined, re.DOTALL), (
+            "linux daemon smoke test must exit nonzero when `/healthz` never "
+            "becomes healthy"
         )
 
     def test_daemon_smoke_before_upload(self, build_workflow: dict) -> None:

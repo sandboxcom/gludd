@@ -12,6 +12,8 @@ windows-x86_64).
 from __future__ import annotations
 
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -35,6 +37,103 @@ def build_yml_text() -> str:
 
 class TestSpecPlatformCompatibility:
     """Verify gludd.spec works on all target platforms."""
+
+    def test_version_command_imports_without_posix_terminal_modules(self) -> None:
+        """The Windows executable must not import POSIX-only TUI modules."""
+        script = """
+import builtins
+import os
+import sys
+
+real_import = builtins.__import__
+
+def reject_posix_terminal_modules(name, *args, **kwargs):
+    if name in {"termios", "tty"}:
+        raise ModuleNotFoundError(f"No module named {name!r}", name=name)
+    return real_import(name, *args, **kwargs)
+
+builtins.__import__ = reject_posix_terminal_modules
+if hasattr(os, "getuid"):
+    del os.getuid
+sys.argv = ["gludd", "version"]
+from general_ludd.cli import main
+main()
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert "0.1.0-beta.3" in result.stdout
+
+    def test_tui_reports_unsupported_platform_at_invocation_time(self) -> None:
+        """A Windows TUI request fails explicitly without breaking CLI import."""
+        script = """
+import builtins
+
+real_import = builtins.__import__
+
+def reject_posix_terminal_modules(name, *args, **kwargs):
+    if name in {"termios", "tty"}:
+        raise ModuleNotFoundError(f"No module named {name!r}", name=name)
+    return real_import(name, *args, **kwargs)
+
+builtins.__import__ = reject_posix_terminal_modules
+from general_ludd.tui.runner import run_tui
+
+try:
+    run_tui(None, None)
+except SystemExit as exc:
+    assert "requires POSIX termios/tty support" in str(exc)
+else:
+    raise AssertionError("run_tui unexpectedly started without POSIX terminal modules")
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stderr
+
+    def test_help_command_handles_windows_cp1252_console(self) -> None:
+        """Top-level help must render on the default Windows console encoding."""
+        script = """
+import builtins
+import io
+import os
+import sys
+
+real_import = builtins.__import__
+
+def reject_posix_terminal_modules(name, *args, **kwargs):
+    if name in {"termios", "tty"}:
+        raise ModuleNotFoundError(f"No module named {name!r}", name=name)
+    return real_import(name, *args, **kwargs)
+
+builtins.__import__ = reject_posix_terminal_modules
+if hasattr(os, "getuid"):
+    del os.getuid
+sys.stdout = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+sys.argv = ["gludd", "--help"]
+from general_ludd.cli import main
+main()
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stderr
 
     def test_no_windows_incompatible_paths(self, spec_text: str):
         """Spec doesn't use paths with colons or backslashes that break Windows.

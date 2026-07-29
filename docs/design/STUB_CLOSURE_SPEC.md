@@ -423,6 +423,17 @@ ag2 lifecycle hooks fail-open via world-writable `/tmp/gludd-subagent-{pid}.json
 Each gets a real ticket in beta.3 planning or is deleted with its
 stub-asserting tests (the tests are the reason these rot unnoticed).
 
+The socket-timeout fallback previously used by `_isolate_network()` was removed:
+it changed Python's process-wide default rather than creating a network boundary.
+Long-lived user reports confirm that `socket.setdefaulttimeout()` persists until
+explicitly changed and affects subsequently created sockets, including sockets
+returned by `accept()`:
+[default timeout persists](https://stackoverflow.com/questions/45498383/setting-default-timeout-with-socket-setdefaulttimeout)
+and
+[accepted sockets inherit the global default](https://stackoverflow.com/questions/16215309/why-so-rcvtimeo-is-inherited-from-listening-socket-to-accepted-socket).
+The hard deny boundary remains the responsibility of the configured container or
+VM backend; this hook must not leak transport policy into unrelated callers.
+
 ## Verified clean (checked, cleared — do not re-audit)
 
 Worker PSK auth (fail-closed), `/jobs/execute`, dispatch caps, saturation

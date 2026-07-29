@@ -705,7 +705,9 @@ task:
 	@EXIT=$$?; if [ $$EXIT -eq 124 ]; then echo "TASK TIMEOUT: $(CMD) exceeded $(GLUDD_TASK_TIMEOUT)s"; fi; exit $$EXIT
 
 test-count:
-	@$(UV) run python -m pytest tests/ --co -q 2>&1 | tail -3
+	@OUT=$$(/usr/bin/mktemp /tmp/gludd-test-count.XXXXXX); \
+	$(UV) run python -m pytest $(or $(TESTPATH),tests/) --co -q > "$$OUT" 2>&1; RC=$$?; \
+	/usr/bin/tail -3 "$$OUT"; /bin/rm -f "$$OUT"; exit $$RC
 test-nodeids:
 	@$(UV) run python scripts/collect_nodeids.py --start $(or $(START),1) --limit $(or $(LIMIT),120) $(or $(TESTPATH),tests/)
 
@@ -5847,11 +5849,11 @@ search:
 	@[ -n "$(PATTERN)" ] || { echo "Usage: make search PATTERN=regex [SEARCH_PATH=path]"; exit 1; }
 	@SEARCH_ROOT="$(if $(SEARCH_PATH),$(SEARCH_PATH),.)"; \
 	case "$$SEARCH_ROOT" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $$SEARCH_ROOT"; exit 1;; esac; \
-	if [ -x /opt/homebrew/bin/rg ]; then RG=/opt/homebrew/bin/rg; elif [ -x /usr/local/bin/rg ]; then RG=/usr/local/bin/rg; else RG=""; fi; \
+	RG=$$(command -v rg 2>/dev/null || true); \
 	if [ -n "$$RG" ]; then \
-		"$$RG" -n --glob '!.git/**' --glob '!.venv/**' --glob '!.mypy_cache/**' --glob '!.pytest_cache/**' --glob '!.gate-logs/**' -- "$(PATTERN)" "$$SEARCH_ROOT"; \
+		"$$RG" -n --glob '!.git/**' --glob '!.venv/**' --glob '!.mypy_cache/**' --glob '!.pytest_cache/**' --glob '!.gate-logs/**' -- "$(PATTERN)" "$$SEARCH_ROOT" 2>/dev/null | /usr/bin/grep .; \
 	else \
-		/usr/bin/find "$$SEARCH_ROOT" \( -path '*/.git' -o -path '*/.venv' -o -path '*/.mypy_cache' -o -path '*/.pytest_cache' -o -path '*/.gate-logs' \) -prune -o -type f -print0 | /usr/bin/xargs -0 /usr/bin/grep -n -- "$(PATTERN)" 2>/dev/null; \
+		/usr/bin/grep -R -nH -I --exclude-dir=.git --exclude-dir=.venv --exclude-dir=.mypy_cache --exclude-dir=.pytest_cache --exclude-dir=.gate-logs -- "$(PATTERN)" "$$SEARCH_ROOT" 2>/dev/null | /usr/bin/grep .; \
 	fi
 
 show-lines:
