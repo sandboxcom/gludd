@@ -65,6 +65,36 @@ def mock_ansible_core():
 
 
 class TestM1CallbackRegistered:
+    def test_plugin_loader_is_not_reinitialized_when_finder_exists(
+        self, mock_ansible_core
+    ):
+        from ansible.utils.collection_loader import AnsibleCollectionConfig
+
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
+
+        runner = CoreAnsibleRunner()
+        with patch.object(
+            AnsibleCollectionConfig, "_collection_finder", object()
+        ), patch("ansible.plugins.loader.init_plugin_loader") as mock_init:
+            runner._execute_with_core(playbook_path="/tmp/test.yml")
+
+        mock_init.assert_not_called()
+
+    def test_plugin_loader_is_initialized_when_finder_is_missing(
+        self, mock_ansible_core
+    ):
+        from ansible.utils.collection_loader import AnsibleCollectionConfig
+
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
+
+        runner = CoreAnsibleRunner()
+        with patch.object(
+            AnsibleCollectionConfig, "_collection_finder", None
+        ), patch("ansible.plugins.loader.init_plugin_loader") as mock_init:
+            runner._execute_with_core(playbook_path="/tmp/test.yml")
+
+        mock_init.assert_called_once_with()
+
     def test_events_are_collected_not_empty(self, mock_ansible_core):
         from general_ludd.ansible.core_runner import CoreAnsibleRunner
 

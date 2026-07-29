@@ -745,18 +745,16 @@ class CoreAnsibleRunner:
         from ansible.executor.playbook_executor import PlaybookExecutor
         from ansible.inventory.manager import InventoryManager
         from ansible.module_utils.common.collections import ImmutableDict
+        from ansible.plugins.loader import init_plugin_loader
+        from ansible.utils.collection_loader import AnsibleCollectionConfig
         from ansible.vars.manager import VariableManager
 
-        # Ensure the collection/plugin loader is initialized in THIS process.
-        # When the run is bounded in an isolated child, it must (re)install the
-        # AnsibleCollectionFinder on its own sys.meta_path or ansible.builtin.*
-        # module resolution fails ("couldn't resolve module/action"). Idempotent.
-        try:
-            from ansible.plugins.loader import init_plugin_loader
-
+        # Ensure the collection/plugin loader is initialized in this process.
+        # A spawned child starts without a finder and must install one, while a
+        # forked or repeatedly used process retains its configured finder.
+        # ansible-core warns when init_plugin_loader() is called a second time.
+        if AnsibleCollectionConfig.collection_finder is None:
             init_plugin_loader()
-        except Exception:  # pragma: no cover - older cores auto-init on use
-            pass
 
         # Restore pre-existing ansible env values after AnsibleCollectionConfig
         # has read the overridden paths.  The full env swap below takes over from
