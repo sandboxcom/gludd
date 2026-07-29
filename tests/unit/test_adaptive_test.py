@@ -339,9 +339,22 @@ def test_unique_basetemp_is_unique_and_namespaced() -> None:
     a = at.unique_basetemp()
     b = at.unique_basetemp()
     assert a != b  # uuid-keyed uniqueness
-    assert "gludd-adaptive-basetemp" in a
+    assert Path(a).name.startswith(f"gludd-at-{os.getpid()}-")
     # A path is returned, not created — pytest creates/wipes the basetemp itself.
     assert not os.path.exists(a)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="AF_UNIX path limit is POSIX-only")
+def test_unique_basetemp_leaves_af_unix_socket_headroom() -> None:
+    """Nested tmp_path sockets must remain within Darwin's 103-byte limit."""
+    socket_path = os.path.join(
+        at.unique_basetemp(),
+        "popen-gw99",
+        "test_unix_http_connection_connect_uses_af_unix0",
+        "fc.sock",
+    )
+
+    assert len(os.fsencode(socket_path)) <= 103
 
 
 def test_run_injects_unique_basetemp_when_absent(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -358,7 +371,7 @@ def test_run_injects_unique_basetemp_when_absent(monkeypatch: pytest.MonkeyPatch
     assert rc == 0
     injected = [a for a in seen["cmd"] if a.startswith("--basetemp=")]
     assert len(injected) == 1
-    assert "gludd-adaptive-basetemp" in injected[0]
+    assert "gludd-at-" in injected[0]
 
 
 def test_run_respects_caller_basetemp(monkeypatch: pytest.MonkeyPatch) -> None:
