@@ -561,7 +561,7 @@ class TestGateMatrixStructure:
     Structural invariants that keep CI fast and informative:
     - The gate runs on two Python versions in parallel with fail-fast disabled
       so both versions' results are always reported.
-    - test-shard splits the suite across 4 path-based groups x 2 Python versions
+    - test-shard splits the suite across 7 bounded groups x 2 Python versions
       so failures surface at job granularity in minutes.
     - molecule is also fail-fast:false so all 4 shards report results.
     """
@@ -603,10 +603,17 @@ class TestGateMatrixStructure:
             f"got {matrix.get('python-version')!r}"
         )
         assert matrix.get("shard") == [
-            "unit-1a", "unit-1b", "unit-1d", "unit-2", "unit-3", "other"
+            "unit-1a1",
+            "unit-1a2",
+            "unit-1b",
+            "unit-1d",
+            "unit-2",
+            "unit-3",
+            "other",
         ], (
             "test-shard shard dimension must be "
-            "['unit-1a', 'unit-1b', 'unit-1d', 'unit-2', 'unit-3', 'other']; "
+            "['unit-1a1', 'unit-1a2', 'unit-1b', 'unit-1d', "
+            "'unit-2', 'unit-3', 'other']; "
             f"got {matrix.get('shard')!r}"
         )
         assert strategy.get("fail-fast") is False, (
