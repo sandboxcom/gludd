@@ -357,6 +357,25 @@ class TestWriteDuringRead:
         assert score_models.call_count == 1
         assert score_facts.call_count == 1
 
+    def test_repeated_recall_reuses_scores_until_facts_change(self) -> None:
+        bank = MemoryBank(MemoryBankConfig(bank_id="recall-cache-bank"))
+        bank.retain(MemoryEntry(content="initial fact", tags=["initial"]))
+
+        with patch.object(
+            memory_bank_module,
+            "_score_text",
+            wraps=memory_bank_module._score_text,
+        ) as score_text:
+            first = bank.recall("initial")
+            second = bank.recall("initial")
+            assert score_text.call_count == 1
+            assert first.facts[0] is not second.facts[0]
+
+            bank.retain(MemoryEntry(content="unrelated fact", tags=["other"]))
+            bank.recall("initial")
+
+        assert score_text.call_count == 3
+
     def test_reader_sees_consistent_snapshot(self):
         store = ObservationStore(store_path="/tmp/gludd-test-observations-wdr.json")
         store.clear()

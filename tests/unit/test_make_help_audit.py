@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -73,6 +74,39 @@ def test_search_target_succeeds_when_ripgrep_finds_match_before_transient_error(
 
     assert proc.returncode == 0, proc.stderr + proc.stdout
     assert "Makefile:5833:cat-file:" in proc.stdout
+
+
+def test_search_fallback_succeeds_when_match_precedes_scan_error(
+    tmp_path: Path,
+) -> None:
+    search_root = tmp_path / "search-root"
+    search_root.mkdir()
+    (search_root / "needle.txt").write_text("cat-file:\n", encoding="utf-8")
+    (search_root / "vanished").symlink_to(search_root / "missing")
+    unreadable = search_root / "unreadable.txt"
+    unreadable.write_text("unreadable\n", encoding="utf-8")
+    unreadable.chmod(0)
+    empty_bin = tmp_path / "empty-bin"
+    empty_bin.mkdir()
+    make_bin = shutil.which("make")
+    assert make_bin is not None
+    safe_search_root = str(search_root).replace("/private/tmp/", "/tmp/", 1)
+
+    proc = subprocess.run(
+        [
+            make_bin,
+            "search",
+            "PATTERN=^cat-file:",
+            f"SEARCH_PATH={safe_search_root}",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=15,
+        env=dict(os.environ, PATH=str(empty_bin)),
+    )
+
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    assert "needle.txt:1:cat-file:" in proc.stdout
 
 
 def test_codex_system_skill_read_uses_explicit_root(tmp_path: Path) -> None:
