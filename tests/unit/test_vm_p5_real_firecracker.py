@@ -767,6 +767,39 @@ def test_release_issues_ctrl_alt_del_via_api(sample_spec, tmp_path):
         t.join(timeout=2.0)
 
 
+def test_release_attempts_ctrl_alt_del_without_socket_existence_precheck(
+    sample_spec,
+):
+    """Avoid a TOCTOU race between checking and connecting to the API socket."""
+    from general_ludd.security.sandboxes.vm.firecracker_backend import (
+        FirecrackerBackend,
+    )
+
+    fake_popen = _fake_popen(pid=44405, returncode=None)
+    handle = SandboxHandle(
+        backend="firecracker", token="t", applied=True,
+        extra={
+            "pid": 44405, "popen": fake_popen, "sandbox_id": "sb-r5",
+            "api_sock": "/tmp/gludd-firecracker-toctou.sock",
+            "vsock_uds": "/tmp/x.vsock",
+        },
+    )
+    with mock.patch(
+        "general_ludd.security.sandboxes.vm.firecracker_backend.os.path.exists",
+        return_value=False,
+    ), mock.patch(
+        "general_ludd.security.sandboxes.vm.firecracker_backend._firecracker_put",
+        return_value={},
+    ) as put_mock:
+        FirecrackerBackend.release(handle)
+
+    put_mock.assert_called_once_with(
+        "/tmp/gludd-firecracker-toctou.sock",
+        "/actions",
+        {"action_type": "InstanceSendCtrlAltDel"},
+    )
+
+
 def test_release_terminates_popen_when_ctrlaltdel_unavailable(
     sample_spec, tmp_path,
 ):
