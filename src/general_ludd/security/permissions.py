@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import enum
 import fnmatch
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
@@ -528,9 +529,18 @@ class PermissionSpecParser:
             )
 
         denied_union: list[Capability] = []
-        seen_denied: set[tuple[str, tuple[str, ...]]] = set()
+        seen_denied: set[tuple[str, tuple[str, ...], str]] = set()
         for d in list(a.denied) + list(b.denied):
-            key = (d.resource, tuple(sorted(d.actions)))
+            key = (
+                d.resource,
+                tuple(sorted(d.actions)),
+                json.dumps(
+                    d.constraints,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    default=str,
+                ),
+            )
             if key in seen_denied:
                 continue
             seen_denied.add(key)
