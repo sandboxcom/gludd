@@ -43,7 +43,7 @@ def test_gate_pins_supported_node_before_hot_reload_build() -> None:
     assert setup, "gate job relies on the hosted runner's ambient Node version"
     setup_index, setup_step = setup[0]
     assert setup_index < build_index
-    assert setup_step.get("with", {}).get("node-version") == "22"
+    assert setup_step.get("with", {}).get("node-version") == "26"
 
 
 def test_gate_installs_pinned_esbuild_before_hot_reload_build() -> None:
@@ -58,6 +58,13 @@ def test_gate_installs_pinned_esbuild_before_hot_reload_build() -> None:
 
     assert installs, "gate job does not provision the mature TypeScript transpiler"
     assert installs[0] < build_index
+
+
+def test_all_test_shards_pin_node_26() -> None:
+    steps = _job_steps("test-shard")
+    setup = next(step for step in steps if step.get("uses") == SETUP_NODE)
+
+    assert setup.get("with", {}).get("node-version") == "26"
 
 
 def test_all_test_shards_install_pinned_esbuild_before_pytest() -> None:

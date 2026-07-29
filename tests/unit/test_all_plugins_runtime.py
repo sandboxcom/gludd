@@ -98,7 +98,7 @@ class TestAllPluginsSyntax:
         errors = []
         for f in _collect_plugin_files():
             result = subprocess.run(
-                ["node", "--check", str(f)],
+                ["node", "--experimental-strip-types", "--check", str(f)],
                 capture_output=True, text=True, timeout=30,
             )
             if result.returncode != 0:
