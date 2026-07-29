@@ -2363,11 +2363,18 @@ def test_no_wait_sleep_blocked():
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-no-wait.ts')
 const plugin = await mod.default({{}})
-const result = await plugin['tool.execute.before']({{tool: 'bash', args: {{command: 'sleep 60&& make gate-status-check'}}}}, undefined)
-console.log(JSON.stringify(result ?? null))
+try {{
+    await plugin['tool.execute.before']({{tool: 'bash', args: {{command: 'sleep 60&& make gate-status-check'}}}}, undefined)
+    console.log(JSON.stringify(null))
+}} catch (error) {{
+    console.log(JSON.stringify({{
+        permissionDecision: error?.permissionDecision ?? 'error',
+        message: error?.message ?? String(error),
+    }}))
+}}
 """
     result = _run_ts(code)
-    assert result is not None, "Expected deny object, got None"
+    assert result is not None, "Expected denial error, got None"
     assert result.get("permissionDecision") == "deny", f"Expected deny, got: {result}"
     assert "forbidden" in result.get("message", "").lower()
 
@@ -2377,11 +2384,18 @@ def test_no_wait_gate_tail_blocked():
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-no-wait.ts')
 const plugin = await mod.default({{}})
-const result = await plugin['tool.execute.before']({{tool: 'bash', args: {{command: 'make gate-tail'}}}}, undefined)
-console.log(JSON.stringify(result ?? null))
+try {{
+    await plugin['tool.execute.before']({{tool: 'bash', args: {{command: 'make gate-tail'}}}}, undefined)
+    console.log(JSON.stringify(null))
+}} catch (error) {{
+    console.log(JSON.stringify({{
+        permissionDecision: error?.permissionDecision ?? 'error',
+        message: error?.message ?? String(error),
+    }}))
+}}
 """
     result = _run_ts(code)
-    assert result is not None, "Expected deny object, got None"
+    assert result is not None, "Expected denial error, got None"
     assert result.get("permissionDecision") == "deny", f"Expected deny, got: {result}"
 
 

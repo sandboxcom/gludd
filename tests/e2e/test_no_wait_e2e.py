@@ -64,8 +64,33 @@ def _bash_invoke(cmd: str) -> str:
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
 const hook = plugin['tool.execute.before']
-const result = await hook({{tool: 'bash', command: `{cmd}`}}, undefined)
-console.log(JSON.stringify(result ?? {{allowed: true}}))
+try {{
+  const result = await hook({{tool: 'bash', command: `{cmd}`}}, undefined)
+  console.log(JSON.stringify(result ?? {{allowed: true}}))
+}} catch (error) {{
+  console.log(JSON.stringify({{
+    permissionDecision: error?.permissionDecision ?? 'error',
+    message: error?.message ?? String(error),
+  }}))
+}}
+"""
+
+
+def _bash_output_args_invoke(cmd: str) -> str:
+    """Invoke the hook with OpenCode 1.18's real two-argument command shape."""
+    return f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+const hook = plugin['tool.execute.before']
+try {{
+  const result = await hook({{tool: 'bash'}}, {{args: {{command: `{cmd}`}}}})
+  console.log(JSON.stringify(result ?? {{allowed: true}}))
+}} catch (error) {{
+  console.log(JSON.stringify({{
+    permissionDecision: error?.permissionDecision ?? 'error',
+    message: error?.message ?? String(error),
+  }}))
+}}
 """
 
 
@@ -74,8 +99,15 @@ def _dispatch_invoke(tool: str, prompt: str = "", description: str = "") -> str:
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
 const hook = plugin['tool.execute.before']
-const result = await hook({{tool: '{tool}', prompt: `{prompt}`, description: `{description}`}}, undefined)
-console.log(JSON.stringify(result ?? {{allowed: true}}))
+try {{
+  const result = await hook({{tool: '{tool}', prompt: `{prompt}`, description: `{description}`}}, undefined)
+  console.log(JSON.stringify(result ?? {{allowed: true}}))
+}} catch (error) {{
+  console.log(JSON.stringify({{
+    permissionDecision: error?.permissionDecision ?? 'error',
+    message: error?.message ?? String(error),
+  }}))
+}}
 """
 
 
@@ -88,6 +120,13 @@ def test_sleep_and_make_blocked():
     assert result is not None, "Expected deny for sleep+N && make pattern"
     assert result.get("permissionDecision") == "deny", f"Got: {result}"
     assert "Main-thread wait forbidden" in result.get("message", "")
+
+
+def test_output_args_command_shape_blocked():
+    """OpenCode 1.18 supplies live TUI bash arguments through output.args."""
+    result = _run_plugin(_bash_output_args_invoke("make gate-tail"))
+    assert result is not None
+    assert result.get("permissionDecision") == "deny", f"Got: {result}"
 
 
 def test_naked_sleep_blocked():

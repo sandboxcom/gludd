@@ -351,7 +351,11 @@ class DeterministicProvider:
 
 
 class _Tui:
-    def __init__(self, config_content: str) -> None:
+    def __init__(
+        self,
+        config_content: str,
+        env_override: dict[str, str] | None = None,
+    ) -> None:
         self.master_fd, slave_fd = pty.openpty()
         fcntl.ioctl(
             slave_fd,
@@ -365,6 +369,8 @@ class _Tui:
         # The test targets OpenCode's permission engine. Project plugins have
         # their own suites and intentionally skip delegated/subagent contexts.
         env["OPENCODE_SUBAGENT"] = "1"
+        if env_override:
+            env.update(env_override)
         self.proc = subprocess.Popen(
             [
                 str(OPENCODE),
@@ -495,6 +501,102 @@ def test_tui_handles_multiple_permissioned_tool_prompts() -> None:
         assert "permission=bash" in denied_segment
         assert "action.action=deny" in denied_segment
         assert provider.main_calls == 9
+    finally:
+        tui.close()
+        provider.close()
+
+
+@pytest.mark.skipif(OPENCODE is None, reason="opencode binary not on PATH")
+@pytest.mark.timeout(420)
+@pytest.mark.xdist_group("opencode-tui-permissions")
+def test_tui_no_wait_plugin_handles_multiple_bash_prompts() -> None:
+    """A fresh TUI allows normal Make work and denies blocking Make waits."""
+    responses = [
+        DeterministicProvider.tool_call(
+            "bash",
+            {"command": "make version", "description": "Print project version"},
+            "call_no_wait_make_version",
+        ),
+        {"text": "0.1.0-beta.3"},
+        DeterministicProvider.tool_call(
+            "bash",
+            {"command": "make gate-tail", "description": "Follow the gate log"},
+            "call_no_wait_gate_tail",
+        ),
+        {"text": "The no-wait guard denied the blocking gate tail."},
+        DeterministicProvider.tool_call(
+            "bash",
+            {
+                "command": "make gate-status-check",
+                "description": "Wait for gate status",
+            },
+            "call_no_wait_gate_status",
+        ),
+        {"text": "The no-wait guard denied the blocking gate status check."},
+    ]
+    provider = DeterministicProvider(responses=responses)
+    config = json.loads(provider.config_content)
+    config["plugin"] = ["./.opencode/plugin/enforce-no-wait.ts"]
+    tui = _Tui(
+        json.dumps(config),
+        env_override={
+            "OPENCODE_SUBAGENT": "",
+            "GLUDD_ANTI_ESSAY_ENFORCE": "0",
+            "GLUDD_AUDIT_ENFORCE": "0",
+            "GLUDD_BATCH_PUSH_ENFORCE": "0",
+            "GLUDD_BRANCH_DISCIPLINE_ENFORCE": "0",
+            "GLUDD_CLEAN_TREE_ENFORCE": "0",
+            "GLUDD_COMMIT_LOCK_ENFORCE": "0",
+            "GLUDD_CONTEXT_ENFORCE": "0",
+            "GLUDD_DELETION_GATE_ENFORCE": "0",
+            "GLUDD_DELIVERABLE_ENFORCE": "0",
+            "GLUDD_DEPTH_ENFORCE": "0",
+            "GLUDD_ENHANCEMENT_RATIO_ENFORCE": "0",
+            "GLUDD_FLOOR_ENFORCE": "0",
+            "GLUDD_FLOOR_V2_ENFORCE": "0",
+            "GLUDD_MAINTHREAD_STREAK_ENFORCE": "0",
+            "GLUDD_MODEL_UTIL_ENFORCE": "0",
+            "GLUDD_MULTITASK_FLOOR_ENFORCE": "0",
+            "GLUDD_NO_CI_POLL_ENFORCE": "0",
+            "GLUDD_NO_WAIT_ENFORCE": "1",
+            "GLUDD_OBJECTIVE_ENFORCE": "0",
+            "GLUDD_RELEASE_DEADLINE_ENFORCE": "0",
+            "GLUDD_SESSION_START_ENFORCE": "0",
+            "GLUDD_STOP_ENFORCE": "0",
+            "GLUDD_TASK_DEADLINE_ENABLED": "0",
+            "GLUDD_TASK_TRACKING_ENFORCE": "0",
+            "GLUDD_TDD_ENFORCE": "0",
+            "GLUDD_TEST_INTEGRITY_ENFORCE": "0",
+            "GLUDD_VERIFIED_CLAIMS_ENFORCE": "0",
+            "GLUDD_WORKTREE_ENFORCE": "0",
+        },
+    )
+    try:
+        tui.wait_for("Ask anything...", timeout=30)
+        allowed_segment = tui.prompt(
+            "Use the bash tool to run make version, then reply with only the "
+            "version value printed by that command.",
+        )
+        assert "permission=bash" in allowed_segment
+        assert "action.action=allow" in allowed_segment
+
+        gate_tail_segment = tui.prompt(
+            "Use the bash tool to run make gate-tail exactly once. If the "
+            "no-wait guard denies it, explain that briefly.",
+        )
+        assert "$ make gate-tail" in gate_tail_segment
+        assert "no-wait guard denied the blocking gate tail" in gate_tail_segment
+
+        gate_status_segment = tui.prompt(
+            "Use the bash tool to run make gate-status-check exactly once. If "
+            "the no-wait guard denies it, explain that briefly.",
+        )
+        assert "$ make gate-status-check" in gate_status_segment
+        assert (
+            "no-wait guard denied the blocking gate status check"
+            in gate_status_segment
+        )
+        assert provider.main_calls == 6
     finally:
         tui.close()
         provider.close()
