@@ -1312,7 +1312,153 @@ physical effects. Primary sources and the long-lived reports supporting these
 gates are cataloged in
 [`EXPERT_SYSTEM_INTEROPERABILITY_RESEARCH_2026-07-29.md`](EXPERT_SYSTEM_INTEROPERABILITY_RESEARCH_2026-07-29.md).
 
-## 9. Implementation specifications and backlog
+## 9. Cross-expert operational profiles
+
+### 9.1 Closed-loop lab-on-chip experimentation
+
+The laboratory profile composes existing chemistry, materials, AI/ML,
+simulation, scheduling, safety, provenance, and interoperability services. It
+does not create a second scheduler, device bus, evidence store, or permission
+system.
+
+| Role | Typed responsibility | Authority boundary |
+|---|---|---|
+| `lab_experiment_orchestrator` | Compile objective, method, protocol DAG, resources, stops, gates, and reproducibility manifest | May schedule and dispatch; cannot waive safety or directly drive a device |
+| `device_protocol_scout` | Discover SiLA/vendor endpoints; attest identity, firmware, protocol, feature/capability and adapter compatibility | Read/discovery only until an exact device is approved |
+| `sample_lineage_steward` | Track samples, aliquots, reagents, consumables, containers, wells/channels, transformations, custody and disposal | May hold an experiment for ambiguous identity; cannot synthesize missing lineage |
+| `calibration_measurement_verifier` | Resolve calibration scope, validity, uncertainty, controls and measurement quality | Verification/hold only; a nominal status flag is insufficient |
+| `contamination_control_steward` | Maintain contact/carryover state, compatibility, cleaning validation, blanks and waste state | Veto/hold; never infer cleanliness from a completed command |
+| `microfluidics_controller` | Convert approved recipe operations into typed bounded device commands and reconcile effects | Exact approved device/feature/action only |
+| `experiment_optimizer` | Propose next experiments inside signed feasible region, objective, budget and stopping rule | Proposal only; cannot widen bounds or bypass interlocks |
+| `lab_safety_steward` | Evaluate hazards, interlocks, stop/safe-state and qualified-human gates | Independent veto/stop; no optimizer dependency |
+| `lab_hil_verifier` | Run versioned plant/device doubles, injected faults and sim-to-real parity checks | Simulation resources only |
+| `reproducibility_verifier` | Replay manifests, recalculate lineage, check controls and compare independent measurements | Read/verify; cannot repair evidence silently |
+
+The typed workflow is:
+
+1. Resolve objective, hypothesis, measurement endpoint, success/futility rules,
+   risk class, feasible region, sample/reagent identity and policy.
+2. Compile a versioned ISA-88-like recipe/procedure DAG independently from the
+   physical equipment binding.
+3. Discover candidate devices and protocols, then bind authenticated physical
+   identity, firmware, adapter, capabilities, calibration and environment.
+4. Materialize sample, consumable, contact, contamination, resource, schedule,
+   interlock and emergency-stop state before authorization.
+5. Run the exact protocol in HIL with pinned clocks/models/seeds and an
+   adversarial fault schedule; quantify simulator and physical parity limits.
+6. Obtain the required human and safety approvals for the exact run revision.
+7. Execute each operation using idempotency/effect identity, telemetry and
+   acknowledgement reconciliation; ambiguous effects transition to `unknown`.
+8. Feed only validated, time-aligned observations to the bounded controller and
+   optimizer; deterministic safety checks run before every proposed action.
+9. Close with sample/disposal lineage, cleanup and contamination receipts,
+   result/uncertainty/control evaluation, residual state and a content-addressed
+   reproducibility bundle.
+
+Required primary-source adapters:
+
+| Source | Use | Required pin/freshness record |
+|---|---|---|
+| [SiLA 2 standards](https://sila-standard.com/standards/) | Device feature/command/property/error/discovery/security protocol | Core edition, feature definitions, endpoint identity, implementation/firmware, digest and compatibility result |
+| [ISA-88](https://www.isa.org/standards-and-publications/isa-standards/isa-88-standards) | Recipe, equipment capability, procedural control, scheduling and batch-record concepts | Applicable part/edition and qualified applicability decision |
+| [ISO/IEC 17025:2017](https://www.iso.org/standard/66912.html) | Calibration, method, uncertainty, traceability and laboratory records | Edition, ISO confirmation date, local quality-policy mapping and reviewer |
+| [ISO 13850:2015](https://www.iso.org/standard/59970.html) | Emergency-stop design principles where applicable | Edition plus equipment/jurisdiction applicability decision |
+| [Allotrope ADF/ADM/AFO](https://docs.allotrope.org/) and [AnIML](https://new.animl.org/) | Laboratory/analytical data adapters | Exact vocabulary/schema revision, lossless-extension map and round-trip fixtures |
+| [FMI 3.0](https://fmi-standard.org/docs/3.0/) | Model Exchange, Co-Simulation, Scheduled Execution and HIL package | FMU/solver/adapter digest, platform, clocks, units, initial state and fault schedule |
+| [W3C PROV](https://www.w3.org/TR/prov-overview/) | Entity/activity/agent lineage | Recommendation revision and canonical mapping |
+| [Burger et al. 2020](https://www.nature.com/articles/s41586-020-2442-2), [MacLeod et al. 2020](https://pubmed.ncbi.nlm.nih.gov/32426501/), and [Wang et al. 2021](https://pubmed.ncbi.nlm.nih.gov/34008660/) | Closed-loop architecture and benchmark seeds | DOI/version, methods/equipment, supplements, limitations and correction status |
+
+The acceptance corpus must include stale or position-inapplicable calibration,
+duplicate device identity, firmware drift, unsupported feature revision, liquid
+level error, bubble/clog, valve stuck open/closed, sensor saturation/drift,
+partial aspiration/dispense, cross-contamination, failed wash, empty
+consumable, expired reagent, schedule/resource collision, network partition,
+late/duplicate acknowledgement, reconnect, clock jump, optimizer boundary
+violation, interlock, emergency stop, cleanup failure, and simulation-to-physical
+divergence. Every fixture defines forbidden effects as well as its expected
+terminal state.
+
+### 9.2 Linux server incident response
+
+The incident profile coordinates existing OS, security, observability, logging,
+storage and network-monitoring experts. It treats an investigated host as
+potentially compromised and makes observation, acquisition, containment,
+cleanup, rollback and recovery separate authority domains.
+
+| Role | Typed responsibility | Authority boundary |
+|---|---|---|
+| `incident_coordinator` | Maintain incident scope, hypotheses, case state, plan revisions, approvals and decisions | Dispatch/coordinate only; no implicit host or network mutation |
+| `host_evidence_collector` | Acquire host, boot, kernel, account, process, cgroup, namespace, service and memory facts | Read-only acquisition unless separately authorized |
+| `log_timeline_analyst` | Preserve originals; normalize event/observed/acquired time, clocks, uncertainty, gaps and causal relations | Analysis only; cannot rewrite chronology |
+| `storage_forensics_expert` | Record device/filesystem/mount namespace, inode/path, journal, snapshot, digest and recovery evidence | Snapshot/read by default; repair/delete is a distinct effect |
+| `network_monitor_expert` | Execute bounded flow/packet/alert acquisition at named capture points and report sensor completeness | Scope/approval-limited capture; no active response by default |
+| `privacy_legal_steward` | Decide collection purpose, minimization, payload/decryption approval, access, retention and disclosure | Hold/veto; qualified review for legal conclusions |
+| `containment_executor` | Apply approved isolation, firewall, credential, process or service action with effect identity and rollback | Exact approved target/action only |
+| `recovery_verifier` | Independently verify rebuild/patch, secrets, configuration, service/data invariants, monitoring and persistence absence | Verify/hold; cannot approve its own recovery change |
+
+The evidence envelope uses three or more time fields: source event time,
+observer/receiver time, and acquisition/ingest time. It also records clock
+domain, boot identity, synchronization evidence, resolution, uncertainty,
+sequence/causal relation, and original artifact digest. A global stable sort is
+not a causal proof.
+
+Host evidence uses stable composite identities. Machine/image/cloud-instance,
+boot and kernel identity qualify every record. A process uses PID plus start
+time, executable identity/digest, parent, account, capabilities, cgroup,
+container and PID/mount/network/user namespace identities. A file uses device,
+filesystem, mount namespace, inode and path-at-observation plus digest and
+timestamps. A socket/flow uses network namespace, interface/capture point,
+direction, addresses, ports, protocol/evidence, time bounds and sensor identity.
+
+The dispatched network request must declare:
+
+- incident, tenant, authorization and approval references;
+- capture point, host/interface/network namespace and direction;
+- addresses, ports, protocols and application-classification method;
+- start/stop predicate, duration, byte and packet budget, snap length and
+  rotating-file policy;
+- metadata versus payload, decryption, redaction, unrelated-traffic minimization,
+  access, encryption, retention and destruction;
+- exact IPFIX, Zeek, Suricata or packet schema and clock/correlation fields; and
+- required NIC/kernel/sensor loss counters, filter receipt, health telemetry,
+  artifacts, chain of custody and cleanup.
+
+The response correlates evidence without assuming port equals protocol and
+without hiding missing packets, rotated logs, parser failures, partial batches
+or clock uncertainty. It records what was not observed and why.
+
+Primary-source registry:
+
+| Source | Use | Freshness/applicability treatment |
+|---|---|---|
+| [NIST SP 800-61 Rev. 3](https://www.nist.gov/news-events/news/2025/04/nist-revises-sp-800-61-incident-response-recommendations-and-considerations) | Current incident-response lifecycle baseline, April 2025 | Pin revision/digest and organizational CSF/policy mapping |
+| [NIST SP 800-86](https://csrc.nist.gov/pubs/sp/800/86/final) and [SP 800-115](https://csrc.nist.gov/pubs/sp/800/115/final) | Forensic integration and technical testing/acquisition | Record older publication date and a current applicability review |
+| [RFC 3227](https://www.rfc-editor.org/info/rfc3227/) | Order of volatility, evidence handling, privacy/legal and custody | Historical BCP from 2002; use only under current policy and preserve status |
+| [OASIS CACAO 2.0](https://docs.oasis-open.org/cacao/security-playbooks/v2.0/security-playbooks-v2.0.html) | Typed signed investigation/mitigation/remediation playbooks | Pin approved 2023 specification revision and extensions |
+| [OpenTelemetry Logs Data Model](https://opentelemetry.io/docs/specs/otel/logs/data-model/) | Event versus observed time and resource/trace correlation | Pin stable schema/semantic-convention versions |
+| [systemd journal format](https://systemd.io/JOURNAL_FILE_FORMAT/) and [`journalctl`](https://www.freedesktop.org/software/systemd/man/255/journalctl.html) | Boot/file identity, monotonic/realtime timestamps, sealing and retrieval semantics | Pin systemd build/config, machine/boot IDs, storage mode and effective retention |
+| [Linux namespaces](https://man7.org/linux/man-pages/man7/namespaces.7.html), [network namespaces](https://www.man7.org/linux/man-pages/man7/network_namespaces.7.html), and [Linux Audit](https://github.com/linux-audit/audit-userspace) | Scoped host identities, capabilities, audit sequence/loss/backlog evidence | Pin kernel/audit versions, configuration and namespace visibility qualification |
+| [RFC 7011 IPFIX](https://www.rfc-editor.org/info/rfc7011/), [Zeek capture-loss guidance](https://docs.zeek.org/en/current/reference/logs/capture-loss-and-reporter.html), and [Suricata EVE](https://docs.suricata.io/en/suricata-8.0.0/output/eve/eve-json-format.html) | Flow/event/capture adapters and sensor completeness | Pin exporter/sensor version, capture point, schema, filter and loss telemetry |
+| [RFC 6973](https://www.rfc-editor.org/info/rfc6973/) | Collection/use/disclosure/retention minimization | Bind current privacy/legal policy and approval to each capture |
+
+Adversarial fixtures must cover wrong clocks, reboot, PID reuse, container and
+namespace collisions, misleading paths, renamed/deleted-open files, log
+rotation/retention, partial ingestion, parser mismatch, compromised collectors,
+rootkit-like omission, audit backlog/loss, packet loss with low CPU, NIC drops,
+asymmetric routes, encrypted traffic, nonstandard ports, privacy-sensitive
+payload, expired capture approval, disk exhaustion, capture-agent crash,
+over-broad firewall proposals, containment availability harm, rollback failure,
+reintroduced credentials, stale monitoring, persistence after rebuild and a
+quiet-but-not-recovered host.
+
+Operational sources are maintained as attributed regression evidence in
+[`EXPERT_SYSTEM_INTEROPERABILITY_RESEARCH_2026-07-29.md`](EXPERT_SYSTEM_INTEROPERABILITY_RESEARCH_2026-07-29.md).
+In particular, Loki #963 drives partial-ingest receipts; systemd #31315 drives
+retention/completeness telemetry; Falco #2874 drives kernel/probe/capability
+discovery; the 2020 Security Onion report drives NIC/kernel/sensor loss
+measurement; and Wazuh #9662 drives typed log-parser handoff failures.
+
+## 10. Implementation specifications and backlog
 
 ### Shared platform
 
@@ -1443,7 +1589,92 @@ gates are cataloged in
 - **EXP-CHEM-009 — Safety steward and hazardous-operation human gate.**
 - **EXP-CHEM-010 — Scale-up hazard and condition-change detector.**
 
-## 10. Recommended delivery order
+### Closed-loop laboratory
+
+- **EXP-LAB-001 — Laboratory experiment and effect schemas.** Implement
+  `gludd.lab_experiment.v1`, state transitions, operation/effect identities,
+  typed handoffs and immutable run revisions.
+- **EXP-LAB-002 — Device/protocol discovery attestation.** Add SiLA/vendor
+  adapters that bind authenticated physical identity, endpoint, firmware,
+  protocol/features, capability digest and compatibility evidence.
+- **EXP-LAB-003 — Calibration applicability verifier.** Bind exact device,
+  channel, geometry/position, method/reference, conditions, range, uncertainty,
+  software/firmware and validity.
+- **EXP-LAB-004 — Sample/reagent/consumable lineage graph.** Track aliquot,
+  pool, dilute, react, separate, measure, transfer and disposal events with
+  container/well/channel identities.
+- **EXP-LAB-005 — Contamination and cleaning state engine.** Model contact,
+  carryover, compatibility, tip reuse, washes, blanks, controls and
+  unknown-contamination transitions.
+- **EXP-LAB-006 — Recipe/equipment compiler.** Keep protocol intent separate
+  from approved equipment capabilities and validate units, ranges and resources.
+- **EXP-LAB-007 — Resource and schedule controller.** Lease devices, channels,
+  consumables, samples and human gates; enforce expiry, capacity, collision and
+  safe cancellation.
+- **EXP-LAB-008 — Telemetry and closed-loop controller.** Align commands,
+  observations and clocks; expose gaps/saturation; enforce objective, bounds,
+  budget and stopping rules.
+- **EXP-LAB-009 — Independent interlock and emergency-stop adapter.** Prove the
+  safe-state path does not depend on the optimizer, network or orchestrator and
+  that reset never implies resume.
+- **EXP-LAB-010 — Laboratory HIL fault suite.** Pin FMI models/adapters/clocks
+  and inject device, fluidic, sensor, timing, network and power faults.
+- **EXP-LAB-011 — Sim-to-real qualification ledger.** Measure parity slices,
+  error budgets and qualification expiry; label unqualified output
+  simulation-only.
+- **EXP-LAB-012 — Reproducibility and control verifier.** Reconstruct exact
+  method, materials, device state, calibrations, controls, telemetry, code/model
+  and result uncertainty.
+- **EXP-LAB-013 — Laboratory cleanup/residual-state verifier.** Verify safe
+  state, waste/disposal, decontamination, leases and unresolved effects.
+- **EXP-LAB-014 — Governed laboratory improvement loop.** Convert run failures
+  and literature changes into isolated proposals and regression cases without
+  self-authorizing a physical run.
+
+### Linux incident response
+
+- **EXP-IR-001 — Incident case and evidence schemas.** Implement
+  `gludd.incident_case.v1`, immutable plan revisions, typed team handoffs,
+  hypotheses, evidence gaps, approvals and terminal claims.
+- **EXP-IR-002 — Host/boot/namespace identity resolver.** Normalize machine,
+  image, boot, kernel, container, cgroup and namespace identities.
+- **EXP-IR-003 — Multi-clock evidence timeline.** Preserve event, observed and
+  acquired time, clock/synchronization/uncertainty and causal relations without
+  inventing total order.
+- **EXP-IR-004 — Process identity collector.** Bind PID/start/executable/hash,
+  parent, account, capabilities, cgroup/container and namespaces; detect reuse.
+- **EXP-IR-005 — Storage evidence collector.** Bind device/filesystem/mount
+  namespace/inode/path, snapshots, journals, hashes and chain of custody.
+- **EXP-IR-006 — Loss-aware log ingestion.** Preserve originals, per-entry
+  partial-batch receipts, parser revisions, rotation/retention and source,
+  transport and ingest loss.
+- **EXP-IR-007 — Typed network-monitor dispatch.** Implement bounded
+  flow/packet/alert request/response schemas across IPFIX, Zeek and Suricata.
+- **EXP-IR-008 — Capture privacy and approval gate.** Enforce purpose, scope,
+  minimization, payload/decryption approval, access, encryption, retention and
+  destruction.
+- **EXP-IR-009 — Capture-completeness verifier.** Correlate interface, NIC,
+  kernel, exporter and sensor drops with filters, health and capture artifacts.
+- **EXP-IR-010 — Least-privilege evidence sandbox.** Use narrowed credentials,
+  read-only mounts/APIs, namespace isolation and untrusted-host handling.
+- **EXP-IR-011 — Observe-versus-mutate gate.** Prevent an evidence task from
+  becoming a kill/firewall/route/mount/account/credential/delete effect.
+- **EXP-IR-012 — Transactional containment executor.** Bind exact target,
+  preconditions, blast radius, effect identity, receipts, availability impact,
+  rollback and evidence-preservation policy.
+- **EXP-IR-013 — Incident cleanup lease manager.** Expire and verify temporary
+  agents, captures, sockets, namespaces, mounts, snapshots, credentials, routes,
+  rules and cloud resources.
+- **EXP-IR-014 — Containment rollback and service recovery.** Restore from
+  harmful/failed containment and prove declared service/data invariants.
+- **EXP-IR-015 — Independent recovery verifier.** Verify rebuild/patch,
+  credentials, approved configuration, data integrity, telemetry, persistence
+  absence and a policy-defined observation window.
+- **EXP-IR-016 — Sanitized incident-learning pipeline.** Convert failures into
+  provenance-linked regression proposals while protecting evidence, subjects,
+  secrets and hidden detection details.
+
+## 11. Recommended delivery order
 
 1. Implement the shared evidence schema, source registry, identity/units service,
    evaluation harness, and human gates.
@@ -1453,9 +1684,11 @@ gates are cataloged in
    model integrations.
 4. Implement materials and chemistry identity/property schemas before
    generative recommendations.
-5. Add one role at a time behind feature flags, with its acceptance suite and
+5. Implement lab and incident schemas, simulated collectors/device doubles and
+   adversarial suites before any physical actuation or live containment.
+6. Add one role at a time behind feature flags, with its acceptance suite and
    rollbackable source bundle.
-6. Promote self-improvement only after regression, provenance, and specialist
+7. Promote self-improvement only after regression, provenance, and specialist
    review are enforced mechanically.
 
 This order is intentionally independent from the beta.3 release. None of these

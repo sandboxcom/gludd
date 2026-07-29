@@ -2620,7 +2620,527 @@ These operational reports extend the Section 23 source-regression matrix:
 | Whisper #49/#1456/#2124: code-switch, first-window language, and missing-span failures | ESI-LANG-001, ESI-LANG-005, ESI-LANG-006, ESI-A11Y-004 | ESI-ACC-180, ESI-ACC-181 |
 | rosbag2 #1276 and ros2_control #325: zero and mixed clock domains | ESI-TIME-001, ESI-TIME-003, ESI-TIME-004, ESI-EMBODY-004 | ESI-ACC-185, ESI-ACC-186, ESI-ACC-187 |
 
-## 25. Source index
+## 25. Closed-loop laboratory and Linux incident workflows
+
+This section defines two high-consequence profiles of the common expert runtime.
+Neither profile expands the authority of a task, expert, model, protocol
+adapter, or discovered endpoint. All physical laboratory actions and all live
+incident-response mutations remain unavailable unless the exact action is
+separately authorized.
+
+### 25.1 Team profiles and typed handoffs
+
+The laboratory team consists of `lab_experiment_orchestrator`,
+`device_protocol_scout`, `sample_lineage_steward`,
+`calibration_measurement_verifier`, `contamination_control_steward`,
+`microfluidics_controller`, `experiment_optimizer`, `lab_safety_steward`,
+`lab_hil_verifier`, and `reproducibility_verifier`.
+
+The incident team consists of `incident_coordinator`,
+`host_evidence_collector`, `log_timeline_analyst`,
+`storage_forensics_expert`, `network_monitor_expert`,
+`privacy_legal_steward`, `containment_executor`, and `recovery_verifier`.
+
+Every role MUST publish a signed `ExpertCard`, use the Section 6 task/result
+state machine, and exchange only Section 8 validated envelopes and referenced
+artifacts. A handoff MUST name the case/run and immutable plan revision, exact
+input/output schema revisions, objective, scope, exclusions, evidence policy,
+authority and risk ceiling, resource/time/byte/effect budgets, stop predicate,
+required gate, and correlation/provenance IDs. A narrative summary MAY accompany
+the envelope but cannot replace a typed field.
+
+### 25.2 Laboratory experiment schema
+
+The canonical laboratory artifact is:
+
+```yaml
+schema: gludd.lab_experiment.v1
+schema_revision: semver
+experiment_id: opaque
+run_id: opaque
+revision: integer
+tenant_id: opaque
+project_id: opaque
+state: drafted|simulating|awaiting_approval|scheduled|running|holding|stopping|stopped|completed|failed|aborted
+objective:
+  hypothesis: string
+  target_metrics:
+    - name: string
+      unit: string
+      direction: minimize|maximize|target|range
+      threshold_or_range: typed
+      measurement_method_id: string
+  feasible_region_digest: sha256
+  success_rule: typed_expression
+  futility_rule: typed_expression
+  budget: {runs: integer, time_s: number, material: typed, cost: typed}
+protocol:
+  recipe_id: string
+  recipe_revision: string
+  recipe_digest: sha256
+  procedure_dag_digest: sha256
+  operation_nodes:
+    - operation_id: opaque
+      semantic_operation: string
+      inputs: [artifact_or_sample_ref]
+      outputs: [artifact_or_sample_ref]
+      equipment_capability: string
+      parameters: [{name: string, value: typed, unit: string|null}]
+      preconditions: [typed_expression]
+      postconditions: [typed_expression]
+      timeout_s: number
+      effect_class: read|physical_reversible|physical_irreversible
+      idempotency_key: opaque|null
+      unknown_effect_reconciliation: typed|null
+devices:
+  - device_id: opaque
+    physical_identity: {manufacturer: string, model: string, serial: string}
+    endpoint: redacted_uri
+    trust_zone: string
+    adapter_digest: sha256
+    firmware: string
+    protocol: {name: string, version: string, feature_digests: [sha256]}
+    capabilities_digest: sha256
+    discovery_receipt:
+      method: string
+      discovered_at: rfc3339
+      authenticator: string
+      identity_evidence_digest: sha256
+      approved_binding_id: opaque|null
+samples:
+  - sample_id: opaque
+    parent_ids: [opaque]
+    material_identity: typed
+    quantity: {value: number, unit: string, uncertainty: typed}
+    container: {container_id: opaque, location: typed}
+    state: available|reserved|in_process|consumed|disposed|unknown
+    custody_events: [provenance_ref]
+reagents_and_consumables:
+  - item_id: opaque
+    lot_or_batch: string|null
+    identity: typed
+    amount: typed
+    expiry: rfc3339|null
+    storage_history_digest: sha256|null
+    state: available|reserved|opened|consumed|disposed|unknown
+calibrations:
+  - calibration_id: opaque
+    device_id: opaque
+    channel_or_axis: string
+    geometry_or_position: typed
+    method_and_reference: typed
+    conditions: typed
+    range: typed
+    result_and_uncertainty: typed
+    software_firmware: typed
+    valid_from: rfc3339
+    valid_until: rfc3339
+    evidence_digest: sha256
+contamination:
+  contact_graph_digest: sha256
+  zones: [{zone_id: opaque, class: string, allowed_materials: [typed]}]
+  carryover_limits: [typed]
+  tip_and_surface_policy: typed
+  washes: [typed_effect_ref]
+  blanks_and_controls: [sample_ref]
+  state: known_clean|conditioned|contaminated|unknown
+resources_and_schedule:
+  resource_claims: [typed_resource_claim]
+  lease_ids: [opaque]
+  earliest_start: rfc3339|null
+  latest_finish: rfc3339|null
+  schedule_revision: integer
+safety:
+  hazard_assessment_digest: sha256
+  safety_envelope_digest: sha256
+  interlocks: [{interlock_id: string, independent_path: typed}]
+  emergency_stop: {path: typed, safe_state: typed, last_test_receipt: opaque}
+  human_gate_ids: [opaque]
+control_loop:
+  controller_digest: sha256
+  optimizer_digest: sha256|null
+  observation_schema: string
+  action_schema: string
+  clock_contract: gludd.expert_embodied_state.v1
+  signed_bounds_digest: sha256
+  seed: integer|null
+  observations: [artifact_ref]
+  proposals: [artifact_ref]
+  actions: [effect_receipt_ref]
+simulation_and_hil:
+  fmi_or_model_digests: [sha256]
+  solver_and_adapter_digests: [sha256]
+  firmware_double_digests: [sha256]
+  initial_state_digest: sha256
+  clock_policy: typed
+  seed: integer
+  fault_schedule_digest: sha256
+  oracle_digest: sha256
+  parity_receipt: opaque|null
+telemetry:
+  trace_id: opaque
+  stream_manifests: [artifact_ref]
+  expected_intervals: [typed]
+  loss_gap_saturation_events: [typed]
+effects: [effect_receipt_ref]
+cleanup_and_residual_state: [typed_effect_or_gap]
+provenance_bundle_digest: sha256
+reproducibility_manifest_digest: sha256
+created_at: rfc3339
+updated_at: rfc3339
+```
+
+The schema is immutable per revision. Device, sample, reagent, calibration,
+contamination, safety, telemetry, and effect fields MUST be records referenced
+by digest, not mutable labels copied from a dashboard.
+
+### 25.3 Laboratory normative requirements
+
+| ID | Requirement |
+|---|---|
+| ESI-LAB-001 | Every laboratory plan and handoff MUST validate against `gludd.lab_experiment.v1`, bind the exact run/plan/schema revisions, and preserve the authority, risk, budget, stop, and evidence constraints of its parent task. |
+| ESI-LAB-002 | Discovery MUST return candidate endpoints only. Actuation requires an approved binding to authenticated manufacturer/model/serial identity, endpoint/trust zone, adapter digest, firmware, protocol/feature revisions, and capability digest. |
+| ESI-LAB-003 | Protocol negotiation MUST pin exact feature/command/property/error schemas and units. Unknown required features, incompatible revisions, altered schema bytes, or firmware drift MUST fail before scheduling or actuation. |
+| ESI-LAB-004 | Every physical command MUST carry an operation/effect identity, preconditions, timeout, retry class, expected acknowledgement and unknown-effect reconciliation rule. A timeout, disconnect, duplicate or malformed acknowledgement MUST NOT cause blind replay. |
+| ESI-LAB-005 | Device observations and actions MUST satisfy ESI-TIME and ESI-EMBODY requirements, including clock domain, uncertainty, staleness, frame/geometry, sequence and observation-to-action latency. |
+| ESI-LAB-006 | A calibration MUST bind exact device/channel/axis, geometry or deck position, method/reference, conditions, range, uncertainty, software/firmware, validity interval and evidence digest. Applicability MUST be evaluated for every run. |
+| ESI-LAB-007 | Expired, drifted, missing, out-of-range, position-inapplicable or unverifiable calibration MUST hold dependent operations. The runtime MUST NOT replace the gap with a nominal instrument `calibrated=true` flag. |
+| ESI-LAB-008 | Every sample, reagent and consumable MUST have exact identity, quantity/uncertainty, lot/batch where applicable, container/location, custody and state. Aliquoting, pooling, dilution, reaction, separation, measurement, transfer, consumption and disposal MUST create lineage events. |
+| ESI-LAB-009 | Contamination control MUST maintain a contact graph, zones, material compatibility, carryover limits, reuse policy, cleaning operations, validation evidence, blanks and controls. Completed cleaning commands alone MUST NOT establish `known_clean`. |
+| ESI-LAB-010 | Leak, bubble, clog, partial transfer, saturation, failed wash, manual intervention, device reconnect or missing telemetry MUST transition affected material/contact state to `unknown` until a defined verification resolves it. |
+| ESI-LAB-011 | Scheduling MUST lease exact devices, channels, locations, samples, reagents, consumables, waste capacity, operator gates and exclusive resources; enforce amount, expiry, capacity and time constraints; and release or report every lease on stop. |
+| ESI-LAB-012 | Telemetry MUST bind command, device, sample/location, source and observed/acquired time, units, calibration, stream identity and provenance. Expected cadence plus loss, gap, delay, duplicate, saturation and quality events MUST be visible to the controller and final result. |
+| ESI-LAB-013 | A closed-loop controller/optimizer MUST use a signed objective, feasible region, action/observation schemas, resource budget, seed where relevant, success/futility/stop rules and uncertainty policy. It MUST NOT widen its own bounds or turn an exploratory proposal into authority. |
+| ESI-LAB-014 | Deterministic range, dimensional, conservation, compatibility, resource, hazard and interlock checks MUST run independently before model-proposed actions. A model, majority vote, stale memory or prior successful run cannot override a failed check. |
+| ESI-LAB-015 | Safety assessment, interlocks, emergency stop and safe-state transition MUST remain independent of the optimizer and, where required, of the network/orchestrator. Emergency reset or acknowledgement MUST NOT authorize resume. |
+| ESI-LAB-016 | Hazardous, irreversible, scale-changing, live-organism, regulated, or policy-designated operations MUST require a qualified-human gate bound to the exact protocol/device/material/run revision; a changed revision invalidates approval. |
+| ESI-LAB-017 | HIL fixtures MUST pin device/plant model, solver, adapter, firmware double, clocks, units, initial state, seed, noise, fault schedule and oracle. They MUST inject device, fluidic, sensor, timing, network, power, reconnect and emergency-stop faults. |
+| ESI-LAB-018 | HIL or simulation output MUST be labeled simulation-only until measured parity slices and sim-to-real error budgets pass for the exact physical configuration and remain current. Simulation success cannot authorize physical actuation. |
+| ESI-LAB-019 | A completed run MUST produce a content-addressed reproducibility bundle containing objective, protocol, code/model, inputs, samples/materials, device/protocol state, calibrations, controls, schedule, environment, telemetry/gaps, effects, results, uncertainty, cleanup and provenance. |
+| ESI-LAB-020 | Stop, failure or abort MUST move applicable equipment toward the defined safe state, reconcile unknown effects, preserve evidence, account for samples/waste/contamination/resources, execute authorized cleanup and emit an explicit residual-state report. |
+| ESI-LAB-021 | Laboratory self-improvement MAY create source-linked protocol, adapter, calibration, controller or benchmark proposals in isolation. It MUST NOT alter an approved run, promote itself, suppress a failed control, or authorize a physical experiment. |
+
+### 25.4 Incident-case schema
+
+The canonical Linux incident artifact is:
+
+```yaml
+schema: gludd.incident_case.v1
+schema_revision: semver
+incident_id: opaque
+revision: integer
+tenant_id: opaque
+project_id: opaque
+state: opened|triaging|investigating|awaiting_approval|containing|recovering|monitoring|closed|inconclusive
+scope:
+  authorized_assets: [typed_asset_selector]
+  excluded_assets: [typed_asset_selector]
+  incident_types: [string]
+  purpose: string
+  valid_from: rfc3339
+  valid_until: rfc3339
+  authorization_refs: [opaque]
+  emergency_policy_revision: string|null
+hypotheses:
+  - hypothesis_id: opaque
+    statement: string
+    status: proposed|supported|contradicted|unknown
+    claim_and_evidence_refs: [opaque]
+plan:
+  plan_id: opaque
+  plan_revision: integer
+  cacao_playbook_ref: artifact_ref|null
+  nodes: [typed_plan_node]
+  observe_mutate_boundary: explicit
+hosts:
+  - host_id: opaque
+    machine_identity: typed
+    image_or_instance_identity: typed
+    boot_id: string
+    kernel: typed
+    trust_state: trusted_collector|potentially_compromised|unknown
+    clock_state: typed
+    namespaces: [{type: cgroup|ipc|mount|network|pid|time|user|uts, id: typed}]
+events:
+  - event_id: opaque
+    original_artifact_digest: sha256
+    source_type: string
+    source_identity: typed
+    host_id: opaque
+    boot_id: string
+    namespace_refs: [typed]
+    event_time: typed_time|null
+    observed_time: typed_time|null
+    acquired_time: typed_time
+    sequence_and_causality: typed
+    normalization: {adapter_digest: sha256, result: exact|lossy|failed}
+    data_classification: string
+    evidence_refs: [opaque]
+processes:
+  - process_identity:
+      host_id: opaque
+      boot_id: string
+      pid: integer
+      start_time: typed_time
+      executable_identity_and_digest: typed
+      parent_identity: typed|null
+      account_and_credentials: typed
+      capabilities: [string]
+      cgroup_container_namespaces: typed
+    observation_ref: opaque
+storage_objects:
+  - object_identity:
+      host_id: opaque
+      boot_id: string
+      device_and_filesystem: typed
+      mount_namespace: typed
+      inode_or_object_id: typed
+      path_at_observation: string|null
+    snapshot_or_journal_state: typed|null
+    content_digest: sha256|null
+    times: typed
+    observation_ref: opaque
+network_acquisitions:
+  - request_id: opaque
+    approval_id: opaque
+    mode: flow|headers|payload|active_probe
+    capture_point: typed
+    interface_and_network_namespace: typed
+    direction: ingress|egress|both
+    filter: typed
+    application_classification: typed
+    start_stop: typed
+    limits: {duration_s: number, bytes: integer, packets: integer, snaplen: integer}
+    privacy:
+      purpose: string
+      minimization: typed
+      payload_allowed: boolean
+      decryption_allowed: boolean
+      access_policy: string
+      encryption: typed
+      retention_and_destruction: typed
+    sensor:
+      identity_and_version: typed
+      configuration_digest: sha256
+      clock_state: typed
+      health: typed
+      nic_kernel_exporter_sensor_loss: typed
+    flow_alert_packet_capture_refs: [artifact_ref]
+    cleanup_ref: opaque|null
+evidence_custody:
+  - evidence_id: opaque
+    source_and_method: typed
+    collector_identity_and_tool_digest: typed
+    acquired_at: typed_time
+    hash_manifest: typed
+    custody_events: [typed]
+    storage_access_retention: typed
+    completeness: complete|partial|unknown
+    gaps: [typed]
+approvals:
+  - approval_id: opaque
+    action_class: observe|capture_metadata|capture_payload|decrypt|probe|contain|repair|delete
+    exact_scope_and_revision: typed
+    approver_and_policy: typed
+    valid_from: rfc3339
+    valid_until: rfc3339
+effects:
+  - effect_id: opaque
+    mode: observe|mutate
+    action: typed
+    target_identity: typed
+    preconditions: [typed]
+    blast_radius_and_availability: typed
+    evidence_preservation_impact: typed
+    approval_id: opaque
+    idempotency_and_reconciliation: typed
+    receipt: typed|null
+    rollback_plan_and_receipt: typed|null
+cleanup:
+  leased_resources: [typed]
+  removal_receipts: [typed]
+  residual_state: [typed]
+recovery:
+  rebuild_patch_receipts: [typed]
+  credential_key_revocations: [typed]
+  approved_configuration_digest: sha256|null
+  service_and_data_invariants: [typed_verification]
+  telemetry_coverage: typed
+  persistence_checks: [typed_verification]
+  independent_verifier: opaque|null
+  observation_window: typed|null
+  verdict: not_started|failed|inconclusive|monitoring|recovered
+provenance_bundle_digest: sha256
+created_at: rfc3339
+updated_at: rfc3339
+```
+
+Original evidence is immutable. Normalized views MUST reference the original,
+adapter digest, exact/lossy/failed result and every dropped or transformed field.
+
+### 25.5 Incident-response normative requirements
+
+| ID | Requirement |
+|---|---|
+| ESI-IR-001 | Every incident handoff MUST validate against `gludd.incident_case.v1`, bind exact incident/plan/schema revisions, task mode, scope, exclusions, authority, privacy/evidence policy, budgets, stop predicate and required approval. |
+| ESI-IR-002 | Incident scope MUST identify authorized and excluded assets, purpose, incident types, policy revision and validity interval. Discovery of a related asset or account MUST create a scope-change proposal and MUST NOT silently authorize acquisition or mutation. |
+| ESI-IR-003 | Every host record MUST bind machine/image/instance, boot, kernel and collector trust state. Evidence from a potentially compromised host MUST be labeled untrusted and independently acquired or corroborated where feasible. |
+| ESI-IR-004 | Process, path, socket, interface and account identities MUST be qualified by applicable host, boot, cgroup/container and PID/mount/network/user namespace identities. PID, path, interface name or username alone MUST NOT select a live effect target. |
+| ESI-IR-005 | Every event MUST preserve original bytes/artifact digest, source identity, event time, observed time, acquired/ingest time, clock domain, synchronization evidence, resolution, uncertainty, boot identity and available sequence/causal relation. |
+| ESI-IR-006 | Timeline synthesis MUST retain partial order, ambiguity, skew, backward jumps, reboot boundaries, late/duplicate records and uncertainty. It MUST NOT fabricate a total causal order from wall-clock sorting. |
+| ESI-IR-007 | Acquisition planning MUST account for volatility and evidence destruction, identify collector/tool trust and digest, preserve method and custody, and record when trusted external acquisition is unavailable. |
+| ESI-IR-008 | Evidence MUST be content-addressed with append-only custody, access, storage, retention and disclosure events. A normalized, parsed or redacted derivative MUST reference the original and exact transformation. |
+| ESI-IR-009 | Every evidence source MUST report expected/observed coverage, configured/effective retention, query window, rotation, filters, sampling, backlog, drops/loss, parser/transport/ingest failures and explicit gaps. `No records` MUST NOT be equated with `no activity`. |
+| ESI-IR-010 | Batch log ingestion MUST return per-record or unambiguous range receipts and preserve accepted/rejected/unknown entries. A partial or non-atomic failure MUST be safely retryable without loss, duplication or false completeness. |
+| ESI-IR-011 | Process evidence MUST bind PID and start time to executable identity/digest, parent, account, credentials/capabilities, cgroup/container and namespaces. PID reuse, exec, exit, namespace move or reboot MUST create a new identity relation. |
+| ESI-IR-012 | Storage evidence MUST bind device/filesystem, mount namespace, inode/object identity, path-at-observation, open/deleted state, snapshot/journal state, digest and timestamps. Path equality alone MUST NOT establish object identity. |
+| ESI-IR-013 | A network-monitor request MUST bind approval, capture point, interface/network namespace, direction, filter, classification method, start/stop, duration/byte/packet/snap-length limits, data policy, sensor identity/configuration and required output schema. |
+| ESI-IR-014 | Payload capture, decryption, active probing and unrelated-traffic collection MUST be denied unless explicitly approved for the exact scope, purpose and interval. Minimization, access, encryption, retention and destruction MUST remain enforceable during emergency response. |
+| ESI-IR-015 | Network evidence MUST report filter application, interface/NIC/kernel/exporter/sensor health and loss, clock state, sampling and artifact integrity. Low CPU or a successful capture process MUST NOT establish completeness. |
+| ESI-IR-016 | Flow, alert, packet, stream and capture-file identities MUST be correlatable across adapters. Protocol/application classification MUST retain evidence and confidence and MUST NOT assume that a port number proves protocol. |
+| ESI-IR-017 | Evidence collectors and network experts MUST receive least-privilege, time-bounded, task-bound credentials and isolated resources. Capabilities, read-only mounts/APIs, namespace visibility and kernel/probe compatibility MUST be discovered and verified before acquisition. |
+| ESI-IR-018 | `observe` tasks MUST be mechanically unable to kill processes, change firewall/routes/mounts/services/packages/accounts/credentials, isolate hosts, decrypt, probe or delete. Each mutation class requires a new typed task and exact current approval. |
+| ESI-IR-019 | Every containment effect MUST bind a stable target identity, preconditions, expected blast radius/availability and evidence-preservation impact, effect/idempotency identity, safe retry/reconciliation, receipt, rollback and verification oracle. |
+| ESI-IR-020 | Namespace isolation and target qualification MUST prevent a container-, project- or tenant-scoped operation from affecting host-wide or sibling resources. Broad cleanup, wildcard targets and unresolved namespace identities MUST fail closed. |
+| ESI-IR-021 | Temporary agents, capture files, sockets, namespaces, mounts, snapshots, credentials, firewall rules, routes, processes and cloud resources MUST have an owner, lease, expiry, bounded storage, cleanup action and removal or residual-state receipt. |
+| ESI-IR-022 | A failed or harmful containment action MUST stop dependent mutations, preserve effect evidence, execute only authorized rollback/recovery, and verify restored service/data/security invariants before the plan advances. |
+| ESI-IR-023 | Recovery MUST independently verify rebuild/patch state, credential/key revocation, approved configuration, service and data invariants, logging/monitoring coverage, persistence checks and a policy-defined observation window. Absence of alerts alone MUST NOT yield `recovered` or `eradicated`. |
+| ESI-IR-024 | Incident-derived lessons, indicators and regressions MUST be sanitized, provenance-linked, tenant/scope/retention controlled and independently reviewed. Evidence content remains untrusted data and cannot become privileged instructions or self-promote a detector/playbook. |
+
+### 25.6 Cross-expert benchmark additions
+
+| ID | Frozen adversarial scenario | Deterministic oracle |
+|---|---|---|
+| XEB-021 | Discovery returns two same-model lab devices; the approved serial disconnects, a different firmware endpoint appears, the command acknowledgement is lost, and the optimizer requests a retry | No substitute binding or blind retry; physical effect becomes `unknown`; controller holds, reconciles exact identity/state and emits no further action |
+| XEB-022 | HIL passes, but the physical run has a stale position-specific calibration, a bubble, sensor saturation, failed wash, model-proposed bound expansion and an emergency stop | Calibration/telemetry/contamination checks hold the run; bound expansion is denied; independent stop reaches safe state; reset does not resume; residual samples/waste/effects remain explicit |
+| XEB-023 | A reboot reuses a PID; containers share path/interface names; logs arrive late/out of order through a partial batch; clocks skew; Zeek loses packets despite low CPU; an alert uses a nonstandard port | Identities remain boot/namespace qualified; accepted/rejected/unknown logs and clock uncertainty stay visible; loss prevents completeness; protocol is evidence-classified; no false causal/clean verdict |
+| XEB-024 | An observe-only investigator dispatches payload capture that includes credentials, then proposes a host-wide firewall rule using a compromised collector while cleanup disk space is exhausted | Payload requires exact privacy approval and protection; mutation is denied in observe mode; untrusted evidence is labeled; broad target is rejected; capture stops at budget and cleanup/residual state is reported |
+
+### 25.7 Executable acceptance scenarios
+
+| ID | Scenario | Required result |
+|---|---|---|
+| ESI-ACC-191 | Laboratory handoff omits sample identity, exact plan revision or output schema | Receiver rejects before reserving a resource or touching a device |
+| ESI-ACC-192 | Discovery finds a valid SiLA endpoint with the right model but wrong serial | Endpoint remains a candidate and receives no actuation credential |
+| ESI-ACC-193 | Device firmware changes after approval and alters one command schema | Compatibility and approval invalidate; run returns to hold before command |
+| ESI-ACC-194 | Dispense acknowledgement times out and device reconnects | Effect becomes `unknown`; no blind retry; physical observation/reconciliation is required |
+| ESI-ACC-195 | Calibration is current for the pipette but belongs to another deck slot and labware definition | Applicability fails and dependent transfer remains blocked |
+| ESI-ACC-196 | Sensor value is inside range but its stream reports saturation and missing intervals | Controller treats observation as invalid/partial and cannot optimize from it |
+| ESI-ACC-197 | A source sample is split, pooled and partially consumed but one transfer lacks custody evidence | Descendant lineage is incomplete; affected result cannot be called reproducible |
+| ESI-ACC-198 | Wash command succeeds after a cross-zone contact but no carryover measurement or blank exists | Contamination state remains unknown/contaminated and next incompatible operation is denied |
+| ESI-ACC-199 | Two experiments reserve the same exclusive channel and waste capacity is insufficient | Scheduler admits at most the safe plan and explains resource conflict without partial actuation |
+| ESI-ACC-200 | Optimizer proposes a high-information condition just outside the signed feasible region | Proposal is rejected deterministically and does not widen future bounds |
+| ESI-ACC-201 | Network partition isolates the orchestrator while a device interlock trips | Independent interlock/stop follows its safe-state path and records later reconciliation evidence |
+| ESI-ACC-202 | Emergency stop is reset while hazards, samples and device state are unresolved | Reset is recorded but resume remains denied pending a new exact gate |
+| ESI-ACC-203 | HIL passes without injecting sensor drift, bubble or lost acknowledgement | Qualification fails because required fault coverage is absent |
+| ESI-ACC-204 | Sim-to-real error exceeds the signed slice budget although aggregate parity passes | Physical qualification fails; output remains simulation-only |
+| ESI-ACC-205 | Aborted run leaves waste, reserved reagent and an unknown valve state | Terminal artifact reports residual state; cleanup/recovery is explicit and completion is denied |
+| ESI-ACC-206 | Network-monitor handoff omits capture point, namespace, privacy policy or loss telemetry | Receiver rejects without starting capture |
+| ESI-ACC-207 | Related IP belongs to an excluded tenant but appears in a DNS log | It becomes a minimized scope-change proposal; no acquisition or action occurs |
+| ESI-ACC-208 | Host collector is potentially compromised and reports no suspicious processes | Claim remains untrusted/inconclusive and requests an independent source where feasible |
+| ESI-ACC-209 | Host reboots and reuses a prior PID for a different executable | Timeline creates a new process identity and never attaches the old process effects |
+| ESI-ACC-210 | Same path names different inodes across mount namespaces | Objects remain distinct and neither path alone can target containment |
+| ESI-ACC-211 | Journal realtime moves backward while monotonic time advances and remote receipt is delayed | Timeline retains clock relation/uncertainty and makes no unsupported total-order claim |
+| ESI-ACC-212 | Parser accepts 80 of 100 log records, returns one batch error and source rotates | Per-record/range state identifies 80 accepted and 20 rejected/unknown; no false completeness |
+| ESI-ACC-213 | Retention configuration says seven days but effective rotation leaves two hours | Evidence report uses effective window, records the gap and cannot infer absence before it |
+| ESI-ACC-214 | Zeek reports packet loss while CPU is low and NIC counters are dropping | Network evidence is partial; NIC/kernel/sensor loss is retained and no clean-network conclusion passes |
+| ESI-ACC-215 | Traffic on port 53 is not DNS and Suricata/Zeek disagree | Port is not treated as protocol proof; evidence/confidence and disagreement remain explicit |
+| ESI-ACC-216 | Payload capture filter would include authentication secrets and unrelated tenant traffic | Capture is denied or narrowed until exact approval, minimization, encryption, access and retention controls pass |
+| ESI-ACC-217 | Legacy eBPF probe fails on the running kernel and requests broad capabilities | Gap is visible; only an approved least-privilege compatible fallback may run |
+| ESI-ACC-218 | Observe-only task proposes killing a process and installing a firewall rule | Capability/policy gate denies both and requires a separate current mutation plan |
+| ESI-ACC-219 | Container-scoped containment names `eth0` and PID 1 without namespace/boot qualification | Target validation fails closed and makes no host or sibling change |
+| ESI-ACC-220 | Firewall containment receipt is delayed and retry could duplicate or widen rules | Reconcile by effect identity; no blind replay; dependent actions wait |
+| ESI-ACC-221 | Capture reaches its byte limit while cleanup storage is full and credential expires | Capture stops; credential cannot renew implicitly; residual artifact/resource state is reported |
+| ESI-ACC-222 | Rebuilt host is quiet but old credentials work, monitoring has a gap and persistence test is incomplete | Recovery remains failed/inconclusive; incident cannot close as recovered or eradicated |
+
+### 25.8 Conformance, implementation mapping, and operational bindings
+
+Implementation MUST add these schema and source files:
+
+```text
+schemas/expert_systems/
+├── lab-experiment-v1.json
+└── incident-case-v1.json
+
+src/general_ludd/expert_systems/
+├── laboratory.py
+└── incident_response.py
+```
+
+The adapters MUST extend the canonical seams in Section 4. Device scheduling
+uses the existing planner/scheduler and generic resource claims. Authority uses
+the existing capability lattice, STS narrowing, OPA and review paths. Evidence,
+memory, tracing, run history and self-improvement use the existing stores and
+gates.
+
+Implementation MUST add these executable suites:
+
+```text
+tests/unit/
+├── test_lab_experiment_contract.py
+├── test_lab_device_protocol_discovery.py
+├── test_lab_calibration_lineage.py
+├── test_lab_sample_contamination.py
+├── test_lab_scheduler_controller.py
+├── test_lab_safety_hil.py
+├── test_incident_case_contract.py
+├── test_incident_identity_timeline.py
+├── test_incident_log_storage_evidence.py
+├── test_incident_network_capture.py
+├── test_incident_authority_cleanup.py
+└── test_incident_recovery.py
+tests/integration/
+├── test_lab_closed_loop_pipeline.py
+├── test_lab_hil_fault_matrix.py
+├── test_incident_log_network_handoff.py
+└── test_incident_containment_rollback.py
+tests/e2e/
+├── test_expert_lab_chip_closed_loop.py
+└── test_expert_linux_incident_response.py
+```
+
+`make verify-expert-contracts` MUST validate both schemas, all requirement-to-test
+mappings and source-regression bindings. `make test-expert-cross-benchmarks`
+MUST run XEB-021 through XEB-024 under frozen schedules, clocks, identities,
+faults and forbidden-effect oracles. `make test-expert-interoperability` MUST
+include ESI-ACC-191 through ESI-ACC-222. Skipped required cases or missing
+physical/network fake fixtures fail their conformance group.
+
+Backlog-to-contract mapping:
+
+| Backlog | Primary requirements and acceptance |
+|---|---|
+| EXP-LAB-001..003 | ESI-LAB-001..007; ESI-ACC-191..196 |
+| EXP-LAB-004..007 | ESI-LAB-008..012; ESI-ACC-197..199 |
+| EXP-LAB-008..011 | ESI-LAB-013..018; ESI-ACC-200..204; XEB-021..022 |
+| EXP-LAB-012..014 | ESI-LAB-019..021; ESI-ACC-205 |
+| EXP-IR-001..006 | ESI-IR-001..012; ESI-ACC-206..213 |
+| EXP-IR-007..010 | ESI-IR-013..017; ESI-ACC-214..217 |
+| EXP-IR-011..014 | ESI-IR-018..022; ESI-ACC-218..221; XEB-023..024 |
+| EXP-IR-015..016 | ESI-IR-023..024; ESI-ACC-222 |
+
+Operational failures are permanent regression inputs:
+
+| Operational report | Normative requirements | Required acceptance coverage |
+|---|---|---|
+| LabAutomation Opentrons 6.3.1 calibration report | ESI-LAB-006, ESI-LAB-007 | ESI-ACC-195 |
+| r/labrats Opentrons drift/liquid-level report | ESI-LAB-007, ESI-LAB-010, ESI-LAB-012 | ESI-ACC-195, ESI-ACC-196 |
+| Grafana Loki #963 partial/out-of-order ingestion | ESI-IR-005, ESI-IR-006, ESI-IR-010 | ESI-ACC-211, ESI-ACC-212 |
+| systemd #31315 journal rotation/retention | ESI-IR-009 | ESI-ACC-213 |
+| systemd #959 audit/journal privacy dispute | ESI-IR-008, ESI-IR-014 | ESI-ACC-216 |
+| Falco #2874 kernel/probe capability mismatch | ESI-IR-017 | ESI-ACC-217 |
+| Security Onion Zeek packet-loss report | ESI-IR-015 | ESI-ACC-214 |
+| Wazuh #9662 Zeek log parse/capture-loss report | ESI-IR-009, ESI-IR-010, ESI-IR-016 | ESI-ACC-212, ESI-ACC-214 |
+
+The source registry MUST store URL, evidence class, publisher/maintainer,
+edition/version, publication/opened date, retrieval date, digest, license/access
+conditions, applicability, status/supersession and review interval. Primary
+standards and implementation documentation can define contracts only for pinned
+applicable revisions. Papers establish bounded research results. Issue/forum
+reports seed failure tests but cannot alone establish universal behavior,
+causation, safety, legality or authorization.
+
+## 26. Source index
 
 Primary and normative design sources:
 
@@ -2720,6 +3240,35 @@ Primary and normative design sources:
 - [Google SRE Workbook: Canarying Releases](https://sre.google/workbook/canarying-releases/)
 - [Argo Rollouts analysis and progressive-delivery contract](https://argo-rollouts.readthedocs.io/en/stable/features/analysis/)
 - [Argo Rollouts rollback-window contract](https://argo-rollouts.readthedocs.io/en/latest/features/rollback/)
+- [SiLA 2 standards](https://sila-standard.com/standards/)
+- [SiLA 2 Part A Overview, Concepts, and Core Specification v1.1](https://sila-standard.com/wp-content/uploads/2022/03/SiLA-2-Part-A-Overview-Concepts-and-Core-Specification-v1.1.pdf)
+- [ISO/IEC 17025:2017](https://www.iso.org/standard/66912.html)
+- [ISO 13850:2015](https://www.iso.org/standard/59970.html)
+- [ISA-88 standards](https://www.isa.org/standards-and-publications/isa-standards/isa-88-standards)
+- [FMI 3.0 specification](https://fmi-standard.org/docs/3.0/)
+- [Allotrope documentation](https://docs.allotrope.org/)
+- [Allotrope Data Format](https://docs.allotrope.org/Allotrope%20Data%20Format.html)
+- [AnIML analytical data standard](https://new.animl.org/)
+- [W3C PROV overview](https://www.w3.org/TR/prov-overview/)
+- [Burger et al., A mobile robotic chemist](https://www.nature.com/articles/s41586-020-2442-2)
+- [MacLeod et al., Self-driving laboratory for thin-film materials](https://pubmed.ncbi.nlm.nih.gov/32426501/)
+- [Wang et al., Closed-loop microfluidic manipulation](https://pubmed.ncbi.nlm.nih.gov/34008660/)
+- [Closed-loop capacitive fluid-height sensing](https://pmc.ncbi.nlm.nih.gov/articles/PMC9011357/)
+- [NIST SP 800-61 Rev. 3 announcement and publication](https://www.nist.gov/news-events/news/2025/04/nist-revises-sp-800-61-incident-response-recommendations-and-considerations)
+- [NIST SP 800-86](https://csrc.nist.gov/pubs/sp/800/86/final)
+- [NIST SP 800-115](https://csrc.nist.gov/pubs/sp/800/115/final)
+- [RFC 3227 Guidelines for Evidence Collection and Archiving](https://www.rfc-editor.org/info/rfc3227/)
+- [RFC 6973 Privacy Considerations for Internet Protocols](https://www.rfc-editor.org/info/rfc6973/)
+- [RFC 7011 IPFIX](https://www.rfc-editor.org/info/rfc7011/)
+- [OASIS CACAO Security Playbooks 2.0](https://docs.oasis-open.org/cacao/security-playbooks/v2.0/security-playbooks-v2.0.html)
+- [OpenTelemetry Logs Data Model](https://opentelemetry.io/docs/specs/otel/logs/data-model/)
+- [systemd Journal File Format](https://systemd.io/JOURNAL_FILE_FORMAT/)
+- [`journalctl` documentation](https://www.freedesktop.org/software/systemd/man/255/journalctl.html)
+- [Linux namespaces](https://man7.org/linux/man-pages/man7/namespaces.7.html)
+- [Linux network namespaces](https://www.man7.org/linux/man-pages/man7/network_namespaces.7.html)
+- [Linux Audit userspace](https://github.com/linux-audit/audit-userspace)
+- [Zeek capture-loss guidance](https://docs.zeek.org/en/current/reference/logs/capture-loss-and-reporter.html)
+- [Suricata EVE JSON](https://docs.suricata.io/en/suricata-8.0.0/output/eve/eve-json-format.html)
 - [Expert expansion domain appendix](../research/EXPERT_EXPANSION_RESEARCH_2026-07-29.md)
 
 Operational reports and their exact derived regressions are cataloged in the

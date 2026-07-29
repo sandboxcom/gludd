@@ -1079,6 +1079,168 @@ Primary and normative sources for these residuals:
   [RFC 3339](https://www.rfc-editor.org/info/rfc3339), and
   [Allen's interval algebra](https://doi.org/10.1145/182.358434)
 
+### 9.6 Closed-loop laboratories and Linux incident response
+
+Two workflows expose gaps that generic "embodied action" and "incident
+containment" labels do not close.
+
+A lab-on-chip experiment is a resource-constrained physical control loop. It
+must bind an objective and stopping rule to an exact protocol revision, device
+inventory, control surface, samples, reagents, consumables, calibrations,
+contamination model, safety envelope, schedule, observations, and effect
+receipts. The [SiLA 2 Core Specification](https://sila-standard.com/standards/)
+provides feature, command, property, data-type, error, discovery, and security
+building blocks for laboratory devices. It does not by itself prove that a
+discovered endpoint is the intended physical device, that a liquid-transfer
+offset is applicable to this deck position, or that a retry is safe after an
+ambiguous acknowledgement. Gludd therefore needs an authenticated discovery
+receipt and exact device/protocol/capability digest, with an operation identity
+and reconciliation rule for every physical command.
+
+[ISA-88](https://www.isa.org/standards-and-publications/isa-standards/isa-88-standards)
+separates recipes, equipment capabilities, procedural control, scheduling, and
+batch records. That separation is useful even for a small microfluidic run:
+protocol intent must not silently become device-specific actuator instructions.
+[ISO/IEC 17025:2017](https://www.iso.org/standard/66912.html), confirmed by ISO
+in 2023, motivates controlled calibration, method, measurement uncertainty,
+traceability, and records. Applicability and accreditation claims still require
+qualified review. A calibration is never a boolean; it is scoped to the exact
+device, channel, method, position or geometry, reference, environment, range,
+uncertainty, software/firmware, validity interval, and evidence.
+
+Sample lineage must survive aliquoting, pooling, dilution, reaction, separation,
+destructive measurement, disposal, and every plate/well/channel move. An
+experiment cannot be reproduced from an instrument file alone.
+[Allotrope](https://docs.allotrope.org/Allotrope%20Data%20Format.html) supplies
+a useful laboratory data, equipment, process, material, result, audit, and
+checksum model; [AnIML](https://new.animl.org/) is an emerging ASTM analytical
+data format. Both remain adapters to a canonical Gludd lineage graph rather than
+permission to discard fields the format cannot represent. W3C PROV links the
+result to the exact samples, operations, agents, and artifacts.
+
+Contamination is also a state transition. The planner needs a contact graph over
+channels, reservoirs, surfaces, tips, seals, wash solutions, waste, and
+environment; compatibility and carryover limits; tip-reuse policy; wash
+validation; and positive/negative/blank controls. A wash command is not proof
+of cleanliness. The state becomes `unknown` after a leak, bubble, failed
+aspiration, saturation, interrupted wash, unverified manual intervention, or
+device reconnect. A qualified human must resolve safety-relevant unknown state
+before further physical work.
+
+Closed-loop optimization introduces a second authority boundary. The optimizer
+may propose the next condition only inside a signed feasible region and resource
+budget. Deterministic limits, device interlocks, emergency stop, and the
+laboratory safety steward remain independent of model output. ISO 13850:2015 is
+a current emergency-stop design reference where applicable; it is not a claim
+that every lab device falls under that standard. The emergency stop must move
+affected equipment toward a defined safe state without depending on the
+optimizer, network, or orchestration process, and reset cannot authorize resume.
+
+[FMI 3.0](https://fmi-standard.org/docs/3.0/) supports Model Exchange,
+Co-Simulation, Scheduled Execution, clocks, units, run-time calibration, and
+hardware-in-the-loop use. A lab HIL fixture must pin the plant/device model,
+solver, adapter and firmware doubles, clock policy, initial state, seed, noise,
+fault schedule, and oracle. It must inject delay, loss, duplicate
+acknowledgements, bubbles, clogs, sensor drift/saturation, empty reservoirs,
+valve faults, power loss, reconnect, clock jumps, and emergency stop. Passing
+simulation is evidence about the pinned model only; physical authorization
+requires measured sim-to-real error budgets and a separate human gate.
+
+Primary closed-loop laboratory demonstrations establish feasibility, not a
+universal safety case:
+
+- Burger et al.'s
+  [mobile robotic chemist](https://www.nature.com/articles/s41586-020-2442-2)
+  (Nature, 2020, DOI `10.1038/s41586-020-2442-2`) ran 688 experiments over eight
+  days and retained measured/suggested experiment data.
+- MacLeod et al.'s
+  [self-driving thin-film laboratory](https://pubmed.ncbi.nlm.nih.gov/32426501/)
+  (Science Advances, 2020, DOI `10.1126/sciadv.aaz8867`) integrated planning,
+  fabrication, characterization, and learning.
+- Wang et al.'s
+  [deep-learning microfluidic feedback controller](https://pubmed.ncbi.nlm.nih.gov/34008660/)
+  (Lab on a Chip, 2021, DOI `10.1039/D1LC00076D`) demonstrates that sensor and
+  controller behavior are part of the experimental system.
+- [Closed-loop capacitive fluid-height sensing](https://pmc.ncbi.nlm.nih.gov/articles/PMC9011357/)
+  shows why direct observation and controller telemetry are needed instead of
+  assuming commanded volume equals delivered volume.
+
+Linux incident response is a different closed loop: observe, form hypotheses,
+dispatch bounded acquisition, correlate evidence, obtain authority, contain,
+verify effect, recover, and monitor. The current baseline is
+[NIST SP 800-61 Rev. 3](https://www.nist.gov/news-events/news/2025/04/nist-revises-sp-800-61-incident-response-recommendations-and-considerations),
+published April 2025 and aligned to CSF 2.0. NIST SP 800-86 remains the primary
+NIST forensic-process reference. [RFC 3227](https://www.rfc-editor.org/info/rfc3227/)
+is older, from 2002, but its order-of-volatility, evidence-preservation,
+privacy/legal, and chain-of-custody considerations remain useful when current
+organizational and legal policy says they apply.
+
+A cross-host timeline cannot use one timestamp field. The
+[OpenTelemetry Logs Data Model](https://opentelemetry.io/docs/specs/otel/logs/data-model/)
+distinguishes event and observed time. Gludd also needs acquisition/ingest time,
+clock domain, source boot identity, synchronization evidence, resolution,
+uncertainty, sequence relation, and immutable original bytes. The
+[systemd journal format](https://systemd.io/JOURNAL_FILE_FORMAT/) exposes boot
+IDs, realtime and monotonic timestamps, file identity, and optional sealing.
+`journalctl` documents that wrong system time can produce out-of-order entries.
+The timeline must therefore retain uncertainty and partial order rather than
+sorting timestamps into false causality.
+
+Host identity is likewise composite. A process record needs machine/image/boot
+identity plus PID, start time, executable identity and digest, parent, user,
+capabilities, cgroup, container, and namespace IDs. PID alone is reusable.
+[Linux namespaces](https://man7.org/linux/man-pages/man7/namespaces.7.html) make
+IDs meaningful only within their namespace; a network namespace has its own
+devices, protocol stacks, routing, firewall rules, sockets, and related
+resources. A cleanup or containment action aimed at an unqualified PID,
+interface, mount, or path is unsafe.
+
+The log analyst and dispatched network-monitor expert exchange typed evidence,
+not conclusions in free-form chat. The network request names authorization,
+capture point, interface and namespace, direction, address/port/protocol filter,
+start/stop condition, snap length, byte/time budget, payload policy, encryption
+and access, retention, and expected flow/event schema. IPFIX, Zeek, and
+Suricata EVE are useful adapters. Protocol classification cannot rely on port
+number alone. The response must report packet/capture loss, filter and sensor
+health, clock evidence, gaps, and the relation between flow, alert, packet,
+stream, and capture-file identities.
+
+Network capture can collect credentials, content, personal data, unrelated
+tenant traffic, or privileged communications. RFC 6973's data-minimization
+principle and current legal/organizational policy require an explicit approval
+and privacy boundary. An emergency does not silently expand scope. Full payload
+capture, decryption, active probing, process interruption, firewall changes,
+credential revocation, isolation, and deletion are distinct effects with
+separate authority.
+
+Observation and mutation must remain separate phases. A read-only evidence task
+cannot be converted by an expert into `kill`, firewall, route, mount, package,
+account, credential, quarantine, or deletion action. A containment proposal
+names preconditions, blast radius, expected evidence loss, availability impact,
+operation identity, safe retries, rollback and recovery plan, and verification
+oracle. A compromised host's tools and output are untrusted; independent
+collection or a trusted acquisition environment is required where feasible.
+
+Cleanup is itself an effect: temporary agents, capture files, sockets, network
+namespaces, mounts, snapshots, credentials, firewall rules, routes, processes,
+and cloud resources need owner, lease, expiry, removal receipt, and residual
+state. Recovery is not "no alerts." It requires independently verified rebuild
+or patch state, credential/key revocation, approved configuration, restored
+service invariants, logging and monitoring coverage, persistence checks, data
+integrity, and a policy-defined observation window.
+
+Source trust and freshness for these profiles:
+
+| Source family | Trust/use | Freshness treatment |
+|---|---|---|
+| ISO/IEC 17025, ISO 13850, ISA-88, SiLA 2, FMI 3.0 | Primary standards or official specifications; normative only after applicability and licensed-text review | Registry pins edition, publication/confirmation date, digest, owner, review interval, and supersession |
+| Allotrope, AnIML, W3C PROV | Primary data/provenance specifications; used as adapters and semantic references | Pin exact revision and vocabulary; unknown terms remain losslessly preserved |
+| Peer-reviewed autonomous-lab papers | Primary research demonstrations; evidence for architecture and benchmark design, not operating authority | Record DOI/version, methods, equipment, supplementary artifacts, limitations, and later corrections |
+| NIST SP 800-61r3, SP 800-86, SP 800-115 | Primary US government guidance; policy baseline where applicable | Pin revision; review on NIST update or organizational-policy change |
+| RFC 3227, RFC 6973, RFC 7011 | Primary Internet standards/BCP references, some intentionally old | Record publication/obsolescence status and current applicability decision |
+| OpenTelemetry, systemd, Linux, Linux Audit, Zeek, Suricata | Primary implementation/specification sources | Pin exact runtime/kernel/tool version and requalify on material upgrade |
+| Issue trackers and practitioner forums | Operational reports that seed regressions; never universal truth | Record opened/observed date, environment, status, retrieval date, and corroboration |
+
 ## 10. Practitioner and maintainer failure evidence
 
 These reports are operational evidence. They motivate tests and do not establish
@@ -1119,6 +1281,14 @@ universal framework behavior.
 | [Whisper discussion #2124](https://github.com/openai/whisper/discussions/2124) | 2024-02-23 | Users reported long-audio transcription gaps spanning many seconds | Accessibility acceptance checks timestamp coverage and explicit unavailable spans, not merely readable transcript text |
 | [rosbag2 issue #1276](https://github.com/ros2/rosbag2/issues/1276) | 2023-02-03 | Messages recorded before simulated clock initialization received zero timestamps and became unplayable or distorted statistics | Zero/uninitialized time is invalid for causal action; buffer, reject, or mark unknown without fabricating chronology |
 | [ros2_control issue #325](https://github.com/ros-controls/ros2_control/issues/325) | 2021-05-10 | Mixed simulated and system clock use produced inconsistent controller behavior | Clock domain is part of every state/action interface and incompatible domains fail before actuation |
+| [LabAutomation forum: Opentrons 6.3.1 calibration](https://labautomation.io/t/version-6-3-1-pulling-my-hair-out/2092) | 2023 | Users could not reliably understand or reuse prior-run labware offsets after a calibration-stack change; an Opentrons representative acknowledged the friction | Calibration binds exact robot, pipette, labware definition, slot/module, software/firmware and validity; preview and revalidate every applied offset |
+| [r/labrats: Opentrons experiences](https://www.reddit.com/r/labrats/comments/1clk6bv/) | 2024-05-06 | Practitioners reported calibration drift and liquid-level limitations in real workflows | Inject drift and liquid-level uncertainty; measured feedback and applicability checks outrank a nominal calibration flag |
+| [Grafana Loki issue #963](https://github.com/grafana/loki/issues/963) | 2019-09-03 | Out-of-order and non-atomic batch ingestion made it unclear which log entries had committed | Preserve source/event/observed/ingest time and return per-entry receipts for partial ingestion |
+| [systemd issue #31315](https://github.com/systemd/systemd/issues/31315) | 2024-02 | Retention configuration caused excessive journal rotation and degraded retrieval | Report configured/effective retention, rotation, query window, dropped/lost records, and an explicit evidence-completeness verdict |
+| [systemd issue #959](https://github.com/systemd/systemd/issues/959) | 2015-08-14 | Maintainers and users disputed mixing security-audit material with ordinary journal data and its privacy/duplication effects | Classify each capture/log source, destination, access, duplication, retention, and privacy policy instead of assuming one sink is safe |
+| [Falco issue #2874](https://github.com/falcosecurity/falco/issues/2874) | 2023-10-10 | A legacy eBPF probe failed on a managed Kubernetes kernel while a modern least-privileged path worked | Discover kernel/probe compatibility, declare exact capabilities, test least-privilege fallback, and expose telemetry gaps |
+| [r/securityonion: Zeek packet loss](https://www.reddit.com/r/securityonion/comments/hsfeq6/) | 2020-07-16 | A practitioner saw packet loss despite low CPU; NIC receive buffers were implicated | Capture completeness includes NIC/kernel/sensor drop counters and cannot be inferred from host CPU |
+| [Wazuh issue #9662](https://github.com/wazuh/wazuh/issues/9662) | 2021-09-01 | The manager failed to ingest or parse expected Zeek logs while capture-loss notices appeared | Validate handoff schemas, distinguish parser/transport/source gaps, and retain original records plus loss evidence |
 
 ## 11. Repository-specific conclusions
 
@@ -1191,6 +1361,23 @@ self-update path would be a defect.
     testable behavior, including critical-token and subgroup gates.
 27. Clock domains, staleness, frames, belief state, action invariants, safety
     stop, and unknown-effect reconciliation are typed embodied interfaces.
+28. A laboratory run is a typed physical state machine over recipe, devices,
+    samples, calibrations, contamination, resources, telemetry, and effects.
+29. Device discovery and protocol negotiation establish a candidate endpoint;
+    authenticated physical identity, current capability/calibration evidence,
+    and a safe command reconciliation policy are required before actuation.
+30. Closed-loop optimization remains inside deterministic constraints and cannot
+    bypass interlocks, emergency stop, qualified-human gates, or a safe state.
+31. HIL evidence pins model, adapter, firmware double, clocks, seed and fault
+    schedule; it never silently becomes authorization for a physical run.
+32. Incident evidence identifies host, boot, namespace, process, storage,
+    interface, clock, acquisition, custody, privacy scope, and completeness.
+33. Cross-host incident timelines retain partial order and uncertainty; missing,
+    rotated, dropped, delayed, duplicated, or out-of-order records stay visible.
+34. Observation, capture, containment, cleanup, rollback, and recovery are
+    separately authorized typed effects using least privilege and bounded scope.
+35. Incident closure requires independently verified recovery invariants and an
+    observation window, not merely an absence of alerts.
 
 ## 13. Domain appendix integration
 
@@ -1207,14 +1394,21 @@ contains the deep domain research and implementation backlog requested for:
   machining, additive manufacturing, molding/forming, textiles, structural
   modeling, qualification, and manufacturing safety; and
 - chemical identity, authoritative data, analytical/computational chemistry,
-  molecular simulation, retrosynthesis, scale-up, and chemical safety.
+  molecular simulation, retrosynthesis, scale-up, and chemical safety;
+- closed-loop lab-on-chip experimentation, authenticated device/protocol
+  discovery, sample and calibration lineage, contamination controls, scheduling,
+  HIL qualification, and independent safety stops; and
+- Linux host/log/process/storage/network incident evidence, privacy-bounded
+  capture, namespace-safe containment, cleanup, rollback, and independently
+  verified recovery.
 
 Those are domain profiles for the common runtime rather than independent agent
-platforms. Every `EXP-GIT-*`, `EXP-ML-*`, `EXP-MAT-*`, and `EXP-CHEM-*` backlog
-item binds to the `ExpertCard`, typed task/result, team/handoff, source/evidence,
-memory, safety, abstention, benchmark, promotion, canary, and rollback contracts
-in the feature specification. The domain acceptance cases provide specialized
-fixtures; the common XEB suite proves their cross-domain composition.
+platforms. Every `EXP-GIT-*`, `EXP-ML-*`, `EXP-MAT-*`, `EXP-CHEM-*`,
+`EXP-LAB-*`, and `EXP-IR-*` backlog item binds to the `ExpertCard`, typed
+task/result, team/handoff, source/evidence, memory, safety, abstention,
+benchmark, promotion, canary, and rollback contracts in the feature
+specification. The domain acceptance cases provide specialized fixtures; the
+common XEB suite proves their cross-domain composition.
 
 The domain appendix and interoperability feature are explicitly post-beta3.
 Research branches must not alter the beta.3 release commit, workflow, artifacts,
