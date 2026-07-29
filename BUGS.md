@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-29 — (resolved) hosted gate silently used regex TypeScript fallback
+
+- **What**: Hosted run 30488970773 built 0/28 hot-reload modules in both Linux gate matrix legs, while the same builder completed locally. Generated candidates retained TypeScript syntax or were corrupted by the emergency regex fallback and were correctly rejected by the existing syntax/require validation.
+- **Root cause**: `scripts/ts_to_js.js` already preferred esbuild, but esbuild existed only in the developer checkout's untracked `node_modules`. The `gate` job neither pinned Node nor installed esbuild, so the hosted runner silently selected the fallback. The `test-shard` job's Node 22 setup did not apply to the separate gate job.
+- **Fix applied**: The gate job now uses the repository's pinned `actions/setup-node` action with Node 22 and installs exact esbuild 0.28.1 before the hot-module build. Regression tests parse the real workflow and require both prerequisites to precede `Build hot-reload modules`; atomic candidate publication, syntax validation, require probing, and nonzero build failure remain unchanged.
+- **Long-lived user evidence**: The setup-node maintainers recommend explicitly specifying Node instead of relying on the runner's ambient version ([actions/setup-node](https://github.com/actions/setup-node)). esbuild documents exact local npm installation as the supported path ([getting started](https://esbuild.github.io/getting-started/)); its maintainer explains that TypeScript grammar requires parsing and backtracking rather than regex deletion ([evanw/esbuild#101](https://github.com/evanw/esbuild/issues/101)), while users report CI/runtime failures when esbuild's platform package is not installed correctly ([evanw/esbuild#3478](https://github.com/evanw/esbuild/issues/3478)).
+- **Lesson**: A mature transpiler used only from an untracked developer dependency is not a build dependency. Every CI job that generates runtime JavaScript must pin its Node contract, provision the exact parser, and retain fail-closed validation at publication.
+
 ### 2026-07-28 — (resolved) plugin boot spawned competing release gates and shared runtime state across projects
 
 - **What**: Constructing the multitask and stop plugins in fresh OpenCode or Node test processes independently launched detached `make gate-refresh` trees. Three gates then wrote the same `.gate-status` and `/tmp/gludd-gate-refresh-test.log`, ran overlapping pytest workers, and produced closed-xdist-channel failures plus contradictory gate status. Floor E2E also inherited the live OpenCode session, CI, stop, todo, and project-root state, so normal-session assertions changed with process order.

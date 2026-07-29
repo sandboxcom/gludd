@@ -91,6 +91,9 @@ jobs:
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0 (node20)
+        with:
+          node-version: "22"
       - name: Inject version
         run: |
           sed -i "s/__version__ = \".*\"/__version__ = \"${{ needs.version.outputs.version }}\"/" src/general_ludd/__init__.py
@@ -114,6 +117,9 @@ jobs:
         run: uv run ansible-playbook playbooks/verify_feature_claims.yml
         env:
           GLUDD_PSK: ""
+
+      - name: Install pinned TypeScript transpiler
+        run: npm install --no-save --no-package-lock esbuild@0.28.1
 
       - name: Build hot-reload modules
         # Auto-build hot-reload JS modules from current plugin .ts source so CI
