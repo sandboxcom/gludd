@@ -1744,6 +1744,15 @@ def _run_bundled_gunicorn_if_requested() -> bool:
     return True
 
 
+def _daemon_child_stdio() -> tuple[int | None, int | None]:
+    """Return child stream policy, preserving frozen-runtime diagnostics."""
+    import subprocess
+
+    if getattr(sys, "frozen", False):
+        return None, None
+    return subprocess.DEVNULL, subprocess.DEVNULL
+
+
 def main() -> None:
     if _run_bundled_gunicorn_if_requested():
         return
@@ -1803,11 +1812,12 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
     )
     env = os.environ.copy()
     env.update(cmd_env)
+    child_stdout, child_stderr = _daemon_child_stdio()
     proc = subprocess.Popen(
         cmd,
         stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=child_stdout,
+        stderr=child_stderr,
         start_new_session=True,
         close_fds=True,
         env=env,

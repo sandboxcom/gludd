@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 import sys
 
 from general_ludd import cli
@@ -60,3 +61,14 @@ def test_source_runtime_does_not_accept_bundled_bootstrap(monkeypatch) -> None:
     )
 
     assert cli._run_bundled_gunicorn_if_requested() is False
+
+
+def test_frozen_child_inherits_logs_but_source_child_stays_quiet(monkeypatch) -> None:
+    monkeypatch.setattr(cli.sys, "frozen", True, raising=False)
+    assert cli._daemon_child_stdio() == (None, None)
+
+    monkeypatch.delattr(cli.sys, "frozen", raising=False)
+    assert cli._daemon_child_stdio() == (
+        subprocess.DEVNULL,
+        subprocess.DEVNULL,
+    )
