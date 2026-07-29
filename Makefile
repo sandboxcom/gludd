@@ -207,6 +207,7 @@ help:
 	@echo "  security              Full security: sast + sbom + pip-audit"
 	@echo "  test-unit             Unit tests only"
 	@echo "  test-unit-shards      Unit tests in bounded serial shards (SHARDS=12 SHARD=1)"
+	@echo "  test-unit-shards-sequential  Run every unit shard serially with fresh workers"
 	@echo "  test-integration      Integration tests"
 	@echo "  test-e2e              End-to-end tests"
 	@echo "  test-opencode-e2e     .opencode/ plugin load+invocation tests"
@@ -655,6 +656,15 @@ test-ci-shard-kill-unit-4:
 test-unit-shards:
 	@if [ -z "$(SHARD)" ]; then echo "Usage: make test-unit-shards SHARD=unit-1a|unit-1b|unit-1d|unit-2|unit-3|other"; exit 1; fi
 	@/Library/Developer/CommandLineTools/usr/bin/make --no-print-directory test-ci-shard SHARD="$(SHARD)" PYTEST_ARGS="$(PYTEST_ARGS)"
+
+.PHONY: test-unit-shards-sequential
+test-unit-shards-sequential:
+	@set -e; \
+	for SHARD_NAME in unit-1a1 unit-1a2 unit-1b unit-1d unit-2 unit-3; do \
+		echo "=== unit shard $$SHARD_NAME: begin ==="; \
+		$(MAKE) --no-print-directory test-ci-shard SHARD="$$SHARD_NAME" PYTEST_ARGS="$(PYTEST_ARGS)" GLUDD_XDIST="$(or $(GLUDD_XDIST),2)"; \
+		echo "=== unit shard $$SHARD_NAME: passed ==="; \
+	done
 
 test-ci-shards-parallel: _ci-replica-clean-tree
 	@if [ -n "$(filter-out $@,$(MAKECMDGOALS))" ]; then echo "ERROR: quote SHARDS with spaces: make $@ SHARDS='unit-2 unit-3' [WORKERS_PER_SHARD=1]"; exit 2; fi
@@ -3456,15 +3466,13 @@ gate-refresh: _gate-run-lock-acquire
 	if [ -n "$$OLD_TEST" ] && echo "$$OLD_TEST" | grep -q "PASS"; then echo "$$OLD_TEST" >> .gate-status; else \
 		echo "=== GATE-REFRESH PHASE: test ==="; \
 		TEST_LOG="/tmp/gludd-gate-refresh-test.$$$$.log"; \
-		BASE_TEMP="/tmp/gludd-gate-refresh-basetemp.$$$$"; \
 		printf "test " >> .gate-status; \
-		if $(UV) run python -m pytest tests/unit/ -q --no-header -n 2 --maxprocesses=2 --dist loadgroup --basetemp="$$BASE_TEMP" > "$$TEST_LOG" 2>&1; then \
+		if $(MAKE) --no-print-directory run-watched CMD='$(MAKE) --no-print-directory test-unit-shards-sequential PYTEST_ARGS="-q --no-header" GLUDD_XDIST=2' LOG="$$TEST_LOG" STALL_SECS=180 MAX_SECS=3600; then \
 			echo "PASS 0" >> .gate-status; rm -f "$$TEST_LOG"; \
 		else \
 			echo "FAIL non-zero-exit" >> .gate-status && touch .gate-failed && echo "[gate-refresh] test FAILED — tail:" && tail -20 "$$TEST_LOG"; \
 			echo "[gate-refresh] full log: $$TEST_LOG"; \
 		fi; \
-		rm -rf "$$BASE_TEMP"; \
 	fi; \
 	if [ -n "$$OLD_SMOKE" ] && echo "$$OLD_SMOKE" | grep -q "PASS"; then echo "$$OLD_SMOKE" >> .gate-status; else \
 		echo "=== GATE-REFRESH PHASE: smoke ==="; \

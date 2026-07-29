@@ -26,15 +26,30 @@ def test_clean_tmp_scopes_generated_release_audit_artifacts() -> None:
 def test_gate_refresh_log_cannot_be_deleted_by_concurrent_tmp_cleanup() -> None:
     makefile = MAKEFILE.read_text(encoding="utf-8")
     gate_refresh = makefile.split("gate-refresh:", 1)[1].split(
-        "_gate-run-lock-acquire:", 1
+        "\n_gate-fresh-check:", 1
     )[0]
 
     assert 'TEST_LOG="/tmp/gludd-gate-refresh-test.$$$$.log"' in gate_refresh
-    assert 'BASE_TEMP="/tmp/gludd-gate-refresh-basetemp.$$$$"' in gate_refresh
-    assert '--basetemp="$$BASE_TEMP"' in gate_refresh
-    assert "--dist loadgroup" in gate_refresh
+    assert "test-unit-shards-sequential" in gate_refresh
     assert "[gate-refresh] full log: $$TEST_LOG" in gate_refresh
     assert "> /tmp/gludd-gate-refresh-test.log" not in gate_refresh
+
+
+def test_gate_refresh_recycles_workers_between_bounded_unit_shards() -> None:
+    makefile = MAKEFILE.read_text(encoding="utf-8")
+    gate_refresh = makefile.split("gate-refresh:", 1)[1].split(
+        "\n_gate-fresh-check:", 1
+    )[0]
+    shard_target = makefile.split("test-unit-shards-sequential:", 1)[1].split(
+        "test-ci-shards-parallel:", 1
+    )[0]
+
+    assert "test-unit-shards-sequential" in gate_refresh
+    assert "run-watched" in gate_refresh
+    assert "pytest tests/unit/" not in gate_refresh
+    assert "test-ci-shard" in shard_target
+    for shard in ("unit-1a1", "unit-1a2", "unit-1b", "unit-1d", "unit-2", "unit-3"):
+        assert shard in shard_target
 
 
 def test_clean_tmp_removes_home_tmp_pytest_garbage_with_unwritable_children(tmp_path: Path) -> None:
