@@ -3456,13 +3456,15 @@ gate-refresh: _gate-run-lock-acquire
 	if [ -n "$$OLD_TEST" ] && echo "$$OLD_TEST" | grep -q "PASS"; then echo "$$OLD_TEST" >> .gate-status; else \
 		echo "=== GATE-REFRESH PHASE: test ==="; \
 		TEST_LOG="/tmp/gludd-gate-refresh-test.$$$$.log"; \
+		BASE_TEMP="/tmp/gludd-gate-refresh-basetemp.$$$$"; \
 		printf "test " >> .gate-status; \
-		if $(UV) run python -m pytest tests/unit/ -q --no-header -n 2 --maxprocesses=2 > "$$TEST_LOG" 2>&1; then \
-			echo "PASS 0" >> .gate-status; \
+		if $(UV) run python -m pytest tests/unit/ -q --no-header -n 2 --maxprocesses=2 --basetemp="$$BASE_TEMP" > "$$TEST_LOG" 2>&1; then \
+			echo "PASS 0" >> .gate-status; rm -f "$$TEST_LOG"; \
 		else \
 			echo "FAIL non-zero-exit" >> .gate-status && touch .gate-failed && echo "[gate-refresh] test FAILED — tail:" && tail -20 "$$TEST_LOG"; \
+			echo "[gate-refresh] full log: $$TEST_LOG"; \
 		fi; \
-		rm -f "$$TEST_LOG"; \
+		rm -rf "$$BASE_TEMP"; \
 	fi; \
 	if [ -n "$$OLD_SMOKE" ] && echo "$$OLD_SMOKE" | grep -q "PASS"; then echo "$$OLD_SMOKE" >> .gate-status; else \
 		echo "=== GATE-REFRESH PHASE: smoke ==="; \
