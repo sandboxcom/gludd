@@ -2555,12 +2555,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     if _model_gateway_ref is not None:
         with contextlib.suppress(Exception):
             _model_gateway_ref.close()
-    if engine is not None:
-        await engine.dispose()
     _embedding_session_ref = getattr(app.state, "_embedding_session", None)
     if _embedding_session_ref is not None:
         with contextlib.suppress(Exception):
             await _embedding_session_ref.close()
+    if engine is not None:
+        await engine.dispose()
     otel_bridge_ref = getattr(app.state, "_otel_bridge", None)
     if otel_bridge_ref is not None and hasattr(otel_bridge_ref, "shutdown"):
         otel_bridge_ref.shutdown()
