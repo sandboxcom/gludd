@@ -69,13 +69,65 @@ def expand_shard(shard: str) -> list[str]:
     return selected
 
 
+def slice_paths(
+    paths: list[str],
+    *,
+    from_path: str | None = None,
+    after_path: str | None = None,
+    to_path: str | None = None,
+    before_path: str | None = None,
+) -> list[str]:
+    """Return a fail-closed path slice using explicit file boundaries."""
+    if from_path and after_path:
+        raise SystemExit("--from and --after are mutually exclusive")
+    if to_path and before_path:
+        raise SystemExit("--to and --before are mutually exclusive")
+
+    def boundary_index(path: str, option: str) -> int:
+        try:
+            return paths.index(path)
+        except ValueError as exc:
+            raise SystemExit(
+                f"{option} boundary {path!r} is not present in the shard"
+            ) from exc
+
+    start = 0
+    if from_path:
+        start = boundary_index(from_path, "--from")
+    elif after_path:
+        start = boundary_index(after_path, "--after") + 1
+
+    end = len(paths)
+    if to_path:
+        end = boundary_index(to_path, "--to") + 1
+    elif before_path:
+        end = boundary_index(before_path, "--before")
+
+    selected = paths[start:end]
+    if not selected:
+        raise SystemExit("requested shard boundaries produced an empty slice")
+    return selected
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--shard", required=True)
     parser.add_argument("--shell", action="store_true")
+    start_group = parser.add_mutually_exclusive_group()
+    start_group.add_argument("--from", dest="from_path")
+    start_group.add_argument("--after", dest="after_path")
+    end_group = parser.add_mutually_exclusive_group()
+    end_group.add_argument("--to", dest="to_path")
+    end_group.add_argument("--before", dest="before_path")
     args = parser.parse_args()
 
-    paths = expand_shard(args.shard)
+    paths = slice_paths(
+        expand_shard(args.shard),
+        from_path=args.from_path,
+        after_path=args.after_path,
+        to_path=args.to_path,
+        before_path=args.before_path,
+    )
     if not paths:
         raise SystemExit(f"shard {args.shard!r} expanded to no test paths")
     if args.shell:

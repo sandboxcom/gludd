@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -74,6 +75,33 @@ def test_every_unit_test_file_has_exactly_one_shard() -> None:
         relative = path.relative_to(ROOT).as_posix()
         owners = [shard for shard, files in selected.items() if relative in files]
         assert len(owners) == 1, f"{relative} belongs to {owners}, expected exactly one shard"
+
+
+def test_shard_slice_supports_inclusive_boundaries() -> None:
+    module = _load_script("ci_named_shard_files")
+    paths = ["a.py", "b.py", "c.py", "d.py"]
+
+    assert module.slice_paths(paths, from_path="b.py", to_path="c.py") == [
+        "b.py",
+        "c.py",
+    ]
+
+
+def test_shard_slice_supports_exclusive_boundaries() -> None:
+    module = _load_script("ci_named_shard_files")
+    paths = ["a.py", "b.py", "c.py", "d.py"]
+
+    assert module.slice_paths(paths, after_path="a.py", before_path="d.py") == [
+        "b.py",
+        "c.py",
+    ]
+
+
+def test_shard_slice_fails_closed_for_unknown_boundary() -> None:
+    module = _load_script("ci_named_shard_files")
+
+    with pytest.raises(SystemExit, match="not present"):
+        module.slice_paths(["a.py"], from_path="missing.py")
 
 
 def test_serial_gate_runner_is_fresh_process_and_coverage_complete() -> None:
