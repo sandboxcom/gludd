@@ -1,6 +1,6 @@
 # Collection Structure — Terraform + OPA Content
 
-Status: **stable** · Last updated 2026-06-29
+Status: **stable** · Last updated 2026-07-29
 
 This document specifies the layout of terraform and OPA policy content shipped
 inside a gludd ansible-galaxy collection, and the import-time contract enforced
@@ -80,26 +80,21 @@ The operator anchors trust in
 }
 ```
 
-A collection declares its provider surface in TWO places, both intersected with
-the operator trust list at import:
+A collection declares its provider surface in
+`plugins/terraform/providers.yaml` as
+`providers: [{name, source, version}]`:
 
-1. `galaxy.yml` → `terraform_provider_trust: [<provider>, ...]` — the
-   collection's *intent* declaration. Example (this collection):
+```yaml
+providers:
+  - name: vsphere
+    source: vmware/vsphere
+    version: "~> 2.8"
+```
 
-   ```yaml
-   terraform_provider_trust:
-     - vmware/vsphere
-   ```
-
-2. `plugins/terraform/providers.yaml` → `providers: [{name, source, version}]`
-   — the runtime dependency list.
-
-   ```yaml
-   providers:
-     - name: vsphere
-       source: vmware/vsphere
-       version: "~> 2.8"
-   ```
+`galaxy.yml` contains only keys from Ansible Galaxy's collection schema.
+Provider metadata is intentionally kept in the collection-local Terraform
+manifest so `ansible-galaxy collection build` does not emit unknown-key
+warnings.
 
 Matching is name-suffix tolerant: `vmware/vsphere` matches
 `registry.terraform.io/vmware/vsphere`. Any provider not in the operator
@@ -116,7 +111,7 @@ result list means the collection passed. The four checks:
 | 1 | `terraform validate` per module/stack dir | `error`  | `subprocess.run(["terraform","validate"], cwd=<dir>)` — skipped (warn) if terraform binary absent |
 | 2 | `opa check` on every `*.rego`  | `error`             | `subprocess.run(["opa","check",...])` — skipped (warn) if opa binary absent |
 | 3 | No `deny -=` / `deny +=` / `deny =` reassignment | `error`  | regex over source text — runs even without opa installed |
-| 4 | Provider trust cross-check     | `error`             | intersect `galaxy.yml#terraform_provider_trust` AND `providers.yaml#providers` with operator trust list |
+| 4 | Provider trust cross-check     | `error`             | intersect each `providers.yaml#providers[].source` with the operator trust list |
 
 Validation 1–2 surface as warnings (not errors) when the respective binary is
 absent so CI without `terraform`/`opa` installed does not false-fail. Validations

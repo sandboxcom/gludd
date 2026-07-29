@@ -5,7 +5,7 @@ importer checks:
   * plugins/terraform/modules|stacks layout
   * plugins/terraform/policies/*.rego (additive deny rules only)
   * plugins/terraform/providers.yaml trust cross-check
-  * galaxy.yml terraform_provider_trust field
+  * standard galaxy.yml metadata without custom provider-trust keys
 
 `terraform validate` and `opa check` are invoked via subprocess.run; the tests
 monkeypatch subprocess.run so they pass without those binaries installed. The
@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 
 from general_ludd.collections.importer import ImportIssue, TerraformCollectionImporter
 
@@ -65,6 +66,62 @@ _EXTRA_REGO = textwrap.dedent("""\
     """)
 
 
+def test_bundled_provider_trust_is_outside_galaxy_metadata() -> None:
+    collection = (
+        _PROJECT
+        / "collections"
+        / "ansible_collections"
+        / "general_ludd"
+        / "agent"
+    )
+    galaxy = yaml.safe_load(collection.joinpath("galaxy.yml").read_text(encoding="utf-8"))
+    providers = yaml.safe_load(
+        collection.joinpath("plugins", "terraform", "providers.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert "terraform_provider_trust" not in galaxy
+    assert any(
+        provider.get("source") == "vmware/vsphere"
+        for provider in providers["providers"]
+    )
+
+
+def test_bundled_collection_build_has_no_galaxy_schema_warnings(
+    tmp_path: Path,
+) -> None:
+    ansible_galaxy = shutil.which("ansible-galaxy")
+    if ansible_galaxy is None:
+        pytest.skip("ansible-galaxy not installed")
+
+    collection = (
+        _PROJECT
+        / "collections"
+        / "ansible_collections"
+        / "general_ludd"
+        / "agent"
+    )
+    proc = subprocess.run(
+        [
+            ansible_galaxy,
+            "collection",
+            "build",
+            str(collection),
+            "--output-path",
+            str(tmp_path),
+            "--force",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    combined = proc.stdout + proc.stderr
+
+    assert proc.returncode == 0, combined
+    assert "[WARNING]" not in combined, combined
+
+
 def _ok_completed(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
     return subprocess.CompletedProcess[str](args=[], returncode=0, stdout="", stderr="")
 
@@ -72,15 +129,13 @@ def _ok_completed(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[st
 def _build_collection(
     root: Path,
     *,
-    provider_trust: list[str],
     providers_yaml: list[str],
     extra_rego: str | None = _EXTRA_REGO,
     main_tf: str = _VALID_MAIN_TF,
 ) -> Path:
     root.mkdir(parents=True, exist_ok=True)
 
-    galaxy_lines = ["namespace: acme", "name: obs", "version: 1.0.0", "terraform_provider_trust:"]
-    galaxy_lines.extend(f'  - "{p}"' for p in provider_trust)
+    galaxy_lines = ["namespace: acme", "name: obs", "version: 1.0.0"]
     root.joinpath("galaxy.yml").write_text("\n".join(galaxy_lines) + "\n", encoding="utf-8")
 
     modules_dir = root / "plugins" / "terraform" / "modules" / "x"
@@ -93,7 +148,14 @@ def _build_collection(
         policies_dir.joinpath("extra.rego").write_text(extra_rego, encoding="utf-8")
 
     providers_lines = ["providers:"]
-    providers_lines.extend(f"  - {p}" for p in providers_yaml)
+    for source in providers_yaml:
+        providers_lines.extend(
+            (
+                f"  - name: {source.rsplit('/', maxsplit=1)[-1]}",
+                f"    source: {source}",
+                '    version: "~> 1.0"',
+            )
+        )
     providers_file = root / "plugins" / "terraform" / "providers.yaml"
     providers_file.write_text("\n".join(providers_lines) + "\n", encoding="utf-8")
     return root
@@ -105,7 +167,6 @@ def test_collection_with_terraform_dir_passes_import(
     monkeypatch.setattr(subprocess, "run", _ok_completed)
     root = _build_collection(
         tmp_path / "acme-obs",
-        provider_trust=["hashicorp/aws"],
         providers_yaml=["hashicorp/aws"],
     )
     issues = TerraformCollectionImporter(root, operator_trust_data_path=_TRUST_DATA).import_collection()
@@ -119,7 +180,6 @@ def test_collection_with_untrusted_provider_fails_import(
     monkeypatch.setattr(subprocess, "run", _ok_completed)
     root = _build_collection(
         tmp_path / "acme-obs",
-        provider_trust=["somecorp/some-provider"],
         providers_yaml=["somecorp/some-provider"],
     )
     issues = TerraformCollectionImporter(root, operator_trust_data_path=_TRUST_DATA).import_collection()
@@ -139,7 +199,6 @@ def test_collection_policy_extends_core_deny_set(
     monkeypatch.setattr(subprocess, "run", _ok_completed)
     root = _build_collection(
         tmp_path / "acme-obs",
-        provider_trust=["hashicorp/aws"],
         providers_yaml=["hashicorp/aws"],
     )
     issues = TerraformCollectionImporter(root, operator_trust_data_path=_TRUST_DATA).import_collection()
@@ -172,7 +231,6 @@ def test_collection_policy_cannot_override_core_deny(
     bad_rego = 'package main\n\ndeny -= "core: provider not trusted"\n'
     root = _build_collection(
         tmp_path / "acme-obs",
-        provider_trust=["hashicorp/aws"],
         providers_yaml=["hashicorp/aws"],
         extra_rego=bad_rego,
     )
@@ -189,7 +247,6 @@ def test_collection_providers_yaml_trust_check(
     monkeypatch.setattr(subprocess, "run", _ok_completed)
     root = _build_collection(
         tmp_path / "acme-obs",
-        provider_trust=["hashicorp/aws"],
         providers_yaml=["hashicorp/aws", "somecorp/evil"],
     )
     issues = TerraformCollectionImporter(root, operator_trust_data_path=_TRUST_DATA).import_collection()
