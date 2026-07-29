@@ -56,8 +56,8 @@ def test_molecule_runner_keeps_named_scenarios_separate_from_default() -> None:
     assert 'molecule test -s "$(SCENARIO)"' in body
 
 
-def test_molecule_runner_resets_cached_state_before_test() -> None:
-    """Re-copied configs must not inherit prepared state or stale mtimes."""
+def test_molecule_runner_uses_fresh_state_without_cross_runtime_reset() -> None:
+    """Fresh namespaced state must isolate caches without probing another runtime."""
     makefile = _MAKEFILE.read_text()
     runner = re.search(
         r"^molecule-test:\n(?P<body>(?:\t.*\n)+)",
@@ -66,9 +66,10 @@ def test_molecule_runner_resets_cached_state_before_test() -> None:
     )
     assert runner is not None
     body = runner.group("body")
-    reset = body.index('molecule reset -s "$(SCENARIO)"')
+    state = body.index('mktemp -d "/tmp/gludd-molecule-$(SCENARIO).XXXXXX"')
     test = body.index('molecule test -s "$(SCENARIO)"')
-    assert reset < test
+    assert state < test
+    assert 'molecule reset -s "$(SCENARIO)"' not in body
 
 
 def test_molecule_runner_uses_isolated_ansible_home() -> None:
@@ -92,6 +93,6 @@ __all__ = [
     "test_canonical_default_scenario_is_loadable",
     "test_molecule_clean_preserves_canonical_default_scenario",
     "test_molecule_runner_keeps_named_scenarios_separate_from_default",
-    "test_molecule_runner_resets_cached_state_before_test",
+    "test_molecule_runner_uses_fresh_state_without_cross_runtime_reset",
     "test_molecule_runner_uses_isolated_ansible_home",
 ]
