@@ -342,10 +342,17 @@ def test_no_wait_blocks_sleep():
     """enforce-no-wait blocks sleep pattern."""
     code = _factory_load_code("enforce-no-wait.ts") + """\
 const cmd = 'sleep 60&& make gate-status-check'
-const r = await plugin['tool.execute.before'](
-    {tool: 'bash', args: {command: cmd}}, undefined
-)
-console.log(JSON.stringify(r ?? null))
+try {
+  const r = await plugin['tool.execute.before'](
+      {tool: 'bash', args: {command: cmd}}, undefined
+  )
+  console.log(JSON.stringify(r ?? null))
+} catch(e) {
+  console.log(JSON.stringify({
+    permissionDecision: e.permissionDecision ?? "deny",
+    message: String(e.message),
+  }))
+}
 """
     result = _run_ts(code)
     assert result is not None, f"Expected deny for sleep, got: {result}"
@@ -355,8 +362,17 @@ console.log(JSON.stringify(r ?? null))
 def test_no_wait_blocks_gate_tail():
     """enforce-no-wait blocks gate-tail."""
     code = _factory_load_code("enforce-no-wait.ts") + """\
-const r = await plugin['tool.execute.before']({tool: 'bash', args: {command: 'make gate-tail'}}, undefined)
-console.log(JSON.stringify(r ?? null))
+try {
+  const r = await plugin['tool.execute.before'](
+      {tool: 'bash', args: {command: 'make gate-tail'}}, undefined
+  )
+  console.log(JSON.stringify(r ?? null))
+} catch(e) {
+  console.log(JSON.stringify({
+    permissionDecision: e.permissionDecision ?? "deny",
+    message: String(e.message),
+  }))
+}
 """
     result = _run_ts(code)
     assert result is not None, "Expected deny for gate-tail"

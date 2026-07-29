@@ -85,27 +85,18 @@ class TestBug3_EnforceDelegateFloorDefault:
 # ── Bug 4: enforce-no-wait.ts — bash command uses input.args?.command ─────────
 
 class TestBug4_EnforceNoWaitBashCommand:
-    """Line 99 uses input.command fallback; opencode passes bash command via input.args.command."""
+    """OpenCode exposes the live bash command through the mutable output args."""
 
     def test_bash_command_reads_from_input_args_not_input_directly(self):
         src = _read_plugin("enforce-no-wait.ts")
-        # The bug is `input.command` used as a direct property access for the bash command.
-        # opencode's tool.execute.before API exposes command via input.args.command only.
-        # The fix removes the `input.command` fallback entirely.
-        # Look for the actual command-reading line.
-        m = re.search(
-            r'const\s+cmd[^;]*=\s*(.+?);',
-            src,
+        assert "function _extractBashCommand(input: unknown, output: unknown)" in src
+        assert "result?.args?.command" in src, (
+            "live OpenCode tool.execute.before commands must be read from output.args.command"
         )
-        assert m, "must have a cmd assignment line"
-        cmd_assignment = m.group(1)
-        assert "input.command" not in cmd_assignment, (
-            f"BUG STILL PRESENT: cmd assignment uses input.command: {cmd_assignment!r}. "
-            "Must use only input.args?.command."
+        assert "p?.args?.command" in src, (
+            "legacy hook fixtures must remain compatible with input.args.command"
         )
-        assert "input.args?.command" in cmd_assignment or "input.args.command" in cmd_assignment, (
-            f"bash command must be read from input.args: {cmd_assignment!r}"
-        )
+        assert "const cmd = _extractBashCommand(input, output)" in src
 
 
 # ── Bug 5: enforce-verified-claims.ts — uses ctx?.tool not ctx?.toolName ──────
