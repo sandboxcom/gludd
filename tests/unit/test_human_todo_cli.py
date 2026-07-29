@@ -89,7 +89,10 @@ def fake_app(monkeypatch):
             await session.commit()
 
     asyncio.run(_seed())
-    yield app, factory, engine
+    try:
+        yield app, factory, engine
+    finally:
+        asyncio.run(engine.dispose())
 
 
 class TestHumanTodoCli:
