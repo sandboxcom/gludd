@@ -298,6 +298,10 @@ jobs:
           sed -i "s/^version = \".*\"/version = \"${{ needs.version.outputs.version }}\"/" pyproject.toml
       - name: Install deps
         run: uv sync --python ${{ matrix.python-version }}
+      - name: Install pinned TypeScript transpiler
+        # test_hot_reload_proxy runs in unit-2 and must exercise the same mature
+        # transpiler as the gate job, never the emergency regex fallback.
+        run: npm install --no-save --no-package-lock esbuild@0.28.1
       - name: Test (shard ${{ matrix.shard }}, Python ${{ matrix.python-version }})
         # Expand $TESTPATHS with bash so wildcard patterns like test_[a-e]*.py
         # are resolved by the shell before pytest sees them. An empty selection
@@ -339,21 +343,12 @@ jobs:
             echo "::error::Shard '${{ matrix.shard }}' selected no files after exclusions."
             exit 1
           fi
-          # Route through the adaptive runner (single source of truth for worker
-          # sizing) instead of a raw `-n auto`. On CI (CI=true, below) the runner
-          # sizes by min(cpu_count, available-RAM/PER_WORKER_GB) and BYPASSES the
-          # shared-local-box load cap (2.5*cores - load5): a fresh isolated 2-core
-          # runner has no competing load and is sharded so it won't OOM, so the
-          # load cap only over-throttled it to -n 1 (unit-1 ran 30+ min). It still
-          # appends `--maxprocesses N --dist loadgroup`, so a worker crash/respawn
-          # loop cannot exceed the bounded count and OOM the runner, and an
-          # OOM-shaped exit auto-retries at a halved worker count. `-n auto`
-          # previously spawned one ~1.2-1.5 GB worker PER CORE. Test SCOPE is
-          # the exclude-filtered $FILES list; the coverage flags are forwarded
-          # verbatim.
-          # GLUDD_XDIST=auto (below) is not a positive int so the runner ignores
-          # it and the adaptive computation applies. (Off-CI the load cap stays —
-          # the #45 local-OOM fix is unchanged.)
+          # Route through the adaptive runner so crash respawns stay bounded by
+          # `--maxprocesses` and OOM-shaped exits retry with half the workers.
+          # Hosted runners can expose four cores while providing only ~7 GiB;
+          # GLUDD_XDIST=2 below is an explicit override that leaves headroom for
+          # tests which launch nested Node and Python subprocesses. Test scope is
+          # the exclude-filtered $FILES list and coverage flags pass through.
           uv run python scripts/adaptive_test.py $FILES \
             --cov=general_ludd \
             --cov=collections/ansible_collections/general_ludd/governance/plugins/module_utils \
@@ -373,21 +368,10 @@ jobs:
           test -s ".coverage.${{ matrix.shard }}-${{ matrix.python-version }}"
         env:
           GLUDD_PSK: ""
-          GLUDD_XDIST: auto
-          # GitHub Actions already sets CI=true for every step; set it explicitly
-          # here so the adaptive runner's CI branch (skip the load cap, size by
-          # RAM + cores) is deterministic and self-documenting even if that
-          # default ever changes. This is what un-throttles the isolated shards.
+          GLUDD_XDIST: "2"
+          # Keep CI explicit for deterministic adaptive-runner behavior if the
+          # worker override is ever removed; the numeric cap above wins today.
           CI: "true"
-          # Per-xdist-worker RLIMIT_AS backstop (conftest.py pytest_configure).
-          # RLIMIT_AS caps VIRTUAL address space, which for this dependency set
-          # (eager tree_sitter C-ext, OpenSSL via cryptography, psycopg binary,
-          # glibc per-thread arenas) runs well above RSS — so the local default
-          # of 1600 MiB would clip HEALTHY workers on Linux. The real CI-OOM
-          # protection is the bounded worker count above (-n 2 on the 7 GB
-          # runner); this cap is only a runaway catcher, so give it VSZ headroom
-          # here to keep it from red-flagging the pipeline.
-          GLUDD_TEST_WORKER_MEM_MB: "6144"
       - name: Upload coverage data (shard ${{ matrix.shard }}, Python ${{ matrix.python-version }})
         if: always()
         # Upload the shard-unique .coverage.* data file so the `coverage` job
@@ -396,6 +380,7 @@ jobs:
         with:
           name: coverage-${{ matrix.shard }}-${{ matrix.python-version }}
           path: .coverage.${{ matrix.shard }}-${{ matrix.python-version }}
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
 
@@ -558,7 +543,7 @@ jobs:
       - name: Smoke test daemon start
         run: |
           set -euo pipefail
-          ./dist/gludd daemon start &
+          ./dist/gludd daemon &
           DAEMON_PID=$!
           cleanup() {
             if kill -0 "$DAEMON_PID" 2>/dev/null; then
@@ -568,7 +553,11 @@ jobs:
           trap cleanup EXIT
           healthy=0
           for attempt in $(seq 1 20); do
-            if curl -fsS http://127.0.0.1:8000/health; then
+            if ! kill -0 "$DAEMON_PID" 2>/dev/null; then
+              echo "::error::Linux daemon process exited before becoming healthy."
+              exit 1
+            fi
+            if curl -fsS http://127.0.0.1:8000/healthz; then
               healthy=1
               break
             fi

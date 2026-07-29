@@ -137,28 +137,21 @@ def compute_nproc(
 
     The result is always ``>= 1``.
 
-    On CI (``CI=true``) the load cap is BYPASSED and sizing is
-    ``min(cpu_count, by_mem)`` only. The load cap (#45) exists to keep a shared
-    LOCAL box responsive by not piling a full ``-n auto`` fan-out on top of the
-    developer's existing load. A CI shard is the opposite case: a fresh, isolated
-    single-purpose runner with ample per-shard RAM and no competing load, split so
-    it does not OOM — there the load cap only over-throttles (e.g. on a 2-core
-    runner it collapses to ``-n 1`` and a shard runs 30+ min). The RAM cap and the
-    OOM-halve-retry backstop still apply on CI, so an isolated shard is never
-    left unbounded.
+    On CI (``CI=true``) automatic sizing bypasses the shared-machine load cap and
+    uses ``min(cpu_count, by_mem)``. Callers whose tests launch nested process
+    trees should set a positive ``GLUDD_XDIST`` override so the outer workers
+    leave explicit headroom; the beta.3 hosted workflow uses two. The RAM cap
+    still protects automatic sizing, and the OOM-halve-retry backstop applies to
+    both automatic and overridden counts.
     """
     cpu_count = max(1, cpu_count)
 
     # RAM cap (original behaviour).
-    if avail_gb is None or gb_per_worker <= 0:
-        by_mem = cpu_count
-    else:
-        by_mem = max(1, int(avail_gb // gb_per_worker))
+    by_mem = cpu_count if avail_gb is None or gb_per_worker <= 0 else max(1, int(avail_gb // gb_per_worker))
 
-    # CI shards are isolated (fresh, single-purpose runner, ample per-shard RAM,
-    # no competing load) and don't OOM, so the shared-LOCAL-box load cap only
-    # over-throttles them. Size by RAM + cores only; the RAM cap and the
-    # OOM-halve-retry backstop below still guard against over-commit.
+    # CI runners are isolated from local developer load, so automatic sizing
+    # skips that shared-machine cap. Workflows with nested subprocesses can still
+    # need a numeric env override to reserve headroom beyond this outer pool.
     if os.environ.get("CI") == "true":
         return max(1, min(cpu_count, by_mem))
 

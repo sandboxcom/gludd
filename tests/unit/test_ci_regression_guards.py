@@ -15,12 +15,15 @@ if), not brittle substring matches.
 
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent.parent
+DOCKERFILE = ROOT / "Dockerfile"
+PYPROJECT = ROOT / "pyproject.toml"
 SPEC = ROOT / "gludd.spec"
 BUILD_YML = ROOT / ".github" / "workflows" / "build.yml"
 PARTIALS_GITKEEP = ROOT / "templates" / "prompts" / "partials" / ".gitkeep"
@@ -362,4 +365,80 @@ def test_coverage_aggregation_job_exists() -> None:
     assert "upload-artifact" in combined, (
         "CI regression: the 'coverage' job does not upload the merged "
         "coverage.xml artifact, so the combined report is not retained."
+    )
+
+
+def test_docker_builder_copies_wheel_force_includes_before_project_sync() -> None:
+    """Guard: Hatch force-includes must exist before Docker installs the project.
+
+    Hosted beta.3 incident: ``uv sync --frozen --no-dev`` failed because Hatch
+    tried to force-include ``/app/infra/terraform`` before Docker copied it.
+    """
+    dockerfile = DOCKERFILE.read_text(encoding="utf-8")
+    project_sync = dockerfile.rindex("uv sync --frozen --no-dev")
+    builder_prefix = dockerfile[:project_sync]
+    copied_sources = {
+        source
+        for line in builder_prefix.splitlines()
+        if line.startswith("COPY ")
+        for source in line.removeprefix("COPY ").split()[:-1]
+    }
+    pyproject = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
+    force_includes = set(
+        pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]["force-include"]
+    )
+
+    assert force_includes <= copied_sources, (
+        "Docker packaging regression: every Hatch wheel force-include must be "
+        "copied before the final `uv sync --frozen --no-dev`; missing sources: "
+        f"{sorted(force_includes - copied_sources)}"
+    )
+
+
+def test_shard_coverage_upload_includes_hidden_file_and_fails_closed() -> None:
+    """Guard: upload-artifact must opt into the hidden ``.coverage.*`` payload."""
+    workflow = _load_build_workflow()
+    steps = workflow["jobs"]["test-shard"]["steps"]
+    uploads = [
+        step
+        for step in steps
+        if str(step.get("name", "")).startswith("Upload coverage data")
+    ]
+
+    assert len(uploads) == 1, (
+        "CI regression: expected exactly one test-shard coverage upload step, "
+        f"found {len(uploads)}."
+    )
+    upload_with = uploads[0].get("with", {})
+    assert upload_with.get("include-hidden-files") is True, (
+        "CI regression: actions/upload-artifact excludes the shard's hidden "
+        "`.coverage.*` file unless `include-hidden-files: true` is explicit."
+    )
+    assert upload_with.get("if-no-files-found") == "error", (
+        "CI regression: shard coverage upload must fail closed when the hidden "
+        "coverage file is missing."
+    )
+
+
+def test_test_shards_cap_xdist_for_nested_process_headroom() -> None:
+    """Guard: hosted shards must leave RAM for nested Node/process tests."""
+    workflow = _load_build_workflow()
+    job = workflow["jobs"]["test-shard"]
+    test_steps = [
+        step
+        for step in job["steps"]
+        if str(step.get("name", "")).startswith("Test (shard ")
+    ]
+
+    assert len(test_steps) == 1
+    test_env = test_steps[0].get("env", {})
+    assert str(test_env.get("GLUDD_XDIST")) == "2", (
+        "CI resource regression: the hosted adaptive runner must be explicitly "
+        "capped at two xdist workers so nested Node and subprocess tests retain "
+        "headroom on the 7 GiB runner."
+    )
+    all_envs = [job.get("env", {}), *[step.get("env", {}) for step in job["steps"]]]
+    assert all("GLUDD_TEST_WORKER_MEM_MB" not in env for env in all_envs), (
+        "CI resource regression: the obsolete RLIMIT_AS override must stay "
+        "absent; V8 needs a large contiguous virtual address range."
     )
