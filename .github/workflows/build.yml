@@ -302,6 +302,11 @@ jobs:
         # test_hot_reload_proxy runs in unit-2 and must exercise the same mature
         # transpiler as the gate job, never the emergency regex fallback.
         run: npm install --no-save --no-package-lock esbuild@0.28.1
+      - name: Install pinned OpenCode CLI
+        if: matrix.shard == 'other'
+        run: |
+          npm install --global opencode-ai@1.18.9
+          opencode --version
       - name: Test (shard ${{ matrix.shard }}, Python ${{ matrix.python-version }})
         # Expand $TESTPATHS with bash so wildcard patterns like test_[a-e]*.py
         # are resolved by the shell before pytest sees them. An empty selection

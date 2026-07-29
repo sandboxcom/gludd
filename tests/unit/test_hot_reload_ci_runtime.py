@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "build.yml"
 SETUP_NODE = "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020"
 ESBUILD_INSTALL = "npm install --no-save --no-package-lock esbuild@0.28.1"
+OPENCODE_INSTALL = "npm install --global opencode-ai@1.18.9"
 
 
 def _job_steps(job: str) -> list[dict[str, Any]]:
@@ -65,6 +66,25 @@ def test_all_test_shards_pin_node_26() -> None:
     setup = next(step for step in steps if step.get("uses") == SETUP_NODE)
 
     assert setup.get("with", {}).get("node-version") == "26"
+
+
+def test_other_shard_installs_pinned_opencode_before_pytest() -> None:
+    steps = _job_steps("test-shard")
+    test_index = next(
+        index
+        for index, step in enumerate(steps)
+        if str(step.get("name", "")).startswith("Test (shard ")
+    )
+    installs = [
+        (index, step)
+        for index, step in enumerate(steps)
+        if OPENCODE_INSTALL in str(step.get("run", ""))
+    ]
+
+    assert installs, "other-shard OpenCode e2e tests require the upstream CLI"
+    install_index, install_step = installs[0]
+    assert install_index < test_index
+    assert "matrix.shard == 'other'" in str(install_step.get("if", ""))
 
 
 def test_all_test_shards_install_pinned_esbuild_before_pytest() -> None:
