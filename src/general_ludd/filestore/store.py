@@ -1,16 +1,16 @@
-"""FileStore — virtual filesystem-based artifact and binary storage using PyFilesystem2."""
+"""FileStore — confined artifact and binary storage on the local filesystem."""
 
 from __future__ import annotations
 
 import os
+import shutil
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
-
-from fs.osfs import OSFS
-from fs.path import dirname, join
 
 
 class FileStore:
-    """Virtual filesystem store for artifacts, binaries, configs, and cache.
+    """Local filesystem store for artifacts, binaries, configs, and cache.
 
     Supports a config overlay: files in ~/.config/gludd/fs/ take precedence
     over files in the main store (~/.local/share/general-ludd/filestore/).
@@ -25,14 +25,15 @@ class FileStore:
         if root_path is None:
             root_path = os.path.expanduser("~/.local/share/general-ludd/filestore")
         self._root_path = root_path
-        self._fs = OSFS(root_path, create=True)
-        self._overlay_fs: OSFS | None = None
+        self._fs = Path(root_path).expanduser().resolve()
+        self._fs.mkdir(parents=True, exist_ok=True)
+
         if overlay_path is None:
             self._overlay_path = os.path.expanduser("~/.config/gludd/fs")
         else:
             self._overlay_path = overlay_path
-        if self._overlay_path is not None and os.path.isdir(self._overlay_path):
-            self._overlay_fs = OSFS(self._overlay_path)
+        overlay = Path(self._overlay_path).expanduser()
+        self._overlay_fs: Path | None = overlay.resolve() if overlay.is_dir() else None
 
     @staticmethod
     def _is_binary_path(path: str) -> bool:
@@ -41,173 +42,170 @@ class FileStore:
         norm = path.lstrip("/")
         return norm == "binaries" or norm.startswith("binaries/")
 
+    @staticmethod
+    def _confine(root: Path, path: str) -> Path:
+        """Resolve *path* and reject any result outside *root*.
+
+        ``Path.resolve(strict=False)`` follows every existing symlink while also
+        supporting new write targets.  Checking the resolved result prevents
+        traversal and symlink-based reads, writes, moves, and deletions outside
+        the store.
+        """
+        root_real = root.resolve()
+        target = (root_real / path.lstrip("/")).resolve(strict=False)
+        try:
+            target.relative_to(root_real)
+        except ValueError as exc:
+            raise PermissionError(f"Path escapes store root: {path}") from exc
+        return target
+
     def _overlay_owns(self, path: str) -> bool:
         """Whether the overlay should serve this path.
 
-        Findings 1/2: writes/removes go to the MAIN store, so the overlay must
-        only serve a path when the main store does NOT have it. Otherwise an
-        overlay file silently shadows a just-written value (a write must be
-        visible to the subsequent read). Binaries are never served from the
-        overlay (Finding 1, trust boundary).
+        Writes/removes go to the main store, so the overlay only serves a path
+        when the main store does not have it. Binaries are never served from the
+        overlay.
         """
-        if self._overlay_fs is None:
+        if self._overlay_fs is None or self._is_binary_path(path):
             return False
-        if self._is_binary_path(path):
+        if self._confine(self._fs, path).exists():
             return False
-        if self._fs.exists(path):
-            return False
-        return bool(self._overlay_fs.exists(path))
+        return self._confine(self._overlay_fs, path).exists()
 
-    def _root_for(self, fs: OSFS) -> str:
-        return self._overlay_path if fs is self._overlay_fs else self._root_path
-
-    def _confine(self, fs: OSFS, path: str) -> None:
-        """Finding 4: reject entries whose realpath escapes the backend root.
-
-        OSFS follows symlinks, so a symlink planted in the store/overlay root
-        can be followed out of the root (exfiltration / out-of-root clobber).
-        After resolving, assert the realpath stays under the intended root.
-        """
-        root = self._root_for(fs)
-        root_real = os.path.realpath(root)
-        try:
-            syspath = fs.getsyspath(path)
-        except Exception:
-            # No OS-level path for this entry (non-OSFS backend) → nothing to confine.
-            return
-        target_real = os.path.realpath(syspath)
-        if target_real != root_real and not target_real.startswith(root_real + os.sep):
-            raise PermissionError(f"Path escapes store root: {path}")
-
-    def _resolve_path(self, path: str) -> tuple[OSFS, str]:
-        # _overlay_owns() is True only when _overlay_fs is not None, so this
-        # narrows to a concrete OSFS for both branches.
+    def _resolve_path(self, path: str) -> tuple[Path, str]:
         if self._overlay_owns(path):
             assert self._overlay_fs is not None
-            fs: OSFS = self._overlay_fs
+            root = self._overlay_fs
         else:
-            fs = self._fs
-        self._confine(fs, path)
-        return fs, path
+            root = self._fs
+        self._confine(root, path)
+        return root, path
 
     @property
     def root_path(self) -> str:
         return self._root_path
 
     def write_text(self, path: str, content: str) -> None:
-        self._fs.makedirs(dirname(path), recreate=True)
-        # Confine the FULL path, not just its dirname: a symlink planted at the
-        # file target itself would otherwise be followed and let the write escape
-        # the store root (the read path already confines the full path).
-        self._confine(self._fs, path)
-        self._fs.writetext(path, content)
+        target = self._confine(self._fs, path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
 
     def read_text(self, path: str) -> str:
-        fs, resolved = self._resolve_path(path)
-        return fs.readtext(resolved)
+        root, resolved = self._resolve_path(path)
+        return self._confine(root, resolved).read_text(encoding="utf-8")
 
     def read_bytes(self, path: str) -> bytes:
-        fs, resolved = self._resolve_path(path)
-        return fs.readbytes(resolved)
+        root, resolved = self._resolve_path(path)
+        return self._confine(root, resolved).read_bytes()
 
     def write_bytes(self, path: str, data: bytes) -> None:
-        self._fs.makedirs(dirname(path), recreate=True)
-        # Confine the FULL path (see write_text): a symlink at the file target
-        # must not let the write escape the store root.
-        self._confine(self._fs, path)
-        self._fs.writebytes(path, data)
+        target = self._confine(self._fs, path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
 
     def exists(self, path: str) -> bool:
-        # Use the same resolution as reads/removes so that exists()==True implies
-        # the resolving backend can serve/remove the path (Finding 3 consistency).
         if self._overlay_owns(path):
             return True
-        return self._fs.exists(path)
+        return self._confine(self._fs, path).exists()
 
     def is_dir(self, path: str) -> bool:
-        if self._overlay_fs is not None and self._overlay_owns(path):
-            return self._overlay_fs.isdir(path)
-        return self._fs.isdir(path)
+        root, resolved = self._resolve_path(path)
+        return self._confine(root, resolved).is_dir()
+
+    @staticmethod
+    def _entry_info(root: Path, entry: Path) -> dict[str, Any]:
+        relative = entry.relative_to(root).as_posix()
+        confined = FileStore._confine(root, relative)
+        stat = confined.stat()
+        return {
+            "name": entry.name,
+            "path": relative,
+            "is_dir": confined.is_dir(),
+            "size": stat.st_size,
+            "modified": datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
+        }
 
     def list_dir(self, path: str = "/") -> list[dict[str, Any]]:
         seen: set[str] = set()
         entries: list[dict[str, Any]] = []
 
-        def _add_from(fs: Any, base_path: str) -> None:
-            if not fs.isdir(base_path):
+        def _add_from(root: Path, base_path: str) -> None:
+            directory = self._confine(root, base_path)
+            if not directory.is_dir():
                 return
-            for entry in fs.scandir(base_path):
+            for entry in directory.iterdir():
                 if entry.name in seen:
                     continue
                 seen.add(entry.name)
-                full_path = join(path, entry.name).lstrip("/")
-                info = fs.getinfo(full_path, namespaces=["details"])
-                entries.append({
-                    "name": entry.name,
-                    "path": full_path,
-                    "is_dir": entry.is_dir,
-                    "size": info.size,
-                    "modified": info.modified.isoformat() if info.modified else None,
-                })
+                entries.append(self._entry_info(root, entry))
 
         if self._overlay_fs is not None:
             _add_from(self._overlay_fs, path)
         _add_from(self._fs, path)
 
-        entries.sort(key=lambda e: (not e["is_dir"], e["name"]))
+        entries.sort(key=lambda entry: (not entry["is_dir"], entry["name"]))
         return entries
 
     def tree(self, path: str = "/") -> list[dict[str, Any]]:
         entries: list[dict[str, Any]] = []
-        for step in self._fs.walk(path):
-            for file in step.files:
-                full = join(step.path, file.name).lstrip("/")
-                entries.append({"path": full, "is_dir": False, "name": file.name})
-            for subdir in step.dirs:
-                full = join(step.path, subdir.name).lstrip("/")
-                entries.append({"path": full, "is_dir": True, "name": subdir.name})
+        base = self._confine(self._fs, path)
+        if not base.is_dir():
+            return entries
+
+        for current, dirnames, filenames in os.walk(base, followlinks=False):
+            dirnames.sort()
+            filenames.sort()
+            current_path = Path(current)
+            for name, is_dir in [
+                *((dirname, True) for dirname in dirnames),
+                *((filename, False) for filename in filenames),
+            ]:
+                entry = current_path / name
+                relative = entry.relative_to(self._fs).as_posix()
+                self._confine(self._fs, relative)
+                entries.append({"path": relative, "is_dir": is_dir, "name": name})
         return entries
 
     def makedirs(self, path: str) -> None:
-        self._fs.makedirs(path, recreate=True)
+        self._confine(self._fs, path).mkdir(parents=True, exist_ok=True)
 
     def remove(self, path: str) -> None:
-        # Finding 3: remove from whichever backend exists() resolves to, so a
-        # path exists() reported True can always be removed (no FileNotFoundError
-        # on an overlay-only entry, and an overlay-only "removed" path no longer
-        # resolves afterwards).
         if self._overlay_owns(path):
             assert self._overlay_fs is not None
-            target: OSFS = self._overlay_fs
-        elif self._fs.exists(path):
-            target = self._fs
+            root = self._overlay_fs
+        elif self._confine(self._fs, path).exists():
+            root = self._fs
         else:
             raise FileNotFoundError(f"Path not found: {path}")
-        # Confine before deleting: a symlink in the store must not let a remove
-        # escape and delete a file outside the store root.
-        self._confine(target, path)
-        if target.isdir(path):
-            target.removetree(path)
+
+        target = self._confine(root, path)
+        if target.is_dir():
+            shutil.rmtree(target)
         else:
-            target.remove(path)
+            target.unlink()
 
     def get_info(self, path: str) -> dict[str, Any]:
-        info = self._fs.getinfo(path, namespaces=["details"])
+        target = self._confine(self._fs, path)
+        stat = target.stat()
         return {
-            "name": info.name,
+            "name": target.name,
             "path": path.lstrip("/"),
-            "is_dir": info.is_dir,
-            "size": info.size,
-            "modified": info.modified.isoformat() if info.modified else None,
+            "is_dir": target.is_dir(),
+            "size": stat.st_size,
+            "modified": datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
         }
 
     def copy(self, src: str, dst: str) -> None:
-        self._fs.makedirs(dirname(dst), recreate=True)
-        self._fs.copy(src, dst)
+        source = self._confine(self._fs, src)
+        destination = self._confine(self._fs, dst)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
 
     def move(self, src: str, dst: str) -> None:
-        self._fs.makedirs(dirname(dst), recreate=True)
-        self._fs.move(src, dst)
+        source = self._confine(self._fs, src)
+        destination = self._confine(self._fs, dst)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(source, destination)
 
     def close(self) -> None:
-        self._fs.close()
+        """Retained for API compatibility; local files are opened per operation."""

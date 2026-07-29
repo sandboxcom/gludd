@@ -40,7 +40,6 @@ dependencies = [
     "langsmith>=0.8.18",
     "langchain-openai>=1.4.1",
     "watchdog>=6.0.0",
-    "fs>=2.4.0",
     "rich>=13.0.0",
     "diskcache>=5.6.0",
     "prompt_toolkit>=3.0.0",
@@ -179,12 +178,6 @@ markers = [
     "requires_postgres: skip unless POSTGRES_AVAILABLE=1 is set in env or port 5432 is open",
     "hook_live: exercises a real opencode CLI against the .opencode/plugin/*.ts hooks; excluded from the default run (`-m \"not hook_live\"` in addopts) — run via `make test-hooks-live` or `-m hook_live`",
 ]
-filterwarnings = [
-    "ignore:pkg_resources is deprecated as an API:UserWarning:fs",
-    "ignore:Deprecated call to `pkg_resources\\.declare_namespace\\('fs.*:DeprecationWarning:fs",
-    "ignore:Deprecated call to `pkg_resources\\.declare_namespace\\('fs.*:DeprecationWarning:pkg_resources",
-]
-
 [tool.coverage.run]
 source = ["general_ludd"]
 omit = ["tests/*"]
