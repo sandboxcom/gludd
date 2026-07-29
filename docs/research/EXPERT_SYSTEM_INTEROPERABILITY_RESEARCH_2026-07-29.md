@@ -983,6 +983,102 @@ The oracle checks terminal class, deterministic invariants, required
 evidence/traces, and forbidden effects. Transcript similarity is not a
 conformance oracle.
 
+### 9.5 Residual governance, drift, language, and embodied-time findings
+
+The first-pass design attached `license`, privacy, freshness, and units to
+evidence, but those labels do not answer whether one concrete use is allowed.
+SPDX 3.0.1 deliberately separates a package's declared license from its
+concluded license. Dataset/model documentation practices likewise describe
+provenance and intended use rather than granting an executor authority to make a
+legal conclusion. The expert runtime therefore needs a purpose-specific rights
+decision graph over every input, model, adapter, prompt, output, derivative,
+redistribution channel, and required notice. Unknown or incompatible rights
+must produce a hold; the model may assemble evidence but cannot act as legal
+counsel. A license or consent change must invalidate downstream use decisions,
+including cached and transformed copies.
+
+Privacy has the same lineage problem. A transformation into chunks, embeddings,
+features, adapters, checkpoints, logs, or evaluation fixtures does not erase
+the source purpose, subject, retention, or deletion obligation. Shokri et al.
+demonstrated that membership can be inferred from model access, so deletion is
+not proved by removing the source row. NIST's Privacy Framework supports
+purpose- and risk-driven controls; Guo et al.'s certified-removal work provides
+one bounded technique, not a universal unlearning certificate. Gludd needs a
+descendant inventory, purpose/legal-basis gate, privacy attack tests, and an
+honest outcome vocabulary: `removed`, `retrained`, `contained`,
+`verification_inconclusive`, or `not_removed`.
+
+Export-control and sanctions rules are volatile, jurisdiction-specific legal
+inputs. Current BIS EAR parts 740, 742, and 748 illustrate that authorization
+can depend on the item or model weights, software, computing service, parties,
+end user, end use, destination, license, and exception. OFAC's framework calls
+for risk assessment, controls, testing, and training, while FAQ 65 warns that
+lists change frequently. A model must not invent an ECCN or legal entitlement.
+The runtime instead binds a signed, current policy revision and a qualified
+trade-compliance decision to the exact transfer, then re-screens at execution,
+re-export, remote-access, and renewal boundaries. Ambiguous location or name
+signals receive a privacy-minimized review and appeal path rather than an
+irreversible automated accusation.
+
+Benchmark identity also needs more than an aggregate score. LiveBench motivates
+fresh, contamination-resistant tasks. The LM Evaluation Harness maintains task
+versions and changelogs because prompt, metric, dataset, and evaluator changes
+can break comparability. Gludd must bind the exact task/dataset revision,
+prompt/template, tokenizer, metric, evaluator or judge, harness and dependency
+versions, environment, cohort, and contamination declarations. It must model
+construct, distribution, annotation, evaluator, and implementation drift
+separately. A changed benchmark creates a new score series connected by an
+explicit comparability decision; it never silently rewrites historical scores.
+
+Multilingual support is not satisfied by translating an English fixture.
+BCP 47 identifies language, script, region, and variants; Unicode Technical
+Standard 39 provides security mechanisms for mixed-script and confusable text.
+Belebele reports multilingual reading-comprehension evaluation across 122
+language variants, while Koenecke et al. found material ASR disparities across
+speaker groups. Every segment therefore needs explicit language metadata,
+code-switch and low-resource coverage, critical-token preservation, and
+human validation for high-risk translations. Unicode normalization used for
+matching or security must retain the original representation. WCAG 2.2 makes
+equivalent text, captions, audio description, keyboard access, focus, semantic
+structure, and language-of-parts executable product requirements rather than UI
+preferences.
+
+Finally, embodied reasoning needs typed time and observation semantics. The ROS
+2 clock design distinguishes system, steady, and simulated time and documents
+that simulation can pause, accelerate, or jump backwards; a zero ROS time can
+mean uninitialized. Wall-clock timestamps cannot establish causal order.
+Every observation must name its clock domain, epoch/scale, uncertainty,
+staleness, frame, transform validity, and provenance. The planner must keep
+partial observability and belief state explicit, enforce action
+preconditions/invariants/postconditions and a safety envelope, and treat an
+ambiguous acknowledgement as an unknown effect rather than blindly retrying a
+physical action.
+
+Primary and normative sources for these residuals:
+
+- [SPDX 3.0.1 AI profile](https://spdx.github.io/spdx-spec/v3.0.1/model/AI/AI/)
+- [MLCommons Croissant](https://github.com/mlcommons/croissant)
+- [Datasheets for Datasets](https://doi.org/10.1145/3458723)
+- [Model Cards for Model Reporting](https://doi.org/10.1145/3287560.3287596)
+- [NIST Privacy Framework](https://www.nist.gov/privacy-framework/privacy-framework)
+- [Shokri et al., Membership Inference Attacks](https://doi.org/10.1109/SP.2017.41)
+- [Guo et al., Certified Data Removal](https://arxiv.org/abs/1912.03817)
+- [BIS EAR part 740](https://www.bis.gov/regulations/ear/740),
+  [part 742](https://www.bis.gov/regulations/ear/742), and
+  [part 748](https://www.bis.gov/regulations/ear/748)
+- [OFAC Framework for Compliance Commitments](https://ofac.treasury.gov/media/16331/download)
+  and [OFAC FAQ 65](https://ofac.treasury.gov/faqs/65)
+- [LiveBench](https://proceedings.iclr.cc/paper_files/paper/2025/hash/e4a46394ba5378b3f9a186a5b4c650d1-Abstract-Conference.html)
+- [LM Evaluation Harness task-version guidance](https://github.com/EleutherAI/lm-evaluation-harness/blob/main/docs/new_task_guide.md)
+- [RFC 5646 / BCP 47](https://www.rfc-editor.org/info/rfc5646/),
+  [Unicode UTS 39](https://www.unicode.org/reports/tr39/), and
+  [WCAG 2.2](https://www.w3.org/TR/WCAG22/)
+- [Belebele](https://aclanthology.org/2024.acl-long.44/) and
+  [Racial disparities in automated speech recognition](https://doi.org/10.1073/pnas.1915768117)
+- [ROS 2 Clock and Time design](https://design.ros2.org/articles/clock_and_time.html),
+  [RFC 3339](https://www.rfc-editor.org/info/rfc3339), and
+  [Allen's interval algebra](https://doi.org/10.1145/182.358434)
+
 ## 10. Practitioner and maintainer failure evidence
 
 These reports are operational evidence. They motivate tests and do not establish
@@ -1011,6 +1107,18 @@ universal framework behavior.
 | [Temporal Java issue #871](https://github.com/temporalio/sdk-java/issues/871) | 2021-11-15 | Activity cancellation re-entered an event loop and produced a detected workflow deadlock | Detect wait cycles and non-yielding work; cancellation/deadlock tests must cover state-machine re-entry and preserve replay evidence |
 | [Temporal compensation forum report](https://community.temporal.io/t/exception-on-compensation/2403) | 2021-06-16 | Users found that compensations can exhaust retries or stop remaining cleanup, leaving workflow failure semantics unclear | Compensation is a durable typed effect with independent retry, continuation policy, receipt, residual-state report, and human-recovery path |
 | [Argo Rollouts issue #995](https://github.com/argoproj/argo-rollouts/issues/995) | 2021-02-17 | An unhealthy stable revision blocked progress of a healthy canary; users discussed breaking-glass recovery | Canary/control health must be attributed separately; pre-exercise rollback and recovery when stable/control paths are degraded |
+| [Hugging Face Hub issue #1579](https://github.com/huggingface/huggingface_hub/issues/1579) | 2023-05-09 | A gated repository's public license metadata could not be retrieved before the access agreement | License and restrictions must be inspectable before assent or use; gated bytes cannot be the only rights record |
+| [Hugging Face forum: custom dataset metadata](https://discuss.huggingface.co/t/how-do-i-add-custom-metadata-fields-to-datasets/43714/1) | 2023-05-25 | A user could not retain arbitrary dataset metadata needed by their workflow | Transform/adaptor contracts preserve rights, subject, consent, and field-level metadata rather than silently projecting a fixed schema |
+| [Hugging Face Hub issue #2218](https://github.com/huggingface/huggingface_hub/issues/2218) | 2024-03-19 | Dataset caches were outside the cache scan/delete tool's inventory | Deletion traverses source, cache, chunk, embedding, adapter, model, log, and backup descendants and reports unresolved copies |
+| [Hugging Face Datasets issue #2065](https://github.com/huggingface/datasets/issues/2065) | 2021-02-24 | Shared dataset cache permissions caused multi-user access failures and exposure concerns | Cache namespace, owner, tenant, permissions, and reuse purpose are explicit; cross-user reuse is denied by default |
+| [GitHub Community discussion #58614](https://github.com/orgs/community/discussions/58614) | 2023-06-05 | Users in or associated with sanctioned regions described private-repository restrictions and difficult appeals | Regulated-transfer decisions use current policy and qualified review, minimize sensitive evidence, expose reason codes, and support appeal |
+| [LM Evaluation Harness issue #1217](https://github.com/EleutherAI/lm-evaluation-harness/issues/1217) | 2024-01-23 | A dataset revision changed split size and therefore evaluation results; pinning the earlier revision restored the historical run | Freeze dataset revision and comparability metadata; a changed dataset starts a new score series |
+| [LM Evaluation Harness issue #1831](https://github.com/EleutherAI/lm-evaluation-harness/issues/1831) | 2024-06-18 | The configured judge model differed across evaluation paths | Bind exact evaluator identity and configuration; evaluator drift cannot be reported as candidate drift |
+| [Whisper discussion #49](https://github.com/openai/whisper/discussions/49) | 2022-09-23 | Users found code-switched speech difficult because language selection assumed one language | Tag language per segment, preserve uncertain/code-switched spans, and score switches rather than force one language |
+| [Whisper discussion #1456](https://github.com/openai/whisper/discussions/1456) | 2023-06-26 | Users reported unreliable language detection when the first audio window was not representative | Language detection retains confidence and segment evidence, supports re-detection, and does not silently govern the whole artifact |
+| [Whisper discussion #2124](https://github.com/openai/whisper/discussions/2124) | 2024-02-23 | Users reported long-audio transcription gaps spanning many seconds | Accessibility acceptance checks timestamp coverage and explicit unavailable spans, not merely readable transcript text |
+| [rosbag2 issue #1276](https://github.com/ros2/rosbag2/issues/1276) | 2023-02-03 | Messages recorded before simulated clock initialization received zero timestamps and became unplayable or distorted statistics | Zero/uninitialized time is invalid for causal action; buffer, reject, or mark unknown without fabricating chronology |
+| [ros2_control issue #325](https://github.com/ros-controls/ros2_control/issues/325) | 2021-05-10 | Mixed simulated and system clock use produced inconsistent controller behavior | Clock domain is part of every state/action interface and incompatible domains fail before actuation |
 
 ## 11. Repository-specific conclusions
 
@@ -1071,6 +1179,18 @@ self-update path would be a defect.
     schedules/faults, deterministic invariants, and forbidden-effect oracles.
 21. Canary policy is signed before results are visible, and promotion requires
     representative evidence plus independently exercised rollback.
+22. Rights are purpose-specific decisions over the complete derivation and
+    distribution graph; metadata labels alone never authorize use.
+23. Privacy obligations and removal verification follow every derived artifact,
+    cache, adapter, checkpoint, model, fixture, log, and backup.
+24. Regulated transfers bind current signed jurisdiction policy and qualified
+    review to the exact item/service, parties, end use, destination, and time.
+25. Benchmark identity and each drift class are explicit; changed tasks or
+    evaluators never silently rewrite a historical score series.
+26. Language is segment-scoped and accessibility is task-equivalent,
+    testable behavior, including critical-token and subgroup gates.
+27. Clock domains, staleness, frames, belief state, action invariants, safety
+    stop, and unknown-effect reconciliation are typed embodied interfaces.
 
 ## 13. Domain appendix integration
 

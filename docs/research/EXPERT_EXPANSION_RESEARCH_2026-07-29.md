@@ -1251,6 +1251,67 @@ Minimum promotion policy:
 10. Generated/source-feedback lineage and hidden-evaluation contamination checks
     pass without a critical unknown.
 
+### 8.1 Residual AI/ML qualification boundaries
+
+The following boundaries apply across the speech, world-model, vision,
+distillation, simulator, materials, and chemistry roles. They were not fully
+captured by the domain acceptance framework above:
+
+- **Rights compatibility is use-specific.** A model, dataset, adapter, voice,
+  image, prompt, software dependency, and generated artifact can each have
+  different rights and obligations. Record declared and concluded licenses
+  separately, permitted purpose, output/derivative/redistribution rights,
+  attribution and notice obligations, consent, expiry/revocation, and the
+  qualified human decision. “Open” or downloadable is not a rights verdict.
+  SPDX's AI profile and Croissant provide metadata seams; they do not replace
+  the decision.
+- **Privacy follows derived state.** Purpose, subject/sensitivity, legal basis,
+  consent, retention, and deletion obligations propagate into chunks,
+  embeddings, features, caches, adapters, distilled models, checkpoints,
+  evaluation fixtures, and logs. The role must inventory descendants, prevent
+  cross-tenant/training reuse by default, test membership/extraction risk, and
+  distinguish verified removal, retraining, containment, and inconclusive
+  removal. It cannot claim unlearning merely because a row or cache entry was
+  deleted.
+- **Regulated transfer is a current-policy decision.** Export and sanctions
+  screening binds exact software/model/weights/compute or service, parties and
+  ultimate parent, end user/end use, origin/destination, remote access,
+  transfer/re-export type, and time-limited license or exception to a signed
+  jurisdiction-policy revision. The AI/ML expert supplies technical facts; a
+  qualified trade-compliance role decides. Screening reruns at transfer and
+  material-change boundaries and includes privacy-minimized review and appeal.
+- **Benchmark drift is typed.** Freeze task, dataset and split revision,
+  prompt/template, tokenizer, metric, evaluator/judge, harness, dependencies,
+  environment, cohort, and contamination declarations. Construct,
+  distribution, annotation, evaluator, and implementation drift are separate.
+  Changed tasks start a linked score series with an explicit comparability
+  verdict, frozen anchors, and recalibration; historical scores are immutable.
+- **Multilingual and accessible equivalence is evaluated, not assumed.** Tag
+  language/script/region/variant per segment with BCP 47, support code-switching,
+  dialect and low-resource slices, preserve original Unicode alongside
+  security-normalized views, and test critical identifiers/units/safety terms
+  through translation. Speech evaluation includes disability, accent, noise,
+  diarization, silence, and timestamp-coverage slices. User-facing image/audio
+  results supply WCAG 2.2-equivalent text, captions, audio description,
+  non-speech cues, semantic structure, keyboard/focus behavior, and explicit
+  unavailable spans.
+- **Embodied time is an interface type.** Every observation/action names system,
+  steady, simulated, event, or logical clock; epoch/scale/timezone or simulation
+  epoch; resolution/uncertainty/synchronization; frame and transform validity;
+  staleness; and observation-to-action latency. Simulation pause/rate/backward
+  jumps and zero/uninitialized time are first-class events. World-model and
+  simulator roles maintain a bounded belief state under partial observability,
+  action preconditions/invariants/postconditions, a safety envelope, stop
+  authority, and ambiguous-effect reconciliation before retry.
+
+These are promotion gates, not extra prose fields. The cross-expert suite must
+include incompatible rights, incomplete descendant deletion, changed screening
+policy, benchmark/evaluator drift, code-switched safety instructions, inaccessible
+multimodal output, simulated-clock jumps, stale transforms, and uncertain
+physical effects. Primary sources and the long-lived reports supporting these
+gates are cataloged in
+[`EXPERT_SYSTEM_INTEROPERABILITY_RESEARCH_2026-07-29.md`](EXPERT_SYSTEM_INTEROPERABILITY_RESEARCH_2026-07-29.md).
+
 ## 9. Implementation specifications and backlog
 
 ### Shared platform
@@ -1297,6 +1358,31 @@ Minimum promotion policy:
 - **EXP-CORE-017 — Governed regression memory.** Preserve minimized
   reproductions, exact lineage/conditions, negative and inconclusive results,
   hidden-evaluation boundaries, and duplicate/prior-failure links.
+- **EXP-CORE-018 — Purpose-specific rights decision graph.** Resolve declared
+  versus concluded licenses and use/output/derivative/redistribution obligations
+  across every source, model, adapter, tool, and artifact; invalidate downstream
+  decisions on expiry, revocation, or incompatibility and require qualified
+  review for legal conclusions.
+- **EXP-CORE-019 — Privacy lineage and removal verifier.** Propagate
+  purpose/subject/legal-basis/consent/retention metadata through every
+  transformation, enumerate descendants, execute privacy attack/removal tests,
+  and prevent unsupported deletion or unlearning claims.
+- **EXP-CORE-020 — Regulated-transfer decision gate.** Bind signed current
+  jurisdiction policy, technical classification facts, parties/end use,
+  destination and transfer type, licenses/exceptions, expiry, re-screening,
+  qualified review, reason codes, and appeal without autonomous legal advice.
+- **EXP-CORE-021 — Benchmark identity and drift ledger.** Version all task,
+  dataset, prompt, metric, evaluator, harness, dependency, environment, and
+  cohort inputs; model distinct drift classes and enforce explicit score-series
+  comparability, anchors, recalibration, and qualification expiry.
+- **EXP-CORE-022 — Language and accessibility equivalence harness.** Exercise
+  per-segment BCP 47 metadata, code-switch/dialect/low-resource slices, Unicode
+  confusables, critical-token translation, assistive alternatives, timestamp
+  coverage, and WCAG 2.2 interaction requirements.
+- **EXP-CORE-023 — Temporal and embodied state contract.** Type clock domains,
+  epochs, uncertainty, synchronization, staleness, frames/transforms, belief
+  state, action invariants, safety envelopes, stop authority, and unknown-effect
+  reconciliation across simulators, world models, and physical adapters.
 
 ### Git, release, and build
 
@@ -1325,6 +1411,10 @@ Minimum promotion policy:
 - **EXP-ML-010 — Accelerator platform-parity benchmarks, including A100-class hardware.**
 - **EXP-ML-011 — Sim-to-real delta and embodied-action safety gate.**
 - **EXP-ML-012 — Governed expert self-improvement proposal pipeline.**
+- **EXP-ML-013 — Multilingual speech/vision accessibility parity suite.**
+- **EXP-ML-014 — Model/dataset/adapter/output rights-compatibility suite.**
+- **EXP-ML-015 — Training-data privacy, extraction, and removal suite.**
+- **EXP-ML-016 — Clock-domain, partial-observability, and action-safety suite.**
 
 ### Materials
 

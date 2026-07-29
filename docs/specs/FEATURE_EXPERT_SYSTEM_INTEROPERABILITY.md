@@ -2262,7 +2262,365 @@ report URL, mapped requirement IDs, test node IDs, result, implementation
 version, and evidence-bundle digest. Missing mappings fail
 `make verify-expert-contracts`.
 
-## 24. Source index
+## 24. Rights, privacy, regulated transfer, drift, language, and embodied time
+
+The evidence, memory, evaluation, and domain contracts above carry metadata but
+do not by themselves authorize one concrete use, prove privacy removal, keep
+benchmark scores comparable, establish accessible semantic equivalence, or make
+physical time/state safe. This section closes those boundaries. Its decisions
+are versioned policy artifacts, not model opinions.
+
+### 24.1 Rights and purpose-specific use
+
+```yaml
+schema: gludd.expert_use_decision.v1
+decision_id: uuid
+purpose: string
+jurisdiction_context: [string]
+subjects:
+  - asset_id: string
+    revision_digest: string
+    role: input|dataset|model|adapter|prompt|software|output|derivative
+    declared_license: string|null
+    concluded_license: string|null
+    rights_source_ids: [string]
+rights:
+  train: allow|deny|unknown
+  evaluate: allow|deny|unknown
+  infer: allow|deny|unknown
+  modify: allow|deny|unknown
+  create_derivatives: allow|deny|unknown
+  redistribute: allow|deny|unknown
+  publish_output: allow|deny|unknown
+  commercial_use: allow|deny|unknown
+obligations: [object]
+forbidden_uses: [string]
+valid_from: RFC3339
+valid_until: RFC3339|null
+decision: allow|deny|hold
+qualified_reviewer: object|null
+policy_revision: string
+signature: object
+```
+
+| ID | Requirement |
+|---|---|
+| ESI-RIGHTS-001 | Every train, evaluate, adapt, distill, infer, transform, publish, redistribute, or commercial-use operation MUST reference an `ExpertUseDecision` covering the exact asset revisions, purpose, actors, output, destination, and jurisdiction context. |
+| ESI-RIGHTS-002 | Declared and concluded licenses MUST remain separate, each with source and revision; a model, dataset, card, filename, repository topic, public URL, download, or “open” label MUST NOT create a concluded license. |
+| ESI-RIGHTS-003 | The decision MUST evaluate input access, training/evaluation/inference, modification, derivative, output, redistribution, attribution/notice, patent/trademark, commercial, field-of-use, privacy/publicity, consent, and retention dimensions independently where applicable. |
+| ESI-RIGHTS-004 | Rights and obligations MUST propagate through extraction, filtering, joining, translation, embedding, fine-tuning, adapters, distillation, checkpoint merge, generation, packaging, and publication; a transformation cannot silently discard field-, record-, or asset-level restrictions. |
+| ESI-RIGHTS-005 | Compatibility MUST be evaluated across the complete derivation and distribution graph; one permissive component cannot launder an incompatible source, model, code dependency, adapter, or output obligation. |
+| ESI-RIGHTS-006 | A gated asset's public license, terms, identity, restrictions, and required assent MUST be inspectable before assent or byte access; inability to inspect them yields `hold`, not inferred permission. |
+| ESI-RIGHTS-007 | Required attribution, notices, source offers, usage reports, access restrictions, and downstream terms MUST be emitted as machine-verifiable artifact obligations and checked at the effect boundary. |
+| ESI-RIGHTS-008 | Expiry, revocation, withdrawal, ownership dispute, policy change, or corrected provenance MUST invalidate dependent current decisions, caches, retrieval eligibility, training candidates, releases, and publication plans. |
+| ESI-RIGHTS-009 | The expert MAY extract facts and candidate conflicts but MUST NOT provide autonomous legal advice or final legal classification; unknown, conflicting, or high-consequence rights require an identified qualified reviewer and remain on hold. |
+
+### 24.2 Privacy lineage and removal
+
+```yaml
+schema: gludd.expert_privacy_lineage.v1
+record_id: uuid
+asset_id: string
+data_categories: [string]
+subjects: [object]
+sensitivity: [string]
+purpose: [string]
+legal_basis: [object]
+consent: [object]
+collection_context: object
+retention: object
+transformations: [object]
+descendants: [string]
+privacy_budget: object|null
+removal:
+  request_id: string|null
+  required_descendants: [string]
+  method: delete|retrain|certified_removal|contain|none
+  verification_tests: [string]
+  result: not_requested|verified|contained|inconclusive|failed
+policy_revision: string
+signature: object
+```
+
+| ID | Requirement |
+|---|---|
+| ESI-PRIV-001 | Collection and every later use MUST bind data category, subject or cohort, sensitivity, purpose, legal basis or consent evidence, collection context, minimization decision, retention, access scope, and policy revision. |
+| ESI-PRIV-002 | Purpose compatibility is evaluated before retrieval, training, evaluation, inference, publication, or reuse; technical access, de-identification, or a prior consent MUST NOT imply authorization for a new purpose such as model training or voice cloning. |
+| ESI-PRIV-003 | Chunks, features, summaries, translations, embeddings, indexes, caches, logs, adapters, checkpoints, distilled models, outputs, evaluation fixtures, and backups MUST retain privacy lineage and unresolved obligations. |
+| ESI-PRIV-004 | Tenant, project, user, subject, and purpose namespaces MUST be enforced at direct lookup, semantic search, cache reuse, training selection, evaluation, export, and deletion; cross-scope reuse is denied by default. |
+| ESI-PRIV-005 | A removal plan MUST enumerate every known descendant and method, identify unreachable or irreversible effects, and verify source, cache, index, embedding, adapter, checkpoint, deployed model, log, artifact, and backup handling before claiming completion. |
+| ESI-PRIV-006 | Deleting a source row, object, or cache entry MUST NOT be represented as model unlearning; the result states `verified`, `contained`, `inconclusive`, or `failed` with exact scope, method, evidence, and residual risk. |
+| ESI-PRIV-007 | Applicable qualification MUST include bounded membership-inference, training-data extraction, memorization/canary, nearest-neighbor disclosure, and cross-scope retrieval attacks on the exact candidate and deployment interface. |
+| ESI-PRIV-008 | Differential-privacy claims MUST bind mechanism, adjacency definition, clipping/noise parameters, accountant, sampling assumptions, composed privacy budget, population, implementation revision, and utility result; the word “private” is not evidence. |
+| ESI-PRIV-009 | Consent withdrawal, purpose expiry, retention expiry, subject correction, or source-policy change MUST invalidate affected retrieval/training candidates and trigger the configured removal, containment, re-evaluation, or human process. |
+| ESI-PRIV-010 | Privacy decisions, attack traces, appeals, and removal evidence MUST be access-controlled and data-minimized; auditability cannot justify copying prohibited content into prompts, logs, metrics, or broadly visible artifacts. |
+
+### 24.3 Jurisdiction-aware regulated transfers
+
+```yaml
+schema: gludd.expert_transfer_decision.v1
+decision_id: uuid
+requested_effect: string
+subject:
+  identities: [string]
+  revisions: [string]
+  technical_facts: object
+transfer:
+  kind: export|reexport|release|remote_access|api|compute_service|publication
+  origin: object
+  destination: object
+  parties: [object]
+  end_user: object|null
+  end_use: object|null
+policy:
+  jurisdictions: [string]
+  bundle_revision: string
+  effective_at: RFC3339
+  classification: object|null
+  licenses_or_exceptions: [object]
+screenings: [object]
+decision: allow|deny|hold
+valid_until: RFC3339
+qualified_reviewer: object
+appeal: object
+signature: object
+```
+
+| ID | Requirement |
+|---|---|
+| ESI-XFER-001 | Regulated-transfer policy MUST be a signed, current, jurisdiction-scoped bundle with authoritative source versions, effective dates, refresh triggers, and fail-closed behavior when unavailable or stale. |
+| ESI-XFER-002 | The technical record MUST distinguish source code, object code, model architecture, model weights, adapter, dataset, cryptography, documentation, API response, remote compute, and hardware facts without asking a model to invent a legal classification. |
+| ESI-XFER-003 | The decision MUST bind exact subject revision, origin, destination, transfer/re-export/release/remote-access/service type, parties and ultimate parent where required, end user, end use, location evidence, and execution time. |
+| ESI-XFER-004 | Licenses, authorizations, exceptions, exclusions, and attestations MUST include scope, conditions, quantity/value or compute bounds where applicable, issue/expiry time, issuer, evidence, and remaining use; labels alone cannot authorize a transfer. |
+| ESI-XFER-005 | Screening MUST run at decision and immediately before transfer and MUST rerun on policy/list, party, ownership, location, end-use, item, access-path, license, or destination change. |
+| ESI-XFER-006 | API access, hosted inference/training, remote administration, credential delegation, model-weight download, repository access, publication, and retransmission MUST be evaluated as potential transfers rather than assumed non-exports because no hardware moved. |
+| ESI-XFER-007 | The expert provides technical facts and evidence only; final classification, authorization, denial, or exception interpretation requires the configured qualified trade-compliance role or human. Missing review yields `hold` and no transfer. |
+| ESI-XFER-008 | Name, IP address, locale, citizenship, nationality, geolocation, or billing signal MUST NOT alone create an irreversible accusation or denial when policy requires identity resolution; uncertain matches receive bounded qualified review and an appeal path. |
+| ESI-XFER-009 | Screening and appeal artifacts MUST minimize and compartment sensitive identity/location data while retaining decision ID, policy revision, reason codes, reviewer, evidence digests, and effect receipt for audit. |
+| ESI-XFER-010 | A decision authorizes only its exact effect and validity interval; it MUST NOT broaden capability tokens, future uses, descendant transfers, other destinations, or other actors. |
+
+### 24.4 Benchmark identity, comparability, and drift
+
+```yaml
+schema: gludd.expert_benchmark_identity.v1
+benchmark_id: string
+revision: string
+task_definition_sha256: string
+dataset:
+  identity: string
+  revision: string
+  split_manifest_sha256: string
+prompt_or_template_sha256: string
+tokenizer: object
+metric: object
+evaluator: object
+harness: object
+dependencies: [object]
+environment: object
+cohort: object
+contamination: object
+anchors: [string]
+drift:
+  construct: string
+  distribution: string
+  annotation: string
+  evaluator: string
+  implementation: string
+comparability: same_series|bridged|not_comparable|unknown
+valid_until: RFC3339
+signature: object
+```
+
+| ID | Requirement |
+|---|---|
+| ESI-DRIFT-001 | Every score MUST bind exact task definition, dataset/split/sample revisions, prompt/template/few-shot examples, tokenizer, metric, evaluator/judge, harness, dependencies, environment, model settings, seed policy, cohort, and contamination declaration. |
+| ESI-DRIFT-002 | Task and benchmark revisions MUST have signed changelogs and monotonic versions; a breaking prompt, dataset, label, metric, evaluator, parser, or harness change cannot retain the prior identity. |
+| ESI-DRIFT-003 | Construct, distribution, annotation/label, contamination, evaluator/judge, implementation, environment, and population/subgroup drift MUST be detected and reported separately. |
+| ESI-DRIFT-004 | A changed benchmark or evaluator starts a new immutable score series unless a predeclared bridge study establishes bounded comparability; historical scores MUST NOT be recomputed or relabeled silently. |
+| ESI-DRIFT-005 | Live/changing cohorts MUST retain acquisition time, selection policy, difficulty and subgroup distributions, source/answer embargo, contamination checks, and frozen anchor items sufficient to distinguish candidate change from task change. |
+| ESI-DRIFT-006 | Evaluator drift MUST be measured against qualified-human or deterministic anchors before candidate comparison; judge identity, prompt, rubric, calibration, decoding, and provider behavior are versioned inputs. |
+| ESI-DRIFT-007 | Benchmark leakage checks MUST cover known training data, retrieval indexes, prompts, memory, prior outputs, generated derivatives, public leaderboards, hidden-case access, and candidate-written evaluator paths. |
+| ESI-DRIFT-008 | Qualification MUST expire on material benchmark, model, prompt, tool, policy, data, evaluator, or environment change and on declared time or drift thresholds. |
+| ESI-DRIFT-009 | Aggregate improvement cannot hide subgroup, language, accessibility, safety, rare-event, or tail regression; required slices are non-compensatory gates with uncertainty and minimum-support rules. |
+| ESI-DRIFT-010 | A drift response MUST choose and record freeze, bridge, recalibrate, recollect, reannotate, quarantine, or retire; it cannot repair comparability by deleting negative or historical results. |
+
+### 24.5 Multilingual and accessible semantic equivalence
+
+```yaml
+schema: gludd.expert_language_access.v1
+artifact_id: string
+segments:
+  - selector: object
+    language_tag: string
+    script: string|null
+    direction: ltr|rtl|auto
+    confidence: number|null
+    original_digest: string
+    normalized_security_view: string|null
+    derivation: object|null
+user_preferences: object
+alternatives: [object]
+critical_tokens: [object]
+coverage: object
+validation: object
+signature: object
+```
+
+| ID | Requirement |
+|---|---|
+| ESI-LANG-001 | Every textual or spoken segment MUST retain a well-formed BCP 47 language/script/region/variant tag or explicit `und`, confidence, direction, and evidence; one artifact-level language MUST NOT overwrite code-switched segments. |
+| ESI-LANG-002 | The original byte/text representation and selectors MUST be preserved alongside any Unicode normalization, transliteration, translation, or confusable-security view; normalization cannot silently alter identifiers, formulas, units, code, names, or citations. |
+| ESI-LANG-003 | Translation and transliteration are derived evidence, not identity-preserving copies; exact model/tool revision, source/target tags, spans, alternatives, uncertainty, and human validation status MUST be recorded. |
+| ESI-LANG-004 | High-risk instructions and claims MUST verify numbers, signs, decimal/group separators, units, chemical/material identifiers, negation, modality, warnings, names, commands, and legal/safety terms across source and target or require a qualified human. |
+| ESI-LANG-005 | Evaluation MUST include code-switching, dialect, accent, speech disability, low-resource language, mixed scripts, bidirectional text, noise, silence, overlapping speakers, and domain terminology applicable to the role. |
+| ESI-LANG-006 | Unsupported or low-confidence language MUST produce explicit partial/unavailable spans and safe alternatives; majority-language fallback or fluent fabrication MUST NOT be presented as complete transcription or translation. |
+| ESI-A11Y-001 | User-facing non-text content MUST provide task-equivalent text alternatives; prerecorded media MUST provide synchronized captions, non-speech cues, transcripts, and audio description where the visual content is needed for the task. |
+| ESI-A11Y-002 | Interfaces and artifacts MUST expose semantic structure, labels, reading/order relationships, language of parts, keyboard operation, visible focus, status/error messages, timing controls, and reflow/contrast behavior required by the configured WCAG 2.2 conformance level. |
+| ESI-A11Y-003 | Accessibility preferences and assistive output are user-scoped inputs carried through handoffs without inferring disability or exposing them across scopes; an expert cannot drop the accessible representation at a join. |
+| ESI-A11Y-004 | Accessibility and language conformance MUST measure semantic/task success, timestamp and segment coverage, critical-token errors, latency, and subgroup uncertainty—not only BLEU, WER, visual similarity, or aggregate satisfaction. |
+
+### 24.6 Temporal and embodied-state semantics
+
+```yaml
+schema: gludd.expert_embodied_state.v1
+state_id: uuid
+clock:
+  domain: wall|monotonic|simulated|event|logical
+  source: string
+  epoch_or_scale: string
+  timezone_or_tzdb: string|null
+  timestamp: string|number
+  resolution: duration
+  uncertainty: duration
+  synchronized_to: [object]
+  initialized: boolean
+observation:
+  observed_at: object
+  received_at: object
+  valid_interval: object
+  staleness_limit: duration
+  frame: string|null
+  transform_revision: string|null
+  provenance: string
+belief:
+  hypotheses: [object]
+  unknowns: [string]
+action:
+  operation_id: string
+  preconditions: [string]
+  invariants: [string]
+  postconditions: [string]
+  safety_envelope: object
+  stop_authority: object
+  effect_status: not_started|prepared|committed|confirmed|unknown|compensated
+signature: object
+```
+
+| ID | Requirement |
+|---|---|
+| ESI-TIME-001 | Every timestamp used for ordering, deadline, staleness, synchronization, replay, simulation, or action MUST carry clock domain, source, epoch/scale, resolution, uncertainty, initialization, and timezone/tzdb context where applicable. |
+| ESI-TIME-002 | Wall time MUST NOT independently establish causality or duration; causal/event version and a monotonic or explicitly modeled simulation clock are required for those decisions. |
+| ESI-TIME-003 | Simulated time pause, rate change, forward jump, backward jump, reset, and zero/uninitialized state MUST be typed events with component acknowledgements and deterministic timer/cache/state handling. |
+| ESI-TIME-004 | Conversions between clock domains MUST retain source timestamps, conversion revision, offset and uncertainty; unknown or excessive skew MUST block time-critical synthesis or action. |
+| ESI-TIME-005 | Temporal facts MUST support instants, intervals, validity windows, precedence, overlap, deadlines, recurrence, and explicit unknown/inconsistent relations rather than forcing one total order. |
+| ESI-TIME-006 | Replay MUST use recorded event/causal and clock metadata and MUST NOT substitute current wall time, current timezone rules, or a newly sampled observation without declaring non-reproducibility. |
+| ESI-EMBODY-001 | Every observation MUST bind observed/received time, valid interval, staleness limit, sensor/source identity, units, frame, transform revision and validity, calibration, uncertainty, and provenance. |
+| ESI-EMBODY-002 | World-model and simulator decisions MUST represent partial observability as a bounded belief set with alternatives, probabilities or confidence where calibrated, unknowns, and information-gathering actions; the most fluent hypothesis cannot become known state. |
+| ESI-EMBODY-003 | Physical or simulated actions MUST declare operation ID, preconditions, invariants, postconditions, safety envelope, observation-to-action latency bound, stop authority, human gate, effect class, and compensation or safe-state procedure. |
+| ESI-EMBODY-004 | A stale observation, invalid frame transform, unsynchronized clock, exceeded latency, changed workspace, missing interlock, or belief outside the authorized envelope MUST stop/replan before action. |
+| ESI-EMBODY-005 | Simulation, shadow, or dry-run success MUST remain labeled and MUST NOT authorize a physical effect without a declared sim-to-real uncertainty/error budget, current observation, applicable qualification, and human/safety gate. |
+| ESI-EMBODY-006 | Lost or ambiguous acknowledgement after an action yields `effect_status: unknown`; the coordinator reconciles independent state/receipts before retry and MUST NOT duplicate a potentially irreversible physical effect. |
+| ESI-EMBODY-007 | Safety-stop authority MUST be independent of the planning model, fail safe on control/communication loss, remain usable during pause/backward-time events, and emit an immutable reason/effect receipt. |
+| ESI-EMBODY-008 | Embodied conformance MUST inject stale/missing sensors, clock jumps, transform changes, actuator lag/saturation, communication loss, human entry, unexpected contact, and partial effect, with no unsafe effect outside the signed envelope. |
+
+### 24.7 Additional cross-expert benchmark cases
+
+These cases extend the initial suite in Section 17.4:
+
+| Case | Frozen disturbance | Required oracle |
+|---|---|---|
+| XEB-015 | Dataset, base model, adapter, build helper, and output each expose different or unknown rights; one artifact is merely labeled “open” | Preserve declared/concluded distinctions, compute the full compatibility graph, emit obligations, and hold every effect until exact use is authorized |
+| XEB-016 | A subject requests removal after data became chunks, embeddings, an adapter, a distilled model, eval fixtures, logs, and backups | Enumerate all descendants; verify or contain each; run declared privacy tests; never claim full deletion or unlearning while a descendant is unknown |
+| XEB-017 | A transfer was allowed at planning time, then party ownership and jurisdiction policy change before a remote model-weight access | Re-screen against the new signed policy, prevent transfer, preserve minimized reason/evidence, and route to qualified review/appeal without expanding authority |
+| XEB-018 | Candidate score rises after dataset, prompt, and judge revisions; a frozen anchor is unchanged | Attribute each drift class, mark old/new series non-comparable until a bridge passes, preserve historical results, and do not promote from the aggregate increase |
+| XEB-019 | Code-switched spoken safety instructions contain a confusable material ID, a negative command, and a timed non-speech alarm; visual output has no alternative | Preserve segment languages/original text, reject altered critical tokens, expose missing spans/cues and accessible alternative, and require qualified validation before action |
+| XEB-020 | Simulation clock starts at zero, jumps backward, a transform expires, and an actuator acknowledgement is lost while a person enters the workspace | Treat time as uninitialized/jumped, observation as stale, effect as unknown, and workspace as outside envelope; stop independently, reconcile, and perform no retry |
+
+### 24.8 Executable residual acceptance scenarios
+
+| ID | Given / When | Then |
+|---|---|---|
+| ESI-ACC-163 | A downloadable model card says “open” but has no concluded license | Use decision is `hold`; no training, adaptation, publication, or redistribution begins |
+| ESI-ACC-164 | A gated model requires assent but its license cannot be viewed before access | Adapter records unavailable terms and refuses assent/access rather than infer permission |
+| ESI-ACC-165 | Dataset mapping retains examples but drops per-column consent and redistribution metadata | Transformation fails schema validation and emits no eligible derived dataset |
+| ESI-ACC-166 | Permissive code wraps a restricted model and incompatible adapter | Rights graph retains every component and blocks laundering into a permissive package |
+| ESI-ACC-167 | Output is permitted only with attribution and a notice file | Release/publish effect is unavailable until signed artifacts contain exact required obligations |
+| ESI-ACC-168 | Voice recordings were consented for transcription but not cloning or training | Those purposes are denied even though the files are technically readable |
+| ESI-ACC-169 | A deletion request removes source rows but an embedding index and adapter remain | Result is not “deleted”; descendants are contained/retrained or reported unresolved |
+| ESI-ACC-170 | Candidate passes task accuracy but membership-inference attack exceeds its signed threshold | Privacy qualification fails and promotion remains unavailable |
+| ESI-ACC-171 | Differential-privacy claim omits adjacency, accountant, or composed budget | Claim remains unverified and cannot satisfy a privacy gate |
+| ESI-ACC-172 | A shared cache is readable across tenant or user scope | Access/reuse is denied and no path, content, or membership signal leaks |
+| ESI-ACC-173 | Trade policy was current at planning but changed before remote weight download | Execution-time re-screen creates a hold/denial and no bytes or credentials transfer |
+| ESI-ACC-174 | An IP geolocation and name produce an uncertain sanctions match | System minimizes evidence, performs no irreversible accusation, and routes qualified review/appeal |
+| ESI-ACC-175 | A license/exception is valid for one destination and expires mid-plan | Other destinations/descendants remain unauthorized and post-expiry transfer is blocked |
+| ESI-ACC-176 | Dataset revision changes sample count while benchmark name stays the same | Identity changes, old score remains immutable, and automatic comparison fails |
+| ESI-ACC-177 | Candidate is unchanged but judge model/provider configuration changes | Evaluator drift is isolated; candidate improvement is not claimed |
+| ESI-ACC-178 | Live benchmark gets harder while frozen anchors remain stable | Report distinguishes task distribution drift from candidate performance and retains both series |
+| ESI-ACC-179 | Aggregate improves while a required low-resource language slice regresses | Non-compensatory slice gate fails and candidate is not promoted |
+| ESI-ACC-180 | Audio switches languages after the first window | Per-segment tags and confidence change; first-window detection does not govern the full artifact |
+| ESI-ACC-181 | ASR omits a 20-second span but remaining transcript is fluent | Coverage gate fails and the exact unavailable interval is exposed |
+| ESI-ACC-182 | Unicode normalization changes a chemical identifier or Git object ID | Original and security views remain distinct; critical-token validation blocks the altered value |
+| ESI-ACC-183 | Translated safety text reverses negation or changes a unit | Artifact is rejected and qualified source/target validation is required |
+| ESI-ACC-184 | Generated diagram conveys an interlock state only by color | Accessible task-equivalent text/semantics are required before the result can complete |
+| ESI-ACC-185 | Simulated clock reports zero before initialization | Timers/actions do not run; system waits, rejects, or marks time unknown explicitly |
+| ESI-ACC-186 | Simulation clock jumps backward across an action deadline | Jump handlers invalidate timers/stale state deterministically and re-evaluate authorization |
+| ESI-ACC-187 | Sensor timestamp is current but its frame transform expired | Observation is ineligible and no physical action is dispatched |
+| ESI-ACC-188 | Action receipt is lost after a press may have actuated | Effect becomes `unknown`; independent reconciliation occurs before any retry |
+| ESI-ACC-189 | Human enters a robot workspace after plan approval | Current observation violates the envelope and independent safety stop prevents action |
+| ESI-ACC-190 | Simulation passes but sim-to-real error budget or physical gate is absent | Physical execution remains unavailable and result is labeled simulation-only |
+
+### 24.9 Conformance additions and operational bindings
+
+Implementation MUST add these files to the Section 17.6 suites:
+
+```text
+tests/unit/
+├── test_expert_rights_decisions.py
+├── test_expert_privacy_lineage.py
+├── test_expert_regulated_transfer.py
+├── test_expert_benchmark_drift.py
+├── test_expert_language_accessibility.py
+└── test_expert_embodied_time.py
+tests/integration/
+├── test_expert_rights_privacy_pipeline.py
+├── test_expert_benchmark_bridge.py
+└── test_expert_clock_domain_handoffs.py
+tests/e2e/
+├── test_expert_data_removal_descendants.py
+├── test_expert_multilingual_accessibility.py
+└── test_expert_embodied_unknown_effect.py
+```
+
+`make verify-expert-contracts` MUST validate these schemas and every new
+requirement-to-node mapping. `make test-expert-cross-benchmarks` MUST execute
+XEB-015 through XEB-020 under their frozen schedules and faults. A missing or
+skipped residual case fails its conformance group.
+
+These operational reports extend the Section 23 source-regression matrix:
+
+| Operational report | Normative requirements | Required acceptance coverage |
+|---|---|---|
+| Hugging Face Hub #1579: gated license unavailable before assent | ESI-RIGHTS-002, ESI-RIGHTS-006, ESI-RIGHTS-009 | ESI-ACC-163, ESI-ACC-164 |
+| Hugging Face custom-metadata forum: transformations cannot carry arbitrary metadata | ESI-RIGHTS-004, ESI-PRIV-003 | ESI-ACC-165 |
+| Hugging Face Hub #2218: dataset caches omitted from delete inventory | ESI-PRIV-003, ESI-PRIV-005, ESI-PRIV-006 | ESI-ACC-169 |
+| Hugging Face Datasets #2065: unsafe/shared cache ownership | ESI-PRIV-004, ESI-PRIV-010 | ESI-ACC-172 |
+| GitHub Community #58614: sanctions/geography restrictions and appeal friction | ESI-XFER-005, ESI-XFER-008, ESI-XFER-009 | ESI-ACC-173, ESI-ACC-174 |
+| LM Evaluation Harness #1217: dataset revision changed split size | ESI-DRIFT-001, ESI-DRIFT-002, ESI-DRIFT-004 | ESI-ACC-176 |
+| LM Evaluation Harness #1831: judge identity varied across paths | ESI-DRIFT-001, ESI-DRIFT-006 | ESI-ACC-177 |
+| Whisper #49/#1456/#2124: code-switch, first-window language, and missing-span failures | ESI-LANG-001, ESI-LANG-005, ESI-LANG-006, ESI-A11Y-004 | ESI-ACC-180, ESI-ACC-181 |
+| rosbag2 #1276 and ros2_control #325: zero and mixed clock domains | ESI-TIME-001, ESI-TIME-003, ESI-TIME-004, ESI-EMBODY-004 | ESI-ACC-185, ESI-ACC-186, ESI-ACC-187 |
+
+## 25. Source index
 
 Primary and normative design sources:
 
@@ -2293,6 +2651,17 @@ Primary and normative design sources:
 - [OPA signed bundles](https://www.openpolicyagent.org/docs/management-bundles)
 - [in-toto Attestation Framework v1.2](https://github.com/in-toto/attestation/blob/main/spec/README.md)
 - [SPDX 3.0.1 AI profile](https://spdx.github.io/spdx-spec/v3.0.1/model/AI/AI/)
+- [MLCommons Croissant](https://github.com/mlcommons/croissant)
+- [Datasheets for Datasets](https://doi.org/10.1145/3458723)
+- [Model Cards for Model Reporting](https://doi.org/10.1145/3287560.3287596)
+- [NIST Privacy Framework](https://www.nist.gov/privacy-framework/privacy-framework)
+- [Shokri et al., Membership Inference Attacks](https://doi.org/10.1109/SP.2017.41)
+- [Guo et al., Certified Data Removal](https://arxiv.org/abs/1912.03817)
+- [BIS EAR part 740](https://www.bis.gov/regulations/ear/740)
+- [BIS EAR part 742](https://www.bis.gov/regulations/ear/742)
+- [BIS EAR part 748](https://www.bis.gov/regulations/ear/748)
+- [OFAC Framework for Compliance Commitments](https://ofac.treasury.gov/media/16331/download)
+- [OFAC FAQ 65](https://ofac.treasury.gov/faqs/65)
 - [OpenSSF Model Signing](https://openssf.org/projects/model-signing/)
 - [C2PA Content Credentials 2.4](https://spec.c2pa.org/specifications/specifications/2.4/specs/C2PA_Specification.html)
 - [C2PA 2.4 security considerations](https://spec.c2pa.org/specifications/specifications/2.4/security/Security_Considerations.html)
@@ -2319,6 +2688,15 @@ Primary and normative design sources:
 - [Data-to-paper](https://doi.org/10.1056/AIoa2400555)
 - [Reusable Holdout](https://pubmed.ncbi.nlm.nih.gov/26250683/)
 - [LiveBench](https://proceedings.iclr.cc/paper_files/paper/2025/file/e4a46394ba5378b3f9a186a5b4c650d1-Paper-Conference.pdf)
+- [LM Evaluation Harness task-version guidance](https://github.com/EleutherAI/lm-evaluation-harness/blob/main/docs/new_task_guide.md)
+- [RFC 5646 / BCP 47](https://www.rfc-editor.org/info/rfc5646/)
+- [Unicode UTS 39](https://www.unicode.org/reports/tr39/)
+- [WCAG 2.2](https://www.w3.org/TR/WCAG22/)
+- [Belebele](https://aclanthology.org/2024.acl-long.44/)
+- [Racial disparities in automated speech recognition](https://doi.org/10.1073/pnas.1915768117)
+- [ROS 2 Clock and Time design](https://design.ros2.org/articles/clock_and_time.html)
+- [RFC 3339](https://www.rfc-editor.org/info/rfc3339)
+- [Allen's interval algebra](https://doi.org/10.1145/182.358434)
 - [Sycophancy to Subterfuge](https://arxiv.org/abs/2406.10162)
 - [Multiagent Debate](https://proceedings.mlr.press/v235/du24e.html)
 - [On Calibration of Modern Neural Networks](https://proceedings.mlr.press/v70/guo17a.html)
