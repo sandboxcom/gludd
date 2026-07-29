@@ -63,6 +63,27 @@ class TestSessionDriftDetector:
         finally:
             pf.REPO_ROOT = orig
 
+    def test_in_progress_gate_is_not_authoritative(self, tmp_path, monkeypatch):
+        (tmp_path / "SESSION.md").write_text(
+            "<!-- gate:begin -->\n- previous PASS\n<!-- gate:end -->\n"
+        )
+        (tmp_path / ".gate-status").write_text(
+            "=== GATE 2026-07-29T00:00:00Z ===\n"
+            "lint PASS 0\n"
+            "test "
+        )
+        import general_ludd.quality.preflight as pf
+
+        monkeypatch.setattr(pf, "REPO_ROOT", tmp_path)
+
+        result = pf.check_session_drift()
+
+        assert result == {
+            "passed": True,
+            "violations": [],
+            "reason": "gate status incomplete",
+        }
+
 
 class TestReadmeNoHardcodedMetrics:
     """W5.5: README must not hardcode measured metrics; the gate is the truth."""
