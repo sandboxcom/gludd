@@ -37,6 +37,17 @@ def test_search_target_defaults_to_workspace_not_shell_path() -> None:
     assert "Makefile:" in proc.stdout
 
 
+def test_search_target_is_portable_and_avoids_xargs_match_status() -> None:
+    content = Path("Makefile").read_text()
+    start = content.index("\nsearch:")
+    end = content.index("\n\n", start)
+    section = content[start:end]
+
+    assert "command -v rg" in section
+    assert "xargs -0 grep" not in section
+    assert "/usr/bin/grep -R" in section
+
+
 def test_codex_system_skill_read_uses_explicit_root(tmp_path: Path) -> None:
     skill_file = tmp_path / ".system" / "demo-skill" / "SKILL.md"
     skill_file.parent.mkdir(parents=True)

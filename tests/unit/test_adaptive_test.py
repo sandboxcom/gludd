@@ -210,13 +210,30 @@ def test_is_oom_exit_signal_codes(rc) -> None:
 @pytest.mark.parametrize(
     "output",
     [
-        "... node down: Not properly terminated",
+        "[gw2] node down: Not properly terminated",
         "replacing crashed worker gw3",
-        "worker CRASHED while running test",
+        "worker gw1 CRASHED while running tests/unit/test_demo.py::test_case",
     ],
 )
 def test_is_oom_exit_output_markers(output) -> None:
     assert at.is_oom_exit(1, output) is True
+
+
+@pytest.mark.parametrize(
+    "output",
+    [
+        'E assert "worker crashed" in incident_text',
+        "Failure report mentions node down: Not properly terminated in prose",
+        "docs say replacing crashed worker gw3 during restart",
+        "assertion: worker gw1 crashed while running was the expected message",
+    ],
+)
+def test_is_oom_exit_ignores_failure_prose(output) -> None:
+    assert at.is_oom_exit(1, output) is False
+
+
+def test_is_oom_exit_ignores_marker_on_success() -> None:
+    assert at.is_oom_exit(0, "[gw2] node down: Not properly terminated") is False
 
 
 def test_is_oom_exit_clean_failure_is_not_oom() -> None:
@@ -291,6 +308,22 @@ def test_run_returns_immediately_on_clean_exit(monkeypatch: pytest.MonkeyPatch) 
     rc = at.run(["tests/unit"], env={}, runner=runner)
     assert rc == 1
     assert n_calls == 1  # no retry on a non-OOM failure
+
+
+def test_run_does_not_retry_failure_prose_with_crash_words(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(at, "decide_nproc", lambda env=None: 4)
+    n_calls = 0
+
+    def runner(cmd):
+        nonlocal n_calls
+        n_calls += 1
+        return 1, 'E assert "worker crashed" in incident_text'
+
+    rc = at.run(["tests/unit"], env={}, runner=runner)
+    assert rc == 1
+    assert n_calls == 1
 
 
 # ---- shared-tmp-root isolation (the popen-gwN FileNotFoundError race) -----

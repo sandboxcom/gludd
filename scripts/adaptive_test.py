@@ -42,11 +42,12 @@ Only stdlib is required; ``psutil`` is used when importable for the RAM reading.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import tempfile
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 DEFAULT_PER_WORKER_GB = 1.5
 # Load headroom: never let the run drive the 5-minute load average above this
@@ -55,12 +56,21 @@ DEFAULT_PER_WORKER_GB = 1.5
 LOAD_HEADROOM_MULTIPLIER = 2.5
 # Exit codes that indicate the OS killed the process (or a worker) — OOM-shaped.
 _OOM_EXIT_CODES = frozenset({-9, 137})
-_OOM_OUTPUT_MARKERS = (
-    "worker crashed",
-    "node down",
-    "crashed while running",
-    "replacing crashed worker",
+_OOM_OUTPUT_PATTERNS = (
+    re.compile(
+        r"^\s*\[gw\d+\]\s+node down:\s+Not properly terminated\s*$",
+        re.IGNORECASE | re.MULTILINE,
+    ),
+    re.compile(
+        r"^\s*replacing crashed worker\s+gw\d+\s*$",
+        re.IGNORECASE | re.MULTILINE,
+    ),
+    re.compile(
+        r"""^\s*worker\s+['"]?gw\d+['"]?\s+crashed while running(?:\s+.+)?$""",
+        re.IGNORECASE | re.MULTILINE,
+    ),
 )
+Runner = Callable[[Sequence[str]], tuple[int, str]]
 
 
 def per_worker_gb(env: Mapping[str, str] | None = None) -> float:
@@ -150,10 +160,11 @@ def compute_nproc(
     cpu_count = max(1, cpu_count)
 
     # RAM cap (original behaviour).
-    if avail_gb is None or gb_per_worker <= 0:
-        by_mem = cpu_count
-    else:
-        by_mem = max(1, int(avail_gb // gb_per_worker))
+    by_mem = (
+        cpu_count
+        if avail_gb is None or gb_per_worker <= 0
+        else max(1, int(avail_gb // gb_per_worker))
+    )
 
     # CI shards are isolated (fresh, single-purpose runner, ample per-shard RAM,
     # no competing load) and don't OOM, so the shared-LOCAL-box load cap only
@@ -186,11 +197,18 @@ def decide_nproc(env: Mapping[str, str] | None = None) -> int:
 
 
 def is_oom_exit(returncode: int, output: str = "") -> bool:
-    """True when the exit looks like an OOM kill (signal/137 or crashed worker)."""
+    """True for an OOM signal or a complete xdist worker-crash diagnostic.
+
+    The output check is deliberately line-shaped. Test failures can contain
+    phrases such as ``worker crashed`` in assertion values or documentation;
+    substring matching those phrases retried ordinary failures as if they were
+    OOMs and obscured the original error.
+    """
+    if returncode == 0:
+        return False
     if returncode in _OOM_EXIT_CODES:
         return True
-    low = output.lower()
-    return any(marker in low for marker in _OOM_OUTPUT_MARKERS)
+    return any(pattern.search(output) is not None for pattern in _OOM_OUTPUT_PATTERNS)
 
 
 def _stream_run(cmd: Sequence[str]) -> tuple[int, str]:
@@ -273,7 +291,7 @@ def build_pytest_cmd(pytest_args: Sequence[str], nproc: int) -> list[str]:
 def run(
     pytest_args: Sequence[str],
     env: Mapping[str, str] | None = None,
-    runner=_stream_run,
+    runner: Runner = _stream_run,
 ) -> int:
     """Run pytest at the adaptive worker count, halving + retrying on OOM exits."""
     # Isolate this run's tmp tree from every other pytest process on the box.
