@@ -119,7 +119,7 @@ _commit-lock-acquire _gate-run-lock-acquire check-clean-tree worktree-state all-
          release-upload-assets git-restore-from release-deploy \
         build-sandbox-image verify-sandbox-image clean-sandbox-images \
         vm-image-build vm-image-list vm-image-clean \
-        verify-feature-claims audit-coverage gate-audit coverage-json \
+        verify-feature-claims audit-coverage gate-audit coverage-json coverage-missing-lines \
         tf-cache-setup tf-init tf-init-local tf-validate tf-cache-warm tf-versions-check tf-clean test-opa-policies \
         deck deck-serve deck-preview deck-data deck-honesty \
         script-count strip-enforce-stop test-hooks-live test-hook-runtime test-opencode-e2e \
@@ -224,6 +224,7 @@ help:
 	@echo "  test-opa-policies     Execute the Azure/AWS/GCP IAM Rego policy tests"
 	@echo "  test-and-commit       Run tests then commit if green (MSG='msg')"
 	@echo "  audit-coverage        Run coverage audit: pytest --cov + per-file threshold check"
+	@echo "  coverage-missing-lines  Report uncovered line ranges (XML=coverage.xml COVERAGE_THRESHOLD=75)"
 	@echo "  test-live-zai         Live GLM model test (requires API key)"
 	@echo "  test-guardrails       Test guardrail infrastructure"
 	@echo "  test-install          Run install.sh bats tests"
@@ -4882,6 +4883,10 @@ audit-coverage:
 coverage-json:
 	@mkdir -p .gate-logs
 	@$(PYTHON) scripts/audit_coverage.py --json-file=coverage.json --threshold=$(THRESHOLD) --source=$(SOURCE)
+
+coverage-missing-lines:
+	@[ -n "$(XML)" ] && [ -n "$(COVERAGE_THRESHOLD)" ] || { echo "Usage: make coverage-missing-lines XML=coverage.xml COVERAGE_THRESHOLD=75"; exit 1; }
+	@$(PYTHON) scripts/coverage_missing_lines.py --xml "$(XML)" --threshold "$(COVERAGE_THRESHOLD)"
 
 # Targeted coverage check on key files (user-requested coverage report).
 coverage-key-files:
