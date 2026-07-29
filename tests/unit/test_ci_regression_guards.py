@@ -432,13 +432,41 @@ def test_test_shards_cap_xdist_for_nested_process_headroom() -> None:
 
     assert len(test_steps) == 1
     test_env = test_steps[0].get("env", {})
-    assert str(test_env.get("GLUDD_XDIST")) == "2", (
+    assert str(test_env.get("GLUDD_XDIST")) in {
+        "2",
+        "${{ matrix.shard == 'unit-1a1' && '1' || '2' }}",
+    }, (
         "CI resource regression: the hosted adaptive runner must be explicitly "
-        "capped at two xdist workers so nested Node and subprocess tests retain "
-        "headroom on the 7 GiB runner."
+        "capped at no more than two xdist workers so nested Node and subprocess "
+        "tests retain headroom on the 7 GiB runner."
     )
     all_envs = [job.get("env", {}), *[step.get("env", {}) for step in job["steps"]]]
     assert all("GLUDD_TEST_WORKER_MEM_MB" not in env for env in all_envs), (
         "CI resource regression: the obsolete RLIMIT_AS override must stay "
         "absent; V8 needs a large contiguous virtual address range."
+    )
+
+
+def test_node_heavy_unit_1a1_shard_runs_serially() -> None:
+    """Guard: plugin factory subprocess checks need exclusive runner memory.
+
+    Hosted beta.3 run 30494011946 exhausted V8 code-range reservations when
+    Python 3.12's unit-1a1 shard ran two xdist workers.  That shard owns the
+    Node-heavy ``test_all*`` plugin checks, so it must use one worker while the
+    remaining shards retain the two-worker cap.
+    """
+    workflow = _load_build_workflow()
+    test_steps = [
+        step
+        for step in workflow["jobs"]["test-shard"]["steps"]
+        if str(step.get("name", "")).startswith("Test (shard ")
+    ]
+
+    assert len(test_steps) == 1
+    assert str(test_steps[0].get("env", {}).get("GLUDD_XDIST")) == (
+        "${{ matrix.shard == 'unit-1a1' && '1' || '2' }}"
+    ), (
+        "CI resource regression: unit-1a1 must run one xdist worker so its "
+        "nested Node plugin checks retain V8 address-space headroom; all other "
+        "shards should remain capped at two workers."
     )

@@ -369,9 +369,10 @@ jobs:
           fi
           # Route through the adaptive runner so crash respawns stay bounded by
           # `--maxprocesses` and OOM-shaped exits retry with half the workers.
-          # Hosted runners can expose four cores while providing only ~7 GiB;
-          # GLUDD_XDIST=2 below is an explicit override that leaves headroom for
-          # tests which launch nested Node and Python subprocesses. Test scope is
+          # Hosted runners can expose four cores while providing only ~7 GiB.
+          # The unit-1a1 shard owns the Node-heavy plugin factory checks, so it
+          # runs serially to leave V8 enough code-range/address-space headroom.
+          # Every other shard keeps the explicit two-worker cap. Test scope is
           # the exclude-filtered $FILES list and coverage flags pass through.
           uv run python scripts/adaptive_test.py $FILES \
             --cov=general_ludd \
@@ -392,7 +393,7 @@ jobs:
           test -s ".coverage.${{ matrix.shard }}-${{ matrix.python-version }}"
         env:
           GLUDD_PSK: ""
-          GLUDD_XDIST: "2"
+          GLUDD_XDIST: "${{ matrix.shard == 'unit-1a1' && '1' || '2' }}"
           # Keep CI explicit for deterministic adaptive-runner behavior if the
           # worker override is ever removed; the numeric cap above wins today.
           CI: "true"
