@@ -38,6 +38,7 @@ dependencies = [
     "huggingface-hub>=0.28.0",
     "langgraph>=0.2.0",
     "langsmith>=0.8.18",
+    "langchain-openai>=1.4.1",
     "watchdog>=6.0.0",
     "fs>=2.4.0",
     "rich>=13.0.0",
