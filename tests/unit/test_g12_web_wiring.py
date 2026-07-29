@@ -112,7 +112,9 @@ class TestWebRetrieverConstruction(unittest.TestCase):
 
     def test_constructor_defers_cache_connection(self) -> None:
         """Construction does not hold an idle SQLite connection open."""
-        with patch("general_ludd.retrieval.web.diskcache.Cache") as cache_factory:
+        with patch(
+            "general_ludd.retrieval.web.open_safe_diskcache"
+        ) as cache_factory:
             wr = WebRetriever()
 
         cache_factory.assert_not_called()
