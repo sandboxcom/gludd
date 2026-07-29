@@ -286,7 +286,7 @@ def _resolve_role_definition_name(auth_client: Any, role_def_id: str) -> str:
         scope = role_def_id.rsplit("/", 1)[0]
         name = role_def_id.rsplit("/", 1)[-1]
         rd = auth_client.role_definitions.get(scope=scope, role_definition_id=name)
-        return getattr(getattr(rd, "role_name", None), "replace", lambda *_: "")() or getattr(rd, "role_name", "") or ""
+        return str(getattr(rd, "role_name", "") or "")
     except Exception:  # pragma: no cover — best effort
         return ""
 

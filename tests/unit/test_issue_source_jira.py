@@ -77,6 +77,14 @@ def test_jira_auth_header(monkeypatch):
     assert header.startswith("Basic ")
 
 
+def test_jira_auth_header_requires_both_credentials(monkeypatch):
+    monkeypatch.delenv("JIRA_EMAIL", raising=False)
+    monkeypatch.delenv("JIRA_API_TOKEN", raising=False)
+    source = JiraIssueSource(_make_config(), transport=FakeHttpTransport())
+    with pytest.raises(ValueError, match="Missing Jira credentials"):
+        source._auth_header()
+
+
 def test_jira_health_ok(monkeypatch):
     monkeypatch.setenv("JIRA_EMAIL", "u@e.com")
     monkeypatch.setenv("JIRA_API_TOKEN", "t")
@@ -135,6 +143,70 @@ def test_jira_normalize_missing_fields(monkeypatch):
     assert normalized["assignee"] is None
 
 
+def test_jira_update_status_posts_matching_transition_with_comment(monkeypatch):
+    monkeypatch.setenv("JIRA_EMAIL", "u@e.com")
+    monkeypatch.setenv("JIRA_API_TOKEN", "t")
+    transport = FakeHttpTransport([
+        FakeHttpResponse(
+            200,
+            {
+                "transitions": [
+                    {"id": "31", "name": "Finish", "to": {"name": "Done"}},
+                ],
+            },
+        ),
+        FakeHttpResponse(204, {}),
+    ])
+    source = JiraIssueSource(_make_config(), transport=transport)
+
+    result = source.update_status("TEST-1", "done", comment="shipped")
+
+    assert result == {
+        "external_id": "TEST-1",
+        "status": "done",
+        "transition_id": "31",
+        "ok": True,
+    }
+    assert transport.requests[1]["body"]["transition"] == {"id": "31"}
+    assert (
+        transport.requests[1]["body"]["update"]["comment"][0]["add"]["body"]
+        == _adf("shipped")
+    )
+
+
+def test_jira_update_status_rejects_unavailable_transition(monkeypatch):
+    monkeypatch.setenv("JIRA_EMAIL", "u@e.com")
+    monkeypatch.setenv("JIRA_API_TOKEN", "t")
+    transport = FakeHttpTransport([
+        FakeHttpResponse(
+            200,
+            {"transitions": [{"id": "1", "to": {"name": "In Progress"}}]},
+        ),
+    ])
+    source = JiraIssueSource(_make_config(), transport=transport)
+
+    with pytest.raises(ValueError, match="No Jira transition"):
+        source.update_status("TEST-1", "Done")
+
+
+@pytest.mark.parametrize(("status_code", "expected"), [(201, True), (500, False)])
+def test_jira_add_comment_reports_http_status(
+    monkeypatch,
+    status_code,
+    expected,
+):
+    monkeypatch.setenv("JIRA_EMAIL", "u@e.com")
+    monkeypatch.setenv("JIRA_API_TOKEN", "t")
+    transport = FakeHttpTransport([FakeHttpResponse(status_code, {})])
+    source = JiraIssueSource(_make_config(), transport=transport)
+
+    result = source.add_comment("TEST-1", "hello")
+
+    assert result["ok"] is expected
+    assert result["detail"] == f"HTTP {status_code}"
+    assert transport.requests[0]["body"] == {"body": _adf("hello")}
+
+
 def test_parse_updated_normal():
     ts = _parse_updated("2026-06-12T10:30:00.000+0000")
     assert ts > 0.0
@@ -151,6 +223,10 @@ def test_parse_updated_empty():
 def test_parse_updated_offset_with_colon():
     ts = _parse_updated("2026-06-12T10:30:00.000+00:00")
     assert ts > 0.0
+
+
+def test_parse_updated_invalid_returns_zero():
+    assert _parse_updated("not-a-date") == 0.0
 
 
 def test_adf():

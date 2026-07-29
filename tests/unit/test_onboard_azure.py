@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -139,6 +141,96 @@ class TestValidateTokenAndRole:
         assert ok is True
         assert info["missing"] == []
         assert set(info["roles_verified"]) == set(azure_onboard.EXPECTED_ROLES)
+
+    def test_requires_principal_id(self) -> None:
+        with pytest.raises(ValueError, match="principal_id is required"):
+            azure_onboard.validate_token_and_role(subscription_id="sub-1")
+
+
+class TestAzureSdkBoundaries:
+    @staticmethod
+    def _sdk_modules() -> tuple[dict[str, ModuleType], MagicMock, MagicMock]:
+        azure = ModuleType("azure")
+        identity = ModuleType("azure.identity")
+        mgmt = ModuleType("azure.mgmt")
+        compute = ModuleType("azure.mgmt.compute")
+        authorization = ModuleType("azure.mgmt.authorization")
+        credential = MagicMock(name="DefaultAzureCredential")
+        compute_client = MagicMock(name="ComputeManagementClient")
+        identity.DefaultAzureCredential = credential
+        compute.ComputeManagementClient = compute_client
+        return (
+            {
+                "azure": azure,
+                "azure.identity": identity,
+                "azure.mgmt": mgmt,
+                "azure.mgmt.compute": compute,
+                "azure.mgmt.authorization": authorization,
+            },
+            credential,
+            compute_client,
+        )
+
+    def test_build_client_uses_default_credential_and_subscription(self) -> None:
+        modules, credential, compute_client = self._sdk_modules()
+        with patch.dict(sys.modules, modules):
+            result = azure_onboard._build_azure_client(subscription_id="sub-1")
+
+        assert result is compute_client.return_value
+        compute_client.assert_called_once_with(
+            credential=credential.return_value,
+            subscription_id="sub-1",
+        )
+
+    def test_role_assignments_are_normalized(self) -> None:
+        modules, credential, _compute_client = self._sdk_modules()
+        auth_client_type = MagicMock(name="AuthorizationManagementClient")
+        modules["azure.mgmt.authorization"].AuthorizationManagementClient = (
+            auth_client_type
+        )
+        auth_client = auth_client_type.return_value
+        auth_client.role_assignments.list.return_value = [
+            SimpleNamespace(
+                principal_id="principal-1",
+                role_definition_id="/subscriptions/sub-1/roleDefinitions/role-1",
+            ),
+        ]
+
+        with (
+            patch.dict(sys.modules, modules),
+            patch.object(
+                azure_onboard,
+                "_resolve_role_definition_name",
+                return_value="General Ludd Accelerator Deployer",
+            ),
+        ):
+            result = azure_onboard._get_role_assignments("sub-1", "principal-1")
+
+        assert result == [{
+            "principal_id": "principal-1",
+            "role_definition_id": "/subscriptions/sub-1/roleDefinitions/role-1",
+            "role_definition_name": "General Ludd Accelerator Deployer",
+        }]
+        auth_client_type.assert_called_once_with(
+            credential=credential.return_value,
+            subscription_id="sub-1",
+        )
+        auth_client.role_assignments.list.assert_called_once_with(
+            filter="principalId eq 'principal-1'",
+        )
+
+    def test_role_definition_name_handles_success_empty_and_failure(self) -> None:
+        auth_client = MagicMock()
+        auth_client.role_definitions.get.return_value.role_name = "Accelerator"
+        role_id = "/subscriptions/sub-1/roleDefinitions/role-1"
+
+        assert (
+            azure_onboard._resolve_role_definition_name(auth_client, role_id)
+            == "Accelerator"
+        )
+        assert azure_onboard._resolve_role_definition_name(auth_client, "") == ""
+        auth_client.role_definitions.get.side_effect = RuntimeError("unavailable")
+        assert azure_onboard._resolve_role_definition_name(auth_client, role_id) == ""
 
 
 # ---------------------------------------------------------------------------
