@@ -119,6 +119,18 @@ def _collect_submodule_packages(spec_text: str) -> set[str]:
     return packages
 
 
+def _collect_submodule_calls(spec_text: str) -> list[ast.Call]:
+    """Return every ``collect_submodules(...)`` call in the spec."""
+    tree = ast.parse(spec_text, filename=str(SPEC_PATH))
+    return [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "collect_submodules"
+    ]
+
+
 def _find_runtime_data_files(package_name: str) -> list[Path]:
     """Find runtime-critical non-.py data files shipped by an installed package.
 
@@ -265,6 +277,31 @@ class TestAnsibleDataCollection:
 
 class TestBuildWarningPrevention:
     """Intentional optional/platform imports must not pollute release builds."""
+
+    def test_windows_ansible_collection_ignores_posix_import_failures(
+        self, spec_text: str
+    ) -> None:
+        """Windows discovery skips warnings from unsupported Ansible internals."""
+        calls = _collect_submodule_calls(spec_text)
+        assert calls
+        for call in calls:
+            on_error = next(
+                (item.value for item in call.keywords if item.arg == "on_error"),
+                None,
+            )
+            assert isinstance(on_error, ast.Name)
+            assert on_error.id == "_ansible_collect_error_mode"
+
+        assert 'sys.platform == "win32"' in spec_text
+        assert '_ansible_collect_error_mode = "ignore"' in spec_text
+
+    def test_windows_excludes_posix_only_stdlib_modules(
+        self, spec_text: str
+    ) -> None:
+        """Static analysis must not warn for stdlib modules absent on Windows."""
+        assert 'sys.platform == "win32"' in spec_text
+        for module in ("fcntl", "grp", "pty", "pwd", "resource", "termios", "tty"):
+            assert f"'{module}'" in spec_text
 
     def test_unused_sqlalchemy_drivers_are_explicitly_excluded(
         self, spec_text: str

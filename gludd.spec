@@ -35,18 +35,45 @@ def _is_collectable_ansible_submodule(name):
     return name not in _ABSENT_ANSIBLE_SUBMODULES
 
 
+# Ansible is not a supported native-Windows control node. Its recursive
+# packages import POSIX stdlib modules while PyInstaller enumerates dynamic
+# children, even though non-Ansible Gludd commands do not use those paths.
+# PyInstaller documents ``on_error="ignore"`` for skipping those known
+# unimportable children without emitting misleading build warnings.
+_ansible_collect_error_mode = "ignore" if sys.platform == "win32" else "warn once"
+
 _hidden_ansible = collect_submodules(
     'ansible.module_utils',
     filter=_is_collectable_ansible_submodule,
+    on_error=_ansible_collect_error_mode,
 )
-_hidden_ansible += collect_submodules('ansible.plugins')
-_hidden_ansible += collect_submodules('ansible.template')
-_hidden_ansible += collect_submodules('ansible.galaxy')
+_hidden_ansible += collect_submodules(
+    'ansible.plugins',
+    on_error=_ansible_collect_error_mode,
+)
+_hidden_ansible += collect_submodules(
+    'ansible.template',
+    on_error=_ansible_collect_error_mode,
+)
+_hidden_ansible += collect_submodules(
+    'ansible.galaxy',
+    on_error=_ansible_collect_error_mode,
+)
 
-# PyInstaller's dependency hooks inspect conditional Windows modules even on
-# POSIX hosts. Excluding those branches on non-Windows builds avoids attempts
-# to resolve user32/shell32/ole32 while retaining them in Windows artifacts.
+# PyInstaller follows conditional imports from both platform branches. Exclude
+# unavailable stdlib modules on Windows and Windows-only implementation modules
+# on POSIX so analysis stays warning-free without stripping usable code.
 _platform_excludes = []
+if sys.platform == "win32":
+    _platform_excludes = [
+        'fcntl',
+        'grp',
+        'pty',
+        'pwd',
+        'resource',
+        'termios',
+        'tty',
+    ]
 if sys.platform != "win32":
     _platform_excludes = [
         'appdirs',
