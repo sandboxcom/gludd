@@ -184,9 +184,9 @@ class TestRetrievalSearcher:
         with tempfile.TemporaryDirectory() as tmp:
             cache_dir = Path(tmp) / "cache"
             cache_dir.mkdir()
-            import diskcache
+            from general_ludd.security.safe_diskcache import open_safe_diskcache
 
-            cache = diskcache.Cache(str(cache_dir))
+            cache = open_safe_diskcache(cache_dir)
             from general_ludd.retrieval.indexer import _tokenize
 
             tokens = _tokenize("hello world")
