@@ -46,6 +46,8 @@ def test_gate_refresh_recycles_workers_between_bounded_unit_shards() -> None:
 
     assert "test-unit-shards-sequential" in gate_refresh
     assert "run-watched" in gate_refresh
+    assert "PYTEST_ARGS=-q" in gate_refresh
+    assert 'PYTEST_ARGS="' not in gate_refresh
     assert "pytest tests/unit/" not in gate_refresh
     assert "test-ci-shard" in shard_target
     for shard in ("unit-1a1", "unit-1a2", "unit-1b", "unit-1d", "unit-2", "unit-3"):

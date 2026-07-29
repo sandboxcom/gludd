@@ -3467,7 +3467,7 @@ gate-refresh: _gate-run-lock-acquire
 		echo "=== GATE-REFRESH PHASE: test ==="; \
 		TEST_LOG="/tmp/gludd-gate-refresh-test.$$$$.log"; \
 		printf "test " >> .gate-status; \
-		if $(MAKE) --no-print-directory run-watched CMD='$(MAKE) --no-print-directory test-unit-shards-sequential PYTEST_ARGS="-q --no-header" GLUDD_XDIST=2' LOG="$$TEST_LOG" STALL_SECS=180 MAX_SECS=3600; then \
+		if $(MAKE) --no-print-directory run-watched CMD='$(MAKE) --no-print-directory test-unit-shards-sequential PYTEST_ARGS=-q GLUDD_XDIST=2' LOG="$$TEST_LOG" STALL_SECS=180 MAX_SECS=3600; then \
 			echo "PASS 0" >> .gate-status; rm -f "$$TEST_LOG"; \
 		else \
 			echo "FAIL non-zero-exit" >> .gate-status && touch .gate-failed && echo "[gate-refresh] test FAILED — tail:" && tail -20 "$$TEST_LOG"; \
