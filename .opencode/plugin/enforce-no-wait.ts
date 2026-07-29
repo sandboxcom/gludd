@@ -34,6 +34,24 @@ const CI_POLL_DENY_MESSAGE =
   "work instead; check CI at the next natural break with `make ci-verdict-safe` " +
   "(10-min cooldown enforced). `make ci-wait` is for release-cut ONLY.";
 const DISPATCH_TOOLS = new Set(["task", "agent", "workflow"]);
+function _extractBashCommand(input: unknown): string {
+  const p = input as {
+    command?: unknown;
+    args?: { command?: unknown };
+    input?: { command?: unknown };
+    tool_input?: { command?: unknown };
+  };
+  const candidates = [
+    p.args?.command,
+    p.command,
+    p.input?.command,
+    p.tool_input?.command,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string") return candidate;
+  }
+  return "";
+}
 function _extractDispatchText(params: unknown): string {
   const p = params as {
     prompt?: unknown;
@@ -60,7 +78,7 @@ const defaultImpl: HotModule = {
     try {
       if (process.env.GLUDD_NO_WAIT_ENFORCE === "0") return;
       if (input.tool === "bash") {
-        const cmd: string = String(input.args?.command ?? "");
+        const cmd = _extractBashCommand(input);
         if (cmd) {
           for (const pattern of WAIT_PATTERNS) {
             if (pattern.test(cmd)) {
