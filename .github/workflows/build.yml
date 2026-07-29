@@ -95,6 +95,10 @@ jobs:
         with:
           node-version: "26"
       - name: Inject version
+        # Non-tag CI validates the version committed in the checkout. Injecting
+        # the synthetic timestamped alpha from the version job made the
+        # release-version E2E contract fail before any artifact was built.
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           sed -i "s/__version__ = \".*\"/__version__ = \"${{ needs.version.outputs.version }}\"/" src/general_ludd/__init__.py
           sed -i "s/^version = \".*\"/version = \"${{ needs.version.outputs.version }}\"/" pyproject.toml
@@ -293,6 +297,9 @@ jobs:
         with:
           node-version: "26"
       - name: Inject version
+        # Preserve the committed package version during branch CI. Release tags
+        # remain the sole source allowed to override package metadata in tests.
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           sed -i "s/__version__ = \".*\"/__version__ = \"${{ needs.version.outputs.version }}\"/" src/general_ludd/__init__.py
           sed -i "s/^version = \".*\"/version = \"${{ needs.version.outputs.version }}\"/" pyproject.toml

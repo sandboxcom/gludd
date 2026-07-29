@@ -72,6 +72,14 @@ def test_all_test_shards_pin_node_26() -> None:
     assert setup.get("with", {}).get("node-version") == "26"
 
 
+def test_test_shards_only_inject_generated_version_for_release_tags() -> None:
+    """Branch CI must test the committed package version, not a synthetic alpha."""
+    for job in ("gate", "test-shard"):
+        steps = _job_steps(job)
+        inject = next(step for step in steps if step.get("name") == "Inject version")
+        assert inject.get("if") == "startsWith(github.ref, 'refs/tags/v')", job
+
+
 def test_other_shard_installs_pinned_opencode_before_pytest() -> None:
     steps = _job_steps("test-shard")
     test_index = next(
