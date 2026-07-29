@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import os
-import re
 from pathlib import Path
+
+RUNNER = Path("scripts/run_ci_shards_serial.py")
 
 
 class TestRunGateIncludesCoverageFlags:
@@ -17,26 +18,19 @@ class TestRunGateIncludesCoverageFlags:
         assert path.stat().st_size > 0, "run_gate.sh is empty"
 
     def test_run_gate_sh_includes_cov_flag(self) -> None:
-        content = Path("scripts/run_gate.sh").read_text()
+        content = RUNNER.read_text()
         assert "--cov=general_ludd" in content, (
-            "run_gate.sh missing --cov=general_ludd flag"
+            "serial shard runner missing --cov=general_ludd flag"
         )
-        assert "--cov-report=term-missing" in content, (
-            "run_gate.sh missing --cov-report=term-missing flag"
+        assert "--show-missing" in content, (
+            "serial shard runner must show missing lines in aggregate coverage"
         )
 
     def test_coverage_comes_before_basetemp(self) -> None:
         """Coverage flags must precede --basetemp so pytest sees them."""
-        content = Path("scripts/run_gate.sh").read_text()
-        m = re.search(
-            r"adaptive_test\.py\s+tests/\s+-q\s+(.*?)--basetemp",
-            content,
-            re.DOTALL,
-        )
-        assert m is not None, "Could not find adaptive_test.py call in run_gate.sh"
-        args_block = m.group(1)
-        assert "--cov" in args_block, (
-            "--cov not found before --basetemp in run_gate.sh"
+        content = RUNNER.read_text()
+        assert content.index("--cov=general_ludd") < content.index("--basetemp="), (
+            "--cov must precede --basetemp in the shard pytest command"
         )
 
     def test_pyproject_toml_coverage_fail_under_set(self) -> None:

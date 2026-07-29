@@ -730,7 +730,10 @@ class TestShardCoverageInvariant:
         wf = _load_workflow()
         includes = self._shard_includes(wf)
         unit_dir = ROOT / "tests" / "unit"
-        unit_files = sorted(p.name for p in unit_dir.glob("test_*.py"))
+        unit_files = sorted(
+            path.relative_to(ROOT).as_posix()
+            for path in unit_dir.rglob("test_*.py")
+        )
         assert unit_files, "tests/unit/ must contain test_*.py files"
 
         counts: dict[str, int] = {name: 0 for name in unit_files}
@@ -738,15 +741,17 @@ class TestShardCoverageInvariant:
             testpaths = str(entry.get("testpaths", ""))
             excludes = str(entry.get("exclude", "")).split()
             for token in testpaths.split():
-                if not token.startswith("tests/unit/test_"):
+                if not token.startswith("tests/unit/test_") and not token.startswith("tests/unit/"):
                     continue
                 # Simulate bash glob expansion of the testpaths token.
                 for path in sorted(ROOT.glob(token)):
-                    rel = path.relative_to(ROOT).as_posix()
-                    # Simulate the run step's `case "$f" in $pat)` drop.
-                    if any(fnmatch.fnmatch(rel, pat) for pat in excludes):
-                        continue
-                    counts[path.name] += 1
+                    candidates = path.rglob("test_*.py") if path.is_dir() else [path]
+                    for candidate in candidates:
+                        rel = candidate.relative_to(ROOT).as_posix()
+                        # Simulate the run step's `case "$f" in $pat)` drop.
+                        if any(fnmatch.fnmatch(rel, pat) for pat in excludes):
+                            continue
+                        counts[rel] += 1
 
         never_collected = sorted(n for n, c in counts.items() if c == 0)
         double_collected = {n: c for n, c in counts.items() if c > 1}

@@ -163,7 +163,7 @@ jobs:
         env:
           GLUDD_PSK: ""
 
-  # Parallel test shards — 7 path-based groups × 1 Python version = 7 jobs.
+  # Parallel test shards — 7 path-based groups × 2 Python versions = 14 jobs.
   # Each shard is independent: a failure in shard "unit-1a1" is reported at the
   # job level within minutes of that shard finishing, without waiting for the
   # other 6 jobs.  No new dependencies: xdist (already present) is used within
@@ -185,7 +185,8 @@ jobs:
   #   other       tests/integration/ tests/e2e/ tests/live/
   #               tests/security/ tests/test_*.py         ← non-unit files, plus
   #               tests/unit/test_connector*.py and tests/unit/test_*_e2e.py
-  #               rerouted here from their letter shards (see `exclude` below)
+  #               rerouted here from their letter shards (see `exclude` below),
+  #               plus nested tests/unit/sts/ and test_e2e_test_generation/
   #
   # unit-1a was split (2026-07-24, RP.11/CP.5) into unit-1a1 + unit-1a2 after
   # the monolithic test_a*.py shard ran 28-57 min in CI (runs 29055665462,
@@ -272,7 +273,8 @@ jobs:
             # untouched (excludes only match tests/unit/*.py file tokens).
             exclude: "*/test_*_e2e.py"
           - shard: other
-            testpaths: "tests/integration/ tests/e2e/ tests/live/ tests/security/ tests/test_*.py tests/unit/test_connector*.py tests/unit/test_*_e2e.py"
+            testpaths: "tests/integration/ tests/e2e/ tests/live/ tests/security/ tests/test_*.py tests/unit/test_connector*.py tests/unit/test_*_e2e.py tests/unit/sts/ tests/unit/test_e2e_test_generation/"
+            exclude: ""
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
@@ -298,7 +300,7 @@ jobs:
         # EVERY shard collects coverage data (.coverage SQLite file) so the
         # `coverage` job downstream can merge them into a single canonical
         # coverage.xml.  --cov-report= suppresses per-shard terminal/xml output
-        # (noise across 12 shard legs); the merged report is produced by the
+        # (noise across 14 shard legs); the merged report is produced by the
         # `coverage` job.  Coverage gate is enforced by the `coverage` job
         # downstream at 85% aggregate and 75% for every source file.
         run: |
@@ -420,7 +422,7 @@ jobs:
         # debugging the merged data file is possible from the artifact.
         run: |
           set -euo pipefail
-          EXPECTED_SHARD_COVERAGE_FILES=7
+          EXPECTED_SHARD_COVERAGE_FILES=14
           mkdir -p .coverage-shards
           test -d coverage-data
           find coverage-data -type f -name '.coverage.*' -exec cp {} .coverage-shards/ \;

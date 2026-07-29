@@ -12,6 +12,7 @@ SCRIPT_NAMES = (
     "ci_shards_parallel_status.py",
     "run_ci_shard_summary.py",
     "run_ci_shards_parallel.py",
+    "run_ci_shards_serial.py",
     "start_ci_shards_parallel_bg.py",
 )
 

@@ -7,14 +7,17 @@ import fnmatch
 import shlex
 from pathlib import Path
 
-
 SHARDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
-    "unit-1a": (("tests/unit/test_a*.py",), ("*/test_*_e2e.py",)),
-    "unit-1d": (("tests/unit/test_[bd]*.py",), ("*/test_*_e2e.py",)),
+    "unit-1a1": (("tests/unit/test_a[a-m]*.py",), ("*/test_*_e2e.py",)),
+    "unit-1a2": (
+        ("tests/unit/test_a[n-z]*.py", "tests/unit/test_a[0-9]*.py"),
+        ("*/test_*_e2e.py",),
+    ),
     "unit-1b": (
         ("tests/unit/test_[ce]*.py",),
         ("*/test_connector*.py", "*/test_*_e2e.py"),
     ),
+    "unit-1d": (("tests/unit/test_[bd]*.py",), ("*/test_*_e2e.py",)),
     "unit-2": (("tests/unit/test_[f-m]*.py",), ("*/test_*_e2e.py",)),
     "unit-3": (
         ("tests/unit/test_[n-z]*.py", "tests/unit/secrets/"),
@@ -29,6 +32,8 @@ SHARDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
             "tests/test_*.py",
             "tests/unit/test_connector*.py",
             "tests/unit/test_*_e2e.py",
+            "tests/unit/sts/",
+            "tests/unit/test_e2e_test_generation/",
         ),
         (),
     ),

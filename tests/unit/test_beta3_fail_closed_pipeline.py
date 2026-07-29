@@ -97,7 +97,9 @@ def test_test_shards_reject_empty_selection_and_missing_coverage() -> None:
 def test_coverage_requires_all_shards_and_both_thresholds() -> None:
     coverage = _job("coverage")
     runs = _run_blocks(coverage)
-    assert "EXPECTED_SHARD_COVERAGE_FILES=7" in runs
+    matrix = _job("test-shard")["strategy"]["matrix"]
+    expected_files = len(matrix["python-version"]) * len(matrix["shard"])
+    assert f"EXPECTED_SHARD_COVERAGE_FILES={expected_files}" in runs
     assert "coverage report --skip-covered --fail-under=85" in runs
     assert "coverage json -o coverage.json" in runs
     assert "audit_coverage.py" in runs
