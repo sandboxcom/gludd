@@ -10,6 +10,7 @@ from scripts import clean_tmp
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "clean_tmp.py"
+MAKEFILE = ROOT / "Makefile"
 
 
 def test_clean_tmp_scopes_generated_release_audit_artifacts() -> None:
@@ -20,6 +21,16 @@ def test_clean_tmp_scopes_generated_release_audit_artifacts() -> None:
     }
 
     assert expected.issubset(set(clean_tmp.TMP_GLOBS))
+
+
+def test_gate_refresh_log_cannot_be_deleted_by_concurrent_tmp_cleanup() -> None:
+    makefile = MAKEFILE.read_text(encoding="utf-8")
+    gate_refresh = makefile.split("gate-refresh:", 1)[1].split(
+        "_gate-run-lock-acquire:", 1
+    )[0]
+
+    assert 'TEST_LOG="/tmp/gludd-gate-refresh-test.$$$$.log"' in gate_refresh
+    assert "> /tmp/gludd-gate-refresh-test.log" not in gate_refresh
 
 
 def test_clean_tmp_removes_home_tmp_pytest_garbage_with_unwritable_children(tmp_path: Path) -> None:
