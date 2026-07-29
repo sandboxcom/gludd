@@ -1002,7 +1002,8 @@ kill-stray:
 	pkill -9 -f '/Users/shawnwilson/gludd/.venv/bin/detect-secrets scan' 2>/dev/null; \
 	pkill -9 -f '/Users/shawnwilson/gludd/.venv/bin/python -c from multiprocessing.resource_tracker' 2>/dev/null; \
 	pkill -9 -f '/Users/shawnwilson/gludd/.venv/bin/python -c from multiprocessing.spawn' 2>/dev/null; \
-	echo "killed stray pytest/gate/secret-scan workers (if any)"
+	pkill -9 -f '/Users/shawnwilson/gludd/\.venv/bin/python3? -u -c import sys;exec\(eval\(sys.stdin.readline\(\)\)\)' 2>/dev/null; \
+	echo "killed stray pytest/xdist/gate/secret-scan workers (if any)"
 
 # Reap ONLY genuinely-stale gludd processes — never the active one. A process is
 # killed iff it matches a known gludd scratch pattern and its parent is PID 1,

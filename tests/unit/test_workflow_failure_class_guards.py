@@ -457,3 +457,11 @@ def test_kill_stale_reaps_orphaned_workspace_gunicorn_daemon_tree() -> None:
     assert "pgrep -P \"$$pid\"" in block
     assert "active non-daemon" in block
     assert "childless gludd scratch only" not in block
+
+
+def test_kill_stray_reaps_orphaned_xdist_worker_children() -> None:
+    block = _target_block("kill-stray")
+    assert (
+        r"/Users/shawnwilson/gludd/\.venv/bin/python3? -u -c "
+        r"import sys;exec\(eval\(sys.stdin.readline\(\)\)\)"
+    ) in block
