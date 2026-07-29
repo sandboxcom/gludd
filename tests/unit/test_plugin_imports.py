@@ -85,20 +85,15 @@ def test_invalid_file_detected():
         bad_path = fp.name
 
     try:
-        target = PLUGIN_DIR / "zzz_bad_imports_test.ts"
-        target.symlink_to(bad_path)
-        try:
-            result = subprocess.run(
-                ["python", str(SCRIPT)],
-                capture_output=True, text=True, timeout=30, cwd=str(ROOT),
-            )
-            assert result.returncode == 1, (
-                f"Expected exit 1 for invalid imports, got {result.returncode}\n"
-                f"stdout: {result.stdout}\nstderr: {result.stderr}"
-            )
-            assert "violations found" in result.stdout
-        finally:
-            target.unlink()
+        result = subprocess.run(
+            ["python", str(SCRIPT), bad_path],
+            capture_output=True, text=True, timeout=30, cwd=str(ROOT),
+        )
+        assert result.returncode == 1, (
+            f"Expected exit 1 for invalid imports, got {result.returncode}\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+        assert "violations found" in result.stdout
     finally:
         Path(bad_path).unlink()
 
