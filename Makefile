@@ -5155,8 +5155,8 @@ reload-enforcement:
 	@FLOOR="$${CLAUDE_AGENT_FLOOR:-10}"; \
 	echo "$${FLOOR}" > /tmp/gludd-floor-override; \
 	echo "  /tmp/gludd-floor-override          → $${FLOOR}"
-	@$(UV) run python3 -c 'import json,time; json.dump({"count":0,"ts":int(time.time()*1000)},open("/tmp/gludd-tool-streak.json","w"))'
-	@echo "  /tmp/gludd-tool-streak.json        → count=0"
+	@$(UV) run python3 -c 'import json,os,time; path=os.environ.get("GLUDD_STREAK_FILE","/tmp/gludd-tool-streak.json"); json.dump({"count":0,"ts":int(time.time()*1000)},open(path,"w"))'
+	@echo "  $${GLUDD_STREAK_FILE:-/tmp/gludd-tool-streak.json} → count=0"
 	@$(UV) run python3 -c 'import json,time; json.dump({"streak":0,"last_dispatch_ts":int(time.time()*1000),"ts":int(time.time()*1000)},open("/tmp/gludd-mainthread-streak.json","w"))'
 	@echo "  /tmp/gludd-mainthread-streak.json  → strength=0"
 	@rm -f /tmp/gludd-watchdog-disengage.json

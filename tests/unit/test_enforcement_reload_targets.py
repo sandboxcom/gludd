@@ -45,23 +45,26 @@ def _cleanup_enf_state() -> None:
 
 
 class TestReloadEnforcement:
-    def test_reload_resets_streak_files(self):
-        try:
-            _cleanup_enf_state()
-            # pre-create a stale streak file to verify it gets reset
-            with open("/tmp/gludd-tool-streak.json", "w") as f:
-                json.dump({"count": 99, "ts": int(time.time() * 1000)}, f)
-            result = subprocess.run(
-                ["make", "reload-enforcement"],
-                capture_output=True, text=True, timeout=15,
-                cwd=str(ROOT),
-            )
-            assert result.returncode == 0, result.stderr
-            with open("/tmp/gludd-tool-streak.json") as f:
-                streak = json.load(f)
-            assert streak["count"] == 0
-        finally:
-            _cleanup_enf_state()
+    def test_reload_resets_streak_files(self, tmp_path: Path):
+        streak_path = tmp_path / "tool-streak.json"
+        streak_path.write_text(
+            json.dumps({"count": 99, "ts": int(time.time() * 1000)})
+        )
+        env = os.environ.copy()
+        env["GLUDD_STREAK_FILE"] = str(streak_path)
+
+        result = subprocess.run(
+            ["make", "reload-enforcement"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            cwd=str(ROOT),
+            env=env,
+        )
+
+        assert result.returncode == 0, result.stderr
+        streak = json.loads(streak_path.read_text())
+        assert streak["count"] == 0
 
     def test_reload_removes_disengage_signal(self):
         try:
