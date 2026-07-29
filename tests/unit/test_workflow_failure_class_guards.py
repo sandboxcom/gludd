@@ -478,9 +478,14 @@ def test_kill_stale_reaps_orphaned_workspace_gunicorn_daemon_tree() -> None:
     assert "childless gludd scratch only" not in block
 
 
-def test_kill_stray_reaps_orphaned_xdist_worker_children() -> None:
+def test_kill_stray_delegates_to_orphan_only_cleanup() -> None:
     block = _target_block("kill-stray")
+    stale_block = _target_block("kill-stale")
+    assert "$(MAKE) --no-print-directory kill-stale" in block
+    assert "pkill" not in block
+    assert '[ "$$ppid" != "1" ]' in stale_block
     assert (
         r"/Users/shawnwilson/gludd/\.venv/bin/python3? -u -c "
         r"import sys;exec\(eval\(sys.stdin.readline\(\)\)\)"
-    ) in block
+    ) in stale_block
+    assert "KILLED stale orphan xdist tree" in stale_block

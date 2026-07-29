@@ -1003,17 +1003,11 @@ ps-gludd:
 	done; \
 	echo "--- ORPHAN(ppid=1)=stale. kill-stale removes stale scratch processes and workspace daemon trees only ---"
 
-# Kill stray pytest/gate processes (e.g. xdist workers orphaned by a killed run).
-# NOTE: blunt instrument — see kill-stale for self-tree-protecting cleanup.
+# Backward-compatible cleanup entry point. Cleanup is intentionally delegated to
+# the orphan-only implementation so one worktree cannot terminate another
+# worktree's active gate or test run.
 kill-stray:
-	@pkill -9 -f 'gludd-gate-basetemp' 2>/dev/null; \
-	pkill -9 -f 'pytest tests/' 2>/dev/null; \
-	pkill -9 -f 'make gate' 2>/dev/null; \
-	pkill -9 -f '/Users/shawnwilson/gludd/.venv/bin/detect-secrets scan' 2>/dev/null; \
-	pkill -9 -f '/Users/shawnwilson/gludd/.venv/bin/python -c from multiprocessing.resource_tracker' 2>/dev/null; \
-	pkill -9 -f '/Users/shawnwilson/gludd/.venv/bin/python -c from multiprocessing.spawn' 2>/dev/null; \
-	pkill -9 -f '/Users/shawnwilson/gludd/\.venv/bin/python3? -u -c import sys;exec\(eval\(sys.stdin.readline\(\)\)\)' 2>/dev/null; \
-	echo "killed stray pytest/xdist/gate/secret-scan workers (if any)"
+	@$(MAKE) --no-print-directory kill-stale
 
 # Reap ONLY genuinely-stale gludd processes — never the active one. A process is
 # killed iff it matches a known gludd scratch pattern and its parent is PID 1,
@@ -1030,12 +1024,21 @@ kill-stale:
 	PARENTS=$$(ps -axo ppid= | tr -s ' ' '\n' | grep -E '^[0-9]+$$' | sort -u); \
 	echo "[kill-stale] self=$$SELF parent=$$PARENT — reaping orphaned gludd scratch and daemon trees"; \
 	ps -axo pid=,ppid=,command= | \
-	grep -E "molecule/mock_daemon|\.claude/worktrees/agent-[^ ]*/\.venv/bin/python|general_ludd\.cli tui|gludd-gate-basetemp|pytest tests/|ansible-playbook|/Users/shawnwilson/gludd/\.venv/bin/gunicorn general_ludd\.daemon:create_daemon_app" | \
+	grep -E "molecule/mock_daemon|\.claude/worktrees/agent-[^ ]*/\.venv/bin/python|general_ludd\.cli tui|gludd-gate-basetemp|pytest tests/|ansible-playbook|/Users/shawnwilson/gludd/\.venv/bin/python3? -u -c import sys;exec\(eval\(sys.stdin.readline\(\)\)\)|/Users/shawnwilson/gludd/\.venv/bin/gunicorn general_ludd\.daemon:create_daemon_app" | \
 	grep -v -E 'grep |kill-stale|ps-gludd' | \
 	while read -r pid ppid rest; do \
 		cmd=$$(echo "$$rest" | cut -c1-70); \
 		{ [ "$$pid" = "$$SELF" ] || [ "$$pid" = "$$PARENT" ]; } && { echo "  KEEP (self/parent): $$pid"; continue; }; \
 		if [ "$$ppid" != "1" ]; then echo "  KEEP (live parent $$ppid = active run): $$pid $$cmd"; continue; fi; \
+		if echo "$$rest" | grep -Eq '/Users/shawnwilson/gludd/\.venv/bin/python3? -u -c import sys;exec\(eval\(sys.stdin.readline\(\)\)\)'; then \
+			CHILDREN=$$(/usr/bin/pgrep -P "$$pid" 2>/dev/null || true); \
+			for child in $$CHILDREN; do kill -TERM "$$child" 2>/dev/null; done; \
+			kill -TERM "$$pid" 2>/dev/null; sleep 0.2; \
+			for child in $$CHILDREN; do kill -KILL "$$child" 2>/dev/null; done; \
+			kill -KILL "$$pid" 2>/dev/null; \
+			echo "  KILLED stale orphan xdist tree: $$pid $$cmd"; \
+			continue; \
+		fi; \
 		case "$$rest" in \
 			*"/Users/shawnwilson/gludd/.venv/bin/gunicorn general_ludd.daemon:create_daemon_app()"*) \
 				CHILDREN=$$(/usr/bin/pgrep -P "$$pid" 2>/dev/null || true); \
