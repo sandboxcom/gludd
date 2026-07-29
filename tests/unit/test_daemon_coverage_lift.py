@@ -423,7 +423,10 @@ class TestBenchmarkScoresWithSession:
     @pytest.mark.asyncio
     async def test_benchmark_scores_with_session(self, app, transport):
         mock_session = MagicMock()
-        app.state._session = mock_session
+        mock_sf = MagicMock()
+        mock_sf.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_sf.return_value.__aexit__ = AsyncMock(return_value=False)
+        app.state._session_factory = mock_sf
         with patch(
             "general_ludd.db.repository.BenchmarkRepository.get_aggregate_scores",
             new_callable=AsyncMock,
