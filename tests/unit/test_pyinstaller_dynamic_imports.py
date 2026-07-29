@@ -12,6 +12,12 @@ def test_safe_diskcache_serializer_is_bundled() -> None:
     assert "'msgpack'," in spec
 
 
+def test_project_collections_are_bundled() -> None:
+    spec = (_ROOT / "gludd.spec").read_text()
+
+    assert "('collections', 'collections')" in spec
+
+
 def test_frozen_daemon_runtime_is_bundled() -> None:
     spec = (_ROOT / "gludd.spec").read_text()
 

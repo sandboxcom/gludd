@@ -15,6 +15,7 @@ _ansible_binaries = []
 
 datas = [
     ('config', 'config'),
+    ('collections', 'collections'),
     ('templates', 'templates'),
     ('playbooks', 'playbooks'),
     ('infra/terraform', 'general_ludd/terraform_assets'),
