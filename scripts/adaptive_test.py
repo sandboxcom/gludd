@@ -236,11 +236,14 @@ def has_basetemp(args: Sequence[str]) -> bool:
 
 
 def unique_basetemp() -> str:
-    """A process-unique pytest ``--basetemp`` path under the system temp root.
+    """A short, process-unique pytest ``--basetemp`` path.
 
     Returns a path (NOT created here — pytest creates and, if it exists, wipes
     the basetemp at startup) that no other pytest process can share, keyed on
-    PID + a random uuid.
+    PID + a random suffix. POSIX uses the literal ``/tmp`` rather than a
+    potentially long ``TMPDIR`` so descendants can bind AF_UNIX sockets within
+    Darwin's 103-byte path limit. The compact ``gludd-at`` namespace plus PID
+    and random suffix still isolates simultaneous project/test processes.
 
     WHY THIS EXISTS — the CI shared-tmp-root race that produced ~86
     ``FileNotFoundError: /tmp/pytest-of-<user>/pytest-0/popen-gwN`` errors:
@@ -265,8 +268,15 @@ def unique_basetemp() -> str:
     test spawns a nested pytest. This is the same isolation ``scripts/run_gate.sh``
     already applies to the local gate (unique ``mktemp -d`` basetemp).
     """
-    root = tempfile.gettempdir()
-    return os.path.join(root, f"gludd-adaptive-basetemp-{os.getpid()}-{uuid.uuid4().hex}")
+    root = (
+        "/tmp"
+        if os.name == "posix" and os.path.isdir("/tmp")
+        else tempfile.gettempdir()
+    )
+    return os.path.join(
+        root,
+        f"gludd-at-{os.getpid()}-{uuid.uuid4().hex[:8]}",
+    )
 
 
 def build_pytest_cmd(pytest_args: Sequence[str], nproc: int) -> list[str]:
