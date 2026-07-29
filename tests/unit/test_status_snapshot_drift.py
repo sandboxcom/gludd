@@ -78,6 +78,7 @@ class TestDriftDetectorFlagsChanges:
     def test_drift_detector_flags_changes(self, tmp_path):
         gate_file = tmp_path / ".gate-status"
         gate_file.write_text(
+            "=== GATE: PASSED ===\n"
             "test PASS 89\nlint PASS 0\ntypecheck PASS 0\nsmoke PASS\n"
         )
 
@@ -110,7 +111,10 @@ class TestCleanSnapshotPasses:
     must pass the drift check with zero violations."""
 
     def test_clean_snapshot_passes(self, tmp_path):
-        gate_text = "test PASS 89\nlint PASS 0\ntypecheck PASS 0\nsmoke PASS\n"
+        gate_text = (
+            "=== GATE: PASSED ===\n"
+            "test PASS 89\nlint PASS 0\ntypecheck PASS 0\nsmoke PASS\n"
+        )
         gate_file = tmp_path / ".gate-status"
         gate_file.write_text(gate_text)
 
