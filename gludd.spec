@@ -86,6 +86,9 @@ a = Analysis(
         'general_ludd.secrets.manager',
         'general_ludd.mcp.client',
         'general_ludd.mcp.transport',
+        # safe_diskcache imports this serializer through importlib so static
+        # PyInstaller analysis cannot discover it.
+        'msgpack',
         'uvicorn.logging',
         'uvicorn.loops',
         'uvicorn.loops.auto',
