@@ -196,11 +196,11 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
     )
 
 
-# ─── Env var disable skips enforcement ───────────────────────────────────────
+# ─── Env var disable cannot bypass pending-work enforcement ─────────────────
 
 
-def test_gludd_stop_enforce_zero_skips_text_complete(tmp_path):
-    """GLUDD_STOP_ENFORCE=0 -> text.complete returns output unchanged."""
+def test_gludd_stop_enforce_zero_cannot_bypass_pending_work(tmp_path):
+    """GLUDD_STOP_ENFORCE=0 cannot disable the fundamental pending-work gate."""
     cwd = _setup_pending_work_dir(tmp_path)
 
     code = f"""\
@@ -214,9 +214,10 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
     assert result is not None
     out_text = result.get("output_text", "")
     res_text = result.get("result_text", "")
-    assert out_text == "This message would be blocked when enforcement is enabled.", (
-        f"Enforce=0 should skip, got output_text={out_text!r} result_text={res_text!r}"
+    assert out_text == "", (
+        f"Enforce=0 must not bypass pending work, got output_text={out_text!r}"
     )
+    assert "PENDING WORK EXISTS" in res_text
 
 
 # ─── False-done completion phrases blocked without evidence ──────────────────
