@@ -179,7 +179,6 @@ class TestCleanupOnFailureD09:
             client.post(
                 "/jobs/execute",
                 json=_make_job(job_id="TESTJOBTIMEOUT", timeout=0.05),
-                timeout=10,
             )
         except Exception:
             pass
@@ -211,7 +210,7 @@ class TestCleanupOnFailureD09:
 
         client = _make_client(runner)
         with contextlib.suppress(Exception):
-            client.post("/jobs/execute", json=_make_job(job_id="TESTJOBWV"), timeout=10)
+            client.post("/jobs/execute", json=_make_job(job_id="TESTJOBWV"))
 
         job_dir = tmp_path / "TESTJOBWV"
         assert not job_dir.exists(), "job dir leaked after write_vars failure"
@@ -267,7 +266,6 @@ class TestWaitForTimeoutD35:
             resp = client.post(
                 "/jobs/execute",
                 json=_make_job(job_id="TESTJOBSTALL", timeout=0.05),
-                timeout=10,
             )
             assert resp.status_code != 200
         except Exception:

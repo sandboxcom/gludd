@@ -138,6 +138,7 @@ class TestConcurrencyCapBeforeClaim:
 
         todo_repo = AsyncMock()
         todo_repo.count_active.return_value = 4
+        todo_repo.claim_runnable.return_value = []
 
         session = AsyncMock()
         http_client = AsyncMock()
