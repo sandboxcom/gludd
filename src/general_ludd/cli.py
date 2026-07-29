@@ -30,6 +30,8 @@ from general_ludd.tui.tables import _make_table
 if TYPE_CHECKING:
     from rich.table import Table
 
+_BUNDLED_GUNICORN_FLAG = "__gludd_bundled_gunicorn__"
+
 MAN_PAGE = """\
 NAME
     gludd — General Ludd Agent — autonomous coding system
@@ -1724,7 +1726,28 @@ def _cmd_smoke(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def _run_bundled_gunicorn_if_requested() -> bool:
+    """Run Gunicorn's console entry point when a frozen Gludd re-execs itself."""
+    if (
+        not getattr(sys, "frozen", False)
+        or len(sys.argv) < 2
+        or sys.argv[1] != _BUNDLED_GUNICORN_FLAG
+    ):
+        return False
+
+    # Gunicorn expects argv[1] to be the WSGI/ASGI application expression.
+    # Remove Gludd's private bootstrap flag before handing control to it.
+    sys.argv = [sys.argv[0], *sys.argv[2:]]
+    from gunicorn.app.wsgiapp import run
+
+    run()
+    return True
+
+
 def main() -> None:
+    if _run_bundled_gunicorn_if_requested():
+        return
+
     parser, subcommand_map = build_parser()
     args = parser.parse_args()
     if args.func is None:
@@ -3902,8 +3925,13 @@ def _build_daemon_start_cmd(
     safe_host = _validate_daemon_host(host)
     safe_port = _validate_daemon_port(port)
     workers = _clamp_workers_for_sqlite(workers)
+    executable = (
+        [sys.executable, _BUNDLED_GUNICORN_FLAG]
+        if getattr(sys, "frozen", False)
+        else ["gunicorn"]
+    )
     argv: list[str] = [
-        "gunicorn",
+        *executable,
         "general_ludd.daemon:create_daemon_app()",
         "--worker-class",
         "uvicorn_worker.UvicornWorker",

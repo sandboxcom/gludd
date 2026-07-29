@@ -89,6 +89,10 @@ a = Analysis(
         # safe_diskcache imports this serializer through importlib so static
         # PyInstaller analysis cannot discover it.
         'msgpack',
+        # Frozen daemon startup re-execs Gludd and enters Gunicorn's bundled
+        # console entry point; both the entry point and worker load dynamically.
+        'gunicorn.app.wsgiapp',
+        'uvicorn_worker',
         'uvicorn.logging',
         'uvicorn.loops',
         'uvicorn.loops.auto',
