@@ -464,7 +464,7 @@ class _Tui:
 
 @pytest.mark.skipif(OPENCODE is None, reason="opencode binary not on PATH")
 @pytest.mark.timeout(420)
-@pytest.mark.xdist_group("opencode-tui-permissions")
+@pytest.mark.xdist_group("opencode-live")
 def test_tui_handles_multiple_permissioned_tool_prompts() -> None:
     """A persistent TUI can read, grep, and run an allowed Make target."""
     provider = DeterministicProvider()
@@ -508,7 +508,7 @@ def test_tui_handles_multiple_permissioned_tool_prompts() -> None:
 
 @pytest.mark.skipif(OPENCODE is None, reason="opencode binary not on PATH")
 @pytest.mark.timeout(420)
-@pytest.mark.xdist_group("opencode-tui-permissions")
+@pytest.mark.xdist_group("opencode-live")
 def test_tui_no_wait_plugin_handles_multiple_bash_prompts() -> None:
     """A fresh TUI allows normal Make work and denies blocking Make waits."""
     responses = [

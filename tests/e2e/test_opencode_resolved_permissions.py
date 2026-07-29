@@ -38,7 +38,7 @@ def _resolved_config() -> dict:
 
 
 @pytest.mark.skipif(OPENCODE is None, reason="opencode binary not on PATH")
-@pytest.mark.xdist_group("opencode-resolved-config")
+@pytest.mark.xdist_group("opencode-live")
 def test_resolved_config_retains_project_permission_rules() -> None:
     """The runtime—not merely the JSON file—must retain project rules."""
     config = _resolved_config()
@@ -64,7 +64,7 @@ def test_resolved_config_retains_project_permission_rules() -> None:
 
 
 @pytest.mark.skipif(OPENCODE is None, reason="opencode binary not on PATH")
-@pytest.mark.xdist_group("opencode-resolved-config")
+@pytest.mark.xdist_group("opencode-live")
 def test_build_agent_does_not_override_project_permission_rules() -> None:
     """The effective build agent must mirror the project safety rules."""
     config = _resolved_config()

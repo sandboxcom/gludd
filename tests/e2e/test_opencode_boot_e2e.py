@@ -55,6 +55,7 @@ OPENCODE_JSON = ROOT / "opencode.json"
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
 PLUGINS_DIR = ROOT / ".opencode" / "plugins"
 HOOK_CHECKER = ROOT / "scripts" / "check_plugin_hooks.py"
+pytestmark = pytest.mark.xdist_group("opencode-live")
 
 # Patterns that indicate the boot-time plugin crash. Any one of these in the
 # serve/TUI log is a hard failure.

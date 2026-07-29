@@ -31,10 +31,13 @@ BLOCKED_PHRASES = [
 ]
 
 _OPENCODE_MISSING = shutil.which(OPENCODE_BIN) is None
-pytestmark = pytest.mark.skipif(
-    _OPENCODE_MISSING,
-    reason=f"{OPENCODE_BIN} binary not found on PATH",
-)
+pytestmark = [
+    pytest.mark.skipif(
+        _OPENCODE_MISSING,
+        reason=f"{OPENCODE_BIN} binary not found on PATH",
+    ),
+    pytest.mark.xdist_group("opencode-live"),
+]
 
 # Crash signatures that indicate opencode failed before exercising enforcement
 CRASH_RE = re.compile(r"Unexpected server error")

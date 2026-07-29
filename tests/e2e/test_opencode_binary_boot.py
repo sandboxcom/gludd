@@ -18,6 +18,7 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 OPENCODE_BIN = "opencode"
+pytestmark = pytest.mark.xdist_group("opencode-live")
 
 # Error patterns that indicate plugin-load or boot failures
 PLUGIN_LOAD_FAILED_RE = re.compile(r"failed to load plugin.*error=\"([^\"]+)\"")
