@@ -1071,8 +1071,7 @@ class GitAutomation:
         """
         # A `..` component is the traversal primitive that escapes the intended
         # area; refuse it outright (a legitimate worktree path never needs one).
-        norm = os.path.normpath(worktree_path)
-        parts = norm.replace("\\", "/").split("/")
+        parts = worktree_path.replace("\\", "/").split("/")
         if ".." in parts:
             raise ValueError(
                 f"refusing worktree path containing '..' traversal: {worktree_path!r}"
