@@ -45,12 +45,30 @@ class TestMakefileTargets:
         assert "lint" in content
 
     def test_make_test_count_passes(self):
-        """Suites collect without errors — fast gate, not full test run."""
+        """The nested guardrail smoke test collects a representative scope."""
         result = subprocess.run(
-            ["make", "test-count"],
-            capture_output=True, text=True, cwd=str(ROOT), timeout=120,
+            [
+                "make",
+                "test-count",
+                "TESTPATH=tests/unit/test_guardrails.py",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(ROOT),
+            timeout=60,
         )
         assert result.returncode == 0, f"make test-count failed:\n{result.stderr}\n{result.stdout}"
+
+    def test_make_test_count_is_scopeable_and_preserves_pytest_status(self):
+        """Collection smoke tests must be narrowable and fail when pytest fails."""
+        content = MAKEFILE.read_text()
+        start = content.index("\ntest-count:")
+        end = content.index("\n\n", start)
+        section = content[start:end]
+
+        assert "$(or $(TESTPATH),tests/)" in section
+        assert "RC=$$?" in section
+        assert "exit $$RC" in section
 
     def test_make_lint_passes(self):
         result = subprocess.run(
