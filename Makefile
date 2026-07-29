@@ -1419,28 +1419,73 @@ molecule-clean:
 		s=$$(basename "$$d"); \
 		case "$$s" in \
 			playbooks|roles|internal_tools|mock_daemon|library|default) ;; \
-			*) echo "  Removing stray: $$d"; rm -rf "$$d" ;; \
+			*) if [ -n "$$(git ls-files -- "$$d")" ]; then \
+				echo "  Preserving tracked scenario: $$d"; \
+			else \
+				echo "  Removing stray: $$d"; rm -rf "$$d"; \
+			fi ;; \
 		esac; \
 	done
+	@echo "Removing Ansible dependency namespaces accidentally installed into the source collection root..."
+	@rm -rf -- collections/ansible_collections/ansible collections/ansible_collections/community
+	@find collections/ansible_collections -maxdepth 1 -type d \( -name 'ansible.*.info' -o -name 'community.*.info' \) -exec rm -rf -- {} +
 	@echo "molecule-clean done"
 
 molecule-test:
 	@if [ -z "$(SCENARIO)" ]; then echo "Usage: make molecule-test SCENARIO=noop|prompt_eval|runtime_validate"; exit 1; fi
 	@echo "Running molecule scenario: $(SCENARIO)"
+	@if [ "$(SCENARIO)" = "binary_smoke_linux" ]; then \
+		$(MAKE) --no-print-directory build-linux-executable \
+			LIMA_INSTANCE="$(LIMA_INSTANCE)" \
+			LIMA_DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" \
+			LINUX_BINARY_IMAGE="$(LINUX_BINARY_IMAGE)" \
+			LINUX_BINARY_OUTPUT="$(LINUX_BINARY_OUTPUT)"; \
+	fi
 	@ANSIBLE_STATE_DIR=$$(mktemp -d "/tmp/gludd-molecule-$(SCENARIO).XXXXXX"); \
+	DOCKER_CONFIG_VALUE="$$ANSIBLE_STATE_DIR/docker"; \
+	mkdir -p "$$DOCKER_CONFIG_VALUE"; \
+	chmod 700 "$$DOCKER_CONFIG_VALUE"; \
+	export DOCKER_CONFIG="$$DOCKER_CONFIG_VALUE"; \
+	PROJECT_COLLECTIONS="$$(pwd)/collections"; \
+	export ANSIBLE_COLLECTIONS_PATH="$$ANSIBLE_STATE_DIR/collections:$$PROJECT_COLLECTIONS:/usr/share/ansible/collections"; \
+	echo "Using Ansible collections: $$ANSIBLE_COLLECTIONS_PATH"; \
+	DOCKER_HOST_VALUE="$${DOCKER_HOST:-}"; \
+	if [ -z "$$DOCKER_HOST_VALUE" ] && command -v limactl >/dev/null 2>&1; then \
+		LIMA_SOCKET=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Dir}}/sock/docker.sock' 2>/dev/null || true); \
+		if [ -n "$$LIMA_SOCKET" ] && [ -S "$$LIMA_SOCKET" ]; then \
+			DOCKER_HOST_VALUE="unix://$$LIMA_SOCKET"; \
+			export DOCKER_HOST="$$DOCKER_HOST_VALUE"; \
+			echo "Using Lima Docker API socket: $$DOCKER_HOST_VALUE"; \
+		fi; \
+	fi; \
+	if [ -z "$$DOCKER_HOST_VALUE" ] && command -v podman >/dev/null 2>&1; then \
+		PODMAN_SOCKET=$$(podman machine inspect "$(PODMAN_MACHINE)" --format '{{.ConnectionInfo.PodmanSocket.Path}}' 2>/dev/null || true); \
+		if [ -n "$$PODMAN_SOCKET" ] && [ -S "$$PODMAN_SOCKET" ]; then \
+			DOCKER_HOST_VALUE="unix://$$PODMAN_SOCKET"; \
+			export DOCKER_HOST="$$DOCKER_HOST_VALUE"; \
+			echo "Using Podman Docker API socket: $$DOCKER_HOST_VALUE"; \
+		fi; \
+	fi; \
+	RUNTIME_SCENARIO="molecule/$(SCENARIO)"; \
+	TRACKED_SCENARIO=0; \
+	if [ -n "$$(git ls-files -- "$$RUNTIME_SCENARIO")" ]; then \
+		TRACKED_SCENARIO=1; \
+		echo "Using tracked Molecule scenario: $$RUNTIME_SCENARIO"; \
+	fi; \
 	cleanup() { \
-		rm -rf "molecule/$(SCENARIO)"; \
+		if [ "$$TRACKED_SCENARIO" -eq 0 ]; then rm -rf "$$RUNTIME_SCENARIO"; fi; \
 		rm -rf "$$ANSIBLE_STATE_DIR"; \
 	}; \
 	trap cleanup EXIT INT TERM; \
-	rm -rf "molecule/$(SCENARIO)"; \
-	mkdir -p "molecule/$(SCENARIO)"; \
-	cp "molecule/playbooks/$(SCENARIO)/molecule.yml" "molecule/$(SCENARIO)/"; \
-	cp -r "molecule/playbooks/$(SCENARIO)/default" "molecule/$(SCENARIO)/default"; \
-	ANSIBLE_HOME="$$ANSIBLE_STATE_DIR" $(UV) run molecule reset -s "$(SCENARIO)"; \
-	RESET_CODE=$$?; \
-	if [ $$RESET_CODE -ne 0 ]; then \
-		exit $$RESET_CODE; \
+	if [ "$$TRACKED_SCENARIO" -eq 0 ]; then \
+		rm -rf "$$RUNTIME_SCENARIO"; \
+		mkdir -p "$$RUNTIME_SCENARIO"; \
+		cp "molecule/playbooks/$(SCENARIO)/molecule.yml" "$$RUNTIME_SCENARIO/"; \
+		cp -r "molecule/playbooks/$(SCENARIO)/default" "$$RUNTIME_SCENARIO/default"; \
+		for dependency_file in collections.yml requirements.yml; do \
+			source_file="molecule/playbooks/$(SCENARIO)/$$dependency_file"; \
+			if [ -f "$$source_file" ]; then cp "$$source_file" "$$RUNTIME_SCENARIO/"; fi; \
+		done; \
 	fi; \
 	ANSIBLE_HOME="$$ANSIBLE_STATE_DIR" $(UV) run molecule test -s "$(SCENARIO)"; \
 	EXIT_CODE=$$?; \
@@ -3937,6 +3982,51 @@ build-executable:
 	@$(UV) run pyinstaller gludd.spec --clean --noconfirm
 	@echo "Built dist/gludd"
 
+LINUX_BINARY_IMAGE ?= ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+LINUX_BINARY_OUTPUT ?= dist/linux/gludd
+
+build-linux-executable: ## Build and verify a real Linux PyInstaller executable
+	@case "$(LINUX_BINARY_OUTPUT)" in /*|*..*) echo "Refusing unsafe LINUX_BINARY_OUTPUT: $(LINUX_BINARY_OUTPUT)"; exit 1;; esac
+	@mkdir -p "$$(dirname "$(LINUX_BINARY_OUTPUT)")"
+	@rm -f "$(LINUX_BINARY_OUTPUT)"
+	@if [ "$$(uname -s)" = "Linux" ]; then \
+		echo "Building Linux executable natively"; \
+		$(MAKE) --no-print-directory build-executable; \
+		cp dist/gludd "$(LINUX_BINARY_OUTPUT)"; \
+	else \
+		socket=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Dir}}/sock/docker.sock' 2>/dev/null || true); \
+		if [ -z "$$socket" ] || [ ! -S "$$socket" ]; then \
+			echo "Lima Docker socket unavailable for $(LIMA_INSTANCE): $$socket"; \
+			exit 1; \
+		fi; \
+		mkdir -p "$(LIMA_DOCKER_CONFIG)"; \
+		chmod 700 "$(LIMA_DOCKER_CONFIG)"; \
+		project_dir="$$(pwd)"; \
+		source_dir=$$(mktemp -d "$$project_dir/.gludd-linux-source.XXXXXX"); \
+		container_name="gludd-linux-build-$$$$"; \
+		cleanup_build() { \
+			rm -rf "$$source_dir"; \
+			DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker rm -f "$$container_name" >/dev/null 2>&1 || true; \
+		}; \
+		trap cleanup_build EXIT INT TERM; \
+		git archive HEAD | tar -x -C "$$source_dir"; \
+		echo "Building Linux executable in namespaced Lima Docker VM $(LIMA_INSTANCE)"; \
+		DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker run \
+			--pull=always \
+			--name "$$container_name" \
+			-e HOME=/tmp/gludd-home \
+			-e UV_CACHE_DIR=/tmp/gludd-uv-cache \
+			-e UV_LINK_MODE=copy \
+			-e UV_PROJECT_ENVIRONMENT=/tmp/gludd-linux-venv \
+			-v "$$source_dir:/workspace:ro" \
+			-w /workspace \
+			"$(LINUX_BINARY_IMAGE)" \
+			sh -ec 'export DEBIAN_FRONTEND=noninteractive; apt-get update; apt-get install -y --no-install-recommends binutils; rm -rf /var/lib/apt/lists/*; uv sync --frozen; uv run pyinstaller gludd.spec --clean --noconfirm --workpath /tmp/gludd-pyinstaller-build --distpath /out'; \
+		DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker cp "$$container_name:/out/gludd" "$(LINUX_BINARY_OUTPUT)"; \
+	fi
+	@test -x "$(LINUX_BINARY_OUTPUT)" || { echo "Linux executable missing: $(LINUX_BINARY_OUTPUT)"; exit 1; }
+	@kind=$$(file "$(LINUX_BINARY_OUTPUT)"); echo "$$kind"; echo "$$kind" | grep -q 'ELF' || { echo "Expected an ELF executable"; exit 1; }
+
 gen-status-table:
 	@$(UV) run python scripts/gen_status_table.py --write --fast
 
@@ -4425,39 +4515,109 @@ clean-sandbox-images:
 # on Linux, etc.) surface here directly instead of only in CI. PYV=3.11|3.12.
 # Uses a container-local venv (UV_PROJECT_ENVIRONMENT) so the host macOS .venv is
 # never touched. Streams via tee (observability invariant).
+LIMA_INSTANCE ?= gludd-docker
+LIMA_MEMORY_GIB ?= 4
+LIMA_IMAGE ?= ubuntu:24.04
+LIMA_DOCKER_CONFIG ?= /tmp/gludd-lima-docker-config
+
+lima-up:
+	@command -v limactl >/dev/null 2>&1 || { echo "limactl not installed"; exit 1; }
+	@status=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Status}}' 2>/dev/null || true); \
+	if [ -z "$$status" ]; then \
+		echo "Initializing namespaced Lima Docker VM $(LIMA_INSTANCE)"; \
+		limactl start --name="$(LIMA_INSTANCE)" --cpus="$(VCPU)" --memory="$(LIMA_MEMORY_GIB)" --disk="$(VDISK)" --progress template:docker; \
+	elif [ "$$status" != "Running" ]; then \
+		echo "Starting namespaced Lima Docker VM $(LIMA_INSTANCE)"; \
+		limactl start --progress "$(LIMA_INSTANCE)"; \
+	fi
+	@socket=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Dir}}/sock/docker.sock'); \
+	if [ ! -S "$$socket" ]; then echo "Lima Docker socket missing: $$socket"; exit 1; fi; \
+	DOCKER_HOST="unix://$$socket" docker info --format 'Lima Docker {{.ServerVersion}} ready'
+
+lima-status:
+	@limactl list "$(LIMA_INSTANCE)"
+
+lima-docker-status: ## Show bounded Docker engine, container, and image state for the namespaced Lima VM
+	@socket=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Dir}}/sock/docker.sock' 2>/dev/null || true); \
+	if [ -z "$$socket" ] || [ ! -S "$$socket" ]; then \
+		echo "Lima Docker socket unavailable for $(LIMA_INSTANCE): $$socket"; \
+		exit 1; \
+	fi; \
+	mkdir -p "$(LIMA_DOCKER_CONFIG)"; \
+	chmod 700 "$(LIMA_DOCKER_CONFIG)"; \
+	echo "=== Lima Docker engine ($(LIMA_INSTANCE)) ==="; \
+	DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker info --format 'server={{.ServerVersion}} containers={{.Containers}} images={{.Images}}'; \
+	echo "=== Containers ==="; \
+	DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker ps --all --no-trunc; \
+	echo "=== Images ==="; \
+	DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker images --digests
+
+lima-docker-pull: ## Pull one image through the namespaced Lima Docker socket with live progress
+	@socket=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Dir}}/sock/docker.sock' 2>/dev/null || true); \
+	if [ -z "$$socket" ] || [ ! -S "$$socket" ]; then \
+		echo "Lima Docker socket unavailable for $(LIMA_INSTANCE): $$socket"; \
+		exit 1; \
+	fi; \
+	mkdir -p "$(LIMA_DOCKER_CONFIG)"; \
+	chmod 700 "$(LIMA_DOCKER_CONFIG)"; \
+	echo "Pulling $(LIMA_IMAGE) into Lima VM $(LIMA_INSTANCE)"; \
+	DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker pull "$(LIMA_IMAGE)"
+
+lima-stop:
+	@limactl stop "$(LIMA_INSTANCE)"
+
 # Ensure the podman Linux VM is initialised and running (macOS needs a VM to run
 # Linux containers). Idempotent: init/start fail harmlessly if already done.
+PODMAN_MACHINE ?= gludd
+VMEM ?= 4096
+VCPU ?= 4
+VDISK ?= 20
+
 podman-up:
 	@command -v podman >/dev/null 2>&1 || { echo "podman not installed"; exit 1; }
-	@podman machine init 2>/dev/null || true
-	@podman machine start 2>/dev/null || true
-	@# A stale default connection (e.g. an old Lima VM) hijacks `podman run`;
-	@# force the running podman machine to be the default so containers actually run.
-	@podman system connection default podman-machine-default 2>/dev/null || true
+	@if ! podman machine inspect "$(PODMAN_MACHINE)" >/dev/null 2>&1; then \
+		echo "Initializing namespaced Podman machine $(PODMAN_MACHINE)"; \
+		podman machine init --memory "$(VMEM)" --cpus "$(VCPU)" --disk-size "$(VDISK)" "$(PODMAN_MACHINE)"; \
+	fi
+	@state=$$(podman machine inspect "$(PODMAN_MACHINE)" --format '{{.State}}'); \
+	if [ "$$state" != "running" ]; then podman machine start "$(PODMAN_MACHINE)"; fi
+	@state=$$(podman machine inspect "$(PODMAN_MACHINE)" --format '{{.State}}'); \
+	if [ "$$state" != "running" ]; then echo "Podman machine $(PODMAN_MACHINE) failed to start"; exit 1; fi
+	@podman system connection default "$(PODMAN_MACHINE)"
 	@podman machine list
 
 podman-restart:
-	@podman machine stop 2>/dev/null || true
-	@podman machine start
-	@podman system connection default podman-machine-default 2>/dev/null || true
+	@podman machine stop "$(PODMAN_MACHINE)" 2>/dev/null || true
+	@podman machine start "$(PODMAN_MACHINE)"
+	@podman system connection default "$(PODMAN_MACHINE)"
 	@podman machine list
 
-VMEM ?= 4096
-VCPU ?= 4
 # Recreate the podman VM from scratch with the requested resources. The default
 # 2GiB VM crashed (and self-destructed) under the full test suite; a fresh VM
 # with more memory is more reliable than trying to resize a dead one.
 podman-resize:
-	@podman machine rm -f podman-machine-default 2>/dev/null || true
-	@podman machine init --memory $(VMEM) --cpus $(VCPU) 2>/dev/null || true
-	@podman machine start
-	@podman system connection default podman-machine-default 2>/dev/null || true
+	@case "$(PODMAN_MACHINE)" in gludd*) ;; *) echo "Refusing to replace non-Gludd machine: $(PODMAN_MACHINE)"; exit 1;; esac
+	@podman machine rm -f "$(PODMAN_MACHINE)" 2>/dev/null || true
+	@podman machine init --memory "$(VMEM)" --cpus "$(VCPU)" --disk-size "$(VDISK)" "$(PODMAN_MACHINE)"
+	@podman machine start "$(PODMAN_MACHINE)"
+	@podman system connection default "$(PODMAN_MACHINE)"
 	@podman machine list
 
 podman-diag:
+	@echo "--- container tools ---"; \
+	for tool in docker podman limactl; do command -v "$$tool" 2>/dev/null || echo "$$tool: unavailable"; done
 	@echo "--- machine list ---"; podman machine list 2>&1 || true
 	@echo "--- connection list ---"; podman system connection list 2>&1 || true
+	@echo "--- $(PODMAN_MACHINE) inspect ---"; podman machine inspect "$(PODMAN_MACHINE)" 2>&1 || true
+	@socket=$$(podman machine inspect "$(PODMAN_MACHINE)" --format '{{.ConnectionInfo.PodmanSocket.Path}}' 2>/dev/null || true); \
+	log_dir=$$(dirname "$$socket"); \
+	echo "--- $(PODMAN_MACHINE) serial log ---"; tail -500 "$$log_dir/$(PODMAN_MACHINE).log" 2>&1 || true; \
+	echo "--- gvproxy log ---"; tail -100 "$$log_dir/gvproxy.log" 2>&1 || true
 	@echo "--- info (host socket) ---"; podman info --format '{{.Host.RemoteSocket.Path}}' 2>&1 | head -3 || true
+
+podman-debug-start:
+	@echo "--- debug-starting namespaced machine $(PODMAN_MACHINE) ---"
+	@podman --log-level=debug machine start "$(PODMAN_MACHINE)"
 
 PYV ?= 3.11
 ci-repro-linux:

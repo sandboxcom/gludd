@@ -15,10 +15,10 @@
 # submitted via POST /api/todos). This scenario adapts the generic task brief
 # to those real surfaces so the smoke test is functional.
 #
-# REQUIRES: docker or podman on the runner. The repo's `make gate` does NOT run
-# molecule, so this scenario only executes in the dedicated CI molecule job
-# (GitHub-hosted runners ship with Docker) or via an explicit
-# `make molecule-test SCENARIO=binary_smoke_linux`.
+# REQUIRES: Docker on the runner plus the separately packaged
+# molecule-plugins[docker] dependency. See this scenario's README.md for
+# official installation guidance and long-lived community driver-discovery
+# reports. Run via `make molecule-test SCENARIO=binary_smoke_linux`.
 driver:
   name: docker
 platforms:
@@ -27,10 +27,14 @@ platforms:
     # ubuntu:24.04's default CMD exits immediately; keep the container alive
     # for the duration of the scenario so ansible can run tasks inside it.
     command: "sleep infinity"
-    pre_build_image: false
+    # The scenario validates Gludd's binary, not a generated Molecule base
+    # image.  Use Ubuntu directly and bootstrap Python via raw transport in the
+    # first converge play so preparation remains small and observable.
+    pre_build_image: true
 provisioner:
   name: ansible
   playbooks:
+    cleanup: default/cleanup.yml
     prepare: default/prepare.yml
     converge: default/converge.yml
     verify: default/verify.yml
@@ -39,6 +43,8 @@ verifier:
 scenario:
   test_sequence:
     - dependency
+    - cleanup
+    - destroy
     - create
     - prepare
     - converge

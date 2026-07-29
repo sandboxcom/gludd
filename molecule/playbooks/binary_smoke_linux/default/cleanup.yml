@@ -1,0 +1,10 @@
+---
+- name: Cleanup controller state for the Linux binary smoke scenario
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Report that no external controller resources require cleanup
+      ansible.builtin.debug:
+        msg: "binary_smoke_linux controller cleanup complete"
+      changed_when: false

@@ -11,17 +11,33 @@
 #   7. start gludd daemon (backgrounded) + poll /healthz up to 30s
 #   8. POST /api/todos          -> daemon accepts a trivial job
 #   9. ERROR: second gludd daemon on the occupied port -> graceful failure
+- name: Bootstrap Python for Ansible modules
+  hosts: all
+  gather_facts: false
+  become: false
+  tasks:
+    - name: Install Python when the stock Ubuntu image does not provide it
+      ansible.builtin.raw: |
+        if command -v python3 >/dev/null 2>&1; then
+          exit 0
+        fi
+        apt-get update -qq
+        DEBIAN_FRONTEND=noninteractive apt-get install -y python3
+      register: python_bootstrap
+      changed_when: python_bootstrap.stdout | length > 0
+
 - name: Converge - smoke test the gludd binary in a Linux container
   hosts: all
   gather_facts: true
-  become: true
+  become: false
   vars:
     gludd_bin: /usr/local/bin/gludd
     daemon_host: "127.0.0.1"
     daemon_port: 8000
     daemon_url: "http://127.0.0.1:8000"
     daemon_log: /tmp/gludd-daemon.log
-    host_binary: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/dist/gludd"
+    daemon_psk: "binary-smoke-linux-test-psk"
+    host_binary: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/dist/linux/gludd"
   tasks:
     - name: Install minimal runtime deps (ca-certificates, curl)
       ansible.builtin.apt:
@@ -99,6 +115,8 @@
     - name: Start the gludd daemon in the background
       ansible.builtin.shell:
         cmd: "nohup {{ gludd_bin }} daemon --host {{ daemon_host }} --port {{ daemon_port }} > {{ daemon_log }} 2>&1 &"
+      environment:
+        GLUDD_PSK: "{{ daemon_psk }}"
       changed_when: true
 
     - name: Poll /healthz up to 30s for HTTP 200
@@ -133,6 +151,8 @@
       ansible.builtin.uri:
         url: "{{ daemon_url }}/api/todos"
         method: POST
+        headers:
+          Authorization: "Bearer {{ daemon_psk }}"
         body_format: json
         body:
           title: "binary-smoke-linux-noop"
@@ -157,8 +177,11 @@
     # gracefully — no uncaught Python traceback.
     - name: Run a second daemon on the occupied port (expect graceful failure)
       ansible.builtin.shell: |
+        set +e
         {{ gludd_bin }} daemon --host {{ daemon_host }} --port {{ daemon_port }} > /tmp/gludd-port-clash.out 2>&1
-        echo "EXIT_RC=$?"
+        clash_rc=$?
+        cat /tmp/gludd-port-clash.out
+        echo "EXIT_RC=$clash_rc"
       args:
         executable: /bin/bash
       register: port_clash
@@ -168,9 +191,7 @@
     - name: Persist port-clash result
       ansible.builtin.copy:
         content: |
-          rc_block={{ port_clash.stdout }}
+          {{ port_clash.stdout }}
           stderr={{ port_clash.stderr }}
-          --- daemon port-clash output ---
-          {{ lookup('file', '/tmp/gludd-port-clash.out') | default('') }}
         dest: /tmp/gludd-port-clash.txt
         mode: "0644"
