@@ -2364,6 +2364,19 @@ def _read_multitask_state() -> dict:
         return {}
 
 
+def _append_directive_once(directive: str, marker: str) -> None:
+    """Add a watchdog directive without erasing a more specific alert."""
+    path = Path(PURE_IDLE_DIRECTIVE)
+    try:
+        existing = path.read_text() if path.exists() else ""
+    except OSError:
+        existing = ""
+    if marker in existing:
+        return
+    prefix = existing.rstrip()
+    path.write_text(f"{prefix}\n{directive}" if prefix else directive)
+
+
 def _check_under_floor_dispatch() -> None:
     state = _read_multitask_state()
     if not state:
@@ -2393,7 +2406,7 @@ def _check_under_floor_dispatch() -> None:
             f"Floor is 10. pending work exists. Dispatch {10 - dispatch_count} more subagents NOW.\n"
             f"zero_streak={zero_streak}, estimated_in_flight={estimated_in_flight}\n"
         )
-        Path(PURE_IDLE_DIRECTIVE).write_text(directive)
+        _append_directive_once(directive, "UNDER-FLOOR DETECTED")
     elif pipeline_dry and zero_streak > 0:
         _log(
             f"UNDER-FLOOR DETECTED: pipeline dry — zero dispatch streak={zero_streak}, "
@@ -2404,7 +2417,7 @@ def _check_under_floor_dispatch() -> None:
             f"Estimated in flight: {estimated_in_flight}. Floor is 10. pending work exists.\n"
             f"DISPATCH A FULL WAVE OF 10 SUBAGENTS NOW.\n"
         )
-        Path(PURE_IDLE_DIRECTIVE).write_text(directive)
+        _append_directive_once(directive, "UNDER-FLOOR DETECTED")
 
 
 def check_and_reset() -> dict:
