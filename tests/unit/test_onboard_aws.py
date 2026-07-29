@@ -13,6 +13,7 @@ These tests pin three surfaces:
 
 from __future__ import annotations
 
+import importlib
 import json
 import shutil
 import subprocess
@@ -26,6 +27,7 @@ from general_ludd.onboard.aws import (
     ALLOWED_ACTIONS,
     DENIED_ACTIONS,
     AWSOnboardProvider,
+    _build_boto3_client,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -73,6 +75,18 @@ class TestTokenAcquisitionGuide:
     def test_mentions_session_token_for_sts(self) -> None:
         text = AWSOnboardProvider().token_acquisition_guide()
         assert "AWS_SESSION_TOKEN" in text
+
+
+def test_build_boto3_client_uses_requested_service_and_region(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected_client = object()
+    fake_boto3 = MagicMock()
+    fake_boto3.client.return_value = expected_client
+    monkeypatch.setattr(importlib, "import_module", lambda _name: fake_boto3)
+
+    assert _build_boto3_client("ec2", "us-east-1") is expected_client
+    fake_boto3.client.assert_called_once_with("ec2", region_name="us-east-1")
 
 
 # ---------------------------------------------------------------------------

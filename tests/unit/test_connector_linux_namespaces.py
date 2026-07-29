@@ -248,6 +248,18 @@ def test_resolve_pid_rejects_non_integer_string() -> None:
         src._resolve_pid("abc")
 
 
+def test_resolve_pid_rejects_non_scalar() -> None:
+    src, _ = _ns_src()
+    with pytest.raises(ValueError, match="pid must be int"):
+        src._resolve_pid([])
+
+
+def test_run_requires_injected_runner() -> None:
+    src = Connector()
+    with pytest.raises(RuntimeError, match="no runner injected"):
+        src._run(["lsns", "--json"])
+
+
 @pytest.mark.parametrize(
     "bad_pid",
     [
