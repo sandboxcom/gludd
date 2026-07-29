@@ -72,7 +72,7 @@ The operator anchors trust in
       "registry.terraform.io/hashicorp/aws",
       "registry.terraform.io/hashicorp/google",
       "registry.terraform.io/hashicorp/azurerm",
-      "registry.terraform.io/hashicorp/vsphere",
+      "registry.terraform.io/vmware/vsphere",
       "registry.terraform.io/hashicorp/random",
       "registry.terraform.io/hashicorp/null"
     ]
@@ -88,7 +88,7 @@ the operator trust list at import:
 
    ```yaml
    terraform_provider_trust:
-     - hashicorp/vsphere
+     - vmware/vsphere
    ```
 
 2. `plugins/terraform/providers.yaml` → `providers: [{name, source, version}]`
@@ -97,12 +97,12 @@ the operator trust list at import:
    ```yaml
    providers:
      - name: vsphere
-       source: hashicorp/vsphere
+       source: vmware/vsphere
        version: "~> 2.8"
    ```
 
-Matching is name-suffix tolerant: `hashicorp/vsphere` matches
-`registry.terraform.io/hashicorp/vsphere`. Any provider not in the operator
+Matching is name-suffix tolerant: `vmware/vsphere` matches
+`registry.terraform.io/vmware/vsphere`. Any provider not in the operator
 trust list is an import ERROR (not a warning) — see `_check_provider_trust()` in
 `importer.py`.
 

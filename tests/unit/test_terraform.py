@@ -25,7 +25,7 @@ def test_generate_vsphere_is_warning_free_without_pyvmomi() -> None:
         warnings.simplefilter("error")
         hcl = TerraformGenerator().generate(config)
 
-    assert 'source  = "hashicorp/vsphere"' in hcl
+    assert 'source  = "vmware/vsphere"' in hcl
 
 
 def test_materialize_azure_a100_stack_with_cost_bounded_ttl(tmp_path) -> None:
