@@ -326,12 +326,20 @@ class TestC16SizeCap:
 
         assert result is False
 
-    def test_download_rejects_oversized_body(self, real_hash: str) -> None:
+    def test_download_rejects_oversized_body(
+        self, real_hash: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import general_ludd.filestore.bootstrap as bootstrap_mod
+
         store = MagicMock()
         store.exists.return_value = False
         boot = BinaryBootstrapper(store=store, known_sha256={"test-bin": real_hash})
 
-        big_content = b"x" * (_MAX_DOWNLOAD_BYTES + 1)
+        # Exercise the exact production boundary without retaining a 512 MiB
+        # allocation in a long-lived xdist worker for the rest of the suite.
+        test_limit = 1024
+        monkeypatch.setattr(bootstrap_mod, "_MAX_DOWNLOAD_BYTES", test_limit)
+        big_content = b"x" * (test_limit + 1)
 
         class FakeResponse:
             def __init__(self) -> None:

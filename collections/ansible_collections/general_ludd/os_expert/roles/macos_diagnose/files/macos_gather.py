@@ -17,14 +17,39 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
+from contextlib import suppress
 from typing import Any
 
+_MAX_COMMAND_OUTPUT_BYTES = 8 * 1024 * 1024
 
-def _run(args: list[str], timeout: int = 30) -> str:
-    """Run a command and return stdout (empty string on failure)."""
+
+def _run(
+    args: list[str],
+    timeout: int = 30,
+    max_output_bytes: int = _MAX_COMMAND_OUTPUT_BYTES,
+) -> str:
+    """Run a command with disk-spooled, size-bounded stdout.
+
+    Diagnostic commands such as ``log show`` can emit hundreds of megabytes in
+    a short window. Spooling to a temporary file prevents ``subprocess.run``
+    from retaining the full stream in RAM; only the bounded prefix is decoded
+    for the structured artifact.
+    """
+    if max_output_bytes <= 0:
+        return ""
     try:
-        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
-        return result.stdout if result.returncode == 0 else ""
+        with tempfile.TemporaryFile(mode="w+b") as output:
+            result = subprocess.run(
+                args,
+                stdout=output,
+                stderr=subprocess.DEVNULL,
+                timeout=timeout,
+            )
+            if result.returncode != 0:
+                return ""
+            output.seek(0)
+            return output.read(max_output_bytes).decode("utf-8", errors="replace")
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         return ""
 
@@ -70,14 +95,10 @@ def parse_launchctl_list(raw: str) -> list[dict[str, Any]]:
             "status": 0,
             "label": label,
         }
-        try:
+        with suppress(ValueError):
             entry["pid"] = int(pid_str) if pid_str != "-" else 0
-        except ValueError:
-            pass
-        try:
+        with suppress(ValueError):
             entry["status"] = int(status_str) if status_str != "-" else 0
-        except ValueError:
-            pass
         entries.append(entry)
 
     return entries
@@ -181,7 +202,7 @@ def gather(
 
     if gather_log:
         log_raw = _run(
-            ["log", "show", f"--last", log_window, "--style", "ndjson"],
+            ["log", "show", "--last", log_window, "--style", "ndjson"],
             timeout=60,
         )
         result["unified_log"] = parse_unified_log(log_raw)
