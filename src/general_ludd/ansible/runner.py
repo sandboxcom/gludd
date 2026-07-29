@@ -8,6 +8,7 @@ and Jinja2 templating.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -81,7 +82,17 @@ def _convert_role_args(role: str, extra: dict[str, Any]) -> list[str]:
             return ["--input", str(extra["text"])]
     elif role == "i18n_extract":
         if "directory" in extra:
-            return ["--source-dir", str(extra["directory"])]
+            source_dir = str(extra["directory"])
+            output_dir = str(extra.get("output_dir", "")).strip()
+            if not output_dir:
+                source_hash = hashlib.sha256(
+                    str(Path(source_dir).resolve()).encode("utf-8")
+                ).hexdigest()[:12]
+                output_dir = str(
+                    Path(tempfile.gettempdir())
+                    / f"gludd-i18n-extract-{os.getpid()}-{source_hash}"
+                )
+            return ["--source-dir", source_dir, "--output-dir", output_dir]
     elif role == "locale_format":
         if "locale" in extra:
             return ["--locale", str(extra["locale"])]
