@@ -147,7 +147,12 @@ class MCPCatalog:
                     f"{registry_name} registry response exceeded "
                     f"{_REGISTRY_RESPONSE_MAX_BYTES}-byte cap"
                 )
-            return json.loads(raw.decode())
+            parsed = json.loads(raw.decode())
+            if not isinstance(parsed, dict):
+                raise ValueError(
+                    f"{registry_name} registry response must be a JSON object"
+                )
+            return {str(key): value for key, value in parsed.items()}
 
         if "smithery.ai" in registry:
             url = "https://api.smithery.ai/servers"

@@ -194,6 +194,24 @@ class TestMCPCatalogOversizedResponse:
     """C-1/C-2: oversized registry responses must be rejected gracefully."""
 
     @patch("urllib.request.urlopen")
+    def test_query_rejects_non_object_json_response(self, mock_urlopen):
+        catalog = MCPCatalog(registries=["smithery.ai"])
+        payload = json.dumps(["not", "an", "object"]).encode()
+        mock_resp = type("Resp", (), {
+            "read": lambda self, n=None: payload if n is None else payload[:n],
+            "__enter__": lambda self: self,
+            "__exit__": lambda self, *a: None,
+        })()
+        mock_urlopen.return_value = mock_resp
+
+        try:
+            catalog._query_registry("smithery.ai", "", 10)
+        except ValueError as exc:
+            assert str(exc) == "Smithery registry response must be a JSON object"
+        else:
+            raise AssertionError("non-object registry response was accepted")
+
+    @patch("urllib.request.urlopen")
     def test_search_smithery_rejects_oversized_response(self, mock_urlopen):
         catalog = MCPCatalog(registries=["smithery.ai"])
         oversized = b"x" * (_REGISTRY_RESPONSE_MAX_BYTES + 2)
