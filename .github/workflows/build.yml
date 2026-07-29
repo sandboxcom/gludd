@@ -257,6 +257,9 @@ jobs:
             # plugin. Run it in the dedicated fresh-process step below so the
             # long-lived coverage worker cannot consume V8's CodeRange budget.
             exclude: "*/test_*_e2e.py */test_all_plugins_runtime.py"
+            # Keep the fresh-process lane in matrix data so shard ownership
+            # checks can prove that every unit test still runs exactly once.
+            isolated_testpaths: "tests/unit/test_all_plugins_runtime.py"
           - shard: unit-1a2
             # test_a[0-9]*.py: digit-prefixed files (a03, a3, a6...) belong to
             # neither [a-m] nor [n-z]; routed here (smaller half) for balance.
@@ -329,13 +332,13 @@ jobs:
           chmod 0755 "$HOME/.local/bin/opa"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           "$HOME/.local/bin/opa" version | grep -F "Version: ${OPA_VERSION}"
-      - name: Test Node plugin syntax in isolated process
+      - name: Run isolated Node plugin syntax in fresh process
         if: matrix.shard == 'unit-1a1'
         # This file launches Node once per registered plugin. Keep it in a
         # fresh, short-lived pytest process, before the coverage process retains
         # memory from the other ~1,700 shard tests. It imports no Gludd source,
         # so excluding pytest-cov here does not reduce application coverage.
-        run: uv run pytest tests/unit/test_all_plugins_runtime.py -v
+        run: uv run pytest ${{ matrix.isolated_testpaths }} -v
       - name: Test (shard ${{ matrix.shard }}, Python ${{ matrix.python-version }})
         # Expand $TESTPATHS with bash so wildcard patterns like test_[a-e]*.py
         # are resolved by the shell before pytest sees them. An empty selection

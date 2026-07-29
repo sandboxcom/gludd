@@ -459,12 +459,12 @@ def test_node_heavy_unit_1a1_shard_runs_serially() -> None:
     isolated_steps = [
         step
         for step in workflow["jobs"]["test-shard"]["steps"]
-        if step.get("name") == "Test Node plugin syntax in isolated process"
+        if step.get("name") == "Run isolated Node plugin syntax in fresh process"
     ]
 
     assert len(isolated_steps) == 1
     command = str(isolated_steps[0].get("run", ""))
-    assert "uv run pytest tests/unit/test_all_plugins_runtime.py" in command
+    assert "uv run pytest ${{ matrix.isolated_testpaths }}" in command
     assert "adaptive_test.py" not in command and " -n " not in command, (
         "CI resource regression: the Node plugin syntax suite must run serially "
         "in its own short-lived pytest process."
@@ -487,12 +487,15 @@ def test_node_plugin_syntax_suite_runs_in_fresh_pytest_process() -> None:
         if entry.get("shard") == "unit-1a1"
     )
     assert "*/test_all_plugins_runtime.py" in str(unit_1a1.get("exclude", "")).split()
+    assert str(unit_1a1.get("isolated_testpaths", "")).split() == [
+        "tests/unit/test_all_plugins_runtime.py"
+    ]
 
     steps = job["steps"]
     isolated_index = next(
         index
         for index, step in enumerate(steps)
-        if step.get("name") == "Test Node plugin syntax in isolated process"
+        if step.get("name") == "Run isolated Node plugin syntax in fresh process"
     )
     shard_index = next(
         index
@@ -504,5 +507,5 @@ def test_node_plugin_syntax_suite_runs_in_fresh_pytest_process() -> None:
     assert isolated_index < shard_index
     assert isolated.get("if") == "matrix.shard == 'unit-1a1'"
     isolated_run = str(isolated.get("run", ""))
-    assert "tests/unit/test_all_plugins_runtime.py" in isolated_run
+    assert "${{ matrix.isolated_testpaths }}" in isolated_run
     assert "--cov" not in isolated_run

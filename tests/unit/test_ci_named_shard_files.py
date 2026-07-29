@@ -60,10 +60,17 @@ def test_local_shard_patterns_match_workflow_matrix() -> None:
 
 def test_local_unit_1a1_excludes_isolated_node_runtime_suite() -> None:
     module = _load_script("ci_named_shard_files")
+    workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "build.yml").read_text())
+    unit_1a1 = next(
+        item
+        for item in workflow["jobs"]["test-shard"]["strategy"]["matrix"]["include"]
+        if item["shard"] == "unit-1a1"
+    )
 
     assert "tests/unit/test_all_plugins_runtime.py" not in module.expand_shard("unit-1a1")
     assert "*/test_all_plugins_runtime.py" in module.SHARDS["unit-1a1"][1]
     assert module.ISOLATED_TESTS == ("tests/unit/test_all_plugins_runtime.py",)
+    assert tuple(str(unit_1a1["isolated_testpaths"]).split()) == module.ISOLATED_TESTS
 
 
 def test_every_unit_test_file_has_exactly_one_execution_lane() -> None:

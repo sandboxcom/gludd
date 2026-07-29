@@ -706,7 +706,8 @@ class TestShardCoverageInvariant:
         ts_job = wf["jobs"]["test-shard"]
         test_steps = [
             s for s in ts_job.get("steps", [])
-            if isinstance(s, dict) and str(s.get("name", "")).startswith("Test ")
+            if isinstance(s, dict)
+            and str(s.get("name", "")).startswith("Test (shard ")
         ]
         assert test_steps, "test-shard must have a 'Test ...' run step"
         script = test_steps[0].get("run", "")
@@ -752,6 +753,17 @@ class TestShardCoverageInvariant:
                         if any(fnmatch.fnmatch(rel, pat) for pat in excludes):
                             continue
                         counts[rel] += 1
+            # A resource-heavy suite may run in a fresh pytest process before
+            # its shard's long-lived coverage process.  Keep that lane
+            # explicit in matrix metadata so this exactly-once invariant can
+            # account for it rather than treating the workflow step as hidden
+            # control flow.
+            for token in str(entry.get("isolated_testpaths", "")).split():
+                path = ROOT / token
+                candidates = path.rglob("test_*.py") if path.is_dir() else [path]
+                for candidate in candidates:
+                    rel = candidate.relative_to(ROOT).as_posix()
+                    counts[rel] += 1
 
         never_collected = sorted(n for n, c in counts.items() if c == 0)
         double_collected = {n: c for n, c in counts.items() if c > 1}
@@ -763,6 +775,31 @@ class TestShardCoverageInvariant:
             "these tests/unit/ files are collected by MORE THAN ONE test-shard "
             f"matrix leg (would run twice): {double_collected}"
         )
+
+    def test_isolated_test_lane_is_declared_and_consumed(self) -> None:
+        """Fresh-process suites must be auditable matrix data, not hidden paths."""
+        wf = _load_workflow()
+        ts_job = wf["jobs"]["test-shard"]
+        unit_1a1 = next(
+            entry
+            for entry in self._shard_includes(wf)
+            if entry.get("shard") == "unit-1a1"
+        )
+        isolated = str(unit_1a1.get("isolated_testpaths", "")).split()
+        assert isolated == ["tests/unit/test_all_plugins_runtime.py"]
+
+        isolated_steps = [
+            step
+            for step in ts_job.get("steps", [])
+            if isinstance(step, dict)
+            and step.get("name") == "Run isolated Node plugin syntax in fresh process"
+        ]
+        assert len(isolated_steps) == 1
+        step = isolated_steps[0]
+        assert step.get("if") == "matrix.shard == 'unit-1a1'"
+        script = str(step.get("run", ""))
+        assert "${{ matrix.isolated_testpaths }}" in script
+        assert "--cov" not in script
 
 
 class TestPagesWorkflow:
