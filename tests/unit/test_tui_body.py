@@ -7,6 +7,8 @@ import collections
 import contextlib
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 _TermSize = collections.namedtuple("terminal_size", ["columns", "lines"])
 
 
@@ -104,6 +106,223 @@ def _run_tui(keys: list[bytes], extra: list | None = None) -> dict:
 
 
 class TestCmdTUIBody:
+
+    @pytest.mark.parametrize("key", ["P", "R", "L", "H", "T", "D", "C"])
+    def test_uppercase_commands_preserve_case_for_dispatch(self, key: str) -> None:
+        dispatched: list[str] = []
+
+        def capture_key(_handler: object, ch: str) -> bool:
+            dispatched.append(ch)
+            return True
+
+        _run_tui(
+            [key.encode(), b"q"],
+            [
+                patch(
+                    "general_ludd.tui.runner.TUIKeyHandler.handle_key",
+                    autospec=True,
+                    side_effect=capture_key,
+                ),
+            ],
+        )
+
+        assert dispatched == [key]
+
+    @pytest.mark.parametrize(
+        ("key", "builder_name", "expected"),
+        [
+            ("y", "_build_leaderboard_table", [{"model": "gludd-test"}]),
+            ("P", "_build_playbooks_table", [{"name": "deploy"}]),
+            ("L", "_build_slurm_table", [{"job_id": "job-1"}]),
+            (
+                "H",
+                "_build_health_table",
+                {
+                    "leaderboard": [{"model": "gludd-test"}],
+                    "playbooks": [{"name": "deploy"}],
+                    "jobs": [{"job_id": "job-1"}],
+                    "profiles": [{"name": "local-model"}],
+                    "status": "ok",
+                },
+            ),
+            ("T", "_build_selftest_table", {}),
+            (
+                "0",
+                "_build_version_table",
+                {"version": "?", "python_version": "?", "platform": "?"},
+            ),
+            ("1", "_build_loglevel_table", "info"),
+            ("D", "_build_discovered_table", [{"name": "local-model"}]),
+            ("C", "_build_code_table", []),
+        ],
+    )
+    def test_extended_view_render_uses_runtime_data(
+        self,
+        key: str,
+        builder_name: str,
+        expected: object,
+    ) -> None:
+        payload = {
+            "leaderboard": [{"model": "gludd-test"}],
+            "playbooks": [{"name": "deploy"}],
+            "jobs": [{"job_id": "job-1"}],
+            "profiles": [{"name": "local-model"}],
+            "status": "ok",
+        }
+        response = MagicMock(status_code=200)
+        response.json.return_value = payload
+        builder = MagicMock(return_value=MagicMock())
+
+        _run_tui(
+            [key.encode(), b"q"],
+            [
+                patch(f"general_ludd.cli.{builder_name}", builder),
+                patch("httpx.get", return_value=response),
+            ],
+        )
+
+        assert builder.call_args.args[0] == expected
+
+    @pytest.mark.parametrize(
+        ("key", "builder_name", "expected"),
+        [
+            ("t", "_build_todos_table", [{"todo_id": "todo-1"}]),
+            ("h", "_build_hooks_table", [{"hook_id": "hook-1"}]),
+            ("o", "_build_workers_table", [{"worker_id": "worker-1"}]),
+            (
+                "x",
+                "_build_metrics_table",
+                {
+                    "projects": [{"project_id": "project-1"}],
+                    "todos": [{"todo_id": "todo-1"}],
+                    "hooks": [{"hook_id": "hook-1"}],
+                    "workers": [{"worker_id": "worker-1"}],
+                    "agents": [{"agent_id": "agent-1"}],
+                    "servers": [{"name": "mcp-1"}],
+                    "skills": [{"name": "skill-1"}],
+                    "endpoints": [{"name": "gpu-1"}],
+                    "scores": [{"score": 1.0}],
+                    "templates": [{"name": "template-1"}],
+                    "entries": [{"name": "quant-1"}],
+                    "files": [{"path": "artifact.bin"}],
+                    "deployments": [{"deployment_id": "deploy-1"}],
+                },
+            ),
+            ("g", "_build_agents_table", [{"agent_id": "agent-1"}]),
+            ("u", "_build_mcp_table", [{"name": "mcp-1"}]),
+            ("j", "_build_skills_table", [{"name": "skill-1"}]),
+            ("e", "_build_compute_table", [{"name": "gpu-1"}]),
+            ("b", "_build_scores_table", [{"score": 1.0}]),
+            ("l", "_build_templates_table", [{"name": "template-1"}]),
+            ("n", "_build_quantization_table", [{"name": "quant-1"}]),
+            ("f", "_build_filestore_table", [{"path": "artifact.bin"}]),
+            ("z", "_build_deployments_table", [{"deployment_id": "deploy-1"}]),
+        ],
+    )
+    def test_network_view_render_uses_success_payload(
+        self,
+        key: str,
+        builder_name: str,
+        expected: object,
+    ) -> None:
+        payload = {
+            "projects": [{"project_id": "project-1"}],
+            "todos": [{"todo_id": "todo-1"}],
+            "hooks": [{"hook_id": "hook-1"}],
+            "workers": [{"worker_id": "worker-1"}],
+            "agents": [{"agent_id": "agent-1"}],
+            "servers": [{"name": "mcp-1"}],
+            "skills": [{"name": "skill-1"}],
+            "endpoints": [{"name": "gpu-1"}],
+            "scores": [{"score": 1.0}],
+            "templates": [{"name": "template-1"}],
+            "entries": [{"name": "quant-1"}],
+            "files": [{"path": "artifact.bin"}],
+            "deployments": [{"deployment_id": "deploy-1"}],
+        }
+        response = MagicMock(status_code=200)
+        response.json.return_value = payload
+        builder = MagicMock(return_value=MagicMock())
+
+        _run_tui(
+            [key.encode(), b"q"],
+            [
+                patch(f"general_ludd.cli.{builder_name}", builder),
+                patch("httpx.get", return_value=response),
+            ],
+        )
+
+        assert builder.call_args.args[0] == expected
+
+    def test_project_add_dispatches_json_to_daemon(self) -> None:
+        get_response = MagicMock(status_code=200)
+        get_response.json.return_value = {"projects": []}
+        post_response = MagicMock(status_code=200)
+        post_response.json.return_value = {"project_id": "project-new"}
+        post = MagicMock(return_value=post_response)
+        builder = MagicMock(return_value=MagicMock())
+
+        def enter_projects(handler: object, _ch: str) -> bool:
+            handler._state["current_view"] = "projects"  # type: ignore[attr-defined]
+            return True
+
+        _run_tui(
+            [b"u", b"a", b"q"],
+            [
+                patch(
+                    "general_ludd.tui.runner.TUIKeyHandler.handle_key",
+                    autospec=True,
+                    side_effect=enter_projects,
+                ),
+                patch("httpx.get", return_value=get_response),
+                patch("httpx.post", post),
+                patch("general_ludd.cli._build_projects_table", builder),
+            ],
+        )
+
+        project_calls = [
+            call for call in post.call_args_list
+            if call.args[0].endswith("/admin/projects")
+        ]
+        assert len(project_calls) == 1
+        assert '"name": "new-project"' in project_calls[0].kwargs["content"]
+        assert builder.call_args.args[0] == []
+
+    def test_project_delete_dispatches_selected_project(self) -> None:
+        get_response = MagicMock(status_code=200)
+        get_response.json.return_value = {
+            "projects": [{"project_id": "project-old"}],
+        }
+        delete_response = MagicMock(status_code=200)
+        delete = MagicMock(return_value=delete_response)
+        builder = MagicMock(return_value=MagicMock())
+
+        def enter_projects(handler: object, _ch: str) -> bool:
+            handler._state["current_view"] = "projects"  # type: ignore[attr-defined]
+            return True
+
+        _run_tui(
+            [b"u", b"d", b"q"],
+            [
+                patch(
+                    "general_ludd.tui.runner.TUIKeyHandler.handle_key",
+                    autospec=True,
+                    side_effect=enter_projects,
+                ),
+                patch("httpx.get", return_value=get_response),
+                patch("httpx.delete", delete),
+                patch("general_ludd.cli._build_projects_table", builder),
+            ],
+        )
+
+        assert delete.call_args.args[0].endswith("/admin/projects/project-old")
+        assert builder.call_args.args[0] == [{"project_id": "project-old"}]
+
+    def test_mouse_drag_sequence_is_parsed_without_terminal_side_effects(self) -> None:
+        press = bytes((32, 72, 40))
+        release = bytes((35, 72, 40))
+
+        _run_tui([b"\x1b", b"[M", press, b"\x1b", b"[M", release, b"q"])
 
     def test_quit_immediately(self) -> None:
         _run_tui([b"q"])
