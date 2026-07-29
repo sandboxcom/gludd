@@ -37,3 +37,9 @@ output "bootstrap_extension_id" {
   description = "Driver-ready inference bootstrap and hardware-smoke evidence."
   value       = azurerm_virtual_machine_extension.accelerator_bootstrap.id
 }
+
+output "watchdog_user_data" {
+  description = "Rendered GPU cost-watchdog bootstrap for release validation."
+  value       = module.gpu_cost_watchdog.user_data
+  sensitive   = true
+}
