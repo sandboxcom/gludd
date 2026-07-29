@@ -15,61 +15,79 @@ from general_ludd.models.timeout_detector import (
 )
 
 
+def _close_unstarted_app(app: object, client: TestClient) -> None:
+    """Release resources when a focused endpoint test bypasses app lifespan."""
+    client.close()
+    state = app.state
+    gateway = getattr(state, "_model_gateway", None)
+    if gateway is not None:
+        gateway.close()
+
+
 class TestDaemonModelHealthEndpoint:
     def test_get_models_health_empty(self) -> None:
         from general_ludd.daemon import create_daemon_app
 
         app = create_daemon_app()
         client = TestClient(app)
-        resp = client.get("/admin/models/health")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "health" in data
+        try:
+            resp = client.get("/admin/models/health")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert "health" in data
+        finally:
+            _close_unstarted_app(app, client)
 
     def test_get_models_health_with_profiles(self) -> None:
         from general_ludd.daemon import create_daemon_app
 
         app = create_daemon_app()
         client = TestClient(app)
-        client.post("/admin/models", json={
-            "model_id": "test-health-1",
-            "provider": "openai",
-            "model": "gpt-4",
-            "enabled": True,
-        })
-        resp = client.get("/admin/models/health")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert len(data["health"]) >= 1
-        health = data["health"][0]
-        assert health["model_id"] == "test-health-1"
-        assert health["healthy"] is True
+        try:
+            client.post("/admin/models", json={
+                "model_id": "test-health-1",
+                "provider": "openai",
+                "model": "gpt-4",
+                "enabled": True,
+            })
+            resp = client.get("/admin/models/health")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert len(data["health"]) >= 1
+            health = data["health"][0]
+            assert health["model_id"] == "test-health-1"
+            assert health["healthy"] is True
+        finally:
+            _close_unstarted_app(app, client)
 
     def test_get_models_health_unhealthy_model(self) -> None:
         from general_ludd.daemon import create_daemon_app
 
         app = create_daemon_app()
         client = TestClient(app)
-        client.post("/admin/models", json={
-            "model_id": "sick-model",
-            "provider": "openai",
-            "model": "gpt-4",
-            "enabled": True,
-        })
-        tracker = app.state._health_tracker
-        for _ in range(3):
-            tracker.record_event(TimeoutEvent(
-                model_id="sick-model",
-                kind=TimeoutKind.READ_TIMEOUT,
-                timestamp=time.monotonic(),
-                duration_s=30.0,
-            ))
-        resp = client.get("/admin/models/health")
-        assert resp.status_code == 200
-        data = resp.json()
-        sick = next(h for h in data["health"] if h["model_id"] == "sick-model")
-        assert sick["healthy"] is False
-        assert sick["consecutive_failures"] == 3
+        try:
+            client.post("/admin/models", json={
+                "model_id": "sick-model",
+                "provider": "openai",
+                "model": "gpt-4",
+                "enabled": True,
+            })
+            tracker = app.state._health_tracker
+            for _ in range(3):
+                tracker.record_event(TimeoutEvent(
+                    model_id="sick-model",
+                    kind=TimeoutKind.READ_TIMEOUT,
+                    timestamp=time.monotonic(),
+                    duration_s=30.0,
+                ))
+            resp = client.get("/admin/models/health")
+            assert resp.status_code == 200
+            data = resp.json()
+            sick = next(h for h in data["health"] if h["model_id"] == "sick-model")
+            assert sick["healthy"] is False
+            assert sick["consecutive_failures"] == 3
+        finally:
+            _close_unstarted_app(app, client)
 
 
 class TestRouterHealthAwareRouting:

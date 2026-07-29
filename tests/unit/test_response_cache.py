@@ -48,11 +48,34 @@ def _make_profile(profile_id="test-p", model_name="test"):
 
 
 class TestModelResponseCache:
-    def test_cache_miss_returns_none(self):
+    @patch("diskcache.Cache")
+    def test_constructor_defers_database_connection(self, cache_factory):
         from general_ludd.models.response_cache import ModelResponseCache
 
         with tempfile.TemporaryDirectory() as tmpdir:
             cache = ModelResponseCache(cache_dir=tmpdir)
+
+        cache_factory.assert_not_called()
+        assert cache._cache is None
+
+    @patch("diskcache.Cache")
+    def test_close_releases_initialized_cache_once(self, cache_factory):
+        from general_ludd.models.response_cache import ModelResponseCache
+
+        backend = MagicMock()
+        cache_factory.return_value = backend
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache = ModelResponseCache(cache_dir=tmpdir)
+            cache.get("missing")
+            cache.close()
+            cache.close()
+
+        backend.close.assert_called_once_with()
+
+    def test_cache_miss_returns_none(self):
+        from general_ludd.models.response_cache import ModelResponseCache
+
+        with tempfile.TemporaryDirectory() as tmpdir, ModelResponseCache(cache_dir=tmpdir) as cache:
             result = cache.get("nonexistent-key")
             assert result is None
 
@@ -75,8 +98,7 @@ class TestModelResponseCache:
     def test_cache_set_and_get(self):
         from general_ludd.models.response_cache import ModelResponseCache
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            cache = ModelResponseCache(cache_dir=tmpdir)
+        with tempfile.TemporaryDirectory() as tmpdir, ModelResponseCache(cache_dir=tmpdir) as cache:
             response = _sample_response()
             cache.set("test-key-1", response)
             result = cache.get("test-key-1")
@@ -85,8 +107,7 @@ class TestModelResponseCache:
     def test_cache_invalidate_removes_entry(self):
         from general_ludd.models.response_cache import ModelResponseCache
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            cache = ModelResponseCache(cache_dir=tmpdir)
+        with tempfile.TemporaryDirectory() as tmpdir, ModelResponseCache(cache_dir=tmpdir) as cache:
             cache.set("key-a", _sample_response())
             cache.invalidate("key-a")
             assert cache.get("key-a") is None
@@ -94,8 +115,7 @@ class TestModelResponseCache:
     def test_cache_clear_removes_all(self):
         from general_ludd.models.response_cache import ModelResponseCache
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            cache = ModelResponseCache(cache_dir=tmpdir)
+        with tempfile.TemporaryDirectory() as tmpdir, ModelResponseCache(cache_dir=tmpdir) as cache:
             cache.set("k1", _sample_response())
             cache.set("k2", {"content": "other"})
             cache.clear()
@@ -127,8 +147,7 @@ class TestModelResponseCache:
         from general_ludd.models.gateway import ModelGateway
         from general_ludd.models.response_cache import ModelResponseCache
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            cache = ModelResponseCache(cache_dir=tmpdir)
+        with tempfile.TemporaryDirectory() as tmpdir, ModelResponseCache(cache_dir=tmpdir) as cache:
             profile = _make_profile("test-profile")
 
             mock_response = MagicMock()
@@ -139,7 +158,9 @@ class TestModelResponseCache:
             mock_chat_model.invoke.return_value = mock_response
 
             mock_registry = MagicMock()
-            mock_registry.get_provider_class.return_value = MagicMock(return_value=mock_chat_model)
+            mock_registry.get_provider_class.return_value = MagicMock(
+                return_value=mock_chat_model
+            )
             mock_registry.is_installed.return_value = True
 
             with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
@@ -159,8 +180,7 @@ class TestModelResponseCache:
         from general_ludd.models.gateway import ModelGateway
         from general_ludd.models.response_cache import ModelResponseCache
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            cache = ModelResponseCache(cache_dir=tmpdir)
+        with tempfile.TemporaryDirectory() as tmpdir, ModelResponseCache(cache_dir=tmpdir) as cache:
             profile = _make_profile("test-p")
 
             mock_response = MagicMock()
@@ -171,7 +191,9 @@ class TestModelResponseCache:
             mock_chat_model.invoke.return_value = mock_response
 
             mock_registry = MagicMock()
-            mock_registry.get_provider_class.return_value = MagicMock(return_value=mock_chat_model)
+            mock_registry.get_provider_class.return_value = MagicMock(
+                return_value=mock_chat_model
+            )
             mock_registry.is_installed.return_value = True
 
             with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
@@ -180,7 +202,9 @@ class TestModelResponseCache:
                     provider_registry=mock_registry,
                     response_cache=cache,
                 )
-                resp = gw.call_model("test-p", [{"role": "user", "content": "unique query"}])
+                resp = gw.call_model(
+                    "test-p", [{"role": "user", "content": "unique query"}]
+                )
                 assert resp.content == "fresh response"
 
     def test_gateway_call_model_no_cache_works_unchanged(self):

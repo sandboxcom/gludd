@@ -1496,6 +1496,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             app.state._model_gateway = model_gateway
 
             semantic_searcher = SemanticSearcher()
+            app.state._semantic_searcher = semantic_searcher
             execution_engine = ExecutionEngine(
                 model_gateway=model_gateway,
                 benchmark_recorder=None,
@@ -2540,11 +2541,20 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     if _searx_client_ref is not None:
         with contextlib.suppress(Exception):
             await _searx_client_ref.close()
-    for _cache_owner_attr in ("_codebase_indexer", "_research_index", "_local_memory"):
+    for _cache_owner_attr in (
+        "_codebase_indexer",
+        "_research_index",
+        "_local_memory",
+        "_semantic_searcher",
+    ):
         _cache_owner = getattr(app.state, _cache_owner_attr, None)
         if _cache_owner is not None:
             with contextlib.suppress(Exception):
                 _cache_owner.close()
+    _model_gateway_ref = getattr(app.state, "_model_gateway", None)
+    if _model_gateway_ref is not None:
+        with contextlib.suppress(Exception):
+            _model_gateway_ref.close()
     if engine is not None:
         await engine.dispose()
     _embedding_session_ref = getattr(app.state, "_embedding_session", None)
