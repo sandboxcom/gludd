@@ -177,6 +177,14 @@ def test_git_remote_bootstrap_uses_authenticated_https() -> None:
     assert "sandboxcom_github_rsa" not in remote_block
 
 
+def test_current_head_push_uses_ssh_url_for_workflow_file_changes() -> None:
+    push_block = _target_block("git-push-current-head-nv")
+    assert "git@github.com:sandboxcom/gludd.git" in push_block
+    assert "HEAD:refs/heads/$$BRANCH" in push_block
+    assert "ci-busy-check BRANCH=$$BRANCH" in push_block
+    assert "PUSH_BRANCH=$$BRANCH" in push_block
+
+
 def test_local_ci_replica_shards_refuse_dirty_tree_by_default() -> None:
     for target in [
         "test-ci-shard",
