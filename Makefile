@@ -1992,14 +1992,14 @@ clean-untracked:
 	@echo "Cleaned up reinvention-of-wheel files"
 
 git-remote-sandboxcom:
-	@command -v gh >/dev/null 2>&1 || { echo "gh is required for authenticated HTTPS git access"; exit 1; }
-	@gh auth setup-git
+	@test -r /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa || { echo "Missing repository-scoped SSH key: /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa"; exit 1; }
+	@chmod 600 /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa
 	@if git remote get-url sandboxcom >/dev/null 2>&1; then \
-		git remote set-url sandboxcom https://github.com/sandboxcom/gludd.git; \
+		git remote set-url sandboxcom git@github.com:sandboxcom/gludd.git; \
 	else \
-		git remote add sandboxcom https://github.com/sandboxcom/gludd.git; \
+		git remote add sandboxcom git@github.com:sandboxcom/gludd.git; \
 	fi
-	@echo "Remote sandboxcom configured via authenticated HTTPS"
+	@echo "Remote sandboxcom configured via repository-scoped SSH"
 
 # -- Push gate: prevent CI thrash (cancelled runs, push storms, excessive pushes) --
 
@@ -2042,7 +2042,7 @@ commit-ready:
 	@UV=echo $(SYSTEM_PYTHON) scripts/workflow_state_guard.py --assert-clean --assert-no-feature-on-master
 
 gha-ready: workflow-gate
-	@UV=echo GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new" $(SYSTEM_PYTHON) scripts/ci_remote_head_guard.py --ref "$(REF)" --remote "$(REMOTE)"
+	@UV=echo GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa -o StrictHostKeyChecking=accept-new" $(SYSTEM_PYTHON) scripts/ci_remote_head_guard.py --ref "$(REF)" --remote "$(REMOTE)"
 
 merge-ready:
 	@UV=echo $(SYSTEM_PYTHON) scripts/workflow_state_guard.py --assert-clean --assert-merge-ready --assert-no-unintegrated-worktrees --assert-no-unintegrated-branches
@@ -2103,8 +2103,8 @@ master-force-push:
 	@$(MAKE) verify-remote BRANCH=master SHA=$$(git rev-parse master)
 	@echo "Master branch force-pushed and verified"
 
-git-push-sandboxcom: check-clean-tree _test-disabled-guard _push-rate-guard
-	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
+git-push-sandboxcom: check-clean-tree git-remote-sandboxcom _test-disabled-guard _push-rate-guard
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd"
 
 push-dev: check-clean-tree ci-busy-check
@@ -2122,24 +2122,24 @@ push-dev-nv: check-clean-tree _push-rate-guard
 # collect-check local gate). Use when the local 21k-test gate is non-viable
 # and CI is the gate. The _push-rate-guard (CI-pending / cooldown / thrash)
 # is STILL enforced. Mirrors commit-no-verify for the push side.
-git-push-sandboxcom-nv: check-clean-tree _push-rate-guard
-	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom master
+git-push-sandboxcom-nv: check-clean-tree git-remote-sandboxcom _push-rate-guard
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd (--no-verify)"
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
 
 # Push only the committed HEAD for the current branch. This is for CI candidate
 # runs from a dirty integration checkout; uncommitted files are not included.
-git-push-current-head-nv: check-clean-tree
+git-push-current-head-nv: check-clean-tree git-remote-sandboxcom
 	@BRANCH=$$(git branch --show-current); \
 	if [ -z "$$BRANCH" ]; then echo "Cannot push detached HEAD"; exit 1; fi; \
 	$(MAKE) --no-print-directory ci-busy-check BRANCH=$$BRANCH || exit 1; \
 	PUSH_BRANCH=$$BRANCH $(MAKE) --no-print-directory _push-rate-guard || exit 1; \
-	GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u git@github.com:sandboxcom/gludd.git HEAD:refs/heads/$$BRANCH
+	GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom HEAD:refs/heads/$$BRANCH
 	@echo "Pushed committed HEAD to sandboxcom/gludd"
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
 
-git-push-current-head-to-master-nv: check-clean-tree _push-rate-guard
-	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify sandboxcom HEAD:master
+git-push-current-head-to-master-nv: check-clean-tree git-remote-sandboxcom _push-rate-guard
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify sandboxcom HEAD:master
 	@echo "Pushed committed HEAD to sandboxcom/gludd master"
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
 
@@ -2230,7 +2230,7 @@ git-fetch-sandboxcom:
 
 verify-remote:
 	@SHA=$(or $(SHA),$$(git rev-parse HEAD)); BR=$(or $(BRANCH),master); \
-	REMOTE=$$(GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom refs/heads/$$BR | awk '{print $$1}'); \
+	REMOTE=$$(GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom refs/heads/$$BR | awk '{print $$1}'); \
 	echo "remote=$$REMOTE expected=$$SHA"; \
 	REMOTE_SHORT=$$(echo $$REMOTE | cut -c1-$${#SHA}); \
 	if [ "$$SHA" = "$$REMOTE_SHORT" ]; then echo "VERIFIED $$BR@$$SHA"; else echo "REMOTE MISMATCH: remote=$$REMOTE expected=$$SHA" && exit 1; fi
@@ -2238,10 +2238,10 @@ verify-remote:
 # Create an annotated tag and push it to sandboxcom to trigger the tag-gated
 # release job (version -> gate -> builds -> release). Usage:
 #   make git-tag-push TAG=v0.1.0-alpha.1 COMMIT=<sha> MSG='alpha release'
-git-tag-push:
+git-tag-push: git-remote-sandboxcom
 	@[ -n "$(TAG)" ] || { echo "Usage: make git-tag-push TAG=v0.1.0-alpha.N [COMMIT=<sha>] [MSG='...']"; exit 1; }
 	@git tag -a "$(TAG)" $(if $(COMMIT),$(COMMIT)) -m "$(if $(MSG),$(MSG),$(TAG))"
-	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"
 	@echo "Pushed tag $(TAG) to sandboxcom/gludd (triggers release job)"
 
 
@@ -3017,7 +3017,7 @@ ci-rerun:
 ci-remote-head-guard:
 	@REF="$(REF)"; if [ -z "$$REF" ]; then REF="$$(git branch --show-current)"; fi; \
 	REMOTE="$(REMOTE)"; if [ -z "$$REMOTE" ]; then REMOTE=sandboxcom; fi; \
-	GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new" $(PYTHON) scripts/ci_remote_head_guard.py --ref "$$REF" --remote "$$REMOTE"
+	GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa -o StrictHostKeyChecking=accept-new" $(PYTHON) scripts/ci_remote_head_guard.py --ref "$$REF" --remote "$$REMOTE"
 
 # Fresh dispatch of the Build and Release workflow on the current branch after exact-HEAD guard.
 ci-trigger: ci-remote-head-guard _require-gh
@@ -3096,8 +3096,8 @@ ci-pyver-list:
 	@$(UV) python list 2>&1 | head -40 || echo "uv-python-list-failed"
 
 ci-ssh-test:
-	@chmod 600 sandboxcom_github_rsa 2>/dev/null || true
-	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' ssh -T -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new git@github.com 2>&1 | head -5 || true
+	@chmod 600 /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa 2>/dev/null || true
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa -o StrictHostKeyChecking=accept-new' ssh -T -i /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa -o StrictHostKeyChecking=accept-new git@github.com 2>&1 | head -5 || true
 
 ci-remotes:
 	@git remote -v 2>&1 || true
@@ -5956,8 +5956,8 @@ expand-specs:
 	@$(UV) run python3 scripts/generate_specs_to_4000.py --target $(or $(TARGET),4000)
 
 # Push exactly the current clean HEAD for the current branch.
-git-push-committed-head-nv: commit-ready workflow-gate
-	@BRANCH=$$(git branch --show-current); if [ -z "$$BRANCH" ]; then echo "Cannot push detached HEAD"; exit 1; fi; $(MAKE) --no-print-directory ci-busy-check BRANCH=$$BRANCH || exit 1; PUSH_BRANCH=$$BRANCH $(MAKE) --no-print-directory _push-rate-guard || exit 1; HEAD=$$(git rev-parse HEAD); GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new" git push --no-verify -u sandboxcom HEAD:refs/heads/$$BRANCH || exit 1; $(MAKE) --no-print-directory verify-remote BRANCH=$$BRANCH SHA=$$HEAD || exit 1; echo "Pushed clean HEAD $$HEAD to sandboxcom/$$BRANCH."
+git-push-committed-head-nv: commit-ready workflow-gate git-remote-sandboxcom
+	@BRANCH=$$(git branch --show-current); if [ -z "$$BRANCH" ]; then echo "Cannot push detached HEAD"; exit 1; fi; $(MAKE) --no-print-directory ci-busy-check BRANCH=$$BRANCH || exit 1; PUSH_BRANCH=$$BRANCH $(MAKE) --no-print-directory _push-rate-guard || exit 1; HEAD=$$(git rev-parse HEAD); GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa -o StrictHostKeyChecking=accept-new" git push --no-verify -u sandboxcom HEAD:refs/heads/$$BRANCH || exit 1; $(MAKE) --no-print-directory verify-remote BRANCH=$$BRANCH SHA=$$HEAD || exit 1; echo "Pushed clean HEAD $$HEAD to sandboxcom/$$BRANCH."
 
 # Trigger the Build and Release workflow for the exact clean HEAD already on sandboxcom.
 ci-trigger-committed-head: gha-ready _require-gh
