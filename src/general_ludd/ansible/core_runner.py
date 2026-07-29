@@ -893,11 +893,13 @@ class CoreAnsibleRunner:
             else 0
         )
         if pb_rc != 0 or failed_count:
+            failure_rc = pb_rc if pb_rc != 0 else 1
             return AnsibleResult(
                 status="failed",
-                rc=pb_rc if pb_rc != 0 else 1,
+                rc=failure_rc,
                 stats=stats,
                 events=list(self._collected_events),
+                error=f"ansible playbook execution failed with rc={failure_rc}",
             )
 
         return AnsibleResult(
