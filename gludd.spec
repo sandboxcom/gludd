@@ -90,8 +90,9 @@ a = Analysis(
         # PyInstaller analysis cannot discover it.
         'msgpack',
         # Frozen daemon startup re-execs Gludd and enters Gunicorn's bundled
-        # console entry point; both the entry point and worker load dynamically.
+        # console entry point; its logger and worker load dynamically.
         'gunicorn.app.wsgiapp',
+        'gunicorn.glogging',
         'uvicorn_worker',
         'uvicorn.logging',
         'uvicorn.loops',

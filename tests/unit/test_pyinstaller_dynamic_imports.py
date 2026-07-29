@@ -16,6 +16,7 @@ def test_frozen_daemon_runtime_is_bundled() -> None:
     spec = (_ROOT / "gludd.spec").read_text()
 
     assert "'gunicorn.app.wsgiapp'," in spec
+    assert "'gunicorn.glogging'," in spec
     assert "'uvicorn_worker'," in spec
 
 
