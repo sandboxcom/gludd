@@ -172,8 +172,8 @@ class TestGateAsyncConcurrentRefused:
         # Launch first gate in background
         first = subprocess.Popen(
             ["bash", str(GATE_ASYNC_SH)],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
             text=True,
             env=env,
         )
@@ -238,8 +238,8 @@ class TestGateAsyncRunningWrittenImmediately:
 
         proc = subprocess.Popen(
             ["bash", str(GATE_ASYNC_SH)],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
             text=True,
             env=env,
         )
