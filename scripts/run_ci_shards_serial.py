@@ -11,7 +11,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from ci_named_shard_files import SHARDS, expand_shard
+from ci_named_shard_files import ISOLATED_TESTS, SHARDS, expand_shard
 from run_ci_shards_parallel import _env_for_shard, _parse_shards
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -46,6 +46,18 @@ def _pytest_command(files: list[str], basetemp: Path, pytest_args: list[str]) ->
         "-v",
         *pytest_args,
         f"--basetemp={basetemp / 'pytest'}",
+    ]
+
+
+def _isolated_pytest_command(pytest_args: list[str]) -> list[str]:
+    """Run process-heavy tests outside the long-lived coverage workers."""
+    return [
+        sys.executable,
+        "-m",
+        "pytest",
+        *ISOLATED_TESTS,
+        "-v",
+        *pytest_args,
     ]
 
 
@@ -119,6 +131,13 @@ def run(shards: list[str], pytest_args: list[str]) -> int:
         return erase_rc
 
     failures: dict[str, int] = {}
+    isolated_rc = _run_command(_isolated_pytest_command(pytest_args))
+    if isolated_rc:
+        failures["isolated"] = isolated_rc
+        print(f"ISOLATED-TESTS-FAIL rc={isolated_rc}", flush=True)
+    else:
+        print("ISOLATED-TESTS-PASS rc=0", flush=True)
+
     for index, shard in enumerate(shards, start=1):
         files = expand_shard(shard)
         if not files:
