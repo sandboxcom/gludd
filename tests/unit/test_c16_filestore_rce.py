@@ -142,9 +142,7 @@ class TestC16DownloadFlowIntegrity:
                     side_effect=Exception("should not be called"),
                 ):
             import asyncio
-            asyncio.new_event_loop().run_until_complete(
-                boot.download("test-bin")
-            )
+            asyncio.run(boot.download("test-bin"))
 
         assert boot._verify_digest("test-bin", b"anything") is False
 
@@ -168,9 +166,7 @@ class TestC16DownloadFlowIntegrity:
                 patch.object(boot, "get_download_url", return_value="https://example.com/bin"), \
                 patch("httpx.AsyncClient.get", side_effect=fake_get):
             import asyncio
-            result = asyncio.new_event_loop().run_until_complete(
-                boot.download("test-bin")
-            )
+            result = asyncio.run(boot.download("test-bin"))
 
         assert result is False
         store.write_bytes.assert_not_called()
@@ -193,9 +189,7 @@ class TestC16DownloadFlowIntegrity:
                 patch.object(boot, "get_download_url", return_value="https://example.com/bin"), \
                 patch("httpx.AsyncClient.get", side_effect=fake_get):
             import asyncio
-            result = asyncio.new_event_loop().run_until_complete(
-                boot.download("test-bin")
-            )
+            result = asyncio.run(boot.download("test-bin"))
 
         assert result is True
         store.write_bytes.assert_called_once()
@@ -320,9 +314,7 @@ class TestC16SizeCap:
                 patch.object(boot, "get_download_url", return_value="https://example.com/bin"), \
                 patch("httpx.AsyncClient.get", side_effect=fake_get):
             import asyncio
-            result = asyncio.new_event_loop().run_until_complete(
-                boot.download("test-bin")
-            )
+            result = asyncio.run(boot.download("test-bin"))
 
         assert result is False
 
@@ -354,9 +346,7 @@ class TestC16SizeCap:
                 patch.object(boot, "get_download_url", return_value="https://example.com/bin"), \
                 patch("httpx.AsyncClient.get", side_effect=fake_get):
             import asyncio
-            result = asyncio.new_event_loop().run_until_complete(
-                boot.download("test-bin")
-            )
+            result = asyncio.run(boot.download("test-bin"))
 
         assert result is False
 
