@@ -172,8 +172,11 @@ class TestRetrievalSearcher:
 
         with tempfile.TemporaryDirectory() as tmp:
             searcher = SemanticSearcher(cache_dir=Path(tmp) / "nonexistent")
-            results = searcher.search("query")
-            assert results == []
+            try:
+                results = searcher.search("query")
+                assert results == []
+            finally:
+                searcher.close()
 
     def test_searcher_with_cache(self):
         from general_ludd.retrieval.searcher import SemanticSearcher
@@ -198,9 +201,12 @@ class TestRetrievalSearcher:
             cache.close()
 
             searcher = SemanticSearcher(cache_dir=cache_dir)
-            results = searcher.search("hello")
-            assert len(results) >= 1
-            assert results[0]["filepath"] == "file1.py"
+            try:
+                results = searcher.search("hello")
+                assert len(results) >= 1
+                assert results[0]["filepath"] == "file1.py"
+            finally:
+                searcher.close()
 
 
 class TestRetrievalIndexer:
