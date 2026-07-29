@@ -13,6 +13,11 @@ from general_ludd.ansible.isolation import (
 
 
 class TestPodmanSocketPaths:
+    def test_windows_without_getuid_uses_system_socket_only(self, monkeypatch):
+        monkeypatch.delattr(os, "getuid")
+
+        assert _podman_socket_paths() == ["/run/podman/podman.sock"]
+
     def test_includes_user_specific_paths(self):
         paths = _podman_socket_paths()
         uid = os.getuid()

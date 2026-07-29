@@ -42,6 +42,7 @@ class TestSpecPlatformCompatibility:
         """The Windows executable must not import POSIX-only TUI modules."""
         script = """
 import builtins
+import os
 import sys
 
 real_import = builtins.__import__
@@ -52,6 +53,8 @@ def reject_posix_terminal_modules(name, *args, **kwargs):
     return real_import(name, *args, **kwargs)
 
 builtins.__import__ = reject_posix_terminal_modules
+if hasattr(os, "getuid"):
+    del os.getuid
 sys.argv = ["gludd", "version"]
 from general_ludd.cli import main
 main()
