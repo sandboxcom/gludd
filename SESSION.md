@@ -1,5 +1,7 @@
 # Session State
 
+## PRIMARY OBJECTIVE: Deploy v0.1.0-beta.3 only after local and hosted CI are fully GREEN and all release artifacts are published and verified.
+
 > Authoritative state: `make gate` output and `TASKS.md` evidence.
 > SESSION.md is derived from gate output, not the other way around.
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
@@ -7,15 +9,17 @@
 ---
 
 ## Current Gate Status (2026-07-24)
+## Current Gate Status (2026-07-29)
 <!-- gate:begin -->
 - lint PASS 0
+- verify-feature-claims PASS
+- hot-reload PASS
+- verify-hot-reload PASS
+- check-status-table PASS
 - env-writes PASS
-- hook-runtime PASS (122 passed, 0 failed, 18 skipped)
+- hook-runtime PASS
 - typecheck PASS 0
-- collect PASS 0
-- coverage-gaps PASS 0 new gaps
-- smoke PASS
-- GATE: PASSED
+- collect
 
 <!-- gate:end -->
 
