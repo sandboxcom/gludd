@@ -20,6 +20,9 @@ DEFAULT_SHARDS = tuple(SHARDS)
 COVERAGE_SHARDS = ROOT / ".coverage-shards-local"
 COVERAGE_JSON = ROOT / "coverage.json"
 COVERAGE_AUDIT = ROOT / ".gate-logs" / "coverage-local.json"
+GOVERNANCE_MODULE_UTILS = (
+    "collections/ansible_collections/general_ludd/governance/plugins/module_utils"
+)
 
 
 def _quote(command: list[str]) -> str:
@@ -37,6 +40,7 @@ def _pytest_command(files: list[str], basetemp: Path, pytest_args: list[str]) ->
         str(SCRIPTS / "adaptive_test.py"),
         *files,
         "--cov=general_ludd",
+        f"--cov={GOVERNANCE_MODULE_UTILS}",
         "--cov-report=",
         "--cov-fail-under=0",
         "-v",

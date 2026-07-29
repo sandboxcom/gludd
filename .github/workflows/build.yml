@@ -349,7 +349,9 @@ jobs:
           # it and the adaptive computation applies. (Off-CI the load cap stays —
           # the #45 local-OOM fix is unchanged.)
           uv run python scripts/adaptive_test.py $FILES \
-            --cov=general_ludd --cov-report= \
+            --cov=general_ludd \
+            --cov=collections/ansible_collections/general_ludd/governance/plugins/module_utils \
+            --cov-report= \
             --cov-fail-under=0 \
             -v
           # pytest-cov under xdist can leave parallel-named .coverage.<host>.<pid>

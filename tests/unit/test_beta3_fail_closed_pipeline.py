@@ -85,6 +85,10 @@ def test_test_shards_reject_empty_selection_and_missing_coverage() -> None:
     assert "selected no files after exclusions" in runs
     assert "exit 1" in runs
     assert "RC -eq 5" not in runs
+    assert (
+        "--cov=collections/ansible_collections/general_ludd/governance/plugins/module_utils"
+        in runs
+    )
     assert "test -s .coverage" in runs
     uploads = _upload_steps(shard)
     assert uploads

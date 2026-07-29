@@ -112,6 +112,10 @@ def test_serial_pytest_command_uses_adaptive_runner_and_isolated_basetemp(
     assert command[1].endswith("scripts/adaptive_test.py")
     assert "tests/unit/test_alpha.py" in command
     assert "--cov=general_ludd" in command
+    assert (
+        "--cov=collections/ansible_collections/general_ludd/governance/plugins/module_utils"
+        in command
+    )
     assert f"--basetemp={tmp_path / 'pytest'}" in command
 
 
