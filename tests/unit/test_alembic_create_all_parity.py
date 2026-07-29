@@ -217,9 +217,12 @@ def _introspect(conn: Connection) -> dict:
 def _build_create_all_schema() -> dict:
     """Return the schema snapshot produced by ``Base.metadata.create_all``."""
     engine = create_engine("sqlite://")
-    Base.metadata.create_all(engine)
-    with engine.connect() as conn:
-        return _introspect(conn)
+    try:
+        Base.metadata.create_all(engine)
+        with engine.connect() as conn:
+            return _introspect(conn)
+    finally:
+        engine.dispose()
 
 
 def _build_migrated_schema(tmp_path: pathlib.Path) -> dict:
@@ -227,8 +230,11 @@ def _build_migrated_schema(tmp_path: pathlib.Path) -> dict:
     db_path = str(tmp_path / "wp_d3_migrated.db")
     _run_migrations(db_path)
     engine = create_engine(f"sqlite:///{db_path}")
-    with engine.connect() as conn:
-        return _introspect(conn)
+    try:
+        with engine.connect() as conn:
+            return _introspect(conn)
+    finally:
+        engine.dispose()
 
 
 @pytest.fixture(scope="module")
