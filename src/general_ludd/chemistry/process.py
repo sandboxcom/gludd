@@ -21,7 +21,6 @@ artifact is produced.
 
 from __future__ import annotations
 
-import math
 from typing import Any
 
 SCHEMA_VERSION = "1.0"
@@ -289,4 +288,4 @@ class ProcessScaleUp:
         }
 
 
-__all__ = ["ProcessScaleUp", "LINEAR_SCALE_NOT_VALID"]
+__all__ = ["LINEAR_SCALE_NOT_VALID", "ProcessScaleUp"]

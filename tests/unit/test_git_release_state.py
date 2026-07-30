@@ -210,7 +210,7 @@ def test_state_machine_rollback_without_prior_digest_is_blocked(sm: ReleaseState
     # Place the machine in CANARY directly (bypassing advance(), which would
     # capture the prior digest) so the rollback precondition fires.
     sm.state = ReleaseState.CANARY
-    sm._prior_digest = None  # noqa: SLF001 — intentionally testing the guard
+    sm._prior_digest = None
     try:
         sm.rollback(reason="nothing to roll back to")
     except TransitionError as exc:

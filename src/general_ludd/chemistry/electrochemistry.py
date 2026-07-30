@@ -22,7 +22,8 @@ return ``limitations`` whenever a result is approximate or assumes a model.
 from __future__ import annotations
 
 import math
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 SCHEMA_VERSION = "1.0"
 METHOD_ID = "chemistry-electrochemistry@0.1.0"

@@ -20,12 +20,11 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from general_ludd.git_release.provenance import (
-    Attestation,
     ProvenanceRecord,
     SignatureState,
     VerificationResult,
@@ -33,7 +32,6 @@ from general_ludd.git_release.provenance import (
     verify_provenance,
 )
 from general_ludd.git_release.source_registry import (
-    FreshnessFlag,
     SourceAuthority,
     SourceEntry,
     SourceRegistry,
@@ -78,11 +76,11 @@ def provenance(lock_bytes: bytes, artifact_bytes: bytes) -> ProvenanceRecord:
 
 
 def _now_rfc3339() -> str:
-    return datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _days_from_now(days: int) -> str:
-    return (datetime.now(tz=timezone.utc) + timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return (datetime.now(tz=UTC) + timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 # ---------------------------------------------------------------------------

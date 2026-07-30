@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import enum
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from general_ludd.ai_ml.schemas import _require_nonempty_str, _require_sha256
 
@@ -161,7 +161,7 @@ class ResearchDiscovery:
         now = int(time.time())
         for topic in self._portfolio.topics:
             for connector in self._portfolio.connectors:
-                payload = f"{connector.value}:{topic}".encode("utf-8")
+                payload = f"{connector.value}:{topic}".encode()
                 digest = hashlib.sha256(payload).hexdigest()
                 items.append(
                     RetrievedItem(

@@ -239,6 +239,6 @@ class TextileAdvisor:
 __all__ = [
     "KNIT_TYPES",
     "TEXTILE_FIBERS",
-    "TextileAdvisor",
     "WEAVE_TYPES",
+    "TextileAdvisor",
 ]

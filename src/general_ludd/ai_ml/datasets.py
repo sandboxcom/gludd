@@ -29,7 +29,6 @@ is never chosen solely because it is already used (spec §6.1).
 
 from __future__ import annotations
 
-import dataclasses
 import enum
 import re
 import time

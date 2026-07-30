@@ -343,7 +343,7 @@ class FailureAnalyzer:
 __all__ = [
     "CANDIDATE",
     "CONFIDENCE_STATES",
-    "FailureAnalyzer",
     "INSUFFICIENT",
     "RULED_OUT",
+    "FailureAnalyzer",
 ]

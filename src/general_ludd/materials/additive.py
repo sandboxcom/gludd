@@ -331,4 +331,4 @@ class AdditiveManufacturingAdvisor:
         }
 
 
-__all__ = ["AdditiveManufacturingAdvisor", "ADDITIVE_PROCESSES"]
+__all__ = ["ADDITIVE_PROCESSES", "AdditiveManufacturingAdvisor"]

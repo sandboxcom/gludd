@@ -27,8 +27,8 @@ the expert can re-fetch or drop a source before relying on it.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import StrEnum
 
 __all__ = [
@@ -103,7 +103,7 @@ def _parse_rfc3339(value: str) -> datetime:
     except ValueError as exc:
         raise ValueError(f"not an RFC3339 timestamp: {value!r}") from exc
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt
 
 
