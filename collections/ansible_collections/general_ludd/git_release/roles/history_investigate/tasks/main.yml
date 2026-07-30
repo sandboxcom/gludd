@@ -1,0 +1,15 @@
+- name: Assert repo path is provided
+  ansible.builtin.assert:
+    that:
+      - history_investigate_path is defined
+      - history_investigate_path | length > 0
+    fail_msg: history_investigate_path must be defined
+
+- name: Collect repo evidence for history investigation
+  general_ludd.git_release.collect_repo_evidence:
+    path: "{{ history_investigate_path }}"
+  register: history_repo_evidence
+
+- name: Surface history investigation seed evidence
+  ansible.builtin.set_fact:
+    history_investigate_evidence: "{{ history_repo_evidence }}"

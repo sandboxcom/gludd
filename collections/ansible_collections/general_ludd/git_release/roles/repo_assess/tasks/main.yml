@@ -1,0 +1,22 @@
+- name: Assert repo path is provided
+  ansible.builtin.assert:
+    that:
+      - repo_path is defined
+      - repo_path | length > 0
+    fail_msg: repo_path must be defined for repo_assess
+
+- name: Collect repo evidence (read-only)
+  general_ludd.git_release.collect_repo_evidence:
+    path: "{{ repo_path }}"
+  register: repo_evidence
+
+- name: Assert evidence is well-formed
+  ansible.builtin.assert:
+    that:
+      - repo_evidence.path == repo_path
+      - repo_evidence.head_sha | length > 0
+    fail_msg: repo evidence malformed
+
+- name: Surface repo evidence for downstream planners
+  ansible.builtin.set_fact:
+    repo_assess_evidence: "{{ repo_evidence }}"

@@ -1,0 +1,22 @@
+namespace: general_ludd
+name: git_release
+version: 1.0.0
+readme: README.md
+authors:
+  - Gludd
+description: >-
+  Git mastery and release captain expert collection. Evidence-driven planner and
+  operator for repository assessment, history investigation, branch planning,
+  release preparation, artifact verification, and zero-downtime deployment.
+license:
+  - MIT
+tags:
+  - git
+  - release
+  - infrastructure
+  - evidence
+repository: https://github.com/sandboxcom/gludd
+manifest:
+  directives:
+    - recursive-exclude
+dependencies: {}
