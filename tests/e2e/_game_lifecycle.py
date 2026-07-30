@@ -32,49 +32,117 @@ from collections.abc import Callable
 # ---------------------------------------------------------------------------
 
 _TICK_NAMES: tuple[str, ...] = (
-    "tick", "step", "update", "advance", "next_frame", "next_turn",
-    "frame", "turn", "simulate",
+    "tick",
+    "step",
+    "update",
+    "advance",
+    "next_frame",
+    "next_turn",
+    "frame",
+    "turn",
+    "simulate",
 )
 _START_NAMES: tuple[str, ...] = (
-    "start", "play", "begin", "new_game", "start_game", "reset",
+    "start",
+    "play",
+    "begin",
+    "new_game",
+    "start_game",
+    "reset",
 )
 _RESTART_NAMES: tuple[str, ...] = (
-    "restart", "reset", "new_game", "start_over", "play_again",
+    "restart",
+    "reset",
+    "new_game",
+    "start_over",
+    "play_again",
 )
 _STATE_ATTR_NAMES: tuple[str, ...] = (
-    "state", "phase", "mode", "status",
+    "state",
+    "phase",
+    "mode",
+    "status",
 )
 _SCORE_ATTR_NAMES: tuple[str, ...] = (
-    "score", "points", "score_value",
+    "score",
+    "points",
+    "score_value",
 )
 _OVER_ATTR_NAMES: tuple[str, ...] = (
-    "game_over", "over", "crashed", "finished", "ended", "dead", "done",
+    "game_over",
+    "over",
+    "crashed",
+    "finished",
+    "ended",
+    "dead",
+    "done",
 )
 _WON_ATTR_NAMES: tuple[str, ...] = (
-    "won", "winner", "victory", "is_won",
+    "won",
+    "winner",
+    "victory",
+    "is_won",
 )
 _REVEAL_NAMES: tuple[str, ...] = ("reveal", "click", "open", "dig", "uncover")
 _THROW_NAMES: tuple[str, ...] = ("throw", "shoot", "fire", "launch", "toss")
 _FLIP_NAMES: tuple[str, ...] = ("flip", "select", "reveal_card", "turn", "pick")
 _GUESS_NAMES: tuple[str, ...] = (
-    "guess", "try_letter", "guess_letter", "submit", "attempt",
+    "guess",
+    "try_letter",
+    "guess_letter",
+    "submit",
+    "attempt",
 )
 
 # Acceptable "ready to play" states (case-insensitive)
-_READY_STATES: frozenset[str] = frozenset({
-    "ready", "menu", "idle", "start", "initial", "new", "stopped",
-    "wait", "waiting", "begin", "setup", "init",
-})
+_READY_STATES: frozenset[str] = frozenset(
+    {
+        "ready",
+        "menu",
+        "idle",
+        "start",
+        "initial",
+        "new",
+        "stopped",
+        "wait",
+        "waiting",
+        "begin",
+        "setup",
+        "init",
+    }
+)
 # Acceptable "actively playing" states
-_PLAYING_STATES: frozenset[str] = frozenset({
-    "playing", "running", "active", "in_progress", "play", "ongoing",
-    "started", "live",
-})
+_PLAYING_STATES: frozenset[str] = frozenset(
+    {
+        "playing",
+        "running",
+        "active",
+        "in_progress",
+        "play",
+        "ongoing",
+        "started",
+        "live",
+    }
+)
 # Acceptable "terminal" states
-_TERMINAL_STATES: frozenset[str] = frozenset({
-    "game_over", "over", "ended", "finished", "done", "dead", "crashed",
-    "won", "lost", "draw", "drawn", "lose", "win", "end",
-})
+_TERMINAL_STATES: frozenset[str] = frozenset(
+    {
+        "game_over",
+        "over",
+        "ended",
+        "finished",
+        "done",
+        "dead",
+        "crashed",
+        "won",
+        "lost",
+        "draw",
+        "drawn",
+        "lose",
+        "win",
+        "end",
+    }
+)
 
 _PREFERRED_CLASS_NAME: dict[str, str] = {
     "snake": "Snake",
@@ -96,8 +164,10 @@ _PREFERRED_CLASS_NAME: dict[str, str] = {
 # Generic discovery helpers (operate on the LLM-generated module/instance)
 # ---------------------------------------------------------------------------
 
+
 def _find_callable(
-    obj: object, names: tuple[str, ...],
+    obj: object,
+    names: tuple[str, ...],
 ) -> tuple[str, Callable[..., object]] | None:
     """Return ``(attr_name, attr)`` for the first name in ``names`` that
     resolves to a callable on ``obj``, else ``None``."""
@@ -109,7 +179,8 @@ def _find_callable(
 
 
 def _find_attr(
-    obj: object, names: tuple[str, ...],
+    obj: object,
+    names: tuple[str, ...],
 ) -> tuple[str, object] | None:
     """Return ``(attr_name, value)`` for the first name in ``names`` that
     exists on ``obj``, else ``None``."""
@@ -144,10 +215,9 @@ def _discover_game_class(mod: object, preferred: str | None) -> type[object] | N
                 return obj
     return max(
         candidates,
-        key=lambda kv: len([
-            m for m in inspect.getmembers(kv[1], predicate=inspect.isfunction)
-            if not m[0].startswith("_")
-        ]),
+        key=lambda kv: len(
+            [m for m in inspect.getmembers(kv[1], predicate=inspect.isfunction) if not m[0].startswith("_")]
+        ),
     )[1]
 
 
@@ -155,13 +225,19 @@ def _instantiate_game(cls: type[object]) -> object:
     """Instantiate ``cls`` by trying common constructor signatures."""
     sig = inspect.signature(cls.__init__)
     params = [
-        p for p in sig.parameters.values()
-        if p.name != "self"
-        and p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+        p
+        for p in sig.parameters.values()
+        if p.name != "self" and p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
     ]
     n_required = sum(1 for p in params if p.default is inspect.Parameter.empty)
     candidates: list[tuple[object, ...]] = [
-        (), (10,), (20,), (10, 10), (20, 20), (40, 100), (10, 10, 10),
+        (),
+        (10,),
+        (20,),
+        (10, 10),
+        (20, 20),
+        (40, 100),
+        (10, 10, 10),
     ]
     last_exc: Exception | None = None
     seen: set[tuple[object, ...]] = set()
@@ -220,17 +296,11 @@ def _invoke_start_method(instance: object) -> str | None:
     """
     state_before = _find_attr(instance, _STATE_ATTR_NAMES)
     is_confirmed_ready = (
-        state_before is not None
-        and isinstance(state_before[1], str)
-        and state_before[1].lower() in _READY_STATES
+        state_before is not None and isinstance(state_before[1], str) and state_before[1].lower() in _READY_STATES
     )
 
     # Non-ready confirmed — nothing to do
-    if (
-        state_before is not None
-        and isinstance(state_before[1], str)
-        and state_before[1].lower() not in _READY_STATES
-    ):
+    if state_before is not None and isinstance(state_before[1], str) and state_before[1].lower() not in _READY_STATES:
         return None
 
     # Try start regardless of whether state attr was found: games may
@@ -242,29 +312,16 @@ def _invoke_start_method(instance: object) -> str | None:
         try:
             start_found[1]()
         except Exception as exc:
-            return (
-                f"start method {start_found[0]!r} raised: "
-                f"{type(exc).__name__}: {exc}"
-            )
+            return f"start method {start_found[0]!r} raised: {type(exc).__name__}: {exc}"
     elif is_confirmed_ready and not _tick_once(instance):
-        return (
-            "could not transition from ready to playing — "
-            "no start() method and tick() did not auto-start"
-        )
+        return "could not transition from ready to playing — no start() method and tick() did not auto-start"
     # else: no start method + state unknown → assume game auto-starts
 
     # Verify transition (only meaningful when we saw a ready state before)
     if is_confirmed_ready:
         state_after = _find_attr(instance, _STATE_ATTR_NAMES)
-        if (
-            state_after is not None
-            and isinstance(state_after[1], str)
-            and state_after[1].lower() in _READY_STATES
-        ):
-            return (
-                f"state stayed at {state_after[1]!r} after start "
-                f"(expected transition to playing/running/active)"
-            )
+        if state_after is not None and isinstance(state_after[1], str) and state_after[1].lower() in _READY_STATES:
+            return f"state stayed at {state_after[1]!r} after start (expected transition to playing/running/active)"
     return None
 
 
@@ -277,6 +334,7 @@ def _is_truthy_bool(value: object) -> bool:
 # ---------------------------------------------------------------------------
 # The 7 lifecycle checks (each returns None on pass, str on fail)
 # ---------------------------------------------------------------------------
+
 
 def _check_lifecycle_initial_state(instance: object) -> str | None:
     """Check 1: state attribute (state/phase/mode/status) starts in a
@@ -291,10 +349,7 @@ def _check_lifecycle_initial_state(instance: object) -> str | None:
     if vlow in _READY_STATES:
         return None
     if vlow in {"playing", "game_over", "won"} or vlow in _TERMINAL_STATES:
-        return (
-            f"initial state is {value!r} for attribute {name!r} "
-            f"(expected 'ready' or 'menu')"
-        )
+        return f"initial state is {value!r} for attribute {name!r} (expected 'ready' or 'menu')"
     return None  # unknown state string — accept
 
 
@@ -310,16 +365,10 @@ def _check_lifecycle_start(instance: object) -> str | None:
         try:
             start_found[1]()
         except Exception as exc:
-            return (
-                f"start method {start_found[0]!r} raised: "
-                f"{type(exc).__name__}: {exc}"
-            )
+            return f"start method {start_found[0]!r} raised: {type(exc).__name__}: {exc}"
     else:
         if not _tick_once(instance):
-            return (
-                "no start method (start/play/begin/new_game/...) "
-                "and no tick method found"
-            )
+            return "no start method (start/play/begin/new_game/...) and no tick method found"
 
     state_after = _find_attr(instance, _STATE_ATTR_NAMES)
     after_val = state_after[1] if state_after is not None else None
@@ -330,10 +379,7 @@ def _check_lifecycle_start(instance: object) -> str | None:
         and before_val.lower() in _READY_STATES
         and after_val.lower() in _READY_STATES
     ):
-        return (
-            f"state stayed at {after_val!r} after start "
-            f"(expected transition to playing/running/active)"
-        )
+        return f"state stayed at {after_val!r} after start (expected transition to playing/running/active)"
     return None
 
 
@@ -344,10 +390,7 @@ def _check_lifecycle_score_starts_zero(instance: object) -> str | None:
         return None  # no score attr — skip
     name, value = found
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return (
-            f"score attribute {name!r} is not numeric "
-            f"(got {type(value).__name__})"
-        )
+        return f"score attribute {name!r} is not numeric (got {type(value).__name__})"
     if value != 0:
         return f"score is {value!r} at start of play (expected 0)"
     return None
@@ -357,7 +400,9 @@ _SCORE_INCREMENT_DISPATCH: dict[str, Callable[[object], str | None]] = {}
 
 
 def _check_lifecycle_score_increments(
-    instance: object, n_ticks: int = 20, game_id: str | None = None,
+    instance: object,
+    n_ticks: int = 20,
+    game_id: str | None = None,
 ) -> str | None:
     """Check 4: over n_ticks, score increases at least once OR the game
     ends.  If neither, fail.  Skipped if no score attribute or no tick
@@ -388,10 +433,7 @@ def _check_lifecycle_score_increments(
                     and new_score > initial_score
                 ):
                     return None
-            return (
-                f"score did not increment after game-specific strategy "
-                f"(initial={initial_score})"
-            )
+            return f"score did not increment after game-specific strategy (initial={initial_score})"
 
     ticked_any = False
     for _ in range(n_ticks):
@@ -404,22 +446,16 @@ def _check_lifecycle_score_increments(
             return None  # game ended — acceptable
         if new_score_found is not None:
             new_score = new_score_found[1]
-            if (
-                isinstance(new_score, (int, float))
-                and not isinstance(new_score, bool)
-                and new_score > initial_score
-            ):
+            if isinstance(new_score, (int, float)) and not isinstance(new_score, bool) and new_score > initial_score:
                 return None  # score incremented
     if not ticked_any:
         return None  # no tick method — skip
-    return (
-        f"score did not increment in {n_ticks} ticks and game did not end "
-        f"(initial={initial_score})"
-    )
+    return f"score did not increment in {n_ticks} ticks and game did not end (initial={initial_score})"
 
 
 def _check_lifecycle_game_over(
-    instance: object, force_lose: Callable[[object], str | None] | None,
+    instance: object,
+    force_lose: Callable[[object], str | None] | None,
 ) -> str | None:
     """Check 5: force a lose/terminal condition and confirm game_over (or
     won) becomes True.  If no force_lose strategy is registered OR the
@@ -440,6 +476,12 @@ def _check_lifecycle_game_over(
     won_found = _find_attr(instance, _WON_ATTR_NAMES)
     is_over = _is_truthy_bool(over_found[1]) if over_found else False
     is_won = _is_truthy_bool(won_found[1]) if won_found else False
+    # Z.2: a won game IS over. Generated games sometimes set won=True but
+    # leave game_over=False. Normalize so the idempotent check and downstream
+    # logic see a consistent terminal state.
+    if is_won and over_found is not None and not is_over:
+        setattr(instance, over_found[0], True)
+        is_over = True
     if not (is_over or is_won):
         if over_found is not None:
             setattr(instance, over_found[0], True)
@@ -479,10 +521,7 @@ def _check_lifecycle_game_over_idempotent(instance: object) -> str | None:
 
     new_over_found = _find_attr(instance, _OVER_ATTR_NAMES)
     if new_over_found is not None and not _is_truthy_bool(new_over_found[1]):
-        return (
-            f"tick() after game_over cleared flag "
-            f"{new_over_found[0]!r} (expected to remain True)"
-        )
+        return f"tick() after game_over cleared flag {new_over_found[0]!r} (expected to remain True)"
 
     new_score_found = _find_attr(instance, _SCORE_ATTR_NAMES)
     if (
@@ -492,15 +531,8 @@ def _check_lifecycle_game_over_idempotent(instance: object) -> str | None:
         and not isinstance(score_at_over, bool)
     ):
         new_score = new_score_found[1]
-        if (
-            isinstance(new_score, (int, float))
-            and not isinstance(new_score, bool)
-            and new_score != score_at_over
-        ):
-            return (
-                f"score changed after game_over "
-                f"({score_at_over} -> {new_score})"
-            )
+        if isinstance(new_score, (int, float)) and not isinstance(new_score, bool) and new_score != score_at_over:
+            return f"score changed after game_over ({score_at_over} -> {new_score})"
 
     for pos_name, old_val in _positions_at_over.items():
         if hasattr(instance, pos_name):
@@ -511,10 +543,7 @@ def _check_lifecycle_game_over_idempotent(instance: object) -> str | None:
                 and isinstance(old_val, (int, float))
                 and new_val != old_val
             ):
-                return (
-                    f"position {pos_name!r} changed after game_over "
-                    f"({old_val} -> {new_val})"
-                )
+                return f"position {pos_name!r} changed after game_over ({old_val} -> {new_val})"
 
     new_state_found = _find_attr(instance, _STATE_ATTR_NAMES)
     if (
@@ -524,18 +553,61 @@ def _check_lifecycle_game_over_idempotent(instance: object) -> str | None:
         and state_at_over.lower() in _TERMINAL_STATES
         and new_state_found[1].lower() not in _TERMINAL_STATES
     ):
-        return (
-            f"state changed from terminal {state_at_over!r} to "
-            f"{new_state_found[1]!r} after game_over"
-        )
+        return f"state changed from terminal {state_at_over!r} to {new_state_found[1]!r} after game_over"
+    return None
+
+
+def _check_tetris_gravity(instance: object) -> str | None:
+    """Z.3: Verify tetris pieces auto-drop on tick().
+
+    Uses a board-diff approach: snapshot the grid before and after a single
+    tick.  If the grid is unchanged while the game is in a 'playing' state,
+    gravity is not being applied (the active piece did not move down one row).
+
+    Returns None on success or if the check cannot run (no grid / no tick).
+    Returns a failure string if gravity is not applied.
+    """
+    import copy as _copy
+
+    start_fail = _invoke_start_method(instance)
+    if start_fail is not None:
+        return start_fail
+
+    grid_found = _find_attr(instance, ("grid", "board", "playfield"))
+    if grid_found is None:
+        return None  # no board to diff — skip
+
+    grid_before = _copy.deepcopy(grid_found[1])
+
+    if not _tick_once(instance):
+        return None  # no tick method — skip
+
+    grid_after_raw = getattr(instance, grid_found[0], None)
+    if grid_after_raw is None:
+        return None
+
+    grid_after = _copy.deepcopy(grid_after_raw)
+    if grid_after == grid_before:
+        return "gravity not applied: board unchanged after tick() (active piece did not auto-drop one row)"
     return None
 
 
 def _snapshot_positions(instance: object) -> dict[str, object]:
     _POSITION_ATTR_SUFFIXES = (
-        "_x", "_y", "skier_x", "skier_y", "player_x", "player_y",
-        "ball_x", "ball_y", "paddle_x", "paddle_y",
-        "paddle1_y", "paddle2_y", "x", "y",
+        "_x",
+        "_y",
+        "skier_x",
+        "skier_y",
+        "player_x",
+        "player_y",
+        "ball_x",
+        "ball_y",
+        "paddle_x",
+        "paddle_y",
+        "paddle1_y",
+        "paddle2_y",
+        "x",
+        "y",
     )
     result: dict[str, object] = {}
     for attr_name in _POSITION_ATTR_SUFFIXES:
@@ -551,17 +623,11 @@ def _check_lifecycle_restart(instance: object) -> str | None:
     game_over=False, won=False)."""
     restart_found = _find_callable(instance, _RESTART_NAMES)
     if restart_found is None:
-        return (
-            "no restart method found (restart/reset/new_game/start_over/"
-            "play_again) — cannot verify reusability"
-        )
+        return "no restart method found (restart/reset/new_game/start_over/play_again) — cannot verify reusability"
     try:
         restart_found[1]()
     except Exception as exc:
-        return (
-            f"restart method {restart_found[0]!r} raised: "
-            f"{type(exc).__name__}: {exc}"
-        )
+        return f"restart method {restart_found[0]!r} raised: {type(exc).__name__}: {exc}"
 
     over_found = _find_attr(instance, _OVER_ATTR_NAMES)
     if over_found is not None and _is_truthy_bool(over_found[1]):
@@ -574,11 +640,7 @@ def _check_lifecycle_restart(instance: object) -> str | None:
     score_found = _find_attr(instance, _SCORE_ATTR_NAMES)
     if score_found is not None:
         value = score_found[1]
-        if (
-            isinstance(value, (int, float))
-            and not isinstance(value, bool)
-            and value != 0
-        ):
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and value != 0:
             return f"score is {value!r} after restart (expected 0)"
 
     start_fail = _invoke_start_method(instance)
@@ -594,6 +656,7 @@ def _check_lifecycle_restart(instance: object) -> str | None:
 #   - a descriptive string when the feature is not testable for this instance
 #     (the lifecycle check then SKIPS, not fails)
 # ---------------------------------------------------------------------------
+
 
 def _force_lose_snake(instance: object) -> str | None:
     """Snake: set snake head out of bounds, tick, expect game_over."""
@@ -731,10 +794,7 @@ def _force_lose_banana(instance: object) -> str | None:
                 result = throw_found[1](angle, velocity)
             except Exception:
                 continue
-            if (
-                isinstance(result, dict)
-                and (result.get("hit") or result.get("winner") is not None)
-            ):
+            if isinstance(result, dict) and (result.get("hit") or result.get("winner") is not None):
                 return None
     return "could not force gorilla hit — feature not testable"
 
@@ -830,9 +890,7 @@ def _force_lose_memory_match(instance: object) -> str | None:
         return "no cards attribute — feature not testable"
     value_to_ids: dict[str, list[int]] = {}
     for i, card in enumerate(cards):
-        val: object = (
-            card.get("value") if isinstance(card, dict) else getattr(card, "value", None)
-        )
+        val: object = card.get("value") if isinstance(card, dict) else getattr(card, "value", None)
         if val is not None:
             value_to_ids.setdefault(str(val), []).append(i)
     if hasattr(instance, "first_flip"):
@@ -895,6 +953,7 @@ _FORCE_LOSE_DISPATCH: dict[str, Callable[[object], str | None]] = {
 #   - a descriptive string when the strategy could not increment score
 # ---------------------------------------------------------------------------
 
+
 def _score_increment_strategy_tetris(instance: object) -> str | None:
     """Tetris: fill bottom row to force line-clear on next piece lock.
 
@@ -951,6 +1010,7 @@ _SCORE_INCREMENT_DISPATCH["tetris"] = _score_increment_strategy_tetris
 # Public entry point
 # ---------------------------------------------------------------------------
 
+
 def run_lifecycle_checks(game_id: str, mod: object) -> list[str]:
     """Run all 7 lifecycle checks for ``game_id`` against ``mod``.
 
@@ -966,9 +1026,7 @@ def run_lifecycle_checks(game_id: str, mod: object) -> list[str]:
     try:
         instance = _instantiate_game(cls)
     except Exception as exc:
-        return [
-            f"lifecycle: instantiation failed: {type(exc).__name__}: {exc}"
-        ]
+        return [f"lifecycle: instantiation failed: {type(exc).__name__}: {exc}"]
 
     fail = _check_lifecycle_initial_state(instance)
     if fail is not None:
