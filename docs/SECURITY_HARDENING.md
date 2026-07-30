@@ -70,6 +70,25 @@ link** — each surface validates even though the next layer would also catch it
 | A/B candidate execution | `src/general_ludd/abtest/runner.py` | crash-isolated fresh-interpreter child; success requires exit 0 **and** an unforgeable parent-generated `secrets.token_hex` nonce written to a parent-controlled result file; fails closed otherwise; bounded output | `tests/unit/test_abtest_runner.py` |
 | `make test` (engine test gate) | `src/general_ludd/execution/engine.py` | `_run_tests()` runs in its own process group (`start_new_session=True`) and `os.killpg`s the whole group on a 120s timeout so no recipe grandchild leaks | `tests/unit/test_execution_engine.py` |
 
+#### Ephemeral Git maintenance boundary
+
+Git porcelain may trigger automatic maintenance after writing data, and that
+maintenance detaches by default. The official
+[`git-config` documentation](https://git-scm.com/docs/git-config#Documentation/git-config.txt-maintenanceauto)
+documents both behaviors; `gc.auto=0` and `maintenance.auto=false` disable the
+two automatic paths without preventing explicit maintenance. Long-lived user
+reports show the operational consequences: background packing can continue
+after the foreground command returns
+([Stack Overflow](https://stackoverflow.com/questions/28633956/why-does-git-keep-telling-me-its-auto-packing-the-repository-in-background-for)),
+and a live writer under `.git/objects/pack` can make repository deletion fail
+with “Directory not empty”
+([Stack Overflow](https://stackoverflow.com/questions/64852408/cannot-remove-git-directory-not-empty)).
+
+`GitAutomation` therefore injects both settings into every controlled Git
+subprocess. This is especially important for temporary test/worktree
+repositories: a successful Git call now has process-lifetime semantics and
+cannot leave a detached pack writer racing the repository’s teardown.
+
 #### A/B resource-limit process boundary
 
 The A/B child lowers both the soft and hard POSIX limits so candidate code
