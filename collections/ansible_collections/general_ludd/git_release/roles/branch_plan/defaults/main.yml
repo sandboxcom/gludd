@@ -1,0 +1,4 @@
+branch_plan_repo_path: "{{ repo_path | default('') }}"
+branch_plan_base: "{{ repo_evidence.branch | default('') }}"
+branch_plan_target: ""
+branch_plan_dry_run: true

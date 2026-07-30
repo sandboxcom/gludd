@@ -1,0 +1,3 @@
+history_investigate_path: "{{ repo_path | default('') }}"
+history_investigate_max_commits: 100
+history_investigate_follow_renames: true

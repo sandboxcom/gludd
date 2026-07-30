@@ -18,9 +18,7 @@ scoping-only assertions (we are not exercising contention, just scope).
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
-import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import (
     AsyncSession,

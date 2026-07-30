@@ -1,0 +1,21 @@
+- name: Assert branch_plan_repo_path is provided
+  ansible.builtin.assert:
+    that:
+      - branch_plan_repo_path is defined
+      - branch_plan_repo_path | length > 0
+    fail_msg: branch_plan_repo_path must be defined
+
+- name: Collect repo evidence for branch planning
+  general_ludd.git_release.collect_repo_evidence:
+    path: "{{ branch_plan_repo_path }}"
+  register: branch_plan_repo_evidence
+
+- name: Assert branch_plan_base is non-empty
+  ansible.builtin.assert:
+    that:
+      - branch_plan_repo_evidence.branch | length > 0
+    fail_msg: branch_plan requires a non-detached HEAD; aborting
+
+- name: Surface branch plan evidence
+  ansible.builtin.set_fact:
+    branch_plan_evidence: "{{ branch_plan_repo_evidence }}"

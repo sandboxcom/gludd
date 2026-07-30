@@ -14,7 +14,6 @@ AIML-AT-018 (decision record contents).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 import pytest
@@ -29,12 +28,9 @@ from general_ludd.ai_ml.schemas import (
     ArtifactInput,
     Constraints,
     DataClassification,
-    ErrorRecord,
-    EvidenceArtifact,
     ExpertRequest,
     ExpertResult,
     ExpertTask,
-    PolicyDecision,
     ResultStatus,
     ToolCandidate,
     Verification,
