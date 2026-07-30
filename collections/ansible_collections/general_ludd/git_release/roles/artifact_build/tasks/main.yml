@@ -1,0 +1,11 @@
+---
+# artifact_build role tasks — git_release service.
+
+- name: Load artifact_build defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _artifact_build_defaults
+
+- name: Reference artifact_build service API
+  ansible.builtin.debug:
+    msg: "artifact_build routes via the git_release service API (/api/git_release/artifact_build)."

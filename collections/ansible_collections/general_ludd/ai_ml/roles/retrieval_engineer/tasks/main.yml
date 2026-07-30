@@ -1,0 +1,11 @@
+---
+# retrieval_engineer role tasks — ai_ml service.
+
+- name: Load retrieval_engineer defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _retrieval_engineer_defaults
+
+- name: Reference retrieval_engineer service API
+  ansible.builtin.debug:
+    msg: "retrieval_engineer routes via the ai_ml service API (/api/ai_ml/retrieval_engineer)."

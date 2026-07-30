@@ -1,0 +1,11 @@
+---
+# tool_discover role tasks — chemistry service.
+
+- name: Load tool_discover defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _tool_discover_defaults
+
+- name: Reference tool_discover service API
+  ansible.builtin.debug:
+    msg: "tool_discover routes via the chemistry service API (/api/chemistry/tool_discover)."

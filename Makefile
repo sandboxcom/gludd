@@ -1574,6 +1574,11 @@ collection-roles:
 collection-modules:
 	@ls -1 collections/ansible_collections/general_ludd/agent/plugins/modules/gludd_*.py 2>/dev/null || echo "No modules found"
 
+# Scaffold missing expert-service collection roles (materials/chemistry/ai_ml/git_release).
+# Idempotent: skips roles that already exist. Use FORCE=1 to overwrite.
+scaffold-collection-roles:
+	@$(UV) run python scripts/scaffold_collection_roles.py $(if $(FORCE),--force,)
+
 molecule-scenarios:
 	@ls -1 molecule/playbooks 2>/dev/null || echo "No scenarios found"
 

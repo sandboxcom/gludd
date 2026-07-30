@@ -1,0 +1,11 @@
+---
+# model_distill role tasks — ai_ml service.
+
+- name: Load model_distill defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _model_distill_defaults
+
+- name: Reference model_distill service API
+  ansible.builtin.debug:
+    msg: "model_distill routes via the ai_ml service API (/api/ai_ml/model_distill)."

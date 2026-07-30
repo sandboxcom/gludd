@@ -1,0 +1,11 @@
+---
+# cheminformatics role tasks — chemistry service.
+
+- name: Load cheminformatics defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _cheminformatics_defaults
+
+- name: Reference cheminformatics service API
+  ansible.builtin.debug:
+    msg: "cheminformatics routes via the chemistry service API (/api/chemistry/cheminformatics)."

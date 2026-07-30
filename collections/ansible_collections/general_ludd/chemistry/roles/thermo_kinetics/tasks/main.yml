@@ -1,0 +1,11 @@
+---
+# thermo_kinetics role tasks — chemistry service.
+
+- name: Load thermo_kinetics defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _thermo_kinetics_defaults
+
+- name: Reference thermo_kinetics service API
+  ansible.builtin.debug:
+    msg: "thermo_kinetics routes via the chemistry service API (/api/chemistry/thermo_kinetics)."

@@ -1,0 +1,11 @@
+---
+# adapter_train role tasks — ai_ml service.
+
+- name: Load adapter_train defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _adapter_train_defaults
+
+- name: Reference adapter_train service API
+  ansible.builtin.debug:
+    msg: "adapter_train routes via the ai_ml service API (/api/ai_ml/adapter_train)."

@@ -1,0 +1,11 @@
+---
+# image_create role tasks — ai_ml service.
+
+- name: Load image_create defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _image_create_defaults
+
+- name: Reference image_create service API
+  ansible.builtin.debug:
+    msg: "image_create routes via the ai_ml service API (/api/ai_ml/image_create)."

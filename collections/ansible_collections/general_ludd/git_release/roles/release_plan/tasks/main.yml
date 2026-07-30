@@ -1,0 +1,11 @@
+---
+# release_plan role tasks — git_release service.
+
+- name: Load release_plan defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _release_plan_defaults
+
+- name: Reference release_plan service API
+  ansible.builtin.debug:
+    msg: "release_plan routes via the git_release service API (/api/git_release/release_plan)."

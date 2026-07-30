@@ -1,0 +1,11 @@
+---
+# chemistry_refresh role tasks — chemistry service.
+
+- name: Load chemistry_refresh defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _chemistry_refresh_defaults
+
+- name: Reference chemistry_refresh service API
+  ansible.builtin.debug:
+    msg: "chemistry_refresh routes via the chemistry service API (/api/chemistry/chemistry_refresh)."

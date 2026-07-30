@@ -1,0 +1,11 @@
+---
+# pipeline_triage role tasks — git_release service.
+
+- name: Load pipeline_triage defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _pipeline_triage_defaults
+
+- name: Reference pipeline_triage service API
+  ansible.builtin.debug:
+    msg: "pipeline_triage routes via the git_release service API (/api/git_release/pipeline_triage)."

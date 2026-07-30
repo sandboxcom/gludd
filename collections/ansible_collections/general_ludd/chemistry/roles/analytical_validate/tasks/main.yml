@@ -1,0 +1,11 @@
+---
+# analytical_validate role tasks — chemistry service.
+
+- name: Load analytical_validate defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _analytical_validate_defaults
+
+- name: Reference analytical_validate service API
+  ansible.builtin.debug:
+    msg: "analytical_validate routes via the chemistry service API (/api/chemistry/analytical_validate)."

@@ -1,0 +1,11 @@
+---
+# dataset_engineer role tasks — ai_ml service.
+
+- name: Load dataset_engineer defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _dataset_engineer_defaults
+
+- name: Reference dataset_engineer service API
+  ansible.builtin.debug:
+    msg: "dataset_engineer routes via the ai_ml service API (/api/ai_ml/dataset_engineer)."

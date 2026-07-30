@@ -1,0 +1,11 @@
+---
+# multiphysics_model role tasks — materials service.
+
+- name: Load multiphysics_model defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _multiphysics_model_defaults
+
+- name: Reference multiphysics_model service API
+  ansible.builtin.debug:
+    msg: "multiphysics_model routes via the materials service API (/api/materials/multiphysics_model)."

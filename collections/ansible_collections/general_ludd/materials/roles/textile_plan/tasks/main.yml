@@ -1,0 +1,11 @@
+---
+# textile_plan role tasks — materials service.
+
+- name: Load textile_plan defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _textile_plan_defaults
+
+- name: Reference textile_plan service API
+  ansible.builtin.debug:
+    msg: "textile_plan routes via the materials service API (/api/materials/textile_plan)."

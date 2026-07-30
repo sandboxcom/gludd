@@ -1,0 +1,11 @@
+---
+# molding_plan role tasks — materials service.
+
+- name: Load molding_plan defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _molding_plan_defaults
+
+- name: Reference molding_plan service API
+  ansible.builtin.debug:
+    msg: "molding_plan routes via the materials service API (/api/materials/molding_plan)."

@@ -1,0 +1,11 @@
+---
+# accelerator_job role tasks — ai_ml service.
+
+- name: Load accelerator_job defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _accelerator_job_defaults
+
+- name: Reference accelerator_job service API
+  ansible.builtin.debug:
+    msg: "accelerator_job routes via the ai_ml service API (/api/ai_ml/accelerator_job)."

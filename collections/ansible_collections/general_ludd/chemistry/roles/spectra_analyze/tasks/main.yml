@@ -1,0 +1,11 @@
+---
+# spectra_analyze role tasks — chemistry service.
+
+- name: Load spectra_analyze defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _spectra_analyze_defaults
+
+- name: Reference spectra_analyze service API
+  ansible.builtin.debug:
+    msg: "spectra_analyze routes via the chemistry service API (/api/chemistry/spectra_analyze)."

@@ -1,0 +1,11 @@
+---
+# conflict_resolve role tasks — git_release service.
+
+- name: Load conflict_resolve defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _conflict_resolve_defaults
+
+- name: Reference conflict_resolve service API
+  ansible.builtin.debug:
+    msg: "conflict_resolve routes via the git_release service API (/api/git_release/conflict_resolve)."

@@ -1,0 +1,11 @@
+---
+# chemistry_promote role tasks — chemistry service.
+
+- name: Load chemistry_promote defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _chemistry_promote_defaults
+
+- name: Reference chemistry_promote service API
+  ansible.builtin.debug:
+    msg: "chemistry_promote routes via the chemistry service API (/api/chemistry/chemistry_promote)."

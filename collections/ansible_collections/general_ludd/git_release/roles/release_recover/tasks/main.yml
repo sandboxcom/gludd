@@ -1,0 +1,11 @@
+---
+# release_recover role tasks — git_release service.
+
+- name: Load release_recover defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _release_recover_defaults
+
+- name: Reference release_recover service API
+  ansible.builtin.debug:
+    msg: "release_recover routes via the git_release service API (/api/git_release/release_recover)."

@@ -1,0 +1,9 @@
+---
+galaxy_info:
+  role_name: quantum_workflow
+  author: Agentic Harness Agent
+  description: quantum_workflow role for the chemistry service.
+  license: MIT
+  min_ansible_version: "2.14"
+  galaxy_tags: [chemistry]
+dependencies: []

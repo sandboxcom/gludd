@@ -1,0 +1,11 @@
+---
+# process_scaleup role tasks — chemistry service.
+
+- name: Load process_scaleup defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _process_scaleup_defaults
+
+- name: Reference process_scaleup service API
+  ansible.builtin.debug:
+    msg: "process_scaleup routes via the chemistry service API (/api/chemistry/process_scaleup)."

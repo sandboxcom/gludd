@@ -1,0 +1,11 @@
+---
+# machining_plan role tasks — materials service.
+
+- name: Load machining_plan defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _machining_plan_defaults
+
+- name: Reference machining_plan service API
+  ansible.builtin.debug:
+    msg: "machining_plan routes via the materials service API (/api/materials/machining_plan)."

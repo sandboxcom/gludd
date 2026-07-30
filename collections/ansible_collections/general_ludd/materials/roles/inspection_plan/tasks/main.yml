@@ -1,0 +1,11 @@
+---
+# inspection_plan role tasks — materials service.
+
+- name: Load inspection_plan defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _inspection_plan_defaults
+
+- name: Reference inspection_plan service API
+  ansible.builtin.debug:
+    msg: "inspection_plan routes via the materials service API (/api/materials/inspection_plan)."

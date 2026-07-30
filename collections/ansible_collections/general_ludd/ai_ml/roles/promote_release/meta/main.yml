@@ -1,0 +1,9 @@
+---
+galaxy_info:
+  role_name: promote_release
+  author: Agentic Harness Agent
+  description: promote_release role for the ai_ml service.
+  license: MIT
+  min_ansible_version: "2.14"
+  galaxy_tags: [ai_ml]
+dependencies: []

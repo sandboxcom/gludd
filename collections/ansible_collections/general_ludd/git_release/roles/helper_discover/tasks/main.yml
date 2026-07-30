@@ -1,0 +1,11 @@
+---
+# helper_discover role tasks — git_release service.
+
+- name: Load helper_discover defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _helper_discover_defaults
+
+- name: Reference helper_discover service API
+  ansible.builtin.debug:
+    msg: "helper_discover routes via the git_release service API (/api/git_release/helper_discover)."

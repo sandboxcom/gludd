@@ -1,0 +1,11 @@
+---
+# promote_release role tasks — ai_ml service.
+
+- name: Load promote_release defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _promote_release_defaults
+
+- name: Reference promote_release service API
+  ansible.builtin.debug:
+    msg: "promote_release routes via the ai_ml service API (/api/ai_ml/promote_release)."

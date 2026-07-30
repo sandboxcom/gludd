@@ -1,0 +1,11 @@
+---
+# electrochemistry role tasks — chemistry service.
+
+- name: Load electrochemistry defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _electrochemistry_defaults
+
+- name: Reference electrochemistry service API
+  ansible.builtin.debug:
+    msg: "electrochemistry routes via the chemistry service API (/api/chemistry/electrochemistry)."

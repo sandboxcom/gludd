@@ -1,0 +1,11 @@
+---
+# molecular_simulation role tasks — chemistry service.
+
+- name: Load molecular_simulation defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _molecular_simulation_defaults
+
+- name: Reference molecular_simulation service API
+  ansible.builtin.debug:
+    msg: "molecular_simulation routes via the chemistry service API (/api/chemistry/molecular_simulation)."

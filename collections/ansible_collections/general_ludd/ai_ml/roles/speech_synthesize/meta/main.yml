@@ -1,0 +1,9 @@
+---
+galaxy_info:
+  role_name: speech_synthesize
+  author: Agentic Harness Agent
+  description: speech_synthesize role for the ai_ml service.
+  license: MIT
+  min_ansible_version: "2.14"
+  galaxy_tags: [ai_ml]
+dependencies: []

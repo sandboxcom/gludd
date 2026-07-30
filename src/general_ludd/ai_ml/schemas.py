@@ -279,6 +279,11 @@ class EvidenceArtifact:
     Content is content-addressed by ``sha256``; duplicate content produces one
     artifact with multiple ``locators`` (AIML-AT-002). Tenant isolation is
     enforced by the store, not by this record.
+
+    Phase A extensions (spec §4.3, §5.2): ``creator`` provenance, ``supersedes``
+    relation for corrections, and ``retracted``/``retraction_reason``/
+    ``retracted_at`` for tracking retractions. All extensions are optional
+    with defaults so existing construction remains backward compatible.
     """
 
     source_id: str
@@ -289,6 +294,11 @@ class EvidenceArtifact:
     license: str
     authority_score: float = 0.0
     tenant_id: str = "default"
+    creator: str = ""
+    supersedes: str | None = None
+    retracted: bool = False
+    retraction_reason: str = ""
+    retracted_at: int | None = None
 
     def __post_init__(self) -> None:
         _require_nonempty_str(self.source_id, "source_id")
@@ -298,6 +308,14 @@ class EvidenceArtifact:
             raise ValueError("evidence must have at least one locator")
         if not (0.0 <= self.authority_score <= 1.0):
             raise ValueError(f"authority_score must be in [0.0, 1.0], got {self.authority_score}")
+        if self.retracted and not self.retraction_reason.strip():
+            raise ValueError("a retracted evidence record must carry a non-empty retraction_reason")
+        if self.retracted and self.retracted_at is None:
+            raise ValueError("a retracted evidence record must set retracted_at")
+        if self.retracted_at is not None and self.retracted_at < 0:
+            raise ValueError(f"retracted_at must be non-negative, got {self.retracted_at}")
+        if self.supersedes is not None and not self.supersedes.strip():
+            raise ValueError("supersedes, when set, must be a non-empty source_id")
 
 
 @dataclass(frozen=True)

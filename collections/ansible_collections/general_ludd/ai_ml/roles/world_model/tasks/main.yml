@@ -1,0 +1,11 @@
+---
+# world_model role tasks — ai_ml service.
+
+- name: Load world_model defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _world_model_defaults
+
+- name: Reference world_model service API
+  ansible.builtin.debug:
+    msg: "world_model routes via the ai_ml service API (/api/ai_ml/world_model)."

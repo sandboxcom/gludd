@@ -1,0 +1,11 @@
+---
+# deploy_orchestrate role tasks — git_release service.
+
+- name: Load deploy_orchestrate defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _deploy_orchestrate_defaults
+
+- name: Reference deploy_orchestrate service API
+  ansible.builtin.debug:
+    msg: "deploy_orchestrate routes via the git_release service API (/api/git_release/deploy_orchestrate)."

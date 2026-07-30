@@ -1,0 +1,9 @@
+---
+galaxy_info:
+  role_name: helper_select
+  author: Agentic Harness Agent
+  description: helper_select role for the git_release service.
+  license: MIT
+  min_ansible_version: "2.14"
+  galaxy_tags: [git_release]
+dependencies: []

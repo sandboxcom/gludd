@@ -1,0 +1,11 @@
+---
+# joining_plan role tasks — materials service.
+
+- name: Load joining_plan defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _joining_plan_defaults
+
+- name: Reference joining_plan service API
+  ansible.builtin.debug:
+    msg: "joining_plan routes via the materials service API (/api/materials/joining_plan)."

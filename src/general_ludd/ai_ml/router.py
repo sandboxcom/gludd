@@ -22,15 +22,13 @@ functions here are the typed entry points the ansible roles wrap.
 
 from __future__ import annotations
 
-import hashlib
-import time
 import uuid
 from collections.abc import Iterable
 
+from general_ludd.ai_ml.evidence import EvidenceStore
 from general_ludd.ai_ml.schemas import (
     Citation,
     Constraints,
-    EvidenceArtifact,
     ExpertRequest,
     ExpertResult,
     ExpertTask,
@@ -132,97 +130,10 @@ class ExpertRouter:
 
 
 # ---------------------------------------------------------------------------
-# AIML-002 / AIML-003 — Evidence store
+# AIML-002 / AIML-003 — Evidence store lives in ``general_ludd.ai_ml.evidence``.
+# It is re-exported from this module (and from the package __init__) so the
+# historical import paths keep working.
 # ---------------------------------------------------------------------------
-
-
-class EvidenceStore:
-    """Immutable, content-addressed, citation-addressable evidence store.
-
-    Content is keyed by SHA-256. Ingesting the same content twice produces
-    ONE artifact whose ``locators`` tuple grows (AIML-AT-002). Records are
-    tenant-scoped: a list/get for tenant B cannot see tenant A's evidence
-    (AIML-AT-020 isolation invariant).
-    """
-
-    def __init__(self) -> None:
-        # sha256 -> EvidenceArtifact (canonical record)
-        self._by_sha: dict[str, EvidenceArtifact] = {}
-        # source_id -> sha256 (lookup index)
-        self._by_source: dict[str, str] = {}
-
-    def ingest(
-        self,
-        *,
-        content: bytes,
-        media_type: str,
-        license: str,
-        locator: str,
-        tenant_id: str = "default",
-        authority_score: float = 0.0,
-    ) -> EvidenceArtifact:
-        if not content:
-            raise ValueError("content must be non-empty bytes")
-        if not isinstance(media_type, str) or not media_type.strip():
-            raise ValueError("media_type must be a non-empty string")
-        if not isinstance(license, str) or not license.strip():
-            raise ValueError("license must be a non-empty string")
-        if not isinstance(locator, str) or not locator.strip():
-            raise ValueError("locator must be a non-empty string")
-        if not (0.0 <= authority_score <= 1.0):
-            raise ValueError(f"authority_score must be in [0.0, 1.0], got {authority_score}")
-
-        digest = hashlib.sha256(content).hexdigest()
-        existing = self._by_sha.get(digest)
-        if existing is not None:
-            # AIML-AT-002: dedupe — one artifact, multiple locators. The
-            # canonical record is replaced with an extended-locators copy
-            # (frozen dataclass, so we rebuild).
-            if locator not in existing.locators:
-                merged = EvidenceArtifact(
-                    source_id=existing.source_id,
-                    sha256=existing.sha256,
-                    media_type=existing.media_type,
-                    locators=(*existing.locators, locator),
-                    fetched_at=existing.fetched_at,
-                    license=existing.license,
-                    authority_score=existing.authority_score,
-                    tenant_id=existing.tenant_id,
-                )
-                self._by_sha[digest] = merged
-                self._by_source[merged.source_id] = digest
-                return merged
-            return existing
-
-        source_id = f"evd-{uuid.uuid4().hex[:16]}"
-        record = EvidenceArtifact(
-            source_id=source_id,
-            sha256=digest,
-            media_type=media_type,
-            locators=(locator,),
-            fetched_at=int(time.time()),
-            license=license,
-            authority_score=authority_score,
-            tenant_id=tenant_id,
-        )
-        self._by_sha[digest] = record
-        self._by_source[source_id] = digest
-        return record
-
-    def get(self, source_id: str, tenant_id: str | None = None) -> EvidenceArtifact | None:
-        digest = self._by_source.get(source_id)
-        if digest is None:
-            return None
-        record = self._by_sha[digest]
-        if tenant_id is not None and record.tenant_id != tenant_id:
-            return None
-        return record
-
-    def list_all(self, tenant_id: str | None = None) -> list[EvidenceArtifact]:
-        records = list(self._by_sha.values())
-        if tenant_id is not None:
-            records = [r for r in records if r.tenant_id == tenant_id]
-        return sorted(records, key=lambda r: r.fetched_at)
 
 
 # ---------------------------------------------------------------------------

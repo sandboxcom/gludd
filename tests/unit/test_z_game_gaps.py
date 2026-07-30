@@ -7,7 +7,6 @@ Z.3: tetris gravity — board-diff fallback in _check_tetris_gravity
 
 from __future__ import annotations
 
-import copy
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -19,7 +18,6 @@ from general_ludd.db.models import Base
 from general_ludd.db.repository import TodoRepository
 from general_ludd.event_loop.loop import EventLoop
 from general_ludd.schemas.todo import TodoStatus
-
 from tests.e2e._game_lifecycle import (
     _check_lifecycle_game_over,
     _check_tetris_gravity,
@@ -111,9 +109,7 @@ class _WonButNotOverGame:
             self.state = "playing"
 
     def tick(self):
-        if self.state != "playing" or self.game_over:
-            return False
-        return True
+        return not (self.state != "playing" or self.game_over)
 
     def restart(self):
         self.state = "ready"
@@ -166,9 +162,7 @@ class _NoGravityTetris:
             self.state = "playing"
 
     def tick(self):
-        if self.state != "playing" or self.game_over:
-            return False
-        return True
+        return not (self.state != "playing" or self.game_over)
 
     def restart(self):
         self.state = "ready"

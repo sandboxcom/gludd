@@ -1,0 +1,9 @@
+---
+galaxy_info:
+  role_name: accelerator_job
+  author: Agentic Harness Agent
+  description: accelerator_job role for the ai_ml service.
+  license: MIT
+  min_ansible_version: "2.14"
+  galaxy_tags: [ai_ml]
+dependencies: []

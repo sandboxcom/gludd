@@ -1,0 +1,11 @@
+---
+# artifact_verify role tasks — git_release service.
+
+- name: Load artifact_verify defaults
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/defaults/main.yml"
+    name: _artifact_verify_defaults
+
+- name: Reference artifact_verify service API
+  ansible.builtin.debug:
+    msg: "artifact_verify routes via the git_release service API (/api/git_release/artifact_verify)."
