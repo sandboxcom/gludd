@@ -24,30 +24,39 @@
 
 - name: Set system health classification based on live facts
   ansible.builtin.set_fact:
-    _rs_success_rate: "{{ live_facts.ansible_facts.gludd.history.success_rate | default(0) | float }}"
+    _rs_success_rate_fraction: >-
+      {{ live_facts.ansible_facts.gludd.history.success_rate | default(0) | float }}
     _rs_backlog: "{{ live_facts.ansible_facts.gludd.todos.backlog_size | default(0) | int }}"
     _rs_unread: "{{ live_facts.ansible_facts.gludd.messages.total_unread | default(0) | int }}"
     _rs_total_work: "{{ live_facts.ansible_facts.gludd.work.total | default(0) | int }}"
 
+- name: Normalize success rate fraction to percentage
+  ansible.builtin.set_fact:
+    _rs_success_rate_pct: >-
+      {{ (_rs_success_rate_fraction | float * 100.0) | round(2) }}
+
 - name: Classify system health (critical — success rate below 50%)
   ansible.builtin.set_fact:
     _rs_health_status: "critical"
-    _rs_health_reason: "Success rate {{ _rs_success_rate }}% below 50% threshold"
-  when: _rs_success_rate | float < 50.0
+    _rs_health_reason: >-
+      Success rate {{ _rs_success_rate_pct }}% is below 50% threshold
+  when: _rs_success_rate_pct | float < 50.0
 
 - name: Classify system health (degraded — success rate 50-80%)
   ansible.builtin.set_fact:
     _rs_health_status: "degraded"
-    _rs_health_reason: "Success rate {{ _rs_success_rate }}% is in degraded range (50-80%)"
+    _rs_health_reason: >-
+      Success rate {{ _rs_success_rate_pct }}% is in degraded range [50%, 80%)
   when:
-    - _rs_success_rate | float >= 50.0
-    - _rs_success_rate | float < 80.0
+    - _rs_success_rate_pct | float >= 50.0
+    - _rs_success_rate_pct | float < 80.0
 
 - name: Classify system health (healthy)
   ansible.builtin.set_fact:
     _rs_health_status: "healthy"
-    _rs_health_reason: "Success rate {{ _rs_success_rate }}% above 80% threshold"
-  when: _rs_success_rate | float >= 80.0
+    _rs_health_reason: >-
+      Success rate {{ _rs_success_rate_pct }}% is at or above 80% threshold
+  when: _rs_success_rate_pct | float >= 80.0
 
 - name: Set health status default (no history)
   ansible.builtin.set_fact:
@@ -99,7 +108,7 @@
       ## History
 
       - Total runs: {{ live_facts.ansible_facts.gludd.history.total_runs | default(0) }}
-      - Success rate: {{ live_facts.ansible_facts.gludd.history.success_rate | default('N/A') }}%
+      - Success rate: {{ _rs_success_rate_pct }}%
 
       ## Messages
 
