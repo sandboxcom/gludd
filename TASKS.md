@@ -515,7 +515,7 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 ### Phase X — XML Collection (2026-07-12, 11 items, 100%)
 
 - [x] X.1 — XML collection: create general_ludd.xml collection with roles for XML/HTML/SOAP/SAML/DocBook/Gradle/plist/XSD/XSLT| evidence: Wave 6 — 9 roles, xml_utils.py (16 funcs), docs/XML_COLLECTION.md (975 lines), 47 tests | priority: medium | effort: L | status: completed
-- [ ] X.1.1 — xml_core role: XML parsing, XPath, namespaces | priority: medium | effort: M | status: pending
+- [x] X.1.1 — xml_core role: XML parsing, XPath, namespaces | evidence: xml_core.py module_util implements parse_xml/xpath_eval/extract_namespaces/normalize_namespace; 13 tests at test_xml_core.py pass | priority: medium | effort: M | status: completed
 - [ ] X.1.2 — xsd_generator role: infer XSD from XML samples | priority: medium | effort: M | status: pending
 - [ ] X.1.3 — xslt_transformer role: apply/author XSLT transformations | priority: medium | effort: M | status: pending
 - [ ] X.1.4 — html_processor role: HTML parsing/manipulation | priority: medium | effort: M | status: pending
@@ -555,9 +555,9 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 
 ### Phase Z — E2E Game Gaps (2026-07-12, 7 items, 100%)
 
-- [ ] Z.1 — CRITICAL: Fix daemon pipeline — claim_runnable() returns 0 todos, _dispatch_execute_job never fires| commits: wave9 | priority: high | effort: M | status: pending
-- [ ] Z.2 — CRITICAL: Fix game_over/won flag mismatch — 4 games set won=True but not game_over=True| commits: wave9 | priority: high | effort: S | status: pending
-- [ ] Z.3 — HIGH: Fix Tetris gravity — pieces don't auto-drop on tick()| commits: wave9 | priority: high | effort: S | status: pending
+- [x] Z.1 — CRITICAL: Fix daemon pipeline — claim_runnable() returns 0 todos, _dispatch_execute_job never fires| evidence: test_z_game_gaps.py::TestZ1DaemonPipeline passes; claim_runnable returns queued todos | priority: high | effort: M | status: completed
+- [x] Z.2 — CRITICAL: Fix game_over/won flag mismatch — 4 games set won=True but not game_over=True| evidence: test_z_game_gaps.py::TestZ2GameOverWonMismatch 2 tests pass; normalization in _game_lifecycle.py | priority: high | effort: S | status: completed
+- [x] Z.3 — HIGH: Fix Tetris gravity — pieces don't auto-drop on tick()| evidence: test_z_game_gaps.py::TestZ3TetrisGravity 3 tests pass; _check_tetris_gravity in _game_lifecycle.py | priority: high | effort: S | status: completed
 - [ ] Z.4 — MEDIUM: Fix banana throw trajectory — returns empty list| commits: wave9 | priority: medium | effort: S | status: pending
 - [ ] Z.5 — MEDIUM: SearX integration untestable — 3 tests skipped, instance not running| commits: wave9 | priority: medium | effort: M | status: pending
 - [ ] Z.6 — Re-run full e2e game tests after Z.1-Z.5 fixed| commits: wave9 | priority: high | effort: M | status: pending
