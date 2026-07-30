@@ -69,7 +69,7 @@ CHEMICALS: tuple[Chemical, ...] = (
     ),
     Chemical(
         "sucrose",
-        "OC[C@H]1OC(O[C@@]2(CO)OC(CO)[C@@H](O)[C@@H]2O)[C@@H](O)[C@@H]1O",
+        "C(C1C(C(C(C(O1)OC2(C(C(C(O2)CO)O)O)CO)O)O)O)O",
         "C12H22O11",
         342.303,
         "57-50-1",
