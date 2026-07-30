@@ -102,6 +102,25 @@ def test_cli_smoke_subcommand_parses_provider_and_test() -> None:
     assert callable(args.func)
 
 
+@pytest.mark.parametrize("test_name", ["gpu-a100_80", "gpu-a100-80"])
+def test_cli_azure_a100_dynamic_smoke_name_normalization(
+    test_name: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("AZURE_SUBSCRIPTION_ID", "test-subscription-id")
+    parser, _ = build_parser()
+    args = parser.parse_args(["smoke", "azure", test_name, "--json"])
+
+    args.func(args)
+
+    report = json.loads(capsys.readouterr().out)
+    assert report["status"] == "pass"
+    assert report["provider"] == "azure"
+    assert report["test"] == "gpu-a100-80"
+    assert report["mode"] == "dry-run"
+
+
 def test_unknown_smoke_test_exits_with_clear_error() -> None:
     with pytest.raises(ValueError, match="unknown smoke test"):
         run_smoke("aws", "does-not-exist", env={})
