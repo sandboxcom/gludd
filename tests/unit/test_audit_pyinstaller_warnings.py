@@ -14,6 +14,7 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[2]
 _MAKEFILE = _ROOT / "Makefile"
 _SCRIPT = _ROOT / "scripts" / "audit_pyinstaller_warnings.py"
+_LINUX_POLICY = _ROOT / "config" / "pyinstaller-warning-allowlist-linux.json"
 _CONNECTOR_REGISTRY = _ROOT / "src" / "general_ludd" / "connectors" / "registry.py"
 _PRICING_SOURCES = _ROOT / "src" / "general_ludd" / "pricing_intel" / "sources.py"
 _PYINSTALLER_VERSION = "6.20.0"
@@ -65,6 +66,8 @@ def _run_audit(
     manifest_version: str | None = None,
     spec_text: str = "a = Analysis([], excludes=[])\n",
     transitive_warning_sha256: str = _EMPTY_TRANSITIVE_DIGEST,
+    architecture: str = "x86_64",
+    manifest_architecture_digests: dict[str, str] | None = None,
     baseline_pinned_project_modules: list[dict[str, str]] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     warning_path = tmp_path / "warn-gludd.txt"
@@ -78,14 +81,17 @@ def _run_audit(
     allowlist_path.write_text(
         json.dumps(
             {
-                "schema_version": 2,
+                "schema_version": 3,
                 "platform": manifest_platform or platform,
                 "pyinstaller_version": manifest_version or version,
                 "allowed_missing_imports": allowed or [],
                 "baseline_pinned_project_modules": (
                     baseline_pinned_project_modules or []
                 ),
-                "transitive_warning_sha256": transitive_warning_sha256,
+                "transitive_warning_sha256_by_architecture": (
+                    manifest_architecture_digests
+                    or {architecture: transitive_warning_sha256}
+                ),
             }
         ),
         encoding="utf-8",
@@ -103,6 +109,8 @@ def _run_audit(
             str(allowlist_path),
             "--platform",
             platform,
+            "--architecture",
+            architecture,
             "--pyinstaller-version",
             version,
             "--spec",
@@ -125,6 +133,23 @@ def test_makefile_exposes_replayable_linux_warning_audit() -> None:
     assert "PYINSTALLER_WARNING_FILE_LINUX ?= dist/linux/warn-gludd.txt" in makefile
     assert "\naudit-linux-pyinstaller-warnings:" in makefile
     assert '--warnings "$(PYINSTALLER_WARNING_FILE_LINUX)"' in makefile
+    assert makefile.count('--architecture "$$architecture"') == 3
+
+
+def test_linux_policy_pins_hosted_and_container_architectures() -> None:
+    policy = json.loads(_LINUX_POLICY.read_text(encoding="utf-8"))
+
+    assert policy["schema_version"] == 3
+    assert policy["transitive_warning_sha256_by_architecture"] == {
+        "aarch64": (
+            "fe46fb237e7274fe5f8db70da336b212f"
+            "ac65c3aa6fc65e1e453241f3e0a3d50"
+        ),
+        "x86_64": (
+            "b744f744d6117f6ce2b15e568831e1d4"
+            "0616bfdff55e1c174b9bbcc240abee93"
+        ),
+    }
 
 
 def test_exact_reviewed_conditional_and_optional_edges_pass(tmp_path: Path) -> None:
@@ -427,6 +452,71 @@ def test_exact_transitive_warning_graph_digest_passes(tmp_path: Path) -> None:
     assert "1 baseline-pinned transitive edge" in result.stdout
 
 
+def test_transitive_warning_digest_is_selected_by_architecture(
+    tmp_path: Path,
+) -> None:
+    warning = (
+        "missing module named optional_backend - "
+        "imported by dependency.compat (optional)\n"
+    )
+    normalized = "missing optional_backend <- dependency.compat (optional)"
+    x86_64_digest = hashlib.sha256(normalized.encode()).hexdigest()
+    result = _run_audit(
+        tmp_path,
+        warning,
+        architecture="x86_64",
+        manifest_architecture_digests={
+            "aarch64": _EMPTY_TRANSITIVE_DIGEST,
+            "x86_64": x86_64_digest,
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "architecture=x86_64" in result.stdout
+
+
+def test_missing_architecture_digest_fails_closed(tmp_path: Path) -> None:
+    result = _run_audit(
+        tmp_path,
+        "",
+        architecture="x86_64",
+        manifest_architecture_digests={
+            "aarch64": _EMPTY_TRANSITIVE_DIGEST,
+        },
+    )
+
+    assert result.returncode == 1
+    assert "no transitive warning digest for architecture 'x86_64'" in result.stderr
+
+
+def test_runtime_architecture_alias_uses_canonical_digest(tmp_path: Path) -> None:
+    result = _run_audit(
+        tmp_path,
+        "",
+        architecture="amd64",
+        manifest_architecture_digests={
+            "x86_64": _EMPTY_TRANSITIVE_DIGEST,
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "architecture=x86_64" in result.stdout
+
+
+def test_manifest_architecture_alias_fails_closed(tmp_path: Path) -> None:
+    result = _run_audit(
+        tmp_path,
+        "",
+        architecture="amd64",
+        manifest_architecture_digests={
+            "amd64": _EMPTY_TRANSITIVE_DIGEST,
+        },
+    )
+
+    assert result.returncode == 1
+    assert "'amd64' should be 'x86_64'" in result.stderr
+
+
 def test_project_module_attribute_graph_can_be_digest_pinned(
     tmp_path: Path,
 ) -> None:
@@ -478,7 +568,7 @@ def test_transitive_warning_digest_must_be_lowercase_sha256(
     )
 
     assert result.returncode == 1
-    assert "transitive_warning_sha256" in result.stderr
+    assert "transitive_warning_sha256_by_architecture" in result.stderr
 
 
 def test_connector_registry_avoids_pyinstaller_path_pseudo_module() -> None:

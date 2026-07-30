@@ -23,10 +23,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 _KNOWN_FLAGS = frozenset({"conditional", "delayed", "optional", "top-level"})
 _REVIEWABLE_FLAGS = frozenset({"conditional", "optional"})
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_ARCHITECTURE_ALIASES = {
+    "aarch64": "aarch64",
+    "amd64": "x86_64",
+    "arm64": "aarch64",
+    "x86_64": "x86_64",
+}
 _CATEGORIES = frozenset(
     {
         "interpreter-specific",
@@ -185,10 +191,18 @@ def _require_string(entry: dict[str, Any], key: str, index: int) -> str:
     return value.strip()
 
 
+def _normalize_architecture(raw_architecture: str) -> str:
+    architecture = raw_architecture.strip().lower()
+    if not architecture:
+        raise AuditError("architecture must be non-empty")
+    return _ARCHITECTURE_ALIASES.get(architecture, architecture)
+
+
 def _parse_allowlist(
     path: Path,
     *,
     platform: str,
+    architecture: str,
     pyinstaller_version: str,
 ) -> tuple[list[MissingImportEdge], set[str], str]:
     if not path.is_file():
@@ -205,7 +219,7 @@ def _parse_allowlist(
         "platform",
         "pyinstaller_version",
         "schema_version",
-        "transitive_warning_sha256",
+        "transitive_warning_sha256_by_architecture",
     }
     if set(data) != expected_root_keys:
         raise AuditError(
@@ -227,14 +241,41 @@ def _parse_allowlist(
             f"expected {pyinstaller_version!r}, "
             f"found {data['pyinstaller_version']!r}"
         )
-    transitive_warning_sha256 = data["transitive_warning_sha256"]
-    if (
-        not isinstance(transitive_warning_sha256, str)
-        or not _SHA256_RE.fullmatch(transitive_warning_sha256)
-    ):
+    raw_architecture_digests = data[
+        "transitive_warning_sha256_by_architecture"
+    ]
+    if not isinstance(raw_architecture_digests, dict) or not raw_architecture_digests:
         raise AuditError(
-            "transitive_warning_sha256 must be a lowercase SHA-256 digest"
+            "transitive_warning_sha256_by_architecture must be a non-empty "
+            "JSON object"
         )
+    architecture_digests: dict[str, str] = {}
+    for raw_architecture, raw_digest in raw_architecture_digests.items():
+        if not isinstance(raw_architecture, str):
+            raise AuditError("architecture digest keys must be strings")
+        normalized_architecture = _normalize_architecture(raw_architecture)
+        if raw_architecture != normalized_architecture:
+            raise AuditError(
+                "architecture digest keys must use canonical names: "
+                f"{raw_architecture!r} should be {normalized_architecture!r}"
+            )
+        if (
+            not isinstance(raw_digest, str)
+            or not _SHA256_RE.fullmatch(raw_digest)
+        ):
+            raise AuditError(
+                "transitive_warning_sha256_by_architecture digest for "
+                "architecture "
+                f"{raw_architecture!r} must be a lowercase SHA-256 digest"
+            )
+        architecture_digests[normalized_architecture] = raw_digest
+    normalized_architecture = _normalize_architecture(architecture)
+    if normalized_architecture not in architecture_digests:
+        raise AuditError(
+            "no transitive warning digest for architecture "
+            f"{normalized_architecture!r}"
+        )
+    transitive_warning_sha256 = architecture_digests[normalized_architecture]
 
     raw_entries = data["allowed_missing_imports"]
     if not isinstance(raw_entries, list):
@@ -591,6 +632,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--warnings", required=True, type=Path)
     parser.add_argument("--allowlist", required=True, type=Path)
     parser.add_argument("--platform", required=True)
+    parser.add_argument("--architecture", required=True)
     parser.add_argument("--pyinstaller-version", required=True)
     parser.add_argument("--spec", required=True, type=Path)
     return parser
@@ -607,6 +649,7 @@ def main() -> int:
         ) = _parse_allowlist(
             args.allowlist,
             platform=args.platform,
+            architecture=args.architecture,
             pyinstaller_version=args.pyinstaller_version,
         )
         active_excludes = _active_analysis_excludes(args.spec, args.platform)
@@ -646,7 +689,9 @@ def main() -> int:
         f"{'edge' if excluded_count == 1 else 'edges'} and "
         f"{runtime_count} hook-provided runtime "
         f"{'edge' if runtime_count == 1 else 'edges'} "
-        f"(platform={args.platform}, PyInstaller={args.pyinstaller_version})"
+        f"(platform={args.platform}, "
+        f"architecture={_normalize_architecture(args.architecture)}, "
+        f"PyInstaller={args.pyinstaller_version})"
     )
     return 0
 

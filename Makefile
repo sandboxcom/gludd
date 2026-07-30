@@ -4014,10 +4014,12 @@ PYINSTALLER_VERSION_LINUX ?= 6.20.0
 .PHONY: audit-linux-pyinstaller-warnings
 audit-linux-pyinstaller-warnings: ## Re-audit a retained Linux PyInstaller warning report
 	@case "$(PYINSTALLER_WARNING_FILE_LINUX)" in /*|*..*) echo "Refusing unsafe PYINSTALLER_WARNING_FILE_LINUX: $(PYINSTALLER_WARNING_FILE_LINUX)"; exit 1;; esac
-	@$(UV) run python scripts/audit_pyinstaller_warnings.py \
+	@architecture="$$(uname -m)"; \
+	$(UV) run python scripts/audit_pyinstaller_warnings.py \
 		--warnings "$(PYINSTALLER_WARNING_FILE_LINUX)" \
 		--allowlist "$(PYINSTALLER_WARNING_ALLOWLIST_LINUX)" \
 		--platform linux \
+		--architecture "$$architecture" \
 		--pyinstaller-version "$(PYINSTALLER_VERSION_LINUX)" \
 		--spec gludd.spec
 
@@ -4030,11 +4032,13 @@ build-linux-executable: ## Build and verify a real Linux PyInstaller executable
 		echo "Building Linux executable natively"; \
 		$(MAKE) --no-print-directory build-executable; \
 		pyinstaller_version=$$($(UV) run pyinstaller --version); \
+		architecture=$$(uname -m); \
 		cp build/gludd/warn-gludd.txt "$(dir $(LINUX_BINARY_OUTPUT))warn-gludd.txt"; \
 		$(UV) run python scripts/audit_pyinstaller_warnings.py \
 			--warnings build/gludd/warn-gludd.txt \
 			--allowlist "$(PYINSTALLER_WARNING_ALLOWLIST_LINUX)" \
 			--platform linux \
+			--architecture "$$architecture" \
 			--pyinstaller-version "$$pyinstaller_version" \
 			--spec gludd.spec; \
 		cp dist/gludd "$(LINUX_BINARY_OUTPUT)"; \
@@ -4101,6 +4105,7 @@ build-linux-executable: ## Build and verify a real Linux PyInstaller executable
 				uv sync --frozen; \
 				pyinstaller_version=$$(uv run pyinstaller --version); \
 				test "$$pyinstaller_version" = "6.20.0"; \
+				architecture=$$(uname -m); \
 				pyinstaller_status=0; \
 				uv run pyinstaller gludd.spec --clean --noconfirm --workpath /tmp/gludd-pyinstaller-build --distpath /out || pyinstaller_status=$$?; \
 				if test -f /tmp/gludd-pyinstaller-build/gludd/warn-gludd.txt; then \
@@ -4111,6 +4116,7 @@ build-linux-executable: ## Build and verify a real Linux PyInstaller executable
 					--warnings /tmp/gludd-pyinstaller-build/gludd/warn-gludd.txt \
 					--allowlist "$(PYINSTALLER_WARNING_ALLOWLIST_LINUX)" \
 					--platform linux \
+					--architecture "$$architecture" \
 					--pyinstaller-version "$$pyinstaller_version" \
 					--spec gludd.spec' || build_status=$$?; \
 		warning_copy_status=0; \
