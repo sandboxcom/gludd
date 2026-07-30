@@ -122,6 +122,27 @@ def _ns_src(
     return Connector(config={"name": name}, runner=r), r
 
 
+def test_proc_link_helpers_degrade_when_entries_disappear(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Vanished or inaccessible proc entries produce empty observations."""
+
+    def unavailable(_path: str) -> list[str]:
+        raise OSError("proc entry disappeared")
+
+    monkeypatch.setattr(
+        "general_ludd.connectors.linux_namespaces.os.listdir",
+        unavailable,
+    )
+    monkeypatch.setattr(
+        "general_ludd.connectors.linux_namespaces.os.readlink",
+        unavailable,
+    )
+
+    assert Connector._list_dir("/proc/123/ns") == []
+    assert Connector._readlink("/proc/123/ns/pid") is None
+
+
 # ── query: namespaces (uses /proc reads, not runner) ─────────────────────
 
 
