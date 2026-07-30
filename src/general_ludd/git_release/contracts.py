@@ -10,7 +10,7 @@ requires:
   emit additional fields without breaking an older consumer.
 
 The nested record shapes (upstreams, worktrees, dirty_paths, gates, artifacts,
-provenance, deployment, rollback, release_page, …) mirror spec §5.1–§5.4
+provenance, deployment, rollback, release_page, ...) mirror spec §5.1-§5.4
 verbatim. Consumers import the top-level models; the underscore-prefixed
 sub-records are module-private but fully introspectable via pydantic.
 """

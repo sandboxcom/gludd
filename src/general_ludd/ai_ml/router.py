@@ -243,7 +243,7 @@ def answer_question(
         status = ResultStatus.FAILED
         uncertainty_score = 0.9
         method = "independent_check_failed"
-        limitations = ("an independent verification check failed",)
+        limitations: tuple[str, ...] = ("an independent verification check failed",)
     elif not_run_required:
         status = ResultStatus.DEGRADED
         uncertainty_score = 0.6

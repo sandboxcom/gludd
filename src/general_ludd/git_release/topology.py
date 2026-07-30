@@ -18,12 +18,7 @@ import os
 import subprocess
 from datetime import UTC, datetime
 
-from .contracts import RepoEvidence
-from .contracts import _DirtyPath
-from .contracts import _Operation
-from .contracts import _Policy
-from .contracts import _Upstream
-from .contracts import _Worktree
+from .contracts import RepoEvidence, _DirtyPath, _Operation, _Policy, _Upstream, _Worktree
 
 __all__ = ["assess_repo"]
 
@@ -253,13 +248,11 @@ def assess_repo(path: str) -> RepoEvidence:
 
     abs_path = os.path.abspath(path)
 
-    head_sha = _run_git(path, "rev-parse", "HEAD")
-    if not head_sha:
-        # Unborn branch — sentinel zeros so the SHA pattern still validates and
-        # a downstream planner can fail closed on the empty branch.
-        head_sha = "0" * 40
+    # Unborn branch: sentinel zeros so the SHA pattern still validates and a
+    # downstream planner can fail closed on the empty branch.
+    head_sha = _run_git(path, "rev-parse", "HEAD") or "0" * 40
 
-    branch = _run_git(path, "rev-parse", "--abbrev-ref", "HEAD")
+    branch: str | None = _run_git(path, "rev-parse", "--abbrev-ref", "HEAD")
     if branch in ("", "HEAD"):
         branch = None
 

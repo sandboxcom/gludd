@@ -376,7 +376,7 @@ def check_fatigue_sn(
             "uncertainty": uncertainty,
             "equation_id": equation_id,
             "inputs": inputs,
-            "assumptions": assumptions + [n_label, "fully reversed loading (mean stress = 0)"],
+            "assumptions": [*assumptions, n_label, "fully reversed loading (mean stress = 0)"],
         }
 
     margin = (allowable - applied_amplitude_MPa) / applied_amplitude_MPa
@@ -391,7 +391,7 @@ def check_fatigue_sn(
         "uncertainty": uncertainty,
         "equation_id": equation_id,
         "inputs": inputs,
-        "assumptions": assumptions + [n_label, "fully reversed loading (mean stress = 0)"],
+        "assumptions": [*assumptions, n_label, "fully reversed loading (mean stress = 0)"],
     }
 
 
@@ -405,6 +405,6 @@ __all__ = [
     "check_compression",
     "check_fatigue_sn",
     "check_shear",
-    "check_thermal_stress",
     "check_tension",
+    "check_thermal_stress",
 ]
