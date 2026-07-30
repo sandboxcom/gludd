@@ -1123,10 +1123,16 @@ run-watched:
 	wait $$CMDPID; RC=$$?; echo "[watchdog] RESULT=EXIT rc=$$RC elapsed=$$(($$(date +%s)-START))s"; exit $$RC
 
 test-integration:
-	@$(UV) run python -m pytest tests/integration/ $(_XD) -v
+	@BT=$$(mktemp -d /tmp/gludd-test-integration-XXXXXX); \
+	trap 'rc=$$?; rm -rf "$$BT"; exit $$rc' EXIT; \
+	trap 'exit 130' INT TERM; \
+	$(UV) run python -m pytest tests/integration/ $(_XD) -v --basetemp="$$BT"
 
 test-e2e:
-	@$(UV) run python -m pytest tests/e2e/ $(_XD) -v
+	@BT=$$(mktemp -d /tmp/gludd-test-e2e-XXXXXX); \
+	trap 'rc=$$?; rm -rf "$$BT"; exit $$rc' EXIT; \
+	trap 'exit 130' INT TERM; \
+	$(UV) run python -m pytest tests/e2e/ $(_XD) -v --basetemp="$$BT"
 
 test-games:
 	@$(UV) run python -m pytest tests/e2e/test_game_building_deepseek.py $(_XD) -v $(PYTEST_ARGS)
@@ -2763,9 +2769,10 @@ gate-release-phases:
 	status_tmp="$${status}.release.$$$$"; \
 	sed -e '/^=== GATE: PASSED ===$$/d' -e '/^=== GATE: FAILED ===$$/d' "$$status" > "$$status_tmp"; \
 	mv "$$status_tmp" "$$status"; \
+	release_tmp=$$(mktemp -d /tmp/gludd-gate-release-XXXXXX); \
 	failed_written=0; \
 	trap 'exit 130' INT TERM; \
-	trap 'rc=$$?; if [ "$$rc" -ne 0 ] && [ "$$failed_written" -eq 0 ]; then printf "=== GATE: FAILED ===\n" >> "$$status"; fi' EXIT; \
+	trap 'rc=$$?; rm -rf "$$release_tmp"; if [ "$$rc" -ne 0 ] && [ "$$failed_written" -eq 0 ]; then printf "=== GATE: FAILED ===\n" >> "$$status"; fi' EXIT; \
 	start_phase() { \
 		phase="$$1"; \
 		echo "=== GATE RELEASE PHASE: $$phase ==="; \
@@ -2789,13 +2796,13 @@ gate-release-phases:
 			;; \
 	esac; \
 	start_phase integration; \
-	if $(GATE_RELEASE_PYTEST) tests/integration/ -q --no-header --maxfail=1 --tb=line -n "$(GATE_RELEASE_WORKERS)" --dist loadgroup; then \
+	if $(GATE_RELEASE_PYTEST) tests/integration/ -q --no-header --maxfail=1 --tb=line -n "$(GATE_RELEASE_WORKERS)" --dist loadgroup --basetemp="$$release_tmp/integration"; then \
 		pass_phase integration; \
 	else \
 		rc=$$?; fail_phase integration "$$rc" command-failed; \
 	fi; \
 	start_phase e2e; \
-	if $(GATE_RELEASE_PYTEST) tests/e2e/ -q --no-header --maxfail=1 --tb=line -n 1 --dist loadgroup; then \
+	if $(GATE_RELEASE_PYTEST) tests/e2e/ -q --no-header --maxfail=1 --tb=line -n 1 --dist loadgroup --basetemp="$$release_tmp/e2e"; then \
 		pass_phase e2e; \
 	else \
 		rc=$$?; fail_phase e2e "$$rc" command-failed; \

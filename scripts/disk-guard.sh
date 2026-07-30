@@ -27,8 +27,9 @@ clean() {
 
   echo "Cleaning pytest cache..."
   rm -rf "${GLUDD_ROOT}/.pytest_cache" 2>/dev/null && echo "  .pytest_cache removed" || true
-  rm -rf /tmp/pytest-of-* 2>/dev/null && echo "  /tmp/pytest-of-* removed" || true
-  rm -rf /private/tmp/pytest-of-* 2>/dev/null && echo "  /private/tmp/pytest-of-* removed" || true
+  python3 "${GLUDD_ROOT}/scripts/clean_tmp.py" \
+    && echo "  pytest garbage reclaimed; live shared namespaces preserved" \
+    || echo "  scoped pytest garbage cleanup skipped"
 
   echo "Cleaning __pycache__ directories..."
   find "$GLUDD_ROOT" -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null && echo "  __pycache__ dirs removed" || true
