@@ -16,6 +16,15 @@ import yaml
 _ROOT = Path(__file__).resolve().parents[2]
 _SCENARIO_ROOT = _ROOT / "molecule" / "playbooks"
 _SHARED_ROOT = _ROOT / "molecule" / "shared"
+_IMPLEMENT_CHANGE_ROOT = (
+    _ROOT
+    / "collections"
+    / "ansible_collections"
+    / "general_ludd"
+    / "agent"
+    / "roles"
+    / "implement_change"
+)
 
 _FAILED_SCENARIOS = (
     "role_agent_task",
@@ -113,3 +122,49 @@ def test_analysis_only_dependency_scenario_does_not_regenerate_mcp_docs() -> Non
     ).read_text()
     assert "apply_updates: false" in converge
     assert "mcp_sync_enabled: false" in converge
+
+
+def test_implement_change_only_runs_available_mcp_authoring_helpers() -> None:
+    """An arbitrary target repository must not emit false MCP failure warnings."""
+    tasks = yaml.safe_load(
+        (_IMPLEMENT_CHANGE_ROOT / "tasks" / "mcp_sync.yml").read_text()
+    )
+    by_name = {task["name"]: task for task in tasks}
+
+    expected = {
+        "MCP documentation checker": (
+            "Inspect target worktree for MCP documentation checker",
+            "Ensure newly-authored modules carry a DOCUMENTATION block "
+            "(stub if missing)",
+            "Warn if an authored resource is undocumented and stubbing is disabled",
+            "scripts/mcp_docs_check.py",
+            "_mcp_docs_script",
+        ),
+        "MCP tool generator": (
+            "Inspect target worktree for MCP tool generator",
+            "Regenerate MCP tool defs + topics for the newly-authored resource",
+            "Warn if MCP regeneration failed (non-fatal)",
+            "scripts/gen_mcp_tools.py",
+            "_mcp_gen_script",
+        ),
+    }
+    for label, (
+        inspect_name,
+        command_name,
+        warning_name,
+        relative_path,
+        result_name,
+    ) in expected.items():
+        inspect_task = by_name[inspect_name]
+        assert inspect_task["ansible.builtin.stat"]["path"].endswith(relative_path)
+        assert inspect_task["register"] == result_name
+        assert inspect_task["changed_when"] is False
+
+        for task_name in (command_name, warning_name):
+            conditions = " ".join(by_name[task_name]["when"])
+            assert f"{result_name}.stat.exists" in conditions, label
+            assert f"{result_name}.stat.isreg" in conditions, label
+
+    readme = (_IMPLEMENT_CHANGE_ROOT / "README.md").read_text()
+    assert "forum.ansible.com" in readme
+    assert "ansible.builtin.stat" in readme
