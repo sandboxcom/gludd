@@ -296,6 +296,30 @@ class TestSelfImproveApplyConfigTierApprovalGate:
             await engine.dispose()
 
     @pytest.mark.asyncio
+    async def test_apply_with_unknown_approval_is_refused(self, app):
+        """A caller cannot manufacture an approval id to reach the write path."""
+        engine, _factory = await _attach_inmemory_db(app)
+        try:
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+            ) as client:
+                response = await client.post(
+                    "/admin/self-improve/apply",
+                    json={
+                        "kind": "config",
+                        "approval_id": "TODO-NOT-AN-APPROVAL",
+                    },
+                )
+
+            assert response.status_code == 404
+            assert response.json()["detail"] == (
+                "approval TODO-NOT-AN-APPROVAL not found"
+            )
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
     async def test_config_apply_without_db_is_refused(self, transport):
         """Fail-closed: with no approval database the config-tier apply must
         refuse rather than perform an unreviewed write."""
