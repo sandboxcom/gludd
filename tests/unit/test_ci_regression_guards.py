@@ -15,6 +15,7 @@ if), not brittle substring matches.
 
 from __future__ import annotations
 
+import configparser
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,7 @@ DOCKERFILE = ROOT / "Dockerfile"
 PYPROJECT = ROOT / "pyproject.toml"
 SPEC = ROOT / "gludd.spec"
 BUILD_YML = ROOT / ".github" / "workflows" / "build.yml"
+GREENLET_COVERAGE_RC = ROOT / ".coveragerc-greenlet"
 PARTIALS_GITKEEP = ROOT / "templates" / "prompts" / "partials" / ".gitkeep"
 MOLECULE_PLAYBOOKS = ROOT / "molecule" / "playbooks"
 
@@ -458,23 +460,54 @@ def test_test_shard_coverage_is_private_and_combines_parallel_fragments() -> Non
     assert "if [ ! -f .coverage ]" not in run
 
 
-def test_coverage_tracks_async_sqlalchemy_greenlet_resumptions() -> None:
-    """Guard coverage across SQLAlchemy async greenlet context switches.
+def test_greenlet_coverage_is_scoped_to_unit3() -> None:
+    """Trace SQLAlchemy greenlets without slowing every hosted shard.
 
     Hosted beta.3 run 30517080961 reported ``routers/self_improve.py`` below
     the per-file floor even though its endpoint tests passed.  Every missing
     block began immediately after an awaited repository call: coverage stopped
     tracing when SQLAlchemy switched through greenlet and never recorded the
-    resumed coroutine.  The greenlet concurrency plugin restores that tracing.
+    resumed coroutine.  Global greenlet/thread tracing fixed that gap, but run
+    30520711085 then timed out otherwise-green unit-1b and unit-2 tests on both
+    Python versions.  Only unit-3 owns the self-improve tests, so it alone must
+    pay the extra tracing cost.
     """
     pyproject = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
-    concurrency = pyproject["tool"]["coverage"]["run"].get("concurrency", [])
+    default_run = pyproject["tool"]["coverage"]["run"]
+    assert "concurrency" not in default_run, (
+        "CI timeout regression (beta.3 run 30520711085): greenlet/thread "
+        "coverage tracing must not be enabled globally because its overhead "
+        "trips unit-1b and unit-2 wall-clock guards."
+    )
 
-    assert set(concurrency) == {"greenlet", "thread"}, (
+    assert GREENLET_COVERAGE_RC.is_file()
+    greenlet_config = configparser.ConfigParser()
+    greenlet_config.read(GREENLET_COVERAGE_RC, encoding="utf-8")
+    concurrency = {
+        value.strip()
+        for value in greenlet_config.get("run", "concurrency").splitlines()
+        if value.strip()
+    }
+    assert concurrency == {"greenlet", "thread"}, (
         "CI coverage regression (beta.3 run 30517080961): coverage must enable "
         "both greenlet and thread concurrency or lines resumed after async "
         "SQLAlchemy awaits silently disappear from per-file coverage."
     )
+
+    workflow = _load_build_workflow()
+    test_steps = [
+        step
+        for step in workflow["jobs"]["test-shard"]["steps"]
+        if str(step.get("name", "")).startswith("Test (shard ")
+    ]
+    assert len(test_steps) == 1
+    test_step = test_steps[0]
+    coverage_config = str(test_step.get("env", {}).get("COVERAGE_CONFIG", ""))
+    assert coverage_config == (
+        "${{ matrix.shard == 'unit-3' "
+        "&& '.coveragerc-greenlet' || 'pyproject.toml' }}"
+    )
+    assert '--cov-config="$COVERAGE_CONFIG"' in str(test_step.get("run", ""))
 
 
 def test_test_shards_cap_xdist_for_nested_process_headroom() -> None:

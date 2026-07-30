@@ -185,7 +185,6 @@ markers = [
 [tool.coverage.run]
 source = ["general_ludd"]
 omit = ["tests/*"]
-concurrency = ["greenlet", "thread"]
 
 [tool.coverage.report]
 fail_under = 85

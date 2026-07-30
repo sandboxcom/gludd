@@ -392,6 +392,7 @@ jobs:
           uv run python scripts/adaptive_test.py $FILES \
             --cov=general_ludd \
             --cov=collections/ansible_collections/general_ludd/governance/plugins/module_utils \
+            --cov-config="$COVERAGE_CONFIG" \
             --cov-report= \
             --cov-fail-under=0 \
             -v
@@ -413,6 +414,11 @@ jobs:
         env:
           GLUDD_PSK: ""
           GLUDD_XDIST: "2"
+          # SQLAlchemy async coverage needs greenlet-aware tracing for the
+          # self-improve endpoints owned by unit-3. Keep that extra tracing
+          # cost off other shards: run 30520711085 showed it can trip their
+          # existing wall-clock guards on both supported Python versions.
+          COVERAGE_CONFIG: "${{ matrix.shard == 'unit-3' && '.coveragerc-greenlet' || 'pyproject.toml' }}"
           # Keep the outer shard's coverage database away from the checkout:
           # unit tests may invoke nested pytest/coverage commands there.
           COVERAGE_FILE: "${{ runner.temp }}/gludd-coverage-${{ matrix.shard }}-${{ matrix.python-version }}/.coverage"
