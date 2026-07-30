@@ -16,17 +16,19 @@ _PYINSTALLER_VERSION = "6.20.0"
 
 _WARNING_HEADER = """\
 This file lists modules PyInstaller was not able to find. This does not
-necessarily mean this module is required for running your program. Python and
-Python 3rd-party packages include a lot of conditional or optional modules.
+necessarily mean these modules are required for running your program. Both
+Python's standard library and 3rd-party Python packages often conditionally
+import optional modules, some of which may be available only on certain
+platforms.
 
-Types if import:
+Types of import:
 * top-level: imported at the top-level - look at these first
 * conditional: imported within an if-statement
 * delayed: imported within a function
 * optional: imported within a try-except-statement
 
 IMPORTANT: Do NOT post this list to the issue-tracker. Use it as a basis for
-tracking down the missing module yourself. Thanks!
+            tracking down the missing module yourself. Thanks!
 """
 
 

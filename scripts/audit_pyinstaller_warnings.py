@@ -37,17 +37,21 @@ _IMPORTER_RE = re.compile(
     r"(?:^|, )(?P<importer>[^,]+?) "
     r"\((?P<flags>[^)]+)\)(?=, |$)"
 )
-_HEADER_PREFIXES = (
-    "* ",
-    "IMPORTANT:",
-    "Do not post",
-    "Python and",
-    "Python 3rd-party",
-    "The following",
-    "This file lists",
-    "Types if import:",
-    "necessarily mean",
-    "tracking down",
+_HEADER_LINES = frozenset(
+    {
+        "This file lists modules PyInstaller was not able to find. This does not",
+        "necessarily mean these modules are required for running your program. Both",
+        "Python's standard library and 3rd-party Python packages often conditionally",
+        "import optional modules, some of which may be available only on certain",
+        "platforms.",
+        "Types of import:",
+        "* top-level: imported at the top-level - look at these first",
+        "* conditional: imported within an if-statement",
+        "* delayed: imported within a function",
+        "* optional: imported within a try-except-statement",
+        "IMPORTANT: Do NOT post this list to the issue-tracker. Use it as a basis for",
+        "tracking down the missing module yourself. Thanks!",
+    }
 )
 
 
@@ -153,7 +157,7 @@ def _parse_warning_file(path: Path) -> list[MissingImportEdge]:
                 )
             )
             continue
-        if line.startswith(_HEADER_PREFIXES):
+        if line in _HEADER_LINES:
             continue
         raise AuditError(
             f"unrecognized warning-file line {line_number}: {line!r}"
