@@ -187,6 +187,22 @@ def _copy_memory_entry(fact: MemoryEntry) -> MemoryEntry:
     return copied
 
 
+def _insert_fact_by_recency(
+    ordered: list[MemoryEntry],
+    fact: MemoryEntry,
+) -> None:
+    """Insert after equal timestamps in descending creation-time order."""
+    low = 0
+    high = len(ordered)
+    while low < high:
+        middle = (low + high) // 2
+        if ordered[middle].created_at >= fact.created_at:
+            low = middle + 1
+        else:
+            high = middle
+    ordered.insert(low, fact)
+
+
 # === MemoryBank ==============================================================
 
 
@@ -398,12 +414,36 @@ class MemoryBank:
             if revision == self._facts_revision:
                 self._ordered_facts_revision = revision
                 self._ordered_facts_cache = ordered
+            else:
+                # Publish a current cache even when a writer raced the initial
+                # sort. Future retains update it incrementally, preventing
+                # repeated full-bank sorts under sustained write load.
+                current_ordered = tuple(
+                    sorted(
+                        self._facts.values(),
+                        key=lambda fact: fact.created_at,
+                        reverse=True,
+                    )
+                )
+                self._ordered_facts_revision = self._facts_revision
+                self._ordered_facts_cache = current_ordered
         return ordered
 
     def _record_fact_retained(self, fact: MemoryEntry) -> None:
+        previous_revision = self._facts_revision
         self._facts_revision += 1
-        self._ordered_facts_revision = -1
-        self._ordered_facts_cache = ()
+        if self._ordered_facts_revision == previous_revision:
+            ordered = [
+                existing
+                for existing in self._ordered_facts_cache
+                if existing.entry_id != fact.entry_id
+            ]
+            _insert_fact_by_recency(ordered, fact)
+            self._ordered_facts_revision = self._facts_revision
+            self._ordered_facts_cache = tuple(ordered)
+        else:
+            self._ordered_facts_revision = -1
+            self._ordered_facts_cache = ()
         cache_key = self._fact_score_cache_key
         if cache_key is None:
             return
@@ -422,9 +462,18 @@ class MemoryBank:
         self._fact_score_cache = tuple(updated)
 
     def _record_fact_deleted(self, entry_id: str) -> None:
+        previous_revision = self._facts_revision
         self._facts_revision += 1
-        self._ordered_facts_revision = -1
-        self._ordered_facts_cache = ()
+        if self._ordered_facts_revision == previous_revision:
+            self._ordered_facts_cache = tuple(
+                fact
+                for fact in self._ordered_facts_cache
+                if fact.entry_id != entry_id
+            )
+            self._ordered_facts_revision = self._facts_revision
+        else:
+            self._ordered_facts_revision = -1
+            self._ordered_facts_cache = ()
         self._fact_score_cache = tuple(
             item
             for item in self._fact_score_cache

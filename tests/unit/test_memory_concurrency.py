@@ -335,6 +335,94 @@ class TestWriteDuringRead:
                 release_copy.set()
             reader.result(timeout=2)
 
+    def test_ordered_fact_cache_survives_write_during_initial_sort(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A racing retain must not leave every later read sorting the bank."""
+        bank = MemoryBank(MemoryBankConfig(bank_id="ordered-cache-race"))
+        initial_one = bank.retain(
+            MemoryEntry(
+                content="initial one",
+                created_at=1.0,
+                tags=["initial"],
+            )
+        )
+        bank.retain(
+            MemoryEntry(
+                content="initial two",
+                created_at=2.0,
+                tags=["initial"],
+            )
+        )
+        sort_started = threading.Event()
+        release_sort = threading.Event()
+        real_sorted = sorted
+        sort_calls = 0
+
+        def gated_sorted(values, *args, **kwargs):
+            nonlocal sort_calls
+            sort_calls += 1
+            if sort_calls == 1:
+                sort_started.set()
+                assert release_sort.wait(timeout=2)
+            return real_sorted(values, *args, **kwargs)
+
+        monkeypatch.setattr(
+            memory_bank_module,
+            "sorted",
+            gated_sorted,
+            raising=False,
+        )
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            first_read = executor.submit(bank.get_facts)
+            try:
+                assert sort_started.wait(timeout=1)
+                late = bank.retain(
+                    MemoryEntry(
+                        content="initial late",
+                        created_at=3.0,
+                        tags=["initial"],
+                    )
+                )
+            finally:
+                release_sort.set()
+            first = first_read.result(timeout=2)
+
+        assert [fact.content for fact in first] == ["initial two", "initial one"]
+        sort_calls = 0
+        bank.retain(
+            MemoryEntry(
+                content="initial later",
+                created_at=4.0,
+                tags=["initial"],
+            )
+        )
+        second = bank.get_facts()
+        bank.retain(
+            MemoryEntry(
+                entry_id=initial_one.entry_id,
+                content="initial one updated",
+                created_at=5.0,
+                tags=["initial"],
+            )
+        )
+        assert bank.delete_fact(late.entry_id) is True
+        final = bank.get_facts()
+
+        assert [fact.content for fact in second] == [
+            "initial later",
+            "initial late",
+            "initial two",
+            "initial one",
+        ]
+        assert [fact.content for fact in final] == [
+            "initial one updated",
+            "initial later",
+            "initial two",
+        ]
+        assert sort_calls == 0
+
     def test_recall_scores_each_snapshot_once(self) -> None:
         """Recall must reuse its scored snapshot instead of scanning twice."""
         bank = MemoryBank(MemoryBankConfig(bank_id="single-score-bank"))
