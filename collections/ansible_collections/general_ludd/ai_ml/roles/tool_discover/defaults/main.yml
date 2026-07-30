@@ -1,0 +1,29 @@
+---
+# tool_discover defaults — tool and resource discovery (AIML-018).
+#
+# Before proposing custom code, queries the source registry and allowed
+# internet connectors for maintained libraries, command-line tools, Ansible
+# collections, model servers, indexes, dataset systems, evaluation
+# frameworks, build helpers, and deployment/debug scripts (spec §9).
+tool_discover_enabled: false
+
+# Capability need, e.g. "vector index for hybrid retrieval".
+tool_discover_need: ""
+
+# Tenant scoping for registry access.
+tool_discover_tenant_id: "default"
+
+# Maximum candidates to score. Candidates above this cap are kept in the
+# rejected-alternatives list with a short reason.
+tool_discover_max_candidates: 20
+
+# Minimum maintenance score (0.0-1.0) for a candidate to be selected.
+# Popularity alone is not a selection criterion (spec §9).
+tool_discover_min_maintenance_score: 0.5
+
+# When true, executable examples from repositories/blogs/forums remain
+# untrusted and must be reviewed, pinned, sandboxed, scanned, and tested
+# before use (spec §9).
+tool_discover_untrusted_executable_policy: quarantine
+
+tool_discover_output_dir: /tmp/gludd-aiml-tool-discover

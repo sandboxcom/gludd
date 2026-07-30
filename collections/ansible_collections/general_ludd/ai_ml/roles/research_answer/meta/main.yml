@@ -1,0 +1,21 @@
+---
+galaxy_info:
+  role_name: research_answer
+  author: Agentic Harness Agent
+  description: >
+    Reasoning (AIML-007): retrieve evidence from the store and produce a
+    cited, uncertainty-calibrated answer with at least one independent
+    verification for high-impact numerical claims. Externally visible
+    reasoning is a concise rationale plus verifiable artifacts, not private
+    token-level chain-of-thought (spec §6.3).
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [ai, ml, reasoning, answer, citation, uncertainty]
+dependencies: []

@@ -1,0 +1,29 @@
+---
+namespace: general_ludd
+name: ai_ml
+version: 0.1.0
+readme: README.md
+description: >
+  AI/ML expert collection — roles that route AI/ML questions to the smallest
+  qualified role set, discover research evidence, ingest it into an immutable
+  citation-addressable store, produce cited and uncertainty-calibrated answers,
+  and discover mature existing tools before any custom code is written.
+  Implements capabilities AIML-001 (router), AIML-002 (research discovery),
+  AIML-003 (evidence store), AIML-007 (reasoning), and AIML-018 (tool
+  discovery) from docs/specs/FEATURE_AI_ML_EXPERT.md.
+license:
+  - MIT
+authors:
+  - Agentic Harness Agent <agent@harness.local>
+tags:
+  - ai
+  - ml
+  - expert
+  - router
+  - research
+  - evidence
+  - reasoning
+  - tools
+  - llm
+  - retrieval
+dependencies: {}

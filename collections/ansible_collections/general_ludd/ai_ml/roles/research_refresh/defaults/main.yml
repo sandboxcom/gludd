@@ -1,0 +1,33 @@
+---
+# research_refresh defaults — research discovery (AIML-002).
+#
+# Searches allowed internet sources, normalizes evidence, detects novelty, and
+# opens a staged update against the evidence store. The role never promotes a
+# staged snapshot — promotion requires human approval (spec §5.2 step 9).
+research_refresh_enabled: false
+
+# Natural-language research query, e.g. "state of the art in sparse retrieval".
+research_refresh_query: ""
+
+# Tenant scoping. Tenant data and indexes are cryptographically isolated
+# (spec §11); the role must not cross tenant boundaries.
+research_refresh_tenant_id: "default"
+
+# Data classification of the query and any fetched artifacts. Fetching
+# restricted/confidential content requires an explicit approval token.
+research_refresh_data_classification: public
+
+# Maximum number of sources to fetch per run. Each source is quarantined,
+# digested, and malware-scanned before metadata extraction (spec §5.2).
+research_refresh_max_sources: 50
+
+# Network policy: when true, only the explicitly allowlisted connectors
+# may be used. Domain allow/deny policy is enforced regardless.
+research_refresh_offline: false
+
+# Approval token. Required when classification is confidential/restricted or
+# when the refresh may pull executable artifacts (notebooks, repo hooks).
+research_refresh_approval_token: null
+
+# Artifact directory for the staged update manifest and per-source locators.
+research_refresh_output_dir: /tmp/gludd-aiml-research-refresh

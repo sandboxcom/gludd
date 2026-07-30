@@ -1,0 +1,21 @@
+---
+galaxy_info:
+  role_name: tool_discover
+  author: Agentic Harness Agent
+  description: >
+    Tool and resource discovery (AIML-018): find and assess existing mature
+    libraries, model servers, datasets, indexes, evaluation frameworks, and
+    build helpers before custom code is written. Produces a decision record
+    with rejected alternatives and a minimal integration spike. Popularity
+    alone is not a selection criterion (spec §9).
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [ai, ml, tools, discovery, registry, decision]
+dependencies: []

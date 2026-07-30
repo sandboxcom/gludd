@@ -1,0 +1,46 @@
+---
+# Internal keyword -> connector map used by research_refresh.
+# A connector is consulted when the lowercased query contains any of its
+# keywords. Each connector respects robots rules, terms, authentication scope,
+# rate limits, and the domain allow/deny policy (spec §5.1).
+_research_refresh_connectors:
+  papers:
+    - paper
+    - preprint
+    - arxiv
+    - proceedings
+    - citation
+    - peer review
+  docs:
+    - documentation
+    - docs
+    - release notes
+    - model card
+    - vendor
+    - standard
+  repos:
+    - repository
+    - github
+    - source code
+    - issue tracker
+    - benchmark code
+    - reproduci
+  articles:
+    - blog
+    - article
+    - technical post
+    - tutorial
+  forums:
+    - forum
+    - discussion
+    - issue
+    - pitfall
+    - workaround
+    - stack overflow
+  datasets:
+    - dataset
+    - benchmark
+    - catalog
+    - artifact registry
+    - retraction
+    - correction
