@@ -415,6 +415,26 @@ class TestRemediateFinding:
 # generate_dhparam — dependency surface
 # ---------------------------------------------------------------------------
 class TestGenerateDhparam:
+    def test_default_group_does_not_generate_a_random_safe_prime(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import dh
+
+        monkeypatch.chdir(tmp_path)
+
+        def _unexpected_generation(*_args, **_kwargs):
+            raise AssertionError("default DH parameters must use the standard group")
+
+        monkeypatch.setattr(dh, "generate_parameters", _unexpected_generation)
+        generate_dhparam(bits=2048)
+        pem_path = tmp_path / "dhparam.pem"
+        assert pem_path.is_file()
+        parameters = serialization.load_pem_parameters(pem_path.read_bytes())
+        numbers = parameters.parameter_numbers()
+        assert numbers.p.bit_length() == 2048
+        assert numbers.g == 2
+
     def test_generates_pem_file(self, tmp_path, monkeypatch) -> None:
         monkeypatch.chdir(tmp_path)
         generate_dhparam(bits=2048)

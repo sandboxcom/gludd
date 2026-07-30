@@ -546,7 +546,26 @@ cipher string. The role applies it to nginx (`ssl_ciphers`) or Apache
 The `ssl_config` role configures HSTS via nginx's `add_header` or Apache's
 `Header always set` directive.
 
-### 4.4 OCSP Stapling
+### 4.4 Deterministic DH Parameters
+
+`generate_dhparam()` uses the standardized 2048-bit `ffdhe2048` group from
+[RFC 7919 Appendix A.1](https://datatracker.ietf.org/doc/html/rfc7919#appendix-A.1)
+for its default size. This produces interoperable PEM parameters in bounded
+time instead of generating a fresh safe prime, an operation whose runtime can
+vary dramatically on contended CI runners and production hosts. Explicit
+non-default bit sizes continue to request freshly generated parameters.
+
+Long-lived operator discussions show both the recurring need for correctly
+sized DH parameters and the operational confusion around generating and
+deploying them:
+
+- [Server Fault: Should I set Diffie-Hellman parameters for nginx SSL?](https://serverfault.com/questions/345830/should-i-set-diffie-hellman-parameters-for-nginx-ssl)
+  records nginx operators weighing generation cost, reuse, and deployment.
+- [Stack Overflow: How to check my server Diffie-Hellman MODP size and increase it?](https://stackoverflow.com/questions/61326004/how-to-check-my-server-diffie-hellman-modp-size-bits-and-increase-it)
+  documents users needing a reliable way to verify and raise deployed group
+  strength.
+
+### 4.5 OCSP Stapling
 
 Enabled by the `ssl_config` role. The server periodically fetches the OCSP
 response from the CA and staples it into the TLS handshake. Benefits:
@@ -565,7 +584,7 @@ resolver 8.8.8.8 8.8.4.4 valid=300s;
 resolver_timeout 5s;
 ```
 
-### 4.5 Let's Encrypt Automation
+### 4.6 Let's Encrypt Automation
 
 The `ssl_config` role can integrate with certbot for automated certificate
 issuance and renewal. Typical workflow:
@@ -578,7 +597,7 @@ issuance and renewal. Typical workflow:
 Rate limits: 50 certificates per registered domain per week, 5 duplicate
 certificates per week. Use `--test-cert` for staging during development.
 
-### 4.6 Certificate Validation
+### 4.7 Certificate Validation
 
 The `ssl_config.py` tool validates certificates:
 
