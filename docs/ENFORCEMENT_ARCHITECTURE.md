@@ -170,9 +170,18 @@ export default (async ({ }) => {
   plugin documentation requires matching the plugin package to the targeted
   OpenCode release
   ([OpenCode plugin dependencies](https://opencode.ai/v2/docs/build/plugins#installation-and-dependencies)).
+  Users have also reproduced OpenCode creating or updating dependency files in
+  every project-local `.opencode/` directory on launch
+  ([issue #11147](https://github.com/anomalyco/opencode/issues/11147)). A copied
+  working directory alone is not a complete subprocess boundary: Python's
+  `cwd=` does not rewrite inherited `PWD`, `OPENCODE_CONFIG`, or
+  `OPENCODE_CONFIG_DIR`, and OpenCode exposes both config-path variables as
+  supported overrides
+  ([OpenCode CLI environment variables](https://opencode.ai/docs/cli/#environment-variables)).
   The E2E therefore copies `opencode.json` and `.opencode/` into a pytest-owned
-  temporary project before boot. Dependency reconciliation remains exercised,
-  but it can update only the disposable copy, never the tracked release tree.
+  temporary project before boot, then pins all three path variables to that
+  copy. Dependency reconciliation remains exercised, but it can update only the
+  disposable copy, never the tracked release tree.
 
 ---
 

@@ -75,6 +75,14 @@ def _run_with_deterministic_provider(
     env["OPENCODE_CONFIG_CONTENT"] = provider.config_content
     env["OPENCODE_DISABLE_AUTOUPDATE"] = "true"
     env["GLUDD_PROJECT_ROOT"] = str(project)
+    # ``cwd=`` changes the child's operating-system cwd, but does not rewrite
+    # inherited path environment variables. OpenCode consumes both its explicit
+    # config paths and ``PWD`` while resolving project config directories, so a
+    # parent session rooted in the tracked checkout can otherwise reconcile its
+    # own .opencode/package.json instead of the disposable copy.
+    env["PWD"] = str(project)
+    env["OPENCODE_CONFIG"] = str(project / "opencode.json")
+    env["OPENCODE_CONFIG_DIR"] = str(project / ".opencode")
     try:
         result = subprocess.run(
             command,
@@ -144,6 +152,48 @@ class TestOpencodeBinaryBoot:
         env = observed["env"]
         assert isinstance(env, dict)
         assert env["GLUDD_PROJECT_ROOT"] == str(isolated_opencode_project)
+
+    def test_live_command_overrides_inherited_opencode_paths(
+        self,
+        isolated_opencode_project: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """Parent OpenCode path variables must not escape the disposable copy."""
+        observed: dict[str, object] = {}
+        tracked_config = PROJECT_ROOT / "opencode.json"
+        tracked_config_dir = PROJECT_ROOT / ".opencode"
+        monkeypatch.setenv("OPENCODE_CONFIG", str(tracked_config))
+        monkeypatch.setenv("OPENCODE_CONFIG_DIR", str(tracked_config_dir))
+        monkeypatch.setenv("PWD", str(PROJECT_ROOT))
+
+        class StubProvider:
+            config_content = "{}"
+            main_calls = 1
+
+            def __init__(self, responses: list[dict[str, str]]) -> None:
+                del responses
+
+            def close(self) -> None:
+                return
+
+        def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess:
+            observed.update(kwargs)
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+        monkeypatch.setitem(globals(), "DeterministicProvider", StubProvider)
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        _run_opencode_run(isolated_opencode_project)
+
+        env = observed["env"]
+        assert isinstance(env, dict)
+        assert env["PWD"] == str(isolated_opencode_project)
+        assert env["OPENCODE_CONFIG"] == str(
+            isolated_opencode_project / "opencode.json"
+        )
+        assert env["OPENCODE_CONFIG_DIR"] == str(
+            isolated_opencode_project / ".opencode"
+        )
 
     def test_runs_from_disposable_project_without_mutating_manifest(
         self,
