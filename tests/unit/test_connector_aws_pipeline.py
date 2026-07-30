@@ -175,6 +175,26 @@ class TestQueryNormalization:
         assert fake.calls
         assert fake.calls[0]["pipelineName"] == "build-pipeline"
 
+    def test_aws_client_callback_and_name_alias(self) -> None:
+        calls: list[tuple[str, dict[str, Any]]] = []
+
+        def aws_client(method: str, **kwargs: Any) -> tuple[int, object]:
+            calls.append((method, kwargs))
+            return 200, {"pipelineExecutionSummaries": CANNED_EXECUTIONS}
+
+        src = AwsPipelineSource(
+            {"region": "us-east-1", "name": "build-pipeline"},
+            aws_client=aws_client,
+        )
+
+        records = src.query({})
+
+        assert len(records) == 3
+        assert records[0]["kind"] == "pipeline"
+        assert calls == [
+            ("list_pipeline_executions", {"pipelineName": "build-pipeline"})
+        ]
+
     def test_query_trigger_missing_is_none_label(self) -> None:
         fake = FakeCodePipelineClient(CANNED_EXECUTIONS)
         src = self._source(fake)

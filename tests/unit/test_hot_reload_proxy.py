@@ -1,6 +1,6 @@
 """Verify the hot-reload proxy pattern across all enforcement plugins.
 
-The pattern (from hot_reload.ts docs): each enforce-*.ts plugin is a thin proxy
+The pattern (from .opencode/lib/hot_reload.ts docs): each enforce-*.ts plugin is a thin proxy
 wrapper that delegates to /tmp/gludd-hot-<name>.js on every hook invocation,
 falling back to compiled-in defaultImpl if the hot file is absent or broken.
 
@@ -18,6 +18,7 @@ import contextlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -26,7 +27,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
-HOT_RELOAD_TS = PLUGIN_DIR / "hot_reload.ts"
+HOT_RELOAD_TS = ROOT / ".opencode" / "lib" / "hot_reload.ts"
 BUILD_SCRIPT = ROOT / "scripts" / "build_hot_modules.js"
 MAKEFILE = ROOT / "Makefile"
 HOT_PROXY_PREFIX = f"/tmp/gludd-hot-{os.getpid()}-hot-reload-proxy-"
@@ -94,7 +95,9 @@ class TestProxyPatternInConvertedPlugins:
         src = HOT_RELOAD_TS.read_text()
         assert "export function loadHotModule" in src, "missing exported loadHotModule"
         assert "hotCache" in src, "missing mtime-based cache (hotCache)"
-        assert "return defaults" in src, "missing fail-open return defaults on error"
+        assert "return withJsonHookKeys(defaults)" in src, (
+            "missing fail-open return of normalized defaults on error"
+        )
 
     def test_unconverted_plugins_documented(self):
         """Plugins without defaultImpl are not yet converted — catalog them."""
@@ -131,6 +134,18 @@ class TestHotModuleBuild:
             "Makefile missing hot-reload-plugins target"
         )
 
+    def test_hot_module_load_target_fails_closed(self):
+        """A missing or invalid module must make the verification target fail."""
+        match = re.search(
+            r"^test-hot-module-load:\n(?P<recipe>(?:\t.*\n?)+)",
+            MAKEFILE.read_text(),
+            re.MULTILINE,
+        )
+        assert match is not None, "Makefile missing test-hot-module-load target"
+        assert "process.exitCode = 1" in match.group("recipe"), (
+            "test-hot-module-load reports LOAD FAILED without a non-zero exit"
+        )
+
     def test_build_produces_hot_modules(self):
         self._cleanup()
         try:
@@ -151,28 +166,97 @@ class TestHotModuleBuild:
         finally:
             self._cleanup()
 
-    def test_built_modules_are_valid_javascript(self):
-        """Each built hot module must be parseable.
+    def test_builder_fails_closed_when_required_source_is_truncated(
+        self,
+        tmp_path: Path,
+    ):
+        """A copied, empty enforcement source must make the build non-zero."""
+        copied_opencode = tmp_path / ".opencode"
+        shutil.copytree(
+            ROOT / ".opencode",
+            copied_opencode,
+            ignore=shutil.ignore_patterns("node_modules", "package-lock.json"),
+        )
+        truncated = copied_opencode / "plugin" / "enforce-no-wait.ts"
+        truncated.write_text("", encoding="utf-8")
+        hot_prefix = str(tmp_path / "hot-")
 
-        KNOWN BUG (2026-07-13): build_hot_modules.js extractDefaultImplMethods
-        truncates ternary expressions — e.g. `return fn ? await fn(x) : undefined`
-        becomes `return fn ? await fn(x) };` (missing `: fallback`). This produces
-        `};` dangling-brace syntax errors on ALL currently-built modules.
+        result = subprocess.run(
+            ["node", str(BUILD_SCRIPT)],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env={
+                **os.environ,
+                "GLUDD_HOT_MODULE_PREFIX": hot_prefix,
+                "GLUDD_PLUGIN_DIR": str(copied_opencode / "plugin"),
+            },
+        )
 
-        When this test detects failures, it reports them but does not fail —
-        it's a known TS-to-JS converter bug, not a regression. The fail-open
-        design means loadHotModule catches these parse errors and returns
-        compiled-in defaults silently, so the system is safe but hot-reload is
-        non-functional until the converter is fixed.
-        """
+        assert result.returncode != 0, (
+            "The hot-reload builder accepted a truncated required plugin source"
+        )
+        output = result.stdout + result.stderr
+        assert "enforce-no-wait" in output
+        assert "Hot-reload build failed" in output
+        assert not Path(f"{hot_prefix}enforce-no-wait.js").exists()
+
+    def test_builder_uses_each_proxy_lookup_name(self):
+        """Generated filenames must match the names passed to loadHotModule()."""
         self._cleanup()
         try:
             subprocess.run(
+                ["node", str(BUILD_SCRIPT)],
+                cwd=str(ROOT),
+                capture_output=True,
+                text=True,
+                timeout=30,
+                env={**os.environ, "GLUDD_HOT_MODULE_PREFIX": HOT_PROXY_PREFIX},
+                check=True,
+            )
+            for plugin_name in _CONVERTED_PLUGINS:
+                calls = set(_parse_load_hot_module_calls(_plugin_source(plugin_name)))
+                assert len(calls) == 1, (
+                    f"{plugin_name}: expected one proxy lookup name, got {calls}"
+                )
+                lookup_name = next(iter(calls))
+                assert Path(f"{HOT_PROXY_PREFIX}{lookup_name}.js").exists(), (
+                    f"{plugin_name}: builder output does not match "
+                    f"loadHotModule({lookup_name!r})"
+                )
+        finally:
+            self._cleanup()
+
+    def test_builder_follows_thin_proxy_implementation_modules(self):
+        """Top-level loader shims must not hide their hot-reload implementations."""
+        self._cleanup()
+        try:
+            subprocess.run(
+                ["node", str(BUILD_SCRIPT)],
+                cwd=str(ROOT),
+                capture_output=True,
+                text=True,
+                timeout=30,
+                env={**os.environ, "GLUDD_HOT_MODULE_PREFIX": HOT_PROXY_PREFIX},
+                check=True,
+            )
+            assert Path(f"{HOT_PROXY_PREFIX}enforce-make.js").exists()
+            assert Path(f"{HOT_PROXY_PREFIX}enforce-stop.js").exists()
+        finally:
+            self._cleanup()
+
+    def test_built_modules_are_valid_javascript(self):
+        """Every generated hot module must be parseable JavaScript."""
+        self._cleanup()
+        try:
+            build = subprocess.run(
                 ["node", str(BUILD_SCRIPT)],
                 cwd=str(ROOT), capture_output=True, text=True, timeout=30,
                 env={**os.environ, "GLUDD_HOT_MODULE_PREFIX": HOT_PROXY_PREFIX},
                 check=True,
             )
+            assert "generated module has invalid JS" not in build.stdout
             failures = []
             for f in sorted(Path("/tmp").glob(f"{Path(HOT_PROXY_PREFIX).name}*.js")):
                 proc = subprocess.run(
@@ -182,13 +266,77 @@ class TestHotModuleBuild:
                 if proc.returncode != 0:
                     failures.append(f.name)
 
-            if failures:
-                print(f"\nKNOWN TS-to-JS converter bug: {len(failures)} hot modules have JS syntax errors.")
-                print(f"  Affected: {failures}")
-                print("  All parse errors silently fall back to compiled-in defaults (fail-open).")
-                print("  Fix: extend build_hot_modules.js tsToJs() to handle ternary expressions.")
-            else:
-                assert True  # all clean
+            assert failures == [], (
+                "hot-reload builder emitted invalid JavaScript: "
+                + ", ".join(failures)
+            )
+        finally:
+            self._cleanup()
+
+    def test_multitask_hot_module_exports_each_default_hook(self):
+        """The final defaultImpl hook must not absorb following declarations."""
+        self._cleanup()
+        try:
+            subprocess.run(
+                ["node", str(BUILD_SCRIPT)],
+                cwd=str(ROOT), capture_output=True, text=True, timeout=30,
+                env={**os.environ, "GLUDD_HOT_MODULE_PREFIX": HOT_PROXY_PREFIX},
+                check=True,
+            )
+            hot = Path(f"{HOT_PROXY_PREFIX}multitask.js")
+            probe = subprocess.run(
+                [
+                    "node",
+                    "-e",
+                    (
+                        f"const m = require({json.dumps(str(hot))});"
+                        "process.stdout.write(JSON.stringify(Object.keys(m).sort()));"
+                    ),
+                ],
+                cwd=str(ROOT),
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=True,
+            )
+            assert json.loads(probe.stdout) == [
+                "experimental.text.complete",
+                "text.complete",
+                "tool.execute.before",
+            ]
+        finally:
+            self._cleanup()
+
+    def test_verified_claims_hot_module_preserves_imported_helpers(self):
+        """A generated fallback must retain local helper-module behavior."""
+        self._cleanup()
+        try:
+            subprocess.run(
+                ["node", str(BUILD_SCRIPT)],
+                cwd=str(ROOT),
+                capture_output=True,
+                text=True,
+                timeout=30,
+                env={**os.environ, "GLUDD_HOT_MODULE_PREFIX": HOT_PROXY_PREFIX},
+                check=True,
+            )
+            hot = Path(f"{HOT_PROXY_PREFIX}verified-claims.js")
+            script = (
+                f"const m = require({json.dumps(str(hot))});"
+                "Promise.resolve(m['tool.execute.before']({"
+                "tool:'bash',args:{command:'make git-commit MSG=\"all done\"'}"
+                "})).then(() => process.stdout.write('allowed'))."
+                "catch(e => process.stdout.write(e.permissionDecision || 'error'));"
+            )
+            probe = subprocess.run(
+                ["node", "-e", script],
+                cwd=str(ROOT),
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=True,
+            )
+            assert probe.stdout == "deny"
         finally:
             self._cleanup()
 
@@ -371,16 +519,24 @@ class TestRealPluginHotModules:
             subprocess.run(
                 ["node", str(BUILD_SCRIPT)],
                 cwd=str(ROOT), capture_output=True, text=True, timeout=30,
+                env={
+                    **os.environ,
+                    "GLUDD_HOT_MODULE_PREFIX": HOT_PROXY_REAL_PREFIX,
+                },
                 check=True,
             )
 
             # Find any built hot module
-            built = sorted(Path("/tmp").glob("gludd-hot-*.js"))
+            built = sorted(
+                Path("/tmp").glob(f"{Path(HOT_PROXY_REAL_PREFIX).name}*.js")
+            )
             if not built:
                 pytest.skip("No hot modules built")
 
             for hot_file in built[:3]:  # test up to 3
-                name = hot_file.name.removeprefix("gludd-hot-").removesuffix(".js")
+                name = hot_file.name.removeprefix(
+                    Path(HOT_PROXY_REAL_PREFIX).name
+                ).removesuffix(".js")
                 code = (
                     "import { loadHotModule, type HotModule } from "
                     + json.dumps(str(HOT_RELOAD_TS))
@@ -396,6 +552,7 @@ class TestRealPluginHotModules:
                 try:
                     env = os.environ.copy()
                     env["OPENCODE_SUBAGENT"] = ""
+                    env["GLUDD_HOT_MODULE_PREFIX"] = HOT_PROXY_REAL_PREFIX
                     proc = subprocess.run(
                         ["node", "--experimental-strip-types", str(tmp)],
                         capture_output=True, text=True, timeout=15,
@@ -431,6 +588,7 @@ class TestRealPluginHotModules:
         try:
             env = os.environ.copy()
             env["OPENCODE_SUBAGENT"] = ""
+            env["GLUDD_HOT_MODULE_PREFIX"] = HOT_PROXY_REAL_PREFIX + "missing-"
             proc = subprocess.run(
                 ["node", "--experimental-strip-types", str(tmp)],
                 capture_output=True, text=True, timeout=15,
@@ -452,40 +610,28 @@ class TestRealPluginHotModules:
 class TestHotReloadSystemIssues:
     """Report known issues with the hot-reload proxy system."""
 
-    def test_issue_build_script_ts_to_js_converter_bug(self):
-        """The TS-to-JS converter in build_hot_modules.js can produce syntax errors.
-
-        Verified by: running `node --check` on built output. Some modules
-        (enforce-deadline observed) produce trailing `};` artifacts.
-        Root cause: the regex-based tsToJs() converter does not handle nested
-        TypeScript constructs correctly.
-
-        Impact: those hot modules fail to load (silently fallen-back to
-        compiled-in defaults).
-
-        Fix: either (a) switch to a proper TypeScript compiler for hot module
-        generation, or (b) extend the regex converter to handle the specific
-        constructs that produce invalid JS.
-        """
-        # This test verifies the issue is still present by building and checking
+    def test_regression_builder_never_publishes_invalid_javascript(self):
+        """A formerly invalid last-hook extraction stays fixed and isolated."""
         TestHotModuleBuild._cleanup()
         try:
-            subprocess.run(
+            build = subprocess.run(
                 ["node", str(BUILD_SCRIPT)],
                 cwd=str(ROOT), capture_output=True, text=True, timeout=30,
+                env={**os.environ, "GLUDD_HOT_MODULE_PREFIX": HOT_PROXY_PREFIX},
+                check=True,
             )
             broken = []
-            for f in sorted(Path("/tmp").glob("gludd-hot-*.js")):
+            for f in sorted(
+                Path("/tmp").glob(f"{Path(HOT_PROXY_PREFIX).name}*.js")
+            ):
                 proc = subprocess.run(
                     ["node", "--check", str(f)],
                     capture_output=True, text=True, timeout=10,
                 )
                 if proc.returncode != 0:
                     broken.append(f.name)
-            # This is informational — we know some may be broken
-            # and that's the bug being tracked
-            if broken:
-                print(f"\nKnown TS-to-JS converter issues: {broken}")
+            assert " FAIL " not in build.stdout
+            assert broken == []
         finally:
             TestHotModuleBuild._cleanup()
 

@@ -34,6 +34,50 @@ const CI_POLL_DENY_MESSAGE =
   "work instead; check CI at the next natural break with `make ci-verdict-safe` " +
   "(10-min cooldown enforced). `make ci-wait` is for release-cut ONLY.";
 const DISPATCH_TOOLS = new Set(["task", "agent", "workflow"]);
+type DenialError = Error & { permissionDecision: "deny" };
+
+function _deny(message: string): never {
+  throw Object.assign(new Error(message), {
+    permissionDecision: "deny" as const,
+  });
+}
+
+function _isDenial(error: unknown): error is DenialError {
+  return (
+    error instanceof Error &&
+    (error as Error & { permissionDecision?: unknown }).permissionDecision ===
+      "deny"
+  );
+}
+
+function _extractBashCommand(input: unknown, output: unknown): string {
+  const p = input as {
+    command?: unknown;
+    args?: { command?: unknown };
+    input?: { command?: unknown };
+    tool_input?: { command?: unknown };
+  };
+  const result = output as {
+    command?: unknown;
+    args?: { command?: unknown };
+    input?: { command?: unknown };
+    tool_input?: { command?: unknown };
+  };
+  const candidates = [
+    result?.args?.command,
+    p?.args?.command,
+    result?.command,
+    p?.command,
+    result?.input?.command,
+    p?.input?.command,
+    result?.tool_input?.command,
+    p?.tool_input?.command,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string") return candidate;
+  }
+  return "";
+}
 function _extractDispatchText(params: unknown): string {
   const p = params as {
     prompt?: unknown;
@@ -60,14 +104,11 @@ const defaultImpl: HotModule = {
     try {
       if (process.env.GLUDD_NO_WAIT_ENFORCE === "0") return;
       if (input.tool === "bash") {
-        const cmd: string = String(input.args?.command ?? input.command ?? "");
+        const cmd = _extractBashCommand(input, output);
         if (cmd) {
           for (const pattern of WAIT_PATTERNS) {
             if (pattern.test(cmd)) {
-              return {
-                permissionDecision: "deny" as const,
-                message: DENY_MESSAGE,
-              };
+              _deny(DENY_MESSAGE);
             }
           }
         }
@@ -78,15 +119,13 @@ const defaultImpl: HotModule = {
         if (text) {
           for (const pattern of CI_POLL_DISPATCH_PATTERNS) {
             if (pattern.test(text)) {
-              return {
-                permissionDecision: "deny" as const,
-                message: CI_POLL_DENY_MESSAGE,
-              };
+              _deny(CI_POLL_DENY_MESSAGE);
             }
           }
         }
       }
-    } catch {
+    } catch (error) {
+      if (_isDenial(error)) throw error;
       // Fail-open: never wedge the editor on a plugin error.
     }
   },

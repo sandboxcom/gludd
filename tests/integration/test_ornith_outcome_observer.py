@@ -157,6 +157,56 @@ class TestOutcomeObserver:
         await obs.on_gate_complete(pair_id, gate_passed=True)
         assert (pair_id, True) in seen
 
+    @pytest.mark.asyncio
+    async def test_review_and_revert_subscribers_fire(self, session_factory):
+        review_id = await _record(session_factory)
+        revert_id = await _record(session_factory)
+        obs = OutcomeObserver(session_factory)
+        reviews: list[tuple[str, bool, str]] = []
+        reverts: list[tuple[str, str]] = []
+
+        async def review_listener(pid: str, approved: bool, reason: str) -> None:
+            reviews.append((pid, approved, reason))
+
+        async def revert_listener(pid: str, reason: str) -> None:
+            reverts.append((pid, reason))
+
+        obs.subscribe_review(review_listener)
+        obs.subscribe_revert(revert_listener)
+        await obs.on_review_decision(review_id, False, "unsafe")
+        await obs.on_commit_revert(revert_id, "regression")
+
+        assert reviews == [(review_id, False, "unsafe")]
+        assert reverts == [(revert_id, "regression")]
+
+    @pytest.mark.asyncio
+    async def test_mark_applied_and_unknown_pair_are_nonfatal(self, session_factory):
+        pair_id = await _record(session_factory)
+        obs = OutcomeObserver(session_factory)
+
+        await obs.mark_applied(pair_id)
+        await obs.mark_applied("unknown-pair")
+
+        async with session_factory() as session:
+            row = await OrnithTrainingRepo(session).get(pair_id)
+            assert row is not None
+            assert row.outcome_status == "applied"
+
+    @pytest.mark.asyncio
+    async def test_poll_once_and_start_stop_lifecycle(self, session_factory):
+        await _record(session_factory)
+        obs = OutcomeObserver(
+            session_factory,
+            poll_interval_seconds=10,
+            pending_older_than_minutes=0,
+        )
+
+        await obs._poll_once()
+        task = obs.start()
+        assert task.get_name() == "ornith-outcome-observer"
+        await obs.stop()
+        assert obs._task is None
+
 
 async def _noop() -> None:
     return None

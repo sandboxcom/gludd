@@ -115,13 +115,42 @@ class TestValidateRegoPolicies:
 
 
 class TestCheckProviderTrust:
+    def test_structured_provider_manifest_uses_source_for_trust(
+        self, tmp_path: Path
+    ) -> None:
+        trust_data = {"gludd": {"provider_trust_list": ["hashicorp/aws"]}}
+        trust_file = tmp_path / "trust.json"
+        trust_file.write_text(json.dumps(trust_data))
+
+        prov_dir = tmp_path / "plugins" / "terraform"
+        prov_dir.mkdir(parents=True)
+        (prov_dir / "providers.yaml").write_text(
+            "providers:\n"
+            "  - name: aws\n"
+            "    source: hashicorp/aws\n"
+            '    version: "~> 5.0"\n'
+        )
+
+        importer = TerraformCollectionImporter(
+            collection_path=tmp_path,
+            operator_trust_data_path=trust_file,
+        )
+
+        assert importer._read_providers_yaml() == ["hashicorp/aws"]
+        assert importer._check_provider_trust() == []
+
     def test_trusted_provider_passes(self, tmp_path: Path) -> None:
         trust_data = {"gludd": {"provider_trust_list": ["hashicorp/aws"]}}
         trust_file = tmp_path / "trust.json"
         trust_file.write_text(json.dumps(trust_data))
 
-        (tmp_path / "galaxy.yml").write_text(
-            "terraform_provider_trust:\n  - hashicorp/aws\n"
+        prov_dir = tmp_path / "plugins" / "terraform"
+        prov_dir.mkdir(parents=True)
+        (prov_dir / "providers.yaml").write_text(
+            "providers:\n"
+            "  - name: aws\n"
+            "    source: hashicorp/aws\n"
+            '    version: "~> 5.0"\n'
         )
 
         importer = TerraformCollectionImporter(
@@ -137,8 +166,13 @@ class TestCheckProviderTrust:
         trust_file = tmp_path / "trust.json"
         trust_file.write_text(json.dumps(trust_data))
 
-        (tmp_path / "galaxy.yml").write_text(
-            "terraform_provider_trust:\n  - evilcorp/shells\n"
+        prov_dir = tmp_path / "plugins" / "terraform"
+        prov_dir.mkdir(parents=True)
+        (prov_dir / "providers.yaml").write_text(
+            "providers:\n"
+            "  - name: shells\n"
+            "    source: evilcorp/shells\n"
+            '    version: "~> 1.0"\n'
         )
 
         importer = TerraformCollectionImporter(
@@ -159,7 +193,10 @@ class TestCheckProviderTrust:
         prov_dir = tmp_path / "plugins" / "terraform"
         prov_dir.mkdir(parents=True)
         (prov_dir / "providers.yaml").write_text(
-            "providers:\n  - evilcorp/shells\n"
+            "providers:\n"
+            "  - name: shells\n"
+            "    source: evilcorp/shells\n"
+            '    version: "~> 1.0"\n'
         )
 
         importer = TerraformCollectionImporter(
@@ -178,8 +215,13 @@ class TestCheckProviderTrust:
         trust_file = tmp_path / "trust.json"
         trust_file.write_text(json.dumps(trust_data))
 
-        (tmp_path / "galaxy.yml").write_text(
-            "terraform_provider_trust:\n  - hashicorp/aws\n"
+        prov_dir = tmp_path / "plugins" / "terraform"
+        prov_dir.mkdir(parents=True)
+        (prov_dir / "providers.yaml").write_text(
+            "providers:\n"
+            "  - name: aws\n"
+            "    source: hashicorp/aws\n"
+            '    version: "~> 5.0"\n'
         )
 
         importer = TerraformCollectionImporter(
@@ -217,8 +259,11 @@ class TestImportCollection:
             "package gludd.terraform.checks\n\ndeny = {}\n"
         )
 
-        (tmp_path / "galaxy.yml").write_text(
-            "terraform_provider_trust:\n  - evilcorp/shells\n"
+        (policies_dir.parent / "providers.yaml").write_text(
+            "providers:\n"
+            "  - name: shells\n"
+            "    source: evilcorp/shells\n"
+            '    version: "~> 1.0"\n'
         )
 
         importer = TerraformCollectionImporter(

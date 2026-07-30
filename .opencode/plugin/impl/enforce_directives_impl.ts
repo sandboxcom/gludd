@@ -1,4 +1,5 @@
-// enforce-directives.ts — mechanical enforcement of explicit user directives.
+// Dormant directive-enforcement implementation. Keep this below plugin/impl so
+// OpenCode does not auto-discover an unregistered top-level plugin.
 //
 // THE FAILURE PATTERN (AGENTS.md session gap):
 //   1. User: "E2E coverage must be >85% before beta.3" → agent stops at 68%
@@ -25,8 +26,8 @@
 
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
-import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
-import { isSubagent, reportAlive, writeHeartbeat, readJsonFile, writeJsonFile } from "../lib/shared.ts"
+import { loadHotModule, type HotModule } from "../../lib/hot_reload.ts"
+import { isSubagent, reportAlive, writeHeartbeat, readJsonFile, writeJsonFile } from "../../lib/shared.ts"
 
 const STATE_FILE = process.env.GLUDD_DIRECTIVE_STATE || "/tmp/gludd-active-directives.json"
 const ENABLED = process.env.GLUDD_DIRECTIVE_ENFORCE !== "0"

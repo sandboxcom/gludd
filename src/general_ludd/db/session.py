@@ -230,7 +230,7 @@ async def get_async_session(
 def json_dumps(obj: Any) -> str:
     import json
 
-    return json.dumps(obj) if obj else "[]"
+    return "[]" if obj is None else json.dumps(obj)
 
 
 # ---------------------------------------------------------------------------

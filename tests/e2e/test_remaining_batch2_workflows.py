@@ -2,12 +2,7 @@
 
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
-from unittest.mock import MagicMock
-
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # ssl.algorithms
@@ -17,14 +12,7 @@ class TestSSLAlgorithms:
     def test_imports(self):
         from general_ludd.ssl.algorithms import (
             KNOWN_ALGORITHMS,
-            AlgorithmEval,
-            AlgorithmInfo,
             AlgorithmStatus,
-            AlgorithmType,
-            ComparisonResult,
-            compare_algorithms,
-            compliance_check,
-            evaluate_algorithm,
         )
 
         assert len(KNOWN_ALGORITHMS) > 20
@@ -130,7 +118,7 @@ class TestSSLAlgorithms:
         from general_ludd.ssl.algorithms import compliance_check
 
         with pytest.raises(ValueError, match="not evaluated"):
-            compliance_check("X448", "HIPAA")  # X448 not in HIPAA
+            compliance_check("ZZZ-999", "HIPAA")  # Unknown algorithm is not evaluated.
 
     def test_all_standards_available(self):
         from general_ludd.ssl.algorithms import COMPLIANCE_STANDARDS
@@ -167,13 +155,7 @@ class TestSSLAlgorithms:
 class TestSSLCertificate:
     def test_import(self):
         from general_ludd.ssl.certificate import (
-            build_chain,
-            generate_csr,
             generate_key,
-            parse_cert,
-            self_sign,
-            sign_csr,
-            verify_chain,
         )
 
         assert generate_key is not None
@@ -384,14 +366,6 @@ class TestSSLCompliance:
     def test_imports(self):
         from general_ludd.ssl.compliance import (
             FIPS_140_3,
-            HIPAA,
-            PCI_DSS,
-            SOC2,
-            ComplianceProfile,
-            ComplianceResult,
-            check_compliance,
-            get_profile,
-            list_profiles,
         )
 
         assert FIPS_140_3 is not None
@@ -475,12 +449,6 @@ class TestSSLCompliance:
 
     def test_all_profiles_valid(self):
         from general_ludd.ssl.compliance import (
-            FIPS_140_3,
-            HIPAA,
-            ISO_27001,
-            PCI_DSS,
-            SOC2,
-            FedRAMP,
             get_profile,
         )
 
@@ -505,7 +473,7 @@ class TestSSLCompliance:
 
 class TestSSLASN1:
     def test_import(self):
-        from general_ludd.ssl.asn1 import encode_der, lookup_oid, parse_der
+        from general_ludd.ssl.asn1 import parse_der
 
         assert parse_der is not None
 
@@ -600,7 +568,7 @@ class TestSSLASN1:
 
 class TestSSLHSM:
     def test_import(self):
-        from general_ludd.ssl.hsm import HSMConfig, HSMKey, _MockHSMSession
+        from general_ludd.ssl.hsm import HSMConfig
 
         assert HSMConfig is not None
 
@@ -648,7 +616,7 @@ class TestSSLHSM:
 
         config = HSMConfig(module_path="/fake.so", slot_id=0)
         session = _MockHSMSession(config)
-        with pytest.raises(ValueError, match="Unknown key"):
+        with pytest.raises(KeyError, match="not found"):
             session.sign("nonexistent", b"data")
 
     def test_mock_hsm_close(self):
@@ -677,11 +645,6 @@ class TestSSLCertManager:
     def test_import(self):
         from general_ludd.ssl_agent.cert_manager import (
             CertManager,
-            KeyPair,
-            algorithm_evaluate,
-            ca_jurisdiction_lookup,
-            cert_parse,
-            generate_key_pair,
         )
 
         assert CertManager is not None
@@ -733,7 +696,6 @@ class TestSSLCertManager:
         from general_ludd.ssl_agent.cert_manager import (
             generate_csr,
             generate_key_pair,
-            cert_parse,
             self_sign_cert,
         )
 
@@ -753,16 +715,12 @@ class TestSSLCertManager:
     def test_asn1_roundtrip_verify(self):
         from general_ludd.ssl_agent.cert_manager import (
             asn1_roundtrip_verify,
-            generate_csr,
-            generate_key_pair,
-            self_sign_cert,
+            generate_ca_chain,
         )
 
-        kp = generate_key_pair("rsa-2048")
-        csr = generate_csr("roundtrip.example.com", kp)
-        fields = self_sign_cert(csr, kp, 1)
-        result = asn1_roundtrip_verify(fields)
-        assert "match" in result
+        chain = generate_ca_chain("Roundtrip Root", "roundtrip.example.com")
+        result = asn1_roundtrip_verify(chain["leaf_cert_pem"])
+        assert result["match"] is True
 
     def test_oid_lookup_by_oid(self):
         from general_ludd.ssl_agent.cert_manager import oid_lookup
@@ -813,16 +771,13 @@ class TestSSLCertManager:
         from general_ludd.ssl_agent.cert_manager import (
             ComplianceProfile,
             compliance_check,
-            generate_csr,
-            generate_key_pair,
-            self_sign_cert,
+            generate_ca_chain,
         )
 
-        kp = generate_key_pair("rsa-2048")
-        csr = generate_csr("compliant.example.com", kp)
-        fields = self_sign_cert(csr, kp, 365)
-        result = compliance_check(fields, ComplianceProfile.FIPS)
+        chain = generate_ca_chain("Compliance Root", "compliant.example.com")
+        result = compliance_check(chain["leaf_cert_pem"], ComplianceProfile.FIPS)
         assert result.profile == "fips"
+        assert result.passed is True
 
     def test_ca_jurisdiction_lookup_letsencrypt(self):
         from general_ludd.ssl_agent.cert_manager import ca_jurisdiction_lookup
@@ -862,7 +817,7 @@ class TestSSLCertManager:
 
 class TestSSLCertAgentFlow:
     def test_import(self):
-        from general_ludd.ssl_agent.agent_flow import SSLCertAgent, ssl_agent_flow
+        from general_ludd.ssl_agent.agent_flow import ssl_agent_flow
 
         assert ssl_agent_flow is not None
 
@@ -925,7 +880,6 @@ class TestSSLCertAgentFlow:
 class TestNotificationDispatcher:
     def test_import(self):
         from general_ludd.notifications.dispatcher import (
-            NOTIFICATION_TEMPLATE,
             NotificationDispatcher,
         )
 

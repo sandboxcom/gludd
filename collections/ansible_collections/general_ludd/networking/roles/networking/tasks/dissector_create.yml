@@ -51,8 +51,6 @@
         src: files/dissector_template.lua
         dest: "{{ _dc_output_file }}"
         mode: "0644"
-        variable_start_string: "{{"
-        variable_end_string: "}}"
       vars:
         dissector_name: "{{ networking__dissector_name }}"
         dissector_port: "{{ networking__dissector_port | default(0) }}"

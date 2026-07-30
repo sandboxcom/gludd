@@ -9,6 +9,7 @@ import os
 import sys
 import threading
 import time
+from collections import ChainMap
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -295,10 +296,12 @@ class LangGraphModelCallError(Exception):
 # quality_gate cannot bleed across FastAPI instances in one process. The
 # authoritative store is ``app.state.daemon_state`` (set by the factory).
 # This module-level name exists ONLY as a migration shim for legacy callers
-# (scripts/dogfood.py, test fixtures); it starts unset and is rebound to the
-# most recently created app's dict by ``create_daemon_app()``.
+# (scripts/dogfood.py, test fixtures). It is a stable proxy whose first map is
+# switched to the most recently created app's dict by ``create_daemon_app()``.
+# Keeping the proxy identity stable preserves ``from daemon import
+# _daemon_state`` callers without aliasing any app's authoritative state.
 # New code MUST NOT access this global — use explicit injection instead.
-_daemon_state: Any = None
+_daemon_state: ChainMap[str, Any] = ChainMap({})
 
 
 def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
@@ -1493,6 +1496,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             app.state._model_gateway = model_gateway
 
             semantic_searcher = SemanticSearcher()
+            app.state._semantic_searcher = semantic_searcher
             execution_engine = ExecutionEngine(
                 model_gateway=model_gateway,
                 benchmark_recorder=None,
@@ -2530,12 +2534,33 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             # ~15s waiting on the subprocess to exit; run it off the event
             # loop so shutdown doesn't freeze the loop for that long.
             await asyncio.to_thread(_writer_process_ref.stop)
-    if engine is not None:
-        await engine.dispose()
+    # Retrieval services each own a diskcache connection (database, WAL, and
+    # shared-memory descriptors). Close every app-scoped owner explicitly so
+    # repeated lifespan cycles do not rely on garbage collection for release.
+    _searx_client_ref = getattr(app.state, "_searx_client", None)
+    if _searx_client_ref is not None:
+        with contextlib.suppress(Exception):
+            await _searx_client_ref.close()
+    for _cache_owner_attr in (
+        "_codebase_indexer",
+        "_research_index",
+        "_local_memory",
+        "_semantic_searcher",
+    ):
+        _cache_owner = getattr(app.state, _cache_owner_attr, None)
+        if _cache_owner is not None:
+            with contextlib.suppress(Exception):
+                _cache_owner.close()
+    _model_gateway_ref = getattr(app.state, "_model_gateway", None)
+    if _model_gateway_ref is not None:
+        with contextlib.suppress(Exception):
+            _model_gateway_ref.close()
     _embedding_session_ref = getattr(app.state, "_embedding_session", None)
     if _embedding_session_ref is not None:
         with contextlib.suppress(Exception):
             await _embedding_session_ref.close()
+    if engine is not None:
+        await engine.dispose()
     otel_bridge_ref = getattr(app.state, "_otel_bridge", None)
     if otel_bridge_ref is not None and hasattr(otel_bridge_ref, "shutdown"):
         otel_bridge_ref.shutdown()
@@ -2797,11 +2822,16 @@ def create_daemon_app(
         "quality_gate": {},
     }
     app.state.daemon_state = daemon_state
-    # Rebind the module-level name so legacy observers (scripts/dogfood.py, test
-    # fixtures that read ``daemon_mod._daemon_state``) see this app's state. The
-    # per-app dict on ``app.state.daemon_state`` remains the authoritative store.
+    # Point the stable compatibility proxy at the latest app. This preserves
+    # legacy mapping operations while keeping the proxy distinct from every
+    # app-owned authoritative state dict. Older integrations sometimes replace
+    # the shim outright while resetting test/process state; recover a proxy in
+    # that case instead of letting their assignment break app construction.
     global _daemon_state
-    _daemon_state = daemon_state
+    if isinstance(_daemon_state, ChainMap):
+        _daemon_state.maps[:] = [daemon_state]
+    else:
+        _daemon_state = ChainMap(daemon_state)
     app.state.tick_interval = tick_interval
     app.state.event_loop = None
     app.state.log_level = log_level

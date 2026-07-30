@@ -14,6 +14,7 @@ import {
   writeJsonFile,
   getProjectRoot,
   isStateFileMtimeStale,
+  spawnGateRefreshIfStale,
 } from "../lib/shared.ts"
 const nodeRequire = typeof require === "function" ? require : createRequire(import.meta.url)
 function spawn(...args: any[]): any {
@@ -121,7 +122,8 @@ function hasPendingWork(): boolean {
       if (/test REQUIRED/.test(content) || /smoke REQUIRED/.test(content)) return true
     }
 
-    const ciCachePath = "/tmp/gludd-watchdog-ci.json"
+    const ciCachePath =
+      process.env.GLUDD_WATCHDOG_CI_FILE || "/tmp/gludd-watchdog-ci.json"
     if (fs.existsSync(ciCachePath)) {
       const ciData = JSON.parse(fs.readFileSync(ciCachePath, "utf8"))
       const rawLastCheck: number = ciData.last_ci_check || 0
@@ -131,7 +133,8 @@ function hasPendingWork(): boolean {
     }
 
     try {
-      const todowritePath = "/tmp/gludd-todowrite-state.json"
+      const todowritePath =
+        process.env.GLUDD_TODOWRITE_STATE || "/tmp/gludd-todowrite-state.json"
       if (fs.existsSync(todowritePath)) {
         const tdData = JSON.parse(fs.readFileSync(todowritePath, "utf8"))
         const items: any[] = Array.isArray(tdData.items) ? tdData.items : []
@@ -178,19 +181,7 @@ function handleMessageBoundary(s: MultitaskState): void {
   s.thisMessageDispatches = 0
 }
 function spawnGateRefresh(): void {
-  try {
-    const root = getProjectRoot()
-    const gatePath = path.join(root, ".gate-status")
-    if (!fs.existsSync(gatePath)) return
-    const stat = fs.statSync(gatePath)
-    if ((Date.now() - stat.mtimeMs) <= 300_000) return
-    const child = spawn("make", ["gate-refresh"], {
-      cwd: root,
-      detached: true,
-      stdio: "ignore",
-    })
-    child.unref()
-  } catch {  }
+  spawnGateRefreshIfStale(getProjectRoot(), spawn)
 }
 let _state: MultitaskState = (() => {
   const s = readState()
@@ -336,6 +327,24 @@ const defaultImpl: HotModule = {
           }
         }
       }
+      // === ZERO-DISPATCH STREAK (FIRES BEFORE UNDER-FLOOR) ===
+      if (
+        !disengaged &&
+        _state.thisMessageDispatches === 0 &&
+        _state.zeroStreak >= MAX_ZERO_STREAK
+      ) {
+        writeState(_state)
+        return {
+          permissionDecision: "deny" as const,
+          message: [
+            "ZERO-DISPATCH STREAK: " + String(MAX_ZERO_STREAK) + " consecutive responses with 0 subagent dispatches.",
+            "Floor is 10. This block is UNCONDITIONAL. DISPATCH 10 AGENTS NOW.",
+            "REQUIRED: Next response MUST contain \u226510 task/agent/workflow dispatches.",
+            "No pending-work gate. No tool-type bypass. Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+            "Run 'make disengage-enforcement' to bypass.",
+          ].join("\n"),
+        }
+      }
       // === UNDER-FLOOR HARD BLOCK ===
       // Per AGENTS.md "UNDER-FLOOR HARD BLOCK (2026-07-15)": EVERY non-dispatch
       // tool call — including read/glob/grep — is blocked until the wave
@@ -369,24 +378,6 @@ const defaultImpl: HotModule = {
             "You have " + String(_state.thisMessageDispatches) + "; need " + String(MIN_DISPATCHES) + ". ALL tools (read/grep/glob/edit/write/bash) are blocked when below floor and dispatches have been made this session.",
             "consecutive non-dispatch calls: " + String(_state.consecutiveNonDispatch),
             "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
-            "Run 'make disengage-enforcement' to bypass.",
-          ].join("\n"),
-        }
-      }
-      // === ZERO-DISPATCH STREAK (FIRES BEFORE UNDER-FLOOR) ===
-      if (
-        !disengaged &&
-        _state.thisMessageDispatches === 0 &&
-        _state.zeroStreak >= MAX_ZERO_STREAK
-      ) {
-        writeState(_state)
-        return {
-          permissionDecision: "deny" as const,
-          message: [
-            "ZERO-DISPATCH STREAK: " + String(MAX_ZERO_STREAK) + " consecutive responses with 0 subagent dispatches.",
-            "Floor is 10. This block is UNCONDITIONAL. DISPATCH 10 AGENTS NOW.",
-            "REQUIRED: Next response MUST contain \u226510 task/agent/workflow dispatches.",
-            "No pending-work gate. No tool-type bypass. Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
             "Run 'make disengage-enforcement' to bypass.",
           ].join("\n"),
         }
@@ -543,114 +534,9 @@ export default (({ }) => {
   // in the proxy's returned Hooks object.
   "experimental.text.complete": async (_input: unknown, output: unknown) => {
     if (isSubagent()) return output
-    if (!FLOOR_ENFORCE) return undefined
-    const text = typeof output === "string" ? output
-      : (output as any)?.text ? String((output as any).text) : ""
-    if (!text || text.trim().length === 0) return output
-    if (isDisengaged()) return output
-    if (!hasPendingWork()) return output
-    // RESEARCH FINDING: opencode text.complete never receives tool output.
-    // Result markers here are assistant text, so they must feed the same
-    // message-boundary logic as any other assistant response. The next
-    // handleMessageBoundary(_state) updates _state.prevMessageDispatches and
-    // applies zeroStreak++ when no dispatches occurred.
-    const hasResultMarker = /(?:task result|subagent result|workflow result)/i.test(text)
-    if (hasResultMarker) {
-      _state.estimatedInFlight = Math.max(0, _state.estimatedInFlight - 1)
-    }
-    // Block: current message had < MIN_DISPATCHES but >0 dispatches
-    // AND pending work exists. thisMessageDispatches is the live count
-    // for the message that just completed (all tool calls have fired).
-    if (_state.thisMessageDispatches > 0 && _state.thisMessageDispatches < MIN_DISPATCHES) {
-      const dispatched = _state.thisMessageDispatches
-      // Close the message boundary BEFORE returning the blanked text (T21):
-      // the blanked message is OVER — its stale dispatch count must not
-      // consume the ceiling when the agent re-sends the corrective 10-wave.
-      handleMessageBoundary(_state)
-      // MT.1: escalate when under-floor waves keep happening
-      const mt1Escalation = _state.underFloorCount >= 3
-        ? [
-            "",
-            "⛔ ESCALATION: " + String(_state.underFloorCount) + " waves in a row below the " + String(MAX_DISPATCHES) + "-agent floor.",
-            "You have dispatched fewer than " + String(MAX_DISPATCHES) + " agents for " + String(_state.underFloorCount) + " consecutive responses.",
-            "The 10-agent floor is MANDATORY. Correct immediately.",
-          ].join("\n")
-        : ""
-      // MT.2: single-dispatch wave escalation
-      const mt2Escalation = _state.singleDispatchWaves >= 3
-        ? [
-            "",
-            "MESSAGE SHAPE VIOLATION: 3 consecutive single-dispatch waves. Batch wider — 2+ dispatches per message.",
-          ].join("\n")
-        : ""
-      writeState(_state)
-      return {
-        text: [
-          "⛔⛔⛔ THIN WAVE BLOCKED ⛔⛔⛔",
-          "",
-          "MUST DISPATCH a full wave before sending summary text.",
-          "This message had only " + String(dispatched) + " dispatch(es).",
-          "The 10-agent floor REQUIRES " + String(MIN_DISPATCHES) + " per wave.",
-          "When pending work exists, your ONLY valid action is a " +
-            String(MIN_DISPATCHES) + "-dispatch wave.",
-          "",
-          "Your text has been blanked. Re-send with >= " +
-            String(MIN_DISPATCHES) + " task/agent/workflow dispatches.",
-          mt1Escalation,
-          mt2Escalation,
-          "",
-          "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
-        ].join("\n"),
-      }
-    }
-    // --- Canonical message boundary: text.complete ---
-    // text.complete fires at the end of every assistant response. This is
-    // the ONLY reliable message-boundary signal. Resetting thisMessageDispatches
-    // here fixes the inflation bug where the counter persisted across messages
-    // because heuristic detection (time gap / pattern / high-water-mark)
-    // missed boundary transitions. The 500ms idempotency guard in
-    // handleMessageBoundary prevents double-processing if heuristic signals
-    // also fire.
-    handleMessageBoundary(_state)
-    // MT.1: escalate when under-floor waves keep happening — inject into
-    // non-blocked output so the agent sees it even on full-wave responses.
-    // MT.2: single-dispatch wave escalation — inject when 3 consecutive waves
-    // had exactly 1 dispatch.  2+ dispatches resets the counter.
-    const warnings: string[] = []
-    if (_state.underFloorCount >= 3) {
-      warnings.push([
-        "⛔ DISPATCH FLOOR VIOLATION: " + String(_state.underFloorCount) + " consecutive waves with fewer than " + String(MAX_DISPATCHES) + " dispatches.",
-        "The 10-agent floor is MANDATORY. Each wave MUST dispatch exactly " + String(MAX_DISPATCHES) + " agents.",
-        "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
-      ].join("\n"))
-    }
-    if (_state.singleDispatchWaves >= 3) {
-      warnings.push("MESSAGE SHAPE VIOLATION: 3 consecutive single-dispatch waves. Batch wider — 2+ dispatches per message.")
-    }
-    // DP.2: wave refill automation — inject reminder when pool drops low
-    if (
-      _state.lastDispatchTs > 0 &&
-      _state.estimatedInFlight < 5 &&
-      (Date.now() - _state.lastDispatchTs) > RESULT_ARRIVAL_REFRESH_INTERVAL_MS
-    ) {
-      warnings.push([
-        "⛔ FLOOR LOW: only " + String(_state.estimatedInFlight) + " agents remain.",
-        "Last dispatch was >" + String(Math.round((Date.now() - _state.lastDispatchTs) / 1000)) + "s ago.",
-        "Dispatch replacements now to maintain the 10-agent floor.",
-        "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
-      ].join("\n"))
-    }
-    if (warnings.length > 0) {
-      const warning = warnings.join("\n\n")
-      writeState(_state)
-      if (typeof output === "string") return warning + "\n\n" + (output as string)
-      if ((output as any)?.text) {
-        return { ...(output as any), text: warning + "\n\n" + String((output as any).text) }
-      }
-      return output
-    }
-    writeState(_state)
-    return output
+    const impl = loadHotModule("multitask", defaultImpl)
+    const fn = impl["experimental.text.complete"] ?? impl["text.complete"]
+    return fn ? await fn(_input, output) : output
   },
   }
 }) satisfies Plugin

@@ -104,6 +104,43 @@ class HttpTransport(Protocol):
         ...
 
 
+class CallableHttpTransport(Protocol):
+    """Compact method-and-URL callback used by generated workflows."""
+
+    def __call__(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str],
+        timeout: float,
+    ) -> tuple[int, object]: ...
+
+
+class _CallableTransportAdapter:
+    def __init__(self, callback: CallableHttpTransport) -> None:
+        self._callback = callback
+
+    def get(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str],
+        timeout: float,
+    ) -> tuple[int, dict[str, object]]:
+        status, payload = self._callback(
+            "GET",
+            url,
+            headers=headers,
+            timeout=timeout,
+        )
+        if isinstance(payload, Mapping):
+            return status, dict(payload)
+        if isinstance(payload, list):
+            return status, {"data": payload}
+        return status, {}
+
+
 def _validate_base_url(base_url: str) -> str:
     """Validate + normalize a base URL, applying the literal-host SSRF guard.
 
@@ -175,7 +212,7 @@ class AppDynamicsSource:
     def __init__(
         self,
         config: Mapping[str, object],
-        transport: HttpTransport | None = None,
+        transport: HttpTransport | CallableHttpTransport | None = None,
     ) -> None:
         self.name: str = str(config.get("name", "appdynamics"))
         self.base_url: str = _validate_base_url(str(config.get("base_url", "")))
@@ -185,7 +222,15 @@ class AppDynamicsSource:
             raise ConnectorConfigError("config['application'] is required")
         self._token: str = _resolve_secret(config, "token_env")
         self.timeout: float = float(cast(float | int | str | bool, config.get("timeout", DEFAULT_TIMEOUT)))
-        self._transport: HttpTransport = transport or _HttpxTransport()
+        self._transport: HttpTransport
+        if transport is None:
+            self._transport = _HttpxTransport()
+        elif callable(getattr(transport, "get", None)):
+            self._transport = cast(HttpTransport, transport)
+        elif callable(transport):
+            self._transport = _CallableTransportAdapter(transport)
+        else:
+            raise TypeError("transport must provide get or be callable")
 
     # -- internals ---------------------------------------------------------
 

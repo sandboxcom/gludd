@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
+
+pytestmark = pytest.mark.xdist_group("completion_audit")
+
 
 class TestCompletionAudit:
     def test_audit_returns_list_of_findings(self):
@@ -49,6 +55,35 @@ class TestCompletionAudit:
         report = run_completion_audit()
         assert "completion_pct" in report
         assert 0 <= report["completion_pct"] <= 100
+
+    def test_audit_reads_each_source_file_once(self, monkeypatch, tmp_path):
+        from general_ludd.quality.preflight import _run_completion_audit_cached
+
+        source_root = tmp_path / "src" / "general_ludd"
+        source_root.mkdir(parents=True)
+        source_files = [
+            source_root / "alpha.py",
+            source_root / "beta.py",
+        ]
+        for source_file in source_files:
+            source_file.write_text("class Example:\n    pass\n", encoding="utf-8")
+
+        original_read_text = Path.read_text
+        read_counts: dict[Path, int] = {}
+
+        def counting_read_text(path: Path, *args, **kwargs):
+            if path in source_files:
+                read_counts[path] = read_counts.get(path, 0) + 1
+            return original_read_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", counting_read_text)
+        _run_completion_audit_cached.cache_clear()
+        try:
+            _run_completion_audit_cached(str(tmp_path))
+        finally:
+            _run_completion_audit_cached.cache_clear()
+
+        assert read_counts == dict.fromkeys(source_files, 1)
 
     def test_generate_backlog_from_audit(self):
         from general_ludd.quality.preflight import generate_backlog_from_audit

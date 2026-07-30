@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -11,6 +13,21 @@ from general_ludd.filestore.store import FileStore
 
 
 class TestFileStoreInit:
+    def test_import_is_clean_with_deprecations_as_errors(self) -> None:
+        script = (
+            "import tempfile\n"
+            "from general_ludd.filestore.store import FileStore\n"
+            "with tempfile.TemporaryDirectory() as root:\n"
+            "    FileStore(root_path=root).close()\n"
+        )
+        result = subprocess.run(
+            [sys.executable, "-W", "error::DeprecationWarning", "-c", script],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+
     def test_init_with_explicit_root(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = FileStore(root_path=tmp)

@@ -125,6 +125,30 @@ class _AwsClient(Protocol):
     def __getattr__(self, name: str) -> Any: ...  # pragma: no cover - protocol
 
 
+class AwsClientCallback(Protocol):
+    """Compact generated-workflow callback for AWS API methods."""
+
+    def __call__(self, method: str, **kwargs: object) -> tuple[int, object]: ...
+
+
+class _CallbackAwsClient:
+    """Expose a compact callback through the boto3-style method interface."""
+
+    def __init__(self, callback: AwsClientCallback) -> None:
+        self._callback = callback
+
+    def __getattr__(self, method: str) -> Any:
+        def invoke(**kwargs: object) -> dict[str, object]:
+            status, payload = self._callback(method, **kwargs)
+            if not (200 <= int(status) < 300):
+                raise RuntimeError(f"AWS {method} request failed with HTTP {status}")
+            if not isinstance(payload, Mapping):
+                raise RuntimeError(f"AWS {method} response was not an object")
+            return dict(payload)
+
+        return invoke
+
+
 # A factory turning a service name ('codepipeline' | 'logs') into a client.
 ClientFactory = Callable[[str], _AwsClient]
 
@@ -160,18 +184,35 @@ class AwsPipelineSource:
 
     KIND: str = "pipeline"
 
-    def __init__(self, config: Mapping[str, object]) -> None:
+    def __init__(
+        self,
+        config: Mapping[str, object],
+        *,
+        aws_client: AwsClientCallback | None = None,
+    ) -> None:
         self._config: dict[str, object] = dict(config)
         self.region: str = str(config.get("region", ""))
         pipeline_raw = config.get("pipeline")
+        if not isinstance(pipeline_raw, str):
+            pipeline_raw = config.get("name")
         self.pipeline: str | None = pipeline_raw if isinstance(pipeline_raw, str) else None
         log_group_raw = config.get("log_group")
         self.log_group: str | None = log_group_raw if isinstance(log_group_raw, str) else None
 
         factory = config.get("client_factory")
-        self._client_factory: ClientFactory = (
-            factory if callable(factory) else self._default_client_factory
-        )
+        if aws_client is not None and callable(factory):
+            raise ValueError("client_factory and aws_client are mutually exclusive")
+        self._client_factory: ClientFactory
+        if aws_client is not None:
+            self._client_factory = lambda _service: cast(
+                _AwsClient, _CallbackAwsClient(aws_client)
+            )
+        else:
+            self._client_factory = (
+                cast(ClientFactory, factory)
+                if callable(factory)
+                else self._default_client_factory
+            )
 
         pipeline_part = self.pipeline or "unknown"
         self.name: str = f"aws-pipeline:{self.region or 'unknown'}:{pipeline_part}"

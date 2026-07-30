@@ -130,14 +130,20 @@ class TestCleanTreeFix:
 
     def test_clean_tree_uses_wrapped_process_import(self):
         src = (ROOT / ".opencode" / "plugin" / "enforce-clean-tree.ts").read_text()
-        assert 'import { createRequire } from "node:module"' in src, (
-            "enforce-clean-tree.ts must use the shared createRequire wrapper"
+        helper_src = (
+            ROOT / ".opencode" / "lib" / "plugin_test_exports.ts"
+        ).read_text()
+        assert "getGitStatus" in src, (
+            "enforce-clean-tree.ts must call the shared git-status helper"
         )
-        assert '"node:child_" + "process"' in src, (
-            "enforce-clean-tree.ts must avoid a static child-process import"
+        assert 'import { createRequire } from "node:module"' in helper_src, (
+            "plugin_test_exports.ts must use the createRequire wrapper"
         )
-        assert 'require("node:child_process")' not in src, (
-            "enforce-clean-tree.ts still uses direct CJS require()"
+        assert '"node:child_" + "process"' in helper_src, (
+            "the shared helper must avoid a static child-process import"
+        )
+        assert 'require("node:child_process")' not in src + helper_src, (
+            "clean-tree dependency path still uses direct CJS require()"
         )
 
 

@@ -10,18 +10,13 @@ Covers end-to-end integration across:
 
 from __future__ import annotations
 
-import asyncio
-import time
-from collections import defaultdict
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 
-from general_ludd.budget.combined_cost import CombinedCostTracker
 from general_ludd.budget.credit_tracker import CreditTracker
 from general_ludd.budget.envelope import (
-    BudgetCheckResult,
     BudgetEnvelope,
     BudgetManager,
     PerAgentEnvelope,
@@ -40,7 +35,6 @@ from general_ludd.events.bus import EventBus
 from general_ludd.events.hooks import (
     HookRegistration,
     HookSystem,
-    WebhookConfig,
     _redact_payload,
     is_safe_fetch_url,
 )
@@ -54,12 +48,9 @@ from general_ludd.events.types import (
     PlaybookRegisteredEvent,
     ReloadCompletedEvent,
     ReloadRequestedEvent,
-    WorkerPingEvent,
-    WorkerPongEvent,
 )
 from general_ludd.worker.app import create_app
 from general_ludd.worker.heartbeat import handle_ping, make_ping
-
 
 # ── Budget: BudgetEnvelope E2E ──────────────────────────────────────────────
 
@@ -324,9 +315,8 @@ class TestCreditTrackerE2E:
 
 class TestWorkerAppE2E:
     @pytest.fixture
-    def unauthed_client(self):
-        import os as _os
-        _os.environ["GLUDD_PSK_DISABLE"] = "1"
+    def unauthed_client(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("GLUDD_PSK_DISABLE", "1")
         app = create_app(gateway=None, dispatcher=None)
         return TestClient(app)
 

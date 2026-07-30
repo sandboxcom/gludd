@@ -118,6 +118,31 @@ class TestDeadCodeCheckExitCodes:
         names = [d["name"] for d in data["dead"]]
         assert "Provider" not in names
 
+    def test_does_not_flag_symbol_used_inside_its_own_module(self, tmp_path: Path):
+        src = tmp_path / "src" / "general_ludd"
+        tests = tmp_path / "tests"
+        src.mkdir(parents=True)
+        tests.mkdir()
+
+        (src / "__init__.py").write_text("")
+        (src / "provider.py").write_text(
+            "class Provider:\n"
+            "    pass\n\n"
+            "def build_provider() -> Provider:\n"
+            "    return Provider()\n"
+        )
+        (src / "consumer.py").write_text(
+            "from general_ludd.provider import build_provider\n\n"
+            "provider = build_provider()\n"
+        )
+        (tests / "__init__.py").write_text("")
+
+        result = _run("--json", repo_root=tmp_path)
+        assert result.returncode == 0
+        data = json.loads(result.stdout)
+        names = [d["name"] for d in data["dead"]]
+        assert "Provider" not in names
+
 
 class TestJsonOutput:
     def test_json_structure(self, tmp_path: Path):

@@ -31,6 +31,7 @@ import json
 import logging
 import os
 import urllib.parse
+from collections.abc import Callable
 from typing import Protocol, cast, runtime_checkable
 
 import httpx
@@ -72,6 +73,29 @@ class _HttpxTransport:
         return _TempoResponse(resp.status_code, resp.content)
 
 
+CallbackTransport = Callable[..., _TempoResponse | tuple[int, object]]
+
+
+class _CallbackTransport:
+    """Adapt the shared method/url callback contract to Tempo's ``get`` API."""
+
+    def __init__(self, callback: CallbackTransport) -> None:
+        self._callback = callback
+
+    def get(self, url: str, *, headers: dict[str, str], timeout: float) -> _TempoResponse:
+        result = self._callback("GET", url, headers=headers, timeout=timeout)
+        if isinstance(result, _TempoResponse):
+            return result
+        status, body = result
+        if isinstance(body, bytes):
+            encoded = body
+        elif isinstance(body, str):
+            encoded = body.encode("utf-8")
+        else:
+            encoded = json.dumps(body).encode("utf-8")
+        return _TempoResponse(status, encoded)
+
+
 def _guard_base_url(base_url: str, *, allow_private: bool) -> str:
     if not allow_private and is_url_blocked(base_url, scheme_allowlist=("http", "https")):
         raise SSRFError(f"blocked private/internal host: {base_url!r}")
@@ -89,7 +113,11 @@ class TempoSource:
 
     KIND = "traces"
 
-    def __init__(self, config: dict[str, object], transport: HttpTransport | None = None) -> None:
+    def __init__(
+        self,
+        config: dict[str, object],
+        transport: HttpTransport | CallbackTransport | None = None,
+    ) -> None:
         self.name: str = str(config.get("name", "tempo"))
         self.allow_private: bool = bool(config.get("allow_private", False))
         self.base_url: str = _guard_base_url(
@@ -109,7 +137,12 @@ class TempoSource:
         token_env = config.get("token_env")
         self._token: str | None = os.environ.get(str(token_env)) if token_env else None
 
-        self._transport: HttpTransport = transport if transport is not None else _HttpxTransport()
+        transport_input = transport if transport is not None else _HttpxTransport()
+        self._transport: HttpTransport = (
+            transport_input
+            if isinstance(transport_input, HttpTransport)
+            else _CallbackTransport(transport_input)
+        )
 
     def _headers(self) -> dict[str, str]:
         headers = {"Accept": "application/json"}

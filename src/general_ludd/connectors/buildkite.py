@@ -37,6 +37,9 @@ logger = logging.getLogger(__name__)
 
 # A transport is a callable: (method, url, headers, timeout) -> (status, body).
 Transport = Callable[[str, str, Mapping[str, str], float], "tuple[int, bytes]"]
+# Compatibility surface shared by the E2E connector harness:
+# (url, headers) -> (status, already-decoded JSON-compatible body).
+HttpGet = Callable[[str, dict[str, str]], "tuple[int, object]"]
 
 DEFAULT_BASE_URL = "https://api.buildkite.com"
 
@@ -95,12 +98,41 @@ def _httpx_transport(method: str, url: str, headers: Mapping[str, str], timeout:
     return resp.status_code, resp.content
 
 
+def _adapt_http_get(http_get: HttpGet) -> Transport:
+    """Adapt the compact connector ``http_get`` contract to ``Transport``."""
+
+    def transport(
+        _method: str,
+        url: str,
+        headers: Mapping[str, str],
+        _timeout: float,
+    ) -> tuple[int, bytes]:
+        status, payload = http_get(url, dict(headers))
+        if isinstance(payload, bytes):
+            body = payload
+        elif isinstance(payload, str):
+            body = payload.encode("utf-8")
+        else:
+            body = json.dumps(payload).encode("utf-8")
+        return status, body
+
+    return transport
+
+
 class BuildkiteSource:
     """Normalizes Buildkite pipeline *builds* into gludd pipeline events."""
 
     KIND = "pipeline"
 
-    def __init__(self, config: Mapping[str, object], transport: Transport | None = None) -> None:
+    def __init__(
+        self,
+        config: Mapping[str, object],
+        transport: Transport | None = None,
+        *,
+        http_get: HttpGet | None = None,
+    ) -> None:
+        if transport is not None and http_get is not None:
+            raise ValueError("transport and http_get are mutually exclusive")
         self._config = dict(config)
         self.name = str(self._config.get("name", "buildkite"))
         self.base_url = _guard_base_url(str(self._config.get("base_url", DEFAULT_BASE_URL)))
@@ -109,7 +141,10 @@ class BuildkiteSource:
         self.timeout = float(cast(float | int | str | bool, self._config.get("timeout", 10.0)))
         self._token_env = str(self._config.get("token_env", "BUILDKITE_TOKEN"))
         self._token = os.environ.get(self._token_env, "")
-        self._transport: Transport = transport or _httpx_transport
+        self._transport: Transport = (
+            transport
+            or (_adapt_http_get(http_get) if http_get is not None else _httpx_transport)
+        )
 
     # -- internals ---------------------------------------------------------
     def _headers(self) -> dict[str, str]:

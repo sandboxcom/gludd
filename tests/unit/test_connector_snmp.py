@@ -6,6 +6,8 @@ network. A recurring assertion is that the community string never leaks.
 
 from __future__ import annotations
 
+import importlib
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -224,6 +226,33 @@ def test_default_getter_guards_import(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", fake_import)
     with pytest.raises(snmp_mod._PysnmpUnavailable):
         snmp_mod._default_snmp_getter("h", 161, "c", ["1.2.3"], 1.0)
+
+
+def test_default_getter_uses_loaded_pysnmp_adapter(monkeypatch):
+    class _PrettyValue:
+        def prettyPrint(self) -> str:
+            return "ready"
+
+    def _get_cmd(*_args: Any, **_kwargs: Any):
+        return iter([(None, None, None, [("1.2.3", _PrettyValue())])])
+
+    def _constructor(*_args: Any, **_kwargs: Any) -> object:
+        return object()
+
+    fake_hlapi = SimpleNamespace(
+        CommunityData=_constructor,
+        ContextData=_constructor,
+        ObjectIdentity=_constructor,
+        ObjectType=_constructor,
+        SnmpEngine=_constructor,
+        UdpTransportTarget=_constructor,
+        getCmd=_get_cmd,
+    )
+    monkeypatch.setattr(importlib, "import_module", lambda _name: fake_hlapi)
+
+    assert snmp_mod._default_snmp_getter("host", 161, "community", ["1.2.3"], 1.0) == [
+        ("1.2.3", "ready")
+    ]
 
 
 def test_health_ok_when_getter_reachable(monkeypatch):

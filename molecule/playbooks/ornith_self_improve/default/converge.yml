@@ -4,8 +4,8 @@
   connection: local
   gather_facts: false
   vars:
-    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8794', true) }}"
-    mock_repo_path: "/tmp/gludd-ornith-repo-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8794', true) }}"
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8897', true) }}"
+    mock_repo_path: "/tmp/gludd-ornith-repo-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8897', true) }}"
   tasks:
     - name: Reset mock-daemon request log (isolate this role's endpoint hits)
       ansible.builtin.uri:

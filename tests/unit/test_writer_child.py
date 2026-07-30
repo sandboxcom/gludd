@@ -114,14 +114,13 @@ def _wait_for_readiness(ready_path: Path, nonce: str, timeout: float = _READINES
 
 def _terminate_clean(proc: subprocess.Popen, timeout: float = 10.0) -> int:
     """Send SIGTERM and return the exit code. Kills with SIGKILL if it doesn't exit in time."""
-    if proc.poll() is not None:
-        return proc.returncode if proc.returncode is not None else -1
-    proc.terminate()
+    if proc.poll() is None:
+        proc.terminate()
     try:
-        proc.wait(timeout=timeout)
+        proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
         proc.kill()
-        proc.wait(timeout=5)
+        proc.communicate(timeout=5)
     return proc.returncode if proc.returncode is not None else -1
 
 
@@ -251,12 +250,11 @@ class TestChildSigtermCleanExit:
             time.sleep(0.3)
             assert proc.poll() is None, "child died before SIGTERM"
             proc.send_signal(signal.SIGTERM)
-            rc = proc.wait(timeout=10.0)
+            proc.communicate(timeout=10.0)
+            rc = proc.returncode
             assert rc == 0, f"expected clean exit 0 after SIGTERM, got {rc}"
         finally:
-            if proc.poll() is None:
-                proc.kill()
-                proc.wait(timeout=5)
+            _terminate_clean(proc)
 
 
 class TestChildConfigPathRequired:

@@ -5,7 +5,6 @@
   gather_facts: false
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8794', true) }}"
-    pidfile: "/tmp/gludd-mock-{{ mock_port }}.pid"
     backup_dir: "/tmp/gludd-openbao-backup-{{ mock_port }}"
     gnupghome: "/tmp/gludd-mock-gnupg-{{ mock_port }}"
     backup_path: "{{ backup_dir }}/openbao-molecule-test.gpg"
@@ -38,12 +37,6 @@
           - bk.stat.size > 0
         fail_msg: "encrypted backup is 0 bytes"
         success_msg: "encrypted backup {{ backup_path }} ({{ bk.stat.size }} bytes)"
-
-    - name: Stop mock daemon
-      ansible.builtin.shell:
-        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
-      changed_when: false
-      failed_when: false
 
     - name: Remove backup dir + GNUPGHOME
       ansible.builtin.file:

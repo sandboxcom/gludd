@@ -1,12 +1,17 @@
-import os
-import sys
+import importlib
+from pathlib import Path
 
 
-def test_script_exists():
-    assert os.path.exist("scripts/check_ci_integrity.py")
+def test_script_exists(monkeypatch):
+    script = (
+        Path(__file__).resolve().parents[2]
+        / "scripts"
+        / "check_ci_integrity.py"
+    )
+    assert script.is_file()
 
-    sys.path.insert(0, "scripts")
-    m = __import__("check_ci_integrity")
+    monkeypatch.syspath_prepend(str(script.parent))
+    m = importlib.import_module("check_ci_integrity")
     assert hasattr(m, "CI_CRITICAL")
     assert len(m.CI_CRITICAL) >= 1
 

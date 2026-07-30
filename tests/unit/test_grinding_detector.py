@@ -12,6 +12,7 @@ import pytest
 
 from general_ludd.self_update.grinding_detector import (
     GrindingDetector,
+    _read_json,
     detect_and_create_todos,
 )
 
@@ -19,6 +20,12 @@ from general_ludd.self_update.grinding_detector import (
 def _write_json(path: str, data: object) -> None:
     with open(path, "w") as fh:
         json.dump(data, fh)
+
+
+def test_read_json_returns_empty_for_invalid_json(tmp_path: Path) -> None:
+    state_file = tmp_path / "invalid.json"
+    state_file.write_text("{", encoding="utf-8")
+    assert _read_json(str(state_file)) == {}
 
 
 # ── Fixtures ────────────────────────────────────────────────────────────────

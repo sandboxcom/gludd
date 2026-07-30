@@ -31,7 +31,16 @@ def engine():
         cursor.close()
 
     Base.metadata.create_all(e)
-    return e
+    try:
+        yield e
+    finally:
+        e.dispose()
+
+
+@pytest.fixture
+def db_session(engine):
+    with Session(engine) as session:
+        yield session
 
 
 def _col_reflects_fk(model, col_name: str) -> ForeignKey | None:
@@ -63,8 +72,8 @@ def test_task_decision_matched_todo_id_has_fk():
 # ── Runtime integrity tests ─────────────────────────────────────────────────
 
 
-def test_parent_todo_id_fk_blocks_orphan_insert(engine):
-    session = Session(engine)
+def test_parent_todo_id_fk_blocks_orphan_insert(db_session):
+    session = db_session
     todo = TodoModel(
         todo_id="S13-001",
         title="orphan test",
@@ -76,8 +85,8 @@ def test_parent_todo_id_fk_blocks_orphan_insert(engine):
     session.rollback()
 
 
-def test_parent_todo_id_set_null_on_parent_delete(engine):
-    session = Session(engine)
+def test_parent_todo_id_set_null_on_parent_delete(db_session):
+    session = db_session
     parent = TodoModel(todo_id="S13-PARENT", title="parent")
     child = TodoModel(todo_id="S13-CHILD", title="child", parent_todo_id="S13-PARENT")
     session.add_all([parent, child])
@@ -90,8 +99,8 @@ def test_parent_todo_id_set_null_on_parent_delete(engine):
     assert child.parent_todo_id is None
 
 
-def test_matched_todo_id_fk_blocks_orphan_insert(engine):
-    session = Session(engine)
+def test_matched_todo_id_fk_blocks_orphan_insert(db_session):
+    session = db_session
     parent_ret = TaskReturnModel(
         return_id="S13-RET-001",
         job_id="job-1",
@@ -112,8 +121,8 @@ def test_matched_todo_id_fk_blocks_orphan_insert(engine):
     session.rollback()
 
 
-def test_matched_todo_id_set_null_on_todo_delete(engine):
-    session = Session(engine)
+def test_matched_todo_id_set_null_on_todo_delete(db_session):
+    session = db_session
     todo = TodoModel(todo_id="S13-MATCH", title="matched")
     parent_ret = TaskReturnModel(
         return_id="S13-RET-002",
@@ -149,8 +158,8 @@ def test_human_todo_parent_agent_todo_id_has_fk():
     assert fk.ondelete == "SET NULL"
 
 
-def test_human_todo_parent_fk_blocks_orphan_insert(engine):
-    session = Session(engine)
+def test_human_todo_parent_fk_blocks_orphan_insert(db_session):
+    session = db_session
     ht = HumanTodoModel(
         id="HT-S13-001",
         title="orphan test",
@@ -164,8 +173,8 @@ def test_human_todo_parent_fk_blocks_orphan_insert(engine):
     session.rollback()
 
 
-def test_human_todo_parent_fk_set_null_on_todo_delete(engine):
-    session = Session(engine)
+def test_human_todo_parent_fk_set_null_on_todo_delete(db_session):
+    session = db_session
     todo = TodoModel(todo_id="S13-HT-PARENT", title="blocked parent")
     session.add(todo)
     session.flush()

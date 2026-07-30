@@ -733,52 +733,56 @@ def test_live_total_debug_returns_breakdown(
 
 # --- 12. _tasks_dir activity-based ranking (defect #1 fix) ------------------
 #
-# These tests use a FAKE uid (monkeypatching os.getuid) instead of the
-# GLUDD_TASKS_DIR override, because the whole point is to exercise the
-# session-discovery heuristic in ``_tasks_dir`` itself (GLUDD_TASKS_DIR
-# short-circuits it entirely). Each fake uid is unique to its test so no two
-# tests' fixture trees can collide, and each cleans up its
-# ``/private/tmp/claude-<fake_uid>`` tree in a ``finally`` block.
+# These tests set ``GLUDD_CLAUDE_SESSIONS_BASE`` to a pytest-owned directory
+# rather than ``GLUDD_TASKS_DIR``, because the latter short-circuits the
+# session-discovery heuristic. The base override preserves the discovery path
+# while keeping every filesystem write hermetic on Linux and macOS.
+
+
+def test_claude_sessions_base_honors_isolated_override(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    base = tmp_path / "claude-sessions"
+    monkeypatch.setenv("GLUDD_CLAUDE_SESSIONS_BASE", str(base))
+
+    assert agent_liveness._claude_sessions_base() == str(base)
+
 
 def test_activity_ranking_prefers_active_tasks_over_newer_empty_session(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """A brand-new, near-empty session dir must NOT hijack the resolved tasks
     dir away from an older session whose tasks/ dir has genuine, fresh file
     activity. Reproduces the exact bug: ranking by the SESSION DIR's own mtime
     (which the empty new session wins) instead of by activity INSIDE tasks/."""
-    import shutil
-
-    fake_uid = 900000124
-    monkeypatch.setattr(agent_liveness.os, "getuid", lambda: fake_uid)
-    base = f"/private/tmp/claude-{fake_uid}/-Users-shawnwilson-gludd"
+    base = str(tmp_path / "claude-sessions")
+    monkeypatch.setenv("GLUDD_CLAUDE_SESSIONS_BASE", base)
     old_session_dir = os.path.join(base, "old-session")
     new_session_dir = os.path.join(base, "new-session")
     old_session_tasks = os.path.join(old_session_dir, "tasks")
     new_session_tasks = os.path.join(new_session_dir, "tasks")
     os.makedirs(old_session_tasks, exist_ok=True)
     os.makedirs(new_session_tasks, exist_ok=True)
-    try:
-        now = time.time()
-        active_f = os.path.join(old_session_tasks, "agent1.output")
-        with open(active_f, "w") as fh:
-            fh.write("x")
-        os.utime(active_f, (now - 1, now - 1))               # actively streaming
-        os.utime(old_session_dir, (now - 1000, now - 1000))  # but dir itself is OLD
+    now = time.time()
+    active_f = os.path.join(old_session_tasks, "agent1.output")
+    with open(active_f, "w") as fh:
+        fh.write("x")
+    os.utime(active_f, (now - 1, now - 1))               # actively streaming
+    os.utime(old_session_dir, (now - 1000, now - 1000))  # but dir itself is OLD
 
-        os.utime(new_session_dir, (now - 5, now - 5))         # dir created "recently"
-        # new_session_tasks stays EMPTY -> _dir_activity_mtime falls back to dir mtime.
+    os.utime(new_session_dir, (now - 5, now - 5))         # dir created "recently"
+    # new_session_tasks stays EMPTY -> _dir_activity_mtime falls back to dir mtime.
 
-        monkeypatch.delenv("GLUDD_TASKS_DIR", raising=False)
-        monkeypatch.delenv("GLUDD_SESSION_ID", raising=False)
+    monkeypatch.delenv("GLUDD_TASKS_DIR", raising=False)
+    monkeypatch.delenv("GLUDD_SESSION_ID", raising=False)
 
-        resolved = agent_liveness._tasks_dir()
-        assert resolved == old_session_tasks, (
-            "the session with genuine tasks/ file activity must win over a "
-            "nominally newer but empty session dir"
-        )
-    finally:
-        shutil.rmtree(f"/private/tmp/claude-{fake_uid}", ignore_errors=True)
+    resolved = agent_liveness._tasks_dir()
+    assert resolved == old_session_tasks, (
+        "the session with genuine tasks/ file activity must win over a "
+        "nominally newer but empty session dir"
+    )
 
 
 def test_dir_activity_mtime_empty_dir_returns_none(tmp_path: Path) -> None:
@@ -808,68 +812,58 @@ def test_dir_activity_mtime_returns_max_file_mtime(tmp_path: Path) -> None:
 
 def test_session_id_env_resolves_deterministically(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """GLUDD_SESSION_ID lets a caller (e.g. force_delegate_pretool.sh, which has
     the session id from the PreToolUse payload) resolve its OWN tasks dir
     deterministically, bypassing the activity-ranking heuristic entirely --
     even when another session LOOKS more active by the heuristic."""
-    import shutil
-
-    fake_uid = 900000126
-    monkeypatch.setattr(agent_liveness.os, "getuid", lambda: fake_uid)
-    base = f"/private/tmp/claude-{fake_uid}/-Users-shawnwilson-gludd"
+    base = str(tmp_path / "claude-sessions")
+    monkeypatch.setenv("GLUDD_CLAUDE_SESSIONS_BASE", base)
     target_session_id = "test-session-xyz"
     target_tasks = os.path.join(base, target_session_id, "tasks")
     other_tasks = os.path.join(base, "other-session", "tasks")
     os.makedirs(target_tasks, exist_ok=True)
     os.makedirs(other_tasks, exist_ok=True)
-    try:
-        now = time.time()
-        # Make the OTHER session look more "active" than the target -- the
-        # session-id override must win anyway.
-        other_f = os.path.join(other_tasks, "agent.output")
-        with open(other_f, "w") as fh:
-            fh.write("y")
-        os.utime(other_f, (now, now))
+    now = time.time()
+    # Make the OTHER session look more "active" than the target -- the
+    # session-id override must win anyway.
+    other_f = os.path.join(other_tasks, "agent.output")
+    with open(other_f, "w") as fh:
+        fh.write("y")
+    os.utime(other_f, (now, now))
 
-        target_f = os.path.join(target_tasks, "agent.output")
-        with open(target_f, "w") as fh:
-            fh.write("x")
-        os.utime(target_f, (now - 5000, now - 5000))
+    target_f = os.path.join(target_tasks, "agent.output")
+    with open(target_f, "w") as fh:
+        fh.write("x")
+    os.utime(target_f, (now - 5000, now - 5000))
 
-        monkeypatch.delenv("GLUDD_TASKS_DIR", raising=False)
-        monkeypatch.setenv("GLUDD_SESSION_ID", target_session_id)
+    monkeypatch.delenv("GLUDD_TASKS_DIR", raising=False)
+    monkeypatch.setenv("GLUDD_SESSION_ID", target_session_id)
 
-        resolved = agent_liveness._tasks_dir()
-        assert resolved == target_tasks
-    finally:
-        shutil.rmtree(f"/private/tmp/claude-{fake_uid}", ignore_errors=True)
+    resolved = agent_liveness._tasks_dir()
+    assert resolved == target_tasks
 
 
 def test_session_id_env_falls_back_when_no_tasks_dir(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """If GLUDD_SESSION_ID points at a session with no tasks/ dir (yet), fall
     back to the activity-ranking heuristic rather than returning None."""
-    import shutil
-
-    fake_uid = 900000127
-    monkeypatch.setattr(agent_liveness.os, "getuid", lambda: fake_uid)
-    base = f"/private/tmp/claude-{fake_uid}/-Users-shawnwilson-gludd"
+    base = str(tmp_path / "claude-sessions")
+    monkeypatch.setenv("GLUDD_CLAUDE_SESSIONS_BASE", base)
     real_tasks = os.path.join(base, "real-session", "tasks")
     os.makedirs(real_tasks, exist_ok=True)
-    try:
-        f = os.path.join(real_tasks, "agent.output")
-        with open(f, "w") as fh:
-            fh.write("x")
+    f = os.path.join(real_tasks, "agent.output")
+    with open(f, "w") as fh:
+        fh.write("x")
 
-        monkeypatch.delenv("GLUDD_TASKS_DIR", raising=False)
-        monkeypatch.setenv("GLUDD_SESSION_ID", "nonexistent-session-id")
+    monkeypatch.delenv("GLUDD_TASKS_DIR", raising=False)
+    monkeypatch.setenv("GLUDD_SESSION_ID", "nonexistent-session-id")
 
-        resolved = agent_liveness._tasks_dir()
-        assert resolved == real_tasks
-    finally:
-        shutil.rmtree(f"/private/tmp/claude-{fake_uid}", ignore_errors=True)
+    resolved = agent_liveness._tasks_dir()
+    assert resolved == real_tasks
 
 
 # --- 13. _workflow_transcript_files window/session filtering (defect #3 fix) -
@@ -886,8 +880,11 @@ def test_stale_workflow_session_tree_excluded(
     fake_home = tmp_path / "home"
     fake_home.mkdir()
     monkeypatch.setenv("HOME", str(fake_home))
-    # Keep the /private/tmp fallback pattern from matching real machine state.
-    monkeypatch.setattr(agent_liveness.os, "getuid", lambda: 900000128)
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", "/Users/shawnwilson/gludd")
+    monkeypatch.setenv(
+        "GLUDD_CLAUDE_SESSIONS_BASE",
+        str(tmp_path / "empty-fallback"),
+    )
 
     proj_dir = fake_home / ".claude" / "projects" / "-Users-shawnwilson-gludd"
 
@@ -920,7 +917,11 @@ def test_workflow_session_id_match_always_included_regardless_of_age(
     fake_home = tmp_path / "home2"
     fake_home.mkdir()
     monkeypatch.setenv("HOME", str(fake_home))
-    monkeypatch.setattr(agent_liveness.os, "getuid", lambda: 900000129)
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", "/Users/shawnwilson/gludd")
+    monkeypatch.setenv(
+        "GLUDD_CLAUDE_SESSIONS_BASE",
+        str(tmp_path / "empty-fallback"),
+    )
 
     proj_dir = fake_home / ".claude" / "projects" / "-Users-shawnwilson-gludd"
     matched_session = proj_dir / "matched-session"

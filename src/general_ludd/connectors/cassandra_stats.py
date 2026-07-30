@@ -27,8 +27,8 @@ from __future__ import annotations
 import logging
 import os
 import time
-from collections.abc import Callable, Sequence
-from typing import TypedDict
+from collections.abc import Callable, Iterator, Sequence
+from typing import Protocol, TypedDict
 
 from general_ludd.connectors.normalize import sanitize_metric_value
 
@@ -78,6 +78,15 @@ class CassandraHealthResult(TypedDict, total=False):
 
 Executor = Callable[[str], Sequence[CassandraRow]]
 
+
+class Cursor(Protocol):
+    """Minimal iterable DB cursor accepted for compatibility injection."""
+
+    def execute(self, command: str) -> object: ...
+
+    def __iter__(self) -> Iterator[CassandraRow]: ...
+
+
 _DRIVER_UNAVAILABLE = "driver unavailable"
 
 # Logical metric groups the executor is asked for, in collection order.
@@ -89,16 +98,37 @@ class CassandraStatsSource:
 
     KIND = "metrics"
 
-    def __init__(self, config: CassandraConfig | None = None, executor: Executor | None = None) -> None:
+    def __init__(
+        self,
+        config: CassandraConfig | None = None,
+        executor: Executor | None = None,
+        cursor: Cursor | None = None,
+    ) -> None:
+        if executor is not None and cursor is not None:
+            raise ValueError("provide executor or cursor, not both")
         cfg = dict(config or {})
         self.name: str = str(cfg.get("name", "cassandra"))
         self._config = cfg
         self._jmx_url: str = str(cfg.get("jmx_url", "http://localhost:7070/metrics"))
         self._token_env: str = str(cfg.get("token_env", "CASSANDRA_JMX_TOKEN"))
-        self._executor = executor
+        self._executor = (
+            executor
+            if executor is not None
+            else self._executor_from_cursor(cursor)
+            if cursor is not None
+            else None
+        )
         self._driver_error: str | None = None
 
     # -- executor wiring ---------------------------------------------------
+
+    @staticmethod
+    def _executor_from_cursor(cursor: Cursor) -> Executor:
+        def _run(command: str) -> Sequence[CassandraRow]:
+            cursor.execute(command)
+            return list(cursor)
+
+        return _run
 
     def _get_executor(self) -> Executor | None:
         if self._executor is not None:

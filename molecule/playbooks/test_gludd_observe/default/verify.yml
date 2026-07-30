@@ -1,0 +1,59 @@
+---
+- name: Verify - gludd_observe exercised real HTTP fan-out
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8898', true) }}"
+  tasks:
+    - name: Load persisted observe results
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-observe.json"
+      register: observe_raw
+
+    - name: Parse observe results
+      ansible.builtin.set_fact:
+        observe: "{{ observe_raw.content | b64decode | from_json }}"
+
+    - name: Assert query fan-out and source failure isolation
+      ansible.builtin.assert:
+        that:
+          - observe.query.source_count | int == 3
+          - observe.query.role == 'molecule_observe_probe'
+          - observe.query.records | length == 5
+          - observe.query.groups.T7 | length == 4
+          - observe.query.errors | length == 1
+          - observe.query.errors[0].source == 'broken-logs'
+          - observe.query.errors[0].message == 'query failed'
+
+    - name: Assert bounded timeline and JSON-safe topology
+      ansible.builtin.assert:
+        that:
+          - observe.timeline.records | length == 5
+          - observe.timeline.records[0].ts | float == 100.0
+          - observe.timeline.errors | length == 1
+          - observe.topology.topology.services.checkout == ['db-01', 'web-01', 'web-02']
+          - observe.topology.topology.hosts['web-01'] == ['checkout']
+          - observe.topology.errors | length == 1
+
+    - name: Assert incident correlation includes seed and healthy records
+      ansible.builtin.assert:
+        that:
+          - observe.incident.groups.T7 | length == 5
+          - observe.incident.errors | length == 1
+          - observe.incident.errors[0].source == 'broken-logs'
+
+    - name: Assert every operation used daemon discovery and query routes
+      ansible.builtin.assert:
+        that:
+          - >-
+            observe.requests
+            | select('equalto', 'GET /api/observe/sources')
+            | list
+            | length == 4
+          - >-
+            observe.requests
+            | select('equalto', 'POST /api/observe/query')
+            | list
+            | length == 12
+        success_msg: "gludd_observe completed four real HTTP-backed workflows"

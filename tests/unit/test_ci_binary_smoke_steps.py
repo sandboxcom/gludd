@@ -65,10 +65,10 @@ def _step_uses_uses(step: dict) -> str:
 
 
 class TestSmokeTestStepPerPlatform:
-    """Each platform build job (linux/macos/windows) must run a smoke test."""
+    """Each required platform build job must run a smoke test."""
 
     @pytest.mark.parametrize(
-        "job_name", ["linux", "macos", "windows"], ids=lambda n: f"job:{n}"
+        "job_name", ["linux", "macos", "windows", "termux"], ids=lambda n: f"job:{n}"
     )
     def test_smoke_test_step_exists(self, build_workflow: dict, job_name: str) -> None:
         steps = _steps(build_workflow, job_name)
@@ -85,7 +85,7 @@ class TestSmokeTestStepPerPlatform:
         )
 
     @pytest.mark.parametrize(
-        "job_name", ["linux", "macos", "windows"], ids=lambda n: f"job:{n}"
+        "job_name", ["linux", "macos", "windows", "termux"], ids=lambda n: f"job:{n}"
     )
     def test_smoke_step_runs_binary(
         self, build_workflow: dict, job_name: str
@@ -93,8 +93,8 @@ class TestSmokeTestStepPerPlatform:
         combined = "\n".join(
             (s.get("run") or "") for s in _steps(build_workflow, job_name)
         )
-        assert "--version" in combined, (
-            f"build.yml job '{job_name}' smoke test must run `--version`"
+        assert " version" in combined, (
+            f"build.yml job '{job_name}' smoke test must run `gludd version`"
         )
         assert "--help" in combined, (
             f"build.yml job '{job_name}' smoke test must run `--help`"
@@ -110,7 +110,7 @@ class TestSmokeTestOrdering:
     """Smoke test must run after build, before artifact upload."""
 
     @pytest.mark.parametrize(
-        "job_name", ["linux", "macos", "windows"], ids=lambda n: f"job:{n}"
+        "job_name", ["linux", "macos", "windows", "termux"], ids=lambda n: f"job:{n}"
     )
     def test_smoke_after_build_before_upload(
         self, build_workflow: dict, job_name: str
@@ -163,7 +163,7 @@ class TestSmokeTestCrashDetection:
     )
 
     @pytest.mark.parametrize(
-        "job_name", ["linux", "macos", "windows"], ids=lambda n: f"job:{n}"
+        "job_name", ["linux", "macos", "windows", "termux"], ids=lambda n: f"job:{n}"
     )
     def test_smoke_step_detects_crash_signatures(
         self, build_workflow: dict, job_name: str
@@ -216,11 +216,25 @@ class TestLinuxDaemonSmokeTest:
         assert combined.strip(), (
             "build.yml linux daemon smoke test step has no run block"
         )
-        assert "daemon start" in combined or "daemon" in combined.lower(), (
-            "linux daemon smoke test must start the daemon"
+        assert "daemon start" not in combined, (
+            "linux daemon smoke test uses the removed `daemon start` syntax; "
+            "the current CLI starts with the bare `gludd daemon` command"
         )
-        assert re.search(r"/health\b", combined) or "curl" in combined, (
-            "linux daemon smoke test must hit a /health endpoint to verify boot"
+        assert re.search(r"(?m)^\s*\./dist/gludd daemon\s*&\s*$", combined), (
+            "linux daemon smoke test must run the actual packaged CLI as "
+            "`./dist/gludd daemon &`"
+        )
+        assert "curl -fsS http://127.0.0.1:8000/healthz" in combined, (
+            "linux daemon smoke test must fail closed against the canonical "
+            "`/healthz` endpoint"
+        )
+        assert 'if ! kill -0 "$DAEMON_PID"' in combined, (
+            "linux daemon smoke test must reject a process that exits before "
+            "the health probe succeeds"
+        )
+        assert re.search(r'if \[ "\$healthy" -ne 1 \]; then.*?exit 1', combined, re.DOTALL), (
+            "linux daemon smoke test must exit nonzero when `/healthz` never "
+            "becomes healthy"
         )
 
     def test_daemon_smoke_before_upload(self, build_workflow: dict) -> None:

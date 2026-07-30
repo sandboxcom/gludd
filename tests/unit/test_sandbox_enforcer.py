@@ -14,6 +14,7 @@ Covers the SandboxEnforcer with behavioral tests for:
 from __future__ import annotations
 
 import os
+import socket
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -144,6 +145,20 @@ class TestNetworkIsolation:
                 patch.dict(os.environ, {"GLUDD_SANDBOX_NO_NETWORK": val}),
             ):
                 SandboxEnforcer._isolate_network()
+
+    def test_isolate_network_does_not_leak_process_socket_timeout(self) -> None:
+        """Isolation must not mutate sockets subsequently created by the caller."""
+        original_timeout = socket.getdefaulttimeout()
+        try:
+            socket.setdefaulttimeout(None)
+            with (
+                patch("os.name", "posix"),
+                patch.dict(os.environ, {"GLUDD_SANDBOX_NO_NETWORK": "1"}),
+            ):
+                SandboxEnforcer._isolate_network()
+            assert socket.getdefaulttimeout() is None
+        finally:
+            socket.setdefaulttimeout(original_timeout)
 
     def test_isolate_network_posix_env_not_set(self) -> None:
         with (

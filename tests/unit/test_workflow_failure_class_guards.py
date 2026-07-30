@@ -144,7 +144,7 @@ def test_workflow_state_machine_targets_back_release_and_ci_paths() -> None:
     assert "--assert-no-unintegrated-worktrees" in workflow_gate
     assert "workflow-gate" in _target_line("gha-ready")
     assert "scripts/ci_remote_head_guard.py" in gha_block
-    assert "/Users/shawnwilson/gludd/sandboxcom_github_rsa" in gha_block
+    assert "/Users/shawnwilson/.ssh/sandboxcom_gludd_rsa" in gha_block
     assert "--assert-no-unintegrated-worktrees" in merge_block
     assert "merge-ready" in merge_line
 
@@ -154,8 +154,8 @@ def test_committed_head_ci_path_uses_worktree_safe_key_and_fails_closed() -> Non
     gha_block = _target_block("gha-ready")
     trigger_block = _target_block("ci-trigger-committed-head")
 
-    assert "/Users/shawnwilson/gludd/sandboxcom_github_rsa" in push_block
-    assert "/Users/shawnwilson/gludd/sandboxcom_github_rsa" in gha_block
+    assert "/Users/shawnwilson/.ssh/sandboxcom_gludd_rsa" in push_block
+    assert "/Users/shawnwilson/.ssh/sandboxcom_gludd_rsa" in gha_block
     assert "git push --no-verify -u sandboxcom HEAD:refs/heads/" in push_block
     assert "verify-remote BRANCH=" in push_block
     assert "gh workflow run \"Build and Release\"" in trigger_block
@@ -166,7 +166,34 @@ def test_committed_head_ci_path_uses_worktree_safe_key_and_fails_closed() -> Non
 def test_git_remote_targets_use_worktree_safe_ssh_key_path() -> None:
     makefile = _makefile()
     assert "-i sandboxcom_github_rsa" not in makefile
-    assert "/Users/shawnwilson/gludd/sandboxcom_github_rsa" in makefile
+    assert "/Users/shawnwilson/.ssh/sandboxcom_gludd_rsa" in makefile
+
+
+def test_git_remote_bootstrap_uses_repository_scoped_ssh() -> None:
+    remote_block = _target_block("git-remote-sandboxcom")
+    assert "gh auth setup-git" not in remote_block
+    assert "git@github.com:sandboxcom/gludd.git" in remote_block
+    assert "git remote set-url sandboxcom" in remote_block
+    assert "/Users/shawnwilson/.ssh/sandboxcom_gludd_rsa" in remote_block
+
+
+def test_current_head_push_uses_ssh_url_for_workflow_file_changes() -> None:
+    push_block = _target_block("git-push-current-head-nv")
+    assert "HEAD:refs/heads/$$BRANCH" in push_block
+    assert "ci-busy-check BRANCH=$$BRANCH" in push_block
+    assert "PUSH_BRANCH=$$BRANCH" in push_block
+    assert "/Users/shawnwilson/.ssh/sandboxcom_gludd_rsa" in push_block
+
+
+def test_release_push_targets_bootstrap_repository_scoped_ssh() -> None:
+    for target in [
+        "git-push-sandboxcom",
+        "git-push-sandboxcom-nv",
+        "git-push-current-head-nv",
+        "git-push-current-head-to-master-nv",
+        "git-tag-push",
+    ]:
+        assert "git-remote-sandboxcom" in _target_line(target), target
 
 
 def test_local_ci_replica_shards_refuse_dirty_tree_by_default() -> None:
@@ -449,3 +476,16 @@ def test_kill_stale_reaps_orphaned_workspace_gunicorn_daemon_tree() -> None:
     assert "pgrep -P \"$$pid\"" in block
     assert "active non-daemon" in block
     assert "childless gludd scratch only" not in block
+
+
+def test_kill_stray_delegates_to_orphan_only_cleanup() -> None:
+    block = _target_block("kill-stray")
+    stale_block = _target_block("kill-stale")
+    assert "$(MAKE) --no-print-directory kill-stale" in block
+    assert "pkill" not in block
+    assert '[ "$$ppid" != "1" ]' in stale_block
+    assert (
+        r"/Users/shawnwilson/gludd/\.venv/bin/python3? -u -c "
+        r"import sys;exec\(eval\(sys.stdin.readline\(\)\)\)"
+    ) in stale_block
+    assert "KILLED stale orphan xdist tree" in stale_block

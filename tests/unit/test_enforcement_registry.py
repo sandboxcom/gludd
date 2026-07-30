@@ -110,13 +110,22 @@ class TestRegistryDocumentsDisableMechanism:
         assert plugin_section is not None, (
             f"Could not locate a documented section for plugin '{stem}'."
         )
-        has_env = bool(re.search(r"GLUDD_[A-Z_]+(?:_ENFORCE|_ENABLED|_DISABLED)?\s*=\s*0", plugin_section))
+        has_env = bool(re.search(
+            r"GLUDD_[A-Z0-9_]+(?:_ENFORCE|_ENABLED|_DISABLED)?\s*=\s*0",
+            plugin_section,
+        ))
         has_hardcoded_note = "hard-coded" in plugin_section.lower() or "no env disable" in plugin_section.lower()
         assert has_env or has_hardcoded_note, (
             f"Plugin '{stem}' is documented but its disable mechanism is not. "
             "Every entry must name a `GLUDD_*_ENFORCE=0` env var OR explicitly "
             "note that the plugin is hard-coded ON / has no env disable."
         )
+
+    def test_no_ci_poll_entry_names_primary_disable(self) -> None:
+        text = REGISTRY_DOC.read_text()
+        plugin_section = _extract_plugin_section(text, "enforce-no-ci-poll")
+        assert plugin_section is not None
+        assert "GLUDD_NO_CI_POLL_ENFORCE=0" in plugin_section
 
 
 def _extract_plugin_section(text: str, stem: str) -> str | None:

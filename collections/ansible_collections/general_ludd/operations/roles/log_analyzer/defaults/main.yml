@@ -17,8 +17,9 @@ log_source_dirs: >
   ] | join(',') }}
 
 # Per-run variables — set by caller (e.g. integration test) as extravars.
-# Mapped onto the internal vars above via the role's defaults.
-log_analyzer_glob: "{{ log_source_dirs.split(',') | first | trim }}/*.log"
+# An empty glob means "scan log_source_dirs"; a non-empty glob is an explicit
+# single-source override and must take precedence over those legacy defaults.
+log_analyzer_glob: ""
 log_analyzer_output_dir: "{{ artifact_dir }}"
 log_analyzer_error_rate_threshold: 0.1
 log_analyzer_min_cluster_size: 2

@@ -25,6 +25,7 @@ from unittest.mock import patch
 
 import pytest
 
+import general_ludd.memory.memory_bank as memory_bank_module
 from general_ludd.memory.hindsight_adapter import (
     HindsightMemoryAdapter,
     _InMemoryStore,
@@ -306,6 +307,294 @@ class TestRaceConditionDetection:
 
 
 class TestWriteDuringRead:
+    def test_get_facts_releases_lock_before_copying_snapshot(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A slow defensive copy must not block an unrelated bank mutation."""
+        bank = MemoryBank(MemoryBankConfig(bank_id="snapshot-lock-bank"))
+        retained = bank.retain(MemoryEntry(content="snapshot", tags=["lock"]))
+        copy_started = threading.Event()
+        release_copy = threading.Event()
+        real_copy_entry = memory_bank_module._copy_memory_entry
+
+        def slow_copy_entry(value):
+            if isinstance(value, MemoryEntry) and not copy_started.is_set():
+                copy_started.set()
+                assert release_copy.wait(timeout=2)
+            return real_copy_entry(value)
+
+        monkeypatch.setattr(memory_bank_module, "_copy_memory_entry", slow_copy_entry)
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            reader = executor.submit(bank.get_facts)
+            assert copy_started.wait(timeout=1)
+            deleter = executor.submit(bank.delete_fact, retained.entry_id)
+            try:
+                assert deleter.result(timeout=0.25) is True
+            finally:
+                release_copy.set()
+            reader.result(timeout=2)
+
+    def test_ordered_fact_cache_survives_write_during_initial_sort(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A racing retain must not leave every later read sorting the bank."""
+        bank = MemoryBank(MemoryBankConfig(bank_id="ordered-cache-race"))
+        initial_one = bank.retain(
+            MemoryEntry(
+                content="initial one",
+                created_at=1.0,
+                tags=["initial"],
+            )
+        )
+        bank.retain(
+            MemoryEntry(
+                content="initial two",
+                created_at=2.0,
+                tags=["initial"],
+            )
+        )
+        sort_started = threading.Event()
+        release_sort = threading.Event()
+        real_sorted = sorted
+        sort_calls = 0
+
+        def gated_sorted(values, *args, **kwargs):
+            nonlocal sort_calls
+            sort_calls += 1
+            if sort_calls == 1:
+                sort_started.set()
+                assert release_sort.wait(timeout=2)
+            return real_sorted(values, *args, **kwargs)
+
+        monkeypatch.setattr(
+            memory_bank_module,
+            "sorted",
+            gated_sorted,
+            raising=False,
+        )
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            first_read = executor.submit(bank.get_facts)
+            try:
+                assert sort_started.wait(timeout=1)
+                late = bank.retain(
+                    MemoryEntry(
+                        content="initial late",
+                        created_at=3.0,
+                        tags=["initial"],
+                    )
+                )
+            finally:
+                release_sort.set()
+            first = first_read.result(timeout=2)
+
+        assert [fact.content for fact in first] == ["initial two", "initial one"]
+        sort_calls = 0
+        bank.retain(
+            MemoryEntry(
+                content="initial later",
+                created_at=4.0,
+                tags=["initial"],
+            )
+        )
+        second = bank.get_facts()
+        bank.retain(
+            MemoryEntry(
+                entry_id=initial_one.entry_id,
+                content="initial one updated",
+                created_at=5.0,
+                tags=["initial"],
+            )
+        )
+        assert bank.delete_fact(late.entry_id) is True
+        final = bank.get_facts()
+
+        assert [fact.content for fact in second] == [
+            "initial later",
+            "initial late",
+            "initial two",
+            "initial one",
+        ]
+        assert [fact.content for fact in final] == [
+            "initial one updated",
+            "initial later",
+            "initial two",
+        ]
+        assert sort_calls == 0
+
+    def test_recall_scores_each_snapshot_once(self) -> None:
+        """Recall must reuse its scored snapshot instead of scanning twice."""
+        bank = MemoryBank(MemoryBankConfig(bank_id="single-score-bank"))
+        bank.retain(MemoryEntry(content="initial fact", tags=["initial"]))
+
+        with (
+            patch.object(
+                bank,
+                "_score_mental_models",
+                wraps=bank._score_mental_models,
+            ) as score_models,
+            patch.object(
+                bank,
+                "_score_facts",
+                wraps=bank._score_facts,
+            ) as score_facts,
+        ):
+            bank.recall("initial")
+
+        assert score_models.call_count == 1
+        assert score_facts.call_count == 1
+
+    def test_repeated_recall_reuses_scores_until_facts_change(self) -> None:
+        bank = MemoryBank(MemoryBankConfig(bank_id="recall-cache-bank"))
+        bank.retain(MemoryEntry(content="initial fact", tags=["initial"]))
+
+        with patch.object(
+            memory_bank_module,
+            "_score_text",
+            wraps=memory_bank_module._score_text,
+        ) as score_text:
+            first = bank.recall("initial")
+            second = bank.recall("initial")
+            assert score_text.call_count == 1
+            assert first.facts[0] is not second.facts[0]
+
+            bank.retain(MemoryEntry(content="unrelated fact", tags=["other"]))
+            bank.recall("initial")
+
+        assert score_text.call_count == 2
+
+    def test_recall_cache_reconciles_write_that_arrives_during_scoring(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Concurrent writes must not starve installation of the recall cache."""
+        bank = MemoryBank(MemoryBankConfig(bank_id="recall-cache-race"))
+        bank.retain(MemoryEntry(content="initial one", tags=["initial"]))
+        bank.retain(MemoryEntry(content="initial two", tags=["initial"]))
+        score_started = threading.Event()
+        release_score = threading.Event()
+        real_score_text = memory_bank_module._score_text
+        score_calls = 0
+
+        def gated_score_text(qterms, ql, text):
+            nonlocal score_calls
+            score_calls += 1
+            if score_calls == 1:
+                score_started.set()
+                assert release_score.wait(timeout=2)
+            return real_score_text(qterms, ql, text)
+
+        monkeypatch.setattr(memory_bank_module, "_score_text", gated_score_text)
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            first_recall = executor.submit(bank.recall, "initial")
+            assert score_started.wait(timeout=1)
+            bank.retain(MemoryEntry(content="initial late", tags=["initial"]))
+            release_score.set()
+            first = first_recall.result(timeout=2)
+
+        second = bank.recall("initial")
+
+        assert len(first.facts) == 2
+        assert len(second.facts) == 3
+        assert score_calls == 3
+
+    def test_active_recall_cache_updates_each_fact_incrementally(self) -> None:
+        bank = MemoryBank(MemoryBankConfig(bank_id="incremental-recall-cache"))
+        replaceable = bank.retain(
+            MemoryEntry(content="initial replaceable", tags=["initial"])
+        )
+        removable = bank.retain(
+            MemoryEntry(content="initial removable", tags=["initial"])
+        )
+        assert len(bank.recall("initial").facts) == 2
+
+        with patch.object(
+            memory_bank_module,
+            "_score_text",
+            wraps=memory_bank_module._score_text,
+        ) as score_text:
+            for index in range(32):
+                bank.retain(
+                    MemoryEntry(
+                        content=f"unrelated fact {index}",
+                        tags=["other"],
+                    )
+                )
+                assert len(bank.recall("initial").facts) == 2
+
+            bank.retain(
+                MemoryEntry(
+                    entry_id=replaceable.entry_id,
+                    content="replacement unrelated",
+                    tags=["other"],
+                )
+            )
+            remaining = bank.recall("initial").facts
+            assert [fact.entry_id for fact in remaining] == [removable.entry_id]
+
+            assert bank.delete_fact(removable.entry_id) is True
+            assert bank.recall("initial").facts == []
+
+        assert score_text.call_count == 33
+
+    def test_unrelated_retain_does_not_rebuild_active_recall_cache(self) -> None:
+        """A non-matching write must leave an already valid score cache intact."""
+        bank = MemoryBank(MemoryBankConfig(bank_id="stable-recall-cache"))
+        bank.retain(MemoryEntry(content="initial fact", tags=["initial"]))
+        assert len(bank.recall("initial").facts) == 1
+        cached_scores = bank._fact_score_cache
+
+        bank.retain(MemoryEntry(content="unrelated fact", tags=["other"]))
+
+        assert bank._fact_score_cache is cached_scores
+        assert [fact.content for fact in bank.recall("initial").facts] == [
+            "initial fact"
+        ]
+
+    def test_flat_memory_entry_clones_avoid_generic_copy_protocol(self) -> None:
+        """Hot-path snapshots must clone flat entries without ``copy.copy``."""
+        bank = MemoryBank(MemoryBankConfig(bank_id="direct-entry-clone"))
+        source = MemoryEntry(content="initial fact", tags=["initial"])
+
+        with patch.object(
+            memory_bank_module,
+            "copy",
+            side_effect=AssertionError("generic copy protocol used"),
+        ):
+            retained = bank.retain(source)
+            recalled = bank.get_facts()[0]
+
+        assert retained == source
+        assert recalled == source
+        assert retained is not source
+        assert recalled is not source
+        assert retained.tags is not source.tags
+        assert recalled.tags is not source.tags
+
+    def test_newest_unique_retain_uses_ordered_cache_fast_path(self) -> None:
+        """The common append-by-time write must avoid a general list insertion."""
+        bank = MemoryBank(MemoryBankConfig(bank_id="ordered-cache-fast-path"))
+        bank.retain(MemoryEntry(content="first", created_at=1.0))
+        assert [fact.content for fact in bank.get_facts()] == ["first"]
+        ordered_cache = bank._ordered_facts_cache
+
+        with patch.object(
+            memory_bank_module,
+            "_insert_fact_by_recency",
+            wraps=memory_bank_module._insert_fact_by_recency,
+        ) as general_insert:
+            bank.retain(MemoryEntry(content="third", created_at=3.0))
+            bank.retain(MemoryEntry(content="second", created_at=2.0))
+
+        assert general_insert.call_count == 1
+        assert bank._ordered_facts_cache is ordered_cache
+        assert [fact.content for fact in bank.get_facts()] == [
+            "third",
+            "second",
+            "first",
+        ]
+
     def test_reader_sees_consistent_snapshot(self):
         store = ObservationStore(store_path="/tmp/gludd-test-observations-wdr.json")
         store.clear()
@@ -401,7 +690,7 @@ class TestWriteDuringRead:
         initial_count = sum(1 for f in all_facts if f.content.startswith("initial-"))
         aggressive_count = sum(1 for f in all_facts if f.content.startswith("aggressive-"))
         assert initial_count == 100
-        assert aggressive_count == 500
+        assert aggressive_count == 2 * 500
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -451,6 +740,83 @@ class TestFaultInjection:
             os.remove("/tmp/gludd-test-fault.json.tmp")
         except OSError:
             pass
+
+    def test_store_put_all_error_rolls_back_every_new_observation(self):
+        store = ObservationStore(store_path="/tmp/gludd-test-fault-bulk.json")
+        store.clear()
+        existing = Observation(
+            observation_id="existing",
+            subject="test",
+            statement="durable",
+            created_at=time.time(),
+            updated_at=time.time(),
+        )
+        store.put(existing)
+        additions = [
+            Observation(
+                observation_id=f"new-{index}",
+                subject="test",
+                statement=f"new {index}",
+                created_at=time.time(),
+                updated_at=time.time(),
+            )
+            for index in range(2)
+        ]
+
+        with (
+            patch.object(store, "_persist", side_effect=OSError("disk full")),
+            pytest.raises(OSError, match="disk full"),
+        ):
+            store.put_all(additions)
+
+        assert [item.observation_id for item in store.list_all()] == ["existing"]
+        store.clear()
+
+    def test_store_delete_error_restores_deleted_observation(self):
+        store = ObservationStore(store_path="/tmp/gludd-test-fault-delete.json")
+        store.clear()
+        existing = Observation(
+            observation_id="existing",
+            subject="test",
+            statement="durable",
+            created_at=time.time(),
+            updated_at=time.time(),
+        )
+        store.put(existing)
+
+        with (
+            patch.object(store, "_persist", side_effect=OSError("disk full")),
+            pytest.raises(OSError, match="disk full"),
+        ):
+            store.delete("existing")
+
+        restored = store.get("existing")
+        assert restored == existing
+        assert restored is not existing
+        store.clear()
+
+    def test_store_clear_error_restores_all_observations(self):
+        store = ObservationStore(store_path="/tmp/gludd-test-fault-clear.json")
+        store.clear()
+        existing = Observation(
+            observation_id="existing",
+            subject="test",
+            statement="durable",
+            created_at=time.time(),
+            updated_at=time.time(),
+        )
+        store.put(existing)
+
+        with (
+            patch.object(store, "_persist", side_effect=OSError("disk full")),
+            pytest.raises(OSError, match="disk full"),
+        ):
+            store.clear()
+
+        restored = store.get("existing")
+        assert restored == existing
+        assert restored is not existing
+        store.clear()
 
     def test_fault_injection_recovery(self):
         config = MemoryBankConfig(bank_id="fault-recovery-bank")
@@ -609,6 +975,27 @@ class TestCancellationSafety:
 
 
 class TestImmutableRecords:
+    def test_observation_store_copies_values_on_write(self, tmp_path):
+        store = ObservationStore(store_path=str(tmp_path / "write-copy.json"))
+        original = Observation(
+            observation_id="write-copy",
+            subject="mutability",
+            statement="original statement",
+            evidence=[EvidenceRef(fact_id="f1", quote="original quote", timestamp=time.time())],
+            contradictions=["original contradiction"],
+        )
+
+        store.put(original)
+        original.statement = "mutated statement"
+        original.evidence[0].quote = "mutated quote"
+        original.contradictions.append("new contradiction")
+
+        retrieved = store.get("write-copy")
+        assert retrieved is not None
+        assert retrieved.statement == "original statement"
+        assert retrieved.evidence[0].quote == "original quote"
+        assert retrieved.contradictions == ["original contradiction"]
+
     def test_observation_store_returns_independent_copies(self):
         store = ObservationStore(store_path="/tmp/gludd-test-immutable.json")
         store.clear()
@@ -645,6 +1032,39 @@ class TestImmutableRecords:
         with contextlib.suppress(OSError):
             os.remove("/tmp/gludd-test-immutable.json")
 
+    @pytest.mark.parametrize(
+        ("query", "stale"),
+        [
+            pytest.param(lambda store: store.get_by_subject("mutability"), False, id="subject"),
+            pytest.param(lambda store: store.get_fresh(), False, id="fresh"),
+            pytest.param(lambda store: store.get_stale(), True, id="stale"),
+            pytest.param(lambda store: store.get_above_confidence(0.5), False, id="confidence"),
+            pytest.param(lambda store: store.list_all(), False, id="all"),
+        ],
+    )
+    def test_observation_store_query_results_are_independent(self, tmp_path, query, stale):
+        store = ObservationStore(store_path=str(tmp_path / "query-copy.json"))
+        store.put(
+            Observation(
+                observation_id="query-copy",
+                subject="mutability",
+                statement="original statement",
+                confidence=0.8,
+                stale=stale,
+                evidence=[EvidenceRef(fact_id="f1", quote="original quote", timestamp=time.time())],
+            )
+        )
+
+        result = query(store)
+        assert len(result) == 1
+        result[0].statement = "mutated statement"
+        result[0].evidence[0].quote = "mutated quote"
+
+        retrieved = store.get("query-copy")
+        assert retrieved is not None
+        assert retrieved.statement == "original statement"
+        assert retrieved.evidence[0].quote == "original quote"
+
     def test_bank_mental_models_not_mutable_through_getter(self):
         bank = MemoryBank(MemoryBankConfig(bank_id="immutable-bank"))
         model = MentalModel(
@@ -680,6 +1100,59 @@ class TestImmutableRecords:
         assert len(re_facts) == 1
         assert re_facts[0].content == "a fact about gludd"
         assert re_facts[0].tags == ["immutable"]
+
+    def test_memory_bank_copies_records_on_write(self):
+        bank = MemoryBank(MemoryBankConfig(bank_id="write-copy-bank"))
+        model = MentalModel(
+            model_id="mm-write-copy",
+            subject="original subject",
+            content="original content",
+            tags=["original"],
+        )
+        fact = MemoryEntry(
+            entry_id="fact-write-copy",
+            content="original fact",
+            tags=["original"],
+        )
+
+        bank.add_mental_model(model)
+        bank.retain(fact)
+        model.subject = "mutated subject"
+        model.tags.append("mutated")
+        fact.content = "mutated fact"
+        fact.tags.append("mutated")
+
+        stored_model = bank.get_mental_models()[0]
+        stored_fact = bank.get_facts()[0]
+        assert stored_model.subject == "original subject"
+        assert stored_model.tags == ["original"]
+        assert stored_fact.content == "original fact"
+        assert stored_fact.tags == ["original"]
+
+    def test_memory_bank_recall_returns_independent_copies(self):
+        bank = MemoryBank(MemoryBankConfig(bank_id="recall-copy-bank"))
+        bank.add_mental_model(
+            MentalModel(
+                model_id="mm-recall-copy",
+                subject="gludd",
+                content="original model",
+                tags=["original"],
+            )
+        )
+        bank.retain(
+            MemoryEntry(
+                entry_id="fact-recall-copy",
+                content="gludd original fact",
+                tags=["original"],
+            )
+        )
+
+        recalled = bank.recall("gludd")
+        recalled.mental_models[0].content = "mutated model"
+        recalled.facts[0].content = "mutated fact"
+
+        assert bank.get_mental_models()[0].content == "original model"
+        assert bank.get_facts()[0].content == "gludd original fact"
 
     def test_observation_consolidator_does_not_mutate_input(self):
         consolidator = ObservationConsolidator()

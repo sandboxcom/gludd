@@ -296,6 +296,44 @@ def _lifespan_patches(mock_loop):
 
 class TestDaemonLifespan:
     @pytest.mark.asyncio
+    async def test_lifespan_closes_semantic_searcher(self):
+        mock_loop = MagicMock()
+        mock_loop.run_forever = AsyncMock()
+        semantic_searcher = MagicMock()
+        with _lifespan_patches(mock_loop):
+            from fastapi import FastAPI
+
+            from general_ludd.daemon import _lifespan
+
+            app = FastAPI()
+            app.state.tick_interval = 0.01
+            app.state.event_loop = None
+            app.state._receiver_buffer = MagicMock()
+            async with _lifespan(app):
+                app.state._semantic_searcher = semantic_searcher
+
+        semantic_searcher.close.assert_called_once_with()
+
+    @pytest.mark.asyncio
+    async def test_lifespan_closes_model_gateway(self):
+        mock_loop = MagicMock()
+        mock_loop.run_forever = AsyncMock()
+        model_gateway = MagicMock()
+        with _lifespan_patches(mock_loop):
+            from fastapi import FastAPI
+
+            from general_ludd.daemon import _lifespan
+
+            app = FastAPI()
+            app.state.tick_interval = 0.01
+            app.state.event_loop = None
+            app.state._receiver_buffer = MagicMock()
+            async with _lifespan(app):
+                app.state._model_gateway = model_gateway
+
+        model_gateway.close.assert_called_once_with()
+
+    @pytest.mark.asyncio
     async def test_lifespan_creates_event_loop_and_task(self):
         mock_loop = MagicMock()
         mock_loop.run_forever = AsyncMock()

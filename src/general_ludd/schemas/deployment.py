@@ -21,3 +21,7 @@ class DeploymentRecord(BaseModel):
     ip_address: str | None = None
     endpoint_url: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    expires_at: datetime | None = None
+    # Alias *names* only. Secret values remain in the configured resolver and
+    # are resolved again for teardown after a daemon restart.
+    provider_auth_aliases: dict[str, str] | None = None

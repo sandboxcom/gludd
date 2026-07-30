@@ -70,6 +70,47 @@ link** — each surface validates even though the next layer would also catch it
 | A/B candidate execution | `src/general_ludd/abtest/runner.py` | crash-isolated fresh-interpreter child; success requires exit 0 **and** an unforgeable parent-generated `secrets.token_hex` nonce written to a parent-controlled result file; fails closed otherwise; bounded output | `tests/unit/test_abtest_runner.py` |
 | `make test` (engine test gate) | `src/general_ludd/execution/engine.py` | `_run_tests()` runs in its own process group (`start_new_session=True`) and `os.killpg`s the whole group on a 120s timeout so no recipe grandchild leaks | `tests/unit/test_execution_engine.py` |
 
+#### Ephemeral Git maintenance boundary
+
+Git porcelain may trigger automatic maintenance after writing data, and that
+maintenance detaches by default. The official
+[`git-config` documentation](https://git-scm.com/docs/git-config#Documentation/git-config.txt-maintenanceauto)
+documents both behaviors; `gc.auto=0` and `maintenance.auto=false` disable the
+two automatic paths without preventing explicit maintenance. Long-lived user
+reports show the operational consequences: background packing can continue
+after the foreground command returns
+([Stack Overflow](https://stackoverflow.com/questions/28633956/why-does-git-keep-telling-me-its-auto-packing-the-repository-in-background-for)),
+and a live writer under `.git/objects/pack` can make repository deletion fail
+with “Directory not empty”
+([Stack Overflow](https://stackoverflow.com/questions/64852408/cannot-remove-git-directory-not-empty)).
+
+`GitAutomation` therefore injects both settings into every controlled Git
+subprocess. This is especially important for temporary test/worktree
+repositories: a successful Git call now has process-lifetime semantics and
+cannot leave a detached pack writer racing the repository’s teardown.
+
+#### A/B resource-limit process boundary
+
+The A/B child lowers both the soft and hard POSIX limits so candidate code
+cannot raise its own cap. That operation belongs only in the fresh
+`python -m general_ludd.abtest._child` interpreter: an unprivileged process
+cannot restore a lowered hard limit, as the community discussion on
+[limiting a child without affecting its parent](https://stackoverflow.com/questions/48295074/limiting-child-processs-memory-usage-with-rlimit-without-affecting-current-proc)
+notes. A commonly suggested same-process context manager instead changes only
+the soft limit and restores it later
+([Stack Overflow discussion](https://stackoverflow.com/questions/13622706/how-to-protect-myself-from-a-gzip-or-bzip2-bomb/));
+that is unsuitable for hostile candidate code because it could raise the soft
+limit back to the inherited hard limit. A long-lived pytest report likewise
+documents that suite-only subprocess hangs generally come from application
+process/resource handling rather than pytest itself
+([pytest issue #11174](https://github.com/pytest-dev/pytest/issues/11174)).
+
+Therefore `abtest._child.main()` is safe for direct in-process callers by
+default, while the module entrypoint explicitly opts into irreversible
+resource limits. The regression test runs the direct-call boundary before the
+account and admin HTTP tests so a future parent-process limit leak cannot turn
+into delayed `MemoryError` or thread-start timeouts elsewhere in the shard.
+
 ### SSRF guards
 
 | Surface | File | Guard | Test |

@@ -41,11 +41,20 @@ def _run_plugin(
     try:
         env = os.environ.copy()
         env["OPENCODE_SUBAGENT"] = ""
+        env["GLUDD_PROJECT_ROOT"] = cwd or str(ROOT)
         env["GLUDD_MULTITASK_FLOOR_ENFORCE"] = "1"
         env["GLUDD_DISENGAGE_PATH"] = str(
             Path(tempfile.mktemp(suffix=".json", prefix=f"gludd-disengage-e2e-{_ts_counter}-"))
         )
         env["GLUDD_MULTITASK_STATE_FILE"] = str(state_file)
+        env["GLUDD_WATCHDOG_CI_FILE"] = str(
+            Path(tempfile.gettempdir())
+            / f"gludd-watchdog-ci-NOEXIST-e2e-{_ts_counter}.json"
+        )
+        env["GLUDD_TODOWRITE_STATE"] = str(
+            Path(tempfile.gettempdir())
+            / f"gludd-todowrite-NOEXIST-e2e-{_ts_counter}.json"
+        )
         if env_override:
             env.update(env_override)
         proc = subprocess.run(
@@ -973,7 +982,7 @@ import * as fs from 'node:fs'
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
 {dispatches}
-const state = JSON.parse(fs.readFileSync('/tmp/gludd-multitask-state.json', 'utf8'))
+const state = JSON.parse(fs.readFileSync(process.env.GLUDD_MULTITASK_STATE_FILE, 'utf8'))
 const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
 console.log(JSON.stringify({{...r, zeroStreakBefore: state.zeroStreak}}))
 """

@@ -6,12 +6,13 @@ import json
 import os
 import tempfile
 import time
+from contextlib import suppress
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 import yaml
-
+from pydantic import ValidationError
 
 # ---------------------------------------------------------------------------
 # renderers.registry
@@ -255,16 +256,7 @@ class TestRendererRegistry:
 class TestRenderDocument:
     def test_import_schema(self):
         from general_ludd.renderers.schema import (
-            ChartData,
-            ChartSection,
-            ChartSeries,
-            MarkdownSection,
-            Metric,
-            MetricGridSection,
-            RawHtmlSection,
             RenderDocument,
-            RenderMetadata,
-            TableSection,
         )
 
         assert RenderDocument is not None
@@ -280,7 +272,7 @@ class TestRenderDocument:
     def test_render_document_extra_forbidden(self):
         from general_ludd.renderers.schema import RenderDocument
 
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             RenderDocument(title="Test", extra_field="bad")
 
     def test_markdown_section(self):
@@ -373,10 +365,7 @@ class TestRenderDocument:
 class TestSchemaLoader:
     def test_import(self):
         from general_ludd.renderers.schema_loader import (
-            FieldMeta,
-            extract_field_metadata,
             load_schema,
-            validate_against_schema,
         )
 
         assert load_schema is not None
@@ -597,10 +586,7 @@ class TestRendererCache:
 class TestRendererRunner:
     def test_import(self):
         from general_ludd.renderers.runner import (
-            RendererFailure,
             RendererResult,
-            RendererTimeout,
-            SchemaValidationError,
         )
 
         assert RendererResult is not None
@@ -642,8 +628,6 @@ class TestRendererRunner:
 class TestRendererExecutor:
     def test_executor_re_exports(self):
         from general_ludd.renderers.executor import (
-            RendererFailure,
-            RendererTimeout,
             run_renderer,
         )
 
@@ -672,10 +656,10 @@ class TestRendererMaxBytes:
 
         assert _max_bytes() == 1024 * 1024
 
-    def test_max_bytes_env_set_valid(self):
+    def test_max_bytes_env_set_valid(self, monkeypatch):
         from general_ludd.renderers.runner import _max_bytes
 
-        os.environ["GLUDD_RENDER_MAX_BYTES"] = "512"
+        monkeypatch.setenv("GLUDD_RENDER_MAX_BYTES", "512")
         try:
             assert _max_bytes() == 512
         finally:
@@ -766,10 +750,8 @@ class TestCollectionsImporter:
             importer = TerraformCollectionImporter(
                 collection, operator_trust_data_path=Path("/tmp/nonexistent_trust.json")
             )
-            try:
+            with suppress(RuntimeError):
                 importer._load_operator_trust_list()
-            except RuntimeError:
-                pass  # expected — trust file doesn't exist
 
     def test_importer_run_optional_binary_missing(self):
         from general_ludd.collections.importer import _run_optional_binary
@@ -828,7 +810,7 @@ class TestCollectionsImporter:
             collection.mkdir()
             policies = collection / "plugins" / "terraform" / "policies"
             policies.mkdir(parents=True)
-            (policies / "bad.rego").write_text("deny = true")
+            (policies / "bad.rego").write_text("package test\n\ndeny = true\n")
             importer = TerraformCollectionImporter(collection)
             issues = importer._validate_rego_policies()
             assert len(issues) == 1

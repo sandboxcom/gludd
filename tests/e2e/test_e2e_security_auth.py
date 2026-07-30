@@ -45,6 +45,7 @@ class _LiveLoopTask:
 def daemon_with_psk(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv("GLUDD_PSK", _PSK)
     monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "0")
+    monkeypatch.delenv("GLUDD_PSK_DISABLE", raising=False)
     monkeypatch.delenv("GLUDD_REQUIRE_AUTH", raising=False)
 
     from general_ludd.daemon import create_daemon_app
@@ -57,6 +58,8 @@ def daemon_with_psk(monkeypatch: pytest.MonkeyPatch) -> TestClient:
 def daemon_no_psk_fail_closed(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.delenv("GLUDD_PSK", raising=False)
     monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "0")
+    monkeypatch.delenv("GLUDD_PSK_DISABLE", raising=False)
+    monkeypatch.delenv("GLUDD_REQUIRE_AUTH", raising=False)
 
     from general_ludd.daemon import create_daemon_app
 
@@ -68,6 +71,8 @@ def daemon_no_psk_fail_closed(monkeypatch: pytest.MonkeyPatch) -> TestClient:
 def daemon_no_psk_dev_allow(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.delenv("GLUDD_PSK", raising=False)
     monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
+    monkeypatch.delenv("GLUDD_PSK_DISABLE", raising=False)
+    monkeypatch.delenv("GLUDD_REQUIRE_AUTH", raising=False)
 
     from general_ludd.daemon import create_daemon_app
 
@@ -80,6 +85,7 @@ def daemon_with_require_auth(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv("GLUDD_PSK", _PSK)
     monkeypatch.setenv("GLUDD_REQUIRE_AUTH", "1")
     monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
+    monkeypatch.delenv("GLUDD_PSK_DISABLE", raising=False)
 
     from general_ludd.daemon import create_daemon_app
 

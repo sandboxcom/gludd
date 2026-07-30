@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # dispatch.dynamic_dispatcher
@@ -19,13 +16,8 @@ import pytest
 class TestDispatchParseToolCalls:
     def test_import(self):
         from general_ludd.dispatch.dynamic_dispatcher import (
-            PRIVILEGED_KINDS,
             UNRESTRICTED_ROLE,
-            DispatchResult,
-            DynamicDispatcher,
-            ToolCall,
             parse_tool_calls,
-            structured_tool_calls_to_calls,
         )
 
         assert parse_tool_calls is not None
@@ -167,42 +159,64 @@ class TestDynamicDispatcher:
         assert "unknown_kind" in str(result.error)
 
     async def test_dispatch_handler_error(self):
-        from general_ludd.dispatch.dynamic_dispatcher import DynamicDispatcher, ToolCall
+        from general_ludd.dispatch.dynamic_dispatcher import (
+            UNRESTRICTED_ROLE,
+            DynamicDispatcher,
+            ToolCall,
+        )
 
         def failing(name, args):
             raise RuntimeError("boom")
 
-        dd = DynamicDispatcher(skill_handler=failing)
+        dd = DynamicDispatcher(skill_handler=failing, role=UNRESTRICTED_ROLE)
         call = ToolCall(kind="skill", name="x")
         result = await dd.dispatch(call)
         assert result.ok is False
         assert result.error == "handler_error"
 
     async def test_dispatch_async_handler(self):
-        from general_ludd.dispatch.dynamic_dispatcher import DynamicDispatcher, ToolCall
+        from general_ludd.dispatch.dynamic_dispatcher import (
+            UNRESTRICTED_ROLE,
+            DynamicDispatcher,
+            ToolCall,
+        )
 
         async def async_handler(name, args):
             return f"async:{name}"
 
-        dd = DynamicDispatcher(skill_handler=async_handler)
+        dd = DynamicDispatcher(skill_handler=async_handler, role=UNRESTRICTED_ROLE)
         call = ToolCall(kind="skill", name="test")
         result = await dd.dispatch(call)
         assert result.ok is True
         assert result.output == "async:test"
 
     async def test_dispatch_sync_handler(self):
-        from general_ludd.dispatch.dynamic_dispatcher import DynamicDispatcher, ToolCall
+        from general_ludd.dispatch.dynamic_dispatcher import (
+            UNRESTRICTED_ROLE,
+            DynamicDispatcher,
+            ToolCall,
+        )
 
-        dd = DynamicDispatcher(mcp_handler=lambda n, a: f"result:{n}")
+        dd = DynamicDispatcher(
+            mcp_handler=lambda n, a: f"result:{n}",
+            role=UNRESTRICTED_ROLE,
+        )
         call = ToolCall(kind="mcp", name="get")
         result = await dd.dispatch(call)
         assert result.ok is True
         assert result.output == "result:get"
 
     async def test_dispatch_all(self):
-        from general_ludd.dispatch.dynamic_dispatcher import DynamicDispatcher, ToolCall
+        from general_ludd.dispatch.dynamic_dispatcher import (
+            UNRESTRICTED_ROLE,
+            DynamicDispatcher,
+            ToolCall,
+        )
 
-        dd = DynamicDispatcher(mcp_handler=lambda n, a: f"got:{n}")
+        dd = DynamicDispatcher(
+            mcp_handler=lambda n, a: f"got:{n}",
+            role=UNRESTRICTED_ROLE,
+        )
         calls = [
             ToolCall(kind="mcp", name="a"),
             ToolCall(kind="mcp", name="b"),
@@ -220,13 +234,14 @@ class TestDynamicDispatcher:
         assert result.ok is False
         assert result.error == "capability_denied"
 
-    async def test_none_role_allow_non_privileged(self):
+    async def test_none_role_denies_mcp(self):
         from general_ludd.dispatch.dynamic_dispatcher import DynamicDispatcher, ToolCall
 
         dd = DynamicDispatcher(mcp_handler=lambda n, a: n, role=None)
         call = ToolCall(kind="mcp", name="get")
         result = await dd.dispatch(call)
-        assert result.ok is True
+        assert result.ok is False
+        assert result.error == "capability_denied"
 
     async def test_unrestricted_role_allow_all(self):
         from general_ludd.dispatch.dynamic_dispatcher import (
@@ -247,7 +262,7 @@ class TestDynamicDispatcher:
         from general_ludd.dispatch.dynamic_dispatcher import UNRESTRICTED_ROLE
 
         assert UNRESTRICTED_ROLE is not None
-        assert UNRESTRICTED_ROLE is not "unrestricted"
+        assert UNRESTRICTED_ROLE != "unrestricted"
 
     def test_privileged_kinds_all_present(self):
         from general_ludd.dispatch.dynamic_dispatcher import PRIVILEGED_KINDS
@@ -280,7 +295,7 @@ class TestDynamicDispatcher:
 
 class TestVariableStore:
     def test_import(self):
-        from general_ludd.dispatch.variable_store import VariableStore, apply_results
+        from general_ludd.dispatch.variable_store import VariableStore
 
         assert VariableStore is not None
 
@@ -411,15 +426,7 @@ class TestVariableStore:
 class TestPromptEvaluator:
     def test_import(self):
         from general_ludd.log_analysis.prompt_evaluator import (
-            ab_compare,
-            analyze_cot_quality,
             classify_prompt,
-            detect_context_waste,
-            extract_prompts,
-            generate_report,
-            measure_prompt_efficiency,
-            parse_conversation_log,
-            recommend_improvements,
         )
 
         assert classify_prompt is not None
@@ -593,7 +600,13 @@ class TestPromptEvaluator:
             {
                 "prompt_id": "test-1",
                 "classification": "coding",
-                "efficiency": {"tokens_in": 42, "tokens_out": 20, "task_completed": True, "steps_taken": 1, "errors": 0},
+                "efficiency": {
+                    "tokens_in": 42,
+                    "tokens_out": 20,
+                    "task_completed": True,
+                    "steps_taken": 1,
+                    "errors": 0,
+                },
                 "cot_quality": {"reasoning_depth": 5, "decision_quality": 6, "dead_ends": 0, "score": 8},
                 "context_waste": [],
                 "recommendations": ["Looks good"],
@@ -618,9 +631,7 @@ class TestPromptEvaluator:
 class TestServiceDiscoveryPipeline:
     def test_imports(self):
         from general_ludd.service_discovery.pipeline import (
-            DiscoveryReport,
             ServiceDiscoveryPipeline,
-            _extract_service_name,
         )
 
         assert ServiceDiscoveryPipeline is not None
@@ -656,7 +667,7 @@ class TestServiceDiscoveryPipeline:
         result = _extract_service_name(FakeResult())
         assert result == "ServiceX"
 
-    def test_extract_service_name_short(self):
+    def test_extract_service_name_preserves_two_character_name(self):
         from general_ludd.service_discovery.pipeline import _extract_service_name
 
         class FakeResult:
@@ -666,7 +677,18 @@ class TestServiceDiscoveryPipeline:
             engine = "g"
 
         result = _extract_service_name(FakeResult())
-        assert result is None
+        assert result == "Ab"
+
+    def test_extract_service_name_rejects_blank_title(self):
+        from general_ludd.service_discovery.pipeline import _extract_service_name
+
+        class FakeResult:
+            title = "   "
+            url = "https://blank.example.com"
+            snippet = "s"
+            engine = "g"
+
+        assert _extract_service_name(FakeResult()) is None
 
     def test_extract_service_name_long(self):
         from general_ludd.service_discovery.pipeline import _extract_service_name

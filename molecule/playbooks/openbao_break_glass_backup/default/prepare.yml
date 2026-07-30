@@ -36,7 +36,6 @@
       loop:
         - "{{ backup_dir }}"
         - "{{ gnupghome }}"
-        - "{{ pidfile }}"
 
     - name: Recreate backup dir
       ansible.builtin.file:

@@ -108,6 +108,25 @@ def test_instant_query_normalized() -> None:
     assert call["params"]["query"] == "up"
 
 
+def test_tuple_transport_compatibility() -> None:
+    calls: list[tuple[str, str]] = []
+
+    def transport(method: str, url: str, **_: object) -> tuple[int, object]:
+        calls.append((method, url))
+        return 200, _instant_payload()
+
+    src = VictoriaMetricsSource(
+        {"base_url": "https://vm.example.com"},
+        transport=transport,
+    )
+
+    records = src.query({"query": "up"})
+
+    assert len(records) == 2
+    assert records[0]["message"] == "up"
+    assert calls == [("GET", "https://vm.example.com/api/v1/query")]
+
+
 def test_range_query_uses_query_range_endpoint() -> None:
     transport = RecordingTransport(FakeResponse(200, _range_payload()))
     src = VictoriaMetricsSource(

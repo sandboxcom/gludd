@@ -53,6 +53,59 @@ class _Transport(Protocol):
     ) -> HttpResponse: ...
 
 
+class _TransportInput(Protocol):
+    """Transport input accepting response objects or compact tuples."""
+
+    def __call__(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        json: object = None,
+        timeout: float | None = None,
+    ) -> HttpResponse | tuple[int, object]: ...
+
+
+class _CallbackResponse:
+    def __init__(self, status_code: int, body: object) -> None:
+        self.status_code = int(status_code)
+        self._body = body
+
+    @property
+    def text(self) -> str:
+        return self._body if isinstance(self._body, str) else str(self._body)
+
+    def json(self) -> object:
+        return self._body
+
+
+class _CompatibleTransport:
+    def __init__(self, callback: _TransportInput) -> None:
+        self._callback = callback
+
+    def __call__(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        json: object = None,
+        timeout: float | None = None,
+    ) -> HttpResponse:
+        result = self._callback(
+            method,
+            url,
+            headers=headers,
+            json=json,
+            timeout=timeout,
+        )
+        if isinstance(result, tuple):
+            status, body = result
+            return _CallbackResponse(status, body)
+        return result
+
+
 class HoneycombSource:
     """Honeycomb high-cardinality query source.
 
@@ -69,7 +122,12 @@ class HoneycombSource:
 
     KIND = "traces"
 
-    def __init__(self, config: dict[str, object]) -> None:
+    def __init__(
+        self,
+        config: dict[str, object],
+        *,
+        transport: _TransportInput | None = None,
+    ) -> None:
         self.name: str = str(config.get("name") or "honeycomb")
         self.dataset: str = str(config.get("dataset", ""))
         self._api_key_env: str = str(config.get("api_key_env", ""))
@@ -84,8 +142,17 @@ class HoneycombSource:
         timeout = config.get("timeout")
         self._timeout: float = float(str(timeout)) if timeout is not None else DEFAULT_TIMEOUT
 
-        transport = config.get("transport")
-        self._transport: _Transport = cast(_Transport, transport) if transport is not None else _no_transport
+        configured_transport = config.get("transport")
+        if transport is not None and configured_transport is not None:
+            raise ValueError("config transport and transport keyword are mutually exclusive")
+        selected_transport = (
+            transport if transport is not None else configured_transport
+        )
+        self._transport: _Transport = (
+            _CompatibleTransport(cast(_TransportInput, selected_transport))
+            if selected_transport is not None
+            else _no_transport
+        )
 
     # ------------------------------------------------------------------ #
     # auth / headers

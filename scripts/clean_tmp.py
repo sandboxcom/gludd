@@ -1,4 +1,10 @@
-"""Clean scoped gludd and pytest temporary directories."""
+"""Clean scoped Gludd artifacts and pytest-owned garbage.
+
+The default ``pytest-of-<user>`` root is shared by every checkout and pytest
+process for that user.  It is never an ownership boundary, so this cleaner must
+not remove it (or any live ``pytest-N`` child) wholesale.  Pytest's atomically
+renamed ``garbage-*`` children are the only safe reclaimable entries there.
+"""
 
 from __future__ import annotations
 
@@ -9,14 +15,15 @@ import stat
 from pathlib import Path
 
 TMP_GLOBS = (
+    "gludd-audit-e2e-*",
+    "gludd-collect-output.txt",
+    "gludd-gate-refresh-test.log",
     "gludd-iso-*",
     "gludd-winfix*-gate.log",
     "gludd-test-gate.txt",
     "gludd-stop-state.json",
 )
-TMP_EXACT = (
-    Path("/tmp/gludd-gate-basetemp"),
-)
+TMP_EXACT: tuple[Path, ...] = ()
 
 
 def _resolve(path: Path) -> Path:
@@ -54,8 +61,12 @@ def _candidates() -> list[Path]:
     for pattern in TMP_GLOBS:
         found.extend(Path("/tmp").glob(pattern))
     for root in _pytest_roots():
-        if _within_allowed_root(root):
-            found.extend(root.glob("pytest-of-*"))
+        if not _within_allowed_root(root):
+            continue
+        for pytest_root in root.glob("pytest-of-*"):
+            if pytest_root.is_symlink() or not pytest_root.is_dir():
+                continue
+            found.extend(pytest_root.glob("garbage-*"))
     return found
 
 
@@ -67,17 +78,24 @@ def _make_writable_tree(path: Path) -> None:
         with contextlib.suppress(OSError):
             os.chmod(root_path, stat.S_IRWXU)
         for name in dirs:
+            child = root_path / name
+            if child.is_symlink():
+                continue
             with contextlib.suppress(OSError):
-                os.chmod(root_path / name, stat.S_IRWXU)
+                os.chmod(child, stat.S_IRWXU)
         for name in files:
+            child = root_path / name
+            if child.is_symlink():
+                continue
             with contextlib.suppress(OSError):
-                os.chmod(root_path / name, stat.S_IRUSR | stat.S_IWUSR)
+                os.chmod(child, stat.S_IRUSR | stat.S_IWUSR)
 
 
 def _retry_with_chmod(func, path_str: str, _exc_info) -> None:
     path = Path(path_str)
-    with contextlib.suppress(OSError):
-        os.chmod(path, stat.S_IRWXU)
+    if not path.is_symlink():
+        with contextlib.suppress(OSError):
+            os.chmod(path, stat.S_IRWXU)
     func(path_str)
 
 

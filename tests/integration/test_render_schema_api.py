@@ -88,7 +88,7 @@ def _write_fixture(
     if with_schema:
         if schema is None:
             schema = {
-                "$schema": "http://json-schema.org/draft-07/schema#",
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
                 "title": "Foo Schema Title",
                 "type": "object",
                 "properties": {
@@ -134,7 +134,7 @@ class TestSchemaDrivenRender:
         self, monkeypatch, tmp_path
     ):
         schema = {
-            "$schema": "http://json-schema.org/draft-07/schema#",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
             "title": "Strict Foo",
             "type": "object",
             "properties": {"backlog": {"type": "integer"}},

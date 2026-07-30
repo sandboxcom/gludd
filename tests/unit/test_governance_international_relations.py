@@ -428,6 +428,30 @@ class TestListVisaWaiverPrograms:
             assert p in programs, f"missing program {p}"
 
 
+class TestLookupCompatibilityAccessors:
+    def test_lookup_diplomatic_relations_success_and_unknown(self, ir):
+        result = ir.lookup_diplomatic_relations("us")
+        assert result["found"] is True
+        assert result["country"] == "US"
+        assert ir.lookup_diplomatic_relations("XX") is None
+
+    def test_lookup_sanctions_success_and_unknown(self, ir):
+        result = ir.lookup_sanctions("IR")
+        assert result["found"] is True
+        assert ir.lookup_sanctions("XX") is None
+
+    def test_search_alliance_finds_trade_agreement_and_members(self, ir):
+        trade_results = ir.search_alliance("USMCA")
+        assert any("USMCA" in item["name"] for item in trade_results)
+
+        nato_results = ir.search_alliance("NATO")
+        assert any(item.get("member") == "US" for item in nato_results)
+        assert all(
+            item.get("full_name") == "North Atlantic Treaty Organization"
+            for item in nato_results
+        )
+
+
 # ── Functions (accessor round-trip) ──────────────────────────────────────────
 
 

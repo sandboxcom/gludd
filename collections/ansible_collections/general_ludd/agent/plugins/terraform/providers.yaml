@@ -3,5 +3,5 @@
 # every entry against infra/terraform/policies/data.json provider_trust_list.
 providers:
   - name: vsphere
-    source: hashicorp/vsphere
+    source: vmware/vsphere
     version: "~> 2.8"

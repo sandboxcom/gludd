@@ -8,7 +8,7 @@
 > **Verify currency:** `make test-specific TESTFILE='tests/unit/test_enforcement_registry'`
 > fails if any plugin in `opencode.json` is missing from this document.
 
-## Total: 28 active plugins
+## Total: 30 active plugins
 
 | # | Plugin | Hook(s) | What it blocks | Disable env var |
 |---|--------|---------|----------------|-----------------|
@@ -37,9 +37,31 @@
 | 23 | `enforce-audit.ts` | `experimental.text.complete` | Text containing done-words when TASKS.md has unchecked items OR `config/ratchet.yml` has entries AND the text lacks machine-produced evidence (commit hash, test counts, gate-pass marker, CI verdict). Companion to `enforce-verified-claims.ts`. | `GLUDD_AUDIT_ENFORCE=0` |
 | 24 | `enforce-context.ts` | `tool.execute.before` | All non-read tools when `SESSION.md` has not been updated in >24h (stale session context — forces a session-persistence refresh before further mutations). Read/grep/glob excluded. | `GLUDD_CONTEXT_ENFORCE=0` |
 | 25 | `enforce-deliverable.ts` | `tool.execute.before` | Task/agent/workflow dispatch whose prompt lacks a concrete deliverable directive (must end with "Do NOT just report problems. Fix them." or equivalent — prevents status-check subagents from consuming floor slots). | `GLUDD_DELIVERABLE_ENFORCE=0` |
-| 26 | `enforce-no-ci-poll.ts` | `tool.execute.before` | More than `GLUDD_CI_POLL_MAX` (default 3) consecutive CI-poll make targets (`ci-status`, `ci-verdict`, `ci-view`, `ci-await`, `ci-verdict-safe`, `gate-status-check`, `verify-release-completeness`, `release-view`) without an intervening productive mutation. Also: more than `GLUDD_STAGNANT_MAX` (default 5) consecutive stagnant read-only operations (incl. direct `read`/`glob`/`grep` tool calls). | `GLUDD_STAGNANT_ENFORCE=0` (stagnant detector); CI-poll detector has no env disable (intentional — polling is always an anti-pattern) |
+| 26 | `enforce-no-ci-poll.ts` | `tool.execute.before` | More than `GLUDD_CI_POLL_MAX` (default 3) consecutive CI-poll make targets (`ci-status`, `ci-verdict`, `ci-view`, `ci-await`, `ci-verdict-safe`, `gate-status-check`, `verify-release-completeness`, `release-view`) without an intervening productive mutation. Also: more than `GLUDD_STAGNANT_MAX` (default 5) consecutive stagnant read-only operations (incl. direct `read`/`glob`/`grep` tool calls). | `GLUDD_NO_CI_POLL_ENFORCE=0` (primary); `GLUDD_STAGNANT_ENFORCE=0` (compatibility alias) |
 | 27 | `enforce-release-deadline.ts` | `tool.execute.before` | Bash release operations (`release-cut`, `git-tag-push`, `release-create`, `release-deploy`) issued after the configured release deadline window has elapsed. | `GLUDD_RELEASE_DEADLINE_ENFORCE=0` |
 | 28 | `watchdog.ts` | `event` | Not a blocker — observes `session.created`/`session.deleted` events to write/remove `.gate-logs/watchdog.pid`. Background daemon (`make watchdog-auto`) reads this PID to detect idle sessions and inject CONTINUE directives. | `GLUDD_WATCHDOG_ENABLED=0` |
+| 29 | `enforce-floor-v2.ts` | `tool.execute.before`, `experimental.text.complete` | Non-dispatch tools while pending work exists and the session-wide in-flight count (`dispatched - completed`) is below `GLUDD_DISPATCH_FLOOR` (default 10). Persists cumulative state in `/tmp/gludd-dispatch-state.json` through `scripts/dispatch_tracker.py` and records completions from result markers. | `GLUDD_FLOOR_V2_ENFORCE=0` |
+| 30 | `enforce-task-tracking.ts` | `tool.execute.before`, `experimental.text.complete` | Source/test/document writes when TASKS.md has no unchecked entry; TASKS.md edits that remove all or more than half of checked items or more than half of the file; text-only completion while unchecked tasks remain. | `GLUDD_TASK_TRACKING_ENFORCE=0` |
+
+## Community issue evidence
+
+The registry and its runtime tests account for limitations reported by OpenCode
+users over multiple releases:
+
+- [OpenCode issue #5894](https://github.com/anomalyco/opencode/issues/5894)
+  reported in December 2025 that `tool.execute.before` hooks did not intercept
+  subagent tool calls. The issue is closed, but it is the reason Gludd treats
+  subagent isolation as an explicit, tested boundary rather than assuming hook
+  propagation.
+- [OpenCode issue #12472](https://github.com/anomalyco/opencode/issues/12472)
+  documents that `session.idle` is fire-and-forget and cannot reactivate a
+  stopped agent. Gludd therefore enforces task/floor state at tool and
+  `experimental.text.complete` boundaries instead of relying on idle events.
+- [OpenCode issue #17412](https://github.com/anomalyco/opencode/issues/17412)
+  reports that behavioral rules can be forgotten after several tool calls or
+  compaction because post-tool hooks cannot inject durable AI-visible context.
+  Gludd keeps enforcement state in files and repeats checks at multiple hook
+  surfaces so compaction does not become the sole policy boundary.
 
 ## Hook surface reference
 

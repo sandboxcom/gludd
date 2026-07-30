@@ -5,6 +5,16 @@
   vars:
     test_dir: "/tmp/molecule-git-commit-test"
     test_message: "molecule test commit"
+    project_repo: >-
+      {{
+        lookup('env', 'MOLECULE_PROJECT_DIRECTORY')
+        | dirname | dirname | dirname | dirname | dirname | dirname
+      }}
+  environment:
+    GIT_AUTHOR_NAME: "Molecule Test"
+    GIT_AUTHOR_EMAIL: "test@example.com"
+    GIT_COMMITTER_NAME: "Molecule Test"
+    GIT_COMMITTER_EMAIL: "test@example.com"
 
   tasks:
     - name: "Clean up any prior test directory"
@@ -12,38 +22,13 @@
         path: "{{ test_dir }}"
         state: absent
 
-    - name: "Create test directory"
-      ansible.builtin.file:
-        path: "{{ test_dir }}"
-        state: directory
-        mode: "0755"
-
-    - name: "Initialize git repository"
-      ansible.builtin.command:
-        cmd: git init
-        chdir: "{{ test_dir }}"
-      changed_when: true
-
-    - name: "Configure git user for test"
-      ansible.builtin.command:
-        cmd: "git config {{ item.key }} {{ item.value }}"
-        chdir: "{{ test_dir }}"
-      changed_when: true
-      loop:
-        - { key: "user.email", value: "test@example.com" }
-        - { key: "user.name", value: "Molecule Test" }
-
-    - name: "Create initial file and first commit (so HEAD exists)"
-      ansible.builtin.copy:
-        dest: "{{ test_dir }}/initial.txt"
-        content: "base content\n"
-        mode: "0644"
-
-    - name: "Stage and commit initial file"
-      ansible.builtin.command:
-        cmd: "git add -A && git commit -m 'initial commit'"
-        chdir: "{{ test_dir }}"
-      changed_when: true
+    - name: "Clone an existing repository as the commit fixture"
+      general_ludd.agent.gludd_git:
+        path: "{{ project_repo }}"
+        op: clone
+        clone_url: "{{ project_repo }}"
+        target_dir: "{{ test_dir }}"
+        clone_allow_local: true
 
     - name: "Create file to commit via the role"
       ansible.builtin.copy:

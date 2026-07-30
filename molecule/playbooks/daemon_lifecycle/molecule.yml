@@ -21,8 +21,21 @@ provisioner:
     ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_PROJECT_DIRECTORY}/collections"
     # Isolate this scenario from any host daemon on the default 8000 port.
     GLUDD_DAEMON_LIFECYCLE_PORT: "8767"
+  inventory:
+    hosts:
+      all:
+        hosts:
+          localhost:
+            ansible_connection: local
   playbooks:
+    prepare: default/prepare.yml
     converge: default/converge.yml
     verify: default/verify.yml
 verifier:
   name: ansible
+scenario:
+  test_sequence:
+    - syntax
+    - prepare
+    - converge
+    - verify

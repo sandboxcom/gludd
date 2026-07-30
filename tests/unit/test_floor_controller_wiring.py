@@ -83,7 +83,7 @@ class FakeTodo:
 class TestEventLoopFloorCap:
     """Verify the claim phase applies the floor-cap and releases excess."""
 
-    @patch("general_ludd.event_loop.lease.acquire_lease", new_callable=AsyncMock)
+    @patch("general_ludd.event_loop.lease.acquire_leases_batch", new_callable=AsyncMock)
     async def test_floor_cap_releases_excess_todos(self, _mock_acquire_lease) -> None:
         from general_ludd.event_loop.loop import EventLoop
 
@@ -113,7 +113,7 @@ class TestEventLoopFloorCap:
         assert len(claimed) == 3
         todo_repo.transition.assert_not_called()
 
-    @patch("general_ludd.event_loop.lease.acquire_lease", new_callable=AsyncMock)
+    @patch("general_ludd.event_loop.lease.acquire_leases_batch", new_callable=AsyncMock)
     async def test_no_floor_controller_claims_all(self, _mock_acquire_lease) -> None:
         from general_ludd.event_loop.loop import EventLoop
 
@@ -136,7 +136,7 @@ class TestEventLoopFloorCap:
         assert len(claimed) == 10
         todo_repo.transition.assert_not_called()
 
-    @patch("general_ludd.event_loop.lease.acquire_lease", new_callable=AsyncMock)
+    @patch("general_ludd.event_loop.lease.acquire_leases_batch", new_callable=AsyncMock)
     async def test_health_zero_blocks_all_claims(self, _mock_acquire_lease) -> None:
         from general_ludd.event_loop.loop import EventLoop
 
@@ -167,7 +167,7 @@ class TestEventLoopFloorCap:
         assert len(claimed) == 0
         todo_repo.transition.assert_not_called()
 
-    @patch("general_ludd.event_loop.lease.acquire_lease", new_callable=AsyncMock)
+    @patch("general_ludd.event_loop.lease.acquire_leases_batch", new_callable=AsyncMock)
     async def test_excess_transitioned_to_queued(self, _mock_acquire_lease) -> None:
         from general_ludd.event_loop.loop import EventLoop
 
@@ -197,7 +197,7 @@ class TestEventLoopFloorCap:
         assert len(claimed) == 4
         todo_repo.transition.assert_not_called()
 
-    @patch("general_ludd.event_loop.lease.acquire_lease", new_callable=AsyncMock)
+    @patch("general_ludd.event_loop.lease.acquire_leases_batch", new_callable=AsyncMock)
     async def test_health_modulates_cap(self, _mock_acquire_lease) -> None:
         from general_ludd.event_loop.loop import EventLoop
 

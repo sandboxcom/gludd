@@ -1,0 +1,118 @@
+{
+  "schema_version": 3,
+  "platform": "linux",
+  "pyinstaller_version": "6.20.0",
+  "transitive_warning_sha256_by_architecture": {
+    "aarch64": "fe46fb237e7274fe5f8db70da336b212fac65c3aa6fc65e1e453241f3e0a3d50",
+    "x86_64": "b744f744d6117f6ce2b15e568831e1d40616bfdff55e1c174b9bbcc240abee93"
+  },
+  "baseline_pinned_project_modules": [
+    {
+      "module": "pydantic.BaseModel",
+      "category": "module-attribute",
+      "evidence": "https://pyinstaller.org/en/stable/when-things-go-wrong.html#build-time-messages"
+    }
+  ],
+  "allowed_missing_imports": [
+    {
+      "module": "azure.identity",
+      "importer": "general_ludd.infra.azure_accelerator",
+      "flags": [
+        "delayed",
+        "optional"
+      ],
+      "category": "optional-dependency",
+      "evidence": "https://learn.microsoft.com/en-us/python/api/overview/azure/identity-readme"
+    },
+    {
+      "module": "azure.identity",
+      "importer": "general_ludd.onboard.azure",
+      "flags": [
+        "delayed",
+        "optional"
+      ],
+      "category": "optional-dependency",
+      "evidence": "https://learn.microsoft.com/en-us/python/api/overview/azure/identity-readme"
+    },
+    {
+      "module": "azure.mgmt",
+      "importer": "general_ludd.infra.azure_accelerator",
+      "flags": [
+        "delayed",
+        "optional"
+      ],
+      "category": "optional-dependency",
+      "evidence": "https://github.com/Azure/azure-sdk-for-python"
+    },
+    {
+      "module": "azure.mgmt",
+      "importer": "general_ludd.onboard.azure",
+      "flags": [
+        "delayed",
+        "optional"
+      ],
+      "category": "optional-dependency",
+      "evidence": "https://github.com/Azure/azure-sdk-for-python"
+    },
+    {
+      "module": "google.cloud",
+      "importer": "general_ludd.pricing_intel.sources",
+      "flags": [
+        "delayed",
+        "optional"
+      ],
+      "category": "optional-dependency",
+      "evidence": "https://cloud.google.com/python/docs/reference/cloudbilling/latest"
+    },
+    {
+      "module": "google.oauth2",
+      "importer": "general_ludd.onboard.gcp",
+      "flags": [
+        "delayed",
+        "optional"
+      ],
+      "category": "optional-dependency",
+      "evidence": "https://google-auth.readthedocs.io/en/latest/"
+    },
+    {
+      "module": "google.protobuf",
+      "importer": "general_ludd.receiver.parsers",
+      "flags": [
+        "delayed",
+        "optional"
+      ],
+      "category": "optional-dependency",
+      "evidence": "https://protobuf.dev/reference/python/python-generated/"
+    },
+    {
+      "module": "googleapiclient",
+      "importer": "general_ludd.onboard.gcp",
+      "flags": [
+        "delayed",
+        "optional"
+      ],
+      "category": "optional-dependency",
+      "evidence": "https://github.com/googleapis/google-api-python-client"
+    },
+    {
+      "module": "pyVim",
+      "importer": "general_ludd.infra.discovery",
+      "flags": [
+        "delayed",
+        "optional"
+      ],
+      "category": "optional-dependency",
+      "evidence": "https://github.com/vmware/pyvmomi"
+    },
+    {
+      "module": "pyVmomi",
+      "importer": "general_ludd.infra.discovery",
+      "flags": [
+        "delayed",
+        "optional"
+      ],
+      "category": "optional-dependency",
+      "evidence": "https://github.com/vmware/pyvmomi"
+    }
+  ]
+}

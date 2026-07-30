@@ -112,8 +112,16 @@ class TestGetTenantZeroCallSites:
 
         for py_file in SRC_DIR.rglob("*.py"):
             rel = py_file.relative_to(SRC_DIR).as_posix()
+            source = py_file.read_text()
+            # The full suite runs this late in an already large xdist worker.
+            # Avoid materialising an AST for every production module: only
+            # files containing the symbol can possibly contain a matching
+            # call.  All source files are still inspected, while peak memory
+            # stays bounded to the small candidate set.
+            if "get_tenant" not in source:
+                continue
             try:
-                tree = ast.parse(py_file.read_text(), filename=str(py_file))
+                tree = ast.parse(source, filename=str(py_file))
             except SyntaxError:
                 continue
             finder = _GetTenantCallSiteFinder()
@@ -369,15 +377,15 @@ class TestThreadPoolSpawnLosesTenantContext:
 
     @pytest.mark.asyncio
     async def test_contextvar_propagates_via_to_thread(self):
-        import contextvars
-
         def _check():
             return get_tenant()
 
         tok = set_tenant("globex-inc")
         try:
-            ctx = contextvars.copy_context()
-            got = await asyncio.to_thread(ctx.run, _check)
+            # asyncio.to_thread copies the current Context itself. Wrapping the
+            # callable in a second Context.run is redundant and proved unstable
+            # in a long-lived Python 3.14 xdist worker.
+            got = await asyncio.to_thread(_check)
             assert got == "globex-inc", (
                 f"Expected globex-inc via to_thread, got {got}. "
                 "Contextvar propagation to ThreadPoolExecutor is broken."

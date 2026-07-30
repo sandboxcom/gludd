@@ -118,6 +118,28 @@ def test_query_normalizes_spans_and_transactions() -> None:
     assert call["url"] == "https://es.example.com/apm-*/_search"
 
 
+def test_tuple_transport_compatibility() -> None:
+    calls: list[dict[str, Any]] = []
+
+    def transport(
+        method: str,
+        url: str,
+        **kwargs: Any,
+    ) -> tuple[int, object]:
+        calls.append({"method": method, "url": url, **kwargs})
+        return 200, _canned_search()
+
+    src = ElasticApmSource(
+        {"base_url": "https://es.example.com"},
+        transport=transport,
+    )
+
+    records = src.query({})
+
+    assert len(records) == 2
+    assert calls[0]["method"] == "POST"
+
+
 def test_auth_api_key_from_env() -> None:
     transport = RecordingTransport(FakeResponse(200, _canned_search()))
     src = ElasticApmSource(

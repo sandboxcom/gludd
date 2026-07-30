@@ -13,8 +13,9 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import diskcache
 from pydantic import BaseModel, Field
+
+from general_ludd.security.safe_diskcache import open_safe_diskcache
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,12 @@ DEFAULT_INDEX_DIR = os.path.join(
 DEFAULT_FRESHNESS_TTL_DAYS: int = 7
 DEFAULT_MAX_TOPICS: int = 10_000
 DEFAULT_STALE_THRESHOLD_DAYS: int = 3
+
+
+def _json_cache_value(value: object) -> str | bytes | bytearray | None:
+    if isinstance(value, (str, bytes, bytearray)):
+        return value
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -127,8 +134,7 @@ class ResearchIndex:
         cache_dir = os.path.expanduser(os.path.expandvars(
             str(index_dir or DEFAULT_INDEX_DIR)
         ))
-        os.makedirs(cache_dir, mode=0o700, exist_ok=True)
-        self._cache = diskcache.Cache(cache_dir)
+        self._cache = open_safe_diskcache(cache_dir)
         self._freshness_ttl = freshness_ttl_days
         self._max_topics = max_topics
 
@@ -151,10 +157,11 @@ class ResearchIndex:
 
     def get_topic(self, topic_id: str) -> ResearchTopic | None:
         raw = self._cache.get(self._topic_key(topic_id))
-        if raw is None:
+        json_value = _json_cache_value(raw)
+        if json_value is None:
             return None
         try:
-            return ResearchTopic.model_validate_json(raw)
+            return ResearchTopic.model_validate_json(json_value)
         except Exception:
             return None
 
@@ -265,10 +272,11 @@ class ResearchIndex:
 
     def get_source(self, source_id: str) -> SourceEntry | None:
         raw = self._cache.get(self._source_key(source_id))
-        if raw is None:
+        json_value = _json_cache_value(raw)
+        if json_value is None:
             return None
         try:
-            return SourceEntry.model_validate_json(raw)
+            return SourceEntry.model_validate_json(json_value)
         except Exception:
             return None
 
@@ -337,10 +345,11 @@ class ResearchIndex:
             if not str(key).startswith("citation:"):
                 continue
             raw = self._cache.get(key)
-            if raw is None:
+            json_value = _json_cache_value(raw)
+            if json_value is None:
                 continue
             try:
-                edge = CitationEdge.model_validate_json(raw)
+                edge = CitationEdge.model_validate_json(json_value)
             except Exception:
                 continue
             if topic_id and edge.topic_id != topic_id:

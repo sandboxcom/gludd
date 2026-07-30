@@ -15,4 +15,5 @@
         dep_ecosystem: "python"
         dep_package: "requests"
         apply_updates: false
+        mcp_sync_enabled: false
         artifact_dir: "/tmp/gludd-dependency-update-{{ mock_port }}"

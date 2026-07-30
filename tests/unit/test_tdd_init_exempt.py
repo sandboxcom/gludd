@@ -20,6 +20,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-tdd.ts"
+LOGIC_PATH = ROOT / ".opencode" / "lib" / "enforce_tdd_logic.ts"
 COMMIT_SCRIPT_PATH = ROOT / "scripts" / "check_tdd_compliance.py"
 
 
@@ -29,14 +30,14 @@ COMMIT_SCRIPT_PATH = ROOT / "scripts" / "check_tdd_compliance.py"
 class TestInitExemptPluginStructure:
     def test_function_is_init_in_empty_dir_exists(self):
         assert PLUGIN_PATH.exists(), "enforce-tdd.ts must exist"
-        src = PLUGIN_PATH.read_text()
+        src = LOGIC_PATH.read_text()
         assert "isInitInEmptyDir" in src, (
             "enforce-tdd.ts must define isInitInEmptyDir() — the function that "
             "checks whether __init__.py lives in a directory with no other .py files"
         )
 
     def test_init_py_removed_from_global_allowlist(self):
-        src = PLUGIN_PATH.read_text()
+        src = LOGIC_PATH.read_text()
         # Find ALLOWLIST_PATTERNS and capture from the array-opening `[`
         # after the `=` to the closing `];`.  The RegExp[] type annotation
         # also contains `[]` so a simple single-bracket capture is wrong.
@@ -53,7 +54,7 @@ class TestInitExemptPluginStructure:
         )
 
     def test_is_init_in_empty_dir_references_fs(self):
-        src = PLUGIN_PATH.read_text()
+        src = LOGIC_PATH.read_text()
         assert any(
             keyword in src
             for keyword in ["readdirSync", "existsSync", "statSync", "isDirectory"]
@@ -63,7 +64,7 @@ class TestInitExemptPluginStructure:
         )
 
     def test_is_init_in_empty_dir_checks_sibling_py_files(self):
-        src = PLUGIN_PATH.read_text()
+        src = LOGIC_PATH.read_text()
         assert ".py" in src and 'endsWith(".py")' in src, (
             "isInitInEmptyDir must check for sibling .py files "
             "(e.endsWith(\".py\")) in the parent directory"
@@ -109,14 +110,14 @@ class TestInitExemptVerdictContract:
     """The behavioral contract without requiring a running node process."""
 
     def test_should_allow_edit_calls_is_init_in_empty_dir(self):
-        src = PLUGIN_PATH.read_text()
+        src = LOGIC_PATH.read_text()
         assert "isInitInEmptyDir(filePath)" in src or "isInitInEmptyDir(" in src, (
             "shouldAllowEdit() must call isInitInEmptyDir() — the function "
             "exists but must be wired into the decision pipeline"
         )
 
     def test_init_in_empty_dir_checked_after_allowlist(self):
-        src = PLUGIN_PATH.read_text()
+        src = LOGIC_PATH.read_text()
         # isInitInEmptyDir must appear after isAllowlisted and before test-file check.
         allowlist_idx = src.find("isAllowlisted(filePath)")
         init_idx = src.find("isInitInEmptyDir(filePath)")
@@ -168,7 +169,7 @@ class TestInitExemptBehavioral:
         """Call shouldAllowEdit via Node --experimental-strip-types."""
         script = (
             "(async () => {\n"
-            f"  const m = await import({json.dumps(str(PLUGIN_PATH))});\n"
+            f"  const m = await import({json.dumps(str(LOGIC_PATH))});\n"
             f"  const v = m.shouldAllowEdit("
             f"{json.dumps(file_path)}, {json.dumps(project_root)});\n"
             "  process.stdout.write(JSON.stringify(v));\n"
@@ -245,8 +246,10 @@ class TestInitExemptBehavioral:
     def test_should_allow_edit_is_exported(self):
         """Bullet 1: the allowlist mechanism exists and is testable —
         shouldAllowEdit is an exported function."""
-        src = PLUGIN_PATH.read_text()
+        src = LOGIC_PATH.read_text()
         assert re.search(
             r"export\s+function\s+shouldAllowEdit",
             src,
-        ), "shouldAllowEdit must be exported for behavioral testing"
+        ), "TDD logic must export shouldAllowEdit for behavioral testing"
+        plugin = PLUGIN_PATH.read_text()
+        assert "shouldAllowEdit" in plugin and "enforce_tdd_logic" in plugin

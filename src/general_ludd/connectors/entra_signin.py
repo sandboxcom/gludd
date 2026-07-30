@@ -31,6 +31,8 @@ from general_ludd.security.ssrf import is_url_blocked
 
 logger = logging.getLogger(__name__)
 
+__all__ = ["EntraSignInSource", "EntraSigninSource", "Transport"]
+
 _DEFAULT_BASE = "https://graph.microsoft.com/v1.0/auditLogs/signIns"
 
 
@@ -282,3 +284,12 @@ class EntraSignInSource:
             url, params = self._split_url_params(link)
 
         return out
+
+
+class EntraSigninSource(EntraSignInSource):
+    """Compatibility spelling for callers that use ``Signin`` as one word.
+
+    The authentication contract is intentionally unchanged: callers provide an
+    externally minted Microsoft Graph bearer token through ``token_env``.
+    Client secrets are never mistaken for Graph access tokens.
+    """

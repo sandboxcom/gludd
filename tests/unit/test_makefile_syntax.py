@@ -1,4 +1,5 @@
 """Validate Makefile syntax — catches TAB vs space errors and missing separators."""
+import os
 import re
 import subprocess
 import sys
@@ -7,6 +8,40 @@ from pathlib import Path
 import pytest
 
 MAKEFILE = Path(__file__).parent.parent.parent / "Makefile"
+
+
+def _make_exported_term(term: str) -> str:
+    """Return TERM observed by a recipe under the project Makefile."""
+    env = os.environ.copy()
+    env["TERM"] = term
+    result = subprocess.run(
+        [
+            "make",
+            "-s",
+            "-f",
+            str(MAKEFILE),
+            "-f",
+            "-",
+            "print-term",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        env=env,
+        input='print-term:\n\t@printf "%s" "$$TERM"\n',
+    )
+    assert result.returncode == 0, result.stderr
+    return result.stdout
+
+
+def test_makefile_exports_suitable_term_default():
+    """Non-interactive TERM=dumb is promoted for TUI-aware test subprocesses."""
+    assert _make_exported_term("dumb") == "xterm-256color"
+
+
+def test_makefile_preserves_suitable_caller_term():
+    """A usable caller-selected terminal type must not be overwritten."""
+    assert _make_exported_term("screen-256color") == "screen-256color"
 
 
 def test_makefile_parses():

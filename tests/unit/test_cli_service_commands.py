@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from general_ludd.cli_service_commands import (
@@ -70,6 +71,58 @@ class TestServiceDispatch:
 
     def test_unknown_handler_returns_none(self):
         assert _SERVICE_DISPATCH.get("nonexistent") is None
+
+
+class TestCmdDiscover:
+    def test_reports_discovered_services_and_errors(self, capsys):
+        args = argparse.Namespace(
+            searx_url="https://search.example",
+            catalog_path="/tmp/catalog.yml",
+            terms=["gpu"],
+        )
+        report = SimpleNamespace(
+            new_services=["accelerator-api"],
+            retired_services=[],
+            changed_services=["model-api"],
+            total_discovered=2,
+            errors=["one endpoint unavailable"],
+        )
+        pipeline = MagicMock()
+        pipeline.run_discovery_pipeline.return_value = report
+
+        with (
+            patch("general_ludd.cli_service_commands.SearXConnector") as connector,
+            patch("general_ludd.cli_service_commands.ServiceCatalog") as catalog,
+            patch(
+                "general_ludd.cli_service_commands.ServiceDiscoveryPipeline",
+                return_value=pipeline,
+            ) as pipeline_factory,
+        ):
+            assert _cmd_discover(args) == 0
+
+        connector.assert_called_once_with({"base_url": "https://search.example"})
+        catalog.assert_called_once_with("/tmp/catalog.yml")
+        pipeline_factory.assert_called_once_with(
+            searx_url="https://search.example",
+            catalog_path="/tmp/catalog.yml",
+            search_terms=["gpu"],
+        )
+        output = capsys.readouterr().out
+        assert "NEW: accelerator-api" in output
+        assert "ERROR: one endpoint unavailable" in output
+
+    def test_connector_construction_failure_returns_one(self, caplog):
+        args = argparse.Namespace(
+            searx_url="bad-url",
+            catalog_path="/tmp/catalog.yml",
+            terms=None,
+        )
+        with patch(
+            "general_ludd.cli_service_commands.SearXConnector",
+            side_effect=ValueError("invalid endpoint"),
+        ):
+            assert _cmd_discover(args) == 1
+        assert "invalid endpoint" in caplog.text
 
 
 class TestMain:

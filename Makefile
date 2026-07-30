@@ -8,12 +8,25 @@ OPENCODE_DB ?= ~/.local/share/opencode/opencode.db
 VERIFY_POLLS ?= 30
 GLUDD_TASK_TIMEOUT ?= 300
 GATE_POLL_INTERVAL ?= 60
+GATE_STATUS_FILE ?= .gate-status
+GATE_RELEASE_PYTEST ?= $(UV) run python -m pytest
+GATE_RELEASE_MAKE ?= $(MAKE)
+GATE_RELEASE_WORKERS ?= 2
+
+# TUI-aware subprocesses require a terminal type present in the base system's
+# terminfo database. Normalize missing, dumb, unknown, and host-specific values
+# (for example alacritty on minimal CI/macOS images), but preserve common usable
+# caller selections.
+ifeq (,$(filter xterm% screen% tmux% vt100 ansi,$(strip $(TERM))))
+override TERM := xterm-256color
+endif
+export TERM
 
 _MULTIWORD_VALUE_GOALS := \
     copy-file feature-done feature-start git-add git-branch git-checkout git-cherry-pick-list \
     git-commit git-commit-file git-commit-files git-merge git-reset git-restore git-tag-move \
     git-tag-push lint-files lint-fix-files release-cut release-deploy release-upload-assets \
-    replace-all-text replace-lines replace-text search ship-commit test-and-commit test-ci-shards-parallel \
+    fix-test-env-writes replace-all-text replace-lines replace-text search ship-commit test-and-commit test-ci-shards-parallel \
     test-ci-shards-parallel-bg test-files ci-shards-log-context
 _FIRST_MAKE_GOAL := $(firstword $(MAKECMDGOALS))
 _EXTRA_MAKE_GOALS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
@@ -29,7 +42,7 @@ _NO_UV_SYNC_GOALS := \
     worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
     release-worktree-guard status-claim-guard workflow-state workflow-gate commit-ready gha-ready merge-ready \
     git-where repo-status git-status git-remote-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom verify-remote \
-    git-branch git-checkout git-add git-merge git-merge-nc git-merge-abort git-rebase-abort git-rebase-continue git-rebase-skip \
+    git-branch git-checkout git-add git-merge git-merge-nc git-merge-abort git-rebase-abort git-rebase-continue git-rebase-skip git-uncommit-last \
     git-cherry-pick git-cherry-pick-list git-cherry-pick-continue git-cherry-pick-skip git-cherry-pick-abort \
     ci-remotes ci-diff-since-remote ci-head-compare ci-remote-head-guard ci-trigger ci-shards-log-context \
     git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head git-push-current-head-to-master-nv \
@@ -58,15 +71,15 @@ endif
 PYTEST_VERBOSITY ?= -v
 
 .PHONY: \
-        init sync install-pip lint lint-files lint-fix test test-unit test-unit-shards test-specific test-files test-count test-integration test-e2e \
-         test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg test-bg-runner \
+        init sync install-pip lint lint-files lint-fix test test-unit test-unit-shards test-specific test-files test-count test-integration test-e2e bisect-test-collection-polluter \
+         test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg test-bg-runner fix-test-env-writes \
          test-games game-audit gen-mcp-tools gen-mcp-tool-ref mcp-docs-check \
         typecheck setup-dirs setup-venv clean healthcheck \
         bootstrap skeleton version check-uv check-pytest \
         ansible-syntax ansible-lint-playbooks ansible-collection-test playbook-list \
         git-status git-init git-add git-commit git-log git-diff git-reset \
         git-branch git-checkout git-merge git-staged git-stash git-stash-pop \
-        git-merge-abort git-rebase-abort git-rebase-continue git-rebase-skip git-reset-hard git-cherry-pick git-cherry-pick-list \
+        git-merge-abort git-rebase-abort git-rebase-continue git-rebase-skip git-reset-hard git-uncommit-last git-cherry-pick git-cherry-pick-list \
         submodule-init submodule-update submodule-status submodule-pin \
         repo-status repo-diff repo-staged repo-log \
         feature-start feature-done test-and-commit preflight \
@@ -74,7 +87,7 @@ PYTEST_VERBOSITY ?= -v
         agent-worktree-dev agent-merge-dev \
         development-push development-merge-to-master development-start development-status \
         git-commit-no-verify git-amend-msg \
-_commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
+_commit-lock-acquire _gate-run-lock-acquire check-clean-tree worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
         release-worktree-guard status-claim-guard workflow-state workflow-gate commit-ready gha-ready merge-ready ship-commit-files remove-workspace-file-b64 \
         molecule-version molecule-test molecule-test-all \
         collection-roles collection-modules molecule-scenarios \
@@ -106,8 +119,8 @@ _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-wor
          release-upload-assets git-restore-from release-deploy \
         build-sandbox-image verify-sandbox-image clean-sandbox-images \
         vm-image-build vm-image-list vm-image-clean \
-        verify-feature-claims audit-coverage gate-audit coverage-json \
-        tf-cache-setup tf-init tf-validate tf-cache-warm tf-versions-check tf-clean \
+        verify-feature-claims audit-coverage gate-audit coverage-json coverage-missing-lines \
+        tf-cache-setup tf-init tf-init-local tf-validate tf-cache-warm tf-versions-check tf-clean test-opa-policies \
         deck deck-serve deck-preview deck-data deck-honesty \
         script-count strip-enforce-stop test-hooks-live test-hook-runtime test-opencode-e2e \
         verify-enforcement \
@@ -124,8 +137,9 @@ log-agent-result disk-guard disk-check check-disk disk tmp-gludd-usage tmp-gludd
          subagent-init subagent-cleanup \
          chat chat-eval test-chat \
 git-tag-delete git-tag-move release-deploy append-text write-text-b64 replace-text-b64 mkdir-p replace-lines _no-raw-git-guard \
-         git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head provider-smoke check-no-prompt-prone-edit-tools add-target edit-target edit-makefile-target validate-makefile \
-         azure-event-guard-start azure-event-guard-stop azure-event-guard-check azure-event-guard-status
+         git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head provider-smoke provider-harness azure-harness check-no-prompt-prone-edit-tools add-target edit-target edit-makefile-target validate-makefile \
+         azure-event-guard-start azure-event-guard-stop azure-event-guard-check azure-event-guard-status \
+         codex-system-skill-read
 
 help:
 	@echo "Usage: make [target]"
@@ -162,6 +176,7 @@ help:
 	@echo "  gate-async            Launch gate detached (non-blocking); writes .gate-status"
 	@echo "  gate-status           Print current .gate-status (RUNNING/PASS/FAIL)"
 	@echo "  collect-check         Fast collection-error gate"
+	@echo "  fix-test-env-writes   Convert bare test env writes (FILES='tests/...')"
 	@echo "  test-nodeids          Print bounded pytest node-id slice (START/LIMIT/TESTPATH)"
 	@echo "  test-xdist-trace      Run pytest with durable xdist worker/node/resource trace"
 	@echo "  test-xdist-trace-summary  Summarize /tmp/gludd-xdist-progress.log unfinished tests"
@@ -192,18 +207,25 @@ help:
 	@echo "  security              Full security: sast + sbom + pip-audit"
 	@echo "  test-unit             Unit tests only"
 	@echo "  test-unit-shards      Unit tests in bounded serial shards (SHARDS=12 SHARD=1)"
+	@echo "  test-unit-shards-sequential  Run every unit shard serially with fresh workers"
 	@echo "  test-integration      Integration tests"
 	@echo "  test-e2e              End-to-end tests"
 	@echo "  test-opencode-e2e     .opencode/ plugin load+invocation tests"
 	@echo "  test-specific         Single test (TESTFILE=path::TestClass::test_name)"
 	@echo "  test-files            Multiple tests (TESTFILES=tests/unit/a.py tests/unit/b.py)"
+	@echo "  bisect-test-collection-polluter  Minimize pytest import pollution (CANDIDATE_DIR=tests/unit START=0 LIMIT=0)"
 	@echo "  ci-shards-log-context Show local shard log context (LOG=.gate-logs/ci.log PATTERN=FAILED)"
 	@echo "  task                  Run CMD with timeout (CMD=make test-unit, GLUDD_TASK_TIMEOUT=300)"
 	@echo "  test-count            Count collected tests"
 	@echo "  test-failures         Show test failures"
 	@echo   provider-smoke        Run gludd smoke PROVIDER=aws SMOKE_TEST=ec2-a100 ARGS=--json
+	@echo "  provider-harness      Non-provisioning provider preflight (PROVIDER=azure, LIVE=1 is read-only)"
+	@echo "  azure-harness         Azure A100/H100 SKU + quota harness (dry-run by default)"
+	@echo "  tf-init-local         State-free init for an Azure release stack (no backend)"
+	@echo "  test-opa-policies     Execute the Azure/AWS/GCP IAM Rego policy tests"
 	@echo "  test-and-commit       Run tests then commit if green (MSG='msg')"
 	@echo "  audit-coverage        Run coverage audit: pytest --cov + per-file threshold check"
+	@echo "  coverage-missing-lines  Report uncovered line ranges (XML=coverage.xml COVERAGE_THRESHOLD=75)"
 	@echo "  test-live-zai         Live GLM model test (requires API key)"
 	@echo "  test-guardrails       Test guardrail infrastructure"
 	@echo "  test-install          Run install.sh bats tests"
@@ -227,6 +249,7 @@ help:
 	@echo "  git-add-all           Stage all changes"
 	@echo "  git-commit MSG='...'  Commit staged changes"
 	@echo "  git-reset FILES='...' Reset to ref (soft by default)"
+	@echo "  git-uncommit-last CONFIRM=1  Uncommit local HEAD while preserving all files"
 	@echo "  git-branch MSG='...'  Create branch"
 	@echo "  git-checkout MSG='...' Switch branch"
 	@echo "  git-merge MSG='...'   Merge branch with --no-ff"
@@ -363,6 +386,7 @@ help:
 	@echo "  clean                 Remove build artifacts"
 	@echo "  dist-clean            Remove distribution artifacts"
 	@echo "  gated-merge           flock-guarded multi-branch merge with manifest (BASE/BRANCHES/MERGE_STRATEGY/MANIFEST)"
+	@echo "  codex-system-skill-read SKILL=name CODEX_SKILLS_ROOT=path  Read one installed Codex system skill"
 	@echo ""
 	@echo "  --- Complete Target Index ---"
 	@$(PYTHON) scripts/check_make_help.py --print-index
@@ -633,6 +657,15 @@ test-unit-shards:
 	@if [ -z "$(SHARD)" ]; then echo "Usage: make test-unit-shards SHARD=unit-1a|unit-1b|unit-1d|unit-2|unit-3|other"; exit 1; fi
 	@/Library/Developer/CommandLineTools/usr/bin/make --no-print-directory test-ci-shard SHARD="$(SHARD)" PYTEST_ARGS="$(PYTEST_ARGS)"
 
+.PHONY: test-unit-shards-sequential
+test-unit-shards-sequential:
+	@set -e; \
+	for SHARD_NAME in unit-1a1 unit-1a2 unit-1b unit-1d unit-2 unit-3; do \
+		echo "=== unit shard $$SHARD_NAME: begin ==="; \
+		$(MAKE) --no-print-directory test-ci-shard SHARD="$$SHARD_NAME" PYTEST_ARGS="$(PYTEST_ARGS)" GLUDD_XDIST="$(or $(GLUDD_XDIST),2)"; \
+		echo "=== unit shard $$SHARD_NAME: passed ==="; \
+	done
+
 test-ci-shards-parallel: _ci-replica-clean-tree
 	@if [ -n "$(filter-out $@,$(MAKECMDGOALS))" ]; then echo "ERROR: quote SHARDS with spaces: make $@ SHARDS='unit-2 unit-3' [WORKERS_PER_SHARD=1]"; exit 2; fi
 	@if [ -z "$(SHARDS)" ]; then echo "Usage: make test-ci-shards-parallel SHARDS='unit-2 unit-3' [WORKERS_PER_SHARD=1]"; exit 1; fi
@@ -672,7 +705,9 @@ task:
 	@EXIT=$$?; if [ $$EXIT -eq 124 ]; then echo "TASK TIMEOUT: $(CMD) exceeded $(GLUDD_TASK_TIMEOUT)s"; fi; exit $$EXIT
 
 test-count:
-	@$(UV) run python -m pytest tests/ --co -q 2>&1 | tail -3
+	@OUT=$$(/usr/bin/mktemp /tmp/gludd-test-count.XXXXXX); \
+	$(UV) run python -m pytest $(or $(TESTPATH),tests/) --co -q > "$$OUT" 2>&1; RC=$$?; \
+	/usr/bin/tail -3 "$$OUT"; /bin/rm -f "$$OUT"; exit $$RC
 test-nodeids:
 	@$(UV) run python scripts/collect_nodeids.py --start $(or $(START),1) --limit $(or $(LIMIT),120) $(or $(TESTPATH),tests/)
 
@@ -681,6 +716,13 @@ test-xdist-trace:
 
 test-xdist-trace-summary:
 	@$(UV) run python scripts/summarize_xdist_trace.py $(or $(LOG),/tmp/gludd-xdist-progress.log)
+
+bisect-test-collection-polluter:
+	@$(UV) run python scripts/bisect_pytest_collection_polluter.py \
+		--candidate-dir "$(or $(CANDIDATE_DIR),tests/unit)" \
+		--target "$(or $(SENTINEL_TEST),tests/controllers/test_pause_slice3_capture.py::test_endpoint_pause_project_captures_resources_from_request)" \
+		--start "$(or $(START),0)" \
+		--limit "$(or $(LIMIT),0)"
 
 test-count-e2e:
 	@find tests/e2e -name 'test_*.py' | wc -l | xargs echo "e2e test files:"
@@ -779,7 +821,12 @@ test-opencode-boot-e2e:
 gate-fast: lint typecheck collect-check
 	@echo "=== GATE-FAST: PASS ==="
 
-gate: check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-hook-invoke check-plugin-imports check-node-v26-compat check-duplicate-targets check-task-integrity
+GATE_RUN_LOCK ?= /tmp/gludd-gate-run.lock
+
+_gate-run-lock-acquire:
+	@$(PYTHON) scripts/gate_run_lock.py acquire "$(GATE_RUN_LOCK)" "$$PPID"
+
+gate: _gate-run-lock-acquire check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-hook-invoke check-plugin-imports check-node-v26-compat check-duplicate-targets check-task-integrity check-no-prompt-prone-edit-tools
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
@@ -802,7 +849,9 @@ gate: check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-t
 	@printf "hook-runtime " >> .gate-status
 	@mkdir -p .gate-logs
 	@$(MAKE) --no-print-directory test-hook-runtime > .gate-logs/hook-runtime.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/hook-runtime.log)
-	$(MAKE) --no-print-directory test-opencode-e2e > .gate-logs/opencode-e2e.log 2>&1 \&\& echo "PASS" >> .gate-status || \(echo "FAIL" >> .gate-status \&\& touch .gate-failed \&\& tail -30 .gate-logs/opencode-e2e.log\); \
+	@echo "=== GATE PHASE: opencode-e2e ==="
+	@printf "opencode-e2e " >> .gate-status
+	@$(MAKE) --no-print-directory test-opencode-e2e > .gate-logs/opencode-e2e.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/opencode-e2e.log)
 	@echo "=== GATE PHASE: verify-enforcement ==="
 	@printf "verify-enforcement " >> .gate-status
 	@$(MAKE) --no-print-directory verify-enforcement > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed)
@@ -841,11 +890,14 @@ gate: check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-t
 		rm -f .gate-failed; \
 		echo "=== GATE: FAILED ==="; \
 		echo "=== GATE: FAILED ===" >> .gate-status; \
-		exit 1; \
+		RC=1; \
 	else \
 		echo "=== GATE: PASSED ==="; \
 		echo "=== GATE: PASSED ===" >> .gate-status; \
-	fi
+		RC=0; \
+	fi; \
+	if ! $(PYTHON) scripts/gate_run_lock.py release "$(GATE_RUN_LOCK)" "$$PPID"; then RC=1; fi; \
+	exit $$RC
 
 # gate-lite: LOCAL validation without the full xdist test phase that OOMs on
 # this machine under 8-worker xdist. Runs the same lint/typecheck/collect/smoke
@@ -953,16 +1005,11 @@ ps-gludd:
 	done; \
 	echo "--- ORPHAN(ppid=1)=stale. kill-stale removes stale scratch processes and workspace daemon trees only ---"
 
-# Kill stray pytest/gate processes (e.g. xdist workers orphaned by a killed run).
-# NOTE: blunt instrument — see kill-stale for self-tree-protecting cleanup.
+# Backward-compatible cleanup entry point. Cleanup is intentionally delegated to
+# the orphan-only implementation so one worktree cannot terminate another
+# worktree's active gate or test run.
 kill-stray:
-	@pkill -9 -f 'gludd-gate-basetemp' 2>/dev/null; \
-	pkill -9 -f 'pytest tests/' 2>/dev/null; \
-	pkill -9 -f 'make gate' 2>/dev/null; \
-	pkill -9 -f '/Users/shawnwilson/gludd/.venv/bin/detect-secrets scan' 2>/dev/null; \
-	pkill -9 -f '/Users/shawnwilson/gludd/.venv/bin/python -c from multiprocessing.resource_tracker' 2>/dev/null; \
-	pkill -9 -f '/Users/shawnwilson/gludd/.venv/bin/python -c from multiprocessing.spawn' 2>/dev/null; \
-	echo "killed stray pytest/gate/secret-scan workers (if any)"
+	@$(MAKE) --no-print-directory kill-stale
 
 # Reap ONLY genuinely-stale gludd processes — never the active one. A process is
 # killed iff it matches a known gludd scratch pattern and its parent is PID 1,
@@ -979,12 +1026,21 @@ kill-stale:
 	PARENTS=$$(ps -axo ppid= | tr -s ' ' '\n' | grep -E '^[0-9]+$$' | sort -u); \
 	echo "[kill-stale] self=$$SELF parent=$$PARENT — reaping orphaned gludd scratch and daemon trees"; \
 	ps -axo pid=,ppid=,command= | \
-	grep -E "molecule/mock_daemon|\.claude/worktrees/agent-[^ ]*/\.venv/bin/python|general_ludd\.cli tui|gludd-gate-basetemp|pytest tests/|ansible-playbook|/Users/shawnwilson/gludd/\.venv/bin/gunicorn general_ludd\.daemon:create_daemon_app" | \
+	grep -E "molecule/mock_daemon|\.claude/worktrees/agent-[^ ]*/\.venv/bin/python|general_ludd\.cli tui|gludd-gate-basetemp|pytest tests/|ansible-playbook|/Users/shawnwilson/gludd/\.venv/bin/python3? -u -c import sys;exec\(eval\(sys.stdin.readline\(\)\)\)|/Users/shawnwilson/gludd/\.venv/bin/gunicorn general_ludd\.daemon:create_daemon_app" | \
 	grep -v -E 'grep |kill-stale|ps-gludd' | \
 	while read -r pid ppid rest; do \
 		cmd=$$(echo "$$rest" | cut -c1-70); \
 		{ [ "$$pid" = "$$SELF" ] || [ "$$pid" = "$$PARENT" ]; } && { echo "  KEEP (self/parent): $$pid"; continue; }; \
 		if [ "$$ppid" != "1" ]; then echo "  KEEP (live parent $$ppid = active run): $$pid $$cmd"; continue; fi; \
+		if echo "$$rest" | grep -Eq '/Users/shawnwilson/gludd/\.venv/bin/python3? -u -c import sys;exec\(eval\(sys.stdin.readline\(\)\)\)'; then \
+			CHILDREN=$$(/usr/bin/pgrep -P "$$pid" 2>/dev/null || true); \
+			for child in $$CHILDREN; do kill -TERM "$$child" 2>/dev/null; done; \
+			kill -TERM "$$pid" 2>/dev/null; sleep 0.2; \
+			for child in $$CHILDREN; do kill -KILL "$$child" 2>/dev/null; done; \
+			kill -KILL "$$pid" 2>/dev/null; \
+			echo "  KILLED stale orphan xdist tree: $$pid $$cmd"; \
+			continue; \
+		fi; \
 		case "$$rest" in \
 			*"/Users/shawnwilson/gludd/.venv/bin/gunicorn general_ludd.daemon:create_daemon_app()"*) \
 				CHILDREN=$$(/usr/bin/pgrep -P "$$pid" 2>/dev/null || true); \
@@ -1067,10 +1123,16 @@ run-watched:
 	wait $$CMDPID; RC=$$?; echo "[watchdog] RESULT=EXIT rc=$$RC elapsed=$$(($$(date +%s)-START))s"; exit $$RC
 
 test-integration:
-	@$(UV) run python -m pytest tests/integration/ $(_XD) -v
+	@BT=$$(mktemp -d /tmp/gludd-test-integration-XXXXXX); \
+	trap 'rc=$$?; rm -rf "$$BT"; exit $$rc' EXIT; \
+	trap 'exit 130' INT TERM; \
+	$(UV) run python -m pytest tests/integration/ $(_XD) -v --basetemp="$$BT"
 
 test-e2e:
-	@$(UV) run python -m pytest tests/e2e/ $(_XD) -v
+	@BT=$$(mktemp -d /tmp/gludd-test-e2e-XXXXXX); \
+	trap 'rc=$$?; rm -rf "$$BT"; exit $$rc' EXIT; \
+	trap 'exit 130' INT TERM; \
+	$(UV) run python -m pytest tests/e2e/ $(_XD) -v --basetemp="$$BT"
 
 test-games:
 	@$(UV) run python -m pytest tests/e2e/test_game_building_deepseek.py $(_XD) -v $(PYTEST_ARGS)
@@ -1373,26 +1435,81 @@ clean-worktree-caches: clean-worktree-venvs
 	@rm -rf /tmp/gludd-worktrees/*/.pytest_cache /tmp/gludd-worktrees/*/.mypy_cache /tmp/gludd-worktrees/*/.ruff_cache 2>/dev/null || true
 	@echo "clean-worktree-caches done"
 molecule-clean:
-	@echo "Removing stray molecule/<scenario> runtime dirs (any dir directly under molecule/ that is NOT playbooks, roles, internal_tools, mock_daemon, library)..."
+	@echo "Removing stray molecule/<scenario> runtime dirs (preserving the canonical default scenario and source directories)..."
 	@for d in molecule/*/; do \
 		s=$$(basename "$$d"); \
 		case "$$s" in \
-			playbooks|roles|internal_tools|mock_daemon|library) ;; \
-			*) echo "  Removing stray: $$d"; rm -rf "$$d" ;; \
+			playbooks|roles|internal_tools|mock_daemon|library|default) ;; \
+			*) if [ -n "$$(git ls-files -- "$$d")" ]; then \
+				echo "  Preserving tracked scenario: $$d"; \
+			else \
+				echo "  Removing stray: $$d"; rm -rf "$$d"; \
+			fi ;; \
 		esac; \
 	done
+	@echo "Removing Ansible dependency namespaces accidentally installed into the source collection root..."
+	@rm -rf -- collections/ansible_collections/ansible collections/ansible_collections/community
+	@find collections/ansible_collections -maxdepth 1 -type d \( -name 'ansible.*.info' -o -name 'community.*.info' \) -exec rm -rf -- {} +
 	@echo "molecule-clean done"
 
 molecule-test:
 	@if [ -z "$(SCENARIO)" ]; then echo "Usage: make molecule-test SCENARIO=noop|prompt_eval|runtime_validate"; exit 1; fi
 	@echo "Running molecule scenario: $(SCENARIO)"
-	@rm -rf "molecule/$(SCENARIO)"; \
-	mkdir -p "molecule/$(SCENARIO)"; \
-	cp "molecule/playbooks/$(SCENARIO)/molecule.yml" "molecule/$(SCENARIO)/"; \
-	cp -r "molecule/playbooks/$(SCENARIO)/default" "molecule/$(SCENARIO)/default"; \
-	$(UV) run molecule test -s "$(SCENARIO)"; \
+	@if [ "$(SCENARIO)" = "binary_smoke_linux" ]; then \
+		$(MAKE) --no-print-directory build-linux-executable \
+			LIMA_INSTANCE="$(LIMA_INSTANCE)" \
+			LIMA_DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" \
+			LINUX_BINARY_IMAGE="$(LINUX_BINARY_IMAGE)" \
+			LINUX_BINARY_OUTPUT="$(LINUX_BINARY_OUTPUT)"; \
+	fi
+	@ANSIBLE_STATE_DIR=$$(mktemp -d "/tmp/gludd-molecule-$(SCENARIO).XXXXXX"); \
+	DOCKER_CONFIG_VALUE="$$ANSIBLE_STATE_DIR/docker"; \
+	mkdir -p "$$DOCKER_CONFIG_VALUE"; \
+	chmod 700 "$$DOCKER_CONFIG_VALUE"; \
+	export DOCKER_CONFIG="$$DOCKER_CONFIG_VALUE"; \
+	PROJECT_COLLECTIONS="$$(pwd)/collections"; \
+	export ANSIBLE_COLLECTIONS_PATH="$$ANSIBLE_STATE_DIR/collections:$$PROJECT_COLLECTIONS:/usr/share/ansible/collections"; \
+	echo "Using Ansible collections: $$ANSIBLE_COLLECTIONS_PATH"; \
+	DOCKER_HOST_VALUE="$${DOCKER_HOST:-}"; \
+	if [ -z "$$DOCKER_HOST_VALUE" ] && command -v limactl >/dev/null 2>&1; then \
+		LIMA_SOCKET=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Dir}}/sock/docker.sock' 2>/dev/null || true); \
+		if [ -n "$$LIMA_SOCKET" ] && [ -S "$$LIMA_SOCKET" ]; then \
+			DOCKER_HOST_VALUE="unix://$$LIMA_SOCKET"; \
+			export DOCKER_HOST="$$DOCKER_HOST_VALUE"; \
+			echo "Using Lima Docker API socket: $$DOCKER_HOST_VALUE"; \
+		fi; \
+	fi; \
+	if [ -z "$$DOCKER_HOST_VALUE" ] && command -v podman >/dev/null 2>&1; then \
+		PODMAN_SOCKET=$$(podman machine inspect "$(PODMAN_MACHINE)" --format '{{.ConnectionInfo.PodmanSocket.Path}}' 2>/dev/null || true); \
+		if [ -n "$$PODMAN_SOCKET" ] && [ -S "$$PODMAN_SOCKET" ]; then \
+			DOCKER_HOST_VALUE="unix://$$PODMAN_SOCKET"; \
+			export DOCKER_HOST="$$DOCKER_HOST_VALUE"; \
+			echo "Using Podman Docker API socket: $$DOCKER_HOST_VALUE"; \
+		fi; \
+	fi; \
+	RUNTIME_SCENARIO="molecule/$(SCENARIO)"; \
+	TRACKED_SCENARIO=0; \
+	if [ -n "$$(git ls-files -- "$$RUNTIME_SCENARIO")" ]; then \
+		TRACKED_SCENARIO=1; \
+		echo "Using tracked Molecule scenario: $$RUNTIME_SCENARIO"; \
+	fi; \
+	cleanup() { \
+		if [ "$$TRACKED_SCENARIO" -eq 0 ]; then rm -rf "$$RUNTIME_SCENARIO"; fi; \
+		rm -rf "$$ANSIBLE_STATE_DIR"; \
+	}; \
+	trap cleanup EXIT INT TERM; \
+	if [ "$$TRACKED_SCENARIO" -eq 0 ]; then \
+		rm -rf "$$RUNTIME_SCENARIO"; \
+		mkdir -p "$$RUNTIME_SCENARIO"; \
+		cp "molecule/playbooks/$(SCENARIO)/molecule.yml" "$$RUNTIME_SCENARIO/"; \
+		cp -r "molecule/playbooks/$(SCENARIO)/default" "$$RUNTIME_SCENARIO/default"; \
+		for dependency_file in collections.yml requirements.yml; do \
+			source_file="molecule/playbooks/$(SCENARIO)/$$dependency_file"; \
+			if [ -f "$$source_file" ]; then cp "$$source_file" "$$RUNTIME_SCENARIO/"; fi; \
+		done; \
+	fi; \
+	ANSIBLE_HOME="$$ANSIBLE_STATE_DIR" $(UV) run molecule test -s "$(SCENARIO)"; \
 	EXIT_CODE=$$?; \
-	rm -rf "molecule/$(SCENARIO)"; \
 	exit $$EXIT_CODE
 
 git-status:
@@ -1737,6 +1854,19 @@ provider-smoke:
 	@test -n "$(SMOKE_TEST)" || { echo Usage: make provider-smoke PROVIDER=aws SMOKE_TEST=ec2-a100 ARGS=--json; exit 1; }
 	@$(UV) run gludd smoke "$(PROVIDER)" "$(SMOKE_TEST)" $(ARGS)
 
+# Azure accelerator harness. Dry-run is local-only; LIVE=1 performs read-only
+# Azure Compute SKU and quota calls and never creates or deletes resources.
+provider-harness:
+	@test "$(PROVIDER)" = "azure" || { echo "Usage: make provider-harness PROVIDER=azure [LIVE=1]"; exit 1; }
+	@$(UV) run python scripts/provider_smoke_harness.py "$(PROVIDER)" $(if $(filter 1 true yes,$(LIVE)),--live,)
+
+azure-harness:
+	@$(MAKE) --no-print-directory provider-harness PROVIDER=azure LIVE=$(LIVE)
+
+test-opa-policies:
+	@command -v opa >/dev/null 2>&1 || { echo "opa MISSING — install OPA to run policy tests"; exit 1; }
+	@opa test $(OPA_ARGS) config/opa/iam_policy.rego config/opa/iam_policy_test.rego
+
 # --- Azure Event Guard ---
 # Monitors Azure Activity Log for expensive resource creation, duplicate names,
 # and wrong-account usage during smoke tests.  Pre-req: az CLI installed + logged in.
@@ -1873,9 +2003,14 @@ clean-untracked:
 	@echo "Cleaned up reinvention-of-wheel files"
 
 git-remote-sandboxcom:
-	@chmod 600 sandboxcom_github_rsa
-	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git remote add sandboxcom git@github.com:sandboxcom/gludd.git 2>/dev/null || true
-	@echo "Remote sandboxcom configured"
+	@test -r /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa || { echo "Missing repository-scoped SSH key: /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa"; exit 1; }
+	@chmod 600 /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa
+	@if git remote get-url sandboxcom >/dev/null 2>&1; then \
+		git remote set-url sandboxcom git@github.com:sandboxcom/gludd.git; \
+	else \
+		git remote add sandboxcom git@github.com:sandboxcom/gludd.git; \
+	fi
+	@echo "Remote sandboxcom configured via repository-scoped SSH"
 
 # -- Push gate: prevent CI thrash (cancelled runs, push storms, excessive pushes) --
 
@@ -1918,7 +2053,7 @@ commit-ready:
 	@UV=echo $(SYSTEM_PYTHON) scripts/workflow_state_guard.py --assert-clean --assert-no-feature-on-master
 
 gha-ready: workflow-gate
-	@UV=echo GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new" $(SYSTEM_PYTHON) scripts/ci_remote_head_guard.py --ref "$(REF)" --remote "$(REMOTE)"
+	@UV=echo GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa -o StrictHostKeyChecking=accept-new" $(SYSTEM_PYTHON) scripts/ci_remote_head_guard.py --ref "$(REF)" --remote "$(REMOTE)"
 
 merge-ready:
 	@UV=echo $(SYSTEM_PYTHON) scripts/workflow_state_guard.py --assert-clean --assert-merge-ready --assert-no-unintegrated-worktrees --assert-no-unintegrated-branches
@@ -1979,8 +2114,8 @@ master-force-push:
 	@$(MAKE) verify-remote BRANCH=master SHA=$$(git rev-parse master)
 	@echo "Master branch force-pushed and verified"
 
-git-push-sandboxcom: check-clean-tree _test-disabled-guard _push-rate-guard
-	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
+git-push-sandboxcom: check-clean-tree git-remote-sandboxcom _test-disabled-guard _push-rate-guard
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd"
 
 push-dev: check-clean-tree ci-busy-check
@@ -1998,22 +2133,24 @@ push-dev-nv: check-clean-tree _push-rate-guard
 # collect-check local gate). Use when the local 21k-test gate is non-viable
 # and CI is the gate. The _push-rate-guard (CI-pending / cooldown / thrash)
 # is STILL enforced. Mirrors commit-no-verify for the push side.
-git-push-sandboxcom-nv: check-clean-tree _push-rate-guard
-	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom master
+git-push-sandboxcom-nv: check-clean-tree git-remote-sandboxcom _push-rate-guard
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd (--no-verify)"
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
 
 # Push only the committed HEAD for the current branch. This is for CI candidate
 # runs from a dirty integration checkout; uncommitted files are not included.
-git-push-current-head-nv: check-clean-tree _push-rate-guard
+git-push-current-head-nv: check-clean-tree git-remote-sandboxcom
 	@BRANCH=$$(git branch --show-current); \
 	if [ -z "$$BRANCH" ]; then echo "Cannot push detached HEAD"; exit 1; fi; \
-	GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom HEAD:$$BRANCH
+	$(MAKE) --no-print-directory ci-busy-check BRANCH=$$BRANCH || exit 1; \
+	PUSH_BRANCH=$$BRANCH $(MAKE) --no-print-directory _push-rate-guard || exit 1; \
+	GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom HEAD:refs/heads/$$BRANCH
 	@echo "Pushed committed HEAD to sandboxcom/gludd"
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
 
-git-push-current-head-to-master-nv: check-clean-tree _push-rate-guard
-	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify sandboxcom HEAD:master
+git-push-current-head-to-master-nv: check-clean-tree git-remote-sandboxcom _push-rate-guard
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify sandboxcom HEAD:master
 	@echo "Pushed committed HEAD to sandboxcom/gludd master"
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
 
@@ -2104,7 +2241,7 @@ git-fetch-sandboxcom:
 
 verify-remote:
 	@SHA=$(or $(SHA),$$(git rev-parse HEAD)); BR=$(or $(BRANCH),master); \
-	REMOTE=$$(GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom refs/heads/$$BR | awk '{print $$1}'); \
+	REMOTE=$$(GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom refs/heads/$$BR | awk '{print $$1}'); \
 	echo "remote=$$REMOTE expected=$$SHA"; \
 	REMOTE_SHORT=$$(echo $$REMOTE | cut -c1-$${#SHA}); \
 	if [ "$$SHA" = "$$REMOTE_SHORT" ]; then echo "VERIFIED $$BR@$$SHA"; else echo "REMOTE MISMATCH: remote=$$REMOTE expected=$$SHA" && exit 1; fi
@@ -2112,10 +2249,10 @@ verify-remote:
 # Create an annotated tag and push it to sandboxcom to trigger the tag-gated
 # release job (version -> gate -> builds -> release). Usage:
 #   make git-tag-push TAG=v0.1.0-alpha.1 COMMIT=<sha> MSG='alpha release'
-git-tag-push:
+git-tag-push: git-remote-sandboxcom
 	@[ -n "$(TAG)" ] || { echo "Usage: make git-tag-push TAG=v0.1.0-alpha.N [COMMIT=<sha>] [MSG='...']"; exit 1; }
 	@git tag -a "$(TAG)" $(if $(COMMIT),$(COMMIT)) -m "$(if $(MSG),$(MSG),$(TAG))"
-	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"
 	@echo "Pushed tag $(TAG) to sandboxcom/gludd (triggers release job)"
 
 
@@ -2267,14 +2404,7 @@ release-list:
 # Confirm a published GitHub Release + list its downloadable assets.
 release-view:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-view TAG=v0.1.0-alpha.1"; exit 1; }
-	@gh release view "$(TAG)" -R sandboxcom/gludd --json tagName,name,isDraft,isPrerelease,publishedAt,url,assets 2>&1 | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); \
-		st = '📝 DRAFT' if d.get('isDraft') else ('📦 prerelease' if d.get('isPrerelease') else '📦 release'); \
-		print('RELEASE %s  [%s]' % (d.get('tagName','?'), st)); \
-		print('  url:      %s' % d.get('url','')); \
-		print('  published:%s' % d.get('publishedAt','-')); \
-		a=d.get('assets',[]); \
-		print('  ASSETS (%d):' % len(a)); \
-		[print('   - %-40s %8.1f MB' % (x['name'], x['size']/1048576.0)) for x in a]" 2>&1 || echo "release-view-failed"
+	@$(PYTHON) scripts/release_view.py "$(TAG)"
 
 # Verify a GitHub Release has published assets (exit 0 only if non-draft + assets >= 1).
 # A tag is NOT a release. This is the machine-enforceable definition of "shipped."
@@ -2621,16 +2751,82 @@ branches-unmerged:
 ci-greenness:
 	@gh run list -R sandboxcom/gludd -L 20 --json conclusion,status 2>/dev/null | $(PYTHON) -c "import sys,json; r=json.load(sys.stdin); done=[x for x in r if x.get('status')=='completed']; g=[x for x in done if x.get('conclusion')=='success']; total=len(done); print('CI greenness (last %d completed runs): %d GREEN, %d not-green = %d%%.' % (total, len(g), total-len(g), (100*len(g)//total if total else 0))); print('  -> Do NOT call CI \"reliable/green\" without quoting this ratio.')" || echo "ci-greenness-failed"
 
+.PHONY: gate-full gate-all gate-release-phases
 gate-full: gate-refresh
-	@echo "=== GATE PHASE: integration ==="; \
-	printf "integration " >> .gate-status; \
-	echo run python -m pytest tests/integration/ -q --no-header -n 2 --maxprocesses=2 > /tmp/gludd-gate-integration.log 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL" >> .gate-status && tail -20 /tmp/gludd-gate-integration.log); \
-	echo "=== GATE PHASE: e2e ==="; \
-	printf "e2e " >> .gate-status; \
-	echo run python -m pytest tests/e2e/ -q --no-header > /tmp/gludd-gate-e2e.log 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL" >> .gate-status && tail -20 /tmp/gludd-gate-e2e.log); \
-	echo "=== GATE PHASE: molecule ==="; \
-	printf "molecule " >> .gate-status; \
-	/Library/Developer/CommandLineTools/usr/bin/make --no-print-directory molecule-test > /tmp/gludd-gate-molecule.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && tail -20 /tmp/gludd-gate-molecule.log)
+	@$(MAKE) --no-print-directory gate-release-phases
+
+# Release-only phases shared by gate-full and gate-all. Commands intentionally
+# stream directly to the caller: a silent redirected test is not observable
+# release evidence. The prior terminal marker is removed before work starts so
+# any interruption or phase failure cannot leave a stale green status behind.
+gate-release-phases:
+	@set -eu; \
+	status="$(GATE_STATUS_FILE)"; \
+	if [ ! -f "$$status" ]; then \
+		echo "ERROR: $$status is missing; run the base gate before release phases." >&2; \
+		exit 1; \
+	fi; \
+	status_tmp="$${status}.release.$$$$"; \
+	sed -e '/^=== GATE: PASSED ===$$/d' -e '/^=== GATE: FAILED ===$$/d' "$$status" > "$$status_tmp"; \
+	mv "$$status_tmp" "$$status"; \
+	release_tmp=$$(mktemp -d /tmp/gludd-gate-release-XXXXXX); \
+	failed_written=0; \
+	trap 'exit 130' INT TERM; \
+	trap 'rc=$$?; rm -rf "$$release_tmp"; if [ "$$rc" -ne 0 ] && [ "$$failed_written" -eq 0 ]; then printf "=== GATE: FAILED ===\n" >> "$$status"; fi' EXIT; \
+	start_phase() { \
+		phase="$$1"; \
+		echo "=== GATE RELEASE PHASE: $$phase ==="; \
+		printf "%s RUN\n" "$$phase" >> "$$status"; \
+	}; \
+	pass_phase() { \
+		printf "%s PASS 0\n" "$$1" >> "$$status"; \
+	}; \
+	fail_phase() { \
+		phase="$$1"; rc="$$2"; detail="$$3"; \
+		printf "%s FAIL %s %s\n" "$$phase" "$$rc" "$$detail" >> "$$status"; \
+		printf "=== GATE: FAILED ===\n" >> "$$status"; \
+		failed_written=1; \
+		exit "$$rc"; \
+	}; \
+	case "$(GATE_RELEASE_WORKERS)" in \
+		1|2) ;; \
+		*) \
+			echo "ERROR: GATE_RELEASE_WORKERS must be 1 or 2." >&2; \
+			fail_phase configuration 2 invalid-worker-cap; \
+			;; \
+	esac; \
+	start_phase integration; \
+	if $(GATE_RELEASE_PYTEST) tests/integration/ -q --no-header --maxfail=1 --tb=line -n "$(GATE_RELEASE_WORKERS)" --dist loadgroup --basetemp="$$release_tmp/integration"; then \
+		pass_phase integration; \
+	else \
+		rc=$$?; fail_phase integration "$$rc" command-failed; \
+	fi; \
+	start_phase e2e; \
+	if $(GATE_RELEASE_PYTEST) tests/e2e/ -q --no-header --maxfail=1 --tb=line -n 1 --dist loadgroup --basetemp="$$release_tmp/e2e"; then \
+		pass_phase e2e; \
+	else \
+		rc=$$?; fail_phase e2e "$$rc" command-failed; \
+	fi; \
+	start_phase molecule; \
+	found_scenario=0; \
+	for scenario_dir in molecule/playbooks/*/; do \
+		if [ ! -d "$$scenario_dir" ]; then continue; fi; \
+		found_scenario=1; \
+		scenario=$$(basename "$$scenario_dir"); \
+		echo "--- GATE MOLECULE SCENARIO: $$scenario ---"; \
+		if $(GATE_RELEASE_MAKE) --no-print-directory molecule-test SCENARIO="$$scenario"; then \
+			echo "--- GATE MOLECULE PASS: $$scenario ---"; \
+		else \
+			rc=$$?; fail_phase molecule "$$rc" "scenario=$$scenario"; \
+		fi; \
+	done; \
+	if [ "$$found_scenario" -ne 1 ]; then \
+		echo "ERROR: no Molecule scenarios found under molecule/playbooks/." >&2; \
+		fail_phase molecule 2 no-scenarios; \
+	fi; \
+	pass_phase molecule; \
+	printf "=== GATE: PASSED ===\n" >> "$$status"; \
+	echo "=== GATE RELEASE PHASES: PASSED ==="
 
 test-atomic-validate:
 	@echo "test-atomic-validate: verify atomic target creation with tempfile validation"
@@ -2833,7 +3029,7 @@ ci-rerun:
 ci-remote-head-guard:
 	@REF="$(REF)"; if [ -z "$$REF" ]; then REF="$$(git branch --show-current)"; fi; \
 	REMOTE="$(REMOTE)"; if [ -z "$$REMOTE" ]; then REMOTE=sandboxcom; fi; \
-	GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new" $(PYTHON) scripts/ci_remote_head_guard.py --ref "$$REF" --remote "$$REMOTE"
+	GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa -o StrictHostKeyChecking=accept-new" $(PYTHON) scripts/ci_remote_head_guard.py --ref "$$REF" --remote "$$REMOTE"
 
 # Fresh dispatch of the Build and Release workflow on the current branch after exact-HEAD guard.
 ci-trigger: ci-remote-head-guard _require-gh
@@ -2912,8 +3108,8 @@ ci-pyver-list:
 	@$(UV) python list 2>&1 | head -40 || echo "uv-python-list-failed"
 
 ci-ssh-test:
-	@chmod 600 sandboxcom_github_rsa 2>/dev/null || true
-	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' ssh -T -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new git@github.com 2>&1 | head -5 || true
+	@chmod 600 /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa 2>/dev/null || true
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa -o StrictHostKeyChecking=accept-new' ssh -T -i /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa -o StrictHostKeyChecking=accept-new git@github.com 2>&1 | head -5 || true
 
 ci-remotes:
 	@git remote -v 2>&1 || true
@@ -3217,13 +3413,13 @@ dist-path-check:
 	HITS=$$(grep -rIl -e '/Users/' -e 'Mac.localdomain' $$DIRS 2>/dev/null || true); \
 	if [ -n "$$HITS" ]; then echo "LEAKED LOCAL PATHS in tarball:"; echo "$$HITS"; exit 1; else echo "Tarball dir(s) path-clean."; fi
 
-# gate-refresh: re-run fast gate phases (lint, typecheck, collect) and write a
-# fresh .gate-status with current timestamp. Test/smoke lines are PRESERVED from
-# the prior full gate run. This lets the agent prove partial gate green to
-# unblock commits while the gate-background test phase is still running.
+# gate-refresh: re-run the non-sharded CI gate phases and write a fresh
+# .gate-status with current timestamp. Test/smoke lines are PRESERVED from the
+# prior full gate run. This lets the agent prove partial gate green to unblock
+# commits while the gate-background test phase is still running.
 # Does NOT run the full test suite — that's what gate-background is for.
 .PHONY: gate-refresh
-gate-refresh:
+gate-refresh: _gate-run-lock-acquire
 	@if [ ! -f .gate-status ]; then \
 		echo "ERROR: .gate-status missing — no prior gate to refresh. Run 'make gate' first."; exit 1; \
 	fi; \
@@ -3237,6 +3433,34 @@ gate-refresh:
 		echo "PASS 0" >> .gate-status; \
 	else \
 		echo "FAIL $$($(UV) run ruff check src tests --output-format concise 2>&1 | grep -c .)" >> .gate-status && touch .gate-failed; \
+	fi; \
+	echo "=== GATE PHASE: verify-feature-claims ==="; \
+	printf "verify-feature-claims " >> .gate-status; \
+	if $(MAKE) --no-print-directory verify-feature-claims; then \
+		echo "PASS" >> .gate-status; \
+	else \
+		echo "FAIL" >> .gate-status && touch .gate-failed; \
+	fi; \
+	echo "=== GATE PHASE: hot-reload ==="; \
+	printf "hot-reload " >> .gate-status; \
+	if $(MAKE) --no-print-directory hot-reload-plugins; then \
+		echo "PASS" >> .gate-status; \
+	else \
+		echo "FAIL" >> .gate-status && touch .gate-failed; \
+	fi; \
+	echo "=== GATE PHASE: verify-hot-reload ==="; \
+	printf "verify-hot-reload " >> .gate-status; \
+	if $(MAKE) --no-print-directory check-hot-reload-fresh; then \
+		echo "PASS" >> .gate-status; \
+	else \
+		echo "FAIL" >> .gate-status && touch .gate-failed; \
+	fi; \
+	echo "=== GATE PHASE: check-status-table ==="; \
+	printf "check-status-table " >> .gate-status; \
+	if $(MAKE) --no-print-directory check-status-table; then \
+		echo "PASS" >> .gate-status; \
+	else \
+		echo "FAIL" >> .gate-status && touch .gate-failed; \
 	fi; \
 	echo "=== GATE PHASE: env-writes ==="; \
 	printf "env-writes " >> .gate-status; \
@@ -3255,11 +3479,13 @@ gate-refresh:
 	$(MAKE) --no-print-directory collect-check > /dev/null 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL collection-errors" >> .gate-status && touch .gate-failed); \
 	if [ -n "$$OLD_TEST" ] && echo "$$OLD_TEST" | grep -q "PASS"; then echo "$$OLD_TEST" >> .gate-status; else \
 		echo "=== GATE-REFRESH PHASE: test ==="; \
+		TEST_LOG="/tmp/gludd-gate-refresh-test.$$$$.log"; \
 		printf "test " >> .gate-status; \
-		if $(UV) run python -m pytest tests/unit/ -q --no-header -n 2 --maxprocesses=2 > /tmp/gludd-gate-refresh-test.log 2>&1; then \
-			echo "PASS 0" >> .gate-status; \
+		if $(MAKE) --no-print-directory run-watched CMD='$(MAKE) --no-print-directory test-unit-shards-sequential PYTEST_ARGS=-q GLUDD_XDIST=2' LOG="$$TEST_LOG" STALL_SECS=180 MAX_SECS=3600; then \
+			echo "PASS 0" >> .gate-status; rm -f "$$TEST_LOG"; \
 		else \
-			echo "FAIL non-zero-exit" >> .gate-status && touch .gate-failed && echo "[gate-refresh] test FAILED — tail:" && tail -20 /tmp/gludd-gate-refresh-test.log; \
+			echo "FAIL non-zero-exit" >> .gate-status && touch .gate-failed && echo "[gate-refresh] test FAILED — tail:" && tail -20 "$$TEST_LOG"; \
+			echo "[gate-refresh] full log: $$TEST_LOG"; \
 		fi; \
 	fi; \
 	if [ -n "$$OLD_SMOKE" ] && echo "$$OLD_SMOKE" | grep -q "PASS"; then echo "$$OLD_SMOKE" >> .gate-status; else \
@@ -3274,11 +3500,14 @@ gate-refresh:
 		rm -f .gate-failed; \
 		echo "=== GATE-REFRESH: FAILED (fast phases) ==="; \
 		echo "=== GATE: FAILED ===" >> .gate-status; \
-		exit 1; \
+		RC=1; \
 	else \
 		echo "=== GATE-REFRESH: PASSED ==="; \
 		echo "=== GATE: PASSED ===" >> .gate-status; \
-	fi
+		RC=0; \
+	fi; \
+	if ! $(PYTHON) scripts/gate_run_lock.py release "$(GATE_RUN_LOCK)" "$$PPID"; then RC=1; fi; \
+	exit $$RC
 
 _gate-fresh-check: check-gate-fresh
 	@true
@@ -3300,9 +3529,9 @@ git-commit: _gate-fresh-check _commit-lock-acquire
 	@echo "Running pre-commit collection check..."
 	@$(MAKE) --no-print-directory collect-check
 	@echo "Gate fresh and green. Running pre-commit directly on staged files..."
-	@# pre-commit-directly: run pre-commit on staged-only, auto-stage fixes, commit -n.
-	@git diff --cached --name-only | xargs -r pre-commit run --files 2>/dev/null || true
-	@git diff --name-only | xargs -r git add 2>/dev/null || true
+	@# Fail closed on hook errors and preserve unstaged user work. If a hook edits
+	@# a file, stage that explicit file and rerun instead of sweeping the worktree.
+	@git diff --cached --name-only -z | xargs -0 -r $(UV) run pre-commit run --files
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
 commit-no-verify: _gate-fresh-check _commit-lock-acquire
@@ -3447,6 +3676,28 @@ git-reset:
 		exit 1; \
 	fi
 	@git reset -- $(FILES)
+
+git-uncommit-last:
+	@if [ "$(CONFIRM)" != "1" ]; then \
+		echo "Usage: make git-uncommit-last CONFIRM=1 [DRY_RUN=1]"; \
+		exit 1; \
+	fi
+	@parents=$$(git rev-list --parents -n 1 HEAD); \
+	parent_count=$$(printf '%s\n' "$$parents" | awk '{print NF - 1}'); \
+	if [ "$$parent_count" -ne 1 ]; then \
+		echo "Refusing to uncommit a root or merge commit"; \
+		exit 1; \
+	fi; \
+	if git branch -r --contains HEAD | grep -q .; then \
+		echo "Refusing to uncommit a commit contained by a remote-tracking branch"; \
+		exit 1; \
+	fi; \
+	if [ "$(DRY_RUN)" = "1" ]; then \
+		echo "Would run: git reset --mixed HEAD^"; \
+	else \
+		git reset --mixed HEAD^; \
+		echo "Uncommitted local HEAD; all file changes were preserved"; \
+	fi
 
 git-restore:
 	@if [ -z "$(FILES)" ]; then \
@@ -3757,6 +4008,139 @@ build-executable:
 	@$(UV) run pyinstaller gludd.spec --clean --noconfirm
 	@echo "Built dist/gludd"
 
+LINUX_BINARY_IMAGE ?= ghcr.io/astral-sh/uv:python3.12-bookworm-slim@sha256:e5b65587bce7de595f299855d7385fe7fca39b8a74baa261ba1b7147afa78e58
+LINUX_BINARY_OUTPUT ?= dist/linux/gludd
+LINUX_BINARY_SCRATCH_ROOT ?= $(HOME)/tmp/gludd-linux-build
+DEBIAN_SNAPSHOT ?= 20260729T000000Z
+LINUX_BINUTILS_VERSION ?= 2.40-2
+LINUX_APT_UTILS_VERSION ?= 2.6.1
+PYINSTALLER_WARNING_ALLOWLIST_LINUX ?= config/pyinstaller-warning-allowlist-linux.json
+PYINSTALLER_WARNING_FILE_LINUX ?= dist/linux/warn-gludd.txt
+PYINSTALLER_VERSION_LINUX ?= 6.20.0
+
+.PHONY: audit-linux-pyinstaller-warnings
+audit-linux-pyinstaller-warnings: ## Re-audit a retained Linux PyInstaller warning report
+	@case "$(PYINSTALLER_WARNING_FILE_LINUX)" in /*|*..*) echo "Refusing unsafe PYINSTALLER_WARNING_FILE_LINUX: $(PYINSTALLER_WARNING_FILE_LINUX)"; exit 1;; esac
+	@architecture="$$(uname -m)"; \
+	$(UV) run python scripts/audit_pyinstaller_warnings.py \
+		--warnings "$(PYINSTALLER_WARNING_FILE_LINUX)" \
+		--allowlist "$(PYINSTALLER_WARNING_ALLOWLIST_LINUX)" \
+		--platform linux \
+		--architecture "$$architecture" \
+		--pyinstaller-version "$(PYINSTALLER_VERSION_LINUX)" \
+		--spec gludd.spec
+
+build-linux-executable: ## Build and verify a real Linux PyInstaller executable
+	@case "$(LINUX_BINARY_OUTPUT)" in /*|*..*) echo "Refusing unsafe LINUX_BINARY_OUTPUT: $(LINUX_BINARY_OUTPUT)"; exit 1;; esac
+	@case "$(LINUX_BINARY_SCRATCH_ROOT)" in "$(HOME)"/*) ;; *) echo "Refusing scratch root outside HOME: $(LINUX_BINARY_SCRATCH_ROOT)"; exit 1;; esac
+	@mkdir -p "$$(dirname "$(LINUX_BINARY_OUTPUT)")"
+	@rm -f "$(LINUX_BINARY_OUTPUT)" "$(dir $(LINUX_BINARY_OUTPUT))warn-gludd.txt"
+	@set -e; if [ "$$(uname -s)" = "Linux" ]; then \
+		echo "Building Linux executable natively"; \
+		$(MAKE) --no-print-directory build-executable; \
+		pyinstaller_version=$$($(UV) run pyinstaller --version); \
+		architecture=$$(uname -m); \
+		cp build/gludd/warn-gludd.txt "$(dir $(LINUX_BINARY_OUTPUT))warn-gludd.txt"; \
+		$(UV) run python scripts/audit_pyinstaller_warnings.py \
+			--warnings build/gludd/warn-gludd.txt \
+			--allowlist "$(PYINSTALLER_WARNING_ALLOWLIST_LINUX)" \
+			--platform linux \
+			--architecture "$$architecture" \
+			--pyinstaller-version "$$pyinstaller_version" \
+			--spec gludd.spec; \
+		cp dist/gludd "$(LINUX_BINARY_OUTPUT)"; \
+	else \
+		socket=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Dir}}/sock/docker.sock' 2>/dev/null || true); \
+		if [ -z "$$socket" ] || [ ! -S "$$socket" ]; then \
+			echo "Lima Docker socket unavailable for $(LIMA_INSTANCE): $$socket"; \
+			exit 1; \
+		fi; \
+		mkdir -p "$(LIMA_DOCKER_CONFIG)"; \
+		chmod 700 "$(LIMA_DOCKER_CONFIG)"; \
+		mkdir -p "$(LINUX_BINARY_SCRATCH_ROOT)"; \
+		source_dir=$$(mktemp -d "$(LINUX_BINARY_SCRATCH_ROOT)/source.XXXXXX"); \
+		container_name="gludd-linux-build-$$$$"; \
+		cleanup_build() { \
+			rm -rf "$$source_dir"; \
+			DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker rm -f "$$container_name" >/dev/null 2>&1 || true; \
+		}; \
+		trap cleanup_build EXIT INT TERM; \
+		git archive HEAD | tar -x -C "$$source_dir"; \
+		echo "Building Linux executable in namespaced Lima Docker VM $(LIMA_INSTANCE)"; \
+		build_status=0; \
+		DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker run \
+			--pull=always \
+			--name "$$container_name" \
+			-e HOME=/tmp/gludd-home \
+			-e UV_CACHE_DIR=/tmp/gludd-uv-cache \
+			-e UV_LINK_MODE=copy \
+			-e UV_PROJECT_ENVIRONMENT=/tmp/gludd-linux-venv \
+			-v "$$source_dir:/workspace:ro" \
+			-w /workspace \
+			"$(LINUX_BINARY_IMAGE)" \
+			sh -ec 'export DEBIAN_FRONTEND=noninteractive; \
+				sed -i \
+					-e "s|http://deb.debian.org/debian-security|https://snapshot.debian.org/archive/debian-security/$(DEBIAN_SNAPSHOT)|g" \
+					-e "s|http://deb.debian.org/debian|https://snapshot.debian.org/archive/debian/$(DEBIAN_SNAPSHOT)|g" \
+					/etc/apt/sources.list.d/debian.sources; \
+				if test -f /etc/dpkg/dpkg.cfg.d/docker; then \
+					sed -i "\|/usr/share/man/|d" /etc/dpkg/dpkg.cfg.d/docker; \
+				fi; \
+				printf "%s\n" "Acquire::Check-Valid-Until \"false\";" > /etc/apt/apt.conf.d/99gludd-snapshot; \
+				apt-get -o APT::Update::Error-Mode=any update; \
+				if test -L /etc/alternatives/builtins.7.gz && ! test -e /usr/share/man/man7/bash-builtins.7.gz; then \
+					mkdir -p /usr/share/man/man7; \
+					: > /usr/share/man/man7/bash-builtins.7.gz; \
+					update-alternatives --remove builtins.7.gz /usr/share/man/man7/bash-builtins.7.gz; \
+					rm -f /usr/share/man/man7/bash-builtins.7.gz; \
+				fi; \
+				apt-get install -y --download-only --no-install-recommends "apt-utils=$(LINUX_APT_UTILS_VERSION)"; \
+				dpkg -i /var/cache/apt/archives/apt-utils_$(LINUX_APT_UTILS_VERSION)_*.deb; \
+				dpkg-query -W apt-utils; \
+				echo "=== pending package updates before dist-upgrade ==="; \
+				apt-get -s dist-upgrade; \
+				apt-get -y --no-remove dist-upgrade; \
+				apt-get install -y --no-install-recommends "binutils=$(LINUX_BINUTILS_VERSION)"; \
+				command -v objdump; \
+				command -v objcopy; \
+				dpkg-query -W binutils; \
+				echo "=== pending package updates after dist-upgrade ==="; \
+				apt-get -s dist-upgrade > /tmp/gludd-apt-after.txt; \
+				cat /tmp/gludd-apt-after.txt; \
+				grep -Fq "0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded." /tmp/gludd-apt-after.txt; \
+				rm -rf /var/lib/apt/lists/*; \
+				uv sync --frozen; \
+				pyinstaller_version=$$(uv run pyinstaller --version); \
+				test "$$pyinstaller_version" = "6.20.0"; \
+				architecture=$$(uname -m); \
+				pyinstaller_status=0; \
+				uv run pyinstaller gludd.spec --clean --noconfirm --workpath /tmp/gludd-pyinstaller-build --distpath /out || pyinstaller_status=$$?; \
+				if test -f /tmp/gludd-pyinstaller-build/gludd/warn-gludd.txt; then \
+					cp /tmp/gludd-pyinstaller-build/gludd/warn-gludd.txt /out/warn-gludd.txt; \
+				fi; \
+				test "$$pyinstaller_status" -eq 0; \
+				uv run python scripts/audit_pyinstaller_warnings.py \
+					--warnings /tmp/gludd-pyinstaller-build/gludd/warn-gludd.txt \
+					--allowlist "$(PYINSTALLER_WARNING_ALLOWLIST_LINUX)" \
+					--platform linux \
+					--architecture "$$architecture" \
+					--pyinstaller-version "$$pyinstaller_version" \
+					--spec gludd.spec' || build_status=$$?; \
+		warning_copy_status=0; \
+		DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker cp "$$container_name:/out/warn-gludd.txt" "$(dir $(LINUX_BINARY_OUTPUT))warn-gludd.txt" || warning_copy_status=$$?; \
+		if [ "$$build_status" -ne 0 ]; then \
+			echo "Linux executable container build failed"; \
+			exit "$$build_status"; \
+		fi; \
+		if [ "$$warning_copy_status" -ne 0 ]; then \
+			echo "PyInstaller warning report was not retained"; \
+			exit "$$warning_copy_status"; \
+		fi; \
+		DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker cp "$$container_name:/out/gludd" "$(LINUX_BINARY_OUTPUT)"; \
+	fi
+	@test -x "$(LINUX_BINARY_OUTPUT)" || { echo "Linux executable missing: $(LINUX_BINARY_OUTPUT)"; exit 1; }
+	@kind=$$(file "$(LINUX_BINARY_OUTPUT)"); echo "$$kind"; echo "$$kind" | grep -q 'ELF' || { echo "Expected an ELF executable"; exit 1; }
+
 gen-status-table:
 	@$(UV) run python scripts/gen_status_table.py --write --fast
 
@@ -3928,6 +4312,10 @@ check-opa-iam:
 check-test-env-writes:
 	@$(UV) run python scripts/check_test_env_writes.py tests
 
+fix-test-env-writes:
+	@test -n "$(FILES)" || { echo "Usage: make fix-test-env-writes FILES='tests/path.py ...'"; exit 2; }
+	@$(UV) run python scripts/fix_test_env_writes.py $(FILES)
+
 # --- TDD compliance: new/modified source files require corresponding tests ---
 # Blocks commit if source files in src/general_ludd/ lack test files with imports + test_* functions.
 check-tdd-compliance:
@@ -3951,18 +4339,7 @@ audit-untested-code:
 	@$(UV) run python scripts/audit_untested_code.py
 
 gate-all: gate-refresh
-	@echo "=== GATE PHASE: integration ==="; \
-	printf "integration " >> .gate-status; \
-	echo run python -m pytest tests/integration/ -q --no-header -n 2 --maxprocesses=2 > /tmp/gludd-gate-integration.log 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL" >> .gate-status && tail -20 /tmp/gludd-gate-integration.log); \
-	echo "=== GATE PHASE: e2e ==="; \
-	printf "e2e " >> .gate-status; \
-	echo run python -m pytest tests/e2e/ -q --no-header > /tmp/gludd-gate-e2e.log 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL" >> .gate-status && tail -20 /tmp/gludd-gate-e2e.log); \
-	echo "=== GATE PHASE: molecule ==="; \
-	printf "molecule " >> .gate-status; \
-	for shard in 1 2 3 4 5 6; do \
-		/Library/Developer/CommandLineTools/usr/bin/make --no-print-directory molecule-test-shard SHARD=$shard > /tmp/gludd-gate-mol$shard.log 2>&1 || touch /tmp/gludd-gate-mol-failed; \
-	done; \
-	if [ -f /tmp/gludd-gate-mol-failed ]; then rm -f /tmp/gludd-gate-mol-failed; echo "FAIL" >> .gate-status; else echo "PASS" >> .gate-status; fi
+	@$(MAKE) --no-print-directory gate-release-phases
 
 check-test-quality:
 	@$(UV) run python scripts/check_test_quality.py
@@ -3980,7 +4357,7 @@ check-types-baseline:
 
 verify-feature-claims:
 	@echo "=== verify-feature-claims: full evidence verification (pytest for test: refs) ==="
-	@$(UV) run ansible-playbook playbooks/verify_feature_claims.yml
+	@$(UV) run ansible-playbook -i localhost, -c local playbooks/verify_feature_claims.yml
 
 file-executable:
 	@if [ -f "$(FILE)" ]; then chmod +x "$(FILE)"; else echo "ERROR: FILE '$(FILE)' not found"; exit 1; fi
@@ -4035,18 +4412,20 @@ deb-install-deps:
 	@echo "=== Installing .deb package dependencies ==="
 	@grep '^Depends:' dist/debian/control | sed 's/^Depends: //' | tr ',' '\n' | sed 's/^ *//;s/ .*//' | xargs -r sudo apt-get install -y
 
+RPMBUILD_DIR := $(abspath dist/rpmbuild)
 rpm-package:
 	@echo "=== Building .rpm package ==="
 	@which rpmbuild >/dev/null 2>&1 || (echo "ERROR: rpmbuild not found. Install rpm-build package."; exit 1)
-	@mkdir -p dist/rpm /tmp/gludd-rpmbuild/BUILD /tmp/gludd-rpmbuild/RPMS /tmp/gludd-rpmbuild/SOURCES /tmp/gludd-rpmbuild/SPECS /tmp/gludd-rpmbuild/SRPMS
-	@cp dist/gludd /tmp/gludd-rpmbuild/SOURCES/gludd
-	@sed "s/VERSION_PLACEHOLDER/$(VERSION)/g" dist/rpm/gludd.spec > /tmp/gludd-rpmbuild/SPECS/gludd.spec
-	@rpmbuild -bb --define "_topdir /tmp/gludd-rpmbuild" /tmp/gludd-rpmbuild/SPECS/gludd.spec
-	@RPM_FILE=$$(ls /tmp/gludd-rpmbuild/RPMS/x86_64/gludd-*.rpm 2>/dev/null | head -1); \
+	@rm -rf "$(RPMBUILD_DIR)"
+	@mkdir -p dist/rpm "$(RPMBUILD_DIR)/BUILD" "$(RPMBUILD_DIR)/BUILDROOT" "$(RPMBUILD_DIR)/RPMS" "$(RPMBUILD_DIR)/SOURCES" "$(RPMBUILD_DIR)/SPECS" "$(RPMBUILD_DIR)/SRPMS"
+	@cp dist/gludd "$(RPMBUILD_DIR)/SOURCES/gludd"
+	@sed "s/VERSION_PLACEHOLDER/$(VERSION)/g" dist/rpm/gludd.spec > "$(RPMBUILD_DIR)/SPECS/gludd.spec"
+	@rpmbuild -bb --define "_topdir $(RPMBUILD_DIR)" "$(RPMBUILD_DIR)/SPECS/gludd.spec"
+	@RPM_FILE=$$(ls "$(RPMBUILD_DIR)"/RPMS/x86_64/gludd-*.rpm 2>/dev/null | head -1); \
 	if [ -z "$$RPM_FILE" ]; then echo "ERROR: rpmbuild produced no .rpm"; exit 1; fi; \
 	cp "$$RPM_FILE" "dist/gludd-$(VERSION)-1.x86_64.rpm"; \
 	sha256sum "dist/gludd-$(VERSION)-1.x86_64.rpm" > "dist/gludd-$(VERSION)-1.x86_64.rpm.sha256"; \
-	rm -rf /tmp/gludd-rpmbuild
+	rm -rf "$(RPMBUILD_DIR)"
 	@echo "=== .rpm built: dist/gludd-$(VERSION)-1.x86_64.rpm ==="
 
 # --- macOS .dmg packaging ---
@@ -4079,8 +4458,8 @@ windows-installer:
 	@if ! command -v makensis >/dev/null 2>&1; then echo "windows-installer requires makensis (NSIS). Install: brew install makensis or apt install nsis"; exit 1; fi
 	@echo "Building $(WINDOWS_INSTALLER)..."
 	@mkdir -p dist/windows
-	@$(UV) run python -c "import shutil; shutil.copy('dist/gludd', 'dist/windows/gludd.exe')" 2>/dev/null || true
-	@makensis -DVERSION=$(VERSION) -DBUILDDIR=dist $(NSI_SCRIPT)
+	@if [ -f dist/gludd.exe ]; then cp dist/gludd.exe dist/windows/gludd.exe; elif [ -f dist/gludd ]; then cp dist/gludd dist/windows/gludd.exe; else echo "ERROR: no gludd binary found at dist/gludd.exe or dist/gludd"; exit 1; fi
+	@makensis -WX -DVERSION=$(VERSION) -DBUILDDIR=.. $(NSI_SCRIPT)
 	@shasum -a 256 dist/$(WINDOWS_INSTALLER) > dist/$(WINDOWS_INSTALLER).sha256
 	@echo "Created dist/$(WINDOWS_INSTALLER)"
 	@echo "Checksum: dist/$(WINDOWS_INSTALLER).sha256"
@@ -4250,39 +4629,109 @@ clean-sandbox-images:
 # on Linux, etc.) surface here directly instead of only in CI. PYV=3.11|3.12.
 # Uses a container-local venv (UV_PROJECT_ENVIRONMENT) so the host macOS .venv is
 # never touched. Streams via tee (observability invariant).
+LIMA_INSTANCE ?= gludd-docker
+LIMA_MEMORY_GIB ?= 4
+LIMA_IMAGE ?= ubuntu:24.04
+LIMA_DOCKER_CONFIG ?= /tmp/gludd-lima-docker-config
+
+lima-up:
+	@command -v limactl >/dev/null 2>&1 || { echo "limactl not installed"; exit 1; }
+	@status=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Status}}' 2>/dev/null || true); \
+	if [ -z "$$status" ]; then \
+		echo "Initializing namespaced Lima Docker VM $(LIMA_INSTANCE)"; \
+		limactl start --name="$(LIMA_INSTANCE)" --cpus="$(VCPU)" --memory="$(LIMA_MEMORY_GIB)" --disk="$(VDISK)" --progress template:docker; \
+	elif [ "$$status" != "Running" ]; then \
+		echo "Starting namespaced Lima Docker VM $(LIMA_INSTANCE)"; \
+		limactl start --progress "$(LIMA_INSTANCE)"; \
+	fi
+	@socket=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Dir}}/sock/docker.sock'); \
+	if [ ! -S "$$socket" ]; then echo "Lima Docker socket missing: $$socket"; exit 1; fi; \
+	DOCKER_HOST="unix://$$socket" docker info --format 'Lima Docker {{.ServerVersion}} ready'
+
+lima-status:
+	@limactl list "$(LIMA_INSTANCE)"
+
+lima-docker-status: ## Show bounded Docker engine, container, and image state for the namespaced Lima VM
+	@socket=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Dir}}/sock/docker.sock' 2>/dev/null || true); \
+	if [ -z "$$socket" ] || [ ! -S "$$socket" ]; then \
+		echo "Lima Docker socket unavailable for $(LIMA_INSTANCE): $$socket"; \
+		exit 1; \
+	fi; \
+	mkdir -p "$(LIMA_DOCKER_CONFIG)"; \
+	chmod 700 "$(LIMA_DOCKER_CONFIG)"; \
+	echo "=== Lima Docker engine ($(LIMA_INSTANCE)) ==="; \
+	DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker info --format 'server={{.ServerVersion}} containers={{.Containers}} images={{.Images}}'; \
+	echo "=== Containers ==="; \
+	DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker ps --all --no-trunc; \
+	echo "=== Images ==="; \
+	DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker images --digests
+
+lima-docker-pull: ## Pull one image through the namespaced Lima Docker socket with live progress
+	@socket=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Dir}}/sock/docker.sock' 2>/dev/null || true); \
+	if [ -z "$$socket" ] || [ ! -S "$$socket" ]; then \
+		echo "Lima Docker socket unavailable for $(LIMA_INSTANCE): $$socket"; \
+		exit 1; \
+	fi; \
+	mkdir -p "$(LIMA_DOCKER_CONFIG)"; \
+	chmod 700 "$(LIMA_DOCKER_CONFIG)"; \
+	echo "Pulling $(LIMA_IMAGE) into Lima VM $(LIMA_INSTANCE)"; \
+	DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker pull "$(LIMA_IMAGE)"
+
+lima-stop:
+	@limactl stop "$(LIMA_INSTANCE)"
+
 # Ensure the podman Linux VM is initialised and running (macOS needs a VM to run
 # Linux containers). Idempotent: init/start fail harmlessly if already done.
+PODMAN_MACHINE ?= gludd
+VMEM ?= 4096
+VCPU ?= 4
+VDISK ?= 20
+
 podman-up:
 	@command -v podman >/dev/null 2>&1 || { echo "podman not installed"; exit 1; }
-	@podman machine init 2>/dev/null || true
-	@podman machine start 2>/dev/null || true
-	@# A stale default connection (e.g. an old Lima VM) hijacks `podman run`;
-	@# force the running podman machine to be the default so containers actually run.
-	@podman system connection default podman-machine-default 2>/dev/null || true
+	@if ! podman machine inspect "$(PODMAN_MACHINE)" >/dev/null 2>&1; then \
+		echo "Initializing namespaced Podman machine $(PODMAN_MACHINE)"; \
+		podman machine init --memory "$(VMEM)" --cpus "$(VCPU)" --disk-size "$(VDISK)" "$(PODMAN_MACHINE)"; \
+	fi
+	@state=$$(podman machine inspect "$(PODMAN_MACHINE)" --format '{{.State}}'); \
+	if [ "$$state" != "running" ]; then podman machine start "$(PODMAN_MACHINE)"; fi
+	@state=$$(podman machine inspect "$(PODMAN_MACHINE)" --format '{{.State}}'); \
+	if [ "$$state" != "running" ]; then echo "Podman machine $(PODMAN_MACHINE) failed to start"; exit 1; fi
+	@podman system connection default "$(PODMAN_MACHINE)"
 	@podman machine list
 
 podman-restart:
-	@podman machine stop 2>/dev/null || true
-	@podman machine start
-	@podman system connection default podman-machine-default 2>/dev/null || true
+	@podman machine stop "$(PODMAN_MACHINE)" 2>/dev/null || true
+	@podman machine start "$(PODMAN_MACHINE)"
+	@podman system connection default "$(PODMAN_MACHINE)"
 	@podman machine list
 
-VMEM ?= 4096
-VCPU ?= 4
 # Recreate the podman VM from scratch with the requested resources. The default
 # 2GiB VM crashed (and self-destructed) under the full test suite; a fresh VM
 # with more memory is more reliable than trying to resize a dead one.
 podman-resize:
-	@podman machine rm -f podman-machine-default 2>/dev/null || true
-	@podman machine init --memory $(VMEM) --cpus $(VCPU) 2>/dev/null || true
-	@podman machine start
-	@podman system connection default podman-machine-default 2>/dev/null || true
+	@case "$(PODMAN_MACHINE)" in gludd*) ;; *) echo "Refusing to replace non-Gludd machine: $(PODMAN_MACHINE)"; exit 1;; esac
+	@podman machine rm -f "$(PODMAN_MACHINE)" 2>/dev/null || true
+	@podman machine init --memory "$(VMEM)" --cpus "$(VCPU)" --disk-size "$(VDISK)" "$(PODMAN_MACHINE)"
+	@podman machine start "$(PODMAN_MACHINE)"
+	@podman system connection default "$(PODMAN_MACHINE)"
 	@podman machine list
 
 podman-diag:
+	@echo "--- container tools ---"; \
+	for tool in docker podman limactl; do command -v "$$tool" 2>/dev/null || echo "$$tool: unavailable"; done
 	@echo "--- machine list ---"; podman machine list 2>&1 || true
 	@echo "--- connection list ---"; podman system connection list 2>&1 || true
+	@echo "--- $(PODMAN_MACHINE) inspect ---"; podman machine inspect "$(PODMAN_MACHINE)" 2>&1 || true
+	@socket=$$(podman machine inspect "$(PODMAN_MACHINE)" --format '{{.ConnectionInfo.PodmanSocket.Path}}' 2>/dev/null || true); \
+	log_dir=$$(dirname "$$socket"); \
+	echo "--- $(PODMAN_MACHINE) serial log ---"; tail -500 "$$log_dir/$(PODMAN_MACHINE).log" 2>&1 || true; \
+	echo "--- gvproxy log ---"; tail -100 "$$log_dir/gvproxy.log" 2>&1 || true
 	@echo "--- info (host socket) ---"; podman info --format '{{.Host.RemoteSocket.Path}}' 2>&1 | head -3 || true
+
+podman-debug-start:
+	@echo "--- debug-starting namespaced machine $(PODMAN_MACHINE) ---"
+	@podman --log-level=debug machine start "$(PODMAN_MACHINE)"
 
 PYV ?= 3.11
 ci-repro-linux:
@@ -4322,9 +4771,9 @@ pip-audit:
 # Gating audit (W5.3): fail-closed on any NEW advisory. The two known,
 # adjudicated advisories are ignored with a documented rationale in
 # SECURITY.md "Known dependency advisories":
-#   - CVE-2025-69872 (diskcache): no upstream fix; mitigated by owner-only
-#     (0o700) cache dir in models/response_cache.py — attacker needs cache-dir
-#     write access, which the permission removes.
+#   - CVE-2025-69872 (diskcache): no upstream fix; every application cache uses
+#     security.safe_diskcache's non-executable MessagePack serializer in a
+#     versioned owner-only namespace and refuses legacy pickle modes.
 #   - PYSEC-2026-196 (pip): build-time installer only; pip is NOT a runtime
 #     dependency (not in pyproject) and is absent from the shipped PyInstaller
 #     binary; fixed pip 26.1.2 is used in CI/dev.
@@ -4710,6 +5159,10 @@ coverage-json:
 	@mkdir -p .gate-logs
 	@$(PYTHON) scripts/audit_coverage.py --json-file=coverage.json --threshold=$(THRESHOLD) --source=$(SOURCE)
 
+coverage-missing-lines:
+	@[ -n "$(XML)" ] && [ -n "$(COVERAGE_THRESHOLD)" ] || { echo "Usage: make coverage-missing-lines XML=coverage.xml COVERAGE_THRESHOLD=75"; exit 1; }
+	@$(PYTHON) scripts/coverage_missing_lines.py --xml "$(XML)" --threshold "$(COVERAGE_THRESHOLD)"
+
 # Targeted coverage check on key files (user-requested coverage report).
 coverage-key-files:
 	@PYYAML_FORCE_LIBYAML=0 $(UV) run python -m pytest \
@@ -4976,8 +5429,8 @@ reload-enforcement:
 	@FLOOR="$${CLAUDE_AGENT_FLOOR:-10}"; \
 	echo "$${FLOOR}" > /tmp/gludd-floor-override; \
 	echo "  /tmp/gludd-floor-override          → $${FLOOR}"
-	@$(UV) run python3 -c 'import json,time; json.dump({"count":0,"ts":int(time.time()*1000)},open("/tmp/gludd-tool-streak.json","w"))'
-	@echo "  /tmp/gludd-tool-streak.json        → count=0"
+	@$(UV) run python3 -c 'import json,os,time; path=os.environ.get("GLUDD_STREAK_FILE","/tmp/gludd-tool-streak.json"); json.dump({"count":0,"ts":int(time.time()*1000)},open(path,"w"))'
+	@echo "  $${GLUDD_STREAK_FILE:-/tmp/gludd-tool-streak.json} → count=0"
 	@$(UV) run python3 -c 'import json,time; json.dump({"streak":0,"last_dispatch_ts":int(time.time()*1000),"ts":int(time.time()*1000)},open("/tmp/gludd-mainthread-streak.json","w"))'
 	@echo "  /tmp/gludd-mainthread-streak.json  → strength=0"
 	@rm -f /tmp/gludd-watchdog-disengage.json
@@ -5056,6 +5509,16 @@ tf-init: tf-cache-setup
 	@test -n "$(STACK)" || { echo "Usage: make tf-init STACK=stacks/<name>"; exit 2; }
 	@test -d $(TF_ROOT)/$(STACK) || { echo "No such stack: $(TF_ROOT)/$(STACK)"; exit 2; }
 	@cd $(TF_ROOT)/$(STACK) && $(TF) init
+
+# Initialise only the two beta.3 Azure accelerator stacks without contacting
+# the daemon-backed HTTP state service.  Removing the generated .terraform
+# metadata prevents an earlier backend-enabled init from leaking into this
+# state-free validation path.
+tf-init-local: tf-cache-setup
+	@case "$(STACK)" in stacks/azure-vllm|stacks/azure-llamacpp) ;; *) echo "Usage: make tf-init-local STACK=stacks/azure-vllm|stacks/azure-llamacpp"; exit 2;; esac
+	@$(PYTHON) scripts/clean_terraform_test_artifacts.py "$(TF_ROOT)/$(STACK)"
+	@rm -rf "$(TF_ROOT)/$(STACK)/.terraform"
+	@cd "$(TF_ROOT)/$(STACK)" && TF_PLUGIN_CACHE_DIR="$(TF_PLUGIN_CACHE)" terraform init -backend=false
 
 # Validates a single stack against the shared cache.
 #   make tf-validate STACK=stacks/aws-vllm
@@ -5454,7 +5917,7 @@ find-untested:
 	$(PYTHON) scripts/find_untested_modules.py
 
 test-hot-module-load:
-	@node --experimental-strip-types -e "try { const m = require('/tmp/gludd-hot-enforce-session-start.js'); console.log('LOADED OK: typeof default=' + typeof m.default + ', keys=' + Object.keys(m).join()); } catch(e) { console.log('LOAD FAILED: ' + e.message); console.log('FALLBACK: loadHotModule would use defaultImpl'); }"
+	@node --experimental-strip-types -e "try { const m = require('/tmp/gludd-hot-enforce-session-start.js'); console.log('LOADED OK: typeof default=' + typeof m.default + ', keys=' + Object.keys(m).join()); } catch(e) { console.error('LOAD FAILED: ' + e.message); console.error('FALLBACK: loadHotModule would use defaultImpl'); process.exitCode = 1; }"
 
 diag-multitask:
 	@node --experimental-strip-types _diag_multitask.ts
@@ -5467,6 +5930,11 @@ cat-file:
 	@case "$(FILE)" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $(FILE)"; exit 1;; esac
 	@/bin/cat "$(FILE)"
 
+codex-system-skill-read:
+	@[ -n "$(SKILL)" ] && [ -n "$(CODEX_SKILLS_ROOT)" ] || { echo "Usage: make codex-system-skill-read SKILL=name CODEX_SKILLS_ROOT=path"; exit 1; }
+	@case "$(SKILL)" in *[!a-zA-Z0-9_-]*|'') echo "Invalid skill name: $(SKILL)"; exit 1;; esac
+	@/bin/cat "$(CODEX_SKILLS_ROOT)/.system/$(SKILL)/SKILL.md"
+
 list-files:
 	@[ -n "$(DIR)" ] || { echo "Usage: make list-files DIR=path"; exit 1; }
 	@case "$(DIR)" in /*|*..*) echo "Refusing path outside workspace: $(DIR)"; exit 1;; esac
@@ -5476,11 +5944,11 @@ search:
 	@[ -n "$(PATTERN)" ] || { echo "Usage: make search PATTERN=regex [SEARCH_PATH=path]"; exit 1; }
 	@SEARCH_ROOT="$(if $(SEARCH_PATH),$(SEARCH_PATH),.)"; \
 	case "$$SEARCH_ROOT" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $$SEARCH_ROOT"; exit 1;; esac; \
-	if [ -x /opt/homebrew/bin/rg ]; then RG=/opt/homebrew/bin/rg; elif [ -x /usr/local/bin/rg ]; then RG=/usr/local/bin/rg; else RG=""; fi; \
+	RG=$$(command -v rg 2>/dev/null || true); \
 	if [ -n "$$RG" ]; then \
-		"$$RG" -n --glob '!.git/**' --glob '!.venv/**' --glob '!.mypy_cache/**' --glob '!.pytest_cache/**' --glob '!.gate-logs/**' -- "$(PATTERN)" "$$SEARCH_ROOT"; \
+		"$$RG" -n --glob '!.git/**' --glob '!.venv/**' --glob '!.mypy_cache/**' --glob '!.pytest_cache/**' --glob '!.gate-logs/**' -- "$(PATTERN)" "$$SEARCH_ROOT" 2>/dev/null | /usr/bin/grep .; \
 	else \
-		/usr/bin/find "$$SEARCH_ROOT" \( -path '*/.git' -o -path '*/.venv' -o -path '*/.mypy_cache' -o -path '*/.pytest_cache' -o -path '*/.gate-logs' \) -prune -o -type f -print0 | /usr/bin/xargs -0 /usr/bin/grep -n -- "$(PATTERN)" 2>/dev/null; \
+		/usr/bin/grep -R -nH -I --exclude-dir=.git --exclude-dir=.venv --exclude-dir=.mypy_cache --exclude-dir=.pytest_cache --exclude-dir=.gate-logs -- "$(PATTERN)" "$$SEARCH_ROOT" 2>/dev/null | /usr/bin/grep .; \
 	fi
 
 show-lines:
@@ -5494,7 +5962,15 @@ kill-project-pid:
 	@[ -n "$(PID)" ] || { echo "Usage: make kill-project-pid PID=pid"; exit 1; }
 	@cmd=$$(/bin/ps -p "$(PID)" -o command=); \
 	case "$$cmd" in \
-		*"/Users/shawnwilson/gludd"*|*"make search"*|*"grep -R"*) /bin/kill "$(PID)" ;; \
+		*"/Users/shawnwilson/gludd"*|*"make search"*|*"grep -R"*) \
+			/bin/kill -TERM "$(PID)" 2>/dev/null || true; \
+			elapsed=0; \
+			while [ $$elapsed -lt 2 ] && /bin/kill -0 "$(PID)" 2>/dev/null; do \
+				/bin/sleep 1; elapsed=$$((elapsed + 1)); \
+			done; \
+			if /bin/kill -0 "$(PID)" 2>/dev/null; then \
+				/bin/kill -KILL "$(PID)" 2>/dev/null || true; \
+			fi ;; \
 		*) echo "Refusing to kill unrelated process: $$cmd"; exit 1 ;; \
 	esac
 
@@ -5580,8 +6056,8 @@ expand-specs:
 	@$(UV) run python3 scripts/generate_specs_to_4000.py --target $(or $(TARGET),4000)
 
 # Push exactly the current clean HEAD for the current branch.
-git-push-committed-head-nv: commit-ready workflow-gate
-	@BRANCH=$$(git branch --show-current); if [ -z "$$BRANCH" ]; then echo "Cannot push detached HEAD"; exit 1; fi; $(MAKE) --no-print-directory ci-busy-check BRANCH=$$BRANCH || exit 1; PUSH_BRANCH=$$BRANCH $(MAKE) --no-print-directory _push-rate-guard || exit 1; HEAD=$$(git rev-parse HEAD); GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new" git push --no-verify -u sandboxcom HEAD:refs/heads/$$BRANCH || exit 1; $(MAKE) --no-print-directory verify-remote BRANCH=$$BRANCH SHA=$$HEAD || exit 1; echo "Pushed clean HEAD $$HEAD to sandboxcom/$$BRANCH."
+git-push-committed-head-nv: commit-ready workflow-gate git-remote-sandboxcom
+	@BRANCH=$$(git branch --show-current); if [ -z "$$BRANCH" ]; then echo "Cannot push detached HEAD"; exit 1; fi; $(MAKE) --no-print-directory ci-busy-check BRANCH=$$BRANCH || exit 1; PUSH_BRANCH=$$BRANCH $(MAKE) --no-print-directory _push-rate-guard || exit 1; HEAD=$$(git rev-parse HEAD); GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa -o StrictHostKeyChecking=accept-new" git push --no-verify -u sandboxcom HEAD:refs/heads/$$BRANCH || exit 1; $(MAKE) --no-print-directory verify-remote BRANCH=$$BRANCH SHA=$$HEAD || exit 1; echo "Pushed clean HEAD $$HEAD to sandboxcom/$$BRANCH."
 
 # Trigger the Build and Release workflow for the exact clean HEAD already on sandboxcom.
 ci-trigger-committed-head: gha-ready _require-gh
@@ -5741,7 +6217,7 @@ pipeline-health: pipeline-status
 	@true
 
 check-gate-fresh:
-	@echo run python scripts/gate_fresh_check.py check .gate-status
+	@$(UV) run python scripts/gate_fresh_check.py check .gate-status
 
 check-version-consistency:
 	@$(UV) run python scripts/check_version_consistency.py

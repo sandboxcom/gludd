@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import json
+import urllib.error
 from unittest.mock import patch
 
 from general_ludd.mcp.catalog import _REGISTRY_RESPONSE_MAX_BYTES, MCPCatalog, MCPCatalogEntry
@@ -132,10 +134,12 @@ class TestMCPCatalogSearch:
         assert len(results) == 1
         assert results[0].server_name == "nested-name"
 
-    def test_search_filters_by_source(self):
+    @patch.object(MCPCatalog, "_query_registry", return_value=[])
+    def test_search_filters_by_source(self, mock_query_registry):
         catalog = MCPCatalog(registries=["smithery.ai", "glama.ai"])
         results = catalog.search(query="test", source="smithery")
         assert isinstance(results, list)
+        mock_query_registry.assert_called_once_with("smithery.ai", "test", 20)
 
     @patch("urllib.request.urlopen")
     def test_search_handles_registry_error(self, mock_urlopen):
@@ -143,6 +147,21 @@ class TestMCPCatalogSearch:
         mock_urlopen.side_effect = Exception("Network error")
         results = catalog.search(query="test")
         assert results == []
+
+    @patch("urllib.request.urlopen")
+    def test_search_closes_http_error_body(self, mock_urlopen):
+        catalog = MCPCatalog(registries=["smithery.ai"])
+        body = io.BytesIO(b"forbidden")
+        mock_urlopen.side_effect = urllib.error.HTTPError(
+            "https://api.smithery.ai/servers",
+            403,
+            "Forbidden",
+            {},
+            body,
+        )
+
+        assert catalog.search(query="test") == []
+        assert body.closed
 
     def test_search_limits_results(self):
         catalog = MCPCatalog(registries=[])
@@ -173,6 +192,24 @@ class TestMCPCatalogRefresh:
 
 class TestMCPCatalogOversizedResponse:
     """C-1/C-2: oversized registry responses must be rejected gracefully."""
+
+    @patch("urllib.request.urlopen")
+    def test_query_rejects_non_object_json_response(self, mock_urlopen):
+        catalog = MCPCatalog(registries=["smithery.ai"])
+        payload = json.dumps(["not", "an", "object"]).encode()
+        mock_resp = type("Resp", (), {
+            "read": lambda self, n=None: payload if n is None else payload[:n],
+            "__enter__": lambda self: self,
+            "__exit__": lambda self, *a: None,
+        })()
+        mock_urlopen.return_value = mock_resp
+
+        try:
+            catalog._query_registry("smithery.ai", "", 10)
+        except ValueError as exc:
+            assert str(exc) == "Smithery registry response must be a JSON object"
+        else:
+            raise AssertionError("non-object registry response was accepted")
 
     @patch("urllib.request.urlopen")
     def test_search_smithery_rejects_oversized_response(self, mock_urlopen):

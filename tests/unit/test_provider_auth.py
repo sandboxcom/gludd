@@ -111,8 +111,11 @@ class TestDeploymentManagerAuthInjection:
             mock_tf.side_effect = [
                 {"stdout": "Init done", "stderr": "", "returncode": 0},
                 {"stdout": "Apply done", "stderr": "", "returncode": 0},
-                {"stdout": json.dumps({"endpoint_url": {"value": "https://gpu-inference"
-                                                       ".eastus.azurecontainerapps.io"}}),
+                {"stdout": json.dumps({
+                    "instance_id": {"value": "azure-auth-test"},
+                    "endpoint_url": {"value": "https://gpu-inference"
+                                               ".eastus.azurecontainerapps.io"},
+                }),
                  "stderr": "", "returncode": 0},
             ]
 
@@ -151,7 +154,10 @@ class TestDeploymentManagerAuthInjection:
             mock_tf.side_effect = [
                 {"stdout": "ok", "stderr": "", "returncode": 0},
                 {"stdout": "ok", "stderr": "", "returncode": 0},
-                {"stdout": json.dumps({"endpoint_url": {"value": "https://test.azurecontainerapps.io"}}),
+                {"stdout": json.dumps({
+                    "instance_id": {"value": "azure-env-test"},
+                    "endpoint_url": {"value": "https://test.azurecontainerapps.io"},
+                }),
                  "stderr": "", "returncode": 0},
             ]
             await mgr.deploy(cfg)
@@ -169,7 +175,10 @@ class TestDeploymentManagerAuthInjection:
             mock_tf.side_effect = [
                 {"stdout": "ok", "stderr": "", "returncode": 0},
                 {"stdout": "ok", "stderr": "", "returncode": 0},
-                {"stdout": json.dumps({"endpoint_url": {"value": "https://test.azurecontainerapps.io"}}),
+                {"stdout": json.dumps({
+                    "instance_id": {"value": "azure-no-auth-test"},
+                    "endpoint_url": {"value": "https://test.azurecontainerapps.io"},
+                }),
                  "stderr": "", "returncode": 0},
             ]
             instance = await mgr.deploy(cfg)
@@ -253,8 +262,12 @@ class TestDeploymentManagerAuthInjection:
             mock_tf.side_effect = [
                 {"stdout": "ok", "stderr": "", "returncode": 0},
                 {"stdout": "ok", "stderr": "", "returncode": 0},
-                {"stdout": json.dumps({"endpoint_url": {
-                    "value": "https://msi-test.azurecontainerapps.io"}}),
+                {"stdout": json.dumps({
+                    "instance_id": {"value": "azure-msi-test"},
+                    "endpoint_url": {
+                        "value": "https://msi-test.azurecontainerapps.io",
+                    },
+                }),
                  "stderr": "", "returncode": 0},
             ]
             instance = await mgr.deploy(cfg)

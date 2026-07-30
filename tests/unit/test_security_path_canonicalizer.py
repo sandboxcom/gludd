@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from general_ludd.security.path_canonicalizer import (
     CANONICAL_DENY_MARKERS,
     PROTECTED_FILE_STEMS,
@@ -137,3 +139,15 @@ class TestIsDeniedPath:
 
     def test_policy_file_denied(self) -> None:
         assert is_denied_path("src/policy.py") is True
+
+    def test_workspace_resolution_detects_symlink_to_protected_path(
+        self, tmp_path: Path
+    ) -> None:
+        protected = tmp_path / ".opencode"
+        protected.mkdir()
+        alias = tmp_path / "ordinary"
+        alias.symlink_to(protected, target_is_directory=True)
+
+        assert (
+            is_denied_path("ordinary/plugin.ts", workspace_root=tmp_path) is True
+        )

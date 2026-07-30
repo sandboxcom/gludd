@@ -111,6 +111,30 @@ def test_constructs_with_default_transport():
     assert src.name
 
 
+def test_transport_and_query_alias_compatibility():
+    transport = RecordingTransport([(200, vector_payload())])
+    src = ThanosSource(
+        {"base_url": GOOD_URL},
+        transport=transport,
+    )
+
+    records = src.query({"query": "up"})
+
+    assert len(records) == 2
+    assert records[0]["message"] == 'up{instance="h1:9090", job="api"}'
+    assert transport.calls[0]["params"]["query"] == "up"
+
+
+def test_http_get_and_transport_are_mutually_exclusive():
+    callback = RecordingTransport([])
+    with pytest.raises(ValueError, match="http_get or transport"):
+        ThanosSource(
+            {"base_url": GOOD_URL},
+            http_get=callback,
+            transport=callback,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Auth from env
 # ---------------------------------------------------------------------------
@@ -229,6 +253,23 @@ def test_query_matrix_uses_range_endpoint_and_expands_samples():
     assert len(records) == 2
     assert records[0]["value"] == 10.0
     assert records[1]["value"] == 12.5
+
+
+def test_query_scalar_normalization():
+    payload = {
+        "status": "success",
+        "data": {"resultType": "scalar", "result": [1718000000.0, "7.5"]},
+    }
+    src = ThanosSource(
+        {"base_url": GOOD_URL},
+        http_get=RecordingTransport([(200, payload)]),
+    )
+
+    records = src.query({"promql": "scalar(7.5)"})
+
+    assert len(records) == 1
+    assert records[0]["ts"] == 1718000000.0
+    assert records[0]["value"] == 7.5
 
 
 def test_query_passes_thanos_dedup_param():

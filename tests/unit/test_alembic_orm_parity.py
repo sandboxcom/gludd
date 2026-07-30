@@ -10,10 +10,12 @@ that table on the next schema change, which is a data-loss security finding.
 from __future__ import annotations
 
 import pathlib
+from collections.abc import Iterator
 
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy import inspect as sa_inspect
+from sqlalchemy.engine import Engine
 
 from general_ludd.db.models import Base
 
@@ -49,12 +51,21 @@ def migrated_db_path(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) ->
     return db_path
 
 
+@pytest.fixture
+def migrated_engine(migrated_db_path: str) -> Iterator[Engine]:
+    """Provide a migrated engine and close its SQLite pool after each test."""
+    engine = create_engine(f"sqlite:///{migrated_db_path}")
+    try:
+        yield engine
+    finally:
+        engine.dispose()
+
+
 class TestAlembicOrmParity:
     """Every ORM ``__tablename__`` must appear after ``alembic upgrade head``."""
 
-    def test_all_orm_tables_exist_in_migrations(self, migrated_db_path: str) -> None:
-        engine = create_engine(f"sqlite:///{migrated_db_path}")
-        inspector = sa_inspect(engine)
+    def test_all_orm_tables_exist_in_migrations(self, migrated_engine: Engine) -> None:
+        inspector = sa_inspect(migrated_engine)
         migrated_tables = set(inspector.get_table_names())
 
         # alembic_version is a bookkeeping table, not an ORM model.
@@ -75,9 +86,8 @@ class TestAlembicOrmParity:
             f"[Unexpected — if intentional, add the model; otherwise remove from migration.]"
         )
 
-    def test_migration_count_matches_orm_count(self, migrated_db_path: str) -> None:
-        engine = create_engine(f"sqlite:///{migrated_db_path}")
-        inspector = sa_inspect(engine)
+    def test_migration_count_matches_orm_count(self, migrated_engine: Engine) -> None:
+        inspector = sa_inspect(migrated_engine)
         migrated_tables = set(inspector.get_table_names())
         migrated_tables.discard("alembic_version")
 
@@ -89,10 +99,9 @@ class TestAlembicOrmParity:
             f"Migrated: {sorted(migrated_tables)}. ORM: {sorted(orm_tablenames)}."
         )
 
-    def test_no_missing_columns_per_model(self, migrated_db_path: str) -> None:
+    def test_no_missing_columns_per_model(self, migrated_engine: Engine) -> None:
         """Each ORM model's columns must exist in the migrated table."""
-        engine = create_engine(f"sqlite:///{migrated_db_path}")
-        inspector = sa_inspect(engine)
+        inspector = sa_inspect(migrated_engine)
 
         for tablename, table in Base.metadata.tables.items():
             if tablename not in inspector.get_table_names():
@@ -118,11 +127,16 @@ class TestAlembicOrmParity:
         # On SQLite, a broken migration would leave the file inconsistent
         # and the next open would fail.
         engine = create_engine(f"sqlite:///{db_path}")
-        with engine.connect() as conn:
-            result = conn.execute(
-                __import__("sqlalchemy").text("SELECT name FROM sqlite_master WHERE type='table'")
-            )
-            tables = {row[0] for row in result}
+        try:
+            with engine.connect() as conn:
+                result = conn.execute(
+                    __import__("sqlalchemy").text(
+                        "SELECT name FROM sqlite_master WHERE type='table'"
+                    )
+                )
+                tables = {row[0] for row in result}
+        finally:
+            engine.dispose()
         orm_tablenames = _collect_orm_tablenames()
         missing = orm_tablenames - tables
         assert missing == set(), (

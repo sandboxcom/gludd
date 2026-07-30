@@ -19,10 +19,9 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     def _now_iso() -> str:
         return datetime.datetime.now(datetime.UTC).isoformat()
 
-    @app.api_route(
-        "/api/terraform/state/{stack_name}",
-        methods=["GET", "POST", "DELETE"],
-    )
+    @app.get("/api/terraform/state/{stack_name}")
+    @app.post("/api/terraform/state/{stack_name}")
+    @app.delete("/api/terraform/state/{stack_name}")
     async def terraform_state(request: Request, stack_name: str) -> JSONResponse:
         if request.method == "GET":
             state = _state_store.get(stack_name)

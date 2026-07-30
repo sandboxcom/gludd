@@ -8,12 +8,10 @@
 #   2. Poll /healthz for up to 30 seconds.
 #   3. GET /api/facts — verify the body is a JSON object/list the caller can
 #      consume (the daemon's facts aggregator).
-#   4. GET /api/tasks — verify it returns a list. (Specification endpoint:
-#      drives the implementation contract for a tasks facet parallel to
-#      /api/todos.)
-#   5. POST /api/playbook/run with a minimal playbook body — verify the daemon
-#      accepts the request (2xx).
-#   6. GET /health — verify 200 + JSON status.
+#   4. GET /api/todos — verify it returns a list.
+#   5. POST /api/todos with a minimal job body — verify the daemon accepts the
+#      request (2xx). The event loop maps work_type to a registered playbook.
+#   6. GET /healthz — verify 200 + JSON status.
 #   7. Send SIGTERM to the recorded PID.
 #   8. Verify the daemon exits cleanly (exit code 0 via reaped returncode).
 #   9. Verify port 8767 is released after shutdown.
@@ -96,30 +94,32 @@
         body_format: json
       register: facts_resp
 
-    - name: GET /api/tasks
+    - name: GET /api/todos
       ansible.builtin.uri:
-        url: "{{ daemon_url }}/api/tasks"
+        url: "{{ daemon_url }}/api/todos"
         method: GET
         status_code: 200
         return_content: true
         body_format: json
-      register: tasks_resp
+      register: todos_resp
 
-    - name: POST /api/playbook/run with a minimal playbook body
+    - name: POST /api/todos with a minimal job body
       ansible.builtin.uri:
-        url: "{{ daemon_url }}/api/playbook/run"
+        url: "{{ daemon_url }}/api/todos"
         method: POST
         status_code: [200, 201, 202]
         return_content: true
         body_format: json
         body:
-          playbook: "noop.yml"
-          extra_vars: {}
-      register: playbook_resp
+          title: "daemon-lifecycle-test-job"
+          work_type: "noop"
+          queue: "core"
+          priority: "medium"
+      register: todo_submit_resp
 
-    - name: GET /health (public status)
+    - name: GET /healthz (public status)
       ansible.builtin.uri:
-        url: "{{ daemon_url }}/health"
+        url: "{{ daemon_url }}/healthz"
         method: GET
         status_code: 200
         return_content: true
@@ -147,13 +147,13 @@
                 "status": facts_resp.status,
                 "is_mapping_or_list": (facts_resp.json is mapping or facts_resp.json is sequence)
               },
-              "tasks": {
-                "status": tasks_resp.status,
-                "is_list": (tasks_resp.json is sequence)
+              "todos": {
+                "status": todos_resp.status,
+                "is_list": (todos_resp.json is sequence)
               },
-              "playbook": {
-                "status": playbook_resp.status,
-                "accepted": (playbook_resp.status in [200, 201, 202])
+              "todo_submit": {
+                "status": todo_submit_resp.status,
+                "accepted": (todo_submit_resp.status in [200, 201, 202])
               },
               "health": {
                 "status": health_resp.status,
@@ -188,6 +188,11 @@
       changed_when: false
       failed_when: false
 
+    - name: Remove scenario-owned PID file
+      ansible.builtin.file:
+        path: "{{ pidfile }}"
+        state: absent
+
     - name: Verify port released after shutdown
       ansible.builtin.shell:
         cmd: >-
@@ -217,13 +222,13 @@
                 "status": facts_resp.status,
                 "is_mapping_or_list": (facts_resp.json is mapping or facts_resp.json is sequence)
               },
-              "tasks": {
-                "status": tasks_resp.status,
-                "is_list": (tasks_resp.json is sequence)
+              "todos": {
+                "status": todos_resp.status,
+                "is_list": (todos_resp.json is sequence)
               },
-              "playbook": {
-                "status": playbook_resp.status,
-                "accepted": (playbook_resp.status in [200, 201, 202])
+              "todo_submit": {
+                "status": todo_submit_resp.status,
+                "accepted": (todo_submit_resp.status in [200, 201, 202])
               },
               "health": {
                 "status": health_resp.status,

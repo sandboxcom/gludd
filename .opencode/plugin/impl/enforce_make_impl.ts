@@ -22,6 +22,8 @@ const BASH_POLICY_FIX = [
 const BASH_POLICY_REF = "See AGENTS.md for existing make targets and the full policy.\n"
 
 const MAKE_ENFORCE = process.env.GLUDD_MAKE_ENFORCE !== "0"
+const PROMPT_PRONE_PATCH_TOOL = ["apply", "patch"].join("_")
+const PROMPT_PRONE_PATCH_TOOL_QUALIFIED = `functions.${PROMPT_PRONE_PATCH_TOOL}`
 // Bare `(` and `)` removed 2026-07-18: they triggered false positives on
 // legitimate commit messages (e.g. MSG="fix foo (see #123)"). The actual
 // shell-injection vector is `$()` command substitution, which is still
@@ -368,6 +370,16 @@ const defaultImpl: HotModule = {
     "tool.execute.before": async (input, output) => {
         reportAlive("enforce-make")
 
+        if (
+          !isSubagent() &&
+          (input.tool === PROMPT_PRONE_PATCH_TOOL ||
+            input.tool === PROMPT_PRONE_PATCH_TOOL_QUALIFIED)
+        ) {
+          throw new Error(
+            "BLOCKED: Prompt-prone edit tool. Use a make edit target so work can continue without an approval prompt.",
+          )
+        }
+
         // --- BASH CHECK runs for ALL agents including subagents ---
         // AGENTS.md: "Bash = `make <target>` only. Subagents MUST know
         // that the bash tool can ONLY run `make <target>` commands."
@@ -602,8 +614,7 @@ const defaultImpl: HotModule = {
         }
 
         // Subagent guard: skip edit/write/TDD prompts for subagents
-        const isSubagent = process.env.OPENCODE_SUBAGENT === "1"
-        if (isSubagent) return
+        if (isSubagent()) return
 
         if (input.tool === "edit" || input.tool === "write") {
           const filePath: string = output?.args?.filePath ?? output?.args?.path ?? ""

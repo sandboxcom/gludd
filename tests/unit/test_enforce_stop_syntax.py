@@ -6,6 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode/plugin/enforce-stop.ts"
+IMPL_PATH = ROOT / ".opencode/plugin/impl/enforce_stop_impl.ts"
 
 _REQUIRED_HOOKS = [
     "tool.execute.before",
@@ -16,16 +17,20 @@ _REQUIRED_HOOKS = [
 
 
 def _src() -> str:
-    return PLUGIN_PATH.read_text()
+    return PLUGIN_PATH.read_text() + "\n" + IMPL_PATH.read_text()
 
 
 def test_node_check_syntax_valid():
     """enforce-stop.ts passes node --check (no syntax errors)."""
-    result = subprocess.run(
-        ["node", "--check", str(PLUGIN_PATH)],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 0, f"node --check failed: {result.stderr}"
+    for source_path in (PLUGIN_PATH, IMPL_PATH):
+        result = subprocess.run(
+            ["node", "--check", str(source_path)],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"node --check failed for {source_path}: {result.stderr}"
+        )
 
 
 def test_exports_default():
@@ -59,8 +64,12 @@ def test_compile_does_not_throw():
     """node --check passes; excessive syntax errors would be caught above.
     This is an additional guard that the file is parseable without TypeScript
     errors leaking into the AST."""
-    result = subprocess.run(
-        ["node", "--check", str(PLUGIN_PATH)],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 0, f"compile check failed: {result.stderr}"
+    for source_path in (PLUGIN_PATH, IMPL_PATH):
+        result = subprocess.run(
+            ["node", "--check", str(source_path)],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"compile check failed for {source_path}: {result.stderr}"
+        )

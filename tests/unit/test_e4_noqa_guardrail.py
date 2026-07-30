@@ -118,8 +118,14 @@ class TestEditTimeHook:
         )
 
     def test_hook_skips_subagents(self):
-        assert "OPENCODE_SUBAGENT" in self.src, (
-            "Layer 1 failure: hook must skip when OPENCODE_SUBAGENT=1"
+        assert (
+            "OPENCODE_SUBAGENT" in self.src
+            or (
+                "isSubagent" in self.src
+                and "../lib/shared.ts" in self.src
+            )
+        ), (
+            "Layer 1 failure: hook must skip through the shared subagent guard"
         )
 
     def test_hook_deny_message_references_agents_md(self):

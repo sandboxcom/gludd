@@ -79,6 +79,11 @@ def _has_xdist_worker_arg(args: list[str]) -> bool:
     return False
 
 
+def _pytest_basetemp(shard_workspace: Path) -> Path:
+    """Keep pytest cleanup away from the shard's process and state directories."""
+    return shard_workspace / "pytest"
+
+
 def _command_for_shard(shard: str, pytest_args: list[str], workers_per_shard: int) -> tuple[list[str], Path]:
     files = expand_shard(shard)
     if not files:
@@ -96,7 +101,7 @@ def _command_for_shard(shard: str, pytest_args: list[str], workers_per_shard: in
         *worker_args,
         "-v",
         *pytest_args,
-        f"--basetemp={basetemp}",
+        f"--basetemp={_pytest_basetemp(basetemp)}",
     ]
     return command, basetemp
 

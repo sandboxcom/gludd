@@ -42,11 +42,12 @@ Only stdlib is required; ``psutil`` is used when importable for the RAM reading.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import tempfile
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 DEFAULT_PER_WORKER_GB = 1.5
 # Load headroom: never let the run drive the 5-minute load average above this
@@ -55,12 +56,21 @@ DEFAULT_PER_WORKER_GB = 1.5
 LOAD_HEADROOM_MULTIPLIER = 2.5
 # Exit codes that indicate the OS killed the process (or a worker) — OOM-shaped.
 _OOM_EXIT_CODES = frozenset({-9, 137})
-_OOM_OUTPUT_MARKERS = (
-    "worker crashed",
-    "node down",
-    "crashed while running",
-    "replacing crashed worker",
+_OOM_OUTPUT_PATTERNS = (
+    re.compile(
+        r"^\s*\[gw\d+\]\s+node down:\s+Not properly terminated\s*$",
+        re.IGNORECASE | re.MULTILINE,
+    ),
+    re.compile(
+        r"^\s*replacing crashed worker\s+gw\d+\s*$",
+        re.IGNORECASE | re.MULTILINE,
+    ),
+    re.compile(
+        r"""^\s*worker\s+['"]?gw\d+['"]?\s+crashed while running(?:\s+.+)?$""",
+        re.IGNORECASE | re.MULTILINE,
+    ),
 )
+Runner = Callable[[Sequence[str]], tuple[int, str]]
 
 
 def per_worker_gb(env: Mapping[str, str] | None = None) -> float:
@@ -137,28 +147,25 @@ def compute_nproc(
 
     The result is always ``>= 1``.
 
-    On CI (``CI=true``) the load cap is BYPASSED and sizing is
-    ``min(cpu_count, by_mem)`` only. The load cap (#45) exists to keep a shared
-    LOCAL box responsive by not piling a full ``-n auto`` fan-out on top of the
-    developer's existing load. A CI shard is the opposite case: a fresh, isolated
-    single-purpose runner with ample per-shard RAM and no competing load, split so
-    it does not OOM — there the load cap only over-throttles (e.g. on a 2-core
-    runner it collapses to ``-n 1`` and a shard runs 30+ min). The RAM cap and the
-    OOM-halve-retry backstop still apply on CI, so an isolated shard is never
-    left unbounded.
+    On CI (``CI=true``) automatic sizing bypasses the shared-machine load cap and
+    uses ``min(cpu_count, by_mem)``. Callers whose tests launch nested process
+    trees should set a positive ``GLUDD_XDIST`` override so the outer workers
+    leave explicit headroom; the beta.3 hosted workflow uses two. The RAM cap
+    still protects automatic sizing, and the OOM-halve-retry backstop applies to
+    both automatic and overridden counts.
     """
     cpu_count = max(1, cpu_count)
 
     # RAM cap (original behaviour).
-    if avail_gb is None or gb_per_worker <= 0:
-        by_mem = cpu_count
-    else:
-        by_mem = max(1, int(avail_gb // gb_per_worker))
+    by_mem = (
+        cpu_count
+        if avail_gb is None or gb_per_worker <= 0
+        else max(1, int(avail_gb // gb_per_worker))
+    )
 
-    # CI shards are isolated (fresh, single-purpose runner, ample per-shard RAM,
-    # no competing load) and don't OOM, so the shared-LOCAL-box load cap only
-    # over-throttles them. Size by RAM + cores only; the RAM cap and the
-    # OOM-halve-retry backstop below still guard against over-commit.
+    # CI runners are isolated from local developer load, so automatic sizing
+    # skips that shared-machine cap. Workflows with nested subprocesses can still
+    # need a numeric env override to reserve headroom beyond this outer pool.
     if os.environ.get("CI") == "true":
         return max(1, min(cpu_count, by_mem))
 
@@ -186,11 +193,18 @@ def decide_nproc(env: Mapping[str, str] | None = None) -> int:
 
 
 def is_oom_exit(returncode: int, output: str = "") -> bool:
-    """True when the exit looks like an OOM kill (signal/137 or crashed worker)."""
+    """True for an OOM signal or a complete xdist worker-crash diagnostic.
+
+    The output check is deliberately line-shaped. Test failures can contain
+    phrases such as ``worker crashed`` in assertion values or documentation;
+    substring matching those phrases retried ordinary failures as if they were
+    OOMs and obscured the original error.
+    """
+    if returncode == 0:
+        return False
     if returncode in _OOM_EXIT_CODES:
         return True
-    low = output.lower()
-    return any(marker in low for marker in _OOM_OUTPUT_MARKERS)
+    return any(pattern.search(output) is not None for pattern in _OOM_OUTPUT_PATTERNS)
 
 
 def _stream_run(cmd: Sequence[str]) -> tuple[int, str]:
@@ -218,11 +232,14 @@ def has_basetemp(args: Sequence[str]) -> bool:
 
 
 def unique_basetemp() -> str:
-    """A process-unique pytest ``--basetemp`` path under the system temp root.
+    """A short, process-unique pytest ``--basetemp`` path.
 
     Returns a path (NOT created here — pytest creates and, if it exists, wipes
     the basetemp at startup) that no other pytest process can share, keyed on
-    PID + a random uuid.
+    PID + a random suffix. POSIX uses the literal ``/tmp`` rather than a
+    potentially long ``TMPDIR`` so descendants can bind AF_UNIX sockets within
+    Darwin's 103-byte path limit. The compact ``gludd-at`` namespace plus PID
+    and random suffix still isolates simultaneous project/test processes.
 
     WHY THIS EXISTS — the CI shared-tmp-root race that produced ~86
     ``FileNotFoundError: /tmp/pytest-of-<user>/pytest-0/popen-gwN`` errors:
@@ -247,8 +264,15 @@ def unique_basetemp() -> str:
     test spawns a nested pytest. This is the same isolation ``scripts/run_gate.sh``
     already applies to the local gate (unique ``mktemp -d`` basetemp).
     """
-    root = tempfile.gettempdir()
-    return os.path.join(root, f"gludd-adaptive-basetemp-{os.getpid()}-{uuid.uuid4().hex}")
+    root = (
+        "/tmp"
+        if os.name == "posix" and os.path.isdir("/tmp")
+        else tempfile.gettempdir()
+    )
+    return os.path.join(
+        root,
+        f"gludd-at-{os.getpid()}-{uuid.uuid4().hex[:8]}",
+    )
 
 
 def build_pytest_cmd(pytest_args: Sequence[str], nproc: int) -> list[str]:
@@ -273,7 +297,7 @@ def build_pytest_cmd(pytest_args: Sequence[str], nproc: int) -> list[str]:
 def run(
     pytest_args: Sequence[str],
     env: Mapping[str, str] | None = None,
-    runner=_stream_run,
+    runner: Runner = _stream_run,
 ) -> int:
     """Run pytest at the adaptive worker count, halving + retrying on OOM exits."""
     # Isolate this run's tmp tree from every other pytest process on the box.

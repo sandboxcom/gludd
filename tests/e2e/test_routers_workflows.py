@@ -126,7 +126,7 @@ class TestHumanTodosEndpoints:
 
     def test_list_with_query_params_no_db(self, dispatch_app: TestClient):
         resp = dispatch_app.get(
-            "/api/human-todos?status=open&category=general&limit=10&offset=0"
+            "/api/human-todos?status=open&category=input_request&limit=10&offset=0"
         )
         assert resp.status_code == 200
 
@@ -154,7 +154,7 @@ class TestHumanTodosEndpoints:
                     "agent_id": "test-agent",
                     "title": "Test human todo",
                     "body": "This is a test",
-                    "category": "general",
+                    "category": "input_request",
                 },
             )
             assert resp.status_code == 201
@@ -199,7 +199,7 @@ class TestHumanTodosEndpoints:
                     "agent_id": "test-agent",
                     "title": "",
                     "body": "Body",
-                    "category": "general",
+                    "category": "input_request",
                 },
             )
             assert resp.status_code == 422
@@ -215,7 +215,7 @@ class TestHumanTodosEndpoints:
                     "agent_id": "agent-get",
                     "title": "Get this todo",
                     "body": "Test body for GET",
-                    "category": "general",
+                    "category": "input_request",
                 },
             )
             created = create_resp.json()
@@ -246,7 +246,7 @@ class TestHumanTodosEndpoints:
                     "agent_id": "agent-done",
                     "title": "To be done",
                     "body": "Will be resolved",
-                    "category": "general",
+                    "category": "input_request",
                 },
             )
             ht_id = create_resp.json()["id"]
@@ -285,7 +285,7 @@ class TestHumanTodosEndpoints:
                     "agent_id": "agent-filter",
                     "title": "Open todo",
                     "body": "Should be filtered",
-                    "category": "general",
+                    "category": "input_request",
                 },
             )
 
@@ -306,7 +306,7 @@ class TestHumanTodosEndpoints:
                         "agent_id": f"agent-{i}",
                         "title": f"Paginate {i}",
                         "body": f"Body {i}",
-                        "category": "general",
+                        "category": "input_request",
                     },
                 )
 
@@ -480,20 +480,20 @@ class TestCoordinationEndpoints:
         resp = dispatch_app.get("/api/coordination/claims")
         assert resp.status_code == 200
 
-    def test_overlaps_returns_200_no_worker(self, dispatch_app: TestClient):
+    def test_overlaps_missing_worker_id_returns_422(self, dispatch_app: TestClient):
         resp = dispatch_app.get("/api/coordination/overlaps")
-        assert resp.status_code == 200
+        assert resp.status_code == 422
 
     def test_claim_missing_worker_id_returns_422(self, dispatch_app: TestClient):
         resp = dispatch_app.post("/api/coordination/claim", json={})
         assert resp.status_code == 422
 
-    def test_claim_with_worker_id_returns_200(self, dispatch_app: TestClient):
+    def test_claim_with_worker_id_returns_201(self, dispatch_app: TestClient):
         resp = dispatch_app.post(
             "/api/coordination/claim",
             json={"worker_id": "worker-1", "files": ["file1.py"]},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 201
 
     def test_release_missing_worker_id_returns_422(self, dispatch_app: TestClient):
         resp = dispatch_app.post("/api/coordination/release", json={})

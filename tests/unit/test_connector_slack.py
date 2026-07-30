@@ -205,6 +205,33 @@ class TestSendNotification:
         r = src.send_notification("hello")
         assert r["ok"] is False
 
+    def test_callable_transport_compatibility(self, env: dict[str, str]) -> None:
+        calls: list[dict[str, Any]] = []
+
+        def transport(
+            method: str,
+            url: str,
+            **kwargs: Any,
+        ) -> tuple[int, object]:
+            calls.append({"method": method, "url": url, **kwargs})
+            return 200, {"ok": True}
+
+        src = SlackSource(
+            {
+                "base_url": "https://slack.com/api",
+                "token_env": "SLACK_TOKEN",
+                "webhook_url": "https://hooks.slack.com/xxx",
+            },
+            transport=transport,
+            env=env,
+        )
+
+        result = src.send_notification("hello")
+
+        assert result["ok"] is True
+        assert calls[0]["method"] == "POST"
+        assert calls[0]["json"] == {"text": "hello"}
+
 
 class TestReadChannelHistory:
     def test_returns_messages(self, env: dict[str, str]) -> None:

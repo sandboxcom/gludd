@@ -6,7 +6,8 @@ sweeps and misattributed commits. This plugin (LAYER 2) wraps commit-shaped
 bash tool calls in an O_EXCL lock so only one commit runs at a time.
 
 This test extracts COMMIT_TARGETS + STALE_THRESHOLD_MS from the TypeScript
-source and asserts the deny/allow/stale-break contract. It also verifies the
+plugin and shared helper sources and asserts the deny/allow/stale-break
+contract. It also verifies the
 Makefile `_commit-lock-acquire` target exists and is wired as a prereq to
 every commit-shaped target (LAYER 1).
 """
@@ -19,6 +20,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode/plugin/enforce-commit-lock.ts"
+HELPER_PATH = ROOT / ".opencode/lib/plugin_test_exports.ts"
 MAKEFILE_PATH = ROOT / "Makefile"
 
 EXPECTED_COMMIT_TARGETS = [
@@ -36,14 +38,15 @@ EXPECTED_COMMIT_TARGETS = [
 
 def _plugin_source() -> str:
     assert PLUGIN_PATH.exists(), f"Plugin missing at {PLUGIN_PATH}"
-    return PLUGIN_PATH.read_text()
+    assert HELPER_PATH.exists(), f"Plugin helper missing at {HELPER_PATH}"
+    return PLUGIN_PATH.read_text() + "\n" + HELPER_PATH.read_text()
 
 
 def _extract_commit_targets(src: str) -> list[str]:
     block = re.search(
         r"COMMIT_TARGETS[^=]*=\s*Object\.freeze\(\[(.*?)\]\)", src, re.DOTALL
     )
-    assert block, "COMMIT_TARGETS export not found in plugin source"
+    assert block, "COMMIT_TARGETS definition not found in plugin sources"
     return re.findall(r'"([^"]+)"', block.group(1))
 
 
@@ -69,13 +72,13 @@ class TestPluginStructure:
         oc = (ROOT / "opencode.json").read_text()
         assert "enforce-commit-lock.ts" in oc, "Plugin not registered in opencode.json"
 
-    def test_exports_commit_targets(self):
+    def test_defines_commit_targets(self):
         src = _plugin_source()
-        assert "COMMIT_TARGETS" in src, "COMMIT_TARGETS export missing"
+        assert "COMMIT_TARGETS" in src, "COMMIT_TARGETS definition missing"
 
-    def test_exports_stale_threshold(self):
+    def test_defines_stale_threshold(self):
         src = _plugin_source()
-        assert "STALE_THRESHOLD_MS" in src, "STALE_THRESHOLD_MS export missing"
+        assert "STALE_THRESHOLD_MS" in src, "STALE_THRESHOLD_MS definition missing"
 
     def test_tool_execute_before_hook(self):
         src = _plugin_source()
@@ -193,9 +196,9 @@ class TestAllowOnFree:
 
 
 class TestStaleBreak:
-    def test_stale_threshold_is_5_minutes(self):
+    def test_stale_threshold_is_2_minutes(self):
         threshold = _extract_stale_threshold_ms(_plugin_source())
-        assert threshold == 300000, f"Expected 300000ms (5 min), got {threshold}"
+        assert threshold == 120000, f"Expected 120000ms (2 min), got {threshold}"
 
     def test_stale_break_logic_present(self):
         src = _plugin_source()

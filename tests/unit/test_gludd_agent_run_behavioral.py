@@ -11,8 +11,12 @@ Run: make test-iso TESTFILE='tests/unit/test_gludd_agent_run_behavioral.py'
 from __future__ import annotations
 
 import asyncio
+import io
+import json
 import os
+import subprocess
 import sys
+from types import SimpleNamespace
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
@@ -56,6 +60,41 @@ def _import_run_local():
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         return mod._run_local
+
+
+def _import_agent_run_module():
+    """Import the complete module with its Ansible dependencies isolated."""
+    module_path = os.path.join(
+        os.path.dirname(__file__),
+        "../../collections/ansible_collections/general_ludd/agent/plugins/modules/gludd_agent_run.py",
+    )
+    module_path = os.path.abspath(module_path)
+
+    ansible_mock = MagicMock()
+    gludd_utils_mock = MagicMock()
+    gludd_utils_mock.ok_result = lambda data, changed=False: {
+        "failed": False, "changed": changed, **data
+    }
+    gludd_utils_mock.error_result = lambda msg, **extra: {
+        "failed": True, "changed": False, "msg": msg, **extra
+    }
+
+    with mock.patch.dict(sys.modules, {
+        "ansible": ansible_mock,
+        "ansible.module_utils": ansible_mock.module_utils,
+        "ansible.module_utils.basic": ansible_mock.module_utils.basic,
+        "ansible_collections": MagicMock(),
+        "ansible_collections.general_ludd": MagicMock(),
+        "ansible_collections.general_ludd.agent": MagicMock(),
+        "ansible_collections.general_ludd.agent.plugins": MagicMock(),
+        "ansible_collections.general_ludd.agent.plugins.module_utils": MagicMock(),
+        "ansible_collections.general_ludd.agent.plugins.module_utils.gludd": gludd_utils_mock,
+    }):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("gludd_agent_run_module", module_path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
 
 
 # ---------------------------------------------------------------------------
@@ -202,6 +241,199 @@ class TestRunLocalBehavioral:
         assert result.get("answer") == "hello from mock", (
             f"Expected answer='hello from mock', got: {result}"
         )
+
+
+class TestRunLocalIsolation:
+    """The Ansible module process must never import the controller application."""
+
+    def test_isolated_runner_uses_fresh_python_process(self):
+        mod = _import_agent_run_module()
+        expected = {
+            "failed": False,
+            "changed": False,
+            "answer": "isolated answer",
+            "tool_calls": [],
+            "usage": {},
+            "iterations": 1,
+        }
+        completed = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=json.dumps(expected),
+            stderr="",
+        )
+
+        with patch.object(mod.subprocess, "run", return_value=completed) as run:
+            result = mod._run_local_isolated(
+                prompt="hello",
+                system_prompt="system",
+                model_profile="profile",
+                max_iterations=3,
+                timeout=17,
+            )
+
+        assert result == expected
+        command = run.call_args.args[0]
+        assert command == [
+            sys.executable,
+            "-m",
+            "general_ludd.execution.local_agent_runner",
+        ]
+        request = json.loads(run.call_args.kwargs["input"])
+        assert request == {
+            "prompt": "hello",
+            "system_prompt": "system",
+            "model_profile": "profile",
+            "max_iterations": 3,
+        }
+        assert run.call_args.kwargs["timeout"] == 17
+
+    def test_isolated_runner_timeout_is_a_safe_fallback_result(self):
+        mod = _import_agent_run_module()
+        timeout = subprocess.TimeoutExpired(cmd=["python"], timeout=17)
+
+        with patch.object(mod.subprocess, "run", side_effect=timeout):
+            result = mod._run_local_isolated(
+                prompt="hello",
+                system_prompt="system",
+                model_profile=None,
+                max_iterations=3,
+                timeout=17,
+            )
+
+        assert result == {
+            "failed": True,
+            "changed": False,
+            "msg": "local agent run timed out after 17 seconds",
+        }
+
+    def test_isolated_runner_rejects_non_json_output(self):
+        mod = _import_agent_run_module()
+        completed = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="controller log without a result",
+            stderr="",
+        )
+
+        with patch.object(mod.subprocess, "run", return_value=completed):
+            result = mod._run_local_isolated(
+                prompt="hello",
+                system_prompt="system",
+                model_profile=None,
+                max_iterations=3,
+                timeout=17,
+            )
+
+        assert result == {
+            "failed": True,
+            "changed": False,
+            "msg": "local agent runner returned invalid JSON",
+        }
+
+    def test_main_calls_isolated_runner_not_in_process_runner(self):
+        mod = _import_agent_run_module()
+        fake_module = SimpleNamespace(
+            params={
+                "prompt": "hello",
+                "system_prompt": "",
+                "tools": [],
+                "max_iterations": 3,
+                "model_profile": "",
+                "daemon_url": "http://localhost:8000",
+                "psk": "",
+                "timeout": 17,
+            },
+            check_mode=False,
+            exit_json=MagicMock(),
+            fail_json=MagicMock(),
+        )
+        local_result = {
+            "failed": False,
+            "changed": False,
+            "answer": "isolated answer",
+            "tool_calls": [],
+            "usage": {},
+            "iterations": 1,
+        }
+
+        with (
+            patch.object(mod, "AnsibleModule", return_value=fake_module),
+            patch.object(mod, "_run_local", side_effect=AssertionError(
+                "controller application imported inside AnsiballZ process"
+            )),
+            patch.object(mod, "_run_local_isolated", return_value=local_result),
+        ):
+            mod.main()
+
+        fake_module.exit_json.assert_called_once_with(**local_result)
+        fake_module.fail_json.assert_not_called()
+
+
+class TestLocalAgentRunnerCLI:
+    """The subprocess protocol is one JSON request and one JSON response."""
+
+    def test_main_dispatches_json_request(self):
+        from general_ludd.execution import local_agent_runner
+
+        expected = {
+            "failed": False,
+            "changed": False,
+            "answer": "answer",
+            "tool_calls": [],
+            "usage": {},
+            "iterations": 1,
+        }
+        request = {
+            "prompt": "hello",
+            "system_prompt": "system",
+            "model_profile": "profile",
+            "max_iterations": 4,
+        }
+        stdout = io.StringIO()
+        with (
+            patch.object(
+                local_agent_runner,
+                "run_local",
+                return_value=expected,
+            ) as run_local,
+            patch.object(
+                local_agent_runner.sys,
+                "stdin",
+                io.StringIO(json.dumps(request)),
+            ),
+            patch.object(local_agent_runner.sys, "stdout", stdout),
+        ):
+            return_code = local_agent_runner.main()
+
+        assert return_code == 0
+        assert json.loads(stdout.getvalue()) == expected
+        run_local.assert_called_once_with(
+            prompt="hello",
+            system_prompt="system",
+            model_profile="profile",
+            max_iterations=4,
+        )
+
+    def test_main_returns_structured_error_for_invalid_request(self):
+        from general_ludd.execution import local_agent_runner
+
+        stdout = io.StringIO()
+        with (
+            patch.object(
+                local_agent_runner.sys,
+                "stdin",
+                io.StringIO("{}"),
+            ),
+            patch.object(local_agent_runner.sys, "stdout", stdout),
+        ):
+            return_code = local_agent_runner.main()
+
+        result = json.loads(stdout.getvalue())
+        assert return_code == 0
+        assert result["failed"] is True
+        assert result["changed"] is False
+        assert result["msg"].startswith("invalid local agent request:")
 
 
 # ---------------------------------------------------------------------------

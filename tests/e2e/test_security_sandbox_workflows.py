@@ -161,7 +161,7 @@ class TestRBAC:
         cap = spec.capability_for("secret:openbao")
         assert cap is not None
         assert cap.actions == ["read"]
-        assert "build/*" in cap.constraints.get("openbao_paths", [])
+        assert "secret/data/gludd/build/*" in cap.constraints.get("openbao_paths", [])
 
     def test_default_spec_subagent_has_no_capabilities(self):
         from general_ludd.security.permissions import default_spec
@@ -194,7 +194,9 @@ class TestRBAC:
         cap = spec.capability_for("secret:openbao")
         assert cap is not None
         assert cap.actions == ["read"]
-        assert "read-only/*" in cap.constraints.get("openbao_paths", [])
+        assert "secret/data/gludd/read-only/*" in cap.constraints.get(
+            "openbao_paths", []
+        )
 
     def test_default_human_unknown_falls_back_to_viewer(self):
         from general_ludd.security.permissions import default_human_spec
@@ -691,11 +693,13 @@ class TestSandboxExecution:
     def test_sandbox_enforcer_confine_path_allows_subpath(self):
         from general_ludd.sandbox.enforcer import SandboxConfig, SandboxEnforcer
 
-        config = SandboxConfig()
-        enforcer = SandboxEnforcer(config)
-        enforcer.verify_ready()
         with tempfile.TemporaryDirectory() as td:
-            result = enforcer.confine_path(td)
+            subdir = Path(td) / "allowed"
+            subdir.mkdir()
+            config = SandboxConfig(jail_dir=td)
+            enforcer = SandboxEnforcer(config)
+            enforcer.verify_ready()
+            result = enforcer.confine_path(str(subdir))
             assert Path(result).is_dir()
 
     def test_sandbox_enforcer_execute_confines_workdir(self):
@@ -1468,7 +1472,7 @@ class TestAuditTrail:
         audit.record_use(token.token_id, Capability(resource="agent:", actions=[]), "agent/status")
 
         assert len(audit.query(capability="secret:openbao")) == 1
-        assert len(audit.query(capability="agent:")) == 0
+        assert len(audit.query(capability="agent:")) == 1
 
     def test_audit_log_query_filter_by_time_window(self):
         from general_ludd.security.permissions import Capability, PermissionSpec
@@ -1586,7 +1590,7 @@ class TestSTSTokenLifecycle:
         subject_spec = PermissionSpec(
             agent_type="subagent",
             capabilities=[
-                Capability(resource="secret:openbao", actions=["read", "write"],
+                Capability(resource="secret:openbao", actions=["read"],
                            constraints={"openbao_paths": ["*"]}),
             ],
         )

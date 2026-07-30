@@ -12,8 +12,7 @@ from email.message import Message
 from typing import IO
 from urllib.parse import urlparse
 
-import diskcache
-
+from general_ludd.security.safe_diskcache import open_safe_diskcache
 from general_ludd.security.ssrf import is_url_blocked
 
 logger = logging.getLogger(__name__)
@@ -86,7 +85,7 @@ class WebRetriever:
 
     def __init__(self, *, timeout_seconds: int = 30) -> None:
         self._timeout = timeout_seconds
-        self._cache = diskcache.Cache("web_retriever")
+        self._cache_path = "web_retriever"
 
     @staticmethod
     def allowed_domains() -> list[str]:
@@ -132,9 +131,15 @@ class WebRetriever:
                     f"Allowed domains: {allowed}"
                 )
 
-        with self._cache as cache:
+        # Open the disk-backed cache only after validation and close it before
+        # returning.  Keeping a Cache instance on every retriever leaks an idle
+        # SQLite connection when callers construct a retriever for dependency
+        # injection or reject a URL before the first cache operation.
+        with open_safe_diskcache(self._cache_path) as cache:
             cached = cache.get(url)
-            if cached is not None:
+            if isinstance(cached, dict) and all(
+                isinstance(key, str) for key in cached
+            ):
                 logger.debug("cache hit for %s", url)
                 return WebPageResult(**cached)
 
@@ -151,14 +156,17 @@ class WebRetriever:
             try:
                 resp = opener.open(req, timeout=self._timeout)
             except urllib.error.HTTPError as exc:
-                logger.warning("HTTP %s fetching %s", exc.code, url)
-                return WebPageResult(
-                    url=url,
-                    status_code=exc.code,
-                    content="",
-                    title=None,
-                    headers=dict(exc.headers.items()),
-                )
+                try:
+                    logger.warning("HTTP %s fetching %s", exc.code, url)
+                    return WebPageResult(
+                        url=url,
+                        status_code=exc.code,
+                        content="",
+                        title=None,
+                        headers=dict(exc.headers.items()),
+                    )
+                finally:
+                    exc.close()
             except Exception as exc:
                 logger.error("Failed to fetch %s: %s", url, exc)
                 return WebPageResult(
@@ -169,32 +177,35 @@ class WebRetriever:
                     headers=None,
                 )
 
-            status_code = resp.status
-            headers = {k.lower(): v for k, v in dict(resp.headers).items()}
+            try:
+                status_code = resp.status
+                headers = {k.lower(): v for k, v in dict(resp.headers).items()}
 
-            content_bytes = resp.read(_MAX_CONTENT_BYTES + 1)
-            if len(content_bytes) > _MAX_CONTENT_BYTES:
-                content_bytes = content_bytes[:_MAX_CONTENT_BYTES]
-            content = content_bytes.decode("utf-8", errors="replace")
+                content_bytes = resp.read(_MAX_CONTENT_BYTES + 1)
+                if len(content_bytes) > _MAX_CONTENT_BYTES:
+                    content_bytes = content_bytes[:_MAX_CONTENT_BYTES]
+                content = content_bytes.decode("utf-8", errors="replace")
 
-            title = _extract_title(content)
-            result = WebPageResult(
-                url=url,
-                status_code=status_code,
-                content=content,
-                title=title,
-                headers=headers,
-            )
+                title = _extract_title(content)
+                result = WebPageResult(
+                    url=url,
+                    status_code=status_code,
+                    content=content,
+                    title=title,
+                    headers=headers,
+                )
 
-            cache.set(
-                url,
-                {
-                    "url": result.url,
-                    "status_code": result.status_code,
-                    "content": result.content,
-                    "title": result.title,
-                    "headers": result.headers,
-                },
-                expire=_CACHE_TTL_SECONDS,
-            )
-            return result
+                cache.set(
+                    url,
+                    {
+                        "url": result.url,
+                        "status_code": result.status_code,
+                        "content": result.content,
+                        "title": result.title,
+                        "headers": result.headers,
+                    },
+                    expire=_CACHE_TTL_SECONDS,
+                )
+                return result
+            finally:
+                resp.close()

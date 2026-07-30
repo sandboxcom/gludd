@@ -30,6 +30,8 @@ from general_ludd.tui.tables import _make_table
 if TYPE_CHECKING:
     from rich.table import Table
 
+_BUNDLED_GUNICORN_FLAG = "__gludd_bundled_gunicorn__"
+
 MAN_PAGE = """\
 NAME
     gludd — General Ludd Agent — autonomous coding system
@@ -201,13 +203,19 @@ COMMANDS
       --timeout N          OAuth2 callback timeout in seconds (default: 120)
       --store {env,openbao}  Credential storage backend (default: env)
 
+    pause               Pause daemon-managed work
+      list                List paused entities
+      project ID          Pause a project
+      model ID            Pause a model
+      --reason TEXT        Record a pause reason
+      --daemon-url URL     Daemon URL
+
+    resume              Resume daemon-managed work
+      project ID          Resume a project
+      model ID            Resume a model
+      --daemon-url URL     Daemon URL
+
     help                Show this manual
-    Pause state is managed via tasks/agents/infra API endpoints:
-      POST /api/tasks/{task_id}/pause
-      POST /api/tasks/{task_id}/resume
-      POST /api/agents/{agent_id}/pause
-      POST /api/infra/{deployment_id}/pause
-      GET  /api/pause/status
 
     test-bg             Background test runner commands
       launch              Launch a test in the background
@@ -328,10 +336,50 @@ def _http_call(
     return None
 
 
+def _add_smoke_arguments(parser: argparse.ArgumentParser) -> None:
+    """Configure a smoke parser shared by ``smoke`` and ``test smoke``."""
+    parser.add_argument("provider", nargs="?", default=None, help="Provider or service slug, or 'list'")
+    parser.add_argument("test", nargs="?", default=None, help="Smoke test name, e.g. metadata or ec2-a100")
+    parser.add_argument("--list", action="store_true", help="List available smoke tests")
+    parser.add_argument("--live", action="store_true", help="Allow cheap live metadata probes")
+    parser.add_argument(
+        "--provisioned",
+        action="store_true",
+        help="Provision a real resource, run a model task, and tear it down",
+    )
+    parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    parser.add_argument("--output", default=None, help="Write the rendered diagnostic bundle to this file")
+    parser.add_argument(
+        "--output-template",
+        default=None,
+        help="Compiled output template for smoke list/report rendering",
+    )
+    parser.add_argument("--timeout", type=float, default=2.0, help="HTTP probe timeout in seconds")
+    parser.add_argument("--max-cost-usd", type=float, default=10.0, help="Fail if estimated cost exceeds this")
+    parser.add_argument("--base-url", default=None, help="Override endpoint base URL for this run")
+    parser.add_argument("--model", default=None, help="Override model identifier for this run")
+    parser.add_argument("--region", default=None, help="Provider region for provisioned smoke tests")
+    parser.add_argument("--gpu-count", type=int, default=1, help="GPU count for provisioned smoke tests")
+    parser.add_argument(
+        "--engine",
+        default="vllm",
+        choices=["vllm", "llamacpp"],
+        help="Inference engine for provisioned smoke tests",
+    )
+    parser.set_defaults(func=_cmd_smoke)
+
+
 def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.ArgumentParser]]:
+    from general_ludd import __version__
+
     parser = argparse.ArgumentParser(
         prog="gludd",
         description="General Ludd Agent — the black swan agentic coding system",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
     parser.set_defaults(func=None)
     sub = parser.add_subparsers(dest="command")
@@ -349,7 +397,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     daemon_parser.set_defaults(func=_cmd_daemon)
 
     add_parser = sub.add_parser("add", help="Add a todo to the queue")
-    add_parser.add_argument("title", help="Todo title")
+    add_parser.add_argument("title", metavar="TITLE", help="Todo title")
     add_parser.add_argument("--queue", default="core")
     add_parser.add_argument("--priority", default="medium")
     add_parser.add_argument("--work-type", default="code")
@@ -386,6 +434,43 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     health_parser = sub.add_parser("health", help="Check daemon health")
     health_parser.add_argument("--daemon-url", default="http://localhost:8000")
     health_parser.set_defaults(func=_cmd_health)
+
+    smoke_parser = sub.add_parser("smoke", help="Run provider/service smoke checks")
+    _add_smoke_arguments(smoke_parser)
+
+    pause_parser = sub.add_parser("pause", help="Pause daemon-managed work")
+    pause_parser.set_defaults(func=None)
+    pause_sub = pause_parser.add_subparsers(dest="pause_command")
+
+    pause_list_parser = pause_sub.add_parser("list", help="List paused entities")
+    pause_list_parser.add_argument("--daemon-url", default="http://localhost:8000")
+    pause_list_parser.set_defaults(func=_cmd_pause_list)
+
+    pause_project_parser = pause_sub.add_parser("project", help="Pause a project")
+    pause_project_parser.add_argument("target_id", help="Project identifier")
+    pause_project_parser.add_argument("--reason", default="", help="Reason for pausing")
+    pause_project_parser.add_argument("--daemon-url", default="http://localhost:8000")
+    pause_project_parser.set_defaults(func=_cmd_pause_project)
+
+    pause_model_parser = pause_sub.add_parser("model", help="Pause a model profile")
+    pause_model_parser.add_argument("target_id", help="Model profile identifier")
+    pause_model_parser.add_argument("--reason", default="", help="Reason for pausing")
+    pause_model_parser.add_argument("--daemon-url", default="http://localhost:8000")
+    pause_model_parser.set_defaults(func=_cmd_pause_model)
+
+    resume_parser = sub.add_parser("resume", help="Resume daemon-managed work")
+    resume_parser.set_defaults(func=None)
+    resume_sub = resume_parser.add_subparsers(dest="resume_command")
+
+    resume_project_parser = resume_sub.add_parser("project", help="Resume a project")
+    resume_project_parser.add_argument("target_id", help="Project identifier")
+    resume_project_parser.add_argument("--daemon-url", default="http://localhost:8000")
+    resume_project_parser.set_defaults(func=_cmd_resume_project)
+
+    resume_model_parser = resume_sub.add_parser("model", help="Resume a model profile")
+    resume_model_parser.add_argument("target_id", help="Model profile identifier")
+    resume_model_parser.add_argument("--daemon-url", default="http://localhost:8000")
+    resume_model_parser.set_defaults(func=_cmd_resume_model)
 
     models_parser = sub.add_parser("models", help="Model management commands")
     models_parser.set_defaults(func=None)
@@ -605,6 +690,32 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     compute_unregister.add_argument("--daemon-url", default="http://localhost:8000")
     compute_unregister.set_defaults(func=_cmd_compute_unregister)
 
+    compute_azure_preflight = compute_sub.add_parser(
+        "azure-preflight",
+        help="Read-only Azure accelerator SKU and quota preflight",
+    )
+    compute_azure_preflight.add_argument(
+        "--gpu",
+        required=True,
+        help="Azure accelerator type (a100_40, a100_80, h100, or t4)",
+    )
+    compute_azure_preflight.add_argument(
+        "--gpu-count",
+        type=int,
+        default=1,
+        help="Exact accelerator count requested",
+    )
+    compute_azure_preflight.add_argument(
+        "--region",
+        default="eastus",
+        help="Azure region used for SKU and quota checks",
+    )
+    compute_azure_preflight.add_argument(
+        "--daemon-url",
+        default="http://localhost:8000",
+    )
+    compute_azure_preflight.set_defaults(func=_cmd_compute_azure_preflight)
+
     compute_launch = compute_sub.add_parser("launch", help="Launch a GPU compute instance")
     compute_launch.add_argument("--provider", required=True, help="Cloud provider (aws, azure, gcp, runpod, etc.)")
     compute_launch.add_argument("--gpu", required=True, help="GPU type (t4, a100_80, h100, etc.)")
@@ -613,7 +724,46 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     compute_launch.add_argument("--deploy-type", default="vm", help="Deploy type (vm or containerapp)")
     compute_launch.add_argument("--gpu-count", type=int, default=1, help="Number of GPUs")
     compute_launch.add_argument("--max-cost", type=float, default=10.0, help="Max cost in USD")
+    compute_launch.add_argument(
+        "--timeout-minutes",
+        type=float,
+        default=60.0,
+        help="Hard deployment lifetime before automatic teardown",
+    )
+    compute_launch.add_argument(
+        "--disk-size-gb",
+        type=int,
+        default=100,
+        help="OS disk size for the inference worker",
+    )
+    compute_launch.add_argument(
+        "--container-image",
+        default=None,
+        help="Optional serving image override",
+    )
+    compute_launch.add_argument(
+        "--hourly-rate",
+        type=float,
+        default=None,
+        help="Known USD/hour rate used to shorten the hard TTL to the spend ceiling",
+    )
     compute_launch.add_argument("--no-spot", action="store_true", help="Disable spot instances")
+    compute_launch.add_argument(
+        "--allowed-cidr",
+        default="127.0.0.1/32",
+        help="CIDR allowed to reach SSH and inference (secure default: loopback only)",
+    )
+    compute_launch.add_argument(
+        "--ssh-public-key-path",
+        default="~/.ssh/id_ed25519.pub",
+        help="Public SSH key used by Azure VM provisioning",
+    )
+    compute_launch.add_argument(
+        "--max-concurrent",
+        type=int,
+        default=4,
+        help="Scheduler concurrency registered for the new endpoint",
+    )
     compute_launch.add_argument("--engine", default="vllm", help="Inference engine (vllm or llamacpp)")
     compute_launch.add_argument("--workload-type", default="",
                                choices=["batch_inference", "realtime_api", "fine_tuning",
@@ -847,21 +997,19 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     codeintel_search.add_argument("--daemon-url", default="http://localhost:8000")
     codeintel_search.set_defaults(func=_cmd_code_search)
 
-    # quantization removed from CLI — should be a tunable daemon subsystem.
-    # Code retained below for programmatic use.
-    # quant_parser = sub.add_parser("quantization", help="Model quantization detection")
-    # quant_parser.set_defaults(func=None)
-    # quant_sub = quant_parser.add_subparsers(dest="quantization_command")
-    # quant_list = quant_sub.add_parser("list", help="List known quantization info")
-    # quant_list.add_argument("--daemon-url", default="http://localhost:8000")
-    # quant_list.set_defaults(func=_cmd_quantization_list)
-    # quant_detect = quant_sub.add_parser("detect", help="Detect quantization for a model")
-    # quant_detect.add_argument("--model-id", required=True, help="Model ID to detect")
-    # quant_detect.add_argument("--daemon-url", default="http://localhost:8000")
-    # quant_detect.set_defaults(func=_cmd_quantization_detect)
-    # quant_drift = quant_sub.add_parser("drift-check", help="Check for quantization drift")
-    # quant_drift.add_argument("--daemon-url", default="http://localhost:8000")
-    # quant_drift.set_defaults(func=_cmd_quantization_drift_check)
+    quant_parser = sub.add_parser("quantization", help="Model quantization detection")
+    quant_parser.set_defaults(func=None)
+    quant_sub = quant_parser.add_subparsers(dest="quantization_command")
+    quant_list = quant_sub.add_parser("list", help="List known quantization info")
+    quant_list.add_argument("--daemon-url", default="http://localhost:8000")
+    quant_list.set_defaults(func=_cmd_quantization_list)
+    quant_detect = quant_sub.add_parser("detect", help="Detect quantization for a model")
+    quant_detect.add_argument("--model-id", required=True, help="Model ID to detect")
+    quant_detect.add_argument("--daemon-url", default="http://localhost:8000")
+    quant_detect.set_defaults(func=_cmd_quantization_detect)
+    quant_drift = quant_sub.add_parser("drift-check", help="Check for quantization drift")
+    quant_drift.add_argument("--daemon-url", default="http://localhost:8000")
+    quant_drift.set_defaults(func=_cmd_quantization_drift_check)
 
     slurm_parser = sub.add_parser("slurm", help="Slurm job management")
     slurm_parser.set_defaults(func=None)
@@ -1157,37 +1305,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     test_self_parser.set_defaults(func=_cmd_selftest)
 
     test_smoke_parser = test_sub.add_parser("smoke", help="Run provider/service smoke checks")
-    test_smoke_parser.add_argument("provider", nargs="?", default=None, help="Provider or service slug, or 'list'")
-    test_smoke_parser.add_argument("test", nargs="?", default=None, help="Smoke test name, e.g. metadata or ec2-a100")
-    test_smoke_parser.add_argument("--list", action="store_true", help="List available smoke tests")
-    test_smoke_parser.add_argument("--live", action="store_true", help="Allow cheap live metadata probes")
-    test_smoke_parser.add_argument(
-        "--provisioned",
-        action="store_true",
-        help="Provision a real resource, run a model task, and tear it down",
-    )
-    test_smoke_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
-    test_smoke_parser.add_argument("--output", default=None, help="Write the rendered diagnostic bundle to this file")
-    test_smoke_parser.add_argument(
-        "--output-template",
-        default=None,
-        help="Compiled output template for smoke list/report rendering",
-    )
-    test_smoke_parser.add_argument("--timeout", type=float, default=2.0, help="HTTP probe timeout in seconds")
-    test_smoke_parser.add_argument(
-        "--max-cost-usd", type=float, default=10.0, help="Fail if estimated cost exceeds this"
-    )
-    test_smoke_parser.add_argument("--base-url", default=None, help="Override endpoint base URL for this run")
-    test_smoke_parser.add_argument("--model", default=None, help="Override model identifier for this run")
-    test_smoke_parser.add_argument("--region", default=None, help="Provider region for provisioned smoke tests")
-    test_smoke_parser.add_argument("--gpu-count", type=int, default=1, help="GPU count for provisioned smoke tests")
-    test_smoke_parser.add_argument(
-        "--engine",
-        default="vllm",
-        choices=["vllm", "llamacpp"],
-        help="Inference engine for provisioned smoke tests",
-    )
-    test_smoke_parser.set_defaults(func=_cmd_smoke)
+    _add_smoke_arguments(test_smoke_parser)
 
     subcommand_map = {
         "login": login_parser,
@@ -1222,8 +1340,10 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "searx": searx_parser,
         "test-bg": test_bg_parser,
         "test": test_parser,
+        "smoke": smoke_parser,
         "chat": chat_parser,
-        # Pause state is managed via tasks/agents/infra API endpoints.
+        "pause": pause_parser,
+        "resume": resume_parser,
     }
 
     return parser, subcommand_map
@@ -1516,6 +1636,52 @@ def _cmd_config_terraform_set(args: argparse.Namespace) -> None:
     print(f"Written to {config_path}")
 
 
+def _print_daemon_result(data: Any) -> None:
+    if data is not None:
+        print(json.dumps(data, indent=2))
+
+
+def _cmd_pause_list(args: argparse.Namespace) -> None:
+    data = _http_call("GET", f"{args.daemon_url.rstrip('/')}/api/pause")
+    _print_daemon_result(data)
+
+
+def _cmd_pause_project(args: argparse.Namespace) -> None:
+    data = _http_call(
+        "POST",
+        f"{args.daemon_url.rstrip('/')}/api/pause/project",
+        json={"target_id": args.target_id, "reason": args.reason},
+    )
+    _print_daemon_result(data)
+
+
+def _cmd_pause_model(args: argparse.Namespace) -> None:
+    data = _http_call(
+        "POST",
+        f"{args.daemon_url.rstrip('/')}/api/pause/model",
+        json={"target_id": args.target_id, "reason": args.reason},
+    )
+    _print_daemon_result(data)
+
+
+def _cmd_resume_project(args: argparse.Namespace) -> None:
+    data = _http_call(
+        "POST",
+        f"{args.daemon_url.rstrip('/')}/api/resume/project",
+        json={"target_id": args.target_id},
+    )
+    _print_daemon_result(data)
+
+
+def _cmd_resume_model(args: argparse.Namespace) -> None:
+    data = _http_call(
+        "POST",
+        f"{args.daemon_url.rstrip('/')}/api/resume/model",
+        json={"target_id": args.target_id},
+    )
+    _print_daemon_result(data)
+
+
 def _cmd_smoke(args: argparse.Namespace) -> None:
     from general_ludd.output_templates import render_smoke_list, render_smoke_report
     from general_ludd.smoke import list_smoke_tests, run_smoke
@@ -1560,7 +1726,37 @@ def _cmd_smoke(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def _run_bundled_gunicorn_if_requested() -> bool:
+    """Run Gunicorn's console entry point when a frozen Gludd re-execs itself."""
+    if (
+        not getattr(sys, "frozen", False)
+        or len(sys.argv) < 2
+        or sys.argv[1] != _BUNDLED_GUNICORN_FLAG
+    ):
+        return False
+
+    # Gunicorn expects argv[1] to be the WSGI/ASGI application expression.
+    # Remove Gludd's private bootstrap flag before handing control to it.
+    sys.argv = [sys.argv[0], *sys.argv[2:]]
+    from gunicorn.app.wsgiapp import run
+
+    run()
+    return True
+
+
+def _daemon_child_stdio() -> tuple[int | None, int | None]:
+    """Return child stream policy, preserving frozen-runtime diagnostics."""
+    import subprocess
+
+    if getattr(sys, "frozen", False):
+        return None, None
+    return subprocess.DEVNULL, subprocess.DEVNULL
+
+
 def main() -> None:
+    if _run_bundled_gunicorn_if_requested():
+        return
+
     parser, subcommand_map = build_parser()
     args = parser.parse_args()
     if args.func is None:
@@ -1573,10 +1769,14 @@ def main() -> None:
     args.func(args)
 
 
+_DAEMON_SHUTDOWN_TIMEOUT_SECONDS = 5.0
+
+
 def _cmd_daemon(args: argparse.Namespace) -> None:
     import secrets
     import signal
     import subprocess
+    import threading
 
     log_level = args.log_level.upper()
     logging.basicConfig(level=getattr(logging, log_level), format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -1616,40 +1816,67 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
     )
     env = os.environ.copy()
     env.update(cmd_env)
+    child_stdout, child_stderr = _daemon_child_stdio()
     proc = subprocess.Popen(
         cmd,
         stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=child_stdout,
+        stderr=child_stderr,
         start_new_session=True,
         close_fds=True,
         env=env,
     )
 
 
-    def _terminate_child(timeout: float = 5.0) -> None:
+    shutdown_requested = threading.Event()
+    child_reaped = threading.Event()
+    received_signal: int | None = None
+
+    def _forward_signal(signum: int, frame: Any) -> None:
+        """Record and forward shutdown without waiting from signal context."""
+        nonlocal received_signal
+        if received_signal is not None:
+            return
+        received_signal = signum
         try:
             proc.terminate()
         except ProcessLookupError:
-            return
-        try:
-            proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait(timeout=timeout)
+            pass
+        finally:
+            shutdown_requested.set()
 
-    def _forward_signal(signum: int, frame: Any) -> None:
-        _terminate_child()
-        sys.exit(128 + signum)
+    def _shutdown_watchdog() -> None:
+        """Escalate outside signal context if graceful termination stalls."""
+        shutdown_requested.wait()
+        if child_reaped.is_set():
+            return
+        if child_reaped.wait(timeout=_DAEMON_SHUTDOWN_TIMEOUT_SECONDS):
+            return
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
+
+    watchdog = threading.Thread(
+        target=_shutdown_watchdog,
+        name=f"gludd-daemon-shutdown-{proc.pid}",
+        daemon=True,
+    )
+    watchdog.start()
 
     signal.signal(signal.SIGTERM, _forward_signal)
     signal.signal(signal.SIGINT, _forward_signal)
 
     try:
-        proc.wait()
-    except KeyboardInterrupt:
-        _terminate_child()
-        sys.exit(130)
+        try:
+            proc.wait()
+        except KeyboardInterrupt:
+            _forward_signal(signal.SIGINT, None)
+            proc.wait()
+    finally:
+        child_reaped.set()
+        shutdown_requested.set()
+        watchdog.join(timeout=0.25)
+    if received_signal is not None:
+        sys.exit(128 + received_signal)
     sys.exit(proc.returncode)
 
 
@@ -2396,6 +2623,22 @@ def _cmd_compute_unregister(args: argparse.Namespace) -> None:
         _handle_connection_error(exc, args.daemon_url)
 
 
+def _cmd_compute_azure_preflight(args: argparse.Namespace) -> None:
+    data = _http_call(
+        "POST",
+        f"{args.daemon_url}/admin/compute/azure/preflight",
+        json={
+            "gpu_type": args.gpu,
+            "gpu_count": args.gpu_count,
+            "region": args.region,
+        },
+        timeout=60.0,
+        ok_codes=(200,),
+    )
+    if data is not None:
+        print(json.dumps(data, indent=2))
+
+
 def _cmd_compute_launch(args: argparse.Namespace) -> None:
     payload: dict[str, Any] = {
         "provider": args.provider,
@@ -2404,7 +2647,14 @@ def _cmd_compute_launch(args: argparse.Namespace) -> None:
         "deploy_type": args.deploy_type,
         "gpu_count": args.gpu_count,
         "max_cost_usd": args.max_cost,
+        "timeout_minutes": args.timeout_minutes,
+        "disk_size_gb": args.disk_size_gb,
+        "container_image": args.container_image,
+        "hourly_rate_usd": args.hourly_rate,
         "spot": not args.no_spot,
+        "allowed_cidr": args.allowed_cidr,
+        "ssh_public_key_path": args.ssh_public_key_path,
+        "max_concurrent": args.max_concurrent,
         "engine": args.engine,
         "workload_type": args.workload_type,
     }
@@ -3715,8 +3965,13 @@ def _build_daemon_start_cmd(
     safe_host = _validate_daemon_host(host)
     safe_port = _validate_daemon_port(port)
     workers = _clamp_workers_for_sqlite(workers)
+    executable = (
+        [sys.executable, _BUNDLED_GUNICORN_FLAG]
+        if getattr(sys, "frozen", False)
+        else ["gunicorn"]
+    )
     argv: list[str] = [
-        "gunicorn",
+        *executable,
         "general_ludd.daemon:create_daemon_app()",
         "--worker-class",
         "uvicorn_worker.UvicornWorker",
@@ -3976,7 +4231,15 @@ def _cmd_quantization_list(args: argparse.Namespace) -> None:
     data = _http_call("GET", f"{args.daemon_url}/admin/quantization", timeout=10.0)
     if data is None:
         return
-    models = data.get("profiles", data.get("models", []))
+    raw_models = data.get("profiles", data.get("models", []))
+    if isinstance(raw_models, dict):
+        models = [
+            {"model_id": model_id, **profile}
+            for model_id, profile in raw_models.items()
+            if isinstance(profile, dict)
+        ]
+    else:
+        models = raw_models
     if models:
         for m in models:
             prec = m.get("precision", "unknown")
@@ -3994,8 +4257,10 @@ def _cmd_quantization_detect(args: argparse.Namespace) -> None:
     if data is None:
         return
     mid = data.get("model_id", "?")
-    prec = data.get("precision", "unknown")
-    conf = data.get("confidence", 0)
+    best = data.get("best")
+    profile = best if isinstance(best, dict) else data
+    prec = profile.get("precision", "unknown")
+    conf = profile.get("confidence", 0)
     print(f"  {mid}  prec={prec}  conf={conf:.2f}")
 
 
@@ -4004,8 +4269,9 @@ def _cmd_quantization_drift_check(args: argparse.Namespace) -> None:
     if data is None:
         return
     if data.get("drift_detected"):
-        print(f"Drift detected in {len(data.get('drifted_models', []))} model(s)")
-        for m in data.get("drifted_models", []):
+        changes = data.get("changes", data.get("drifted_models", []))
+        print(f"Drift detected in {len(changes)} model(s)")
+        for m in changes:
             print(f"  {m.get('model_id')}: {m.get('old_precision')} -> {m.get('new_precision')}")
     else:
         print("No drift detected.")

@@ -294,6 +294,7 @@ GATE_MAX_RUNTIME_SECS = int(os.environ.get("GATE_WATCHDOG_TIMEOUT", "3600"))
 _TASKS_MD = _WORKSPACE / "TASKS.md"
 _RATCHET_YML = _WORKSPACE / "config" / "ratchet.yml"
 _GATE_STATUS = _WORKSPACE / ".gate-status"
+_CI_STATUS = _WORKSPACE / ".ci-status"
 
 _UNCHECKED_PATTERN = re.compile(r"-\s+\[\s*\]|\*\s+\[\s*\]", re.IGNORECASE)
 
@@ -2363,6 +2364,19 @@ def _read_multitask_state() -> dict:
         return {}
 
 
+def _append_directive_once(directive: str, marker: str) -> None:
+    """Add a watchdog directive without erasing a more specific alert."""
+    path = Path(PURE_IDLE_DIRECTIVE)
+    try:
+        existing = path.read_text() if path.exists() else ""
+    except OSError:
+        existing = ""
+    if marker in existing:
+        return
+    prefix = existing.rstrip()
+    path.write_text(f"{prefix}\n{directive}" if prefix else directive)
+
+
 def _check_under_floor_dispatch() -> None:
     state = _read_multitask_state()
     if not state:
@@ -2392,7 +2406,7 @@ def _check_under_floor_dispatch() -> None:
             f"Floor is 10. pending work exists. Dispatch {10 - dispatch_count} more subagents NOW.\n"
             f"zero_streak={zero_streak}, estimated_in_flight={estimated_in_flight}\n"
         )
-        Path(PURE_IDLE_DIRECTIVE).write_text(directive)
+        _append_directive_once(directive, "UNDER-FLOOR DETECTED")
     elif pipeline_dry and zero_streak > 0:
         _log(
             f"UNDER-FLOOR DETECTED: pipeline dry — zero dispatch streak={zero_streak}, "
@@ -2403,7 +2417,7 @@ def _check_under_floor_dispatch() -> None:
             f"Estimated in flight: {estimated_in_flight}. Floor is 10. pending work exists.\n"
             f"DISPATCH A FULL WAVE OF 10 SUBAGENTS NOW.\n"
         )
-        Path(PURE_IDLE_DIRECTIVE).write_text(directive)
+        _append_directive_once(directive, "UNDER-FLOOR DETECTED")
 
 
 def check_and_reset() -> dict:
@@ -2438,21 +2452,12 @@ def check_and_reset() -> dict:
         try:
             stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
             newline = chr(10)
-            ci_line = f"CI FAIL pending (run {ci_run_id}) at {stamp}" + newline
-            ci_status = _WORKSPACE / ".ci-status"
-            ci_status.parent.mkdir(parents=True, exist_ok=True)
-            ci_status.write_text(
+            _CI_STATUS.parent.mkdir(parents=True, exist_ok=True)
+            _CI_STATUS.write_text(
                 f"=== CI {stamp} ===" + newline
                 + f"CI FAIL pending (run {ci_run_id})" + newline
                 + "suggested_action: wait_for_ci" + newline
             )
-            if not gate_red:
-                gate_text = _GATE_STATUS.read_text(encoding="utf-8") if _GATE_STATUS.exists() else ""
-                if ci_line not in gate_text:
-                    separator = "" if not gate_text or gate_text.endswith(newline) else newline
-                    _GATE_STATUS.parent.mkdir(parents=True, exist_ok=True)
-                    _GATE_STATUS.write_text(f"{gate_text}{separator}{ci_line}", encoding="utf-8")
-                gate_red = True
             has_pending_work = True
         except Exception:
             pass

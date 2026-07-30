@@ -353,15 +353,32 @@ def validate_certificate(cert_path: str) -> dict[str, Any]:
     return cert_obj_parsed
 
 
-def generate_dhparam(bits: int = 2048) -> None:
-    from cryptography.hazmat.primitives import serialization
-    from cryptography.hazmat.primitives.asymmetric import dh
+# RFC 7919 Appendix A.1 ffdhe2048, serialized as PKCS#3 for nginx/OpenSSL
+# compatibility. Generating a new 2048-bit safe prime can take minutes under
+# load. See https://datatracker.ietf.org/doc/html/rfc7919#appendix-A.1
+_RFC7919_FFDHE2048_PEM = b"""-----BEGIN DH PARAMETERS-----
+MIIBCAKCAQEA//////////+t+FRYortKmq/cViAnPTzx2LnFg84tNpWp4TZBFGQz
++8yTnc4kmz75fS/jY2MMddj2gbICrsRhetPfHtXV/WVhJDP1H18GbtCFY2VVPe0a
+87VXE15/V8k1mE8McODmi3fipona8+/och3xWKE2rec1MKzKT0g6eXq8CrGCsyT7
+YdEIqUuyyOP7uWrat2DX9GgdT0Kj3jlN9K5W7edjcrsZCwenyO4KbXCeAvzhzffi
+7MA0BM0oNC9hkXL+nOmFg/+OTxIy7vKBg8P+OxtMb61zO7X8vC7CIAXFjvGDfRaD
+ssbzSibBsu/6iGtCOGEoXJf//////////wIBAg==
+-----END DH PARAMETERS-----
+"""
 
-    parameters = dh.generate_parameters(generator=2, key_size=bits)
-    pem = parameters.parameter_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.ParameterFormat.PKCS3,
-    )
+
+def generate_dhparam(bits: int = 2048) -> None:
+    if bits == 2048:
+        pem = _RFC7919_FFDHE2048_PEM
+    else:
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import dh
+
+        parameters = dh.generate_parameters(generator=2, key_size=bits)
+        pem = parameters.parameter_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.ParameterFormat.PKCS3,
+        )
     with open("dhparam.pem", "wb") as fh:
         fh.write(pem)
 

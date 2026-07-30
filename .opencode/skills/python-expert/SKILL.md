@@ -1,6 +1,12 @@
 ---
 name: python-expert
-description: Use when writing, debugging, reviewing, or discussing Python code, Python packaging, CPython internals, PyPy, Jython, asyncio, GIL behavior, type annotations, or any Python ecosystem concern. Covers PEPs, common patterns, performance, testing, profiling, security pitfalls, and packaging. Trigger keywords: Python, CPython, PyPy, Jython, MicroPython, PEP, GIL, asyncio, pytest, pyproject.toml, pip, PyPI, mypy, ruff.
+description: >-
+  Use when writing, debugging, reviewing, or discussing Python code, Python
+  packaging, CPython internals, PyPy, Jython, asyncio, GIL behavior, type
+  annotations, or any Python ecosystem concern. Covers PEPs, common patterns,
+  performance, testing, profiling, security pitfalls, and packaging. Trigger
+  keywords include Python, CPython, PyPy, Jython, MicroPython, PEP, GIL,
+  asyncio, pytest, pyproject.toml, pip, PyPI, mypy, and ruff.
 ---
 
 # Python Expert

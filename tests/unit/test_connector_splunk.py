@@ -266,6 +266,30 @@ def test_query_sends_oneshot_search_post() -> None:
     assert call["headers"]["Authorization"] == "Bearer s3cr3t-hec-token"
 
 
+def test_callable_transport_compatibility() -> None:
+    calls: list[dict[str, Any]] = []
+
+    def transport(
+        method: str,
+        url: str,
+        **kwargs: Any,
+    ) -> tuple[int, object]:
+        calls.append({"method": method, "url": url, **kwargs})
+        return 200, ONESHOT_PAYLOAD
+
+    src = SplunkSource(
+        GOOD_CONFIG,
+        transport=transport,
+        env=dict(ENV),
+    )
+
+    records = src.query({"search": "search index=main"})
+
+    assert len(records) == 2
+    assert calls[0]["method"] == "POST"
+    assert calls[0]["data"]["exec_mode"] == "oneshot"
+
+
 def test_query_requires_search() -> None:
     src, _ = _make_source(post_response=FakeResponse(200, ONESHOT_PAYLOAD))
     with pytest.raises(ValueError):

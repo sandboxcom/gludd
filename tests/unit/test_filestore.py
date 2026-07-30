@@ -279,13 +279,16 @@ class TestBinaryBootstrapper:
             assert boot.check_openbao_in_store() is True
 
     def test_check_openbao_in_store_not_found(self):
+        from unittest.mock import patch
+
         from general_ludd.filestore.bootstrap import BinaryBootstrapper
         from general_ludd.filestore.store import FileStore
 
         with tempfile.TemporaryDirectory() as tmp:
             store = FileStore(root_path=tmp)
-            boot = BinaryBootstrapper(store=store, bundled_binaries_dir=None)
-            assert boot.check_openbao_in_store() is False
+            with patch.object(BinaryBootstrapper, "_find_dist_bundled_dir", return_value=None):
+                boot = BinaryBootstrapper(store=store, bundled_binaries_dir=None)
+                assert boot.check_openbao_in_store() is False
 
     def test_get_platform_info_amd64(self):
         from unittest.mock import patch

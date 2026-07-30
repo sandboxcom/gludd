@@ -13,8 +13,14 @@ MAKEFILE = ROOT / "Makefile"
 OPENCODE_JSON = ROOT / "opencode.json"
 AGENTS_MD = ROOT / "AGENTS.md"
 PLUGIN_FILE = ROOT / ".opencode" / "plugin" / "enforce-make.ts"
+PLUGIN_IMPL = ROOT / ".opencode" / "plugin" / "impl" / "enforce_make_impl.ts"
 SKELETON_SCRIPT = ROOT / "scripts" / "skeleton.py"
 SKILL_FILE = ROOT / ".opencode" / "skills" / "guardrail-pattern" / "SKILL.md"
+
+
+def _read_plugin_source() -> str:
+    """Return the public enforce-make wrapper plus its split implementation."""
+    return PLUGIN_FILE.read_text() + "\n" + PLUGIN_IMPL.read_text()
 
 
 class TestMakefileTargets:
@@ -39,12 +45,30 @@ class TestMakefileTargets:
         assert "lint" in content
 
     def test_make_test_count_passes(self):
-        """Suites collect without errors — fast gate, not full test run."""
+        """The nested guardrail smoke test collects a representative scope."""
         result = subprocess.run(
-            ["make", "test-count"],
-            capture_output=True, text=True, cwd=str(ROOT), timeout=120,
+            [
+                "make",
+                "test-count",
+                "TESTPATH=tests/unit/test_guardrails.py",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(ROOT),
+            timeout=60,
         )
         assert result.returncode == 0, f"make test-count failed:\n{result.stderr}\n{result.stdout}"
+
+    def test_make_test_count_is_scopeable_and_preserves_pytest_status(self):
+        """Collection smoke tests must be narrowable and fail when pytest fails."""
+        content = MAKEFILE.read_text()
+        start = content.index("\ntest-count:")
+        end = content.index("\n\n", start)
+        section = content[start:end]
+
+        assert "$(or $(TESTPATH),tests/)" in section
+        assert "RC=$$?" in section
+        assert "exit $$RC" in section
 
     def test_make_lint_passes(self):
         result = subprocess.run(
@@ -114,28 +138,28 @@ class TestBashGuardrailPlugin:
         assert PLUGIN_FILE.exists(), "enforce-make.ts plugin must exist"
 
     def test_plugin_exports_default(self):
-        content = PLUGIN_FILE.read_text()
+        content = _read_plugin_source()
         assert "export default" in content
         assert "tool.execute.before" in content
         assert "input.tool" in content
 
     def test_plugin_checks_bash_tool(self):
-        content = PLUGIN_FILE.read_text()
+        content = _read_plugin_source()
         assert '"bash"' in content
 
     def test_plugin_checks_make_prefix(self):
-        content = PLUGIN_FILE.read_text()
+        content = _read_plugin_source()
         assert "make " in content
         assert "throw new Error" in content
 
     def test_plugin_provides_helpful_error_message(self):
-        content = PLUGIN_FILE.read_text()
+        content = _read_plugin_source()
         assert "BLOCKED" in content
         assert "Makefile" in content
         assert "AGENTS.md" in content
 
     def test_plugin_allows_make_commands(self):
-        content = PLUGIN_FILE.read_text()
+        content = _read_plugin_source()
         assert "startsWith" in content or "make" in content
 
 
@@ -149,7 +173,7 @@ class TestOpencodeJsonSchemaGuardPlugin:
     """
 
     ALLOWED_KEYS_PYTHON = ROOT.parent / "tests" / "unit"
-    PLUGIN_CONTENT = PLUGIN_FILE.read_text()
+    PLUGIN_CONTENT = _read_plugin_source()
 
     def test_plugin_contains_schema_guard_block(self):
         """The plugin must contain the BLOCKED message for unknown keys."""
@@ -228,7 +252,7 @@ class TestTDDGuardrail:
         assert "test-and-commit:" in content, "Makefile must have test-and-commit target"
 
     def test_plugin_emits_tdd_reminder_on_src_edit(self):
-        content = PLUGIN_FILE.read_text()
+        content = _read_plugin_source()
         assert "TDD VIOLATION" in content, "Plugin must block production edits when no test file exists"
         assert "production" in content.lower() or "src/" in content
         assert "testExists" in content or "test_" in content, "Plugin must check for test file existence"
@@ -245,7 +269,7 @@ class TestTDDGuardrail:
         assert "make test-unit" in content
 
     def test_tdd_guardrail_has_all_three_layers(self):
-        content_plugin = PLUGIN_FILE.read_text()
+        content_plugin = _read_plugin_source()
         content_agents = AGENTS_MD.read_text()
         content_config = OPENCODE_JSON.read_text()
         assert "TDD" in content_plugin or "tdd" in content_plugin.lower()
@@ -255,7 +279,7 @@ class TestTDDGuardrail:
 
 class TestGuardrailIntegrity:
     def test_plugin_protects_against_guardrail_removal(self):
-        content = PLUGIN_FILE.read_text()
+        content = _read_plugin_source()
         assert "GUARDRAIL INTEGRITY VIOLATION" in content, "Plugin must detect guardrail removal"
 
     def test_agents_md_has_guardrail_integrity_policy(self):
@@ -265,7 +289,7 @@ class TestGuardrailIntegrity:
         assert "make the guardrail smarter" in content
 
     def test_plugin_enforcement_patterns_exist(self):
-        content = PLUGIN_FILE.read_text()
+        content = _read_plugin_source()
         for pattern in ["throw new Error", "TDD VIOLATION", "BLOCKED", "FORBIDDEN"]:
             assert pattern in content, f"Guardrail enforcement pattern '{pattern}' missing from plugin"
 
@@ -321,7 +345,7 @@ class TestCommitAfterGreenGuardrail:
         assert "$(MSG)" in tac_section
 
     def test_plugin_emits_commit_reminder_after_test_pass(self):
-        content = PLUGIN_FILE.read_text()
+        content = _read_plugin_source()
         assert "COMMIT REMINDER" in content, "Plugin must remind to commit after test pass"
         assert "test-and-commit" in content or "uncommitted" in content.lower()
 
@@ -335,7 +359,7 @@ class TestCommitAfterGreenGuardrail:
         assert "uncommitted" in content.lower() or "MUST commit" in content
 
     def test_commit_guardrail_has_all_three_layers(self):
-        content_plugin = PLUGIN_FILE.read_text()
+        content_plugin = _read_plugin_source()
         content_agents = AGENTS_MD.read_text()
         content_makefile = MAKEFILE.read_text()
         assert "COMMIT REMINDER" in content_plugin
@@ -356,16 +380,16 @@ class TestTaskCompletionGuardrail:
         assert "Do NOT get sidetracked" in content
 
     def test_plugin_injects_system_prompt(self):
-        content = PLUGIN_FILE.read_text()
+        content = _read_plugin_source()
         assert "Task Completion Policy" in content or "completion" in content.lower()
         assert "experimental.chat.system.transform" in content
 
     def test_plugin_warns_about_task_completion(self):
-        content = PLUGIN_FILE.read_text()
+        content = _read_plugin_source()
         assert "TASK COMPLETION CHECK" in content or "RESUME WORK" in content
 
     def test_completion_guardrail_has_all_three_layers(self):
-        content_plugin = PLUGIN_FILE.read_text()
+        content_plugin = _read_plugin_source()
         content_agents = AGENTS_MD.read_text()
         assert "completion" in content_plugin.lower() or "RESUME" in content_plugin
         assert "completion" in content_agents.lower() or "Task Completion" in content_agents
@@ -424,7 +448,7 @@ class TestEvidencePolicyGuardrail:
         assert "CRITICAL" in content
 
     def test_evidence_policy_in_plugin(self):
-        content = PLUGIN_FILE.read_text()
+        content = _read_plugin_source()
         assert "Evidence-Based Response" in content or "Evidence" in content or "evidence" in content.lower()
         assert "source" in content.lower() or "cite" in content.lower()
 
@@ -454,20 +478,20 @@ class TestMakeTargetSmokeTests:
 
 class TestGateStatusEnforcement:
     def test_plugin_reads_gate_status_in_response_transform(self):
-        content = PLUGIN_FILE.read_text()
+        content = _read_plugin_source()
         assert ".gate-status" in content, (
             "chat.response.transform must read .gate-status to verify completion claims"
         )
 
     def test_plugin_response_transform_has_state_based_block(self):
-        content = PLUGIN_FILE.read_text()
+        content = _read_plugin_source()
         assert "experimental.text.complete" in content
         assert "readFileSync" in content or "gate-status" in content, (
             "completion claims must be verified against .gate-status, not just vocabulary"
         )
 
     def test_plugin_replaces_response_when_gate_red(self):
-        content = PLUGIN_FILE.read_text()
+        content = _read_plugin_source()
         has_gate_check = ".gate-status" in content
         has_replace = "output =" in content or "return {" in content
         assert has_gate_check and has_replace, (
@@ -475,7 +499,7 @@ class TestGateStatusEnforcement:
         )
 
     def test_plugin_registers_session_idle_event(self):
-        content = PLUGIN_FILE.read_text()
+        content = _read_plugin_source()
         assert '"session.idle"' in content, (
             "session.idle event must be registered to reset turn state per turn"
         )
@@ -483,7 +507,7 @@ class TestGateStatusEnforcement:
 
 class TestSystemPromptDiet:
     def test_system_prompt_is_compact(self):
-        content = PLUGIN_FILE.read_text()
+        content = _read_plugin_source()
         transform_start = content.index('"experimental.chat.system.transform"')
         next_hook = content.index('"experimental.text.complete"')
         transform_block = content[transform_start:next_hook]
@@ -527,13 +551,13 @@ class TestRatchetGrowthGuard:
 
 class TestTDDGateSharpened:
     def test_tdd_gate_has_test_file_reference_check(self):
-        content = PLUGIN_FILE.read_text()
+        content = _read_plugin_source()
         has_tdd = "TDD VIOLATION" in content
         has_throw = "throw new Error" in content
         assert has_tdd and has_throw, "TDD gate must still throw for untested edits"
 
     def test_tdd_gate_searches_for_existing_tests(self):
-        content = PLUGIN_FILE.read_text()
+        content = _read_plugin_source()
         assert "readdirSync" in content or "testExists" in content, (
             "TDD gate must search for existing test files before rejecting edits"
         )

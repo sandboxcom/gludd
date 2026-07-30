@@ -33,16 +33,32 @@ class TestStatusSnapshot:
 
 
 class TestSessionDriftDetector:
-    def test_session_not_drifted(self):
-        session = Path(__file__).parent.parent.parent / "SESSION.md"
-        gate = Path(__file__).parent.parent.parent / ".gate-status"
-        if not session.exists() or not gate.exists():
-            pytest.skip("SESSION.md or .gate-status missing")
-        result = check_session_drift()
-        assert result["passed"], (
-            "SESSION.md gate block drifted from .gate-status:\n"
-            + "\n".join(result.get("violations", []))
+    def test_matching_terminal_gate_is_not_drifted(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        (tmp_path / "SESSION.md").write_text(
+            "<!-- gate:begin -->\n"
+            "- lint PASS 0\n"
+            "- test FAIL non-zero-exit\n"
+            "- smoke PASS\n"
+            "<!-- gate:end -->\n"
         )
+        (tmp_path / ".gate-status").write_text(
+            "=== GATE 2026-07-29T00:00:00Z ===\n"
+            "lint PASS 0\n"
+            "test FAIL non-zero-exit\n"
+            "smoke PASS\n"
+            "---\n"
+            "epoch 1785318827\n"
+            "=== GATE: FAILED ===\n"
+        )
+        import general_ludd.quality.preflight as pf
+
+        monkeypatch.setattr(pf, "REPO_ROOT", tmp_path)
+
+        assert check_session_drift() == {"passed": True, "violations": []}
 
     def test_drift_detected_with_stale_block(self):
         result = check_session_drift()
@@ -62,6 +78,27 @@ class TestSessionDriftDetector:
             assert not result["passed"]
         finally:
             pf.REPO_ROOT = orig
+
+    def test_in_progress_gate_is_not_authoritative(self, tmp_path, monkeypatch):
+        (tmp_path / "SESSION.md").write_text(
+            "<!-- gate:begin -->\n- previous PASS\n<!-- gate:end -->\n"
+        )
+        (tmp_path / ".gate-status").write_text(
+            "=== GATE 2026-07-29T00:00:00Z ===\n"
+            "lint PASS 0\n"
+            "test "
+        )
+        import general_ludd.quality.preflight as pf
+
+        monkeypatch.setattr(pf, "REPO_ROOT", tmp_path)
+
+        result = pf.check_session_drift()
+
+        assert result == {
+            "passed": True,
+            "violations": [],
+            "reason": "gate status incomplete",
+        }
 
 
 class TestReadmeNoHardcodedMetrics:

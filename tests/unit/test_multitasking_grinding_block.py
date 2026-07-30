@@ -100,17 +100,16 @@ class TestGrindingBlockStatic:
             "CONSECUTIVE_NON_DISPATCH_THRESHOLD must read from env var"
         )
 
-    def test_defaultimpl_exported(self, src):
-        """defaultImpl must be exported for direct testability."""
-        assert "export const defaultImpl" in src or "export { defaultImpl" in src, (
-            "defaultImpl must be exported so tests can invoke hooks directly"
-        )
+    def test_defaultimpl_is_local_fallback(self, src):
+        """defaultImpl stays local; runtime tests use the public default plugin."""
+        assert "const defaultImpl" in src
+        assert "export const defaultImpl" not in src
+        assert "export default" in src
 
-    def test_reset_multitask_state_exported(self, src):
-        """resetMultitaskState must be exported for test isolation."""
-        assert "export function resetMultitaskState" in src or "export const resetMultitaskState" in src, (
-            "resetMultitaskState must be exported"
-        )
+    def test_reset_multitask_state_is_local(self, src):
+        """Test-state reset support exists without adding a named export."""
+        assert "function resetMultitaskState" in src
+        assert "export function resetMultitaskState" not in src
 
 
 # ── Runtime tests ──────────────────────────────────────────────────────────
@@ -160,10 +159,8 @@ try {{ fs.unlinkSync("{state_file}"); }} catch (e) {{}}
 // Dynamic import so env vars above take effect before module init
 const mod = await import("{PLUGIN}");
 
-const hook = mod.defaultImpl["tool.execute.before"];
-
-// Always reset state to start fresh
-mod.resetMultitaskState();
+const hooks = await mod.default({{}});
+const hook = hooks["tool.execute.before"];
 
 async function run() {{
     const results = [];
@@ -211,6 +208,16 @@ console.log(JSON.stringify(results));
                     **os.environ,
                     "GLUDD_MULTITASK_STATE_FILE": "",
                     "GLUDD_PROJECT_ROOT": "",
+                    "GLUDD_HOT_MODULE_PREFIX": (
+                        f"/tmp/test-grinding-no-hot-{os.getpid()}-"
+                    ),
+                    "GLUDD_GATE_REFRESH_AUTOSPAWN": "0",
+                    "GLUDD_WATCHDOG_CI_FILE": (
+                        f"/tmp/test-grinding-ci-noexist-{os.getpid()}.json"
+                    ),
+                    "GLUDD_TODOWRITE_STATE": (
+                        f"/tmp/test-grinding-todos-noexist-{os.getpid()}.json"
+                    ),
                     "OPENCODE_SUBAGENT": "",
                 },
             )
@@ -263,8 +270,8 @@ import * as fs from "node:fs";
 try {{ fs.unlinkSync("{state_file}"); }} catch (e) {{}}
 
 const mod = await import("{PLUGIN}");
-const hook = mod.defaultImpl["tool.execute.before"];
-mod.resetMultitaskState();
+const hooks = await mod.default({{}});
+const hook = hooks["tool.execute.before"];
 
 async function run() {{
     var results = [];
@@ -363,8 +370,8 @@ import * as fs from "node:fs";
 try {{ fs.unlinkSync("{state_file}"); }} catch (e) {{}}
 
 const mod = await import("{PLUGIN}");
-const hook = mod.defaultImpl["tool.execute.before"];
-mod.resetMultitaskState();
+const hooks = await mod.default({{}});
+const hook = hooks["tool.execute.before"];
 
 async function run() {{
     var results = [];
@@ -457,8 +464,8 @@ import * as fs from "node:fs";
 try {{ fs.unlinkSync("{state_file}"); }} catch (e) {{}}
 
 const mod = await import("{PLUGIN}");
-const hook = mod.defaultImpl["tool.execute.before"];
-mod.resetMultitaskState();
+const hooks = await mod.default({{}});
+const hook = hooks["tool.execute.before"];
 
 async function run() {{
     var results = [];
@@ -516,8 +523,8 @@ import * as fs from "node:fs";
 try {{ fs.unlinkSync("{state_file}"); }} catch (e) {{}}
 
 const mod = await import("{PLUGIN}");
-const hook = mod.defaultImpl["tool.execute.before"];
-mod.resetMultitaskState();
+const hooks = await mod.default({{}});
+const hook = hooks["tool.execute.before"];
 
 async function run() {{
     var results = [];
@@ -585,8 +592,8 @@ import * as fs from "node:fs";
 try {{ fs.unlinkSync("{state_file}"); }} catch (e) {{}}
 
 const mod = await import("{PLUGIN}");
-const hook = mod.defaultImpl["tool.execute.before"];
-mod.resetMultitaskState();
+const hooks = await mod.default({{}});
+const hook = hooks["tool.execute.before"];
 
 async function run() {{
     var results = [];

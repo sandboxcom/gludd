@@ -4,11 +4,22 @@ import re
 ENFORCE_MAKE_PATH = os.path.join(
     os.path.dirname(__file__), "..", "..", ".opencode", "plugin", "enforce-make.ts"
 )
+ENFORCE_MAKE_IMPL_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "..",
+    "..",
+    ".opencode",
+    "plugin",
+    "impl",
+    "enforce_make_impl.ts",
+)
 
 
 def _read_source():
-    with open(ENFORCE_MAKE_PATH) as f:
-        return f.read()
+    with open(ENFORCE_MAKE_PATH) as wrapper, open(
+        ENFORCE_MAKE_IMPL_PATH
+    ) as implementation:
+        return implementation.read() + "\n" + wrapper.read()
 
 
 def _find_function_body(source: str, func_search: str) -> str:
@@ -102,10 +113,9 @@ def test_bash_checks_not_behind_subagent_guard():
         "Bash block missing invalid-pattern/bare-command enforcement"
     )
 
-    isSubagent_declared = "const isSubagent" in tool_before
-    assert isSubagent_declared, (
-        "isSubagent is not declared in tool.execute.before at all. "
-        "It should still exist to guard edit/write checks."
+    assert "isSubagent()" in tool_before, (
+        "The shared isSubagent() helper must still guard edit/write checks in "
+        "tool.execute.before."
     )
 
 

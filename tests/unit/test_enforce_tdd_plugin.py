@@ -26,6 +26,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-tdd.ts"
+LOGIC_PATH = ROOT / ".opencode" / "lib" / "enforce_tdd_logic.ts"
 OPENCODE_JSON = ROOT / "opencode.json"
 
 # Spec allowlist — files exempt from the "must have a test" rule. MUST match
@@ -84,13 +85,16 @@ class TestPluginStructure:
     def test_exports_named_helpers(self):
         if not PLUGIN_PATH.exists():
             pytest_skip("plugin not yet written — TDD red phase")
-        src = PLUGIN_PATH.read_text()
-        # Must export the decision function so this test can pin behavior.
+        src = LOGIC_PATH.read_text()
+        # The non-auto-discovered logic module exports the decision function so
+        # tests can pin behavior without adding loader-unsafe plugin exports.
         assert re.search(
             r"export\s+function\s+shouldAllowEdit|"
             r"export\s+const\s+shouldAllowEdit",
             src,
-        ), "plugin must export shouldAllowEdit() so tests can pin the verdict"
+        ), "TDD logic module must export shouldAllowEdit()"
+        plugin = PLUGIN_PATH.read_text()
+        assert "shouldAllowEdit" in plugin and "enforce_tdd_logic" in plugin
 
     def test_subagent_guard_present(self):
         if not PLUGIN_PATH.exists():
@@ -113,7 +117,7 @@ class TestPluginStructure:
     def test_fail_open_present(self):
         if not PLUGIN_PATH.exists():
             pytest_skip("plugin not yet written — TDD red phase")
-        src = PLUGIN_PATH.read_text()
+        src = LOGIC_PATH.read_text()
         assert "catch" in src, (
             "plugin must wrap logic in try/catch for fail-open behavior — "
             "a broken plugin must never wedge the editor"
@@ -133,7 +137,7 @@ class TestCandidateTestPaths:
         """Extract the path-computation regex/logic from the plugin source."""
         if not PLUGIN_PATH.exists():
             return {}
-        src = PLUGIN_PATH.read_text()
+        src = LOGIC_PATH.read_text()
         logic = {}
         # The plugin must reference tests/unit/test_<stem>.py pattern.
         m = re.search(r'test_\$\{(\w+)\}\.py|test_[`"\'].*?\$\{', src)
@@ -159,7 +163,7 @@ class TestCandidateTestPaths:
         This mirrors check_tdd_compliance.py _candidate_test_paths()."""
         if not PLUGIN_PATH.exists():
             pytest_skip("plugin not yet written — TDD red phase")
-        src = PLUGIN_PATH.read_text()
+        src = LOGIC_PATH.read_text()
         # The plugin must produce BOTH the full-path stem and the leaf-name
         # candidate (two candidates, matching the python script).
         assert "leaf" in src or "parts" in src, (
@@ -189,7 +193,7 @@ class TestTDDVerdicts:
         # hook. Here we pin the decision contract via source inspection.
         if not PLUGIN_PATH.exists():
             return None
-        return PLUGIN_PATH.read_text()
+        return PLUGIN_PATH.read_text() + "\n" + LOGIC_PATH.read_text()
 
     def test_denies_when_no_test_file_exists(self):
         """The core TDD rule: editing src/ when no test exists = DENY."""
@@ -292,7 +296,7 @@ class TestScriptPluginAllowlistAgreement:
         allows could be blocked at commit, or vice versa."""
         if not PLUGIN_PATH.exists():
             pytest_skip("plugin not yet written — TDD red phase")
-        src = PLUGIN_PATH.read_text()
+        src = LOGIC_PATH.read_text()
         # Each spec allowlist pattern must appear (as a literal or regex) in
         # the plugin source.
         for allow in ["__init__", ".pyi", "protocols", "typing", "type_defs"]:

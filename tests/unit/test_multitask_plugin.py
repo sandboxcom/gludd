@@ -3,7 +3,7 @@
 Per AGENTS.md cost-efficiency directive (2026-07-13 rewrite): floor is 10.
 Only tool.execute.before hook — message boundaries detected via 5s inter-call
 timeout. Dispatch counting, zero-streak tracking, and per-message enforcement
-all happen in a single hook. Exports MIN_DISPATCHES (10), MAX_DISPATCHES (10),
+all happen in a single hook. Defines MIN_DISPATCHES (10), MAX_DISPATCHES (10),
 MAX_ZERO_STREAK (2), WAVE_HISTORY_SIZE (10), CONSECUTIVE_NON_DISPATCH_THRESHOLD (5),
 CONSECUTIVE_NON_DISPATCH_WINDOW_MS (30000).
 """
@@ -19,29 +19,15 @@ def _plugin_source() -> str:
     return PLUGIN_PATH.read_text()
 
 
-def _extract_export_value(src: str, name: str) -> str:
-    """Extract the value of `export const X = <value>;` or `export const X = <value>` (no semicolon)."""
-    pat = re.compile(rf"export\s+const\s+{name}\s*=\s*(.+?)(?:;|\n)", re.DOTALL)
+def _extract_const_value(src: str, name: str) -> str:
+    """Extract a local or exported TypeScript constant assignment."""
+    pat = re.compile(
+        rf"(?:export\s+)?const\s+{name}\s*=\s*(.+?)(?:;|\n)",
+        re.DOTALL,
+    )
     m = pat.search(src)
-    assert m, f"export const {name} not found in plugin source"
+    assert m, f"const {name} not found in plugin source"
     return m.group(1).strip()
-
-
-def _extract_string_value(src: str, name: str) -> str:
-    raw = _extract_export_value(src, name)
-    m = re.match(r'"(.+?)"\s*(?:\+\s*\n\s*"(.+?)")*', raw, re.DOTALL)
-    if m:
-        parts = [m.group(1)]
-        if m.group(2):
-            parts.append(m.group(2))
-        return " ".join(parts)
-    m = re.match(r'"(.+)"', raw, re.DOTALL)
-    if m:
-        return m.group(1)
-    m = re.match(r"'(.+)'", raw, re.DOTALL)
-    if m:
-        return m.group(1)
-    return raw
 
 
 def _extract_env_default(src: str, env_var: str) -> int:
@@ -243,7 +229,7 @@ class TestStateFilePath:
     def test_state_file_is_in_tmp(self):
         """State file defaults to /tmp but honors GLUDD_MULTITASK_STATE_FILE
         so tests can isolate from live sessions (node T10)."""
-        raw = _extract_export_value(_plugin_source(), "MULTITASK_STATE_FILE")
+        raw = _extract_const_value(_plugin_source(), "MULTITASK_STATE_FILE")
         assert "process.env.GLUDD_MULTITASK_STATE_FILE" in raw, (
             f"State file must honor the GLUDD_MULTITASK_STATE_FILE env override, got: {raw}"
         )
@@ -420,10 +406,10 @@ class TestMinDispatchesPerWave:
             "GLUDD_MIN_DISPATCHES env var must be referenced in source"
         )
 
-    def test_export_const_present(self):
+    def test_const_present(self):
         src = _plugin_source()
-        assert "export const MIN_DISPATCHES" in src, (
-            "MIN_DISPATCHES export missing"
+        assert re.search(r"\bconst\s+MIN_DISPATCHES\s*=", src), (
+            "MIN_DISPATCHES constant missing"
         )
 
 

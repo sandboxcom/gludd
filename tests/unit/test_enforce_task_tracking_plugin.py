@@ -194,7 +194,7 @@ class TestMakefileIntegration:
         content = MAKEFILE_PATH.read_text()
         gate_line = ""
         for line in content.split("\n"):
-            if re.match(r"^[^#]*gate:", line) and not line.strip().startswith("#"):
+            if re.match(r"^gate\s*:", line):
                 gate_line = line.strip()
                 break
         assert gate_line, "Could not find gate: target in Makefile"

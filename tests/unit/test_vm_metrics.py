@@ -5,12 +5,34 @@ VMSandboxMetricsCollector basic operations.
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+from general_ludd.security.sandboxes.vm.lifecycle import VMLifecycleState
 from general_ludd.security.sandboxes.vm.metrics import (
     VMSandboxHealth,
     VMSandboxMetricsCollector,
     VMSandboxMetricsSnapshot,
     _percentile,
 )
+
+
+def _instance(
+    state: VMLifecycleState,
+    *,
+    backend: str = "firecracker",
+    boot_ms: float = 100.0,
+    dispatches: int = 1,
+    findings: int = 0,
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        state=state,
+        backend_name=backend,
+        metrics=SimpleNamespace(
+            boot_ms=boot_ms,
+            dispatch_count=dispatches,
+            last_verify_findings=findings,
+        ),
+    )
 
 
 class TestPercentile:
@@ -125,6 +147,88 @@ class TestVMSandboxMetricsCollector:
         assert snap.total_instances == 0
         assert snap.running_instances == 0
         assert snap.failed_instances == 0
+
+    def test_collect_aggregates_attached_manager_instances(self) -> None:
+        manager = SimpleNamespace(
+            instances={
+                "running": _instance(
+                    VMLifecycleState.RUNNING,
+                    boot_ms=100.0,
+                    dispatches=3,
+                ),
+                "executing": _instance(
+                    VMLifecycleState.EXECUTING,
+                    backend="gvisor",
+                    boot_ms=300.0,
+                    findings=2,
+                ),
+                "failed": _instance(
+                    VMLifecycleState.FAILED,
+                    boot_ms=0.0,
+                ),
+                "stopped": _instance(
+                    VMLifecycleState.STOPPED,
+                    boot_ms=200.0,
+                ),
+            },
+            events=["created", "stopped"],
+        )
+        collector = VMSandboxMetricsCollector(manager)
+
+        snap = collector.collect()
+
+        assert snap.total_instances == 4
+        assert snap.running_instances == 2
+        assert snap.failed_instances == 1
+        assert snap.stopped_instances == 1
+        assert snap.total_dispatches == 6
+        assert snap.total_verify_findings == 2
+        assert snap.avg_boot_ms == 200.0
+        assert snap.events_emitted == 2
+        assert snap.state_breakdown == {
+            "running": 1,
+            "executing": 1,
+            "failed": 1,
+            "stopped": 1,
+        }
+        assert snap.backend_breakdown == {"firecracker": 3, "gvisor": 1}
+
+        prometheus = collector.export_prometheus()
+        assert 'gludd_vm_instances_by_state{state="failed"} 1' in prometheus
+        assert (
+            'gludd_vm_instances_by_backend{backend="firecracker"} 3'
+            in prometheus
+        )
+
+    def test_health_classifies_unhealthy_degraded_and_healthy_managers(self) -> None:
+        unhealthy_manager = SimpleNamespace(
+            instances={
+                "failed": _instance(VMLifecycleState.FAILED),
+                "running": _instance(VMLifecycleState.RUNNING),
+            },
+            events=[],
+        )
+        unhealthy = VMSandboxMetricsCollector(unhealthy_manager).health()
+        assert unhealthy.status == "unhealthy"
+        assert "majority of instances failed" in unhealthy.issues[0]
+
+        degraded_manager = SimpleNamespace(
+            instances={
+                "failed": _instance(VMLifecycleState.FAILED),
+                "running-1": _instance(VMLifecycleState.RUNNING),
+                "running-2": _instance(VMLifecycleState.RUNNING),
+            },
+            events=[],
+        )
+        degraded = VMSandboxMetricsCollector(degraded_manager).health()
+        assert degraded.status == "degraded"
+        assert "instance(s) failed" in degraded.issues[0]
+
+        healthy_manager = SimpleNamespace(
+            instances={"running": _instance(VMLifecycleState.RUNNING)},
+            events=[],
+        )
+        assert VMSandboxMetricsCollector(healthy_manager).health().status == "healthy"
 
     def test_health_without_manager_returns_empty(self) -> None:
         collector = VMSandboxMetricsCollector()

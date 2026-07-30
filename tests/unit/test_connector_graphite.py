@@ -72,6 +72,22 @@ def test_render_request_shape() -> None:
     assert call["params"]["from"] == "-1h"
 
 
+def test_callable_transport_and_query_alias_compatibility() -> None:
+    calls: list[tuple[str, str]] = []
+
+    def transport(method: str, url: str, **_: object) -> tuple[int, object]:
+        calls.append((method, url))
+        return 200, CANNED
+
+    src = GraphiteSource(CONFIG, transport, environ={})
+
+    records = src.query({"query": "servers.web1.cpu"})
+
+    assert len(records) == 3
+    assert records[0]["message"] == "servers.web1.cpu"
+    assert calls == [("GET", "https://graphite.example.com/render")]
+
+
 def test_optional_auth_header_from_env() -> None:
     t = _MockTransport(_Resp(200, CANNED))
     src = GraphiteSource({**CONFIG, "token_env": "GRAPHITE_TOKEN"}, t, environ={"GRAPHITE_TOKEN": "abc"})

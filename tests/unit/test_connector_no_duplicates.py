@@ -88,7 +88,7 @@ _UTILITY_ALLOWLIST: frozenset[str] = frozenset(
 # ---------------------------------------------------------------------------
 
 def _class_names_in_file(file_path: Path) -> set[str]:
-    """Extract top-level class names from a Python source file via AST."""
+    """Extract concrete top-level class names from a Python source file via AST."""
     try:
         tree = ast.parse(file_path.read_text(encoding="utf-8"))
     except SyntaxError:
@@ -96,6 +96,13 @@ def _class_names_in_file(file_path: Path) -> set[str]:
     names: set[str] = set()
     for node in ast.iter_child_nodes(tree):
         if isinstance(node, ast.ClassDef):
+            is_protocol = any(
+                (isinstance(base, ast.Name) and base.id == "Protocol")
+                or (isinstance(base, ast.Attribute) and base.attr == "Protocol")
+                for base in node.bases
+            )
+            if is_protocol:
+                continue
             names.add(node.name)
     return names
 
@@ -128,6 +135,21 @@ def _build_duplicate_map() -> dict[str, list[str]]:
 
 def test_connectors_directory_exists() -> None:
     assert CONNECTORS_DIR.is_dir(), f"Connectors directory not found: {CONNECTORS_DIR}"
+
+
+def test_protocol_interfaces_are_not_concrete_duplicate_candidates(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "connector.py"
+    source.write_text(
+        "from typing import Protocol\n"
+        "class Transport(Protocol):\n"
+        "    pass\n"
+        "class ConcreteConnector:\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    assert _class_names_in_file(source) == {"ConcreteConnector"}
 
 
 def test_no_duplicate_class_names_across_connector_files() -> None:

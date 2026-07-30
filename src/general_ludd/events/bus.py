@@ -60,10 +60,8 @@ class EventBus:
         for sub_id, callback in all_subs:
             try:
                 result = callback(event)
-                if asyncio.iscoroutine(result):
+                if inspect.isawaitable(result):
                     self._dispatch_coro(result)
-                elif inspect.iscoroutinefunction(callback):
-                    self._dispatch_coro(callback(event))
                 delivered += 1
             except Exception as exc:
                 failed += 1

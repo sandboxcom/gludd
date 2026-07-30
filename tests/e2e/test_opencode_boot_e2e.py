@@ -32,12 +32,19 @@ loader path. This test targets the path users actually hit.
 from __future__ import annotations
 
 import contextlib
+import errno
+import fcntl
 import json
 import os
+import pty
 import re
+import select
+import signal
 import socket
+import struct
 import subprocess
 import sys
+import termios
 import time
 from pathlib import Path
 
@@ -48,6 +55,7 @@ OPENCODE_JSON = ROOT / "opencode.json"
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
 PLUGINS_DIR = ROOT / ".opencode" / "plugins"
 HOOK_CHECKER = ROOT / "scripts" / "check_plugin_hooks.py"
+pytestmark = pytest.mark.xdist_group("opencode-live")
 
 # Patterns that indicate the boot-time plugin crash. Any one of these in the
 # serve/TUI log is a hard failure.
@@ -169,40 +177,61 @@ def _boot_serve(port: int, timeout: float = 20.0) -> tuple[subprocess.Popen, str
 def _boot_tui(timeout: float = 12.0) -> tuple[int, str]:
     """Start the default ``opencode`` (TUI) command, return (rc, output).
 
-    The TUI needs a tty; we feed it stdin=closed so it exits or we kill it
-    after ``timeout`` seconds. The goal is to capture the boot log.
+    The TUI redraws a screen rather than emitting line-delimited output, so a
+    pipe plus ``readline()`` can block forever. Run it on a real nonblocking
+    pseudo-terminal and capture redraws until the interface is visible.
     """
+    master_fd, slave_fd = pty.openpty()
+    fcntl.ioctl(
+        slave_fd,
+        termios.TIOCSWINSZ,
+        struct.pack("HHHH", 48, 180, 0, 0),
+    )
+    env = os.environ.copy()
+    env["TERM"] = "xterm-256color"
+    env["OPENCODE_DISABLE_AUTOUPDATE"] = "true"
     proc = subprocess.Popen(
         ["opencode", "--print-logs", "--log-level", "ERROR"],
         cwd=str(ROOT),
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
+        env=env,
+        stdin=slave_fd,
+        stdout=slave_fd,
+        stderr=slave_fd,
+        start_new_session=True,
+        close_fds=True,
     )
+    os.close(slave_fd)
+    os.set_blocking(master_fd, False)
     deadline = time.time() + timeout
-    buf: list[str] = []
+    buf = bytearray()
     try:
         while time.time() < deadline:
             if proc.poll() is not None:
-                rest = proc.stdout.read() if proc.stdout else ""
-                buf.append(rest)
                 break
-            line = proc.stdout.readline() if proc.stdout else ""
-            if not line:
-                time.sleep(0.2)
+            ready, _, _ = select.select([master_fd], [], [], 0.2)
+            if not ready:
                 continue
-            buf.append(line)
-            if BOOT_RE.search(line) or LISTEN_RE.search(line):
+            try:
+                chunk = os.read(master_fd, 65_536)
+            except OSError as exc:
+                if exc.errno != errno.EIO:
+                    raise
+                break
+            if not chunk:
+                break
+            buf.extend(chunk)
+            if b"OpenCode" in buf:
                 break
     finally:
-        proc.terminate()
+        if proc.poll() is None:
+            os.killpg(proc.pid, signal.SIGTERM)
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            proc.kill()
+            os.killpg(proc.pid, signal.SIGKILL)
             proc.wait(timeout=5)
-    return proc.returncode, "".join(buf)
+        os.close(master_fd)
+    return proc.returncode, buf.decode("utf-8", errors="replace")
 
 
 def _assert_no_fatal_patterns(log: str, context: str) -> None:
@@ -241,6 +270,7 @@ def test_opencode_serve_boots_clean_with_full_plugin_suite() -> None:
 def test_opencode_tui_boots_clean_with_full_plugin_suite() -> None:
     """The user-facing path: ``opencode`` (default TUI command)."""
     _rc, log = _boot_tui()
+    assert "OpenCode" in log, "OpenCode TUI did not render its interface"
     _assert_no_fatal_patterns(log, "opencode TUI")
 
 

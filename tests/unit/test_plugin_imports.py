@@ -54,7 +54,7 @@ def test_no_child_process_directly():
 
 
 def test_is_subagent_final_report_declared_before_use():
-    stop_file = PLUGIN_DIR / "enforce-stop.ts"
+    stop_file = PLUGIN_DIR / "impl" / "enforce_stop_impl.ts"
     text = stop_file.read_text()
     lines = text.splitlines()
     first_use = None
@@ -85,20 +85,15 @@ def test_invalid_file_detected():
         bad_path = fp.name
 
     try:
-        target = PLUGIN_DIR / "zzz_bad_imports_test.ts"
-        target.symlink_to(bad_path)
-        try:
-            result = subprocess.run(
-                ["python", str(SCRIPT)],
-                capture_output=True, text=True, timeout=30, cwd=str(ROOT),
-            )
-            assert result.returncode == 1, (
-                f"Expected exit 1 for invalid imports, got {result.returncode}\n"
-                f"stdout: {result.stdout}\nstderr: {result.stderr}"
-            )
-            assert "violations found" in result.stdout
-        finally:
-            target.unlink()
+        result = subprocess.run(
+            ["python", str(SCRIPT), bad_path],
+            capture_output=True, text=True, timeout=30, cwd=str(ROOT),
+        )
+        assert result.returncode == 1, (
+            f"Expected exit 1 for invalid imports, got {result.returncode}\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+        assert "violations found" in result.stdout
     finally:
         Path(bad_path).unlink()
 

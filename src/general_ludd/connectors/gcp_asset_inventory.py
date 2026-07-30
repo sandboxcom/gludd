@@ -25,6 +25,7 @@ from __future__ import annotations
 import ipaddress
 import logging
 import os
+from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
@@ -57,6 +58,57 @@ class _Transport(Protocol):
         params: dict[str, Any] | None = ...,
         timeout: float | None = ...,
     ) -> Any: ...
+
+
+class _CallbackResponse:
+    def __init__(self, status_code: int, body: object) -> None:
+        self.status_code = int(status_code)
+        self._body = body
+        self.text = body if isinstance(body, str) else str(body)
+
+    def json(self) -> object:
+        return self._body
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+
+class _CallbackTransport:
+    """Adapt the shared method/url callback contract to an object with ``get``."""
+
+    def __init__(self, callback: Callable[..., Any]) -> None:
+        self._callback = callback
+
+    def get(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        params: dict[str, Any] | None = None,
+        timeout: float | None = None,
+    ) -> Any:
+        result = self._callback(
+            "GET",
+            url,
+            headers=headers,
+            params=params,
+            timeout=timeout,
+        )
+        if isinstance(result, tuple):
+            status, body = result
+            return _CallbackResponse(status, body)
+        return result
+
+
+def _coerce_transport(value: object) -> _Transport | None:
+    if value is None:
+        return None
+    if isinstance(value, _Transport):
+        return value
+    if callable(value):
+        return _CallbackTransport(value)
+    raise TypeError("transport must expose get() or be callable")
 
 
 def _host_is_internal(host: str) -> bool:
@@ -119,14 +171,26 @@ class GcpAssetInventorySource:
     KIND = "infra"
     name = "gcp_asset_inventory"
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        config: dict[str, Any],
+        transport: _Transport | Callable[..., Any] | None = None,
+    ) -> None:
         self._config = dict(config)
-        self._scope: str = str(config.get("scope", "")).strip()
+        scope = str(config.get("scope", "")).strip()
+        if not scope:
+            project_id = str(config.get("project_id", "")).strip()
+            if project_id:
+                scope = f"projects/{project_id}"
+        self._scope = scope
         self._token_env: str = str(config.get("token_env", "GOOGLE_OAUTH_ACCESS_TOKEN"))
         self._endpoint = _validate_endpoint(str(config.get("endpoint", DEFAULT_ENDPOINT)))
         self._timeout = float(config.get("timeout", 10.0))
         self._page_size = int(config.get("page_size", 500))
-        self._transport: _Transport | None = config.get("transport")
+        transport_input = (
+            transport if transport is not None else config.get("transport")
+        )
+        self._transport = _coerce_transport(transport_input)
 
     # -- internals -----------------------------------------------------------
 

@@ -210,7 +210,13 @@ class TestValidateTokenAndRoleWithFakeClient:
             "bindings": [
                 {"role": r, "members": [f"serviceAccount:{sa_email}"]}
                 for r in gcp_onboard.EXPECTED_ROLES
-            ]
+            ] + [{
+                "role": (
+                    "projects/proj-123/roles/"
+                    f"{gcp_onboard.CUSTOM_ROLE_SUFFIX}"
+                ),
+                "members": [f"serviceAccount:{sa_email}"],
+            }]
         }
         monkeypatch.setattr(gcp_onboard, "_build_gcp_client", lambda **kw: fake_discovery)
         monkeypatch.setattr(gcp_onboard, "_get_iam_policy", lambda client, project_id: policy)

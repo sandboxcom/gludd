@@ -13,12 +13,15 @@ ROOT = Path(__file__).resolve().parents[2]
 SHARED_PATH = ROOT / ".opencode/lib/shared.ts"
 FLOOR_PATH = ROOT / ".opencode/plugin/enforce-floor.ts"
 STOP_PATH = ROOT / ".opencode/plugin/enforce-stop.ts"
+STOP_IMPL_PATH = ROOT / ".opencode/plugin/impl/enforce_stop_impl.ts"
 MULTITASK_PATH = ROOT / ".opencode/plugin/enforce-multitask.ts"
 DELEGATE_PATH = ROOT / ".opencode/plugin/enforce-delegate.ts"
 VERIFIED_CLAIMS_PATH = ROOT / ".opencode/plugin/enforce-verified-claims.ts"
 
 
 def _src(path: Path) -> str:
+    if path == STOP_PATH:
+        return STOP_IMPL_PATH.read_text() + "\n" + path.read_text()
     return path.read_text()
 
 
@@ -118,15 +121,11 @@ class TestCleanOutputPassthrough:
         assert "(output as any)" in handler or "typeof output" in handler
 
     def test_verified_claims_passthrough_path_exists(self):
-        """enforce-verified-claims: text.complete was removed — commit-time
-        enforcement only in tool.execute.before. Verify the plugin has no
-        text.complete hook."""
+        """Coverage-claim enforcement preserves clean text.complete output."""
         src = _src(VERIFIED_CLAIMS_PATH)
-        assert '"experimental.text.complete"' not in src, (
-            "enforce-verified-claims: text.complete was removed — commit-time enforcement only"
-        )
-        handler = _from_marker(src, '"tool.execute.before"')
-        assert "permissionDecision" in handler or "shouldBlock" in handler
+        handler = _from_marker(src, '"experimental.text.complete"')
+        assert "shouldBlockCoverageClaim" in handler
+        assert "return output" in handler
 
 
 # ── DELEGATE-FIRST nag NOT generated on zero streak ─────────────────────────
@@ -208,8 +207,8 @@ class TestMultitaskNagConditional:
     def test_max_zero_streak_positive(self):
         """MAX_ZERO_STREAK >= 1 ensures zeroStreak=0 never triggers MUST DISPATCH."""
         src = _src(MULTITASK_PATH)
-        assert "export const MAX_ZERO_STREAK = 2" in src, (
-            "MAX_ZERO_STREAK must be a positive integer (>= 1), const at line 17"
+        assert "const MAX_ZERO_STREAK = 2" in src, (
+            "MAX_ZERO_STREAK must be a positive local constant"
         )
 
 
@@ -270,12 +269,11 @@ class TestNoUnconditionalNag:
         assert True  # assertions in _check_handler_not_unconditional helper
 
     def test_verified_claims_not_unconditional(self):
-        """enforce-verified-claims: text.complete was removed — commit-time
-        enforcement only. tool.execute.before must be conditional."""
+        """Verified-claims output mutation is coverage-claim conditional."""
         src = _src(VERIFIED_CLAIMS_PATH)
-        assert '"experimental.text.complete"' not in src, "text.complete removed from verified-claims"
-        handler = _from_marker(src, '"tool.execute.before"')
-        assert "if " in handler, "tool.execute.before must have conditional logic"
+        handler = _from_marker(src, '"experimental.text.complete"')
+        assert "if (shouldBlockCoverageClaim(text))" in handler
+        assert "return output" in handler
 
 
 # ── Subagent nag-free output ────────────────────────────────────────────────
@@ -326,12 +324,10 @@ class TestDelegateFirstNagSubagentBypass:
         assert "DELEGATE-FIRST" in handler
         assert "DELEGATE_FIRST_THRESHOLD" in handler
         assert "streakState.streak" in handler or "streakState" in handler
-        after_streak = handler[handler.find("DELEGATE_FIRST_THRESHOLD"):]
-        assert "GLUDD_IS_SUBAGENT" in handler or "subagent" in after_streak.lower() or (
-            "\n" in after_streak[max(0, after_streak.find("GLUDD_IS_SUBAGENT") - 50):]
-        ) or True, (
-            "DELEGATE-FIRST check must be preceded or accompanied by a subagent bypass "
-            "(GLUDD_IS_SUBAGENT env check or subagent-report marker guard)"
+        assert 0 <= handler.find("isSubagent()") < handler.find(
+            "DELEGATE_FIRST_THRESHOLD"
+        ), (
+            "DELEGATE-FIRST check must follow the subagent passthrough guard"
         )
 
 
@@ -345,8 +341,8 @@ class TestMustDispatchSubagentBypass:
         handler = _from_marker(_src(MULTITASK_PATH), '"tool.execute.before"')
         assert "zeroStreak" in handler
         assert "MAX_ZERO_STREAK" in handler
-        after_max = handler[handler.find("MAX_ZERO_STREAK"):]
-        assert "GLUDD_IS_SUBAGENT" in after_max or "subagent" in after_max.lower(), (
-            "MUST DISPATCH block must be guarded by GLUDD_IS_SUBAGENT or subagent check "
-            "so subagent output with zeroStreak >= 2 is NOT replaced"
+        assert 0 <= handler.find("isSubagent()") < handler.find(
+            "ZERO-DISPATCH STREAK"
+        ), (
+            "MUST DISPATCH block must follow the subagent passthrough guard"
         )

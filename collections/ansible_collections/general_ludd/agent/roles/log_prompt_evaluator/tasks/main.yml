@@ -107,12 +107,14 @@
 - name: Build waste pattern summary
   ansible.builtin.set_fact:
     _lpe_top_waste_patterns: >-
-      {{
-        ((_lpe_eval.waste_patterns | default([]))
-        | sort(attribute='frequency', reverse=true)
-        | map(attribute='pattern')
-        | list)[:max_recommendations | int]
-      }}
+      {%- set patterns = [] -%}
+      {%- for item in ((_lpe_eval.waste_patterns | default([]))
+                       | sort(attribute='frequency', reverse=true)) -%}
+        {%- if loop.index <= (max_recommendations | int) -%}
+          {%- set _ = patterns.append(item.pattern) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ patterns }}
     _lpe_total_waste_instances: >-
       {{
         (_lpe_eval.waste_patterns | default([]))
@@ -134,9 +136,13 @@
 - name: Build top recommendations
   ansible.builtin.set_fact:
     _lpe_top_recs: >-
-      {{
-        (_lpe_eval.recommendations | default([]))[:max_recommendations | int]
-      }}
+      {%- set recommendations = [] -%}
+      {%- for item in (_lpe_eval.recommendations | default([])) -%}
+        {%- if loop.index <= (max_recommendations | int) -%}
+          {%- set _ = recommendations.append(item) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ recommendations }}
 
 # ── Write artifacts ────────────────────────────────────────────────────────────
 

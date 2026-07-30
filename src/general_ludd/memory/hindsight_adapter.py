@@ -16,14 +16,16 @@ import os
 import re
 import threading
 import time
+from importlib import import_module
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
 _HINDSIGHT_IMPORT_ERROR: str | None = None
+_HindsightClient: Any | None
 try:
-    from hindsight_client import Hindsight as _HindsightClient  # type: ignore[import-not-found]
-except ImportError as exc:
+    _HindsightClient = vars(import_module("hindsight_client"))["Hindsight"]
+except (ImportError, KeyError) as exc:
     _HindsightClient = None
     _HINDSIGHT_IMPORT_ERROR = str(exc)
 
@@ -250,7 +252,7 @@ class HindsightMemoryAdapter:
 
 
 def _tokenize(text: str) -> list[str]:
-    words = re.findall(r"[a-z0-9_]+", text.lower())
+    words = re.findall(r"[a-z0-9_]+(?:-[a-z0-9_]+)*", text.lower())
     stop = {
         "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
         "have", "has", "had", "do", "does", "did", "will", "would", "could",

@@ -300,6 +300,16 @@ class TestRunGateScript:
         assert marker in combined, (
             f"PYTEST_CMD stub output '{marker}' must appear in run_gate.sh output. Got:\n{combined}"
         )
+        logs = list((workdir / ".gate-logs").glob("gate-pytest-*.log"))
+        assert len(logs) == 1
+        assert marker in logs[0].read_text(encoding="utf-8")
+
+    def test_live_log_is_outside_pytest_basetemp(self) -> None:
+        """pytest clears --basetemp, so the streamed log must not live inside it."""
+        script_text = SCRIPT.read_text(encoding="utf-8")
+
+        assert 'LOG_FILE="${BASETEMP}/gate.log"' not in script_text
+        assert ".gate-logs/gate-pytest-" in script_text
 
     # -----------------------------------------------------------------------
     # Subagent guard tests (mt-5)

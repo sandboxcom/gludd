@@ -260,6 +260,7 @@ class LangGraphAgentLoop:
         for mcp_tool in mcp_tools:
             tool_name = mcp_tool.name
             tool_desc = mcp_tool.description or f"MCP tool: {tool_name}"
+            tool_schema = getattr(mcp_tool, "input_schema", None)
             server_id = self._resolve_server_id(tool_name)
 
             mcp_client = self._mcp_client
@@ -339,6 +340,7 @@ class LangGraphAgentLoop:
                 coroutine=_execute,
                 name=tool_name,
                 description=tool_desc,
+                args_schema=tool_schema or None,
             )
             langchain_tools.append(lc_tool)
 

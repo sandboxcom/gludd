@@ -7,6 +7,7 @@ Smithery (api.smithery.ai), and Glama (glama.ai) for server discovery.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -124,8 +125,34 @@ class MCPCatalog:
         self, registry: str, query: str, limit: int
     ) -> list[MCPCatalogEntry]:
         import json
+        import urllib.error
         import urllib.parse
         import urllib.request
+
+        def _read_registry_json(
+            req: urllib.request.Request,
+            registry_name: str,
+        ) -> dict[str, Any]:
+            try:
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    raw = resp.read(_REGISTRY_RESPONSE_MAX_BYTES + 1)
+            except urllib.error.HTTPError as exc:
+                # HTTPError is also a file-like response.  It is raised before
+                # the successful-response context manager is entered, so the
+                # caller must close it before propagating the registry failure.
+                exc.close()
+                raise
+            if len(raw) > _REGISTRY_RESPONSE_MAX_BYTES:
+                raise ValueError(
+                    f"{registry_name} registry response exceeded "
+                    f"{_REGISTRY_RESPONSE_MAX_BYTES}-byte cap"
+                )
+            parsed = json.loads(raw.decode())
+            if not isinstance(parsed, dict):
+                raise ValueError(
+                    f"{registry_name} registry response must be a JSON object"
+                )
+            return {str(key): value for key, value in parsed.items()}
 
         if "smithery.ai" in registry:
             url = "https://api.smithery.ai/servers"
@@ -134,13 +161,7 @@ class MCPCatalog:
                 params["q"] = query
             url = f"{url}?{urllib.parse.urlencode(params)}"
             req = urllib.request.Request(url, headers={"Accept": "application/json"})
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                raw = resp.read(_REGISTRY_RESPONSE_MAX_BYTES + 1)
-                if len(raw) > _REGISTRY_RESPONSE_MAX_BYTES:
-                    raise ValueError(
-                        f"Smithery registry response exceeded {_REGISTRY_RESPONSE_MAX_BYTES}-byte cap"
-                    )
-                data = json.loads(raw.decode())
+            data = _read_registry_json(req, "Smithery")
             entries: list[MCPCatalogEntry] = []
             for s in data.get("servers", []):
                 entries.append(self._harden_registry_entry(MCPCatalogEntry(
@@ -155,13 +176,7 @@ class MCPCatalog:
         if "registry.modelcontextprotocol.io" in registry:
             url = f"https://registry.modelcontextprotocol.io/v0.1/servers?limit={min(limit, 100)}"
             req = urllib.request.Request(url, headers={"Accept": "application/json"})
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                raw = resp.read(_REGISTRY_RESPONSE_MAX_BYTES + 1)
-                if len(raw) > _REGISTRY_RESPONSE_MAX_BYTES:
-                    raise ValueError(
-                        f"MCP registry response exceeded {_REGISTRY_RESPONSE_MAX_BYTES}-byte cap"
-                    )
-                data = json.loads(raw.decode())
+            data = _read_registry_json(req, "MCP")
             entries = []
             for s in data.get("servers", []):
                 name_val = s.get("name", "")

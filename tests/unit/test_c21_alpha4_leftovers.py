@@ -47,7 +47,7 @@ class TestValidationSymlinkConfinement:
 
             result = confine_worktree_path(subdir, inside)
             assert os.path.isabs(result)
-            assert result.startswith(inside)
+            assert result.startswith(os.path.realpath(inside))
 
     def test_realpath_confinement_allows_base_itself(self):
         """The allowed base itself passes confinement."""

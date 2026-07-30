@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import ast
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -85,6 +84,12 @@ def _candidate_test_paths(src_file: Path) -> list[Path]:
     if len(parts) > 1 and parts[0] == "general_ludd":
         stem_no_prefix = "_".join(parts[1:])
         candidates.append(TESTS_DIR / f"test_{stem_no_prefix}.py")
+
+    # Candidate 3: module leaf only.  The repository's long-standing convention
+    # uses names such as ``test_tempr_retriever.py`` for nested modules.  Import
+    # validation in ``_check_module`` prevents a same-stem test for another
+    # package from being accepted accidentally.
+    candidates.append(TESTS_DIR / f"test_{parts[-1]}.py")
 
     return candidates
 
@@ -155,22 +160,31 @@ def _check_module(src_file: Path) -> dict:
         result["test_count"] = 0
         return result
 
-    test_file = existing[0]
-    test_count = _count_test_functions(test_file)
+    inspected = [
+        (test_file, _count_test_functions(test_file))
+        for test_file in existing
+    ]
+    for test_file, test_count in inspected:
+        if test_count > 0 and _test_imports_module(test_file, module_path):
+            result["status"] = "OK"
+            result["test_file"] = str(test_file.relative_to(PROJECT_ROOT))
+            result["test_count"] = test_count
+            return result
 
-    if test_count == 0:
+    tests_with_functions = [
+        (test_file, test_count)
+        for test_file, test_count in inspected
+        if test_count > 0
+    ]
+    if not tests_with_functions:
+        test_file = existing[0]
         result["status"] = "STUB"
         result["test_file"] = str(test_file.relative_to(PROJECT_ROOT))
         result["test_count"] = 0
         return result
 
-    if not _test_imports_module(test_file, module_path):
-        result["status"] = "NO_IMPORT"
-        result["test_file"] = str(test_file.relative_to(PROJECT_ROOT))
-        result["test_count"] = test_count
-        return result
-
-    result["status"] = "OK"
+    test_file, test_count = tests_with_functions[0]
+    result["status"] = "NO_IMPORT"
     result["test_file"] = str(test_file.relative_to(PROJECT_ROOT))
     result["test_count"] = test_count
     return result
@@ -270,7 +284,11 @@ def main(argv: list[str]) -> int:
 
     if has_gaps:
         if allowed_gaps:
-            print(f"FAIL: {len(new_gap_results)} new gap(s) (excluded {len(allowed_gaps)} allowed), {len(below_threshold)} below threshold")
+            print(
+                f"FAIL: {len(new_gap_results)} new gap(s) "
+                f"(excluded {len(allowed_gaps)} allowed), "
+                f"{len(below_threshold)} below threshold"
+            )
         else:
             print(f"FAIL: {len(new_gap_results)} gap(s), {len(below_threshold)} below threshold")
         return 1

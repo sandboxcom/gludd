@@ -15,14 +15,19 @@ if), not brittle substring matches.
 
 from __future__ import annotations
 
+import configparser
+import tomllib
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent.parent
+DOCKERFILE = ROOT / "Dockerfile"
+PYPROJECT = ROOT / "pyproject.toml"
 SPEC = ROOT / "gludd.spec"
 BUILD_YML = ROOT / ".github" / "workflows" / "build.yml"
+GREENLET_COVERAGE_RC = ROOT / ".coveragerc-greenlet"
 PARTIALS_GITKEEP = ROOT / "templates" / "prompts" / "partials" / ".gitkeep"
 MOLECULE_PLAYBOOKS = ROOT / "molecule" / "playbooks"
 
@@ -97,26 +102,74 @@ def test_gate_job_sets_gludd_xdist_auto() -> None:
     )
 
 
-def test_windows_job_is_non_blocking() -> None:
-    """Guard: the windows build job must keep continue-on-error: true.
-
-    CI incident: the Windows pyinstaller build is not yet reliable. Keeping the
-    windows job non-blocking (``continue-on-error: true``) is the safety net that
-    lets a tag still publish a Release with the linux/macos/termux artifacts
-    instead of the whole release failing on Windows. Removing it makes a flaky
-    Windows build block every release.
-    """
+def test_windows_job_is_release_blocking() -> None:
+    """A green release must prove that the required Windows artifacts built."""
     wf = _load_build_workflow()
     windows = wf["jobs"].get("windows")
     assert windows is not None, (
         "CI regression: the 'windows' build job vanished from build.yml."
     )
-    assert windows.get("continue-on-error") is True, (
-        "CI regression (unstable Windows pyinstaller build blocking releases): "
-        "the windows job no longer has 'continue-on-error: true'. Restore it so "
-        "an unstable Windows build stays NON-BLOCKING and a tag still ships the "
-        "linux/macos/termux artifacts."
+    assert windows.get("continue-on-error", False) is False, (
+        "CI regression: Windows is a required beta.3 artifact producer; "
+        "continue-on-error can turn a missing zip/installer into a green pipeline"
     )
+
+
+def test_windows_job_uses_canonical_pinned_bootstrap_actions() -> None:
+    """Windows must use the same maintained action revisions as Linux."""
+    wf = _load_build_workflow()
+    jobs = wf["jobs"]
+
+    def bootstrap_uses(job_name: str, action: str) -> list[str]:
+        return [
+            str(step.get("uses", ""))
+            for step in jobs[job_name].get("steps", [])
+            if str(step.get("uses", "")).startswith(f"{action}@")
+        ]
+
+    for action in ("actions/checkout", "astral-sh/setup-uv"):
+        linux_uses = bootstrap_uses("linux", action)
+        windows_uses = bootstrap_uses("windows", action)
+        assert len(linux_uses) == len(windows_uses) == 1
+        assert windows_uses == linux_uses, (
+            f"Windows {action} must match the canonical Linux immutable pin; "
+            f"got windows={windows_uses}, linux={linux_uses}."
+        )
+
+
+def test_windows_packaging_job_is_deterministic_and_fail_closed() -> None:
+    """Pin the runner/toolchain and reject partial or untested artifacts."""
+    windows = _load_build_workflow()["jobs"]["windows"]
+    assert windows["runs-on"] == "windows-2022"
+
+    steps = windows["steps"]
+    setup_uv = next(
+        step
+        for step in steps
+        if str(step.get("uses", "")).startswith("astral-sh/setup-uv@")
+    )
+    assert setup_uv.get("with", {}).get("python-version") == "3.12"
+
+    names = [str(step.get("name", "")) for step in steps]
+    smoke_index = names.index("Smoke test binary")
+    package_index = names.index("Package zip")
+    upload_index = next(
+        i
+        for i, step in enumerate(steps)
+        if str(step.get("uses", "")).startswith("actions/upload-artifact@")
+    )
+    assert smoke_index < package_index < upload_index
+    assert steps[smoke_index].get("continue-on-error", False) is False
+
+    upload = steps[upload_index]
+    assert upload.get("if", "success()") == "success()"
+    assert upload.get("with", {}).get("if-no-files-found") == "error"
+
+    runs = "\n".join(str(step.get("run", "")) for step in steps)
+    assert "choco install nsis --version=3.12.0" in runs
+    assert "makensis.exe" in runs and "$makensis /WX" in runs
+    assert "Get-FileHash" in runs
+    assert "certutil" not in runs
 
 
 def test_partials_gitkeep_is_tracked() -> None:
@@ -315,3 +368,234 @@ def test_coverage_aggregation_job_exists() -> None:
         "CI regression: the 'coverage' job does not upload the merged "
         "coverage.xml artifact, so the combined report is not retained."
     )
+
+
+def test_docker_builder_copies_wheel_force_includes_before_project_sync() -> None:
+    """Guard: Hatch force-includes must exist before Docker installs the project.
+
+    Hosted beta.3 incident: ``uv sync --frozen --no-dev`` failed because Hatch
+    tried to force-include ``/app/infra/terraform`` before Docker copied it.
+    """
+    dockerfile = DOCKERFILE.read_text(encoding="utf-8")
+    project_sync = dockerfile.rindex("uv sync --frozen --no-dev")
+    builder_prefix = dockerfile[:project_sync]
+    copied_sources = {
+        source
+        for line in builder_prefix.splitlines()
+        if line.startswith("COPY ")
+        for source in line.removeprefix("COPY ").split()[:-1]
+    }
+    pyproject = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
+    force_includes = set(
+        pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]["force-include"]
+    )
+
+    assert force_includes <= copied_sources, (
+        "Docker packaging regression: every Hatch wheel force-include must be "
+        "copied before the final `uv sync --frozen --no-dev`; missing sources: "
+        f"{sorted(force_includes - copied_sources)}"
+    )
+
+
+def test_shard_coverage_upload_includes_hidden_file_and_fails_closed() -> None:
+    """Guard: upload-artifact must opt into the hidden ``.coverage.*`` payload."""
+    workflow = _load_build_workflow()
+    steps = workflow["jobs"]["test-shard"]["steps"]
+    uploads = [
+        step
+        for step in steps
+        if str(step.get("name", "")).startswith("Upload coverage data")
+    ]
+
+    assert len(uploads) == 1, (
+        "CI regression: expected exactly one test-shard coverage upload step, "
+        f"found {len(uploads)}."
+    )
+    upload_with = uploads[0].get("with", {})
+    assert upload_with.get("include-hidden-files") is True, (
+        "CI regression: actions/upload-artifact excludes the shard's hidden "
+        "`.coverage.*` file unless `include-hidden-files: true` is explicit."
+    )
+    assert upload_with.get("if-no-files-found") == "error", (
+        "CI regression: shard coverage upload must fail closed when the hidden "
+        "coverage file is missing."
+    )
+
+
+def test_test_shard_coverage_is_private_and_combines_parallel_fragments() -> None:
+    """Guard against checkout-level and xdist-worker coverage data loss.
+
+    A hosted shard may execute tests which themselves invoke pytest/coverage.
+    Keeping the outer shard's data at ``./.coverage`` lets those nested commands
+    erase or replace it.  pytest-cov may also leave worker fragments alongside a
+    canonical file, so checking only whether the canonical file exists can skip
+    required combination and silently drop one worker's executed lines.
+    """
+    workflow = _load_build_workflow()
+    steps = workflow["jobs"]["test-shard"]["steps"]
+    test_steps = [
+        step
+        for step in steps
+        if str(step.get("name", "")).startswith("Test (shard ")
+    ]
+
+    assert len(test_steps) == 1
+    step = test_steps[0]
+    coverage_file = str(step.get("env", {}).get("COVERAGE_FILE", ""))
+    assert "runner.temp" in coverage_file, (
+        "CI coverage data must live under runner.temp, outside the shared "
+        "checkout where nested pytest/coverage commands can replace it."
+    )
+    assert "matrix.shard" in coverage_file
+    assert "matrix.python-version" in coverage_file
+
+    run = str(step.get("run", ""))
+    assert 'if compgen -G "${COVERAGE_FILE}.*"' in run, (
+        "CI must detect and combine xdist .coverage worker fragments even when "
+        "pytest-cov also left a canonical COVERAGE_FILE."
+    )
+    assert "coverage combine --keep" in run
+    assert 'test -s "$COVERAGE_FILE"' in run
+    assert 'cp "$COVERAGE_FILE"' in run
+    assert "if [ ! -f .coverage ]" not in run
+
+
+def test_greenlet_coverage_is_scoped_to_unit3() -> None:
+    """Trace SQLAlchemy greenlets without slowing every hosted shard.
+
+    Hosted beta.3 run 30517080961 reported ``routers/self_improve.py`` below
+    the per-file floor even though its endpoint tests passed.  Every missing
+    block began immediately after an awaited repository call: coverage stopped
+    tracing when SQLAlchemy switched through greenlet and never recorded the
+    resumed coroutine.  Global greenlet/thread tracing fixed that gap, but run
+    30520711085 then timed out otherwise-green unit-1b and unit-2 tests on both
+    Python versions.  Only unit-3 owns the self-improve tests, so it alone must
+    pay the extra tracing cost.
+    """
+    pyproject = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
+    default_run = pyproject["tool"]["coverage"]["run"]
+    assert "concurrency" not in default_run, (
+        "CI timeout regression (beta.3 run 30520711085): greenlet/thread "
+        "coverage tracing must not be enabled globally because its overhead "
+        "trips unit-1b and unit-2 wall-clock guards."
+    )
+
+    assert GREENLET_COVERAGE_RC.is_file()
+    greenlet_config = configparser.ConfigParser()
+    greenlet_config.read(GREENLET_COVERAGE_RC, encoding="utf-8")
+    concurrency = {
+        value.strip()
+        for value in greenlet_config.get("run", "concurrency").splitlines()
+        if value.strip()
+    }
+    assert concurrency == {"greenlet", "thread"}, (
+        "CI coverage regression (beta.3 run 30517080961): coverage must enable "
+        "both greenlet and thread concurrency or lines resumed after async "
+        "SQLAlchemy awaits silently disappear from per-file coverage."
+    )
+
+    workflow = _load_build_workflow()
+    test_steps = [
+        step
+        for step in workflow["jobs"]["test-shard"]["steps"]
+        if str(step.get("name", "")).startswith("Test (shard ")
+    ]
+    assert len(test_steps) == 1
+    test_step = test_steps[0]
+    coverage_config = str(test_step.get("env", {}).get("COVERAGE_CONFIG", ""))
+    assert coverage_config == (
+        "${{ matrix.shard == 'unit-3' "
+        "&& '.coveragerc-greenlet' || 'pyproject.toml' }}"
+    )
+    assert '--cov-config="$COVERAGE_CONFIG"' in str(test_step.get("run", ""))
+
+
+def test_test_shards_cap_xdist_for_nested_process_headroom() -> None:
+    """Guard: hosted shards must leave RAM for nested Node/process tests."""
+    workflow = _load_build_workflow()
+    job = workflow["jobs"]["test-shard"]
+    test_steps = [
+        step
+        for step in job["steps"]
+        if str(step.get("name", "")).startswith("Test (shard ")
+    ]
+
+    assert len(test_steps) == 1
+    test_env = test_steps[0].get("env", {})
+    assert str(test_env.get("GLUDD_XDIST")) in {
+        "2",
+        "${{ matrix.shard == 'unit-1a1' && '1' || '2' }}",
+    }, (
+        "CI resource regression: the hosted adaptive runner must be explicitly "
+        "capped at no more than two xdist workers so nested Node and subprocess "
+        "tests retain headroom on the 7 GiB runner."
+    )
+    all_envs = [job.get("env", {}), *[step.get("env", {}) for step in job["steps"]]]
+    assert all("GLUDD_TEST_WORKER_MEM_MB" not in env for env in all_envs), (
+        "CI resource regression: the obsolete RLIMIT_AS override must stay "
+        "absent; V8 needs a large contiguous virtual address range."
+    )
+
+
+def test_node_heavy_unit_1a1_shard_runs_serially() -> None:
+    """Guard: plugin syntax subprocess checks get a fresh serial test process.
+
+    Hosted beta.3 run 30494011946 exhausted V8 code-range reservations when
+    Python 3.12's unit-1a1 shard ran two xdist workers. Run 30495510250 then
+    proved serializing all 1,705 shard tests retained too much memory in one
+    process on both Python versions. The Node-heavy file must run alone.
+    """
+    workflow = _load_build_workflow()
+    isolated_steps = [
+        step
+        for step in workflow["jobs"]["test-shard"]["steps"]
+        if step.get("name") == "Run isolated Node plugin syntax in fresh process"
+    ]
+
+    assert len(isolated_steps) == 1
+    command = str(isolated_steps[0].get("run", ""))
+    assert "uv run pytest ${{ matrix.isolated_testpaths }}" in command
+    assert "adaptive_test.py" not in command and " -n " not in command, (
+        "CI resource regression: the Node plugin syntax suite must run serially "
+        "in its own short-lived pytest process."
+    )
+
+
+def test_node_plugin_syntax_suite_runs_in_fresh_pytest_process() -> None:
+    """Guard the both-Python V8 CodeRange failure from run 30495510250.
+
+    Serializing the whole unit-1a1 shard retained all 1,705 tests in one Python
+    process and still exhausted the runner before ``node --check``.  The
+    Node-heavy file must instead run in a fresh, coverage-free pytest process
+    and be excluded from the long-lived coverage process.
+    """
+    workflow = _load_build_workflow()
+    job = workflow["jobs"]["test-shard"]
+    unit_1a1 = next(
+        entry
+        for entry in job["strategy"]["matrix"]["include"]
+        if entry.get("shard") == "unit-1a1"
+    )
+    assert "*/test_all_plugins_runtime.py" in str(unit_1a1.get("exclude", "")).split()
+    assert str(unit_1a1.get("isolated_testpaths", "")).split() == [
+        "tests/unit/test_all_plugins_runtime.py"
+    ]
+
+    steps = job["steps"]
+    isolated_index = next(
+        index
+        for index, step in enumerate(steps)
+        if step.get("name") == "Run isolated Node plugin syntax in fresh process"
+    )
+    shard_index = next(
+        index
+        for index, step in enumerate(steps)
+        if str(step.get("name", "")).startswith("Test (shard ")
+    )
+    isolated = steps[isolated_index]
+
+    assert isolated_index < shard_index
+    assert isolated.get("if") == "matrix.shard == 'unit-1a1'"
+    isolated_run = str(isolated.get("run", ""))
+    assert "${{ matrix.isolated_testpaths }}" in isolated_run
+    assert "--cov" not in isolated_run

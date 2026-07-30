@@ -38,8 +38,12 @@ FLOOR_SRC = (PLUGIN_DIR / "enforce-floor.ts").read_text()
 SHARED_SRC = (ROOT / ".opencode" / "lib" / "shared.ts").read_text()
 
 FAKE_STALE_PID = 999999
-MULTITASK_STATE_FILE = "/tmp/gludd-multitask-state.json"
-SHARED_STREAK_FILE = "/tmp/gludd-tool-streak.json"
+MULTITASK_STATE_FILE = os.environ.get(
+    "GLUDD_MULTITASK_STATE_FILE", "/tmp/gludd-multitask-state.json"
+)
+SHARED_STREAK_FILE = os.environ.get(
+    "GLUDD_STREAK_FILE", "/tmp/gludd-tool-streak.json"
+)
 
 
 # ---------------------------------------------------------------------------

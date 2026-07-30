@@ -10,11 +10,15 @@ from pydantic import BaseModel, Field, field_validator
 
 
 def _podman_socket_paths() -> list[str]:
+    system_socket = "/run/podman/podman.sock"
+    if not hasattr(os, "getuid"):
+        return [system_socket]
+
     uid = os.getuid()
     return [
         f"/run/user/{uid}/podman/podman.sock",
         f"/run/user/{uid}/podman.sock",
-        "/run/podman/podman.sock",
+        system_socket,
     ]
 
 

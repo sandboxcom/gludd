@@ -32,7 +32,7 @@ class TestConfineExportPath:
             "general_ludd.ornith.sandbox._ALLOWED_EXPORT_ROOTS", [td]
         ):
             result = confine_export_path(f"{td}/my-export.jsonl", "fallback.jsonl")
-            assert result == Path(td) / "my-export.jsonl"
+            assert result == Path(td).resolve() / "my-export.jsonl"
 
     def test_platform_private_tmp_alias_is_allowed_when_present(self):
         private_tmp = Path("/private/tmp")
@@ -86,7 +86,7 @@ class TestConfineExportPath:
             "general_ludd.ornith.sandbox._ALLOWED_EXPORT_ROOTS", [td]
         ):
             result = confine_export_path("subdir/file.jsonl", "fallback.jsonl")
-            assert result == Path(td) / "subdir/file.jsonl"
+            assert result == Path(td).resolve() / "subdir/file.jsonl"
 
     def test_empty_out_path_returns_default(self):
         with patch(

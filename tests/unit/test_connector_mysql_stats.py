@@ -132,6 +132,36 @@ def test_constructor_accepts_executor() -> None:
     assert source._executor is dummy
 
 
+def test_constructor_adapts_database_cursor() -> None:
+    mod = importlib.import_module(_MODULE)
+
+    class Cursor:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def execute(self, query: str) -> None:
+            self.calls.append(query)
+
+        def __iter__(self):
+            return iter([{"Variable_name": "Threads_connected", "Value": "4"}])
+
+    cursor = Cursor()
+    source = mod.MysqlStatsSource(cursor=cursor)
+
+    records = source.query()
+
+    assert cursor.calls == ["SHOW GLOBAL STATUS"]
+    assert records[0]["message"] == "global status Threads_connected"
+    assert records[0]["value"] == 4.0
+
+
+def test_constructor_rejects_executor_and_cursor_together() -> None:
+    mod = importlib.import_module(_MODULE)
+
+    with pytest.raises(ValueError, match="executor or cursor"):
+        mod.MysqlStatsSource(executor=lambda _: [], cursor=object())
+
+
 def test_constructor_config_is_mutable_dict() -> None:
     mod = importlib.import_module(_MODULE)
     source = mod.MysqlStatsSource()

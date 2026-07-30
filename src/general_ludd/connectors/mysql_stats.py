@@ -19,9 +19,9 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from datetime import UTC, datetime
-from typing import TypedDict
+from typing import Protocol, TypedDict
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,14 @@ class MysqlReplicaRow(TypedDict, total=False):
 
 MysqlRow = MysqlStatusRow | MysqlPerformanceRow | MysqlReplicaRow
 Executor = Callable[[str], Sequence[MysqlRow]]
+
+
+class Cursor(Protocol):
+    """Minimal iterable DB-API cursor accepted for compatibility injection."""
+
+    def execute(self, query: str) -> object: ...
+
+    def __iter__(self) -> Iterator[MysqlRow]: ...
 
 
 class MysqlConfig(TypedDict, total=False):
@@ -132,9 +140,26 @@ class MysqlStatsSource:
         self,
         config: Mapping[str, object] | None = None,
         executor: Executor | None = None,
+        cursor: Cursor | None = None,
     ) -> None:
+        if executor is not None and cursor is not None:
+            raise ValueError("provide executor or cursor, not both")
         self.config: dict[str, object] = dict(config or {})
-        self._executor = executor
+        self._executor = (
+            executor
+            if executor is not None
+            else self._executor_from_cursor(cursor)
+            if cursor is not None
+            else None
+        )
+
+    @staticmethod
+    def _executor_from_cursor(cursor: Cursor) -> Executor:
+        def _run(query: str) -> Sequence[MysqlRow]:
+            cursor.execute(query)
+            return list(cursor)
+
+        return _run
 
     # -- credential / driver plumbing ------------------------------------
 

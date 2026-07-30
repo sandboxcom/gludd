@@ -104,6 +104,34 @@ def make_source(**overrides: Any) -> AwsConfigTrailSource:
 
 
 class TestContract:
+    def test_aws_client_callback_compatibility(self) -> None:
+        calls: list[tuple[str, dict[str, object]]] = []
+
+        def aws_client(method: str, **kwargs: object) -> tuple[int, object]:
+            calls.append((method, kwargs))
+            return 200, {
+                "Events": [
+                    {
+                        "EventId": "evt-1",
+                        "EventName": "RunInstances",
+                        "EventTime": "2026-06-10T03:04:05Z",
+                    }
+                ]
+            }
+
+        src = AwsConfigTrailSource(
+            {"region": "us-east-1"},
+            aws_client=aws_client,
+        )
+
+        rows = src.query({"mode": "cloudtrail"})
+
+        assert len(rows) == 1
+        assert rows[0]["kind"] == "infra"
+        assert rows[0]["message"] == "RunInstances"
+        assert calls[0][0] == "lookup_events"
+        assert calls[0][1]["service_name"] == "cloudtrail"
+
     def test_kind_and_name(self) -> None:
         src = make_source(client_factory=factory_for({}))
         assert src.KIND == "infra"

@@ -64,16 +64,27 @@ def _fake_popen(pid: int = 4242, returncode: int | None = None) -> mock.MagicMoc
     return p
 
 
-def _serve_http_response(server: socket.socket, response_bytes: bytes) -> None:
+def _serve_http_response(
+    server: socket.socket,
+    response_bytes: bytes,
+    *,
+    ready: threading.Event | None = None,
+    requests: list[bytes] | None = None,
+    errors: list[OSError] | None = None,
+) -> None:
     """Accept one connection, drain the FULL request, then send the response.
 
     Parses ``Content-Length`` from the request headers and reads the body to
     completion before responding — otherwise the client's ``sendall`` of the
     body can race with the server's ``close`` and produce ``BrokenPipeError``.
     """
+    if ready is not None:
+        ready.set()
     try:
         conn, _ = server.accept()
-    except OSError:
+    except OSError as exc:
+        if errors is not None:
+            errors.append(exc)
         return
     try:
         buf = b""
@@ -95,7 +106,12 @@ def _serve_http_response(server: socket.socket, response_bytes: bytes) -> None:
             if not chunk:
                 break
             body_buf += chunk
+        if requests is not None:
+            requests.append(head + b"\r\n\r\n" + body_buf)
         conn.sendall(response_bytes)
+    except OSError as exc:
+        if errors is not None:
+            errors.append(exc)
     finally:
         conn.close()
 
@@ -737,21 +753,19 @@ def test_release_issues_ctrl_alt_del_via_api(sample_spec, tmp_path):
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server.bind(sock_path)
     server.listen(1)
-    server_accept_called: list[bool] = []
-
-    def serve_once() -> None:
-        try:
-            conn, _ = server.accept()
-            server_accept_called.append(True)
-            conn.recv(4096)
-            conn.sendall(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
-            conn.close()
-        except OSError:
-            return
-
-    t = threading.Thread(target=serve_once, daemon=True)
+    ready = threading.Event()
+    requests: list[bytes] = []
+    errors: list[OSError] = []
+    response = b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n"
+    t = threading.Thread(
+        target=_serve_http_response,
+        args=(server, response),
+        kwargs={"ready": ready, "requests": requests, "errors": errors},
+        daemon=True,
+    )
     t.start()
     try:
+        assert ready.wait(timeout=2.0), "release API server did not become ready"
         fake_popen = _fake_popen(pid=44401, returncode=None)
         handle = SandboxHandle(
             backend="firecracker", token="t", applied=True,
@@ -761,10 +775,48 @@ def test_release_issues_ctrl_alt_del_via_api(sample_spec, tmp_path):
             },
         )
         FirecrackerBackend.release(handle)
-        assert server_accept_called, "release did not issue CtrlAltDel PUT"
+        t.join(timeout=2.0)
+        assert not t.is_alive(), "release API server did not finish"
+        assert not errors, f"release API server failed: {errors}"
+        assert len(requests) == 1, "release did not issue CtrlAltDel PUT"
+        assert requests[0].startswith(b"PUT /actions HTTP/1.1\r\n")
+        assert b'"action_type": "InstanceSendCtrlAltDel"' in requests[0]
     finally:
         server.close()
         t.join(timeout=2.0)
+
+
+def test_release_attempts_ctrl_alt_del_without_socket_existence_precheck(
+    sample_spec,
+):
+    """Avoid a TOCTOU race between checking and connecting to the API socket."""
+    from general_ludd.security.sandboxes.vm.firecracker_backend import (
+        FirecrackerBackend,
+    )
+
+    fake_popen = _fake_popen(pid=44405, returncode=None)
+    handle = SandboxHandle(
+        backend="firecracker", token="t", applied=True,
+        extra={
+            "pid": 44405, "popen": fake_popen, "sandbox_id": "sb-r5",
+            "api_sock": "/tmp/gludd-firecracker-toctou.sock",
+            "vsock_uds": "/tmp/x.vsock",
+        },
+    )
+    with mock.patch(
+        "general_ludd.security.sandboxes.vm.firecracker_backend.os.path.exists",
+        return_value=False,
+    ), mock.patch(
+        "general_ludd.security.sandboxes.vm.firecracker_backend._firecracker_put",
+        return_value={},
+    ) as put_mock:
+        FirecrackerBackend.release(handle)
+
+    put_mock.assert_called_once_with(
+        "/tmp/gludd-firecracker-toctou.sock",
+        "/actions",
+        {"action_type": "InstanceSendCtrlAltDel"},
+    )
 
 
 def test_release_terminates_popen_when_ctrlaltdel_unavailable(

@@ -32,6 +32,7 @@ from general_ludd.security.ssrf import is_url_blocked
 logger = logging.getLogger(__name__)
 
 Transport = Callable[[str, str, Mapping[str, str], float], "tuple[int, bytes]"]
+HttpGet = Callable[[str, dict[str, str]], "tuple[int, object]"]
 
 DEFAULT_BASE_URL = "https://api.travis-ci.com"
 TRAVIS_API_VERSION = "3"
@@ -107,20 +108,51 @@ def _httpx_transport(method: str, url: str, headers: Mapping[str, str], timeout:
     return resp.status_code, resp.content
 
 
+def _adapt_http_get(http_get: HttpGet) -> Transport:
+    """Adapt the generated workflow's compact GET callback."""
+
+    def transport(
+        method: str,
+        url: str,
+        headers: Mapping[str, str],
+        _timeout: float,
+    ) -> tuple[int, bytes]:
+        if method != "GET":
+            raise ValueError(f"http_get cannot perform {method} requests")
+        status, body = http_get(url, dict(headers))
+        if isinstance(body, bytes):
+            encoded = body
+        elif isinstance(body, str):
+            encoded = body.encode("utf-8")
+        else:
+            encoded = json.dumps(body).encode("utf-8")
+        return status, encoded
+
+    return transport
+
+
 class TravisSource:
     """Normalizes Travis CI builds (API v3) into gludd pipeline events."""
 
     KIND = "pipeline"
 
-    def __init__(self, config: Mapping[str, object], transport: Transport | None = None) -> None:
+    def __init__(
+        self,
+        config: Mapping[str, object],
+        transport: Transport | None = None,
+        *,
+        http_get: HttpGet | None = None,
+    ) -> None:
+        if transport is not None and http_get is not None:
+            raise ValueError("transport and http_get are mutually exclusive")
         self._config = dict(config)
         self.name = str(self._config.get("name", "travis"))
         self.base_url = _guard_base_url(str(self._config.get("base_url", DEFAULT_BASE_URL)))
-        self.slug = str(self._config.get("slug", ""))
+        self.slug = str(self._config.get("slug") or self._config.get("repository", ""))
         self.timeout = float(cast(float | int | str | bool, self._config.get("timeout", 10.0)))
         self._token_env = str(self._config.get("token_env", "TRAVIS_TOKEN"))
         self._token = os.environ.get(self._token_env, "")
-        self._transport: Transport = transport or _httpx_transport
+        self._transport: Transport = transport or (_adapt_http_get(http_get) if http_get else _httpx_transport)
 
     # -- internals ---------------------------------------------------------
     def _headers(self) -> dict[str, str]:

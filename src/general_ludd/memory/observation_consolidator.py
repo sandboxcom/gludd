@@ -17,6 +17,7 @@ import threading
 import time
 from collections import defaultdict
 from collections.abc import Sequence
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -115,6 +116,9 @@ class ObservationConsolidator:
         existing: Observation,
         new_facts: Sequence[MemoryFact],
     ) -> Observation:
+        if not new_facts:
+            return deepcopy(existing)
+
         now = time.time()
         recalculated = Observation(
             observation_id=existing.observation_id,
@@ -224,28 +228,77 @@ class ObservationConsolidator:
     def _categorize_facts(
         self, subject: str, facts: list[MemoryFact]
     ) -> tuple[list[MemoryFact], list[MemoryFact]]:
+        del subject
         if len(facts) <= 1:
             return list(facts), []
 
-        cluster_k = max(2, min(len(facts) // 3, 5))
-        clusters: list[list[MemoryFact]] = _agglomerative_cluster(
-            facts, self.similarity_threshold, cluster_k
-        )
-
-        if not clusters:
-            return list(facts), []
-
-        largest = max(clusters, key=len)
+        targets_by_fact = {
+            id(fact): _negative_targets(fact.content)
+            for fact in facts
+        }
+        word_sets = {
+            id(fact): set(_normalize(fact.content).split())
+            for fact in facts
+        }
+        supporting: list[MemoryFact] = []
         contradictory: list[MemoryFact] = []
-        seen = set(id(f) for f in largest)
-        for cluster in clusters:
-            if cluster is not largest:
-                for fact in cluster:
-                    if id(fact) not in seen:
-                        contradictory.append(fact)
-                        seen.add(id(fact))
+        for fact in facts:
+            targets = targets_by_fact[id(fact)]
+            contradicts_other = any(
+                target in word_sets[id(other)]
+                and target not in targets_by_fact[id(other)]
+                for target in targets
+                for other in facts
+                if other is not fact
+            )
+            if contradicts_other:
+                contradictory.append(fact)
+            else:
+                supporting.append(fact)
 
-        return largest, contradictory
+        if contradictory:
+            if not supporting:
+                return list(facts), []
+            return supporting, contradictory
+
+        # A later state-changing or preference claim supersedes different
+        # choices in the same scope.  Explicit transitions such as "switched
+        # to Vue" and exclusive preferences such as "prefers Angular" are
+        # otherwise all positive sentences, so negative-word matching alone
+        # cannot identify the displaced claims.
+        claims = [
+            (index, fact, _choice_claim(fact.content))
+            for index, fact in enumerate(facts)
+        ]
+        decisive = [
+            (index, fact, claim)
+            for index, fact, claim in claims
+            if claim is not None and claim[2]
+        ]
+        if decisive:
+            _, anchor_fact, anchor_claim = max(
+                decisive,
+                key=lambda item: (item[1].timestamp, item[0]),
+            )
+            anchor_scope, anchor_target, _ = anchor_claim
+            displaced = [
+                fact
+                for _, fact, claim in claims
+                if (
+                    fact is not anchor_fact
+                    and claim is not None
+                    and claim[0] == anchor_scope
+                    and claim[1] != anchor_target
+                )
+            ]
+            if displaced:
+                displaced_ids = {id(fact) for fact in displaced}
+                supporting = [
+                    fact for fact in facts if id(fact) not in displaced_ids
+                ]
+                return supporting, displaced
+
+        return list(facts), []
 
     def _build_observation(
         self,
@@ -331,55 +384,76 @@ class ObservationStore:
 
     def put(self, observation: Observation) -> None:
         with self._lock:
-            self._observations[observation.observation_id] = observation
-            self._persist()
+            previous = self._observations.copy()
+            self._observations[observation.observation_id] = deepcopy(observation)
+            try:
+                self._persist()
+            except BaseException:
+                self._observations = previous
+                raise
 
     def put_all(self, observations: list[Observation]) -> None:
         with self._lock:
+            previous = self._observations.copy()
             for obs in observations:
-                self._observations[obs.observation_id] = obs
-            self._persist()
+                self._observations[obs.observation_id] = deepcopy(obs)
+            try:
+                self._persist()
+            except BaseException:
+                self._observations = previous
+                raise
 
     def get(self, observation_id: str) -> Observation | None:
         with self._lock:
-            return self._observations.get(observation_id)
+            observation = self._observations.get(observation_id)
+            return deepcopy(observation)
 
     # ---------------------------------------------------------------- query
 
     def get_by_subject(self, subject: str) -> list[Observation]:
         with self._lock:
-            return [o for o in self._observations.values() if o.subject == subject]
+            return [deepcopy(o) for o in self._observations.values() if o.subject == subject]
 
     def get_fresh(self) -> list[Observation]:
         with self._lock:
-            return [o for o in self._observations.values() if not o.stale]
+            return [deepcopy(o) for o in self._observations.values() if not o.stale]
 
     def get_stale(self) -> list[Observation]:
         with self._lock:
-            return [o for o in self._observations.values() if o.stale]
+            return [deepcopy(o) for o in self._observations.values() if o.stale]
 
     def get_above_confidence(self, threshold: float) -> list[Observation]:
         with self._lock:
-            return [o for o in self._observations.values() if o.confidence >= threshold]
+            return [deepcopy(o) for o in self._observations.values() if o.confidence >= threshold]
 
     def list_all(self) -> list[Observation]:
         with self._lock:
-            return list(self._observations.values())
+            return [deepcopy(o) for o in self._observations.values()]
 
     # ---------------------------------------------------------------- mutate
 
     def delete(self, observation_id: str) -> bool:
         with self._lock:
-            existed = observation_id in self._observations
+            previous = self._observations.copy()
+            existed = observation_id in previous
             self._observations.pop(observation_id, None)
             if existed:
-                self._persist()
+                try:
+                    self._persist()
+                except BaseException:
+                    self._observations = previous
+                    raise
             return existed
 
     def clear(self) -> None:
         with self._lock:
+            previous = self._observations.copy()
             self._observations.clear()
-            self._persist()
+            try:
+                self._persist()
+            except BaseException:
+                self._observations = previous
+                raise
 
     # ---------------------------------------------------------------- persistence
 
@@ -438,7 +512,10 @@ class ObservationStore:
                 "stale": obs.stale,
                 "contradictions": obs.contradictions,
             }
-        tmp = self._path + ".tmp"
+        tmp = (
+            f"{self._path}.tmp.{os.getpid()}."
+            f"{threading.get_ident()}"
+        )
         with open(tmp, "w") as fh:
             json.dump(out, fh, indent=2, default=str)
         os.replace(tmp, self._path)
@@ -461,22 +538,111 @@ def _bigrams(text: str) -> set[tuple[str, str]]:
     return set(itertools.pairwise(words))
 
 
+_NEGATIVE_TARGET_RE = re.compile(
+    r"\b(?:"
+    r"hates?|dislikes?|avoids?|rejects?|opposes?|forbids?|"
+    r"stopped\s+using|no\s+longer\s+(?:uses?|likes?|prefers?)|"
+    r"(?:does\s+not|doesn't|never)\s+(?:uses?|likes?|prefers?)"
+    r")\s+(?:a|an|the|any)?\s*([A-Za-z0-9_+#.-]+)",
+    re.IGNORECASE,
+)
+
+
+_CHOICE_PATTERNS: tuple[tuple[re.Pattern[str], bool], ...] = (
+    (
+        re.compile(
+            r"\b(?:switched|moved|migrated)\s+to\s+"
+            r"(?:a|an|the)?\s*([A-Za-z0-9_+#.-]+)",
+            re.IGNORECASE,
+        ),
+        True,
+    ),
+    (
+        re.compile(
+            r"\breplaced\s+[A-Za-z0-9_+#.-]+\s+with\s+"
+            r"(?:a|an|the)?\s*([A-Za-z0-9_+#.-]+)",
+            re.IGNORECASE,
+        ),
+        True,
+    ),
+    (
+        re.compile(
+            r"\bprefers?\s+(?:a|an|the)?\s*([A-Za-z0-9_+#.-]+)",
+            re.IGNORECASE,
+        ),
+        True,
+    ),
+    (
+        re.compile(
+            r"\b(?:uses?|chooses?|selects?|adopts?|picks?)\s+"
+            r"(?:a|an|the)?\s*([A-Za-z0-9_+#.-]+)",
+            re.IGNORECASE,
+        ),
+        False,
+    ),
+)
+
+_CHOICE_SCOPES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("frontend", re.compile(r"\b(?:front\s*end|frontend|ui|web)\b")),
+    ("backend", re.compile(r"\b(?:back\s*end|backend|server(?:-side)?)\b")),
+    ("testing", re.compile(r"\b(?:test|tests|testing|unit\s+test)\b")),
+    ("database", re.compile(r"\b(?:database|datastore|storage)\b")),
+    ("deployment", re.compile(r"\b(?:deploy|deployment|production)\b")),
+)
+
+
+def _negative_targets(content: str) -> set[str]:
+    return {
+        normalized
+        for match in _NEGATIVE_TARGET_RE.finditer(content)
+        if (normalized := _normalize(match.group(1)).strip())
+    }
+
+
+def _choice_claim(content: str) -> tuple[str, str, bool] | None:
+    """Return ``(scope, target, decisive)`` for a technology-choice claim."""
+    normalized_content = _normalize(content)
+    scope = next(
+        (
+            scope_name
+            for scope_name, scope_pattern in _CHOICE_SCOPES
+            if scope_pattern.search(normalized_content)
+        ),
+        "general",
+    )
+    for pattern, decisive in _CHOICE_PATTERNS:
+        match = pattern.search(content)
+        if match is None:
+            continue
+        target = _normalize(match.group(1)).strip()
+        if target:
+            return scope, target, decisive
+    return None
+
+
 def _extract_names(content: str) -> list[str]:
     names: list[str] = []
-    for match in re.finditer(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b", content):
+    name_pattern = r"\b([A-Z][A-Za-z0-9_]*(?:\s+[A-Z][A-Za-z0-9_]*)?)\b"
+    for match in re.finditer(name_pattern, content):
         candidate = match.group(1).strip()
-        if candidate.lower() not in _COMMON_NOUNS:
-            names.append(candidate)
+        meaningful_words = [
+            word
+            for word in candidate.split()
+            if word.casefold() not in _COMMON_NOUNS
+        ]
+        if meaningful_words:
+            names.append(" ".join(meaningful_words))
     return names
 
 
-_COMMON_NOUNS: frozenset[str] = frozenset({
+_COMMON_NOUNS: frozenset[str] = frozenset(word.casefold() for word in {
     "I", "We", "He", "She", "They", "It", "This", "That", "The",
     "A", "An", "And", "Or", "But", "Not", "Is", "Are", "Was", "Were",
     "Has", "Have", "Do", "Does", "Will", "Would", "Can", "Could",
     "Should", "May", "Might", "All", "Any", "Each", "Every", "Some",
     "No", "Yes", "More", "Most", "Other", "Only", "Just", "New",
     "Good", "Bad", "High", "Low", "Big", "Small", "First", "Last",
+    "Python",
 })
 
 

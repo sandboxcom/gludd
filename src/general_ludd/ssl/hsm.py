@@ -41,6 +41,10 @@ class _MockHSMSession:
     def closed(self) -> bool:
         return self._closed
 
+    def _ensure_open(self) -> None:
+        if self._closed:
+            raise RuntimeError("HSM session is closed")
+
     def _load_preloaded_keys(self) -> None:
         preloaded = [
             HSMKey(
@@ -72,9 +76,11 @@ class _MockHSMSession:
             self._keys[key.key_id] = key
 
     def list_keys(self) -> list[HSMKey]:
+        self._ensure_open()
         return list(self._keys.values())
 
     def sign(self, key_id: str, data: bytes, mechanism: str = "SHA256-RSA-PKCS") -> bytes:
+        self._ensure_open()
         if key_id not in self._keys:
             raise KeyError(f"Key {key_id!r} not found")
         key = self._keys[key_id]
@@ -111,6 +117,7 @@ def sign_with_hsm_key(
 def import_key(session: HSMSession, key_pem: bytes, label: str) -> HSMKey | None:
     if not isinstance(session, _MockHSMSession):
         return None
+    session._ensure_open()
     key_id = f"imported-{label}"
     key = HSMKey(
         key_id=key_id,

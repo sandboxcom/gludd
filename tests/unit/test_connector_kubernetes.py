@@ -199,6 +199,7 @@ def test_missing_token_env_is_error_record_not_raise(monkeypatch: pytest.MonkeyP
     assert len(recs) == 1
     assert recs[0]["level_or_status"] == "error"
     assert "token" in recs[0]["message"].lower()
+    assert TOKEN_ENV not in recs[0]["message"]
 
 
 # --------------------------------------------------------------------------- #

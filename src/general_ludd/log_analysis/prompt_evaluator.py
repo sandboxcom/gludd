@@ -6,13 +6,25 @@ from typing import Any
 
 
 def parse_conversation_log(log_path: str | Path) -> list[dict[str, Any]]:
-    path = Path(log_path)
-    if path.is_file():
-        raw = path.read_text(encoding="utf-8")
-    elif path.exists() or "\n" not in str(log_path):
-        return []
+    raw_value = str(log_path)
+    is_inline = isinstance(log_path, str) and (
+        "\n" in raw_value
+        or re.search(r"<(?:user|assistant|system)>", raw_value, re.IGNORECASE)
+        is not None
+        or re.match(
+            r"^(?:User|Assistant|System|Human|AI)\s*[:>]",
+            raw_value,
+            re.IGNORECASE,
+        )
+        is not None
+    )
+    if is_inline:
+        raw = raw_value
     else:
-        raw = str(log_path)
+        path = Path(log_path)
+        if not path.is_file():
+            return []
+        raw = path.read_text(encoding="utf-8")
     entries: list[dict[str, Any]] = []
     role_pattern = re.compile(
         r"<(user|assistant|system)>(.*?)</\1>",

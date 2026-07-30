@@ -15,10 +15,11 @@ from typing import Any
 
 __ROLE_DIR = Path(__file__).resolve().parent.parent
 _PLUGIN_ROOT = __ROLE_DIR.parent.parent / "plugins"
-if str(_PLUGIN_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PLUGIN_ROOT))
+_MODULE_UTILS = _PLUGIN_ROOT / "module_utils"
+if str(_MODULE_UTILS) not in sys.path:
+    sys.path.insert(0, str(_MODULE_UTILS))
 
-from module_utils.fuzzing_strategies import (
+from fuzzing_strategies import (
     AflPlusPlusConfig,
     CrashBucket,
     CrashInfo,

@@ -3,8 +3,8 @@
 Parses ``.github/workflows/build.yml`` and asserts that the ``linux``,
 ``macos``, and ``windows`` build jobs each:
 
-1. Run a checksum tool (``sha256sum`` / ``shasum -a 256`` / ``certutil
-   -hashfile ... SHA256``) that emits a ``.sha256`` sidecar file.
+1. Run a checksum tool (``sha256sum`` / ``shasum -a 256`` /
+   ``Get-FileHash -Algorithm SHA256``) that emits a ``.sha256`` sidecar file.
 2. Reference the built binary/archive by its ``gludd-*`` name in that
    checksum step (so we checksum the real artifact, not an anonymous file).
 3. Upload the ``.sha256`` file as a workflow artifact or stage it for
@@ -29,14 +29,14 @@ BUILD_YML = REPO_ROOT / ".github" / "workflows" / "build.yml"
 # Build jobs in scope for PK.11. ``termux`` is a linux-aarch64 variant that
 # follows the same pattern; it is included as an extra-data parametrize so the
 # test surface stays honest, but the task spec names linux/macos/windows.
-BUILD_JOBS: tuple[str, ...] = ("linux", "macos", "windows")
+BUILD_JOBS: tuple[str, ...] = ("linux", "macos", "windows", "termux")
 
-# Regex patterns matching the three platform-specific checksum tools.
+# Regex patterns matching the platform-specific checksum tools.
 # Each must produce a ``.sha256`` output file (asserted separately).
 CHECKSUM_TOOL_PATTERNS: tuple[str, ...] = (
     r"sha256sum\b",
     r"shasum\s+-a\s+256",
-    r"certutil\s+-hashfile\b.*\bSHA256\b",
+    r"Get-FileHash\b.*-Algorithm\s+SHA256\b",
 )
 
 # Pattern matching the built binary/archive name prefix. Every checksummed
@@ -96,7 +96,7 @@ def _combined_runs(workflow: dict[str, Any], name: str) -> str:
 
 
 class TestChecksumToolPresent:
-    """Each build job runs sha256sum / shasum / certutil for SHA-256."""
+    """Each build job runs a supported SHA-256 checksum tool."""
 
     @pytest.mark.parametrize("job_name", BUILD_JOBS, ids=lambda n: f"job:{n}")
     def test_has_checksum_tool(self, workflow: dict[str, Any], job_name: str) -> None:
@@ -105,7 +105,7 @@ class TestChecksumToolPresent:
 
         matched = [p for p in CHECKSUM_TOOL_PATTERNS if re.search(p, combined)]
         assert matched, (
-            f"build.yml job '{job_name}' has no sha256sum/shasum/certutil "
+            f"build.yml job '{job_name}' has no supported checksum "
             f"step producing a SHA-256 checksum. Expected one of: "
             f"{CHECKSUM_TOOL_PATTERNS}"
         )

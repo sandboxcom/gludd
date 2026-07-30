@@ -596,11 +596,11 @@ class TestEventLoop:
         reviewer.review_return.return_value = decision
 
         todo_repo = AsyncMock()
-        session = AsyncMock()
+        session = MagicMock()
         session.flush = AsyncMock()
         db_result = MagicMock()
         db_result.scalars.return_value.all.return_value = []
-        session.execute.return_value = db_result
+        session.execute = AsyncMock(return_value=db_result)
 
         loop = EventLoop(
             reviewer=reviewer,
@@ -755,13 +755,13 @@ class TestOneProjectPerTick:
             f"got {seen_projects} (W3.14 cross-project incoherence)"
         )
     @pytest.mark.asyncio
-    async def test_projectless_tick_claims_unscoped_todos(self):
+    async def test_projectless_tick_does_not_claim_unscoped_todos(self):
         loop, mocks = _make_loop(project_manager=None)
         mocks["todo_repo"].claim_runnable.return_value = []
 
         await loop._phase_claim_runnable_todos()
 
-        mocks["todo_repo"].claim_runnable.assert_awaited_once_with(limit=10, project_id=None)
+        mocks["todo_repo"].claim_runnable.assert_not_awaited()
         assert loop._tick_state["claimed_todos"] == []
 
 

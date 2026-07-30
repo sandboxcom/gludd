@@ -1,7 +1,7 @@
 """TDD for shared Terraform provider plugin cache (design doc §10 #3).
 
 Closes the long-standing "open question": third-party providers (aws, google,
-azurerm, kubernetes, vsphere, runpod, libvirt, qemu) were re-downloaded once per stack.
+azurerm, kubernetes, vsphere, runpod, libvirt) were re-downloaded once per stack.
 ``infra/terraform/versions.tf`` is now the canonical version contract and
 ``TF_PLUGIN_CACHE_DIR`` shares each downloaded provider binary across every
 stack. ``scripts/check_tf_provider_versions.py`` keeps the stacks in sync with
@@ -27,12 +27,35 @@ def test_versions_tf_is_the_canonical_contract() -> None:
         "hashicorp/google": "~> 5.0",
         "hashicorp/azurerm": "~> 3.0",
         "hashicorp/kubernetes": "~> 2.31",
-        "hashicorp/vsphere": "~> 2.8",
+        "vmware/vsphere": "~> 2.8",
         "runpod/runpod": "~> 1.0",
         "dmacvicar/libvirt": "~> 0.7",
-        "jvzq/qemu": "~> 0.1",
     }
     assert contract == expected
+
+
+def test_contract_has_no_retired_or_nonexistent_provider_addresses() -> None:
+    """Cache warming must not query moved or nonexistent registry addresses."""
+    provider_files = [
+        TF_ROOT / "versions.tf",
+        TF_ROOT / "policies" / "data.json",
+        TF_ROOT / "stacks" / "vsphere-llamacpp" / "main.tf",
+        TF_ROOT / "stacks" / "vsphere-vllm" / "main.tf",
+        REPO_ROOT / "src" / "general_ludd" / "infra" / "providers.py",
+        REPO_ROOT / "src" / "general_ludd" / "infra" / "terraform.py",
+        REPO_ROOT
+        / "collections"
+        / "ansible_collections"
+        / "general_ludd"
+        / "agent"
+        / "plugins"
+        / "terraform"
+        / "providers.yaml",
+    ]
+    for provider_file in provider_files:
+        text = provider_file.read_text(encoding="utf-8")
+        assert "hashicorp/vsphere" not in text, provider_file
+        assert "jvzq/qemu" not in text, provider_file
 
 
 def test_every_stack_provider_matches_the_contract() -> None:

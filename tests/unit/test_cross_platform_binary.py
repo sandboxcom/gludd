@@ -12,6 +12,8 @@ windows-x86_64).
 from __future__ import annotations
 
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -35,6 +37,103 @@ def build_yml_text() -> str:
 
 class TestSpecPlatformCompatibility:
     """Verify gludd.spec works on all target platforms."""
+
+    def test_version_command_imports_without_posix_terminal_modules(self) -> None:
+        """The Windows executable must not import POSIX-only TUI modules."""
+        script = """
+import builtins
+import os
+import sys
+
+real_import = builtins.__import__
+
+def reject_posix_terminal_modules(name, *args, **kwargs):
+    if name in {"termios", "tty"}:
+        raise ModuleNotFoundError(f"No module named {name!r}", name=name)
+    return real_import(name, *args, **kwargs)
+
+builtins.__import__ = reject_posix_terminal_modules
+if hasattr(os, "getuid"):
+    del os.getuid
+sys.argv = ["gludd", "version"]
+from general_ludd.cli import main
+main()
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert "0.1.0-beta.3" in result.stdout
+
+    def test_tui_reports_unsupported_platform_at_invocation_time(self) -> None:
+        """A Windows TUI request fails explicitly without breaking CLI import."""
+        script = """
+import builtins
+
+real_import = builtins.__import__
+
+def reject_posix_terminal_modules(name, *args, **kwargs):
+    if name in {"termios", "tty"}:
+        raise ModuleNotFoundError(f"No module named {name!r}", name=name)
+    return real_import(name, *args, **kwargs)
+
+builtins.__import__ = reject_posix_terminal_modules
+from general_ludd.tui.runner import run_tui
+
+try:
+    run_tui(None, None)
+except SystemExit as exc:
+    assert "requires POSIX termios/tty support" in str(exc)
+else:
+    raise AssertionError("run_tui unexpectedly started without POSIX terminal modules")
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stderr
+
+    def test_help_command_handles_windows_cp1252_console(self) -> None:
+        """Top-level help must render on the default Windows console encoding."""
+        script = """
+import builtins
+import io
+import os
+import sys
+
+real_import = builtins.__import__
+
+def reject_posix_terminal_modules(name, *args, **kwargs):
+    if name in {"termios", "tty"}:
+        raise ModuleNotFoundError(f"No module named {name!r}", name=name)
+    return real_import(name, *args, **kwargs)
+
+builtins.__import__ = reject_posix_terminal_modules
+if hasattr(os, "getuid"):
+    del os.getuid
+sys.stdout = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+sys.argv = ["gludd", "--help"]
+from general_ludd.cli import main
+main()
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stderr
 
     def test_no_windows_incompatible_paths(self, spec_text: str):
         """Spec doesn't use paths with colons or backslashes that break Windows.
@@ -102,7 +201,11 @@ class TestSpecPlatformCompatibility:
         build time. But ansible core (executor API) MUST NOT be excluded —
         gludd drives ansible.runner/core_runner/templating at runtime.
         """
-        excludes_match = re.search(r"excludes\s*=\s*\[([^\]]*)\]", spec_text, re.DOTALL)
+        excludes_match = re.search(
+            r"^[ ]{4}excludes\s*=\s*\[([^\]]*)\]",
+            spec_text,
+            re.MULTILINE | re.DOTALL,
+        )
         assert excludes_match, "Spec must have an excludes= list"
         excludes_body = excludes_match.group(1)
 
@@ -223,8 +326,8 @@ class TestBuildYmlPlatformCoverage:
         assert re.search(r"^  windows\s*:", build_yml_text, re.MULTILINE), (
             "build.yml must define a 'windows:' build job"
         )
-        assert "runs-on: windows-latest" in build_yml_text, (
-            "windows job must run on windows-latest"
+        assert "runs-on: windows-2022" in build_yml_text, (
+            "windows job must use the pinned windows-2022 release image"
         )
         # Windows job MUST set PYTHONUTF8=1 to work around the cp1252 locale
         # issue that breaks ansible.cli at pyinstaller build time.
@@ -300,23 +403,18 @@ class TestBuildYmlPlatformCoverage:
                 f"build.yml must upload an artifact named {platform_pattern!r}"
             )
 
-    def test_continue_on_error_is_true(self, build_yml_text: str):
-        """Build jobs have continue-on-error: true (non-blocking).
+    def test_build_jobs_fail_closed(self, build_yml_text: str):
+        """Required platform build jobs are release-blocking.
 
-        The platform build jobs are deliberately non-blocking so that a
-        regression on one platform does not sink the release for the others.
-        The release job has its own pre-publish gate that catches missing
-        artifacts.
+        A green release must prove every platform built and smoke-tested its
+        required artifact set.
         """
-        # For each platform build job, assert that continue-on-error: true
-        # appears in the job body. We split the YAML into per-job chunks at
-        # top-level two-space-indented keys.
         for job_name in self.EXPECTED_BUILD_JOBS:
             job_body = self._extract_job_body(build_yml_text, job_name)
             assert job_body is not None, f"could not extract job body for {job_name!r}"
-            assert re.search(r"continue-on-error\s*:\s*true", job_body), (
-                f"build job {job_name!r} must set continue-on-error: true "
-                f"so a single-platform regression does not sink the release"
+            assert not re.search(r"continue-on-error\s*:\s*true", job_body), (
+                f"build job {job_name!r} must fail closed so a platform "
+                "regression blocks release publication"
             )
 
     @staticmethod

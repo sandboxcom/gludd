@@ -449,8 +449,7 @@ general_ludd.agent.gludd_embed:
       under C(ansible_facts.gludd_embed).
     - Read-only and check-mode safe — it performs no writes (C(changed=False)).
     - Similarity is computed over the same embedding layer the adaptive router uses
-      (HashEmbedder by default; OpenAIEmbedder only when C(GLUDD_TASK_EMBEDDINGS_PROVIDER=openai)
-      and C(OPENAI_API_KEY) are set on the daemon).
+      (HashEmbedder offline, OpenAIEmbedder when C(OPENAI_API_KEY) is set on the daemon).
     module: gludd_embed
     options:
       corpus:
@@ -856,13 +855,24 @@ general_ludd.agent.gludd_git:
     module: gludd_git
     options:
       branch: {}
+      clone_allow_local: {}
+      clone_url: {}
+      files: {}
+      gate_cmd: {}
+      git_clone_timeout: {}
       message: {}
       op: {}
       path: {}
       remote: {}
+      sha: {}
       source: {}
+      state_reconciled_preserve_head_file: {}
+      state_reconciled_preserve_heads: {}
       strategy: {}
+      tag: {}
       target: {}
+      target_dir: {}
+      todo_id: {}
       worktree_path: {}
     short_description: Git control-plane ops (commit/branch/worktree/merge/push) via
       git_automation
@@ -903,8 +913,8 @@ general_ludd.agent.gludd_git:
     name: Push a branch to origin (bounded by the control-plane timeout)
   RETURN:
     branch:
-      description: Branch name (op=branch).
-      returned: when op=branch
+      description: Branch name (op=branch/current_branch).
+      returned: when op=branch/current_branch
       type: str
     result:
       description: Typed result dict for worktree/merge/push ops.
@@ -1759,6 +1769,115 @@ general_ludd.agent.gludd_model_call:
       returned: success
       type: dict
   module: gludd_model_call
+general_ludd.agent.gludd_observe:
+  DOCUMENTATION:
+    author:
+    - Agentic Harness
+    description:
+    - Discovers operator-configured sources through the Gludd daemon.
+    - Adapts those named sources to C(GluddObserve) without accepting arbitrary URLs.
+    - Runs query, timeline, incident-correlation, and topology workflows.
+    - Isolates a failing source so healthy source results still return.
+    - All operations are read-only and check-mode safe.
+    module: gludd_observe
+    options:
+      by:
+        default: trace_id
+        description: Canonical join key used for incident correlation.
+        type: str
+      correlate_by:
+        default: ''
+        description: Optional join key used to group C(query_sources) records.
+        type: str
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the Gludd daemon.
+        type: str
+      end:
+        description: Optional inclusive end time as epoch seconds.
+        type: float
+      kinds:
+        default: []
+        description: Connector kinds selected for query, topology, or incident correlation.
+        elements: str
+        type: list
+      op:
+        choices:
+        - query_sources
+        - correlate_incident
+        - timeline
+        - topology
+        description: Cross-source observability operation.
+        required: true
+        type: str
+      psk:
+        default: ''
+        description: Pre-shared key for daemon authentication.
+        no_log: true
+        type: str
+      role:
+        default: ''
+        description:
+        - Calling capability role, returned as result metadata.
+        - The default-deny policy must grant access to the daemon host.
+        type: str
+      seed:
+        default: {}
+        description: Normalized incident record for C(correlate_incident).
+        type: dict
+      spec:
+        default: {}
+        description: Bounded connector query specification.
+        type: dict
+      start:
+        description: Optional inclusive start time as epoch seconds.
+        type: float
+      timeout:
+        default: 30
+        description: Per-request timeout in seconds.
+        type: int
+      window:
+        default: []
+        description: Connector kinds selected for a timeline operation.
+        elements: str
+        type: list
+      window_s:
+        default: 300.0
+        description: Seconds before and after the incident seed to query.
+        type: float
+    short_description: Correlate telemetry across daemon-registered observability
+      sources
+  EXAMPLES:
+  - general_ludd.agent.gludd_observe:
+      end: 1750000300
+      op: timeline
+      spec:
+        service: checkout
+      start: 1750000000
+      window:
+      - logs
+      - traces
+    name: Build a bounded telemetry timeline
+    register: timeline
+  - general_ludd.agent.gludd_observe:
+      by: trace_id
+      kinds:
+      - logs
+      - traces
+      op: correlate_incident
+      seed: '{{ incident_seed }}'
+    name: Correlate an incident by trace ID
+  RETURN:
+    ansible_facts:
+      contains:
+        gludd_observe:
+          description: Records, groups, topology, isolated errors, and operation metadata.
+          returned: always
+          type: dict
+      description: Cross-source observability result.
+      returned: always
+      type: dict
+  module: gludd_observe
 general_ludd.agent.gludd_open_code:
   DOCUMENTATION:
     description:

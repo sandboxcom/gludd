@@ -30,6 +30,7 @@ import subprocess
 from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException
+from sqlalchemy.exc import SQLAlchemyError
 from starlette.requests import Request
 
 from general_ludd.db.repository import (
@@ -427,15 +428,24 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
         factory = _get_session_factory(app)
         if factory is not None:
-            async with factory() as session:
-                todo_repo = TodoRepository(session)
-                tr_repo = TaskReturnRepository(session)
-                msg_repo = AgentMessageRepository(session)
-                todos = await todo_repo.status_summary(project_id=scope)
-                work = await tr_repo.work_summary(project_id=scope)
-                history = await tr_repo.history_summary(project_id=scope)
-                unread = await msg_repo.unread_counts(project_id=scope)
-                messages = {"unread_by_recipient": unread, "total_unread": sum(unread.values())}
+            try:
+                async with factory() as session:
+                    todo_repo = TodoRepository(session)
+                    tr_repo = TaskReturnRepository(session)
+                    msg_repo = AgentMessageRepository(session)
+                    todos = await todo_repo.status_summary(project_id=scope)
+                    work = await tr_repo.work_summary(project_id=scope)
+                    history = await tr_repo.history_summary(project_id=scope)
+                    unread = await msg_repo.unread_counts(project_id=scope)
+                    messages = {
+                        "unread_by_recipient": unread,
+                        "total_unread": sum(unread.values()),
+                    }
+            except (SQLAlchemyError, ConnectionError, OSError, TimeoutError) as exc:
+                # A daemon can be healthy before its optional external database
+                # is reachable. Keep non-database facts available instead of
+                # turning a read-only status snapshot into HTTP 500.
+                logger.warning("facts database facets unavailable: %s", exc)
 
         dispatch_facet_fn = getattr(app.state, "_dispatch_facet", None)
         dispatch: dict[str, object] = (

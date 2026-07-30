@@ -222,7 +222,20 @@ def test_http_response_protocol():
 
     from general_ludd.issue_sources.gitlab_issues import HTTPResponse
     assert HTTPResponse.__class__.__name__ == "_ProtocolMeta"
-    assert hasattr(HTTPResponse, "__protocol_attrs__")
+    assert HTTPResponse._is_runtime_protocol is True
+
+
+def test_protocol_metadata_is_scoped_to_each_protocol_class():
+    from general_ludd.issue_sources.gitlab_issues import HTTPResponse, HTTPTransport
+
+    protocol_meta = type(HTTPResponse)
+    assert "__protocol_attrs__" not in protocol_meta.__dict__
+    assert "__protocol_attrs__" not in getattr(
+        HTTPResponse, "__protocol_attrs__", frozenset()
+    )
+    assert "__protocol_attrs__" not in getattr(
+        HTTPTransport, "__protocol_attrs__", frozenset()
+    )
 
 
 def test_http_response_satisfies():
@@ -237,7 +250,7 @@ def test_http_transport_protocol():
 
     from general_ludd.issue_sources.gitlab_issues import HTTPTransport
     assert HTTPTransport.__class__.__name__ == "_ProtocolMeta"
-    assert hasattr(HTTPTransport, "__protocol_attrs__")
+    assert HTTPTransport._is_runtime_protocol is True
 
 
 def test_http_transport_satisfies():

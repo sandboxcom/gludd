@@ -4,10 +4,14 @@ Covers PoolConfig validation, PoolStats, and VMSandboxPool basic operations.
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
 import pytest
 
 from general_ludd.security.permissions import PermissionSpec
 from general_ludd.security.sandboxes import SandboxTarget
+from general_ludd.security.sandboxes.vm.lifecycle import VMLifecycleState
 from general_ludd.security.sandboxes.vm.pool import (
     PoolConfig,
     PoolStats,
@@ -140,6 +144,53 @@ class TestVMSandboxPoolConstruction:
         assert stats.checked_out == 0
         assert stats.total == 0
         assert stats.as_dict()["max_size"] == 5
+
+    def test_active_pool_prewarms_scales_returns_reaps_and_shuts_down(self) -> None:
+        manager = MagicMock()
+        manager.instances = {}
+        sequence = iter(("vm-1", "vm-2", "vm-3"))
+
+        def boot(*_args):
+            instance_id = next(sequence)
+            instance = SimpleNamespace(
+                instance_id=instance_id,
+                state=VMLifecycleState.RUNNING,
+            )
+            manager.instances[instance_id] = instance
+            return instance
+
+        manager.boot.side_effect = boot
+        pool = VMSandboxPool(
+            backend_name="qemu",
+            spec=_make_spec(),
+            target=_make_target(),
+            config=PoolConfig(
+                min_idle=2,
+                max_size=3,
+                prewarm_count=2,
+                idle_timeout_seconds=0,
+            ),
+            manager=manager,
+        )
+
+        assert pool.prewarm() == 2
+        assert pool.prewarm() == 0
+        leased = pool.checkout()
+        assert leased == "vm-1"
+        assert pool.available_count() == 2
+        assert pool.checked_out_count() == 1
+
+        pool.return_instance(leased)
+        assert pool.available_count() == 3
+        assert pool.checked_out_count() == 0
+
+        assert pool.reap_idle() == 1
+        assert pool.available_count() == 2
+        assert manager.release.call_count == 1
+
+        pool.shutdown()
+        assert manager.release.call_count == 3
+        assert pool.available_count() == 0
 
     def test_prewarm_shutdown_pool_returns_zero(self) -> None:
         pool = VMSandboxPool(

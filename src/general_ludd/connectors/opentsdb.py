@@ -27,6 +27,7 @@ import base64
 import json
 import os
 import urllib.parse
+from collections.abc import Callable
 from typing import Protocol, cast, runtime_checkable
 
 import httpx
@@ -71,6 +72,45 @@ class _HttpxTransport:
         with httpx.Client(timeout=timeout, follow_redirects=False) as client:
             resp = client.request(method, url, headers=headers or {}, content=body)
         return resp.status_code, resp.text
+
+
+CallbackTransport = Callable[..., tuple[int, object]]
+
+
+class _CallbackTransport:
+    """Adapt the shared method/url callback to OpenTSDB's request protocol."""
+
+    def __init__(self, callback: CallbackTransport) -> None:
+        self._callback = callback
+
+    def request(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        body: bytes | None = None,
+        timeout: float = _DEFAULT_TIMEOUT,
+    ) -> tuple[int, str]:
+        json_body: object = None
+        if body is not None:
+            try:
+                json_body = json.loads(body.decode("utf-8"))
+            except (UnicodeDecodeError, ValueError):
+                json_body = body.decode("utf-8", errors="replace")
+        status, response_body = self._callback(
+            method,
+            url,
+            headers=headers,
+            json=json_body,
+            timeout=timeout,
+        )
+        text = (
+            response_body
+            if isinstance(response_body, str)
+            else json.dumps(response_body)
+        )
+        return int(status), text
 
 
 def _guard_base_url(base_url: str, allow_private: bool) -> str:
@@ -119,7 +159,11 @@ class OpenTsdbSource:
 
     KIND = "metrics"
 
-    def __init__(self, config: dict[str, object], transport: Transport | None = None) -> None:
+    def __init__(
+        self,
+        config: dict[str, object],
+        transport: Transport | CallbackTransport | None = None,
+    ) -> None:
         self.config: dict[str, object] = dict(config or {})
         self.name: str = str(self.config.get("name", "opentsdb"))
         self.allow_private: bool = bool(self.config.get("allow_private", False))
@@ -130,7 +174,12 @@ class OpenTsdbSource:
         self.default_aggregator: str = str(
             self.config.get("aggregator", _DEFAULT_AGGREGATOR)
         )
-        self._transport: Transport = transport or _HttpxTransport()
+        transport_input = transport if transport is not None else _HttpxTransport()
+        self._transport: Transport = (
+            transport_input
+            if isinstance(transport_input, Transport)
+            else _CallbackTransport(transport_input)
+        )
 
         # Optional HTTP Basic auth from env (never inline secrets).
         self._username: str | None = None

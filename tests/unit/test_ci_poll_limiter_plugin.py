@@ -62,6 +62,12 @@ class TestCiPollLimiterConfig:
         src = _src()
         assert "GLUDD_CI_POLL_MAX" in src, "Must allow env var override"
 
+    def test_plugin_and_stagnation_disable_switches_are_enforced(self):
+        src = _src()
+        assert 'process.env.GLUDD_NO_CI_POLL_ENFORCE !== "0"' in src
+        assert 'process.env.GLUDD_STAGNANT_ENFORCE !== "0"' in src
+        assert "if (!ENFORCE) return" in src
+
 
 class TestCiPollLimiterRegistered:
     def test_plugin_in_opencode_json(self):

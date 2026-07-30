@@ -1,19 +1,26 @@
-import os, sys, subprocess
+import subprocess
+import sys
+from pathlib import Path
 
-f = "TASKS.md"
-if not os.path.exist(f):
-    print("ERROR: TASK.md not found")
+task_path = Path("TASKS.md")
+if not task_path.is_file():
+    print("ERROR: TASKS.md not found")
     sys.exit(1)
 
-with open(f) as fh:
-    c = fh.read()
+c = task_path.read_text(encoding="utf-8")
 
 if "Current Session" not in c:
     print("ERROR: TASKS.md lacks 'Current Session' section")
     sys.exit(1)
 
 # Check that staged files have corresponding task entries
-r = subprocess.run(["git","diff","--cached","--name-only"], capture_output=True, text=True, timeout=5)
+r = subprocess.run(
+    ["git", "diff", "--cached", "--name-only"],
+    capture_output=True,
+    text=True,
+    timeout=5,
+    check=False,
+)
 staged = [s for s in r.stdout.strip().split("\n") if s]
 if staged:
     current_sec = c.split("## Current Session")[1]

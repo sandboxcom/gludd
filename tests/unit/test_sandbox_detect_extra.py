@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from types import SimpleNamespace
 from unittest import mock
 
 from general_ludd.security.sandboxes.detect import (
@@ -161,3 +162,35 @@ class TestDetectionHelpersReturnTypes:
 
     def test_appcontainer_present(self):
         assert isinstance(_appcontainer_present(), bool)
+
+    def test_landlock_available_with_positive_abi(self):
+        landlock = SimpleNamespace(
+            Ruleset=lambda: SimpleNamespace(abi=4),
+        )
+        with mock.patch("importlib.import_module", return_value=landlock):
+            assert _landlock_available() is True
+
+    def test_selinux_enabled_with_python_binding_and_toolchain(self):
+        selinux = SimpleNamespace(is_selinux_enabled=lambda: True)
+        with (
+            mock.patch("shutil.which", return_value="/usr/bin/checkmodule"),
+            mock.patch("importlib.import_module", return_value=selinux),
+        ):
+            assert _selinux_enabled() is True
+
+    def test_apparmor_enabled_when_tools_and_kernel_are_ready(self):
+        with (
+            mock.patch("shutil.which", return_value="/usr/bin/tool"),
+            mock.patch(
+                "subprocess.run",
+                return_value=SimpleNamespace(returncode=0),
+            ),
+        ):
+            assert _apparmor_enabled() is True
+
+    def test_appcontainer_present_on_windows_with_pywin32(self):
+        with (
+            mock.patch.object(sys, "platform", "win32"),
+            mock.patch("importlib.import_module", return_value=object()),
+        ):
+            assert _appcontainer_present() is True

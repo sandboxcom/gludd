@@ -13,8 +13,6 @@ import tempfile
 import time
 from pathlib import Path
 
-import pytest
-
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_STOP = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
 PLUGIN_MULTITASK = ROOT / ".opencode" / "plugin" / "enforce-multitask.ts"
@@ -34,6 +32,12 @@ _SAFE_BASE = {
     "GLUDD_DISENGAGE_PATH": _SAFE_DISENGAGE,
     "GLUDD_BLOCK_COUNTER_FILE": "",
     "GLUDD_BLOCK_REASON_FILE": "",
+    "GLUDD_WATCHDOG_CI_FILE": (
+        "/tmp/gludd-watchdog-ci-NOEXIST-behavior-test.json"
+    ),
+    "GLUDD_TODOWRITE_STATE": (
+        "/tmp/gludd-todowrite-NOEXIST-behavior-test.json"
+    ),
 }
 
 
@@ -50,6 +54,7 @@ def _run_plugin(
     try:
         env = os.environ.copy()
         env["OPENCODE_SUBAGENT"] = ""
+        env["GLUDD_PROJECT_ROOT"] = cwd or str(ROOT)
         env.update(_SAFE_BASE)
         if env_override:
             env.update(env_override)
@@ -244,26 +249,19 @@ console.log(JSON.stringify({{ result_text: result?.text || result }}))
 def test_consecutive_nondispatch_blocked_after_threshold(tmp_path):
     """Consecutive non-dispatch calls -> CONSECUTIVE GRINDING block.
 
-    BUG: enforce-multitask.ts fires UNDER-FLOOR HARD BLOCK (thisMessageDispatches=0 < 10)
-    on EVERY non-dispatch call. This preempts the consecutive-non-dispatch counter
-    from ever reaching its threshold. The grinding check at line 202 CANNOT fire
-    because the UNDER-FLOOR check at line 228 fires first on the very first call.
-
-    EXPECTED BEHAVIOR AFTER FIX: read x5 are allowed, edit (6th call) triggers
-    CONSECUTIVE GRINDING block with cc=5 >= threshold.
-
-    CURRENT ACTUAL: first non-dispatch call triggers UNDER-FLOOR HARD BLOCK with cc=0.
+    Read-only investigation is intentionally excluded from this counter, so
+    four writes build the streak and the fifth mutation must surface the
+    higher-priority grinding diagnosis instead of the under-floor fallback.
     """
     ws = _setup_pending_work_git_dir(tmp_path / "grind")
 
     code = f"""\
 const mod = await import('{PLUGIN_MULTITASK}')
 const plugin = await mod.default({{}})
-await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
-await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
-await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
-await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
-await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
 const r = await plugin['tool.execute.before']({{tool: 'edit'}}, undefined)
 console.log(JSON.stringify(r ?? {{allowed: true}}))
 """
@@ -284,18 +282,8 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
         f"Expected deny for consecutive grinding, got: {r}"
     )
     msg = r.get("message", "")
-    # BUG: UNDER-FLOOR fires first. After fix, should be CONSECUTIVE GRINDING.
-    # Assert current behavior to document the bug; xfail documents the expected fix.
-    if "UNDER-FLOOR HARD BLOCK" in msg and "CONSECUTIVE GRINDING" not in msg:
-        pytest.xfail(
-            "BUG: UNDER-FLOOR preempts CONSECUTIVE GRINDING. "
-            "See enforce-multitask.ts lines 228-245 (UNDER-FLOOR fires before "
-            "grinding counter can accumulate). Root-cause fix: UNDER-FLOOR "
-            "should not fire when consecutive-non-dispatch counter has started "
-            "accumulating within the window."
-        )
-    assert "CONSECUTIVE GRINDING" in msg, (
-        f"Expected CONSECUTIVE GRINDING block after fix. Got: {r}"
+    assert "CONSECUTIVE NON-DISPATCH STREAK" in msg, (
+        f"Expected consecutive non-dispatch block. Got: {r}"
     )
 
 
@@ -305,11 +293,8 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
 def test_zero_dispatch_streak_blocks_fourth_message(tmp_path):
     """3 zero-dispatch messages -> 4th non-dispatch call blocked with ZERO-DISPATCH STREAK.
 
-    BUG: Same preemption bug as test 5. The zeroStreak DOES accumulate across message
-    boundaries but the UNDER-FLOOR check fires on the first non-dispatch call of the
-    4th message, BEFORE the ZERO-DISPATCH STREAK check at line 247.
-
-    CURRENT ACTUAL: first non-dispatch call of 4th message triggers UNDER-FLOOR HARD BLOCK.
+    The zero-dispatch diagnosis must take precedence over the generic
+    under-floor fallback once the message streak has reached its threshold.
     """
     ws = _setup_pending_work_git_dir(tmp_path / "zerostreak")
 
@@ -342,13 +327,6 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
         f"Expected deny after zero-dispatch streak, got: {r}"
     )
     msg = r.get("message", "")
-    if "UNDER-FLOOR HARD BLOCK" in msg and "ZERO-DISPATCH STREAK" not in msg:
-        pytest.xfail(
-            "BUG: UNDER-FLOOR preempts ZERO-DISPATCH STREAK. "
-            "Same root cause as test 5 — UNDER-FLOOR check at line 228 fires "
-            "before ZERO-DISPATCH STREAK check at line 247. "
-            "zeroStreak DOES reach 2 but is never evaluated."
-        )
     assert "ZERO-DISPATCH STREAK" in msg, (
         f"Expected ZERO-DISPATCH STREAK after fix. Got: {r}"
     )

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import sys
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -11,6 +14,16 @@ from general_ludd.onboard import azure as azure_onboard
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AZURE_MODULE_DIR = REPO_ROOT / "infra" / "terraform" / "modules" / "onboard-iam-azure"
+AZURE_POLICY_PATH = REPO_ROOT / "config" / "infra" / "azure-iam-policy.json"
+OPA_IAM_TEST_PATH = REPO_ROOT / "config" / "opa" / "iam_policy_test.rego"
+ACCELERATOR_ROLE = "General Ludd Accelerator Deployer"
+REQUIRED_ACCELERATOR_ACTIONS = (
+    "Microsoft.Compute/skus/read",
+    "Microsoft.Compute/locations/usages/read",
+    "Microsoft.Compute/virtualMachines/extensions/read",
+    "Microsoft.Compute/virtualMachines/extensions/write",
+    "Microsoft.Compute/virtualMachines/extensions/delete",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -35,6 +48,13 @@ class TestCreateRoleInstructions:
         text = azure_onboard.create_role_instructions(subscription_id="00000000-0000-0000-0000-000000000000")
         assert "onboard-iam-azure" in text
 
+    def test_mentions_service_principal_object_id_and_accelerator_role(self) -> None:
+        text = azure_onboard.create_role_instructions(
+            subscription_id="00000000-0000-0000-0000-000000000000",
+        )
+        assert "operator_principal_id" in text
+        assert ACCELERATOR_ROLE in text
+
 
 # ---------------------------------------------------------------------------
 # token_acquisition_guide
@@ -54,6 +74,12 @@ class TestTokenAcquisitionGuide:
         text = azure_onboard.token_acquisition_guide()
         lowered = text.lower()
         assert "app registration" in lowered or "managed identity" in lowered
+
+    def test_service_principal_guide_assigns_accelerator_role(self) -> None:
+        text = azure_onboard.token_acquisition_guide()
+        assert "az ad sp show" in text
+        assert "operator_principal_id" in text
+        assert ACCELERATOR_ROLE in text
 
 
 # ---------------------------------------------------------------------------
@@ -116,6 +142,96 @@ class TestValidateTokenAndRole:
         assert info["missing"] == []
         assert set(info["roles_verified"]) == set(azure_onboard.EXPECTED_ROLES)
 
+    def test_requires_principal_id(self) -> None:
+        with pytest.raises(ValueError, match="principal_id is required"):
+            azure_onboard.validate_token_and_role(subscription_id="sub-1")
+
+
+class TestAzureSdkBoundaries:
+    @staticmethod
+    def _sdk_modules() -> tuple[dict[str, ModuleType], MagicMock, MagicMock]:
+        azure = ModuleType("azure")
+        identity = ModuleType("azure.identity")
+        mgmt = ModuleType("azure.mgmt")
+        compute = ModuleType("azure.mgmt.compute")
+        authorization = ModuleType("azure.mgmt.authorization")
+        credential = MagicMock(name="DefaultAzureCredential")
+        compute_client = MagicMock(name="ComputeManagementClient")
+        identity.DefaultAzureCredential = credential
+        compute.ComputeManagementClient = compute_client
+        return (
+            {
+                "azure": azure,
+                "azure.identity": identity,
+                "azure.mgmt": mgmt,
+                "azure.mgmt.compute": compute,
+                "azure.mgmt.authorization": authorization,
+            },
+            credential,
+            compute_client,
+        )
+
+    def test_build_client_uses_default_credential_and_subscription(self) -> None:
+        modules, credential, compute_client = self._sdk_modules()
+        with patch.dict(sys.modules, modules):
+            result = azure_onboard._build_azure_client(subscription_id="sub-1")
+
+        assert result is compute_client.return_value
+        compute_client.assert_called_once_with(
+            credential=credential.return_value,
+            subscription_id="sub-1",
+        )
+
+    def test_role_assignments_are_normalized(self) -> None:
+        modules, credential, _compute_client = self._sdk_modules()
+        auth_client_type = MagicMock(name="AuthorizationManagementClient")
+        modules["azure.mgmt.authorization"].AuthorizationManagementClient = (
+            auth_client_type
+        )
+        auth_client = auth_client_type.return_value
+        auth_client.role_assignments.list.return_value = [
+            SimpleNamespace(
+                principal_id="principal-1",
+                role_definition_id="/subscriptions/sub-1/roleDefinitions/role-1",
+            ),
+        ]
+
+        with (
+            patch.dict(sys.modules, modules),
+            patch.object(
+                azure_onboard,
+                "_resolve_role_definition_name",
+                return_value="General Ludd Accelerator Deployer",
+            ),
+        ):
+            result = azure_onboard._get_role_assignments("sub-1", "principal-1")
+
+        assert result == [{
+            "principal_id": "principal-1",
+            "role_definition_id": "/subscriptions/sub-1/roleDefinitions/role-1",
+            "role_definition_name": "General Ludd Accelerator Deployer",
+        }]
+        auth_client_type.assert_called_once_with(
+            credential=credential.return_value,
+            subscription_id="sub-1",
+        )
+        auth_client.role_assignments.list.assert_called_once_with(
+            filter="principalId eq 'principal-1'",
+        )
+
+    def test_role_definition_name_handles_success_empty_and_failure(self) -> None:
+        auth_client = MagicMock()
+        auth_client.role_definitions.get.return_value.role_name = "Accelerator"
+        role_id = "/subscriptions/sub-1/roleDefinitions/role-1"
+
+        assert (
+            azure_onboard._resolve_role_definition_name(auth_client, role_id)
+            == "Accelerator"
+        )
+        assert azure_onboard._resolve_role_definition_name(auth_client, "") == ""
+        auth_client.role_definitions.get.side_effect = RuntimeError("unavailable")
+        assert azure_onboard._resolve_role_definition_name(auth_client, role_id) == ""
+
 
 # ---------------------------------------------------------------------------
 # Terraform module — least-privilege IAM policy
@@ -127,14 +243,40 @@ class TestTerraformModuleLeastPriv:
         for name in ("main.tf", "variables.tf", "outputs.tf"):
             assert (AZURE_MODULE_DIR / name).is_file(), f"Missing {name}"
 
-    def test_iam_policy_uses_vm_contributor_role(self) -> None:
+    def test_iam_policy_uses_custom_accelerator_role(self) -> None:
         main_tf = (AZURE_MODULE_DIR / "main.tf").read_text()
-        assert "Virtual Machine Contributor" in main_tf
-        assert "Managed Identity Operator" in main_tf
+        assert 'resource "azurerm_role_definition" "accelerator_deployer"' in main_tf
+        assert ACCELERATOR_ROLE in main_tf
 
         # Forbidden broad roles.
-        for bad in ('"Contributor"', '"Owner"'):
+        for bad in ('role_definition_name = "Contributor"', 'role_definition_name = "Owner"'):
             assert bad not in main_tf, f"Forbidden broad built-in role {bad} present in main.tf"
+
+    def test_policy_and_module_cover_preflight_and_gpu_driver_extensions(self) -> None:
+        main_tf = (AZURE_MODULE_DIR / "main.tf").read_text()
+        policy = json.loads(AZURE_POLICY_PATH.read_text())
+
+        assert policy["Name"] == ACCELERATOR_ROLE
+        for action in REQUIRED_ACCELERATOR_ACTIONS:
+            assert action in main_tf
+            assert action in policy["Actions"]
+
+    def test_role_can_target_service_principal_or_managed_identity(self) -> None:
+        main_tf = (AZURE_MODULE_DIR / "main.tf").read_text()
+        variables_tf = (AZURE_MODULE_DIR / "variables.tf").read_text()
+
+        assert 'variable "operator_principal_id"' in variables_tf
+        assert "var.operator_principal_id" in main_tf
+        assert "azurerm_user_assigned_identity.gludd_operator.principal_id" in main_tf
+
+    def test_opa_contract_checks_accelerator_role_subscription_scope(self) -> None:
+        rego_tests = OPA_IAM_TEST_PATH.read_text()
+        makefile = (REPO_ROOT / "Makefile").read_text()
+
+        assert "test_azure_accelerator_role_subscription_scope_passes" in rego_tests
+        assert ACCELERATOR_ROLE in rego_tests
+        assert '"/subscriptions/sub-123"' in rego_tests
+        assert "test-opa-policies:" in makefile
 
     def test_creates_user_assigned_identity(self) -> None:
         main_tf = (AZURE_MODULE_DIR / "main.tf").read_text()

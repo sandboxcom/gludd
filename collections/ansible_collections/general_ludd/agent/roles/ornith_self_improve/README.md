@@ -91,6 +91,24 @@ Per artifact improved, the role writes to `artifact_dir`:
 
 When no artifact meets the rejection threshold, it writes `skip.json`.
 
+## Molecule daemon isolation
+
+The end-to-end scenario owns mock port `8897`; it does not share the OpenBao
+backup scenario's port. Both scenarios run the shared cleanup before and after
+their work. Cleanup verifies that the pidfile points to this checkout's mock
+daemon and port, sends `SIGTERM` only to that owned process, waits for the port
+to close, and only then removes the pidfile. This prevents a health check from
+accepting an old daemon while the replacement process fails to bind.
+
+This follows two long-lived user reports: the
+[macOS `SimpleHTTPServer` address-in-use discussion](https://stackoverflow.com/questions/19071512/socket-error-errno-48-address-already-in-use)
+identifies a still-running prior server as the common cause and recommends
+either stopping that process or assigning another port; the
+[Python TCPServer restart discussion](https://stackoverflow.com/questions/15260558/python-tcpserver-address-already-in-use-but-i-close-the-server-and-i-use-allow)
+shows that port reuse can still be timing-sensitive after clients have
+connected. Gludd therefore uses both distinct scenario namespaces and
+observable, ownership-checked shutdown instead of retrying the next request.
+
 ## See also
 
 - `docs/design/SYMBIOTIC_AGENT_INTEGRATION.md` §5.7 (self-improvement loop)

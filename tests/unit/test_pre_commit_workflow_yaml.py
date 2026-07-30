@@ -100,14 +100,12 @@ class TestHookScriptProperties:
         assert HOOK_PATH.exists(), f"hook script missing at {HOOK_PATH}"
 
     def test_hook_script_is_executable(self):
-        if not HOOK_PATH.exists():
-            pytest.skip("hook script missing")
+        assert HOOK_PATH.is_file(), f"hook script missing at {HOOK_PATH}"
         mode = HOOK_PATH.stat().st_mode
         assert mode & 0o111, f"hook script is not executable: {oct(mode)}"
 
     def test_hook_script_has_shebang(self):
-        if not HOOK_PATH.exists():
-            pytest.skip("hook script missing")
+        assert HOOK_PATH.is_file(), f"hook script missing at {HOOK_PATH}"
         first = HOOK_PATH.read_text(encoding="utf-8").splitlines()[0]
         assert first.startswith("#!"), f"missing shebang: {first!r}"
 
@@ -152,8 +150,7 @@ class TestHookBehaviorOnValidYaml:
     def test_exits_zero_on_canonical_build_yml(self):
         """The real .github/workflows/build.yml MUST pass the hook."""
         canonical = ROOT / ".github" / "workflows" / "build.yml"
-        if not canonical.exists():
-            pytest.skip("canonical build.yml missing")
+        assert canonical.is_file(), "Required canonical build.yml is missing"
         result = _run_hook(canonical)
         assert result.returncode == 0, (
             f"canonical build.yml failed the hook: rc={result.returncode}, "

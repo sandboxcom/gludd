@@ -22,6 +22,16 @@ import pytest
 ROOT = Path(__file__).parent.parent.parent
 SCRIPT_PATH = ROOT / "scripts" / "agent_watchdog.py"
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
+PLUGIN_IMPL_PATH = (
+    ROOT / ".opencode" / "plugin" / "impl" / "enforce_stop_impl.ts"
+)
+
+
+def _plugin_source() -> str:
+    """Return the deployed proxy and its implementation as one source view."""
+    assert PLUGIN_PATH.exists()
+    assert PLUGIN_IMPL_PATH.exists()
+    return PLUGIN_PATH.read_text() + "\n" + PLUGIN_IMPL_PATH.read_text()
 
 
 def _load_module():
@@ -290,7 +300,7 @@ def test_check_and_reset_does_not_write_directive_when_no_stop(tmp_path):
 
 
 def test_plugin_reads_continue_directive():
-    src = PLUGIN_PATH.read_text()
+    src = _plugin_source()
     assert ("/tmp/gludd-force-dispatch.json" in src or
             "FORCE_DISPATCH_FILE" in src), (
         "enforce-stop.ts must reference the force-dispatch file"
@@ -298,7 +308,7 @@ def test_plugin_reads_continue_directive():
 
 
 def test_plugin_has_freshness_check():
-    src = PLUGIN_PATH.read_text()
+    src = _plugin_source()
     assert "120_000" in src or "120000" in src, (
         "enforce-stop.ts must check freshness (<120s)"
     )
@@ -308,7 +318,7 @@ def test_plugin_has_freshness_check():
 
 
 def test_plugin_prepends_continue_directive():
-    src = PLUGIN_PATH.read_text()
+    src = _plugin_source()
     assert "FORCE_DISPATCH" in src or "MANDATORY" in src, (
         "enforce-stop.ts must prepend a FORCE_DISPATCH directive to the system prompt"
     )
@@ -318,21 +328,21 @@ def test_plugin_prepends_continue_directive():
 
 
 def test_plugin_directive_mentions_required_tool():
-    src = PLUGIN_PATH.read_text()
+    src = _plugin_source()
     assert "Task tool" in src or "dispatch a subagent" in src, (
         "enforce-stop.ts must instruct dispatch via Task tool"
     )
 
 
 def test_plugin_directive_mentions_pending_items():
-    src = PLUGIN_PATH.read_text()
+    src = _plugin_source()
     assert "pending_items" in src or "PENDING WORK EXISTS" in src, (
         "enforce-stop.ts must surface pending work items"
     )
 
 
 def test_plugin_directive_has_action_check():
-    src = PLUGIN_PATH.read_text()
+    src = _plugin_source()
     assert "active:" in src or "consecutiveBlocks," in src, (
         "enforce-stop.ts must write force-dispatch data with action fields"
     )
@@ -342,7 +352,7 @@ def test_plugin_directive_has_action_check():
 
 
 def test_watchdog_and_plugin_use_same_filename():
-    src = PLUGIN_PATH.read_text()
+    src = _plugin_source()
     # Plugin writes FORCE_DISPATCH_FILE; watchdog reads it
     assert ("/tmp/gludd-force-dispatch.json" in src or
             "FORCE_DISPATCH_FILE" in src), (

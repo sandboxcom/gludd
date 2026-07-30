@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Callable, Mapping
+from typing import cast
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._protocols import HttpResponse
@@ -36,6 +37,47 @@ logger = logging.getLogger(__name__)
 
 # (method, url, headers, json_body, timeout) -> response with ``.status_code`` + ``.json()``.
 Transport = Callable[[str, str, Mapping[str, str], object, float], HttpResponse]
+HttpGet = Callable[..., HttpResponse | tuple[int, object]]
+
+
+class _CallbackResponse:
+    def __init__(self, status_code: int, body: object) -> None:
+        self.status_code = int(status_code)
+        self._body = body
+
+    @property
+    def text(self) -> str:
+        return self._body if isinstance(self._body, str) else str(self._body)
+
+    def json(self) -> object:
+        return self._body
+
+
+class _HttpGetAdapter:
+    """Adapt the shared keyword callback to Resource Graph's transport shape."""
+
+    def __init__(self, callback: HttpGet) -> None:
+        self._callback = callback
+
+    def __call__(
+        self,
+        method: str,
+        url: str,
+        headers: Mapping[str, str],
+        json_body: object,
+        timeout: float,
+    ) -> HttpResponse:
+        result = self._callback(
+            method,
+            url,
+            headers=dict(headers),
+            json=json_body,
+            timeout=timeout,
+        )
+        if isinstance(result, tuple):
+            status, body = result
+            return _CallbackResponse(status, body)
+        return result
 
 
 # --- literal-host SSRF block (NO DNS) -------------------------------------------------
@@ -102,13 +144,19 @@ class AzureResourceGraphSource:
     DEFAULT_BASE_URL = "https://management.azure.com"
     API_VERSION = "2021-03-01"
 
-    def __init__(self, config: dict[str, object]) -> None:
+    def __init__(
+        self,
+        config: dict[str, object],
+        http_get: HttpGet | None = None,
+    ) -> None:
         if not isinstance(config, dict):
             raise TypeError("config must be a dict")
 
         self.name: str = str(config.get("name", "azure-resource-graph"))
 
         subs: object = config.get("subscriptions", [])
+        if not subs and config.get("subscription_id"):
+            subs = [config["subscription_id"]]
         if isinstance(subs, str):
             subs = [subs]
         if not isinstance(subs, list):
@@ -128,11 +176,17 @@ class AzureResourceGraphSource:
         self._timeout: float = float(str(config.get("timeout", 30.0)))
 
         transport = config.get("transport")
-        if transport is None:
-            transport = _default_transport
-        if not callable(transport):
-            raise TypeError("config['transport'] must be callable")
-        self._transport: Transport = transport
+        self._transport: Transport
+        if http_get is not None and transport is not None:
+            raise ValueError("provide http_get or config['transport'], not both")
+        if http_get is not None:
+            self._transport = _HttpGetAdapter(http_get)
+        else:
+            if transport is None:
+                transport = _default_transport
+            if not callable(transport):
+                raise TypeError("config['transport'] must be callable")
+            self._transport = cast(Transport, transport)
 
     # -- internals ---------------------------------------------------------------------
 

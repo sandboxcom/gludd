@@ -69,17 +69,15 @@ def test_rejects_bad_scheme() -> None:
 # -- SSRF -------------------------------------------------------------------
 def test_ssrf_blocks_loopback_by_default() -> None:
     transport = FakeTransport({})
-    src = NomadSource({"base_url": "http://127.0.0.1:4646", "transport": transport})
     with pytest.raises(NomadSSRFError):
-        src.query({"type": "metrics"})
+        NomadSource({"base_url": "http://127.0.0.1:4646", "transport": transport})
     # The transport must never have been called.
     assert transport.calls == []
 
 
 def test_ssrf_blocks_private_literal_by_default() -> None:
-    src = NomadSource({"base_url": "http://10.0.0.5:4646", "transport": FakeTransport({})})
     with pytest.raises(NomadSSRFError):
-        src.query({"type": "metrics"})
+        NomadSource({"base_url": "http://10.0.0.5:4646", "transport": FakeTransport({})})
 
 
 def test_allow_private_opt_in_permits_internal_host() -> None:
@@ -99,11 +97,19 @@ def test_allow_private_opt_in_permits_internal_host() -> None:
     assert transport.calls  # transport WAS called this time
 
 
-def test_health_reports_ssrf_block() -> None:
-    src = NomadSource({"base_url": "http://192.168.1.10:4646", "transport": FakeTransport({})})
+def test_health_reports_ssrf_block_after_dns_rebind(monkeypatch: pytest.MonkeyPatch) -> None:
+    from general_ludd.connectors import nomad as nomad_mod
+
+    transport = FakeTransport({})
+    src = NomadSource(
+        {"base_url": PUBLIC_BASE, "transport": transport, "allow_private": True}
+    )
+    src._allow_private = False
+    monkeypatch.setattr(nomad_mod, "_host_is_private", lambda _host: True)
     h = src.health()
     assert h["ok"] is False
     assert "ssrf" in h["detail"]
+    assert transport.calls == []
 
 
 def test_health_ok_with_canned_transport() -> None:
@@ -286,9 +292,8 @@ def test_ssrf_blocks_cgnat_literal_without_allow_private() -> None:
     # _host_is_private (missing the `not is_global` flag) would NOT have
     # blocked it. resolved_host_is_blocked (via the canonical _ip_addr_is_blocked
     # flag set) closes this gap.
-    src = NomadSource({"base_url": "http://100.70.1.1:4646", "transport": FakeTransport({})})
     with pytest.raises(NomadSSRFError):
-        src.query({"type": "metrics"})
+        NomadSource({"base_url": "http://100.70.1.1:4646", "transport": FakeTransport({})})
 
 
 def test_ssrf_blocks_hostname_resolving_to_cgnat_address(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -300,11 +305,10 @@ def test_ssrf_blocks_hostname_resolving_to_cgnat_address(monkeypatch: pytest.Mon
     monkeypatch.setattr(ssrf_mod.socket, "getaddrinfo", _fake_getaddrinfo)
 
     transport = FakeTransport({})
-    src = NomadSource(
-        {"base_url": "http://internal-nomad.example.com:4646", "transport": transport}
-    )
     with pytest.raises(NomadSSRFError):
-        src.query({"type": "metrics"})
+        NomadSource(
+            {"base_url": "http://internal-nomad.example.com:4646", "transport": transport}
+        )
     assert transport.calls == []
 
 
@@ -317,11 +321,10 @@ def test_ssrf_blocks_unresolvable_hostname_fail_closed(monkeypatch: pytest.Monke
     monkeypatch.setattr(ssrf_mod.socket, "getaddrinfo", _boom)
 
     transport = FakeTransport({})
-    src = NomadSource(
-        {"base_url": "http://does-not-resolve.example.com:4646", "transport": transport}
-    )
     with pytest.raises(NomadSSRFError):
-        src.query({"type": "metrics"})
+        NomadSource(
+            {"base_url": "http://does-not-resolve.example.com:4646", "transport": transport}
+        )
     assert transport.calls == []
 
 

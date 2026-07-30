@@ -15,6 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-verified-claims.ts"
+PLUGIN_TEST_EXPORTS = ROOT / ".opencode" / "lib" / "plugin_test_exports.ts"
 
 _ts_counter = 0
 
@@ -85,7 +86,7 @@ try {{
 
 def test_shouldblock_done_without_evidence_blocked():
     code = f"""\
-const mod = await import('{PLUGIN_PATH}')
+const mod = await import('{PLUGIN_TEST_EXPORTS}')
 console.log(JSON.stringify({{shouldBlock: mod.shouldBlock("commit landed")}}))
 """
     result = _run_plugin(code)
@@ -95,7 +96,7 @@ console.log(JSON.stringify({{shouldBlock: mod.shouldBlock("commit landed")}}))
 
 def test_shouldblock_done_with_commit_hash_allowed():
     code = f"""\
-const mod = await import('{PLUGIN_PATH}')
+const mod = await import('{PLUGIN_TEST_EXPORTS}')
 console.log(JSON.stringify({{shouldBlock: mod.shouldBlock("commit landed abc1234")}}))
 """
     result = _run_plugin(code)
@@ -105,7 +106,7 @@ console.log(JSON.stringify({{shouldBlock: mod.shouldBlock("commit landed abc1234
 
 def test_shouldblock_done_with_verified_token_allowed():
     code = f"""\
-const mod = await import('{PLUGIN_PATH}')
+const mod = await import('{PLUGIN_TEST_EXPORTS}')
 console.log(JSON.stringify({{shouldBlock: mod.shouldBlock("pushed, VERIFIED master@abc1234")}}))
 """
     result = _run_plugin(code)
@@ -115,7 +116,7 @@ console.log(JSON.stringify({{shouldBlock: mod.shouldBlock("pushed, VERIFIED mast
 
 def test_shouldblock_done_with_test_count_allowed():
     code = f"""\
-const mod = await import('{PLUGIN_PATH}')
+const mod = await import('{PLUGIN_TEST_EXPORTS}')
 console.log(JSON.stringify({{shouldBlock: mod.shouldBlock("tests passing, 10 passed")}}))
 """
     result = _run_plugin(code)
@@ -125,7 +126,7 @@ console.log(JSON.stringify({{shouldBlock: mod.shouldBlock("tests passing, 10 pas
 
 def test_shouldblock_done_with_ci_green_allowed():
     code = f"""\
-const mod = await import('{PLUGIN_PATH}')
+const mod = await import('{PLUGIN_TEST_EXPORTS}')
 console.log(JSON.stringify({{shouldBlock: mod.shouldBlock("CI GREEN — change landed")}}))
 """
     result = _run_plugin(code)
@@ -135,7 +136,7 @@ console.log(JSON.stringify({{shouldBlock: mod.shouldBlock("CI GREEN — change l
 
 def test_shouldblock_done_with_gate_passed_allowed():
     code = f"""\
-const mod = await import('{PLUGIN_PATH}')
+const mod = await import('{PLUGIN_TEST_EXPORTS}')
 console.log(JSON.stringify({{shouldBlock: mod.shouldBlock("=== GATE: PASSED ===\\nfeature shipped")}}))
 """
     result = _run_plugin(code)
@@ -145,7 +146,7 @@ console.log(JSON.stringify({{shouldBlock: mod.shouldBlock("=== GATE: PASSED ===\
 
 def test_shouldblock_no_done_word_allowed():
     code = f"""\
-const mod = await import('{PLUGIN_PATH}')
+const mod = await import('{PLUGIN_TEST_EXPORTS}')
 console.log(JSON.stringify({{shouldBlock: mod.shouldBlock("continuing work on the fix")}}))
 """
     result = _run_plugin(code)
@@ -155,7 +156,7 @@ console.log(JSON.stringify({{shouldBlock: mod.shouldBlock("continuing work on th
 
 def test_shouldblock_passing_alone_blocked():
     code = f"""\
-const mod = await import('{PLUGIN_PATH}')
+const mod = await import('{PLUGIN_TEST_EXPORTS}')
 console.log(JSON.stringify({{shouldBlock: mod.shouldBlock("tests are passing")}}))
 """
     result = _run_plugin(code)
@@ -165,7 +166,7 @@ console.log(JSON.stringify({{shouldBlock: mod.shouldBlock("tests are passing")}}
 
 def test_shouldblock_working_as_state_claim_blocked():
     code = f"""\
-const mod = await import('{PLUGIN_PATH}')
+const mod = await import('{PLUGIN_TEST_EXPORTS}')
 console.log(JSON.stringify({{shouldBlock: mod.shouldBlock("it's working now")}}))
 """
     result = _run_plugin(code)
@@ -175,7 +176,7 @@ console.log(JSON.stringify({{shouldBlock: mod.shouldBlock("it's working now")}})
 
 def test_shouldblock_green_alone_blocked():
     code = f"""\
-const mod = await import('{PLUGIN_PATH}')
+const mod = await import('{PLUGIN_TEST_EXPORTS}')
 console.log(JSON.stringify({{shouldBlock: mod.shouldBlock("the gate is green")}}))
 """
     result = _run_plugin(code)
@@ -233,10 +234,10 @@ def test_env_var_disables_enforcement():
     )
 
 
-# ─── No text hook surface ────────────────────────────────────────────────────
+# ─── Coverage-claim text hook surface ────────────────────────────────────────
 
 
-def test_plugin_has_no_text_complete_hook():
+def test_plugin_has_experimental_text_complete_hook():
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
@@ -247,7 +248,7 @@ console.log(JSON.stringify({{
 """
     result = _run_plugin(code)
     assert result is not None
-    assert result["hasExperimentalTextComplete"] is False
+    assert result["hasExperimentalTextComplete"] is True
     assert result["hasTextComplete"] is False
 
 
@@ -256,7 +257,7 @@ console.log(JSON.stringify({{
 
 def test_shouldblock_empty_text_allowed():
     code = f"""\
-const mod = await import('{PLUGIN_PATH}')
+const mod = await import('{PLUGIN_TEST_EXPORTS}')
 console.log(JSON.stringify({{shouldBlock: mod.shouldBlock("")}}))
 """
     result = _run_plugin(code)
@@ -276,7 +277,7 @@ def test_tool_hook_empty_commit_message_allowed():
 
 def test_working_on_not_counted_as_done():
     code = f"""\
-const mod = await import('{PLUGIN_PATH}')
+const mod = await import('{PLUGIN_TEST_EXPORTS}')
 console.log(JSON.stringify({{shouldBlock: mod.shouldBlock("working on the fix now")}}))
 """
     result = _run_plugin(code)

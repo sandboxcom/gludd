@@ -5,7 +5,16 @@ const path = require("node:path");
 const vm = require("node:vm");
 const { spawnSync } = require("node:child_process");
 
-const PLUGIN_DIR = path.resolve(__dirname, "..", ".opencode", "plugin");
+const PLUGIN_DIR = path.resolve(
+  process.env.GLUDD_PLUGIN_DIR
+    || path.join(__dirname, "..", ".opencode", "plugin"),
+);
+const PLUGIN_TEST_EXPORTS = path.resolve(
+  PLUGIN_DIR,
+  "..",
+  "lib",
+  "plugin_test_exports.ts",
+);
 const OUT_DIR = "/tmp";
 const HOT_PREFIX = process.env.GLUDD_HOT_MODULE_PREFIX || path.join(OUT_DIR, "gludd-hot-");
 
@@ -16,16 +25,21 @@ const PLUGINS = [
   "enforce-branch-discipline",
   "enforce-deadline",
   "enforce-context",
+  "enforce-deliverable",
   "enforce-depth",
   "enforce-enhancement-ratio",
   "enforce-floor",
+  "enforce-floor-v2",
   "enforce-delegate",
   "enforce-make",
   "enforce-multitask",
+  "enforce-no-ci-poll",
   "enforce-no-suppressions",
   "enforce-no-wait",
+  "enforce-release-deadline",
   "enforce-session-start",
   "enforce-stop",
+  "enforce-task-tracking",
   "enforce-verified-claims",
   "enforce-clean-tree",
   "enforce-deletion-gate",
@@ -39,92 +53,104 @@ function tsToJs(content) {
   return require("./ts_to_js.js").tsToJs(content);
 }
 
-function extractDefaultImplMethods(content) {
-  const methods = {};
-
-  const implMatch = content.match(/defaultImpl\s*=\s*\{/);
-  if (!implMatch) return methods;
-
-  const objStart = implMatch.index + implMatch[0].length;
-
-  // Find the end of defaultImpl by locating the next structural marker
-  // (the "PROXY" comment or "export default" that always follows defaultImpl)
-  const afterDefault = content.substring(objStart);
-  const proxyMarker = afterDefault.search(/var stdin_default\b/);
-  if (proxyMarker < 0) return methods;
-
-  // Walk backward from the proxy marker to find the closing }; of defaultImpl
-  let objEnd = objStart + proxyMarker;
-  while (objEnd > objStart && content[objEnd] !== "}") objEnd--;
-  if (objEnd <= objStart) return methods;
-
-  // Extract methods from within the defaultImpl body using positional
-  // boundaries instead of brace counting (which fails on {} in strings)
-  const bodySlice = content.substring(objStart, objEnd);
-  const methodRegex = /^(\s*)"([^"]+)"(\s*[:=])/gm;
-  const methodPositions = [];
-  let match;
-  while ((match = methodRegex.exec(bodySlice)) !== null) {
-    methodPositions.push({ name: match[2], pos: match.index + match[0].length });
+function hotModuleName(content, sourceName) {
+  const names = new Set(
+    [...content.matchAll(/loadHotModule\(\s*["']([^"']+)["']/g)]
+      .map((match) => match[1]),
+  );
+  if (names.size !== 1) {
+    throw new Error(
+      `${sourceName}: expected exactly one loadHotModule lookup name, found ${[...names].join(", ") || "none"}`,
+    );
   }
+  return [...names][0];
+}
 
-  for (let i = 0; i < methodPositions.length; i++) {
-    const { name, pos } = methodPositions[i];
-    const nextPos = (i + 1 < methodPositions.length) ? methodPositions[i + 1].pos : bodySlice.length;
+function importedTestHelperPrelude(content) {
+  const match = content.match(
+    /import\s*\{([^}]*)\}\s*from\s*["']\.\.\/lib\/plugin_test_exports\.ts["']\s*;?/,
+  );
+  if (!match) return "";
 
-    // Find => to locate arrow function body (skip past type annotation remnants)
-    const arrowIdx = bodySlice.indexOf("=>", pos);
-    let braceIdx = -1;
-    if (arrowIdx >= 0 && arrowIdx < nextPos) {
-      braceIdx = bodySlice.indexOf("{", arrowIdx + 2);
-    }
-    if (braceIdx < 0 || braceIdx >= nextPos) {
-      braceIdx = bodySlice.indexOf("{", pos);
-    }
-    if (braceIdx < 0 || braceIdx >= nextPos) continue;
+  const bindings = match[1]
+    .split(",")
+    .map((binding) => binding.trim())
+    .filter(Boolean)
+    .map((binding) => {
+      const [imported, local = imported] = binding.split(/\s+as\s+/);
+      return { imported: imported.trim(), local: local.trim() };
+    });
+  const helperJs = tsToJs(fs.readFileSync(PLUGIN_TEST_EXPORTS, "utf8"));
+  const returned = bindings
+    .map(({ imported, local }) => (
+      imported === local ? imported : `${local}: ${imported}`
+    ))
+    .join(", ");
+  const locals = bindings.map(({ local }) => local).join(", ");
 
-    let body = bodySlice.substring(braceIdx, nextPos);
-    body = body.replace(/\n\s*"[^"]*"\s*:\s*$/, "").trimEnd();
-    body = body.replace(/,\s*$/, "").trimEnd();
-    methods[name] = body;
-  }
+  return [
+    "const __pluginTestExports = (() => {",
+    helperJs,
+    `return { ${returned} };`,
+    "})();",
+    `const { ${locals} } = __pluginTestExports;`,
+    "",
+  ].join("\n");
+}
 
-  return methods;
+function hasDefaultImpl(content) {
+  return /\b(?:const|let|var)\s+defaultImpl\b/.test(content);
+}
+
+function implementationSource(srcPath, content) {
+  if (hasDefaultImpl(content)) return { path: srcPath, content };
+  const match = content.match(
+    /import\s+impl\s+from\s+["']\.\/impl\/([^"']+\.ts)["']\s*;?/,
+  );
+  if (!match) return null;
+  const implPath = path.resolve(path.dirname(srcPath), "impl", match[1]);
+  if (!fs.existsSync(implPath)) return null;
+  const implContent = fs.readFileSync(implPath, "utf8");
+  return hasDefaultImpl(implContent)
+    ? { path: implPath, content: implContent }
+    : null;
 }
 
 function buildPlugin(name) {
   const srcPath = path.join(PLUGIN_DIR, `${name}.ts`);
-  const outPath = `${HOT_PREFIX}${name}.js`;
 
   if (!fs.existsSync(srcPath)) {
     console.log(`  SKIP ${name}: source not found`);
     return false;
   }
 
-  let content = fs.readFileSync(srcPath, "utf8");
-
-  if (!content.includes("defaultImpl")) {
+  const entryContent = fs.readFileSync(srcPath, "utf8");
+  const source = implementationSource(srcPath, entryContent);
+  if (!source) {
     console.log(`  SKIP ${name}: not yet converted to proxy pattern (no defaultImpl)`);
     return false;
   }
+  const content = source.content;
+
+  let lookupName;
+  try {
+    lookupName = hotModuleName(content, name);
+  } catch (e) {
+    console.error(`  FAIL ${name}: ${e.message}`);
+    return false;
+  }
+  const outPath = `${HOT_PREFIX}${lookupName}.js`;
 
   const js = tsToJs(content);
-  const methods = extractDefaultImplMethods(js);
-
-  // Debug: show what we found
-  const hasDefaultImpl = js.includes("defaultImpl");
-  const defaultImplIdx = js.indexOf("defaultImpl");
-  const snippet = defaultImplIdx >= 0 ? js.substring(defaultImplIdx, defaultImplIdx + 200) : "(not found)";
-  console.log(`  DEBUG ${name}: defaultImpl=${hasDefaultImpl}, pos=${defaultImplIdx}, snippet=${JSON.stringify(snippet)}`);
-
-  if (Object.keys(methods).length === 0) {
-    console.log(`  SKIP ${name}: no hook methods extracted from defaultImpl`);
+  if (!/\bdefaultImpl\s*=/.test(js)) {
+    console.log(`  SKIP ${name}: transpiled output has no defaultImpl`);
     return false;
   }
 
   let out = `// Hot-reload module for ${name}\n`;
   out += `// Generated ${new Date().toISOString()}\n`;
-  out += `// Overrides compiled-in defaultImpl hooks.  Edit ${name}.ts, run make hot-reload-plugins,\n`;
+  out += `// Source ${path.relative(path.resolve(__dirname, ".."), source.path)}\n`;
+  out += `// Overrides compiled-in defaultImpl hooks. Run make hot-reload-plugins after edits,\n`;
   out += `// and the next hook invocation picks up changes without restart.\n\n`;
 
   // Inject shared utility stubs — hot modules are eval'd via new Function()
@@ -132,6 +158,7 @@ function buildPlugin(name) {
   out += `// === shared utility stubs (sandbox context) ===\n`;
   out += `var _fs = require("node:fs");\n`;
   out += `var _path = require("node:path");\n`;
+  out += `var createRequire = require("node:module").createRequire;\n`;
   out += `function isSubagent() {\n`;
   out += `  if (process.env.OPENCODE_SUBAGENT === "1") return true;\n`;
   out += `  try { return _fs.existsSync("/tmp/gludd-subagent-" + process.pid + ".json"); } catch (e) { return false; }\n`;
@@ -160,11 +187,24 @@ function buildPlugin(name) {
   out += `var READ_TOOLS = ["read", "grep", "glob"];\n`;
   out += `function isDispatchTool(tool) { return _DISPATCH_TOOLS.includes(tool); }\n`;
   out += `function isReadTool(tool) { return READ_TOOLS.includes(tool); }\n`;
-  out += `function isDisengaged() {\n`;
+  out += `function isDisengaged(opts) {\n`;
   out += `  try {\n`;
-  out += `    if (!_fs.existsSync("/tmp/gludd-disengage-enforcement")) return false;\n`;
-  out += `    var d = JSON.parse(_fs.readFileSync("/tmp/gludd-disengage-enforcement", "utf8"));\n`;
-  out += `    return typeof d.disengage_until === "number" && d.disengage_until > Date.now();\n`;
+  out += `    var nextPath = process.env.GLUDD_DISENGAGE_NEXT_PATH || "/tmp/gludd-disengage-next";\n`;
+  out += `    if (_fs.existsSync(nextPath)) {\n`;
+  out += `      try { _fs.unlinkSync(nextPath); } catch (e) {}\n`;
+  out += `      return true;\n`;
+  out += `    }\n`;
+  out += `    var disengagePath = process.env.GLUDD_DISENGAGE_PATH || "/tmp/gludd-watchdog-disengage.json";\n`;
+  out += `    if (!_fs.existsSync(disengagePath)) return false;\n`;
+  out += `    var d = JSON.parse(_fs.readFileSync(disengagePath, "utf8"));\n`;
+  out += `    if (d.expires === 1) {\n`;
+  out += `      try { _fs.unlinkSync(disengagePath); } catch (e) {}\n`;
+  out += `      return true;\n`;
+  out += `    }\n`;
+  out += `    if (typeof d.disengage_until !== "number") return false;\n`;
+  out += `    var now = Date.now();\n`;
+  out += `    var maxMs = opts && typeof opts.maxMs === "number" ? opts.maxMs : 300000;\n`;
+  out += `    return Math.min(d.disengage_until, now + maxMs) > now;\n`;
   out += `  } catch (e) { return false; }\n`;
   out += `}\n`;
   out += `function readJsonFile(filePath, defaultVal) {\n`;
@@ -211,6 +251,7 @@ function buildPlugin(name) {
 }
 `;
   out += `// === end shared stubs ===\n\n`;
+  out += importedTestHelperPrelude(content);
 
   // Include everything from the js output EXCEPT the export default block.
   // This gives hooks access to all module-level vars/functions/consts.
@@ -234,65 +275,62 @@ function buildPlugin(name) {
 `;
   }
 
-  for (const [hookName, body] of Object.entries(methods)) {
-    const fnBody = body.trim();
-    // Map ...args parameters to input/output for body references
-    const mapped = fnBody.replace(
-      /^\{/,
-      "{ var input = callArgs[0] || {}; var output = callArgs[1]; "
-    );
-    out += `exports["${hookName}"] = async function(...callArgs) ${mapped};\n\n`;
-    console.log(`    hook: ${hookName} (${fnBody.length} bytes)`);
-  }
+  // Export the transpiled fallback functions directly. Reconstructing function
+  // bodies with regexes used to make the last hook absorb declarations that
+  // followed defaultImpl (notably handleTextComplete in enforce-multitask),
+  // producing a dangling `};` and invalid JavaScript. The real transpiler has
+  // already built the runtime object, so copying its functions is both simpler
+  // and preserves the exact hook signatures and behavior.
+  out += `for (const [hookName, hook] of Object.entries(defaultImpl)) {\n`;
+  out += `  if (typeof hook === "function") exports[hookName] = hook;\n`;
+  out += `}\n`;
 
-  fs.writeFileSync(outPath, out, "utf8");
-
-  // Validate the generated module. Three outcomes:
-  //   1. Parse/require failure — HARMLESS: loadHotModule() catches the error
-  //      and falls back to the compiled-in defaultImpl. Keep the file, warn.
-  //   2. Loads but exports none of the extracted hooks — DANGEROUS: the proxy
-  //      does `fn ? await fn(...) : undefined`, so an empty-export module
-  //      silently DISABLES the plugin's enforcement. Delete the file so
-  //      loadHotModule falls back to defaultImpl (missing file => defaults).
-  //   3. Loads with the expected hook exports — fully functional hot module.
-  let parseOk = true;
+  // Validate before atomically publishing the module. A malformed file must
+  // never replace the last known-good module, even though loadHotModule has a
+  // compiled-in fallback.
   try {
     new vm.Script(out, { filename: outPath });
   } catch (e) {
-    parseOk = false;
-    console.log(`  WARN ${name}: generated module has invalid JS (${e.message}) — kept; loadHotModule will fail-open to compiled-in defaultImpl`);
-  }
-  if (parseOk) {
-    const hookNames = Object.keys(methods);
-    let probe;
-    try {
-      probe = spawnSync("node", ["-e",
-        `const m = require(${JSON.stringify(outPath)}); process.stdout.write(JSON.stringify(Object.keys(m)));`,
-      ], { timeout: 10000, encoding: "utf8" });
-    } catch (e) {
-      console.log(`  WARN ${name}: require() probe crashed (${e.message}) — kept; loadHotModule will fail-open to compiled-in defaultImpl`);
-      console.log(`  BUILT ${name} → ${outPath} (${Object.keys(methods).length} hooks)`);
-      return true;
-    }
-    if (probe.status !== 0) {
-      const errLine = (probe.stderr || "").split("\n").find(l => l.trim()) || "unknown error";
-      console.log(`  WARN ${name}: generated module failed to require (${errLine.trim()}) — kept; loadHotModule will fail-open to compiled-in defaultImpl`);
-    } else {
-      let exported = [];
-      try { exported = JSON.parse(probe.stdout || "[]"); } catch (e) { exported = []; }
-      const missing = hookNames.filter(h => !exported.includes(h));
-      if (missing.length === hookNames.length) {
-        fs.unlinkSync(outPath);
-        console.log(`  SKIP ${name}: module loads but exports ZERO hooks (would silently disable enforcement) — removed; plugin falls back to compiled-in defaultImpl`);
-        return false;
-      }
-      if (missing.length > 0) {
-        console.log(`  WARN ${name}: module missing hook exports: ${missing.join(", ")}`);
-      }
-    }
+    console.error(`  FAIL ${name}: generated module has invalid JS (${e.message})`);
+    return false;
   }
 
-  console.log(`  BUILT ${name} → ${outPath} (${Object.keys(methods).length} hooks)`);
+  const candidatePath = `${outPath}.candidate-${process.pid}.js`;
+  fs.writeFileSync(candidatePath, out, "utf8");
+  let probe;
+  try {
+    probe = spawnSync("node", ["-e",
+      `const m = require(${JSON.stringify(candidatePath)}); process.stdout.write(JSON.stringify(Object.keys(m)));`,
+    ], { timeout: 10000, encoding: "utf8" });
+  } catch (e) {
+    fs.unlinkSync(candidatePath);
+    console.error(`  FAIL ${name}: require() probe crashed (${e.message})`);
+    return false;
+  }
+  if (probe.status !== 0) {
+    fs.unlinkSync(candidatePath);
+    const errLine = (probe.stderr || "").split("\n").find(l => l.trim()) || "unknown error";
+    console.error(`  FAIL ${name}: generated module failed to require (${errLine.trim()})`);
+    return false;
+  }
+
+  let exported = [];
+  try {
+    exported = JSON.parse(probe.stdout || "[]");
+  } catch {
+    exported = [];
+  }
+  if (exported.length === 0) {
+    fs.unlinkSync(candidatePath);
+    console.error(`  FAIL ${name}: generated module exports zero hooks`);
+    return false;
+  }
+
+  fs.renameSync(candidatePath, outPath);
+  for (const hookName of exported) {
+    console.log(`    hook: ${hookName}`);
+  }
+  console.log(`  BUILT ${name} → ${outPath} (${exported.length} hooks)`);
   return true;
 }
 
@@ -337,6 +375,12 @@ function main() {
 
   console.log(`\nBuilt ${built}/${PLUGINS.length} hot-reload modules in ${OUT_DIR}/`);
   status();
+  if (built !== PLUGINS.length) {
+    console.error(
+      `Hot-reload build failed: built ${built}/${PLUGINS.length} required plugins`,
+    );
+    process.exitCode = 1;
+  }
 }
 
 main();

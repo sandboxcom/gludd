@@ -24,8 +24,6 @@ from general_ludd.schemas.benchmark import (
 from general_ludd.scoring.pareto import ParetoRouter
 from general_ludd.scoring.router import AdaptiveRouter
 
-pytestmark = pytest.mark.asyncio
-
 
 def _make_agg(
     model_id: str,

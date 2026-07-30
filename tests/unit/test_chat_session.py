@@ -231,7 +231,7 @@ class TestContextInjection:
         with tempfile.TemporaryDirectory() as tmpdir:
             session = ChatSession(project_dir=tmpdir)
             content = session.history[0]["content"]
-            assert f"Project directory: {tmpdir}" in content
+            assert f"Project directory: {Path(tmpdir).resolve()}" in content
 
     def test_nonexistent_project_dir_no_context(self) -> None:
         session = ChatSession(project_dir="/tmp/does-not-exist-12345")

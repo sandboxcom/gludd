@@ -154,6 +154,28 @@ class TestQuery:
         with pytest.raises(RuntimeError):
             src.query({})
 
+    def test_callable_transport_compatibility(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("PAGERDUTY_TOKEN", "tok")
+        calls: list[dict[str, Any]] = []
+
+        def transport(
+            method: str,
+            url: str,
+            **kwargs: Any,
+        ) -> tuple[int, object]:
+            calls.append({"method": method, "url": url, **kwargs})
+            return 200, CANNED
+
+        src = PagerDutySource(_cfg(), transport=transport)
+
+        records = src.query({"statuses": ["triggered"]})
+
+        assert len(records) == 1
+        assert calls[0]["method"] == "GET"
+        assert calls[0]["params"] == {"statuses[]": ["triggered"]}
+
 
 class TestLogEntries:
     def test_fetch_log_entries(self, monkeypatch: pytest.MonkeyPatch) -> None:

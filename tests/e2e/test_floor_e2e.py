@@ -40,10 +40,23 @@ def _run_plugin(
     global _ts_counter
     _ts_counter += 1
     tmp = Path(tempfile.mktemp(suffix=".ts", prefix=f"floor_e2e_{_ts_counter}_"))
+    session_state = tmp.with_suffix(".session.json")
+    ci_state = tmp.with_suffix(".ci.json")
+    stop_state = tmp.with_suffix(".stop.json")
+    todo_state = tmp.with_suffix(".todos.json")
     tmp.write_text(ts_code)
     try:
         env = os.environ.copy()
         env["OPENCODE_SUBAGENT"] = ""
+        env["GLUDD_PROJECT_ROOT"] = cwd or str(ROOT)
+        # A live OpenCode process writes the default session-start state under
+        # /tmp.  Floor tests must not inherit that unrelated runtime window:
+        # doing so changes MAX_STREAK from 2 to 1 and makes results depend on
+        # test order and whether OpenCode happens to be running.
+        env["GLUDD_SESSION_STATE"] = str(session_state)
+        env["GLUDD_WATCHDOG_CI_FILE"] = str(ci_state)
+        env["GLUDD_STOP_STATE_FILE"] = str(stop_state)
+        env["GLUDD_TODOWRITE_STATE"] = str(todo_state)
         if env_override:
             env.update(env_override)
         proc = subprocess.run(
@@ -57,8 +70,9 @@ def _run_plugin(
             )
         return proc.stdout.strip()
     finally:
-        with contextlib.suppress(OSError):
-            tmp.unlink()
+        for generated_path in (tmp, session_state, ci_state, stop_state, todo_state):
+            with contextlib.suppress(OSError):
+                generated_path.unlink()
 
 
 def _last_json(stdout: str) -> dict | None:

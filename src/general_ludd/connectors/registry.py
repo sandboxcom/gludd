@@ -56,7 +56,7 @@ import pkgutil
 import re
 from typing import Any, Protocol, runtime_checkable
 
-from general_ludd.connectors import __path__ as _connectors_pkg_path
+import general_ludd.connectors as _connectors_pkg
 from general_ludd.connectors.normalize import auth_family
 
 logger = logging.getLogger(__name__)
@@ -139,7 +139,16 @@ class ConnectorRegistry:
             # itself incur network/secret side effects; rejecting it here keeps
             # those side effects from firing just for the instance to be
             # discarded by the post-construction _SourceLike check below.
-            if config.get("factory") is None:
+            # Explicit factory maps may intentionally contain factory functions,
+            # which cannot expose instance methods at function scope.  Concrete
+            # classes, however, are safe to validate before construction no
+            # matter how they were selected.  Non-callables also take this path
+            # so they are classified as discovery failures.
+            if (
+                config.get("factory") is None
+                or isinstance(factory, type)
+                or not callable(factory)
+            ):
                 _validate_source_class(factory)
         except Exception as exc:  # discovery failure — skip, never abort
             self._errors.append({"name": name, "error": f"discovery: {exc}"})
@@ -338,7 +347,7 @@ _MODULE_ALLOWLIST_PREFIX = _CONNECTORS_PKG  # "general_ludd.connectors"
 # arbitrary stdlib/third-party module.
 _ALLOWED_CONNECTOR_MODULES: frozenset[str] = frozenset(
     f"{_CONNECTORS_PKG}.{name}"
-    for _finder, name, _ispkg in pkgutil.iter_modules(_connectors_pkg_path)
+    for _finder, name, _ispkg in pkgutil.iter_modules(_connectors_pkg.__path__)
 )
 
 

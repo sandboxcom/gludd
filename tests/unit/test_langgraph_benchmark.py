@@ -292,7 +292,7 @@ class TestAgentLoopComparison:
         async def _run() -> str:
             return await loop.run_with_tools(_make_job(), "system", "user prompt")
 
-        result = asyncio.new_event_loop().run_until_complete(_run())
+        result = asyncio.run(_run())
         text = _extract_content(result)
         assert "hello_world" in text or "done" in text
 
@@ -308,7 +308,7 @@ class TestAgentLoopComparison:
         async def _run() -> str:
             return await loop.run_with_tools(_make_job(), "system", "user prompt")
 
-        result = asyncio.new_event_loop().run_until_complete(_run())
+        result = asyncio.run(_run())
         text = _extract_content(result)
         assert "hello_world" in text or "done" in text
 
@@ -321,7 +321,7 @@ class TestAgentLoopComparison:
         async def _run_tcl() -> str:
             return await tcl.run_with_tools(_make_job(), "s", "u")
 
-        tcl_result = asyncio.new_event_loop().run_until_complete(_run_tcl())
+        tcl_result = asyncio.run(_run_tcl())
         tcl_text = _extract_content(tcl_result)
         assert "identical output" in tcl_text
 
@@ -336,7 +336,7 @@ class TestAgentLoopComparison:
         async def _run_lgl() -> str:
             return await lgl.run_with_tools(_make_job(), "s", "u")
 
-        lgl_result = asyncio.new_event_loop().run_until_complete(_run_lgl())
+        lgl_result = asyncio.run(_run_lgl())
         lgl_text = _extract_content(lgl_result)
         assert "identical output" in lgl_text
 
@@ -676,7 +676,7 @@ class TestAgentLoopOutputEquivalence:
         async def _run() -> str:
             return await tcl.run_with_tools(_make_job(), "s", "u")
 
-        tcl_out = asyncio.new_event_loop().run_until_complete(_run())
+        tcl_out = asyncio.run(_run())
         tcl_text = _extract_content(tcl_out)
         assert expected in tcl_text or tcl_text == expected
 
@@ -691,6 +691,6 @@ class TestAgentLoopOutputEquivalence:
         async def _run2() -> str:
             return await lgl.run_with_tools(_make_job(), "s", "u")
 
-        lgl_out = asyncio.new_event_loop().run_until_complete(_run2())
+        lgl_out = asyncio.run(_run2())
         lgl_text = _extract_content(lgl_out)
         assert expected in lgl_text or lgl_text == expected

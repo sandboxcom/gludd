@@ -1,0 +1,39 @@
+---
+driver:
+  name: default
+platforms:
+  - name: localhost
+    connection: local
+provisioner:
+  name: ansible
+  config_options:
+    defaults:
+      gathering: explicit
+      host_key_checking: false
+  env:
+    ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_PROJECT_DIRECTORY}/collections"
+    GLUDD_MOCK_PORT: "8898"
+    PYTHONPATH: "${MOLECULE_PROJECT_DIRECTORY}/src"
+  inventory:
+    hosts:
+      all:
+        hosts:
+          localhost:
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
+  playbooks:
+    cleanup: default/cleanup.yml
+    prepare: default/prepare.yml
+    converge: default/converge.yml
+    verify: default/verify.yml
+verifier:
+  name: ansible
+scenario:
+  test_sequence:
+    - cleanup
+    - syntax
+    - prepare
+    - converge
+    - idempotence
+    - verify
+    - cleanup

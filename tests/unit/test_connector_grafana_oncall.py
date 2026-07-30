@@ -127,6 +127,26 @@ def test_query_normalizes_alert_groups(monkeypatch):
     assert "perpage=25" in str(req.url)
 
 
+def test_callable_transport_compatibility(monkeypatch):
+    monkeypatch.setenv(_ENV, _TOKEN)
+    calls: list[dict[str, Any]] = []
+
+    def transport(method: str, url: str, **kwargs: Any) -> tuple[int, object]:
+        calls.append({"method": method, "url": url, **kwargs})
+        return 200, _CANNED
+
+    src = GrafanaOnCallSource(
+        {"base_url": _PUBLIC_BASE},
+        transport=transport,
+    )
+
+    records = src.query({"state": "firing"})
+
+    assert len(records) == 2
+    assert calls[0]["method"] == "GET"
+    assert "state=firing" in calls[0]["url"]
+
+
 def test_query_handles_bare_list_payload(monkeypatch):
     monkeypatch.setenv(_ENV, _TOKEN)
     captured: dict[str, Any] = {}

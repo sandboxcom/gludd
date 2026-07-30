@@ -3,7 +3,7 @@ package hottentot.iam
 import future.keywords.if
 
 # ============================================================================
-# AWS tests (7)
+# AWS tests (9)
 # ============================================================================
 
 test_aws_valid_policy_passes if {
@@ -28,6 +28,33 @@ test_aws_wildcard_resource_denied if {
     violation := deny_aws_wildcard_resource with input as {
         "aws_policy": {"statements": [
             {"sid": "BadResource", "effect": "Allow", "action": ["ec2:RunInstances"], "resource": ["*"]},
+        ]}
+    }
+    count(violation) == 1
+}
+
+test_aws_describe_wildcard_resource_required if {
+    aws_least_privilege_valid with input as {
+        "aws_policy": {"statements": [
+            {
+                "sid": "Ec2Describe",
+                "effect": "Allow",
+                "action": ["ec2:DescribeInstances", "ec2:DescribeVolumes"],
+                "resource": ["*"],
+            },
+        ]}
+    }
+}
+
+test_aws_mixed_wildcard_resource_denied if {
+    violation := deny_aws_wildcard_resource with input as {
+        "aws_policy": {"statements": [
+            {
+                "sid": "MixedActions",
+                "effect": "Allow",
+                "action": ["ec2:DescribeInstances", "ec2:RunInstances"],
+                "resource": ["*"],
+            },
         ]}
     }
     count(violation) == 1
@@ -70,17 +97,36 @@ test_aws_allow_must_not_contain_escalation if {
 }
 
 # ============================================================================
-# Azure tests (6)
+# Azure tests (8)
 # ============================================================================
 
 test_azure_scoped_roles_pass if {
     azure_least_privilege_valid with input as {
         "azure_role_assignments": [
-            {"role_definition_name": "Virtual Machine Contributor"},
-            {"role_definition_name": "Managed Identity Operator"},
-            {"role_definition_name": "Log Analytics Contributor"},
+            {
+                "role_definition_name": "General Ludd Accelerator Deployer",
+                "scope": "/subscriptions/sub-123",
+            },
         ]
     }
+}
+
+test_azure_accelerator_role_subscription_scope_passes if {
+    azure_least_privilege_valid with input as {
+        "azure_role_assignments": [{
+            "role_definition_name": "General Ludd Accelerator Deployer",
+            "scope": "/subscriptions/sub-123",
+        }]
+    }
+}
+
+test_azure_missing_scope_denied if {
+    violation := deny_azure_missing_scope with input as {
+        "azure_role_assignments": [{
+            "role_definition_name": "General Ludd Accelerator Deployer",
+        }]
+    }
+    count(violation) == 1
 }
 
 test_azure_contributor_denied if {
@@ -212,7 +258,10 @@ test_all_clouds_valid_passes if {
             {"sid": "Ec2Run", "effect": "Allow", "action": ["ec2:RunInstances"], "resource": ["arn:aws:ec2:*:*:*"]},
         ]},
         "azure_role_assignments": [
-            {"role_definition_name": "Virtual Machine Contributor"},
+            {
+                "role_definition_name": "General Ludd Accelerator Deployer",
+                "scope": "/subscriptions/sub-123",
+            },
         ],
         "gcp_role_bindings": [
             {"role": "roles/compute.instanceAdmin.v1"},

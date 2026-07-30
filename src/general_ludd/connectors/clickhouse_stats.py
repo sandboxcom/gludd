@@ -28,8 +28,8 @@ import json
 import logging
 import os
 import time
-from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, TypedDict, cast
+from collections.abc import Callable, Iterator, Sequence
+from typing import TYPE_CHECKING, Protocol, TypedDict, cast
 
 if TYPE_CHECKING:
     from general_ludd.connectors.base import NormalizedRecord
@@ -65,6 +65,15 @@ class ClickhouseQuerySpec(TypedDict, total=False):
 
 Executor = Callable[[str], Sequence[ClickhouseRow]]
 
+
+class Cursor(Protocol):
+    """Minimal iterable DB cursor accepted for compatibility injection."""
+
+    def execute(self, sql: str) -> object: ...
+
+    def __iter__(self) -> Iterator[ClickhouseRow]: ...
+
+
 _DRIVER_UNAVAILABLE = "driver unavailable"
 
 # (table, value-selecting SQL). Each query yields rows the normalizer maps to
@@ -89,17 +98,38 @@ class ClickHouseStatsSource:
 
     KIND = "metrics"
 
-    def __init__(self, config: ClickhouseConfig | None = None, executor: Executor | None = None) -> None:
+    def __init__(
+        self,
+        config: ClickhouseConfig | None = None,
+        executor: Executor | None = None,
+        cursor: Cursor | None = None,
+    ) -> None:
+        if executor is not None and cursor is not None:
+            raise ValueError("provide executor or cursor, not both")
         cfg: dict[str, object] = dict(config or {})
         self.name: str = str(cfg.get("name", "clickhouse"))
         self._config = cfg
         self._url: str = str(cfg.get("url", "http://localhost:8123")).rstrip("/")
         self._user: str = str(cfg.get("user", "default"))
         self._password_env: str = str(cfg.get("password_env", "CLICKHOUSE_PASSWORD"))
-        self._executor = executor
+        self._executor = (
+            executor
+            if executor is not None
+            else self._executor_from_cursor(cursor)
+            if cursor is not None
+            else None
+        )
         self._driver_error: str | None = None
 
     # -- executor wiring ---------------------------------------------------
+
+    @staticmethod
+    def _executor_from_cursor(cursor: Cursor) -> Executor:
+        def _run(sql: str) -> Sequence[ClickhouseRow]:
+            cursor.execute(sql)
+            return list(cursor)
+
+        return _run
 
     def _get_executor(self) -> Executor | None:
         if self._executor is not None:

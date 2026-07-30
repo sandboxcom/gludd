@@ -24,6 +24,7 @@
         cfg_path: "{{ specs_dir }}/CounterSpec.cfg"
         tla_tools_jar: "{{ shim_dir }}/tla2tools.jar"
         enable_tla: false
+        tla_check_timeout: 300
         tlc_output_override: "Model checking completed. No error has been found."
         artifact_dir: "/tmp/gludd-tla-check-pass-{{ mock_port }}"
         daemon_url: "http://127.0.0.1:{{ mock_port }}"
@@ -42,6 +43,7 @@
             cfg_path: "{{ specs_dir }}/ViolationSpec.cfg"
             tla_tools_jar: "{{ shim_dir }}/tla2tools.jar"
             enable_tla: false
+            tla_check_timeout: 300
             tlc_output_override: |
               Error: Invariant NeverNegative is violated.
               Error: The behavior up to this point is:

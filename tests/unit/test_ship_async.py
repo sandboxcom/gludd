@@ -199,10 +199,10 @@ class TestShipAsync:
         # Clean up background process
         bg.terminate()
         try:
-            bg.wait(timeout=3)
+            bg.communicate(timeout=3)
         except subprocess.TimeoutExpired:
             bg.kill()
-            bg.wait()
+            bg.communicate()
 
         assert result2.returncode != 0, f"Second invocation should fail, got returncode={result2.returncode}"
         assert elapsed < 3.0, f"Second invocation should fail fast (< 3s), took {elapsed:.1f}s"

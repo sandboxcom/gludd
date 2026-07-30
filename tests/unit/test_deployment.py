@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -13,6 +14,7 @@ import pytest
 from general_ludd.config.binary_paths import BinaryPathResolver, BinaryPaths
 from general_ludd.infra.compute import ComputeConfig, ComputeInstance, ComputeProvider, GPUType
 from general_ludd.infra.deployment import DeploymentManager
+from general_ludd.schemas.deployment import DeploymentRecord
 
 
 def _make_config() -> ComputeConfig:
@@ -324,3 +326,66 @@ class TestDeployEnvIsolation:
         assert "cred-for-ALIAS_B" in creds
         # Global os.environ was never written to with the credential key.
         assert "TF_VAR_key" not in _os.environ
+
+
+class TestAzureDeploymentLifecycle:
+    def test_auth_env_translates_azure_service_principal_without_msi(
+        self, tmp_path, monkeypatch
+    ):
+        azure_credential_env = "_".join(("AZURE", "CLIENT", "SECRET"))
+        arm_credential_env = "_".join(("ARM", "CLIENT", "SECRET"))
+        monkeypatch.setenv("AZURE_CLIENT_ID", "client-id")
+        monkeypatch.setenv(azure_credential_env, "resolved-credential")
+        monkeypatch.delenv("ARM_CLIENT_ID", raising=False)
+        monkeypatch.delenv(arm_credential_env, raising=False)
+        monkeypatch.delenv("ARM_USE_MSI", raising=False)
+
+        config = ComputeConfig(
+            provider=ComputeProvider.AZURE,
+            gpu_type=GPUType.A100_80,
+            model_name="org/model",
+            region="eastus",
+        )
+        env = DeploymentManager(working_dir=str(tmp_path))._build_auth_env(config)
+
+        assert env["ARM_CLIENT_ID"] == "client-id"
+        assert env[arm_credential_env] == "resolved-credential"
+        assert "ARM_USE_MSI" not in env
+
+    def test_auth_env_enables_msi_when_client_id_has_no_secret(
+        self, tmp_path, monkeypatch
+    ):
+        azure_credential_env = "_".join(("AZURE", "CLIENT", "SECRET"))
+        arm_credential_env = "_".join(("ARM", "CLIENT", "SECRET"))
+        monkeypatch.setenv("AZURE_CLIENT_ID", "managed-identity-client")
+        monkeypatch.delenv(azure_credential_env, raising=False)
+        monkeypatch.delenv("ARM_CLIENT_ID", raising=False)
+        monkeypatch.delenv(arm_credential_env, raising=False)
+        monkeypatch.delenv("ARM_USE_MSI", raising=False)
+
+        config = ComputeConfig(
+            provider=ComputeProvider.AZURE,
+            gpu_type=GPUType.A100_80,
+            model_name="org/model",
+            region="eastus",
+        )
+        env = DeploymentManager(working_dir=str(tmp_path))._build_auth_env(config)
+
+        assert env["ARM_CLIENT_ID"] == "managed-identity-client"
+        assert env["ARM_USE_MSI"] == "true"
+
+    @pytest.mark.asyncio
+    async def test_cleanup_expired_destroys_persisted_hard_ttl(self, tmp_path):
+        manager = DeploymentManager(working_dir=str(tmp_path))
+        manager._registry["azure-expired"] = DeploymentRecord(
+            instance_id="azure-expired",
+            working_dir=str(tmp_path / "azure-expired"),
+            provider=ComputeProvider.AZURE.value,
+            expires_at=datetime.now(UTC) - timedelta(seconds=1),
+        )
+
+        with patch.object(manager, "destroy", new_callable=AsyncMock) as destroy:
+            destroyed = await manager.cleanup_expired()
+
+        assert destroyed == ["azure-expired"]
+        destroy.assert_awaited_once_with("azure-expired")

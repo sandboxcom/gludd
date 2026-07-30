@@ -13,7 +13,12 @@ from typing import Any
 
 import pytest
 
-from general_ludd.connectors.gcp_asset_inventory import GcpAssetInventorySource
+from general_ludd.connectors.gcp_asset_inventory import (
+    GcpAssetInventorySource,
+    _CallbackResponse,
+    _coerce_transport,
+    _host_is_internal,
+)
 
 
 class FakeResponse:
@@ -92,6 +97,14 @@ def make_source(transport: Any, **overrides: Any) -> GcpAssetInventorySource:
 
 
 class TestContract:
+    def test_project_id_alias_builds_project_scope(self) -> None:
+        src = GcpAssetInventorySource(
+            {"project_id": "my-project"},
+            transport=RecordingTransport(FakeResponse(200, {"results": []})),
+        )
+
+        assert src._scope == "projects/my-project"
+
     def test_kind_and_name(self) -> None:
         src = make_source(RecordingTransport(FakeResponse(200, CANNED_SEARCH)))
         assert src.KIND == "infra"
@@ -104,7 +117,63 @@ class TestContract:
         assert isinstance(h["ok"], bool)
 
 
+class TestCompatibilityHelpers:
+    @pytest.mark.parametrize(
+        ("host", "expected"),
+        [
+            ("", True),
+            ("[::1]", True),
+            ("internal", True),
+            ("metadata.google.internal", True),
+            ("cloudasset.googleapis.com", False),
+            ("8.8.8.8", False),
+        ],
+    )
+    def test_host_is_internal(self, host: str, expected: bool) -> None:
+        assert _host_is_internal(host) is expected
+
+    def test_callback_response_raises_for_error_status(self) -> None:
+        response = _CallbackResponse(503, {"error": "unavailable"})
+
+        with pytest.raises(RuntimeError, match="HTTP 503"):
+            response.raise_for_status()
+
+    def test_transport_coercion_handles_none_and_invalid_values(self) -> None:
+        assert _coerce_transport(None) is None
+        with pytest.raises(TypeError, match="transport"):
+            _coerce_transport(object())
+
+
 class TestNormalization:
+    def test_keyword_tuple_transport_compatibility(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("GCP_TEST_TOKEN", "tok-abc")
+        calls: list[tuple[str, str]] = []
+
+        def transport(method: str, url: str, **_: object) -> tuple[int, object]:
+            calls.append((method, url))
+            return 200, CANNED_SEARCH
+
+        src = GcpAssetInventorySource(
+            {
+                "scope": "projects/123456789",
+                "token_env": "GCP_TEST_TOKEN",
+            },
+            transport=transport,
+        )
+
+        rows = src.query({})
+
+        assert len(rows) == 2
+        assert calls == [
+            (
+                "GET",
+                "https://cloudasset.googleapis.com/v1/"
+                "projects/123456789:searchAllResources",
+            )
+        ]
+
     def test_query_normalizes_resources(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("GCP_TEST_TOKEN", "tok-abc")
         transport = RecordingTransport(FakeResponse(200, CANNED_SEARCH))

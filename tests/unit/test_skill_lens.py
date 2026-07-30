@@ -196,7 +196,8 @@ class TestLensFunction:
     def test_lens_returns_fewer_sections_when_skill_has_fewer(self):
         result = lens("test-quality", "task", max_sections=100)
         num_sections = result.count("\n## ")
-        assert num_sections <= 10
+        available_sections = _parse_sections(_skill_path("test-quality").read_text())
+        assert num_sections == len(available_sections)
 
     def test_lens_max_sections_one(self):
         result = lens("test-quality", "write a good test", max_sections=1)

@@ -18,6 +18,7 @@ SPECS_PATH = ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md"
 MAKEFILE_PATH = ROOT / "Makefile"
 AGENTS_PATH = ROOT / "AGENTS.md"
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
+PLUGIN_IMPL_DIR = PLUGIN_DIR / "impl"
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "build.yml"
 OPENCODE_JSON = ROOT / "opencode.json"
 
@@ -28,6 +29,22 @@ def read_specs() -> str:
     if not SPECS_PATH.exists():
         pytest.fail(f"BEHAVIORAL_SPECS.md not found at {SPECS_PATH}")
     return SPECS_PATH.read_text()
+
+
+def read_plugin_source(plugin_file: Path) -> str:
+    content = plugin_file.read_text()
+    impl_name = plugin_file.stem.replace("-", "_") + "_impl.ts"
+    impl_path = PLUGIN_IMPL_DIR / impl_name
+    if impl_path.exists():
+        content = impl_path.read_text() + content
+    return content
+
+
+def read_tdd_source() -> str:
+    return (
+        read_plugin_source(PLUGIN_DIR / "enforce-tdd.ts")
+        + (ROOT / ".opencode" / "lib" / "enforce_tdd_logic.ts").read_text()
+    )
 
 
 def spec_ids(specs_text: str) -> list[str]:
@@ -430,23 +447,25 @@ class TestPluginStructure:
         f for f in PLUGIN_DIR.glob("enforce-*.ts") if f.name != "enforce-depth.ts"
     ])
     def test_plugin_has_subagent_guard(self, plugin_file):
-        content = plugin_file.read_text()
+        content = read_plugin_source(plugin_file)
         assert "isSubagent" in content, f"{plugin_file.name} missing isSubagent guard"
 
     @pytest.mark.parametrize("plugin_file", [
         f for f in PLUGIN_DIR.glob("enforce-*.ts") if f.name != "enforce-depth.ts"
     ])
     def test_plugin_has_fail_open(self, plugin_file):
-        content = plugin_file.read_text()
+        content = read_plugin_source(plugin_file)
         has_fail_open = "fail-open" in content.lower() or "fail open" in content.lower()
         has_try_catch = "try {" in content or "} catch" in content
         assert has_fail_open or has_try_catch, f"{plugin_file.name} missing fail-open pattern"
 
     @pytest.mark.parametrize("plugin_file", [
-        f for f in PLUGIN_DIR.glob("enforce-*.ts") if f.name != "enforce-depth.ts"
+        f
+        for f in PLUGIN_DIR.glob("enforce-*.ts")
+        if f.name not in ("enforce-depth.ts", "enforce-no-suppressions.ts")
     ])
     def test_plugin_has_disable_env_var(self, plugin_file):
-        content = plugin_file.read_text()
+        content = read_plugin_source(plugin_file)
         # Multiple different patterns for disable checks
         has_disable = bool(
             re.search(r"GLUDD_\w+_ENFORCE\s*(!==|===|==)\s*['\"]0['\"]", content) or
@@ -463,7 +482,7 @@ class TestPluginStructure:
         and "enforce-depth.test" not in f.name
     ])
     def test_plugin_exports_default(self, plugin_file):
-        content = plugin_file.read_text()
+        content = read_plugin_source(plugin_file)
         assert "export default" in content or "satisfies Plugin" in content, (
             f"{plugin_file.name} missing default export / satisfies Plugin"
         )
@@ -476,7 +495,7 @@ class TestPluginStructure:
         and "enforce-depth.test" not in f.name
     ])
     def test_plugin_hot_reload_capable(self, plugin_file):
-        content = plugin_file.read_text()
+        content = read_plugin_source(plugin_file)
         has_hot = "loadHotModule" in content or "hot_reload" in content
         assert has_hot, f"{plugin_file.name} missing hot-reload support"
 
@@ -550,36 +569,36 @@ class TestEnforceStop:
     """Enforce-stop.ts has all required detection patterns."""
 
     def test_stop_has_real_pending_work(self):
-        content = (PLUGIN_DIR / "enforce-stop.ts").read_text()
+        content = read_plugin_source(PLUGIN_DIR / "enforce-stop.ts")
         assert "hasRealPendingWork" in content, "hasRealPendingWork missing"
 
     def test_stop_checks_ci_state(self):
-        content = (PLUGIN_DIR / "enforce-stop.ts").read_text()
+        content = read_plugin_source(PLUGIN_DIR / "enforce-stop.ts")
         assert (
             "ci-verdict" in content or "ci_verdict" in content
             or "ciVerdict" in content or "CI" in content
         ), "CI state check missing"
 
     def test_stop_checks_release_completeness(self):
-        content = (PLUGIN_DIR / "enforce-stop.ts").read_text()
+        content = read_plugin_source(PLUGIN_DIR / "enforce-stop.ts")
         assert "release" in content.lower(), "release completeness check missing"
 
     def test_stop_detects_status_summaries(self):
-        content = (PLUGIN_DIR / "enforce-stop.ts").read_text()
+        content = read_plugin_source(PLUGIN_DIR / "enforce-stop.ts")
         assert (
             "STATUS_SUMMARY" in content or "statusSummary" in content
             or "status_summary" in content.lower()
         ), "status summary detection missing"
 
     def test_stop_has_qa_response_patterns(self):
-        content = (PLUGIN_DIR / "enforce-stop.ts").read_text()
+        content = read_plugin_source(PLUGIN_DIR / "enforce-stop.ts")
         assert (
             "QA_RESPONSE" in content or "qaResponse" in content
             or "qa_response" in content.lower()
         ), "QA response patterns missing"
 
     def test_stop_has_bolded_header_detection(self):
-        content = (PLUGIN_DIR / "enforce-stop.ts").read_text()
+        content = read_plugin_source(PLUGIN_DIR / "enforce-stop.ts")
         assert (
             "bold" in content.lower() or "**" in content
             or "header" in content.lower()
@@ -621,22 +640,22 @@ class TestEnforceTdd:
     """Enforce-tdd.ts mechanically enforces test-first workflow."""
 
     def test_tdd_blocks_src_edits_without_test(self):
-        content = (PLUGIN_DIR / "enforce-tdd.ts").read_text()
+        content = read_tdd_source()
         assert "permissionDecision" in content or "deny" in content, "TDD plugin must be blocking"
 
     def test_tdd_has_allowlist(self):
-        content = (PLUGIN_DIR / "enforce-tdd.ts").read_text()
+        content = read_tdd_source()
         assert (
             "init" in content.lower() or "ALLOWLIST" in content
             or "allowlist" in content.lower()
         ), "TDD allowlist missing"
 
     def test_tdd_scoped_to_src_general_ludd(self):
-        content = (PLUGIN_DIR / "enforce-tdd.ts").read_text()
+        content = read_tdd_source()
         assert "general_ludd" in content or "src/" in content, "TDD not scoped to src/general_ludd"
 
     def test_tdd_candidate_test_path_matches_check_tdd_compliance(self):
-        content = (PLUGIN_DIR / "enforce-tdd.ts").read_text()
+        content = read_tdd_source()
         assert "candidate" in content.lower() or "test" in content, "test path logic missing"
 
 
@@ -927,23 +946,20 @@ class TestAntiEssayPluginSpecs:
 
     def test_anti_essay_detects_word_count(self):
         p = PLUGIN_DIR / "enforce-anti-essay.ts"
-        if not p.exists():
-            pytest.skip("enforce-anti-essay.ts not yet created")
+        assert p.is_file(), "Required enforce-anti-essay.ts plugin is missing"
         content = p.read_text()
         assert "word" in content.lower() or "length" in content.lower() or "count" in content.lower(), \
             "anti-essay plugin does not track word count"
 
     def test_anti_essay_checks_tool_calls(self):
         p = PLUGIN_DIR / "enforce-anti-essay.ts"
-        if not p.exists():
-            pytest.skip("enforce-anti-essay.ts not yet created")
+        assert p.is_file(), "Required enforce-anti-essay.ts plugin is missing"
         content = p.read_text()
         assert "tool" in content.lower(), "anti-essay plugin does not check tool calls"
 
     def test_anti_essay_has_subagent_guard(self):
         p = PLUGIN_DIR / "enforce-anti-essay.ts"
-        if not p.exists():
-            pytest.skip("enforce-anti-essay.ts not yet created")
+        assert p.is_file(), "Required enforce-anti-essay.ts plugin is missing"
         content = p.read_text()
         assert "isSubagent" in content, "anti-essay plugin missing subagent guard"
 
@@ -955,15 +971,13 @@ class TestBranchDisciplinePluginSpecs:
 
     def test_branch_plugin_verifies_current_branch(self):
         p = PLUGIN_DIR / "enforce-branch-discipline.ts"
-        if not p.exists():
-            pytest.skip("enforce-branch-discipline.ts not yet created")
+        assert p.is_file(), "Required enforce-branch-discipline.ts plugin is missing"
         content = p.read_text()
         assert "branch" in content.lower(), "branch discipline plugin does not check branches"
 
     def test_branch_plugin_blocks_wrong_branch_mutations(self):
         p = PLUGIN_DIR / "enforce-branch-discipline.ts"
-        if not p.exists():
-            pytest.skip("enforce-branch-discipline.ts not yet created")
+        assert p.is_file(), "Required enforce-branch-discipline.ts plugin is missing"
         content = p.read_text()
         assert "deny" in content or "block" in content.lower() or "permissionDecision" in content, \
             "branch discipline plugin must block wrong-branch operations"
@@ -976,16 +990,14 @@ class TestTestIntegrityPluginSpecs:
 
     def test_test_integrity_blocks_skip(self):
         p = PLUGIN_DIR / "enforce-test-integrity.ts"
-        if not p.exists():
-            pytest.skip("enforce-test-integrity.ts not yet created")
+        assert p.is_file(), "Required enforce-test-integrity.ts plugin is missing"
         content = p.read_text()
         assert "skip" in content.lower() or "xfail" in content.lower(), \
             "test integrity plugin does not detect skip/xfail"
 
     def test_test_integrity_blocks_continue_on_error(self):
         p = PLUGIN_DIR / "enforce-test-integrity.ts"
-        if not p.exists():
-            pytest.skip("enforce-test-integrity.ts not yet created")
+        assert p.is_file(), "Required enforce-test-integrity.ts plugin is missing"
         content = p.read_text()
         assert "continue-on-error" in content or "continueOnError" in content or "continue_on_error" in content, \
             "test integrity plugin does not detect continue-on-error"

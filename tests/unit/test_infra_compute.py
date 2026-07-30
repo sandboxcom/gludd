@@ -19,9 +19,9 @@ class TestComputeProvider:
 
     def test_all_providers_present(self):
         expected = {
-            "aws", "azure", "gcp", "runpod", "vast_ai",
+            "aws", "azure", "gcp", "qemu", "runpod", "vast", "vast_ai",
             "lambda_labs", "modal", "coreweave", "digital_ocean", "oracle",
-            "vmware", "kubernetes", "together_ai", "fireworks_ai",
+            "vsphere", "vmware", "kubernetes", "together_ai", "fireworks_ai",
             "huggingface", "replicate",
         }
         actual = {p.value for p in ComputeProvider}
@@ -35,7 +35,7 @@ class TestGPUType:
     def test_all_gpus_present(self):
         expected = {
             "t4", "a10g", "l4", "a10", "rtx_4090", "rtx_6000_ada",
-            "a40", "l40s", "a100_40", "a100_80", "h100", "h200",
+            "a40", "l40s", "amd_mi250", "a100_40", "a100_80", "h100", "h200",
         }
         actual = {g.value for g in GPUType}
         assert actual == expected

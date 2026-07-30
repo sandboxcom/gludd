@@ -275,7 +275,7 @@
   },
   {
     "name": "general_ludd.agent.gludd_embed",
-    "description": "Embedding similarity over the daemon's bert surface — With C(op=similar) (the default) queries the daemon's read-only C(POST /api/embeddings/similar) endpoint and returns the ranked similar canonical task types under C(ansible_facts.gludd_embed) so a playbook (or the model running a job) can borrow a good model/prompt from a semantically-neighboring task type. With C(op=compare) queries C(POST /api/embeddings/compare) to measure the pairwise similarity of two strings (C(text_a)/C(text_b)) produced by separate bots/agents — so a role can decide how to proceed (near-duplicate strings -> merge/dedupe; divergent -> escalate). Supply C(texts) (2+) instead for the full pairwise similarity matrix. The snapshot is injected under C(ansible_facts.gludd_embed). With C(op=search) queries C(POST /api/embeddings/search) to take a string a bot produced (C(text)) and search a real corpus with it (RAG search), returning the C(top_k) most-similar items ranked by cosine similarity. C(corpus) selects the corpus — C(skills) (the live skill registry, descriptions matched on the fly), C(task_types) (the canonical task types), C(prompts) (the persisted prompt profiles), C(traces) (recent execution traces, work_type/phase/span descriptions matched on the fly), or C(events) (recent audit events, event_type/entity_type and a summary of the details JSON matched on the fly). The snapshot is injected under C(ansible_facts.gludd_embed). Read-only and check-mode safe — it performs no writes (C(changed=False)). Similarity is computed over the same embedding layer the adaptive router uses (HashEmbedder by default; OpenAIEmbedder only when C(GLUDD_TASK_EMBEDDINGS_PROVIDER=openai) and C(OPENAI_API_KEY) are set on the daemon).",
+    "description": "Embedding similarity over the daemon's bert surface — With C(op=similar) (the default) queries the daemon's read-only C(POST /api/embeddings/similar) endpoint and returns the ranked similar canonical task types under C(ansible_facts.gludd_embed) so a playbook (or the model running a job) can borrow a good model/prompt from a semantically-neighboring task type. With C(op=compare) queries C(POST /api/embeddings/compare) to measure the pairwise similarity of two strings (C(text_a)/C(text_b)) produced by separate bots/agents — so a role can decide how to proceed (near-duplicate strings -> merge/dedupe; divergent -> escalate). Supply C(texts) (2+) instead for the full pairwise similarity matrix. The snapshot is injected under C(ansible_facts.gludd_embed). With C(op=search) queries C(POST /api/embeddings/search) to take a string a bot produced (C(text)) and search a real corpus with it (RAG search), returning the C(top_k) most-similar items ranked by cosine similarity. C(corpus) selects the corpus — C(skills) (the live skill registry, descriptions matched on the fly), C(task_types) (the canonical task types), C(prompts) (the persisted prompt profiles), C(traces) (recent execution traces, work_type/phase/span descriptions matched on the fly), or C(events) (recent audit events, event_type/entity_type and a summary of the details JSON matched on the fly). The snapshot is injected under C(ansible_facts.gludd_embed). Read-only and check-mode safe — it performs no writes (C(changed=False)). Similarity is computed over the same embedding layer the adaptive router uses (HashEmbedder offline, OpenAIEmbedder when C(OPENAI_API_KEY) is set on the daemon).",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -491,17 +491,50 @@
         "op": {
           "type": "string",
           "enum": [
+            "clone",
             "commit",
+            "gated_commit",
+            "current_branch",
             "branch",
+            "branch_list",
+            "branch_delete",
             "worktree_list",
             "worktree_create",
             "worktree_remove",
             "merge",
-            "push"
+            "gated_merge",
+            "push",
+            "tag_release",
+            "tag_checkpoint",
+            "release_tag",
+            "checkpoint_tag",
+            "state"
           ]
+        },
+        "clone_url": {
+          "type": "string"
+        },
+        "target_dir": {
+          "type": "string"
+        },
+        "git_clone_timeout": {
+          "type": "integer",
+          "default": 120
+        },
+        "clone_allow_local": {
+          "type": "boolean",
+          "default": true
         },
         "message": {
           "type": "string"
+        },
+        "files": {
+          "type": "array",
+          "default": []
+        },
+        "gate_cmd": {
+          "type": "array",
+          "default": []
         },
         "branch": {
           "type": "string"
@@ -524,9 +557,70 @@
           ],
           "default": "ff"
         },
+        "tag": {
+          "type": "string"
+        },
+        "todo_id": {
+          "type": "string"
+        },
+        "sha": {
+          "type": "string"
+        },
         "remote": {
           "type": "string",
           "default": "origin"
+        },
+        "state_ref": {
+          "type": "string",
+          "default": ""
+        },
+        "state_gha_head_sha": {
+          "type": "string",
+          "default": ""
+        },
+        "state_worktree_target_ref": {
+          "type": "string",
+          "default": "HEAD"
+        },
+        "state_preserve_branch_patterns": {
+          "type": "array",
+          "default": []
+        },
+        "state_reconciled_preserve_heads": {
+          "type": "array",
+          "default": []
+        },
+        "state_reconciled_preserve_head_file": {
+          "type": "string",
+          "default": "config/reconciled_preserved_heads.txt"
+        },
+        "state_assert_clean": {
+          "type": "boolean",
+          "default": false
+        },
+        "state_assert_no_feature_on_master": {
+          "type": "boolean",
+          "default": false
+        },
+        "state_assert_merge_ready": {
+          "type": "boolean",
+          "default": false
+        },
+        "state_assert_remote_head": {
+          "type": "boolean",
+          "default": false
+        },
+        "state_assert_gha_matches_local": {
+          "type": "boolean",
+          "default": false
+        },
+        "state_assert_no_unintegrated_worktrees": {
+          "type": "boolean",
+          "default": false
+        },
+        "state_assert_no_unintegrated_branches": {
+          "type": "boolean",
+          "default": false
         }
       },
       "additionalProperties": false,
@@ -1008,6 +1102,80 @@
       "additionalProperties": false,
       "required": [
         "prompt"
+      ]
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_observe",
+    "description": "Correlate telemetry across daemon-registered observability sources — Discovers operator-configured sources through the Gludd daemon. Adapts those named sources to C(GluddObserve) without accepting arbitrary URLs. Runs query, timeline, incident-correlation, and topology workflows. Isolates a failing source so healthy source results still return. All operations are read-only and check-mode safe.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "op": {
+          "type": "string",
+          "enum": [
+            "query_sources",
+            "correlate_incident",
+            "timeline",
+            "topology"
+          ]
+        },
+        "role": {
+          "type": "string",
+          "default": ""
+        },
+        "kinds": {
+          "type": "array",
+          "default": []
+        },
+        "window": {
+          "type": "array",
+          "default": []
+        },
+        "seed": {
+          "type": "object",
+          "default": {}
+        },
+        "by": {
+          "type": "string",
+          "default": "trace_id"
+        },
+        "window_s": {
+          "type": "number",
+          "default": 300.0
+        },
+        "spec": {
+          "type": "object",
+          "default": {}
+        },
+        "start": {
+          "type": "number"
+        },
+        "end": {
+          "type": "number"
+        },
+        "correlate_by": {
+          "type": "string",
+          "default": ""
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 30
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "op"
       ]
     },
     "server_id": "ansible"

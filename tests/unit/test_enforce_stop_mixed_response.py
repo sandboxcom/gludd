@@ -1,4 +1,4 @@
-"""Verify enforce-stop.ts mixed-response detection is complete.
+"""Verify enforce-stop mixed-response detection is complete.
 
 STATUS (2026-07-15): The plugin was patched in commits ea0a419e and 0c816e34
 to add STATUS_SUMMARY_RE + looksLikeStatusSummary(), closing the gap where
@@ -35,7 +35,8 @@ from tests.unit._hook_fixtures import (
 )
 
 ROOT = Path(__file__).parent.parent.parent
-PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
+STOP_IMPL = ROOT / ".opencode" / "plugin" / "impl" / "enforce_stop_impl.ts"
+PLUGIN_TEST_EXPORTS = ROOT / ".opencode" / "lib" / "plugin_test_exports.ts"
 PERSIST_BLOCK_ENV = "GLUDD_PERSIST_STOP_BLOCK_FILE"
 
 # hasRealPendingWork() reads live filesystem state — the cwd TASKS.md and the
@@ -88,11 +89,12 @@ def _seed_ci_cache(status: str) -> None:
 # ── Source extraction helpers ─────────────────────────────────────────────────
 
 def _src() -> str:
-    return PLUGIN.read_text()
+    """Return the loader-safe implementation and its test-export boundary."""
+    return STOP_IMPL.read_text() + "\n" + PLUGIN_TEST_EXPORTS.read_text()
 
 
 def _extract_status_summary_re() -> re.Pattern:
-    """Extract status-summary regex from getStatusSummaryRe() in enforce-stop.ts."""
+    """Extract the status-summary regex from the shared test-export boundary."""
     src = _src()
     m = re.search(r"getStatusSummaryRe[\s\S]*?return\s+new\s+RegExp\s*\(([\s\S]*?),", src)
     if m:
@@ -100,7 +102,7 @@ def _extract_status_summary_re() -> re.Pattern:
         parts = re.findall(r'"([^"]*)"', body)
         body = "|".join(parts)
     else:
-        raise AssertionError("getStatusSummaryRe() not found in enforce-stop.ts")
+        raise AssertionError("getStatusSummaryRe() not found in plugin_test_exports.ts")
     flags = re.IGNORECASE | re.MULTILINE
     return re.compile(body, flags)
 
@@ -252,7 +254,8 @@ class TestStatusSummaryRegexDetection:
     def test_status_summary_re_exists_in_plugin(self):
         src = _src()
         assert "getStatusSummaryRe" in src, (
-            "getStatusSummaryRe() must be defined in enforce-stop.ts — "
+            "getStatusSummaryRe() must be defined at the loader-safe implementation "
+            "or test-export boundary — "
             "commits 0c816e34/ea0a419e added it."
         )
 

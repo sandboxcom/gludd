@@ -14,6 +14,7 @@ labels, raw.
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from typing import Protocol, cast, runtime_checkable
 from urllib.parse import urlsplit
 
@@ -34,6 +35,50 @@ class HttpTransport(Protocol):
         params: dict[str, object] | None = ...,
         timeout: float | None = ...,
     ) -> HttpResponse: ...
+
+
+CallbackTransport = Callable[..., HttpResponse | tuple[int, object]]
+
+
+class _CallbackResponse:
+    def __init__(self, status_code: int, body: object) -> None:
+        self.status_code = int(status_code)
+        self._body = body
+
+    @property
+    def text(self) -> str:
+        return self._body if isinstance(self._body, str) else str(self._body)
+
+    def json(self) -> object:
+        return self._body
+
+
+class _CallbackTransport:
+    """Adapt the shared method/url callback to Graphite's request protocol."""
+
+    def __init__(self, callback: CallbackTransport) -> None:
+        self._callback = callback
+
+    def request(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        params: dict[str, object] | None = None,
+        timeout: float | None = None,
+    ) -> HttpResponse:
+        result = self._callback(
+            method,
+            url,
+            headers=headers,
+            params=params,
+            timeout=timeout,
+        )
+        if isinstance(result, tuple):
+            status, body = result
+            return _CallbackResponse(status, body)
+        return result
 
 
 def _assert_public_base_url(base_url: str) -> None:
@@ -63,7 +108,7 @@ class GraphiteSource:
     def __init__(
         self,
         config: dict[str, object],
-        transport: HttpTransport,
+        transport: HttpTransport | CallbackTransport,
         *,
         environ: dict[str, str] | None = None,
     ) -> None:
@@ -83,7 +128,11 @@ class GraphiteSource:
             if not token:
                 raise ConnectorConfigError(f"environment variable {token_env!r} is unset or empty")
             self._auth_header = {"Authorization": f"Bearer {token}"}
-        self._transport = transport
+        self._transport: HttpTransport = (
+            transport
+            if isinstance(transport, HttpTransport)
+            else _CallbackTransport(transport)
+        )
         self._timeout = float(cast("float | int | str", config.get("timeout", 30.0)))
 
     def _headers(self) -> dict[str, str]:
@@ -106,7 +155,7 @@ class GraphiteSource:
 
     def query(self, spec: dict[str, object] | None = None) -> list[dict[str, object]]:
         spec = spec or {}
-        target = spec.get("target")
+        target = spec.get("target") or spec.get("query")
         if not target:
             raise ConnectorConfigError("spec must set 'target'")
         params: dict[str, object] = {"target": target, "format": "json"}

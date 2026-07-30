@@ -561,11 +561,11 @@ class TestCachingBehavior:
         assert len(result.results) == 2  # 3 raw, 1 deduped
 
     async def test_cache_hit_skips_api_call(self, temp_cache_dir, sample_search_response):
-        import diskcache
+        from general_ludd.security.safe_diskcache import open_safe_diskcache
 
         # Pre-seed the cache with a response
         cache_path = temp_cache_dir
-        cache = diskcache.Cache(cache_path)
+        cache = open_safe_diskcache(cache_path)
         from general_ludd.retrieval.searx_client import SearxResponse, SearxResult
 
         cached_result = SearxResult(url="https://cached.com", title="Cached", score=1.0)
@@ -622,11 +622,11 @@ class TestCachingBehavior:
         assert (first.title if hasattr(first, "title") else first["title"]) == "Cached"
 
     async def test_bypass_cache_always_fetches(self, temp_cache_dir, sample_search_response):
-        import diskcache
+        from general_ludd.security.safe_diskcache import open_safe_diskcache
 
         # Pre-seed the cache
         cache_path = temp_cache_dir
-        cache = diskcache.Cache(cache_path)
+        cache = open_safe_diskcache(cache_path)
         from general_ludd.retrieval.searx_client import SearxResponse, SearxResult, _cache_key
 
         r = SearxResult(url="https://stale.com", title="Stale")
@@ -672,7 +672,7 @@ class TestCachingBehavior:
         assert len(result.results) == 2
 
     async def test_search_persists_results_to_cache(self, temp_cache_dir, sample_search_response):
-        import diskcache
+        from general_ludd.security.safe_diskcache import open_safe_diskcache
 
         mock_client = _make_mock_async_client(get_response=sample_search_response)
 
@@ -682,7 +682,7 @@ class TestCachingBehavior:
             await client.close()
 
         # Verify data was written to the cache
-        cache = diskcache.Cache(temp_cache_dir)
+        cache = open_safe_diskcache(temp_cache_dir)
         from general_ludd.retrieval.searx_client import _cache_key
 
         key = _cache_key("persist query", ("general", "it", "science"), None, 1, "en")
@@ -695,7 +695,7 @@ class TestCachingBehavior:
 
     async def test_cache_varying_time_ranges(self, temp_cache_dir, sample_search_response):
         """Different time_range values produce distinct cache entries."""
-        import diskcache
+        from general_ludd.security.safe_diskcache import open_safe_diskcache
 
         cache_path = temp_cache_dir
         mock_client = _make_mock_async_client(get_response=sample_search_response)
@@ -706,7 +706,7 @@ class TestCachingBehavior:
             await client.search("multi range", time_range="year")
             await client.close()
 
-        cache = diskcache.Cache(cache_path)
+        cache = open_safe_diskcache(cache_path)
         from general_ludd.retrieval.searx_client import _cache_key
 
         key_day = _cache_key("multi range", ("general", "it", "science"), "day", 1, "en")

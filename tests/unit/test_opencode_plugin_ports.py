@@ -33,17 +33,45 @@ Plugin coverage map (claude shell hook → opencode TS plugin):
 """
 
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
 OPENCODE_JSON = ROOT / "opencode.json"
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
 
-ENFORCE_MAKE = PLUGIN_DIR / "enforce-make.ts"
-ENFORCE_FLOOR = PLUGIN_DIR / "enforce-floor.ts"
-ENFORCE_DELEGATE = PLUGIN_DIR / "enforce-delegate.ts"
-ENFORCE_STOP = PLUGIN_DIR / "enforce-stop.ts"
-ENFORCE_SESSION_START = PLUGIN_DIR / "enforce-session-start.ts"
+
+class _EffectivePluginSource:
+    """Expose a plugin entrypoint together with its split implementation."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+
+    def exists(self) -> bool:
+        return self.path.exists()
+
+    def read_text(self) -> str:
+        entrypoint = self.path.read_text(encoding="utf-8")
+        implementation_sources = []
+        for relative in re.findall(
+            r"""from\s+["'](\./impl/[^"']+)["']""",
+            entrypoint,
+        ):
+            implementation_path = self.path.parent / relative
+            if implementation_path.is_file():
+                implementation_sources.append(
+                    implementation_path.read_text(encoding="utf-8")
+                )
+        return "\n".join([entrypoint, *implementation_sources])
+
+
+ENFORCE_MAKE = _EffectivePluginSource(PLUGIN_DIR / "enforce-make.ts")
+ENFORCE_FLOOR = _EffectivePluginSource(PLUGIN_DIR / "enforce-floor.ts")
+ENFORCE_DELEGATE = _EffectivePluginSource(PLUGIN_DIR / "enforce-delegate.ts")
+ENFORCE_STOP = _EffectivePluginSource(PLUGIN_DIR / "enforce-stop.ts")
+ENFORCE_SESSION_START = _EffectivePluginSource(
+    PLUGIN_DIR / "enforce-session-start.ts"
+)
 
 
 def _plugin_list() -> list[str]:

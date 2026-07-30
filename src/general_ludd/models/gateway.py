@@ -486,6 +486,21 @@ class ModelGateway:
         self._cache_key_lock_refs: dict[str, int] = {}
         self._cache_key_locks_guard = threading.Lock()
 
+    def close(self) -> None:
+        """Release resources owned by this gateway.
+
+        Response caches may own SQLite connections.  Detach the cache before
+        closing it so repeated shutdown calls are safe and a failed close does
+        not leave the gateway pointing at a partially closed resource.
+        """
+        response_cache = self._response_cache
+        self._response_cache = None
+        if response_cache is None:
+            return
+        close = getattr(response_cache, "close", None)
+        if callable(close):
+            close()
+
     def _cache_key_lock(self, cache_key: str) -> threading.Lock:
         """Return the process-local single-flight lock for a cache key.
 

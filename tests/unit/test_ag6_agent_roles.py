@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from general_ludd.agents.behavior import AgentBehavior
+from general_ludd.agents.behavior import AgentBehavior, BehaviorRenderer
 
 
 class TestAgentBehaviorRoles:
@@ -77,3 +77,22 @@ class TestAgentBehaviorRoles:
             assert b.role is None
             assert b.goal is None
             assert b.backstory is None
+
+    def test_renderer_includes_configured_role_goal_and_backstory(self):
+        behavior = AgentBehavior(
+            role="Senior Developer",
+            goal="Build reliable software",
+            backstory="A veteran engineer",
+        )
+
+        prompt = BehaviorRenderer().render(behavior)
+
+        assert "## Role Context" in prompt
+        assert "Role: Senior Developer" in prompt
+        assert "Goal: Build reliable software" in prompt
+        assert "Backstory: A veteran engineer" in prompt
+
+    def test_renderer_omits_role_context_when_unconfigured(self):
+        prompt = BehaviorRenderer().render(AgentBehavior())
+
+        assert "## Role Context" not in prompt

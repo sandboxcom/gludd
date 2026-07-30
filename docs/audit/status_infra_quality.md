@@ -111,16 +111,46 @@ yields >1 workers — `auto` = #logical CPUs, which fixes the `//4 == 1` problem
 
 ## #40 — concurrent-pytest collision → per-run basetemp isolation — DONE
 
-Evidence (all `Makefile`):
-- `gate` test phase pins this run's tmp root: `--basetemp=/tmp/gludd-gate-basetemp` with a preceding
-  `rm -rf` (`:257-258`), and a long comment (`:250-256`) documenting the exact root cause: a
-  concurrent pytest could trigger pytest's keep-last-3 tmp rotation and delete this run's
-  `popen-gwN` worker dirs → the "208 errors: FileNotFoundError popen-gwN" cascade.
-- `test-iso:` uses a unique basetemp `"/tmp/gludd-iso-$${ID:-$$$$}"` (`:843-845`).
-- `test-xdist:` uses `"/tmp/gludd-xdist-$${ID:-$$$$}"` (`:849-851`).
-- Process-hygiene helpers reinforce the invariant: `ps-pytest` (`:278-279`), `kill-stray` (`:282-283`).
-**Remaining work:** none in tooling. No automated test asserts the isolation, but the collision
-class is structurally removed by pinning basetemp.
+The beta.3 release gate exposed the final unisolated path: release integration
+and E2E phases still used pytest's default
+`<temproot>/pytest-of-<user>/pytest-N` namespace.  A concurrent cleanup removed
+the live E2E `pytest-3/popen-gw0` directory at 93%, causing fixture setup
+`FileNotFoundError` despite the tests themselves being healthy.
+
+Current evidence:
+
+- `gate`, `gate-lite`, `gate-release-phases`, `test-integration`, `test-e2e`,
+  `test-iso`, `test-xdist`, and the adaptive CI shard runner all create
+  invocation-unique `gludd-*` basetemps.
+- `gate-release-phases` owns one `mktemp` root with separate `integration` and
+  `e2e` children, and its EXIT/INT/TERM traps remove only that owned root.
+- `scripts/clean_tmp.py` never removes a shared `pytest-of-*` root or live
+  `pytest-N` child. It reclaims only pytest's atomically renamed `garbage-*`
+  children; `disk-guard.sh` delegates to that scoped cleaner instead of using
+  broad `rm -rf /tmp/pytest-of-*` globs.
+- `tests/unit/test_release_gate_execution.py` overlaps two release gates behind
+  a deterministic barrier, proves distinct namespaces, and proves owner-only
+  cleanup. `tests/unit/test_clean_tmp.py` proves cleanup preserves a simulated
+  live `pytest-3/popen-gw0` tree while removing sibling garbage.
+
+Long-lived upstream/user reports support treating the default temp root as
+shared, not owned:
+
+- pytest's documentation says concurrent invocations require a unique base
+  directory, keeps only the last three default roots, and warns that an explicit
+  `--basetemp` is cleared blindly:
+  <https://docs.pytest.org/en/stable/how-to/tmp_path.html>
+- pytest issue #5524 records a real CI/xdist race while concurrently creating a
+  basetemp: <https://github.com/pytest-dev/pytest/issues/5524>
+- pytest issue #11789 and linked #11790 document the easily missed retention
+  behavior and lack of default support for concurrent invocations:
+  <https://github.com/pytest-dev/pytest/issues/11789>
+- A user running concurrent MPI pytest processes reported `--basetemp`
+  collisions when more than one process tried to own the same path:
+  <https://stackoverflow.com/questions/79064328/how-to-fix-fileexistserror-when-using-the-basetemp-flag-with-pytest>
+
+**Remaining work:** none for this failure class; unique ownership and concurrent
+regressions now cover every release pytest entrypoint.
 
 ## #47 — re-add test_gludd_reload + role_self_improve_propose molecule scenarios that PASS — DONE (pass unverified)
 

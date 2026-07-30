@@ -87,6 +87,7 @@ _AMBIENT_ENV_KEYS = [
     "GLUDD_MULTITASK_STATE_FILE",
     "GLUDD_ALIVE_PATH",
     "GLUDD_STREAK_FILE",
+    "GLUDD_WATCHDOG_CI_FILE",
 ]
 
 
@@ -223,6 +224,7 @@ def _stop_env(base: Path) -> dict[str, str]:
         "GLUDD_STOP_TOOL_COUNTS_FILE": str(state / "tool-counts.json"),
         "GLUDD_ALIVE_PATH": str(state / "alive.json"),
         "GLUDD_STREAK_FILE": str(state / "streak.json"),
+        "GLUDD_WATCHDOG_CI_FILE": str(state / "watchdog-ci.json"),
     }
 
 
@@ -280,11 +282,13 @@ def _ci_cache_pre_js(ts_expression: str) -> str:
     _update_ci_cache() does, immediately before the hook is invoked (minimal
     race window with the live watchdog daemon)."""
     return f"""
-fs.writeFileSync("/tmp/gludd-watchdog-ci.json", JSON.stringify({{
-  last_ci_check: {ts_expression},
-  last_ci_status: "FAILURE",
-  last_output: "CI RED: run 29613868503 conclusion='failure'",
-}}));
+    fs.writeFileSync(
+      process.env.GLUDD_WATCHDOG_CI_FILE || "/tmp/gludd-watchdog-ci.json",
+      JSON.stringify({{
+      last_ci_check: {ts_expression},
+      last_ci_status: "FAILURE",
+      last_output: "CI RED: run 29613868503 conclusion='failure'",
+    }}));
 """
 
 

@@ -63,15 +63,6 @@ def confine_export_path(out_path: str | Path | None, default_filename: str) -> P
             raise ValueError(
                 f"out_path {raw!r} contains a null byte, which is disallowed."
             )
-        resolved = Path(raw).expanduser().resolve(strict=False)
-        temp_roots = {
-            Path(tempfile.gettempdir()).resolve(strict=False),
-            Path("/tmp").resolve(strict=False),
-            Path("/private/tmp").resolve(strict=False),
-        }
-        for candidate in (resolved, *resolved.parents):
-            if candidate.name.startswith("gludd-") and candidate.parent in temp_roots:
-                return resolved
         for root in _ALLOWED_EXPORT_ROOTS:
             confined = confine_path(raw, root)
             if confined is not None:

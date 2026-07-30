@@ -43,7 +43,7 @@ _MONKEYPATCH_SETENV_RE = re.compile(
 )
 
 _OS_ENVIRON_ASSIGN_RE = re.compile(
-    r"os\s*\.\s*environ\s*\[\s*(['\"])([A-Za-z_][A-Za-z0-9_]*)\1\s*\]\s*="
+    r"os\s*\.\s*environ\s*\[\s*(['\"])([A-Za-z_][A-Za-z0-9_]*)\1\s*\]\s*=(?!=)"
 )
 
 

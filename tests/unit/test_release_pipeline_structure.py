@@ -2,10 +2,10 @@
 
 These tests verify:
 1. No circular dependencies in the CI workflow job graph
-2. Build/release jobs do NOT depend on test-shard (which takes 60+ min)
+2. Build jobs run in parallel while release waits for the full test fan-in
 3. The release job includes artifact verification steps
 4. The workflow YAML is parseable (no !cancelled() tag issues)
-5. All platform build jobs are continue-on-error (non-blocking)
+5. All platform build jobs are release-blocking
 6. The release job downloads ALL build artifacts via pattern: gludd-*
 7. The molecule and coverage jobs exist and are correctly wired
 8. The test-shard matrix covers the full tests/unit/ letter range (a-z)
@@ -69,36 +69,40 @@ class TestNoCircularDependencies:
 
 
 class TestBuildJobsDoNotDependOnTestShard:
-    """Build/release jobs must NOT wait for test-shard.
+    """Artifact producers run in parallel, while release waits for tests.
 
-    unit-1a takes 60+ minutes on CI. When it's in the needs chain,
-    artifact creation is blocked for an hour or cancelled by timeout.
-    Tests are continue-on-error (informational) and must not gate releases.
+    Platform builds do not need to serialize behind the long shard matrix.
+    The release fan-in itself depends on both builds and the test/coverage
+    jobs, so parallelism does not weaken the release gate.
     """
 
-    BUILD_RELEASE_JOBS: typing.ClassVar[list[str]] = [
+    BUILD_JOBS: typing.ClassVar[list[str]] = [
         "linux", "macos", "windows", "termux",
-        "container", "release",
+        "container",
     ]
 
     def test_build_jobs_dont_need_test_shard(self):
         src = _workflow_source()
         jobs = _extract_jobs(src)
         violations = []
-        for job_name in self.BUILD_RELEASE_JOBS:
+        for job_name in self.BUILD_JOBS:
             if job_name not in jobs:
                 continue
             needs = jobs[job_name]["needs"]
             if "test-shard" in needs:
                 violations.append(
                     f"  {job_name}: needs test-shard — "
-                    f"this blocks artifact creation for 60+ min. "
-                    f"Remove test-shard from needs (tests are continue-on-error)."
+                    f"this unnecessarily serializes artifact creation."
                 )
         assert not violations, (
-            "Build/release jobs must NOT depend on test-shard:\n"
+            "Build jobs should run in parallel with test-shard:\n"
             + "\n".join(violations)
         )
+
+    def test_release_needs_test_shard_and_coverage(self):
+        jobs = _extract_jobs(_workflow_source())
+        needs = set(jobs["release"]["needs"])
+        assert {"test-shard", "coverage"} <= needs
 
 
 class TestReleaseJobHasVerificationSteps:
@@ -215,54 +219,48 @@ class TestNoJobExceedsMaxTimeout:
         )
 
 
-class TestTestShardIsNonBlocking:
-    """test-shard MUST have continue-on-error: true."""
+class TestTestShardIsBlocking:
+    """A green release must prove every test shard passed."""
 
-    def test_continue_on_error_present(self):
+    def test_continue_on_error_absent(self):
         src = _workflow_source()
-        # Find the test-shard job section
         idx = src.find("test-shard:")
         assert idx >= 0, "test-shard job must exist"
         section = src[idx:idx + 500]
-        assert "continue-on-error: true" in section or 'continue-on-error: True' in section, (
-            "test-shard must have continue-on-error: true so test failures "
-            "don't block the release pipeline"
+        assert "continue-on-error: true" not in section, (
+            "test-shard failures must block the release pipeline"
         )
 
 
-class TestAllBuildsContinueOnError:
-    """All platform build jobs MUST have continue-on-error: true.
+class TestAllBuildsFailClosed:
+    """All platform build jobs MUST be release-blocking.
 
-    A single platform's transient failure (pyinstaller hiccup, runner issue,
-    environment variability) must not sink an otherwise-good release. The
-    release job's pre-publish gate catches missing artifacts; the build jobs
-    themselves must be non-blocking so a tag always produces a Release with
-    whatever platforms succeeded.
+    A pipeline cannot be green when any required platform artifact failed to
+    build or smoke-test. Missing artifacts are release failures, not partial
+    successes.
     """
 
     BUILD_JOBS: typing.ClassVar[list[str]] = ["linux", "macos", "windows", "termux"]
 
-    def test_each_build_job_has_continue_on_error(self):
+    def test_each_build_job_is_blocking(self):
         import yaml
 
         src = _workflow_source()
         data = yaml.safe_load(src)
         jobs = data.get("jobs", {})
-        missing: list[str] = []
+        violations: list[str] = []
         for job_name in self.BUILD_JOBS:
             job_spec = jobs.get(job_name)
             if not isinstance(job_spec, dict):
-                missing.append(f"{job_name}: job not found in build.yml")
+                violations.append(f"{job_name}: job not found in build.yml")
                 continue
-            if job_spec.get("continue-on-error") is not True:
-                missing.append(
-                    f"{job_name}: continue-on-error is not true "
-                    f"(got {job_spec.get('continue-on-error')!r})"
+            if job_spec.get("continue-on-error", False) is True:
+                violations.append(
+                    f"{job_name}: continue-on-error masks required build failures"
                 )
-        assert not missing, (
-            "Platform build jobs must set continue-on-error: true so a single "
-            "platform failure does not block the release:\n  "
-            + "\n  ".join(missing)
+        assert not violations, (
+            "Platform build jobs must fail closed:\n  "
+            + "\n  ".join(violations)
         )
 
 
@@ -311,7 +309,7 @@ class TestMoleculeJobExists:
             "molecule job must exist in build.yml for ansible role/module testing"
         )
 
-    def test_molecule_is_non_blocking(self):
+    def test_molecule_is_blocking(self):
         import yaml
 
         src = _workflow_source()
@@ -319,9 +317,8 @@ class TestMoleculeJobExists:
         jobs = data.get("jobs", {})
         mol = jobs.get("molecule")
         assert isinstance(mol, dict), "molecule job must exist in build.yml"
-        assert mol.get("continue-on-error") is True, (
-            "molecule must be continue-on-error: true so scenario flakiness "
-            "or runner load does not block the release pipeline"
+        assert mol.get("continue-on-error", False) is False, (
+            "Molecule failures must block release publication"
         )
 
 
@@ -367,9 +364,8 @@ class TestShardMatrixCoverage:
       unit-2:   test_[f-m]*     unit-3:   test_[n-z]* + secrets/
       other:    integration/, e2e/, connector*, _e2e.py rerouted files
 
-    A gap in the letter coverage means tests silently stop running — the
-    shard glob matches nothing, pytest exits 5 (no tests collected), and the
-    shard is treated as a no-op pass.
+    A gap in the letter coverage means tests silently stop running, so an
+    empty shard selection is a hard failure.
     """
 
     EXPECTED_SHARDS: typing.ClassVar[list[str]] = [

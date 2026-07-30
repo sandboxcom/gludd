@@ -49,6 +49,12 @@ def _load_private_key(key_pem: bytes) -> Any:
     return serialization.load_pem_private_key(key_pem, password=None)
 
 
+def _signature_algorithm(private_key: Any) -> hashes.SHA256 | None:
+    if isinstance(private_key, ed25519.Ed25519PrivateKey):
+        return None
+    return hashes.SHA256()
+
+
 def generate_csr(
     key_pem: bytes,
     subject: dict[str, str],
@@ -118,7 +124,7 @@ def generate_csr(
                 x509.ExtendedKeyUsage(oids), critical=False
             )
 
-    return csr_builder.sign(private_key, hashes.SHA256()).public_bytes(
+    return csr_builder.sign(private_key, _signature_algorithm(private_key)).public_bytes(
         serialization.Encoding.PEM
     )
 
@@ -164,7 +170,9 @@ def _build_cert(
     )
     for ext in extensions:
         cert_builder = cert_builder.add_extension(ext.value, critical=ext.critical)
-    return cert_builder.sign(signer_key, hashes.SHA256()).public_bytes(
+    return cert_builder.sign(
+        signer_key, _signature_algorithm(signer_key)
+    ).public_bytes(
         serialization.Encoding.PEM
     )
 

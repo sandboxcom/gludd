@@ -66,15 +66,44 @@ class TestPK10GluddSpec:
             "gludd.spec missing EXE(...) block"
         )
 
-    def test_spec_has_collect(self, spec_source: str) -> None:
-        # COLLECT is required for multi-file (onedir) bundles. gludd currently
-        # uses onefile mode (EXE-only) so COLLECT is absent — known gap.
-        if not re.search(r"\bCOLLECT\s*\(", spec_source):
-            pytest.xfail(
-                "KNOWN GAP PK.10: gludd.spec has no COLLECT(...) block — "
-                "the spec uses onefile mode (EXE-only), not onedir. "
-                "Documented gap; no build.yml or spec change made."
+    def test_spec_has_complete_bundle_layout(self, spec_source: str) -> None:
+        """Accept complete PyInstaller onefile and onedir bundle layouts."""
+        exe_match = re.search(
+            r"\bEXE\s*\((?P<body>.*?)^\)",
+            spec_source,
+            re.DOTALL | re.MULTILINE,
+        )
+        assert exe_match, "gludd.spec EXE(...) block could not be parsed"
+
+        collect_match = re.search(
+            r"\bCOLLECT\s*\((?P<body>.*?)^\)",
+            spec_source,
+            re.DOTALL | re.MULTILINE,
+        )
+        if collect_match:
+            collect_body = collect_match.group("body")
+            for required in ("exe", "a.binaries", "a.datas"):
+                assert required in collect_body, (
+                    "gludd.spec onedir COLLECT(...) block is incomplete: "
+                    f"missing {required}"
+                )
+            return
+
+        exe_body = exe_match.group("body")
+        for required in (
+            "a.scripts",
+            "a.binaries",
+            "a.zipfiles",
+            "a.datas",
+        ):
+            assert required in exe_body, (
+                "gludd.spec onefile EXE(...) block is incomplete: "
+                f"missing {required}"
             )
+        assert not re.search(r"\bexclude_binaries\s*=\s*True\b", exe_body), (
+            "gludd.spec onefile EXE(...) excludes binaries without a "
+            "COLLECT(...) block"
+        )
 
     def test_spec_entry_script_is_cli(self, spec_source: str) -> None:
         match = re.search(r"Analysis\s*\(\s*\[([^\]]+)\]", spec_source)
@@ -99,7 +128,7 @@ class TestPK11Sha256Checksums:
     SHA256_PATTERNS: tuple[str, ...] = (
         r"sha256sum\b",
         r"shasum\s+-a\s+256",
-        r"certutil\s+-hashfile.*SHA256",
+        r"Get-FileHash\b.*-Algorithm\s+SHA256\b",
     )
 
     @pytest.mark.parametrize(
@@ -115,7 +144,7 @@ class TestPK11Sha256Checksums:
         assert any(
             re.search(p, combined) for p in self.SHA256_PATTERNS
         ), (
-            f"build.yml job '{job_name}' has no sha256sum/shasum/certutil "
+            f"build.yml job '{job_name}' has no supported checksum "
             f"step producing a .sha256 checksum"
         )
 

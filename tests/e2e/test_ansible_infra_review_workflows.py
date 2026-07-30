@@ -276,13 +276,8 @@ class TestAnsibleTemplating:
         from general_ludd.ansible.templating import AnsibleTemplater
 
         t = AnsibleTemplater()
-        # Trusted render requires ansible-core; may fail without it installed,
-        # but the method exists and is reachable.
-        try:
-            result = t.render("{{ 1 + 1 }}")
-            assert "2" in result
-        except Exception:
-            pytest.skip("ansible-core not available for trusted render")
+        result = t.render("{{ 1 + 1 }}")
+        assert "2" in result
 
     def test_resolve_fact_delegates_to_runner(self):
         from general_ludd.ansible.templating import AnsibleTemplater
