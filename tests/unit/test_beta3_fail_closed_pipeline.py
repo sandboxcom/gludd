@@ -89,7 +89,7 @@ def test_test_shards_reject_empty_selection_and_missing_coverage() -> None:
         "--cov=collections/ansible_collections/general_ludd/governance/plugins/module_utils"
         in runs
     )
-    assert "test -s .coverage" in runs
+    assert 'test -s "$COVERAGE_FILE"' in runs
     uploads = _upload_steps(shard)
     assert uploads
     assert all(

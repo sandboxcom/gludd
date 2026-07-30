@@ -387,26 +387,35 @@ jobs:
           # The coverage shards therefore retain the explicit two-worker cap.
           # Test scope is the exclude-filtered $FILES list and coverage flags
           # pass through.
+          mkdir -p "$(dirname "$COVERAGE_FILE")"
+          rm -f "$COVERAGE_FILE" "${COVERAGE_FILE}".*
           uv run python scripts/adaptive_test.py $FILES \
             --cov=general_ludd \
             --cov=collections/ansible_collections/general_ludd/governance/plugins/module_utils \
             --cov-report= \
             --cov-fail-under=0 \
             -v
-          # pytest-cov under xdist can leave parallel-named .coverage.<host>.<pid>
-          # data files instead of a single combined .coverage. Only combine
-          # when pytest-cov did not already emit the canonical file.
-          if [ ! -f .coverage ]; then
-            uv run coverage combine
+          # pytest-cov under xdist can leave parallel-named worker files even
+          # when a canonical file exists. Preserve that canonical data as one
+          # more fragment and combine every fragment; testing only for the
+          # canonical file silently dropped a worker in hosted run 30514958385.
+          if compgen -G "${COVERAGE_FILE}.*" > /dev/null; then
+            if [ -f "$COVERAGE_FILE" ]; then
+              mv "$COVERAGE_FILE" "${COVERAGE_FILE}.controller"
+            fi
+            uv run coverage combine --keep "$(dirname "$COVERAGE_FILE")"
           fi
-          test -s .coverage
+          test -s "$COVERAGE_FILE"
           # Stash the data file under a shard-unique name so the coverage job
           # can combine them without filename collisions.
-          cp .coverage ".coverage.${{ matrix.shard }}-${{ matrix.python-version }}"
+          cp "$COVERAGE_FILE" ".coverage.${{ matrix.shard }}-${{ matrix.python-version }}"
           test -s ".coverage.${{ matrix.shard }}-${{ matrix.python-version }}"
         env:
           GLUDD_PSK: ""
           GLUDD_XDIST: "2"
+          # Keep the outer shard's coverage database away from the checkout:
+          # unit tests may invoke nested pytest/coverage commands there.
+          COVERAGE_FILE: "${{ runner.temp }}/gludd-coverage-${{ matrix.shard }}-${{ matrix.python-version }}/.coverage"
           # Keep CI explicit for deterministic adaptive-runner behavior if the
           # worker override is ever removed; the numeric cap above wins today.
           CI: "true"

@@ -420,6 +420,44 @@ def test_shard_coverage_upload_includes_hidden_file_and_fails_closed() -> None:
     )
 
 
+def test_test_shard_coverage_is_private_and_combines_parallel_fragments() -> None:
+    """Guard against checkout-level and xdist-worker coverage data loss.
+
+    A hosted shard may execute tests which themselves invoke pytest/coverage.
+    Keeping the outer shard's data at ``./.coverage`` lets those nested commands
+    erase or replace it.  pytest-cov may also leave worker fragments alongside a
+    canonical file, so checking only whether the canonical file exists can skip
+    required combination and silently drop one worker's executed lines.
+    """
+    workflow = _load_build_workflow()
+    steps = workflow["jobs"]["test-shard"]["steps"]
+    test_steps = [
+        step
+        for step in steps
+        if str(step.get("name", "")).startswith("Test (shard ")
+    ]
+
+    assert len(test_steps) == 1
+    step = test_steps[0]
+    coverage_file = str(step.get("env", {}).get("COVERAGE_FILE", ""))
+    assert "runner.temp" in coverage_file, (
+        "CI coverage data must live under runner.temp, outside the shared "
+        "checkout where nested pytest/coverage commands can replace it."
+    )
+    assert "matrix.shard" in coverage_file
+    assert "matrix.python-version" in coverage_file
+
+    run = str(step.get("run", ""))
+    assert 'if compgen -G "${COVERAGE_FILE}.*"' in run, (
+        "CI must detect and combine xdist .coverage worker fragments even when "
+        "pytest-cov also left a canonical COVERAGE_FILE."
+    )
+    assert "coverage combine --keep" in run
+    assert 'test -s "$COVERAGE_FILE"' in run
+    assert 'cp "$COVERAGE_FILE"' in run
+    assert "if [ ! -f .coverage ]" not in run
+
+
 def test_test_shards_cap_xdist_for_nested_process_headroom() -> None:
     """Guard: hosted shards must leave RAM for nested Node/process tests."""
     workflow = _load_build_workflow()
