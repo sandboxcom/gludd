@@ -45,6 +45,38 @@ def _compact(text: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "", text)
 
 
+def _write_primed_session_state(tmp_path: Path) -> Path:
+    """Give a focused plugin scenario a private, completed start protocol."""
+    state_path = tmp_path / "session-start.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "started_at": int(time.time() * 1000),
+                "readsDone": True,
+                "dispatches": 10,
+                "timeGateReset": True,
+                # Zero deliberately avoids cross-process crash recovery. The
+                # OpenCode child stamps its own PID on the next state write.
+                "pid": 0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return state_path
+
+
+def test_no_wait_session_state_is_isolated_and_primed(tmp_path: Path) -> None:
+    """The no-wait scenario cannot inherit another session's start gate."""
+    state_path = _write_primed_session_state(tmp_path)
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+
+    assert state_path.parent == tmp_path
+    assert state["readsDone"] is True
+    assert state["dispatches"] == 10
+    assert state["timeGateReset"] is True
+    assert state["pid"] == 0
+
+
 def _message_text(message: dict[str, Any]) -> str:
     content = message.get("content", "")
     if isinstance(content, str):
@@ -509,8 +541,9 @@ def test_tui_handles_multiple_permissioned_tool_prompts() -> None:
 @pytest.mark.skipif(OPENCODE is None, reason="opencode binary not on PATH")
 @pytest.mark.timeout(420)
 @pytest.mark.xdist_group("opencode-live")
-def test_tui_no_wait_plugin_handles_multiple_bash_prompts() -> None:
+def test_tui_no_wait_plugin_handles_multiple_bash_prompts(tmp_path: Path) -> None:
     """A fresh TUI allows normal Make work and denies blocking Make waits."""
+    session_state = _write_primed_session_state(tmp_path)
     responses = [
         DeterministicProvider.tool_call(
             "bash",
@@ -561,7 +594,9 @@ def test_tui_no_wait_plugin_handles_multiple_bash_prompts() -> None:
             "GLUDD_NO_WAIT_ENFORCE": "1",
             "GLUDD_OBJECTIVE_ENFORCE": "0",
             "GLUDD_RELEASE_DEADLINE_ENFORCE": "0",
-            "GLUDD_SESSION_START_ENFORCE": "0",
+            "GLUDD_HOT_MODULE_PREFIX": str(tmp_path / "no-wait-hot-"),
+            "GLUDD_SESSION_START_ENFORCE": "1",
+            "GLUDD_SESSION_STATE": str(session_state),
             "GLUDD_STOP_ENFORCE": "0",
             "GLUDD_TASK_DEADLINE_ENABLED": "0",
             "GLUDD_TASK_TRACKING_ENFORCE": "0",
@@ -585,6 +620,7 @@ def test_tui_no_wait_plugin_handles_multiple_bash_prompts() -> None:
             "no-wait guard denies it, explain that briefly.",
         )
         assert "$ make gate-tail" in gate_tail_segment
+        assert "[SESSION START PROTOCOL]" not in gate_tail_segment
         assert "no-wait guard denied the blocking gate tail" in gate_tail_segment
 
         gate_status_segment = tui.prompt(
@@ -592,6 +628,7 @@ def test_tui_no_wait_plugin_handles_multiple_bash_prompts() -> None:
             "the no-wait guard denies it, explain that briefly.",
         )
         assert "$ make gate-status-check" in gate_status_segment
+        assert "[SESSION START PROTOCOL]" not in gate_status_segment
         assert (
             "no-wait guard denied the blocking gate status check"
             in gate_status_segment
