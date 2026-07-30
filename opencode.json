@@ -5,6 +5,8 @@
       "*": "deny",
       "/Users/shawnwilson/gludd/**": "allow",
       "/tmp/**": "allow",
+      "/private/tmp/**": "allow",
+      "/private/var/folders/**": "allow",
       "/Users/shawnwilson/.config/opencode/**": "allow",
       "/Users/shawnwilson/.local/share/opencode/**": "allow",
       "/Users/shawnwilson/.cache/**": "allow"
@@ -13,6 +15,8 @@
       "*": "deny",
       "/Users/shawnwilson/gludd/**": "allow",
       "/tmp/**": "allow",
+      "/private/tmp/**": "allow",
+      "/private/var/folders/**": "allow",
       "/Users/shawnwilson/.config/opencode/**": "allow",
       "/Users/shawnwilson/.local/share/opencode/**": "allow",
       "/Users/shawnwilson/.cache/**": "allow"
@@ -21,6 +25,8 @@
       "*": "deny",
       "/Users/shawnwilson/gludd/**": "allow",
       "/tmp/**": "allow",
+      "/private/tmp/**": "allow",
+      "/private/var/folders/**": "allow",
       "/Users/shawnwilson/.config/opencode/**": "allow",
       "/Users/shawnwilson/.local/share/opencode/**": "allow",
       "/Users/shawnwilson/.cache/**": "allow"
@@ -29,6 +35,8 @@
       "*": "deny",
       "/Users/shawnwilson/gludd/**": "allow",
       "/tmp/**": "allow",
+      "/private/tmp/**": "allow",
+      "/private/var/folders/**": "allow",
       "/Users/shawnwilson/.config/opencode/**": "allow",
       "/Users/shawnwilson/.local/share/opencode/**": "allow",
       "/Users/shawnwilson/.cache/**": "allow"
@@ -37,6 +45,8 @@
       "*": "deny",
       "/Users/shawnwilson/gludd/**": "allow",
       "/tmp/**": "allow",
+      "/private/tmp/**": "allow",
+      "/private/var/folders/**": "allow",
       "/Users/shawnwilson/.config/opencode/**": "allow",
       "/Users/shawnwilson/.local/share/opencode/**": "allow",
       "/Users/shawnwilson/.cache/**": "allow"
@@ -44,6 +54,15 @@
     "bash": {
       "*": "deny",
       "make *": "allow"
+    },
+    "external_directory": {
+      "*": "deny",
+      "/tmp/**": "allow",
+      "/private/tmp/**": "allow",
+      "/private/var/folders/**": "allow",
+      "/Users/shawnwilson/.config/opencode/**": "allow",
+      "/Users/shawnwilson/.local/share/opencode/**": "allow",
+      "/Users/shawnwilson/.cache/**": "allow"
     },
     "doom_loop": "deny"
   },
