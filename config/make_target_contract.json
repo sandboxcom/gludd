@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "targets": [
+    {
+      "name": "test-specific",
+      "make_variables": ["TESTFILE", "PYTEST_ARGS"],
+      "behavior": "make test-specific TESTFILE=tests/unit/test_make_target_contract.py::test_make_target_contract_is_valid PYTEST_ARGS=-q"
+    },
+    {
+      "name": "test-files",
+      "make_variables": ["TESTFILES", "PYTEST_ARGS"],
+      "behavior": "make test-files TESTFILES=tests/unit/test_make_target_contract.py PYTEST_ARGS=-q"
+    },
+    {
+      "name": "provider-harness",
+      "make_variables": ["PROVIDER", "LIVE"],
+      "behavior": "make provider-harness PROVIDER=azure LIVE=0"
+    },
+    {
+      "name": "azure-harness",
+      "make_variables": ["LIVE"],
+      "environment_variables": ["AZURE_SUBSCRIPTION_ID", "AZURE_TENANT_ID"],
+      "behavior": "make azure-harness LIVE=0 AZURE_SUBSCRIPTION_ID=sub-123 AZURE_TENANT_ID=tenant-456"
+    },
+    {
+      "name": "test-opa-policies",
+      "make_variables": ["OPA_ARGS"],
+      "behavior": "make test-opa-policies OPA_ARGS=--strict"
+    },
+    {
+      "name": "audit-coverage",
+      "make_variables": ["THRESHOLD", "SOURCE"],
+      "behavior": "make audit-coverage THRESHOLD=85 SOURCE=src/general_ludd"
+    },
+    {
+      "name": "git-commit",
+      "make_variables": ["MSG"],
+      "behavior": "make git-commit MSG='documented change'"
+    },
+    {
+      "name": "check-task-integrity",
+      "make_variables": [],
+      "behavior": "make check-task-integrity"
+    },
+    {
+      "name": "validate-task-ledger",
+      "make_variables": [],
+      "behavior": "make validate-task-ledger"
+    },
+    {
+      "name": "check-make-target-contract",
+      "make_variables": [],
+      "behavior": "make check-make-target-contract"
+    },
+    {
+      "name": "ci-trigger-committed-head",
+      "make_variables": [
+        "EXAMPLE",
+        "REF",
+        "REMOTE",
+        "REPO",
+        "WORKFLOW",
+        "DISCOVERY_POLLS",
+        "CONFIRM_POLLS",
+        "POLL_INTERVAL"
+      ],
+      "behavior": "make ci-trigger-committed-head EXAMPLE=1 REF=release/beta3-candidate REMOTE=sandboxcom REPO=sandboxcom/gludd WORKFLOW='Build and Release' DISCOVERY_POLLS=1 CONFIRM_POLLS=1 POLL_INTERVAL=0"
+    },
+    {
+      "name": "release-view",
+      "make_variables": ["TAG"],
+      "behavior": "make release-view TAG=v0.1.0-beta.2"
+    }
+  ]
+}

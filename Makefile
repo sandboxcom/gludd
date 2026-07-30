@@ -184,6 +184,9 @@ help:
 	@echo "  check-make-help       Verify every public Makefile target is listed by make help"
 	@echo "  codemod-lean-enforcement-plugins Extract bulky enforcement implementations from counted plugin entrypoints"
 	@echo "  check-no-prompt-prone-edit-tools  Enforce make-target-only edit workflow"
+	@echo "  check-make-target-contract  Validate target variables, help, and behavioral examples"
+	@echo "  check-task-integrity  Require changed files to map to registered tasks"
+	@echo "  validate-task-ledger  Validate TASKS.md metadata and completion evidence"
 	@echo "  write-text-b64        Write FILE from base64 TEXT_B64 without shell quoting loss"
 	@echo "  replace-text-b64      Exact old/new base64 replacement via scripts/replace_text.py"
 	@echo "  mkdir-p               Create an allowed workspace or /tmp/gludd-* directory"
@@ -830,7 +833,7 @@ _gate-run-lock-acquire:
 _check-windows-tracked-paths:
 	@BT="/tmp/gludd-windows-paths-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest tests/unit/test_cross_platform_binary.py::test_tracked_paths_are_windows_checkout_compatible -q -n 0 --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
 
-gate: _gate-run-lock-acquire _check-windows-tracked-paths check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-hook-invoke check-plugin-imports check-node-v26-compat check-duplicate-targets check-task-integrity check-no-prompt-prone-edit-tools
+gate: _gate-run-lock-acquire _check-windows-tracked-paths check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-make-target-contract check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-hook-invoke check-plugin-imports check-node-v26-compat check-duplicate-targets check-task-integrity check-no-prompt-prone-edit-tools
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
@@ -6096,6 +6099,9 @@ ci-push-committed-head: git-push-committed-head-nv ci-trigger-committed-head
 
 check-no-prompt-prone-edit-tools:
 	@$(UV) run python scripts/check_no_prompt_prone_edit_tools.py
+
+check-make-target-contract:
+	@$(UV) run python scripts/check_make_target_contract.py
 
 
 git-resolve-theirs:
