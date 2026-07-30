@@ -80,7 +80,10 @@ def test_main_usage_error():
     assert rc == 2
 
 
-def test_main_happy_path(monkeypatch, tmp_path: Path):
+def test_main_direct_call_does_not_poison_parent_resource_limits(
+    monkeypatch, tmp_path: Path
+):
+    """Only the ``python -m`` child boundary may lower irreversible RLIMITs."""
     calls = []
     monkeypatch.setattr(
         "general_ludd.abtest._child.apply_limits",
@@ -92,10 +95,35 @@ def test_main_happy_path(monkeypatch, tmp_path: Path):
         "prog",
         "/nonexistent/root",
         json.dumps({"kind": "import_module", "module": "os"}),
-        "256",
+        "128",
         "30",
         str(result_path),
         "test-nonce",
     ])
+
+    assert rc == 0
+    assert calls == []
+
+
+def test_main_happy_path(monkeypatch, tmp_path: Path):
+    calls = []
+    monkeypatch.setattr(
+        "general_ludd.abtest._child.apply_limits",
+        lambda mem_mb, cpu_s: calls.append((mem_mb, cpu_s)),
+    )
+    result_path = tmp_path / "test-result.json"
+
+    rc = main(
+        [
+            "prog",
+            "/nonexistent/root",
+            json.dumps({"kind": "import_module", "module": "os"}),
+            "256",
+            "30",
+            str(result_path),
+            "test-nonce",
+        ],
+        apply_resource_limits=True,
+    )
     assert rc == 0
     assert calls == [(256, 30)]
