@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-29 — (resolved) Linux artifact build masked its warning-audit failure
+
+- **What**: The first real beta.3 Linux build upgraded all 19 pending snapshot packages and produced an AArch64 ELF, but its PyInstaller auditor stopped on `runtime module named six.moves`. The surrounding Make recipe then ran a successful `docker cp`, returned zero, and made the failed audit look green. Debian also emitted a stale `bash-builtins` alternatives warning and the minimal-image `apt-utils` configuration notice.
+- **Root cause**: The warning grammar recognized only `missing` and `excluded`, even though PyInstaller's graph has a distinct hook-created `RuntimeModule` node. The multiline `if` recipe did not enable fail-fast behavior, so the later copy replaced `docker run`'s nonzero status. Container cleanup discarded the warning report, and the slim image's man-page exclusion had left an alternatives record pointing at a path that was not yet present.
+- **Fix applied**: Tests went red first for runtime classification and fail-closed recipe structure. The auditor now counts runtime edges separately while unknown statuses still fail. The build uses `set -e` plus an explicit failed-container branch, copies the warning report to a namespaced host scratch mount before auditing, withholds the ELF until the audit passes, and removes both scratch directories and the container through one trap. The package phase repairs the dangling alternative and bootstraps exact `apt-utils=2.6.1` before the pinned dist-upgrade.
+- **Long-lived user evidence**: PyInstaller [issue #3495](https://github.com/pyinstaller/pyinstaller/issues/3495), opened in 2018, shows `runtime module named ... six.moves` records coexisting with genuinely missing modules; the official v6.20.0 [module graph](https://github.com/pyinstaller/pyinstaller/blob/v6.20.0/PyInstaller/lib/modulegraph/modulegraph.py) models runtime and missing nodes separately. Users have reported missing modules that only surface after packaging since at least 2014 ([Stack Overflow](https://stackoverflow.com/questions/25733467/no-module-named-when-using-pyinstaller)).
+- **Lesson**: An artifact is publishable only if the analysis audit's exact exit status reaches Make. Preserve diagnostic inputs before cleanup, distinguish tool-defined resolved runtime nodes from unresolved imports, and never let a successful copy overwrite a failed validator.
+
 ### 2026-07-29 — (resolved) hosted log analyzer ignored explicit path overrides
 
 - **What**: Both Python legs of beta.3 hosted run 30489932257 returned Ansible `rc=2` for every log-analyzer role invocation, while developer machines with previously-created `/tmp` directories passed. The result discarded the failure reason as `error: None`.
