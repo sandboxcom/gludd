@@ -411,6 +411,10 @@ class TestPrepare:
         assert "snapshot.debian.org/archive/debian-security/" in makefile
         assert "Acquire::Check-Valid-Until" in makefile
         assert "APT::Update::Error-Mode=any update" in makefile
+        assert (
+            'sed -i "\\|/usr/share/man/|d" '
+            "/etc/dpkg/dpkg.cfg.d/docker"
+        ) in makefile
         assert "apt-get -y --no-remove dist-upgrade" in makefile
         assert (
             'apt-get install -y --no-install-recommends '
@@ -418,6 +422,7 @@ class TestPrepare:
         ) in makefile
         assert "command -v objdump" in makefile
         assert "command -v objcopy" in makefile
+        assert "dpkg-query -W binutils" in makefile
         assert "apt-get -s dist-upgrade" in makefile
         assert (
             "0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded."

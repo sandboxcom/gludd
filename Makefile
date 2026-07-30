@@ -4056,6 +4056,9 @@ build-linux-executable: ## Build and verify a real Linux PyInstaller executable
 					-e "s|http://deb.debian.org/debian-security|https://snapshot.debian.org/archive/debian-security/$(DEBIAN_SNAPSHOT)|g" \
 					-e "s|http://deb.debian.org/debian|https://snapshot.debian.org/archive/debian/$(DEBIAN_SNAPSHOT)|g" \
 					/etc/apt/sources.list.d/debian.sources; \
+				if test -f /etc/dpkg/dpkg.cfg.d/docker; then \
+					sed -i "\|/usr/share/man/|d" /etc/dpkg/dpkg.cfg.d/docker; \
+				fi; \
 				printf "%s\n" "Acquire::Check-Valid-Until \"false\";" > /etc/apt/apt.conf.d/99gludd-snapshot; \
 				apt-get -o APT::Update::Error-Mode=any update; \
 				echo "=== pending package updates before dist-upgrade ==="; \
@@ -4064,6 +4067,7 @@ build-linux-executable: ## Build and verify a real Linux PyInstaller executable
 				apt-get install -y --no-install-recommends "binutils=$(LINUX_BINUTILS_VERSION)"; \
 				command -v objdump; \
 				command -v objcopy; \
+				dpkg-query -W binutils; \
 				echo "=== pending package updates after dist-upgrade ==="; \
 				apt-get -s dist-upgrade > /tmp/gludd-apt-after.txt; \
 				cat /tmp/gludd-apt-after.txt; \
