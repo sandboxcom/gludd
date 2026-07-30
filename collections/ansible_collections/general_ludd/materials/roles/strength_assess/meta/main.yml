@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: strength_assess
+  author: Agentic Harness Agent
+  description: >
+    Check static, fatigue, fracture, creep, buckling, impact, wear, thermal,
+    and environmental limits with fail-closed safety behavior
+    (spec MATE-001 §3, §4.7).
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [materials, engineering, strength, fea, safety]
+dependencies: []

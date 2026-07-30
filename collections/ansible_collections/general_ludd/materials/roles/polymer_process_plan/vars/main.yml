@@ -1,0 +1,2 @@
+---
+_materials_module: "{{ role_path }}/../../plugins/module_utils/materials.py"

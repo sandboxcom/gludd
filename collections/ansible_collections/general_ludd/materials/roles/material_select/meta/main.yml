@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: material_select
+  author: Agentic Harness Agent
+  description: >
+    Rank material families and grades using traceable requirements,
+    uncertainty, and trade-offs (spec MATE-001 §3).
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [materials, engineering, selection]
+dependencies: []

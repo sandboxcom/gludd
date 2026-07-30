@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: polymer_process_plan
+  author: Agentic Harness Agent
+  description: >
+    Select resin/additives/drying/tooling/process windows for forming
+    plastics; distinguish thermoplastic melting from thermoset cure
+    (spec MATE-001 §3, §4.2).
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [materials, polymers, plastics, injection_molding]
+dependencies: []

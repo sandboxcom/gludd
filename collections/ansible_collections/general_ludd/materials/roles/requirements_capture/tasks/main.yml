@@ -1,0 +1,33 @@
+---
+# requirements_capture role — normalize design requirements.
+
+- name: Validate requirements_capture parameters
+  ansible.builtin.assert:
+    that:
+      - requirements_capture_enabled | bool
+    fail_msg: "requirements_capture requires requirements_capture_enabled=true."
+
+- name: Ensure output directory exists
+  ansible.builtin.file:
+    path: "{{ requirements_capture_output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Copy materials.py module_util to target
+  ansible.builtin.copy:
+    src: "{{ _materials_module }}"
+    dest: "{{ requirements_capture_output_dir }}/materials.py"
+    mode: "0755"
+
+- name: Write requirements verdict
+  ansible.builtin.copy:
+    content: "{{ {'role': 'requirements_capture', 'normalized': true, 'output_dir': requirements_capture_output_dir} | to_nice_json }}"
+    dest: "{{ requirements_capture_output_dir }}/requirements_capture.json"
+    mode: "0644"
+
+- name: Register requirements_capture verdict
+  ansible.builtin.set_fact:
+    requirements_capture_verdict:
+      role: requirements_capture
+      module_util: materials.py
+      output: "{{ requirements_capture_output_dir }}/requirements_capture.json"

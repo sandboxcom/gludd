@@ -1,0 +1,36 @@
+---
+# polymer_process_plan role — plan a polymer forming process.
+
+- name: Validate polymer_process_plan parameters
+  ansible.builtin.assert:
+    that:
+      - polymer_process_plan_enabled | bool
+      - polymer_process_plan_material is defined
+      - polymer_process_plan_process is defined
+    fail_msg: >
+      polymer_process_plan requires material and process to be set.
+
+- name: Ensure output directory exists
+  ansible.builtin.file:
+    path: "{{ polymer_process_plan_output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Copy materials.py module_util to target
+  ansible.builtin.copy:
+    src: "{{ _materials_module }}"
+    dest: "{{ polymer_process_plan_output_dir }}/materials.py"
+    mode: "0755"
+
+- name: Write polymer process plan verdict
+  ansible.builtin.copy:
+    content: "{{ {'role': 'polymer_process_plan', 'material': polymer_process_plan_material, 'process': polymer_process_plan_process} | to_nice_json }}"
+    dest: "{{ polymer_process_plan_output_dir }}/polymer_process_plan.json"
+    mode: "0644"
+
+- name: Register polymer_process_plan verdict
+  ansible.builtin.set_fact:
+    polymer_process_plan_verdict:
+      role: polymer_process_plan
+      module_util: materials.py
+      output: "{{ polymer_process_plan_output_dir }}/polymer_process_plan.json"
