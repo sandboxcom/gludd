@@ -5,7 +5,10 @@ const path = require("node:path");
 const vm = require("node:vm");
 const { spawnSync } = require("node:child_process");
 
-const PLUGIN_DIR = path.resolve(__dirname, "..", ".opencode", "plugin");
+const PLUGIN_DIR = path.resolve(
+  process.env.GLUDD_PLUGIN_DIR
+    || path.join(__dirname, "..", ".opencode", "plugin"),
+);
 const PLUGIN_TEST_EXPORTS = path.resolve(
   PLUGIN_DIR,
   "..",
@@ -366,22 +369,16 @@ function main() {
   console.log("=== build_hot_modules.js ===\n");
 
   let built = 0;
-  let expected = 0;
   for (const name of PLUGINS) {
-    const srcPath = path.join(PLUGIN_DIR, `${name}.ts`);
-    if (
-      fs.existsSync(srcPath)
-      && implementationSource(srcPath, fs.readFileSync(srcPath, "utf8"))
-    ) {
-      expected++;
-    }
     if (buildPlugin(name)) built++;
   }
 
   console.log(`\nBuilt ${built}/${PLUGINS.length} hot-reload modules in ${OUT_DIR}/`);
   status();
-  if (built !== expected) {
-    console.error(`Hot-reload build failed: built ${built}/${expected} proxy-pattern plugins`);
+  if (built !== PLUGINS.length) {
+    console.error(
+      `Hot-reload build failed: built ${built}/${PLUGINS.length} required plugins`,
+    );
     process.exitCode = 1;
   }
 }

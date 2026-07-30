@@ -18,6 +18,7 @@ import contextlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -164,6 +165,42 @@ class TestHotModuleBuild:
                 assert size > 0, f"Hot module {f.name} is empty"
         finally:
             self._cleanup()
+
+    def test_builder_fails_closed_when_required_source_is_truncated(
+        self,
+        tmp_path: Path,
+    ):
+        """A copied, empty enforcement source must make the build non-zero."""
+        copied_opencode = tmp_path / ".opencode"
+        shutil.copytree(
+            ROOT / ".opencode",
+            copied_opencode,
+            ignore=shutil.ignore_patterns("node_modules", "package-lock.json"),
+        )
+        truncated = copied_opencode / "plugin" / "enforce-no-wait.ts"
+        truncated.write_text("", encoding="utf-8")
+        hot_prefix = str(tmp_path / "hot-")
+
+        result = subprocess.run(
+            ["node", str(BUILD_SCRIPT)],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env={
+                **os.environ,
+                "GLUDD_HOT_MODULE_PREFIX": hot_prefix,
+                "GLUDD_PLUGIN_DIR": str(copied_opencode / "plugin"),
+            },
+        )
+
+        assert result.returncode != 0, (
+            "The hot-reload builder accepted a truncated required plugin source"
+        )
+        output = result.stdout + result.stderr
+        assert "enforce-no-wait" in output
+        assert "Hot-reload build failed" in output
+        assert not Path(f"{hot_prefix}enforce-no-wait.js").exists()
 
     def test_builder_uses_each_proxy_lookup_name(self):
         """Generated filenames must match the names passed to loadHotModule()."""
