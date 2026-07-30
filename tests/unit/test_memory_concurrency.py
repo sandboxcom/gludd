@@ -374,7 +374,46 @@ class TestWriteDuringRead:
             bank.retain(MemoryEntry(content="unrelated fact", tags=["other"]))
             bank.recall("initial")
 
-        assert score_text.call_count == 3
+        assert score_text.call_count == 2
+
+    def test_active_recall_cache_updates_each_fact_incrementally(self) -> None:
+        bank = MemoryBank(MemoryBankConfig(bank_id="incremental-recall-cache"))
+        replaceable = bank.retain(
+            MemoryEntry(content="initial replaceable", tags=["initial"])
+        )
+        removable = bank.retain(
+            MemoryEntry(content="initial removable", tags=["initial"])
+        )
+        assert len(bank.recall("initial").facts) == 2
+
+        with patch.object(
+            memory_bank_module,
+            "_score_text",
+            wraps=memory_bank_module._score_text,
+        ) as score_text:
+            for index in range(32):
+                bank.retain(
+                    MemoryEntry(
+                        content=f"unrelated fact {index}",
+                        tags=["other"],
+                    )
+                )
+                assert len(bank.recall("initial").facts) == 2
+
+            bank.retain(
+                MemoryEntry(
+                    entry_id=replaceable.entry_id,
+                    content="replacement unrelated",
+                    tags=["other"],
+                )
+            )
+            remaining = bank.recall("initial").facts
+            assert [fact.entry_id for fact in remaining] == [removable.entry_id]
+
+            assert bank.delete_fact(removable.entry_id) is True
+            assert bank.recall("initial").facts == []
+
+        assert score_text.call_count == 33
 
     def test_reader_sees_consistent_snapshot(self):
         store = ObservationStore(store_path="/tmp/gludd-test-observations-wdr.json")

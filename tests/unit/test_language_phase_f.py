@@ -394,6 +394,12 @@ class TestMoleculeScenarioStructure:
             "Phase F gap: verify.yml must exist"
         )
 
+    def test_destroy_playbook_configured(self) -> None:
+        with open(self.MOLECULE_DIR / "molecule.yml") as f:
+            data = yaml.safe_load(f)
+        destroy = data["provisioner"]["playbooks"].get("destroy")
+        assert destroy, "Phase F gap: destroy playbook must be configured"
+
     def test_molecule_yml_valid_yaml(self) -> None:
         with open(self.MOLECULE_DIR / "molecule.yml") as f:
             data = yaml.safe_load(f)
@@ -482,6 +488,9 @@ class TestRoleFileCompleteness:
             data = yaml.safe_load(f)
         assert isinstance(data, dict), f"defaults/main.yml for {role} must be a YAML dict"
         assert len(data) >= 1, f"defaults/main.yml for {role} must have >=1 default var"
+        assert "name" not in data, (
+            f"defaults/main.yml for {role} must not override Ansible's reserved 'name'"
+        )
 
     @pytest.mark.parametrize("role", ALL_ROLES)
     def test_standalone_script_executable(self, role: str) -> None:

@@ -207,7 +207,7 @@ class MemoryBank:
         self._ordered_facts_revision = -1
         self._ordered_facts_cache: tuple[MemoryEntry, ...] = ()
         self._fact_score_cache_key: tuple[str, tuple[str, ...]] | None = None
-        self._fact_score_cache: tuple[MemoryEntry, ...] = ()
+        self._fact_score_cache: tuple[tuple[MemoryEntry, float], ...] = ()
 
     @property
     def config(self) -> MemoryBankConfig:
@@ -270,7 +270,7 @@ class MemoryBank:
         stored = _copy_memory_entry(fact)
         with self._lock:
             self._facts[fact.entry_id] = stored
-            self._invalidate_fact_caches()
+            self._record_fact_retained(stored)
         return _copy_memory_entry(fact)
 
     def get_facts(self, tag_filter: str | None = None) -> list[MemoryEntry]:
@@ -284,7 +284,7 @@ class MemoryBank:
         with self._lock:
             if entry_id in self._facts:
                 del self._facts[entry_id]
-                self._invalidate_fact_caches()
+                self._record_fact_deleted(entry_id)
                 return True
             return False
 
@@ -349,19 +349,19 @@ class MemoryBank:
                 revision = self._facts_revision
                 snapshot = tuple(self._facts.values())
         if cached is not None:
-            return [_copy_memory_entry(fact) for fact in cached]
+            return [_copy_memory_entry(fact) for fact, _ in cached]
         for fact in snapshot:
             text_blob = f"{fact.content} {fact.source} {' '.join(fact.tags)}"
             score = _score_text(qterms, ql, text_blob)
             if score > 0:
                 scored.append((fact, score))
         scored.sort(key=lambda x: x[1], reverse=True)
-        ordered = tuple(fact for fact, _ in scored)
+        ordered = tuple(scored)
         with self._lock:
             if revision == self._facts_revision:
                 self._fact_score_cache_key = cache_key
                 self._fact_score_cache = ordered
-        return [_copy_memory_entry(fact) for fact in ordered]
+        return [_copy_memory_entry(fact) for fact, _ in ordered]
 
     def _ordered_fact_snapshot(self) -> tuple[MemoryEntry, ...]:
         with self._lock:
@@ -378,12 +378,36 @@ class MemoryBank:
                 self._ordered_facts_cache = ordered
         return ordered
 
-    def _invalidate_fact_caches(self) -> None:
+    def _record_fact_retained(self, fact: MemoryEntry) -> None:
         self._facts_revision += 1
         self._ordered_facts_revision = -1
         self._ordered_facts_cache = ()
-        self._fact_score_cache_key = None
-        self._fact_score_cache = ()
+        cache_key = self._fact_score_cache_key
+        if cache_key is None:
+            return
+
+        ql, qterms = cache_key
+        updated = [
+            item
+            for item in self._fact_score_cache
+            if item[0].entry_id != fact.entry_id
+        ]
+        text_blob = f"{fact.content} {fact.source} {' '.join(fact.tags)}"
+        score = _score_text(list(qterms), ql, text_blob)
+        if score > 0:
+            updated.append((fact, score))
+            updated.sort(key=lambda item: item[1], reverse=True)
+        self._fact_score_cache = tuple(updated)
+
+    def _record_fact_deleted(self, entry_id: str) -> None:
+        self._facts_revision += 1
+        self._ordered_facts_revision = -1
+        self._ordered_facts_cache = ()
+        self._fact_score_cache = tuple(
+            item
+            for item in self._fact_score_cache
+            if item[0].entry_id != entry_id
+        )
 
     def _synthesize(
         self,
