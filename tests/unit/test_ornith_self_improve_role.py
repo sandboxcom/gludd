@@ -29,6 +29,8 @@ PLAYBOOK = ROOT / "playbooks" / "ornith_self_improve.yml"
 SEED_SCRIPT = ROOT / "scripts" / "seed_ornith_self_improve_schedule.py"
 MOCK_DAEMON = ROOT / "molecule" / "mock_daemon" / "server.py"
 MOLECULE_SCENARIO = ROOT / "molecule" / "playbooks" / "ornith_self_improve"
+OPENBAO_SCENARIO = ROOT / "molecule" / "playbooks" / "openbao_break_glass_backup"
+SHARED_MOLECULE_CLEANUP = ROOT / "molecule" / "shared" / "cleanup.yml"
 
 
 def _load_yaml(path: Path) -> object:
@@ -251,6 +253,58 @@ class TestMoleculeScenario:
     def test_converge_enables_ornith(self):
         converge = (MOLECULE_SCENARIO / "default" / "converge.yml").read_text()
         assert "ornith_enabled: true" in converge
+
+    def test_mock_daemon_lifecycle_is_isolated_from_preceding_openbao(self):
+        """The full gate must not health-check a daemon that is being stopped."""
+        ornith = _load_yaml(MOLECULE_SCENARIO / "molecule.yml")
+        openbao = _load_yaml(OPENBAO_SCENARIO / "molecule.yml")
+        assert isinstance(ornith, dict)
+        assert isinstance(openbao, dict)
+
+        ornith_port = ornith["provisioner"]["env"]["GLUDD_MOCK_PORT"]
+        openbao_port = openbao["provisioner"]["env"]["GLUDD_MOCK_PORT"]
+        assert ornith_port != openbao_port, (
+            "adjacent openbao and Ornith scenarios must own distinct mock ports"
+        )
+
+        expected_cleanup = (
+            "${MOLECULE_PROJECT_DIRECTORY}/molecule/shared/cleanup.yml"
+        )
+        for scenario, config in (
+            (MOLECULE_SCENARIO, ornith),
+            (OPENBAO_SCENARIO, openbao),
+        ):
+            playbooks = config["provisioner"]["playbooks"]
+            sequence = config["scenario"]["test_sequence"]
+            assert playbooks["cleanup"] == expected_cleanup
+            assert sequence[0] == "cleanup"
+            assert sequence[-1] == "cleanup"
+
+            verify = (scenario / "default" / "verify.yml").read_text()
+            assert "kill $(cat" not in verify, (
+                "scenario teardown must use the ownership-checked shared cleanup"
+            )
+
+        cleanup = SHARED_MOLECULE_CLEANUP.read_text()
+        assert "_gludd_mock_owned" in cleanup
+        assert "state: stopped" in cleanup, (
+            "cleanup must prove the owned daemon released its port before returning"
+        )
+
+        openbao_prepare = _load_yaml(
+            OPENBAO_SCENARIO / "default" / "prepare.yml"
+        )
+        assert isinstance(openbao_prepare, list)
+        tasks = openbao_prepare[0]["tasks"]
+        launch_index = next(
+            index
+            for index, task in enumerate(tasks)
+            if task["name"] == "Launch mock daemon (background, nohup)"
+        )
+        assert all(
+            "{{ pidfile }}" not in json.dumps(task)
+            for task in tasks[launch_index + 1 :]
+        ), "prepare must preserve the launched daemon's ownership pidfile"
 
 
 class TestMockDaemonExtensions:

@@ -58,6 +58,16 @@
         - _gludd_mock_pidfile.stat.exists
         - _gludd_mock_owned | default(false) | bool
 
+    - name: Wait for the scenario-owned mock daemon port to close
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ mock_port | int }}"
+        state: stopped
+        timeout: 10
+      when:
+        - _gludd_mock_pidfile.stat.exists
+        - _gludd_mock_owned | default(false) | bool
+
     - name: Remove only an owned or stale pidfile
       ansible.builtin.file:
         path: "{{ pidfile }}"
