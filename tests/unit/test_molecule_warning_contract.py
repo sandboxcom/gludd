@@ -8,7 +8,8 @@ from pathlib import Path
 import yaml
 
 _ROOT = Path(__file__).resolve().parents[2]
-_SCENARIOS = _ROOT / "molecule" / "playbooks"
+_MOLECULE_ROOT = _ROOT / "molecule"
+_SCENARIOS = _MOLECULE_ROOT / "playbooks"
 _MODULES = (
     _ROOT
     / "collections"
@@ -42,10 +43,35 @@ _DEFAULT_TEST_SEQUENCE = [
     "destroy",
 ]
 _DRIVER_MANAGED_PHASES = {"create", "destroy"}
+_EXPECTED_RELEASE_SCENARIOS = 123
+_CONDITIONAL_KEYS = {"changed_when", "failed_when", "that", "until", "when"}
 
 
 def _scenario_configs() -> list[Path]:
-    return sorted(_SCENARIOS.glob("*/molecule.yml"))
+    source_configs = set(_SCENARIOS.glob("*/molecule.yml"))
+    source_names = {config.parent.name for config in source_configs}
+    runtime_configs = {
+        config
+        for config in _MOLECULE_ROOT.glob("*/molecule.yml")
+        if config.parent.name in source_names
+    }
+    return sorted(source_configs | runtime_configs)
+
+
+def _conditional_values(node: object) -> list[str]:
+    values: list[str] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in _CONDITIONAL_KEYS:
+                candidates = value if isinstance(value, list) else [value]
+                values.extend(
+                    candidate for candidate in candidates if isinstance(candidate, str)
+                )
+            values.extend(_conditional_values(value))
+    elif isinstance(node, list):
+        for value in node:
+            values.extend(_conditional_values(value))
+    return values
 
 
 def _mapped_playbook_exists(
@@ -96,6 +122,36 @@ def test_full_matrix_has_explicit_inventory_and_complete_sequences() -> None:
                 if not (config_path.parent / filename).is_file():
                     violations.append(
                         f"{scenario}: missing dependency file {filename}"
+                    )
+
+    assert not violations, "\n" + "\n".join(violations)
+
+
+def test_warning_contract_covers_every_release_scenario() -> None:
+    configs = _scenario_configs()
+    source_configs = sorted(_SCENARIOS.glob("*/molecule.yml"))
+    names = {config.parent.name for config in configs}
+    assert len(source_configs) == _EXPECTED_RELEASE_SCENARIOS
+    assert len(names) == _EXPECTED_RELEASE_SCENARIOS
+    assert {"project_init_role", "prompt_eval"} <= names
+    assert (_MOLECULE_ROOT / "prompt_eval" / "molecule.yml") in configs
+
+
+def test_molecule_conditionals_do_not_use_deprecated_jinja_delimiters() -> None:
+    violations: list[str] = []
+    scenario_roots = {config.parent for config in _scenario_configs()}
+    playbook_paths = {
+        playbook
+        for scenario_root in scenario_roots
+        for playbook in scenario_root.glob("default/*.yml")
+    }
+    for playbook_path in sorted(playbook_paths):
+        for document in yaml.safe_load_all(playbook_path.read_text()):
+            for conditional in _conditional_values(document):
+                expression = conditional.strip()
+                if expression.startswith("{{") and expression.endswith("}}"):
+                    violations.append(
+                        f"{playbook_path.relative_to(_ROOT)}: {expression}"
                     )
 
     assert not violations, "\n" + "\n".join(violations)
