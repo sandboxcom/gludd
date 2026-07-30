@@ -2,8 +2,9 @@
 
 Checks:
   1. File listing: .opencode.orig/ must contain all .ts files present in
-     .opencode/plugin/ (excludes node_modules/).
-  2. Export parity: plugin/shared.ts exports must match between live and backup.
+     .opencode/plugin/, .opencode/plugins/, and .opencode/lib/
+     (excludes node_modules/).
+  2. Export parity: shared.ts exports must match between live and backup.
      A backup missing exports is stale — running restore-opencode would
      overwrite live code with code missing those exports.
 
@@ -15,6 +16,12 @@ from __future__ import annotations
 import re
 import sys
 from pathlib import Path
+
+# Directories whose .ts contents must round-trip through backup/restore.
+# plugin/ and plugins/ hold enforcement plugins; lib/ holds shared.ts and
+# helper modules since the E.5 refactor. All three must be backed up, or a
+# restore would drop live enforcement code.
+BACKUP_TS_DIRS = ("plugin", "plugins", "lib")
 
 EXPORT_RE = re.compile(
     r"^\s*export\s+(?:default\s+)?"
@@ -36,16 +43,26 @@ def _extract_exports(filepath: Path) -> set[str]:
     return names
 
 
-def _list_plugin_ts_files(root: Path) -> set[str]:
-    """Return relative paths (from root) of all .ts files under plugin/."""
-    plugin = root / "plugin"
-    if not plugin.is_dir():
-        return set()
-    return {
-        str(p.relative_to(root))
-        for p in plugin.rglob("*.ts")
-        if p.is_file() and "node_modules" not in p.parts
-    }
+def _list_ts_files(root: Path) -> set[str]:
+    """Return relative paths (from root) of all .ts files under the backup-relevant
+    subdirectories (plugin/, plugins/, lib/).
+
+    Excludes node_modules/ and non-.ts files. The legacy name `_list_plugin_ts_files`
+    is kept as an alias so existing callers and tests continue to work.
+    """
+    found: set[str] = set()
+    for sub in BACKUP_TS_DIRS:
+        d = root / sub
+        if not d.is_dir():
+            continue
+        for p in d.rglob("*.ts"):
+            if p.is_file() and "node_modules" not in p.parts:
+                found.add(str(p.relative_to(root)))
+    return found
+
+
+# Backwards-compat alias for callers that imported the old name.
+_list_plugin_ts_files = _list_ts_files
 
 
 def verify(opencode: Path, backup: Path) -> tuple[bool, list[str]]:
@@ -55,16 +72,15 @@ def verify(opencode: Path, backup: Path) -> tuple[bool, list[str]]:
         msgs.append("ERROR: .opencode.orig/ does not exist")
         return False, msgs
 
-    live_files = _list_plugin_ts_files(opencode)
-    backup_files = _list_plugin_ts_files(backup)
+    live_files = _list_ts_files(opencode)
+    backup_files = _list_ts_files(backup)
 
     missing = live_files - backup_files
     if missing:
         for f in sorted(missing):
             msgs.append(f"  MISSING: {f} in .opencode.orig/")
         msgs.append(
-            "  WARNING: .opencode.orig/ is missing files present in .opencode/."
-            " Run 'make backup-opencode' to refresh."
+            "  WARNING: .opencode.orig/ is missing files present in .opencode/. Run 'make backup-opencode' to refresh."
         )
 
     extra = backup_files - live_files
@@ -85,9 +101,7 @@ def verify(opencode: Path, backup: Path) -> tuple[bool, list[str]]:
         missing_exports = live_exports - backup_exports
         if missing_exports:
             for name in sorted(missing_exports):
-                msgs.append(
-                    f"  MISSING EXPORT from backup shared.ts: '{name}'"
-                )
+                msgs.append(f"  MISSING EXPORT from backup shared.ts: '{name}'")
             msgs.append(
                 "  WARNING: backup shared.ts is missing exports the live"
                 " shared.ts has. Running 'make restore-opencode' would"
@@ -96,15 +110,11 @@ def verify(opencode: Path, backup: Path) -> tuple[bool, list[str]]:
         extra_exports = backup_exports - live_exports
         if extra_exports:
             for name in sorted(extra_exports):
-                msgs.append(
-                    f"  NOTE: backup shared.ts has extra export not in live: '{name}'"
-                )
+                msgs.append(f"  NOTE: backup shared.ts has extra export not in live: '{name}'")
     elif live_shared.is_file() and not backup_shared.is_file():
         msgs.append("  MISSING: plugin/shared.ts from .opencode.orig/")
 
-    ok = len(missing) == 0 and not any(
-        "MISSING EXPORT" in m for m in msgs
-    )
+    ok = len(missing) == 0 and not any("MISSING EXPORT" in m for m in msgs)
     return ok, msgs
 
 
