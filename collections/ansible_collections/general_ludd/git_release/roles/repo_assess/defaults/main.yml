@@ -1,0 +1,11 @@
+---
+# repo_assess defaults — read-only evidence collection parameters
+
+repo_path: "."
+
+# Maximum age (seconds) before evidence is considered stale and must be
+# refreshed. MVP does not enforce freshness; downstream mutating roles will.
+evidence_max_age_seconds: 300
+
+# Remote name to probe for upstream sync state (read-only ls-remote).
+evidence_remote_name: "sandboxcom"

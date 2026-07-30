@@ -1,0 +1,20 @@
+---
+namespace: general_ludd
+name: git_release
+version: 0.1.0
+readme: README.md
+description: >
+  Git mastery and release-captain expert collection. Read-only repository
+  evidence, history investigation, work recovery, helper discovery, and branch
+  planning — wrapping general_ludd.git_automation. No mutations in MVP.
+license:
+  - MIT
+authors:
+  - Agentic Harness Agent <agent@harness.local>
+tags:
+  - git
+  - release
+  - evidence
+  - forensics
+  - branching
+dependencies: {}

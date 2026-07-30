@@ -1,0 +1,24 @@
+---
+# branch_plan — plan branch operations with collision evidence.
+# MVP: read-only topology survey. Produces a PLAN record; applying the plan
+# (create/sync/backport/merge) lands in Phase GRC-P2 behind authorization.
+
+- name: "Assert repo_path is set"
+  ansible.builtin.assert:
+    that:
+      - repo_path | string | length > 0
+    fail_msg: "repo_path is required for branch_plan"
+
+- name: "Describe branch topology (read-only)"
+  general_ludd.agent.gludd_python:
+    module: general_ludd.git_release.topology
+    function: describe_topology
+    args:
+      repo_path: "{{ repo_path }}"
+  register: _topology_result
+
+- name: "Expose branch topology plan input"
+  ansible.builtin.set_fact:
+    git_release_branch_topology: "{{ _topology_result.result }}"
+    git_release_role: "branch_plan"
+    git_release_role_status: "planned"

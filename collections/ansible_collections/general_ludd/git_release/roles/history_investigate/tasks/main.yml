@@ -1,0 +1,25 @@
+---
+# history_investigate — read-only log/blame/range-diff probes.
+# MVP: delegates to general_ludd.git_automation.git_stats for indexed history.
+# Phase GRC-P1 read-only; bisect/blame-depth lands in a later phase.
+
+- name: "Assert repo_path is set"
+  ansible.builtin.assert:
+    that:
+      - repo_path | string | length > 0
+    fail_msg: "repo_path is required for history_investigate"
+
+- name: "Gather recent commit log (read-only)"
+  general_ludd.agent.gludd_python:
+    module: general_ludd.git_automation.git_stats
+    function: git_log
+    args:
+      repo_path: "{{ repo_path }}"
+      limit: "{{ history_limit }}"
+  register: _history_log_result
+
+- name: "Expose history probe result"
+  ansible.builtin.set_fact:
+    git_release_history_log: "{{ _history_log_result.result }}"
+    git_release_role: "history_investigate"
+    git_release_role_status: "collected"

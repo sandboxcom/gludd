@@ -1,0 +1,55 @@
+---
+# helper_discover — discover build/test/deploy/package helpers.
+# MVP: scans for well-known repo-native entry points per spec §4.3 priority order.
+# Ranking (helper_select) and helper_build land in Phase GRC-P3.
+
+- name: "Assert repo_path is set"
+  ansible.builtin.assert:
+    that:
+      - repo_path | string | length > 0
+    fail_msg: "repo_path is required for helper_discover"
+
+- name: "Find repo instruction files (priority 1)"
+  ansible.builtin.stat:
+    path: "{{ repo_path }}/{{ item }}"
+  loop:
+    - AGENTS.md
+    - CONTRIBUTING.md
+    - README.md
+    - DEVELOPMENT.md
+    - SECURITY.md
+    - RELEASING.md
+  register: _helper_instruction_files
+
+- name: "Find native entry points (priority 2)"
+  ansible.builtin.stat:
+    path: "{{ repo_path }}/{{ item }}"
+  loop:
+    - Makefile
+    - Taskfile.yml
+    - justfile
+    - tox.ini
+    - noxfile.py
+    - pyproject.toml
+    - package.json
+    - Cargo.toml
+    - build.gradle
+    - pom.xml
+    - go.mod
+  register: _helper_native_entries
+
+- name: "Expose discovered helpers"
+  ansible.builtin.set_fact:
+    git_release_helpers:
+      instructions: >-
+        {{ _helper_instruction_files.results
+           | selectattr('stat.exists')
+           | map(attribute='item')
+           | list }}
+      native_entries: >-
+        {{ _helper_native_entries.results
+           | selectattr('stat.exists')
+           | map(attribute='item')
+           | list }}
+    git_release_role: "helper_discover"
+    git_release_role_status: "discovered"

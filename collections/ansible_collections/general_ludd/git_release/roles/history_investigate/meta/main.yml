@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: history_investigate
+  author: Agentic Harness Agent
+  description: >
+    Read-only git history investigation. Probes log, and (in later phases)
+    blame, bisect, patch-id, and range-diff. Wraps git_automation.git_stats;
+    never mutates the repository.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

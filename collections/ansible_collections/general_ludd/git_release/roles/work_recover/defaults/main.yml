@@ -1,0 +1,5 @@
+---
+# work_recover defaults
+
+repo_path: "."
+work_recover_reflog_limit: 50

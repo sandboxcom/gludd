@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: work_recover
+  author: Agentic Harness Agent
+  description: >
+    Survey reflog, stashes, and dangling objects to produce a reversible
+    recovery plan. MVP is read-only survey only; applying a recovery (with
+    a verified recovery point and authorization) lands in Phase GRC-P2.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

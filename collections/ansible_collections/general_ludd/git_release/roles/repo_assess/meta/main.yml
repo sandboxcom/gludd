@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: repo_assess
+  author: Agentic Harness Agent
+  description: >
+    Read-only repository evidence collection. Produces a RepoEvidence record
+    (HEAD SHA, branch, dirty paths, worktrees, upstreams, in-progress
+    operations, repo policies) by wrapping general_ludd.git_automation.
+    Never mutates the repository.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

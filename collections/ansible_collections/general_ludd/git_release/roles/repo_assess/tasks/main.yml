@@ -1,0 +1,24 @@
+---
+# repo_assess — collect RepoEvidence without mutation.
+# Calls general_ludd.git_release.evidence.collect_repo_evidence and exposes
+# the result as the host fact `git_release_repo_evidence`.
+
+- name: "Assert repo_path is set"
+  ansible.builtin.assert:
+    that:
+      - repo_path | string | length > 0
+    fail_msg: "repo_path is required for repo_assess (read-only evidence collection)"
+
+- name: "Collect RepoEvidence (read-only — no git mutation)"
+  general_ludd.agent.gludd_python:
+    module: general_ludd.git_release.evidence
+    function: collect_repo_evidence
+    args:
+      repo_path: "{{ repo_path }}"
+  register: _repo_evidence_result
+
+- name: "Expose RepoEvidence as a host fact"
+  ansible.builtin.set_fact:
+    git_release_repo_evidence: "{{ _repo_evidence_result.result }}"
+    git_release_role: "repo_assess"
+    git_release_role_status: "collected"

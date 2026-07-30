@@ -1,0 +1,5 @@
+---
+# history_investigate defaults
+
+repo_path: "."
+history_limit: 20

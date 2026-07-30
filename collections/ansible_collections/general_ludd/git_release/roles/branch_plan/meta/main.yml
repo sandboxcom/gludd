@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: branch_plan
+  author: Agentic Harness Agent
+  description: >
+    Plan branch creation, synchronization, backport, merge, rebase, or
+    cherry-pick with collision evidence. MVP is a read-only topology survey;
+    applying a plan lands in Phase GRC-P2 behind authorization.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

@@ -1,0 +1,30 @@
+---
+# work_recover — survey recovery points without mutation.
+# MVP: lists reflog, stashes, and dangling-object recovery candidates.
+# Produces a recovery SURVEY only — applying a recovery lands in Phase GRC-P2.
+
+- name: "Assert repo_path is set"
+  ansible.builtin.assert:
+    that:
+      - repo_path | string | length > 0
+    fail_msg: "repo_path is required for work_recover"
+
+- name: "Survey reflog (read-only recovery points)"
+  ansible.builtin.command:
+    cmd: "git -C {{ repo_path }} reflog --format=%H%x00%gs -n {{ work_recover_reflog_limit }}"
+  register: _work_recover_reflog
+  changed_when: false
+
+- name: "Survey stashes (read-only)"
+  ansible.builtin.command:
+    cmd: "git -C {{ repo_path }} stash list --format=%H%x00%gs"
+  register: _work_recover_stashes
+  changed_when: false
+
+- name: "Expose recovery survey"
+  ansible.builtin.set_fact:
+    git_release_recovery_survey:
+      reflog: "{{ _work_recover_reflog.stdout_lines }}"
+      stashes: "{{ _work_recover_stashes.stdout_lines }}"
+    git_release_role: "work_recover"
+    git_release_role_status: "surveyed"
