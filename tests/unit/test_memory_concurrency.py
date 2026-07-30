@@ -552,6 +552,26 @@ class TestWriteDuringRead:
             "initial fact"
         ]
 
+    def test_flat_memory_entry_clones_avoid_generic_copy_protocol(self) -> None:
+        """Hot-path snapshots must clone flat entries without ``copy.copy``."""
+        bank = MemoryBank(MemoryBankConfig(bank_id="direct-entry-clone"))
+        source = MemoryEntry(content="initial fact", tags=["initial"])
+
+        with patch.object(
+            memory_bank_module,
+            "copy",
+            side_effect=AssertionError("generic copy protocol used"),
+        ):
+            retained = bank.retain(source)
+            recalled = bank.get_facts()[0]
+
+        assert retained == source
+        assert recalled == source
+        assert retained is not source
+        assert recalled is not source
+        assert retained.tags is not source.tags
+        assert recalled.tags is not source.tags
+
     def test_newest_unique_retain_uses_ordered_cache_fast_path(self) -> None:
         """The common append-by-time write must avoid a general list insertion."""
         bank = MemoryBank(MemoryBankConfig(bank_id="ordered-cache-fast-path"))

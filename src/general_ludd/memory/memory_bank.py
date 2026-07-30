@@ -182,10 +182,19 @@ def _copy_mental_model(model: MentalModel) -> MentalModel:
 
 
 def _copy_memory_entry(fact: MemoryEntry) -> MemoryEntry:
-    """Copy the flat record and its sole mutable field."""
-    copied = copy(fact)
-    copied.tags = fact.tags.copy()
-    return copied
+    """Clone the flat record directly and isolate its sole mutable field.
+
+    ``copy.copy`` invokes Python's generic reduction protocol.  Fact snapshots
+    can clone hundreds of thousands of entries during concurrent recall, so
+    constructing this known flat type directly keeps that hot path bounded.
+    """
+    return MemoryEntry(
+        entry_id=fact.entry_id,
+        content=fact.content,
+        source=fact.source,
+        created_at=fact.created_at,
+        tags=fact.tags.copy(),
+    )
 
 
 def _insert_fact_by_recency(
