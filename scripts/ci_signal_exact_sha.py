@@ -20,6 +20,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager, suppress
@@ -31,7 +32,7 @@ from ci_remote_head_guard import GuardError, collect_state, guard_state
 # Quoted because macOS /usr/bin/python3 can be 3.9: postponed annotations do
 # not defer evaluation of a module-level type alias.
 RunFn = Callable[[Sequence[str], "str | None"], subprocess.CompletedProcess[str]]
-SleepFn = Callable[[float], None]
+WaitFn = Callable[[float], bool]
 ProgressFn = Callable[[str], None]
 
 DEFAULT_REPO = "sandboxcom/gludd"
@@ -181,7 +182,7 @@ def _state_paths(
 def _signal_lock(
     path: Path,
     *,
-    sleep: SleepFn,
+    wait: WaitFn,
     progress: ProgressFn,
     timeout: float = 60.0,
 ) -> Iterator[None]:
@@ -198,7 +199,11 @@ def _signal_lock(
                         f"timed out waiting for exact-SHA signal lock {path}"
                     ) from None
                 progress(f"GHA-SIGNAL-LOCK waiting path={path}")
-                sleep(1.0)
+                remaining = max(0.0, deadline - time.monotonic())
+                if wait(min(1.0, remaining)):
+                    raise SignalError(
+                        f"exact-SHA signal lock wait cancelled for {path}"
+                    ) from None
         try:
             yield
         finally:
@@ -260,7 +265,7 @@ def _poll_for_run(
     sha: str,
     run: RunFn,
     cwd: str | None,
-    sleep: SleepFn,
+    wait: WaitFn,
     progress: ProgressFn,
 ) -> WorkflowRun | None:
     attempts = max(1, polls)
@@ -278,8 +283,12 @@ def _poll_for_run(
             f"GHA-SIGNAL-CHECK phase={phase} attempt={attempt}/{attempts} "
             f"sha={sha} result=absent"
         )
-        if attempt < attempts and poll_interval > 0:
-            sleep(poll_interval)
+        if (
+            attempt < attempts
+            and poll_interval > 0
+            and wait(poll_interval)
+        ):
+            raise SignalError(f"{phase} wait cancelled")
     return None
 
 
@@ -324,7 +333,7 @@ def signal_exact_sha(
     poll_interval: float = 2.0,
     state_dir: Path = DEFAULT_STATE_DIR,
     run: RunFn = _run,
-    sleep: SleepFn = time.sleep,
+    wait: WaitFn | None = None,
     progress: ProgressFn = print,
     cwd: str | None = None,
 ) -> SignalResult:
@@ -351,8 +360,9 @@ def signal_exact_sha(
         workflow=workflow,
         sha=sha,
     )
+    wait_for_event = wait if wait is not None else threading.Event().wait
 
-    with _signal_lock(lock_path, sleep=sleep, progress=progress):
+    with _signal_lock(lock_path, wait=wait_for_event, progress=progress):
         exact_run = _poll_for_run(
             phase="push-discovery",
             polls=discovery_polls,
@@ -362,7 +372,7 @@ def signal_exact_sha(
             sha=sha,
             run=run,
             cwd=cwd,
-            sleep=sleep,
+            wait=wait_for_event,
             progress=progress,
         )
         if exact_run is not None:
@@ -415,7 +425,7 @@ def signal_exact_sha(
             sha=sha,
             run=run,
             cwd=cwd,
-            sleep=sleep,
+            wait=wait_for_event,
             progress=progress,
         )
         if exact_run is None:

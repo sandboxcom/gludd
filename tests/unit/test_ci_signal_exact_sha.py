@@ -123,7 +123,7 @@ def _signal(
         poll_interval=0,
         state_dir=state_dir,
         run=runner,
-        sleep=lambda _seconds: None,
+        wait=lambda _seconds: False,
     )
 
 
@@ -161,6 +161,37 @@ def test_missing_run_dispatches_once_then_confirms_exact_sha_url(tmp_path: Path)
     assert result.dispatched is True
     assert result.url == RUN_URL
     assert runner.dispatch_count == 1
+
+
+def test_polling_uses_cancellable_event_wait(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    waits: list[float] = []
+
+    class CancelledEvent:
+        def wait(self, timeout: float) -> bool:
+            waits.append(timeout)
+            return True
+
+    monkeypatch.setattr(signal_module.threading, "Event", CancelledEvent)
+    runner = FakeRunner([[]])
+
+    with pytest.raises(SignalError, match="push-discovery wait cancelled"):
+        signal_exact_sha(
+            ref="release/beta3-candidate",
+            remote="sandboxcom",
+            repo="sandboxcom/gludd",
+            workflow="Build and Release",
+            discovery_polls=2,
+            confirm_polls=1,
+            poll_interval=0.25,
+            state_dir=tmp_path,
+            run=runner,
+        )
+
+    assert waits == [0.25]
+    assert runner.dispatch_count == 0
 
 
 def test_nonmatching_run_does_not_count_as_exact_sha_evidence(tmp_path: Path) -> None:
