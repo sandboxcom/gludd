@@ -4008,6 +4008,18 @@ DEBIAN_SNAPSHOT ?= 20260729T000000Z
 LINUX_BINUTILS_VERSION ?= 2.40-2
 LINUX_APT_UTILS_VERSION ?= 2.6.1
 PYINSTALLER_WARNING_ALLOWLIST_LINUX ?= config/pyinstaller-warning-allowlist-linux.json
+PYINSTALLER_WARNING_FILE_LINUX ?= dist/linux/warn-gludd.txt
+PYINSTALLER_VERSION_LINUX ?= 6.20.0
+
+.PHONY: audit-linux-pyinstaller-warnings
+audit-linux-pyinstaller-warnings: ## Re-audit a retained Linux PyInstaller warning report
+	@case "$(PYINSTALLER_WARNING_FILE_LINUX)" in /*|*..*) echo "Refusing unsafe PYINSTALLER_WARNING_FILE_LINUX: $(PYINSTALLER_WARNING_FILE_LINUX)"; exit 1;; esac
+	@$(UV) run python scripts/audit_pyinstaller_warnings.py \
+		--warnings "$(PYINSTALLER_WARNING_FILE_LINUX)" \
+		--allowlist "$(PYINSTALLER_WARNING_ALLOWLIST_LINUX)" \
+		--platform linux \
+		--pyinstaller-version "$(PYINSTALLER_VERSION_LINUX)" \
+		--spec gludd.spec
 
 build-linux-executable: ## Build and verify a real Linux PyInstaller executable
 	@case "$(LINUX_BINARY_OUTPUT)" in /*|*..*) echo "Refusing unsafe LINUX_BINARY_OUTPUT: $(LINUX_BINARY_OUTPUT)"; exit 1;; esac

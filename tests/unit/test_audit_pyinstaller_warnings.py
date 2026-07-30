@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -11,8 +12,12 @@ from typing import Any
 import pytest
 
 _ROOT = Path(__file__).resolve().parents[2]
+_MAKEFILE = _ROOT / "Makefile"
 _SCRIPT = _ROOT / "scripts" / "audit_pyinstaller_warnings.py"
+_CONNECTOR_REGISTRY = _ROOT / "src" / "general_ludd" / "connectors" / "registry.py"
+_PRICING_SOURCES = _ROOT / "src" / "general_ludd" / "pricing_intel" / "sources.py"
 _PYINSTALLER_VERSION = "6.20.0"
+_EMPTY_TRANSITIVE_DIGEST = hashlib.sha256(b"").hexdigest()
 
 _WARNING_HEADER = """\
 This file lists modules PyInstaller was not able to find. This does not
@@ -59,6 +64,8 @@ def _run_audit(
     version: str = _PYINSTALLER_VERSION,
     manifest_version: str | None = None,
     spec_text: str = "a = Analysis([], excludes=[])\n",
+    transitive_warning_sha256: str = _EMPTY_TRANSITIVE_DIGEST,
+    baseline_pinned_project_modules: list[dict[str, str]] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     warning_path = tmp_path / "warn-gludd.txt"
     if warning_body is not None:
@@ -71,10 +78,14 @@ def _run_audit(
     allowlist_path.write_text(
         json.dumps(
             {
-                "schema_version": 1,
+                "schema_version": 2,
                 "platform": manifest_platform or platform,
                 "pyinstaller_version": manifest_version or version,
                 "allowed_missing_imports": allowed or [],
+                "baseline_pinned_project_modules": (
+                    baseline_pinned_project_modules or []
+                ),
+                "transitive_warning_sha256": transitive_warning_sha256,
             }
         ),
         encoding="utf-8",
@@ -108,17 +119,26 @@ def test_script_exists() -> None:
     assert _SCRIPT.is_file()
 
 
+def test_makefile_exposes_replayable_linux_warning_audit() -> None:
+    makefile = _MAKEFILE.read_text(encoding="utf-8")
+
+    assert "PYINSTALLER_WARNING_FILE_LINUX ?= dist/linux/warn-gludd.txt" in makefile
+    assert "\naudit-linux-pyinstaller-warnings:" in makefile
+    assert '--warnings "$(PYINSTALLER_WARNING_FILE_LINUX)"' in makefile
+
+
 def test_exact_reviewed_conditional_and_optional_edges_pass(tmp_path: Path) -> None:
     warnings = (
-        "missing module named 'org.python' - imported by copy (optional)\n"
+        "missing module named 'org.python' - "
+        "imported by general_ludd.compat.copy (optional)\n"
         "missing module named winreg - imported by "
-        "importlib._bootstrap_external (conditional), "
-        "platform (delayed, optional)\n"
+        "general_ludd.compat.bootstrap (conditional), "
+        "general_ludd.compat.platform (delayed, optional)\n"
     )
     allowed = [
         _allow(
             "org.python",
-            "copy",
+            "general_ludd.compat.copy",
             ["optional"],
             category="interpreter-specific",
             evidence=(
@@ -128,12 +148,12 @@ def test_exact_reviewed_conditional_and_optional_edges_pass(tmp_path: Path) -> N
         ),
         _allow(
             "winreg",
-            "importlib._bootstrap_external",
+            "general_ludd.compat.bootstrap",
             ["conditional"],
         ),
         _allow(
             "winreg",
-            "platform",
+            "general_ludd.compat.platform",
             ["delayed", "optional"],
         ),
     ]
@@ -241,7 +261,7 @@ def test_allowlist_requires_category_and_evidence(tmp_path: Path) -> None:
     allowed = [
         {
             "module": "org.python",
-            "importer": "copy",
+            "importer": "general_ludd.compat.copy",
             "flags": ["optional"],
             "category": "",
             "evidence": "",
@@ -249,7 +269,8 @@ def test_allowlist_requires_category_and_evidence(tmp_path: Path) -> None:
     ]
     result = _run_audit(
         tmp_path,
-        "missing module named 'org.python' - imported by copy (optional)\n",
+        "missing module named 'org.python' - "
+        "imported by general_ludd.compat.copy (optional)\n",
         allowed=allowed,
     )
 
@@ -295,11 +316,12 @@ def test_allowlist_is_pinned_to_target_platform(tmp_path: Path) -> None:
 def test_importer_and_flags_must_match_exactly(tmp_path: Path) -> None:
     result = _run_audit(
         tmp_path,
-        "missing module named winreg - imported by platform (optional)\n",
+        "missing module named winreg - "
+        "imported by general_ludd.compat.platform (optional)\n",
         allowed=[
             _allow(
                 "winreg",
-                "importlib._bootstrap_external",
+                "general_ludd.compat.bootstrap",
                 ["conditional"],
             )
         ],
@@ -334,7 +356,8 @@ a = Analysis([], excludes=["pytest"] + _platform_excludes)
 def test_excluded_warning_not_in_analysis_excludes_fails(tmp_path: Path) -> None:
     result = _run_audit(
         tmp_path,
-        "excluded module named unreviewed - imported by app (conditional)\n",
+        "excluded module named unreviewed - "
+        "imported by general_ludd.app (conditional)\n",
     )
 
     assert result.returncode == 1
@@ -344,7 +367,8 @@ def test_excluded_warning_not_in_analysis_excludes_fails(tmp_path: Path) -> None
 def test_inactive_platform_exclude_is_not_accepted(tmp_path: Path) -> None:
     result = _run_audit(
         tmp_path,
-        "excluded module named fcntl - imported by app (conditional)\n",
+        "excluded module named fcntl - "
+        "imported by general_ludd.app (conditional)\n",
         spec_text="""\
 import sys
 
@@ -371,3 +395,105 @@ def test_missing_or_malformed_spec_fails_closed(tmp_path: Path) -> None:
 
     assert result.returncode == 1
     assert "cannot parse PyInstaller spec" in result.stderr
+
+
+def test_transitive_warning_graph_requires_exact_normalized_digest(
+    tmp_path: Path,
+) -> None:
+    warning = (
+        "missing module named optional_backend - "
+        "imported by dependency.compat (optional)\n"
+    )
+    result = _run_audit(tmp_path, warning)
+
+    assert result.returncode == 1
+    assert "transitive warning digest mismatch" in result.stderr
+
+
+def test_exact_transitive_warning_graph_digest_passes(tmp_path: Path) -> None:
+    warning = (
+        "missing module named optional_backend - "
+        "imported by dependency.compat (optional)\n"
+    )
+    normalized = "missing optional_backend <- dependency.compat (optional)"
+    digest = hashlib.sha256(normalized.encode()).hexdigest()
+    result = _run_audit(
+        tmp_path,
+        warning,
+        transitive_warning_sha256=digest,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "1 baseline-pinned transitive edge" in result.stdout
+
+
+def test_project_module_attribute_graph_can_be_digest_pinned(
+    tmp_path: Path,
+) -> None:
+    warning = (
+        "missing module named pydantic.BaseModel - "
+        "imported by general_ludd.schemas.job (top-level), "
+        "pydantic._internal._fields (conditional)\n"
+    )
+    normalized = "\n".join(
+        [
+            (
+                "missing pydantic.BaseModel <- "
+                "general_ludd.schemas.job (top-level)"
+            ),
+            (
+                "missing pydantic.BaseModel <- "
+                "pydantic._internal._fields (conditional)"
+            ),
+        ]
+    )
+    digest = hashlib.sha256(normalized.encode()).hexdigest()
+    result = _run_audit(
+        tmp_path,
+        warning,
+        transitive_warning_sha256=digest,
+        baseline_pinned_project_modules=[
+            {
+                "module": "pydantic.BaseModel",
+                "category": "module-attribute",
+                "evidence": (
+                    "https://pyinstaller.org/en/stable/"
+                    "when-things-go-wrong.html#build-time-messages"
+                ),
+            }
+        ],
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "2 baseline-pinned transitive edges" in result.stdout
+
+
+def test_transitive_warning_digest_must_be_lowercase_sha256(
+    tmp_path: Path,
+) -> None:
+    result = _run_audit(
+        tmp_path,
+        "",
+        transitive_warning_sha256="not-a-sha256",
+    )
+
+    assert result.returncode == 1
+    assert "transitive_warning_sha256" in result.stderr
+
+
+def test_connector_registry_avoids_pyinstaller_path_pseudo_module() -> None:
+    source = _CONNECTOR_REGISTRY.read_text(encoding="utf-8")
+
+    assert "from general_ludd.connectors import __path__" not in source
+    assert "import general_ludd.connectors as _connectors_pkg" in source
+    assert "pkgutil.iter_modules(_connectors_pkg.__path__)" in source
+
+
+def test_optional_gcp_sdk_import_is_locally_guarded() -> None:
+    source = _PRICING_SOURCES.read_text(encoding="utf-8")
+
+    assert (
+        "try:\n"
+        "            from google.cloud import billing\n"
+        "        except ImportError as exc:"
+    ) in source
