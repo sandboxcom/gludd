@@ -407,6 +407,7 @@ class TestPrepare:
         assert "LINUX_BINARY_SCRATCH_ROOT ?= $(HOME)/tmp/gludd-linux-build" in makefile
         assert "DEBIAN_SNAPSHOT ?= 20260729T000000Z" in makefile
         assert "LINUX_BINUTILS_VERSION ?=" in makefile
+        assert "LINUX_APT_UTILS_VERSION ?=" in makefile
         assert "snapshot.debian.org/archive/debian/" in makefile
         assert "snapshot.debian.org/archive/debian-security/" in makefile
         assert "Acquire::Check-Valid-Until" in makefile
@@ -415,6 +416,12 @@ class TestPrepare:
             'sed -i "\\|/usr/share/man/|d" '
             "/etc/dpkg/dpkg.cfg.d/docker"
         ) in makefile
+        assert "update-alternatives --remove builtins.7.gz" in makefile
+        assert (
+            'apt-get install -y --download-only --no-install-recommends '
+            '"apt-utils=$(LINUX_APT_UTILS_VERSION)"'
+        ) in makefile
+        assert "dpkg -i /var/cache/apt/archives/apt-utils_" in makefile
         assert "apt-get -y --no-remove dist-upgrade" in makefile
         assert (
             'apt-get install -y --no-install-recommends '
@@ -432,6 +439,13 @@ class TestPrepare:
         assert "/tmp/gludd-pyinstaller-build/gludd/warn-gludd.txt" in makefile
         assert "--spec gludd.spec" in makefile
         assert ":/workspace:ro" in makefile
-        assert 'docker cp "$$container_name:/out/gludd"' in makefile
+        assert '@set -e; if [ "$$(uname -s)" = "Linux" ]' in makefile
+        assert 'output_dir=$$(mktemp -d "$(LINUX_BINARY_SCRATCH_ROOT)/output.' in makefile
+        assert 'rm -rf "$$source_dir" "$$output_dir"' in makefile
+        assert '-v "$$output_dir:/out"' in makefile
+        assert "cp /tmp/gludd-pyinstaller-build/gludd/warn-gludd.txt" in makefile
+        assert 'if ! DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)"' in makefile
+        assert 'cp "$$output_dir/warn-gludd.txt"' in makefile
+        assert 'cp "$$output_dir/gludd" "$(LINUX_BINARY_OUTPUT)"' in makefile
         assert "file \"$(LINUX_BINARY_OUTPUT)\"" in makefile
         assert "ELF" in makefile

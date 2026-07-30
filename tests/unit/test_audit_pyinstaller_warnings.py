@@ -155,6 +155,33 @@ def test_unreviewed_missing_import_fails(tmp_path: Path) -> None:
     assert "unreviewed missing-import edge" in result.stderr
 
 
+def test_hook_provided_runtime_modules_are_audited_separately(
+    tmp_path: Path,
+) -> None:
+    result = _run_audit(
+        tmp_path,
+        "runtime module named six.moves - imported by "
+        "dateutil.tz.tz (top-level), "
+        "dateutil.tz._factories (top-level), "
+        "dateutil.rrule (top-level)\n",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "0 reviewed missing-import edges" in result.stdout
+    assert "3 hook-provided runtime edges" in result.stdout
+
+
+def test_unknown_module_status_still_fails_closed(tmp_path: Path) -> None:
+    result = _run_audit(
+        tmp_path,
+        "deferred module named six.moves - "
+        "imported by dateutil.rrule (top-level)\n",
+    )
+
+    assert result.returncode == 1
+    assert "unrecognized warning-file line" in result.stderr
+
+
 @pytest.mark.parametrize(
     ("flags", "reason"),
     [

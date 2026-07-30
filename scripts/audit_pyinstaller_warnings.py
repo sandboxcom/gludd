@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Fail closed on unreviewed PyInstaller missing-module warnings.
+"""Fail closed on unreviewed PyInstaller module-analysis warnings.
 
 PyInstaller's warning file contains one edge per missing module and importer.
 Conditional and optional imports can be harmless, but only an exact,
 evidence-backed edge in the platform/version-specific allowlist is accepted.
-Top-level and delayed-only imports are always actionable.
+Top-level and delayed-only missing imports are always actionable. ``runtime``
+nodes are separately counted because PyInstaller hooks deliberately create
+them to represent modules supplied by runtime import machinery.
 """
 
 from __future__ import annotations
@@ -30,7 +32,7 @@ _CATEGORIES = frozenset(
     }
 )
 _WARNING_RE = re.compile(
-    r"^(?P<kind>missing|excluded) module named "
+    r"^(?P<kind>missing|excluded|runtime) module named "
     r"(?P<module>.+?) - imported by (?P<importers>.+)$"
 )
 _IMPORTER_RE = re.compile(
@@ -438,6 +440,8 @@ def _audit(
                     f"{edge.render()}"
                 )
             continue
+        if edge.kind == "runtime":
+            continue
         if _is_actionable(edge):
             failures.append(f"actionable import edge: {edge.render()}")
         if edge not in allowed_set:
@@ -481,12 +485,15 @@ def main() -> int:
         return 1
 
     missing_count = sum(edge.kind == "missing" for edge in warning_edges)
-    excluded_count = len(warning_edges) - missing_count
+    excluded_count = sum(edge.kind == "excluded" for edge in warning_edges)
+    runtime_count = sum(edge.kind == "runtime" for edge in warning_edges)
     print(
         "PASS: audited "
         f"{missing_count} reviewed missing-import edges and "
         f"{excluded_count} spec-excluded "
-        f"{'edge' if excluded_count == 1 else 'edges'} "
+        f"{'edge' if excluded_count == 1 else 'edges'} and "
+        f"{runtime_count} hook-provided runtime "
+        f"{'edge' if runtime_count == 1 else 'edges'} "
         f"(platform={args.platform}, PyInstaller={args.pyinstaller_version})"
     )
     return 0
