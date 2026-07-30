@@ -418,7 +418,7 @@ def _build_registry() -> list[SmokeSpec]:
             specs.append(
                 SmokeSpec(
                     provider=provider,
-                    test=f"gpu-{gpu}",
+                    test=f"gpu-{_normalize(gpu)}",
                     category="compute",
                     description=(
                         f"GPU smoke for {info.display_name} {gpu}; dry-run preflight by default, "
