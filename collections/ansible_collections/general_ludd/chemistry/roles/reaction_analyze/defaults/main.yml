@@ -1,0 +1,5 @@
+---
+reaction_analyze_enabled: true
+reaction_analyze_reactants: []
+reaction_analyze_products: []
+reaction_analyze_output_dir: /tmp/chemistry_reaction

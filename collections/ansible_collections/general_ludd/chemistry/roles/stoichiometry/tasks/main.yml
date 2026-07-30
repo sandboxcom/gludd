@@ -1,0 +1,48 @@
+---
+- name: Validate stoichiometry parameters
+  ansible.builtin.assert:
+    that:
+      - stoichiometry_enabled | bool
+      - stoichiometry_action in ['molar_mass', 'moles', 'dilution', 'yield']
+    fail_msg: "stoichiometry role requires a valid action."
+
+- name: Ensure output directory
+  ansible.builtin.file:
+    path: "{{ stoichiometry_output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Build stoichiometry payload
+  ansible.builtin.set_fact:
+    _stoichiometry_payload: >-
+      {{
+        {'formula': stoichiometry_formula}
+        if stoichiometry_action == 'molar_mass' else
+        {'formula': stoichiometry_formula, 'mass_g': stoichiometry_mass_g, 'mass_uncertainty': stoichiometry_mass_uncertainty}
+        if stoichiometry_action == 'moles' else
+        {'actual_g': stoichiometry_actual_g, 'theoretical_g': stoichiometry_theoretical_g, 'actual_unc': stoichiometry_actual_unc, 'theoretical_unc': stoichiometry_theoretical_unc}
+        if stoichiometry_action == 'yield' else
+        {'c1': stoichiometry_c1, 'v1': stoichiometry_v1, 'c2': stoichiometry_c2, 'v2': stoichiometry_v2}
+      }}
+
+- name: Run stoichiometry calculation
+  ansible.builtin.command: >
+    {{ ansible_python_interpreter | default('python3') }}
+    {{ role_path }}/../../plugins/module_utils/chemistry_dispatch.py
+  environment:
+    CHEMISTRY_ACTION: "{{ stoichiometry_action }}"
+    CHEMISTRY_INPUT: "{{ _stoichiometry_payload | to_json }}"
+  register: _stoichiometry_result
+  changed_when: false
+  failed_when: false
+
+- name: Parse stoichiometry result
+  ansible.builtin.set_fact:
+    stoichiometry_result: "{{ (_stoichiometry_result.stdout | from_json) if _stoichiometry_result.stdout | default('') | length > 0 else {} }}"
+
+- name: Write JSON output
+  ansible.builtin.copy:
+    content: "{{ stoichiometry_result | to_nice_json }}"
+    dest: "{{ stoichiometry_output_dir }}/{{ stoichiometry_action }}.json"
+    mode: "0644"
+  when: stoichiometry_result is defined

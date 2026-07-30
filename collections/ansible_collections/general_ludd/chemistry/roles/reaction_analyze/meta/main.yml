@@ -1,0 +1,7 @@
+---
+galaxy_info:
+  author: Agentic Harness Agent
+  description: CHEM-005 reaction reasoning — balance, mass/charge accounting, verification
+  license: MIT
+  min_ansible_version: "2.14"
+dependencies: []

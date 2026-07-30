@@ -1,0 +1,15 @@
+---
+stoichiometry_enabled: true
+stoichiometry_action: molar_mass
+stoichiometry_formula: ""
+stoichiometry_mass_g: 0.0
+stoichiometry_mass_uncertainty: 0.0
+stoichiometry_actual_g: 0.0
+stoichiometry_theoretical_g: 0.0
+stoichiometry_actual_unc: 0.0
+stoichiometry_theoretical_unc: 0.0
+stoichiometry_c1: null
+stoichiometry_v1: null
+stoichiometry_c2: null
+stoichiometry_v2: null
+stoichiometry_output_dir: /tmp/chemistry_stoichiometry

@@ -1,0 +1,7 @@
+---
+galaxy_info:
+  author: Agentic Harness Agent
+  description: CHEM-001 expert router — maps a chemistry task to its owning capability
+  license: MIT
+  min_ansible_version: "2.14"
+dependencies: []

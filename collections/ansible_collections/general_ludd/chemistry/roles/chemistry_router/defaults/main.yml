@@ -1,0 +1,4 @@
+---
+chemistry_router_enabled: true
+chemistry_router_request: {}
+chemistry_router_output_dir: /tmp/chemistry_router

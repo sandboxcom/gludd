@@ -1,0 +1,6 @@
+---
+hazard_review_enabled: true
+hazard_review_query: ""
+hazard_review_entities: []
+hazard_review_facility_controls: []
+hazard_review_output_dir: /tmp/chemistry_hazard
