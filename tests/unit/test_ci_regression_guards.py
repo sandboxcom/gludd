@@ -458,6 +458,25 @@ def test_test_shard_coverage_is_private_and_combines_parallel_fragments() -> Non
     assert "if [ ! -f .coverage ]" not in run
 
 
+def test_coverage_tracks_async_sqlalchemy_greenlet_resumptions() -> None:
+    """Guard coverage across SQLAlchemy async greenlet context switches.
+
+    Hosted beta.3 run 30517080961 reported ``routers/self_improve.py`` below
+    the per-file floor even though its endpoint tests passed.  Every missing
+    block began immediately after an awaited repository call: coverage stopped
+    tracing when SQLAlchemy switched through greenlet and never recorded the
+    resumed coroutine.  The greenlet concurrency plugin restores that tracing.
+    """
+    pyproject = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
+    concurrency = pyproject["tool"]["coverage"]["run"].get("concurrency", [])
+
+    assert set(concurrency) == {"greenlet", "thread"}, (
+        "CI coverage regression (beta.3 run 30517080961): coverage must enable "
+        "both greenlet and thread concurrency or lines resumed after async "
+        "SQLAlchemy awaits silently disappear from per-file coverage."
+    )
+
+
 def test_test_shards_cap_xdist_for_nested_process_headroom() -> None:
     """Guard: hosted shards must leave RAM for nested Node/process tests."""
     workflow = _load_build_workflow()
