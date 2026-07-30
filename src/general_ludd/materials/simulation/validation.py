@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import math
 import statistics
-from typing import Any
+from typing import Any, TypedDict
 
 STATE_OK = "ok"
 STATE_FAIL_CLOSED = "fail_closed"
@@ -40,6 +40,12 @@ _EQ_PREDICTION = "prediction_error: e_i = sim_i - exp_i; rms = sqrt(mean(e_i^2))
 _EQ_RSS = "uncertainty_rss: band = sqrt(sum(u_i^2))"
 _EQ_WORST = "uncertainty_worst_case: band = sum(|u_i|)"
 _EQ_SENSITIVITY = "sensitivity: sample input across uncertainty_range, re-rank candidates, compare to nominal ranking"
+
+
+class _ScoredCandidate(TypedDict):
+    id: str
+    nominal_score: float
+    uncertainty: float
 
 
 def _modified_z_scores(values: list[float]) -> list[float]:
@@ -313,7 +319,7 @@ def sensitivity_analysis(
         lo, hi = hi, lo
 
     # Defensive copy so caller dicts are not mutated.
-    cands = [
+    cands: list[_ScoredCandidate] = [
         {
             "id": str(c["id"]),
             "nominal_score": float(c["nominal_score"]),

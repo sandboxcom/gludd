@@ -318,10 +318,10 @@ class CalibrationCurve:
     def lod(self, sigma_blank: float | None = None, k: int = 3) -> float:
         """Limit of detection = k * sigma / |slope| (IUPAC, k=3)."""
         f = self.fit()
-        slope = f["slope"]
+        slope = float(f["slope"])
         if slope == 0.0:
             raise ValueError("slope is zero; cannot compute LOD")
-        sigma = sigma_blank if sigma_blank is not None else f["s_yx"]
+        sigma = sigma_blank if sigma_blank is not None else float(f["s_yx"])
         if sigma < 0.0:
             raise ValueError(f"sigma_blank must be non-negative, got {sigma}")
         return k * sigma / abs(slope)
@@ -329,10 +329,10 @@ class CalibrationCurve:
     def loq(self, sigma_blank: float | None = None, k: int = 10) -> float:
         """Limit of quantitation = k * sigma / |slope| (IUPAC, k=10)."""
         f = self.fit()
-        slope = f["slope"]
+        slope = float(f["slope"])
         if slope == 0.0:
             raise ValueError("slope is zero; cannot compute LOQ")
-        sigma = sigma_blank if sigma_blank is not None else f["s_yx"]
+        sigma = sigma_blank if sigma_blank is not None else float(f["s_yx"])
         if sigma < 0.0:
             raise ValueError(f"sigma_blank must be non-negative, got {sigma}")
         return k * sigma / abs(slope)

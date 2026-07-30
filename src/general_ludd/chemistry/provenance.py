@@ -70,6 +70,12 @@ class ProvenanceChain:
         locator = self.source.get("locator", "?")
         return f"ProvenanceChain(method={self.method!r}, source={locator!r})"
 
+    def __getitem__(self, key: str) -> Any:
+        try:
+            return getattr(self, key)
+        except AttributeError:
+            raise KeyError(key) from None
+
 
 def build_chain(result: Any) -> Any:
     """Build a :class:`ProvenanceChain` (or list of them) from a result.
@@ -118,7 +124,7 @@ def verify_chain(chain: Any) -> dict[str, Any]:
     """
     if isinstance(chain, ProvenanceChain):
         record = chain.to_dict()
-        chain_id = chain.chain_id
+        chain_id: str | None = chain.chain_id
     elif isinstance(chain, dict):
         record = chain
         chain_id = chain.get("chain_id")

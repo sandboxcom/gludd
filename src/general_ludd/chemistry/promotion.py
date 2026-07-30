@@ -399,9 +399,10 @@ class PromotionPipeline:
         """
         direction = self._policy_direction(old, new)
         with self._lock:
-            state = self._require_alias(alias)
+            state = self._aliases.get(alias)
             if direction == "tighten":
-                state.safety_policies[alias] = copy.deepcopy(new)
+                if state is not None:
+                    state.safety_policies[alias] = copy.deepcopy(new)
                 return {
                     "alias": alias,
                     "applied": True,
@@ -421,7 +422,8 @@ class PromotionPipeline:
                             "canary evidence per spec §11"
                         ),
                     }
-                state.safety_policies[alias] = copy.deepcopy(new)
+                if state is not None:
+                    state.safety_policies[alias] = copy.deepcopy(new)
                 return {
                     "alias": alias,
                     "applied": True,

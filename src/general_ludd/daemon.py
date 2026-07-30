@@ -3298,6 +3298,7 @@ def create_daemon_app(
         deployments,
         embeddings,
         environment,
+        experts,
         facts,
         features,
         filestore,
@@ -3384,6 +3385,7 @@ def create_daemon_app(
     research.register(app, daemon_state)
     review.register(app, daemon_state)
     ornith.register(app, daemon_state)
+    experts.register(app, daemon_state)
     # Playbook web renderer (Phase 1): /api/renderers (PSK) + /render/<name> (public).
     # Registry discovery is best-effort — a missing playbooks/renderers/ dir must
     # not crash daemon startup (the router serves a 503 in that case).

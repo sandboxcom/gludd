@@ -1,14 +1,20 @@
 ---
 namespace: general_ludd
 name: materials
-version: 0.1.0
+version: 0.2.0
 readme: README.md
 description: >
-  Materials engineering expert collection — roles and modules that enable
-  agents to translate functional, environmental, manufacturing, safety, cost,
-  and lifecycle requirements into traceable material and process decisions.
-  Covers polymers, metals, ceramics, composites, and textiles across forming,
-  joining, machining, additive, and strength assessment (spec MATE-001).
+  Materials engineering expert collection — all 16 roles from spec MATE-001
+  (docs/specs/FEATURE_MATERIALS_ENGINEER.md §3) that translate functional,
+  environmental, manufacturing, safety, cost, and lifecycle requirements into
+  traceable material and process decisions. Covers polymers, metals, ceramics,
+  composites, and textiles across requirements capture, material selection,
+  forming (polymer/metal/molding/textile), joining, welding, machining,
+  additive, strength assessment, multiphysics modeling, tolerance analysis,
+  failure analysis, manufacturing planning, and inspection planning. The
+  typed Python service API lives in src/general_ludd/materials/ and is
+  consumed by the roles; no independent engineering logic lives in the
+  task files.
 license:
   - MIT
 authors:

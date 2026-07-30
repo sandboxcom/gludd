@@ -1,17 +1,21 @@
 ---
 namespace: general_ludd
 name: chemistry
-version: 0.1.0
+version: 0.2.0
 readme: README.md
 description: >
-  Chemistry expert collection — decision-support roles and modules for
-  evidence-grounded chemical identity, reaction reasoning, stoichiometry,
-  and hazard screening. Implements the top 5 capabilities from
-  docs/specs/FEATURE_CHEMISTRY_EXPERT.md: CHEM-001 (router), CHEM-002
-  (identity), CHEM-005 (reactions), CHEM-007 (stoichiometry), and CHEM-008
-  (safety). The service API lives in src/general_ludd/chemistry and is
-  consumed by the roles below; no independent chemical logic lives in the
-  task files.
+  Chemistry expert collection — all 20 decision-support roles from
+  docs/specs/FEATURE_CHEMISTRY_EXPERT.md covering router (CHEM-001),
+  identity (CHEM-002), properties (CHEM-003), reactions (CHEM-005),
+  stoichiometry (CHEM-007), safety/hazards (CHEM-008), analytical
+  validation (CHEM-009), cheminformatics (CHEM-010), electrochemistry
+  (CHEM-011), thermo-kinetics (CHEM-012), spectroscopy (CHEM-013),
+  protocol drafting (CHEM-014), inventory (CHEM-015), process scale-up
+  (CHEM-016), molecular simulation (CHEM-017), quantum workflow (CHEM-018),
+  research (CHEM-019), refresh (CHEM-020), promotion (CHEM-PROMO), and tool
+  discovery (CHEM-TOOLS). The typed service API lives in
+  src/general_ludd/chemistry/ and is consumed by the roles; no independent
+  chemical logic lives in the task files.
 license:
   - MIT
 authors:

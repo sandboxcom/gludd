@@ -16,7 +16,46 @@
 
 ---
 
-## SESSION 57 — 2026-07-28 (CURRENT)
+## SESSION 58 — 2026-07-30 (CURRENT)
+
+- **HEAD:** latest commit on `development`
+- **Version: 0.1.0-beta.3**
+- **Push status: BLOCKED** — CI cooldown active, previous push SHA cc7f31f0 not yet CI-verified
+- **Working tree: CLEAN**
+
+### Work completed — 4 new expert collections implemented
+
+Implemented 4 major feature specs from docs/specs/:
+
+| Spec | Collection | Modules | Tests | Status |
+|------|-----------|---------|-------|--------|
+| FEATURE_MATERIALS_ENGINEER | general_ludd.materials | 20 src + simulation/ | ~80 | Phase 1-5 done |
+| FEATURE_CHEMISTRY_EXPERT | general_ludd.chemistry | 22 src | ~200 | Phase A-E done |
+| FEATURE_AI_ML_EXPERT | general_ludd.ai_ml | 18 src | ~150 | Phase A-F done |
+| FEATURE_GIT_RELEASE_CAPTAIN | general_ludd.git_release | 9 src | ~100 | Phase 1-5 done |
+
+- 709+ tests across 30+ test files, all passing
+- 52 Ansible collection roles scaffolded (11 materials + 15 chemistry + 15 ai_ml + 11 git_release)
+- Typecheck: 0 errors (45 fixed in Wave 3)
+- Lint: 0 errors in new code
+- Collection check: OK
+- OSS tools survey completed (docs/research/OSS_TOOLS_SURVEY.md)
+
+### Commits this session
+- dd426897 — Wave 5: chemistry promotion, api/router/policy, ai_ml images, materials simulation
+- 04f1608f — Wave 4: 709 tests, analytical/validation/compute/accelerators/promotion
+- dd2aec1a — Wave 3: typecheck fix, additive/textiles, thermo/spectra, datasets/research
+- 69944a1d — Wave 2: polymers/metals, adaptation/evaluation, state machine/deployment
+- d50b1919 — Wave 1: contracts, schemas, selection, evidence, helpers, 52 roles
+
+### Next
+1. Push when CI cooldown clears
+2. CI green on development
+3. Release cut for beta.3
+
+---
+
+## SESSION 57 — 2026-07-28 (SUPERSEDED by Session 58)
 
 - **HEAD: `402d008b`** on `development` branch (commit: "fix: BLOCKING stash-leak guard")
 - **Version: 0.1.0-beta.3** (pyproject.toml, __init__.py)

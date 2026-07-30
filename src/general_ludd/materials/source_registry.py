@@ -31,7 +31,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Callable
 
 
 class Authority(StrEnum):
@@ -110,7 +110,7 @@ class SourceRegistry:
     by :meth:`query` unless ``include_retracted=True`` is passed.
     """
 
-    now: callable[[], datetime] = field(default=datetime.now)  # type: ignore[assignment]
+    now: Callable[[], datetime] = field(default=datetime.now)
     _entries: dict[str, SourceEntry] = field(default_factory=dict)
 
     # ─── mutation ──────────────────────────────────────────────────────────
