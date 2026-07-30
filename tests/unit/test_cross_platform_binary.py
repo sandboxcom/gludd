@@ -21,6 +21,60 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SPEC_PATH = REPO_ROOT / "gludd.spec"
 BUILD_YML_PATH = REPO_ROOT / ".github" / "workflows" / "build.yml"
+MAKEFILE_PATH = REPO_ROOT / "Makefile"
+WINDOWS_RESERVED_NAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{number}" for number in range(1, 10)),
+    *(f"LPT{number}" for number in range(1, 10)),
+}
+
+
+def test_tracked_paths_are_windows_checkout_compatible() -> None:
+    """Every tracked path must be representable by Git on Windows."""
+    completed = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+    )
+    invalid: list[str] = []
+    for raw_path in completed.stdout.split(b"\0"):
+        if not raw_path:
+            continue
+        path = raw_path.decode("utf-8")
+        for segment in path.split("/"):
+            basename = segment.split(".", 1)[0].upper()
+            if (
+                any(character in '<>:"\\|?*' for character in segment)
+                or segment.endswith((" ", "."))
+                or basename in WINDOWS_RESERVED_NAMES
+                or any(ord(character) < 32 for character in segment)
+            ):
+                invalid.append(path)
+                break
+
+    assert invalid == [], f"tracked paths cannot be checked out on Windows: {invalid}"
+
+
+def test_gate_checks_tracked_paths_before_platform_fanout() -> None:
+    """The Linux gate must reject Windows-invalid paths before build fanout."""
+    makefile = MAKEFILE_PATH.read_text(encoding="utf-8")
+    gate_line = next(line for line in makefile.splitlines() if line.startswith("gate:"))
+    check_match = re.search(
+        r"^_check-windows-tracked-paths:\n(?P<body>(?:\t.*\n)+)",
+        makefile,
+        re.MULTILINE,
+    )
+
+    assert "_check-windows-tracked-paths" in gate_line
+    assert check_match is not None
+    assert (
+        "test_tracked_paths_are_windows_checkout_compatible"
+        in check_match.group("body")
+    )
 
 
 @pytest.fixture(scope="module")
