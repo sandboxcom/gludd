@@ -16,10 +16,10 @@ The real target fails closed unless all of these are true:
 4. GitHub CLI lookup and dispatch operations succeed.
 5. A run whose full `headSha` equals local `HEAD` becomes visible.
 
-Unrelated sibling worktrees are deliberately outside this signal gate. The
-helper evaluates only the current checkout and the selected remote ref, so
-completed or dirty work in another isolated worktree cannot suppress a needed
-exact-SHA CI signal.
+Unrelated sibling worktrees are deliberately outside this push-and-signal
+gate. The path evaluates only the current checkout and the selected remote ref,
+so completed or dirty work in another isolated worktree cannot suppress a
+needed exact-SHA CI signal.
 
 It then follows this sequence:
 
