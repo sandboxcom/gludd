@@ -1,0 +1,7 @@
+---
+galaxy_info:
+  author: Agentic Harness Agent
+  description: CHEM-002 chemical identity resolution preserving stereo / isotope / salt distinctions
+  license: MIT
+  min_ansible_version: "2.14"
+dependencies: []

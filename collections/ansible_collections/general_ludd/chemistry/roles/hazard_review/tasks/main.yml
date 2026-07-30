@@ -1,0 +1,52 @@
+---
+- name: Validate hazard_review parameters
+  ansible.builtin.assert:
+    that:
+      - hazard_review_enabled | bool
+      - (hazard_review_query | length > 0) or (hazard_review_entities | length > 0)
+    fail_msg: "hazard_review role requires a query or entities list."
+
+- name: Ensure output directory
+  ansible.builtin.file:
+    path: "{{ hazard_review_output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Build hazard review payload
+  ansible.builtin.set_fact:
+    _hazard_payload: >-
+      {{
+        {'query': hazard_review_query} if hazard_review_query | length > 0 else
+        {'entities': hazard_review_entities, 'facility_controls': hazard_review_facility_controls}
+      }}
+
+- name: Run hazard screen
+  ansible.builtin.command: >
+    {{ ansible_python_interpreter | default('python3') }}
+    {{ role_path }}/../../plugins/module_utils/chemistry_dispatch.py
+  environment:
+    CHEMISTRY_ACTION: hazard
+    CHEMISTRY_INPUT: "{{ _hazard_payload | to_json }}"
+  register: _hazard_result
+  changed_when: false
+  failed_when: false
+
+- name: Parse hazard result
+  ansible.builtin.set_fact:
+    hazard_review_result: "{{ (_hazard_result.stdout | from_json) if _hazard_result.stdout | default('') | length > 0 else {} }}"
+
+- name: Refuse actionable output when risk tier is high or prohibited
+  ansible.builtin.assert:
+    that:
+      - hazard_review_result.risk_tier | default('low') in ['low', 'moderate']
+    fail_msg: >-
+      hazard_review refused: risk_tier={{ hazard_review_result.risk_tier | default('unknown') }}.
+      limitations: {{ hazard_review_result.limitations | default([]) | join('; ') }}
+  when: hazard_review_result is defined
+
+- name: Write JSON output
+  ansible.builtin.copy:
+    content: "{{ hazard_review_result | to_nice_json }}"
+    dest: "{{ hazard_review_output_dir }}/hazard.json"
+    mode: "0644"
+  when: hazard_review_result is defined

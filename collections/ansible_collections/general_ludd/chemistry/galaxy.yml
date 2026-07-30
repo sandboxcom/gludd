@@ -1,0 +1,29 @@
+---
+namespace: general_ludd
+name: chemistry
+version: 0.1.0
+readme: README.md
+description: >
+  Chemistry expert collection — decision-support roles and modules for
+  evidence-grounded chemical identity, reaction reasoning, stoichiometry,
+  and hazard screening. Implements the top 5 capabilities from
+  docs/specs/FEATURE_CHEMISTRY_EXPERT.md: CHEM-001 (router), CHEM-002
+  (identity), CHEM-005 (reactions), CHEM-007 (stoichiometry), and CHEM-008
+  (safety). The service API lives in src/general_ludd/chemistry and is
+  consumed by the roles below; no independent chemical logic lives in the
+  task files.
+license:
+  - MIT
+authors:
+  - Agentic Harness Agent <agent@harness.local>
+tags:
+  - chemistry
+  - identity
+  - reactions
+  - stoichiometry
+  - safety
+  - hazards
+  - cheminformatics
+  - laboratory
+  - decision_support
+dependencies: {}

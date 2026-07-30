@@ -1,0 +1,7 @@
+---
+galaxy_info:
+  author: Agentic Harness Agent
+  description: CHEM-007 stoichiometry — molar mass, moles, dilution, yield with uncertainty
+  license: MIT
+  min_ansible_version: "2.14"
+dependencies: []

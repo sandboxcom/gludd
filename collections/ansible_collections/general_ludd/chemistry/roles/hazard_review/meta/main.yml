@@ -1,0 +1,7 @@
+---
+galaxy_info:
+  author: Agentic Harness Agent
+  description: CHEM-008 safety and compatibility — risk tier, incompatibilities, controls
+  license: MIT
+  min_ansible_version: "2.14"
+dependencies: []

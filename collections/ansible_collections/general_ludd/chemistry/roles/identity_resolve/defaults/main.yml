@@ -1,0 +1,4 @@
+---
+identity_resolve_enabled: true
+identity_resolve_query: ""
+identity_resolve_output_dir: /tmp/chemistry_identity
