@@ -6331,7 +6331,6 @@ ci-trigger-committed-head:
 			--confirm-polls "$(or $(CONFIRM_POLLS),1)" \
 			--poll-interval "$(or $(POLL_INTERVAL),0)"; \
 	else \
-		$(MAKE) --no-print-directory gha-ready REF="$$REF" REMOTE="$$REMOTE" || exit 1; \
 		$(MAKE) --no-print-directory _require-gh || exit 1; \
 		UV=echo GIT_SSH_COMMAND="ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new" \
 			$(SYSTEM_PYTHON) scripts/ci_signal_exact_sha.py \
@@ -6340,7 +6339,7 @@ ci-trigger-committed-head:
 			--workflow "$(or $(WORKFLOW),Build and Release)" \
 			--discovery-polls "$(or $(DISCOVERY_POLLS),6)" \
 			--confirm-polls "$(or $(CONFIRM_POLLS),15)" \
-			--poll-interval "$(or $(POLL_INTERVAL),2)"; \
+			--poll-interval "$(or $(POLL_INTERVAL),2)" || exit 1; \
 	fi
 
 # Push and dispatch the exact clean HEAD without allowing local/remote code drift.

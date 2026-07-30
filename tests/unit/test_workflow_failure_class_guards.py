@@ -118,7 +118,9 @@ def test_committed_head_ci_path_requires_clean_state_before_push_and_dispatch() 
     assert "commit-ready" in push_line
     assert "workflow-gate" in push_line
     assert trigger_line == "ci-trigger-committed-head:"
-    assert "gha-ready" in trigger_block
+    assert "gha-ready" not in trigger_block
+    assert "workflow-gate" not in trigger_block
+    assert "_require-gh" in trigger_block
     assert "uncommitted files are not included" not in push_block
     assert "dirty local files are not included" not in trigger_block
     assert "Pushed clean HEAD" in push_block
@@ -226,7 +228,8 @@ def test_committed_head_ci_path_checks_active_runs_before_push_and_dispatch() ->
 
     assert "workflow-gate" in push_line
     assert trigger_line == "ci-trigger-committed-head:"
-    assert "gha-ready" in trigger_block
+    assert "gha-ready" not in trigger_block
+    assert "_require-gh" in trigger_block
     assert "ci-busy-check" in push_line or "ci-busy-check" in push_block
     assert "scripts/ci_signal_exact_sha.py" in trigger_block
 
