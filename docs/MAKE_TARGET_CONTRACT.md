@@ -21,3 +21,8 @@ the `workstreams` map groups controller and child PIDs so a second terminal can
 verify whether one target has spawned real parallel workers. The snapshot
 intentionally reports `agent_pids: false`: model-agent turns are not OS processes;
 only their spawned Make/pytest work can have auditable PIDs.
+
+Release-candidate pushes use `make ci-push-committed-head`, whose
+`ci-trigger-committed-head` step is the idempotent exact-SHA signal documented
+in [CI_EXACT_SHA_SIGNAL.md](CI_EXACT_SHA_SIGNAL.md). It must return a confirmed
+`GHA_RUN_URL`; a successful push by itself is not evidence that CI started.

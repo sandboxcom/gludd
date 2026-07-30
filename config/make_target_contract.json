@@ -64,6 +64,20 @@
       "behavior": "make check-make-target-contract"
     },
     {
+      "name": "ci-trigger-committed-head",
+      "make_variables": [
+        "EXAMPLE",
+        "REF",
+        "REMOTE",
+        "REPO",
+        "WORKFLOW",
+        "DISCOVERY_POLLS",
+        "CONFIRM_POLLS",
+        "POLL_INTERVAL"
+      ],
+      "behavior": "make ci-trigger-committed-head EXAMPLE=1 REF=release/beta3-candidate REMOTE=sandboxcom REPO=sandboxcom/gludd WORKFLOW='Build and Release' DISCOVERY_POLLS=1 CONFIRM_POLLS=1 POLL_INTERVAL=0"
+    },
+    {
       "name": "active-work-status",
       "make_variables": [],
       "behavior": "make active-work-status"

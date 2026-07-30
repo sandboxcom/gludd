@@ -345,6 +345,7 @@ help:
 	@echo "  ci-view RUN=<id>       Show CI run details (jobs, steps, failures)"
 	@echo "  ci-active              List active/in-flight CI runs"
 	@echo "  ci-greenness           CI reliability ratio (green / total completed)"
+	@echo "  ci-trigger-committed-head [REF=<b>]  Idempotently signal + return exact-SHA GHA run URL"
 	@echo ""
 	@echo "  --- Git Remote ---"
 	@echo "  git-remote-sandboxcom Configure sandboxcom GitHub remote with SSH key"
@@ -6314,9 +6315,33 @@ expand-specs:
 git-push-committed-head-nv: commit-ready workflow-gate
 	@BRANCH=$$(git branch --show-current); if [ -z "$$BRANCH" ]; then echo "Cannot push detached HEAD"; exit 1; fi; $(MAKE) --no-print-directory ci-busy-check BRANCH=$$BRANCH || exit 1; PUSH_BRANCH=$$BRANCH $(MAKE) --no-print-directory _push-rate-guard || exit 1; HEAD=$$(git rev-parse HEAD); GIT_SSH_COMMAND="ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new" git push --no-verify -u sandboxcom HEAD:refs/heads/$$BRANCH || exit 1; $(MAKE) --no-print-directory verify-remote BRANCH=$$BRANCH SHA=$$HEAD || exit 1; echo "Pushed clean HEAD $$HEAD to sandboxcom/$$BRANCH."
 
-# Trigger the Build and Release workflow for the exact clean HEAD already on sandboxcom.
-ci-trigger-committed-head: gha-ready _require-gh
-	@REF="$(REF)"; if [ -z "$$REF" ]; then REF=$$(git branch --show-current); fi; $(MAKE) --no-print-directory ci-busy-check BRANCH=$$REF || exit 1; gh workflow run "Build and Release" -R sandboxcom/gludd --ref "$$REF" || exit 1; echo "Triggered Build and Release for clean HEAD on $$REF."
+# Idempotently signal the Build and Release workflow for the exact clean HEAD.
+# The helper reuses the remote-head guard, discovers a push-created exact-SHA
+# run before dispatching, serializes concurrent callers, records a successful
+# dispatch, and returns the confirmed run URL. EXAMPLE=1 is network-free.
+ci-trigger-committed-head:
+	@REF="$(REF)"; if [ -z "$$REF" ]; then REF=$$(git branch --show-current); fi; \
+	REMOTE="$(REMOTE)"; if [ -z "$$REMOTE" ]; then REMOTE=sandboxcom; fi; \
+	if [ "$(EXAMPLE)" = "1" ]; then \
+		UV=echo $(SYSTEM_PYTHON) scripts/ci_signal_exact_sha.py \
+			--example --ref "$$REF" --remote "$$REMOTE" \
+			--repo "$(or $(REPO),sandboxcom/gludd)" \
+			--workflow "$(or $(WORKFLOW),Build and Release)" \
+			--discovery-polls "$(or $(DISCOVERY_POLLS),1)" \
+			--confirm-polls "$(or $(CONFIRM_POLLS),1)" \
+			--poll-interval "$(or $(POLL_INTERVAL),0)"; \
+	else \
+		$(MAKE) --no-print-directory gha-ready REF="$$REF" REMOTE="$$REMOTE" || exit 1; \
+		$(MAKE) --no-print-directory _require-gh || exit 1; \
+		UV=echo GIT_SSH_COMMAND="ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new" \
+			$(SYSTEM_PYTHON) scripts/ci_signal_exact_sha.py \
+			--ref "$$REF" --remote "$$REMOTE" \
+			--repo "$(or $(REPO),sandboxcom/gludd)" \
+			--workflow "$(or $(WORKFLOW),Build and Release)" \
+			--discovery-polls "$(or $(DISCOVERY_POLLS),6)" \
+			--confirm-polls "$(or $(CONFIRM_POLLS),15)" \
+			--poll-interval "$(or $(POLL_INTERVAL),2)"; \
+	fi
 
 # Push and dispatch the exact clean HEAD without allowing local/remote code drift.
 ci-push-committed-head: git-push-committed-head-nv ci-trigger-committed-head
