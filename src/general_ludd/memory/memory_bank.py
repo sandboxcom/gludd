@@ -18,6 +18,7 @@ import re
 import threading
 import time
 import uuid
+from collections import deque
 from copy import copy
 from dataclasses import dataclass, field
 from typing import Any
@@ -188,19 +189,15 @@ def _copy_memory_entry(fact: MemoryEntry) -> MemoryEntry:
 
 
 def _insert_fact_by_recency(
-    ordered: list[MemoryEntry],
+    ordered: deque[MemoryEntry],
     fact: MemoryEntry,
 ) -> None:
-    """Insert after equal timestamps in descending creation-time order."""
-    low = 0
-    high = len(ordered)
-    while low < high:
-        middle = (low + high) // 2
-        if ordered[middle].created_at >= fact.created_at:
-            low = middle + 1
-        else:
-            high = middle
-    ordered.insert(low, fact)
+    """Insert near the head of a time-ordered write stream without copying it."""
+    for position, existing in enumerate(ordered):
+        if existing.created_at < fact.created_at:
+            ordered.insert(position, fact)
+            return
+    ordered.append(fact)
 
 
 # === MemoryBank ==============================================================
@@ -221,9 +218,10 @@ class MemoryBank:
         self._lock = threading.Lock()
         self._facts_revision = 0
         self._ordered_facts_revision = -1
-        self._ordered_facts_cache: tuple[MemoryEntry, ...] = ()
+        self._ordered_facts_cache: deque[MemoryEntry] = deque()
         self._fact_score_cache_key: tuple[str, tuple[str, ...]] | None = None
         self._fact_score_cache: tuple[tuple[MemoryEntry, float], ...] = ()
+        self._fact_score_cache_ids: set[str] = set()
 
     @property
     def config(self) -> MemoryBankConfig:
@@ -285,8 +283,12 @@ class MemoryBank:
             fact.created_at = time.time()
         stored = _copy_memory_entry(fact)
         with self._lock:
+            replaces_existing = fact.entry_id in self._facts
             self._facts[fact.entry_id] = stored
-            self._record_fact_retained(stored)
+            self._record_fact_retained(
+                stored,
+                replaces_existing=replaces_existing,
+            )
         return _copy_memory_entry(fact)
 
     def get_facts(self, tag_filter: str | None = None) -> list[MemoryEntry]:
@@ -378,6 +380,9 @@ class MemoryBank:
             if revision == self._facts_revision:
                 self._fact_score_cache_key = cache_key
                 self._fact_score_cache = ordered
+                self._fact_score_cache_ids = {
+                    fact.entry_id for fact, _ in ordered
+                }
             else:
                 # A steady writer must not starve cache installation. Reconcile
                 # only entries changed since the snapshot while holding the
@@ -399,13 +404,16 @@ class MemoryBank:
                 reconciled.sort(key=lambda item: item[1], reverse=True)
                 self._fact_score_cache_key = cache_key
                 self._fact_score_cache = tuple(reconciled)
+                self._fact_score_cache_ids = {
+                    fact.entry_id for fact, _ in reconciled
+                }
         return [_copy_memory_entry(fact) for fact, _ in ordered]
 
     def _ordered_fact_snapshot(self) -> tuple[MemoryEntry, ...]:
         with self._lock:
             revision = self._facts_revision
             if revision == self._ordered_facts_revision:
-                return self._ordered_facts_cache
+                return tuple(self._ordered_facts_cache)
             snapshot = tuple(self._facts.values())
         ordered = tuple(
             sorted(snapshot, key=lambda fact: fact.created_at, reverse=True)
@@ -413,7 +421,7 @@ class MemoryBank:
         with self._lock:
             if revision == self._facts_revision:
                 self._ordered_facts_revision = revision
-                self._ordered_facts_cache = ordered
+                self._ordered_facts_cache = deque(ordered)
             else:
                 # Publish a current cache even when a writer raced the initial
                 # sort. Future retains update it incrementally, preventing
@@ -426,59 +434,77 @@ class MemoryBank:
                     )
                 )
                 self._ordered_facts_revision = self._facts_revision
-                self._ordered_facts_cache = current_ordered
+                self._ordered_facts_cache = deque(current_ordered)
         return ordered
 
-    def _record_fact_retained(self, fact: MemoryEntry) -> None:
+    def _record_fact_retained(
+        self,
+        fact: MemoryEntry,
+        *,
+        replaces_existing: bool,
+    ) -> None:
         previous_revision = self._facts_revision
         self._facts_revision += 1
         if self._ordered_facts_revision == previous_revision:
-            ordered = [
-                existing
-                for existing in self._ordered_facts_cache
-                if existing.entry_id != fact.entry_id
-            ]
-            _insert_fact_by_recency(ordered, fact)
+            cached = self._ordered_facts_cache
+            if not cached:
+                cached.append(fact)
+            elif not replaces_existing and fact.created_at > cached[0].created_at:
+                cached.appendleft(fact)
+            elif not replaces_existing and fact.created_at <= cached[-1].created_at:
+                cached.append(fact)
+            else:
+                if replaces_existing:
+                    for position, existing in enumerate(cached):
+                        if existing.entry_id == fact.entry_id:
+                            del cached[position]
+                            break
+                _insert_fact_by_recency(cached, fact)
             self._ordered_facts_revision = self._facts_revision
-            self._ordered_facts_cache = tuple(ordered)
         else:
             self._ordered_facts_revision = -1
-            self._ordered_facts_cache = ()
+            self._ordered_facts_cache.clear()
         cache_key = self._fact_score_cache_key
         if cache_key is None:
             return
 
         ql, qterms = cache_key
+        text_blob = f"{fact.content} {fact.source} {' '.join(fact.tags)}"
+        score = _score_text(list(qterms), ql, text_blob)
+        was_cached = fact.entry_id in self._fact_score_cache_ids
+        if score <= 0 and not was_cached:
+            return
         updated = [
             item
             for item in self._fact_score_cache
             if item[0].entry_id != fact.entry_id
         ]
-        text_blob = f"{fact.content} {fact.source} {' '.join(fact.tags)}"
-        score = _score_text(list(qterms), ql, text_blob)
         if score > 0:
             updated.append((fact, score))
             updated.sort(key=lambda item: item[1], reverse=True)
+            self._fact_score_cache_ids.add(fact.entry_id)
+        else:
+            self._fact_score_cache_ids.discard(fact.entry_id)
         self._fact_score_cache = tuple(updated)
 
     def _record_fact_deleted(self, entry_id: str) -> None:
         previous_revision = self._facts_revision
         self._facts_revision += 1
         if self._ordered_facts_revision == previous_revision:
-            self._ordered_facts_cache = tuple(
-                fact
-                for fact in self._ordered_facts_cache
-                if fact.entry_id != entry_id
-            )
+            for position, fact in enumerate(self._ordered_facts_cache):
+                if fact.entry_id == entry_id:
+                    del self._ordered_facts_cache[position]
+                    break
             self._ordered_facts_revision = self._facts_revision
         else:
             self._ordered_facts_revision = -1
-            self._ordered_facts_cache = ()
+            self._ordered_facts_cache.clear()
         self._fact_score_cache = tuple(
             item
             for item in self._fact_score_cache
             if item[0].entry_id != entry_id
         )
+        self._fact_score_cache_ids.discard(entry_id)
 
     def _synthesize(
         self,

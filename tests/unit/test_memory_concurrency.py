@@ -538,6 +538,43 @@ class TestWriteDuringRead:
 
         assert score_text.call_count == 33
 
+    def test_unrelated_retain_does_not_rebuild_active_recall_cache(self) -> None:
+        """A non-matching write must leave an already valid score cache intact."""
+        bank = MemoryBank(MemoryBankConfig(bank_id="stable-recall-cache"))
+        bank.retain(MemoryEntry(content="initial fact", tags=["initial"]))
+        assert len(bank.recall("initial").facts) == 1
+        cached_scores = bank._fact_score_cache
+
+        bank.retain(MemoryEntry(content="unrelated fact", tags=["other"]))
+
+        assert bank._fact_score_cache is cached_scores
+        assert [fact.content for fact in bank.recall("initial").facts] == [
+            "initial fact"
+        ]
+
+    def test_newest_unique_retain_uses_ordered_cache_fast_path(self) -> None:
+        """The common append-by-time write must avoid a general list insertion."""
+        bank = MemoryBank(MemoryBankConfig(bank_id="ordered-cache-fast-path"))
+        bank.retain(MemoryEntry(content="first", created_at=1.0))
+        assert [fact.content for fact in bank.get_facts()] == ["first"]
+        ordered_cache = bank._ordered_facts_cache
+
+        with patch.object(
+            memory_bank_module,
+            "_insert_fact_by_recency",
+            wraps=memory_bank_module._insert_fact_by_recency,
+        ) as general_insert:
+            bank.retain(MemoryEntry(content="third", created_at=3.0))
+            bank.retain(MemoryEntry(content="second", created_at=2.0))
+
+        assert general_insert.call_count == 1
+        assert bank._ordered_facts_cache is ordered_cache
+        assert [fact.content for fact in bank.get_facts()] == [
+            "third",
+            "second",
+            "first",
+        ]
+
     def test_reader_sees_consistent_snapshot(self):
         store = ObservationStore(store_path="/tmp/gludd-test-observations-wdr.json")
         store.clear()
