@@ -33,5 +33,8 @@ The enforced repository contract is:
 4. Ansible modules emit warnings through `AnsibleModule.warn()` and never pass
    reserved `warnings` or `deprecations` keys to `exit_json`/`fail_json`.
 
-`tests/unit/test_molecule_warning_contract.py` checks the complete scenario and
-module matrix so new warning-producing configurations fail before hosted CI.
+`tests/unit/test_molecule_warning_contract.py` ratchets the release inventory at
+123 logical scenarios and checks both canonical `molecule/playbooks/*` sources
+and any tracked `molecule/*` runtime copies with the same scenario name. It also
+walks every scenario playbook conditional, so stale runtime configurations and
+deprecated Jinja-delimited conditions fail before hosted CI.
