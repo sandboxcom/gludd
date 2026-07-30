@@ -116,7 +116,7 @@ def test_committed_head_ci_path_requires_clean_state_before_push_and_dispatch() 
     combined_line = _target_line("ci-push-committed-head")
 
     assert "commit-ready" in push_line
-    assert "workflow-gate" in push_line
+    assert "workflow-gate" not in push_line
     assert trigger_line == "ci-trigger-committed-head:"
     assert "gha-ready" not in trigger_block
     assert "workflow-gate" not in trigger_block
@@ -226,7 +226,8 @@ def test_committed_head_ci_path_checks_active_runs_before_push_and_dispatch() ->
     push_block = _target_block("git-push-committed-head-nv")
     trigger_block = _target_block("ci-trigger-committed-head")
 
-    assert "workflow-gate" in push_line
+    assert "commit-ready" in push_line
+    assert "workflow-gate" not in push_line
     assert trigger_line == "ci-trigger-committed-head:"
     assert "gha-ready" not in trigger_block
     assert "_require-gh" in trigger_block
