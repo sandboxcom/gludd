@@ -4001,16 +4001,27 @@ build-executable:
 	@$(UV) run pyinstaller gludd.spec --clean --noconfirm
 	@echo "Built dist/gludd"
 
-LINUX_BINARY_IMAGE ?= ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+LINUX_BINARY_IMAGE ?= ghcr.io/astral-sh/uv:python3.12-bookworm-slim@sha256:e5b65587bce7de595f299855d7385fe7fca39b8a74baa261ba1b7147afa78e58
 LINUX_BINARY_OUTPUT ?= dist/linux/gludd
+LINUX_BINARY_SCRATCH_ROOT ?= $(HOME)/tmp/gludd-linux-build
+DEBIAN_SNAPSHOT ?= 20260729T000000Z
+LINUX_BINUTILS_VERSION ?= 2.40-2
+PYINSTALLER_WARNING_ALLOWLIST_LINUX ?= config/pyinstaller-warning-allowlist-linux.json
 
 build-linux-executable: ## Build and verify a real Linux PyInstaller executable
 	@case "$(LINUX_BINARY_OUTPUT)" in /*|*..*) echo "Refusing unsafe LINUX_BINARY_OUTPUT: $(LINUX_BINARY_OUTPUT)"; exit 1;; esac
+	@case "$(LINUX_BINARY_SCRATCH_ROOT)" in "$(HOME)"/*) ;; *) echo "Refusing scratch root outside HOME: $(LINUX_BINARY_SCRATCH_ROOT)"; exit 1;; esac
 	@mkdir -p "$$(dirname "$(LINUX_BINARY_OUTPUT)")"
 	@rm -f "$(LINUX_BINARY_OUTPUT)"
 	@if [ "$$(uname -s)" = "Linux" ]; then \
 		echo "Building Linux executable natively"; \
 		$(MAKE) --no-print-directory build-executable; \
+		pyinstaller_version=$$($(UV) run pyinstaller --version); \
+		$(UV) run python scripts/audit_pyinstaller_warnings.py \
+			--warnings build/gludd/warn-gludd.txt \
+			--allowlist "$(PYINSTALLER_WARNING_ALLOWLIST_LINUX)" \
+			--platform linux \
+			--pyinstaller-version "$$pyinstaller_version"; \
 		cp dist/gludd "$(LINUX_BINARY_OUTPUT)"; \
 	else \
 		socket=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Dir}}/sock/docker.sock' 2>/dev/null || true); \
@@ -4020,8 +4031,8 @@ build-linux-executable: ## Build and verify a real Linux PyInstaller executable
 		fi; \
 		mkdir -p "$(LIMA_DOCKER_CONFIG)"; \
 		chmod 700 "$(LIMA_DOCKER_CONFIG)"; \
-		project_dir="$$(pwd)"; \
-		source_dir=$$(mktemp -d "$$project_dir/.gludd-linux-source.XXXXXX"); \
+		mkdir -p "$(LINUX_BINARY_SCRATCH_ROOT)"; \
+		source_dir=$$(mktemp -d "$(LINUX_BINARY_SCRATCH_ROOT)/source.XXXXXX"); \
 		container_name="gludd-linux-build-$$$$"; \
 		cleanup_build() { \
 			rm -rf "$$source_dir"; \
@@ -4040,7 +4051,33 @@ build-linux-executable: ## Build and verify a real Linux PyInstaller executable
 			-v "$$source_dir:/workspace:ro" \
 			-w /workspace \
 			"$(LINUX_BINARY_IMAGE)" \
-			sh -ec 'export DEBIAN_FRONTEND=noninteractive; apt-get update; apt-get install -y --no-install-recommends binutils; rm -rf /var/lib/apt/lists/*; uv sync --frozen; uv run pyinstaller gludd.spec --clean --noconfirm --workpath /tmp/gludd-pyinstaller-build --distpath /out'; \
+			sh -ec 'export DEBIAN_FRONTEND=noninteractive; \
+				sed -i \
+					-e "s|http://deb.debian.org/debian-security|https://snapshot.debian.org/archive/debian-security/$(DEBIAN_SNAPSHOT)|g" \
+					-e "s|http://deb.debian.org/debian|https://snapshot.debian.org/archive/debian/$(DEBIAN_SNAPSHOT)|g" \
+					/etc/apt/sources.list.d/debian.sources; \
+				printf "%s\n" "Acquire::Check-Valid-Until \"false\";" > /etc/apt/apt.conf.d/99gludd-snapshot; \
+				apt-get -o APT::Update::Error-Mode=any update; \
+				echo "=== pending package updates before dist-upgrade ==="; \
+				apt-get -s dist-upgrade; \
+				apt-get -y --no-remove dist-upgrade; \
+				apt-get install -y --no-install-recommends "binutils=$(LINUX_BINUTILS_VERSION)"; \
+				command -v objdump; \
+				command -v objcopy; \
+				echo "=== pending package updates after dist-upgrade ==="; \
+				apt-get -s dist-upgrade > /tmp/gludd-apt-after.txt; \
+				cat /tmp/gludd-apt-after.txt; \
+				grep -Fq "0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded." /tmp/gludd-apt-after.txt; \
+				rm -rf /var/lib/apt/lists/*; \
+				uv sync --frozen; \
+				pyinstaller_version=$$(uv run pyinstaller --version); \
+				test "$$pyinstaller_version" = "6.20.0"; \
+				uv run pyinstaller gludd.spec --clean --noconfirm --workpath /tmp/gludd-pyinstaller-build --distpath /out; \
+				uv run python scripts/audit_pyinstaller_warnings.py \
+					--warnings /tmp/gludd-pyinstaller-build/gludd/warn-gludd.txt \
+					--allowlist "$(PYINSTALLER_WARNING_ALLOWLIST_LINUX)" \
+					--platform linux \
+					--pyinstaller-version "$$pyinstaller_version"'; \
 		DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker cp "$$container_name:/out/gludd" "$(LINUX_BINARY_OUTPUT)"; \
 	fi
 	@test -x "$(LINUX_BINARY_OUTPUT)" || { echo "Linux executable missing: $(LINUX_BINARY_OUTPUT)"; exit 1; }

@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "platform": "linux",
+  "pyinstaller_version": "6.20.0",
+  "allowed_missing_imports": []
+}

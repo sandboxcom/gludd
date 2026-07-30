@@ -397,9 +397,34 @@ class TestPrepare:
         assert "build-linux-executable:" in makefile
         assert "UV_PROJECT_ENVIRONMENT=/tmp/gludd-linux-venv" in makefile
         assert "git archive HEAD" in makefile
+        assert (
+            "LINUX_BINARY_IMAGE ?= "
+            "ghcr.io/astral-sh/uv:python3.12-bookworm-slim@"
+            "sha256:e5b65587bce7de595f299855d7385fe7fca39b8a74baa261"
+            "ba1b7147afa78e58"
+        ) in makefile
         assert "--pull=always" in makefile
-        assert "apt-get upgrade -y" not in makefile
-        assert "apt-get install -y --no-install-recommends binutils" in makefile
+        assert "LINUX_BINARY_SCRATCH_ROOT ?= $(HOME)/tmp/gludd-linux-build" in makefile
+        assert "DEBIAN_SNAPSHOT ?= 20260729T000000Z" in makefile
+        assert "LINUX_BINUTILS_VERSION ?=" in makefile
+        assert "snapshot.debian.org/archive/debian/" in makefile
+        assert "snapshot.debian.org/archive/debian-security/" in makefile
+        assert "Acquire::Check-Valid-Until" in makefile
+        assert "APT::Update::Error-Mode=any update" in makefile
+        assert "apt-get -y --no-remove dist-upgrade" in makefile
+        assert (
+            'apt-get install -y --no-install-recommends '
+            '"binutils=$(LINUX_BINUTILS_VERSION)"'
+        ) in makefile
+        assert "command -v objdump" in makefile
+        assert "command -v objcopy" in makefile
+        assert "apt-get -s dist-upgrade" in makefile
+        assert (
+            "0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded."
+            in makefile
+        )
+        assert "audit_pyinstaller_warnings.py" in makefile
+        assert "/tmp/gludd-pyinstaller-build/gludd/warn-gludd.txt" in makefile
         assert ":/workspace:ro" in makefile
         assert 'docker cp "$$container_name:/out/gludd"' in makefile
         assert "file \"$(LINUX_BINARY_OUTPUT)\"" in makefile
