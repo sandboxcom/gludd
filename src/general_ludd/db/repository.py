@@ -643,9 +643,11 @@ class TodoRepository:
         cooldown_hours: int = 24,
         max_run_count: int = 3,
         limit: int = 10,
+        project_id: str | None = None,
     ) -> int:
         from sqlalchemy import update as _update
 
+        _pid = self._resolve_pid(project_id)
         cutoff = datetime.now(UTC) - timedelta(hours=cooldown_hours)
         cap = min(limit, _DEFAULT_LIST_LIMIT)
         stmt = (
@@ -657,6 +659,15 @@ class TodoRepository:
             )
             .limit(cap)
         )
+        # H.12: mirror claim_runnable's tenant guard. A scoped requeue MUST only
+        # flip rows in that scope; an unscooped requeue (project_id=None and no
+        # instance scope) MUST only touch NULL-project rows. Without this branch
+        # the requeue was a cross-tenant mutation (every tenant's NEEDS_MORE_WORK
+        # rows got flipped to QUEUED).
+        if _pid is not None:
+            stmt = stmt.where(TodoModel.project_id == _pid)
+        else:
+            stmt = stmt.where(TodoModel.project_id.is_(None))
         result = await self._session.execute(stmt)
         todos = list(result.scalars().all())
         requeued = 0
@@ -784,6 +795,12 @@ class TaskReturnRepository:
         stmt = select(TaskReturnModel).where(TaskReturnModel.status == "created")
         if project_id is not None:
             stmt = stmt.where(TaskReturnModel.project_id == project_id)
+        else:
+            # H.12: an unscooped claim MUST only touch NULL-project rows. The
+            # missing else branch was a cross-tenant leak: project_id=None
+            # returned EVERY created row across all tenants. Mirrors the
+            # claim_runnable guard.
+            stmt = stmt.where(TaskReturnModel.project_id.is_(None))
         stmt = stmt.order_by(TaskReturnModel.created_at.asc()).limit(min(limit, _DEFAULT_LIST_LIMIT))
         result = await self._session.execute(stmt)
         candidates = list(result.scalars().all())
