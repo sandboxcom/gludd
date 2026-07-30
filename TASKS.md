@@ -385,7 +385,7 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 - [x] W.19 — Convert enforce-deadline.ts to hot-reload proxy pattern| evidence: Waves 11-12 final | priority: high | effort: S | status: completed
 - [x] W.20 — Convert enforce-enhancement-ratio.ts to hot-reload proxy pattern| evidence: Waves 11-12 final | priority: high | effort: S | status: completed
 - [x] W.21 — Convert enforce-floor.ts to hot-reload proxy pattern| evidence: Waves 11-12 final | priority: high | effort: S | status: completed
-- [ ] W.22 — .opencode integrity checker + verify-opencode-backup guard| priority: medium | effort: S | status: pending | prior-evidence: session 26
+- [x] W.22 — .opencode integrity checker + verify-opencode-backup guard| evidence: check_opencode_integrity.py hardened with node v26 compat scan + plugin-manifest xref; verify_opencode_backup.py covers lib/ + plugins/; 13 tests at test_w22_opencode_integrity.py | priority: medium | effort: S | status: completed
 - [x] W.23 — enforce-clean-tree.ts dirty dispatch fix + 14 runtime tests| evidence: 14 runtime tests pass, session 26 | priority: medium | effort: M | status: completed
 - [x] W.24 — enforce-commit-lock.ts 8 runtime tests| evidence: 8 runtime tests pass, session 26 | priority: medium | effort: S | status: completed
 - [x] W.25 — watchdog.ts 5 runtime tests| evidence: 5 runtime tests pass, session 26 | priority: medium | effort: S | status: completed
@@ -429,13 +429,13 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 - [x] H.3 — H-READYZ-PREMATURE: /readyz treats "task not yet set" same as "task healthy"| evidence: 6 tests pass | priority: low | effort: S | status: completed
 - [x] H.4 — H-LANGGRAPH-AUDITOR-NOOP: tool_auditor stored but never invoked in LangGraphAgentLoop| evidence: 14 tests pass | priority: medium | effort: M | status: completed
 - [x] H.5 — H-HUMANGATE-NO-CHECKPOINTER: gate graph compiled without checkpointer breaks interrupt/resume| evidence: 2026-07-12 waves 11-12 | priority: medium | effort: M | status: completed
-- [ ] H.6 — H-LANGGRAPH-FACTORY-ROLE-TRAP: make_langgraph_tool_loop has no required role param| priority: medium | effort: S | status: pending | prior-evidence: Waves 11-12
+- [x] H.6 — H-LANGGRAPH-FACTORY-ROLE-TRAP: make_langgraph_tool_loop has no required role param| evidence: make_langgraph_tool_loop requires role: str positional (capabilities.py:191); tests at test_h6_langgraph_factory.py | priority: medium | effort: S | status: completed
 - [x] H.7 — H-PROJECT-OVERLAY-DANGEROUS-FIELDS: untrusted project config can override connectors, database.url, budget, issues, self_improve gates| evidence: 70 tests pass, project overlay deny-list | priority: high | effort: M | status: completed
 - [x] H.8 — H-MEMORY-CROSS-PROJECT-BLEED: MemoryRecordModel has no project_id, cross-project leak+overwrite| evidence: 32 tests pass, migration 030, commit ac698bec | priority: high | effort: M | status: completed
 - [x] H.9 — H-MCP-STOPALL-ORPHAN: one failing transport.stop() orphans every remaining MCP subprocess| evidence: 5 tests pass, commit 5ce6065d | priority: medium | effort: S | status: completed
 - [x] H.10 — H-MCP-UVX-UNPINNED: uvx package specs exempt from version-pin requirement| evidence: 33 tests pass, commit 5ce6065d | priority: medium | effort: S | status: completed
 - [x] H.11 — H-DENYLIST-DRIFT: three independent protected-path deny-lists disagree| evidence: 6 passed — denylist consolidated into path_canonicalizer.py | priority: medium | effort: M | status: completed
-- [ ] H.12 — H-TENANT-CLAIM-FALLBACK: unscoped cross-tenant claim_runnable fallback when no project selected| priority: medium | effort: S | status: pending | prior-evidence: Wave 34
+- [x] H.12 — H-TENANT-CLAIM-FALLBACK: unscoped cross-tenant claim_runnable fallback when no project selected| evidence: cross-tenant siblings fixed — TaskReturnRepository.claim_unreviewed + TodoRepository.requeue_needs_more_work now scope to NULL project when unscooped; 4 tests at test_repository_tenant_isolation.py | priority: medium | effort: S | status: completed
 - [x] H.13 — H-ORNITH-SANDBOX-GAPS: arbitrary file-write via export out_path + unsandboxed coding-agent subprocess| evidence: 18 tests pass, commit 3c81b1b1 | priority: medium | effort: M | status: completed
 - [x] H.14 — H-PRIORITY-UPPERBOUND: priority has no upper bound at schema/repository layer| evidence: commit 3c81b1b1 | priority: low | effort: S | status: completed
 - [x] H.15 — H-MCP-STARTUP-ORPHAN: partial multi-server MCP startup failure orphans already-spawned subprocesses| evidence: 10 tests pass | priority: high | effort: M | status: completed
@@ -453,11 +453,11 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 - [x] S.1 — POST-SHIP #3: registry seal + daemon default_registry swap| evidence: 13 tests pass | priority: high | effort: S | status: completed
 - [x] S.2 — POST-SHIP #3: events/hooks.py no is_safe_fetch_url / follow_redirects=False| evidence: 30 tests pass | priority: high | effort: S | status: completed
 - [x] S.3 — POST-SHIP #3: gateway.py call_model_with_fallback no health gate before _try_call_model + budget not threaded| evidence: 18 tests pass | priority: medium | effort: M | status: completed
-- [ ] S.4 — POST-SHIP #3: daemon.py _is_public startswith("/docs") → /docs_evil bypass| priority: medium | effort: S | status: pending | prior-evidence: Wave 34
+- [x] S.4 — POST-SHIP #3: daemon.py _is_public startswith("/docs") → /docs_evil bypass| evidence: verified fixed — _is_public uses exact match + trailing-slash prefix; tests at test_daemon_paths.py, test_daemon_is_public_bypass.py (audit 2026-07-30) | priority: medium | effort: S | status: completed
 - [x] S.5 — POST-SHIP #4: db/repository.py details=NULL on NOT NULL col (D1/CA-DB1)| evidence: guard at repository.py:791; 11 tests pass | priority: medium | effort: S | status: completed
 - [x] S.6 — POST-SHIP #4: db/repository.py task_type .contains substring false-positives (D2/CA-DB2)| evidence: 2026-07-12 waves 11-12 | priority: medium | effort: S | status: completed
 - [x] S.7 — POST-SHIP #4: agents/dispatcher.py get_semaphore check-and-set not atomic (D3/CA-Dispatcher)| evidence: async with self._lock at dispatcher.py:104; 9 tests pass | priority: medium | effort: S | status: completed
-- [ ] S.8 — POST-SHIP #4: connectors/registry.py getattr class_name unvalidated (D4/CA-Connectors)| priority: medium | effort: S | status: pending | prior-evidence: Waves 11-12
+- [x] S.8 — POST-SHIP #4: connectors/registry.py getattr class_name unvalidated (D4/CA-Connectors)| evidence: _validate_class_name regex `^[A-Z][A-Za-z0-9]*Source$` at registry.py:445 guards both getattr sites; tests at test_s8_connectors_registry.py | priority: medium | effort: S | status: completed
 - [x] S.9 — POST-SHIP #4: self_update/applier.py substring-only protected-path bypass (D5/CA-E5)| evidence: 2026-07-12 waves 11-12 | priority: medium | effort: S | status: completed
 - [x] S.10 — POST-SHIP #4: routers/integrity.py unconfined repo_root/path (D6/CA-R2)| evidence: 2026-07-12 waves 11-12 | priority: medium | effort: S | status: completed
 - [x] S.11 — POST-SHIP #4: validation/runner.py unconfined subprocess cwd (D7/CA-validation)| evidence: 2026-07-12 waves 11-12 | priority: medium | effort: S | status: completed
