@@ -1588,6 +1588,14 @@ def _verify_tetris_features(mod: Any) -> list[str]:
                 failures.append(f"gravity moved active piece by {after_y - before_y!r} rows; expected exactly one")
         except Exception as exc:
             failures.append(f"gravity tick raised: {type(exc).__name__}: {exc}")
+    elif tick is not None:
+        # Z.3 fallback: when piece-Y can't be extracted by name, use a
+        # board-diff check to verify gravity moves the active piece.
+        from tests.e2e._game_lifecycle import _check_tetris_gravity
+
+        gravity_fail = _check_tetris_gravity(instance)
+        if gravity_fail is not None:
+            failures.append(gravity_fail)
     state = _get_state_dict(instance)
     if _find_board_attribute(state) is None:
         failures.append(
