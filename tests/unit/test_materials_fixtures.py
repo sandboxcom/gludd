@@ -117,11 +117,19 @@ class TestSourceProvenance:
         )
 
     def test_source_ids_are_unique_per_publisher_revision(self):
-        seen: set[str] = set()
+        # Multiple materials from the same handbook volume legitimately share
+        # a source_id (e.g. all steels reference ASM Handbook Vol 1). The
+        # invariant is that every source_id maps to consistent publisher and
+        # revision values, not that source_ids are globally unique.
+        source_to_props: dict[str, tuple[str, str]] = {}
         for mat in MATERIAL_PROPERTY_FIXTURES:
-            key = mat.source.source_id
-            assert key not in seen, f"duplicate source_id {key!r}"
-            seen.add(key)
+            sid = mat.source.source_id
+            pair = (mat.source.publisher, mat.source.revision)
+            if sid in source_to_props:
+                prev = source_to_props[sid]
+                assert pair == prev, f"source_id {sid!r} mapped to {prev} but now {pair}"
+            else:
+                source_to_props[sid] = pair
 
 
 # ─── physical plausibility (smoke test that fixtures aren't garbage) ──────────

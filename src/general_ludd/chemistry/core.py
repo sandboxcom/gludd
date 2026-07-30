@@ -240,7 +240,7 @@ COMMON_NAMES: dict[str, dict[str, str]] = {
         "systematic": "(2R,3S,4R,5R)-2,3,4,5,6-pentahydroxyhexanal",
     },
     "sucrose": {
-        "smiles": "OC[C@H]1OC(O[C@@]2(CO)OC(CO)[C@@H](O)[C@@H]2O)[C@@H](O)[C@@H]1O",
+        "smiles": "C(C1C(C(C(C(O1)OC2(C(C(C(O2)CO)O)O)CO)O)O)O)O",
         "formula": "C12H22O11",
         "systematic": "alpha-D-glucopyranosyl-(1->2)-beta-D-fructofuranoside",
     },
@@ -453,7 +453,7 @@ def _strip_smiles_to_formula(smiles: str) -> str:
     """
     out = smiles
     out = re.sub(r"\[[^\]]*\]", lambda m: _bracket_atom_to_symbol(m.group(0)), out)
-    out = re.sub(r"[=#/\\().\-\d]", "", out)
+    out = re.sub(r"[=#/()0-9\\.\-d]", "", out)
     out = re.sub(r"([A-Z])([a-z]?)(?=[A-Z])", r"\1\2", out)
     return out
 

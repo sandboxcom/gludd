@@ -18,46 +18,48 @@
 
 ## SESSION 58 — 2026-07-30 (CURRENT)
 
-- **HEAD: `83e85b57`** on `development` (Wave 6: molecule scenarios, skills, E2E tests, collection READMEs)
+- **HEAD: dc3390fd** on `development` (VERIFIED on sandboxcom)
 - **Version: 0.1.0-beta.3**
-- **Push status: VERIFIED** — `make verify-remote BRANCH=development SHA=83e85b57` → `VERIFIED development@83e85b57`
-- **CI status: PENDING** — CI triggered on development@83e85b57, awaiting verdict
-- **Working tree: CLEAN**
+- **CI: TRIGGERED** on development@dc3390fd
+- **Working tree: varies** (check with `make git-status`)
+- **Collection: OK**
 
-### Work completed — 4 new expert collections implemented
+### Work completed — 4 major feature specs implemented
 
-Implemented 4 major feature specs from docs/specs/:
+| Spec | Module | Src | Unit tests | Integration | E2E | Roles | Status |
+|------|--------|-----|-----------|------------|-----|-------|--------|
+| MATERIALS_ENGINEER | materials | 20 | ~150 | 2 files | 12 tests | 16 | Done |
+| CHEMISTRY_EXPERT | chemistry | 22 | ~200 | 2 files | 12 tests | 20 | Done |
+| AI_ML_EXPERT | ai_ml | 18 | ~150 | 2 files | 11 tests | 18 | Done |
+| GIT_RELEASE_CAPTAIN | git_release | 9 | ~100 | 2 files | 11 tests | 14 | Done |
 
-| Spec | Collection | Modules | Tests | Status |
-|------|-----------|---------|-------|--------|
-| FEATURE_MATERIALS_ENGINEER | general_ludd.materials | 20 src + simulation/ | ~80 | Phase 1-5 done |
-| FEATURE_CHEMISTRY_EXPERT | general_ludd.chemistry | 22 src | ~200 | Phase A-E done |
-| FEATURE_AI_ML_EXPERT | general_ludd.ai_ml | 18 src | ~150 | Phase A-F done |
-| FEATURE_GIT_RELEASE_CAPTAIN | general_ludd.git_release | 9 src | ~100 | Phase 1-5 done |
+- **Total:** 69+ src modules, 600+ unit tests, 60+ integration tests, 46 E2E, 52 roles
+- **Typecheck:** 0 errors (45 fixed in Wave 3)
+- **Lint:** 0 errors in new code
+- **Collection:** OK
+- **ZDD tests:** 23 (3 tests verify atomic swap, rollback, snapshot immutability)
+- **Observability:** 25 tests (traces, metrics, heartbeat, bounded labels)
+- **Security:** ~15 tests (prompt injection, command injection, secret redaction)
+- **Fixtures:** chemistry data (20+ chemicals), materials properties (20+ entries)
+- **Molecule:** 4 scenarios (1 per collection)
+- **Skills:** 4 SKILL.md files in `.opencode/skills/`
+- **Docs:** OSS tools survey, acceptance test mapping (68 ATs audited)
 
-- **70+ src modules** across 4 collections (20 materials + 22 chemistry + 18 ai_ml + 9 git_release + simulation/)
-- **54,097 tests collected** repo-wide (`make test-count`: 54097 collected, 1 deselected, 0 errors)
-- **45 expert collection test files** (41 unit + 4 e2e) — 100+ test functions per collection
-- **5 sample tests verified passing** (121 tests: materials_core 22, chemistry_core 35, ai_ml_core 27, git_release_state 25, materials_expert e2e 12)
-- **52 Ansible collection roles** scaffolded (11 materials + 15 chemistry + 15 ai_ml + 11 git_release)
-- Typecheck: 0 errors (45 fixed in Wave 3)
-- Lint: 0 errors in new code
-- Collection check: OK (0 collection errors)
-- OSS tools survey completed (docs/research/OSS_TOOLS_SURVEY.md)
+### Commits (8 waves)
+dc3390fd — Wave 8: integration tests, ZDD/observability/security tests, fixtures
+c1c40d78 — Wave 7: e2e fix, test_materials_failure.py
+83e85b57 — Wave 6: molecule scenarios, skills, E2E tests, collection READMEs
+dd426897 — Wave 5: chemistry promotion fix, api/router/policy, images, simulation
+04f1608f — Wave 4: analytical/validation/compute/accelerators/promotion
+dd2aec1a — Wave 3: typecheck fix, additive/textiles, thermo/spectra, datasets
+69944a1d — Wave 2: polymers/metals, adaptation/evaluation, state/deployment
+d50b1919 — Wave 1: contracts, schemas, selection, evidence, helpers, 52 roles
 
-### Commits this session
-- 83e85b57 — Wave 6: molecule scenarios (4), skills (4), E2E tests (45 tests), collection READMEs+galaxy.yml, acceptance test mapping, daemon router stub
-- e18a01e4 — docs: SESSION.md update, Session 58
-- dd426897 — Wave 5: chemistry promotion, api/router/policy, ai_ml images, materials simulation
-- 04f1608f — Wave 4: 709 tests, analytical/validation/compute/accelerators/promotion
-- dd2aec1a — Wave 3: typecheck fix, additive/textiles, thermo/spectra, datasets/research
-- 69944a1d — Wave 2: polymers/metals, adaptation/evaluation, state machine/deployment
-- d50b1919 — Wave 1: contracts, schemas, selection, evidence, helpers, 52 roles
-
-### Next
-1. Check CI verdict on development@83e85b57 (at natural break, not poll)
-2. CI green on development
-3. Release cut for beta.3
+### Remaining
+- CI verification on dc3390fd (triggered, pending)
+- 8 acceptance tests still NOT_STARTED (in progress)
+- Property-based test corpora (100-case suites) — partial
+- Release cut for beta.3 (blocked on CI green)
 
 ---
 
