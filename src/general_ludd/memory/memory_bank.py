@@ -357,10 +357,32 @@ class MemoryBank:
                 scored.append((fact, score))
         scored.sort(key=lambda x: x[1], reverse=True)
         ordered = tuple(scored)
+        snapshot_by_id = {fact.entry_id: fact for fact in snapshot}
         with self._lock:
             if revision == self._facts_revision:
                 self._fact_score_cache_key = cache_key
                 self._fact_score_cache = ordered
+            else:
+                # A steady writer must not starve cache installation. Reconcile
+                # only entries changed since the snapshot while holding the
+                # mutation lock, then publish one cache valid at this revision.
+                # The current caller still receives its original point-in-time
+                # snapshot; the reconciled cache serves subsequent recalls.
+                reconciled = [
+                    (fact, score)
+                    for fact, score in ordered
+                    if self._facts.get(fact.entry_id) is fact
+                ]
+                for fact in self._facts.values():
+                    if snapshot_by_id.get(fact.entry_id) is fact:
+                        continue
+                    text_blob = f"{fact.content} {fact.source} {' '.join(fact.tags)}"
+                    score = _score_text(qterms, ql, text_blob)
+                    if score > 0:
+                        reconciled.append((fact, score))
+                reconciled.sort(key=lambda item: item[1], reverse=True)
+                self._fact_score_cache_key = cache_key
+                self._fact_score_cache = tuple(reconciled)
         return [_copy_memory_entry(fact) for fact, _ in ordered]
 
     def _ordered_fact_snapshot(self) -> tuple[MemoryEntry, ...]:

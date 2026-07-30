@@ -376,6 +376,41 @@ class TestWriteDuringRead:
 
         assert score_text.call_count == 2
 
+    def test_recall_cache_reconciles_write_that_arrives_during_scoring(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Concurrent writes must not starve installation of the recall cache."""
+        bank = MemoryBank(MemoryBankConfig(bank_id="recall-cache-race"))
+        bank.retain(MemoryEntry(content="initial one", tags=["initial"]))
+        bank.retain(MemoryEntry(content="initial two", tags=["initial"]))
+        score_started = threading.Event()
+        release_score = threading.Event()
+        real_score_text = memory_bank_module._score_text
+        score_calls = 0
+
+        def gated_score_text(qterms, ql, text):
+            nonlocal score_calls
+            score_calls += 1
+            if score_calls == 1:
+                score_started.set()
+                assert release_score.wait(timeout=2)
+            return real_score_text(qterms, ql, text)
+
+        monkeypatch.setattr(memory_bank_module, "_score_text", gated_score_text)
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            first_recall = executor.submit(bank.recall, "initial")
+            assert score_started.wait(timeout=1)
+            bank.retain(MemoryEntry(content="initial late", tags=["initial"]))
+            release_score.set()
+            first = first_recall.result(timeout=2)
+
+        second = bank.recall("initial")
+
+        assert len(first.facts) == 2
+        assert len(second.facts) == 3
+        assert score_calls == 3
+
     def test_active_recall_cache_updates_each_fact_incrementally(self) -> None:
         bank = MemoryBank(MemoryBankConfig(bank_id="incremental-recall-cache"))
         replaceable = bank.retain(
