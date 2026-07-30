@@ -17,7 +17,7 @@ enable_tla: false
 tlc_output_override: "Model checking completed. No error has been found."
 
 # Timeout in seconds for TLC (0 = no timeout)
-timeout: 300
+tla_check_timeout: 300
 
 # Artifact output directory
 artifact_dir: "/tmp/gludd-tla-check"

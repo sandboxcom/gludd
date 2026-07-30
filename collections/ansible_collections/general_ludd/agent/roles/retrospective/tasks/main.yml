@@ -50,7 +50,7 @@
   ansible.builtin.set_fact:
     _retro_well:
       - "High success rate: {{ (_retro_success_rate * 100) | round(1) }}% of {{ _retro_total_runs }} runs succeeded"
-      - "{{ _retro_total_agents }} agent(s) were operational and contributing"
+      - "Operational agents: {{ _retro_total_agents }} contributing"
       - "Execution tracing captured {{ _retro_traces_count }} trace(s) for retrospective review"
 
 - name: Add velocity well item (when runs > 10)
@@ -65,7 +65,7 @@
 - name: Build what-went-ill list (always non-empty for seeded data)
   ansible.builtin.set_fact:
     _retro_ill:
-      - "{{ _retro_failures }} failure(s) recorded — root causes should be investigated"
+      - "Failures recorded: {{ _retro_failures }} — root causes should be investigated"
       - "Backlog of {{ _retro_backlog }} items remains — grooming needed before next sprint"
 
 - name: Add message backlog ill item (when inbox messages present)

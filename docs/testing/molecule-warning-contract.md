@@ -32,9 +32,15 @@ The enforced repository contract is:
 3. `dependency` is present only when both Galaxy manifest files exist.
 4. Ansible modules emit warnings through `AnsibleModule.warn()` and never pass
    reserved `warnings` or `deprecations` keys to `exit_json`/`fail_json`.
+5. Role defaults use role-prefixed names instead of Ansible-reserved variables
+   such as `timeout`.
+6. Rendered list text starts with a stable label, not a bare numeric Jinja
+   expression. Python 3.11 can otherwise emit `invalid decimal literal` while
+   Ansible attempts native literal conversion of text such as `2 failures`.
 
 `tests/unit/test_molecule_warning_contract.py` ratchets the release inventory at
 123 logical scenarios and checks both canonical `molecule/playbooks/*` sources
 and any tracked `molecule/*` runtime copies with the same scenario name. It also
 walks every scenario playbook conditional, so stale runtime configurations and
-deprecated Jinja-delimited conditions fail before hosted CI.
+deprecated Jinja-delimited conditions fail before hosted CI. The same guard
+checks role defaults and numeric-leading rendered list strings.

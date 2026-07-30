@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 import yaml
@@ -19,6 +20,7 @@ _MODULES = (
     / "plugins"
     / "modules"
 )
+_COLLECTIONS = _ROOT / "collections" / "ansible_collections" / "general_ludd"
 _PLAYBOOK_PHASES = {
     "cleanup",
     "create",
@@ -45,6 +47,10 @@ _DEFAULT_TEST_SEQUENCE = [
 _DRIVER_MANAGED_PHASES = {"create", "destroy"}
 _EXPECTED_RELEASE_SCENARIOS = 123
 _CONDITIONAL_KEYS = {"changed_when", "failed_when", "that", "until", "when"}
+_RESERVED_ROLE_DEFAULTS = {"timeout"}
+_LEADING_JINJA_TEXT = re.compile(
+    r"""^\s*-\s*["']?\{\{[^{}]+\}\}\s+[A-Za-z]"""
+)
 
 
 def _scenario_configs() -> list[Path]:
@@ -177,6 +183,32 @@ def test_modules_do_not_return_reserved_ansible_warning_keys() -> None:
             for key in sorted(reserved):
                 violations.append(
                     f"{module_path.name}:{call.lineno}: reserved {key!r}"
+                )
+
+    assert not violations, "\n" + "\n".join(violations)
+
+
+def test_role_strings_do_not_trigger_python_invalid_decimal_warning() -> None:
+    violations: list[str] = []
+    for task_path in sorted(_COLLECTIONS.glob("*/roles/*/tasks/*.yml")):
+        for lineno, line in enumerate(task_path.read_text().splitlines(), start=1):
+            if _LEADING_JINJA_TEXT.match(line):
+                violations.append(
+                    f"{task_path.relative_to(_ROOT)}:{lineno}: {line.strip()}"
+                )
+
+    assert not violations, "\n" + "\n".join(violations)
+
+
+def test_role_defaults_do_not_shadow_reserved_ansible_variables() -> None:
+    violations: list[str] = []
+    for defaults_path in sorted(_COLLECTIONS.glob("*/roles/*/defaults/*.yml")):
+        for document in yaml.safe_load_all(defaults_path.read_text()):
+            if not isinstance(document, dict):
+                continue
+            for variable in sorted(_RESERVED_ROLE_DEFAULTS.intersection(document)):
+                violations.append(
+                    f"{defaults_path.relative_to(_ROOT)}: {variable}"
                 )
 
     assert not violations, "\n" + "\n".join(violations)

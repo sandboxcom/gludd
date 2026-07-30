@@ -46,16 +46,16 @@
   ansible.builtin.set_fact:
     _sd_done:
       - "Completed {{ _sd_total_runs }} total runs with {{ (_sd_success_rate * 100) | round(1) }}% success rate"
-      - "{{ _sd_failures }} failures recorded in history; {{ _sd_total_runs | int - _sd_failures | int }} succeeded"
+      - "History: {{ _sd_failures }} failures recorded; {{ _sd_total_runs | int - _sd_failures | int }} succeeded"
 
 # ── Build in_progress[] from active work ──────────────────────────────────────
 
 - name: Build in_progress list from active jobs
   ansible.builtin.set_fact:
     _sd_in_progress:
-      - "{{ _sd_active_jobs }} active job(s) running"
-      - "{{ _sd_queued }} job(s) queued"
-      - "{{ _sd_backlog }} item(s) in backlog"
+      - "Active jobs: {{ _sd_active_jobs }} running"
+      - "Queued jobs: {{ _sd_queued }}"
+      - "Backlog items: {{ _sd_backlog }}"
 
 # ── Surface blockers from gludd_message inbox ────────────────────────────────
 
