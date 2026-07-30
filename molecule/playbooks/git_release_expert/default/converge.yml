@@ -1,0 +1,25 @@
+---
+# Converge: run general_ludd.git_release.release_plan and prove it executes.
+- name: Converge - run git_release.release_plan role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8864', true) }}"
+    out_dir: "/tmp/gludd-git-release-expert-{{ mock_port }}"
+  tasks:
+    - name: Invoke release_plan
+      ansible.builtin.include_role:
+        name: general_ludd.git_release.release_plan
+
+    - name: Ensure marker directory exists
+      ansible.builtin.file:
+        path: "{{ out_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write execution marker
+      ansible.builtin.copy:
+        content: "git_release.release_plan ran\n"
+        dest: "{{ out_dir }}/release_plan_ran.ok"
+        mode: "0644"

@@ -1,0 +1,39 @@
+---
+# Verify: the git_release collection is discoverable AND release_plan executed.
+- name: Verify - git_release collection installed and release_plan executed
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8864', true) }}"
+    out_dir: "/tmp/gludd-git-release-expert-{{ mock_port }}"
+    marker: "{{ out_dir }}/release_plan_ran.ok"
+  tasks:
+    - name: Assert collection galaxy.yml is discoverable
+      ansible.builtin.stat:
+        path: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/collections/ansible_collections/general_ludd/git_release/galaxy.yml"
+      register: galaxy_stat
+      failed_when: not galaxy_stat.stat.exists
+
+    - name: Assert release_plan role tasks are discoverable
+      ansible.builtin.stat:
+        path: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/collections/ansible_collections/general_ludd/git_release/roles/release_plan/tasks/main.yml"
+      register: role_stat
+      failed_when: not role_stat.stat.exists
+
+    - name: Assert execution marker present
+      ansible.builtin.stat:
+        path: "{{ marker }}"
+      register: marker_stat
+      failed_when: not marker_stat.stat.exists
+
+    - name: Report
+      ansible.builtin.debug:
+        msg: "git_release.release_plan executed; collection discoverable."
+
+    # ---- cleanup ----
+    - name: Remove marker dir
+      ansible.builtin.file:
+        path: "{{ out_dir }}"
+        state: absent
+      failed_when: false

@@ -1,0 +1,10 @@
+---
+# prepare: no external fixtures needed; release_plan is self-contained.
+- name: Prepare - noop for git_release_expert
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Sentinel (no fixtures required)
+      ansible.builtin.debug:
+        msg: "git_release_expert prepare: release_plan is self-contained."

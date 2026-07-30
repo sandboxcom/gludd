@@ -1,0 +1,54 @@
+---
+# Verify: the materials collection is discoverable AND material_select executed.
+- name: Verify - materials collection installed and material_select executed
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8861', true) }}"
+    out_dir: "/tmp/gludd-materials-expert-{{ mock_port }}"
+    artifact: "{{ out_dir }}/material_select.json"
+    marker: "{{ out_dir }}/material_select_ran.ok"
+  tasks:
+    - name: Assert collection galaxy.yml is discoverable
+      ansible.builtin.stat:
+        path: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/collections/ansible_collections/general_ludd/materials/galaxy.yml"
+      register: galaxy_stat
+      failed_when: not galaxy_stat.stat.exists
+
+    - name: Assert material_select artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art_stat
+      failed_when: not art_stat.stat.exists
+
+    - name: Load material_select artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse material_select artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert material_select wrote expected verdict
+      ansible.builtin.assert:
+        that:
+          - result.role == 'material_select'
+          - result.candidates | length > 0
+          - result.requirements is defined
+        fail_msg: "material_select artifact wrong: {{ result }}"
+        success_msg: "material_select executed: candidates={{ result.candidates | length }}"
+
+    - name: Assert execution marker present
+      ansible.builtin.stat:
+        path: "{{ marker }}"
+      register: marker_stat
+      failed_when: not marker_stat.stat.exists
+
+    # ---- cleanup ----
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "{{ out_dir }}"
+        state: absent
+      failed_when: false

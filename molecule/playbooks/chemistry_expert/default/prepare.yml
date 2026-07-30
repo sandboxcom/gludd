@@ -1,0 +1,10 @@
+---
+# prepare: no external fixtures needed; property_lookup is self-contained.
+- name: Prepare - noop for chemistry_expert
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Sentinel (no fixtures required)
+      ansible.builtin.debug:
+        msg: "chemistry_expert prepare: property_lookup is self-contained."

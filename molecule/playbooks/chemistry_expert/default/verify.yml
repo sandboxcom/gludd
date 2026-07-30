@@ -1,0 +1,39 @@
+---
+# Verify: the chemistry collection is discoverable AND property_lookup executed.
+- name: Verify - chemistry collection installed and property_lookup executed
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8862', true) }}"
+    out_dir: "/tmp/gludd-chemistry-expert-{{ mock_port }}"
+    marker: "{{ out_dir }}/property_lookup_ran.ok"
+  tasks:
+    - name: Assert collection galaxy.yml is discoverable
+      ansible.builtin.stat:
+        path: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/collections/ansible_collections/general_ludd/chemistry/galaxy.yml"
+      register: galaxy_stat
+      failed_when: not galaxy_stat.stat.exists
+
+    - name: Assert property_lookup role tasks are discoverable
+      ansible.builtin.stat:
+        path: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/collections/ansible_collections/general_ludd/chemistry/roles/property_lookup/tasks/main.yml"
+      register: role_stat
+      failed_when: not role_stat.stat.exists
+
+    - name: Assert execution marker present
+      ansible.builtin.stat:
+        path: "{{ marker }}"
+      register: marker_stat
+      failed_when: not marker_stat.stat.exists
+
+    - name: Report
+      ansible.builtin.debug:
+        msg: "chemistry.property_lookup executed; collection discoverable."
+
+    # ---- cleanup ----
+    - name: Remove marker dir
+      ansible.builtin.file:
+        path: "{{ out_dir }}"
+        state: absent
+      failed_when: false

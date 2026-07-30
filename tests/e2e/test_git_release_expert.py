@@ -73,7 +73,7 @@ class TestRepoEvidenceContract:
     """Verify RepoEvidence carries the required structured fields."""
 
     def test_repo_evidence_rejects_short_sha(self) -> None:
-        from general_ludd.git_release import RepoEvidence
+        from general_ludd.git_release.contracts import RepoEvidence
         from pydantic import ValidationError
 
         with pytest.raises(ValidationError):

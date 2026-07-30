@@ -1,0 +1,10 @@
+---
+# prepare: no external fixtures needed; model_select is self-contained.
+- name: Prepare - noop for ai_ml_expert
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Sentinel (no fixtures required)
+      ansible.builtin.debug:
+        msg: "ai_ml_expert prepare: model_select is self-contained."

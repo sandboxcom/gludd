@@ -1,0 +1,25 @@
+---
+# Converge: run general_ludd.ai_ml.model_select and prove it executes.
+- name: Converge - run ai_ml.model_select role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8863', true) }}"
+    out_dir: "/tmp/gludd-ai-ml-expert-{{ mock_port }}"
+  tasks:
+    - name: Invoke model_select
+      ansible.builtin.include_role:
+        name: general_ludd.ai_ml.model_select
+
+    - name: Ensure marker directory exists
+      ansible.builtin.file:
+        path: "{{ out_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write execution marker
+      ansible.builtin.copy:
+        content: "ai_ml.model_select ran\n"
+        dest: "{{ out_dir }}/model_select_ran.ok"
+        mode: "0644"

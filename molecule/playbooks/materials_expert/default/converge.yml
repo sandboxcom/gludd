@@ -1,0 +1,29 @@
+---
+# Converge: run general_ludd.materials.material_select and prove it executes.
+# material_select ranks material candidates against requirements and emits a
+# JSON artifact. We enable it and supply minimal candidates/requirements.
+- name: Converge - run materials.material_select role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8861', true) }}"
+    out_dir: "/tmp/gludd-materials-expert-{{ mock_port }}"
+  tasks:
+    - name: Invoke material_select
+      ansible.builtin.include_role:
+        name: general_ludd.materials.material_select
+      vars:
+        material_select_enabled: true
+        material_select_candidates:
+          - family: steel
+            grade: "AISI 1045"
+        material_select_requirements:
+          tensile_strength_mpa: 600
+        material_select_output_dir: "{{ out_dir }}"
+
+    - name: Write execution marker
+      ansible.builtin.copy:
+        content: "materials.material_select ran\n"
+        dest: "{{ out_dir }}/material_select_ran.ok"
+        mode: "0644"
