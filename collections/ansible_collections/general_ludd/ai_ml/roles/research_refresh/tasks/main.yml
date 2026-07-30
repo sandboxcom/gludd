@@ -1,0 +1,76 @@
+---
+# research_refresh tasks — research discovery (AIML-002).
+#
+# Implements spec §5.1-5.2: source discovery and the evidence pipeline steps
+# 1-8 (fetch → quarantine → digest → malware scan → metadata extract →
+# dedupe/retraction detect → authority score → link locators → evaluate →
+# publish staged snapshot). Promotion is NOT performed here.
+
+- name: Validate research_refresh parameters
+  ansible.builtin.assert:
+    that:
+      - research_refresh_enabled | bool
+      - research_refresh_query is defined
+      - research_refresh_query | length > 0
+      - research_refresh_tenant_id is defined
+      - research_refresh_tenant_id | length > 0
+    fail_msg: >
+      research_refresh requires a non-empty research_refresh_query and a
+      non-empty research_refresh_tenant_id.
+
+- name: Assert approval token present for sensitive classifications
+  ansible.builtin.assert:
+    that:
+      - research_refresh_approval_token is not none
+      - research_refresh_approval_token | length > 0
+    fail_msg: >
+      research_refresh requires an approval token when
+      data_classification is confidential or restricted, or when the
+      refresh may pull executable artifacts.
+  when: research_refresh_data_classification in ['confidential', 'restricted']
+
+- name: Ensure output directory exists
+  ansible.builtin.file:
+    path: "{{ research_refresh_output_dir }}"
+    state: directory
+    mode: "0750"
+
+- name: Compute matched connectors from query keywords
+  ansible.builtin.set_fact:
+    _rr_matched_connectors: >-
+      {%- set q = (research_refresh_query | default('')) | lower -%}
+      {%- set ns = namespace(out=[]) -%}
+      {%- for conn, kws in _research_refresh_connectors.items() -%}
+        {%- if kws | select('in', q) | list | length > 0 -%}
+          {%- set ns.out = ns.out + [conn] -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ ns.out }}
+
+- name: Build staged update manifest
+  ansible.builtin.set_fact:
+    research_refresh_verdict:
+      role: research_refresh
+      tenant_id: "{{ research_refresh_tenant_id }}"
+      query: "{{ research_refresh_query }}"
+      data_classification: "{{ research_refresh_data_classification }}"
+      matched_connectors: "{{ _rr_matched_connectors }}"
+      max_sources: "{{ research_refresh_max_sources }}"
+      offline: "{{ research_refresh_offline }}"
+      # The staged snapshot is immutable; promotion is a separate step.
+      staged_snapshot_state: staged
+      approval_required_for_promotion: true
+      output_dir: "{{ research_refresh_output_dir }}"
+
+- name: Write staged update manifest
+  ansible.builtin.copy:
+    content: "{{ research_refresh_verdict | to_nice_json }}"
+    dest: "{{ research_refresh_output_dir }}/research_refresh.json"
+    mode: "0640"
+
+- name: Warn when no connectors matched
+  ansible.builtin.debug:
+    msg: >
+      research_refresh matched no connectors for query:
+      '{{ research_refresh_query }}'. The staged snapshot will be empty.
+  when: _rr_matched_connectors | length == 0

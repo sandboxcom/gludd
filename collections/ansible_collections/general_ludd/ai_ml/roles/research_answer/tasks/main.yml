@@ -1,0 +1,69 @@
+---
+# research_answer tasks — reasoning (AIML-007).
+
+- name: Validate research_answer parameters
+  ansible.builtin.assert:
+    that:
+      - research_answer_enabled | bool
+      - research_answer_query is defined
+      - research_answer_query | length > 0
+      - research_answer_snapshot_id is defined
+      - research_answer_snapshot_id | length > 0
+    fail_msg: >
+      research_answer requires a non-empty research_answer_query and a
+      non-empty research_answer_snapshot_id (evidence is read from an
+      immutable snapshot, never from staging).
+
+- name: Ensure output directory exists
+  ansible.builtin.file:
+    path: "{{ research_answer_output_dir }}"
+    state: directory
+    mode: "0750"
+
+- name: Detect numerical claim in query
+  ansible.builtin.set_fact:
+    _ra_is_numerical_claim: >-
+      {%- set q = (research_answer_query | default('')) | lower -%}
+      {%- set ns = namespace(hit=false) -%}
+      {%- for kw in _research_answer_numerical_keywords -%}
+        {%- if kw in q -%}
+          {%- set ns.hit = true -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ ns.hit }}
+
+- name: Assert independent check required for numerical claims
+  ansible.builtin.assert:
+    that:
+      - research_answer_require_independent_check | bool
+    fail_msg: >
+      research_answer requires research_answer_require_independent_check=true
+      when the query is a numerical claim (spec §6.3).
+  when: _ra_is_numerical_claim | bool
+
+- name: Build answer verdict scaffold
+  ansible.builtin.set_fact:
+    research_answer_verdict:
+      role: research_answer
+      tenant_id: "{{ research_answer_tenant_id }}"
+      query: "{{ research_answer_query }}"
+      snapshot_id: "{{ research_answer_snapshot_id }}"
+      is_numerical_claim: "{{ _ra_is_numerical_claim }}"
+      independent_check_required: "{{ research_answer_require_independent_check }}"
+      # Status is one of succeeded|degraded|refused|failed|awaiting_approval.
+      # The role never returns `succeeded` for a numerical claim whose
+      # independent check did not pass (spec §6.3).
+      status: awaiting_evidence
+      citations: []
+      verification: []
+      uncertainty:
+        score: 0.0
+        method: pending
+        limitations: []
+      output_dir: "{{ research_answer_output_dir }}"
+
+- name: Write answer verdict scaffold
+  ansible.builtin.copy:
+    content: "{{ research_answer_verdict | to_nice_json }}"
+    dest: "{{ research_answer_output_dir }}/research_answer.json"
+    mode: "0640"

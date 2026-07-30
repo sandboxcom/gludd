@@ -1,0 +1,45 @@
+---
+# Internal capability-need -> tool-class keywords used by tool_discover.
+# A candidate tool class is considered when the lowercased need contains any
+# of its keywords. Final selection is by composite score (task fit,
+# maintenance, security, license, platform), never by popularity alone.
+_tool_discover_need_keywords:
+  vector_index:
+    - vector
+    - embedding
+    - retrieval
+    - ann
+    - similarity
+    - dense
+    - sparse
+  lexical_index:
+    - bm25
+    - lexical
+    - full text
+    - search
+    - elasticsearch
+    - opensearch
+  model_server:
+    - model server
+    - inference
+    - serving
+    - vllm
+    - triton
+    - tgi
+  dataset:
+    - dataset
+    - data loader
+    - webdataset
+    - parquet
+    - arrow
+  eval_framework:
+    - evaluation
+    - benchmark
+    - harness
+    - metric
+  build_helper:
+    - build
+    - compile
+    - package
+    - wheel
+    - container

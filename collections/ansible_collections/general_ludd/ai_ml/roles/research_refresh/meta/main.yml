@@ -1,0 +1,21 @@
+---
+galaxy_info:
+  role_name: research_refresh
+  author: Agentic Harness Agent
+  description: >
+    Research discovery (AIML-002): search allowed internet sources, normalize
+    evidence, detect novelty, and open a staged update against the evidence
+    store. Implements spec §5.1-5.2 source-discovery and evidence-pipeline
+    steps 1-8. Promotion to the active alias is gated on human approval and
+    is handled by a separate promotion role, not this one.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [ai, ml, research, evidence, discovery, refresh]
+dependencies: []

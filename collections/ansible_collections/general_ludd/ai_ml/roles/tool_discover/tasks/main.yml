@@ -1,0 +1,66 @@
+---
+# tool_discover tasks — tool and resource discovery (AIML-018).
+
+- name: Validate tool_discover parameters
+  ansible.builtin.assert:
+    that:
+      - tool_discover_enabled | bool
+      - tool_discover_need is defined
+      - tool_discover_need | length > 0
+      - tool_discover_tenant_id is defined
+      - tool_discover_tenant_id | length > 0
+      - tool_discover_min_maintenance_score | float >= 0.0
+      - tool_discover_min_maintenance_score | float <= 1.0
+    fail_msg: >
+      tool_discover requires a non-empty tool_discover_need, a non-empty
+      tool_discover_tenant_id, and tool_discover_min_maintenance_score in
+      [0.0, 1.0].
+
+- name: Ensure output directory exists
+  ansible.builtin.file:
+    path: "{{ tool_discover_output_dir }}"
+    state: directory
+    mode: "0750"
+
+- name: Compute matched tool classes from need keywords
+  ansible.builtin.set_fact:
+    _td_matched_classes: >-
+      {%- set n = (tool_discover_need | default('')) | lower -%}
+      {%- set ns = namespace(out=[]) -%}
+      {%- for cls, kws in _tool_discover_need_keywords.items() -%}
+        {%- if kws | select('in', n) | list | length > 0 -%}
+          {%- set ns.out = ns.out + [cls] -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ ns.out }}
+
+- name: Build decision record scaffold
+  ansible.builtin.set_fact:
+    tool_discover_verdict:
+      role: tool_discover
+      tenant_id: "{{ tool_discover_tenant_id }}"
+      need: "{{ tool_discover_need }}"
+      matched_classes: "{{ _td_matched_classes }}"
+      max_candidates: "{{ tool_discover_max_candidates }}"
+      min_maintenance_score: "{{ tool_discover_min_maintenance_score }}"
+      untrusted_executable_policy: "{{ tool_discover_untrusted_executable_policy }}"
+      # The decision record MUST include selected + rejected alternatives
+      # with maintenance/license/security/forum-issue/exit-strategy evidence
+      # (spec §9, AIML-AT-018). Popularity alone is not a selection signal.
+      selected: []
+      rejected_alternatives: []
+      integration_spike_required: true
+      output_dir: "{{ tool_discover_output_dir }}"
+
+- name: Write decision record scaffold
+  ansible.builtin.copy:
+    content: "{{ tool_discover_verdict | to_nice_json }}"
+    dest: "{{ tool_discover_output_dir }}/tool_discover.json"
+    mode: "0640"
+
+- name: Warn when no tool classes matched
+  ansible.builtin.debug:
+    msg: >
+      tool_discover matched no tool classes for need:
+      '{{ tool_discover_need }}'. The decision record will be empty.
+  when: _td_matched_classes | length == 0

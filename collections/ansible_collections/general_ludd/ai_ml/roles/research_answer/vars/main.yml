@@ -1,0 +1,25 @@
+---
+# Internal numerical-claim detector keywords used by research_answer.
+# When any of these appear in the lowercased query AND the answer contains a
+# number, an independent verification is mandatory before `succeeded`.
+_research_answer_numerical_keywords:
+  - recall
+  - precision
+  - ndcg
+  - mrr
+  - accuracy
+  - latency
+  - throughput
+  - wer
+  - cer
+  - f1
+  - auc
+  - perplexity
+  - bleu
+  - meteor
+  - rouge
+  - how many
+  - how much
+  - what is the
+  - calculate
+  - compute
