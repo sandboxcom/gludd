@@ -20,6 +20,8 @@ DEFAULT_SHARDS = tuple(SHARDS)
 COVERAGE_SHARDS = ROOT / ".coverage-shards-local"
 COVERAGE_JSON = ROOT / "coverage.json"
 COVERAGE_AUDIT = ROOT / ".gate-logs" / "coverage-local.json"
+DEFAULT_COVERAGE_CONFIG = ROOT / "pyproject.toml"
+GREENLET_COVERAGE_CONFIG = ROOT / ".coveragerc-greenlet"
 GOVERNANCE_MODULE_UTILS = (
     "collections/ansible_collections/general_ludd/governance/plugins/module_utils"
 )
@@ -34,13 +36,22 @@ def _run_command(command: list[str], *, env: dict[str, str] | None = None) -> in
     return subprocess.run(command, cwd=ROOT, env=env, check=False).returncode
 
 
-def _pytest_command(files: list[str], basetemp: Path, pytest_args: list[str]) -> list[str]:
+def _pytest_command(
+    shard: str,
+    files: list[str],
+    basetemp: Path,
+    pytest_args: list[str],
+) -> list[str]:
+    coverage_config = (
+        GREENLET_COVERAGE_CONFIG if shard == "unit-3" else DEFAULT_COVERAGE_CONFIG
+    )
     return [
         sys.executable,
         str(SCRIPTS / "adaptive_test.py"),
         *files,
         "--cov=general_ludd",
         f"--cov={GOVERNANCE_MODULE_UTILS}",
+        f"--cov-config={coverage_config}",
         "--cov-report=",
         "--cov-fail-under=0",
         "-v",
@@ -154,7 +165,10 @@ def run(shards: list[str], pytest_args: list[str]) -> int:
                 f"files={len(files)} ===",
                 flush=True,
             )
-            rc = _run_command(_pytest_command(files, basetemp, pytest_args), env=env)
+            rc = _run_command(
+                _pytest_command(shard, files, basetemp, pytest_args),
+                env=env,
+            )
             coverage_saved = _save_shard_coverage(shard, basetemp, env)
             if rc != 0 or not coverage_saved:
                 failures[shard] = rc or 1

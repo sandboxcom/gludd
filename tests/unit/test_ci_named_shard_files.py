@@ -150,7 +150,12 @@ def test_serial_pytest_command_uses_adaptive_runner_and_isolated_basetemp(
 ) -> None:
     module = _load_script("run_ci_shards_serial")
 
-    command = module._pytest_command(["tests/unit/test_alpha.py"], tmp_path, ["-q"])
+    command = module._pytest_command(
+        "unit-2", ["tests/unit/test_alpha.py"], tmp_path, ["-q"]
+    )
+    greenlet_command = module._pytest_command(
+        "unit-3", ["tests/unit/test_zeta.py"], tmp_path, ["-q"]
+    )
 
     assert command[0] == sys.executable
     assert command[1].endswith("scripts/adaptive_test.py")
@@ -160,6 +165,8 @@ def test_serial_pytest_command_uses_adaptive_runner_and_isolated_basetemp(
         "--cov=collections/ansible_collections/general_ludd/governance/plugins/module_utils"
         in command
     )
+    assert f"--cov-config={module.ROOT / 'pyproject.toml'}" in command
+    assert f"--cov-config={module.ROOT / '.coveragerc-greenlet'}" in greenlet_command
     assert f"--basetemp={tmp_path / 'pytest'}" in command
 
 
