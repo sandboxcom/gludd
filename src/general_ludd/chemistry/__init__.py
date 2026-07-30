@@ -178,6 +178,7 @@ __all__ = [
     "ProvenanceChain",
     "QuantumJob",
     "QuantumResult",
+    "RelatedRecord",
     "ResultStatus",
     "RiskTier",
     "SafetyRecord",

@@ -140,7 +140,7 @@ def test_evidence_empty_defaults() -> None:
 
 def test_evidence_is_frozen() -> None:
     evidence = RepoEvidence.empty("/tmp/x")
-    with pytest.raises(Exception):  # FrozenInstanceError subclass
+    with pytest.raises(AttributeError):  # frozen dataclass raises AttributeError on set
         evidence.head_sha = "mutated"  # type: ignore[misc]
 
 

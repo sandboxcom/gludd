@@ -106,7 +106,7 @@ class TestCellPotential:
 
 class TestElectrolysisEnergy:
     def test_known_energy_joules(self):
-        # 2 V × 1 A × 60 s = 120 J.
+        # 2 V * 1 A * 60 s = 120 J.
         result = electrochemistry.electrolysis_energy(cell_voltage_v=2.0, current_a=1.0, duration_s=60.0)
         assert result["value"] == 120.0
         assert result["unit"] == "J"
