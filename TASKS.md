@@ -516,7 +516,7 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 
 - [x] X.1 — XML collection: create general_ludd.xml collection with roles for XML/HTML/SOAP/SAML/DocBook/Gradle/plist/XSD/XSLT| evidence: Wave 6 — 9 roles, xml_utils.py (16 funcs), docs/XML_COLLECTION.md (975 lines), 47 tests | priority: medium | effort: L | status: completed
 - [x] X.1.1 — xml_core role: XML parsing, XPath, namespaces | evidence: xml_core.py module_util implements parse_xml/xpath_eval/extract_namespaces/normalize_namespace; 13 tests at test_xml_core.py pass | priority: medium | effort: M | status: completed
-- [ ] X.1.2 — xsd_generator role: infer XSD from XML samples | priority: medium | effort: M | status: pending
+- [x] X.1.2 — xsd_generator role: infer XSD from XML samples | evidence: xsd_generator.py implements infer_xsd; 12 tests pass | priority: medium | effort: M | status: completed
 - [ ] X.1.3 — xslt_transformer role: apply/author XSLT transformations | priority: medium | effort: M | status: pending
 - [ ] X.1.4 — html_processor role: HTML parsing/manipulation | priority: medium | effort: M | status: pending
 - [ ] X.1.5 — soap_handler role: SOAP/XML-RPC messaging | priority: medium | effort: M | status: pending

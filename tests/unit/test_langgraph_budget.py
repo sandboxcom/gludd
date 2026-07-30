@@ -328,12 +328,14 @@ class TestMaxTotalTokens:
 
         client = _mock_mcp_client_with_tools("search")
         reg = _make_registry_with_tools("search")
-        graph = _make_graph_with_messages([
-            AIMessage(
-                content="ok",
-                usage_metadata={"input_tokens": 50, "output_tokens": 25, "total_tokens": 75},
-            ),
-        ])
+        graph = _make_graph_with_messages(
+            [
+                AIMessage(
+                    content="ok",
+                    usage_metadata={"input_tokens": 50, "output_tokens": 25, "total_tokens": 75},
+                ),
+            ]
+        )
         chat_model = MagicMock()
 
         loop = LangGraphAgentLoop(
@@ -353,12 +355,14 @@ class TestMaxTotalTokens:
 
         client = _mock_mcp_client_with_tools("search")
         reg = _make_registry_with_tools("search")
-        graph = _make_graph_with_messages([
-            AIMessage(
-                content="final",
-                usage_metadata={"input_tokens": 5000, "output_tokens": 100, "total_tokens": 5100},
-            ),
-        ])
+        graph = _make_graph_with_messages(
+            [
+                AIMessage(
+                    content="final",
+                    usage_metadata={"input_tokens": 5000, "output_tokens": 100, "total_tokens": 5100},
+                ),
+            ]
+        )
         chat_model = MagicMock()
 
         loop = LangGraphAgentLoop(
@@ -385,20 +389,22 @@ class TestMaxTotalTokens:
 
         client = _mock_mcp_client_with_tools("search")
         reg = _make_registry_with_tools("search")
-        graph = _make_graph_with_messages([
-            AIMessage(
-                content="",
-                usage_metadata={"input_tokens": 30, "output_tokens": 10, "total_tokens": 40},
-            ),
-            AIMessage(
-                content="",
-                usage_metadata={"input_tokens": 20, "output_tokens": 5, "total_tokens": 25},
-            ),
-            AIMessage(
-                content="final",
-                usage_metadata={"input_tokens": 40, "output_tokens": 15, "total_tokens": 55},
-            ),
-        ])
+        graph = _make_graph_with_messages(
+            [
+                AIMessage(
+                    content="",
+                    usage_metadata={"input_tokens": 30, "output_tokens": 10, "total_tokens": 40},
+                ),
+                AIMessage(
+                    content="",
+                    usage_metadata={"input_tokens": 20, "output_tokens": 5, "total_tokens": 25},
+                ),
+                AIMessage(
+                    content="final",
+                    usage_metadata={"input_tokens": 40, "output_tokens": 15, "total_tokens": 55},
+                ),
+            ]
+        )
         chat_model = MagicMock()
 
         loop = LangGraphAgentLoop(
@@ -481,3 +487,59 @@ class TestAllGuardsActive:
         assert loop._adversarial_detector is not None
         assert loop._auditor is not None
         assert loop._max_total_tokens == 5000
+
+
+# ---------------------------------------------------------------------------
+# Factory wiring — make_langgraph_tool_loop must thread all guards through
+# ---------------------------------------------------------------------------
+
+
+class TestFactoryWiring:
+    """C.29 — make_langgraph_tool_loop factory must not silently drop guards.
+
+    The LangGraphAgentLoop constructor accepts adversarial_detector,
+    tool_auditor, and max_total_tokens, but the factory only threaded
+    budget_guard and chat_model — leaving the other three at their defaults
+    even when a caller had wired instances to provide.
+    """
+
+    def test_factory_threads_adversarial_detector(self):
+        from general_ludd.agents.capabilities import AgentCapabilities
+
+        detector = MagicMock()
+        caps = AgentCapabilities()
+        loop = caps.make_langgraph_tool_loop(
+            model_gateway=MagicMock(),
+            role="coder",
+            mcp_client=MagicMock(),
+            mcp_registry=MagicMock(),
+            adversarial_detector=detector,
+        )
+        assert loop._adversarial_detector is detector
+
+    def test_factory_threads_tool_auditor(self):
+        from general_ludd.agents.capabilities import AgentCapabilities
+
+        auditor = MagicMock()
+        caps = AgentCapabilities()
+        loop = caps.make_langgraph_tool_loop(
+            model_gateway=MagicMock(),
+            role="coder",
+            mcp_client=MagicMock(),
+            mcp_registry=MagicMock(),
+            tool_auditor=auditor,
+        )
+        assert loop._auditor is auditor
+
+    def test_factory_threads_max_total_tokens(self):
+        from general_ludd.agents.capabilities import AgentCapabilities
+
+        caps = AgentCapabilities()
+        loop = caps.make_langgraph_tool_loop(
+            model_gateway=MagicMock(),
+            role="coder",
+            mcp_client=MagicMock(),
+            mcp_registry=MagicMock(),
+            max_total_tokens=4242,
+        )
+        assert loop._max_total_tokens == 4242
