@@ -416,7 +416,10 @@ class TestPrepare:
             'sed -i "\\|/usr/share/man/|d" '
             "/etc/dpkg/dpkg.cfg.d/docker"
         ) in makefile
+        assert 'mkdir -p /usr/share/man/man7' in makefile
+        assert ': > /usr/share/man/man7/bash-builtins.7.gz' in makefile
         assert "update-alternatives --remove builtins.7.gz" in makefile
+        assert 'rm -f /usr/share/man/man7/bash-builtins.7.gz' in makefile
         assert (
             'apt-get install -y --download-only --no-install-recommends '
             '"apt-utils=$(LINUX_APT_UTILS_VERSION)"'
@@ -440,12 +443,24 @@ class TestPrepare:
         assert "--spec gludd.spec" in makefile
         assert ":/workspace:ro" in makefile
         assert '@set -e; if [ "$$(uname -s)" = "Linux" ]' in makefile
-        assert 'output_dir=$$(mktemp -d "$(LINUX_BINARY_SCRATCH_ROOT)/output.' in makefile
-        assert 'rm -rf "$$source_dir" "$$output_dir"' in makefile
-        assert '-v "$$output_dir:/out"' in makefile
+        assert "output_dir=$$(mktemp" not in makefile
+        assert 'rm -rf "$$source_dir"' in makefile
+        assert '-v "$$output_dir:/out"' not in makefile
         assert "cp /tmp/gludd-pyinstaller-build/gludd/warn-gludd.txt" in makefile
-        assert 'if ! DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)"' in makefile
-        assert 'cp "$$output_dir/warn-gludd.txt"' in makefile
-        assert 'cp "$$output_dir/gludd" "$(LINUX_BINARY_OUTPUT)"' in makefile
+        assert "pyinstaller_status=0" in makefile
+        assert "|| pyinstaller_status=$$?" in makefile
+        assert 'test "$$pyinstaller_status" -eq 0' in makefile
+        assert "build_status=0" in makefile
+        assert "|| build_status=$$?" in makefile
+        assert (
+            'docker cp "$$container_name:/out/warn-gludd.txt" '
+            '"$(dir $(LINUX_BINARY_OUTPUT))warn-gludd.txt"'
+        ) in makefile
+        status_check = makefile.index('if [ "$$build_status" -ne 0 ]')
+        binary_copy = makefile.index(
+            'docker cp "$$container_name:/out/gludd" "$(LINUX_BINARY_OUTPUT)"'
+        )
+        assert status_check < binary_copy
+        assert 'exit "$$build_status"' in makefile
         assert "file \"$(LINUX_BINARY_OUTPUT)\"" in makefile
         assert "ELF" in makefile

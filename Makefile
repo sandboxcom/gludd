@@ -4036,16 +4036,16 @@ build-linux-executable: ## Build and verify a real Linux PyInstaller executable
 		chmod 700 "$(LIMA_DOCKER_CONFIG)"; \
 		mkdir -p "$(LINUX_BINARY_SCRATCH_ROOT)"; \
 		source_dir=$$(mktemp -d "$(LINUX_BINARY_SCRATCH_ROOT)/source.XXXXXX"); \
-		output_dir=$$(mktemp -d "$(LINUX_BINARY_SCRATCH_ROOT)/output.XXXXXX"); \
 		container_name="gludd-linux-build-$$$$"; \
 		cleanup_build() { \
-			rm -rf "$$source_dir" "$$output_dir"; \
+			rm -rf "$$source_dir"; \
 			DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker rm -f "$$container_name" >/dev/null 2>&1 || true; \
 		}; \
 		trap cleanup_build EXIT INT TERM; \
 		git archive HEAD | tar -x -C "$$source_dir"; \
 		echo "Building Linux executable in namespaced Lima Docker VM $(LIMA_INSTANCE)"; \
-		if ! DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker run \
+		build_status=0; \
+		DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker run \
 			--pull=always \
 			--name "$$container_name" \
 			-e HOME=/tmp/gludd-home \
@@ -4053,7 +4053,6 @@ build-linux-executable: ## Build and verify a real Linux PyInstaller executable
 			-e UV_LINK_MODE=copy \
 			-e UV_PROJECT_ENVIRONMENT=/tmp/gludd-linux-venv \
 			-v "$$source_dir:/workspace:ro" \
-			-v "$$output_dir:/out" \
 			-w /workspace \
 			"$(LINUX_BINARY_IMAGE)" \
 			sh -ec 'export DEBIAN_FRONTEND=noninteractive; \
@@ -4067,7 +4066,10 @@ build-linux-executable: ## Build and verify a real Linux PyInstaller executable
 				printf "%s\n" "Acquire::Check-Valid-Until \"false\";" > /etc/apt/apt.conf.d/99gludd-snapshot; \
 				apt-get -o APT::Update::Error-Mode=any update; \
 				if test -L /etc/alternatives/builtins.7.gz && ! test -e /usr/share/man/man7/bash-builtins.7.gz; then \
+					mkdir -p /usr/share/man/man7; \
+					: > /usr/share/man/man7/bash-builtins.7.gz; \
 					update-alternatives --remove builtins.7.gz /usr/share/man/man7/bash-builtins.7.gz; \
+					rm -f /usr/share/man/man7/bash-builtins.7.gz; \
 				fi; \
 				apt-get install -y --download-only --no-install-recommends "apt-utils=$(LINUX_APT_UTILS_VERSION)"; \
 				dpkg -i /var/cache/apt/archives/apt-utils_$(LINUX_APT_UTILS_VERSION)_*.deb; \
@@ -4087,22 +4089,29 @@ build-linux-executable: ## Build and verify a real Linux PyInstaller executable
 				uv sync --frozen; \
 				pyinstaller_version=$$(uv run pyinstaller --version); \
 				test "$$pyinstaller_version" = "6.20.0"; \
-				uv run pyinstaller gludd.spec --clean --noconfirm --workpath /tmp/gludd-pyinstaller-build --distpath /out; \
-				cp /tmp/gludd-pyinstaller-build/gludd/warn-gludd.txt /out/warn-gludd.txt; \
+				pyinstaller_status=0; \
+				uv run pyinstaller gludd.spec --clean --noconfirm --workpath /tmp/gludd-pyinstaller-build --distpath /out || pyinstaller_status=$$?; \
+				if test -f /tmp/gludd-pyinstaller-build/gludd/warn-gludd.txt; then \
+					cp /tmp/gludd-pyinstaller-build/gludd/warn-gludd.txt /out/warn-gludd.txt; \
+				fi; \
+				test "$$pyinstaller_status" -eq 0; \
 				uv run python scripts/audit_pyinstaller_warnings.py \
 					--warnings /tmp/gludd-pyinstaller-build/gludd/warn-gludd.txt \
 					--allowlist "$(PYINSTALLER_WARNING_ALLOWLIST_LINUX)" \
 					--platform linux \
 					--pyinstaller-version "$$pyinstaller_version" \
-					--spec gludd.spec'; then \
-			if [ -f "$$output_dir/warn-gludd.txt" ]; then \
-				cp "$$output_dir/warn-gludd.txt" "$(dir $(LINUX_BINARY_OUTPUT))warn-gludd.txt"; \
-			fi; \
+					--spec gludd.spec' || build_status=$$?; \
+		warning_copy_status=0; \
+		DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker cp "$$container_name:/out/warn-gludd.txt" "$(dir $(LINUX_BINARY_OUTPUT))warn-gludd.txt" || warning_copy_status=$$?; \
+		if [ "$$build_status" -ne 0 ]; then \
 			echo "Linux executable container build failed"; \
-			exit 1; \
+			exit "$$build_status"; \
 		fi; \
-		cp "$$output_dir/warn-gludd.txt" "$(dir $(LINUX_BINARY_OUTPUT))warn-gludd.txt"; \
-		cp "$$output_dir/gludd" "$(LINUX_BINARY_OUTPUT)"; \
+		if [ "$$warning_copy_status" -ne 0 ]; then \
+			echo "PyInstaller warning report was not retained"; \
+			exit "$$warning_copy_status"; \
+		fi; \
+		DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker cp "$$container_name:/out/gludd" "$(LINUX_BINARY_OUTPUT)"; \
 	fi
 	@test -x "$(LINUX_BINARY_OUTPUT)" || { echo "Linux executable missing: $(LINUX_BINARY_OUTPUT)"; exit 1; }
 	@kind=$$(file "$(LINUX_BINARY_OUTPUT)"); echo "$$kind"; echo "$$kind" | grep -q 'ELF' || { echo "Expected an ELF executable"; exit 1; }
