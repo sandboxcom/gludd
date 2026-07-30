@@ -98,6 +98,9 @@ web_retriever/
 
 Makefile.tmp
 
+# Junk artifact from accidental database URI used as filename
+sqlite+aiosqlite:
+
 # ── OpenCode backup directory (debug artifact after crash recovery) ─────────
 .opencode.orig/
 opencode.json.orig
