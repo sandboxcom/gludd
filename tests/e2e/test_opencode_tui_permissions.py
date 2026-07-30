@@ -65,6 +65,61 @@ def _write_primed_session_state(tmp_path: Path) -> Path:
     return state_path
 
 
+@pytest.fixture
+def isolated_tui_project(tmp_path: Path) -> Path:
+    """Run live OpenCode TUI checks outside the tracked checkout."""
+    project = tmp_path / "project"
+    project.mkdir()
+    for relative in (
+        "opencode.json",
+        "pyproject.toml",
+        "AGENTS.md",
+    ):
+        source = ROOT / relative
+        if source.is_file():
+            shutil.copy2(source, project / relative)
+    (project / "Makefile").write_text(
+        ".PHONY: version gate-tail gate-status-check\n"
+        "version:\n"
+        "\t@echo 0.1.0-beta.3\n"
+        "gate-tail:\n"
+        "\t@touch gate-tail-executed\n"
+        "gate-status-check:\n"
+        "\t@touch gate-status-check-executed\n",
+        encoding="utf-8",
+    )
+    (project / "TASKS.md").write_text(
+        "# Isolated TUI tasks\n\n- [x] Fixture is ready.\n",
+        encoding="utf-8",
+    )
+    (project / "BUGS.md").write_text("# Isolated TUI bugs\n", encoding="utf-8")
+    (project / "SESSION.md").write_text(
+        "# Isolated TUI session\n",
+        encoding="utf-8",
+    )
+    (project / ".gate-status").write_text(
+        "lint PASS\ntypecheck PASS\ncollect PASS\ntest PASS\nsmoke PASS\n",
+        encoding="utf-8",
+    )
+    (project / "config").mkdir()
+    (project / "config" / "ratchet.yml").write_text(
+        "# No known failures in the isolated TUI project.\n",
+        encoding="utf-8",
+    )
+    shutil.copytree(
+        ROOT / ".opencode",
+        project / ".opencode",
+        ignore=shutil.ignore_patterns(
+            "node_modules",
+            "package-lock.json",
+            "bun.lock",
+            "__pycache__",
+            "*.pyc",
+        ),
+    )
+    return project
+
+
 def test_no_wait_session_state_is_isolated_and_primed(tmp_path: Path) -> None:
     """The no-wait scenario cannot inherit another session's start gate."""
     state_path = _write_primed_session_state(tmp_path)
@@ -96,9 +151,15 @@ class DeterministicProvider:
     def __init__(
         self,
         responses: list[dict[str, Any]] | None = None,
+        project_root: Path = ROOT,
+        prompt_responses: dict[str, list[dict[str, Any]]] | None = None,
     ) -> None:
         self.requests: list[dict[str, Any]] = []
+        self.issued_bash_commands: list[str] = []
+        self.prompt_calls: dict[str, int] = {}
         self._responses = responses
+        self._prompt_responses = prompt_responses
+        self._project_root = project_root
         self._state_lock = threading.Lock()
         self._main_calls = 0
         provider = self
@@ -194,13 +255,39 @@ class DeterministicProvider:
         ):
             return {"text": "TUI permission verification"}
 
+        if self._prompt_responses is not None:
+            latest_user = next(
+                (
+                    _message_text(message)
+                    for message in reversed(messages)
+                    if isinstance(message, dict) and message.get("role") == "user"
+                ),
+                "",
+            )
+            prompt_key = next(
+                (
+                    key
+                    for key in self._prompt_responses
+                    if key in latest_user
+                ),
+                "",
+            )
+            with self._state_lock:
+                step = self.prompt_calls.get(prompt_key, 0)
+                self.prompt_calls[prompt_key] = step + 1
+                self._main_calls += 1
+            prompt_sequence = self._prompt_responses.get(prompt_key, [])
+            if step < len(prompt_sequence):
+                return self._record_response(prompt_sequence[step])
+            return {"text": f"Unexpected provider turn {step} for {prompt_key!r}"}
+
         with self._state_lock:
             step = self._main_calls
             self._main_calls += 1
         responses = self._responses or [
             self.tool_call(
                 "read",
-                {"filePath": str(ROOT / "pyproject.toml")},
+                {"filePath": str(self._project_root / "pyproject.toml")},
                 "call_read_project_name",
             ),
             {"text": "general-ludd-agent"},
@@ -208,14 +295,14 @@ class DeterministicProvider:
                 "grep",
                 {
                     "pattern": r"authors\s*=",
-                    "path": str(ROOT),
+                    "path": str(self._project_root),
                     "include": "pyproject.toml",
                 },
                 "call_grep_authors",
             ),
             self.tool_call(
                 "read",
-                {"filePath": str(ROOT / "pyproject.toml")},
+                {"filePath": str(self._project_root / "pyproject.toml")},
                 "call_read_authors",
             ),
             {"text": "General Ludd Team"},
@@ -233,8 +320,18 @@ class DeterministicProvider:
             {"text": "The command was denied by the configured permission rule."},
         ]
         if step < len(responses):
-            return responses[step]
+            return self._record_response(responses[step])
         return {"text": f"Unexpected deterministic provider turn {step}"}
+
+    def _record_response(self, response: dict[str, Any]) -> dict[str, Any]:
+        """Record tool responses so tests can prove the model issued them."""
+        tool = response.get("tool")
+        if isinstance(tool, dict) and tool.get("name") == "bash":
+            arguments = json.loads(str(tool.get("arguments", "{}")))
+            command = arguments.get("command")
+            if isinstance(command, str):
+                self.issued_bash_commands.append(command)
+        return response
 
     @staticmethod
     def tool_call(
@@ -386,6 +483,7 @@ class _Tui:
     def __init__(
         self,
         config_content: str,
+        project_root: Path = ROOT,
         env_override: dict[str, str] | None = None,
     ) -> None:
         self.master_fd, slave_fd = pty.openpty()
@@ -398,6 +496,7 @@ class _Tui:
         env["TERM"] = "xterm-256color"
         env["OPENCODE_DISABLE_AUTOUPDATE"] = "true"
         env["OPENCODE_CONFIG_CONTENT"] = config_content
+        env["GLUDD_PROJECT_ROOT"] = str(project_root)
         # The test targets OpenCode's permission engine. Project plugins have
         # their own suites and intentionally skip delegated/subagent contexts.
         env["OPENCODE_SUBAGENT"] = "1"
@@ -410,7 +509,7 @@ class _Tui:
                 "--log-level",
                 "INFO",
             ],
-            cwd=ROOT,
+            cwd=project_root,
             env=env,
             stdin=slave_fd,
             stdout=slave_fd,
@@ -497,10 +596,14 @@ class _Tui:
 @pytest.mark.skipif(OPENCODE is None, reason="opencode binary not on PATH")
 @pytest.mark.timeout(420)
 @pytest.mark.xdist_group("opencode-live")
-def test_tui_handles_multiple_permissioned_tool_prompts() -> None:
+def test_tui_handles_multiple_permissioned_tool_prompts(
+    isolated_tui_project: Path,
+) -> None:
     """A persistent TUI can read, grep, and run an allowed Make target."""
-    provider = DeterministicProvider()
-    tui = _Tui(provider.config_content)
+    manifest = ROOT / ".opencode" / "package.json"
+    manifest_before = manifest.read_bytes()
+    provider = DeterministicProvider(project_root=isolated_tui_project)
+    tui = _Tui(provider.config_content, project_root=isolated_tui_project)
     try:
         tui.wait_for("Ask anything...", timeout=30)
         read_segment = tui.prompt(
@@ -509,7 +612,7 @@ def test_tui_handles_multiple_permissioned_tool_prompts() -> None:
         )
         assert "permission=read" in read_segment
         assert "action.action=allow" in read_segment
-        assert f"file={ROOT / 'pyproject.toml'}" in read_segment
+        assert f"file={isolated_tui_project / 'pyproject.toml'}" in read_segment
 
         grep_segment = tui.prompt(
             "Use the grep tool to locate the exact `authors =` declaration in "
@@ -536,42 +639,60 @@ def test_tui_handles_multiple_permissioned_tool_prompts() -> None:
     finally:
         tui.close()
         provider.close()
+    assert manifest.read_bytes() == manifest_before, (
+        "OpenCode TUI E2E mutated the tracked .opencode/package.json"
+    )
 
 
 @pytest.mark.skipif(OPENCODE is None, reason="opencode binary not on PATH")
 @pytest.mark.timeout(420)
 @pytest.mark.xdist_group("opencode-live")
-def test_tui_no_wait_plugin_handles_multiple_bash_prompts(tmp_path: Path) -> None:
+def test_tui_no_wait_plugin_handles_multiple_bash_prompts(
+    tmp_path: Path,
+    isolated_tui_project: Path,
+) -> None:
     """A fresh TUI allows normal Make work and denies blocking Make waits."""
+    manifest = ROOT / ".opencode" / "package.json"
+    manifest_before = manifest.read_bytes()
     session_state = _write_primed_session_state(tmp_path)
-    responses = [
-        DeterministicProvider.tool_call(
-            "bash",
-            {"command": "make version", "description": "Print project version"},
-            "call_no_wait_make_version",
-        ),
-        {"text": "0.1.0-beta.3"},
-        DeterministicProvider.tool_call(
-            "bash",
-            {"command": "make gate-tail", "description": "Follow the gate log"},
-            "call_no_wait_gate_tail",
-        ),
-        {"text": "The no-wait guard denied the blocking gate tail."},
-        DeterministicProvider.tool_call(
-            "bash",
-            {
-                "command": "make gate-status-check",
-                "description": "Wait for gate status",
-            },
-            "call_no_wait_gate_status",
-        ),
-        {"text": "The no-wait guard denied the blocking gate status check."},
-    ]
-    provider = DeterministicProvider(responses=responses)
+    prompt_responses = {
+        "make version": [
+            DeterministicProvider.tool_call(
+                "bash",
+                {"command": "make version", "description": "Print project version"},
+                "call_no_wait_make_version",
+            ),
+            {"text": "0.1.0-beta.3"},
+        ],
+        "make gate-tail": [
+            DeterministicProvider.tool_call(
+                "bash",
+                {"command": "make gate-tail", "description": "Follow the gate log"},
+                "call_no_wait_gate_tail",
+            ),
+            {"text": "The no-wait plugin denied the blocking gate tail."},
+        ],
+        "make gate-status-check": [
+            DeterministicProvider.tool_call(
+                "bash",
+                {
+                    "command": "make gate-status-check",
+                    "description": "Wait for gate status",
+                },
+                "call_no_wait_gate_status",
+            ),
+            {"text": "The no-wait plugin denied the blocking gate status check."},
+        ],
+    }
+    provider = DeterministicProvider(
+        project_root=isolated_tui_project,
+        prompt_responses=prompt_responses,
+    )
     config = json.loads(provider.config_content)
     config["plugin"] = ["./.opencode/plugin/enforce-no-wait.ts"]
     tui = _Tui(
         json.dumps(config),
+        project_root=isolated_tui_project,
         env_override={
             "OPENCODE_SUBAGENT": "",
             "GLUDD_ANTI_ESSAY_ENFORCE": "0",
@@ -595,14 +716,26 @@ def test_tui_no_wait_plugin_handles_multiple_bash_prompts(tmp_path: Path) -> Non
             "GLUDD_OBJECTIVE_ENFORCE": "0",
             "GLUDD_RELEASE_DEADLINE_ENFORCE": "0",
             "GLUDD_HOT_MODULE_PREFIX": str(tmp_path / "no-wait-hot-"),
+            "GLUDD_BLOCK_COUNTER_FILE": str(tmp_path / "block-counter.json"),
+            "GLUDD_BLOCK_REASON_FILE": str(tmp_path / "block-reason.json"),
+            "GLUDD_FORCE_DISPATCH_PATH": str(tmp_path / "force-dispatch.json"),
+            "GLUDD_LAST_TEST_RESULT_FILE": str(tmp_path / "last-test.json"),
+            "GLUDD_MULTITASK_STATE_FILE": str(tmp_path / "multitask.json"),
+            "GLUDD_PERSIST_STOP_BLOCK_FILE": str(tmp_path / "persist-stop.json"),
+            "GLUDD_POST_RESULTS_STATE_FILE": str(tmp_path / "post-results.json"),
+            "GLUDD_RELEASE_COMPLETENESS_FILE": str(tmp_path / "release.json"),
             "GLUDD_SESSION_START_ENFORCE": "1",
             "GLUDD_SESSION_STATE": str(session_state),
+            "GLUDD_STOP_STATE_FILE": str(tmp_path / "stop-state.json"),
+            "GLUDD_STOP_TEXT_COMPLETE_COUNT": str(tmp_path / "stop-count.json"),
             "GLUDD_STOP_ENFORCE": "0",
             "GLUDD_TASK_DEADLINE_ENABLED": "0",
             "GLUDD_TASK_TRACKING_ENFORCE": "0",
             "GLUDD_TDD_ENFORCE": "0",
             "GLUDD_TEST_INTEGRITY_ENFORCE": "0",
+            "GLUDD_TEXT_ONLY_STATE_FILE": str(tmp_path / "text-only.json"),
             "GLUDD_VERIFIED_CLAIMS_ENFORCE": "0",
+            "GLUDD_WATCHDOG_CI_FILE": str(tmp_path / "watchdog-ci.json"),
             "GLUDD_WORKTREE_ENFORCE": "0",
         },
     )
@@ -619,21 +752,34 @@ def test_tui_no_wait_plugin_handles_multiple_bash_prompts(tmp_path: Path) -> Non
             "Use the bash tool to run make gate-tail exactly once. If the "
             "no-wait guard denies it, explain that briefly.",
         )
-        assert "$ make gate-tail" in gate_tail_segment
         assert "[SESSION START PROTOCOL]" not in gate_tail_segment
-        assert "no-wait guard denied the blocking gate tail" in gate_tail_segment
+        assert provider.prompt_calls["make gate-tail"] >= 1
+        assert provider.issued_bash_commands == ["make version", "make gate-tail"]
+        assert not (isolated_tui_project / "gate-tail-executed").exists(), (
+            "the no-wait plugin allowed make gate-tail to execute"
+        )
 
         gate_status_segment = tui.prompt(
             "Use the bash tool to run make gate-status-check exactly once. If "
             "the no-wait guard denies it, explain that briefly.",
         )
-        assert "$ make gate-status-check" in gate_status_segment
         assert "[SESSION START PROTOCOL]" not in gate_status_segment
-        assert (
-            "no-wait guard denied the blocking gate status check"
-            in gate_status_segment
-        )
-        assert provider.main_calls == 6
+        assert provider.prompt_calls["make gate-status-check"] >= 1
+        assert provider.issued_bash_commands == [
+            "make version",
+            "make gate-tail",
+            "make gate-status-check",
+        ]
+        assert not (
+            isolated_tui_project / "gate-status-check-executed"
+        ).exists(), "the no-wait plugin allowed make gate-status-check to execute"
+        # OpenCode 1.18.x may end a denied turn without requesting a synthetic
+        # explanation or rendering `$ make ...`. Prompt-scoped responses keep
+        # later user prompts aligned; issued commands plus canaries are the
+        # version-independent behavioral invariant.
     finally:
         tui.close()
         provider.close()
+    assert manifest.read_bytes() == manifest_before, (
+        "OpenCode no-wait TUI E2E mutated the tracked .opencode/package.json"
+    )
