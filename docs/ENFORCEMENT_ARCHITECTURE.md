@@ -163,7 +163,16 @@ export default (async ({ }) => {
   `tests/e2e/test_opencode_binary_boot.py` runs the real OpenCode binary and real
   plugin loader against the in-process deterministic OpenAI-compatible provider.
   This keeps plugin/crash assertions live while eliminating external provider,
-  credential, update, and network latency from the boot gate.
+  credential, and network latency from the boot gate. OpenCode also reconciles
+  `.opencode/package.json` to the running binary's `@opencode-ai/plugin` version;
+  users have documented that installer path and its startup impact
+  ([issue #26003](https://github.com/anomalyco/opencode/issues/26003)), and the
+  plugin documentation requires matching the plugin package to the targeted
+  OpenCode release
+  ([OpenCode plugin dependencies](https://opencode.ai/v2/docs/build/plugins#installation-and-dependencies)).
+  The E2E therefore copies `opencode.json` and `.opencode/` into a pytest-owned
+  temporary project before boot. Dependency reconciliation remains exercised,
+  but it can update only the disposable copy, never the tracked release tree.
 
 ---
 
