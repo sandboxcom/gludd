@@ -551,7 +551,7 @@ def analyze_reaction(reaction: dict[str, Any]) -> dict[str, Any]:
 
     coeffs = _solve_integer_balance(matrix, len(species))
     balanced = coeffs is not None
-    coefficients = {"reactants": {}, "products": {}}
+    coefficients: dict[str, dict[str, int]] = {"reactants": {}, "products": {}}
     if balanced and coeffs is not None:
         for i, token in enumerate(reactants):
             coefficients["reactants"][token] = coeffs[i]
@@ -729,15 +729,19 @@ def stoichiometry_dilution(
         raise ValueError("exactly one of c1, v1, c2, v2 must be None for dilution")
     result: dict[str, Any] = {}
     if c1 is None:
+        assert v1 is not None and c2 is not None and v2 is not None
         result["c1"] = (c2 * v2) / v1
         result["unit_c"] = "mol/L"
     if v1 is None:
+        assert c1 is not None and c2 is not None and v2 is not None
         result["v1"] = (c2 * v2) / c1
         result["unit_v"] = "L"
     if c2 is None:
+        assert c1 is not None and v1 is not None and v2 is not None
         result["c2"] = (c1 * v1) / v2
         result["unit_c"] = "mol/L"
     if v2 is None:
+        assert c1 is not None and v1 is not None and c2 is not None
         result["v2"] = (c1 * v1) / c2
         result["unit_v"] = "L"
     return result

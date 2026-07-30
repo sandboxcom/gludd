@@ -352,7 +352,8 @@ def get_properties(material_id: str) -> list[dict[str, Any]]:
 
 
 def _find_property(material: dict[str, Any], name: str) -> dict[str, Any] | None:
-    for prop in material["properties"]:
+    properties: list[dict[str, Any]] = material["properties"]
+    for prop in properties:
         if prop["name"] == name:
             return prop
     return None
@@ -388,7 +389,8 @@ def _yield_requirement(reqs: dict[str, Any]) -> dict[str, Any] | None:
     cases = reqs.get("load_cases")
     if not isinstance(cases, list):
         return None
-    for case in cases:
+    typed_cases: list[dict[str, Any]] = cases
+    for case in typed_cases:
         if case.get("type") in ("yield", "tensile") and case.get("unit") == "MPa":
             return case
     return None

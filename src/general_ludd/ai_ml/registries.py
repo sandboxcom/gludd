@@ -19,6 +19,7 @@ import enum
 import re
 import time
 from dataclasses import dataclass, field
+from typing import Any
 
 from general_ludd.ai_ml.schemas import _require_nonempty_str, _require_sha256
 
@@ -201,7 +202,7 @@ class Registry:
         return list(self._records.values())
 
 
-def _rebuild_record(record: RegistryRecord, **overrides: object) -> RegistryRecord:
+def _rebuild_record(record: RegistryRecord, **overrides: Any) -> RegistryRecord:
     """Return a new frozen record of the same concrete type with ``overrides``."""
     return dataclasses.replace(record, **overrides)
 

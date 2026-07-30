@@ -47,7 +47,8 @@ _STRESS_UNIT_FACTOR_TO_MPA: dict[str, float] = {
 
 
 def _find_property(material: dict[str, Any], name: str) -> dict[str, Any] | None:
-    for prop in material["properties"]:
+    properties: list[dict[str, Any]] = material["properties"]
+    for prop in properties:
         if prop["name"] == name:
             return prop
     return None

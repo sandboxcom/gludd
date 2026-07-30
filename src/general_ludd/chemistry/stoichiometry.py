@@ -26,6 +26,7 @@ from __future__ import annotations
 import importlib.util
 import math
 import os
+from types import ModuleType
 from typing import Any
 
 _CORE_PATH = os.path.join(
@@ -34,7 +35,7 @@ _CORE_PATH = os.path.join(
 )
 
 
-def _load_core():
+def _load_core() -> ModuleType:
     spec = importlib.util.spec_from_file_location("chemistry_core_for_stoichiometry", _CORE_PATH)
     assert spec is not None and spec.loader is not None, "chemistry core spec failed"
     mod = importlib.util.module_from_spec(spec)
@@ -53,7 +54,8 @@ def _value_record(
     uncertainty: float = 0.0,
     method_id: str = _core.CANONICALIZER,
 ) -> dict[str, Any]:
-    return _core._value_record(name, value, unit, uncertainty=uncertainty, method_id=method_id)
+    result: dict[str, Any] = _core._value_record(name, value, unit, uncertainty=uncertainty, method_id=method_id)
+    return result
 
 
 def _propagate_relative(value: float, *rel_uncertainties: float) -> float:

@@ -35,6 +35,7 @@ import importlib.util
 import os
 import sys
 from dataclasses import dataclass, field
+from types import ModuleType
 from typing import Any
 
 # This module is loaded by file path in the test suite (mirroring
@@ -42,7 +43,7 @@ from typing import Any
 _CORE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "core.py")
 
 
-def _load_core():
+def _load_core() -> ModuleType:
     spec = importlib.util.spec_from_file_location("chemistry_core_for_safety", _CORE_PATH)
     assert spec is not None and spec.loader is not None, "chemistry core spec failed"
     mod = importlib.util.module_from_spec(spec)
@@ -111,7 +112,8 @@ class SafetyScreen:
 
 
 def _resolve_hazard_entry(query: str) -> dict[str, Any] | None:
-    return _core._resolve_hazard_entry(query)
+    result: dict[str, Any] | None = _core._resolve_hazard_entry(query)
+    return result
 
 
 def check_compatibility(entities: list[str]) -> list[dict[str, Any]]:

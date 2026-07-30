@@ -15,12 +15,13 @@ from __future__ import annotations
 
 import importlib.util
 import os
+from types import ModuleType
 from typing import Any
 
 _CORE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "core.py")
 
 
-def _load_core():
+def _load_core() -> ModuleType:
     spec = importlib.util.spec_from_file_location("chemistry_core_for_inventory", _CORE_PATH)
     assert spec is not None and spec.loader is not None, "chemistry core spec failed"
     mod = importlib.util.module_from_spec(spec)

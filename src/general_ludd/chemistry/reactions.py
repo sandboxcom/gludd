@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+from types import ModuleType
 from typing import Any
 
 # This module is loaded by file path in the test suite (mirroring
@@ -30,7 +31,7 @@ _CORE_PATH = os.path.join(
 )
 
 
-def _load_core():
+def _load_core() -> ModuleType:
     spec = importlib.util.spec_from_file_location("chemistry_core_for_reactions", _CORE_PATH)
     assert spec is not None and spec.loader is not None, "chemistry core spec failed"
     mod = importlib.util.module_from_spec(spec)
@@ -50,21 +51,26 @@ def _err(code: str, message: str, retryable: bool = False) -> dict[str, Any]:
 def _species_atoms(token: str) -> dict[str, int]:
     """Return ``{element: atom_count}`` for a formula or SMILES-like token."""
     try:
-        return _core.parse_formula(token)
+        parsed: dict[str, int] = _core.parse_formula(token)
+        return parsed
     except ValueError:
-        return _core.parse_formula(_core._strip_smiles_to_formula(token))
+        fallback: dict[str, int] = _core.parse_formula(_core._strip_smiles_to_formula(token))
+        return fallback
 
 
 def _hill_formula(atoms: dict[str, int]) -> str:
-    return _core._hill_formula(atoms)
+    result: str = _core._hill_formula(atoms)
+    return result
 
 
 def _formula_mass(atoms: dict[str, int]) -> float:
-    return _core._formula_mass(atoms)
+    result: float = _core._formula_mass(atoms)
+    return result
 
 
 def _extract_charge(token: str) -> int:
-    return _core._extract_charge(token)
+    result: int = _core._extract_charge(token)
+    return result
 
 
 # ---------------------------------------------------------------------------
