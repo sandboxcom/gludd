@@ -170,6 +170,12 @@
          and (_bp_mmdc_lookup.rc | default(1)) == 0
          and (_bp_mmdc_lookup.stdout | default('') | length > 0) }}
 
+- name: Stat presentation directory before Mermaid discovery
+  ansible.builtin.stat:
+    path: "{{ presentation_dir }}"
+  register: _bp_presentation_dir_stat
+  when: validate_mermaid_syntax | bool
+
 - name: Find .mmd diagram files under presentation dir
   ansible.builtin.find:
     paths: "{{ presentation_dir }}"
@@ -177,7 +183,10 @@
     recurse: true
     use_regex: false
   register: _bp_mmd_files
-  when: validate_mermaid_syntax | bool
+  when:
+    - validate_mermaid_syntax | bool
+    - _bp_presentation_dir_stat.stat.exists | default(false) | bool
+    - _bp_presentation_dir_stat.stat.isdir | default(false) | bool
 
 - name: Validate Mermaid syntax via mmdc (one task per file)
   ansible.builtin.command:

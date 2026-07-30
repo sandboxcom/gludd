@@ -31,6 +31,24 @@ available; see step 6 in the pipeline table below. The step is
 safe-by-default — when `mmdc` is absent the validation is skipped, not
 failed.
 
+### Absent deck directories
+
+An absent `presentation_dir` is valid for build-only and staged workflows.
+The role checks that it is a directory before invoking
+`ansible.builtin.find`, and treats absence as zero Mermaid files. This avoids
+the warning that `find` intentionally emits for missing/non-directory paths
+while preserving a successful no-op result.
+
+This has been a recurring source of noisy automation output: users reported
+the exact `find` warning in
+[Ansible Automation Platform](https://stackoverflow.com/questions/74703214/within-ansible-automation-platform-getting-path-to-directory-does-not-exist)
+and asked how to suppress it for optional locations in
+[r/ansible](https://www.reddit.com/r/ansible/comments/15306ul/hide_warnings_from_a_single_task_module/).
+Ansible's
+[`find` return-value documentation](https://docs.ansible.com/ansible/latest/collections/ansible/builtin/find_module.html#return-values)
+confirms that invalid paths are reported through `skipped_paths`; preflighting
+with `stat` keeps that diagnostic reserved for genuinely unexpected paths.
+
 ## Pipeline
 
 | Step | Toggle | Default |
