@@ -1,0 +1,5 @@
+---
+strength_assess_enabled: false
+strength_assess_material: null
+strength_assess_load_case: {}
+strength_assess_output_dir: /tmp/gludd-materials-strength

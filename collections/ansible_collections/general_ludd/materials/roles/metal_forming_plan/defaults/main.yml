@@ -1,0 +1,5 @@
+---
+metal_forming_plan_enabled: false
+metal_forming_plan_material: null
+metal_forming_plan_operation: null
+metal_forming_plan_output_dir: /tmp/gludd-materials-metal-forming

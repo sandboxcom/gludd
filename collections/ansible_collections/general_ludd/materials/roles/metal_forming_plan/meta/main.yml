@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: metal_forming_plan
+  author: Agentic Harness Agent
+  description: >
+    Select alloy condition, stock form, forming sequence, heat treatment,
+    and springback controls (spec MATE-001 §3, §4.3).
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [materials, metals, forming, forging, stamping]
+dependencies: []

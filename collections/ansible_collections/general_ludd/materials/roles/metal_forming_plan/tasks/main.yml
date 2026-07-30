@@ -1,0 +1,36 @@
+---
+# metal_forming_plan role — plan a metal forming operation.
+
+- name: Validate metal_forming_plan parameters
+  ansible.builtin.assert:
+    that:
+      - metal_forming_plan_enabled | bool
+      - metal_forming_plan_material is defined
+      - metal_forming_plan_operation is defined
+    fail_msg: >
+      metal_forming_plan requires material and operation to be set.
+
+- name: Ensure output directory exists
+  ansible.builtin.file:
+    path: "{{ metal_forming_plan_output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Copy materials.py module_util to target
+  ansible.builtin.copy:
+    src: "{{ _materials_module }}"
+    dest: "{{ metal_forming_plan_output_dir }}/materials.py"
+    mode: "0755"
+
+- name: Write metal forming plan verdict
+  ansible.builtin.copy:
+    content: "{{ {'role': 'metal_forming_plan', 'material': metal_forming_plan_material, 'operation': metal_forming_plan_operation} | to_nice_json }}"
+    dest: "{{ metal_forming_plan_output_dir }}/metal_forming_plan.json"
+    mode: "0644"
+
+- name: Register metal_forming_plan verdict
+  ansible.builtin.set_fact:
+    metal_forming_plan_verdict:
+      role: metal_forming_plan
+      module_util: materials.py
+      output: "{{ metal_forming_plan_output_dir }}/metal_forming_plan.json"

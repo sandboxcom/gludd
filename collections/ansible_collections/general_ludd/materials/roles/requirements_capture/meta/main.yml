@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: requirements_capture
+  author: Agentic Harness Agent
+  description: >
+    Normalize loads, environment, life, geometry, manufacturing, inspection,
+    cost, repair, and regulatory constraints (spec MATE-001 §3).
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [materials, engineering, requirements]
+dependencies: []

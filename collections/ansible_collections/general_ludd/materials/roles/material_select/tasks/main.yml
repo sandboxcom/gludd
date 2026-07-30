@@ -1,0 +1,33 @@
+---
+# material_select role — screen and rank material candidates.
+
+- name: Validate material_select parameters
+  ansible.builtin.assert:
+    that:
+      - material_select_enabled | bool
+    fail_msg: "material_select requires material_select_enabled=true."
+
+- name: Ensure output directory exists
+  ansible.builtin.file:
+    path: "{{ material_select_output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Copy materials.py module_util to target
+  ansible.builtin.copy:
+    src: "{{ _materials_module }}"
+    dest: "{{ material_select_output_dir }}/materials.py"
+    mode: "0755"
+
+- name: Write selection verdict
+  ansible.builtin.copy:
+    content: "{{ {'role': 'material_select', 'candidates': material_select_candidates, 'requirements': material_select_requirements} | to_nice_json }}"
+    dest: "{{ material_select_output_dir }}/material_select.json"
+    mode: "0644"
+
+- name: Register material_select verdict
+  ansible.builtin.set_fact:
+    material_select_verdict:
+      role: material_select
+      module_util: materials.py
+      output: "{{ material_select_output_dir }}/material_select.json"

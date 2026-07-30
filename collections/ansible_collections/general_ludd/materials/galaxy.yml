@@ -1,0 +1,29 @@
+---
+namespace: general_ludd
+name: materials
+version: 0.1.0
+readme: README.md
+description: >
+  Materials engineering expert collection — roles and modules that enable
+  agents to translate functional, environmental, manufacturing, safety, cost,
+  and lifecycle requirements into traceable material and process decisions.
+  Covers polymers, metals, ceramics, composites, and textiles across forming,
+  joining, machining, additive, and strength assessment (spec MATE-001).
+license:
+  - MIT
+authors:
+  - Agentic Harness Agent <agent@harness.local>
+tags:
+  - materials
+  - engineering
+  - polymers
+  - metals
+  - ceramics
+  - composites
+  - manufacturing
+  - strength
+  - forming
+  - welding
+  - machining
+  - additive
+dependencies: {}

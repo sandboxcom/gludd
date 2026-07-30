@@ -1,0 +1,5 @@
+---
+# requirements_capture defaults — safe-by-default
+requirements_capture_enabled: false
+requirements_capture_input_file: null
+requirements_capture_output_dir: /tmp/gludd-materials-requirements

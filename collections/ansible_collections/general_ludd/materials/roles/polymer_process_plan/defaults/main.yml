@@ -1,0 +1,5 @@
+---
+polymer_process_plan_enabled: false
+polymer_process_plan_material: null
+polymer_process_plan_process: null
+polymer_process_plan_output_dir: /tmp/gludd-materials-polymer
