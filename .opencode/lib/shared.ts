@@ -24,7 +24,7 @@ export const ALIVE_PATH =
   process.env.GLUDD_ALIVE_PATH || "/tmp/gludd-plugin-alive.json"
 
 export const SUBAGENT_MARKER = (pid: number) =>
-  `/tmp/gludd-subagent-${pid}.json`
+  `${process.env.GLUDD_SUBAGENT_MARKER_PREFIX || "/tmp/gludd-subagent-"}${pid}.json`
 
 export interface GateRefreshProcess {
   pid?: number

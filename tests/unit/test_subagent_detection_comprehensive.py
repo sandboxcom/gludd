@@ -171,6 +171,29 @@ console.log(JSON.stringify({isSub: val}))
     assert result["isSub"] is True, f"File marker must win over env=0, got {result}"
 
 
+# ── Edge case: namespaced marker lookup isolates concurrent sessions ─────────
+
+def test_namespaced_marker_ignores_stale_default_pid_marker(tmp_path: Path):
+    marker_prefix = f"{tmp_path}/gludd-subagent-"
+    result = _run_ts(
+        """\
+const fs = await import('node:fs')
+const staleDefaultMarker = `/tmp/gludd-subagent-${process.pid}.json`
+fs.writeFileSync(staleDefaultMarker, '{}')
+const val = isSubagent()
+try { fs.unlinkSync(staleDefaultMarker) } catch {}
+console.log(JSON.stringify({isSub: val}))
+""",
+        env_override={
+            "OPENCODE_SUBAGENT": "0",
+            "GLUDD_SUBAGENT_MARKER_PREFIX": marker_prefix,
+        },
+    )
+    assert result["isSub"] is False, (
+        "A namespaced main-thread session must not inherit a stale default PID marker"
+    )
+
+
 # ── Edge case: env=1 overrides missing file ─────────────────────────────────
 
 def test_env_overrides_missing_file():

@@ -724,6 +724,7 @@ def test_tui_no_wait_plugin_handles_multiple_bash_prompts(
             "GLUDD_PERSIST_STOP_BLOCK_FILE": str(tmp_path / "persist-stop.json"),
             "GLUDD_POST_RESULTS_STATE_FILE": str(tmp_path / "post-results.json"),
             "GLUDD_RELEASE_COMPLETENESS_FILE": str(tmp_path / "release.json"),
+            "GLUDD_SUBAGENT_MARKER_PREFIX": str(tmp_path / "subagent-"),
             "GLUDD_SESSION_START_ENFORCE": "1",
             "GLUDD_SESSION_STATE": str(session_state),
             "GLUDD_STOP_STATE_FILE": str(tmp_path / "stop-state.json"),
