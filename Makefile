@@ -4021,7 +4021,8 @@ build-linux-executable: ## Build and verify a real Linux PyInstaller executable
 			--warnings build/gludd/warn-gludd.txt \
 			--allowlist "$(PYINSTALLER_WARNING_ALLOWLIST_LINUX)" \
 			--platform linux \
-			--pyinstaller-version "$$pyinstaller_version"; \
+			--pyinstaller-version "$$pyinstaller_version" \
+			--spec gludd.spec; \
 		cp dist/gludd "$(LINUX_BINARY_OUTPUT)"; \
 	else \
 		socket=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Dir}}/sock/docker.sock' 2>/dev/null || true); \
@@ -4081,7 +4082,8 @@ build-linux-executable: ## Build and verify a real Linux PyInstaller executable
 					--warnings /tmp/gludd-pyinstaller-build/gludd/warn-gludd.txt \
 					--allowlist "$(PYINSTALLER_WARNING_ALLOWLIST_LINUX)" \
 					--platform linux \
-					--pyinstaller-version "$$pyinstaller_version"'; \
+					--pyinstaller-version "$$pyinstaller_version" \
+					--spec gludd.spec'; \
 		DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker cp "$$container_name:/out/gludd" "$(LINUX_BINARY_OUTPUT)"; \
 	fi
 	@test -x "$(LINUX_BINARY_OUTPUT)" || { echo "Linux executable missing: $(LINUX_BINARY_OUTPUT)"; exit 1; }

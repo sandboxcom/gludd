@@ -430,6 +430,7 @@ class TestPrepare:
         )
         assert "audit_pyinstaller_warnings.py" in makefile
         assert "/tmp/gludd-pyinstaller-build/gludd/warn-gludd.txt" in makefile
+        assert "--spec gludd.spec" in makefile
         assert ":/workspace:ro" in makefile
         assert 'docker cp "$$container_name:/out/gludd"' in makefile
         assert "file \"$(LINUX_BINARY_OUTPUT)\"" in makefile

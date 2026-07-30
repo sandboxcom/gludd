@@ -56,6 +56,7 @@ def _run_audit(
     manifest_platform: str | None = None,
     version: str = _PYINSTALLER_VERSION,
     manifest_version: str | None = None,
+    spec_text: str = "a = Analysis([], excludes=[])\n",
 ) -> subprocess.CompletedProcess[str]:
     warning_path = tmp_path / "warn-gludd.txt"
     if warning_body is not None:
@@ -76,6 +77,8 @@ def _run_audit(
         ),
         encoding="utf-8",
     )
+    spec_path = tmp_path / "gludd.spec"
+    spec_path.write_text(spec_text, encoding="utf-8")
 
     return subprocess.run(
         [
@@ -89,6 +92,8 @@ def _run_audit(
             platform,
             "--pyinstaller-version",
             version,
+            "--spec",
+            str(spec_path),
         ],
         cwd=_ROOT,
         text=True,
@@ -274,3 +279,66 @@ def test_importer_and_flags_must_match_exactly(tmp_path: Path) -> None:
     assert result.returncode == 1
     assert "unreviewed missing-import edge" in result.stderr
     assert "stale allowlist edge" in result.stderr
+
+
+def test_exact_active_analysis_exclude_passes(tmp_path: Path) -> None:
+    result = _run_audit(
+        tmp_path,
+        "excluded module named winreg - imported by platform (conditional)\n",
+        spec_text="""\
+import sys
+
+_platform_excludes = []
+if sys.platform == "win32":
+    _platform_excludes = ["fcntl"]
+if sys.platform != "win32":
+    _platform_excludes = ["winreg"]
+
+a = Analysis([], excludes=["pytest"] + _platform_excludes)
+""",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "1 spec-excluded edge" in result.stdout
+
+
+def test_excluded_warning_not_in_analysis_excludes_fails(tmp_path: Path) -> None:
+    result = _run_audit(
+        tmp_path,
+        "excluded module named unreviewed - imported by app (conditional)\n",
+    )
+
+    assert result.returncode == 1
+    assert "module is not in active Analysis.excludes" in result.stderr
+
+
+def test_inactive_platform_exclude_is_not_accepted(tmp_path: Path) -> None:
+    result = _run_audit(
+        tmp_path,
+        "excluded module named fcntl - imported by app (conditional)\n",
+        spec_text="""\
+import sys
+
+_platform_excludes = []
+if sys.platform == "win32":
+    _platform_excludes = ["fcntl"]
+if sys.platform != "win32":
+    _platform_excludes = ["winreg"]
+
+a = Analysis([], excludes=_platform_excludes)
+""",
+    )
+
+    assert result.returncode == 1
+    assert "module is not in active Analysis.excludes" in result.stderr
+
+
+def test_missing_or_malformed_spec_fails_closed(tmp_path: Path) -> None:
+    result = _run_audit(
+        tmp_path,
+        "",
+        spec_text="this is not valid Python !!!\n",
+    )
+
+    assert result.returncode == 1
+    assert "cannot parse PyInstaller spec" in result.stderr

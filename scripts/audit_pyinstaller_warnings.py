@@ -10,6 +10,8 @@ Top-level and delayed-only imports are always actionable.
 from __future__ import annotations
 
 import argparse
+import ast
+import contextlib
 import json
 import re
 import sys
@@ -28,7 +30,8 @@ _CATEGORIES = frozenset(
     }
 )
 _WARNING_RE = re.compile(
-    r"^missing module named (?P<module>.+?) - imported by (?P<importers>.+)$"
+    r"^(?P<kind>missing|excluded) module named "
+    r"(?P<module>.+?) - imported by (?P<importers>.+)$"
 )
 _IMPORTER_RE = re.compile(
     r"(?:^|, )(?P<importer>[^,]+?) "
@@ -56,13 +59,14 @@ class AuditError(ValueError):
 class MissingImportEdge:
     """One exact missing-module relationship from PyInstaller analysis."""
 
+    kind: str
     module: str
     importer: str
     flags: tuple[str, ...]
 
     def render(self) -> str:
         flags = ", ".join(self.flags)
-        return f"{self.module} <- {self.importer} ({flags})"
+        return f"{self.kind} {self.module} <- {self.importer} ({flags})"
 
 
 def _normalize_module(raw_module: str) -> str:
@@ -78,7 +82,11 @@ def _normalize_module(raw_module: str) -> str:
     return module
 
 
-def _parse_importers(raw_importers: str, module: str) -> list[MissingImportEdge]:
+def _parse_importers(
+    raw_importers: str,
+    module: str,
+    kind: str,
+) -> list[MissingImportEdge]:
     matches = list(_IMPORTER_RE.finditer(raw_importers))
     if not matches:
         raise AuditError(f"unrecognized importer syntax for missing module {module!r}")
@@ -107,6 +115,7 @@ def _parse_importers(raw_importers: str, module: str) -> list[MissingImportEdge]
             raise AuditError(f"duplicate import flags for missing module {module!r}")
         edges.append(
             MissingImportEdge(
+                kind=kind,
                 module=module,
                 importer=importer,
                 flags=flags,
@@ -136,7 +145,13 @@ def _parse_warning_file(path: Path) -> list[MissingImportEdge]:
         match = _WARNING_RE.fullmatch(line)
         if match:
             module = _normalize_module(match.group("module"))
-            edges.extend(_parse_importers(match.group("importers"), module))
+            edges.extend(
+                _parse_importers(
+                    match.group("importers"),
+                    module,
+                    match.group("kind"),
+                )
+            )
             continue
         if line.startswith(_HEADER_PREFIXES):
             continue
@@ -265,6 +280,7 @@ def _parse_allowlist(
             )
         edges.append(
             MissingImportEdge(
+                kind="missing",
                 module=module,
                 importer=importer,
                 flags=flags,
@@ -278,6 +294,124 @@ def _parse_allowlist(
     return edges
 
 
+def _literal_string_list(
+    node: ast.expr,
+    variables: dict[str, list[str]],
+) -> list[str]:
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        values: list[str] = []
+        for element in node.elts:
+            if not isinstance(element, ast.Constant) or not isinstance(
+                element.value,
+                str,
+            ):
+                raise AuditError("Analysis.excludes must contain string literals")
+            values.append(element.value)
+        return values
+    if isinstance(node, ast.Name) and node.id in variables:
+        return list(variables[node.id])
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return _literal_string_list(
+            node.left,
+            variables,
+        ) + _literal_string_list(node.right, variables)
+    raise AuditError(
+        "Analysis.excludes must resolve to literal lists and named literal lists"
+    )
+
+
+def _sys_platform_value(platform: str) -> str:
+    aliases = {
+        "darwin": "darwin",
+        "linux": "linux",
+        "macos": "darwin",
+        "win32": "win32",
+        "windows": "win32",
+    }
+    return aliases.get(platform, platform)
+
+
+def _platform_condition(node: ast.expr, platform: str) -> bool | None:
+    if (
+        not isinstance(node, ast.Compare)
+        or len(node.ops) != 1
+        or len(node.comparators) != 1
+        or not isinstance(node.left, ast.Attribute)
+        or not isinstance(node.left.value, ast.Name)
+        or node.left.value.id != "sys"
+        or node.left.attr != "platform"
+        or not isinstance(node.comparators[0], ast.Constant)
+        or not isinstance(node.comparators[0].value, str)
+    ):
+        return None
+
+    actual = _sys_platform_value(platform)
+    expected = node.comparators[0].value
+    operator = node.ops[0]
+    if isinstance(operator, ast.Eq):
+        return actual == expected
+    if isinstance(operator, ast.NotEq):
+        return actual != expected
+    raise AuditError("unsupported sys.platform comparison in PyInstaller spec")
+
+
+def _active_analysis_excludes(path: Path, platform: str) -> set[str]:
+    if not path.is_file():
+        raise AuditError(f"PyInstaller spec does not exist: {path}")
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    except (OSError, SyntaxError) as exc:
+        raise AuditError(f"cannot parse PyInstaller spec {path}: {exc}") from exc
+
+    variables: dict[str, list[str]] = {}
+    analysis_excludes: list[list[str]] = []
+
+    def process(statements: list[ast.stmt]) -> None:
+        for statement in statements:
+            if isinstance(statement, ast.If):
+                condition = _platform_condition(statement.test, platform)
+                if condition is not None:
+                    process(statement.body if condition else statement.orelse)
+                continue
+            if not isinstance(statement, ast.Assign):
+                continue
+            for target in statement.targets:
+                if isinstance(target, ast.Name):
+                    with contextlib.suppress(AuditError):
+                        variables[target.id] = _literal_string_list(
+                            statement.value,
+                            variables,
+                        )
+            if not isinstance(statement.value, ast.Call):
+                continue
+            function = statement.value.func
+            if not isinstance(function, ast.Name) or function.id != "Analysis":
+                continue
+            excludes_keyword = next(
+                (
+                    keyword
+                    for keyword in statement.value.keywords
+                    if keyword.arg == "excludes"
+                ),
+                None,
+            )
+            if excludes_keyword is None:
+                raise AuditError("Analysis call has no excludes keyword")
+            analysis_excludes.append(
+                _literal_string_list(excludes_keyword.value, variables)
+            )
+
+    process(tree.body)
+    if len(analysis_excludes) != 1:
+        raise AuditError(
+            "PyInstaller spec must contain exactly one Analysis(excludes=...) call"
+        )
+    excludes = analysis_excludes[0]
+    if len(excludes) != len(set(excludes)):
+        raise AuditError("active Analysis.excludes contains duplicate modules")
+    return set(excludes)
+
+
 def _is_actionable(edge: MissingImportEdge) -> bool:
     flags = set(edge.flags)
     return "top-level" in flags or not flags.intersection(_REVIEWABLE_FLAGS)
@@ -286,17 +420,28 @@ def _is_actionable(edge: MissingImportEdge) -> bool:
 def _audit(
     warning_edges: list[MissingImportEdge],
     allowed_edges: list[MissingImportEdge],
+    active_excludes: set[str],
 ) -> list[str]:
     warning_set = set(warning_edges)
     allowed_set = set(allowed_edges)
     failures: list[str] = []
 
     for edge in sorted(warning_set):
+        if edge.kind == "excluded":
+            if edge.module not in active_excludes:
+                failures.append(
+                    "excluded module is not in active Analysis.excludes: "
+                    f"{edge.render()}"
+                )
+            continue
         if _is_actionable(edge):
             failures.append(f"actionable import edge: {edge.render()}")
         if edge not in allowed_set:
             failures.append(f"unreviewed missing-import edge: {edge.render()}")
-    for edge in sorted(allowed_set - warning_set):
+    missing_warning_set = {
+        edge for edge in warning_set if edge.kind == "missing"
+    }
+    for edge in sorted(allowed_set - missing_warning_set):
         failures.append(f"stale allowlist edge: {edge.render()}")
     return failures
 
@@ -307,6 +452,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--allowlist", required=True, type=Path)
     parser.add_argument("--platform", required=True)
     parser.add_argument("--pyinstaller-version", required=True)
+    parser.add_argument("--spec", required=True, type=Path)
     return parser
 
 
@@ -319,19 +465,24 @@ def main() -> int:
             platform=args.platform,
             pyinstaller_version=args.pyinstaller_version,
         )
+        active_excludes = _active_analysis_excludes(args.spec, args.platform)
     except AuditError as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
         return 1
 
-    failures = _audit(warning_edges, allowed_edges)
+    failures = _audit(warning_edges, allowed_edges, active_excludes)
     if failures:
         for failure in failures:
             print(f"FAIL: {failure}", file=sys.stderr)
         return 1
 
+    missing_count = sum(edge.kind == "missing" for edge in warning_edges)
+    excluded_count = len(warning_edges) - missing_count
     print(
         "PASS: audited "
-        f"{len(warning_edges)} reviewed missing-import edges "
+        f"{missing_count} reviewed missing-import edges and "
+        f"{excluded_count} spec-excluded "
+        f"{'edge' if excluded_count == 1 else 'edges'} "
         f"(platform={args.platform}, PyInstaller={args.pyinstaller_version})"
     )
     return 0
