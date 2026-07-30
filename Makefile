@@ -6335,7 +6335,7 @@ ci-trigger-committed-head:
 			--poll-interval "$(or $(POLL_INTERVAL),0)"; \
 	else \
 		$(MAKE) --no-print-directory _require-gh || exit 1; \
-		UV=echo GIT_SSH_COMMAND="ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new" \
+		UV=echo GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa -o StrictHostKeyChecking=accept-new" \
 			$(SYSTEM_PYTHON) scripts/ci_signal_exact_sha.py \
 			--ref "$$REF" --remote "$$REMOTE" \
 			--repo "$(or $(REPO),sandboxcom/gludd)" \

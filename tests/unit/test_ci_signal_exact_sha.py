@@ -303,6 +303,8 @@ def test_release_candidate_push_path_uses_idempotent_signal_script() -> None:
 
     assert "scripts/ci_signal_exact_sha.py" in trigger
     assert "_require-gh" in trigger
+    assert "$(SSH_KEY)" not in trigger
+    assert "/Users/shawnwilson/.ssh/sandboxcom_gludd_rsa" in trigger
     assert "gha-ready" not in trigger
     assert "workflow-gate" not in trigger
     assert "ci-trigger-committed-head" in combined_line
