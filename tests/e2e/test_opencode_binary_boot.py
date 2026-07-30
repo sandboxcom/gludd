@@ -74,7 +74,7 @@ def _run_with_deterministic_provider(
     env = os.environ.copy()
     env["OPENCODE_CONFIG_CONTENT"] = provider.config_content
     env["OPENCODE_DISABLE_AUTOUPDATE"] = "true"
-    env["GLUDD_PROJECT_ROOT"] = str(PROJECT_ROOT)
+    env["GLUDD_PROJECT_ROOT"] = str(project)
     try:
         result = subprocess.run(
             command,
@@ -112,6 +112,38 @@ def _run_opencode_pure(project: Path) -> tuple[int, str, str]:
 
 class TestOpencodeBinaryBoot:
     """OpenCode binary must start and load all plugins without crashing."""
+
+    def test_live_command_scopes_gludd_root_to_disposable_project(
+        self,
+        isolated_opencode_project: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """The copied plugins must resolve project state inside their sandbox."""
+        observed: dict[str, object] = {}
+
+        class StubProvider:
+            config_content = "{}"
+            main_calls = 1
+
+            def __init__(self, responses: list[dict[str, str]]) -> None:
+                del responses
+
+            def close(self) -> None:
+                return
+
+        def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess:
+            observed.update(kwargs)
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+        monkeypatch.setitem(globals(), "DeterministicProvider", StubProvider)
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        _run_opencode_run(isolated_opencode_project)
+
+        assert observed["cwd"] == str(isolated_opencode_project)
+        env = observed["env"]
+        assert isinstance(env, dict)
+        assert env["GLUDD_PROJECT_ROOT"] == str(isolated_opencode_project)
 
     def test_runs_from_disposable_project_without_mutating_manifest(
         self,
