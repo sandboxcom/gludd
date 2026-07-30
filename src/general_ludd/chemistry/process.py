@@ -230,9 +230,9 @@ class ProcessScaleUp:
         """Assess feasibility of a downstream separation.
 
         Currently supports ``distillation``: when relative volatility is close
-        to unity (``α < 1.05``), ordinary distillation is uneconomic and an
+        to unity (``alpha < 1.05``), ordinary distillation is uneconomic and an
         azeotrope / entrainer / pressure-swing alternative is required. Higher
-        purities demand exponentially more stages as ``α -> 1``.
+        purities demand exponentially more stages as ``alpha -> 1``.
 
         Other methods (extraction, crystallization, membranes, chromatography)
         return ``feasible=True`` with a ``method_not_characterized`` limitation

@@ -333,7 +333,10 @@ class JoiningAdvisor:
                 "category": category,
                 "compatible": False,
                 "state": "rejected",
-                "reason": f"{thermoset_id} is a thermoset and cannot be remelted for {process}; use cure-based or mechanical joining instead",
+                "reason": (
+                    f"{thermoset_id} is a thermoset and cannot be remelted for "
+                    f"{process}; use cure-based or mechanical joining instead"
+                ),
                 "risks": [],
                 "inspectability": _INSPECTABILITY.get(category, {}),
             }

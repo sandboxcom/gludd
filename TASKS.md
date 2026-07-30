@@ -49,10 +49,11 @@ An audit of this ledger against the source tree found:
 | S57 | Session 57 — 2026-07-28 (Wave 3) | 0 | 4 | 100% |
 | S57-W4 | Session 57 — 2026-07-28 (Wave 4) | 0 | 9 | 100% |
 | S57-W5 | Session 57 — 2026-07-28 (Wave 5) | 0 | 7 | 100% |
-| **Total Active** | | **0** | **177** | **100%** |
+| S58 | New Expert Collections — 2026-07-30 | 0 | 6 | 100% |
+| **Total Active** | | **0** | **183** | **100%** |
 | *Archived (13 detail phases)* | *Phase C 28/28 closed (C.18 verified)* | *0* | *185* | *100%* |
 | *Legacy blocks* | *incl. 2 false S2 ticks* | *2* | *63* | *97%* |
-| **Grand Total** | | **2** | **418** | **99.5%** |
+| **Grand Total** | | **2** | **424** | **99.5%** |
 
 ---
 
@@ -331,6 +332,15 @@ State backend for terraform with HTTP API (lock/unlock/get/update), replacing lo
 - [x] S57-W5.5 — Collection engine.py merge conflicts fixed: 2 engine.py merge conflicts resolved (committed) | evidence: commit `fd0f23a9` | priority: high | effort: S | status: completed
 - [x] S57-W5.6 — PSK env var scavenge: gludd.py fixed; 2 modules remain (committed) | evidence: commit `91270014` | priority: high | effort: M | status: completed
 - [x] S57-W5.7 — Embeddings router tests: 30 new tests (committed) | evidence: commit `76eceaf1`; `tests/unit/test_embeddings_router.py` | priority: medium | effort: M | status: completed
+
+## S58 — New Expert Collections (2026-07-30)
+
+- [x] S58.1 — Materials Engineering: contracts, units, selection, strength, polymers, metals, joining, machining, additive, textiles, tolerance, failure, process_planning, source_registry, property_store, simulation | evidence: 709 tests pass, commit dd2aec1a+ | priority: high | status: completed
+- [x] S58.2 — Chemistry Expert: schemas, entities, reactions, stoichiometry, safety, properties, protocols, inventory, cheminformatics, thermo_kinetics, spectroscopy, analytical, validation, compute, promotion, provenance, electrochemistry, process, api, router, policy | evidence: 709 tests pass | priority: high | status: completed
+- [x] S58.3 — AI/ML Expert: router, schemas, evidence, registries, reasoning, retrieval, adaptation, evaluation, datasets, research, distillation, policy, speech, vision, images, accelerators, promotion, world_models, simulators | evidence: 709 tests pass | priority: high | status: completed
+- [x] S58.4 — Git Release Captain: contracts, topology, evidence, helper_catalog, helper_ranker, release_state, deployment, provenance, source_registry + 14 collection roles | evidence: 709 tests pass | priority: high | status: completed
+- [x] S58.5 — 52 collection roles scaffolded (11 materials + 15 chemistry + 15 ai_ml + 11 git_release) | evidence: make scaffold-collection-roles | priority: medium | status: completed
+- [x] S58.6 — OSS tools survey completed | evidence: docs/research/OSS_TOOLS_SURVEY.md | priority: low | status: completed
 
 ---
 

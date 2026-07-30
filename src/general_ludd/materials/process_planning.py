@@ -460,8 +460,8 @@ def plan_manufacturing(
 def estimate_cost(route: RouteCard) -> dict[str, Any]:
     """Estimate total cost (USD) for a route: material + labor + energy + overhead.
 
-    Material cost is based on nominal part mass × price per kg. Labor is based
-    on total cycle time × labor rate. Energy comes from ``estimate_energy``.
+    Material cost is based on nominal part mass * price per kg. Labor is based
+    on total cycle time * labor rate. Energy comes from ``estimate_energy``.
     Overhead is applied as a multiplier on direct cost.
     """
     if route.state == INSUFFICIENT_DATA:
@@ -471,9 +471,9 @@ def estimate_cost(route: RouteCard) -> dict[str, Any]:
             "reason": "route has no valid operations",
         }
 
-    density, price_per_kg = _MATERIAL_COST.get(route.material_id, (0.0, 0.0))
+    _density, price_per_kg = _MATERIAL_COST.get(route.material_id, (0.0, 0.0))
     # Nominal part mass — conservative 0.5 kg default; real planning needs CAD.
-    part_mass = _DEFAULT_PART_MASS_KG if density == 0.0 else _DEFAULT_PART_MASS_KG
+    part_mass = _DEFAULT_PART_MASS_KG
     material_cost = part_mass * price_per_kg
 
     # Labor: sum of cycle times across steps.

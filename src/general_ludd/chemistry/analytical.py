@@ -12,13 +12,13 @@ This module is intentionally dependency-free (uses only ``math`` + ``uuid``):
   ``(concentration, response)`` pairs, with ``predict`` returning a confidence
   interval (inverse-prediction / classical calibration interval) and an
   ``extrapolated`` flag for queries outside the calibrated response range.
-  ``lod`` / ``loq`` follow the IUPAC convention (LOD = 3·σ/slope,
-  LOQ = 10·σ/slope).
+  ``lod`` / ``loq`` follow the IUPAC convention (LOD = 3*sigma/slope,
+  LOQ = 10*sigma/slope).
 * :class:`MethodValidation` — wraps a :class:`CalibrationCurve` with the
   ICH Q2(R1) figures of merit: precision (RSD%), accuracy (recovery%),
   linearity (R²), range, specificity, robustness, LOD/LOQ.
 * :func:`detect_outliers_grubbs` and :func:`dixon_q` — outlier-policy stubs
-  (Grubbs at α=0.05 critical values; Dixon Q at the 0.90 tabular level).
+  (Grubbs at alpha=0.05 critical values; Dixon Q at the 0.90 tabular level).
 * :func:`subtract_blank` — blank-subtraction helper producing a typed record.
 
 Records follow the project convention (``name``, ``value``, ``unit``,
@@ -58,7 +58,7 @@ def _sample_std(values: list[float]) -> float:
     return math.sqrt(ss / (n - 1))
 
 
-# Grubbs critical values Z for α=0.05 (two-sided), n=3..30. Beyond the table we
+# Grubbs critical values Z for alpha=0.05 (two-sided), n=3..30. Beyond the table we
 # fall back to the n=30 entry conservatively. This is intentionally a small
 # reference table — production code would compute from the t-distribution, but
 # this stub is sufficient to demonstrate the outlier-policy contract.
@@ -316,7 +316,7 @@ class CalibrationCurve:
     # -- detection / quantitation limits --------------------------------
 
     def lod(self, sigma_blank: float | None = None, k: int = 3) -> float:
-        """Limit of detection = k · σ / |slope| (IUPAC, k=3)."""
+        """Limit of detection = k * sigma / |slope| (IUPAC, k=3)."""
         f = self.fit()
         slope = f["slope"]
         if slope == 0.0:
@@ -327,7 +327,7 @@ class CalibrationCurve:
         return k * sigma / abs(slope)
 
     def loq(self, sigma_blank: float | None = None, k: int = 10) -> float:
-        """Limit of quantitation = k · σ / |slope| (IUPAC, k=10)."""
+        """Limit of quantitation = k * sigma / |slope| (IUPAC, k=10)."""
         f = self.fit()
         slope = f["slope"]
         if slope == 0.0:
@@ -521,7 +521,7 @@ def detect_outliers_grubbs(values: list[float], alpha: float = 0.05) -> dict[str
     """Grubbs' test for a single outlier (max |z|).
 
     Compares the standardized max deviation against the Grubbs critical Z at
-    α=0.05 for the sample size. Iteratively removes flagged outliers until none
+    alpha=0.05 for the sample size. Iteratively removes flagged outliers until none
     remain. Returns a record naming flagged values.
     """
     if len(values) < 3:

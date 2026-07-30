@@ -245,7 +245,7 @@ def _check_near_duplicates(records: list[dict[str, Any]]) -> list[ValidationFind
         by_split.setdefault(split, {}).setdefault(text, []).append(key_str)
     findings: list[ValidationFinding] = []
     for split, text_keys in by_split.items():
-        for text, keys in text_keys.items():
+        for _text, keys in text_keys.items():
             if len(keys) > 1:
                 findings.append(
                     ValidationFinding(
