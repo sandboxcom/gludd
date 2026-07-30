@@ -117,14 +117,14 @@ def test_committed_head_ci_path_requires_clean_state_before_push_and_dispatch() 
 
     assert "commit-ready" in push_line
     assert "workflow-gate" in push_line
-    assert "gha-ready" in trigger_line
+    assert trigger_line == "ci-trigger-committed-head:"
+    assert "gha-ready" in trigger_block
     assert "uncommitted files are not included" not in push_block
     assert "dirty local files are not included" not in trigger_block
     assert "Pushed clean HEAD" in push_block
-    assert "Triggered Build and Release for clean HEAD" in trigger_block
+    assert "scripts/ci_signal_exact_sha.py" in trigger_block
     assert "HEAD:refs/heads/" in push_block
     assert "verify-remote" in push_block
-    assert "gh workflow run " + chr(34) + "Build and Release" + chr(34) in trigger_block
     assert "git-push-committed-head-nv" in combined_line
     assert "ci-trigger-committed-head" in combined_line
 
@@ -158,9 +158,9 @@ def test_committed_head_ci_path_uses_worktree_safe_key_and_fails_closed() -> Non
     assert "/Users/shawnwilson/.ssh/sandboxcom_gludd_rsa" in gha_block
     assert "git push --no-verify -u sandboxcom HEAD:refs/heads/" in push_block
     assert "verify-remote BRANCH=" in push_block
-    assert "gh workflow run \"Build and Release\"" in trigger_block
+    assert "scripts/ci_signal_exact_sha.py" in trigger_block
     assert push_block.count("|| exit 1") >= 3
-    assert trigger_block.count("|| exit 1") >= 1
+    assert trigger_block.count("|| exit 1") >= 2
 
 
 def test_git_remote_targets_use_worktree_safe_ssh_key_path() -> None:
@@ -251,9 +251,10 @@ def test_committed_head_ci_path_checks_active_runs_before_push_and_dispatch() ->
     trigger_block = _target_block("ci-trigger-committed-head")
 
     assert "workflow-gate" in push_line
-    assert "gha-ready" in trigger_line
+    assert trigger_line == "ci-trigger-committed-head:"
+    assert "gha-ready" in trigger_block
     assert "ci-busy-check" in push_line or "ci-busy-check" in push_block
-    assert "ci-busy-check" in trigger_line or "ci-busy-check" in trigger_block
+    assert "scripts/ci_signal_exact_sha.py" in trigger_block
 
 
 def test_ci_busy_check_defaults_to_current_branch_not_master() -> None:
