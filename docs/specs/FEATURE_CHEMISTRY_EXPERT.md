@@ -43,6 +43,8 @@ validation requirements.
 | `CHEM-020` | Self-improvement | Stage new evidence, methods, tools, and evaluations without silently changing active behavior |
 | `CHEM-021` | Observability | Expose safe, correlated progress and audit evidence for every workflow |
 | `CHEM-022` | Zero-downtime delivery | Promote knowledge, models, parsers, and workflows with canary and atomic rollback |
+| `CHEM-023` | Lab-on-chip campaigns | Plan, simulate, observe, and optimize approval-gated microfluidic experiments |
+| `CHEM-024` | Cross-expert scientific campaigns | Compose chemistry, materials, AI/ML, automation, and instrument experts through typed handoffs |
 
 ## 3. Expert Composition
 
@@ -71,6 +73,9 @@ Ansible task files contain orchestration rather than independent chemical logic.
 | `tool_discover` | Evaluate databases, engines, libraries, formats, instrument integrations, and build helpers |
 | `chemistry_refresh` | Stage evidence/method/tool/evaluation updates and run promotion gates |
 | `chemistry_promote` | Shadow, canary, atomically promote, and roll back versioned expert assets |
+| `lab_automation_plan` | Compile a safe, vendor-neutral protocol graph and approved adapter command plan |
+| `instrument_observe` | Ingest immutable instrument state, calibration, microscopy, sensor, and deviation records |
+| `campaign_optimize` | Propose bounded next experiments using declared design/active-learning methods |
 
 High-risk tasks always compose `hazard_review` before `protocol_draft`,
 `quantum_workflow`, `molecular_simulation`, or `process_scaleup` can return an
@@ -111,7 +116,7 @@ mixtures are related records, not silently interchangeable strings.
   "schema_version": "1.0",
   "request_id": "uuid",
   "tenant_id": "string",
-  "task": "identity|research|property|reaction|protocol|stoichiometry|hazard|inventory|compute|spectra|analytical|electrochemistry|process",
+  "task": "identity|research|property|reaction|protocol|stoichiometry|hazard|inventory|compute|spectra|analytical|electrochemistry|process|lab_campaign",
   "entities": ["entity-id"],
   "inputs": [{"uri": "artifact://...", "sha256": "hex", "media_type": "string"}],
   "conditions": [{"name": "temperature", "value": 298.15, "unit": "K", "uncertainty": 0.1}],
@@ -150,6 +155,24 @@ Every numerical result carries units, conditions, method, uncertainty or an
 explicit reason it is unavailable, and provenance. The system rejects unitless
 inputs where physical meaning depends on units.
 
+### 4.4 Interchange and handoff contracts
+
+Quantities use UCUM codes and retain the original unit string; quantity-kind and
+dimension mappings may use a pinned QUDT vocabulary. Structure interchange
+supports source-preserving InChI, SMILES/CXSMILES, SDF/Molfile, CIF, and declared
+domain formats. Analytical adapters declare exact support for JCAMP-DX, AnIML,
+mzML/mzQC, and vendor formats rather than treating an extension as proof of
+compatibility. Round trips compare identity, stereo/isotope/charge, units,
+dimensions, arrays, calibration, method metadata, and raw checksums.
+
+Cross-expert work uses a versioned handoff with producer/consumer capability and
+schema digests, entity and artifact IDs/hashes, UCUM/QUDT/ontology versions,
+conditions, assumptions, uncertainty, evidence, safety tier, approvals,
+delegated permissions, deadline/lease, retry/idempotency rules, and
+compensation/safe-state action. Free text cannot carry a quantity, identity,
+approval, executable instruction, or actuation authority that is absent from
+the typed fields.
+
 ## 5. Knowledge and Resource Registries
 
 Immutable registries cover:
@@ -169,6 +192,14 @@ rights, creator/importer, timestamps, supersedes/retraction links, validation
 state, uncertainty, and policy decision. Conflicting values remain distinct and
 are compared by conditions and evidence quality; the newest value does not
 automatically win.
+
+A research source also records canonical URL/DOI/repository, source class,
+publisher/authors, published/updated/accessed times, snapshot digest or locator,
+release/commit, SPDX expression or terms URI, separate index/train/quote/
+redistribute rights, robots/terms outcome, supported claim IDs, correction and
+retraction state, replication evidence, freshness deadline, last revalidation,
+and tombstone reason. Unknown rights default to citation-only metadata and
+exclude content from training or redistribution.
 
 ## 6. Literature Research and Self-Improvement
 
@@ -201,6 +232,23 @@ ingestion.
 
 The expert cannot approve its own proposal. A rejected or retracted source is
 retained as negative evidence so it is not reintroduced on the next refresh.
+
+Research queries derive from ambiguous identities, conflicting values, stale
+safety evidence, unsupported method conditions, failed validation slices, new
+citations, and explicit capability gaps. Each bounded pass searches at least one
+primary-literature index, official database/standard, maintained code or issue
+tracker, and correction/retraction channel; reconciles DOI, structure, registry,
+sample, method, and version identities; seeks contrary evidence; and stops at a
+declared time, source-count, novelty, or confidence budget. Results distinguish
+measurement, database assertion, calculation, prediction, model inference,
+operator report, and unresolved conflict.
+
+Security/safety sources and retractions refresh within 24 hours, API/tool
+records within 7 days, and papers/standards/reference data within 30 days unless
+a stricter source-specific deadline applies. Stale evidence remains visible but
+cannot solely support a high-risk protocol or safety decision. A source rights
+change or retraction opens an impact graph over entities, properties, protocols,
+datasets, models, evaluations, and active aliases.
 
 ## 7. Computational Chemistry
 
@@ -309,6 +357,64 @@ environment, observations, deviations, results, failures, citations, and
 signatures. Timestamps are normalized without discarding original timezone.
 Corrections append signed amendments; they do not rewrite history.
 
+### 8.5 Lab-on-chip and automated campaign protocol
+
+Gludd separates scientific intent, vendor-neutral protocol, adapter translation,
+human arming, commanded state, observed state, and derived result. Chemistry
+owns entity, compatibility, hazard, waste, and scientific-validity decisions.
+The AI/ML expert may optimize a bounded design; materials and process experts
+may assess chip, seal, tubing, solvent, temperature, pressure, adsorption, and
+fabrication compatibility. No expert inherits another expert's authority.
+
+The required state machine is `draft -> simulated -> safety_reviewed ->
+facility_approved -> reserved -> calibrated -> armed -> executing -> paused |
+aborted | completed -> safe_state -> reconciled`. Only a qualified human can
+create the short-lived arm token bound to protocol, adapter, device, facility,
+safe domain, and expiry. Restart after pause or communication loss requires
+observed-state reconciliation and a new token when policy demands it.
+
+The campaign record declares objective and response variables, factors and safe
+domain, chip/consumable/lot maps, reagent identity/purity, volume and dead-volume
+budgets, coordinate frame, pressure/flow/temperature limits, mixing and
+residence-time model, calibration, blanks/controls/replicates, sensor range and
+sampling, carryover/cleaning, waste and containment, uncertainty target,
+acceptance and stopping rules, maximum experiments/material/time, and
+compensation/safe-state actions.
+
+A pinned adapter may translate the approved plan to SiLA 2, Opentrons, DropBot,
+Fluigent, or another validated capability. Simulation is mandatory before a
+hardware export, but never proves hardware safety. During execution, every
+bounded command has preconditions, acknowledgement timeout, idempotency key,
+maximum retry, observed postcondition, and immutable event. Bubble, clog, leak,
+pressure/temperature/volume excursion, sensor drift/saturation, image anomaly,
+contamination, missed heartbeat, calibration expiry, or interlock change pauses
+the campaign and triggers the predeclared safe state without model improvisation.
+
+An active learner or Bayesian optimizer may rank the next candidate only inside
+the approved safe domain and must expose acquisition method, uncertainty,
+constraints, excluded regions, and stop reason. It cannot widen the domain,
+approve, arm, transmit, suppress a failed control, or convert simulation output
+into an observation. Final reconciliation accounts for material, samples,
+waste, deviations, raw data, derived data, approvals, instrument state, and
+safe-state evidence.
+
+### 8.6 Cross-expert scientific campaign
+
+The conductor compiles an acyclic capability graph and validates every handoff
+before dispatch. A representative materials-discovery graph may compose:
+literature/identity and hazard review; materials compatibility; computational
+chemistry and multiphysics simulation; protocol design; lab-on-chip execution;
+microscopy/spectroscopy interpretation; uncertainty-aware statistical analysis;
+and candidate selection. Parallel results join only after units, identities,
+conditions, fidelity, provenance, safety, and uncertainty invariants pass.
+
+Admission calculates maximum cost, sample/waste, privilege, and time. Fan-out,
+retry, and recursion are bounded; cancellation propagates; leases are released;
+partial, refused, degraded, skipped, and compensated nodes remain explicit. A
+failed domain expert cannot be replaced by a general model's guess. High-impact
+claims require an independent validator, and a candidate-generating expert
+cannot be its own safety reviewer, evaluator, or approver.
+
 ## 9. Chemical Safety, Security, and Failure Behavior
 
 Risk classification occurs before detailed workflow generation and again after
@@ -335,6 +441,10 @@ transport, legal controls, and facility capability.
 | Audit/policy service unavailable | Fail closed for mutation and execution-facing export |
 | Partial job/timeout | Terminate children, preserve bounded artifacts, mark incomplete, release resources |
 | New snapshot regression | Keep active alias and emit failed-promotion event |
+| Device heartbeat, acknowledgement, or state mismatch | Stop commands, enter the declared safe state, expire the arm token, reconcile observations |
+| Bubble, clog, leak, drift, saturation, or interlock change | Pause/abort at the configured threshold; quarantine affected samples and results |
+| Cross-expert schema, unit, identity, or fidelity mismatch | Refuse the handoff and preserve both records; never coerce or guess |
+| Active learner proposes outside safe domain | Reject the point, stop the campaign, and open a policy/optimizer regression |
 
 Secrets, personal data, unpublished formulations, sample identities, and
 regulated records are encrypted and tenant-isolated. Logs contain stable IDs and
@@ -408,11 +518,11 @@ text, source URLs, sample names, and artifact digests are not metric labels.
 
 | Phase | Feature IDs | Deliverables |
 |-------|-------------|--------------|
-| A | 001-004, 018-022 | Schemas, entity/evidence registries, router, policies, research staging, audit, ZDD aliases |
+| A | 001-004, 018-022, 024 | Schemas, entity/evidence registries, typed expert DAGs, router, policies, research staging, audit, ZDD aliases |
 | B | 005-010 | Reaction, protocol, stoichiometry, safety, inventory, and cheminformatics workflows |
 | C | 011-013 | Quantum, molecular simulation, thermodynamics, kinetics, and validation adapters |
 | D | 014-017 | Spectroscopy, analytical, electrochemistry, process/scale-up, and ELN lineage |
-| E | all | Skill and collection integration, Molecule, security/chaos tests, canary/rollback rehearsal |
+| E | 023-024 and all | Lab campaign/cross-expert integration, Molecule, safety/security/chaos tests, canary/rollback rehearsal |
 
 All mutation and experimental-export capabilities are disabled by default.
 Phases land as independently reversible changes and do not alter the current
@@ -446,6 +556,9 @@ src/general_ludd/chemistry/
 ├── analytical.py
 ├── electrochemistry.py
 ├── process.py
+├── lab_automation.py
+├── campaign.py
+├── orchestration.py
 ├── provenance.py
 ├── validation.py
 ├── promotion.py
@@ -484,15 +597,105 @@ tests/e2e/test_chemistry_expert.py
 | `CHEM-AT-023` | Mutation and execution-facing export fail closed when policy/audit storage is unavailable |
 | `CHEM-AT-024` | A 30-minute computation emits progress at least every 30 seconds and leaves no unbounded metric labels |
 | `CHEM-AT-025` | Unit, integration, Molecule, E2E, security, chaos, and ZDD suites are green with >=85% aggregate and >=75% per Python file coverage |
+| `CHEM-AT-026` | Source-record property tests reject absent dates, unresolved rights, missing claim links, invalid freshness, and mutable snapshots |
+| `CHEM-AT-027` | A retraction or safety-source correction is detected within 24 hours and blocks every impacted high-risk protocol and alias |
+| `CHEM-AT-028` | Identity reconciliation across InChI, PubChem, source structure, and a second authority preserves stereo/isotope/salt distinctions and exposes conflicts |
+| `CHEM-AT-029` | Non-tetrahedral and unsupported stereochemistry fixtures are preserved or explicitly refused through RDKit/Open Babel round trips, never silently flattened |
+| `CHEM-AT-030` | NIST/reference-data outage uses a pinned permitted snapshot or alternate authoritative source, marks degradation, and never drops conditions or uncertainty |
+| `CHEM-AT-031` | AnIML, mzML/mzQC, JCAMP-DX, SDF, and CIF fixtures round-trip all adapter-declared identity, unit, method, array, and provenance fields |
+| `CHEM-AT-032` | Lab-on-chip dry run validates simulation, compatibility, calibration, approval binding, command/observation separation, timeout, abort, safe state, and reconciliation with no actuation |
+| `CHEM-AT-033` | Bubble, clog, leak, drift, saturation, missed-heartbeat, and interlock fixtures pause at pinned thresholds and quarantine affected results |
+| `CHEM-AT-034` | Changing protocol, adapter, device, facility, safe domain, or expiry invalidates the arm token; replayed commands execute at most once |
+| `CHEM-AT-035` | Active-learning fixtures stay inside the approved domain and material/time/waste budget and cannot approve, arm, transmit, widen constraints, or suppress controls |
+| `CHEM-AT-036` | Cross-expert fixtures reject graph cycles, schema/unit/entity/fidelity mismatch, privilege escalation, expired leases, unbounded fan-out, and self-verification |
+| `CHEM-AT-037` | Cancelling a campaign reaches every child, releases device/facility leases, executes compensation once, accounts for materials/waste, and records one terminal state per node |
+| `CHEM-AT-038` | A full simulated campaign links protocol, approvals, lots, commands, observations, raw/derived data, deviations, uncertainty, and safe state in a validated RO-Crate/PROV record |
 
 ## 16. Research Integration Gate
 
-Before implementation status changes from `PROPOSED`, a serialized research pass
-must add a source appendix containing primary standards, databases, papers,
-official engine/library documentation, validation datasets, and representative
-long-lived user forum/issue reports for Sections 5-10. Each source record must
-include URL, title, author/organization, publication/update date, access date,
-license/use terms where applicable, supported claim/feature IDs, corrections or
-retractions checked, and reproduction status. Named tool categories remain
-capability requirements until that cited pass selects maintained implementations.
+Section 17 satisfies the initial serialized research baseline, not implementation
+selection. Before status changes from `PROPOSED`, the implementation branch must
+refresh every selected record, pin exact versions/commits and dependency
+digests, resolve redistribution and model-training rights, reproduce the
+relevant parser, calculation, simulation, or device dry run in the target
+environment, and attach artifacts to the acceptance tests. Named tools and
+formats remain candidates until those checks pass.
 
+## 17. Cited Research Baseline
+
+### 17.1 Record conventions
+
+All records below were accessed on 2026-07-30. `Screened` means the linked
+landing page/metadata showed no correction or retraction notice during this
+research pass; it is not a permanent integrity guarantee. `N/A` is used for
+living standards, databases, documentation, or code where retraction does not
+apply. `Citation only` means publisher/site terms govern content and no training
+or redistribution right is inferred. Reproduction was not attempted in this
+documentation-only pass (`repro: no`) and is a hard implementation gate.
+
+### 17.2 Identity, reference data, safety, and interchange
+
+| Source ID | Source, steward, publication/update date | Supports | Rights, integrity, reproduction |
+|-----------|------------------------------------------|----------|---------------------------------|
+| `CHEM-SRC-PUBCHEM` | [PubChem documentation](https://pubchem.ncbi.nlm.nih.gov/docs/), NCBI, rolling database/docs | `CHEM-002`-`004`, identity/property evidence | US-government/site terms; N/A; repro: no |
+| `CHEM-SRC-PUGREST` | [PubChem PUG REST](https://pubchem.ncbi.nlm.nih.gov/docs/pug-rest), NCBI, rolling API docs | `CHEM-002`-`004`, programmatic retrieval | API/site terms; N/A; repro: no |
+| `CHEM-SRC-NISTWB` | [NIST Chemistry WebBook](https://webbook.nist.gov/), NIST, SRD 69 rolling data | `CHEM-004`, thermochemistry/spectra | NIST/site terms; N/A; repro: no |
+| `CHEM-SRC-COMPTOX` | [CompTox APIs](https://www.epa.gov/comptox-tools/computational-toxicology-and-exposure-apis-about), US EPA, rolling docs | `CHEM-004`, `CHEM-008`, exposure/toxicity evidence | US-government/site terms; N/A; repro: no |
+| `CHEM-SRC-INCHI` | [InChI Technical Manual](https://www.inchi-trust.org/wp/download/104/InChI_TechMan.pdf), InChI Trust, current manual | `CHEM-002`, identity serialization | Published terms; N/A; repro: no |
+| `CHEM-SRC-UCUM` | [Unified Code for Units of Measure v2.2](https://ucum.org/ucum), UCUM, 2024-06-17 | `CHEM-004`, `CHEM-007`, typed quantities | Published license terms; N/A; repro: no |
+| `CHEM-SRC-QUDT` | [QUDT](https://www.qudt.org/), QUDT.org, rolling vocabulary | `CHEM-004`, quantity kind/dimension | Published vocabulary terms; N/A; repro: no |
+| `CHEM-SRC-ANIML` | [AnIML overview and schemas](https://new.animl.org/overview), ASTM AnIML community, v1.0 materials | `CHEM-014`, `CHEM-015`, analytical interchange | Standard/schema terms; N/A; repro: no |
+| `CHEM-SRC-MZML` | [HUPO-PSI mzML repository](https://github.com/HUPO-PSI/mzML), HUPO-PSI, rolling schema | `CHEM-014`, mass-spectrometry interchange | Repository/spec terms; N/A; repro: no |
+| `CHEM-SRC-MZQC` | [mzQC specification](https://hupo-psi.github.io/mzQC/), HUPO-PSI, rolling spec | `CHEM-014`, MS quality-control interchange | Specification terms; N/A; repro: no |
+| `CHEM-SRC-JCAMP` | [JCAMP-DX IR specification](https://iupac.org/wp-content/uploads/2021/08/JCAMP-DX_IR_1988.pdf), IUPAC, 1988 | `CHEM-014`, spectroscopy interchange | IUPAC terms; screened; repro: no |
+| `CHEM-SRC-CIF` | [CIF specifications](https://www.iucr.org/resources/cif/spec), IUCr, living standard | `CHEM-002`, `CHEM-014`, crystallographic interchange | IUCr terms; N/A; repro: no |
+| `CHEM-SRC-ALLOTROPE` | [Allotrope Framework technical reports](https://docs.allotrope.org/), Allotrope Foundation, rolling specs | `CHEM-014`, `CHEM-015`, analytical data/provenance | Foundation/spec terms; N/A; repro: no |
+| `CHEM-SRC-GHS` | [GHS Revision 11](https://unece.org/transport/documents/2025/09/standards/globally-harmonized-system-classification-and-labelling), UNECE, 2025 | `CHEM-008`, hazard communication | UN publication terms; N/A; repro: no |
+| `CHEM-SRC-OSHA1450` | [29 CFR 1910.1450](https://www.osha.gov/laws-regs/regulations/standardnumber/1910/1910.1450), US OSHA, current regulation | `CHEM-006`, `CHEM-008`, laboratory controls | US-government terms; N/A; repro: no |
+| `CHEM-SRC-CAMEO` | [CAMEO Chemicals](https://cameochemicals.noaa.gov/), NOAA, rolling data | `CHEM-008`, reactivity/incompatibility screening | US-government/site terms; N/A; repro: no |
+
+Jurisdiction, facility policy, current SDS, and qualified review remain
+mandatory. The global and US sources above are evidence inputs, not a complete
+legal or safety rule set for every location.
+
+### 17.3 Cheminformatics, computation, and provenance
+
+| Source ID | Source, steward, publication/update date | Supports | Rights, integrity, reproduction |
+|-----------|------------------------------------------|----------|---------------------------------|
+| `CHEM-SRC-RDKIT` | [RDKit Book](https://www.rdkit.org/docs/RDKit_Book.html), RDKit, rolling docs | `CHEM-002`, `CHEM-010`, structure transforms | BSD project; N/A; repro: no |
+| `CHEM-SRC-OPENBABEL` | [Open Babel common formats](https://openbabel.org/docs/FileFormats/Common_cheminformatics_Formats.html), Open Babel, rolling docs | `CHEM-002`, `CHEM-010`, conversion | GPL project/site terms; N/A; repro: no |
+| `CHEM-SRC-PSI4` | [Psi4 manual](https://psi4.github.io/psi4docs/master/), Psi4, rolling docs | `CHEM-011`, quantum workflows | Project/site terms; N/A; repro: no |
+| `CHEM-SRC-ASE` | [Atomic Simulation Environment](https://ase.gitlab.io/ase/), ASE, rolling docs | `CHEM-011`, calculator/workflow adapters | LGPL project; N/A; repro: no |
+| `CHEM-SRC-OPENMM` | [OpenMM user guide](https://docs.openmm.org/latest/userguide/introduction.html), OpenMM, rolling docs | `CHEM-012`, molecular simulation | Project/site terms; N/A; repro: no |
+| `CHEM-SRC-CANTERA` | [Cantera science reference](https://cantera.org/stable/reference/), Cantera, rolling docs | `CHEM-013`, kinetics/thermodynamics | Project/site terms; N/A; repro: no |
+| `CHEM-SRC-PROV` | [PROV-O](https://www.w3.org/TR/prov-o/), W3C, 2013 | `CHEM-019`, provenance graph | W3C document terms; N/A; repro: no |
+| `CHEM-SRC-ROCRATE` | [RO-Crate 1.3](https://www.researchobject.org/ro-crate/specification/1.3/index.html), RO-Crate Community, 2026-06-22 | `CHEM-019`, portable campaign record | Apache-2.0 specification; N/A; repro: no |
+| `CHEM-SRC-BO` | [A Tutorial on Bayesian Optimization](https://arxiv.org/abs/1807.02811), Frazier, 2018 | `CHEM-020`, `CHEM-023`, bounded design | Citation only; screened; repro: no |
+| `CHEM-SRC-AL-MAT` | [Bayesian active learning for materials discovery](https://arxiv.org/abs/2006.06141), Kusne et al., 2020 | `CHEM-023`, campaign selection | Citation only; screened; repro: no |
+
+### 17.4 Lab automation and lab-on-chip
+
+| Source ID | Source, steward, publication/update date | Supports | Rights, integrity, reproduction |
+|-----------|------------------------------------------|----------|---------------------------------|
+| `CHEM-SRC-SILA` | [SiLA 2 base documentation](https://sila2.gitlab.io/sila_base/), SiLA Consortium, rolling docs | `CHEM-023`, device interoperability | Project/spec terms; N/A; repro: no |
+| `CHEM-SRC-SILAPY` | [SiLA 2 Python implementation](https://sila2.gitlab.io/sila_python/), SiLA Consortium, rolling docs | `CHEM-023`, adapter candidate | Project terms; N/A; repro: no |
+| `CHEM-SRC-OPENTRONS` | [Opentrons Python Protocol API](https://opentrons.com/pythonapi), Opentrons, rolling docs | `CHEM-023`, protocol simulation/translation | API/site terms; N/A; repro: no |
+| `CHEM-SRC-PAML` | [PAML: Protocol Activity Markup Language](https://www.biorxiv.org/content/10.1101/2022.07.05.498808v1), Myers et al., 2022 | `CHEM-023`, protocol graphs | Publisher terms; screened; repro: no |
+| `CHEM-SRC-DROPBOT` | [DropBot](https://microfluidics.utoronto.ca/dropbot/), Wheeler Microfluidics Laboratory, rolling docs | `CHEM-023`, digital-microfluidic feedback | Site/project terms; N/A; repro: no |
+| `CHEM-SRC-FLUIGENT` | [Fluigent SDK manual](https://store.fluigent.com/wp-content/uploads/2021/06/Fluigent-SDK-User-Manual.pdf), Fluigent, 2021 | `CHEM-023`, pressure/flow adapter evidence | Vendor terms; N/A; repro: no |
+| `CHEM-SRC-OPENFLEX` | [OpenFlexure Microscope documentation](https://openflexure.org/projects/microscope/documentation), OpenFlexure, rolling docs | `CHEM-023`, image observations | Project/site terms; N/A; repro: no |
+| `CHEM-SRC-DMFML` | [Machine learning for digital microfluidics](https://pubs.rsc.org/en/content/articlelanding/2023/lc/d2lc00764a), RSC authors, 2023 | `CHEM-023`, adaptive microfluidic control evidence | Citation only; screened; repro: no |
+
+### 17.5 Operator evidence and required regression fixtures
+
+Operator reports are untrusted observations. They establish failure hypotheses
+and regression tests, not product defects or general causal conclusions.
+
+| Evidence ID | Report and observed date | Required implementation response |
+|-------------|--------------------------|----------------------------------|
+| `CHEM-OPS-RDKIT-STEREO` | [RDKit issue 4851](https://github.com/rdkit/rdkit/issues/4851), tracked since 2021, observed 2026-07-30 | Capability-probe non-tetrahedral stereo; preserve source and explicitly reject unsupported transforms |
+| `CHEM-OPS-OPENBABEL-WIN` | [Open Babel Windows format report](https://www.reddit.com/r/comp_chem/comments/1f811fq/), reported 2024, observed 2026-07-30 | Probe formats per pinned platform and require semantic round-trip fixtures |
+| `CHEM-OPS-NIST-CONDITIONS` | [NIST provenance/condition discussion](https://www.reddit.com/r/chemistry/comments/xf0m55/), reported 2022, observed 2026-07-30 | Preserve original-paper locator and conditions; never treat a database row as context-free truth |
+| `CHEM-OPS-NIST-OUTAGE` | [NIST WebBook outage report](https://www.reddit.com/r/chemistry/comments/1iq1fdc/), reported 2025, observed 2026-07-30 | Exercise permitted snapshot/alternate-source degradation and recovery |
+| `CHEM-OPS-COMPTOX-AUTH` | [CompTox API access report](https://www.reddit.com/r/toxicology/comments/1mjgyjg/), reported 2025, observed 2026-07-30 | Add connector readiness/auth test and a documented non-silent degraded path |
+| `CHEM-OPS-OPENTRONS` | [Opentrons field discussion](https://www.reddit.com/r/labrats/comments/10jllne/), reported 2023, observed 2026-07-30 | Simulate alignment, calibration, low-volume, API/runtime mismatch, and ambiguous device errors |
