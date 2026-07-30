@@ -53,7 +53,8 @@ xdist/CI-env races) — route `ci_pipeline_medic` to the strongest available pro
 
 **Capabilities:** Read/Edit under `src/` and `tests/`; run make targets
 (`ci-status`, `ci-failed-tests`, `test-iso`, `typecheck`, `collect-check`,
-`ship-commit-files`, `batch-push`); gh/MCP for CI. Deny protected-path self-mod.
+`ship-commit-files`, `ci-push-committed-head`); gh/MCP for CI. Deny protected-path
+self-mod.
 
 **Helpers it dispatches:** `ci_pipeline_verify` (poll a run to green), `debug_failure`
 + `log_analyst` (parse a shard's failure log), `ci_annotations_poll` (GH annotations).
@@ -73,11 +74,13 @@ xdist/CI-env races) — route `ci_pipeline_medic` to the strongest available pro
 >    (targeted; plain `make test TESTFILE=` is a no-op), plus `make typecheck` and
 >    `make collect-check` when the change touches types/imports.
 > 5. Batch all fixes for one run, commit via `make ship-commit-files FILES='...' MSG='...'`
->    (single-line MSG, NO `;`/`|`/`&&`/`$()`/backticks — blocked even in quotes), push via
->    `make batch-push COMMIT_THRESHOLD=1`. Pre-push hooks (ruff, detect-secrets,
->    collect-check) run — if one auto-fixes a file or fails, apply/commit and re-push.
-> 6. `make ci-status` again; if a NEW run is RED, go to 1. Do not tight-poll a run in
->    progress; a full matrix run takes ~30 min.
+>    (single-line MSG, NO `;`/`|`/`&&`/`$()`/backticks — blocked even in quotes).
+>    Once the focused checks pass and HEAD is clean and committed, immediately run
+>    `make ci-push-committed-head`; it pushes and returns the exact-SHA GHA run URL.
+>    Pre-push hooks (ruff, detect-secrets, collect-check) run — if one auto-fixes a
+>    file or fails, apply/commit and retry the same combined push-and-signal target.
+> 6. Inspect the returned exact-SHA run; if it is RED, go to 1. Do not tight-poll a
+>    run in progress; a full matrix run takes ~30 min.
 
 ### 2b. FAILURE TAXONOMY (signature → root cause → fix) — the load-bearing knowledge
 
@@ -102,6 +105,23 @@ xdist/CI-env races) — route `ci_pipeline_medic` to the strongest available pro
   before declaring green or cutting a release.
 - Commit messages single-line, no shell metacharacters.
 
+### 2d. Automatic exact-SHA transition
+
+**Mandatory state transition:** when all known failures have focused passing evidence
+and HEAD is clean and committed, the medic's next action is
+`make ci-push-committed-head`. The medic MUST NOT stop at a status-only report, ask
+for permission to start CI, or substitute another local status check.
+The medic MUST NOT wait for a person to notice that the fixes are ready or to
+request a hosted run.
+
+The combined target owns the push-to-hosted-signal boundary: it pushes the committed
+HEAD, verifies the remote tip, reuses an existing exact-SHA run when present, or
+dispatches and confirms one when absent. Its fail-closed behavior and stable
+`GHA_RUN_URL` output are specified in
+[Exact-SHA GHA Signal](../CI_EXACT_SHA_SIGNAL.md). If the target fails, the medic
+diagnoses and fixes that failure, revalidates the affected focused checks, and retries
+the same target; failure is not a reason to fall back to a human prompt.
+
 ---
 
 ## 3. Registration checklist (implementer)
@@ -112,7 +132,7 @@ xdist/CI-env races) — route `ci_pipeline_medic` to the strongest available pro
 4. Add the Ansible role dir + `feature_seed` registration for the runner path.
 5. Confirm the `make` targets the playbook depends on exist (`ci-status`,
    `ci-failed-tests`, `test-iso`, `typecheck`, `collect-check`, `ship-commit-files`,
-   `batch-push`); add any missing as a single `make` target.
+   `ci-push-committed-head`); add any missing as a single `make` target.
 6. Tests: a role-dispatch test that `ci_pipeline_medic` renders its playbook system
    prompt (proves D-CIM-0) and routes to its strong model; a taxonomy-coverage test
    that the behavior text names each failure class.
