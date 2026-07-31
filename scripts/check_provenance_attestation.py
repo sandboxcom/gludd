@@ -24,6 +24,32 @@ def check_provenance_attestation(assets):
     return passed, len(provenance_assets), len(binary_assets)
 
 
+def parse_provenance_file(content):
+    try:
+        return json.loads(content)
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+
+def verify_provenance_digest(provenance_dict, binary_sha256):
+    if not provenance_dict:
+        return False
+    subjects = provenance_dict.get("subject", [])
+    if not subjects:
+        return False
+    for subject in subjects:
+        sha = subject.get("digest", {}).get("sha256", "")
+        if sha == binary_sha256:
+            return True
+    return False
+
+
+def extract_builder_id(provenance_dict):
+    if not provenance_dict:
+        return None
+    return provenance_dict.get("builder", {}).get("id")
+
+
 def main():
     tag = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("TAG", "")
     if not tag:

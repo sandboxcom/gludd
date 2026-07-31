@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -17,16 +18,55 @@ from check_asset_retention import (
     asset_matches_patterns,
     check_retention_for_releases,
 )
+from check_changelog_accuracy import (
+    crossref_changelog_against_commits,
+    find_missing_commits,
+    find_phantom_entries,
+    find_version_section,
+    parse_changelog_entries,
+)
+from check_dependency_pinning import (
+    check_dependency_pinning,
+    check_lockfile_staleness,
+    find_unpinned_deps,
+    parse_lockfile_deps,
+)
+from check_multiplatform_consistency import (
+    PLATFORMS,
+    check_binary_size_consistency,
+    check_checksum_entries,
+    check_platform_coverage,
+)
 from check_prerelease_flag import expected_prerelease
+from check_provenance_attestation import (
+    check_provenance_attestation,
+    extract_builder_id,
+    parse_provenance_file,
+    verify_provenance_digest,
+)
 from check_release_audit_trail import (
     get_audit_dir,
     validate_audit_entry,
     validate_audit_file,
 )
 from check_rollback_procedure import check_rollback_section, required_rollback_fields
+from check_runbook_currency import (
+    check_targets_exist,
+    check_version_in_runbook,
+    extract_make_targets,
+    find_missing_targets,
+    parse_runbook_date,
+)
 from check_sbom_freshness import get_tag_timestamp
 from check_tag_immutability import ci_green_for_sha, tag_has_artifacts
 from check_tag_signing import classify_result, verify_tag
+from check_version_bump_atomicity import (
+    check_atomicity,
+    extract_version_from_changelog,
+    extract_version_from_init,
+    extract_version_from_readme,
+    extract_version_from_toml,
+)
 from generate_release_notes import COMMIT_CATEGORIES, categorize_commits, find_prev_tag, format_notes
 from validate_release_checksums import parse_checksums
 from verify_container_push import try_crane, try_docker, try_skopeo
@@ -675,3 +715,522 @@ class TestCheckReleaseAuditTrail:
         os.unlink(f.name)
         assert ok is False
         assert "missing fields" in reason
+
+
+class TestCheckMultiplatformConsistency:
+    """AC010: multi-platform-consistency — binaries for all platforms, similar sizes."""
+
+    def test_all_platforms_present_valid_sizes(self):
+        assets = [
+            {"name": "gludd-linux-amd64.tar.gz", "size": 5000},
+            {"name": "gludd-linux-arm64.tar.gz", "size": 4800},
+            {"name": "gludd-macos-amd64.tar.gz", "size": 5200},
+            {"name": "gludd-macos-arm64.tar.gz", "size": 4900},
+        ]
+        passed, found, missing, _issues = check_platform_coverage(assets)
+        assert passed is True
+        assert len(found) == 4
+        assert len(missing) == 0
+
+    def test_missing_platform_reported(self):
+        assets = [
+            {"name": "gludd-linux-amd64.tar.gz", "size": 5000},
+            {"name": "gludd-macos-amd64.tar.gz", "size": 5000},
+        ]
+        passed, _found, missing, _issues = check_platform_coverage(assets)
+        assert passed is False
+        assert "linux-arm64" in missing
+
+    def test_oversized_binary_warns_but_passes(self):
+        assets = [
+            {"name": "gludd-linux-amd64.tar.gz", "size": 5000},
+            {"name": "gludd-linux-arm64.tar.gz", "size": 5000},
+            {"name": "gludd-macos-amd64.tar.gz", "size": 20000},
+            {"name": "gludd-macos-arm64.tar.gz", "size": 5000},
+        ]
+        passed, _found, _missing, issues = check_platform_coverage(assets)
+        assert passed is True
+        assert any("deviates from mean" in i for i in issues)
+
+    def test_min_platforms_default_four(self):
+        assets = [
+            {"name": "gludd-linux-amd64.tar.gz", "size": 5000},
+        ]
+        passed, _found, _missing, issues = check_platform_coverage(assets)
+        assert passed is False
+        assert any("1/4 required" in i for i in issues)
+
+    def test_empty_assets_fails(self):
+        passed, found, missing, _issues = check_platform_coverage([])
+        assert passed is False
+        assert len(found) == 0
+        assert len(missing) == len(PLATFORMS)
+
+    def test_binary_size_consistency_all_similar(self):
+        sizes = {"linux-amd64": 5000, "linux-arm64": 4800, "macos-amd64": 5200, "macos-arm64": 5100}
+        passed, issues = check_binary_size_consistency(sizes)
+        assert passed is True
+        assert len(issues) == 0
+
+    def test_binary_size_one_deviant(self):
+        sizes = {"linux-amd64": 5000, "linux-arm64": 5000, "macos-amd64": 20000, "macos-arm64": 5000}
+        passed, issues = check_binary_size_consistency(sizes)
+        assert passed is True
+        assert len(issues) == 1
+        assert "deviates from mean" in issues[0]
+
+    def test_checksum_entries_all_covered(self):
+        assets = [{"name": "a.tar.gz"}, {"name": "b.exe"}]
+        content = (
+            "abc123def4567890abc123def4567890abc123def4567890abc123def4567890  a.tar.gz\n"
+            "fed456cba7890abc123def4567890abcfed456cba7890abc123def4567890abc  b.exe\n"
+        )
+        passed, issues = check_checksum_entries(assets, content)
+        assert passed is True
+        assert len(issues) == 0
+
+    def test_checksum_entry_missing(self):
+        assets = [{"name": "a.tar.gz"}, {"name": "b.exe"}]
+        content = "abc123def4567890abc123def4567890abc123def4567890abc123def4567890  a.tar.gz\n"
+        passed, issues = check_checksum_entries(assets, content)
+        assert passed is False
+        assert any("b.exe" in i for i in issues)
+
+
+class TestCheckProvenanceAttestation:
+    """AC011: provenance-attestation — SLSA provenance for release artifacts."""
+
+    def test_valid_provenance_found(self):
+        assets = [
+            {"name": "gludd-linux-amd64"},
+            {"name": "gludd-linux-amd64.build.provenance"},
+        ]
+        passed, prov_count, _bin_count = check_provenance_attestation(assets)
+        assert passed is True
+        assert prov_count == 1
+
+    def test_no_provenance_fails(self):
+        assets = [
+            {"name": "gludd-linux-amd64"},
+            {"name": "gludd-macos-amd64"},
+        ]
+        passed, prov_count, _bin_count = check_provenance_attestation(assets)
+        assert passed is False
+        assert prov_count == 0
+
+    def test_multiple_provenance_files(self):
+        assets = [
+            {"name": "gludd-linux-amd64"},
+            {"name": "gludd-linux-amd64.build.provenance"},
+            {"name": "gludd-macos-amd64.attestation.json"},
+        ]
+        passed, prov_count, _bin_count = check_provenance_attestation(assets)
+        assert passed is True
+        assert prov_count == 2
+
+    def test_parse_valid_provenance_json(self):
+        content = json.dumps({"subject": [{"name": "gludd", "digest": {"sha256": "abc"}}]})
+        result = parse_provenance_file(content)
+        assert isinstance(result, dict)
+        assert "subject" in result
+
+    def test_parse_invalid_json_returns_none(self):
+        assert parse_provenance_file("not json") is None
+
+    def test_verify_digest_match(self):
+        prov = {"subject": [{"name": "gludd", "digest": {"sha256": "abc123"}}]}
+        assert verify_provenance_digest(prov, "abc123") is True
+
+    def test_verify_digest_mismatch(self):
+        prov = {"subject": [{"name": "gludd", "digest": {"sha256": "abc123"}}]}
+        assert verify_provenance_digest(prov, "wrong") is False
+
+    def test_extract_builder_id_present(self):
+        prov = {
+            "builder": {
+                "id": "https://github.com/slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@refs/tags/v1.9.0"
+            }
+        }
+        assert (
+            extract_builder_id(prov)
+            == "https://github.com/slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@refs/tags/v1.9.0"
+        )
+
+    def test_extract_builder_id_missing(self):
+        assert extract_builder_id({}) is None
+        assert extract_builder_id({"subject": []}) is None
+
+
+class TestCheckDependencyPinning:
+    """AC012: dependency-pinning — exact versions, no ranges, stale lockfile detection."""
+
+    def test_all_pinned_passes(self):
+        content = '[project]\ndependencies = [\n  "requests==2.31.0",\n  "click==8.1.7",\n]\n'
+        passed, violations = check_dependency_pinning(content)
+        assert passed is True
+        assert len(violations) == 0
+
+    def test_range_dep_fails(self):
+        content = '[project]\ndependencies = [\n  "requests>=2.31.0",\n  "click==8.1.7",\n]\n'
+        passed, violations = check_dependency_pinning(content)
+        assert passed is False
+        assert len(violations) == 1
+        assert "requests>=" in violations[0]
+
+    def test_empty_pyproject_passes(self):
+        passed, _violations = check_dependency_pinning("")
+        assert passed is True
+
+    def test_non_dependencies_section_skipped(self):
+        content = (
+            "[project]\n"
+            'dependencies = [\n  "requests==2.31.0",\n]\n\n'
+            "[tool.uv]\n"
+            'dev-dependencies = [\n  "pytest>=7.0",\n]\n'
+        )
+        passed, _violations = check_dependency_pinning(content)
+        assert passed is True
+
+    def test_parse_lockfile_deps_valid(self):
+        content = (
+            '[[package]]\nname = "requests"\nversion = "2.31.0"\n\n[[package]]\nname = "click"\nversion = "8.1.7"\n'
+        )
+        deps = parse_lockfile_deps(content)
+        assert deps == {"requests": "2.31.0", "click": "8.1.7"}
+
+    def test_parse_lockfile_deps_empty(self):
+        assert parse_lockfile_deps("") == {}
+
+    def test_find_unpinned_deps_range_in_prod(self):
+        content = '[project]\ndependencies = [\n  "requests~=2.31",\n  "click==8.1.7",\n]\n'
+        lockfile_deps = {"requests": "2.31.0", "click": "8.1.7"}
+        violations = find_unpinned_deps(content, lockfile_deps)
+        assert len(violations) == 1
+        assert "requests" in violations[0]
+
+    def test_find_unpinned_deps_all_cross_referenced(self):
+        content = '[project]\ndependencies = [\n  "requests==2.31.0",\n  "click==8.1.7",\n]\n'
+        lockfile_deps = {"requests": "2.31.0", "click": "8.1.7"}
+        violations = find_unpinned_deps(content, lockfile_deps)
+        assert len(violations) == 0
+
+    def test_check_lockfile_staleness_lockfile_newer(self, tmp_path):
+        lockfile = tmp_path / "uv.lock"
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("")
+        lockfile.write_text("")
+        import time
+
+        time.sleep(0.01)
+        lockfile.touch()
+        assert check_lockfile_staleness(lockfile, pyproject) is False
+
+    def test_check_lockfile_staleness_lockfile_older(self, tmp_path):
+        lockfile = tmp_path / "uv.lock"
+        pyproject = tmp_path / "pyproject.toml"
+        lockfile.write_text("")
+        import time
+
+        time.sleep(0.01)
+        pyproject.write_text("")
+        assert check_lockfile_staleness(lockfile, pyproject) is True
+
+
+class TestCheckRunbookCurrency:
+    """AC013: release-runbook-currency."""
+
+    def test_parse_runbook_date_with_date(self):
+        content = "Last updated: 2024-06-15\nOther content here."
+        assert parse_runbook_date(content) == "2024-06-15"
+
+    def test_parse_runbook_date_with_colon_space(self):
+        content = "Last Updated:  2024-01-20  "
+        assert parse_runbook_date(content) == "2024-01-20"
+
+    def test_parse_runbook_date_missing(self):
+        content = "Some content without a date line."
+        assert parse_runbook_date(content) is None
+
+    def test_parse_runbook_date_empty_string(self):
+        assert parse_runbook_date("") is None
+
+    def test_check_version_in_runbook_found(self):
+        assert check_version_in_runbook("version 1.2.3 included", "1.2.3") is True
+
+    def test_check_version_in_runbook_not_found(self):
+        assert check_version_in_runbook("different content here", "1.2.3") is False
+
+    def test_check_version_in_runbook_empty_version(self):
+        assert check_version_in_runbook("some content", "") is True
+
+    def test_check_targets_exist_all_found(self):
+        makefile = "build:\n\t@echo build\nrelease-cut:\n\t@echo cut\n"
+        assert check_targets_exist(["build", "release-cut"], makefile) == []
+
+    def test_check_targets_exist_nonexistent(self):
+        makefile = "build:\n\t@echo build\n"
+        missing = check_targets_exist(["build", "deploy"], makefile)
+        assert missing == ["deploy"]
+
+    def test_check_targets_exist_empty_list(self):
+        assert check_targets_exist([], "anything:\n\t@echo x") == []
+
+    def test_extract_make_targets_from_runbook(self):
+        content = "Run `make release-cut` then `make verify-release-completeness`."
+        targets = extract_make_targets(content)
+        assert targets == {"release-cut", "verify-release-completeness"}
+
+    def test_extract_make_targets_hyphenated(self):
+        content = "Use `make check-runbook-currency` and `make check-changelog-accuracy`."
+        targets = extract_make_targets(content)
+        assert "check-runbook-currency" in targets
+        assert "check-changelog-accuracy" in targets
+
+    def test_find_missing_targets_all_present(self):
+        makefile = "target-a:\n\t@echo a\ntarget-b:\n\t@echo b\n"
+        assert find_missing_targets({"target-a", "target-b"}, makefile) == []
+
+    def test_find_missing_targets_some_absent(self):
+        makefile = "target-a:\n\t@echo a\n"
+        missing = find_missing_targets({"target-a", "target-c"}, makefile)
+        assert missing == ["target-c"]
+
+
+class TestReleaseDryRunGuard:
+    """AC014: dry-run-releases — target dependency verification."""
+
+    DRY_RUN_GUARD_TARGETS = [
+        "check-runbook-currency",
+        "check-changelog-accuracy",
+        "check-version-bump-atomicity",
+        "check-prerelease-flag",
+    ]
+
+    def test_dry_run_guard_targets_exist_in_makefile(self):
+        makefile_path = Path(__file__).resolve().parent.parent.parent / "Makefile"
+        makefile_content = makefile_path.read_text()
+        for target in self.DRY_RUN_GUARD_TARGETS:
+            assert re.search(rf"^{target}:", makefile_content, re.MULTILINE), (
+                f"Guard target '{target}' not found in Makefile"
+            )
+
+    def test_release_dry_run_target_exists(self):
+        makefile_path = Path(__file__).resolve().parent.parent.parent / "Makefile"
+        makefile_content = makefile_path.read_text()
+        assert re.search(r"^release-dry-run:", makefile_content, re.MULTILINE), (
+            "release-dry-run target not found in Makefile"
+        )
+
+    def test_dry_run_guard_calls_all_checks(self):
+        makefile_path = Path(__file__).resolve().parent.parent.parent / "Makefile"
+        makefile_content = makefile_path.read_text()
+        start = makefile_content.index("_release-dry-run-guard:")
+        end = makefile_content.index("\n\n", start) if "\n\n" in makefile_content[start:] else len(makefile_content)
+        guard_block = makefile_content[start:end]
+        for script in [
+            "check_runbook_currency.py",
+            "check_changelog_accuracy.py",
+            "check_version_bump_atomicity.py",
+            "check_prerelease_flag.py",
+        ]:
+            assert script in guard_block, f"Guard block missing {script}"
+
+    def test_dry_run_target_does_not_push_tag(self):
+        makefile_path = Path(__file__).resolve().parent.parent.parent / "Makefile"
+        makefile_content = makefile_path.read_text()
+        start = makefile_content.index("release-dry-run:")
+        next_target = re.search(r"\n[^\t\n#][a-zA-Z_-]+:", makefile_content[start + 1 :])
+        end_offset = next_target.start() if next_target else len(makefile_content[start:])
+        dry_run_block = makefile_content[start : start + end_offset]
+        recipe_lines = [l for l in dry_run_block.split("\n") if l.startswith("\t")]
+        recipe_text = "\n".join(recipe_lines)
+        assert "git-tag-push" not in recipe_text
+        assert "git-push-sandboxcom" not in recipe_text
+
+    def test_dry_run_guard_fail_closed(self):
+        makefile_path = Path(__file__).resolve().parent.parent.parent / "Makefile"
+        makefile_content = makefile_path.read_text()
+        start = makefile_content.index("_release-dry-run-guard:")
+        next_target = re.search(r"\n[a-zA-Z_-]+:", makefile_content[start + 1 :])
+        end_offset = next_target.start() if next_target else len(makefile_content[start:])
+        guard_block = makefile_content[start : start + end_offset]
+        assert "||" not in guard_block, "Guard uses || (fail-open instead of fail-closed)"
+
+
+class TestCheckChangelogAccuracy:
+    """AC015: changelog-accuracy."""
+
+    def test_find_version_section_with_brackets(self):
+        content = "## [1.0.0]\n- feat: something\n\n## [0.9.0]\n- old stuff\n"
+        section = find_version_section(content, "1.0.0")
+        assert "## [1.0.0]" in section
+        assert "feat: something" in section
+
+    def test_find_version_section_without_brackets(self):
+        content = "## 0.1.0-beta.1\n- initial release\n\n## Other\n"
+        section = find_version_section(content, "0.1.0-beta.1")
+        assert section is not None
+        assert "initial release" in section
+
+    def test_find_version_section_not_found(self):
+        content = "## [1.0.0]\n- release notes\n"
+        assert find_version_section(content, "2.0.0") is None
+
+    def test_parse_changelog_entries_basic(self):
+        content = "## [1.0.0]\n- feat: add login\n- fix: crash on null\n\n## [0.9.0]"
+        entries = parse_changelog_entries(content, "1.0.0")
+        assert entries == ["feat: add login", "fix: crash on null"]
+
+    def test_parse_changelog_entries_missing_version(self):
+        entries = parse_changelog_entries("## [1.0.0]\n- something\n", "2.0.0")
+        assert entries == []
+
+    def test_parse_changelog_entries_empty_changelog(self):
+        assert parse_changelog_entries("", "1.0.0") == []
+
+    def test_crossref_changelog_against_commits_all_covered(self):
+        section_text = "abc123 feat: add login feature\ndef456 fix: crash on null pointer"
+        commits = ["abc123 feat: add login feature", "def456 fix: crash on null pointer"]
+        result = crossref_changelog_against_commits(section_text, commits)
+        assert result["missing_in_changelog"] == []
+        assert result["phantom_entries"] == []
+
+    def test_crossref_changelog_against_commits_missing(self):
+        section_text = "abc123 feat: add login feature"
+        commits = ["abc123 feat: add login feature", "def456 fix: crash on null pointer"]
+        result = crossref_changelog_against_commits(section_text, commits)
+        assert len(result["missing_in_changelog"]) == 1
+        assert "def456" in result["missing_in_changelog"][0]
+
+    def test_find_phantom_entries_no_phantom(self):
+        section_text = "abc123 feat: add login feature"
+        commits = ["abc123 feat: add login feature"]
+        assert find_phantom_entries(section_text, commits) == []
+
+    def test_find_phantom_entries_detected(self):
+        section_text = "abc123 feat: add login feature\nReferences commit deadbeef for something"
+        commits = ["abc123 feat: add login feature"]
+        phantom = find_phantom_entries(section_text, commits)
+        assert "deadbeef" in phantom
+
+    def test_find_missing_commits_all_found(self):
+        section = "abc123 def456 feat: add login"
+        commits = ["abc123 feat: add login feature"]
+        assert find_missing_commits(commits, section) == []
+
+    def test_find_missing_commits_not_found(self):
+        section = "Some changelog text"
+        commits = ["abc123 feat: add login"]
+        missing = find_missing_commits(commits, section)
+        assert len(missing) == 1
+        assert "abc123" in missing[0]
+
+
+class TestCheckVersionBumpAtomicity:
+    """AC016: version-bump-atomicity."""
+
+    def test_extract_version_from_toml(self):
+        content = '[project]\nname = "gludd"\nversion = "0.1.0"\n'
+        assert extract_version_from_toml(content) == "0.1.0"
+
+    def test_extract_version_from_toml_prerelease(self):
+        content = '[project]\nversion = "0.1.0-beta.3"\n'
+        assert extract_version_from_toml(content) == "0.1.0-beta.3"
+
+    def test_extract_version_from_toml_not_found(self):
+        assert extract_version_from_toml('[project]\nname = "gludd"\n') is None
+
+    def test_extract_version_from_init(self):
+        content = '__version__ = "1.2.3"\n'
+        assert extract_version_from_init(content) == "1.2.3"
+
+    def test_extract_version_from_init_not_found(self):
+        assert extract_version_from_init("x = 5") is None
+
+    def test_extract_version_from_changelog(self):
+        content = "## [0.1.0]\n- first release\n"
+        assert extract_version_from_changelog(content) == "0.1.0"
+
+    def test_extract_version_from_changelog_prerelease(self):
+        content = "## 0.1.0-beta.1\n- beta release\n"
+        assert extract_version_from_changelog(content) == "0.1.0-beta.1"
+
+    def test_extract_version_from_changelog_not_found(self):
+        assert extract_version_from_changelog("# No version here\n") is None
+
+    def test_extract_version_from_readme(self):
+        content = "**Status as of v0.1.0-beta.1**\n"
+        assert extract_version_from_readme(content) == "0.1.0-beta.1"
+
+    def test_extract_version_from_readme_no_v_prefix(self):
+        content = "**Status as of 1.0.0**\n"
+        assert extract_version_from_readme(content) == "1.0.0"
+
+    def test_extract_version_from_readme_not_found(self):
+        assert extract_version_from_readme("# README") is None
+
+    def test_check_atomicity_all_match(self):
+        versions = {
+            "pyproject.toml": "0.1.0",
+            "src/general_ludd/__init__.py": "0.1.0",
+            "CHANGELOG.md": "0.1.0",
+            "README.md": "0.1.0",
+        }
+        ok, info = check_atomicity(versions)
+        assert ok is True
+        assert "0.1.0" in info
+
+    def test_check_atomicity_pyproject_mismatch(self):
+        versions = {
+            "pyproject.toml": "0.2.0",
+            "src/general_ludd/__init__.py": "0.1.0",
+            "CHANGELOG.md": "0.1.0",
+            "README.md": "0.1.0",
+        }
+        ok, info = check_atomicity(versions)
+        assert ok is False
+        assert len(info) > 0
+
+    def test_check_atomicity_init_mismatch(self):
+        versions = {
+            "pyproject.toml": "0.1.0",
+            "src/general_ludd/__init__.py": "0.2.0",
+            "CHANGELOG.md": "0.1.0",
+            "README.md": "0.1.0",
+        }
+        ok, _info = check_atomicity(versions)
+        assert ok is False
+
+    def test_check_atomicity_changelog_mismatch(self):
+        versions = {
+            "pyproject.toml": "0.1.0",
+            "src/general_ludd/__init__.py": "0.1.0",
+            "CHANGELOG.md": "0.2.0",
+            "README.md": "0.1.0",
+        }
+        ok, _info = check_atomicity(versions)
+        assert ok is False
+
+    def test_check_atomicity_readme_mismatch(self):
+        versions = {
+            "pyproject.toml": "0.1.0",
+            "src/general_ludd/__init__.py": "0.1.0",
+            "CHANGELOG.md": "0.1.0",
+            "README.md": "0.2.0",
+        }
+        ok, _info = check_atomicity(versions)
+        assert ok is False
+
+    def test_check_atomicity_empty_versions(self):
+        ok, info = check_atomicity({})
+        assert ok is False
+        assert "No versions" in info[0]
+
+    def test_check_atomicity_all_none(self):
+        versions = {
+            "pyproject.toml": None,
+            "src/general_ludd/__init__.py": None,
+        }
+        ok, info = check_atomicity(versions)
+        assert ok is False
+        assert "No versions" in info[0]

@@ -47,6 +47,31 @@ def check_platform_coverage(assets, platforms=None, min_platforms=4):
     return passed, found_platforms, missing, issues
 
 
+def check_binary_size_consistency(sizes_dict):
+    issues = []
+    nonzero = {k: v for k, v in sizes_dict.items() if v > 0}
+    if not nonzero:
+        return True, []
+    mean = sum(nonzero.values()) / len(nonzero)
+    for name, size in nonzero.items():
+        if size < mean * 0.5 or size > mean * 1.5:
+            issues.append(f"WARN — {name} size {size} deviates from mean {mean:.0f}")
+    return True, issues
+
+
+def check_checksum_entries(assets, checksums_content):
+    from validate_release_checksums import parse_checksums
+
+    checksums = parse_checksums(checksums_content)
+    issues = []
+    for a in assets:
+        name = a.get("name", "")
+        if name not in checksums:
+            issues.append(f"FAIL — missing checksum entry for: {name}")
+    passed = len(issues) == 0
+    return passed, issues
+
+
 def main():
     tag = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("TAG", "")
     if not tag:

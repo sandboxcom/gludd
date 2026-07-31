@@ -27,6 +27,53 @@ def check_dependency_pinning(content):
     return passed, violations
 
 
+def parse_lockfile_deps(lockfile_content):
+    deps = {}
+    current_name = None
+    for line in lockfile_content.splitlines():
+        line = line.strip()
+        if line == "[[package]]":
+            current_name = None
+        elif line.startswith('name = "'):
+            current_name = line.split('"')[1]
+        elif line.startswith('version = "') and current_name:
+            version = line.split('"')[1]
+            deps[current_name] = version
+            current_name = None
+    return deps
+
+
+def find_unpinned_deps(pyproject_content, lockfile_deps):
+    violations = []
+    in_prod_deps = False
+    for line in pyproject_content.splitlines():
+        if "dependencies" in line and "dev" not in line.lower():
+            in_prod_deps = True
+            continue
+        elif line.strip().startswith("[") and in_prod_deps:
+            in_prod_deps = False
+            continue
+        if in_prod_deps and line.strip() and not line.strip().startswith("#"):
+            if any(p in line for p in RANGE_PATTERNS):
+                violations.append(line.strip())
+            else:
+                parts = line.split("==")
+                if len(parts) >= 2:
+                    dep_name = parts[0].strip().strip('"').strip("'")
+                    if dep_name and dep_name not in lockfile_deps:
+                        violations.append(f"{dep_name}: not in lockfile")
+    return violations
+
+
+def check_lockfile_staleness(lockfile_path, pyproject_path):
+    try:
+        lock_path = Path(lockfile_path) if not isinstance(lockfile_path, Path) else lockfile_path
+        pp_path = Path(pyproject_path) if not isinstance(pyproject_path, Path) else pyproject_path
+        return lock_path.stat().st_mtime < pp_path.stat().st_mtime
+    except OSError:
+        return True
+
+
 def main():
     root = Path(__file__).resolve().parent.parent
     lockfile = root / "uv.lock"
