@@ -243,6 +243,66 @@ ARM_CLIENT_SECRET=your-client-secret
 The agent's `DeploymentManager` reads these from the environment and passes them
 through to Terraform subprocess calls.
 
+**Using a non-standard env file path** (e.g. `/tmp/general-ludd.env`):
+
+```bash
+# Source the env file to export variables into the current shell
+source /tmp/general-ludd.env
+
+# Or for temporary testing, source + run in one command:
+source /tmp/general-ludd.env && python -m general_ludd.daemon
+
+# For the daemon via systemd with a custom path, edit the unit override:
+sudo mkdir -p /etc/systemd/system/general-ludd.service.d
+sudo tee /etc/systemd/system/general-ludd.service.d/env-file-override.conf > /dev/null <<EOF
+[Service]
+EnvironmentFile=-/tmp/general-ludd.env
+EOF
+sudo systemctl daemon-reload
+```
+
+**Testing gludd against Azure** (local checkout, non-systemd):
+
+```bash
+# 1. Source your Azure credentials
+source /tmp/general-ludd.env
+
+# 2. Set the config directory (required when running from a repo checkout)
+export GLUDD_CONFIG_DIR="$PWD/config"
+
+# 3. Run a smoke test
+make smoke
+
+# 4. Run Azure-specific IAM tests
+make validate-azure-iam
+make test TESTFILE='tests/unit/test_validate_azure_iam_policy.py'
+
+# 5. Deploy and destroy a test resource
+python -c "
+from general_ludd.infra.compute import ComputeConfig, ComputeProvider, GPUType
+from general_ludd.infra.deployment import DeploymentManager
+from general_ludd.secrets.env import EnvSecretsManager
+import asyncio
+
+async def test():
+    secrets = EnvSecretsManager()
+    mgr = DeploymentManager(secrets_resolver=secrets)
+    config = ComputeConfig(
+        provider=ComputeProvider.AZURE,
+        gpu_type=GPUType.T4,
+        model_name='meta-llama/Meta-Llama-3-8B-Instruct',
+        deploy_type='containerapp',
+        region='eastus',
+    )
+    instance = await mgr.deploy(config)
+    print(f'Deployed: {instance.endpoint_url}')
+    await mgr.destroy(instance.instance_id)
+    print('Destroyed')
+
+asyncio.run(test())
+"
+```
+
 ### Option B: Secret aliases (recommended for production)
 
 If using OpenBao/Vault for secrets management, reference the credentials by
