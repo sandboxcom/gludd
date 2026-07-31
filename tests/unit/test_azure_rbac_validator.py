@@ -81,10 +81,11 @@ class TestValidateActionString:
         ok, _msg = validate_action_string("Microsoft.OperationalInsights/workspaces/query/action")
         assert ok is True
 
-    def test_rejects_sharedkeys_read(self):
+    def test_accepts_sharedkeys_read(self):
+        """sharedKeys/read is valid for OperationalInsights — not flagged by secret pattern check."""
         ok, msg = validate_action_string("Microsoft.OperationalInsights/workspaces/sharedKeys/read")
-        assert ok is False
-        assert "/action instead of /read" in msg
+        assert ok is True
+        assert msg == "ok"
 
     def test_rejects_listcredentials_read(self):
         ok, msg = validate_action_string("Microsoft.ContainerRegistry/registries/listCredentials/read")
@@ -134,8 +135,9 @@ class TestSecretActionPatterns:
         assert isinstance(SECRET_ACTION_PATTERNS, dict)
         assert len(SECRET_ACTION_PATTERNS) > 0
 
-    def test_contains_sharedkeys_pattern(self):
-        assert r"/sharedKeys/read$" in SECRET_ACTION_PATTERNS
+    def test_sharedkeys_not_in_secret_patterns(self):
+        """sharedKeys/read is NOT in SECRET_ACTION_PATTERNS — it is valid for OperationalInsights."""
+        assert r"/sharedKeys/read$" not in SECRET_ACTION_PATTERNS
 
     def test_contains_listcredentials_pattern(self):
         assert r"/listCredentials/read$" in SECRET_ACTION_PATTERNS

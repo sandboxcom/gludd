@@ -82,7 +82,7 @@
     "Microsoft.Authorization/roleDefinitions/read",
 
     "Microsoft.OperationalInsights/workspaces/read",
-    "Microsoft.OperationalInsights/workspaces/sharedKeys/action",
+    "Microsoft.OperationalInsights/workspaces/sharedKeys/read",
 
     "Microsoft.Insights/diagnosticSettings/read",
     "Microsoft.Insights/diagnosticSettings/write"

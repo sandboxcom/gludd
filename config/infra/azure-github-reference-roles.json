@@ -1,0 +1,62 @@
+[
+  {
+    "_source": "jeffnelson1/azure-custom-roles — GitHub public repo",
+    "_note": "Validates in Azure Portal. Uses wildcards, empty lists, AssignableScopes last, PascalCase throughout.",
+    "Name": "Log Analytics Reader Custom",
+    "IsCustom": true,
+    "Description": "Read Log Analytics workspaces and list/shared keys — real-world pattern with wildcards",
+    "Actions": [
+      "*/read",
+      "Microsoft.OperationalInsights/workspaces/read",
+      "Microsoft.OperationalInsights/workspaces/sharedKeys/read",
+      "Microsoft.OperationalInsights/workspaces/listKeys/action",
+      "Microsoft.OperationalInsights/workspaces/search/action",
+      "Microsoft.OperationalInsights/workspaces/query/read",
+      "Microsoft.Insights/diagnosticSettings/read",
+      "Microsoft.Insights/diagnosticSettings/write",
+      "Microsoft.Resources/subscriptions/resourceGroups/read",
+      "Microsoft.Resources/subscriptions/locations/read"
+    ],
+    "NotActions": [],
+    "DataActions": [],
+    "NotDataActions": [],
+    "AssignableScopes": [
+      "/subscriptions/00000000-0000-0000-0000-000000000000"
+    ]
+  },
+  {
+    "_source": "CustomRoleProvisioner — GitHub public repo",
+    "_note": "Validates in Azure Portal. Minimal, no NotActions/DataActions/NotDataActions at all. AssignableScopes at end.",
+    "Name": "Custom Role Provisioner",
+    "IsCustom": true,
+    "Description": "Provision and manage Azure custom role definitions only",
+    "Actions": [
+      "Microsoft.Authorization/*/read",
+      "Microsoft.Authorization/*/write",
+      "Microsoft.Authorization/roleDefinitions/read",
+      "Microsoft.Authorization/roleDefinitions/write",
+      "Microsoft.Authorization/roleDefinitions/delete"
+    ],
+    "AssignableScopes": [
+      "/subscriptions/00000000-0000-0000-0000-000000000000"
+    ]
+  },
+  {
+    "_source": "juju — GitHub public repo / inline CLI creation",
+    "_note": "Validates via inline CLI. All wildcards, no NotActions/DataActions/NotDataActions, AssignableScopes at end.",
+    "Name": "Juju Service Principal Role",
+    "IsCustom": true,
+    "Description": "Full compute/network/storage management for Juju workloads in Azure",
+    "Actions": [
+      "Microsoft.Compute/*",
+      "Microsoft.Network/*",
+      "Microsoft.Storage/*",
+      "Microsoft.Resources/subscriptions/resourceGroups/read",
+      "Microsoft.Resources/subscriptions/resourceGroups/write",
+      "Microsoft.Resources/subscriptions/resourceGroups/delete"
+    ],
+    "AssignableScopes": [
+      "/subscriptions/00000000-0000-0000-0000-000000000000"
+    ]
+  }
+]

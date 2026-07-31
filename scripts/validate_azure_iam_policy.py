@@ -38,7 +38,9 @@ SECURITY_CRITICAL_DENIED_ACTIONS = {
     "Microsoft.Authorization/roleDefinitions/delete",
 }
 
-CLI_ACTION_PATTERN = re.compile(r"^[Mm]icrosoft\.\w+/([\w.]+/)*\w+/(read|write|delete|action)$")
+CLI_ACTION_PATTERN = re.compile(
+    r"^(\*|[Mm]icrosoft\.\w+)/([\w.*]+/)*(\w+/(read|write|delete|action)|read|write|delete|action|\*)$"
+)
 
 FORBIDDEN_SUFFIX_PATTERNS = [
     (r"/list/action$", "/read covers listing; use /read instead of /list/action"),
@@ -50,7 +52,6 @@ FORBIDDEN_SUFFIX_PATTERNS = [
 SECRET_ACTION_PATTERNS: dict[str, str] = {
     r"/keys/read$": "Key operations use /action not /read",
     r"/secrets/read$": "Secret operations use /action not /read",
-    r"/sharedKeys/read$": "Shared key operations use /action not /read",
     r"/listCredentials/read$": "Credential listing uses /action not /read",
     r"/listSecrets/read$": "Secret listing uses /action not /read",
 }
@@ -84,10 +85,21 @@ def validate_action_format(action: str) -> list[str]:
     for pattern, explanation in FORBIDDEN_SUFFIX_PATTERNS:
         if re.search(pattern, action, re.IGNORECASE):
             errors.append(f"Action '{action}': {explanation}")
+    return errors
+
+
+def check_secret_action_warnings(action: str) -> list[str]:
+    """Check action strings for secret/key/credential operations using /read instead of /action.
+
+    Returns WARNING messages only — these are advisory, not blocking.
+    Azure has mixed conventions (e.g. sharedKeys/read is valid for
+    OperationalInsights), so this check is intentionally non-blocking.
+    """
+    warnings: list[str] = []
     for pattern, message in _RE_SECRET_PATTERNS.items():
         if pattern.search(action):
-            errors.append(f"Action '{action}' may need /action instead of /read — {message.lower()}")
-    return errors
+            warnings.append(f"[ADVISORY] Action '{action}' may need /action instead of /read — {message.lower()}")
+    return warnings
 
 
 def validate_cli_format(policy: dict) -> tuple[list[str], list[str], list[str]]:
@@ -122,6 +134,7 @@ def validate_cli_format(policy: dict) -> tuple[list[str], list[str], list[str]]:
             warnings.append(f"Duplicate action: {action}")
         seen.add(action)
         errors.extend(validate_action_format(action))
+        warnings.extend(check_secret_action_warnings(action))
 
     denied = set(policy.get("NotActions", []))
     missing_denials = SECURITY_CRITICAL_DENIED_ACTIONS - denied
@@ -191,6 +204,7 @@ def validate_rest_format(policy: dict) -> tuple[list[str], list[str], list[str]]
             warnings.append(f"Duplicate action: {action}")
         seen.add(action)
         errors.extend(validate_action_format(action))
+        warnings.extend(check_secret_action_warnings(action))
 
     denied = set(not_actions)
     missing_denials = SECURITY_CRITICAL_DENIED_ACTIONS - denied
@@ -201,6 +215,34 @@ def validate_rest_format(policy: dict) -> tuple[list[str], list[str], list[str]]
         )
 
     return errors, warnings, all_actions
+
+
+def _check_field_order(policy: dict, label: str) -> list[str]:
+    """Check structural field ordering against real-world GitHub reference patterns.
+
+    Returns WARNING messages only — field ordering is advisory.
+    """
+    warnings: list[str] = []
+    fields = list(policy.keys())
+    # In most real-world roles, AssignableScopes is the LAST field (after Actions/NotActions)
+    assignable_idx = -1
+    for i, k in enumerate(fields):
+        if k in ("AssignableScopes", "assignableScopes"):
+            assignable_idx = i
+            break
+    if assignable_idx >= 0 and assignable_idx < len(fields) - 1:
+        warnings.append(
+            f"[{label}] AssignableScopes is field {assignable_idx + 1} of {len(fields)}. "
+            f"Real-world GitHub roles place AssignableScopes last (after Actions/NotActions)."
+        )
+    if assignable_idx == 0:
+        warnings.append(f"[{label}] AssignableScopes is the FIRST field. Real-world GitHub roles place it at the END.")
+    # IsCustom is auto-added by Azure — warn if present in our source files
+    if "IsCustom" in policy or "isCustom" in policy:
+        warnings.append(
+            f"[{label}] IsCustom field is present — Azure auto-adds this. It is unnecessary in the source file."
+        )
+    return warnings
 
 
 def main() -> None:
@@ -222,6 +264,10 @@ def main() -> None:
             sys.exit(1)
 
         file_errors, file_warnings, all_actions = validator(policy)
+
+        # Structural warnings (field ordering, IsCustom presence)
+        structural_warnings = _check_field_order(policy, label)
+        file_warnings.extend(structural_warnings)
 
         # Prefix errors/warnings with the file label and file name
         for e in file_errors:

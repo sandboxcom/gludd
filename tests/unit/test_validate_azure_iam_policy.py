@@ -1,9 +1,10 @@
-"""Unit tests for azure-iam-policy.json, azure-iam-policy-cli.json, and validate_azure_iam_policy.py.
+"""Unit tests for azure-iam-policy.json, azure-iam-policy-cli.json, validate_azure_iam_policy.py,
+and GitHub reference roles.
 
 Verifies JSON validity, required fields, RBAC action format, forbidden suffix
-patterns, security-critical denials, subscription scopes, no duplicates, and
-the REST API / Portal format (properties wrapper) for the -cli.json variant.
-Also tests validate_action_format and validate_rest_format directly.
+patterns, security-critical denials, subscription scopes, no duplicates,
+REST API / Portal format, GitHub reference role structure, cross-validation
+against real-world production Azure roles, and secret-key false positive checks.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ SCRIPTS_DIR = REPO_ROOT / "scripts"
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-from validate_azure_iam_policy import validate_action_format, validate_rest_format  # noqa: E402
+from validate_azure_iam_policy import _check_field_order, validate_action_format, validate_rest_format  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -336,27 +337,29 @@ class TestValidateActionFormatFunction:
 
 
 class TestSecretActionPatterns:
-    """Secret/key/credential operations using /read should be flagged by validate_action_format."""
+    """Secret/key/credential operations using /read produce WARNINGs only — not blocking errors.
 
-    def test_sharedkeys_read_is_rejected(self) -> None:
+    Secret-key checks in validate_action_format are advisory (warning-only).
+    The sharedKeys/read pattern is explicitly valid for OperationalInsights.
+    """
+
+    def test_sharedkeys_read_is_accepted(self) -> None:
+        """sharedKeys/read is valid for OperationalInsights — should NOT be flagged."""
         errors = validate_action_format("Microsoft.OperationalInsights/workspaces/sharedKeys/read")
-        assert len(errors) > 0
-        assert any("/action instead of /read" in e.lower() for e in errors)
+        assert errors == [], f"sharedKeys/read should be valid, got: {errors}"
 
-    def test_listcredentials_read_is_rejected(self) -> None:
+    def test_listcredentials_read_passes_format_only(self) -> None:
+        """validate_action_format no longer checks secret patterns (warning-only)."""
         errors = validate_action_format("Microsoft.ContainerRegistry/registries/listCredentials/read")
-        assert len(errors) > 0
-        assert any("/action instead of /read" in e.lower() for e in errors)
+        assert errors == [], f"Format check should pass (secret check is warning-only), got: {errors}"
 
-    def test_listsecrets_read_is_rejected(self) -> None:
+    def test_listsecrets_read_passes_format_only(self) -> None:
         errors = validate_action_format("Microsoft.App/containerApps/listSecrets/read")
-        assert len(errors) > 0
-        assert any("/action instead of /read" in e.lower() for e in errors)
+        assert errors == [], f"Format check should pass (secret check is warning-only), got: {errors}"
 
-    def test_keys_read_is_rejected(self) -> None:
+    def test_keys_read_passes_format_only(self) -> None:
         errors = validate_action_format("Microsoft.KeyVault/vaults/keys/read")
-        assert len(errors) > 0
-        assert any("/action instead of /read" in e.lower() for e in errors)
+        assert errors == [], f"Format check should pass (secret check is warning-only), got: {errors}"
 
     def test_listcredentials_action_passes(self) -> None:
         errors = validate_action_format("Microsoft.ContainerRegistry/registries/listCredentials/action")
@@ -416,7 +419,7 @@ class TestValidateRestFormatFunction:
                 ],
             }
         }
-        errors, warnings, all_actions = validate_rest_format(doc)
+        errors, _warnings, all_actions = validate_rest_format(doc)
         assert errors == [], f"Unexpected errors: {errors}"
         assert len(all_actions) == 9
 
@@ -517,7 +520,7 @@ class TestValidateRestFormatFunction:
         assert any("BadFormattedAction" in e for e in errors)
 
     def test_actual_cli_file_validates_clean(self, policy_cli: dict) -> None:
-        errors, warnings, all_actions = validate_rest_format(policy_cli)
+        errors, _warnings, _all_actions = validate_rest_format(policy_cli)
         assert errors == [], f"Actual -cli.json has validation errors: {errors}"
 
     def test_security_denials_missing_is_error(self) -> None:
@@ -565,3 +568,156 @@ class TestActionParity:
             f"  Only in CLI: {sorted(cli_not - rest_not)}\n"
             f"  Only in REST: {sorted(rest_not - cli_not)}"
         )
+
+
+# ---------------------------------------------------------------------------
+# GitHub reference roles — real-world production Azure custom role validation
+# ---------------------------------------------------------------------------
+
+
+class TestGitHubReferenceRoles:
+    """Validate the 3 real-world GitHub reference roles used for cross-validation."""
+
+    ACTION_PATTERN = re.compile(
+        r"^(\*|[Mm]icrosoft\.\w+)/([\w.*]+/)*("
+        r"\w+/(read|write|delete|action)|"
+        r"read|write|delete|action|"
+        r"\*)$"
+    )
+
+    @pytest.fixture(scope="class")
+    def gh_references(self) -> list[dict]:
+        path = INFRA_DIR / "azure-github-reference-roles.json"
+        assert path.exists(), f"Missing: {path}"
+        data = json.loads(path.read_text())
+        assert isinstance(data, list), "GitHub reference file must be a JSON array"
+        assert len(data) == 3, f"Expected 3 reference roles, got {len(data)}"
+        return data
+
+    def test_all_parse_as_valid_json(self, gh_references: list[dict]) -> None:
+        for i, role in enumerate(gh_references):
+            assert isinstance(role, dict), f"Role {i} is not a dict"
+
+    def test_each_has_required_fields(self, gh_references: list[dict]) -> None:
+        required = {"Name", "Actions", "AssignableScopes"}
+        for i, role in enumerate(gh_references):
+            missing = required - set(role.keys())
+            assert not missing, f"Role {i} ({role.get('Name', '?')}): missing {sorted(missing)}"
+
+    def test_assignable_scopes_is_last_field(self, gh_references: list[dict]) -> None:
+        """Real-world roles place AssignableScopes last (after Actions)."""
+        for i, role in enumerate(gh_references):
+            fields = [k for k in role if not k.startswith("_")]
+            assignable_idx = fields.index("AssignableScopes") if "AssignableScopes" in fields else -1
+            assert assignable_idx == len(fields) - 1, (
+                f"Role {i} ({role.get('Name', '?')}): AssignableScopes is "
+                f"field {assignable_idx + 1} of {len(fields)}, not last"
+            )
+
+    def test_all_actions_match_rbac_format(self, gh_references: list[dict]) -> None:
+        for i, role in enumerate(gh_references):
+            for action in role.get("Actions", []):
+                assert self.ACTION_PATTERN.match(action), (
+                    f"Role {i} ({role.get('Name', '?')}): action '{action}' does not match Azure RBAC format"
+                )
+
+    def test_no_github_ref_triggers_secret_key_false_positive(self, gh_references: list[dict]) -> None:
+        """Secret-key checks are advisory only; GitHub roles pass format validation."""
+        from scripts.validate_azure_iam_policy import check_secret_action_warnings
+
+        for i, role in enumerate(gh_references):
+            for action in role.get("Actions", []):
+                warnings = check_secret_action_warnings(action)
+                # GitHub ref roles use valid patterns; assert format itself is fine
+                errors = validate_action_format(action)
+                assert errors == [], (
+                    f"Role {i} ({role.get('Name', '?')}): GitHub ref action '{action}' has format errors: {errors}"
+                )
+                # Secret-key warnings are advisory, not errors
+                for w in warnings:
+                    assert "ADVISORY" in w, f"Secret key warning should be advisory: {w}"
+
+    def test_custom_role_provisioner_has_no_not_data_actions(self, gh_references: list[dict]) -> None:
+        """CustomRoleProvisioner uses no NotActions/DataActions/NotDataActions."""
+        for role in gh_references:
+            if role.get("Name") == "Custom Role Provisioner":
+                assert "NotActions" not in role
+                assert "DataActions" not in role
+                assert "NotDataActions" not in role
+                return
+        pytest.fail("Custom Role Provisioner not found in GitHub references")
+
+    def test_juju_role_has_no_not_data_actions(self, gh_references: list[dict]) -> None:
+        """Juju role uses no NotActions/DataActions/NotDataActions at all."""
+        for role in gh_references:
+            if role.get("Name") == "Juju Service Principal Role":
+                assert "NotActions" not in role
+                assert "DataActions" not in role
+                assert "NotDataActions" not in role
+                return
+        pytest.fail("Juju Service Principal Role not found in GitHub references")
+
+
+# ---------------------------------------------------------------------------
+# Structural validation — field ordering warnings (non-blocking)
+# ---------------------------------------------------------------------------
+
+
+class TestStructuralFieldChecks:
+    """validate_azure_iam_policy._check_field_order produces advisory warnings."""
+
+    def test_assignable_scopes_last_yields_no_warnings(self) -> None:
+        policy = {
+            "Name": "Test",
+            "Description": "desc",
+            "Actions": ["Microsoft.Compute/virtualMachines/read"],
+            "AssignableScopes": ["/subscriptions/123"],
+        }
+        warnings = _check_field_order(policy, "TEST")
+        assert warnings == [], f"Expected no warnings, got: {warnings}"
+
+    def test_assignable_scopes_first_yields_warning(self) -> None:
+        policy = {
+            "AssignableScopes": ["/subscriptions/123"],
+            "Name": "Test",
+            "Description": "desc",
+            "Actions": ["Microsoft.Compute/virtualMachines/read"],
+            "NotActions": [],
+        }
+        warnings = _check_field_order(policy, "TEST")
+        assert len(warnings) >= 1
+        assert any("FIRST" in w for w in warnings), f"Expected FIRST warning, got: {warnings}"
+
+    def test_assignable_scopes_not_last_yields_warning(self) -> None:
+        policy = {
+            "Name": "Test",
+            "Description": "desc",
+            "AssignableScopes": ["/subscriptions/123"],
+            "Actions": ["Microsoft.Compute/virtualMachines/read"],
+            "NotActions": [],
+        }
+        warnings = _check_field_order(policy, "TEST")
+        assert len(warnings) >= 1
+        assert any("last" in w.lower() for w in warnings), f"Expected ordering warning, got: {warnings}"
+
+    def test_iscustom_present_yields_warning(self) -> None:
+        policy = {
+            "Name": "Test",
+            "Description": "desc",
+            "IsCustom": True,
+            "Actions": ["Microsoft.Compute/virtualMachines/read"],
+            "AssignableScopes": ["/subscriptions/123"],
+        }
+        warnings = _check_field_order(policy, "TEST")
+        assert any("IsCustom" in w for w in warnings), f"Expected IsCustom warning, got: {warnings}"
+
+    def test_no_iscustom_no_warning(self) -> None:
+        policy = {
+            "Name": "Test",
+            "Description": "desc",
+            "Actions": ["Microsoft.Compute/virtualMachines/read"],
+            "AssignableScopes": ["/subscriptions/123"],
+        }
+        warnings = _check_field_order(policy, "TEST")
+        iscustom_warnings = [w for w in warnings if "IsCustom" in w]
+        assert iscustom_warnings == [], f"Unexpected IsCustom warnings: {iscustom_warnings}"

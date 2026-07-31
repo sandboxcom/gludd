@@ -36,9 +36,13 @@ FORBIDDEN_SUFFIX_PATTERNS: tuple[str, ...] = (
 )
 
 SECRET_ACTION_PATTERNS: dict[str, str] = {
+    # sharedKeys/read is NOT included — it is the correct and valid action
+    # for Microsoft.OperationalInsights/workspaces/sharedKeys/read (reading
+    # Log Analytics workspace keys). Azure uses mixed conventions: some
+    # key/secret operations use /action (Storage, Key Vault), while
+    # sharedKeys legitimately uses /read.
     r"/keys/read$": "Key operations use /action not /read",
     r"/secrets/read$": "Secret operations use /action not /read",
-    r"/sharedKeys/read$": "Shared key operations use /action not /read",
     r"/listCredentials/read$": "Credential listing uses /action not /read",
     r"/listSecrets/read$": "Secret listing uses /action not /read",
 }
@@ -320,7 +324,6 @@ PROVIDER_OPERATIONS: dict[str, frozenset[str]] = {
             "Microsoft.OperationalInsights/workspaces/read",
             "Microsoft.OperationalInsights/workspaces/write",
             "Microsoft.OperationalInsights/workspaces/delete",
-            "Microsoft.OperationalInsights/workspaces/sharedKeys/action",
             "Microsoft.OperationalInsights/workspaces/sharedKeys/read",
             "Microsoft.OperationalInsights/workspaces/query/action",
         }
