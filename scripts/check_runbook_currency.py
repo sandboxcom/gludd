@@ -11,6 +11,19 @@ import sys
 from pathlib import Path
 
 
+def extract_make_targets(content: str) -> set[str]:
+    pattern = re.compile(r"`make\s+([a-zA-Z_-]+)`")
+    return set(pattern.findall(content))
+
+
+def find_missing_targets(targets: set[str], makefile_text: str) -> list[str]:
+    missing = []
+    for t in targets:
+        if not re.search(rf"^{t}:", makefile_text, re.MULTILINE):
+            missing.append(t)
+    return missing
+
+
 def main():
     tag = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("TAG", "")
     root = Path(__file__).resolve().parent.parent

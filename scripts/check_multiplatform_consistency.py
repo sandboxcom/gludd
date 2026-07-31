@@ -14,6 +14,39 @@ import sys
 PLATFORMS = ["linux-amd64", "linux-arm64", "macos-amd64", "macos-arm64"]
 
 
+def check_platform_coverage(assets, platforms=None, min_platforms=4):
+    if platforms is None:
+        platforms = PLATFORMS
+    found_platforms = set()
+    binaries = []
+    for a in assets:
+        name = a.get("name", "").lower()
+        for p in platforms:
+            if p in name:
+                found_platforms.add(p)
+                binaries.append(a)
+                break
+
+    missing = set(platforms) - found_platforms
+    issues = []
+    if missing:
+        issues.append("FAIL — missing platforms: " + ", ".join(sorted(missing)))
+
+    sizes = [int(a.get("size", 0)) for a in binaries]
+    nonzero = [s for s in sizes if s > 0]
+    if nonzero:
+        mean = sum(nonzero) / len(nonzero)
+        for i, s in enumerate(nonzero):
+            if s < mean * 0.5 or s > mean * 1.5:
+                issues.append(f"WARN — size {s} deviates from mean {mean:.0f}")
+
+    if len(found_platforms) < min_platforms:
+        issues.append(f"FAIL — only {len(found_platforms)}/{min_platforms} required platforms found")
+
+    passed = len(issues) == 0 or all(not i.startswith("FAIL") for i in issues)
+    return passed, found_platforms, missing, issues
+
+
 def main():
     tag = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("TAG", "")
     if not tag:
@@ -42,32 +75,14 @@ def main():
         print("AC010: INCONCLUSIVE — cannot parse gh output")
         sys.exit(2)
 
-    found_platforms = set()
-    binaries = []
-    for a in assets:
-        name = a.get("name", "").lower()
-        for p in PLATFORMS:
-            if p in name:
-                found_platforms.add(p)
-                binaries.append(a)
-                break
-
-    missing = set(PLATFORMS) - found_platforms
-    if missing:
-        print(f"AC010: FAIL — missing platforms: {', '.join(sorted(missing))}")
-        sys.exit(1)
-
-    sizes = [int(a.get("size", 0)) for a in binaries]
-    nonzero = [s for s in sizes if s > 0]
-    if nonzero:
-        mean = sum(nonzero) / len(nonzero)
-        for i, s in enumerate(nonzero):
-            if s < mean * 0.5 or s > mean * 1.5:
-                print(f"AC010: WARN — size {s} deviates from mean {mean:.0f}")
-
     min_platforms = int(os.environ.get("GLUDD_MIN_PLATFORMS", "4"))
-    if len(found_platforms) < min_platforms:
-        print(f"AC010: FAIL — only {len(found_platforms)}/{min_platforms} required platforms found")
+    passed, found_platforms, missing, issues = check_platform_coverage(assets, PLATFORMS, min_platforms)
+
+    for issue in issues:
+        prefix = "AC010: FAIL" if issue.startswith("FAIL") else "AC010: WARN"
+        print(f"AC010: {issue}")
+
+    if not passed:
         sys.exit(1)
 
     print(f"AC010: PASS — {len(found_platforms)} platforms verified")

@@ -11,9 +11,69 @@ import subprocess
 import sys
 
 
+LABEL_MAP = {
+    "feat": "Features",
+    "fix": "Bug Fixes",
+    "docs": "Documentation",
+    "refactor": "Refactoring",
+    "test": "Tests",
+    "chore": "Chores",
+    "other": "Other Changes",
+}
+
+COMMIT_CATEGORIES = list(LABEL_MAP.keys())
+
+
 def run_git(args):
     result = subprocess.run(["git"] + args, capture_output=True, text=True)
     return result.stdout.strip()
+
+
+def find_prev_tag(tags, current_tag):
+    if current_tag not in tags:
+        raise ValueError(f"Tag '{current_tag}' not found")
+    idx = tags.index(current_tag)
+    return tags[idx + 1] if idx + 1 < len(tags) else None
+
+
+def categorize_commits(commit_lines):
+    categories = {k: [] for k in COMMIT_CATEGORIES}
+    for commit in commit_lines:
+        match = re.match(r"^[a-f0-9]+\s+(\w+)(?:\([^)]*\))?!?:?\s*(.*)", commit)
+        if match:
+            ctype, desc = match.group(1), match.group(2)
+            if ctype in categories:
+                categories[ctype].append(desc)
+            else:
+                categories["other"].append(commit)
+        else:
+            categories["other"].append(commit)
+    return categories
+
+
+def format_notes(categories, version, prev_tag, contributors=""):
+    lines = []
+    lines.append(f"## What's Changed in {version}")
+    lines.append("")
+
+    for key, label in LABEL_MAP.items():
+        if categories.get(key):
+            lines.append(f"### {label}")
+            for item in categories[key]:
+                lines.append(f"- {item}")
+            lines.append("")
+
+    if contributors:
+        lines.append("### Contributors")
+        for line in contributors.split("\n"):
+            lines.append(f"- {line.strip()}")
+        lines.append("")
+
+    if prev_tag:
+        lines.append(f"**Full Changelog**: {prev_tag}...{version}")
+    else:
+        lines.append(f"**Initial Release**: {version}")
+    return "\n".join(lines)
 
 
 def main():
@@ -30,8 +90,7 @@ def main():
         sys.exit(2)
 
     try:
-        idx = tags.index(tag)
-        prev_tag = tags[idx + 1] if idx + 1 < len(tags) else None
+        prev_tag = find_prev_tag(tags, tag)
     except ValueError:
         prev_tag = None
 
@@ -44,47 +103,11 @@ def main():
     commits = run_git(["log", "--oneline", range_spec]).split("\n")
     commits = [c for c in commits if c]
 
-    categories = {"feat": [], "fix": [], "docs": [], "refactor": [], "test": [], "chore": [], "other": []}
-
-    for commit in commits:
-        match = re.match(r"^[a-f0-9]+\s+(\w+)(?:\([^)]*\))?[!:]\s*(.*)", commit)
-        if match:
-            ctype, desc = match.group(1), match.group(2)
-            if ctype in categories:
-                categories[ctype].append(desc)
-            else:
-                categories["other"].append(commit)
-        else:
-            categories["other"].append(commit)
+    categories = categorize_commits(commits)
+    contributors = run_git(["shortlog", "-sn", range_spec])
 
     version = tag.lstrip("v")
-    print(f"## What's Changed in {version}")
-    print()
-
-    label_map = {
-        "feat": "Features",
-        "fix": "Bug Fixes",
-        "docs": "Documentation",
-        "refactor": "Refactoring",
-        "test": "Tests",
-        "chore": "Chores",
-        "other": "Other Changes",
-    }
-
-    for key, label in label_map.items():
-        if categories[key]:
-            print(f"### {label}")
-            for item in categories[key]:
-                print(f"- {item}")
-            print()
-
-    contributors = run_git(["shortlog", "-sn", range_spec])
-    if contributors:
-        print("### Contributors")
-        for line in contributors.split("\n"):
-            print(f"- {line.strip()}")
-
-    print(f"\n**Full Changelog**: {prev_tag}...{tag}" if prev_tag else f"\n**Initial Release**: {tag}")
+    print(format_notes(categories, version, prev_tag, contributors))
     sys.exit(0)
 
 

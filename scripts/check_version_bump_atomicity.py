@@ -19,6 +19,36 @@ VERSION_FILES = [
 ]
 
 
+def extract_versions(root: Path) -> dict[str, str | None]:
+    versions: dict[str, str | None] = {}
+    for relpath, pattern in VERSION_FILES:
+        path = root / relpath
+        if not path.exists():
+            versions[relpath] = None
+            continue
+        content = path.read_text()
+        match = re.search(pattern, content)
+        versions[relpath] = match.group(1) if match else None
+    return versions
+
+
+def check_version_consistency(versions: dict[str, str | None], expected_tag: str = "") -> list[str]:
+    errors: list[str] = []
+    valid = {k: v for k, v in versions.items() if v is not None}
+    if not valid:
+        errors.append("No versions found in any files")
+        return errors
+    unique = set(valid.values())
+    if len(unique) > 1:
+        errors.append(f"Version mismatch across files: {sorted(unique)}")
+    if expected_tag:
+        expected = expected_tag.lstrip("v")
+        actual = sorted(unique)[0]
+        if actual != expected:
+            errors.append(f"File version '{actual}' != tag version '{expected}'")
+    return errors
+
+
 def main():
     tag = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("TAG", "")
     root = Path(__file__).resolve().parent.parent

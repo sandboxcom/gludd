@@ -16,6 +16,26 @@ def run_git(args):
     return result.stdout.strip(), result.stderr.strip(), result.returncode
 
 
+def find_version_section(changelog_text: str, version: str) -> str | None:
+    match = re.search(
+        rf"(##\s+\[?{re.escape(version)}[\]\s].*?)(?=##\s+\[|\Z)",
+        changelog_text,
+        re.DOTALL,
+    )
+    return match.group(0) if match else None
+
+
+def find_missing_commits(commits: list[str], section: str) -> list[str]:
+    missing = []
+    for commit in commits:
+        parts = commit.split()
+        sha = parts[0]
+        desc = " ".join(parts[1:])
+        if sha not in section and desc[:20] not in section:
+            missing.append(commit)
+    return missing
+
+
 def get_tags():
     out, _, rc = run_git(["tag", "--sort=-creatordate", "-l", "v*"])
     if rc != 0:

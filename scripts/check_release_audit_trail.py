@@ -25,10 +25,34 @@ REQUIRED_FIELDS = [
 ]
 
 
+def get_audit_dir(script_root=None):
+    if script_root is None:
+        script_root = Path(__file__).resolve().parent.parent
+    else:
+        script_root = Path(script_root)
+    return script_root / "docs" / "releases"
+
+
+def validate_audit_entry(data):
+    return [f for f in REQUIRED_FIELDS if f not in data or data[f] is None]
+
+
+def validate_audit_file(audit_path):
+    try:
+        with open(audit_path) as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        return False, str(e)
+
+    missing = validate_audit_entry(data)
+    if missing:
+        return False, f"missing fields: {', '.join(missing)}"
+    return True, None
+
+
 def main():
     tag = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("TAG", "")
-    root = Path(__file__).resolve().parent.parent
-    audit_dir = root / "docs" / "releases"
+    audit_dir = get_audit_dir()
 
     if not tag:
         all_audits = sorted(audit_dir.glob("audit-*.json")) if audit_dir.exists() else []
@@ -38,15 +62,9 @@ def main():
 
         errors = 0
         for audit_path in all_audits:
-            try:
-                with open(audit_path) as f:
-                    data = json.load(f)
-                missing = [f for f in REQUIRED_FIELDS if f not in data or data[f] is None]
-                if missing:
-                    print(f"AC020: FAIL — {audit_path.name} missing fields: {', '.join(missing)}")
-                    errors += 1
-            except (json.JSONDecodeError, OSError) as e:
-                print(f"AC020: FAIL — {audit_path.name}: {e}")
+            ok, reason = validate_audit_file(audit_path)
+            if not ok:
+                print(f"AC020: FAIL — {audit_path.name}: {reason}")
                 errors += 1
 
         if errors:
@@ -62,16 +80,9 @@ def main():
         print(f"AC020: FAIL — {audit_path} not found")
         sys.exit(1)
 
-    try:
-        with open(audit_path) as f:
-            data = json.load(f)
-    except (json.JSONDecodeError, OSError) as e:
-        print(f"AC020: FAIL — {audit_path}: {e}")
-        sys.exit(1)
-
-    missing = [f for f in REQUIRED_FIELDS if f not in data or data[f] is None]
-    if missing:
-        print(f"AC020: FAIL — audit trail for {tag} missing fields: {', '.join(missing)}")
+    ok, reason = validate_audit_file(audit_path)
+    if not ok:
+        print(f"AC020: FAIL — {audit_path}: {reason}")
         sys.exit(1)
 
     print(f"AC020: PASS — audit trail complete for {tag}")

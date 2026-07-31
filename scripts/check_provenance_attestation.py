@@ -9,6 +9,20 @@ import os
 import subprocess
 import sys
 
+PROVENANCE_PATTERNS = [".build.provenance", "provenance.json", "attestation.json", ".intoto.jsonl"]
+
+
+def check_provenance_attestation(assets):
+    binary_assets = [
+        a
+        for a in assets
+        if any(p in a.get("name", "").lower() for p in ["linux", "macos", "windows", "binary", "gludd"])
+        and "provenance" not in a.get("name", "").lower()
+    ]
+    provenance_assets = [a for a in assets if any(p in a.get("name", "").lower() for p in PROVENANCE_PATTERNS)]
+    passed = len(provenance_assets) > 0
+    return passed, len(provenance_assets), len(binary_assets)
+
 
 def main():
     tag = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("TAG", "")
@@ -38,23 +52,15 @@ def main():
         print("AC011: INCONCLUSIVE — cannot parse gh output")
         sys.exit(2)
 
-    provenance_patterns = [".build.provenance", "provenance.json", "attestation.json", ".intoto.jsonl"]
-    binary_assets = [
-        a
-        for a in assets
-        if any(p in a.get("name", "").lower() for p in ["linux", "macos", "windows", "binary", "gludd"])
-        and "provenance" not in a.get("name", "").lower()
-    ]
+    passed, prov_count, bin_count = check_provenance_attestation(assets)
 
-    provenance_assets = [a for a in assets if any(p in a.get("name", "").lower() for p in provenance_patterns)]
-
-    if not provenance_assets:
+    if not passed:
         print("AC011: FAIL — no provenance attestation found in release assets")
         sys.exit(1)
 
-    print(f"AC011: PASS — {len(provenance_assets)} provenance attestation(s) found")
-    if binary_assets:
-        print(f"AC011: INFO — {len(binary_assets)} binary assets, {len(provenance_assets)} attestations")
+    print(f"AC011: PASS — {prov_count} provenance attestation(s) found")
+    if bin_count:
+        print(f"AC011: INFO — {bin_count} binary assets, {prov_count} attestations")
     sys.exit(0)
 
 

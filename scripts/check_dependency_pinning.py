@@ -10,6 +10,22 @@ import subprocess
 import sys
 from pathlib import Path
 
+RANGE_PATTERNS = [">=", "~=", "^", "!="]
+
+
+def check_dependency_pinning(content):
+    violations = []
+    in_prod_deps = False
+    for line in content.splitlines():
+        if "dependencies" in line and "dev" not in line.lower():
+            in_prod_deps = True
+        elif line.strip().startswith("[") and in_prod_deps:
+            in_prod_deps = False
+        if in_prod_deps and any(p in line for p in RANGE_PATTERNS):
+            violations.append(line.strip())
+    passed = len(violations) == 0
+    return passed, violations
+
 
 def main():
     root = Path(__file__).resolve().parent.parent
@@ -22,18 +38,9 @@ def main():
 
     if pyproject.exists():
         content = pyproject.read_text()
-        range_patterns = [">=", "~=", "^", "!="]
-        violations = []
-        in_prod_deps = False
-        for line in content.splitlines():
-            if "dependencies" in line and "dev" not in line.lower():
-                in_prod_deps = True
-            elif line.strip().startswith("[") and in_prod_deps:
-                in_prod_deps = False
-            if in_prod_deps and any(p in line for p in range_patterns):
-                violations.append(line.strip())
+        passed, violations = check_dependency_pinning(content)
 
-        if violations:
+        if not passed:
             for v in violations:
                 print(f"AC012: VIOLATION — unpinned dependency: {v}")
             print("AC012: FAIL — production dependencies must be pinned to exact versions")
