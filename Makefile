@@ -84,6 +84,7 @@ _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-wor
         molecule-version molecule-test molecule-test-all \
         collection-roles collection-modules molecule-scenarios \
         test-binary-re test-radio test-os-expert test-e2e-test-gen test-language test-language-expert test-collections \
+         test-e2e-azure test-e2e-azure-provision test-e2e-providers \
         molecule-test-binary-re molecule-test-radio molecule-test-os-expert molecule-test-e2e-test-gen molecule-test-language \
         move-ansible-roles \
         container-build container-run container-push \
@@ -203,6 +204,11 @@ help:
 	@echo "  test-unit-shards      Unit tests in bounded serial shards (SHARDS=12 SHARD=1)"
 	@echo "  test-integration      Integration tests"
 	@echo "  test-e2e              End-to-end tests"
+	@echo "  test-e2e-azure        Azure E2E — env-pointer (CI-friendly)"
+	@echo "  test-e2e-azure-provision  Azure full-provision E2E (opt-in, costly)"
+	@echo "  test-e2e-providers    All E2E provider tests"
+	@echo "  test-e2e-games        Game generation E2E — AI generates games, compares frames (no Azure provision)"
+	@echo "  test-e2e-games-provision  Game E2E with Azure GPU provisioning (opt-in, costly)"
 	@echo "  test-opencode-e2e     .opencode/ plugin load+invocation tests"
 	@echo "  test-specific         Single test (TESTFILE=path::TestClass::test_name)"
 	@echo "  test-files            Multiple tests (TESTFILES=tests/unit/a.py tests/unit/b.py)"
@@ -1453,6 +1459,29 @@ test-e2e:
 	run_e2e_file() { test_file="$$1"; file_key="$$(printf '%s' "$$test_file" | shasum -a 256 | cut -c1-16)"; FILE_BT="$$BT/$$file_key"; FILE_LOG="$$RESOURCE_BASE/e2e-shard-$$SHARD-of-$$TOTAL-logs-$$$$/$$file_key.log"; mkdir -p "$$FILE_BT"; echo "=== E2E FILE: $$test_file key=$$file_key ==="; $(PYTHON) scripts/e2e_supervisor.py record --state "$$STATE" --file "$$test_file" --status RUNNING; $(MAKE) --no-print-directory run-watched CMD="GLUDD_E2E_ACTIVE=1 $(UV) run python -m pytest $$test_file -n $(E2E_WORKERS) --dist loadgroup -v $(PYTEST_ARGS) --timeout=$(E2E_TEST_TIMEOUT) --basetemp=$$FILE_BT" STALL_SECS="$(E2E_STALL_SECS)" MAX_SECS="$(E2E_FILE_MAX_SECS)" LOG="$$FILE_LOG"; FILE_RC=$$?; if [ "$$FILE_RC" -eq 0 ]; then STATUS=PASS; elif [ "$$FILE_RC" -eq 5 ]; then STATUS=SKIP; else STATUS=FAIL; fi; $(PYTHON) scripts/e2e_supervisor.py record --state "$$STATE" --file "$$test_file" --status "$$STATUS"; if [ "$$FILE_RC" -eq 5 ]; then return 0; fi; return "$$FILE_RC"; }; \
 	TEST_FILES="$$($(PYTHON) scripts/e2e_supervisor.py pending --state "$$STATE" --revision "$$REVISION" --root tests/e2e --glob "$(E2E_FILE_GLOB)" --shard "$$SHARD" --total "$$TOTAL")"; RC=0; active=0; PIDS=""; for test_file in $$TEST_FILES; do while [ "$$active" -ge "$$FILE_WORKERS" ]; do set -- $$PIDS; pid="$$1"; shift; PIDS="$$*"; wait "$$pid"; WAIT_RC=$$?; if [ "$$WAIT_RC" -ne 0 ] && [ "$$RC" -eq 0 ]; then RC="$$WAIT_RC"; fi; active=$$((active - 1)); done; run_e2e_file "$$test_file" & PIDS="$$PIDS $$!"; active=$$((active + 1)); done; for pid in $$PIDS; do wait "$$pid"; WAIT_RC=$$?; if [ "$$WAIT_RC" -ne 0 ] && [ "$$RC" -eq 0 ]; then RC="$$WAIT_RC"; fi; done; \
 	chmod -R u+rwx "$$BT" 2>/dev/null || true; rm -rf "$$BT"; exit $$RC
+
+# Azure E2E — env-pointer (CI-friendly, no provisioning)
+GLUDD_E2E_MAX_SPEND_USD ?= 5
+AZURE_PROVISION_E2E ?= 0
+test-e2e-azure:
+	@AZURE_BASE_URL=$(AZURE_BASE_URL) AZURE_MODEL=$(AZURE_MODEL) AZURE_API_KEY=$(AZURE_API_KEY) \
+		$(UV) run pytest tests/e2e/providers/test_azure_e2e.py -v
+
+# Azure full-provision E2E (opt-in, costly, manual)
+test-e2e-azure-provision:
+	@AZURE_PROVISION_E2E=1 GLUDD_E2E_MAX_SPEND_USD=$(GLUDD_E2E_MAX_SPEND_USD) \
+		$(UV) run pytest tests/e2e/providers/test_azure_provision_e2e.py -v -m azure_provision
+
+# All E2E provider tests (skips everything not configured)
+test-e2e-providers:
+	@$(UV) run pytest tests/e2e/providers/ -v
+
+# Game E2E tests — AI generates games, compares against reference gameplay
+test-e2e-games:
+	@$(UV) run pytest tests/e2e/game_e2e/ -v -m "e2e and not azure_provision"
+
+test-e2e-games-provision:
+	@AZURE_PROVISION_E2E=1 $(UV) run pytest tests/e2e/game_e2e/ -v -m azure_provision
 
 test-games:
 	@$(UV) run python -m pytest tests/e2e/test_game_building_deepseek.py $(_XD) -v $(PYTEST_ARGS)

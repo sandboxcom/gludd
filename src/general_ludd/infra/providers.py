@@ -63,8 +63,8 @@ _BUILTIN_PROVIDERS: list[dict[str, Any]] = [
         "supports_spot": True,
         "sub_hour_billing": False,
         "min_gpu": GPUType.T4,
-        "max_gpu": GPUType.A100_80,
-        "pricing": {"t4": 0.53, "a100_80": 3.67},
+        "max_gpu": GPUType.H100,
+        "pricing": {"t4": 0.53, "a100_80": 3.67, "h100": 6.98},
     },
     {
         "provider": ComputeProvider.RUNPOD,
