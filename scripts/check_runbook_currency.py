@@ -16,12 +16,25 @@ def extract_make_targets(content: str) -> set[str]:
     return set(pattern.findall(content))
 
 
-def find_missing_targets(targets: set[str], makefile_text: str) -> list[str]:
+def parse_runbook_date(content: str) -> str | None:
+    match = re.search(r"Last\s+updated[:.]?\s*(.+)", content, re.IGNORECASE)
+    return match.group(1).strip() if match else None
+
+
+def check_version_in_runbook(content: str, version: str) -> bool:
+    return version in content if version else True
+
+
+def check_targets_exist(targets: list[str], makefile_content: str) -> list[str]:
     missing = []
     for t in targets:
-        if not re.search(rf"^{t}:", makefile_text, re.MULTILINE):
+        if not re.search(rf"^{t}:", makefile_content, re.MULTILINE):
             missing.append(t)
     return missing
+
+
+def find_missing_targets(targets: set[str], makefile_text: str) -> list[str]:
+    return check_targets_exist(list(targets), makefile_text)
 
 
 def main():

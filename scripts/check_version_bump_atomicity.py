@@ -19,6 +19,36 @@ VERSION_FILES = [
 ]
 
 
+def extract_version_from_toml(content: str) -> str | None:
+    match = re.search(r'version\s*=\s*"([^"]+)"', content)
+    return match.group(1) if match else None
+
+
+def extract_version_from_init(content: str) -> str | None:
+    match = re.search(r'__version__\s*=\s*"([^"]+)"', content)
+    return match.group(1) if match else None
+
+
+def extract_version_from_changelog(content: str) -> str | None:
+    match = re.search(r"##\s+\[?(\d+\.\d+\.\d+(?:-[a-z]+(?:\.\d+)?)?)\]?", content)
+    return match.group(1) if match else None
+
+
+def extract_version_from_readme(content: str) -> str | None:
+    match = re.search(r"Status as of\s+v?(\d+\.\d+\.\d+(?:-[a-z]+(?:\.\d+)?)?)", content)
+    return match.group(1) if match else None
+
+
+def check_atomicity(versions_dict: dict[str, str | None]) -> tuple[bool, list[str]]:
+    valid = {k: v for k, v in versions_dict.items() if v is not None}
+    if not valid:
+        return False, ["No versions found in any files"]
+    unique = set(valid.values())
+    if len(unique) > 1:
+        return False, [f"Version mismatch: {sorted(unique)}"]
+    return True, [list(unique)[0]]
+
+
 def extract_versions(root: Path) -> dict[str, str | None]:
     versions: dict[str, str | None] = {}
     for relpath, pattern in VERSION_FILES:

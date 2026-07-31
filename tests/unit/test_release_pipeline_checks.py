@@ -999,12 +999,12 @@ class TestCheckRunbookCurrency:
 class TestReleaseDryRunGuard:
     """AC014: dry-run-releases — target dependency verification."""
 
-    DRY_RUN_GUARD_TARGETS = [
+    DRY_RUN_GUARD_TARGETS: tuple[str, ...] = (
         "check-runbook-currency",
         "check-changelog-accuracy",
         "check-version-bump-atomicity",
         "check-prerelease-flag",
-    ]
+    )
 
     def test_dry_run_guard_targets_exist_in_makefile(self):
         makefile_path = Path(__file__).resolve().parent.parent.parent / "Makefile"
@@ -1042,7 +1042,7 @@ class TestReleaseDryRunGuard:
         next_target = re.search(r"\n[^\t\n#][a-zA-Z_-]+:", makefile_content[start + 1 :])
         end_offset = next_target.start() if next_target else len(makefile_content[start:])
         dry_run_block = makefile_content[start : start + end_offset]
-        recipe_lines = [l for l in dry_run_block.split("\n") if l.startswith("\t")]
+        recipe_lines = [line for line in dry_run_block.split("\n") if line.startswith("\t")]
         recipe_text = "\n".join(recipe_lines)
         assert "git-tag-push" not in recipe_text
         assert "git-push-sandboxcom" not in recipe_text

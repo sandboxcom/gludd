@@ -36,6 +36,39 @@ def find_missing_commits(commits: list[str], section: str) -> list[str]:
     return missing
 
 
+def parse_changelog_entries(changelog_content: str, version: str) -> list[str]:
+    section = find_version_section(changelog_content, version)
+    if not section:
+        return []
+    lines = section.split("\n")
+    entries = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("- "):
+            entries.append(stripped[2:])
+    return entries
+
+
+def crossref_changelog_against_commits(section_text: str, commits: list[str]) -> dict[str, list]:
+    missing_in_changelog = []
+    for commit in commits:
+        parts = commit.split()
+        sha = parts[0]
+        desc = " ".join(parts[1:])
+        if sha not in section_text and desc[:20] not in section_text:
+            missing_in_changelog.append(commit)
+    phantom = find_phantom_entries(section_text, commits)
+    return {"missing_in_changelog": missing_in_changelog, "phantom_entries": phantom}
+
+
+def find_phantom_entries(section_text: str, commits: list[str]) -> list[str]:
+    commit_shas = {c.split()[0] for c in commits}
+    sha_pattern = re.compile(r"\b([0-9a-f]{7,40})\b")
+    referenced_shas = set(sha_pattern.findall(section_text))
+    phantom_shas = referenced_shas - commit_shas
+    return sorted(phantom_shas)
+
+
 def get_tags():
     out, _, rc = run_git(["tag", "--sort=-creatordate", "-l", "v*"])
     if rc != 0:
