@@ -67,7 +67,7 @@ class EnvSecretsManager:
             return True
         return any(p.search(alias_name) for p in _ALLOWLIST_PATTERNS)
 
-    def resolve(self, alias_name: str) -> str | None:
+    def resolve(self, alias_name: str, project_id: str | None = None) -> str | None:
         # Explicitly-registered overrides are always honored.
         if alias_name in self._overrides:
             return self._overrides[alias_name]
