@@ -102,6 +102,11 @@ Makefile.tmp
 sqlite+aiosqlite:
 
 # ── OpenCode backup directory (debug artifact after crash recovery) ─────────
+# ── Vim swap files ──────────────────────────────────────────────────────────
+# Standard naming: .file.swp, .file.swo (dot-prefixed swap files for any file)
+.*.sw?
+*.sw?
+
 .opencode.orig/
 opencode.json.orig
 
