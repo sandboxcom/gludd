@@ -30,11 +30,18 @@ def _get_env(key: str, default: str = "") -> str:
 def require_backend() -> str:
     """Return AZURE_BASE_URL or pytest.skip with a clear reason.
 
-    Also does a quick HTTP HEAD to verify reachability.
+    This is the env-pointer path — it tests against an ALREADY-RUNNING endpoint.
+    To auto-provision an endpoint from credentials, use the provision test:
+        AZURE_PROVISION_E2E=1 make test-e2e-azure-provision
     """
     base_url = _get_env("AZURE_BASE_URL")
     if not base_url:
-        pytest.skip("AZURE_BASE_URL not set — export it to run Azure E2E")
+        pytest.skip(
+            "AZURE_BASE_URL not set — this is the env-pointer test that requires "
+            "an already-running Azure GPU endpoint. To auto-provision one from your "
+            "env file credentials, run the provision test instead:\n"
+            "  AZURE_PROVISION_E2E=1 make test-e2e-azure-provision"
+        )
     try:
         r = httpx.head(base_url, timeout=10.0)
         r.raise_for_status()
