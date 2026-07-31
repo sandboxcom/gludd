@@ -63,7 +63,7 @@ function callTracker(args: string[]): string {
       encoding: "utf8",
     })
     return String(result).trim()
-  } catch (e: any) {
+  } catch (e) {
     if (e?.stdout) return String(e.stdout).trim()
     return ""
   }
