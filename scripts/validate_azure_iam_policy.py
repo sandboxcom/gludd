@@ -245,14 +245,17 @@ def _check_field_order(policy: dict, label: str) -> list[str]:
     return warnings
 
 
+def _auto_detect_format(policy: dict) -> tuple[str, callable]:
+    if "properties" in policy and isinstance(policy.get("properties"), dict):
+        return "REST API / Portal (auto-detected)", validate_rest_format
+    return "CLI (PascalCase) (auto-detected)", validate_cli_format
+
+
 def main() -> None:
     errors: list[str] = []
     warnings: list[str] = []
 
-    for policy_file, label, validator in [
-        (POLICY_FILE, "CLI (PascalCase)", validate_cli_format),
-        (POLICY_CLI_FILE, "REST API / Portal", validate_rest_format),
-    ]:
+    for policy_file in [POLICY_FILE, POLICY_CLI_FILE]:
         if not policy_file.exists():
             print(f"MISSING: {policy_file}")
             sys.exit(1)
@@ -260,9 +263,10 @@ def main() -> None:
         try:
             policy = json.loads(policy_file.read_text())
         except json.JSONDecodeError as e:
-            print(f"INVALID JSON ({label}): {e}")
+            print(f"INVALID JSON ({policy_file.name}): {e}")
             sys.exit(1)
 
+        label, validator = _auto_detect_format(policy)
         file_errors, file_warnings, all_actions = validator(policy)
 
         # Structural warnings (field ordering, IsCustom presence)
