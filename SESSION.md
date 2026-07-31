@@ -18,9 +18,9 @@
 
 ## SESSION 58 — 2026-07-30 (CURRENT)
 
-- **HEAD: dc3390fd** on `development` (VERIFIED on sandboxcom)
+- **HEAD: 7a6de5c6** on `development` (3 unpushed commits since b008630c)
 - **Version: 0.1.0-beta.3**
-- **CI: TRIGGERED** on development@dc3390fd
+- **CI: IN_PROGRESS** on development@b008630c (run 30602040158)
 - **Working tree: varies** (check with `make git-status`)
 - **Collection: OK**
 
@@ -28,24 +28,29 @@
 
 | Spec | Module | Src | Unit tests | Integration | E2E | Roles | Status |
 |------|--------|-----|-----------|------------|-----|-------|--------|
-| MATERIALS_ENGINEER | materials | 20 | ~150 | 2 files | 12 tests | 16 | Done |
-| CHEMISTRY_EXPERT | chemistry | 22 | ~200 | 2 files | 12 tests | 20 | Done |
-| AI_ML_EXPERT | ai_ml | 18 | ~150 | 2 files | 11 tests | 18 | Done |
-| GIT_RELEASE_CAPTAIN | git_release | 9 | ~100 | 2 files | 11 tests | 14 | Done |
+| MATERIALS_ENGINEER | materials | 20 | ~456 | 2 files | 12 tests | 16 | Done |
+| CHEMISTRY_EXPERT | chemistry | 22 | ~380 | 2 files | 12 tests | 20 | Done |
+| AI_ML_EXPERT | ai_ml | 18 | ~319 | 2 files | 11 tests | 18 | Done |
+| GIT_RELEASE_CAPTAIN | git_release | 9 | ~237 | 2 files | 11 tests | 14 | Done |
 
-- **Total:** 69+ src modules, 600+ unit tests, 60+ integration tests, 46 E2E, 52 roles
-- **Typecheck:** 0 errors (45 fixed in Wave 3)
-- **Lint:** 0 errors in new code
+- **Total:** 69 src modules, 1,392 tests across 60 files, 52 roles, 4 skills
+- **Typecheck:** 0 errors (898 files)
+- **Lint:** 0 errors
 - **Collection:** OK
-- **ZDD tests:** 23 (3 tests verify atomic swap, rollback, snapshot immutability)
-- **Observability:** 25 tests (traces, metrics, heartbeat, bounded labels)
-- **Security:** ~15 tests (prompt injection, command injection, secret redaction)
-- **Fixtures:** chemistry data (20+ chemicals), materials properties (20+ entries)
-- **Molecule:** 4 scenarios (1 per collection)
-- **Skills:** 4 SKILL.md files in `.opencode/skills/`
-- **Docs:** OSS tools survey, acceptance test mapping (68 ATs audited)
+- **Golden material benchmarks:** 189 tests (30 golden problems)
+- **ZDD tests:** 23
+- **Observability:** 25 tests
+- **Security:** ~15 tests
+- **Molecule:** 4 scenarios
+- **AT compliance:** 8 acceptance tests converted from NOT_STARTED → implemented
+- **Release pipeline AC specs:** AC003 (tag immutability) + AC006 (checksum validation) scripts written, 19 unit tests
 
-### Commits (8 waves)
+### Commits (Wave 9 continuation + post-wave fixes)
+7a6de5c6 — feat: AC003 + AC006 release pipeline enforcement scripts + 19 tests
+adb0af61 — fix: Node v26 catch variable compat in enforce-floor-v2.ts
+b008630c — fix: lint CI — B904 raise from err, E501 line breaks
+e4f4a7da — Wave 9: 1,392 tests, golden material selection, AT compliance, skills
+85a16156 — SESSION.md update
 dc3390fd — Wave 8: integration tests, ZDD/observability/security tests, fixtures
 c1c40d78 — Wave 7: e2e fix, test_materials_failure.py
 83e85b57 — Wave 6: molecule scenarios, skills, E2E tests, collection READMEs
@@ -56,10 +61,9 @@ dd2aec1a — Wave 3: typecheck fix, additive/textiles, thermo/spectra, datasets
 d50b1919 — Wave 1: contracts, schemas, selection, evidence, helpers, 52 roles
 
 ### Remaining
-- CI verification on dc3390fd (triggered, pending)
-- 8 acceptance tests still NOT_STARTED (in progress)
-- Property-based test corpora (100-case suites) — partial
-- Release cut for beta.3 (blocked on CI green)
+- CI green on b008630c (in_progress)
+- Push 3 accumulated commits after CI completes
+- Release cut for beta.3 (blocked on CI green + full gate)
 
 ---
 
