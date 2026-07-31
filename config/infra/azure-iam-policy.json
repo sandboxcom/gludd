@@ -35,7 +35,6 @@
     "Microsoft.App/containerApps/delete",
     "Microsoft.App/containerApps/listSecrets/action",
     "Microsoft.App/containerApps/revisions/read",
-    "Microsoft.App/containerApps/revisions/list/action",
     "Microsoft.App/containerApps/revisions/restart/action",
     "Microsoft.App/containerApps/revisions/activate/action",
     "Microsoft.App/containerApps/revisions/deactivate/action",

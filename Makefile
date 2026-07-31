@@ -4253,6 +4253,9 @@ validate-makefile:
 	@echo "=== make -n help ==="
 	@$(MAKE) -n help > /dev/null && echo "VALIDATE OK: make -n help" || { echo "VALIDATE FAIL: make -n help"; exit 1; }
 
+validate-azure-iam:
+	@$(UV) run python scripts/validate_azure_iam_policy.py
+
 
 skip-counts:
 	@$(UV) run python scripts/list_pytest_skips.py
