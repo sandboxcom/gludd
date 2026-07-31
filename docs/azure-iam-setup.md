@@ -388,3 +388,61 @@ The inference API is available at:
 GET  https://gpu-inference-<revision>.<region>.azurecontainerapps.io/v1/models
 POST https://gpu-inference-<revision>.<region>.azurecontainerapps.io/v1/chat/completions
 ```
+
+## 4. Azure Game E2E Smoke Tests
+
+The project includes a full E2E test that provisions Azure GPU compute (A100 or
+H100), runs an LLM to generate game code (Doom-like hallway, Quake-like arena),
+runs the generated game headless, captures frames, and compares them against
+reference gameplay using SSIM similarity metrics. All inference runs exclusively
+on Azure GPU resources.
+
+### Prerequisites
+
+- Azure subscription with GPU quota (NCasT4_v3, NC_A100_v4, or ND_H100_v5)
+- `General Ludd Container App Deployer` custom role created and assigned
+- `/etc/general-ludd/env` sourced with Azure credentials
+
+### Quick start — pre-provisioned endpoint
+
+```bash
+source /tmp/general-ludd.env
+export GLUDD_CONFIG_DIR="$PWD/config"
+export AZURE_BASE_URL="https://gpu-inference-xxx.eastus.azurecontainerapps.io/v1"
+export AZURE_MODEL="Qwen/Qwen2.5-Coder-7B-Instruct"
+make test-e2e-games
+```
+
+### Full provision — deploy GPU on-demand
+
+```bash
+source /tmp/general-ludd.env
+export GLUDD_CONFIG_DIR="$PWD/config"
+export AZURE_PROVISION_E2E=1
+export AZURE_GPU_TYPE=a100_80
+export AZURE_PROVISION_ENGINE=vllm
+export AZURE_MODEL="Qwen/Qwen2.5-Coder-7B-Instruct"
+export GLUDD_E2E_MAX_SPEND_USD=10
+make test-e2e-games-provision
+```
+
+Cost ~$1-5 for a single run. Total runtime ~20-40 min (provision + model download + inference + destroy).
+
+### Available Make targets
+
+| Target | What it does |
+|---|---|
+| `make test-e2e-games` | Game E2E via pre-provisioned Azure endpoint (AZURE_BASE_URL). Skips if unset. |
+| `make test-e2e-games-provision` | Full GPU provision → game gen → run → compare → destroy. AZURE_PROVISION_E2E=1. |
+| `make test-e2e-azure` | Azure env-pointer E2E — model call + billing |
+| `make test-e2e-azure-provision` | Full deploy → inference → destroy |
+| `make test-e2e-providers` | All provider E2E (skips unconfigured) |
+
+### Test files
+
+```
+tests/e2e/game_e2e/test_game_fidelity.py   # Doom+Quake gen, SSIM frame compare (10 tests)
+tests/e2e/providers/test_azure_e2e.py       # Model call, billing, discovery (3 tests)
+tests/e2e/providers/test_azure_provision_e2e.py  # Full deploy E2E (opt-in)
+src/general_ludd/cloud/game_e2e.py          # 561-line orchestrator
+```

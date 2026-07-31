@@ -135,9 +135,13 @@ def _check_cross_provider(provider: str, role_def: dict[str, Any]) -> list[str]:
             if not isinstance(stmt, dict):
                 continue
             actions = stmt.get("Action", [])
-            if isinstance(actions, list):
-                if "iam:PassRole" in actions and stmt.get("Effect") == "Allow" and "Condition" not in stmt:
-                    warnings.append(f"{CROSS_PROVIDER_PATTERNS['passrole_unscoped']}")
+            if (
+                isinstance(actions, list)
+                and "iam:PassRole" in actions
+                and stmt.get("Effect") == "Allow"
+                and "Condition" not in stmt
+            ):
+                warnings.append(f"{CROSS_PROVIDER_PATTERNS['passrole_unscoped']}")
 
     elif provider == "gcp":
         bindings = role_def.get("bindings", [])

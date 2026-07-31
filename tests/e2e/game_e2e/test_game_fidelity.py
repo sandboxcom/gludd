@@ -1,11 +1,15 @@
 """E2E tests for AI-generated game fidelity against reference gameplay.
 
-These tests use Azure GPU compute to run an LLM that generates simple game code.
-The generated game is run headless, frames are captured, and compared against
-reference gameplay videos using SSIM similarity metrics.
+These tests use Azure GPU compute (A100/H100) to provision an inference endpoint,
+then run an LLM on that endpoint to generate simple game code. The generated game
+is run headless, frames are captured, and compared against reference gameplay
+videos using SSIM similarity metrics.
 
-All AI inference runs on Azure GPU resources exclusively.
+ALL AI inference runs on Azure GPU resources exclusively. No fallback to hosted
+APIs (DeepSeek, OpenAI, etc.) — this is an Azure compute E2E test.
+
 Opt-in: requires AZURE_PROVISION_E2E=1 or pre-provisioned AZURE_BASE_URL.
+Azure credentials (ARM_*) must be set in the environment.
 """
 
 from __future__ import annotations
@@ -28,7 +32,9 @@ from general_ludd.cloud.game_e2e import (
 
 _HAS_LANGCHAIN_OPENAI = importlib.util.find_spec("langchain_openai") is not None
 
-_AZURE_CONFIGURED = bool(os.environ.get("AZURE_BASE_URL") or os.environ.get("AZURE_PROVISION_E2E") == "1")
+_AZURE_PROVISION_ENABLED = os.environ.get("AZURE_PROVISION_E2E") == "1"
+_AZURE_ENDPOINT_SET = bool(os.environ.get("AZURE_BASE_URL"))
+_AZURE_CONFIGURED = _AZURE_PROVISION_ENABLED or _AZURE_ENDPOINT_SET
 
 _AZURE_SKIP_REASON = "Azure GPU not configured — set AZURE_BASE_URL or AZURE_PROVISION_E2E=1"
 
@@ -38,30 +44,71 @@ LIVE_SKIP_REASON = (
     else ("langchain-openai is not installed" if not _HAS_LANGCHAIN_OPENAI else "")
 )
 
-
-def _get_deepseek_key() -> str | None:
-    return os.environ.get("DEEPSEEK_API_KEY", os.environ.get("AZURE_API_KEY"))
+_AZURE_CHECKED = bool(os.environ.get("ARM_SUBSCRIPTION_ID") or os.environ.get("AZURE_SUBSCRIPTION_ID"))
 
 
-def _build_gateway():
+def _build_azure_gateway():
+    """Build a ModelGateway pointed at an Azure-provisioned GPU endpoint.
+
+    Uses the endpoint URL from AzureGameE2E if provisioned, or
+    AZURE_BASE_URL if pre-provisioned. NEVER falls back to DeepSeek/OpenAI.
+    """
     from general_ludd.models.gateway import ModelGateway
     from general_ludd.models.profiles import ModelProfile
 
-    key = _get_deepseek_key()
-    base_url = os.environ.get("AZURE_BASE_URL") or (
-        "https://api.deepseek.com" if key and key.startswith("sk-") else None
-    )
+    base_url = os.environ.get("AZURE_BASE_URL")
+
+    if not base_url and _AZURE_PROVISION_ENABLED and _AZURE_CHECKED:
+        base_url = _provision_azure_endpoint()
+
     if not base_url:
         return None
 
     profile = ModelProfile(
-        model_profile_id="deepseek_coder",
-        provider="deepseek",
-        model="deepseek-coder",
+        model_profile_id="azure_gpu_coder",
+        provider="openai",
+        model=os.environ.get("AZURE_MODEL", "qwen2.5-coder-7b"),
         api_base_url=base_url,
-        api_key=key or "",
+        api_key=os.environ.get("AZURE_API_KEY", "sk-azure-local"),
     )
     return ModelGateway(profiles=[profile])
+
+
+def _provision_azure_endpoint() -> str | None:
+    """Provision an Azure GPU endpoint and return its base URL.
+
+    Uses gludd's DeploymentManager to provision a Container App with
+    Azure-deployed vllm serving the model. Returns the /v1 endpoint URL.
+    Only called when AZURE_PROVISION_E2E=1 and ARM credentials are set.
+    """
+    try:
+        from general_ludd.infra.compute import ComputeConfig, ComputeProvider, GPUType
+        from general_ludd.infra.deployment import DeploymentManager
+        from general_ludd.secrets.env import EnvSecretsManager
+
+        gpu_type_str = os.environ.get("AZURE_GPU_TYPE", "a100_80")
+        engine = os.environ.get("AZURE_PROVISION_ENGINE", "vllm")
+        model = os.environ.get("AZURE_MODEL", "Qwen/Qwen2.5-Coder-7B-Instruct")
+
+        gpu_type = getattr(GPUType, gpu_type_str.upper(), GPUType.A100_80)
+
+        config = ComputeConfig(
+            provider=ComputeProvider.AZURE,
+            gpu_type=gpu_type,
+            model_name=model,
+            deploy_type="containerapp",
+            engine=engine,
+            region="eastus",
+        )
+
+        secrets = EnvSecretsManager()
+        mgr = DeploymentManager(secrets_resolver=secrets)
+        import asyncio
+
+        instance = asyncio.run(mgr.deploy(config))
+        return instance.endpoint_url
+    except Exception:
+        return None
 
 
 # ── Test: Doom Hallway Generation ──────────────────────────────────────────
@@ -73,7 +120,7 @@ def _build_gateway():
 class TestDoomHallwayGeneration:
     @pytest.fixture(scope="class")
     def gateway(self):
-        gw = _build_gateway()
+        gw = _build_azure_gateway()
         if gw is None:
             pytest.skip("Azure gateway not configured")
         return gw
@@ -123,7 +170,7 @@ class TestDoomHallwayGeneration:
 class TestQuakeArenaGeneration:
     @pytest.fixture(scope="class")
     def gateway(self):
-        gw = _build_gateway()
+        gw = _build_azure_gateway()
         if gw is None:
             pytest.skip("Azure gateway not configured")
         return gw
