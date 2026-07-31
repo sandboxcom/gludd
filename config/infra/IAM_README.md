@@ -14,12 +14,22 @@ permissions required** for the named gludd operation to function.
 
 ## File Map
 
-| File | Content |
-|------|---------|
-| `aws-iam-roles.yml` | AWS IAM policy documents (JSON-embedded in YAML) |
-| `gcp-iam-roles.yml` | GCP predefined role bindings + CEL conditions |
-| `azure-iam-roles.yml` | Azure RBAC role assignments scoped to resource group |
-| `azure-iam-policy.json` | Azure custom role definition (detailed Action/NotAction) |
+Two Azure policy files exist because the Portal JSON editor and the Azure CLI
+expect different JSON structures for the same role definition. Both files
+contain identical permissions — only the shape differs.
+
+| File | Format | Use with |
+|------|--------|----------|
+| `aws-iam-roles.yml` | AWS IAM policy documents (JSON-embedded in YAML) | AWS CLI / CloudFormation |
+| `gcp-iam-roles.yml` | GCP predefined role bindings + CEL conditions | gcloud CLI |
+| `azure-iam-roles.yml` | Azure RBAC role assignments scoped to resource group | az CLI |
+| `azure-iam-policy.json` | Azure custom role — **PascalCase flat keys** (`Name`, `Actions`, `NotActions`, `AssignableScopes`) | Azure CLI: `az role definition create --role-definition "$(cat ...)"` (inline JSON, not `@file`) |
+| `azure-iam-policy-cli.json` | Azure custom role — **REST API format** (`properties` wrapper: `roleName`, `permissions[].actions`, `assignableScopes`) | Azure Portal Web UI: paste into JSON tab |
+
+### When to use which Azure file
+
+- **Portal (Web UI)** → Use `azure-iam-policy-cli.json`. The Portal JSON editor expects the REST API format with `properties` / `permissions` wrapper.
+- **Azure CLI** → Use `azure-iam-policy.json`. The CLI `--role-definition` flag expects PascalCase flat keys.
 
 ## Headless CI validation
 
@@ -318,7 +328,8 @@ SUB_ID="00000000-0000-0000-0000-000000000000"
 RG="gludd-prod"
 
 # Create the custom Terraform deployer role (one-time)
-az role definition create --role-definition @config/infra/azure-iam-policy.json
+# Use inline JSON (not @file) — the CLI expects PascalCase keys for --role-definition
+az role definition create --role-definition "$(sed "s/{subscription_id}/$SUB_ID/" config/infra/azure-iam-policy.json)"
 
 # Create user-assigned managed identities
 az identity create --name gludd-terraform-deploy --resource-group "${RG}"

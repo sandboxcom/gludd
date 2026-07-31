@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
-"""validate_azure_iam_policy.py — Validate azure-iam-policy.json against known Azure RBAC schema.
+"""validate_azure_iam_policy.py — Validate Azure IAM policy JSON files.
+
+Validates two formats:
+  1. azure-iam-policy.json — PascalCase CLI format
+     (Name, Description, Actions, NotActions, AssignableScopes, DataActions, NotDataActions)
+  2. azure-iam-policy-cli.json — REST API / Portal format
+     (wrapped in "properties": roleName, description, permissions[].actions, assignableScopes)
 
 Checks:
   1. All action strings follow a valid Azure RBAC format
   2. No nonexistent suffix patterns (e.g. /list/action where /read is the correct form)
   3. Secret/key/credential operations using /read instead of /action
   4. Actions cross-referenced against PROVIDER_OPERATIONS catalog (warn only)
-  5. JSON schema matches what az role definition create expects
+  5. JSON schema matches what each target (CLI or Portal) expects
   6. AssignableScopes uses the correct subscription placeholder
   7. Required fields present
 """
@@ -17,7 +23,9 @@ import sys
 from pathlib import Path
 
 
-POLICY_FILE = Path(__file__).resolve().parent.parent / "config" / "infra" / "azure-iam-policy.json"
+INFRA_DIR = Path(__file__).resolve().parent.parent / "config" / "infra"
+POLICY_FILE = INFRA_DIR / "azure-iam-policy.json"
+POLICY_CLI_FILE = INFRA_DIR / "azure-iam-policy-cli.json"
 
 SECURITY_CRITICAL_DENIED_ACTIONS = {
     "Microsoft.Compute/virtualMachines/runCommand/action",
@@ -82,17 +90,11 @@ def validate_action_format(action: str) -> list[str]:
     return errors
 
 
-def main() -> None:
-    if not POLICY_FILE.exists():
-        print(f"MISSING: {POLICY_FILE}")
-        sys.exit(1)
+def validate_cli_format(policy: dict) -> tuple[list[str], list[str], list[str]]:
+    """Validate the PascalCase CLI format (azure-iam-policy.json).
 
-    try:
-        policy = json.loads(POLICY_FILE.read_text())
-    except json.JSONDecodeError as e:
-        print(f"INVALID JSON: {e}")
-        sys.exit(1)
-
+    Returns (errors, warnings, all_actions_list).
+    """
     errors: list[str] = []
     warnings: list[str] = []
 
@@ -130,12 +132,112 @@ def main() -> None:
     if len(description) < 20:
         warnings.append(f"Description is too short ({len(description)} chars)")
 
-    # Cross-reference against known Azure actions (warn only — Azure adds new actions)
-    known = _load_known_actions()
-    if known:
-        for action in all_actions:
-            if action not in known and validate_action_format(action) == []:
-                warnings.append(f"UNKNOWN: '{action}' not verified against Azure docs")
+    return errors, warnings, all_actions
+
+
+def validate_rest_format(policy: dict) -> tuple[list[str], list[str], list[str]]:
+    """Validate the REST API / Portal format (azure-iam-policy-cli.json).
+
+    Expected shape: {"properties": {"roleName": ..., "permissions": [{"actions": [...], ...}]}}
+
+    Returns (errors, warnings, all_actions_list).
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    props = policy.get("properties")
+    if not isinstance(props, dict):
+        errors.append("Missing or invalid 'properties' object — REST API format requires properties wrapper")
+        return errors, warnings, []
+
+    role_name = props.get("roleName")
+    if not isinstance(role_name, str) or len(role_name) == 0:
+        errors.append("properties.roleName must be a non-empty string")
+
+    description = props.get("description", "")
+    if len(description) < 20:
+        warnings.append(f"properties.description is too short ({len(description)} chars)")
+
+    scopes = props.get("assignableScopes", [])
+    if not isinstance(scopes, list) or len(scopes) == 0:
+        errors.append("properties.assignableScopes must be a non-empty list")
+    elif not any("{subscription_id}" in s or re.match(r"^/subscriptions/[0-9a-f-]+", s) or s == "/" for s in scopes):
+        warnings.append("properties.assignableScopes does not contain subscription-level scope")
+
+    permissions = props.get("permissions")
+    if not isinstance(permissions, list) or len(permissions) == 0:
+        errors.append("properties.permissions must be a non-empty list")
+        return errors, warnings, []
+
+    perm = permissions[0]
+    if not isinstance(perm, dict):
+        errors.append("properties.permissions[0] must be an object")
+        return errors, warnings, []
+
+    actions = perm.get("actions")
+    if not isinstance(actions, list) or len(actions) == 0:
+        errors.append("properties.permissions[0].actions must be a non-empty list")
+        actions = []
+
+    not_actions = perm.get("notActions", [])
+    if not isinstance(not_actions, list):
+        errors.append("properties.permissions[0].notActions must be a list")
+        not_actions = []
+
+    all_actions = actions + not_actions
+    seen: set[str] = set()
+    for action in all_actions:
+        if action in seen:
+            warnings.append(f"Duplicate action: {action}")
+        seen.add(action)
+        errors.extend(validate_action_format(action))
+
+    denied = set(not_actions)
+    missing_denials = SECURITY_CRITICAL_DENIED_ACTIONS - denied
+    if missing_denials:
+        errors.append(
+            f"properties.permissions[0].notActions missing security-critical denials: "
+            f"{', '.join(sorted(missing_denials))}"
+        )
+
+    return errors, warnings, all_actions
+
+
+def main() -> None:
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    for policy_file, label, validator in [
+        (POLICY_FILE, "CLI (PascalCase)", validate_cli_format),
+        (POLICY_CLI_FILE, "REST API / Portal", validate_rest_format),
+    ]:
+        if not policy_file.exists():
+            print(f"MISSING: {policy_file}")
+            sys.exit(1)
+
+        try:
+            policy = json.loads(policy_file.read_text())
+        except json.JSONDecodeError as e:
+            print(f"INVALID JSON ({label}): {e}")
+            sys.exit(1)
+
+        file_errors, file_warnings, all_actions = validator(policy)
+
+        # Prefix errors/warnings with the file label and file name
+        for e in file_errors:
+            errors.append(f"[{label}] {e}")
+        for w in file_warnings:
+            warnings.append(f"[{label}] {w}")
+
+        # Cross-reference against known Azure actions (warn only — Azure adds new actions)
+        known = _load_known_actions()
+        if known:
+            for action in all_actions:
+                if action not in known and validate_action_format(action) == []:
+                    warnings.append(f"[{label}] UNKNOWN: '{action}' not verified against Azure docs")
+
+        action_count = len(all_actions)
+        print(f"PASS: {policy_file.name} ({label}) — {action_count} actions parsed")
 
     if errors:
         for e in errors:
@@ -148,11 +250,7 @@ def main() -> None:
     for w in warnings:
         print(f"WARN: {w}")
 
-    print(
-        f"PASS: {POLICY_FILE.name} — {len(policy['Actions'])} actions, "
-        f"{len(policy['NotActions'])} not-actions, "
-        f"{len(policy.get('AssignableScopes', []))} scopes"
-    )
+    print(f"\nPASS: All Azure IAM policy files valid — {len(errors)} errors, {len(warnings)} warnings")
     sys.exit(0)
 
 

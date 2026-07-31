@@ -40,29 +40,43 @@ Virtual Networks, Subnets, and Resource Groups via Terraform/OpenTofu.
 
 ## 2. Creating and Assigning the Role in Azure Portal
 
-### Step 1: Create the custom role
+Two policy files exist because the Azure Portal JSON editor and the Azure CLI
+expect different formats for the same role definition. Both files contain
+identical permissions — the only difference is the JSON structure.
+
+| File | Format | Use with |
+|------|--------|----------|
+| `config/infra/azure-iam-policy-cli.json` | REST API (`properties` / `permissions` wrapper) | **Azure Portal Web UI** — paste into JSON tab |
+| `config/infra/azure-iam-policy.json` | PascalCase flat keys (`Name`, `Actions`, ...) | **Azure CLI** — `az role definition create` |
+
+### Step 1a: Create the custom role via Azure Portal (Web UI)
+
+Use `config/infra/azure-iam-policy-cli.json` — this file uses the REST API
+format that the Portal JSON editor expects.
 
 1. Sign in to the [Azure Portal](https://portal.azure.com).
 2. Search for **Subscriptions** and select your target subscription.
 3. Click **Access control (IAM)** in the left sidebar.
 4. Click **+ Add** → **Add custom role**.
 5. Switch to **JSON** tab and click **Edit**.
-6. Replace the JSON with the contents of `config/infra/azure-iam-policy.json`.
-7. Replace `"/subscriptions/{subscription_id}"` in `AssignableScopes` with your
+6. Replace the JSON with the contents of `config/infra/azure-iam-policy-cli.json`.
+7. Replace `"{subscription_id}"` in `assignableScopes` with your
    actual subscription ID (found on the Subscription overview page).
 8. Click **Save** → **Review + create** → **Create**.
 
-Alternatively, use the Azure CLI:
+### Step 1b: Create the custom role via Azure CLI
+
+Use `config/infra/azure-iam-policy.json` — this file uses PascalCase keys
+that `az role definition create` expects. The `--role-definition` flag
+accepts inline JSON (do NOT use `@file` syntax with this format).
 
 ```bash
 # Get your subscription ID
 SUBSCRIPTION_ID=$(az account show --query id -o tsv)
 
-# Substitute the subscription ID into the policy
-sed "s/{subscription_id}/$SUBSCRIPTION_ID/" config/infra/azure-iam-policy.json > /tmp/gludd-role.json
-
-# Create the custom role
-az role definition create --role-definition /tmp/gludd-role.json
+# Substitute the subscription ID into the policy and create the role
+# Use inline JSON (not @file) — the CLI expects PascalCase keys for --role-definition
+az role definition create --role-definition "$(sed "s/{subscription_id}/$SUBSCRIPTION_ID/" config/infra/azure-iam-policy.json)"
 ```
 
 ### Step 2: Create a managed identity or service principal
