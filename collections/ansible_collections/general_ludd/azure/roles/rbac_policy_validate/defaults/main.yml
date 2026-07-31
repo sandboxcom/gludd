@@ -1,0 +1,4 @@
+---
+role_enabled: false
+role_definition_file: ""
+output_path: /tmp/gludd-azure-rbac-validate

@@ -1,0 +1,6 @@
+---
+role_enabled: false
+app_name: ""
+region: eastus
+cidr_range: 10.0.0.0/16
+output_path: /tmp/gludd-azure-network-design

@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  role_name: cost_optimize
+  author: Agentic Harness Agent
+  description: Optimize Azure costs for a service type.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [azure, cost, optimization, pricing]
+dependencies: []

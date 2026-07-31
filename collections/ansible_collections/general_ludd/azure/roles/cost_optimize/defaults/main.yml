@@ -1,0 +1,6 @@
+---
+role_enabled: false
+service_type: ""
+region: eastus
+gpu_type: T4
+output_path: /tmp/gludd-azure-cost-optimize

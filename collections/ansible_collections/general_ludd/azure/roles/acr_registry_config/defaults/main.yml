@@ -1,0 +1,6 @@
+---
+role_enabled: false
+name: ""
+sku: Basic
+region: eastus
+output_path: /tmp/gludd-azure-acr-config

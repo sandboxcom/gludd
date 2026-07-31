@@ -238,3 +238,56 @@ class TestValidateActionFormatFunction:
         for action in all_actions:
             errors = validate_action_format(action)
             assert errors == [], f"Action '{action}' should be valid: {errors}"
+
+
+# ---------------------------------------------------------------------------
+# Secret / key / credential patterns — /read on secret ops should fail
+# ---------------------------------------------------------------------------
+
+
+class TestSecretActionPatterns:
+    """Secret/key/credential operations using /read should be flagged by validate_action_format."""
+
+    def test_sharedkeys_read_is_rejected(self) -> None:
+        errors = validate_action_format("Microsoft.OperationalInsights/workspaces/sharedKeys/read")
+        assert len(errors) > 0
+        assert any("/action instead of /read" in e.lower() for e in errors)
+
+    def test_listcredentials_read_is_rejected(self) -> None:
+        errors = validate_action_format("Microsoft.ContainerRegistry/registries/listCredentials/read")
+        assert len(errors) > 0
+        assert any("/action instead of /read" in e.lower() for e in errors)
+
+    def test_listsecrets_read_is_rejected(self) -> None:
+        errors = validate_action_format("Microsoft.App/containerApps/listSecrets/read")
+        assert len(errors) > 0
+        assert any("/action instead of /read" in e.lower() for e in errors)
+
+    def test_keys_read_is_rejected(self) -> None:
+        errors = validate_action_format("Microsoft.KeyVault/vaults/keys/read")
+        assert len(errors) > 0
+        assert any("/action instead of /read" in e.lower() for e in errors)
+
+    def test_listcredentials_action_passes(self) -> None:
+        errors = validate_action_format("Microsoft.ContainerRegistry/registries/listCredentials/action")
+        assert errors == []
+
+    def test_listsecrets_action_passes(self) -> None:
+        errors = validate_action_format("Microsoft.App/containerApps/listSecrets/action")
+        assert errors == []
+
+
+# ---------------------------------------------------------------------------
+# Provider operations cross-reference (warn-only — Azure adds new actions)
+# ---------------------------------------------------------------------------
+
+
+class TestProviderOperationsCrossReference:
+    """Validate script should cross-reference actions against PROVIDER_OPERATIONS."""
+
+    def test_imports_known_actions(self) -> None:
+        from general_ludd.azure.rbac_validator import all_known_actions
+
+        known = all_known_actions()
+        assert isinstance(known, frozenset)
+        assert len(known) > 50

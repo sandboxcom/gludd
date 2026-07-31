@@ -82,7 +82,7 @@
     "Microsoft.Authorization/roleDefinitions/read",
 
     "Microsoft.OperationalInsights/workspaces/read",
-    "Microsoft.OperationalInsights/workspaces/sharedKeys/read",
+    "Microsoft.OperationalInsights/workspaces/sharedKeys/action",
 
     "Microsoft.Insights/diagnosticSettings/read",
     "Microsoft.Insights/diagnosticSettings/write"
@@ -93,7 +93,6 @@
     "Microsoft.Authorization/roleDefinitions/write",
     "Microsoft.Authorization/roleDefinitions/delete",
     "Microsoft.Resources/subscriptions/resourceGroups/moveResources/action",
-    "Microsoft.ContainerRegistry/registries/queueBuild/action",
     "Microsoft.Compute/virtualMachines/runCommand/action",
     "Microsoft.Compute/virtualMachines/runCommands/read",
     "Microsoft.Compute/virtualMachines/runCommands/write",

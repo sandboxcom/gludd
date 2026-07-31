@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  role_name: log_analytics_query
+  author: Agentic Harness Agent
+  description: Query a Log Analytics workspace.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [azure, monitoring, log-analytics, kql]
+dependencies: []

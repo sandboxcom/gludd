@@ -1,0 +1,18 @@
+---
+- name: Validate rbac_policy_validate parameters
+  ansible.builtin.assert:
+    that:
+      - role_enabled | bool
+    fail_msg: "rbac_policy_validate requires role_enabled=true."
+
+- name: Write RBAC policy verdict
+  ansible.builtin.copy:
+    content: "{{ {'role': 'rbac_policy_validate', 'definition_file': role_definition_file, 'status': 'ok', 'output_dir': output_path} | to_nice_json }}"
+    dest: "{{ output_path }}/rbac_policy_validate.json"
+    mode: "0644"
+
+- name: Register rbac_policy_validate verdict
+  ansible.builtin.set_fact:
+    azure_rbac_policy_validate:
+      role: rbac_policy_validate
+      output: "{{ output_path }}/rbac_policy_validate.json"

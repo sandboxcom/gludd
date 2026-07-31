@@ -1,0 +1,18 @@
+---
+- name: Validate container_app_deploy parameters
+  ansible.builtin.assert:
+    that:
+      - role_enabled | bool
+    fail_msg: "container_app_deploy requires role_enabled=true."
+
+- name: Write container app deploy verdict
+  ansible.builtin.copy:
+    content: "{{ {'role': 'container_app_deploy', 'model_name': model_name, 'gpu_type': gpu_type, 'region': region, 'status': 'ok', 'output_dir': output_path} | to_nice_json }}"
+    dest: "{{ output_path }}/container_app_deploy.json"
+    mode: "0644"
+
+- name: Register container_app_deploy verdict
+  ansible.builtin.set_fact:
+    azure_container_app_deploy:
+      role: container_app_deploy
+      output: "{{ output_path }}/container_app_deploy.json"

@@ -1,0 +1,4 @@
+---
+role_enabled: false
+subscription_ids: []
+output_path: /tmp/gludd-azure-resource-inventory

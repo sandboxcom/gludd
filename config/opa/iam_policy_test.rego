@@ -305,8 +305,7 @@ test_azure_custom_role_valid if {
 			"Microsoft.Compute/virtualMachines/runCommands/read",
 			"Microsoft.Compute/virtualMachines/runCommands/write",
 			"Microsoft.Compute/virtualMachines/runCommands/delete",
-			"Microsoft.Resources/subscriptions/resourceGroups/moveResources/action",
-			"Microsoft.ContainerRegistry/registries/queueBuild/action"
+			"Microsoft.Resources/subscriptions/resourceGroups/moveResources/action"
 		],
 		"DataActions": [],
 		"NotDataActions": []

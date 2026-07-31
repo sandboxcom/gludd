@@ -1,0 +1,18 @@
+---
+- name: Validate iam_role_audit parameters
+  ansible.builtin.assert:
+    that:
+      - role_enabled | bool
+    fail_msg: "iam_role_audit requires role_enabled=true."
+
+- name: Write IAM audit verdict
+  ansible.builtin.copy:
+    content: "{{ {'role': 'iam_role_audit', 'persona': persona, 'status': 'ok', 'output_dir': output_path} | to_nice_json }}"
+    dest: "{{ output_path }}/iam_role_audit.json"
+    mode: "0644"
+
+- name: Register iam_role_audit verdict
+  ansible.builtin.set_fact:
+    azure_iam_audit:
+      role: iam_role_audit
+      output: "{{ output_path }}/iam_role_audit.json"

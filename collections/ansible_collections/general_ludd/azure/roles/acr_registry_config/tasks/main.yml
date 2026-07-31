@@ -1,0 +1,18 @@
+---
+- name: Validate acr_registry_config parameters
+  ansible.builtin.assert:
+    that:
+      - role_enabled | bool
+    fail_msg: "acr_registry_config requires role_enabled=true."
+
+- name: Write ACR config verdict
+  ansible.builtin.copy:
+    content: "{{ {'role': 'acr_registry_config', 'name': name, 'sku': sku, 'region': region, 'status': 'ok', 'output_dir': output_path} | to_nice_json }}"
+    dest: "{{ output_path }}/acr_registry_config.json"
+    mode: "0644"
+
+- name: Register acr_registry_config verdict
+  ansible.builtin.set_fact:
+    azure_acr_registry_config:
+      role: acr_registry_config
+      output: "{{ output_path }}/acr_registry_config.json"

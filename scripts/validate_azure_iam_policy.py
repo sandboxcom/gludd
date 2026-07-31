@@ -4,9 +4,11 @@
 Checks:
   1. All action strings follow a valid Azure RBAC format
   2. No nonexistent suffix patterns (e.g. /list/action where /read is the correct form)
-  3. JSON schema matches what az role definition create expects
-  4. AssignableScopes uses the correct subscription placeholder
-  5. Required fields present
+  3. Secret/key/credential operations using /read instead of /action
+  4. Actions cross-referenced against PROVIDER_OPERATIONS catalog (warn only)
+  5. JSON schema matches what az role definition create expects
+  6. AssignableScopes uses the correct subscription placeholder
+  7. Required fields present
 """
 
 import json
@@ -37,18 +39,50 @@ FORBIDDEN_SUFFIX_PATTERNS = [
     (r"/update/action$", "/write covers update; use /write instead of /update/action"),
 ]
 
+SECRET_ACTION_PATTERNS: dict[str, str] = {
+    r"/keys/read$": "Key operations use /action not /read",
+    r"/secrets/read$": "Secret operations use /action not /read",
+    r"/sharedKeys/read$": "Shared key operations use /action not /read",
+    r"/listCredentials/read$": "Credential listing uses /action not /read",
+    r"/listSecrets/read$": "Secret listing uses /action not /read",
+}
 
-def validate_action_format(action):
-    errors = []
+_RE_SECRET_PATTERNS = {re.compile(pat, re.IGNORECASE): msg for pat, msg in SECRET_ACTION_PATTERNS.items()}
+
+# Lazily import PROVIDER_OPERATIONS from rbac_validator — handle case
+# where the module path may not be on sys.path yet.
+_ALL_KNOWN_ACTIONS: frozenset[str] | None = None
+
+
+def _load_known_actions() -> frozenset[str]:
+    """Import PROVIDER_OPERATIONS from rbac_validator and flatten into a single set."""
+    global _ALL_KNOWN_ACTIONS
+    if _ALL_KNOWN_ACTIONS is not None:
+        return _ALL_KNOWN_ACTIONS
+
+    try:
+        from general_ludd.azure.rbac_validator import all_known_actions  # noqa: PLC0415
+
+        _ALL_KNOWN_ACTIONS = all_known_actions()
+    except ImportError:
+        _ALL_KNOWN_ACTIONS = frozenset()
+    return _ALL_KNOWN_ACTIONS
+
+
+def validate_action_format(action: str) -> list[str]:
+    errors: list[str] = []
     if not CLI_ACTION_PATTERN.match(action):
         errors.append(f"Action '{action}' does not match Azure RBAC format")
     for pattern, explanation in FORBIDDEN_SUFFIX_PATTERNS:
         if re.search(pattern, action, re.IGNORECASE):
             errors.append(f"Action '{action}': {explanation}")
+    for pattern, message in _RE_SECRET_PATTERNS.items():
+        if pattern.search(action):
+            errors.append(f"Action '{action}' may need /action instead of /read — {message.lower()}")
     return errors
 
 
-def main():
+def main() -> None:
     if not POLICY_FILE.exists():
         print(f"MISSING: {POLICY_FILE}")
         sys.exit(1)
@@ -59,8 +93,8 @@ def main():
         print(f"INVALID JSON: {e}")
         sys.exit(1)
 
-    errors = []
-    warnings = []
+    errors: list[str] = []
+    warnings: list[str] = []
 
     required = ["Name", "Description", "Actions", "NotActions", "AssignableScopes"]
     missing = [f for f in required if f not in policy]
@@ -80,7 +114,7 @@ def main():
         warnings.append("AssignableScopes does not contain subscription-level scope")
 
     all_actions = policy.get("Actions", []) + policy.get("NotActions", [])
-    seen = set()
+    seen: set[str] = set()
     for action in all_actions:
         if action in seen:
             warnings.append(f"Duplicate action: {action}")
@@ -96,15 +130,23 @@ def main():
     if len(description) < 20:
         warnings.append(f"Description is too short ({len(description)} chars)")
 
+    # Cross-reference against known Azure actions (warn only — Azure adds new actions)
+    known = _load_known_actions()
+    if known:
+        for action in all_actions:
+            if action not in known and validate_action_format(action) == []:
+                warnings.append(f"UNKNOWN: '{action}' not verified against Azure docs")
+
     if errors:
         for e in errors:
             print(f"FAIL: {e}")
+        for w in warnings:
+            print(f"WARN: {w}")
         print(f"\n{len(errors)} error(s), {len(warnings)} warning(s)")
         sys.exit(1)
 
-    if warnings:
-        for w in warnings:
-            print(f"WARN: {w}")
+    for w in warnings:
+        print(f"WARN: {w}")
 
     print(
         f"PASS: {POLICY_FILE.name} — {len(policy['Actions'])} actions, "

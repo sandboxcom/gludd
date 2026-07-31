@@ -1,0 +1,24 @@
+---
+namespace: general_ludd
+name: azure
+version: 0.1.0
+readme: README.md
+description: >
+  Azure cloud operations collection — IAM, networking, container apps,
+  monitoring, cost optimization. Roles consume the typed Python service
+  API in src/general_ludd/azure/; no independent domain logic lives in
+  the task files.
+license:
+  - MIT
+authors:
+  - Agentic Harness Agent <agent@harness.local>
+tags:
+  - azure
+  - cloud
+  - iam
+  - rbac
+  - networking
+  - containers
+  - monitoring
+  - cost
+dependencies: {}

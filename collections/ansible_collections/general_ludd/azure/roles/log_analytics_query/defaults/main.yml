@@ -1,0 +1,5 @@
+---
+role_enabled: false
+workspace_id: ""
+kql_query: "Heartbeat | take 5"
+output_path: /tmp/gludd-azure-log-analytics

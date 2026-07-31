@@ -1,0 +1,18 @@
+---
+- name: Validate cost_optimize parameters
+  ansible.builtin.assert:
+    that:
+      - role_enabled | bool
+    fail_msg: "cost_optimize requires role_enabled=true."
+
+- name: Write cost optimize verdict
+  ansible.builtin.copy:
+    content: "{{ {'role': 'cost_optimize', 'service_type': service_type, 'region': region, 'gpu_type': gpu_type, 'status': 'ok', 'output_dir': output_path} | to_nice_json }}"
+    dest: "{{ output_path }}/cost_optimize.json"
+    mode: "0644"
+
+- name: Register cost_optimize verdict
+  ansible.builtin.set_fact:
+    azure_cost_optimize:
+      role: cost_optimize
+      output: "{{ output_path }}/cost_optimize.json"

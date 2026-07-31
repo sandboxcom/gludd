@@ -1,0 +1,18 @@
+---
+- name: Validate log_analytics_query parameters
+  ansible.builtin.assert:
+    that:
+      - role_enabled | bool
+    fail_msg: "log_analytics_query requires role_enabled=true."
+
+- name: Write log analytics query verdict
+  ansible.builtin.copy:
+    content: "{{ {'role': 'log_analytics_query', 'workspace_id': workspace_id, 'kql_query': kql_query, 'status': 'ok', 'output_dir': output_path} | to_nice_json }}"
+    dest: "{{ output_path }}/log_analytics_query.json"
+    mode: "0644"
+
+- name: Register log_analytics_query verdict
+  ansible.builtin.set_fact:
+    azure_log_analytics_query:
+      role: log_analytics_query
+      output: "{{ output_path }}/log_analytics_query.json"

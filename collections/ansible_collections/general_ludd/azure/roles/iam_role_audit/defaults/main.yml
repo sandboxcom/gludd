@@ -1,0 +1,4 @@
+---
+role_enabled: false
+persona: terraform_deploy
+output_path: /tmp/gludd-azure-iam-audit

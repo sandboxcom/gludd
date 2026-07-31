@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  role_name: network_design
+  author: Agentic Harness Agent
+  description: Design an Azure virtual network with subnets.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [azure, networking, vnet, design]
+dependencies: []

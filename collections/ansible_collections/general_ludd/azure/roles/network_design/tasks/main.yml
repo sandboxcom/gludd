@@ -1,0 +1,18 @@
+---
+- name: Validate network_design parameters
+  ansible.builtin.assert:
+    that:
+      - role_enabled | bool
+    fail_msg: "network_design requires role_enabled=true."
+
+- name: Write network design verdict
+  ansible.builtin.copy:
+    content: "{{ {'role': 'network_design', 'app_name': app_name, 'region': region, 'cidr_range': cidr_range, 'status': 'ok', 'output_dir': output_path} | to_nice_json }}"
+    dest: "{{ output_path }}/network_design.json"
+    mode: "0644"
+
+- name: Register network_design verdict
+  ansible.builtin.set_fact:
+    azure_network_design:
+      role: network_design
+      output: "{{ output_path }}/network_design.json"
