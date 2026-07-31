@@ -19,8 +19,8 @@ INFRA_DIR = REPO_ROOT / "config" / "infra"
 SCRIPTS_DIR = REPO_ROOT / "scripts"
 
 sys.path.insert(0, str(SCRIPTS_DIR))
-import validate_azure_iam_policy as vap  # noqa: E402
 
+from validate_azure_iam_policy import validate_action_format  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -191,50 +191,50 @@ class TestValidateActionFormatFunction:
     """Direct tests of validate_azure_iam_policy.validate_action_format()."""
 
     def test_valid_read_action_returns_no_errors(self) -> None:
-        errors = vap.validate_action_format("Microsoft.Compute/virtualMachines/read")
+        errors = validate_action_format("Microsoft.Compute/virtualMachines/read")
         assert errors == []
 
     def test_valid_write_action_returns_no_errors(self) -> None:
-        errors = vap.validate_action_format("Microsoft.Network/virtualNetworks/write")
+        errors = validate_action_format("Microsoft.Network/virtualNetworks/write")
         assert errors == []
 
     def test_valid_delete_action_returns_no_errors(self) -> None:
-        errors = vap.validate_action_format("Microsoft.Resources/resourceGroups/delete")
+        errors = validate_action_format("Microsoft.Resources/resourceGroups/delete")
         assert errors == []
 
     def test_valid_nested_resource_action_returns_no_errors(self) -> None:
-        errors = vap.validate_action_format("Microsoft.Network/virtualNetworks/subnets/join/action")
+        errors = validate_action_format("Microsoft.Network/virtualNetworks/subnets/join/action")
         assert errors == []
 
     def test_list_action_suffix_is_rejected(self) -> None:
-        errors = vap.validate_action_format("Microsoft.Compute/virtualMachines/list/action")
+        errors = validate_action_format("Microsoft.Compute/virtualMachines/list/action")
         assert len(errors) > 0
         assert any("use /read instead of /list/action" in e.lower() for e in errors)
 
     def test_get_action_suffix_is_rejected(self) -> None:
-        errors = vap.validate_action_format("Microsoft.Compute/virtualMachines/get/action")
+        errors = validate_action_format("Microsoft.Compute/virtualMachines/get/action")
         assert len(errors) > 0
         assert any("use /read instead of /get/action" in e.lower() for e in errors)
 
     def test_create_action_suffix_is_rejected(self) -> None:
-        errors = vap.validate_action_format("Microsoft.Compute/virtualMachines/create/action")
+        errors = validate_action_format("Microsoft.Compute/virtualMachines/create/action")
         assert len(errors) > 0
         assert any("use /write instead of /create/action" in e.lower() for e in errors)
 
     def test_update_action_suffix_is_rejected(self) -> None:
-        errors = vap.validate_action_format("Microsoft.Compute/virtualMachines/update/action")
+        errors = validate_action_format("Microsoft.Compute/virtualMachines/update/action")
         assert len(errors) > 0
         assert any("use /write instead of /update/action" in e.lower() for e in errors)
 
     def test_invalid_module_name_is_rejected(self) -> None:
-        errors = vap.validate_action_format("NotMicrosoft.Something/something/read")
+        errors = validate_action_format("NotMicrosoft.Something/something/read")
         assert len(errors) > 0
 
     def test_missing_module_is_rejected(self) -> None:
-        errors = vap.validate_action_format("read")
+        errors = validate_action_format("read")
         assert len(errors) > 0
 
     def test_actual_policy_actions_all_pass(self, all_actions: list[str]) -> None:
         for action in all_actions:
-            errors = vap.validate_action_format(action)
+            errors = validate_action_format(action)
             assert errors == [], f"Action '{action}' should be valid: {errors}"
