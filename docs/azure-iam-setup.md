@@ -145,6 +145,79 @@ For a managed identity on an Azure VM/Container App, no credentials are needed
 — the managed identity is used automatically by the Azure SDK. Set
 `ARM_USE_MSI=true` and `ARM_SUBSCRIPTION_ID` only.
 
+#### Automated env file creation (az CLI)
+
+Run these commands to query Azure and create `/etc/general-ludd/env`:
+
+**Service Principal with client secret:**
+
+```bash
+sudo mkdir -p /etc/general-ludd
+
+SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+TENANT_ID=$(az account show --query tenantId -o tsv)
+
+az ad sp create-for-rbac \
+  --name "gludd-deployer" \
+  --role "General Ludd Container App Deployer" \
+  --scopes "/subscriptions/$SUBSCRIPTION_ID" \
+  --output json \
+  | sudo tee -a /tmp/gludd-sp-credentials.tmp > /dev/null
+
+CLIENT_ID=$(jq -r .appId /tmp/gludd-sp-credentials.tmp)
+CLIENT_SECRET=$(jq -r .password /tmp/gludd-sp-credentials.tmp)
+
+sudo tee /etc/general-ludd/env > /dev/null <<GLUDD_EOF
+# General Ludd Azure authentication — generated $(date -u +%Y-%m-%dT%H:%M:%SZ)
+ARM_SUBSCRIPTION_ID=$SUBSCRIPTION_ID
+ARM_TENANT_ID=$TENANT_ID
+ARM_CLIENT_ID=$CLIENT_ID
+ARM_CLIENT_SECRET=$CLIENT_SECRET
+GLUDD_EOF
+
+sudo chmod 600 /etc/general-ludd/env
+rm -f /tmp/gludd-sp-credentials.tmp
+
+echo "/etc/general-ludd/env created with mode 600"
+```
+
+**Managed Identity (Azure VM / Container App):**
+
+```bash
+sudo mkdir -p /etc/general-ludd
+
+SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+
+sudo tee /etc/general-ludd/env > /dev/null <<GLUDD_EOF
+# General Ludd Azure authentication — managed identity $(date -u +%Y-%m-%dT%H:%M:%SZ)
+ARM_USE_MSI=true
+ARM_SUBSCRIPTION_ID=$SUBSCRIPTION_ID
+GLUDD_EOF
+
+sudo chmod 600 /etc/general-ludd/env
+echo "/etc/general-ludd/env created with mode 600"
+```
+
+**Application registered in Entra ID (existing SP, manual credential):**
+
+```bash
+sudo mkdir -p /etc/general-ludd
+
+SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+TENANT_ID=$(az account show --query tenantId -o tsv)
+
+sudo tee /etc/general-ludd/env > /dev/null <<GLUDD_EOF
+# General Ludd Azure authentication — Entra ID application $(date -u +%Y-%m-%dT%H:%M:%SZ)
+ARM_SUBSCRIPTION_ID=$SUBSCRIPTION_ID
+ARM_TENANT_ID=$TENANT_ID
+ARM_CLIENT_ID=<your-app-id>
+ARM_CLIENT_SECRET=<your-client-secret>
+GLUDD_EOF
+
+sudo chmod 600 /etc/general-ludd/env
+echo "/etc/general-ludd/env created — update ARM_CLIENT_ID and ARM_CLIENT_SECRET"
+```
+
 ## 3. Configuring the Agent
 
 The General Ludd agent uses `DeploymentManager` to run Terraform/OpenTofu
