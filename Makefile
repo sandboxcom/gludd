@@ -6614,4 +6614,7 @@ e2e-test-gen-pipeline-dogfood:
 collect-specific:
 	@$(UV) run python -m pytest $(or $(TESTFILES),tests/) --co -q 2>&1
 
-.PHONY: e2e-test-gen-pipeline e2e-test-gen-pipeline-dogfood collect-specific
+fix-e501-golden:
+	@$(UV) run python /tmp/fix_e501_lines.py
+
+.PHONY: e2e-test-gen-pipeline e2e-test-gen-pipeline-dogfood collect-specific fix-e501-golden

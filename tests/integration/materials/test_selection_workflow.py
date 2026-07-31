@@ -30,7 +30,6 @@ from general_ludd.materials.material_selection import (
     screen_candidates,
 )
 
-
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------

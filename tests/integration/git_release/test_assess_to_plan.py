@@ -22,14 +22,13 @@ from uuid import uuid4
 import pytest
 
 from general_ludd.git_release.contracts import ReleasePlan, RepoEvidence
-from general_ludd.git_release.helper_catalog import HelperCandidate, discover_helpers
+from general_ludd.git_release.helper_catalog import discover_helpers
 from general_ludd.git_release.helper_ranker import (
     TaskRequirements,
     helper_build_file_changes,
     rank_helpers,
 )
 from general_ludd.git_release.topology import assess_repo
-
 
 # ---------------------------------------------------------------------------
 # Fixture: a real git repo on disk with the kinds of files discovery scans for.

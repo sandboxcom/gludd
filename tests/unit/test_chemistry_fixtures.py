@@ -29,8 +29,6 @@ import importlib.util
 import os
 import re
 
-import pytest
-
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 _FIXTURE_PATH = os.path.join(_PROJECT_ROOT, "tests", "fixtures", "chemistry_data.py")
 _CORE_PATH = os.path.join(_PROJECT_ROOT, "src", "general_ludd", "chemistry", "core.py")

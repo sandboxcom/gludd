@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import pytest
 
-from general_ludd.materials import failure
 from general_ludd.materials.failure import (
     CANDIDATE,
     CONFIDENCE_STATES,
@@ -27,7 +26,6 @@ from general_ludd.materials.failure import (
     _extract_stress,
 )
 
-
 # ─── Module-level constants ────────────────────────────────────────────────────
 
 
@@ -37,7 +35,7 @@ class TestConfidenceStates:
         assert "confirmed" not in CONFIDENCE_STATES
 
     def test_exported_state_constants_match_set(self):
-        assert CONFIDENCE_STATES == frozenset({CANDIDATE, RULED_OUT, INSUFFICIENT})
+        assert frozenset({CANDIDATE, RULED_OUT, INSUFFICIENT}) == CONFIDENCE_STATES
         assert CANDIDATE == "candidate"
         assert RULED_OUT == "ruled_out"
         assert INSUFFICIENT == "insufficient_data"

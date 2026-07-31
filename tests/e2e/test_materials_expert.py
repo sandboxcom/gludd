@@ -48,8 +48,9 @@ class TestDesignRequirementsConstruction:
         assert req.requires_human_review is True
 
     def test_invalid_failure_consequence_rejected(self) -> None:
-        from general_ludd.materials import DesignRequirements
         from pydantic import ValidationError
+
+        from general_ludd.materials import DesignRequirements
 
         with pytest.raises(ValidationError):
             DesignRequirements(failure_consequence="not_a_real_consequence")
@@ -140,8 +141,9 @@ class TestMaterialCandidateContract:
         assert candidate.requirement_margins == []
 
     def test_material_property_rejects_negative_uncertainty(self) -> None:
-        from general_ludd.materials.contracts import MaterialProperty
         from pydantic import ValidationError
+
+        from general_ludd.materials.contracts import MaterialProperty
 
         with pytest.raises(ValidationError):
             MaterialProperty(

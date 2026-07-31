@@ -47,8 +47,9 @@ class TestChemistryRequestConstruction:
         assert req.entities == ["water"]
 
     def test_request_rejects_empty_entities(self) -> None:
-        from general_ludd.chemistry import ChemistryRequest, TaskKind
         from pydantic import ValidationError
+
+        from general_ludd.chemistry import ChemistryRequest, TaskKind
 
         with pytest.raises(ValidationError):
             ChemistryRequest(
@@ -59,8 +60,9 @@ class TestChemistryRequestConstruction:
             )
 
     def test_request_rejects_unknown_task(self) -> None:
-        from general_ludd.chemistry import ChemistryRequest
         from pydantic import ValidationError
+
+        from general_ludd.chemistry import ChemistryRequest
 
         with pytest.raises(ValidationError):
             ChemistryRequest(

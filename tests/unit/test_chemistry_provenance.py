@@ -114,10 +114,7 @@ class TestBuildChain:
         result = {"value": 1.23, "provenance": _CITATION_FIXTURE}
         chains = provenance.build_chain(result)
         assert not isinstance(chains, list) or len(chains) > 0
-        if isinstance(chains, list):
-            chain = chains[0]
-        else:
-            chain = chains
+        chain = chains[0] if isinstance(chains, list) else chains
         assert isinstance(chain, provenance.ProvenanceChain)
 
     def test_build_from_nested_records(self):
@@ -137,10 +134,7 @@ class TestBuildChain:
 
     def test_build_from_raw_provenance_dict(self):
         chains = provenance.build_chain(_CITATION_FIXTURE)
-        if isinstance(chains, list):
-            chain = chains[0] if chains else None
-        else:
-            chain = chains
+        chain = (chains[0] if chains else None) if isinstance(chains, list) else chains
         assert isinstance(chain, provenance.ProvenanceChain)
 
 

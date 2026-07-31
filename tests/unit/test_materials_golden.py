@@ -13,7 +13,6 @@ from general_ludd.materials.material_selection import (
     rank_candidates,
     screen_candidates,
 )
-
 from tests.fixtures.golden_material_selection import (
     GOLDEN_PROBLEMS,
     GoldenSelectionProblem,

@@ -88,9 +88,9 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
         try:
             result = select_materials(body.requirements, body.candidates)
-        except Exception:
+        except Exception as err:
             logger.exception("materials.select_materials failed")
-            raise HTTPException(status_code=500, detail="materials select failed")
+            raise HTTPException(status_code=500, detail="materials select failed") from err
         return result
 
     @app.post("/api/chemistry/resolve")
@@ -99,9 +99,9 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
         try:
             result = route_chemistry_task(body.request)
-        except Exception:
+        except Exception as err:
             logger.exception("chemistry.route_chemistry_task failed")
-            raise HTTPException(status_code=500, detail="chemistry resolve failed")
+            raise HTTPException(status_code=500, detail="chemistry resolve failed") from err
         return result
 
     @app.post("/api/ai_ml/query")
@@ -132,9 +132,9 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             decision = ExpertRouter().route(request)
         except HTTPException:
             raise
-        except Exception:
+        except Exception as err:
             logger.exception("ai_ml router failed")
-            raise HTTPException(status_code=500, detail="ai_ml query failed")
+            raise HTTPException(status_code=500, detail="ai_ml query failed") from err
         return {
             "request_id": decision.request_id,
             "matched_roles": list(decision.matched_roles),
@@ -153,9 +153,9 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except (NotADirectoryError, RuntimeError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        except Exception:
+        except Exception as err:
             logger.exception("git_release.collect_repo_evidence failed")
-            raise HTTPException(status_code=500, detail="repo assess failed")
+            raise HTTPException(status_code=500, detail="repo assess failed") from err
         return {
             "path": evidence.path,
             "head_sha": evidence.head_sha,

@@ -12,6 +12,7 @@ pin the spec's shape so the real implementations can be validated against them.
 
 from __future__ import annotations
 
+import itertools
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
@@ -119,10 +120,7 @@ def heartbeat_intervals_ok(heartbeats: list[HeartbeatMarker], max_gap_seconds: f
     if len(heartbeats) < 2:
         return True
     times = sorted(h.emitted_at for h in heartbeats)
-    for prev, curr in zip(times, times[1:]):
-        if (curr - prev).total_seconds() > max_gap_seconds:
-            return False
-    return True
+    return all((curr - prev).total_seconds() <= max_gap_seconds for prev, curr in itertools.pairwise(times))
 
 
 def sanitize_error(exc: BaseException) -> str:

@@ -25,7 +25,6 @@ from __future__ import annotations
 
 from typing import Any, NamedTuple
 
-
 SCHEMA_VERSION = "1.0"
 FIXTURE_SOURCE = "tests/fixtures/chemistry_data.py"
 FIXTURE_LICENSE = "CC0-1.0"

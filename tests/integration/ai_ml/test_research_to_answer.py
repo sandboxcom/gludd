@@ -150,7 +150,7 @@ class TestPromptInjectionResistance:
         )
 
         # 1. The ruleset digest is unchanged.
-        assert EVIDENCE_POLICY_RULESET_SHA256 == original_ruleset
+        assert original_ruleset == EVIDENCE_POLICY_RULESET_SHA256
         # 2. The disallowed-license check still fires — the injected text did
         #    not widen the allowed set.
         with pytest.raises(ValueError, match="license"):

@@ -14,11 +14,7 @@ providing the fixture that MATE-AT-009 requires.
 
 from __future__ import annotations
 
-import copy
-from collections.abc import Sequence
 from dataclasses import dataclass
-
-import pytest
 
 # ---------------------------------------------------------------------------
 # ZDD stage ordering (spec MATE-001 §9)
@@ -250,7 +246,7 @@ class TestZddRouteCardIntegration:
 
     def test_route_card_importable(self):
         """The RouteCard dataclass exists and is importable."""
-        from general_ludd.materials.process_planning import RouteCard  # noqa: F811
+        from general_ludd.materials.process_planning import RouteCard
 
         assert RouteCard is not None
 

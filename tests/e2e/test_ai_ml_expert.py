@@ -68,7 +68,7 @@ class TestExpertRequestConstruction:
             )
 
     def test_constraints_default_to_public(self) -> None:
-        from general_ludd.ai_ml import Constraints, ExpertRequest, ExpertTask
+        from general_ludd.ai_ml import ExpertRequest, ExpertTask
 
         req = ExpertRequest(
             request_id="req-003",

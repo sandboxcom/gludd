@@ -13,6 +13,7 @@ skipped pending sandbox-forge wiring.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import importlib.util
 import os
@@ -151,10 +152,8 @@ class TestBuildOnceInvariant:
     def test_released_is_terminal(self):
         sm = release_state.ReleaseStateMachine(source_sha="0" * 40, artifact_digest="0" * 64)
         for s in release_state.ReleaseState:
-            try:
+            with contextlib.suppress(Exception):
                 sm.advance(s)
-            except Exception:
-                pass
             if sm.current == release_state.ReleaseState.BUILD_ONCE:
                 break
         # Verify RELEASED has no forward edges

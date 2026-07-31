@@ -73,8 +73,9 @@ class TestRepoEvidenceContract:
     """Verify RepoEvidence carries the required structured fields."""
 
     def test_repo_evidence_rejects_short_sha(self) -> None:
-        from general_ludd.git_release.contracts import RepoEvidence
         from pydantic import ValidationError
+
+        from general_ludd.git_release.contracts import RepoEvidence
 
         with pytest.raises(ValidationError):
             RepoEvidence(
@@ -84,8 +85,9 @@ class TestRepoEvidenceContract:
             )
 
     def test_repo_evidence_rejects_missing_timestamp(self) -> None:
-        from general_ludd.git_release.contracts import RepoEvidence
         from pydantic import ValidationError
+
+        from general_ludd.git_release.contracts import RepoEvidence
 
         with pytest.raises((ValidationError, TypeError)):
             RepoEvidence(

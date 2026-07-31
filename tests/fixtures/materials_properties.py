@@ -24,7 +24,7 @@ quality of each value.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from general_ludd.materials.property_store import PropertyRecord
@@ -340,8 +340,8 @@ def to_property_records(
 
 
 __all__ = [
-    "FixtureSource",
     "MATERIAL_PROPERTY_FIXTURES",
+    "FixtureSource",
     "MaterialFixture",
     "PropertyFixture",
     "to_property_records",

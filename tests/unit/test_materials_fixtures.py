@@ -26,10 +26,8 @@ from tests.fixtures.materials_properties import (
     MATERIAL_PROPERTY_FIXTURES,
     FixtureSource,
     MaterialFixture,
-    PropertyFixture,
     to_property_records,
 )
-
 
 # ─── counts & coverage ────────────────────────────────────────────────────────
 

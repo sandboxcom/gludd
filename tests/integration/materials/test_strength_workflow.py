@@ -27,7 +27,6 @@ from general_ludd.materials.strength import (
     check_thermal_stress,
 )
 
-
 # ---------------------------------------------------------------------------
 # Property-record helpers (mirror the shape strength.py expects)
 # ---------------------------------------------------------------------------
