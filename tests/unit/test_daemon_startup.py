@@ -69,6 +69,27 @@ class TestDaemonStartupNonNullDeps:
             )
 
     @pytest.mark.asyncio
+    async def test_deployment_manager_publishes_to_daemon_event_bus(self):
+        """Terraform lifecycle events must enter the daemon's observable bus."""
+        from general_ludd.daemon import create_daemon_app
+
+        app = create_daemon_app(config_dir=None)
+        async with app.router.lifespan_context(app):
+            manager = app.state._deployment_manager
+            event_bus = app.state._event_bus
+
+            assert manager._event_bus is event_bus, (
+                "DeploymentManager must share the daemon EventBus; otherwise "
+                "Terraform progress is invisible to hooks, history, and clients"
+            )
+
+            manager._publish_event("terraform.test.available", resource_id="resource-1")
+            event = event_bus.get_history()[-1]
+            assert event.payload["name"] == "terraform.test.available"
+            assert event.payload["resource_id"] == "resource-1"
+            assert event.source == "terraform_deployment"
+
+    @pytest.mark.asyncio
     async def test_event_loop_has_live_adaptive_router(self):
         """EventLoop._adaptive_router must be non-None after lifespan.
 

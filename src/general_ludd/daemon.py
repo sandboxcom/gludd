@@ -1992,6 +1992,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             deployment_manager = DeploymentManager(
                 secrets_resolver=secrets_resolver,
                 working_dir=_deploy_working_dir,
+                event_bus=subsys["bus"],
             )
             app.state._deployment_manager = deployment_manager
 
