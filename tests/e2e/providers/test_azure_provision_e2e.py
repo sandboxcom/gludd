@@ -10,6 +10,7 @@ Gated by GLUDD_E2E_MAX_SPEND_USD (default $5).
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import os
 import time
 from typing import Any, cast
@@ -107,8 +108,60 @@ def _run_inference(url: str, model: str) -> None:
     assert "pong" in content.lower(), f"Expected 'pong' in response, got: {content}"
 
 
+def _resolve_allowed_cidr() -> str:
+    """Restrict the ephemeral endpoint to the explicit or current runner IPv4."""
+    explicit = _get_env("AZURE_ALLOWED_CIDR")
+    if explicit:
+        return explicit
+
+    try:
+        response = httpx.get(
+            "https://api4.ipify.org",
+            params={"format": "json"},
+            timeout=10.0,
+        )
+        response.raise_for_status()
+        address = ipaddress.ip_address(str(response.json()["ip"]))
+    except (httpx.HTTPError, KeyError, TypeError, ValueError):
+        pytest.fail(
+            "Unable to discover the runner public IPv4 before Azure spend; "
+            "set AZURE_ALLOWED_CIDR explicitly"
+        )
+
+    if not isinstance(address, ipaddress.IPv4Address) or not address.is_global:
+        pytest.fail(
+            "Public-IP discovery returned a non-global IPv4; "
+            "set AZURE_ALLOWED_CIDR explicitly"
+        )
+    return f"{address}/32"
+
+
+class TestAzureAllowedCidr:
+    def test_explicit_cidr_avoids_network_lookup(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("AZURE_ALLOWED_CIDR", "198.51.100.10/32")
+
+        def unexpected_lookup(*_args: Any, **_kwargs: Any) -> None:
+            raise AssertionError("explicit CIDR must avoid public-IP lookup")
+
+        monkeypatch.setattr(httpx, "get", unexpected_lookup)
+        assert _resolve_allowed_cidr() == "198.51.100.10/32"
+
+    def test_missing_cidr_discovers_runner_ipv4(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("AZURE_ALLOWED_CIDR", raising=False)
+
+        class Response:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, str]:
+                return {"ip": "8.8.8.8"}
+
+        monkeypatch.setattr(httpx, "get", lambda *_args, **_kwargs: Response())
+        assert _resolve_allowed_cidr() == "8.8.8.8/32"
+
+
 @pytest.mark.azure_provision
-@pytest.mark.timeout(2400)
+@pytest.mark.timeout(3600)
 class TestAzureProvisionE2E:
     def test_azure_provision_model_call_and_destroy(self) -> None:
         _require_azure_creds()
@@ -118,6 +171,8 @@ class TestAzureProvisionE2E:
         gpu = _resolve_gpu()
         deploy_type = _get_env("AZURE_DEPLOY_TYPE", "containerapp") or "containerapp"
         model = _get_env("AZURE_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
+        allowed_cidr = _resolve_allowed_cidr()
+        print(f"[test] Restricting inference ingress to {allowed_cidr}", flush=True)
 
         config = ComputeConfig(
             provider=ComputeProvider.AZURE,
@@ -129,6 +184,7 @@ class TestAzureProvisionE2E:
             max_cost_usd=max_spend,
             timeout_minutes=15.0,
             disk_size_gb=100,
+            allowed_cidr=allowed_cidr,
         )
 
         strategist = DeployStrategist()

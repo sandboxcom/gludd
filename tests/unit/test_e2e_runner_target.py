@@ -140,6 +140,7 @@ def test_azure_provision_sourced_target_uses_explicit_env_file_contract() -> Non
     assert 'test -r "$(AZURE_E2E_ENV_FILE)"' in body
     assert '. "$(AZURE_E2E_ENV_FILE)"' in body
     assert "AZURE_E2E_VALIDATE_ONLY" in body
+    assert "--timeout=3600" in body
     assert ". /tmp/general-ludd.env" not in body
 
 
@@ -147,7 +148,7 @@ def test_azure_cleanup_target_is_bounded_observable_and_env_parameterized() -> N
     content = MAKEFILE.read_text(encoding="utf-8")
     body = _target_body("azure-cleanup-e2e")
 
-    assert "AZURE_CLEANUP_TIMEOUT_SECS ?=" in content
+    assert "AZURE_CLEANUP_TIMEOUT_SECS ?= 1800" in content
     assert "AZURE_CLEANUP_POLL_SECS ?=" in content
     assert "AZURE_CLI ?=" in content
     assert 'test -r "$(AZURE_E2E_ENV_FILE)"' in body
@@ -157,6 +158,17 @@ def test_azure_cleanup_target_is_bounded_observable_and_env_parameterized() -> N
     assert "CLEANUP_POLL attempt=" in body
     assert "CLEANUP_VERIFIED leaked_resources=0" in body
     assert "CLEANUP_TIMEOUT" in body
+
+
+def test_azure_cleanup_inspect_reports_group_and_resource_states() -> None:
+    body = _target_body("azure-cleanup-inspect")
+    assert 'test -r "$(AZURE_E2E_ENV_FILE)"' in body
+    assert '. "$(AZURE_E2E_ENV_FILE)"' in body
+    assert "CLEANUP_INSPECT groups=" in body
+    assert "CLEANUP_GROUP resource_group=" in body
+    assert "properties.provisioningState" in body
+    assert "resource list" in body
+    assert "monitor activity-log list" in body
 
 
 def test_azure_cleanup_target_behavioral_example_is_deletion_free() -> None:

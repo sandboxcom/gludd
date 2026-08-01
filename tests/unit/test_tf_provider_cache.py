@@ -1,7 +1,7 @@
 """TDD for shared Terraform provider plugin cache (design doc §10 #3).
 
 Closes the long-standing "open question": third-party providers (aws, google,
-azurerm, kubernetes, vsphere, runpod, libvirt, qemu) were re-downloaded once per stack.
+azurerm, azapi, kubernetes, vsphere, runpod, libvirt, qemu) were re-downloaded once per stack.
 ``infra/terraform/versions.tf`` is now the canonical version contract and
 ``TF_PLUGIN_CACHE_DIR`` shares each downloaded provider binary across every
 stack. ``scripts/check_tf_provider_versions.py`` keeps the stacks in sync with
@@ -25,7 +25,8 @@ def test_versions_tf_is_the_canonical_contract() -> None:
     expected = {
         "hashicorp/aws": "~> 5.0",
         "hashicorp/google": "~> 5.0",
-        "hashicorp/azurerm": "~> 3.0",
+        "hashicorp/azurerm": "~> 4.55",
+        "Azure/azapi": "~> 2.0",
         "hashicorp/kubernetes": "~> 2.31",
         "hashicorp/vsphere": "~> 2.8",
         "runpod/runpod": "~> 1.0",
@@ -46,6 +47,18 @@ def test_every_stack_provider_matches_the_contract() -> None:
         "stack provider versions drift from infra/terraform/versions.tf:\n"
         + "\n".join(f"  {f}" for f in findings)
     )
+
+
+def test_azurerm_contract_supports_container_apps_gpu_profiles() -> None:
+    """AzureRM 4.55 introduced validation for Consumption-GPU profile SKUs."""
+    contract = checker.parse_versions_tf(TF_ROOT / "versions.tf")
+    assert contract["hashicorp/azurerm"] == "~> 4.55"
+
+
+def test_azapi_contract_can_omit_serverless_gpu_capacity_fields() -> None:
+    """AzAPI owns the GPU environment until AzureRM stops serializing counts."""
+    contract = checker.parse_versions_tf(TF_ROOT / "versions.tf")
+    assert contract["Azure/azapi"] == "~> 2.0"
 
 
 def test_drift_is_detected(tmp_path: Path) -> None:

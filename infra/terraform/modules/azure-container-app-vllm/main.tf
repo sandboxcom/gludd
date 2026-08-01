@@ -1,3 +1,14 @@
+terraform {
+  required_providers {
+    azapi = {
+      source = "Azure/azapi"
+    }
+    azurerm = {
+      source = "hashicorp/azurerm"
+    }
+  }
+}
+
 locals {
   gpu_profiles = {
     t4 = {
@@ -48,16 +59,25 @@ resource "azurerm_resource_group" "gludd" {
   }
 }
 
-resource "azurerm_container_app_environment" "gludd" {
-  name                = "gludd-cae-${local.name_suffix}"
-  resource_group_name = azurerm_resource_group.gludd.name
-  location            = azurerm_resource_group.gludd.location
+// AzureRM 4.81 still serializes minimumCount and maximumCount as zero for
+// Consumption-GPU profiles even when those fields are absent from HCL. Azure
+// rejects both properties for serverless GPU environments. AzAPI owns only
+// this resource so the request body can omit the unsupported fields entirely.
+resource "azapi_resource" "gludd_environment" {
+  type      = "Microsoft.App/managedEnvironments@2025-01-01"
+  name      = "gludd-cae-${local.name_suffix}"
+  parent_id = azurerm_resource_group.gludd.id
+  location  = azurerm_resource_group.gludd.location
 
-  workload_profile {
-    name                  = "gludd-gpu"
-    workload_profile_type = local.gpu_profile_type
-    minimum_count         = 0
-    maximum_count         = 1
+  body = {
+    properties = {
+      workloadProfiles = [
+        {
+          name                = "gludd-gpu"
+          workloadProfileType = local.gpu_profile_type
+        }
+      ]
+    }
   }
 
   tags = azurerm_resource_group.gludd.tags
@@ -66,7 +86,7 @@ resource "azurerm_container_app_environment" "gludd" {
 resource "azurerm_container_app" "vllm" {
   name                         = "gludd-vllm-${local.name_suffix}"
   resource_group_name          = azurerm_resource_group.gludd.name
-  container_app_environment_id = azurerm_container_app_environment.gludd.id
+  container_app_environment_id = azapi_resource.gludd_environment.id
   workload_profile_name        = "gludd-gpu"
   revision_mode                = "Single"
 

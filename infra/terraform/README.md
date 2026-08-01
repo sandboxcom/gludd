@@ -22,7 +22,8 @@ infra/terraform/
 |---|---|---|
 | AWS | `hashicorp/aws` | `~> 5.0` |
 | Google (GCP) | `hashicorp/google` | `~> 5.0` |
-| Azure | `hashicorp/azurerm` | `~> 3.0` |
+| Azure | `hashicorp/azurerm` | `~> 4.55` |
+| Azure ARM escape hatch | `Azure/azapi` | `~> 2.0` |
 | Kubernetes | `hashicorp/kubernetes` | `~> 2.31` |
 | vSphere | `hashicorp/vsphere` | `~> 2.8` |
 | RunPod | `runpod/runpod` | `~> 1.0` |

@@ -235,6 +235,7 @@ help:
 	@echo "  gpu-hardware-smoke        Local AMD/NVIDIA GPU smoke (LIVE=1 BACKEND=cuda|rocm ARGS=...)"
 	@echo "  provider-harness      Validate Azure/RunPod credentials, billing bounds, and optional Gludd telemetry"
 	@echo "  azure-harness         Azure provider harness (LIVE=1 for read-only credential check)"
+	@echo "  azure-cleanup-inspect Read-only provisioning states for Gludd Azure E2E resource groups"
 	@echo "  runpod-harness        RunPod provider harness (LIVE=1 for read-only credential check)"
 	@echo "  test-opa-policies     Execute Rego policy tests when opa is installed"
 	@echo "  check-make-target-contract  Validate target variables, help, and behavioral examples"
@@ -1481,7 +1482,7 @@ GLUDD_E2E_MAX_SPEND_USD ?= 5
 AZURE_PROVISION_E2E ?= 0
 AZURE_E2E_ENV_FILE ?= /tmp/general-ludd.env
 AZURE_E2E_VALIDATE_ONLY ?= 0
-AZURE_CLEANUP_TIMEOUT_SECS ?= 900
+AZURE_CLEANUP_TIMEOUT_SECS ?= 1800
 AZURE_CLEANUP_POLL_SECS ?= 10
 AZURE_CLI ?= az
 test-e2e-azure:
@@ -1501,7 +1502,7 @@ test-e2e-azure-provision-sourced:
 	 export GLUDD_CONFIG_DIR="$${GLUDD_CONFIG_DIR:-$$PWD/config}"; \
 	 export ARM_CLIENT_ID ARM_CLIENT_SECRET ARM_TENANT_ID ARM_SUBSCRIPTION_ID ARM_USE_MSI AZURE_SUBSCRIPTION_ID; \
 	 AZURE_PROVISION_E2E=1 GLUDD_E2E_MAX_SPEND_USD="$${GLUDD_E2E_MAX_SPEND_USD:-5}" \
-		$(UV) run python scripts/e2e_log_capture.py --label azure-provision --cmd "uv run pytest tests/e2e/providers/test_azure_provision_e2e.py -v -s -m azure_provision --timeout=1200 --log-cli-level=INFO" --tee
+		$(UV) run python scripts/e2e_log_capture.py --label azure-provision --cmd "uv run pytest tests/e2e/providers/test_azure_provision_e2e.py -v -s -m azure_provision --timeout=3600 --log-cli-level=INFO" --tee
 
 # Azure full-provision E2E (opt-in, costly, manual) — use when vars are already exported
 test-e2e-azure-provision:
@@ -1605,8 +1606,24 @@ azure-stream-logs:
 	   sleep 30; \
 	 done
 
+# Inspect orphaned E2E resource groups without exposing credentials or mutating Azure.
+.PHONY: azure-cleanup-inspect azure-cleanup-e2e
+azure-cleanup-inspect:
+	@test -r "$(AZURE_E2E_ENV_FILE)" || { echo "AZURE_E2E_ENV_FILE_UNREADABLE path=$(AZURE_E2E_ENV_FILE)"; exit 2; }
+	@. "$(AZURE_E2E_ENV_FILE)"; \
+	 SUB=$${ARM_SUBSCRIPTION_ID:-$$AZURE_SUBSCRIPTION_ID}; \
+	 if [ -z "$$SUB" ]; then echo "AZURE_SUBSCRIPTION_ID_MISSING"; exit 2; fi; \
+	 RESOURCE_GROUPS="$$($(AZURE_CLI) group list --subscription "$$SUB" --query "[?starts_with(name,'gludd-gpu')].name" -o tsv)" || { echo "CLEANUP_INSPECT_LIST_FAILED"; exit 1; }; \
+	 COUNT="$$(printf '%s\n' "$$RESOURCE_GROUPS" | awk 'NF {count += 1} END {print count + 0}')"; \
+	 echo "CLEANUP_INSPECT groups=$$COUNT"; \
+	 for rg in $$RESOURCE_GROUPS; do \
+	   echo "CLEANUP_GROUP resource_group=$$rg"; \
+	   $(AZURE_CLI) group show --subscription "$$SUB" --name "$$rg" --query "{name:name,state:properties.provisioningState}" -o table || echo "CLEANUP_GROUP_GONE resource_group=$$rg"; \
+	   $(AZURE_CLI) resource list --subscription "$$SUB" --resource-group "$$rg" --query "[].{name:name,type:type,state:properties.provisioningState}" -o table || echo "CLEANUP_RESOURCE_LIST_UNAVAILABLE resource_group=$$rg"; \
+	   $(AZURE_CLI) monitor activity-log list --subscription "$$SUB" --resource-group "$$rg" --offset 2h --query "[?status.value!='Succeeded'].{time:eventTimestamp,status:status.value,operation:operationName.localizedValue,subStatus:subStatus.localizedValue}" -o table || echo "CLEANUP_ACTIVITY_LOG_UNAVAILABLE resource_group=$$rg"; \
+	 done
+
 # Clean up orphaned E2E resource groups (from failed test runs)
-.PHONY: azure-cleanup-e2e
 azure-cleanup-e2e:
 	@test -r "$(AZURE_E2E_ENV_FILE)" || { echo "AZURE_E2E_ENV_FILE_UNREADABLE path=$(AZURE_E2E_ENV_FILE)"; exit 2; }
 	@. "$(AZURE_E2E_ENV_FILE)"; \
@@ -1626,6 +1643,7 @@ azure-cleanup-e2e:
 	   $(AZURE_CLI) group delete --subscription "$$SUB" --name "$$rg" --yes --no-wait || { echo "CLEANUP_DELETE_FAILED resource_group=$$rg"; exit 1; }; \
 	 done; \
 	 START="$$(date +%s)"; ATTEMPT=0; \
+	 echo "CLEANUP_POLL attempt=0 elapsed_seconds=0 leaked_resources=$$COUNT"; \
 	 while :; do \
 	   ATTEMPT=$$((ATTEMPT + 1)); \
 	   RESOURCE_GROUPS="$$(list_groups)" || { echo "CLEANUP_LIST_FAILED attempt=$$ATTEMPT"; exit 1; }; \

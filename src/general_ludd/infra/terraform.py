@@ -596,7 +596,7 @@ class TerraformGenerator:
               required_providers {{
                 azurerm = {{
                   source  = "hashicorp/azurerm"
-                  version = "~> 3.0"
+                  version = "~> 4.55"
                 }}
               }}
             }}
@@ -646,7 +646,12 @@ class TerraformGenerator:
     def _generate_azure_containerapp(self, config: ComputeConfig) -> str:
         self._validate_azure_containerapp(config)
         stack_main = _terraform_assets_root() / "stacks" / "azure-container-app-vllm" / "main.tf"
-        return stack_main.read_text(encoding="utf-8")
+        repository_hcl = stack_main.read_text(encoding="utf-8")
+        return repository_hcl.replace(
+            'source = "../../modules/azure-container-app-vllm"',
+            'source = "./modules/azure-container-app-vllm"',
+            1,
+        )
 
     def _generate_runpod(self, config: ComputeConfig) -> str:
         _modules = os.path.join(os.path.dirname(__file__), "..", "..", "..", "infra", "terraform", "modules")

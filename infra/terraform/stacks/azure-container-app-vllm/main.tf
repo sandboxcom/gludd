@@ -4,18 +4,22 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~> 3.0"
+      version = "~> 4.55"
+    }
+    azapi = {
+      source  = "Azure/azapi"
+      version = "~> 2.0"
     }
   }
 }
 
 provider "azurerm" {
   features {}
-  skip_provider_registration = true
+  resource_provider_registrations = "none"
 }
 
 module "vllm_server" {
-  source = "./modules/azure-container-app-vllm"
+  source = "../../modules/azure-container-app-vllm"
 
   deployment_name                = var.deployment_name
   region                         = var.region

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
@@ -420,6 +421,17 @@ class TestTerraformGeneratorAzureContainerApp:
         assert "azurerm_container_app" not in tf
         assert "python:3.11-slim" not in tf
 
+    def test_checked_in_stack_uses_repository_module_path(self):
+        stack = (
+            Path(__file__).resolve().parents[2]
+            / "infra"
+            / "terraform"
+            / "stacks"
+            / "azure-container-app-vllm"
+            / "main.tf"
+        ).read_text()
+        assert 'source = "../../modules/azure-container-app-vllm"' in stack
+
     def test_contains_container_app_environment(self):
         # Phase 4 — inline container_app_environment gone; module-style emission.
         cfg = ComputeConfig(
@@ -503,20 +515,45 @@ class TestTerraformGeneratorAzureContainerApp:
         root = (tmp_path / "main.tf").read_text()
         tfvars = (tmp_path / "terraform.tfvars").read_text()
         module = (tmp_path / "modules" / "azure-container-app-vllm" / "main.tf").read_text()
+        module_outputs = (
+            tmp_path / "modules" / "azure-container-app-vllm" / "outputs.tf"
+        ).read_text()
         assert 'source = "./modules/azure-container-app-vllm"' in root
         assert 'deployment_name = "d-azure-test"' in tfvars
         assert 'model_name = "Qwen/Qwen2.5-0.5B-Instruct"' in tfvars
         assert 'gpu_type = "t4"' in tfvars
         assert 'allowed_cidr = "198.51.100.10/32"' in tfvars
-        assert 'workload_profile_type = local.gpu_profile_type' in module
+        assert 'source  = "Azure/azapi"' in root
+        assert 'version = "~> 2.0"' in root
+        assert 'resource "azapi_resource" "gludd_environment"' in module
+        assert 'type      = "Microsoft.App/managedEnvironments@2025-01-01"' in module
+        assert 'workloadProfileType = local.gpu_profile_type' in module
         assert '"Consumption-GPU-NC8as-T4"' in module
         assert '"Consumption-GPU-NC24-A100"' in module
-        assert re.search(r"minimum_count\s*=\s*0", module)
+        environment_block = module.split(
+            'resource "azapi_resource" "gludd_environment"', 1
+        )[1].split('resource "azurerm_container_app"', 1)[0]
+        assert "minimumCount" not in environment_block
+        assert "maximumCount" not in environment_block
+        assert "minimum_count" not in environment_block
+        assert "maximum_count" not in environment_block
+        assert "azurerm_container_app_environment" not in module
+        assert (
+            "container_app_environment_id = azapi_resource.gludd_environment.id"
+            in module
+        )
         assert re.search(r"min_replicas\s*=\s*0", module)
         assert re.search(r"max_replicas\s*=\s*1", module)
+        assert 'resource_provider_registrations = "none"' in root
+        assert "skip_provider_registration" not in root
         assert "var.container_image" in module
         assert "var.model_name" in module
         assert "python:3.11-slim" not in module
+        assert (
+            'value       = "https://${azurerm_container_app.vllm.latest_revision_fqdn}"'
+            in module_outputs
+        )
+        assert "latest_revision_fqdn}/v1" not in module_outputs
 
     def test_invalid_runtime_profile_value_fails_closed(self):
         cfg = ComputeConfig(

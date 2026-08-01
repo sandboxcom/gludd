@@ -38,6 +38,11 @@
       "behavior": "make azure-cleanup-e2e AZURE_E2E_ENV_FILE=tests/fixtures/azure-e2e.env.example AZURE_CLEANUP_TIMEOUT_SECS=1 AZURE_CLEANUP_POLL_SECS=1 AZURE_CLI=true"
     },
     {
+      "name": "azure-cleanup-inspect",
+      "make_variables": ["AZURE_E2E_ENV_FILE", "AZURE_CLI"],
+      "behavior": "make azure-cleanup-inspect AZURE_E2E_ENV_FILE=tests/fixtures/azure-e2e.env.example AZURE_CLI=true"
+    },
+    {
       "name": "test-e2e-postgres-multiworker",
       "make_variables": [
         "POSTGRES_E2E_RUNTIME",

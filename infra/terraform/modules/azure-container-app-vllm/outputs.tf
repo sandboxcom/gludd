@@ -4,8 +4,8 @@ output "instance_id" {
 }
 
 output "base_url" {
-  description = "OpenAI-compatible vLLM base URL."
-  value       = "https://${azurerm_container_app.vllm.latest_revision_fqdn}/v1"
+  description = "Root HTTPS URL for the vLLM service; clients append OpenAI API paths."
+  value       = "https://${azurerm_container_app.vllm.latest_revision_fqdn}"
 }
 
 output "resource_group_name" {
