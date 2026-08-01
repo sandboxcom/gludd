@@ -28,6 +28,15 @@
       "behavior": "make test-e2e-azure-provision-sourced AZURE_E2E_ENV_FILE=tests/fixtures/azure-e2e.env.example AZURE_E2E_VALIDATE_ONLY=1"
     },
     {
+      "name": "test-e2e-games-provision",
+      "make_variables": [
+        "AZURE_E2E_ENV_FILE",
+        "AZURE_E2E_VALIDATE_ONLY",
+        "GAME_E2E_TIMEOUT_SECS"
+      ],
+      "behavior": "make test-e2e-games-provision AZURE_E2E_ENV_FILE=tests/fixtures/azure-e2e.env.example AZURE_E2E_VALIDATE_ONLY=1 GAME_E2E_TIMEOUT_SECS=3600"
+    },
+    {
       "name": "azure-cleanup-e2e",
       "make_variables": [
         "AZURE_E2E_ENV_FILE",

@@ -144,6 +144,61 @@ def test_azure_provision_sourced_target_uses_explicit_env_file_contract() -> Non
     assert ". /tmp/general-ludd.env" not in body
 
 
+def test_game_provision_target_uses_env_file_and_hour_long_timeout_contract() -> None:
+    content = MAKEFILE.read_text(encoding="utf-8")
+    body = _target_body("test-e2e-games-provision")
+
+    assert "GAME_E2E_TIMEOUT_SECS ?= 3600" in content
+    assert 'test -r "$(AZURE_E2E_ENV_FILE)"' in body
+    assert '. "$(AZURE_E2E_ENV_FILE)"' in body
+    assert "AZURE_E2E_VALIDATE_ONLY" in body
+    assert '"$(GAME_E2E_TIMEOUT_SECS)" -lt 3600' in body
+    assert '--timeout "$(GAME_E2E_TIMEOUT_SECS)"' in body
+    assert "--timeout=$(GAME_E2E_TIMEOUT_SECS)" in body
+    assert ". /tmp/general-ludd.env" not in body
+
+
+def test_game_provision_target_behavioral_example_never_provisions() -> None:
+    result = subprocess.run(
+        [
+            "make",
+            "test-e2e-games-provision",
+            "AZURE_E2E_ENV_FILE=tests/fixtures/azure-e2e.env.example",
+            "AZURE_E2E_VALIDATE_ONLY=1",
+            "GAME_E2E_TIMEOUT_SECS=3600",
+        ],
+        cwd=MAKEFILE.parent,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "GAME_E2E_ENV_FILE_OK" in result.stdout
+    assert "timeout_seconds=3600" in result.stdout
+    assert "e2e_log_capture.py" not in result.stdout
+
+
+def test_game_provision_target_rejects_short_timeout_before_provisioning() -> None:
+    result = subprocess.run(
+        [
+            "make",
+            "test-e2e-games-provision",
+            "AZURE_E2E_ENV_FILE=tests/fixtures/azure-e2e.env.example",
+            "AZURE_E2E_VALIDATE_ONLY=1",
+            "GAME_E2E_TIMEOUT_SECS=3599",
+        ],
+        cwd=MAKEFILE.parent,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode != 0
+    assert "GAME_E2E_TIMEOUT_SECS must be >=3600" in result.stdout
+    assert "e2e_log_capture.py" not in result.stdout
+
+
 def test_azure_cleanup_target_is_bounded_observable_and_env_parameterized() -> None:
     content = MAKEFILE.read_text(encoding="utf-8")
     body = _target_body("azure-cleanup-e2e")

@@ -216,7 +216,7 @@ help:
 	@echo "  test-e2e-providers    All E2E provider tests"
 	@echo "  test-e2e-games        Game generation E2E — AI generates games, compares frames (no Azure provision)"
 	@echo "  test-e2e-games-local  Game unit tests only — video compare, game gen, no Azure needed"
-	@echo "  test-e2e-games-provision  Game E2E with Azure GPU provisioning (opt-in, costly)"
+	@echo "  test-e2e-games-provision  Source AZURE_E2E_ENV_FILE; Azure game E2E (GAME_E2E_TIMEOUT_SECS>=3600)"
 	@echo "  e2e-audit-azure     List all E2E runs with PASS/FAIL/RUNNING status"
 	@echo "  e2e-latest-log      Show exit code and error summary for latest E2E run"
 	@echo "  azure-cleanup-e2e   Delete gludd-gpu* groups and visibly verify absence"
@@ -1482,6 +1482,7 @@ GLUDD_E2E_MAX_SPEND_USD ?= 5
 AZURE_PROVISION_E2E ?= 0
 AZURE_E2E_ENV_FILE ?= /tmp/general-ludd.env
 AZURE_E2E_VALIDATE_ONLY ?= 0
+GAME_E2E_TIMEOUT_SECS ?= 3600
 AZURE_CLEANUP_TIMEOUT_SECS ?= 1800
 AZURE_CLEANUP_POLL_SECS ?= 10
 AZURE_CLI ?= az
@@ -1537,9 +1538,19 @@ test-e2e-games:
 
 test-e2e-games-provision:
 	@mkdir -p .gate-logs/e2e-azure
-	@ARM_CLIENT_ID="$${ARM_CLIENT_ID:-}" ARM_CLIENT_SECRET="$${ARM_CLIENT_SECRET:-}" \
-	 ARM_TENANT_ID="$${ARM_TENANT_ID:-}" ARM_SUBSCRIPTION_ID="$${ARM_SUBSCRIPTION_ID:-}" \
-	 AZURE_PROVISION_E2E=1 $(UV) run python scripts/e2e_log_capture.py --cmd "$(UV) run pytest tests/e2e/game_e2e/ -v -m azure_provision --timeout=900" --label games-provision
+	@test -r "$(AZURE_E2E_ENV_FILE)" || { echo "AZURE_E2E_ENV_FILE_UNREADABLE path=$(AZURE_E2E_ENV_FILE)"; exit 2; }
+	@case "$(GAME_E2E_TIMEOUT_SECS)" in ''|*[!0-9]*) echo "GAME_E2E_TIMEOUT_SECS must be an integer >=3600"; exit 2;; esac; \
+	 if [ "$(GAME_E2E_TIMEOUT_SECS)" -lt 3600 ]; then echo "GAME_E2E_TIMEOUT_SECS must be >=3600"; exit 2; fi
+	@. "$(AZURE_E2E_ENV_FILE)"; \
+	 if [ "$(AZURE_E2E_VALIDATE_ONLY)" = "1" ]; then \
+	   echo "GAME_E2E_ENV_FILE_OK path=$(AZURE_E2E_ENV_FILE) timeout_seconds=$(GAME_E2E_TIMEOUT_SECS)"; \
+	   exit 0; \
+	 fi; \
+	 export GLUDD_CONFIG_DIR="$${GLUDD_CONFIG_DIR:-$$PWD/config}"; \
+	 export ARM_CLIENT_ID ARM_CLIENT_SECRET ARM_TENANT_ID ARM_SUBSCRIPTION_ID ARM_USE_MSI AZURE_SUBSCRIPTION_ID; \
+	 export AZURE_MODEL AZURE_BASE_URL AZURE_GPU_TYPE AZURE_PROVISION_ENGINE; \
+	 AZURE_PROVISION_E2E=1 GLUDD_E2E_MAX_SPEND_USD="$${GLUDD_E2E_MAX_SPEND_USD:-$(GLUDD_E2E_MAX_SPEND_USD)}" \
+	 $(UV) run python scripts/e2e_log_capture.py --timeout "$(GAME_E2E_TIMEOUT_SECS)" --cmd "$(UV) run pytest tests/e2e/game_e2e/ -v -s -m azure_provision --timeout=$(GAME_E2E_TIMEOUT_SECS) --log-cli-level=INFO" --label games-provision --tee
 
 # AWS E2E — env-pointer (CI-friendly, no provisioning)
 test-e2e-aws:
