@@ -148,13 +148,20 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 metrics_collector=metrics_collector,
             )
         gateway: ModelGateway = app.state._model_gateway
-        profile = gateway.add_profile(
-            model_id=req.model_id,
-            provider=req.provider,
-            model=req.model,
-            api_key_env=req.api_key_env,
-            api_base_alias=req.api_base_alias,
-        )
+        try:
+            profile = gateway.add_profile(
+                model_id=req.model_id,
+                provider=req.provider,
+                model=req.model,
+                api_key_env=req.api_key_env,
+                api_base_alias=req.api_base_alias,
+                enabled=req.enabled,
+                api_metered=req.api_metered,
+                cost_per_input_token=req.cost_per_input_token,
+                cost_per_output_token=req.cost_per_output_token,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {"model_id": req.model_id, "profile": profile.model_dump()}
 
     @app.delete("/admin/models/{model_id}")

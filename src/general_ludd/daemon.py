@@ -728,6 +728,10 @@ class AddModelRequest(BaseModel):
     model: str = ""
     api_key_env: str | None = None
     api_base_alias: str | None = None
+    enabled: bool = True
+    api_metered: bool = True
+    cost_per_input_token: float = Field(default=0.0, ge=0.0)
+    cost_per_output_token: float = Field(default=0.0, ge=0.0)
 
 
 class RegisterHookRequest(BaseModel):

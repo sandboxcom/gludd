@@ -27,12 +27,12 @@ def _register_invoker(reg: AgentRegistry, name: str = "build") -> str:
 
 
 class TestGatewayBackedExecutor:
-    def test_noop_executor_returns_empty_string(self):
+    def test_noop_executor_returns_unconfigured_sentinel(self):
         task = AgentTask(task_id="t1", agent_name="c", description="d", prompt="p")
         import asyncio
 
         r = asyncio.run(_noop_executor(task))
-        assert r == ""
+        assert r == "__NOOP_EXECUTOR_UNCONFIGURED__"
 
     def test_gateway_executor_calls_model(self):
         profile = ModelProfile(
@@ -91,7 +91,7 @@ class TestGatewayBackedExecutor:
         assert r.output == "result"
 
     @pytest.mark.asyncio
-    async def test_dispatcher_falls_back_to_noop(self):
+    async def test_dispatcher_fails_closed_when_gateway_is_unconfigured(self):
         reg = AgentRegistry()
         reg.register(AgentConfig(name="g", type=AgentType.SUBAGENT, description="d"))
         invoker = _register_invoker(reg)
@@ -105,5 +105,6 @@ class TestGatewayBackedExecutor:
                 invoker_name=invoker,
             )
         )
-        assert r.status == "completed"
-        assert r.output == ""
+        assert r.status == "failed"
+        assert r.output.startswith("Executor unconfigured:")
+        assert "GLUDD_CONFIG_DIR" in r.output

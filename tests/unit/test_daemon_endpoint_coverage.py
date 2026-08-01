@@ -223,6 +223,9 @@ class TestDaemonAdminEndpoints:
             "model_id": "test-model",
             "provider": "openai",
             "model": "gpt-4",
+            "api_metered": True,
+            "cost_per_input_token": 0.00003,
+            "cost_per_output_token": 0.00006,
         })
         assert resp.status_code == 200
 

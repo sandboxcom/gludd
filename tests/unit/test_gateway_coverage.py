@@ -82,6 +82,7 @@ def _profile(
     model_name: str = "",
     fallback: list[str] | None = None,
     budget: float = 200.0,
+    api_metered: bool = False,
     api_base_alias: str | None = None,
     credential_alias: str | None = None,
 ) -> ModelProfile:
@@ -90,6 +91,9 @@ def _profile(
         provider="openai",
         model_name=model_name or pid,
         enabled=True,
+        api_metered=api_metered,
+        cost_per_input_token=5e-6 if api_metered else 0.0,
+        cost_per_output_token=15e-6 if api_metered else 0.0,
         run_budget_usd=budget,
         fallback_profiles=fallback or [],
         api_base_alias=api_base_alias,
@@ -438,7 +442,9 @@ class TestBudgetExceededErrorPropagates:
         call_model raises BudgetExceededError (a ValueError subclass) so the
         fallback chain does not silently route around the per-profile cap.
         """
-        profile = _profile("over-budget-p", model_name="m", budget=0.001)
+        profile = _profile(
+            "over-budget-p", model_name="m", budget=0.001, api_metered=True
+        )
         gw = ModelGateway(
             profiles=[profile],
             provider_registry=_mock_registry(),

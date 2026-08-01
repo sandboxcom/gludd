@@ -41,6 +41,7 @@ ZAI_PROFILE_DICT: dict[str, Any] = {
     "model_name": "glm-4.6",
     "credential_alias": "ZAI_API_KEY",
     "api_base_alias": "ZAI_BASE_URL",
+    "api_metered": False,
     "enabled": True,
 }
 
@@ -57,6 +58,7 @@ def _zai_model_profile() -> ModelProfile:
         model_name="glm-4.6",
         credential_alias="ZAI_API_KEY",
         api_base_alias="ZAI_BASE_URL",
+        api_metered=False,
         enabled=True,
     )
 

@@ -1943,6 +1943,7 @@ class ModelGateway:
         model: str = "",
         api_key_env: str | None = None,
         api_base_alias: str | None = None,
+        enabled: bool = True,
         **kwargs: Any,
     ) -> ModelProfile:
         profile = ModelProfile(
@@ -1951,7 +1952,7 @@ class ModelGateway:
             model_name=model,
             credential_alias=api_key_env,
             api_base_alias=api_base_alias,
-            enabled=True,
+            enabled=enabled,
             **{k: v for k, v in kwargs.items() if k in ModelProfile.model_fields},
         )
         self._profiles[model_id] = profile

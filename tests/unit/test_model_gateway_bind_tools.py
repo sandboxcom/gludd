@@ -105,6 +105,7 @@ def _make_gateway(provider_cls: type) -> tuple[ModelGateway, ModelProfile]:
         provider="openai",
         model_name="gpt-4o-mini",
         enabled=True,
+        api_metered=False,
         cost_per_input_token=0.0,
         cost_per_output_token=0.0,
     )

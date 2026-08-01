@@ -88,8 +88,8 @@ def _make_gateway(*, response_cache: Any | None = None) -> ModelGateway:
         enabled=True,
         provider="openai",
         model_name="gpt-4",
-        cost_per_input_token=0.0,
-        cost_per_output_token=0.0,
+        cost_per_input_token=0.00003,
+        cost_per_output_token=0.00006,
     )
     return ModelGateway(
         profiles=[profile],

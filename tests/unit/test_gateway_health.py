@@ -30,6 +30,7 @@ def _profile(
     return ModelProfile(
         model_profile_id=pid,
         enabled=True,
+        api_metered=False,
         provider="openai",
         provider_package="langchain-openai",
         provider_class_hint="ChatOpenAI",
