@@ -1,7 +1,7 @@
 """Verify hot-reload module freshness exit-code behavior.
 
 Tests scripts/check_hot_reload_fresh.py::main() exit codes:
-  - exit 0 when no hot modules exist (clean/compiled-default state)
+  - exit 1 when an expected proxy hot module is missing
   - exit 0 when a hot module is newer than its source (fresh)
   - exit 1 when a hot module is older than its source (STALE — loads old code)
 
@@ -48,15 +48,18 @@ def fresh_module(monkeypatch, tmp_path):
 
 def _write_plugin_src(plugin_dir: Path, name: str = "enforce-stop") -> Path:
     src = plugin_dir / f"{name}.ts"
+    lookup_name = name.removeprefix("enforce-")
     src.write_text(
-        "const defaultImpl = { };\nexport default (async () => defaultImpl);\n",
+        "const defaultImpl = { };\n"
+        f'const current = loadHotModule("{lookup_name}", defaultImpl);\n'
+        "export default (async () => current);\n",
         encoding="utf-8",
     )
     return src
 
 
 def _write_hot_module(out_dir: Path, name: str = "enforce-stop", body: str | None = None) -> Path:
-    hot = out_dir / f"gludd-hot-{name}.js"
+    hot = out_dir / f"gludd-hot-{name.removeprefix('enforce-')}.js"
     if body is None:
         body = (
             "module.exports = {\n"
@@ -79,10 +82,10 @@ class TestScriptExists:
 
 
 class TestNoHotModules:
-    def test_exit_zero_when_no_hot_modules_exist(self, fresh_module):
+    def test_exit_one_when_expected_hot_module_is_missing(self, fresh_module):
         mod, plugin_dir, _out_dir = fresh_module
         _write_plugin_src(plugin_dir)
-        assert mod.main([]) == 0
+        assert mod.main([]) == 1
 
 
 class TestFreshHotModule:
@@ -113,4 +116,33 @@ class TestStaleHotModule:
         os.utime(src, (now, now))
 
         assert hot.stat().st_mtime < src.stat().st_mtime
+        assert mod.main([]) == 1
+
+
+class TestInvalidHotModule:
+    def test_exit_one_when_hot_module_has_invalid_javascript(self, fresh_module):
+        mod, plugin_dir, out_dir = fresh_module
+        src = _write_plugin_src(plugin_dir)
+        hot = _write_hot_module(
+            out_dir,
+            body='module.exports = { "tool.execute.before": async function( };\n',
+        )
+        now = time.time()
+        os.utime(src, (now - 100, now - 100))
+        os.utime(hot, (now, now))
+
+        assert mod.main([]) == 1
+
+    def test_enforce_multitask_is_not_exempt_from_validation(self, fresh_module):
+        mod, plugin_dir, out_dir = fresh_module
+        src = _write_plugin_src(plugin_dir, name="enforce-multitask")
+        hot = _write_hot_module(
+            out_dir,
+            name="enforce-multitask",
+            body='module.exports = { "text.complete": async function( };\n',
+        )
+        now = time.time()
+        os.utime(src, (now - 100, now - 100))
+        os.utime(hot, (now, now))
+
         assert mod.main([]) == 1

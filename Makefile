@@ -6029,8 +6029,11 @@ subagent-cleanup:
 check-hot-reload-fresh:
 	@if [ "$${CI:-}" = "true" ]; then \
 		echo "CI environment — skipping hot-reload freshness check (modules in /tmp/ don't persist across steps)"; \
+	elif $(UV) run python3 scripts/check_hot_reload_fresh.py; then \
+		echo "PASS: all expected hot modules are fresh and valid"; \
 	else \
-		$(UV) run python3 scripts/check_hot_reload_fresh.py; \
+		echo "FAIL: hot-module freshness or validity check failed"; \
+		exit 1; \
 	fi
 
 # Mechanical restart-needed check: compares session-start timestamp against
@@ -6592,7 +6595,8 @@ find-untested:
 	$(PYTHON) scripts/find_untested_modules.py
 
 test-hot-module-load:
-	@node --experimental-strip-types -e "try { const m = require('/tmp/gludd-hot-enforce-session-start.js'); console.log('LOADED OK: typeof default=' + typeof m.default + ', keys=' + Object.keys(m).join()); } catch(e) { console.log('LOAD FAILED: ' + e.message); console.log('FALLBACK: loadHotModule would use defaultImpl'); }"
+	@$(MAKE) --no-print-directory hot-reload-plugins
+	@$(MAKE) --no-print-directory check-hot-reload-fresh
 
 diag-multitask:
 	@node --experimental-strip-types _diag_multitask.ts
