@@ -1910,8 +1910,16 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             vsock_port=vm_sandbox_cfg.vsock_port,
             memory_mb=vm_sandbox_cfg.mem_mib,
         )
+        from general_ludd.security.policy.profiles import resolve_sandbox_profile
+        from general_ludd.security.sandboxes.attestation import (
+            DurableSandboxAttestationStore,
+        )
+
+        sandbox_profile = resolve_sandbox_profile(vm_sandbox_cfg.profile)
+        sandbox_attestation_store = DurableSandboxAttestationStore(session_factory)
         app.state._sandbox_config = sandbox_config
         app.state._vm_sandbox_config = vm_sandbox_cfg
+        app.state._sandbox_profile = sandbox_profile
 
         if vm_sandbox_cfg.enabled and vm_sandbox_cfg.auto_build:
             try:
@@ -2135,6 +2143,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             memory_repo=memory_repo,
             sandbox_executor=sandbox_executor,
             sandbox_config=sandbox_config,
+            sandbox_attestation_store=sandbox_attestation_store,
+            sandbox_profile=sandbox_profile,
             run_recorder=run_recorder,
             checkpointer=app.state.checkpointer,
             utilization_tracker=getattr(app.state, "_utilization_tracker", None),

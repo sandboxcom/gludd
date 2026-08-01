@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, model_validator
@@ -181,6 +181,7 @@ class VmSandboxConfig(BaseModel):
     """
 
     enabled: bool = False
+    profile: Literal["locked", "standard", "development"] = "locked"
     image_type: str = "firecracker"
     default_image: str = ""
     kernel_path: str = ""

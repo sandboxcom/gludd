@@ -50,6 +50,47 @@ targets. Generated files are evidence snapshots, not allowlists.
   an operating-system network boundary. Locked workloads SHALL reject this as
   unenforced, not report it as isolated.
 
+### 2.1 Implemented production-boundary slice (2026-08-01)
+
+One production seam is now fail-closed: the daemon-wired
+`EventLoop._dispatch_execute_job_isolated()` path. Daemon startup resolves the
+validated `vm_sandbox.profile` (`locked` by default), pins its immutable policy
+hash, and supplies the shared `DurableSandboxAttestationStore`. Before the agent
+job runs, this seam requires a sandbox executor, permission spec, selected and
+applied backend, successful backend verification, and a typed independent
+`observe_runtime` result. It commits a tenant-partitioned allow or denial event
+before returning the decision. Missing guarantees, missing observation, an
+unsealed event, or audit-store failure prevents execution and releases any
+created backend handle.
+
+This is intentionally **not** a global-enforcement claim. Direct
+`AgentDispatcher.dispatch_one()` callers, dynamic `/api/dispatch` handlers,
+worker `/jobs/execute`, administrative code execution, other MCP/tool seams,
+and explicitly unwired legacy `EventLoop` instances are not covered by this
+slice. They remain open until they route through an equivalent durable admission
+boundary. Current Firecracker/gVisor and process backends also lack the required
+independent structured probe, so this seam truthfully records denial rather than
+converting `available()` or `applied=True` into an allow. Full backend canaries,
+escape tests, heartbeats, cleanup attestations, and policy promotion remain
+open.
+
+The pinned `ResolvedSandboxProfile` preserves the local ZDD invariant: an
+in-flight dispatch cannot change policy hash while a replacement worker and
+profile are prepared. Rollback currently means starting replacement workers on
+a previously validated immutable profile and draining the rejected/new workers;
+the shared version store, worker acknowledgements, atomic router switch, and
+automated forward-only rollback required by SH-ZDD-001 are not yet implemented.
+An invalid profile fails daemon construction before traffic changes.
+
+The fail-closed choice follows the already-recorded long-lived operator reports:
+[Bubblewrap #324](https://github.com/containers/bubblewrap/issues/324) shows
+binary presence surviving while host namespace policy makes the sandbox
+unusable; [nsjail #236](https://github.com/google/nsjail/issues/236) shows an OS
+upgrade invalidating mount setup; and [Apple Developer Forums thread
+661939](https://developer.apple.com/forums/thread/661939) documents the
+unsupported/deprecated Seatbelt path. These are evidence for requiring observed
+host state at admission, not new claims of backend completeness.
+
 ## 3. Threat model and trust boundaries
 
 ### 3.1 Protected assets

@@ -1,7 +1,7 @@
 # Sandbox profile resolution and runtime attestation
 
 **Feature:** `SEC-SBX-001` first executable slice  
-**Implementation status:** implemented locally; dispatch wiring and real backend probes remain open  
+**Implementation status:** production dispatch admission wired; real backend probes remain open  
 **Last reviewed:** 2026-08-01
 
 ## Scope and completion boundary
@@ -19,13 +19,40 @@ truthfully route untrusted work to a sandbox:
 - bounded, tenant-partitioned, integrity-checked attestation events committed
   to the shared audit database before the caller receives them.
 
-This does **not** mark `SEC-SBX-001` implemented. Backend canaries, dispatch
-wiring, kernel/VM probes, event notifications, policy promotion, and escape
-tests remain required by
+This does **not** mark `SEC-SBX-001` implemented. Backend canaries, kernel/VM
+probes, event notifications, policy promotion, and escape tests remain required by
 [`FEATURE_SECURITY_SANDBOX_HARDENING.md`](../specs/FEATURE_SECURITY_SANDBOX_HARDENING.md).
 In particular, a backend-provided `applied=True` value is not sufficient:
 callers must populate `RuntimeSandboxObservation` from independently observed
 host state.
+
+## Production dispatch admission
+
+The daemon now resolves the operator-selected `vm_sandbox.profile` once at
+startup and wires that immutable value plus `DurableSandboxAttestationStore`
+into `EventLoop._dispatch_execute_job_isolated()`. The boundary applies and
+verifies the selected backend, requires its independent `observe_runtime`
+probe, commits the tenant-partitioned decision, and only then invokes the
+existing sandbox executor and agent job. A missing backend, missing permission
+spec or executor, failed verification, absent/invalid observation, denial
+decision, or unsealed/unavailable audit store blocks execution. Backend handles
+are released on both allow completion and pre-execution denial.
+
+Each dispatch holds one `ResolvedSandboxProfile` and policy hash for its entire
+lifetime. A replacement worker can prepare another profile without mutating the
+in-flight value, preserving the prepare/verify/switch/drain seam required for
+later ZDD promotion work. The `locked` default remains unchanged; `standard`
+and `development` are explicit validated configuration choices.
+
+The long-lived Bubblewrap namespace failure documented below directly informs
+the admission rule: binary detection or an `applied=True` handle never creates
+guarantees. Until a backend supplies a typed independent probe, production
+dispatch records a durable denial instead of falling through unsandboxed.
+
+This slice covers only the daemon event-loop isolated-job boundary. Direct agent
+dispatcher calls, dynamic HTTP dispatch, worker execution, administrative code,
+and other tool/MCP paths still require equivalent integration; the feature spec
+tracks those residual seams and does not claim global enforcement.
 
 ## Configuration and narrowing contract
 
@@ -126,5 +153,6 @@ continuous-dispatch tests are intentionally not claimed by this slice.
 make test-files TESTFILES='tests/unit/test_sandbox_policy_profiles.py tests/unit/test_sandbox_runtime_attestation.py' PYTEST_ARGS=-q
 make test-files TESTFILES='tests/unit/test_sandbox_policy_profiles.py tests/unit/test_sandbox_runtime_attestation.py' PYTEST_ARGS='-q --cov=general_ludd.security.policy.profiles --cov=general_ludd.security.sandboxes.attestation --cov-report=term-missing --cov-fail-under=85'
 make lint-files FILES='src/general_ludd/security/policy/__init__.py src/general_ludd/security/policy/profiles.py src/general_ludd/security/sandboxes/attestation.py tests/unit/test_sandbox_policy_profiles.py tests/unit/test_sandbox_runtime_attestation.py'
+make test-files TESTFILES='tests/unit/test_sandbox_dispatch_boundary.py tests/unit/test_sandbox_executor_dispatch.py tests/unit/test_sandbox_runtime_attestation.py' PYTEST_ARGS=-q
+make test-files TESTFILES='tests/unit/test_sandbox_dispatch_boundary.py tests/unit/test_sandbox_runtime_attestation.py' PYTEST_ARGS='-q --cov=general_ludd.security.sandboxes.dispatch --cov-report=term-missing --cov-fail-under=85'
 ```
-
