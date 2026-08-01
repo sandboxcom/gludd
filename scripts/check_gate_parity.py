@@ -99,26 +99,22 @@ def extract_ci_phases(workflow_path: Path) -> set[str]:
 
 
 def extract_local_phases(makefile_path: Path) -> list[str]:
-    """Extract phase names from `=== GATE PHASE:` markers in gate-refresh recipe."""
+    """Extract phase markers from the gate-refresh wrapper and its body target."""
     text = makefile_path.read_text(encoding="utf-8")
     phases: list[str] = []
 
     in_target = False
     for line in text.splitlines():
         stripped = line.strip()
-        if stripped == "gate-refresh:" or stripped.startswith("gate-refresh:"):
-            in_target = True
+        target = None
+        if stripped and not line.startswith(("\t", " ")):
+            match = re.match(r"^([a-zA-Z_][a-zA-Z0-9_.-]*):", stripped)
+            if match:
+                target = match.group(1)
+        if target is not None:
+            in_target = target in {"gate-refresh", "_gate-refresh-body"}
             continue
         if in_target:
-            # Recipe ends when we hit a non-indented, non-empty, non-comment line
-            # that looks like a new target
-            if (
-                stripped
-                and not line.startswith("\t")
-                and not line.startswith("    ")
-                and re.match(r"^[a-zA-Z_][a-zA-Z0-9_.-]*:", stripped)
-            ):
-                break
             m = re.search(r"=== GATE(?:-REFRESH)? PHASE:\s*(\S+)", line)
             if m:
                 phases.append(m.group(1))
