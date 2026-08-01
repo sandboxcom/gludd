@@ -137,11 +137,20 @@ class TestAzureProvisionE2E:
             if _get_env("AZURE_URGENCY", "normal").lower() == "immediate"
             else DeployUrgency.NORMAL
         )
-        plan = strategist.plan(urgency, config.gpu_type.value, config.model_name)
+        plan = strategist.plan(
+            urgency,
+            config.gpu_type.value,
+            config.model_name,
+            estimated_runtime_minutes=config.timeout_minutes,
+            region=config.region or "eastus",
+            max_cost_usd=config.max_cost_usd,
+        )
         warmup_id = plan.warmup.tier_id if plan.warmup else "none"
         print(
             f"[test] Deploy plan: primary={plan.primary.tier_id}, "
-            f"warmup={warmup_id}, cost=${plan.estimated_cost_usd:.4f}",
+            f"warmup={warmup_id}, cost=${plan.estimated_cost_usd:.6f}, "
+            f"pricing={plan.pricing_source}, region={plan.pricing_region}, "
+            f"meters={','.join(plan.meter_ids)}",
             flush=True,
         )
 
