@@ -8,7 +8,7 @@
 > **Verify currency:** `make test-specific TESTFILE='tests/unit/test_enforcement_registry'`
 > fails if any plugin in `opencode.json` is missing from this document.
 
-## Total: 28 active plugins
+## Total: 31 active plugins
 
 | # | Plugin | Hook(s) | What it blocks | Disable env var |
 |---|--------|---------|----------------|-----------------|
@@ -40,6 +40,9 @@
 | 26 | `enforce-no-ci-poll.ts` | `tool.execute.before` | More than `GLUDD_CI_POLL_MAX` (default 3) consecutive CI-poll make targets (`ci-status`, `ci-verdict`, `ci-view`, `ci-await`, `ci-verdict-safe`, `gate-status-check`, `verify-release-completeness`, `release-view`) without an intervening productive mutation. Also: more than `GLUDD_STAGNANT_MAX` (default 5) consecutive stagnant read-only operations (incl. direct `read`/`glob`/`grep` tool calls). | `GLUDD_STAGNANT_ENFORCE=0` (stagnant detector); CI-poll detector has no env disable (intentional — polling is always an anti-pattern) |
 | 27 | `enforce-release-deadline.ts` | `tool.execute.before` | Bash release operations (`release-cut`, `git-tag-push`, `release-create`, `release-deploy`) issued after the configured release deadline window has elapsed. | `GLUDD_RELEASE_DEADLINE_ENFORCE=0` |
 | 28 | `watchdog.ts` | `event` | Not a blocker — observes `session.created`/`session.deleted` events to write/remove `.gate-logs/watchdog.pid`. Background daemon (`make watchdog-auto`) reads this PID to detect idle sessions and inject CONTINUE directives. | `GLUDD_WATCHDOG_ENABLED=0` |
+| 29 | `enforce-floor-v2.ts` | `tool.execute.before`, `experimental.text.complete` | Tracks session-wide dispatched-minus-completed work and denies non-dispatch tools while the configured cumulative floor is deficient. | `GLUDD_FLOOR_V2_ENFORCE=0` |
+| 30 | `enforce-directives.ts` | `tool.execute.before`, `experimental.text.complete` | Enforces explicit numeric, prohibition, completion, and all-items user directives; blocks commit/push or completion claims while a matched directive remains unmet. | `GLUDD_DIRECTIVE_ENFORCE=0` |
+| 31 | `enforce-task-tracking.ts` | `tool.execute.before`, `experimental.text.complete`, `experimental.chat.system.transform` | Denies implementation edits until TASKS.md has been updated for the work, then emits escalating stale-task reminders and injects the task-tracking directive. | `GLUDD_TASK_TRACKING_ENFORCE=0` |
 
 ## Hook surface reference
 

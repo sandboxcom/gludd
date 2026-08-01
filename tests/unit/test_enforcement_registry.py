@@ -110,7 +110,12 @@ class TestRegistryDocumentsDisableMechanism:
         assert plugin_section is not None, (
             f"Could not locate a documented section for plugin '{stem}'."
         )
-        has_env = bool(re.search(r"GLUDD_[A-Z_]+(?:_ENFORCE|_ENABLED|_DISABLED)?\s*=\s*0", plugin_section))
+        has_env = bool(
+            re.search(
+                r"GLUDD_[A-Z0-9_]+(?:_ENFORCE|_ENABLED|_DISABLED)?\s*=\s*0",
+                plugin_section,
+            )
+        )
         has_hardcoded_note = "hard-coded" in plugin_section.lower() or "no env disable" in plugin_section.lower()
         assert has_env or has_hardcoded_note, (
             f"Plugin '{stem}' is documented but its disable mechanism is not. "
