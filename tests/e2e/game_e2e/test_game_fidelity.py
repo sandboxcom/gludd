@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -99,18 +100,16 @@ def gateway():
     allow_network = os.environ.get("GAME_E2E_REFERENCE_NETWORK") == "1"
 
     def reference_preflight() -> None:
-        validations = preflight_reference_videos(
+        def stream_reference_event(name: str, payload: Mapping[str, object]) -> None:
+            details = " ".join(f"{key}={value}" for key, value in payload.items())
+            print(f"[game-fixture] {name} {details}", flush=True)
+
+        preflight_reference_videos(
             (spec.name for spec in GAME_SPECS),
             cache_dir,
             allow_network=allow_network,
+            event_reporter=stream_reference_event,
         )
-        for validation in validations.values():
-            print(
-                f"[game-fixture] reference_ready fixture={validation.game_name} "
-                f"status={validation.cache_status} frames={validation.reference_frame_count} "
-                f"sha256={validation.object_sha256}",
-                flush=True,
-            )
 
     runtime = AzureGameRuntime(preflight=reference_preflight)
     try:

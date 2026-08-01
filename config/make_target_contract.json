@@ -39,6 +39,15 @@
       "behavior": "make test-e2e-games-provision AZURE_E2E_ENV_FILE=tests/fixtures/azure-e2e.env.example AZURE_E2E_VALIDATE_ONLY=1 GAME_E2E_TIMEOUT_SECS=3600 GAME_E2E_REFERENCE_NETWORK=0 GAME_E2E_REFERENCE_CACHE_DIR=.cache/gludd-game-e2e"
     },
     {
+      "name": "game-reference-preflight",
+      "make_variables": [
+        "GAME_E2E_REFERENCE_NETWORK",
+        "GAME_E2E_REFERENCE_CACHE_DIR",
+        "GAME_E2E_REFERENCE_VALIDATE_ONLY"
+      ],
+      "behavior": "make game-reference-preflight GAME_E2E_REFERENCE_NETWORK=0 GAME_E2E_REFERENCE_CACHE_DIR=.cache/gludd-game-e2e GAME_E2E_REFERENCE_VALIDATE_ONLY=1"
+    },
+    {
       "name": "test-e2e-games",
       "make_variables": ["PYTEST_ARGS"],
       "behavior": "make test-e2e-games PYTEST_ARGS='-q -k test_ssim_identity'"

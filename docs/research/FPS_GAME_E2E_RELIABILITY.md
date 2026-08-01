@@ -36,6 +36,23 @@ A cache miss, digest mismatch, unavailable source, unsupported codec, zero
 frames, or incomplete clip is a preflight failure. It is never a test skip and
 must occur before Terraform starts.
 
+The implemented operator boundary is:
+
+```text
+make game-reference-preflight \
+  GAME_E2E_REFERENCE_NETWORK=1 \
+  GAME_E2E_REFERENCE_CACHE_DIR=.cache/gludd-game-e2e \
+  GAME_E2E_REFERENCE_VALIDATE_ONLY=0
+```
+
+Run it once with network access to acquire the bounded clips, then repeat with
+`GAME_E2E_REFERENCE_NETWORK=0` before the paid acceptance. It emits
+`reference_check_started`, `reference_acquisition_started`, sanitized yt-dlp
+progress, `reference_ready`, and `reference_failed` as each event occurs. Each
+ready event includes the cache status, frame count, and object digest. The Azure
+runtime runs the same preflight callback before endpoint discovery or Terraform
+deployment and emits `azure_game_preflight_failed` if it cannot proceed.
+
 ## Why live YouTube downloads are not the acceptance path
 
 The yt-dlp maintainers' long-running [known-issues thread][ytdlp-known] records
@@ -130,6 +147,31 @@ least 25%. This is a fail-closed sanity path, not a lower acceptance threshold.
 The call still specifies the 8-bit `data_range=255` and RGB `channel_axis`, as
 required by the [scikit-image metric contract][skimage-ssim-api].
 
+## macOS SDL/OpenCV import collision is a blocking warning
+
+The first paid-path dry failure exposed Objective-C duplicate-class warnings:
+OpenCV's `cv2/.dylibs/libSDL2-2.0.0.dylib` and Homebrew SDL (loaded by the
+Python 3.14 Pygame build) were present in one process. macOS states that which
+duplicate class wins is undefined, so this is a correctness and crash risk, not
+cosmetic log noise. Azure provisioning remains blocked until the combined game
+runtime import is warning-free.
+
+This failure family is long-lived in user reports. A Stack Overflow operator
+reported the same undefined duplicate-class behavior between OpenCV-bundled and
+application GUI libraries ([OpenCV/Qt duplicate report][opencv-qt-duplicate]);
+another macOS report shows a bundled `.dylibs/libSDL2-2.0.0.dylib` causing a
+runtime loader failure ([bundled SDL report][bundled-sdl-report]). A recent
+Apple-Silicon game-runtime account reproduces the exact `SDLApplication`
+collision between Homebrew SDL and `cv2/.dylibs` ([GRF SDL report][grf-sdl]).
+
+The OpenCV wheel maintainers require exactly one OpenCV wheel and recommend the
+headless variant when GUI APIs are unused ([OpenCV wheel guidance][opencv-wheel]).
+Gludd already satisfies that package-selection rule, but an upstream video-I/O
+discussion confirms binary wheels carry their own FFmpeg stack rather than the
+system FFmpeg ([OpenCV video-I/O report][opencv-videoio]). Therefore merely
+reinstalling the same headless wheel is not accepted as evidence; the gate must
+exercise the actual Pygame-plus-video runtime and reject duplicate-class stderr.
+
 ## Efficiency and failure ordering
 
 The cheapest deterministic checks run first: environment shape, optional
@@ -152,3 +194,8 @@ infrastructure failure.
 [ytdlp-403]: https://github.com/yt-dlp/yt-dlp/issues/14138
 [ytdlp-known]: https://github.com/yt-dlp/yt-dlp/issues/3766
 [ytdlp-sections]: https://github.com/yt-dlp/yt-dlp/issues/15036
+[bundled-sdl-report]: https://stackoverflow.com/questions/65909503/how-can-i-play-video-in-opencv-with-audio-the-same-time
+[grf-sdl]: https://medium.com/@Nirodya_Pussadeniya/installing-google-research-football-grf-on-macos-apple-silicon-38887a485fc1
+[opencv-qt-duplicate]: https://stackoverflow.com/questions/51371421/pyqt5-and-opencv-have-similar-libraries-how-to-avoid-conflict-between-the-2
+[opencv-videoio]: https://github.com/opencv/opencv/issues/24430
+[opencv-wheel]: https://github.com/opencv/opencv-python

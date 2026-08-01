@@ -85,7 +85,7 @@ _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-wor
         molecule-version molecule-test molecule-test-all \
         collection-roles collection-modules molecule-scenarios \
         test-binary-re test-radio test-os-expert test-e2e-test-gen test-language test-language-expert test-collections \
-          test-e2e-azure test-e2e-azure-provision test-e2e-games-provision test-e2e-providers \
+          test-e2e-azure test-e2e-azure-provision game-reference-preflight test-e2e-games-provision test-e2e-providers \
           test-e2e-aws test-e2e-gcp test-e2e-runpod \
          e2e-audit-azure e2e-latest-log \
         molecule-test-binary-re molecule-test-radio molecule-test-os-expert molecule-test-e2e-test-gen molecule-test-language \
@@ -218,6 +218,7 @@ help:
 	@echo "  test-e2e-providers    All E2E provider tests"
 	@echo "  test-e2e-games        Game generation E2E — AI generates games, compares frames (no Azure provision)"
 	@echo "  test-e2e-games-local  Game unit tests only — video compare, game gen, no Azure needed"
+	@echo "  game-reference-preflight  Acquire/verify approved FPS clips before Azure provisioning"
 	@echo "  test-e2e-games-provision  Source AZURE_E2E_ENV_FILE; Azure game E2E (GAME_E2E_TIMEOUT_SECS>=3600)"
 	@echo "  e2e-audit-azure     List all E2E runs with PASS/FAIL/RUNNING status"
 	@echo "  e2e-latest-log      Show exit code and error summary for latest E2E run"
@@ -1488,6 +1489,7 @@ AZURE_E2E_VALIDATE_ONLY ?= 0
 GAME_E2E_TIMEOUT_SECS ?= 3600
 GAME_E2E_REFERENCE_NETWORK ?= 1
 GAME_E2E_REFERENCE_CACHE_DIR ?= .cache/gludd-game-e2e
+GAME_E2E_REFERENCE_VALIDATE_ONLY ?= 0
 AZURE_CLEANUP_TIMEOUT_SECS ?= 1800
 AZURE_CLEANUP_POLL_SECS ?= 10
 AZURE_CLI ?= az
@@ -1540,6 +1542,12 @@ test-e2e-games:
 	 ARM_TENANT_ID="$${ARM_TENANT_ID:-}" ARM_SUBSCRIPTION_ID="$${ARM_SUBSCRIPTION_ID:-}" \
 	 AZURE_MODEL="$${AZURE_MODEL:-}" AZURE_BASE_URL="$${AZURE_BASE_URL:-}" \
 	 $(UV) run --extra game-e2e pytest tests/e2e/game_e2e/ -v -m "e2e and not azure_provision" $(PYTEST_ARGS)
+
+game-reference-preflight:
+	@$(UV) run --extra game-e2e python scripts/game_reference_preflight.py \
+		--cache-dir "$(GAME_E2E_REFERENCE_CACHE_DIR)" \
+		--allow-network "$(GAME_E2E_REFERENCE_NETWORK)" \
+		--validate-only "$(GAME_E2E_REFERENCE_VALIDATE_ONLY)"
 
 test-e2e-games-provision:
 	@mkdir -p .gate-logs/e2e-azure

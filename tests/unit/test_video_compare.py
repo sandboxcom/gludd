@@ -98,6 +98,7 @@ class TestMediaAdapters:
         tmp_path: Path,
     ) -> None:
         captured: dict[str, object] = {}
+        progress_events: list[dict[str, object]] = []
         destination = tmp_path / "reference.mp4"
 
         class FakeYoutubeDL:
@@ -122,6 +123,7 @@ class TestMediaAdapters:
             destination,
             clip_start_seconds=1.25,
             clip_duration_seconds=2.5,
+            progress_sink=progress_events.append,
         )
 
         options = captured["options"]
@@ -129,6 +131,25 @@ class TestMediaAdapters:
         assert options["download_sections"] == "*1.250-3.750"
         assert options["force_keyframes_at_cuts"] is True
         assert options["noplaylist"] is True
+        progress_hooks = options["progress_hooks"]
+        assert isinstance(progress_hooks, list)
+        progress_hooks[0](
+            {
+                "status": "downloading",
+                "downloaded_bytes": 512,
+                "total_bytes": 1024,
+                "eta": 3,
+                "filename": "must-not-be-forwarded",
+            }
+        )
+        assert progress_events == [
+            {
+                "status": "downloading",
+                "downloaded_bytes": 512,
+                "total_bytes": 1024,
+                "eta": 3,
+            }
+        ]
         assert captured["download"] is True
         assert Path(result) == destination
 
@@ -470,6 +491,27 @@ class TestReferenceVideos:
                 allow_network=False,
             )
 
+    def test_preflight_streams_failure_before_raising(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        events: list[tuple[str, dict[str, object]]] = []
+
+        with pytest.raises(RuntimeError, match="reference clip is missing"):
+            preflight_reference_videos(
+                ("doom_e1m1_hallway",),
+                tmp_path,
+                allow_network=False,
+                event_reporter=lambda name, payload: events.append((name, dict(payload))),
+            )
+
+        assert [name for name, _payload in events] == [
+            "reference_check_started",
+            "reference_failed",
+        ]
+        assert events[-1][1]["game_name"] == "doom_e1m1_hallway"
+        assert "missing" in str(events[-1][1]["error"])
+
     def test_preflight_atomically_records_and_reuses_verified_provenance(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -478,6 +520,7 @@ class TestReferenceVideos:
         source = REFERENCE_VIDEO_SPECS["doom_e1m1_hallway"]
         frames = [_make_frame(64, 64, value) for value in (10, 20, 30)]
         download_calls: list[Path] = []
+        events: list[tuple[str, dict[str, object]]] = []
 
         def fake_download(
             url: str,
@@ -486,6 +529,7 @@ class TestReferenceVideos:
             clip_start_seconds: float,
             clip_duration_seconds: float,
             metadata_sink=None,
+            progress_sink=None,
         ) -> str:
             path = Path(output_path)
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -503,6 +547,8 @@ class TestReferenceVideos:
                         "license": "unknown",
                     }
                 )
+            if progress_sink is not None:
+                progress_sink({"status": "downloading", "downloaded_bytes": 512})
             return str(path)
 
         monkeypatch.setattr(video_compare, "download_youtube_video", fake_download)
@@ -513,6 +559,7 @@ class TestReferenceVideos:
             (source.game_name,),
             tmp_path,
             allow_network=True,
+            event_reporter=lambda name, payload: events.append((name, dict(payload))),
         )
 
         assert len(first) == 1
@@ -529,6 +576,12 @@ class TestReferenceVideos:
         assert payload["ffmpeg_version"] == "ffmpeg fixture"
         assert payload["format_id"] == "18"
         assert not list(tmp_path.glob("*.tmp"))
+        assert [name for name, _payload in events] == [
+            "reference_check_started",
+            "reference_acquisition_started",
+            "reference_acquisition_progress",
+            "reference_ready",
+        ]
 
         monkeypatch.setattr(
             video_compare,

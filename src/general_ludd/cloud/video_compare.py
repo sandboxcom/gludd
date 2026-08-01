@@ -167,6 +167,7 @@ def download_youtube_video(
     clip_start_seconds: float = 0.0,
     clip_duration_seconds: float | None = None,
     metadata_sink: Callable[[dict[str, object]], None] | None = None,
+    progress_sink: Callable[[Mapping[str, object]], object] | None = None,
 ) -> str:
     """Download a bounded YouTube clip and surface selected-stream metadata.
 
@@ -175,6 +176,7 @@ def download_youtube_video(
         output_path: Directory or file path for the downloaded video.
         clip_start_seconds: First source second to retain.
         clip_duration_seconds: Optional bounded duration; omitted only for legacy callers.
+        progress_sink: Optional receiver for sanitized yt-dlp progress fields.
 
     Returns:
         Absolute path to the downloaded video file.
@@ -203,6 +205,28 @@ def download_youtube_video(
         "merge_output_format": "mp4",
         "noplaylist": True,
     }
+    if progress_sink is not None:
+        progress_fields = (
+            "status",
+            "downloaded_bytes",
+            "total_bytes",
+            "total_bytes_estimate",
+            "speed",
+            "eta",
+            "fragment_index",
+            "fragment_count",
+        )
+
+        def report_progress(raw: Mapping[str, object]) -> None:
+            progress_sink(
+                {
+                    key: raw[key]
+                    for key in progress_fields
+                    if key in raw and raw[key] is not None
+                }
+            )
+
+        ydl_opts["progress_hooks"] = [report_progress]
     if clip_start_seconds < 0:
         raise ValueError("clip_start_seconds must be non-negative")
     if clip_duration_seconds is not None:
@@ -369,6 +393,7 @@ def _acquire_reference(
     spec: ReferenceVideoSpec,
     cache_path: Path,
     provenance_path: Path,
+    event_reporter: Callable[[str, Mapping[str, object]], object] | None = None,
 ) -> ReferenceCacheValidation:
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     token = uuid.uuid4().hex
@@ -376,6 +401,14 @@ def _acquire_reference(
     temporary_sidecar = provenance_path.parent / f".{provenance_path.name}.{token}.tmp"
     metadata: dict[str, object] = {}
     downloaded_path: Path | None = None
+
+    def report_progress(payload: Mapping[str, object]) -> None:
+        if event_reporter is not None:
+            event_reporter(
+                "reference_acquisition_progress",
+                {"game_name": spec.game_name, **payload},
+            )
+
     try:
         ffmpeg_version = _ffmpeg_version()
         downloaded_path = Path(
@@ -385,6 +418,7 @@ def _acquire_reference(
                 clip_start_seconds=spec.clip_start_seconds,
                 clip_duration_seconds=spec.clip_duration_seconds,
                 metadata_sink=metadata.update,
+                progress_sink=report_progress if event_reporter is not None else None,
             )
         )
         if not downloaded_path.is_file():
@@ -449,6 +483,7 @@ def preflight_reference_videos(
     cache_dir: str | Path,
     *,
     allow_network: bool = False,
+    event_reporter: Callable[[str, Mapping[str, object]], object] | None = None,
 ) -> dict[str, ReferenceCacheValidation]:
     """Verify all approved clips before any paid Azure resource is started."""
     root = Path(cache_dir)
@@ -458,28 +493,78 @@ def preflight_reference_videos(
         try:
             spec = REFERENCE_VIDEO_SPECS[game_name]
         except KeyError:
-            failures.append(f"{game_name}: no approved reference manifest")
+            error = "no approved reference manifest"
+            failures.append(f"{game_name}: {error}")
+            if event_reporter is not None:
+                event_reporter("reference_failed", {"game_name": game_name, "error": error})
             continue
         cache_path = root / spec.cache_filename
         provenance_path = root / spec.provenance_filename
+        if event_reporter is not None:
+            event_reporter(
+                "reference_check_started",
+                {
+                    "game_name": game_name,
+                    "cache_path": str(cache_path),
+                    "allow_network": allow_network,
+                },
+            )
         try:
-            validations[game_name] = _validate_cached_reference(
+            validation = _validate_cached_reference(
                 spec,
                 cache_path,
                 provenance_path,
             )
+            validations[game_name] = validation
+            if event_reporter is not None:
+                event_reporter(
+                    "reference_ready",
+                    {
+                        "game_name": game_name,
+                        "cache_status": validation.cache_status,
+                        "reference_frame_count": validation.reference_frame_count,
+                        "object_sha256": validation.object_sha256,
+                    },
+                )
         except RuntimeError as error:
             if not allow_network:
                 failures.append(f"{game_name}: {error}")
+                if event_reporter is not None:
+                    event_reporter(
+                        "reference_failed",
+                        {"game_name": game_name, "error": str(error)},
+                    )
                 continue
+            if event_reporter is not None:
+                event_reporter(
+                    "reference_acquisition_started",
+                    {"game_name": game_name, "reason": str(error)},
+                )
             try:
-                validations[game_name] = _acquire_reference(
+                validation = _acquire_reference(
                     spec,
                     cache_path,
                     provenance_path,
+                    event_reporter,
                 )
+                validations[game_name] = validation
+                if event_reporter is not None:
+                    event_reporter(
+                        "reference_ready",
+                        {
+                            "game_name": game_name,
+                            "cache_status": validation.cache_status,
+                            "reference_frame_count": validation.reference_frame_count,
+                            "object_sha256": validation.object_sha256,
+                        },
+                    )
             except Exception as acquisition_error:
                 failures.append(f"{game_name}: acquisition failed: {acquisition_error}")
+                if event_reporter is not None:
+                    event_reporter(
+                        "reference_failed",
+                        {"game_name": game_name, "error": str(acquisition_error)},
+                    )
     if failures:
         raise RuntimeError("reference cache preflight failed: " + "; ".join(failures))
     return validations
