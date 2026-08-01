@@ -81,6 +81,34 @@ def test_owned_runtime_deploys_once_reuses_gateway_and_destroys_once() -> None:
     assert runtime.owns_endpoint is False
 
 
+def test_reference_preflight_failure_blocks_azure_deploy_and_is_streamed() -> None:
+    manager = FakeDeploymentManager(_instance())
+    events: list[str] = []
+    event_bus = EventBus()
+    event_bus.subscribe("custom", lambda event: events.append(str(event.payload["name"])))
+
+    def fail_preflight() -> None:
+        raise RuntimeError("reference cache is missing")
+
+    runtime = AzureGameRuntime(
+        environment=_environment(),
+        deployment_manager=manager,
+        event_bus=event_bus,
+        gateway_factory=lambda endpoint: object(),
+        readiness_probe=lambda endpoint: True,
+        sleep=lambda seconds: None,
+        event_reporter=None,
+        preflight=fail_preflight,
+    )
+
+    with pytest.raises(RuntimeError, match="reference cache is missing"):
+        runtime.start()
+
+    assert manager.deploy_calls == 0
+    assert manager.destroy_calls == []
+    assert events == ["azure_game_preflight_started", "azure_game_preflight_failed"]
+
+
 def test_runtime_cleans_up_owned_endpoint_when_readiness_fails() -> None:
     manager = FakeDeploymentManager(_instance())
     runtime = AzureGameRuntime(

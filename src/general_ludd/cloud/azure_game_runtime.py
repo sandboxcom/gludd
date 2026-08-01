@@ -91,12 +91,15 @@ class AzureGameRuntime:
         readiness_probe: Callable[[str], bool] = _default_readiness_probe,
         sleep: Callable[[float], None] = time.sleep,
         event_reporter: Callable[[Event], object] | None = _print_event,
+        preflight: Callable[[], object] | None = None,
     ) -> None:
         self._environment = dict(os.environ if environment is None else environment)
         self._event_bus = event_bus or EventBus()
         self._gateway_factory = gateway_factory
         self._readiness_probe = readiness_probe
         self._sleep = sleep
+        self._preflight = preflight
+        self._preflight_completed = False
         self._reporter_subscription: str | None = None
         if event_reporter is not None:
             self._reporter_subscription = self._event_bus.subscribe("custom", event_reporter)
@@ -218,12 +221,26 @@ class AzureGameRuntime:
             raise RuntimeError("Azure gateway could not be constructed for the selected endpoint")
         return gateway
 
+    def _run_preflight(self) -> None:
+        if self._preflight is None or self._preflight_completed:
+            return
+        self._publish("azure_game_preflight_started")
+        try:
+            self._preflight()
+        except BaseException as error:
+            self._publish("azure_game_preflight_failed", error=str(error))
+            raise
+        self._preflight_completed = True
+        self._publish("azure_game_preflight_completed")
+
     def start(self) -> object:
         """Return the session gateway, provisioning only on the first call."""
         if self._closed:
             raise RuntimeError("Azure game runtime is already closed")
         if self._gateway is not None:
             return self._gateway
+
+        self._run_preflight()
 
         external_endpoint = self._value("AZURE_BASE_URL")
         if external_endpoint:

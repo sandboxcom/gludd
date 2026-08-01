@@ -44,11 +44,13 @@ from general_ludd.cloud.game_gen import (
     validate_game_syntax,
 )
 from general_ludd.cloud.video_compare import (
+    REFERENCE_VIDEO_SPECS,
     REFERENCE_VIDEOS,
     ReferenceComparisonResult,
     compare_gameplay_to_reference,
     compute_ssim,
     download_youtube_video,
+    preflight_reference_videos,
 )
 
 _HAS_LANGCHAIN_OPENAI = importlib.util.find_spec("langchain_openai") is not None
@@ -93,7 +95,24 @@ class LiveGameGenArtifact:
 @pytest.fixture(scope="session")
 def gateway():
     """Provision or borrow one Azure endpoint for the entire game E2E session."""
-    runtime = AzureGameRuntime()
+    cache_dir = Path(os.environ.get("GAME_E2E_REFERENCE_CACHE_DIR", ".cache/gludd-game-e2e"))
+    allow_network = os.environ.get("GAME_E2E_REFERENCE_NETWORK") == "1"
+
+    def reference_preflight() -> None:
+        validations = preflight_reference_videos(
+            (spec.name for spec in GAME_SPECS),
+            cache_dir,
+            allow_network=allow_network,
+        )
+        for validation in validations.values():
+            print(
+                f"[game-fixture] reference_ready fixture={validation.game_name} "
+                f"status={validation.cache_status} frames={validation.reference_frame_count} "
+                f"sha256={validation.object_sha256}",
+                flush=True,
+            )
+
+    runtime = AzureGameRuntime(preflight=reference_preflight)
     try:
         yield cast(Any, runtime.start())
     finally:
@@ -558,8 +577,13 @@ class TestSSIMComputation:
 class TestVideoDownload:
     @pytest.mark.skipif(not _HAS_YTDLP_E2E, reason="yt-dlp not installed")
     def test_download_short_clip(self, tmp_path: Path) -> None:
-        url = REFERENCE_VIDEOS["doom_e1m1_hallway"]
-        video_path = download_youtube_video(url, str(tmp_path))
+        reference = REFERENCE_VIDEO_SPECS["doom_e1m1_hallway"]
+        video_path = download_youtube_video(
+            reference.source_url,
+            str(tmp_path),
+            clip_start_seconds=reference.clip_start_seconds,
+            clip_duration_seconds=reference.clip_duration_seconds,
+        )
         assert os.path.exists(video_path), f"Downloaded video not found: {video_path}"
         assert os.path.getsize(video_path) > 0, "Downloaded video is empty"
 

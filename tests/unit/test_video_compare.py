@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import warnings
 from pathlib import Path
 from types import SimpleNamespace
@@ -21,6 +22,7 @@ from general_ludd.cloud.video_compare import (
     download_youtube_video,
     extract_frames,
     motion_correlation,
+    preflight_reference_videos,
     resize_frames,
 )
 
@@ -449,3 +451,150 @@ class TestReferenceVideos:
         assert result.network_used is True
         assert result.source_video_id == source.video_id
         assert result.passed is True
+
+    def test_preflight_fails_offline_before_downloading_missing_references(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        monkeypatch.setattr(
+            video_compare,
+            "download_youtube_video",
+            lambda *args, **kwargs: pytest.fail("offline preflight attempted a download"),
+        )
+
+        with pytest.raises(RuntimeError, match=r"doom_e1m1_hallway.*missing"):
+            preflight_reference_videos(
+                ("doom_e1m1_hallway",),
+                tmp_path,
+                allow_network=False,
+            )
+
+    def test_preflight_atomically_records_and_reuses_verified_provenance(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        source = REFERENCE_VIDEO_SPECS["doom_e1m1_hallway"]
+        frames = [_make_frame(64, 64, value) for value in (10, 20, 30)]
+        download_calls: list[Path] = []
+
+        def fake_download(
+            url: str,
+            output_path: str | Path,
+            *,
+            clip_start_seconds: float,
+            clip_duration_seconds: float,
+            metadata_sink=None,
+        ) -> str:
+            path = Path(output_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"bounded reference clip")
+            download_calls.append(path)
+            if metadata_sink is not None:
+                metadata_sink(
+                    {
+                        "format_id": "18",
+                        "container": "mp4",
+                        "video_codec": "h264",
+                        "pixel_format": "yuv420p",
+                        "uploader": "fixture uploader",
+                        "channel": "fixture channel",
+                        "license": "unknown",
+                    }
+                )
+            return str(path)
+
+        monkeypatch.setattr(video_compare, "download_youtube_video", fake_download)
+        monkeypatch.setattr(video_compare, "extract_frames", lambda *args, **kwargs: frames)
+        monkeypatch.setattr(video_compare, "_ffmpeg_version", lambda: "ffmpeg fixture")
+
+        first = preflight_reference_videos(
+            (source.game_name,),
+            tmp_path,
+            allow_network=True,
+        )
+
+        assert len(first) == 1
+        validation = first[source.game_name]
+        assert validation.cache_status == "downloaded"
+        assert validation.reference_frame_count == len(frames)
+        assert validation.object_sha256
+        assert validation.decoded_frames_sha256
+        assert validation.provenance_path.is_file()
+        payload = json.loads(validation.provenance_path.read_text())
+        assert payload["source_video_id"] == source.video_id
+        assert payload["object_sha256"] == validation.object_sha256
+        assert payload["decoded_frames_sha256"] == validation.decoded_frames_sha256
+        assert payload["ffmpeg_version"] == "ffmpeg fixture"
+        assert payload["format_id"] == "18"
+        assert not list(tmp_path.glob("*.tmp"))
+
+        monkeypatch.setattr(
+            video_compare,
+            "download_youtube_video",
+            lambda *args, **kwargs: pytest.fail("validated cache was downloaded twice"),
+        )
+        second = preflight_reference_videos(
+            (source.game_name,),
+            tmp_path,
+            allow_network=False,
+        )
+
+        assert second[source.game_name].cache_status == "verified"
+        assert len(download_calls) == 1
+
+    def test_preflight_rejects_tampered_cached_clip(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        source = REFERENCE_VIDEO_SPECS["quake_dm6_arena"]
+        frames = [_make_frame(64, 64, 50), _make_frame(64, 64, 60)]
+
+        def fake_download(url: str, output_path: str | Path, **kwargs: object) -> str:
+            path = Path(output_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"original clip")
+            metadata_sink = kwargs.get("metadata_sink")
+            if callable(metadata_sink):
+                metadata_sink({})
+            return str(path)
+
+        monkeypatch.setattr(video_compare, "download_youtube_video", fake_download)
+        monkeypatch.setattr(video_compare, "extract_frames", lambda *args, **kwargs: frames)
+        monkeypatch.setattr(video_compare, "_ffmpeg_version", lambda: "ffmpeg fixture")
+        first = preflight_reference_videos((source.game_name,), tmp_path, allow_network=True)
+        first[source.game_name].cache_path.write_bytes(b"tampered clip")
+
+        with pytest.raises(RuntimeError, match="object digest mismatch"):
+            preflight_reference_videos((source.game_name,), tmp_path, allow_network=False)
+
+    def test_preflight_removes_downloader_selected_partial_on_decode_failure(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        source = REFERENCE_VIDEO_SPECS["doom_e1m1_hallway"]
+        selected_path = tmp_path / "downloader-selected.webm"
+
+        def fake_download(*args: object, **kwargs: object) -> str:
+            selected_path.write_bytes(b"invalid partial clip")
+            return str(selected_path)
+
+        monkeypatch.setattr(video_compare, "download_youtube_video", fake_download)
+        monkeypatch.setattr(
+            video_compare,
+            "extract_frames",
+            lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("decode failed")),
+        )
+        monkeypatch.setattr(video_compare, "_ffmpeg_version", lambda: "ffmpeg fixture")
+
+        with pytest.raises(RuntimeError, match="decode failed"):
+            preflight_reference_videos((source.game_name,), tmp_path, allow_network=True)
+
+        assert not selected_path.exists()
+
+    def test_preflight_types_are_part_of_the_public_module_contract(self) -> None:
+        assert "ReferenceCacheValidation" in video_compare.__all__
+        assert "preflight_reference_videos" in video_compare.__all__

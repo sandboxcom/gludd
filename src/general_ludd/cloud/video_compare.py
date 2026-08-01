@@ -6,9 +6,17 @@ and compares against AI-generated game frames using SSIM and motion analysis.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import os
+import shutil
+import subprocess
+import uuid
+from collections.abc import Callable, Iterable, Mapping
+from contextlib import suppress
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Protocol, cast
@@ -71,11 +79,17 @@ class ReferenceVideoSpec:
     sample_interval_seconds: float = 0.4
     comparison_threshold: float = 0.35
     redistribution_allowed: bool = False
+    approval_version: int = 1
 
     @property
     def cache_filename(self) -> str:
         """Stable user-cache filename; clips are never checked into the repository."""
         return f"{self.game_name}-{self.video_id}.mp4"
+
+    @property
+    def provenance_filename(self) -> str:
+        """Sidecar committed last after a clip and decoded sample validate."""
+        return f"{self.cache_filename}.provenance.json"
 
 
 @dataclass(frozen=True)
@@ -96,6 +110,19 @@ class ReferenceComparisonResult:
     motion_correlation: float
     per_frame_ssim: tuple[float, ...]
     passed: bool
+
+
+@dataclass(frozen=True)
+class ReferenceCacheValidation:
+    """Verified cache artifact that is safe to consume before Azure starts."""
+
+    game_name: str
+    cache_path: Path
+    provenance_path: Path
+    cache_status: str
+    object_sha256: str
+    decoded_frames_sha256: str
+    reference_frame_count: int
 
 
 def _reference_spec(game_name: str, video_id: str) -> ReferenceVideoSpec:
@@ -139,8 +166,9 @@ def download_youtube_video(
     *,
     clip_start_seconds: float = 0.0,
     clip_duration_seconds: float | None = None,
+    metadata_sink: Callable[[dict[str, object]], None] | None = None,
 ) -> str:
-    """Download a YouTube video using yt-dlp Python API.
+    """Download a bounded YouTube clip and surface selected-stream metadata.
 
     Args:
         url: YouTube video URL.
@@ -189,6 +217,31 @@ def download_youtube_video(
             info = ydl.extract_info(url, download=True)
             if info is None:
                 raise RuntimeError("yt-dlp returned no info for url")
+            requested_downloads = info.get("requested_downloads")
+            selected = (
+                requested_downloads[-1]
+                if isinstance(requested_downloads, list) and requested_downloads
+                else info
+            )
+            if not isinstance(selected, Mapping):
+                selected = info
+            if metadata_sink is not None:
+                metadata_sink(
+                    {
+                        "format_id": selected.get("format_id", info.get("format_id", "unknown")),
+                        "container": selected.get("ext", info.get("ext", "unknown")),
+                        "video_codec": selected.get("vcodec", info.get("vcodec", "unknown")),
+                        "pixel_format": selected.get("pix_fmt", "unknown"),
+                        "width": selected.get("width", info.get("width")),
+                        "height": selected.get("height", info.get("height")),
+                        "fps": selected.get("fps", info.get("fps")),
+                        "duration": info.get("duration"),
+                        "uploader": info.get("uploader", "unknown"),
+                        "channel": info.get("channel", "unknown"),
+                        "channel_id": info.get("channel_id", "unknown"),
+                        "license": info.get("license", "unknown"),
+                    }
+                )
             video_path = str(out_dir_path / f"{out_template}.mp4")
             if not os.path.exists(video_path):
                 candidates = sorted(
@@ -201,6 +254,235 @@ def download_youtube_video(
             return video_path
     except Exception as exc:
         raise RuntimeError(f"Failed to download video from {url}: {exc}") from exc
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _sha256_frames(frames: Iterable[Frame]) -> str:
+    digest = hashlib.sha256()
+    for frame in frames:
+        contiguous = np.ascontiguousarray(frame)
+        digest.update(str(contiguous.dtype).encode("ascii"))
+        digest.update(json.dumps(contiguous.shape).encode("ascii"))
+        digest.update(contiguous.tobytes())
+    return digest.hexdigest()
+
+
+def _ffmpeg_version() -> str:
+    executable = shutil.which("ffmpeg")
+    if executable is None:
+        raise RuntimeError("ffmpeg is required before reference acquisition")
+    completed = subprocess.run(
+        [executable, "-version"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    first_line = next((line.strip() for line in completed.stdout.splitlines() if line.strip()), "")
+    if completed.returncode != 0 or not first_line:
+        raise RuntimeError("ffmpeg version probe failed before reference acquisition")
+    return first_line
+
+
+def _yt_dlp_version() -> str:
+    module = _ensure_yt_dlp()
+    version_module = getattr(module, "version", None)
+    return str(getattr(version_module, "__version__", "unknown"))
+
+
+def _read_provenance(path: Path) -> dict[str, object]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError(f"invalid provenance sidecar: {error}") from error
+    if not isinstance(payload, dict):
+        raise RuntimeError("invalid provenance sidecar: expected a JSON object")
+    return payload
+
+
+def _decode_reference_frames(spec: ReferenceVideoSpec, path: Path) -> list[Frame]:
+    frames = extract_frames(
+        path,
+        num_frames=spec.sample_frame_count,
+        interval=spec.sample_interval_seconds,
+    )
+    if not frames:
+        raise RuntimeError("reference clip decoded zero frames")
+    shapes = {tuple(frame.shape) for frame in frames}
+    if len(shapes) != 1:
+        raise RuntimeError(f"reference clip frame dimensions changed: {sorted(shapes)}")
+    return frames
+
+
+def _validate_cached_reference(
+    spec: ReferenceVideoSpec,
+    cache_path: Path,
+    provenance_path: Path,
+) -> ReferenceCacheValidation:
+    if not cache_path.is_file():
+        raise RuntimeError("reference clip is missing")
+    if not provenance_path.is_file():
+        raise RuntimeError("reference provenance sidecar is missing")
+    payload = _read_provenance(provenance_path)
+    expected = {
+        "schema_version": 1,
+        "game_name": spec.game_name,
+        "source_url": spec.source_url,
+        "source_video_id": spec.video_id,
+        "clip_start_seconds": spec.clip_start_seconds,
+        "clip_duration_seconds": spec.clip_duration_seconds,
+        "approval_version": spec.approval_version,
+        "redistribution_allowed": spec.redistribution_allowed,
+    }
+    for key, value in expected.items():
+        if payload.get(key) != value:
+            raise RuntimeError(f"provenance {key} mismatch")
+
+    object_sha256 = _sha256_file(cache_path)
+    if payload.get("object_sha256") != object_sha256:
+        raise RuntimeError("object digest mismatch")
+    frames = _decode_reference_frames(spec, cache_path)
+    decoded_frames_sha256 = _sha256_frames(frames)
+    if payload.get("decoded_frames_sha256") != decoded_frames_sha256:
+        raise RuntimeError("decoded frame digest mismatch")
+    if payload.get("decoded_frame_count") != len(frames):
+        raise RuntimeError("decoded frame count mismatch")
+    return ReferenceCacheValidation(
+        game_name=spec.game_name,
+        cache_path=cache_path,
+        provenance_path=provenance_path,
+        cache_status="verified",
+        object_sha256=object_sha256,
+        decoded_frames_sha256=decoded_frames_sha256,
+        reference_frame_count=len(frames),
+    )
+
+
+def _acquire_reference(
+    spec: ReferenceVideoSpec,
+    cache_path: Path,
+    provenance_path: Path,
+) -> ReferenceCacheValidation:
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    token = uuid.uuid4().hex
+    temporary_video = cache_path.parent / f".{cache_path.stem}.{token}.tmp.mp4"
+    temporary_sidecar = provenance_path.parent / f".{provenance_path.name}.{token}.tmp"
+    metadata: dict[str, object] = {}
+    downloaded_path: Path | None = None
+    try:
+        ffmpeg_version = _ffmpeg_version()
+        downloaded_path = Path(
+            download_youtube_video(
+                spec.source_url,
+                temporary_video,
+                clip_start_seconds=spec.clip_start_seconds,
+                clip_duration_seconds=spec.clip_duration_seconds,
+                metadata_sink=metadata.update,
+            )
+        )
+        if not downloaded_path.is_file():
+            raise RuntimeError("reference downloader did not produce a file")
+        frames = _decode_reference_frames(spec, downloaded_path)
+        object_sha256 = _sha256_file(downloaded_path)
+        decoded_frames_sha256 = _sha256_frames(frames)
+        first_shape = tuple(frames[0].shape)
+        payload: dict[str, object] = {
+            "schema_version": 1,
+            "approval_version": spec.approval_version,
+            "game_name": spec.game_name,
+            "source_url": spec.source_url,
+            "source_video_id": spec.video_id,
+            "clip_start_seconds": spec.clip_start_seconds,
+            "clip_duration_seconds": spec.clip_duration_seconds,
+            "sample_frame_count": spec.sample_frame_count,
+            "sample_interval_seconds": spec.sample_interval_seconds,
+            "redistribution_allowed": spec.redistribution_allowed,
+            "retrieved_at": datetime.now(UTC).isoformat(),
+            "object_sha256": object_sha256,
+            "decoded_frames_sha256": decoded_frames_sha256,
+            "decoded_frame_count": len(frames),
+            "decoded_height": first_shape[0],
+            "decoded_width": first_shape[1],
+            "decoded_channels": first_shape[2] if len(first_shape) > 2 else 1,
+            "yt_dlp_version": _yt_dlp_version(),
+            "ffmpeg_version": ffmpeg_version,
+            "opencv_version": str(getattr(cv2, "__version__", "unknown")),
+            **metadata,
+        }
+        with temporary_sidecar.open("w", encoding="utf-8") as stream:
+            json.dump(payload, stream, indent=2, sort_keys=True)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(downloaded_path, cache_path)
+        os.replace(temporary_sidecar, provenance_path)
+        return ReferenceCacheValidation(
+            game_name=spec.game_name,
+            cache_path=cache_path,
+            provenance_path=provenance_path,
+            cache_status="downloaded",
+            object_sha256=object_sha256,
+            decoded_frames_sha256=decoded_frames_sha256,
+            reference_frame_count=len(frames),
+        )
+    finally:
+        partials = [temporary_video, temporary_sidecar]
+        if downloaded_path is not None and downloaded_path not in {
+            cache_path,
+            provenance_path,
+        }:
+            partials.append(downloaded_path)
+        for partial in partials:
+            with suppress(FileNotFoundError):
+                partial.unlink()
+
+
+def preflight_reference_videos(
+    game_names: Iterable[str],
+    cache_dir: str | Path,
+    *,
+    allow_network: bool = False,
+) -> dict[str, ReferenceCacheValidation]:
+    """Verify all approved clips before any paid Azure resource is started."""
+    root = Path(cache_dir)
+    validations: dict[str, ReferenceCacheValidation] = {}
+    failures: list[str] = []
+    for game_name in game_names:
+        try:
+            spec = REFERENCE_VIDEO_SPECS[game_name]
+        except KeyError:
+            failures.append(f"{game_name}: no approved reference manifest")
+            continue
+        cache_path = root / spec.cache_filename
+        provenance_path = root / spec.provenance_filename
+        try:
+            validations[game_name] = _validate_cached_reference(
+                spec,
+                cache_path,
+                provenance_path,
+            )
+        except RuntimeError as error:
+            if not allow_network:
+                failures.append(f"{game_name}: {error}")
+                continue
+            try:
+                validations[game_name] = _acquire_reference(
+                    spec,
+                    cache_path,
+                    provenance_path,
+                )
+            except Exception as acquisition_error:
+                failures.append(f"{game_name}: acquisition failed: {acquisition_error}")
+    if failures:
+        raise RuntimeError("reference cache preflight failed: " + "; ".join(failures))
+    return validations
 
 
 def extract_frames(
@@ -550,6 +832,7 @@ def compare_gameplay_to_reference(
 __all__ = [
     "REFERENCE_VIDEOS",
     "REFERENCE_VIDEO_SPECS",
+    "ReferenceCacheValidation",
     "ReferenceComparisonResult",
     "ReferenceVideoSpec",
     "compare_gameplay",
@@ -559,5 +842,6 @@ __all__ = [
     "download_youtube_video",
     "extract_frames",
     "motion_correlation",
+    "preflight_reference_videos",
     "resize_frames",
 ]
