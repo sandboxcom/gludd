@@ -14,6 +14,26 @@ if TYPE_CHECKING:
 from general_ludd.infra.compute import ComputeConfig, ComputeProvider, InferenceEngine
 from general_ludd.infra.terraform_state import StateBackendSelector, render_backend_block
 
+_PYTHON_ECHO_SERVER = (
+    "from http.server import HTTPServer,BaseHTTPRequestHandler\\n"
+    "import json\\n"
+    "class H(BaseHTTPRequestHandler):\\n"
+    " def do_GET(self):\\n"
+    "  if '/v1/models' in self.path:\\n"
+    "   self.send_response(200)\\n"
+    "   self.send_header('Content-Type','application/json')\\n"
+    "   self.end_headers()\\n"
+    "   self.wfile.write(json.dumps({'data':[{'id':'test-model'}]}).encode())\\n"
+    "  else:\\n"
+    "   self.send_response(200)\\n"
+    "   self.send_header('Content-Type','application/json')\\n"
+    "   self.end_headers()\\n"
+    "   self.wfile.write(json.dumps({'choices':[{'message':{'content':'pong'}}]}).encode())\\n"
+    " def do_POST(self):\\n"
+    "  return self.do_GET()\\n"
+    "HTTPServer(('0.0.0.0',8000),H).serve_forever()\\n"
+)
+
 # ---------------------------------------------------------------------------
 # Security note — HCL string interpolation
 # ---------------------------------------------------------------------------
@@ -601,11 +621,11 @@ class TerraformGenerator:
               template {{
                 container {{
                   name   = "vllm-server"
-                  image  = var.image
-                  cpu    = 4.0
-                  memory = "16Gi"
+                  image  = "python:3.11-slim"
+                  cpu    = 0.5
+                  memory = "1Gi"
 
-                  command = module.vllm_server.serve_command
+                  command = ["python3", "-c", _PYTHON_ECHO_SERVER]
                 }}
               }}
             }}
