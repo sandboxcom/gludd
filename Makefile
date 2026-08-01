@@ -1470,7 +1470,16 @@ test-e2e-azure:
 	@AZURE_BASE_URL=$(AZURE_BASE_URL) AZURE_MODEL=$(AZURE_MODEL) AZURE_API_KEY=$(AZURE_API_KEY) \
 		$(UV) run pytest tests/e2e/providers/test_azure_e2e.py -v
 
-# Azure full-provision E2E (opt-in, costly, manual)
+# Azure full-provision E2E with env file sourcing — source your env file and run the test
+test-e2e-azure-provision-sourced:
+	@mkdir -p .gate-logs/e2e-azure
+	@. /tmp/general-ludd.env; \
+	 export GLUDD_CONFIG_DIR="$${GLUDD_CONFIG_DIR:-$$PWD/config}"; \
+	 export ARM_CLIENT_ID ARM_CLIENT_SECRET ARM_TENANT_ID ARM_SUBSCRIPTION_ID ARM_USE_MSI AZURE_SUBSCRIPTION_ID; \
+	 AZURE_PROVISION_E2E=1 GLUDD_E2E_MAX_SPEND_USD="$${GLUDD_E2E_MAX_SPEND_USD:-5}" \
+		$(UV) run python scripts/e2e_log_capture.py --label azure-provision --cmd "uv run pytest tests/e2e/providers/test_azure_provision_e2e.py -v -m azure_provision --timeout=900"
+
+# Azure full-provision E2E (opt-in, costly, manual) — use when vars are already exported
 test-e2e-azure-provision:
 	@mkdir -p .gate-logs/e2e-azure
 	@ARM_CLIENT_ID="$${ARM_CLIENT_ID:-}" ARM_CLIENT_SECRET="$${ARM_CLIENT_SECRET:-}" \
