@@ -5,6 +5,7 @@ Never stores secret_id — that lives only in OpenBao.
 
 from __future__ import annotations
 
+import inspect
 import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -28,17 +29,19 @@ class TokenStore:
     async def store(self, token_record: AgentTokenModel) -> None:
         """Insert or merge *token_record* into the DB."""
         async with self._session_factory.begin() as session:
-            session.add(token_record)
+            add_result = session.add(token_record)
+            if inspect.isawaitable(add_result):
+                await add_result
 
     async def get(self, agent_id: str) -> AgentTokenModel | None:
         """Return the token record for *agent_id*, or None."""
         from general_ludd.db.models import AgentTokenModel as A
 
         async with self._session_factory() as session:
-                stmt = select(A).where(A.agent_id == agent_id)
-                result = await session.execute(stmt)
-                row: AgentTokenModel | None = result.scalar_one_or_none()
-                return row
+            stmt = select(A).where(A.agent_id == agent_id)
+            result = await session.execute(stmt)
+            row: AgentTokenModel | None = result.scalar_one_or_none()
+            return row
 
     async def revoke(self, token_id: str) -> None:
         """Mark the token *token_id* as revoked (soft-delete with timestamp)."""
@@ -46,7 +49,9 @@ class TokenStore:
         if record is not None:
             record.revoked_at = datetime.now(UTC)
             async with self._session_factory.begin() as session:
-                session.add(record)
+                add_result = session.add(record)
+                if inspect.isawaitable(add_result):
+                    await add_result
 
     async def increment_hydration(self, agent_id: str) -> None:
         """Increment the hydration_count for *agent_id*'s token record."""
@@ -58,16 +63,18 @@ class TokenStore:
             record: AgentTokenModel | None = result.scalar_one_or_none()
             if record is not None:
                 record.hydration_count += 1
-                session.add(record)
+                add_result = session.add(record)
+                if inspect.isawaitable(add_result):
+                    await add_result
 
     async def _by_token_id(self, token_id: str) -> AgentTokenModel | None:
         from general_ludd.db.models import AgentTokenModel as A
 
         async with self._session_factory() as session:
-                stmt = select(A).where(A.token_id == token_id)
-                result = await session.execute(stmt)
-                row: AgentTokenModel | None = result.scalar_one_or_none()
-                return row
+            stmt = select(A).where(A.token_id == token_id)
+            result = await session.execute(stmt)
+            row: AgentTokenModel | None = result.scalar_one_or_none()
+            return row
 
     async def list_expired(self, now: datetime) -> list[AgentTokenModel]:
         """Return all live (non-revoked) tokens whose ``expires_at < now``.

@@ -55,7 +55,7 @@ def upgrade() -> None:
             "AND todo_id NOT IN (SELECT todo_id FROM todos)"
         )
     )
-    with op.batch_alter_table("task_returns", recreate="always") as batch_op:
+    with op.batch_alter_table("task_returns") as batch_op:
         batch_op.create_foreign_key(
             FK_TASK_RETURNS_TODO,
             "todos",
@@ -74,7 +74,7 @@ def upgrade() -> None:
             "WHERE return_id NOT IN (SELECT return_id FROM task_returns)"
         )
     )
-    with op.batch_alter_table("task_decisions", recreate="always") as batch_op:
+    with op.batch_alter_table("task_decisions") as batch_op:
         batch_op.create_foreign_key(
             FK_TASK_DECISIONS_RETURN,
             "task_returns",
@@ -85,8 +85,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("task_decisions", recreate="always") as batch_op:
+    with op.batch_alter_table("task_decisions") as batch_op:
         batch_op.drop_constraint(FK_TASK_DECISIONS_RETURN, type_="foreignkey")
 
-    with op.batch_alter_table("task_returns", recreate="always") as batch_op:
+    with op.batch_alter_table("task_returns") as batch_op:
         batch_op.drop_constraint(FK_TASK_RETURNS_TODO, type_="foreignkey")

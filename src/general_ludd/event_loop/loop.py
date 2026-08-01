@@ -434,6 +434,7 @@ class EventLoop:
         self._mcp_client = mcp_client
         self._mcp_tool_registry = mcp_tool_registry
         self._running = False
+        self._wake_event = asyncio.Event()
         self._total_ticks = 0
         self._tick_state: dict[str, Any] = {}
         self._active_traces: dict[str, Any] = {}
@@ -880,7 +881,14 @@ class EventLoop:
                 await self.tick()
                 if self._inbound_queue is not None:
                     await self._drain_inbound_queue()
-                await asyncio.sleep(interval)
+                if not self._running:
+                    break
+                try:
+                    await asyncio.wait_for(self._wake_event.wait(), timeout=interval)
+                except TimeoutError:
+                    pass
+                finally:
+                    self._wake_event.clear()
         except Exception as exc:
             logger.error("EventLoop run_forever exited with error: %s", exc)
             raise
@@ -956,8 +964,13 @@ class EventLoop:
             )
         logger.info("Applied inbound envelope: topic=%s", topic)
 
+    def wake(self) -> None:
+        """Interrupt the idle interval so newly available work is claimed now."""
+        self._wake_event.set()
+
     def stop(self) -> None:
         self._running = False
+        self.wake()
 
     async def shutdown(self) -> None:
         """Stop ticking and drain all in-flight background tasks.
@@ -969,6 +982,7 @@ class EventLoop:
         drain reads a snapshot under ``_bg_tasks_lock``.
         """
         self._running = False
+        self.wake()
         await self._drain_background_tasks()
 
     def get_available_tools(self) -> list[str]:

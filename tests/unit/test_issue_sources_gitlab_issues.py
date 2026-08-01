@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from general_ludd.issue_sources.gitlab_issues import _PRIORITY_LABELS, GitLabIssueSource
 
 
 class FakeHTTPResponse:
-    def __init__(self, status_code: int, data: dict | list):
+    def __init__(self, status_code: int, data: dict[str, Any] | list[Any]):
         self.status_code = status_code
         self._data = data
 
@@ -17,7 +19,7 @@ class FakeHTTPResponse:
 class FakeHTTPTransport:
     def __init__(self, responses: list[FakeHTTPResponse] | None = None):
         self.responses = responses or []
-        self.calls: list[dict] = []
+        self.calls: list[dict[str, Any]] = []
 
     def __call__(self, method, url, *, headers, params=None, json=None, timeout):
         self.calls.append({
@@ -219,32 +221,51 @@ def test_module_exports():
 
 
 def test_http_response_protocol():
+    from typing import get_protocol_members
 
     from general_ludd.issue_sources.gitlab_issues import HTTPResponse
+
     assert HTTPResponse.__class__.__name__ == "_ProtocolMeta"
-    assert hasattr(HTTPResponse, "__protocol_attrs__")
+    assert get_protocol_members(HTTPResponse) == frozenset({"status_code", "json"})
 
 
-def test_http_response_satisfies():
+def test_http_response_satisfies() -> None:
     from general_ludd.issue_sources.gitlab_issues import HTTPResponse
+
     class R:
         status_code: int = 200
-        def json(self) -> dict: return {}
+
+        def json(self) -> dict[str, Any]:
+            return {}
+
     assert isinstance(R(), HTTPResponse)
 
 
 def test_http_transport_protocol():
+    from typing import get_protocol_members
 
     from general_ludd.issue_sources.gitlab_issues import HTTPTransport
+
     assert HTTPTransport.__class__.__name__ == "_ProtocolMeta"
-    assert hasattr(HTTPTransport, "__protocol_attrs__")
+    assert get_protocol_members(HTTPTransport) == frozenset({"__call__"})
 
 
-def test_http_transport_satisfies():
+def test_http_transport_satisfies() -> None:
     from general_ludd.issue_sources.gitlab_issues import HTTPTransport
+
     class T:
-        def __call__(self, method, url, *, headers, params=None, json=None, timeout):
+        def __call__(
+            self,
+            method: str,
+            url: str,
+            *,
+            headers: dict[str, str],
+            params: dict[str, str] | None = None,
+            json: dict[str, Any] | None = None,
+            timeout: float,
+        ) -> FakeHTTPResponse:
             return FakeHTTPResponse(200, {})
+
     assert isinstance(T(), HTTPTransport)
 
 

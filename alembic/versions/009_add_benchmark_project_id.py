@@ -61,8 +61,9 @@ def upgrade() -> None:
     # 3. FK to projects.project_id (SET NULL). Added through batch_alter_table so
     #    SQLite (which cannot ALTER ... ADD CONSTRAINT) rebuilds the table; mirrors
     #    migration 006. The alembic env enables render_as_batch globally, but we
-    #    use an explicit batch block here so the FK lands on every backend.
-    with op.batch_alter_table("benchmark_results", recreate="always") as batch_op:
+    #    use an explicit batch block here so the FK lands on every backend while
+    #    PostgreSQL retains native ALTER TABLE semantics.
+    with op.batch_alter_table("benchmark_results") as batch_op:
         batch_op.create_foreign_key(
             FK_BENCHMARK_PROJECT,
             "projects",
@@ -73,7 +74,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("benchmark_results", recreate="always") as batch_op:
+    with op.batch_alter_table("benchmark_results") as batch_op:
         batch_op.drop_constraint(FK_BENCHMARK_PROJECT, type_="foreignkey")
     op.drop_index(IX_BENCHMARK_PROJECT_TASK, "benchmark_results")
     op.drop_index(IX_BENCHMARK_PROJECT, "benchmark_results")

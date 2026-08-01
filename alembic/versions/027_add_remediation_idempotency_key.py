@@ -7,8 +7,8 @@ Adds:
 - ``idempotency_key`` (nullable, unique, indexed)
 - Composite index on ``(blocked_todo_id, action_kind, created_at)``
 
-Uses ``batch_alter_table(recreate="always")`` so the migration works on
-SQLite (which can't ALTER constraints in-place).
+Uses batch mode so Alembic rebuilds on SQLite when constraints cannot be
+altered in place while retaining native DDL on PostgreSQL.
 """
 
 from collections.abc import Sequence
@@ -23,7 +23,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("remediation_actions", recreate="always") as batch_op:
+    with op.batch_alter_table("remediation_actions") as batch_op:
         batch_op.add_column(
             sa.Column("idempotency_key", sa.String(length=256), nullable=True)
         )
@@ -43,7 +43,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("remediation_actions", recreate="always") as batch_op:
+    with op.batch_alter_table("remediation_actions") as batch_op:
         batch_op.drop_index("ix_remediation_actions_dedup")
         batch_op.drop_index("ix_remediation_actions_idempotency_key")
         batch_op.drop_constraint(

@@ -3731,15 +3731,23 @@ def _build_daemon_env(
     return env
 
 
-def _clamp_workers_for_sqlite(workers: int | None) -> int:
-    """W3.5 (M8): clamp gunicorn workers to 1 for the SQLite-only deployment.
+def _clamp_workers_for_sqlite(
+    workers: int | None,
+    *,
+    database_url: str | None = None,
+) -> int:
+    """Clamp SQLite to one worker and permit bounded PostgreSQL concurrency.
 
     Each gunicorn worker spawns its own event loop + in-memory stores; with a
     single SQLite file there is no cross-process claim coordination, so N>1 is
-    dishonest (duplicate dispatch, racing writers). Default to 1 and clamp any
-    N>1 down to 1 with a warning. The honest multi-worker story requires Postgres
-    (H18), which is not supported.
+    dishonest (duplicate dispatch, racing writers). PostgreSQL claims use row
+    locking plus guarded updates, so explicit worker counts are preserved and
+    the default is bounded to four workers to keep connection usage predictable.
     """
+    resolved_url = database_url or os.environ.get("DATABASE_URL") or get_default_db_url()
+    if not is_sqlite_url(resolved_url):
+        requested = workers if workers is not None else min(4, os.cpu_count() or 1)
+        return max(1, requested)
     if workers is None:
         return 1
     if workers > 1:

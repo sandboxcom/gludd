@@ -5,8 +5,8 @@ Phase P4: records mint, use, renew, revoke, revive events to StsAuditModel rows.
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
+import inspect
 import json as _json
 import logging
 import time
@@ -49,7 +49,7 @@ class StsAuditPipeline:
                 )
                 row_raw = result.scalar_one_or_none()
                 row: StsAuditModel | None = (
-                    await row_raw if asyncio.iscoroutine(row_raw) else row_raw
+                    await row_raw if inspect.isawaitable(row_raw) else row_raw
                 )
                 if row is not None:
                     row.use_count = (row.use_count or 0) + 1
@@ -61,7 +61,7 @@ class StsAuditPipeline:
                     events_list.append(event)
                     row.events = _json.dumps(events_list)
                     add_result = session.add(row)
-                    if asyncio.iscoroutine(add_result):
+                    if inspect.isawaitable(add_result):
                         await add_result
             await session.commit()
         self._pending_events = []
@@ -193,4 +193,6 @@ class StsAuditPipeline:
                 events_list = []
             events_list.append(event)
             row.events = _json.dumps(events_list)
-            session.add(row)
+            add_result = session.add(row)
+            if inspect.isawaitable(add_result):
+                await add_result

@@ -75,7 +75,7 @@ def upgrade() -> None:
             "schedule_paused",
             sa.Boolean(),
             nullable=False,
-            server_default="0",
+            server_default=sa.false(),
         ),
     )
     # Composite index supporting the scheduler's due-todo query:

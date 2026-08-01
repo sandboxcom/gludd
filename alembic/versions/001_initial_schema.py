@@ -130,7 +130,7 @@ def upgrade() -> None:
         "queues",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("queue_name", sa.String(64), nullable=False),
-        sa.Column("queue_enabled", sa.Boolean(), nullable=False, server_default="1"),
+        sa.Column("queue_enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("priority_weight", sa.Integer(), nullable=False, server_default="100"),
         sa.Column("resource_profile", sa.String(32), nullable=False, server_default="low_resource"),
         sa.Column("hard_cap", sa.Integer(), nullable=False, server_default="10"),

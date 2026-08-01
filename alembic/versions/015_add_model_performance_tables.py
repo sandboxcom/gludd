@@ -38,7 +38,7 @@ def upgrade() -> None:
             server_default="generation",
         ),
         sa.Column("work_type", sa.String(length=32), nullable=True),
-        sa.Column("success", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column("success", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("input_tokens", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("output_tokens", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("cost_usd", sa.Float(), nullable=False, server_default="0.0"),

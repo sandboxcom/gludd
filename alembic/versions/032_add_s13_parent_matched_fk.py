@@ -44,7 +44,7 @@ def upgrade() -> None:
             "AND parent_todo_id NOT IN (SELECT todo_id FROM todos)"
         )
     )
-    with op.batch_alter_table("todos", recreate="always") as batch_op:
+    with op.batch_alter_table("todos") as batch_op:
         batch_op.create_foreign_key(
             FK_TODOS_PARENT,
             "todos",
@@ -62,7 +62,7 @@ def upgrade() -> None:
             "AND matched_todo_id NOT IN (SELECT todo_id FROM todos)"
         )
     )
-    with op.batch_alter_table("task_decisions", recreate="always") as batch_op:
+    with op.batch_alter_table("task_decisions") as batch_op:
         batch_op.create_foreign_key(
             FK_TASK_DECISIONS_MATCHED,
             "todos",
@@ -73,8 +73,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("task_decisions", recreate="always") as batch_op:
+    with op.batch_alter_table("task_decisions") as batch_op:
         batch_op.drop_constraint(FK_TASK_DECISIONS_MATCHED, type_="foreignkey")
 
-    with op.batch_alter_table("todos", recreate="always") as batch_op:
+    with op.batch_alter_table("todos") as batch_op:
         batch_op.drop_constraint(FK_TODOS_PARENT, type_="foreignkey")

@@ -90,6 +90,19 @@ class TestDaemonStartupNonNullDeps:
             assert event.source == "terraform_deployment"
 
     @pytest.mark.asyncio
+    async def test_terraform_events_have_durable_bridge_and_immediate_wake(self):
+        from general_ludd.daemon import create_daemon_app
+
+        app = create_daemon_app(config_dir=None)
+        async with app.router.lifespan_context(app):
+            bridge = app.state._terraform_event_bridge
+            loop = app.state.event_loop
+
+            assert bridge is not None
+            assert bridge._event_bus is app.state._event_bus
+            assert bridge._wake.__self__ is loop
+
+    @pytest.mark.asyncio
     async def test_event_loop_has_live_adaptive_router(self):
         """EventLoop._adaptive_router must be non-None after lifespan.
 

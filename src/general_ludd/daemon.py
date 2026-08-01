@@ -2126,6 +2126,16 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         app.state.event_loop = event_loop
         app.state.event_loop._runner = runner
+        from general_ludd.infra.deployment_events import TerraformEventBridge
+
+        terraform_event_bridge = TerraformEventBridge(
+            event_bus=subsys["bus"],
+            session_factory=session_factory,
+            wake=event_loop.wake,
+            worker_id=os.environ.get("GLUDD_WORKER_ID", f"gunicorn-{os.getpid()}"),
+        )
+        terraform_event_bridge.start()
+        app.state._terraform_event_bridge = terraform_event_bridge
         daemon_state["human_gate"] = event_loop._human_gate
         # #52: single config source for the auto-remediation tick phase AND
         # the /admin/remediation/* HTTP endpoints (see
@@ -2538,6 +2548,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.warning("mcp_client.stop_all() failed during shutdown", exc_info=True)
             raise
     _el = event_loop if event_loop is not None else getattr(app.state, "event_loop", None)
+    _terraform_bridge = getattr(app.state, "_terraform_event_bridge", None)
+    if _terraform_bridge is not None:
+        _terraform_bridge.close()
+        _event_bus = getattr(app.state, "_event_bus", None)
+        if _event_bus is not None:
+            await _event_bus.drain()
     if _el is not None:
         _el.stop()
     if task is not None:
@@ -2856,6 +2872,7 @@ def create_daemon_app(
     app.state._skill_registry = None
     app.state._adaptive_router = _STARTUP_UNSET
     app.state._deployment_health_router = None
+    app.state._terraform_event_bridge = None
     app.state._execution_engine = None
     app.state._self_update_audit_sink = None
     app.state._compaction_compactor = None

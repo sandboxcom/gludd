@@ -38,6 +38,43 @@
       "behavior": "make azure-cleanup-e2e AZURE_E2E_ENV_FILE=tests/fixtures/azure-e2e.env.example AZURE_CLEANUP_TIMEOUT_SECS=1 AZURE_CLEANUP_POLL_SECS=1 AZURE_CLI=true"
     },
     {
+      "name": "test-e2e-postgres-multiworker",
+      "make_variables": [
+        "POSTGRES_E2E_RUNTIME",
+        "POSTGRES_E2E_IMAGE",
+        "POSTGRES_E2E_TIMEOUT_SECS",
+        "POSTGRES_E2E_VALIDATE_ONLY",
+        "PODMAN_MACHINE",
+        "PODMAN_START_TIMEOUT_SECS",
+        "PODMAN_RECREATE",
+        "PODMAN_MEMORY_MB",
+        "PODMAN_CPUS",
+        "PODMAN_DISK_GB"
+      ],
+      "behavior": "make test-e2e-postgres-multiworker POSTGRES_E2E_RUNTIME=true POSTGRES_E2E_IMAGE=postgres:16-alpine POSTGRES_E2E_TIMEOUT_SECS=1 POSTGRES_E2E_VALIDATE_ONLY=1 PODMAN_MACHINE=gludd PODMAN_START_TIMEOUT_SECS=1 PODMAN_RECREATE=0 PODMAN_MEMORY_MB=4096 PODMAN_CPUS=4 PODMAN_DISK_GB=20"
+    },
+    {
+      "name": "podman-project-up",
+      "make_variables": [
+        "PODMAN_MACHINE",
+        "PODMAN_START_TIMEOUT_SECS",
+        "PODMAN_VALIDATE_ONLY"
+      ],
+      "behavior": "make podman-project-up PODMAN_MACHINE=gludd PODMAN_START_TIMEOUT_SECS=1 PODMAN_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "podman-project-recreate",
+      "make_variables": [
+        "PODMAN_MACHINE",
+        "PODMAN_MEMORY_MB",
+        "PODMAN_CPUS",
+        "PODMAN_DISK_GB",
+        "PODMAN_START_TIMEOUT_SECS",
+        "PODMAN_VALIDATE_ONLY"
+      ],
+      "behavior": "make podman-project-recreate PODMAN_MACHINE=gludd-e2e PODMAN_MEMORY_MB=4096 PODMAN_CPUS=4 PODMAN_DISK_GB=20 PODMAN_START_TIMEOUT_SECS=30 PODMAN_VALIDATE_ONLY=1"
+    },
+    {
       "name": "runpod-harness",
       "make_variables": ["LIVE"],
       "environment_variables": ["RUNPOD_API_KEY", "RUNPOD_BUDGET_USD"],

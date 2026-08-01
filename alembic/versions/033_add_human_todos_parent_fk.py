@@ -35,7 +35,7 @@ def upgrade() -> None:
         )
     )
 
-    with op.batch_alter_table("human_todos", recreate="always") as batch_op:
+    with op.batch_alter_table("human_todos") as batch_op:
         batch_op.create_foreign_key(
             FK_HUMAN_TODOS_PARENT,
             "todos",
@@ -46,5 +46,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("human_todos", recreate="always") as batch_op:
+    with op.batch_alter_table("human_todos") as batch_op:
         batch_op.drop_constraint(FK_HUMAN_TODOS_PARENT, type_="foreignkey")

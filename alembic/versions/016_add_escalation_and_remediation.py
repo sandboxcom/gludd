@@ -73,7 +73,7 @@ def upgrade() -> None:
         sa.Column("action_kind", sa.String(length=32), nullable=False),
         sa.Column("summary", sa.Text(), nullable=False, server_default=""),
         sa.Column("detail", sa.Text(), nullable=False, server_default="{}"),
-        sa.Column("ok", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column("ok", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("reason", sa.Text(), nullable=False, server_default=""),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
     )

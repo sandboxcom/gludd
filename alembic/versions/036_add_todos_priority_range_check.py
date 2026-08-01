@@ -20,7 +20,7 @@ _CK_NAME = "ck_todos_priority_range"
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("todos", recreate="always") as batch_op:
+    with op.batch_alter_table("todos") as batch_op:
         batch_op.create_check_constraint(
             _CK_NAME,
             "priority >= 0 AND priority <= 1000",
@@ -28,5 +28,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("todos", recreate="always") as batch_op:
+    with op.batch_alter_table("todos") as batch_op:
         batch_op.drop_constraint(_CK_NAME, type_="check")

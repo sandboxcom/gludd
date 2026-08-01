@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import pathlib
 from typing import Any, ClassVar, cast
 from unittest.mock import patch
+
+import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql, sqlite
 
 
 def _load_migration(filename: str):
@@ -53,6 +57,45 @@ class TestMigration002Batch:
             mod.downgrade()
         assert mock_op.alter_column.call_count == 0, (
             "002 should not use bare alter_column (not SQLite compatible)"
+        )
+
+    def test_active_default_is_dialect_safe_boolean(self):
+        mod = _load_migration(self._FILENAME)
+        with patch.object(mod, "op") as mock_op:
+            mod.upgrade()
+
+        columns = [
+            value
+            for value in mock_op.create_table.call_args.args
+            if isinstance(value, sa.Column)
+        ]
+        active = next(column for column in columns if column.name == "active")
+        assert active.server_default is not None
+        expression = active.server_default.arg
+        assert str(expression.compile(dialect=postgresql.dialect())) == "true"
+        assert str(expression.compile(dialect=sqlite.dialect())) == "1"
+
+    def test_postgresql_does_not_force_table_recreation(self):
+        mod = _load_migration(self._FILENAME)
+        with patch.object(mod, "op") as mock_op:
+            mock_op.get_bind.return_value.dialect.name = "postgresql"
+            mod.upgrade()
+
+        assert mock_op.batch_alter_table.call_count >= 7
+        assert all(
+            call.kwargs.get("recreate") != "always"
+            for call in mock_op.batch_alter_table.call_args_list
+        ), "PostgreSQL must use native ALTER TABLE so dependent foreign keys remain valid"
+
+    def test_postgresql_uses_server_generated_namespace_constraint_name(self):
+        mod = _load_migration(self._FILENAME)
+        with patch.object(mod, "op") as mock_op:
+            mock_op.get_bind.return_value.dialect.name = "postgresql"
+            mod.upgrade()
+
+        batch_ctx = mock_op.batch_alter_table.return_value.__enter__.return_value
+        batch_ctx.drop_constraint.assert_called_once_with(
+            "variable_namespaces_namespace_key", type_="unique"
         )
 
 
@@ -115,6 +158,17 @@ class TestMigration003Batch:
             assert call.args[0] == "todos", (
                 f"003 batch_alter_table should operate on 'todos'; got {call.args[0]}"
             )
+
+    def test_does_not_force_table_recreation_on_postgresql(self):
+        mod = _load_migration(self._FILENAME)
+        with patch.object(mod, "op") as mock_op:
+            mod.upgrade()
+            mod.downgrade()
+
+        assert all(
+            call.kwargs.get("recreate") != "always"
+            for call in mock_op.batch_alter_table.call_args_list
+        ), "003 must preserve foreign keys that depend on todos.todo_id"
 
 
 class TestMigration004Batch:
@@ -240,3 +294,93 @@ class TestMigration002to005ChainContinuity:
             assert mod.down_revision == down, (
                 f"{filename}: expected down_revision {down}, got {mod.down_revision}"
             )
+
+
+class TestMigration024PostgresqlConstraintNames:
+    _FILENAME = "024_reconcile_drift.py"
+
+    def test_upgrade_drops_postgresql_generated_fk_names(self):
+        mod = _load_migration(self._FILENAME)
+        with patch.object(mod, "op") as mock_op:
+            mock_op.get_bind.return_value.dialect.name = "postgresql"
+            mod._upgrade_foreign_keys()
+
+        batch_ctx = mock_op.batch_alter_table.return_value.__enter__.return_value
+        dropped = {call.args[0] for call in batch_ctx.drop_constraint.call_args_list}
+        assert {
+            "todo_events_todo_id_fkey",
+            "variable_values_namespace_id_fkey",
+            "benchmark_results_prompt_profile_id_fkey",
+        } <= dropped
+
+    def test_downgrade_restores_postgresql_generated_fk_names(self):
+        mod = _load_migration(self._FILENAME)
+        with patch.object(mod, "op") as mock_op:
+            mock_op.get_bind.return_value.dialect.name = "postgresql"
+            mod._downgrade_foreign_keys()
+
+        batch_ctx = mock_op.batch_alter_table.return_value.__enter__.return_value
+        created = {
+            call.args[0] for call in batch_ctx.create_foreign_key.call_args_list
+        }
+        assert {
+            "todo_events_todo_id_fkey",
+            "variable_values_namespace_id_fkey",
+            "benchmark_results_prompt_profile_id_fkey",
+        } <= created
+
+
+def test_migrations_never_force_cross_dialect_table_recreation():
+    """SQLite may rebuild automatically; PostgreSQL must retain native DDL."""
+    versions = pathlib.Path(__file__).parent.parent.parent / "alembic" / "versions"
+    offenders: list[str] = []
+    for source in sorted(versions.glob("*.py")):
+        tree = ast.parse(source.read_text(), filename=str(source))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not (
+                isinstance(node.func, ast.Attribute)
+                and node.func.attr == "batch_alter_table"
+            ):
+                continue
+            if any(
+                keyword.arg == "recreate"
+                and isinstance(keyword.value, ast.Constant)
+                and keyword.value.value == "always"
+                for keyword in node.keywords
+            ):
+                offenders.append(f"{source.name}:{node.lineno}")
+    assert not offenders, (
+        "forced batch recreation breaks PostgreSQL tables with dependent FKs: "
+        + ", ".join(offenders)
+    )
+
+
+def test_boolean_server_defaults_are_dialect_safe():
+    versions = pathlib.Path(__file__).parent.parent.parent / "alembic" / "versions"
+    offenders: list[str] = []
+    for source in sorted(versions.glob("*.py")):
+        tree = ast.parse(source.read_text(), filename=str(source))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or len(node.args) < 2:
+                continue
+            column_name = getattr(node.func, "attr", None)
+            type_name = getattr(getattr(node.args[1], "func", None), "attr", None)
+            if column_name != "Column" or type_name != "Boolean":
+                continue
+            default = next(
+                (kw.value for kw in node.keywords if kw.arg == "server_default"),
+                None,
+            )
+            safe_name = (
+                getattr(default.func, "attr", None)
+                if isinstance(default, ast.Call)
+                else None
+            )
+            if default is not None and safe_name not in {"true", "false"}:
+                offenders.append(f"{source.name}:{node.lineno}")
+    assert not offenders, (
+        "Boolean defaults must compile for both SQLite and PostgreSQL: "
+        + ", ".join(offenders)
+    )

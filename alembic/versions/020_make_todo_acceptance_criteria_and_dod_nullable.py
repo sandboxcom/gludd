@@ -16,13 +16,13 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("todos", recreate="always") as batch_op:
+    with op.batch_alter_table("todos") as batch_op:
         batch_op.alter_column("acceptance_criteria", nullable=True, existing_type=sa.Text())
         batch_op.alter_column("definition_of_done", nullable=True, existing_type=sa.Text())
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("todos", recreate="always") as batch_op:
+    with op.batch_alter_table("todos") as batch_op:
         batch_op.alter_column(
             "acceptance_criteria", nullable=False, existing_type=sa.Text(),
             server_default="[]",

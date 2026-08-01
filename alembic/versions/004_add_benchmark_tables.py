@@ -45,7 +45,7 @@ def upgrade() -> None:
         sa.Column("input_tokens", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("output_tokens", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("cost_usd", sa.Float(), nullable=False, server_default="0.0"),
-        sa.Column("success", sa.Boolean(), nullable=False, server_default="0"),
+        sa.Column("success", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("error_message", sa.Text(), nullable=False, server_default=""),
         sa.Column("raw_output", sa.Text(), nullable=False, server_default=""),
         sa.Column(

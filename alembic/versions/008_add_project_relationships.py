@@ -50,7 +50,7 @@ def upgrade() -> None:
             "controlled_by_gludd",
             sa.Boolean(),
             nullable=False,
-            server_default=sa.text("0"),
+            server_default=sa.false(),
         ),
         sa.Column("interface_hint", sa.String(1024), nullable=True),
         sa.Column(

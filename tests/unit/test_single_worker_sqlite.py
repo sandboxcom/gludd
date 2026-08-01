@@ -48,3 +48,26 @@ class TestSingleWorkerClamp:
         from general_ludd.cli import _clamp_workers_for_sqlite
         # N>1 with SQLite is clamped to 1 (honest single-writer behavior).
         assert _clamp_workers_for_sqlite(4) == 1
+
+    def test_postgres_allows_explicit_multiworker_count(self):
+        from general_ludd.cli import _clamp_workers_for_sqlite
+
+        assert (
+            _clamp_workers_for_sqlite(
+                4,
+                database_url="postgresql+psycopg://gludd@db/gludd",
+            )
+            == 4
+        )
+
+    def test_postgres_default_is_cpu_bounded(self, monkeypatch):
+        from general_ludd import cli
+
+        monkeypatch.setattr(cli.os, "cpu_count", lambda: 32)
+        assert (
+            cli._clamp_workers_for_sqlite(
+                None,
+                database_url="postgresql+psycopg://gludd@db/gludd",
+            )
+            == 4
+        )

@@ -162,6 +162,17 @@ class EventBus:
         with self._history_lock:
             return list(self._history)
 
+    async def drain(self) -> None:
+        """Wait until every currently scheduled async subscriber has finished.
+
+        The loop repeats because a subscriber may publish another event and
+        schedule more work. Tests and graceful shutdown can therefore observe
+        progressive event failures deterministically instead of waiting for an
+        unrelated suite or process timeout.
+        """
+        while self._background_tasks:
+            await asyncio.gather(*tuple(self._background_tasks), return_exceptions=True)
+
     def clear(self) -> None:
         with self._lock:
             self._subscribers.clear()

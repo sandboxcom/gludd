@@ -220,6 +220,9 @@ help:
 	@echo "  e2e-audit-azure     List all E2E runs with PASS/FAIL/RUNNING status"
 	@echo "  e2e-latest-log      Show exit code and error summary for latest E2E run"
 	@echo "  azure-cleanup-e2e   Delete gludd-gpu* groups and visibly verify absence"
+	@echo "  test-e2e-postgres-multiworker  Live Postgres 16 + two-worker Gunicorn acceptance"
+	@echo "  podman-project-up   Start an explicit project Podman machine and wait for readiness"
+	@echo "  podman-project-recreate  Recreate one gludd-namespaced Podman test machine"
 	@echo "  test-opencode-e2e     .opencode/ plugin load+invocation tests"
 	@echo "  test-specific         Single test (TESTFILE=path::TestClass::test_name)"
 	@echo "  test-files            Multiple tests (TESTFILES=tests/unit/a.py tests/unit/b.py)"
@@ -1564,6 +1567,30 @@ e2e-audit-azure:
 
 e2e-latest-log:
 	@$(UV) run python scripts/e2e_log_capture.py --latest azure-provision
+
+# Namespaced disposable PostgreSQL 16 plus real two-worker Gunicorn acceptance.
+.PHONY: test-e2e-postgres-multiworker
+test-e2e-postgres-multiworker:
+	@if [ "$(POSTGRES_E2E_RUNTIME)" = "podman" ] && [ "$(POSTGRES_E2E_VALIDATE_ONLY)" != "1" ]; then \
+		case "$(PODMAN_RECREATE)" in \
+			0) $(MAKE) --no-print-directory podman-project-up PODMAN_MACHINE="$(PODMAN_MACHINE)" PODMAN_START_TIMEOUT_SECS="$(PODMAN_START_TIMEOUT_SECS)" PODMAN_VALIDATE_ONLY=0 ;; \
+			1) $(MAKE) --no-print-directory podman-project-recreate PODMAN_MACHINE="$(PODMAN_MACHINE)" PODMAN_MEMORY_MB="$(PODMAN_MEMORY_MB)" PODMAN_CPUS="$(PODMAN_CPUS)" PODMAN_DISK_GB="$(PODMAN_DISK_GB)" PODMAN_START_TIMEOUT_SECS="$(PODMAN_START_TIMEOUT_SECS)" PODMAN_VALIDATE_ONLY=0 ;; \
+			*) echo "PODMAN_RECREATE must be 0 or 1"; exit 2 ;; \
+		esac; \
+		start_rc=$$?; \
+		if [ "$$start_rc" -ne 0 ]; then exit "$$start_rc"; fi; \
+	fi; \
+	$(UV) run python scripts/postgres_e2e_runner.py \
+		--runtime "$(POSTGRES_E2E_RUNTIME)" \
+		--image "$(POSTGRES_E2E_IMAGE)" \
+		--timeout-seconds "$(POSTGRES_E2E_TIMEOUT_SECS)" \
+		$(if $(filter 1 true yes,$(POSTGRES_E2E_VALIDATE_ONLY)),--validate-only,); \
+	test_rc=$$?; \
+	if [ "$(POSTGRES_E2E_RUNTIME)" = "podman" ] && [ "$(POSTGRES_E2E_VALIDATE_ONLY)" != "1" ]; then \
+		echo "POSTGRES_E2E_MACHINE_STOP machine=$(PODMAN_MACHINE)"; \
+		podman machine stop "$(PODMAN_MACHINE)" 2>&1 || true; \
+	fi; \
+	exit "$$test_rc"
 
 # Stream Azure Activity Log for the test resource group — shows deployments, errors, events
 azure-stream-logs:
@@ -5177,6 +5204,112 @@ podman-up:
 	@# force the running podman machine to be the default so containers actually run.
 	@podman system connection default podman-machine-default 2>/dev/null || true
 	@podman machine list
+
+# Start one explicit project-owned Podman machine and fail closed until its API
+# is ready. Validate-only mode lets the target contract run without host changes.
+.PHONY: podman-project-up
+podman-project-up:
+	@[ -n "$(PODMAN_MACHINE)" ] || { echo "Usage: make podman-project-up PODMAN_MACHINE=name PODMAN_START_TIMEOUT_SECS=30 PODMAN_VALIDATE_ONLY=0"; exit 2; }
+	@case "$(PODMAN_MACHINE)" in *[!A-Za-z0-9_.-]*) echo "PODMAN_MACHINE contains unsupported characters"; exit 2;; esac
+	@case "$(PODMAN_VALIDATE_ONLY)" in 0|1) ;; *) echo "PODMAN_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@[ "$(PODMAN_START_TIMEOUT_SECS)" -ge 1 ] 2>/dev/null || { echo "PODMAN_START_TIMEOUT_SECS must be a positive integer"; exit 2; }
+	@if [ "$(PODMAN_VALIDATE_ONLY)" = "1" ]; then \
+		echo "PODMAN_PROJECT_UP_VALID machine=$(PODMAN_MACHINE)"; \
+		exit 0; \
+	fi; \
+	command -v podman >/dev/null 2>&1 || { echo "podman not installed"; exit 1; }; \
+	recover_machine() { \
+		echo "PODMAN_PROJECT_UP_RECOVER machine=$(PODMAN_MACHINE)"; \
+		recovery_log="/tmp/gludd-podman-stop-$(PODMAN_MACHINE).log"; \
+		rm -f "$$recovery_log"; \
+		podman machine stop "$(PODMAN_MACHINE)" >"$$recovery_log" 2>&1 & \
+		recovery_pid=$$!; \
+		recovery_attempt=0; \
+		while kill -0 "$$recovery_pid" 2>/dev/null; do \
+			recovery_attempt=$$((recovery_attempt + 1)); \
+			echo "PODMAN_PROJECT_UP_RECOVER_WAIT machine=$(PODMAN_MACHINE) attempt=$$recovery_attempt"; \
+			if [ "$$recovery_attempt" -ge 2 ]; then \
+				kill -TERM "$$recovery_pid" 2>/dev/null || true; \
+				sleep 1; \
+				kill -KILL "$$recovery_pid" 2>/dev/null || true; \
+				break; \
+			fi; \
+			sleep 1; \
+		done; \
+		wait "$$recovery_pid" 2>/dev/null || true; \
+		[ ! -f "$$recovery_log" ] || cat "$$recovery_log"; \
+	}; \
+	echo "PODMAN_PROJECT_UP_START machine=$(PODMAN_MACHINE)"; \
+	podman system connection default "$(PODMAN_MACHINE)"; \
+	log="/tmp/gludd-podman-start-$(PODMAN_MACHINE).log"; \
+	rm -f "$$log"; \
+	podman machine start "$(PODMAN_MACHINE)" >"$$log" 2>&1 & \
+	start_pid=$$!; \
+	trap 'kill -TERM '"$$start_pid"' 2>/dev/null || true' INT TERM EXIT; \
+	attempt=0; \
+	while kill -0 "$$start_pid" 2>/dev/null; do \
+		attempt=$$((attempt + 1)); \
+		echo "PODMAN_PROJECT_UP_START_WAIT machine=$(PODMAN_MACHINE) attempt=$$attempt"; \
+		if [ "$$attempt" -ge "$(PODMAN_START_TIMEOUT_SECS)" ]; then \
+			kill -TERM "$$start_pid" 2>/dev/null || true; \
+			sleep 1; \
+			kill -KILL "$$start_pid" 2>/dev/null || true; \
+			wait "$$start_pid" 2>/dev/null || true; \
+			[ ! -f "$$log" ] || cat "$$log"; \
+			recover_machine; \
+			trap - INT TERM EXIT; \
+			echo "PODMAN_PROJECT_UP_TIMEOUT machine=$(PODMAN_MACHINE) attempts=$$attempt"; \
+			exit 1; \
+		fi; \
+		sleep 1; \
+	done; \
+	wait "$$start_pid"; start_rc=$$?; \
+	[ ! -f "$$log" ] || cat "$$log"; \
+	trap - INT TERM EXIT; \
+	if [ "$$start_rc" -ne 0 ] && ! podman info >/dev/null 2>&1; then \
+		recover_machine; \
+		echo "PODMAN_PROJECT_UP_START_FAILED machine=$(PODMAN_MACHINE) exit=$$start_rc"; \
+		exit "$$start_rc"; \
+	fi; \
+	until podman info >/dev/null 2>&1; do \
+		attempt=$$((attempt + 1)); \
+		if [ "$$attempt" -ge "$(PODMAN_START_TIMEOUT_SECS)" ]; then \
+			recover_machine; \
+			echo "PODMAN_PROJECT_UP_TIMEOUT machine=$(PODMAN_MACHINE) attempts=$$attempt"; \
+			exit 1; \
+		fi; \
+		echo "PODMAN_PROJECT_UP_WAIT machine=$(PODMAN_MACHINE) attempt=$$attempt"; \
+		sleep 1; \
+	done; \
+	podman machine list; \
+	echo "PODMAN_PROJECT_UP_READY machine=$(PODMAN_MACHINE)"
+
+# Destructive recovery is restricted mechanically to the project namespace.
+# Validate-only mode is the contract example and never touches a machine.
+.PHONY: podman-project-recreate
+podman-project-recreate:
+	@[ -n "$(PODMAN_MACHINE)" ] || { echo "Usage: make podman-project-recreate PODMAN_MACHINE=gludd-e2e PODMAN_MEMORY_MB=4096 PODMAN_CPUS=4 PODMAN_DISK_GB=20 PODMAN_START_TIMEOUT_SECS=30 PODMAN_VALIDATE_ONLY=0"; exit 2; }
+	@case "$(PODMAN_MACHINE)" in gludd|gludd-*) ;; *) echo "Refusing non-project Podman machine: $(PODMAN_MACHINE)"; exit 2;; esac
+	@case "$(PODMAN_VALIDATE_ONLY)" in 0|1) ;; *) echo "PODMAN_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@[ "$(PODMAN_MEMORY_MB)" -ge 2048 ] 2>/dev/null || { echo "PODMAN_MEMORY_MB must be an integer >= 2048"; exit 2; }
+	@[ "$(PODMAN_CPUS)" -ge 1 ] 2>/dev/null || { echo "PODMAN_CPUS must be a positive integer"; exit 2; }
+	@[ "$(PODMAN_DISK_GB)" -ge 10 ] 2>/dev/null || { echo "PODMAN_DISK_GB must be an integer >= 10"; exit 2; }
+	@[ "$(PODMAN_START_TIMEOUT_SECS)" -ge 1 ] 2>/dev/null || { echo "PODMAN_START_TIMEOUT_SECS must be a positive integer"; exit 2; }
+	@if [ "$(PODMAN_VALIDATE_ONLY)" = "1" ]; then \
+		echo "PODMAN_PROJECT_RECREATE_VALID machine=$(PODMAN_MACHINE)"; \
+		exit 0; \
+	fi; \
+	command -v podman >/dev/null 2>&1 || { echo "podman not installed"; exit 1; }; \
+	echo "PODMAN_PROJECT_RECREATE_STOP machine=$(PODMAN_MACHINE)"; \
+	podman machine stop "$(PODMAN_MACHINE)" 2>&1 || true; \
+	echo "PODMAN_PROJECT_RECREATE_REMOVE machine=$(PODMAN_MACHINE)"; \
+	podman machine rm -f "$(PODMAN_MACHINE)" 2>&1 || true; \
+	echo "PODMAN_PROJECT_RECREATE_INIT machine=$(PODMAN_MACHINE) memory_mb=$(PODMAN_MEMORY_MB) cpus=$(PODMAN_CPUS) disk_gb=$(PODMAN_DISK_GB)"; \
+	podman machine init --memory "$(PODMAN_MEMORY_MB)" --cpus "$(PODMAN_CPUS)" --disk-size "$(PODMAN_DISK_GB)" "$(PODMAN_MACHINE)"; \
+	echo "PODMAN_PROJECT_RECREATE_INITIALIZED machine=$(PODMAN_MACHINE)"
+	@if [ "$(PODMAN_VALIDATE_ONLY)" != "1" ]; then \
+		$(MAKE) --no-print-directory podman-project-up PODMAN_MACHINE="$(PODMAN_MACHINE)" PODMAN_START_TIMEOUT_SECS="$(PODMAN_START_TIMEOUT_SECS)" PODMAN_VALIDATE_ONLY=0; \
+	fi
 
 podman-restart:
 	@podman machine stop 2>/dev/null || true

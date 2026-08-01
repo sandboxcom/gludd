@@ -24,6 +24,7 @@ from general_ludd.models.timeout_detector import (
     _NON_RETRYABLE_KINDS,
     _OVERLOAD_KINDS,
     TimeoutClassifier,
+    TimeoutEvent,
     TimeoutRetryPolicy,
 )
 from general_ludd.observability.langsmith_tracer import LangSmithTracer
@@ -65,9 +66,9 @@ class _SecretsResolver(Protocol):
 
 
 class _HealthTrackerProtocol(Protocol):
-    def is_healthy(self, model_id: str, admit_probe: bool = ...) -> bool: ...
+    def is_healthy(self, model_id: str, *, admit_probe: bool = ...) -> bool: ...
     def record_success(self, model_id: str) -> None: ...
-    def record_event(self, event: object) -> None: ...
+    def record_event(self, event: TimeoutEvent) -> None: ...
 
 
 def _is_healthy_with_timeout(

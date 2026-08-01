@@ -64,6 +64,13 @@ _PROJECT_ID_TABLES = (
 )
 
 
+def _legacy_fk_name(batch_name: str, postgresql_name: str) -> str:
+    """Select the name assigned by the original migration on this dialect."""
+    if op.get_bind().dialect.name == "postgresql":
+        return postgresql_name
+    return batch_name
+
+
 def upgrade() -> None:
     _upgrade_indexes()
     _upgrade_foreign_keys()
@@ -165,7 +172,7 @@ def _upgrade_foreign_keys() -> None:
     for table in _PROJECT_ID_TABLES:
         fk_name = f"fk_{table}_project_id"
         with op.batch_alter_table(
-            table, recreate="always", naming_convention=NAMING_CONVENTION
+            table, naming_convention=NAMING_CONVENTION
         ) as batch_op:
             batch_op.drop_constraint(fk_name, type_="foreignkey")
             batch_op.create_foreign_key(
@@ -178,7 +185,7 @@ def _upgrade_foreign_keys() -> None:
 
     # todo_events: project_id (SET NULL) + todo_id (CASCADE).
     with op.batch_alter_table(
-        "todo_events", recreate="always", naming_convention=NAMING_CONVENTION
+        "todo_events", naming_convention=NAMING_CONVENTION
     ) as batch_op:
         batch_op.drop_constraint(
             "fk_todo_events_project_id", type_="foreignkey"
@@ -191,7 +198,10 @@ def _upgrade_foreign_keys() -> None:
             ondelete="SET NULL",
         )
         batch_op.drop_constraint(
-            "fk_todo_events_todo_id_todos", type_="foreignkey"
+            _legacy_fk_name(
+                "fk_todo_events_todo_id_todos", "todo_events_todo_id_fkey"
+            ),
+            type_="foreignkey",
         )
         batch_op.create_foreign_key(
             "fk_todo_events_todo_id_todos",
@@ -203,10 +213,13 @@ def _upgrade_foreign_keys() -> None:
 
     # variable_values: namespace_id (CASCADE) — unnamed FK from migration 001.
     with op.batch_alter_table(
-        "variable_values", recreate="always", naming_convention=NAMING_CONVENTION
+        "variable_values", naming_convention=NAMING_CONVENTION
     ) as batch_op:
         batch_op.drop_constraint(
-            "fk_variable_values_namespace_id_variable_namespaces",
+            _legacy_fk_name(
+                "fk_variable_values_namespace_id_variable_namespaces",
+                "variable_values_namespace_id_fkey",
+            ),
             type_="foreignkey",
         )
         batch_op.create_foreign_key(
@@ -221,11 +234,13 @@ def _upgrade_foreign_keys() -> None:
     # migration 004. project_id FK (migration 009) already has SET NULL.
     with op.batch_alter_table(
         "benchmark_results",
-        recreate="always",
         naming_convention=NAMING_CONVENTION,
     ) as batch_op:
         batch_op.drop_constraint(
-            "fk_benchmark_results_prompt_profile_id_prompt_profiles",
+            _legacy_fk_name(
+                "fk_benchmark_results_prompt_profile_id_prompt_profiles",
+                "benchmark_results_prompt_profile_id_fkey",
+            ),
             type_="foreignkey",
         )
         batch_op.create_foreign_key(
@@ -242,7 +257,6 @@ def _downgrade_foreign_keys() -> None:
 
     with op.batch_alter_table(
         "benchmark_results",
-        recreate="always",
         naming_convention=NAMING_CONVENTION,
     ) as batch_op:
         batch_op.drop_constraint(
@@ -250,34 +264,42 @@ def _downgrade_foreign_keys() -> None:
             type_="foreignkey",
         )
         batch_op.create_foreign_key(
-            "fk_benchmark_results_prompt_profile_id_prompt_profiles",
+            _legacy_fk_name(
+                "fk_benchmark_results_prompt_profile_id_prompt_profiles",
+                "benchmark_results_prompt_profile_id_fkey",
+            ),
             "prompt_profiles",
             ["prompt_profile_id"],
             ["id"],
         )
 
     with op.batch_alter_table(
-        "variable_values", recreate="always", naming_convention=NAMING_CONVENTION
+        "variable_values", naming_convention=NAMING_CONVENTION
     ) as batch_op:
         batch_op.drop_constraint(
             "fk_variable_values_namespace_id_variable_namespaces",
             type_="foreignkey",
         )
         batch_op.create_foreign_key(
-            "fk_variable_values_namespace_id_variable_namespaces",
+            _legacy_fk_name(
+                "fk_variable_values_namespace_id_variable_namespaces",
+                "variable_values_namespace_id_fkey",
+            ),
             "variable_namespaces",
             ["namespace_id"],
             ["id"],
         )
 
     with op.batch_alter_table(
-        "todo_events", recreate="always", naming_convention=NAMING_CONVENTION
+        "todo_events", naming_convention=NAMING_CONVENTION
     ) as batch_op:
         batch_op.drop_constraint(
             "fk_todo_events_todo_id_todos", type_="foreignkey"
         )
         batch_op.create_foreign_key(
-            "fk_todo_events_todo_id_todos",
+            _legacy_fk_name(
+                "fk_todo_events_todo_id_todos", "todo_events_todo_id_fkey"
+            ),
             "todos",
             ["todo_id"],
             ["todo_id"],
@@ -295,7 +317,7 @@ def _downgrade_foreign_keys() -> None:
     for table in reversed(_PROJECT_ID_TABLES):
         fk_name = f"fk_{table}_project_id"
         with op.batch_alter_table(
-            table, recreate="always", naming_convention=NAMING_CONVENTION
+            table, naming_convention=NAMING_CONVENTION
         ) as batch_op:
             batch_op.drop_constraint(fk_name, type_="foreignkey")
             batch_op.create_foreign_key(

@@ -14,11 +14,9 @@ backup/restore time). ``db/models.py`` now declares
 (``TodoModel``'s 13 Text columns are a separate, not-yet-scheduled
 follow-on — deliberately out of scope here.)
 
-SQLite has no ``ALTER TABLE ... ADD CONSTRAINT``, so each table is rebuilt
-once via ``op.batch_alter_table(table, recreate="always")`` with ALL of that
-table's new CHECK constraints added inside the same batch block (mirrors the
-FK-recreate pattern in migration 024_reconcile_drift). ``downgrade()`` drops
-them in reverse via the same batch-recreate mechanism.
+SQLite has no ``ALTER TABLE ... ADD CONSTRAINT``, so Alembic automatically
+rebuilds each table once with all of that table's new CHECK constraints in the
+same batch block. PostgreSQL retains native ALTER TABLE semantics.
 
 Revision ID: 026
 Revises: 025
@@ -53,14 +51,14 @@ def _ck_name(table: str, column: str) -> str:
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("task_decisions", recreate="always") as batch_op:
+    with op.batch_alter_table("task_decisions") as batch_op:
         for column in _TASK_DECISIONS_COLUMNS:
             batch_op.create_check_constraint(
                 _ck_name("task_decisions", column),
                 f"length({column}) <= {MAX_JSON_BLOB_LEN}",
             )
 
-    with op.batch_alter_table("audit_events", recreate="always") as batch_op:
+    with op.batch_alter_table("audit_events") as batch_op:
         for column in _AUDIT_EVENTS_COLUMNS:
             batch_op.create_check_constraint(
                 _ck_name("audit_events", column),
@@ -70,10 +68,10 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     # Reverse order of upgrade.
-    with op.batch_alter_table("audit_events", recreate="always") as batch_op:
+    with op.batch_alter_table("audit_events") as batch_op:
         for column in reversed(_AUDIT_EVENTS_COLUMNS):
             batch_op.drop_constraint(_ck_name("audit_events", column), type_="check")
 
-    with op.batch_alter_table("task_decisions", recreate="always") as batch_op:
+    with op.batch_alter_table("task_decisions") as batch_op:
         for column in reversed(_TASK_DECISIONS_COLUMNS):
             batch_op.drop_constraint(_ck_name("task_decisions", column), type_="check")

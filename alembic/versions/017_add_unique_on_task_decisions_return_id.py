@@ -37,10 +37,10 @@ def upgrade() -> None:
         )
     )
 
-    with op.batch_alter_table("task_decisions", recreate="always") as batch_op:
+    with op.batch_alter_table("task_decisions") as batch_op:
         batch_op.create_unique_constraint(UNIQUE_NAME, ["return_id"])
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("task_decisions", recreate="always") as batch_op:
+    with op.batch_alter_table("task_decisions") as batch_op:
         batch_op.drop_constraint(UNIQUE_NAME, type_="unique")

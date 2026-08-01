@@ -38,6 +38,7 @@ def _build_gateway_with_always_failing_primary(
         model_profile_id="primary",
         provider="openai",
         model_name="m1",
+        api_metered=False,
         enabled=True,
     )
     gateway = ModelGateway(profiles=[primary], health_tracker=tracker)

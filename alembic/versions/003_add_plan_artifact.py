@@ -12,10 +12,10 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("todos", recreate="always") as batch_op:
+    with op.batch_alter_table("todos") as batch_op:
         batch_op.add_column(sa.Column("plan_artifact", sa.Text(), nullable=True))
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("todos", recreate="always") as batch_op:
+    with op.batch_alter_table("todos") as batch_op:
         batch_op.drop_column("plan_artifact")

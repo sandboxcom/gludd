@@ -43,6 +43,9 @@ from general_ludd.db.models import (
     VariableValueModel,
 )
 
+_TEST_PSK = "account-backup-test-psk"
+_AUTH_HEADERS = {"Authorization": f"Bearer {_TEST_PSK}"}
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -270,7 +273,8 @@ class _Args:
 @pytest.fixture()
 def app_with_account_router(session_factory, monkeypatch):
     """Spin up a FastAPI app with the account router wired in."""
-    monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
+    monkeypatch.delenv("GLUDD_ALLOW_NO_AUTH", raising=False)
+    monkeypatch.setenv("GLUDD_PSK", _TEST_PSK)
     from general_ludd.daemon import create_daemon_app
 
     app = create_daemon_app(tick_interval=1.0)
@@ -305,7 +309,7 @@ class TestCliAccount:
     def test_backup_subcommand_prints_path(self, app_with_account_router, monkeypatch, tmp_path):
         app, sf = app_with_account_router
         _seed_user(sf, "alice")
-        client = TestClient(app)
+        client = TestClient(app, headers=_AUTH_HEADERS)
         import general_ludd.cli_account as mod
 
         monkeypatch.setattr(mod, "_http", lambda *a, **k: _client_http(client, *a, **k))
@@ -323,7 +327,7 @@ class TestCliAccount:
     def test_delete_subcommand_returns_summary(self, app_with_account_router, monkeypatch):
         app, sf = app_with_account_router
         _seed_user(sf, "alice")
-        client = TestClient(app)
+        client = TestClient(app, headers=_AUTH_HEADERS)
         import general_ludd.cli_account as mod
 
         monkeypatch.setattr(mod, "_http", lambda *a, **k: _client_http(client, *a, **k))
@@ -350,7 +354,7 @@ class TestCliAccount:
 
     def test_policy_subcommand_prints_notice(self, app_with_account_router, monkeypatch):
         app, _sf = app_with_account_router
-        client = TestClient(app)
+        client = TestClient(app, headers=_AUTH_HEADERS)
         import general_ludd.cli_account as mod
 
         monkeypatch.setattr(mod, "_http", lambda *a, **k: _client_http(client, *a, **k))
@@ -371,7 +375,7 @@ class TestAccountRouter:
     def test_post_account_backup_returns_200_with_payload(self, app_with_account_router):
         app, sf = app_with_account_router
         _seed_user(sf, "alice")
-        client = TestClient(app)
+        client = TestClient(app, headers=_AUTH_HEADERS)
         resp = client.post("/api/account/backup", json={"user_id": "alice"})
         assert resp.status_code == 200, resp.text
         body = resp.json()
@@ -382,14 +386,14 @@ class TestAccountRouter:
 
     def test_post_account_backup_validates_user_id(self, app_with_account_router):
         app, _sf = app_with_account_router
-        client = TestClient(app)
+        client = TestClient(app, headers=_AUTH_HEADERS)
         resp = client.post("/api/account/backup", json={"user_id": ""})
         assert resp.status_code == 422
 
     def test_delete_account_returns_summary(self, app_with_account_router):
         app, sf = app_with_account_router
         _seed_user(sf, "alice")
-        client = TestClient(app)
+        client = TestClient(app, headers=_AUTH_HEADERS)
         resp = client.request("DELETE", "/api/account", json={"user_id": "alice", "confirm": True})
         assert resp.status_code in (200, 204), resp.text
         if resp.status_code == 200:
@@ -400,13 +404,13 @@ class TestAccountRouter:
     def test_delete_account_requires_confirm(self, app_with_account_router):
         app, sf = app_with_account_router
         _seed_user(sf, "alice")
-        client = TestClient(app)
+        client = TestClient(app, headers=_AUTH_HEADERS)
         resp = client.request("DELETE", "/api/account", json={"user_id": "alice", "confirm": False})
         assert resp.status_code == 400
 
     def test_get_policy_known_service(self, app_with_account_router):
         app, _sf = app_with_account_router
-        client = TestClient(app)
+        client = TestClient(app, headers=_AUTH_HEADERS)
         resp = client.get("/api/account/policy", params={"service": "openai"})
         assert resp.status_code == 200, resp.text
         body = resp.json()
@@ -416,6 +420,6 @@ class TestAccountRouter:
 
     def test_get_policy_unknown_service_returns_422(self, app_with_account_router):
         app, _sf = app_with_account_router
-        client = TestClient(app)
+        client = TestClient(app, headers=_AUTH_HEADERS)
         resp = client.get("/api/account/policy", params={"service": "not-a-cloud"})
         assert resp.status_code == 422
