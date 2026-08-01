@@ -147,6 +147,56 @@ def test_hash_is_canonical_across_mapping_order() -> None:
     assert first.canonical_json == second.canonical_json
 
 
+def test_policy_collections_are_normalized_for_deterministic_attestation() -> None:
+    resolved = resolve_sandbox_profile(
+        administrator={
+            "filesystem": {"host_paths": ["/var/model", "/opt/cache"]},
+            "network": {
+                "mode": "allowlist",
+                "hosts": ["MODELS.EXAMPLE.COM.", "api.example.com"],
+                "cidrs": ["2001:db8::/32", "192.0.2.0/24"],
+                "ports": [8443, 443],
+            },
+            "process": {"executable_allowlist": ["/usr/bin/python", "/bin/sh"]},
+            "secrets": {"allowed_refs": ["scm/read", "model/inference"]},
+        }
+    )
+
+    assert resolved.policy.filesystem.host_paths == ("/opt/cache", "/var/model")
+    assert resolved.policy.network.hosts == (
+        "api.example.com",
+        "models.example.com",
+    )
+    assert resolved.policy.network.cidrs == ("192.0.2.0/24", "2001:db8::/32")
+    assert resolved.policy.network.ports == (443, 8443)
+    assert resolved.policy.process.executable_allowlist == ("/bin/sh", "/usr/bin/python")
+    assert resolved.policy.secrets.allowed_refs == ("model/inference", "scm/read")
+
+    with pytest.raises(ValidationError, match="duplicate"):
+        resolve_sandbox_profile(
+            administrator={
+                "network": {
+                    "mode": "allowlist",
+                    "hosts": ["API.EXAMPLE.COM", "api.example.com."],
+                }
+            }
+        )
+
+
+def test_development_layer_cannot_restore_administrator_audit_fallback() -> None:
+    with pytest.raises(PolicyWideningError, match=r"backend\.fallback"):
+        resolve_sandbox_profile(
+            "development",
+            administrator={"backend": {"fallback": "deny"}},
+            layers=(
+                PolicyLayer(
+                    scope="project",
+                    values={"backend": {"fallback": "audit"}},
+                ),
+            ),
+        )
+
+
 def test_profile_bounds_and_backend_names_are_validated() -> None:
     with pytest.raises(ValidationError):
         SandboxProfile.model_validate(

@@ -72,6 +72,21 @@ def test_complete_observed_state_allows_locked_workload() -> None:
     assert event.effective_backend == "firecracker"
 
 
+def test_integrity_digest_is_canonical_across_guarantee_input_order() -> None:
+    draft = _event(work_item_id="canonical-order")
+    payload = draft.model_dump(mode="python")
+    observation = payload["observation"]
+    assert isinstance(observation, dict)
+    observation["guarantees"] = list(reversed(sorted(draft.observation.guarantees)))
+    reconstructed = SandboxAttestationEvent.model_validate(payload)
+
+    original = draft.seal(17)
+    reordered = reconstructed.seal(17)
+
+    assert original.integrity_sha256 == reordered.integrity_sha256
+    assert reordered.verify_integrity() is True
+
+
 def test_missing_or_unapplied_guarantee_denies_before_dispatch() -> None:
     missing_network = evaluate_runtime_attestation(
         resolved=resolve_sandbox_profile(),

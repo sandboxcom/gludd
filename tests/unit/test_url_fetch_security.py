@@ -439,6 +439,47 @@ async def test_cross_origin_303_drops_credentials_and_post_body(
 
 
 @pytest.mark.asyncio
+async def test_same_origin_307_preserves_method_credentials_and_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str, bool, bytes]] = []
+    pinned_ips: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(
+            (
+                request.method,
+                request.url.path,
+                "authorization" in request.headers,
+                request.content,
+            )
+        )
+        if request.url.path == "/start":
+            return httpx.Response(307, headers={"Location": "/done"})
+        return httpx.Response(200, content=b"ok")
+
+    monkeypatch.setattr(
+        "general_ludd.security.url_fetch.resolve_and_pin",
+        lambda host, *, port, timeout: _public_target(host, port=port),
+    )
+    _install_transport(monkeypatch, handler, pinned_ips)
+
+    result = await secure_fetch_async(
+        "https://same.example/start",
+        method="POST",
+        headers={"Authorization": "Bearer secret", "Content-Type": "text/plain"},
+        content=b"payload",
+        policy=FetchPolicy(allowed_hosts=frozenset({"same.example"})),
+    )
+
+    assert result.content == b"ok"
+    assert calls == [
+        ("POST", "/start", True, b"payload"),
+        ("POST", "/done", True, b"payload"),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_redirect_limit_and_invalid_method_fail_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

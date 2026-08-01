@@ -59,6 +59,45 @@ def test_state_directories_are_owner_only_and_owned_by_caller(
             assert info.st_uid == os.getuid()
 
 
+def test_temporary_directories_are_unique_private_and_project_scoped(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from general_ludd.security.sandboxes.state import SandboxState
+
+    monkeypatch.setenv("GLUDD_SANDBOX_STATE_DIR", str(tmp_path / "state"))
+    state = SandboxState.discover(project_root=_project(tmp_path, "project"))
+
+    first = state.temporary_directory("jobs", prefix="work-")
+    second = state.temporary_directory("jobs", prefix="work-")
+
+    assert first != second
+    assert first.parent == second.parent == state.path("jobs")
+    assert first.name.startswith("work-")
+    assert stat.S_IMODE(first.stat().st_mode) == 0o700
+    assert first.resolve().is_relative_to(state.project_dir.resolve())
+    assert state.cleanup_path(first) is True
+    assert state.cleanup_path(second) is True
+
+
+@pytest.mark.parametrize("prefix", ["", "..", "../escape", "nested/name"])
+def test_temporary_directory_prefix_rejects_path_control(
+    prefix: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from general_ludd.security.sandboxes.state import (
+        SandboxState,
+        SandboxStateError,
+    )
+
+    monkeypatch.setenv("GLUDD_SANDBOX_STATE_DIR", str(tmp_path / "state"))
+    state = SandboxState.discover(project_root=_project(tmp_path, "project"))
+
+    with pytest.raises(SandboxStateError, match="prefix"):
+        state.temporary_directory("jobs", prefix=prefix)
+
+
 def test_configured_root_rejects_relative_paths_and_symlinks(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

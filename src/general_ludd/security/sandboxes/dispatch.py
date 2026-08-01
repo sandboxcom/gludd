@@ -123,6 +123,18 @@ class DurableSandboxDispatchGuard:
             raise AttestationIntegrityError(
                 "sandbox dispatch store returned an unsealed attestation"
             )
+        draft_payload = draft.model_dump(
+            mode="python",
+            exclude={"sequence", "integrity_sha256"},
+        )
+        sealed_payload = sealed.model_dump(
+            mode="python",
+            exclude={"sequence", "integrity_sha256"},
+        )
+        if sealed_payload != draft_payload:
+            raise AttestationIntegrityError(
+                "sandbox dispatch store returned a different attestation"
+            )
         if sealed.decision == "deny":
             raise SandboxDispatchDenied(sealed)
         return sealed

@@ -77,6 +77,26 @@ def test_dtd_and_entities_fail_closed_with_redacted_audit_event(
     assert "passwd" not in repr(event)
 
 
+def test_encoded_dtd_is_rejected_by_parser_and_classified_for_audit() -> None:
+    payload = "<!DOCTYPE root><root/>".encode("utf-16")
+    events: list[XmlSecurityEvent] = []
+
+    with pytest.raises(XmlSecurityError, match="dtd_forbidden"):
+        parse_xml_string(
+            payload,
+            source="utf16-model-output",
+            audit_sink=events.append,
+        )
+
+    assert events == [
+        XmlSecurityEvent(
+            reason="dtd_forbidden",
+            source="utf16-model-output",
+            input_bytes=len(payload),
+        )
+    ]
+
+
 def test_input_byte_limit_applies_before_parsing() -> None:
     limits = XmlSecurityLimits(max_bytes=15, max_depth=8, max_nodes=8)
     events: list[XmlSecurityEvent] = []

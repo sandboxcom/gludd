@@ -21,6 +21,7 @@ from general_ludd.security.sandboxes.attestation import (
     AttestationIntegrityError,
     DurableSandboxAttestationStore,
     RuntimeSandboxObservation,
+    SandboxAttestationEvent,
 )
 from general_ludd.security.sandboxes.dispatch import (
     DurableSandboxDispatchGuard,
@@ -368,6 +369,34 @@ async def test_guard_rejects_store_that_did_not_durably_seal_event() -> None:
 
     assert guard.resolved is resolved
     with pytest.raises(AttestationIntegrityError, match="unsealed"):
+        await guard.attest(
+            identity,
+            _observation("bubblewrap", application_kernel=False),
+        )
+
+
+@pytest.mark.asyncio
+async def test_guard_rejects_integrity_valid_event_swapped_by_store() -> None:
+    class SwappingStore:
+        async def append(
+            self,
+            event: SandboxAttestationEvent,
+        ) -> SandboxAttestationEvent:
+            return event.model_copy(update={"work_item_id": "TODO-OTHER"}).seal(41)
+
+    guard = DurableSandboxDispatchGuard(
+        resolved=resolve_sandbox_profile("standard"),
+        store=SwappingStore(),
+    )
+    identity = SandboxDispatchIdentity(
+        project_id="tenant-a",
+        work_item_id="TODO-EXPECTED",
+        agent_id="event-loop",
+        tenant_id="tenant-a",
+        correlation_id="sandbox:TODO-EXPECTED",
+    )
+
+    with pytest.raises(AttestationIntegrityError, match="different attestation"):
         await guard.attest(
             identity,
             _observation("bubblewrap", application_kernel=False),
