@@ -13,6 +13,10 @@ import {
   MSG_GAP_MS,
   MULTITASK_STATE_FILE,
 } from "../lib/multitask_config.ts"
+// Source-level state contract: the shared resolver defaults to
+// /tmp/gludd-multitask-state.json and honors GLUDD_MULTITASK_STATE_FILE.
+// Keep the resolver centralized in multitask_config.ts so the plugin and its
+// runtime tests cannot drift onto different state files.
 import {
   isSubagent,
   reportAlive,
