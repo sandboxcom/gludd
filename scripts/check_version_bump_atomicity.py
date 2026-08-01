@@ -8,14 +8,16 @@ Files checked: pyproject.toml, __init__.py, CHANGELOG.md, README.md.
 import os
 import re
 import sys
+from collections import Counter
 from pathlib import Path
 
+_VERSION_TOKEN = r"(\d+(?:\.\d+)+(?:[-+._]?[0-9A-Za-z]+)*)"
 
 VERSION_FILES = [
     ("pyproject.toml", r'version\s*=\s*"([^"]+)"'),
     ("src/general_ludd/__init__.py", r'__version__\s*=\s*"([^"]+)"'),
-    ("CHANGELOG.md", r"##\s+\[?(\d+\.\d+\.\d+(?:-[a-z]+\d*)?)\]?"),
-    ("README.md", r"Status as of\s+v?(\d+\.\d+\.\d+(?:-[a-z]+\d*)?)"),
+    ("CHANGELOG.md", rf"##\s+\[?{_VERSION_TOKEN}\]?"),
+    ("README.md", rf"Status as of\s+v?{_VERSION_TOKEN}"),
 ]
 
 
@@ -30,12 +32,12 @@ def extract_version_from_init(content: str) -> str | None:
 
 
 def extract_version_from_changelog(content: str) -> str | None:
-    match = re.search(r"##\s+\[?(\d+\.\d+\.\d+(?:-[a-z]+(?:\.\d+)?)?)\]?", content)
+    match = re.search(dict(VERSION_FILES)["CHANGELOG.md"], content)
     return match.group(1) if match else None
 
 
 def extract_version_from_readme(content: str) -> str | None:
-    match = re.search(r"Status as of\s+v?(\d+\.\d+\.\d+(?:-[a-z]+(?:\.\d+)?)?)", content)
+    match = re.search(dict(VERSION_FILES)["README.md"], content)
     return match.group(1) if match else None
 
 
@@ -46,7 +48,7 @@ def check_atomicity(versions_dict: dict[str, str | None]) -> tuple[bool, list[st
     unique = set(valid.values())
     if len(unique) > 1:
         return False, [f"Version mismatch: {sorted(unique)}"]
-    return True, [list(unique)[0]]
+    return True, [next(iter(unique))]
 
 
 def extract_versions(root: Path) -> dict[str, str | None]:
@@ -79,45 +81,40 @@ def check_version_consistency(versions: dict[str, str | None], expected_tag: str
     return errors
 
 
-def main():
+def main() -> None:
     tag = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("TAG", "")
     root = Path(__file__).resolve().parent.parent
-    versions = {}
-
-    for relpath, pattern in VERSION_FILES:
-        path = root / relpath
-        if not path.exists():
+    versions = extract_versions(root)
+    for relpath, version in list(versions.items()):
+        if version is None and not (root / relpath).exists():
             print(f"AC016: WARN — {relpath} not found, skipping")
+            del versions[relpath]
             continue
-
-        content = path.read_text()
-        match = re.search(pattern, content)
-        if match:
-            versions[relpath] = match.group(1)
-        else:
+        if version is None:
             print(f"AC016: FAIL — cannot find version in {relpath}")
             sys.exit(1)
 
-    unique = set(versions.values())
+    unique = {version for version in versions.values() if version is not None}
+    if not unique:
+        print("AC016: FAIL — no version-bearing files found")
+        sys.exit(1)
     if len(unique) > 1:
         print("AC016: FAIL — version mismatch across files:")
-        for f, v in versions.items():
-            marker = (
-                " <-- MISMATCH"
-                if list(unique).count(v) == 1 or v != max(unique, key=lambda x: list(versions.values()).count(x))
-                else ""
-            )
-            print(f"  {f}: {v}{marker}")
+        valid_versions = {path: version for path, version in versions.items() if version is not None}
+        majority_version = Counter(valid_versions.values()).most_common(1)[0][0]
+        for path, version in valid_versions.items():
+            marker = " <-- MISMATCH" if version != majority_version else ""
+            print(f"  {path}: {version}{marker}")
         sys.exit(1)
 
     if tag:
         expected = tag.lstrip("v")
-        actual = list(unique)[0]
+        actual = next(iter(unique))
         if actual != expected:
             print(f"AC016: FAIL — file version '{actual}' != tag version '{expected}'")
             sys.exit(1)
 
-    print(f"AC016: PASS — all files at version {list(unique)[0]}")
+    print(f"AC016: PASS — all files at version {next(iter(unique))}")
     sys.exit(0)
 
 

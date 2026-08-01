@@ -66,6 +66,7 @@ from check_version_bump_atomicity import (
     extract_version_from_init,
     extract_version_from_readme,
     extract_version_from_toml,
+    extract_versions,
 )
 from generate_release_notes import COMMIT_CATEGORIES, categorize_commits, find_prev_tag, format_notes
 from validate_release_checksums import parse_checksums
@@ -1176,6 +1177,15 @@ class TestCheckVersionBumpAtomicity:
 
     def test_extract_version_from_readme_not_found(self):
         assert extract_version_from_readme("# README") is None
+
+    def test_extract_versions_preserves_dotted_prerelease(self, tmp_path):
+        (tmp_path / "src/general_ludd").mkdir(parents=True)
+        (tmp_path / "pyproject.toml").write_text('[project]\nversion = "0.1.0-beta.3"\n')
+        (tmp_path / "src/general_ludd/__init__.py").write_text('__version__ = "0.1.0-beta.3"\n')
+        (tmp_path / "CHANGELOG.md").write_text("## [0.1.0-beta.3] — release\n")
+        (tmp_path / "README.md").write_text("**Status as of v0.1.0-beta.3 — today**\n")
+
+        assert set(extract_versions(tmp_path).values()) == {"0.1.0-beta.3"}
 
     def test_check_atomicity_all_match(self):
         versions = {
