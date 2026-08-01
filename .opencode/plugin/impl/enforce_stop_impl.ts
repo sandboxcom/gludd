@@ -34,7 +34,9 @@
  *   7. Main-thread grinding (too many consecutive non-dispatch calls)
  *
  * Hot-reload capable. Subagent context skips enforcement. Dispatch tools: "task" "agent" "workflow".
- * GLUDD_STOP_ENFORCE=0 disables all stop enforcement including text.complete. Disengage file: /tmp/gludd-watchdog-disengage.json.
+ * GLUDD_STOP_ENFORCE=0 disables optional stop heuristics. The mandatory
+ * pending-work text.complete guard and subagent isolation remain invariant.
+ * Disengage file: /tmp/gludd-watchdog-disengage.json.
  */
 import * as fs from "node:fs"
 import * as path from "node:path"
@@ -929,6 +931,64 @@ function repoHasPendingWork(inExecSync: any, mode?: "commit" | "push"): boolean 
   } catch { return false }
 }
 
+/**
+ * Apply the non-bypassable text-only guard for filesystem-backed pending work.
+ *
+ * This guard is intentionally separate from the optional completion heuristics:
+ * GLUDD_STOP_ENFORCE=0 may disable those heuristics, but it must never turn an
+ * unchecked TASKS.md/ratchet/gate/CI signal into an allowed terminal response.
+ * The caller must perform the subagent check first so delegated final reports
+ * retain their documented isolation.
+ */
+function blockMandatoryPendingText(
+  text: string,
+  output: unknown,
+  workState: WorkState,
+): { text: string } | undefined {
+  if (!workState.hasPendingWork) return undefined
+
+  const challengeToken = issueStopChallenge()
+  const sessionBlockCount = incrementSessionBlockCounter()
+  const escalationNote = sessionBlockCount > ESCALATION_THRESHOLD
+    ? `\n🚨 ESCALATION: ${sessionBlockCount} stop attempts blocked this session. COMPLIANCE REQUIRED.`
+    : ""
+  const blockReason = workState.ciVerdictPendingOrRed
+    ? "ci-red-text-only"
+    : "text-only-while-work-exists"
+
+  recordBlock(blockReason)
+  if (workState.ciVerdictPendingOrRed) {
+    logFalseDoneBlock(blockReason, text)
+  }
+  recordBlankedResponse(blockReason, text)
+  writePersistBlock(true, blockReason)
+  clearBlockedOutput(output)
+
+  return {
+    text: [
+      workState.ciVerdictPendingOrRed
+        ? "⛔ CI RED/PENDING COMPLETION CLAIM BLOCKED"
+        : "⛔⛔⛔ TEXT-ONLY RESPONSE BLOCKED ⛔⛔⛔",
+      `STOP CHALLENGE: ${challengeToken}`,
+      "",
+      `PENDING WORK EXISTS: ${workState.tasksMdUncheckedCount} unchecked TASKS.md items, ` +
+      `${workState.ratchetEntries} ratchet entries, ` +
+      `BUGS.md open: ${workState.bugsOpen ? "YES" : "no"}, ` +
+      `gate: ${workState.gateStatusRed ? "RED" : workState.gateStatusMissing ? "MISSING" : workState.gateStale ? "STALE" : "OK"}, ` +
+      `CI: ${workState.ciVerdictPendingOrRed ? "RED/PENDING" : workState.ciVerdictUnknown ? "UNKNOWN (cooldown)" : "N/A"}, ` +
+      `release: ${workState.releaseIncomplete ? "INCOMPLETE" : "N/A"}, ` +
+      `repo: ${workState.repoPending ? "DIRTY" : "clean"}.`,
+      `Health: ${workState.healthScore}/100.`,
+      "",
+      "You may NOT send a text-only response while work exists.",
+      "The ONLY valid action is to DISPATCH SUBAGENTS via the Task tool,",
+      "or read/edit files to fix the pending work.",
+      "NO short-text exemption. NO length exemption. NO content exemption.",
+      escalationNote,
+    ].join("\n"),
+  }
+}
+
 // ============================================================================
 // DEFAULT IMPLEMENTATION (compiled-in fallback)
 // ============================================================================
@@ -1400,48 +1460,10 @@ const defaultImpl: HotModule = {
     // this is the catch-all for any text-only response while pending work exists.
     // CI RED / CI PENDING COMPLETION CLAIM BLOCKED: keep a CI-specific reason
     // identifier for audit trails when the pending-work source is failed CI.
-    if (workState.hasPendingWork) {
-      const challenge_token = issueStopChallenge()
-      const sessionBlockCount = incrementSessionBlockCounter()
-      const escalationNote = sessionBlockCount > ESCALATION_THRESHOLD
-        ? `\n🚨 ESCALATION: ${sessionBlockCount} stop attempts blocked this session. COMPLIANCE REQUIRED.`
-        : ""
-      const blockReason = workState.ciVerdictPendingOrRed
-        ? "ci-red-text-only"
-        : "text-only-while-work-exists"
-
-      recordBlock(blockReason)
-      if (workState.ciVerdictPendingOrRed) {
-        logFalseDoneBlock(blockReason, text)
-      }
-      recordBlankedResponse(blockReason, text)
-      writePersistBlock(true, blockReason)
-      clearBlockedOutput(output)
+    const mandatoryPendingBlock = blockMandatoryPendingText(text, output, workState)
+    if (mandatoryPendingBlock) {
       turnState.blocked = true
-
-      return {
-        text: [
-          workState.ciVerdictPendingOrRed
-            ? "⛔ CI RED/PENDING COMPLETION CLAIM BLOCKED"
-            : "⛔⛔⛔ TEXT-ONLY RESPONSE BLOCKED ⛔⛔⛔",
-          `STOP CHALLENGE: ${challenge_token}`,
-          "",
-          `PENDING WORK EXISTS: ${workState.tasksMdUncheckedCount} unchecked TASKS.md items, ` +
-          `${workState.ratchetEntries} ratchet entries, ` +
-          `BUGS.md open: ${workState.bugsOpen ? "YES" : "no"}, ` +
-          `gate: ${workState.gateStatusRed ? "RED" : workState.gateStatusMissing ? "MISSING" : workState.gateStale ? "STALE" : "OK"}, ` +
-          `CI: ${workState.ciVerdictPendingOrRed ? "RED/PENDING" : workState.ciVerdictUnknown ? "UNKNOWN (cooldown)" : "N/A"}, ` +
-          `release: ${workState.releaseIncomplete ? "INCOMPLETE" : "N/A"}, ` +
-          `repo: ${workState.repoPending ? "DIRTY" : "clean"}.`,
-          `Health: ${workState.healthScore}/100.`,
-          "",
-          "You may NOT send a text-only response while work exists.",
-          "The ONLY valid action is to DISPATCH SUBAGENTS via the Task tool,",
-          "or read/edit files to fix the pending work.",
-          "NO short-text exemption. NO length exemption. NO content exemption.",
-          escalationNote,
-        ].join("\n"),
-      }
+      return mandatoryPendingBlock
     }
 
     // ── UPDATE POST-RESULTS STATE FOR NEXT TURN ────────────────────────────
@@ -1717,7 +1739,13 @@ export default (async () => {
     },
     "experimental.text.complete": async (_input: unknown, output: unknown) => {
       if (isSubagent()) return output // OPENCODE_SUBAGENT guard
-      if (isStopEnforcementDisabled()) return output
+      if (isStopEnforcementDisabled()) {
+        const text = typeof output === "string" ? output
+          : (output as any)?.text ? String((output as any).text)
+          : JSON.stringify(output)
+        if (!text || text.trim().length === 0) return output
+        return blockMandatoryPendingText(text, output, hasRealPendingWork()) ?? output
+      }
       const impl = stopImpl()
       const fn = impl["experimental.text.complete"]
       return fn ? await fn(_input, output) : output
