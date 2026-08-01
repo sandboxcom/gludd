@@ -531,7 +531,7 @@ class TerraformGenerator:
     def _generate_azure_containerapp(self, config: ComputeConfig) -> str:
         region = config.region or "eastus"
         _modules = os.path.join(os.path.dirname(__file__), "..", "..", "..", "infra", "terraform", "modules")
-        suffix = config.model_name.replace("/", "-").replace(".", "-")[:20]
+        suffix = config.model_name.replace("/", "-").replace(".", "-").replace("_", "-").lower()[:12]
         return textwrap.dedent(f"""\
             terraform {{
               required_providers {{
