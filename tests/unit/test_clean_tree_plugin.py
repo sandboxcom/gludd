@@ -17,6 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode/plugin/enforce-clean-tree.ts"
+HELPERS_PATH = ROOT / ".opencode/lib/plugin_test_exports.ts"
 MAKEFILE_PATH = ROOT / "Makefile"
 
 EXPECTED_DISPATCH_TOOLS = {"task", "agent", "workflow"}
@@ -24,14 +25,15 @@ EXPECTED_DISPATCH_TOOLS = {"task", "agent", "workflow"}
 
 def _plugin_source() -> str:
     assert PLUGIN_PATH.exists(), f"Plugin missing at {PLUGIN_PATH}"
-    return PLUGIN_PATH.read_text()
+    assert HELPERS_PATH.exists(), f"Plugin helpers missing at {HELPERS_PATH}"
+    return "\n".join((PLUGIN_PATH.read_text(), HELPERS_PATH.read_text()))
 
 
 def _extract_dispatch_tools(src: str) -> set[str]:
     block = re.search(
-        r'DISPATCH_TOOLS[^=]*=\s*Object\.freeze\(\[(.*?)\]\)', src, re.DOTALL
+        r'getDispatchTools\(\).*?return\s*\[(.*?)\]', src, re.DOTALL
     )
-    assert block, "DISPATCH_TOOLS export not found in plugin source"
+    assert block, "getDispatchTools helper not found in plugin source graph"
     return set(re.findall(r'"([^"]+)"', block.group(1)))
 
 

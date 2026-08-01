@@ -40,6 +40,51 @@ const WAVE_WIDTH = _tunable(
 const FLOOR_ENFORCE = process.env.GLUDD_FLOOR_ENFORCE !== "0"
 const STREAK_PLUGIN_NAME = "enforce-floor"
 const DISPATCH_PREFLIGHT_PATH = "/tmp/gludd-dispatch-preflight.json"
+const MISSED_COMMIT_FILE = "/tmp/gludd-missed-commit-dispatch.json"
+const MISSED_COMMIT_THRESHOLD = 3
+const MISSED_COMMIT_REMINDER_MS = 300_000
+
+interface MissedCommitState {
+  misses: number
+  last_miss_ts: number
+  last_reminder_ts: number
+  pid: number
+}
+
+function readMissedCommitState(): MissedCommitState {
+  const state = readJsonFile(MISSED_COMMIT_FILE) as Partial<MissedCommitState> | null
+  return {
+    misses: typeof state?.misses === "number" ? state.misses : 0,
+    last_miss_ts: typeof state?.last_miss_ts === "number" ? state.last_miss_ts : 0,
+    last_reminder_ts: typeof state?.last_reminder_ts === "number" ? state.last_reminder_ts : 0,
+    pid: typeof state?.pid === "number" ? state.pid : 0,
+  }
+}
+
+function recordMissedCommit(): void {
+  try {
+    const state = readMissedCommitState()
+    writeJsonFile(MISSED_COMMIT_FILE, {
+      ...state,
+      misses: state.misses + 1,
+      last_miss_ts: Date.now(),
+      pid: process.pid,
+    })
+  } catch {}
+}
+
+function maybeRemindMissedCommitDispatch(): void {
+  try {
+    const state = readMissedCommitState()
+    const now = Date.now()
+    if (state.misses < MISSED_COMMIT_THRESHOLD) return
+    if (now - state.last_reminder_ts < MISSED_COMMIT_REMINDER_MS) return
+    console.warn(
+      "DP.1: Use one dispatch slot for make ship-commit — keeps 9 productive tasks running.",
+    )
+    writeJsonFile(MISSED_COMMIT_FILE, { ...state, last_reminder_ts: now })
+  } catch {}
+}
 // Shared state filenames used through shared.ts: gludd-tool-streak.json, gludd-watchdog-disengage.json.
 // ── Time-based message boundary detection ──────────────────────────────────
 // Inter-call gap that marks a new agent message. Env-tunable so e2e tests can
@@ -531,6 +576,10 @@ const defaultImpl: HotModule = {
         const outArgs = (output as Record<string, unknown> | undefined)?.args as { command?: string } | undefined
         const cmd = typeof outArgs?.command === "string" ? outArgs.command.trim() : ""
         commitToolMode = isCommitBashCommand(cmd)
+        if (commitToolMode) {
+          recordMissedCommit()
+          maybeRemindMissedCommitDispatch()
+        }
         if (COMPULSIVE_CHECK_RE.test(cmd) && openWorkExists()) {
           return {
             permissionDecision: "deny" as const,
