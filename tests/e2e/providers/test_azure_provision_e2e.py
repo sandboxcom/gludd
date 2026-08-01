@@ -110,7 +110,7 @@ class TestAzureProvisionE2E:
         engine = _resolve_engine()
         gpu = _resolve_gpu()
         deploy_type = _get_env("AZURE_DEPLOY_TYPE", "containerapp") or "containerapp"
-        model = _get_env("AZURE_MODEL", "microsoft/phi-2")
+        model = _get_env("AZURE_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
 
         config = ComputeConfig(
             provider=ComputeProvider.AZURE,
