@@ -98,12 +98,12 @@
     "./.opencode/plugin/enforce-branch-discipline.ts",
     "./.opencode/plugin/enforce-test-integrity.ts",
     "./.opencode/plugin/enforce-worktree.ts",
+    "./.opencode/plugin/enforce-audit.ts",
+    "./.opencode/plugin/enforce-context.ts",
     "./.opencode/plugin/enforce-deliverable.ts",
     "./.opencode/plugin/enforce-no-ci-poll.ts",
     "./.opencode/plugin/enforce-release-deadline.ts",
     "./.opencode/plugin/enforce-task-tracking.ts",
-    "./.opencode/plugin/enforce-audit.ts",
-    "./.opencode/plugin/enforce-context.ts",
     "./.opencode/plugins/watchdog.ts"
   ]
 }
