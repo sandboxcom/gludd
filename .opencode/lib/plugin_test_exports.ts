@@ -56,7 +56,7 @@ export function buildDenyMessage(count: number): string {
 
 // ── enforce-commit-lock helpers ─────────────────────────────────────────
 
-const COMMIT_TARGETS = Object.freeze([
+export const COMMIT_TARGETS = Object.freeze([
   "git-commit", "commit-no-verify", "git-commit-no-verify",
   "ship-commit", "repo-commit", "git-commit-file",
   "test-and-commit", "commit-bootstrap", "git-amend-msg",

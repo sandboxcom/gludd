@@ -19,6 +19,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode/plugin/enforce-commit-lock.ts"
+HELPER_PATH = ROOT / ".opencode/lib/plugin_test_exports.ts"
 MAKEFILE_PATH = ROOT / "Makefile"
 
 EXPECTED_COMMIT_TARGETS = [
@@ -37,6 +38,11 @@ EXPECTED_COMMIT_TARGETS = [
 def _plugin_source() -> str:
     assert PLUGIN_PATH.exists(), f"Plugin missing at {PLUGIN_PATH}"
     return PLUGIN_PATH.read_text()
+
+
+def _helper_source() -> str:
+    assert HELPER_PATH.exists(), f"Plugin helper missing at {HELPER_PATH}"
+    return HELPER_PATH.read_text()
 
 
 def _extract_commit_targets(src: str) -> list[str]:
@@ -70,8 +76,8 @@ class TestPluginStructure:
         assert "enforce-commit-lock.ts" in oc, "Plugin not registered in opencode.json"
 
     def test_exports_commit_targets(self):
-        src = _plugin_source()
-        assert "COMMIT_TARGETS" in src, "COMMIT_TARGETS export missing"
+        src = _helper_source()
+        assert "export const COMMIT_TARGETS" in src, "COMMIT_TARGETS export missing"
 
     def test_exports_stale_threshold(self):
         src = _plugin_source()
@@ -106,12 +112,12 @@ class TestPluginStructure:
 
 class TestCommitTargetsList:
     def test_all_expected_targets_present(self):
-        targets = _extract_commit_targets(_plugin_source())
+        targets = _extract_commit_targets(_helper_source())
         for expected in EXPECTED_COMMIT_TARGETS:
             assert expected in targets, f"Missing commit target: {expected}"
 
     def test_target_count_matches(self):
-        targets = _extract_commit_targets(_plugin_source())
+        targets = _extract_commit_targets(_helper_source())
         assert len(targets) == len(EXPECTED_COMMIT_TARGETS), (
             f"Expected {len(EXPECTED_COMMIT_TARGETS)} targets, got {len(targets)}: {targets}"
         )
@@ -122,7 +128,7 @@ class TestDenyOnHeld:
 
     @pytest.fixture(scope="class")
     def targets(self) -> list[str]:
-        return _extract_commit_targets(_plugin_source())
+        return _extract_commit_targets(_helper_source())
 
     @pytest.mark.parametrize(
         "cmd",
