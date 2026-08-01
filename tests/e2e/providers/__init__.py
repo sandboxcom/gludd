@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -134,7 +134,10 @@ async def _run_inference_async(endpoint_url: str, prompt: str = "Reply with exac
             json=payload,
         )
         r.raise_for_status()
-        return r.json()
+        response = r.json()
+        if not isinstance(response, dict):
+            raise ValueError("Inference response must be a JSON object")
+        return cast(dict[str, Any], response)
 
 
 def run_inference(endpoint_url: str, prompt: str = "Reply with exactly: pong") -> dict[str, Any]:
