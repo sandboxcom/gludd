@@ -488,6 +488,35 @@ class AuditEventModel(Base):
     )
 
 
+class DeploymentRecordModel(Base):
+    """Durable cross-worker source of truth for chargeable deployments."""
+
+    __tablename__ = "deployment_records"
+
+    instance_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    working_dir: Mapped[str] = mapped_column(String(1024), nullable=False)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    model_name: Mapped[str] = mapped_column(String(256), nullable=False, default="")
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="running", index=True)
+    ip_address: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    endpoint_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    destroy_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), nullable=False, default=_utcnow, onupdate=_utcnow
+    )
+
+    __table_args__ = (
+        CheckConstraint("revision > 0", name="ck_deployment_records_revision_positive"),
+        CheckConstraint(
+            "((state = 'destroying' AND destroy_owner IS NOT NULL) OR "
+            "(state <> 'destroying' AND destroy_owner IS NULL))",
+            name="ck_deployment_records_destroy_owner_state",
+        ),
+    )
+
+
 class VariableNamespaceModel(Base):
     __tablename__ = "variable_namespaces"
 

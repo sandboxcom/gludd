@@ -2013,6 +2013,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 secrets_resolver=secrets_resolver,
                 working_dir=_deploy_working_dir,
                 event_bus=subsys["bus"],
+                session_factory=session_factory,
+                worker_id=f"{os.environ.get('GLUDD_WORKER_ID', 'gunicorn')}-{os.getpid()}",
             )
             app.state._deployment_manager = deployment_manager
 
@@ -2146,13 +2148,33 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         app.state.event_loop = event_loop
         app.state.event_loop._runner = runner
-        from general_ludd.infra.deployment_events import TerraformEventBridge
+        from general_ludd.infra.deployment_events import (
+            PostgresWakeupListener,
+            TerraformEventBridge,
+        )
+
+        terraform_worker_id = f"{os.environ.get('GLUDD_WORKER_ID', 'gunicorn')}-{os.getpid()}"
+        terraform_wakeup_listener = None
+        if engine.dialect.name == "postgresql":
+            terraform_wakeup_listener = PostgresWakeupListener(
+                database_url=engine.url.render_as_string(hide_password=False),
+                session_factory=session_factory,
+                wake=event_loop.wake,
+                worker_id=terraform_worker_id,
+                reconnect_min_seconds=float(
+                    os.environ.get("GLUDD_PG_WAKE_RECONNECT_SECONDS", "0.1")
+                ),
+                reconnect_max_seconds=float(
+                    os.environ.get("GLUDD_PG_WAKE_RECONNECT_SECONDS", "5.0")
+                ),
+            )
 
         terraform_event_bridge = TerraformEventBridge(
             event_bus=subsys["bus"],
             session_factory=session_factory,
             wake=event_loop.wake,
-            worker_id=os.environ.get("GLUDD_WORKER_ID", f"gunicorn-{os.getpid()}"),
+            worker_id=terraform_worker_id,
+            listener=terraform_wakeup_listener,
         )
         terraform_event_bridge.start()
         app.state._terraform_event_bridge = terraform_event_bridge
@@ -2570,7 +2592,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     _el = event_loop if event_loop is not None else getattr(app.state, "event_loop", None)
     _terraform_bridge = getattr(app.state, "_terraform_event_bridge", None)
     if _terraform_bridge is not None:
-        _terraform_bridge.close()
+        await _terraform_bridge.aclose()
         _event_bus = getattr(app.state, "_event_bus", None)
         if _event_bus is not None:
             await _event_bus.drain()

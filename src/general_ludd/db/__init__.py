@@ -14,6 +14,9 @@ __all__ = (
     "BenchmarkResultModel",
     "BucketLeaseModel",
     "ConcurrencyError",
+    "DeploymentBusyError",
+    "DeploymentRecordModel",
+    "DeploymentRegistryRepository",
     "ImmutableAzureCostIdentityError",
     "InvalidTransitionError",
     "ModelCallLogModel",
@@ -60,6 +63,10 @@ from general_ludd.db.azure_cost_repository import (
     NonMonotonicAzureCostStateError,
     StaleAzureCostLeaseError,
 )
+from general_ludd.db.deployment_repository import (
+    DeploymentBusyError,
+    DeploymentRegistryRepository,
+)
 from general_ludd.db.migrations import get_alembic_config, stamp_head
 from general_ludd.db.models import (
     AuditEventModel,
@@ -70,6 +77,7 @@ from general_ludd.db.models import (
     Base,
     BenchmarkResultModel,
     BucketLeaseModel,
+    DeploymentRecordModel,
     ModelCallLogModel,
     ModelPerformanceModel,
     ProjectModel,
