@@ -3039,6 +3039,7 @@ check-provenance-attestation:
 	@$(UV) run python scripts/check_provenance_attestation.py $(TAG)
 
 check-dependency-pinning:
+	@$(UV) lock --check
 	@$(UV) run python scripts/check_dependency_pinning.py
 
 check-runbook-currency:

@@ -862,7 +862,7 @@ class TestCheckProvenanceAttestation:
 
 
 class TestCheckDependencyPinning:
-    """AC012: dependency-pinning — exact versions, no ranges, stale lockfile detection."""
+    """AC012: dependency-pinning — exact lock resolution and stale-lock detection."""
 
     def test_all_pinned_passes(self):
         content = '[project]\ndependencies = [\n  "requests==2.31.0",\n  "click==8.1.7",\n]\n'
@@ -870,12 +870,11 @@ class TestCheckDependencyPinning:
         assert passed is True
         assert len(violations) == 0
 
-    def test_range_dep_fails(self):
+    def test_range_dep_passes_when_lockfile_satisfies_it(self):
         content = '[project]\ndependencies = [\n  "requests>=2.31.0",\n  "click==8.1.7",\n]\n'
-        passed, violations = check_dependency_pinning(content)
-        assert passed is False
-        assert len(violations) == 1
-        assert "requests>=" in violations[0]
+        lockfile_deps = {"requests": "2.32.0", "click": "8.1.7"}
+        violations = find_unpinned_deps(content, lockfile_deps)
+        assert violations == []
 
     def test_empty_pyproject_passes(self):
         passed, _violations = check_dependency_pinning("")
@@ -905,8 +904,17 @@ class TestCheckDependencyPinning:
         content = '[project]\ndependencies = [\n  "requests~=2.31",\n  "click==8.1.7",\n]\n'
         lockfile_deps = {"requests": "2.31.0", "click": "8.1.7"}
         violations = find_unpinned_deps(content, lockfile_deps)
-        assert len(violations) == 1
-        assert "requests" in violations[0]
+        assert violations == []
+
+    def test_find_unpinned_deps_rejects_incompatible_lock_version(self):
+        content = '[project]\ndependencies = [\n  "requests>=2.31.0",\n]\n'
+        violations = find_unpinned_deps(content, {"requests": "2.30.0"})
+        assert violations == ["requests>=2.31.0: locked 2.30.0 does not satisfy >=2.31.0"]
+
+    def test_find_unpinned_deps_rejects_missing_lock_entry(self):
+        content = '[project]\ndependencies = [\n  "requests>=2.31.0",\n]\n'
+        violations = find_unpinned_deps(content, {})
+        assert violations == ["requests: not in lockfile"]
 
     def test_find_unpinned_deps_all_cross_referenced(self):
         content = '[project]\ndependencies = [\n  "requests==2.31.0",\n  "click==8.1.7",\n]\n'
