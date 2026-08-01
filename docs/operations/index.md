@@ -4,11 +4,15 @@ Operational guides for running General Ludd in production.
 
 ## Contents
 
-This directory does not yet hold split-out operations pages. Monitoring and
-observability sources are covered in [docs/OBSERVABILITY_SOURCES.md](../OBSERVABILITY_SOURCES.md);
-configuration (including budget settings) is in
+Monitoring and observability sources are covered in
+[docs/OBSERVABILITY_SOURCES.md](../OBSERVABILITY_SOURCES.md); configuration
+(including budget settings) is in
 [docs/CONFIG_REFERENCE.md](../CONFIG_REFERENCE.md). The quick reference below
 covers day-to-day health/budget checks and troubleshooting entry points.
+
+- [Podman 5.8 AppleHV startup recovery](PODMAN_APPLEHV_STARTUP_RECOVERY.md) —
+  machine-scoped diagnosis and recovery for a macOS VM stuck at
+  `Currently starting`, without resetting unrelated machines.
 
 **The troubleshooting table lives in
 [CONFIG_REFERENCE.md §4](../CONFIG_REFERENCE.md#4-troubleshooting)** — start there for
