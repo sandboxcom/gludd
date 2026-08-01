@@ -277,30 +277,8 @@ make smoke
 make validate-azure-iam
 make test TESTFILE='tests/unit/test_validate_azure_iam_policy.py'
 
-# 5. Deploy and destroy a test resource
-python -c "
-from general_ludd.infra.compute import ComputeConfig, ComputeProvider, GPUType
-from general_ludd.infra.deployment import DeploymentManager
-from general_ludd.secrets.env import EnvSecretsManager
-import asyncio
-
-async def test():
-    secrets = EnvSecretsManager()
-    mgr = DeploymentManager(secrets_resolver=secrets)
-    config = ComputeConfig(
-        provider=ComputeProvider.AZURE,
-        gpu_type=GPUType.T4,
-        model_name='meta-llama/Meta-Llama-3-8B-Instruct',
-        deploy_type='containerapp',
-        region='eastus',
-    )
-    instance = await mgr.deploy(config)
-    print(f'Deployed: {instance.endpoint_url}')
-    await mgr.destroy(instance.instance_id)
-    print('Destroyed')
-
-asyncio.run(test())
-"
+# 5. Full Azure E2E test (auto-provision GPU → test → destroy)
+make test-e2e-azure-provision
 ```
 
 ### Option B: Secret aliases (recommended for production)
