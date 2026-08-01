@@ -13,10 +13,10 @@ skipped pending sandbox-forge wiring.
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import importlib.util
 import os
+from types import ModuleType
 
 import pytest
 
@@ -25,7 +25,7 @@ _RELEASE_STATE_PATH = os.path.join(_PROJECT_ROOT, "src", "general_ludd", "git_re
 _DEPLOYMENT_PATH = os.path.join(_PROJECT_ROOT, "src", "general_ludd", "git_release", "deployment.py")
 
 
-def _load_mod(path: str, name: str):
+def _load_mod(path: str, name: str) -> ModuleType:
     spec = importlib.util.spec_from_file_location(name, path)
     assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
@@ -58,22 +58,22 @@ def _artifact_digest(content: str) -> str:
 class TestBuildDigestMatching:
     """GRC-AT-006: two clean builds produce byte-identical artifacts."""
 
-    def test_same_content_produces_same_digest(self):
+    def test_same_content_produces_same_digest(self) -> None:
         d1 = _artifact_digest("release-1.0.0 binary content")
         d2 = _artifact_digest("release-1.0.0 binary content")
         assert d1 == d2
 
-    def test_different_content_produces_different_digest(self):
+    def test_different_content_produces_different_digest(self) -> None:
         d1 = _artifact_digest("release-1.0.0")
         d2 = _artifact_digest("release-1.0.1")
         assert d1 != d2
 
-    def test_empty_content_has_known_digest(self):
+    def test_empty_content_has_known_digest(self) -> None:
         d = _artifact_digest("")
         expected = hashlib.sha256(b"").hexdigest()
         assert d == expected
 
-    def test_digest_is_hex_string(self):
+    def test_digest_is_hex_string(self) -> None:
         d = _artifact_digest("some artifact")
         assert len(d) == 64
         assert all(c in "0123456789abcdef" for c in d)
@@ -87,7 +87,7 @@ class TestBuildDigestMatching:
 class TestDeploymentDigestGate:
     """DeploymentOrchestrator gates on digest identity."""
 
-    def test_orchestrator_requires_non_empty_digests(self):
+    def test_orchestrator_requires_non_empty_digests(self) -> None:
         with pytest.raises(ValueError):
             deployment.DeploymentOrchestrator(
                 config=deployment.DeploymentConfig(
@@ -103,7 +103,7 @@ class TestDeploymentDigestGate:
                 new_digest="abc123",
             )
 
-    def test_orchestrator_exposes_digests(self):
+    def test_orchestrator_exposes_digests(self) -> None:
         orch = deployment.DeploymentOrchestrator(
             config=deployment.DeploymentConfig(
                 strategy=deployment.DeploymentStrategy.CANARY,
@@ -129,33 +129,26 @@ class TestDeploymentDigestGate:
 class TestBuildOnceInvariant:
     """The release state machine enforces BUILD_ONCE with pinned SHA."""
 
-    def test_state_machine_exists(self):
+    def test_state_machine_exists(self) -> None:
         assert hasattr(release_state, "ReleaseStateMachine")
 
-    def test_release_state_enum_has_build_once(self):
+    def test_release_state_enum_has_build_once(self) -> None:
         assert hasattr(release_state, "ReleaseState")
         assert release_state.ReleaseState.BUILD_ONCE.value == "build_once"
 
-    def test_build_once_to_verify_offline_transition(self):
+    def test_build_once_to_verify_offline_transition(self) -> None:
         sm = release_state.ReleaseStateMachine(source_sha="0" * 40, artifact_digest="0" * 64)
-        sm.advance(release_state.ReleaseState.DISCOVER)
-        sm.advance(release_state.ReleaseState.PLAN)
-        result = sm.advance(release_state.ReleaseState.BUILD_ONCE)
+        sm.advance(target=release_state.ReleaseState.PLAN)
+        result = sm.advance(target=release_state.ReleaseState.BUILD_ONCE)
         assert not result.blocked
-        assert sm.current == release_state.ReleaseState.BUILD_ONCE
+        assert sm.state == release_state.ReleaseState.BUILD_ONCE
 
-    def test_state_machine_rejects_invalid_transition(self):
+    def test_state_machine_rejects_invalid_transition(self) -> None:
         sm = release_state.ReleaseStateMachine(source_sha="0" * 40, artifact_digest="0" * 64)
-        result = sm.advance(release_state.ReleaseState.CANARY)
-        assert result.blocked
+        with pytest.raises(release_state.TransitionError):
+            sm.advance(target=release_state.ReleaseState.CANARY)
 
-    def test_released_is_terminal(self):
-        sm = release_state.ReleaseStateMachine(source_sha="0" * 40, artifact_digest="0" * 64)
-        for s in release_state.ReleaseState:
-            with contextlib.suppress(Exception):
-                sm.advance(s)
-            if sm.current == release_state.ReleaseState.BUILD_ONCE:
-                break
+    def test_released_is_terminal(self) -> None:
         # Verify RELEASED has no forward edges
         edges = release_state._ALLOWED_FORWARD.get(release_state.ReleaseState.RELEASED, frozenset())
         assert len(edges) == 0
@@ -175,13 +168,13 @@ class TestReproducibleBuildPipeline:
         "builds and verify byte-identical digests.  Primitives "
         "(ReleaseStateMachine.BUILD_ONCE, digest matching) are correct."
     )
-    def test_two_clean_builds_byte_identical(self):
+    def test_two_clean_builds_byte_identical(self) -> None:
         pass
 
     @pytest.mark.skip("GRC-AT-006: install/smoke/uninstall test requires sandbox-forge.")
-    def test_artifact_installs_and_smokes(self):
+    def test_artifact_installs_and_smokes(self) -> None:
         pass
 
     @pytest.mark.skip("GRC-AT-006: uninstall/verify test requires sandbox-forge.")
-    def test_artifact_uninstalls_and_verifies_cleanup(self):
+    def test_artifact_uninstalls_and_verifies_cleanup(self) -> None:
         pass
