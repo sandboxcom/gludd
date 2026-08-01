@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "clean_tmp.py"
 
 
-def test_clean_tmp_removes_home_tmp_pytest_garbage_with_unwritable_children(tmp_path: Path) -> None:
+def test_clean_tmp_preserves_generic_pytest_roots_owned_by_other_runs(tmp_path: Path) -> None:
     home = tmp_path / "home"
     pytest_root = home / "tmp" / "pytest-of-shawnwilson"
     secrets = pytest_root / "garbage-deadbeef" / "test_case0" / "secrets"
@@ -33,7 +33,14 @@ def test_clean_tmp_removes_home_tmp_pytest_garbage_with_unwritable_children(tmp_
 
         assert result.returncode == 0, result.stdout + result.stderr
         assert "failed=0" in result.stdout
-        assert not pytest_root.exists()
+        assert pytest_root.exists()
     finally:
         if secrets.exists():
             os.chmod(secrets, 0o700)
+
+
+def test_clean_tmp_never_targets_active_gludd_test_directories() -> None:
+    source = SCRIPT.read_text()
+
+    assert '"gludd-iso-*"' not in source
+    assert 'Path("/tmp/gludd-gate-basetemp")' not in source

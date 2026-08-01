@@ -229,6 +229,7 @@ help:
 	@echo "  test-e2e-postgres-multiworker  Live Postgres 16 + two-worker Gunicorn acceptance"
 	@echo "  podman-project-up   Start an explicit project Podman machine and wait for readiness"
 	@echo "  podman-project-recreate  Recreate one gludd-namespaced Podman test machine"
+	@echo "  podman-project-delete  Delete one gludd-namespaced Podman machine with bounded progress"
 	@echo "  test-opencode-e2e     .opencode/ plugin load+invocation tests"
 	@echo "  test-specific         Single test (TESTFILE=path::TestClass::test_name)"
 	@echo "  test-files            Multiple tests (TESTFILES=tests/unit/a.py tests/unit/b.py)"
@@ -396,6 +397,8 @@ help:
 	@echo "  check-disk            Pre-commit check: fails if /tmp/gludd-* >100MB or disk >90%"
 	@echo "  check-system-load     Read-only system load diagnostic (1m avg, CPU count, verdict)"
 	@echo "  disk                  Print disk usage + gludd footprint"
+	@echo "  disk-reclaim          Run bounded, heartbeat-emitting cache cleanup"
+	@echo "  uv-cache-prune-status List uv cache-prune PID, parent, age, and command"
 	@echo "  tmp-gludd-usage       Print largest /tmp/gludd-* entries sorted by size"
 	@echo "  tmp-gludd-worktree-usage  Print largest generated entries under /tmp/gludd-worktrees"
 	@echo "  tmp-gludd-clean-ci-shards  Remove stale generated CI shard scratch dirs"
@@ -1349,18 +1352,22 @@ reap-orphan-pytest:
 # lock, then remove the lock and any gludd-gate-XXXXXX tmp dirs so the next
 # `make gate` can start cleanly. Use when `make kill-stale` is too conservative.
 kill-gate-force:
-	@echo "[kill-gate-force] reading lock owner from /tmp/gludd-gate.lock ..."
+	@echo "[kill-gate-force] resolving gate owner from lock or .gate-background.pid ..."
 	@HOLDER=$$(cat /tmp/gludd-gate.lock 2>/dev/null || echo ""); \
+	if [ -z "$$HOLDER" ] || ! kill -0 "$$HOLDER" 2>/dev/null; then \
+		CANDIDATE=$$(cat .gate-background.pid 2>/dev/null || echo ""); \
+		CMD=$$(ps -p "$$CANDIDATE" -o command= 2>/dev/null || echo ""); \
+		case "$$CMD" in *"make gate"*) HOLDER="$$CANDIDATE" ;; *) HOLDER="" ;; esac; \
+	fi; \
 	if [ -n "$$HOLDER" ] && kill -0 "$$HOLDER" 2>/dev/null; then \
 		echo "[kill-gate-force] killing PID $$HOLDER"; \
 		kill -TERM "$$HOLDER" 2>/dev/null || true; sleep 1; \
 		kill -KILL "$$HOLDER" 2>/dev/null || true; \
 	else \
-		echo "[kill-gate-force] no live gate process found in lock file"; \
+		echo "[kill-gate-force] no live project gate process found"; \
 	fi
-	@rm -f /tmp/gludd-gate.lock /tmp/gludd-gate.lock.*.tmp
-	@rm -rf /tmp/gludd-gate-[A-Za-z0-9]* 2>/dev/null || true
-	@echo "[kill-gate-force] lock + tmp dirs removed"
+	@rm -f /tmp/gludd-gate.lock /tmp/gludd-gate.lock.*.tmp .gate-background.pid
+	@echo "[kill-gate-force] project gate lock records removed; shared tmp roots preserved"
 
 # Combined kill-everything: stray pytest/gate workers, stale orphans, gate locks,
 # and any running gunicorn daemon tree. A single target to avoid streak blocks.
@@ -1919,6 +1926,9 @@ disk-guard:
 disk-check:
 	@bash scripts/disk-guard.sh check
 
+uv-cache-prune-status:
+	@/bin/ps -ax -o pid=,ppid=,etime=,command= | /usr/bin/awk '/[u]v cache prune/ { found=1; print } END { if (!found) print "UV_CACHE_PRUNE_IDLE" }'
+
 # Pre-commit disk check: fail if /tmp/gludd-* >100MB or disk >90%.
 check-disk:
 	@uv run python scripts/check_disk_usage.py
@@ -1932,8 +1942,16 @@ check-system-load:
 # Disk headroom check — run BEFORE any heavy op (gate, agent dispatch) so we
 # never silently refill the volume. Prints % used + free on the data volume.
 disk:
-	@df -h / | awk 'NR==1 || /\/$$/'
-	@echo "--- gludd scratch + worktree venv footprint ---"
+	@df -h . | awk 'NR==1 || NR==2'
+	@echo "--- generated workspace footprint ---"
+	@du -sh .gate-logs .venv .cache .pytest_cache .mypy_cache .ruff_cache dist build htmlcov 2>/dev/null | sort -h || true
+	@echo "--- largest gate-log entries ---"
+	@du -sh .gate-logs/* 2>/dev/null | sort -h | tail -15 || true
+	@echo "--- major workspace paths ---"
+	@du -sh .git .opencode .claude .agents node_modules collections infra tests src docs 2>/dev/null | sort -h || true
+	@echo "--- Terraform footprint ---"
+	@du -sh infra/terraform/.plugin-cache infra/terraform/* 2>/dev/null | sort -h | tail -20 || true
+	@echo "--- gludd scratch + worktree footprint ---"
 	@du -sh /tmp/gludd-* 2>/dev/null | tail -5 || true
 tmp-gludd-usage:
 	@du -sh /tmp/gludd-* 2>/dev/null | sort -h | tail -40 || true
@@ -4329,22 +4347,11 @@ clean:
 	@git rm --cached .coverage coverage.xml 2>/dev/null || true
 	@echo "Cleaned."
 
-# disk-reclaim: free disk headroom when the APFS container nears full (ENOSPC on
-# task-output writes wedges the whole harness). Safe + idempotent — everything
-# pruned here is a regenerable cache, never source/repo/user data:
-#   * uv download/build cache (usually the biggest win, multi-GB)
-#   * pip cache
-#   * local pytest/mypy/ruff caches
-#   * gludd tmp workspaces + stale harness task-output files
-# Prints free space before/after so the reclaim is measured, not assumed.
+# disk-reclaim: compatibility alias for the bounded disk guard.  Keep the
+# cleanup implementation single-sourced so uv pruning always has a heartbeat,
+# lock timeout, and maximum runtime rather than becoming an unseen stall.
 disk-reclaim:
-	@echo "=== BEFORE ==="; df -h / | tail -1
-	@echo "--- pruning uv cache ---"; $(UV) cache prune 2>/dev/null || true
-	@echo "--- pruning pip cache ---"; $(PYTHON) -m pip cache purge 2>/dev/null || true
-	@rm -rf .pytest_cache .mypy_cache .ruff_cache 2>/dev/null || true
-	@rm -rf /tmp/gludd-workspace /tmp/gludd-workspaces/* /tmp/gludd-worktrees/* 2>/dev/null || true
-	@find /tmp -maxdepth 1 -name 'gludd-*.txt' -mtime +1 -delete 2>/dev/null || true
-	@echo "=== AFTER ==="; df -h / | tail -1
+	@$(MAKE) --no-print-directory disk-guard GLUDD_DISK_THRESHOLD="$(GLUDD_DISK_THRESHOLD)"
 
 test-live-zai:
 	@echo "Running live Z.AI integration tests..."
@@ -5360,6 +5367,56 @@ podman-project-recreate:
 		$(MAKE) --no-print-directory podman-project-up PODMAN_MACHINE="$(PODMAN_MACHINE)" PODMAN_START_TIMEOUT_SECS="$(PODMAN_START_TIMEOUT_SECS)" PODMAN_VALIDATE_ONLY=0; \
 	fi
 
+# Reclaim a project-owned Podman VM after live acceptance.  The namespace check
+# prevents touching another project's machine, while the bounded background
+# removal makes a slow VM teardown visible and prevents an unseen hang.
+.PHONY: podman-project-delete
+podman-project-delete:
+	@[ -n "$(PODMAN_MACHINE)" ] || { echo "Usage: make podman-project-delete PODMAN_MACHINE=gludd-e2e PODMAN_DELETE_TIMEOUT_SECS=120 PODMAN_VALIDATE_ONLY=0"; exit 2; }
+	@case "$(PODMAN_MACHINE)" in gludd|gludd-*) ;; *) echo "Refusing non-project Podman machine: $(PODMAN_MACHINE)"; exit 2;; esac
+	@case "$(PODMAN_VALIDATE_ONLY)" in 0|1) ;; *) echo "PODMAN_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@[ "$(PODMAN_DELETE_TIMEOUT_SECS)" -ge 1 ] 2>/dev/null || { echo "PODMAN_DELETE_TIMEOUT_SECS must be a positive integer"; exit 2; }
+	@if [ "$(PODMAN_VALIDATE_ONLY)" = "1" ]; then \
+		echo "PODMAN_PROJECT_DELETE_VALID machine=$(PODMAN_MACHINE)"; \
+		exit 0; \
+	fi; \
+	command -v podman >/dev/null 2>&1 || { echo "podman not installed"; exit 1; }; \
+	if ! podman machine inspect "$(PODMAN_MACHINE)" >/dev/null 2>&1; then \
+		echo "PODMAN_PROJECT_DELETE_ALREADY_ABSENT machine=$(PODMAN_MACHINE)"; \
+		exit 0; \
+	fi; \
+	log="/tmp/gludd-podman-delete-$(PODMAN_MACHINE).log"; \
+	rm -f "$$log"; \
+	echo "PODMAN_PROJECT_DELETE_START machine=$(PODMAN_MACHINE) timeout_secs=$(PODMAN_DELETE_TIMEOUT_SECS)"; \
+	podman machine rm -f "$(PODMAN_MACHINE)" >"$$log" 2>&1 & \
+	delete_pid=$$!; \
+	trap 'kill -TERM '"$$delete_pid"' 2>/dev/null || true' INT TERM EXIT; \
+	elapsed=0; \
+	while kill -0 "$$delete_pid" 2>/dev/null; do \
+		echo "PODMAN_PROJECT_DELETE_HEARTBEAT machine=$(PODMAN_MACHINE) elapsed_secs=$$elapsed"; \
+		if [ "$$elapsed" -ge "$(PODMAN_DELETE_TIMEOUT_SECS)" ]; then \
+			kill -TERM "$$delete_pid" 2>/dev/null || true; \
+			sleep 1; \
+			kill -KILL "$$delete_pid" 2>/dev/null || true; \
+			wait "$$delete_pid" 2>/dev/null || true; \
+			[ ! -f "$$log" ] || cat "$$log"; \
+			trap - INT TERM EXIT; \
+			echo "PODMAN_PROJECT_DELETE_TIMEOUT machine=$(PODMAN_MACHINE) elapsed_secs=$$elapsed"; \
+			exit 1; \
+		fi; \
+		sleep 1; \
+		elapsed=$$((elapsed + 1)); \
+	done; \
+	wait "$$delete_pid"; delete_rc=$$?; \
+	[ ! -f "$$log" ] || cat "$$log"; \
+	rm -f "$$log"; \
+	trap - INT TERM EXIT; \
+	if [ "$$delete_rc" -ne 0 ]; then \
+		echo "PODMAN_PROJECT_DELETE_FAILED machine=$(PODMAN_MACHINE) exit=$$delete_rc"; \
+		exit "$$delete_rc"; \
+	fi; \
+	echo "PODMAN_PROJECT_DELETE_DONE machine=$(PODMAN_MACHINE) elapsed_secs=$$elapsed"
+
 podman-restart:
 	@podman machine stop 2>/dev/null || true
 	@podman machine start
@@ -6197,8 +6254,9 @@ tf-versions-check:
 
 # Removes the shared cache (provider binaries); regenerated by tf-cache-warm.
 tf-clean:
-	rm -rf $(TF_PLUGIN_CACHE)
-	@echo "Removed $(TF_PLUGIN_CACHE)"
+	@mkdir -p $(TF_PLUGIN_CACHE)
+	@find $(TF_PLUGIN_CACHE) -mindepth 1 ! -name .gitkeep -exec rm -rf {} +
+	@echo "Removed cached providers from $(TF_PLUGIN_CACHE); preserved .gitkeep"
 
 # --- Presentation deck ---
 #   make deck            — build the reveal.js deck (generate deck-data.json + honesty check)
@@ -6646,9 +6704,12 @@ ps:
 
 kill-project-pid:
 	@[ -n "$(PID)" ] || { echo "Usage: make kill-project-pid PID=pid"; exit 1; }
-	@cmd=$$(/bin/ps -p "$(PID)" -o command=); \
+	@cmd=$$(/bin/ps -p "$(PID)" -o command=); ppid=$$(/bin/ps -p "$(PID)" -o ppid= | tr -d ' '); \
 	case "$$cmd" in \
 		*"/Users/shawnwilson/gludd"*|*"make search"*|*"grep -R"*) /bin/kill "$(PID)" ;; \
+		*"make gate"*|*"_gate-refresh-body"*) if [ "$$ppid" = "1" ]; then /bin/kill "$(PID)"; else echo "Refusing to kill non-orphan gate: pid=$(PID) ppid=$$ppid"; exit 1; fi ;; \
+		*"uv cache prune"*) if [ "$$ppid" = "1" ]; then /bin/kill "$(PID)"; else echo "Refusing to kill non-orphan uv cache prune: pid=$(PID) ppid=$$ppid"; exit 1; fi ;; \
+		*"uv run python -m pytest tests/unit/"*) if [ "$$ppid" = "1" ]; then /bin/kill "$(PID)"; else echo "Refusing to kill non-orphan pytest: pid=$(PID) ppid=$$ppid"; exit 1; fi ;; \
 		*) echo "Refusing to kill unrelated process: $$cmd"; exit 1 ;; \
 	esac
 

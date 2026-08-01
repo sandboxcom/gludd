@@ -98,6 +98,54 @@ class TestNoUnseenEvents:
             "sleep loop is an unseen event (regression of the silent-poller defect)"
         )
 
+    def test_disk_reclaim_delegates_to_bounded_heartbeat_guard(self) -> None:
+        body = _recipe("disk-reclaim")
+
+        assert "$(MAKE) --no-print-directory disk-guard" in body, (
+            "disk-reclaim must use the bounded disk-guard implementation so cache "
+            "pruning emits heartbeats and cannot stall indefinitely"
+        )
+        assert "uv cache prune" not in body
+
+    def test_disk_status_uses_workspace_volume_and_lists_generated_footprints(
+        self,
+    ) -> None:
+        body = _recipe("disk")
+
+        assert "df -h ." in body
+        assert "df -h /" not in body
+        for generated_path in (".gate-logs", ".venv", ".cache"):
+            assert generated_path in body
+        assert ".gate-logs/*" in body
+        assert ".opencode" in body
+        assert ".git" in body
+        assert "infra/terraform/*" in body
+
+    def test_uv_cache_prune_status_exposes_pid_parent_and_elapsed_time(self) -> None:
+        body = _recipe("uv-cache-prune-status")
+
+        for field in ("pid=", "ppid=", "etime=", "command="):
+            assert field in body
+        assert "[u]v cache prune" in body
+
+    def test_pid_reaper_only_accepts_orphaned_uv_cache_prune(self) -> None:
+        body = _recipe("kill-project-pid")
+
+        assert "uv cache prune" in body
+        assert '"$$ppid" = "1"' in body
+        assert "Refusing to kill non-orphan uv cache prune" in body
+        assert "make gate" in body
+        assert "_gate-refresh-body" in body
+        assert "Refusing to kill non-orphan gate" in body
+        assert "uv run python -m pytest tests/unit/" in body
+        assert "Refusing to kill non-orphan pytest" in body
+
+    def test_force_gate_kill_uses_background_pid_without_global_tmp_deletion(self) -> None:
+        body = _recipe("kill-gate-force")
+
+        assert ".gate-background.pid" in body
+        assert "rm -rf /tmp/gludd-gate-" not in body
+
     def test_ci_poll_waits_on_run_level_conclusion(self) -> None:
         """The poller must trust the RUN-level conclusion, not a job snapshot.
 

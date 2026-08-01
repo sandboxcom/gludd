@@ -63,6 +63,16 @@
       "behavior": "make grep Q=GAME_E2E SEARCH_PATH=docs"
     },
     {
+      "name": "disk-reclaim",
+      "make_variables": ["GLUDD_DISK_THRESHOLD"],
+      "behavior": "make disk-reclaim GLUDD_DISK_THRESHOLD=101"
+    },
+    {
+      "name": "uv-cache-prune-status",
+      "make_variables": [],
+      "behavior": "make uv-cache-prune-status"
+    },
+    {
       "name": "gate-tail",
       "make_variables": ["GATE_TAIL_LINES"],
       "behavior": "make gate-tail GATE_TAIL_LINES=5"
@@ -123,6 +133,15 @@
         "PODMAN_VALIDATE_ONLY"
       ],
       "behavior": "make podman-project-recreate PODMAN_MACHINE=gludd-e2e PODMAN_MEMORY_MB=4096 PODMAN_CPUS=4 PODMAN_DISK_GB=20 PODMAN_START_TIMEOUT_SECS=30 PODMAN_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "podman-project-delete",
+      "make_variables": [
+        "PODMAN_MACHINE",
+        "PODMAN_DELETE_TIMEOUT_SECS",
+        "PODMAN_VALIDATE_ONLY"
+      ],
+      "behavior": "make podman-project-delete PODMAN_MACHINE=gludd-e2e PODMAN_DELETE_TIMEOUT_SECS=30 PODMAN_VALIDATE_ONLY=1"
     },
     {
       "name": "runpod-harness",

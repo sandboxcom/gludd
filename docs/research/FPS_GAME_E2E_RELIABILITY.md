@@ -308,6 +308,35 @@ clean child that imports the actual `general_ludd.cloud.game_e2e` module, captur
 stderr, and fails on duplicate-class markers. This executable check remains the
 contract even if a future wheel changes its transitive binaries.
 
+## Local APFS and resource cleanup are paid-test preconditions
+
+The 2026-08-01 rerun exposed a macOS accounting trap before a second paid Azure
+provision: `df` against `/` reported the sealed System snapshot while the writable
+workspace lived on `/System/Volumes/Data`, which was already at 100%. Ask Different
+operators have repeatedly encountered the same split. The Catalina filesystem
+layout combines a read-only System volume and read-write Data volume through
+firmlinks, and its accepted explanation recommends inspecting the layout with
+`df` or `diskutil apfs list` ([Data-volume explanation][apfs-data-volume]). Other
+reports show users reasoning from the System snapshot while the Data volume has
+only a few GiB available ([snapshot-versus-data report][apfs-snapshot-report]) and
+different apparent APFS percentages depending on which mount and accounting
+field is queried ([APFS percentage report][apfs-percentage-report]).
+
+Gludd therefore measures the filesystem containing the workspace (`df -Pk .`),
+not `/`, and a paid run may start only when `make disk-check` is below the 95%
+limit. `make disk` must expose the Data-volume capacity plus the largest generated
+workspace, gate-log, Terraform-cache, and namespaced scratch footprints so an
+operator can act on evidence instead of deleting broadly.
+
+Cleanup is also fail-closed around concurrent work. It defers when project-owned
+pytest, mypy, or ruff validation is active; it never deletes generic
+`pytest-of-*` or shared Gludd test roots; uv pruning is bounded and emits progress;
+and stale Podman machines may be deleted only through the `gludd`/`gludd-*`
+namespace with heartbeat and timeout evidence. For an Azure-only rerun, the
+regenerable multi-cloud Terraform plugin cache can be cleared so only the Azure
+provider is fetched lazily. These rules preserve live failure evidence and keep
+one project's cleanup from corrupting another project's test run.
+
 ## Efficiency and failure ordering
 
 The cheapest deterministic checks run first: environment shape, optional
@@ -343,3 +372,6 @@ infrastructure failure.
 [openai-client]: https://github.com/openai/openai-python/blob/main/src/openai/_client.py
 [vllm-key-discussion]: https://github.com/vllm-project/vllm/discussions/898
 [open-compatible-key]: https://github.com/langchain-ai/open_deep_research/issues/195
+[apfs-data-volume]: https://apple.stackexchange.com/questions/367158/whats-system-volumes-data
+[apfs-snapshot-report]: https://apple.stackexchange.com/questions/433849
+[apfs-percentage-report]: https://apple.stackexchange.com/questions/352693

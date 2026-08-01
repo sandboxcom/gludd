@@ -88,3 +88,43 @@ def test_podman_project_recreate_validate_only_is_namespaced() -> None:
 
     assert result.returncode == 0, result.stderr
     assert "PODMAN_PROJECT_RECREATE_VALID machine=gludd-e2e" in result.stdout
+
+
+def test_podman_project_delete_validate_only_is_namespaced() -> None:
+    result = subprocess.run(
+        [
+            "make",
+            "podman-project-delete",
+            "PODMAN_MACHINE=gludd-e2e",
+            "PODMAN_DELETE_TIMEOUT_SECS=30",
+            "PODMAN_VALIDATE_ONLY=1",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "PODMAN_PROJECT_DELETE_VALID machine=gludd-e2e" in result.stdout
+
+
+def test_podman_project_delete_rejects_non_project_machine() -> None:
+    result = subprocess.run(
+        [
+            "make",
+            "podman-project-delete",
+            "PODMAN_MACHINE=podman-machine-default",
+            "PODMAN_DELETE_TIMEOUT_SECS=30",
+            "PODMAN_VALIDATE_ONLY=1",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "Refusing non-project Podman machine" in result.stdout

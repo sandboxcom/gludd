@@ -19,6 +19,16 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 TF_ROOT = REPO_ROOT / "infra" / "terraform"
 
 
+def test_tf_clean_preserves_tracked_cache_sentinel() -> None:
+    makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+    recipe = makefile.split("\ntf-clean:\n", 1)[1].split("\n\n", 1)[0]
+
+    assert "mkdir -p $(TF_PLUGIN_CACHE)" in recipe
+    assert "find $(TF_PLUGIN_CACHE) -mindepth 1 ! -name .gitkeep" in recipe
+    assert "\trm -rf $(TF_PLUGIN_CACHE)\n" not in recipe
+    assert "touch $(TF_PLUGIN_CACHE)/.gitkeep" not in recipe
+
+
 def test_versions_tf_is_the_canonical_contract() -> None:
     """versions.tf declares every third-party provider used by the stacks."""
     contract = checker.parse_versions_tf(TF_ROOT / "versions.tf")

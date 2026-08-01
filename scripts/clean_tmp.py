@@ -9,13 +9,9 @@ import stat
 from pathlib import Path
 
 TMP_GLOBS = (
-    "gludd-iso-*",
     "gludd-winfix*-gate.log",
     "gludd-test-gate.txt",
     "gludd-stop-state.json",
-)
-TMP_EXACT = (
-    Path("/tmp/gludd-gate-basetemp"),
 )
 
 
@@ -36,26 +32,10 @@ def _within_allowed_root(path: Path) -> bool:
     return any(resolved == root or root in resolved.parents for root in _allowed_roots())
 
 
-def _pytest_roots() -> list[Path]:
-    roots = [Path("/tmp")]
-    tmpdir = os.environ.get("TMPDIR")
-    if tmpdir:
-        roots.append(Path(tmpdir))
-    home = os.environ.get("HOME")
-    if home:
-        roots.append(Path(home) / "tmp")
-    return roots
-
-
 def _candidates() -> list[Path]:
     found: list[Path] = []
-    for path in TMP_EXACT:
-        found.append(path)
     for pattern in TMP_GLOBS:
         found.extend(Path("/tmp").glob(pattern))
-    for root in _pytest_roots():
-        if _within_allowed_root(root):
-            found.extend(root.glob("pytest-of-*"))
     return found
 
 

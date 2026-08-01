@@ -14,7 +14,11 @@ DISK_GUARD_UV_MAX_SECONDS="${DISK_GUARD_UV_MAX_SECONDS:-120}"
 DISK_GUARD_UV_HEARTBEAT_SECONDS="${DISK_GUARD_UV_HEARTBEAT_SECONDS:-5}"
 
 get_usage_pct() {
-  df -h "$TARGET_DIR" 2>/dev/null | awk 'NR==2 {gsub(/%/,""); print $5}' || echo "0"
+  df -Pk "$TARGET_DIR" 2>/dev/null | awk 'END {gsub(/%/,""); print $5}' || echo "0"
+}
+
+active_project_validation() {
+  pgrep -f "${GLUDD_ROOT}/.*(pytest|mypy|ruff)" >/dev/null 2>&1
 }
 
 clean() {
@@ -59,8 +63,6 @@ clean() {
 
   echo "Cleaning pytest cache..."
   rm -rf "${GLUDD_ROOT}/.pytest_cache" 2>/dev/null && echo "  .pytest_cache removed" || true
-  rm -rf /tmp/pytest-of-* 2>/dev/null && echo "  /tmp/pytest-of-* removed" || true
-  rm -rf /private/tmp/pytest-of-* 2>/dev/null && echo "  /private/tmp/pytest-of-* removed" || true
 
   echo "Cleaning __pycache__ directories..."
   find "$GLUDD_ROOT" -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null && echo "  __pycache__ dirs removed" || true
@@ -71,9 +73,7 @@ clean() {
   echo "Cleaning .ruff_cache..."
   rm -rf "${GLUDD_ROOT}/.ruff_cache" 2>/dev/null && echo "  .ruff_cache removed" || true
 
-  echo "Cleaning gludd tmp files..."
-  rm -rf /tmp/gludd-iso-* 2>/dev/null && echo "  /tmp/gludd-iso-* removed" || true
-  rm -rf /tmp/gludd-gate-basetemp 2>/dev/null && echo "  gludd-gate-basetemp removed" || true
+  echo "Preserving shared pytest and Gludd test roots; they may belong to active namespaced runs."
 }
 
 check_only() {
@@ -98,6 +98,11 @@ check_and_clean() {
   if [[ "$pct" -lt "$THRESHOLD" ]]; then
     echo "DISK OK: ${pct}% < ${THRESHOLD}%"
     return 0
+  fi
+
+  if active_project_validation; then
+    echo "DISK_CLEANUP_DEFERRED active project pytest/mypy/ruff validation is running"
+    return 1
   fi
 
   echo "DISK ABOVE ${THRESHOLD}% (${pct}%) — cleaning..." | tee -a "$CLEANUP_LOG"

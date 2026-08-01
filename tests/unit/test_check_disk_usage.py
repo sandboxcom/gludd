@@ -7,6 +7,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "check_disk_usage.py"
+DISK_GUARD_SCRIPT = ROOT / "scripts" / "disk-guard.sh"
 
 
 def _load_module():
@@ -53,3 +54,27 @@ def test_tmp_size_counts_non_worktree_gludd_directories(tmp_path: Path) -> None:
     expected = len(b"generated") / (1024 * 1024)
 
     assert actual == pytest.approx(expected)
+
+
+def test_shell_disk_guard_uses_portable_single_line_df_output() -> None:
+    source = DISK_GUARD_SCRIPT.read_text()
+
+    assert 'df -Pk "$TARGET_DIR"' in source
+    assert "awk 'END {gsub(/%/,\"\"); print $5}'" in source
+
+
+def test_shell_disk_guard_never_deletes_global_pytest_roots() -> None:
+    source = DISK_GUARD_SCRIPT.read_text()
+
+    assert "rm -rf /tmp/pytest-of-*" not in source
+    assert "rm -rf /private/tmp/pytest-of-*" not in source
+    assert "rm -rf /tmp/gludd-iso-*" not in source
+    assert "rm -rf /tmp/gludd-gate-basetemp" not in source
+
+
+def test_shell_disk_guard_defers_while_project_validation_is_active() -> None:
+    source = DISK_GUARD_SCRIPT.read_text()
+
+    assert "active_project_validation" in source
+    assert 'pgrep -f "${GLUDD_ROOT}/.*(pytest|mypy|ruff)"' in source
+    assert "DISK_CLEANUP_DEFERRED" in source
