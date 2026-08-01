@@ -617,7 +617,6 @@ class TerraformGenerator:
             output "base_url" {{
               value = "https://${{azurerm_container_app.vllm.latest_revision_fqdn}}/v1"
             }}
-            }}
 
             # Legacy aliases — DeploymentManager.deploy() reads instance_ip /
             # endpoint_url from `terraform output -json`. Keep the reader
