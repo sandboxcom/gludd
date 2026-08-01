@@ -199,9 +199,9 @@ class TestAllowOnFree:
 
 
 class TestStaleBreak:
-    def test_stale_threshold_is_5_minutes(self):
+    def test_stale_threshold_is_2_minutes(self):
         threshold = _extract_stale_threshold_ms(_plugin_source())
-        assert threshold == 300000, f"Expected 300000ms (5 min), got {threshold}"
+        assert threshold == 120000, f"Expected 120000ms (2 min), got {threshold}"
 
     def test_stale_break_logic_present(self):
         src = _plugin_source()

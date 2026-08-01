@@ -7,7 +7,7 @@ import { isSubagent, reportAlive } from "../lib/shared.ts";
 import { isCommitCommand } from "../lib/plugin_test_exports.ts";
 
 const LOCK_PATH: string = process.env.GLUDD_COMMIT_LOCK_PATH || "/tmp/gludd-commit.lock";
-const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+const STALE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
 const DENY_MESSAGE =
   "COMMIT-LOCK: another commit is in flight. Parallel commits race on the git index " +
   "(AGENTS.md commit-serialization guardrail). Retry serially — dispatch ONE commit " +

@@ -3,9 +3,7 @@ import ast
 import pathlib
 import re
 
-PLUGIN_PATH = pathlib.Path(
-    "/Users/shawnwilson/gludd/.opencode/plugin/enforce-commit-lock.ts"
-)
+PLUGIN_PATH = pathlib.Path(__file__).resolve().parents[2] / ".opencode/plugin/enforce-commit-lock.ts"
 
 
 def test_stale_threshold_is_120000() -> None:
@@ -15,7 +13,7 @@ def test_stale_threshold_is_120000() -> None:
     assert m is not None, (
         "STALE_THRESHOLD_MS declaration not found in enforce-commit-lock.ts"
     )
-    expr = m.group(1).rstrip(";").strip()
+    expr = m.group(1).split("//", 1)[0].strip().rstrip(";").strip()
     tree = ast.parse(expr, mode="eval")
     assert isinstance(tree.body, ast.BinOp)
     assert isinstance(tree.body.left, ast.BinOp)
