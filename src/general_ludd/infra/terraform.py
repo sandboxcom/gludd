@@ -552,7 +552,8 @@ class TerraformGenerator:
         region = config.region or "eastus"
         _modules = os.path.join(os.path.dirname(__file__), "..", "..", "..", "infra", "terraform", "modules")
         suffix = config.model_name.replace("/", "-").replace(".", "-").replace("_", "-").lower()[:12]
-        return textwrap.dedent(f"""\
+        return (
+            textwrap.dedent(f"""\
             terraform {{
               required_providers {{
                 azurerm = {{
@@ -625,7 +626,7 @@ class TerraformGenerator:
                   cpu    = 0.5
                   memory = "1Gi"
 
-                  command = ["python3", "-c", _PYTHON_ECHO_SERVER]
+                  command = ["python3", "-c", "%s"]
                 }}
               }}
             }}
@@ -651,6 +652,8 @@ class TerraformGenerator:
               value = "https://${{azurerm_container_app.vllm.latest_revision_fqdn}}/v1"
             }}
         """)
+            % _PYTHON_ECHO_SERVER
+        )
 
     def _generate_runpod(self, config: ComputeConfig) -> str:
         _modules = os.path.join(os.path.dirname(__file__), "..", "..", "..", "infra", "terraform", "modules")
