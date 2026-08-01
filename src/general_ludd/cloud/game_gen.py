@@ -11,7 +11,6 @@ import contextlib
 import importlib.util
 import logging
 import os
-import re
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -19,6 +18,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
+
+from general_ludd.cloud.game_generation import normalize_generated_python
 
 if TYPE_CHECKING:
     from general_ludd.models.gateway import ModelGateway
@@ -225,18 +226,7 @@ def generate_game_code(
         estimated_cost=0.0,
         budget_remaining=5.0,
     )
-    content = getattr(response, "content", "")
-    if not content:
-        raise RuntimeError("LLM returned empty response")
-    return _extract_python_code(str(content))
-
-
-def _extract_python_code(content: str) -> str:
-    """Extract Python code from an LLM response, stripping markdown fences."""
-    fence = re.search(r"```(?:python)?\s*\n(.*?)```", content, re.DOTALL)
-    if fence:
-        return fence.group(1).strip()
-    return content.strip()
+    return normalize_generated_python(response)
 
 
 def validate_game_syntax(code: str) -> bool:

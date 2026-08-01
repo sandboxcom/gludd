@@ -199,6 +199,57 @@ process environment or a second default. Borrowed endpoints use the runtime's
 explicit `AZURE_MODEL`, with one shared fallback constant only when the operator
 does not provide a name.
 
+## Successful chat responses require structured-content normalization
+
+An HTTP 200 from `/v1/chat/completions` proves transport success, not that the
+consumer received one plain string. LangChain's OpenAI adapter deliberately
+supports list-valued message content and typed text blocks
+([LangChain adapter source][langchain-content-blocks]). A LangGraph user report
+shows the resulting operational failure mode and a downstream sanitizer that
+must distinguish typed text blocks from empty/non-text blocks
+([LangGraph issue 4780][langgraph-content-list]). OpenAI-compatible servers also
+have provider-specific response fields: a vLLM/DeepSeek operator demonstrated
+that `reasoning_content` present in the raw HTTP body can be omitted while
+LangChain converts it to `AIMessage` ([LangChain issue 35059][langchain-vllm-reasoning]).
+A Qwen2.5/vLLM operator also found that temperature zero, top-p one, and a fixed
+seed did not make output identical across serving modes, vLLM versions, or GPU
+layouts ([vLLM discussion 17166][vllm-qwen-determinism]). Normalization may
+remove representation noise, but syntax and playable-contract validation must
+still reject incomplete or semantically wrong source.
+
+Gludd therefore has one response normalizer shared by both game-generation
+pipelines. It prefers the retained raw LangChain message, uses LangChain's
+public `.text` adapter when available, and otherwise joins only declared text
+content blocks. Reasoning, image, and tool blocks cannot be stringified into
+Python accidentally. The normalizer accepts case-insensitive `python`, `py`,
+and unlabelled Markdown fences, including a missing closing fence when a
+completion stops at its output limit; a response with no usable text fails
+explicitly before syntax or controls validation. This keeps provider
+representation details out of the executable game contract and prevents the
+two game paths from drifting into different parsers.
+
+### 2026-08-01 live output-quality boundary
+
+The paid run recorded in `games-provision-20260801T173849Z.log` proves that the
+deployed model was consumed: readiness returned HTTP 200 and both independent
+chat-completion requests returned HTTP 200. It does **not** prove playable game
+generation. The FPS response normalized to syntactically valid Pygame source,
+but omitted the required menu, mouse input, and RETURN transition and referenced
+undefined/external game objects. The legacy `game_gen` response was prose that
+ended with “Here’s a basic implementation:” without supplying Python source.
+Both were correctly rejected by the existing syntax/playable-contract gates.
+
+The shared response normalizer does not repair or invent missing game behavior;
+its scope is only provider representation and Markdown boundaries. A future
+quality-repair implementation, if the live acceptance is resumed, must remain
+on the same provisioned Azure model and use a bounded loop: validate each
+candidate, report the exact missing syntax/menu/control/assets contract back to
+that model, retry under an explicit attempt/token/spend cap, and cache only a
+fully validated candidate. It must stream `generation_repair_started`,
+`generation_repair_failed`, and `generation_ready` per fixture and must never
+fall back to a hosted model. Exhaustion is a failed fixture, not permission to
+weaken the controls or fidelity assertions.
+
 ## Why live YouTube downloads are not the acceptance path
 
 The yt-dlp maintainers' long-running [known-issues thread][ytdlp-known] records
@@ -399,3 +450,7 @@ infrastructure failure.
 [apfs-data-volume]: https://apple.stackexchange.com/questions/367158/whats-system-volumes-data
 [apfs-snapshot-report]: https://apple.stackexchange.com/questions/433849
 [apfs-percentage-report]: https://apple.stackexchange.com/questions/352693
+[langchain-content-blocks]: https://github.com/langchain-ai/langchain/blob/master/libs/partners/openai/langchain_openai/chat_models/base.py
+[langgraph-content-list]: https://github.com/langchain-ai/langgraph/issues/4780
+[langchain-vllm-reasoning]: https://github.com/langchain-ai/langchain/issues/35059
+[vllm-qwen-determinism]: https://github.com/vllm-project/vllm/discussions/17166
