@@ -22,6 +22,9 @@ CLAUDE_SETTINGS = ROOT / ".claude" / "settings.json"
 ENFORCE_FLOOR = ROOT / ".opencode" / "plugin" / "enforce-floor.ts"
 ENFORCE_DELEGATE = ROOT / ".opencode" / "plugin" / "enforce-delegate.ts"
 ENFORCE_STOP = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
+ENFORCE_STOP_IMPL = (
+    ROOT / ".opencode" / "plugin" / "impl" / "enforce_stop_impl.ts"
+)
 AGENTS_MD = ROOT / "AGENTS.md"
 
 EXPECTED_FLOOR = 10
@@ -77,7 +80,7 @@ class TestEnforceStopPlugin:
         assert ENFORCE_STOP.exists(), "enforce-stop.ts must exist"
 
     def test_references_dispatch_floor(self):
-        text = ENFORCE_STOP.read_text()
+        text = "\n".join((ENFORCE_STOP.read_text(), ENFORCE_STOP_IMPL.read_text()))
         assert "MIN_DISPATCHES" in text or "UNDER-FLOOR" in text, (
             "enforce-stop.ts must reference dispatch floor (MIN_DISPATCHES or UNDER-FLOOR)"
         )
