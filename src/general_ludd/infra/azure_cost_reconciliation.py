@@ -30,6 +30,41 @@ class AzureCostReconciliationState(StrEnum):
     RECONCILED = "COST_RECONCILED"
 
 
+class AzureCostLedgerState(StrEnum):
+    """Durable delayed-data state persisted across worker restarts."""
+
+    PREDICTED = "PREDICTED"
+    USAGE_PENDING = "USAGE_PENDING"
+    QUERY_DUE = "QUERY_DUE"
+    NO_DATA_RETRY = "NO_DATA_RETRY"
+    PARTIAL = "PARTIAL"
+    PROVISIONAL = "PROVISIONAL"
+    STABLE = "STABLE"
+    FINAL = "FINAL"
+    ADJUSTED = "ADJUSTED"
+    NEEDS_REVIEW = "NEEDS_REVIEW"
+    RETRYABLE_ERROR = "RETRYABLE_ERROR"
+    AUTH_BLOCKED = "AUTH_BLOCKED"
+
+
+AZURE_COST_LEDGER_STATE_RANKS: Mapping[AzureCostLedgerState, int] = MappingProxyType(
+    {
+        AzureCostLedgerState.PREDICTED: 0,
+        AzureCostLedgerState.USAGE_PENDING: 1,
+        AzureCostLedgerState.QUERY_DUE: 2,
+        AzureCostLedgerState.NO_DATA_RETRY: 2,
+        AzureCostLedgerState.RETRYABLE_ERROR: 2,
+        AzureCostLedgerState.AUTH_BLOCKED: 2,
+        AzureCostLedgerState.PARTIAL: 3,
+        AzureCostLedgerState.NEEDS_REVIEW: 3,
+        AzureCostLedgerState.PROVISIONAL: 4,
+        AzureCostLedgerState.STABLE: 5,
+        AzureCostLedgerState.FINAL: 6,
+        AzureCostLedgerState.ADJUSTED: 7,
+    }
+)
+
+
 class AzureCostCohortState(StrEnum):
     """Whether a homogeneous cost cohort supports an accuracy claim."""
 
@@ -70,6 +105,7 @@ class AzureCostPrediction:
     conservative_ceiling_usd: float
     usage_started_at: datetime
     usage_ended_at: datetime
+    prediction_version: int = 1
     tags: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -87,6 +123,8 @@ class AzureCostPrediction:
             raise ValueError("resource_ids must contain at least one ARM resource ID")
         if not self.meter_ids:
             raise ValueError("meter_ids must contain at least one exact meter ID")
+        if isinstance(self.prediction_version, bool) or self.prediction_version <= 0:
+            raise ValueError("prediction_version must be a positive integer")
         normalized_resources = tuple(
             dict.fromkeys(resource_id.strip().lower() for resource_id in self.resource_ids)
         )
@@ -134,6 +172,30 @@ class AzureBilledCostLineItem:
     currency: str
     service_name: str
     charge_type: str
+
+
+@dataclass(frozen=True)
+class AzureActualCostObservation:
+    """Immutable identity and payload for one billed-cost source row."""
+
+    source: str
+    snapshot_id: str
+    row_identity: str
+    cost_usd: float
+    currency: str
+    payload: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        for name in ("source", "snapshot_id", "row_identity", "currency"):
+            _require_text(name, getattr(self, name))
+        if isinstance(self.cost_usd, bool) or not math.isfinite(self.cost_usd):
+            raise ValueError("cost_usd must be finite")
+        normalized_payload: dict[str, object] = {}
+        for key, value in self.payload.items():
+            _require_text("payload key", key)
+            normalized_payload[key] = value
+        object.__setattr__(self, "currency", self.currency.upper())
+        object.__setattr__(self, "payload", MappingProxyType(normalized_payload))
 
 
 class AzureActualCostQueryClient(Protocol):
@@ -508,10 +570,13 @@ def build_cohort_metrics(
 
 
 __all__ = [
+    "AZURE_COST_LEDGER_STATE_RANKS",
+    "AzureActualCostObservation",
     "AzureActualCostQueryClient",
     "AzureBilledCostLineItem",
     "AzureCostCohortMetrics",
     "AzureCostCohortState",
+    "AzureCostLedgerState",
     "AzureCostManagementQueryClient",
     "AzureCostPrediction",
     "AzureCostReconciler",

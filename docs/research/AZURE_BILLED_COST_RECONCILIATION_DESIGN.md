@@ -1,8 +1,9 @@
 # Azure billed-cost reconciliation design
 
-Status: implementation design for AZL.2 (2026-08-01). This document defines
-the delayed half of Azure cost prediction. It does not claim that billed-cost
-reconciliation is implemented.
+Status: implementation design plus durable ledger foundation for AZL.2
+(2026-08-01). This document defines the delayed half of Azure cost prediction.
+It does not claim that Azure export ingestion or final calibrated accuracy is
+implemented.
 
 ## Decision
 
@@ -158,6 +159,32 @@ Gunicorn worker may ingest or reconcile, a dead worker's lease is recoverable,
 and a stale worker cannot publish a second final. This preserves ZDD and lets
 live tests diagnose partial cost results while unrelated tests continue.
 
+### Durable foundation implemented
+
+Migration `038` and `AzureCostReconciliationRepository` implement the smallest
+database-backed portion of this contract without querying Azure:
+
+- `azure_cost_predictions` stores a canonical, fingerprinted prediction
+  envelope keyed by prediction ID and version. Repeating the same write is
+  idempotent; changing that identity under the same key fails closed.
+- due claims use PostgreSQL row locks with `SKIP LOCKED`, a lease expiry, and a
+  monotonically increasing fencing token. SQLite exercises deterministic
+  repository semantics but is not used as evidence for multiworker safety.
+- `azure_cost_observations` retains arbitrary immutable source rows by
+  snapshot and row identity. Its payload is intentionally resource- and
+  meter-agnostic: VM compute, OS/data disks, public IPs, Log Analytics, network,
+  registry, storage, corrections, and future ancillary meters do not require a
+  schema rewrite or a compute-only total.
+- finality rank cannot move backward; `FINAL` requires `STABLE`, and only an
+  explicit `ADJUSTED` transition may supersede it. Every state change inserts
+  a deduplicated outbox event in the caller's same database transaction.
+- the live PostgreSQL multiworker acceptance races separate processes for one
+  due prediction, then proves expired-owner takeover and stale-token rejection.
+
+This is persistence and concurrency infrastructure, not a final cost claim.
+Export parsing, completeness checks, billing-period closure, cohort updates,
+and outbox delivery remain separate rollout slices.
+
 ## Cohort math and acceptance
 
 A cohort is homogeneous on provider, region, exact resource shape/SKU, workload
@@ -240,6 +267,7 @@ evidence for failure modes that official happy-path examples do not emphasize.
 | [Query pagination missing from SDK specification, opened 2023][forum-pagination] | The service returned `nextLink`, but generated SDKs exposed only the first 1,000 rows. | Every selected SDK/API version gets a live pagination contract; page count and continuation evidence are persisted. |
 | [Export failed with opaque diagnostics, opened 2021][forum-export-failure] | A working scheduled export began failing while run history exposed no useful cause. | Export health is its own observable state; Query provides a bounded fallback and opaque failures retain request/run IDs for escalation. |
 | [Invoice ID arrived days after monthly export, opened 2023][forum-invoice-delay] | Invoice metadata was absent from the scheduled file and appeared on a later manual run. | Billing-period close is not immediate finality; wait 72 hours and compare the republished prior-month export. |
+| [Stopped Spot VM still bills attached resources, opened 2023][forum-spot-deallocated-cost] | Operators confirmed that stopped/deallocated or evicted Spot VMs stop compute billing while OS/data disks and allocated public IPs can continue billing. | Warmup and eviction reconciliation retain VM, disk, and IP rows independently; deallocation never closes the ownership window for ancillary meters, and totals are never compute-only. |
 
 ## Sources
 
@@ -259,5 +287,6 @@ evidence for failure modes that official happy-path examples do not emphasize.
 [forum-missing-month]: https://learn.microsoft.com/en-us/answers/questions/712665/azurecostmanagement-api-missing-data
 [forum-new-subscription]: https://learn.microsoft.com/en-us/answers/questions/306268/the-azure-cost-management-api-usage-query-error-no
 [forum-pagination]: https://github.com/Azure/azure-rest-api-specs/issues/23405
+[forum-spot-deallocated-cost]: https://learn.microsoft.com/en-us/answers/questions/1358675/how-is-the-spot-price-calculated
 [python-sdk]: https://learn.microsoft.com/en-us/python/api/overview/azure/mgmt-costmanagement-readme?view=azure-python
 [query-api]: https://learn.microsoft.com/en-us/rest/api/cost-management/query/usage?view=rest-cost-management-2025-03-01

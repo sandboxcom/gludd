@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from general_ludd.infra.azure_cost_reconciliation import (
+    AzureActualCostObservation,
     AzureBilledCostLineItem,
     AzureCostCohortState,
     AzureCostManagementQueryClient,
@@ -114,6 +115,7 @@ class TestPredictionIdentity:
             ("predicted_cost_usd", 0.0),
             ("predicted_cost_usd", float("nan")),
             ("conservative_ceiling_usd", 1.49),
+            ("prediction_version", 0),
         ],
     )
     def test_rejects_incomplete_or_unsafe_prediction_identity(
@@ -137,6 +139,20 @@ class TestPredictionIdentity:
             "Consumption-GPU-NC8as-T4",
             "fps-e2e",
         )
+
+    def test_actual_cost_observation_preserves_arbitrary_ancillary_payload(self) -> None:
+        observation = AzureActualCostObservation(
+            source="actual-cost-export",
+            snapshot_id="run-1/etag-a",
+            row_identity="public-ip-line",
+            cost_usd=-0.25,
+            currency="usd",
+            payload={"service": "Public IP", "resource_id": _RESOURCE},
+        )
+        assert observation.currency == "USD"
+        assert observation.payload["service"] == "Public IP"
+        with pytest.raises(ValueError, match="finite"):
+            replace(observation, cost_usd=float("nan"))
 
 
 class TestDelayedReconciliation:
