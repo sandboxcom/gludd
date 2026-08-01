@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
+import general_ludd.cloud.video_compare as video_compare
 from general_ludd.cloud.video_compare import (
     _HAS_CV2,
+    REFERENCE_VIDEO_SPECS,
     REFERENCE_VIDEOS,
     compare_gameplay,
+    compare_gameplay_to_reference,
     compute_motion_signature,
     compute_ssim,
     motion_correlation,
@@ -142,3 +147,123 @@ class TestReferenceVideos:
         for name, url in REFERENCE_VIDEOS.items():
             assert url.startswith("https://www.youtube.com/watch?v="), f"Invalid URL format for {name}: {url}"
             assert len(url) > 30, f"URL too short for {name}: {url}"
+
+    def test_fps_reference_manifest_is_bounded_and_non_redistributable(self) -> None:
+        for game_name in ("doom_e1m1_hallway", "quake_dm6_arena"):
+            source = REFERENCE_VIDEO_SPECS[game_name]
+            assert REFERENCE_VIDEOS[game_name] == source.source_url
+            assert source.source_url.endswith(source.video_id)
+            assert 0.0 < source.clip_duration_seconds <= 15.0
+            assert 0 < source.sample_frame_count <= 30
+            assert source.redistribution_allowed is False
+            assert source.video_id in source.cache_filename
+
+    def test_offline_cache_miss_never_downloads(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        def fail_download(*args: object, **kwargs: object) -> str:
+            raise AssertionError("offline comparison attempted a network download")
+
+        monkeypatch.setattr(video_compare, "download_youtube_video", fail_download)
+        generated = [_make_frame(64, 64, i * 10) for i in range(6)]
+
+        result = compare_gameplay_to_reference(
+            "doom_e1m1_hallway",
+            generated,
+            cache_dir=tmp_path,
+        )
+
+        assert result.game_name == "doom_e1m1_hallway"
+        assert result.source_video_id == "YUU7d93IUBE"
+        assert result.source_url == REFERENCE_VIDEOS[result.game_name]
+        assert result.cache_status == "missing"
+        assert result.network_used is False
+        assert result.generated_frame_count == 6
+        assert result.reference_frame_count == 0
+        assert result.compared_frame_count == 0
+        assert result.threshold == 0.35
+        assert result.passed is False
+
+    def test_cached_clip_produces_auditable_comparison(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        source = REFERENCE_VIDEO_SPECS["doom_e1m1_hallway"]
+        cache_path = tmp_path / source.cache_filename
+        cache_path.write_bytes(b"locally cached test clip")
+        generated = [_make_frame(64, 64, i * 10) for i in range(6)]
+        sampled: dict[str, object] = {}
+
+        def fake_extract(video_path: str | Path, num_frames: int, interval: float) -> list[np.ndarray]:
+            sampled.update(path=Path(video_path), count=num_frames, interval=interval)
+            return [frame.copy() for frame in generated]
+
+        monkeypatch.setattr(video_compare, "extract_frames", fake_extract)
+        monkeypatch.setattr(video_compare, "resize_frames", lambda frames, target_size=(800, 600): frames)
+
+        result = compare_gameplay_to_reference(
+            "doom_e1m1_hallway",
+            generated,
+            cache_dir=tmp_path,
+        )
+
+        assert sampled == {
+            "path": cache_path,
+            "count": source.sample_frame_count,
+            "interval": source.sample_interval_seconds,
+        }
+        assert result.cache_status == "cached"
+        assert result.network_used is False
+        assert result.reference_frame_count == 6
+        assert result.generated_frame_count == 6
+        assert result.compared_frame_count == 6
+        assert result.mean_ssim == 1.0
+        assert result.threshold == source.comparison_threshold
+        assert result.passed is True
+
+    def test_network_opt_in_requests_only_manifest_clip(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        source = REFERENCE_VIDEO_SPECS["quake_dm6_arena"]
+        requested: dict[str, object] = {}
+
+        def fake_download(
+            url: str,
+            output_path: str | Path,
+            *,
+            clip_start_seconds: float,
+            clip_duration_seconds: float,
+        ) -> str:
+            requested.update(
+                url=url,
+                path=Path(output_path),
+                start=clip_start_seconds,
+                duration=clip_duration_seconds,
+            )
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(output_path).write_bytes(b"bounded test clip")
+            return str(output_path)
+
+        generated = [_make_frame(64, 64, i * 10) for i in range(6)]
+        monkeypatch.setattr(video_compare, "download_youtube_video", fake_download)
+        monkeypatch.setattr(video_compare, "extract_frames", lambda *args, **kwargs: generated)
+        monkeypatch.setattr(video_compare, "resize_frames", lambda frames, target_size=(800, 600): frames)
+
+        result = compare_gameplay_to_reference(
+            "quake_dm6_arena",
+            generated,
+            cache_dir=tmp_path,
+            allow_network=True,
+        )
+
+        assert requested == {
+            "url": source.source_url,
+            "path": tmp_path / source.cache_filename,
+            "start": source.clip_start_seconds,
+            "duration": source.clip_duration_seconds,
+        }
+        assert result.cache_status == "downloaded"
+        assert result.network_used is True
+        assert result.source_video_id == source.video_id
+        assert result.passed is True

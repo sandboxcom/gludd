@@ -8,29 +8,32 @@ from __future__ import annotations
 
 import logging
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+from numpy.typing import NDArray
 
 logger = logging.getLogger(__name__)
+Frame = NDArray[np.uint8]
 
 _HAS_SKIMAGE: bool
 try:
-    from skimage.metrics import structural_similarity  # type: ignore[import-untyped]
+    from skimage.metrics import structural_similarity  # type: ignore[import-not-found]
 
     _HAS_SKIMAGE = True
 except ImportError:  # pragma: no cover
-    structural_similarity = None  # type: ignore[assignment]
+    structural_similarity = None
     _HAS_SKIMAGE = False
 
 _HAS_CV2: bool
 try:
-    import cv2  # type: ignore[import-untyped]
+    import cv2  # type: ignore[import-not-found]
 
     _HAS_CV2 = True
 except ImportError:  # pragma: no cover
-    cv2 = None  # type: ignore[assignment]
+    cv2 = None
     _HAS_CV2 = False
 
 _HAS_YTDLP: bool
@@ -39,15 +42,67 @@ try:
 
     _HAS_YTDLP = True
 except ImportError:  # pragma: no cover
-    yt_dlp = None  # type: ignore[assignment]
+    yt_dlp = None
     _HAS_YTDLP = False
 
+@dataclass(frozen=True)
+class ReferenceVideoSpec:
+    """Auditable, bounded use of an online gameplay reference."""
+
+    game_name: str
+    source_url: str
+    video_id: str
+    clip_start_seconds: float = 0.0
+    clip_duration_seconds: float = 12.0
+    sample_frame_count: int = 30
+    sample_interval_seconds: float = 0.4
+    comparison_threshold: float = 0.35
+    redistribution_allowed: bool = False
+
+    @property
+    def cache_filename(self) -> str:
+        """Stable user-cache filename; clips are never checked into the repository."""
+        return f"{self.game_name}-{self.video_id}.mp4"
+
+
+@dataclass(frozen=True)
+class ReferenceComparisonResult:
+    """Comparison metrics carrying their source and sampling provenance."""
+
+    game_name: str
+    source_url: str
+    source_video_id: str
+    cache_path: str
+    cache_status: str
+    network_used: bool
+    generated_frame_count: int
+    reference_frame_count: int
+    compared_frame_count: int
+    threshold: float
+    mean_ssim: float
+    motion_correlation: float
+    per_frame_ssim: tuple[float, ...]
+    passed: bool
+
+
+def _reference_spec(game_name: str, video_id: str) -> ReferenceVideoSpec:
+    return ReferenceVideoSpec(
+        game_name=game_name,
+        source_url=f"https://www.youtube.com/watch?v={video_id}",
+        video_id=video_id,
+    )
+
+
+REFERENCE_VIDEO_SPECS: dict[str, ReferenceVideoSpec] = {
+    "doom_e1m1_hallway": _reference_spec("doom_e1m1_hallway", "YUU7d93IUBE"),
+    "quake_dm6_arena": _reference_spec("quake_dm6_arena", "h_RmqpBk7bU"),
+    "wipeout_racing": _reference_spec("wipeout_racing", "ZnTwZr6r0Hk"),
+    "descent_tunnel": _reference_spec("descent_tunnel", "GbWtHn3w8vA"),
+    "rogue_dungeon": _reference_spec("rogue_dungeon", "wFikvjM5H1s"),
+}
+
 REFERENCE_VIDEOS: dict[str, str] = {
-    "doom_e1m1_hallway": "https://www.youtube.com/watch?v=YUU7d93IUBE",
-    "quake_dm6_arena": "https://www.youtube.com/watch?v=h_RmqpBk7bU",
-    "wipeout_racing": "https://www.youtube.com/watch?v=ZnTwZr6r0Hk",
-    "descent_tunnel": "https://www.youtube.com/watch?v=GbWtHn3w8vA",
-    "rogue_dungeon": "https://www.youtube.com/watch?v=wFikvjM5H1s",
+    game_name: spec.source_url for game_name, spec in REFERENCE_VIDEO_SPECS.items()
 }
 
 
@@ -63,12 +118,20 @@ def _ensure_cv2() -> None:
         )
 
 
-def download_youtube_video(url: str, output_path: str | Path) -> str:
+def download_youtube_video(
+    url: str,
+    output_path: str | Path,
+    *,
+    clip_start_seconds: float = 0.0,
+    clip_duration_seconds: float | None = None,
+) -> str:
     """Download a YouTube video using yt-dlp Python API.
 
     Args:
         url: YouTube video URL.
         output_path: Directory or file path for the downloaded video.
+        clip_start_seconds: First source second to retain.
+        clip_duration_seconds: Optional bounded duration; omitted only for legacy callers.
 
     Returns:
         Absolute path to the downloaded video file.
@@ -95,7 +158,16 @@ def download_youtube_video(url: str, output_path: str | Path) -> str:
         "quiet": True,
         "no_warnings": True,
         "merge_output_format": "mp4",
+        "noplaylist": True,
     }
+    if clip_start_seconds < 0:
+        raise ValueError("clip_start_seconds must be non-negative")
+    if clip_duration_seconds is not None:
+        if clip_duration_seconds <= 0:
+            raise ValueError("clip_duration_seconds must be positive")
+        clip_end_seconds = clip_start_seconds + clip_duration_seconds
+        ydl_opts["download_sections"] = f"*{clip_start_seconds:.3f}-{clip_end_seconds:.3f}"
+        ydl_opts["force_keyframes_at_cuts"] = True
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -120,7 +192,7 @@ def extract_frames(
     video_path: str | Path,
     num_frames: int = 30,
     interval: float = 1.0,
-) -> list[np.ndarray]:
+) -> list[Frame]:
     """Extract frames from a video file at regular intervals.
 
     Args:
@@ -143,7 +215,7 @@ def extract_frames(
     frame_interval = max(1, int(fps * interval))
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    frames: list[np.ndarray] = []
+    frames: list[Frame] = []
     frame_idx = 0
     extracted = 0
 
@@ -161,9 +233,9 @@ def extract_frames(
 
 
 def resize_frames(
-    frames: list[np.ndarray],
+    frames: list[Frame],
     target_size: tuple[int, int] = (800, 600),
-) -> list[np.ndarray]:
+) -> list[Frame]:
     """Resize frames to a consistent target size for comparison.
 
     Args:
@@ -174,13 +246,13 @@ def resize_frames(
         List of resized frames.
     """
     _ensure_cv2()
-    resized: list[np.ndarray] = []
+    resized: list[Frame] = []
     for frame in frames:
         resized.append(cv2.resize(frame, target_size))
     return resized
 
 
-def compute_ssim(frame_a: np.ndarray, frame_b: np.ndarray) -> float:
+def compute_ssim(frame_a: Frame, frame_b: Frame) -> float:
     """Compute Structural Similarity Index between two frames.
 
     Uses skimage if available, falls back to pixel-difference approximation.
@@ -217,7 +289,7 @@ def compute_ssim(frame_a: np.ndarray, frame_b: np.ndarray) -> float:
 
 
 def compute_motion_signature(
-    frames: list[np.ndarray],
+    frames: list[Frame],
     window: int = 5,
 ) -> list[float]:
     """Capture motion patterns across a sequence of frames.
@@ -265,8 +337,8 @@ def motion_correlation(sig_a: list[float], sig_b: list[float]) -> float:
 
 
 def compare_gameplay(
-    gen_frames: list[np.ndarray],
-    ref_frames: list[np.ndarray],
+    gen_frames: list[Frame],
+    ref_frames: list[Frame],
     threshold: float = 0.35,
 ) -> dict[str, Any]:
     """Compare AI-generated game frames against reference gameplay frames.
@@ -316,9 +388,95 @@ def compare_gameplay(
     }
 
 
+def compare_gameplay_to_reference(
+    game_name: str,
+    generated_frames: list[Frame],
+    cache_dir: str | Path,
+    *,
+    allow_network: bool = False,
+) -> ReferenceComparisonResult:
+    """Compare generated frames to an approved, bounded reference clip.
+
+    The cache is read-only by default. Network access must be explicitly enabled,
+    and even then only the manifest's short clip window is requested. Cached media
+    remains outside the repository and is marked non-redistributable by the spec.
+    """
+    try:
+        source = REFERENCE_VIDEO_SPECS[game_name]
+    except KeyError as exc:
+        raise ValueError(f"No approved reference video for game: {game_name}") from exc
+
+    cache_path = Path(cache_dir) / source.cache_filename
+    network_used = False
+    cache_status = "cached" if cache_path.is_file() else "missing"
+    resolved_path: Path | None = cache_path if cache_status == "cached" else None
+
+    if resolved_path is None and allow_network:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        downloaded_path = download_youtube_video(
+            source.source_url,
+            cache_path,
+            clip_start_seconds=source.clip_start_seconds,
+            clip_duration_seconds=source.clip_duration_seconds,
+        )
+        resolved_path = Path(downloaded_path)
+        network_used = True
+        cache_status = "downloaded"
+
+    if resolved_path is None:
+        return ReferenceComparisonResult(
+            game_name=game_name,
+            source_url=source.source_url,
+            source_video_id=source.video_id,
+            cache_path=str(cache_path),
+            cache_status=cache_status,
+            network_used=network_used,
+            generated_frame_count=len(generated_frames),
+            reference_frame_count=0,
+            compared_frame_count=0,
+            threshold=source.comparison_threshold,
+            mean_ssim=0.0,
+            motion_correlation=0.0,
+            per_frame_ssim=(),
+            passed=False,
+        )
+
+    reference_frames = extract_frames(
+        resolved_path,
+        num_frames=source.sample_frame_count,
+        interval=source.sample_interval_seconds,
+    )
+    comparison = compare_gameplay(
+        generated_frames,
+        reference_frames,
+        threshold=source.comparison_threshold,
+    )
+    per_frame_ssim = tuple(float(value) for value in comparison["per_frame_ssim"])
+    return ReferenceComparisonResult(
+        game_name=game_name,
+        source_url=source.source_url,
+        source_video_id=source.video_id,
+        cache_path=str(resolved_path),
+        cache_status=cache_status,
+        network_used=network_used,
+        generated_frame_count=len(generated_frames),
+        reference_frame_count=len(reference_frames),
+        compared_frame_count=int(comparison["frame_count"]),
+        threshold=source.comparison_threshold,
+        mean_ssim=float(comparison["mean_ssim"]),
+        motion_correlation=float(comparison["motion_correlation"]),
+        per_frame_ssim=per_frame_ssim,
+        passed=bool(comparison["pass"]),
+    )
+
+
 __all__ = [
     "REFERENCE_VIDEOS",
+    "REFERENCE_VIDEO_SPECS",
+    "ReferenceComparisonResult",
+    "ReferenceVideoSpec",
     "compare_gameplay",
+    "compare_gameplay_to_reference",
     "compute_motion_signature",
     "compute_ssim",
     "download_youtube_video",

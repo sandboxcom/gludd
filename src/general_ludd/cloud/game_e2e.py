@@ -18,41 +18,45 @@ import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
+from numpy.typing import NDArray
+
+from general_ludd.cloud.video_compare import REFERENCE_VIDEO_SPECS, compare_gameplay_to_reference
 
 if TYPE_CHECKING:
     from general_ludd.models.gateway import ModelGateway
 
 logger = logging.getLogger(__name__)
+Frame = NDArray[np.uint8]
 
 # ── Optional dependency detection ──────────────────────────────────────────
 _HAS_PYGAME: bool
 try:
-    import pygame  # type: ignore[import-untyped]
+    import pygame  # type: ignore[import-not-found]
 
     _HAS_PYGAME = True
 except ImportError:  # pragma: no cover
-    pygame = None  # type: ignore[assignment]
+    pygame = None
     _HAS_PYGAME = False
 
 _HAS_SKIMAGE: bool
 try:
-    from skimage.metrics import structural_similarity  # type: ignore[import-untyped]
+    from skimage.metrics import structural_similarity  # type: ignore[import-not-found]
 
     _HAS_SKIMAGE = True
 except ImportError:  # pragma: no cover
-    structural_similarity = None  # type: ignore[assignment]
+    structural_similarity = None
     _HAS_SKIMAGE = False
 
 _HAS_CV2: bool
 try:
-    import cv2  # type: ignore[import-untyped]
+    import cv2  # type: ignore[import-not-found]
 
     _HAS_CV2 = True
 except ImportError:  # pragma: no cover
-    cv2 = None  # type: ignore[assignment]
+    cv2 = None
     _HAS_CV2 = False
 
 
@@ -70,6 +74,8 @@ class GameSpec:
     similarity_threshold: float
     prompt_template: str
     reference_video_url: str | None = None
+    required_controls: tuple[str, ...] = ()
+    requires_menu: bool = False
 
 
 # ── Predefined game specs ──────────────────────────────────────────────────
@@ -84,7 +90,7 @@ GAME_SPECS: list[GameSpec] = [
             "Player can move with WASD and look with mouse."
         ),
         expected_frames=30,
-        similarity_threshold=0.35,
+        similarity_threshold=REFERENCE_VIDEO_SPECS["doom_e1m1_hallway"].comparison_threshold,
         prompt_template=(
             "Write a complete Python game using pygame that renders a first-person "
             "shooter scene.\n"
@@ -94,12 +100,16 @@ GAME_SPECS: list[GameSpec] = [
             "- Red/brown floor\n"
             "- Ceiling with periodic light sources\n"
             "- A green glowing pickup item at the far end of the hallway\n"
-            "- Player can look around with mouse and move forward/backward with W/S\n"
+            "- Start in a visible menu that lists controls; RETURN starts play and ESCAPE returns to the menu\n"
+            "- Player uses W/A/S/D to move and strafes while looking around with the mouse\n"
             "- Rendering should use raycasting or simple 3D projection\n"
             "- Window size 800x600\n"
             "- Run for at least 30 frames then exit\n"
             "The game must be self-contained in one file and runnable with: python game.py\n"
         ),
+        reference_video_url=REFERENCE_VIDEO_SPECS["doom_e1m1_hallway"].source_url,
+        required_controls=("w", "a", "s", "d", "mouse", "escape", "return"),
+        requires_menu=True,
     ),
     GameSpec(
         name="quake_dm6_arena",
@@ -110,7 +120,7 @@ GAME_SPECS: list[GameSpec] = [
             "palette, flickering lights. Player can jump between platforms."
         ),
         expected_frames=30,
-        similarity_threshold=0.35,
+        similarity_threshold=REFERENCE_VIDEO_SPECS["quake_dm6_arena"].comparison_threshold,
         prompt_template=(
             "Write a complete Python game using pygame that renders a dark industrial "
             "arena.\n"
@@ -120,12 +130,16 @@ GAME_SPECS: list[GameSpec] = [
             "- A central pillar/column structure\n"
             "- Orange/brown color palette\n"
             "- Flickering point lights on platforms\n"
-            "- Player can look with mouse and jump between platforms with SPACE\n"
+            "- Start in a visible menu that lists controls; RETURN starts play and ESCAPE returns to the menu\n"
+            "- Player uses W/A/S/D to move, looks with the mouse, and jumps with SPACE\n"
             "- Simple gravity and platform collision\n"
             "- Window 800x600\n"
             "- Run for 30 frames then exit\n"
             "Self-contained, runnable with: python game.py\n"
         ),
+        reference_video_url=REFERENCE_VIDEO_SPECS["quake_dm6_arena"].source_url,
+        required_controls=("w", "a", "s", "d", "mouse", "space", "escape", "return"),
+        requires_menu=True,
     ),
 ]
 
@@ -156,8 +170,8 @@ class GameGenerator:
         return _extract_python_code(str(content))
 
     @staticmethod
-    def validate_game_code(code: str) -> bool:
-        """Check code for basic syntax validity, pygame imports, and game loop."""
+    def validate_game_code(code: str, spec: GameSpec | None = None) -> bool:
+        """Check syntax and, when supplied, the playable game contract."""
         try:
             tree = ast.parse(code)
         except SyntaxError:
@@ -187,7 +201,14 @@ class GameGenerator:
             elif isinstance(node, ast.While):
                 has_game_loop = True
 
-        return has_pygame_import and has_game_loop and has_pygame_init
+        if not (has_pygame_import and has_game_loop and has_pygame_init):
+            return False
+        if spec is None:
+            return True
+        if spec.requires_menu and not _has_rendered_menu_state(tree):
+            return False
+        observed_controls = _collect_pygame_controls(tree)
+        return all(control.lower() in observed_controls for control in spec.required_controls)
 
     @staticmethod
     def save_game(code: str, path: str) -> None:
@@ -207,6 +228,55 @@ def _extract_python_code(content: str) -> str:
     return content.strip()
 
 
+_PYGAME_KEY_CONTROLS: dict[str, str] = {
+    "k_w": "w",
+    "k_a": "a",
+    "k_s": "s",
+    "k_d": "d",
+    "k_space": "space",
+    "k_escape": "escape",
+    "k_return": "return",
+    "k_enter": "return",
+    "k_kp_enter": "return",
+}
+_MENU_STATES = frozenset({"menu", "main_menu", "pause", "paused", "start"})
+
+
+def _collect_pygame_controls(tree: ast.AST) -> set[str]:
+    """Return canonical controls referenced by executable pygame code."""
+    controls: set[str] = set()
+    for node in ast.walk(tree):
+        name = ""
+        if isinstance(node, ast.Attribute):
+            name = node.attr.lower()
+        elif isinstance(node, ast.Name):
+            name = node.id.lower()
+        if name in _PYGAME_KEY_CONTROLS:
+            controls.add(_PYGAME_KEY_CONTROLS[name])
+        if name in {"mouse", "mousemotion", "get_rel", "get_pos"}:
+            controls.add("mouse")
+    return controls
+
+
+def _has_rendered_menu_state(tree: ast.AST) -> bool:
+    """Require both an initial menu value and a control-flow branch for it."""
+    has_initial_state = False
+    has_menu_branch = False
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            value = node.value
+            if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                has_initial_state = value.value.lower() in _MENU_STATES or has_initial_state
+        elif isinstance(node, (ast.If, ast.While)):
+            states = {
+                child.value.lower()
+                for child in ast.walk(node.test)
+                if isinstance(child, ast.Constant) and isinstance(child.value, str)
+            }
+            has_menu_branch = bool(states & _MENU_STATES) or has_menu_branch
+    return has_initial_state and has_menu_branch
+
+
 # ── GameRunner ──────────────────────────────────────────────────────────────
 
 
@@ -216,7 +286,7 @@ class GameRunner:
     def __init__(self) -> None:
         self._processes: list[subprocess.Popen[Any]] = []
 
-    def run_headless(self, game_path: str, num_frames: int) -> list[np.ndarray]:
+    def run_headless(self, game_path: str, num_frames: int) -> list[Frame]:
         """Run the game in headless mode using pygame with dummy video driver."""
         if not _HAS_PYGAME:
             raise ImportError("pygame is required for game execution")
@@ -225,7 +295,7 @@ class GameRunner:
         env["SDL_VIDEODRIVER"] = "dummy"
         env["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
 
-        frames: list[np.ndarray] = []
+        frames: list[Frame] = []
 
         proc = subprocess.Popen(
             [sys.executable, str(game_path)],
@@ -245,7 +315,7 @@ class GameRunner:
 
         return frames
 
-    def run_headless_inline(self, game_path: str, num_frames: int) -> list[np.ndarray]:
+    def run_headless_inline(self, game_path: str, num_frames: int) -> list[Frame]:
         """Run the game by importing and calling it in-process for frame capture.
 
         This method hooks pygame's display to capture frames into memory
@@ -257,7 +327,7 @@ class GameRunner:
         os.environ["SDL_VIDEODRIVER"] = "dummy"
         os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
 
-        frames: list[np.ndarray] = []
+        frames: list[Frame] = []
 
         display_surface = pygame.display.set_mode((800, 600))
 
@@ -286,8 +356,8 @@ class GameRunner:
                 raise SystemExit(0)
             original_update(*args, **kwargs)
 
-        pygame.display.flip = _capturing_flip  # type: ignore[method-assign]
-        pygame.display.update = _capturing_update  # type: ignore[method-assign]
+        pygame.display.flip = _capturing_flip
+        pygame.display.update = _capturing_update
 
         try:
             import importlib.util
@@ -301,8 +371,8 @@ class GameRunner:
             with contextlib.suppress(SystemExit):
                 spec.loader.exec_module(module)
         finally:
-            pygame.display.flip = original_flip  # type: ignore[method-assign]
-            pygame.display.update = original_update  # type: ignore[method-assign]
+            pygame.display.flip = original_flip
+            pygame.display.update = original_update
 
         runner = self
         for surf in captured[:num_frames]:
@@ -311,12 +381,12 @@ class GameRunner:
         return frames
 
     @staticmethod
-    def capture_frame(surface: Any) -> np.ndarray:
+    def capture_frame(surface: Any) -> Frame:
         """Convert a pygame Surface to a numpy array (RGB)."""
         if not _HAS_PYGAME:
             raise ImportError("pygame is required for frame capture")
         arr = pygame.surfarray.array3d(surface)
-        return arr.transpose(1, 0, 2)
+        return cast(Frame, arr.transpose(1, 0, 2))
 
     def cleanup(self) -> None:
         """Kill any lingering game processes."""
@@ -337,7 +407,7 @@ class FrameComparator:
     """Compares generated frames against reference using SSIM and PSNR."""
 
     @staticmethod
-    def compute_ssim(frame1: np.ndarray, frame2: np.ndarray) -> float:
+    def compute_ssim(frame1: Frame, frame2: Frame) -> float:
         """Structural similarity using skimage if available, else pixel-difference fallback."""
         if frame1.shape != frame2.shape:
             return 0.0
@@ -363,7 +433,7 @@ class FrameComparator:
         return float(1.0 / (1.0 + mse / max_val))
 
     @staticmethod
-    def compute_psnr(frame1: np.ndarray, frame2: np.ndarray) -> float:
+    def compute_psnr(frame1: Frame, frame2: Frame) -> float:
         """Peak signal-to-noise ratio between two frames."""
         if frame1.shape != frame2.shape:
             return 0.0
@@ -380,8 +450,8 @@ class FrameComparator:
 
     @staticmethod
     def compare_frames(
-        generated: list[np.ndarray],
-        reference: list[np.ndarray],
+        generated: list[Frame],
+        reference: list[Frame],
         threshold: float = 0.4,
     ) -> dict[str, Any]:
         """Compare two sequences of frames, returning mean SSIM, mean PSNR, and pass/fail."""
@@ -417,7 +487,7 @@ class FrameComparator:
         }
 
     @staticmethod
-    def load_reference_frames(video_path: str) -> list[np.ndarray]:
+    def load_reference_frames(video_path: str) -> list[Frame]:
         """Extract frames from a reference video using cv2."""
         if not _HAS_CV2:
             raise ImportError("opencv-python (cv2) is required for video frame extraction")
@@ -426,7 +496,7 @@ class FrameComparator:
         if not cap.isOpened():
             raise FileNotFoundError(f"Cannot open video: {video_path}")
 
-        frames: list[np.ndarray] = []
+        frames: list[Frame] = []
         while True:
             ret, frame = cap.read()
             if not ret:
@@ -452,6 +522,10 @@ class DeploymentConfig:
     api_key: str = ""
     model: str = ""
     provision_timeout_seconds: int = 600
+    reference_cache_dir: str = field(
+        default_factory=lambda: str(Path.home() / ".cache" / "gludd" / "reference-videos")
+    )
+    allow_reference_network: bool = False
 
 
 @dataclass
@@ -469,6 +543,13 @@ class E2EResult:
     errors: list[str] = field(default_factory=list)
     generated_code_path: str = ""
     generated_code: str = ""
+    reference_source_url: str = ""
+    reference_video_id: str = ""
+    reference_cache_status: str = ""
+    reference_frames_sampled: int = 0
+    reference_network_used: bool = False
+    comparison_threshold: float = 0.0
+    motion_correlation: float = 0.0
 
 
 class AzureGameE2E:
@@ -494,7 +575,10 @@ class AzureGameE2E:
             result.generated_code = code
             result.code_generated = True
 
-            result.code_valid = GameGenerator.validate_game_code(code)
+            result.code_valid = GameGenerator.validate_game_code(code, spec)
+            if not result.code_valid:
+                result.errors.append("Generated game failed its required controls/menu contract")
+                return result
 
             with tempfile.TemporaryDirectory() as tmpdir:
                 game_path = os.path.join(tmpdir, "game.py")
@@ -506,25 +590,38 @@ class AzureGameE2E:
                     result.frames_captured = len(frames)
                     result.game_ran = len(frames) > 0
 
-                    reference_frames: list[np.ndarray] = []
-                    if spec.reference_video_url and _HAS_CV2:
+                    if spec.reference_video_url:
                         try:
-                            reference_frames = self.comparator.load_reference_frames(spec.reference_video_url)
+                            comparison = compare_gameplay_to_reference(
+                                spec.name,
+                                frames,
+                                self.deploy_config.reference_cache_dir,
+                                allow_network=self.deploy_config.allow_reference_network,
+                            )
+                            result.reference_source_url = comparison.source_url
+                            result.reference_video_id = comparison.source_video_id
+                            result.reference_cache_status = comparison.cache_status
+                            result.reference_frames_sampled = comparison.reference_frame_count
+                            result.reference_network_used = comparison.network_used
+                            result.comparison_threshold = comparison.threshold
+                            result.mean_ssim = comparison.mean_ssim
+                            result.motion_correlation = comparison.motion_correlation
+                            result.comparison_pass = comparison.passed
+                            if comparison.cache_status == "missing":
+                                result.errors.append(
+                                    "Reference clip is not cached; network retrieval is disabled"
+                                )
                         except Exception as exc:
-                            result.errors.append(f"Reference video load failed: {exc}")
-
-                    if reference_frames or (spec.reference_video_url is None and frames):
-                        comparison = self.comparator.compare_frames(
-                            frames, reference_frames or frames, spec.similarity_threshold
+                            result.errors.append(f"Reference comparison failed: {exc}")
+                    elif frames:
+                        self_comparison = self.comparator.compare_frames(
+                            frames,
+                            frames,
+                            spec.similarity_threshold,
                         )
-                        if reference_frames:
-                            result.mean_ssim = comparison["mean_ssim"]
-                            result.mean_psnr = comparison["mean_psnr"]
-                            result.comparison_pass = comparison["pass"]
-                        else:
-                            result.mean_ssim = 1.0
-                            result.mean_psnr = float("inf")
-                            result.comparison_pass = True
+                        result.mean_ssim = self_comparison["mean_ssim"]
+                        result.mean_psnr = self_comparison["mean_psnr"]
+                        result.comparison_pass = self_comparison["pass"]
                 else:
                     result.errors.append("pygame not installed — cannot run game")
 
@@ -546,6 +643,13 @@ class AzureGameE2E:
             "mean_ssim": results.mean_ssim,
             "mean_psnr": results.mean_psnr,
             "comparison_pass": results.comparison_pass,
+            "comparison_threshold": results.comparison_threshold,
+            "motion_correlation": results.motion_correlation,
+            "reference_source_url": results.reference_source_url,
+            "reference_video_id": results.reference_video_id,
+            "reference_cache_status": results.reference_cache_status,
+            "reference_frames_sampled": results.reference_frames_sampled,
+            "reference_network_used": results.reference_network_used,
             "errors": results.errors,
         }
 

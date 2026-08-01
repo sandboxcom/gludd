@@ -2,16 +2,24 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, cast
+
 import numpy as np
 import pytest
 
+import general_ludd.cloud.game_e2e as game_e2e
 from general_ludd.cloud.game_e2e import (
     GAME_SPECS,
+    AzureGameE2E,
+    DeploymentConfig,
     FrameComparator,
     GameGenerator,
     GameRunner,
     GameSpec,
 )
+from general_ludd.cloud.video_compare import REFERENCE_VIDEO_SPECS, ReferenceComparisonResult
 
 
 class TestGameSpec:
@@ -39,6 +47,27 @@ class TestGameSpec:
     def test_all_specs_have_prompt_template(self) -> None:
         for spec in GAME_SPECS:
             assert spec.prompt_template, f"{spec.name} missing prompt_template"
+
+    def test_fps_specs_require_complete_controls_and_menu(self) -> None:
+        for spec in GAME_SPECS:
+            if spec.genre != "fps":
+                continue
+            assert spec.requires_menu is True
+            assert {"w", "a", "s", "d", "mouse", "escape", "return"} <= set(spec.required_controls)
+            prompt = spec.prompt_template.lower()
+            assert "menu" in prompt
+            assert "w/a/s/d" in prompt
+            assert "mouse" in prompt
+            assert "return" in prompt
+            assert "escape" in prompt
+
+    def test_fps_specs_use_the_reference_video_manifest(self) -> None:
+        for spec in GAME_SPECS:
+            if spec.genre != "fps":
+                continue
+            source = REFERENCE_VIDEO_SPECS[spec.name]
+            assert spec.reference_video_url == source.source_url
+            assert spec.similarity_threshold == source.comparison_threshold
 
 
 class TestFrameComparatorUnit:
@@ -112,6 +141,62 @@ pygame.quit()
 """
         assert gen.validate_game_code(code) is False
 
+    def test_validate_fps_contract_rejects_missing_controls_and_menu(self) -> None:
+        gen = GameGenerator(None)  # type: ignore[arg-type]
+        spec = GAME_SPECS[0]
+        code = """
+import pygame
+pygame.init()
+running = True
+while running:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+    pygame.display.flip()
+pygame.quit()
+"""
+        assert gen.validate_game_code(code, spec) is False
+
+    def test_validate_fps_contract_accepts_playable_controls_and_menu(self) -> None:
+        gen = GameGenerator(None)  # type: ignore[arg-type]
+        spec = GAME_SPECS[0]
+        code = """
+import pygame
+pygame.init()
+screen = pygame.display.set_mode((800, 600))
+running = True
+state = "menu"
+yaw = 0
+player_x = 0
+player_y = 0
+while running:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_RETURN:
+                state = "playing"
+            elif event.key == pygame.K_ESCAPE:
+                state = "menu"
+        elif event.type == pygame.MOUSEMOTION and state == "playing":
+            yaw += event.rel[0]
+    keys = pygame.key.get_pressed()
+    if state == "playing":
+        if keys[pygame.K_w]:
+            player_y -= 1
+        if keys[pygame.K_s]:
+            player_y += 1
+        if keys[pygame.K_a]:
+            player_x -= 1
+        if keys[pygame.K_d]:
+            player_x += 1
+    if state == "menu":
+        screen.fill((0, 0, 0))
+    pygame.display.flip()
+pygame.quit()
+"""
+        assert gen.validate_game_code(code, spec) is True
+
 
 class TestGameRunnerUnit:
     def test_runner_importable(self) -> None:
@@ -129,3 +214,71 @@ class TestGameRunnerUnit:
         result = runner.capture_frame(surface)
         assert isinstance(result, np.ndarray)
         assert result.shape == (64, 64, 3)
+
+
+class TestReferenceComparisonPipeline:
+    def test_full_test_reports_cached_reference_provenance(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        class Gateway:
+            def call_model(self, *args: Any, **kwargs: Any) -> SimpleNamespace:
+                return SimpleNamespace(content="import pygame")
+
+        generated = [np.full((64, 64, 3), i * 10, dtype=np.uint8) for i in range(6)]
+        source = REFERENCE_VIDEO_SPECS["doom_e1m1_hallway"]
+        expected = ReferenceComparisonResult(
+            game_name=source.game_name,
+            source_url=source.source_url,
+            source_video_id=source.video_id,
+            cache_path=str(tmp_path / source.cache_filename),
+            cache_status="cached",
+            network_used=False,
+            generated_frame_count=6,
+            reference_frame_count=6,
+            compared_frame_count=6,
+            threshold=source.comparison_threshold,
+            mean_ssim=0.91,
+            motion_correlation=0.82,
+            per_frame_ssim=(0.91,) * 6,
+            passed=True,
+        )
+
+        def fake_compare(
+            game_name: str,
+            frames: list[np.ndarray],
+            cache_dir: str,
+            *,
+            allow_network: bool,
+        ) -> ReferenceComparisonResult:
+            assert game_name == source.game_name
+            assert frames is generated
+            assert cache_dir == str(tmp_path)
+            assert allow_network is False
+            return expected
+
+        monkeypatch.setattr(game_e2e, "_HAS_PYGAME", True)
+        monkeypatch.setattr(game_e2e.GameGenerator, "validate_game_code", lambda code, spec: True)
+        monkeypatch.setattr(game_e2e, "compare_gameplay_to_reference", fake_compare, raising=False)
+        pipeline = AzureGameE2E(
+            deploy_config=DeploymentConfig(
+                reference_cache_dir=str(tmp_path),
+                allow_reference_network=False,
+            ),
+            model_gateway=cast(Any, Gateway()),
+        )
+        monkeypatch.setattr(pipeline.runner, "run_headless_inline", lambda path, count: generated)
+
+        result = pipeline.run_full_test(GAME_SPECS[0])
+        report = pipeline.report_results(result)
+
+        assert result.comparison_pass is True
+        assert result.mean_ssim == 0.91
+        assert result.reference_video_id == source.video_id
+        assert result.reference_source_url == source.source_url
+        assert result.reference_cache_status == "cached"
+        assert result.reference_frames_sampled == 6
+        assert result.comparison_threshold == source.comparison_threshold
+        assert report["reference_video_id"] == source.video_id
+        assert report["reference_cache_status"] == "cached"
