@@ -21,6 +21,11 @@ requirement, and defines the evidence required before the status can change.
 Scanner success, a backend's `available()` result, or creation of a policy file
 is not evidence that a boundary was enforced.
 
+The first executable profile-resolution and durable-attestation slice, its
+explicit limitations, mature Firecracker research, and long-lived Bubblewrap
+operator evidence are documented in
+[`SANDBOX_PROFILE_RESOLUTION_AND_ATTESTATION.md`](../research/SANDBOX_PROFILE_RESOLUTION_AND_ATTESTATION.md).
+
 ## 2. Observed baseline
 
 The baseline was measured on development commit `1adcb2de` with repository make
