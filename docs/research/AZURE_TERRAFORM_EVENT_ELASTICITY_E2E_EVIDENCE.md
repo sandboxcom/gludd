@@ -78,6 +78,9 @@ paths miss. Primary documentation in the next sections remains authoritative.
 | [Container Apps scale-from-zero cold start, opened 2022][forum-cold-start] | A small API took five to six seconds to wake, making scale from zero unsuitable for the reporter's latency target. | Measure cold and warm admission separately and retain a minimum replica or warm pool when the workload SLO cannot absorb cold start. |
 | [Event Grid dead-letter and duplicate questions, opened 2022][forum-event-duplicates] | The accepted answer states that Event Grid has no duplicate detection and at-least-once delivery means duplicates should be expected. | Use a unique durable event identity and make every transition idempotent. Dead-letter replay must use the same path. |
 | [Container Apps readiness regression, opened 2023][forum-revision-cold-start] | A new revision received traffic while still provisioning, briefly stalling a warm endpoint despite `minReplicas=1`. | Keep the old revision routable until the new revision passes readiness and prove uninterrupted admission during a ZDD rollout. |
+| [Retail Prices results became empty and pagination changed, opened 2023][forum-retail-throttling] | A user observed empty responses, a page-size change from 100 to 1,000, and inconsistent continuation offsets from the public endpoint. | Bound and validate pagination, cache only fresh successful results, and fail preflight instead of silently reusing stale prices. |
+| [Container Apps active-use cost rose 3x to 5x, opened 2023][forum-container-app-cost-spike] | Multiple operators reported replicas billed as active despite metrics below the documented threshold; some shut apps down while Microsoft investigated. | Treat public retail rates as a prediction input, never as billed truth; retain resource/meter identity for delayed Cost Management reconciliation and bias alarms. |
+| [Retail API and pricing-page values disagreed, opened 2021][forum-retail-page-mismatch] | A user found the programmatic retail result differed from the Azure pricing page after currency conversion. | Pin USD, currency, effective date, region, primary-meter status, SKU, meter name, and price type; reject comparisons that mix currencies or contract discounts. |
 | [Terraform-created Azure resources absent from state, opened 2025][forum-terraform-state-gap] | After a late apply failure, operational Azure resources did not appear in state and a rerun wanted to recreate them. | Persist the planned ownership manifest before apply and reconcile it after every partial failure before retrying or deleting. |
 
 Closed issues still matter as regression fixtures. They describe observable
@@ -230,6 +233,45 @@ samples it reports `UNCALIBRATED`, applies a conservative ceiling, and cannot be
 advertised as accurate. Arithmetic for metered compute time must match the exact
 meter within 1%; all-in variance is calibrated separately.
 
+### Implemented exact pre-deploy slice
+
+`AzureContainerAppsRetailPricing` now queries the unauthenticated public API
+with case-sensitive `armRegionName`, `skuName`, `meterName`, and `priceType`
+filters, then revalidates service, USD currency, unit, primary-meter status,
+and effective date client-side. The cache is keyed by all selector fields and
+never returns an expired entry after a failed refresh. Duplicate meters at the
+latest effective date, unsafe continuation hosts, malformed prices, unsupported
+GPUs, and missing current meters all stop planning before allocation.
+
+A credential-free live East US query on 2026-08-01 established an important
+schema detail: Container Apps GPU records use `skuName=Standard` and an empty
+`armSkuName`; the accelerator identity is the exact meter name. The current
+Consumption meters were `Standard NC T4 v3 GPU Usage` at USD 0.000073 per
+second, `Standard NC A100 v4 GPU Usage` at USD 0.000529 per second,
+`Standard vCPU Active Usage` at USD 0.000024 per vCPU-second, and
+`Standard Memory Active Usage` at USD 0.000003 per GiB-second. Gludd therefore
+matches `skuName=Standard` plus the exact meter name instead of inventing an ARM
+SKU from the workload-profile string. The opt-in, non-provisioning E2E contract
+re-queries those identities with `AZURE_RETAIL_PRICES_LIVE=1`.
+
+`DeployStrategist` now uses the three exact meters for the full active resource
+shape materialized by the Terraform GPU profile (T4: 8 vCPU/56 GiB; A100:
+24 vCPU/220 GiB). Normal and background Container Apps plans are exact public
+retail estimates. The immediate plan labels its temporary VM component as a
+legacy estimate rather than claiming the combined value is fully exact. Plans
+persist the three meter IDs, source, and region through phased execution, and
+the live provision test passes its timeout-derived duration and operator spend
+ceiling into planning so an over-budget estimate stops before Terraform runs.
+
+This completes only the exact pre-deploy Container Apps slice. Contract-specific
+discounts, free-grant balances, ancillary logs/network/storage, exact warmup VM
+meters, and delayed billed-cost reconciliation remain open under AZL.2; the
+public Retail Prices API is not evidence of final invoiced cost. Azure's pricing
+page likewise states that serverless GPU charges are additive to active vCPU and
+RAM charges ([Container Apps pricing][azure-container-apps-pricing]), while the
+GPU overview confirms per-second billing and scale to zero
+([serverless GPU overview][azure-serverless-gpu]).
+
 ## Live E2E acceptance matrix
 
 The Azure environment pointer may be supplied to the existing make target, but
@@ -350,11 +392,14 @@ to failure.
 - [Azure Container Apps scaling behavior][azure-container-scaling]
 - [Azure Spot VM behavior, pricing, and eviction history][azure-spot-vms]
 - [Azure Retail Prices API][azure-retail-prices]
+- [Azure Container Apps pricing][azure-container-apps-pricing]
+- [Azure Container Apps serverless GPU overview][azure-serverless-gpu]
 - [Azure Cost Management data latency][azure-cost-latency]
 - [Gunicorn pre-fork worker design][gunicorn-design]
 - [Gunicorn graceful timeout and worker settings][gunicorn-settings]
 
 [azure-activity-log-schema]: https://learn.microsoft.com/en-us/azure/azure-monitor/platform/activity-log-schema
+[azure-container-apps-pricing]: https://azure.microsoft.com/en-us/pricing/details/container-apps/
 [azure-container-scaling]: https://learn.microsoft.com/en-us/azure/container-apps/scale-app
 [azure-cost-latency]: https://learn.microsoft.com/en-ca/azure/cost-management-billing/costs/understand-cost-mgt-data#cost-and-usage-data-updates-and-retention
 [azure-delivery-retry]: https://learn.microsoft.com/en-us/azure/event-grid/delivery-and-retry
@@ -363,15 +408,19 @@ to failure.
 [azure-event-metrics]: https://learn.microsoft.com/en-us/azure/event-grid/monitor-push-reference
 [azure-provisioning-state]: https://learn.microsoft.com/en-us/azure/networking/troubleshoot-failed-state#provisioning-states
 [azure-retail-prices]: https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices
+[azure-serverless-gpu]: https://learn.microsoft.com/en-us/azure/container-apps/gpu-serverless-overview
 [azure-spot-vms]: https://learn.microsoft.com/en-us/azure/virtual-machines/spot-vms
 [azure-vm-instance-view]: https://learn.microsoft.com/en-us/rest/api/compute/virtual-machines/instance-view
 [azure-vm-states]: https://learn.microsoft.com/en-us/azure/virtual-machines/states-billing
 [forum-cold-start]: https://github.com/microsoft/azure-container-apps/issues/199
+[forum-container-app-cost-spike]: https://github.com/microsoft/azure-container-apps/issues/799
 [forum-event-delay]: https://learn.microsoft.com/en-us/answers/questions/436552/azure-eventgrid-throws-internal-server-error-to-pu
 [forum-event-duplicates]: https://learn.microsoft.com/en-us/answers/questions/1121532/how-to-check-the-reason-why-event-was-dead-lettere
 [forum-gunicorn-state]: https://github.com/benoitc/gunicorn/issues/2082
 [forum-gunicorn-workers-threads]: https://github.com/benoitc/gunicorn/issues/1045
 [forum-revision-cold-start]: https://github.com/microsoft/azure-container-apps/issues/598
+[forum-retail-page-mismatch]: https://learn.microsoft.com/en-us/answers/questions/405787/azure-retail-pricing-api-is-not-consistent-with-az
+[forum-retail-throttling]: https://learn.microsoft.com/en-us/answers/questions/1353965/undesirable-throttled-results-from-azure-retail-pr
 [forum-terraform-orphan]: https://github.com/hashicorp/terraform-provider-azurerm/issues/7236
 [forum-terraform-state-gap]: https://discuss.hashicorp.com/t/terraform-resources-not-tracked-after-failure-even-when-successfully-deployed/73976
 [forum-vm-deallocating]: https://learn.microsoft.com/en-us/answers/questions/261/trending-on-msdn-virtual-machine-stuck-in-dealloca

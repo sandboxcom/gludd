@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, ClassVar
+
+from general_ludd.infra.azure_retail_pricing import (
+    AzureContainerAppsRetailPricing,
+    AzureRetailPricingError,
+)
 
 
 class DeployUrgency(Enum):
@@ -48,6 +54,9 @@ class PhasedDeployPlan:
     warmup: ResourceTier | None = None
     estimated_cost_usd: float = 0.0
     reasoning: str = ""
+    pricing_source: str = ""
+    pricing_region: str | None = None
+    meter_ids: tuple[str, ...] = ()
 
 
 @dataclass
@@ -68,8 +77,13 @@ class DeployStrategist:
     over time via learn_from_history() + average_cost().
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        azure_pricing: AzureContainerAppsRetailPricing | None = None,
+    ) -> None:
         self.cost_history: list[CostEntry] = []
+        self._azure_pricing = azure_pricing or AzureContainerAppsRetailPricing()
 
     def plan(
         self,
@@ -77,7 +91,44 @@ class DeployStrategist:
         gpu_type: str,
         model_name: str,
         estimated_runtime_minutes: float = 60.0,
+        *,
+        region: str = "eastus",
+        container_vcpu: float | None = None,
+        container_memory_gib: float | None = None,
+        max_cost_usd: float | None = None,
     ) -> PhasedDeployPlan:
+        if max_cost_usd is not None and (
+            isinstance(max_cost_usd, bool)
+            or not math.isfinite(max_cost_usd)
+            or max_cost_usd <= 0
+        ):
+            raise ValueError(
+                f"max_cost_usd must be finite and > 0, got {max_cost_usd!r}"
+            )
+        container_estimate = self._azure_pricing.estimate_for_gpu(
+            gpu_type,
+            region=region,
+            duration_seconds=estimated_runtime_minutes * 60.0,
+            vcpu=container_vcpu,
+            memory_gib=container_memory_gib,
+        )
+        if max_cost_usd is not None:
+            warmup = (
+                ResourceTier.DEDICATED_VM
+                if urgency == DeployUrgency.IMMEDIATE
+                else None
+            )
+            estimated_cost = self._estimate_cost(
+                ResourceTier.CONTAINER_APP,
+                warmup,
+                estimated_runtime_minutes,
+                primary_cost_usd=container_estimate.total_cost_usd,
+            )
+            if estimated_cost > max_cost_usd:
+                raise AzureRetailPricingError(
+                    f"estimated Azure cost ${estimated_cost:.6f} exceeds "
+                    f"operator cost ceiling ${max_cost_usd:.6f}"
+                )
         if urgency == DeployUrgency.IMMEDIATE:
             return PhasedDeployPlan(
                 urgency=urgency,
@@ -87,12 +138,18 @@ class DeployStrategist:
                     ResourceTier.CONTAINER_APP,
                     ResourceTier.DEDICATED_VM,
                     estimated_runtime_minutes,
+                    primary_cost_usd=container_estimate.total_cost_usd,
                 ),
                 reasoning=(
                     "IMMEDIATE urgency: fast-warm via dedicated VM (120s startup) "
                     "while slow-cheap Container App (600s) provisions in parallel. "
-                    "Work starts on VM immediately; migrates to Container App when ready."
+                    "Work starts on VM immediately; migrates to Container App when ready. "
+                    "The Container App component uses exact Azure Retail Prices meters; "
+                    "the temporary VM warmup remains a conservative legacy tier."
                 ),
+                pricing_source="azure-retail-prices+legacy-warmup",
+                pricing_region=region,
+                meter_ids=container_estimate.meter_ids,
             )
 
         if urgency == DeployUrgency.NORMAL:
@@ -103,11 +160,17 @@ class DeployStrategist:
                     ResourceTier.CONTAINER_APP,
                     None,
                     estimated_runtime_minutes,
+                    primary_cost_usd=container_estimate.total_cost_usd,
                 ),
                 reasoning=(
-                    "NORMAL urgency: deploying to Container App (cheapest at $0.05/hr, "
-                    "600s startup). No warmup tier needed."
+                    "NORMAL urgency: deploying to a scale-zero Container App using "
+                    "exact Azure Retail Prices GPU, active-vCPU, and active-memory "
+                    f"meters for {region} (${container_estimate.hourly_rate_usd:.6f}/hr). "
+                    "No warmup tier needed."
                 ),
+                pricing_source="azure-retail-prices",
+                pricing_region=region,
+                meter_ids=container_estimate.meter_ids,
             )
 
         return PhasedDeployPlan(
@@ -117,10 +180,17 @@ class DeployStrategist:
                 ResourceTier.CONTAINER_APP,
                 None,
                 estimated_runtime_minutes,
+                primary_cost_usd=container_estimate.total_cost_usd,
             ),
             reasoning=(
-                "BACKGROUND urgency: deploying to Container App (cheapest at $0.05/hr). Startup time is not a concern."
+                "BACKGROUND urgency: deploying to a scale-zero Container App using "
+                "exact Azure Retail Prices GPU, active-vCPU, and active-memory "
+                f"meters for {region} (${container_estimate.hourly_rate_usd:.6f}/hr). "
+                "Startup time is not a concern."
             ),
+            pricing_source="azure-retail-prices",
+            pricing_region=region,
+            meter_ids=container_estimate.meter_ids,
         )
 
     def _estimate_cost(
@@ -128,13 +198,19 @@ class DeployStrategist:
         primary: ResourceTier,
         warmup: ResourceTier | None,
         estimated_runtime_minutes: float,
+        *,
+        primary_cost_usd: float | None = None,
     ) -> float:
         hours = estimated_runtime_minutes / 60.0
-        cost = primary.cost_per_hour * hours
+        cost = (
+            primary.cost_per_hour * hours
+            if primary_cost_usd is None
+            else primary_cost_usd
+        )
         if warmup is not None:
             warmup_hours = min(warmup.startup_seconds / 3600.0, hours)
             cost += warmup.cost_per_hour * warmup_hours
-        return round(cost, 4)
+        return round(cost, 6)
 
     def execute_phased(
         self,
@@ -148,6 +224,9 @@ class DeployStrategist:
                 "primary_tier": plan.primary.tier_id,
                 "warmup_tier": plan.warmup.tier_id if plan.warmup else None,
                 "estimated_cost_usd": plan.estimated_cost_usd,
+                "pricing_source": plan.pricing_source,
+                "pricing_region": plan.pricing_region,
+                "meter_ids": plan.meter_ids,
             },
             "primary": {"status": "provisioning", "tier": plan.primary.tier_id},
             "warmup": None,
