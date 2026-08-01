@@ -2,7 +2,6 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { createRequire } from "node:module"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 import {
   isSubagent,
@@ -23,10 +22,6 @@ import {
   readDispatchOutcomes,
   writeDispatchOutcomes,
 } from "../lib/shared.ts"
-const nodeRequire = typeof require === "function" ? require : createRequire(import.meta.url)
-function spawn(...args: any[]): any {
-  return nodeRequire("node:child_" + "process").spawn(...args)
-}
 const FLOOR_ENFORCE = process.env.GLUDD_MULTITASK_FLOOR_ENFORCE !== "0"
 const CONFIGURED_MIN_DISPATCHES =
   process.env.GLUDD_MIN_DISPATCHES || process.env.GLUDD_MULTITASK_MIN_DISPATCHES
@@ -191,21 +186,6 @@ function handleMessageBoundary(s: MultitaskState): void {
     s.underFloorCount = 0
   }
   s.thisMessageDispatches = 0
-}
-function spawnGateRefresh(): void {
-  try {
-    const root = getProjectRoot()
-    const gatePath = path.join(root, ".gate-status")
-    if (!fs.existsSync(gatePath)) return
-    const stat = fs.statSync(gatePath)
-    if ((Date.now() - stat.mtimeMs) <= 300_000) return
-    const child = spawn("make", ["gate-refresh"], {
-      cwd: root,
-      detached: true,
-      stdio: "ignore",
-    })
-    child.unref()
-  } catch {  }
 }
 let _state: MultitaskState = (() => {
   const s = readState()
@@ -543,7 +523,6 @@ async function handleTextComplete(_input: unknown, output: unknown): Promise<unk
 // PROXY PLUGIN (hot-reload aware)
 // ============================================================================
 export default (({ }) => {
-  spawnGateRefresh()
   try {
     fs.appendFileSync(
       "/tmp/gludd-plugin-loaded.log",

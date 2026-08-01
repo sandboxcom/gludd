@@ -69,10 +69,6 @@ function execSync(...args: any[]): Buffer {
   return nodeRequire("node:child_" + "process").execSync(...args)
 }
 
-function spawn(...args: any[]): any {
-  return nodeRequire("node:child_" + "process").spawn(...args)
-}
-
 const isSubagentFinalReport = (text: string): boolean => SUBAGENT_TEXT_MARKERS.test(text)
 
 // ── File paths ──────────────────────────────────────────────────────────────
@@ -302,23 +298,6 @@ function getSessionBlockCount(): number {
   try {
     return readJsonFile<{ count: number }>(SESSION_BLOCK_COUNTER_FILE, { count: 0 }).count
   } catch { return 0 }
-}
-
-// ── Spot gate refresh (background) ──────────────────────────────────────────
-
-function spawnGateRefresh(): void {
-  try {
-    const gatePath = path.join(process.cwd(), ".gate-status")
-    if (!fs.existsSync(gatePath)) return
-    const stat = fs.statSync(gatePath)
-    if ((Date.now() - stat.mtimeMs) <= 300_000) return
-    const child = spawn("make", ["gate-refresh"], {
-      cwd: process.cwd(),
-      detached: true,
-      stdio: "ignore",
-    })
-    child.unref()
-  } catch {}
 }
 
 // ── Persist block flag ──────────────────────────────────────────────────────
@@ -1719,7 +1698,6 @@ const defaultImpl: HotModule = {
 // PROXY PLUGIN (hot-reload aware)
 // ============================================================================
 export default (async () => {
-  if (!isStopEnforcementDisabled()) spawnGateRefresh()
   try {
     fs.appendFileSync(
       "/tmp/gludd-plugin-loaded.log",

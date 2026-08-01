@@ -1297,7 +1297,7 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
     assert result is None or result.get("allowed") == True or result.get("permissionDecision") != "deny"
 
 
-def test_multitask_under_floor_hard_block():
+def test_multitask_configured_minimum_hard_block():
     """Non-dispatch tool call with 0 dispatches and pending work → denied (UNDER-FLOOR HARD BLOCK).
 
     With MIN_DISPATCHES=2, a non-dispatch call when thisMessageDispatches=0
@@ -1322,7 +1322,9 @@ console.log(JSON.stringify(result ?? null))
     })
     assert result is not None, f"Expected deny object, got None: {result}"
     assert result.get("permissionDecision") == "deny", f"Expected deny, got: {result}"
-    assert "UNDER-FLOOR HARD BLOCK" in result.get("message", ""), f"Missing UNDER-FLOOR HARD BLOCK: {result}"
+    message = result.get("message", "")
+    assert "CONFIGURED MINIMUM BLOCK" in message, f"Missing configured-minimum block: {result}"
+    assert "Configured minimum is 2" in message, f"Missing explicit configured minimum: {result}"
     _clean_state_files(state_file)
 
 
