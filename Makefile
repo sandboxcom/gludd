@@ -187,6 +187,7 @@ help:
 	@echo "  gate-status           Print current .gate-status (RUNNING/PASS/FAIL)"
 	@echo "  gate-tail             Print a bounded latest gate-log snapshot (GATE_TAIL_LINES=80)"
 	@echo "  gate-lite-tail        Print a bounded latest gate-lite-log snapshot (GATE_TAIL_LINES=80)"
+	@echo "  triage-failures       Incrementally group streamed failures (LOG, TRIAGE_STATE, TRIAGE_FORMAT)"
 	@echo "  collect-check         Fast collection-error gate"
 	@echo "  test-nodeids          Print bounded pytest node-id slice (START/LIMIT/TESTPATH)"
 	@echo "  test-xdist-trace      Run pytest with durable xdist worker/node/resource trace"
@@ -856,10 +857,11 @@ check-structural-test-fragility:
 lint-specs:
 	@$(UV) run python3 scripts/lint_specs.py
 
-# AA063 — triage-failures: classifies test failures as NEW vs PRE-EXISTING.
-# Agent must fix NEW failures immediately; PRE-EXISTING tracked separately.
+# AA063 — triage-failures: with LOG set, incrementally classifies streamed
+# FAILED/ERROR node IDs and emits a compact delta; without LOG, retains the
+# collect-only NEW vs PRE-EXISTING check.
 triage-failures:
-	@$(UV) run python3 scripts/triage_failures.py
+	@$(UV) run python3 scripts/triage_failures.py $(if $(strip $(LOG)),--log "$(LOG)" --format "$(or $(TRIAGE_FORMAT),json)" $(if $(strip $(TRIAGE_STATE)),--state "$(TRIAGE_STATE)"),)
 
 # AA064 — audit-spec-completeness: checks whether agent's CURRENT behavior
 # matches its written specs, detecting recursive self-reference.

@@ -2310,8 +2310,17 @@ false-success test job to piping pytest through `tee`, which returned the logger
 zero status instead of pytest's failure. The streaming helper therefore mirrors
 bytes directly and returns the child process status without a shell pipeline.
 
-**Enforcement:** Makefile `gate-refresh` target
-**Test:** `tests/unit/test_gate_refresh_streaming.py`
+While that durable log grows, `make triage-failures LOG=... TRIAGE_STATE=...
+TRIAGE_FORMAT=json` MUST consume only appended bytes, emit newly observed
+`FAILED`/`ERROR` node IDs in a compact JSON delta, group the complete snapshot
+by test file and normalized root cause, and update an early status when pytest's
+later short summary adds a typed cause. Log replacement, truncation, or corrupt
+cursor state MUST rebuild the snapshot. Invoking the target without `LOG` MUST
+retain its collect-only behavior. Operational semantics and upstream evidence
+are recorded in `docs/operations/INCREMENTAL_GATE_FAILURE_TRIAGE.md`.
+
+**Enforcement:** Makefile `gate-refresh` and `triage-failures` targets
+**Test:** `tests/unit/test_gate_refresh_streaming.py`, `tests/unit/test_triage_failures.py`
 
 ### G19 — Gate-status shows PASS/FAIL/RUNNING
 `make gate-status` MUST display the current gate state (PASS/FAIL/RUNNING/STALE).
