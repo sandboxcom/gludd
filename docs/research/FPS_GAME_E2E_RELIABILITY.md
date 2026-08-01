@@ -172,6 +172,14 @@ system FFmpeg ([OpenCV video-I/O report][opencv-videoio]). Therefore merely
 reinstalling the same headless wheel is not accepted as evidence; the gate must
 exercise the actual Pygame-plus-video runtime and reject duplicate-class stderr.
 
+The reproduced boundary was `opencv-python-headless==4.13.0.92`; OpenCV 4.13
+added FFmpeg 8 support ([OpenCV 4.13 changelog][opencv-413]). Constraining both
+game extras to `opencv-python-headless>=4.9.0,<4.13` resolved the warning with
+4.12.0.88 on the same macOS/Python 3.14 process. The preflight now launches a
+clean child that imports the actual `general_ludd.cloud.game_e2e` module, captures
+stderr, and fails on duplicate-class markers. This executable check remains the
+contract even if a future wheel changes its transitive binaries.
+
 ## Efficiency and failure ordering
 
 The cheapest deterministic checks run first: environment shape, optional
@@ -197,5 +205,6 @@ infrastructure failure.
 [bundled-sdl-report]: https://stackoverflow.com/questions/65909503/how-can-i-play-video-in-opencv-with-audio-the-same-time
 [grf-sdl]: https://medium.com/@Nirodya_Pussadeniya/installing-google-research-football-grf-on-macos-apple-silicon-38887a485fc1
 [opencv-qt-duplicate]: https://stackoverflow.com/questions/51371421/pyqt5-and-opencv-have-similar-libraries-how-to-avoid-conflict-between-the-2
+[opencv-413]: https://github.com/opencv/opencv/wiki/OpenCV-Change-Logs#version4130
 [opencv-videoio]: https://github.com/opencv/opencv/issues/24430
 [opencv-wheel]: https://github.com/opencv/opencv-python

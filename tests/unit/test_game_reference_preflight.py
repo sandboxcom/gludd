@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import tomllib
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,6 +19,7 @@ def test_validate_only_checks_arguments_without_touching_media(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
 ) -> None:
+    monkeypatch.setattr(game_reference_preflight, "_check_runtime_imports", lambda: None)
     monkeypatch.setattr(
         game_reference_preflight,
         "preflight_reference_videos",
@@ -44,6 +46,7 @@ def test_preflight_streams_each_verified_reference(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
 ) -> None:
+    monkeypatch.setattr(game_reference_preflight, "_check_runtime_imports", lambda: None)
     calls: list[tuple[tuple[str, ...], Path, bool]] = []
 
     def fake_preflight(
@@ -99,6 +102,46 @@ def test_preflight_streams_each_verified_reference(
     for name in game_reference_preflight.GAME_NAMES:
         assert f"reference_ready game={name}" in output
     assert "GAME_REFERENCE_PREFLIGHT_OK" in output
+
+
+def test_runtime_import_smoke_rejects_duplicate_native_classes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    completed = subprocess.CompletedProcess(
+        args=["python", "-c", "import general_ludd.cloud.game_e2e"],
+        returncode=0,
+        stdout="",
+        stderr=(
+            "Class SDLApplication is implemented in both cv2/.dylibs/libSDL2 "
+            "and /opt/homebrew/libSDL2. One of the duplicates must be removed."
+        ),
+    )
+    monkeypatch.setattr(game_reference_preflight.subprocess, "run", lambda *args, **kwargs: completed)
+
+    with pytest.raises(RuntimeError, match="duplicate native runtime"):
+        game_reference_preflight._check_runtime_imports()
+
+
+def test_runtime_import_smoke_accepts_warning_free_process(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    completed = subprocess.CompletedProcess(
+        args=["python", "-c", "import general_ludd.cloud.game_e2e"],
+        returncode=0,
+        stdout="",
+        stderr="",
+    )
+    monkeypatch.setattr(game_reference_preflight.subprocess, "run", lambda *args, **kwargs: completed)
+
+    game_reference_preflight._check_runtime_imports()
+
+
+def test_game_extras_exclude_opencv_413_ffmpeg8_sdl_bundle() -> None:
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    optional_dependencies = project["project"]["optional-dependencies"]
+
+    for extra_name in ("game-e2e", "e2e-all"):
+        assert "opencv-python-headless>=4.9.0,<4.13" in optional_dependencies[extra_name]
 
 
 def test_make_target_has_a_network_free_behavioral_smoke(tmp_path: Path) -> None:
