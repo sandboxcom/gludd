@@ -130,3 +130,13 @@ def test_e2e_runner_treats_collection_skip_as_success() -> None:
     body = _target_body("test-e2e")
     assert 'FILE_RC" -eq 5' in body
     assert "return 0" in body
+
+
+def test_azure_provision_sourced_target_uses_explicit_env_file_contract() -> None:
+    content = MAKEFILE.read_text(encoding="utf-8")
+    assert "AZURE_E2E_ENV_FILE ?= /tmp/general-ludd.env" in content
+    body = _target_body("test-e2e-azure-provision-sourced")
+    assert 'test -r "$(AZURE_E2E_ENV_FILE)"' in body
+    assert '. "$(AZURE_E2E_ENV_FILE)"' in body
+    assert "AZURE_E2E_VALIDATE_ONLY" in body
+    assert ". /tmp/general-ludd.env" not in body

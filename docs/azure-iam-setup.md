@@ -277,6 +277,19 @@ sudo systemctl daemon-reload
 
 **Testing gludd against Azure** (local checkout, non-systemd):
 
+The repository's full-provision harness sources the credential file without
+printing its contents. Validate the path without creating resources first, then
+run the costly test explicitly:
+
+```bash
+make test-e2e-azure-provision-sourced AZURE_E2E_ENV_FILE=/tmp/general-ludd.env AZURE_E2E_VALIDATE_ONLY=1
+make test-e2e-azure-provision-sourced AZURE_E2E_ENV_FILE=/tmp/general-ludd.env AZURE_E2E_VALIDATE_ONLY=0
+```
+
+The default `AZURE_E2E_ENV_FILE` is `/tmp/general-ludd.env`; override it for a
+different operator-managed path. An unreadable path fails before Terraform is
+invoked.
+
 ```bash
 # 1. Source your Azure credentials
 source /tmp/general-ludd.env

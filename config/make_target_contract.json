@@ -23,6 +23,11 @@
       "behavior": "make azure-harness LIVE=0 AZURE_SUBSCRIPTION_ID=sub-123 AZURE_TENANT_ID=tenant-456"
     },
     {
+      "name": "test-e2e-azure-provision-sourced",
+      "make_variables": ["AZURE_E2E_ENV_FILE", "AZURE_E2E_VALIDATE_ONLY"],
+      "behavior": "make test-e2e-azure-provision-sourced AZURE_E2E_ENV_FILE=tests/fixtures/azure-e2e.env.example AZURE_E2E_VALIDATE_ONLY=1"
+    },
+    {
       "name": "runpod-harness",
       "make_variables": ["LIVE"],
       "environment_variables": ["RUNPOD_API_KEY", "RUNPOD_BUDGET_USD"],

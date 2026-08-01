@@ -209,6 +209,7 @@ help:
 	@echo "  test-e2e              End-to-end tests"
 	@echo "  test-e2e-azure        Azure E2E — env-pointer (CI-friendly)"
 	@echo "  test-e2e-azure-provision  Azure full-provision E2E (opt-in, costly)"
+	@echo "  test-e2e-azure-provision-sourced  Source AZURE_E2E_ENV_FILE, then provision (AZURE_E2E_VALIDATE_ONLY=0|1)"
 	@echo "  test-e2e-aws          AWS E2E — env-pointer (CI-friendly)"
 	@echo "  test-e2e-gcp          GCP E2E — env-pointer (CI-friendly)"
 	@echo "  test-e2e-runpod       RunPod E2E — env-pointer (CI-friendly)"
@@ -1474,6 +1475,8 @@ test-e2e:
 # Azure E2E — env-pointer (CI-friendly, no provisioning)
 GLUDD_E2E_MAX_SPEND_USD ?= 5
 AZURE_PROVISION_E2E ?= 0
+AZURE_E2E_ENV_FILE ?= /tmp/general-ludd.env
+AZURE_E2E_VALIDATE_ONLY ?= 0
 test-e2e-azure:
 	@AZURE_BASE_URL=$(AZURE_BASE_URL) AZURE_MODEL=$(AZURE_MODEL) AZURE_API_KEY=$(AZURE_API_KEY) \
 		$(UV) run pytest tests/e2e/providers/test_azure_e2e.py -v
@@ -1482,7 +1485,12 @@ test-e2e-azure:
 # Logs to console AND .gate-logs/e2e-azure/
 test-e2e-azure-provision-sourced:
 	@mkdir -p .gate-logs/e2e-azure
-	@. /tmp/general-ludd.env; \
+	@test -r "$(AZURE_E2E_ENV_FILE)" || { echo "AZURE_E2E_ENV_FILE_UNREADABLE path=$(AZURE_E2E_ENV_FILE)"; exit 2; }
+	@. "$(AZURE_E2E_ENV_FILE)"; \
+	 if [ "$(AZURE_E2E_VALIDATE_ONLY)" = "1" ]; then \
+	   echo "AZURE_E2E_ENV_FILE_OK path=$(AZURE_E2E_ENV_FILE)"; \
+	   exit 0; \
+	 fi; \
 	 export GLUDD_CONFIG_DIR="$${GLUDD_CONFIG_DIR:-$$PWD/config}"; \
 	 export ARM_CLIENT_ID ARM_CLIENT_SECRET ARM_TENANT_ID ARM_SUBSCRIPTION_ID ARM_USE_MSI AZURE_SUBSCRIPTION_ID; \
 	 AZURE_PROVISION_E2E=1 GLUDD_E2E_MAX_SPEND_USD="$${GLUDD_E2E_MAX_SPEND_USD:-5}" \
