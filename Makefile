@@ -6711,6 +6711,7 @@ kill-project-pid:
 		*"make gate"*|*"_gate-refresh-body"*) if [ "$$orphan" = "1" ]; then /bin/kill "$(PID)"; else echo "Refusing to kill non-orphan gate: pid=$(PID) ppid=$$ppid"; exit 1; fi ;; \
 		*"uv cache prune"*) if [ "$$orphan" = "1" ]; then /bin/kill "$(PID)"; else echo "Refusing to kill non-orphan uv cache prune: pid=$(PID) ppid=$$ppid"; exit 1; fi ;; \
 		*"uv run python -m pytest tests/unit/"*) if [ "$$orphan" = "1" ]; then /bin/kill "$(PID)"; else echo "Refusing to kill non-orphan pytest: pid=$(PID) ppid=$$ppid"; exit 1; fi ;; \
+		*"python -m general_ludd.cli daemon"*"/Users/shawnwilson/tmp/pytest-of-shawnwilson/"*) if [ "$$orphan" = "1" ]; then /bin/kill "$(PID)"; else echo "Refusing to kill non-orphan test daemon: pid=$(PID) ppid=$$ppid"; exit 1; fi ;; \
 		*) echo "Refusing to kill unrelated process: $$cmd"; exit 1 ;; \
 	esac
 
