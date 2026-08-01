@@ -5,6 +5,21 @@ from __future__ import annotations
 import pytest
 import yaml
 
+
+class _UnsafeScalar(str):
+    """Test-only marker proving a serialized scalar carried ``!unsafe``."""
+
+
+class _UnsafeLoader(yaml.SafeLoader):
+    pass
+
+
+def _construct_unsafe(loader: yaml.SafeLoader, node: yaml.nodes.ScalarNode) -> _UnsafeScalar:
+    return _UnsafeScalar(loader.construct_scalar(node))
+
+
+_UnsafeLoader.add_constructor("!unsafe", _construct_unsafe)
+
 # ---------------------------------------------------------------------------
 # Helpers — extract the generated playbook YAML from a mock adapter
 # ---------------------------------------------------------------------------
@@ -40,7 +55,7 @@ def _written_playbook_yaml(adapter, handler, module_fqcn, task_args):
     assert registered, "register_playbook was never called"
     _, path = registered[0]
     with open(path) as f:
-        return yaml.safe_load(f.read())
+        return yaml.load(f.read(), Loader=_UnsafeLoader)
 
 
 # ---------------------------------------------------------------------------
@@ -79,12 +94,9 @@ class TestCollectionHandlerSSTI:
     def test_hostile_payload_in_args_is_wrapped_unsafe(self, adapter, handler, payload):
         """A Jinja template in a task-arg value must appear as !unsafe in YAML."""
         body = _written_playbook_yaml(adapter, handler, "ansible.builtin.debug", {"msg": payload})
-        # The playbook YAML written to disk must carry the !unsafe tag or at
-        # least contain the raw paylaod string verbatim (not a resolved value).
-        raw_yaml = yaml.dump(body, default_flow_style=False)
-        assert payload in raw_yaml, (
-            "Hostile payload not found in generated playbook YAML — it may have been templated away"
-        )
+        value = body[0]["tasks"][0]["ansible.builtin.debug"]["msg"]
+        assert value == payload
+        assert isinstance(value, _UnsafeScalar), "hostile Jinja scalar lost its !unsafe YAML tag"
 
     def test_task_args_stripped_metadata_not_in_playbook(self, adapter, handler):
         """Underscore-prefixed dispatch keys are peeled before writing."""

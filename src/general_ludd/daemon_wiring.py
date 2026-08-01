@@ -223,6 +223,45 @@ def make_collection_handler(
         timeout = task_args.pop("_timeout", None)
         hosts = task_args.pop("_hosts", "localhost")
 
+        # Persist Ansible's native ``!unsafe`` tag for every untrusted string.
+        # A Python unsafe-proxy does not survive a YAML round trip, while the
+        # tag is understood by both legacy and trusted-templating Ansible
+        # loaders and prevents a model/operator value from being re-templated.
+        class _UnsafePlaybookText(str):
+            pass
+
+        # PyYAML exposes its dumper base without usable type metadata, so build
+        # the isolated subclass dynamically instead of weakening project type
+        # checks with a suppression.
+        _TransientPlaybookDumper = type(
+            "_TransientPlaybookDumper", (yaml.SafeDumper,), {}
+        )
+
+        def _represent_unsafe_text(
+            dumper: yaml.SafeDumper, value: _UnsafePlaybookText
+        ) -> yaml.nodes.ScalarNode:
+            return dumper.represent_scalar("!unsafe", str(value))
+
+        yaml.add_representer(
+            _UnsafePlaybookText,
+            _represent_unsafe_text,
+            Dumper=_TransientPlaybookDumper,
+        )
+
+        def _tag_untrusted_strings(value: Any) -> Any:
+            if isinstance(value, dict):
+                return {key: _tag_untrusted_strings(item) for key, item in value.items()}
+            if isinstance(value, list):
+                return [_tag_untrusted_strings(item) for item in value]
+            if isinstance(value, tuple):
+                return tuple(_tag_untrusted_strings(item) for item in value)
+            if isinstance(value, str):
+                return _UnsafePlaybookText(value)
+            return value
+
+        task_args = _tag_untrusted_strings(task_args)
+        hosts = _tag_untrusted_strings(hosts)
+
         playbook = [
             {
                 "hosts": hosts,
@@ -244,7 +283,12 @@ def make_collection_handler(
         # does not block on disk I/O under concurrent dispatch.
         def _write_playbook() -> None:
             with open(playbook_path, "w") as f:
-                yaml.safe_dump(playbook, f, default_flow_style=False)
+                yaml.dump(
+                    playbook,
+                    f,
+                    Dumper=_TransientPlaybookDumper,
+                    default_flow_style=False,
+                )
 
         await asyncio.to_thread(_write_playbook)
 

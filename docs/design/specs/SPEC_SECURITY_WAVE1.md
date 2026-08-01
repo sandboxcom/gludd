@@ -843,6 +843,31 @@ the test); if `safe_dump` drops the tag, pass the args via a wrapped
 `extravars`/`vars` channel referenced by the task instead of inlining raw
 strings. Keep the `_FQCN_RE` name validation.
 
+**Implemented 2026-08-01.** The transient-playbook serializer now uses a
+`SafeDumper` subclass that emits every caller-controlled string in task args
+(and the caller-controlled hosts selector) as an explicit `!unsafe` scalar.
+The regression test loads the generated file with an unsafe-tag-aware loader
+and asserts both literal payload preservation and tag presence for lookup,
+dunder, and arithmetic Jinja payloads. This closes the serialization gap noted
+above: an in-memory unsafe proxy alone is insufficient if a YAML round trip
+silently reduces it to an ordinary playbook string.
+
+**Upstream/operator evidence.** This is a long-lived operational boundary, not
+a Gludd-only convention:
+
+- [Ansible's advanced YAML syntax documentation](https://docs.ansible.com/projects/ansible-core/devel/playbook_guide/playbooks_advanced_syntax.html#unsafe-or-raw-strings)
+  says `!unsafe` prevents malicious Jinja evaluation and is more comprehensive
+  than raw-block escaping, including for nested arrays and mappings.
+- [Ansible's version 12 porting guide](https://docs.ansible.com/projects/ansible/latest/porting_guides/porting_guide_12.html#template-trust-model-inversion)
+  records that the legacy trust-by-default model produced multiple RCE-class
+  vulnerabilities when unsafe markers were not propagated. Gludd keeps the
+  explicit tag for compatibility across both legacy and inverted trust models.
+- A [2020 Ansible operator thread](https://forum.ansible.com/t/making-an-unsafe-variable-safe/33059)
+  confirms that operators intentionally preserve the unsafe boundary rather
+  than relying on a generic inverse `!safe` conversion; a later
+  [operator discussion](https://forum.ansible.com/t/how-to-get-ansibleunsafetext-to-template/8831)
+  reiterates that externally sourced values are marked unsafe by design.
+
 **Tests (FAIL today)** — `tests/unit/test_collection_handler_ssti.py` (new):
 - `test_task_args_jinja_is_neutralized` — pass
   `task_args={"cmd": "{{ lookup('pipe','id') }}"}`; assert the generated
