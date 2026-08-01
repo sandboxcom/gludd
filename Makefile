@@ -100,7 +100,7 @@ _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-wor
         move-ansible-roles \
         container-build container-run container-push \
          file-executable build-executable deb-package deb-install-deps rpm-package macos-dmg windows-installer release-artifacts dist-clean bundle-binaries bundle-ripgrep \
-        sast sbom pip-audit security security-backlog-gate \
+        sast sast-summary sbom pip-audit security security-backlog-gate \
         audit-messages qa validate collect-check gate gate-refresh gate-lite smoke install-hooks feature-spec-inventory \
         status-snapshot audit-evidence deps-audit dogfood-features ruff-audit check-make-help \
         skill-install skill-list bootstrap-skills scan-tool-usage \
@@ -331,7 +331,8 @@ help:
 	@echo "  secrets-baseline      Rebuild .secrets.baseline"
 	@echo "  scan-secrets          Alias for secrets-scan"
 	@echo "  scan-secrets-baseline Alias for secrets-baseline"
-	@echo "  security-audit        Comprehensive: secrets + sast + Python/Node audits + backlog gate"
+	@echo "  sast-summary          Summarize Bandit JSON by severity/rule/file with baseline deltas (SAST_REPORT, SAST_SUMMARY, SAST_BASELINE)"
+	@echo "  security-audit        Observable secrets/SAST/dependency/backlog audit (SECURITY_AUDIT_HEARTBEAT_SECS, SECURITY_AUDIT_PHASE_TIMEOUT_SECS, SECURITY_AUDIT_VALIDATE_ONLY, SECURITY_AUDIT_SUMMARY)"
 	@echo "  clean-artifacts       Clean build artifacts, caches, temp files (replaces direct rm)"
 	@echo "  health-check          Verify imports and basic system health"
 	@echo "  clean-untracked       Remove reinvention-of-wheel files"
@@ -3818,19 +3819,30 @@ secrets-baseline:
 	@mv -f .secrets.baseline.tmp .secrets.baseline
 	@echo "[secrets-baseline] wrote .secrets.baseline ($$(wc -c < .secrets.baseline | tr -d ' ') bytes)"
 
-# security-audit: comprehensive security check (secrets + sast + pip-audit + backlog gate)
+# security-audit: all phases emit bounded JSON heartbeats and timings. The
+# detect-secrets child is deliberately silenced so credential values cannot be
+# copied into terminals or CI logs; only its exit status and timing are exposed.
+# The Python orchestrator invokes the existing pip-audit-gate, node-deps-audit,
+# and security-backlog-gate targets rather than reimplementing those scanners.
+SECURITY_AUDIT_HEARTBEAT_SECS ?= 15
+SECURITY_AUDIT_PHASE_TIMEOUT_SECS ?= 1800
+SECURITY_AUDIT_VALIDATE_ONLY ?= 0
+SECURITY_AUDIT_SUMMARY ?= dist/security-audit-summary.json
 security-audit:
-	@echo "=== SECURITY AUDIT: secrets scan ==="
-	@$(MAKE) --no-print-directory secrets-scan || echo "[secrets-scan skipped — baseline plugin mismatch]"
-	@echo "=== SECURITY AUDIT: sast (bandit) ==="
-	@$(MAKE) --no-print-directory sast
-	@echo "=== SECURITY AUDIT: pip-audit (gating) ==="
-	@$(MAKE) --no-print-directory pip-audit-gate
-	@echo "=== SECURITY AUDIT: npm audit (gating) ==="
-	@$(MAKE) --no-print-directory node-deps-audit NODE_DEPS_VALIDATE_ONLY=0 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org NODE_DEPS_AUDIT_LEVEL=moderate
-	@echo "=== SECURITY AUDIT: security backlog gate ==="
-	@$(MAKE) --no-print-directory security-backlog-gate
-	@echo "=== SECURITY AUDIT: PASSED ==="
+	@case "$(SECURITY_AUDIT_HEARTBEAT_SECS)" in ''|*[!0-9]*) echo "SECURITY_AUDIT_HEARTBEAT_SECS must be an integer between 5 and 300" >&2; exit 2;; esac; \
+	case "$(SECURITY_AUDIT_PHASE_TIMEOUT_SECS)" in ''|*[!0-9]*) echo "SECURITY_AUDIT_PHASE_TIMEOUT_SECS must be an integer between 60 and 7200" >&2; exit 2;; esac; \
+	[ "$(SECURITY_AUDIT_HEARTBEAT_SECS)" -ge 5 ] && [ "$(SECURITY_AUDIT_HEARTBEAT_SECS)" -le 300 ] || { echo "SECURITY_AUDIT_HEARTBEAT_SECS must be between 5 and 300" >&2; exit 2; }; \
+	[ "$(SECURITY_AUDIT_PHASE_TIMEOUT_SECS)" -ge 60 ] && [ "$(SECURITY_AUDIT_PHASE_TIMEOUT_SECS)" -le 7200 ] || { echo "SECURITY_AUDIT_PHASE_TIMEOUT_SECS must be between 60 and 7200" >&2; exit 2; }; \
+	case "$(SECURITY_AUDIT_VALIDATE_ONLY)" in 0|1) :;; *) echo "SECURITY_AUDIT_VALIDATE_ONLY must be 0 or 1" >&2; exit 2;; esac; \
+	VALIDATE_ARG=""; [ "$(SECURITY_AUDIT_VALIDATE_ONLY)" = "0" ] || VALIDATE_ARG="--validate-only"; \
+	$(PYTHON) scripts/security_audit_observability.py audit \
+		--heartbeat-seconds "$(SECURITY_AUDIT_HEARTBEAT_SECS)" \
+		--timeout-seconds "$(SECURITY_AUDIT_PHASE_TIMEOUT_SECS)" \
+		--summary "$(SECURITY_AUDIT_SUMMARY)" \
+		--sast-report "$(SAST_REPORT)" \
+		--sast-summary "$(SAST_SUMMARY)" \
+		--sast-baseline "$(SAST_BASELINE)" \
+		$$VALIDATE_ARG
 
 # clean-artifacts: clean build artifacts, caches, temp files (replaces direct rm commands)
 clean-artifacts:
@@ -5515,10 +5527,17 @@ ci-repro-linux:
 	RC=$$(cat /tmp/gludd-ci-repro-rc 2>/dev/null || echo 1); \
 	echo "=== ci-repro-linux exit=$$RC ==="; exit $$RC
 
+SAST_REPORT ?= dist/sast-report.json
+SAST_SUMMARY ?= dist/sast-summary.json
+SAST_BASELINE ?=
+
 sast:
-	@mkdir -p dist
-	@$(UV) run bandit -r src/ -f json -o dist/sast-report.json || true
-	@$(UV) run bandit -r src/ -f custom || true
+	@mkdir -p "$$(dirname "$(SAST_REPORT)")"
+	@$(UV) run bandit -q --ignore-nosec -r src/ -f json -o "$(SAST_REPORT)" || true
+	@$(MAKE) --no-print-directory sast-summary SAST_REPORT="$(SAST_REPORT)" SAST_SUMMARY="$(SAST_SUMMARY)" SAST_BASELINE="$(SAST_BASELINE)"
+
+sast-summary:
+	@$(PYTHON) scripts/summarize_sast.py --report "$(SAST_REPORT)" --output "$(SAST_SUMMARY)" --baseline "$(SAST_BASELINE)"
 
 sbom:
 	@mkdir -p dist
