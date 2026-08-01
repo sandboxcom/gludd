@@ -248,7 +248,7 @@ EXPECTED_SUBCOMMANDS = [
     "daemon", "version", "health", "add", "status", "list", "help",
     "models", "project", "mcp", "skills", "compute", "scores",
     "leaderboard", "filestore", "worktree", "config", "ansible",
-    "integrity", "slurm", "login", "smoke", "tui", "chat", "metrics",
+    "integrity", "slurm", "login", "test", "tui", "chat", "metrics",
     "reload", "templates", "playbooks", "pause", "resume",
 ]
 
@@ -276,6 +276,12 @@ class TestHelpCommand:
         assert result.returncode == 0, (
             f"`gludd {subcommand} --help` exited {result.returncode}: {result.stderr!r}"
         )
+        assert "usage:" in result.stdout.lower()
+
+    def test_nested_smoke_help(self):
+        """The consolidated test namespace exposes provider smoke checks."""
+        result = run_gludd(["test", "smoke", "--help"], timeout=20)
+        assert result.returncode == 0, result.stderr
         assert "usage:" in result.stdout.lower()
 
 

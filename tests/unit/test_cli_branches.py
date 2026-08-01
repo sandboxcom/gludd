@@ -120,7 +120,7 @@ class TestBuildParser:
         assert "log-level" in choices
 
     def test_smoke_subparser(self):
-        choices = _top_level_choices()
+        choices = _nested_choices("test")
         assert "smoke" in choices
 
     def test_searx_subparser(self):
@@ -397,8 +397,9 @@ class TestSubcommandSmoke:
         from general_ludd.cli import build_parser
 
         parser, _ = build_parser()
-        args = parser.parse_args(["smoke", "aws", "ec2-a100", "--live"])
-        assert args.command == "smoke"
+        args = parser.parse_args(["test", "smoke", "aws", "ec2-a100", "--live"])
+        assert args.command == "test"
+        assert args.test_command == "smoke"
         assert args.provider == "aws"
         assert args.test == "ec2-a100"
         assert args.live is True

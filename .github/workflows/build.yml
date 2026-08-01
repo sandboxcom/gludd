@@ -41,8 +41,8 @@ on:
 concurrency:
   # PR runs coalesce on the PR ref and cancel superseded runs (cancel-in-progress:
   # true) — that eviction is intentional, since only the latest push in a PR needs
-  # a verdict. Push/tag runs (and workflow_dispatch) key on github.sha instead of
-  # github.ref: every commit gets its OWN concurrency group, so a later push to the
+  # a verdict. Push/tag runs (and workflow_dispatch) key on github.sha plus the
+  # ref name: every commit/ref pair gets its OWN concurrency group, so a later push to the
   # same branch can NEVER evict/cancel the still-queued or in-progress run for an
   # earlier commit. Without this, GitHub's "one pending run per group" behavior
   # silently cancels the older commit's run the instant a new one is pushed to the
@@ -51,7 +51,8 @@ concurrency:
   # released via `make release-cut`, which is fail-closed on `require-ci-green`
   # (scripts/require_ci_green.py treats cancelled/missing runs as CI RED), so this
   # keys the group to guarantee every commit actually GETS a real run to check.
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  # ref_name also prevents a tag and branch at the same SHA from cancelling one another.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}-${{ github.ref_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:

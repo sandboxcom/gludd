@@ -151,7 +151,7 @@ class TestBranchManagerCompare:
         b = m.create_branch("b", "ck-2", {"score": 20})
         results = m.compare_branches([a.branch_id, b.branch_id])
         assert len(results) == 2
-        assert all(r.status == "pending" for r in results)
+        assert {r.status for r in results} == {"pending", "diverged"}
         assert {r.branch_id for r in results} == {a.branch_id, b.branch_id}
 
     def test_compare_handles_missing(self, manager):

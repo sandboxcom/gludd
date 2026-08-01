@@ -23,7 +23,7 @@ class TestEventType:
         assert len(vals) == len(set(vals))
 
     def test_member_count(self) -> None:
-        assert len(list(EventType)) == 17
+        assert len(list(EventType)) == 18
 
 
 class TestEvent:

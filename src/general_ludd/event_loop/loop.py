@@ -1588,7 +1588,7 @@ class EventLoop:
             self._tick_state["claimed_todos"] = []
             return
         project_id = self._tick_project_id
-        if project_id is None:
+        if project_id is None and self._project_manager is not None:
             logger.warning("Claim skipped: no active project selected")
             self._tick_state["claimed_todos"] = []
             return

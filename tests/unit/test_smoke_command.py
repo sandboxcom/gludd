@@ -93,9 +93,9 @@ def test_live_metadata_probe_records_http_metrics_without_payload_dump() -> None
 
 def test_cli_smoke_subcommand_parses_provider_and_test() -> None:
     parser, subcommand_map = build_parser()
-    args = parser.parse_args(["smoke", "aws", "ec2-a100", "--json"])
+    args = parser.parse_args(["test", "smoke", "aws", "ec2-a100", "--json"])
 
-    assert "smoke" in subcommand_map
+    assert "test" in subcommand_map
     assert args.provider == "aws"
     assert args.test == "ec2-a100"
     assert args.json is True
@@ -110,7 +110,7 @@ def test_cli_azure_a100_dynamic_smoke_name_normalization(
 ) -> None:
     monkeypatch.setenv("AZURE_SUBSCRIPTION_ID", "test-subscription-id")
     parser, _ = build_parser()
-    args = parser.parse_args(["smoke", "azure", test_name, "--json"])
+    args = parser.parse_args(["test", "smoke", "azure", test_name, "--json"])
 
     args.func(args)
 
@@ -237,7 +237,7 @@ def test_cli_smoke_json_writes_full_diagnostic_bundle(
     output_path = tmp_path / "aws-smoke.json"
     parser, _ = build_parser()
     args = parser.parse_args(
-        ["smoke", "aws", "ec2-a100", "--json", "--output", str(output_path)]
+        ["test", "smoke", "aws", "ec2-a100", "--json", "--output", str(output_path)]
     )
 
     args.func(args)
@@ -253,12 +253,22 @@ def test_cli_smoke_json_writes_full_diagnostic_bundle(
 
 def test_cli_smoke_default_cost_ceiling_is_ten_dollars() -> None:
     parser, _ = build_parser()
-    args = parser.parse_args(["smoke", "openai", "model-ping"])
+    args = parser.parse_args(["test", "smoke", "openai", "model-ping"])
 
     assert args.max_cost_usd == 10.0
     assert args.engine == "vllm"
 
-    args = parser.parse_args(["smoke", "aws", "ec2-a100", "--provisioned", "--engine", "llamacpp"])
+    args = parser.parse_args(
+        [
+            "test",
+            "smoke",
+            "aws",
+            "ec2-a100",
+            "--provisioned",
+            "--engine",
+            "llamacpp",
+        ]
+    )
     assert args.engine == "llamacpp"
 
 

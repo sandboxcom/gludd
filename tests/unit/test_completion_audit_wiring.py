@@ -275,7 +275,8 @@ class TestReleaseOrchestratorWiring:
         def _fake_build(self, context_dir, image_ref, runtime="podman"):
             return BuildResult(image_ref=image_ref, image_digest="sha256:x", success=True)
 
-        def _fake_validate(self, version, artifacts_dir):
+        def _fake_validate(self, version, artifacts_dir, require_container=False):
+            assert require_container is True
             return ReleaseValidationResult(
                 valid=True, pip_bundle_valid=True, container_valid=True,
                 manifest_valid=True,

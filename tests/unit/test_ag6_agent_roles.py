@@ -72,8 +72,11 @@ class TestAgentBehaviorRoles:
             default_subagent_behavior,
         )
 
-        for factory in (default_primary_behavior, default_subagent_behavior):
-            b = factory()
-            assert b.role is None
-            assert b.goal is None
-            assert b.backstory is None
+        primary = default_primary_behavior()
+        subagent = default_subagent_behavior()
+        assert primary.role == "primary orchestrator"
+        assert primary.goal == "coordinate and complete the requested work"
+        assert primary.backstory is None
+        assert subagent.role == "specialized subagent"
+        assert subagent.goal == "execute the assigned task and return evidence"
+        assert subagent.backstory is None

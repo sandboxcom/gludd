@@ -288,7 +288,18 @@ class TestFindProjectRoot:
         deep.mkdir(parents=True)
         assert find_project_root(deep) == proj.resolve()
 
-    def test_returns_none_when_no_gludd(self, tmp_path):
+    def test_returns_none_when_no_gludd(self, tmp_path, monkeypatch):
         from general_ludd.config.project import find_project_root
 
+        # Other full-suite tests may legitimately create a `.gludd` marker in
+        # pytest's shared temp ancestry. Isolate this unit contract from that
+        # concurrent state while preserving all non-marker filesystem checks.
+        original_is_dir = Path.is_dir
+
+        def _without_project_markers(path: Path) -> bool:
+            if path.name == ".gludd":
+                return False
+            return original_is_dir(path)
+
+        monkeypatch.setattr(Path, "is_dir", _without_project_markers)
         assert find_project_root(tmp_path) is None
