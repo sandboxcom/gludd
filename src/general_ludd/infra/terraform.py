@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shlex
 import textwrap
 from collections.abc import Callable
@@ -528,12 +529,8 @@ class TerraformGenerator:
         """)
 
     def _generate_azure_containerapp(self, config: ComputeConfig) -> str:
-        # Phase 4 — module-style; the azurerm_container_app /
-        # container_app_environment / container_registry / vnet / subnet
-        # resource bodies and the GPU→SKU mapping now live behind the module
-        # interface (passed in via tfvars as instance_type). The generator
-        # only composes provider + module block.
         region = config.region or "eastus"
+        _modules = os.path.join(os.path.dirname(__file__), "..", "..", "..", "infra", "terraform", "modules")
         return textwrap.dedent(f"""\
             terraform {{
               required_providers {{
@@ -550,7 +547,7 @@ class TerraformGenerator:
             }}
 
             module "vllm_server" {{
-              source = "./modules/vllm-server"
+              source = "{_modules}/vllm-server"
 
               image           = var.image
               gpus            = var.gpus
