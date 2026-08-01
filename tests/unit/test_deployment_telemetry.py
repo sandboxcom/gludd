@@ -58,7 +58,10 @@ async def test_deploy_attributes_elapsed_cost_and_publishes_lifecycle(tmp_path) 
 
     with (
         patch.object(manager, "_run_terraform", side_effect=fake_terraform),
-        patch("general_ludd.infra.deployment.time.sleep"),
+        patch(
+            "general_ludd.infra.deployment.time.sleep",
+            side_effect=AssertionError("deploy must not block for FQDN propagation"),
+        ),
         patch("general_ludd.infra.deployment.time.monotonic", side_effect=[100.0, 220.0]),
     ):
         instance = await manager.deploy(_azure_container_app_config())

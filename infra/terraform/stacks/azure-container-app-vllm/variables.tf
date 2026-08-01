@@ -1,52 +1,67 @@
-variable "image" {
-  description = "Container image for the inference engine. Defaults to the engine's canonical image."
-  type        = string
-  default     = "vllm/vllm-openai:latest"
-}
-
-variable "gpus" {
-  description = "Number of GPUs to expose to the inference container."
-  type        = number
-  default     = 1
-}
-
-variable "model" {
-  description = "Model identifier served by the inference engine. Must match the ComputeConfig.model_name allowlist."
-  type        = string
+variable "deployment_name" {
+  type = string
 }
 
 variable "region" {
-  description = "Azure region the stack deploys into."
-  type        = string
-  default     = "eastus"
+  type = string
 }
 
-variable "instance_type" {
-  description = "Azure Container App consumption profile. Resolved by the stack from GPU type; passed through here for tagging/labeling."
-  type        = string
-  default     = "Standard_NC6s_v3"
+variable "container_image" {
+  type = string
 }
 
-variable "extra_args" {
-  description = "Extra arguments appended to the inference server invocation."
-  type        = string
-  default     = ""
+variable "model_name" {
+  type = string
+}
+
+variable "gpu_type" {
+  type = string
+}
+
+variable "gpu_count" {
+  type = number
+}
+
+variable "allowed_cidr" {
+  type = string
 }
 
 variable "max_cost_usd" {
-  description = "Cost watchdog ceiling (USD). Mirrors ComputeConfig.max_cost_usd."
-  type        = number
-  default     = 10
+  type = number
 }
 
 variable "timeout_minutes" {
-  description = "Cost watchdog TTL (minutes). Mirrors ComputeConfig.timeout_minutes."
-  type        = number
-  default     = 60
+  type = number
 }
 
-variable "use_spot" {
-  description = "Spot/preemptible instances are not supported for Azure Container Apps. Variable present for interface consistency."
-  type        = bool
-  default     = false
+variable "vllm_context_length" {
+  type = number
+}
+
+variable "vllm_max_num_seqs" {
+  type = number
+}
+
+variable "vllm_gpu_memory_utilization" {
+  type = number
+}
+
+variable "vllm_enforce_eager" {
+  type = bool
+}
+
+variable "vllm_enable_prefix_caching" {
+  type = bool
+}
+
+variable "vllm_enable_chunked_prefill" {
+  type = bool
+}
+
+variable "vllm_kv_cache_dtype" {
+  type = string
+}
+
+variable "vllm_quantization" {
+  type = string
 }

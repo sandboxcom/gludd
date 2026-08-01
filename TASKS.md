@@ -77,6 +77,10 @@ An audit of this ledger against the source tree found:
 ## Active — In Progress (items being worked on right now)
 
 - [x] ACT-1 — Consolidate backlog into TASKS.md| evidence: TASKS.md contains consolidated ~78 items from 5 spec files | priority: high | effort: M | status: completed
+- [ ] AZL.1 — Replace the Azure Container Apps echo-server stand-in with a deploy-local, provider-validated, scale-to-zero GPU vLLM stack; prove live model inference and verified teardown | evidence: focused unit and non-skipping Terraform validation green; live apply/inference/destroy still required | priority: high | effort: L | status: in_progress
+- [ ] AZL.2 — Replace static work-item cost tiers with exact Azure Retail Prices meter selection and delayed billed-cost reconciliation | evidence: research contract recorded; implementation and calibrated live evidence pending | priority: high | effort: L | status: pending
+- [ ] MWK.1 — Implement durable PostgreSQL event/work transport with fenced cross-Gunicorn-worker claims and immediate readiness consumption | evidence: ADR complete; storage parity and process E2E pending | priority: high | effort: L | status: in_progress
+- [ ] FPX.1 — Prove every FPS fixture's menu, controls, gameplay transition, captured video, and pinned online-reference comparison on available Gludd compute | evidence: prompt/reference unit slices green; per-game live compute matrix pending | priority: high | effort: L | status: in_progress
 
 ---
 

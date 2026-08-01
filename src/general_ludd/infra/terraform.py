@@ -4,36 +4,61 @@ from __future__ import annotations
 
 import os
 import shlex
+import shutil
 import textwrap
-import uuid
 from collections.abc import Callable
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from general_ludd.config.deployment_optimization import DeploymentOptimizationConfig
 
-from general_ludd.infra.compute import ComputeConfig, ComputeProvider, InferenceEngine
+from general_ludd.infra.compute import ComputeConfig, ComputeProvider, GPUType, InferenceEngine
 from general_ludd.infra.terraform_state import StateBackendSelector, render_backend_block
 
-_PYTHON_ECHO_SERVER = (
-    "from http.server import HTTPServer,BaseHTTPRequestHandler\\n"
-    "import json\\n"
-    "class H(BaseHTTPRequestHandler):\\n"
-    " def do_GET(self):\\n"
-    "  if '/v1/models' in self.path:\\n"
-    "   self.send_response(200)\\n"
-    "   self.send_header('Content-Type','application/json')\\n"
-    "   self.end_headers()\\n"
-    "   self.wfile.write(json.dumps({'data':[{'id':'test-model'}]}).encode())\\n"
-    "  else:\\n"
-    "   self.send_response(200)\\n"
-    "   self.send_header('Content-Type','application/json')\\n"
-    "   self.end_headers()\\n"
-    "   self.wfile.write(json.dumps({'choices':[{'message':{'content':'pong'}}]}).encode())\\n"
-    " def do_POST(self):\\n"
-    "  return self.do_GET()\\n"
-    "HTTPServer(('0.0.0.0',8000),H).serve_forever()\\n"
-)
+_AZURE_CONTAINER_APP_GPUS = {GPUType.T4, GPUType.A100_40, GPUType.A100_80}
+
+
+def _terraform_assets_root() -> Path:
+    """Locate canonical Terraform assets in a source tree or installed wheel."""
+    source_tree = Path(__file__).resolve().parents[3] / "infra" / "terraform"
+    if source_tree.is_dir():
+        return source_tree
+    packaged = Path(__file__).resolve().parents[1] / "terraform"
+    if packaged.is_dir():
+        return packaged
+    raise RuntimeError("Terraform assets are missing from this Gludd installation")
+
+
+def _profile_integer(profile: dict[str, object], key: str, default: int) -> int:
+    value = profile.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{key} must be an integer")
+    return value
+
+
+def _profile_float(profile: dict[str, object], key: str, default: float) -> float:
+    value = profile.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{key} must be a number")
+    result = float(value)
+    if not 0 < result <= 1:
+        raise ValueError(f"{key} must be between 0 and 1")
+    return result
+
+
+def _profile_boolean(profile: dict[str, object], key: str, default: bool) -> bool:
+    value = profile.get(key, default)
+    if not isinstance(value, bool):
+        raise ValueError(f"{key} must be a boolean")
+    return value
+
+
+def _profile_string(profile: dict[str, object], key: str, default: str) -> str:
+    value = profile.get(key, default)
+    if not isinstance(value, str):
+        raise ValueError(f"{key} must be a string")
+    return value
 
 # ---------------------------------------------------------------------------
 # Security note — HCL string interpolation
@@ -381,6 +406,75 @@ class TerraformGenerator:
                 lines.append(f"grammar_file               = {escape_tfvar_value(str(grammar))}")
         return "\n".join(lines) + "\n"
 
+    def build_azure_containerapp_tfvars(self, config: ComputeConfig, *, deployment_name: str) -> str:
+        """Render only the declared inputs for the Azure GPU Container App stack."""
+        self._validate_azure_containerapp(config)
+        profile = config.deployment_profile or {}
+        lines = [
+            f"deployment_name = {escape_tfvar_value(deployment_name)}",
+            f"region = {escape_tfvar_value(config.region or 'eastus')}",
+            f"container_image = {escape_tfvar_value(_container_image(config))}",
+            f"model_name = {escape_tfvar_value(config.model_name)}",
+            f"gpu_type = {escape_tfvar_value(config.gpu_type.value)}",
+            f"gpu_count = {config.gpu_count}",
+            f"allowed_cidr = {escape_tfvar_value(config.allowed_cidr)}",
+            f"max_cost_usd = {config.max_cost_usd}",
+            f"timeout_minutes = {config.timeout_minutes}",
+            f"vllm_context_length = {_profile_integer(profile, 'context_length', 4096)}",
+            f"vllm_max_num_seqs = {_profile_integer(profile, 'max_num_seqs', 8)}",
+            f"vllm_gpu_memory_utilization = {_profile_float(profile, 'gpu_memory_utilization', 0.90)}",
+            f"vllm_enforce_eager = {str(_profile_boolean(profile, 'enforce_eager', False)).lower()}",
+            "vllm_enable_prefix_caching = "
+            f"{str(_profile_boolean(profile, 'enable_prefix_caching', True)).lower()}",
+            "vllm_enable_chunked_prefill = "
+            f"{str(_profile_boolean(profile, 'enable_chunked_prefill', True)).lower()}",
+            "vllm_kv_cache_dtype = "
+            f"{escape_tfvar_value(_profile_string(profile, 'kv_cache_dtype', 'auto'))}",
+        ]
+        quantization = _profile_string(profile, "quantization", "")
+        lines.append(f"vllm_quantization = {escape_tfvar_value(quantization)}")
+        return "\n".join(lines) + "\n"
+
+    def materialize(self, config: ComputeConfig, destination: str | os.PathLike[str], *, deployment_name: str) -> None:
+        """Write a runnable Terraform root, values, and local modules."""
+        destination_path = Path(destination)
+        destination_path.mkdir(parents=True, exist_ok=True)
+        (destination_path / "main.tf").write_text(self.generate(config), encoding="utf-8")
+
+        if config.provider != ComputeProvider.AZURE or config.deploy_type != "containerapp":
+            return
+
+        assets = _terraform_assets_root()
+        stack = assets / "stacks" / "azure-container-app-vllm"
+        module_source = assets / "modules" / "azure-container-app-vllm"
+        if not stack.is_dir() or not module_source.is_dir():
+            raise RuntimeError("Azure Container Apps Terraform stack assets are incomplete")
+
+        (destination_path / "terraform.tfvars").write_text(
+            self.build_azure_containerapp_tfvars(config, deployment_name=deployment_name),
+            encoding="utf-8",
+        )
+        for filename in ("variables.tf", "outputs.tf"):
+            shutil.copy2(stack / filename, destination_path / filename)
+        shutil.copytree(
+            module_source,
+            destination_path / "modules" / "azure-container-app-vllm",
+            dirs_exist_ok=True,
+        )
+
+    @staticmethod
+    def _validate_azure_containerapp(config: ComputeConfig) -> None:
+        if config.engine != InferenceEngine.VLLM:
+            raise ValueError("Azure Container Apps GPU deployments currently require the vLLM engine")
+        if config.gpu_type not in _AZURE_CONTAINER_APP_GPUS:
+            supported = ", ".join(sorted(gpu.value for gpu in _AZURE_CONTAINER_APP_GPUS))
+            raise ValueError(
+                "Azure Container Apps serverless GPU supports only "
+                f"{supported}; got {config.gpu_type.value}"
+            )
+        if config.gpu_count != 1:
+            raise ValueError("Azure Container Apps serverless GPU requires gpu_count=1 per replica")
+
     def _generate_aws(self, config: ComputeConfig) -> str:
         # Phase 4 — module-style: emit a thin stack that composes
         # ./modules/<engine>-server. No inline resource blocks; all config
@@ -550,115 +644,9 @@ class TerraformGenerator:
         """)
 
     def _generate_azure_containerapp(self, config: ComputeConfig) -> str:
-        region = config.region or os.environ.get("AZURE_REGION", "westus2")
-        _modules = os.path.join(os.path.dirname(__file__), "..", "..", "..", "infra", "terraform", "modules")
-        suffix = config.model_name.replace("/", "-").replace(".", "-").replace("_", "-").lower()[:8]
-        suffix = suffix + "-" + uuid.uuid4().hex[:6]
-        return (
-            textwrap.dedent(f"""\
-            terraform {{
-              required_providers {{
-                azurerm = {{
-                  source  = "hashicorp/azurerm"
-                  version = "~> 3.0"
-                }}
-              }}
-            }}
-
-            provider "azurerm" {{
-              features {{}}
-              skip_provider_registration = true
-            }}
-
-            variable "image"          {{ default = "" }}
-            variable "gpus"           {{ default = 1 }}
-            variable "model"          {{ default = "" }}
-            variable "region"         {{ default = "{region}" }}
-            variable "instance_type"  {{ default = "" }}
-            variable "extra_args"     {{ default = "" }}
-            variable "max_cost_usd"   {{ default = 5 }}
-            variable "timeout_minutes"{{ default = 30 }}
-            variable "guided_decoding_backend"   {{ default = "" }}
-            variable "enable_structured_outputs" {{ default = false }}
-
-            resource "azurerm_resource_group" "gludd" {{
-              name     = "gludd-gpu-{suffix}"
-              location = var.region
-            }}
-
-            resource "azurerm_container_app_environment" "gludd" {{
-              name                       = "gludd-cae-{suffix}"
-              resource_group_name        = azurerm_resource_group.gludd.name
-              location                   = var.region
-            }}
-
-            module "vllm_server" {{
-              source = "{_modules}/vllm-server"
-
-              image           = var.image
-              gpus            = var.gpus
-              model           = var.model
-              region          = var.region
-              instance_type   = var.instance_type
-              extra_args      = var.extra_args
-              max_cost_usd    = var.max_cost_usd
-              timeout_minutes = var.timeout_minutes
-              guided_decoding_backend    = var.guided_decoding_backend
-              enable_structured_outputs  = var.enable_structured_outputs
-            }}
-
-            resource "azurerm_container_app" "vllm" {{
-              name                         = "gludd-vllm-{suffix}"
-              resource_group_name          = azurerm_resource_group.gludd.name
-              container_app_environment_id = azurerm_container_app_environment.gludd.id
-              revision_mode                = "Single"
-
-              template {{
-                container {{
-                  name   = "vllm-server"
-                  image  = "python:3.11-slim"
-                  cpu    = 0.5
-                  memory = "1Gi"
-
-                  command = ["python3", "-c", "%s"]
-                }}
-              }}
-
-              ingress {{
-                external_enabled = true
-                target_port       = 8000
-                transport         = "http"
-
-                traffic_weight {{
-                  percentage      = 100
-                  latest_revision = true
-                }}
-              }}
-            }}
-
-            output "instance_id" {{
-              value = azurerm_container_app.vllm.id
-            }}
-
-            output "base_url" {{
-              value = "https://${{azurerm_container_app.vllm.latest_revision_fqdn}}/v1"
-            }}
-
-            # Legacy aliases — DeploymentManager.deploy() reads instance_ip /
-            # endpoint_url from `terraform output -json`. Keep the reader
-            # working through the Phase 4 transition without a deploy-side
-            # change. Remove once deployment.py is updated to read the new
-            # instance_id / base_url names directly.
-            output "instance_ip" {{
-              value = azurerm_container_app.vllm.id
-            }}
-
-            output "endpoint_url" {{
-              value = "https://${{azurerm_container_app.vllm.latest_revision_fqdn}}/v1"
-            }}
-        """)
-            % _PYTHON_ECHO_SERVER
-        )
+        self._validate_azure_containerapp(config)
+        stack_main = _terraform_assets_root() / "stacks" / "azure-container-app-vllm" / "main.tf"
+        return stack_main.read_text(encoding="utf-8")
 
     def _generate_runpod(self, config: ComputeConfig) -> str:
         _modules = os.path.join(os.path.dirname(__file__), "..", "..", "..", "infra", "terraform", "modules")
@@ -822,26 +810,6 @@ class TerraformGenerator:
         """)
 
     def _generate_vsphere(self, config: ComputeConfig, **kwargs: str) -> str:
-        # Lazy-import pyvmomi so it is NOT a hard top-level dependency; the
-        # vSphere provider only needs the SDK for direct vAPI calls (inventory
-        # discovery, customization spec validation), which Terraform itself
-        # does not require at plan/apply time.
-        import importlib.util
-
-        pyvmomi_available = importlib.util.find_spec("pyvmomi") is not None
-        if not pyvmomi_available:
-            # Terraform generation still proceeds — pyvmomi is only required
-            # for live vSphere API calls during the deploy step, not for HCL
-            # emission. Surface the requirement loudly so callers know.
-            import warnings
-
-            warnings.warn(
-                "pyvmomi is not installed; vSphere live-API features "
-                "(inventory discovery, customization spec validation) are "
-                "disabled. HCL generation proceeds normally.",
-                stacklevel=2,
-            )
-
         image = _container_image(config)
         user_data = _user_data_script(config)
         datacenter = kwargs.get("datacenter", "DC0")

@@ -272,6 +272,24 @@ teardown acceptance row: an empty resource-group query proves those test groups
 are absent, but does not prove that unrelated Terraform state, billing records,
 or resources outside the prefix are reconciled.
 
+### Real GPU artifact boundary
+
+The runtime generator must never substitute a CPU echo server for a GPU or
+model-readiness assertion. The Azure Container Apps path now materializes a
+deploy-local root module, exact `terraform.tfvars`, and a provider module that
+creates a Consumption GPU workload profile, runs the requested vLLM image and
+model, applies explicit ingress CIDRs, and bounds both the environment and app
+at zero-to-one replicas. T4 maps to `Consumption-GPU-NC8as-T4`; A100 maps to
+`Consumption-GPU-NC24-A100`. Unsupported GPU families, non-vLLM engines, and
+multi-GPU-per-replica requests fail before Terraform can create billable
+resources.
+
+This artifact has a non-skipping Terraform `init` plus `validate` test against
+the current AzureRM provider schema. That test proves provider syntax and local
+module completeness, not quota, image startup, GPU identity, inference, or
+teardown. Those remain live-provision acceptance requirements and cannot be
+closed by the validate-only result.
+
 For FPS claims, every declared game fixture must exercise a deterministic menu
 path, key/mouse/controller trace, gameplay-state transition, and captured Azure
 GPU video. Comparisons use version-pinned, license-compatible reference clips

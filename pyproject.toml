@@ -131,6 +131,8 @@ packages = ["src/general_ludd"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "THIRD_PARTY_LICENSES.md" = "general_ludd/THIRD_PARTY_LICENSES.md"
+"infra/terraform/modules" = "general_ludd/terraform/modules"
+"infra/terraform/stacks" = "general_ludd/terraform/stacks"
 
 [tool.ruff]
 target-version = "py311"

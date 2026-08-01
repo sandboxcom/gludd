@@ -12,9 +12,11 @@ Scope:
 
 from __future__ import annotations
 
+import importlib
 import re
 import shutil
 import subprocess
+import warnings
 from pathlib import Path
 from typing import Any, cast
 
@@ -23,7 +25,13 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODULES_DIR = REPO_ROOT / "infra" / "terraform" / "modules"
 
-EXPECTED_MODULES = {"vllm-server", "llamacpp-server", "gpu-cost-watchdog", "network"}
+EXPECTED_MODULES = {
+    "azure-container-app-vllm",
+    "gpu-cost-watchdog",
+    "llamacpp-server",
+    "network",
+    "vllm-server",
+}
 REQUIRED_FILES = ("main.tf", "variables.tf", "outputs.tf")
 
 # Credential attribute names that must never appear as literal HCL attributes.
@@ -50,7 +58,7 @@ def _has_terraform_binary() -> bool:
 
 def _try_import_hcl2():
     try:
-        import hcl2
+        hcl2 = importlib.import_module("hcl2")
     except ImportError:
         return None
     return cast(Any, hcl2)
@@ -93,6 +101,9 @@ def _strip_var_refs(text: str) -> str:
 class TestModuleStructure:
     def test_modules_dir_exists(self):
         assert MODULES_DIR.is_dir(), f"expected {MODULES_DIR} to exist"
+
+    def test_real_azure_container_app_module_is_in_validation_matrix(self):
+        assert "azure-container-app-vllm" in EXPECTED_MODULES
 
     def test_expected_modules_present(self):
         actual = {p.name for p in _all_module_dirs()}
@@ -285,12 +296,11 @@ _ALLOWED_INLINE_RESOURCE_TYPES = (
 # Matches `resource "type" "name"` — captures the resource type.
 _INLINE_RESOURCE_TYPE_RE = re.compile(r'resource\s+"([^"]+)"\s+', re.MULTILINE)
 
-# module source must point at (../|../../)modules/<engine>-server, where engine
-# matches the stack-name suffix (the last `-`-delimited token). Both relative
-# depths appear in-tree depending on whether the stack composes a sibling module
-# dir or reaches up two levels from stacks/<name>/ to modules/.
+# Module source must point at a checked-in module. Most stacks use the shared
+# engine module; Azure Container Apps uses its provider-specific GPU wrapper.
 _STACK_MODULE_SOURCE_RE = re.compile(
-    r'source\s*=\s*"(?:\.\./|\.\./\.\./)modules/(vllm-server|llamacpp-server)"'
+    r'source\s*=\s*"(?:\./|\.\./|\.\./\.\./)modules/'
+    r'(vllm-server|llamacpp-server|azure-container-app-vllm)"'
 )
 # Stacks must be thin: no inline `resource "..."` blocks.
 _INLINE_RESOURCE_RE = re.compile(r'^\s*resource\s+"', re.MULTILINE)
@@ -335,12 +345,16 @@ class TestStacksPhase4:
         text = main_tf.read_text()
 
         engine_suffix = stack_name.rsplit("-", 1)[-1]
-        expected_module = "vllm-server" if engine_suffix == "vllm" else "llamacpp-server"
+        expected_module = (
+            "azure-container-app-vllm"
+            if stack_name == "azure-container-app-vllm"
+            else "vllm-server" if engine_suffix == "vllm" else "llamacpp-server"
+        )
 
         m = _STACK_MODULE_SOURCE_RE.search(text)
         assert m is not None, (
             f"{main_tf}: no module source matching "
-            f'"../modules/(vllm-server|llamacpp-server)" found'
+            "checked-in Terraform modules found"
         )
         assert m.group(1) == expected_module, (
             f"{main_tf}: module source {m.group(1)!r} does not match "
@@ -400,6 +414,20 @@ def _build_cfg(provider, gpu_type, deploy_type="vm"):
 
 
 class TestProviderMethodsPhase4:
+    def test_offline_vsphere_hcl_generation_is_warning_free(self):
+        from general_ludd.infra.compute import ComputeConfig, ComputeProvider, GPUType
+        from general_ludd.infra.terraform import TerraformGenerator
+
+        config = ComputeConfig(
+            provider=ComputeProvider.VMWARE,
+            gpu_type=GPUType.A100_80,
+            model_name="test-model",
+            allowed_cidr="127.0.0.1/32",
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            TerraformGenerator().generate(config)
+
     @pytest.mark.parametrize(
         ("provider", "gpu_type", "deploy_type"),
         [

@@ -19,9 +19,9 @@ class TestComputeProvider:
 
     def test_all_providers_present(self):
         expected = {
-            "aws", "azure", "gcp", "runpod", "vast_ai",
+            "aws", "azure", "gcp", "qemu", "runpod", "vast", "vast_ai",
             "lambda_labs", "modal", "coreweave", "digital_ocean", "oracle",
-            "vmware", "kubernetes", "together_ai", "fireworks_ai",
+            "vsphere", "vmware", "kubernetes", "together_ai", "fireworks_ai",
             "huggingface", "replicate",
         }
         actual = {p.value for p in ComputeProvider}
@@ -35,7 +35,7 @@ class TestGPUType:
     def test_all_gpus_present(self):
         expected = {
             "t4", "a10g", "l4", "a10", "rtx_4090", "rtx_6000_ada",
-            "a40", "l40s", "a100_40", "a100_80", "h100", "h200",
+            "a40", "l40s", "amd_mi250", "a100_40", "a100_80", "h100", "h200",
         }
         actual = {g.value for g in GPUType}
         assert actual == expected
@@ -418,6 +418,7 @@ class TestTerraformGeneratorAzureContainerApp:
         assert "terraform {" in tf
         assert 'module "vllm_server"' in tf
         assert "azurerm_container_app" not in tf
+        assert "python:3.11-slim" not in tf
 
     def test_contains_container_app_environment(self):
         # Phase 4 — inline container_app_environment gone; module-style emission.
@@ -429,7 +430,7 @@ class TestTerraformGeneratorAzureContainerApp:
         )
         tf = self.gen.generate(cfg)
         assert 'module "vllm_server"' in tf
-        assert 'source = "./modules/vllm-server"' in tf
+        assert 'source = "./modules/azure-container-app-vllm"' in tf
 
     def test_contains_model_name(self):
         # Phase 4 — model name flows via tfvars; module block references var.model.
@@ -442,17 +443,15 @@ class TestTerraformGeneratorAzureContainerApp:
         tf = self.gen.generate(cfg)
         assert "var.model" in tf
 
-    def test_contains_resource_group(self):
-        # Phase 4 — inline resource_group gone; thin module-style stack.
+    def test_unsupported_gpu_fails_closed_before_terraform(self):
         cfg = ComputeConfig(
             provider=ComputeProvider.AZURE,
             gpu_type=GPUType.L4,
             model_name="m",
             deploy_type="containerapp",
         )
-        tf = self.gen.generate(cfg)
-        assert 'module "vllm_server"' in tf
-        assert not re.search(r'^\s*resource\s+"', tf, re.MULTILINE)
+        with pytest.raises(ValueError, match="Azure Container Apps serverless GPU"):
+            self.gen.generate(cfg)
 
     def test_contains_ingress(self):
         # Phase 4 — ingress/target_port live in the module, not inline HCL.
@@ -466,17 +465,17 @@ class TestTerraformGeneratorAzureContainerApp:
         assert 'module "vllm_server"' in tf
         assert not re.search(r'^\s*resource\s+"', tf, re.MULTILINE)
 
-    def test_contains_output_endpoint_url(self):
-        # Phase 4 — endpoint_url legacy alias output is still emitted.
+    def test_contains_output_endpoint_url(self, tmp_path):
+        # The runnable root materializes outputs separately from main.tf.
         cfg = ComputeConfig(
             provider=ComputeProvider.AZURE,
             gpu_type=GPUType.T4,
             model_name="m",
             deploy_type="containerapp",
         )
-        tf = self.gen.generate(cfg)
-        assert "output" in tf
-        assert 'output "endpoint_url"' in tf
+        self.gen.materialize(cfg, tmp_path, deployment_name="d-output-test")
+        outputs = (tmp_path / "outputs.tf").read_text()
+        assert 'output "endpoint_url"' in outputs
 
     def test_custom_region(self):
         cfg = ComputeConfig(
@@ -486,8 +485,91 @@ class TestTerraformGeneratorAzureContainerApp:
             deploy_type="containerapp",
             region="westus2",
         )
-        tf = self.gen.generate(cfg)
-        assert "westus2" in tf
+        target = self.gen.build_azure_containerapp_tfvars(cfg, deployment_name="d-region-test")
+        assert 'region = "westus2"' in target
+
+    def test_materializes_real_gpu_module_and_runtime_values(self, tmp_path):
+        cfg = ComputeConfig(
+            provider=ComputeProvider.AZURE,
+            gpu_type=GPUType.T4,
+            model_name="Qwen/Qwen2.5-0.5B-Instruct",
+            deploy_type="containerapp",
+            region="eastus",
+            allowed_cidr="198.51.100.10/32",
+        )
+
+        self.gen.materialize(cfg, tmp_path, deployment_name="d-azure-test")
+
+        root = (tmp_path / "main.tf").read_text()
+        tfvars = (tmp_path / "terraform.tfvars").read_text()
+        module = (tmp_path / "modules" / "azure-container-app-vllm" / "main.tf").read_text()
+        assert 'source = "./modules/azure-container-app-vllm"' in root
+        assert 'deployment_name = "d-azure-test"' in tfvars
+        assert 'model_name = "Qwen/Qwen2.5-0.5B-Instruct"' in tfvars
+        assert 'gpu_type = "t4"' in tfvars
+        assert 'allowed_cidr = "198.51.100.10/32"' in tfvars
+        assert 'workload_profile_type = local.gpu_profile_type' in module
+        assert '"Consumption-GPU-NC8as-T4"' in module
+        assert '"Consumption-GPU-NC24-A100"' in module
+        assert re.search(r"minimum_count\s*=\s*0", module)
+        assert re.search(r"min_replicas\s*=\s*0", module)
+        assert re.search(r"max_replicas\s*=\s*1", module)
+        assert "var.container_image" in module
+        assert "var.model_name" in module
+        assert "python:3.11-slim" not in module
+
+    def test_invalid_runtime_profile_value_fails_closed(self):
+        cfg = ComputeConfig(
+            provider=ComputeProvider.AZURE,
+            gpu_type=GPUType.T4,
+            model_name="m",
+            deploy_type="containerapp",
+            deployment_profile={"context_length": "4096"},
+        )
+
+        with pytest.raises(ValueError, match="context_length must be an integer"):
+            self.gen.build_azure_containerapp_tfvars(cfg, deployment_name="d-profile-test")
+
+    def test_invalid_gpu_memory_fraction_fails_closed(self):
+        cfg = ComputeConfig(
+            provider=ComputeProvider.AZURE,
+            gpu_type=GPUType.T4,
+            model_name="m",
+            deploy_type="containerapp",
+            deployment_profile={"gpu_memory_utilization": 1.5},
+        )
+
+        with pytest.raises(ValueError, match="gpu_memory_utilization must be between 0 and 1"):
+            self.gen.build_azure_containerapp_tfvars(cfg, deployment_name="d-profile-test")
+
+    @pytest.mark.parametrize(
+        "config, message",
+        [
+            (
+                ComputeConfig(
+                    provider=ComputeProvider.AZURE,
+                    gpu_type=GPUType.T4,
+                    model_name="m",
+                    deploy_type="containerapp",
+                    gpu_count=2,
+                ),
+                "gpu_count=1",
+            ),
+            (
+                ComputeConfig(
+                    provider=ComputeProvider.AZURE,
+                    gpu_type=GPUType.T4,
+                    model_name="m",
+                    deploy_type="containerapp",
+                    engine=InferenceEngine.LLAMACPP,
+                ),
+                "vLLM engine",
+            ),
+        ],
+    )
+    def test_unsupported_container_app_shapes_fail_before_spend(self, config, message):
+        with pytest.raises(ValueError, match=message):
+            self.gen.generate(config)
 
     def test_vm_deploy_type_still_uses_vm_generator(self):
         # Phase 4 — both deploy_types now emit thin module-style HCL.

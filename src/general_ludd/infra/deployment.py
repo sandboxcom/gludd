@@ -295,10 +295,7 @@ class DeploymentManager:
             for region in regions:
                 print(f"[deploy] Trying region {region}...", flush=True)
                 config.region = region
-                hcl = self._generator.generate(config)
-                main_tf_path = os.path.join(deploy_dir, "main.tf")
-                with open(main_tf_path, "w") as f:
-                    f.write(hcl)
+                self._generator.materialize(config, deploy_dir, deployment_name=deployment_id)
 
                 try:
                     print(f"[deploy] Terraform init in {region}...", flush=True)
@@ -310,12 +307,11 @@ class DeploymentManager:
                         cwd=deploy_dir,
                         env=auth_env,
                     )
-                    print(
-                        f"[deploy] Terraform apply done in {region}, waiting for FQDN propagation...",
-                        flush=True,
-                    )
-                    time.sleep(30)
-                    print("[deploy] Propagation delay complete", flush=True)
+                    # Terraform does not return from apply until the Container App
+                    # resource and its FQDN output exist.  Endpoint readiness is a
+                    # separate concern handled by the observable live-E2E poller;
+                    # blocking this event loop here delays every concurrent job.
+                    print(f"[deploy] Terraform apply done in {region}", flush=True)
                     last_error = None
                     break  # Success — exit the region loop
                 except RuntimeError as error:
@@ -387,11 +383,10 @@ class DeploymentManager:
 
     async def plan(self, config: ComputeConfig) -> dict[str, Any]:
         auth_env = self._build_auth_env(config)
-        plan_dir = os.path.join(self._working_dir, f"p-{uuid.uuid4().hex[:12]}")
+        plan_id = f"p-{uuid.uuid4().hex[:12]}"
+        plan_dir = os.path.join(self._working_dir, plan_id)
         os.makedirs(plan_dir, exist_ok=True)
-        hcl = self._generator.generate(config)
-        with open(os.path.join(plan_dir, "main.tf"), "w") as f:
-            f.write(hcl)
+        self._generator.materialize(config, plan_dir, deployment_name=plan_id)
         await self._run_terraform(["init", "-input=false"], cwd=plan_dir, env=auth_env)
         binary = self._binary_resolver.get_infra_binary()
         proc = await asyncio.create_subprocess_exec(
@@ -417,11 +412,10 @@ class DeploymentManager:
 
     async def validate(self, config: ComputeConfig) -> dict[str, Any]:
         auth_env = self._build_auth_env(config)
-        val_dir = os.path.join(self._working_dir, f"v-{uuid.uuid4().hex[:12]}")
+        validation_id = f"v-{uuid.uuid4().hex[:12]}"
+        val_dir = os.path.join(self._working_dir, validation_id)
         os.makedirs(val_dir, exist_ok=True)
-        hcl = self._generator.generate(config)
-        with open(os.path.join(val_dir, "main.tf"), "w") as f:
-            f.write(hcl)
+        self._generator.materialize(config, val_dir, deployment_name=validation_id)
         await self._run_terraform(["init", "-input=false"], cwd=val_dir, env=auth_env)
         return await self._run_terraform(["validate", "-json"], cwd=val_dir, env=auth_env)
 

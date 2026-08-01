@@ -16,6 +16,7 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -355,7 +356,6 @@ class TestDeploymentManagerPlan:
         from general_ludd.config.binary_paths import BinaryPathResolver
         self._resolver = BinaryPathResolver()
 
-    from typing import ClassVar
     _PROVIDER_ENGINES: ClassVar[list[tuple[str, str]]] = [
         ("aws", "vllm"), ("aws", "llamacpp"),
         ("azure", "vllm"), ("azure", "llamacpp"),
@@ -435,6 +435,30 @@ class TestDeploymentManagerPlan:
             result = asyncio.run(dm.validate(config))
         except RuntimeError as exc:
             pytest.skip(f"validate(aws/vllm) failed: {exc}")
+        assert result["returncode"] == 0
+
+    def test_deployment_manager_validate_azure_containerapp_vllm(self, tmp_path: Path) -> None:
+        from general_ludd.infra.compute import (
+            ComputeConfig,
+            ComputeProvider,
+            GPUType,
+            InferenceEngine,
+        )
+        from general_ludd.infra.deployment import DeploymentManager
+
+        config = ComputeConfig(
+            provider=ComputeProvider.AZURE,
+            gpu_type=GPUType.T4,
+            engine=InferenceEngine.VLLM,
+            model_name="Qwen/Qwen2.5-0.5B-Instruct",
+            region="eastus",
+            deploy_type="containerapp",
+            allowed_cidr="198.51.100.10/32",
+        )
+        dm = DeploymentManager(working_dir=str(tmp_path), binary_paths=self._resolver)
+
+        result = asyncio.run(dm.validate(config))
+
         assert result["returncode"] == 0
 
     def test_deployment_manager_validate_qemu_llamacpp(self) -> None:
