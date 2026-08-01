@@ -1,5 +1,6 @@
 """Regression coverage for the bounded E2E runner Make target."""
 
+import subprocess
 from pathlib import Path
 
 MAKEFILE = Path(__file__).resolve().parents[2] / "Makefile"
@@ -140,3 +141,76 @@ def test_azure_provision_sourced_target_uses_explicit_env_file_contract() -> Non
     assert '. "$(AZURE_E2E_ENV_FILE)"' in body
     assert "AZURE_E2E_VALIDATE_ONLY" in body
     assert ". /tmp/general-ludd.env" not in body
+
+
+def test_azure_cleanup_target_is_bounded_observable_and_env_parameterized() -> None:
+    content = MAKEFILE.read_text(encoding="utf-8")
+    body = _target_body("azure-cleanup-e2e")
+
+    assert "AZURE_CLEANUP_TIMEOUT_SECS ?=" in content
+    assert "AZURE_CLEANUP_POLL_SECS ?=" in content
+    assert "AZURE_CLI ?=" in content
+    assert 'test -r "$(AZURE_E2E_ENV_FILE)"' in body
+    assert '. "$(AZURE_E2E_ENV_FILE)"' in body
+    assert ". /tmp/general-ludd.env" not in body
+    assert "CLEANUP_SCAN leaked_resources=" in body
+    assert "CLEANUP_POLL attempt=" in body
+    assert "CLEANUP_VERIFIED leaked_resources=0" in body
+    assert "CLEANUP_TIMEOUT" in body
+
+
+def test_azure_cleanup_target_behavioral_example_is_deletion_free() -> None:
+    result = subprocess.run(
+        [
+            "make",
+            "azure-cleanup-e2e",
+            "AZURE_E2E_ENV_FILE=tests/fixtures/azure-e2e.env.example",
+            "AZURE_CLEANUP_TIMEOUT_SECS=1",
+            "AZURE_CLEANUP_POLL_SECS=1",
+            "AZURE_CLI=true",
+        ],
+        cwd=MAKEFILE.parent,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "CLEANUP_SCAN leaked_resources=0" in result.stdout
+    assert "CLEANUP_VERIFIED leaked_resources=0" in result.stdout
+
+
+def test_azure_cleanup_target_fails_closed_on_timeout(tmp_path: Path) -> None:
+    fake_az = tmp_path / "fake-az"
+    fake_az.write_text(
+        "#!/bin/sh\n"
+        'case "$*" in\n'
+        "  'group list '* ) printf 'gludd-gpu-stuck\\n' ;;\n"
+        "  'group delete '* ) exit 0 ;;\n"
+        "  * ) exit 64 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    fake_az.chmod(0o700)
+    env_file = tmp_path / "azure.env"
+    env_file.write_text("ARM_SUBSCRIPTION_ID=test-subscription\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "make",
+            "azure-cleanup-e2e",
+            f"AZURE_E2E_ENV_FILE={env_file}",
+            "AZURE_CLEANUP_TIMEOUT_SECS=1",
+            "AZURE_CLEANUP_POLL_SECS=1",
+            f"AZURE_CLI={fake_az}",
+        ],
+        cwd=MAKEFILE.parent,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode != 0
+    assert result.stdout.count("CLEANUP_POLL attempt=") >= 2
+    assert "CLEANUP_TIMEOUT" in result.stdout
+    assert "CLEANUP_VERIFIED" not in result.stdout

@@ -28,6 +28,16 @@
       "behavior": "make test-e2e-azure-provision-sourced AZURE_E2E_ENV_FILE=tests/fixtures/azure-e2e.env.example AZURE_E2E_VALIDATE_ONLY=1"
     },
     {
+      "name": "azure-cleanup-e2e",
+      "make_variables": [
+        "AZURE_E2E_ENV_FILE",
+        "AZURE_CLEANUP_TIMEOUT_SECS",
+        "AZURE_CLEANUP_POLL_SECS",
+        "AZURE_CLI"
+      ],
+      "behavior": "make azure-cleanup-e2e AZURE_E2E_ENV_FILE=tests/fixtures/azure-e2e.env.example AZURE_CLEANUP_TIMEOUT_SECS=1 AZURE_CLEANUP_POLL_SECS=1 AZURE_CLI=true"
+    },
+    {
       "name": "runpod-harness",
       "make_variables": ["LIVE"],
       "environment_variables": ["RUNPOD_API_KEY", "RUNPOD_BUDGET_USD"],

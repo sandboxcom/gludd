@@ -290,6 +290,26 @@ The default `AZURE_E2E_ENV_FILE` is `/tmp/general-ludd.env`; override it for a
 different operator-managed path. An unreadable path fails before Terraform is
 invoked.
 
+After any interrupted provision run, use the same credential pointer to request
+deletion and wait for Azure to report that every E2E resource group is absent:
+
+```bash
+make azure-cleanup-e2e AZURE_E2E_ENV_FILE=/tmp/general-ludd.env AZURE_CLEANUP_TIMEOUT_SECS=900 AZURE_CLEANUP_POLL_SECS=10 AZURE_CLI=az
+```
+
+The target only selects resource groups whose names start with `gludd-gpu`. It
+prints `CLEANUP_SCAN`, every deletion request, and a `CLEANUP_POLL` heartbeat on
+each query. It succeeds only after printing
+`CLEANUP_VERIFIED leaked_resources=0`; an Azure query/delete failure or timeout
+returns nonzero. The credential file is sourced without printing its values.
+
+This verified-absence rule is intentional: operators have reported both
+[long-running Azure deallocation][forum-vm-deallocating] and Azure objects left
+outside Terraform state after failed applies
+([research and acceptance contract][azure-terraform-e2e-research]). The cleanup
+target is a narrow E2E safety net; it does not replace Terraform/ARM ownership
+reconciliation for production resources.
+
 ```bash
 # 1. Source your Azure credentials
 source /tmp/general-ludd.env
@@ -307,6 +327,9 @@ make test TESTFILE='tests/unit/test_validate_azure_iam_policy.py'
 # 5. Full Azure E2E test (auto-provision GPU → test → destroy)
 make test-e2e-azure-provision
 ```
+
+[azure-terraform-e2e-research]: research/AZURE_TERRAFORM_EVENT_ELASTICITY_E2E_EVIDENCE.md
+[forum-vm-deallocating]: https://learn.microsoft.com/en-us/answers/questions/261/trending-on-msdn-virtual-machine-stuck-in-dealloca
 
 ### Option B: Secret aliases (recommended for production)
 

@@ -219,6 +219,7 @@ help:
 	@echo "  test-e2e-games-provision  Game E2E with Azure GPU provisioning (opt-in, costly)"
 	@echo "  e2e-audit-azure     List all E2E runs with PASS/FAIL/RUNNING status"
 	@echo "  e2e-latest-log      Show exit code and error summary for latest E2E run"
+	@echo "  azure-cleanup-e2e   Delete gludd-gpu* groups and visibly verify absence"
 	@echo "  test-opencode-e2e     .opencode/ plugin load+invocation tests"
 	@echo "  test-specific         Single test (TESTFILE=path::TestClass::test_name)"
 	@echo "  test-files            Multiple tests (TESTFILES=tests/unit/a.py tests/unit/b.py)"
@@ -1477,6 +1478,9 @@ GLUDD_E2E_MAX_SPEND_USD ?= 5
 AZURE_PROVISION_E2E ?= 0
 AZURE_E2E_ENV_FILE ?= /tmp/general-ludd.env
 AZURE_E2E_VALIDATE_ONLY ?= 0
+AZURE_CLEANUP_TIMEOUT_SECS ?= 900
+AZURE_CLEANUP_POLL_SECS ?= 10
+AZURE_CLI ?= az
 test-e2e-azure:
 	@AZURE_BASE_URL=$(AZURE_BASE_URL) AZURE_MODEL=$(AZURE_MODEL) AZURE_API_KEY=$(AZURE_API_KEY) \
 		$(UV) run pytest tests/e2e/providers/test_azure_e2e.py -v
@@ -1575,15 +1579,36 @@ azure-stream-logs:
 	 done
 
 # Clean up orphaned E2E resource groups (from failed test runs)
+.PHONY: azure-cleanup-e2e
 azure-cleanup-e2e:
-	@. /tmp/general-ludd.env > /dev/null 2>&1; \
+	@test -r "$(AZURE_E2E_ENV_FILE)" || { echo "AZURE_E2E_ENV_FILE_UNREADABLE path=$(AZURE_E2E_ENV_FILE)"; exit 2; }
+	@. "$(AZURE_E2E_ENV_FILE)"; \
 	 SUB=$${ARM_SUBSCRIPTION_ID:-$$AZURE_SUBSCRIPTION_ID}; \
-	 echo "Finding orphaned E2E resource groups..."; \
-	 az group list --subscription "$$SUB" --query "[?starts_with(name,'gludd-gpu')].name" -o tsv | while read rg; do \
-	   echo "Deleting $$rg..."; \
-	   az group delete --subscription "$$SUB" --name "$$rg" --yes --no-wait; \
+	 if [ -z "$$SUB" ]; then echo "AZURE_SUBSCRIPTION_ID_MISSING"; exit 2; fi; \
+	 case "$(AZURE_CLEANUP_TIMEOUT_SECS)" in ''|*[!0-9]*) echo "AZURE_CLEANUP_TIMEOUT_SECS must be a positive integer"; exit 2;; esac; \
+	 case "$(AZURE_CLEANUP_POLL_SECS)" in ''|*[!0-9]*) echo "AZURE_CLEANUP_POLL_SECS must be a positive integer"; exit 2;; esac; \
+	 if [ "$(AZURE_CLEANUP_TIMEOUT_SECS)" -lt 1 ]; then echo "AZURE_CLEANUP_TIMEOUT_SECS must be a positive integer"; exit 2; fi; \
+	 if [ "$(AZURE_CLEANUP_POLL_SECS)" -lt 1 ]; then echo "AZURE_CLEANUP_POLL_SECS must be a positive integer"; exit 2; fi; \
+	 list_groups() { $(AZURE_CLI) group list --subscription "$$SUB" --query "[?starts_with(name,'gludd-gpu')].name" -o tsv; }; \
+	 count_groups() { printf '%s\n' "$$1" | awk 'NF {count += 1} END {print count + 0}'; }; \
+	 RESOURCE_GROUPS="$$(list_groups)" || { echo "CLEANUP_LIST_FAILED"; exit 1; }; \
+	 COUNT="$$(count_groups "$$RESOURCE_GROUPS")"; \
+	 echo "CLEANUP_SCAN leaked_resources=$$COUNT"; \
+	 for rg in $$RESOURCE_GROUPS; do \
+	   echo "CLEANUP_DELETE resource_group=$$rg"; \
+	   $(AZURE_CLI) group delete --subscription "$$SUB" --name "$$rg" --yes --no-wait || { echo "CLEANUP_DELETE_FAILED resource_group=$$rg"; exit 1; }; \
 	 done; \
-	 echo "Cleanup initiated (deletes run async — check Azure Portal for completion)"
+	 START="$$(date +%s)"; ATTEMPT=0; \
+	 while :; do \
+	   ATTEMPT=$$((ATTEMPT + 1)); \
+	   RESOURCE_GROUPS="$$(list_groups)" || { echo "CLEANUP_LIST_FAILED attempt=$$ATTEMPT"; exit 1; }; \
+	   COUNT="$$(count_groups "$$RESOURCE_GROUPS")"; \
+	   NOW="$$(date +%s)"; ELAPSED=$$((NOW - START)); \
+	   echo "CLEANUP_POLL attempt=$$ATTEMPT elapsed_seconds=$$ELAPSED leaked_resources=$$COUNT"; \
+	   if [ "$$COUNT" -eq 0 ]; then echo "CLEANUP_VERIFIED leaked_resources=0"; exit 0; fi; \
+	   if [ "$$ELAPSED" -ge "$(AZURE_CLEANUP_TIMEOUT_SECS)" ]; then echo "CLEANUP_TIMEOUT elapsed_seconds=$$ELAPSED leaked_resources=$$COUNT"; exit 1; fi; \
+	   sleep "$(AZURE_CLEANUP_POLL_SECS)"; \
+	 done
 
 test-games:
 	@$(UV) run python -m pytest tests/e2e/test_game_building_deepseek.py $(_XD) -v $(PYTEST_ARGS)
