@@ -17,6 +17,12 @@ from general_ludd.models.provider_registry import ProviderRegistry
 from general_ludd.models.router import ModelRouter
 from general_ludd.secrets.manager import SecretAlias, SecretsManager
 
+# Historical catalog rates converted from USD per 1,000 tokens to per-token rates.
+_GPT_4_INPUT_COST_PER_TOKEN = 0.00003
+_GPT_4_OUTPUT_COST_PER_TOKEN = 0.00006
+_GPT_35_INPUT_COST_PER_TOKEN = 0.0000005
+_GPT_35_OUTPUT_COST_PER_TOKEN = 0.0000015
+
 
 def _make_fake_chat_model():
     FakeChatModel = MagicMock()
@@ -76,6 +82,8 @@ class TestModelGatewayCallModelWithStub:
             provider_class_hint="ChatOpenAI",
             model_name="gpt-4",
             credential_alias="openai_key",
+            cost_per_input_token=_GPT_4_INPUT_COST_PER_TOKEN,
+            cost_per_output_token=_GPT_4_OUTPUT_COST_PER_TOKEN,
             run_budget_usd=100.0,
         )
 
@@ -185,6 +193,8 @@ class TestCallerBaseUrlSSRFGuard:
             provider_class_hint="ChatOpenAI",
             model_name="gpt-4",
             credential_alias="openai_key",
+            cost_per_input_token=_GPT_4_INPUT_COST_PER_TOKEN,
+            cost_per_output_token=_GPT_4_OUTPUT_COST_PER_TOKEN,
             run_budget_usd=100.0,
         )
         gw = ModelGateway(
@@ -331,6 +341,8 @@ class TestToolCallsReachToolLoopProductionPath:
             provider_package="langchain-openai",
             provider_class_hint="ChatOpenAI",
             model_name="gpt-4",
+            cost_per_input_token=_GPT_4_INPUT_COST_PER_TOKEN,
+            cost_per_output_token=_GPT_4_OUTPUT_COST_PER_TOKEN,
             run_budget_usd=100.0,
         )
         gw = ModelGateway(profiles=[profile], provider_registry=reg)
@@ -446,6 +458,8 @@ class TestToolCallsReachToolLoopProductionPath:
             provider_package="langchain-openai",
             provider_class_hint="ChatOpenAI",
             model_name="gpt-4",
+            cost_per_input_token=_GPT_4_INPUT_COST_PER_TOKEN,
+            cost_per_output_token=_GPT_4_OUTPUT_COST_PER_TOKEN,
             run_budget_usd=100.0,
         )
         gw = ModelGateway(profiles=[profile], provider_registry=reg)
@@ -569,6 +583,8 @@ class TestModelGatewayRedactsCredentials:
             provider_class_hint="ChatOpenAI",
             model_name="gpt-4",
             credential_alias="openai_key",
+            cost_per_input_token=_GPT_4_INPUT_COST_PER_TOKEN,
+            cost_per_output_token=_GPT_4_OUTPUT_COST_PER_TOKEN,
             run_budget_usd=100.0,
         )
 
@@ -609,6 +625,8 @@ class TestCallModelByRoleStrictMode:
             provider_package="langchain-openai",
             provider_class_hint="ChatOpenAI",
             model_name="gpt-4",
+            cost_per_input_token=_GPT_4_INPUT_COST_PER_TOKEN,
+            cost_per_output_token=_GPT_4_OUTPUT_COST_PER_TOKEN,
             run_budget_usd=100.0,
         )
         router = ModelRouter(
@@ -666,6 +684,8 @@ class TestFallbackRecordSuccessOnce:
             provider_package="langchain-openai",
             provider_class_hint="ChatOpenAI",
             model_name="gpt-4",
+            cost_per_input_token=_GPT_4_INPUT_COST_PER_TOKEN,
+            cost_per_output_token=_GPT_4_OUTPUT_COST_PER_TOKEN,
             run_budget_usd=100.0,
             fallback_profiles=["fallback_model"],
         )
@@ -676,6 +696,8 @@ class TestFallbackRecordSuccessOnce:
             provider_package="langchain-openai",
             provider_class_hint="ChatOpenAI",
             model_name="gpt-3.5-turbo",
+            cost_per_input_token=_GPT_35_INPUT_COST_PER_TOKEN,
+            cost_per_output_token=_GPT_35_OUTPUT_COST_PER_TOKEN,
             run_budget_usd=100.0,
         )
 
@@ -751,6 +773,7 @@ class TestLocalModelProfileIgnoredUnlessEnabled:
         gw = ModelGateway([ModelProfile(
             model_profile_id="local_llm",
             enabled=False,
+            api_metered=False,
             resource_profile="local_heavy",
         )])
         assert gw.is_available("local_llm") is False
@@ -759,6 +782,7 @@ class TestLocalModelProfileIgnoredUnlessEnabled:
         gw = ModelGateway([ModelProfile(
             model_profile_id="local_llm",
             enabled=True,
+            api_metered=False,
             resource_profile="local_heavy",
         )])
         assert gw.is_available("local_llm") is True
@@ -853,7 +877,7 @@ class TestRequestedMaxOutputTokensBudgetEstimate:
     TestCheckBudgetServerSideReEstimation above).
     """
 
-    def _make_gateway(self, run_budget_usd: float = 0.5) -> tuple:
+    def _make_gateway(self, run_budget_usd: float = 0.1) -> tuple:
         from general_ludd.models.gateway import ModelGateway, ModelProfile
         from general_ludd.models.provider_registry import ProviderRegistry
 
@@ -868,11 +892,11 @@ class TestRequestedMaxOutputTokensBudgetEstimate:
             model_name="gpt-4",
             api_metered=True,
             run_budget_usd=run_budget_usd,
-            # Worst-case output leg = 8000 * 0.001 = 8.0 USD >> 0.5 budget, so a
+            # Worst-case output leg = 8000 * 0.00006 = 0.48 USD > 0.1 budget, so a
             # call estimated at max_output_tokens is rejected. A call that caps
-            # output at 50 tokens estimates ~50 * 0.001 = 0.05 USD < 0.5 → allowed.
-            cost_per_input_token=0.0,
-            cost_per_output_token=0.001,
+            # output at 50 tokens estimates ~0.003 USD < 0.1 → allowed.
+            cost_per_input_token=_GPT_4_INPUT_COST_PER_TOKEN,
+            cost_per_output_token=_GPT_4_OUTPUT_COST_PER_TOKEN,
             max_output_tokens=8000,
         )
         gw = ModelGateway(profiles=[profile], provider_registry=reg)
@@ -883,9 +907,9 @@ class TestRequestedMaxOutputTokensBudgetEstimate:
         against a finite remaining budget (D-21 security behaviour preserved).
         budget_remaining=0.001 ensures the rejection path actually executes
         rather than being skipped by inf → no-cost-exceeds-inf semantics."""
-        gw, _reg = self._make_gateway(run_budget_usd=0.5)
+        gw, _reg = self._make_gateway(run_budget_usd=0.1)
         msg = [{"role": "user", "content": "hi"}]
-        # 8000 * 0.001 = 8.0 USD output leg > 0.001 remaining → rejected.
+        # 8000 * 0.00006 = 0.48 USD output leg > 0.001 remaining → rejected.
         assert gw.check_budget(
             "lowbudget",
             estimated_cost=0.0,
@@ -897,9 +921,9 @@ class TestRequestedMaxOutputTokensBudgetEstimate:
         """A small requested_max_output_tokens → realistic small estimate →
         ALLOWED against the same modest run_budget_usd that rejected the
         worst-case estimate."""
-        gw, _reg = self._make_gateway(run_budget_usd=0.5)
+        gw, _reg = self._make_gateway(run_budget_usd=0.1)
         msg = [{"role": "user", "content": "hi"}]
-        # 50 * 0.001 = 0.05 USD output leg < 0.5 budget → allowed.
+        # 50 * 0.00006 = 0.003 USD output leg < 0.1 budget → allowed.
         assert gw.check_budget(
             "lowbudget",
             estimated_cost=0.0,
@@ -913,10 +937,10 @@ class TestRequestedMaxOutputTokensBudgetEstimate:
         estimate below the profile's real worst case — it is min()'d to the
         profile max, so a giant requested value yields the same worst-case
         (rejecting) estimate as no cap at all."""
-        gw, _reg = self._make_gateway(run_budget_usd=0.5)
+        gw, _reg = self._make_gateway(run_budget_usd=0.1)
         msg = [{"role": "user", "content": "hi"}]
         # Request 10x the profile cap; estimate uses min(80000, 8000)=8000 →
-        # 8.0 USD > 0.5 → still rejected (cannot bypass the gate upward).
+        # 0.48 USD > 0.1 → still rejected (cannot bypass the gate upward).
         assert gw.check_budget(
             "lowbudget",
             estimated_cost=0.0,
@@ -931,26 +955,26 @@ class TestRequestedMaxOutputTokensBudgetEstimate:
 
         profile = ModelProfile(
             model_profile_id="p",
-            cost_per_input_token=0.0,
-            cost_per_output_token=0.001,
+            cost_per_input_token=_GPT_4_INPUT_COST_PER_TOKEN,
+            cost_per_output_token=_GPT_4_OUTPUT_COST_PER_TOKEN,
             max_output_tokens=8000,
             enabled=True,
         )
         msg = [{"role": "user", "content": "hi"}]
-        # No cap → worst case 8000 * 0.001 = 8.0
-        assert ModelGateway.estimate_cost(profile, msg) == pytest.approx(8.0)
-        # Small cap → 50 * 0.001 = 0.05
+        # No cap → worst case 8000 * 0.00006 = 0.48
+        assert ModelGateway.estimate_cost(profile, msg) == pytest.approx(0.48)
+        # Small cap → 50 * 0.00006 = 0.003
         assert ModelGateway.estimate_cost(
             profile, msg, requested_max_output_tokens=50
-        ) == pytest.approx(0.05)
-        # Cap above profile max → min()'d to 8000 → 8.0 (unchanged worst case)
+        ) == pytest.approx(0.003)
+        # Cap above profile max → min()'d to 8000 → 0.48 (unchanged worst case)
         assert ModelGateway.estimate_cost(
             profile, msg, requested_max_output_tokens=99_999
-        ) == pytest.approx(8.0)
+        ) == pytest.approx(0.48)
         # Non-positive cap is ignored → worst case (defensive backward-compat)
         assert ModelGateway.estimate_cost(
             profile, msg, requested_max_output_tokens=0
-        ) == pytest.approx(8.0)
+        ) == pytest.approx(0.48)
 
     def test_call_model_allows_capped_call_on_low_budget(self):
         """End-to-end through call_model: a call that would be rejected under the
@@ -958,7 +982,7 @@ class TestRequestedMaxOutputTokensBudgetEstimate:
         requested_max_output_tokens, on a low run_budget_usd deployment."""
         from unittest.mock import MagicMock, patch
 
-        gw, reg = self._make_gateway(run_budget_usd=0.5)
+        gw, reg = self._make_gateway(run_budget_usd=0.1)
         msg = [{"role": "user", "content": "hi"}]
 
         FakeChatModel = MagicMock()
@@ -987,7 +1011,7 @@ class TestRequestedMaxOutputTokensBudgetEstimate:
         worst-case estimate rejects (D-21 security still enforced)."""
         from general_ludd.models.gateway import BudgetExceededError
 
-        gw, _reg = self._make_gateway(run_budget_usd=0.5)
+        gw, _reg = self._make_gateway(run_budget_usd=0.1)
         msg = [{"role": "user", "content": "hi"}]
         with pytest.raises(BudgetExceededError):
             gw.call_model("lowbudget", msg)
@@ -1013,6 +1037,8 @@ class TestCacheKeyLockEviction:
             model_profile_id="p",
             enabled=True,
             provider="openai",
+            cost_per_input_token=_GPT_4_INPUT_COST_PER_TOKEN,
+            cost_per_output_token=_GPT_4_OUTPUT_COST_PER_TOKEN,
             run_budget_usd=100.0,
         )
 
@@ -1044,6 +1070,8 @@ class TestCacheKeyLockEviction:
             provider_package="langchain-openai",
             provider_class_hint="ChatOpenAI",
             model_name="gpt-4",
+            cost_per_input_token=_GPT_4_INPUT_COST_PER_TOKEN,
+            cost_per_output_token=_GPT_4_OUTPUT_COST_PER_TOKEN,
             run_budget_usd=100.0,
         )
         _store: dict = {}
@@ -1113,6 +1141,8 @@ class TestCacheKeyLockEviction:
                     provider_package="langchain-openai",
                     provider_class_hint="ChatOpenAI",
                     model_name="gpt-4",
+                    cost_per_input_token=_GPT_4_INPUT_COST_PER_TOKEN,
+                    cost_per_output_token=_GPT_4_OUTPUT_COST_PER_TOKEN,
                     run_budget_usd=100.0,
                 )
             )
@@ -1178,6 +1208,8 @@ class TestRetryBackoffCumulativeCap:
             provider_package="langchain-openai",
             provider_class_hint="ChatOpenAI",
             model_name="gpt-4",
+            cost_per_input_token=_GPT_4_INPUT_COST_PER_TOKEN,
+            cost_per_output_token=_GPT_4_OUTPUT_COST_PER_TOKEN,
             run_budget_usd=100.0,
         )
         gw = ModelGateway(profiles=[profile], provider_registry=reg)
@@ -1235,6 +1267,8 @@ class TestRetryBackoffCumulativeCap:
             provider_package="langchain-openai",
             provider_class_hint="ChatOpenAI",
             model_name="gpt-4",
+            cost_per_input_token=_GPT_4_INPUT_COST_PER_TOKEN,
+            cost_per_output_token=_GPT_4_OUTPUT_COST_PER_TOKEN,
             run_budget_usd=100.0,
         )
         gw = ModelGateway(profiles=[profile], provider_registry=reg)
