@@ -28,20 +28,23 @@ operator evidence are documented in
 
 ## 2. Observed baseline
 
-The baseline was measured on development commit `1adcb2de` with repository make
-targets. Generated files are evidence snapshots, not allowlists.
+The baseline was refreshed on development commit `5922cff3` with repository
+make targets. Generated files are evidence snapshots, not allowlists.
 
 - `make security-backlog-gate` reported `TOTAL=24`,
   `LANDED-VERIFIED=8`, and `OPEN=16`. The current target intentionally exits
   successfully when controls are open, so it is not a completion gate.
-- `make sast` generated `dist/sast-report.json` with `SEVERITY.HIGH: 1`,
-  `SEVERITY.MEDIUM: 68`, and `SEVERITY.LOW: 508`. The target currently masks
-  Bandit's exit status and is informational only.
-- `make pip-audit` reported `ansible-core 2.21.0` as
-  `PYSEC-2026-3458` and `diskcache 5.6.3` as `PYSEC-2026-2447`.
-- `uv.lock` resolves Pillow 12.2.0. The current dependency scanner did not
-  report the security changes shipped by Pillow 12.3.0; that absence SHALL NOT
-  be interpreted as safety.
+- `make sast` generated `dist/sast-report.json` with `SEVERITY.HIGH: 0`,
+  `SEVERITY.MEDIUM: 47`, and `SEVERITY.LOW: 506`. The target still masks
+  Bandit's finding exit status and is therefore an inventory, not a strict
+  completion gate.
+- `make pip-audit-gate` reported `No known vulnerabilities found`; the project
+  package is not published on PyPI and is explicitly shown as unauditable.
+  `make node-deps-audit` reported zero vulnerabilities. Neither result replaces
+  source-level or runtime-boundary review.
+- `uv.lock` resolves Pillow 12.3.0 and safehttpx 0.1.7. Pillow's security update
+  and the pinned-IP outbound transport are landed, while decoder resource
+  isolation and migration of the final Azure-pricing URL call remain open.
 - `SandboxEnforcer` describes a fail-closed contract, while
   `security.sandboxes.SandboxBackend` and several backends explicitly fail
   open. The effective dispatch boundary is therefore not yet uniformly
@@ -49,6 +52,9 @@ targets. Generated files are evidence snapshots, not allowlists.
 - The current `_isolate_network()` changes a socket timeout but does not create
   an operating-system network boundary. Locked workloads SHALL reject this as
   unenforced, not report it as isolated.
+- `make security-audit` completed successfully, but its `detect-secrets` phase
+  emitted no heartbeat for more than 90 seconds. Long-running security phases
+  SHALL publish bounded progress and early failures just like test gates.
 
 ### 2.1 Implemented production-boundary slice (2026-08-01)
 
@@ -451,7 +457,7 @@ Dependency resolution SHALL be reproducible, hash locked, SBOM-attested and
 scanned against multiple advisory aliases. A scanner that lacks a new advisory
 SHALL not override upstream security release notes.
 
-### 10.1 Pillow 12.2.0 to Pillow 12.3.0
+### 10.1 Pillow 12.3.0 locked; decoder isolation remains open
 
 The official [Pillow 12.3.0 security notes](https://pillow.readthedocs.io/en/stable/releasenotes/12.3.0.html)
 describe security fixes absent from the current 12.2.0 lock:
@@ -468,26 +474,33 @@ describe security fixes absent from the current 12.2.0 lock:
   decompression bombs; and
 - `CVE-2026-55380` GD decompression bomb.
 
-Remediation SHALL pin Pillow 12.3.0 or newer in the resolved lock and verify the
-wheel hashes/SBOM. All untrusted image/video frames SHALL still decode in a
-locked sandbox with input bytes, dimensions, pixels, frames, decompression
-ratio, CPU, memory and wall-time limits. EPS/Ghostscript and viewer execution
-SHALL be disabled unless separately granted. Regression fixtures SHALL cover
-each class without embedding weaponized content in logs. Until the upgrade and
-decoder tests land, this requirement is OPEN.
+Pillow 12.3.0 is now pinned in the game extras and resolved lock, and the current
+dependency audit is clean. That package update does not make hostile media safe
+by itself. All untrusted image/video frames SHALL still decode in a locked
+sandbox with input bytes, dimensions, pixels, frames, decompression ratio, CPU,
+memory and wall-time limits. EPS/Ghostscript and viewer execution SHALL be
+disabled unless separately granted. Regression fixtures SHALL cover each class
+without embedding weaponized content in logs. The dependency-update slice is
+landed; decoder isolation and adversarial resource-limit evidence remain OPEN.
 
-### 10.2 Current pip-audit findings
+### 10.2 Current dependency audit and historical regression controls
 
-- `ansible-core 2.21.0` / `PYSEC-2026-3458`: Gludd SHALL reject dependency
-  specifications and git-option injection from untrusted Galaxy role metadata,
-  avoid runtime install of untrusted roles, and upgrade to the first stable
-  fixed compatible release. A malicious `meta/requirements.yml` fixture SHALL
-  not alter git configuration or execute code.
-- `diskcache 5.6.3` / `PYSEC-2026-2447`: Gludd SHALL not deserialize pickle
-  from a directory writable by sandboxed or untrusted code. Replace the default
-  serializer/cache or cryptographically authenticate a safe typed format. A
-  crafted pickle fixture SHALL remain inert. Directory permissions alone do not
-  satisfy this control when hostile code can share the service UID.
+The refreshed Python audit reports `No known vulnerabilities found`, and the
+Node audit reports zero vulnerabilities. The former `ansible-core`
+`PYSEC-2026-3458` and `diskcache` `PYSEC-2026-2447` entries no longer appear in
+the resolved-environment report. Their exploit-class controls remain mandatory:
+
+- Gludd SHALL reject dependency specifications and git-option injection from
+  untrusted Galaxy role metadata and avoid runtime installation of untrusted
+  roles. A malicious `meta/requirements.yml` fixture SHALL not alter git
+  configuration or execute code.
+- Gludd SHALL not deserialize pickle from a directory writable by sandboxed or
+  untrusted code. Use a safe typed format or authenticate the serialized bytes.
+  A crafted pickle fixture SHALL remain inert even when hostile code shares the
+  service UID.
+- safehttpx 0.1.7 SHALL remain hash locked and covered by redirect, DNS
+  rebinding, destination, deadline and response-byte tests; replacing or
+  upgrading it requires the same behavioral contract and license review.
 
 Advisory ignores SHALL match all aliases, include a threat-model proof and
 expiry, and remain red in the strict gate if the compensating-control test is

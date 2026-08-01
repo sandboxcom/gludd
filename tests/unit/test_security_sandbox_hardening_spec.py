@@ -66,16 +66,15 @@ def test_spec_defines_all_boundary_and_delivery_contracts() -> None:
 
 def test_spec_covers_current_bandit_and_dependency_baselines() -> None:
     text = _read_spec()
-    assert "SEVERITY.HIGH: 1" in text
-    assert "SEVERITY.MEDIUM: 68" in text
-    assert "SEVERITY.LOW: 508" in text
+    assert "SEVERITY.HIGH: 0" in text
+    assert "SEVERITY.MEDIUM: 47" in text
+    assert "SEVERITY.LOW: 506" in text
     for finding_id in ("B324", "B314", "B318", "B608", "B603", "B607"):
         assert finding_id in text
     for dependency in (
-        "Pillow 12.2.0",
         "Pillow 12.3.0",
-        "PYSEC-2026-3458",
-        "PYSEC-2026-2447",
+        "safehttpx 0.1.7",
+        "No known vulnerabilities found",
     ):
         assert dependency in text
 
