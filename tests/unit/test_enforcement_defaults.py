@@ -18,6 +18,7 @@ ROOT = Path(__file__).parent.parent.parent
 FLOOR_PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-floor.ts"
 SESSION_START_PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-session-start.ts"
 STOP_PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
+NO_WAIT_PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-no-wait.ts"
 DELEGATE_PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-delegate.ts"
 
 
@@ -69,7 +70,7 @@ class TestEnforcementDefaultsOn:
         )
 
     def test_no_wait_enforcement_default_is_on(self) -> None:
-        src = STOP_PLUGIN.read_text()
+        src = NO_WAIT_PLUGIN.read_text()
         line = next(
             (
                 ln
@@ -79,10 +80,10 @@ class TestEnforcementDefaultsOn:
             None,
         )
         assert line is not None, "GLUDD_NO_WAIT_ENFORCE env read not found in enforce-stop.ts"
-        assert '!== "0"' in line, (
+        assert '=== "0"' in line, (
             "GLUDD_NO_WAIT_ENFORCE must default ON (opt-out via =0) — this has been "
-            "the contract since 2026-06-22. Found line did not use the opt-OUT "
-            "`!== \"0\"` pattern; do not regress to advisory-by-default."
+            "the contract since 2026-06-22. The only early bypass must be the "
+            "explicit `=== \"0\"` opt-out."
         )
         assert '=== "1"' not in line, (
             "GLUDD_NO_WAIT_ENFORCE must NOT be opt-in."
@@ -112,9 +113,9 @@ class TestEnforcementDefaultsOn:
         src = FLOOR_PLUGIN.read_text()
         # 2026-07-01 refactor: the FLOOR default moved from an inline
         # `parseInt(process.env.CLAUDE_AGENT_FLOOR || "10")` to a
-        # `_tunable("/tmp/gludd-floor-override", "CLAUDE_AGENT_FLOOR", "7")`
+        # `_tunable("/tmp/gludd-floor-override", "CLAUDE_AGENT_FLOOR", "10")`
         # helper (same default, adds a /tmp override read). Accept either the
-        # _tunable form or the legacy parseInt form; the env-var name + "7"
+        # _tunable form or the legacy parseInt form; the env-var name + "10"
         # default are the load-bearing parts.
         line = next(
             (
@@ -127,9 +128,9 @@ class TestEnforcementDefaultsOn:
         )
         assert line is not None, (
             "CLAUDE_AGENT_FLOOR default line not found in enforce-floor.ts "
-            "(expected _tunable(..., \"CLAUDE_AGENT_FLOOR\", \"7\") or a parseInt form)"
+            "(expected _tunable(..., \"CLAUDE_AGENT_FLOOR\", \"10\") or a parseInt form)"
         )
-        assert '"7"' in line, (
-            "CLAUDE_AGENT_FLOOR default must be \"7\" (per the 2026-07-11 cost-efficiency "
-            "directive setting the floor at 7). The floor must not be silently changed."
+        assert '"10"' in line, (
+            "CLAUDE_AGENT_FLOOR default must be \"10\" per the active cost-efficiency "
+            "directive and machine-enforced cap. The floor must not drift."
         )

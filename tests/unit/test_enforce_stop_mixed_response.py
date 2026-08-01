@@ -36,6 +36,7 @@ from tests.unit._hook_fixtures import (
 
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
+IMPL = ROOT / ".opencode" / "plugin" / "impl" / "enforce_stop_impl.ts"
 EXPORTS = ROOT / ".opencode" / "lib" / "plugin_test_exports.ts"
 PERSIST_BLOCK_ENV = "GLUDD_PERSIST_STOP_BLOCK_FILE"
 
@@ -94,7 +95,10 @@ def _seed_ci_cache(status: str) -> None:
 
 
 def _src() -> str:
-    s = PLUGIN.read_text()
+    # Runtime behavior lives in the implementation behind the lean plugin
+    # entrypoint; inspect it first so structural assertions exercise real code
+    # rather than compatibility markers in the proxy.
+    s = IMPL.read_text() + "\n" + PLUGIN.read_text()
     if EXPORTS.exists():
         s += "\n" + EXPORTS.read_text()
     return s

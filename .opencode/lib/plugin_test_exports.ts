@@ -132,13 +132,13 @@ export function looksLikeStatusSummary(text: string): boolean {
 
 // ── enforce-verified-claims helpers ─────────────────────────────────────
 
-const DONE_WORDS = [
+export const DONE_WORDS = [
   "landed", "committed", "pushed", "fixed", "passing",
   "shipped", "done", "complete", "green", "resolved",
   "deployed", "verified", "passed", "working",
 ] as const
 
-const EVIDENCE_PATTERNS: RegExp[] = [
+export const EVIDENCE_PATTERNS: RegExp[] = [
   /\b[0-9a-f]*[a-f][0-9a-f]{6,39}\b/,
   /VERIFIED\s+\w+@/,
   /CI\s+(GREEN|RED|PENDING)/,
@@ -149,7 +149,7 @@ const EVIDENCE_PATTERNS: RegExp[] = [
   /Success: no issues found/,
 ]
 
-const NOT_DONE_PHRASES = [/\bworking\s+on\b/] as const
+export const NOT_DONE_PHRASES = [/\bworking\s+on\b/] as const
 
 export function shouldBlock(text: string): boolean {
   if (!text || text.trim().length === 0) return false

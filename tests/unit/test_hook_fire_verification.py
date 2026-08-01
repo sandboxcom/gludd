@@ -1,8 +1,9 @@
-"""Verify which hooks each enforcement plugin exports in opencode 1.17.9.
+"""Verify which hooks each enforcement plugin exports in opencode 1.18.5.
 
 Loads every plugin, inspects the hook names it returns, verifies they are
-callable, and reports which hooks are dead code (text.complete, session.idle,
-event — all removed in 1.17.9 or never implemented).
+callable, and rejects only the legacy direct hook names. Current opencode uses
+``experimental.text.complete`` for response text and ``event`` for lifecycle
+events such as ``session.idle``.
 """
 
 from __future__ import annotations
@@ -66,19 +67,25 @@ PLUGIN_PATHS = {
     p.name: str(p) for p in list(PLUGIN_DIR.glob("*.ts")) + list(PLUGINS_DIR.glob("*.ts"))
 }
 
-# Hooks known to be removed/unsupported in opencode >=1.17.9
-DEAD_HOOK_NAMES = {"experimental.text.complete", "text.complete", "session.idle", "event"}
-# Hooks that are expected to work
+# Direct hook names removed/unsupported in opencode >=1.17.9. Their supported
+# replacements are experimental.text.complete and event, respectively.
+DEAD_HOOK_NAMES = {"text.complete", "session.idle"}
+# Hooks supported by the pinned opencode plugin API.
 LIVE_HOOK_NAMES = {
     "tool.execute.before",
     "tool.execute.after",
+    "experimental.text.complete",
     "experimental.chat.system.transform",
+    "event",
 }
 
 # PluginAPI-style plugins: use `api.tool.execute.before(fn)` not `return { ... }`
 PLUGINAPI_PLUGINS = {"enforce-commit-lock.ts", "watchdog.ts"}
 # Daemon-side plugins that intentionally register zero enforcement hooks
 DAEMON_PLUGINS = {"watchdog.ts"}
+# This plugin intentionally enforces only at response completion; forcing a
+# no-op tool hook would add surface without adding protection.
+TEXT_ONLY_PLUGINS = {"enforce-audit.ts"}
 
 
 # ── Fixture: load each plugin and return its hook table ─────────────────────
@@ -172,7 +179,7 @@ console.log(JSON.stringify({{file: '{plugin_file}', hooks: entries}}))
 
 @pytest.mark.parametrize("plugin_file", PLUGIN_FILES)
 def test_plugin_no_dead_hooks(plugin_file: str):
-    """No plugin exports hooks removed in opencode 1.17.9 (text.complete, session.idle, event)."""
+    """No plugin exports legacy direct text.complete or session.idle hooks."""
     abs_path = PLUGIN_PATHS[plugin_file]
     if plugin_file in PLUGINAPI_PLUGINS:
         code = f"""\
@@ -189,7 +196,7 @@ const api = {{
 }}
 const mod = await import('{abs_path}')
 mod.default(api)
-const dead = hooks.filter(h => ['experimental.text.complete', 'text.complete', 'session.idle', 'event'].includes(h))
+const dead = hooks.filter(h => ['text.complete', 'session.idle'].includes(h))
 console.log(JSON.stringify({{file: '{plugin_file}', allHooks: hooks, dead}}))
 """
     else:
@@ -197,21 +204,25 @@ console.log(JSON.stringify({{file: '{plugin_file}', allHooks: hooks, dead}}))
 const mod = await import('{abs_path}')
 const plugin = await mod.default({{}})
 const keys = Object.keys(plugin ?? {{}})
-const dead = keys.filter(k => ['experimental.text.complete', 'text.complete', 'session.idle', 'event'].includes(k))
+const dead = keys.filter(k => ['text.complete', 'session.idle'].includes(k))
 console.log(JSON.stringify({{file: '{plugin_file}', allHooks: keys, dead}}))
 """
     result = _run_ts(code)
     assert result is not None
     assert len(result["dead"]) == 0, (
         f"Plugin {plugin_file} exports dead hooks: {result['dead']}. "
-        "These hooks were removed in opencode 1.17.9."
+        "Use experimental.text.complete or event instead."
     )
 
 
 # ── Cross-plugin consistency checks ─────────────────────────────────────────
 
-def test_all_plugins_export_tool_execute_before():
-    """tool.execute.before is the primary enforcement hook — every plugin must export it."""
+def test_plugins_export_required_blocking_surface():
+    """Every plugin exposes its required blocking surface.
+
+    Most enforcement runs before tool execution. The explicitly text-only
+    audit plugin must instead expose the response-completion hook.
+    """
     for plugin_file in PLUGIN_FILES:
         if plugin_file in DAEMON_PLUGINS:
             continue
@@ -234,7 +245,21 @@ console.log(JSON.stringify({{file: '{plugin_file}', hasBefore: 'tool.execute.bef
 """
         result = _run_ts(code)
         assert result is not None
-        assert result["hasBefore"] is True, f"Plugin {plugin_file} missing tool.execute.before"
+        if plugin_file in TEXT_ONLY_PLUGINS:
+            code = f"""\
+const mod = await import('{abs_path}')
+const plugin = await mod.default({{}})
+console.log(JSON.stringify({{hasText: 'experimental.text.complete' in (plugin ?? {{}})}}))
+"""
+            result = _run_ts(code)
+            assert result is not None
+            assert result["hasText"] is True, (
+                f"Text-only plugin {plugin_file} missing experimental.text.complete"
+            )
+        else:
+            assert result["hasBefore"] is True, (
+                f"Plugin {plugin_file} missing tool.execute.before"
+            )
 
 
 def test_hook_fire_verification_table():
@@ -243,8 +268,8 @@ def test_hook_fire_verification_table():
     This is a meta-test that validates the entire hook ecosystem:
     - Every plugin loads
     - Every exported hook is callable
-    - No dead hooks (text.complete, session.idle, event)
-    - Every plugin exports tool.execute.before
+    - No legacy direct hooks (text.complete, session.idle)
+    - Every plugin exports its declared blocking surface
     """
     results = []
     all_pass = True
@@ -267,7 +292,7 @@ const api = {{
 }}
 const mod = await import('{abs_path}')
 mod.default(api)
-const dead = hooks.filter(h => ['experimental.text.complete', 'text.complete', 'session.idle', 'event'].includes(h))
+const dead = hooks.filter(h => ['text.complete', 'session.idle'].includes(h))
 console.log(JSON.stringify({{hooks, dead, deadCount: dead.length}}))
 """
             else:
@@ -281,7 +306,7 @@ for (const k of keys) {{
   callable[k] = typeof plugin[k] === 'function'
   if (typeof plugin[k] !== 'function') notCallable.push(k)
 }}
-const dead = keys.filter(k => ['experimental.text.complete', 'text.complete', 'session.idle', 'event'].includes(k))
+const dead = keys.filter(k => ['text.complete', 'session.idle'].includes(k))
 console.log(JSON.stringify({{hooks: keys, callable, notCallable, dead}}))
 """
             result = _run_ts(code)
@@ -290,10 +315,21 @@ console.log(JSON.stringify({{hooks: keys, callable, notCallable, dead}}))
             not_callable = result.get("notCallable", [])
             has_before = "tool.execute.before" in hooks
             is_daemon = plugin_file in DAEMON_PLUGINS
+            has_required_surface = (
+                has_before
+                or (
+                    plugin_file in TEXT_ONLY_PLUGINS
+                    and "experimental.text.complete" in hooks
+                )
+            )
 
             row_pass = (
                 (is_daemon and len(not_callable) == 0)
-                or (has_before and len(dead) == 0 and len(not_callable) == 0)
+                or (
+                    has_required_surface
+                    and len(dead) == 0
+                    and len(not_callable) == 0
+                )
             )
             if not row_pass:
                 all_pass = False
@@ -316,7 +352,7 @@ console.log(JSON.stringify({{hooks: keys, callable, notCallable, dead}}))
             all_pass = False
 
     print("\n╔══════════════════════════════════════════════════════════════════╗")
-    print("║       Hook Fire Verification — opencode 1.17.9                 ║")
+    print("║       Hook Fire Verification — opencode 1.18.5                 ║")
     print("╠══════════════════════════════════════════════════════════════════╣")
     print("║ Plugin                     Hooks  Before Dead  NotCall  PASS   ║")
     print("╠══════════════════════════════════════════════════════════════════╣")
@@ -339,6 +375,6 @@ console.log(JSON.stringify({{hooks: keys, callable, notCallable, dead}}))
 
     assert all_pass, (
         "Hook fire verification FAILED. See table above for details. "
-        "Dead hooks (text.complete, session.idle, event) indicate pre-1.17.9 stale code. "
-        "Missing tool.execute.before indicates a broken plugin."
+        "Legacy hooks (text.complete, session.idle) are unsupported. "
+        "Each plugin must expose its declared blocking surface."
     )

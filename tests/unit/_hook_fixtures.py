@@ -391,6 +391,11 @@ def hook_plugin_env_impl(tmp_path: Path):
     snap = _snapshot(HARDCODED_TMP_PATHS)
 
     env = _clean_base_env()
+    # Keep filesystem-backed enforcement checks inside the per-test project.
+    # Without this override getProjectRoot() falls back to the live main
+    # checkout when a clean fixture intentionally has no TASKS.md, making
+    # otherwise isolated hook tests inherit real pending work.
+    env["GLUDD_PROJECT_ROOT"] = str(tmp_path)
     for var in STATE_FILE_ENV_VARS:
         env[var] = str(tmp_path / f"{var.lower()}.json")
     # Blanket disk-safety overrides — bypass the real disk_usage subprocess
