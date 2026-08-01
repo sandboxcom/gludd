@@ -81,7 +81,14 @@ def _convert_role_args(role: str, extra: dict[str, Any]) -> list[str]:
             return ["--input", str(extra["text"])]
     elif role == "i18n_extract":
         if "directory" in extra:
-            return ["--source-dir", str(extra["directory"])]
+            source_dir = str(extra["directory"])
+            output_dir = str(extra.get("output_dir", source_dir))
+            return [
+                "--source-dir",
+                source_dir,
+                "--output-dir",
+                output_dir,
+            ]
     elif role == "locale_format":
         if "locale" in extra:
             return ["--locale", str(extra["locale"])]

@@ -1123,6 +1123,28 @@ class TestAnsibleConversion:
         assert "--input" in result
         assert "abc" in result
 
+    def test_convert_role_args_i18n_extract_namespaces_output(self):
+        from general_ludd.ansible.runner import _convert_role_args
+
+        assert _convert_role_args(
+            "i18n_extract",
+            {"directory": "/work/source"},
+        ) == [
+            "--source-dir",
+            "/work/source",
+            "--output-dir",
+            "/work/source",
+        ]
+        assert _convert_role_args(
+            "i18n_extract",
+            {"directory": "/work/source", "output_dir": "/work/output"},
+        ) == [
+            "--source-dir",
+            "/work/source",
+            "--output-dir",
+            "/work/output",
+        ]
+
     def test_convert_role_args_unknown_role(self):
         from general_ludd.ansible.runner import _convert_role_args
         result = _convert_role_args("unknown_role", {"a": 1})
