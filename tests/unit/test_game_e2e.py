@@ -15,9 +15,12 @@ from general_ludd.cloud.game_e2e import (
     AzureGameE2E,
     DeploymentConfig,
     FrameComparator,
+    GameGenerationCache,
     GameGenerator,
+    GameInputEvent,
     GameRunner,
     GameSpec,
+    build_game_input_script,
 )
 from general_ludd.cloud.video_compare import REFERENCE_VIDEO_SPECS, ReferenceComparisonResult
 
@@ -197,6 +200,45 @@ pygame.quit()
 """
         assert gen.validate_game_code(code, spec) is True
 
+    def test_session_cache_generates_once_per_fixture_prompt_and_model_settings(self) -> None:
+        calls: list[tuple[str, str]] = []
+
+        class Generator:
+            def generate_game(self, spec: GameSpec, model_id: str = "default") -> str:
+                calls.append((spec.prompt_template, model_id))
+                return f"# {model_id}\n{spec.prompt_template}"
+
+        cache = GameGenerationCache()
+        spec = GAME_SPECS[0]
+        generator = cast(Any, Generator())
+
+        first = cache.generate(
+            generator,
+            spec,
+            model_id="default",
+            model_settings={"AZURE_MODEL": "qwen", "temperature": "0"},
+        )
+        second = cache.generate(
+            generator,
+            spec,
+            model_id="default",
+            model_settings={"temperature": "0", "AZURE_MODEL": "qwen"},
+        )
+        changed_model = cache.generate(
+            generator,
+            spec,
+            model_id="azure-game",
+            model_settings={"AZURE_MODEL": "qwen", "temperature": "0"},
+        )
+
+        assert first is second
+        assert changed_model != first
+        assert calls == [
+            (spec.prompt_template, "default"),
+            (spec.prompt_template, "azure-game"),
+        ]
+        assert cache.miss_count == 2
+
 
 class TestGameRunnerUnit:
     def test_runner_importable(self) -> None:
@@ -214,6 +256,43 @@ class TestGameRunnerUnit:
         result = runner.capture_frame(surface)
         assert isinstance(result, np.ndarray)
         assert result.shape == (64, 64, 3)
+
+    def test_fps_input_script_covers_every_declared_control_and_menu_transition(self) -> None:
+        for spec in GAME_SPECS:
+            script = build_game_input_script(spec)
+            assert {event.control for event in script} == set(spec.required_controls)
+            assert script[0] == GameInputEvent(frame=0, control="return")
+            assert script[-1].control == "escape"
+
+    def test_runner_injects_scripted_events_through_pygame_queue(self, tmp_path: Path) -> None:
+        if not game_e2e._HAS_PYGAME:
+            pytest.skip("pygame not installed")
+
+        game_path = tmp_path / "scripted_game.py"
+        game_path.write_text(
+            """
+import pygame
+pygame.init()
+screen = pygame.display.set_mode((800, 600))
+running = True
+frame = 0
+while running and frame < 12:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+    screen.fill((frame, 0, 0))
+    pygame.display.flip()
+    frame += 1
+pygame.quit()
+"""
+        )
+        script = build_game_input_script(GAME_SPECS[0])
+        runner = GameRunner()
+
+        frames = runner.run_headless_inline(str(game_path), 12, input_script=script)
+
+        assert frames
+        assert runner.last_injected_controls == set(GAME_SPECS[0].required_controls)
 
 
 class TestReferenceComparisonPipeline:
@@ -268,7 +347,16 @@ class TestReferenceComparisonPipeline:
             ),
             model_gateway=cast(Any, Gateway()),
         )
-        monkeypatch.setattr(pipeline.runner, "run_headless_inline", lambda path, count: generated)
+        def fake_run(
+            path: str,
+            count: int,
+            *,
+            input_script: tuple[GameInputEvent, ...],
+        ) -> list[np.ndarray]:
+            pipeline.runner.last_injected_controls = {event.control for event in input_script}
+            return generated
+
+        monkeypatch.setattr(pipeline.runner, "run_headless_inline", fake_run)
 
         result = pipeline.run_full_test(GAME_SPECS[0])
         report = pipeline.report_results(result)
@@ -280,5 +368,6 @@ class TestReferenceComparisonPipeline:
         assert result.reference_cache_status == "cached"
         assert result.reference_frames_sampled == 6
         assert result.comparison_threshold == source.comparison_threshold
+        assert result.input_controls_injected == GAME_SPECS[0].required_controls
         assert report["reference_video_id"] == source.video_id
         assert report["reference_cache_status"] == "cached"

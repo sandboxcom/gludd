@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -16,6 +18,8 @@ from general_ludd.cloud.video_compare import (
     compare_gameplay_to_reference,
     compute_motion_signature,
     compute_ssim,
+    download_youtube_video,
+    extract_frames,
     motion_correlation,
     resize_frames,
 )
@@ -66,6 +70,153 @@ class TestResizeFrames:
         assert result == []
 
 
+class TestMediaAdapters:
+    def test_download_requests_only_the_bounded_clip(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        captured: dict[str, object] = {}
+        destination = tmp_path / "reference.mp4"
+
+        class FakeYoutubeDL:
+            def __init__(self, options: dict[str, object]) -> None:
+                captured["options"] = options
+
+            def __enter__(self) -> FakeYoutubeDL:
+                return self
+
+            def __exit__(self, *args: object) -> None:
+                return None
+
+            def extract_info(self, url: str, *, download: bool) -> dict[str, str]:
+                captured.update(url=url, download=download)
+                destination.write_bytes(b"bounded clip")
+                return {"id": "video-id"}
+
+        monkeypatch.setattr(video_compare, "yt_dlp", SimpleNamespace(YoutubeDL=FakeYoutubeDL))
+
+        result = download_youtube_video(
+            "https://www.youtube.com/watch?v=video-id",
+            destination,
+            clip_start_seconds=1.25,
+            clip_duration_seconds=2.5,
+        )
+
+        options = captured["options"]
+        assert isinstance(options, dict)
+        assert options["download_sections"] == "*1.250-3.750"
+        assert options["force_keyframes_at_cuts"] is True
+        assert options["noplaylist"] is True
+        assert captured["download"] is True
+        assert Path(result) == destination
+
+    @pytest.mark.parametrize(
+        ("start", "duration", "message"),
+        [(-1.0, None, "non-negative"), (0.0, 0.0, "positive")],
+    )
+    def test_download_rejects_unbounded_clip_values(
+        self,
+        start: float,
+        duration: float | None,
+        message: str,
+        tmp_path: Path,
+    ) -> None:
+        with pytest.raises(ValueError, match=message):
+            download_youtube_video(
+                "https://www.youtube.com/watch?v=video-id",
+                tmp_path,
+                clip_start_seconds=start,
+                clip_duration_seconds=duration,
+            )
+
+    def test_download_wraps_adapter_failure(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        class FailingYoutubeDL:
+            def __init__(self, options: dict[str, object]) -> None:
+                self.options = options
+
+            def __enter__(self) -> FailingYoutubeDL:
+                return self
+
+            def __exit__(self, *args: object) -> None:
+                return None
+
+            def extract_info(self, url: str, *, download: bool) -> None:
+                raise OSError("media unavailable")
+
+        monkeypatch.setattr(video_compare, "yt_dlp", SimpleNamespace(YoutubeDL=FailingYoutubeDL))
+
+        with pytest.raises(RuntimeError, match=r"Failed to download.*media unavailable"):
+            download_youtube_video("https://www.youtube.com/watch?v=video-id", tmp_path)
+
+    def test_extract_frames_uses_fps_interval_and_releases_capture(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        raw_frames = [np.full((2, 3, 3), value, dtype=np.uint8) for value in (10, 20)]
+
+        class FakeCapture:
+            def __init__(self) -> None:
+                self.positions: list[int] = []
+                self.released = False
+                self.read_index = 0
+
+            def isOpened(self) -> bool:
+                return True
+
+            def get(self, prop: int) -> float:
+                return 0.0 if prop == 1 else 3.0
+
+            def set(self, prop: int, value: int) -> None:
+                assert prop == 3
+                self.positions.append(value)
+
+            def read(self) -> tuple[bool, np.ndarray]:
+                if self.read_index >= len(raw_frames):
+                    return False, np.empty((0, 0, 3), dtype=np.uint8)
+                frame = raw_frames[self.read_index]
+                self.read_index += 1
+                return True, frame
+
+            def release(self) -> None:
+                self.released = True
+
+        capture = FakeCapture()
+        fake_cv2 = SimpleNamespace(
+            CAP_PROP_FPS=1,
+            CAP_PROP_FRAME_COUNT=2,
+            CAP_PROP_POS_FRAMES=3,
+            COLOR_BGR2RGB=4,
+            VideoCapture=lambda path: capture,
+            cvtColor=lambda frame, conversion: frame[..., ::-1],
+        )
+        monkeypatch.setattr(video_compare, "cv2", fake_cv2)
+
+        frames = extract_frames("reference.mp4", num_frames=3, interval=0.01)
+
+        assert len(frames) == 2
+        assert capture.positions == [0, 1, 2]
+        assert capture.released is True
+        assert np.array_equal(frames[0], raw_frames[0][..., ::-1])
+
+    def test_media_adapters_fail_clearly_when_extras_are_missing(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        monkeypatch.setattr(video_compare, "yt_dlp", None)
+        with pytest.raises(ImportError, match="yt-dlp is required"):
+            download_youtube_video("https://example.test/video", tmp_path)
+
+        monkeypatch.setattr(video_compare, "cv2", None)
+        with pytest.raises(ImportError, match="opencv-python"):
+            extract_frames("missing.mp4")
+
+
 class TestMotionSignature:
     def test_compute_motion_signature(self) -> None:
         frames = [_make_frame(64, 64, i * 10) for i in range(30)]
@@ -94,6 +245,14 @@ class TestMotionSignature:
     def test_motion_correlation_empty(self) -> None:
         assert motion_correlation([], [1.0, 2.0, 3.0]) == 0.0
         assert motion_correlation([1.0], [1.0, 2.0]) == 0.0
+
+    def test_motion_correlation_constant_signatures_is_zero_without_warning(self) -> None:
+        with warnings.catch_warnings(record=True) as recorded:
+            warnings.simplefilter("always")
+            result = motion_correlation([1.0] * 8, [2.0] * 8)
+
+        assert result == 0.0
+        assert list(recorded) == []
 
 
 class TestCompareGameplay:
@@ -147,6 +306,10 @@ class TestReferenceVideos:
         for name, url in REFERENCE_VIDEOS.items():
             assert url.startswith("https://www.youtube.com/watch?v="), f"Invalid URL format for {name}: {url}"
             assert len(url) > 30, f"URL too short for {name}: {url}"
+
+    def test_unknown_game_has_no_implicit_reference_fallback(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="No approved reference video"):
+            compare_gameplay_to_reference("unknown-game", [], cache_dir=tmp_path)
 
     def test_fps_reference_manifest_is_bounded_and_non_redistributable(self) -> None:
         for game_name in ("doom_e1m1_hallway", "quake_dm6_arena"):
