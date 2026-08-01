@@ -42,6 +42,8 @@ def _model_gateway() -> ModelGateway:
         quality_class="high",
         latency_class="standard",
         api_metered=True,
+        cost_per_input_token=5e-6,
+        cost_per_output_token=15e-6,
         fallback_profiles=["weak"],
     )
     weak = ModelProfile(
