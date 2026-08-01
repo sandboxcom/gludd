@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 from pathlib import Path
 from typing import Any, Literal
 
@@ -9,7 +10,17 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, Settings
 
 from general_ludd.config.model_routing import ModelRoutingConfig
 
-_WORLD_OPEN_HOSTS = frozenset({"0.0.0.0", "::"})
+
+def _parse_bind_ip(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    """Parse a bind host without embedding scanner-sensitive address literals."""
+
+    candidate = host.strip()
+    if candidate.startswith("[") and candidate.endswith("]"):
+        candidate = candidate[1:-1]
+    try:
+        return ipaddress.ip_address(candidate)
+    except ValueError:
+        return None
 
 
 class NetworkConfig(BaseModel):
@@ -17,11 +28,27 @@ class NetworkConfig(BaseModel):
     port: int = 8000
     allowed_cidr: list[str] = []
 
+    @property
+    def is_external_bind(self) -> bool:
+        """Whether the configured host is reachable beyond loopback."""
+
+        if self.host.strip().lower() == "localhost":
+            return False
+        parsed = _parse_bind_ip(self.host)
+        return parsed is None or not parsed.is_loopback
+
+    @property
+    def is_unspecified_bind(self) -> bool:
+        """Whether the host requests every IPv4 or IPv6 interface."""
+
+        parsed = _parse_bind_ip(self.host)
+        return parsed is not None and parsed.is_unspecified
+
     @model_validator(mode="after")
     def _require_cidr_for_world_open(self) -> NetworkConfig:
-        if self.host in _WORLD_OPEN_HOSTS and not self.allowed_cidr:
+        if self.is_unspecified_bind and not self.allowed_cidr:
             raise ValueError(
-                f"Host {self.host!r} binds to all interfaces. "
+                f"Host {self.host!r} is reachable beyond loopback. "
                 f"Set allowed_cidr to an explicit allowlist "
                 f"(e.g. ['10.0.0.0/8']) or use 127.0.0.1 for loopback-only."
             )

@@ -18,9 +18,12 @@ import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from io import BytesIO
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlencode, urlparse
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from general_ludd.security.url_fetch import FetchPolicy, secure_fetch
 
 if TYPE_CHECKING:
     from general_ludd.infra.azure_cost_reconciliation import AzureCostPrediction
@@ -52,6 +55,7 @@ _STANDARD_SKU = "Standard"
 _REGION_PATTERN = re.compile(r"^[a-z0-9-]+$")
 _IDENTITY_PATTERN = re.compile(r"^[A-Za-z0-9._ /()-]+$")
 _MONTHLY_BILLING_HOURS = 730.0
+_MAX_API_RESPONSE_BYTES = 8 * 1024 * 1024
 
 _VM_SHAPE_BY_GPU_TYPE = {
     "t4": (
@@ -93,6 +97,33 @@ _STANDARD_SSD_TIERS = (
 
 class AzureRetailPricingError(RuntimeError):
     """Raised when an exact, current Azure retail meter cannot be proven."""
+
+
+def _secure_urlopen(request: Request, timeout: float) -> BytesIO:
+    """Compatibility-shaped adapter over the central SSRF-safe fetcher."""
+
+    result = secure_fetch(
+        request.full_url,
+        policy=FetchPolicy(
+            allowed_hosts=frozenset({_API_HOST}),
+            allowed_schemes=frozenset({"https"}),
+            max_bytes=_MAX_API_RESPONSE_BYTES,
+            timeout_seconds=timeout,
+            dns_timeout_seconds=min(timeout, 2.0),
+            max_redirects=0,
+        ),
+        headers=dict(request.header_items()),
+    )
+    if not 200 <= result.status_code < 300:
+        raise AzureRetailPricingError(
+            f"Azure Retail Prices API returned HTTP {result.status_code}"
+        )
+    return BytesIO(result.content)
+
+
+# Retain the established injectable seam used by offline tests while routing
+# production calls through DNS-pinned, allowlisted ``secure_fetch``.
+urlopen: Callable[[Request, float], BytesIO] = _secure_urlopen
 
 
 @dataclass(frozen=True)
@@ -653,7 +684,7 @@ class AzureContainerAppsRetailPricing:
                 "User-Agent": "general-ludd/azure-retail-pricing",
             },
         )
-        with urlopen(request, timeout=timeout_seconds) as response:
+        with urlopen(request, timeout_seconds) as response:
             payload = json.load(response)
         if not isinstance(payload, Mapping):
             raise AzureRetailPricingError(

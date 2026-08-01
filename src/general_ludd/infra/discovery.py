@@ -143,6 +143,20 @@ def discover_all(
     return all_resources
 
 
+def _build_vsphere_ssl_context(verify_ssl: bool) -> ssl.SSLContext | None:
+    """Build an explicit vSphere TLS context using maintained public APIs."""
+
+    if verify_ssl:
+        return None
+    logger.warning(
+        "SECURITY: vSphere TLS certificate verification was explicitly disabled"
+    )
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    return context
+
+
 class VSphereProbe:
     """Discover vSphere inventory parameters for Terraform generation.
 
@@ -180,9 +194,7 @@ class VSphereProbe:
             logger.warning("pyvmomi is not installed; vSphere inventory discovery is unavailable")
             return None
 
-        ssl_context: ssl.SSLContext | None = None
-        if not self.verify_ssl:
-            ssl_context = ssl._create_unverified_context()
+        ssl_context = _build_vsphere_ssl_context(self.verify_ssl)
 
         si = None
         try:

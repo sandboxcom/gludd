@@ -35,7 +35,9 @@ make targets. Generated files are evidence snapshots, not allowlists.
   `LANDED-VERIFIED=8`, and `OPEN=16`. The current target intentionally exits
   successfully when controls are open, so it is not a completion gate.
 - `make sast` generated `dist/sast-report.json` with `SEVERITY.HIGH: 0`,
-  `SEVERITY.MEDIUM: 46`, and `SEVERITY.LOW: 506`. The target still masks
+  `SEVERITY.MEDIUM: 34`, and `SEVERITY.LOW: 506`. The remaining medium findings
+  are all B108 hard-coded temporary paths; B104, B310, B323 and B608 are zero.
+  The target still masks
   Bandit's finding exit status and is therefore an inventory, not a strict
   completion gate.
 - `make pip-audit-gate` reported `No known vulnerabilities found`; the project

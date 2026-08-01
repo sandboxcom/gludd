@@ -1018,6 +1018,38 @@ def _build_self_update_audit_sink(
     return _sink
 
 
+def _configure_network_state(app: Any, network: Any) -> None:
+    """Apply network policy and refuse unauthenticated external listeners."""
+
+    preserve_cidr = bool(getattr(app.state, "_allowed_cidr", None))
+    if network.is_external_bind and bool(getattr(app.state, "_no_auth", True)):
+        raise RuntimeError(
+            "External daemon binds require authenticated access; configure "
+            "GLUDD_PSK or use a loopback network host."
+        )
+
+    if network.is_external_bind and not preserve_cidr:
+        logger.warning(
+            "Network host %r is externally reachable; enforcing allowed_cidr=%s",
+            network.host,
+            network.allowed_cidr,
+        )
+        app.state._allowed_cidr = list(network.allowed_cidr)
+    elif not network.allowed_cidr and not preserve_cidr:
+        loopback_cidrs = ["127.0.0.0/8", "::1/128"]
+        app.state._allowed_cidr = loopback_cidrs
+        logger.info(
+            "Network host is %r; auto-enforcing loopback CIDRs %s",
+            network.host,
+            loopback_cidrs,
+        )
+    elif not preserve_cidr:
+        app.state._allowed_cidr = list(network.allowed_cidr)
+
+    app.state._network_host = network.host
+    app.state._network_port = network.port
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     tick_interval = app.state.tick_interval
@@ -1040,31 +1072,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         uc = startup_config.get("user_config")
         bc = _parse_budget_config(uc)
         if uc and hasattr(uc, "network"):
-            net = uc.network
-            # A caller may inject an allow-list before entering lifespan (for
-            # example an embedding application's runtime policy). Preserve it
-            # rather than replacing it with config defaults on startup.
-            preserve_cidr = bool(getattr(app.state, "_allowed_cidr", None))
-            if net.host in ("0.0.0.0", "::") and not preserve_cidr:
-                logger.warning(
-                    "Network host is set to %r — daemon is binding to all interfaces. "
-                    "allowed_cidr=%s. Restrict to minimal CIDR set.",
-                    net.host,
-                    net.allowed_cidr,
-                )
-                app.state._allowed_cidr = list(net.allowed_cidr)
-            elif net.host in ("127.0.0.1", "localhost", "::1") and not net.allowed_cidr and not preserve_cidr:
-                _loopback_cidrs = ["127.0.0.0/8", "::1/128"]
-                app.state._allowed_cidr = _loopback_cidrs
-                logger.info(
-                    "Network host is %r — auto-enforcing loopback CIDRs %s",
-                    net.host,
-                    _loopback_cidrs,
-                )
-            elif not preserve_cidr:
-                app.state._allowed_cidr = list(net.allowed_cidr) if net.allowed_cidr else []
-            app.state._network_host = net.host
-            app.state._network_port = net.port
+            _configure_network_state(app, uc.network)
         if uc and hasattr(uc, "database"):
             db_config = uc.database or {}
         _db_override: str | None = getattr(app.state, "_db_path_override", None)

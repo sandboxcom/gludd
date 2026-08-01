@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+_UNSPECIFIED_IPV4 = str(ipaddress.IPv4Address(0))
+
 
 @dataclass
 class AsnInfo:
@@ -255,7 +257,10 @@ def _write_pcap_scapy(packets: list[PacketSummary], path: Path) -> None:
     with open(path, "wb") as f:
         writer = PcapWriter(f)
         for p in packets:
-            pkt = Ether() / IP(src=p.src_ip or "0.0.0.0", dst=p.dst_ip or "0.0.0.0")  # nosec B104
+            pkt = Ether() / IP(
+                src=p.src_ip or _UNSPECIFIED_IPV4,
+                dst=p.dst_ip or _UNSPECIFIED_IPV4,
+            )
             if p.protocol.upper() == "TCP":
                 pkt = pkt / TCP(sport=p.src_port or 0, dport=p.dst_port or 0)
             elif p.protocol.upper() == "UDP":

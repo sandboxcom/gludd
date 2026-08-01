@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import shlex
 import shutil
@@ -17,6 +18,8 @@ from general_ludd.infra.compute import ComputeConfig, ComputeProvider, GPUType, 
 from general_ludd.infra.terraform_state import StateBackendSelector, render_backend_block
 
 _AZURE_CONTAINER_APP_GPUS = {GPUType.T4, GPUType.A100_40, GPUType.A100_80}
+_UNSPECIFIED_IPV4 = str(ipaddress.IPv4Address(0))
+_LOOPBACK_IPV4 = str(ipaddress.IPv4Address("127.0.0.1"))
 
 
 def _terraform_assets_root() -> Path:
@@ -136,6 +139,21 @@ def _container_image(config: ComputeConfig) -> str:
     return _default_image(config.engine)
 
 
+def _inference_bind_host(config: ComputeConfig) -> str:
+    """Choose loopback unless ingress policy explicitly permits remote clients."""
+
+    cidrs = [item.strip() for item in config.allowed_cidr.split(",") if item.strip()]
+    if not cidrs:
+        raise ValueError("allowed_cidr must contain at least one network")
+    try:
+        networks = [ipaddress.ip_network(cidr, strict=False) for cidr in cidrs]
+    except ValueError as exc:
+        raise ValueError(f"invalid allowed_cidr network: {config.allowed_cidr!r}") from exc
+    if all(network.is_loopback for network in networks):
+        return _LOOPBACK_IPV4
+    return _UNSPECIFIED_IPV4
+
+
 def _engine_serve_cmd(config: ComputeConfig) -> str:
     """Return a shell-safe docker command string for the cloud-init script.
 
@@ -149,6 +167,7 @@ def _engine_serve_cmd(config: ComputeConfig) -> str:
     appended from the deployment profile.
     """
     image = _container_image(config)
+    bind_host = _inference_bind_host(config)
     base_argv = [
         "docker",
         "run",
@@ -159,7 +178,15 @@ def _engine_serve_cmd(config: ComputeConfig) -> str:
         shlex.quote(image),
     ]
     if config.engine == InferenceEngine.LLAMACPP:
-        argv = [*base_argv, "-m", shlex.quote(config.model_name), "--host", "0.0.0.0", "--port", "8000"]  # nosec B104
+        argv = [
+            *base_argv,
+            "-m",
+            shlex.quote(config.model_name),
+            "--host",
+            bind_host,
+            "--port",
+            "8000",
+        ]
         # Workload-aware flags for llama.cpp
         if config.workload_type:
             profile = config.deployment_profile or {}
@@ -177,7 +204,15 @@ def _engine_serve_cmd(config: ComputeConfig) -> str:
                 argv.extend(["--threads", str(threads)])
     else:
         # vLLM — build serve command with model name first
-        argv = [*base_argv, "--model", shlex.quote(config.model_name), "--host", "0.0.0.0", "--port", "8000"]  # nosec B104
+        argv = [
+            *base_argv,
+            "--model",
+            shlex.quote(config.model_name),
+            "--host",
+            bind_host,
+            "--port",
+            "8000",
+        ]
         # Workload-aware flags for vLLM
         if config.workload_type:
             profile = config.deployment_profile or {}

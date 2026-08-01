@@ -21,6 +21,7 @@ extra.
 from __future__ import annotations
 
 import os
+import re
 import sys
 from collections.abc import Callable
 from typing import Any
@@ -35,6 +36,15 @@ EXPECTED_ROLES: tuple[str, ...] = (
 
 DEFAULT_IDENTITY_NAME = "gludd-compute-operator"
 MODULE_REL_PATH = "infra/terraform/modules/onboard-iam-azure"
+_INSTRUCTION_VALUE_RE = re.compile(r"^[A-Za-z0-9._@:/()<>-]+$")
+
+
+def _validate_instruction_values(**values: str) -> None:
+    """Reject characters that could escape generated shell command arguments."""
+
+    for name, value in values.items():
+        if not value or _INSTRUCTION_VALUE_RE.fullmatch(value) is None:
+            raise ValueError(f"unsafe {name} for Azure onboarding instructions")
 
 
 # ---------------------------------------------------------------------------
@@ -50,13 +60,19 @@ def create_role_instructions(
     identity_name: str = DEFAULT_IDENTITY_NAME,
 ) -> str:
     """Return markdown walking the user through provisioning the managed identity."""
-    return f"""# Azure onboarding — IAM provisioning  # nosec B608
+    _validate_instruction_values(
+        subscription_id=subscription_id,
+        resource_group_name=resource_group_name,
+        location=location,
+        identity_name=identity_name,
+    )
+    return f"""# Azure onboarding — IAM provisioning
 
 This provisions a least-privilege user-assigned managed identity that gludd
 uses to launch and tear down ephemeral GPU compute VMs in subscription
 `{subscription_id}`.
 
-## 1. Authenticate and select the subscription
+## 1. Authenticate and target the subscription
 
 ```bash
 az login

@@ -71,6 +71,25 @@ CREATE INDEX IF NOT EXISTS idx_files_changed_path ON files_changed(path);
 CREATE INDEX IF NOT EXISTS idx_files_changed_commit ON files_changed(commit_hash);
 """
 
+_SEARCH_SQL = """
+    SELECT hash, author, date, message, insertions, deletions,
+           GROUP_CONCAT(path, '|') AS paths
+    FROM (
+        SELECT DISTINCT c.hash AS hash, c.author AS author, c.date AS date,
+               c.message AS message, c.insertions AS insertions,
+               c.deletions AS deletions, f.path AS path
+        FROM commits c
+        LEFT JOIN files_changed f ON c.hash = f.commit_hash
+        WHERE (? = '' OR c.message LIKE ? OR f.path LIKE ?)
+          AND (? = '' OR c.date >= ?)
+          AND (? = '' OR c.author LIKE ?)
+          AND (? = '' OR f.path LIKE ?)
+    )
+    GROUP BY hash
+    ORDER BY date DESC
+    LIMIT ? OFFSET ?
+"""
+
 
 class GitHistoryIndexer:
     def __init__(self, repo_path: str | Path = ".", db_path: str | Path = DEFAULT_DB_PATH) -> None:
@@ -191,70 +210,29 @@ class GitHistoryIndexer:
         conn = self._get_conn()
         results: list[SearchResult] = []
         try:
-            where_clauses: list[str] = []
-            params: list[str] = []
-
-            if query:
-                where_clauses.append("(c.message LIKE ? OR f.path LIKE ?)")
-                like_q = f"%{query}%"
-                params.extend([like_q, like_q])
-
-            if since:
-                where_clauses.append("c.date >= ?")
-                params.append(_normalize_date(since))
-
-            if author:
-                where_clauses.append("c.author LIKE ?")
-                params.append(f"%{author}%")
-
-            if path_filter:
-                where_clauses.append("f.path LIKE ?")
-                params.append(f"%{path_filter}%")
-
-            where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
-            joined = any([query, path_filter])
-
             # NOTE: sqlite only allows a DISTINCT aggregate with exactly one
             # argument, so GROUP_CONCAT(DISTINCT f.path, '|') (two args) raises
             # "DISTINCT aggregates must have exactly one argument". Deduplicate
             # (hash, path) pairs in an inner subquery instead, then GROUP_CONCAT
             # the already-distinct paths without DISTINCT — same semantics
             # (matched rows per the WHERE filter, deduped paths, '|'-joined).
-            if joined:
-                select_sql = f"""
-                    SELECT hash, author, date, message, insertions, deletions,
-                           GROUP_CONCAT(path, '|') AS paths
-                    FROM (
-                        SELECT DISTINCT c.hash AS hash, c.author AS author, c.date AS date,
-                               c.message AS message, c.insertions AS insertions,
-                               c.deletions AS deletions, f.path AS path
-                        FROM commits c
-                        JOIN files_changed f ON c.hash = f.commit_hash
-                        WHERE {where_sql}
-                    )
-                    GROUP BY hash
-                    ORDER BY date DESC
-                    LIMIT ? OFFSET ?
-                """
-            else:
-                select_sql = f"""
-                    SELECT hash, author, date, message, insertions, deletions,
-                           GROUP_CONCAT(path, '|') AS paths
-                    FROM (
-                        SELECT DISTINCT c.hash AS hash, c.author AS author, c.date AS date,
-                               c.message AS message, c.insertions AS insertions,
-                               c.deletions AS deletions, f.path AS path
-                        FROM commits c
-                        LEFT JOIN files_changed f ON c.hash = f.commit_hash
-                        WHERE {where_sql}
-                    )
-                    GROUP BY hash
-                    ORDER BY date DESC
-                    LIMIT ? OFFSET ?
-                """
-
-            params.extend([str(limit), str(offset)])
-            rows = conn.execute(select_sql, params).fetchall()
+            # Optional filters use fixed boolean guards, so neither SQL
+            # structure nor identifiers ever derive from input.
+            like_query = f"%{query}%"
+            params: tuple[str | int, ...] = (
+                query,
+                like_query,
+                like_query,
+                since,
+                _normalize_date(since) if since else "",
+                author,
+                f"%{author}%",
+                path_filter,
+                f"%{path_filter}%",
+                limit,
+                offset,
+            )
+            rows = conn.execute(_SEARCH_SQL, params).fetchall()
 
             for row in rows:
                 paths_str = row[6] or ""

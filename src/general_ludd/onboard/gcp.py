@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -43,6 +44,15 @@ CUSTOM_ROLE_SUFFIX: str = "gluddComputeOperator"
 DEFAULT_SERVICE_ACCOUNT_NAME = "gludd-compute-operator"
 DEFAULT_DISPLAY_NAME = "Gludd compute operator (ephemeral GPU provisioning)"
 MODULE_REL_PATH = "infra/terraform/modules/onboard-iam-gcp"
+_INSTRUCTION_VALUE_RE = re.compile(r"^[A-Za-z0-9._@:/<>-]+$")
+
+
+def _validate_instruction_values(**values: str) -> None:
+    """Reject characters that could escape generated shell command arguments."""
+
+    for name, value in values.items():
+        if not value or _INSTRUCTION_VALUE_RE.fullmatch(value) is None:
+            raise ValueError(f"unsafe {name} for GCP onboarding instructions")
 
 
 # ---------------------------------------------------------------------------
@@ -61,13 +71,17 @@ def create_role_instructions(
     CLI, target the right project/subscription, then ``terraform init/apply``
     the provider's onboard-iam module.
     """
+    _validate_instruction_values(
+        project_id=project_id,
+        service_account_name=service_account_name,
+    )
     sa_email = _sa_email(project_id, service_account_name)
-    return f"""# GCP onboarding — IAM provisioning  # nosec B608
+    return f"""# GCP onboarding — IAM provisioning
 
 This provisions a least-privilege service account that gludd uses to launch
 and tear down ephemeral GPU compute instances in project `{project_id}`.
 
-## 1. Authenticate and select the project
+## 1. Authenticate and target the project
 
 ```bash
 gcloud auth login
