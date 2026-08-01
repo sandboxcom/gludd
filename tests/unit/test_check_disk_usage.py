@@ -78,3 +78,13 @@ def test_shell_disk_guard_defers_while_project_validation_is_active() -> None:
     assert "active_project_validation" in source
     assert 'pgrep -f "${GLUDD_ROOT}/.*(pytest|mypy|ruff)"' in source
     assert "DISK_CLEANUP_DEFERRED" in source
+
+
+def test_shell_disk_guard_removes_only_namespaced_node_download_caches() -> None:
+    source = DISK_GUARD_SCRIPT.read_text()
+
+    assert 'GLUDD_NODE_CACHE_DIRS=(' in source
+    assert '"/tmp/gludd-npm-cache"' in source
+    assert '"/tmp/gludd-npm-cache-public-v1"' in source
+    assert 'rm -rf -- "$cache_dir"' in source
+    assert "rm -rf /tmp/gludd-*" not in source

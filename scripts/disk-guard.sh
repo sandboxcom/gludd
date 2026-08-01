@@ -12,6 +12,10 @@ CLEANUP_LOG="${GLUDD_DISK_CLEANUP_LOG:-/tmp/gludd-disk-cleanup.log}"
 DISK_GUARD_UV_LOCK_TIMEOUT="${DISK_GUARD_UV_LOCK_TIMEOUT:-15}"
 DISK_GUARD_UV_MAX_SECONDS="${DISK_GUARD_UV_MAX_SECONDS:-120}"
 DISK_GUARD_UV_HEARTBEAT_SECONDS="${DISK_GUARD_UV_HEARTBEAT_SECONDS:-5}"
+GLUDD_NODE_CACHE_DIRS=(
+  "/tmp/gludd-npm-cache"
+  "/tmp/gludd-npm-cache-public-v1"
+)
 
 get_usage_pct() {
   df -Pk "$TARGET_DIR" 2>/dev/null | awk 'END {gsub(/%/,""); print $5}' || echo "0"
@@ -72,6 +76,17 @@ clean() {
 
   echo "Cleaning .ruff_cache..."
   rm -rf "${GLUDD_ROOT}/.ruff_cache" 2>/dev/null && echo "  .ruff_cache removed" || true
+
+  echo "Cleaning namespaced Node download caches..."
+  local cache_dir
+  for cache_dir in "${GLUDD_NODE_CACHE_DIRS[@]}"; do
+    if [[ -d "$cache_dir" ]]; then
+      rm -rf -- "$cache_dir"
+      echo "  removed $cache_dir"
+    else
+      echo "  absent $cache_dir"
+    fi
+  done
 
   echo "Preserving shared pytest and Gludd test roots; they may belong to active namespaced runs."
 }
