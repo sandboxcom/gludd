@@ -1481,7 +1481,7 @@ test-e2e-azure-provision-sourced:
 	 export GLUDD_CONFIG_DIR="$${GLUDD_CONFIG_DIR:-$$PWD/config}"; \
 	 export ARM_CLIENT_ID ARM_CLIENT_SECRET ARM_TENANT_ID ARM_SUBSCRIPTION_ID ARM_USE_MSI AZURE_SUBSCRIPTION_ID; \
 	 AZURE_PROVISION_E2E=1 GLUDD_E2E_MAX_SPEND_USD="$${GLUDD_E2E_MAX_SPEND_USD:-5}" \
-		$(UV) run python scripts/e2e_log_capture.py --label azure-provision --cmd "uv run pytest tests/e2e/providers/test_azure_provision_e2e.py -v -s -m azure_provision --timeout=900 --log-cli-level=INFO" --tee
+		$(UV) run python scripts/e2e_log_capture.py --label azure-provision --cmd "uv run pytest tests/e2e/providers/test_azure_provision_e2e.py -v -s -m azure_provision --timeout=1200 --log-cli-level=INFO" --tee
 
 # Azure full-provision E2E (opt-in, costly, manual) — use when vars are already exported
 test-e2e-azure-provision:
