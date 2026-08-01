@@ -95,9 +95,9 @@
     "Microsoft.Compute/virtualMachines/runCommands/write",
     "Microsoft.Compute/virtualMachines/runCommands/delete"
   ],
+  "DataActions": [],
+  "NotDataActions": [],
   "AssignableScopes": [
     "/subscriptions/{subscription_id}"
-  ],
-  "DataActions": [],
-  "NotDataActions": []
+  ]
 }
