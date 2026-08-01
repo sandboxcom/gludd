@@ -205,7 +205,9 @@ class DeploymentManager:
                 print("[deploy] Terraform init done", flush=True)
                 print(f"[deploy] Terraform apply in {region} (this takes 3-5min)...", flush=True)
                 await self._run_terraform(["apply", "-auto-approve", "-input=false"], cwd=deploy_dir, env=auth_env)
-                print(f"[deploy] Terraform apply done in {region}", flush=True)
+                print(f"[deploy] Terraform apply done in {region}, waiting for FQDN propagation...", flush=True)
+                time.sleep(30)
+                print("[deploy] Propagation delay complete", flush=True)
                 break  # Success — exit the region loop
             except RuntimeError as e:
                 last_error = e

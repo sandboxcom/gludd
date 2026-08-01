@@ -623,6 +623,12 @@ class TerraformGenerator:
                   command = ["python3", "-c", "%s"]
                 }}
               }}
+
+              ingress {{
+                external_enabled = true
+                target_port       = 8000
+                transport         = "http"
+              }}
             }}
 
             output "instance_id" {{
