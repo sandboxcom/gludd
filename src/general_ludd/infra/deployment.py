@@ -3,19 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
 import json
 import logging
 import os
+import subprocess
 import tempfile
+import time
 import uuid
-
-_AZURE_REGIONS = [
-    "westus2",
-    "northeurope",
-    "westeurope",
-    "eastus",
-    "centralus",
-]
+from pathlib import Path
 from typing import Any, Protocol
 
 from general_ludd.config.binary_paths import BinaryPathResolver
@@ -26,6 +22,84 @@ from general_ludd.schemas.deployment import DeploymentRecord
 logger = logging.getLogger(__name__)
 
 _REGISTRY_FILE = "deployments.json"
+
+GPU_PRIORITY_REGIONS = [
+    "westus2",
+    "northeurope",
+    "westeurope",
+    "eastus",
+    "centralus",
+    "eastus2",
+    "southcentralus",
+]
+
+_DEPLOYED_INSTANCES: dict[str, str] = {}  # instance_id → deploy_dir
+
+
+def _get_all_regions() -> list[str]:
+    try:
+        result = subprocess.run(
+            ["az", "account", "list-locations", "--query", "[?regionalDisplayName].name", "-o", "tsv"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return [r.strip() for r in result.stdout.splitlines() if r.strip()]
+    except Exception:
+        pass
+    return []
+
+
+def _discover_azure_regions() -> list[str]:
+    cache_path = "/tmp/gludd-azure-regions.json"
+
+    try:
+        if os.path.exists(cache_path):
+            data = json.loads(Path(cache_path).read_text())
+            if time.time() - data.get("ts", 0) < 86400:
+                return data["regions"]
+    except Exception:
+        pass
+
+    all_regions = _get_all_regions()
+    ordered = [r for r in GPU_PRIORITY_REGIONS if r in all_regions]
+    ordered += [r for r in all_regions if r not in ordered]
+
+    try:
+        Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(cache_path).write_text(json.dumps({"ts": time.time(), "regions": ordered}))
+    except Exception:
+        pass
+
+    return ordered or GPU_PRIORITY_REGIONS
+
+
+async def _destroy_instance(instance_id: str, deploy_dir: str) -> None:
+    resolver = BinaryPathResolver()
+    binary = resolver.get_infra_binary()
+    proc = await asyncio.create_subprocess_exec(
+        binary,
+        "destroy",
+        "-auto-approve",
+        "-input=false",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        cwd=deploy_dir,
+    )
+    await proc.communicate()
+
+
+def _cleanup_orphaned_instances() -> None:
+    for instance_id, deploy_dir in list(_DEPLOYED_INSTANCES.items()):
+        try:
+            logger.warning("Cleaning up orphaned instance %s", instance_id)
+            asyncio.run(_destroy_instance(instance_id, deploy_dir))
+        except Exception:
+            logger.exception("Failed to clean up orphaned instance %s", instance_id)
+
+
+atexit.register(_cleanup_orphaned_instances)
 
 
 class SecretsResolver(Protocol):
@@ -114,7 +188,7 @@ class DeploymentManager:
         deploy_dir = os.path.join(self._working_dir, f"d-{uuid.uuid4().hex[:12]}")
         os.makedirs(deploy_dir, exist_ok=True)
 
-        regions = [config.region] if config.region else _AZURE_REGIONS
+        regions = [config.region] if config.region else _discover_azure_regions()
         last_error = None
 
         for region in regions:
@@ -152,6 +226,7 @@ class DeploymentManager:
             endpoint_url=parsed.get("endpoint_url"),
         )
         self._save_registry()
+        _DEPLOYED_INSTANCES[instance_id] = deploy_dir
         return ComputeInstance(
             instance_id=instance_id,
             provider=config.provider,
@@ -223,6 +298,7 @@ class DeploymentManager:
                 env=auth_env,
             )
             self._registry.pop(instance_id, None)
+            _DEPLOYED_INSTANCES.pop(instance_id, None)
             self._save_registry()
         finally:
             pass  # no env cleanup needed — we never touched os.environ
