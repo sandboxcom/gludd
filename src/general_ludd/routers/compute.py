@@ -76,6 +76,8 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         mgr = DeploymentManager(
             secrets_resolver=secrets_resolver,
             working_dir=pdd,
+            session_factory=getattr(app.state, "_session_factory", None),
+            worker_id=f"{os.environ.get('GLUDD_WORKER_ID', 'router')}-{os.getpid()}",
         )
         app.state._deployment_manager = mgr
         return mgr
@@ -343,7 +345,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         mgr = _get_deployment_manager()
         # W2.3 (C5): destroy refuses an instance_id with no deployment record.
         # Surface that as a 404 (unknown), terraform errors as 500.
-        if mgr.get_deployment(instance_id) is None:
+        if await mgr.get_deployment_shared(instance_id) is None:
             raise HTTPException(
                 status_code=404,
                 detail=f"Unknown instance_id {instance_id}: no deployment record",
@@ -431,7 +433,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     async def list_deployments() -> dict[str, object]:
         # W2.3 (M2): expose the persisted deployment registry.
         mgr = _get_deployment_manager()
-        records = mgr.list_deployments()
+        records = await mgr.list_deployments_shared()
         return {
             "deployments": [
                 {

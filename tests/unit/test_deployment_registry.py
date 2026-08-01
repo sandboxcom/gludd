@@ -13,8 +13,10 @@ import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from general_ludd.config.binary_paths import BinaryPathResolver, BinaryPaths
+from general_ludd.db.models import Base
 from general_ludd.infra.compute import ComputeConfig, ComputeProvider, GPUType
 from general_ludd.infra.deployment import DeploymentManager
 from general_ludd.schemas.deployment import DeploymentRecord
@@ -124,3 +126,65 @@ class TestRegistryPersistence:
             inst = await mgr.deploy(_make_config())
         listed = mgr.list_deployments()
         assert any(r.instance_id == inst.instance_id for r in listed)
+
+    @pytest.mark.asyncio
+    async def test_database_registry_is_shared_across_managers(self, tmp_path):
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'shared.db'}")
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+        manager_a = DeploymentManager(
+            binary_paths=BinaryPathResolver(config=BinaryPaths()),
+            working_dir=str(tmp_path / "worker-a"),
+            session_factory=sessions,
+            worker_id="worker-a",
+        )
+        manager_b = DeploymentManager(
+            binary_paths=BinaryPathResolver(config=BinaryPaths()),
+            working_dir=str(tmp_path / "worker-b"),
+            session_factory=sessions,
+            worker_id="worker-b",
+        )
+        with patch.object(manager_a, "_run_terraform", new_callable=AsyncMock) as run:
+            run.return_value = {
+                "stdout": json.dumps({"instance_ip": {"value": "10.0.0.1"}}),
+            }
+            instance = await manager_a.deploy(_make_config())
+
+        shared = await manager_b.get_deployment_shared(instance.instance_id)
+        assert shared is not None
+        assert shared.working_dir.startswith(str(tmp_path / "worker-a"))
+        assert [record.instance_id for record in await manager_b.list_deployments_shared()] == [
+            instance.instance_id
+        ]
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_database_destroy_can_be_claimed_by_another_worker(self, tmp_path):
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'destroy.db'}")
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+        manager_a = DeploymentManager(
+            binary_paths=BinaryPathResolver(config=BinaryPaths()),
+            working_dir=str(tmp_path / "worker-a"),
+            session_factory=sessions,
+            worker_id="worker-a",
+        )
+        manager_b = DeploymentManager(
+            binary_paths=BinaryPathResolver(config=BinaryPaths()),
+            working_dir=str(tmp_path / "worker-b"),
+            session_factory=sessions,
+            worker_id="worker-b",
+        )
+        with patch.object(manager_a, "_run_terraform", new_callable=AsyncMock) as deploy_run:
+            deploy_run.return_value = {
+                "stdout": json.dumps({"instance_ip": {"value": "10.0.0.2"}}),
+            }
+            instance = await manager_a.deploy(_make_config())
+        with patch.object(manager_b, "_run_terraform", new_callable=AsyncMock) as destroy_run:
+            destroy_run.return_value = {"stdout": "", "returncode": 0}
+            await manager_b.destroy(instance.instance_id)
+            assert destroy_run.await_args.kwargs["cwd"].startswith(str(tmp_path / "worker-a"))
+        assert await manager_a.get_deployment_shared(instance.instance_id) is None
+        await engine.dispose()

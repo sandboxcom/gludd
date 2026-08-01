@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 from alembic import command
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from general_ludd.db.azure_cost_repository import (
@@ -30,10 +30,12 @@ from general_ludd.db.azure_cost_repository import (
     AzureCostReconciliationRepository,
     StaleAzureCostLeaseError,
 )
+from general_ludd.db.deployment_repository import DeploymentRegistryRepository
 from general_ludd.db.migrations import get_alembic_config
 from general_ludd.db.models import (
     AuditEventModel,
     AzureCostOutboxEventModel,
+    DeploymentRecordModel,
     ProjectModel,
     TodoModel,
     TodoStatus,
@@ -45,6 +47,7 @@ from general_ludd.infra.azure_cost_reconciliation import (
     AzureCostPrediction,
 )
 from general_ludd.infra.deployment_events import TerraformEventBridge
+from general_ludd.schemas.deployment import DeploymentRecord
 
 POSTGRES_URL = os.environ.get("POSTGRES_E2E_URL", "")
 pytestmark = pytest.mark.skipif(
@@ -141,6 +144,40 @@ def _claim_process(url: str, project_id: str, start, results) -> None:
         results.put({"claimed": asyncio.run(_claim(url, project_id))})
     except BaseException as exc:
         results.put({"error": f"{type(exc).__name__}: {exc}"})
+
+
+async def _persist_deployment(url: str, instance_id: str, working_dir: str) -> None:
+    engine = create_async_engine(url, pool_size=1, max_overflow=0)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with sessions() as session:
+            await DeploymentRegistryRepository(session).upsert(
+                DeploymentRecord(
+                    instance_id=instance_id,
+                    working_dir=working_dir,
+                    provider="azure",
+                    model_name="postgres-multiworker",
+                )
+            )
+            await session.commit()
+    finally:
+        await engine.dispose()
+
+
+def _persist_deployment_process(
+    url: str,
+    instance_id: str,
+    working_dir: str,
+    start,
+    results,
+) -> None:
+    try:
+        if not start.wait(timeout=20):
+            raise TimeoutError("deployment persist start barrier timed out")
+        asyncio.run(_persist_deployment(url, instance_id, working_dir))
+        results.put({"instance_id": instance_id})
+    except BaseException as exc:
+        results.put({"instance_id": instance_id, "error": f"{type(exc).__name__}: {exc}"})
 
 
 @pytest.mark.asyncio
@@ -303,6 +340,47 @@ async def test_postgres_fences_cost_reconciliation_across_worker_processes() -> 
 
 
 @pytest.mark.asyncio
+async def test_postgres_registry_preserves_concurrent_worker_writes() -> None:
+    suffix = uuid.uuid4().hex[:12]
+    instance_ids = [f"pg-deploy-a-{suffix}", f"pg-deploy-b-{suffix}"]
+    context = multiprocessing.get_context("spawn")
+    start = context.Event()
+    results = context.Queue()
+    workers = [
+        context.Process(
+            target=_persist_deployment_process,
+            args=(POSTGRES_URL, instance_id, f"/tmp/{instance_id}", start, results),
+        )
+        for instance_id in instance_ids
+    ]
+    for worker in workers:
+        worker.start()
+    start.set()
+    payloads = [results.get(timeout=30) for _ in workers]
+    for worker in workers:
+        worker.join(timeout=10)
+
+    assert all(worker.exitcode == 0 for worker in workers)
+    assert all("error" not in payload for payload in payloads), payloads
+    engine = create_async_engine(POSTGRES_URL)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    async with sessions() as session:
+        rows = list(
+            (
+                await session.execute(
+                    select(DeploymentRecordModel).where(
+                        DeploymentRecordModel.instance_id.in_(instance_ids)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert {row.instance_id for row in rows} == set(instance_ids)
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_terraform_event_is_visible_from_another_database_connection() -> None:
     writer_engine = create_async_engine(POSTGRES_URL)
     reader_engine = create_async_engine(POSTGRES_URL)
@@ -342,6 +420,56 @@ def _free_port() -> int:
         return int(listener.getsockname()[1])
 
 
+async def _publish_terminal_event(deployment_id: str) -> int:
+    engine = create_async_engine(POSTGRES_URL)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    bus = EventBus()
+    bridge = TerraformEventBridge(
+        event_bus=bus,
+        session_factory=sessions,
+        worker_id="postgres-e2e-publisher",
+    )
+    bridge.start()
+    event = CustomEvent(
+        name="terraform_deploy_completed",
+        payload={"deployment_id": deployment_id, "instance_id": f"gpu-{deployment_id}"},
+        source="terraform_deployment",
+    )
+    bus.publish(event)
+    await bus.drain()
+    async with sessions() as session:
+        audit_id = await session.scalar(
+            select(AuditEventModel.id).where(AuditEventModel.entity_id == event.event_id)
+        )
+    await bridge.aclose()
+    await engine.dispose()
+    assert audit_id is not None
+    return int(audit_id)
+
+
+async def _terminate_wakeup_connections() -> int:
+    engine = create_async_engine(POSTGRES_URL)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    async with sessions() as session:
+        terminated = await session.scalar(
+            text(
+                "SELECT count(*) FROM pg_stat_activity "
+                "WHERE application_name LIKE 'gludd-wakeup:%' "
+                "AND pid <> pg_backend_pid()"
+            )
+        )
+        await session.execute(
+            text(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE application_name LIKE 'gludd-wakeup:%' "
+                "AND pid <> pg_backend_pid()"
+            )
+        )
+        await session.commit()
+    await engine.dispose()
+    return int(terminated or 0)
+
+
 def test_two_worker_gunicorn_boots_and_serves_health() -> None:
     port = _free_port()
     project_root = Path(__file__).resolve().parents[2]
@@ -354,6 +482,7 @@ def test_two_worker_gunicorn_boots_and_serves_health() -> None:
             "GLUDD_SEARX_AUTOSTART": "false",
             "GLUDD_SERVICE_DISCOVERY_ENABLED": "false",
             "GLUDD_WORKER_ID": "postgres-e2e",
+            "GLUDD_PG_WAKE_RECONNECT_SECONDS": "1.0",
         }
     )
     process = subprocess.Popen(
@@ -416,6 +545,86 @@ def test_two_worker_gunicorn_boots_and_serves_health() -> None:
             time.sleep(0.25)
         assert process.poll() is None, "Gunicorn exited early:\n" + "".join(lines[-40:])
         assert healthy, "two-worker daemon never became healthy:\n" + "".join(lines[-40:])
+
+        ready_deadline = time.monotonic() + 15
+        ready_pids: set[str] = set()
+        while time.monotonic() < ready_deadline:
+            ready_pids = {
+                match.group(1)
+                for line in lines
+                if (
+                    match := re.search(
+                        r"Terraform PostgreSQL wake listener ready .* pid=(\d+)",
+                        line,
+                    )
+                )
+            }
+            if len(ready_pids) >= 2:
+                break
+            time.sleep(0.05)
+        assert len(ready_pids) == 2, "both worker listeners were not ready:\n" + "".join(lines[-60:])
+
+        published_at = time.monotonic()
+        audit_id = asyncio.run(_publish_terminal_event(f"gunicorn-notify-{uuid.uuid4().hex}"))
+        notify_deadline = time.monotonic() + 5
+        notified_pids: set[str] = set()
+        while time.monotonic() < notify_deadline:
+            notified_pids = {
+                match.group(1)
+                for line in lines
+                if (
+                    match := re.search(
+                        rf"wake notification received .* pid=(\d+) audit_event_id={audit_id}\b",
+                        line,
+                    )
+                )
+            }
+            if notified_pids == ready_pids:
+                break
+            time.sleep(0.05)
+        assert notified_pids == ready_pids, "event did not promptly wake both workers:\n" + "".join(lines[-80:])
+        assert time.monotonic() - published_at < 5
+
+        reconnect_marker = len(lines)
+        assert asyncio.run(_terminate_wakeup_connections()) == 2
+        reconnect_deadline = time.monotonic() + 5
+        reconnect_pids: set[str] = set()
+        while time.monotonic() < reconnect_deadline:
+            reconnect_pids = {
+                match.group(1)
+                for line in lines[reconnect_marker:]
+                if (
+                    match := re.search(
+                        r"wake listener reconnecting .* pid=(\d+)",
+                        line,
+                    )
+                )
+            }
+            if reconnect_pids == ready_pids:
+                break
+            time.sleep(0.05)
+        assert reconnect_pids == ready_pids, "listeners did not detect disconnect:\n" + "".join(lines[-80:])
+
+        missed_audit_id = asyncio.run(
+            _publish_terminal_event(f"gunicorn-catchup-{uuid.uuid4().hex}")
+        )
+        catchup_deadline = time.monotonic() + 8
+        caught_up_pids: set[str] = set()
+        while time.monotonic() < catchup_deadline:
+            caught_up_pids = {
+                match.group(1)
+                for line in lines[reconnect_marker:]
+                if (
+                    match := re.search(
+                        rf"wake catch-up .* pid=(\d+) .* latest={missed_audit_id}\b",
+                        line,
+                    )
+                )
+            }
+            if caught_up_pids == ready_pids:
+                break
+            time.sleep(0.05)
+        assert caught_up_pids == ready_pids, "missed event was not caught up:\n" + "".join(lines[-100:])
     finally:
         if process.poll() is None:
             os.killpg(process.pid, signal.SIGTERM)
@@ -426,6 +635,17 @@ def test_two_worker_gunicorn_boots_and_serves_health() -> None:
 
     assert process.returncode == 0
     output = "".join(lines)
+    closed_pids = {
+        match.group(1)
+        for line in lines
+        if (
+            match := re.search(
+                r"Terraform PostgreSQL wake listener closed .* pid=(\d+)",
+                line,
+            )
+        )
+    }
+    assert closed_pids == ready_pids
     for unexpected in (
         "SearXNG process exited prematurely",
         "searxng installed but still not importable",

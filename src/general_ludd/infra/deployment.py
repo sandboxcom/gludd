@@ -16,7 +16,10 @@ import uuid
 from pathlib import Path
 from typing import Any, Protocol
 
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from general_ludd.config.binary_paths import BinaryPathResolver
+from general_ludd.db.deployment_repository import DeploymentRegistryRepository
 from general_ludd.events import CustomEvent
 from general_ludd.infra.compute import ComputeConfig, ComputeInstance, ComputeProvider
 from general_ludd.infra.deploy_strategy import ResourceTier
@@ -166,6 +169,8 @@ class DeploymentManager:
         working_dir: str | None = None,
         secrets_resolver: SecretsResolver | None = None,
         event_bus: EventPublisher | None = None,
+        session_factory: async_sessionmaker[AsyncSession] | None = None,
+        worker_id: str | None = None,
     ) -> None:
         self._binary_resolver = binary_paths or BinaryPathResolver()
         self._working_dir = working_dir or tempfile.mkdtemp(prefix="gludd-tf-")
@@ -175,11 +180,14 @@ class DeploymentManager:
         self._generator = TerraformGenerator()
         self._secrets_resolver = secrets_resolver
         self._event_bus = event_bus
+        self._session_factory = session_factory
+        self._worker_id = (worker_id or f"deployment-{os.getpid()}")[:128]
         self._last_config: ComputeConfig | None = None
         # W2.3 (C5/M2): instance_id -> DeploymentRecord, persisted to disk so a
         # restart still knows what is deployed and where (deploy-before-destroy).
         self._registry: dict[str, DeploymentRecord] = {}
-        self._load_registry()
+        if self._session_factory is None:
+            self._load_registry()
 
     def _publish_event(self, name: str, **payload: Any) -> None:
         """Publish deployment progress without letting observers break lifecycle work."""
@@ -240,6 +248,36 @@ class DeploymentManager:
 
     def list_deployments(self) -> list[DeploymentRecord]:
         return list(self._registry.values())
+
+    async def get_deployment_shared(self, instance_id: str) -> DeploymentRecord | None:
+        """Read the shared registry when configured, keeping the local cache coherent."""
+        if self._session_factory is None:
+            return self.get_deployment(instance_id)
+        async with self._session_factory() as session:
+            record = await DeploymentRegistryRepository(session).get(instance_id)
+        if record is None:
+            self._registry.pop(instance_id, None)
+        else:
+            self._registry[instance_id] = record
+        return record
+
+    async def list_deployments_shared(self) -> list[DeploymentRecord]:
+        """List all deployments from the cross-worker source of truth."""
+        if self._session_factory is None:
+            return self.list_deployments()
+        async with self._session_factory() as session:
+            records = await DeploymentRegistryRepository(session).list()
+        self._registry = {record.instance_id: record for record in records}
+        return records
+
+    async def _persist_record(self, record: DeploymentRecord) -> None:
+        self._registry[record.instance_id] = record
+        if self._session_factory is None:
+            self._save_registry()
+            return
+        async with self._session_factory() as session:
+            await DeploymentRegistryRepository(session).upsert(record)
+            await session.commit()
 
     def cleanup_orphaned_instances(self) -> int:
         if _LIFECYCLE_IMPORTED:
@@ -338,7 +376,7 @@ class DeploymentManager:
             instance_id = parsed.get("instance_ip", parsed.get("pod_id", "unknown"))
             elapsed_seconds = time.monotonic() - started_at
             cost_incurred = self._estimate_elapsed_cost(config, elapsed_seconds)
-            self._registry[instance_id] = DeploymentRecord(
+            record = DeploymentRecord(
                 instance_id=instance_id,
                 working_dir=deploy_dir,
                 provider=config.provider.value,
@@ -347,7 +385,7 @@ class DeploymentManager:
                 ip_address=parsed.get("instance_ip"),
                 endpoint_url=parsed.get("endpoint_url"),
             )
-            self._save_registry()
+            await self._persist_record(record)
             _DEPLOYED_INSTANCES.pop(deployment_id, None)
             _DEPLOYED_INSTANCES[instance_id] = deploy_dir
 
@@ -426,7 +464,7 @@ class DeploymentManager:
         # W2.3 (C5): refuse to destroy an instance we have no record of. Running
         # terraform destroy blind was the money-leak — it could tear down the
         # wrong state, or none, while reporting success.
-        record = self._registry.get(instance_id)
+        record = await self.get_deployment_shared(instance_id)
         if record is None:
             raise ValueError(
                 f"Refusing to destroy unknown instance_id {instance_id!r}: "
@@ -436,6 +474,22 @@ class DeploymentManager:
         auth_env: dict[str, str] | None = None
         if self._last_config is not None:
             auth_env = self._build_auth_env(self._last_config)
+        database_claimed = False
+        if self._session_factory is not None:
+            async with self._session_factory() as session:
+                try:
+                    record = await DeploymentRegistryRepository(session).claim_for_destroy(
+                        instance_id,
+                        owner=self._worker_id,
+                    )
+                except KeyError:
+                    raise ValueError(
+                        f"Refusing to destroy unknown instance_id {instance_id!r}: "
+                        "no deployment record (deploy-before-destroy)."
+                    ) from None
+                await session.commit()
+                database_claimed = True
+            self._registry[instance_id] = record
         self._publish_event(
             "terraform_destroy_started",
             instance_id=instance_id,
@@ -458,9 +512,18 @@ class DeploymentManager:
                 # semantics for the caller.
                 cancelled = True
                 await destroy_task
+            if self._session_factory is not None:
+                async with self._session_factory() as session:
+                    await DeploymentRegistryRepository(session).finish_destroy(
+                        instance_id,
+                        owner=self._worker_id,
+                    )
+                    await session.commit()
+                database_claimed = False
             self._registry.pop(instance_id, None)
             _DEPLOYED_INSTANCES.pop(instance_id, None)
-            self._save_registry()
+            if self._session_factory is None:
+                self._save_registry()
 
             if _LIFECYCLE_IMPORTED:
                 get_lifecycle().deregister(instance_id)
@@ -472,6 +535,20 @@ class DeploymentManager:
             if cancelled:
                 raise asyncio.CancelledError
         except BaseException as error:
+            if database_claimed and self._session_factory is not None:
+                try:
+                    async with self._session_factory() as session:
+                        await DeploymentRegistryRepository(session).release_destroy(
+                            instance_id,
+                            owner=self._worker_id,
+                        )
+                        await session.commit()
+                except Exception:
+                    logger.exception(
+                        "Failed to release destroy claim for %s owned by %s",
+                        instance_id,
+                        self._worker_id,
+                    )
             if not (cancelled and isinstance(error, asyncio.CancelledError)):
                 self._publish_event(
                     "terraform_destroy_failed",

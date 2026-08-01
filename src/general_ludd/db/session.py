@@ -6,6 +6,7 @@ SQLite is used out-of-the-box with no external database required.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from collections.abc import AsyncGenerator
@@ -13,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy import event
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Session, with_loader_criteria
 
@@ -184,9 +186,24 @@ def create_async_session_factory(engine: AsyncEngine) -> async_sessionmaker[Asyn
 
 async def ensure_tables(engine: AsyncEngine) -> None:
     if is_sqlite_url(str(engine.url)):
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        logger.info("SQLite tables ensured for %s", engine.url)
+        # SQLAlchemy's create_all(checkfirst=True) performs an introspection
+        # query before each CREATE. Separate Gunicorn/test processes can both
+        # observe a missing table and race on the DDL. SQLite has no portable
+        # CREATE TABLE IF NOT EXISTS hook at SQLAlchemy's metadata level, so
+        # retry the idempotent metadata pass after only the two expected race
+        # errors. Any other OperationalError still fails startup immediately.
+        for attempt in range(20):
+            try:
+                async with engine.begin() as conn:
+                    await conn.run_sync(Base.metadata.create_all)
+                logger.info("SQLite tables ensured for %s", engine.url)
+                return
+            except OperationalError as error:
+                message = str(error).lower()
+                retryable = "already exists" in message or "database is locked" in message
+                if not retryable or attempt == 19:
+                    raise
+                await asyncio.sleep(0.01 * (attempt + 1))
 
 
 def _conflict_ignoring_insert(model: Any, dialect_name: str) -> Any:
