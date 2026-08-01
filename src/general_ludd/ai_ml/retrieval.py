@@ -19,6 +19,13 @@ import math
 import time
 from dataclasses import dataclass
 
+# Version the deterministic dense-vector mapping because changing its digest
+# changes hash buckets and can therefore change retrieval ordering.  BLAKE2b is
+# provided by hashlib, is collision resistant, and supports domain separation.
+DENSE_VECTOR_HASH_VERSION: str = "blake2b-256-v2"
+_DENSE_VECTOR_DIGEST_SIZE: int = 32
+_DENSE_VECTOR_PERSONALIZATION: bytes = b"gludd-retrieval"
+
 
 def _require_nonempty_str(value: str, field_name: str) -> None:
     if not isinstance(value, str) or not value.strip():
@@ -64,12 +71,14 @@ class RetrievalResult:
     reranker_version: str
     retrieved_source_ids: tuple[str, ...]
     latency_ms: float
+    dense_vector_version: str = DENSE_VECTOR_HASH_VERSION
 
     def __post_init__(self) -> None:
         _require_nonempty_str(self.query, "query")
         _require_nonempty_str(self.query_rewrite, "query_rewrite")
         _require_nonempty_str(self.index_version, "index_version")
         _require_nonempty_str(self.reranker_version, "reranker_version")
+        _require_nonempty_str(self.dense_vector_version, "dense_vector_version")
 
 
 @dataclass(frozen=True)
@@ -151,7 +160,12 @@ class RetrievalService:
         """Deterministic hash-based dense vector (stub for real embeddings)."""
         vec: list[float] = [0.0] * _VEC_DIM
         for word in text.lower().split():
-            h = int(hashlib.md5(word.encode()).hexdigest(), 16)
+            digest = hashlib.blake2b(
+                word.encode("utf-8"),
+                digest_size=_DENSE_VECTOR_DIGEST_SIZE,
+                person=_DENSE_VECTOR_PERSONALIZATION,
+            ).digest()
+            h = int.from_bytes(digest, byteorder="big")
             vec[h % _VEC_DIM] += 1.0
         norm = math.sqrt(sum(v * v for v in vec))
         if norm > 0:
@@ -233,6 +247,7 @@ class RetrievalService:
             reranker_version=self._reranker_version,
             retrieved_source_ids=source_ids,
             latency_ms=elapsed_ms,
+            dense_vector_version=DENSE_VECTOR_HASH_VERSION,
         )
 
     def evaluate(
@@ -282,6 +297,7 @@ class RetrievalService:
 
 
 __all__ = [
+    "DENSE_VECTOR_HASH_VERSION",
     "RetrievalMetrics",
     "RetrievalResult",
     "RetrievalService",

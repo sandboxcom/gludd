@@ -233,9 +233,14 @@ hybrid fusion, reranking, knowledge-graph traversal, temporal filters, and
 multimodal embeddings behind one interface. It evaluates recall@k, MRR/nDCG,
 answer faithfulness, citation precision, freshness, latency, and cost.
 
-Every answer records the query rewrite, index version, filter policy, retrieved
-source IDs, scores, reranker version, and chosen citation spans. Raw confidential
-queries are encrypted and excluded from training unless explicit consent exists.
+Every answer records the query rewrite, index version, dense-vector mapping
+version, filter policy, retrieved source IDs, scores, reranker version, and
+chosen citation spans. Raw confidential queries are encrypted and excluded from
+training unless explicit consent exists. Deterministic vector stubs use a
+collision-resistant standard-library digest and a versioned domain; weak-digest
+downgrades are forbidden. The BLAKE2b migration, cached-ranking impact, ZDD
+procedure, and CPython FIPS operator evidence are recorded in
+[`retrieval-hash-migration.md`](../security/retrieval-hash-migration.md).
 
 ### 6.3 Reasoning and verification
 
@@ -544,4 +549,3 @@ include URL, title, author/organization, publication/update date, access date,
 license where applicable, supported claim IDs, and whether reproduction was
 attempted. Candidate libraries and simulators remain examples until that cited
 pass confirms maintenance, licensing, API, and platform suitability.
-
