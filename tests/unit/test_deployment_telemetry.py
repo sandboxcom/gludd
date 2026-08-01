@@ -177,3 +177,15 @@ async def test_process_cleanup_can_destroy_while_an_event_loop_is_running(tmp_pa
         assert "pending-azure" not in deployment_module._DEPLOYED_INSTANCES
     finally:
         deployment_module._DEPLOYED_INSTANCES.pop("pending-azure", None)
+
+
+def test_empty_lifecycle_cleanup_is_not_reported_as_a_warning(caplog) -> None:
+    with (
+        patch.object(deployment_module, "_LIFECYCLE_IMPORTED", True),
+        patch("general_ludd.infra.deployment.get_lifecycle") as get_lifecycle,
+        caplog.at_level("WARNING"),
+    ):
+        get_lifecycle.return_value.cleanup_all.return_value = 0
+        deployment_module._cleanup_orphaned_instances()
+
+    assert "Lifecycle cleanup" not in caplog.text

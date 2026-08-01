@@ -150,11 +150,15 @@ def _free_port() -> int:
 
 def test_two_worker_gunicorn_boots_and_serves_health() -> None:
     port = _free_port()
+    project_root = Path(__file__).resolve().parents[2]
     env = os.environ.copy()
     env.update(
         {
             "DATABASE_URL": POSTGRES_URL,
+            "GLUDD_ALLOW_UNCONFIGURED_MODEL": "true",
             "GLUDD_PSK": "postgres-e2e-psk",
+            "GLUDD_SEARX_AUTOSTART": "false",
+            "GLUDD_SERVICE_DISCOVERY_ENABLED": "false",
             "GLUDD_WORKER_ID": "postgres-e2e",
         }
     )
@@ -175,7 +179,7 @@ def test_two_worker_gunicorn_boots_and_serves_health() -> None:
             "--error-logfile",
             "-",
         ],
-        cwd=Path(__file__).resolve().parents[2],
+        cwd=project_root,
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -225,3 +229,13 @@ def test_two_worker_gunicorn_boots_and_serves_health() -> None:
         reader.join(timeout=5)
         if process.stdout is not None:
             process.stdout.close()
+
+    assert process.returncode == 0
+    output = "".join(lines)
+    for unexpected in (
+        "SearXNG process exited prematurely",
+        "searxng installed but still not importable",
+        "No model_profiles loaded",
+        "_adaptive_router was still _STARTUP_UNSET",
+    ):
+        assert unexpected not in output

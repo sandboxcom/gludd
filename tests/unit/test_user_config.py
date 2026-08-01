@@ -54,6 +54,20 @@ class TestUserConfigDefaults:
         assert cfg.database["host"] == "localhost"
         assert cfg.database["port"] == 5432
 
+    def test_searx_autostart_is_opt_in_for_multiworker_safety(self):
+        cfg = UserConfig()
+        assert cfg.searx_autostart is False
+        assert cfg.service_discovery_enabled is False
+        assert cfg.allow_unconfigured_model is False
+
+    def test_searx_autostart_can_be_enabled_explicitly(self, monkeypatch):
+        monkeypatch.setenv("GLUDD_SEARX_AUTOSTART", "true")
+        assert UserConfig().searx_autostart is True
+
+    def test_health_only_mode_can_explicitly_allow_no_model(self, monkeypatch):
+        monkeypatch.setenv("GLUDD_ALLOW_UNCONFIGURED_MODEL", "true")
+        assert UserConfig().allow_unconfigured_model is True
+
 
 class TestAgentConfigDefaults:
     def test_model_routing_is_none(self):

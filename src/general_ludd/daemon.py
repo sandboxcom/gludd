@@ -9,6 +9,7 @@ import os
 import sys
 import threading
 import time
+from collections import deque
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -86,6 +87,7 @@ from general_ludd.models.deployment_health import (
 )
 from general_ludd.models.gateway import ModelGateway, ModelProfile
 from general_ludd.models.model_registry import ModelRegistry
+from general_ludd.models.provider_registry import ProviderRegistry
 from general_ludd.models.timeout_detector import ModelHealthTracker
 from general_ludd.observability.dashboard_data import DashboardDataProvider
 from general_ludd.observability.langsmith_tracer import LangSmithTracer
@@ -1214,15 +1216,28 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         app.state._searx_client = SearxNGClient()
 
-        from general_ludd.searx.install import ensure_searx_initialized, ensure_searx_installed
-        from general_ludd.searx.server import SearXServer
+        if uc is not None and uc.searx_autostart:
+            from general_ludd.searx.install import (
+                ensure_searx_initialized,
+                ensure_searx_installed,
+            )
+            from general_ludd.searx.server import SearXServer
 
-        ensure_searx_installed()
-        ensure_searx_initialized()
-        searx_server = SearXServer()
-        searx_server.ensure_started()
-        app.state._searx_server = searx_server
-        logger.info("SearXNG server started on %s", searx_server.get_instance_url())
+            if ensure_searx_installed() and ensure_searx_initialized():
+                searx_server = SearXServer()
+                if searx_server.ensure_started():
+                    app.state._searx_server = searx_server
+                    logger.info(
+                        "SearXNG server started on %s",
+                        searx_server.get_instance_url(),
+                    )
+                else:
+                    logger.error("SearXNG autostart was requested but startup failed")
+            else:
+                logger.error("SearXNG autostart was requested but setup failed")
+        else:
+            app.state._searx_server = None
+            logger.info("SearXNG autostart disabled; expecting an external service")
 
         from general_ludd.retrieval.research_index import ResearchIndex
 
@@ -1467,8 +1482,6 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         model_gateway = None
         deployment_health_router = None
         if model_profiles:
-            from general_ludd.models.provider_registry import ProviderRegistry
-
             _resolved_profiles = [
                 p if isinstance(p, ModelProfile) else ModelProfile(**p)
                 for p in model_profiles
@@ -1551,11 +1564,14 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             # can report NOT ready and the dispatcher fails-loud instead of
             # silently completing every task with the noop executor.
             app.state._model_unconfigured = True
-            logger.warning(
-                "No model_profiles loaded — model gateway is unconfigured. "
-                "All agent dispatch will fail until model profiles are "
-                "provided via GLUDD_CONFIG_DIR / config/model_profiles/*.yml."
-            )
+            if uc is not None and uc.allow_unconfigured_model:
+                logger.info("Model gateway intentionally disabled for this process")
+            else:
+                logger.warning(
+                    "No model_profiles loaded — model gateway is unconfigured. "
+                    "All agent dispatch will fail until model profiles are "
+                    "provided via GLUDD_CONFIG_DIR / config/model_profiles/*.yml."
+                )
 
         if getattr(app.state, "eval_harness", None) is None:
             app.state.eval_harness = EvalHarness(model="sonnet")
@@ -1591,7 +1607,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             "Wired adversarial detector (%d patterns) and estimation tracker",
             len(adversarial_detector.get_all_categories()),
         )
-        if model_gateway is not None:
+        if (
+            model_gateway is not None
+            and uc is not None
+            and uc.service_discovery_enabled
+        ):
             from general_ludd.review.reviewer import ReturnReviewer
 
             return_reviewer = ReturnReviewer(
@@ -1997,7 +2017,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             app.state._deployment_manager = deployment_manager
 
         service_discovery = None
-        if uc is not None and getattr(uc, "service_discovery_enabled", True):
+        if uc is not None and uc.service_discovery_enabled:
             from general_ludd.infra.service_catalog import DEFAULT_CATALOG_PATH
 
             searx_url = getattr(uc, "service_discovery_searx_url", "http://localhost:8888")
@@ -2762,9 +2782,7 @@ def _get_or_create_extended_subsystems(
         or app.state._adaptive_router is _STARTUP_UNSET
     ):
         if getattr(app.state, "_adaptive_router", None) is _STARTUP_UNSET:
-            logger.warning(
-                "_adaptive_router was still _STARTUP_UNSET during _get_or_create_extended_subsystems; constructing now"
-            )
+            logger.debug("Constructing the per-worker adaptive router during startup")
         benchmark_repo = BenchmarkRepository(session_factory=session_factory)
         quantization_map: dict[str, tuple[str, float]] = {}
         tracker = getattr(app.state, "_quantization_tracker", None)
@@ -2849,7 +2867,7 @@ def create_daemon_app(
     # quality_gate cannot bleed across FastAPI instances in one process (the
     # module-level ``_daemon_state`` used to be shared — a test-isolation hazard).
     daemon_state: dict[str, Any] = {
-        "todos": [],
+        "todos": deque(),
         "tick_metrics": {},
         "quality_gate": {},
     }

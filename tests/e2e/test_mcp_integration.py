@@ -25,7 +25,11 @@ class TestMCPConfig:
         assert "filesystem" in configs
         cfg = configs["filesystem"]
         assert isinstance(cfg, MCPServerConfig)
-        assert cfg.command == ["npx", "-y", "@modelcontextprotocol/server-filesystem"]
+        assert cfg.command == [
+            "npx",
+            "-y",
+            "@modelcontextprotocol/server-filesystem@2026.7.10",
+        ]
         assert cfg.args == ["/tmp"]
 
     def test_mcp_config_stdio_detection(self):

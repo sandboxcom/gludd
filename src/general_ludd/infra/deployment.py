@@ -124,7 +124,10 @@ def _destroy_instance(instance_id: str, deploy_dir: str) -> None:
 def _cleanup_orphaned_instances() -> None:
     if _LIFECYCLE_IMPORTED:
         cleaned = get_lifecycle().cleanup_all()
-        logger.warning("Lifecycle cleanup: %d resources destroyed", cleaned)
+        if cleaned:
+            logger.warning("Lifecycle cleanup: %d resources destroyed", cleaned)
+        else:
+            logger.info("Lifecycle cleanup: no tracked resources")
     for instance_id, deploy_dir in list(_DEPLOYED_INSTANCES.items()):
         try:
             logger.warning("Cleaning up orphaned instance %s", instance_id)

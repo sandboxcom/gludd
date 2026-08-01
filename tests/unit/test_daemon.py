@@ -294,6 +294,28 @@ def _lifespan_patches(mock_loop):
 
 class TestDaemonLifespan:
     @pytest.mark.asyncio
+    async def test_lifespan_does_not_autostart_searx_by_default(self):
+        from general_ludd.config.user_config import UserConfig
+        from general_ludd.daemon import _lifespan
+
+        mock_loop = MagicMock()
+        mock_loop.run_forever = AsyncMock()
+        app = create_daemon_app(tick_interval=0.01)
+        app.state._startup_config["user_config"] = UserConfig()
+        with (
+            _lifespan_patches(mock_loop),
+            patch("general_ludd.searx.install.ensure_searx_installed") as install,
+            patch("general_ludd.searx.install.ensure_searx_initialized") as initialize,
+            patch("general_ludd.searx.server.SearXServer") as server,
+        ):
+            async with _lifespan(app):
+                pass
+
+        install.assert_not_called()
+        initialize.assert_not_called()
+        server.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_lifespan_creates_event_loop_and_task(self):
         mock_loop = MagicMock()
         mock_loop.run_forever = AsyncMock()

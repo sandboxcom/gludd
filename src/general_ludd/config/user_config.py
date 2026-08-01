@@ -262,6 +262,14 @@ class UserConfig(BaseSettings):
     observability: ObservabilityConfig = ObservabilityConfig()
     queues: list[dict[str, Any]] = []
     connectors: list[dict[str, Any]] = []
+    # Local SearXNG is a separately managed service by default. Starting it in
+    # the daemon would make every Gunicorn worker race to install and bind the
+    # same process. Single-process deployments can explicitly opt in.
+    searx_autostart: bool = False
+    service_discovery_enabled: bool = False
+    # Health/process acceptance may intentionally boot without an inference
+    # provider. Production keeps the fail-loud warning unless explicitly set.
+    allow_unconfigured_model: bool = False
     self_improve: dict[str, Any] = {}
     # Phase-2 self-update wiring (§7d daemon_integration_plan.md). Controls
     # whether config-tier SelfUpdatePlans auto-apply without manual approval;

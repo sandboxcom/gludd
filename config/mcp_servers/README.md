@@ -24,7 +24,7 @@ surfaced in the daemon's `/environment/tools` endpoint.
 servers:
   <server_id>:
     # REQUIRED: exactly one of `command` (stdio) or `url` (HTTP)
-    command: ["npx", "-y", "@modelcontextprotocol/server-filesystem"]
+    command: ["npx", "-y", "@modelcontextprotocol/server-filesystem@2026.7.10"]
     args: ["/tmp"]
     # url: https://my-mcp-server.example.com/mcp
 
@@ -112,7 +112,7 @@ A local stdio server exposing a directory tree as MCP tools. This is what
 ```yaml
 servers:
   filesystem:
-    command: ["npx", "-y", "@modelcontextprotocol/server-filesystem"]
+    command: ["npx", "-y", "@modelcontextprotocol/server-filesystem@2026.7.10"]
     args: ["/tmp"]                       # expose /tmp as the root
     timeout_seconds: 30
     enabled: true
@@ -120,6 +120,12 @@ servers:
 
 Agents can now call `filesystem:read_file`, `filesystem:write_file`,
 `filesystem:list_directory`, etc. (whatever tools the npm package exposes).
+
+The exact npm version is intentional. The transport rejects bare package names,
+tags, and ranges so a later publish cannot silently change executable code.
+The pin tracks the [official npm release](https://www.npmjs.com/package/@modelcontextprotocol/server-filesystem),
+while the long-running [cross-platform startup report](https://github.com/modelcontextprotocol/servers/issues/1107)
+shows why reproducible launcher and package resolution matter operationally.
 
 To expose multiple directories, either pass extra `args` (if the server
 supports it) or define multiple `servers:` entries with different

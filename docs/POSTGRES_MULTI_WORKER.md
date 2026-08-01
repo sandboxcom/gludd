@@ -1,14 +1,13 @@
 # Postgres Migration Path & Multi-Worker Architecture
 
-Status: IMPLEMENTATION IN PROGRESS (owner go-ahead received 2026-08-01)
+Status: LIVE ACCEPTANCE GREEN (2026-08-01)
 
-The first bounded storage-parity slice is implemented: write and read-only
-SQLAlchemy async engines accept PostgreSQL URLs, PostgreSQL read-only sessions
-set the transaction default to read-only on connect, and initial queue seeding
-selects the native SQLite or PostgreSQL `INSERT ... ON CONFLICT` builder. This
-does **not** claim production readiness: migration execution, the remaining
-repository upserts, live PostgreSQL schema parity, and multi-worker claims stay
-open and must pass the gates below before the SQLite worker clamp is removed.
+The namespaced acceptance target applies all 37 Alembic migrations to a
+disposable PostgreSQL 16 instance, proves fenced claims from two spawned
+processes, persists a Terraform event that is read from a separate connection,
+and boots two real Gunicorn workers. The 2026-08-01 run passed all three live
+tests and then removed its container and stopped its project-scoped Podman VM.
+SQLite remains the single-worker development fallback.
 
 ## Motivation
 
@@ -63,6 +62,16 @@ records a maintainer's explanation that workers are separate processes and
 need external storage or messaging for shared state. That user-reported failure
 mode is why merely raising the Gunicorn worker count is not accepted here:
 PostgreSQL durability and fenced claim tests must land first.
+
+The same process boundary applies to sidecars. Gunicorn operators have also
+reported surprising initialization and preload behavior when work is performed
+inside worker processes ([issue #1666](https://github.com/benoitc/gunicorn/issues/1666)).
+SearXNG's current administrator guide recommends a separately managed Compose
+deployment for most installations rather than an application-worker package
+install ([official container guide](https://docs.searxng.org/admin/installation-docker)).
+Gludd therefore defaults `searx_autostart` and `service_discovery_enabled` to
+false. A Gunicorn worker never installs or binds a singleton SearXNG process;
+operators start the namespaced service separately and opt in explicitly.
 
 ### Step 2 — Alembic Against Postgres
 
