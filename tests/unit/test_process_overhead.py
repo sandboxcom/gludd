@@ -63,6 +63,12 @@ def _implementation_lines(path: Path) -> int:
 
 class TestAntiStopFalsePositiveRate:
     """Measure whether state-file tracking shows over-firing."""
+
+    def test_false_done_state_file_is_namespaced_for_harnesses(self):
+        """Runtime harnesses must be able to avoid polluting live telemetry."""
+        source = plugin_contract_source(PLUGIN_DIR / "enforce-stop.ts")
+        assert "process.env.GLUDD_FALSE_DONE_BLOCKS_FILE" in source
+
     def test_false_done_state_file_tracks_block_count(self):
         """Recent block rate checks for over-fitting; persistent file is cumulative."""
         data = _read_json("/tmp/gludd-false-done-blocks.json")

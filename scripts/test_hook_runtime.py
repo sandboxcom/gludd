@@ -53,6 +53,9 @@ def _run_ts(ts_code: str, env_override: dict | None = None, timeout: int = 15):
     """
     global _tmp_counter
     _tmp_counter += 1
+    false_done_path = (
+        f"/tmp/gludd-false-done-blocks-test-{os.getpid()}-{_tmp_counter}.json"
+    )
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".ts", dir="/tmp", prefix=f"hook_test_{_tmp_counter}_", delete=False
     ) as f:
@@ -67,6 +70,7 @@ def _run_ts(ts_code: str, env_override: dict | None = None, timeout: int = 15):
         # Point plugins at a per-process nonexistent path unless a test
         # explicitly overrides it.
         env["GLUDD_DISENGAGE_PATH"] = f"/tmp/gludd-disengage-hermetic-{os.getpid()}.json"
+        env["GLUDD_FALSE_DONE_BLOCKS_FILE"] = false_done_path
         if env_override:
             env.update(env_override)
         proc = subprocess.run(
@@ -93,10 +97,11 @@ def _run_ts(ts_code: str, env_override: dict | None = None, timeout: int = 15):
                 continue
         return None
     finally:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
+        for path in (tmp, false_done_path):
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
 
 
 def test_shared_explicit_non_subagent_ignores_stale_pid_marker():

@@ -86,7 +86,8 @@ const STATE_FILE = process.env.GLUDD_STOP_STATE_FILE || "/tmp/gludd-stop-state.j
 const BLOCK_COUNTER_FILE = process.env.GLUDD_BLOCK_COUNTER_FILE || "/tmp/gludd-block-counter.json"
 const BLOCK_REASON_FILE = process.env.GLUDD_BLOCK_REASON_FILE || "/tmp/gludd-block-reason.json"
 const PERSIST_BLOCK_FILE = process.env.GLUDD_PERSIST_STOP_BLOCK_FILE || "/tmp/gludd-persist-stop-block.json"
-const FALSE_DONE_BLOCKS_FILE = "/tmp/gludd-false-done-blocks.json"
+const FALSE_DONE_BLOCKS_FILE =
+  process.env.GLUDD_FALSE_DONE_BLOCKS_FILE || "/tmp/gludd-false-done-blocks.json"
 const BLANKED_RESPONSE_FILE = "/tmp/gludd-blanked-responses.json"
 const TEXT_COMPLETE_COUNT_FILE = process.env.GLUDD_STOP_TEXT_COMPLETE_COUNT || "/tmp/gludd-stop-text-complete-count.json"
 const SESSION_BLOCK_COUNTER_FILE = "/tmp/gludd-stop-session-blocks.json"
