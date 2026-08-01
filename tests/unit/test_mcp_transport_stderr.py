@@ -1,11 +1,4 @@
-"""Regression test: MCPStdioClient must NOT use stderr=PIPE.
-
-A subprocess with stderr=PIPE and an undrained stderr pipe will deadlock once
-the server writes more than ~64 KB to stderr (the OS pipe buffer fills and the
-write(2) call blocks, which in turn blocks every subsequent tool call).  The
-fix is stderr=DEVNULL.  This test ensures the value never silently regresses
-back to PIPE.
-"""
+"""D-24 regression coverage for bounded MCP stderr diagnostics."""
 
 from __future__ import annotations
 
@@ -16,70 +9,160 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from general_ludd.mcp.config import MCPServerConfig
-from general_ludd.mcp.transport import MCPStdioClient
+from general_ludd.mcp.transport import MCPStdioClient, MCPTransportError
 
 
 @pytest.fixture()
 def stdio_config() -> MCPServerConfig:
-    """Minimal config that passes _validate_launch_command for 'python'.
-
-    Uses ``-m json.tool`` (a stdlib module) rather than ``-c`` because ``-c``
-    is now rejected by the python/node argv validation guard (C27).
-    The subprocess output is fully mocked, so the actual module behavior is
-    irrelevant — only the argv shape matters for the stderr=PIPE test.
-    """
     return MCPServerConfig(
         server_id="test-server",
         command=[sys.executable],
         args=["-m", "json.tool"],
-        timeout_seconds=5.0,
+        env={"MCP_TOKEN": "diagnostic-secret-value"},
+        timeout_seconds=0.2,
     )
+
+
+def _process(stderr_chunks: list[bytes]) -> MagicMock:
+    proc = MagicMock()
+    proc.returncode = None
+    proc.stdin = MagicMock()
+    proc.stdin.write = MagicMock()
+    proc.stdin.drain = AsyncMock()
+    proc.stdin.close = MagicMock()
+    proc.stdout = MagicMock()
+    proc.stdout.readline = AsyncMock(
+        return_value=(
+            b'{"jsonrpc":"2.0","id":1,"result":'
+            b'{"protocolVersion":"2024-11-05","capabilities":{}}}\n'
+        )
+    )
+    proc.stderr = MagicMock()
+    proc.stderr.read = AsyncMock(side_effect=stderr_chunks)
+    proc.terminate = MagicMock()
+    proc.kill = MagicMock()
+    proc.wait = AsyncMock(return_value=0)
+    return proc
+
+
+async def _await_stderr(client: MCPStdioClient) -> None:
+    task = client._stderr_task
+    assert task is not None
+    await asyncio.wait_for(task, timeout=1.0)
 
 
 @pytest.mark.asyncio
-async def test_stderr_is_devnull_not_pipe(stdio_config: MCPServerConfig) -> None:
-    """create_subprocess_exec must be called with stderr=DEVNULL, never PIPE.
+async def test_stderr_is_concurrently_drained_redacted_and_bounded(
+    stdio_config: MCPServerConfig,
+) -> None:
+    proc = _process(
+        [
+            b"discarded\nkept-one\n",
+            b"password=diagnostic-secret-value\nkept-two\n",
+            b"",
+        ]
+    )
 
-    If stderr=PIPE were used and the subprocess wrote >64 KB of diagnostics,
-    the OS pipe buffer would fill and the write(2) would block, deadlocking all
-    subsequent tool calls.
-    """
-    captured_kwargs: dict = {}
-
-    async def fake_create_subprocess_exec(*args: object, **kwargs: object) -> MagicMock:
-        captured_kwargs.update(kwargs)
-        proc = MagicMock()
-        proc.returncode = None
-        proc.stdin = MagicMock()
-        proc.stdin.write = MagicMock()
-        proc.stdin.drain = AsyncMock()
-        proc.stdout = MagicMock()
-        # Simulate server writing initialize response then initialized ack
-        proc.stdout.readline = AsyncMock(
-            side_effect=[
-                b'{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","capabilities":{}}}\n',
-                b"",  # EOF sentinel for any subsequent read
-            ]
+    with patch("asyncio.create_subprocess_exec", return_value=proc) as spawn:
+        client = MCPStdioClient(
+            stdio_config,
+            stderr_tail_bytes=80,
+            stderr_tail_lines=2,
         )
-        proc.terminate = MagicMock()
-        proc.wait = AsyncMock(return_value=0)
-        proc.kill = MagicMock()
-        return proc
-
-    with patch(
-        "asyncio.create_subprocess_exec",
-        side_effect=fake_create_subprocess_exec,
-    ):
-        client = MCPStdioClient(stdio_config)
         await client.start()
-        await client.stop()
+        await _await_stderr(client)
 
-    assert "stderr" in captured_kwargs, "stderr kwarg was not passed to create_subprocess_exec"
-    assert captured_kwargs["stderr"] == asyncio.subprocess.DEVNULL, (
-        f"Expected stderr=DEVNULL ({asyncio.subprocess.DEVNULL!r}) to prevent pipe-buffer "
-        f"deadlock, got {captured_kwargs['stderr']!r}. "
-        "Using stderr=PIPE without a drain task deadlocks when the server writes >64 KB."
-    )
-    assert captured_kwargs["stderr"] != asyncio.subprocess.PIPE, (
-        "stderr=PIPE is set — this will deadlock on >64 KB stderr output from the MCP server."
-    )
+    assert spawn.call_args.kwargs["stderr"] == asyncio.subprocess.PIPE
+    diagnostics = client.stderr_diagnostics
+    assert len(diagnostics["tail"].encode()) <= 80
+    assert diagnostics["tail_lines"] <= 2
+    assert "diagnostic-secret-value" not in diagnostics["tail"]
+    assert "REDACTED" in diagnostics["tail"]
+    assert diagnostics["truncated"] is True
+    assert diagnostics["truncated_lines"] >= 2
+    assert diagnostics["observed_lines"] == 4
+
+
+@pytest.mark.asyncio
+async def test_infinite_stderr_is_cancelled_at_total_byte_policy_limit(
+    stdio_config: MCPServerConfig,
+) -> None:
+    proc = _process([])
+
+    async def endless_stderr(_size: int) -> bytes:
+        return b"noise-line\n"
+
+    proc.stderr.read = AsyncMock(side_effect=endless_stderr)
+
+    with patch("asyncio.create_subprocess_exec", return_value=proc):
+        client = MCPStdioClient(
+            stdio_config,
+            stderr_tail_bytes=24,
+            stderr_tail_lines=2,
+            stderr_max_bytes=32,
+        )
+        await client.start()
+        await _await_stderr(client)
+
+    diagnostics = client.stderr_diagnostics
+    proc.kill.assert_called_once()
+    assert proc.stderr.read.await_count <= 4
+    assert diagnostics["policy_breached"] is True
+    assert diagnostics["policy_reason"] == "max_bytes"
+    assert diagnostics["observed_bytes"] <= 33
+    assert len(diagnostics["tail"].encode()) <= 24
+    with pytest.raises(MCPTransportError, match=r"stderr policy breach.*max_bytes"):
+        await client.list_tools()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("kwargs", "chunks", "reason"),
+    [
+        ({"stderr_line_bytes": 4}, [b"12345", b""], "line_bytes"),
+        ({"stderr_max_lines": 2}, [b"one\ntwo\nthree\n", b""], "max_lines"),
+    ],
+)
+async def test_line_policies_cancel_without_retaining_offending_payload(
+    stdio_config: MCPServerConfig,
+    kwargs: dict[str, int],
+    chunks: list[bytes],
+    reason: str,
+) -> None:
+    proc = _process(chunks)
+
+    with patch("asyncio.create_subprocess_exec", return_value=proc):
+        client = MCPStdioClient(stdio_config, **kwargs)
+        await client.start()
+        await _await_stderr(client)
+
+    diagnostics = client.stderr_diagnostics
+    proc.kill.assert_called_once()
+    assert diagnostics["policy_breached"] is True
+    assert diagnostics["policy_reason"] == reason
+    assert "12345" not in diagnostics["tail"]
+    assert "three" not in diagnostics["tail"]
+
+
+def test_stderr_limits_are_configurable_from_environment(
+    stdio_config: MCPServerConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GLUDD_MCP_STDERR_TAIL_BYTES", "123")
+    monkeypatch.setenv("GLUDD_MCP_STDERR_MAX_LINES", "7")
+
+    client = MCPStdioClient(stdio_config)
+
+    diagnostics = client.stderr_diagnostics
+    assert diagnostics["limits"]["tail_bytes"] == 123
+    assert diagnostics["limits"]["max_lines"] == 7
+
+
+def test_invalid_stderr_limit_fails_closed(
+    stdio_config: MCPServerConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GLUDD_MCP_STDERR_MAX_BYTES", "unbounded")
+
+    with pytest.raises(MCPTransportError, match="GLUDD_MCP_STDERR_MAX_BYTES"):
+        MCPStdioClient(stdio_config)

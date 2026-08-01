@@ -28,14 +28,14 @@ operator evidence are documented in
 
 ## 2. Observed baseline
 
-The baseline was refreshed on development commit `5922cff3` with repository
+The baseline was refreshed on development commit `770ec792` with repository
 make targets. Generated files are evidence snapshots, not allowlists.
 
 - `make security-backlog-gate` reported `TOTAL=24`,
   `LANDED-VERIFIED=8`, and `OPEN=16`. The current target intentionally exits
   successfully when controls are open, so it is not a completion gate.
 - `make sast` generated `dist/sast-report.json` with `SEVERITY.HIGH: 0`,
-  `SEVERITY.MEDIUM: 47`, and `SEVERITY.LOW: 506`. The target still masks
+  `SEVERITY.MEDIUM: 46`, and `SEVERITY.LOW: 506`. The target still masks
   Bandit's finding exit status and is therefore an inventory, not a strict
   completion gate.
 - `make pip-audit-gate` reported `No known vulnerabilities found`; the project
@@ -52,9 +52,16 @@ make targets. Generated files are evidence snapshots, not allowlists.
 - The current `_isolate_network()` changes a socket timeout but does not create
   an operating-system network boundary. Locked workloads SHALL reject this as
   unenforced, not report it as isolated.
-- `make security-audit` completed successfully, but its `detect-secrets` phase
-  emitted no heartbeat for more than 90 seconds. Long-running security phases
-  SHALL publish bounded progress and early failures just like test gates.
+- `make security-audit SECURITY_AUDIT_HEARTBEAT_SECS=10
+  SECURITY_AUDIT_PHASE_TIMEOUT_SECS=300 SECURITY_AUDIT_VALIDATE_ONLY=0
+  SECURITY_AUDIT_SUMMARY=.gate-logs/security-audit-current.json` completed in
+  54.798 seconds. Secrets scanning emitted three 10-second heartbeats before
+  passing; SAST, Python and Node dependency audit, and backlog inventory all
+  streamed their phase boundaries. No phase failed or timed out.
+- The generated SAST summary reported `baseline_available=false` and the backlog
+  target still treats all 16 open controls as informational. Consequently the
+  successful audit is accurate inventory evidence, not a security-completion
+  gate. SEC-SBX-001 remains proposed until the acceptance rules below are green.
 
 ### 2.1 Implemented production-boundary slice (2026-08-01)
 

@@ -13,14 +13,20 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import json
+import logging
 import os
 import re
 import shutil
+from collections import deque
 from typing import Any, cast
 
 from general_ludd.mcp.config import MCPServerConfig
 from general_ludd.mcp.registry import MCPTool
+from general_ludd.security.sanitize import sanitize_error_message
+
+logger = logging.getLogger(__name__)
 
 # Package managers / runtimes that are explicitly permitted as MCP launchers.
 # Anything not on this list is rejected by default (operator can opt out via
@@ -348,6 +354,27 @@ def _validate_python_node_argv(cmd: list[str], launcher: str) -> None:
 # (defense in depth alongside the per-read timeout). Finding 5.
 _MAX_INTERLEAVE_SKIPS = 100
 
+# D-24: stderr is drained concurrently so a noisy MCP server cannot fill its
+# pipe and deadlock.  These defaults retain a small redacted diagnostic tail,
+# while the larger policy limits cap the total work accepted from one server.
+# Every value is operator-configurable (constructor keyword or environment),
+# but a hard safety ceiling prevents a typo from turning diagnostics into an
+# unbounded-memory or unbounded-I/O path.
+_STDERR_READ_CHUNK_BYTES = 4096
+_STDERR_DEFAULT_TAIL_BYTES = 16 * 1024
+_STDERR_DEFAULT_TAIL_LINES = 128
+_STDERR_DEFAULT_LINE_BYTES = 8 * 1024
+_STDERR_DEFAULT_MAX_BYTES = 1024 * 1024
+_STDERR_DEFAULT_MAX_LINES = 10_000
+_STDERR_LIMIT_CEILINGS = {
+    "tail_bytes": 1024 * 1024,
+    "tail_lines": 4096,
+    "line_bytes": 64 * 1024,
+    "max_bytes": 64 * 1024 * 1024,
+    "max_lines": 1_000_000,
+}
+_STDERR_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
 # Minimal base environment handed to every MCP subprocess. The full host
 # environment (which includes ANTHROPIC_API_KEY, GLUDD_PSK, cloud creds, etc.)
 # is NEVER inherited — only these process-hygiene vars plus the server's own
@@ -359,20 +386,285 @@ class MCPTransportError(Exception):
     pass
 
 
+def _stderr_limit(
+    explicit: int | None,
+    *,
+    env_name: str,
+    default: int,
+    limit_name: str,
+) -> int:
+    """Resolve and validate one bounded stderr policy setting."""
+    raw: object = explicit if explicit is not None else os.environ.get(env_name, default)
+    if isinstance(raw, bool):
+        raise MCPTransportError(f"{env_name} must be a positive integer")
+    try:
+        value = int(cast("str | int", raw))
+    except (TypeError, ValueError) as exc:
+        raise MCPTransportError(f"{env_name} must be a positive integer") from exc
+    ceiling = _STDERR_LIMIT_CEILINGS[limit_name]
+    if value <= 0 or value > ceiling:
+        raise MCPTransportError(
+            f"{env_name} must be between 1 and {ceiling}, got {value}"
+        )
+    return value
+
+
 class MCPStdioClient:
     """Manages a single MCP server subprocess via stdio JSON-RPC."""
 
-    def __init__(self, config: MCPServerConfig, secrets_mgr: Any = None) -> None:
+    def __init__(
+        self,
+        config: MCPServerConfig,
+        secrets_mgr: Any = None,
+        *,
+        stderr_tail_bytes: int | None = None,
+        stderr_tail_lines: int | None = None,
+        stderr_line_bytes: int | None = None,
+        stderr_max_bytes: int | None = None,
+        stderr_max_lines: int | None = None,
+    ) -> None:
         self._config = config
         self._secrets_mgr = secrets_mgr
         self._process: asyncio.subprocess.Process | None = None
         self._request_id = 0
+        self._stderr_tail_bytes_limit = _stderr_limit(
+            stderr_tail_bytes,
+            env_name="GLUDD_MCP_STDERR_TAIL_BYTES",
+            default=_STDERR_DEFAULT_TAIL_BYTES,
+            limit_name="tail_bytes",
+        )
+        self._stderr_tail_lines_limit = _stderr_limit(
+            stderr_tail_lines,
+            env_name="GLUDD_MCP_STDERR_TAIL_LINES",
+            default=_STDERR_DEFAULT_TAIL_LINES,
+            limit_name="tail_lines",
+        )
+        self._stderr_line_bytes_limit = _stderr_limit(
+            stderr_line_bytes,
+            env_name="GLUDD_MCP_STDERR_LINE_BYTES",
+            default=_STDERR_DEFAULT_LINE_BYTES,
+            limit_name="line_bytes",
+        )
+        self._stderr_max_bytes = _stderr_limit(
+            stderr_max_bytes,
+            env_name="GLUDD_MCP_STDERR_MAX_BYTES",
+            default=_STDERR_DEFAULT_MAX_BYTES,
+            limit_name="max_bytes",
+        )
+        self._stderr_max_lines = _stderr_limit(
+            stderr_max_lines,
+            env_name="GLUDD_MCP_STDERR_MAX_LINES",
+            default=_STDERR_DEFAULT_MAX_LINES,
+            limit_name="max_lines",
+        )
+        self._stderr_task: asyncio.Task[None] | None = None
+        self._stderr_secret_values: tuple[str, ...] = ()
+        self._reset_stderr_diagnostics()
 
     @property
     def pid(self) -> int | None:
         if self._process is None:
             return None
         return self._process.pid
+
+    @property
+    def stderr_diagnostics(self) -> dict[str, Any]:
+        """Return a bounded, already-redacted stderr tail and its counters.
+
+        Raw stderr is never exposed.  The metadata is intentionally sufficient
+        for an event/log sink to persist an early failure event without copying
+        an untrusted payload into that event.
+        """
+        tail = "\n".join(self._stderr_tail)
+        return {
+            "tail": tail,
+            "tail_bytes": len(tail.encode("utf-8")),
+            "tail_lines": len(self._stderr_tail),
+            "observed_bytes": self._stderr_observed_bytes,
+            "observed_lines": self._stderr_observed_lines,
+            "truncated": bool(
+                self._stderr_truncated_bytes
+                or self._stderr_truncated_lines
+                or self._stderr_policy_reason
+            ),
+            "truncated_bytes": self._stderr_truncated_bytes,
+            "truncated_lines": self._stderr_truncated_lines,
+            "policy_breached": self._stderr_policy_reason is not None,
+            "policy_reason": self._stderr_policy_reason,
+            "limits": {
+                "tail_bytes": self._stderr_tail_bytes_limit,
+                "tail_lines": self._stderr_tail_lines_limit,
+                "line_bytes": self._stderr_line_bytes_limit,
+                "max_bytes": self._stderr_max_bytes,
+                "max_lines": self._stderr_max_lines,
+            },
+        }
+
+    def _reset_stderr_diagnostics(self) -> None:
+        self._stderr_tail: deque[str] = deque()
+        self._stderr_observed_bytes = 0
+        self._stderr_observed_lines = 0
+        self._stderr_truncated_bytes = 0
+        self._stderr_truncated_lines = 0
+        self._stderr_policy_reason: str | None = None
+
+    def _raise_stderr_policy_breach(self) -> None:
+        if self._stderr_policy_reason is None:
+            return
+        raise MCPTransportError(
+            "MCP stderr policy breach "
+            f"({self._stderr_policy_reason}); subprocess terminated after "
+            f"{self._stderr_observed_bytes} bytes and "
+            f"{self._stderr_observed_lines} lines"
+        )
+
+    def _redact_stderr_line(self, raw: bytes) -> str:
+        text = raw.decode("utf-8", errors="replace")
+        for secret in self._stderr_secret_values:
+            text = text.replace(secret, "[REDACTED_MCP_ENV]")
+        text = sanitize_error_message(text)
+        return _STDERR_CONTROL_CHARS_RE.sub("�", text)
+
+    @staticmethod
+    def _tail_bytes(text: str, max_bytes: int) -> str:
+        """Return at most the last ``max_bytes`` without broken UTF-8."""
+        encoded = text.encode("utf-8")
+        if len(encoded) <= max_bytes:
+            return text
+        return encoded[-max_bytes:].decode("utf-8", errors="ignore")
+
+    def _tail_size(self) -> int:
+        return len("\n".join(self._stderr_tail).encode("utf-8"))
+
+    def _retain_stderr_line(self, raw: bytes) -> None:
+        line = self._redact_stderr_line(raw)
+        encoded_size = len(line.encode("utf-8"))
+        retained_line_limit = min(
+            self._stderr_line_bytes_limit,
+            self._stderr_tail_bytes_limit,
+        )
+        if encoded_size > retained_line_limit:
+            line = self._tail_bytes(line, retained_line_limit)
+            self._stderr_truncated_bytes += encoded_size - len(line.encode("utf-8"))
+        self._stderr_tail.append(line)
+
+        while (
+            len(self._stderr_tail) > self._stderr_tail_lines_limit
+            or self._tail_size() > self._stderr_tail_bytes_limit
+        ):
+            removed = self._stderr_tail.popleft()
+            self._stderr_truncated_lines += 1
+            self._stderr_truncated_bytes += len(removed.encode("utf-8"))
+
+    async def _stderr_policy_breach(self, reason: str) -> None:
+        if self._stderr_policy_reason is not None:
+            return
+        self._stderr_policy_reason = reason
+        # Stable, bounded metadata makes this an immediately persistable
+        # failure event in Gunicorn/container logs; never include raw stderr.
+        logger.error(
+            "event=mcp.stderr.policy_breach server_id=%s reason=%s "
+            "observed_bytes=%d observed_lines=%d truncated_bytes=%d "
+            "truncated_lines=%d",
+            self._config.server_id,
+            reason,
+            self._stderr_observed_bytes,
+            self._stderr_observed_lines,
+            self._stderr_truncated_bytes,
+            self._stderr_truncated_lines,
+        )
+        await self._force_terminate()
+
+    async def _drain_stderr(self) -> None:
+        """Continuously drain stderr under bounded memory and I/O policies."""
+        proc = self._process
+        if proc is None or proc.stderr is None:
+            return
+        stream = proc.stderr
+        pending = bytearray()
+        try:
+            while True:
+                remaining = self._stderr_max_bytes - self._stderr_observed_bytes
+                read_size = min(
+                    _STDERR_READ_CHUNK_BYTES,
+                    self._stderr_line_bytes_limit + 1,
+                    remaining + 1,
+                )
+                read_result = stream.read(max(1, read_size))
+                # Some existing unit-test process doubles predate stderr
+                # capture and expose a synchronous MagicMock. Treat that as no
+                # diagnostic stream; real asyncio StreamReader.read is awaitable.
+                if not inspect.isawaitable(read_result):
+                    return
+                chunk = await read_result
+                if not isinstance(chunk, bytes):
+                    await self._stderr_policy_breach("drain_error")
+                    return
+                if not chunk:
+                    if pending:
+                        if len(pending) > self._stderr_line_bytes_limit:
+                            self._stderr_truncated_lines += 1
+                            self._stderr_truncated_bytes += len(pending)
+                            await self._stderr_policy_breach("line_bytes")
+                            return
+                        self._stderr_observed_lines += 1
+                        if self._stderr_observed_lines > self._stderr_max_lines:
+                            self._stderr_truncated_lines += 1
+                            self._stderr_truncated_bytes += len(pending)
+                            await self._stderr_policy_breach("max_lines")
+                            return
+                        self._retain_stderr_line(bytes(pending))
+                    return
+
+                self._stderr_observed_bytes += len(chunk)
+                if self._stderr_observed_bytes > self._stderr_max_bytes:
+                    self._stderr_truncated_bytes += (
+                        self._stderr_observed_bytes - self._stderr_max_bytes
+                    )
+                    await self._stderr_policy_breach("max_bytes")
+                    return
+
+                pending.extend(chunk)
+                while True:
+                    newline = pending.find(b"\n")
+                    if newline < 0:
+                        if len(pending) > self._stderr_line_bytes_limit:
+                            self._stderr_truncated_lines += 1
+                            self._stderr_truncated_bytes += len(pending)
+                            await self._stderr_policy_breach("line_bytes")
+                            return
+                        break
+                    if newline > self._stderr_line_bytes_limit:
+                        self._stderr_truncated_lines += 1
+                        self._stderr_truncated_bytes += newline
+                        await self._stderr_policy_breach("line_bytes")
+                        return
+                    raw_line = bytes(pending[:newline])
+                    del pending[: newline + 1]
+                    if raw_line.endswith(b"\r"):
+                        raw_line = raw_line[:-1]
+                    self._stderr_observed_lines += 1
+                    if self._stderr_observed_lines > self._stderr_max_lines:
+                        self._stderr_truncated_lines += 1
+                        self._stderr_truncated_bytes += len(raw_line)
+                        await self._stderr_policy_breach("max_lines")
+                        return
+                    self._retain_stderr_line(raw_line)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # A failed drain can recreate the original pipe-deadlock. Fail
+            # closed and log only the exception type via the stable reason.
+            await self._stderr_policy_breach("drain_error")
+
+    async def _finish_stderr_drain(self) -> None:
+        task = self._stderr_task
+        if task is None or task is asyncio.current_task():
+            return
+        if not task.done():
+            task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
     def _build_env(self) -> dict[str, str]:
         """Minimal allowlisted base env + the server's declared/resolved env.
@@ -473,6 +765,7 @@ class MCPStdioClient:
     async def _send_request(
         self, method: str, params: dict[str, Any] | None = None
     ) -> dict[str, Any]:
+        self._raise_stderr_policy_breach()
         if self._process is None or self._process.returncode is not None:
             raise MCPTransportError("Process not running")
         assert self._process.stdin is not None
@@ -493,6 +786,7 @@ class MCPStdioClient:
         while True:
             response_line = await self._readline_with_timeout()
             if not response_line:
+                self._raise_stderr_policy_breach()
                 raise MCPTransportError("Connection closed")
             response = json.loads(response_line.decode())
             if response.get("id") != request_id:
@@ -533,13 +827,28 @@ class MCPStdioClient:
         # PATH resolution, and package-spec injection in one go.
         _validate_launch_command(cmd)
         env = self._build_env()
+        self._reset_stderr_diagnostics()
+        declared_env_keys = set(self._config.env) | set(self._config.env_aliases)
+        self._stderr_secret_values = tuple(
+            sorted(
+                {env[key] for key in declared_env_keys if env.get(key)},
+                key=len,
+                reverse=True,
+            )
+        )
 
         self._process = await asyncio.create_subprocess_exec(
             *cmd,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,  # PIPE would block on >64KB stderr writes
+            stderr=asyncio.subprocess.PIPE,
             env=env,
+        )
+        # Start the drain before the initialize request so even startup errors
+        # cannot fill the OS pipe and delay failure detection.
+        self._stderr_task = asyncio.create_task(
+            self._drain_stderr(),
+            name=f"mcp-stderr-{self._config.server_id}",
         )
 
         await self._send_request(
@@ -587,24 +896,27 @@ class MCPStdioClient:
         )
 
     async def stop(self) -> None:
-        if self._process is not None and self._process.returncode is None:
-            if self._process.stdin is not None:
-                self._process.stdin.close()
-            self._process.terminate()
-            # Finding 4: bound the wait() so a process that ignores SIGTERM
-            # can't hang stop() forever — escalate to kill() on timeout.
-            try:
-                await asyncio.wait_for(
-                    self._process.wait(),
-                    timeout=self._config.timeout_seconds,
-                )
-            except TimeoutError:
+        try:
+            if self._process is not None and self._process.returncode is None:
+                if self._process.stdin is not None:
+                    self._process.stdin.close()
+                self._process.terminate()
+                # Finding 4: bound the wait() so a process that ignores SIGTERM
+                # can't hang stop() forever — escalate to kill() on timeout.
                 try:
-                    self._process.kill()
-                except ProcessLookupError:
-                    return
-                with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(
                         self._process.wait(),
                         timeout=self._config.timeout_seconds,
                     )
+                except TimeoutError:
+                    try:
+                        self._process.kill()
+                    except ProcessLookupError:
+                        return
+                    with contextlib.suppress(TimeoutError):
+                        await asyncio.wait_for(
+                            self._process.wait(),
+                            timeout=self._config.timeout_seconds,
+                        )
+        finally:
+            await self._finish_stderr_drain()

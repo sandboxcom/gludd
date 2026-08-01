@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 GROUPS = ("by_severity", "by_rule", "by_file")
+ACTIONABLE_SEVERITIES = frozenset({"HIGH", "MEDIUM"})
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -63,6 +64,42 @@ def _counts(payload: Mapping[str, Any]) -> dict[str, Counter[str]]:
     )
 
 
+def _actionable_findings(payload: Mapping[str, Any]) -> list[dict[str, object]]:
+    """Return source-free coordinates for findings that require remediation."""
+
+    results = payload.get("results", [])
+    if not isinstance(results, list):
+        raise ValueError("Bandit report `results` must be a list")
+
+    findings: list[dict[str, object]] = []
+    for result in results:
+        if not isinstance(result, dict):
+            raise ValueError("Bandit report findings must be JSON objects")
+        severity = _clean_label(result.get("issue_severity"), "UNKNOWN").upper()
+        if severity not in ACTIONABLE_SEVERITIES:
+            continue
+        line = result.get("line_number", 0)
+        findings.append(
+            {
+                "filename": _clean_label(result.get("filename"), "UNKNOWN"),
+                "line": line if isinstance(line, int) and line >= 0 else 0,
+                "rule": _clean_label(result.get("test_id"), "UNKNOWN"),
+                "severity": severity,
+            }
+        )
+
+    severity_order = {"HIGH": 0, "MEDIUM": 1}
+    return sorted(
+        findings,
+        key=lambda finding: (
+            severity_order.get(str(finding["severity"]), 2),
+            str(finding["filename"]),
+            int(finding["line"]),
+            str(finding["rule"]),
+        ),
+    )
+
+
 def _delta_group(
     current: Counter[str], baseline: Counter[str]
 ) -> dict[str, dict[str, int]]:
@@ -91,6 +128,7 @@ def summarize(report: dict[str, Any], baseline: dict[str, Any] | None) -> dict[s
         "schema_version": 1,
         "baseline_available": baseline is not None,
         "scanner_error_count": scanner_error_count,
+        "actionable_findings": _actionable_findings(report),
         "totals": {
             "baseline": baseline_total,
             "current": current_total,

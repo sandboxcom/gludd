@@ -26,6 +26,7 @@ from general_ludd.ansible.paths import (
     resolve_collections_paths,
     to_ansible_env,
 )
+from general_ludd.ansible.unsafe import validate_extravars
 from general_ludd.events.types import PlaybookRegisteredEvent
 from general_ludd.security.sanitize import sanitize_job_id
 
@@ -299,14 +300,15 @@ class AnsibleRunnerAdapter:
         safe_id = sanitize_job_id(job_id)
         if safe_id is None:
             raise ValueError(f"Invalid job_id: {job_id!r}")
-        vars_dir = os.path.join(self.private_data_dir, safe_id, "env")
-        os.makedirs(vars_dir, exist_ok=True)
         payload: dict[str, Any] = {"job_vars": job_vars}
         if shared_vars is not None:
             payload["shared_vars"] = shared_vars
+        payload = validate_extravars(payload)
+        vars_dir = os.path.join(self.private_data_dir, safe_id, "env")
+        os.makedirs(vars_dir, exist_ok=True)
         path = os.path.join(vars_dir, filename)
-        with open(path, "w") as f:
-            yaml.dump(payload, f, default_flow_style=False)
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(payload, f, default_flow_style=False)
         os.chmod(path, 0o600)
         return path
 

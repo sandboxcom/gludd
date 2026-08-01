@@ -346,6 +346,14 @@ def test_sast_summary_groups_findings_and_computes_baseline_delta(
         "current": 1,
         "delta": 1,
     }
+    assert summary["actionable_findings"] == [
+        {
+            "filename": "src/b.py",
+            "line": 9,
+            "rule": "B602",
+            "severity": "HIGH",
+        }
+    ]
     assert marker not in summary_path.read_text(encoding="utf-8")
     assert "SAST_SUMMARY current=2 baseline=1 delta=+1" in completed.stdout
     assert sast_summarizer.summarize(current, baseline)["totals"] == summary["totals"]

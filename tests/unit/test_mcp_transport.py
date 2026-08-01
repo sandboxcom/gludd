@@ -66,7 +66,9 @@ class TestMCPStdioClient:
         assert list(pos_args) == cmd
         assert kwargs["stdin"] == asyncio.subprocess.PIPE
         assert kwargs["stdout"] == asyncio.subprocess.PIPE
-        assert kwargs["stderr"] == asyncio.subprocess.DEVNULL
+        # D-24 captures stderr through a concurrently started bounded drain;
+        # PIPE is safe here because the transport owns and drains it.
+        assert kwargs["stderr"] == asyncio.subprocess.PIPE
         assert kwargs["env"]["FOO"] == "bar"
 
     async def test_stdio_client_sends_initialize(self):
