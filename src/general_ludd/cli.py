@@ -1027,9 +1027,11 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
 
     perm_parser = _register_perm(sub)
 
-    # payment removed from CLI — access via prompting. Code retained in cli_payment.py for programmatic use.
-    # from general_ludd.cli_payment import register as _register_payment
-    # payment_parser = _register_payment(sub)
+    # Keep the documented vault available from the CLI. Its handler defaults to
+    # non-echoing interactive entry and explicitly warns on cleartext flags.
+    from general_ludd.cli_payment import register as _register_payment
+
+    payment_parser = _register_payment(sub)
 
     # `gludd human-todo` — bot→human task requests.
     from general_ludd.cli_human_todos import add_human_todo_subparser
@@ -1210,6 +1212,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "slurm": slurm_parser,
         "connectors": connectors_parser,
         "perm": perm_parser,
+        "payment": payment_parser,
         "human-todo": human_todo_parser,
         "self-improve": self_improve_parser,
         "remediation": remediation_parser,

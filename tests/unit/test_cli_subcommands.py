@@ -23,19 +23,12 @@ def _get_subcommands() -> list[str]:
 
 
 class TestRemovedSubcommands:
-    """Verify that physics, payment, account are NOT top-level subcommands."""
+    """Verify that superseded physics and account commands stay removed."""
 
     def test_physics_not_in_subcommands(self) -> None:
         subcmds = _get_subcommands()
         assert "physics" not in subcmds, (
             f"physics should NOT be a top-level subcommand, "
-            f"but found in: {subcmds}"
-        )
-
-    def test_payment_not_in_subcommands(self) -> None:
-        subcmds = _get_subcommands()
-        assert "payment" not in subcmds, (
-            f"payment should NOT be a top-level subcommand, "
             f"but found in: {subcmds}"
         )
 
@@ -45,6 +38,14 @@ class TestRemovedSubcommands:
             f"account should NOT be a top-level subcommand, "
             f"but found in: {subcmds}"
         )
+
+
+class TestPaymentSubcommand:
+    """The documented secure vault remains directly usable by operators."""
+
+    def test_payment_is_in_subcommands(self) -> None:
+        subcmds = _get_subcommands()
+        assert "payment" in subcmds, f"payment command missing from: {subcmds}"
 
 
 class TestConsolidatedTestSubcommands:
