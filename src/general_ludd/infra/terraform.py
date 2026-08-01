@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shlex
 import textwrap
+import uuid
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -551,7 +552,8 @@ class TerraformGenerator:
     def _generate_azure_containerapp(self, config: ComputeConfig) -> str:
         region = config.region or "eastus"
         _modules = os.path.join(os.path.dirname(__file__), "..", "..", "..", "infra", "terraform", "modules")
-        suffix = config.model_name.replace("/", "-").replace(".", "-").replace("_", "-").lower()[:12]
+        suffix = config.model_name.replace("/", "-").replace(".", "-").replace("_", "-").lower()[:8]
+        suffix = suffix + "-" + uuid.uuid4().hex[:6]
         return (
             textwrap.dedent(f"""\
             terraform {{
