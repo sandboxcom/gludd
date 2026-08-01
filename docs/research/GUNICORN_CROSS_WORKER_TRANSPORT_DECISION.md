@@ -184,7 +184,7 @@ target contract, stream progress, clean up resources on failure, and pass:
 ```text
 make test-postgres-multiworker-e2e WORKERS=4 COMMANDS=10000
 make test-postgres-transport-failover WORKERS=4 POLL_INTERVAL_MS=250
-make test-e2e-azure-provision ENV_FILE=/tmp/general-luddite.env WORKERS=4
+make test-e2e-azure-provision-sourced AZURE_E2E_ENV_FILE=/tmp/general-ludd.env WORKERS=4
 ```
 
 The first target must launch actual Gunicorn worker processes against PostgreSQL,
@@ -209,7 +209,7 @@ It must exercise listener rotation and verify a long-running listener never pins
 notification-queue cleanup.
 
 The live Azure target must load credentials only from the explicitly supplied
-`/tmp/general-luddite.env`, redact them from output, and use uniquely namespaced
+`/tmp/general-ludd.env`, redact them from output, and use uniquely namespaced
 resources. Terraform readiness events must enter the durable inbox as soon as each
 resource is usable; duplicate/out-of-order Event Grid deliveries must not allocate
 duplicate compute. It must canary two then four workers, interrupt one worker and a
