@@ -1,19 +1,33 @@
 """Shared XML operations for Ansible XML collection roles.
 
-Uses stdlib xml.etree.ElementTree as primary; falls back to lxml for
-XSLT, XSD inference, and XPath 1.0+ features when available.
+Uses a resource-bounded ``defusedxml`` boundary for every untrusted parse;
+falls back to locked-down lxml for XSLT and XPath features when available.
 """
 
 from __future__ import annotations
 
 import plistlib
 import re
-import xml.dom.minidom
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from datetime import UTC
 from pathlib import Path
 from typing import Any, cast
+
+from general_ludd.security.secure_xml import (
+    DEFAULT_XML_SECURITY_LIMITS,
+    XmlSecurityAuditSink,
+    XmlSecurityLimits,
+    read_xml_payload,
+    validate_xml_payload,
+    validate_xml_tree,
+)
+from general_ludd.security.secure_xml import (
+    parse_xml_file as secure_parse_xml_file,
+)
+from general_ludd.security.secure_xml import (
+    parse_xml_string as secure_parse_xml_string,
+)
 
 _DEFAULT_SOAP_NS_12 = "http://www.w3.org/2003/05/soap-envelope"
 _DEFAULT_SOAP_NS_11 = "http://schemas.xmlsoap.org/soap/envelope/"
@@ -35,7 +49,14 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 
-def parse_xml(source: str | Path, is_html: bool = False, html: bool = False) -> ET.ElementTree:
+def parse_xml(
+    source: str | Path,
+    is_html: bool = False,
+    html: bool = False,
+    *,
+    limits: XmlSecurityLimits = DEFAULT_XML_SECURITY_LIMITS,
+    audit_sink: XmlSecurityAuditSink | None = None,
+) -> ET.ElementTree:
     """Parse an XML (or HTML) string or file path into an ElementTree.
 
     When *source* is a file path it must exist on disk; otherwise it is
@@ -43,24 +64,47 @@ def parse_xml(source: str | Path, is_html: bool = False, html: bool = False) -> 
     """
     use_html = is_html or html
     source_str = str(source)
-    path = Path(source_str)
-    if path.is_file():
+    path = _existing_file(source_str)
+    if path is not None:
         if _LXML_AVAILABLE and use_html:
-            parser = lxml_etree.HTMLParser()
-            tree = lxml_etree.parse(source_str, parser)
-            return cast(ET.ElementTree, tree)
-        return cast(ET.ElementTree, ET.parse(source_str))
+            raw = read_xml_payload(
+                path,
+                limits=limits,
+                source=str(path),
+                audit_sink=audit_sink,
+            )
+            return _parse_lxml_html(
+                raw,
+                limits=limits,
+                source=str(path),
+                audit_sink=audit_sink,
+            )
+        return secure_parse_xml_file(
+            path,
+            limits=limits,
+            source=str(path),
+            audit_sink=audit_sink,
+        )
     if _LXML_AVAILABLE and use_html:
-        root = lxml_etree.fromstring(source_str, lxml_etree.HTMLParser())
-        return cast(ET.ElementTree, ET.ElementTree(root))
-    root = ET.fromstring(source_str)
+        return _parse_lxml_html(
+            source_str,
+            limits=limits,
+            source="memory-html",
+            audit_sink=audit_sink,
+        )
+    root = secure_parse_xml_string(
+        source_str,
+        limits=limits,
+        source="memory-xml",
+        audit_sink=audit_sink,
+    )
     return ET.ElementTree(root)
 
 
 def _lxml_tree(tree: ET.ElementTree) -> Any:
     """Convert an stdlib ElementTree to an lxml ElementTree if available."""
     if _LXML_AVAILABLE:
-        return lxml_etree.fromstring(_serialize(tree))
+        return _secure_lxml_root(_serialize(tree), source="element-tree")
     return tree
 
 
@@ -85,7 +129,7 @@ def xpath_query(
     """
     ns = namespaces or {}
     if _LXML_AVAILABLE:
-        lxml_root = lxml_etree.fromstring(_serialize(tree))
+        lxml_root = _lxml_tree(tree)
         result = lxml_root.xpath(query, namespaces=ns)
         if _is_numeric_xpath_query(query):
             if isinstance(result, list):
@@ -266,10 +310,15 @@ def apply_xslt(
             "apply_xslt requires lxml; install it with 'pip install lxml'"
         )
     xml_doc = _resolve_xml_source(xml_input)
-    xslt_str = str(xslt_file)
-    xslt_path = Path(xslt_str)
-    xslt_doc = lxml_etree.parse(xslt_str) if xslt_path.is_file() else lxml_etree.fromstring(xslt_str.encode("utf-8"))
-    transform = lxml_etree.XSLT(xslt_doc)
+    xslt_doc = _resolve_xml_source(xslt_file)
+    access_control = lxml_etree.XSLTAccessControl(
+        read_file=False,
+        write_file=False,
+        create_dir=False,
+        read_network=False,
+        write_network=False,
+    )
+    transform = lxml_etree.XSLT(xslt_doc, access_control=access_control)
     result = (
         transform(xml_doc, **{k: _xslt_param_value(v) for k, v in params.items()})
         if params
@@ -279,15 +328,11 @@ def apply_xslt(
 
 
 def _resolve_xml_source(source: str | Path) -> Any:
-    source_str = str(source)
-    path = Path(source_str)
-    if path.is_file():
-        return lxml_etree.parse(source_str)
-    return lxml_etree.fromstring(source_str.encode("utf-8"))
+    return _lxml_tree(parse_xml(source))
 
 
-def _xslt_param_value(value: str) -> str:
-    return f"'{value}'"
+def _xslt_param_value(value: str) -> Any:
+    return lxml_etree.XSLT.strparam(value)
 
 
 # ---------------------------------------------------------------------------
@@ -303,7 +348,10 @@ def xml_to_dict(xml_input: str | ET.Element) -> dict[str, Any]:
     is stored under the ``#text`` key when other children coexist.
     """
     if isinstance(xml_input, str):
-        element: ET.Element = ET.fromstring(xml_input)
+        element: ET.Element = secure_parse_xml_string(
+            xml_input,
+            source="xml-to-dict",
+        )
     else:
         element = xml_input
 
@@ -407,13 +455,13 @@ def build_soap_envelope(
     header_el = ET.SubElement(envelope, f"{{{ns_env}}}Header")
     if header:
         try:
-            header_payload = ET.fromstring(header)
+            header_payload = secure_parse_xml_string(header, source="soap-header")
             header_el.append(header_payload)
         except ET.ParseError:
             header_el.text = header
     body = ET.SubElement(envelope, f"{{{ns_env}}}Body")
     try:
-        payload = ET.fromstring(body_content)
+        payload = secure_parse_xml_string(body_content, source="soap-body")
         body.append(payload)
     except ET.ParseError:
         body.text = body_content
@@ -424,7 +472,7 @@ def build_soap_envelope(
 
 def parse_soap_response(response_xml: str) -> dict[str, Any]:
     """Parse a SOAP response XML into a dict with *envelope*, *header*, *body*."""
-    root = ET.fromstring(response_xml)
+    root = secure_parse_xml_string(response_xml, source="soap-response")
     ns = extract_namespaces(response_xml)
     soap_uri = (
         _DEFAULT_SOAP_NS_12
@@ -460,7 +508,7 @@ def parse_saml_assertion(saml_xml: str) -> dict[str, Any]:
     """Extract key fields from a SAML 2.0 assertion."""
     from datetime import datetime as dt
 
-    root = ET.fromstring(saml_xml)
+    root = secure_parse_xml_string(saml_xml, source="saml-assertion")
     ns = extract_namespaces(saml_xml)
     saml_uri = ns.get("saml", ns.get("saml2", _DEFAULT_SAML_NS))
     dsig_uri = ns.get("ds", _DEFAULT_DSIG_NS)
@@ -555,7 +603,7 @@ def validate_saml_signature(saml_xml: str, cert_pem: str) -> bool:
         import xmlsec
     except ImportError:
         return False
-    sig_nodes = lxml_etree.etree_fromstring(saml_xml).xpath(
+    sig_nodes = _secure_lxml_root(saml_xml, source="saml-signature").xpath(
         "//ds:Signature",
         namespaces={"ds": _DEFAULT_DSIG_NS},
     )
@@ -596,7 +644,7 @@ def docbook_to_html(
     """
     if xslt_path:
         return apply_xslt(docbook_xml, xslt_path)
-    root = ET.fromstring(docbook_xml)
+    root = secure_parse_xml_string(docbook_xml, source="docbook")
     return _docbook_to_html_stdlib(root)
 
 
@@ -719,5 +767,83 @@ def _serialize(tree: ET.ElementTree) -> str:
 
 
 def _pretty_print_xml(raw: str) -> str:
-    dom = xml.dom.minidom.parseString(raw)
-    return dom.toprettyxml(indent="  ")
+    root = secure_parse_xml_string(raw, source="internal-pretty-print")
+    tree = ET.ElementTree(root)
+    ET.indent(tree, space="  ")
+    pretty_root = tree.getroot()
+    if pretty_root is None:
+        return ""
+    return ET.tostring(
+        pretty_root,
+        encoding="unicode",
+        method="xml",
+        xml_declaration=True,
+    )
+
+
+def _existing_file(value: str) -> Path | None:
+    """Resolve an existing path without treating long XML text as a filename."""
+    try:
+        path = Path(value)
+        return path if path.is_file() else None
+    except OSError:
+        return None
+
+
+def _secure_lxml_root(
+    data: str | bytes,
+    *,
+    source: str,
+    limits: XmlSecurityLimits = DEFAULT_XML_SECURITY_LIMITS,
+    audit_sink: XmlSecurityAuditSink | None = None,
+) -> Any:
+    raw = validate_xml_payload(
+        data,
+        limits=limits,
+        source=source,
+        audit_sink=audit_sink,
+    )
+    parser = lxml_etree.XMLParser(
+        resolve_entities=False,
+        no_network=True,
+        load_dtd=False,
+        huge_tree=False,
+    )
+    root = lxml_etree.fromstring(raw, parser)
+    validate_xml_tree(
+        cast(ET.Element, root),
+        limits=limits,
+        source=source,
+        input_bytes=len(raw),
+        audit_sink=audit_sink,
+    )
+    return root
+
+
+def _parse_lxml_html(
+    data: str | bytes,
+    *,
+    limits: XmlSecurityLimits,
+    source: str,
+    audit_sink: XmlSecurityAuditSink | None,
+) -> ET.ElementTree:
+    raw = validate_xml_payload(
+        data,
+        limits=limits,
+        source=source,
+        audit_sink=audit_sink,
+    )
+    parser = lxml_etree.HTMLParser(
+        no_network=True,
+        recover=True,
+        huge_tree=False,
+    )
+    root = lxml_etree.fromstring(raw, parser)
+    validate_xml_tree(
+        cast(ET.Element, root),
+        limits=limits,
+        source=source,
+        input_bytes=len(raw),
+        audit_sink=audit_sink,
+    )
+    return cast(ET.ElementTree, lxml_etree.ElementTree(root))

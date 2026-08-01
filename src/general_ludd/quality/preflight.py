@@ -8,11 +8,11 @@ import functools
 import logging
 import os
 import subprocess
-import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import cast
 
 from general_ludd.filestore.store import FileStore
+from general_ludd.security.secure_xml import parse_xml_file
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +36,10 @@ def check_coverage(threshold: float = 85.0, coverage_xml: Path | None = None) ->
     coverage_pct = 0.0
     if coverage_xml.exists():
         try:
-            tree = ET.parse(str(coverage_xml))
+            tree = parse_xml_file(coverage_xml, source="preflight-coverage")
             root = tree.getroot()
+            if root is None:
+                raise ValueError("coverage XML has no root element")
             rate = root.attrib.get("line-rate", "0")
             coverage_pct = float(rate) * 100
             passed = coverage_pct >= threshold

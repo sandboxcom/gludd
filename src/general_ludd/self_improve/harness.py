@@ -256,8 +256,9 @@ class SelfImprovementHarness:
             return
 
         try:
-            import xml.etree.ElementTree as ET
-            tree = ET.parse(coverage_xml)
+            from general_ludd.security.secure_xml import parse_xml_file
+
+            tree = parse_xml_file(coverage_xml, source="self-improve-coverage")
             for pkg in tree.findall(".//package"):
                 for cls in pkg.findall("classes/class"):
                     filename = cls.get("filename", "")
