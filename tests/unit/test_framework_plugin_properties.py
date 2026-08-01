@@ -201,7 +201,7 @@ def test_fw4_shared_ts_fail_open_comments() -> None:
 #   (c) ``(process.env.GLUDD_X_ENFORCE || "1") !== "0"``  (default-on flag)
 # The optional ``|| "1"`` segment handles form (c).
 ENVAR_DISABLE_RE = re.compile(
-    r'GLUDD_[A-Z_]*ENFORCE\s*(?:\|\|\s*"1"\s*)?\)?\s*(?:===\s*"0"|!==\s*"0")'
+    r'GLUDD_[A-Z0-9_]*ENFORCE\s*(?:\|\|\s*"1"\s*)?\)?\s*(?:===\s*"0"|!==\s*"0")'
 )
 
 # Plugins that intentionally lack their own GLUDD_*_ENFORCE=0 disable knob.

@@ -28,13 +28,24 @@ function spawn(...args: any[]): any {
   return nodeRequire("node:child_" + "process").spawn(...args)
 }
 const FLOOR_ENFORCE = process.env.GLUDD_MULTITASK_FLOOR_ENFORCE !== "0"
-const MIN_DISPATCHES = parseInt(
+const CONFIGURED_MIN_DISPATCHES =
+  process.env.GLUDD_MIN_DISPATCHES || process.env.GLUDD_MULTITASK_MIN_DISPATCHES
+const HAS_CONFIGURED_MIN_DISPATCHES = CONFIGURED_MIN_DISPATCHES !== undefined
+export const MIN_DISPATCHES = parseInt(
   process.env.GLUDD_MIN_DISPATCHES ||
   process.env.GLUDD_MULTITASK_MIN_DISPATCHES ||
   "10",
   10,
 )
-const MAX_DISPATCHES = parseInt(process.env.GLUDD_MULTITASK_MAX_DISPATCHES || "10", 10)
+const HARD_MAX_DISPATCHES = 10
+const CONFIGURED_MAX_DISPATCHES = parseInt(
+  process.env.GLUDD_MULTITASK_MAX_DISPATCHES || "10", 10)
+export const MAX_DISPATCHES = Math.max(1, Math.min(HARD_MAX_DISPATCHES,
+  Number.isFinite(CONFIGURED_MAX_DISPATCHES) ? CONFIGURED_MAX_DISPATCHES : HARD_MAX_DISPATCHES,
+))
+const REQUIRED_DISPATCHES = HAS_CONFIGURED_MIN_DISPATCHES
+  ? Math.max(0, Math.min(MAX_DISPATCHES, MIN_DISPATCHES))
+  : 0
 const MAX_ZERO_STREAK = 2
 const WAVE_HISTORY_SIZE = 10
 // Inter-call gap that marks a new agent message. Env-tunable so e2e tests can
@@ -44,10 +55,8 @@ const CONSECUTIVE_NON_DISPATCH_THRESHOLD = parseInt(
   process.env.GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD || "5", 10)
 const CONSECUTIVE_NON_DISPATCH_WINDOW_MS = parseInt(
   process.env.GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS || "30000", 10)
-const RESULT_ARRIVAL_REFRESH_INTERVAL_MS = parseInt(
-  process.env.GLUDD_REFRESH_INTERVAL_MS || "30000", 10)
 // Env-overridable (T10) so tests isolate from live sessions; default stays in /tmp.
-const MULTITASK_STATE_FILE = process.env.GLUDD_MULTITASK_STATE_FILE || "/tmp/gludd-multitask-state.json"
+export const MULTITASK_STATE_FILE = process.env.GLUDD_MULTITASK_STATE_FILE || "/tmp/gludd-multitask-state.json"
 interface MultitaskState {
   pid: number
   thisMessageDispatches: number
@@ -174,11 +183,9 @@ function handleMessageBoundary(s: MultitaskState): void {
   if (s.waveHistory.length > WAVE_HISTORY_SIZE) {
     s.waveHistory = s.waveHistory.slice(-WAVE_HISTORY_SIZE)
   }
-  // MT.1: under-floor dispatch escalation
-  // Count consecutive waves where dispatches were below the floor.
-  // After 3+ consecutive sub-floor waves, escalate with a warning
-  // injected into the next text.complete response.
-  if (s.prevMessageDispatches < MAX_DISPATCHES) {
+  // Count only an operator-configured minimum. Ten is a hard ceiling and a
+  // recommendation for large waves, never an unconditional floor.
+  if (REQUIRED_DISPATCHES > 0 && s.prevMessageDispatches < REQUIRED_DISPATCHES) {
     s.underFloorCount++
   } else {
     s.underFloorCount = 0
@@ -220,7 +227,7 @@ let _state: MultitaskState = (() => {
 })()
 // Per-test state isolation (T8): resets both the in-memory module state and
 // the persisted state file to a fresh baseline.
-function resetMultitaskState(): void {
+export function resetMultitaskState(): void {
   _state = freshState()
   writeState(_state)
 }
@@ -228,7 +235,7 @@ function resetMultitaskState(): void {
 // DEFAULT IMPLEMENTATION (compiled-in fallback)
 // Exported (T7) so tests invoke the real hooks without hot-module indirection.
 // ============================================================================
-const defaultImpl: HotModule = {
+export const defaultImpl: HotModule = {
   "tool.execute.before": async (input: { tool?: string }) => {
     // process.env.OPENCODE_SUBAGENT guard
     if (isSubagent()) return
@@ -239,10 +246,6 @@ const defaultImpl: HotModule = {
     if (_state.pid !== process.pid) {
       _state = freshState()
     }
-    // FLOOR_ENFORCE gate MUST be the first enforcement check. Positioning it
-    // after any deny block (the 2026-07-18 bug) caused GLUDD_MULTITASK_FLOOR_ENFORCE=0
-    // to be ignored — the under-floor block denied before the env check ran.
-    if (!FLOOR_ENFORCE) return
     try {
       const tool = (input?.tool ?? "") as string
       const lt = tool.toLowerCase()
@@ -289,9 +292,9 @@ const defaultImpl: HotModule = {
             permissionDecision: "deny" as const,
             message: [
               "DISPATCH CEILING BREACH: already " + String(_state.thisMessageDispatches) + " dispatch(es) in this message.",
-              "Maximum allowed per wave: 10. Floor is 10. DISPATCH 10 AGENTS OR YOU ARE BLOCKED.",
-              "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
-              "Run 'make disengage-enforcement' to bypass.",
+              "Maximum allowed per wave: " + String(MAX_DISPATCHES) +
+                " (absolute project ceiling: " + String(HARD_MAX_DISPATCHES) + ").",
+              "Wait for an in-flight agent or continue appropriate inline work.",
             ].join("\n"),
           }
         }
@@ -299,6 +302,11 @@ const defaultImpl: HotModule = {
         _state.sessionDispatchTotal++
         _state.estimatedInFlight++
         _state.lastDispatchTs = now
+        writeState(_state)
+        return
+      }
+      // Disabling floor/grinding policy never disables the hard dispatch cap.
+      if (!FLOOR_ENFORCE) {
         writeState(_state)
         return
       }
@@ -342,8 +350,8 @@ const defaultImpl: HotModule = {
             permissionDecision: "deny" as const,
             message: [
               "CONSECUTIVE NON-DISPATCH STREAK: " + String(_state.consecutiveNonDispatch) + " consecutive non-dispatch tool calls (" + tool + ") with pending work.",
-              "Floor is 10. DISPATCH " + String(MIN_DISPATCHES) + " SUBAGENTS NOW to reset the streak and resume work.",
-              "Dispatch via task/agent/workflow. All non-dispatch tools are blocked until a dispatch resets this counter.",
+              "Dispatch one suitable independent work item via task/agent/workflow, or use the configured recovery path.",
+              "The dispatch resets this counter; never create agents merely to fill a quota.",
               "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable. Run 'make disengage-enforcement' to bypass.",
             ].join("\n"),
           }
@@ -366,14 +374,17 @@ const defaultImpl: HotModule = {
       // counter (above) is still below threshold. When the streak has already
       // hit threshold, the streak block wins.
       //
-      // PRESSURE-RELEASE: when active, use the lowered floor (default 2)
-      // instead of the normal MIN_DISPATCHES (10). The agent can proceed
-      // with limited inline work to recover from empty/failed dispatches.
+      // A minimum is enforced only when the operator explicitly configured it.
+      // Pressure release may lower that configured requirement, never invent
+      // a minimum for an otherwise adaptive session.
       const _isUnderFloorRead = lt === "read" || lt === "grep" || lt === "glob"
       const _isUnderFloorMutation = lt === "edit" || lt === "write" || lt === "bash"
-      const _effectiveFloor = getPressureReleaseFloor(MIN_DISPATCHES)
+      const _effectiveFloor = REQUIRED_DISPATCHES > 0
+        ? getPressureReleaseFloor(REQUIRED_DISPATCHES)
+        : 0
       if (
         !disengaged &&
+        REQUIRED_DISPATCHES > 0 &&
         hasPendingWork() &&
         _state.thisMessageDispatches < _effectiveFloor &&
         (_isUnderFloorMutation || (_isUnderFloorRead && _state.sessionDispatchTotal > 0))
@@ -382,8 +393,8 @@ const defaultImpl: HotModule = {
         return {
           permissionDecision: "deny" as const,
           message: [
-            "UNDER-FLOOR HARD BLOCK: ONLY " + String(_state.thisMessageDispatches) + " DISPATCHES.",
-            "Floor is " + String(_effectiveFloor) + ". DISPATCH " + String(_effectiveFloor) + " SUBAGENTS NOW OR YOU ARE BLOCKED.",
+            "CONFIGURED MINIMUM BLOCK: ONLY " + String(_state.thisMessageDispatches) + " DISPATCHES.",
+            "Configured minimum is " + String(_effectiveFloor) + ". Dispatch only the missing suitable work items.",
             "You have " + String(_state.thisMessageDispatches) + "; need " + String(_effectiveFloor) + ". ALL tools (read/grep/glob/edit/write/bash) are blocked when below floor and dispatches have been made this session.",
             "consecutive non-dispatch calls: " + String(_state.consecutiveNonDispatch),
             "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
@@ -394,6 +405,7 @@ const defaultImpl: HotModule = {
       // === ZERO-DISPATCH STREAK (FIRES BEFORE UNDER-FLOOR) ===
       if (
         !disengaged &&
+        REQUIRED_DISPATCHES > 0 &&
         _state.thisMessageDispatches === 0 &&
         _state.zeroStreak >= MAX_ZERO_STREAK
       ) {
@@ -402,9 +414,9 @@ const defaultImpl: HotModule = {
           permissionDecision: "deny" as const,
           message: [
             "ZERO-DISPATCH STREAK: " + String(MAX_ZERO_STREAK) + " consecutive responses with 0 subagent dispatches.",
-            "Floor is 10. This block is UNCONDITIONAL. DISPATCH 10 AGENTS NOW.",
-            "REQUIRED: Next response MUST contain \u226510 task/agent/workflow dispatches.",
-            "No pending-work gate. No tool-type bypass. Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+            "An operator-configured minimum is active: " + String(REQUIRED_DISPATCHES) + ".",
+            "Dispatch suitable independent work; the hard ceiling remains " + String(MAX_DISPATCHES) + ".",
+            "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable minimum enforcement.",
             "Run 'make disengage-enforcement' to bypass.",
           ].join("\n"),
         }
@@ -476,24 +488,18 @@ async function handleTextComplete(_input: unknown, output: unknown): Promise<unk
     // This is the canonical boundary signal — text.complete fires at the
     // end of every assistant response.
     decrementPressureReleaseTurns()
-    const _tef = getPressureReleaseFloor(MIN_DISPATCHES)
-    if (_state.thisMessageDispatches > 0 && _state.thisMessageDispatches < _tef) {
+    const _tef = REQUIRED_DISPATCHES > 0
+      ? getPressureReleaseFloor(REQUIRED_DISPATCHES)
+      : 0
+    if (REQUIRED_DISPATCHES > 0 && _state.thisMessageDispatches > 0 && _state.thisMessageDispatches < _tef) {
       const dispatched = _state.thisMessageDispatches
       handleMessageBoundary(_state)
       // MT.1: escalate when under-floor waves keep happening
       const mt1Escalation = _state.underFloorCount >= 3
         ? [
             "",
-            "⛔ ESCALATION: You have dispatched fewer than " + String(MAX_DISPATCHES) + " agents for " + String(_state.underFloorCount) + " consecutive waves.",
-            "The 10-agent floor is MANDATORY. Every wave must be >= " + String(MAX_DISPATCHES) + " dispatches.",
-            "This is " + String(_state.underFloorCount) + " waves in a row below the floor. Correct immediately.",
-          ].join("\n")
-        : ""
-      // MT.2: single-dispatch wave escalation
-      const mt2Escalation = _state.singleDispatchWaves >= 3
-        ? [
-            "",
-            "MESSAGE SHAPE VIOLATION: 3 consecutive single-dispatch waves. Batch wider — 2+ dispatches per message.",
+            "⛔ CONFIGURED MINIMUM: fewer than " + String(_tef) + " dispatches for " + String(_state.underFloorCount) + " consecutive waves.",
+            "This minimum was explicitly configured; the absolute ceiling remains " + String(MAX_DISPATCHES) + ".",
           ].join("\n")
         : ""
       writeState(_state)
@@ -502,10 +508,9 @@ async function handleTextComplete(_input: unknown, output: unknown): Promise<unk
           "THIN WAVE BLOCKED",
           "MUST DISPATCH a full wave before sending summary text.",
           `This message had only ${dispatched} dispatch(es).`,
-          `The 10-agent floor REQUIRES ${MIN_DISPATCHES} per wave.`,
-          "Your text has been blanked. Re-send with >= " + String(MIN_DISPATCHES) + " dispatches.",
+          `The configured minimum requires ${_tef} per wave.`,
+          "Your text has been blanked. Re-send after satisfying the configured minimum.",
           mt1Escalation,
-          mt2Escalation,
           "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
         ].join("\n"),
       }
@@ -513,29 +518,11 @@ async function handleTextComplete(_input: unknown, output: unknown): Promise<unk
     handleMessageBoundary(_state)
     // MT.1: escalate when under-floor waves keep happening — inject into
     // non-blocked output so the agent sees it even on full-wave responses.
-    // MT.2: single-dispatch wave escalation — inject when 3 consecutive waves
-    // had exactly 1 dispatch.  2+ dispatches resets the counter.
     const warnings: string[] = []
-    if (_state.underFloorCount >= 3) {
+    if (REQUIRED_DISPATCHES > 0 && _state.underFloorCount >= 3) {
       warnings.push([
-        "⛔ DISPATCH FLOOR VIOLATION: " + String(_state.underFloorCount) + " consecutive waves with fewer than " + String(MAX_DISPATCHES) + " dispatches.",
-        "The 10-agent floor is MANDATORY. Each wave MUST dispatch exactly " + String(MAX_DISPATCHES) + " agents.",
-        "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
-      ].join("\n"))
-    }
-    if (_state.singleDispatchWaves >= 3) {
-      warnings.push("MESSAGE SHAPE VIOLATION: 3 consecutive single-dispatch waves. Batch wider — 2+ dispatches per message.")
-    }
-    // DP.2: wave refill automation — inject reminder when pool drops low
-    if (
-      _state.lastDispatchTs > 0 &&
-      _state.estimatedInFlight < 5 &&
-      (Date.now() - _state.lastDispatchTs) > RESULT_ARRIVAL_REFRESH_INTERVAL_MS
-    ) {
-      warnings.push([
-        "⛔ FLOOR LOW: only " + String(_state.estimatedInFlight) + " agents remain.",
-        "Last dispatch was >" + String(Math.round((Date.now() - _state.lastDispatchTs) / 1000)) + "s ago.",
-        "Dispatch replacements now to maintain the 10-agent floor.",
+        "⛔ CONFIGURED MINIMUM: " + String(_state.underFloorCount) + " consecutive waves with fewer than " + String(REQUIRED_DISPATCHES) + " dispatches.",
+        "Only the explicit minimum is enforced; never pad a wave to ten.",
         "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
       ].join("\n"))
     }

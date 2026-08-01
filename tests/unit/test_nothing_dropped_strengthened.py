@@ -29,12 +29,14 @@ The behavioural integration (real git repos) is exercised by
 import re
 from pathlib import Path
 
+from tests.unit._plugin_contract import plugin_contract_source
+
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
 
 
 def _src() -> str:
-    return PLUGIN.read_text()
+    return plugin_contract_source(PLUGIN)
 
 
 class TestStrengthenedPluginPresent:

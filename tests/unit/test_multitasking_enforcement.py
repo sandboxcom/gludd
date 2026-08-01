@@ -23,6 +23,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from tests.unit._plugin_contract import plugin_contract_source
+
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
 ENFORCE_FLOOR = PLUGIN_DIR / "enforce-floor.ts"
@@ -34,7 +36,7 @@ def _floor_src() -> str:
 
 
 def _stop_src() -> str:
-    return ENFORCE_STOP.read_text()
+    return plugin_contract_source(ENFORCE_STOP)
 
 
 # ============================================================================

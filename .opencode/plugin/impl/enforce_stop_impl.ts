@@ -60,7 +60,9 @@ import { loadHotModule, type HotModule } from "../../lib/hot_reload.ts"
 
 
 const nodeRequire = createRequire(
-  typeof __filename !== "undefined" ? __filename : import.meta.url,
+  typeof __filename !== "undefined" && path.isAbsolute(__filename)
+    ? __filename
+    : import.meta.url,
 )
 
 function execSync(...args: any[]): Buffer {
@@ -84,7 +86,8 @@ const STATE_FILE = process.env.GLUDD_STOP_STATE_FILE || "/tmp/gludd-stop-state.j
 const BLOCK_COUNTER_FILE = process.env.GLUDD_BLOCK_COUNTER_FILE || "/tmp/gludd-block-counter.json"
 const BLOCK_REASON_FILE = process.env.GLUDD_BLOCK_REASON_FILE || "/tmp/gludd-block-reason.json"
 const PERSIST_BLOCK_FILE = process.env.GLUDD_PERSIST_STOP_BLOCK_FILE || "/tmp/gludd-persist-stop-block.json"
-const FALSE_DONE_BLOCKS_FILE = "/tmp/gludd-false-done-blocks.json"
+const FALSE_DONE_BLOCKS_FILE =
+  process.env.GLUDD_FALSE_DONE_BLOCKS_FILE || "/tmp/gludd-false-done-blocks.json"
 const BLANKED_RESPONSE_FILE = "/tmp/gludd-blanked-responses.json"
 const TEXT_COMPLETE_COUNT_FILE = process.env.GLUDD_STOP_TEXT_COMPLETE_COUNT || "/tmp/gludd-stop-text-complete-count.json"
 const SESSION_BLOCK_COUNTER_FILE = "/tmp/gludd-stop-session-blocks.json"
@@ -95,7 +98,20 @@ const MULTITASK_STATE_FILE = process.env.GLUDD_MULTITASK_STATE_FILE || "/tmp/glu
 const POST_RESULTS_STATE_FILE = process.env.GLUDD_POST_RESULTS_STATE_FILE || "/tmp/gludd-post-results-state.json"
 const TEXT_ONLY_STATE_FILE = process.env.GLUDD_TEXT_ONLY_STATE_FILE || "/tmp/gludd-text-only-state.json"
 const WAVE_RESULT_THRESHOLD = 3
-const AGENT_FLOOR_DEFAULT = parseInt(process.env.CLAUDE_AGENT_FLOOR || "10", 10)
+const HARD_MAX_DISPATCHES = 10
+const CONFIGURED_AGENT_MIN =
+  process.env.CLAUDE_AGENT_FLOOR ||
+  process.env.GLUDD_MIN_DISPATCHES ||
+  process.env.GLUDD_MULTITASK_MIN_DISPATCHES
+// Ten is retained as the recommendation for genuinely broad work. It becomes
+// a mandatory minimum only when an operator explicitly configures one.
+const AGENT_FLOOR_DEFAULT = parseInt(CONFIGURED_AGENT_MIN || "10", 10)
+const REQUIRED_AGENT_MIN = CONFIGURED_AGENT_MIN !== undefined
+  ? Math.max(0, Math.min(
+      HARD_MAX_DISPATCHES,
+      Number.isFinite(AGENT_FLOOR_DEFAULT) ? AGENT_FLOOR_DEFAULT : 0,
+    ))
+  : 0
 const NO_WAIT_ENFORCE = process.env.GLUDD_NO_WAIT_ENFORCE !== "0"
 
 const COMPLETION_WORDS_RE = /\b(?:committed|done|completed|landed|pushed|shipped|deployed|fixed|resolved|passed|working|green|verified|ready for review|all good|all set|no further|finished|wrapped|all tasks)\b/
@@ -112,9 +128,9 @@ const SUBAGENT_TEXT_MARKERS = /(?:task_id|task_result|agent\s+result|subagent\s+
 
 // ── SUBAGENT_DEFICIT (2026-07-27) ──────────────────────────────────────────
 // Agent sends text summarizing "Agent 1 did X, Agent 2 did Y..." while
-// dispatching fewer than 10 subagents in the SAME message. The text is a
-// stop-by-another-name — listing subagent results instead of refilling the
-// floor. Blanked when dispatchCount < 10 AND hasPendingWork is true.
+// dispatching fewer subagents than an explicitly configured minimum in the
+// SAME message. The text is a stop-by-another-name when an operator has opted
+// into that minimum. Adaptive mode never forces quota-padding dispatches.
 const SUBAGENT_DEFICIT_RE = /\b(?:agent|subagent|task)\s+\d+\s+(?:completed|finished|did|fixed|found|wrote|added|removed|updated|reported|returned|resolved|processed|handled|investigated|checked|audited|reviewed|implemented|created|tested|verified|deployed|patched|refactored|cleaned|merged|built|generated|produced|says|indicates|confirms|shows|began|started|noted)\b/i
 
 const STOP_PATTERN_PHRASES = /\b(?:shall\s+i\s+continue|should\s+i\s+proceed|want\s+me\s+to\b[^?!.]*)/i
@@ -708,14 +724,9 @@ function hasRealPendingWork(): WorkState {
     const multitaskStatePath = MULTITASK_STATE_FILE
     if (fs.existsSync(multitaskStatePath)) {
       const ms = JSON.parse(fs.readFileSync(multitaskStatePath, "utf8"))
-      const minDispatches = parseInt(
-        process.env.GLUDD_MIN_DISPATCHES ||
-        process.env.GLUDD_MULTITASK_MIN_DISPATCHES ||
-        "10",
-        10,
-      )
       underFloor = typeof ms.thisMessageDispatches === "number" &&
-        ms.thisMessageDispatches < minDispatches
+        REQUIRED_AGENT_MIN > 0 &&
+        ms.thisMessageDispatches < REQUIRED_AGENT_MIN
     }
   } catch {}
 
@@ -1020,7 +1031,7 @@ const defaultImpl: HotModule = {
         if (workState.releaseIncomplete) indicators.push("release incomplete")
         if (workState.testFailures) indicators.push("test failures")
         if (workState.repoPending) indicators.push("repo dirty")
-        if (workState.underFloor) indicators.push(`UNDER-FLOOR dispatch (floor ${AGENT_FLOOR_DEFAULT})`)
+        if (workState.underFloor) indicators.push(`configured dispatch minimum ${REQUIRED_AGENT_MIN}`)
         const sessionBlockCount = getSessionBlockCount()
         const escalation = sessionBlockCount > ESCALATION_THRESHOLD
           ? `\n🚨 ESCALATION ACTIVE: ${sessionBlockCount} stop attempts blocked this session. DO NOT attempt to stop.\n`
@@ -1212,16 +1223,15 @@ const defaultImpl: HotModule = {
 
     // ── SUBAGENT_DEFICIT (2026-07-27) ──────────────────────────────────────
     // Agent mentions subagent results ("Agent 1 did X, Agent 2 did Y...")
-    // while dispatching fewer than 10 subagents. The text is a summary recapping
-    // results instead of refilling the floor. Blank it regardless of evidence.
-    // Fires for 0 dispatches (text-only summary of results) AND 1-9 dispatches
-    // (partial refill with result-recap text).
-    // Must fire BEFORE the generic UNDER-DISPATCH FLOOR check — this is the
-    // more specific check (subagent-deficit text AND under-dispatch).
+    // while dispatching fewer subagents than an explicitly configured minimum.
+    // In opt-in quota mode, blank the result recap regardless of evidence.
+    // Adaptive mode leaves the recap alone rather than requiring padding.
+    // This specific result-text check precedes the generic minimum check.
     if (
       (workState.hasPendingWork || workState.hasLocalWork || forceDispatchDirective) &&
       SUBAGENT_DEFICIT_RE.test(text) &&
-      turnState.dispatchCount < AGENT_FLOOR_DEFAULT &&
+      REQUIRED_AGENT_MIN > 0 &&
+      turnState.dispatchCount < REQUIRED_AGENT_MIN &&
       !hasWorkArtifact
     ) {
       recordBlock("subagent-deficit")
@@ -1230,31 +1240,29 @@ const defaultImpl: HotModule = {
 
       return {
         text: [
-          "⛔ SUBAGENT DEFICIT BLOCKED — DISPATCH 10 SUBAGENTS, DON'T SUMMARIZE.",
+          "⛔ CONFIGURED SUBAGENT MINIMUM NOT MET.",
           "",
           `Current message has only ${turnState.dispatchCount} dispatch(es) ` +
-          `(floor is ${AGENT_FLOOR_DEFAULT}).`,
-          `Text mentions subagent results but the wave is not yet full.`,
+          `(configured minimum is ${REQUIRED_AGENT_MIN}).`,
+          `Text mentions subagent results but the configured minimum is not met.`,
           "",
           "Do NOT send a text summary of subagent results between waves.",
-          "Instead, DISPATCH MORE SUBAGENTS via the Task tool.",
+          "Dispatch only the remaining suitable independent work via the Task tool.",
           "",
           `PENDING: ${workState.tasksMdUncheckedCount} tasks.`,
         ].join("\n"),
       }
     }
 
-    // ── UNDER-DISPATCH FLOOR (2026-07-27) ─────────────────────────────────
-    // The agent can send text + a few bash/read calls with <10 dispatches,
-    // bypassing the text-only and status-summary blocks. This check ensures
-    // that when work is pending and the current message has fewer than 10
-    // subagent dispatches, the text is blanked with a dispatch directive.
-    // Fires for messages with 1–9 dispatches (not text-only, not zero).
-    // Specific SUBAGENT_DEFICIT check (above) fires first for subagent-result text.
+    // ── CONFIGURED MINIMUM (2026-07-27) ────────────────────────────────────
+    // When an operator explicitly configures a minimum, blank text that stops
+    // below it. Adaptive mode has no mandatory minimum, while the hard maximum
+    // remains ten. The specific result-text check above fires first.
     if (
       (workState.hasPendingWork || workState.hasLocalWork || forceDispatchDirective) &&
       turnState.dispatchCount > 0 &&
-      turnState.dispatchCount < 10 &&
+      REQUIRED_AGENT_MIN > 0 &&
+      turnState.dispatchCount < REQUIRED_AGENT_MIN &&
       !hasWorkArtifact
     ) {
       const GIT_SHIPPING_PHRASE = /\b(ship-commit|git-commit|batch-push|development-push|development-merge|release-cut)\b/i
@@ -1265,10 +1273,10 @@ const defaultImpl: HotModule = {
 
         return {
           text: [
-            "⛔ UNDER-DISPATCH FLOOR: only " + String(turnState.dispatchCount) + " dispatches in current message.",
-            "Floor is 10. When work is pending, every message MUST have ≥10 task/agent/workflow dispatches.",
-            "Bash/read/grep calls do NOT count toward the floor.",
-            "DISPATCH 10 SUBAGENTS NOW.",
+            "⛔ CONFIGURED DISPATCH MINIMUM: only " + String(turnState.dispatchCount) + " dispatches in current message.",
+            "Configured minimum: " + String(REQUIRED_AGENT_MIN) +
+              "; hard ceiling: " + String(HARD_MAX_DISPATCHES) + ".",
+            "Do not pad the wave: dispatch only suitable independent work.",
             "",
             `PENDING: ${workState.tasksMdUncheckedCount} tasks, ` +
             `CI ${workState.ciVerdictPendingOrRed ? "RED/PENDING" : "N/A"}, ` +

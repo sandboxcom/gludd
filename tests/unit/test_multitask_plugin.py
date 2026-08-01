@@ -197,10 +197,10 @@ class TestSubMinDenyMessage:
             "Deny message must detect under-floor dispatch waves"
         )
 
-    def test_mentions_floor_10(self):
+    def test_mentions_configured_minimum(self):
         src = _plugin_source()
-        assert "Floor is 10" in src, (
-            "Deny message must explicitly state Floor is 10"
+        assert "Configured minimum is" in src, (
+            "Deny message must identify the explicit operator minimum"
         )
 
 
@@ -255,10 +255,10 @@ class TestDenyMessageContent:
         src = _plugin_source()
         assert "UNDER-FLOOR HARD BLOCK" in src, "Deny message should mention UNDER-FLOOR HARD BLOCK"
 
-    def test_deny_prefix_mentions_batch_wider(self):
+    def test_deny_prefix_discourages_quota_padding(self):
         src = _plugin_source()
-        assert "task/agent/workflow dispatches" in src, (
-            "Deny message should mention dispatch requirement"
+        assert "never create agents merely to fill a quota" in src, (
+            "Deny message should preserve cost-efficient adaptive delegation"
         )
 
     def test_deny_prefix_mentions_env_disable(self):
@@ -269,11 +269,10 @@ class TestDenyMessageContent:
         src = _plugin_source()
         assert "consecutive" in src.lower(), "Zero-streak deny should mention consecutive"
 
-    def test_stop_guard_prefix_mentions_unconditional(self):
+    def test_stop_guard_requires_explicit_minimum(self):
         src = _plugin_source()
-        assert "UNCONDITIONAL" in src, (
-            "Zero-streak deny should mention UNCONDITIONAL enforcement — "
-            "there is no pending-work gate"
+        assert "REQUIRED_DISPATCHES > 0" in src, (
+            "Zero-streak denial must be inert without an explicit minimum"
         )
 
 
@@ -346,8 +345,8 @@ class TestPerMessageEnforcement:
         assert "UNDER-FLOOR HARD BLOCK" in src, (
             "Per-message deny must include UNDER-FLOOR HARD BLOCK message"
         )
-        assert "DISPATCH 10 AGENTS OR YOU ARE BLOCKED" in src, (
-            "Deny must instruct to dispatch 10 agents"
+        assert "CONFIGURED MINIMUM BLOCK" in src, (
+            "Deny must identify the opt-in configured minimum"
         )
 
     def test_per_message_check_uses_has_pending_work(self):
@@ -380,12 +379,11 @@ class TestPerMessageEnforcement:
             "isSubagent() guard must be present in tool.execute.before"
         )
 
-    def test_per_message_threshold_uses_min_dispatches_variable(self):
-        """The per-message enforcement must use MIN_DISPATCHES variable for comparison,
-        not literal numbers, so threshold changes propagate automatically."""
+    def test_per_message_threshold_uses_required_dispatches(self):
+        """The gate uses the opt-in effective minimum, not the recommendation."""
         src = _plugin_source()
-        assert "_state.thisMessageDispatches < MIN_DISPATCHES" in src, (
-            "Per-message deny must compare against MIN_DISPATCHES (not literal)"
+        assert "_state.thisMessageDispatches < _effectiveFloor" in src, (
+            "Per-message deny must compare against the configured effective minimum"
         )
 
     def test_per_message_time_heuristic_updates_on_every_tool(self):
@@ -723,13 +721,16 @@ class TestConsecutiveNonDispatchSubagentGuard:
 
 
 class TestConsecutiveNonDispatchEnvDisable:
-    """Feature 9: When GLUDD_MULTITASK_FLOOR_ENFORCE=0, the entire
-    tool.execute.before returns early, skipping the streak check."""
+    """Disabling floor policy preserves the hard ceiling but skips grinding."""
 
     def test_floor_enforce_check_before_streak(self):
         src = _plugin_source()
-        enforce_idx = src.find("if (!FLOOR_ENFORCE) return")
+        enforce_idx = src.find("if (!FLOOR_ENFORCE) {")
         assert enforce_idx > 0, "FLOOR_ENFORCE check not found"
+        ceiling_idx = src.find("_state.thisMessageDispatches >= MAX_DISPATCHES")
+        assert 0 < ceiling_idx < enforce_idx, (
+            "The absolute dispatch ceiling must remain active when floor policy is disabled"
+        )
         consecutive_idx = src.find("consecutiveNonDispatchStartTs ==")
         assert consecutive_idx > 0, "consecutive streak check not found"
         assert enforce_idx < consecutive_idx, (
@@ -787,8 +788,7 @@ class TestConsecutiveNonDispatchDenyMessage:
 
 
 class TestTenAgentFloorHardEnforcement:
-    """2026-07-14: The floor is EXACTLY 10. No grace for under-floor waves.
-    The plugin denies any response with <10 dispatches when pending work exists."""
+    """Ten is an absolute ceiling; mandatory minimums are explicit opt-ins."""
 
     def test_min_dispatches_exactly_10(self):
         """MIN_DISPATCHES uses GLUDD_MIN_DISPATCHES || GLUDD_MULTITASK_MIN_DISPATCHES || '10'."""
@@ -804,12 +804,11 @@ class TestTenAgentFloorHardEnforcement:
         default = _extract_env_default(_plugin_source(), "GLUDD_MULTITASK_MAX_DISPATCHES")
         assert default == 10, f"MAX_DISPATCHES default must be 10, got {default}"
 
-    def test_no_grace_for_under_floor_wave(self):
-        """The UNDER-FLOOR HARD BLOCK uses thisMessageDispatches < MIN_DISPATCHES
-        so any count <10 triggers the block."""
+    def test_no_unconfigured_floor_for_wave(self):
         src = _plugin_source()
-        assert "_state.thisMessageDispatches < MIN_DISPATCHES" in src, (
-            "Under-floor check must compare thisMessageDispatches < MIN_DISPATCHES"
+        assert "REQUIRED_DISPATCHES = HAS_CONFIGURED_MIN_DISPATCHES" in src
+        assert re.search(r"REQUIRED_DISPATCHES[\s\S]*?:\s*0", src), (
+            "The default mandatory minimum must be zero"
         )
 
     def test_under_floor_check_does_not_require_zero_streak(self):
@@ -819,29 +818,23 @@ class TestTenAgentFloorHardEnforcement:
         idx = src.find("// === UNDER-FLOOR HARD BLOCK ===")
         assert idx > 0, "UNDER-FLOOR HARD BLOCK comment not found"
         after = src[idx:idx + 2000]
-        assert "_state.thisMessageDispatches < MIN_DISPATCHES" in after, (
-            "UNDER-FLOOR must use thisMessageDispatches < MIN_DISPATCHES"
+        assert "_state.thisMessageDispatches < _effectiveFloor" in after, (
+            "Configured-minimum gate must use the pressure-adjusted requirement"
         )
         assert "hasPendingWork()" in after, (
             "UNDER-FLOOR must gate on hasPendingWork()"
         )
 
-    def test_deny_message_says_10_explicitly(self):
-        """All three deny messages (under-floor, consecutive, zero-streak) must
-        explicitly hardcode 'Floor is 10' so agents reading the message see the number."""
+    def test_deny_message_distinguishes_minimum_and_ceiling(self):
         src = _plugin_source()
         handler = src.split('"tool.execute.before"')[1]
-        # Count occurrences of "Floor is 10" — should appear in all 3 deny messages
-        count = handler.count("Floor is 10")
-        assert count >= 3, (
-            f"Expected 'Floor is 10' at least 3 times (one per deny message), got {count}"
-        )
+        assert "configured minimum" in handler.lower()
+        assert "absolute project ceiling" in handler.lower()
 
-    def test_dispatch_count_must_be_ten_not_less(self):
-        """Verify the comparison uses < not <= so exactly-10 passes."""
+    def test_configured_minimum_uses_strict_less_than(self):
         src = _plugin_source()
-        assert "_state.thisMessageDispatches < MIN_DISPATCHES" in src, (
-            "Comparison must use strict-less-than (<), not less-than-or-equal (<=)"
+        assert "_state.thisMessageDispatches < _effectiveFloor" in src, (
+            "Comparison must use strict-less-than for the configured minimum"
         )
 
     def test_dispatch_count_must_be_ten_not_more(self):
@@ -851,14 +844,13 @@ class TestTenAgentFloorHardEnforcement:
             "Ceiling check must deny at >= MAX_DISPATCHES (10)"
         )
 
-    def test_zero_dispatch_block_mentions_floor_10(self):
-        """The ZERO-DISPATCH STREAK deny must hardcode 'Floor is 10'."""
+    def test_zero_dispatch_block_mentions_configured_minimum(self):
         src = _plugin_source()
         idx = src.find('"ZERO-DISPATCH STREAK:')
         assert idx > 0, "ZERO-DISPATCH STREAK message not found"
         after = src[idx:idx + 500]
-        assert "Floor is 10" in after, (
-            "ZERO-DISPATCH deny must mention Floor is 10"
+        assert "operator-configured minimum" in after, (
+            "ZERO-DISPATCH deny must identify the opt-in minimum"
         )
 
     def test_under_floor_hard_block_blocks_edit_write_bash(self):

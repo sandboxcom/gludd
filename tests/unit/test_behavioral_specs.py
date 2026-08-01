@@ -14,6 +14,8 @@ from typing import ClassVar
 
 import pytest
 
+from tests.unit._plugin_contract import plugin_contract_source
+
 ROOT = Path(__file__).resolve().parent.parent.parent
 SPECS_PATH = ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md"
 MAKEFILE_PATH = ROOT / "Makefile"
@@ -51,7 +53,8 @@ def spec_has_mechanism(spec_id: str, specs_text: str) -> bool:
     idx = specs_text.find(f"### {spec_id}")
     if idx == -1:
         return False
-    block = specs_text[idx : idx + 600]
+    next_spec = specs_text.find("\n### ", idx + 1)
+    block = specs_text[idx : next_spec if next_spec >= 0 else None]
     # Matches: **Enforcement:** plugins, Makefile, AGENTS.md, scripts, test-quality
     _pat = r"\*\*Enforcement:\*\*\s*(`.+?`|enforce-|Makefile|AGENTS\.md|scripts/|plugin|test-quality\b)"
     return bool(re.search(_pat, block))
@@ -459,14 +462,14 @@ class TestPluginStructure:
         "plugin_file", [f for f in PLUGIN_DIR.glob("enforce-*.ts") if f.name != "enforce-depth.ts"]
     )
     def test_plugin_has_subagent_guard(self, plugin_file):
-        content = plugin_file.read_text()
+        content = plugin_contract_source(plugin_file)
         assert "isSubagent" in content, f"{plugin_file.name} missing isSubagent guard"
 
     @pytest.mark.parametrize(
         "plugin_file", [f for f in PLUGIN_DIR.glob("enforce-*.ts") if f.name != "enforce-depth.ts"]
     )
     def test_plugin_has_fail_open(self, plugin_file):
-        content = plugin_file.read_text()
+        content = plugin_contract_source(plugin_file)
         has_fail_open = "fail-open" in content.lower() or "fail open" in content.lower()
         has_try_catch = "try {" in content or "} catch" in content
         assert has_fail_open or has_try_catch, f"{plugin_file.name} missing fail-open pattern"
@@ -475,7 +478,7 @@ class TestPluginStructure:
         "plugin_file", [f for f in PLUGIN_DIR.glob("enforce-*.ts") if f.name != "enforce-depth.ts"]
     )
     def test_plugin_has_disable_env_var(self, plugin_file):
-        content = plugin_file.read_text()
+        content = plugin_contract_source(plugin_file)
         # Multiple different patterns for disable checks
         has_disable = bool(
             re.search(r"GLUDD_\w+_ENFORCE\s*(!==|===|==)\s*['\"]0['\"]", content)
@@ -496,7 +499,7 @@ class TestPluginStructure:
         ],
     )
     def test_plugin_exports_default(self, plugin_file):
-        content = plugin_file.read_text()
+        content = plugin_contract_source(plugin_file)
         assert "export default" in content or "satisfies Plugin" in content, (
             f"{plugin_file.name} missing default export / satisfies Plugin"
         )
@@ -513,7 +516,7 @@ class TestPluginStructure:
         ],
     )
     def test_plugin_hot_reload_capable(self, plugin_file):
-        content = plugin_file.read_text()
+        content = plugin_contract_source(plugin_file)
         has_hot = "loadHotModule" in content or "hot_reload" in content
         assert has_hot, f"{plugin_file.name} missing hot-reload support"
 
@@ -588,63 +591,65 @@ class TestEnforceStop:
     """Enforce-stop.ts has all required detection patterns."""
 
     def test_stop_has_real_pending_work(self):
-        content = (PLUGIN_DIR / "enforce-stop.ts").read_text()
+        content = plugin_contract_source(PLUGIN_DIR / "enforce-stop.ts")
         assert "hasRealPendingWork" in content, "hasRealPendingWork missing"
 
     def test_stop_checks_ci_state(self):
-        content = (PLUGIN_DIR / "enforce-stop.ts").read_text()
+        content = plugin_contract_source(PLUGIN_DIR / "enforce-stop.ts")
         assert "ci-verdict" in content or "ci_verdict" in content or "ciVerdict" in content or "CI" in content, (
             "CI state check missing"
         )
 
     def test_stop_checks_release_completeness(self):
-        content = (PLUGIN_DIR / "enforce-stop.ts").read_text()
+        content = plugin_contract_source(PLUGIN_DIR / "enforce-stop.ts")
         assert "release" in content.lower(), "release completeness check missing"
 
     def test_stop_detects_status_summaries(self):
-        content = (PLUGIN_DIR / "enforce-stop.ts").read_text()
+        content = plugin_contract_source(PLUGIN_DIR / "enforce-stop.ts")
         assert "STATUS_SUMMARY" in content or "statusSummary" in content or "status_summary" in content.lower(), (
             "status summary detection missing"
         )
 
     def test_stop_has_qa_response_patterns(self):
-        content = (PLUGIN_DIR / "enforce-stop.ts").read_text()
+        content = plugin_contract_source(PLUGIN_DIR / "enforce-stop.ts")
         assert "QA_RESPONSE" in content or "qaResponse" in content or "qa_response" in content.lower(), (
             "QA response patterns missing"
         )
 
     def test_stop_has_bolded_header_detection(self):
-        content = (PLUGIN_DIR / "enforce-stop.ts").read_text()
+        content = plugin_contract_source(PLUGIN_DIR / "enforce-stop.ts")
         assert "bold" in content.lower() or "**" in content or "header" in content.lower(), (
             "bolded header detection missing"
         )
 
 
 class TestEnforceMultitask:
-    """Enforce-multitask.ts maintains the 10-agent dispatch floor."""
+    """Enforce-multitask.ts keeps adaptive minima below a hard ceiling."""
 
-    def test_multitask_min_dispatches_is_10(self):
-        content = (PLUGIN_DIR / "enforce-multitask.ts").read_text()
-        assert '"10"' in content or "= 10" in content, "MIN_DISPATCHES should be 10"
+    def test_multitask_hard_max_is_10_and_default_min_is_adaptive(self):
+        content = plugin_contract_source(PLUGIN_DIR / "enforce-multitask.ts")
+        assert "HARD_MAX_DISPATCHES = 10" in content
+        assert "HAS_CONFIGURED_MIN_DISPATCHES" in content
+        assert "REQUIRED_DISPATCHES" in content
 
     def test_multitask_has_zero_streak_counter(self):
-        content = (PLUGIN_DIR / "enforce-multitask.ts").read_text()
+        content = plugin_contract_source(PLUGIN_DIR / "enforce-multitask.ts")
         assert "zeroStreak" in content, "zeroStreak counter missing"
 
     def test_multitask_has_consecutive_non_dispatch(self):
-        content = (PLUGIN_DIR / "enforce-multitask.ts").read_text()
+        content = plugin_contract_source(PLUGIN_DIR / "enforce-multitask.ts")
         assert "consecutiveNonDispatch" in content, "consecutiveNonDispatch counter missing"
 
     def test_multitask_has_wave_history(self):
-        content = (PLUGIN_DIR / "enforce-multitask.ts").read_text()
+        content = plugin_contract_source(PLUGIN_DIR / "enforce-multitask.ts")
         assert "waveHistory" in content, "waveHistory missing"
 
     def test_multitask_has_estimated_in_flight(self):
-        content = (PLUGIN_DIR / "enforce-multitask.ts").read_text()
+        content = plugin_contract_source(PLUGIN_DIR / "enforce-multitask.ts")
         assert "estimatedInFlight" in content, "estimatedInFlight counter missing"
 
     def test_multitask_has_message_boundary_detection(self):
-        content = (PLUGIN_DIR / "enforce-multitask.ts").read_text()
+        content = plugin_contract_source(PLUGIN_DIR / "enforce-multitask.ts")
         assert "text.complete" in content or "messageBoundary" in content or "MSG_GAP" in content, (
             "message boundary detection missing"
         )

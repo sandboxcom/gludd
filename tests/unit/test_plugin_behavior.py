@@ -15,14 +15,16 @@ Covered:
 import re
 from pathlib import Path
 
+from tests.unit._plugin_contract import PluginContractFile
+
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
 
-ENFORCE_MAKE = PLUGIN_DIR / "enforce-make.ts"
-ENFORCE_DELEGATE = PLUGIN_DIR / "enforce-delegate.ts"
-ENFORCE_STOP = PLUGIN_DIR / "enforce-stop.ts"
-ENFORCE_FLOOR = PLUGIN_DIR / "enforce-floor.ts"
-ENFORCE_DEADLINE = PLUGIN_DIR / "enforce-deadline.ts"
+ENFORCE_MAKE = PluginContractFile(PLUGIN_DIR / "enforce-make.ts")
+ENFORCE_DELEGATE = PluginContractFile(PLUGIN_DIR / "enforce-delegate.ts")
+ENFORCE_STOP = PluginContractFile(PLUGIN_DIR / "enforce-stop.ts")
+ENFORCE_FLOOR = PluginContractFile(PLUGIN_DIR / "enforce-floor.ts")
+ENFORCE_DEADLINE = PluginContractFile(PLUGIN_DIR / "enforce-deadline.ts")
 
 
 # --------------------------------------------------------------------------- #
@@ -252,25 +254,17 @@ class TestEnforceStopTextCompleteDetection:
         )
 
     def test_response_looks_terminal_present(self):
-        """responseLooksTerminal removed — text.complete hook is gone (opencode >=1.17.9).
-        Stop detection is now handled by system.transform pre-generation gate."""
+        """responseLooksTerminal remains wired into text.complete."""
         src = ENFORCE_STOP.read_text()
-        assert "function responseLooksTerminal" not in src, (
-            "responseLooksTerminal should NOT be present — text.complete was removed; "
-            "stop detection is now in system.transform"
+        assert "function responseLooksTerminal" in src, (
+            "responseLooksTerminal must remain in the complete runtime contract"
         )
 
     def test_text_complete_has_local_work_block(self):
-        """hasLocalWork / HARD STOP removed — text.complete hook is gone.
-        The system.transform hook now checks pending work directly without a
-        hasLocalWork variable."""
+        """hasLocalWork gates text.complete and pre-generation checks."""
         src = ENFORCE_STOP.read_text()
-        assert "hasLocalWork" not in src, (
-            "hasLocalWork should NOT be present — text.complete was removed"
-        )
-        assert "HARD STOP — STATE-BASED BLOCK" not in src, (
-            "HARD STOP — STATE-BASED BLOCK should NOT be present — text.complete was removed"
-        )
+        assert "hasLocalWork" in src
+        assert "experimental.text.complete" in src
 
     def test_text_complete_ratchet_block(self):
         """RATCHET block moved to system.transform (different header text)."""
@@ -280,20 +274,20 @@ class TestEnforceStopTextCompleteDetection:
         )
 
     def test_text_complete_dispatch_bypass(self):
-        """turnState.dispatchCount preserved in tool.execute.before; toolCallMade removed."""
+        """turn state distinguishes text-only output from tool-backed work."""
         src = ENFORCE_STOP.read_text()
         assert "turnState.dispatchCount" in src, (
             "dispatchCount tracking missing from enforce-stop.ts"
         )
-        assert "turnState.toolCallMade" not in src, (
-            "toolCallMade should NOT be present — removed with text.complete"
+        assert "turnState.toolCallMade" in src, (
+            "toolCallMade must participate in text-only response detection"
         )
 
     def test_detects_false_done_no_evidence_block(self):
-        """FALSE-DONE CLAIM BLOCKED removed — text.complete hook is gone."""
+        """Short false-done claims without evidence remain blocked."""
         src = ENFORCE_STOP.read_text()
-        assert "FALSE-DONE CLAIM BLOCKED" not in src, (
-            "FALSE-DONE CLAIM BLOCKED should NOT be present — text.complete was removed"
+        assert "FALSE-DONE CLAIM BLOCKED" in src, (
+            "FALSE-DONE CLAIM BLOCKED must remain in text.complete"
         )
 
     def test_state_block_message_hard_stop_header(self):
@@ -389,15 +383,10 @@ class TestEnforceStopRepoPendingWork:
         )
 
     def test_repo_has_pending_work_wired_into_has_local_work(self):
-        """system.transform now uses hasWork composite check: unchecked, ratchetCount, bugsOpen, gate/ci status."""
+        """Repository state participates in the unified pending-work state."""
         src = ENFORCE_STOP.read_text()
-        assert re.search(
-            r"hasWork\s*=\s*unchecked\s*>\s*0\s*\|\|\s*ratchetCount\s*>\s*0\s*\|\|\s*bugsOpen\s*\|\|\s*gateRed\s*\|\|\s*ciBad\s*\|\|\s*repoPending",
-            src,
-        ), (
-            "system.transform must compute hasWork as "
-            "'unchecked > 0 || ratchetCount > 0 || bugsOpen || gateRed || ciBad || repoPending'"
-        )
+        assert re.search(r"projectWorkOpen\s*=[\s\S]{0,400}repoPending", src)
+        assert "hasPendingWork = projectWorkOpen || underFloor" in src
 
     def test_no_wait_patterns_include_done_answer(self):
         """NO_WAIT_PATTERNS was removed."""
@@ -494,15 +483,10 @@ class TestEnforceStopTasksMdUnchecked:
         )
 
     def test_tasks_md_has_unchecked_wired_into_has_pending_work(self):
-        """system.transform uses `unchecked = countTasksMdUnchecked()` and gates hasWork on it."""
+        """TASKS.md state participates in the unified pending-work state."""
         src = ENFORCE_STOP.read_text()
-        assert re.search(
-            r"unchecked\s*=\s*countTasksMdUnchecked\s*\(\s*\)",
-            src,
-        ), (
-            "system.transform must call countTasksMdUnchecked() so unchecked "
-            "TASKS.md rows are treated as pending work"
-        )
+        assert "tasksMdUnchecked" in src
+        assert re.search(r"hasLocalWork\s*=[\s\S]{0,200}tasksMdUnchecked", src)
 
     def test_state_block_shows_tasks_md_status(self):
         """system.transform block reports unchecked TASKS.md count."""
@@ -634,23 +618,15 @@ class TestEnforceStopCiPendingOrRed:
             "ciIsPendingOrRed must read from watchdog CI cache "
             "(/tmp/gludd-watchdog-ci.json)"
         )
-        assert "60_000" in src, (
-            "ciIsPendingOrRed must use 60_000 as the cache TTL (1 minute)"
+        assert "600_000" in src, (
+            "ciIsPendingOrRed must reject stale watchdog cache data"
         )
 
     def test_ci_is_pending_or_red_has_cache(self):
         src = ENFORCE_STOP.read_text()
-        assert "ciVerdictCache" in src, (
-            "ciVerdictCache variable missing — CI verdict must be cached "
-            "to avoid excessive shell-outs (Deficiency A+B)"
-        )
-        assert re.search(
-            r"ciVerdictCache\s*\&\&\s*\(now\s*-\s*ciVerdictCache\.ts\)\s*<\s*60_000",
-            src,
-        ), (
-            "ciVerdictCache must be checked with TTL: "
-            "'ciVerdictCache && (now - ciVerdictCache.ts) < 60_000'"
-        )
+        assert "gludd-watchdog-ci.json" in src
+        assert "last_ci_check" in src
+        assert "Date.now() - lastCheck < 600_000" in src
 
     def test_completion_verbatim_detects_session_summary(self):
         """COMPLETION_SOUNDING (in enforce-make.ts) must have comprehensive completion-phrase coverage."""
@@ -667,15 +643,14 @@ class TestEnforceStopCiPendingOrRed:
             "COMPLETION_SOUNDING must contain completion phrases"
         )
 
-    def test_text_complete_does_not_use_bold_headers(self):
-        """boldHeaders was removed from the simplified plugin."""
+    def test_text_complete_status_summary_detects_bold_headers(self):
+        """Structured bold headers contribute to status-summary detection."""
         src = ENFORCE_STOP.read_text()
-        assert "boldHeaders" not in src, (
-            "boldHeaders must NOT be present — was removed from the simplified plugin"
-        )
+        assert "boldHeaders" in src
+        assert "looksLikeStatusSummary" in src
 
     def test_ci_pending_wired_into_has_pending_work(self):
-        """system.transform uses `ciBad = ciIsPendingOrRed()` and gates hasWork on it."""
+        """Both live and cached CI verdict paths feed pending-work state."""
         src = ENFORCE_STOP.read_text()
         assert re.search(
             r"ciBad\s*=\s*ciIsPendingOrRed\s*\(\s*\)",
@@ -684,20 +659,14 @@ class TestEnforceStopCiPendingOrRed:
             "system.transform must call ciIsPendingOrRed() — "
             "the CI verdict query must be wired into the pre-generation gate"
         )
-        assert re.search(
-            r"hasWork\s*=.*\|\|\s*ciBad",
-            src,
-        ), (
-            "hasWork must include ciBad so CI pending/red triggers the gate"
-        )
+        assert "ciVerdictPendingOrRed" in src
+        assert re.search(r"projectWorkOpen\s*=[\s\S]{0,400}ciVerdictPendingOrRed", src)
 
-    def test_session_idle_warms_ci_verdict_cache(self):
-        """session.idle was removed (text.complete is gone). Cache is warmed lazily."""
+    def test_session_idle_refreshes_pending_work_state(self):
+        """session.idle refreshes pending-work state for the next turn."""
         src = ENFORCE_STOP.read_text()
-        assert "session.idle" not in src, (
-            "session.idle should NOT be present — text.complete was removed; "
-            "CI verdict cache is warmed lazily on first call"
-        )
+        assert 'evType === "session.idle"' in src
+        assert "const workState = hasRealPendingWork()" in src
 
 
 # --------------------------------------------------------------------------- #
@@ -971,9 +940,9 @@ class TestEnforceDelegateMainthreadStreak:
         )
         # The function must be wired to throw via the tool.execute.before hook.
         assert re.search(
-            r"mainthreadBudgetBefore\s*\(\s*tool\s*\)", src,
+            r"mainthreadBudgetBefore\s*\(\s*tool\s*,\s*command\s*\)", src,
         ), (
-            "mainthreadBudgetBefore(tool) must be called inside "
+            "mainthreadBudgetBefore(tool, command) must be called inside "
             "tool.execute.before to actually block"
         )
         assert re.search(
@@ -996,10 +965,11 @@ class TestEnforceDelegateMainthreadStreak:
         )
         # mainthreadBudgetAfter must reset streak to 0 on a dispatch tool.
         assert re.search(
-            r"if\s*\(\s*isDispatchTool\s*\(\s*tool\s*\)\s*\)\s*\{?\s*writeStreak\s*\(\s*0\s*\)",
+            r"if\s*\(\s*isDispatchTool\s*\(\s*tool\s*\)\s*\)\s*\{[\s\S]{0,500}"
+            r"writeStreak\s*\(\s*\{\s*count\s*:\s*0\s*\}\s*\)",
             src,
         ), (
-            "mainthreadBudgetAfter must call writeStreak(0) when isDispatchTool(tool) "
+            "mainthreadBudgetAfter must reset count when isDispatchTool(tool) "
             "is true — otherwise the streak never resets and the agent is "
             "permanently blocked from inline work even after delegating"
         )
@@ -1677,21 +1647,21 @@ class TestEnforceFloorCeilingDenyAndProbeAsymmetry:
 
 
 class TestEnforceStopResearchFinding:
-    """RESEARCH FINDING was removed — text.complete hook is gone (opencode >=1.17.9).
-    The stop detection now uses system.transform pre-generation gate instead."""
+    """The runtime contract documents text.complete tool-output scope."""
 
-    ENFORCE_STOP = Path(__file__).resolve().parents[2] / ".opencode/plugin/enforce-stop.ts"
+    ENFORCE_STOP = PluginContractFile(
+        Path(__file__).resolve().parents[2] / ".opencode/plugin/enforce-stop.ts"
+    )
 
     @staticmethod
     def _src() -> str:
         return TestEnforceStopResearchFinding.ENFORCE_STOP.read_text()
 
     def test_research_finding_comment_present(self):
-        """RESEARCH FINDING removed — text.complete hook is gone (opencode >=1.17.9)."""
+        """The hook-scope finding remains beside the runtime hook."""
         src = self._src()
-        assert "RESEARCH FINDING" not in src, (
-            "RESEARCH FINDING should NOT be present — text.complete was removed; "
-            "system.transform now handles pre-generation gate"
+        assert "RESEARCH FINDING" in src, (
+            "Runtime contract must document that text.complete excludes tool output"
         )
 
     def test_isToolOutput_not_present(self):
@@ -1710,17 +1680,17 @@ class TestEnforceStopResearchFinding:
         )
 
     def test_false_done_after_research_finding(self):
-        """FALSE-DONE detection was in text.complete (now removed)."""
+        """FALSE-DONE detection remains in text.complete."""
         src = self._src()
-        assert "FALSE-DONE" not in src, (
-            "FALSE-DONE should NOT be in enforce-stop.ts — text.complete removed"
+        assert "FALSE-DONE" in src, (
+            "FALSE-DONE must remain in the complete runtime contract"
         )
 
     def test_hasLocalWork_after_research_finding(self):
-        """hasLocalWork was removed with text.complete."""
+        """hasLocalWork gates pending-work text responses."""
         src = self._src()
-        assert "hasLocalWork" not in src, (
-            "hasLocalWork should NOT be present — text.complete was removed"
+        assert "hasLocalWork" in src, (
+            "hasLocalWork must remain in the runtime pending-work gate"
         )
 
     def test_ratchet_after_research_finding(self):

@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from tests.unit._hook_fixtures import HookEnv, hook_plugin_env_impl
+from tests.unit._plugin_contract import plugin_contract_source
 
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
@@ -62,6 +63,12 @@ def _implementation_lines(path: Path) -> int:
 
 class TestAntiStopFalsePositiveRate:
     """Measure whether state-file tracking shows over-firing."""
+
+    def test_false_done_state_file_is_namespaced_for_harnesses(self):
+        """Runtime harnesses must be able to avoid polluting live telemetry."""
+        source = plugin_contract_source(PLUGIN_DIR / "enforce-stop.ts")
+        assert "process.env.GLUDD_FALSE_DONE_BLOCKS_FILE" in source
+
     def test_false_done_state_file_tracks_block_count(self):
         """Recent block rate checks for over-fitting; persistent file is cumulative."""
         data = _read_json("/tmp/gludd-false-done-blocks.json")
@@ -194,8 +201,8 @@ class TestProcessChainLength:
 
     def test_no_excessive_pattern_lists(self):
         """NO_WAIT_PATTERNS < 60 entries; CLAIM_PATTERNS < 30 entries."""
-        stop_src = (PLUGIN_DIR / "enforce-stop.ts").read_text()
-        false_done_src = (PLUGIN_DIR / "enforce-stop.ts").read_text()
+        stop_src = plugin_contract_source(PLUGIN_DIR / "enforce-stop.ts")
+        false_done_src = plugin_contract_source(PLUGIN_DIR / "enforce-stop.ts")
 
         no_wait_count = self._count_regex_array_entries(stop_src, "NO_WAIT_PATTERNS")
         assert no_wait_count < self._NO_WAIT_LIMIT, (
@@ -282,7 +289,7 @@ class TestOverfitDetection:
 
     def test_enforce_stop_patterns_mostly_state_based(self):
         """State-based checks >= 3, proving structural design not pattern-whac-a-mole."""
-        stop_src = (PLUGIN_DIR / "enforce-stop.ts").read_text()
+        stop_src = plugin_contract_source(PLUGIN_DIR / "enforce-stop.ts")
 
         state_based_checks = [
             ("ratchetHasEntries", "ratchet.yml entry count"),
@@ -311,7 +318,7 @@ class TestOverfitDetection:
     def test_text_complete_still_has_escape_path(self):
         """enforce-stop.ts must have try/catch fail-open in text.complete."""
         for plugin_name in ("enforce-stop.ts",):
-            src = (PLUGIN_DIR / plugin_name).read_text()
+            src = plugin_contract_source(PLUGIN_DIR / plugin_name)
 
             has_text_complete = '"experimental.text.complete"' in src
             assert has_text_complete, (

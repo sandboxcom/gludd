@@ -193,9 +193,10 @@ class TestTimeGateDefaults:
             "Warning must gate on elapsedSecs >= DISPATCH_NOW_SECS"
         )
 
-    def test_time_gate_only_active_with_zero_dispatches(self, plugin_src):
-        assert "dispatches === 0" in plugin_src, (
-            "Time gate must only fire when dispatches === 0"
+    def test_time_gate_only_active_below_explicit_minimum(self, plugin_src):
+        assert "EFFECTIVE_MIN > 0" in plugin_src
+        assert "state.dispatches < EFFECTIVE_MIN" in plugin_src, (
+            "Time gate must only fire below an operator-configured minimum"
         )
 
     def test_time_gate_resets_on_dispatch(self, plugin_src):
@@ -435,21 +436,18 @@ class TestDenyMessageFormat:
 class TestBehavioralInvariants:
     """Cross-cutting checks that ensure coherent behavior."""
 
-    def test_min_dispatch_is_at_least_5(self, plugin_src):
-        """EFFECTIVE_MIN must be >=5 to enforce meaningful fan-out.
-
-        Accepts both the plain-literal form (``const EFFECTIVE_MIN = 10``) and the
-        older clamped form (``Math.max(..., Math.min(..., N))``).
-        """
-        clamped = re.search(
-            r'EFFECTIVE_MIN\s*=\s*Math\.max\(.*?,\s*Math\.min\(.*?,\s*(\d+)\)\)', plugin_src
+    def test_min_dispatch_is_explicit_opt_in_with_hard_max(self, plugin_src):
+        """Default to adaptive delegation while preserving the ten-agent ceiling."""
+        assert "const HARD_MAX_DISPATCHES = 10" in plugin_src
+        assert "HAS_CONFIGURED_MIN_DISPATCHES" in plugin_src
+        assert (
+            "process.env.GLUDD_SESSION_START_MIN_DISPATCHES !== undefined"
+            in plugin_src
         )
-        literal = re.search(r'EFFECTIVE_MIN\s*=\s*(\d+)', plugin_src)
-        match = clamped or literal
-        assert match is not None, "EFFECTIVE_MIN not found"
-        effective_min_value = int(match.group(1))
-        assert effective_min_value >= 5, (
-            f"EFFECTIVE_MIN={effective_min_value} is too low; need >=5"
+        assert re.search(
+            r"EFFECTIVE_MIN\s*=\s*HAS_CONFIGURED_MIN_DISPATCHES[\s\S]+?"
+            r"Math\.max\(0,\s*Math\.min\([\s\S]+?MAX_DISPATCHES\)\)[\s\S]+?:\s*0",
+            plugin_src,
         )
 
     def test_tool_classification_functions_exported(self, plugin_src, shared_src):

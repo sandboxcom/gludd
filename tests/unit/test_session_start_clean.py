@@ -6,6 +6,8 @@ import subprocess
 import time
 from pathlib import Path
 
+from tests.unit._plugin_contract import plugin_contract_source
+
 PLUGIN_DIR = Path("tools/opencode/plugin")  # symlink or real path
 FLOOR_PLUGIN = PLUGIN_DIR / "enforce-floor.ts"
 DELEGATE_PLUGIN = PLUGIN_DIR / "enforce-delegate.ts"
@@ -41,7 +43,7 @@ def _find_plugin_dir() -> Path:
 
 def _plugin_source(name: str) -> str:
     plugin_dir = _find_plugin_dir()
-    return (plugin_dir / name).read_text()
+    return plugin_contract_source(plugin_dir / name)
 
 
 def _to_int(raw: str) -> int:
@@ -52,7 +54,7 @@ def _extract_stale_ms(src: str) -> int:
     m = re.search(r'READ_GRIND_STALE_MS\s*=\s*[^"]*"(\d+)"', src)
     if m:
         return int(m.group(1))
-    m = re.search(r"STALE_MS\s*=\s*([\d_]+)", src)
+    m = re.search(r"\bSTALE_MS\s*=\s*([\d_]+)", src)
     if m:
         return _to_int(m.group(1))
     return STALE_MS

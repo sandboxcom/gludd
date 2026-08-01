@@ -1,8 +1,15 @@
 from __future__ import annotations
 
 import subprocess
-import tempfile
 from pathlib import Path
+
+from scripts.check_plugin_imports import (
+    _check_bad_import,
+    _check_bare_fs,
+    _check_child_process,
+)
+
+from tests.unit._plugin_contract import plugin_contract_source
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "check_plugin_imports.py"
@@ -55,7 +62,7 @@ def test_no_child_process_directly():
 
 def test_is_subagent_final_report_declared_before_use():
     stop_file = PLUGIN_DIR / "enforce-stop.ts"
-    text = stop_file.read_text()
+    text = plugin_contract_source(stop_file)
     lines = text.splitlines()
     first_use = None
     first_decl = None
@@ -71,36 +78,21 @@ def test_is_subagent_final_report_declared_before_use():
     )
 
 
-def test_invalid_file_detected():
+def test_invalid_file_detected(tmp_path: Path):
     text = (
         'import { execSync } from "child_process";\n'
         'import * as fs from "fs";\n'
         'import type { PluginAPI } from "@opencode/plugin";\n'
         "export const hooks = { tool: { execute: { before: () => ({}) } } };\n"
     )
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".ts", dir="/tmp", prefix="bad_imports_", delete=False
-    ) as fp:
-        fp.write(text)
-        bad_path = fp.name
-
-    try:
-        target = PLUGIN_DIR / "zzz_bad_imports_test.ts"
-        target.symlink_to(bad_path)
-        try:
-            result = subprocess.run(
-                ["python", str(SCRIPT)],
-                capture_output=True, text=True, timeout=30, cwd=str(ROOT),
-            )
-            assert result.returncode == 1, (
-                f"Expected exit 1 for invalid imports, got {result.returncode}\n"
-                f"stdout: {result.stdout}\nstderr: {result.stderr}"
-            )
-            assert "violations found" in result.stdout
-        finally:
-            target.unlink()
-    finally:
-        Path(bad_path).unlink()
+    target = tmp_path / "bad_imports.ts"
+    target.write_text(text)
+    errors = [
+        *_check_bad_import(text, target),
+        *_check_bare_fs(text, target),
+        *_check_child_process(text, target),
+    ]
+    assert len(errors) == 3
 
 
 def test_lean_wrapper_impl_files_exist_and_use_impl_relative_imports():

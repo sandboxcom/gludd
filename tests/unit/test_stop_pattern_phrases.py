@@ -34,16 +34,12 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from tests.unit._plugin_contract import plugin_contract_source
+
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
-_IMPL = ROOT / ".opencode" / "plugin" / "impl" / "enforce_stop_impl.ts"
-
-
 def _src() -> str:
-    s = PLUGIN.read_text()
-    if _IMPL.exists():
-        s += "\n" + _IMPL.read_text()
-    return s
+    return plugin_contract_source(PLUGIN)
 
 
 class TestStopPatternPhrasesDefined:
@@ -58,12 +54,12 @@ class TestStopPatternPhrasesDefined:
 
     def _extract_regex_body(self) -> str:
         src = _src()
-        m = re.search(r"STOP_PATTERN_PHRASES\s*=\s*/([^/\n]+)/", src)
-        assert m, "STOP_PATTERN_PHRASES regex literal not found"
+        matches = re.findall(r"STOP_PATTERN_PHRASES\s*=\s*/([^/\n]+)/", src)
+        assert matches, "STOP_PATTERN_PHRASES regex literal not found"
         # The regex body contains literal tokens ("shall", "continue", etc.)
         # separated by `\s+` whitespace syntax. Token substring checks work
         # directly against the raw body — no normalization needed.
-        return m.group(1).lower()
+        return matches[-1].lower()
 
     def test_includes_shall_i_continue(self):
         body = self._extract_regex_body()
@@ -91,9 +87,9 @@ class TestStopPatternPhrasesDefined:
 
     def test_regex_is_case_insensitive(self):
         src = _src()
-        m = re.search(r"STOP_PATTERN_PHRASES\s*=\s*/[^/\n]+/([a-z]+)", src)
-        assert m, "STOP_PATTERN_PHRASES regex flags not found"
-        flags = m.group(1)
+        matches = re.findall(r"STOP_PATTERN_PHRASES\s*=\s*/[^/\n]+/([a-z]+)", src)
+        assert matches, "STOP_PATTERN_PHRASES regex flags not found"
+        flags = matches[-1]
         assert "i" in flags, (
             "STOP_PATTERN_PHRASES must be case-insensitive (the `/i` flag) "
             "so 'Want me to', 'want me to', and 'WANT ME TO' all match."

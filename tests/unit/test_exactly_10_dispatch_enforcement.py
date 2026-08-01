@@ -1,14 +1,15 @@
-"""Structural tests that enforce exactly-10 dispatch across all layers.
+"""Structural tests for adaptive dispatch with an absolute ten-agent ceiling.
 
-Verifies the dispatch baseline is hardcoded at 10 (not 3, 5, or 7) in:
-  - enforce-session-start.ts: MIN_DISPATCHES and EFFECTIVE_MIN
-  - enforce-multitask.ts: MIN_DISPATCHES and CEILING
+Verifies that ten remains the maximum/recommended batch size while mandatory
+minimums are opt-in in:
+  - enforce-session-start.ts: configured minimum and EFFECTIVE_MIN
+  - enforce-multitask.ts: configured minimum and MAX_DISPATCHES
   - shared.ts: isDispatchTool classification
   - AGENTS.md: no sub-10 dispatch count in any directive
 
-These tests fail when the code softens the floor below 10.  A failing test
-here means someone dropped the dispatch floor in code without updating this
-guard — and the agent will run with fewer subagents than mandated.
+These tests fail when a plugin re-introduces an unconditional ten-agent floor
+or allows more than ten concurrent dispatches.  Simple work may stay inline;
+larger independent work may use up to ten agents.
 """
 
 from __future__ import annotations
@@ -52,12 +53,12 @@ def _env_default(src: str, env_var: str) -> int:
 
 
 # ============================================================================
-# 1. enforce-session-start.ts: MIN_DISPATCHES hardcoded to 10
+# 1. enforce-session-start.ts: ten is a recommendation, not a default floor
 # ============================================================================
 
 
 def test_session_start_min_dispatches_hardcoded_10():
-    """MIN_DISPATCHES in enforce-session-start.ts defaults to 10, not 3."""
+    """The legacy target remains ten for explicit minimum configuration."""
     src = _read(SESSION_START_TS)
     val = _env_default(src, "GLUDD_SESSION_START_MIN_DISPATCHES")
     assert val == 10, (
@@ -73,29 +74,30 @@ def test_session_start_min_dispatches_env_var_name():
 
 
 # ============================================================================
-# 2. enforce-session-start.ts: EFFECTIVE_MIN = 10
+# 2. enforce-session-start.ts: mandatory minimum is opt-in
 # ============================================================================
 
 
-def test_session_start_effective_min_is_10():
-    """EFFECTIVE_MIN must be exactly 10 (hardcoded or resolved)."""
+def test_session_start_effective_min_is_opt_in():
+    """A fresh session must not require ten agents unless explicitly configured."""
     src = _read(SESSION_START_TS)
     assert "EFFECTIVE_MIN" in src, "EFFECTIVE_MIN constant must exist"
-
-    m = re.search(r"EFFECTIVE_MIN\s*=\s*(\d+)", src)
-    assert m, "EFFECTIVE_MIN assignment not found"
-    val = int(m.group(1))
-    assert val == 10, (
-        f"EFFECTIVE_MIN is {val}, expected 10. Must be hardcoded to 10.")
+    assert "HAS_CONFIGURED_MIN_DISPATCHES" in src
+    assert re.search(
+        r"EFFECTIVE_MIN\s*=\s*HAS_CONFIGURED_MIN_DISPATCHES\s*\?",
+        src,
+    ), "EFFECTIVE_MIN must be conditional on an explicit minimum"
+    assert re.search(r":\s*0\s*$", src, re.MULTILINE), (
+        "Unconfigured session-start enforcement must allow zero dispatches")
 
 
 # ============================================================================
-# 3. enforce-multitask.ts: MIN_DISPATCHES = 10
+# 3. enforce-multitask.ts: recommended target 10, required minimum opt-in
 # ============================================================================
 
 
 def test_multitask_min_dispatches_hardcoded_10():
-    """MIN_DISPATCHES in enforce-multitask.ts defaults to 10, not 3.
+    """MIN_DISPATCHES remains the configurable recommendation target.
 
     The parseInt chain now goes:
       parseInt(
@@ -110,7 +112,7 @@ def test_multitask_min_dispatches_hardcoded_10():
     """
     src = _read(MULTITASK_TS)
     m = re.search(
-        r'export const MIN_DISPATCHES\s*=\s*parseInt\(\s*'
+        r'(?:export\s+)?const MIN_DISPATCHES\s*=\s*parseInt\(\s*'
         r'(?:process\.env\.\w+\s*\|\|\s*)+'
         r'"(\d+)"',
         src, re.DOTALL)
@@ -120,52 +122,38 @@ def test_multitask_min_dispatches_hardcoded_10():
         f"enforce-multitask.ts MIN_DISPATCHES env-fallback default is {val}, expected 10.")
 
 
-def test_multitask_min_dispatches_per_wave_hardcoded_10():
-    """MIN_DISPATCHES_PER_WAVE in enforce-multitask.ts defaults to 10.
+def test_multitask_required_dispatches_is_opt_in():
+    """No mandatory batch minimum applies unless a minimum env var is set.
 
-    GLUDD_MIN_DISPATCHES and GLUDD_MULTITASK_MIN_DISPATCHES are now
-    chained in the same parseInt.  Verify the chain's final fallback
-    is "10".
+    The legacy minimum env vars still opt into enforcement, preserving
+    configurability for operators who want a strict minimum.
     """
     src = _read(MULTITASK_TS)
-    m = re.search(
-        r'export const MIN_DISPATCHES\s*=\s*parseInt\(\s*'
-        r'(?:process\.env\.\w+\s*\|\|\s*)+'
-        r'"(\d+)"',
-        src, re.DOTALL)
-    assert m, "MIN_DISPATCHES parseInt fallback not found"
-    val = int(m.group(1))
-    assert val == 10, (
-        f"enforce-multitask.ts MIN_DISPATCHES_PER_WAVE final fallback is {val}, "
-        f"expected 10.")
+    assert "HAS_CONFIGURED_MIN_DISPATCHES" in src
+    assert re.search(
+        r"REQUIRED_DISPATCHES\s*=\s*HAS_CONFIGURED_MIN_DISPATCHES\s*\?",
+        src,
+    )
+    assert re.search(r":\s*0\s*$", src, re.MULTILINE)
 
 
-def test_multitask_per_message_threshold_is_10():
-    """The per-message MIN_DISPATCHES must be 10, which is the threshold."""
+def test_multitask_required_minimum_is_clamped_to_ceiling():
+    """An operator-provided minimum can never exceed the ten-agent cap."""
     src = _read(MULTITASK_TS)
-    m = re.search(
-        r'export const MIN_DISPATCHES\s*=\s*parseInt\(\s*'
-        r'(?:process\.env\.\w+\s*\|\|\s*)+'
-        r'"(\d+)"',
-        src, re.DOTALL)
-    assert m, "MIN_DISPATCHES parseInt fallback not found"
-    val = int(m.group(1))
-    assert val == 10, (
-        f"Multitask MIN_DISPATCHES final fallback is {val}, expected 10 for per-message threshold.")
+    assert "Math.min(MAX_DISPATCHES, MIN_DISPATCHES)" in src
 
 
-def test_multitask_floor_breach_uses_min_dispatches():
-    """Floor breach check references MIN_DISPATCHES (not a literal).
+def test_multitask_floor_breach_uses_required_dispatches():
+    """Floor breach checks the opt-in requirement, not the recommendation.
 
     After refactoring the check uses thisMessageDispatches (the live
     per-message counter), not prevMessageDispatches (set at boundary).
-    Both the under-floor hard block and the thin-wave text.complete
-    check compare against MIN_DISPATCHES.
+    Both the under-floor hard block and thin-wave check must become inert when
+    no minimum was configured.
     """
     src = _read(MULTITASK_TS)
-    assert "_state.thisMessageDispatches < MIN_DISPATCHES" in src, (
-        "Floor breach must use the MIN_DISPATCHES constant, not a literal. "
-        "Expected '_state.thisMessageDispatches < MIN_DISPATCHES'.")
+    assert "getPressureReleaseFloor(REQUIRED_DISPATCHES)" in src
+    assert "REQUIRED_DISPATCHES > 0" in src
 
 
 # ============================================================================
@@ -182,15 +170,10 @@ def test_multitask_has_max_dispatches_constant():
 
 
 def test_multitask_max_dispatches_value_is_10():
-    """MAX_DISPATCHES must resolve to 10 (env override or hardcoded)."""
+    """MAX_DISPATCHES must be clamped to ten even with an env override."""
     src = _read(MULTITASK_TS)
-    m = re.search(
-        r"MAX_DISPATCHES\s*=\s*parseInt\(\s*process\.env\.\w+\s*\|\|\s*\"(\d+)\"",
-        src)
-    assert m, "MAX_DISPATCHES parseInt declaration not found"
-    val = int(m.group(1))
-    assert val == 10, (
-        f"MAX_DISPATCHES is {val}, expected 10. Must cap dispatches at exactly 10 per wave.")
+    assert "HARD_MAX_DISPATCHES = 10" in src
+    assert "Math.min(HARD_MAX_DISPATCHES" in src
 
 
 def test_multitask_max_dispatches_enforcement_exists():
@@ -206,96 +189,23 @@ def test_multitask_max_dispatches_enforcement_exists():
 
 
 # ============================================================================
-# 5. AGENTS.md: no dispatch count less than 10
+# 5. AGENTS.md: cost-efficiency overrides legacy floor language
 # ============================================================================
 
 
-def test_agents_md_no_sub_10_dispatch():
-    """AGENTS.md MUST NOT contain any dispatch count directive below 10.
-
-    Exemptions: date strings, git SHAs, line counts, version numbers.
-    """
+def test_agents_md_documents_adaptive_dispatch():
+    """The active directive must prefer only the agents useful for the work."""
     src = _read(AGENTS_MD)
-
-    # Patterns that match sub-10 dispatch directives — things like "at least 2",
-    # "≥2", "1-4 dispatch", "≥5 dispatches", "≥2 known work items", etc.
-    sub10_patterns: list[tuple[re.Pattern[str], str]] = [
-        # "1-4 dispatch" enforcement phrase
-        (re.compile(r"\b1-4\s+dispatch\b", re.IGNORECASE),
-         "'1-4 dispatch'"),
-        # "at least N" where N < 10 (but skip "at least 10" and "at least half")
-        (re.compile(r"at\s+least\s+([0-9])\s+subagent", re.IGNORECASE),
-         "'at least N subagent' with N < 10"),
-        (re.compile(r"at\s+least\s+([0-9])\s+dispatch", re.IGNORECASE),
-         "'at least N dispatch' with N < 10"),
-        (re.compile(r"at\s+least\s+([0-9])\s+task/agent", re.IGNORECASE),
-         "'at least N task/agent' with N < 10"),
-        (re.compile(r"at\s+least\s+([0-9])\s+parallel\s+task", re.IGNORECASE),
-         "'at least N parallel task' with N < 10"),
-        # "≥N" with N < 10 (but not ≥10)
-        (re.compile(r"\u2265\s*([0-9])\s+", re.UNICODE),
-         "≥N with N < 10"),
-        # "dispatches < N" where N < 10
-        (re.compile(r"dispatches?\s*<\s*([0-9])\b", re.IGNORECASE),
-         "'dispatches < N' with N < 10"),
-        # "MIN_DISPATCHES (default N)" where N < 10
-        (re.compile(r"MIN_DISPATCHES.*default\s+([0-9])", re.IGNORECASE),
-         "'MIN_DISPATCHES default N' with N < 10"),
-        # "floor.*N.*dispatch" where N < 10
-        (re.compile(r"floor.*?[=:]\s*([0-9])\s+.*dispatch", re.IGNORECASE),
-         "'floor = N dispatch' with N < 10"),
-    ]
-
-    violations: list[str] = []
-    for pat, desc in sub10_patterns:
-        for m in pat.finditer(src):
-            # Extract the captured digit
-            groups = m.groups()
-            if groups:
-                n = int(groups[0])
-                if n >= 10:
-                    continue
-            else:
-                n = 0  # falls through as violation
-            line = src[:m.start()].count('\n') + 1
-            violations.append(f"Line {line}: {desc} — \"{m.group().strip()}\"")
-
-    # AGENTS.md contains historical policy sections that reference legacy
-    # floor values (2, 3, 5, 7) documented during the dispatch-floor evolution.
-    # These subsections are retained for historical context — they are NOT
-    # active dispatch directives.  The current floor is exactly 10.
-    false_positives = {
-        "1-4 dispatch": True,                # enforce-multitask message-shape desc
-        "at least N subagent": True,         # legacy subagent rules
-        "at least N dispatch": True,         # legacy dispatch rules
-        "at least N task/agent": True,       # legacy session-start protocol
-        "at least N parallel task": True,    # legacy parallel-task rules
-        "\u2265N with N < 10": True,         # historical \u2265N references
-        "dispatches < N": True,              # legacy dispatch threshold docs
-        "MIN_DISPATCHES default N": True,    # old default-value documentation
-        "floor = N dispatch": True,          # old floor documentation
-        "DISENGAGE": True,
-        "2026-07": True,
-    }
-
-    real_violations = []
-    for v in violations:
-        # Skip if it's clearly not a dispatch directive
-        if any(fp in v for fp in false_positives):
-            continue
-        real_violations.append(v)
-
-    assert not real_violations, (
-        f"AGENTS.md contains {len(real_violations)} sub-10 dispatch directive(s):\n" +
-        "\n".join(f"  - {v}" for v in real_violations[:10]))
+    assert "COST-EFFICIENCY DIRECTIVE" in src
+    assert "Fewer, better subagents" in src
+    assert "Inline work preferred for simple tasks" in src
 
 
-def test_agents_md_assumes_10_dispatch_floor():
-    """AGENTS.md must explicitly state the dispatch floor is 10."""
+def test_agents_md_documents_ten_as_ceiling_not_floor():
+    """The active directive must make ten a maximum rather than a minimum."""
     src = _read(AGENTS_MD)
-    # Must contain "10 subagents" or "10-agent floor" or "dispatch >= 10" etc.
-    assert "10-agent floor" in src or "10 subagents" in src.lower(), (
-        "AGENTS.md must document the 10-agent floor.")
+    assert "Max 10 subagents per wave" in src
+    assert "OVERRIDES all \"10-agent floor\" rules" in src
 
 
 # ============================================================================
@@ -349,25 +259,20 @@ def test_is_dispatch_tool_exported_via_es_module():
 
 
 # ============================================================================
-# 7. Freshness check blocks until dispatches >= 10
+# 7. Freshness check honors the optional effective minimum
 # ============================================================================
 
 
 def test_session_start_freshness_uses_effective_min():
-    """The freshness check MUST compare dispatches against EFFECTIVE_MIN = 10."""
+    """The freshness check compares dispatches against the configured minimum."""
     src = _read(SESSION_START_TS)
     assert "EFFECTIVE_MIN" in src, "Freshness gate must reference EFFECTIVE_MIN."
-
-    m = re.search(r"EFFECTIVE_MIN\s*=\s*(\d+)", src)
-    assert m, "EFFECTIVE_MIN assignment not found"
-    val = int(m.group(1))
-    assert val == 10, (
-        f"EFFECTIVE_MIN = {val}, freshness gate would pass at {val} dispatches, "
-        f"but 10 is mandated.")
+    assert "HAS_CONFIGURED_MIN_DISPATCHES" in src
+    assert "MAX_DISPATCHES" in src
 
 
 def test_session_start_primed_check_requires_10():
-    """The primed condition must be: readsDone && dispatches >= EFFECTIVE_MIN."""
+    """The primed condition uses the effective, possibly-zero minimum."""
     src = _read(SESSION_START_TS)
     assert "dispatches >= EFFECTIVE_MIN" in src, (
         "Primed condition must check dispatches >= EFFECTIVE_MIN.")
