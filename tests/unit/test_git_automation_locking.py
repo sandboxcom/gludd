@@ -6,18 +6,32 @@ registry, public API surface, and cross-process safety on POSIX.
 
 from __future__ import annotations
 
+import contextlib
 import multiprocessing
 import os
 import subprocess
 import tempfile
 import threading
 import time
+from collections.abc import MutableSequence
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from general_ludd.git_automation import locking
+
+
+def _hold_repo_lock_then_record(
+    repo_path: str,
+    execution_order: MutableSequence[str],
+    name: str,
+    hold_secs: float,
+) -> None:
+    """Spawn-safe worker used to prove cross-process worktree locking."""
+    with locking.git_repo_lock(repo_path, timeout=10.0, stale_after=60.0):
+        execution_order.append(name)
+        time.sleep(hold_secs)
 
 
 class TestNormalize:
@@ -173,7 +187,7 @@ class TestFileLock:
         key = "missing-during-open"
         locking._file_lock_depth.pop(key, None)
         with (
-            patch.object(locking.os, "open", side_effect=FileNotFoundError),
+            patch("general_ludd.git_automation.locking.os.open", side_effect=FileNotFoundError),
             locking._file_lock("/tmp/gludd-missing-git-dir", key, timeout=1.0, stale_after=60.0),
         ):
             assert locking._file_lock_depth.get(key, 0) == 0
@@ -200,7 +214,7 @@ class TestFileLock:
                 ):
                     pass
             finally:
-                with locking.contextlib.suppress(OSError):
+                with contextlib.suppress(OSError):
                     fcntl.flock(fd, fcntl.LOCK_UN)
                 os.close(fd)
 
@@ -313,25 +327,27 @@ class TestGitRepoLockWorktree:
                 capture_output=True,
             )
             try:
-                manager = multiprocessing.Manager()
-                execution_order = manager.list()
+                with multiprocessing.Manager() as manager:
+                    execution_order = manager.list()
+                    p1 = multiprocessing.Process(
+                        target=_hold_repo_lock_then_record,
+                        args=(wt_path, execution_order, "first", 0.3),
+                    )
+                    p2 = multiprocessing.Process(
+                        target=_hold_repo_lock_then_record,
+                        args=(wt_path, execution_order, "second", 0.1),
+                    )
 
-                def hold_lock_then_record(name: str, hold_secs: float) -> None:
-                    with locking.git_repo_lock(wt_path, timeout=10.0, stale_after=60.0):
-                        execution_order.append(name)
-                        time.sleep(hold_secs)
+                    p1.start()
+                    time.sleep(0.05)
+                    p2.start()
 
-                p1 = multiprocessing.Process(target=hold_lock_then_record, args=("first", 0.3))
-                p2 = multiprocessing.Process(target=hold_lock_then_record, args=("second", 0.1))
+                    p1.join(timeout=10)
+                    p2.join(timeout=10)
 
-                p1.start()
-                time.sleep(0.05)
-                p2.start()
-
-                p1.join(timeout=10)
-                p2.join(timeout=10)
-
-                assert list(execution_order) == ["first", "second"]
+                    assert p1.exitcode == 0
+                    assert p2.exitcode == 0
+                    assert list(execution_order) == ["first", "second"]
             finally:
                 subprocess.run(
                     ["git", "worktree", "remove", "--force", wt_path],
