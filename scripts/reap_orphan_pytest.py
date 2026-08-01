@@ -4,17 +4,29 @@
 from __future__ import annotations
 
 import contextlib
+import importlib
 import os
 import re
 import signal
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
-try:
-    from scripts.resource_arbiter import resource_path
-except ModuleNotFoundError:  # pragma: no cover - direct script execution
-    from resource_arbiter import resource_path
+ResourcePath = Callable[[str, Path | str | None], Path]
+
+
+def _load_resource_path() -> ResourcePath:
+    """Resolve the helper in both package-import and direct-script modes."""
+    try:
+        module = importlib.import_module("scripts.resource_arbiter")
+    except ModuleNotFoundError:
+        module = importlib.import_module("resource_arbiter")
+    return cast(ResourcePath, module.resource_path)
+
+
+resource_path = _load_resource_path()
 
 
 @dataclass(frozen=True)
@@ -178,6 +190,36 @@ def select_reapable_records(
     ]
 
 
+def descendant_records(
+    root: ProcessRecord, records: list[ProcessRecord]
+) -> list[ProcessRecord]:
+    """Return a proven orphan tree leaf-first, including its root.
+
+    Test processes may create their own process groups (Gunicorn does), so
+    terminating only the pytest launcher's group can strand chargeable or
+    resource-heavy grandchildren.  PID-scoped leaf-first termination stays
+    within the already selected project-owned tree while crossing those group
+    boundaries safely.
+    """
+    children: dict[int, list[ProcessRecord]] = {}
+    for record in records:
+        children.setdefault(record.ppid, []).append(record)
+
+    selected: list[ProcessRecord] = []
+    visited: set[int] = set()
+
+    def visit(record: ProcessRecord) -> None:
+        if record.pid in visited:
+            return
+        visited.add(record.pid)
+        for child in children.get(record.pid, []):
+            visit(child)
+        selected.append(record)
+
+    visit(root)
+    return selected
+
+
 def _records(project_root: Path) -> list[ProcessRecord]:
     output = subprocess.run(
         ["ps", "-axo", "pid=,ppid=,pgid=,etime=,command="],
@@ -229,8 +271,9 @@ def reap(project_root: Path, *, min_age_seconds: int, apply: bool) -> int:
         action = "REAP" if apply else "WOULD-REAP"
         print(f"{action} pid={record.pid} age={record.elapsed_seconds}s command={record.command}")
         if apply:
-            with contextlib.suppress(OSError, ProcessLookupError):
-                os.killpg(os.getpgid(record.pid), signal.SIGTERM)
+            for process in descendant_records(record, records):
+                with contextlib.suppress(OSError, ProcessLookupError):
+                    os.kill(process.pid, signal.SIGTERM)
     print(f"orphan-pytest candidates={len(candidates)} apply={apply}")
     return 0
 

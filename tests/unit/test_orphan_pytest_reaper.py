@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import scripts.reap_orphan_pytest as reaper
 from scripts.reap_orphan_pytest import (
     ProcessRecord,
     is_reapable,
@@ -57,6 +58,43 @@ def test_orphan_launcher_is_owned_when_project_child_is_present() -> None:
         ProcessRecord(11, 10, 1900, f"{root}/.venv/bin/python3 -m pytest tests/unit/ -q"),
     ]
     assert reapable_with_descendants(records[0], records, project_root=root, min_age_seconds=1800)
+
+
+def test_descendants_are_selected_leaf_first_across_process_groups() -> None:
+    root = Path.cwd()
+    records = [
+        ProcessRecord(10, 1, 1900, f"{root}/.venv/bin/python -m pytest tests/unit/", 10),
+        ProcessRecord(11, 10, 1890, f"{root}/.venv/bin/python xdist-worker", 10),
+        ProcessRecord(12, 11, 1880, f"{root}/.venv/bin/gunicorn general_ludd.daemon", 12),
+        ProcessRecord(13, 12, 1870, f"{root}/.venv/bin/gunicorn worker", 12),
+        ProcessRecord(14, 12, 1870, f"{root}/.venv/bin/gunicorn worker", 12),
+    ]
+
+    selected = reaper.descendant_records(records[0], records)
+
+    assert [record.pid for record in selected] == [13, 14, 12, 11, 10]
+
+
+def test_reap_terminates_each_descendant_not_only_the_root_group(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    root = tmp_path / "checkout"
+    root.mkdir()
+    records = [
+        ProcessRecord(10, 1, 1900, f"{root}/.venv/bin/python -m pytest tests/unit/", 10),
+        ProcessRecord(11, 10, 1890, f"{root}/.venv/bin/python xdist-worker", 10),
+        ProcessRecord(12, 11, 1880, f"{root}/.venv/bin/gunicorn general_ludd.daemon", 12),
+        ProcessRecord(13, 12, 1870, f"{root}/.venv/bin/gunicorn worker", 12),
+    ]
+    terminated: list[int] = []
+    monkeypatch.setattr(reaper, "_records", lambda _root: records)
+    monkeypatch.setattr(reaper, "owner_pids", lambda _root: set())
+    monkeypatch.setattr(reaper.os, "kill", lambda pid, _signal: terminated.append(pid))
+
+    assert reaper.reap(root, min_age_seconds=1800, apply=True) == 0
+
+    assert terminated == [13, 12, 11, 10]
+    assert "orphan-pytest candidates=1 apply=True" in capsys.readouterr().out
 
 
 def test_reaper_preserves_orphans_while_live_gate_owner_exists() -> None:
