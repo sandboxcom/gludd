@@ -1383,13 +1383,16 @@ SERVICES: dict[str, dict[str, Any]] = {
                     "Fingerprints and FBI background check",
                     "Firearm safety training course (typically 8-16 hours for CCW permits)",
                     "Real ID-compliant driver's license or government ID",
-                    "States with strict requirements (CA, NY, IL, MA): firearm safety certificate, roster of approved handguns, ammunition background check",
+                    (
+                        "States with strict requirements (CA, NY, IL, MA): firearm safety certificate, "
+                        "roster of approved handguns, ammunition background check"
+                    ),
                 ],
                 "cost": {"currency": "USD", "ATF_transfer": "15-50 (dealer fee)"},
                 "online_portal": "state DOJ / ATF portals",
             },
             "GB": {
-                "issuing_body": "Police firearms licensing department (local force)",
+                "issuing_body": "Police Firearms Licensing Department (local force)",
                 "requirements": [
                     "Firearm Certificate (FAC) or Shotgun Certificate application to local police",
                     "Good reason for firearm ownership (hunting, target shooting, deer stalking)",
@@ -1503,8 +1506,14 @@ SERVICES: dict[str, dict[str, Any]] = {
             "US": {
                 "issuing_body": "State Department of Social Services / Department of Children and Family Services",
                 "requirements": [
-                    "FBI and state criminal background check + child abuse/neglect registry for every adult in facility",
-                    "Health and safety pre-licensing inspection (fire marshal, building code, lead paint for pre-1978 buildings)",
+                    (
+                        "FBI and state criminal background check + child abuse/neglect registry "
+                        "for every adult in facility"
+                    ),
+                    (
+                        "Health and safety pre-licensing inspection "
+                        "(fire marshal, building code, lead paint for pre-1978 buildings)"
+                    ),
                     "Staff-to-child ratio: 1:4 for infants (0-12mo), 1:6 for toddlers, 1:10-12 for preschool",
                     "Director qualified: BA in ECE or related + experience",
                     "Lead teacher qualified: CDA or AA in ECE",
@@ -1558,8 +1567,14 @@ SERVICES: dict[str, dict[str, Any]] = {
                     "Application during Open Enrollment (Nov 1 - Jan 15) or after Qualifying Life Event",
                     "SSN and income verification (tax return or pay stubs)",
                     "ACA-compliant plan tiers: Bronze (60% covered), Silver (70%), Gold (80%), Platinum (90%)",
-                    "Subsidies: premium tax credit (income 100-400% FPL) and cost-sharing reductions (Silver only, 100-250% FPL)",
-                    "Employer coverage must be unaffordable (>9.02% of household income) for marketplace subsidy eligibility",
+                    (
+                        "Subsidies: premium tax credit (income 100-400% FPL) and cost-sharing "
+                        "reductions (Silver only, 100-250% FPL)"
+                    ),
+                    (
+                        "Employer coverage must be unaffordable (>9.02% of household income) "
+                        "for marketplace subsidy eligibility"
+                    ),
                 ],
                 "cost": {"currency": "USD", "bronze_avg_monthly": "320-420"},
                 "online_portal": "https://www.healthcare.gov",
@@ -1634,7 +1649,10 @@ SERVICES: dict[str, dict[str, Any]] = {
                 "issuing_body": "County Superior/Family Court Clerk",
                 "requirements": [
                     "Petition for Dissolution (FL-100 in CA; state-specific form otherwise)",
-                    "Residency: petitioner or respondent must have lived in state for 3-6 months (varies) and county for 3 months",
+                    (
+                        "Residency: petitioner or respondent must have lived in state for 3-6 months "
+                        "(varies) and county for 3 months"
+                    ),
                     "No-fault: irreconcilable differences / irretrievable breakdown (all 50 states)",
                     "Financial disclosure: income & expense declaration, schedule of assets & debts",
                     "Mandatory parenting class for divorcing parents (children under 18)",
@@ -2153,20 +2171,20 @@ CIVIC_SERVICES = SERVICES
 
 
 __all__ = [
-    "SERVICE_CATEGORIES",
+    "CIVIC_SERVICES",
+    "POSTAL_SYSTEMS",
     "REQUIRED_SERVICE_KEYS",
     "SERVICES",
-    "CIVIC_SERVICES",
+    "SERVICE_CATEGORIES",
     "SERVICE_OFFICES",
-    "POSTAL_SYSTEMS",
+    "PostageRate",
+    "PostalSystem",
     "ServiceInfo",
     "ServiceOffice",
-    "PostalSystem",
-    "PostageRate",
-    "lookup_service",
-    "get_requirements",
-    "get_processing_time",
     "find_service_office",
-    "get_postal_info",
     "get_postage_rate",
+    "get_postal_info",
+    "get_processing_time",
+    "get_requirements",
+    "lookup_service",
 ]

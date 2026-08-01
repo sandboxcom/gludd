@@ -2554,11 +2554,10 @@ _push-rate-guard:
 	@# Uses ci_push_guard.py (branch-level active-run check, not commit-specific)
 	@# PUSH_BRANCH overrides the branch to check (default: master).
 	@PUSH_BRANCH=$${PUSH_BRANCH:-master}; \
-	if [ "$$GLUDD_FORCE_PUSH" = "1" ]; then \
-		FORCE=1 $(PYTHON) scripts/ci_push_guard.py "$$PUSH_BRANCH" || true; \
-	else \
-		$(PYTHON) scripts/ci_push_guard.py "$$PUSH_BRANCH" || { echo "Use GLUDD_FORCE_PUSH=1 to override, or wait for CI to complete."; exit 1; }; \
-	fi
+	$(PYTHON) scripts/ci_push_guard.py "$$PUSH_BRANCH" || { \
+		echo "Push blocked while CI is active on $$PUSH_BRANCH; wait for CI to complete."; \
+		exit 1; \
+	}
 	@# Check push cooldown (minimum interval between pushes)
 	@LAST_PUSH=$$(python3 -c "import json;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];print(d[-1] if d else 0)" 2>/dev/null || echo 0); \
 	if [ "$$LAST_PUSH" != "0" ]; then \

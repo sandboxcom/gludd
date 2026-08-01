@@ -15,6 +15,8 @@ import os
 import subprocess
 import threading
 import time
+from pathlib import Path
+from typing import Literal
 
 import pytest
 
@@ -36,7 +38,7 @@ def _init_repo(path: str) -> GitAutomation:
 # --- in-process serialization (the common in-daemon race) ----------------
 
 
-def test_two_threads_mutating_same_repo_no_lock_error_no_lost_commit(tmp_path):
+def test_two_threads_mutating_same_repo_no_lock_error_no_lost_commit(tmp_path: Path) -> None:
     """Two threads each performing an atomic mutating git op against the SAME
     repo must both succeed (no ``index.lock`` / "Another git process" error)
     and produce TWO distinct commits (none lost to the race).
@@ -50,6 +52,11 @@ def test_two_threads_mutating_same_repo_no_lock_error_no_lost_commit(tmp_path):
     os.makedirs(repo)
     auto = _init_repo(repo)
     start = auto.get_current_commit()
+    baseline = subprocess.run(
+        ["git", "rev-list", "--count", "HEAD"],
+        cwd=repo, capture_output=True, text=True, check=True,
+    )
+    baseline_count = int(baseline.stdout.strip())
 
     errors: list[BaseException] = []
     barrier = threading.Barrier(2)
@@ -72,16 +79,17 @@ def test_two_threads_mutating_same_repo_no_lock_error_no_lost_commit(tmp_path):
         t.join(timeout=30)
 
     assert not errors, f"concurrent commits raced / failed: {errors}"
-    # Both commits landed on top of the seed -> linear history of 3 commits.
+    # Both commits land linearly on top of whatever safe initialization history
+    # ``init_repo`` creates (currently an empty root plus the fixture seed).
     log = subprocess.run(
         ["git", "rev-list", "--count", "HEAD"],
         cwd=repo, capture_output=True, text=True, check=True,
     )
-    assert int(log.stdout.strip()) == 3, "a commit was lost to the race"
+    assert int(log.stdout.strip()) == baseline_count + 2, "a commit was lost to the race"
     assert auto.get_current_commit() != start
 
 
-def test_index_lock_never_observed_under_contention(tmp_path):
+def test_index_lock_never_observed_under_contention(tmp_path: Path) -> None:
     """Under heavy contention, no git op fails with the 'Another git process'
     / index.lock error — the serializer prevents the collision entirely.
 
@@ -91,6 +99,11 @@ def test_index_lock_never_observed_under_contention(tmp_path):
     repo = str(tmp_path / "repo")
     os.makedirs(repo)
     auto = _init_repo(repo)
+    baseline = subprocess.run(
+        ["git", "rev-list", "--count", "HEAD"],
+        cwd=repo, capture_output=True, text=True, check=True,
+    )
+    baseline_count = int(baseline.stdout.strip())
 
     collisions: list[str] = []
 
@@ -116,18 +129,18 @@ def test_index_lock_never_observed_under_contention(tmp_path):
         t.join(timeout=60)
 
     assert not collisions, f"git lock collision under contention: {collisions}"
-    # All 12 serialized commits landed (4 workers x 3) on top of the seed.
+    # All 12 serialized commits land on top of the initialized fixture history.
     count = subprocess.run(
         ["git", "rev-list", "--count", "HEAD"],
         cwd=repo, capture_output=True, text=True, check=True,
     )
-    assert int(count.stdout.strip()) == 1 + 4 * 3, "commits lost under contention"
+    assert int(count.stdout.strip()) == baseline_count + 4 * 3, "commits lost under contention"
 
 
 # --- different repos do not block each other -----------------------------
 
 
-def test_different_repos_do_not_block_each_other(tmp_path):
+def test_different_repos_do_not_block_each_other(tmp_path: Path) -> None:
     """A lock held on repo A must NOT block work on repo B."""
     repo_a = str(tmp_path / "a")
     repo_b = str(tmp_path / "b")
@@ -164,7 +177,7 @@ def test_different_repos_do_not_block_each_other(tmp_path):
 # --- stale lock breaking --------------------------------------------------
 
 
-def test_file_lock_breaks_stale_lock_after_timeout(tmp_path):
+def test_file_lock_breaks_stale_lock_after_timeout(tmp_path: Path) -> None:
     """A leftover lock file from a crashed holder (old mtime, no live flock)
     must be broken so a fresh acquire still succeeds within the timeout."""
     repo = str(tmp_path / "repo")
@@ -187,7 +200,7 @@ def test_file_lock_breaks_stale_lock_after_timeout(tmp_path):
     assert elapsed < 5.0, "stale lock was not broken; acquire timed out"
 
 
-def test_acquire_times_out_when_held_by_another_process(tmp_path):
+def test_acquire_times_out_when_held_by_another_process(tmp_path: Path) -> None:
     """When the cross-process flock is genuinely held (live, fresh), a second
     acquire with a short timeout raises TimeoutError rather than hanging."""
     repo = str(tmp_path / "repo")
@@ -215,7 +228,7 @@ def test_acquire_times_out_when_held_by_another_process(tmp_path):
 # --- re-entrancy ----------------------------------------------------------
 
 
-def test_reentrant_same_repo_same_thread_no_self_deadlock(tmp_path):
+def test_reentrant_same_repo_same_thread_no_self_deadlock(tmp_path: Path) -> None:
     """Nested ``git_repo_lock`` on the same repo in one thread must not
     self-deadlock (re-entrant)."""
     repo = str(tmp_path / "repo")
@@ -239,7 +252,7 @@ def test_reentrant_same_repo_same_thread_no_self_deadlock(tmp_path):
     assert done.is_set(), "nested git_repo_lock self-deadlocked"
 
 
-def test_nested_run_git_same_repo_does_not_deadlock(tmp_path):
+def test_nested_run_git_same_repo_does_not_deadlock(tmp_path: Path) -> None:
     """``commit`` calls ``_run_git`` several times in sequence; with the lock
     wired into ``_run_git`` this must still work (the lock is re-entrant)."""
     repo = str(tmp_path / "repo")
@@ -258,7 +271,7 @@ def test_nested_run_git_same_repo_does_not_deadlock(tmp_path):
 # --- repo.py wiring -------------------------------------------------------
 
 
-def test_run_git_holds_lock_for_duration(tmp_path, monkeypatch):
+def test_run_git_holds_lock_for_duration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Every git invocation through ``_run_git`` must hold the per-repo lock for
     its duration — proven by observing the in-process lock is held when the
     subprocess actually runs."""
@@ -268,13 +281,26 @@ def test_run_git_holds_lock_for_duration(tmp_path, monkeypatch):
 
     from general_ludd.git_automation import locking
 
-    key = locking._normalize(repo)
+    git_dir = locking._git_dir(repo)
+    assert git_dir is not None
+    # Worktrees intentionally share the common Git directory as their lock key,
+    # so observe the same canonical lock that ``git_repo_lock`` acquires.
+    key = locking._normalize(git_dir)
     lock = locking._get_inprocess_lock(key)
 
-    observed = {}
+    observed: dict[str, bool] = {}
     real_run = subprocess.run
 
-    def spy_run(*args, **kwargs):
+    def spy_run(
+        command: list[str],
+        *,
+        cwd: str,
+        capture_output: bool,
+        text: Literal[True],
+        check: bool,
+        timeout: float,
+        env: dict[str, str],
+    ) -> subprocess.CompletedProcess[str]:
         # If _run_git holds the RLock, a *different* thread cannot acquire it.
         acquired = lock.acquire(blocking=False)
         if acquired:
@@ -282,7 +308,7 @@ def test_run_git_holds_lock_for_duration(tmp_path, monkeypatch):
             # us). Release the extra acquisition; held==True still holds.
             lock.release()
         # Confirm a foreign thread is blocked out while we run.
-        result_holder = {}
+        result_holder: dict[str, bool] = {}
 
         def foreign() -> None:
             result_holder["got"] = lock.acquire(blocking=False)
@@ -293,7 +319,15 @@ def test_run_git_holds_lock_for_duration(tmp_path, monkeypatch):
         th.start()
         th.join(timeout=2)
         observed["foreign_blocked"] = not result_holder.get("got", True)
-        return real_run(*args, **kwargs)
+        return real_run(
+            command,
+            cwd=cwd,
+            capture_output=capture_output,
+            text=text,
+            check=check,
+            timeout=timeout,
+            env=env,
+        )
 
     monkeypatch.setattr(subprocess, "run", spy_run)
     auto._run_git("rev-parse", "HEAD")

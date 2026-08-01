@@ -363,6 +363,28 @@ versions/platforms, symptom, root cause or uncertainty, mitigation, and the
 requirement IDs it informed. The expert SHALL prefer current official behavior
 when a forum report conflicts with maintained documentation.
 
+### 10.1 Practitioner findings for serialization and CI cancellation
+
+- A GitHub Actions community thread opened in April 2021 reported that
+  workflow-level `cancel-in-progress` appeared to queue rather than cancel, then
+  confirmed the behavior was working in May 2021. The long-lived lesson is that
+  concurrency behavior must be verified rather than inferred from configuration:
+  [GitHub Community discussion #26566](https://github.com/orgs/community/discussions/26566).
+  Current GitHub documentation says a new run in the same group cancels an active
+  run when `cancel-in-progress: true`, so Gludd's push guard MUST remain
+  fail-closed while a branch run is active instead of treating a force override
+  as permission to churn that run. This informs GRC-SEC-004 and GRC-AT-003.
+- Users have reported `.git/index.lock` failures across editor and agent tooling
+  since at least 2021, including a concurrent-process report in
+  [r/logseq](https://www.reddit.com/r/logseq/comments/pmxtg7/) and a 2026 agent
+  report in
+  [r/ClaudeAI](https://www.reddit.com/r/ClaudeAI/comments/1v2m8mu/claude_cowork_repeatedly_leaves_git_indexlock/).
+  Deleting the lock file treats only the symptom and can race a live Git process.
+  Gludd therefore serializes the full duration of every Git subprocess with a
+  repository-common lock, uses a bounded acquisition timeout, and tests regular
+  checkouts plus linked worktrees across threads and spawned processes. This
+  informs GRC-SEC-003, GRC-SEC-004, and GRC-AT-003.
+
 ## 11. Implementation layout
 
 ```text
