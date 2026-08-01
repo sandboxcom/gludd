@@ -630,24 +630,24 @@ class TerraformGenerator:
               timeout_minutes = var.timeout_minutes
               guided_decoding_backend    = var.guided_decoding_backend
               enable_structured_outputs  = var.enable_structured_outputs
-            }
+            }}
 
-            output "instance_id" {
+            output "instance_id" {{
               value = module.vllm_server.instance_id
-            }
+            }}
 
-            output "base_url" {
+            output "base_url" {{
               value = module.vllm_server.base_url
-            }
+            }}
 
             # Legacy aliases (see other providers for rationale).
-            output "instance_ip" {
+            output "instance_ip" {{
               value = module.vllm_server.instance_id
-            }
+            }}
 
-            output "endpoint_url" {
+            output "endpoint_url" {{
               value = module.vllm_server.base_url
-            }
+            }}
         """)
 
     def _generate_vast_ai(self, config: ComputeConfig) -> str:
