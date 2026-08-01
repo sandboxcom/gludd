@@ -82,6 +82,9 @@ paths miss. Primary documentation in the next sections remains authoritative.
 | [Container Apps active-use cost rose 3x to 5x, opened 2023][forum-container-app-cost-spike] | Multiple operators reported replicas billed as active despite metrics below the documented threshold; some shut apps down while Microsoft investigated. | Treat public retail rates as a prediction input, never as billed truth; retain resource/meter identity for delayed Cost Management reconciliation and bias alarms. |
 | [Retail API and pricing-page values disagreed, opened 2021][forum-retail-page-mismatch] | A user found the programmatic retail result differed from the Azure pricing page after currency conversion. | Pin USD, currency, effective date, region, primary-meter status, SKU, meter name, and price type; reject comparisons that mix currencies or contract discounts. |
 | [Terraform-created Azure resources absent from state, opened 2025][forum-terraform-state-gap] | After a late apply failure, operational Azure resources did not appear in state and a rerun wanted to recreate them. | Persist the planned ownership manifest before apply and reconcile it after every partial failure before retrying or deleting. |
+| [AzureRM GPU support request, opened 2024][forum-azurerm-gpu-support] | For about a year the provider rejected both serverless and dedicated Container Apps GPU profile types before the change reached AzureRM 4.55.0. | Pin and test the provider schema; a platform feature announcement is not evidence that the Terraform provider can express it. |
+| [AzureRM GPU follow-up, reported 2025][forum-azurerm-gpu-counts] | After GPU enum support merged, users found that the provider still sent zero-valued environment `minimumCount` and `maximumCount` fields that the serverless GPU API rejected. | Keep environment profile capacity distinct from app replica bounds and use an omission-preserving ARM path until a live test proves the AzureRM encoder is fixed. |
+| [Azure CLI GPU profile-name failure, opened 2025][forum-azure-cli-gpu-name] | A supported long GPU profile type was also used as the profile name and failed the name-length rule; the request body omitted `workloadProfileType`. | Use a short stable profile `name`, send the exact long string only as `workloadProfileType`, and inspect the emitted request in acceptance evidence. |
 
 Closed issues still matter as regression fixtures. They describe observable
 contracts that can recur through provider, API, regional, or configuration
@@ -320,8 +323,8 @@ The runtime generator must never substitute a CPU echo server for a GPU or
 model-readiness assertion. The Azure Container Apps path now materializes a
 deploy-local root module, exact `terraform.tfvars`, and a provider module that
 creates a Consumption GPU workload profile, runs the requested vLLM image and
-model, applies explicit ingress CIDRs, and bounds both the environment and app
-at zero-to-one replicas. T4 maps to `Consumption-GPU-NC8as-T4`; A100 maps to
+model, applies explicit ingress CIDRs, and bounds the app at zero-to-one
+replicas. T4 maps to `Consumption-GPU-NC8as-T4`; A100 maps to
 `Consumption-GPU-NC24-A100`. Unsupported GPU families, non-vLLM engines, and
 multi-GPU-per-replica requests fail before Terraform can create billable
 resources.
@@ -331,6 +334,58 @@ the current AzureRM provider schema. That test proves provider syntax and local
 module completeness, not quota, image startup, GPU identity, inference, or
 teardown. Those remain live-provision acceptance requirements and cannot be
 closed by the validate-only result.
+
+### AzureRM provider and serverless-GPU payload contract
+
+The provider boundary is now versioned explicitly. AzureRM 3.117.1 recognizes
+only `Consumption`, D-series, and E-series workload-profile types in its
+Container Apps helper ([3.117.1 helper source][azurerm-3117-helper]). The GPU
+types first entered the provider through PR 30738, merged in November 2025 and
+released as AzureRM 4.55.0 on December 4, 2025
+([provider change][azurerm-gpu-pr] and [4.x changelog][azurerm-v4-changelog]).
+The current resource documentation includes both
+`Consumption-GPU-NC8as-T4` and `Consumption-GPU-NC24-A100`
+([AzureRM resource schema][azurerm-container-app-environment]). Therefore a
+3.117.1 validation failure is expected; it is not a regional quota failure.
+
+Gludd's supported AzureRM constraint is `>= 4.55.0, < 5.0.0`, with the lock
+file pinning the exact 4.x binary and checksums proven by the live E2E run. The
+initial verified lock candidate is 4.81.0. Version 5 is a separate major-version
+upgrade and must not enter through an unconstrained init. Both the canonical
+provider file and every generated root module must use the same constraint, and
+`make tf-versions-check` must reject drift.
+
+Enum acceptance does not yet make the AzureRM environment payload safe. In
+4.81.0, `ExpandWorkloadProfiles` still attaches `MaximumCount` and
+`MinimumCount` to every profile whose *name* is not exactly `Consumption`
+([4.81.0 helper source][azurerm-481-helper]). That includes a correctly named
+serverless profile such as `gludd-gpu`. The long-running provider discussion
+records Azure rejecting those fields for Consumption GPU profiles after the
+enum fix ([GPU follow-up][forum-azurerm-gpu-counts]). Gludd's module currently
+sets environment counts to zero and one, so schema validation alone is a false
+positive.
+
+Until an upstream encoder change is both released and live-proven, the
+environment is owned by one `azapi_resource` using
+`Microsoft.App/managedEnvironments@2025-07-01`, with a short profile `name`, an
+exact GPU `workloadProfileType`, and both environment `minimumCount` and
+`maximumCount` omitted ([managed-environment ARM schema][arm-managed-environment]).
+The temporary AzAPI constraint is
+`>= 2.11.0, < 3.0.0`, locked initially to 2.11.0. AzAPI is the official
+full-lifecycle escape hatch for ARM features that AzureRM cannot safely encode
+([AzAPI resource][azapi-resource]); AzureRM must not also own the same managed
+environment. App-level `min_replicas=0` and `max_replicas=1` remain valid and
+are deliberately separate from environment node counts.
+
+AzAPI can be removed only when all of these are true in one change: the pinned
+AzureRM source omits both count fields for Consumption GPU profiles; a request
+payload regression test proves omission; `terraform plan` has no ownership or
+replacement drift during the state migration; and a live T4 plus A100-capable
+regional test creates the environment, reaches runtime readiness, scales the
+app to zero, and destroys it. The official workload-profile table confirms the
+two exact profile types and per-replica serverless allocation
+([workload profiles][azure-workload-profiles]); regional availability and quota
+remain independent preflight gates ([serverless GPU overview][azure-serverless-gpu]).
 
 For FPS claims, every declared game fixture must exercise a deterministic menu
 path, key/mouse/controller trace, gameplay-state transition, and captured Azure
@@ -394,7 +449,12 @@ to failure.
 - [Azure Retail Prices API][azure-retail-prices]
 - [Azure Container Apps pricing][azure-container-apps-pricing]
 - [Azure Container Apps serverless GPU overview][azure-serverless-gpu]
+- [Azure Container Apps workload-profile types][azure-workload-profiles]
 - [Azure Cost Management data latency][azure-cost-latency]
+- [AzureRM Container App Environment schema][azurerm-container-app-environment]
+- [AzureRM GPU workload-profile change and release history][azurerm-gpu-pr]
+- [Managed Environment stable ARM schema][arm-managed-environment]
+- [AzAPI full-lifecycle resource contract][azapi-resource]
 - [Gunicorn pre-fork worker design][gunicorn-design]
 - [Gunicorn graceful timeout and worker settings][gunicorn-settings]
 
@@ -409,6 +469,7 @@ to failure.
 [azure-provisioning-state]: https://learn.microsoft.com/en-us/azure/networking/troubleshoot-failed-state#provisioning-states
 [azure-retail-prices]: https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices
 [azure-serverless-gpu]: https://learn.microsoft.com/en-us/azure/container-apps/gpu-serverless-overview
+[azure-workload-profiles]: https://learn.microsoft.com/en-us/azure/container-apps/workload-profiles-overview
 [azure-spot-vms]: https://learn.microsoft.com/en-us/azure/virtual-machines/spot-vms
 [azure-vm-instance-view]: https://learn.microsoft.com/en-us/rest/api/compute/virtual-machines/instance-view
 [azure-vm-states]: https://learn.microsoft.com/en-us/azure/virtual-machines/states-billing
@@ -424,7 +485,17 @@ to failure.
 [forum-terraform-orphan]: https://github.com/hashicorp/terraform-provider-azurerm/issues/7236
 [forum-terraform-state-gap]: https://discuss.hashicorp.com/t/terraform-resources-not-tracked-after-failure-even-when-successfully-deployed/73976
 [forum-vm-deallocating]: https://learn.microsoft.com/en-us/answers/questions/261/trending-on-msdn-virtual-machine-stuck-in-dealloca
+[forum-azure-cli-gpu-name]: https://github.com/Azure/azure-cli/issues/31239
+[forum-azurerm-gpu-counts]: https://github.com/hashicorp/terraform-provider-azurerm/pull/30738
+[forum-azurerm-gpu-support]: https://github.com/hashicorp/terraform-provider-azurerm/issues/28117
 [gludd-accelerator-proof]: ../design/AZURE_ACCELERATOR_LIVE_PROOF.md
 [gludd-postgres-workers]: ../POSTGRES_MULTI_WORKER.md
 [gunicorn-design]: https://docs.gunicorn.org/en/stable/design.html
 [gunicorn-settings]: https://docs.gunicorn.org/en/stable/settings.html
+[azapi-resource]: https://registry.terraform.io/providers/Azure/azapi/latest/docs/resources/resource
+[azurerm-3117-helper]: https://github.com/hashicorp/terraform-provider-azurerm/blob/v3.117.1/internal/services/containerapps/helpers/container_app_environment.go
+[azurerm-481-helper]: https://github.com/hashicorp/terraform-provider-azurerm/blob/v4.81.0/internal/services/containerapps/helpers/container_app_environment.go
+[azurerm-container-app-environment]: https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/container_app_environment
+[azurerm-gpu-pr]: https://github.com/hashicorp/terraform-provider-azurerm/pull/30738
+[azurerm-v4-changelog]: https://github.com/hashicorp/terraform-provider-azurerm/blob/main/CHANGELOG-v4.md#4550-december-04-2025
+[arm-managed-environment]: https://learn.microsoft.com/en-us/azure/templates/microsoft.app/2025-07-01/managedenvironments
