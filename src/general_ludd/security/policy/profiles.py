@@ -58,6 +58,16 @@ def _tuple_input(value: object) -> object:
     return value
 
 
+def _freeze_value(value: object) -> object:
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: _freeze_value(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_value(item) for item in value)
+    if isinstance(value, (set, frozenset)):
+        return frozenset(_freeze_value(item) for item in value)
+    return copy.deepcopy(value)
+
+
 def _sorted_unique_strings(values: tuple[str, ...], *, field_name: str) -> tuple[str, ...]:
     if len(values) != len(set(values)):
         raise ValueError(f"{field_name} contains duplicate entries")
@@ -268,7 +278,10 @@ class PolicyLayer:
             raise ValueError(f"unsupported policy scope: {self.scope}")
         if not isinstance(self.values, Mapping):
             raise TypeError("policy layer values must be a mapping")
-        object.__setattr__(self, "values", MappingProxyType(copy.deepcopy(dict(self.values))))
+        frozen = _freeze_value(self.values)
+        if not isinstance(frozen, Mapping):
+            raise TypeError("policy layer values must remain a mapping")
+        object.__setattr__(self, "values", frozen)
 
 
 @dataclass(frozen=True)

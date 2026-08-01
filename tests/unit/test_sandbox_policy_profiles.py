@@ -237,3 +237,13 @@ def test_layer_constructor_and_administrator_scope_fail_closed() -> None:
         resolve_sandbox_profile(administrator=[])  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="administrator argument"):
         resolve_sandbox_profile(layers=(PolicyLayer(scope="administrator", values={}),))
+
+
+def test_policy_layer_is_deeply_immutable_after_validation() -> None:
+    original = {"network": {"hosts": ["api.example.com"]}}
+    layer = PolicyLayer(scope="project", values=original)
+    original["network"]["hosts"].append("mutated.example.com")  # type: ignore[index,union-attr]
+
+    assert layer.values["network"]["hosts"] == ("api.example.com",)  # type: ignore[index]
+    with pytest.raises(TypeError):
+        layer.values["network"]["mode"] = "proxy"  # type: ignore[index]
