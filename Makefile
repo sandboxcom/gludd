@@ -1485,10 +1485,15 @@ test-e2e-providers:
 
 # Game E2E tests — AI generates games, compares against reference gameplay
 test-e2e-games:
-	@$(UV) run pytest tests/e2e/game_e2e/ -v -m "e2e and not azure_provision"
+	@ARM_CLIENT_ID="$${ARM_CLIENT_ID:-}" ARM_CLIENT_SECRET="$${ARM_CLIENT_SECRET:-}" \
+	 ARM_TENANT_ID="$${ARM_TENANT_ID:-}" ARM_SUBSCRIPTION_ID="$${ARM_SUBSCRIPTION_ID:-}" \
+	 AZURE_MODEL="$${AZURE_MODEL:-}" AZURE_BASE_URL="$${AZURE_BASE_URL:-}" \
+	 $(UV) run pytest tests/e2e/game_e2e/ -v -m "e2e and not azure_provision"
 
 test-e2e-games-provision:
-	@AZURE_PROVISION_E2E=1 $(UV) run pytest tests/e2e/game_e2e/ -v -m azure_provision
+	@ARM_CLIENT_ID="$${ARM_CLIENT_ID:-}" ARM_CLIENT_SECRET="$${ARM_CLIENT_SECRET:-}" \
+	 ARM_TENANT_ID="$${ARM_TENANT_ID:-}" ARM_SUBSCRIPTION_ID="$${ARM_SUBSCRIPTION_ID:-}" \
+	 AZURE_PROVISION_E2E=1 $(UV) run pytest tests/e2e/game_e2e/ -v -m azure_provision
 
 test-games:
 	@$(UV) run python -m pytest tests/e2e/test_game_building_deepseek.py $(_XD) -v $(PYTEST_ARGS)

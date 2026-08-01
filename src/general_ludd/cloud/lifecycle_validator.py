@@ -82,9 +82,9 @@ SUPPORTED_PROVIDERS: frozenset[str] = frozenset({"azure", "aws", "gcp", "runpod"
 
 _PROVIDER_CRED_VARS: dict[str, list[str]] = {
     "azure": [
-        "AZURE_CLIENT_ID",
-        "AZURE_TENANT_ID",
-        "AZURE_SUBSCRIPTION_ID",
+        "ARM_CLIENT_ID",
+        "ARM_TENANT_ID",
+        "ARM_SUBSCRIPTION_ID",
     ],
     "aws": [
         "AWS_ACCESS_KEY_ID",

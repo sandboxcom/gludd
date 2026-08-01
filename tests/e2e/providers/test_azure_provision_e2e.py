@@ -109,8 +109,8 @@ class TestAzureProvisionE2E:
         max_spend = max(float(_get_env("GLUDD_E2E_MAX_SPEND_USD", "5")), 1.0)
         engine = _resolve_engine()
         gpu = _resolve_gpu()
-        deploy_type = _get_env("AZURE_DEPLOY_TYPE", "vm") or "vm"
-        model = _get_env("AZURE_PROVISION_MODEL", "microsoft/phi-2")
+        deploy_type = _get_env("AZURE_DEPLOY_TYPE", "containerapp") or "containerapp"
+        model = _get_env("AZURE_MODEL", "microsoft/phi-2")
 
         config = ComputeConfig(
             provider=ComputeProvider.AZURE,

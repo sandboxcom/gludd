@@ -53,8 +53,7 @@ def _build_azure_gateway():
     Uses the endpoint URL from AzureGameE2E if provisioned, or
     AZURE_BASE_URL if pre-provisioned. NEVER falls back to DeepSeek/OpenAI.
     """
-    from general_ludd.models.gateway import ModelGateway
-    from general_ludd.models.profiles import ModelProfile
+    from general_ludd.models.gateway import ModelGateway, ModelProfile
 
     base_url = os.environ.get("AZURE_BASE_URL")
 
@@ -67,9 +66,9 @@ def _build_azure_gateway():
     profile = ModelProfile(
         model_profile_id="azure_gpu_coder",
         provider="openai",
-        model=os.environ.get("AZURE_MODEL", "qwen2.5-coder-7b"),
-        api_base_url=base_url,
-        api_key=os.environ.get("AZURE_API_KEY", "sk-azure-local"),
+        model_name=os.environ.get("AZURE_MODEL", "qwen2.5-coder-7b"),
+        api_base_alias="AZURE_BASE_URL",
+        credential_alias="AZURE_API_KEY",
     )
     return ModelGateway(profiles=[profile])
 
