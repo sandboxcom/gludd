@@ -41,7 +41,6 @@ forwarded to the transport via ``verify`` kwarg if the transport accepts it),
 from __future__ import annotations
 
 import ipaddress
-import logging
 import os
 import re
 from datetime import UTC, datetime
@@ -51,9 +50,11 @@ from urllib.parse import quote, urlencode, urlsplit
 import httpx
 
 from general_ludd.connectors._protocols import HttpResponse
+from general_ludd.connectors.exc_sanitizer import (
+    sanitize_exc_for_health,
+    sanitize_exc_for_query,
+)
 from general_ludd.security.ssrf import BLOCKED_HOST_NAMES, BLOCKED_METADATA_IPS, host_is_blocked
-
-logger = logging.getLogger(__name__)
 
 __all__ = ["KubernetesSource"]
 
@@ -331,9 +332,8 @@ class KubernetesSource:
             url = f"{self._api_server}{path}"
             try:
                 resp = self._send(url, accept="application/json")
-            except Exception:
-                logger.warning("kubernetes health check failed", exc_info=True)
-                return {"ok": False, "detail": "health check failed"}
+            except Exception as exc:
+                return {"ok": False, "detail": sanitize_exc_for_health(exc)}
             if 200 <= resp.status_code < 300:
                 return {"ok": True, "detail": f"{path} -> {resp.status_code}"}
         return {
@@ -359,10 +359,10 @@ class KubernetesSource:
                 return self._query_events(spec)
             return [self._error(f"unknown mode {mode!r} (expected 'logs' or 'events')")]
         except _ConfigError as exc:
-            logger.warning("kubernetes config error in query", exc_info=True)
-            return [self._error(str(exc))]
-        except Exception:
-            logger.exception("kubernetes query failed")
+            sanitize_exc_for_query(exc)
+            return [self._error("token configuration unavailable")]
+        except Exception as exc:
+            sanitize_exc_for_query(exc)
             return [self._error("query failed")]
 
     # -- logs -------------------------------------------------------------- #

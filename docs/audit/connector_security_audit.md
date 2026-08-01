@@ -164,6 +164,25 @@ the facade (`base.py`) so it covers all sources.
   stringified) contains `SEKRET` or `api_key=`.
 - `test_raw_is_not_live_exception`: assert `record["raw"]` is not an `Exception`.
 
+**2026-08-01 implementation update:** the canonical connector exception sanitizer
+now emits only the exception type in both records and logs; it never attaches
+`exc_info`, exception text, URLs, paths, or credentials. The Kubernetes connector
+uses that sanitizer for health, configuration, and transport failures while
+returning stable, non-secret messages. Regression coverage is in
+`tests/unit/test_h20_connector_exc_leak.py`,
+`tests/unit/test_connector_kubernetes.py`, and
+`tests/unit/test_connector_kubernetes_no_leak.py`.
+
+This closes a failure mode seen in long-lived operator reports: Requests users
+have posted tracebacks containing complete authenticated endpoint paths in
+[issue #4246](https://github.com/psf/requests/issues/4246) and full request URLs
+plus local source paths in
+[issue #5801](https://github.com/psf/requests/issues/5801). It also follows the
+[OWASP Logging Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html),
+which requires tokens, passwords, connection strings, keys, and potentially file
+paths or internal network names to be removed, masked, or sanitized before log
+storage.
+
 ### F4 — Single-label internal hostnames pass every guard but Azure's (Low)
 
 **Where:** `azure_monitor.py:89` rejects dot-less, colon-less hosts:

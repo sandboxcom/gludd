@@ -27,8 +27,7 @@ __all__ = [
 def sanitize_exc_for_health(exc: BaseException) -> str:
     """Return a safe detail string for a failing ``health()`` response.
 
-    Always logs the full traceback with ``exc_info=True`` and returns
-    ``"health check failed"`` — a generic, path-free, token-free label.
+    Logs only the exception type and returns that path-free, token-free label.
 
     Usage in connector ``health()`` methods::
 
@@ -41,8 +40,8 @@ def sanitize_exc_for_health(exc: BaseException) -> str:
 def sanitize_exc_for_query(exc: BaseException) -> str:
     """Return a safe error message for a ``query()`` error record.
 
-    Always logs the full traceback with ``exc_info=True`` and returns
-    ``type(exc).__name__`` — no paths, tokens, URLs, or stack traces.
+    Logs only the exception type and returns ``type(exc).__name__`` — no paths,
+    tokens, URLs, or stack traces in either the caller response or log stream.
 
     Usage in connector ``query()`` methods::
 

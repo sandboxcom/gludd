@@ -134,6 +134,9 @@ def test_sanitize_exc_for_health_no_leak(caplog: pytest.LogCaptureFixture) -> No
     assert "abc123" not in result
     assert result == "RuntimeError"
     assert len(caplog.records) >= 1
+    assert "/home/" not in caplog.text
+    assert "token=abc123" not in caplog.text
+    assert all(record.exc_info is None for record in caplog.records)
 
 
 # ── sanitize_exc_for_query ──────────────────────────────────────────────
@@ -148,6 +151,9 @@ def test_sanitize_exc_for_query_no_leak(caplog: pytest.LogCaptureFixture) -> Non
     assert "secret=zzz" not in result
     assert result == "ValueError"
     assert len(caplog.records) >= 1
+    assert "leak.me" not in caplog.text
+    assert "secret=zzz" not in caplog.text
+    assert all(record.exc_info is None for record in caplog.records)
 
 
 # ── Kubernetes sink (top-3) ─────────────────────────────────────────────
