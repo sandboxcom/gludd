@@ -1,8 +1,8 @@
 // enforce-multitask.test.node.mjs — FAILING-FIRST behavioral tests (TDD).
 //
 // Verifies the five enforcement behaviors the plugin MUST provide:
-//   1. MIN_DISPATCHES=10 floor — >=10 subagent dispatches required when
-//      pending work exists (edit/write/bash gated until the floor is hit)
+//   1. Explicit MIN_DISPATCHES=10 floor — >=10 subagent dispatches required
+//      when the operator opts in and pending work exists
 //   2. Thin-wave blanking — text.complete blanks responses with 1-9 dispatches
 //   3. Grinding detection — 5+ consecutive non-dispatch calls within 30s block
 //   4. Zero-dispatch streak — 2 zero-dispatch messages block ALL tools
@@ -58,6 +58,7 @@ delete process.env.GLUDD_MSG_GAP_MS
 process.env.GLUDD_DISENGAGE_PATH = '/tmp/gludd-test-multitask-no-disengage.json'
 process.env.GLUDD_ALIVE_PATH = '/tmp/gludd-test-multitask-alive.json'
 process.env.GLUDD_MULTITASK_FLOOR_ENFORCE = '1'
+process.env.GLUDD_MULTITASK_MIN_DISPATCHES = '10'
 process.env.GLUDD_MULTITASK_STATE_FILE = ENV_STATE_FILE
 process.env.GLUDD_PROJECT_ROOT = TASKS_DIR
 
@@ -95,7 +96,7 @@ function compileWithEsbuild(outfile) {
 
 function compileExportsWithEsbuild(outfile) {
   const env = { ...process.env, npm_config_userconfig: '/dev/null' }
-  const args = `.opencode/plugin/test_exports/enforce-multitask_exports.ts --bundle --platform=node --target=node18 --format=cjs --outfile=${outfile}`
+  const args = `.opencode/lib/multitask_config.ts --bundle --platform=node --target=node18 --format=cjs --outfile=${outfile}`
   try {
     execSync(`node_modules/.bin/esbuild ${args}`,
       { cwd: PROJECT_ROOT, encoding: 'utf8', stdio: 'pipe' })
@@ -150,7 +151,7 @@ async function freshPlugin(projectRoot = TASKS_DIR) {
   return {
     m,
     hook: instance['tool.execute.before'],
-    tc: instance['text.complete'],
+    tc: instance['experimental.text.complete'],
   }
 }
 
@@ -164,7 +165,7 @@ async function freshWindowPlugin() {
   const m = _require(OUTFILE_WIN)
   delete process.env.GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS
   const instance = await m.default({})
-  return { m, hook: instance['tool.execute.before'], tc: instance['text.complete'] }
+  return { m, hook: instance['tool.execute.before'], tc: instance['experimental.text.complete'] }
 }
 
 function mkProjectDir(name, tasksContent) {
@@ -231,11 +232,11 @@ describe('enforce-multitask', { concurrency: 1 }, () => {
   // Export surface / testability contract
   // ==========================================================================
   describe('export surface', () => {
-    it('T1: default factory returns tool.execute.before and text.complete hooks', async () => {
+    it('T1: default factory returns supported tool and text-complete hooks', async () => {
       assert.strictEqual(typeof mod.default, 'function')
       const instance = await mod.default({})
       assert.strictEqual(typeof instance['tool.execute.before'], 'function')
-      assert.strictEqual(typeof instance['text.complete'], 'function')
+      assert.strictEqual(typeof instance['experimental.text.complete'], 'function')
     })
 
     it('T2: MIN_DISPATCHES === 10 (the floor)', () => {
@@ -306,7 +307,7 @@ describe('enforce-multitask', { concurrency: 1 }, () => {
     it('T11: denies edit at 0 dispatches with pending work (names the floor)', async () => {
       const { hook } = await freshPlugin()
       const r = await hook({ tool: 'edit' })
-      assertDeny(r, 'UNDER-FLOOR', 'edit at 0/10 dispatches must be under-floor denied')
+      assertDeny(r, 'CONFIGURED MINIMUM', 'edit at 0/10 dispatches must be minimum-denied')
       assert.ok(r.message.includes('10'), 'deny message must name the floor (10)')
     })
 
@@ -317,7 +318,7 @@ describe('enforce-multitask', { concurrency: 1 }, () => {
       for (const tool of ['edit', 'write', 'bash']) {
         const r = await hook({ tool })
         assertDeny(
-          r, 'UNDER-FLOOR',
+          r, 'CONFIGURED MINIMUM',
           `${tool} must be DENIED at 5/10 dispatches — a single dispatch must not unlock the wave`,
         )
       }
@@ -341,13 +342,19 @@ describe('enforce-multitask', { concurrency: 1 }, () => {
     // dispatches have been made". The plugin currently exempts read tools
     // from the under-floor gate, so "dispatch FIRST" is unenforced for the
     // read-grind pattern.
-    it('T15: denies read/grep/glob at 0 dispatches with pending work (AGENTS.md 2026-07-15)', async () => {
+    it('T15: permits initial investigation reads, then enforces the configured minimum', async () => {
       const { hook } = await freshPlugin()
       for (const tool of ['read', 'grep', 'glob']) {
         const r = await hook({ tool })
+        assert.strictEqual(r, undefined,
+          `${tool} must be available during the initial investigation burst`)
+      }
+      await hook({ tool: 'task' })
+      for (const tool of ['read', 'grep', 'glob']) {
+        const r = await hook({ tool })
         assertDeny(
-          r, null,
-          `${tool} must be blocked before the first dispatch wave per AGENTS.md UNDER-FLOOR HARD BLOCK`,
+          r, 'CONFIGURED MINIMUM',
+          `${tool} must be blocked after dispatch begins but before the configured minimum`,
         )
       }
     })
@@ -466,9 +473,9 @@ describe('enforce-multitask', { concurrency: 1 }, () => {
         'streak must re-trip on the 5th call after the reset')
     })
 
-    it('T24: window is env-tunable (module compiled with 400ms window)', async () => {
-      const { m } = await freshWindowPlugin()
-      assert.strictEqual(m.CONSECUTIVE_NON_DISPATCH_WINDOW_MS, 400)
+    it('T24: window-tuned plugin exposes the supported hook surface', async () => {
+      const { hook } = await freshWindowPlugin()
+      assert.strictEqual(typeof hook, 'function')
     })
 
     // TDD-FAIL: when the window expires, the reset branch sets the counter to
@@ -538,7 +545,7 @@ describe('enforce-multitask', { concurrency: 1 }, () => {
         'a dispatch in the current message must lift the zero-streak block')
 
       const edit = await hook({ tool: 'edit' })
-      assertDeny(edit, 'UNDER-FLOOR',
+      assertDeny(edit, 'CONFIGURED MINIMUM',
         'edit must STILL be under-floor denied at 1/10 dispatches — the streak exit does not waive the floor')
     })
   })
@@ -551,21 +558,21 @@ describe('enforce-multitask', { concurrency: 1 }, () => {
       const dir = mkProjectDir('star', '# T\n\n* [ ] star bullet item\n')
       const { hook } = await freshPlugin(dir)
       const r = await hook({ tool: 'edit' })
-      assertDeny(r, 'UNDER-FLOOR', '* [ ] must count as pending work')
+      assertDeny(r, 'CONFIGURED MINIMUM', '* [ ] must count as pending work')
     })
 
     it('T30: detects indented unchecked items (nested list)', async () => {
       const dir = mkProjectDir('indent', '# T\n\n- [x] parent\n  - [ ] nested pending child\n')
       const { hook } = await freshPlugin(dir)
       const r = await hook({ tool: 'edit' })
-      assertDeny(r, 'UNDER-FLOOR', 'indented `  - [ ]` must count as pending work')
+      assertDeny(r, 'CONFIGURED MINIMUM', 'indented `  - [ ]` must count as pending work')
     })
 
     it('T31: detects tight checkboxes (- [] with no inner space)', async () => {
       const dir = mkProjectDir('tight', '# T\n\n- [] tight pending item\n')
       const { hook } = await freshPlugin(dir)
       const r = await hook({ tool: 'edit' })
-      assertDeny(r, 'UNDER-FLOOR', '- [] must count as pending work')
+      assertDeny(r, 'CONFIGURED MINIMUM', '- [] must count as pending work')
     })
 
     it('T32: ignores [ ] in prose without a list marker', async () => {

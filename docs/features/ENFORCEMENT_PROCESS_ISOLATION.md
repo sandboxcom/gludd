@@ -55,14 +55,35 @@ The design conclusion is deliberately stronger than trying to tune process flags
 plugin evaluation is process-pure, while project orchestration remains explicit
 and observable.
 
+## Loader-surface isolation
+
+An enforcement plugin is also a loader boundary. OpenCode's legacy discovery
+iterates the runtime exports of auto-discovered plugin modules, so raw named
+constants or objects can be mistaken for plugin factories and prevent startup.
+`enforce-multitask.ts` therefore exports only its default factory. Its validated,
+test-visible configuration lives in `.opencode/lib/multitask_config.ts`, outside
+the auto-discovered directory, and runtime tests exercise the public factory
+rather than exporting an internal implementation or reset hook.
+
+This failure class is visible in long-lived operator reports even when the exact
+bad export differs. [OpenCode issue #8006](https://github.com/anomalyco/opencode/issues/8006)
+records plugin packaging/ESM exports making installed plugins unloadable, while
+[OpenCode issue #7810](https://github.com/anomalyco/opencode/issues/7810)
+records malformed extension configuration preventing launch without a useful
+diagnostic. These reports support a fail-fast build-time loader check and a
+minimal runtime export surface; they do not claim those upstream reports had
+Gludd's exact named-constant cause.
+
 ## Verification
 
 The acceptance sequence is:
 
 1. Run `make test-files TESTFILES='tests/unit/test_enforcement_gate_spawn_safety.py'`.
-2. Run `make test-hook-runtime`.
-3. Run `make verify-enforcement`.
-4. Run `make ps` and confirm that verification left no project process behind.
+2. Run `make check-plugin-hooks`.
+3. Run `make test-multitask-node`.
+4. Run `make test-hook-runtime`.
+5. Run `make verify-enforcement`.
+6. Run `make ps` and confirm that verification left no project process behind.
 
 Because OpenCode loads plugin entrypoints at startup, editing this plugin requires
 an OpenCode restart before the running session uses the new implementation.

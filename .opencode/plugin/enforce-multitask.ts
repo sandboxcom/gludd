@@ -4,6 +4,16 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 import {
+  CONSECUTIVE_NON_DISPATCH_THRESHOLD,
+  CONSECUTIVE_NON_DISPATCH_WINDOW_MS,
+  HARD_MAX_DISPATCHES,
+  MAX_DISPATCHES,
+  MAX_ZERO_STREAK,
+  MIN_DISPATCHES,
+  MSG_GAP_MS,
+  MULTITASK_STATE_FILE,
+} from "../lib/multitask_config.ts"
+import {
   isSubagent,
   reportAlive,
   isDispatchTool,
@@ -26,32 +36,10 @@ const FLOOR_ENFORCE = process.env.GLUDD_MULTITASK_FLOOR_ENFORCE !== "0"
 const CONFIGURED_MIN_DISPATCHES =
   process.env.GLUDD_MIN_DISPATCHES || process.env.GLUDD_MULTITASK_MIN_DISPATCHES
 const HAS_CONFIGURED_MIN_DISPATCHES = CONFIGURED_MIN_DISPATCHES !== undefined
-export const MIN_DISPATCHES = parseInt(
-  process.env.GLUDD_MIN_DISPATCHES ||
-  process.env.GLUDD_MULTITASK_MIN_DISPATCHES ||
-  "10",
-  10,
-)
-const HARD_MAX_DISPATCHES = 10
-const CONFIGURED_MAX_DISPATCHES = parseInt(
-  process.env.GLUDD_MULTITASK_MAX_DISPATCHES || "10", 10)
-export const MAX_DISPATCHES = Math.max(1, Math.min(HARD_MAX_DISPATCHES,
-  Number.isFinite(CONFIGURED_MAX_DISPATCHES) ? CONFIGURED_MAX_DISPATCHES : HARD_MAX_DISPATCHES,
-))
 const REQUIRED_DISPATCHES = HAS_CONFIGURED_MIN_DISPATCHES
-  ? Math.max(0, Math.min(MAX_DISPATCHES, MIN_DISPATCHES))
+  ? Math.max(0, Math.min(MAX_DISPATCHES, Number.isFinite(MIN_DISPATCHES) ? MIN_DISPATCHES : 0))
   : 0
-const MAX_ZERO_STREAK = 2
 const WAVE_HISTORY_SIZE = 10
-// Inter-call gap that marks a new agent message. Env-tunable so e2e tests can
-// drive the real boundary logic without 5s sleeps; production default unchanged.
-const MSG_GAP_MS = parseInt(process.env.GLUDD_MSG_GAP_MS || "5000", 10)
-const CONSECUTIVE_NON_DISPATCH_THRESHOLD = parseInt(
-  process.env.GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD || "5", 10)
-const CONSECUTIVE_NON_DISPATCH_WINDOW_MS = parseInt(
-  process.env.GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS || "30000", 10)
-// Env-overridable (T10) so tests isolate from live sessions; default stays in /tmp.
-export const MULTITASK_STATE_FILE = process.env.GLUDD_MULTITASK_STATE_FILE || "/tmp/gludd-multitask-state.json"
 interface MultitaskState {
   pid: number
   thisMessageDispatches: number
@@ -205,17 +193,11 @@ let _state: MultitaskState = (() => {
   writeState(s)
   return s
 })()
-// Per-test state isolation (T8): resets both the in-memory module state and
-// the persisted state file to a fresh baseline.
-export function resetMultitaskState(): void {
-  _state = freshState()
-  writeState(_state)
-}
 // ============================================================================
 // DEFAULT IMPLEMENTATION (compiled-in fallback)
-// Exported (T7) so tests invoke the real hooks without hot-module indirection.
+// Module-private because named exports crash OpenCode's legacy plugin loader.
 // ============================================================================
-export const defaultImpl: HotModule = {
+const defaultImpl: HotModule = {
   "tool.execute.before": async (input: { tool?: string }) => {
     // process.env.OPENCODE_SUBAGENT guard
     if (isSubagent()) return

@@ -22,6 +22,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-multitask.ts"
+CONFIG = ROOT / ".opencode" / "lib" / "multitask_config.ts"
 
 
 def _run_test_script(script: str, env_extra: dict | None = None) -> dict:
@@ -66,6 +67,10 @@ class TestGrindingBlockStatic:
     def src(self):
         return PLUGIN.read_text()
 
+    @pytest.fixture(scope="class")
+    def config_src(self):
+        return CONFIG.read_text()
+
     def test_consecutive_non_dispatch_threshold_constant(self, src):
         """CONSECUTIVE_NON_DISPATCH_THRESHOLD must be defined and defaults to 5."""
         assert "CONSECUTIVE_NON_DISPATCH_THRESHOLD" in src, (
@@ -94,23 +99,25 @@ class TestGrindingBlockStatic:
             "Comment confirming counter reset in dispatch branch must exist"
         )
 
-    def test_env_var_tunable_threshold(self, src):
+    def test_env_var_tunable_threshold(self, src, config_src):
         """Threshold must be env-tunable via GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD."""
-        assert "GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD" in src, (
+        assert "CONSECUTIVE_NON_DISPATCH_THRESHOLD" in src
+        assert "GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD" in config_src, (
             "CONSECUTIVE_NON_DISPATCH_THRESHOLD must read from env var"
         )
 
-    def test_defaultimpl_exported(self, src):
-        """defaultImpl must be exported for direct testability."""
-        assert "export const defaultImpl" in src or "export { defaultImpl" in src, (
-            "defaultImpl must be exported so tests can invoke hooks directly"
-        )
+    def test_defaultimpl_is_module_private(self, src):
+        """The fallback implementation must not become a loader-visible export."""
+        assert "const defaultImpl: HotModule" in src
+        assert "export const defaultImpl" not in src
 
-    def test_reset_multitask_state_exported(self, src):
-        """resetMultitaskState must be exported for test isolation."""
-        assert "export function resetMultitaskState" in src or "export const resetMultitaskState" in src, (
-            "resetMultitaskState must be exported"
-        )
+    def test_state_isolation_uses_configurable_file_not_named_reset(
+        self, src, config_src,
+    ):
+        """Tests isolate state through the configured file and a fresh process."""
+        assert "MULTITASK_STATE_FILE" in src
+        assert "GLUDD_MULTITASK_STATE_FILE" in config_src
+        assert "export function resetMultitaskState" not in src
 
 
 # ── Runtime tests ──────────────────────────────────────────────────────────
@@ -160,10 +167,8 @@ try {{ fs.unlinkSync("{state_file}"); }} catch (e) {{}}
 // Dynamic import so env vars above take effect before module init
 const mod = await import("{PLUGIN}");
 
-const hook = mod.defaultImpl["tool.execute.before"];
-
-// Always reset state to start fresh
-mod.resetMultitaskState();
+const plugin = await mod.default({{}});
+const hook = plugin["tool.execute.before"];
 
 async function run() {{
     const results = [];
@@ -211,6 +216,9 @@ console.log(JSON.stringify(results));
                     **os.environ,
                     "GLUDD_MULTITASK_STATE_FILE": "",
                     "GLUDD_PROJECT_ROOT": "",
+                    "GLUDD_HOT_MODULE_PREFIX": (
+                        f"/tmp/test-grind-no-hot-{os.getpid()}-"
+                    ),
                     "OPENCODE_SUBAGENT": "",
                 },
             )
@@ -263,8 +271,8 @@ import * as fs from "node:fs";
 try {{ fs.unlinkSync("{state_file}"); }} catch (e) {{}}
 
 const mod = await import("{PLUGIN}");
-const hook = mod.defaultImpl["tool.execute.before"];
-mod.resetMultitaskState();
+const plugin = await mod.default({{}});
+const hook = plugin["tool.execute.before"];
 
 async function run() {{
     var results = [];
@@ -363,8 +371,8 @@ import * as fs from "node:fs";
 try {{ fs.unlinkSync("{state_file}"); }} catch (e) {{}}
 
 const mod = await import("{PLUGIN}");
-const hook = mod.defaultImpl["tool.execute.before"];
-mod.resetMultitaskState();
+const plugin = await mod.default({{}});
+const hook = plugin["tool.execute.before"];
 
 async function run() {{
     var results = [];
@@ -457,8 +465,8 @@ import * as fs from "node:fs";
 try {{ fs.unlinkSync("{state_file}"); }} catch (e) {{}}
 
 const mod = await import("{PLUGIN}");
-const hook = mod.defaultImpl["tool.execute.before"];
-mod.resetMultitaskState();
+const plugin = await mod.default({{}});
+const hook = plugin["tool.execute.before"];
 
 async function run() {{
     var results = [];
@@ -516,8 +524,8 @@ import * as fs from "node:fs";
 try {{ fs.unlinkSync("{state_file}"); }} catch (e) {{}}
 
 const mod = await import("{PLUGIN}");
-const hook = mod.defaultImpl["tool.execute.before"];
-mod.resetMultitaskState();
+const plugin = await mod.default({{}});
+const hook = plugin["tool.execute.before"];
 
 async function run() {{
     var results = [];
@@ -585,8 +593,8 @@ import * as fs from "node:fs";
 try {{ fs.unlinkSync("{state_file}"); }} catch (e) {{}}
 
 const mod = await import("{PLUGIN}");
-const hook = mod.defaultImpl["tool.execute.before"];
-mod.resetMultitaskState();
+const plugin = await mod.default({{}});
+const hook = plugin["tool.execute.before"];
 
 async function run() {{
     var results = [];
