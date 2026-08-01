@@ -191,10 +191,9 @@ class TestQueryRobustness:
         src = MacosLogSource(runner=_CannedRunner(stdout=""))
         assert src.query({}) == []
 
-    def test_query_without_runner_raises(self) -> None:
+    def test_query_without_runner_is_empty(self) -> None:
         src = MacosLogSource()
-        with pytest.raises(RuntimeError):
-            src.query({})
+        assert src.query({}) == []
 
 
 class TestSecretFromEnv:

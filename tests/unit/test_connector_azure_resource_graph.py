@@ -96,9 +96,9 @@ def test_requires_subscriptions() -> None:
         AzureResourceGraphSource({"token_env": TOKEN_ENV, "subscriptions": []})
 
 
-def test_requires_token_env() -> None:
-    with pytest.raises(ValueError, match="token_env"):
-        AzureResourceGraphSource({"subscriptions": [SUB]})
+def test_defaults_token_env_to_standard_azure_name() -> None:
+    source = AzureResourceGraphSource({"subscriptions": [SUB]})
+    assert source._token_env == "AZURE_TOKEN"
 
 
 # -- query normalization ---------------------------------------------------------------

@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import contextlib
 import importlib
+import inspect
 import logging
 import pkgutil
 import re
@@ -139,7 +140,11 @@ class ConnectorRegistry:
             # itself incur network/secret side effects; rejecting it here keeps
             # those side effects from firing just for the instance to be
             # discarded by the post-construction _SourceLike check below.
-            if config.get("factory") is None:
+            # Explicit factory maps may contain either Source classes or
+            # factory functions. Classes are safe to preflight structurally;
+            # functions must be invoked before their return interface is known.
+            # Non-callables are always rejected as discovery failures.
+            if inspect.isclass(factory) or not callable(factory):
                 _validate_source_class(factory)
         except Exception as exc:  # discovery failure — skip, never abort
             self._errors.append({"name": name, "error": f"discovery: {exc}"})

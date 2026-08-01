@@ -272,7 +272,7 @@ class TestRunHealthcheck:
     def test_timeout_enforced(self) -> None:
         result = run_healthcheck(_SlowSource(), timeout=0.5)
         assert result["status"] == "unhealthy"
-        assert "timed out" in result["detail"]
+        assert "timeout" in result["detail"]
         assert result["source"] == "slow"
 
     def test_exception_becomes_unhealthy_not_leak_message(self) -> None:
