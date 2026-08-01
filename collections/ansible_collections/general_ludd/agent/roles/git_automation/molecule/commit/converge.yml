@@ -18,20 +18,10 @@
         state: directory
         mode: "0755"
 
-    - name: "Initialize git repository"
-      ansible.builtin.command:
-        cmd: git init
-        chdir: "{{ test_dir }}"
-      changed_when: true
-
-    - name: "Configure git user for test"
-      ansible.builtin.command:
-        cmd: "git config {{ item.key }} {{ item.value }}"
-        chdir: "{{ test_dir }}"
-      changed_when: true
-      loop:
-        - { key: "user.email", value: "test@example.com" }
-        - { key: "user.name", value: "Molecule Test" }
+    - name: "Initialize git repository through the hardened control plane"
+      general_ludd.agent.gludd_git:
+        path: "{{ test_dir }}"
+        op: init
 
     - name: "Create initial file and first commit (so HEAD exists)"
       ansible.builtin.copy:
@@ -39,11 +29,11 @@
         content: "base content\n"
         mode: "0644"
 
-    - name: "Stage and commit initial file"
-      ansible.builtin.command:
-        cmd: "git add -A && git commit -m 'initial commit'"
-        chdir: "{{ test_dir }}"
-      changed_when: true
+    - name: "Commit initial file through the hardened control plane"
+      general_ludd.agent.gludd_git:
+        path: "{{ test_dir }}"
+        op: commit
+        message: "initial commit"
 
     - name: "Create file to commit via the role"
       ansible.builtin.copy:

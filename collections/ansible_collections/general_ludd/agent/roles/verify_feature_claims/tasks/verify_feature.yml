@@ -2,7 +2,7 @@
 # verify_feature.yml — verify ONE feature's evidence refs + commit hashes.
 # Included via include_tasks loop from main.yml with loop_var: _vfc_feature.
 
-- name: "{{ _vfc_feature.id }} — Parse evidence refs into typed paths"
+- name: "Parse evidence refs into typed paths — {{ _vfc_feature.id }}"
   ansible.builtin.set_fact:
     _vf_typed_refs: >-
       {%- set out = [] -%}
@@ -15,7 +15,7 @@
       {%- endfor -%}
       {{ out }}
 
-- name: "{{ _vfc_feature.id }} — Resolve evidence refs to filesystem paths"
+- name: "Resolve evidence refs to filesystem paths — {{ _vfc_feature.id }}"
   ansible.builtin.set_fact:
     _vf_stat_paths: >-
       {%- set paths = [] -%}
@@ -42,14 +42,14 @@
       {%- endfor -%}
       {{ paths }}
 
-- name: "{{ _vfc_feature.id }} — Stat all evidence"
+- name: "Stat all evidence — {{ _vfc_feature.id }}"
   ansible.builtin.stat:
     path: "{{ item }}"
   loop: "{{ _vf_stat_paths }}"
   register: _vf_stats
   when: _vf_stat_paths | length > 0
 
-- name: "{{ _vfc_feature.id }} — Stat test files for content check"
+- name: "Stat test files for content check — {{ _vfc_feature.id }}"
   ansible.builtin.stat:
     path: "{{ item }}"
     checksum_algorithm: sha1
@@ -59,17 +59,15 @@
     - check_test_content | bool
     - _vf_test_paths | length > 0
 
-- name: "{{ _vfc_feature.id }} — Tally file evidence"
+- name: "Tally file evidence — {{ _vfc_feature.id }}"
   ansible.builtin.set_fact:
     _vf_total_file_refs: "{{ _vf_stat_paths | length }}"
     _vf_existing_files: >-
-      {%- if _vf_stat_paths | length == 0 -%}0
-      {%- else -%}
+      {%- if _vf_stat_paths | length == 0 -%}0{%- else -%}
         {{ _vf_stats.results | selectattr('stat.exists') | list | length }}
       {%- endif -%}
     _vf_missing_files: >-
-      {%- if _vf_stat_paths | length == 0 -%}[]
-      {%- else -%}
+      {%- if _vf_stat_paths | length == 0 -%}[]{%- else -%}
         {{ _vf_stats.results | rejectattr('stat.exists') | map(attribute='item') | list }}
       {%- endif -%}
     _vf_empty_tests: >-
@@ -81,14 +79,14 @@
            | map(attribute='item') | list }}
       {%- endif -%}
 
-- name: "{{ _vfc_feature.id }} — Extract commit hashes from notes"
+- name: "Extract commit hashes from notes — {{ _vfc_feature.id }}"
   ansible.builtin.set_fact:
     _vf_commits: >-
       {%- set raw = _vfc_feature.notes | default('') -%}
       {%- set matches = raw | regex_findall('\\[([a-fA-F0-9]{7,40})\\]') -%}
       {{ matches | unique | list }}
 
-- name: "{{ _vfc_feature.id }} — Git-log check commit hashes"
+- name: "Git-log check commit hashes — {{ _vfc_feature.id }}"
   ansible.builtin.command:
     argv:
       - git
@@ -106,17 +104,15 @@
     - check_commits | bool
     - _vf_commits | length > 0
 
-- name: "{{ _vfc_feature.id }} — Tally commit evidence"
+- name: "Tally commit evidence — {{ _vfc_feature.id }}"
   ansible.builtin.set_fact:
     _vf_total_commits: "{{ _vf_commits | length }}"
     _vf_existing_commits: >-
-      {%- if not (check_commits | bool) or _vf_commits | length == 0 -%}0
-      {%- else -%}
+      {%- if not (check_commits | bool) or _vf_commits | length == 0 -%}0{%- else -%}
         {{ _vf_commit_results.results | selectattr('rc', 'equalto', 0) | list | length }}
       {%- endif -%}
     _vf_missing_commits: >-
-      {%- if not (check_commits | bool) or _vf_commits | length == 0 -%}[]
-      {%- else -%}
+      {%- if not (check_commits | bool) or _vf_commits | length == 0 -%}[]{%- else -%}
         {%- set missing = [] -%}
         {%- for r in _vf_commit_results.results -%}
           {%- if r.rc | int != 0 -%}
@@ -126,22 +122,18 @@
         {{ missing }}
       {%- endif -%}
 
-- name: "{{ _vfc_feature.id }} — Compute total checks and passes"
+- name: "Compute total checks and passes — {{ _vfc_feature.id }}"
   ansible.builtin.set_fact:
     _vf_total_checks: "{{ _vf_total_file_refs | int + _vf_total_commits | int }}"
     _vf_passed_checks: "{{ _vf_existing_files | int + _vf_existing_commits | int }}"
     _vf_evidence_refs_count: "{{ (_vfc_feature.evidence_refs | default([])) | length }}"
 
-- name: "{{ _vfc_feature.id }} — Classify verdict"
+- name: "Classify verdict — {{ _vfc_feature.id }}"
   ansible.builtin.set_fact:
     _vf_verdict: >-
-      {%- if _vf_evidence_refs_count == 0 -%}UNVERIFIED
-      {%- elif _vf_passed_checks | int == _vf_total_checks | int and _vf_empty_tests | length == 0 -%}VERIFIED
-      {%- elif _vf_passed_checks | int == 0 -%}FALSE_CLAIM
-      {%- else -%}PARTIAL
-      {%- endif -%}
+      {%- if _vf_evidence_refs_count == 0 -%}UNVERIFIED{%- elif _vf_passed_checks | int == _vf_total_checks | int and _vf_empty_tests | length == 0 -%}VERIFIED{%- elif _vf_passed_checks | int == 0 -%}FALSE_CLAIM{%- else -%}PARTIAL{%- endif -%}
 
-- name: "{{ _vfc_feature.id }} — Accumulate verdict into shared list"
+- name: "Accumulate verdict into shared list — {{ _vfc_feature.id }}"
   ansible.builtin.set_fact:
     _vfc_verdicts: >-
       {{ _vfc_verdicts | default([]) + [{

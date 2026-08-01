@@ -817,7 +817,47 @@ vendor connector is a prerequisite except the handful security_signal needs
 
 ---
 
-## 5. Change log
+## 5. Implemented module seam and operator evidence (2026-08-01)
+
+`general_ludd.agent.gludd_observe` is now a real, read-only module rather than a
+future placeholder referenced by the six roles. It discovers the daemon's
+operator-registered source names through `GET /api/observe/sources`, adapts each
+name to `POST /api/observe/query`, and delegates merge/correlation/timeline/
+topology behavior to the canonical `GluddObserve` implementation. The module
+never accepts a connector URL, caps the source catalog at 1,000 entries, rejects
+malformed or duplicate catalog rows, returns deterministic JSON-safe topology
+lists, and exposes generic failures without transport exception text.
+
+This implementation deliberately fixes resolver diagnostics instead of mocking
+modules or suppressing lint rules:
+
+- Ansible operators have reported collection-resource lookup failures whose
+  symptoms are misleading controller-relative paths; the discussion in
+  [ansible/ansible#74917](https://github.com/ansible/ansible/issues/74917)
+  reinforces that an FQCN must resolve to a valid shipped collection resource.
+  The prior roles named an FQCN for a module that did not exist, so the correct
+  response was to ship and test the module, not add it to a lint mock list.
+- Relative task resolution remains an active operator pain point; the
+  [ansible-lint nested `include_tasks` fix proposal](https://github.com/ansible/ansible-lint/pull/5055)
+  documents the same `load-failure` class. Gludd's stale partial networking role
+  referenced six files it did not own. It now delegates to the complete
+  `general_ludd.networking.networking` role, leaving one canonical task tree.
+- A long-running custom-module report,
+  [ansible/ansible#82414](https://github.com/ansible/ansible/issues/82414),
+  describes `AnsibleUnsafeText` casting changes breaking `Pathlib.Path` in
+  custom modules. `gludd_observe` avoids filesystem/path conversion entirely,
+  works on the typed argument-spec containers, and copies query dictionaries
+  before forwarding them.
+
+Verification is executable: the direct module tests cover source discovery,
+bounded fan-out, ordering, correlation, deterministic topology, malformed
+catalogs, query failures, and auth/transport failure. The production
+`ansible-lint` profile reports zero failures and zero warnings without skip
+rules.
+
+---
+
+## 6. Change log
 
 - **2026-06-16 (rev 2):** Corrected Section 0 after parallel agents inventoried
   the **canonical** tree (this design was first drafted against a stale worktree):
@@ -830,3 +870,7 @@ vendor connector is a prerequisite except the handful security_signal needs
   (the plumbing layer) and `docs/OBSERVABILITY_SOURCES.md` / `docs/privileges/`
   (the authoritative inventories). The façade API, the 6 roles, and the
   capability grants are unchanged in substance.
+- **2026-08-01 (rev 3):** Implemented the missing `gludd_observe` Ansible seam,
+  replaced the partial duplicate networking role with canonical collection
+  delegation, and documented operator reports behind the resolver/path-safety
+  decisions.

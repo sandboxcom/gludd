@@ -386,8 +386,7 @@
       Enforcement verification FAILED: {{ _ev_silent_mechanisms | length }}
       mechanism(s) silent —
       {% for key in _ev_silent_mechanisms %}
-      {{ _ev_mechanisms[key].label }} (age={{ _ev_mechanisms[key].age_seconds }}s)
-      {%- if not loop.last %}, {% endif %}
+      {{ _ev_mechanisms[key].label }} (age={{ _ev_mechanisms[key].age_seconds }}s){%- if not loop.last %}, {% endif %}
       {% endfor %}.
       {{ _ev_healthy_count }}/{{ _ev_total_count }} mechanisms healthy.
   when:

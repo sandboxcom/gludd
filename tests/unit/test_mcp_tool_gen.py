@@ -86,6 +86,7 @@ def test_tool_def_required_and_choices():
     assert "op" in schema["required"]
 
     assert schema["properties"]["op"]["enum"] == [
+        "init",
         "clone",
         "commit",
         "gated_commit",
@@ -99,11 +100,18 @@ def test_tool_def_required_and_choices():
         "merge",
         "gated_merge",
         "push",
+        "verify_remote",
         "tag_release",
         "tag_checkpoint",
         "release_tag",
         "checkpoint_tag",
         "state",
+        "batch_push",
+        "release_cut",
+        "release_delete",
+        "release_recut",
+        "ci_verdict",
+        "ci_cancel",
     ]
 
 

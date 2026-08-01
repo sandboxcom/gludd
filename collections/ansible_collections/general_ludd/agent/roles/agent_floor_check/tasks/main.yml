@@ -116,15 +116,7 @@
 - name: Classify status
   ansible.builtin.set_fact:
     _afc_status: >-
-      {% if (_afc_live_count | int) >= (agent_floor | int) -%}
-      healthy
-      {%- elif (_afc_block_count | int) > 4 -%}
-      critical
-      {%- elif (_afc_live_count | int) < ((agent_floor | int) // 2) -%}
-      critical
-      {%- else -%}
-      degraded
-      {%- endif %}
+      {% if (_afc_live_count | int) >= (agent_floor | int) -%}healthy{%- elif (_afc_block_count | int) > 4 -%}critical{%- elif (_afc_live_count | int) < ((agent_floor | int) // 2) -%}critical{%- else -%}degraded{%- endif %}
 
 - name: Set breach flag
   ansible.builtin.set_fact:
