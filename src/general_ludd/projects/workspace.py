@@ -6,6 +6,14 @@ import os
 from pathlib import Path
 from typing import Any
 
+from general_ludd.security.sandboxes.state import safe_state_component
+from general_ludd.security.state import project_state, secure_directory
+
+
+def default_workspace_base() -> str:
+    """Return the configured owner-only workspace root for this project."""
+    return str(project_state().directory("workspaces"))
+
 
 def confine_workspace_path(base_dir: str, workspace_path: str) -> str:
     """Resolve an untrusted ``workspace_path`` to a real path confined to ``base_dir``.
@@ -47,15 +55,35 @@ class ProjectWorkspace:
     def __init__(
         self,
         project_id: str,
-        base_dir: str = "/tmp/gludd-workspaces",
+        base_dir: str | None = None,
         workspace_path: str | None = None,
     ) -> None:
         self.project_id = project_id
-        self._base_dir = base_dir
-        if workspace_path:
-            self.root = Path(workspace_path)
+        if base_dir is None and workspace_path:
+            candidate = Path(workspace_path).expanduser()
+            if not candidate.is_absolute():
+                candidate = Path.cwd() / candidate
+            selected_base = candidate.parent
+        elif base_dir is None:
+            selected_base = Path(default_workspace_base())
         else:
-            self.root = Path(base_dir) / project_id
+            selected_base = Path(base_dir).expanduser()
+            if not selected_base.is_absolute():
+                selected_base = Path.cwd() / selected_base
+        self._base_dir = str(selected_base)
+        if workspace_path:
+            candidate = Path(workspace_path).expanduser()
+            if not candidate.is_absolute():
+                candidate = selected_base / candidate
+            resolved = candidate.resolve(strict=False)
+            base_resolved = selected_base.resolve(strict=False)
+            if not resolved.is_relative_to(base_resolved):
+                raise ValueError(
+                    f"workspace path escapes configured base: {workspace_path!r}",
+                )
+            self.root = candidate
+        else:
+            self.root = selected_base / safe_state_component(project_id)
 
     @property
     def artifacts_dir(self) -> Path:
@@ -101,10 +129,10 @@ class ProjectWorkspace:
             self.templates_dir,
             self.roles_dir,
         ):
-            d.mkdir(parents=True, exist_ok=True)
+            secure_directory(d)
 
     def job_artifact_dir(self, job_id: str) -> Path:
-        return self.artifacts_dir / job_id
+        return self.artifacts_dir / safe_state_component(job_id)
 
     def to_dict(self) -> dict[str, Any]:
         return {

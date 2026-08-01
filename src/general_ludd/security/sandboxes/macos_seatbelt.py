@@ -49,6 +49,7 @@ from general_ludd.security.sandboxes import (
     path_prefix,
 )
 from general_ludd.security.sandboxes.state import SandboxState, safe_state_component
+from general_ludd.security.state import project_state
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +87,11 @@ def _is_net_family(cap: Capability) -> bool:
 
 
 def _file_clause(cap: Capability) -> str:
-    prefix = path_prefix(cap) or "/tmp/gludd/"
+    prefix = path_prefix(cap)
+    if not prefix and cap.resource.startswith("file:/"):
+        prefix = cap.resource.removeprefix("file:")
+    if not prefix:
+        prefix = str(project_state().directory("seatbelt", "files"))
     verbs: list[str] = []
     if "read" in cap.actions:
         verbs.append("file-read*")

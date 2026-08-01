@@ -18,10 +18,10 @@ import time
 from pathlib import Path
 from typing import Any, cast
 
+from general_ludd.security.state import project_state, secure_directory, secure_write_text
+
 _COOLDOWN_SEC: int = int(os.environ.get("CI_CHECK_COOLDOWN_SEC", "600"))
-_STATE_FILE: Path = Path(
-    os.environ.get("GLUDD_CI_STATE_FILE", "/tmp/gludd-ci-check-state.json")
-)
+_STATE_FILE: Path | None = None
 _REPO: str = "sandboxcom/gludd"
 _WORKFLOW: str = "Build and Release"
 
@@ -34,9 +34,20 @@ def _get_current_time() -> float:
     return time.time()
 
 
+def _state_file() -> Path:
+    if _STATE_FILE is not None:
+        return _STATE_FILE
+    configured = os.environ.get("GLUDD_CI_STATE_FILE")
+    if configured:
+        candidate = Path(configured).expanduser()
+        secure_directory(candidate.parent)
+        return candidate
+    return project_state().path("ci", "check-state.json")
+
+
 def _load_cooldown_state() -> dict[str, Any]:
     try:
-        return cast(dict[str, Any], json.loads(_STATE_FILE.read_text()))
+        return cast(dict[str, Any], json.loads(_state_file().read_text()))
     except (FileNotFoundError, json.JSONDecodeError):
         return {
             "last_check_epoch": 0.0,
@@ -49,7 +60,7 @@ def _load_cooldown_state() -> dict[str, Any]:
 
 
 def _save_cooldown_state(state: dict[str, Any]) -> None:
-    _STATE_FILE.write_text(json.dumps(state))
+    secure_write_text(_state_file(), json.dumps(state))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

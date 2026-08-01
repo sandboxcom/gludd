@@ -364,7 +364,7 @@ class ProjectManager:
 def materialize_project_workspace(
     repo_url: str,
     workspace_path: str,
-    base_dir: str = "/tmp/gludd-workspaces",
+    base_dir: str | None = None,
 ) -> str | None:
     """Clone ``repo_url`` into the project's workspace ``repo`` directory.
 
@@ -380,7 +380,13 @@ def materialize_project_workspace(
         return None
 
     from general_ludd.git_automation.repo import GitAutomation, reject_unsafe_repo_url
-    from general_ludd.projects.workspace import ProjectWorkspace, confine_workspace_path
+    from general_ludd.projects.workspace import (
+        ProjectWorkspace,
+        confine_workspace_path,
+        default_workspace_base,
+    )
+
+    selected_base = base_dir or default_workspace_base()
 
     # SECURITY: this is reachable unauthenticated (POST /admin/projects and DB
     # restore). Refuse a dangerous repo_url (ext:: RCE, file://, SSRF host) BEFORE
@@ -396,14 +402,17 @@ def materialize_project_workspace(
     # base_dir. An empty workspace_path falls back to a fixed in-base name.
     ws_pid = workspace_path or "default"
     try:
-        confined_root = confine_workspace_path(base_dir, workspace_path or "default")
+        confined_root = confine_workspace_path(
+            selected_base,
+            workspace_path or "default",
+        )
     except ValueError as exc:
         logger.warning("Refusing unsafe workspace_path %r: %s", workspace_path, exc)
         return None
 
     ws = ProjectWorkspace(
         project_id=ws_pid,
-        base_dir=base_dir,
+        base_dir=selected_base,
         workspace_path=confined_root,
     )
     ws.ensure_dirs()

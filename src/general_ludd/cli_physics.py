@@ -33,12 +33,18 @@ import sys
 from pathlib import Path
 from typing import no_type_check
 
+from general_ludd.security.state import project_state
+
 _COLLECTIONS_PARENT = Path(__file__).resolve().parents[2] / "collections"
 _COLLECTIONS_ROOT = _COLLECTIONS_PARENT / "ansible_collections"
 _PHYSICS_PLUGINS = _COLLECTIONS_ROOT / "general_ludd" / "physics" / "plugins"
 for _path in (str(_COLLECTIONS_PARENT), str(_PHYSICS_PLUGINS)):
     if _path not in sys.path:
         sys.path.insert(0, _path)
+
+
+def _physics_output_dir(name: str) -> str:
+    return str(project_state().directory("physics", name))
 
 
 def _run_quantum(args: argparse.Namespace) -> None:
@@ -345,7 +351,7 @@ def add_physics_subparser(
     quantum_p.add_argument("--num-states", type=int, default=5)
     quantum_p.add_argument("--solver", default="numpy",
                            choices=["numpy", "scipy", "analytical"])
-    quantum_p.add_argument("--output-dir", default="/tmp/gludd-quantum")
+    quantum_p.add_argument("--output-dir", default=_physics_output_dir("quantum"))
     quantum_p.set_defaults(func=_run_quantum)
 
     # --- particle ---
@@ -361,7 +367,7 @@ def add_physics_subparser(
     particle_p.add_argument("--decay-lifetime-s", type=float, default=1.56e-22)
     particle_p.add_argument("--branching-ratios", default=None,
                             help="JSON dict of branching ratios")
-    particle_p.add_argument("--output-dir", default="/tmp/gludd-particle")
+    particle_p.add_argument("--output-dir", default=_physics_output_dir("particle"))
     particle_p.set_defaults(func=_run_particle)
 
     # --- spectroscopy ---
@@ -377,7 +383,7 @@ def add_physics_subparser(
     spectro_p.add_argument("--peak-threshold", type=float, default=0.1)
     spectro_p.add_argument("--peaks", default=None,
                            help="JSON list of peak dicts")
-    spectro_p.add_argument("--output-dir", default="/tmp/gludd-spectroscopy")
+    spectro_p.add_argument("--output-dir", default=_physics_output_dir("spectroscopy"))
     spectro_p.set_defaults(func=_run_spectroscopy)
 
     # --- thermo ---
@@ -391,7 +397,7 @@ def add_physics_subparser(
     thermo_p.add_argument("--final-temp", type=float, default=100.0,
                           help="Final temperature (C)")
     thermo_p.add_argument("--pressure", type=float, default=1.0, help="Pressure (atm)")
-    thermo_p.add_argument("--output-dir", default="/tmp/gludd-thermo")
+    thermo_p.add_argument("--output-dir", default=_physics_output_dir("thermo"))
     thermo_p.set_defaults(func=_run_thermo)
 
     # --- synthesis ---
@@ -405,7 +411,7 @@ def add_physics_subparser(
                          help="Reaction temperature (C)")
     synth_p.add_argument("--reaction-time", type=float, default=15.0,
                          help="Reaction time (min)")
-    synth_p.add_argument("--output-dir", default="/tmp/gludd-synthesis")
+    synth_p.add_argument("--output-dir", default=_physics_output_dir("synthesis"))
     synth_p.set_defaults(func=_run_synthesis)
 
     # --- math ---
@@ -417,7 +423,7 @@ def add_physics_subparser(
     math_p.add_argument("--time-start", type=float, default=0.0)
     math_p.add_argument("--time-end", type=float, default=10.0)
     math_p.add_argument("--time-steps", type=int, default=100)
-    math_p.add_argument("--output-dir", default="/tmp/gludd-math")
+    math_p.add_argument("--output-dir", default=_physics_output_dir("math"))
     math_p.set_defaults(func=_run_math)
 
     # --- latex ---
@@ -430,7 +436,7 @@ def add_physics_subparser(
     latex_p.add_argument("--author", default="Agentic Harness")
     latex_p.add_argument("--equation", default=r"E = mc^2",
                          help="LaTeX equation to render")
-    latex_p.add_argument("--output-dir", default="/tmp/gludd-latex")
+    latex_p.add_argument("--output-dir", default=_physics_output_dir("latex"))
     latex_p.set_defaults(func=_run_latex)
 
     # --- review ---
@@ -441,7 +447,7 @@ def add_physics_subparser(
                           help="File containing paper text")
     review_p.add_argument("--depth", default="standard",
                           choices=["quick", "standard", "deep", "meta_review"])
-    review_p.add_argument("--output-dir", default="/tmp/gludd-review")
+    review_p.add_argument("--output-dir", default=_physics_output_dir("review"))
     review_p.set_defaults(func=_run_review)
 
 

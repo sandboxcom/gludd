@@ -26,6 +26,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from general_ludd.security.state import project_state, secure_directory
+
 __all__ = [
     "SUPPORTED_PROCESSOR_TOOLS",
     "_FORBIDDEN_SHELL_CHARS",
@@ -37,8 +39,6 @@ __all__ = [
 SUPPORTED_PROCESSOR_TOOLS: frozenset[str] = frozenset(
     {"whisper.cpp", "ffmpeg", "agent"}
 )
-
-_DEFAULT_WORK_ROOT = Path("/tmp/gludd-stream-clones")
 
 _SAFE_BINARY_RE = re.compile(r"^(?!.*\.\.)[a-zA-Z0-9_./-]+$")
 
@@ -84,7 +84,13 @@ class RoleCloner:
         work_root: Path | None = None,
     ) -> None:
         self.collection_root = Path(collection_root)
-        self.work_root = Path(work_root) if work_root is not None else _DEFAULT_WORK_ROOT
+        self.work_root = (
+            secure_directory(work_root)
+            if work_root is not None
+            else project_state(project_root=self.collection_root).directory(
+                "stream-clones"
+            )
+        )
 
     def clone(self, role_name: str, overrides: dict[str, Any]) -> Path:
         """Copy ``roles/<role_name>/`` to a fresh per-clone dir and emit wrappers.
@@ -113,7 +119,7 @@ class RoleCloner:
             ) from None
         if not src.is_dir():
             raise FileNotFoundError(f"Role {role_name!r} not found under {roles_root}")
-        self.work_root.mkdir(parents=True, exist_ok=True)
+        secure_directory(self.work_root)
         clone_path = self.work_root / f"{role_name}-{uuid.uuid4().hex}"
         src = src.resolve()
         roles_root = (self.collection_root / "roles").resolve()
@@ -124,6 +130,7 @@ class RoleCloner:
                 f"Role {role_name!r} resolves outside {roles_root}"
             ) from None
         shutil.copytree(src, clone_path)
+        secure_directory(clone_path)
 
         (clone_path / "clone-overrides.json").write_text(
             json.dumps(overrides, indent=2, sort_keys=True)

@@ -19,9 +19,9 @@ from pathlib import Path
 from typing import Any
 
 from general_ludd.ansible.runner import AnsibleRunnerAdapter
+from general_ludd.security.state import project_state
 
 AUDIT_PLAYBOOK = "audit_plugins.yml"
-DEFAULT_ARTIFACT_DIR = "/tmp/gludd-plugin-audit"
 
 
 def _resolve_playbook_path(name: str) -> Path:
@@ -53,12 +53,15 @@ def _cmd_audit_plugins(args: argparse.Namespace) -> None:
     enforce_disengage = bool(getattr(args, "enforce_disengage", False))
 
     project_root = project if project else str(Path.cwd())
+    artifact_dir = str(
+        project_state(project_root=project_root).directory("plugin-audit")
+    )
 
     extra_vars: dict[str, Any] = {
         "project_name": project,
         "project_root": project_root,
         "daemon_url": daemon_url,
-        "artifact_dir": DEFAULT_ARTIFACT_DIR,
+        "artifact_dir": artifact_dir,
         "audit_plugins_run_enforce_disengage": enforce_disengage,
     }
     if limit:
@@ -70,7 +73,7 @@ def _cmd_audit_plugins(args: argparse.Namespace) -> None:
     status = str(result.get("status", "failed"))
 
     print(f"audit-plugins playbook finished: status={status} rc={rc}")
-    print(f"artifact_dir={DEFAULT_ARTIFACT_DIR}")
+    print(f"artifact_dir={artifact_dir}")
 
     events = result.get("events") or []
     if events:

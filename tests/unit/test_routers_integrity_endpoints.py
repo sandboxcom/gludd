@@ -83,7 +83,7 @@ async def test_scan_with_callable_tempdir_path(app, tmp_path):
     with patch(
         "general_ludd.routers.integrity.FileIntegrityScanner",
         return_value=fake_scanner,
-    ):
+    ), patch.object(app.state, "_config_dir", str(tmp_path), create=True):
         resp = await _post(
             app, "/admin/integrity/scan",
             json={"paths": [str(tmp_path)]},
@@ -228,11 +228,14 @@ class TestScanRoots:
         roots = _scan_roots(app)
         assert "/my/config" in roots
 
-    def test_scan_roots_includes_tempdir(self, app):
+    def test_scan_roots_includes_namespaced_state_not_global_temp(self, app):
         from general_ludd.routers.integrity import _scan_roots
+        from general_ludd.security.state import project_state
+
         roots = _scan_roots(app)
         import tempfile
-        assert tempfile.gettempdir() in roots
+        assert str(project_state().project_dir) in roots
+        assert tempfile.gettempdir() not in roots
 
     def test_scan_roots_excludes_empty_strings(self, app):
         from general_ludd.routers.integrity import _scan_roots

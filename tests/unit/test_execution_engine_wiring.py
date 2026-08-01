@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -105,6 +106,10 @@ class TestExecutionEngineWiring:
         assert engine.workspace_path == ws
 
     def test_execution_engine_default_workspace(self) -> None:
+        from general_ludd.security.state import project_state
+
         mock_gateway = MagicMock()
         engine = ExecutionEngine(model_gateway=mock_gateway)
-        assert engine.workspace_path == "/tmp/gludd-workspace"
+        workspace = Path(engine.workspace_path)
+        assert workspace.is_relative_to(project_state().project_dir)
+        assert workspace.name == "workspace"

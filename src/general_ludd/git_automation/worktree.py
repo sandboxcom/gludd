@@ -22,14 +22,16 @@ import logging
 import os
 import subprocess
 import time
+from pathlib import Path
 from typing import Any
 
 from general_ludd.git_automation.locking import git_repo_lock
 from general_ludd.git_automation.types import MergeResult, WorktreeInfo, WorktreeResult
+from general_ludd.security.state import project_state, secure_directory
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_WORKTREE_ROOT = "/tmp/gludd-worktrees"
+DEFAULT_WORKTREE_ROOT: str | None = None
 DEFAULT_MAX_AGE_HOURS = 24
 DEFAULT_REMOTE_NAME = "sandboxcom"
 DEFAULT_TARGET_BRANCH = "development"
@@ -91,7 +93,7 @@ def worktree_create(
     repo_path: str,
     branch: str,
     base_branch: str | None = None,
-    worktree_root: str = DEFAULT_WORKTREE_ROOT,
+    worktree_root: str | None = DEFAULT_WORKTREE_ROOT,
 ) -> WorktreeResult:
     """Create an isolated git worktree for a subagent.
 
@@ -112,13 +114,26 @@ def worktree_create(
     except ValueError as exc:
         return WorktreeResult(path="", branch=branch, success=False, message=str(exc))
 
-    worktree_path = os.path.join(worktree_root, branch)
+    root = (
+        project_state(project_root=repo_path).directory("worktrees")
+        if worktree_root is None
+        else secure_directory(worktree_root)
+    )
+    branch_path = Path(branch)
+    if branch_path.is_absolute() or ".." in branch_path.parts:
+        return WorktreeResult(
+            path="",
+            branch=branch,
+            success=False,
+            message=f"refusing branch path that escapes worktree root: {branch!r}",
+        )
+    worktree_path = str(root.joinpath(*branch_path.parts))
     try:
         _reject_leading_dash(worktree_path, "worktree path")
     except ValueError as exc:
         return WorktreeResult(path="", branch=branch, success=False, message=str(exc))
 
-    os.makedirs(worktree_root, exist_ok=True)
+    secure_directory(Path(worktree_path).parent)
 
     try:
         cmd = ["worktree", "add", worktree_path, "-b", branch]
@@ -239,7 +254,7 @@ def worktree_merge(
 def worktree_cleanup(
     repo_path: str,
     branch: str,
-    worktree_root: str = DEFAULT_WORKTREE_ROOT,
+    worktree_root: str | None = DEFAULT_WORKTREE_ROOT,
 ) -> dict[str, Any]:
     """Remove a worktree directory and its branch after merge.
 
@@ -258,7 +273,21 @@ def worktree_cleanup(
     except ValueError as exc:
         return {"success": False, "branch": branch, "branch_removed": False, "cleaned": False, "error": str(exc)}
 
-    worktree_path = os.path.join(worktree_root, branch)
+    root = (
+        project_state(project_root=repo_path).directory("worktrees")
+        if worktree_root is None
+        else secure_directory(worktree_root)
+    )
+    branch_path = Path(branch)
+    if branch_path.is_absolute() or ".." in branch_path.parts:
+        return {
+            "success": False,
+            "branch": branch,
+            "branch_removed": False,
+            "cleaned": False,
+            "error": f"refusing branch path that escapes worktree root: {branch!r}",
+        }
+    worktree_path = str(root.joinpath(*branch_path.parts))
     cleaned = False
 
     try:
@@ -453,7 +482,7 @@ def worktree_health_check(
 def worktree_merge_all(
     repo_path: str,
     target_branch: str = DEFAULT_TARGET_BRANCH,
-    worktree_root: str = DEFAULT_WORKTREE_ROOT,
+    worktree_root: str | None = DEFAULT_WORKTREE_ROOT,
 ) -> dict[str, Any]:
     """Bulk merge all worktree branches into target_branch and cleanup.
 

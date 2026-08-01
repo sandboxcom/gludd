@@ -4,16 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import atexit
+import contextlib
 import json
 import logging
 import os
 import signal
 import subprocess
 import sys
-import tempfile
 import time
 import uuid
-from pathlib import Path
 from typing import Any, Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -26,6 +25,7 @@ from general_ludd.infra.deploy_strategy import ResourceTier
 from general_ludd.infra.terraform import TerraformGenerator
 from general_ludd.schemas.deployment import DeploymentRecord
 from general_ludd.security.sanitize import sanitize_error_message
+from general_ludd.security.state import project_state, secure_write_text
 
 try:
     from general_ludd.cloud.resource_lifecycle import get_lifecycle
@@ -68,11 +68,11 @@ def _get_all_regions() -> list[str]:
 
 
 def _discover_azure_regions() -> list[str]:
-    cache_path = "/tmp/gludd-azure-regions.json"
+    cache_path = project_state().path("infra", "azure-regions.json")
 
     try:
-        if os.path.exists(cache_path):
-            data = json.loads(Path(cache_path).read_text())
+        if cache_path.exists():
+            data = json.loads(cache_path.read_text())
             cached_regions = data.get("regions")
             if (
                 time.time() - data.get("ts", 0) < 86400
@@ -87,11 +87,11 @@ def _discover_azure_regions() -> list[str]:
     ordered = [r for r in GPU_PRIORITY_REGIONS if r in all_regions]
     ordered += [r for r in all_regions if r not in ordered]
 
-    try:
-        Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(cache_path).write_text(json.dumps({"ts": time.time(), "regions": ordered}))
-    except Exception:
-        pass
+    with contextlib.suppress(Exception):
+        secure_write_text(
+            cache_path,
+            json.dumps({"ts": time.time(), "regions": ordered}),
+        )
 
     return ordered or GPU_PRIORITY_REGIONS
 
@@ -173,7 +173,9 @@ class DeploymentManager:
         worker_id: str | None = None,
     ) -> None:
         self._binary_resolver = binary_paths or BinaryPathResolver()
-        self._working_dir = working_dir or tempfile.mkdtemp(prefix="gludd-tf-")
+        self._working_dir = working_dir or str(
+            project_state().temporary_directory("terraform", prefix="gludd-tf-")
+        )
         # The dir the NEXT terraform invocation runs in. deploy()/destroy() point
         # this at the per-instance dir so one manager can hold many deployments.
         self._active_working_dir = self._working_dir

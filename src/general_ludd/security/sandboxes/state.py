@@ -23,6 +23,7 @@ from general_ludd.config.project import find_project_root
 
 STATE_DIR_ENV = "GLUDD_SANDBOX_STATE_DIR"
 PROJECT_ROOT_ENV = "GLUDD_PROJECT_ROOT"
+DEFAULT_STATE_PREFIX = "gludd-sandbox-state"
 _COMPONENT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,95}\Z")
 
 
@@ -139,21 +140,22 @@ def _project_namespace(project_root: Path) -> str:
     return f"{slug}-{digest}"
 
 
-def _configured_base(raw: str) -> Path:
+def _configured_base(raw: str, *, env_name: str = STATE_DIR_ENV) -> Path:
     candidate = Path(raw).expanduser()
     if not candidate.is_absolute():
-        raise SandboxStateError(f"{STATE_DIR_ENV} must be an absolute path")
+        raise SandboxStateError(f"{env_name} must be an absolute path")
     if ".." in candidate.parts:
-        raise SandboxStateError(f"{STATE_DIR_ENV} must not contain '..'")
+        raise SandboxStateError(f"{env_name} must not contain '..'")
     _reject_symlink_components(candidate)
     return candidate
 
 
-def _default_base() -> Path:
+def _default_base(prefix: str = DEFAULT_STATE_PREFIX) -> Path:
+    _validate_component(prefix)
     temp_root = Path(tempfile.gettempdir()).resolve(strict=True)
     uid = _current_uid()
     identity = str(uid) if uid is not None else "user"
-    return temp_root / f"gludd-sandbox-state-{identity}"
+    return temp_root / f"{prefix}-{identity}"
 
 
 def _resolve_project_root(project_root: str | Path | None) -> Path:
@@ -200,10 +202,16 @@ class SandboxState:
         *,
         project_root: str | Path | None = None,
         create: bool = True,
+        state_dir_env: str = STATE_DIR_ENV,
+        default_prefix: str = DEFAULT_STATE_PREFIX,
     ) -> SandboxState:
         root = _resolve_project_root(project_root)
-        raw_base = os.environ.get(STATE_DIR_ENV)
-        base = _configured_base(raw_base) if raw_base else _default_base()
+        raw_base = os.environ.get(state_dir_env)
+        base = (
+            _configured_base(raw_base, env_name=state_dir_env)
+            if raw_base
+            else _default_base(default_prefix)
+        )
         namespace = _project_namespace(root)
         project_dir = base / namespace
         if create:
@@ -242,6 +250,18 @@ class SandboxState:
         candidate = self.path(*components)
         return _secure_directory(candidate)
 
+    def temporary_directory(self, category: str, *, prefix: str = "job-") -> Path:
+        """Allocate one owner-only temporary directory inside this namespace."""
+        _validate_component(category)
+        if not prefix or Path(prefix).name != prefix or ".." in prefix:
+            raise SandboxStateError(
+                f"unsafe sandbox state temporary-directory prefix: {prefix!r}",
+            )
+        parent = self.directory(category)
+        allocated = Path(tempfile.mkdtemp(prefix=prefix, dir=parent))
+        self._assert_contained(allocated)
+        return _secure_directory(allocated)
+
     def cleanup_path(self, candidate: str | Path) -> bool:
         target = Path(candidate)
         _reject_symlink_components(target)
@@ -273,6 +293,7 @@ class SandboxState:
 
 
 __all__ = [
+    "DEFAULT_STATE_PREFIX",
     "PROJECT_ROOT_ENV",
     "STATE_DIR_ENV",
     "SandboxState",

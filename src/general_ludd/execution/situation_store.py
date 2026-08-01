@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from general_ludd.security.state import project_state, secure_directory, secure_write_text
+
 logger = logging.getLogger(__name__)
 
 _MAC_KEY = b"gludd-situation-store-integrity"
@@ -67,9 +69,7 @@ class BadCallSituationStore:
     """
 
     def __init__(self, base_dir: Path | str | None = None) -> None:
-        self._dir: Path | None = Path(base_dir) if base_dir else None
-        if self._dir is not None:
-            self._dir.mkdir(parents=True, exist_ok=True)
+        self._dir: Path | None = secure_directory(base_dir) if base_dir else None
         self._inmemory: list[BadCallSituation] = []
 
     def save(self, situation: BadCallSituation) -> Path:
@@ -81,7 +81,10 @@ class BadCallSituationStore:
         ts = int(situation.timestamp * 1_000_000)
 
         if self._dir is None:
-            dummy = Path(f"/tmp/gludd_situation_{ts}.json")
+            dummy = project_state().path(
+                "situations",
+                f"situation_{ts}.json",
+            )
             return dummy
 
         data = _serialize(situation)
@@ -90,16 +93,19 @@ class BadCallSituationStore:
 
         fname = f"situation_{ts}.json"
         fpath = self._dir / fname
-        fpath.write_text(raw)
+        secure_write_text(fpath, raw)
 
         mac_path = self._dir / (fname + ".mac")
-        mac_path.write_text(mac)
+        secure_write_text(mac_path, mac)
 
         return fpath
 
     def load(self, filename: str) -> BadCallSituation | None:
         """Load a situation from its filename. Returns None if not found or tampered."""
         if self._dir is None:
+            return None
+        if Path(filename).name != filename:
+            logger.warning("refusing unsafe situation filename: %r", filename)
             return None
         fpath = self._dir / filename
         mac_path = self._dir / (filename + ".mac")

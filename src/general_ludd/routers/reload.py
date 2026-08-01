@@ -14,6 +14,7 @@ from general_ludd.events.types import ConfigReloadedEvent
 from general_ludd.prompts.registry import PromptRegistry
 from general_ludd.reload.hot_reloader import HotReloader, ReloadScope
 from general_ludd.security import is_safe_fetch_url
+from general_ludd.security.state import project_state
 from general_ludd.self_update.module_snapshot import (
     ModuleSnapshot,
     restore_modules,
@@ -137,7 +138,8 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             )
 
         reloader = HotReloader(
-            config_dir=app.state._config_dir or "/tmp/gl-config",
+            config_dir=app.state._config_dir
+            or str(project_state().directory("config")),
             event_bus=subsys["bus"],
             hook_system=subsys["hooks"],
             worker_broadcaster=subsys["broadcaster"],

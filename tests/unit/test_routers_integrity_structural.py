@@ -125,11 +125,15 @@ class TestScanRoots:
         roots = _scan_roots(app)
         assert os.getcwd() in roots
 
-    def test_includes_tmp(self):
+    def test_includes_namespaced_state_not_global_tmp(self):
         import tempfile
+
+        from general_ludd.security.state import project_state
+
         app = FastAPI()
         roots = _scan_roots(app)
-        assert tempfile.gettempdir() in roots
+        assert str(project_state().project_dir) in roots
+        assert tempfile.gettempdir() not in roots
 
     def test_no_empty_strings_in_roots(self):
         app = FastAPI()

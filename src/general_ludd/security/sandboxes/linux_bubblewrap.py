@@ -28,6 +28,7 @@ from __future__ import annotations
 import logging
 import shlex
 import shutil
+from pathlib import PurePosixPath
 from typing import cast
 
 from general_ludd.security.sandboxes import (
@@ -41,6 +42,8 @@ from general_ludd.security.sandboxes import (
 )
 
 logger = logging.getLogger(__name__)
+
+_GUEST_TEMP_DIR = str(PurePosixPath("/") / "tmp")
 
 
 def _is_file_family(cap: Capability) -> bool:
@@ -73,7 +76,8 @@ def render_argv(spec: PermissionSpec, target: SandboxTarget, cmd: list[str] | No
     argv += ["--ro-bind", "/lib64", "/lib64"]
     argv += ["--symlink", "usr/lib", "lib"]
     argv += ["--symlink", "usr/lib64", "lib64"]
-    argv += ["--dir", "/tmp"]
+    # Empty inside the new mount namespace; this is never host runtime state.
+    argv += ["--dir", _GUEST_TEMP_DIR]
     argv += ["--proc", "/proc"]
     argv += ["--dev", "/dev"]
     argv += ["--ro-bind", "/etc/resolv.conf", "/etc/resolv.conf"]

@@ -20,6 +20,7 @@ from general_ludd.project_runner import (
 )
 from general_ludd.schemas.job import JobSpec
 from general_ludd.schemas.task_return import TaskReturn
+from general_ludd.security.state import project_state, secure_directory
 
 logger = logging.getLogger(__name__)
 
@@ -283,7 +284,7 @@ class ExecutionEngine:
     def __init__(
         self,
         model_gateway: Any = None,
-        workspace_path: str = "/tmp/gludd-workspace",
+        workspace_path: str | None = None,
         benchmark_recorder: Any = None,
         metrics_collector: Any = None,
         budget_guard: Any = None,
@@ -292,7 +293,12 @@ class ExecutionEngine:
         sandbox_enforcer: Any = None,
     ) -> None:
         self._model_gateway = model_gateway
-        self.workspace_path = workspace_path
+        workspace = (
+            project_state().directory("execution", "workspace")
+            if workspace_path is None
+            else secure_directory(workspace_path)
+        )
+        self.workspace_path = str(workspace)
         self._benchmark_recorder = benchmark_recorder
         self._metrics_collector = metrics_collector
         self._budget_guard = budget_guard
@@ -302,7 +308,6 @@ class ExecutionEngine:
         self._sandbox_verified = False
         self._background_tasks: set[asyncio.Task[Any]] = set()
         self._commit_lock: asyncio.Lock = asyncio.Lock()
-        os.makedirs(workspace_path, exist_ok=True)
 
     def _verify_sandbox(self) -> str | None:
         if self._sandbox_enforcer is None:

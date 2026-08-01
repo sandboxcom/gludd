@@ -65,8 +65,8 @@ def test_spec_defines_all_boundary_and_delivery_contracts() -> None:
 def test_spec_covers_current_bandit_and_dependency_baselines() -> None:
     text = _read_spec()
     assert "SEVERITY.HIGH: 0" in text
-    assert "SEVERITY.MEDIUM: 34" in text
-    assert "SEVERITY.LOW: 506" in text
+    assert "SEVERITY.MEDIUM: 0" in text
+    assert "SEVERITY.LOW: 505" in text
     for finding_id in ("B324", "B314", "B318", "B608", "B603", "B607"):
         assert finding_id in text
     for dependency in (

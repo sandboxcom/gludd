@@ -36,6 +36,7 @@ from general_ludd.git_automation.types import (
 )
 from general_ludd.git_automation.verify_remote import verify_remote as _verify_remote_fn
 from general_ludd.security.ssrf import resolved_host_is_blocked
+from general_ludd.security.state import SecureStateError, project_state
 
 logger = logging.getLogger(__name__)
 
@@ -1099,30 +1100,25 @@ class GitAutomation:
             root_prefix = root.rstrip(os.sep) + os.sep
             if target == root or target.startswith(root_prefix):
                 return
-        if GitAutomation._is_gludd_temp_worktree_path(target):
+        if GitAutomation._is_gludd_temp_worktree_path(target, project_root=repo_abs):
             return
         raise ValueError(
             f"refusing worktree path that escapes the repo parent: {worktree_path!r}"
         )
 
     @staticmethod
-    def _is_gludd_temp_worktree_path(path: str) -> bool:
+    def _is_gludd_temp_worktree_path(
+        path: str,
+        *,
+        project_root: str | None = None,
+    ) -> bool:
         real_target = os.path.realpath(path)
-        temp_roots = {
-            os.path.realpath(tempfile.gettempdir()),
-            os.path.realpath("/tmp"),
-        }
-        for root in temp_roots:
-            try:
-                if os.path.commonpath([root, real_target]) != root:
-                    continue
-            except ValueError:
-                continue
-            rel = os.path.relpath(real_target, root)
-            first_component = rel.split(os.sep, 1)[0]
-            if first_component.startswith("gludd-"):
-                return True
-        return False
+        try:
+            state = project_state(project_root=project_root, create=False)
+            root = os.path.realpath(state.path("worktrees"))
+            return os.path.commonpath([root, real_target]) == root
+        except (OSError, ValueError, SecureStateError):
+            return False
 
     def remove_worktree(self, repo_path: str, worktree_path: str) -> bool:
         _reject_leading_dash(worktree_path, kind="worktree path")

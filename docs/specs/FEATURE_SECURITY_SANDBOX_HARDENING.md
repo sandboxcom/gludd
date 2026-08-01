@@ -28,15 +28,16 @@ operator evidence are documented in
 
 ## 2. Observed baseline
 
-The baseline was refreshed on development commit `770ec792` with repository
-make targets. Generated files are evidence snapshots, not allowlists.
+The baseline was refreshed on development after commit `53d3085d`, including
+the pending secure-state migration, with repository make targets. Generated
+files are evidence snapshots, not allowlists.
 
 - `make security-backlog-gate` reported `TOTAL=24`,
-  `LANDED-VERIFIED=8`, and `OPEN=16`. The current target intentionally exits
+  `LANDED-VERIFIED=10`, and `OPEN=14`. The current target intentionally exits
   successfully when controls are open, so it is not a completion gate.
-- `make sast` generated `dist/sast-report.json` with `SEVERITY.HIGH: 0`,
-  `SEVERITY.MEDIUM: 34`, and `SEVERITY.LOW: 506`. The remaining medium findings
-  are all B108 hard-coded temporary paths; B104, B310, B323 and B608 are zero.
+- `make sast` generated a fresh report with `SEVERITY.HIGH: 0`,
+  `SEVERITY.MEDIUM: 0`, and `SEVERITY.LOW: 505`. B104, B108, B310, B323 and
+  B608 are all zero; no finding was suppressed.
   The target still masks
   Bandit's finding exit status and is therefore an inventory, not a strict
   completion gate.
@@ -44,9 +45,9 @@ make targets. Generated files are evidence snapshots, not allowlists.
   package is not published on PyPI and is explicitly shown as unauditable.
   `make node-deps-audit` reported zero vulnerabilities. Neither result replaces
   source-level or runtime-boundary review.
-- `uv.lock` resolves Pillow 12.3.0 and safehttpx 0.1.7. Pillow's security update
-  and the pinned-IP outbound transport are landed, while decoder resource
-  isolation and migration of the final Azure-pricing URL call remain open.
+- `uv.lock` resolves Pillow 12.3.0 and safehttpx 0.1.7. Pillow's security update,
+  the pinned-IP outbound transport, and the Azure-pricing migration are landed,
+  while decoder resource isolation remains open.
 - `SandboxEnforcer` describes a fail-closed contract, while
   `security.sandboxes.SandboxBackend` and several backends explicitly fail
   open. The effective dispatch boundary is therefore not yet uniformly
@@ -61,7 +62,7 @@ make targets. Generated files are evidence snapshots, not allowlists.
   passing; SAST, Python and Node dependency audit, and backlog inventory all
   streamed their phase boundaries. No phase failed or timed out.
 - The generated SAST summary reported `baseline_available=false` and the backlog
-  target still treats all 16 open controls as informational. Consequently the
+  target still treats all 14 open controls as informational. Consequently the
   successful audit is accurate inventory evidence, not a security-completion
   gate. SEC-SBX-001 remains proposed until the acceptance rules below are green.
 
@@ -124,6 +125,18 @@ These are narrow control claims, not completion of SEC-SBX-001:
 
 Both controls have red-first behavior tests and source-wiring regression probes.
 The remaining table below therefore contains only the 14 controls still open.
+
+### 2.3 Namespaced secure runtime state (2026-08-01)
+
+The B108 migration routes runtime state through one configurable
+`GLUDD_STATE_DIR` allocator. Project namespaces and their parents are owner-only
+(mode 0700); state files are written mode 0600 with flush/fsync durability;
+symlink, ownership and containment violations fail closed; cleanup targets only
+the exact owned namespace. Callers no longer rely on global predictable paths.
+Migration tests cover every former B108 call site, cross-project isolation,
+unsafe roots and compatibility semantics. This closes the medium-severity SAST
+inventory without a Bandit skip or suppression; it does not by itself close the
+crash-reaper and PID-identity requirements in D-22 and D-23.
 
 ## 3. Threat model and trust boundaries
 

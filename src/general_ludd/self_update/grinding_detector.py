@@ -18,7 +18,15 @@ import logging
 import os
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
+
+from general_ludd.security.state import (
+    SecureStateError,
+    project_state,
+    secure_write_text,
+    trusted_owned_file,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +34,10 @@ logger = logging.getLogger(__name__)
 _DISPATCH_TOOLS = frozenset({"task", "agent", "workflow", "skill"})
 
 # ── canonical paths for enforcement-plugin state files ──────────────────────
-_STREAK_FILE = "/tmp/gludd-floor-streak.json"
-_STOP_STATE_FILE = "/tmp/gludd-stop-state.json"
-_TASK_DEADLINE_FILE = "/tmp/gludd-task-deadlines.json"
+_STREAK_FILE: str | None = None
+_STOP_STATE_FILE: str | None = None
+_TASK_DEADLINE_FILE: str | None = None
+_LEGACY_ENFORCEMENT_STATE_ROOT = Path(os.sep) / "tmp"
 
 # ── detection thresholds ────────────────────────────────────────────────────
 _STREAK_HIGH = 10
@@ -37,7 +46,7 @@ _BLOCKS_HIGH = 2
 
 
 def _read_json(path: str) -> dict[str, Any]:
-    if not os.path.isfile(path):
+    if not trusted_owned_file(path):
         return {}
     try:
         with open(path) as fh:
@@ -46,6 +55,19 @@ def _read_json(path: str) -> dict[str, Any]:
     except (json.JSONDecodeError, OSError) as exc:
         logger.debug("grinding_detector: failed to read %s: %s", path, exc)
         return {}
+
+
+def _enforcement_state_file(override: str | None, filename: str) -> str:
+    if override is not None:
+        return override
+    namespaced = project_state().path("enforcement", filename)
+    try:
+        namespaced.lstat()
+    except OSError:
+        legacy = _LEGACY_ENFORCEMENT_STATE_ROOT / f"gludd-{filename}"
+        if trusted_owned_file(legacy):
+            return str(legacy)
+    return str(namespaced)
 
 
 def _recent_count(record: dict[str, Any], window: float, key: str) -> int:
@@ -169,7 +191,9 @@ def detect_and_create_todos() -> list[dict[str, Any]]:
     todos: list[dict[str, Any]] = []
 
     # ── 1. high streak → agent grinding inline ──────────────────────────
-    streak_data = _read_json(_STREAK_FILE)
+    streak_data = _read_json(
+        _enforcement_state_file(_STREAK_FILE, "floor-streak.json")
+    )
     max_streak = _recent_max_streak(streak_data, _WINDOW_SECONDS)
     if max_streak > _STREAK_HIGH:
         todos.append({
@@ -230,7 +254,9 @@ def detect_and_create_todos() -> list[dict[str, Any]]:
             })
 
     # ── 3. frequent stop blocks → enforce-stop.ts false positives ────────
-    stop_data = _read_json(_STOP_STATE_FILE)
+    stop_data = _read_json(
+        _enforcement_state_file(_STOP_STATE_FILE, "stop-state.json")
+    )
     blocks = _recent_count(stop_data, _WINDOW_SECONDS, "blocked")
     if blocks > _BLOCKS_HIGH:
         todos.append({
@@ -253,7 +279,9 @@ def detect_and_create_todos() -> list[dict[str, Any]]:
         })
 
     # ── 4. task deadlines exceeded → subagent timeout pattern ────────────
-    deadline_data = _read_json(_TASK_DEADLINE_FILE)
+    deadline_data = _read_json(
+        _enforcement_state_file(_TASK_DEADLINE_FILE, "task-deadlines.json")
+    )
     deadlines = _recent_count(deadline_data, _WINDOW_SECONDS * 2, "deadline_exceeded")
     if deadlines > _BLOCKS_HIGH:
         todos.append({
@@ -321,7 +349,7 @@ class GrindingDetector:
     Runs inside the daemon (full filesystem access), not as an opencode plugin.
     """
 
-    _REPORT_PATH = "/tmp/gludd-grinding-report.json"
+    _REPORT_PATH: str | None = None
 
     def __init__(
         self,
@@ -447,16 +475,17 @@ class GrindingDetector:
             "total_responses_analyzed": self._report.total_responses_analyzed,
         }
         try:
-            os.makedirs(os.path.dirname(self._REPORT_PATH), exist_ok=True)
-            with open(self._REPORT_PATH, "w") as fh:
-                json.dump(report_dict, fh, indent=2)
+            report_path = self._REPORT_PATH or str(
+                project_state().path("self-update", "grinding-report.json")
+            )
+            secure_write_text(report_path, json.dumps(report_dict, indent=2))
             logger.info(
                 "Grinding report written to %s: %d grinding, %d stop episodes",
-                self._REPORT_PATH,
+                report_path,
                 len(self._report.grinding_episodes),
                 len(self._report.stop_episodes),
             )
-        except OSError as exc:
+        except (OSError, SecureStateError) as exc:
             logger.warning("Failed to write grinding report: %s", exc)
         return report_dict
 

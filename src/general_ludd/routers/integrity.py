@@ -14,6 +14,7 @@ from general_ludd.integrity.scanner import (
     sign_change_openbao,
 )
 from general_ludd.security.sanitize import confine_path_multi
+from general_ludd.security.state import project_state
 from general_ludd.validation.gap_analyzer import GapAnalyzer
 from general_ludd.validation.log_auditor import LogAuditor
 
@@ -32,25 +33,18 @@ def _scan_roots(app: FastAPI) -> list[str]:
     else (e.g. ``/etc``, ``/``, ``~/.ssh``) is refused. Pure env/attr reads — no
     blocking I/O.
 
-    The system temp directory is included so the endpoint can be used from tests
-    and for scanning user-supplied temporary artifacts.  On macOS the real path
-    differs from the symlink (/tmp -> /private/var/...); both are included.
+    The owner-only project state namespace is included for generated artifacts;
+    the process-wide temporary directory is intentionally excluded.
     """
-    import tempfile
-
-    tmp = tempfile.gettempdir()
+    state_root = project_state().project_dir
     roots = [
         os.getcwd(),
         os.environ.get("GLUDD_WORKSPACE", ""),
         str(getattr(app.state, "_config_dir", "") or ""),
         os.path.expanduser("~/.config/gludd"),
         os.path.expanduser("~/.local/share/general-ludd"),
-        tmp,
-        os.path.realpath(tmp),
-        "/tmp",
-        os.path.realpath("/tmp"),
-        "/var/tmp",
-        os.path.realpath("/var/tmp"),
+        str(state_root),
+        os.path.realpath(state_root),
     ]
     return [r for r in roots if r]
 

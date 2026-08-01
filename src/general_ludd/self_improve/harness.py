@@ -40,7 +40,7 @@ class SelfImprovementHarness:
         model_gateway: Any | None = None,
         model_profile_id: str | None = None,
         project_id: str | None = None,
-        project_base_dir: str = "/tmp/gludd-workspaces",
+        project_base_dir: str | None = None,
     ) -> None:
         if repo_root is not None:
             self.repo_root = repo_root

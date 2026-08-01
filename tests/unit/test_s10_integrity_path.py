@@ -84,7 +84,7 @@ class TestConfineScanPaths:
         ):
             _confine_scan_paths(app, ["/etc/passwd"])
 
-    def test_allows_path_within_tmp(self):
+    def test_allows_path_within_configured_root(self):
         from general_ludd.routers.integrity import _confine_scan_paths
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -92,7 +92,8 @@ class TestConfineScanPaths:
             os.makedirs(sub, exist_ok=True)
 
             app = FastAPI()
-            result = _confine_scan_paths(app, [sub])
+            with patch.object(app.state, "_config_dir", tmp, create=True):
+                result = _confine_scan_paths(app, [sub])
 
         assert len(result) == 1
         assert os.path.isabs(result[0])
@@ -108,7 +109,8 @@ class TestConfineScanPaths:
             os.symlink(sub, symlink)
 
             app = FastAPI()
-            result = _confine_scan_paths(app, [symlink])
+            with patch.object(app.state, "_config_dir", tmp, create=True):
+                result = _confine_scan_paths(app, [symlink])
 
         assert len(result) == 1
         result_real = os.path.realpath(result[0])
@@ -166,14 +168,19 @@ class TestGapAnalysisPathConfinement:
         assert os.path.isabs(repo_root), f"repo_root must be absolute: {repo_root}"
 
     @pytest.mark.asyncio
-    async def test_allows_confined_repo_root_in_tmp(self, app):
+    async def test_allows_repo_root_in_configured_scan_root(self, app):
         fake_analyzer = MagicMock()
         fake_report = MagicMock()
         fake_report.total_gaps = 5
         fake_report.gaps = []
         fake_analyzer.analyze.return_value = fake_report
 
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            app.state,
+            "_config_dir",
+            tmp,
+            create=True,
+        ):
             resp = await _post(app, "/admin/gap-analysis", json={
                 "repo_root": tmp,
             })

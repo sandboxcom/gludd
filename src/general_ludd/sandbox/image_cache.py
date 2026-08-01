@@ -5,7 +5,8 @@ from __future__ import annotations
 import subprocess
 import time
 from dataclasses import dataclass
-from pathlib import Path
+
+from general_ludd.security.state import project_state, secure_directory
 
 
 @dataclass
@@ -28,9 +29,12 @@ class CachedImage:
         return self.age_seconds > max_age_seconds
 
 class ImageCache:
-    def __init__(self, cache_dir: str = "/tmp/gludd-image-cache") -> None:
-        self.cache_dir = Path(cache_dir)
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
+    def __init__(self, cache_dir: str | None = None) -> None:
+        self.cache_dir = (
+            project_state().directory("sandbox", "image-cache")
+            if cache_dir is None
+            else secure_directory(cache_dir)
+        )
         self._images: dict[str, CachedImage] = {}
 
     def get(self, name: str, tag: str = "latest") -> CachedImage | None:

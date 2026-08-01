@@ -338,10 +338,18 @@ def test_subagent_guard_env_var() -> None:
         assert not guard.is_subagent()
 
 
-def test_subagent_guard_file_fallback() -> None:
+def test_subagent_guard_file_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    from general_ludd.security.state import project_state, secure_write_text
+
+    monkeypatch.setenv("GLUDD_STATE_DIR", str(tmp_path / "state"))
+    state = project_state()
+    marker = state.path("subagents", f"process-{os.getpid()}.json")
+    secure_write_text(marker, "{}")
     guard = SubagentGuard()
-    os.getpid()
-    with patch.dict(os.environ, {}, clear=True), patch("os.path.exists", return_value=True):
+    with patch.dict(os.environ, {"GLUDD_STATE_DIR": str(tmp_path / "state")}, clear=True):
         assert guard.is_subagent()
 
 

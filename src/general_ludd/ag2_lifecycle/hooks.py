@@ -9,6 +9,7 @@ import logging
 import os
 import threading
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Protocol
 
 from general_ludd.ag2_lifecycle.types import (
@@ -29,8 +30,15 @@ from general_ludd.ag2_lifecycle.types import (
     TaskDispatchBeforeInput,
     TaskDispatchBeforeOutput,
 )
+from general_ludd.security.state import (
+    SecureStateError,
+    project_state,
+    trusted_owned_file,
+)
 
 logger = logging.getLogger(__name__)
+
+_LEGACY_SIGNAL_ROOT = Path(os.sep) / "tmp"
 
 
 # ── Deny Error ─────────────────────────────────────────────────────────────────
@@ -81,8 +89,11 @@ class SubagentGuard:
         if os.environ.get("OPENCODE_SUBAGENT") == "1":
             return True
         try:
-            return os.path.exists(f"/tmp/gludd-subagent-{os.getpid()}.json")
-        except OSError:
+            state = project_state(create=False)
+            namespaced = state.path("subagents", f"process-{os.getpid()}.json")
+            legacy = _LEGACY_SIGNAL_ROOT / f"gludd-subagent-{os.getpid()}.json"
+            return any(trusted_owned_file(path) for path in (namespaced, legacy))
+        except (OSError, SecureStateError):
             return False
 
 

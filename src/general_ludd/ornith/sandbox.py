@@ -8,16 +8,23 @@ is turned on.
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
-import tempfile
 from pathlib import Path
 from types import TracebackType
 
 from general_ludd.security.sanitize import confine_path
+from general_ludd.security.state import SecureState, project_state, secure_directory
 
-_ORNITH_EXPORT_ROOT = os.environ.get("ORNITH_EXPORT_ROOT", tempfile.gettempdir())
-_GLUDD_DATA_DIR = os.environ.get("GLUDD_DATA_DIR")
+_ORNITH_EXPORT_ROOT: str | Path | None = None
+
+
+def _ornith_export_root() -> Path:
+    configured = _ORNITH_EXPORT_ROOT or os.environ.get("ORNITH_EXPORT_ROOT")
+    if configured:
+        raw = Path(configured).expanduser()
+        secure_directory(raw)
+        return raw
+    return project_state().directory("ornith", "exports")
 
 
 def _append_root_aliases(roots: list[str], root: str | Path | None) -> None:
@@ -30,21 +37,14 @@ def _append_root_aliases(roots: list[str], root: str | Path | None) -> None:
 
 def _build_allowed_export_roots() -> list[str]:
     roots: list[str] = []
-    for root in (
-        _ORNITH_EXPORT_ROOT,
-        os.environ.get("TMPDIR"),
-        os.environ.get("TEMP"),
-        os.environ.get("TMP"),
-    ):
-        _append_root_aliases(roots, root)
-    for platform_temp in ("/tmp", "/private/tmp"):
-        if Path(platform_temp).exists():
-            _append_root_aliases(roots, platform_temp)
-    _append_root_aliases(roots, _GLUDD_DATA_DIR)
+    _append_root_aliases(roots, _ornith_export_root())
+    data_dir = os.environ.get("GLUDD_DATA_DIR")
+    if data_dir:
+        _append_root_aliases(roots, secure_directory(data_dir))
     return roots
 
 
-_ALLOWED_EXPORT_ROOTS: list[str] = _build_allowed_export_roots()
+_ALLOWED_EXPORT_ROOTS: list[str] | None = None
 
 ORNITH_SANDBOX_MEM_MB = int(os.environ.get("ORNITH_SANDBOX_MEM_MB", "4096"))
 ORNITH_SANDBOX_CPU_S = int(os.environ.get("ORNITH_SANDBOX_CPU_S", "300"))
@@ -63,24 +63,16 @@ def confine_export_path(out_path: str | Path | None, default_filename: str) -> P
             raise ValueError(
                 f"out_path {raw!r} contains a null byte, which is disallowed."
             )
-        resolved = Path(raw).expanduser().resolve(strict=False)
-        temp_roots = {
-            Path(tempfile.gettempdir()).resolve(strict=False),
-            Path("/tmp").resolve(strict=False),
-            Path("/private/tmp").resolve(strict=False),
-        }
-        for candidate in (resolved, *resolved.parents):
-            if candidate.name.startswith("gludd-") and candidate.parent in temp_roots:
-                return resolved
-        for root in _ALLOWED_EXPORT_ROOTS:
+        roots = _ALLOWED_EXPORT_ROOTS or _build_allowed_export_roots()
+        for root in roots:
             confined = confine_path(raw, root)
             if confined is not None:
                 return Path(confined)
         raise ValueError(
             f"out_path {raw!r} is not within an allowed export root. "
-            f"Allowed: {_ALLOWED_EXPORT_ROOTS}"
+            f"Allowed: {roots}"
         )
-    return Path(_ORNITH_EXPORT_ROOT) / default_filename
+    return _ornith_export_root() / default_filename
 
 
 def ornith_sandbox_preexec() -> None:
@@ -110,12 +102,16 @@ class OrnithSandbox:
     """
 
     def __init__(self) -> None:
-        self.temp_dir = Path(tempfile.mkdtemp(prefix="ornith-sandbox-"))
+        self._state: SecureState = project_state()
+        self.temp_dir = self._state.temporary_directory(
+            "ornith",
+            prefix="ornith-sandbox-",
+        )
         self._cleaned = False
 
     def cleanup(self) -> None:
         if not self._cleaned and self.temp_dir.exists():
-            shutil.rmtree(self.temp_dir, ignore_errors=True)
+            self._state.cleanup_path(self.temp_dir)
             self._cleaned = True
 
     def __enter__(self) -> OrnithSandbox:
