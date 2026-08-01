@@ -497,6 +497,35 @@ single, clearly-marked, opt-in test.
   and budget-guarded. Recommend running it on a cadence (nightly/weekly) outside
   the PR gate, never in the per-commit suite.
 
+#### Live progress and timeout-safe teardown
+
+The 2026-08-01 live run confirmed that Azure can spend several minutes creating
+the Container Apps environment before an endpoint exists. A prior run reached a
+successful HTTP inference but exposed two lifecycle gaps: the returned instance
+still reported zero cost, and the suite timeout interrupted `terraform destroy`.
+`DeploymentManager` therefore treats deployment progress as a first-class event
+stream: command start, sanitized output lines, completion/failure, deploy, and
+destroy events are published while Terraform is still running. The returned
+Azure instance attributes elapsed provision time at the same tier rate used by
+`DeployStrategist`, and cancellation is deferred until destroy has finished.
+Signal/atexit cleanup uses the initialized Terraform state directly rather than
+trying to start a nested asyncio loop.
+
+This is also a long-lived platform concern, not only a test-runner concern:
+
+- A [2025 Microsoft Q&A report](https://learn.microsoft.com/en-us/answers/questions/5570112/container-app-environment-stuck-in-waiting-provisi)
+  describes a Container Apps environment stuck in `Waiting`, returning 409 while
+  an earlier operation remains in progress. Live events must surface that state
+  before the entire E2E deadline expires.
+- A [2024 Microsoft Q&A thread](https://learn.microsoft.com/en-us/answers/questions/1660320/cannot-delete-container-app-environment)
+  records environment deletion as asynchronous and potentially slow, including
+  hidden builder dependencies. Cleanup success must come from Terraform/Azure
+  state reconciliation, not merely from issuing a delete request.
+- Microsoft's [Container Apps troubleshooting guide](https://learn.microsoft.com/en-us/azure/container-apps/troubleshooting)
+  documents indefinitely provisioning revisions and environments scheduled for
+  deletion that need dependency cleanup. The live harness consequently preserves
+  state for retry when destroy fails instead of declaring cleanup complete.
+
 ---
 
 ## 5. Make targets (proposed — Bash here is make-only)

@@ -17,6 +17,7 @@ from typing import Any, cast
 import httpx
 import pytest
 
+from general_ludd.events import EventBus
 from general_ludd.infra.compute import (
     ComputeConfig,
     ComputeInstance,
@@ -107,6 +108,7 @@ def _run_inference(url: str, model: str) -> None:
 
 
 @pytest.mark.azure_provision
+@pytest.mark.timeout(2400)
 class TestAzureProvisionE2E:
     def test_azure_provision_model_call_and_destroy(self) -> None:
         _require_azure_creds()
@@ -144,7 +146,18 @@ class TestAzureProvisionE2E:
         )
 
         secrets = cast(Any, EnvSecretsManager())
-        mgr = DeploymentManager(secrets_resolver=secrets)
+        terraform_events: list[str] = []
+        event_bus = EventBus()
+
+        def report_terraform_event(event: Any) -> None:
+            name = str(event.payload.get("name", ""))
+            terraform_events.append(name)
+            if name != "terraform_output":
+                operation = event.payload.get("operation", "")
+                print(f"[event] {name} {operation}".rstrip(), flush=True)
+
+        event_bus.subscribe("custom", report_terraform_event)
+        mgr = DeploymentManager(secrets_resolver=secrets, event_bus=event_bus)
         instance: ComputeInstance | None = None
 
         try:
@@ -153,6 +166,9 @@ class TestAzureProvisionE2E:
             assert instance is not None
             assert instance.status == "running", f"Expected 'running', got {instance.status!r}"
             assert instance.endpoint_url, "endpoint_url must be set after deploy"
+            assert terraform_events[0] == "terraform_deploy_started"
+            assert "terraform_output" in terraform_events
+            assert "terraform_deploy_completed" in terraform_events
             print(f"[test] Deploy done, endpoint: {instance.endpoint_url}", flush=True)
 
             print(f"[test] Waiting for endpoint {instance.endpoint_url}...", flush=True)
@@ -188,6 +204,8 @@ class TestAzureProvisionE2E:
                 print("[test] Destroy complete", flush=True)
 
         assert instance is not None
+        assert "terraform_destroy_started" in terraform_events
+        assert "terraform_destroy_completed" in terraform_events
         assert instance.cost_incurred <= max_spend, (
             f"Cost {instance.cost_incurred:.2f} exceeded max spend {max_spend:.2f}"
         )
