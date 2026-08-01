@@ -11,6 +11,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from typing import Any, Protocol
@@ -150,8 +151,39 @@ def _handle_signal(signum: int, frame: object) -> None:
     os.kill(os.getpid(), signum)
 
 
-signal.signal(signal.SIGTERM, _handle_signal)
-signal.signal(signal.SIGINT, _handle_signal)
+_signal_handlers_installed = False
+
+
+def _install_signal_handlers() -> bool:
+    """Install deployment cleanup handlers when Python permits it.
+
+    Imports can happen inside ``asyncio.to_thread`` on the worker generation
+    path.  Python only permits ``signal.signal`` in the main thread of the main
+    interpreter, so a worker-thread import must remain process-pure and let a
+    later main-thread manager construction retry installation.  The ValueError
+    guard is still required for embedded interpreters where
+    ``threading.main_thread`` can differ from the interpreter's signal thread.
+    """
+    global _signal_handlers_installed
+    if _signal_handlers_installed:
+        return True
+    if threading.current_thread() is not threading.main_thread():
+        logger.debug("Skipping deployment signal handlers outside the main thread")
+        return False
+    try:
+        signal.signal(signal.SIGTERM, _handle_signal)
+        signal.signal(signal.SIGINT, _handle_signal)
+    except ValueError:
+        logger.debug(
+            "Skipping deployment signal handlers outside the main interpreter",
+            exc_info=True,
+        )
+        return False
+    _signal_handlers_installed = True
+    return True
+
+
+_install_signal_handlers()
 
 
 class SecretsResolver(Protocol):
@@ -172,6 +204,7 @@ class DeploymentManager:
         session_factory: async_sessionmaker[AsyncSession] | None = None,
         worker_id: str | None = None,
     ) -> None:
+        _install_signal_handlers()
         self._binary_resolver = binary_paths or BinaryPathResolver()
         self._working_dir = working_dir or str(
             project_state().temporary_directory("terraform", prefix="gludd-tf-")

@@ -265,13 +265,42 @@ class ResourceLifecycleManager:
 # ------------------------------------------------------------------
 
 _lifecycle_singleton: ResourceLifecycleManager | None = None
+_lifecycle_singleton_lock = threading.Lock()
+_signal_handlers_installed = False
+
+
+def _install_signal_handlers(manager: ResourceLifecycleManager) -> bool:
+    """Install lifecycle handlers only from the main interpreter thread.
+
+    A worker thread may be the first caller of :func:`get_lifecycle`; that must
+    construct a usable singleton without raising.  A later main-thread call
+    retries installation so crash cleanup is not permanently lost.
+    """
+    global _signal_handlers_installed
+    if _signal_handlers_installed:
+        return True
+    if threading.current_thread() is not threading.main_thread():
+        logger.debug("Deferring lifecycle signal handlers to the main thread")
+        return False
+    try:
+        signal.signal(signal.SIGTERM, manager._handle_signal)
+        signal.signal(signal.SIGINT, manager._handle_signal)
+    except ValueError:
+        logger.debug(
+            "Deferring lifecycle signal handlers outside the main interpreter",
+            exc_info=True,
+        )
+        return False
+    _signal_handlers_installed = True
+    return True
 
 
 def get_lifecycle() -> ResourceLifecycleManager:
     global _lifecycle_singleton
-    if _lifecycle_singleton is None:
-        _lifecycle_singleton = ResourceLifecycleManager()
-        atexit.register(_lifecycle_singleton._guaranteed_cleanup)
-        signal.signal(signal.SIGTERM, _lifecycle_singleton._handle_signal)
-        signal.signal(signal.SIGINT, _lifecycle_singleton._handle_signal)
-    return _lifecycle_singleton
+    with _lifecycle_singleton_lock:
+        if _lifecycle_singleton is None:
+            _lifecycle_singleton = ResourceLifecycleManager()
+            atexit.register(_lifecycle_singleton._guaranteed_cleanup)
+        manager = _lifecycle_singleton
+        _install_signal_handlers(manager)
+        return manager
