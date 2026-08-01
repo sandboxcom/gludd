@@ -549,6 +549,7 @@ class TerraformGenerator:
             variable "image"          {{ default = "" }}
             variable "gpus"           {{ default = 1 }}
             variable "model"          {{ default = "" }}
+            variable "region"         {{ default = "" }}
             variable "instance_type"  {{ default = "" }}
             variable "extra_args"     {{ default = "" }}
             variable "max_cost_usd"   {{ default = 5 }}
@@ -610,6 +611,7 @@ class TerraformGenerator:
             variable "image"          {{ default = "" }}
             variable "gpus"           {{ default = 1 }}
             variable "model"          {{ default = "" }}
+            variable "region"        {{ default = "" }}
             variable "instance_type"  {{ default = "" }}
             variable "extra_args"     {{ default = "" }}
             variable "max_cost_usd"   {{ default = 5 }}
