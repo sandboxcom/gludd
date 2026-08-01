@@ -8,6 +8,14 @@ import logging
 import os
 import tempfile
 import uuid
+
+_AZURE_REGIONS = [
+    "westus2",
+    "northeurope",
+    "westeurope",
+    "eastus",
+    "centralus",
+]
 from typing import Any, Protocol
 
 from general_ludd.config.binary_paths import BinaryPathResolver
@@ -65,10 +73,7 @@ class DeploymentManager:
 
     def _save_registry(self) -> None:
         os.makedirs(self._working_dir, exist_ok=True)
-        serializable = {
-            inst_id: json.loads(record.model_dump_json())
-            for inst_id, record in self._registry.items()
-        }
+        serializable = {inst_id: json.loads(record.model_dump_json()) for inst_id, record in self._registry.items()}
         with open(self._registry_path, "w") as f:
             json.dump(serializable, f)
 
@@ -105,48 +110,57 @@ class DeploymentManager:
 
     async def deploy(self, config: ComputeConfig) -> ComputeInstance:
         self._last_config = config
-        # Build a per-call env snapshot; global os.environ is never mutated.
         auth_env = self._build_auth_env(config)
-        # Each deployment gets its OWN terraform working dir so its state is
-        # isolated; destroy later runs in exactly this dir (deploy-before-destroy).
         deploy_dir = os.path.join(self._working_dir, f"d-{uuid.uuid4().hex[:12]}")
         os.makedirs(deploy_dir, exist_ok=True)
-        try:
+
+        regions = [config.region] if config.region else _AZURE_REGIONS
+        last_error = None
+
+        for region in regions:
+            config.region = region
             hcl = self._generator.generate(config)
             main_tf_path = os.path.join(deploy_dir, "main.tf")
             with open(main_tf_path, "w") as f:
                 f.write(hcl)
 
-            await self._run_terraform(["init", "-input=false"], cwd=deploy_dir, env=auth_env)
-            await self._run_terraform(["apply", "-auto-approve", "-input=false"], cwd=deploy_dir, env=auth_env)
+            try:
+                await self._run_terraform(["init", "-input=false"], cwd=deploy_dir, env=auth_env)
+                await self._run_terraform(["apply", "-auto-approve", "-input=false"], cwd=deploy_dir, env=auth_env)
+                break  # Success — exit the region loop
+            except RuntimeError as e:
+                last_error = e
+                error_str = str(e)
+                if "AKSCapacityHeavyUsage" in error_str or "capacity" in error_str.lower():
+                    continue  # Try next region
+                raise  # Not a capacity error — re-raise
 
-            output_result = await self._run_terraform(["output", "-json"], cwd=deploy_dir, env=auth_env)
-            parsed = self._parse_outputs(output_result.get("stdout", ""))
+        if last_error:
+            raise last_error
 
-            instance_id = parsed.get("instance_ip", parsed.get("pod_id", "unknown"))
-            # W2.3 (C5/M2): record the deployment before returning. Now destroy can
-            # look up its working dir and refuse instance_ids it never deployed.
-            self._registry[instance_id] = DeploymentRecord(
-                instance_id=instance_id,
-                working_dir=deploy_dir,
-                provider=config.provider.value,
-                model_name=config.model_name,
-                state="running",
-                ip_address=parsed.get("instance_ip"),
-                endpoint_url=parsed.get("endpoint_url"),
-            )
-            self._save_registry()
-            return ComputeInstance(
-                instance_id=instance_id,
-                provider=config.provider,
-                status="running",
-                ip_address=parsed.get("instance_ip"),
-                port=8000,
-                gpu_type=config.gpu_type,
-                endpoint_url=parsed.get("endpoint_url"),
-            )
-        finally:
-            pass  # no env cleanup needed — we never touched os.environ
+        output_result = await self._run_terraform(["output", "-json"], cwd=deploy_dir, env=auth_env)
+        parsed = self._parse_outputs(output_result.get("stdout", ""))
+
+        instance_id = parsed.get("instance_ip", parsed.get("pod_id", "unknown"))
+        self._registry[instance_id] = DeploymentRecord(
+            instance_id=instance_id,
+            working_dir=deploy_dir,
+            provider=config.provider.value,
+            model_name=config.model_name,
+            state="running",
+            ip_address=parsed.get("instance_ip"),
+            endpoint_url=parsed.get("endpoint_url"),
+        )
+        self._save_registry()
+        return ComputeInstance(
+            instance_id=instance_id,
+            provider=config.provider,
+            status="running",
+            ip_address=parsed.get("instance_ip"),
+            port=8000,
+            gpu_type=config.gpu_type,
+            endpoint_url=parsed.get("endpoint_url"),
+        )
 
     async def plan(self, config: ComputeConfig) -> dict[str, Any]:
         auth_env = self._build_auth_env(config)
@@ -158,7 +172,10 @@ class DeploymentManager:
         await self._run_terraform(["init", "-input=false"], cwd=plan_dir, env=auth_env)
         binary = self._binary_resolver.get_infra_binary()
         proc = await asyncio.create_subprocess_exec(
-            binary, "plan", "-detailed-exitcode", "-input=false",
+            binary,
+            "plan",
+            "-detailed-exitcode",
+            "-input=false",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=plan_dir,
@@ -167,9 +184,7 @@ class DeploymentManager:
         stdout, stderr = await proc.communicate()
         changes = proc.returncode == 2
         if proc.returncode not in (0, 2):
-            raise RuntimeError(
-                f"terraform plan failed (rc={proc.returncode}): {stderr.decode()}"
-            )
+            raise RuntimeError(f"terraform plan failed (rc={proc.returncode}): {stderr.decode()}")
         return {
             "changes_present": changes,
             "stdout": stdout.decode(),
@@ -230,9 +245,7 @@ class DeploymentManager:
         )
         stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
-            raise RuntimeError(
-                f"terraform failed (rc={proc.returncode}): {stderr.decode()}"
-            )
+            raise RuntimeError(f"terraform failed (rc={proc.returncode}): {stderr.decode()}")
         return {
             "stdout": stdout.decode(),
             "stderr": stderr.decode(),
