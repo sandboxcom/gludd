@@ -16,9 +16,11 @@ import os
 import subprocess
 import sys
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from types import ModuleType
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -32,32 +34,56 @@ logger = logging.getLogger(__name__)
 Frame = NDArray[np.uint8]
 
 # ── Optional dependency detection ──────────────────────────────────────────
-_HAS_PYGAME: bool
+pygame: ModuleType | None
 try:
-    import pygame  # type: ignore[import-not-found]
-
-    _HAS_PYGAME = True
+    import pygame as _pygame
 except ImportError:  # pragma: no cover
     pygame = None
-    _HAS_PYGAME = False
+else:
+    pygame = _pygame
+_HAS_PYGAME = pygame is not None
 
-_HAS_SKIMAGE: bool
+class _StructuralSimilarity(Protocol):
+    def __call__(
+        self,
+        frame_a: object,
+        frame_b: object,
+        *,
+        data_range: float,
+        channel_axis: int,
+        win_size: int,
+    ) -> float: ...
+
+
+structural_similarity: _StructuralSimilarity | None
 try:
-    from skimage.metrics import structural_similarity  # type: ignore[import-not-found]
-
-    _HAS_SKIMAGE = True
+    from skimage.metrics import structural_similarity as _skimage_structural_similarity
 except ImportError:  # pragma: no cover
     structural_similarity = None
-    _HAS_SKIMAGE = False
+else:
+    structural_similarity = cast(_StructuralSimilarity, _skimage_structural_similarity)
+_HAS_SKIMAGE = structural_similarity is not None
 
-_HAS_CV2: bool
+cv2: ModuleType | None
 try:
-    import cv2  # type: ignore[import-not-found]
-
-    _HAS_CV2 = True
+    import cv2 as _cv2
 except ImportError:  # pragma: no cover
     cv2 = None
-    _HAS_CV2 = False
+else:
+    cv2 = _cv2
+_HAS_CV2 = cv2 is not None
+
+
+def _require_pygame() -> ModuleType:
+    if pygame is None:
+        raise ImportError("pygame is required for game execution")
+    return pygame
+
+
+def _require_cv2() -> ModuleType:
+    if cv2 is None:
+        raise ImportError("opencv-python (cv2) is required for video frame extraction")
+    return cv2
 
 
 # ── GameSpec ────────────────────────────────────────────────────────────────
@@ -76,6 +102,14 @@ class GameSpec:
     reference_video_url: str | None = None
     required_controls: tuple[str, ...] = ()
     requires_menu: bool = False
+
+
+@dataclass(frozen=True)
+class GameInputEvent:
+    """One deterministic input delivered through pygame's event queue."""
+
+    frame: int
+    control: str
 
 
 # ── Predefined game specs ──────────────────────────────────────────────────
@@ -142,6 +176,18 @@ GAME_SPECS: list[GameSpec] = [
         requires_menu=True,
     ),
 ]
+
+
+def build_game_input_script(spec: GameSpec) -> tuple[GameInputEvent, ...]:
+    """Build a menu→play→menu event script covering every declared control."""
+    controls = [control.lower() for control in spec.required_controls]
+    ordered: list[str] = []
+    if "return" in controls:
+        ordered.append("return")
+    ordered.extend(control for control in controls if control not in {"return", "escape"})
+    if "escape" in controls:
+        ordered.append("escape")
+    return tuple(GameInputEvent(frame=index, control=control) for index, control in enumerate(ordered))
 
 
 # ── GameGenerator ───────────────────────────────────────────────────────────
@@ -218,6 +264,32 @@ class GameGenerator:
         file_path.write_text(code, encoding="utf-8")
 
 
+class GameGenerationCache:
+    """Session cache keyed by fixture prompt, model id, and model settings."""
+
+    def __init__(self) -> None:
+        self._generated: dict[tuple[str, str, str, tuple[tuple[str, str], ...]], str] = {}
+        self.miss_count = 0
+
+    def generate(
+        self,
+        generator: GameGenerator,
+        spec: GameSpec,
+        *,
+        model_id: str = "default",
+        model_settings: Mapping[str, str] | None = None,
+    ) -> str:
+        settings = tuple(sorted((model_settings or {}).items()))
+        key = (spec.name, spec.prompt_template, model_id, settings)
+        cached = self._generated.get(key)
+        if cached is not None:
+            return cached
+        generated = generator.generate_game(spec, model_id=model_id)
+        self._generated[key] = generated
+        self.miss_count += 1
+        return generated
+
+
 def _extract_python_code(content: str) -> str:
     """Extract Python code from an LLM response, stripping markdown fences."""
     import re
@@ -285,11 +357,11 @@ class GameRunner:
 
     def __init__(self) -> None:
         self._processes: list[subprocess.Popen[Any]] = []
+        self.last_injected_controls: set[str] = set()
 
     def run_headless(self, game_path: str, num_frames: int) -> list[Frame]:
         """Run the game in headless mode using pygame with dummy video driver."""
-        if not _HAS_PYGAME:
-            raise ImportError("pygame is required for game execution")
+        _require_pygame()
 
         env = os.environ.copy()
         env["SDL_VIDEODRIVER"] = "dummy"
@@ -315,21 +387,26 @@ class GameRunner:
 
         return frames
 
-    def run_headless_inline(self, game_path: str, num_frames: int) -> list[Frame]:
+    def run_headless_inline(
+        self,
+        game_path: str,
+        num_frames: int,
+        *,
+        input_script: tuple[GameInputEvent, ...] = (),
+    ) -> list[Frame]:
         """Run the game by importing and calling it in-process for frame capture.
 
         This method hooks pygame's display to capture frames into memory
         rather than launching a subprocess.
         """
-        if not _HAS_PYGAME:
-            raise ImportError("pygame is required for game execution")
+        pygame_module = _require_pygame()
 
         os.environ["SDL_VIDEODRIVER"] = "dummy"
         os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
 
         frames: list[Frame] = []
 
-        display_surface = pygame.display.set_mode((800, 600))
+        display_surface = pygame_module.display.set_mode((800, 600))
 
         game_dir = str(Path(game_path).parent)
         game_name = Path(game_path).stem
@@ -337,10 +414,48 @@ class GameRunner:
         if game_dir not in sys.path:
             sys.path.insert(0, game_dir)
 
-        captured: list[pygame.Surface] = []
+        captured: list[object] = []
 
-        original_flip = pygame.display.flip
-        original_update = pygame.display.update
+        original_flip = pygame_module.display.flip
+        original_update = pygame_module.display.update
+        original_event_get = pygame_module.event.get
+        events_by_frame: dict[int, list[GameInputEvent]] = {}
+        for scripted_event in input_script:
+            events_by_frame.setdefault(scripted_event.frame, []).append(scripted_event)
+        event_frame = 0
+        self.last_injected_controls.clear()
+
+        key_constants = {
+            "w": pygame_module.K_w,
+            "a": pygame_module.K_a,
+            "s": pygame_module.K_s,
+            "d": pygame_module.K_d,
+            "space": pygame_module.K_SPACE,
+            "escape": pygame_module.K_ESCAPE,
+            "return": pygame_module.K_RETURN,
+        }
+
+        def _scripted_event_get(*args: Any, **kwargs: Any) -> list[Any]:
+            nonlocal event_frame
+            events = list(original_event_get(*args, **kwargs))
+            for scripted_event in events_by_frame.get(event_frame, []):
+                control = scripted_event.control
+                if control == "mouse":
+                    event = pygame_module.event.Event(
+                        pygame_module.MOUSEMOTION,
+                        pos=(400, 300),
+                        rel=(8, 0),
+                        buttons=(False, False, False),
+                    )
+                else:
+                    key = key_constants.get(control)
+                    if key is None:
+                        raise ValueError(f"Unsupported scripted game control: {control}")
+                    event = pygame_module.event.Event(pygame_module.KEYDOWN, key=key)
+                events.append(event)
+                self.last_injected_controls.add(control)
+            event_frame += 1
+            return events
 
         def _capturing_flip() -> None:
             surf = display_surface.copy()
@@ -356,8 +471,9 @@ class GameRunner:
                 raise SystemExit(0)
             original_update(*args, **kwargs)
 
-        pygame.display.flip = _capturing_flip
-        pygame.display.update = _capturing_update
+        pygame_module.display.flip = _capturing_flip
+        pygame_module.display.update = _capturing_update
+        pygame_module.event.get = _scripted_event_get
 
         try:
             import importlib.util
@@ -371,8 +487,9 @@ class GameRunner:
             with contextlib.suppress(SystemExit):
                 spec.loader.exec_module(module)
         finally:
-            pygame.display.flip = original_flip
-            pygame.display.update = original_update
+            pygame_module.display.flip = original_flip
+            pygame_module.display.update = original_update
+            pygame_module.event.get = original_event_get
 
         runner = self
         for surf in captured[:num_frames]:
@@ -382,10 +499,9 @@ class GameRunner:
 
     @staticmethod
     def capture_frame(surface: Any) -> Frame:
-        """Convert a pygame Surface to a numpy array (RGB)."""
-        if not _HAS_PYGAME:
-            raise ImportError("pygame is required for frame capture")
-        arr = pygame.surfarray.array3d(surface)
+        """Convert a pygame Surface to an ``(height, width, 3)`` RGB frame."""
+        pygame_module = _require_pygame()
+        arr = pygame_module.surfarray.array3d(surface)
         return cast(Frame, arr.transpose(1, 0, 2))
 
     def cleanup(self) -> None:
@@ -412,7 +528,7 @@ class FrameComparator:
         if frame1.shape != frame2.shape:
             return 0.0
 
-        if _HAS_SKIMAGE and frame1.ndim == 3 and frame1.shape[2] == 3:
+        if structural_similarity is not None and frame1.ndim == 3 and frame1.shape[2] == 3:
             try:
                 val: float = structural_similarity(
                     frame1,
@@ -489,10 +605,8 @@ class FrameComparator:
     @staticmethod
     def load_reference_frames(video_path: str) -> list[Frame]:
         """Extract frames from a reference video using cv2."""
-        if not _HAS_CV2:
-            raise ImportError("opencv-python (cv2) is required for video frame extraction")
-
-        cap = cv2.VideoCapture(video_path)
+        cv2_module = _require_cv2()
+        cap = cv2_module.VideoCapture(video_path)
         if not cap.isOpened():
             raise FileNotFoundError(f"Cannot open video: {video_path}")
 
@@ -501,7 +615,7 @@ class FrameComparator:
             ret, frame = cap.read()
             if not ret:
                 break
-            frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            frames.append(cv2_module.cvtColor(frame, cv2_module.COLOR_BGR2RGB))
         cap.release()
         return frames
 
@@ -550,6 +664,7 @@ class E2EResult:
     reference_network_used: bool = False
     comparison_threshold: float = 0.0
     motion_correlation: float = 0.0
+    input_controls_injected: tuple[str, ...] = ()
 
 
 class AzureGameE2E:
@@ -586,9 +701,19 @@ class AzureGameE2E:
                 result.generated_code_path = game_path
 
                 if _HAS_PYGAME:
-                    frames = self.runner.run_headless_inline(game_path, spec.expected_frames)
+                    input_script = build_game_input_script(spec)
+                    frames = self.runner.run_headless_inline(
+                        game_path,
+                        spec.expected_frames,
+                        input_script=input_script,
+                    )
                     result.frames_captured = len(frames)
                     result.game_ran = len(frames) > 0
+                    result.input_controls_injected = tuple(
+                        control
+                        for control in spec.required_controls
+                        if control in self.runner.last_injected_controls
+                    )
 
                     if spec.reference_video_url:
                         try:
@@ -650,6 +775,7 @@ class AzureGameE2E:
             "reference_cache_status": results.reference_cache_status,
             "reference_frames_sampled": results.reference_frames_sampled,
             "reference_network_used": results.reference_network_used,
+            "input_controls_injected": results.input_controls_injected,
             "errors": results.errors,
         }
 
@@ -662,7 +788,10 @@ __all__ = [
     "DeploymentConfig",
     "E2EResult",
     "FrameComparator",
+    "GameGenerationCache",
     "GameGenerator",
+    "GameInputEvent",
     "GameRunner",
     "GameSpec",
+    "build_game_input_script",
 ]

@@ -10,7 +10,8 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from types import ModuleType
+from typing import Any, Protocol, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -18,32 +19,44 @@ from numpy.typing import NDArray
 logger = logging.getLogger(__name__)
 Frame = NDArray[np.uint8]
 
-_HAS_SKIMAGE: bool
-try:
-    from skimage.metrics import structural_similarity  # type: ignore[import-not-found]
+class _StructuralSimilarity(Protocol):
+    def __call__(
+        self,
+        frame_a: object,
+        frame_b: object,
+        *,
+        data_range: float,
+        channel_axis: int,
+        win_size: int,
+    ) -> float: ...
 
-    _HAS_SKIMAGE = True
+
+structural_similarity: _StructuralSimilarity | None
+try:
+    from skimage.metrics import structural_similarity as _skimage_structural_similarity
 except ImportError:  # pragma: no cover
     structural_similarity = None
-    _HAS_SKIMAGE = False
+else:
+    structural_similarity = cast(_StructuralSimilarity, _skimage_structural_similarity)
+_HAS_SKIMAGE = structural_similarity is not None
 
-_HAS_CV2: bool
+cv2: ModuleType | None
 try:
-    import cv2  # type: ignore[import-not-found]
-
-    _HAS_CV2 = True
+    import cv2 as _cv2
 except ImportError:  # pragma: no cover
     cv2 = None
-    _HAS_CV2 = False
+else:
+    cv2 = _cv2
+_HAS_CV2 = cv2 is not None
 
-_HAS_YTDLP: bool
+yt_dlp: ModuleType | None
 try:
-    import yt_dlp  # type: ignore[import-untyped]
-
-    _HAS_YTDLP = True
+    import yt_dlp as _yt_dlp
 except ImportError:  # pragma: no cover
     yt_dlp = None
-    _HAS_YTDLP = False
+else:
+    yt_dlp = _yt_dlp
+_HAS_YTDLP = yt_dlp is not None
 
 @dataclass(frozen=True)
 class ReferenceVideoSpec:
@@ -106,16 +119,18 @@ REFERENCE_VIDEOS: dict[str, str] = {
 }
 
 
-def _ensure_yt_dlp() -> None:
-    if not _HAS_YTDLP:
+def _ensure_yt_dlp() -> ModuleType:
+    if yt_dlp is None:
         raise ImportError("yt-dlp is required for video download — install with: pip install yt-dlp")
+    return yt_dlp
 
 
-def _ensure_cv2() -> None:
-    if not _HAS_CV2:
+def _ensure_cv2() -> ModuleType:
+    if cv2 is None:
         raise ImportError(
             "opencv-python (cv2) is required for video processing — install with: pip install opencv-python"
         )
+    return cv2
 
 
 def download_youtube_video(
@@ -140,7 +155,7 @@ def download_youtube_video(
         ImportError: If yt-dlp is not installed.
         RuntimeError: If download fails.
     """
-    _ensure_yt_dlp()
+    ytdlp_module = _ensure_yt_dlp()
     out = Path(output_path)
     if out.suffix:
         out_dir = str(out.parent)
@@ -170,7 +185,7 @@ def download_youtube_video(
         ydl_opts["force_keyframes_at_cuts"] = True
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        with ytdlp_module.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             if info is None:
                 raise RuntimeError("yt-dlp returned no info for url")
@@ -203,28 +218,28 @@ def extract_frames(
     Returns:
         List of frames as numpy arrays (H, W, 3) in RGB.
     """
-    _ensure_cv2()
-    cap = cv2.VideoCapture(str(video_path))
+    cv2_module = _ensure_cv2()
+    cap = cv2_module.VideoCapture(str(video_path))
     if not cap.isOpened():
         raise FileNotFoundError(f"Cannot open video: {video_path}")
 
-    fps = cap.get(cv2.CAP_PROP_FPS)
+    fps = cap.get(cv2_module.CAP_PROP_FPS)
     if fps <= 0:
         fps = 30.0
 
     frame_interval = max(1, int(fps * interval))
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    total_frames = int(cap.get(cv2_module.CAP_PROP_FRAME_COUNT))
 
     frames: list[Frame] = []
     frame_idx = 0
     extracted = 0
 
     while extracted < num_frames and frame_idx < total_frames:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+        cap.set(cv2_module.CAP_PROP_POS_FRAMES, frame_idx)
         ret, frame = cap.read()
         if not ret:
             break
-        frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        frames.append(cv2_module.cvtColor(frame, cv2_module.COLOR_BGR2RGB))
         extracted += 1
         frame_idx += frame_interval
 
@@ -245,10 +260,10 @@ def resize_frames(
     Returns:
         List of resized frames.
     """
-    _ensure_cv2()
+    cv2_module = _ensure_cv2()
     resized: list[Frame] = []
     for frame in frames:
-        resized.append(cv2.resize(frame, target_size))
+        resized.append(cv2_module.resize(frame, target_size))
     return resized
 
 
@@ -267,7 +282,7 @@ def compute_ssim(frame_a: Frame, frame_b: Frame) -> float:
     if frame_a.shape != frame_b.shape:
         return 0.0
 
-    if _HAS_SKIMAGE and frame_a.ndim == 3 and frame_a.shape[2] == 3:
+    if structural_similarity is not None and frame_a.ndim == 3 and frame_a.shape[2] == 3:
         try:
             val: float = structural_similarity(
                 frame_a.astype(np.float64),
@@ -333,7 +348,12 @@ def motion_correlation(sig_a: list[float], sig_b: list[float]) -> float:
     if len(sig_a) < 2 or len(sig_b) < 2:
         return 0.0
     min_len = min(len(sig_a), len(sig_b))
-    return float(np.corrcoef(sig_a[:min_len], sig_b[:min_len])[0, 1])
+    values_a = np.asarray(sig_a[:min_len], dtype=np.float64)
+    values_b = np.asarray(sig_b[:min_len], dtype=np.float64)
+    if np.ptp(values_a) == 0 or np.ptp(values_b) == 0:
+        return 0.0
+    correlation = float(np.corrcoef(values_a, values_b)[0, 1])
+    return correlation if np.isfinite(correlation) else 0.0
 
 
 def compare_gameplay(

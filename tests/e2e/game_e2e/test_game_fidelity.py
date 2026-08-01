@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -23,14 +24,17 @@ from typing import Any, cast
 import numpy as np
 import pytest
 
+from general_ludd.cloud.azure_game_runtime import AzureGameRuntime
 from general_ludd.cloud.game_e2e import _HAS_PYGAME as HAS_PYGAME
 from general_ludd.cloud.game_e2e import (
     GAME_SPECS,
     AzureGameE2E,
     E2EResult,
     FrameComparator,
+    GameGenerationCache,
     GameGenerator,
     GameRunner,
+    build_game_input_script,
 )
 from general_ludd.cloud.game_gen import _HAS_PYGAME as HAS_PYGAME_GEN
 from general_ludd.cloud.game_gen import (
@@ -41,6 +45,8 @@ from general_ludd.cloud.game_gen import (
 )
 from general_ludd.cloud.video_compare import (
     REFERENCE_VIDEOS,
+    ReferenceComparisonResult,
+    compare_gameplay_to_reference,
     compute_ssim,
     download_youtube_video,
 )
@@ -63,16 +69,142 @@ LIVE_SKIP_REASON = (
 _AZURE_CHECKED = bool(os.environ.get("ARM_SUBSCRIPTION_ID") or os.environ.get("AZURE_SUBSCRIPTION_ID"))
 
 
-def _build_azure_gateway():
-    """Build a ModelGateway pointed at an Azure-provisioned GPU endpoint.
+@dataclass(frozen=True)
+class LiveFpsArtifact:
+    code: str
+    game_path: Path
+    frame_count: int
+    first_frame_shape: tuple[int, ...]
+    input_controls: tuple[str, ...]
+    comparison: ReferenceComparisonResult
+    generation_count: int = 1
 
-    Uses DeployStrategist to resolve the endpoint — pre-provisioned via
-    AZURE_BASE_URL or auto-provisioned via DeploymentManager/Terraform.
-    NEVER falls back to DeepSeek/OpenAI hosted APIs.
-    """
-    from general_ludd.infra.deploy_strategy import build_azure_gateway as _build
 
-    return _build()
+@dataclass(frozen=True)
+class LiveGameGenArtifact:
+    code: str
+    frame_count: int
+    frame_shapes: tuple[tuple[int, ...], ...]
+    has_non_blank_frame: bool
+    has_color_variation: bool
+    generation_count: int = 1
+
+
+@pytest.fixture(scope="session")
+def gateway():
+    """Provision or borrow one Azure endpoint for the entire game E2E session."""
+    runtime = AzureGameRuntime()
+    try:
+        yield cast(Any, runtime.start())
+    finally:
+        runtime.close()
+
+
+@pytest.fixture(scope="session")
+def fps_artifacts(gateway, tmp_path_factory: pytest.TempPathFactory) -> dict[str, LiveFpsArtifact]:
+    """Generate, exercise, capture, and compare each declared FPS exactly once."""
+    generator = GameGenerator(gateway)
+    cache = GameGenerationCache()
+    output_dir = tmp_path_factory.mktemp("azure-fps-games")
+    cache_dir = Path(os.environ.get("GAME_E2E_REFERENCE_CACHE_DIR", ".cache/gludd-game-e2e"))
+    allow_network = os.environ.get("GAME_E2E_REFERENCE_NETWORK") == "1"
+    model_settings = {
+        "AZURE_MODEL": os.environ.get("AZURE_MODEL", "Qwen/Qwen2.5-0.5B-Instruct"),
+        "GAME_E2E_TEMPERATURE": os.environ.get("GAME_E2E_TEMPERATURE", "0"),
+    }
+    artifacts: dict[str, LiveFpsArtifact] = {}
+
+    for spec in GAME_SPECS:
+        print(f"[game-fixture] generation_started fixture={spec.name}", flush=True)
+        code = cache.generate(generator, spec, model_settings=model_settings)
+        assert code, f"{spec.name}: LLM returned empty code"
+        assert generator.validate_game_code(code, spec), (
+            f"{spec.name}: generated code failed controls/menu validation"
+        )
+        print(f"[game-fixture] generation_ready fixture={spec.name}", flush=True)
+
+        game_path = output_dir / f"{spec.name}.py"
+        generator.save_game(code, str(game_path))
+        runner = GameRunner()
+        script = build_game_input_script(spec)
+        print(f"[game-fixture] controls_started fixture={spec.name}", flush=True)
+        try:
+            frames = runner.run_headless_inline(
+                str(game_path),
+                spec.expected_frames,
+                input_script=script,
+            )
+            injected = tuple(
+                control for control in spec.required_controls if control in runner.last_injected_controls
+            )
+        finally:
+            runner.cleanup()
+        assert frames, f"{spec.name}: no frames captured"
+        assert injected == spec.required_controls, (
+            f"{spec.name}: input harness missed controls {set(spec.required_controls) - set(injected)}"
+        )
+        print(
+            f"[game-fixture] controls_ready fixture={spec.name} frames={len(frames)}",
+            flush=True,
+        )
+
+        print(f"[game-fixture] video_compare_started fixture={spec.name}", flush=True)
+        comparison = compare_gameplay_to_reference(
+            spec.name,
+            frames,
+            cache_dir,
+            allow_network=allow_network,
+        )
+        assert comparison.cache_status in {"cached", "downloaded"}, (
+            f"{spec.name}: reference video unavailable ({comparison.cache_status})"
+        )
+        assert comparison.reference_frame_count > 0, f"{spec.name}: reference video produced no frames"
+        assert comparison.passed, (
+            f"{spec.name}: mean SSIM {comparison.mean_ssim:.4f} below {comparison.threshold:.4f}"
+        )
+        print(
+            f"[game-fixture] video_compare_ready fixture={spec.name} "
+            f"ssim={comparison.mean_ssim:.4f} threshold={comparison.threshold:.4f}",
+            flush=True,
+        )
+        artifacts[spec.name] = LiveFpsArtifact(
+            code=code,
+            game_path=game_path,
+            frame_count=len(frames),
+            first_frame_shape=tuple(frames[0].shape),
+            input_controls=injected,
+            comparison=comparison,
+        )
+
+    assert cache.miss_count == len(GAME_SPECS)
+    return artifacts
+
+
+@pytest.fixture(scope="session")
+def game_gen_artifacts(gateway, tmp_path_factory: pytest.TempPathFactory) -> dict[str, LiveGameGenArtifact]:
+    """Exercise each legacy game_gen prompt once and reuse its capture metrics."""
+    output_dir = tmp_path_factory.mktemp("azure-game-gen")
+    artifacts: dict[str, LiveGameGenArtifact] = {}
+    for template_name in ("doom_hallway", "quake_arena"):
+        print(f"[game-gen-fixture] generation_started fixture={template_name}", flush=True)
+        code = generate_game_code(gateway, template_name)
+        assert code, f"{template_name}: LLM returned empty code"
+        assert validate_game_syntax(code), f"{template_name}: generated code failed validation"
+        game_path = output_dir / f"{template_name}.py"
+        game_path.write_text(code)
+        frames = run_game_headless(str(game_path), num_frames=15) if HAS_PYGAME_GEN else []
+        print(
+            f"[game-gen-fixture] capture_ready fixture={template_name} frames={len(frames)}",
+            flush=True,
+        )
+        artifacts[template_name] = LiveGameGenArtifact(
+            code=code,
+            frame_count=len(frames),
+            frame_shapes=tuple(tuple(frame.shape) for frame in frames),
+            has_non_blank_frame=any(frame.max() > 0 or frame.min() < 255 for frame in frames),
+            has_color_variation=any(float(frame.std()) > 5.0 for frame in frames),
+        )
+    return artifacts
 
 
 # ── Test: Doom Hallway Generation ──────────────────────────────────────────
@@ -82,43 +214,27 @@ def _build_azure_gateway():
 @pytest.mark.azure_provision
 @pytest.mark.skipif(not _AZURE_CONFIGURED, reason=_AZURE_SKIP_REASON)
 class TestDoomHallwayGeneration:
-    @pytest.fixture(scope="class")
-    def gateway(self):
-        gw = _build_azure_gateway()
-        if gw is None:
-            pytest.skip("Azure gateway not configured")
-        return gw
-
-    def test_generate_and_run(self, gateway, tmp_path: Path) -> None:
+    def test_generate_and_run(self, fps_artifacts: dict[str, LiveFpsArtifact]) -> None:
         spec = GAME_SPECS[0]
         assert spec.name == "doom_e1m1_hallway"
+        artifact = fps_artifacts[spec.name]
+        assert artifact.code
+        assert artifact.game_path.exists()
+        assert artifact.frame_count > 0
+        assert artifact.first_frame_shape == (600, 800, 3)
+        assert artifact.input_controls == spec.required_controls
+        assert artifact.comparison.passed
 
-        gen = GameGenerator(gateway)
-        code = gen.generate_game(spec)
-        assert code, "LLM returned empty code"
-        assert gen.validate_game_code(code, spec), "Generated code failed controls/menu validation"
-
-        game_path = tmp_path / "doom_game.py"
-        gen.save_game(code, str(game_path))
-        assert game_path.exists()
-
-        if HAS_PYGAME:
-            runner = GameRunner()
-            frames = runner.run_headless_inline(str(game_path), spec.expected_frames)
-            assert len(frames) > 0, "No frames captured"
-            assert frames[0].shape == (600, 800, 3)
-            runner.cleanup()
-
-    def test_game_is_runnable(self, gateway, tmp_path: Path) -> None:
+    def test_game_is_runnable(self, fps_artifacts: dict[str, LiveFpsArtifact]) -> None:
         spec = GAME_SPECS[0]
-        gen = GameGenerator(gateway)
-        code = gen.generate_game(spec)
-        assert gen.validate_game_code(code, spec), "Generated code should satisfy controls/menu contract"
+        code = fps_artifacts[spec.name].code
+        assert GameGenerator.validate_game_code(code, spec), (
+            "Generated code should satisfy controls/menu contract"
+        )
 
-    def test_game_has_required_elements(self, gateway, tmp_path: Path) -> None:
+    def test_game_has_required_elements(self, fps_artifacts: dict[str, LiveFpsArtifact]) -> None:
         spec = GAME_SPECS[0]
-        gen = GameGenerator(gateway)
-        code = gen.generate_game(spec)
+        code = fps_artifacts[spec.name].code
         code_lower = code.lower()
         required = ["pygame.init", "while", "quit"]
         for item in required:
@@ -132,34 +248,19 @@ class TestDoomHallwayGeneration:
 @pytest.mark.azure_provision
 @pytest.mark.skipif(not _AZURE_CONFIGURED, reason=_AZURE_SKIP_REASON)
 class TestQuakeArenaGeneration:
-    @pytest.fixture(scope="class")
-    def gateway(self):
-        gw = _build_azure_gateway()
-        if gw is None:
-            pytest.skip("Azure gateway not configured")
-        return gw
-
-    def test_generate_and_run(self, gateway, tmp_path: Path) -> None:
+    def test_generate_and_run(self, fps_artifacts: dict[str, LiveFpsArtifact]) -> None:
         spec = GAME_SPECS[1]
         assert spec.name == "quake_dm6_arena"
+        artifact = fps_artifacts[spec.name]
+        assert artifact.code
+        assert artifact.game_path.exists()
+        assert artifact.frame_count > 0
+        assert artifact.input_controls == spec.required_controls
+        assert artifact.comparison.passed
 
-        gen = GameGenerator(gateway)
-        code = gen.generate_game(spec)
-        assert code, "LLM returned empty code"
-
-        game_path = tmp_path / "quake_game.py"
-        gen.save_game(code, str(game_path))
-
-        if HAS_PYGAME:
-            runner = GameRunner()
-            frames = runner.run_headless_inline(str(game_path), spec.expected_frames)
-            assert len(frames) > 0, "No frames captured"
-            runner.cleanup()
-
-    def test_game_has_required_elements(self, gateway, tmp_path: Path) -> None:
+    def test_game_has_required_elements(self, fps_artifacts: dict[str, LiveFpsArtifact]) -> None:
         spec = GAME_SPECS[1]
-        gen = GameGenerator(gateway)
-        code = gen.generate_game(spec)
+        code = fps_artifacts[spec.name].code
         code_lower = code.lower()
         required = ["pygame.init", "platform", "while", "quit"]
         for item in required:
@@ -204,7 +305,7 @@ class TestFrameComparison:
             runner = GameRunner()
             result = runner.capture_frame(surface)
             assert isinstance(result, np.ndarray)
-            assert result.shape == (800, 600, 3), f"Expected (800, 600, 3), got {result.shape}"
+            assert result.shape == (600, 800, 3), f"Expected (600, 800, 3), got {result.shape}"
             assert result.dtype == np.uint8
         finally:
             pygame.display.quit()
@@ -250,20 +351,19 @@ class TestE2EResult:
 @pytest.mark.azure_provision
 @pytest.mark.skipif(not _AZURE_CONFIGURED, reason=_AZURE_SKIP_REASON)
 class TestDoomGenerationGameGen:
-    @pytest.fixture(scope="class")
-    def gateway(self):
-        gw = _build_azure_gateway()
-        if gw is None:
-            pytest.skip("Azure gateway not configured")
-        return gw
-
-    def test_generate_doom_hallway(self, gateway) -> None:
-        code = generate_game_code(gateway, "doom_hallway")
+    def test_generate_doom_hallway(
+        self,
+        game_gen_artifacts: dict[str, LiveGameGenArtifact],
+    ) -> None:
+        code = game_gen_artifacts["doom_hallway"].code
         assert code, "LLM returned empty code"
         assert validate_game_syntax(code), "Generated code failed validation"
 
-    def test_generated_code_has_game_loop(self, gateway) -> None:
-        code = generate_game_code(gateway, "doom_hallway")
+    def test_generated_code_has_game_loop(
+        self,
+        game_gen_artifacts: dict[str, LiveGameGenArtifact],
+    ) -> None:
+        code = game_gen_artifacts["doom_hallway"].code
         code_lower = code.lower()
         for item in ["while", "pygame.init", "quit"]:
             assert item in code_lower, f"Missing: {item}"
@@ -276,20 +376,19 @@ class TestDoomGenerationGameGen:
 @pytest.mark.azure_provision
 @pytest.mark.skipif(not _AZURE_CONFIGURED, reason=_AZURE_SKIP_REASON)
 class TestQuakeArenaGenerationGameGen:
-    @pytest.fixture(scope="class")
-    def gateway(self):
-        gw = _build_azure_gateway()
-        if gw is None:
-            pytest.skip("Azure gateway not configured")
-        return gw
-
-    def test_generate_quake_arena(self, gateway) -> None:
-        code = generate_game_code(gateway, "quake_arena")
+    def test_generate_quake_arena(
+        self,
+        game_gen_artifacts: dict[str, LiveGameGenArtifact],
+    ) -> None:
+        code = game_gen_artifacts["quake_arena"].code
         assert code, "LLM returned empty code"
         assert validate_game_syntax(code), "Generated code failed validation"
 
-    def test_generated_code_has_platform_elements(self, gateway) -> None:
-        code = generate_game_code(gateway, "quake_arena")
+    def test_generated_code_has_platform_elements(
+        self,
+        game_gen_artifacts: dict[str, LiveGameGenArtifact],
+    ) -> None:
+        code = game_gen_artifacts["quake_arena"].code
         code_lower = code.lower()
         for item in ["pygame.init", "while", "quit"]:
             assert item in code_lower, f"Missing: {item}"
@@ -302,39 +401,27 @@ class TestQuakeArenaGenerationGameGen:
 @pytest.mark.azure_provision
 @pytest.mark.skipif(not _AZURE_CONFIGURED, reason=_AZURE_SKIP_REASON)
 class TestDoomFrameConsistency:
-    @pytest.fixture(scope="class")
-    def gateway(self):
-        gw = _build_azure_gateway()
-        if gw is None:
-            pytest.skip("Azure gateway not configured")
-        return gw
-
-    def test_frames_have_consistent_dimensions(self, gateway, tmp_path: Path) -> None:
+    def test_frames_have_consistent_dimensions(
+        self,
+        game_gen_artifacts: dict[str, LiveGameGenArtifact],
+    ) -> None:
         if not HAS_PYGAME_GEN:
             pytest.skip("pygame not installed")
-        code = generate_game_code(gateway, "doom_hallway")
-        game_path = tmp_path / "doom_consistency.py"
-        game_path.write_text(code)
-        frames = run_game_headless(str(game_path), num_frames=15)
-        assert len(frames) >= 1, "No frames captured"
-        expected_shape = frames[0].shape
-        for i, f in enumerate(frames):
-            assert f.shape == expected_shape, f"Frame {i} shape mismatch: {f.shape}"
+        artifact = game_gen_artifacts["doom_hallway"]
+        assert artifact.frame_count >= 1, "No frames captured"
+        expected_shape = artifact.frame_shapes[0]
+        for index, shape in enumerate(artifact.frame_shapes):
+            assert shape == expected_shape, f"Frame {index} shape mismatch: {shape}"
 
-    def test_frames_are_non_blank(self, gateway, tmp_path: Path) -> None:
+    def test_frames_are_non_blank(
+        self,
+        game_gen_artifacts: dict[str, LiveGameGenArtifact],
+    ) -> None:
         if not HAS_PYGAME_GEN:
             pytest.skip("pygame not installed")
-        code = generate_game_code(gateway, "doom_hallway")
-        game_path = tmp_path / "doom_nonblank.py"
-        game_path.write_text(code)
-        frames = run_game_headless(str(game_path), num_frames=10)
-        assert len(frames) >= 1
-        non_blank = False
-        for f in frames:
-            if f.max() > 0 or f.min() < 255:
-                non_blank = True
-                break
-        assert non_blank, "All frames are blank/uniform"
+        artifact = game_gen_artifacts["doom_hallway"]
+        assert artifact.frame_count >= 1
+        assert artifact.has_non_blank_frame, "All frames are blank/uniform"
 
 
 # ── Test: Quake Rendering Colors ──────────────────────────────────────────
@@ -344,28 +431,30 @@ class TestDoomFrameConsistency:
 @pytest.mark.azure_provision
 @pytest.mark.skipif(not _AZURE_CONFIGURED, reason=_AZURE_SKIP_REASON)
 class TestQuakeRendering:
-    @pytest.fixture(scope="class")
-    def gateway(self):
-        gw = _build_azure_gateway()
-        if gw is None:
-            pytest.skip("Azure gateway not configured")
-        return gw
-
-    def test_frames_contain_expected_color_range(self, gateway, tmp_path: Path) -> None:
+    def test_frames_contain_expected_color_range(
+        self,
+        game_gen_artifacts: dict[str, LiveGameGenArtifact],
+    ) -> None:
         if not HAS_PYGAME_GEN:
             pytest.skip("pygame not installed")
-        code = generate_game_code(gateway, "quake_arena")
-        game_path = tmp_path / "quake_color.py"
-        game_path.write_text(code)
-        frames = run_game_headless(str(game_path), num_frames=10)
-        assert len(frames) >= 1
-        has_color_variation = False
-        for f in frames:
-            std = float(f.std())
-            if std > 5.0:
-                has_color_variation = True
-                break
-        assert has_color_variation, "All frames are uniform (no color variation)"
+        artifact = game_gen_artifacts["quake_arena"]
+        assert artifact.frame_count >= 1
+        assert artifact.has_color_variation, "All frames are uniform (no color variation)"
+
+
+@pytest.mark.e2e
+@pytest.mark.azure_provision
+@pytest.mark.skipif(not _AZURE_CONFIGURED, reason=_AZURE_SKIP_REASON)
+class TestLiveFixtureReuse:
+    def test_each_prompt_is_generated_once_per_session(
+        self,
+        fps_artifacts: dict[str, LiveFpsArtifact],
+        game_gen_artifacts: dict[str, LiveGameGenArtifact],
+    ) -> None:
+        assert set(fps_artifacts) == {spec.name for spec in GAME_SPECS}
+        assert set(game_gen_artifacts) == {"doom_hallway", "quake_arena"}
+        assert all(artifact.generation_count == 1 for artifact in fps_artifacts.values())
+        assert all(artifact.generation_count == 1 for artifact in game_gen_artifacts.values())
 
 
 # ── Test: Game Code Completeness ──────────────────────────────────────────

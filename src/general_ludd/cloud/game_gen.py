@@ -14,6 +14,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -24,16 +25,22 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_HAS_PYGAME: bool
+pygame: ModuleType | None
 try:
-    import pygame  # type: ignore[import-not-found]
-
-    _HAS_PYGAME = True
+    import pygame as _pygame
 except ImportError:  # pragma: no cover
     pygame = None
-    _HAS_PYGAME = False
+else:
+    pygame = _pygame
+_HAS_PYGAME = pygame is not None
 
 Frame = NDArray[np.uint8]
+
+
+def _require_pygame() -> ModuleType:
+    if pygame is None:
+        raise ImportError("pygame is required for headless game execution")
+    return pygame
 
 
 QUAKE_ARENA_SPEC: dict[str, Any] = {
@@ -307,8 +314,7 @@ def run_game_headless(
     Raises:
         ImportError: If pygame is not installed.
     """
-    if not _HAS_PYGAME:
-        raise ImportError("pygame is required for headless game execution")
+    pygame_module = _require_pygame()
 
     os.environ["SDL_VIDEODRIVER"] = "dummy"
     os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
@@ -317,11 +323,11 @@ def run_game_headless(
     game_dir = str(game_path_obj.parent)
     game_name = game_path_obj.stem
 
-    display_surface = pygame.display.set_mode((800, 600))
-    captured: list[pygame.Surface] = []
+    display_surface = pygame_module.display.set_mode((800, 600))
+    captured: list[object] = []
 
-    original_flip = pygame.display.flip
-    original_update = pygame.display.update
+    original_flip = pygame_module.display.flip
+    original_update = pygame_module.display.update
 
     def _capturing_flip() -> None:
         surf = display_surface.copy()
@@ -337,8 +343,8 @@ def run_game_headless(
             raise SystemExit(0)
         original_update(*args, **kwargs)
 
-    pygame.display.flip = _capturing_flip
-    pygame.display.update = _capturing_update
+    pygame_module.display.flip = _capturing_flip
+    pygame_module.display.update = _capturing_update
 
     try:
         if game_dir not in sys.path:
@@ -353,12 +359,12 @@ def run_game_headless(
         with contextlib.suppress(SystemExit):
             spec.loader.exec_module(module)
     finally:
-        pygame.display.flip = original_flip
-        pygame.display.update = original_update
+        pygame_module.display.flip = original_flip
+        pygame_module.display.update = original_update
 
     frames: list[Frame] = []
     for surf in captured[:num_frames]:
-        arr = pygame.surfarray.array3d(surf)
+        arr = pygame_module.surfarray.array3d(surf)
         frames.append(arr.transpose(1, 0, 2))
 
     return frames
