@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from general_ludd.models.gateway import ModelGateway
@@ -25,12 +26,14 @@ logger = logging.getLogger(__name__)
 
 _HAS_PYGAME: bool
 try:
-    import pygame  # type: ignore[import-untyped]
+    import pygame  # type: ignore[import-not-found]
 
     _HAS_PYGAME = True
 except ImportError:  # pragma: no cover
-    pygame = None  # type: ignore[assignment]
+    pygame = None
     _HAS_PYGAME = False
+
+Frame = NDArray[np.uint8]
 
 
 QUAKE_ARENA_SPEC: dict[str, Any] = {
@@ -288,7 +291,7 @@ def validate_game_syntax(code: str) -> bool:
 def run_game_headless(
     game_path: str | Path,
     num_frames: int = 30,
-) -> list[np.ndarray]:
+) -> list[Frame]:
     """Run a game in headless mode and capture rendered frames.
 
     Uses SDL_VIDEODRIVER=dummy for headless execution. Patches pygame.display
@@ -334,8 +337,8 @@ def run_game_headless(
             raise SystemExit(0)
         original_update(*args, **kwargs)
 
-    pygame.display.flip = _capturing_flip  # type: ignore[method-assign]
-    pygame.display.update = _capturing_update  # type: ignore[method-assign]
+    pygame.display.flip = _capturing_flip
+    pygame.display.update = _capturing_update
 
     try:
         if game_dir not in sys.path:
@@ -350,10 +353,10 @@ def run_game_headless(
         with contextlib.suppress(SystemExit):
             spec.loader.exec_module(module)
     finally:
-        pygame.display.flip = original_flip  # type: ignore[method-assign]
-        pygame.display.update = original_update  # type: ignore[method-assign]
+        pygame.display.flip = original_flip
+        pygame.display.update = original_update
 
-    frames: list[np.ndarray] = []
+    frames: list[Frame] = []
     for surf in captured[:num_frames]:
         arr = pygame.surfarray.array3d(surf)
         frames.append(arr.transpose(1, 0, 2))

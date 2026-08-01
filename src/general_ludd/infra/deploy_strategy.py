@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import ClassVar
+from typing import Any, ClassVar
 
 
 class DeployUrgency(Enum):
@@ -141,8 +141,8 @@ class DeployStrategist:
         plan: PhasedDeployPlan,
         gpu_type: str,
         model_name: str,
-    ) -> dict:
-        result: dict = {
+    ) -> dict[str, Any]:
+        result: dict[str, Any] = {
             "plan": {
                 "urgency": plan.urgency.value,
                 "primary_tier": plan.primary.tier_id,
@@ -166,7 +166,7 @@ class DeployStrategist:
         self,
         from_instance: str,
         to_instance: str,
-    ) -> dict:
+    ) -> dict[str, str]:
         return {
             "status": "migrated",
             "from": from_instance,
