@@ -1,0 +1,12 @@
+{
+  "baseline_available": false,
+  "by_file": {},
+  "by_rule": {},
+  "by_severity": {},
+  "schema_version": 1,
+  "totals": {
+    "baseline": 0,
+    "current": 0,
+    "delta": 0
+  }
+}

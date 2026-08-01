@@ -98,6 +98,24 @@
       "behavior": "make triage-failures LOG=/dev/null TRIAGE_STATE=/tmp/gludd-triage-contract.json TRIAGE_FORMAT=json"
     },
     {
+      "name": "sast-summary",
+      "make_variables": ["SAST_REPORT", "SAST_SUMMARY", "SAST_BASELINE"],
+      "behavior": "make sast-summary SAST_REPORT=tests/fixtures/security/sast-report.json SAST_SUMMARY=/tmp/gludd-sast-summary-contract.json SAST_BASELINE=tests/fixtures/security/sast-baseline.json"
+    },
+    {
+      "name": "security-audit",
+      "make_variables": [
+        "SECURITY_AUDIT_HEARTBEAT_SECS",
+        "SECURITY_AUDIT_PHASE_TIMEOUT_SECS",
+        "SECURITY_AUDIT_VALIDATE_ONLY",
+        "SECURITY_AUDIT_SUMMARY",
+        "SAST_REPORT",
+        "SAST_SUMMARY",
+        "SAST_BASELINE"
+      ],
+      "behavior": "make security-audit SECURITY_AUDIT_HEARTBEAT_SECS=5 SECURITY_AUDIT_PHASE_TIMEOUT_SECS=60 SECURITY_AUDIT_VALIDATE_ONLY=1 SECURITY_AUDIT_SUMMARY=/tmp/gludd-security-audit-contract.json SAST_REPORT=tests/fixtures/security/sast-report.json SAST_SUMMARY=/tmp/gludd-sast-summary-contract.json SAST_BASELINE=tests/fixtures/security/sast-baseline.json"
+    },
+    {
       "name": "gate-tail",
       "make_variables": ["GATE_TAIL_LINES"],
       "behavior": "make gate-tail GATE_TAIL_LINES=5"
