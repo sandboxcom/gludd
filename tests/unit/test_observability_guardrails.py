@@ -139,6 +139,7 @@ class TestNoUnseenEvents:
         assert "Refusing to kill non-orphan gate" in body
         assert "uv run python -m pytest tests/unit/" in body
         assert "Refusing to kill non-orphan pytest" in body
+        assert '! /bin/kill -0 "$$ppid"' in body
 
     def test_force_gate_kill_uses_background_pid_without_global_tmp_deletion(self) -> None:
         body = _recipe("kill-gate-force")

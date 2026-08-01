@@ -6704,12 +6704,13 @@ ps:
 
 kill-project-pid:
 	@[ -n "$(PID)" ] || { echo "Usage: make kill-project-pid PID=pid"; exit 1; }
-	@cmd=$$(/bin/ps -p "$(PID)" -o command=); ppid=$$(/bin/ps -p "$(PID)" -o ppid= | tr -d ' '); \
+	@cmd=$$(/bin/ps -p "$(PID)" -o command=); ppid=$$(/bin/ps -p "$(PID)" -o ppid= | tr -d ' '); orphan=0; \
+	if [ "$$ppid" = "1" ] || ! /bin/kill -0 "$$ppid" 2>/dev/null; then orphan=1; fi; \
 	case "$$cmd" in \
 		*"/Users/shawnwilson/gludd"*|*"make search"*|*"grep -R"*) /bin/kill "$(PID)" ;; \
-		*"make gate"*|*"_gate-refresh-body"*) if [ "$$ppid" = "1" ]; then /bin/kill "$(PID)"; else echo "Refusing to kill non-orphan gate: pid=$(PID) ppid=$$ppid"; exit 1; fi ;; \
-		*"uv cache prune"*) if [ "$$ppid" = "1" ]; then /bin/kill "$(PID)"; else echo "Refusing to kill non-orphan uv cache prune: pid=$(PID) ppid=$$ppid"; exit 1; fi ;; \
-		*"uv run python -m pytest tests/unit/"*) if [ "$$ppid" = "1" ]; then /bin/kill "$(PID)"; else echo "Refusing to kill non-orphan pytest: pid=$(PID) ppid=$$ppid"; exit 1; fi ;; \
+		*"make gate"*|*"_gate-refresh-body"*) if [ "$$orphan" = "1" ]; then /bin/kill "$(PID)"; else echo "Refusing to kill non-orphan gate: pid=$(PID) ppid=$$ppid"; exit 1; fi ;; \
+		*"uv cache prune"*) if [ "$$orphan" = "1" ]; then /bin/kill "$(PID)"; else echo "Refusing to kill non-orphan uv cache prune: pid=$(PID) ppid=$$ppid"; exit 1; fi ;; \
+		*"uv run python -m pytest tests/unit/"*) if [ "$$orphan" = "1" ]; then /bin/kill "$(PID)"; else echo "Refusing to kill non-orphan pytest: pid=$(PID) ppid=$$ppid"; exit 1; fi ;; \
 		*) echo "Refusing to kill unrelated process: $$cmd"; exit 1 ;; \
 	esac
 
