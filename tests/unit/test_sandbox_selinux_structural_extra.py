@@ -82,7 +82,8 @@ class TestTeFor:
             _make_cap("file:/tmp/b/", {"read"}),
         ])
         te = _te_for(spec)
-        assert te.count("allow gludd_test_agent_t") == 2
+        assert te.count("allow gludd_test_agent_t usr_t:dir") == 2
+        assert te.count("allow gludd_test_agent_t usr_t:file") == 2
 
 
 class TestFcFor:

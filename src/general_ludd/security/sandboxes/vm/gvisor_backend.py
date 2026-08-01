@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import time
 import uuid
+from pathlib import Path
 
 from general_ludd.security.permissions import PermissionSpec
 from general_ludd.security.sandboxes import (
@@ -23,6 +24,7 @@ from general_ludd.security.sandboxes import (
     SandboxHandle,
     SandboxTarget,
 )
+from general_ludd.security.sandboxes.state import SandboxState, safe_state_component
 from general_ludd.security.sandboxes.vm.image_builder import (
     ImageManifest,
     build_gvisor_image,
@@ -32,6 +34,28 @@ logger = logging.getLogger(__name__)
 
 
 _RUNSC_TERMINATE_GRACE_S = 2.0
+
+
+def _runsc_root(sandbox_id: str, *, create: bool = False) -> Path:
+    state = SandboxState.discover(create=create)
+    component = safe_state_component(sandbox_id)
+    if create:
+        return state.directory("gvisor", component)
+    return state.path("gvisor", component)
+
+
+def _cleanup_runsc_state(handle: SandboxHandle) -> None:
+    state = handle.extra.get("state")
+    runtime_root = handle.extra.get("runtime_root")
+    if isinstance(state, SandboxState) and isinstance(runtime_root, str):
+        try:
+            state.cleanup_path(runtime_root)
+        except Exception as exc:
+            logger.warning(
+                "GvisorBackend state cleanup failed for %s: %s",
+                handle.token,
+                exc,
+            )
 
 
 def _spawn_runsc(
@@ -74,11 +98,18 @@ def _spawn_runsc(
         )
 
     bundle_root = str(bundle_path)
+    state: SandboxState | None = None
+    runtime_root: Path | None = None
     try:
+        state = SandboxState.discover()
+        runtime_root = state.directory(
+            "gvisor",
+            safe_state_component(sandbox_id),
+        )
         popen = subprocess.Popen(
             [
                 "runsc",
-                "--root=/tmp/gludd-runsc",
+                f"--root={runtime_root}",
                 "run",
                 "--bundle=" + bundle_root,
                 sandbox_id,
@@ -92,11 +123,29 @@ def _spawn_runsc(
             token,
             exc,
         )
+        handle = SandboxHandle(
+            backend="gvisor",
+            token=token,
+            applied=False,
+            extra={
+                "reason": f"runsc spawn failed: {exc}",
+                "state": state,
+                "runtime_root": str(runtime_root) if runtime_root else "",
+            },
+        )
+        _cleanup_runsc_state(handle)
+        return handle
+    except Exception as exc:
+        logger.error(
+            "GvisorBackend.apply: secure runtime-state allocation failed for %s — %s",
+            token,
+            exc,
+        )
         return SandboxHandle(
             backend="gvisor",
             token=token,
             applied=False,
-            extra={"reason": f"runsc spawn failed: {exc}"},
+            extra={"reason": f"runtime-state allocation failed: {exc}"},
         )
 
     logger.info(
@@ -114,6 +163,8 @@ def _spawn_runsc(
             "pid": popen.pid,
             "sandbox_id": sandbox_id,
             "bundle_path": bundle_root,
+            "runtime_root": str(runtime_root),
+            "state": state,
             "started_at": time.time(),
         },
     )
@@ -222,6 +273,7 @@ class GvisorBackend:
                 "GvisorBackend.release: no popen on handle %s — no-op",
                 handle.token,
             )
+            _cleanup_runsc_state(handle)
             return
 
         try:
@@ -230,6 +282,7 @@ class GvisorBackend:
                     "GvisorBackend.release: pid=%d already dead — no-op",
                     handle.extra.get("pid"),
                 )
+                _cleanup_runsc_state(handle)
                 return
         except Exception:
             pass
@@ -242,6 +295,7 @@ class GvisorBackend:
                 type(exc).__name__,
                 handle.extra.get("pid"),
             )
+            _cleanup_runsc_state(handle)
             return
 
         try:
@@ -260,6 +314,7 @@ class GvisorBackend:
                     type(exc).__name__,
                     handle.extra.get("pid"),
                 )
+        _cleanup_runsc_state(handle)
 
 
 __all__ = ["GvisorBackend"]

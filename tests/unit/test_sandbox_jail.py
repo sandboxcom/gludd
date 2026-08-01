@@ -38,10 +38,13 @@ def test_jail_path_from_file_capability():
 
 
 def test_jail_path_fallback():
+    from general_ludd.security.sandboxes.state import SandboxState
+
     spec = _make_spec(agent_type="redis-worker")
     target = SandboxTarget(directory=None, pid=None)
     path = _jail_path(spec, target)
-    assert path == "/tmp/gludd/redis-worker"
+    state = SandboxState.discover(create=False)
+    assert path == str(state.path("jail", "redis-worker"))
 
 
 def test_pf_rules_no_net_capabilities():

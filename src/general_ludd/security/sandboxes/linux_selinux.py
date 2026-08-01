@@ -19,10 +19,22 @@ from general_ludd.security.sandboxes import (
     SandboxTarget,
     path_prefix,
 )
+from general_ludd.security.sandboxes.state import SandboxState, safe_state_component
 
 logger = logging.getLogger(__name__)
 
-BUILD_DIR = Path("/tmp/gludd-selinux")
+def _build_dir(
+    module_name: str | None = None,
+    *,
+    create: bool = False,
+) -> Path:
+    state = SandboxState.discover(create=create)
+    components = ["selinux"]
+    if module_name is not None:
+        components.append(safe_state_component(module_name))
+    if create:
+        return state.directory(*components)
+    return state.path(*components)
 
 
 def _is_file_family(cap: Capability) -> bool:
@@ -88,8 +100,10 @@ def _fc_for(spec: PermissionSpec) -> str:
                     f"{prefix}(/.*)? -- gen_context(system_u:object_r:{type_name},s0)"
                 )
     if not lines:
+        state = SandboxState.discover(create=False)
+        default_path = state.path("jail", safe_state_component(spec.agent_type))
         lines.append(
-            f"/tmp/gludd/{spec.agent_type}(/.*)? -- "
+            f"{default_path}(/.*)? -- "
             f"gen_context(system_u:object_r:{type_name},s0)"
         )
     return "\n".join(lines) + "\n"
@@ -125,16 +139,25 @@ class SELinuxBackend:
 
     @staticmethod
     def apply(spec: PermissionSpec, target: SandboxTarget) -> SandboxHandle:
+        del target
         agent = spec.agent_type.replace("-", "_")
         module_name = f"gludd_{agent}"
+        state: SandboxState | None = None
+        build_dir: Path | None = None
         try:
-            BUILD_DIR.mkdir(parents=True, exist_ok=True)
-            te_path = BUILD_DIR / f"{module_name}.te"
-            fc_path = BUILD_DIR / f"{module_name}.fc"
+            state = SandboxState.discover()
+            build_dir = state.directory(
+                "selinux",
+                safe_state_component(module_name),
+            )
+            te_path = build_dir / f"{safe_state_component(module_name)}.te"
+            fc_path = build_dir / f"{safe_state_component(module_name)}.fc"
             te_path.write_text(_te_for(spec))
             fc_path.write_text(_fc_for(spec))
-            mod_path = BUILD_DIR / f"{module_name}.mod"
-            pp_path = BUILD_DIR / f"{module_name}.pp"
+            te_path.chmod(0o600)
+            fc_path.chmod(0o600)
+            mod_path = build_dir / f"{safe_state_component(module_name)}.mod"
+            pp_path = build_dir / f"{safe_state_component(module_name)}.pp"
             subprocess.run(
                 ["checkmodule", "-M", "-m", "-o", str(mod_path), str(te_path)],
                 check=True, capture_output=True, timeout=30,
@@ -149,15 +172,33 @@ class SELinuxBackend:
                 check=True, capture_output=True, timeout=60,
             )
             logger.info("SELinux module %s loaded", module_name)
-            return SandboxHandle(backend="selinux", token=module_name, applied=True)
+            return SandboxHandle(
+                backend="selinux",
+                token=module_name,
+                applied=True,
+                extra={"state": state, "state_path": str(build_dir)},
+            )
         except Exception as exc:
             logger.error(
                 "SELinux apply failed for %s — dispatching UNSANDBOXED: %s",
                 module_name, exc, exc_info=True,
             )
+            if state is not None and build_dir is not None:
+                try:
+                    state.cleanup_path(build_dir)
+                except Exception as cleanup_exc:
+                    logger.warning(
+                        "SELinux partial-state cleanup of %s failed: %s",
+                        module_name,
+                        cleanup_exc,
+                    )
             return SandboxHandle(
                 backend="selinux", token=module_name, applied=False,
-                extra={"error": str(exc)},
+                extra={
+                    "error": str(exc),
+                    "state": state,
+                    "state_path": str(build_dir) if build_dir else "",
+                },
             )
 
     @staticmethod
@@ -206,12 +247,22 @@ class SELinuxBackend:
 
     @staticmethod
     def release(handle: SandboxHandle) -> None:
-        if not handle.applied:
-            return
-        try:
-            subprocess.run(
-                ["semodule", "-r", handle.token],
-                check=False, capture_output=True, timeout=60,
-            )
-        except Exception as exc:
-            logger.warning("SELinux release of %s failed: %s", handle.token, exc)
+        if handle.applied:
+            try:
+                subprocess.run(
+                    ["semodule", "-r", handle.token],
+                    check=False, capture_output=True, timeout=60,
+                )
+            except Exception as exc:
+                logger.warning("SELinux release of %s failed: %s", handle.token, exc)
+        state = handle.extra.get("state")
+        state_path = handle.extra.get("state_path")
+        if isinstance(state, SandboxState) and isinstance(state_path, str) and state_path:
+            try:
+                state.cleanup_path(state_path)
+            except Exception as exc:
+                logger.warning(
+                    "SELinux state cleanup of %s failed: %s",
+                    handle.token,
+                    exc,
+                )

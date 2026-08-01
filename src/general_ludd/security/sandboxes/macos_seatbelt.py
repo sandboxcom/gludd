@@ -48,10 +48,9 @@ from general_ludd.security.sandboxes import (
     allowed_ports,
     path_prefix,
 )
+from general_ludd.security.sandboxes.state import SandboxState, safe_state_component
 
 logger = logging.getLogger(__name__)
-
-PROFILE_DIR = Path("/tmp/gludd-seatbelt")
 
 # macOS version where sandbox-exec was removed. 15.4 → (15, 4, 0).
 DEPRECATED_SINCE = (15, 4, 0)
@@ -142,7 +141,9 @@ def render_profile(spec: PermissionSpec) -> str:
 
 
 def _profile_path(spec: PermissionSpec) -> Path:
-    return PROFILE_DIR / f"gludd-{spec.agent_type}.sb"
+    state = SandboxState.discover(create=False)
+    filename = f"gludd-{safe_state_component(spec.agent_type)}.sb"
+    return state.path("seatbelt", filename)
 
 
 class SeatbeltBackend:
@@ -177,6 +178,7 @@ class SeatbeltBackend:
 
     @staticmethod
     def apply(spec: PermissionSpec, target: SandboxTarget) -> SandboxHandle:
+        del target
         profile_name = f"gludd-{spec.agent_type}"
         # LOUD deprecation gate: on macOS 15.4+ we refuse to claim enforcement.
         if _is_deprecated_host():
@@ -197,10 +199,14 @@ class SeatbeltBackend:
                     "deprecated": True,
                 },
             )
+        state: SandboxState | None = None
+        path: Path | None = None
         try:
-            PROFILE_DIR.mkdir(parents=True, exist_ok=True)
-            path = _profile_path(spec)
+            state = SandboxState.discover()
+            profile_dir = state.directory("seatbelt")
+            path = profile_dir / f"gludd-{safe_state_component(spec.agent_type)}.sb"
             path.write_text(render_profile(spec))
+            path.chmod(0o600)
             rc = subprocess.run(
                 ["sandbox-exec", "-f", str(path), "/bin/true"],
                 check=False, capture_output=True, timeout=10,
@@ -210,23 +216,48 @@ class SeatbeltBackend:
                     "sandbox-exec profile %s failed to compile (rc=%d) — UNSANDBOXED",
                     profile_name, rc,
                 )
+                try:
+                    state.cleanup_path(path)
+                except Exception as cleanup_exc:
+                    logger.warning(
+                        "seatbelt partial-state cleanup of %s failed: %s",
+                        profile_name,
+                        cleanup_exc,
+                    )
                 return SandboxHandle(
                     backend="seatbelt", token=profile_name, applied=False,
-                    extra={"path": str(path), "compile_rc": rc},
+                    extra={
+                        "path": str(path),
+                        "compile_rc": rc,
+                        "state": state,
+                    },
                 )
             logger.info("Seatbelt profile %s compiled (dry-run)", profile_name)
             return SandboxHandle(
                 backend="seatbelt", token=profile_name, applied=True,
-                extra={"path": str(path)},
+                extra={"path": str(path), "state": state},
             )
         except Exception as exc:
             logger.error(
                 "seatbelt apply failed for %s — dispatching UNSANDBOXED: %s",
                 profile_name, exc, exc_info=True,
             )
+            if state is not None and path is not None:
+                try:
+                    state.cleanup_path(path)
+                except Exception as cleanup_exc:
+                    logger.warning(
+                        "seatbelt partial-state cleanup of %s failed: %s",
+                        profile_name,
+                        cleanup_exc,
+                    )
             return SandboxHandle(
                 backend="seatbelt", token=profile_name, applied=False,
-                extra={"error": str(exc)},
+                extra={
+                    "error": str(exc),
+                    "path": str(path) if path else "",
+                    "state": state,
+                },
             )
 
     @staticmethod
@@ -268,9 +299,10 @@ class SeatbeltBackend:
 
     @staticmethod
     def release(handle: SandboxHandle) -> None:
-        path = Path(cast(str, handle.extra.get("path", "")))
-        if path.exists():
+        path_raw = handle.extra.get("path")
+        state = handle.extra.get("state")
+        if isinstance(path_raw, str) and path_raw and isinstance(state, SandboxState):
             try:
-                path.unlink()
+                state.cleanup_path(path_raw)
             except Exception as exc:
                 logger.warning("seatbelt release of %s failed: %s", handle.token, exc)

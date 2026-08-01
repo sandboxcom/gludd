@@ -12,6 +12,7 @@ Covers: module exports, _RUNSC_TERMINATE_GRACE_S constant, GVisorBackend
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -22,6 +23,7 @@ from general_ludd.security.sandboxes import (
     SandboxHandle,
     SandboxTarget,
 )
+from general_ludd.security.sandboxes.state import SandboxState
 from general_ludd.security.sandboxes.vm.gvisor_backend import (
     _RUNSC_TERMINATE_GRACE_S,
     GvisorBackend,
@@ -479,7 +481,10 @@ def test_spawn_runsc_includes_correct_popen_args(sample_spec, sample_target):
 
     args = mock_popen.call_args[0][0]
     assert args[0] == "runsc"
-    assert args[1] == "--root=/tmp/gludd-runsc"
+    runtime_root = Path(args[1].removeprefix("--root="))
+    state = SandboxState.discover(create=False)
+    assert runtime_root.resolve(strict=False).is_relative_to(state.project_dir)
+    assert runtime_root.parent.name == "gvisor"
     assert args[2] == "run"
     assert args[3].startswith("--bundle=")
     assert "/tmp/gludd-oci/bundle-test" in args[3]
@@ -548,6 +553,8 @@ def test_spawn_runsc_handle_extra_keys(sample_spec, sample_target):
         "pid",
         "sandbox_id",
         "bundle_path",
+        "runtime_root",
+        "state",
         "started_at",
     }
     assert handle.extra["pid"] == 77
