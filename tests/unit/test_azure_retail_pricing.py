@@ -14,11 +14,12 @@ import pytest
 from general_ludd.infra.azure_retail_pricing import (
     AzureContainerAppsRetailPricing,
     AzureRetailPricingError,
+    AzureVirtualMachineRetailPricing,
+    AzureVmBillingPhases,
 )
 from general_ludd.infra.deploy_strategy import (
     DeployStrategist,
     DeployUrgency,
-    ResourceTier,
 )
 
 T4_SKU = "Standard NC T4 v3 GPU Usage"
@@ -77,6 +78,200 @@ def _exact_responses(gpu_sku: str = T4_SKU) -> list[Mapping[str, object]]:
         _page(_item(VCPU_SKU, 0.000024, "1 Second")),
         _page(_item(MEMORY_SKU, 0.000003, "1 GiB Second")),
     ]
+
+
+def _vm_item(
+    *,
+    service_name: str,
+    product_name: str,
+    sku_name: str,
+    meter_name: str,
+    unit: str,
+    price: float,
+    arm_sku_name: str = "",
+    meter_id: str | None = None,
+    region: str = "eastus",
+) -> dict[str, object]:
+    return {
+        "armRegionName": region,
+        "armSkuName": arm_sku_name,
+        "currencyCode": "USD",
+        "effectiveStartDate": "2026-01-01T00:00:00Z",
+        "isPrimaryMeterRegion": True,
+        "meterId": meter_id or f"meter-{service_name}-{meter_name}",
+        "meterName": meter_name,
+        "productName": product_name,
+        "retailPrice": price,
+        "serviceName": service_name,
+        "skuName": sku_name,
+        "type": "Consumption",
+        "unitOfMeasure": unit,
+    }
+
+
+def _vm_responses(*, spot: bool = False) -> list[Mapping[str, object]]:
+    suffix = " Spot" if spot else ""
+    return [
+        _page(
+            _vm_item(
+                service_name="Virtual Machines",
+                product_name="Virtual Machines NCasT4 v3 Series",
+                sku_name=f"NC8as T4 v3{suffix}",
+                meter_name=f"NC8as T4 v3{suffix}",
+                unit="1 Hour",
+                price=0.2256 if spot else 0.752,
+                arm_sku_name="Standard_NC8as_T4_v3",
+                meter_id="vm-spot" if spot else "vm-ondemand",
+            )
+        ),
+        _page(
+            _vm_item(
+                service_name="Storage",
+                product_name="Standard SSD Managed Disks",
+                sku_name="E10 LRS",
+                meter_name="E10 LRS Disk",
+                unit="1/Month",
+                price=9.6,
+                arm_sku_name="StandardSSD_LRS",
+                meter_id="disk-e10",
+            )
+        ),
+        _page(
+            _vm_item(
+                service_name="Virtual Network",
+                product_name="IP Addresses",
+                sku_name="Standard",
+                meter_name="Standard IPv4 Static Public IP",
+                unit="1 Hour",
+                price=0.005,
+                meter_id="ip-v4-standard",
+                region="Global",
+            )
+        ),
+    ]
+
+
+def test_vm_estimate_uses_exact_compute_disk_ip_meters_and_elapsed_phases() -> None:
+    fetcher = _SequenceFetcher(_vm_responses())
+    pricing = AzureVirtualMachineRetailPricing(
+        fetch_json=fetcher,
+        now=lambda: datetime(2026, 8, 1, tzinfo=UTC),
+    )
+    phases = AzureVmBillingPhases(
+        warmup_seconds=120,
+        runtime_seconds=300,
+        shutdown_seconds=45,
+    )
+
+    estimate = pricing.estimate_for_gpu(
+        "t4",
+        region="eastus",
+        purchase_option="on_demand",
+        phases=phases,
+        disk_size_gib=100,
+    )
+
+    elapsed_hours = 465 / 3600
+    assert estimate.arm_sku_name == "Standard_NC8as_T4_v3"
+    assert estimate.disk_tier == "E10"
+    assert estimate.compute_cost_usd == pytest.approx(0.752 * elapsed_hours)
+    assert estimate.disk_cost_usd == pytest.approx(9.6 * elapsed_hours / 730)
+    assert estimate.public_ip_cost_usd == pytest.approx(0.005 * elapsed_hours)
+    assert estimate.total_cost_usd == pytest.approx(
+        estimate.compute_cost_usd
+        + estimate.disk_cost_usd
+        + estimate.public_ip_cost_usd
+    )
+    assert estimate.phase_costs_usd["warmup"] == pytest.approx(0.752 * 120 / 3600)
+    assert estimate.phase_costs_usd["runtime"] == pytest.approx(0.752 * 300 / 3600)
+    assert estimate.phase_costs_usd["shutdown"] == pytest.approx(0.752 * 45 / 3600)
+    assert estimate.meter_ids == ("vm-ondemand", "disk-e10", "ip-v4-standard")
+    selectors = [parse_qs(urlparse(url).query)["$filter"][0] for url in fetcher.urls]
+    assert "armSkuName eq 'Standard_NC8as_T4_v3'" in selectors[0]
+    assert "serviceName eq 'Virtual Machines'" in selectors[0]
+    assert "skuName eq 'E10 LRS'" in selectors[1]
+    assert "armRegionName eq 'Global'" in selectors[2]
+    assert "serviceName eq 'Virtual Network'" in selectors[2]
+
+
+def test_spot_vm_requires_the_exact_spot_meter_identity() -> None:
+    pricing = AzureVirtualMachineRetailPricing(
+        fetch_json=_SequenceFetcher(_vm_responses(spot=True)),
+        now=lambda: datetime(2026, 8, 1, tzinfo=UTC),
+    )
+    estimate = pricing.estimate_for_gpu(
+        "t4",
+        region="eastus",
+        purchase_option="spot",
+        phases=AzureVmBillingPhases(60, 120, 30),
+        disk_size_gib=128,
+    )
+    assert estimate.compute_meter.meter_name == "NC8as T4 v3 Spot"
+    assert estimate.compute_meter.meter_id == "vm-spot"
+
+    inexact = AzureVirtualMachineRetailPricing(
+        fetch_json=_SequenceFetcher(_vm_responses(spot=False)),
+        now=lambda: datetime(2026, 8, 1, tzinfo=UTC),
+    )
+    with pytest.raises(AzureRetailPricingError, match="no exact"):
+        inexact.estimate_for_gpu(
+            "t4",
+            region="eastus",
+            purchase_option="spot",
+            phases=AzureVmBillingPhases(60, 120, 30),
+        )
+
+
+def test_vm_estimate_builds_durable_work_item_prediction_with_all_meters() -> None:
+    pricing = AzureVirtualMachineRetailPricing(
+        fetch_json=_SequenceFetcher(_vm_responses()),
+        now=lambda: datetime(2026, 8, 1, tzinfo=UTC),
+    )
+    estimate = pricing.estimate_for_gpu(
+        "t4",
+        region="eastus",
+        phases=AzureVmBillingPhases(120, 300, 45),
+    )
+    started_at = datetime(2026, 8, 1, 12, tzinfo=UTC)
+
+    prediction = estimate.to_cost_prediction(
+        prediction_id="prediction-1",
+        todo_id="AZL.2",
+        subscription_id="subscription-1",
+        resource_group="rg-gludd-1",
+        resource_ids=(
+            "/subscriptions/subscription-1/resourceGroups/rg-gludd-1/providers/Microsoft.Compute/virtualMachines/vm-1",
+            "/subscriptions/subscription-1/resourceGroups/rg-gludd-1/providers/Microsoft.Compute/disks/os-1",
+            "/subscriptions/subscription-1/resourceGroups/rg-gludd-1/providers/Microsoft.Network/publicIPAddresses/ip-1",
+        ),
+        workload="fps-game-e2e",
+        usage_started_at=started_at,
+        conservative_multiplier=1.2,
+    )
+
+    assert prediction.meter_ids == estimate.meter_ids
+    assert prediction.sku == "Standard_NC8as_T4_v3:on_demand"
+    assert prediction.predicted_cost_usd == pytest.approx(estimate.total_cost_usd)
+    assert prediction.conservative_ceiling_usd == pytest.approx(
+        estimate.total_cost_usd * 1.2
+    )
+    assert (prediction.usage_ended_at - prediction.usage_started_at).total_seconds() == 465
+    assert prediction.tags["gludd-pricing-source"] == "azure-retail-prices"
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        (-1, 1, 1),
+        (1, 0, 1),
+        (1, 1, float("inf")),
+    ],
+)
+def test_vm_billing_phases_reject_invalid_elapsed_times(
+    values: tuple[float, float, float],
+) -> None:
+    with pytest.raises(ValueError, match="seconds"):
+        AzureVmBillingPhases(*values)
 
 
 def test_t4_estimate_selects_exact_region_skus_and_consumption_type() -> None:
@@ -371,9 +566,9 @@ def test_deploy_strategist_uses_exact_container_app_estimate() -> None:
     assert result["plan"]["meter_ids"] == plan.meter_ids
 
 
-def test_immediate_plan_adds_only_bounded_static_warmup_to_exact_primary() -> None:
+def test_immediate_plan_uses_exact_elapsed_vm_and_ancillary_costs() -> None:
     pricing = AzureContainerAppsRetailPricing(
-        fetch_json=_SequenceFetcher(_exact_responses()),
+        fetch_json=_SequenceFetcher([*_exact_responses(), *_vm_responses()]),
         now=lambda: datetime(2026, 8, 1, tzinfo=UTC),
     )
     strategist = DeployStrategist(azure_pricing=pricing)
@@ -386,10 +581,12 @@ def test_immediate_plan_adds_only_bounded_static_warmup_to_exact_primary() -> No
         region="eastus",
     )
 
-    primary = (0.000073 + 8 * 0.000024 + 56 * 0.000003) * 600
-    warmup = ResourceTier.DEDICATED_VM.cost_per_hour * (120 / 3600)
-    assert plan.estimated_cost_usd == pytest.approx(round(primary + warmup, 6))
-    assert plan.pricing_source == "azure-retail-prices+legacy-warmup"
+    container = (0.000073 + 8 * 0.000024 + 56 * 0.000003) * 120
+    vm_hours = (120 + 480 + 60) / 3600
+    expected = container + 0.752 * vm_hours + 9.6 * vm_hours / 730 + 0.005 * vm_hours
+    assert plan.estimated_cost_usd == pytest.approx(round(expected, 6))
+    assert plan.pricing_source == "azure-retail-prices"
+    assert len(plan.meter_ids) == 6
 
 
 def test_deploy_strategist_fails_closed_when_exact_pricing_is_unavailable() -> None:

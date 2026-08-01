@@ -85,6 +85,7 @@ paths miss. Primary documentation in the next sections remains authoritative.
 | [AzureRM GPU support request, opened 2024][forum-azurerm-gpu-support] | For about a year the provider rejected both serverless and dedicated Container Apps GPU profile types before the change reached AzureRM 4.55.0. | Pin and test the provider schema; a platform feature announcement is not evidence that the Terraform provider can express it. |
 | [AzureRM GPU follow-up, reported 2025][forum-azurerm-gpu-counts] | After GPU enum support merged, users found that the provider still sent zero-valued environment `minimumCount` and `maximumCount` fields that the serverless GPU API rejected. | Keep environment profile capacity distinct from app replica bounds and use an omission-preserving ARM path until a live test proves the AzureRM encoder is fixed. |
 | [Azure CLI GPU profile-name failure, opened 2025][forum-azure-cli-gpu-name] | A supported long GPU profile type was also used as the profile name and failed the name-length rule; the request body omitted `workloadProfileType`. | Use a short stable profile `name`, send the exact long string only as `workloadProfileType`, and inspect the emitted request in acceptance evidence. |
+| [Stopped Azure VM disk charges, opened 2022][forum-vm-disk-cost] | The author deallocated a VM but continued receiving charges; the accepted Microsoft answer confirms the retained OS and data disks still consume billable storage. | Include disk and public-IP meters through verified deletion, not merely through compute deallocation, and reconcile unexpected retained-resource rows. |
 
 Closed issues still matter as regression fixtures. They describe observable
 contracts that can recur through provider, API, regional, or configuration
@@ -257,22 +258,50 @@ matches `skuName=Standard` plus the exact meter name instead of inventing an ARM
 SKU from the workload-profile string. The opt-in, non-provisioning E2E contract
 re-queries those identities with `AZURE_RETAIL_PRICES_LIVE=1`.
 
-`DeployStrategist` now uses the three exact meters for the full active resource
+`DeployStrategist` uses the three exact meters for the full active resource
 shape materialized by the Terraform GPU profile (T4: 8 vCPU/56 GiB; A100:
 24 vCPU/220 GiB). Normal and background Container Apps plans are exact public
-retail estimates. The immediate plan labels its temporary VM component as a
-legacy estimate rather than claiming the combined value is fully exact. Plans
-persist the three meter IDs, source, and region through phased execution, and
-the live provision test passes its timeout-derived duration and operator spend
-ceiling into planning so an over-budget estimate stops before Terraform runs.
+retail estimates. Immediate and queue-driven warmup plans no longer add a
+static VM hourly rate. They resolve an exact Linux Consumption VM meter plus
+the selected Standard SSD disk tier and the Global Standard static IPv4 meter,
+then expose every component, meter ID, and elapsed phase through phased
+execution.
 
-This completes only the exact pre-deploy Container Apps slice. Contract-specific
-discounts, free-grant balances, ancillary logs/network/storage, exact warmup VM
-meters, and delayed billed-cost reconciliation remain open under AZL.2; the
-public Retail Prices API is not evidence of final invoiced cost. Azure's pricing
-page likewise states that serverless GPU charges are additive to active vCPU and
-RAM charges ([Container Apps pricing][azure-container-apps-pricing]), while the
-GPU overview confirms per-second billing and scale to zero
+The VM arithmetic bills compute across startup, workload handoff, and bounded
+shutdown until deallocation. Disk and public-IP forecasts cover the same full
+lifecycle through deletion. Disk sizes round up to Azure's offered E tier; for
+example 100 GiB maps to E10/128 GiB. Azure documents both the size rounding and
+hourly prorating of a monthly disk price ([managed disk billing][azure-disk-billing]).
+The estimator uses the Pricing Calculator's documented 730-hour month
+([pricing calculator][azure-pricing-calculator]). It does not fabricate I/O,
+egress, snapshot, or logging quantities; those remain separately identified
+ancillary observations during delayed reconciliation.
+
+A credential-free live East US check on 2026-08-01 proved the API's inconsistent
+but exact identities without provisioning resources. T4 uses ARM SKU
+`Standard_NC8as_T4_v3`, Linux product `Virtual Machines NCasT4 v3 Series`, and
+meters `NC8as T4 v3` / `NC8as T4 v3 Spot`. A100 uses ARM SKU
+`Standard_NC24ads_A100_v4`, Linux product `NCads A100 v4 Series Linux`, SKU
+`Standard_NC24ads_A100_v4`, and meter `NC24ads_A100_v4`. Standard SSD E10 is
+`E10 LRS Disk` at `1/Month`; the static Standard IPv4 meter is in the
+case-sensitive `Global` pricing region with `skuName=Standard`. Gludd queries
+broadly only where Azure omits or varies ARM identities, revalidates every
+service/product/SKU/meter/unit/currency/primary/effective-date field client-side,
+and fails closed with bounded observed identities when no unique match exists.
+
+The stateful tier controller bases scale-up on queued and active work, runtime,
+latency budget, urgency, and Spot eligibility. Lower scale-down thresholds keep
+the current tier through moderate demand, preventing oscillation. Every choice
+emits `scale_up`, `hold`, or `scale_down` plus its demand score and reason. A
+completed estimate can materialize the immutable `AzureCostPrediction` used by
+durable reconciliation, including all compute/disk/IP resource and meter IDs.
+
+Contract-specific discounts, free-grant balances, transaction/egress/log
+forecasts, and real 20-run calibrated cohort evidence remain open under AZL.2;
+the public Retail Prices API is not evidence of final invoiced cost. Azure's
+pricing page likewise states that serverless GPU charges are additive to active
+vCPU and RAM charges ([Container Apps pricing][azure-container-apps-pricing]),
+while the GPU overview confirms per-second billing and scale to zero
 ([serverless GPU overview][azure-serverless-gpu]).
 
 The API choice, delayed-data states, resource identity, ancillary ledger, and
@@ -451,6 +480,8 @@ to failure.
 - [Azure Container Apps scaling behavior][azure-container-scaling]
 - [Azure Spot VM behavior, pricing, and eviction history][azure-spot-vms]
 - [Azure Retail Prices API][azure-retail-prices]
+- [Azure managed-disk billing][azure-disk-billing]
+- [Azure Pricing Calculator estimation rules][azure-pricing-calculator]
 - [Azure Container Apps pricing][azure-container-apps-pricing]
 - [Azure Container Apps serverless GPU overview][azure-serverless-gpu]
 - [Azure Container Apps workload-profile types][azure-workload-profiles]
@@ -467,10 +498,12 @@ to failure.
 [azure-container-scaling]: https://learn.microsoft.com/en-us/azure/container-apps/scale-app
 [azure-cost-latency]: https://learn.microsoft.com/en-ca/azure/cost-management-billing/costs/understand-cost-mgt-data#cost-and-usage-data-updates-and-retention
 [azure-delivery-retry]: https://learn.microsoft.com/en-us/azure/event-grid/delivery-and-retry
+[azure-disk-billing]: https://learn.microsoft.com/en-us/azure/virtual-machines/disks-types#billing
 [azure-endpoint-validation]: https://learn.microsoft.com/en-us/azure/event-grid/end-point-validation-event-grid-events-schema
 [azure-event-authentication]: https://learn.microsoft.com/en-us/azure/event-grid/security-authentication
 [azure-event-metrics]: https://learn.microsoft.com/en-us/azure/event-grid/monitor-push-reference
 [azure-provisioning-state]: https://learn.microsoft.com/en-us/azure/networking/troubleshoot-failed-state#provisioning-states
+[azure-pricing-calculator]: https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/pricing-calculator
 [azure-retail-prices]: https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices
 [azure-serverless-gpu]: https://learn.microsoft.com/en-us/azure/container-apps/gpu-serverless-overview
 [azure-workload-profiles]: https://learn.microsoft.com/en-us/azure/container-apps/workload-profiles-overview
@@ -489,6 +522,7 @@ to failure.
 [forum-terraform-orphan]: https://github.com/hashicorp/terraform-provider-azurerm/issues/7236
 [forum-terraform-state-gap]: https://discuss.hashicorp.com/t/terraform-resources-not-tracked-after-failure-even-when-successfully-deployed/73976
 [forum-vm-deallocating]: https://learn.microsoft.com/en-us/answers/questions/261/trending-on-msdn-virtual-machine-stuck-in-dealloca
+[forum-vm-disk-cost]: https://learn.microsoft.com/en-us/answers/questions/885339/azure-stopped-vm-disk-cost
 [forum-azure-cli-gpu-name]: https://github.com/Azure/azure-cli/issues/31239
 [forum-azurerm-gpu-counts]: https://github.com/hashicorp/terraform-provider-azurerm/pull/30738
 [forum-azurerm-gpu-support]: https://github.com/hashicorp/terraform-provider-azurerm/issues/28117
