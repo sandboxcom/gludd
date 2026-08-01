@@ -105,12 +105,14 @@ game-e2e = [
     "pygame>=2.5.0",
     "scikit-image>=0.22.0",
     "opencv-python-headless>=4.9.0,<4.13",
+    "pillow>=12.3.0",
     "yt-dlp>=2025.1.15",
 ]
 e2e-all = [
     "pygame>=2.5.0",
     "scikit-image>=0.22.0",
     "opencv-python-headless>=4.9.0,<4.13",
+    "pillow>=12.3.0",
     "yt-dlp>=2025.1.15",
     "langchain-openai>=0.3.0",
     "azure-identity>=1.16.0",

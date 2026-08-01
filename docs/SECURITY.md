@@ -269,6 +269,26 @@ to disk (see `src/general_ludd/secrets/cosign.py`).
 
 ---
 
+## Game and image dependency hardening
+
+The `game-e2e` and `e2e-all` extras require Pillow 12.3.0 or newer. Pillow's
+[12.3.0 release notes](https://pillow.readthedocs.io/en/stable/releasenotes/12.3.0.html)
+record fixes for decompression denial of service and multiple out-of-bounds reads
+and writes. The lockfile pins the selected release and hashes so the audited
+dependency graph is reproducible.
+
+That version floor is a library patch, not an application-level image-size or
+resource limit. Pillow operators have discussed decompression-bomb risk since
+[issue #515](https://github.com/python-pillow/Pillow/issues/515): small encoded
+files can expand to very large images, and decoding is often lazy. Any production
+feature that accepts untrusted images must still bound encoded bytes, decoded
+pixel dimensions, processing time, and sandbox memory; preserve Pillow's
+decompression-bomb checks; and reject or isolate malformed inputs. See Pillow's
+[image security guidance](https://pillow.readthedocs.io/en/stable/handbook/security.html)
+for the upstream threat model and operational mitigations.
+
+---
+
 ## Known dependency advisories (adjudicated)
 
 Audited via `make pip-audit`. `make pip-audit-gate` fails closed on any new
