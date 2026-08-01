@@ -531,6 +531,7 @@ class TerraformGenerator:
     def _generate_azure_containerapp(self, config: ComputeConfig) -> str:
         region = config.region or "eastus"
         _modules = os.path.join(os.path.dirname(__file__), "..", "..", "..", "infra", "terraform", "modules")
+        suffix = config.model_name.replace("/", "-").replace(".", "-")[:20]
         return textwrap.dedent(f"""\
             terraform {{
               required_providers {{
@@ -549,13 +550,32 @@ class TerraformGenerator:
             variable "image"          {{ default = "" }}
             variable "gpus"           {{ default = 1 }}
             variable "model"          {{ default = "" }}
-            variable "region"         {{ default = "" }}
+            variable "region"         {{ default = "{region}" }}
             variable "instance_type"  {{ default = "" }}
             variable "extra_args"     {{ default = "" }}
             variable "max_cost_usd"   {{ default = 5 }}
             variable "timeout_minutes"{{ default = 30 }}
             variable "guided_decoding_backend"   {{ default = "" }}
             variable "enable_structured_outputs" {{ default = false }}
+
+            resource "azurerm_resource_group" "gludd" {{
+              name     = "gludd-gpu-{suffix}"
+              location = var.region
+            }}
+
+            resource "azurerm_log_analytics_workspace" "gludd" {{
+              name                = "gludd-law-{suffix}"
+              resource_group_name = azurerm_resource_group.gludd.name
+              location            = var.region
+              sku                 = "PerGB2018"
+            }}
+
+            resource "azurerm_container_app_environment" "gludd" {{
+              name                       = "gludd-cae-{suffix}"
+              resource_group_name        = azurerm_resource_group.gludd.name
+              location                   = var.region
+              log_analytics_workspace_id = azurerm_log_analytics_workspace.gludd.id
+            }}
 
             module "vllm_server" {{
               source = "{_modules}/vllm-server"
@@ -572,12 +592,31 @@ class TerraformGenerator:
               enable_structured_outputs  = var.enable_structured_outputs
             }}
 
+            resource "azurerm_container_app" "vllm" {{
+              name                         = "gludd-vllm-{suffix}"
+              resource_group_name          = azurerm_resource_group.gludd.name
+              container_app_environment_id = azurerm_container_app_environment.gludd.id
+              revision_mode                = "Single"
+
+              template {{
+                container {{
+                  name   = "vllm-server"
+                  image  = var.image
+                  cpu    = 4.0
+                  memory = "16Gi"
+
+                  command = module.vllm_server.serve_command
+                }}
+              }}
+            }}
+
             output "instance_id" {{
-              value = module.vllm_server.instance_id
+              value = azurerm_container_app.vllm.id
             }}
 
             output "base_url" {{
-              value = module.vllm_server.base_url
+              value = "https://${{azurerm_container_app.vllm.latest_revision_fqdn}}/v1"
+            }}
             }}
 
             # Legacy aliases — DeploymentManager.deploy() reads instance_ip /
@@ -586,11 +625,11 @@ class TerraformGenerator:
             # change. Remove once deployment.py is updated to read the new
             # instance_id / base_url names directly.
             output "instance_ip" {{
-              value = module.vllm_server.instance_id
+              value = azurerm_container_app.vllm.id
             }}
 
             output "endpoint_url" {{
-              value = module.vllm_server.base_url
+              value = "https://${{azurerm_container_app.vllm.latest_revision_fqdn}}/v1"
             }}
         """)
 
