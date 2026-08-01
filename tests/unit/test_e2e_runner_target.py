@@ -158,6 +158,15 @@ def test_game_provision_target_uses_env_file_and_hour_long_timeout_contract() ->
     assert ". /tmp/general-ludd.env" not in body
 
 
+def test_game_targets_install_declared_media_extra_instead_of_silently_skipping() -> None:
+    content = (MAKEFILE.parent / "pyproject.toml").read_text(encoding="utf-8")
+
+    for target in ("test-e2e-games", "test-e2e-games-provision", "test-e2e-games-local"):
+        assert "--extra game-e2e" in _target_body(target)
+    assert 'game-e2e = [' in content
+    assert '"yt-dlp>=' in content
+
+
 def test_game_provision_target_behavioral_example_never_provisions() -> None:
     result = subprocess.run(
         [

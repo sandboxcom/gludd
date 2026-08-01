@@ -173,6 +173,8 @@ help:
 	@echo "  gate-audit            Gate + coverage audit (85% per-file threshold)"
 	@echo "  gate-async            Launch gate detached (non-blocking); writes .gate-status"
 	@echo "  gate-status           Print current .gate-status (RUNNING/PASS/FAIL)"
+	@echo "  gate-tail             Print a bounded latest gate-log snapshot (GATE_TAIL_LINES=80)"
+	@echo "  gate-lite-tail        Print a bounded latest gate-lite-log snapshot (GATE_TAIL_LINES=80)"
 	@echo "  collect-check         Fast collection-error gate"
 	@echo "  test-nodeids          Print bounded pytest node-id slice (START/LIMIT/TESTPATH)"
 	@echo "  test-xdist-trace      Run pytest with durable xdist worker/node/resource trace"
@@ -226,6 +228,7 @@ help:
 	@echo "  test-opencode-e2e     .opencode/ plugin load+invocation tests"
 	@echo "  test-specific         Single test (TESTFILE=path::TestClass::test_name)"
 	@echo "  test-files            Multiple tests (TESTFILES=tests/unit/a.py tests/unit/b.py)"
+	@echo "  grep                  Repository text search (Q=regex SEARCH_PATH=path)"
 	@echo "  ci-shards-log-context Show local shard log context (LOG=.gate-logs/ci.log PATTERN=FAILED)"
 	@echo "  task                  Run CMD with timeout (CMD=make test-unit, GLUDD_TASK_TIMEOUT=300)"
 	@echo "  test-count            Count collected tests"
@@ -1483,6 +1486,8 @@ AZURE_PROVISION_E2E ?= 0
 AZURE_E2E_ENV_FILE ?= /tmp/general-ludd.env
 AZURE_E2E_VALIDATE_ONLY ?= 0
 GAME_E2E_TIMEOUT_SECS ?= 3600
+GAME_E2E_REFERENCE_NETWORK ?= 1
+GAME_E2E_REFERENCE_CACHE_DIR ?= .cache/gludd-game-e2e
 AZURE_CLEANUP_TIMEOUT_SECS ?= 1800
 AZURE_CLEANUP_POLL_SECS ?= 10
 AZURE_CLI ?= az
@@ -1534,7 +1539,7 @@ test-e2e-games:
 	@ARM_CLIENT_ID="$${ARM_CLIENT_ID:-}" ARM_CLIENT_SECRET="$${ARM_CLIENT_SECRET:-}" \
 	 ARM_TENANT_ID="$${ARM_TENANT_ID:-}" ARM_SUBSCRIPTION_ID="$${ARM_SUBSCRIPTION_ID:-}" \
 	 AZURE_MODEL="$${AZURE_MODEL:-}" AZURE_BASE_URL="$${AZURE_BASE_URL:-}" \
-	 $(UV) run pytest tests/e2e/game_e2e/ -v -m "e2e and not azure_provision"
+	 $(UV) run --extra game-e2e pytest tests/e2e/game_e2e/ -v -m "e2e and not azure_provision" $(PYTEST_ARGS)
 
 test-e2e-games-provision:
 	@mkdir -p .gate-logs/e2e-azure
@@ -1550,7 +1555,8 @@ test-e2e-games-provision:
 	 export ARM_CLIENT_ID ARM_CLIENT_SECRET ARM_TENANT_ID ARM_SUBSCRIPTION_ID ARM_USE_MSI AZURE_SUBSCRIPTION_ID; \
 	 export AZURE_MODEL AZURE_BASE_URL AZURE_GPU_TYPE AZURE_PROVISION_ENGINE; \
 	 AZURE_PROVISION_E2E=1 GLUDD_E2E_MAX_SPEND_USD="$${GLUDD_E2E_MAX_SPEND_USD:-$(GLUDD_E2E_MAX_SPEND_USD)}" \
-	 $(UV) run python scripts/e2e_log_capture.py --timeout "$(GAME_E2E_TIMEOUT_SECS)" --cmd "$(UV) run pytest tests/e2e/game_e2e/ -v -s -m azure_provision --timeout=$(GAME_E2E_TIMEOUT_SECS) --log-cli-level=INFO" --label games-provision --tee
+	 GAME_E2E_REFERENCE_NETWORK="$(GAME_E2E_REFERENCE_NETWORK)" GAME_E2E_REFERENCE_CACHE_DIR="$(GAME_E2E_REFERENCE_CACHE_DIR)" \
+	 $(UV) run --extra game-e2e python scripts/e2e_log_capture.py --timeout "$(GAME_E2E_TIMEOUT_SECS)" --cmd "$(UV) run --extra game-e2e pytest tests/e2e/game_e2e/ -v -s -m azure_provision --timeout=$(GAME_E2E_TIMEOUT_SECS) --log-cli-level=INFO" --label games-provision --tee
 
 # AWS E2E — env-pointer (CI-friendly, no provisioning)
 test-e2e-aws:
@@ -1670,7 +1676,7 @@ test-games:
 	@$(UV) run python -m pytest tests/e2e/test_game_building_deepseek.py $(_XD) -v $(PYTEST_ARGS)
 
 test-e2e-games-local:
-	@$(UV) run pytest tests/unit/test_video_compare.py tests/unit/test_game_gen.py tests/unit/test_game_e2e.py -v $(PYTEST_ARGS)
+	@$(UV) run --extra game-e2e pytest tests/unit/test_video_compare.py tests/unit/test_game_gen.py tests/unit/test_game_e2e.py -v $(PYTEST_ARGS)
 
 game-audit:
 	@$(PYTHON) scripts/game_audit.py
@@ -2140,8 +2146,10 @@ git-log-n:
 	@git log --oneline -$(if $(N),$(N),10) || echo "No git history"
 
 grep:
-	@[ -n "$(Q)" ] || { echo "Usage: make grep Q='pattern' [PATH='dir']"; exit 1; }
-	@grep -rn -- "$(Q)" $(if $(PATH_),$(PATH_),src tests) || echo "No matches"
+	@[ -n "$(Q)" ] || { echo "Usage: make grep Q='pattern' [SEARCH_PATH='dir']"; exit 1; }
+	@LEGACY_SEARCH_PATH="$(if $(filter command line,$(origin PATH)),$(PATH),)"; \
+	 PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"; export PATH; \
+	 grep -rn -- "$(Q)" $(if $(SEARCH_PATH),$(SEARCH_PATH),$(if $(PATH_),$(PATH_),$${LEGACY_SEARCH_PATH:-src tests})) || echo "No matches"
 
 # Scoped grep that writes results to a file (avoids flooding stdout on broad
 # audits) and takes a directory scope via DIR (distinct name from PATH, which
@@ -5676,15 +5684,19 @@ gate-lite-status-check:
 		echo "(no background gate-lite found)"; \
 	fi
 
-# Live tail of the latest gate log (Ctrl-C to stop).
+# Bounded snapshot of the latest gate logs. Never leaves a tail watcher behind.
+GATE_TAIL_LINES ?= 80
 gate-tail:
-	@LOGF=$$(ls -t .gate-logs/gate-*.log 2>/dev/null | head -1); \
-	if [ -n "$$LOGF" ]; then tail -f "$$LOGF"; else echo "(no gate log found)"; fi
+	@case "$(GATE_TAIL_LINES)" in ''|*[!0-9]*) echo "GATE_TAIL_LINES must be a positive integer"; exit 2;; esac; \
+	if [ "$(GATE_TAIL_LINES)" -lt 1 ]; then echo "GATE_TAIL_LINES must be a positive integer"; exit 2; fi; \
+	LOGF=$$(ls -t .gate-logs/gate-*.log 2>/dev/null | head -1); \
+	if [ -n "$$LOGF" ]; then tail -n "$(GATE_TAIL_LINES)" "$$LOGF"; else echo "(no gate log found)"; fi
 
-# Live tail of the latest gate-lite log (Ctrl-C to stop).
 gate-lite-tail:
-	@LOGF=$$(ls -t .gate-logs/gate-lite-*.log 2>/dev/null | head -1); \
-	if [ -n "$$LOGF" ]; then tail -f "$$LOGF"; else echo "(no gate-lite log found)"; fi
+	@case "$(GATE_TAIL_LINES)" in ''|*[!0-9]*) echo "GATE_TAIL_LINES must be a positive integer"; exit 2;; esac; \
+	if [ "$(GATE_TAIL_LINES)" -lt 1 ]; then echo "GATE_TAIL_LINES must be a positive integer"; exit 2; fi; \
+	LOGF=$$(ls -t .gate-logs/gate-lite-*.log 2>/dev/null | head -1); \
+	if [ -n "$$LOGF" ]; then tail -n "$(GATE_TAIL_LINES)" "$$LOGF"; else echo "(no gate-lite log found)"; fi
 
 # List .gate-logs/*.log with mtime + PASS/FAIL/incomplete.
 gate-logs:

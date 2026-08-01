@@ -32,9 +32,36 @@
       "make_variables": [
         "AZURE_E2E_ENV_FILE",
         "AZURE_E2E_VALIDATE_ONLY",
-        "GAME_E2E_TIMEOUT_SECS"
+        "GAME_E2E_TIMEOUT_SECS",
+        "GAME_E2E_REFERENCE_NETWORK",
+        "GAME_E2E_REFERENCE_CACHE_DIR"
       ],
-      "behavior": "make test-e2e-games-provision AZURE_E2E_ENV_FILE=tests/fixtures/azure-e2e.env.example AZURE_E2E_VALIDATE_ONLY=1 GAME_E2E_TIMEOUT_SECS=3600"
+      "behavior": "make test-e2e-games-provision AZURE_E2E_ENV_FILE=tests/fixtures/azure-e2e.env.example AZURE_E2E_VALIDATE_ONLY=1 GAME_E2E_TIMEOUT_SECS=3600 GAME_E2E_REFERENCE_NETWORK=0 GAME_E2E_REFERENCE_CACHE_DIR=.cache/gludd-game-e2e"
+    },
+    {
+      "name": "test-e2e-games",
+      "make_variables": ["PYTEST_ARGS"],
+      "behavior": "make test-e2e-games PYTEST_ARGS='-q -k test_ssim_identity'"
+    },
+    {
+      "name": "test-e2e-games-local",
+      "make_variables": ["PYTEST_ARGS"],
+      "behavior": "make test-e2e-games-local PYTEST_ARGS=-q"
+    },
+    {
+      "name": "grep",
+      "make_variables": ["Q", "SEARCH_PATH"],
+      "behavior": "make grep Q=GAME_E2E SEARCH_PATH=docs"
+    },
+    {
+      "name": "gate-tail",
+      "make_variables": ["GATE_TAIL_LINES"],
+      "behavior": "make gate-tail GATE_TAIL_LINES=5"
+    },
+    {
+      "name": "gate-lite-tail",
+      "make_variables": ["GATE_TAIL_LINES"],
+      "behavior": "make gate-lite-tail GATE_TAIL_LINES=5"
     },
     {
       "name": "azure-cleanup-e2e",
