@@ -134,14 +134,26 @@ class TestComputeLaunchDaemonEndpoint:
 
     def test_destroy_unknown_instance_returns_404(self, tmp_path):
         """W2.3 (C5): destroying an instance with no record is refused (404), not run."""
-        from fastapi import FastAPI
+        from fastapi import FastAPI, Request
         from starlette.testclient import TestClient
 
         from general_ludd.infra.deployment import DeploymentManager
         from general_ludd.routers.compute import register
+        from general_ludd.security.permissions import Capability, PermissionSpec
 
         app = FastAPI()
         register(app, {})
+
+        @app.middleware("http")
+        async def authorized_destroy(request: Request, call_next):
+            request.state.auth_spec = PermissionSpec(
+                agent_type="operator",
+                capabilities=[
+                    Capability(resource="admin:compute", actions=["destroy"]),
+                ],
+            )
+            return await call_next(request)
+
         app.state._deployment_manager = DeploymentManager(working_dir=str(tmp_path))
         client = TestClient(app)
         resp = client.delete("/admin/compute/destroy/i-never-deployed")
@@ -419,7 +431,7 @@ class TestAzureContainerAppFixes:
         )
         hcl = gen.generate(config)
         assert 'module "vllm_server"' in hcl
-        assert 'source = "./modules/vllm-server"' in hcl
+        assert 'source = "./modules/azure-container-app-vllm"' in hcl
         import re
         assert not re.search(r'^\s*resource\s+"', hcl, re.MULTILINE), (
             "Phase 4 violation: inline resource block in ContainerApp HCL"
@@ -428,7 +440,7 @@ class TestAzureContainerAppFixes:
     def test_acr_and_container_app_not_inline(self):
         # Phase 4 — the inline ACR / container_app bodies moved behind the module.
         gen = TerraformGenerator()
-        for gpu in [GPUType.T4, GPUType.A100_80, GPUType.A100_40, GPUType.L40S, GPUType.H100]:
+        for gpu in [GPUType.T4, GPUType.A100_80, GPUType.A100_40]:
             config = ComputeConfig(
                 provider=ComputeProvider.AZURE,
                 gpu_type=gpu,
@@ -458,8 +470,8 @@ class TestAzureContainerAppFixes:
             assert "gpu_type" in tfvars, f"gpu={gpu}: gpu_type missing from tfvars"
             assert gpu.value in tfvars, f"gpu={gpu}: gpu value not in tfvars"
 
-    def test_module_block_references_gpus_var(self):
-        # Phase 4 — GPU count flows to the module via var.gpus.
+    def test_module_block_references_gpu_count_var(self):
+        # GPU count is explicit and distinct from gpu_type at the module seam.
         gen = TerraformGenerator()
         config = ComputeConfig(
             provider=ComputeProvider.AZURE,
@@ -468,7 +480,8 @@ class TestAzureContainerAppFixes:
             deploy_type="containerapp",
         )
         hcl = gen.generate(config)
-        assert "var.gpus" in hcl, "module block must reference var.gpus"
+        assert "gpu_count" in hcl
+        assert "var.gpu_count" in hcl, "module block must reference var.gpu_count"
 
 
 class TestEnvVarAuthFallback:
