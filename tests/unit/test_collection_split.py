@@ -11,15 +11,20 @@ NS_DIR = COLLECTIONS_ROOT / "ansible_collections" / "general_ludd"
 EXPECTED_COLLECTIONS = sorted(
     [
         "agent",
+        "ai_ml",
+        "azure",
         "behavioral",
         "binary_re",
         "business",
+        "chemistry",
         "e2e_test_gen",
         "forensics",
         "formal",
+        "git_release",
         "governance",
         "infrastructure",
         "language",
+        "materials",
         "networking",
         "operations",
         "os_expert",
@@ -45,7 +50,7 @@ ROLES_MOVED_OUT = {
 
 
 def _bundle_import() -> Path:
-    from src.general_ludd.ansible.paths import _bundled_collections_root
+    from general_ludd.ansible.paths import _bundled_collections_root
 
     return _bundled_collections_root()
 
@@ -108,8 +113,8 @@ class TestMovedRolesInDestination:
 
 
 class TestListAllCollections:
-    def test_returns_all_seven(self, monkeypatch):
-        from src.general_ludd.ansible import paths as paths_mod
+    def test_returns_all_collections(self, monkeypatch):
+        from general_ludd.ansible import paths as paths_mod
 
         monkeypatch.setattr(
             paths_mod,
@@ -126,7 +131,7 @@ class TestListAllCollections:
         )
 
     def test_returns_empty_for_missing_namespace(self):
-        from src.general_ludd.ansible.paths import list_all_collections
+        from general_ludd.ansible.paths import list_all_collections
 
         result = list_all_collections(
             Path("/nonexistent"),

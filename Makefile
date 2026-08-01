@@ -10,6 +10,9 @@ GLUDD_TASK_TIMEOUT ?= 300
 GATE_POLL_INTERVAL ?= 60
 INTERVAL ?= 300
 COUNT ?= 1
+# Make children emit deterministic, non-interactive logs even when the host's
+# terminal emulator has no terminfo entry inside a worker or CI environment.
+export TERM := dumb
 # SSH deploy keys are credentials and must live outside the repository.
 # Override with `make ... SSH_KEY=/path/to/key` for another external key.
 SSH_KEY ?= $(HOME)/.ssh/sandboxcom_gludd_rsa
@@ -600,6 +603,7 @@ ruff-audit:
 
 typecheck:
 	@$(UV) run mypy -p general_ludd
+	@$(UV) run mypy --config-file config/mypy-tests.toml tests/unit/test_config_gaps.py
 
 test:
 	@if [ -n "$(TESTFILE)" ]; then \

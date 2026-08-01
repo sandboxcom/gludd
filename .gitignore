@@ -50,6 +50,8 @@ ci-attempt-logs/
 .secrets.baseline
 .game-audit-report.json
 research_effectiveness.json
+# Approved gameplay references are locally cached, provenance-verified media.
+.cache/gludd-game-e2e/
 
 gludd-dist.tar.gz
 

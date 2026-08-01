@@ -1,0 +1,7 @@
+[tool.mypy]
+python_version = "3.11"
+strict = true
+explicit_package_bases = true
+warn_unused_configs = true
+mypy_path = "src"
+follow_imports = "skip"

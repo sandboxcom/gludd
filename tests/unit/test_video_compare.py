@@ -6,6 +6,7 @@ import json
 import warnings
 from pathlib import Path
 from types import SimpleNamespace
+from typing import ClassVar
 
 import numpy as np
 import pytest
@@ -101,6 +102,13 @@ class TestMediaAdapters:
         progress_events: list[dict[str, object]] = []
         destination = tmp_path / "reference.mp4"
 
+        def fake_download_range_func(
+            chapters: list[object],
+            ranges: list[tuple[float, float]],
+        ) -> object:
+            captured["range_factory"] = (chapters, ranges)
+            return lambda _info, _ydl: iter(())
+
         class FakeYoutubeDL:
             def __init__(self, options: dict[str, object]) -> None:
                 captured["options"] = options
@@ -116,7 +124,14 @@ class TestMediaAdapters:
                 destination.write_bytes(b"bounded clip")
                 return {"id": "video-id"}
 
-        monkeypatch.setattr(video_compare, "yt_dlp", SimpleNamespace(YoutubeDL=FakeYoutubeDL))
+        monkeypatch.setattr(
+            video_compare,
+            "yt_dlp",
+            SimpleNamespace(
+                YoutubeDL=FakeYoutubeDL,
+                utils=SimpleNamespace(download_range_func=fake_download_range_func),
+            ),
+        )
 
         result = download_youtube_video(
             "https://www.youtube.com/watch?v=video-id",
@@ -128,8 +143,11 @@ class TestMediaAdapters:
 
         options = captured["options"]
         assert isinstance(options, dict)
-        assert options["download_sections"] == "*1.250-3.750"
+        assert captured["range_factory"] == ([], [(1.25, 3.75)])
+        assert callable(options["download_ranges"])
+        assert "download_sections" not in options
         assert options["force_keyframes_at_cuts"] is True
+        assert options["external_downloader"] == "ffmpeg"
         assert options["noplaylist"] is True
         progress_hooks = options["progress_hooks"]
         assert isinstance(progress_hooks, list)
@@ -339,10 +357,21 @@ class TestCompareGameplay:
 
 
 class TestReferenceVideos:
+    EXPECTED_SOURCE_IDS: ClassVar[dict[str, str]] = {
+        "doom_e1m1_hallway": "K0nlO87evhY",
+        "quake_dm6_arena": "dPQO03UmicE",
+        "wipeout_racing": "XASEBvDri4U",
+        "descent_tunnel": "ofUvw5dXGO4",
+        "rogue_dungeon": "cZ7zWh_Ljr0",
+    }
+
     def test_reference_videos_dict_complete(self) -> None:
-        assert len(REFERENCE_VIDEOS) >= 5
-        for name in ["doom_e1m1_hallway", "quake_dm6_arena", "wipeout_racing", "descent_tunnel", "rogue_dungeon"]:
-            assert name in REFERENCE_VIDEOS, f"Missing reference video: {name}"
+        assert set(REFERENCE_VIDEOS) == set(self.EXPECTED_SOURCE_IDS)
+
+    def test_reference_manifest_uses_verified_source_ids(self) -> None:
+        assert {
+            name: spec.video_id for name, spec in REFERENCE_VIDEO_SPECS.items()
+        } == self.EXPECTED_SOURCE_IDS
 
     def test_download_url_format(self) -> None:
         for name, url in REFERENCE_VIDEOS.items():
@@ -377,7 +406,7 @@ class TestReferenceVideos:
         )
 
         assert result.game_name == "doom_e1m1_hallway"
-        assert result.source_video_id == "YUU7d93IUBE"
+        assert result.source_video_id == self.EXPECTED_SOURCE_IDS["doom_e1m1_hallway"]
         assert result.source_url == REFERENCE_VIDEOS[result.game_name]
         assert result.cache_status == "missing"
         assert result.network_used is False
@@ -554,6 +583,7 @@ class TestReferenceVideos:
         monkeypatch.setattr(video_compare, "download_youtube_video", fake_download)
         monkeypatch.setattr(video_compare, "extract_frames", lambda *args, **kwargs: frames)
         monkeypatch.setattr(video_compare, "_ffmpeg_version", lambda: "ffmpeg fixture")
+        monkeypatch.setattr(video_compare, "_video_duration_seconds", lambda _path: 12.0)
 
         first = preflight_reference_videos(
             (source.game_name,),
@@ -617,6 +647,7 @@ class TestReferenceVideos:
         monkeypatch.setattr(video_compare, "download_youtube_video", fake_download)
         monkeypatch.setattr(video_compare, "extract_frames", lambda *args, **kwargs: frames)
         monkeypatch.setattr(video_compare, "_ffmpeg_version", lambda: "ffmpeg fixture")
+        monkeypatch.setattr(video_compare, "_video_duration_seconds", lambda _path: 12.0)
         first = preflight_reference_videos((source.game_name,), tmp_path, allow_network=True)
         first[source.game_name].cache_path.write_bytes(b"tampered clip")
 
@@ -642,11 +673,37 @@ class TestReferenceVideos:
             lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("decode failed")),
         )
         monkeypatch.setattr(video_compare, "_ffmpeg_version", lambda: "ffmpeg fixture")
+        monkeypatch.setattr(video_compare, "_video_duration_seconds", lambda _path: 12.0)
 
         with pytest.raises(RuntimeError, match="decode failed"):
             preflight_reference_videos((source.game_name,), tmp_path, allow_network=True)
 
         assert not selected_path.exists()
+
+    def test_preflight_rejects_a_full_source_disguised_as_a_bounded_clip(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        source = REFERENCE_VIDEO_SPECS["doom_e1m1_hallway"]
+        frames = [_make_frame(64, 64, 50), _make_frame(64, 64, 60)]
+
+        def fake_download(url: str, output_path: str | Path, **kwargs: object) -> str:
+            path = Path(output_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"full source video")
+            return str(path)
+
+        monkeypatch.setattr(video_compare, "download_youtube_video", fake_download)
+        monkeypatch.setattr(video_compare, "extract_frames", lambda *args, **kwargs: frames)
+        monkeypatch.setattr(video_compare, "_ffmpeg_version", lambda: "ffmpeg fixture")
+        monkeypatch.setattr(video_compare, "_video_duration_seconds", lambda _path: 600.0)
+
+        with pytest.raises(RuntimeError, match=r"duration.*exceeds.*bounded"):
+            preflight_reference_videos((source.game_name,), tmp_path, allow_network=True)
+
+        assert not (tmp_path / source.cache_filename).exists()
+        assert not (tmp_path / source.provenance_filename).exists()
 
     def test_preflight_types_are_part_of_the_public_module_contract(self) -> None:
         assert "ReferenceCacheValidation" in video_compare.__all__

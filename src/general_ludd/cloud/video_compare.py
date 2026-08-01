@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 import os
 import shutil
 import subprocess
@@ -26,6 +27,7 @@ from numpy.typing import NDArray
 
 logger = logging.getLogger(__name__)
 Frame = NDArray[np.uint8]
+_MAX_REFERENCE_CLIP_OVERRUN_SECONDS = 2.0
 
 class _StructuralSimilarity(Protocol):
     def __call__(
@@ -134,11 +136,11 @@ def _reference_spec(game_name: str, video_id: str) -> ReferenceVideoSpec:
 
 
 REFERENCE_VIDEO_SPECS: dict[str, ReferenceVideoSpec] = {
-    "doom_e1m1_hallway": _reference_spec("doom_e1m1_hallway", "YUU7d93IUBE"),
-    "quake_dm6_arena": _reference_spec("quake_dm6_arena", "h_RmqpBk7bU"),
-    "wipeout_racing": _reference_spec("wipeout_racing", "ZnTwZr6r0Hk"),
-    "descent_tunnel": _reference_spec("descent_tunnel", "GbWtHn3w8vA"),
-    "rogue_dungeon": _reference_spec("rogue_dungeon", "wFikvjM5H1s"),
+    "doom_e1m1_hallway": _reference_spec("doom_e1m1_hallway", "K0nlO87evhY"),
+    "quake_dm6_arena": _reference_spec("quake_dm6_arena", "dPQO03UmicE"),
+    "wipeout_racing": _reference_spec("wipeout_racing", "XASEBvDri4U"),
+    "descent_tunnel": _reference_spec("descent_tunnel", "ofUvw5dXGO4"),
+    "rogue_dungeon": _reference_spec("rogue_dungeon", "cZ7zWh_Ljr0"),
 }
 
 REFERENCE_VIDEOS: dict[str, str] = {
@@ -233,8 +235,18 @@ def download_youtube_video(
         if clip_duration_seconds <= 0:
             raise ValueError("clip_duration_seconds must be positive")
         clip_end_seconds = clip_start_seconds + clip_duration_seconds
-        ydl_opts["download_sections"] = f"*{clip_start_seconds:.3f}-{clip_end_seconds:.3f}"
+        utils_module = getattr(ytdlp_module, "utils", None)
+        download_range_func = getattr(utils_module, "download_range_func", None)
+        if not callable(download_range_func):
+            raise RuntimeError("yt-dlp download_range_func is unavailable")
+        ydl_opts["download_ranges"] = download_range_func(
+            [],
+            [(clip_start_seconds, clip_end_seconds)],
+        )
         ydl_opts["force_keyframes_at_cuts"] = True
+        # The native HTTP downloader fetches the entire source before cutting.
+        # ffmpeg seeks the remote stream and transfers only the requested range.
+        ydl_opts["external_downloader"] = "ffmpeg"
 
     try:
         with ytdlp_module.YoutubeDL(ydl_opts) as ydl:
@@ -315,6 +327,37 @@ def _ffmpeg_version() -> str:
     return first_line
 
 
+def _video_duration_seconds(path: Path) -> float:
+    """Return container duration using ffprobe, failing closed on invalid media."""
+    executable = shutil.which("ffprobe")
+    if executable is None:
+        raise RuntimeError("ffprobe is required before reference acquisition")
+    completed = subprocess.run(
+        [
+            executable,
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    raw_duration = completed.stdout.strip()
+    try:
+        duration = float(raw_duration)
+    except ValueError as error:
+        raise RuntimeError("ffprobe returned an invalid reference duration") from error
+    if completed.returncode != 0 or not math.isfinite(duration) or duration <= 0:
+        raise RuntimeError("ffprobe could not verify reference duration")
+    return duration
+
+
 def _yt_dlp_version() -> str:
     module = _ensure_yt_dlp()
     version_module = getattr(module, "version", None)
@@ -368,6 +411,19 @@ def _validate_cached_reference(
     for key, value in expected.items():
         if payload.get(key) != value:
             raise RuntimeError(f"provenance {key} mismatch")
+
+    actual_duration = payload.get("clip_actual_duration_seconds")
+    if (
+        isinstance(actual_duration, bool)
+        or not isinstance(actual_duration, (int, float))
+        or not math.isfinite(float(actual_duration))
+        or float(actual_duration) <= 0
+        or float(actual_duration)
+        > spec.clip_duration_seconds + _MAX_REFERENCE_CLIP_OVERRUN_SECONDS
+    ):
+        raise RuntimeError("provenance bounded clip duration is invalid")
+    if payload.get("object_size_bytes") != cache_path.stat().st_size:
+        raise RuntimeError("provenance object size mismatch")
 
     object_sha256 = _sha256_file(cache_path)
     if payload.get("object_sha256") != object_sha256:
@@ -423,6 +479,16 @@ def _acquire_reference(
         )
         if not downloaded_path.is_file():
             raise RuntimeError("reference downloader did not produce a file")
+        actual_duration = _video_duration_seconds(downloaded_path)
+        maximum_duration = (
+            spec.clip_duration_seconds + _MAX_REFERENCE_CLIP_OVERRUN_SECONDS
+        )
+        if actual_duration > maximum_duration:
+            raise RuntimeError(
+                "reference clip duration "
+                f"{actual_duration:.3f}s exceeds bounded request maximum "
+                f"{maximum_duration:.3f}s"
+            )
         frames = _decode_reference_frames(spec, downloaded_path)
         object_sha256 = _sha256_file(downloaded_path)
         decoded_frames_sha256 = _sha256_frames(frames)
@@ -435,6 +501,8 @@ def _acquire_reference(
             "source_video_id": spec.video_id,
             "clip_start_seconds": spec.clip_start_seconds,
             "clip_duration_seconds": spec.clip_duration_seconds,
+            "clip_actual_duration_seconds": actual_duration,
+            "object_size_bytes": downloaded_path.stat().st_size,
             "sample_frame_count": spec.sample_frame_count,
             "sample_interval_seconds": spec.sample_interval_seconds,
             "redistribution_allowed": spec.redistribution_allowed,
