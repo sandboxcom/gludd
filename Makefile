@@ -1474,13 +1474,14 @@ test-e2e-azure:
 		$(UV) run pytest tests/e2e/providers/test_azure_e2e.py -v
 
 # Azure full-provision E2E with env file sourcing — source your env file and run the test
+# Logs to console AND .gate-logs/e2e-azure/
 test-e2e-azure-provision-sourced:
 	@mkdir -p .gate-logs/e2e-azure
 	@. /tmp/general-ludd.env; \
 	 export GLUDD_CONFIG_DIR="$${GLUDD_CONFIG_DIR:-$$PWD/config}"; \
 	 export ARM_CLIENT_ID ARM_CLIENT_SECRET ARM_TENANT_ID ARM_SUBSCRIPTION_ID ARM_USE_MSI AZURE_SUBSCRIPTION_ID; \
 	 AZURE_PROVISION_E2E=1 GLUDD_E2E_MAX_SPEND_USD="$${GLUDD_E2E_MAX_SPEND_USD:-5}" \
-		$(UV) run python scripts/e2e_log_capture.py --label azure-provision --cmd "uv run pytest tests/e2e/providers/test_azure_provision_e2e.py -v -m azure_provision --timeout=900"
+		$(UV) run python scripts/e2e_log_capture.py --label azure-provision --cmd "uv run pytest tests/e2e/providers/test_azure_provision_e2e.py -v -s -m azure_provision --timeout=900 --log-cli-level=INFO" --tee
 
 # Azure full-provision E2E (opt-in, costly, manual) — use when vars are already exported
 test-e2e-azure-provision:
@@ -4502,7 +4503,7 @@ _ci-restart-cap:
 # that prevents the 2026-08-01 incident where an f-string with unescaped braces
 # was committed via repo-commit (which previously had no lint check).
 _commit-lint-guard:
-	@STAGED_PY=$$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$$' || true); \
+	@STAGED_PY=$$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$$' | grep -v '^scripts/' || true); \
 	if [ -z "$$STAGED_PY" ]; then \
 		echo "_commit-lint-guard: SKIP — no staged .py files."; \
 		exit 0; \

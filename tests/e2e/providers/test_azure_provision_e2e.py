@@ -129,18 +129,39 @@ class TestAzureProvisionE2E:
         instance: ComputeInstance | None = None
 
         try:
+            print(f"[test] Deploying {gpu} GPU in {deploy_type} mode...", flush=True)
             instance = _run_async(mgr.deploy(config))
             assert instance is not None
             assert instance.status == "running", f"Expected 'running', got {instance.status!r}"
             assert instance.endpoint_url, "endpoint_url must be set after deploy"
+            print(f"[test] Deploy done, endpoint: {instance.endpoint_url}", flush=True)
 
-            _wait_endpoint(instance.endpoint_url)
+            print(f"[test] Waiting for endpoint {instance.endpoint_url}...", flush=True)
+            start = time.monotonic()
+            max_attempts = 60
+            for i in range(max_attempts):
+                try:
+                    r = httpx.get(f"{instance.endpoint_url}/v1/models", timeout=10.0)
+                    if r.status_code == 200:
+                        break
+                except Exception:
+                    pass
+                print(f"[test] Polling endpoint... ({i + 1}/{max_attempts})", flush=True)
+                time.sleep(10)
+            else:
+                pytest.fail(f"Endpoint {instance.endpoint_url} not reachable after {max_attempts * 10}s")
+            elapsed = time.monotonic() - start
+            print(f"[test] Endpoint ready after {elapsed:.0f}s", flush=True)
+
             _run_inference(instance.endpoint_url, model)
+            print("[test] Inference response received", flush=True)
             assert instance.cost_incurred > 0, "Expected cost_incurred > 0 after inference"
 
         finally:
             if instance is not None:
+                print(f"[test] Destroying {instance.instance_id}...", flush=True)
                 _run_async(mgr.destroy(instance.instance_id))
+                print("[test] Destroy complete", flush=True)
 
         assert instance is not None
         assert instance.cost_incurred <= max_spend, (

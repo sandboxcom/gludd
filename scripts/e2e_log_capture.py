@@ -7,8 +7,8 @@ import json
 import os
 import subprocess
 import sys
-import time
-from datetime import datetime, timezone
+
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -16,9 +16,9 @@ LOG_DIR = Path(".gate-logs/e2e-azure")
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def capture(cmd: list[str], *, label: str, env: dict | None = None) -> dict:
-    """Run a command, tee output to a timestamped log file, return result dict."""
-    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+def capture(cmd: list[str], *, label: str, env: dict | None = None, tee: bool = False) -> dict:
+    """Run a command, optionally tee output to console + timestamped log, return result."""
+    ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     log_path = LOG_DIR / f"{label}-{ts}.log"
     result_path = LOG_DIR / f"{label}-{ts}.json"
 
@@ -31,14 +31,39 @@ def capture(cmd: list[str], *, label: str, env: dict | None = None) -> dict:
         "error_summary": None,
     }
 
+    header = f"=== {label} started at {ts} ===\nCommand: {' '.join(cmd)}\n\n"
+    sys.stdout.write(header)
+    sys.stdout.flush()
+
     with open(log_path, "w") as f:
-        f.write(f"=== {label} started at {ts} ===\n")
-        f.write(f"Command: {' '.join(cmd)}\n")
-        sanitized_env = {k: "***" if "SECRET" in k or "KEY" in k else v for k, v in (env or {}).items()}
-        f.write(f"Env: {json.dumps(sanitized_env, indent=2)}\n\n")
+        f.write(header)
 
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, env={**os.environ, **(env or {})}, timeout=3600)
+            if tee:
+                proc = subprocess.Popen(
+                    cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env={**os.environ, **(env or {})}
+                )
+                assert proc.stdout is not None
+                all_output = []
+                for line in proc.stdout:
+                    sys.stdout.write(line)
+                    sys.stdout.flush()
+                    f.write(line)
+                    all_output.append(line)
+                proc.wait()
+                exit_code = proc.returncode
+                full_output = "".join(all_output)
+            else:
+                proc = subprocess.run(
+                    cmd, capture_output=True, text=True, env={**os.environ, **(env or {})}, timeout=3600
+                )
+                exit_code = proc.returncode
+                full_output = proc.stdout
+                f.write("=== STDOUT ===\n")
+                f.write(proc.stdout)
+                f.write("\n=== STDERR ===\n")
+                f.write(proc.stderr)
+
         except subprocess.TimeoutExpired:
             f.write("=== TIMEOUT after 3600s ===\n")
             result["exit_code"] = 124
@@ -47,15 +72,11 @@ def capture(cmd: list[str], *, label: str, env: dict | None = None) -> dict:
                 json.dump(result, rf, indent=2)
             return result
 
-        f.write("=== STDOUT ===\n")
-        f.write(proc.stdout)
-        f.write("\n=== STDERR ===\n")
-        f.write(proc.stderr)
-        f.write(f"\n=== Exit code: {proc.returncode} ===\n")
+        f.write(f"\n=== Exit code: {exit_code} ===\n")
 
-    result["exit_code"] = proc.returncode
-    if proc.returncode != 0:
-        result["error_summary"] = _extract_errors(proc.stderr)
+    result["exit_code"] = exit_code
+    if exit_code != 0:
+        result["error_summary"] = _extract_errors(full_output)
 
     with open(result_path, "w") as rf:
         json.dump(result, rf, indent=2)
@@ -105,6 +126,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="E2E log capture — wrap a command and persist output")
     parser.add_argument("--cmd", help="Command to run (will be split on spaces)")
     parser.add_argument("--label", help="Label for log files (e.g. azure-provision)")
+    parser.add_argument("--tee", action="store_true", help="Stream command output to console while capturing to file")
     parser.add_argument("--audit", action="store_true", help="List all E2E runs with PASS/FAIL/RUNNING status")
     parser.add_argument("--latest", metavar="LABEL", help="Show exit code and error summary for latest run")
     args = parser.parse_args()
@@ -133,7 +155,7 @@ def main() -> None:
     if not args.cmd or not args.label:
         parser.error("--cmd and --label are required for capture mode")
 
-    result = capture(args.cmd.split(), label=args.label)
+    result = capture(args.cmd.split(), label=args.label, tee=args.tee)
     print(json.dumps({k: v for k, v in result.items() if k != "error_summary"}, indent=2))
     if result["error_summary"]:
         print("\n=== ERROR SUMMARY ===")

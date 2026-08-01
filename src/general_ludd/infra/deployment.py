@@ -192,6 +192,7 @@ class DeploymentManager:
         last_error = None
 
         for region in regions:
+            print(f"[deploy] Trying region {region}...", flush=True)
             config.region = region
             hcl = self._generator.generate(config)
             main_tf_path = os.path.join(deploy_dir, "main.tf")
@@ -199,13 +200,18 @@ class DeploymentManager:
                 f.write(hcl)
 
             try:
+                print(f"[deploy] Terraform init in {region}...", flush=True)
                 await self._run_terraform(["init", "-input=false"], cwd=deploy_dir, env=auth_env)
+                print("[deploy] Terraform init done", flush=True)
+                print(f"[deploy] Terraform apply in {region} (this takes 3-5min)...", flush=True)
                 await self._run_terraform(["apply", "-auto-approve", "-input=false"], cwd=deploy_dir, env=auth_env)
+                print(f"[deploy] Terraform apply done in {region}", flush=True)
                 break  # Success — exit the region loop
             except RuntimeError as e:
                 last_error = e
                 error_str = str(e)
                 if "AKSCapacityHeavyUsage" in error_str or "capacity" in error_str.lower():
+                    print(f"[deploy] Region {region} at capacity, trying next...", flush=True)
                     continue  # Try next region
                 raise  # Not a capacity error — re-raise
 
