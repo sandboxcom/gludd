@@ -55,14 +55,8 @@ class TestCommitTargetsEnforceGate:
         or missing .gate-status always denies the commit.
         """
         recipe = _recipe("git-commit-no-verify")
-        gate_enforced = (
-            ".gate-status" in recipe or
-            "_gate-fresh-check" in recipe
-        )
-        assert gate_enforced, (
-            "git-commit-no-verify must check .gate-status — it cannot "
-            "silently bypass the gate"
-        )
+        gate_enforced = ".gate-status" in recipe or "_gate-fresh-check" in recipe
+        assert gate_enforced, "git-commit-no-verify must check .gate-status — it cannot silently bypass the gate"
 
     def test_commit_bootstrap_enforces_gate(self):
         """commit-bootstrap (feature-branch commit) must also enforce the gate.
@@ -72,13 +66,8 @@ class TestCommitTargetsEnforceGate:
         to master or a feature branch.
         """
         recipe = _recipe("commit-bootstrap")
-        gate_enforced = (
-            ".gate-status" in recipe or
-            "_gate-fresh-check" in recipe
-        )
-        assert gate_enforced, (
-            "commit-bootstrap must check .gate-status — it cannot bypass the gate"
-        )
+        gate_enforced = ".gate-status" in recipe or "_gate-fresh-check" in recipe
+        assert gate_enforced, "commit-bootstrap must check .gate-status — it cannot bypass the gate"
 
     def test_git_amend_msg_enforces_gate(self):
         """git-amend-msg must check .gate-status — cannot bypass via --amend.
@@ -89,13 +78,8 @@ class TestCommitTargetsEnforceGate:
         target and the splitter are now fixed.
         """
         recipe = _recipe("git-amend-msg")
-        gate_enforced = (
-            ".gate-status" in recipe or
-            "_gate-fresh-check" in recipe
-        )
-        assert gate_enforced, (
-            "git-amend-msg must check .gate-status — it cannot bypass the gate"
-        )
+        gate_enforced = ".gate-status" in recipe or "_gate-fresh-check" in recipe
+        assert gate_enforced, "git-amend-msg must check .gate-status — it cannot bypass the gate"
 
     def test_no_commit_target_lacks_gate_check(self):
         """No commit-shaped target may call git commit without a gate check.
@@ -132,10 +116,7 @@ class TestCommitTargetsEnforceGate:
                 continue
             # Only inspect blocks that contain "git commit" as a real invocation
             # (not a comment, not a variable assignment).
-            has_git_commit = any(
-                "git commit" in line and not line.strip().startswith("#")
-                for line in lines
-            )
+            has_git_commit = any("git commit" in line and not line.strip().startswith("#") for line in lines)
             if not has_git_commit:
                 continue
             # Special-case: the .PHONY list, help text, or comments mentioning
@@ -149,8 +130,10 @@ class TestCommitTargetsEnforceGate:
                 "test-and-commit",
                 "repo-commit",
                 "ship-commit",  # subagent-dispatch target; CI is the gate
-                "git-reset", "git-revert",
+                "git-reset",
+                "git-revert",
                 "submodule-pin",
+                "_auto-commit-specs",  # internal auto-commit for BEHAVIORAL_SPECS.md
             }
             if target_name in ALLOWLIST_NO_GATE:
                 continue
@@ -160,6 +143,55 @@ class TestCommitTargetsEnforceGate:
         assert not offenders, "Bypass: " + ", ".join(offenders)
 
 
+class TestCommitLintGuard:
+    """AB030: _commit-lint-guard must be wired into every commit target."""
+
+    def test_lint_guard_exists_in_all_commit_targets(self):
+        """Verify _commit-lint-guard appears in every commit target prerequisite."""
+        content = MAKEFILE.read_text()
+        commit_targets = ["repo-commit", "ship-commit", "git-commit", "commit-no-verify"]
+        missing = []
+        for target in commit_targets:
+            # Find the prerequisite line for this target
+            marker = f"\n{target}:"
+            assert marker in content, f"Makefile target '{target}' not found"
+            start = content.index(marker)
+            prereq_end = content.index("\n", start + 1)
+            prereq_line = content[content.index(marker) : prereq_end]
+            if "_commit-lint-guard" not in prereq_line:
+                missing.append(target)
+        assert not missing, "These commit targets lack _commit-lint-guard: " + ", ".join(missing)
+
+    def test_no_commit_target_skips_lint(self):
+        """No commit target that invokes 'git commit' may escape the lint guard."""
+        content = MAKEFILE.read_text()
+        blocks = content.split("\n\n")
+        offenders = []
+        for block in blocks:
+            lines = block.split("\n")
+            lines = [ln for ln in lines if not ln.strip().startswith("#")]
+            if not lines:
+                continue
+            first = lines[0].strip()
+            if not first.endswith(":") and ":" not in first.split()[0:1]:
+                continue
+            has_git_commit = any("git commit" in line and not line.strip().startswith("#") for line in lines)
+            if not has_git_commit:
+                continue
+            target_name = first.split(":")[0].strip()
+            if target_name.startswith("."):
+                continue
+            if target_name in ("help", "usage", "git-reset", "git-revert", "submodule-pin", "_auto-commit-specs"):
+                continue
+            # Check the prerequisite line (first line after the target name)
+            prereq_line = first
+            has_lint_guard = "_commit-lint-guard" in prereq_line
+            # Also check if this is a non-code target that doesn't need the guard
+            if not has_lint_guard:
+                offenders.append(target_name)
+        assert not offenders, "Commit targets without _commit-lint-guard: " + ", ".join(offenders)
+
+
 class TestMakeGateStatusFile:
     """The gate itself must write .gate-status with the expected fields."""
 
@@ -167,6 +199,4 @@ class TestMakeGateStatusFile:
         """The gate status filename must be the same everywhere it's referenced."""
         content = MAKEFILE.read_text()
         # All references should use the literal ".gate-status" filename.
-        assert content.count(".gate-status") >= 4, (
-            "Expected .gate-status referenced in multiple gate + commit targets"
-        )
+        assert content.count(".gate-status") >= 4, "Expected .gate-status referenced in multiple gate + commit targets"

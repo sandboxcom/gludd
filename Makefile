@@ -3703,7 +3703,7 @@ _commit-lock-acquire:
 	  fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)" 2>/dev/null || { \
 	    echo "COMMIT-LOCK: another commit is in flight. Retry serially." >&2; exit 1; }
 
-git-commit: _gate-fresh-check _commit-lock-acquire _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard _pre-commit-spec-quality-guard
+git-commit: _gate-fresh-check _commit-lock-acquire _commit-lint-guard _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard _pre-commit-spec-quality-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit MSG='message'"; exit 1; fi
 	@echo "Running pre-commit collection check..."
 	@$(MAKE) --no-print-directory collect-check
@@ -3713,7 +3713,7 @@ git-commit: _gate-fresh-check _commit-lock-acquire _pre-commit-stage-guard _stas
 	@git diff --name-only | xargs -r git add 2>/dev/null || true
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
-commit-no-verify: _gate-fresh-check _commit-lock-acquire _pre-commit-stage-guard _edit-commit-atomicity-guard
+commit-no-verify: _gate-fresh-check _commit-lock-acquire _commit-lint-guard _pre-commit-stage-guard _edit-commit-atomicity-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make commit-no-verify MSG='message'"; exit 1; fi
 	@$(MAKE) --no-print-directory collect-check
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
@@ -3734,7 +3734,7 @@ git-amend-msg: _gate-fresh-check _commit-lock-acquire
 	@$(MAKE) --no-print-directory collect-check
 	@git commit --amend --no-verify -m "$(MSG)"
 
-repo-commit: _commit-lock-acquire
+repo-commit: _commit-lock-acquire _commit-lint-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make repo-commit MSG='message'"; exit 1; fi
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
@@ -3745,7 +3745,7 @@ repo-commit: _commit-lock-acquire
 # Allowlisted from the local _gate-fresh-check (CI is the gate for
 # subagent-dispatched pushes; see test_commit_gate_freshness.py ALLOWLIST_NO_GATE).
 PUSH ?= 0
-ship-commit: _commit-lock-acquire _pre-commit-stage-guard _stash-leak-guard _push-parameter-audit _pre-commit-stash-audit _edit-commit-atomicity-guard
+ship-commit: _commit-lock-acquire _commit-lint-guard _pre-commit-stage-guard _stash-leak-guard _push-parameter-audit _pre-commit-stash-audit _edit-commit-atomicity-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make ship-commit MSG='message'"; exit 1; fi
 	@echo "Running pre-commit collection check..."
 	@$(MAKE) --no-print-directory collect-check
@@ -4450,6 +4450,28 @@ _ci-restart-cap:
 		echo "CI-RESTART-CAP: restart $$CI_NEW/3 recorded."; \
 	fi
 	@echo "_ci-restart-cap: PASS"
+
+# AB030 — _commit-lint-guard: runs ruff on staged .py files before every commit.
+# Blocks commits with syntax errors or lint violations. This is the mechanics
+# that prevents the 2026-08-01 incident where an f-string with unescaped braces
+# was committed via repo-commit (which previously had no lint check).
+_commit-lint-guard:
+	@STAGED_PY=$$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$$' || true); \
+	if [ -z "$$STAGED_PY" ]; then \
+		echo "_commit-lint-guard: SKIP — no staged .py files."; \
+		exit 0; \
+	fi; \
+	TEMPFILES=; \
+	for f in $$STAGED_PY; do \
+		TEMPFILES="$$TEMPFILES $$f"; \
+	done; \
+	if $(UV) run ruff check $$TEMPFILES 2>&1; then \
+		echo "_commit-lint-guard: PASS"; \
+		exit 0; \
+	else \
+		echo "_commit-lint-guard: FAIL — lint errors in staged files. Fix before committing."; \
+		exit 1; \
+	fi
 
 # AA029 — _pull-before-push-guard: git fetch before push, block if remote ahead.
 # Agent pushed to master without pulling first, causing "failed to push refs".

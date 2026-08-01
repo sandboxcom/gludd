@@ -1636,7 +1636,7 @@ The 2026-06-22 incident: an agent committed `50dbd1b` with a red gate via `make 
 **Rules:**
 
 1. `make git-commit`, `make commit-no-verify`, `make commit-bootstrap`, `make git-commit-file` — ALL enforce the gate via `_gate-fresh-check`. The `--no-verify` flag on `commit-no-verify` skips ONLY the pre-commit hook stash, not the gate.
-2. `make repo-commit` is the ONLY documented escape hatch, for non-code meta-commits only (version bumps, release artifacts, docs). Using it to land code with a red gate is the SAME bug as the commit-no-verify bypass.
+2. `make repo-commit` is the ONLY documented escape hatch, for non-code meta-commits only (version bumps, release artifacts, docs). Using it to land code with a red gate is the SAME bug as the commit-no-verify bypass. **As of AB030, `repo-commit` includes `_commit-lint-guard` — it cannot land code with syntax errors or lint violations.**
 3. `make test-and-commit` is allowlisted because it runs pytest inline — its own micro-gate.
 4. "Pre-existing failures" are NEVER an excuse to bypass. They are the work. Fix them.
 5. "Environmental issues" (expired credentials, network) are NEVER an excuse. Either fix the env issue or dispatch a research task to work around it.
