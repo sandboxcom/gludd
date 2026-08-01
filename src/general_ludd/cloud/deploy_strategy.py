@@ -43,8 +43,10 @@ def build_azure_gateway(base_url: str | None = None) -> ModelGateway | None:
     secrets = EnvSecretsManager()
     secrets.set("AZURE_BASE_URL", _openai_base_url(endpoint))
     api_key = os.environ.get("AZURE_API_KEY") or os.environ.get("AZURE_OPENAI_API_KEY")
-    if api_key:
-        secrets.set("AZURE_API_KEY", api_key)
+    # The Azure GPU deployment is an unauthenticated, OpenAI-compatible vLLM
+    # endpoint.  The OpenAI client still requires a non-empty key at
+    # construction time even though vLLM does not validate it.
+    secrets.set("AZURE_API_KEY", api_key or "not-required")
     return ModelGateway(
         profiles=profiles,
         provider_registry=registry,

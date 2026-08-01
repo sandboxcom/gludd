@@ -156,6 +156,27 @@ apparently empty environments blocked by hidden children
 ([hidden-child report][aca-hidden-child]); the independent inventory is therefore
 part of the proof, rather than cleanup ceremony.
 
+## Unauthenticated vLLM still needs a client-side key placeholder
+
+The 2026-08-01 paid acceptance reached a healthy Azure vLLM `/v1/models`
+endpoint, then failed before its first generation request because the OpenAI
+client refused to construct without credentials. This is a client-side contract,
+not evidence that the self-hosted endpoint requires authentication: the current
+OpenAI Python client explicitly raises `Missing credentials` when no API key,
+workload identity, or admin key is present ([OpenAI client source][openai-client]).
+
+This mismatch is long-lived in user reports. A vLLM operator asked whether
+LangChain could connect when the server had no API key and showed the established
+`openai_api_key="EMPTY"` workaround ([vLLM discussion 898][vllm-key-discussion]).
+Another OpenAI-compatible LangChain user likewise supplies an arbitrary key with
+a local inference URL ([open-deep-research issue 195][open-compatible-key]).
+
+Gludd therefore stores the non-secret placeholder `not-required` only when the
+Azure vLLM gateway has no explicit `AZURE_API_KEY` or `AZURE_OPENAI_API_KEY`.
+An operator-supplied key always wins. The placeholder satisfies the client
+constructor and may be sent as an unused bearer value; it does not weaken an
+authenticated endpoint or cause fallback to a hosted provider.
+
 ## Why live YouTube downloads are not the acceptance path
 
 The yt-dlp maintainers' long-running [known-issues thread][ytdlp-known] records
@@ -319,3 +340,6 @@ infrastructure failure.
 [aca-timeout]: https://stackoverflow.com/questions/78004168/deleting-azure-container-app-takes-long-time-and-time-out-the-pipeline
 [azure-cleanup-runbook]: AZURE_CONTAINER_APP_CLEANUP_LATENCY.md
 [azure-group-delete]: https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/delete-resource-group
+[openai-client]: https://github.com/openai/openai-python/blob/main/src/openai/_client.py
+[vllm-key-discussion]: https://github.com/vllm-project/vllm/discussions/898
+[open-compatible-key]: https://github.com/langchain-ai/open_deep_research/issues/195

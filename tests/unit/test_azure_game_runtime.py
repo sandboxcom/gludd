@@ -460,6 +460,32 @@ def test_gateway_factory_uses_explicit_azure_endpoint_without_hosted_fallback(
     assert gateway._secrets.resolve("AZURE_API_KEY") == "azure-test-key"
 
 
+def test_gateway_factory_supplies_placeholder_key_for_unauthenticated_vllm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from langchain_openai import ChatOpenAI
+
+    monkeypatch.delenv("AZURE_BASE_URL", raising=False)
+    monkeypatch.delenv("AZURE_API_KEY", raising=False)
+    monkeypatch.delenv("AZURE_OPENAI_API_KEY", raising=False)
+
+    def fake_invoke(_model: object, messages: object) -> SimpleNamespace:
+        assert messages == [{"role": "user", "content": "build a game"}]
+        return SimpleNamespace(content="generated game", usage_metadata={})
+
+    monkeypatch.setattr(ChatOpenAI, "invoke", fake_invoke)
+
+    gateway = build_azure_gateway("https://games.example.test")
+
+    assert gateway is not None
+    assert gateway._secrets.resolve("AZURE_API_KEY") == "not-required"
+    response = gateway.call_model(
+        "default",
+        [{"role": "user", "content": "build a game"}],
+    )
+    assert response.content == "generated game"
+
+
 def test_gateway_factory_requires_an_azure_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AZURE_BASE_URL", raising=False)
     assert build_azure_gateway() is None
