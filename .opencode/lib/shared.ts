@@ -31,6 +31,10 @@ export const SUBAGENT_MARKER = (pid: number) =>
 
 export function isSubagent(): boolean {
   if (process.env.OPENCODE_SUBAGENT === "1") return true
+  // An explicit false value is authoritative. Runtime harnesses and parent
+  // orchestrators use it to prevent a stale, PID-reused marker from making a
+  // new process silently bypass every enforcement hook.
+  if (process.env.OPENCODE_SUBAGENT === "0") return false
   try {
     return fs.existsSync(SUBAGENT_MARKER(process.pid))
   } catch {

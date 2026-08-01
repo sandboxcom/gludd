@@ -60,7 +60,7 @@ def _run_ts(ts_code: str, env_override: dict | None = None, timeout: int = 15):
         tmp = f.name
     try:
         env = os.environ.copy()
-        env["OPENCODE_SUBAGENT"] = ""  # ensure we're NOT treated as subagent
+        env["OPENCODE_SUBAGENT"] = "0"  # parent process; ignore stale PID markers
         # Hermetic disengage path: the live watchdog (check_plugin_hashes.py)
         # can rewrite /tmp/gludd-watchdog-disengage.json mid-test, flipping
         # isDisengaged() to true and turning expected denies into allows.
@@ -97,6 +97,24 @@ def _run_ts(ts_code: str, env_override: dict | None = None, timeout: int = 15):
             os.unlink(tmp)
         except OSError:
             pass
+
+
+def test_shared_explicit_non_subagent_ignores_stale_pid_marker():
+    """An explicit false marker must beat a stale PID file from another process."""
+    code = f"""\
+const fs = await import('node:fs')
+process.env.OPENCODE_SUBAGENT = '0'
+const marker = `/tmp/gludd-subagent-${{process.pid}}.json`
+fs.writeFileSync(marker, '{{}}', 'utf8')
+try {{
+  const mod = await import('{LIB_DIR}/shared.ts')
+  console.log(JSON.stringify({{subagent: mod.isSubagent()}}))
+}} finally {{
+  try {{ fs.unlinkSync(marker) }} catch {{}}
+}}
+"""
+    result = _run_ts(code)
+    assert result == {"subagent": False}
 
 
 def _factory_plugin_code(plugin_rel_path: str, hook_name: str, call_code: str) -> str:
