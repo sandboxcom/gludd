@@ -89,15 +89,17 @@ def _actionable_findings(payload: Mapping[str, Any]) -> list[dict[str, object]]:
         )
 
     severity_order = {"HIGH": 0, "MEDIUM": 1}
-    return sorted(
-        findings,
-        key=lambda finding: (
+
+    def sort_key(finding: dict[str, object]) -> tuple[int, str, int, str]:
+        line = finding["line"]
+        return (
             severity_order.get(str(finding["severity"]), 2),
             str(finding["filename"]),
-            int(finding["line"]),
+            line if isinstance(line, int) else 0,
             str(finding["rule"]),
-        ),
-    )
+        )
+
+    return sorted(findings, key=sort_key)
 
 
 def _delta_group(

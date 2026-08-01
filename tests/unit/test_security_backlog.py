@@ -26,7 +26,7 @@ _EXPLICIT_OPEN_IDS = frozenset(
     {"D-11", "D-12", "D-13", "D-17", "D-19", "D-26", "D-30"}
 )
 _PROBE_IDS = frozenset(
-    {"D-07", "D-10", "D-14", "D-18", "D-25", "D-27", "D-28", "D-29"}
+    {"D-07", "D-08", "D-10", "D-14", "D-18", "D-24", "D-25", "D-27", "D-28", "D-29"}
 )
 
 
@@ -134,6 +134,18 @@ class TestRunBacklogChecks:
             assert r.deferred is False
 
 
+class TestD08ProbeRegressionDetection:
+    """Prove D-08 fails if strict extra-vars validation is removed."""
+
+    def test_fails_if_validator_missing(self, monkeypatch) -> None:
+        import general_ludd.ansible.unsafe as unsafe_mod
+
+        monkeypatch.delattr(unsafe_mod, "validate_extravars")
+        passed, detail = sb._check_d08_ansible_extravars()
+        assert passed is False
+        assert "validate_extravars" in detail
+
+
 class TestD14ProbeRegressionDetection:
     """Prove the D-14 probe is a REAL check by making it fail on symbol removal."""
 
@@ -174,6 +186,18 @@ class TestD14ProbeRegressionDetection:
         passed, detail = sb._check_d14_url_parsing()
         assert passed is False
         assert "projects.manager" in detail
+
+
+class TestD24ProbeRegressionDetection:
+    """Prove the D-24 probe fails if bounded stderr draining is removed."""
+
+    def test_fails_if_stderr_drain_missing(self, monkeypatch) -> None:
+        import general_ludd.mcp.transport as transport_mod
+
+        monkeypatch.delattr(transport_mod.MCPStdioClient, "_drain_stderr")
+        passed, detail = sb._check_d24_mcp_stderr_limit()
+        assert passed is False
+        assert "_drain_stderr" in detail
 
 
 class TestD27ProbeRegressionDetection:

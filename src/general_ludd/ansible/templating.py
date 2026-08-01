@@ -27,7 +27,11 @@ from __future__ import annotations
 from typing import Any
 
 from general_ludd.ansible.core_runner import CoreAnsibleRunner
-from general_ludd.ansible.unsafe import wrap_unsafe
+from general_ludd.ansible.unsafe import (
+    ExtraVarsValidationError,
+    validate_extravars,
+    wrap_unsafe,
+)
 
 
 class TemplateRenderError(Exception):
@@ -40,8 +44,17 @@ class TemplateRenderError(Exception):
 
 class AnsibleTemplater:
     def __init__(self, extra_vars: dict[str, Any] | None = None) -> None:
-        self._extra_vars = extra_vars or {}
+        # Validation happens immediately before each render. Keeping the raw
+        # reference here lets the sandbox translate a validation denial into
+        # its bounded TemplateRenderError contract (HTTP callers return 400),
+        # while still guaranteeing no value reaches either renderer unchecked.
+        self._extra_vars = {} if extra_vars is None else extra_vars
         self._runner = CoreAnsibleRunner()
+
+    def _merged_vars(self, kwargs: dict[str, Any]) -> dict[str, Any]:
+        merged = validate_extravars(self._extra_vars)
+        merged.update(kwargs)
+        return validate_extravars(merged)
 
     def render(self, template: str, **kwargs: Any) -> str:
         """TRUSTED-ONLY full-Templar render (full lookup/plugin surface).
@@ -49,8 +62,7 @@ class AnsibleTemplater:
         Never call this on an attacker-controlled template body — use
         :meth:`render_sandboxed` for that.
         """
-        merged = dict(self._extra_vars)
-        merged.update(kwargs)
+        merged = self._merged_vars(kwargs)
         return self._runner.render_template(template, variables=merged)
 
     def render_sandboxed(self, template: str, **kwargs: Any) -> str:
@@ -66,24 +78,26 @@ class AnsibleTemplater:
         from jinja2.exceptions import SecurityError, TemplateError
         from jinja2.sandbox import SandboxedEnvironment
 
-        merged = dict(self._extra_vars)
-        merged.update(kwargs)
-        # Wrap values unsafe: a value that itself contains Jinja must render as
-        # a literal string, never be re-evaluated.
-        safe_vars = {k: wrap_unsafe(v) for k, v in merged.items()}
-
-        env = SandboxedEnvironment(autoescape=False)
-        # Strip the global namespace so range/dict/lipsum/cycler and any other
-        # callable cannot be reached from inside the template.
-        env.globals.clear()
-
         try:
+            merged = self._merged_vars(kwargs)
+            # Wrap values unsafe: a value that itself contains Jinja must render
+            # literally, never be re-evaluated.
+            safe_vars = {k: wrap_unsafe(v) for k, v in merged.items()}
+
+            env = SandboxedEnvironment(autoescape=False)
+            # Strip the global namespace so range/dict/lipsum/cycler and any
+            # other callable cannot be reached from inside the template.
+            env.globals.clear()
             parsed = env.parse(template)
             missing = meta.find_undeclared_variables(parsed) - set(safe_vars)
             if missing:
                 raise TemplateRenderError("template rejected: UndefinedError")
             compiled = env.from_string(template)
             return compiled.render(safe_vars)
+        except ExtraVarsValidationError as exc:
+            raise TemplateRenderError(
+                "template rejected: ExtraVarsValidationError"
+            ) from exc
         except SecurityError as exc:
             raise TemplateRenderError(f"template rejected: {exc.__class__.__name__}") from exc
         except TemplateError as exc:

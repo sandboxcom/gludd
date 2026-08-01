@@ -562,11 +562,15 @@ class MCPStdioClient:
         self._stderr_policy_reason = reason
         # Stable, bounded metadata makes this an immediately persistable
         # failure event in Gunicorn/container logs; never include raw stderr.
+        safe_server_id = json.dumps(
+            sanitize_error_message(self._config.server_id),
+            ensure_ascii=True,
+        )[:258]
         logger.error(
             "event=mcp.stderr.policy_breach server_id=%s reason=%s "
             "observed_bytes=%d observed_lines=%d truncated_bytes=%d "
             "truncated_lines=%d",
-            self._config.server_id,
+            safe_server_id,
             reason,
             self._stderr_observed_bytes,
             self._stderr_observed_lines,
@@ -656,13 +660,26 @@ class MCPStdioClient:
             # A failed drain can recreate the original pipe-deadlock. Fail
             # closed and log only the exception type via the stable reason.
             await self._stderr_policy_breach("drain_error")
+        finally:
+            # Resolved env values are needed only while redacting the live
+            # stream. Do not retain credential material for the client lifetime.
+            self._stderr_secret_values = ()
 
     async def _finish_stderr_drain(self) -> None:
         task = self._stderr_task
         if task is None or task is asyncio.current_task():
             return
         if not task.done():
-            task.cancel()
+            # Once the process has exited, give the StreamReader one short,
+            # bounded turn to consume its buffered diagnostic suffix and EOF.
+            # Never let diagnostics delay shutdown by the full server timeout.
+            try:
+                await asyncio.wait_for(
+                    asyncio.shield(task),
+                    timeout=min(self._config.timeout_seconds, 0.25),
+                )
+            except TimeoutError:
+                task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
 

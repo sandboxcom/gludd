@@ -104,6 +104,25 @@ upgrade invalidating mount setup; and [Apple Developer Forums thread
 unsupported/deprecated Seatbelt path. These are evidence for requiring observed
 host state at admission, not new claims of backend completeness.
 
+### 2.2 Closed audit controls D-08 and D-24 (2026-08-01)
+
+The executable backlog gate now reports `LANDED-VERIFIED=10` and `OPEN=14`.
+These are narrow control claims, not completion of SEC-SBX-001:
+
+- D-08 validates Ansible extra vars before runner-file creation and before both
+  templating paths. Configurable ceilings bound depth, item count, string/byte
+  values and total bytes; safe YAML parsing/serialization is required; tags,
+  directives, anchors, aliases, merge operators, cycles, shared containers,
+  non-finite numbers, custom objects and non-string keys fail closed.
+- D-24 drains MCP stderr concurrently into a redacted byte/line-bounded tail.
+  Configurable limits have hard ceilings; total output, line-size and line-count
+  breaches terminate the child promptly and expose only sanitized structured
+  diagnostics. Shutdown boundedly finishes the drain and discards resolved
+  secret values.
+
+Both controls have red-first behavior tests and source-wiring regression probes.
+The remaining table below therefore contains only the 14 controls still open.
+
 ## 3. Threat model and trust boundaries
 
 ### 3.1 Protected assets
@@ -403,14 +422,13 @@ unsandboxed, twice, or under an unrecorded policy.
 
 ## 8. Open D-07 through D-30 control requirements
 
-The table maps exactly the 16 controls reported `OPEN` by the 2026-08-01
+The table maps exactly the 14 controls still reported `OPEN` by the 2026-08-01
 `security-backlog-gate`. A row SHALL remain open until implementation tests and
 a real regression probe are both present. Editing the ledger or changing the
 test expectation is not remediation.
 
 | Control | Priority | Required implementation | Executable acceptance |
 |---|---|---|---|
-| D-08 | P1 | Parse Ansible extra vars into a strict typed schema with unknown-key rejection, operator/tag denial, depth/item/string/byte limits, and safe scalar coercion. | Property tests and malicious YAML/JSON fixtures prove no Python/YAML object construction, expression evaluation, or cap bypass; valid scalar/list/map inputs round-trip. |
 | D-09 | P1 | Authenticate and schema-validate a versioned `JobSpec` before allocating a workspace; reject unknown fields, duplicate IDs, cross-tenant IDs, invalid time/cost/resource limits, and oversized payloads. | Fuzzed deserialization is side-effect free on rejection; duplicate jobs return conflict; malformed jobs create no files/processes/events except a bounded denial audit. |
 | D-11 | P2 | Add shared per-identity, tenant, route and global token-bucket limits to todo creation, plus tenant row/spend ceilings. Unauthenticated mutation remains denied. | Multi-worker tests cannot multiply the configured rate; excess returns 429 with bounded `Retry-After`; recovery does not lose accepted writes. |
 | D-12 | P1 | Protect `/admin/code/*` with explicit admin capability, shared rate/concurrency/spend limits, bounded input/output, CSRF protection where browser reachable, and sandboxed execution. | Unauthenticated and ordinary PSK users are denied; concurrent workers share one limit; malicious code cannot escape the selected locked profile. |
@@ -423,7 +441,6 @@ test expectation is not remediation.
 | D-21 | P1 | Own every worktree through a namespace/lease; cleanup in normal/failure/cancel paths and reconcile expired leases after crashes without touching active or foreign worktrees. | Kill-at-every-phase tests leave no owned worktree/process but preserve concurrent project worktrees and tracked user changes. |
 | D-22 | P1 | Use private mode-0700 per-run temp roots with ownership manifests, bounded size/age and exact cleanup on exit/signals/crash via a scoped reaper. | Crash/restart tests remove only expired owned roots; global `/tmp`, shared pytest roots and another project remain byte-for-byte unchanged. |
 | D-23 | P1 | PID records include PID, start time, boot ID, namespace, executable identity, owner and lease; stale cleanup verifies all fields before signalling or unlinking. | PID reuse, forged file, dead parent, live foreign process and reboot fixtures fail closed; only the exact expired project tree is reaped. |
-| D-24 | P1 | Stream MCP stderr through a byte-bounded ring buffer with per-line/event bounds, redaction, backpressure, truncation counters and durable early failure events. | An infinite stderr producer remains within memory/disk limits, is cancelled at policy limit, exposes a bounded diagnostic tail, and does not delay failure detection. |
 | D-26 | P2 | Schedule bounded database maintenance using incremental vacuum where supported, a single leader, free-page/size thresholds, IO/time budgets and backup coordination. | Concurrent read/write availability meets the declared SLO during maintenance; file growth is reclaimed; interruption is recoverable and never runs N times under N workers. |
 | D-30 | P1 | Enforce model request bytes/tokens, response bytes/tokens/chunks, stream duration, idle timeout, decompression ratio, tool-call count and cumulative fallback budget at the gateway. | Oversized buffered and streamed responses cancel upstream promptly, retain bounded diagnostics, never enter cache/DB/event payloads, and return a typed size error. |
 

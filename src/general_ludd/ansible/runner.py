@@ -361,7 +361,10 @@ class AnsibleRunnerAdapter:
                 )
             result = self._core_runner.run_playbook(
                 playbook_path=playbook_path,
-                extravars=extravars or {},
+                # Do not evaluate truthiness on this untrusted mapping: a dict
+                # subclass can override __bool__/__len__. CoreAnsibleRunner's
+                # strict validator will reject non-exact built-in structures.
+                extravars={} if extravars is None else extravars,
                 timeout=effective_timeout,
                 extra_env=_merged_env or None,
             )

@@ -33,8 +33,20 @@ from dataclasses import dataclass
 from typing import Any
 
 import yaml
-from yaml.nodes import MappingNode
-from yaml.tokens import AliasToken, AnchorToken, DirectiveToken, ScalarToken, TagToken
+from yaml.tokens import (
+    AliasToken,
+    AnchorToken,
+    BlockEndToken,
+    BlockMappingStartToken,
+    BlockSequenceStartToken,
+    DirectiveToken,
+    FlowMappingEndToken,
+    FlowMappingStartToken,
+    FlowSequenceEndToken,
+    FlowSequenceStartToken,
+    ScalarToken,
+    TagToken,
+)
 
 try:
     from ansible.utils.unsafe_proxy import wrap_var as _wrap_var
@@ -77,36 +89,27 @@ class ExtraVarsLimits:
 DEFAULT_EXTRAVARS_LIMITS = ExtraVarsLimits()
 
 
-class _StrictExtraVarsLoader(yaml.SafeLoader):
-    """SafeLoader variant that rejects duplicates and YAML merge keys."""
+def _scan_yaml_operators(payload: str, limits: ExtraVarsLimits) -> None:
+    """Reject dangerous YAML features and excessive nesting before loading."""
 
-    def construct_mapping(self, node: MappingNode, deep: bool = False) -> dict[object, object]:
-        if not isinstance(node, MappingNode):
-            raise ExtraVarsValidationError("extra-vars YAML root must be a mapping")
-        mapping: dict[object, object] = {}
-        for key_node, value_node in node.value:
-            if key_node.tag == "tag:yaml.org,2002:merge":
-                raise ExtraVarsValidationError("extra-vars YAML merge operator is forbidden")
-            key = self.construct_object(key_node, deep=deep)
-            try:
-                duplicate = key in mapping
-            except TypeError as exc:
-                raise ExtraVarsValidationError(
-                    "extra-vars YAML mapping keys must be scalar strings"
-                ) from exc
-            if duplicate:
-                raise ExtraVarsValidationError(
-                    f"duplicate extra-vars YAML key is forbidden: {key!r}"
-                )
-            mapping[key] = self.construct_object(value_node, deep=deep)
-        return mapping
-
-
-def _scan_yaml_operators(payload: str) -> None:
-    """Reject YAML features that can construct or alias implicit objects."""
-
+    depth = -1
+    starts = (
+        BlockMappingStartToken,
+        BlockSequenceStartToken,
+        FlowMappingStartToken,
+        FlowSequenceStartToken,
+    )
+    ends = (BlockEndToken, FlowMappingEndToken, FlowSequenceEndToken)
     try:
         for token in yaml.scan(payload):
+            if isinstance(token, starts):
+                depth += 1
+                if depth > limits.max_depth:
+                    raise ExtraVarsValidationError(
+                        "extra-vars YAML depth exceeds limit before construction"
+                    )
+            elif isinstance(token, ends):
+                depth -= 1
             if isinstance(token, TagToken):
                 raise ExtraVarsValidationError("extra-vars YAML tags are forbidden")
             if isinstance(token, (AnchorToken, AliasToken)):
@@ -152,15 +155,19 @@ def validate_extravars(
             raise ExtraVarsValidationError(f"extra-vars depth exceeds limit at {path}")
 
         value_type = type(value)
-        if value is None or value_type is bool or value_type is int:
+        if value is None:
             return value
-        if value_type is float:
+        if isinstance(value, bool) and value_type is bool:
+            return value
+        if isinstance(value, int) and value_type is int:
+            return value
+        if isinstance(value, float) and value_type is float:
             if not math.isfinite(value):
                 raise ExtraVarsValidationError(
                     f"extra-vars numbers must be finite at {path}"
                 )
             return value
-        if value_type is str:
+        if isinstance(value, str) and value_type is str:
             encoded_size = len(value.encode("utf-8"))
             if encoded_size > limits.max_string_bytes:
                 raise ExtraVarsValidationError(
@@ -168,7 +175,7 @@ def validate_extravars(
                 )
             add_bytes(encoded_size, path)
             return value
-        if value_type is bytes:
+        if isinstance(value, bytes) and value_type is bytes:
             if len(value) > limits.max_bytes_value:
                 raise ExtraVarsValidationError(
                     f"extra-vars byte string exceeds limit at {path}"
@@ -176,7 +183,7 @@ def validate_extravars(
             add_bytes(len(value), path)
             return value
 
-        if value_type is not dict and value_type is not list:
+        if not isinstance(value, (dict, list)) or value_type not in (dict, list):
             raise ExtraVarsValidationError(
                 f"unsupported extra-vars structure at {path}: {value_type.__name__}"
             )
@@ -192,7 +199,7 @@ def validate_extravars(
         if item_count > limits.max_items:
             raise ExtraVarsValidationError(f"extra-vars items exceed limit at {path}")
 
-        if value_type is list:
+        if isinstance(value, list):
             return [visit(item, f"{path}[{index}]", depth + 1) for index, item in enumerate(value)]
 
         normalized: dict[str, Any] = {}
@@ -246,16 +253,13 @@ def parse_extravars(
             f"unsupported extra-vars structure at $: {type(payload).__name__}"
         )
 
-    _scan_yaml_operators(raw)
-    loader = _StrictExtraVarsLoader(raw)
+    _scan_yaml_operators(raw, limits)
     try:
-        decoded = loader.get_single_data()
+        decoded = yaml.safe_load(raw)
     except ExtraVarsValidationError:
         raise
     except yaml.YAMLError as exc:
         raise ExtraVarsValidationError("invalid extra-vars YAML") from exc
-    finally:
-        loader.dispose()
     return validate_extravars(decoded, limits=limits)
 
 

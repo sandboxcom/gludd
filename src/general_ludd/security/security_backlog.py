@@ -95,7 +95,20 @@ BACKLOG_ITEMS: dict[str, dict[str, str]] = {
 # Items with a real static regression probe against landed code. Only these
 # can turn the __main__ gate non-zero (see _main) — everything else is an
 # honest OPEN item, not a thing under active regression test.
-_PROBE_ITEM_IDS: frozenset[str] = frozenset({"D-07", "D-10", "D-14", "D-18", "D-25", "D-27", "D-28", "D-29"})
+_PROBE_ITEM_IDS: frozenset[str] = frozenset(
+    {
+        "D-07",
+        "D-08",
+        "D-10",
+        "D-14",
+        "D-18",
+        "D-24",
+        "D-25",
+        "D-27",
+        "D-28",
+        "D-29",
+    }
+)
 
 
 def run_backlog_checks() -> list[SecurityBacklogResult]:
@@ -125,7 +138,7 @@ def _default_check() -> tuple[bool, str]:
     return False, "OPEN — not yet implemented"
 
 
-def _read_module_source(module: ModuleType) -> str:
+def _read_module_source(module: ModuleType | Callable[..., object]) -> str:
     """Return ``module``'s source text, or ``""`` if it cannot be read.
 
     Isolated as its own function (rather than inlining ``inspect.getsource``
@@ -175,6 +188,50 @@ def _check_d07_input_validation() -> tuple[bool, str]:
         "CheckConstraint(length(col) <= MAX_JSON_BLOB_LEN) on "
         "TaskDecisionModel's 6 blob columns and AuditEventModel.details "
         "(migration 026_add_blob_length_check_constraints)"
+    )
+
+
+def _check_d08_ansible_extravars() -> tuple[bool, str]:
+    """Static probe: extra vars are bounded before execution or rendering."""
+
+    try:
+        import general_ludd.ansible.runner as runner_mod
+        import general_ludd.ansible.templating as templating_mod
+        import general_ludd.ansible.unsafe as unsafe_mod
+    except ImportError as exc:
+        return False, f"OPEN — Ansible extra-vars guard failed to import: {exc}"
+
+    for symbol in ("ExtraVarsLimits", "parse_extravars", "validate_extravars"):
+        if not hasattr(unsafe_mod, symbol):
+            return False, f"OPEN — ansible.unsafe.{symbol} is missing (regression)"
+
+    validation_source = _read_module_source(unsafe_mod.validate_extravars)
+    for limit_name in (
+        "max_depth",
+        "max_items",
+        "max_string_bytes",
+        "max_bytes_value",
+        "max_total_bytes",
+    ):
+        if limit_name not in validation_source:
+            return False, f"OPEN — extra-vars validation no longer enforces {limit_name}"
+
+    parse_source = _read_module_source(unsafe_mod.parse_extravars)
+    if "yaml.safe_load" not in parse_source:
+        return False, "OPEN — extra-vars parsing no longer uses yaml.safe_load"
+
+    runner_source = _read_module_source(runner_mod)
+    if "validate_extravars" not in runner_source or "yaml.safe_dump" not in runner_source:
+        return False, "OPEN — Ansible runner no longer validates and safely serializes extra vars"
+
+    templating_source = _read_module_source(templating_mod)
+    if "validate_extravars" not in templating_source:
+        return False, "OPEN — Ansible templating no longer validates extra vars"
+
+    return True, (
+        "LANDED-VERIFIED — Ansible extra vars use strict configurable depth/item/"
+        "string/byte limits, safe YAML parsing and serialization, and validation "
+        "at runner and templating boundaries"
     )
 
 
@@ -353,6 +410,48 @@ def _check_d18_audit_log() -> tuple[bool, str]:
     return True, (
         "LANDED-VERIFIED — AuditEventRepository.record_typed exists and is "
         "called from event_loop.loop's dispatch path"
+    )
+
+
+def _check_d24_mcp_stderr_limit() -> tuple[bool, str]:
+    """Static probe: MCP stderr is drained, redacted, bounded, and fail-closed."""
+
+    try:
+        import general_ludd.mcp.transport as transport_mod
+    except ImportError as exc:
+        return False, f"OPEN — general_ludd.mcp.transport failed to import: {exc}"
+
+    client = getattr(transport_mod, "MCPStdioClient", None)
+    if client is None:
+        return False, "OPEN — MCPStdioClient no longer exists (regression)"
+    for method_name in (
+        "_drain_stderr",
+        "_stderr_policy_breach",
+        "_redact_stderr_line",
+        "stderr_diagnostics",
+    ):
+        if not hasattr(client, method_name):
+            return False, f"OPEN — MCPStdioClient.{method_name} is missing (regression)"
+
+    drain_source = _read_module_source(client._drain_stderr)
+    for limit_name in (
+        "_stderr_max_bytes",
+        "_stderr_max_lines",
+        "_stderr_line_bytes_limit",
+    ):
+        if limit_name not in drain_source:
+            return False, f"OPEN — MCP stderr drain no longer enforces {limit_name}"
+
+    start_source = _read_module_source(client.start)
+    if "stderr=asyncio.subprocess.PIPE" not in start_source:
+        return False, "OPEN — MCP subprocess stderr is no longer captured (regression)"
+    if "self._drain_stderr" not in start_source:
+        return False, "OPEN — MCP stderr drain is no longer started concurrently (regression)"
+
+    return True, (
+        "LANDED-VERIFIED — MCPStdioClient concurrently drains and redacts stderr "
+        "with configurable byte/line/tail ceilings, bounded diagnostics, and "
+        "process termination on policy breach"
     )
 
 
@@ -539,6 +638,7 @@ def _check_d30_gateway_size_limit() -> tuple[bool, str]:
 
 _BACKLOG_CHECKERS: dict[str, Callable[[], tuple[bool, str]]] = {
     "D-07": _check_d07_input_validation,
+    "D-08": _check_d08_ansible_extravars,
     "D-10": _check_d10_body_size_limit,
     "D-11": _check_d11_todo_rate_limit,
     "D-12": _check_d12_admin_code_rate_limit,
@@ -547,6 +647,7 @@ _BACKLOG_CHECKERS: dict[str, Callable[[], tuple[bool, str]]] = {
     "D-17": _check_d17_psk_rotation,
     "D-18": _check_d18_audit_log,
     "D-19": _check_d19_alembic_dry_run,
+    "D-24": _check_d24_mcp_stderr_limit,
     "D-25": _check_d25_stack_depth_cap,
     "D-26": _check_d26_vacuum_schedule,
     "D-27": _check_d27_sandbox_limits,

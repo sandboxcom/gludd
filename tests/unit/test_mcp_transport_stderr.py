@@ -81,11 +81,13 @@ async def test_stderr_is_concurrently_drained_redacted_and_bounded(
     assert diagnostics["truncated"] is True
     assert diagnostics["truncated_lines"] >= 2
     assert diagnostics["observed_lines"] == 4
+    assert client._stderr_secret_values == ()
 
 
 @pytest.mark.asyncio
 async def test_infinite_stderr_is_cancelled_at_total_byte_policy_limit(
     stdio_config: MCPServerConfig,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     proc = _process([])
 
@@ -94,7 +96,10 @@ async def test_infinite_stderr_is_cancelled_at_total_byte_policy_limit(
 
     proc.stderr.read = AsyncMock(side_effect=endless_stderr)
 
-    with patch("asyncio.create_subprocess_exec", return_value=proc):
+    with (
+        caplog.at_level("ERROR", logger="general_ludd.mcp.transport"),
+        patch("asyncio.create_subprocess_exec", return_value=proc),
+    ):
         client = MCPStdioClient(
             stdio_config,
             stderr_tail_bytes=24,
@@ -111,6 +116,8 @@ async def test_infinite_stderr_is_cancelled_at_total_byte_policy_limit(
     assert diagnostics["policy_reason"] == "max_bytes"
     assert diagnostics["observed_bytes"] <= 33
     assert len(diagnostics["tail"].encode()) <= 24
+    assert "event=mcp.stderr.policy_breach" in caplog.text
+    assert "diagnostic-secret-value" not in caplog.text
     with pytest.raises(MCPTransportError, match=r"stderr policy breach.*max_bytes"):
         await client.list_tools()
 

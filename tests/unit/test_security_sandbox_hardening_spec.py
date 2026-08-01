@@ -8,7 +8,6 @@ from pathlib import Path
 SPEC_PATH = Path("docs/specs/FEATURE_SECURITY_SANDBOX_HARDENING.md")
 
 OPEN_BACKLOG_IDS = {
-    "D-08",
     "D-09",
     "D-11",
     "D-12",
@@ -21,7 +20,6 @@ OPEN_BACKLOG_IDS = {
     "D-21",
     "D-22",
     "D-23",
-    "D-24",
     "D-26",
     "D-30",
 }

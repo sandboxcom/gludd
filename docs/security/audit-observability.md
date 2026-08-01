@@ -18,12 +18,17 @@ Bandit remains the SAST engine. Its documented
 feeds `scripts/summarize_sast.py`; the summary intentionally excludes source
 code and issue text. The audit passes `--ignore-nosec`, so legacy suppression
 comments cannot hide findings or produce repeated suppression warnings. It
-contains counts grouped by severity, rule, and file:
+contains counts grouped by severity, rule, and file. It also emits source-free
+coordinates for every high- or medium-severity finding so remediation can be
+automated without exposing snippets or issue text:
 
 ```json
 {
   "totals": {"baseline": 10, "current": 12, "delta": 2},
-  "by_rule": {"B104": {"baseline": 1, "current": 2, "delta": 1}}
+  "by_rule": {"B104": {"baseline": 1, "current": 2, "delta": 1}},
+  "actionable_findings": [
+    {"filename": "src/server.py", "line": 42, "rule": "B104", "severity": "MEDIUM"}
+  ]
 }
 ```
 
