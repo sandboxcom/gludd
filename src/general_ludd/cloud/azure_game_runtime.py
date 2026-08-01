@@ -16,7 +16,7 @@ from typing import Protocol, TypeVar
 
 import httpx
 
-from general_ludd.cloud.deploy_strategy import build_azure_gateway
+from general_ludd.cloud.deploy_strategy import DEFAULT_AZURE_MODEL, build_azure_gateway
 from general_ludd.events import CustomEvent, Event, EventBus
 from general_ludd.infra.compute import (
     ComputeConfig,
@@ -87,7 +87,7 @@ class AzureGameRuntime:
         environment: Mapping[str, str] | None = None,
         deployment_manager: DeploymentController | None = None,
         event_bus: EventBus | None = None,
-        gateway_factory: Callable[[str], object | None] = build_azure_gateway,
+        gateway_factory: Callable[[str], object | None] | None = None,
         readiness_probe: Callable[[str], bool] = _default_readiness_probe,
         sleep: Callable[[float], None] = time.sleep,
         event_reporter: Callable[[Event], object] | None = _print_event,
@@ -215,8 +215,12 @@ class AzureGameRuntime:
                 self._sleep(interval)
         raise RuntimeError(f"Azure game endpoint was not ready after {attempts} attempts")
 
-    def _gateway_for(self, endpoint: str) -> object:
-        gateway = self._gateway_factory(endpoint)
+    def _gateway_for(self, endpoint: str, *, model_name: str) -> object:
+        gateway: object | None
+        if self._gateway_factory is None:
+            gateway = build_azure_gateway(endpoint, model_name=model_name)
+        else:
+            gateway = self._gateway_factory(endpoint)
         if gateway is None:
             raise RuntimeError("Azure gateway could not be constructed for the selected endpoint")
         return gateway
@@ -247,7 +251,8 @@ class AzureGameRuntime:
             self._endpoint_url = external_endpoint
             self._publish("azure_game_external_endpoint_selected")
             self._wait_until_ready(external_endpoint)
-            self._gateway = self._gateway_for(external_endpoint)
+            model_name = self._value("AZURE_MODEL", DEFAULT_AZURE_MODEL)
+            self._gateway = self._gateway_for(external_endpoint, model_name=model_name)
             return self._gateway
 
         if self._value("AZURE_PROVISION_E2E") != "1":
@@ -279,7 +284,7 @@ class AzureGameRuntime:
                 endpoint=endpoint,
             )
             self._wait_until_ready(endpoint)
-            self._gateway = self._gateway_for(endpoint)
+            self._gateway = self._gateway_for(endpoint, model_name=config.model_name)
             return self._gateway
         except BaseException:
             self.close()

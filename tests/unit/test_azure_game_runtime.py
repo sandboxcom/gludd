@@ -460,6 +460,30 @@ def test_gateway_factory_uses_explicit_azure_endpoint_without_hosted_fallback(
     assert gateway._secrets.resolve("AZURE_API_KEY") == "azure-test-key"
 
 
+def test_runtime_gateway_uses_the_exact_model_deployed_to_vllm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A healthy vLLM server returns 404 when chat requests name another model."""
+    deployed_model = "Qwen/Qwen2.5-0.5B-Instruct"
+    monkeypatch.delenv("AZURE_MODEL", raising=False)
+    manager = FakeDeploymentManager(_instance())
+    runtime = AzureGameRuntime(
+        environment=_environment(AZURE_MODEL=deployed_model),
+        deployment_manager=manager,
+        readiness_probe=lambda endpoint: True,
+        sleep=lambda seconds: None,
+        event_reporter=None,
+    )
+
+    try:
+        gateway = runtime.start()
+    finally:
+        runtime.close()
+
+    assert manager.configs[0].model_name == deployed_model
+    assert gateway.get_profile("default").model_name == deployed_model
+
+
 def test_gateway_factory_supplies_placeholder_key_for_unauthenticated_vllm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
