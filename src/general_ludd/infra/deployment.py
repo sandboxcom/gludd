@@ -21,6 +21,14 @@ from general_ludd.infra.compute import ComputeConfig, ComputeInstance
 from general_ludd.infra.terraform import TerraformGenerator
 from general_ludd.schemas.deployment import DeploymentRecord
 
+try:
+    from general_ludd.cloud.resource_lifecycle import get_lifecycle
+
+    _LIFECYCLE_IMPORTED = True
+except ImportError:
+    _LIFECYCLE_IMPORTED = False
+    get_lifecycle = None  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 _REGISTRY_FILE = "deployments.json"
@@ -93,6 +101,9 @@ async def _destroy_instance(instance_id: str, deploy_dir: str) -> None:
 
 
 def _cleanup_orphaned_instances() -> None:
+    if _LIFECYCLE_IMPORTED and get_lifecycle:
+        cleaned = get_lifecycle().cleanup_all()
+        logger.warning("Lifecycle cleanup: %d resources destroyed", cleaned)
     for instance_id, deploy_dir in list(_DEPLOYED_INSTANCES.items()):
         try:
             logger.warning("Cleaning up orphaned instance %s", instance_id)
@@ -170,6 +181,11 @@ class DeploymentManager:
 
     def list_deployments(self) -> list[DeploymentRecord]:
         return list(self._registry.values())
+
+    def cleanup_orphaned_instances(self) -> int:
+        if _LIFECYCLE_IMPORTED and get_lifecycle:
+            return get_lifecycle().cleanup_all()
+        return 0
 
     def _build_auth_env(self, config: ComputeConfig) -> dict[str, str]:
         """Return a *copy* of os.environ with provider creds overlaid.
@@ -249,6 +265,10 @@ class DeploymentManager:
         )
         self._save_registry()
         _DEPLOYED_INSTANCES[instance_id] = deploy_dir
+
+        if _LIFECYCLE_IMPORTED and get_lifecycle:
+            get_lifecycle().register(config.provider.value, instance_id, deploy_dir)
+
         return ComputeInstance(
             instance_id=instance_id,
             provider=config.provider,
@@ -322,6 +342,10 @@ class DeploymentManager:
             self._registry.pop(instance_id, None)
             _DEPLOYED_INSTANCES.pop(instance_id, None)
             self._save_registry()
+
+            if _LIFECYCLE_IMPORTED and get_lifecycle:
+                get_lifecycle().deregister(instance_id)
+
         finally:
             pass  # no env cleanup needed — we never touched os.environ
 

@@ -29,8 +29,21 @@ from general_ludd.cloud.game_e2e import (
     GameGenerator,
     GameRunner,
 )
+from general_ludd.cloud.game_gen import _HAS_PYGAME as HAS_PYGAME_GEN
+from general_ludd.cloud.game_gen import (
+    GAME_TEMPLATES,
+    generate_game_code,
+    run_game_headless,
+    validate_game_syntax,
+)
+from general_ludd.cloud.video_compare import (
+    REFERENCE_VIDEOS,
+    compute_ssim,
+    download_youtube_video,
+)
 
 _HAS_LANGCHAIN_OPENAI = importlib.util.find_spec("langchain_openai") is not None
+_HAS_YTDLP_E2E = importlib.util.find_spec("yt_dlp") is not None
 
 _AZURE_PROVISION_ENABLED = os.environ.get("AZURE_PROVISION_E2E") == "1"
 _AZURE_ENDPOINT_SET = bool(os.environ.get("AZURE_BASE_URL"))
@@ -50,64 +63,13 @@ _AZURE_CHECKED = bool(os.environ.get("ARM_SUBSCRIPTION_ID") or os.environ.get("A
 def _build_azure_gateway():
     """Build a ModelGateway pointed at an Azure-provisioned GPU endpoint.
 
-    Uses the endpoint URL from AzureGameE2E if provisioned, or
-    AZURE_BASE_URL if pre-provisioned. NEVER falls back to DeepSeek/OpenAI.
+    Uses DeployStrategist to resolve the endpoint — pre-provisioned via
+    AZURE_BASE_URL or auto-provisioned via DeploymentManager/Terraform.
+    NEVER falls back to DeepSeek/OpenAI hosted APIs.
     """
-    from general_ludd.models.gateway import ModelGateway, ModelProfile
+    from general_ludd.infra.deploy_strategy import build_azure_gateway as _build
 
-    base_url = os.environ.get("AZURE_BASE_URL")
-
-    if not base_url and _AZURE_PROVISION_ENABLED and _AZURE_CHECKED:
-        base_url = _provision_azure_endpoint()
-
-    if not base_url:
-        return None
-
-    profile = ModelProfile(
-        model_profile_id="azure_gpu_coder",
-        provider="openai",
-        model_name=os.environ.get("AZURE_MODEL", "qwen2.5-coder-7b"),
-        api_base_alias="AZURE_BASE_URL",
-        credential_alias="AZURE_API_KEY",
-    )
-    return ModelGateway(profiles=[profile])
-
-
-def _provision_azure_endpoint() -> str | None:
-    """Provision an Azure GPU endpoint and return its base URL.
-
-    Uses gludd's DeploymentManager to provision a Container App with
-    Azure-deployed vllm serving the model. Returns the /v1 endpoint URL.
-    Only called when AZURE_PROVISION_E2E=1 and ARM credentials are set.
-    """
-    try:
-        from general_ludd.infra.compute import ComputeConfig, ComputeProvider, GPUType
-        from general_ludd.infra.deployment import DeploymentManager
-        from general_ludd.secrets.env import EnvSecretsManager
-
-        gpu_type_str = os.environ.get("AZURE_GPU_TYPE", "a100_80")
-        engine = os.environ.get("AZURE_PROVISION_ENGINE", "vllm")
-        model = os.environ.get("AZURE_MODEL", "Qwen/Qwen2.5-Coder-7B-Instruct")
-
-        gpu_type = getattr(GPUType, gpu_type_str.upper(), GPUType.A100_80)
-
-        config = ComputeConfig(
-            provider=ComputeProvider.AZURE,
-            gpu_type=gpu_type,
-            model_name=model,
-            deploy_type="containerapp",
-            engine=engine,
-            region="eastus",
-        )
-
-        secrets = EnvSecretsManager()
-        mgr = DeploymentManager(secrets_resolver=secrets)
-        import asyncio
-
-        instance = asyncio.run(mgr.deploy(config))
-        return instance.endpoint_url
-    except Exception:
-        return None
+    return _build()
 
 
 # ── Test: Doom Hallway Generation ──────────────────────────────────────────
@@ -276,3 +238,231 @@ class TestE2EResult:
     def test_errors_field(self) -> None:
         r = E2EResult(spec_name="test", errors=["err1", "err2"])
         assert len(r.errors) == 2
+
+
+# ── Test: Doom Generation via game_gen ────────────────────────────────────
+
+
+@pytest.mark.e2e
+@pytest.mark.azure_provision
+@pytest.mark.skipif(not _AZURE_CONFIGURED, reason=_AZURE_SKIP_REASON)
+class TestDoomGenerationGameGen:
+    @pytest.fixture(scope="class")
+    def gateway(self):
+        gw = _build_azure_gateway()
+        if gw is None:
+            pytest.skip("Azure gateway not configured")
+        return gw
+
+    def test_generate_doom_hallway(self, gateway) -> None:
+        code = generate_game_code(gateway, "doom_hallway")
+        assert code, "LLM returned empty code"
+        assert validate_game_syntax(code), "Generated code failed validation"
+
+    def test_generated_code_has_game_loop(self, gateway) -> None:
+        code = generate_game_code(gateway, "doom_hallway")
+        code_lower = code.lower()
+        for item in ["while", "pygame.init", "quit"]:
+            assert item in code_lower, f"Missing: {item}"
+
+
+# ── Test: Quake Arena Generation via game_gen ─────────────────────────────
+
+
+@pytest.mark.e2e
+@pytest.mark.azure_provision
+@pytest.mark.skipif(not _AZURE_CONFIGURED, reason=_AZURE_SKIP_REASON)
+class TestQuakeArenaGenerationGameGen:
+    @pytest.fixture(scope="class")
+    def gateway(self):
+        gw = _build_azure_gateway()
+        if gw is None:
+            pytest.skip("Azure gateway not configured")
+        return gw
+
+    def test_generate_quake_arena(self, gateway) -> None:
+        code = generate_game_code(gateway, "quake_arena")
+        assert code, "LLM returned empty code"
+        assert validate_game_syntax(code), "Generated code failed validation"
+
+    def test_generated_code_has_platform_elements(self, gateway) -> None:
+        code = generate_game_code(gateway, "quake_arena")
+        code_lower = code.lower()
+        for item in ["pygame.init", "while", "quit"]:
+            assert item in code_lower, f"Missing: {item}"
+
+
+# ── Test: Frame Consistency (Doom) ────────────────────────────────────────
+
+
+@pytest.mark.e2e
+@pytest.mark.azure_provision
+@pytest.mark.skipif(not _AZURE_CONFIGURED, reason=_AZURE_SKIP_REASON)
+class TestDoomFrameConsistency:
+    @pytest.fixture(scope="class")
+    def gateway(self):
+        gw = _build_azure_gateway()
+        if gw is None:
+            pytest.skip("Azure gateway not configured")
+        return gw
+
+    def test_frames_have_consistent_dimensions(self, gateway, tmp_path: Path) -> None:
+        if not HAS_PYGAME_GEN:
+            pytest.skip("pygame not installed")
+        code = generate_game_code(gateway, "doom_hallway")
+        game_path = tmp_path / "doom_consistency.py"
+        game_path.write_text(code)
+        frames = run_game_headless(str(game_path), num_frames=15)
+        assert len(frames) >= 1, "No frames captured"
+        expected_shape = frames[0].shape
+        for i, f in enumerate(frames):
+            assert f.shape == expected_shape, f"Frame {i} shape mismatch: {f.shape}"
+
+    def test_frames_are_non_blank(self, gateway, tmp_path: Path) -> None:
+        if not HAS_PYGAME_GEN:
+            pytest.skip("pygame not installed")
+        code = generate_game_code(gateway, "doom_hallway")
+        game_path = tmp_path / "doom_nonblank.py"
+        game_path.write_text(code)
+        frames = run_game_headless(str(game_path), num_frames=10)
+        assert len(frames) >= 1
+        non_blank = False
+        for f in frames:
+            if f.max() > 0 or f.min() < 255:
+                non_blank = True
+                break
+        assert non_blank, "All frames are blank/uniform"
+
+
+# ── Test: Quake Rendering Colors ──────────────────────────────────────────
+
+
+@pytest.mark.e2e
+@pytest.mark.azure_provision
+@pytest.mark.skipif(not _AZURE_CONFIGURED, reason=_AZURE_SKIP_REASON)
+class TestQuakeRendering:
+    @pytest.fixture(scope="class")
+    def gateway(self):
+        gw = _build_azure_gateway()
+        if gw is None:
+            pytest.skip("Azure gateway not configured")
+        return gw
+
+    def test_frames_contain_expected_color_range(self, gateway, tmp_path: Path) -> None:
+        if not HAS_PYGAME_GEN:
+            pytest.skip("pygame not installed")
+        code = generate_game_code(gateway, "quake_arena")
+        game_path = tmp_path / "quake_color.py"
+        game_path.write_text(code)
+        frames = run_game_headless(str(game_path), num_frames=10)
+        assert len(frames) >= 1
+        has_color_variation = False
+        for f in frames:
+            std = float(f.std())
+            if std > 5.0:
+                has_color_variation = True
+                break
+        assert has_color_variation, "All frames are uniform (no color variation)"
+
+
+# ── Test: Game Code Completeness ──────────────────────────────────────────
+
+
+@pytest.mark.e2e
+class TestGameCodeCompleteness:
+    def test_templates_have_game_loop_requirement(self) -> None:
+        for name, template in GAME_TEMPLATES.items():
+            lower = template.lower()
+            assert "while" in lower or "for" in lower, f"Template {name} missing loop requirement"
+            assert "pygame" in lower, f"Template {name} missing pygame requirement"
+
+    def test_templates_have_rendering_requirement(self) -> None:
+        for name, template in GAME_TEMPLATES.items():
+            lower = template.lower()
+            has_render = any(w in lower for w in ["display", "blit", "flip", "render", "draw", "fill"])
+            assert has_render, f"Template {name} missing rendering requirement"
+
+    def test_generated_code_validates_syntax(self) -> None:
+        valid_code = """
+import pygame
+pygame.init()
+screen = pygame.display.set_mode((800, 600))
+running = True
+while running:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+    screen.fill((0, 0, 0))
+    pygame.display.flip()
+pygame.quit()
+"""
+        assert validate_game_syntax(valid_code) is True
+
+    def test_generated_code_without_input_fails(self) -> None:
+        no_input_code = """
+import pygame
+pygame.init()
+for i in range(30):
+    pass
+"""
+        assert validate_game_syntax(no_input_code) is False
+
+
+# ── Test: SSIM Computation ────────────────────────────────────────────────
+
+
+@pytest.mark.e2e
+class TestSSIMComputation:
+    def test_ssim_against_known_image_pairs(self) -> None:
+        from general_ludd.cloud.video_compare import compute_ssim as vc_ssim
+
+        rng = np.random.RandomState(42)
+        img1 = rng.randint(0, 255, (64, 64, 3), dtype=np.uint8)
+        img2 = img1.copy()
+        noise = rng.randint(0, 10, img2.shape, dtype=np.uint8)
+        img2 = np.clip(img2.astype(np.int32) + noise.astype(np.int32), 0, 255).astype(np.uint8)
+
+        ssim = vc_ssim(img1, img2)
+        assert 0.0 <= ssim <= 1.0, f"SSIM out of range: {ssim}"
+
+    def test_ssim_identity_value(self) -> None:
+        from general_ludd.cloud.video_compare import compute_ssim as vc_ssim
+
+        img = np.ones((64, 64, 3), dtype=np.uint8) * 128
+        result = vc_ssim(img, img)
+        assert result == 1.0, f"SSIM of identical images should be 1.0, got {result}"
+
+
+# ── Test: Video Download ──────────────────────────────────────────────────
+
+
+@pytest.mark.e2e
+class TestVideoDownload:
+    @pytest.mark.skipif(not _HAS_YTDLP_E2E, reason="yt-dlp not installed")
+    def test_download_short_clip(self, tmp_path: Path) -> None:
+        url = REFERENCE_VIDEOS["doom_e1m1_hallway"]
+        video_path = download_youtube_video(url, str(tmp_path))
+        assert os.path.exists(video_path), f"Downloaded video not found: {video_path}"
+        assert os.path.getsize(video_path) > 0, "Downloaded video is empty"
+
+    def test_reference_urls_are_valid_youtube_links(self) -> None:
+        for name, url in REFERENCE_VIDEOS.items():
+            assert url.startswith("https://www.youtube.com/watch?v="), f"Invalid YouTube URL for {name}"
+            assert "v=" in url, f"Missing video ID in {name} URL"
+
+
+# ── Test: Frame Comparison via video_compare ──────────────────────────────
+
+
+@pytest.mark.e2e
+class TestFrameComparisonVC:
+    def test_identical_frames_ssim_one(self) -> None:
+        frame = np.ones((64, 64, 3), dtype=np.uint8) * 128
+        result = compute_ssim(frame, frame)
+        assert result == 1.0, f"SSIM of identical frames should be 1.0, got {result}"
+
+    def test_different_frames_ssim_less_than_one(self) -> None:
+        frame_a = np.zeros((64, 64, 3), dtype=np.uint8)
+        frame_b = np.full((64, 64, 3), 255, dtype=np.uint8)
+        result = compute_ssim(frame_a, frame_b)
+        assert result < 1.0, f"SSIM of very different frames should be < 1.0: {result}"

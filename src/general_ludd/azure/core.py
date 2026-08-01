@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from general_ludd.azure.rbac_validator import validate_action_string
+from general_ludd.infra.deploy_strategy import DeployStrategist
 
 AZURE_EXPERT_ROLES: dict[str, str] = {
     "rbac_validator": "Validate Azure RBAC custom role definitions",
@@ -201,12 +202,19 @@ def optimize_cost(
     }
 
 
+def get_deploy_strategist() -> DeployStrategist:
+    """Return a configured DeployStrategist instance."""
+    return DeployStrategist()
+
+
 __all__ = [
     "AZURE_EXPERT_ROLES",
+    "DeployStrategist",
     "acr_registry_config",
     "audit_iam_assignments",
     "container_app_config",
     "design_azure_network",
+    "get_deploy_strategist",
     "inventory_resources",
     "optimize_cost",
     "query_log_analytics",

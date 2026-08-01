@@ -5,9 +5,22 @@
       - role_enabled | bool
     fail_msg: "container_app_deploy requires role_enabled=true."
 
+- name: Resolve urgency parameter
+  ansible.builtin.set_fact:
+    deploy_urgency: "{{ urgency | default('normal') }}"
+    deploy_fallback_to_vm: "{{ fallback_to_vm | default(false) | bool }}"
+
+- name: Build phased deploy plan via DeployStrategist
+  ansible.builtin.set_fact:
+    phased_deploy_plan: "{{ lookup('general_ludd.azure.deploy_strategist',
+          urgency=deploy_urgency,
+          gpu_type=gpu_type,
+          model_name=model_name,
+          fallback_to_vm=deploy_fallback_to_vm) | default({}) }}"
+
 - name: Write container app deploy verdict
   ansible.builtin.copy:
-    content: "{{ {'role': 'container_app_deploy', 'model_name': model_name, 'gpu_type': gpu_type, 'region': region, 'status': 'ok', 'output_dir': output_path} | to_nice_json }}"
+    content: "{{ {'role': 'container_app_deploy', 'model_name': model_name, 'gpu_type': gpu_type, 'region': region, 'urgency': deploy_urgency, 'fallback_to_vm': deploy_fallback_to_vm, 'phased_deploy_plan': phased_deploy_plan, 'status': 'ok', 'output_dir': output_path} | to_nice_json }}"
     dest: "{{ output_path }}/container_app_deploy.json"
     mode: "0644"
 
@@ -15,4 +28,6 @@
   ansible.builtin.set_fact:
     azure_container_app_deploy:
       role: container_app_deploy
+      urgency: "{{ deploy_urgency }}"
+      phased_deploy_plan: "{{ phased_deploy_plan }}"
       output: "{{ output_path }}/container_app_deploy.json"

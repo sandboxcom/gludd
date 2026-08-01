@@ -24,6 +24,11 @@ from general_ludd.infra.compute import (
     GPUType,
     InferenceEngine,
 )
+from general_ludd.infra.deploy_strategy import (
+    DeployStrategist,
+    DeployUrgency,
+    ResourceTier,
+)
 from general_ludd.infra.deployment import DeploymentManager
 from general_ludd.secrets.env import EnvSecretsManager
 
@@ -124,6 +129,20 @@ class TestAzureProvisionE2E:
             disk_size_gb=100,
         )
 
+        strategist = DeployStrategist()
+        urgency = (
+            DeployUrgency.IMMEDIATE
+            if _get_env("AZURE_URGENCY", "normal").lower() == "immediate"
+            else DeployUrgency.NORMAL
+        )
+        plan = strategist.plan(urgency, config.gpu_type.value, config.model_name)
+        warmup_id = plan.warmup.tier_id if plan.warmup else "none"
+        print(
+            f"[test] Deploy plan: primary={plan.primary.tier_id}, "
+            f"warmup={warmup_id}, cost=${plan.estimated_cost_usd:.4f}",
+            flush=True,
+        )
+
         secrets = cast(Any, EnvSecretsManager())
         mgr = DeploymentManager(secrets_resolver=secrets)
         instance: ComputeInstance | None = None
@@ -156,6 +175,11 @@ class TestAzureProvisionE2E:
             _run_inference(instance.endpoint_url, model)
             print("[test] Inference response received", flush=True)
             assert instance.cost_incurred > 0, "Expected cost_incurred > 0 after inference"
+
+            tier = ResourceTier.CONTAINER_APP if deploy_type == "containerapp" else ResourceTier.DEDICATED_VM
+            strategist.learn_from_history(tier, instance.cost_incurred, 600)
+            print(f"[test] Cost history entries: {len(strategist.cost_history)}", flush=True)
+            assert len(strategist.cost_history) == 1
 
         finally:
             if instance is not None:

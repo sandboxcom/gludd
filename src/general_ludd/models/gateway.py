@@ -7,7 +7,7 @@ import logging
 import math
 import threading
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol, cast
 
 import tenacity
 
@@ -564,6 +564,58 @@ class ModelGateway:
 
     def get_profile(self, profile_id: str) -> ModelProfile | None:
         return self._profiles.get(profile_id)
+
+    _TASK_MODEL_PREFERENCES: ClassVar[dict[str, list[str]]] = {
+        "code": ["deepseek-coder", "glm-4", "deepseek-v3", "qwen2.5-coder-7b"],
+        "ansible": ["qwen2.5-coder", "qwen2.5-coder-7b", "qwen2.5"],
+        "general": ["default", "deepseek-v3", "qwen2.5"],
+        "game": ["claude", "qwen2.5", "qwen2.5-coder", "qwen2.5-coder-7b"],
+    }
+
+    _DEFAULT_MODEL_PREFERENCE: ClassVar[list[str]] = ["deepseek-v3", "qwen2.5", "qwen2.5-coder-7b"]
+
+    def route_for_task(self, task_kind: str) -> str:
+        """Select the best model profile for a given task kind.
+
+        Returns the profile_id of the first available matching profile,
+        falling back through preferences then to any available profile.
+
+        Task kinds:
+        - ``"code"`` → DeepSeek-Coder or GLM-4 (best at coding tasks)
+        - ``"ansible"`` → Qwen2.5-Coder (good at YAML/Python mixed)
+        - ``"general"`` → default model
+        - ``"game"`` → Claude or Qwen (good at creative tasks)
+        - Anything else → default fallback chain
+        """
+        kind = task_kind.lower()
+        preferences = self._TASK_MODEL_PREFERENCES.get(kind, self._DEFAULT_MODEL_PREFERENCE)
+
+        for pref_name in preferences:
+            profile_id = self._best_profile_for(pref_name)
+            if profile_id is not None:
+                return profile_id
+
+        for profile_id, profile in self._profiles.items():
+            if profile.enabled:
+                return profile_id
+
+        raise ValueError(f"No enabled profile available for task_kind='{task_kind}' (preferences: {preferences})")
+
+    def _best_profile_for(self, name_hint: str) -> str | None:
+        """Find the best enabled profile matching a name hint.
+
+        Matches case-insensitively against profile_id and model_name.
+        Returns the first enabled match or None.
+        """
+        hint_lower = name_hint.lower()
+        for profile_id, profile in self._profiles.items():
+            if not profile.enabled:
+                continue
+            if hint_lower in profile_id.lower():
+                return profile_id
+            if hint_lower in profile.model_name.lower():
+                return profile_id
+        return None
 
     def get_chat_model(
         self,

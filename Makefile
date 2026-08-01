@@ -85,7 +85,8 @@ _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-wor
         molecule-version molecule-test molecule-test-all \
         collection-roles collection-modules molecule-scenarios \
         test-binary-re test-radio test-os-expert test-e2e-test-gen test-language test-language-expert test-collections \
-         test-e2e-azure test-e2e-azure-provision test-e2e-games-provision test-e2e-providers \
+          test-e2e-azure test-e2e-azure-provision test-e2e-games-provision test-e2e-providers \
+          test-e2e-aws test-e2e-gcp test-e2e-runpod \
          e2e-audit-azure e2e-latest-log \
         molecule-test-binary-re molecule-test-radio molecule-test-os-expert molecule-test-e2e-test-gen molecule-test-language \
         move-ansible-roles \
@@ -208,8 +209,12 @@ help:
 	@echo "  test-e2e              End-to-end tests"
 	@echo "  test-e2e-azure        Azure E2E — env-pointer (CI-friendly)"
 	@echo "  test-e2e-azure-provision  Azure full-provision E2E (opt-in, costly)"
+	@echo "  test-e2e-aws          AWS E2E — env-pointer (CI-friendly)"
+	@echo "  test-e2e-gcp          GCP E2E — env-pointer (CI-friendly)"
+	@echo "  test-e2e-runpod       RunPod E2E — env-pointer (CI-friendly)"
 	@echo "  test-e2e-providers    All E2E provider tests"
 	@echo "  test-e2e-games        Game generation E2E — AI generates games, compares frames (no Azure provision)"
+	@echo "  test-e2e-games-local  Game unit tests only — video compare, game gen, no Azure needed"
 	@echo "  test-e2e-games-provision  Game E2E with Azure GPU provisioning (opt-in, costly)"
 	@echo "  e2e-audit-azure     List all E2E runs with PASS/FAIL/RUNNING status"
 	@echo "  e2e-latest-log      Show exit code and error summary for latest E2E run"
@@ -1494,7 +1499,18 @@ test-e2e-azure-provision:
 
 # All E2E provider tests (skips everything not configured)
 test-e2e-providers:
-	@$(UV) run pytest tests/e2e/providers/ -v
+	@AWS_BASE_URL="$${AWS_BASE_URL:-}" AWS_MODEL="$${AWS_MODEL:-}" \
+		AWS_ACCESS_KEY_ID="$${AWS_ACCESS_KEY_ID:-}" AWS_SECRET_ACCESS_KEY="$${AWS_SECRET_ACCESS_KEY:-}" \
+		AWS_REGION="$${AWS_REGION:-}" AWS_SESSION_TOKEN="$${AWS_SESSION_TOKEN:-}" \
+		AWS_DEFAULT_REGION="$${AWS_DEFAULT_REGION:-}" \
+		GCP_BASE_URL="$${GCP_BASE_URL:-}" GCP_MODEL="$${GCP_MODEL:-}" \
+		GCP_PROJECT_ID="$${GCP_PROJECT_ID:-}" GCP_REGION="$${GCP_REGION:-}" \
+		GOOGLE_CLOUD_PROJECT="$${GOOGLE_CLOUD_PROJECT:-}" \
+		GOOGLE_APPLICATION_CREDENTIALS="$${GOOGLE_APPLICATION_CREDENTIALS:-}" \
+		GOOGLE_CREDENTIALS="$${GOOGLE_CREDENTIALS:-}" \
+		RUNPOD_BASE_URL="$${RUNPOD_BASE_URL:-}" RUNPOD_MODEL="$${RUNPOD_MODEL:-}" \
+		RUNPOD_API_KEY="$${RUNPOD_API_KEY:-}" \
+		$(UV) run pytest tests/e2e/providers/ -v
 
 # Game E2E tests — AI generates games, compares against reference gameplay
 test-e2e-games:
@@ -1508,6 +1524,27 @@ test-e2e-games-provision:
 	@ARM_CLIENT_ID="$${ARM_CLIENT_ID:-}" ARM_CLIENT_SECRET="$${ARM_CLIENT_SECRET:-}" \
 	 ARM_TENANT_ID="$${ARM_TENANT_ID:-}" ARM_SUBSCRIPTION_ID="$${ARM_SUBSCRIPTION_ID:-}" \
 	 AZURE_PROVISION_E2E=1 $(UV) run python scripts/e2e_log_capture.py --cmd "$(UV) run pytest tests/e2e/game_e2e/ -v -m azure_provision --timeout=900" --label games-provision
+
+# AWS E2E — env-pointer (CI-friendly, no provisioning)
+test-e2e-aws:
+	@AWS_BASE_URL=$(AWS_BASE_URL) AWS_MODEL=$(AWS_MODEL) AWS_ACCESS_KEY_ID=$(AWS_ACCESS_KEY_ID) \
+		AWS_SECRET_ACCESS_KEY=$(AWS_SECRET_ACCESS_KEY) AWS_REGION=$(AWS_REGION) \
+		AWS_SESSION_TOKEN=$(AWS_SESSION_TOKEN) AWS_DEFAULT_REGION=$(AWS_DEFAULT_REGION) \
+		$(UV) run pytest tests/e2e/providers/test_aws_e2e.py -v
+
+# GCP E2E — env-pointer (CI-friendly, no provisioning)
+test-e2e-gcp:
+	@GCP_BASE_URL=$(GCP_BASE_URL) GCP_MODEL=$(GCP_MODEL) GCP_PROJECT_ID=$(GCP_PROJECT_ID) \
+		GCP_REGION=$(GCP_REGION) GOOGLE_CLOUD_PROJECT=$(GOOGLE_CLOUD_PROJECT) \
+		GOOGLE_APPLICATION_CREDENTIALS=$(GOOGLE_APPLICATION_CREDENTIALS) \
+		GOOGLE_CREDENTIALS=$(GOOGLE_CREDENTIALS) \
+		$(UV) run pytest tests/e2e/providers/test_gcp_e2e.py -v
+
+# RunPod E2E — env-pointer (CI-friendly, no provisioning)
+test-e2e-runpod:
+	@RUNPOD_BASE_URL=$(RUNPOD_BASE_URL) RUNPOD_MODEL=$(RUNPOD_MODEL) \
+		RUNPOD_API_KEY=$(RUNPOD_API_KEY) \
+		$(UV) run pytest tests/e2e/providers/test_runpod_e2e.py -v
 
 # Azure E2E log audit
 e2e-audit-azure:
@@ -1542,6 +1579,9 @@ azure-cleanup-e2e:
 
 test-games:
 	@$(UV) run python -m pytest tests/e2e/test_game_building_deepseek.py $(_XD) -v $(PYTEST_ARGS)
+
+test-e2e-games-local:
+	@$(UV) run pytest tests/unit/test_video_compare.py tests/unit/test_game_gen.py tests/unit/test_game_e2e.py -v $(PYTEST_ARGS)
 
 game-audit:
 	@$(PYTHON) scripts/game_audit.py

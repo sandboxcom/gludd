@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 import time
@@ -11,25 +12,110 @@ from pathlib import Path
 from typing import Any
 
 
-class FakeGateway:
-    """Fake LLM gateway for E2E testing — returns identity transform."""
+class _GatewayResponse:
+    """Thin wrapper ensuring response.content attribute exists."""
 
-    def call_model(self, profile_id: str, messages: list[dict[str, str]], **kwargs: Any) -> Any:
-        content = str(messages[-1].get("content", ""))
-        for marker in ("=== CURRENT SOURCE", "```python"):
-            if marker in content:
-                parts = content.split(marker, 1)
-                if len(parts) > 1:
-                    inner = parts[1].split("```", 2)
-                    if len(inner) >= 2:
-                        return _FakeResponse(inner[1].strip())
-        # Fallback: return a minimal valid Python source
-        return _FakeResponse('"""No-op improvement — fake gateway fallback."""\n')
-
-
-class _FakeResponse:
-    def __init__(self, content: str) -> None:
+    def __init__(self, content: str, usage_metadata: dict[str, object] | None = None) -> None:
         self.content = content
+        self.usage_metadata = usage_metadata or {}
+        self.cost_estimate: float = 0.0
+        self.model_name: str = ""
+        self.raw_response: object = None
+        self.tool_calls: list[dict[str, object]] | None = None
+        self.correlation_id: str | None = None
+
+
+def _build_e2e_gateway():
+    """Build a real ModelGateway backed by Azure GPU if available.
+
+    Falls back to a thin wrapper that calls the Azure endpoint directly
+    when no full ModelGateway can be constructed. NEVER returns a fake.
+    """
+    try:
+        from general_ludd.cloud.deploy_strategy import build_azure_gateway
+
+        gw = build_azure_gateway()
+        if gw is not None:
+            return gw
+    except Exception:
+        pass
+
+    try:
+        from general_ludd.models.gateway import ModelGateway, ModelProfile
+
+        base_url = os.environ.get("AZURE_BASE_URL", "")
+        if not base_url:
+            return _DirectAzureGateway(os.environ.get("AZURE_API_KEY", ""))
+
+        profile = ModelProfile(
+            model_profile_id="azure_self_improve",
+            provider="openai",
+            model_name=os.environ.get("AZURE_MODEL", "qwen2.5-coder-7b"),
+            api_base_alias="AZURE_BASE_URL",
+            credential_alias="AZURE_API_KEY",
+            enabled=True,
+            api_metered=False,
+        )
+        return ModelGateway(profiles=[profile])
+    except Exception:
+        return _DirectAzureGateway(os.environ.get("AZURE_API_KEY", ""))
+
+
+class _DirectAzureGateway:
+    """Minimal gateway calling Azure endpoint directly via requests.
+
+    Used as a last resort when no ModelGateway can be built.
+    Produces real model responses — never identity transforms.
+    """
+
+    def __init__(self, api_key: str = "") -> None:
+        self._api_key = api_key
+        self._base_url = os.environ.get("AZURE_BASE_URL", "").rstrip("/")
+        self._model = os.environ.get("AZURE_MODEL", "qwen2.5-coder-7b")
+
+    def call_model(self, profile_id: str, messages: list[dict[str, str]], **kwargs: Any) -> _GatewayResponse:
+        if not self._base_url:
+            raise RuntimeError("No Azure endpoint configured. Set AZURE_BASE_URL and AZURE_API_KEY.")
+        import json as _json
+        import urllib.request as _urllib
+
+        body = _json.dumps(
+            {
+                "model": self._model,
+                "messages": messages,
+                "max_tokens": 4096,
+                "temperature": 0.7,
+            }
+        ).encode("utf-8")
+
+        req = _urllib.Request(
+            f"{self._base_url}/chat/completions",
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self._api_key}" if self._api_key else "",
+            },
+        )
+        try:
+            with _urllib.urlopen(req, timeout=120) as resp:
+                data = _json.loads(resp.read().decode("utf-8"))
+        except Exception as exc:
+            raise RuntimeError(f"Azure gateway call failed: {exc}") from exc
+
+        choice = (data.get("choices") or [{}])[0]
+        msg = choice.get("message", {})
+        content = str(msg.get("content", ""))
+
+        if not content:
+            raise RuntimeError("Azure returned empty content — cannot improve")
+
+        return _GatewayResponse(
+            content=content,
+            usage_metadata=data.get("usage", {}),
+        )
+
+    def complete(self, prompt: str) -> _GatewayResponse:
+        return self.call_model("azure_self_improve", [{"role": "user", "content": prompt}])
 
 
 def _run_git(worktree: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -55,45 +141,45 @@ def _get_worktree_root() -> Path:
 def create_worktree() -> tuple[Path, str]:
     branch = f"gludd-self-improve-e2e-{int(time.time())}"
     worktree_path = Path("/tmp/gludd-self-improve-test")
-    worktree_path.mkdir(parents=True, exist_ok=True)
-    # Clean up any stale worktree
-    subprocess.run(
-        ["git", "worktree", "remove", str(worktree_path), "--force"],
-        capture_output=True,
-        timeout=30,
-    )
-    subprocess.run(
-        ["git", "branch", "-D", branch],
-        capture_output=True,
-        timeout=10,
-    )
-    subprocess.run(
-        [
-            "git",
-            "worktree",
-            "add",
-            str(worktree_path),
-            "-b",
-            branch,
-        ],
+
+    proc = subprocess.run(
+        ["make", "agent-worktree", f"BRANCH={branch}"],
         capture_output=True,
         text=True,
         timeout=60,
-        check=True,
     )
+    if proc.returncode != 0:
+        if "already exists" in proc.stderr or "already exists" in proc.stdout:
+            subprocess.run(
+                ["make", "agent-cleanup", f"BRANCH={branch}"],
+                capture_output=True,
+                timeout=30,
+            )
+            proc = subprocess.run(
+                ["make", "agent-worktree", f"BRANCH={branch}"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=True,
+            )
+
+    for line in (proc.stdout or "").splitlines():
+        if "WORKTREE_PATH=" in line:
+            worktree_path = Path(line.split("=", 1)[1].strip())
+            break
+
+    if not worktree_path.exists():
+        worktree_path = Path("/tmp/gludd-self-improve-test")
+        worktree_path.mkdir(parents=True, exist_ok=True)
+
     return worktree_path, branch
 
 
 def cleanup_worktree(worktree_path: Path, branch: str) -> None:
     subprocess.run(
-        ["git", "worktree", "remove", str(worktree_path), "--force"],
+        ["make", "agent-cleanup", f"BRANCH={branch}"],
         capture_output=True,
         timeout=30,
-    )
-    subprocess.run(
-        ["git", "branch", "-D", branch],
-        capture_output=True,
-        timeout=10,
     )
 
 
@@ -104,7 +190,7 @@ def run_improvement(worktree_path: Path, target_name: str, target_def: dict[str,
     finally:
         sys.path.pop(0)
 
-    gateway = FakeGateway()
+    gateway = _build_e2e_gateway()
     evaluator = SelfImproveEvaluator(
         gateway=gateway,
         test_file=target_def["test_file"],
@@ -256,7 +342,7 @@ def main() -> None:
     print_summary(results)
 
     if args.merge and branch_name:
-        print(f"\nMerging worktree branch {branch_name}...")
+        print(f"\nMerging worktree branch {branch_name} into development...")
         proc = subprocess.run(
             ["make", "agent-merge-dev", f"BRANCH={branch_name}"],
             capture_output=True,
@@ -265,10 +351,15 @@ def main() -> None:
         )
         if proc.returncode == 0:
             print("Merge succeeded.")
+            subprocess.run(
+                ["make", "agent-cleanup", f"BRANCH={branch_name}"],
+                capture_output=True,
+                timeout=30,
+            )
         else:
             print(f"Merge failed: {proc.stderr}")
 
-    if args.worktree and branch_name:
+    elif args.worktree and branch_name:
         cleanup_worktree(worktree_path, branch_name)
 
     failed = [r for r in results if r.get("errors")]
