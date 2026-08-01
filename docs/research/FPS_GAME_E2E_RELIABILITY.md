@@ -53,6 +53,109 @@ ready event includes the cache status, frame count, and object digest. The Azure
 runtime runs the same preflight callback before endpoint discovery or Terraform
 deployment and emits `azure_game_preflight_failed` if it cannot proceed.
 
+## Operator runbook: preflight, paid run, and cleanup
+
+Use one explicit, namespaced cache for the whole run. Acquire reference media in
+a non-paid preparation step, then prove that the exact cached objects work with
+network access disabled:
+
+```text
+make game-reference-preflight \
+  GAME_E2E_REFERENCE_NETWORK=1 \
+  GAME_E2E_REFERENCE_CACHE_DIR=.cache/gludd-game-e2e \
+  GAME_E2E_REFERENCE_VALIDATE_ONLY=0
+
+make game-reference-preflight \
+  GAME_E2E_REFERENCE_NETWORK=0 \
+  GAME_E2E_REFERENCE_CACHE_DIR=.cache/gludd-game-e2e \
+  GAME_E2E_REFERENCE_VALIDATE_ONLY=0
+```
+
+For each declared fixture, the command streams `reference_check_started`, then
+either `reference_ready` or `reference_acquisition_started` followed by a
+terminal ready/failed event. It reports all independently checkable fixtures
+before returning nonzero, so an operator can begin repairing the first failure
+without waiting for a later paid suite. A successful offline pass ends with
+`GAME_REFERENCE_PREFLIGHT_OK`. `GAME_E2E_REFERENCE_VALIDATE_ONLY=1` validates
+the command and combined Pygame/video import boundary only; it does not prove
+that media exists, so it cannot replace the second command above.
+
+Validate the credential pointer and timeout without provisioning. The
+repository default is `/tmp/general-ludd.env`, not `/tmp/general-luddite.env`,
+but the path is still supplied explicitly so the evidence is unambiguous:
+
+```text
+make test-e2e-games-provision \
+  AZURE_E2E_ENV_FILE=/tmp/general-ludd.env \
+  AZURE_E2E_VALIDATE_ONLY=1 \
+  GAME_E2E_TIMEOUT_SECS=3600 \
+  GAME_E2E_REFERENCE_NETWORK=0 \
+  GAME_E2E_REFERENCE_CACHE_DIR=.cache/gludd-game-e2e \
+  GLUDD_E2E_MAX_SPEND_USD=5
+```
+
+This validation-only mode proves file readability and argument shape; it does
+not authenticate to Azure. Run the paid path only after both the configuration
+check and offline media preflight pass:
+
+```text
+make test-e2e-games-provision \
+  AZURE_E2E_ENV_FILE=/tmp/general-ludd.env \
+  AZURE_E2E_VALIDATE_ONLY=0 \
+  GAME_E2E_TIMEOUT_SECS=3600 \
+  GAME_E2E_REFERENCE_NETWORK=0 \
+  GAME_E2E_REFERENCE_CACHE_DIR=.cache/gludd-game-e2e \
+  GLUDD_E2E_MAX_SPEND_USD=5
+```
+
+The paid log must show this order:
+
+1. `azure_game_preflight_started`, per-fixture reference events, and
+   `azure_game_preflight_completed`;
+2. `azure_game_deploy_started` and `azure_game_deploy_completed`;
+3. repeated `azure_game_readiness_probe` events and
+   `azure_game_endpoint_ready`;
+4. streamed fixture generation, controls, capture, and comparison output; and
+5. `azure_game_destroy_started` followed by `azure_game_destroy_completed` for
+   an endpoint owned by the test.
+
+A media/runtime failure instead must show `reference_failed` and
+`azure_game_preflight_failed`, exit nonzero, and never emit
+`azure_game_deploy_started`. That absence is the paid-deploy safety invariant.
+The wrapper flushes output to the console and to timestamped
+`.gate-logs/e2e-azure/games-provision-*.log` and companion `.json` records, so
+the first actionable failure survives even when later fixture setup fails or
+the outer timeout terminates pytest.
+
+`azure_game_destroy_completed` proves that Gludd's destroy call returned; it is
+not, by itself, Azure absence evidence. After a paid or interrupted run, inspect
+the subscription and then reconcile any E2E-owned groups to verified absence:
+
+```text
+make azure-cleanup-inspect \
+  AZURE_E2E_ENV_FILE=/tmp/general-ludd.env \
+  AZURE_CLI=az
+
+make azure-cleanup-e2e \
+  AZURE_E2E_ENV_FILE=/tmp/general-ludd.env \
+  AZURE_CLEANUP_TIMEOUT_SECS=1800 \
+  AZURE_CLEANUP_POLL_SECS=10 \
+  AZURE_CLI=az
+```
+
+The cleanup target selects every resource group whose name starts with
+`gludd-gpu`; never run it in a subscription containing another active Gludd E2E
+run. Preserve `CLEANUP_SCAN`, each `CLEANUP_DELETE`, the live `CLEANUP_POLL`
+heartbeats, and the terminal `CLEANUP_VERIFIED leaked_resources=0`. A timeout,
+list failure, or delete failure is a failed acceptance, not a deferred success.
+This distinction follows Azure's asynchronous resource-group deletion contract
+([official ARM deletion guidance][azure-group-delete]) and the project's
+[Container Apps cleanup runbook][azure-cleanup-runbook]. Operators have reported
+20-plus-minute environment deletion ([pipeline timeout report][aca-timeout]) and
+apparently empty environments blocked by hidden children
+([hidden-child report][aca-hidden-child]); the independent inventory is therefore
+part of the proof, rather than cleanup ceremony.
+
 ## Why live YouTube downloads are not the acceptance path
 
 The yt-dlp maintainers' long-running [known-issues thread][ytdlp-known] records
@@ -208,3 +311,7 @@ infrastructure failure.
 [opencv-413]: https://github.com/opencv/opencv/wiki/OpenCV-Change-Logs#version4130
 [opencv-videoio]: https://github.com/opencv/opencv/issues/24430
 [opencv-wheel]: https://github.com/opencv/opencv-python
+[aca-hidden-child]: https://learn.microsoft.com/en-us/answers/questions/1660320/cannot-delete-container-app-environment
+[aca-timeout]: https://stackoverflow.com/questions/78004168/deleting-azure-container-app-takes-long-time-and-time-out-the-pipeline
+[azure-cleanup-runbook]: AZURE_CONTAINER_APP_CLEANUP_LATENCY.md
+[azure-group-delete]: https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/delete-resource-group

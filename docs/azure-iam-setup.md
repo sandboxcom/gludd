@@ -444,26 +444,55 @@ make test-e2e-games
 
 ### Full provision — deploy GPU on-demand
 
+Acquire the approved reference windows before any Azure resource can be
+created, then verify the exact cache with network access disabled:
+
 ```bash
+make game-reference-preflight \
+  GAME_E2E_REFERENCE_NETWORK=1 \
+  GAME_E2E_REFERENCE_CACHE_DIR=.cache/gludd-game-e2e \
+  GAME_E2E_REFERENCE_VALIDATE_ONLY=0
+
+make game-reference-preflight \
+  GAME_E2E_REFERENCE_NETWORK=0 \
+  GAME_E2E_REFERENCE_CACHE_DIR=.cache/gludd-game-e2e \
+  GAME_E2E_REFERENCE_VALIDATE_ONLY=0
+
 make test-e2e-games-provision \
   AZURE_E2E_ENV_FILE=/tmp/general-ludd.env \
   AZURE_E2E_VALIDATE_ONLY=0 \
-  GAME_E2E_TIMEOUT_SECS=3600
+  GAME_E2E_TIMEOUT_SECS=3600 \
+  GAME_E2E_REFERENCE_NETWORK=0 \
+  GAME_E2E_REFERENCE_CACHE_DIR=.cache/gludd-game-e2e \
+  GLUDD_E2E_MAX_SPEND_USD=5
 ```
 
 The target sources only the explicit env file, streams live provisioning/test
 events to the console and audit log, and enforces a configurable wall-clock and
 per-test timeout of at least 3600 seconds. Validate the file and arguments without
-provisioning by changing `AZURE_E2E_VALIDATE_ONLY=1`.
+provisioning by changing `AZURE_E2E_VALIDATE_ONLY=1`; that mode does not replace
+the offline media preflight or authenticate to Azure.
 
-Cost ~$1-5 for a single run. Total runtime ~20-40 min (provision + model download + inference + destroy).
+The run records its computed Azure estimate and refuses a plan above
+`GLUDD_E2E_MAX_SPEND_USD`; do not substitute a static cost guess for that
+SKU-, region-, and duration-specific evidence. Timestamped logs and result JSON
+are retained under `.gate-logs/e2e-azure/games-provision-*`. On a reference
+failure, `azure_game_preflight_failed` must appear and
+`azure_game_deploy_started` must not. After any paid or interrupted run, retain
+independent `CLEANUP_VERIFIED leaked_resources=0` evidence. The exact event
+sequence, cleanup commands, destructive prefix scope, official Azure deletion
+semantics, and long-lived operator reports are documented in the
+[FPS game E2E reliability runbook][fps-game-runbook].
 
 ### Available Make targets
 
 | Target | What it does |
 |---|---|
 | `make test-e2e-games` | Game E2E via pre-provisioned Azure endpoint (AZURE_BASE_URL). Skips if unset. |
-| `make test-e2e-games-provision AZURE_E2E_ENV_FILE=/tmp/general-ludd.env AZURE_E2E_VALIDATE_ONLY=0 GAME_E2E_TIMEOUT_SECS=3600` | Source the explicit env file, then stream full GPU provision → game gen → run → compare → destroy. Timeout must be ≥3600 seconds. |
+| `make game-reference-preflight GAME_E2E_REFERENCE_NETWORK=0 GAME_E2E_REFERENCE_CACHE_DIR=.cache/gludd-game-e2e GAME_E2E_REFERENCE_VALIDATE_ONLY=0` | Verify every provenance-pinned FPS clip and the combined game runtime before Azure spend. Use network `1` only for the separate acquisition step. |
+| `make test-e2e-games-provision AZURE_E2E_ENV_FILE=/tmp/general-ludd.env AZURE_E2E_VALIDATE_ONLY=0 GAME_E2E_TIMEOUT_SECS=3600 GAME_E2E_REFERENCE_NETWORK=0 GAME_E2E_REFERENCE_CACHE_DIR=.cache/gludd-game-e2e GLUDD_E2E_MAX_SPEND_USD=5` | Source the explicit env file, then stream GPU provision → game gen → controls → capture/compare → destroy. Timeout must be ≥3600 seconds. |
+| `make azure-cleanup-inspect AZURE_E2E_ENV_FILE=/tmp/general-ludd.env AZURE_CLI=az` | Inventory matching E2E groups without mutation. |
+| `make azure-cleanup-e2e AZURE_E2E_ENV_FILE=/tmp/general-ludd.env AZURE_CLEANUP_TIMEOUT_SECS=1800 AZURE_CLEANUP_POLL_SECS=10 AZURE_CLI=az` | Delete all `gludd-gpu*` groups and poll until Azure proves zero remain; do not overlap another Gludd E2E run. |
 | `make test-e2e-azure` | Azure env-pointer E2E — model call + billing |
 | `make test-e2e-azure-provision` | Full deploy → inference → destroy |
 | `make test-e2e-providers` | All provider E2E (skips unconfigured) |
@@ -476,3 +505,5 @@ tests/e2e/providers/test_azure_e2e.py       # Model call, billing, discovery (3 
 tests/e2e/providers/test_azure_provision_e2e.py  # Full deploy E2E (opt-in)
 src/general_ludd/cloud/game_e2e.py          # 561-line orchestrator
 ```
+
+[fps-game-runbook]: research/FPS_GAME_E2E_RELIABILITY.md#operator-runbook-preflight-paid-run-and-cleanup
