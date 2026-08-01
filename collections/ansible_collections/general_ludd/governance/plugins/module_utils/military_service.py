@@ -81,7 +81,10 @@ CONSCRIPTION_DATA: dict[str, dict[str, Any]] = {
         "duration_months": 32,
         "duration_male_months": 32,
         "duration_female_months": 24,
-        "notes": "Mandatory for Jewish, Druze, and Circassian citizens. Exemptions for Arab citizens (can volunteer). Religious women may request exemption.",
+        "notes": (
+            "Mandatory for Jewish, Druze, and Circassian citizens. "
+            "Exemptions for Arab citizens (can volunteer). Religious women may request exemption."
+        ),
         "reserve_obligation": "Reserve duty until age 40 (men) or 24 (women), with annual call-up for training.",
     },
     "KR": {
@@ -108,7 +111,10 @@ CONSCRIPTION_DATA: dict[str, dict[str, Any]] = {
         "registration_required": True,
         "registration_age": "18-30 (males; voluntary for females)",
         "duration_months": 12,
-        "notes": "Mandatory for male citizens. Duration: 165-347 days depending on training role. Voluntary for women since 1995.",
+        "notes": (
+            "Mandatory for male citizens. Duration: 165-347 days depending on training role. "
+            "Voluntary for women since 1995."
+        ),
         "reserve_obligation": "Reserve until age 50 (rank and file) or 60 (officers/NCOs).",
     },
     "CH": {
@@ -117,7 +123,10 @@ CONSCRIPTION_DATA: dict[str, dict[str, Any]] = {
         "registration_required": True,
         "registration_age": "18-25 (males only)",
         "duration_months": 18,
-        "notes": "Militia system with initial training + annual refresher courses (3 weeks/year). Alternative civilian service available.",
+        "notes": (
+            "Militia system with initial training + annual refresher courses (3 weeks/year). "
+            "Alternative civilian service available."
+        ),
         "reserve_obligation": "Annual refresher until age 34 (total service 245 days).",
     },
     "BR": {
@@ -126,7 +135,10 @@ CONSCRIPTION_DATA: dict[str, dict[str, Any]] = {
         "registration_required": True,
         "registration_age": "18 (males only)",
         "duration_months": 12,
-        "notes": "Registration mandatory at 18. Selective: only ~5-10% of registered males actually conscripted. Many exemptions available (medical, study, family).",
+        "notes": (
+            "Registration mandatory at 18. Selective: only ~5-10% of registered males actually conscripted. "
+            "Many exemptions available (medical, study, family)."
+        ),
         "reserve_obligation": "Reserve obligation until age 45.",
     },
     "JP": {
@@ -134,7 +146,10 @@ CONSCRIPTION_DATA: dict[str, dict[str, Any]] = {
         "type": "volunteer_only",
         "registration_required": False,
         "registration_age": "N/A",
-        "notes": "All-volunteer Self-Defense Forces since 1954. Article 9 of Constitution renounces war. No conscription.",
+        "notes": (
+            "All-volunteer Self-Defense Forces since 1954. "
+            "Article 9 of Constitution renounces war. No conscription."
+        ),
         "reserve_obligation": "SDF reserves voluntary; Ready Reserve and Primary Reserve categories.",
     },
     "SE": {
@@ -143,7 +158,11 @@ CONSCRIPTION_DATA: dict[str, dict[str, Any]] = {
         "registration_required": True,
         "registration_age": "18 (both sexes; gender-neutral since 2018)",
         "duration_months": 11,
-        "notes": "Conscription reactivated 2017 (suspended 2010-2017). ~5,000-6,000 conscripts/year out of entire cohort. Both men and women required to take enlistment test; only a portion actually serve.",
+        "notes": (
+            "Conscription reactivated 2017 (suspended 2010-2017) and applies to both sexes. "
+            "~5,000-6,000 conscripts/year are selected from the entire cohort; both men and women "
+            "take the enlistment test, but only a portion serve."
+        ),
         "reserve_obligation": "Reserve obligation with periodic refresher training until age 47.",
     },
     "NO": {
@@ -152,7 +171,10 @@ CONSCRIPTION_DATA: dict[str, dict[str, Any]] = {
         "registration_required": True,
         "registration_age": "19 (both sexes; gender-neutral since 2015)",
         "duration_months": 12,
-        "notes": "Universal conscription for both genders since 2015. ~8,000-10,000 conscripts/year from cohort; high proportion serve in Home Guard (Heimevernet).",
+        "notes": (
+            "Universal conscription for both genders since 2015. ~8,000-10,000 conscripts/year from cohort; "
+            "high proportion serve in Home Guard (Heimevernet)."
+        ),
         "reserve_obligation": "Reserve service until age 44 (rank and file) or 55 (officers).",
     },
     "SG": {
@@ -161,7 +183,11 @@ CONSCRIPTION_DATA: dict[str, dict[str, Any]] = {
         "registration_required": True,
         "registration_age": "18 (male citizens and permanent residents)",
         "duration_months": 22,
-        "notes": "National Service (NS) mandatory for male citizens and PRs. Duration: 22-24 months depending on fitness. Annual reservist training (In-Camp Training, ICT) up to 40 days/year until age 40 (rank and file) or 50 (officers).",
+        "notes": (
+            "National Service (NS) mandatory for male citizens and PRs. Duration: 22-24 months depending on fitness. "
+            "Annual reservist training (In-Camp Training, ICT) up to 40 days/year until age 40 "
+            "(rank and file) or 50 (officers)."
+        ),
         "reserve_obligation": "Operationally Ready National Service (ORNS): 10 ICT cycles over reservist period.",
     },
     "GR": {
@@ -170,7 +196,11 @@ CONSCRIPTION_DATA: dict[str, dict[str, Any]] = {
         "registration_required": True,
         "registration_age": "19-45 (males only)",
         "duration_months": 12,
-        "notes": "Mandatory for male citizens. Army service 12 months; Navy/Air Force 12 months. Reduced service for repatriated Greeks and those with family obligations. Alternative civilian service 15 months for conscientious objectors.",
+        "notes": (
+            "Mandatory for male citizens. Army service 12 months; Navy/Air Force 12 months. "
+            "Reduced service for repatriated Greeks and those with family obligations. "
+            "Alternative civilian service 15 months for conscientious objectors."
+        ),
         "reserve_obligation": "Reserve obligation until age 45; periodic recall for training.",
     },
     "TR": {
@@ -179,7 +209,11 @@ CONSCRIPTION_DATA: dict[str, dict[str, Any]] = {
         "registration_required": True,
         "registration_age": "20-41 (males only)",
         "duration_months": 6,
-        "notes": "Mandatory for male citizens. Standard service 6 months (reduced from 12 in 2019); paid exemption possible (bedelli askerlik). University graduates may serve as reserve officers. Draft deferral for education.",
+        "notes": (
+            "Mandatory for male citizens. Standard service 6 months (reduced from 12 in 2019); "
+            "paid exemption possible (bedelli askerlik). University graduates may serve as reserve officers. "
+            "Draft deferral for education."
+        ),
         "reserve_obligation": "Reserve obligation until age 41.",
     },
     "DK": {
@@ -188,7 +222,11 @@ CONSCRIPTION_DATA: dict[str, dict[str, Any]] = {
         "registration_required": True,
         "registration_age": "18 (males; voluntary for females since 1998)",
         "duration_months": 4,
-        "notes": "All male 18-year-olds attend Forsvarets Dag (Defence Day) for fitness and aptitude assessment. Only a fraction actually conscripted (lottery system). Service 4-12 months depending on role. Conscientious objectors may choose alternative civilian service.",
+        "notes": (
+            "All male 18-year-olds attend Forsvarets Dag (Defence Day) for fitness and aptitude assessment. "
+            "Only a fraction are actually conscripted (lottery system). Service is 4-12 months depending on role. "
+            "Conscientious objectors may choose alternative civilian service."
+        ),
         "reserve_obligation": "Reserve obligation until age 50.",
     },
     "TW": {
@@ -197,7 +235,11 @@ CONSCRIPTION_DATA: dict[str, dict[str, Any]] = {
         "registration_required": True,
         "registration_age": "18-36 (males only)",
         "duration_months": 12,
-        "notes": "Mandatory for male citizens. Duration reduced from 24 months (2000), to 14 months (2008), to 12 months (2013). Extended to 12 months (from 4 months training) for those born after 2005. Alternative service available for conscientious objectors (since 2022).",
+        "notes": (
+            "Mandatory for male citizens. Duration reduced from 24 months (2000), to 14 months (2008), "
+            "to 12 months (2013). Extended to 12 months (from 4 months training) for those born after 2005. "
+            "Alternative service available for conscientious objectors (since 2022)."
+        ),
         "reserve_obligation": "Reserve duty until age 36; periodic recall for training exercises.",
     },
     "EE": {
@@ -206,7 +248,11 @@ CONSCRIPTION_DATA: dict[str, dict[str, Any]] = {
         "registration_required": True,
         "registration_age": "18-27 (males; voluntary for females)",
         "duration_months": 8,
-        "notes": "Mandatory for male citizens aged 18-27. Service duration 8 months (11 months for NCO/reserve officers). Alternative civilian service available (duration 12 months). Strong integration with NATO since 2004.",
+        "notes": (
+            "Mandatory for male citizens aged 18-27. Service duration 8 months "
+            "(11 months for NCO/reserve officers). Alternative civilian service is available "
+            "(duration 12 months). Strong integration with NATO since 2004."
+        ),
         "reserve_obligation": "Reserve obligation until age 60 (Reserv Kaitsevaes); periodic refresher exercises.",
     },
     "LT": {
@@ -215,7 +261,11 @@ CONSCRIPTION_DATA: dict[str, dict[str, Any]] = {
         "registration_required": True,
         "registration_age": "18-23 (males; voluntary for females)",
         "duration_months": 9,
-        "notes": "Conscription reintroduced 2015 after Russian annexation of Crimea. Annual draft call of ~3,500-4,000 through random selection of registered males. Conscripts may volunteer to serve. University students eligible for deferment.",
+        "notes": (
+            "Conscription reintroduced 2015 after Russian annexation of Crimea. Annual draft call of ~3,500-4,000 "
+            "through random selection of registered males. Conscripts may volunteer to serve. "
+            "University students are eligible for deferment."
+        ),
         "reserve_obligation": "Reserve obligation until age 60; active reserve training every 3-5 years.",
     },
     "AT": {
@@ -224,25 +274,46 @@ CONSCRIPTION_DATA: dict[str, dict[str, Any]] = {
         "registration_required": True,
         "registration_age": "18-35 (males only)",
         "duration_months": 6,
-        "notes": "Mandatory for male citizens. Basic military service (Grundwehrdienst) 6 months. Alternative civilian service (Zivildienst) 9 months (community service: ambulance, nursing homes, social work). Conscientious objector declaration required before conscription notice.",
+        "notes": (
+            "Mandatory for male citizens. Basic military service (Grundwehrdienst) is 6 months. "
+            "Alternative civilian service (Zivildienst) is 9 months "
+            "(community service: ambulance, nursing homes, social work). "
+            "Conscientious objector declaration is required before a conscription notice."
+        ),
         "reserve_obligation": "Militia duty until age 65 (stand status: officers to 65, enlisted to 50).",
     },
     "UA": {
         "active": True,
         "type": "mandatory_conscription",
         "registration_required": True,
-        "registration_age": "18-27 (males) for peacetime conscription; mobilization age 25-60 (males) under martial law",
+        "registration_age": (
+            "18-27 (males) for peacetime conscription; "
+            "mobilization age 25-60 (males) under martial law"
+        ),
         "duration_months": 12,
-        "notes": "Peacetime conscription 12-18 months for males 18-27. Under martial law (2022-ongoing): general mobilization, males 25-60 subject to call-up; voluntary service for females and males 18-25. Mobilized personnel serve until end of martial law.",
-        "reserve_obligation": "Military liability until age 60; classified in reserve categories based on rank, age, and fitness.",
+        "notes": (
+            "Peacetime conscription is 12-18 months for males 18-27. Under martial law (2022-ongoing), "
+            "general mobilization makes males 25-60 subject to call-up; service is voluntary for females "
+            "and males 18-25. Mobilized personnel serve until the end of martial law."
+        ),
+        "reserve_obligation": (
+            "Military liability until age 60; classified in reserve categories "
+            "based on rank, age, and fitness."
+        ),
     },
     "NG": {
         "active": False,
         "type": "volunteer_only",
         "registration_required": False,
         "registration_age": "N/A",
-        "notes": "All-volunteer Nigerian Armed Forces. No peacetime conscription. Recruitment is competitive; annual Nigerian Army recruitment exercise selects from thousands of applicants.",
-        "reserve_obligation": "Nigerian Army Reserve is voluntary; no statutory reserve obligation for ex-servicemembers.",
+        "notes": (
+            "All-volunteer Nigerian Armed Forces. No peacetime conscription. Recruitment is competitive; "
+            "the annual Nigerian Army recruitment exercise selects from thousands of applicants."
+        ),
+        "reserve_obligation": (
+            "Nigerian Army Reserve is voluntary; "
+            "there is no statutory reserve obligation for ex-servicemembers."
+        ),
     },
 }
 
@@ -414,7 +485,10 @@ MILITARY_BRANCHES: dict[str, list[dict[str, Any]]] = {
             "manpower_active": 100000,
             "manpower_reserve": 30000,
             "established": 1791,
-            "note": "Military force with police duties; under Ministry of Interior for policing, Ministry of Armed Forces for military operations.",
+            "note": (
+                "Military force with police duties; under Ministry of Interior for policing, "
+                "Ministry of Armed Forces for military operations."
+            ),
         },
     ],
     "AU": [
@@ -588,11 +662,17 @@ VETERAN_BENEFITS: dict[str, dict[str, Any]] = {
         "benefits_portal": "https://www.gov.uk/government/organisations/veterans-uk",
         "categories": {
             "healthcare": {
-                "description": "NHS priority treatment for service-related conditions; Veterans' Mental Health services (Op COURAGE)",
+                "description": (
+                    "NHS priority treatment for service-related conditions; "
+                    "Veterans' Mental Health services (Op COURAGE)"
+                ),
                 "eligibility": "Service-related condition; GP registration for general NHS care",
             },
             "education": {
-                "description": "Enhanced Learning Credits (ELC); Publicly Funded Further Education/Higher Education scheme",
+                "description": (
+                    "Enhanced Learning Credits (ELC); "
+                    "Publicly Funded Further Education/Higher Education scheme"
+                ),
                 "eligibility": "Service leavers with 6+ years and certain discharge reasons",
             },
             "pension": {
@@ -636,7 +716,10 @@ VETERAN_BENEFITS: dict[str, dict[str, Any]] = {
         "benefits_portal": "https://www.bundeswehr.de/de/betreuung-fuersorge",
         "categories": {
             "healthcare": {
-                "description": "Free medical care (Heilfuersorge) for service-connected conditions; Bundeswehrkrankenhaeuser",
+                "description": (
+                    "Free medical care (Heilfuersorge) for service-connected conditions; "
+                    "Bundeswehrkrankenhaeuser"
+                ),
                 "eligibility": "Service-related condition; career soldiers get continued coverage",
             },
             "pension": {
@@ -742,7 +825,8 @@ VETERAN_BENEFITS: dict[str, dict[str, Any]] = {
 def get_conscription_info(country: str) -> dict[str, Any] | None:
     """Return conscription data for a country code."""
     code = country.strip().upper()
-    return dict(CONSCRIPTION_DATA.get(code)) if code in CONSCRIPTION_DATA else None
+    data = CONSCRIPTION_DATA.get(code)
+    return dict(data) if data is not None else None
 
 
 def get_military_branches(country: str) -> list[dict[str, Any]] | None:
@@ -795,8 +879,8 @@ __all__ = [
     "MILITARY_BRANCHES",
     "VETERAN_BENEFITS",
     "get_conscription_info",
+    "get_enlistment_process",
     "get_military_branches",
     "get_veteran_benefits",
-    "get_enlistment_process",
     "list_mandatory_service_countries",
 ]
