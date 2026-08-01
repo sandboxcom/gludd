@@ -9,6 +9,9 @@ THRESHOLD="${GLUDD_DISK_THRESHOLD:-95}"
 TARGET_DIR="${2:-/Users/shawnwilson/gludd}"
 GLUDD_ROOT="/Users/shawnwilson/gludd"
 CLEANUP_LOG="${GLUDD_DISK_CLEANUP_LOG:-/tmp/gludd-disk-cleanup.log}"
+DISK_GUARD_UV_LOCK_TIMEOUT="${DISK_GUARD_UV_LOCK_TIMEOUT:-15}"
+DISK_GUARD_UV_MAX_SECONDS="${DISK_GUARD_UV_MAX_SECONDS:-120}"
+DISK_GUARD_UV_HEARTBEAT_SECONDS="${DISK_GUARD_UV_HEARTBEAT_SECONDS:-5}"
 
 get_usage_pct() {
   df -h "$TARGET_DIR" 2>/dev/null | awk 'NR==2 {gsub(/%/,""); print $5}' || echo "0"
@@ -18,9 +21,38 @@ clean() {
   echo "Cleaning pip cache..."
   pip3 cache purge 2>/dev/null && echo "  pip cache purged" || echo "  pip cache purge skipped (no pip3)"
 
-  echo "Cleaning uv cache..."
-  if command -v uv &>/dev/null; then
-    uv cache clean 2>/dev/null && echo "  uv cache cleaned" || echo "  uv cache clean skipped"
+  echo "Pruning unused uv cache entries..."
+  if command -v uv >/dev/null 2>&1; then
+    local uv_pid uv_elapsed=0 uv_rc=""
+    UV_LOCK_TIMEOUT="$DISK_GUARD_UV_LOCK_TIMEOUT" uv cache prune &
+    uv_pid=$!
+    while kill -0 "$uv_pid" 2>/dev/null; do
+      sleep "$DISK_GUARD_UV_HEARTBEAT_SECONDS"
+      if ! kill -0 "$uv_pid" 2>/dev/null; then
+        break
+      fi
+      uv_elapsed=$((uv_elapsed + DISK_GUARD_UV_HEARTBEAT_SECONDS))
+      echo "UV_CACHE_PRUNE_HEARTBEAT pid=$uv_pid elapsed_s=$uv_elapsed max_s=$DISK_GUARD_UV_MAX_SECONDS"
+      if [[ "$uv_elapsed" -ge "$DISK_GUARD_UV_MAX_SECONDS" ]]; then
+        echo "UV_CACHE_PRUNE_TIMEOUT pid=$uv_pid elapsed_s=$uv_elapsed"
+        kill "$uv_pid" 2>/dev/null || true
+        wait "$uv_pid" 2>/dev/null || true
+        uv_rc=124
+        break
+      fi
+    done
+    if [[ -z "$uv_rc" ]]; then
+      if wait "$uv_pid"; then
+        uv_rc=0
+      else
+        uv_rc=$?
+      fi
+    fi
+    if [[ "$uv_rc" -eq 0 ]]; then
+      echo "  uv cache pruned"
+    else
+      echo "  uv cache prune skipped rc=$uv_rc"
+    fi
   else
     echo "  uv not found — skipping"
   fi

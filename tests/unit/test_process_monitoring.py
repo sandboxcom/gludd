@@ -291,6 +291,16 @@ class TestDiskMonitoring:
         # Disk discipline includes a cleanup path.
         assert _makefile_has_target(_makefile_source(), "clean-tmp")
 
+    def test_disk_guard_uses_bounded_visible_uv_prune(self):
+        script = (SCRIPTS_DIR / "disk-guard.sh").read_text(encoding="utf-8")
+        assert "uv cache prune" in script
+        assert "UV_LOCK_TIMEOUT" in script
+        assert "DISK_GUARD_UV_LOCK_TIMEOUT" in script
+        assert "DISK_GUARD_UV_MAX_SECONDS" in script
+        assert "UV_CACHE_PRUNE_HEARTBEAT" in script
+        assert "uv cache clean" not in script
+        assert "uv cache prune 2>/dev/null" not in script
+
 
 # ---------------------------------------------------------------------------
 # Cross-cutting — Crash recovery (referenced by PM.1 + FW.10 + DF.9)
