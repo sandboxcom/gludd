@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Callable, Coroutine
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -23,6 +24,15 @@ from general_ludd.security.url_fetch import (
 Handler = Callable[[httpx.Request], httpx.Response] | Callable[
     [httpx.Request], Coroutine[None, None, httpx.Response]
 ]
+
+
+def test_safehttpx_stub_uses_a_package_shape_visible_to_mypy() -> None:
+    """Stub-only distributions must mirror the imported package layout."""
+
+    repo_root = Path(__file__).resolve().parents[2]
+    assert (repo_root / "typings/safehttpx/__init__.pyi").is_file()
+    assert not (repo_root / "src/safehttpx/__init__.pyi").exists()
+    assert not (repo_root / "src/safehttpx.pyi").exists()
 
 
 def _install_transport(

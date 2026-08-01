@@ -1,4 +1,4 @@
-"""Minimal type surface for safehttpx 0.1.x, which does not ship ``py.typed``."""
+"""Minimal type surface for safehttpx 0.1.x, which omits ``py.typed``."""
 
 from httpx import AsyncBaseTransport
 

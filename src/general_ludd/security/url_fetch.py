@@ -14,8 +14,8 @@ from dataclasses import dataclass
 from urllib.parse import urljoin, urlsplit
 
 import httpx
-import safehttpx
 
+import safehttpx
 from general_ludd.security.ssrf import PinnedTarget, SSRFError, host_is_blocked, resolve_and_pin
 
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})

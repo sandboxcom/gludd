@@ -156,6 +156,7 @@ known-first-party = ["general_ludd"]
 
 [tool.mypy]
 python_version = "3.11"
+mypy_path = "typings"
 strict = true
 explicit_package_bases = true
 warn_return_any = true
