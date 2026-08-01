@@ -140,8 +140,8 @@ class TestGpuAffinityRouting:
 def _make_profile(
     profile_id: str,
     *,
-    cost_input: float = 0.0,
-    cost_output: float = 0.0,
+    cost_input: float = 1e-6,
+    cost_output: float = 2e-6,
     run_budget_usd: float = 200.0,
     enabled: bool = True,
     api_metered: bool = True,
@@ -223,7 +223,7 @@ class TestCostEffectiveProfileSelection:
     def test_sort_order_uses_combined_cost(self):
         a = _make_profile("a", cost_input=1e-5, cost_output=1e-5)   # sum: 2e-5
         b = _make_profile("b", cost_input=1e-6, cost_output=1e-6)   # sum: 2e-6
-        c = _make_profile("c", cost_input=0.0, cost_output=1e-5)    # sum: 1e-5
+        c = _make_profile("c", cost_input=1e-9, cost_output=1e-5)  # sum: ~1e-5
         result = ModelGateway.select_cost_effective_profile(
             [a, b, c], budget_remaining=500.0
         )
