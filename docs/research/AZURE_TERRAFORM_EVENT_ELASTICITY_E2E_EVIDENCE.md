@@ -256,6 +256,22 @@ corresponding feature claim.
 | Cost | Persist exact meter and prediction before allocation, enforce the ceiling live, and emit pending reconciliation. A delayed job later attaches billed cost and updates cohort error metrics. |
 | Event observability | Every phase emits one flushed structured event immediately. A failure consumer can begin diagnosis while cleanup and remaining independent tests continue. |
 
+### Fail-closed E2E cleanup command
+
+`make azure-cleanup-e2e` is the operator safety net for an interrupted live
+test. It sources the same `AZURE_E2E_ENV_FILE` as the provision harness without
+printing credential values, selects only resource groups prefixed
+`gludd-gpu`, submits asynchronous deletions, and visibly polls the authoritative
+Azure group inventory. `CLEANUP_VERIFIED leaked_resources=0` is the sole success
+marker; query failures, delete failures, and the explicit timeout all fail
+nonzero.
+
+This directly guards the failure shape in the long-lived VM deallocation and
+Terraform-orphan reports above. It is intentionally narrower than the full
+teardown acceptance row: an empty resource-group query proves those test groups
+are absent, but does not prove that unrelated Terraform state, billing records,
+or resources outside the prefix are reconciled.
+
 For FPS claims, every declared game fixture must exercise a deterministic menu
 path, key/mouse/controller trace, gameplay-state transition, and captured Azure
 GPU video. Comparisons use version-pinned, license-compatible reference clips
