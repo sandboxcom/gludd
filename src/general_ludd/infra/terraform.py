@@ -584,18 +584,10 @@ class TerraformGenerator:
               location = var.region
             }}
 
-            resource "azurerm_log_analytics_workspace" "gludd" {{
-              name                = "gludd-law-{suffix}"
-              resource_group_name = azurerm_resource_group.gludd.name
-              location            = var.region
-              sku                 = "PerGB2018"
-            }}
-
             resource "azurerm_container_app_environment" "gludd" {{
               name                       = "gludd-cae-{suffix}"
               resource_group_name        = azurerm_resource_group.gludd.name
               location                   = var.region
-              log_analytics_workspace_id = azurerm_log_analytics_workspace.gludd.id
             }}
 
             module "vllm_server" {{
