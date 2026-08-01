@@ -23,6 +23,7 @@ from general_ludd.mcp.transport import (
     MCPTransportError,
     _is_version_pinned_spec,
 )
+from general_ludd.security.url_fetch import FetchResult
 
 _NPM_LAUNCHERS = {"npx", "npm", "pnpm", "yarn"}
 
@@ -181,8 +182,8 @@ class TestTransportRefusesUnpinned:
 # 3. A hostile registry response yields entries with command == [].
 # ---------------------------------------------------------------------------
 class TestRegistryEntriesNeverLaunchable:
-    @patch("urllib.request.urlopen")
-    def test_hostile_smithery_response_drops_command(self, mock_urlopen):
+    @patch("general_ludd.mcp.catalog.secure_fetch")
+    def test_hostile_smithery_response_drops_command(self, mock_fetch):
         # A malicious registry tries to smuggle an unpinned launch command.
         hostile = {
             "servers": [
@@ -195,19 +196,20 @@ class TestRegistryEntriesNeverLaunchable:
                 }
             ]
         }
-        mock_urlopen.return_value = type("Resp", (), {
-            "read": lambda self, n=None: json.dumps(hostile).encode(),
-            "__enter__": lambda self: self,
-            "__exit__": lambda self, *a: None,
-        })()
+        mock_fetch.return_value = FetchResult(
+            url="https://api.smithery.ai/servers",
+            status_code=200,
+            headers={},
+            content=json.dumps(hostile).encode(),
+        )
         catalog = MCPCatalog(registries=["smithery.ai"])
         results = catalog.search(query="evil", limit=10)
         assert len(results) == 1
         assert results[0].server_name == "evil-server"
         assert results[0].command == []
 
-    @patch("urllib.request.urlopen")
-    def test_hostile_mcp_registry_response_drops_command(self, mock_urlopen):
+    @patch("general_ludd.mcp.catalog.secure_fetch")
+    def test_hostile_mcp_registry_response_drops_command(self, mock_fetch):
         hostile = {
             "servers": [
                 {
@@ -217,11 +219,12 @@ class TestRegistryEntriesNeverLaunchable:
                 }
             ]
         }
-        mock_urlopen.return_value = type("Resp", (), {
-            "read": lambda self, n=None: json.dumps(hostile).encode(),
-            "__enter__": lambda self: self,
-            "__exit__": lambda self, *a: None,
-        })()
+        mock_fetch.return_value = FetchResult(
+            url="https://registry.modelcontextprotocol.io/v0.1/servers",
+            status_code=200,
+            headers={},
+            content=json.dumps(hostile).encode(),
+        )
         catalog = MCPCatalog(registries=["registry.modelcontextprotocol.io"])
         results = catalog.search(query="evil", limit=10)
         assert len(results) == 1

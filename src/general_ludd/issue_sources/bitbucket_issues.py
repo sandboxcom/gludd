@@ -9,8 +9,8 @@ Auth supports Bearer access tokens (``token_env``) or HTTP Basic
 ``username:app_password`` (``username`` + ``password_env``).
 
 No dependency on sibling adapters, a base class, or package ``__init__`` side
-effects. The default transport uses only the stdlib ``urllib``; tests inject a
-mock transport.
+effects. The default transport uses the central SSRF-safe outbound fetcher;
+tests inject a mock transport.
 
 Transport contract (injectable callable)::
 
@@ -26,13 +26,12 @@ from __future__ import annotations
 import base64
 import json
 import os
-import urllib.error
-import urllib.request
 from collections.abc import Callable, Mapping
 from typing import TypedDict, cast
 from urllib.parse import quote, urlsplit
 
 from general_ludd.security.ssrf import host_is_blocked
+from general_ludd.security.url_fetch import FetchPolicy, secure_fetch
 
 
 class BitbucketAssignee(TypedDict, total=False):
@@ -86,6 +85,7 @@ Transport = Callable[
 
 _DEFAULT_BASE_URL = "https://api.bitbucket.org"
 _DEFAULT_TIMEOUT = 15.0
+_MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 
 
 def _is_blocked_host(host: str) -> bool:
@@ -125,16 +125,22 @@ def _default_transport(
     data = None
     if json_body is not None:
         data = json.dumps(json_body).encode("utf-8")
-    req = urllib.request.Request(url=url, data=data, method=method)
-    for key, value in headers.items():
-        req.add_header(key, value)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            status = int(getattr(resp, "status", 0) or resp.getcode() or 0)
-            body = resp.read()
-    except urllib.error.HTTPError as exc:  # pragma: no cover - network path
-        status = int(exc.code)
-        body = exc.read() if hasattr(exc, "read") else b""
+    host = urlsplit(url).hostname or ""
+    response = secure_fetch(
+        url,
+        method=method,
+        headers=headers,
+        content=data,
+        policy=FetchPolicy(
+            allowed_hosts=frozenset({host}),
+            allowed_schemes=frozenset({"http", "https"}),
+            max_bytes=_MAX_RESPONSE_BYTES,
+            timeout_seconds=timeout,
+            max_redirects=2,
+        ),
+    )
+    status = response.status_code
+    body = response.content
     payload: dict[str, object] = {}
     if body:
         try:

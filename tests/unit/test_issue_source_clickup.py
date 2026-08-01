@@ -7,7 +7,8 @@ from typing import Any
 
 import pytest
 
-from general_ludd.issue_sources.clickup import ClickUpIssueSource
+from general_ludd.issue_sources.clickup import ClickUpIssueSource, _default_transport
+from general_ludd.security.url_fetch import FetchResult
 
 
 class RecordingTransport:
@@ -35,6 +36,36 @@ class RecordingTransport:
         if self._responses:
             return self._responses.pop(0)
         return 200, {}
+
+
+def test_default_transport_uses_bounded_secure_fetch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_fetch(url: str, **kwargs: Any) -> FetchResult:
+        captured.update(url=url, **kwargs)
+        return FetchResult(
+            url=url,
+            status_code=401,
+            headers={},
+            content=b'{"err":"Token invalid"}',
+        )
+
+    monkeypatch.setattr("general_ludd.issue_sources.clickup.secure_fetch", fake_fetch)
+    status, payload = _default_transport(
+        "PUT",
+        "https://api.clickup.com/api/v2/task/t1",
+        {"Authorization": "token"},
+        {"status": "done"},
+        3.0,
+    )
+
+    assert status == 401
+    assert payload == {"err": "Token invalid"}
+    assert captured["method"] == "PUT"
+    assert captured["policy"].allowed_hosts == frozenset({"api.clickup.com"})
+    assert captured["policy"].timeout_seconds == 3.0
 
 
 def _tasks_payload() -> dict[str, Any]:

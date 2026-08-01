@@ -7,7 +7,7 @@ Covers the previously 28.1%-rated module:
 """
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -18,6 +18,7 @@ from general_ludd.routers.web_search import (
     SlidingWindowRateLimiter,
     _web_search,
 )
+from general_ludd.security.url_fetch import FetchResult
 
 
 @pytest.fixture
@@ -60,7 +61,10 @@ class TestSlidingWindowRateLimiter:
 
 class TestWebSearchFunction:
     def test_web_search_returns_empty_on_network_error(self):
-        with patch("urllib.request.urlopen", side_effect=OSError("network down")):
+        with patch(
+            "general_ludd.routers.web_search.secure_fetch",
+            side_effect=OSError("network down"),
+        ):
             results = _web_search("test query")
         assert results == []
 
@@ -70,9 +74,13 @@ class TestWebSearchFunction:
         <a class="result__snippet">This is a snippet about the example.</a>
         <a class="result__url">example.com</a>
         </html>"""
-        mock_resp = MagicMock()
-        mock_resp.read.return_value = fake_html
-        with patch("urllib.request.urlopen", return_value=mock_resp):
+        response = FetchResult(
+            url="https://html.duckduckgo.com/html/",
+            status_code=200,
+            headers={},
+            content=fake_html,
+        )
+        with patch("general_ludd.routers.web_search.secure_fetch", return_value=response):
             results = _web_search("test query")
         assert len(results) >= 1
         assert results[0]["title"] == "Example Page"
@@ -83,9 +91,13 @@ class TestWebSearchFunction:
         <a class="result__snippet">snippet</a>
         <a class="result__url">example.com</a>
         </html>"""
-        mock_resp = MagicMock()
-        mock_resp.read.return_value = fake_html
-        with patch("urllib.request.urlopen", return_value=mock_resp):
+        response = FetchResult(
+            url="https://html.duckduckgo.com/html/",
+            status_code=200,
+            headers={},
+            content=fake_html,
+        )
+        with patch("general_ludd.routers.web_search.secure_fetch", return_value=response):
             results = _web_search("test")
         assert results == []
 

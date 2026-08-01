@@ -8,6 +8,8 @@ from collections import deque
 
 from fastapi import FastAPI, HTTPException, Query
 
+from general_ludd.security.url_fetch import FetchPolicy, secure_fetch
+
 _DEFAULT_MAX_REQUESTS = 10
 _DEFAULT_WINDOW_SECONDS = 60.0
 
@@ -47,21 +49,25 @@ def _web_search(query: str) -> list[dict[str, str]]:
     """
     import re
     import urllib.parse
-    import urllib.request
 
     encoded_q = urllib.parse.quote_plus(query)
     url = f"https://html.duckduckgo.com/html/?q={encoded_q}"
 
-    req = urllib.request.Request(
-        url,
-        headers={"User-Agent": "gludd-web-retriever/1.0"},
-    )
     try:
-        resp = urllib.request.urlopen(req, timeout=15)
+        response = secure_fetch(
+            url,
+            headers={"User-Agent": "gludd-web-retriever/1.0"},
+            policy=FetchPolicy(
+                allowed_hosts=frozenset({"html.duckduckgo.com"}),
+                max_bytes=1024 * 1024,
+                timeout_seconds=15,
+                max_redirects=2,
+            ),
+        )
     except Exception:
         return []
 
-    html = resp.read().decode("utf-8", errors="replace")
+    html = response.content.decode("utf-8", errors="replace")
 
     results: list[dict[str, str]] = []
     # Extract result blocks: each <a class="result__snippet">...<a class="result__url">...

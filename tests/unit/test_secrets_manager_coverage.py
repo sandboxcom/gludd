@@ -10,6 +10,7 @@ from general_ludd.secrets.manager import (
     SecretsManager,
     SecretsUnavailableError,
 )
+from general_ludd.security.url_fetch import FetchPolicy, FetchResult
 
 
 class TestResolveWithClient:
@@ -122,6 +123,29 @@ class TestScanForImageUpdates:
             result = mgr.scan_for_image_updates()
         assert result is not None
         assert result.registry == "docker.io"
+
+    def test_remote_digest_uses_head_with_bounded_public_policy(self) -> None:
+        mgr = SecretsManager()
+        captured: dict[str, object] = {}
+
+        def fake_fetch(url: str, **kwargs: object) -> FetchResult:
+            captured.update(url=url, **kwargs)
+            return FetchResult(
+                url=url,
+                status_code=200,
+                headers={"docker-content-digest": "sha256:abc123"},
+                content=b"",
+            )
+
+        with patch("general_ludd.security.url_fetch.secure_fetch", fake_fetch):
+            digest = mgr._fetch_remote_digest("ghcr.io/openbao/openbao:2.2.0")
+
+        assert digest == "sha256:abc123"
+        assert captured["method"] == "HEAD"
+        policy = captured["policy"]
+        assert isinstance(policy, FetchPolicy)
+        assert policy.allowed_hosts == frozenset({"ghcr.io"})
+        assert policy.max_bytes == 0
 
 
 class TestStartLocalContainer:

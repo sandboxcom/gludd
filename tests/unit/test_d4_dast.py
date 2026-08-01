@@ -18,10 +18,52 @@ import json
 import subprocess
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 from pydantic import ValidationError
 
 from general_ludd.project_runner.profile import ProjectProfile
+
+
+def test_wait_health_uses_non_redirecting_proxy_free_local_client() -> None:
+    from general_ludd.project_runner.dast import _wait_health
+
+    response = MagicMock()
+    response.raise_for_status.return_value = None
+    client = MagicMock()
+    client.__enter__.return_value = client
+    client.__exit__.return_value = None
+    client.get.return_value = response
+
+    with (
+        patch("general_ludd.project_runner.dast.httpx.Client", return_value=client) as client_cls,
+        patch("general_ludd.project_runner.dast.time.monotonic", side_effect=[0.0, 0.1]),
+    ):
+        assert _wait_health(8123, "/health", 5) is True
+
+    client_cls.assert_called_once_with(timeout=2, follow_redirects=False, trust_env=False)
+    client.get.assert_called_once_with("http://127.0.0.1:8123/health")
+
+
+def test_wait_health_retries_http_errors_until_deadline() -> None:
+    from general_ludd.project_runner.dast import _wait_health
+
+    client = MagicMock()
+    client.__enter__.return_value = client
+    client.__exit__.return_value = None
+    client.get.side_effect = httpx.ConnectError("offline")
+
+    with (
+        patch("general_ludd.project_runner.dast.httpx.Client", return_value=client),
+        patch(
+            "general_ludd.project_runner.dast.time.monotonic",
+            side_effect=[0.0, 0.1, 2.0],
+        ),
+        patch("general_ludd.project_runner.dast.time.sleep") as sleep,
+    ):
+        assert _wait_health(8123, "/", 1) is False
+
+    sleep.assert_called_once_with(1)
 
 # ——— Fixtures ——————————————————————————————————————————————————————————————
 
