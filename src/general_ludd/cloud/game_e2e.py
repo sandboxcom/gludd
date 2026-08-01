@@ -70,6 +70,8 @@ class GameSpec:
     similarity_threshold: float
     prompt_template: str
     reference_video_url: str | None = None
+    required_controls: tuple[str, ...] = ()
+    requires_menu: bool = False
 
 
 # ── Predefined game specs ──────────────────────────────────────────────────
@@ -94,12 +96,15 @@ GAME_SPECS: list[GameSpec] = [
             "- Red/brown floor\n"
             "- Ceiling with periodic light sources\n"
             "- A green glowing pickup item at the far end of the hallway\n"
-            "- Player can look around with mouse and move forward/backward with W/S\n"
+            "- Start in a visible menu that lists controls; RETURN starts play and ESCAPE returns to the menu\n"
+            "- Player uses W/A/S/D to move and strafes while looking around with the mouse\n"
             "- Rendering should use raycasting or simple 3D projection\n"
             "- Window size 800x600\n"
             "- Run for at least 30 frames then exit\n"
             "The game must be self-contained in one file and runnable with: python game.py\n"
         ),
+        required_controls=("w", "a", "s", "d", "mouse", "escape", "return"),
+        requires_menu=True,
     ),
     GameSpec(
         name="quake_dm6_arena",
@@ -120,12 +125,15 @@ GAME_SPECS: list[GameSpec] = [
             "- A central pillar/column structure\n"
             "- Orange/brown color palette\n"
             "- Flickering point lights on platforms\n"
-            "- Player can look with mouse and jump between platforms with SPACE\n"
+            "- Start in a visible menu that lists controls; RETURN starts play and ESCAPE returns to the menu\n"
+            "- Player uses W/A/S/D to move, looks with the mouse, and jumps with SPACE\n"
             "- Simple gravity and platform collision\n"
             "- Window 800x600\n"
             "- Run for 30 frames then exit\n"
             "Self-contained, runnable with: python game.py\n"
         ),
+        required_controls=("w", "a", "s", "d", "mouse", "space", "escape", "return"),
+        requires_menu=True,
     ),
 ]
 
@@ -156,8 +164,8 @@ class GameGenerator:
         return _extract_python_code(str(content))
 
     @staticmethod
-    def validate_game_code(code: str) -> bool:
-        """Check code for basic syntax validity, pygame imports, and game loop."""
+    def validate_game_code(code: str, spec: GameSpec | None = None) -> bool:
+        """Check syntax and, when supplied, the playable game contract."""
         try:
             tree = ast.parse(code)
         except SyntaxError:
@@ -187,7 +195,14 @@ class GameGenerator:
             elif isinstance(node, ast.While):
                 has_game_loop = True
 
-        return has_pygame_import and has_game_loop and has_pygame_init
+        if not (has_pygame_import and has_game_loop and has_pygame_init):
+            return False
+        if spec is None:
+            return True
+        if spec.requires_menu and not _has_rendered_menu_state(tree):
+            return False
+        observed_controls = _collect_pygame_controls(tree)
+        return all(control.lower() in observed_controls for control in spec.required_controls)
 
     @staticmethod
     def save_game(code: str, path: str) -> None:
@@ -205,6 +220,55 @@ def _extract_python_code(content: str) -> str:
     if fence:
         return fence.group(1).strip()
     return content.strip()
+
+
+_PYGAME_KEY_CONTROLS: dict[str, str] = {
+    "k_w": "w",
+    "k_a": "a",
+    "k_s": "s",
+    "k_d": "d",
+    "k_space": "space",
+    "k_escape": "escape",
+    "k_return": "return",
+    "k_enter": "return",
+    "k_kp_enter": "return",
+}
+_MENU_STATES = frozenset({"menu", "main_menu", "pause", "paused", "start"})
+
+
+def _collect_pygame_controls(tree: ast.AST) -> set[str]:
+    """Return canonical controls referenced by executable pygame code."""
+    controls: set[str] = set()
+    for node in ast.walk(tree):
+        name = ""
+        if isinstance(node, ast.Attribute):
+            name = node.attr.lower()
+        elif isinstance(node, ast.Name):
+            name = node.id.lower()
+        if name in _PYGAME_KEY_CONTROLS:
+            controls.add(_PYGAME_KEY_CONTROLS[name])
+        if name in {"mouse", "mousemotion", "get_rel", "get_pos"}:
+            controls.add("mouse")
+    return controls
+
+
+def _has_rendered_menu_state(tree: ast.AST) -> bool:
+    """Require both an initial menu value and a control-flow branch for it."""
+    has_initial_state = False
+    has_menu_branch = False
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            value = node.value
+            if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                has_initial_state = value.value.lower() in _MENU_STATES or has_initial_state
+        elif isinstance(node, (ast.If, ast.While)):
+            states = {
+                child.value.lower()
+                for child in ast.walk(node.test)
+                if isinstance(child, ast.Constant) and isinstance(child.value, str)
+            }
+            has_menu_branch = bool(states & _MENU_STATES) or has_menu_branch
+    return has_initial_state and has_menu_branch
 
 
 # ── GameRunner ──────────────────────────────────────────────────────────────
@@ -494,7 +558,10 @@ class AzureGameE2E:
             result.generated_code = code
             result.code_generated = True
 
-            result.code_valid = GameGenerator.validate_game_code(code)
+            result.code_valid = GameGenerator.validate_game_code(code, spec)
+            if not result.code_valid:
+                result.errors.append("Generated game failed its required controls/menu contract")
+                return result
 
             with tempfile.TemporaryDirectory() as tmpdir:
                 game_path = os.path.join(tmpdir, "game.py")

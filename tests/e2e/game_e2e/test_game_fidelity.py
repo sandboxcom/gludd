@@ -17,6 +17,8 @@ from __future__ import annotations
 import importlib.util
 import os
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -24,6 +26,7 @@ import pytest
 from general_ludd.cloud.game_e2e import _HAS_PYGAME as HAS_PYGAME
 from general_ludd.cloud.game_e2e import (
     GAME_SPECS,
+    AzureGameE2E,
     E2EResult,
     FrameComparator,
     GameGenerator,
@@ -93,7 +96,7 @@ class TestDoomHallwayGeneration:
         gen = GameGenerator(gateway)
         code = gen.generate_game(spec)
         assert code, "LLM returned empty code"
-        assert gen.validate_game_code(code), "Generated code failed validation"
+        assert gen.validate_game_code(code, spec), "Generated code failed controls/menu validation"
 
         game_path = tmp_path / "doom_game.py"
         gen.save_game(code, str(game_path))
@@ -110,7 +113,7 @@ class TestDoomHallwayGeneration:
         spec = GAME_SPECS[0]
         gen = GameGenerator(gateway)
         code = gen.generate_game(spec)
-        assert gen.validate_game_code(code), "Generated code should be valid syntactically"
+        assert gen.validate_game_code(code, spec), "Generated code should satisfy controls/menu contract"
 
     def test_game_has_required_elements(self, gateway, tmp_path: Path) -> None:
         spec = GAME_SPECS[0]
@@ -406,6 +409,32 @@ for i in range(30):
     pass
 """
         assert validate_game_syntax(no_input_code) is False
+
+    def test_fps_pipeline_rejects_incomplete_controls_before_execution(self) -> None:
+        class IncompleteGateway:
+            def call_model(self, *args: Any, **kwargs: Any) -> SimpleNamespace:
+                return SimpleNamespace(
+                    content="""
+import pygame
+pygame.init()
+running = True
+while running:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+    pygame.display.flip()
+pygame.quit()
+"""
+                )
+
+        pipeline = AzureGameE2E(model_gateway=cast(Any, IncompleteGateway()))
+        result = pipeline.run_full_test(GAME_SPECS[0])
+
+        assert result.code_generated is True
+        assert result.code_valid is False
+        assert result.game_ran is False
+        assert result.frames_captured == 0
+        assert result.errors == ["Generated game failed its required controls/menu contract"]
 
 
 # ── Test: SSIM Computation ────────────────────────────────────────────────

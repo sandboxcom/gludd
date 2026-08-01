@@ -40,6 +40,19 @@ class TestGameSpec:
         for spec in GAME_SPECS:
             assert spec.prompt_template, f"{spec.name} missing prompt_template"
 
+    def test_fps_specs_require_complete_controls_and_menu(self) -> None:
+        for spec in GAME_SPECS:
+            if spec.genre != "fps":
+                continue
+            assert spec.requires_menu is True
+            assert {"w", "a", "s", "d", "mouse", "escape", "return"} <= set(spec.required_controls)
+            prompt = spec.prompt_template.lower()
+            assert "menu" in prompt
+            assert "w/a/s/d" in prompt
+            assert "mouse" in prompt
+            assert "return" in prompt
+            assert "escape" in prompt
+
 
 class TestFrameComparatorUnit:
     def test_ssim_identical_images(self) -> None:
@@ -111,6 +124,62 @@ screen = pygame.display.set_mode((800, 600))
 pygame.quit()
 """
         assert gen.validate_game_code(code) is False
+
+    def test_validate_fps_contract_rejects_missing_controls_and_menu(self) -> None:
+        gen = GameGenerator(None)  # type: ignore[arg-type]
+        spec = GAME_SPECS[0]
+        code = """
+import pygame
+pygame.init()
+running = True
+while running:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+    pygame.display.flip()
+pygame.quit()
+"""
+        assert gen.validate_game_code(code, spec) is False
+
+    def test_validate_fps_contract_accepts_playable_controls_and_menu(self) -> None:
+        gen = GameGenerator(None)  # type: ignore[arg-type]
+        spec = GAME_SPECS[0]
+        code = """
+import pygame
+pygame.init()
+screen = pygame.display.set_mode((800, 600))
+running = True
+state = "menu"
+yaw = 0
+player_x = 0
+player_y = 0
+while running:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_RETURN:
+                state = "playing"
+            elif event.key == pygame.K_ESCAPE:
+                state = "menu"
+        elif event.type == pygame.MOUSEMOTION and state == "playing":
+            yaw += event.rel[0]
+    keys = pygame.key.get_pressed()
+    if state == "playing":
+        if keys[pygame.K_w]:
+            player_y -= 1
+        if keys[pygame.K_s]:
+            player_y += 1
+        if keys[pygame.K_a]:
+            player_x -= 1
+        if keys[pygame.K_d]:
+            player_x += 1
+    if state == "menu":
+        screen.fill((0, 0, 0))
+    pygame.display.flip()
+pygame.quit()
+"""
+        assert gen.validate_game_code(code, spec) is True
 
 
 class TestGameRunnerUnit:
