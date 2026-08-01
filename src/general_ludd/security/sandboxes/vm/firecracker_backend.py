@@ -33,6 +33,7 @@ import socket
 import subprocess
 import time
 import uuid
+from pathlib import Path
 from typing import Any
 
 from general_ludd.security.permissions import PermissionSpec
@@ -41,18 +42,64 @@ from general_ludd.security.sandboxes import (
     SandboxHandle,
     SandboxTarget,
 )
+from general_ludd.security.sandboxes.state import SandboxState, safe_state_component
 
 logger = logging.getLogger(__name__)
 
 
 _FC_TERMINATE_GRACE_S = 2.0
-_FC_API_SOCKET_DIR = "/tmp"
+# Test/operator injection seam retained for compatibility. Production state
+# uses :class:`SandboxState`; no host control socket defaults to public /tmp.
+_FC_API_SOCKET_DIR: str | None = None
 _FC_DEFAULT_VCPUS = 1
 _FC_DEFAULT_MEM_MIB = 128
 _FC_DEFAULT_KERNEL_PATH = "/var/lib/gludd/vmlinux"
 _FC_DEFAULT_ROOTFS_PATH = "/var/lib/gludd/rootfs.ext4"
 _FC_DEFAULT_BOOT_ARGS = "console=ttyS0 reboot=k panic=1 pci=off"
 _FC_DEFAULT_GUEST_CID = 3
+
+
+def _socket_paths(
+    sandbox_id: str,
+    *,
+    create: bool = False,
+) -> tuple[str, str]:
+    component = safe_state_component(sandbox_id)
+    if _FC_API_SOCKET_DIR is not None:
+        root = Path(_FC_API_SOCKET_DIR)
+        if create:
+            root.mkdir(parents=True, exist_ok=True)
+        return (
+            str(root / f"{component}.api.sock"),
+            str(root / f"{component}.vsock"),
+        )
+    state = SandboxState.discover(create=create)
+    root = (
+        state.directory("firecracker", component)
+        if create
+        else state.path("firecracker", component)
+    )
+    return str(root / "api.sock"), str(root / "vsock")
+
+
+def _cleanup_firecracker_state(handle: SandboxHandle) -> None:
+    state = handle.extra.get("state")
+    runtime_root = handle.extra.get("runtime_root")
+    if isinstance(state, SandboxState) and isinstance(runtime_root, str):
+        try:
+            state.cleanup_path(runtime_root)
+        except Exception as exc:
+            logger.warning(
+                "Firecracker state cleanup failed for %s: %s",
+                handle.token,
+                exc,
+            )
+        return
+    for key in ("api_sock", "vsock_uds"):
+        path = handle.extra.get(key)
+        if isinstance(path, str):
+            with contextlib.suppress(OSError):
+                os.unlink(path)
 
 
 # ---------------------------------------------------------------------------
@@ -173,8 +220,26 @@ def _spawn_firecracker(
 
     token = f"gludd-{spec.agent_type}"
     sandbox_id = f"gludd-fc-{uuid.uuid4().hex[:12]}"
-    sock_path = os.path.join(_FC_API_SOCKET_DIR, f"{sandbox_id}.api.sock")
-    vsock_uds = os.path.join(_FC_API_SOCKET_DIR, f"{sandbox_id}.vsock")
+    state: SandboxState | None = None
+    runtime_root: str | None = None
+    try:
+        sock_path, vsock_uds = _socket_paths(sandbox_id, create=True)
+        if _FC_API_SOCKET_DIR is None:
+            state = SandboxState.discover()
+            runtime_root = str(Path(sock_path).parent)
+    except Exception as exc:
+        logger.error(
+            "FirecrackerBackend.apply: secure runtime-state allocation failed "
+            "for %s — %s",
+            token,
+            exc,
+        )
+        return SandboxHandle(
+            backend="firecracker",
+            token=token,
+            applied=False,
+            extra={"reason": f"runtime-state allocation failed: {exc}"},
+        )
 
     argv = [
         "firecracker",
@@ -194,12 +259,20 @@ def _spawn_firecracker(
             "FirecrackerBackend.apply: spawn failed for %s — %s",
             token, exc,
         )
-        return SandboxHandle(
+        handle = SandboxHandle(
             backend="firecracker",
             token=token,
             applied=False,
-            extra={"reason": f"firecracker spawn failed: {exc}"},
+            extra={
+                "reason": f"firecracker spawn failed: {exc}",
+                "api_sock": sock_path,
+                "vsock_uds": vsock_uds,
+                "runtime_root": runtime_root or "",
+                "state": state,
+            },
         )
+        _cleanup_firecracker_state(handle)
+        return handle
 
     if not _wait_for_socket(sock_path, timeout=5.0):
         logger.error(
@@ -208,7 +281,7 @@ def _spawn_firecracker(
         )
         with contextlib.suppress(Exception):
             popen.kill()
-        return SandboxHandle(
+        handle = SandboxHandle(
             backend="firecracker",
             token=token,
             applied=False,
@@ -217,8 +290,14 @@ def _spawn_firecracker(
                     f"API socket {sock_path} never appeared "
                     f"(firecracker failed to boot?)"
                 ),
+                "api_sock": sock_path,
+                "vsock_uds": vsock_uds,
+                "runtime_root": runtime_root or "",
+                "state": state,
             },
         )
+        _cleanup_firecracker_state(handle)
+        return handle
 
     try:
         _firecracker_put(
@@ -259,12 +338,20 @@ def _spawn_firecracker(
         except Exception:
             with contextlib.suppress(Exception):
                 popen.kill()
-        return SandboxHandle(
+        handle = SandboxHandle(
             backend="firecracker",
             token=token,
             applied=False,
-            extra={"reason": f"REST configuration failed: {exc}"},
+            extra={
+                "reason": f"REST configuration failed: {exc}",
+                "api_sock": sock_path,
+                "vsock_uds": vsock_uds,
+                "runtime_root": runtime_root or "",
+                "state": state,
+            },
         )
+        _cleanup_firecracker_state(handle)
+        return handle
 
     logger.info(
         "FirecrackerBackend.apply booted sandbox=%s pid=%d api_sock=%s",
@@ -280,6 +367,8 @@ def _spawn_firecracker(
             "sandbox_id": sandbox_id,
             "api_sock": sock_path,
             "vsock_uds": vsock_uds,
+            "runtime_root": runtime_root or "",
+            "state": state,
             "started_at": time.time(),
         },
     )
@@ -405,6 +494,7 @@ class FirecrackerBackend:
                 "FirecrackerBackend.release: no popen on handle %s — no-op",
                 handle.token,
             )
+            _cleanup_firecracker_state(handle)
             return
 
         api_sock_raw = handle.extra.get("api_sock")
@@ -459,9 +549,7 @@ class FirecrackerBackend:
                 handle.extra.get("pid"),
             )
 
-        if api_sock:
-            with contextlib.suppress(OSError):
-                os.unlink(api_sock)
+        _cleanup_firecracker_state(handle)
 
 
 __all__ = [

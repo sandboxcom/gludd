@@ -22,6 +22,7 @@ from general_ludd.security.sandboxes import (
     allowed_ports,
     path_prefix,
 )
+from general_ludd.security.sandboxes.state import SandboxState, safe_state_component
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,10 @@ def _file_path_prefix(cap: Capability) -> str | None:
     return None
 
 
-def _jail_path(spec: PermissionSpec, target: SandboxTarget) -> str:
+def _configured_jail_path(
+    spec: PermissionSpec,
+    target: SandboxTarget,
+) -> str | None:
     if target.directory:
         return target.directory
     for cap in spec.capabilities:
@@ -52,7 +56,23 @@ def _jail_path(spec: PermissionSpec, target: SandboxTarget) -> str:
             prefix = _file_path_prefix(cap)
             if prefix:
                 return prefix.rstrip("/")
-    return f"/tmp/gludd/{spec.agent_type}"
+    return None
+
+
+def _jail_path(
+    spec: PermissionSpec,
+    target: SandboxTarget,
+    *,
+    create_state: bool = False,
+) -> str:
+    configured = _configured_jail_path(spec, target)
+    if configured is not None:
+        return configured
+    state = SandboxState.discover(create=create_state)
+    component = safe_state_component(spec.agent_type)
+    if create_state:
+        return str(state.directory("jail", component))
+    return str(state.path("jail", component))
 
 
 def _pf_rules(spec: PermissionSpec, anchor: str) -> str:
@@ -119,9 +139,16 @@ class JailBackend:
     @staticmethod
     def apply(spec: PermissionSpec, target: SandboxTarget) -> SandboxHandle:
         jail_name = f"gludd-{spec.agent_type}"
+        state: SandboxState | None = None
+        path: str | None = None
+        managed_path = False
         try:
-            path = _jail_path(spec, target)
-            Path(path).mkdir(parents=True, exist_ok=True)
+            managed_path = _configured_jail_path(spec, target) is None
+            path = _jail_path(spec, target, create_state=managed_path)
+            if managed_path:
+                state = SandboxState.discover()
+            else:
+                Path(path).mkdir(parents=True, exist_ok=True)
             devfs_rules = Path("/etc/devfs.rules")
             try:
                 with devfs_rules.open("a") as fh:
@@ -140,15 +167,35 @@ class JailBackend:
                     check=False, capture_output=True, timeout=10,
                 )
             logger.info("FreeBSD jail %s created", jail_name)
-            return SandboxHandle(backend="jail", token=jail_name, applied=True)
+            extra: dict[str, object] = {}
+            if managed_path:
+                extra = {"state": state, "state_path": path}
+            return SandboxHandle(
+                backend="jail",
+                token=jail_name,
+                applied=True,
+                extra=extra,
+            )
         except Exception as exc:
             logger.error(
                 "jail apply failed for %s — dispatching UNSANDBOXED: %s",
                 jail_name, exc, exc_info=True,
             )
+            if state is not None and managed_path and path is not None:
+                try:
+                    state.cleanup_path(path)
+                except Exception as cleanup_exc:
+                    logger.warning(
+                        "jail partial-state cleanup of %s failed: %s",
+                        jail_name,
+                        cleanup_exc,
+                    )
+            failure_extra: dict[str, object] = {"error": str(exc)}
+            if state is not None and managed_path and path is not None:
+                failure_extra.update({"state": state, "state_path": path})
             return SandboxHandle(
                 backend="jail", token=jail_name, applied=False,
-                extra={"error": str(exc)},
+                extra=failure_extra,
             )
 
     @staticmethod
@@ -176,12 +223,22 @@ class JailBackend:
 
     @staticmethod
     def release(handle: SandboxHandle) -> None:
-        if not handle.applied:
-            return
-        try:
-            subprocess.run(
-                ["jail", "-r", handle.token],
-                check=False, capture_output=True, timeout=15,
-            )
-        except Exception as exc:
-            logger.warning("jail release of %s failed: %s", handle.token, exc)
+        if handle.applied:
+            try:
+                subprocess.run(
+                    ["jail", "-r", handle.token],
+                    check=False, capture_output=True, timeout=15,
+                )
+            except Exception as exc:
+                logger.warning("jail release of %s failed: %s", handle.token, exc)
+        state = handle.extra.get("state")
+        state_path = handle.extra.get("state_path")
+        if isinstance(state, SandboxState) and isinstance(state_path, str):
+            try:
+                state.cleanup_path(state_path)
+            except Exception as exc:
+                logger.warning(
+                    "jail state cleanup of %s failed: %s",
+                    handle.token,
+                    exc,
+                )
