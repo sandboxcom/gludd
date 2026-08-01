@@ -326,10 +326,36 @@ LICENSE_REGISTRIES: dict[str, dict[str, Any]] = {
         "architect": {
             "issuing_body": "Ministry of Land, Infrastructure, Transport and Tourism (MLIT) / prefectural government",
             "verification_url": "MLIT — Kenchikushi (建築士) registration",
-            "typical_duration": "First-class Kenchikushi (一級建築士): lifetime; Second-class Kenchikushi (二級建築士): lifetime",
+            "typical_duration": (
+                "First-class Kenchikushi (一級建築士): lifetime; "
+                "Second-class Kenchikushi (二級建築士): lifetime"
+            ),
             "renewal_requirements": [
                 "Registration with prefectural government",
                 "optional CPD via JIA (Japan Institute of Architects)",
+            ],
+        },
+    },
+    "NZ": {
+        "driving": {
+            "issuing_body": "New Zealand Transport Agency Waka Kotahi (NZTA)",
+            "verification_url": "https://www.nzta.govt.nz/driver-licences/renewing-replacing-and-updating/renewing-your-licence",
+            "typical_duration": "10 years for most drivers",
+            "renewal_requirements": [
+                "proof of identity",
+                "eyesight standard",
+                "new photograph and signature",
+                "medical certificate when required",
+            ],
+        },
+        "medical_practitioner": {
+            "issuing_body": "Medical Council of New Zealand (Te Kaunihera Rata o Aotearoa)",
+            "verification_url": "https://www.mcnz.org.nz/registration/register-of-doctors/",
+            "typical_duration": "Annual practising certificate",
+            "renewal_requirements": [
+                "current registration",
+                "annual practising certificate",
+                "recertification and continuing professional development",
             ],
         },
     },
@@ -372,7 +398,10 @@ EXPORT_LICENSE_REQUIREMENTS: dict[str, dict[str, dict[str, Any]]] = {
             "administering_body": "BIS (Bureau of Industry and Security)",
             "requires_license": False,
             "classification_list": "5A002, 5D002 (encryption items)",
-            "notes": "Generally license-exception ENC for mass-market encryption; notification/self-classification required",
+            "notes": (
+                "Generally license-exception ENC for mass-market encryption; "
+                "notification/self-classification required"
+            ),
             "typical_processing": "notification within 30 days of export",
         },
     },
@@ -596,13 +625,13 @@ def get_regulating_body(license_type: str, country: str) -> dict[str, Any] | Non
 
 
 __all__ = [
-    "LICENSE_TYPES",
-    "LICENSE_REGISTRIES",
     "EXPORT_LICENSE_REQUIREMENTS",
+    "LICENSE_REGISTRIES",
+    "LICENSE_TYPES",
     "LICENSE_VALIDITY_RULES",
-    "get_license_info",
-    "get_export_license_requirements",
     "check_license_validity",
-    "list_professions_for_country",
+    "get_export_license_requirements",
+    "get_license_info",
     "get_regulating_body",
+    "list_professions_for_country",
 ]
