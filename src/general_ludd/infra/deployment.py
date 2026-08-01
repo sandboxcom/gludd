@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import subprocess
+import sys
 import tempfile
 import time
 import uuid
@@ -323,16 +324,27 @@ class DeploymentManager:
             binary,
             *args,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
             cwd=cwd if cwd is not None else self._active_working_dir,
             env=env,
         )
-        stdout, stderr = await proc.communicate()
+        lines: list[str] = []
+        assert proc.stdout is not None
+        while True:
+            chunk = await proc.stdout.readline()
+            if not chunk:
+                break
+            text = chunk.decode(errors="replace")
+            sys.stdout.write(text)
+            sys.stdout.flush()
+            lines.append(text)
+        await proc.wait()
+        output = "".join(lines)
         if proc.returncode != 0:
-            raise RuntimeError(f"terraform failed (rc={proc.returncode}): {stderr.decode()}")
+            raise RuntimeError(f"terraform failed (rc={proc.returncode}): {output[-2000:]}")
         return {
-            "stdout": stdout.decode(),
-            "stderr": stderr.decode(),
+            "stdout": output,
+            "stderr": "",
             "returncode": proc.returncode,
         }
 
