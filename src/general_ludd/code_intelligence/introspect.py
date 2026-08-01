@@ -29,10 +29,12 @@ import ast
 import contextlib
 import logging
 import os
-import xml.etree.ElementTree as ET
 from typing import Protocol, cast
 
+from defusedxml.ElementTree import ParseError
+
 from general_ludd.code_intelligence.git_intel import GitIntelligence
+from general_ludd.security.secure_xml import XmlSecurityError, parse_xml_file
 from general_ludd.self_improve.harness import SelfImprovementHarness
 
 logger = logging.getLogger(__name__)
@@ -160,10 +162,12 @@ class CodebaseIntrospector:
         if not os.path.isfile(coverage_xml):
             return None
         try:
-            tree = ET.parse(coverage_xml)
-        except (ET.ParseError, OSError):
+            tree = parse_xml_file(coverage_xml, source="coverage-introspection")
+        except (ParseError, XmlSecurityError, OSError):
             return None
         root = tree.getroot()
+        if root is None:
+            return None
         overall = root.get("line-rate")
         low: list[dict[str, object]] = []
         for cls in root.findall(".//classes/class"):
