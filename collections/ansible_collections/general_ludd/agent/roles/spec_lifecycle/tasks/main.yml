@@ -300,6 +300,7 @@
   when: operation == 'approve_task'
 
 - name: "[approve_task] Move drafts -> active (copy + remove source)"
+  when: operation == 'approve_task'
   block:
     - name: "[approve_task] Recursively copy drafts -> active"
       ansible.builtin.copy:
@@ -311,8 +312,6 @@
       ansible.builtin.file:
         path: "{{ spec_root }}/drafts/{{ task_name }}"
         state: absent
-  when: operation == 'approve_task'
-
 - name: "[approve_task] Mark task.yml stage=active"
   ansible.builtin.copy:
     content: |
@@ -414,6 +413,7 @@
     - _sl_complete_task_yml.stat.exists
 
 - name: "[complete_task] Move active -> archive (copy + remove source)"
+  when: operation == 'complete_task'
   block:
     - name: "[complete_task] Recursively copy active -> archive"
       ansible.builtin.copy:
@@ -425,8 +425,6 @@
       ansible.builtin.file:
         path: "{{ spec_root }}/active/{{ task_name }}"
         state: absent
-  when: operation == 'complete_task'
-
 - name: "[complete_task] Write COMPLETION_REPORT.md (the C doc)"
   ansible.builtin.copy:
     content: |
@@ -510,6 +508,7 @@
   when: operation == 'discard_task'
 
 - name: "[discard_task] Move source -> archive (copy + remove source)"
+  when: operation == 'discard_task'
   block:
     - name: "[discard_task] Recursively copy source -> archive"
       ansible.builtin.copy:
@@ -521,8 +520,6 @@
       ansible.builtin.file:
         path: "{{ _sl_discard_src }}"
         state: absent
-  when: operation == 'discard_task'
-
 - name: "[discard_task] Write DISCARDED.yml marker"
   ansible.builtin.copy:
     content: |
@@ -572,6 +569,7 @@
   when: operation == 'revise'
 
 - name: "[revise] Move active -> drafts (copy + remove source)"
+  when: operation == 'revise'
   block:
     - name: "[revise] Recursively copy active -> drafts"
       ansible.builtin.copy:
@@ -583,8 +581,6 @@
       ansible.builtin.file:
         path: "{{ spec_root }}/active/{{ task_name }}"
         state: absent
-  when: operation == 'revise'
-
 - name: "[revise] Write result artifact"
   ansible.builtin.copy:
     content: >-

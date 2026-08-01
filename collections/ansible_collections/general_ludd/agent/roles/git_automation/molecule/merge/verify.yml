@@ -41,17 +41,15 @@
         fail_msg: "feature branch {{ feature_branch }} not merged into main"
         success_msg: "feature branch {{ feature_branch }} is merged into main"
 
-    - name: Verify feature.txt exists on main
-      ansible.builtin.command:
-        cmd: "git show main:feature.txt"
-        chdir: "{{ repo_path }}"
+    - name: Read feature.txt from the checked-out main branch
+      ansible.builtin.slurp:
+        src: "{{ repo_path }}/feature.txt"
       register: _feature_file
-      changed_when: false
 
     - name: Assert feature file content is on main
       ansible.builtin.assert:
         that:
-          - "'feature work' in _feature_file.stdout"
+          - "'feature work' in (_feature_file.content | b64decode)"
         fail_msg: "feature.txt not found on main branch"
         success_msg: "feature.txt present on main with expected content"
 

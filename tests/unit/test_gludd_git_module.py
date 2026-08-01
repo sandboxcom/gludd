@@ -26,6 +26,7 @@ from general_ludd.git_automation.types import (
     CloneResult,
     GatedCommitResult,
     GitStateResult,
+    InitResult,
     MergeResult,
     PushResult,
     WorktreeInfo,
@@ -72,6 +73,14 @@ class _FakeGit:
     def changed_files(self) -> list[str]:
         self.calls.append(("changed_files",))
         return self._behaviour.get("changed_files", [])
+
+    def init_repo(self, path: str | None = None) -> InitResult:
+        self.calls.append(("init_repo", path))
+        return InitResult(
+            path=path or self.repo_path,
+            created=not self._behaviour.get("init_existing", False),
+            message="initialized",
+        )
 
     def commit(self, message: str) -> str:
         self.calls.append(("commit", message))
@@ -264,6 +273,32 @@ def _run(module: ModuleType, monkeypatch: pytest.MonkeyPatch, params: dict, **be
 
 
 # --- commit -----------------------------------------------------------------
+
+
+def test_init_delegates_to_hardened_git_automation(module, monkeypatch):
+    fake_mod, git = _run(module, monkeypatch, _params(op="init"))
+
+    assert fake_mod.failed is None
+    assert fake_mod.exited["changed"] is True
+    assert fake_mod.exited["result"] == {
+        "path": "/repo",
+        "created": True,
+        "message": "initialized",
+    }
+    assert ("init_repo", "/repo") in git.calls
+
+
+def test_init_existing_repository_is_unchanged(module, monkeypatch):
+    fake_mod, git = _run(
+        module,
+        monkeypatch,
+        _params(op="init"),
+        init_existing=True,
+    )
+
+    assert fake_mod.failed is None
+    assert fake_mod.exited["changed"] is False
+    assert ("init_repo", "/repo") in git.calls
 
 def test_commit_with_changes_uses_changed_files_not_bare_status(module, monkeypatch):
     fake_mod, git = _run(

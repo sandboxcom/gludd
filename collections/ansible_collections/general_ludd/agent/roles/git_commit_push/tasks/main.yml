@@ -33,20 +33,19 @@
 # ── Idempotency gate: check tree cleanliness ─────────────────────────────
 
 - name: Check for uncommitted changes (porcelain)
-  ansible.builtin.command:
-    cmd: git status --porcelain
-    chdir: "{{ repo_path }}"
-  register: _gcp_status
-  changed_when: false
-  failed_when: false
+  general_ludd.agent.gludd_git:
+    path: "{{ repo_path }}"
+    op: state
+    remote: "."
+  register: _gcp_state
 
 - name: Parse changed-file paths from porcelain output
   ansible.builtin.set_fact:
     _gcp_changed_files: >-
       {%- set paths = [] -%}
-      {%- for line in (_gcp_status.stdout_lines | default([])) -%}
+      {%- for line in (_gcp_state.result.status | default([])) -%}
         {%- if line | length >= 4 -%}
-          {%- set entry = (line[3:] | trim) -%}
+          {%- set entry = line[3:] | trim -%}
           {%- if entry -%}
             {%- if ' -> ' in entry -%}
               {%- set entry = entry.split(' -> ', 1)[1] | trim -%}
@@ -59,7 +58,7 @@
         {%- endif -%}
       {%- endfor -%}
       {{ paths }}
-    _gcp_is_dirty: "{{ (_gcp_status.stdout_lines | default([])) | list | length > 0 }}"
+    _gcp_is_dirty: "{{ (_gcp_state.result.dirty_count | default(0) | int) > 0 }}"
 
 - name: End play — nothing to commit (idempotent)
   ansible.builtin.meta: end_play

@@ -46,17 +46,11 @@
           {%- endfor -%}
           {{ lines }}
 
-    - name: Generate Lua dissector from template
-      ansible.builtin.template:
-        src: files/dissector_template.lua
+    - name: Copy Lua dissector template
+      ansible.builtin.copy:
+        src: dissector_template.lua
         dest: "{{ _dc_output_file }}"
         mode: "0644"
-        variable_start_string: "{{"
-        variable_end_string: "}}"
-      vars:
-        dissector_name: "{{ networking__dissector_name }}"
-        dissector_port: "{{ networking__dissector_port | default(0) }}"
-        dissector_fields: "{{ networking__dissector_fields | default([]) }}"
       when:
         - networking__dissector_language == 'lua'
 
