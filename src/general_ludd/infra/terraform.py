@@ -544,7 +544,6 @@ class TerraformGenerator:
 
             provider "azurerm" {{
               features {{}}
-              location = "{region}"
             }}
 
             variable "image"          {{ default = "" }}
