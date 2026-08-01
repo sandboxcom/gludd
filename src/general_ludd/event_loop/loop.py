@@ -363,6 +363,8 @@ class EventLoop:
         consolidation_interval_ticks: int = 100,
         sandbox_executor: Any | None = None,
         sandbox_config: Any | None = None,
+        sandbox_attestation_store: Any | None = None,
+        sandbox_profile: Any | None = None,
         run_recorder: Any | None = None,
         prompt_variant_selector: Any | None = None,
         checkpointer: TickCheckpointer | None = None,
@@ -508,6 +510,8 @@ class EventLoop:
         self._consolidation_tick_counter: int = 0
         self._sandbox_executor = sandbox_executor
         self._sandbox_config = sandbox_config
+        self._sandbox_attestation_store = sandbox_attestation_store
+        self._sandbox_profile = sandbox_profile
         # Task #48: plan-time technical-debt evaluator (config-gated at the
         # dispatch seam; default OFF). Wired to the model gateway when present;
         # a None gateway leaves the evaluator on its deterministic structural
@@ -1906,11 +1910,13 @@ class EventLoop:
     async def _sandbox_apply_for_todo(self, todo: Any) -> Any | None:
         """Resolve this todo's PermissionSpec and apply the host sandbox.
 
-        Fail-open: any exception (no backend, apply raised, spec missing) is
-        swallowed and logged; the agent is dispatched UNSANDBOXED with a
-        warning rather than wedging the daemon. Returns the opaque
-        SandboxHandle or None.
+        Production daemon wiring supplies a durable attestation store and uses
+        the fail-closed admission path.  The legacy fail-open behavior remains
+        only for explicitly unwired EventLoop instances used by older callers.
+        Returns a pinned dispatch lease or a legacy opaque handle.
         """
+        if self._sandbox_attestation_store is not None:
+            return await self._sandbox_admit_for_todo(todo)
         try:
             from general_ludd.security.sandboxes import SandboxTarget, detect
 
@@ -1962,10 +1968,146 @@ class EventLoop:
             )
             return None
 
+    async def _sandbox_admit_for_todo(self, todo: Any) -> Any:
+        """Apply, independently observe, durably attest, then admit one todo.
+
+        This is the production fail-closed path.  The resolved profile is a
+        frozen value supplied at daemon construction, so this dispatch remains
+        pinned to one policy hash while a replacement worker/profile is prepared
+        and promoted.  Legacy test-only loops without a durable store retain the
+        older helper above until their caller explicitly wires admission.
+        """
+
+        from general_ludd.security.sandboxes import SandboxTarget, detect
+        from general_ludd.security.sandboxes.attestation import (
+            RuntimeSandboxObservation,
+        )
+        from general_ludd.security.sandboxes.dispatch import (
+            DurableSandboxDispatchGuard,
+            SandboxDispatchIdentity,
+            SandboxDispatchLease,
+            unavailable_observation,
+        )
+
+        resolved = self._sandbox_profile
+        if resolved is None:
+            raise RuntimeError("sandbox dispatch denied: no resolved sandbox profile")
+        store = self._sandbox_attestation_store
+        if store is None:
+            raise RuntimeError("sandbox dispatch denied: no durable attestation store")
+
+        project_id = (_safe_str(todo, "project_id", "") or "").strip()
+        work_item_id = (_safe_str(todo, "todo_id", "") or "").strip()
+        if not project_id or not work_item_id:
+            raise RuntimeError(
+                "sandbox dispatch denied: tenant/project and work-item identity are required"
+            )
+        identity = SandboxDispatchIdentity(
+            project_id=project_id,
+            work_item_id=work_item_id,
+            agent_id="event-loop",
+            tenant_id=project_id,
+            correlation_id=f"sandbox:{work_item_id}",
+        )
+        guard = DurableSandboxDispatchGuard(
+            resolved=resolved,
+            store=store,
+        )
+        if self._sandbox_executor is None:
+            await guard.deny_unavailable(identity)
+        backend = detect.auto()
+        if backend is None:
+            await guard.deny_unavailable(identity)
+
+        backend_name = str(getattr(backend, "name", ""))
+        spec = self._resolve_permission_spec(todo)
+        if spec is None:
+            await guard.deny_unavailable(identity, backend=backend_name)
+        target = SandboxTarget(directory=self._resolve_repo_root(project_id))
+
+        try:
+            handle = await self._bounded_to_thread(backend.apply, spec, target)
+        except Exception:
+            logger.exception(
+                "Sandbox apply failed for todo %s; denying dispatch",
+                work_item_id,
+            )
+            await guard.deny_unavailable(identity, backend=backend_name)
+
+        try:
+            findings = await self._bounded_to_thread(backend.verify, spec, handle)
+            observe_runtime = getattr(backend, "observe_runtime", None)
+            if not callable(observe_runtime):
+                observation = unavailable_observation(
+                    resolved,
+                    backend=backend_name,
+                )
+            else:
+                raw_observation = await self._bounded_to_thread(
+                    observe_runtime,
+                    spec,
+                    handle,
+                    resolved,
+                )
+                observation = RuntimeSandboxObservation.model_validate(raw_observation)
+
+            verification_failed = any(
+                getattr(finding, "severity", None) == "fail" for finding in findings
+            )
+            if (
+                verification_failed
+                or not bool(getattr(handle, "applied", False))
+                or observation.backend != backend_name
+            ):
+                observation = observation.model_copy(update={"applied": False})
+        except Exception:
+            logger.exception(
+                "Sandbox observation failed for todo %s; denying dispatch",
+                work_item_id,
+            )
+            await self._sandbox_release_backend(backend, handle)
+            await guard.deny_unavailable(identity, backend=backend_name)
+
+        try:
+            attestation = await guard.attest(identity, observation)
+        except BaseException:
+            await self._sandbox_release_backend(backend, handle)
+            raise
+
+        logger.info(
+            "Sandbox dispatch admitted for todo %s under %s via %s (attestation=%d)",
+            work_item_id,
+            attestation.policy_version,
+            attestation.effective_backend,
+            attestation.sequence,
+        )
+        return SandboxDispatchLease(
+            backend=backend,
+            handle=handle,
+            attestation=attestation,
+        )
+
+    async def _sandbox_release_backend(self, backend: Any, handle: Any) -> None:
+        """Release the exact backend selected for this admission attempt."""
+
+        try:
+            await self._bounded_to_thread(backend.release, handle)
+        except Exception as exc:
+            logger.warning(
+                "Sandbox release raised (token=%s): %s",
+                getattr(handle, "token", "?"),
+                exc,
+            )
+
     async def _sandbox_release(self, handle: Any) -> None:
         """Release a sandbox handle; best-effort + fail-open."""
         try:
             from general_ludd.security.sandboxes import detect
+            from general_ludd.security.sandboxes.dispatch import SandboxDispatchLease
+
+            if isinstance(handle, SandboxDispatchLease):
+                await self._sandbox_release_backend(handle.backend, handle.handle)
+                return
 
             backend = detect.auto()
             if backend is None or handle is None:
