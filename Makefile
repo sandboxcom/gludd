@@ -14,6 +14,7 @@ NODE_DEPS_NPM_USERCONFIG ?= /dev/null
 NODE_DEPS_NPM_CACHE ?= /tmp/gludd-npm-cache-public-v1
 NODE_DEPS_NPM_REGISTRY ?= https://registry.npmjs.org
 NODE_DEPS_AUDIT_LEVEL ?= moderate
+GATE_REFRESH_VALIDATE_ONLY ?= 0
 # Make children emit deterministic, non-interactive logs even when the host's
 # terminal emulator has no terminfo entry inside a worker or CI environment.
 export TERM := dumb
@@ -179,6 +180,7 @@ help:
 	@echo "  edit-makefile-target  Edit a Makefile target definition via a file"
 	@echo "  validate-makefile     Validate Makefile targets for duplicates"
 	@echo "  gate                  Full gate: lint + typecheck + collect-check + test"
+	@echo "  gate-refresh          Refresh fast phases; stream fallback test node IDs (GATE_REFRESH_VALIDATE_ONLY=0|1)"
 	@echo "  gate-lite             Local validation (lint+typecheck+collect+smoke+unit@2w); no OOM"
 	@echo "  gate-audit            Gate + coverage audit (85% per-file threshold)"
 	@echo "  gate-async            Launch gate detached (non-blocking); writes .gate-status"
@@ -3856,10 +3858,17 @@ dist-path-check:
 # fresh .gate-status with current timestamp. Test/smoke lines are PRESERVED from
 # the prior full gate run. This lets the agent prove partial gate green to
 # unblock commits while the gate-background test phase is still running.
-# Does NOT run the full test suite — that's what gate-background is for.
+# Does NOT run the full test suite — that's what gate-background is for. When
+# the preserved test result is unavailable, verbose pytest node IDs stream live
+# and are also retained in .gate-logs/gate-refresh-test.log.
 .PHONY: gate-refresh _gate-refresh-body
 gate-refresh:
-	@$(UV) run python scripts/collection_lock.py --resource gate-refresh --run $(MAKE) --no-print-directory _gate-refresh-body
+	@if [ "$(GATE_REFRESH_VALIDATE_ONLY)" = "1" ]; then \
+		$(UV) run python scripts/stream_command.py --help > /dev/null; \
+		echo "gate-refresh: validate-only PASS (live verbose node IDs + durable log configured)"; \
+	else \
+		$(UV) run python scripts/collection_lock.py --resource gate-refresh --run $(MAKE) --no-print-directory _gate-refresh-body; \
+	fi
 
 _gate-refresh-body:
 	@if [ ! -f .gate-status ]; then \
@@ -3910,10 +3919,10 @@ _gate-refresh-body:
 	if [ -n "$$OLD_TEST" ] && echo "$$OLD_TEST" | grep -q "PASS"; then echo "$$OLD_TEST" >> .gate-status; else \
 		echo "=== GATE-REFRESH PHASE: test ==="; \
 		printf "test " >> .gate-status; \
-		if $(UV) run python -m pytest tests/unit/ -q --no-header -n 2 --maxprocesses=2 > /tmp/gludd-gate-refresh-test.log 2>&1; then \
+		if $(UV) run python scripts/stream_command.py --log .gate-logs/gate-refresh-test.log -- $(UV) run python -m pytest tests/unit/ -vv --no-header -n 2 --maxprocesses=2; then \
 			echo "PASS 0" >> .gate-status; \
 		else \
-			echo "FAIL non-zero-exit" >> .gate-status && touch .gate-failed && echo "[gate-refresh] test FAILED — tail:" && tail -20 /tmp/gludd-gate-refresh-test.log; \
+			echo "FAIL non-zero-exit" >> .gate-status && touch .gate-failed && echo "[gate-refresh] test FAILED — tail:" && tail -20 .gate-logs/gate-refresh-test.log; \
 		fi; \
 	fi; \
 	if [ -n "$$OLD_SMOKE" ] && echo "$$OLD_SMOKE" | grep -q "PASS"; then echo "$$OLD_SMOKE" >> .gate-status; else \

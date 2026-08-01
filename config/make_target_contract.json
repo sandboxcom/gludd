@@ -88,6 +88,11 @@
       "behavior": "make uv-cache-prune-status"
     },
     {
+      "name": "gate-refresh",
+      "make_variables": ["GATE_REFRESH_VALIDATE_ONLY"],
+      "behavior": "make gate-refresh GATE_REFRESH_VALIDATE_ONLY=1"
+    },
+    {
       "name": "gate-tail",
       "make_variables": ["GATE_TAIL_LINES"],
       "behavior": "make gate-tail GATE_TAIL_LINES=5"

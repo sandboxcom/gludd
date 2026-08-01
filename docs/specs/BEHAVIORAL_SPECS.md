@@ -2296,8 +2296,22 @@ If `.gate-status` is older than the last source file modification, it MUST be co
 
 ### G18 — Gate-refresh is available for stale gates
 `make gate-refresh` MUST re-validate `.gate-status` without re-running the full gate.
+If the prior gate has no passing test result to preserve, its unit-test fallback
+MUST stream verbose pytest node IDs to the terminal while mirroring the same bytes
+to `.gate-logs/gate-refresh-test.log`; the pytest exit status MUST remain the value
+used to write the final `test PASS` or `test FAIL` status.
+
+Long-lived user reports explain both guardrails. In
+[pytest-xdist #877](https://github.com/pytest-dev/pytest-xdist/issues/877), users
+reported that quiet distributed output obscured useful progress and a maintainer
+recommended verbose mode for one test per line. In
+[pytest #913](https://github.com/pytest-dev/pytest/issues/913), a user traced a
+false-success test job to piping pytest through `tee`, which returned the logger's
+zero status instead of pytest's failure. The streaming helper therefore mirrors
+bytes directly and returns the child process status without a shell pipeline.
+
 **Enforcement:** Makefile `gate-refresh` target
-**Test:** `test_g18_gate_refresh_available`
+**Test:** `tests/unit/test_gate_refresh_streaming.py`
 
 ### G19 — Gate-status shows PASS/FAIL/RUNNING
 `make gate-status` MUST display the current gate state (PASS/FAIL/RUNNING/STALE).
