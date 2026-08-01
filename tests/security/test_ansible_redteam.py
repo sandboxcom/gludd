@@ -508,7 +508,10 @@ class TestProcessIsolationRouting:
                 runner, "_execute_with_core",
                 return_value=AnsibleResult(status="successful", rc=0),
             ),
-            patch.dict(os.environ, {"GLUDD_PLAYBOOK_TIMEOUT": "0"}, clear=False),
+            # This unit test pins routing, not the process timeout boundary.
+            # Keep the optional env timeout unset so the patched in-process
+            # executor remains the seam under spawn/forkserver semantics.
+            patch.dict(os.environ, {"GLUDD_PLAYBOOK_TIMEOUT": ""}, clear=False),
             patch("general_ludd.ansible.core_runner.ansible_runner") as mock_ar,
         ):
             result = runner.run_playbook("/tmp/whatever.yml")
@@ -556,7 +559,10 @@ class TestProcessIsolationRouting:
                 runner, "_execute_with_core",
                 return_value=AnsibleResult(status="successful", rc=0),
             ),
-            patch.dict(os.environ, {"GLUDD_PLAYBOOK_TIMEOUT": "0"}, clear=False),
+            # This unit test pins routing, not the process timeout boundary.
+            # Keep the optional env timeout unset so the patched in-process
+            # executor remains the seam under spawn/forkserver semantics.
+            patch.dict(os.environ, {"GLUDD_PLAYBOOK_TIMEOUT": ""}, clear=False),
         ):
             result = runner.run_playbook("/tmp/whatever.yml")
         assert result.status == "successful"

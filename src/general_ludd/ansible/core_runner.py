@@ -13,6 +13,7 @@ This provides direct access to:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import multiprocessing
 import os
@@ -38,7 +39,7 @@ _TIMEOUT_RC = 124
 def _json_safe(obj: Any) -> Any:
     """Coerce a structure to JSON/pickle-safe primitives.
 
-    Used to ferry an AnsibleResult dump out of a fork child: dicts/lists recurse,
+    Used to ferry an AnsibleResult dump out of a timeout worker: dicts/lists recurse,
     JSON scalars pass through, and anything else (an ansible object embedded in an
     event's result payload) is replaced by its ``repr`` so the queue.put never
     fails on an unpicklable leaf.
@@ -72,6 +73,44 @@ def _env_default_timeout() -> float:
     except ValueError:
         return _DEFAULT_PLAYBOOK_TIMEOUT
     return val if val > 0 else _DEFAULT_PLAYBOOK_TIMEOUT
+
+
+def _timeout_child_entry(
+    runner: CoreAnsibleRunner,
+    queue: Any,
+    exec_kwargs: dict[str, Any],
+) -> None:
+    """Execute one playbook inside a picklable, process-group-owned worker.
+
+    This target must remain at module scope so ``spawn`` and ``forkserver`` can
+    import it without unsafe ``fork()`` inheritance from a threaded Gunicorn or
+    pytest parent. The child retains the original seccomp-before-execution and
+    process-group ownership guarantees.
+    """
+
+    if runner._seccomp_filter is not None:
+        try:
+            applied = runner._seccomp_filter.apply()
+            if not applied:
+                logger.warning(
+                    "seccomp filter not applied (fail-open); playbook "
+                    "child runs without syscall filtering"
+                )
+        except Exception:
+            logger.warning(
+                "seccomp filter apply raised; continuing unfiltered",
+                exc_info=True,
+            )
+
+    # Become a process-group leader so the parent can terminate this worker and
+    # every Ansible task process it creates with one scoped signal.
+    with contextlib.suppress(AttributeError, OSError):
+        os.setsid()
+    try:
+        result = runner._execute_with_core(**exec_kwargs)
+        queue.put(("ok", _json_safe(result.model_dump())))
+    except BaseException as exc:  # report SystemExit and executor failures too
+        queue.put(("err", f"{type(exc).__name__}: {exc}"))
 
 try:
     from ansible.parsing.dataloader import DataLoader
@@ -230,7 +269,7 @@ class CoreAnsibleRunner:
         self._private_data_dir = private_data_dir
         self._network_policy = network_policy
         # OpenShell P2 transfer: an optional seccomp BPF filter installed in the
-        # fork child (before os.setsid) to block container-escape syscalls
+        # timeout child (before os.setsid) to block container-escape syscalls
         # (mount/unshare/setns/pivot_root/...). None = no syscall filtering
         # (backward-compatible default). See general_ludd.security.seccomp.
         self._seccomp_filter = seccomp_filter
@@ -312,17 +351,17 @@ class CoreAnsibleRunner:
                 extra_env=extra_env,
             )
 
-        # HIGH (no timeout): bound the run in a killable fork child. An
+        # HIGH (no timeout): bound the run in a killable child process. An
         # unbounded pb_exec.run() let a runaway/sleeping playbook hang the
         # worker forever. The network-exposed adapter (runner.py) ALWAYS passes
         # a finite timeout, so the exposed path is always bounded.
         #
-        # Bounding requires a fork child, which (a) cannot share an in-process
+        # Bounding requires a child process, which (a) cannot share an in-process
         # mock and (b) serializes the result across the process boundary. So an
         # explicit timeout=None means "run inline, no bound" — preserving the
         # in-process API (direct event/stat collection, mockable executor) for
         # trusted callers and tests. A None timeout falls back to the env-driven
-        # default ONLY when one is configured, never to a silent fork.
+        # default ONLY when one is configured, never to a silent child process.
         if timeout is None:
             env_to = os.environ.get("GLUDD_PLAYBOOK_TIMEOUT", "")
             if not env_to:
@@ -361,7 +400,7 @@ class CoreAnsibleRunner:
         timeout: float,
         **exec_kwargs: Any,
     ) -> AnsibleResult:
-        """Run ``_execute_with_core`` in a fork child bounded by ``timeout``.
+        """Run ``_execute_with_core`` in a thread-safe child bounded by timeout.
 
         The child puts its serialized AnsibleResult on a queue. The parent joins
         with a deadline; on expiry it terminate()s then kill()s the child and
@@ -371,65 +410,49 @@ class CoreAnsibleRunner:
         if timeout is None or timeout <= 0:
             return self._execute_with_core(**exec_kwargs)
 
-        # Prefer a fork context so the child inherits the already-imported
-        # ansible modules and this object's state without re-pickling them.
+        # Python 3.14 explicitly warns that fork() from a multithreaded process
+        # is unsafe. Prefer forkserver where supported: its single-threaded
+        # server retains copy-on-write efficiency without inheriting Gunicorn's
+        # thread state. Spawn is the portable safe fallback.
+        start_methods = multiprocessing.get_all_start_methods()
+        start_method = "forkserver" if "forkserver" in start_methods else "spawn"
         try:
-            ctx = multiprocessing.get_context("fork")
-        except ValueError:  # pragma: no cover - platforms without fork
-            # No fork available (e.g. Windows / spawn-only). Fall back to inline
-            # execution rather than failing — the timeout cannot be enforced via
-            # a killable child here, but correctness is preserved.
-            logger.warning(
-                "fork start method unavailable; running playbook without a "
-                "killable timeout child"
+            # Typeshed exposes a common context base that omits the concrete
+            # Process factory even though every returned runtime context has it.
+            ctx: Any = multiprocessing.get_context(start_method)
+        except ValueError as exc:  # pragma: no cover - Python always has spawn
+            # Never weaken a requested wall-clock bound by falling back inline.
+            return AnsibleResult(
+                status="failed",
+                rc=1,
+                error=(
+                    "no thread-safe multiprocessing start method is available "
+                    f"for the playbook timeout worker: {exc}"
+                ),
             )
-            return self._execute_with_core(**exec_kwargs)
 
         queue: Any = ctx.Queue()
-
-        def _target() -> None:
-            import contextlib
-
-            # OpenShell P2 transfer: install the seccomp syscall filter FIRST,
-            # before setsid() or any playbook work, so a compromised playbook
-            # cannot unshare/mount/setns its way out of the sandbox. Fail-open:
-            # apply() returns False (never raises) on macOS / no-seccomp kernels.
-            if self._seccomp_filter is not None:
-                try:
-                    applied = self._seccomp_filter.apply()
-                    if not applied:
-                        logger.warning(
-                            "seccomp filter not applied (fail-open); playbook "
-                            "child runs without syscall filtering"
-                        )
-                except Exception:
-                    logger.warning(
-                        "seccomp filter apply raised; continuing unfiltered",
-                        exc_info=True,
-                    )
-
-            # Become a process-group leader so a timeout can SIGKILL the whole
-            # group (this child + any ansible worker processes it forks).
-            with contextlib.suppress(AttributeError, OSError):  # non-POSIX: no-op
-                os.setsid()
-            try:
-                result = self._execute_with_core(**exec_kwargs)
-                # Sanitize before crossing the process boundary: event payloads
-                # can carry arbitrary (non-picklable) ansible objects, which
-                # would make queue.put raise and the child die "without a
-                # result". JSON round-trip coerces every leaf to a picklable
-                # primitive (unserializable values become their repr).
-                payload = _json_safe(result.model_dump())
-                queue.put(("ok", payload))
-            except BaseException as exc:  # report any failure (incl. SystemExit) up
-                queue.put(("err", f"{type(exc).__name__}: {exc}"))
 
         # NOT daemon=True: ansible's PlaybookExecutor forks its own task-worker
         # processes, and a daemonic parent cannot have children (Python forbids
         # it), which would silently no-op the play. We instead kill the whole
         # process GROUP on timeout to reap any worker children too.
-        proc = ctx.Process(target=_target, daemon=False)
-        proc.start()
+        proc = ctx.Process(
+            target=_timeout_child_entry,
+            args=(self, queue, exec_kwargs),
+            daemon=False,
+        )
+        try:
+            proc.start()
+        except Exception as exc:
+            return AnsibleResult(
+                status="failed",
+                rc=1,
+                error=(
+                    f"unable to start {start_method} playbook timeout worker: "
+                    f"{type(exc).__name__}: {exc}"
+                ),
+            )
 
         # Track this child (and its setsid process group) in the managed-process
         # registry so the admin API can inspect/signal it. Registration must
