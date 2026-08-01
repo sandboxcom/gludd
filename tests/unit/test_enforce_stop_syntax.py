@@ -6,6 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode/plugin/enforce-stop.ts"
+IMPL_PATH = ROOT / ".opencode/plugin/impl/enforce_stop_impl.ts"
 
 _REQUIRED_HOOKS = [
     "tool.execute.before",
@@ -16,7 +17,9 @@ _REQUIRED_HOOKS = [
 
 
 def _src() -> str:
-    return PLUGIN_PATH.read_text()
+    # The auto-loaded entrypoint is intentionally a lean proxy. Inspect the
+    # implementation it delegates to as part of the same plugin contract.
+    return PLUGIN_PATH.read_text() + "\n" + IMPL_PATH.read_text()
 
 
 def test_node_check_syntax_valid():

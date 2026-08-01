@@ -545,7 +545,7 @@ describe('enforce-task-tracking', { concurrency: 1 }, () => {
       const m = _require(OUTFILE)
       if (m.invalidateProjectRootCache) m.invalidateProjectRootCache()
       const instance = await m.default({})
-      return { m, hook: instance['text.complete'] }
+      return { m, hook: instance['experimental.text.complete'] }
     }
 
     it('T15: text.complete returns output unchanged on first call', async () => {

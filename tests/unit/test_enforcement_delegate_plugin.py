@@ -289,10 +289,11 @@ class TestStreakCounterTracking:
         src = _src()
         idx = src.find("function readStreak")
         assert idx > 0
-        after = src[idx:]
-        assert "catch" in after[:600]
+        end = src.find("function writeStreak", idx)
+        after = src[idx:end]
+        assert "catch" in after
         # Post object-API refactor the catch returns a zeroed MainthreadStreakState.
-        assert "count: 0" in after[:600]
+        assert "count: 0" in after
 
     def test_streak_resets_to_zero_on_dispatch_in_after_hook(self):
         src = _src()
@@ -306,9 +307,10 @@ class TestStreakCounterTracking:
         src = _src()
         idx = src.find("function mainthreadBudgetAfter")
         assert idx > 0
-        after = src[idx:]
+        end = src.find("// ===========================================================================", idx)
+        after = src[idx:end]
         # Post object-API refactor: writeStreak({ count: s.count + 1 }).
-        assert "count + 1" in after[:600] or "writeStreak(readStreak() + 1)" in after[:500]
+        assert "s.count + 1" in after or "writeStreak(readStreak() + 1)" in after
 
     def test_streak_read_handles_bare_integer_format(self):
         src = _src()
@@ -718,13 +720,13 @@ class TestHookBehavior:
         before_idx = src.find('"tool.execute.before": async')
         after = src[before_idx:]
         assert "enforceForceDelegate(tool, args)" in after
-        assert "mainthreadBudgetBefore(tool)" in after
+        assert "mainthreadBudgetBefore(tool, command)" in after
 
     def test_after_hook_calls_mainthread_budget_after(self):
         src = _src()
         idx = src.find('"tool.execute.after": async')
-        after = src[idx:idx + 200]
-        assert "mainthreadBudgetAfter(input.tool)" in after
+        after = src[idx:idx + 400]
+        assert "mainthreadBudgetAfter(input.tool, command)" in after
 
     def test_before_hook_skips_entirely_for_subagent(self):
         src = _src()

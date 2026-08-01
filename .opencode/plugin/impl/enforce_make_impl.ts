@@ -22,6 +22,7 @@ const BASH_POLICY_FIX = [
 const BASH_POLICY_REF = "See AGENTS.md for existing make targets and the full policy.\n"
 
 const MAKE_ENFORCE = process.env.GLUDD_MAKE_ENFORCE !== "0"
+const PROMPT_PRONE_EDIT_TOOLS = new Set(["apply_patch", "functions.apply_patch"])
 // Bare `(` and `)` removed 2026-07-18: they triggered false positives on
 // legitimate commit messages (e.g. MSG="fix foo (see #123)"). The actual
 // shell-injection vector is `$()` command substitution, which is still
@@ -379,6 +380,16 @@ function detectStopPattern(text: string): boolean {
 const defaultImpl: HotModule = {
     "tool.execute.before": async (input, output) => {
         reportAlive("enforce-make")
+
+        // These edit surfaces can trigger an approval prompt before project
+        // policy gets a chance to redirect the operation through an auditable
+        // make target. Deny them at the earliest hook boundary.
+        if (MAKE_ENFORCE && PROMPT_PRONE_EDIT_TOOLS.has(input.tool)) {
+          return {
+            permissionDecision: "deny",
+            message: "Prompt-prone edit tool blocked. Add or use a make target instead.",
+          }
+        }
 
         // --- BASH CHECK runs for ALL agents including subagents ---
         // AGENTS.md: "Bash = `make <target>` only. Subagents MUST know

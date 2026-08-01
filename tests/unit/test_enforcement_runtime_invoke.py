@@ -25,6 +25,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
 PLUGINS_DIR = ROOT / ".opencode" / "plugins"
+HELPERS = ROOT / ".opencode" / "lib" / "plugin_test_exports.ts"
 
 _tmp_counter = 0
 
@@ -47,6 +48,13 @@ def _run_ts(ts_code: str, env_override: dict | None = None, timeout: int = 20):
     try:
         env = os.environ.copy()
         env["OPENCODE_SUBAGENT"] = ""
+        # Runtime-contract tests exercise the committed fallback implementation.
+        # A live session may have stale /tmp/gludd-hot-*.js overrides; isolating
+        # the prefix prevents those mutable process artifacts from changing the
+        # result. Dedicated hot-reload tests cover the override path separately.
+        env["GLUDD_HOT_MODULE_PREFIX"] = (
+            f"/tmp/gludd-test-no-hot-{os.getpid()}-{_tmp_counter}-"
+        )
         if env_override:
             env.update(env_override)
         proc = subprocess.run(
@@ -87,6 +95,11 @@ def _factory_load_code(plugin_rel: str) -> str:
     """TS code to import a factory-pattern plugin."""
     abs_path = str(PLUGIN_DIR / plugin_rel)
     return f"const mod = await import('{abs_path}')\nconst plugin = await mod.default({{}})\n"
+
+
+def _helper_load_code() -> str:
+    """Import named test helpers from outside the auto-loaded plugin tree."""
+    return f"const mod = await import('{HELPERS}')\n"
 
 
 def _pluginapi_load_code(plugin_rel: str) -> str:
@@ -390,7 +403,7 @@ console.log(JSON.stringify(r ?? {allowed: true}))
 
 def test_no_suppression_blocks_noqa():
     """enforce-no-suppressions identifies # noqa as suppression."""
-    code = _factory_load_code("enforce-no-suppressions.ts") + """\
+    code = _helper_load_code() + """\
 const isSupp = mod.isSuppressionComment('# noqa')
 const verdict = mod.shouldAllowEdit('src/foo.py', '# noqa')
 console.log(JSON.stringify({isSupp, allow: verdict.allow}))
@@ -402,7 +415,7 @@ console.log(JSON.stringify({isSupp, allow: verdict.allow}))
 
 def test_no_suppression_allows_plain_comment():
     """Plain comment passes through."""
-    code = _factory_load_code("enforce-no-suppressions.ts") + """\
+    code = _helper_load_code() + """\
 const verdict = mod.shouldAllowEdit('src/foo.py', '# regular comment')
 console.log(JSON.stringify({allow: verdict.allow}))
 """
@@ -412,7 +425,7 @@ console.log(JSON.stringify({allow: verdict.allow}))
 
 def test_no_suppression_allowlisted_path():
     """Allowlisted path allows # noqa."""
-    code = _factory_load_code("enforce-no-suppressions.ts") + """\
+    code = _helper_load_code() + """\
 const verdict = mod.shouldAllowEdit('src/general_ludd/security/fix_not_disable.py', '# noqa')
 console.log(JSON.stringify({allow: verdict.allow}))
 """
@@ -422,7 +435,7 @@ console.log(JSON.stringify({allow: verdict.allow}))
 
 def test_verified_claims_no_evidence_blocked():
     """shouldBlock('everything committed') returns true."""
-    code = _factory_load_code("enforce-verified-claims.ts") + """\
+    code = _helper_load_code() + """\
 console.log(JSON.stringify({shouldBlock: mod.shouldBlock('everything committed')}))
 """
     result = _run_ts(code)
@@ -431,7 +444,7 @@ console.log(JSON.stringify({shouldBlock: mod.shouldBlock('everything committed')
 
 def test_verified_claims_with_hash_allowed():
     """shouldBlock('commit abc12345') returns false (hash is evidence)."""
-    code = _factory_load_code("enforce-verified-claims.ts") + """\
+    code = _helper_load_code() + """\
 console.log(JSON.stringify({shouldBlock: mod.shouldBlock('commit abc12345')}))
 """
     result = _run_ts(code)
@@ -919,8 +932,8 @@ console.log(JSON.stringify(r ?? {allowed: true}))
 
 
 def test_all_done_words_exported():
-    """verify enforce-verified-claims exports DONE_WORDS array."""
-    code = _factory_load_code("enforce-verified-claims.ts") + """\
+    """Verify centralized verified-claims helpers expose their rule data."""
+    code = _helper_load_code() + """\
 console.log(JSON.stringify({
     hasDoneWords: Array.isArray(mod.DONE_WORDS) && mod.DONE_WORDS.length > 0,
     hasEvidence: Array.isArray(mod.EVIDENCE_PATTERNS) && mod.EVIDENCE_PATTERNS.length > 0,
@@ -934,15 +947,15 @@ console.log(JSON.stringify({
 
 
 def test_clean_tree_exports():
-    """verify enforce-clean-tree exports expected symbols."""
-    code = _factory_load_code("enforce-clean-tree.ts") + """\
+    """Verify centralized clean-tree helpers expose expected behavior."""
+    code = _helper_load_code() + """\
 console.log(JSON.stringify({
     hasGetStatus: typeof mod.getGitStatus === 'function',
     hasIsDirty: typeof mod.isTreeDirty === 'function',
     hasCountDirty: typeof mod.countDirtyFiles === 'function',
     hasBuildDeny: typeof mod.buildDenyMessage === 'function',
-    hasDispatchTools: Array.isArray(mod.DISPATCH_TOOLS) && mod.DISPATCH_TOOLS.length === 3,
-    hasPrefix: typeof mod.DENY_MESSAGE_PREFIX === 'string',
+    hasDispatchTools: Array.isArray(mod.getDispatchTools()) && mod.getDispatchTools().length === 3,
+    hasPrefix: typeof mod.getDenyMessagePrefix() === 'string',
     getStatusResult: typeof mod.getGitStatus() === 'string',
     isDirtyResult: typeof mod.isTreeDirty() === 'boolean',
 }))
@@ -1004,7 +1017,7 @@ else {
 
 def test_watchdog_loads_and_reports_alive():
     """watchdog.ts loads, reports alive, and exposes its event hook."""
-    alive_path = "/tmp/gludd-plugin-alive.json"
+    alive_path = f"/tmp/gludd-plugin-alive-invoke-{os.getpid()}.json"
     _clean_state_files(alive_path)
     try:
         code = f"""\
@@ -1017,7 +1030,7 @@ console.log(JSON.stringify({{
   isObject: typeof plugin === "object",
 }}))
 """
-        result = _run_ts(code)
+        result = _run_ts(code, env_override={"GLUDD_ALIVE_PATH": alive_path})
         assert result["ok"] is True, f"watchdog load failed: {result}"
         assert result["keys"] == ["event"], f"watchdog should expose event hook: {result}"
         assert result["eventType"] == "function", f"watchdog event hook must be callable: {result}"
@@ -1030,7 +1043,7 @@ console.log(JSON.stringify({{
 
 def test_watchdog_subagent_loads():
     """watchdog loads even with OPENCODE_SUBAGENT=1."""
-    alive_path = "/tmp/gludd-plugin-alive.json"
+    alive_path = f"/tmp/gludd-plugin-alive-sub-invoke-{os.getpid()}.json"
     _clean_state_files(alive_path)
     try:
         code = f"""\
@@ -1038,7 +1051,13 @@ const mod = await import('{PLUGINS_DIR}/watchdog.ts')
 const plugin = await mod.default({{}})
 console.log(JSON.stringify({{ok: true}}))
 """
-        result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+        result = _run_ts(
+            code,
+            env_override={
+                "OPENCODE_SUBAGENT": "1",
+                "GLUDD_ALIVE_PATH": alive_path,
+            },
+        )
         assert result["ok"] is True, f"watchdog subagent load failed: {result}"
     finally:
         _clean_state_files(alive_path)

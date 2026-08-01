@@ -33,7 +33,7 @@ const defaultImpl: HotModule = {
       if (!cmd.startsWith("make ") || !/\b(git-commit|commit-no-verify|repo-commit|ship-commit|test-and-commit)\b/.test(cmd)) return
       const msgMatch = cmd.match(/MSG=(?:"([^"]*)"|'([^']*)'|(\S+))/)
       const msg = msgMatch ? (msgMatch[1] ?? msgMatch[2] ?? msgMatch[3] ?? "") : ""
-      if (msg && shouldBlock(msg) && !/[0-9a-f]+/.test(msg)) {
+      if (msg && shouldBlock(msg)) {
         throw Object.assign(new Error(BLOCK_MESSAGE), { permissionDecision: "deny" })
       }
     } catch (e) {
