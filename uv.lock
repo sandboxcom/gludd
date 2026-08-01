@@ -574,6 +574,20 @@ wheels = [
 ]
 
 [[package]]
+name = "azure-mgmt-costmanagement"
+version = "5.0.0b1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "azure-mgmt-core" },
+    { name = "isodate" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/11/6c/8fa4145a45a5feed057a45db99376860a4bfedc4c664392103a1c2043ded/azure_mgmt_costmanagement-5.0.0b1.tar.gz", hash = "sha256:7ff39d3d1dfe852942c1bfbd731a6c2c0c39c80acde1b2b4f52bd25f21cea557", size = 154889, upload-time = "2026-05-26T08:53:44.398Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5a/5b/6c3fadd4fe80b6987cab98fb8115fdb2ac85374b2fd4895a1cd29c726096/azure_mgmt_costmanagement-5.0.0b1-py3-none-any.whl", hash = "sha256:8e8f097d51865f63acbd306d730fa2ad50e2c9cb087d79e3d0154db622d5b43d", size = 159667, upload-time = "2026-05-26T08:53:45.906Z" },
+]
+
+[[package]]
 name = "azure-mgmt-resource"
 version = "26.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1841,6 +1855,7 @@ azure = [
     { name = "azure-identity" },
     { name = "azure-mgmt-authorization" },
     { name = "azure-mgmt-compute" },
+    { name = "azure-mgmt-costmanagement" },
     { name = "azure-mgmt-resource" },
 ]
 dev = [
@@ -1871,6 +1886,7 @@ e2e-all = [
     { name = "azure-identity" },
     { name = "azure-mgmt-authorization" },
     { name = "azure-mgmt-compute" },
+    { name = "azure-mgmt-costmanagement" },
     { name = "azure-mgmt-resource" },
     { name = "langchain-openai" },
     { name = "opencv-python-headless" },
@@ -1936,6 +1952,8 @@ requires-dist = [
     { name = "azure-mgmt-authorization", marker = "extra == 'e2e-all'", specifier = ">=4.0.0" },
     { name = "azure-mgmt-compute", marker = "extra == 'azure'", specifier = ">=0.1.0b2" },
     { name = "azure-mgmt-compute", marker = "extra == 'e2e-all'", specifier = ">=31.0.0" },
+    { name = "azure-mgmt-costmanagement", marker = "extra == 'azure'", specifier = "==5.0.0b1" },
+    { name = "azure-mgmt-costmanagement", marker = "extra == 'e2e-all'", specifier = "==5.0.0b1" },
     { name = "azure-mgmt-resource", marker = "extra == 'azure'", specifier = ">=0.1.0b2" },
     { name = "azure-mgmt-resource", marker = "extra == 'e2e-all'", specifier = ">=23.0.0" },
     { name = "bandit", marker = "extra == 'dev'", specifier = ">=0.1.0b2" },
