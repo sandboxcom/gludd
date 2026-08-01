@@ -35,18 +35,19 @@ def _get_env(key: str, default: str = "") -> str:
 def _require_azure_creds() -> None:
     if os.environ.get("AZURE_PROVISION_E2E") != "1":
         pytest.skip("AZURE_PROVISION_E2E != '1' — opt-in only")
-    missing = []
-    for var in (
-        "ARM_SUBSCRIPTION_ID",
-        "ARM_TENANT_ID",
-        "ARM_CLIENT_ID",
-        "ARM_CLIENT_SECRET",
-        "AZURE_SUBSCRIPTION_ID",
-    ):
-        if not _get_env(var):
-            missing.append(var)
-    if missing:
-        pytest.skip(f"Azure credentials not set (missing: {', '.join(missing)})")
+
+    msi = _get_env("ARM_USE_MSI") == "true"
+    sub_id = _get_env("ARM_SUBSCRIPTION_ID") or _get_env("AZURE_SUBSCRIPTION_ID")
+
+    if sub_id and (msi or (_get_env("ARM_TENANT_ID") and _get_env("ARM_CLIENT_ID"))):
+        return  # managed identity or service principal credentials present
+
+    pytest.skip(
+        "Azure credentials not set. Source your env file first:\n"
+        "  source /tmp/general-ludd.env\n"
+        "Or set ARM_SUBSCRIPTION_ID + ARM_TENANT_ID + ARM_CLIENT_ID (+ ARM_CLIENT_SECRET).\n"
+        "Or for managed identity: ARM_USE_MSI=true + ARM_SUBSCRIPTION_ID."
+    )
 
 
 def _resolve_gpu() -> GPUType:
