@@ -168,10 +168,14 @@ and warns that some streams commonly return `403` or EOF errors
 ([yt-dlp issue 15036][ytdlp-sections]). These are source-transport failures,
 not evidence about Gludd or generated games.
 
-The current clip acquisition uses `--download-sections` and forced keyframes,
-which is a sensible bounded fetch, but source ID plus time range alone is not a
-pin. The normalized-frame digest closes that gap while allowing the original
-media to remain outside the repository.
+The current clip acquisition uses yt-dlp's Python API
+`download_ranges=download_range_func(...)` and forced keyframes—the API
+equivalent of `--download-sections`. Passing the CLI parser destination
+`download_sections` directly in `YoutubeDL` options is silently ignored and
+downloads the full source, which the duration/provenance gate now rejects.
+Source ID plus time range alone is still not a pin. The normalized-frame digest
+closes that gap while allowing the original media to remain outside the
+repository.
 
 ## Headless controls are an explicit test interface
 

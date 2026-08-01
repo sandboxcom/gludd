@@ -100,3 +100,16 @@ class TestLanguageExpertE2eTarget:
         assert "-v" in recipe, (
             "test-language-expert must stream verbose output (observability invariant)"
         )
+
+    def test_target_isolates_pytest_temporary_files(self) -> None:
+        recipe = _recipe("test-language-expert")
+        assert "scripts/adaptive_test.py" in recipe, (
+            "test-language-expert must use the adaptive runner's process-unique "
+            "pytest basetemp so nested or concurrent pytest cannot delete live fixtures"
+        )
+
+    def test_target_caps_adaptive_workers_without_disabling_oom_retry(self) -> None:
+        recipe = _recipe("test-language-expert")
+        assert "GLUDD_XDIST=2" in recipe
+        assert "-n 2" not in recipe
+        assert "--maxprocesses=2" not in recipe

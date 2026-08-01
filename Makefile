@@ -6435,7 +6435,7 @@ test-language:
 # Runs collection schema check + ALL unit tests + integration tests + coverage gate (>=85%).
 test-language-expert:
 	@echo "=== test-language-expert: schema + unit + integration + coverage ==="
-	@$(UV) run python -m pytest \
+	@GLUDD_XDIST=2 $(UV) run python scripts/adaptive_test.py \
 		tests/unit/test_language_expert_collection.py \
 		tests/unit/test_language_phase_c.py \
 		tests/unit/test_language_phase_d.py \
