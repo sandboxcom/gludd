@@ -429,7 +429,8 @@ on Azure GPU resources.
 
 - Azure subscription with GPU quota (NCasT4_v3, NC_A100_v4, or ND_H100_v5)
 - `General Ludd Container App Deployer` custom role created and assigned
-- `/etc/general-ludd/env` sourced with Azure credentials
+- `/tmp/general-ludd.env` (or another explicit `AZURE_E2E_ENV_FILE`) readable
+  with Azure credentials; keep this file outside the repository
 
 ### Quick start — pre-provisioned endpoint
 
@@ -444,15 +445,16 @@ make test-e2e-games
 ### Full provision — deploy GPU on-demand
 
 ```bash
-source /tmp/general-ludd.env
-export GLUDD_CONFIG_DIR="$PWD/config"
-export AZURE_PROVISION_E2E=1
-export AZURE_GPU_TYPE=a100_80
-export AZURE_PROVISION_ENGINE=vllm
-export AZURE_MODEL="Qwen/Qwen2.5-Coder-7B-Instruct"
-export GLUDD_E2E_MAX_SPEND_USD=10
-make test-e2e-games-provision
+make test-e2e-games-provision \
+  AZURE_E2E_ENV_FILE=/tmp/general-ludd.env \
+  AZURE_E2E_VALIDATE_ONLY=0 \
+  GAME_E2E_TIMEOUT_SECS=3600
 ```
+
+The target sources only the explicit env file, streams live provisioning/test
+events to the console and audit log, and enforces a configurable wall-clock and
+per-test timeout of at least 3600 seconds. Validate the file and arguments without
+provisioning by changing `AZURE_E2E_VALIDATE_ONLY=1`.
 
 Cost ~$1-5 for a single run. Total runtime ~20-40 min (provision + model download + inference + destroy).
 
@@ -461,7 +463,7 @@ Cost ~$1-5 for a single run. Total runtime ~20-40 min (provision + model downloa
 | Target | What it does |
 |---|---|
 | `make test-e2e-games` | Game E2E via pre-provisioned Azure endpoint (AZURE_BASE_URL). Skips if unset. |
-| `make test-e2e-games-provision` | Full GPU provision → game gen → run → compare → destroy. AZURE_PROVISION_E2E=1. |
+| `make test-e2e-games-provision AZURE_E2E_ENV_FILE=/tmp/general-ludd.env AZURE_E2E_VALIDATE_ONLY=0 GAME_E2E_TIMEOUT_SECS=3600` | Source the explicit env file, then stream full GPU provision → game gen → run → compare → destroy. Timeout must be ≥3600 seconds. |
 | `make test-e2e-azure` | Azure env-pointer E2E — model call + billing |
 | `make test-e2e-azure-provision` | Full deploy → inference → destroy |
 | `make test-e2e-providers` | All provider E2E (skips unconfigured) |
