@@ -1512,6 +1512,30 @@ e2e-audit-azure:
 e2e-latest-log:
 	@$(UV) run python scripts/e2e_log_capture.py --latest azure-provision
 
+# Stream Azure Activity Log for the test resource group — shows deployments, errors, events
+azure-stream-logs:
+	@. /tmp/general-ludd.env > /dev/null 2>&1; \
+	 SUB=$${ARM_SUBSCRIPTION_ID:-$$AZURE_SUBSCRIPTION_ID}; \
+	 echo "Streaming Activity Log for subscription $$SUB (last 30min, auto-refresh 30s)..."; \
+	 while true; do \
+	   az monitor activity-log list --subscription "$$SUB" --start-time "$$(date -u -v-30M '+%Y-%m-%dT%H:%M:%SZ')" \
+	     --query "[?contains(resourceGroupName,'gludd-gpu')].{Time:eventTimestamp,Op:operationName.value,Status:status.value,Resource:resourceId}" \
+	     --output table 2>/dev/null | head -40; \
+	   echo "--- $(date) ---"; \
+	   sleep 30; \
+	 done
+
+# Clean up orphaned E2E resource groups (from failed test runs)
+azure-cleanup-e2e:
+	@. /tmp/general-ludd.env > /dev/null 2>&1; \
+	 SUB=$${ARM_SUBSCRIPTION_ID:-$$AZURE_SUBSCRIPTION_ID}; \
+	 echo "Finding orphaned E2E resource groups..."; \
+	 az group list --subscription "$$SUB" --query "[?starts_with(name,'gludd-gpu')].name" -o tsv | while read rg; do \
+	   echo "Deleting $$rg..."; \
+	   az group delete --subscription "$$SUB" --name "$$rg" --yes --no-wait; \
+	 done; \
+	 echo "Cleanup initiated (deletes run async — check Azure Portal for completion)"
+
 test-games:
 	@$(UV) run python -m pytest tests/e2e/test_game_building_deepseek.py $(_XD) -v $(PYTEST_ARGS)
 
