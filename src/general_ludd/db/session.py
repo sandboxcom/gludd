@@ -118,37 +118,37 @@ def init_engine_from_config(config: dict[str, Any] | None = None) -> AsyncEngine
     url = _compose_db_url(cfg)
     if not url:
         url = get_default_db_url()
-    # W3.5 (M8/H18): general_ludd is SQLite-only. create_all and alembic
-    # stamp_head are SQLite-only and alembic.ini hardcodes a sqlite URL — a
-    # Postgres URL does not actually work. Refuse it loudly rather than boot
-    # into a half-broken state that silently corrupts on the first migration.
-    if not is_sqlite_url(url):
-        raise ValueError(
-            f"Unsupported database URL {url!r}: general_ludd is SQLite only. "
-            "Postgres is not supported (schema creation and migrations are "
-            "SQLite-only). Use a sqlite+aiosqlite:/// URL."
-        )
     engine = create_async_engine(url)
-    # ``create_async_engine`` does not create a file-backed SQLite database
-    # until its first connection.  Callers use engine construction as the
-    # provisioning boundary, so ensure the path exists immediately.
-    run_wal_pragmas(engine)
-    db_path = str(engine.url).replace("sqlite+aiosqlite:///", "")
-    if db_path:
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        if db_path not in (":memory:", ""):
-            Path(db_path).touch(exist_ok=True)
+    if is_sqlite_url(url):
+        # ``create_async_engine`` does not create a file-backed SQLite database
+        # until its first connection.  Callers use engine construction as the
+        # provisioning boundary, so ensure the path exists immediately.
+        run_wal_pragmas(engine)
+        db_path = str(engine.url).replace("sqlite+aiosqlite:///", "")
+        if db_path:
+            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+            if db_path not in (":memory:", ""):
+                Path(db_path).touch(exist_ok=True)
+    else:
+        logger.info(
+            "Initialized %s database engine; schema migrations must be applied before startup",
+            engine.dialect.name,
+        )
     return engine
 
 
 def run_read_only_pragma(engine: AsyncEngine) -> None:
-    if not is_sqlite_url(str(engine.url)):
+    dialect_name = engine.dialect.name
+    if dialect_name not in {"sqlite", "postgresql"}:
         return
 
     @event.listens_for(engine.sync_engine, "connect")
     def _set_query_only(dbapi_conn: Any, _connection_record: Any) -> None:
         cursor = dbapi_conn.cursor()
-        cursor.execute("PRAGMA query_only=ON")
+        if dialect_name == "sqlite":
+            cursor.execute("PRAGMA query_only=ON")
+        else:
+            cursor.execute("SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY")
         cursor.close()
 
 
@@ -157,18 +157,13 @@ def init_read_only_engine_from_config(config: dict[str, Any] | None = None) -> A
     url = _compose_db_url(cfg)
     if not url:
         url = get_default_db_url()
-    if not is_sqlite_url(url):
-        raise ValueError(
-            f"Unsupported database URL {url!r}: general_ludd is SQLite only. "
-            "Postgres is not supported (schema creation and migrations are "
-            "SQLite-only). Use a sqlite+aiosqlite:/// URL."
-        )
     engine = create_async_engine(url)
     run_wal_pragmas(engine)
     run_read_only_pragma(engine)
-    db_path = str(engine.url).replace("sqlite+aiosqlite:///", "")
-    if db_path:
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    if is_sqlite_url(url):
+        db_path = str(engine.url).replace("sqlite+aiosqlite:///", "")
+        if db_path:
+            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     return engine
 
 
@@ -194,18 +189,30 @@ async def ensure_tables(engine: AsyncEngine) -> None:
         logger.info("SQLite tables ensured for %s", engine.url)
 
 
+def _conflict_ignoring_insert(model: Any, dialect_name: str) -> Any:
+    """Return the dialect-native INSERT builder used for idempotent bootstrap."""
+    if dialect_name == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+
+        return postgresql_insert(model)
+    if dialect_name == "sqlite":
+        from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+        return sqlite_insert(model)
+    raise ValueError(f"Queue bootstrap does not support SQL dialect {dialect_name!r}")
+
+
 async def seed_initial_queues(session: AsyncSession) -> int:
     # Idempotent INSERT ... ON CONFLICT DO NOTHING. The prior check-then-insert
     # (get_by_name -> create) was a TOCTOU race on queues.queue_name: two xdist
     # workers both saw None and both INSERTed -> IntegrityError on the unique
     # constraint. A single statement with on_conflict_do_nothing makes the loser
     # a no-op, mirroring VariableNamespaceRepository.set_var (repository.py:683-708).
-    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-
+    dialect_name = session.get_bind().dialect.name
     count = 0
     for q in INITIAL_QUEUES:
         stmt = (
-            sqlite_insert(QueueModel)
+            _conflict_ignoring_insert(QueueModel, dialect_name)
             .values(
                 queue_name=q.queue_name,
                 queue_enabled=q.queue_enabled,

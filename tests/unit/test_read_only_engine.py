@@ -79,6 +79,8 @@ class TestReadOnlyFactoryIndependence:
 
 
 class TestReadOnlyEngineValidation:
-    def test_non_sqlite_url_refused(self):
-        with pytest.raises(ValueError, match="SQLite only"):
-            init_read_only_engine_from_config({"url": "postgresql+psycopg://localhost/db"})
+    def test_postgres_url_builds_read_only_engine(self):
+        engine = init_read_only_engine_from_config(
+            {"url": "postgresql+psycopg://localhost/db"}
+        )
+        assert engine.dialect.name == "postgresql"

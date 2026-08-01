@@ -77,6 +77,7 @@ An audit of this ledger against the source tree found:
 ## Active — In Progress (items being worked on right now)
 
 - [x] ACT-1 — Consolidate backlog into TASKS.md| evidence: TASKS.md contains consolidated ~78 items from 5 spec files | priority: high | effort: M | status: completed
+- [x] PG.1 — PostgreSQL storage-parity slice: async engine initialization, read-only session setup, and dialect-native initial queue seeding | evidence: red-first `test_postgres_storage_parity.py` 4 failed; then 72 focused unit + 1 focused e2e passed, 64-test coverage run passed with `db/session.py` at 79%, scoped lint/type/collection and task-ledger gates passed | priority: high | effort: M | status: completed
 
 ---
 

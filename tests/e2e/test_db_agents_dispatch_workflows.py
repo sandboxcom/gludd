@@ -169,9 +169,12 @@ class TestEngineLifecycle:
             assert os.path.exists(db_path)
             await engine.dispose()
 
-    async def test_init_engine_rejects_postgres(self):
-        with pytest.raises(ValueError, match="SQLite only"):
-            init_engine_from_config({"url": "postgresql+psycopg://localhost/test"})
+    async def test_init_engine_accepts_postgres(self):
+        engine = init_engine_from_config(
+            {"url": "postgresql+psycopg://localhost/test"}
+        )
+        assert engine.dialect.name == "postgresql"
+        await engine.dispose()
 
     async def test_init_engine_falls_back_to_default_on_empty_config(self):
         engine = init_engine_from_config({})

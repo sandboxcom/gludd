@@ -1,6 +1,14 @@
 # Postgres Migration Path & Multi-Worker Architecture
 
-Status: PLAN (gated on owner go-ahead — do NOT implement)
+Status: IMPLEMENTATION IN PROGRESS (owner go-ahead received 2026-08-01)
+
+The first bounded storage-parity slice is implemented: write and read-only
+SQLAlchemy async engines accept PostgreSQL URLs, PostgreSQL read-only sessions
+set the transaction default to read-only on connect, and initial queue seeding
+selects the native SQLite or PostgreSQL `INSERT ... ON CONFLICT` builder. This
+does **not** claim production readiness: migration execution, the remaining
+repository upserts, live PostgreSQL schema parity, and multi-worker claims stay
+open and must pass the gates below before the SQLite worker clamp is removed.
 
 ## Motivation
 
@@ -11,9 +19,10 @@ SQLite is the default with two hard limits:
 2. **No durability in containers.** SQLite files inside a container are lost on
    redeploy without a manually mounted persistent volume.
 
-The IPC layer (broker, write queue, writer subprocess) is already built. The hard
-block on Postgres (`init_engine_from_config` raises `ValueError` at `db/session.py:89`)
-is a deliberate safety gate — migrations and schema creation are SQLite-tested only.
+The IPC layer (broker, write queue, writer subprocess) is already built. Engine
+construction no longer hard-blocks PostgreSQL. Migrations and schema creation
+remain a separate fail-closed deployment prerequisite; `ensure_tables()` still
+creates tables only for SQLite.
 
 ## Current Architecture (Phase 1 — SQLite, IPC Ready)
 
@@ -28,7 +37,7 @@ Several code paths are SQLite-only and need Postgres branches:
 
 | Pattern | Locations | Postgres equivalent |
 |---------|-----------|---------------------|
-| `sqlite_insert().on_conflict_do_nothing()` | `repository.py` (4 sites), `session.py:161-184` | `postgresql_insert().on_conflict_do_nothing()` or native `INSERT ... ON CONFLICT DO NOTHING` |
+| `sqlite_insert().on_conflict_do_nothing()` | `repository.py` (4 remaining sites); initial queue seeding is dialect-safe | `postgresql_insert().on_conflict_do_nothing()` or native `INSERT ... ON CONFLICT DO NOTHING` |
 | `PRAGMA journal_mode=WAL` etc. | `session.py:47-56` | N/A (skip for Postgres; set `statement_timeout` etc. on connect) |
 | `PRAGMA query_only=ON` | `session.py:107-108` | Use read-only connection role / `SET SESSION default_transaction_read_only=on` |
 | `Base.metadata.create_all` | `session.py:151` | Replace with Alembic upgrade head for Postgres; `create_all` is dev-only |
@@ -37,18 +46,23 @@ Several code paths are SQLite-only and need Postgres branches:
 
 ## Migration Plan (5 Steps)
 
-### Step 1 — Un-gate Postgres URLs
+### Step 1 — Un-gate Postgres URLs ✅
 
-Remove the `ValueError` block from `init_engine_from_config` and
-`init_read_only_engine_from_config` (`db/session.py:88-93`, :118-123). Replace
-with a dialect-aware guard:
+The `ValueError` blocks have been removed from `init_engine_from_config` and
+`init_read_only_engine_from_config`. Engine creation remains connection-lazy;
+deployment must apply and verify migrations before the daemon starts.
 
-```python
-if not is_sqlite_url(url):
-    logger.warning("Postgres mode: migrations and schema creation must be "
-                   "verified against Postgres 16 before production use")
-    # No hard block; let the engine boot. Failures surface as connection errors.
-```
+Read-only PostgreSQL engines install `SET SESSION CHARACTERISTICS AS TRANSACTION
+READ ONLY` at connect time. A dedicated read-only database role remains the
+recommended defense in depth.
+
+### Long-lived operator evidence
+
+A [2019 Gunicorn issue about worker-local state](https://github.com/benoitc/gunicorn/issues/2082)
+records a maintainer's explanation that workers are separate processes and
+need external storage or messaging for shared state. That user-reported failure
+mode is why merely raising the Gunicorn worker count is not accepted here:
+PostgreSQL durability and fenced claim tests must land first.
 
 ### Step 2 — Alembic Against Postgres
 
@@ -336,7 +350,7 @@ Execute in order. Each item gates the next — do not skip ahead.
   ANALYZE;
   VACUUM ANALYZE;
   ```
-- [ ] **13. Seed queues.** The `QueueModel` bootstrap (`session.py:155-197`) uses `sqlite_insert().on_conflict_do_nothing()`. Run the Postgres equivalent:
+- [x] **13. Seed queues.** `seed_initial_queues()` now chooses the dialect-native SQLite or PostgreSQL insert builder and uses `ON CONFLICT (queue_name) DO NOTHING`. The SQL below remains an operator-side recovery reference:
   ```sql
   INSERT INTO queues (name, description, concurrency, active, created_at, updated_at)
   VALUES ('core', 'Default work queue', 5, true, now(), now()),
@@ -351,7 +365,7 @@ Execute in order. Each item gates the next — do not skip ahead.
 
 ### Post-Migration
 
-- [ ] **14. Un-gate Postgres in `session.py`.** Remove the `ValueError` blocks from `init_engine_from_config` (`session.py:88-93`) and `init_read_only_engine_from_config` (`session.py:118-123`). Replace with the dialect-aware guard from Step 1 of the Migration Plan.
+- [x] **14. Un-gate Postgres in `session.py`.** Both engine factories now accept `postgresql+psycopg://` URLs; focused tests cover explicit URL, structured host config, and read-only construction.
 - [ ] **15. Update `_clamp_workers_for_sqlite`.** In `cli.py:3345`: skip clamping when the engine URL dialect is `postgresql`. Set default workers to `min(4, os.cpu_count())`.
 - [ ] **16. Start daemon in Postgres mode and run smoke tests.** Boot with:
   ```bash
@@ -544,7 +558,7 @@ def assert_schema_parity(sqlite_url: str, pg_url: str) -> None:
 
 | File | Role |
 |------|------|
-| `src/general_ludd/db/session.py` | Engine factory + Postgres block (lines 88-93, 118-123) |
+| `src/general_ludd/db/session.py` | Dialect-aware engine factories + initial queue bootstrap |
 | `src/general_ludd/cli.py:3345` | Worker clamp for SQLite (`_clamp_workers_for_sqlite`) |
 | `src/general_ludd/db/migrations.py` | `get_alembic_config()` — needs `ALEMBIC_DB_URL` env var |
 | `alembic.ini` | Hardcoded SQLite URL — needs env var override |
