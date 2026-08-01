@@ -5,7 +5,7 @@ upload-artifact step.
 Catches the regression class where a PyInstaller build succeeds but the
 binary crashes at runtime (e.g. the "Missing base YAML definition file"
 ansible error that shipped in v0.1.0-beta.1). A broken binary that crashes
-on ``--version`` / ``--help`` must never reach the release artifact stage.
+on ``version`` / ``--help`` must never reach the release artifact stage.
 """
 
 from __future__ import annotations
@@ -93,8 +93,8 @@ class TestSmokeTestStepPerPlatform:
         combined = "\n".join(
             (s.get("run") or "") for s in _steps(build_workflow, job_name)
         )
-        assert "--version" in combined, (
-            f"build.yml job '{job_name}' smoke test must run `--version`"
+        assert re.search(r"(?:gludd(?:\.exe)?\s+version|gludd(?:\.exe)?\s+--version)", combined), (
+            f"build.yml job '{job_name}' smoke test must run the version command"
         )
         assert "--help" in combined, (
             f"build.yml job '{job_name}' smoke test must run `--help`"
