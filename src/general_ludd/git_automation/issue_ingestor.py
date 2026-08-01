@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from general_ludd.security.url_fetch import FetchPolicy, secure_fetch
+
 logger = logging.getLogger(__name__)
 
 
@@ -77,7 +79,6 @@ class GitHubIssueIngestor:
         import asyncio
         import json
         from urllib.parse import quote, urlencode
-        from urllib.request import Request, urlopen
 
         # Escape request-supplied owner/repo/label. Unescaped interpolation let
         # a value like label="a&state=closed" smuggle extra query params (and
@@ -93,17 +94,26 @@ class GitHubIssueIngestor:
         )
 
         def _blocking_fetch() -> list[dict[str, Any]] | None:
-            req = Request(url)
-            req.add_header("Accept", "application/vnd.github.v3+json")
-            req.add_header("User-Agent", "general-ludd-agent")
-            with urlopen(req, timeout=30) as resp:
-                data = json.loads(resp.read())
+            response = secure_fetch(
+                url,
+                headers={
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "general-ludd-agent",
+                },
+                policy=FetchPolicy(
+                    allowed_hosts=frozenset({"api.github.com"}),
+                    max_bytes=2 * 1024 * 1024,
+                    timeout_seconds=30,
+                    max_redirects=2,
+                ),
+            )
+            data = json.loads(response.content)
             if isinstance(data, list):
                 return data
             return []
 
         try:
-            # urlopen is a blocking network call; this coroutine runs on the
+            # The synchronous fetch adapter is a blocking call; this coroutine runs on the
             # daemon's tick path (loop.py awaits poll_issues), so run it in a
             # worker thread rather than freezing the event loop for up to the
             # 30s timeout on every poll.

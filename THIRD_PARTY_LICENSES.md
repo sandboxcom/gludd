@@ -40,6 +40,10 @@ Key runtime dependencies:
 - Prometheus Client (Apache-2.0) — metrics
 - Gunicorn (MIT) — WSGI server
 - hvac (Apache-2.0) — HashiCorp Vault client
+- safehttpx (Apache-2.0) — DNS-rebinding-resistant pinned HTTP transport
+  ([upstream license](https://github.com/gradio-app/safehttpx/blob/main/LICENSE));
+  Apache-2.0 is a permissive license compatible with this project's MIT
+  distribution, subject to retaining the upstream license and notices.
 
 ## Collected Prompts
 

@@ -669,8 +669,9 @@ class SecretsManager:
         # content-addressed stub when the registry is unreachable (e.g. in
         # offline test environments).
         import hashlib
-        import urllib.error
-        import urllib.request
+        from urllib.parse import urlsplit
+
+        from general_ludd.security.url_fetch import FetchPolicy, secure_fetch
 
         # Parse image_ref: registry/repo:tag or registry/repo (implies :latest)
         tag = "latest"
@@ -688,7 +689,7 @@ class SecretsManager:
         try:
             # Anonymous manifest HEAD to get the digest
             url = f"https://{registry}/v2/{repo}/manifests/{tag}"
-            req = urllib.request.Request(
+            response = secure_fetch(
                 url,
                 headers={
                     "Accept": (
@@ -697,12 +698,17 @@ class SecretsManager:
                     )
                 },
                 method="HEAD",
+                policy=FetchPolicy(
+                    allowed_hosts=frozenset({urlsplit(url).hostname or ""}),
+                    max_bytes=0,
+                    timeout_seconds=5,
+                    max_redirects=1,
+                ),
             )
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                digest: str = resp.headers.get("Docker-Content-Digest") or resp.headers.get("ETag", "")
-                if digest and digest.startswith("sha256:"):
-                    return digest
-        except (urllib.error.URLError, OSError, Exception):
+            digest = response.headers.get("docker-content-digest") or response.headers.get("etag", "")
+            if digest and digest.startswith("sha256:"):
+                return digest
+        except Exception:
             pass
 
         # Fallback: deterministic SHA256 based on image_ref — always differs

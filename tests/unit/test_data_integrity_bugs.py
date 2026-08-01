@@ -25,6 +25,7 @@ import pytest
 
 from general_ludd.git_automation.issue_ingestor import GitHubIssueIngestor
 from general_ludd.observability.run_history import RunHistoryRecorder
+from general_ludd.security.url_fetch import FetchResult
 
 
 class TestBug1Aliasing:
@@ -159,22 +160,11 @@ class TestBug4UrlInjection:
             label="a&state=closed",
         )
 
-        def _fake_urlopen(req: Any, timeout: int = 30) -> Any:
-            captured["url"] = req.full_url
+        def _fake_fetch(url: str, **kwargs: Any) -> FetchResult:
+            captured["url"] = url
+            return FetchResult(url=url, status_code=200, headers={}, content=b"[]")
 
-            class _Resp:
-                def __enter__(self_inner: Any) -> Any:
-                    return self_inner
-
-                def __exit__(self_inner: Any, *a: Any) -> None:
-                    return None
-
-                def read(self_inner: Any) -> bytes:
-                    return b"[]"
-
-            return _Resp()
-
-        with patch("urllib.request.urlopen", _fake_urlopen):
+        with patch("general_ludd.git_automation.issue_ingestor.secure_fetch", _fake_fetch):
             await ingestor._fetch_labeled_issues()
 
         url = captured["url"]
@@ -191,22 +181,11 @@ class TestBug4UrlInjection:
 
         ingestor = GitHubIssueIngestor(owner="o/../../evil", repo="r r")
 
-        def _fake_urlopen(req: Any, timeout: int = 30) -> Any:
-            captured["url"] = req.full_url
+        def _fake_fetch(url: str, **kwargs: Any) -> FetchResult:
+            captured["url"] = url
+            return FetchResult(url=url, status_code=200, headers={}, content=b"[]")
 
-            class _Resp:
-                def __enter__(self_inner: Any) -> Any:
-                    return self_inner
-
-                def __exit__(self_inner: Any, *a: Any) -> None:
-                    return None
-
-                def read(self_inner: Any) -> bytes:
-                    return b"[]"
-
-            return _Resp()
-
-        with patch("urllib.request.urlopen", _fake_urlopen):
+        with patch("general_ludd.git_automation.issue_ingestor.secure_fetch", _fake_fetch):
             await ingestor._fetch_labeled_issues()
 
         parts = urlsplit(captured["url"])
@@ -218,7 +197,7 @@ class TestBug4UrlInjection:
 class TestFetchOffloadsBlockingIO:
     """_fetch_labeled_issues must not block the event loop.
 
-    It is ``async def`` but previously called ``urlopen(..., timeout=30)``
+    It is ``async def`` but invokes the synchronous secure fetch adapter
     directly on the calling coroutine — a blocking network call. It runs on
     the daemon's tick path (``EventLoop`` awaits ``poll_issues`` each cycle),
     so a slow/hanging GitHub response would freeze the ENTIRE daemon loop,
@@ -228,26 +207,16 @@ class TestFetchOffloadsBlockingIO:
     """
 
     @pytest.mark.asyncio
-    async def test_slow_urlopen_does_not_starve_a_concurrent_task(self) -> None:
+    async def test_slow_fetch_does_not_starve_a_concurrent_task(self) -> None:
         ingestor = GitHubIssueIngestor(owner="o", repo="r")
         ticks: list[float] = []
 
-        def _slow_urlopen(req: Any, timeout: int = 30) -> Any:
+        def _slow_fetch(url: str, **kwargs: Any) -> FetchResult:
             # Blocking sleep on the calling thread — if this ran inline on
             # the event loop, no other coroutine could run for 0.3s.
             time.sleep(0.3)
 
-            class _Resp:
-                def __enter__(self_inner: Any) -> Any:
-                    return self_inner
-
-                def __exit__(self_inner: Any, *a: Any) -> None:
-                    return None
-
-                def read(self_inner: Any) -> bytes:
-                    return b"[]"
-
-            return _Resp()
+            return FetchResult(url=url, status_code=200, headers={}, content=b"[]")
 
         async def _ticker() -> None:
             # A concurrent coroutine that should keep making progress on
@@ -256,10 +225,10 @@ class TestFetchOffloadsBlockingIO:
                 await asyncio.sleep(0.05)
                 ticks.append(time.monotonic())
 
-        with patch("urllib.request.urlopen", _slow_urlopen):
+        with patch("general_ludd.git_automation.issue_ingestor.secure_fetch", _slow_fetch):
             await asyncio.gather(ingestor._fetch_labeled_issues(), _ticker())
 
-        # If the blocking urlopen ran directly on the event loop, the ticker
+        # If the blocking fetch ran directly on the event loop, the ticker
         # would be starved for the ~0.3s sleep and accumulate far fewer than
         # 6 ticks (likely 0-1, all bunched up after the sleep finally
         # returns). Offloaded to a worker thread, the loop stays free and
@@ -277,21 +246,11 @@ class TestFetchOffloadsBlockingIO:
             captured["func"] = func
             return func(*a, **kw)
 
-        def _fake_urlopen(req: Any, timeout: int = 30) -> Any:
-            class _Resp:
-                def __enter__(self_inner: Any) -> Any:
-                    return self_inner
-
-                def __exit__(self_inner: Any, *a: Any) -> None:
-                    return None
-
-                def read(self_inner: Any) -> bytes:
-                    return b"[]"
-
-            return _Resp()
+        def _fake_fetch(url: str, **kwargs: Any) -> FetchResult:
+            return FetchResult(url=url, status_code=200, headers={}, content=b"[]")
 
         with (
-            patch("urllib.request.urlopen", _fake_urlopen),
+            patch("general_ludd.git_automation.issue_ingestor.secure_fetch", _fake_fetch),
             patch("asyncio.to_thread", _fake_to_thread),
         ):
             result = await ingestor._fetch_labeled_issues()

@@ -16,66 +16,27 @@ import inspect
 
 import pytest
 
-# ── S12: web_search router bypasses WebRetriever ──────────────────────────
+# ── S12: web_search router uses the hardened outbound fetcher ─────────────
 
 
-class TestS12WebSearchBypassesRetriever:
-    def test_web_search_uses_bare_urllib_not_web_retriever(self) -> None:
-        """_web_search() uses urllib.request.urlopen directly, never WebRetriever."""
-        import ast
-
-        import general_ludd.routers.web_search as ws
-
-        source = inspect.getsource(ws)
-        module_ast = ast.parse(source)
-
-        class RetrieverVisitor(ast.NodeVisitor):
-            def __init__(self):
-                self.has_urlopen = False
-                self.has_web_retriever = False
-                self.has_is_url_blocked = False
-
-            def visit_Call(self, node):
-                if (
-                    isinstance(node.func, ast.Attribute)
-                    and isinstance(node.func.value, ast.Name)
-                    and node.func.value.id == "urllib"
-                    and node.func.attr == "request"
-                    and hasattr(node, "args")
-                ):
-                    for arg in node.args:
-                        if (
-                            isinstance(arg, ast.Call)
-                            and isinstance(arg.func, ast.Attribute)
-                            and arg.func.attr == "urlopen"
-                        ):
-                            self.has_urlopen = True
-                self.generic_visit(node)
-
-            def visit_Attribute(self, node):
-                if isinstance(node, ast.Attribute) and node.attr in (
-                    "WebRetriever",
-                    "is_url_blocked",
-                ):
-                    if node.attr == "WebRetriever":
-                        self.has_web_retriever = True
-                    if node.attr == "is_url_blocked":
-                        self.has_is_url_blocked = True
-                self.generic_visit(node)
-
-        visitor = RetrieverVisitor()
-        visitor.visit(module_ast)
-        # S12: The function does NOT route through WebRetriever or is_url_blocked
-        assert not visitor.has_web_retriever, "S12 FIXED: _web_search now references WebRetriever — update this test"
-        assert not visitor.has_is_url_blocked, "S12 FIXED: _web_search now calls is_url_blocked — update this test"
-
-    def test_web_search_function_imports_urllib(self) -> None:
-        """_web_search imports urllib.request directly, not retrieval.web."""
+class TestS12WebSearchUsesSafeFetcher:
+    def test_web_search_uses_central_secure_fetch(self) -> None:
+        """The router must not bypass destination and resource policy."""
         import general_ludd.routers.web_search as ws
 
         source = inspect.getsource(ws._web_search)
-        assert "urllib.request" in source or "urllib.parse" in source
-        assert "WebRetriever" not in source
+        assert "secure_fetch" in source
+        assert "urlopen" not in source
+
+    def test_web_search_has_explicit_destination_policy(self) -> None:
+        """DuckDuckGo access is host/scheme/bytes/time bounded."""
+        import general_ludd.routers.web_search as ws
+
+        source = inspect.getsource(ws._web_search)
+        assert "FetchPolicy" in source
+        assert "html.duckduckgo.com" in source
+        assert "max_bytes" in source
+        assert "timeout_seconds" in source
 
     def test_web_search_silent_fallback_on_exception(self) -> None:
         """_web_search returns [] on exception — swallowing real errors silently."""
@@ -84,8 +45,7 @@ class TestS12WebSearchBypassesRetriever:
 
         result = _web_search("test")
         assert isinstance(result, list)
-        # The function wraps urlopen in try/except Exception: return []
-        # This is the "silent swallow" gap from S12 spec.
+        # Search remains fail-soft when the external provider is unavailable.
 
 
 # ── S13: Permission-override has been fixed to fail-closed ─────────────────

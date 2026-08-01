@@ -13,7 +13,7 @@ import urllib.request
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, cast
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -477,21 +477,25 @@ class TestBrowserLoginFlowOAuth2:
                 def _inject_code(*args: object, **kwargs: object) -> None:
                     _CallbackHandler.captured_code = "test-oauth-code"
 
-                mock_response = MagicMock()
-                mock_response.__enter__ = lambda self: self
-                mock_response.__exit__ = lambda s, e, t, v: None
-                mock_response.read.return_value = json.dumps({
-                    "access_token": "gho-test-token-abc123",
-                    "token_type": "bearer",
-                    "scope": "repo,user",
-                }).encode()
+                from general_ludd.security.url_fetch import FetchResult
+
+                mock_response = FetchResult(
+                    url="https://github.com/login/oauth/access_token",
+                    status_code=200,
+                    headers={},
+                    content=json.dumps({
+                        "access_token": "gho-test-token-abc123",
+                        "token_type": "bearer",
+                        "scope": "repo,user",
+                    }).encode(),
+                )
 
                 with patch.object(
                     _CallbackHandler.done, "wait", return_value=True
                 ), patch("general_ludd.auth.browser_login._start_callback_server",
                          side_effect=_inject_code), \
                    patch("general_ludd.auth.browser_login._open_browser", return_value=None), \
-                   patch("general_ludd.auth.browser_login.urlopen", return_value=mock_response):
+                   patch("general_ludd.auth.browser_login.secure_fetch", return_value=mock_response):
                     token = flow.run(timeout=10)
                     assert token == "gho-test-token-abc123"
                     assert store.retrieve("github") == "gho-test-token-abc123"

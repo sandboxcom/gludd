@@ -8,7 +8,8 @@ from typing import Any
 
 import pytest
 
-from general_ludd.issue_sources.bitbucket_issues import BitbucketIssueSource
+from general_ludd.issue_sources.bitbucket_issues import BitbucketIssueSource, _default_transport
+from general_ludd.security.url_fetch import FetchResult
 
 
 class RecordingTransport:
@@ -36,6 +37,38 @@ class RecordingTransport:
         if self._responses:
             return self._responses.pop(0)
         return 200, {}
+
+
+def test_default_transport_uses_bounded_secure_fetch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_fetch(url: str, **kwargs: Any) -> FetchResult:
+        captured.update(url=url, **kwargs)
+        return FetchResult(
+            url=url,
+            status_code=403,
+            headers={},
+            content=b'{"error":{"message":"forbidden"}}',
+        )
+
+    monkeypatch.setattr(
+        "general_ludd.issue_sources.bitbucket_issues.secure_fetch", fake_fetch
+    )
+    status, payload = _default_transport(
+        "POST",
+        "https://api.bitbucket.org/2.0/repositories/o/r/issues",
+        {"Authorization": "Bearer token"},
+        {"title": "new"},
+        4.0,
+    )
+
+    assert status == 403
+    assert payload == {"error": {"message": "forbidden"}}
+    assert captured["method"] == "POST"
+    assert captured["policy"].allowed_hosts == frozenset({"api.bitbucket.org"})
+    assert captured["policy"].timeout_seconds == 4.0
 
 
 def _issues_payload() -> dict[str, Any]:

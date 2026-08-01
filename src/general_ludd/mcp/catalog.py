@@ -7,8 +7,11 @@ Smithery (api.smithery.ai), and Glama (glama.ai) for server discovery.
 from __future__ import annotations
 
 import logging
+from urllib.parse import urlencode
 
 from pydantic import BaseModel, Field, field_validator
+
+from general_ludd.security.url_fetch import FetchPolicy, secure_fetch
 
 logger = logging.getLogger(__name__)
 
@@ -124,23 +127,23 @@ class MCPCatalog:
         self, registry: str, query: str, limit: int
     ) -> list[MCPCatalogEntry]:
         import json
-        import urllib.parse
-        import urllib.request
-
         if "smithery.ai" in registry:
             url = "https://api.smithery.ai/servers"
             params: dict[str, str] = {"pageSize": str(min(limit, 100))}
             if query:
                 params["q"] = query
-            url = f"{url}?{urllib.parse.urlencode(params)}"
-            req = urllib.request.Request(url, headers={"Accept": "application/json"})
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                raw = resp.read(_REGISTRY_RESPONSE_MAX_BYTES + 1)
-                if len(raw) > _REGISTRY_RESPONSE_MAX_BYTES:
-                    raise ValueError(
-                        f"Smithery registry response exceeded {_REGISTRY_RESPONSE_MAX_BYTES}-byte cap"
-                    )
-                data = json.loads(raw.decode())
+            url = f"{url}?{urlencode(params)}"
+            response = secure_fetch(
+                url,
+                headers={"Accept": "application/json"},
+                policy=FetchPolicy(
+                    allowed_hosts=frozenset({"api.smithery.ai"}),
+                    max_bytes=_REGISTRY_RESPONSE_MAX_BYTES,
+                    timeout_seconds=10,
+                    max_redirects=2,
+                ),
+            )
+            data = json.loads(response.content.decode())
             entries: list[MCPCatalogEntry] = []
             for s in data.get("servers", []):
                 entries.append(self._harden_registry_entry(MCPCatalogEntry(
@@ -154,14 +157,17 @@ class MCPCatalog:
 
         if "registry.modelcontextprotocol.io" in registry:
             url = f"https://registry.modelcontextprotocol.io/v0.1/servers?limit={min(limit, 100)}"
-            req = urllib.request.Request(url, headers={"Accept": "application/json"})
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                raw = resp.read(_REGISTRY_RESPONSE_MAX_BYTES + 1)
-                if len(raw) > _REGISTRY_RESPONSE_MAX_BYTES:
-                    raise ValueError(
-                        f"MCP registry response exceeded {_REGISTRY_RESPONSE_MAX_BYTES}-byte cap"
-                    )
-                data = json.loads(raw.decode())
+            response = secure_fetch(
+                url,
+                headers={"Accept": "application/json"},
+                policy=FetchPolicy(
+                    allowed_hosts=frozenset({"registry.modelcontextprotocol.io"}),
+                    max_bytes=_REGISTRY_RESPONSE_MAX_BYTES,
+                    timeout_seconds=10,
+                    max_redirects=2,
+                ),
+            )
+            data = json.loads(response.content.decode())
             entries = []
             for s in data.get("servers", []):
                 name_val = s.get("name", "")

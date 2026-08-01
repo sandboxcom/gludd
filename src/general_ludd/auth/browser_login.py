@@ -48,7 +48,8 @@ from dataclasses import dataclass, field
 from http.server import HTTPServer
 from pathlib import Path
 from typing import Any, ClassVar
-from urllib.request import Request, urlopen
+
+from general_ludd.security.url_fetch import FetchPolicy, secure_fetch
 
 logger = logging.getLogger(__name__)
 
@@ -555,10 +556,21 @@ class BrowserLoginFlow:
             credentials = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
             headers["Authorization"] = f"Basic {credentials}"
 
-        req = Request(self._config.token_url, data=data, headers=headers, method="POST")
         try:
-            with urlopen(req, timeout=15) as resp:
-                body: dict[str, Any] = json.loads(resp.read().decode())
+            token_host = urllib.parse.urlsplit(self._config.token_url).hostname or ""
+            response = secure_fetch(
+                self._config.token_url,
+                method="POST",
+                headers=headers,
+                content=data,
+                policy=FetchPolicy(
+                    allowed_hosts=frozenset({token_host}),
+                    max_bytes=512 * 1024,
+                    timeout_seconds=15,
+                    max_redirects=2,
+                ),
+            )
+            body: dict[str, Any] = json.loads(response.content.decode())
         except Exception as exc:
             print(f"  Token exchange failed: {exc}", file=sys.stderr)
             return None

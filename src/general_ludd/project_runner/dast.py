@@ -24,11 +24,11 @@ import signal
 import subprocess
 import tempfile
 import time
-import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
 
+import httpx
 from pydantic import BaseModel, Field, model_validator
 
 from general_ludd.project_runner.profile import ProjectProfile
@@ -409,13 +409,15 @@ def _wait_health(
 ) -> bool:
     health_url = f"http://127.0.0.1:{port}{health_path}"
     deadline = time.monotonic() + startup_timeout_s
-    while time.monotonic() < deadline:
-        try:
-            urllib.request.urlopen(health_url, timeout=2)
-            logger.info("health check passed for %s", health_url)
-            return True
-        except (OSError, Exception):
-            time.sleep(1)
+    with httpx.Client(timeout=2, follow_redirects=False, trust_env=False) as client:
+        while time.monotonic() < deadline:
+            try:
+                response = client.get(health_url)
+                response.raise_for_status()
+                logger.info("health check passed for %s", health_url)
+                return True
+            except (OSError, httpx.HTTPError):
+                time.sleep(1)
     logger.warning("health check timed out for %s after %ds", health_url, startup_timeout_s)
     return False
 
