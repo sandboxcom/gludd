@@ -5,11 +5,9 @@ from unittest.mock import patch
 
 from general_ludd.db.session import _compose_db_url, init_engine_from_config
 
-# W3.5 (M8/H18): general_ludd is SQLite only. These tests verify the URL
-# COMPOSITION logic (`_compose_db_url`) directly — the composer still builds a
-# Postgres URL from host/port/etc, but `init_engine_from_config` then refuses any
-# non-SQLite URL (see test_single_worker_sqlite.py). So composition is tested at
-# the composer; engine construction is tested with SQLite.
+# These tests pin URL composition independently from engine construction.
+# PostgreSQL construction parity is covered by test_postgres_storage_parity.py;
+# SQLite remains the zero-configuration default.
 
 
 class TestDatabaseUrlComposition:

@@ -81,6 +81,7 @@ An audit of this ledger against the source tree found:
 - [ ] AZL.2 — Replace static work-item cost tiers with exact Azure Retail Prices meter selection and delayed billed-cost reconciliation | evidence: research contract recorded; implementation and calibrated live evidence pending | priority: high | effort: L | status: pending
 - [ ] MWK.1 — Implement durable PostgreSQL event/work transport with fenced cross-Gunicorn-worker claims and immediate readiness consumption | evidence: ADR complete; storage parity and process E2E pending | priority: high | effort: L | status: in_progress
 - [ ] FPX.1 — Prove every FPS fixture's menu, controls, gameplay transition, captured video, and pinned online-reference comparison on available Gludd compute | evidence: prompt/reference unit slices green; per-game live compute matrix pending | priority: high | effort: L | status: in_progress
+- [x] PG.1 — PostgreSQL storage-parity slice: async engine initialization, read-only session setup, and dialect-native initial queue seeding | evidence: red-first `test_postgres_storage_parity.py` 4 failed; then 72 focused unit + 1 focused e2e passed, 64-test coverage run passed with `db/session.py` at 79%, scoped lint/type/collection and task-ledger gates passed | priority: high | effort: M | status: completed
 
 ---
 

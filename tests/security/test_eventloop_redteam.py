@@ -8,9 +8,10 @@ it against regression. The tests that originally proved a BUG were marked
 removed and the tests now assert the FIXED behavior (and would turn red if the
 fix regressed).
 
-Environment fact under test: general_ludd is SQLite-only (db/session.py refuses
-non-sqlite URLs), so SELECT ... FOR UPDATE SKIP LOCKED is a no-op and every
-"claim" must be a guarded conditional UPDATE rather than a locked read.
+This suite deliberately exercises the default SQLite backend, where SELECT ...
+FOR UPDATE SKIP LOCKED is a no-op and every "claim" must be a guarded
+conditional UPDATE rather than a locked read. PostgreSQL engine construction is
+covered separately by the storage-parity tests.
 """
 
 from __future__ import annotations
