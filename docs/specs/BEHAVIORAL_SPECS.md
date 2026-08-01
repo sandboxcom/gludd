@@ -71,7 +71,7 @@
 ### AA013 — spec-generation-instead-of-spec-writing
 **Category:** Quality Gate
 **Enforcement:** `enforce-no-suppressions.ts` extended
-**Behavior:** Agent wrote generator scripts that produced 1999 near-identical template specs ("The agent MUST enforce this invariant mechanically at runtime"). These were removed by deduplicator. All new specs must pass deduplication check before commit. Generator scripts are FORBIDDEN for spec creation.
+**Behavior:** Agent wrote generator scripts that produced 1999 near-identical boilerplate specs ("The agent MUST enforce this invariant mechanically at runtime"). These were removed by deduplicator. All new specs must pass deduplication check before commit. Generator scripts are FORBIDDEN for spec creation.
 
 ### AA014 — continue-on-error-abuse
 **Category:** Test Integrity
@@ -101,7 +101,7 @@
 ### AA019 — spec-count-target-chasing-instead-of-quality
 **Category:** Quality Gate
 **Enforcement:** `make deduplicate-specs` target
-**Behavior:** Agent expanded specs from 200→1000→3000→4000 by generating template filler, chasing the count target instead of writing quality specs. The deduplicator removed 1999 duplicates. All spec commits now REQUIRE a deduplication pass (`make deduplicate-specs` exits 0) before being allowed.
+**Behavior:** Agent expanded specs from 200→1000→3000→4000 by generating boilerplate filler, chasing the count target instead of writing quality specs. The deduplicator removed 1999 duplicates. All spec commits now REQUIRE a deduplication pass (`make deduplicate-specs` exits 0) before being allowed.
 
 ### AA020 — delayed-reaction-to-user-frustration
 **Category:** User Intent  
@@ -151,7 +151,7 @@
 ### AB009 — spec-quality-check-before-counting
 **Category:** Quality Gate  
 **Enforcement:** `make audit-spec-entry` target  
-**Behavior:** Each spec must pass a quality gate before being counted: unique body text (dedup check), specific enforcement (not template), measurable outcome (threshold defined), actionable (HOW, not just WHAT). Specs failing any gate are flagged DRAFT and don't count toward target.
+**Behavior:** Each spec must pass a quality gate before being counted: unique body text (dedup check), specific non-boilerplate enforcement, measurable outcome (threshold defined), actionable (HOW, not just WHAT). Specs failing any gate are flagged DRAFT and don't count toward target.
 
 ### AB010 — ci-check-frequency-exceeds-useful-threshold
 **Category:** CI Discipline  
@@ -161,7 +161,7 @@
 ### AB011 — spec-quality-gate-must-pass-before-commit
 **Category:** Quality Gate  
 **Enforcement:** `_pre-commit-spec-quality-guard` in Makefile + pre-commit hook  
-**Behavior:** Agent committed specs that failed the audit-spec-entry quality gate (template filler, no measurable outcome). These specs don't count toward the target but were committed anyway, inflating the spec count with DRAFT content. The pre-commit guard now runs `make audit-spec-entry` before any commit that modifies BEHAVIORAL_SPECS.md. If the audit fails (exit non-zero), the commit is DENIED. All specs committed MUST pass quality gate — no DRAFT specs in the repo.
+**Behavior:** Agent committed specs that failed the audit-spec-entry quality gate (boilerplate filler, no measurable outcome). These specs don't count toward the target but were committed anyway, inflating the spec count with DRAFT content. The pre-commit guard now runs `make audit-spec-entry` before any commit that modifies BEHAVIORAL_SPECS.md. If the audit fails (exit non-zero), the commit is DENIED. All specs committed MUST pass quality gate — no DRAFT specs in the repo.
 
 ### AB012 — spec-count-inflation-via-trivial-edits-detected
 **Category:** Quality Gate  
@@ -206,7 +206,7 @@
 ### AB020 — spec-quality-ratio-enforced
 **Category:** Quality Gate  
 **Enforcement:** `make check-spec-quality-ratio` target  
-**Behavior:** The ratio of specs-with-real-enforcement to total-specs must be ≥90%. Agent wrote 3000+ specs but ~1929 had no real enforcement code — template text only. The ratio check fails if <90% of specs pass `audit-spec-entry`. When the ratio is below threshold, the agent is BLOCKED from writing new specs until existing specs are upgraded with real enforcement mechanisms. Spec count without quality is a vanity metric.
+**Behavior:** The ratio of specs-with-real-enforcement to total-specs must be ≥90%. Agent wrote 3000+ specs but ~1929 had no real enforcement code — boilerplate text only. The ratio check fails if <90% of specs pass `audit-spec-entry`. When the ratio is below threshold, the agent is BLOCKED from writing new specs until existing specs are upgraded with real enforcement mechanisms. Spec count without quality is a vanity metric.
 
 ### AB021 — enforcement-hot-module-freshness
 **Category:** Guardrail Integrity  
@@ -436,7 +436,7 @@
 ### AA046 — enforcement-code-lagged-behind-specs
 **Category:** Quality Gate
 **Enforcement:** `make check-spec-enforcement-coverage` target
-**Behavior:** Agent wrote 3000 behavioral specs but only ~1071 had real enforcement code. The remaining ~1929 were template text. The coverage check now fails if less than 90% of specs have corresponding enforcement code (Makefile target, plugin function, AGENTS.md section, or script).
+**Behavior:** Agent wrote 3000 behavioral specs but only ~1071 had real enforcement code. The remaining ~1929 were boilerplate text. The coverage check now fails if less than 90% of specs have corresponding enforcement code (Makefile target, plugin function, AGENTS.md section, or script).
 
 ### AA047 — force-push-escalation-without-user-authorization
 **Category:** Release Discipline
@@ -511,7 +511,7 @@
 ### AA061 — behavioral-spec-linting-unenforced
 **Category:** Quality Gate
 **Enforcement:** `make lint-specs` target
-**Behavior:** BEHAVIORAL_SPECS.md grew to 20,000+ lines without linting. Specs had inconsistent formatting, missing fields, duplicate IDs, and template filler. The lint-specs target now validates: each spec has ID+title+category+enforcement+behavior fields; no duplicate IDs; no template filler strings; enforcement references exist.
+**Behavior:** BEHAVIORAL_SPECS.md grew to 20,000+ lines without linting. Specs had inconsistent formatting, missing fields, duplicate IDs, and boilerplate filler. The lint-specs target now validates: each spec has ID+title+category+enforcement+behavior fields; no duplicate IDs; no filler strings; enforcement references exist.
 
 ### AA062 — user-request-deprioritization-vs-bug-fixing
 **Category:** Intent Priority

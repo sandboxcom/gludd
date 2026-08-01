@@ -36,17 +36,69 @@ FORBIDDEN_VAGUE = [
 ]
 
 DRAFT_MARKER = "### DRAFT_SPEC_"
+SPEC_HEADER_RE = re.compile(
+    r"^### (?P<id>[A-Z]{1,4}\d{3}) — (?P<title>.+)$", re.MULTILINE
+)
+ENFORCEMENT_FIELD_RE = re.compile(r"^\*\*Enforcement:\*\*\s*(.+)$", re.MULTILINE)
+BEHAVIOR_FIELD_RE = re.compile(r"^\*\*Behavior:\*\*\s*(.+)$", re.MULTILINE | re.DOTALL)
+
+
+def has_specific_enforcement(body: str) -> bool:
+    """Return whether the structured field names an implemented mechanism."""
+    match = ENFORCEMENT_FIELD_RE.search(body)
+    if not match:
+        return False
+    enforcement = match.group(1).strip()
+    if re.search(r"\b(?:none|tbd|todo|planned|proposal|future)\b", enforcement, re.IGNORECASE):
+        return False
+    return bool(
+        re.search(
+            r"(?:`[\w./-]+(?:\s+[\w=<>./-]+)*`|"
+            r"\.(?:ts|py|sh|yml|yaml|js|mjs)\b|"
+            r"\b(?:Makefile|AGENTS\.md|opencode\.json|plugin|hook|workflow|"
+            r"target|guard|prerequisite)\b)",
+            enforcement,
+            re.IGNORECASE,
+        )
+    )
+
+
+def has_measurable_outcome(body: str) -> bool:
+    """Accept quantitative limits or deterministic, observable verdicts."""
+    match = BEHAVIOR_FIELD_RE.search(body)
+    behavior = match.group(1) if match else ""
+    return bool(
+        re.search(
+            r"(?:\b\d+(?:\.\d+)?\s*(?:%|seconds?|minutes?|hours?|days?|"
+            r"pushes?|checks?|commits?|artifacts?|attempts?|files?|tests?|"
+            r"workers?|plugins?|sessions?|cycles?)\b|"
+            r"[<>]=?\s*\d+|[≥≤]\s*\d+|"
+            r"\b(?:no more than|at least|at most|exactly|maximum|minimum|"
+            r"threshold|cap(?:ped)?\s+(?:at|of)|zero|none|every|each|all|any|"
+            r"BLOCKED|DENIED|ABORT(?:ED)?|FORBIDDEN|MUST(?:\s+NOT)?|REQUIRED|"
+            r"requires?|rejects?|refuses?|prevents?|blocks?|fails?|flags?|"
+            r"exits?|records?|removes?|restores?|validates?|verifies?|"
+            r"checks?|detects?|catches?|classifies?|categorizes?|identifies?|"
+            r"warns?|labels?|mark(?:s|ed)?|matches?|compares?|scans?|tracks?|ensures?|"
+            r"accepts?|allows?|commits?|reverts?|runs?|prints?|cannot|never|"
+            r"automatically|until|"
+            r"per\s+(?:session|cycle|hour|day|push|CI))\b)",
+            behavior,
+            re.IGNORECASE,
+        )
+    )
 
 
 def parse_specs(text: str) -> list[tuple[str, str, str]]:
-    pattern = re.compile(r"^### (AB\d{3}|AA\d{3}) — (.+)$", re.MULTILINE)
     specs = []
-    for m in pattern.finditer(text):
-        spec_id = m.group(1)
-        title = m.group(2)
+    headings = list(SPEC_HEADER_RE.finditer(text))
+    for index, m in enumerate(headings):
+        spec_id = m.group("id")
+        if not re.fullmatch(r"(?:AA|AB)\d{3}", spec_id):
+            continue
+        title = m.group("title")
         start = m.end()
-        next_m = pattern.search(text, start)
-        end = next_m.start() if next_m else len(text)
+        end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
         body = text[start:end].strip()
         specs.append((spec_id, title, body))
     return specs
@@ -66,25 +118,11 @@ def check_spec_quality(spec_id: str, title: str, body: str) -> list[str]:
             violations.append(f"template filler detected: {tmpl!r}")
 
     # Gate 3: Has measurable outcome
-    has_measurable = re.search(
-        r"\b(\d+\s+(?:seconds?|minutes?|hours?|pushes?|checks?|commits?|artifacts?|attempts?)"
-        r"|no more than|at least|maximum|minimum|threshold|cap(?:ped)?\s+(?:at|of)|"
-        r"BLOCKED|DENIED|ABORT|FORBIDDEN|MUST NOT|REQUIRED"
-        r"|per\s+(?:session|cycle|hour|day|push|CI))\b",
-        body,
-        re.IGNORECASE,
-    )
-    if not has_measurable:
+    if not has_measurable_outcome(body):
         violations.append("no measurable outcome/threshold defined")
 
     # Gate 4: Has specific enforcement mechanism
-    has_enforcement = re.search(
-        r"\b(?:Makefile|plugin|\.opencode/|AGENTS\.md|scripts/|_guard|"
-        r"enforce-|\.ts|\.py|\.sh|make\s+[\w-]+)\b",
-        body,
-        re.IGNORECASE,
-    )
-    if not has_enforcement:
+    if not has_specific_enforcement(body):
         violations.append("no specific enforcement mechanism referenced")
 
     # Gate 5: Not vague

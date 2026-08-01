@@ -14,17 +14,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SPECS_FILE = ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md"
 
-SPEC_RE = re.compile(r"^### (A[AB]\d{3}) — (.+)$", re.MULTILINE)
+SPEC_RE = re.compile(r"^### (?P<id>[A-Z]{1,4}\d{3}) — (?P<title>.+)$", re.MULTILINE)
 ENFORCEMENT_RE = re.compile(r"\*\*Enforcement:\*\*\s*(.+)$", re.MULTILINE)
 
 TARGET_THRESHOLD = 0.90
 REAL_ENFORCEMENT_INDICATORS = [
     r"\.(?:ts|py|sh|yml|yaml|js|mjs)",
     r"`make\s+[\w-]+`",
+    r"`[\w./-]+(?:\s+[\w=<>./-]+)*`",
     r"AGENTS\.md",
     r"opencode\.json",
     r"\.github/workflows/",
-    r"Makefile\s+(?:target|guard|prerequisite)",
+    r"\b(?:Makefile|plugin|hook|workflow|target|guard|prerequisite)\b",
 ]
 
 
@@ -35,19 +36,23 @@ def has_real_enforcement(body: str) -> bool:
     if not enf_match:
         return False
     enf_text = enf_match.group(1)
-    for indicator in REAL_ENFORCEMENT_INDICATORS:
-        if re.search(indicator, enf_text, re.IGNORECASE):
-            return True
-    return False
+    if re.search(r"\b(?:none|tbd|todo|planned|proposal|future)\b", enf_text, re.IGNORECASE):
+        return False
+    return any(
+        re.search(indicator, enf_text, re.IGNORECASE)
+        for indicator in REAL_ENFORCEMENT_INDICATORS
+    )
 
 
 def parse_specs(text: str) -> list[tuple[str, str]]:
     specs = []
-    for m in SPEC_RE.finditer(text):
+    headings = list(SPEC_RE.finditer(text))
+    for index, m in enumerate(headings):
+        if not re.fullmatch(r"(?:AA|AB)\d{3}", m.group("id")):
+            continue
         start = m.end()
-        next_m = SPEC_RE.search(text, start)
-        end = next_m.start() if next_m else len(text)
-        specs.append((m.group(1), text[start:end].strip()))
+        end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
+        specs.append((m.group("id"), text[start:end].strip()))
     return specs
 
 
