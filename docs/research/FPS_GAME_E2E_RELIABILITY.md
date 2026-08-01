@@ -107,6 +107,29 @@ metrics, publish all component scores, and use thresholds calibrated on known
 positive and deliberately broken fixtures. No threshold may be lowered merely
 to make generated output pass.
 
+## SSIM scale and numerical invariants
+
+The local game suite reproduced a backend failure on the macOS/Python 3.14
+dependency set: scikit-image returned approximately zero for two identical
+600x800 RGB frames and `1.0` for black versus white frames. The project now
+tests those identity and high-error invariants directly instead of trusting a
+third-party scalar solely because it is finite.
+
+This also addresses a long-lived upstream accuracy concern. The scikit-image
+maintainers' [large-image SSIM discussion][skimage-downsample] records that the
+original SSIM preprocessing average-pools by
+`max(1, round(min(height, width) / 256))`; the reporter measured substantially
+better human-ranking correlation after that preprocessing. A separate operator
+report found large disagreement between scikit-image and the original MATLAB
+implementation ([scikit-image issue 4278][skimage-matlab]). Gludd therefore
+applies the documented average-pooling factor before local SSIM, returns `1.0`
+for byte-identical frames, and uses a stable global SSIM only when the backend
+is non-finite or claims near-identity despite normalized pixel error of at
+least 25%. This is a fail-closed sanity path, not a lower acceptance threshold.
+
+The call still specifies the 8-bit `data_range=255` and RGB `channel_axis`, as
+required by the [scikit-image metric contract][skimage-ssim-api].
+
 ## Efficiency and failure ordering
 
 The cheapest deterministic checks run first: environment shape, optional
@@ -123,6 +146,9 @@ infrastructure failure.
 [pygame-headless]: https://www.pygame.org/wiki/HeadlessNoWindowsNeeded
 [pygame-release]: https://github.com/pygame/pygame/releases
 [sdl-driver]: https://wiki.libsdl.org/SDL2/SDL_HINT_VIDEODRIVER
+[skimage-downsample]: https://github.com/scikit-image/scikit-image/issues/5192
+[skimage-matlab]: https://github.com/scikit-image/scikit-image/issues/4278
+[skimage-ssim-api]: https://scikit-image.org/docs/stable/api/skimage.metrics.html#skimage.metrics.structural_similarity
 [ytdlp-403]: https://github.com/yt-dlp/yt-dlp/issues/14138
 [ytdlp-known]: https://github.com/yt-dlp/yt-dlp/issues/3766
 [ytdlp-sections]: https://github.com/yt-dlp/yt-dlp/issues/15036

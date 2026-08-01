@@ -54,6 +54,15 @@ class TestSSIM:
         result = compute_ssim(frame_a, frame_b)
         assert result > 0.9, f"SSIM={result} for near-identical frames"
 
+    @pytest.mark.skipif(not _HAS_CV2, reason="opencv-python not installed")
+    def test_ssim_is_stable_after_gameplay_resize(self) -> None:
+        mid = resize_frames([_make_frame(64, 64, 128)])[0]
+        black = resize_frames([_make_frame(64, 64, 0)])[0]
+        white = resize_frames([_make_frame(64, 64, 255)])[0]
+
+        assert compute_ssim(mid, mid.copy()) > 0.95
+        assert compute_ssim(black, white) < 0.5
+
 
 class TestResizeFrames:
     @pytest.mark.skipif(not _HAS_CV2, reason="opencv-python not installed")
@@ -68,6 +77,16 @@ class TestResizeFrames:
     def test_resize_empty_frames(self) -> None:
         result = resize_frames([], target_size=(80, 60))
         assert result == []
+
+    @pytest.mark.skipif(not _HAS_CV2, reason="opencv-python not installed")
+    def test_resize_preserves_constant_pixels_without_aliasing(self) -> None:
+        frames = [_make_frame(64, 64, 0), _make_frame(64, 64, 255)]
+
+        resized = resize_frames(frames, target_size=(80, 60))
+
+        assert np.all(resized[0] == 0), np.unique(resized[0])
+        assert np.all(resized[1] == 255), np.unique(resized[1])
+        assert not np.shares_memory(resized[0], resized[1])
 
 
 class TestMediaAdapters:
@@ -261,7 +280,7 @@ class TestCompareGameplay:
         gen = [_make_frame(64, 64, 128) for _ in range(10)]
         ref = [_make_frame(64, 64, 128) for _ in range(10)]
         result = compare_gameplay(gen, ref, threshold=0.5)
-        assert result["pass_threshold"] is True
+        assert result["pass_threshold"] is True, result
         assert result["pass"] is True
         assert result["frame_count"] == 10
         assert isinstance(result["per_frame_ssim"], list)
@@ -271,7 +290,7 @@ class TestCompareGameplay:
         gen = [_make_frame(64, 64, 0) for _ in range(10)]
         ref = [_make_frame(64, 64, 255) for _ in range(10)]
         result = compare_gameplay(gen, ref, threshold=0.5)
-        assert result["pass_threshold"] is False
+        assert result["pass_threshold"] is False, result
         assert result["pass"] is False
 
     def test_compare_gameplay_empty(self) -> None:

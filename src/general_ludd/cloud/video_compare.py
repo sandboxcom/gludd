@@ -267,6 +267,45 @@ def resize_frames(
     return resized
 
 
+def _average_pool_for_ssim(frame: NDArray[np.float64], factor: int) -> NDArray[np.float64]:
+    """Average-pool spatial axes by an integer factor without mixing channels."""
+    if factor <= 1:
+        return frame
+    height = (frame.shape[0] // factor) * factor
+    width = (frame.shape[1] // factor) * factor
+    cropped = frame[:height, :width]
+    return cast(
+        NDArray[np.float64],
+        cropped.reshape(
+            height // factor,
+            factor,
+            width // factor,
+            factor,
+            frame.shape[2],
+        ).mean(axis=(1, 3)),
+    )
+
+
+def _global_ssim(frame_a: NDArray[np.float64], frame_b: NDArray[np.float64]) -> float:
+    """Numerically stable global SSIM used when a local backend violates invariants."""
+    mean_a = float(np.mean(frame_a))
+    mean_b = float(np.mean(frame_b))
+    centered_a = frame_a - mean_a
+    centered_b = frame_b - mean_b
+    variance_a = float(np.mean(centered_a * centered_a))
+    variance_b = float(np.mean(centered_b * centered_b))
+    covariance = float(np.mean(centered_a * centered_b))
+    luminance_stabilizer = (0.01 * 255.0) ** 2
+    contrast_stabilizer = (0.03 * 255.0) ** 2
+    numerator = (2.0 * mean_a * mean_b + luminance_stabilizer) * (
+        2.0 * covariance + contrast_stabilizer
+    )
+    denominator = (mean_a**2 + mean_b**2 + luminance_stabilizer) * (
+        variance_a + variance_b + contrast_stabilizer
+    )
+    return float(np.clip(numerator / denominator, 0.0, 1.0))
+
+
 def compute_ssim(frame_a: Frame, frame_b: Frame) -> float:
     """Compute Structural Similarity Index between two frames.
 
@@ -282,16 +321,34 @@ def compute_ssim(frame_a: Frame, frame_b: Frame) -> float:
     if frame_a.shape != frame_b.shape:
         return 0.0
 
+    if np.array_equal(frame_a, frame_b):
+        return 1.0
+
     if structural_similarity is not None and frame_a.ndim == 3 and frame_a.shape[2] == 3:
+        float_a = frame_a.astype(np.float64)
+        float_b = frame_b.astype(np.float64)
+        pooling_factor = max(1, round(min(frame_a.shape[:2]) / 256))
+        pooled_a = _average_pool_for_ssim(float_a, pooling_factor)
+        pooled_b = _average_pool_for_ssim(float_b, pooling_factor)
         try:
             val: float = structural_similarity(
-                frame_a.astype(np.float64),
-                frame_b.astype(np.float64),
+                pooled_a,
+                pooled_b,
                 data_range=255.0,
                 channel_axis=2,
-                win_size=min(7, min(frame_a.shape[0], frame_a.shape[1]) or 7),
+                win_size=min(7, min(pooled_a.shape[0], pooled_a.shape[1]) or 7),
             )
-            return val
+            result = float(val)
+            if not np.isfinite(result):
+                return _global_ssim(pooled_a, pooled_b)
+            if result > 0.75:
+                normalized_mse = float(np.mean((pooled_a - pooled_b) ** 2)) / (255.0**2)
+                if normalized_mse >= 0.25:
+                    logger.warning(
+                        "SSIM backend violated high-error invariant; using stable global SSIM"
+                    )
+                    return _global_ssim(pooled_a, pooled_b)
+            return float(np.clip(result, 0.0, 1.0))
         except (ValueError, RuntimeError):
             pass
 
