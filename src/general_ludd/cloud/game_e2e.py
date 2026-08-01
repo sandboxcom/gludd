@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from general_ludd.cloud.game_generation import normalize_generated_python
 from general_ludd.cloud.video_compare import REFERENCE_VIDEO_SPECS, compare_gameplay_to_reference
 
 if TYPE_CHECKING:
@@ -210,10 +211,7 @@ class GameGenerator:
             estimated_cost=0.0,
             budget_remaining=5.0,
         )
-        content = getattr(response, "content", "")
-        if not content:
-            raise RuntimeError("LLM returned empty response")
-        return _extract_python_code(str(content))
+        return normalize_generated_python(response)
 
     @staticmethod
     def validate_game_code(code: str, spec: GameSpec | None = None) -> bool:
@@ -288,16 +286,6 @@ class GameGenerationCache:
         self._generated[key] = generated
         self.miss_count += 1
         return generated
-
-
-def _extract_python_code(content: str) -> str:
-    """Extract Python code from an LLM response, stripping markdown fences."""
-    import re
-
-    fence = re.search(r"```(?:python)?\s*\n(.*?)```", content, re.DOTALL)
-    if fence:
-        return fence.group(1).strip()
-    return content.strip()
 
 
 _PYGAME_KEY_CONTROLS: dict[str, str] = {

@@ -114,6 +114,21 @@ class TestFrameComparatorUnit:
 
 
 class TestGameGeneratorUnit:
+    def test_generate_game_normalizes_structured_provider_content(self) -> None:
+        code = "import pygame\npygame.init()\nwhile True:\n    pygame.event.get()\n"
+        blocks = [{"type": "text", "text": f"```python\n{code}```"}]
+
+        class Gateway:
+            def call_model(self, *args: Any, **kwargs: Any) -> SimpleNamespace:
+                return SimpleNamespace(
+                    content=str(blocks),
+                    raw_response=SimpleNamespace(content=blocks),
+                )
+
+        generator = GameGenerator(cast(Any, Gateway()))
+
+        assert generator.generate_game(GAME_SPECS[0]) == code.strip()
+
     def test_validate_valid_code(self) -> None:
         gen = GameGenerator(None)  # type: ignore[arg-type]
         code = """

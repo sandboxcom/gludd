@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -124,6 +125,17 @@ pygame.quit()
 
 
 class TestGenerateGameCode:
+    def test_generate_game_code_normalizes_structured_provider_content(self) -> None:
+        code = "import pygame\npygame.init()\nwhile True:\n    pygame.event.get()\n"
+        blocks = [{"type": "output_text", "text": f"```Python\n{code}```"}]
+        gateway = MagicMock()
+        gateway.call_model.return_value = SimpleNamespace(
+            content=str(blocks),
+            raw_response=SimpleNamespace(content=blocks),
+        )
+
+        assert generate_game_code(gateway, "doom_hallway") == code.strip()
+
     def test_generate_game_code_requires_gateway(self) -> None:
         with pytest.raises(ValueError, match="ModelGateway"):
             generate_game_code(None, "doom_hallway")
