@@ -113,7 +113,7 @@ def _esbuild_bundle(plugin_name: str) -> Path:
         f"--outfile={out}",
     ]
     attempts = [
-        [str(ROOT / "node_modules" / ".bin" / "esbuild"), *args],
+        [str(ROOT / ".opencode" / "node_modules" / ".bin" / "esbuild"), *args],
         ["esbuild", *args],
         ["npx", "--yes", "esbuild", *args],
     ]

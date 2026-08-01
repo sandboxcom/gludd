@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 *.pyo
 .venv/
+node_modules/
 .gludd/
 _run_test_local_memory.py
 .pytest_cache/

@@ -1,6 +1,12 @@
 {
+  "name": "gludd-opencode-tools",
+  "version": "0.0.0",
+  "private": true,
   "type": "module",
   "dependencies": {
     "@opencode-ai/plugin": "1.18.5"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.1"
   }
 }

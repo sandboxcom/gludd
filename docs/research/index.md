@@ -11,6 +11,7 @@ Research documents for model routing, enumeration, compaction, and RAG.
 | [Model Routing Prior Art](model_routing_prior_art.md) | Model routing prior art |
 | [RAG Routing Research](RAG_ROUTING_RESEARCH_2026-06-23.md) | RAG routing research 2026-06-23 |
 | [Compaction Models](compaction_models.md) | Compaction models |
+| [Cross-platform esbuild supply chain](NODE_ESBUILD_CROSS_PLATFORM_CI.md) | Reproducible native Node tooling, public lock provenance, and CI controls |
 
 ### Model Weights
 

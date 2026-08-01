@@ -129,6 +129,11 @@ jobs:
         env:
           GLUDD_PSK: ""
 
+      - name: Install locked Node build dependencies
+        run: make node-deps-sync NODE_DEPS_VALIDATE_ONLY=0 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org
+        env:
+          GLUDD_PSK: ""
+
       - name: Build hot-reload modules
         # Auto-build hot-reload JS modules from current plugin .ts source so CI
         # always tests with the freshest plugin code.  Ensures enforcement

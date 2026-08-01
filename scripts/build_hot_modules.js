@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 
 const fs = require("node:fs");
+const { createRequire } = require("node:module");
 const path = require("node:path");
 const vm = require("node:vm");
 const { spawnSync } = require("node:child_process");
 const { pathToFileURL } = require("node:url");
-const esbuild = require("esbuild");
+const opencodeRequire = createRequire(path.resolve(__dirname, "..", ".opencode", "package.json"));
+const esbuild = opencodeRequire("esbuild");
 
 const PLUGIN_DIR = path.resolve(__dirname, "..", ".opencode", "plugin");
 const OUT_DIR = "/tmp";

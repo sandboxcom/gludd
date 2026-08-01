@@ -10,6 +10,10 @@ GLUDD_TASK_TIMEOUT ?= 300
 GATE_POLL_INTERVAL ?= 60
 INTERVAL ?= 300
 COUNT ?= 1
+NODE_DEPS_NPM_USERCONFIG ?= /dev/null
+NODE_DEPS_NPM_CACHE ?= /tmp/gludd-npm-cache-public-v1
+NODE_DEPS_NPM_REGISTRY ?= https://registry.npmjs.org
+NODE_DEPS_AUDIT_LEVEL ?= moderate
 # Make children emit deterministic, non-interactive logs even when the host's
 # terminal emulator has no terminfo entry inside a worker or CI environment.
 export TERM := dumb
@@ -66,7 +70,7 @@ endif
 PYTEST_VERBOSITY ?= -v
 
 .PHONY: \
-        init sync install-pip lint lint-files lint-fix test test-unit test-unit-shards test-specific test-files test-count test-integration test-e2e \
+        init sync relock node-deps-sync node-deps-relock node-deps-audit install-pip lint lint-files lint-fix test test-unit test-unit-shards test-specific test-files test-count test-integration test-e2e \
          test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg test-bg-runner \
          test-games game-audit gen-mcp-tools gen-mcp-tool-ref mcp-docs-check \
         typecheck setup-dirs setup-venv clean healthcheck \
@@ -148,6 +152,9 @@ help:
 	@echo "  --- Setup ---"
 	@echo "  init                  Set up project (dirs + deps)"
 	@echo "  sync                  Sync uv dependencies"
+	@echo "  node-deps-sync        Install locked Node deps (NODE_DEPS_VALIDATE_ONLY, NODE_DEPS_NPM_USERCONFIG, NODE_DEPS_NPM_CACHE, NODE_DEPS_NPM_REGISTRY)"
+	@echo "  node-deps-relock      Regenerate Node lock (NODE_DEPS_VALIDATE_ONLY, NODE_DEPS_NPM_USERCONFIG, NODE_DEPS_NPM_CACHE, NODE_DEPS_NPM_REGISTRY)"
+	@echo "  node-deps-audit       Audit locked Node deps (plus NODE_DEPS_AUDIT_LEVEL=low|moderate|high|critical)"
 	@echo "  bootstrap             init + lint + test + healthcheck"
 	@echo "  install-hooks         Install pre-commit hooks (secrets, lint, collect)"
 	@echo "  install-bats          Install bats-core via Homebrew"
@@ -207,7 +214,7 @@ help:
 	@echo "  sast                  Run bandit SAST"
 	@echo "  sbom                  Generate CycloneDX SBOM"
 	@echo "  pip-audit             Audit dependencies for vulnerabilities"
-	@echo "  security              Full security: sast + sbom + pip-audit"
+	@echo "  security              Full security: sast + sbom + Python/Node dependency audits"
 	@echo "  test-unit             Unit tests only"
 	@echo "  test-unit-shards      Unit tests in bounded serial shards (SHARDS=12 SHARD=1)"
 	@echo "  test-integration      Integration tests"
@@ -321,7 +328,7 @@ help:
 	@echo "  secrets-baseline      Rebuild .secrets.baseline"
 	@echo "  scan-secrets          Alias for secrets-scan"
 	@echo "  scan-secrets-baseline Alias for secrets-baseline"
-	@echo "  security-audit        Comprehensive: secrets + sast + pip-audit + backlog gate"
+	@echo "  security-audit        Comprehensive: secrets + sast + Python/Node audits + backlog gate"
 	@echo "  clean-artifacts       Clean build artifacts, caches, temp files (replaces direct rm)"
 	@echo "  health-check          Verify imports and basic system health"
 	@echo "  clean-untracked       Remove reinvention-of-wheel files"
@@ -536,6 +543,39 @@ sync:
 relock:
 	@$(UV) lock
 	@$(UV) sync
+
+node-deps-sync:
+	@if [ "$(NODE_DEPS_VALIDATE_ONLY)" = "1" ]; then \
+		test -f .opencode/package.json && test -f .opencode/package-lock.json; \
+		node -e 'const p=require("./.opencode/package.json"),l=require("./.opencode/package-lock.json"); if (!p.devDependencies?.esbuild || l.packages?.[""]?.devDependencies?.esbuild !== p.devDependencies.esbuild) process.exit(1)'; \
+		echo "NODE_DEPS_VALIDATED lock=.opencode/package-lock.json"; \
+	else \
+		NPM_CONFIG_USERCONFIG="$(NODE_DEPS_NPM_USERCONFIG)" NPM_CONFIG_CACHE="$(NODE_DEPS_NPM_CACHE)" NPM_CONFIG_REGISTRY="$(NODE_DEPS_NPM_REGISTRY)" npm ci --prefix .opencode --no-audit --no-fund; \
+	fi
+
+node-deps-relock:
+	@if [ "$(NODE_DEPS_VALIDATE_ONLY)" = "1" ]; then \
+		test -f .opencode/package.json && test -f .opencode/package-lock.json; \
+		node -e 'const p=require("./.opencode/package.json"),l=require("./.opencode/package-lock.json"); if (!p.devDependencies?.esbuild || l.packages?.[""]?.devDependencies?.esbuild !== p.devDependencies.esbuild) process.exit(1)'; \
+		echo "NODE_DEPS_RELOCK_VALIDATED lock=.opencode/package-lock.json"; \
+	else \
+		LOCK_TMP="$$(mktemp -d /tmp/gludd-node-lock.XXXXXX)"; \
+		LOCK_TMP="$$(cd "$$LOCK_TMP" && pwd -P)"; \
+		trap 'rm -rf "$$LOCK_TMP"' EXIT HUP INT TERM; \
+		cp .opencode/package.json "$$LOCK_TMP/package.json"; \
+		NPM_CONFIG_USERCONFIG="$(NODE_DEPS_NPM_USERCONFIG)" NPM_CONFIG_CACHE="$(NODE_DEPS_NPM_CACHE)" NPM_CONFIG_REGISTRY="$(NODE_DEPS_NPM_REGISTRY)" npm install --prefix "$$LOCK_TMP" --package-lock-only --no-audit --no-fund; \
+		cp "$$LOCK_TMP/package-lock.json" .opencode/package-lock.json; \
+	fi
+
+node-deps-audit:
+	@case "$(NODE_DEPS_AUDIT_LEVEL)" in low|moderate|high|critical) ;; *) echo "NODE_DEPS_AUDIT_LEVEL must be low, moderate, high, or critical"; exit 2;; esac
+	@if [ "$(NODE_DEPS_VALIDATE_ONLY)" = "1" ]; then \
+		test -f .opencode/package.json && test -f .opencode/package-lock.json; \
+		node -e 'const p=require("./.opencode/package.json"),l=require("./.opencode/package-lock.json"); if (!p.devDependencies?.esbuild || l.packages?.[""]?.devDependencies?.esbuild !== p.devDependencies.esbuild) process.exit(1)'; \
+		echo "NODE_DEPS_AUDIT_VALIDATED level=$(NODE_DEPS_AUDIT_LEVEL)"; \
+	else \
+		NPM_CONFIG_USERCONFIG="$(NODE_DEPS_NPM_USERCONFIG)" NPM_CONFIG_CACHE="$(NODE_DEPS_NPM_CACHE)" NPM_CONFIG_REGISTRY="$(NODE_DEPS_NPM_REGISTRY)" npm audit --prefix .opencode --audit-level="$(NODE_DEPS_AUDIT_LEVEL)"; \
+	fi
 
 install-pip:
 	@$(PYTHON) -m venv .venv
@@ -3782,6 +3822,8 @@ security-audit:
 	@$(MAKE) --no-print-directory sast
 	@echo "=== SECURITY AUDIT: pip-audit (gating) ==="
 	@$(MAKE) --no-print-directory pip-audit-gate
+	@echo "=== SECURITY AUDIT: npm audit (gating) ==="
+	@$(MAKE) --no-print-directory node-deps-audit NODE_DEPS_VALIDATE_ONLY=0 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org NODE_DEPS_AUDIT_LEVEL=moderate
 	@echo "=== SECURITY AUDIT: security backlog gate ==="
 	@$(MAKE) --no-print-directory security-backlog-gate
 	@echo "=== SECURITY AUDIT: PASSED ==="
@@ -5506,7 +5548,7 @@ pip-upgrade:
 security-backlog-gate:
 	@$(UV) run python -m general_ludd.security.security_backlog
 
-security: sast sbom pip-audit security-backlog-gate
+security: sast sbom pip-audit node-deps-audit security-backlog-gate
 
 ci-precheck:
 	@$(UV) run python scripts/ci_precheck.py
