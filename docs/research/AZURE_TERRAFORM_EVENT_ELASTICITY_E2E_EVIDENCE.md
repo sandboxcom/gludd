@@ -275,6 +275,10 @@ RAM charges ([Container Apps pricing][azure-container-apps-pricing]), while the
 GPU overview confirms per-second billing and scale to zero
 ([serverless GPU overview][azure-serverless-gpu]).
 
+The API choice, delayed-data states, resource identity, ancillary ledger, and
+cohort acceptance formulas are specified in the
+[Azure billed-cost reconciliation design](AZURE_BILLED_COST_RECONCILIATION_DESIGN.md).
+
 ## Live E2E acceptance matrix
 
 The Azure environment pointer may be supplied to the existing make target, but
