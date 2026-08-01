@@ -82,7 +82,6 @@ fail_on_verify_mismatch: false
 
 # ── Batch push ───────────────────────────────────────────────────────────────
 threshold: 5
-force: false
 check_ci: true
 
 # ── Release operations ──────────────────────────────────────────────────────

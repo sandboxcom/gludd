@@ -7,7 +7,6 @@
 #   push_remote     (default "sandboxcom") remote name
 #   push_branch     (default "master") branch to push
 #   threshold       (default 5) minimum unpushed commits before pushing
-#   force           (default false) bypass threshold and CI checks
 #   check_ci        (default true) check for in-flight CI before pushing
 #
 # Returns:
@@ -35,7 +34,6 @@
     remote: "{{ push_remote | default('sandboxcom') }}"
     branch: "{{ push_branch | default('master') }}"
     threshold: "{{ threshold | default(5) }}"
-    force: "{{ force | default(false) }}"
     check_ci: "{{ check_ci | default(true) }}"
   register: _batch_push_result
 
