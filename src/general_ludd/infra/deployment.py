@@ -7,6 +7,7 @@ import atexit
 import json
 import logging
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -101,6 +102,18 @@ def _cleanup_orphaned_instances() -> None:
 
 
 atexit.register(_cleanup_orphaned_instances)
+
+
+def _handle_signal(signum: int, frame: object) -> None:
+    """Handle SIGTERM/SIGINT by cleaning up deployed instances, then re-raise."""
+    logger.warning("Received signal %d — cleaning up deployed instances", signum)
+    _cleanup_orphaned_instances()
+    signal.signal(signum, signal.SIG_DFL)
+    os.kill(os.getpid(), signum)
+
+
+signal.signal(signal.SIGTERM, _handle_signal)
+signal.signal(signal.SIGINT, _handle_signal)
 
 
 class SecretsResolver(Protocol):
