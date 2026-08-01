@@ -4582,12 +4582,7 @@ validate-all-cloud-iam:
 	@$(UV) run python scripts/validate_aws_iam_policy.py
 	@$(UV) run python scripts/validate_azure_iam_policy.py
 	@$(UV) run python scripts/validate_gcp_iam_policy.py
-	@$(UV) run python -c "from general_ludd.cloud import generate_cloud_role, validate_cloud_role; \
-		for p in ('azure','aws','gcp'): \
-			r = generate_cloud_role(p, 'monitor'); \
-			assert r['status'] in ('ok','generated_with_warnings'), f'{p} monitor: {r[\"status\"]}'; \
-			v = validate_cloud_role(p, r['role_definition']); \
-			print(f'{p} monitor: generated={r[\"status\"]} validated={v[\"status\"]}')"
+	@$(UV) run python -m general_ludd.cloud.validate_all
 
 check-azure-actions-crossref:
 	@$(UV) run python scripts/crossref_azure_actions.py

@@ -212,6 +212,7 @@ class TestProviderOperations:
             "Microsoft.Compute/virtualMachines/read",
             "Microsoft.Network/virtualNetworks/read",
             "Microsoft.App/containerApps/read",
+            "Microsoft.App/managedEnvironments/join/action",
             "Microsoft.ContainerRegistry/registries/read",
             "Microsoft.OperationalInsights/workspaces/read",
             "Microsoft.Resources/subscriptions/resourceGroups/read",

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from general_ludd.cloud.aws_validator import (
     AWS_REQUIRED_DENIALS,
     validate_aws_role,
@@ -31,6 +33,7 @@ from general_ludd.cloud.gcp_validator import (
 from general_ludd.cloud.role_generator import (
     ROLE_TEMPLATES,
 )
+from general_ludd.cloud.validate_all import validate_monitor_roles
 
 
 class TestCloudContracts:
@@ -351,6 +354,16 @@ class TestCrossProviderPatterns:
             if isinstance(b, dict) and b.get("effect") != "deny":
                 perms = b.get("permissions", [])
                 assert "compute.instances.setMetadata" not in perms
+
+
+class TestValidateAllCloudIam:
+    def test_monitor_roles_generate_and_validate_for_every_provider(self, capsys: pytest.CaptureFixture[str]):
+        assert validate_monitor_roles() == 0
+
+        output = capsys.readouterr().out
+        for provider in ("azure", "aws", "gcp"):
+            assert f"{provider} monitor: generated=" in output
+            assert "validated=valid" in output
 
 
 class TestRoleTemplates:

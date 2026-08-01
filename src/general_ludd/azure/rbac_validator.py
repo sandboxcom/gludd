@@ -207,6 +207,7 @@ PROVIDER_OPERATIONS: dict[str, frozenset[str]] = {
             "Microsoft.App/managedEnvironments/read",
             "Microsoft.App/managedEnvironments/write",
             "Microsoft.App/managedEnvironments/delete",
+            "Microsoft.App/managedEnvironments/join/action",
             "Microsoft.App/managedEnvironments/storages/read",
             "Microsoft.App/managedEnvironments/storages/write",
             "Microsoft.App/managedEnvironments/storages/delete",
