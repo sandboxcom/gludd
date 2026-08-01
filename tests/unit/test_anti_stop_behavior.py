@@ -8,6 +8,8 @@ Written FIRST (TDD red), then implementation verified against them.
 
 from pathlib import Path
 
+from tests.unit._plugin_contract import plugin_contract_source
+
 ROOT = Path(__file__).parent.parent.parent
 MAKEFILE = ROOT / "Makefile"
 AGENTS_MD = ROOT / "AGENTS.md"
@@ -49,29 +51,29 @@ class TestForegroundBlockGuardrail:
     """enforce-make.ts MUST block long foreground commands."""
 
     def test_foreground_block_exists(self):
-        content = ENFORCE_MAKE.read_text()
+        content = plugin_contract_source(ENFORCE_MAKE)
         assert "gate-background" in content or "Long-running foreground" in content, (
             "enforce-make.ts must contain foreground-block guardrail"
         )
 
     def test_blocks_make_gate(self):
-        content = ENFORCE_MAKE.read_text()
+        content = plugin_contract_source(ENFORCE_MAKE)
         assert '"gate"' in content or "'gate'" in content or "isGate" in content, (
             "Foreground block must target 'make gate'"
         )
 
     def test_blocks_make_test_unit(self):
-        content = ENFORCE_MAKE.read_text()
+        content = plugin_contract_source(ENFORCE_MAKE)
         assert "test-unit" in content, "Foreground block must target 'make test-unit'"
 
     def test_blocks_make_qa(self):
-        content = ENFORCE_MAKE.read_text()
+        content = plugin_contract_source(ENFORCE_MAKE)
         assert '"qa"' in content or "'qa'" in content or "isQa" in content, (
             "Foreground block must target 'make qa'"
         )
 
     def test_mentions_alternative(self):
-        content = ENFORCE_MAKE.read_text()
+        content = plugin_contract_source(ENFORCE_MAKE)
         assert "gate-background" in content, "Block message must mention gate-background alternative"
 
 
@@ -79,32 +81,32 @@ class TestStopPatternEnforcer:
     """enforce-stop.ts MUST default to blocking (not advisory)."""
 
     def test_blocking_default(self):
-        content = ENFORCE_STOP.read_text()
+        content = plugin_contract_source(ENFORCE_STOP)
         assert 'permissionDecision: "deny"' in content, (
             "enforce-stop.ts must have hard-deny permissionDecision blocks"
         )
 
     def test_has_ratchet_stop_audit(self):
-        content = ENFORCE_STOP.read_text()
+        content = plugin_contract_source(ENFORCE_STOP)
         assert "ratchet" in content.lower(), (
             "enforce-stop.ts must have ratchet-based stop audit"
         )
 
     def test_has_deferral_patterns(self):
-        content = ENFORCE_STOP.read_text()
+        content = plugin_contract_source(ENFORCE_STOP)
         assert "SUBAGENT_TEXT_MARKERS" in content, (
             "enforce-stop.ts must detect deferral/subagent-result patterns"
         )
 
     def test_has_question_tool_block(self):
-        content = ENFORCE_STOP.read_text()
+        content = plugin_contract_source(ENFORCE_STOP)
         assert '"question"' in content or "'question'" in content, (
             "enforce-stop.ts must block the question tool"
         )
 
 
-class TestAgentFloorEnforcement:
-    """The 10-agent floor must be codified across all layers."""
+class TestAdaptiveDelegationEnforcement:
+    """Delegation stays adaptive while retaining a hard ten-agent ceiling."""
 
     def test_agents_md_has_10_minimum(self):
         content = AGENTS_MD.read_text()
@@ -132,9 +134,11 @@ class TestAgentFloorEnforcement:
         content = ENFORCE_DELEGATE.read_text()
         assert '"10"' in content, "enforce-delegate.ts FLOOR must default to 10"
 
-    def test_enforce_stop_defaults_to_ten(self):
-        content = ENFORCE_STOP.read_text()
-        assert '"10"' in content, "enforce-stop.ts FLOOR must default to 10"
+    def test_enforce_stop_has_ten_agent_ceiling_and_opt_in_minimum(self):
+        content = plugin_contract_source(ENFORCE_STOP)
+        assert "HARD_MAX_DISPATCHES = 10" in content
+        assert "REQUIRED_AGENT_MIN" in content
+        assert "CONFIGURED_AGENT_MIN !== undefined" in content
 
     def test_settings_json_floor_is_five(self):
         settings = (ROOT / ".claude" / "settings.json").read_text()

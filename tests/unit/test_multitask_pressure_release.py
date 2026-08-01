@@ -39,7 +39,7 @@ class TestDispatchOutcomesState:
     def test_dispatch_outcomes_state_interface_exists(self):
         """DispatchOutcomesState interface is defined with required fields."""
         content = _read_shared_ts()
-        assert "DatabaseOutcomesState" in content, "Missing DispatchOutcomesState interface in shared.ts"
+        assert "DispatchOutcomesState" in content, "Missing DispatchOutcomesState interface in shared.ts"
         for field in [
             "consecutiveEmptyDispatches",
             "consecutiveDispatchAttempts",
@@ -124,10 +124,10 @@ class TestDispatchOutcomesState:
         # The floor 2 should appear as the default for pressureReleaseFloor
         assert "pressureReleaseFloor: 2" in content, "Missing default pressureReleaseFloor = 2"
 
-    def test_default_inline_recovery_turns(self):
-        """Default inline recovery allows 5 turns."""
+    def test_activated_inline_recovery_turns(self):
+        """Pressure-release activation grants five inline recovery turns."""
         content = _read_shared_ts()
-        assert "inlineRecoveryTurnsRemaining: 5" in content, "Missing default inlineRecoveryTurnsRemaining = 5"
+        assert "inlineRecoveryTurnsRemaining = 5" in content
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -201,12 +201,12 @@ class TestMultitaskPressureRelease:
         assert "!disengaged && !pressureActive" in content, "Grinding block guard should include !pressureActive"
 
     def test_under_floor_block_uses_pressure_release_floor(self):
-        """UNDER-FLOOR block uses getPressureReleaseFloor(MIN_DISPATCHES)."""
+        """An explicit minimum may be lowered during pressure release."""
         content = _read_multitask_ts()
-        assert "getPressureReleaseFloor(MIN_DISPATCHES)" in content, (
+        assert "getPressureReleaseFloor(REQUIRED_DISPATCHES)" in content, (
             "Under-floor block should use getPressureReleaseFloor for effective floor"
         )
-        assert "_effectiveFloor = getPressureReleaseFloor" in content, "Effective floor variable should be computed"
+        assert "_effectiveFloor = REQUIRED_DISPATCHES > 0" in content
 
     def test_text_complete_detects_empty_results(self):
         """text.complete hook detects empty/failed subagent results."""
@@ -232,9 +232,8 @@ class TestMultitaskPressureRelease:
     def test_thin_wave_block_uses_pressure_release_floor(self):
         """Thin-wave block (text.complete) uses pressure-release floor."""
         content = _read_multitask_ts()
-        # Both defaultImpl and proxy should use the effective floor
-        assert "_tef = getPressureReleaseFloor" in content, "defaultImpl thin-wave check should use _tef"
-        assert "_pef = getPressureReleaseFloor" in content, "Proxy thin-wave check should use _pef"
+        assert "_tef = REQUIRED_DISPATCHES > 0" in content
+        assert "getPressureReleaseFloor(REQUIRED_DISPATCHES)" in content
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -267,7 +266,7 @@ class TestFloorPressureRelease:
         content = _read_floor_ts()
         # Find the read-tool section and verify the pressureRelief return
         read_idx = content.index("─ Read-tool handling")
-        window = content[read_idx : read_idx + 300]
+        window = content[read_idx : read_idx + 500]
         assert "if (pressureRelief) return" in window, "Read-tool branch should return early when pressureRelief"
 
     def test_streak_increment_pressure_relief_skip(self):

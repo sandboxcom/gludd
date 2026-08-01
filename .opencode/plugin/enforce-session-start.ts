@@ -3,10 +3,9 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { isSubagent, reportAlive, isDispatchTool, isReadTool } from "../lib/shared.ts"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
-// enforce-session-start.ts — guarantees the FIRST actions of every session are:
-//   1. LOCATE work: read TASKS.md, BUGS.md, config/ratchet.yml, SESSION.md
-//   2. FAN OUT: dispatch >= MIN_DISPATCHES parallel task/agent subagents on
-//      disjoint work BEFORE any inline mutation or terminal response.
+// enforce-session-start.ts — guarantees the FIRST action of every session is
+// locating work. Delegation is adaptive: simple work may stay inline while
+// independent multi-step work may fan out, up to the hard ten-agent ceiling.
 //
 // Prevents two failure modes:
 //   (a) "Q&A-style session start" — agent replies with prose instead of
@@ -27,14 +26,20 @@ import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 // check /tmp/gludd-hot-enforce-session-start.js on every invocation. Run
 // `make hot-reload-plugins` after editing this file.
 // --- Config -----------------------------------------------------------------
-// Minimum parallel dispatches before inline mutations are allowed in a fresh
-// session. Hardcoded to 10 per user mandate — exactly 10 subagents per wave.
-// Override via GLUDD_SESSION_START_MIN_DISPATCHES.
+// Ten remains the recommended maximum batch size. A mandatory session-start
+// minimum is opt-in via GLUDD_SESSION_START_MIN_DISPATCHES; absent that env var,
+// reads complete the session-start protocol without forcing needless agents.
 const MIN_DISPATCHES = parseInt(
   process.env.GLUDD_SESSION_START_MIN_DISPATCHES || "10",
   10,
 )
-const EFFECTIVE_MIN = 10
+const HARD_MAX_DISPATCHES = 10
+const MAX_DISPATCHES = HARD_MAX_DISPATCHES
+const HAS_CONFIGURED_MIN_DISPATCHES =
+  process.env.GLUDD_SESSION_START_MIN_DISPATCHES !== undefined
+const EFFECTIVE_MIN = HAS_CONFIGURED_MIN_DISPATCHES
+  ? Math.max(0, Math.min(Number.isFinite(MIN_DISPATCHES) ? MIN_DISPATCHES : 0, MAX_DISPATCHES))
+  : 0
 // Hard-deny mode (mirrors GLUDD_FLOOR_ENFORCE / GLUDD_NO_WAIT_ENFORCE).
 // Default is ON (hard deny on premature mutations). Set
 // GLUDD_SESSION_START_ENFORCE=0 to fall back to advisory (directive-only)
@@ -94,16 +99,20 @@ function buildSessionDirective(): string {
     "The FIRST actions of this session, in strict order:",
     "  STEP 1 — LOCATE work: in ONE tool-call message, read TASKS.md,",
     "           BUGS.md, config/ratchet.yml, SESSION.md. Never serial.",
-    `  STEP 2 — FAN OUT: dispatch >= ${EFFECTIVE_MIN} parallel task/agent`,
-    "           subagents on disjoint work BEFORE any inline mutation, status",
-    "           report, or terminal response. Reads are allowed; serial work",
-    "           is not.",
+    "  STEP 2 — ASSESS: keep a simple task inline; dispatch only independent",
+    `           work that benefits from parallelism (0-${MAX_DISPATCHES} agents).`,
+    EFFECTIVE_MIN > 0
+      ? `           Operator-configured minimum: ${EFFECTIVE_MIN} dispatch(es).`
+      : "           No mandatory dispatch minimum is configured.",
     "DO NOT WRITE any prose between session start and the first dispatch wave.",
     "Do not answer the user's prompt first and dispatch second — dispatch first.",
     "No prose, no summaries, no status reports, no planning before the wave.",
-    `⏱  TIME GATE: dispatch within ${nowSecs}s — warning emitted.`,
-    `   After ${denySecs}s with 0 dispatches: non-dispatch mutations DENIED.`,
-    "   Both gates reset on first successful dispatch.",
+    EFFECTIVE_MIN > 0
+      ? `⏱  TIME GATE: satisfy the configured minimum within ${nowSecs}s.`
+      : "⏱  READ GATE: locate work before mutation; adaptive delegation is enabled.",
+    EFFECTIVE_MIN > 0
+      ? `   After ${denySecs}s below the minimum: non-dispatch mutations DENIED.`
+      : "   Simple one-read/one-edit work does not require a subagent.",
     "If the session state is stale (prior session crashed): run",
     "   `make crash-recovery` to reset enforcement state files and unblock.",
     "Why: a session that boots and then grinds inline (0 subagents live) looks",
@@ -127,7 +136,7 @@ function loadState(): SessionState {
       const initial: SessionState = {
         started_at: Date.now(),
         readsDone: false,
-        dispatches: EFFECTIVE_MIN,
+        dispatches: 0,
         timeGateReset: false,
         pid: process.pid,
       }
@@ -370,12 +379,12 @@ const defaultImpl: HotModule = {
         updatePrimedLatch(state)
         return
       }
-      if (!state.timeGateReset && state.dispatches === 0) {
+      if (EFFECTIVE_MIN > 0 && !state.timeGateReset && state.dispatches < EFFECTIVE_MIN) {
         const elapsedSecs = (Date.now() - state.started_at) / 1000
         if (elapsedSecs >= HARD_DENY_SECS) {
           const msg = (
-            `⛔ TIME GATE: ${Math.round(elapsedSecs)}s elapsed with 0 ` +
-            `dispatches. Non-dispatch mutations DENIED. Dispatch >= ` +
+            `⛔ TIME GATE: ${Math.round(elapsedSecs)}s elapsed below the ` +
+            `configured minimum. Non-dispatch mutations DENIED. Dispatch >= ` +
             `${EFFECTIVE_MIN} parallel subagents NOW.`
           )
           console.warn(msg)
@@ -388,7 +397,8 @@ const defaultImpl: HotModule = {
             _lastTimeGateWarningTs = now
             console.warn(
               `⛔ DISPATCH NOW: ${Math.round(elapsedSecs)}s elapsed, ` +
-              `0 dispatches. Hard deny at ${HARD_DENY_SECS}s. ` +
+              `${state.dispatches}/${EFFECTIVE_MIN} dispatches. ` +
+              `Hard deny at ${HARD_DENY_SECS}s. ` +
               `Dispatch >= ${EFFECTIVE_MIN} parallel subagents immediately.`
             )
           }
@@ -400,7 +410,9 @@ const defaultImpl: HotModule = {
           `[SESSION START PROTOCOL] readsDone=${state.readsDone},`,
           `${state.dispatches}/${EFFECTIVE_MIN} dispatches so far.`,
           `Locate work (TASKS.md, BUGS.md, config/ratchet.yml, SESSION.md)`,
-          `then dispatch >= ${EFFECTIVE_MIN} parallel task/agent subagents`,
+          EFFECTIVE_MIN > 0
+            ? `then satisfy the configured ${EFFECTIVE_MIN}-dispatch minimum`
+            : `then assess whether independent work benefits from delegation`,
           `BEFORE inline mutations. Reads and dispatches are allowed; this`,
           `${tool} call is premature.`,
         ].join(" ")
@@ -409,8 +421,8 @@ const defaultImpl: HotModule = {
           denyMessage = (
             "SESSION START PROTOCOL: readsDone=" + state.readsDone +
             ", " + state.dispatches + "/" + EFFECTIVE_MIN + " dispatches. " +
-            "Locate work then dispatch >= " + EFFECTIVE_MIN + " parallel " +
-            "subagents before doing inline mutations. Reads and dispatches " +
+            "Locate work, then satisfy the configured minimum (" + EFFECTIVE_MIN +
+            ") when present before doing inline mutations. Reads and dispatches " +
             "are allowed. Set GLUDD_SESSION_START_ENFORCE=0 to make this " +
             "advisory."
           )

@@ -16,17 +16,13 @@ Two enforcement layers:
 import json
 from pathlib import Path
 
+from tests.unit._plugin_contract import plugin_contract_source
+
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
-_IMPL = ROOT / ".opencode" / "plugin" / "impl" / "enforce_stop_impl.ts"
-
-
 def _src() -> str:
-    """Read plugin source including impl file if it exists."""
-    s = _src()
-    if _IMPL.exists():
-        s += "\n" + _IMPL.read_text()
-    return s
+    """Read the complete contract behind the lean plugin facade."""
+    return plugin_contract_source(PLUGIN)
 
 
 class TestPluginFileExists:

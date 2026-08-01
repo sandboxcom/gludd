@@ -19,13 +19,12 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from tests.unit._plugin_contract import plugin_contract_source
+
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
-IMPL = ROOT / ".opencode" / "plugin" / "impl" / "enforce_stop_impl.ts"
-
-
 def _src() -> str:
-    return PLUGIN.read_text() + "\n" + IMPL.read_text()
+    return plugin_contract_source(PLUGIN)
 
 
 class TestPostResultsStateConstants:
@@ -301,25 +300,27 @@ class TestInteractionWithExistingBlocks:
         )
 
 
-class TestUnderDispatchFloor:
-    """The text.complete hook must block text when <10 dispatches and work is pending."""
+class TestConfiguredDispatchMinimum:
+    """An explicit minimum blocks under-dispatch while the default stays adaptive."""
 
-    def test_under_dispatch_floor_section_exists(self):
+    def test_configured_minimum_block_exists(self):
         src = _src()
-        assert "UNDER-DISPATCH FLOOR" in src, (
-            "enforce_stop_impl.ts must contain an UNDER-DISPATCH FLOOR section "
-            "- blocks text when dispatchCount is 1-9 and work is pending."
+        assert "CONFIGURED MINIMUM" in src, (
+            "enforce_stop_impl.ts must contain the opt-in configured-minimum "
+            "block without presenting ten agents as a mandatory floor."
         )
 
     def test_dispatch_count_range_check(self):
         src = _src()
+        assert "REQUIRED_AGENT_MIN > 0" in src
         m = re.search(
-            r"turnState\.dispatchCount\s*>\s*0[\s\S]{0,200}turnState\.dispatchCount\s*<\s*10",
+            r"turnState\.dispatchCount\s*>\s*0[\s\S]{0,300}"
+            r"turnState\.dispatchCount\s*<\s*REQUIRED_AGENT_MIN",
             src,
         )
         assert m, (
-            "The under-dispatch-floor block must check dispatchCount > 0 AND "
-            "dispatchCount < 10 (agents with 1-9 dispatches while work pending)."
+            "The block must require an explicit minimum and compare the current "
+            "dispatch count against that configured value."
         )
 
     def test_under_dispatch_floor_uses_record_block(self):
@@ -336,18 +337,18 @@ class TestUnderDispatchFloor:
             src,
         ), "The block must call recordBlankedResponse('under-dispatch-floor')."
 
-    def test_under_dispatch_floor_block_message_contains_floor_number(self):
+    def test_under_dispatch_floor_block_message_contains_configured_minimum(self):
         src = _src()
-        assert "Floor is 10" in src, (
-            "The block message must state 'Floor is 10' so the agent knows exactly how many dispatches are required."
-        )
+        assert "Configured minimum:" in src
+        assert "String(REQUIRED_AGENT_MIN)" in src
 
     def test_under_dispatch_floor_block_message_contains_dispatch_count(self):
         src = _src()
         assert re.search(
-            r"String\s*\(\s*turnState\.dispatchCount\s*\)[\s\S]{0,500}Floor is 10",
+            r"String\s*\(\s*turnState\.dispatchCount\s*\)"
+            r"[\s\S]{0,500}Configured minimum:",
             src,
-        ), "The block message must include turnState.dispatchCount so the agent sees its current (insufficient) count."
+        ), "The block message must include the current count and configured minimum."
 
     def test_git_shipping_phrase_exemption(self):
         src = _src()
@@ -359,7 +360,8 @@ class TestUnderDispatchFloor:
         body = m.group(0).lower()
         for phrase in ["ship-commit", "git-commit", "batch-push", "release-cut"]:
             assert phrase in body, (
-                f"GIT_SHIPPING_PHRASE must include '{phrase}' — git operations that legitimately have <10 dispatches."
+                f"GIT_SHIPPING_PHRASE must include '{phrase}' — git operations "
+                "may legitimately remain below an explicitly configured minimum."
             )
 
     def test_git_shipping_phrase_tested_before_block(self):
@@ -387,13 +389,13 @@ class TestUnderDispatchFloor:
 
     def test_under_dispatch_floor_before_consecutive_text_only(self):
         src = _src()
-        idxUnder = src.find("UNDER-DISPATCH FLOOR")
+        idxUnder = src.find('recordBlock("under-dispatch-floor")')
         idxConsec = src.find("CONSECUTIVE TEXT-ONLY RESPONSES")
-        assert idxUnder >= 0, "UNDER-DISPATCH FLOOR section not found"
+        assert idxUnder >= 0, "configured-minimum recordBlock call not found"
         assert idxConsec >= 0, "CONSECUTIVE TEXT-ONLY RESPONSES section not found"
         assert idxUnder < idxConsec, (
-            "UNDER-DISPATCH FLOOR must appear BEFORE CONSECUTIVE TEXT-ONLY "
-            "RESPONSES so the dispatch-floor check fires first."
+            "The configured-minimum block must appear before CONSECUTIVE "
+            "TEXT-ONLY RESPONSES so the more specific check fires first."
         )
 
 

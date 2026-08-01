@@ -102,11 +102,12 @@ class TestKeyConstants:
         assert m, "HARD_DENY_SECS default not found"
         assert m.group(1) == "120"
 
-    def test_effective_min_uses_math_min_of_min_dispatches_and_floor(self):
+    def test_effective_min_is_opt_in_and_bounded_by_hard_max(self):
         src = _src()
-        assert "EFFECTIVE_MIN = 10" in src or "Math.min(MIN_DISPATCHES" in src, (
-            "EFFECTIVE_MIN must be hardcoded 10 or use Math.min(MIN_DISPATCHES, FLOOR)"
-        )
+        assert "const HARD_MAX_DISPATCHES = 10" in src
+        assert "HAS_CONFIGURED_MIN_DISPATCHES" in src
+        assert "Math.min(Number.isFinite(MIN_DISPATCHES)" in src
+        assert re.search(r"EFFECTIVE_MIN\s*=[\s\S]+?:\s*0", src)
 
 
 # ---------------------------------------------------------------------------
@@ -127,10 +128,10 @@ class TestDirectiveBanner:
         assert "config/ratchet.yml" in src
         assert "SESSION.md" in src
 
-    def test_banner_mentions_step_2_fan_out(self):
+    def test_banner_mentions_step_2_adaptive_assessment(self):
         src = _src()
-        assert "FAN OUT" in src
-        assert "dispatch >=" in src or "dispatch >=" in src
+        assert "STEP 2 — ASSESS" in src
+        assert "No mandatory dispatch minimum" in src
 
     def test_banner_mentions_time_gate(self):
         src = _src()
@@ -361,11 +362,13 @@ class TestStateFileIO:
         after = src[idx:idx + 800]
         assert "Date.now()" in after, "new state file must have started_at = Date.now()"
 
-    def test_load_state_sets_dispatches_to_effective_min_on_creation(self):
+    def test_load_state_starts_with_observed_zero_dispatches(self):
         src = _src()
         idx = src.find("function loadState")
         after = src[idx:idx + 800]
-        assert "dispatches: EFFECTIVE_MIN" in after, "new state file must set dispatches = EFFECTIVE_MIN"
+        assert "dispatches: 0" in after, (
+            "A new state file must not fabricate dispatches to satisfy a configured minimum"
+        )
 
     def test_load_state_sets_reads_done_false_on_creation(self):
         src = _src()
@@ -514,10 +517,10 @@ class TestPrimedLatch:
 
 
 class TestTimeGate:
-    def test_time_gate_only_fires_when_dispatches_are_zero(self):
+    def test_time_gate_only_fires_below_explicit_minimum(self):
         src = _src()
-        idx = src.find("state.dispatches === 0")
-        assert idx > 0, "time gate must check dispatches === 0"
+        assert "EFFECTIVE_MIN > 0" in src
+        assert "state.dispatches < EFFECTIVE_MIN" in src
 
     def test_time_gate_requires_not_reset(self):
         src = _src()

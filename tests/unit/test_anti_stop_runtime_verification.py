@@ -9,6 +9,8 @@ import json
 import re
 from pathlib import Path
 
+from tests.unit._plugin_contract import plugin_contract_source
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 PLUGIN_DIR = PROJECT_ROOT / ".opencode" / "plugin"
 PLUGINS_DIR = PROJECT_ROOT / ".opencode" / "plugins"
@@ -58,7 +60,7 @@ def _read_plugin(name: str) -> str:
     for d in (PLUGIN_DIR, PLUGINS_DIR):
         path = d / name
         if path.exists():
-            return path.read_text()
+            return plugin_contract_source(path)
     raise AssertionError(
         f"Plugin file missing: {name} (searched {PLUGIN_DIR} and {PLUGINS_DIR})"
     )
@@ -148,11 +150,14 @@ class TestAllPluginsOnDisk:
         config = json.loads(raw)
         plugins = config["plugin"]
 
-        # The registered count must match EXPECTED_PLUGINS exactly — adding or
-        # removing a plugin without updating this list (or vice versa) is a
-        # structural drift the test must catch.
-        assert len(plugins) == len(EXPECTED_PLUGINS), (
-            f"Expected {len(EXPECTED_PLUGINS)} plugins, got {len(plugins)}"
+        # The required set is a compatibility floor, not a ceiling. New
+        # enforcement plugins may be registered without making this structural
+        # smoke test a manually maintained plugin-count lock.
+        registered_names = {Path(plugin_path).name for plugin_path in plugins}
+        expected_names = {name for name, _directory in EXPECTED_PLUGINS}
+        assert expected_names <= registered_names, (
+            f"Required plugins missing from opencode.json: "
+            f"{sorted(expected_names - registered_names)}"
         )
 
         for plugin_path in plugins:

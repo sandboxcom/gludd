@@ -15,6 +15,8 @@ before the plugin was patched.
 
 import re
 
+from tests.unit._plugin_contract import plugin_contract_source
+
 ROOT = __import__("pathlib").Path(__file__).parent.parent.parent
 
 # Ported from the plugin source — must stay in sync with:
@@ -262,7 +264,7 @@ class TestPluginSourceInSync:
 
     def _src(self):
         plugin = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
-        return plugin.read_text()
+        return plugin_contract_source(plugin)
 
     def test_completion_verbatim_exists(self):
         src = self._src()

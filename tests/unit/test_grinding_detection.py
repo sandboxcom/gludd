@@ -31,12 +31,18 @@ import json
 import re
 from pathlib import Path
 
+from tests.unit._plugin_contract import plugin_contract_source
+
 ROOT = Path(__file__).parent.parent.parent
 STOP_PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
 FLOOR_PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-floor.ts"
 SHARED_LIB = ROOT / ".opencode" / "lib" / "shared.ts"
 
 SHARED_STREAK_FILE = "/tmp/gludd-tool-streak.json"
+
+
+def _stop_source() -> str:
+    return plugin_contract_source(STOP_PLUGIN)
 
 
 def _uses_shared_streak(plugin_src: str) -> bool:
@@ -86,8 +92,14 @@ class TestSharedStreakFileReferenced:
             "cross-plugin grinding detection (P3 audit finding)."
         )
 
-    def test_stop_plugin_references_shared_file(self):
+    def test_stop_proxy_delegates_to_the_guarded_implementation(self):
+        """The lean proxy must not replace runtime grinding enforcement."""
         src = STOP_PLUGIN.read_text()
+        assert 'from "./impl/enforce_stop_impl.ts"' in src
+        assert "isSubagent" in src
+
+    def test_stop_plugin_references_shared_file(self):
+        src = _stop_source()
         assert _uses_shared_streak(src), (
             "enforce-stop.ts must wire into the shared streak state — either "
             "import updateSharedStreak from ../lib/shared or reference "
@@ -116,7 +128,7 @@ class TestSharedStreakFileReferenced:
 
     def test_shared_file_env_override_in_stop(self):
         """enforce-stop.ts gets the env override transitively via shared.ts."""
-        assert "updateSharedStreak" in STOP_PLUGIN.read_text(), (
+        assert "updateSharedStreak" in _stop_source(), (
             "enforce-stop.ts must use updateSharedStreak from shared.ts, "
             "which honors GLUDD_STREAK_FILE for test isolation."
         )
@@ -149,7 +161,7 @@ class TestSharedStreakSchema:
             )
 
     def test_stop_writes_all_fields(self):
-        src = STOP_PLUGIN.read_text()
+        src = _stop_source()
         assert "updateSharedStreak" in src, (
             "enforce-stop.ts must call updateSharedStreak() so all schema "
             "fields (streak/lastDispatchTs/readStreak/editStreak) are written."
@@ -176,7 +188,7 @@ class TestThresholdConstants:
     """
 
     def test_delegate_first_threshold_present(self):
-        src = STOP_PLUGIN.read_text()
+        src = _stop_source()
         has_literal = "> 8" in src or ">= 9" in src
         has_constant = "DELEGATE_FIRST_THRESHOLD = 8" in src or "DELEGATE_FIRST_THRESHOLD=8" in src
         assert has_literal or has_constant, (
@@ -187,7 +199,7 @@ class TestThresholdConstants:
         )
 
     def test_grinding_hard_deny_threshold_present(self):
-        src = STOP_PLUGIN.read_text()
+        src = _stop_source()
         has_literal = "> 12" in src or ">= 13" in src
         has_constant = "GRINDING_HARD_DENY_THRESHOLD = 12" in src or "GRINDING_HARD_DENY_THRESHOLD=12" in src
         assert has_literal or has_constant, (
@@ -206,14 +218,14 @@ class TestDenyMessages:
     """
 
     def test_delegate_first_message_present(self):
-        src = STOP_PLUGIN.read_text()
+        src = _stop_source()
         assert "DELEGATE-FIRST" in src, (
             "enforce-stop.ts must emit a 'DELEGATE-FIRST' directive in the "
             "streak > 8 deny message (spec P3)."
         )
 
     def test_grinding_detected_message_present(self):
-        src = STOP_PLUGIN.read_text()
+        src = _stop_source()
         assert "MAIN-THREAD GRINDING DETECTED" in src, (
             "enforce-stop.ts must emit 'MAIN-THREAD GRINDING DETECTED' in the "
             "streak > 12 hard-deny message (spec P3)."
@@ -222,7 +234,7 @@ class TestDenyMessages:
     def test_grinding_message_mentions_consecutive_count(self):
         """The hard-deny message MUST report the streak count so the agent
         knows how deep the grinding goes."""
-        src = STOP_PLUGIN.read_text()
+        src = _stop_source()
         # The message template references the streak variable
         m = re.search(r"MAIN-THREAD GRINDING DETECTED.*?(\$\{[^}]+\}|streak)", src, re.DOTALL)
         assert m, (
@@ -235,7 +247,7 @@ class TestFailOpen:
     """Grinding detection MUST fail open — never wedge the session."""
 
     def test_stop_fail_open_on_error(self):
-        src = STOP_PLUGIN.read_text()
+        src = _stop_source()
         # The grinding check must be inside a try/catch that fails open.
         assert "catch" in src.lower(), (
             "enforce-stop.ts grinding detection must fail open (try/catch) "
@@ -259,7 +271,7 @@ class TestDispatchResetsStreak:
         )
 
     def test_reset_on_dispatch_in_stop(self):
-        src = STOP_PLUGIN.read_text()
+        src = _stop_source()
         assert "updateSharedStreak" in src, (
             "enforce-stop.ts must call updateSharedStreak() — the dispatch→"
             "reset logic lives there (task/agent/workflow → streak = 0)."
@@ -620,7 +632,7 @@ class TestSharedStreakPidField:
         )
 
     def test_stop_interface_has_pid(self):
-        assert "updateSharedStreak" in STOP_PLUGIN.read_text(), (
+        assert "updateSharedStreak" in _stop_source(), (
             "enforce-stop.ts must consume the shared streak schema "
             "(updateSharedStreak import) that carries `pid: number`."
         )
@@ -641,7 +653,7 @@ class TestSharedStreakPidField:
         )
 
     def test_stop_write_sets_pid(self):
-        assert "updateSharedStreak" in STOP_PLUGIN.read_text()
+        assert "updateSharedStreak" in _stop_source()
         self.test_shared_write_sets_pid()
 
     def test_floor_write_sets_pid(self):
@@ -679,7 +691,7 @@ class TestSharedStreakPidMismatchReset:
         self.test_shared_read_checks_pid_mismatch()
 
     def test_stop_read_checks_pid_mismatch(self):
-        assert "updateSharedStreak" in STOP_PLUGIN.read_text(), (
+        assert "updateSharedStreak" in _stop_source(), (
             "enforce-stop.ts must consume readSharedStreak's pid guard via "
             "updateSharedStreak."
         )

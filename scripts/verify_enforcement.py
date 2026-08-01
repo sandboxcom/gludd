@@ -11,6 +11,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+try:
+    from .plugin_contract import plugin_contract_source
+except ImportError:
+    from plugin_contract import plugin_contract_source
+
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
 
@@ -72,7 +77,7 @@ def _check_structural() -> tuple[list[str], dict[str, bool]]:
             status[filename] = False
             continue
 
-        source = path.read_text(encoding="utf-8")
+        source = plugin_contract_source(path)
 
         if not _has_blocking_pattern(source):
             failures.append(

@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit._plugin_contract import plugin_contract_source
+
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
 
@@ -18,12 +20,7 @@ PLUGIN_DIR = ROOT / ".opencode" / "plugin"
 def _read_plugin(name: str) -> str:
     path = PLUGIN_DIR / name
     assert path.exists(), f"Plugin {name} not found at {path}"
-    src = path.read_text()
-    impl_name = name.removesuffix(".ts").replace("-", "_") + "_impl.ts"
-    impl = PLUGIN_DIR / "impl" / impl_name
-    if impl.exists():
-        src += "\n" + impl.read_text()
-    return src
+    return plugin_contract_source(path)
 
 
 # ── Bug 1: enforce-stop.ts — execSync is used (not undefined es) ──────────────
@@ -49,19 +46,19 @@ class TestBug1_EnforceStopExecSync:
         )
 
 
-# ── Bug 2: enforce-stop.ts — CLAUDE_AGENT_FLOOR defaults to "10" not "7" ─────
+# ── Bug 2: enforce-stop.ts — adaptive minimum, hard maximum ten ───────────────
 
-class TestBug2_EnforceStopFloorDefault:
-    """FLOOR defaults to "7"; AGENTS.md mandates "10"."""
+class TestBug2_EnforceStopAdaptiveMinimum:
+    """No implicit floor is imposed, while the hard maximum remains ten."""
 
-    def test_floor_defaults_to_10_not_7(self):
+    def test_floor_is_explicit_and_ceiling_is_ten(self):
         src = _read_plugin("enforce-stop.ts")
         assert 'CLAUDE_AGENT_FLOOR || "7"' not in src, (
-            "BUG STILL PRESENT: FLOOR defaults to '7'. Must default to '10'."
+            "BUG STILL PRESENT: FLOOR defaults to the retired value seven."
         )
-        assert 'CLAUDE_AGENT_FLOOR || "10"' in src, (
-            "FLOOR must default to '10' to match AGENTS.md floor."
-        )
+        assert "HARD_MAX_DISPATCHES = 10" in src
+        assert "CONFIGURED_AGENT_MIN !== undefined" in src
+        assert "REQUIRED_AGENT_MIN" in src
 
 
 # ── Bug 3: enforce-delegate.ts — CLAUDE_AGENT_FLOOR defaults to "10" not "7" ──

@@ -105,10 +105,10 @@ class TestMinDispatchConstants:
         d = _min_dispatch_default()
         assert d > 0, f"MIN_DISPATCHES must be positive, got {d}"
 
-    def test_min_dispatches_used_in_under_floor_check(self):
+    def test_required_dispatches_used_in_under_floor_check(self):
         src = _plugin_source()
-        assert "thisMessageDispatches < MIN_DISPATCHES" in src, (
-            "MIN_DISPATCHES must be used in UNDER-FLOOR check comparison"
+        assert "thisMessageDispatches < _effectiveFloor" in src, (
+            "The opt-in, pressure-adjusted minimum must gate under-floor checks"
         )
 
     def test_gludd_min_dispatches_env_also_supported(self):
@@ -125,9 +125,8 @@ class TestMinDispatchConstants:
 
     def test_max_dispatches_is_10(self):
         src = _plugin_source()
-        m = re.search(r"MAX_DISPATCHES\s*=\s*parseInt\(.*\"(\d+)\"", src)
-        assert m
-        assert int(m.group(1)) == 10
+        assert "HARD_MAX_DISPATCHES = 10" in src
+        assert "Math.min(HARD_MAX_DISPATCHES" in src
 
     def test_consecutive_non_dispatch_threshold_is_5(self):
         src = _plugin_source()
@@ -274,9 +273,9 @@ class TestUnderFloorHardBlock:
         src = _plugin_source()
         assert "UNDER-FLOOR HARD BLOCK" in src, "Under-floor deny message must exist"
 
-    def test_under_floor_deny_message_mentions_floor(self):
+    def test_under_floor_deny_message_mentions_configured_minimum(self):
         src = _plugin_source()
-        assert "Floor is 10" in src, "Deny must mention Floor is 10"
+        assert "Configured minimum is" in src
 
     def test_under_floor_deny_message_mentions_dispatch_count(self):
         src = _plugin_source()
@@ -308,8 +307,8 @@ class TestUnderFloorHardBlock:
 
     def test_under_floor_uses_this_message_dispatches(self):
         src = _plugin_source()
-        assert "thisMessageDispatches < MIN_DISPATCHES" in src, (
-            "Must use thisMessageDispatches for under-floor comparison"
+        assert "thisMessageDispatches < _effectiveFloor" in src, (
+            "Must compare this-message dispatches with the effective requirement"
         )
 
 
@@ -346,28 +345,25 @@ class TestZeroStreakDenial:
             "Zero streak check must include thisMessageDispatches === 0 guard"
         )
 
-    def test_zero_streak_block_is_unconditional(self):
+    def test_zero_streak_block_requires_configured_minimum(self):
         src = _plugin_source()
-        deny_start = src.find("ZERO-DISPATCH STREAK:")
-        assert deny_start > 0, "ZERO-DISPATCH STREAK deny not found"
-        after = src[deny_start:deny_start + 800]
-        assert "UNCONDITIONAL" in after
+        assert "REQUIRED_DISPATCHES > 0" in src
 
     def test_zero_streak_deny_message_mentions_consecutive(self):
         src = _plugin_source()
         assert "consecutive" in src.lower()
 
-    def test_zero_streak_deny_message_mentions_floor(self):
+    def test_zero_streak_deny_message_mentions_configured_minimum(self):
         src = _plugin_source()
         deny_start = src.find("ZERO-DISPATCH STREAK:")
         after = src[deny_start:deny_start + 600]
-        assert "Floor is 10" in after
+        assert "operator-configured minimum" in after
 
-    def test_zero_streak_requires_dispatch_now(self):
+    def test_zero_streak_preserves_hard_ceiling(self):
         src = _plugin_source()
         deny_start = src.find("ZERO-DISPATCH STREAK:")
         after = src[deny_start:deny_start + 600]
-        assert "DISPATCH 10 AGENTS NOW" in after
+        assert "hard ceiling remains" in after
 
 
 class TestConsecutiveNonDispatchStreak:
@@ -424,11 +420,11 @@ class TestConsecutiveNonDispatchStreak:
             "Consecutive non-dispatch deny message must exist"
         )
 
-    def test_consecutive_deny_mentions_floor(self):
+    def test_consecutive_deny_discourages_quota_padding(self):
         src = _plugin_source()
         deny_start = src.find("CONSECUTIVE NON-DISPATCH STREAK:")
         after = src[deny_start:deny_start + 400]
-        assert "Floor is 10" in after
+        assert "never create agents merely to fill a quota" in after
 
     def test_consecutive_gated_on_pending_work(self):
         src = _plugin_source()
@@ -753,17 +749,15 @@ class TestSpawnGateRefresh:
 
 
 class TestHookRegistration:
-    """Single hook (tool.execute.before) only — no text.complete or session.idle."""
+    """Mutation and response-boundary hooks are registered; no idle blocker."""
 
     def test_tool_execute_before_registered(self):
         src = _plugin_source()
         assert '"tool.execute.before"' in src, "tool.execute.before must be registered"
 
-    def test_no_text_complete_hook(self):
+    def test_text_complete_hook_registered(self):
         src = _plugin_source()
-        assert '"experimental.text.complete"' not in src, (
-            "text.complete hook removed in 2026-07-13 rewrite"
-        )
+        assert '"experimental.text.complete"' in src
 
     def test_no_session_idle_hook(self):
         src = _plugin_source()

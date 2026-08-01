@@ -2687,9 +2687,11 @@ console.log(JSON.stringify({{readsDone: state.readsDone}}))
     _clean_state_files(state_file, hot_module)
 
 
-def test_session_start_dispatch_increment_and_bash_deny():
-    """task tool increments dispatches; bash with dispatches<10 then denied."""
-    state_file = os.path.join("/tmp", f"test-ss-dispatch-inc-{os.getpid()}.json")
+def _session_start_dispatch_then_bash(configured_min: str | None) -> dict:
+    label = configured_min or "adaptive"
+    state_file = os.path.join(
+        "/tmp", f"test-ss-dispatch-inc-{label}-{os.getpid()}.json"
+    )
     _fresh_session_state(state_file, readsDone=True, dispatches=0)
     code = f"""\
 const fs = await import('node:fs')
@@ -2699,7 +2701,7 @@ const plugin = await mod.default({{}})
 await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 const state1 = JSON.parse(fs.readFileSync('{state_file}', 'utf8'))
 const dp1 = state1.dispatches
-// Call 2: bash (non-dispatch, non-read) → should deny (dispatches=1 < 10)
+// Call 2: bash (non-dispatch, non-read) exercises the configured policy.
 let denied = false
 let msg = ''
 try {{
@@ -2710,11 +2712,29 @@ try {{
 }}
 console.log(JSON.stringify({{dp1, denied, hasProtocol: msg.includes('SESSION START PROTOCOL')}}))
 """
-    result = _run_ts(code, env_override={"GLUDD_SESSION_STATE": state_file})
-    assert result["dp1"] == 1, f"Expected dispatches=1 after task call, got: {result}"
-    assert result["denied"] == True, f"Expected deny on bash with dispatches=1<10, got: {result}"
-    assert result["hasProtocol"] == True, f"Deny message missing SESSION START PROTOCOL: {result}"
+    env_override = {"GLUDD_SESSION_STATE": state_file}
+    if configured_min is not None:
+        env_override["GLUDD_SESSION_START_MIN_DISPATCHES"] = configured_min
+    result = _run_ts(code, env_override=env_override)
     _clean_state_files(state_file)
+    return result
+
+
+def test_session_start_dispatch_increment_default_adaptive():
+    """One dispatch is enough by default; no quota-padding denial is emitted."""
+    result = _session_start_dispatch_then_bash(configured_min=None)
+    assert result["dp1"] == 1, f"Expected dispatches=1 after task call, got: {result}"
+    assert result["denied"] is False, f"Adaptive default must allow the bash call: {result}"
+
+
+def test_session_start_explicit_minimum_denies_under_dispatch():
+    """An explicit ten-dispatch minimum denies a mutation after one dispatch."""
+    result = _session_start_dispatch_then_bash(configured_min="10")
+    assert result["dp1"] == 1, f"Expected dispatches=1 after task call, got: {result}"
+    assert result["denied"] is True, f"Configured minimum must deny under-dispatch: {result}"
+    assert result["hasProtocol"] is True, (
+        f"Deny message missing SESSION START PROTOCOL: {result}"
+    )
 
 
 # ---------------------------------------------------------------------------
