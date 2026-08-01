@@ -763,7 +763,7 @@ class TestGovernanceMilitary:
     def test_military_conscription(self):
         args = argparse.Namespace(country="US", branches=False, benefits=None, conscription=True, json=False)
         output = _run_with_stdout(_cmd_military, args)
-        assert "mandatory_conscription" in output.lower()
+        assert "mandatory conscription" in output.lower()
 
     def test_military_not_found_exits(self):
         args = argparse.Namespace(country="ZZ", branches=False, benefits=None, conscription=False, json=False)

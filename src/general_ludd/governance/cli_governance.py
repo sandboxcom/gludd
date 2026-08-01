@@ -243,12 +243,13 @@ def _navigate_query(query: str, *, json_output: bool = False) -> None:
     # ── Border / crossing keywords ──
     border_keywords = {"border", "crossing", "visa", "passport", "schengen", "checkpoint", "demilitarized"}
     if any(kw in query for kw in border_keywords):
+        domain_start = len(results)
         borders = get_borders()
         for name, entry in borders.BORDER_DATA.items():
             if any(word in name.lower() for word in query.split()):
                 results.append({"domain": "borders", "match": name, "data": entry})
         # If no direct match, return all borders as available
-        if not results:
+        if len(results) == domain_start:
             results.append(
                 {
                     "domain": "borders",
@@ -275,12 +276,13 @@ def _navigate_query(query: str, *, json_output: bool = False) -> None:
     if any(kw in query for kw in body_keywords) or any(
         org in query for org in ("united nations", "european union", "african union")
     ):
+        domain_start = len(results)
         bodies = get_governing_bodies()
         for body in bodies.INTERNATIONAL_BODIES:
             haystack = body["name"].lower() + " " + body["id"] + " " + " ".join(body.get("aliases", ()))
             if any(word in haystack for word in query.split() if len(word) > 2):
                 results.append({"domain": "bodies", "match": body["name"], "data": body})
-        if not results:
+        if len(results) == domain_start:
             results.append(
                 {
                     "domain": "bodies",
@@ -324,12 +326,13 @@ def _navigate_query(query: str, *, json_output: bool = False) -> None:
     # ── Treaty / conflict keywords ──
     treaty_keywords = {"treaty", "convention", "agreement", "accord", "pact", "alliance"}
     if any(kw in query for kw in treaty_keywords):
+        domain_start = len(results)
         ct = get_conflicts_treaties()
         for treaty in ct.TREATY_DATABASE:
             haystack = treaty["name"].lower() + " " + treaty["id"] + " " + str(treaty.get("subject", "")).lower()
             if any(word in haystack for word in query.split() if len(word) > 3):
                 results.append({"domain": "treaties", "match": treaty["name"], "data": treaty})
-        if not results:
+        if len(results) == domain_start:
             results.append(
                 {
                     "domain": "treaties",
@@ -379,6 +382,7 @@ def _navigate_query(query: str, *, json_output: bool = False) -> None:
         "compulsory voting",
     }
     if any(kw in query for kw in elections_keywords):
+        domain_start = len(results)
         ev = get_elections_voting()
         for sys_type, sys_info in ev.ELECTION_SYSTEMS.items():
             haystack = sys_type.lower() + " " + str(sys_info.get("description", "")).lower()
@@ -388,7 +392,7 @@ def _navigate_query(query: str, *, json_output: bool = False) -> None:
             haystack = country_code.lower() + " " + str(data.get("name", "")).lower()
             if any(word in haystack for word in query.split() if len(word) > 2):
                 results.append({"domain": "elections_voting", "match": country_code, "data": data})
-        if not results:
+        if len(results) == domain_start:
             results.append(
                 {
                     "domain": "elections_voting",
@@ -412,6 +416,7 @@ def _navigate_query(query: str, *, json_output: bool = False) -> None:
     if any(kw in query for kw in ir_keywords) or any(
         org in query for org in ("five eyes", "g7", "g20", "nonaligned", "quad")
     ):
+        domain_start = len(results)
         ir_mod = get_international_relations()
         for code, data in ir_mod.DIPLOMATIC_RELATIONS.items():
             haystack = (
@@ -419,7 +424,7 @@ def _navigate_query(query: str, *, json_output: bool = False) -> None:
             )
             if any(word in haystack.lower() for word in query.split() if len(word) > 2):
                 results.append({"domain": "international_relations", "match": code, "data": data})
-        if not results:
+        if len(results) == domain_start:
             results.append(
                 {
                     "domain": "international_relations",
@@ -445,12 +450,13 @@ def _navigate_query(query: str, *, json_output: bool = False) -> None:
         "supreme court",
     }
     if any(kw in query for kw in legal_keywords):
+        domain_start = len(results)
         ls_mod = get_legal_systems()
         for code, data in ls_mod.COURT_HIERARCHIES.items():
             haystack = code.lower() + " " + str(data.get("name", "")).lower() + " " + str(data.get("system_type", ""))
             if any(word in haystack.lower() for word in query.split() if len(word) > 2):
                 results.append({"domain": "legal_systems", "match": code, "data": data})
-        if not results:
+        if len(results) == domain_start:
             results.append(
                 {
                     "domain": "legal_systems",
@@ -471,12 +477,13 @@ def _navigate_query(query: str, *, json_output: bool = False) -> None:
         "public finance",
     }
     if any(kw in query for kw in finance_keywords):
+        domain_start = len(results)
         pf_mod = get_public_finance()
         for code, data in pf_mod.COUNTRY_BUDGETS.items():
             haystack = code.lower() + " " + str(data.get("country", "")).lower()
             if any(word in haystack.lower() for word in query.split() if len(word) > 2):
                 results.append({"domain": "public_finance", "match": code, "data": data})
-        if not results:
+        if len(results) == domain_start:
             results.append(
                 {
                     "domain": "public_finance",
@@ -496,12 +503,13 @@ def _navigate_query(query: str, *, json_output: bool = False) -> None:
         "gleif",
     }
     if any(kw in query for kw in jurisd_keywords):
+        domain_start = len(results)
         jurisd = get_jurisdictions()
         for code, data in jurisd.JURISDICTION_CODES.items():
             haystack = code.lower() + " " + str(data.get("name", "")).lower()
             if any(word in haystack for word in query.split() if len(word) > 1):
                 results.append({"domain": "jurisdictions", "match": code, "data": data})
-        if not results:
+        if len(results) == domain_start:
             results.append(
                 {
                     "domain": "jurisdictions",
@@ -526,10 +534,11 @@ def _navigate_query(query: str, *, json_output: bool = False) -> None:
         "cosmic",
     }
     if any(kw in query for kw in class_keywords):
+        domain_start = len(results)
         cm = get_classification_markings()
         for system in cm.BANNER_FORMATS:
             results.append({"domain": "classification_markings", "match": system, "data": {"system": system}})
-        if not results:
+        if len(results) == domain_start:
             results.append(
                 {
                     "domain": "classification_markings",
@@ -549,12 +558,13 @@ def _navigate_query(query: str, *, json_output: bool = False) -> None:
         "ministry of",
     }
     if any(kw in query for kw in authority_keywords):
+        domain_start = len(results)
         ar = get_authority_registry()
         for code, data in ar.AUTHORITY_INSTRUMENTS.items():
             haystack = code.lower() + " " + str(data.get("name", "")).lower()
             if any(word in haystack.lower() for word in query.split() if len(word) > 2):
                 results.append({"domain": "authority_registry", "match": code, "data": data})
-        if not results:
+        if len(results) == domain_start:
             results.append(
                 {
                     "domain": "authority_registry",
@@ -573,12 +583,13 @@ def _navigate_query(query: str, *, json_output: bool = False) -> None:
         "information access",
     }
     if any(kw in query for kw in info_cls_keywords):
+        domain_start = len(results)
         ic = get_info_classification()
         for country, data in ic.CLASSIFICATION_BY_COUNTRY.items():
             haystack = country.lower() + " " + str(data.get("system", "")).lower()
             if any(word in haystack.lower() for word in query.split() if len(word) > 1):
                 results.append({"domain": "info_classification", "match": country, "data": data})
-        if not results:
+        if len(results) == domain_start:
             results.append(
                 {
                     "domain": "info_classification",
@@ -604,6 +615,7 @@ def _navigate_query(query: str, *, json_output: bool = False) -> None:
         "chief justice",
     }
     if any(kw in query for kw in dm_keywords):
+        domain_start = len(results)
         dm = get_decision_makers()
         for country_code, officials in dm.DECISION_MAKERS.items():
             for official in officials:
@@ -618,7 +630,7 @@ def _navigate_query(query: str, *, json_output: bool = False) -> None:
                     results.append(
                         {"domain": "decision_makers", "match": f"{country_code}: {official['role']}", "data": official}
                     )
-        if not results:
+        if len(results) == domain_start:
             results.append(
                 {
                     "domain": "decision_makers",
@@ -643,12 +655,13 @@ def _navigate_query(query: str, *, json_output: bool = False) -> None:
         "ups",
     }
     if any(kw in query for kw in postal_keywords):
+        domain_start = len(results)
         pd = get_postal_delivery()
         for country, data in pd.POSTAL_CODE_PATTERNS.items():
             haystack = country.lower() + " " + str(data.get("name", "")).lower()
             if any(word in haystack.lower() for word in query.split() if len(word) > 1):
                 results.append({"domain": "postal_delivery", "match": country, "data": data})
-        if not results:
+        if len(results) == domain_start:
             results.append(
                 {
                     "domain": "postal_delivery",
@@ -671,12 +684,13 @@ def _navigate_query(query: str, *, json_output: bool = False) -> None:
         "marine",
     }
     if any(kw in query for kw in military_keywords):
+        domain_start = len(results)
         ms = get_military_service()
         for country, data in ms.CONSCRIPTION_DATA.items():
             haystack = country.lower() + " " + str(data.get("name", "")).lower()
             if any(word in haystack.lower() for word in query.split() if len(word) > 2):
                 results.append({"domain": "military_service", "match": country, "data": data})
-        if not results:
+        if len(results) == domain_start:
             results.append(
                 {
                     "domain": "military_service",
@@ -697,10 +711,11 @@ def _navigate_query(query: str, *, json_output: bool = False) -> None:
         "medical license",
     }
     if any(kw in query for kw in licenses_keywords):
+        domain_start = len(results)
         lp = get_licenses_permits()
         for lic_type in lp.LICENSE_TYPES:
             results.append({"domain": "licenses_permits", "match": lic_type, "data": {"license_type": lic_type}})
-        if not results:
+        if len(results) == domain_start:
             results.append(
                 {
                     "domain": "licenses_permits",
@@ -799,29 +814,35 @@ def _cmd_authority(args: argparse.Namespace) -> None:
 def _cmd_info_classification(args: argparse.Namespace) -> None:
     """``gludd governance info-class <country>`` — info classification and FOIA."""
     ic = get_info_classification()
+    display_country = args.country.strip().upper()
+    lookup_country = "UK" if display_country == "GB" else display_country
     if args.foia:
-        result = ic.get_foia_procedure(args.country)
+        result = ic.get_foia_procedure(lookup_country)
         if result is None:
-            print(f"No FOIA procedure found for '{args.country.upper()}'.", file=sys.stderr)
+            print(f"No FOIA procedure found for '{display_country}'.", file=sys.stderr)
             sys.exit(1)
-        _print_result({"country": args.country.upper(), "found": True, **result}, json_output=args.json)
+        _print_result({"country": display_country, "found": True, **result}, json_output=args.json)
         return
     if args.source:
-        result = ic.find_official_source(args.source, args.country)
+        result = ic.find_official_source(args.source, lookup_country)
         if result is None:
-            print(f"No source '{args.source}' found for '{args.country.upper()}'.", file=sys.stderr)
+            print(f"No source '{args.source}' found for '{display_country}'.", file=sys.stderr)
             sys.exit(1)
-        _print_result({"country": args.country.upper(), "found": True, **result}, json_output=args.json)
+        _print_result({"country": display_country, "found": True, **result}, json_output=args.json)
         return
     if args.equiv:
         parts = args.equiv.split(",")
         if len(parts) == 3:
-            ok = ic.check_clearance_equiv(parts[0].strip(), parts[1].strip(), parts[2].strip())
+            country_a = parts[1].strip().upper()
+            country_b = parts[2].strip().upper()
+            lookup_a = "UK" if country_a == "GB" else country_a
+            lookup_b = "UK" if country_b == "GB" else country_b
+            ok = ic.check_clearance_equiv(parts[0].strip(), lookup_a, lookup_b)
             _print_result(
                 {
                     "level": parts[0].strip(),
-                    "country_a": parts[1].strip(),
-                    "country_b": parts[2].strip(),
+                    "country_a": country_a,
+                    "country_b": country_b,
                     "equivalent": ok,
                     "found": True,
                 },
@@ -830,11 +851,11 @@ def _cmd_info_classification(args: argparse.Namespace) -> None:
             return
         print("Use: --equiv <level>,<country_a>,<country_b>", file=sys.stderr)
         sys.exit(1)
-    result = ic.get_classification_system(args.country)
+    result = ic.get_classification_system(lookup_country)
     if result is None:
-        print(f"No classification system found for '{args.country.upper()}'.", file=sys.stderr)
+        print(f"No classification system found for '{display_country}'.", file=sys.stderr)
         sys.exit(1)
-    _print_result({"country": args.country.upper(), "found": True, **result}, json_output=args.json)
+    _print_result({"country": display_country, "found": True, **result}, json_output=args.json)
 
 
 def _cmd_decision_makers(args: argparse.Namespace) -> None:
@@ -861,6 +882,9 @@ def _cmd_decision_makers(args: argparse.Namespace) -> None:
         )
         return
     result = dm.lookup_decision_makers(args.country)
+    if not result.get("found"):
+        print(result.get("message", f"No decision-makers found for '{args.country.upper()}'."), file=sys.stderr)
+        sys.exit(1)
     _print_result(result, json_output=args.json)
 
 
@@ -945,6 +969,9 @@ def _cmd_licenses(args: argparse.Namespace) -> None:
         _print_result(result, json_output=args.json)
         return
     professions = lp.list_professions_for_country(args.country)
+    if not professions:
+        print(f"No license registry found for '{args.country.upper()}'.", file=sys.stderr)
+        sys.exit(1)
     _print_result(
         {"country": args.country.upper(), "found": True, "professions": professions, "count": len(professions)},
         json_output=args.json,

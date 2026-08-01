@@ -733,12 +733,6 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     fs_bins.add_argument("--daemon-url", default="http://localhost:8000")
     fs_bins.set_defaults(func=_cmd_filestore_binaries)
 
-    # Keep the historical top-level alias alongside ``gludd test self`` so
-    # existing operators and E2E callers retain the same parsing contract.
-    selftest_p = sub.add_parser("selftest", help="Run self-tests via molecule scenarios")
-    selftest_p.add_argument("--daemon-url", default="http://localhost:8000")
-    selftest_p.set_defaults(func=_cmd_selftest)
-
     preflight_p = sub.add_parser("preflight", help="Run the preflight quality gate")
     preflight_p.add_argument(
         "--strict-terraform-import",
@@ -956,12 +950,6 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     )
     connectors_query.add_argument("--daemon-url", default="http://localhost:8000")
     connectors_query.set_defaults(func=_cmd_connectors_query)
-
-    smoke_parser = sub.add_parser(
-        "smoke", help="Run low-cost provider, compute, local-model, or connector smoke checks"
-    )
-    _add_smoke_arguments(smoke_parser)
-    smoke_parser.set_defaults(func=_cmd_smoke)
 
     login_parser = sub.add_parser("login", help="Browser-based OAuth2 / API key login for services")
     login_parser.add_argument(
