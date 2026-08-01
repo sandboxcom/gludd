@@ -546,6 +546,16 @@ class TerraformGenerator:
               location = "{region}"
             }}
 
+            variable "image"          {{ default = "" }}
+            variable "gpus"           {{ default = 1 }}
+            variable "model"          {{ default = "" }}
+            variable "instance_type"  {{ default = "" }}
+            variable "extra_args"     {{ default = "" }}
+            variable "max_cost_usd"   {{ default = 5 }}
+            variable "timeout_minutes"{{ default = 30 }}
+            variable "guided_decoding_backend"   {{ default = "" }}
+            variable "enable_structured_outputs" {{ default = false }}
+
             module "vllm_server" {{
               source = "{_modules}/vllm-server"
 
@@ -584,23 +594,31 @@ class TerraformGenerator:
         """)
 
     def _generate_runpod(self, config: ComputeConfig) -> str:
-        # Phase 4 — module-style; runpod_pod resource body and GPU→name mapping
-        # now live behind the module interface. The generator composes provider
-        # + module block; values flow through tfvars (build_tfvars).
-        return textwrap.dedent("""\
-            terraform {
-              required_providers {
-                runpod = {
+        _modules = os.path.join(os.path.dirname(__file__), "..", "..", "..", "infra", "terraform", "modules")
+        return textwrap.dedent(f"""\
+            terraform {{
+              required_providers {{
+                runpod = {{
                   source  = "runpod/runpod"
                   version = "~> 1.0"
-                }
-              }
-            }
+                }}
+              }}
+            }}
 
-            provider "runpod" {}
+            provider "runpod" {{}}
 
-            module "vllm_server" {
-              source = "./modules/vllm-server"
+            variable "image"          {{ default = "" }}
+            variable "gpus"           {{ default = 1 }}
+            variable "model"          {{ default = "" }}
+            variable "instance_type"  {{ default = "" }}
+            variable "extra_args"     {{ default = "" }}
+            variable "max_cost_usd"   {{ default = 5 }}
+            variable "timeout_minutes"{{ default = 30 }}
+            variable "guided_decoding_backend"   {{ default = "" }}
+            variable "enable_structured_outputs" {{ default = false }}
+
+            module "vllm_server" {{
+              source = "{_modules}/vllm-server"
 
               image           = var.image
               gpus            = var.gpus
