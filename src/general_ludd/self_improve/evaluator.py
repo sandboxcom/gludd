@@ -227,14 +227,24 @@ class SelfImproveEvaluator:
             return ""
 
     def _invoke_gateway(self, prompt: str) -> str:
+        gw = self._gateway
+        if gw is None:
+            raise RuntimeError("no model gateway configured")
         try:
-            response = self._gateway.call_model(
-                self._model_profile_id,
-                [{"role": "user", "content": prompt}],
-                estimated_cost=0.05,
-                budget_remaining=self._budget_usd,
-            )
+            if hasattr(gw, "call_model"):
+                response = gw.call_model(
+                    self._model_profile_id,
+                    [{"role": "user", "content": prompt}],
+                    estimated_cost=0.05,
+                    budget_remaining=self._budget_usd,
+                )
+            elif hasattr(gw, "complete"):
+                response = gw.complete(prompt)
+            else:
+                raise RuntimeError(f"Gateway {type(gw).__name__} has neither call_model nor complete")
             return str(response.content)
+        except RuntimeError:
+            raise
         except Exception as exc:
             logger.error("Gateway call failed: %s", exc)
             raise RuntimeError(f"Gateway call failed: {exc}") from exc

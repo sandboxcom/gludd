@@ -38,6 +38,20 @@ Virtual Networks, Subnets, and Resource Groups via Terraform/OpenTofu.
 - No ACR build queueing
 - No VM run commands (prevents arbitrary script execution on VMs)
 
+### Updating an existing role
+
+If the custom role already exists and you need to update its permissions,
+use `az role definition update` instead of `create`:
+
+```bash
+# Substitute the subscription ID into the policy and update the role
+az role definition update --role-definition "$(sed "s/{subscription_id}/$SUBSCRIPTION_ID/" config/infra/azure-iam-policy.json)"
+```
+
+This uses the same `config/infra/azure-iam-policy.json` file (PascalCase keys)
+as the `create` command. The role name (`"General Ludd Container App Deployer"`)
+must match the existing role exactly.
+
 ## 2. Creating and Assigning the Role in Azure Portal
 
 Two policy files exist because the Azure Portal JSON editor and the Azure CLI

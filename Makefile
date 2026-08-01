@@ -77,6 +77,7 @@ PYTEST_VERBOSITY ?= -v
         feature-start feature-done test-and-commit preflight \
         agent-worktree agent-worktree-base agent-merge agent-cleanup agent-worktree-list \
         agent-worktree-dev agent-merge-dev \
+        test-self-improve test-self-improve-all \
          development-push development-merge-to-master development-start development-status require-sandboxcom-ssh-key \
         git-commit-no-verify git-amend-msg \
 _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
@@ -273,6 +274,8 @@ help:
 	@echo "  agent-merge BRANCH=<name>     Merge a subagent worktree branch into master (--no-ff)"
 	@echo "  agent-cleanup BRANCH=<name>   Remove a subagent worktree + branch after merge"
 	@echo "  agent-worktree-list           List active git worktrees"
+	@echo "  test-self-improve TARGET=<name>  E2E: run self-improvement on one target in isolated worktree"
+	@echo "  test-self-improve-all            E2E: run self-improvement on ALL targets in isolated worktree"
 	@echo "  git-index                    Index git log into SQLite (.gludd/git_history.db)"
 	@echo "  git-search Q='...'           Search indexed git history"
 	@echo "  git-stats                    Show git history index statistics"
@@ -4069,6 +4072,16 @@ clean-stale-worktrees:
 # List active worktrees (read-only diagnostic).
 agent-worktree-list:
 	@git worktree list
+
+# Self-improvement E2E — runs in isolated worktree, tests gludd improving itself
+# Usage: make test-self-improve TARGET=azure_iam_validator
+test-self-improve:
+	@$(UV) run python scripts/run_self_improve_e2e.py --target $(TARGET) --worktree
+
+# Self-improvement E2E — runs ALL targets, merges successful improvements
+# Usage: make test-self-improve-all
+test-self-improve-all:
+	@$(UV) run python scripts/run_self_improve_e2e.py --all --worktree
 
 # --- Development-branch workflow targets ---
 # Feature work merges into `development` (not master). `development` merges into

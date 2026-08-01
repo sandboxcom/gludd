@@ -117,6 +117,7 @@ class TestAzureProvisionE2E:
             gpu_type=gpu,
             engine=engine,
             model_name=model,
+            region=_get_env("AZURE_REGION") or "eastus",
             deploy_type=deploy_type,
             max_cost_usd=max_spend,
             timeout_minutes=15.0,
