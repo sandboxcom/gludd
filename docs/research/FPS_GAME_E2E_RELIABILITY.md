@@ -177,6 +177,28 @@ An operator-supplied key always wins. The placeholder satisfies the client
 constructor and may be sent as an unused bearer value; it does not weaken an
 authenticated endpoint or cause fallback to a hosted provider.
 
+## vLLM health does not prove requested model identity
+
+The next paid run reached `GET /v1/models` with HTTP 200 but received HTTP 404
+from `POST /v1/chat/completions`. Terraform had served
+`Qwen/Qwen2.5-0.5B-Instruct`, while the gateway independently fell back to the
+unrelated client default `qwen2.5-coder-7b`. This is not a missing chat route:
+vLLM uses 404 `NotFoundError` when the request's `model` is not one of the
+server's model names.
+
+The symptom and cause are long-lived upstream. A vLLM Docker user reported the
+same healthy `/v1/models` plus 404 `/v1/chat/completions` combination and resolved
+it by correcting the model-name difference ([vLLM discussion 3973][vllm-model-name]).
+Another vLLM report demonstrates that a request using a name outside the configured
+served-model aliases returns `The model ... does not exist` with code 404
+([vLLM issue 15845][vllm-served-model-name]).
+
+Gludd therefore passes the exact `ComputeConfig.model_name` used for provisioning
+into the gateway profile. It must never reconstruct that identity from global
+process environment or a second default. Borrowed endpoints use the runtime's
+explicit `AZURE_MODEL`, with one shared fallback constant only when the operator
+does not provide a name.
+
 ## Why live YouTube downloads are not the acceptance path
 
 The yt-dlp maintainers' long-running [known-issues thread][ytdlp-known] records
@@ -371,6 +393,8 @@ infrastructure failure.
 [azure-group-delete]: https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/delete-resource-group
 [openai-client]: https://github.com/openai/openai-python/blob/main/src/openai/_client.py
 [vllm-key-discussion]: https://github.com/vllm-project/vllm/discussions/898
+[vllm-model-name]: https://github.com/vllm-project/vllm/discussions/3973
+[vllm-served-model-name]: https://github.com/vllm-project/vllm/issues/15845
 [open-compatible-key]: https://github.com/langchain-ai/open_deep_research/issues/195
 [apfs-data-volume]: https://apple.stackexchange.com/questions/367158/whats-system-volumes-data
 [apfs-snapshot-report]: https://apple.stackexchange.com/questions/433849

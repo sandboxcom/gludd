@@ -8,13 +8,19 @@ from general_ludd.models.gateway import ModelGateway, ModelProfile
 from general_ludd.models.provider_registry import ProviderRegistry
 from general_ludd.secrets.env import EnvSecretsManager
 
+DEFAULT_AZURE_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
+
 
 def _openai_base_url(endpoint: str) -> str:
     base_url = endpoint.rstrip("/")
     return base_url if base_url.endswith("/v1") else f"{base_url}/v1"
 
 
-def build_azure_gateway(base_url: str | None = None) -> ModelGateway | None:
+def build_azure_gateway(
+    base_url: str | None = None,
+    *,
+    model_name: str | None = None,
+) -> ModelGateway | None:
     """Construct a real ModelGateway backed by Azure GPU if available.
 
     Returns None when no Azure endpoint is configured.  Never returns a fake.
@@ -23,7 +29,7 @@ def build_azure_gateway(base_url: str | None = None) -> ModelGateway | None:
     if not endpoint:
         return None
 
-    model = os.environ.get("AZURE_MODEL", "qwen2.5-coder-7b")
+    model = (model_name or os.environ.get("AZURE_MODEL") or DEFAULT_AZURE_MODEL).strip()
     profiles = [
         ModelProfile(
             model_profile_id=profile_id,
