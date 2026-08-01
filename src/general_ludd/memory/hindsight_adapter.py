@@ -11,11 +11,13 @@ Environment:
 
 from __future__ import annotations
 
+import copy
 import logging
 import os
 import re
 import threading
 import time
+import uuid
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -36,14 +38,14 @@ class _InMemoryStore:
         self._lock = threading.Lock()
 
     def retain(self, content: str, metadata: dict[str, object] | None = None) -> str:
-        record_id = f"mem_{int(time.time() * 1_000_000)}_{len(self._records)}"
-        entry = {
-            "id": record_id,
-            "content": content,
-            "metadata": dict(metadata or {}),
-            "created_at": time.time(),
-        }
         with self._lock:
+            record_id = f"mem_{uuid.uuid4().hex}"
+            entry = {
+                "id": record_id,
+                "content": content,
+                "metadata": copy.deepcopy(metadata or {}),
+                "created_at": time.time(),
+            }
             self._records.append(entry)
         return record_id
 
@@ -52,7 +54,25 @@ class _InMemoryStore:
         return scored[:top_k]
 
     def search(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
-        return self.recall(query, top_k)
+        normalized_query = query.strip().lower()
+        scored = self._score_all(query)
+        exact = [
+            result
+            for result in scored
+            if normalized_query
+            in f"{result['content']} {result.get('metadata', {})}".lower()
+        ]
+        if exact:
+            return exact[:top_k]
+        qterms = set(_tokenize(query.lower()))
+        if not qterms:
+            return []
+        matches = []
+        for result in scored:
+            searchable = f"{result['content']} {result.get('metadata', {})}"
+            if qterms.issubset(set(_tokenize(searchable.lower()))):
+                matches.append(result)
+        return matches[:top_k]
 
     def _score_all(self, query: str) -> list[dict[str, Any]]:
         ql = query.lower()
@@ -75,7 +95,7 @@ class _InMemoryStore:
                     results.append({
                         "id": rec["id"],
                         "content": rec["content"],
-                        "metadata": rec.get("metadata", {}),
+                        "metadata": copy.deepcopy(rec.get("metadata", {})),
                         "score": round(min(score, 1.0), 3),
                     })
         results.sort(key=lambda r: r["score"], reverse=True)

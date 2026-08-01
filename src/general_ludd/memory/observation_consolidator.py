@@ -7,6 +7,7 @@ source quotes, proof counts, confidence scores, and freshness tracking.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import itertools
 import json
@@ -115,6 +116,9 @@ class ObservationConsolidator:
         existing: Observation,
         new_facts: Sequence[MemoryFact],
     ) -> Observation:
+        if not new_facts:
+            return copy.deepcopy(existing)
+
         now = time.time()
         recalculated = Observation(
             observation_id=existing.observation_id,
@@ -236,16 +240,20 @@ class ObservationConsolidator:
             return list(facts), []
 
         largest = max(clusters, key=len)
+        primary = list(largest)
         contradictory: list[MemoryFact] = []
         seen = set(id(f) for f in largest)
         for cluster in clusters:
             if cluster is not largest:
                 for fact in cluster:
                     if id(fact) not in seen:
-                        contradictory.append(fact)
+                        if _looks_contradictory(fact.content, primary):
+                            contradictory.append(fact)
+                        else:
+                            primary.append(fact)
                         seen.add(id(fact))
 
-        return largest, contradictory
+        return primary, contradictory
 
     def _build_observation(
         self,
@@ -330,56 +338,82 @@ class ObservationStore:
     # ---------------------------------------------------------------- put / get
 
     def put(self, observation: Observation) -> None:
+        candidate = copy.deepcopy(observation)
         with self._lock:
-            self._observations[observation.observation_id] = observation
-            self._persist()
+            before = self._observations.copy()
+            self._observations[candidate.observation_id] = candidate
+            try:
+                self._persist()
+            except Exception:
+                self._observations = before
+                raise
 
     def put_all(self, observations: list[Observation]) -> None:
+        candidates = [copy.deepcopy(observation) for observation in observations]
         with self._lock:
-            for obs in observations:
+            before = self._observations.copy()
+            for obs in candidates:
                 self._observations[obs.observation_id] = obs
-            self._persist()
+            try:
+                self._persist()
+            except Exception:
+                self._observations = before
+                raise
 
     def get(self, observation_id: str) -> Observation | None:
         with self._lock:
-            return self._observations.get(observation_id)
+            return copy.deepcopy(self._observations.get(observation_id))
 
     # ---------------------------------------------------------------- query
 
     def get_by_subject(self, subject: str) -> list[Observation]:
         with self._lock:
-            return [o for o in self._observations.values() if o.subject == subject]
+            return copy.deepcopy(
+                [o for o in self._observations.values() if o.subject == subject]
+            )
 
     def get_fresh(self) -> list[Observation]:
         with self._lock:
-            return [o for o in self._observations.values() if not o.stale]
+            return copy.deepcopy([o for o in self._observations.values() if not o.stale])
 
     def get_stale(self) -> list[Observation]:
         with self._lock:
-            return [o for o in self._observations.values() if o.stale]
+            return copy.deepcopy([o for o in self._observations.values() if o.stale])
 
     def get_above_confidence(self, threshold: float) -> list[Observation]:
         with self._lock:
-            return [o for o in self._observations.values() if o.confidence >= threshold]
+            return copy.deepcopy(
+                [o for o in self._observations.values() if o.confidence >= threshold]
+            )
 
     def list_all(self) -> list[Observation]:
         with self._lock:
-            return list(self._observations.values())
+            return copy.deepcopy(list(self._observations.values()))
 
     # ---------------------------------------------------------------- mutate
 
     def delete(self, observation_id: str) -> bool:
         with self._lock:
             existed = observation_id in self._observations
+            before = self._observations.copy()
             self._observations.pop(observation_id, None)
             if existed:
-                self._persist()
+                try:
+                    self._persist()
+                except Exception:
+                    self._observations = before
+                    raise
             return existed
 
     def clear(self) -> None:
         with self._lock:
+            before = self._observations.copy()
             self._observations.clear()
-            self._persist()
+            try:
+                self._persist()
+            except Exception:
+                self._observations = before
+                raise
 
     # ---------------------------------------------------------------- persistence
 
@@ -463,21 +497,42 @@ def _bigrams(text: str) -> set[tuple[str, str]]:
 
 def _extract_names(content: str) -> list[str]:
     names: list[str] = []
-    for match in re.finditer(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b", content):
-        candidate = match.group(1).strip()
-        if candidate.lower() not in _COMMON_NOUNS:
-            names.append(candidate)
+    pattern = r"\b([A-Z][A-Za-z0-9_]*(?:\s+[A-Z][A-Za-z0-9_]*)?)\b"
+    for match in re.finditer(pattern, content):
+        parts = match.group(1).strip().split()
+        while parts and parts[0].lower() in _COMMON_NOUNS:
+            parts.pop(0)
+        if parts:
+            candidate = " ".join(parts)
+            if candidate.lower() not in _COMMON_NOUNS:
+                names.append(candidate)
     return names
 
 
 _COMMON_NOUNS: frozenset[str] = frozenset({
-    "I", "We", "He", "She", "They", "It", "This", "That", "The",
-    "A", "An", "And", "Or", "But", "Not", "Is", "Are", "Was", "Were",
-    "Has", "Have", "Do", "Does", "Will", "Would", "Can", "Could",
-    "Should", "May", "Might", "All", "Any", "Each", "Every", "Some",
-    "No", "Yes", "More", "Most", "Other", "Only", "Just", "New",
-    "Good", "Bad", "High", "Low", "Big", "Small", "First", "Last",
+    "i", "we", "he", "she", "they", "it", "this", "that", "the",
+    "a", "an", "and", "or", "but", "not", "is", "are", "was", "were",
+    "has", "have", "do", "does", "will", "would", "can", "could",
+    "should", "may", "might", "all", "any", "each", "every", "some",
+    "no", "yes", "more", "most", "other", "only", "just", "new",
+    "good", "bad", "high", "low", "big", "small", "first", "last",
+    "python",
 })
+
+_CONTRADICTION_MARKERS = frozenset(
+    {"hates", "dislikes", "opposes", "contradicts", "not", "never"}
+)
+
+
+def _looks_contradictory(content: str, supporting: Sequence[MemoryFact]) -> bool:
+    candidate_tokens = set(_normalize(content).split())
+    if not candidate_tokens & _CONTRADICTION_MARKERS:
+        return False
+    support_tokens: set[str] = set()
+    for fact in supporting:
+        support_tokens.update(_normalize(fact.content).split())
+    meaningful_overlap = (candidate_tokens & support_tokens) - _COMMON_NOUNS
+    return bool(meaningful_overlap - _CONTRADICTION_MARKERS)
 
 
 def _synthesize_statement(facts: list[MemoryFact]) -> str:

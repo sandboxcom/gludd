@@ -13,6 +13,7 @@ feed into the reflect synthesis to produce persona-appropriate responses.
 
 from __future__ import annotations
 
+import copy
 import logging
 import re
 import threading
@@ -187,11 +188,12 @@ class MemoryBank:
         self._config = config
         self._mental_models: dict[str, MentalModel] = {}
         self._facts: dict[str, MemoryEntry] = {}
+        self._fact_content_index: dict[str, str] = {}
         self._lock = threading.Lock()
 
     @property
     def config(self) -> MemoryBankConfig:
-        return self._config
+        return copy.deepcopy(self._config)
 
     @property
     def bank_id(self) -> str:
@@ -205,15 +207,16 @@ class MemoryBank:
         model.updated_at = time.time()
         if not model.created_at:
             model.created_at = model.updated_at
+        stored = copy.deepcopy(model)
         with self._lock:
-            self._mental_models[model.model_id] = model
-        return model
+            self._mental_models[stored.model_id] = stored
+        return copy.deepcopy(stored)
 
     def get_mental_models(
         self, subject_filter: str | None = None
     ) -> list[MentalModel]:
         with self._lock:
-            models = list(self._mental_models.values())
+            models = copy.deepcopy(list(self._mental_models.values()))
         if subject_filter is not None:
             fl = subject_filter.lower()
             models = [
@@ -231,7 +234,7 @@ class MemoryBank:
                 return None
             existing.content = content
             existing.updated_at = time.time()
-        return existing
+            return copy.deepcopy(existing)
 
     def delete_mental_model(self, model_id: str) -> bool:
         with self._lock:
@@ -248,12 +251,20 @@ class MemoryBank:
         if not fact.created_at:
             fact.created_at = time.time()
         with self._lock:
-            self._facts[fact.entry_id] = fact
-        return fact
+            existing_id = self._fact_content_index.get(fact.content)
+            if existing_id is not None and existing_id in self._facts:
+                existing = self._facts[existing_id]
+                fact.entry_id = existing.entry_id
+                fact.created_at = existing.created_at
+                return copy.deepcopy(existing)
+            stored = copy.deepcopy(fact)
+            self._facts[stored.entry_id] = stored
+            self._fact_content_index[stored.content] = stored.entry_id
+            return copy.deepcopy(stored)
 
     def get_facts(self, tag_filter: str | None = None) -> list[MemoryEntry]:
         with self._lock:
-            facts = list(self._facts.values())
+            facts = copy.deepcopy(list(self._facts.values()))
         if tag_filter is not None:
             fl = tag_filter.lower()
             facts = [f for f in facts if any(fl in t.lower() for t in f.tags)]
@@ -263,7 +274,10 @@ class MemoryBank:
     def delete_fact(self, entry_id: str) -> bool:
         with self._lock:
             if entry_id in self._facts:
+                content = self._facts[entry_id].content
                 del self._facts[entry_id]
+                if self._fact_content_index.get(content) == entry_id:
+                    del self._fact_content_index[content]
                 return True
             return False
 
@@ -309,7 +323,7 @@ class MemoryBank:
                 priority_boost = (model.priority - 5) * 0.04
                 score = min(1.0, score + priority_boost)
                 if score > 0:
-                    scored.append((model, score))
+                    scored.append((copy.deepcopy(model), score))
         scored.sort(key=lambda x: x[1], reverse=True)
         return [m for m, _ in scored]
 
@@ -322,7 +336,7 @@ class MemoryBank:
                 text_blob = f"{fact.content} {fact.source} {' '.join(fact.tags)}"
                 score = _score_text(qterms, ql, text_blob)
                 if score > 0:
-                    scored.append((fact, score))
+                    scored.append((copy.deepcopy(fact), score))
         scored.sort(key=lambda x: x[1], reverse=True)
         return [f for f, _ in scored]
 
