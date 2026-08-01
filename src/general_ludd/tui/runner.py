@@ -175,16 +175,16 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
         sel_idx = tui_state.get("selected_main_idx", -1) if current_view == "main" else -1
         return h._build_controls_table(daemon_running, status_msg, term_width=_tw, selected_idx=sel_idx)
 
-    def build_daemon_table(*, term_width: int = 80) -> Any:
+    def build_daemon_table(*, term_width: int = 60) -> Any:
         return h._build_daemon_table(daemon_running, args.daemon_url, current_view, term_width=term_width)
 
-    def build_info_table(info: dict[str, Any], *, term_width: int = 80) -> Any:
+    def build_info_table(info: dict[str, Any], *, term_width: int = 60) -> Any:
         return h._build_info_table(info, term_width=term_width)
 
-    def build_binary_table(info: dict[str, Any], *, term_width: int = 80) -> Any:
+    def build_binary_table(info: dict[str, Any], *, term_width: int = 60) -> Any:
         return h._build_binary_table(info, term_width=term_width)
 
-    def build_config_table(info: dict[str, Any], *, term_width: int = 80) -> Any:
+    def build_config_table(info: dict[str, Any], *, term_width: int = 60) -> Any:
         return h._build_config_table(info, term_width=term_width)
 
     def make_layout(info: dict[str, Any]) -> Layout:

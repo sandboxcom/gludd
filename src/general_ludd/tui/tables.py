@@ -16,7 +16,7 @@ def _make_table(
     empty_msg: str = "",
     show_header: bool = True,
     selected_idx: int | None = None,
-    term_width: int = 80,
+    term_width: int = 60,
     data: list[Any] | None = None,
     row_formatter: Callable[[Any, int, int | None], tuple[str, ...]] | None = None,
 ) -> Table:
@@ -27,6 +27,7 @@ def _make_table(
         title=title,
         show_header=show_header,
         expand=True,
+        width=term_width,
         title_justify="left",
     )
     for name, style, ratio, min_w in columns:
