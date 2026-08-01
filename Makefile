@@ -1469,14 +1469,10 @@ test-e2e-azure:
 
 # Azure full-provision E2E (opt-in, costly, manual)
 test-e2e-azure-provision:
-	@AZURE_PROVISION_E2E=1 \
-	 GLUDD_E2E_MAX_SPEND_USD=$(GLUDD_E2E_MAX_SPEND_USD) \
-	 ARM_SUBSCRIPTION_ID=$(ARM_SUBSCRIPTION_ID) \
-	 ARM_TENANT_ID=$(ARM_TENANT_ID) \
-	 ARM_CLIENT_ID=$(ARM_CLIENT_ID) \
-	 ARM_CLIENT_SECRET=$(ARM_CLIENT_SECRET) \
-	 ARM_USE_MSI=$(ARM_USE_MSI) \
-	 AZURE_SUBSCRIPTION_ID=$(AZURE_SUBSCRIPTION_ID) \
+	@ARM_CLIENT_ID="$${ARM_CLIENT_ID:-}" ARM_CLIENT_SECRET="$${ARM_CLIENT_SECRET:-}" \
+	 ARM_TENANT_ID="$${ARM_TENANT_ID:-}" ARM_SUBSCRIPTION_ID="$${ARM_SUBSCRIPTION_ID:-}" \
+	 ARM_USE_MSI="$${ARM_USE_MSI:-}" AZURE_SUBSCRIPTION_ID="$${AZURE_SUBSCRIPTION_ID:-}" \
+	 AZURE_PROVISION_E2E=1 GLUDD_E2E_MAX_SPEND_USD="$${GLUDD_E2E_MAX_SPEND_USD:-5}" \
 		$(UV) run pytest tests/e2e/providers/test_azure_provision_e2e.py -v -m azure_provision
 
 # All E2E provider tests (skips everything not configured)
