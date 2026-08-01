@@ -144,6 +144,14 @@ def test_game_extras_exclude_opencv_413_ffmpeg8_sdl_bundle() -> None:
         assert "opencv-python-headless>=4.9.0,<4.13" in optional_dependencies[extra_name]
 
 
+def test_game_extras_require_pillow_with_current_security_fixes() -> None:
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    optional_dependencies = project["project"]["optional-dependencies"]
+
+    for extra_name in ("game-e2e", "e2e-all"):
+        assert "pillow>=12.3.0" in optional_dependencies[extra_name]
+
+
 def test_make_target_has_a_network_free_behavioral_smoke(tmp_path: Path) -> None:
     completed = subprocess.run(
         [
