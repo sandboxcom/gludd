@@ -15,18 +15,35 @@ import threading
 import time
 import urllib.error
 import urllib.request
+import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 from alembic import command
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from general_ludd.db.azure_cost_repository import (
+    AzureCostLeaseClaim,
+    AzureCostReconciliationRepository,
+    StaleAzureCostLeaseError,
+)
 from general_ludd.db.migrations import get_alembic_config
-from general_ludd.db.models import AuditEventModel, ProjectModel, TodoModel, TodoStatus
+from general_ludd.db.models import (
+    AuditEventModel,
+    AzureCostOutboxEventModel,
+    ProjectModel,
+    TodoModel,
+    TodoStatus,
+)
 from general_ludd.db.repository import TodoRepository
 from general_ludd.events import CustomEvent, EventBus
+from general_ludd.infra.azure_cost_reconciliation import (
+    AzureCostLedgerState,
+    AzureCostPrediction,
+)
 from general_ludd.infra.deployment_events import TerraformEventBridge
 
 POSTGRES_URL = os.environ.get("POSTGRES_E2E_URL", "")
@@ -55,6 +72,66 @@ async def _claim(url: str, project_id: str) -> list[str]:
             return [todo.todo_id for todo in claimed]
     finally:
         await engine.dispose()
+
+
+async def _claim_cost(
+    url: str,
+    prediction_id: str,
+    owner: str,
+    now: datetime,
+) -> list[dict[str, object]]:
+    engine = create_async_engine(url, pool_size=1, max_overflow=0)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with sessions() as session:
+            claims = await AzureCostReconciliationRepository(session).claim_due(
+                owner=owner,
+                now=now,
+                lease_duration=timedelta(minutes=1),
+                limit=1,
+                prediction_id=prediction_id,
+            )
+            await session.commit()
+            return [
+                {
+                    "prediction_id": claim.prediction_id,
+                    "prediction_version": claim.prediction_version,
+                    "owner": claim.owner,
+                    "fencing_token": claim.fencing_token,
+                    "expires_at": claim.expires_at.isoformat(),
+                }
+                for claim in claims
+            ]
+    finally:
+        await engine.dispose()
+
+
+def _claim_cost_process(
+    url: str,
+    prediction_id: str,
+    owner: str,
+    now_iso: str,
+    start,
+    results,
+) -> None:
+    try:
+        if not start.wait(timeout=20):
+            raise TimeoutError("cost claim start barrier timed out")
+        results.put(
+            {
+                "owner": owner,
+                "claims": asyncio.run(
+                    _claim_cost(
+                        url,
+                        prediction_id,
+                        owner,
+                        datetime.fromisoformat(now_iso),
+                    )
+                ),
+            }
+        )
+    except BaseException as exc:
+        results.put({"owner": owner, "error": f"{type(exc).__name__}: {exc}"})
 
 
 def _claim_process(url: str, project_id: str, start, results) -> None:
@@ -105,6 +182,123 @@ async def test_postgres_fences_claims_across_worker_processes() -> None:
     assert [len(items) for items in claimed_sets] == [6, 6]
     assert claimed_sets[0].isdisjoint(claimed_sets[1])
     assert len(claimed_sets[0] | claimed_sets[1]) == 12
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_postgres_fences_cost_reconciliation_across_worker_processes() -> None:
+    prediction_id = f"pg-cost-{uuid.uuid4().hex}"
+    now = datetime.now(UTC).replace(microsecond=0)
+    resource_id = (
+        "/subscriptions/sub-1/resourceGroups/rg-1/providers/"
+        "Microsoft.App/containerApps/app-1"
+    )
+    prediction = AzureCostPrediction(
+        prediction_id=prediction_id,
+        prediction_version=1,
+        todo_id=f"TODO-{uuid.uuid4().hex[:12]}",
+        subscription_id="sub-1",
+        resource_group="rg-1",
+        resource_ids=(resource_id,),
+        meter_ids=("gpu-meter",),
+        region="eastus",
+        sku="Consumption-GPU-NC8as-T4",
+        workload="postgres-multiworker",
+        predicted_cost_usd=1.0,
+        conservative_ceiling_usd=1.5,
+        usage_started_at=now - timedelta(hours=2),
+        usage_ended_at=now - timedelta(hours=1),
+    )
+    engine = create_async_engine(POSTGRES_URL)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    async with sessions() as session:
+        await AzureCostReconciliationRepository(session).persist_prediction(
+            prediction,
+            not_before=now,
+            now=now,
+        )
+        await session.commit()
+
+    context = multiprocessing.get_context("spawn")
+    start = context.Event()
+    results = context.Queue()
+    workers = [
+        context.Process(
+            target=_claim_cost_process,
+            args=(
+                POSTGRES_URL,
+                prediction_id,
+                f"cost-worker-{index}",
+                now.isoformat(),
+                start,
+                results,
+            ),
+        )
+        for index in range(2)
+    ]
+    for worker in workers:
+        worker.start()
+    start.set()
+    payloads = [results.get(timeout=30) for _ in workers]
+    for worker in workers:
+        worker.join(timeout=10)
+
+    assert all(worker.exitcode == 0 for worker in workers)
+    assert all("error" not in payload for payload in payloads), payloads
+    claims = [claim for payload in payloads for claim in payload["claims"]]
+    assert len(claims) == 1
+    assert claims[0]["fencing_token"] == 1
+
+    stale_claim = AzureCostLeaseClaim(
+        prediction_id=str(claims[0]["prediction_id"]),
+        prediction_version=int(claims[0]["prediction_version"]),
+        owner=str(claims[0]["owner"]),
+        fencing_token=int(claims[0]["fencing_token"]),
+        expires_at=datetime.fromisoformat(str(claims[0]["expires_at"])),
+    )
+    takeover_at = now + timedelta(minutes=2)
+    async with sessions() as session:
+        repository = AzureCostReconciliationRepository(session)
+        takeover = (
+            await repository.claim_due(
+                owner="cost-worker-takeover",
+                now=takeover_at,
+                lease_duration=timedelta(minutes=1),
+                limit=1,
+                prediction_id=prediction_id,
+            )
+        )[0]
+        await session.commit()
+    assert takeover.fencing_token == 2
+
+    async with sessions() as session:
+        repository = AzureCostReconciliationRepository(session)
+        with pytest.raises(StaleAzureCostLeaseError):
+            await repository.advance_state(
+                stale_claim,
+                AzureCostLedgerState.QUERY_DUE,
+                now=takeover_at,
+            )
+        await session.rollback()
+
+    async with sessions() as session:
+        repository = AzureCostReconciliationRepository(session)
+        await repository.advance_state(
+            takeover,
+            AzureCostLedgerState.QUERY_DUE,
+            now=takeover_at,
+        )
+        await session.commit()
+        event_count = await session.scalar(
+            select(func.count())
+            .select_from(AzureCostOutboxEventModel)
+            .where(
+                AzureCostOutboxEventModel.prediction_id == prediction_id,
+                AzureCostOutboxEventModel.event_type
+                == "COST_RECONCILIATION_QUERY_DUE",
+            )
+        )
+        assert event_count == 1
     await engine.dispose()
 
 

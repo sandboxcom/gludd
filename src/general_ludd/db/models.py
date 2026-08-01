@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import enum
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any, ClassVar
 from uuid import uuid4
 
@@ -13,8 +14,10 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -550,6 +553,160 @@ class BucketLeaseModel(Base):
     __table_args__ = (
         UniqueConstraint("bucket_key", "holder_id", name="uq_bucket_lease"),
         Index("ix_bucket_leases_key_expires", "bucket_key", "expires_at"),
+    )
+
+
+class AzureCostPredictionModel(Base):
+    """Immutable Azure prediction envelope plus mutable reconciliation cursor."""
+
+    __tablename__ = "azure_cost_predictions"
+
+    prediction_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    prediction_version: Mapped[int] = mapped_column(Integer, primary_key=True)
+    todo_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    identity_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    identity_payload: Mapped[str] = mapped_column(Text, nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    state_rank: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    not_before: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, index=True)
+    lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        UTCDateTime(), nullable=True, index=True
+    )
+    fencing_token: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    state_changed_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), nullable=False, default=_utcnow
+    )
+    finalized_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), nullable=False, default=_utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), nullable=False, default=_utcnow, onupdate=_utcnow
+    )
+
+    @property
+    def id(self) -> tuple[str, int]:
+        """Stable composite identity convenient for repository callers."""
+        return (self.prediction_id, self.prediction_version)
+
+    __table_args__ = (
+        CheckConstraint(
+            "prediction_version > 0",
+            name="ck_azure_cost_predictions_version_positive",
+        ),
+        CheckConstraint(
+            "fencing_token >= 0",
+            name="ck_azure_cost_predictions_fencing_nonnegative",
+        ),
+        CheckConstraint(
+            "state_rank >= 0 AND state_rank <= 7",
+            name="ck_azure_cost_predictions_state_rank",
+        ),
+        CheckConstraint(
+            "((lease_owner IS NULL AND lease_expires_at IS NULL) OR "
+            "(lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL))",
+            name="ck_azure_cost_predictions_lease_pair",
+        ),
+        _len_check("identity_payload", "azure_cost_predictions"),
+        Index(
+            "ix_azure_cost_predictions_due_claim",
+            "state_rank",
+            "not_before",
+            "lease_expires_at",
+        ),
+    )
+
+
+class AzureCostObservationModel(Base):
+    """Append-only billed-cost row retained at its source snapshot identity."""
+
+    __tablename__ = "azure_cost_observations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    prediction_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    prediction_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    snapshot_id: Mapped[str] = mapped_column(String(256), nullable=False)
+    row_identity: Mapped[str] = mapped_column(String(256), nullable=False)
+    cost_usd: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), nullable=False)
+    payload_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[str] = mapped_column(Text, nullable=False)
+    fencing_token: Mapped[int] = mapped_column(Integer, nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), nullable=False, default=_utcnow
+    )
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["prediction_id", "prediction_version"],
+            [
+                "azure_cost_predictions.prediction_id",
+                "azure_cost_predictions.prediction_version",
+            ],
+            ondelete="CASCADE",
+            name="fk_azure_cost_observations_prediction",
+        ),
+        UniqueConstraint(
+            "prediction_id",
+            "prediction_version",
+            "source",
+            "snapshot_id",
+            "row_identity",
+            name="uq_azure_cost_observation_identity",
+        ),
+        CheckConstraint(
+            "fencing_token > 0",
+            name="ck_azure_cost_observations_fencing_positive",
+        ),
+        _len_check("payload", "azure_cost_observations"),
+        Index(
+            "ix_azure_cost_observations_prediction",
+            "prediction_id",
+            "prediction_version",
+        ),
+    )
+
+
+class AzureCostOutboxEventModel(Base):
+    """Transactional state event awaiting publication by an outbox relay."""
+
+    __tablename__ = "azure_cost_outbox_events"
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    prediction_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    prediction_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    deduplication_key: Mapped[str] = mapped_column(String(256), nullable=False)
+    payload: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), nullable=False, default=_utcnow
+    )
+    published_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["prediction_id", "prediction_version"],
+            [
+                "azure_cost_predictions.prediction_id",
+                "azure_cost_predictions.prediction_version",
+            ],
+            ondelete="CASCADE",
+            name="fk_azure_cost_outbox_prediction",
+        ),
+        UniqueConstraint(
+            "deduplication_key",
+            name="uq_azure_cost_outbox_deduplication_key",
+        ),
+        _len_check("payload", "azure_cost_outbox_events"),
+        Index("ix_azure_cost_outbox_pending", "published_at", "created_at"),
+        Index(
+            "ix_azure_cost_outbox_prediction",
+            "prediction_id",
+            "prediction_version",
+        ),
     )
 
 
