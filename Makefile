@@ -84,7 +84,8 @@ _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-wor
         molecule-version molecule-test molecule-test-all \
         collection-roles collection-modules molecule-scenarios \
         test-binary-re test-radio test-os-expert test-e2e-test-gen test-language test-language-expert test-collections \
-         test-e2e-azure test-e2e-azure-provision test-e2e-providers \
+         test-e2e-azure test-e2e-azure-provision test-e2e-games-provision test-e2e-providers \
+         e2e-audit-azure e2e-latest-log \
         molecule-test-binary-re molecule-test-radio molecule-test-os-expert molecule-test-e2e-test-gen molecule-test-language \
         move-ansible-roles \
         container-build container-run container-push \
@@ -209,6 +210,8 @@ help:
 	@echo "  test-e2e-providers    All E2E provider tests"
 	@echo "  test-e2e-games        Game generation E2E — AI generates games, compares frames (no Azure provision)"
 	@echo "  test-e2e-games-provision  Game E2E with Azure GPU provisioning (opt-in, costly)"
+	@echo "  e2e-audit-azure     List all E2E runs with PASS/FAIL/RUNNING status"
+	@echo "  e2e-latest-log      Show exit code and error summary for latest E2E run"
 	@echo "  test-opencode-e2e     .opencode/ plugin load+invocation tests"
 	@echo "  test-specific         Single test (TESTFILE=path::TestClass::test_name)"
 	@echo "  test-files            Multiple tests (TESTFILES=tests/unit/a.py tests/unit/b.py)"
@@ -1469,11 +1472,12 @@ test-e2e-azure:
 
 # Azure full-provision E2E (opt-in, costly, manual)
 test-e2e-azure-provision:
+	@mkdir -p .gate-logs/e2e-azure
 	@ARM_CLIENT_ID="$${ARM_CLIENT_ID:-}" ARM_CLIENT_SECRET="$${ARM_CLIENT_SECRET:-}" \
 	 ARM_TENANT_ID="$${ARM_TENANT_ID:-}" ARM_SUBSCRIPTION_ID="$${ARM_SUBSCRIPTION_ID:-}" \
 	 ARM_USE_MSI="$${ARM_USE_MSI:-}" AZURE_SUBSCRIPTION_ID="$${AZURE_SUBSCRIPTION_ID:-}" \
 	 AZURE_PROVISION_E2E=1 GLUDD_E2E_MAX_SPEND_USD="$${GLUDD_E2E_MAX_SPEND_USD:-5}" \
-		$(UV) run pytest tests/e2e/providers/test_azure_provision_e2e.py -v -m azure_provision
+		$(UV) run python scripts/e2e_log_capture.py --cmd "$(UV) run pytest tests/e2e/providers/test_azure_provision_e2e.py -v -m azure_provision" --label azure-provision
 
 # All E2E provider tests (skips everything not configured)
 test-e2e-providers:
@@ -1487,9 +1491,17 @@ test-e2e-games:
 	 $(UV) run pytest tests/e2e/game_e2e/ -v -m "e2e and not azure_provision"
 
 test-e2e-games-provision:
+	@mkdir -p .gate-logs/e2e-azure
 	@ARM_CLIENT_ID="$${ARM_CLIENT_ID:-}" ARM_CLIENT_SECRET="$${ARM_CLIENT_SECRET:-}" \
 	 ARM_TENANT_ID="$${ARM_TENANT_ID:-}" ARM_SUBSCRIPTION_ID="$${ARM_SUBSCRIPTION_ID:-}" \
-	 AZURE_PROVISION_E2E=1 $(UV) run pytest tests/e2e/game_e2e/ -v -m azure_provision
+	 AZURE_PROVISION_E2E=1 $(UV) run python scripts/e2e_log_capture.py --cmd "$(UV) run pytest tests/e2e/game_e2e/ -v -m azure_provision" --label games-provision
+
+# Azure E2E log audit
+e2e-audit-azure:
+	@$(UV) run python scripts/e2e_log_capture.py --audit
+
+e2e-latest-log:
+	@$(UV) run python scripts/e2e_log_capture.py --latest azure-provision
 
 test-games:
 	@$(UV) run python -m pytest tests/e2e/test_game_building_deepseek.py $(_XD) -v $(PYTEST_ARGS)
