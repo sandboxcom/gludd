@@ -550,7 +550,7 @@ class TerraformGenerator:
         """)
 
     def _generate_azure_containerapp(self, config: ComputeConfig) -> str:
-        region = config.region or "centralus"
+        region = config.region or os.environ.get("AZURE_REGION", "westus2")
         _modules = os.path.join(os.path.dirname(__file__), "..", "..", "..", "infra", "terraform", "modules")
         suffix = config.model_name.replace("/", "-").replace(".", "-").replace("_", "-").lower()[:8]
         suffix = suffix + "-" + uuid.uuid4().hex[:6]
