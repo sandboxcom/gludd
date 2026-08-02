@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import math
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, ClassVar, Protocol, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, cast
 
 import tenacity
 
@@ -37,6 +39,21 @@ logger = logging.getLogger(__name__)
 # non-deterministic and time-sensitive, so entries must expire rather than
 # live forever. Configurable per-gateway via response_cache_ttl_seconds.
 DEFAULT_RESPONSE_CACHE_TTL_SECONDS = 3600
+
+# D-30 phase-one buffered payload limits. Token limits already live on
+# ``ModelProfile``; these byte/tool defaults add independent memory-amplification
+# bounds without changing the configured model context windows.
+DEFAULT_MAX_REQUEST_BYTES = 1_048_576
+DEFAULT_MAX_INPUT_TOKENS = 120_000
+DEFAULT_MAX_RESPONSE_BYTES = 4_194_304
+DEFAULT_MAX_OUTPUT_TOKENS = 8_000
+DEFAULT_MAX_TOOL_CALLS = 64
+
+
+def _positive_profile_limit(profile: object, field_name: str, default: int) -> int:
+    """Read a positive profile limit, retaining safe defaults for legacy stubs."""
+    value = getattr(profile, field_name, default)
+    return value if type(value) is int and value > 0 else default
 
 
 def _coerce_token_count(value: object) -> int:
@@ -172,6 +189,39 @@ class CircuitBreakerOpenError(Exception):
     """
 
 
+class PayloadLimitError(Exception):
+    """Typed, payload-free rejection raised by model gateway hard limits.
+
+    The exception intentionally carries only bounded scalar diagnostics. Model
+    content and tool arguments are never copied into the message, logs, traces,
+    metrics, cache, or persistence on this path.
+    """
+
+    def __init__(
+        self,
+        *,
+        profile_id: str,
+        stage: Literal["request", "response"],
+        dimension: Literal["bytes", "tokens", "tool_calls"],
+        actual: int,
+        limit: int,
+        source: Literal["gateway", "provider", "cache"],
+        count_source: str,
+    ) -> None:
+        self.profile_id = profile_id
+        self.stage = stage
+        self.dimension = dimension
+        self.actual = actual
+        self.limit = limit
+        self.source = source
+        self.count_source = count_source
+        super().__init__(
+            "model payload limit exceeded: "
+            f"profile={profile_id!r}, stage={stage}, dimension={dimension}, "
+            f"actual={actual}, limit={limit}, source={source}, count_source={count_source}"
+        )
+
+
 class ModelProfile(BaseModel):
     model_profile_id: str
     role_names: list[str] = Field(default_factory=list)
@@ -182,8 +232,11 @@ class ModelProfile(BaseModel):
     api_base_alias: str | None = None
     credential_alias: str | None = None
     context_window: int = 128000
-    max_input_tokens: int = 120000
-    max_output_tokens: int = 8000
+    max_request_bytes: int = DEFAULT_MAX_REQUEST_BYTES
+    max_input_tokens: int = DEFAULT_MAX_INPUT_TOKENS
+    max_response_bytes: int = DEFAULT_MAX_RESPONSE_BYTES
+    max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS
+    max_tool_calls: int = DEFAULT_MAX_TOOL_CALLS
     cost_per_input_token: float = 0.0
     cost_per_output_token: float = 0.0
     api_metered: bool = True
@@ -215,7 +268,15 @@ class ModelProfile(BaseModel):
             raise ValueError("model_profile_id must not be empty")
         return v
 
-    @field_validator("context_window", "max_input_tokens", "max_output_tokens", "fallback_max_concurrency")
+    @field_validator(
+        "context_window",
+        "max_request_bytes",
+        "max_input_tokens",
+        "max_response_bytes",
+        "max_output_tokens",
+        "max_tool_calls",
+        "fallback_max_concurrency",
+    )
     @classmethod
     def _positive_int(cls, v: int) -> int:
         if v < 1:
@@ -487,6 +548,7 @@ class ModelGateway:
         pause_controller: _PauseControllerProtocol | None = None,
         langsmith_tracer: LangSmithTracer | None = None,
         max_fallback_depth: int = 3,
+        request_token_counter: Callable[[ModelProfile, list[dict[str, str]]], int] | None = None,
     ) -> None:
         self._profiles: dict[str, ModelProfile] = {}
         if profiles:
@@ -508,6 +570,7 @@ class ModelGateway:
         self._pause_controller = pause_controller
         self._langsmith_tracer = langsmith_tracer
         self._max_fallback_depth = max_fallback_depth
+        self._request_token_counter = request_token_counter
         # Gateway-wide failover event log (not tied to any single profile's
         # own chain config): every hop walked by _walk_fallbacks is recorded
         # here for audit/debugging, independent of whether a metrics collector
@@ -565,6 +628,227 @@ class ModelGateway:
 
     def get_profile(self, profile_id: str) -> ModelProfile | None:
         return self._profiles.get(profile_id)
+
+    @staticmethod
+    def _request_utf8_bytes(
+        messages: list[dict[str, str]],
+        request_kwargs: dict[str, Any],
+    ) -> tuple[int, int]:
+        """Return exact bytes for buffered structured request components.
+
+        ``ensure_ascii=False`` is essential: escaped JSON length is not UTF-8
+        wire length for non-ASCII input. Sorted keys make the accounting stable
+        across otherwise equivalent dict insertion orders. Phase one counts the
+        message envelope plus the structured bodies the gateway deliberately
+        forwards (tool schemas, guided generation, and ``extra_body``); transport
+        headers and provider-added framing are outside this logical boundary.
+        """
+        message_bytes = len(
+            json.dumps(
+                messages,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        )
+        body_keys = (
+            "tools",
+            "extra_body",
+            "guided_json",
+            "guided_regex",
+            "guided_choice",
+            "guided_grammar",
+            "guided_whitespace_pattern",
+        )
+        structured_body = {key: request_kwargs[key] for key in body_keys if key in request_kwargs}
+        if not structured_body:
+            return message_bytes, 0
+        body_bytes = len(
+            json.dumps(
+                structured_body,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        )
+        return message_bytes + body_bytes, body_bytes
+
+    def _request_tokens(
+        self,
+        profile: ModelProfile,
+        messages: list[dict[str, str]],
+        request_bytes: int,
+        structured_body_bytes: int,
+    ) -> tuple[int, str]:
+        """Count request tokens without making a provider/network call.
+
+        Operators may inject a model-specific local tokenizer. A counter is
+        trusted only when it returns an exact non-boolean, non-negative integer.
+        Missing, failing, or malformed counters fail closed to one token per
+        UTF-8 byte, a deliberately conservative fallback for common byte-level
+        model tokenizers.
+        """
+        counter = self._request_token_counter
+        if counter is not None:
+            try:
+                counted = counter(profile, messages)
+            except Exception:
+                logger.warning(
+                    "Configured request token counter failed for profile=%s; using conservative UTF-8 byte count",
+                    profile.model_profile_id,
+                )
+            else:
+                if type(counted) is int and counted >= 0:
+                    return counted + structured_body_bytes, (
+                        "configured_token_counter"
+                        if structured_body_bytes == 0
+                        else "configured_token_counter+structured_body_utf8_conservative"
+                    )
+                logger.warning(
+                    "Configured request token counter returned an invalid count for profile=%s; "
+                    "using conservative UTF-8 byte count",
+                    profile.model_profile_id,
+                )
+        return request_bytes, "utf8_bytes_conservative"
+
+    def _enforce_request_limits(
+        self,
+        profile: ModelProfile,
+        profile_id: str,
+        messages: list[dict[str, str]],
+        request_kwargs: dict[str, Any],
+    ) -> None:
+        request_bytes, structured_body_bytes = self._request_utf8_bytes(messages, request_kwargs)
+        max_request_bytes = _positive_profile_limit(profile, "max_request_bytes", DEFAULT_MAX_REQUEST_BYTES)
+        if request_bytes > max_request_bytes:
+            raise PayloadLimitError(
+                profile_id=profile_id,
+                stage="request",
+                dimension="bytes",
+                actual=request_bytes,
+                limit=max_request_bytes,
+                source="gateway",
+                count_source="compact_json_utf8",
+            )
+        input_tokens, count_source = self._request_tokens(
+            profile,
+            messages,
+            request_bytes,
+            structured_body_bytes,
+        )
+        max_input_tokens = _positive_profile_limit(profile, "max_input_tokens", DEFAULT_MAX_INPUT_TOKENS)
+        if input_tokens > max_input_tokens:
+            raise PayloadLimitError(
+                profile_id=profile_id,
+                stage="request",
+                dimension="tokens",
+                actual=input_tokens,
+                limit=max_input_tokens,
+                source="gateway",
+                count_source=count_source,
+            )
+
+    @staticmethod
+    def _response_utf8_bytes(
+        content: str,
+        tool_calls: list[dict[str, object]] | None,
+    ) -> int:
+        """Return exact retained UTF-8 bytes for text and normalized tools."""
+        total = len(content.encode("utf-8"))
+        if tool_calls:
+            total += len(
+                json.dumps(
+                    tool_calls,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ).encode("utf-8")
+            )
+        return total
+
+    @staticmethod
+    def _response_token_count(usage: dict[str, object], response_bytes: int) -> tuple[int, str]:
+        """Use internally consistent LangChain usage metadata or fail closed."""
+        input_tokens = usage.get("input_tokens")
+        output_tokens = usage.get("output_tokens")
+        total_tokens = usage.get("total_tokens")
+        counts = (input_tokens, output_tokens, total_tokens)
+        if all(type(value) is int and value >= 0 for value in counts):
+            input_count = cast(int, input_tokens)
+            output_count = cast(int, output_tokens)
+            total_count = cast(int, total_tokens)
+            if total_count == input_count + output_count:
+                return output_count, "provider_usage_metadata"
+        return response_bytes, "utf8_bytes_conservative"
+
+    def _enforce_response_limits(
+        self,
+        profile: ModelProfile,
+        profile_id: str,
+        *,
+        content: str,
+        usage: dict[str, object],
+        raw_tool_call_count: int,
+        tool_calls: list[dict[str, object]] | None,
+        source: Literal["provider", "cache"],
+    ) -> None:
+        max_tool_calls = _positive_profile_limit(profile, "max_tool_calls", DEFAULT_MAX_TOOL_CALLS)
+        if raw_tool_call_count > max_tool_calls:
+            raise PayloadLimitError(
+                profile_id=profile_id,
+                stage="response",
+                dimension="tool_calls",
+                actual=raw_tool_call_count,
+                limit=max_tool_calls,
+                source=source,
+                count_source="provider_tool_call_list",
+            )
+        response_bytes = self._response_utf8_bytes(content, tool_calls)
+        max_response_bytes = _positive_profile_limit(profile, "max_response_bytes", DEFAULT_MAX_RESPONSE_BYTES)
+        if response_bytes > max_response_bytes:
+            raise PayloadLimitError(
+                profile_id=profile_id,
+                stage="response",
+                dimension="bytes",
+                actual=response_bytes,
+                limit=max_response_bytes,
+                source=source,
+                count_source="retained_content_utf8",
+            )
+        output_tokens, count_source = self._response_token_count(usage, response_bytes)
+        max_output_tokens = _positive_profile_limit(profile, "max_output_tokens", DEFAULT_MAX_OUTPUT_TOKENS)
+        if output_tokens > max_output_tokens:
+            raise PayloadLimitError(
+                profile_id=profile_id,
+                stage="response",
+                dimension="tokens",
+                actual=output_tokens,
+                limit=max_output_tokens,
+                source=source,
+                count_source=count_source,
+            )
+
+    def _cached_response(
+        self,
+        profile: ModelProfile,
+        profile_id: str,
+        cached: dict[str, object],
+    ) -> ModelResponse:
+        content = str(cached.get("content", ""))
+        usage_obj = cached.get("usage_metadata", {})
+        usage = usage_obj if isinstance(usage_obj, dict) else {}
+        tool_calls_obj = cached.get("tool_calls")
+        tool_calls = cast(list[dict[str, object]] | None, tool_calls_obj) if isinstance(tool_calls_obj, list) else None
+        self._enforce_response_limits(
+            profile,
+            profile_id,
+            content=content,
+            usage=usage,
+            raw_tool_call_count=len(tool_calls) if tool_calls is not None else 0,
+            tool_calls=tool_calls,
+            source="cache",
+        )
+        return ModelResponse(**cast(dict[str, Any], cached))
 
     _TASK_MODEL_PREFERENCES: ClassVar[dict[str, list[str]]] = {
         "code": ["deepseek-coder", "glm-4", "deepseek-v3", "qwen2.5-coder-7b"],
@@ -806,6 +1090,10 @@ class ModelGateway:
         ):
             raise CircuitBreakerOpenError(f"Profile '{profile_id}' circuit is open; refusing call")
 
+        # D-30 phase one: reject bounded buffered requests before budget/cache
+        # activity and, critically, before constructing or invoking a provider.
+        self._enforce_request_limits(profile, profile_id, messages, kwargs)
+
         # requested_max_output_tokens (D-21 over-conservatism fix): when a caller
         # knows it will cap the model's output (e.g. the /admin/models/call
         # `max_tokens` field), thread it into the budget gate so the call is
@@ -833,7 +1121,7 @@ class ModelGateway:
             cached = self._response_cache.get(cache_key)
             if cached is not None:
                 logger.debug("Cache hit for profile=%s key=%s", profile_id, cache_key[:12])
-                return ModelResponse(**cast(dict[str, Any], cached))
+                return self._cached_response(profile, profile_id, cached)
 
         # Cache stampede single-flight: under concurrency N identical misses
         # would otherwise all hit the provider. Serialize identical misses on a
@@ -851,7 +1139,7 @@ class ModelGateway:
                             profile_id,
                             cache_key[:12],
                         )
-                        return ModelResponse(**cast(dict[str, Any], cached))
+                        return self._cached_response(profile, profile_id, cached)
                     return self._invoke_and_bill(profile, profile_id, messages, cache_key, **kwargs)
             finally:
                 self._cache_key_unref(cache_key)
@@ -1068,13 +1356,32 @@ class ModelGateway:
                     )
             raise
 
-        content = getattr(raw_response, "content", str(raw_response))
-        usage = getattr(raw_response, "usage_metadata", {}) or {}
+        content = str(getattr(raw_response, "content", str(raw_response)))
+        usage_obj = getattr(raw_response, "usage_metadata", {}) or {}
+        usage = usage_obj if isinstance(usage_obj, dict) else {}
+
+        # Count the raw list BEFORE normalization so malformed/name-less calls
+        # cannot evade the hard count merely because normalization drops them.
+        raw_tool_calls = getattr(raw_response, "tool_calls", None)
+        raw_tool_call_count = len(raw_tool_calls) if isinstance(raw_tool_calls, (list, tuple)) else 0
 
         # Extract tool calls BEFORE the empty-200 guard: a tool-call turn
         # legitimately has empty text content (the model's "output" IS the tool
         # request), so it must NOT be misclassified as an empty-200 soft failure.
         tool_calls = _extract_tool_calls(raw_response)
+
+        # D-30 phase one: this is deliberately before every bill, success
+        # metric, token tracker, trace and cache write. An oversized provider
+        # result is observed only as this bounded typed exception.
+        self._enforce_response_limits(
+            profile,
+            profile_id,
+            content=content,
+            usage=usage,
+            raw_tool_call_count=raw_tool_call_count,
+            tool_calls=tool_calls,
+            source="provider",
+        )
 
         # Empty-200 guard: some providers return HTTP 200 with empty content on
         # a soft/transient failure. Bill+cache BOTH happened AFTER this point, so
@@ -1086,7 +1393,7 @@ class ModelGateway:
         # as PROVIDER_ERROR (5xx) on the health tracker.
         # EXEMPTION: empty content WITH tool calls is a valid tool-call turn, not
         # a soft failure — billing it and returning it is correct.
-        if not str(content).strip() and not tool_calls:
+        if not content.strip() and not tool_calls:
             empty_exc = self._empty_response_error(profile_id)
             self.record_timeout_on_failure(profile_id, empty_exc)
             raise empty_exc
@@ -1151,7 +1458,7 @@ class ModelGateway:
                 tracer.trace_call(
                     model_name=profile.model_name,
                     messages=messages,
-                    response=str(content),
+                    response=content,
                     tokens={"input": input_tokens, "output": output_tokens},
                     cost=cost,
                     metadata={
@@ -1163,7 +1470,7 @@ class ModelGateway:
                 )
 
         response = ModelResponse(
-            content=str(content),
+            content=content,
             usage_metadata=dict(usage),
             cost_estimate=cost,
             model_name=profile.model_name,
@@ -1699,6 +2006,8 @@ class ModelGateway:
                 )
             try:
                 result = self._call_fallback(fb_id, messages, **kwargs)
+            except PayloadLimitError:
+                raise
             except BudgetExceededError:
                 raise
             except SSRFRejectionError:
@@ -1799,6 +2108,8 @@ class ModelGateway:
             return None
         try:
             return self.call_model(profile_id, messages, **kwargs)
+        except PayloadLimitError:
+            raise
         except SSRFRejectionError:
             raise
         except BudgetExceededError:
@@ -1901,8 +2212,11 @@ class ModelGateway:
         if self._broadcaster:
             try:
                 self._broadcaster.broadcast_model_update(action, model_id, broadcast_payload)
-            except Exception as exc:
-                logger.warning("Worker broadcast failed for model %s: %s", action, sanitize_error_message(str(exc)))
+            except Exception:
+                # Broadcaster failures may carry credentials or response fragments.
+                # The profile action is sufficient for diagnosis; never log the
+                # untrusted exception body at this security boundary.
+                logger.warning("Worker broadcast failed for model %s", action)
 
     @staticmethod
     def select_cost_effective_profile(
