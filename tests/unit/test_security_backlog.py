@@ -133,6 +133,16 @@ class TestRunBacklogChecks:
             assert r.status == STATUS_LANDED
             assert r.deferred is False
 
+    def test_d13_reports_phase_one_controls_and_remaining_work(self) -> None:
+        result = {r.item_id: r for r in run_backlog_checks()}["D-13"]
+
+        assert result.status == STATUS_OPEN
+        assert "journal_size_limit_bytes" in result.detail
+        assert "wal_autocheckpoint_pages" in result.detail
+        assert "busy_timeout_ms" in result.detail
+        assert "single maintenance leader" in result.detail
+        assert "no PRAGMA journal_size_limit" not in result.detail
+
 
 class TestD08ProbeRegressionDetection:
     """Prove D-08 fails if strict extra-vars validation is removed."""

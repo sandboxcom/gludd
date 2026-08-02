@@ -459,6 +459,23 @@ test expectation is not remediation.
 | D-26 | P2 | Schedule bounded database maintenance using incremental vacuum where supported, a single leader, free-page/size thresholds, IO/time budgets and backup coordination. | Concurrent read/write availability meets the declared SLO during maintenance; file growth is reclaimed; interruption is recoverable and never runs N times under N workers. |
 | D-30 | P1 | Enforce model request bytes/tokens, response bytes/tokens/chunks, stream duration, idle timeout, decompression ratio, tool-call count and cumulative fallback budget at the gateway. | Oversized buffered and streamed responses cancel upstream promptly, retain bounded diagnostics, never enter cache/DB/event payloads, and return a typed size error. |
 
+### 8.1 D-13 Phase 1: bounded connection defaults
+
+Every SQLite connection now installs validated, per-database
+`journal_size_limit_bytes`, `wal_autocheckpoint_pages`, and `busy_timeout_ms`
+settings. Defaults are respectively 64 MiB, 1000 pages, and 5000 ms; startup
+rejects values outside 1 MiB..1 GiB, 1..100000 pages, and 1..60000 ms before
+provisioning a database file. This removes the prior unbounded `-1` journal
+retention setting and the non-configurable lock wait.
+
+D-13 intentionally remains open. SQLite user reports show that
+[unfinished readers can make a WAL grow past its auto-checkpoint threshold](https://sqlite.org/forum/info/915267efb1f68f9c525c32e3ae8ef4251285e1111c5f5c221fb348df50119640),
+while [passive auto-checkpoints cannot restart or truncate it](https://sqlite.org/forum/forumpost/e37d976043a22458070ce00a4ae00dc6e49ef6dd34aa59e2c5ff7cf5fd543a93).
+The remaining phase must add a single maintenance leader, active-reader and
+checkpoint telemetry, disk-pressure admission control, bounded coordinated
+restart/truncate checkpoints, backup exclusion, and crash/disk-exhaustion
+acceptance tests before the control can be marked complete.
+
 ## 9. Bandit remediation specification
 
 ### SH-BANDIT-001

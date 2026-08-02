@@ -248,10 +248,11 @@ def _check_d11_todo_rate_limit() -> tuple[bool, str]:
 
 def _check_d13_wal_journal_bound() -> tuple[bool, str]:
     return False, (
-        "OPEN — db/session.py run_wal_pragmas() sets PRAGMA journal_mode=WAL "
-        "(and busy_timeout/synchronous/etc.) but no PRAGMA journal_size_limit "
-        "exists anywhere in src/ — the WAL file can grow unbounded under "
-        "sustained write load"
+        "OPEN — Phase 1 validates and applies per-database "
+        "journal_size_limit_bytes, wal_autocheckpoint_pages, and busy_timeout_ms "
+        "with finite defaults. D-13 still requires a single maintenance leader, "
+        "disk-pressure admission control, coordinated active checkpoints/backups, "
+        "and crash/disk-exhaustion acceptance before the WAL is operationally bounded"
     )
 
 
