@@ -23,20 +23,16 @@ real code, is:
             budget_guard.record_spend(cost)            # records THIS cost
     -> budget_manager.record_spend(task_id, result.cost_estimate)
 
-  ModelProfile.cost_per_input_token  defaults to 0.0
-  ModelProfile.cost_per_output_token defaults to 0.0
-  => cost == 0.0 for every call under the shipped/default profile config
-  => record_spend(0.0) => the rolling window / daily ledger never grows
-  => the cap never trips no matter how many calls are made.
+  Enabled metered profiles now fail validation when both token rates are zero.
+  Explicitly unmetered/local profiles may retain zero rates, and their calls
+  correctly record no API-token spend.
 
 The tests below drive a mock gateway that returns a KNOWN NON-TRIVIAL usage
 (input/output tokens) through the REAL _invoke_and_bill billing path, then
 assert the guard actually blocks a subsequent over-budget dispatch.
 
-Per the audit, the "shipped-default profile" test is expected to demonstrate
-the INERT behaviour (cost 0.0, cap never fires) while the "explicit non-zero
-rates" test demonstrates the cap CAN fire only when the operator manually sets
-per-token rates that the default config does not ship with.
+The legacy-named zero-cost tests now exercise only the explicit unmetered path;
+the metered positive controls prove non-zero costs reach and trip the guards.
 
 CA-T12 EXTENSION (2026-07-27): The fix below seeds per-token rates from the
 PricingCatalog at profile-load time, so ModelProfile defaults are real non-zero
@@ -67,6 +63,7 @@ def _make_gateway(
     budget_guard: RunBudgetGuard | None,
     cost_per_input_token: float,
     cost_per_output_token: float,
+    api_metered: bool = True,
     input_tokens: int = 1000,
     output_tokens: int = 1000,
 ):
@@ -88,6 +85,7 @@ def _make_gateway(
         model_name="gpt-4",
         cost_per_input_token=cost_per_input_token,
         cost_per_output_token=cost_per_output_token,
+        api_metered=api_metered,
     )
 
     gw = ModelGateway(
@@ -115,21 +113,22 @@ def _make_gateway(
 
 
 # ---------------------------------------------------------------------------
-# 1. The shipped-default config: profiles carry ZERO per-token rates, so the
-#    real billing path records $0.0 and the cap NEVER fires.  This is the
-#    CA-T12 inertness, demonstrated through the real gateway billing path.
+# 1. Explicitly unmetered profiles carry zero API-token rates, so the real
+#    billing path records $0.0 without misclassifying an enabled metered model
+#    as free.  Test names are retained while the stepwise corpus is active.
 # ---------------------------------------------------------------------------
 
 
 class TestProdPathCostIsZeroWithDefaultProfile:
     def test_default_profile_bills_zero_into_run_budget_guard(self):
-        """With shipped defaults (cost_per_*_token == 0.0) the guard records 0.0."""
+        """An explicitly unmetered local profile records no API-token spend."""
         guard = RunBudgetGuard(run_budget_usd=0.01)  # tiny cap
 
         gw, patches = _make_gateway(
             budget_guard=guard,
-            cost_per_input_token=0.0,  # the SHIPPED default
-            cost_per_output_token=0.0,  # the SHIPPED default
+            cost_per_input_token=0.0,  # explicit unmetered/local rate
+            cost_per_output_token=0.0,  # explicit unmetered/local rate
+            api_metered=False,
             input_tokens=1_000_000,  # huge usage...
             output_tokens=1_000_000,
         )
@@ -158,6 +157,7 @@ class TestProdPathCostIsZeroWithDefaultProfile:
             budget_guard=None,
             cost_per_input_token=0.0,
             cost_per_output_token=0.0,
+            api_metered=False,
             input_tokens=1_000_000,
             output_tokens=1_000_000,
         )
