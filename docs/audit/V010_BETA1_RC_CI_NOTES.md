@@ -10,7 +10,13 @@ Date: 2026-07-20
   https://www.starlette.io/release-notes/. User discussion evidence:
   https://github.com/encode/starlette/discussions/2594. Revalidated for beta.3:
   `tests/e2e/test_secrets_security_workflows.py` passes without the prior
-  `StarletteDeprecationWarning` after the dependency is installed.
+   `StarletteDeprecationWarning` after the dependency is installed.
+- Starlette's TestClient `timeout=` argument has never enforced a request
+  deadline; users reported the misleading API in 2020 and current Starlette
+  deprecates it. Worker tests therefore use `pytest-timeout` for the test-level
+  execution ceiling and a bounded server `asyncio.wait_for` for cancellation,
+  while promoting `StarletteDeprecationWarning` to an error. Reference:
+  https://github.com/Kludex/starlette/issues/1108
 - `pkg_resources` deprecation/removal is a long-lived setuptools transition.
   The local warning comes from third-party `fs`, not direct project imports.
   Local mitigation: keep `setuptools<81` already resolved in lock and filter

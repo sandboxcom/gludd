@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+from collections.abc import Generator
 from typing import Any, cast
 from unittest.mock import patch
 
@@ -18,6 +19,26 @@ from fastapi.testclient import TestClient
 from general_ludd.ansible.runner import AnsibleRunnerAdapter
 from general_ludd.schemas.job import JobSpec
 from general_ludd.worker.app import create_app
+
+pytestmark = pytest.mark.filterwarnings(
+    "error::starlette.exceptions.StarletteDeprecationWarning"
+)
+
+
+@contextlib.contextmanager
+def _bounded_server_wait_for(seconds: float) -> Generator[None, None, None]:
+    """Exercise the worker's wait_for cancellation with a short test deadline."""
+    original_wait_for = asyncio.wait_for
+
+    async def bounded_wait_for(awaitable: Any, timeout: Any) -> Any:
+        del timeout
+        return await original_wait_for(awaitable, timeout=seconds)
+
+    with patch(
+        "general_ludd.worker.app.asyncio.wait_for",
+        side_effect=bounded_wait_for,
+    ):
+        yield
 
 
 def _make_job(**kwargs: Any) -> dict[str, Any]:
@@ -153,6 +174,7 @@ class TestCleanupOnFailureD09:
         job_dir = tmp_path / "TESTJOBOK"
         assert not job_dir.exists()
 
+    @pytest.mark.timeout(10)
     def test_job_dir_removed_on_timeout(self, tmp_path: Any) -> None:
         """D-09: a job that times out must still have its workspace cleaned up.
 
@@ -169,26 +191,26 @@ class TestCleanupOnFailureD09:
         _release = threading.Event()
 
         def stalling_run(playbook_name: str, **kwargs: Any) -> dict[str, Any]:
-            _release.wait(timeout=5.0)
+            _release.wait(timeout=1.0)
             return {"status": "successful", "rc": 0, "events": [], "artifacts": []}  # pragma: no cover
 
         cast(Any, runner).run_playbook = stalling_run
 
         client = _make_client(runner)
         try:
-            client.post(
-                "/jobs/execute",
-                json=_make_job(job_id="TESTJOBTIMEOUT", timeout=0.05),
-                timeout=10,
-            )
-        except Exception:
-            pass
+            with _bounded_server_wait_for(0.05):
+                response = client.post(
+                    "/jobs/execute",
+                    json=_make_job(job_id="TESTJOBTIMEOUT", timeout=0.05),
+                )
         finally:
             _release.set()
+        assert response.status_code == 500
 
         job_dir = tmp_path / "TESTJOBTIMEOUT"
         assert not job_dir.exists(), "job dir leaked after timeout"
 
+    @pytest.mark.timeout(10)
     def test_job_dir_removed_when_write_vars_raises(self, tmp_path: Any) -> None:
         """D-09: cleanup must also cover failures BEFORE run_playbook runs.
 
@@ -210,8 +232,11 @@ class TestCleanupOnFailureD09:
         cast(Any, runner).write_vars = bad_write
 
         client = _make_client(runner)
-        with contextlib.suppress(Exception):
-            client.post("/jobs/execute", json=_make_job(job_id="TESTJOBWV"), timeout=10)
+        response = client.post(
+            "/jobs/execute",
+            json=_make_job(job_id="TESTJOBWV"),
+        )
+        assert response.status_code == 500
 
         job_dir = tmp_path / "TESTJOBWV"
         assert not job_dir.exists(), "job dir leaked after write_vars failure"
@@ -240,6 +265,7 @@ class TestJobSpecTimeoutD35:
 # ---------------------------------------------------------------------------
 
 class TestWaitForTimeoutD35:
+    @pytest.mark.timeout(10)
     def test_stalling_job_times_out(self, tmp_path: Any) -> None:
         """A run_playbook that blocks must be cancelled by wait_for."""
         runner = AnsibleRunnerAdapter(private_data_dir=str(tmp_path))
@@ -250,33 +276,31 @@ class TestWaitForTimeoutD35:
         # Use a threading.Event the worker thread waits on, with a bounded
         # release so the thread cannot survive into pytest/xdist teardown and
         # stall the whole run for the full sleep. wait_for (timeout=0.05) fires
-        # long before the 5s ceiling; the ceiling only bounds thread lifetime.
+        # long before the 1s ceiling; the ceiling only bounds thread lifetime.
         import threading
 
         _release = threading.Event()
 
         def stalling_run(playbook_name: str, **kwargs: Any) -> dict[str, Any]:
-            _release.wait(timeout=5.0)
+            _release.wait(timeout=1.0)
             return {"status": "successful", "rc": 0, "events": [], "artifacts": []}  # pragma: no cover
 
         cast(Any, runner).run_playbook = stalling_run
 
         client = _make_client(runner)
-        # timeout=0.05s — wait_for fires long before the TestClient's own timeout
+        # Bound the worker's outer wait_for, while pytest-timeout bounds the
+        # client call. Starlette's per-request TestClient timeout is unsupported.
         try:
-            resp = client.post(
-                "/jobs/execute",
-                json=_make_job(job_id="TESTJOBSTALL", timeout=0.05),
-                timeout=10,
-            )
-            assert resp.status_code != 200
-        except Exception:
-            # Some transports surface TimeoutError as a client-side exception
-            pass  # test passes — a stall was detected
+            with _bounded_server_wait_for(0.05):
+                resp = client.post(
+                    "/jobs/execute",
+                    json=_make_job(job_id="TESTJOBSTALL", timeout=0.05),
+                )
         finally:
             # Release the worker thread so it exits immediately and cannot
             # block pytest/xdist teardown.
             _release.set()
+        assert resp.status_code == 500
 
     def test_caller_timeout_capped_at_server_max(self, tmp_path: Any, monkeypatch: Any) -> None:
         """Caller-supplied timeout > GLUDD_JOB_TIMEOUT_MAX must be capped to the server max."""
