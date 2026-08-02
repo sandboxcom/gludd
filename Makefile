@@ -1079,46 +1079,84 @@ audit-observability-gate:
 
 # Individual spec audits — AB061-AB080
 audit-state-file-integrity:     ; @$(UV) run python3 scripts/audit_observability.py --filter AB061
+
 audit-silent-operations:        ; @$(UV) run python3 scripts/audit_observability.py --filter AB062
+
 audit-stale-state-files:        ; @$(UV) run python3 scripts/audit_observability.py --filter AB063
+
 audit-plugin-load-health:       ; @$(UV) run python3 scripts/audit_observability.py --filter AB064
+
 audit-gate-observability:       ; @$(UV) run python3 scripts/audit_observability.py --filter AB065
+
 audit-enforcement-coverage:     ; @$(UV) run python3 scripts/audit_observability.py --filter AB066
+
 audit-make-target-timeouts:     ; @$(UV) run python3 scripts/audit_observability.py --filter AB067
+
 audit-disk-metrics:             ; @$(UV) run python3 scripts/audit_observability.py --filter AB068
+
 audit-subagent-timeout-evidence:; @$(UV) run python3 scripts/audit_observability.py --filter AB069
+
 audit-enforcement-state-freshness:; @$(UV) run python3 scripts/audit_observability.py --filter AB070
+
 audit-push-cooldown-integrity:  ; @$(UV) run python3 scripts/audit_observability.py --filter AB071
+
 audit-hot-module-health:        ; @$(UV) run python3 scripts/audit_observability.py --filter AB072
+
 audit-observability-regression: ; @$(UV) run python3 scripts/audit_observability.py --filter AB073
+
 audit-ci-verdict-history:       ; @$(UV) run python3 scripts/audit_observability.py --filter AB074
+
 audit-watchdog-heartbeat:       ; @$(UV) run python3 scripts/audit_observability.py --filter AB075
+
 audit-enforcement-decisions:    ; @$(UV) run python3 scripts/audit_observability.py --filter AB076
+
 audit-make-target-invocations:  ; @$(UV) run python3 scripts/audit_observability.py --filter AB077
+
 audit-error-context-preservation:; @$(UV) run python3 scripts/audit_observability.py --filter AB078
+
 audit-session-boundary-state:   ; @$(UV) run python3 scripts/audit_observability.py --filter AB079
+
 audit-observability-gate-check: ; @$(UV) run python3 scripts/audit_observability.py --filter AB080
 
 # Individual spec audits — AB081-AB100
 audit-result-nonempty:          ; @$(UV) run python3 scripts/audit_observability.py --filter AB081
+
 audit-target-drift:             ; @$(UV) run python3 scripts/audit_observability.py --filter AB082
+
 audit-plugin-version-sync:      ; @$(UV) run python3 scripts/audit_observability.py --filter AB083
+
 audit-dispatchwave-composition: ; @$(UV) run python3 scripts/audit_observability.py --filter AB084
+
 audit-orphaned-ratchet:         ; @$(UV) run python3 scripts/audit_observability.py --filter AB085
+
 audit-lost-results:             ; @$(UV) run python3 scripts/audit_observability.py --filter AB086
+
 audit-recipe-side-effects:      ; @$(UV) run python3 scripts/audit_observability.py --filter AB087
+
 audit-gate-dependencies:        ; @$(UV) run python3 scripts/audit_observability.py --filter AB088
+
 audit-plugin-deprecation:       ; @$(UV) run python3 scripts/audit_observability.py --filter AB089
+
 audit-precommit-order:          ; @$(UV) run python3 scripts/audit_observability.py --filter AB090
+
 audit-test-per-module:          ; @$(UV) run python3 scripts/audit_observability.py --filter AB091
+
 audit-artifact-versions:        ; @$(UV) run python3 scripts/audit_observability.py --filter AB092
+
 audit-wave-completion:          ; @$(UV) run python3 scripts/audit_observability.py --filter AB093
+
 audit-bypass-trail:             ; @$(UV) run python3 scripts/audit_observability.py --filter AB094
+
 audit-makefile-vars:            ; @$(UV) run python3 scripts/audit_observability.py --filter AB095
+
 audit-timeout-proportionality:  ; @$(UV) run python3 scripts/audit_observability.py --filter AB096
+
 audit-task-hopping:             ; @$(UV) run python3 scripts/audit_observability.py --filter AB097
+
 audit-config-drift:             ; @$(UV) run python3 scripts/audit_observability.py --filter AB098
+
 audit-hygiene-score:            ; @$(UV) run python3 scripts/audit_observability.py --filter AB099
+
 audit-enforcement-boot:         ; @$(UV) run python3 scripts/audit_observability.py --filter AB100
 
 # Codified live boot smoke: launches `opencode serve`, waits for the
