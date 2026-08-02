@@ -2291,8 +2291,9 @@ class ModelGateway:
                 )
 
             try:
-                result = await asyncio.to_thread(
-                    lambda fb=fb_id: list(
+
+                def _stream_call(fb: str = fb_id) -> list[object]:
+                    return list(
                         self.call_model_stream(
                             fb,
                             messages,
@@ -2303,7 +2304,8 @@ class ModelGateway:
                             **kwargs,
                         )
                     )
-                )
+
+                result = await asyncio.to_thread(_stream_call)
                 return result
             except StreamLimitError:
                 raise

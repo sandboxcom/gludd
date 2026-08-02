@@ -532,10 +532,13 @@ def _check_d15_openbao_token_scope() -> tuple[bool, str]:
     if "ttl_seconds" not in ob_src or "max_uses" not in ob_src:
         return False, "OPEN — OpenBaoTTLCap TTL/use-limit enforcement missing (regression)"
 
+    revoker_mod: ModuleType | None = None
     try:
-        import general_ludd.sts.revoker as revoker_mod
+        import general_ludd.sts.revoker as _revoker_import
+
+        revoker_mod = _revoker_import
     except ImportError:
-        revoker_mod = None
+        pass
     has_revoker = revoker_mod is not None and hasattr(revoker_mod, "TokenRevoker") and hasattr(revoker_mod, "revoke")
     if not has_revoker:
         return False, "OPEN — STS revoker missing; termination-path revocation not verified"

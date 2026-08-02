@@ -991,9 +991,33 @@ _LANG_FREQUENCY_LATIN_CHARS: dict[str, str] = {
 # ── Unicode script detection ────────────────────────────────────────────────
 
 
+_UNICODE_NAME_TO_SCRIPT: dict[str, str] = {
+    "CJK": "Han",
+    "HANGUL": "Hangul",
+    "HIRAGANA": "Hiragana",
+    "KATAKANA": "Katakana",
+    "LATIN": "Latin",
+    "CYRILLIC": "Cyrillic",
+    "ARABIC": "Arabic",
+    "DEVANAGARI": "Devanagari",
+    "THAI": "Thai",
+    "GREEK": "Greek",
+    "HEBREW": "Hebrew",
+    "BENGALI": "Bengali",
+    "TAMIL": "Tamil",
+    "TELUGU": "Telugu",
+    "MALAYALAM": "Malayalam",
+    "GUJARATI": "Gujarati",
+    "GURMUKHI": "Gurmukhi",
+}
+
+
 def _script_of(cp: int) -> str:
     try:
-        return unicodedata.name(chr(cp), "").split(" ")[0] if cp <= 0x10FFFF else "Unknown"
+        if cp > 0x10FFFF:
+            return "Unknown"
+        raw = unicodedata.name(chr(cp), "").split(" ")[0]
+        return _UNICODE_NAME_TO_SCRIPT.get(raw, raw.title())
     except (ValueError, IndexError):
         return "Unknown"
 
@@ -1055,7 +1079,7 @@ def detect_language(text: str, top_n: int = 3) -> DetectionResult:
             if lang in _LANG_FREQUENCY_LATIN_CHARS and primary_script == "Latin":
                 freq_order = _LANG_FREQUENCY_LATIN_CHARS[lang]
                 text_lower = text.lower()
-                score_sum = 0
+                score_sum = 0.0
                 for i, ch in enumerate(freq_order[:10]):
                     count = text_lower.count(ch)
                     weight = 1.0 - (i * 0.08)
@@ -1067,7 +1091,7 @@ def detect_language(text: str, top_n: int = 3) -> DetectionResult:
     if primary_script == "Latin" and not scores:
         for lang, freq_order in _LANG_FREQUENCY_LATIN_CHARS.items():
             text_lower = text.lower()
-            score_sum = 0
+            score_sum = 0.0
             for i, ch in enumerate(freq_order[:8]):
                 count = text_lower.count(ch)
                 weight = 1.0 - (i * 0.1)

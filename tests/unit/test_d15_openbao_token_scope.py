@@ -386,7 +386,7 @@ class TestOpenBaoTTLCap:
     def test_evidence_with_reason_code(self) -> None:
         cap = OpenBaoTTLCap()
         result = cap.apply(requested_ttl_seconds=3600, requested_uses=500)
-        assert result["reason"] == "ok"
+        assert result["reason"] == "capped: ttl+uses"
 
     def test_ttl_cap_below_spec_max(self) -> None:
         cap = OpenBaoTTLCap()

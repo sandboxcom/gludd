@@ -23,8 +23,9 @@ from general_ludd.schemas.job import (
 class TestCrossTenantValidation:
     def test_same_tenant_accepted(self) -> None:
         ow = OwnershipSpec(tenant_id="org-a", project_id="p1", agent_id="a1")
-        result = validate_cross_tenant(ow, request_tenant_id="org-a")
-        assert result is True
+        is_valid, reason = validate_cross_tenant(ow, request_tenant_id="org-a")
+        assert is_valid is True
+        assert reason == "ok"
 
     def test_different_tenant_rejected(self) -> None:
         ow = OwnershipSpec(tenant_id="org-a", project_id="p1", agent_id="a1")
