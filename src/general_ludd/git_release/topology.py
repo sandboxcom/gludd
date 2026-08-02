@@ -65,6 +65,32 @@ def _git_dir(repo: str) -> str | None:
     return None
 
 
+def _repository_evidence_time(repo: str, git_dir: str, head_sha: str) -> str:
+    """Return an RFC3339 timestamp derived from immutable repository state.
+
+    Repository assessment is a deterministic snapshot operation: collecting an
+    unchanged repository twice must produce equal evidence.  A wall-clock
+    collection timestamp violates that contract, so committed repositories use
+    the HEAD committer timestamp.  An unborn repository falls back to the stable
+    ``HEAD`` metadata timestamp (and the Unix epoch if that metadata disappears
+    during collection).
+    """
+    if head_sha != "0" * 40:
+        commit_time = _run_git(repo, "show", "-s", "--format=%cI", head_sha)
+        try:
+            datetime.fromisoformat(commit_time)
+        except ValueError:
+            pass
+        else:
+            return commit_time
+
+    try:
+        timestamp = os.stat(os.path.join(git_dir, "HEAD")).st_mtime
+    except OSError:
+        timestamp = 0.0
+    return datetime.fromtimestamp(timestamp, UTC).isoformat()
+
+
 def _detect_operations(git_dir: str) -> list[_Operation]:
     """Detect in-progress git operations via filesystem markers.
 
@@ -264,6 +290,7 @@ def assess_repo(path: str) -> RepoEvidence:
     )
     operations = _detect_operations(git_dir)
     policies = _collect_policies(abs_path)
+    evidence_time = _repository_evidence_time(path, git_dir, head_sha)
 
     return RepoEvidence(
         repo_root=abs_path,
@@ -274,7 +301,7 @@ def assess_repo(path: str) -> RepoEvidence:
         operations=operations,
         dirty_paths=dirty_paths,
         policies=policies,
-        evidence_time=datetime.now(UTC).isoformat(),
+        evidence_time=evidence_time,
     )
 
 

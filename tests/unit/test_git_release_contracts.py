@@ -327,6 +327,16 @@ def test_assess_repo_clean_tree(tmp_repo: Path) -> None:
     assert evidence.operations == []
 
 
+def test_assess_repo_uses_stable_head_commit_time(tmp_repo: Path) -> None:
+    expected = _git(tmp_repo, "show", "-s", "--format=%cI", "HEAD")
+
+    evidence_a = assess_repo(str(tmp_repo))
+    evidence_b = assess_repo(str(tmp_repo))
+
+    assert evidence_a.evidence_time == expected
+    assert evidence_b == evidence_a
+
+
 def test_assess_repo_collects_dirty_path(tmp_repo: Path) -> None:
     (tmp_repo / "README.md").write_text("changed\n")
     evidence = assess_repo(str(tmp_repo))
