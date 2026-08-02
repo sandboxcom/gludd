@@ -380,6 +380,17 @@ injects the same `metadata` block. Example schema (flat object of host facts):
 }
 ```
 
+New renderer schemas and tests use the explicit 2020-12 dialect. The validator
+continues to recognize legacy drafts for operator-owned resources, but Gludd does
+not emit draft-07 examples that keep deprecated-validator warnings alive. The
+JSON Schema community's long-running version-support discussion recommends
+2020-12 for new work while acknowledging draft-07 compatibility needs:
+[json-schema-org discussion #192](https://github.com/orgs/json-schema-org/discussions/192).
+Its follow-up roadmap discussion records that simple object schemas generally
+migrate unchanged while tooling support and incompatible advanced keywords are
+the practical upgrade boundary:
+[json-schema-org discussion #282](https://github.com/orgs/json-schema-org/discussions/282).
+
 Matching `render.json` — **no** `sections[]`:
 
 ```json
