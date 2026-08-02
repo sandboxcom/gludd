@@ -794,8 +794,29 @@ class GitAutomation:
         return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
     def delete_branch(self, name: str) -> bool:
+        """Delete ``name``, safely leaving it first when it is checked out.
+
+        Git refuses to delete the current branch.  For the symmetric
+        ``create_branch``/``delete_branch`` lifecycle, move to an existing
+        protected trunk before deleting a checked-out feature branch.  If no
+        such trunk exists, fail closed without detaching HEAD or deleting a
+        different ref.
+        """
         _reject_leading_dash(name, kind="branch name")
         try:
+            if self.current_branch() == name:
+                branches = set(self.list_branches())
+                trunk = next(
+                    (
+                        candidate
+                        for candidate in ("development", "main", "master")
+                        if candidate != name and candidate in branches
+                    ),
+                    None,
+                )
+                if trunk is None:
+                    return False
+                self._run_git("checkout", trunk, "--")
             self._run_git("branch", "-D", "--", name)
             return True
         except subprocess.CalledProcessError:

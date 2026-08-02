@@ -134,6 +134,36 @@ class TestCreateBranch:
         assert GitAutomation(".").delete_branch("feature-x") is True
         assert mock_run.call_args.args[0] == ["git", "branch", "-D", "--", "feature-x"]
 
+    @patch(
+        "general_ludd.git_automation.repo.subprocess.run",
+        side_effect=[
+            _ok(stdout="feature-x\n"),
+            _ok(stdout="master\nfeature-x\n"),
+            _ok(),
+            _ok(),
+        ],
+    )
+    def test_delete_checked_out_branch_switches_to_trunk(self, mock_run: MagicMock):
+        assert GitAutomation(".").delete_branch("feature-x") is True
+        commands = [call.args[0] for call in mock_run.call_args_list]
+        assert commands == [
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            ["git", "branch", "--format=%(refname:short)"],
+            ["git", "checkout", "master", "--"],
+            ["git", "branch", "-D", "--", "feature-x"],
+        ]
+
+    @patch(
+        "general_ludd.git_automation.repo.subprocess.run",
+        side_effect=[
+            _ok(stdout="feature-x\n"),
+            _ok(stdout="feature-x\nother-feature\n"),
+        ],
+    )
+    def test_delete_checked_out_branch_without_trunk_fails_closed(self, mock_run: MagicMock):
+        assert GitAutomation(".").delete_branch("feature-x") is False
+        assert mock_run.call_count == 2
+
     def test_delete_branch_rejects_leading_dash(self):
         try:
             GitAutomation(".").delete_branch("--delete")
