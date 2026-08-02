@@ -46,3 +46,10 @@ status is always updated (to `done` or `failed`) regardless of errors.
 - Push is disabled by default (`enable_git_push: false`) — roles must not
   push to remotes without explicit operator opt-in.
 - The worktree is always removed in the `always` block, even on hard failures.
+- This role creates a worktree, runs an agent/tool loop, executes a quality-gate
+  command, commits, and updates task state. Those impacts make the role
+  ineligible for the default constrained/local-model policy. Do not select a
+  smaller model by profile name, cost, or parameter count. A constrained model
+  may produce an accepted, artifact-only draft upstream; an authorized stronger
+  model must apply and verify the change through this role. See
+  `docs/design/SMALL_MODEL_TASK_POLICY.md`.

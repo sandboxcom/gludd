@@ -92,6 +92,28 @@ Ansible collection for the `general_ludd` agentic SDLC harness.
 | `velocity_report` | Points/throughput over recent history; composes report_metrics data. REPORT-ONLY. |
 | `write_tests` | Generate and place tests via model agent, then run them via the configured test command. |
 
+## Constrained and locally served models
+
+Model size, price, provider, and a `local` or `weak` profile label do not grant a
+role. Before dispatching work to a constrained model, collection callers must
+use `general_ludd.routing_roles.SmallModelTaskPolicy` with proof for the exact
+task kind, routing role, collection, model/runtime/prompt identity, and
+acceptance contract. A result is usable only after `record_completion()` returns
+`accept`; retry and escalation decisions must be honored.
+
+The default eligible outputs are artifact-only context compaction, bounded
+enumeration, schema extraction, format normalization, documentation drafting,
+and failure classification. Roles that mutate a repository, execute tools,
+write to a network, use credentials, deploy, release, or make a security
+decision are not eligible. In particular, `agent_task`, `implement_change`,
+`refactor_code`, `write_tests`, `validate_and_push`, deployment roles, and
+release roles require a stronger authorized model for the side-effecting step.
+
+See
+[`docs/design/SMALL_MODEL_TASK_POLICY.md`](../../../../docs/design/SMALL_MODEL_TASK_POLICY.md)
+for the task matrix, proof schema, local-suite requirements, retry/dedupe rules,
+role prompt envelope, upstream user reports, and ZDD rollout procedure.
+
 ## Authentication
 
 All modules that contact the daemon accept `daemon_url` and `psk` parameters.
