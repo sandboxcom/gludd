@@ -50,6 +50,7 @@ class TestSandboxEngineWiring:
     def test_engine_allows_execution_when_sandbox_ready(self, tmp_path: Path) -> None:
         jail = tmp_path / "jail"
         jail.mkdir()
+        workspace = jail / "workspace"
         enforcer = SandboxEnforcer(SandboxConfig(jail_dir=str(jail)))
         enforcer.verify_ready()
         assert enforcer.is_ready
@@ -59,7 +60,7 @@ class TestSandboxEngineWiring:
 
         engine = ExecutionEngine(
             model_gateway=mock_gateway,
-            workspace_path=str(tmp_path / "workspace"),
+            workspace_path=str(workspace),
             sandbox_enforcer=enforcer,
         )
 
@@ -75,6 +76,41 @@ class TestSandboxEngineWiring:
         result = asyncio.run(engine.execute_async(job))
         assert result.exit_code == 1
         assert "No changes parsed" in result.result_summary
+
+    def test_engine_rejects_workspace_outside_sandbox_jail(self, tmp_path: Path) -> None:
+        jail = tmp_path / "jail"
+        jail.mkdir()
+        workspace = tmp_path / "workspace"
+
+        enforcer = SandboxEnforcer(SandboxConfig(jail_dir=str(jail)))
+        mock_gateway = MagicMock()
+        mock_gateway.call_model = MagicMock(
+            return_value=MagicMock(content="```\nFILE: escaped.py\nunsafe\n```")
+        )
+        engine = ExecutionEngine(
+            model_gateway=mock_gateway,
+            workspace_path=str(workspace),
+            sandbox_enforcer=enforcer,
+        )
+
+        job = JobSpec(
+            job_id="JOB-SB-MISCONFIGURED",
+            todo_id="TODO-SB-MISCONFIGURED",
+            playbook="code",
+            queue="core",
+            work_type="code",
+            prompt_text="write outside the jail",
+        )
+
+        result = asyncio.run(engine.execute_async(job))
+
+        assert result.exit_code == 1
+        assert "Sandbox enforcement failed" in result.result_summary
+        assert "workspace is outside configured jail" in result.result_summary
+        assert str(workspace) not in result.result_summary
+        assert str(jail) not in result.result_summary
+        mock_gateway.call_model.assert_not_called()
+        assert not (workspace / "escaped.py").exists()
 
     def test_engine_without_sandbox_passes_through(self, tmp_path: Path) -> None:
         mock_gateway = MagicMock()
@@ -102,7 +138,7 @@ class TestSandboxEngineWiring:
     def test_sandbox_confines_file_writes_to_jail(self, tmp_path: Path) -> None:
         jail = tmp_path / "jail"
         jail.mkdir()
-        workspace = tmp_path / "workspace"
+        workspace = jail / "workspace"
         workspace.mkdir()
 
         enforcer = SandboxEnforcer(SandboxConfig(jail_dir=str(jail)))
@@ -130,7 +166,8 @@ class TestSandboxEngineWiring:
         )
 
         result = asyncio.run(engine.execute_async(job))
-        assert result.exit_code == 1
+        assert result.exit_code == 0
+        assert "Changed 1 file(s): script.py" in result.result_summary
 
         written_path = enforcer.confine_path(str(workspace / "script.py"))
         assert os.path.isfile(written_path)
@@ -140,7 +177,7 @@ class TestSandboxEngineWiring:
     def test_sandbox_blocks_path_escape_from_model(self, tmp_path: Path) -> None:
         jail = tmp_path / "jail"
         jail.mkdir()
-        workspace = tmp_path / "workspace"
+        workspace = jail / "workspace"
         workspace.mkdir()
 
         enforcer = SandboxEnforcer(SandboxConfig(jail_dir=str(jail)))
@@ -168,12 +205,14 @@ class TestSandboxEngineWiring:
 
         result = asyncio.run(engine.execute_async(job))
         assert result.exit_code == 1
-        assert "No changes parsed" in result.result_summary
+        assert result.result_summary == "Model output rejected by workspace/sandbox policy"
+        assert "passwd" not in result.result_summary
+        assert not (tmp_path / "etc" / "passwd").exists()
 
     def test_sandbox_blocks_absolute_path_outside_jail(self, tmp_path: Path) -> None:
         jail = tmp_path / "jail"
         jail.mkdir()
-        workspace = tmp_path / "workspace"
+        workspace = jail / "workspace"
         workspace.mkdir()
 
         enforcer = SandboxEnforcer(SandboxConfig(jail_dir=str(jail)))
@@ -201,7 +240,8 @@ class TestSandboxEngineWiring:
 
         result = asyncio.run(engine.execute_async(job))
         assert result.exit_code == 1
-        assert "No changes parsed" in result.result_summary
+        assert result.result_summary == "Model output rejected by workspace/sandbox policy"
+        assert "/etc/passwd" not in result.result_summary
 
     def test_async_engine_rejects_when_sandbox_not_ready(self, tmp_path: Path) -> None:
         jail = tmp_path / "nonexistent-async-jail"
@@ -234,6 +274,7 @@ class TestSandboxEngineWiring:
     def test_sandbox_verify_is_idempotent_across_calls(self, tmp_path: Path) -> None:
         jail = tmp_path / "jail"
         jail.mkdir()
+        workspace = jail / "workspace"
         enforcer = SandboxEnforcer(SandboxConfig(jail_dir=str(jail)))
 
         mock_gateway = MagicMock()
@@ -241,7 +282,7 @@ class TestSandboxEngineWiring:
 
         engine = ExecutionEngine(
             model_gateway=mock_gateway,
-            workspace_path=str(tmp_path / "workspace"),
+            workspace_path=str(workspace),
             sandbox_enforcer=enforcer,
         )
 

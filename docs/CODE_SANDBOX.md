@@ -57,6 +57,38 @@ with create_ornith_sandbox() as sandbox:
 - Weakness: no kernel enforcement — a determined subprocess can `chdir("/")`
   and escape. Paired with Landlock/bubblewrap on Linux for kernel enforcement.
 
+### Execution workspace admission
+
+`ExecutionEngine` treats the configured project workspace and the sandbox jail
+as one admission contract. Before a model is called, the engine verifies the
+backend and requires the workspace's symlink-resolved path to be the jail itself
+or one of its descendants. The returned confined real path becomes the effective
+workspace. A sibling or otherwise external workspace is a configuration denial;
+Gludd does not copy, remap, or silently run it outside the jail.
+
+Admission is deliberately followed by per-operation defense in depth. Every
+model-supplied `FILE:` path and each unified-diff target is resolved again under
+the effective workspace and then rechecked against the sandbox. Misconfiguration
+stops before provider invocation, while a malicious output path becomes a stable
+failed `TaskReturn`. Neither public result includes the attempted host path or
+the private jail path.
+
+For ZDD policy changes, build and verify a replacement worker against the new
+jail/profile first, route new work only after its harmless confinement probe
+passes, drain the old worker, and then release its jail. Never mutate the jail of
+an in-flight worker.
+
+Long-lived operator reports explain why admission tests actual host state rather
+than trusting a configured backend name:
+
+- [Bubblewrap issue #324](https://github.com/containers/bubblewrap/issues/324)
+  records systems where the binary is installed but host user-namespace policy
+  makes it unusable.
+- [nsjail issue #236](https://github.com/google/nsjail/issues/236) records an OS
+  upgrade changing mount/AppArmor behavior and breaking previously valid setup.
+- [Apple Developer Forums thread 661939](https://developer.apple.com/forums/thread/661939)
+  documents the unsupported/deprecated status of the public Seatbelt path.
+
 ### Export-boundary operator evidence
 
 - A long-lived FastAPI discussion documents that generic `Exception` handlers

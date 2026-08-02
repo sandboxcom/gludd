@@ -316,10 +316,22 @@ class ExecutionEngine:
             return None
         try:
             self._sandbox_enforcer.verify_ready()
-            self._sandbox_verified = True
-            return None
-        except Exception as exc:
-            return f"Sandbox enforcement failed: {exc}"
+        except Exception:
+            logger.warning("Sandbox readiness verification failed", exc_info=True)
+            return "Sandbox enforcement failed: sandbox unavailable"
+
+        try:
+            confined_workspace = self._sandbox_enforcer.confine_path(self.workspace_path)
+        except Exception:
+            logger.warning(
+                "Execution workspace is outside the configured sandbox jail",
+                exc_info=True,
+            )
+            return "Sandbox enforcement failed: workspace is outside configured jail"
+
+        self.workspace_path = str(confined_workspace)
+        self._sandbox_verified = True
+        return None
 
     def _projected_cost(self) -> float:
         """Compute per-call projected cost from the default model profile.
@@ -585,30 +597,45 @@ class ExecutionEngine:
         changed_files: list[str] = []
         applied_changes = False
         blocks = _parse_fenced_blocks(model_output)
-        for block in blocks:
-            content = block["content"]
-            lang = block["language"].lower()
-            if lang in ("diff", "patch"):
-                changed = self._apply_unified_diff(content)
-                changed_files.extend(changed)
-                if changed:
-                    applied_changes = True
-            else:
-                for file_path, file_content in _extract_file_paths(content):
+        try:
+            for block in blocks:
+                content = block["content"]
+                lang = block["language"].lower()
+                if lang in ("diff", "patch"):
+                    changed = self._apply_unified_diff(content)
+                    changed_files.extend(changed)
+                    if changed:
+                        applied_changes = True
+                else:
+                    for file_path, file_content in _extract_file_paths(content):
+                        self._write_file(file_path, file_content)
+                        changed_files.append(file_path)
+                        applied_changes = True
+            for file_path, file_content in _extract_file_paths(model_output):
+                if file_path not in changed_files:
                     self._write_file(file_path, file_content)
                     changed_files.append(file_path)
                     applied_changes = True
-        for file_path, file_content in _extract_file_paths(model_output):
-            if file_path not in changed_files:
-                self._write_file(file_path, file_content)
-                changed_files.append(file_path)
-                applied_changes = True
 
-        if not applied_changes:
-            fallback_files, fallback_applied = self._fallback_extract_code(job, blocks)
-            if fallback_applied:
-                changed_files.extend(fallback_files)
-                applied_changes = True
+            if not applied_changes:
+                fallback_files, fallback_applied = self._fallback_extract_code(job, blocks)
+                if fallback_applied:
+                    changed_files.extend(fallback_files)
+                    applied_changes = True
+        except ValueError:
+            logger.warning(
+                "Rejected unsafe model-supplied path for job %s",
+                job.job_id,
+            )
+            return TaskReturn(
+                return_id=return_id,
+                todo_id=job.todo_id,
+                job_id=job.job_id,
+                playbook=job.playbook or "code",
+                queue=job.queue or "core",
+                exit_code=1,
+                result_summary="Model output rejected by workspace/sandbox policy",
+            )
 
         if not applied_changes:
             return TaskReturn(
