@@ -497,10 +497,11 @@ def _advice_response(work_type: str) -> dict:
     """
     wt = (work_type or "").strip().lower()
     use_workflow = wt in _WORKFLOW_WORK_TYPES
+    recommended_profile = "mock-weak" if wt == "bounded_small_model" else "mock-profile"
     return {
         "task_type": work_type,
         "recommendation": {
-            "model_profile": "mock-profile",
+            "model_profile": recommended_profile,
             "reason": "mock_recommendation",
             "composite_score": 0.81,
             "fallback": False,
@@ -509,7 +510,7 @@ def _advice_response(work_type: str) -> dict:
             "quality_class": "high",
         },
         "route": {
-            "selected_model_profile_id": "mock-profile",
+            "selected_model_profile_id": recommended_profile,
             "selected_prompt_profile_id": "default",
         },
         "est_cost_usd": 0.0021,

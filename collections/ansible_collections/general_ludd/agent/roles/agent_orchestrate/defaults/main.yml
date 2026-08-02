@@ -12,6 +12,8 @@
 #   6. optional gludd_db todo_update_status to surface status back to gludd
 #
 # Every gludd-supplied var is referenced through `| default(...)` in tasks.
+# This role writes artifacts and may update todo state, so an advisor's configured
+# weak_model_profile is never executed here. It is escalated to default_profile.
 
 # Daemon connectivity
 daemon_url: "http://localhost:8000"

@@ -45,6 +45,33 @@
       {{ ansible_facts.gludd_environment.advice.resource_hints.budget_ok
          | default(true, true) | bool }}
     _est_cost: "{{ ansible_facts.gludd_environment.advice.est_cost_usd | default(none, true) }}"
+    _weak_profile: >-
+      {{ ansible_facts.gludd_environment.routing.weak_model_profile
+         | default('', true) }}
+    _default_profile: >-
+      {{ ansible_facts.gludd_environment.routing.default_profile
+         | default('default', true) }}
+
+- name: Detect constrained-profile recommendation for this side-effecting role
+  ansible.builtin.set_fact:
+    _recommended_profile: "{{ _rec_profile }}"
+    _small_model_escalated: >-
+      {{ (_weak_profile | length > 0) and (_rec_profile == _weak_profile) }}
+
+- name: Escalate constrained recommendation to the configured stronger profile
+  ansible.builtin.set_fact:
+    _rec_profile: >-
+      {{ _default_profile if _small_model_escalated else _rec_profile }}
+    _small_model_policy_result: >-
+      {{ {'action': 'escalate',
+          'reason': 'collection_role_has_side_effects',
+          'recommended_profile': _recommended_profile,
+          'selected_profile': _default_profile}
+         if _small_model_escalated else
+         {'action': 'not_applicable',
+          'reason': 'profile_not_configured_as_constrained',
+          'recommended_profile': _recommended_profile,
+          'selected_profile': _rec_profile} }}
 
 - name: Compute budget-floor gate
   ansible.builtin.set_fact:
@@ -146,6 +173,7 @@
           quality_score: "{{ _wf.quality_score | default(none) }}"
           est_cost_usd: "{{ _est_cost }}"
           content_excerpt: "{{ _content[:500] }}"
+          small_model_policy: "{{ _small_model_policy_result }}"
 
     # (6) Surface status back to gludd (capability-gated, fail-soft).
     - name: Surface status back to gludd

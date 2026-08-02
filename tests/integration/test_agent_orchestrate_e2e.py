@@ -279,3 +279,29 @@ def test_role_proceeds_when_budget_ok(tmp_path: Path, daemon: _DaemonProcess) ->
     assert data["status"] == "success", (
         f"expected success (budget_ok=true), got {data.get('status')}"
     )
+
+
+def test_role_escalates_weak_profile_instead_of_bypassing_small_model_policy(
+    tmp_path: Path, daemon: _DaemonProcess
+) -> None:
+    """A weak-profile recommendation cannot enter a side-effecting role."""
+    artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir()
+
+    result = _run_playbook(
+        str(daemon.url), str(artifact_dir), work_type="bounded_small_model"
+    )
+
+    assert result.returncode == 0, (
+        f"playbook failed:\nSTDOUT={result.stdout}\nSTDERR={result.stderr}"
+    )
+    data = json.loads(
+        (artifact_dir / "agent_orchestrate_result.json").read_text()
+    )
+    assert data["model_profile"] == "mock-profile"
+    assert data["small_model_policy"] == {
+        "action": "escalate",
+        "reason": "collection_role_has_side_effects",
+        "recommended_profile": "mock-weak",
+        "selected_profile": "mock-profile",
+    }
