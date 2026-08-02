@@ -47,6 +47,19 @@ class TestSelftestE2E:
             _run(["selftest", "--daemon-url", "http://localhost:9000"])
         assert mock_cmd.call_args[0][0].daemon_url == "http://localhost:9000"
 
+    def test_canonical_selftest_dispatches_same_handler(self):
+        with patch("general_ludd.cli._cmd_selftest") as mock_cmd:
+            _run(["test", "self", "--daemon-url", "http://localhost:9001"])
+        assert mock_cmd.call_args[0][0].daemon_url == "http://localhost:9001"
+
+    def test_legacy_and_canonical_help_expose_daemon_url(self, capsys):
+        legacy_out, _legacy_err, legacy_code = _run_output(["selftest", "--help"], capsys)
+        canonical_out, _canonical_err, canonical_code = _run_output(["test", "self", "--help"], capsys)
+
+        assert legacy_code == canonical_code == 0
+        assert "--daemon-url" in legacy_out
+        assert "--daemon-url" in canonical_out
+
 
 # ── models discover / discovered ────────────────────────────────────────────
 
