@@ -96,7 +96,7 @@ def worktree_lease_info(repo_path: str) -> list[dict[str, object]]:
     if not leases.is_dir():
         return []
     now = time.time()
-    result: list[dict] = []
+    result: list[dict[str, object]] = []
     for entry in sorted(leases.iterdir()):
         if not entry.is_file() or entry.suffix != ".json":
             continue

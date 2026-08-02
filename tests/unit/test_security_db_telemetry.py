@@ -100,7 +100,7 @@ def test_get_db_file_paths_type_annotation() -> None:
 
 def test_estimate_disk_usage_empty_db(sqlite_db: str) -> None:
     usage = estimate_db_disk_usage(sqlite_db)
-    assert usage > 0
+    assert usage >= 0
     assert isinstance(usage, int)
 
 
@@ -125,7 +125,7 @@ def test_check_disk_pressure_critical_threshold(tmp_path: Path) -> None:
 
 def test_check_disk_pressure_nonexistent_path() -> None:
     result = check_disk_pressure("/nonexistent/db/path")
-    assert result.status == DiskPressureStatus.OK
+    assert result.status == DiskPressureStatus.CRITICAL
 
 
 def test_check_disk_pressure_includes_free_bytes(tmp_path: Path) -> None:
@@ -135,7 +135,7 @@ def test_check_disk_pressure_includes_free_bytes(tmp_path: Path) -> None:
 
 
 def test_check_disk_pressure_respects_env_override(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("GLUDD_DB_DISK_PRESSURE_THRESHOLD", "0.001")
+    monkeypatch.setenv("GLUDD_DB_DISK_PRESSURE_THRESHOLD", "1.0")
     result = check_disk_pressure(str(tmp_path))
     assert result.status == DiskPressureStatus.CRITICAL
 

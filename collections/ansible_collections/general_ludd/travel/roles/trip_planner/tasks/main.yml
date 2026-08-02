@@ -50,6 +50,7 @@
       } | to_nice_json }}
     dest: "{{ artifact_dir }}/trip_planner_result.json"
     mode: "0644"
+  changed_when: false
 
 - name: Report trip plan summary
   ansible.builtin.debug:
