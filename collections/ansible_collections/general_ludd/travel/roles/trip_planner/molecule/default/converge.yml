@@ -1,0 +1,26 @@
+---
+- name: Converge
+  hosts: localhost
+  gather_facts: false
+  vars:
+    origin: "San Francisco"
+    destinations:
+      - "Tokyo"
+      - "Kyoto"
+      - "Osaka"
+    start_date: "2026-09-01"
+    end_date: "2026-09-14"
+    budget: 5000.0
+    interests:
+      - "food"
+      - "temples"
+      - "technology"
+    travelers: 2
+    trip_style: "comfort"
+    artifact_dir: "/tmp/gludd-trip-planner-test"
+    daemon_url: "http://localhost:8000"
+    psk: ""
+  tasks:
+    - name: "Include trip_planner"
+      ansible.builtin.include_role:
+        name: "trip_planner"

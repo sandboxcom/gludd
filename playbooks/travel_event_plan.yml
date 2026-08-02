@@ -1,0 +1,16 @@
+---
+- name: Search events and plan at a destination
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Query SearXNG for events at destination
+      general_ludd.travel.searxng_search:
+        query: "{{ event_type | default('events') }} in {{ destination | default('') }} on {{ event_date | default('') }} for {{ attendees | default(1) }} attendees"
+        category: events
+      register: event_plan_result
+
+    - name: Emit event plan result
+      ansible.builtin.debug:
+        msg: "{{ event_plan_result }}"

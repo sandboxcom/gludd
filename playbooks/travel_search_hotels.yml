@@ -1,0 +1,18 @@
+---
+- name: Search hotels at a destination
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Query hotel search engine
+      general_ludd.travel.hotel_search:
+        destination: "{{ destination | default('') }}"
+        check_in: "{{ checkin_date | default(omit) }}"
+        check_out: "{{ checkout_date | default(omit) }}"
+        guests: "{{ guests | default(1) | int }}"
+      register: hotel_search_result
+
+    - name: Emit hotel search result
+      ansible.builtin.debug:
+        msg: "{{ hotel_search_result }}"

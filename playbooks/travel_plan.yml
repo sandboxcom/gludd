@@ -1,0 +1,20 @@
+---
+- name: Plan a complete trip itinerary
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Generate trip plan
+      general_ludd.travel.trip_planner:
+        origin: "{{ origin | default('') }}"
+        destinations:
+          - "{{ destination | default('') }}"
+        start_date: "{{ departure_date | default(omit) }}"
+        end_date: "{{ return_date | default(omit) }}"
+        budget: "{{ budget | default(0.0) | float }}"
+      register: trip_plan_result
+
+    - name: Emit trip plan result
+      ansible.builtin.debug:
+        msg: "{{ trip_plan_result }}"

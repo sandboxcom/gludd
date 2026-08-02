@@ -1,0 +1,19 @@
+---
+- name: Search flights between origin and destination
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Query flight search engine
+      general_ludd.travel.flight_search:
+        origin: "{{ origin | default('') }}"
+        destination: "{{ destination | default('') }}"
+        depart_date: "{{ departure_date | default(omit) }}"
+        return_date: "{{ return_date | default(omit) }}"
+        passengers: "{{ passengers | default(1) | int }}"
+      register: flight_search_result
+
+    - name: Emit flight search result
+      ansible.builtin.debug:
+        msg: "{{ flight_search_result }}"
