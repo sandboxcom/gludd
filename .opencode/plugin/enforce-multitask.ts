@@ -277,17 +277,14 @@ const defaultImpl: HotModule = {
         return
       }
       // --- Consecutive non-dispatch counter (grinding detection) ---
-      // Counts every non-dispatch tool call. After THRESHOLD calls within the
-      // time window, blocks ALL non-dispatch tools until a dispatch resets.
-      // Read tools (isReadTool(tool)) are excluded from the COUNTER to avoid
-      // penalizing investigation bursts — they are still gated by the
-      // UNDER-FLOOR block below.
+      // Counts mutation tool calls. After THRESHOLD calls within the time
+      // window, blocks further non-dispatch mutations until a dispatch resets.
+      // Read/grep/glob are excluded so investigation bursts remain cheap; an
+      // explicitly configured minimum may still gate reads after a dispatch.
       //
-      // RUNS BEFORE the UNDER-FLOOR block so that when the streak counter has
-      // reached threshold (the agent has been grinding reads/greps), the
-      // STREAK message wins over UNDER-FLOOR. Without this ordering, a call 3
-      // edit after 2 reads would incorrectly surface UNDER-FLOOR instead of
-      // CONSECUTIVE NON-DISPATCH STREAK (2026-07-18 bug).
+      // Runs before the configured-minimum fallback so sustained mutation
+      // grinding receives the specific streak diagnostic. Reads never advance
+      // this counter and therefore cannot cause the mutation-streak block.
       //
       // PRESSURE-RELEASE: skip grinding block when in pressure-release or
       // inline-recovery mode. The agent needs inline tools to recover from
@@ -321,6 +318,25 @@ const defaultImpl: HotModule = {
               "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable. Run 'make disengage-enforcement' to bypass.",
             ].join("\n"),
           }
+        }
+      }
+      // === ZERO-DISPATCH STREAK (specialized diagnostic before fallback) ===
+      if (
+        !disengaged &&
+        REQUIRED_DISPATCHES > 0 &&
+        _state.thisMessageDispatches === 0 &&
+        _state.zeroStreak >= MAX_ZERO_STREAK
+      ) {
+        writeState(_state)
+        return {
+          permissionDecision: "deny" as const,
+          message: [
+            "ZERO-DISPATCH STREAK: " + String(MAX_ZERO_STREAK) + " consecutive responses with 0 subagent dispatches.",
+            "An operator-configured minimum is active: " + String(REQUIRED_DISPATCHES) + ".",
+            "Dispatch suitable independent work; the hard ceiling remains " + String(MAX_DISPATCHES) + ".",
+            "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable minimum enforcement.",
+            "Run 'make disengage-enforcement' to bypass.",
+          ].join("\n"),
         }
       }
       // === UNDER-FLOOR HARD BLOCK ===
@@ -364,25 +380,6 @@ const defaultImpl: HotModule = {
             "You have " + String(_state.thisMessageDispatches) + "; need " + String(_effectiveFloor) + ". ALL tools (read/grep/glob/edit/write/bash) are blocked when below floor and dispatches have been made this session.",
             "consecutive non-dispatch calls: " + String(_state.consecutiveNonDispatch),
             "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
-            "Run 'make disengage-enforcement' to bypass.",
-          ].join("\n"),
-        }
-      }
-      // === ZERO-DISPATCH STREAK (FIRES BEFORE UNDER-FLOOR) ===
-      if (
-        !disengaged &&
-        REQUIRED_DISPATCHES > 0 &&
-        _state.thisMessageDispatches === 0 &&
-        _state.zeroStreak >= MAX_ZERO_STREAK
-      ) {
-        writeState(_state)
-        return {
-          permissionDecision: "deny" as const,
-          message: [
-            "ZERO-DISPATCH STREAK: " + String(MAX_ZERO_STREAK) + " consecutive responses with 0 subagent dispatches.",
-            "An operator-configured minimum is active: " + String(REQUIRED_DISPATCHES) + ".",
-            "Dispatch suitable independent work; the hard ceiling remains " + String(MAX_DISPATCHES) + ".",
-            "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable minimum enforcement.",
             "Run 'make disengage-enforcement' to bypass.",
           ].join("\n"),
         }
