@@ -4,15 +4,33 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+_INLINE_ROLE_TAG = re.compile(r"<(?:user|assistant|system)>", re.IGNORECASE)
+_INLINE_ROLE_PREFIX = re.compile(
+    r"^(?:User|Assistant|System|Human|AI)\s*[:>]",
+    re.IGNORECASE,
+)
+
 
 def parse_conversation_log(log_path: str | Path) -> list[dict[str, Any]]:
-    path = Path(log_path)
-    if path.is_file():
-        raw = path.read_text(encoding="utf-8")
-    elif path.exists() or "\n" not in str(log_path):
-        return []
+    source = str(log_path)
+    is_inline = (
+        not isinstance(log_path, Path)
+        and (
+            "\n" in source
+            or _INLINE_ROLE_TAG.search(source) is not None
+            or _INLINE_ROLE_PREFIX.search(source) is not None
+        )
+    )
+    if is_inline:
+        raw = source
     else:
-        raw = str(log_path)
+        path = Path(log_path)
+        try:
+            if not path.is_file():
+                return []
+            raw = path.read_text(encoding="utf-8")
+        except OSError:
+            return []
     entries: list[dict[str, Any]] = []
     role_pattern = re.compile(
         r"<(user|assistant|system)>(.*?)</\1>",
