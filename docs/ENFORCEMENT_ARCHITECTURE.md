@@ -299,9 +299,17 @@ Plugin worker processes may have a different `cwd` than the main opencode
 process, causing `hasPendingWork()` to fail finding `TASKS.md`/`ratchet.yml`.
 `getProjectRoot()` resolves this with cached walk-up logic:
 
-1. `GLUDD_PROJECT_ROOT` env var (if the directory exists).
+1. `GLUDD_PROJECT_ROOT` env var (if it names an existing directory). The
+   explicit directory is authoritative even without project markers.
 2. Walk up from `cwd` looking for `TASKS.md` OR (`opencode.json` + `Makefile`).
 3. Fall back to `cwd`.
+
+An absent, missing, or non-directory override cannot broaden discovery beyond
+`cwd` and its ancestors. There is no developer-specific or machine-specific
+checkout fallback. Only the trusted environment override may intentionally
+select an unrelated directory; see
+[`ENFORCEMENT_PROCESS_ISOLATION.md`](features/ENFORCEMENT_PROCESS_ISOLATION.md#project-ledger-root-isolation)
+for the configurability, security, rollout, and rollback contract.
 
 The cache is keyed on `(GLUDD_PROJECT_ROOT, cwd)` so a mid-session change
 invalidates the cached resolution. `invalidateProjectRootCache()` forces a

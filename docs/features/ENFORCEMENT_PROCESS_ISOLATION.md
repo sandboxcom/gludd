@@ -125,16 +125,85 @@ file, eliminating the `exists()`/`read_bytes()` time-of-check/time-of-use
 window. Other I/O failures remain visible rather than being silently converted
 to absence.
 
+## Project-ledger root isolation
+
+Enforcement is also a filesystem trust boundary. A previous fallback in
+`getProjectRoot()` named one developer's checkout directly. When a plugin ran
+from a markerless temporary directory, it could read that unrelated checkout's
+`TASKS.md`, `BUGS.md`, `config/ratchet.yml`, and gate state. Besides being
+non-portable, this produced false stop decisions and exposed another project's
+work metadata to the current session.
+
+The resolver now has one portable order:
+
+| Condition | Result |
+|---|---|
+| `GLUDD_PROJECT_ROOT` names an existing directory | Use it as the authoritative root, even when it contains no ledger or project marker. Relative values are resolved against the current directory. |
+| The override is absent or invalid | Walk only the current directory and its ancestors for `TASKS.md`, or for the `opencode.json` + `Makefile` pair. |
+| No marker is found | Stay at the current directory. Never probe a sibling, home-directory checkout, or developer-specific path. |
+
+The cache remains keyed by the raw override and current directory, so either
+changing in-process invalidates the earlier decision. An invalid override is
+not permission to broaden the search: a missing path or non-directory falls
+through to the same ancestor-only walk as an unset value.
+
+### Configuration and trust boundary
+
+`GLUDD_PROJECT_ROOT` is trusted launcher configuration. Whoever can set the
+OpenCode process environment can intentionally select a root outside `cwd`, so
+operators should set it to the exact worktree being controlled and should not
+copy it from repository content. The override is authoritative without
+requiring `TASKS.md`; an empty project must mean “no project ledger,” not
+“borrow a different ledger.” Without that explicit capability, repository
+markers can only widen scope to an ancestor that already contains the process.
+
+This contract matches the direction of the current
+[OpenCode plugin API](https://dev.opencode.ai/docs/plugins/), which exposes
+`directory` and `worktree` as distinct plugin context rather than implying one
+machine-global checkout. It also addresses a durable class of operator reports:
+
+- A year-old [RooCode multi-root workspace report](https://www.reddit.com/r/RooCode/comments/1jsv9ne/roocode_path_issues_with_multiroot_vs_code/)
+  describes cwd switching causing edits to target duplicated or parent paths.
+- Microsoft’s [VS Code Python issue #18207](https://github.com/microsoft/vscode-python/issues/18207),
+  opened in 2021, records a workspace-root token being interpreted from the
+  wrong location in a multi-root configuration.
+- The official [VS Code multi-root guide](https://code.visualstudio.com/docs/editing/workspaces/multi-root-workspaces)
+  notes that extensions without multi-folder support can operate on the first
+  folder, reinforcing that an implicit “default checkout” is not project
+  isolation.
+
+These reports are analogous path-scope failures, not claims that upstream tools
+contained Gludd's hardcoded fallback. The design conclusion is local: project
+identity must come from explicit configuration or bounded discovery, never a
+developer pathname compiled into policy code.
+
+### ZDD deployment and rollback
+
+The change performs no state migration and starts no process. New OpenCode
+sessions pick it up independently, so operators can preserve zero downtime by
+restarting sessions one at a time while other sessions continue. Existing
+sessions keep their loaded plugin generation until restart; editing the source
+does not make the running session safe, and this change must not trigger an
+automatic restart.
+
+For rollout, set `GLUDD_PROJECT_ROOT` explicitly in each launcher when the
+plugin worker's cwd may not be inside the worktree, then restart that session
+and run the live hook verification. For rollback, revert the resolver commit
+and restart affected sessions one at a time. No ledger or `/tmp/gludd-*` state
+needs conversion; keeping a valid explicit root is the safe configuration
+mitigation during either rollout or rollback.
+
 ## Verification
 
 The acceptance sequence is:
 
-1. Run `make test-files TESTFILES='tests/unit/test_enforcement_gate_spawn_safety.py'`.
-2. Run `make check-plugin-hooks`.
-3. Run `make test-multitask-node`.
-4. Run `make test-hook-runtime`.
-5. Run `make verify-enforcement`.
-6. Run `make ps` and confirm that verification left no project process behind.
+1. Run `make test-files TESTFILES='tests/e2e/test_enforce_stop_live.py' PYTEST_ARGS=-q`.
+2. Run `make test-files TESTFILES='tests/unit/test_enforcement_gate_spawn_safety.py' PYTEST_ARGS=-q`.
+3. Run `make check-plugin-hooks`.
+4. Run `make test-multitask-node`.
+5. Run `make test-hook-runtime`.
+6. Run `make verify-enforcement`.
+7. Run `make ps` and confirm that verification left no project process behind.
 
 Because OpenCode loads plugin entrypoints at startup, editing this plugin requires
 an OpenCode restart before the running session uses the new implementation.
