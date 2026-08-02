@@ -25,8 +25,8 @@ from general_ludd.scheduling.scheduler import ComputeSchedulingHint
 def _make_profile(
     profile_id: str,
     *,
-    cost_input: float = 0.0,
-    cost_output: float = 0.0,
+    cost_input: float = 1e-6,
+    cost_output: float = 2e-6,
     run_budget_usd: float = 200.0,
     enabled: bool = True,
     api_metered: bool = True,
