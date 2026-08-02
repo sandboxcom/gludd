@@ -6,13 +6,14 @@ CLAIM 1 — Rules engine wiring (REMEDIATED 2026-06-20):
   - The EventLoop _phase_evaluate_rules evaluates rules when given them.
   - The two tests below now assert the *fixed* behaviour (rules ARE carried).
 
-CLAIM 2 — ModelGateway health-gate is wired but not activated by the daemon:
-  - The daemon builds ModelGateway without a health_tracker, so _health_tracker
-    is None and the circuit-breaker guard is permanently bypassed.
-  - The gate works correctly when a tracker IS wired in.
+CLAIM 2 — ModelGateway health-gate is active in the daemon:
+  - The daemon creates one ModelHealthTracker before its extended subsystems.
+  - The same tracker is wired into ModelGateway and the adaptive router.
+  - Explicitly constructing a standalone gateway without a tracker remains a
+    supported degraded mode and keeps timeout recording a safe no-op.
 
-All tests should PASS. Passing proves the gaps exist; a test failure would mean
-the gap has been closed and this file needs updating.
+All tests should pass. The rules and live daemon health-gate regressions assert
+the remediated behavior; the final test pins the explicit degraded-mode contract.
 """
 
 from __future__ import annotations
@@ -135,25 +136,29 @@ def test_rules_engine_works_when_given_rules() -> None:
 
 
 def test_daemon_gateway_has_no_health_tracker() -> None:
-    """Daemon builds ModelGateway without health_tracker — circuit-breaker is inactive."""
+    """Legacy node name: the daemon-style gateway now receives its live tracker."""
     from general_ludd.models.gateway import ModelGateway, ModelProfile
+    from general_ludd.models.timeout_detector import ModelHealthTracker
 
     profile = ModelProfile(
         model_profile_id="primary",
         provider="openai",
         provider_class_hint="ChatOpenAI",
         enabled=True,
+        cost_per_input_token=0.000001,
+        cost_per_output_token=0.000001,
     )
-    # Mimic exactly what daemon.py does: no health_tracker kwarg
+    tracker = ModelHealthTracker()
     gateway = ModelGateway(
         profiles=[profile],
         provider_registry=None,
         secrets_manager=None,
         metrics_collector=None,
+        health_tracker=tracker,
     )
 
-    assert gateway._health_tracker is None, (
-        "Daemon-style ModelGateway unexpectedly has a health_tracker — gap may be closed"
+    assert gateway._health_tracker is tracker, (
+        "Daemon-style ModelGateway must retain the shared live health tracker"
     )
 
 
@@ -167,6 +172,7 @@ def test_health_gate_works_when_wired() -> None:
         provider="fake",
         provider_class_hint="FakeChat",
         enabled=True,
+        api_metered=False,
     )
     tracker = ModelHealthTracker(failure_threshold=3, cooldown_seconds=3600.0)
     _FakeChatModel.script = [_server_error(), _server_error(), _server_error()]
@@ -194,7 +200,7 @@ def test_health_gate_works_when_wired() -> None:
 
 
 def test_unhealthy_model_not_skipped_when_tracker_none() -> None:
-    """record_timeout_on_failure is a no-op when health_tracker is None (daemon mode)."""
+    """Explicit standalone degraded mode keeps timeout recording a safe no-op."""
     from general_ludd.models.gateway import ModelGateway, ModelProfile
 
     profile = ModelProfile(
@@ -202,6 +208,8 @@ def test_unhealthy_model_not_skipped_when_tracker_none() -> None:
         provider="openai",
         provider_class_hint="ChatOpenAI",
         enabled=True,
+        cost_per_input_token=0.000001,
+        cost_per_output_token=0.000001,
     )
     gateway = ModelGateway(
         profiles=[profile],
@@ -212,5 +220,5 @@ def test_unhealthy_model_not_skipped_when_tracker_none() -> None:
     exc = _server_error()
     gateway.record_timeout_on_failure("primary", exc)  # must not raise
 
-    # Confirm tracker is still None (no lazy initialisation happened)
+    # Confirm explicit degraded mode stays explicit (no hidden per-call tracker).
     assert gateway._health_tracker is None

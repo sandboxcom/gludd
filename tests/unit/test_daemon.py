@@ -552,6 +552,7 @@ class TestExtendedSubsystemsWiring:
 
         from fastapi import FastAPI
 
+        from general_ludd.config.user_config import NetworkConfig
         from general_ludd.controllers.budget import RunBudgetGuard
         from general_ludd.daemon import _lifespan
         from general_ludd.models.gateway import ModelProfile
@@ -562,6 +563,9 @@ class TestExtendedSubsystemsWiring:
         mock_uc.budget = {"daily_limit": 10.0, "per_task_limit": 1.0, "timeout_seconds": 3600.0}
         mock_uc.database = {}
         mock_uc.self_improve = {}
+        # A real loopback network block prevents ambient settings or MagicMock's
+        # truthiness from turning this isolated unit app into an external bind.
+        mock_uc.network = NetworkConfig(host="127.0.0.1")
 
         profile = ModelProfile(
             model_profile_id="test-prof",
@@ -626,6 +630,9 @@ class TestExtendedSubsystemsWiring:
                 )
                 assert isinstance(gateway._budget_guard, RunBudgetGuard), (
                     "ModelGateway._budget_guard must be a live RunBudgetGuard instance"
+                )
+                assert gateway._health_tracker is app.state._health_tracker, (
+                    "ModelGateway must share the daemon's pre-created health tracker"
                 )
 
     @pytest.mark.asyncio
