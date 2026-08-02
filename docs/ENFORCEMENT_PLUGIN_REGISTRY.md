@@ -17,7 +17,7 @@
 | 3 | `enforce-floor.ts` | `tool.execute.before`, `experimental.text.complete` | All non-dispatch tools (incl. read/grep/glob) after 5 consecutive non-dispatch calls in a 30s window (grinding block), OR when the live subagent count drops below the floor. | `GLUDD_FLOOR_ENFORCE=0` |
 | 4 | `enforce-delegate.ts` | `tool.execute.before` | Edit/write/bash after 2 consecutive non-dispatch calls (mainthread streak); serial read-only investigations past `GLUDD_READ_GRIND_DENY_COUNT` (default 10). | `GLUDD_MAINTHREAD_STREAK_ENFORCE=0` (streak), `GLUDD_MODEL_UTIL_ENFORCE=0` (utilization), `GLUDD_READ_GRIND_*` tunables |
 | 5 | `enforce-multitask.ts` | `tool.execute.before` | Task/agent/workflow dispatch waves containing fewer than 10 parallel dispatches when pending work exists (unchecked TASKS.md or ratchet entries); also blocks zero-dispatch streaks. | `GLUDD_MULTITASK_FLOOR_ENFORCE=0` |
-| 6 | `enforce-stop.ts` | `experimental.text.complete`, `tool.execute.before`, `session.idle` | Text-only responses (0 tool calls) when `hasRealPendingWork()` is true (unchecked TASKS.md items, non-empty ratchet.yml, red gate, unreleased tags, CI not green). The `text.complete` block is UNBYPASSABLE — `GLUDD_STOP_ENFORCE=0` disables only the non-text hooks. Stop-pattern make targets (commit/push/release) with pending work are also blocked. | `GLUDD_STOP_ENFORCE=0` (non-text hooks only) |
+| 6 | `enforce-stop.ts` | `experimental.text.complete`, `experimental.chat.system.transform`, `tool.execute.before`, `event` | Text-only responses (0 tool calls) when `hasRealPendingWork()` is true (unchecked TASKS.md items, non-empty ratchet.yml, red gate, unreleased tags, CI not green). The `text.complete` block is UNBYPASSABLE — `GLUDD_STOP_ENFORCE=0` disables only the non-text hooks. Stop-pattern make targets (commit/push/release) with pending work are also blocked; `session.idle` is handled through `event`. | `GLUDD_STOP_ENFORCE=0` (non-text hooks only) |
 | 7 | `enforce-deadline.ts` | `tool.execute.before` | Task/agent/workflow dispatch whose elapsed wall-clock exceeds `GLUDD_TASK_TIMEOUT_MS` (default 300000ms = 5min); emits `TASK DEADLINE EXCEEDED` warning and records to `/tmp/gludd-task-stale.json`. | `GLUDD_TASK_DEADLINE_ENFORCE=0` (block), `GLUDD_TASK_DEADLINE_ENABLED=0` (detection) |
 | 8 | `enforce-enhancement-ratio.ts` | `tool.execute.before`, `experimental.text.complete` | Task/agent/workflow dispatch waves with >50% fix dispatches when ≥2 dispatches are in the wave (forces ≥50% enhancement work per wave). | `GLUDD_ENHANCEMENT_RATIO_ENFORCE=0` |
 | 9 | `enforce-clean-tree.ts` | `tool.execute.before` | Task/agent/workflow dispatch when `git status --porcelain` is non-empty (dirty tree would cause pre-commit stash conflicts on push). | `GLUDD_CLEAN_TREE_ENFORCE=0` |
@@ -57,6 +57,35 @@ for one or more:
 | `experimental.text.complete` | When the assistant finalizes a text response | Block / rewrite text-only responses |
 | `session.idle` | When the session goes idle | Inject resume-work directives |
 | `event` | Opencode lifecycle events (session created/deleted) | Side-effects (PID files, cleanup) |
+
+## Executable runtime contract
+
+Every entrypoint registered by `opencode.json` must return at least one named
+hook itself. Delegating to a second module does not make an otherwise hookless
+entrypoint auditable: the entrypoint must expose the delegated functions in its
+returned hook object. `tests/unit/test_all_plugins_runtime.py` inventories that
+surface and requires an explicit mapping to a behavioral test. The extended
+runtime suite imports the real TypeScript factories and exercises floor denial,
+numeric-directive rejection, deliverable warnings, CI-poll reset, and release
+deadline allow/deny decisions. Task tracking retains its dedicated Node runtime
+suite.
+
+Long-lived upstream operator reports reinforce why source-shape checks alone
+are insufficient:
+
+- [OpenCode #6396](https://github.com/anomalyco/opencode/issues/6396) reports
+  permissions appearing unenforced when SDK requests omit the project
+  directory, so runtime probes always set an exact project root.
+- [OpenCode #20549](https://github.com/anomalyco/opencode/issues/20549) collects
+  subagent permission-transitivity failures, so every probe explicitly selects
+  parent or subagent context instead of inheriting ambient state.
+- [OpenCode #17412](https://github.com/anomalyco/opencode/issues/17412) documents
+  the limits of message injection and `session.idle` continuation, so tests
+  assert the hook's concrete returned decision/output rather than treating a
+  warning or idle callback as proof of enforcement.
+
+Plugin source edits still require an OpenCode restart before the running editor
+loads the new entrypoint object.
 
 ## Disable patterns
 

@@ -8,5 +8,11 @@ import impl from "./impl/enforce_stop_impl.ts"
 
 export default (async () => {
   void isSubagent()
-  return impl({})
+  const hooks = await impl({})
+  return {
+    "tool.execute.before": hooks["tool.execute.before"],
+    "experimental.chat.system.transform": hooks["experimental.chat.system.transform"],
+    "experimental.text.complete": hooks["experimental.text.complete"],
+    "event": hooks["event"],
+  }
 }) satisfies Plugin
