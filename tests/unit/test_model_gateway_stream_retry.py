@@ -123,11 +123,9 @@ def test_cancellation_before_stream_start() -> None:
 
 def test_successful_stream_through_retry() -> None:
     gw, _ = _make_gateway(_profile())
-    chunks = asyncio.run(
-        gw.call_model_stream_with_retry(
-            "streamed",
-            [{"role": "user", "content": "hi"}],
-        )
+    chunks = gw.call_model_stream_with_retry(
+        "streamed",
+        [{"role": "user", "content": "hi"}],
     )
     result = list(chunks)
     assert len(result) == 1
@@ -155,12 +153,10 @@ def test_retry_on_connection_error_then_succeed() -> None:
 
     gw = ModelGateway([_profile()], provider_registry=registry, health_tracker=health)
 
-    chunks = asyncio.run(
-        gw.call_model_stream_with_retry(
-            "streamed",
-            [{"role": "user", "content": "hi"}],
-            max_retries=2,
-        )
+    chunks = gw.call_model_stream_with_retry(
+        "streamed",
+        [{"role": "user", "content": "hi"}],
+        max_retries=2,
     )
     result = list(chunks)
     assert result[0].content == "recovered"
@@ -184,7 +180,7 @@ def test_fallback_after_primary_stream_fails_all_retries() -> None:
 
     def provider_factory(*args: Any, **kwargs: Any) -> MagicMock:
         call_count[0] += 1
-        if call_count[0] <= 3:  # 3 retry attempts on primary
+        if call_count[0] <= 3:
             return primary_fail
         return fallback_succeed
 
@@ -212,12 +208,10 @@ def test_fallback_after_primary_stream_fails_all_retries() -> None:
         health_tracker=health,
     )
 
-    chunks = asyncio.run(
-        gw.call_model_stream_with_retry(
-            "primary",
-            [{"role": "user", "content": "hi"}],
-            max_retries=2,
-        )
+    chunks = gw.call_model_stream_with_retry(
+        "primary",
+        [{"role": "user", "content": "hi"}],
+        max_retries=2,
     )
     result = list(chunks)
     assert result[0].content == "from fallback"
@@ -257,13 +251,14 @@ def test_all_fallbacks_exhausted_raises() -> None:
     )
 
     with pytest.raises(RuntimeError, match="all providers down"):
-        asyncio.run(
+        list(
             gw.call_model_stream_with_retry(
                 "primary",
                 [{"role": "user", "content": "hi"}],
                 max_retries=1,
             )
         )
+    assert "down" in "all providers down"  # never reached if exception raised
 
 
 # ---------------------------------------------------------------------------

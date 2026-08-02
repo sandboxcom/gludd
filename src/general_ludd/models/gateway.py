@@ -1694,18 +1694,28 @@ class ModelGateway:
             pool=min(10.0, transport_wait),
         )
         init_kwargs.update(provider_kwargs)
-        chat_model = provider_cls(**init_kwargs)
-        if tools:
-            if not hasattr(chat_model, "bind_tools"):
-                raise ValueError(f"Provider for profile '{profile_id}' does not support streamed tools")
-            chat_model = chat_model.bind_tools(tools)
 
+        sem = self._stream_provider_semaphore(profile_id)
+        if not sem.acquire(timeout=10.0):
+            raise RuntimeError(
+                f"Stream provider construction for '{profile_id}' timed out "
+                f"(all {profile.stream_provider_max_concurrency} slot(s) occupied)"
+            )
         try:
-            upstream = iter(chat_model.stream(messages))
-        except Exception as exc:
-            _redact_url_in_exception(exc, resolved_base_url)
-            self.record_timeout_on_failure(profile_id, exc)
-            raise
+            chat_model = provider_cls(**init_kwargs)
+            if tools:
+                if not hasattr(chat_model, "bind_tools"):
+                    raise ValueError(f"Provider for profile '{profile_id}' does not support streamed tools")
+                chat_model = chat_model.bind_tools(tools)
+
+            try:
+                upstream = iter(chat_model.stream(messages))
+            except Exception as exc:
+                _redact_url_in_exception(exc, resolved_base_url)
+                self.record_timeout_on_failure(profile_id, exc)
+                raise
+        finally:
+            sem.release()
 
         max_stream_bytes = min(
             _positive_profile_limit(
@@ -2258,7 +2268,10 @@ class ModelGateway:
                 attempts.append(
                     {
                         "profile_id": fb_id,
-                        "reason": f"budget exceeded before stream attempt (estimated={estimated_cost}, remaining={budget_remaining})",
+                        "reason": (
+                            f"budget exceeded before stream attempt "
+                            f"(estimated={estimated_cost}, remaining={budget_remaining})"
+                        ),
                     }
                 )
                 last_exc = BudgetExceededError(
