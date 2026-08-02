@@ -14,9 +14,7 @@ def _get_subcommands() -> list[str]:
     except (AttributeError, IndexError):
         # argparse >= 3.12 stores subparsers differently
         choices = {
-            action.dest: action
-            for action in parser._actions
-            if hasattr(action, "choices") and action.dest == "command"
+            action.dest: action for action in parser._actions if hasattr(action, "choices") and action.dest == "command"
         }
         choices = choices["command"].choices if "command" in choices and hasattr(choices["command"], "choices") else {}
     return list(choices.keys())
@@ -27,17 +25,11 @@ class TestRemovedSubcommands:
 
     def test_physics_not_in_subcommands(self) -> None:
         subcmds = _get_subcommands()
-        assert "physics" not in subcmds, (
-            f"physics should NOT be a top-level subcommand, "
-            f"but found in: {subcmds}"
-        )
+        assert "physics" not in subcmds, f"physics should NOT be a top-level subcommand, but found in: {subcmds}"
 
     def test_account_not_in_subcommands(self) -> None:
         subcmds = _get_subcommands()
-        assert "account" not in subcmds, (
-            f"account should NOT be a top-level subcommand, "
-            f"but found in: {subcmds}"
-        )
+        assert "account" not in subcmds, f"account should NOT be a top-level subcommand, but found in: {subcmds}"
 
 
 class TestPaymentSubcommand:
@@ -62,9 +54,7 @@ class TestConsolidatedTestSubcommands:
         test_parser = parser._subparsers._group_actions[0].choices.get("test")
         assert test_parser is not None, "test subparser not found"
         # Subparsers under test
-        test_sub_actions = [
-            a for a in test_parser._actions if a.dest == "test_command"
-        ]
+        test_sub_actions = [a for a in test_parser._actions if a.dest == "test_command"]
         assert test_sub_actions, "test subparser has no sub-commands"
         test_sub_choices = test_sub_actions[0].choices
         assert "background" in test_sub_choices, (
@@ -77,14 +67,10 @@ class TestConsolidatedTestSubcommands:
         parser, _ = build_parser()
         test_parser = parser._subparsers._group_actions[0].choices.get("test")
         assert test_parser is not None, "test subparser not found"
-        test_sub_actions = [
-            a for a in test_parser._actions if a.dest == "test_command"
-        ]
+        test_sub_actions = [a for a in test_parser._actions if a.dest == "test_command"]
         assert test_sub_actions, "test subparser has no sub-commands"
         test_sub_choices = test_sub_actions[0].choices
-        assert "self" in test_sub_choices, (
-            f"'self' not in test sub-commands: {list(test_sub_choices.keys())}"
-        )
+        assert "self" in test_sub_choices, f"'self' not in test sub-commands: {list(test_sub_choices.keys())}"
 
     def test_test_smoke_is_suboption(self) -> None:
         from general_ludd.cli import build_parser
@@ -92,22 +78,15 @@ class TestConsolidatedTestSubcommands:
         parser, _ = build_parser()
         test_parser = parser._subparsers._group_actions[0].choices.get("test")
         assert test_parser is not None, "test subparser not found"
-        test_sub_actions = [
-            a for a in test_parser._actions if a.dest == "test_command"
-        ]
+        test_sub_actions = [a for a in test_parser._actions if a.dest == "test_command"]
         assert test_sub_actions, "test subparser has no sub-commands"
         test_sub_choices = test_sub_actions[0].choices
-        assert "smoke" in test_sub_choices, (
-            f"'smoke' not in test sub-commands: {list(test_sub_choices.keys())}"
-        )
+        assert "smoke" in test_sub_choices, f"'smoke' not in test sub-commands: {list(test_sub_choices.keys())}"
 
     def test_testbg_not_standalone(self) -> None:
         """Standalone test-bg should NOT be a top-level command."""
         subcmds = _get_subcommands()
-        assert "test-bg" not in subcmds, (
-            f"test-bg should NOT be a standalone top-level command, "
-            f"found: {subcmds}"
-        )
+        assert "test-bg" not in subcmds, f"test-bg should NOT be a standalone top-level command, found: {subcmds}"
 
     def test_selftest_compatibility_alias_is_standalone(self) -> None:
         """Existing automation can keep using the legacy top-level spelling."""
@@ -128,10 +107,7 @@ class TestConsolidatedTestSubcommands:
     def test_smoke_not_standalone(self) -> None:
         """Standalone smoke should NOT be a top-level command."""
         subcmds = _get_subcommands()
-        assert "smoke" not in subcmds, (
-            f"smoke should NOT be a standalone top-level command, "
-            f"found: {subcmds}"
-        )
+        assert "smoke" not in subcmds, f"smoke should NOT be a standalone top-level command, found: {subcmds}"
 
 
 class TestModulesStillImportable:
@@ -151,3 +127,73 @@ class TestModulesStillImportable:
         from general_ludd.cli_account import add_account_subparser
 
         assert callable(add_account_subparser)
+
+
+class TestCloudIamSubcommand:
+    """Verify cloud iam subcommand tree exists and is wired correctly."""
+
+    def test_cloud_is_in_subcommands(self) -> None:
+        subcmds = _get_subcommands()
+        assert "cloud" in subcmds, f"cloud should be a top-level subcommand, found: {subcmds}"
+
+    def test_cloud_iam_is_subcommand(self) -> None:
+        from general_ludd.cli import build_parser
+
+        parser, _ = build_parser()
+        cloud_parser = parser._subparsers._group_actions[0].choices.get("cloud")
+        assert cloud_parser is not None, "cloud subparser not found"
+        cloud_sub_actions = [a for a in cloud_parser._actions if a.dest == "cloud_command"]
+        assert cloud_sub_actions, "cloud subparser has no sub-commands"
+        cloud_sub_choices = cloud_sub_actions[0].choices
+        assert "iam" in cloud_sub_choices, f"'iam' not in cloud sub-commands: {list(cloud_sub_choices.keys())}"
+
+    def test_cloud_iam_generate_is_subcommand(self) -> None:
+        from general_ludd.cli import build_parser
+
+        parser, _ = build_parser()
+        cloud_parser = parser._subparsers._group_actions[0].choices.get("cloud")
+        cloud_sub_actions = [a for a in cloud_parser._actions if a.dest == "cloud_command"]
+        iam_parser = cloud_sub_actions[0].choices.get("iam")
+        assert iam_parser is not None, "iam subparser not found"
+        iam_sub_actions = [a for a in iam_parser._actions if a.dest == "iam_command"]
+        assert iam_sub_actions, "iam subparser has no sub-commands"
+        iam_sub_choices = iam_sub_actions[0].choices
+        assert "generate" in iam_sub_choices, f"'generate' not in iam sub-commands: {list(iam_sub_choices.keys())}"
+
+    def test_cloud_iam_validate_is_subcommand(self) -> None:
+        from general_ludd.cli import build_parser
+
+        parser, _ = build_parser()
+        cloud_parser = parser._subparsers._group_actions[0].choices.get("cloud")
+        cloud_sub_actions = [a for a in cloud_parser._actions if a.dest == "cloud_command"]
+        iam_parser = cloud_sub_actions[0].choices.get("iam")
+        iam_sub_actions = [a for a in iam_parser._actions if a.dest == "iam_command"]
+        iam_sub_choices = iam_sub_actions[0].choices
+        assert "validate" in iam_sub_choices, f"'validate' not in iam sub-commands: {list(iam_sub_choices.keys())}"
+
+    def test_cloud_iam_generate_parses_provider_and_persona(self) -> None:
+        from general_ludd.cli import _cmd_cloud_iam_generate, build_parser
+
+        parser, _ = build_parser()
+        args = parser.parse_args(["cloud", "iam", "generate", "--provider", "aws", "--persona", "monitor"])
+        assert args.provider == "aws"
+        assert args.persona == "monitor"
+        assert args.func is _cmd_cloud_iam_generate
+
+    def test_cloud_iam_generate_defaults_persona(self) -> None:
+        from general_ludd.cli import _cmd_cloud_iam_generate, build_parser
+
+        parser, _ = build_parser()
+        args = parser.parse_args(["cloud", "iam", "generate", "--provider", "azure"])
+        assert args.provider == "azure"
+        assert args.persona == "monitor"
+        assert args.func is _cmd_cloud_iam_generate
+
+    def test_cloud_iam_validate_parses_provider_and_file(self) -> None:
+        from general_ludd.cli import _cmd_cloud_iam_validate, build_parser
+
+        parser, _ = build_parser()
+        args = parser.parse_args(["cloud", "iam", "validate", "--provider", "gcp", "--file", "/tmp/role.json"])
+        assert args.provider == "gcp"
+        assert args.file == "/tmp/role.json"
+        assert args.func is _cmd_cloud_iam_validate

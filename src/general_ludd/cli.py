@@ -291,8 +291,7 @@ SEE ALSO
 def _handle_connection_error(exc: Exception, daemon_url: str) -> None:
     if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)):
         print(
-            f"Error: Cannot connect to daemon at {daemon_url}. "
-            f"Is the daemon running? Start it with: gludd daemon",
+            f"Error: Cannot connect to daemon at {daemon_url}. Is the daemon running? Start it with: gludd daemon",
             file=sys.stderr,
         )
     elif isinstance(exc, httpx.TimeoutException):
@@ -378,6 +377,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         description="General Ludd Agent — the black swan agentic coding system",
     )
     from general_ludd import __version__
+
     parser.add_argument(
         "--version",
         action="version",
@@ -456,21 +456,25 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
 
     models_searx_search = models_sub.add_parser("searx-search", help="Search models via SearXNG")
     models_searx_search.add_argument("query", nargs="?", default="", help="Search query")
-    models_searx_search.add_argument("--source", default="huggingface",
-                                     choices=["huggingface", "github", "web"],
-                                     help="Search source (default: huggingface)")
+    models_searx_search.add_argument(
+        "--source",
+        default="huggingface",
+        choices=["huggingface", "github", "web"],
+        help="Search source (default: huggingface)",
+    )
     models_searx_search.add_argument("--searx-url", default=None, help="SearXNG instance URL")
     models_searx_search.set_defaults(func=_cmd_models_searx_search)
 
     models_deploy = models_sub.add_parser("deploy", help="Deploy a model found via SearXNG")
     models_deploy.add_argument("name", help="Model name to find and deploy")
     models_deploy.add_argument("--provider", default="aws", help="Cloud provider (aws, gcp, azure)")
-    models_deploy.add_argument("--engine", default="vllm", choices=["vllm", "llamacpp"],
-                               help="Inference engine")
-    models_deploy.add_argument("--workload-type", default="realtime_api",
-                               choices=["batch_inference", "realtime_api", "fine_tuning",
-                                        "speculative_decoding", "embedding_generation"],
-                               help="Workload pattern")
+    models_deploy.add_argument("--engine", default="vllm", choices=["vllm", "llamacpp"], help="Inference engine")
+    models_deploy.add_argument(
+        "--workload-type",
+        default="realtime_api",
+        choices=["batch_inference", "realtime_api", "fine_tuning", "speculative_decoding", "embedding_generation"],
+        help="Workload pattern",
+    )
     models_deploy.add_argument("--searx-url", default=None, help="SearXNG instance URL")
     models_deploy.add_argument("--region", default=None, help="Cloud region")
     models_deploy.add_argument("--gpu-count", type=int, default=1, help="Number of GPUs")
@@ -515,9 +519,9 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
 
     models_ranking = models_sub.add_parser("ranking", help="Show model rankings for a task type")
     models_ranking.add_argument("--task-type", required=True, help="Task type to rank")
-    models_ranking.add_argument("--strategy", default="balanced",
-                                choices=list(DEFAULT_STRATEGIES.keys()),
-                                help="Ranking strategy")
+    models_ranking.add_argument(
+        "--strategy", default="balanced", choices=list(DEFAULT_STRATEGIES.keys()), help="Ranking strategy"
+    )
     models_ranking.add_argument("--daemon-url", default="http://localhost:8000")
     models_ranking.set_defaults(func=_cmd_model_ranking)
 
@@ -527,9 +531,9 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
 
     models_router_set = models_sub.add_parser("router-set", help="Set routing strategy for a task type")
     models_router_set.add_argument("--task-type", required=True, help="Task type")
-    models_router_set.add_argument("--strategy", required=True,
-                                   choices=list(DEFAULT_STRATEGIES.keys()),
-                                   help="Routing strategy")
+    models_router_set.add_argument(
+        "--strategy", required=True, choices=list(DEFAULT_STRATEGIES.keys()), help="Routing strategy"
+    )
     models_router_set.add_argument("--daemon-url", default="http://localhost:8000")
     models_router_set.set_defaults(func=_cmd_model_router_set)
 
@@ -566,9 +570,12 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     proj_add.add_argument("--workspace-path", default="", help="Local workspace path")
     proj_add.add_argument("--weight", type=float, default=30.0, help="Allocation weight (0-100)")
     proj_add.add_argument("--description", default="", help="Project description")
-    proj_add.add_argument("--dispatch-mode", default="active",
-                          choices=["active", "passive_external", "worktree_monitor"],
-                          help="Dispatch: active, passive_external, or worktree_monitor")
+    proj_add.add_argument(
+        "--dispatch-mode",
+        default="active",
+        choices=["active", "passive_external", "worktree_monitor"],
+        help="Dispatch: active, passive_external, or worktree_monitor",
+    )
     proj_add.add_argument("--daemon-url", default="http://localhost:8000")
     proj_add.set_defaults(func=_cmd_project_add)
 
@@ -672,10 +679,12 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     compute_launch.add_argument("--max-cost", type=float, default=10.0, help="Max cost in USD")
     compute_launch.add_argument("--no-spot", action="store_true", help="Disable spot instances")
     compute_launch.add_argument("--engine", default="vllm", help="Inference engine (vllm or llamacpp)")
-    compute_launch.add_argument("--workload-type", default="",
-                               choices=["batch_inference", "realtime_api", "fine_tuning",
-                                        "speculative_decoding", "embedding_generation"],
-                               help="Workload pattern to optimize deployment for")
+    compute_launch.add_argument(
+        "--workload-type",
+        default="",
+        choices=["batch_inference", "realtime_api", "fine_tuning", "speculative_decoding", "embedding_generation"],
+        help="Workload pattern to optimize deployment for",
+    )
     compute_launch.add_argument("--daemon-url", default="http://localhost:8000")
     compute_launch.set_defaults(func=_cmd_compute_launch)
 
@@ -695,34 +704,48 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     leaderboard_parser.set_defaults(func=_cmd_leaderboard)
 
     chat_parser = sub.add_parser("chat", help="Interactive AI chat REPL")
-    chat_parser.add_argument("--eval", type=str, default=None, metavar="PROMPT",
-                             help="Single-turn evaluation (non-interactive)")
-    chat_parser.add_argument("--model", default="default",
-                             help="Model profile (e.g. openai/gpt-4o, deepseek/deepseek-chat)")
+    chat_parser.add_argument(
+        "--eval", type=str, default=None, metavar="PROMPT", help="Single-turn evaluation (non-interactive)"
+    )
+    chat_parser.add_argument(
+        "--model", default="default", help="Model profile (e.g. openai/gpt-4o, deepseek/deepseek-chat)"
+    )
     chat_parser.add_argument("--system-prompt", default=None, help="Override system prompt")
-    chat_parser.add_argument("--history", default=None, metavar="FILE",
-                             help="JSON-lines conversation history file")
-    chat_parser.add_argument("--resume", action="store_true",
-                             help="Resume the most recent chat session")
-    chat_parser.add_argument("--list-sessions", action="store_true",
-                             help="List saved chat sessions and exit")
-    chat_parser.add_argument("--save-interval", type=int, default=5,
-                             help="Auto-save history every N turns (default: 5)")
-    chat_parser.add_argument("--api-base", default=os.environ.get("OPENAI_BASE_URL"),
-                             help="Override API base URL (env: OPENAI_BASE_URL)")
-    chat_parser.add_argument("--api-key", default=os.environ.get("OPENAI_API_KEY"),
-                              help="Override API key (env: OPENAI_API_KEY)")
-    chat_parser.add_argument("--project-dir", default=None, metavar="PATH",
-                              help="Project directory for ansible/terraform context injection")
-    chat_parser.add_argument("--export", default=None, metavar="FORMAT",
-                              choices=["md", "json", "html"],
-                              help="Export a saved session to md/json/html and exit")
-    chat_parser.add_argument("--export-output", default=None, metavar="FILE",
-                              help="Write export output to FILE (default: stdout)")
-    chat_parser.add_argument("--stream", action="store_true", default=False,
-                              help="Stream model response tokens in real-time (--eval mode)")
-    chat_parser.add_argument("--max-context", type=int, default=None, metavar="TOKENS",
-                              help="Maximum context window size in tokens (enables sliding-window trimming)")
+    chat_parser.add_argument("--history", default=None, metavar="FILE", help="JSON-lines conversation history file")
+    chat_parser.add_argument("--resume", action="store_true", help="Resume the most recent chat session")
+    chat_parser.add_argument("--list-sessions", action="store_true", help="List saved chat sessions and exit")
+    chat_parser.add_argument(
+        "--save-interval", type=int, default=5, help="Auto-save history every N turns (default: 5)"
+    )
+    chat_parser.add_argument(
+        "--api-base", default=os.environ.get("OPENAI_BASE_URL"), help="Override API base URL (env: OPENAI_BASE_URL)"
+    )
+    chat_parser.add_argument(
+        "--api-key", default=os.environ.get("OPENAI_API_KEY"), help="Override API key (env: OPENAI_API_KEY)"
+    )
+    chat_parser.add_argument(
+        "--project-dir", default=None, metavar="PATH", help="Project directory for ansible/terraform context injection"
+    )
+    chat_parser.add_argument(
+        "--export",
+        default=None,
+        metavar="FORMAT",
+        choices=["md", "json", "html"],
+        help="Export a saved session to md/json/html and exit",
+    )
+    chat_parser.add_argument(
+        "--export-output", default=None, metavar="FILE", help="Write export output to FILE (default: stdout)"
+    )
+    chat_parser.add_argument(
+        "--stream", action="store_true", default=False, help="Stream model response tokens in real-time (--eval mode)"
+    )
+    chat_parser.add_argument(
+        "--max-context",
+        type=int,
+        default=None,
+        metavar="TOKENS",
+        help="Maximum context window size in tokens (enables sliding-window trimming)",
+    )
     chat_parser.set_defaults(func=_cmd_chat)
 
     help_p = sub.add_parser("help", help="Show full manual")
@@ -959,13 +982,9 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     connectors_health.add_argument("--daemon-url", default="http://localhost:8000")
     connectors_health.set_defaults(func=_cmd_connectors_health)
 
-    connectors_query = connectors_sub.add_parser(
-        "query", help="Run a query against a named observability source"
-    )
+    connectors_query = connectors_sub.add_parser("query", help="Run a query against a named observability source")
     connectors_query.add_argument("source", help="Registered source name to query")
-    connectors_query.add_argument(
-        "--spec", default="{}", help="Query spec as a JSON string (default: {})"
-    )
+    connectors_query.add_argument("--spec", default="{}", help="Query spec as a JSON string (default: {})")
     connectors_query.add_argument("--daemon-url", default="http://localhost:8000")
     connectors_query.set_defaults(func=_cmd_connectors_query)
 
@@ -977,15 +996,12 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         help="Service to log into (github, openai, deepseek, zai, anthropic, gemini, openrouter). "
         "Use '--list' to see available services.",
     )
-    login_parser.add_argument(
-        "--list", action="store_true", help="List available login services and exit"
-    )
+    login_parser.add_argument("--list", action="store_true", help="List available login services and exit")
     login_parser.add_argument(
         "--timeout", type=float, default=120.0, help="OAuth2 callback timeout in seconds (default: 120)"
     )
     login_parser.add_argument(
-        "--store", default="env", choices=["env", "openbao"],
-        help="Credential storage backend (default: env)"
+        "--store", default="env", choices=["env", "openbao"], help="Credential storage backend (default: env)"
     )
     login_parser.set_defaults(func=_cmd_login)
 
@@ -1097,10 +1113,33 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     make_parser.add_argument("target", help="Make target to run (e.g. test, lint, gate)")
     make_parser.add_argument("--cwd", default=None, help="Working directory for make")
     make_parser.add_argument("--timeout", type=int, default=None, help="Timeout in seconds")
-    make_parser.add_argument("--env", nargs="*", default=None,
-                             help="Extra env vars (KEY=VALUE ...)")
+    make_parser.add_argument("--env", nargs="*", default=None, help="Extra env vars (KEY=VALUE ...)")
     make_parser.add_argument("--stream", action="store_true", help="Stream phase markers")
     make_parser.set_defaults(func=_cmd_make)
+
+    # `gludd cloud` — cloud IAM and infrastructure management.
+    cloud_parser = sub.add_parser("cloud", help="Cloud IAM and infrastructure commands")
+    cloud_parser.set_defaults(func=None)
+    cloud_sub = cloud_parser.add_subparsers(dest="cloud_command")
+
+    iam_parser = cloud_sub.add_parser("iam", help="Cross-provider IAM role generation and validation")
+    iam_parser.set_defaults(func=None)
+    iam_sub = iam_parser.add_subparsers(dest="iam_command")
+
+    iam_generate = iam_sub.add_parser("generate", help="Generate a least-privilege IAM role")
+    iam_generate.add_argument("--provider", required=True, choices=["azure", "aws", "gcp"], help="Cloud provider")
+    iam_generate.add_argument(
+        "--persona",
+        default="monitor",
+        choices=["terraform_deploy", "runtime_execution", "model_inference", "monitor"],
+        help="Role persona (default: monitor)",
+    )
+    iam_generate.set_defaults(func=_cmd_cloud_iam_generate)
+
+    iam_validate = iam_sub.add_parser("validate", help="Validate an existing IAM role definition")
+    iam_validate.add_argument("--provider", required=True, choices=["azure", "aws", "gcp"], help="Cloud provider")
+    iam_validate.add_argument("--file", required=True, help="Path to JSON file containing the role definition")
+    iam_validate.set_defaults(func=_cmd_cloud_iam_validate)
 
     # `gludd language` — language expert toolkit (encoding, homoglyphs, BOM, phonetics).
     from general_ludd.cli_language import add_language_subparser
@@ -1230,6 +1269,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "collection": collection_parser,
         "config": config_parser,
         "searx": searx_parser,
+        "cloud": cloud_parser,
         "test-bg": test_bg_parser,
         "test": test_parser,
         "chat": chat_parser,
@@ -1271,18 +1311,14 @@ def _cmd_pause_model(args: argparse.Namespace) -> None:
 
 def _cmd_resume_project(args: argparse.Namespace) -> None:
     """Resume a project through the daemon's durable pause controller."""
-    data = _http_call(
-        "POST", f"{args.daemon_url}/api/resume/project", json={"target_id": args.target_id}
-    )
+    data = _http_call("POST", f"{args.daemon_url}/api/resume/project", json={"target_id": args.target_id})
     if data is not None:
         print(json.dumps(data, indent=2))
 
 
 def _cmd_resume_model(args: argparse.Namespace) -> None:
     """Resume a model profile through the daemon's durable pause controller."""
-    data = _http_call(
-        "POST", f"{args.daemon_url}/api/resume/model", json={"target_id": args.target_id}
-    )
+    data = _http_call("POST", f"{args.daemon_url}/api/resume/model", json={"target_id": args.target_id})
     if data is not None:
         print(json.dumps(data, indent=2))
 
@@ -1330,8 +1366,7 @@ def _cmd_login(args: argparse.Namespace) -> None:
             store = OpenBaoCredentialStore(sm)
         except Exception as exc:
             print(
-                f"OpenBao not available: {exc}\n"
-                "Use --store=env or start the OpenBao container first.",
+                f"OpenBao not available: {exc}\nUse --store=env or start the OpenBao container first.",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -1364,8 +1399,7 @@ def _cmd_onboard(args: argparse.Namespace) -> None:
 
     if provider_name not in SUPPORTED_PROVIDERS:
         print(
-            f"Error: unknown provider '{provider_name}'.\n"
-            f"Supported providers: {supported_str}",
+            f"Error: unknown provider '{provider_name}'.\nSupported providers: {supported_str}",
             file=sys.stderr,
         )
         sys.exit(2)
@@ -1384,10 +1418,7 @@ def _cmd_onboard(args: argparse.Namespace) -> None:
     if role_arn:
         print(f"  Role ARN supplied via --role-arn: {role_arn} (skipping guide)")
     elif dry_run:
-        print(
-            f"  [dry-run] Would call {provider_name}.create_role_instructions(). "
-            "Using canned IAM role guidance."
-        )
+        print(f"  [dry-run] Would call {provider_name}.create_role_instructions(). Using canned IAM role guidance.")
         role_arn = f"arn:{provider_name}:iam::000000000000:role/gludd-dry-run"
     else:
         try:
@@ -1468,10 +1499,44 @@ def _cmd_onboard(args: argparse.Namespace) -> None:
     }
     config_path.write_text(json.dumps(config_payload, indent=2))
     print(
-        f"\nOnboard complete: provider={provider_name} region={region} "
-        f"role={role_arn}\nConfig written: {config_path}"
+        f"\nOnboard complete: provider={provider_name} region={region} role={role_arn}\nConfig written: {config_path}"
     )
     sys.exit(0)
+
+
+def _cmd_cloud_iam_generate(args: argparse.Namespace) -> None:
+    from general_ludd.cloud.core import generate_cloud_role
+
+    generated = generate_cloud_role(args.provider, args.persona)
+    print(json.dumps(generated, indent=2, default=str))
+    if generated["status"] == "error":
+        sys.exit(1)
+
+
+def _cmd_cloud_iam_validate(args: argparse.Namespace) -> None:
+    from pathlib import Path
+
+    from general_ludd.cloud.core import validate_cloud_role
+
+    role_path = Path(args.file)
+    if not role_path.is_file():
+        print(f"Error: file not found: {args.file}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        role_definition = json.loads(role_path.read_text())
+    except json.JSONDecodeError as exc:
+        print(f"Error: invalid JSON in {args.file}: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if not isinstance(role_definition, dict):
+        print(f"Error: role definition must be a JSON object, got {type(role_definition).__name__}", file=sys.stderr)
+        sys.exit(1)
+
+    validated = validate_cloud_role(args.provider, role_definition)
+    print(json.dumps(validated, indent=2, default=str))
+    if validated["status"] == "invalid" or validated["status"] == "error":
+        sys.exit(1)
 
 
 def _cmd_searx(args: argparse.Namespace) -> None:
@@ -1504,6 +1569,7 @@ def _cmd_searx(args: argparse.Namespace) -> None:
         path = SearXConfig().generate()
         print(f"Settings written to {path}")
         import yaml
+
         with open(path) as f:
             print(yaml.safe_dump(yaml.safe_load(f), default_flow_style=False))
 
@@ -1531,7 +1597,7 @@ def _cmd_config_terraform_get(args: argparse.Namespace) -> None:
         data = tc.model_dump()
         for k, v in sorted(data.items()):
             if isinstance(v, str):
-                print(f"{k:28} = \"{v}\"")
+                print(f'{k:28} = "{v}"')
             else:
                 print(f"{k:28} = {v}")
 
@@ -1551,6 +1617,7 @@ def _cmd_config_terraform_set(args: argparse.Namespace) -> None:
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
     import yaml
+
     data: dict[str, object] = {}
     if config_path.exists():
         with open(config_path) as f:
@@ -1661,7 +1728,8 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
     # W3.5 (M8): SQLite-only — clamp to a single worker (no hardware-based
     # multi-worker default; multiple workers race on one SQLite file).
     cmd = _build_daemon_start_cmd(
-        host=bind_host, port=args.port,
+        host=bind_host,
+        port=args.port,
         workers=_clamp_workers_for_sqlite(args.workers),
     )
     cmd_env = _build_daemon_env(
@@ -1683,7 +1751,6 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
         close_fds=True,
         env=env,
     )
-
 
     def _terminate_child(timeout: float = 5.0) -> None:
         try:
@@ -1752,12 +1819,14 @@ def _gather_offline_status(config_dir: str | None = None) -> dict[str, Any]:
                 fp = os.path.join(cdir, f)
                 try:
                     st = os.stat(fp)
-                    cfiles.append({
-                        "name": f,
-                        "path": fp,
-                        "size_bytes": st.st_size,
-                        "modified": st.st_mtime,
-                    })
+                    cfiles.append(
+                        {
+                            "name": f,
+                            "path": fp,
+                            "size_bytes": st.st_size,
+                            "modified": st.st_mtime,
+                        }
+                    )
                 except OSError:
                     cfiles.append({"name": f, "path": fp, "size_bytes": 0, "modified": 0})
     info["config_dir"] = cdir
@@ -1771,6 +1840,7 @@ def _gather_offline_status(config_dir: str | None = None) -> dict[str, Any]:
     fs_file_count = 0
     if fs_exists and fs_root:
         import contextlib
+
         for dirpath, _dirnames, filenames in os.walk(fs_root):
             for fn in filenames:
                 fp = os.path.join(dirpath, fn)
@@ -1866,7 +1936,8 @@ def _cmd_status(args: argparse.Namespace) -> None:
             if getattr(args, "project", None):
                 params = f"?project_id={args.project}"
             resp = httpx.get(
-                f"{args.daemon_url}/api/todos/{args.todo_id}{params}", timeout=10.0,
+                f"{args.daemon_url}/api/todos/{args.todo_id}{params}",
+                timeout=10.0,
             )
             if resp.status_code == 200:
                 print(json.dumps(resp.json(), indent=2))
@@ -1890,10 +1961,7 @@ def _cmd_status(args: argparse.Namespace) -> None:
             versions = data.get("binary_versions", {})
             if versions:
                 for name, ver in sorted(versions.items()):
-                    stored = any(
-                        (b.get("name") if isinstance(b, dict) else b) == name
-                        for b in bins
-                    )
+                    stored = any((b.get("name") if isinstance(b, dict) else b) == name for b in bins)
                     status = "stored" if stored else "not downloaded"
                     print(f"  \u251c\u2500 {name} v{ver} [{status}]")
             print(f"DB engine:   {data.get('db_engine', 'sqlite')}")
@@ -1973,14 +2041,16 @@ def _cmd_project_add(args: argparse.Namespace) -> None:
     try:
         resp = httpx.post(
             f"{args.daemon_url}/admin/projects",
-            content=json.dumps({
-                "name": args.name,
-                "weight": args.weight,
-                "description": args.description,
-                "repo_url": args.repo_url,
-                "workspace_path": args.workspace_path,
-                "dispatch_mode": args.dispatch_mode,
-            }),
+            content=json.dumps(
+                {
+                    "name": args.name,
+                    "weight": args.weight,
+                    "description": args.description,
+                    "repo_url": args.repo_url,
+                    "workspace_path": args.workspace_path,
+                    "dispatch_mode": args.dispatch_mode,
+                }
+            ),
             headers={"Content-Type": "application/json"},
             timeout=10.0,
         )
@@ -2027,7 +2097,8 @@ def _cmd_project_list(args: argparse.Namespace) -> None:
 def _cmd_project_remove(args: argparse.Namespace) -> None:
     try:
         resp = httpx.delete(
-            f"{args.daemon_url}/admin/projects/{args.project_id}", timeout=10.0,
+            f"{args.daemon_url}/admin/projects/{args.project_id}",
+            timeout=10.0,
         )
         if resp.status_code == 200:
             print(f"Project removed: {args.project_id}")
@@ -2040,8 +2111,10 @@ def _cmd_project_remove(args: argparse.Namespace) -> None:
 
 def _cmd_models_search(args: argparse.Namespace) -> None:
     data = _http_call(
-        "POST", f"{args.daemon_url}/admin/models/search",
-        json={"query": args.query, "limit": args.limit}, timeout=30.0,
+        "POST",
+        f"{args.daemon_url}/admin/models/search",
+        json={"query": args.query, "limit": args.limit},
+        timeout=30.0,
     )
     if data is None:
         return
@@ -2209,10 +2282,7 @@ def _cmd_model_performance(args: argparse.Namespace) -> None:
     if not rows:
         print("No performance data available.")
         return
-    print(
-        f"{'service':<20} {'model':<25} {'task_type':<15} "
-        f"{'success':<8} {'latency':<10} {'cost':<12} {'calls':<8}"
-    )
+    print(f"{'service':<20} {'model':<25} {'task_type':<15} {'success':<8} {'latency':<10} {'cost':<12} {'calls':<8}")
     print("-" * 100)
     for r in rows:
         svc = r.get("service", "")[:19]
@@ -2278,7 +2348,8 @@ def _cmd_model_router_status(args: argparse.Namespace) -> None:
 def _cmd_model_router_set(args: argparse.Namespace) -> None:
     """Set routing strategy for a task type."""
     data = _http_call(
-        "PUT", f"{args.daemon_url}/admin/models/router/config",
+        "PUT",
+        f"{args.daemon_url}/admin/models/router/config",
         json={"task_type": args.task_type, "strategy": args.strategy},
         timeout=10.0,
     )
@@ -2298,8 +2369,11 @@ def _cmd_local_serve(args: argparse.Namespace) -> None:
         "context_size": args.context_size,
     }
     data = _http_call(
-        "POST", f"{args.daemon_url}/admin/local-inference/start",
-        json=payload, timeout=30.0, ok_codes=(200, 201),
+        "POST",
+        f"{args.daemon_url}/admin/local-inference/start",
+        json=payload,
+        timeout=30.0,
+        ok_codes=(200, 201),
     )
     if data is None:
         return
@@ -2338,8 +2412,10 @@ def _cmd_worktree_status(args: argparse.Namespace) -> None:
 
 def _cmd_mcp_search(args: argparse.Namespace) -> None:
     data = _http_call(
-        "POST", f"{args.daemon_url}/admin/mcp/catalog/search",
-        json={"query": args.query, "limit": 20}, timeout=30.0,
+        "POST",
+        f"{args.daemon_url}/admin/mcp/catalog/search",
+        json={"query": args.query, "limit": 20},
+        timeout=30.0,
     )
     if data is None:
         return
@@ -2377,8 +2453,10 @@ def _cmd_mcp_info(args: argparse.Namespace) -> None:
 
 def _cmd_skills_search(args: argparse.Namespace) -> None:
     data = _http_call(
-        "POST", f"{args.daemon_url}/admin/skills/catalog/search",
-        json={"query": args.query, "limit": 20}, timeout=30.0,
+        "POST",
+        f"{args.daemon_url}/admin/skills/catalog/search",
+        json={"query": args.query, "limit": 20},
+        timeout=30.0,
     )
     if data is None:
         return
@@ -2405,8 +2483,11 @@ def _cmd_skills_list(args: argparse.Namespace) -> None:
 
 def _cmd_skills_install(args: argparse.Namespace) -> None:
     data = _http_call(
-        "POST", f"{args.daemon_url}/admin/skills/catalog/install",
-        json={"name": args.name}, timeout=30.0, ok_codes=(200, 201),
+        "POST",
+        f"{args.daemon_url}/admin/skills/catalog/install",
+        json={"name": args.name},
+        timeout=30.0,
+        ok_codes=(200, 201),
     )
     if data is None:
         return
@@ -2428,8 +2509,11 @@ def _cmd_compute_register(args: argparse.Namespace) -> None:
         "max_concurrent": args.max_concurrent,
     }
     data = _http_call(
-        "POST", f"{args.daemon_url}/admin/compute/endpoints",
-        json=payload, timeout=10.0, ok_codes=(200, 201),
+        "POST",
+        f"{args.daemon_url}/admin/compute/endpoints",
+        json=payload,
+        timeout=10.0,
+        ok_codes=(200, 201),
     )
     if data is None:
         return
@@ -2469,8 +2553,11 @@ def _cmd_compute_launch(args: argparse.Namespace) -> None:
     if args.region:
         payload["region"] = args.region
     data = _http_call(
-        "POST", f"{args.daemon_url}/admin/compute/deploy",
-        json=payload, timeout=300.0, ok_codes=(200, 201),
+        "POST",
+        f"{args.daemon_url}/admin/compute/deploy",
+        json=payload,
+        timeout=300.0,
+        ok_codes=(200, 201),
     )
     if data is None:
         return
@@ -2479,8 +2566,10 @@ def _cmd_compute_launch(args: argparse.Namespace) -> None:
 
 def _cmd_compute_destroy(args: argparse.Namespace) -> None:
     data = _http_call(
-        "DELETE", f"{args.daemon_url}/admin/compute/destroy/{args.instance_id}",
-        timeout=300.0, ok_codes=(200,),
+        "DELETE",
+        f"{args.daemon_url}/admin/compute/destroy/{args.instance_id}",
+        timeout=300.0,
+        ok_codes=(200,),
     )
     if data is None:
         return
@@ -2508,10 +2597,7 @@ def _cmd_leaderboard(args: argparse.Namespace) -> None:
     if not entries:
         print("No benchmark data yet. Run tasks to accumulate scores.")
         return
-    print(
-        f"{'rank':<5} {'prompt':<25} {'model':<20} "
-        f"{'score':<8} {'cost':<10} {'samples':<8} {'task_type':<15}"
-    )
+    print(f"{'rank':<5} {'prompt':<25} {'model':<20} {'score':<8} {'cost':<10} {'samples':<8} {'task_type':<15}")
     print("-" * 100)
     for i, e in enumerate(entries, 1):
         prompt = (e.get("prompt_profile_id") or "default")[:24]
@@ -2754,8 +2840,11 @@ def _compute_footer_rows(term_height: int) -> int:
 
 
 def _build_controls_table(
-    daemon_running: bool, status_msg: str,
-    *, term_width: int = 60, selected_idx: int = -1,
+    daemon_running: bool,
+    status_msg: str,
+    *,
+    term_width: int = 60,
+    selected_idx: int = -1,
 ) -> Table:
     from rich.table import Table
 
@@ -2963,10 +3052,7 @@ def _build_workers_table(
     selected_idx: int | None = None,
 ) -> Table:
 
-    rows = [
-        (str(w.get("worker_id", "?")), str(w.get("address", "?")))
-        for w in workers
-    ]
+    rows = [(str(w.get("worker_id", "?")), str(w.get("address", "?"))) for w in workers]
     return _make_table(
         title="Workers",
         columns=[("ID", "cyan", 2, 6), ("Address", "green", 3, 8)],
@@ -3016,18 +3102,22 @@ def _build_agents_table(agents: list[dict[str, Any]], *, term_width: int = 60) -
         uptime_s = a.get("uptime_seconds", 0)
         uptime_h = uptime_s // 3600
         uptime_m = (uptime_s % 3600) // 60
-        rows.append((
-            str(a.get("agent_id", "?")),
-            str(a.get("agent_name", a.get("name", "?"))),
-            f"[{status_color}]{status}[/]",
-            str(a.get("project", "")),
-            f"{uptime_h}h{uptime_m}m",
-        ))
+        rows.append(
+            (
+                str(a.get("agent_id", "?")),
+                str(a.get("agent_name", a.get("name", "?"))),
+                f"[{status_color}]{status}[/]",
+                str(a.get("project", "")),
+                f"{uptime_h}h{uptime_m}m",
+            )
+        )
     return _make_table(
         title="Agents",
         columns=[
-            ("ID", "cyan", 1, 4), ("Name", "green", 2, 5),
-            ("Status", "yellow", 1, 4), ("Project", "bold", 1, 5),
+            ("ID", "cyan", 1, 4),
+            ("Name", "green", 2, 5),
+            ("Status", "yellow", 1, 4),
+            ("Project", "bold", 1, 5),
             ("Up", "dim", 1, 4),
         ],
         rows=rows,
@@ -3147,10 +3237,7 @@ def _build_config_editor_table(
 
 def _build_worktrees_table(entries: list[tuple[str, str]], *, term_width: int = 60) -> Table:
 
-    rows = [
-        (name, f"[{'green' if 'AGENTS.md' in status else 'dim'}]{status}[/]")
-        for name, status in entries
-    ]
+    rows = [(name, f"[{'green' if 'AGENTS.md' in status else 'dim'}]{status}[/]") for name, status in entries]
     return _make_table(
         title="Projects & Worktrees",
         columns=[("Name", "green", 3, 6), ("Status", "bold", 2, 6)],
@@ -3822,8 +3909,7 @@ def _validate_daemon_log_level(log_level: str) -> str:
     normalized = log_level.lower()
     if normalized not in _LOG_LEVEL_ALLOWLIST:
         raise ValueError(
-            f"invalid daemon log-level: {log_level!r} "
-            f"(allowed: {', '.join(sorted(_LOG_LEVEL_ALLOWLIST))})"
+            f"invalid daemon log-level: {log_level!r} (allowed: {', '.join(sorted(_LOG_LEVEL_ALLOWLIST))})"
         )
     return normalized
 
@@ -3929,7 +4015,6 @@ def _build_daemon_start_cmd(
 def _cmd_tui(args: argparse.Namespace) -> None:
     from types import SimpleNamespace
 
-
     helpers = SimpleNamespace(
         _is_daemon_pid_alive=_is_daemon_pid_alive,
         _DAEMON_PID_FILE=_DAEMON_PID_FILE,
@@ -3996,9 +4081,11 @@ def _cmd_hooks_list(args: argparse.Namespace) -> None:
 
 def _cmd_hooks_register(args: argparse.Namespace) -> None:
     data = _http_call(
-        "POST", f"{args.daemon_url}/admin/hooks",
+        "POST",
+        f"{args.daemon_url}/admin/hooks",
         json={"event_name": args.event, "url": args.handler},
-        timeout=10.0, ok_codes=(200, 201),
+        timeout=10.0,
+        ok_codes=(200, 201),
     )
     if data is None:
         return
@@ -4186,8 +4273,10 @@ def _cmd_quantization_list(args: argparse.Namespace) -> None:
 
 def _cmd_quantization_detect(args: argparse.Namespace) -> None:
     data = _http_call(
-        "POST", f"{args.daemon_url}/admin/quantization/detect",
-        json={"model_id": args.model_id}, timeout=30.0,
+        "POST",
+        f"{args.daemon_url}/admin/quantization/detect",
+        json={"model_id": args.model_id},
+        timeout=30.0,
     )
     if data is None:
         return
@@ -4247,7 +4336,6 @@ def _cmd_integrity_scan(args: argparse.Namespace) -> None:
 def _scan_local_integrity(info: dict[str, Any]) -> dict[str, Any]:
     import os
 
-
     paths = [
         info.get("config_dir", ""),
         info.get("filestore_root", ""),
@@ -4280,9 +4368,7 @@ def _scan_local_integrity(info: dict[str, Any]) -> dict[str, Any]:
             si_cfg = uc.self_improve or {}
         except Exception:
             si_cfg = {}
-    warn_if_overlay_unmonitored(
-        paths, exclude_patterns, resolve_self_improve_enabled(si_cfg)
-    )
+    warn_if_overlay_unmonitored(paths, exclude_patterns, resolve_self_improve_enabled(si_cfg))
 
     scanner = FileIntegrityScanner()
     return scanner.scan(paths, exclude_patterns=exclude_patterns)
@@ -4318,6 +4404,7 @@ def _cmd_integrity_approve(args: argparse.Namespace) -> None:
             sys.exit(1)
     except Exception:
         from general_ludd.integrity.scanner import sign_change_openbao
+
         result = sign_change_openbao(args.change_id, args.signer, args.reason)
         print(json.dumps(result, indent=2))
 
@@ -4342,7 +4429,7 @@ def _cmd_integrity_log(args: argparse.Namespace) -> None:
     if data is None:
         return
     for entry in data.get("entries", []):
-        print(f"[{entry.get('timestamp','?')}] {entry.get('action')}: {entry.get('path')}")
+        print(f"[{entry.get('timestamp', '?')}] {entry.get('action')}: {entry.get('path')}")
         print(f"  Reason: {entry.get('reason')}  Signer: {entry.get('signer')}")
 
 
@@ -4382,6 +4469,7 @@ def _cmd_ansible_search(args: argparse.Namespace) -> None:
             sys.exit(1)
     except Exception:
         from general_ludd.ansible.galaxy import search_galaxy
+
         results = search_galaxy(args.query, args.type)
         if results:
             for r in results:
@@ -4407,6 +4495,7 @@ def _cmd_ansible_install(args: argparse.Namespace) -> None:
             sys.exit(1)
     except Exception:
         from general_ludd.ansible.galaxy import install_galaxy
+
         result = install_galaxy(args.name, args.type)
         status = "OK" if result.get("success") else "FAILED"
         print(f"[{status}] {args.name}")
@@ -4425,6 +4514,7 @@ def _cmd_ansible_builtins(args: argparse.Namespace) -> None:
             sys.exit(1)
     except Exception:
         from general_ludd.ansible.galaxy import get_builtin_modules
+
         for m in get_builtin_modules():
             print(f"  {m}")
 
@@ -4623,14 +4713,19 @@ def _cmd_make(args: argparse.Namespace) -> None:
             env_extra=env_extra,
         )
 
-    print(json.dumps({
-        "target": result.target,
-        "exit_code": result.exit_code,
-        "success": result.success,
-        "duration_s": result.duration_s,
-        "timed_out": result.timed_out,
-        "phases": result.phases,
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "target": result.target,
+                "exit_code": result.exit_code,
+                "success": result.success,
+                "duration_s": result.duration_s,
+                "timed_out": result.timed_out,
+                "phases": result.phases,
+            },
+            indent=2,
+        )
+    )
     sys.exit(0 if result.success else 1)
 
 

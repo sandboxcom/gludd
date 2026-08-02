@@ -5605,6 +5605,52 @@ pip-upgrade:
 security-backlog-gate:
 	@$(UV) run python -m general_ludd.security.security_backlog
 
+# Strict variant: fails on any OPEN item unless EXPECT_OPEN matches the
+# actual count.  EXPECT_OPEN=0 is the acceptance gate for SEC-SBX-001:
+# the feature SHALL remain Proposed until no controls are open.
+# EXPECT_OPEN=<current-count> is the ratchet baseline — the count must
+# never increase.
+SECURITY_BACKLOG_STRICT_EXPECT_OPEN ?= 0
+security-backlog-strict:
+	@OPEN=$$($(UV) run python -m general_ludd.security.security_backlog 2>&1 \
+		| grep '^TOTAL=' | sed 's/.*OPEN=\([0-9]*\).*/\1/'); \
+	EXPECT="$(SECURITY_BACKLOG_STRICT_EXPECT_OPEN)"; \
+	echo "security-backlog-strict: OPEN=$$OPEN EXPECT_OPEN=$$EXPECT"; \
+	if [ "$$OPEN" -gt "$$EXPECT" ]; then \
+		echo "FAIL — $$OPEN open items > expected $$EXPECT (ratchet or completion gate violated)"; \
+		exit 1; \
+	elif [ "$$OPEN" -lt "$$EXPECT" ]; then \
+		echo "PASS — open items ($$OPEN) decreased below expected ($$EXPECT); update EXPECT_OPEN to ratchet down"; \
+		exit 0; \
+	else \
+		echo "PASS — open items match expected count ($$EXPECT)"; \
+		exit 0; \
+	fi
+
+# sast-gate: ratchet-based SAST gate.  Bandit scans src/ and writes the
+# JSON report; the summarizer provides severity counts.  The gate fails
+# when any severity class exceeds its configured ceiling, not when
+# findings merely exist (the old target masked bandit's exit code with
+# || true).  MAX_UNADJUDICATED_LOW is the per-category count ceiling;
+# every low must be fixed or time-bounded and test-backed before the
+# feature gate passes with MAX_LOW=0.
+SAST_GATE_MAX_HIGH ?= 0
+SAST_GATE_MAX_MEDIUM ?= 0
+SAST_GATE_MAX_LOW ?= 506
+sast-gate:
+	@mkdir -p "$$(dirname "$(SAST_REPORT)")"
+	@$(UV) run bandit -q --ignore-nosec -r src/ -f json -o "$(SAST_REPORT)" || true
+	@$(PYTHON) scripts/summarize_sast.py --report "$(SAST_REPORT)" \
+		--output "$(SAST_SUMMARY)" --baseline "$(SAST_BASELINE)" 2>/dev/null
+	@HIGH=$$($(PYTHON) -c "import json; d=json.load(open('$(SAST_SUMMARY)')); h=d.get('by_severity',{}).get('HIGH',0); print(h if isinstance(h,int) else len(h))" 2>/dev/null || echo 0); \
+	MEDIUM=$$($(PYTHON) -c "import json; d=json.load(open('$(SAST_SUMMARY)')); m=d.get('by_severity',{}).get('MEDIUM',0); print(m if isinstance(m,int) else len(m))" 2>/dev/null || echo 0); \
+	LOW=$$($(PYTHON) -c "import json; d=json.load(open('$(SAST_SUMMARY)')); l=d.get('by_severity',{}).get('LOW',0); print(l if isinstance(l,int) else len(l))" 2>/dev/null || echo 0); \
+	FAILED=0; \
+	if [ "$$HIGH" -gt "$(SAST_GATE_MAX_HIGH)" ]; then echo "sast-gate: FAIL — HIGH=$$HIGH > max $(SAST_GATE_MAX_HIGH)"; FAILED=1; fi; \
+	if [ "$$MEDIUM" -gt "$(SAST_GATE_MAX_MEDIUM)" ]; then echo "sast-gate: FAIL — MEDIUM=$$MEDIUM > max $(SAST_GATE_MAX_MEDIUM)"; FAILED=1; fi; \
+	if [ "$$LOW" -gt "$(SAST_GATE_MAX_LOW)" ]; then echo "sast-gate: FAIL — LOW=$$LOW > max $(SAST_GATE_MAX_LOW)"; FAILED=1; fi; \
+	if [ "$$FAILED" -eq 0 ]; then echo "sast-gate: PASS (HIGH=$$HIGH MEDIUM=$$MEDIUM LOW=$$LOW)"; else exit 1; fi
+
 security: sast sbom pip-audit node-deps-audit security-backlog-gate
 
 ci-precheck:
