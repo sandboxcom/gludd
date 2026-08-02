@@ -224,6 +224,52 @@ decoder.
   longer supported. Locked macOS execution SHALL use a VM boundary or reject
   the task; Seatbelt availability is not a supported-security guarantee.
 
+### 4.3 Long-lived lifecycle and multi-worker evidence
+
+These reports constrain configuration delivery as well as backend choice:
+
+- Firecracker issue
+  [#923](https://github.com/firecracker-microvm/firecracker/issues/923), opened
+  in 2019, describes the polling and stateful sequence required to configure a
+  VM through its local API socket. Gludd SHALL compile one immutable,
+  digest-addressed instance bundle before launch and attest the resulting
+  machine; a partly configured VM SHALL never receive work.
+- gVisor issue
+  [#4768](https://github.com/google/gvisor/issues/4768), open since 2020,
+  records an OCI overlay configuration that worked with `runc` but behaved
+  differently with `runsc`, including host temporary-directory ownership and
+  write failures. A portable policy SHALL compile backend-specific mounts and
+  run an actual read/write/escape canary rather than infer compatibility from
+  an OCI document.
+- gVisor issue
+  [#9918](https://github.com/google/gvisor/issues/9918), opened in 2024,
+  records rootless UID mapping making a host-owned bind mount inaccessible.
+  Identity mapping, bind ownership and intended access mode SHALL be explicit
+  policy fields and independently observed after launch.
+- Gunicorn issue
+  [#1562](https://github.com/benoitc/gunicorn/issues/1562), opened in 2017,
+  records reload detection gaps, including files or directories not watched and
+  preloaded modules surviving worker replacement. Gludd SHALL never treat a
+  file watcher, signal or process birth alone as proof that every worker loaded
+  a security generation.
+- Gunicorn issue
+  [#1236](https://github.com/benoitc/gunicorn/issues/1236), open since 2016,
+  records unspecified and worker-dependent keep-alive behavior during graceful
+  shutdown. ZDD SHALL use generation-aware admission, bounded drain deadlines,
+  durable in-flight ownership and explicit cleanup acknowledgement rather than
+  assuming graceful shutdown completed.
+- Gunicorn issue
+  [#1299](https://github.com/benoitc/gunicorn/issues/1299), opened in 2016,
+  records operators seeking per-worker memory protection for hostile archives;
+  later operator experience in the thread moved enforcement to cgroups because
+  Python-process accounting missed native-library consumption. Gludd SHALL
+  enforce resource ceilings at the kernel or VM boundary and only use
+  process-local metrics as additional evidence.
+
+Forum reports are operational evidence, not acceptance evidence. Every derived
+rule below still requires a reproducible local canary and a negative test on the
+actual runtime and host generation.
+
 ## 5. Versioned configuration contract
 
 ### SH-CONFIG-001
@@ -298,6 +344,95 @@ project, agent, then work item. Each layer after the administrator layer SHALL
 be intersected with its parent. A widening SHALL require a separate approval
 capability, reason, expiry, approver identity, and audit event. Environment
 variables SHALL not silently bypass policy files.
+
+The complete hierarchy SHALL also support a tenant layer between administrator
+and user. The currently landed resolver does not yet implement that layer and
+therefore does not satisfy the complete multi-tenant contract. Every resolved
+leaf SHALL expose its source layer and narrowing history in the redacted dry-run
+output.
+
+### 5.1 Configuration semantics and authority
+
+The YAML above is the minimum locked-profile example; the matrix below is the
+normative complete control surface. Every named leaf SHALL be present in the
+versioned schema even when its value is `deny`, an empty set or `disabled`.
+Security behavior SHALL NOT depend on an undocumented environment variable or
+backend default.
+
+The scope abbreviations used in the matrix are:
+
+- **A**: system administrator defines the signed envelope and compiled hard
+  ceiling.
+- **T/U/P/G/W**: tenant, user, project, agent and work-item layers may only
+  narrow the parent value. `G` denotes agent to avoid ambiguity with **A**.
+- **E**: a separately authenticated, time-bounded emergency widening may be
+  requested. It never changes a built-in hard invariant and SHALL record
+  requestor, approver, reason, diff, expiry and revocation.
+
+Sets SHALL use canonical typed entries and intersection semantics; duplicate or
+ambiguous entries fail. Numeric limits use explicit byte, millisecond, second or
+token units, have finite locked defaults and compiled maximums, and reject
+booleans, coercion, NaN, infinity and overflow. A lower resource maximum is a
+narrowing. A stronger required isolation tier, shorter TTL, smaller allowlist,
+more durable audit level or more restrictive access mode is also a narrowing.
+No downstream layer may disable attestation, denial auditing, metadata denial,
+ownership checks, redaction or cleanup verification.
+
+### 5.2 Complete configurable-control matrix
+
+| Control family and canonical policy keys | Locked baseline and non-bypassable invariant | Authorized scope and merge rule | Activation boundary | Independent evidence and failure behavior |
+|---|---|---|---|---|
+| Policy identity: `schema_version`, `policy_id`, `parent_version`, `posture`, `tenant_id`, `approval_ref` | Strict known schema; immutable canonical document and digest; `locked` default for untrusted work | A selects envelope; T/U/P/G/W intersect; E may approve a finite widening below compiled hard invariants | New signed generation; each work item pins one version | Durable canonical hash, signer, provenance and layer diff; parse, signature, parent or expiry failure denies before allocation |
+| Backend: `backend.preference`, `minimum_strength`, `require_attestation`, `fallback`, `runtime_version`, `image_digest`, `kernel_digest`, `canary_ttl_seconds`, `devices` | Attestation required; fallback deny; no mutable/latest image; no host device except an explicit typed grant | A allowlists runtimes/images/devices; descendants remove choices or require greater strength | Replacement backend pool and worker generation | Runtime, image, kernel, jailer/namespace/VM identity and negative canary observations; missing guarantee denies and releases the handle |
+| Filesystem: `filesystem.root`, `source`, `workspace`, `mounts`, `host_paths`, `max_bytes`, `max_inodes`, `max_file_bytes`, `read_only_toolchain` | Empty/private root; source and toolchain read-only; host paths empty; finite byte/inode/file bounds | A allowlists canonical mount roots and modes; descendants may remove, make read-only or reduce limits | New sandbox instance; never mutate mounts of an in-flight instance | Mount table, canonical descriptor-relative paths, ownership and quota probe; traversal, symlink, hard-link or quota ambiguity denies |
+| Network: `network.mode`, `protocols`, `hosts`, `cidrs`, `ports`, `dns`, `redirects`, `proxy`, `max_connections`, `max_bytes`, `grant_ttl_seconds`, `deny_metadata` | Isolated loopback only; no egress; metadata and sibling ranges always denied without a typed exceptional capability | A defines destination envelope; T/U/P/G/W intersect destinations and budgets; E required for metadata-class access | Versioned proxy/firewall rules prepared before route switch | Namespace, firewall/proxy rule hash, DNS and redirect canary, connection and byte counters; partial rule application or rebinding denies/cancels |
+| Execution identity: `process.uid_map`, `gid_map`, `supplementary_groups`, `capabilities`, `no_new_privileges`, `namespaces`, `syscall_profile`, `executables`, `environment` | Unique non-host identity; empty groups/capabilities/environment; no-new-privileges; reviewed syscall and executable allowlists | A defines maps/profiles/allowlists; descendants only remove entries or require more namespaces | New sandbox instance and executable digest | Observed UID/GID maps, capabilities, namespace IDs, seccomp/LSM hash, argv and executable digest; mismatch denies before exec |
+| Process lifecycle: `process.max_pids`, `max_threads`, `open_files`, `cpu_seconds`, `wall_seconds`, `core_bytes`, `stack_bytes`, `output_bytes`, `cancel_grace_seconds`, `drain_seconds` | Every limit finite; core dumps disabled; descendants cannot outlive the namespaced owner; cancellation kills the complete tree | A sets ceilings and drain maximum; T/U/P/G/W reduce them | New work item; counters remain pinned for its lifetime | cgroup/VM counters, PID lineage and verified post-cancel absence; limit breach emits typed reason, bounded tail and cleanup result |
+| Runtime state and leases: `state.root`, `worktree.root`, `namespace`, `lease_seconds`, `reaper_interval_seconds`, `pid_identity_fields`, `cleanup_budget_seconds` | Owner-only namespaced roots; symlinks and foreign ownership denied; PID identity includes start/boot/executable/owner; exact-scope cleanup only | A chooses approved canonical parents and maximum lease; descendants choose contained namespaces and shorter leases | Replacement worker may change parent; existing handles retain old allocation until verified release | Ownership manifest, lease epoch, PID identity and cleanup attestation; stale/forged/foreign state is quarantined and never signalled or deleted |
+| Ingress and archives: `ingress.transport_bytes`, `decoded_bytes`, `depth`, `items`, `string_bytes`, `file_count`, `archive_ratio`, `request_seconds`, `content_types` | Finite limits at transport and decoded schema boundaries; unknown fields/types and ambiguous encodings denied before side effects | A sets protocol/type allowlist and hard ceilings; descendants lower budgets or remove types | Shared ingress generation plus pinned work-item schema version | Incremental counters at socket, decoder and model boundary; breach stops reads, creates no workspace/process and emits bounded denial |
+| Model, tool and media budgets: `model.request_tokens`, `response_tokens`, `response_bytes`, `stream_chunks`, `stream_seconds`, `idle_seconds`, `tool_calls`, `fallback_attempts`, `spend`, `media_pixels`, `media_frames`, `media_ratio` | Every count, time and spend finite; no unbounded stream/fallback; hostile media decoded only in locked isolation | A sets provider/model/media envelope; descendants reduce limits and provider/tool sets; spend widening requires E | Gateway generation; each request pins one cumulative budget across fallback | Provider usage plus local byte/token/chunk/time counters and sandbox decoder metrics; breach cancels upstream and excludes oversized data from cache/events |
+| Secrets: `secrets.mode`, `allowed_refs`, `audiences`, `max_ttl_seconds`, `idle_ttl_seconds`, `max_uses`, `delivery`, `revoke_on` | Brokered opaque references only; empty locked allowlist; no environment/argv/image delivery; revoke on every terminal path | A allowlists broker/mount/audience; T/U/P/G/W intersect exact refs and shorten TTL/use count; E cannot expose raw values in policy | Versioned broker scope with overlap only for verified rotation | Token audience/tenant/agent binding, use counter, expiry/revocation and redaction canary; unavailable audit or broker denies delivery |
+| Authentication and administration: `auth.methods`, `mtls`, `session.absolute_ttl_seconds`, `idle_ttl_seconds`, `audiences`, `csrf`, `psk_rotation`, `admin_capabilities` | Auth required on mutation; secure cookie/token defaults; explicit admin capability; no ordinary PSK privilege inheritance | A defines identities/audiences/capabilities; descendants cannot mint authority; E uses independent approver | Shared identity generation and bounded dual-key overlap | Cross-worker issue/revoke/expiry/rotation probes; fixation, replay, stale key, wrong audience or missing CSRF denies and audits |
+| Admission, concurrency and spend: `limits.identity`, `tenant`, `route`, `global`, `queue_depth`, `concurrency`, `retry_after_seconds`, `provider_spend`, `database_rows` | Shared bounded limits at every scope; unauthenticated mutation denied; retries consume the same parent budget | A sets global/tenant envelope; T/U/P/G/W reduce capacities and spend | Atomic shared-store generation; not process-local worker state | Cross-worker token/lease counters and provider reconciliation; exhaustion returns typed bounded retry/denial without duplicate acceptance |
+| Database and migration: `database.wal_bytes`, `checkpoint_pages`, `busy_timeout_ms`, `disk_reserve_bytes`, `maintenance_io_bytes`, `maintenance_seconds`, `leader_lease_seconds`, `backup`, `migration_mode` | Finite WAL/disk/time budgets; one maintenance leader; backup/restore evidence; expand-contract default; destructive changes separately approved | A defines datastore bounds and migration authority; tenants/projects may only reduce quotas | Expand, migrate, verify, then contract after old-worker retirement | WAL/disk/reader/leader telemetry, schema digest and restore canary; lock, drift, disk pressure or failed migration leaves old schema usable |
+| Audit and event transport: `audit.sink`, `durability`, `heartbeat_seconds`, `payload_bytes`, `retention_seconds`, `redaction_profile`, `include_denials`, `subscriber_lag_events` | Durable shared sink; denials/launch/limit/secret/cleanup events mandatory; bounded redacted payloads; process-local delivery insufficient | A defines minimum durability/retention and maximum payload/heartbeat; descendants may add events, shorten heartbeat or extend retention | Expand-compatible event schema before producer switch | Monotonic committed sequence, tenant partition, integrity seal, worker/subscriber cursor and lag; sink failure denies launch and lag pressure degrades safely |
+| Supply chain: `supply_chain.allowed_digests`, `signers`, `sbom_required`, `advisory_policy`, `licenses`, `max_artifact_bytes`, `offline` | Digest and signature pinning; SBOM and advisory gate; no runtime install from untrusted metadata; finite artifact size | A owns signers/digest/license/advisory exceptions; descendants only reduce allowed artifacts; exceptions require E and expiry | New immutable image/toolchain generation | Signature, digest, SBOM, provenance and scanner/adjudication evidence; missing, mutable, expired or oversized artifact denies promotion |
+| Delivery policy: `rollout.canary_count`, `shadow_seconds`, `worker_ack_timeout_seconds`, `max_unavailable`, `drain_seconds`, `rollback_window_seconds`, `failure_thresholds` | Prepare/verify/CAS-switch/drain; zero unsandboxed or unversioned executions; old artifact retained through rollback window | A defines safe minima/maxima; descendants may demand more canaries, longer shadow or stricter thresholds | Shared routing generation; never in-place mutation | Signed manifest, every-worker acknowledgement, continuous traffic probes, routing epoch and cleanup acknowledgements; threshold or split-brain freezes/rolls forward to a safe prior version |
+
+### 5.3 Configuration source, introspection and compatibility contract
+
+All supported sources SHALL feed the same parser: signed administrator file,
+tenant/user/project files, agent/work-item request, CLI flags, API payload and
+documented legacy environment adapters. Operators SHALL be able to disable any
+source below the administrator layer. Source precedence, file ownership,
+signature requirements and allowed roots SHALL themselves be administrator
+configuration; remote URLs are forbidden as implicit configuration sources.
+
+The redacted `config explain` and `config diff` interfaces SHALL report schema
+version, effective value, unit, built-in default, compiled hard range, source
+layer, narrowing chain, approval metadata, activation class and restart/drain
+requirement for every leaf. Secret values, bearer material and raw untrusted
+payloads SHALL never appear. An offline `config compile` SHALL produce the exact
+signed canonical artifact and policy hash later loaded by workers.
+
+Schema evolution SHALL declare minimum/maximum reader and writer versions plus
+an explicit migration. A new binary SHALL read the current and immediately
+previous immutable schema during a rolling deployment. Unknown keys never
+silently disappear; removed keys fail with a replacement path until the
+documented compatibility window closes. Legacy environment adapters SHALL emit
+a bounded deprecation event and may only map to the same validation and
+authority rules.
+
+### 5.4 Configuration completeness acceptance
+
+The schema is not complete until a mechanical inventory proves that every
+security-relevant constant, environment read, daemon flag, backend option and
+per-provider limit maps to exactly one matrix leaf or an explicit non-security
+setting. The checker SHALL fail on undocumented duplicate knobs, conflicting
+defaults, unit mismatches, unbounded values, values read after generation pinning
+or code paths that bypass normalization. Property tests SHALL generate every
+valid layer combination and prove monotonic narrowing; mutation tests SHALL show
+that deleting any required validation or attestation changes a test result.
 
 ## 6. Enforced boundaries
 
@@ -434,6 +569,133 @@ the same forward-only promotion mechanism to a prior immutable version. Tests
 SHALL continuously dispatch during valid reload, invalid reload, worker restart,
 rollback, and mixed-duration workloads and prove no request executes
 unsandboxed, twice, or under an unrecorded policy.
+
+### 7.1 Immutable release manifest and state machine
+
+Every candidate SHALL have one signed manifest containing at least:
+
+```text
+schema_version, generation, parent_generation, policy_hash, signer,
+created_at, expires_at, compatible_reader_versions, compatible_writer_versions,
+backend_runtime_digests, kernel_image_digests, rootfs_image_digests,
+seccomp_lsm_hashes, firewall_proxy_hashes, secret_key_ids, event_schema_range,
+database_schema_range, canary_plan_hash, rollback_generation
+```
+
+`secret_key_ids` are opaque identifiers, never secret values. The manifest and
+all referenced artifacts SHALL be content addressed and retained until every
+work item pinned to them is terminal, cleanup is attested, the event-retention
+compatibility window closes and the configured rollback window expires.
+
+The durable promotion state machine SHALL be:
+
+```text
+draft -> compiled -> canary -> shadow -> ready -> active -> draining -> retired
+                       |          |        |         |
+                       +----------+--------+---------+-> rejected
+```
+
+Transitions use compare-and-swap on the current routing generation and append a
+committed event before externally visible routing changes. Replaying a
+transition is idempotent. A controller crash SHALL resume from durable state,
+reconcile actual workers/backends/firewall rules against the manifest and either
+finish the same transition or reject it; it SHALL never infer completion from a
+PID file or start time.
+
+### 7.2 Prepare, verify, switch and drain protocol
+
+**Prepare.** Compile the complete inherited policy; verify signatures, schema
+compatibility and hard ceilings; stage database/event expand migrations; create
+new backend pools, proxy/firewall rules, broker scopes and replacement Gunicorn
+workers without changing the active routing epoch. No candidate shares a
+mutable policy, socket path, state directory or writable image with the active
+generation.
+
+**Verify.** Run allow and denial canaries against every backend and worker,
+including filesystem escape, metadata egress, syscall, resource exhaustion,
+secret redaction, cross-tenant access, event visibility and cleanup. Workers
+acknowledge the exact manifest and their independently observed runtime state in
+the shared store. Shadow evaluation compares active and candidate decisions on
+redacted request metadata without executing candidate-denied work or exposing
+payloads to an unauthorized backend.
+
+**Switch.** A single compare-and-swap publishes a new routing epoch only when
+all required acknowledgements are fresh, every canary is green and shared
+database/event schemas are compatible. New work pins the candidate generation;
+accepted work already owned by the old generation remains there. Workers with a
+missing, stale or different acknowledgement are removed from admission before
+the switch. A Gunicorn HUP, file-watcher event, health endpoint or process count
+is not an acknowledgement.
+
+**Drain.** Stop new admission to the old generation while preserving durable
+ownership of its in-flight work. Heartbeats expose work count, oldest age,
+connections, leases, resource pressure and cleanup progress. At the bounded
+drain deadline, compatible resumable work is checkpointed and re-admitted once;
+non-resumable work receives a typed cancellation and complete descendant
+cleanup. The old artifacts retire only after zero work, zero owned processes,
+zero active leases and a committed cleanup event are independently observed.
+
+### 7.3 Roll-forward rollback and automatic aborts
+
+Rollback SHALL create a new generation whose content matches a previously
+verified manifest; it SHALL not mutate the failed generation or move a routing
+pointer backward without a new audit identity. The prior version is eligible
+only when its binaries, database/event schemas, signatures, images and secret
+identities remain compatible and unexpired. If reverting would weaken a newly
+mandated security invariant, Gludd SHALL deny affected work until a safe version
+is available rather than silently restore the weaker behavior.
+
+The controller SHALL abort before switch, or initiate forward rollback after
+switch, on configurable thresholds for any of these signals:
+
+- missing/stale worker or backend acknowledgement;
+- attestation, escape-canary, signature or schema-compatibility failure;
+- policy-decision divergence outside an approved diff;
+- event sink unavailability, sequence gap or subscriber lag beyond its bound;
+- authentication, secret, firewall/proxy or database migration partial state;
+- denial/error/timeout/cleanup-lag or resource-pressure threshold breach; or
+- routing split brain, duplicate ownership or an unversioned execution attempt.
+
+Threshold configuration can only become stricter downstream. Automatic
+rollback shares the same canary, acknowledgement, switch and drain protocol as
+forward promotion. If neither candidate nor prior generation can attest the
+locked contract, admission closes while observability and cleanup remain
+available.
+
+### 7.4 Change-class rollout matrix
+
+| Change class | Required preparation | Switch and overlap rule | Rollback/retirement proof |
+|---|---|---|---|
+| Policy/resource/rate limits | Compile full inherited document; run monotonicity and boundary canaries on every worker | New work pins new counters; old work retains old ceilings unless an emergency kill ceiling is explicitly non-grandfathered | Prior canonical policy remains signed/compatible; shared counters have no orphaned reservations |
+| Backend, kernel, rootfs, seccomp or LSM | Build digest-pinned pool; run boot, allow, denial, escape, pressure and cleanup canaries | New pool receives traffic only after per-instance attestation; no mutable image or in-place syscall-policy replacement | Zero VMs/containers/processes/leases/socket paths for retired pool; old digest remains available through rollback window |
+| Network proxy/firewall/DNS | Stage versioned rules in a disjoint chain/table and test allowed plus denied destinations | Atomically select complete rule set before candidate admission; never update individual rules under live work | Observed active rule hash matches generation; obsolete rule set has zero referenced sandboxes before removal |
+| Secret, PSK, certificate or signing key | Create new identity/scope; validate audience, redaction and revocation; never copy values into manifest | Bounded dual-read/single-write overlap; new work receives new identity while old valid work drains | Old identity rejects after overlap; all derived credentials revoked and no secret appears in events/artifacts |
+| Database or event schema | Expand first; verify backup/restore and old/new reader/writer compatibility | Old and new workers coexist only inside declared compatibility range; destructive contract is forbidden during rollback window | Restore canary, no old readers/writers, retained events migrated or expired, then contract in a later generation |
+| Gunicorn worker/binary/config | Start a disjoint acknowledged worker generation with exact manifest and shared event transport | Atomic admission epoch; in-flight ownership stays durable and old workers have bounded connection/work drain | No old worker, child, listener ownership or uncommitted event remains; PID/start/boot/executable identity all match before cleanup |
+
+### 7.5 ZDD executable invariants
+
+Continuous-traffic tests SHALL inject a crash or timeout after every state
+transition and external side effect. For each injection they SHALL prove:
+
+- every accepted work item has exactly one durable owner and one immutable
+  policy/backend generation from admission through cleanup;
+- zero work executes without successful attestation or before its admission
+  event commits, and a denial is observable while the suite is still running;
+- valid in-flight work is neither lost nor duplicated, while newly prohibited
+  work is denied with the intended policy reason;
+- cross-worker event sequence, secret rotation, rate/spend accounting and
+  cancellation remain coherent with at least two Gunicorn workers;
+- rollout and rollback have finite configured deadlines and emit bounded
+  heartbeats throughout, including when the controller dies; and
+- active/retired resources reconcile to the manifest with no orphaned compute,
+  firewall rule, credential, worktree, temporary root, process or lease.
+
+The acceptance report SHALL include transition/event sequences, manifest and
+artifact hashes, worker acknowledgements, canary results, traffic counts,
+latency/error/denial deltas, injected failure points, rollback generation and
+post-drain resource reconciliation. A green health endpoint or uninterrupted
+TCP listener alone is not ZDD evidence.
 
 ## 8. Open D-07 through D-30 control requirements
 
