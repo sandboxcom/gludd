@@ -93,6 +93,14 @@ class ApprovalGate:
         except Exception:
             return ApprovalResponse(request=request)
 
+    def check(self, request: ApprovalRequest) -> ApprovalResult:
+        """Run the legacy synchronous check while preserving fail-closed HITL."""
+        response = self.request_approval(request)
+        return ApprovalResult(
+            allowed=response.decision is ApprovalDecision.APPROVED,
+            reason=response.decision.value,
+        )
+
     def check_decision(self, human_todo_id: str) -> ApprovalDecision:
         """Map a human-todo status to an ApprovalDecision.
 

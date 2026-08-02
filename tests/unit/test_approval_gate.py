@@ -33,3 +33,13 @@ def test_legacy_request_aliases_and_result_shape() -> None:
     result = ApprovalResult(allowed=False, reason="test")
     assert result.allowed is False
     assert result.reason == "test"
+
+
+def test_legacy_check_fails_closed_while_approval_is_pending() -> None:
+    gate = ApprovalGate()
+    req = ApprovalRequest(action="deploy", target="production", by="agent-1")
+
+    result = gate.check(req)
+
+    assert result.allowed is False
+    assert result.reason == ApprovalDecision.PENDING.value
