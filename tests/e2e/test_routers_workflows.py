@@ -126,7 +126,7 @@ class TestHumanTodosEndpoints:
 
     def test_list_with_query_params_no_db(self, dispatch_app: TestClient):
         resp = dispatch_app.get(
-            "/api/human-todos?status=open&category=general&limit=10&offset=0"
+            "/api/human-todos?status=open&category=input_request&limit=10&offset=0"
         )
         assert resp.status_code == 200
 
@@ -154,7 +154,7 @@ class TestHumanTodosEndpoints:
                     "agent_id": "test-agent",
                     "title": "Test human todo",
                     "body": "This is a test",
-                    "category": "general",
+                    "category": "input_request",
                 },
             )
             assert resp.status_code == 201
@@ -199,7 +199,7 @@ class TestHumanTodosEndpoints:
                     "agent_id": "test-agent",
                     "title": "",
                     "body": "Body",
-                    "category": "general",
+                    "category": "input_request",
                 },
             )
             assert resp.status_code == 422
@@ -215,7 +215,7 @@ class TestHumanTodosEndpoints:
                     "agent_id": "agent-get",
                     "title": "Get this todo",
                     "body": "Test body for GET",
-                    "category": "general",
+                    "category": "input_request",
                 },
             )
             created = create_resp.json()
@@ -246,7 +246,7 @@ class TestHumanTodosEndpoints:
                     "agent_id": "agent-done",
                     "title": "To be done",
                     "body": "Will be resolved",
-                    "category": "general",
+                    "category": "input_request",
                 },
             )
             ht_id = create_resp.json()["id"]
@@ -306,7 +306,7 @@ class TestHumanTodosEndpoints:
                         "agent_id": f"agent-{i}",
                         "title": f"Paginate {i}",
                         "body": f"Body {i}",
-                        "category": "general",
+                        "category": "input_request",
                     },
                 )
 
