@@ -91,7 +91,7 @@ def cleanup_expired_leases(repo_path: str) -> int:
     return removed
 
 
-def worktree_lease_info(repo_path: str) -> list[dict]:
+def worktree_lease_info(repo_path: str) -> list[dict[str, object]]:
     leases = _leases_dir(repo_path)
     if not leases.is_dir():
         return []
