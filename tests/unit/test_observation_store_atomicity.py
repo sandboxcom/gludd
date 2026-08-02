@@ -61,4 +61,3 @@ def test_concurrent_store_instances_use_unique_atomic_temp_files(
         {"baseline", "left"},
         {"baseline", "right"},
     )
-

@@ -1,9 +1,9 @@
 # Feature: Configurable Security and Sandbox Hardening
 
-**Spec ID:** SEC-SBX-001  
-**Status:** Proposed — implementation and acceptance gates are open  
-**Created:** 2026-08-01  
-**Target:** development after all requirements below pass  
+**Spec ID:** SEC-SBX-001
+**Status:** Proposed — implementation and acceptance gates are open
+**Created:** 2026-08-01
+**Target:** development after all requirements below pass
 **Supersedes completion claims in:** `FEATURE_UNIKERNEL_SANDBOX.md`
 
 ## 1. Purpose and completion honesty

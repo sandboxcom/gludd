@@ -54,4 +54,3 @@ def test_same_relation_in_distinct_contexts_remains_compatible() -> None:
     )
 
     assert all(not observation.contradictions for observation in observations)
-

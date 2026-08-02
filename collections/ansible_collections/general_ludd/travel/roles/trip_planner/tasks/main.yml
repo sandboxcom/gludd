@@ -1,0 +1,56 @@
+---
+# trip_planner role — generate a multi-day trip itinerary
+#
+# Flow:
+#   1. Validate required inputs (origin, destinations, dates)
+#   2. Call general_ludd.travel.trip_planner module
+#   3. Write structured itinerary artifact
+
+- name: Validate required inputs
+  ansible.builtin.assert:
+    that:
+      - origin | length > 0
+      - destinations | length > 0
+      - start_date | length > 0
+      - end_date | length > 0
+    fail_msg: "trip_planner requires origin, destinations, start_date, end_date"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Plan trip itinerary
+  general_ludd.travel.trip_planner:
+    origin: "{{ origin }}"
+    destinations: "{{ destinations }}"
+    start_date: "{{ start_date }}"
+    end_date: "{{ end_date }}"
+    budget: "{{ budget | default(0.0) }}"
+    interests: "{{ interests | default([]) }}"
+    travelers: "{{ travelers | default(1) }}"
+    trip_style: "{{ trip_style | default('comfort') }}"
+    daemon_url: "{{ daemon_url | default('http://localhost:8000') }}"
+    psk: "{{ psk | default('') }}"
+  register: trip_result
+
+- name: Write itinerary artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'trip_planner',
+        'status': 'completed',
+        'origin': origin,
+        'destinations': destinations,
+        'start_date': start_date,
+        'end_date': end_date,
+        'itinerary': trip_result.itinerary,
+        'estimated_cost': trip_result.estimated_cost
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/trip_planner_result.json"
+    mode: "0644"
+
+- name: Report trip plan summary
+  ansible.builtin.debug:
+    msg: "Trip plan created: {{ origin }} → {{ destinations | join(', ') }} ({{ start_date }} to {{ end_date }})"

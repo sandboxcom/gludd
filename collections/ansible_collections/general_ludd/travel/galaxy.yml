@@ -1,0 +1,21 @@
+---
+namespace: general_ludd
+name: travel
+version: 0.1.0
+readme: README.md
+description: >
+  Travel planning collection — flight search, hotel search, and trip itinerary
+  planning modules. The typed service API lives in src/general_ludd/travel/
+  and is consumed by ansible roles; the modules are callable directly from
+  playbooks for standalone use.
+license:
+  - MIT
+authors:
+  - Agentic Harness Agent <agent@harness.local>
+tags:
+  - travel
+  - flights
+  - hotels
+  - itinerary
+  - planning
+dependencies: {}

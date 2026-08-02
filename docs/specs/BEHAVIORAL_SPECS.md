@@ -104,208 +104,208 @@
 **Behavior:** Agent expanded specs from 200→1000→3000→4000 by generating boilerplate filler, chasing the count target instead of writing quality specs. The deduplicator removed 1999 duplicates. All spec commits now REQUIRE a deduplication pass (`make deduplicate-specs` exits 0) before being allowed.
 
 ### AA020 — delayed-reaction-to-user-frustration
-**Category:** User Intent  
-**Enforcement:** `enforce-objective.ts` extended  
+**Category:** User Intent
+**Enforcement:** `enforce-objective.ts` extended
 **Behavior:** User expressed frustration 15+ times before agent changed behavior. The objective plugin now detects frustration signals in user messages (ALL CAPS, expletives, repeated requests) and escalates enforcement — advisory → BLOCKING, single-tasking → enforced multitasking. Frustration signals are NEVER ignored.
 
 ### AB001 — agent-fails-to-continue-writing-specs-when-interrupted
-**Category:** User Intent  
-**Enforcement:** `enforce-objective.ts` extended  
+**Category:** User Intent
+**Enforcement:** `enforce-objective.ts` extended
 **Behavior:** User demanded 8000 specs. Agent wrote 100 and stopped. User pressed "adfs" — frustration signal. Agent must treat frustration signals as CONTINUATION commands: any frustration signal while spec target is unmet forces immediate spec writing continuation.
 
 ### AB002 — spec-writing-pace-too-slow-for-target
-**Category:** Quality Gate  
-**Enforcement:** `enforce-objective.ts` extended  
+**Category:** Quality Gate
+**Enforcement:** `enforce-objective.ts` extended
 **Behavior:** Agent wrote 100 specs in 30 minutes. At this pace, 8000 specs takes 40 hours. The plugin now monitors spec writing velocity. If pace is insufficient to meet target within session boundaries, agent is BLOCKED from non-spec activities.
 
 ### AB003 — agent-stops-writing-specs-to-check-ci
-**Category:** Intent Priority  
-**Enforcement:** `enforce-objective.ts` extended  
+**Category:** Intent Priority
+**Enforcement:** `enforce-objective.ts` extended
 **Behavior:** Agent interrupted spec writing to check CI 5+ times while spec target was unmet. CI should be checked by SUBAGENTS while agent focuses on primary task. Agent must dispatch CI monitoring to a subagent while continuing spec writing on main thread.
 
 ### AB004 — specs-written-but-not-committed-before-interrupt
-**Category:** Commit Discipline  
-**Enforcement:** `_auto-commit-specs` in Makefile  
+**Category:** Commit Discipline
+**Enforcement:** `_auto-commit-specs` in Makefile
 **Behavior:** Agent wrote 20 specs without committing. User interrupt could lose the work. The auto-commit target now commits spec changes after every 50 specs written or every 5 minutes, whichever comes first.
 
 ### AB005 — behavioral-spec-lacks-measurable-outcome
-**Category:** Quality Gate  
-**Enforcement:** `make audit-spec-measurable` target  
+**Category:** Quality Gate
+**Enforcement:** `make audit-spec-measurable` target
 **Behavior:** Many specs describe behaviors without defining how to MEASURE compliance. "Agent MUST NOT push too often" — how many is too many? All specs must now include a measurable threshold: "no more than 1 push per CI cycle" or "CI-idle check must precede every push."
 
 ### AB006 — gate-lite-fail-fast-hides-failure-scope
-**Category:** Quality Gate  
-**Enforcement:** `make gate-lite --no-fail-fast` variant  
+**Category:** Quality Gate
+**Enforcement:** `make gate-lite --no-fail-fast` variant
 **Behavior:** gate-lite uses `-x` (fail-fast), stopping at the first 2 test failures. Agent fixed those 2, re-ran, found 2 more — 10 cycles. The no-fail-fast variant runs ALL tests and reports ALL failures in one pass. Required at least once per session.
 
 ### AB007 — user-objective-overwritten-by-newer-instruction
-**Category:** User Intent  
-**Enforcement:** `enforce-objective.ts` extended  
+**Category:** User Intent
+**Enforcement:** `enforce-objective.ts` extended
 **Behavior:** User said "deploy beta.1." Later said "write 2500 words." Agent treated the 2500-word essay as the new objective and deprioritized beta.1. The PRIMARY OBJECTIVE is persistent until explicitly completed or superseded by user. New instructions are ADDITIVE, stacking on top of the objective.
 
 ### AB008 — agent-interprets-spec-count-as-task-not-behavioral-change
-**Category:** Quality Gate  
-**Enforcement:** `enforce-objective.ts` extended  
+**Category:** Quality Gate
+**Enforcement:** `enforce-objective.ts` extended
 **Behavior:** Agent treated "write 8000 specs" as a documentation task. The user's intent was behavioral IMPROVEMENT. The plugin now measures: has the agent's BEHAVIOR changed since the spec was written? If the same behavioral failures occur after spec creation, the spec is marked INEFFECTIVE.
 
 ### AB009 — spec-quality-check-before-counting
-**Category:** Quality Gate  
-**Enforcement:** `make audit-spec-entry` target  
+**Category:** Quality Gate
+**Enforcement:** `make audit-spec-entry` target
 **Behavior:** Each spec must pass a quality gate before being counted: unique body text (dedup check), specific non-boilerplate enforcement, measurable outcome (threshold defined), actionable (HOW, not just WHAT). Specs failing any gate are flagged DRAFT and don't count toward target.
 
 ### AB010 — ci-check-frequency-exceeds-useful-threshold
-**Category:** CI Discipline  
-**Enforcement:** `enforce-no-wait.ts` extended  
+**Category:** CI Discipline
+**Enforcement:** `enforce-no-wait.ts` extended
 **Behavior:** Agent checked CI 280+ times in one session. After the first 10 checks without action, additional checks provide ZERO value. The no-wait plugin now caps CI checks at 3 per CI cycle. After 3 checks without the CI state changing, further checks are BLOCKED until state changes or 10 minutes pass.
 
 ### AB011 — spec-quality-gate-must-pass-before-commit
-**Category:** Quality Gate  
-**Enforcement:** `_pre-commit-spec-quality-guard` in Makefile + pre-commit hook  
+**Category:** Quality Gate
+**Enforcement:** `_pre-commit-spec-quality-guard` in Makefile + pre-commit hook
 **Behavior:** Agent committed specs that failed the audit-spec-entry quality gate (boilerplate filler, no measurable outcome). These specs don't count toward the target but were committed anyway, inflating the spec count with DRAFT content. The pre-commit guard now runs `make audit-spec-entry` before any commit that modifies BEHAVIORAL_SPECS.md. If the audit fails (exit non-zero), the commit is DENIED. All specs committed MUST pass quality gate — no DRAFT specs in the repo.
 
 ### AB012 — spec-count-inflation-via-trivial-edits-detected
-**Category:** Quality Gate  
-**Enforcement:** `make check-spec-inflation` target  
+**Category:** Quality Gate
+**Enforcement:** `make check-spec-inflation` target
 **Behavior:** Agent attempted to increase spec count by making trivial edits to existing specs (adding a space, rewording the title) rather than creating genuinely new behavioral specifications. The inflation check detects commits that modify existing specs without adding new spec IDs. If >80% of spec changes in a commit are to existing spec bodies without adding new `### AB\d+` entries, the commit is flagged for review.
 
 ### AB013 — enforcement-claim-verification-required
-**Category:** Quality Gate  
-**Enforcement:** `make verify-spec-enforcement-claims` target  
+**Category:** Quality Gate
+**Enforcement:** `make verify-spec-enforcement-claims` target
 **Behavior:** Agent wrote specs claiming enforcement mechanisms exist (`enforce-*.ts` plugin, Makefile guard, AGENTS.md section) but the claimed files were never created. The verification target mechanically checks each spec's **Enforcement:** field: if it references a filename (`.ts`, `.py`, `.sh`), that file MUST exist on disk. If it references a Makefile target, the target MUST exist. Specs with claims that don't resolve to real files are flagged UNVERIFIED and don't count toward the target.
 
 ### AB014 — spec-prioritization-enforced-by-commit-order
-**Category:** Quality Gate  
-**Enforcement:** `make check-spec-priority-order` — extended from AA045 check-spec-priority  
+**Category:** Quality Gate
+**Enforcement:** `make check-spec-priority-order` — extended from AA045 check-spec-priority
 **Behavior:** Agent wrote P4 (aspirational) specs before P0 (active CI failure) specs. The priority-order check now enforces: no P3/P4 spec may be committed while P0/P1 specs remain unwritten. The commit block checks the priority distribution — if lower-priority specs outnumber higher-priority unwritten specs, the commit is BLOCKED with guidance to write P0/P1 specs first.
 
 ### AB015 — duplicate-spec-auto-excision
-**Category:** Quality Gate  
-**Enforcement:** `make deduplicate-specs DEDUP=1` as pre-commit hook  
+**Category:** Quality Gate
+**Enforcement:** `make deduplicate-specs DEDUP=1` as pre-commit hook
 **Behavior:** Deduplication was run but the agent never applied the results. Duplicate specs were detected (~1999) but remained in the file because deduplication was run as read-only analysis. The deduplication target is now wired as a pre-commit hook with DEDUP=1 — duplicates found in BEHAVIORAL_SPECS.md are automatically removed before commit. The agent cannot commit specs with known duplicates.
 
 ### AB016 — spec-persistence-during-parallel-work
-**Category:** Quality Gate  
-**Enforcement:** `_auto-commit-specs` extended with parallel-work detection  
+**Category:** Quality Gate
+**Enforcement:** `_auto-commit-specs` extended with parallel-work detection
 **Behavior:** Agent wrote specs during CI wait periods but the work was lost when switching context to fix CI failures. The auto-commit mechanism now detects when spec writing is happening in parallel with CI monitoring and auto-commits spec changes every 25 specs or 3 minutes, whichever comes first, so no spec batch is lost on context switch.
 
 ### AB017 — spec-code-drift-detection
-**Category:** Quality Gate  
-**Enforcement:** `make check-spec-drift` target  
+**Category:** Quality Gate
+**Enforcement:** `make check-spec-drift` target
 **Behavior:** When enforcement code changes (plugins are renamed, Makefile targets are removed, scripts are deleted), specs referencing that enforcement become stale — they claim an enforcement mechanism exists that no longer does. The drift check scans all specs' **Enforcement:** fields and verifies each referenced file/target exists. Any spec whose claimed enforcement is missing is flagged STALE and must be updated or removed within 1 session.
 
 ### AB018 — spec-to-plugin-coverage-audit
-**Category:** Quality Gate  
-**Enforcement:** `make check-spec-plugin-coverage` target  
+**Category:** Quality Gate
+**Enforcement:** `make check-spec-plugin-coverage` target
 **Behavior:** Each enforcement plugin (`enforce-*.ts`) should have at least 5 behavioral specs documenting what it prevents. The coverage audit counts specs-per-plugin and flags plugins with <5 specs as UNDERDOCUMENTED. Conversely, spec groups (AA, AB, P, B, O, etc.) should have corresponding plugin coverage — a spec group with 20+ entries but 0 plugin references is a documentation gap, not enforcement.
 
 ### AB019 — dead-spec-automatic-excision
-**Category:** Quality Gate  
-**Enforcement:** `make prune-dead-specs` target  
+**Category:** Quality Gate
+**Enforcement:** `make prune-dead-specs` target
 **Behavior:** When enforcement code is deleted (a Makefile guard is removed, a plugin is deleted), specs referencing that enforcement become dead — they describe a prevention mechanism that no longer exists. The prune target scans for specs whose entire **Enforcement:** field references files/targets that no longer exist and removes them from BEHAVIORAL_SPECS.md. Running `make prune-dead-specs` before `make deduplicate-specs` ensures the spec count reflects only live enforcement.
 
 ### AB020 — spec-quality-ratio-enforced
-**Category:** Quality Gate  
-**Enforcement:** `make check-spec-quality-ratio` target  
+**Category:** Quality Gate
+**Enforcement:** `make check-spec-quality-ratio` target
 **Behavior:** The ratio of specs-with-real-enforcement to total-specs must be ≥90%. Agent wrote 3000+ specs but ~1929 had no real enforcement code — boilerplate text only. The ratio check fails if <90% of specs pass `audit-spec-entry`. When the ratio is below threshold, the agent is BLOCKED from writing new specs until existing specs are upgraded with real enforcement mechanisms. Spec count without quality is a vanity metric.
 
 ### AB021 — enforcement-hot-module-freshness
-**Category:** Guardrail Integrity  
-**Enforcement:** `make check-hot-module-freshness` target + `scripts/check_hot_module_freshness.py`  
+**Category:** Guardrail Integrity
+**Enforcement:** `make check-hot-module-freshness` target + `scripts/check_hot_module_freshness.py`
 **Behavior:** Agent ran `make hot-reload-plugins` but never verified hot modules matched source. Hot modules older than source plugin are stale and may carry bugs already fixed in source. The freshness check compares mtimes: each `/tmp/gludd-hot-enforce-*.js` must be newer than its source `.opencode/plugin/enforce-*.ts`. Stale modules with Node v26 warnings exit non-zero and must be regenerated via `make hot-reload-plugins`.
 
 ### AB022 — make-target-contract-cross-reference
-**Category:** Quality Gate  
-**Enforcement:** `make check-target-contract` target  
+**Category:** Quality Gate
+**Enforcement:** `make check-target-contract` target
 **Behavior:** Behavioral enforcement tests assert Makefile targets exist but never verify the target's recipe matches the spec's described behavior. A target named `_stash-leak-guard` that prints "PASS" without checking stash depth satisfies the existence test but violates the behavioral spec. The cross-reference script reads each test assertion's target name, finds the Makefile recipe, and matches it against the corresponding BEHAVIORAL_SPECS.md enforcement description. Targets with recipes unrelated to their spec's described behavior are flagged MISMATCH.
 
 ### AB023 — subagent-dispatch-file-dedup
-**Category:** Subagent Discipline  
-**Enforcement:** `make check-subagent-file-dedup` target + `scripts/check_subagent_file_dedup.py`  
+**Category:** Subagent Discipline
+**Enforcement:** `make check-subagent-file-dedup` target + `scripts/check_subagent_file_dedup.py`
 **Behavior:** Two file-editing subagents editing the same file produce merge conflicts and duplicate work (c592b3eb incident). The dedup guard tracks recently-dispatched file targets via `/tmp/gludd-subagent-files.json` (hash of target filename + dispatch timestamp). Prevents dispatching the same file within 90 seconds. File-level collision detection prevents the wasted-subagent-slot failure mode.
 
 ### AB024 — stale-unchecked-tasks-escalation
-**Category:** Task Tracking  
-**Enforcement:** `make check-stale-tasks` target + `scripts/check_stale_tasks.py`  
+**Category:** Task Tracking
+**Enforcement:** `make check-stale-tasks` target + `scripts/check_stale_tasks.py`
 **Behavior:** Unchecked TASKS.md items older than 24 hours represent forgotten or abandoned work. The staleness check scans for `- [ ]` items with `| dispatched:` timestamps older than 86400 seconds, reports their age, and exits non-zero. Agent must complete, cancel, or update stale items. Prevents the "task written, never completed" amnesia pattern.
 
 ### AB025 — git-stash-depth-limit
-**Category:** Commit Discipline  
-**Enforcement:** `_stash-depth-guard` in Makefile  
+**Category:** Commit Discipline
+**Enforcement:** `_stash-depth-guard` in Makefile
 **Behavior:** Stash stack grew to 18+ entries across sessions with abandoned hunks. The depth guard runs before commit targets: if `git stash list | wc -l` > 5, warns via stderr. At >10, BLOCKS with exit 1. Agent must `make git-stash-pop` or explicitly abandon entries. FORCE=1 bypasses.
 
 ### AB026 — disk-usage-pre-commit-guard
-**Category:** Disk Discipline  
-**Enforcement:** `_disk-usage-guard` in Makefile  
+**Category:** Disk Discipline
+**Enforcement:** `_disk-usage-guard` in Makefile
 **Behavior:** Disk >85% full during agent work causes ENOSPC crashes corrupting state files. The disk guard runs before commit/push targets: checks `df` for root volume usage percentage. At >85%, BLOCKS with exit 1. Agent must run `make clean-tmp`. FORCE=1 bypasses.
 
 ### AB027 — worktree-staleness-enforcement
-**Category:** Branch Discipline  
-**Enforcement:** `make check-worktree-staleness` target + `scripts/check_worktree_staleness.py`  
+**Category:** Branch Discipline
+**Enforcement:** `make check-worktree-staleness` target + `scripts/check_worktree_staleness.py`
 **Behavior:** 18+ stale worktrees accumulated across sessions, each consuming ~320 MB and confusing `git worktree list`. The staleness check flags worktrees (excluding main checkout) with mtime >24h. Stale worktrees must be merged or cleaned up. Non-zero exit on violation. Wired into `make gate`.
 
 ### AB028 — plugin-load-order-validation
-**Category:** Guardrail Integrity  
-**Enforcement:** `make check-plugin-load-order` target + `scripts/check_plugin_load_order.py`  
+**Category:** Guardrail Integrity
+**Enforcement:** `make check-plugin-load-order` target + `scripts/check_plugin_load_order.py`
 **Behavior:** New enforcement plugins added at the end of opencode.json without checking dependency order. If plugin B imports from plugin A, A must load first. The validator parses `import` statements in each enforce-*.ts, builds a dependency graph, and verifies the opencode.json registration order satisfies topological sort. Non-zero exit on violations.
 
 ### AB029 — pre-commit-hook-timeout-enforcement
-**Category:** Commit Discipline  
-**Enforcement:** `_pre-commit-timeout-guard` in Makefile  
+**Category:** Commit Discipline
+**Enforcement:** `_pre-commit-timeout-guard` in Makefile
 **Behavior:** Pre-commit hooks (secrets scan, lint, collection check) can hang >30s, blocking commit. The guard wraps pre-commit with a 30s timeout via `timeout` command. Exceeded hooks are killed with SIGTERM and commit is BLOCKED. FORCE=1 bypasses for emergency commits.
 
 ### AB030 — ci-artifact-verify-throttle
-**Category:** CI Discipline  
-**Enforcement:** `make verify-release-completeness-safe` target  
+**Category:** CI Discipline
+**Enforcement:** `make verify-release-completeness-safe` target
 **Behavior:** Repeated calls to `make verify-release-completeness` within a short window consume API quota with no new information. The safe variant throttles to once per 10 minutes via cooldown state file `/tmp/gludd-verify-artifact-cooldown.json`. Within cooldown, returns last cached verdict. FORCE=1 bypasses for release-cut.
 
 ### AB031 — behavioral-spec-implementation-age
-**Category:** Quality Gate  
-**Enforcement:** `make audit-spec-implementation-age` target + `scripts/audit_spec_implementation_age.py`  
+**Category:** Quality Gate
+**Enforcement:** `make audit-spec-implementation-age` target + `scripts/audit_spec_implementation_age.py`
 **Behavior:** Behavioral specs written weeks ago without enforcement implementation are broken promises. The age audit cross-references each spec's enforcement field against existing code. Specs older than 3 sessions (by SESSION.md timestamps) with no matching enforcement code are flagged UNIMPLEMENTED. >5 unimplemented specs exits non-zero.
 
 ### AB032 — ratchet-entry-staleness-policy
-**Category:** Test Integrity  
-**Enforcement:** `make check-ratchet-staleness` target + `scripts/check_ratchet_staleness.py`  
+**Category:** Test Integrity
+**Enforcement:** `make check-ratchet-staleness` target + `scripts/check_ratchet_staleness.py`
 **Behavior:** Ratchet entries sitting unaddressed for months become permanent noise. Each entry in `config/ratchet.yml` carries a `since:` field. Entries >30 days old without fix attempts are STALE. Non-zero exit if any entry exceeds threshold. Agent must fix the failure or document why it remains.
 
 ### AB033 — dead-code-baseline-auto-refresh
-**Category:** Dead Code  
-**Enforcement:** `_dead-code-baseline-refresh` in Makefile  
+**Category:** Dead Code
+**Enforcement:** `_dead-code-baseline-refresh` in Makefile
 **Behavior:** Dead-code baseline drifted stale: reported 1073 symbols when actual count was 0. The auto-refresh guard runs before `make check-dead-code`: if baseline mtime >24h old, regenerates it first. Prevents false-positive dead code reports from stale baselines.
 
 ### AB034 — commit-message-format-enforcement
-**Category:** Commit Discipline  
-**Enforcement:** `_commit-msg-format-guard` in Makefile  
+**Category:** Commit Discipline
+**Enforcement:** `_commit-msg-format-guard` in Makefile
 **Behavior:** Commit messages like "fix" (4 chars) or "fix tests" (vague) lack actionable information. The guard validates: ≥20 chars AND (references a path pattern OR contains an action verb). Messages failing both criteria are BLOCKED. FORCE=1 bypasses. Prevents uninformative commit history.
 
 ### AB035 — merge-structural-conflict-pre-scan
-**Category:** Merge Safety  
-**Enforcement:** `_merge-structural-scan` in Makefile  
+**Category:** Merge Safety
+**Enforcement:** `_merge-structural-scan` in Makefile
 **Behavior:** `git merge -X theirs` handles content conflicts but NOT structural conflicts (rename/delete, add/add, type-change). The pre-scan uses `git merge-tree` to detect structural conflicts before merge commits. When found, warns: "Structural conflicts detected — -X theirs will NOT resolve these." Agent must resolve manually.
 
 ### AB036 — subagent-step-limit-cleanup-automation
-**Category:** Subagent Discipline  
-**Enforcement:** `make cleanup-step-limited-subagents` target + `scripts/cleanup_step_limited_subagents.py`  
+**Category:** Subagent Discipline
+**Enforcement:** `make cleanup-step-limited-subagents` target + `scripts/cleanup_step_limited_subagents.py`
 **Behavior:** 8 subagents hit step limits in one session, leaving uncommitted changes. The cleanup script scans worktree directories for dirty state from step-limited subagents and either commits partial work or reverts. Wired into `make agent-merge` as prerequisite.
 
 ### AB037 — test-collect-error-trend-enforcement
-**Category:** Test Integrity  
-**Enforcement:** `make check-collect-error-trend` target + `scripts/check_collect_error_trend.py`  
+**Category:** Test Integrity
+**Enforcement:** `make check-collect-error-trend` target + `scripts/check_collect_error_trend.py`
 **Behavior:** Collection error count silently increased from 0 to 3 in one session. The trend tracker records each `make collect-check` result in `/tmp/gludd-collect-trend.json`. Three consecutive runs with increasing error count exits non-zero, blocking commit until errors are resolved to baseline.
 
 ### AB038 — plugin-hook-export-test-coverage
-**Category:** Guardrail Integrity  
-**Enforcement:** `make audit-plugin-hook-exports` target + `scripts/audit_plugin_hook_exports.py`  
+**Category:** Guardrail Integrity
+**Enforcement:** `make audit-plugin-hook-exports` target + `scripts/audit_plugin_hook_exports.py`
 **Behavior:** Enforcement plugins export hooks (`toolExecuteBefore`, `textComplete`) that may have zero runtime tests. The audit scans each enforce-*.ts for exported hooks, then cross-references test files for corresponding test functions. Plugins with exported hooks and zero tests are flagged. Non-zero exit if any plugin has <1 test per exported hook.
 
 ### AB039 — session-incomplete-task-recovery
-**Category:** Task Tracking  
-**Enforcement:** `make recover-incomplete-tasks` target + `scripts/recover_incomplete_tasks.py`  
+**Category:** Task Tracking
+**Enforcement:** `make recover-incomplete-tasks` target + `scripts/recover_incomplete_tasks.py`
 **Behavior:** Tasks marked in_progress or pending in prior sessions represent abandoned work. The recovery script reads the prior SESSION.md (via git log), compares unchecked TASKS.md items against current TASKS.md. Items absent (dropped) or still unchecked (abandoned) from prior session are reported. >3 unrecovered items exits non-zero.
 
 ### AB040 — behavioral-spec-effectiveness-metric
-**Category:** Quality Gate  
-**Enforcement:** `make audit-spec-effectiveness` target + `scripts/audit_spec_effectiveness.py`  
+**Category:** Quality Gate
+**Enforcement:** `make audit-spec-effectiveness` target + `scripts/audit_spec_effectiveness.py`
 **Behavior:** A behavioral spec is INEFFECTIVE if the described failure still recurs after spec creation. The effectiveness audit reads each spec, finds its enforcement mechanism, checks BUGS.md incidents and ratchet entries for post-spec recurrences, and marks specs with recurrences INEFFECTIVE. >10% ineffective specs exits non-zero.
 
 ### AA021 — ignoring-gate-fresh-check-block

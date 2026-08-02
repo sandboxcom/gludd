@@ -68,4 +68,3 @@ worker coordination mechanism.
 - `tests/unit/test_port_8000_occupied.py` runs the complete worker E2E file in a
   nested pytest process while port 8000 is occupied, reproducing the original
   failing wrapper boundary.
-

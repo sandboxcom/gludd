@@ -1,8 +1,8 @@
 # Feature: Git Mastery and Release Captain Expert
 
-**Spec ID:** GRC-001  
-**Status:** DRAFT — implementation-ready; cited research pass pending  
-**Target:** development after `v0.1.0-beta.3`  
+**Spec ID:** GRC-001
+**Status:** DRAFT — implementation-ready; cited research pass pending
+**Target:** development after `v0.1.0-beta.3`
 **Collection:** `general_ludd.git_release`
 
 ## 1. Purpose

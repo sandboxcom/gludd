@@ -215,4 +215,3 @@ identity binding, exact proof matching, collection success, the 20-case floor,
 100% pass requirement, all high-impact exclusions, unknown-task rejection,
 task deduplication, exact completion checks, bounded retries, idempotent replay,
 conflicting completion rejection, digest validation, and public package exports.
-

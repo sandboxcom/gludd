@@ -72,4 +72,3 @@ def test_lifecycle_first_created_in_worker_then_installs_signals_on_main(
         signal.SIGINT,
     ]
     atexit.unregister(manager._guaranteed_cleanup)
-
