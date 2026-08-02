@@ -14,14 +14,17 @@ collections path is resolved for the active project.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 from typing import Any
 
 from general_ludd.ansible.runner import AnsibleRunnerAdapter
-from general_ludd.security.state import project_state
+from general_ludd.security.sandboxes.state import _reject_symlink_components
+from general_ludd.security.state import SecureStateError, project_state
 
 AUDIT_PLAYBOOK = "audit_plugins.yml"
+_LOGICAL_PROJECT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,95}\Z")
 
 
 def _resolve_playbook_path(name: str) -> Path:
@@ -46,19 +49,72 @@ def _invoke_audit_playbook(extra_vars: dict[str, Any]) -> dict[str, Any]:
     return adapter.run_playbook(AUDIT_PLAYBOOK, extravars=extra_vars)
 
 
+def _looks_like_project_path(value: str) -> bool:
+    """Return whether *value* explicitly selects filesystem path semantics."""
+    return (
+        Path(value).is_absolute()
+        or value.startswith((".", "~"))
+        or "/" in value
+        or "\\" in value
+    )
+
+
+def _resolve_project_argument(project: str | None) -> tuple[str | None, Path]:
+    """Resolve a project name/path without broadening the filesystem scope.
+
+    A validated single-component name identifies the current project while
+    remaining available to the audit playbook as ``project_name``. Filesystem
+    selection must be explicit (for example ``./child`` or an absolute path),
+    and it fails closed on traversal, symlinks, missing paths, and non-directories.
+    """
+    cwd = Path.cwd().resolve(strict=True)
+    if project is None:
+        return None, cwd
+    if _LOGICAL_PROJECT_RE.fullmatch(project) and project not in {".", ".."}:
+        return project, cwd
+    if not _looks_like_project_path(project):
+        raise SecureStateError(
+            "logical project name must start with an alphanumeric character "
+            "and contain only letters, digits, '.', '_', or '-'",
+        )
+
+    try:
+        candidate = Path(project).expanduser()
+    except (OSError, RuntimeError) as exc:
+        raise SecureStateError(f"project path is unavailable: {project}") from exc
+    path_parts = tuple(part for part in re.split(r"[\\/]", project) if part)
+    if ".." in candidate.parts or ".." in path_parts:
+        raise SecureStateError("project path must not contain '..'")
+    if not candidate.is_absolute():
+        candidate = cwd / candidate
+    _reject_symlink_components(candidate)
+    try:
+        resolved = candidate.resolve(strict=True)
+    except (FileNotFoundError, OSError) as exc:
+        raise SecureStateError(f"project path is unavailable: {candidate}") from exc
+    if resolved != candidate:
+        raise SecureStateError(
+            f"project path resolution changed its filesystem scope: {candidate}",
+        )
+    if not resolved.is_dir():
+        raise SecureStateError(f"project path is not a directory: {candidate}")
+    return project, resolved
+
+
 def _cmd_audit_plugins(args: argparse.Namespace) -> None:
     project = getattr(args, "project", None)
     limit = getattr(args, "limit", None)
     daemon_url = getattr(args, "daemon_url", "http://localhost:8000")
     enforce_disengage = bool(getattr(args, "enforce_disengage", False))
 
-    project_root = project if project else str(Path.cwd())
+    project_name, resolved_project_root = _resolve_project_argument(project)
+    project_root = str(resolved_project_root)
     artifact_dir = str(
         project_state(project_root=project_root).directory("plugin-audit")
     )
 
     extra_vars: dict[str, Any] = {
-        "project_name": project,
+        "project_name": project_name,
         "project_root": project_root,
         "daemon_url": daemon_url,
         "artifact_dir": artifact_dir,
@@ -94,7 +150,10 @@ def add_audit_plugins_subparser(sub: argparse._SubParsersAction[argparse.Argumen
     p.add_argument(
         "--project",
         default=None,
-        help="Project name or path (defaults to current working directory).",
+        help=(
+            "Logical project name or explicit path (relative paths must include "
+            "./; defaults to the current working directory)."
+        ),
     )
     p.add_argument(
         "--limit",

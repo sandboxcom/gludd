@@ -6,6 +6,7 @@ Covers: status, project list, human-todo list, audit-plugins, help, error handli
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -263,9 +264,26 @@ class TestAuditPluginsWorkflow:
                 main()
         extra = mock_invoke.call_args[0][0]
         assert extra["project_name"] == "my-proj"
+        assert extra["project_root"] == str(Path.cwd().resolve(strict=True))
         assert extra["audit_limit"] == "agent_floor_check"
         assert extra["audit_plugins_run_enforce_disengage"] is True
         assert extra["daemon_url"] == "http://localhost:9999"
+
+    def test_audit_plugins_with_explicit_project_path(self, tmp_path, monkeypatch):
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        monkeypatch.setenv("GLUDD_STATE_DIR", str(tmp_path / "state"))
+
+        with patch(
+            "general_ludd.cli_audit_plugins._invoke_audit_playbook",
+        ) as mock_invoke:
+            mock_invoke.return_value = {"rc": 0, "status": "successful", "events": []}
+            exit_code = _run_cli(["audit-plugins", "--project", str(project_dir)])
+
+        assert exit_code == 0
+        extra = mock_invoke.call_args[0][0]
+        assert extra["project_name"] == str(project_dir)
+        assert extra["project_root"] == str(project_dir.resolve(strict=True))
 
     def test_audit_plugins_success_output(self, capsys):
         with patch(
