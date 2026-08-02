@@ -47,7 +47,7 @@ class VacuumScheduler:
 
     def try_acquire_leader(self, now_epoch: float | None = None) -> bool:
         now = now_epoch if now_epoch is not None else time.time()
-        if self._leader_lock_epoch == 0.0 or (now - self._leader_lock_epoch) > self._leader_lock_timeout_sec:
+        if self._leader_lock_epoch == 0.0 or (now - self._leader_lock_epoch) >= self._leader_lock_timeout_sec:
             self._leader_lock_epoch = now
             return True
         return False

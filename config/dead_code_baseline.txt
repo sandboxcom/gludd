@@ -278,9 +278,6 @@ src/general_ludd/budget/envelope.py:PerTaskEnvelope
 src/general_ludd/budget/envelope.py:PerToolEnvelope
 src/general_ludd/business/entity_graph.py:build_graph
 src/general_ludd/business/entity_graph.py:find_related
-src/general_ludd/chat/contracts.py:ChatConfig
-src/general_ludd/chat/contracts.py:ChatMessage
-src/general_ludd/chat/history.py:ChatHistory
 src/general_ludd/chemistry/analytical.py:CalibrationCurve
 src/general_ludd/chemistry/analytical.py:MethodValidation
 src/general_ludd/chemistry/analytical.py:detect_outliers_grubbs
@@ -848,12 +845,9 @@ src/general_ludd/history/git_indexer.py:FileChange
 src/general_ludd/history/git_indexer.py:SearchResult
 src/general_ludd/infra/azure_cost_export_ingestion.py:ActualCostExport
 src/general_ludd/infra/azure_cost_export_ingestion.py:ActualCostExportSummary
-src/general_ludd/infra/azure_cost_export_ingestion.py:AzureActualCostExportIngester
 src/general_ludd/infra/azure_cost_export_ingestion.py:AzureCostExportColumnMap
 src/general_ludd/infra/azure_cost_export_ingestion.py:AzureCostExportCompleteness
 src/general_ludd/infra/azure_cost_export_ingestion.py:AzureCostExportCompletenessError
-src/general_ludd/infra/azure_cost_export_ingestion.py:AzureCostExportError
-src/general_ludd/infra/azure_cost_export_ingestion.py:AzureCostExportParseError
 src/general_ludd/infra/azure_cost_export_ingestion.py:AzureCostExportSchema
 src/general_ludd/infra/azure_cost_export_ingestion.py:parse_actual_cost_csv
 src/general_ludd/infra/azure_cost_export_ingestion.py:validate_export_completeness
@@ -971,9 +965,6 @@ src/general_ludd/language/contracts.py:TranslationRequest
 src/general_ludd/language/contracts.py:TransliterationBatchRequest
 src/general_ludd/language/contracts.py:TransliterationBatchResult
 src/general_ludd/language/contracts.py:TransliterationRequest
-src/general_ludd/language/core.py:LanguageDetector
-src/general_ludd/language/core.py:Translator
-src/general_ludd/language/core.py:Transliterator
 src/general_ludd/language/corpus.py:CorpusAnalyzer
 src/general_ludd/language/cross_patterns.py:detect_cross_language_imports
 src/general_ludd/language/cross_patterns.py:detect_ffi_patterns
@@ -1419,7 +1410,6 @@ src/general_ludd/routers/render.py:render_error
 src/general_ludd/routers/render.py:render_schema_error
 src/general_ludd/routers/render.py:render_schema_page
 src/general_ludd/routers/research.py:ValidateRequest
-src/general_ludd/routers/research.py:ValidateResponse
 src/general_ludd/routers/review.py:ApproveRequest
 src/general_ludd/routers/review.py:PendingGate
 src/general_ludd/routers/review.py:PendingResponse
@@ -1461,15 +1451,10 @@ src/general_ludd/runtime/release.py:ReleaseValidationResult
 src/general_ludd/runtime/release_orchestrator.py:build_and_validate_release
 src/general_ludd/runtime/validator.py:MountValidationResult
 src/general_ludd/runtime/validator.py:PathArgError
-src/general_ludd/sandbox/backends/container_backend.py:ContainerBackend
-src/general_ludd/sandbox/backends/process_backend.py:ProcessBackend
 src/general_ludd/sandbox/cleanup.py:CleanupManager
 src/general_ludd/sandbox/cleanup.py:CleanupRecord
-src/general_ludd/sandbox/contracts.py:IsolationLevel
 src/general_ludd/sandbox/contracts.py:is_valid_isolation_level
 src/general_ludd/sandbox/contracts.py:isolation_exceeds
-src/general_ludd/sandbox/contracts.py:isolation_rank
-src/general_ludd/sandbox/contracts.py:validate_config
 src/general_ludd/sandbox/docker_executor.py:DockerContainerConfig
 src/general_ludd/sandbox/docker_executor.py:DockerExecutor
 src/general_ludd/sandbox/docker_executor.py:DockerResult

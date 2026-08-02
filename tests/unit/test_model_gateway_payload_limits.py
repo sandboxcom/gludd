@@ -15,6 +15,7 @@ from general_ludd.models.gateway import (
     ModelProfile,
     PayloadLimitError,
     SSRFRejectionError,
+    _LimitedChatModel,
 )
 
 
@@ -83,9 +84,7 @@ def _gateway(
 
 
 def _compact_message_bytes(messages: list[dict[str, str]]) -> int:
-    return len(
-        json.dumps(messages, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
-    )
+    return len(json.dumps(messages, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8"))
 
 
 def _assert_no_post_response_side_effects(
@@ -374,9 +373,7 @@ def test_request_byte_limit_uses_exact_compact_utf8_and_never_calls_provider() -
     messages = [{"role": "user", "content": "café 🧪"}]
     exact_bytes = _compact_message_bytes(messages)
 
-    accepting, _, accepting_model = _gateway(
-        _profile(max_request_bytes=exact_bytes, max_input_tokens=exact_bytes)
-    )
+    accepting, _, accepting_model = _gateway(_profile(max_request_bytes=exact_bytes, max_input_tokens=exact_bytes))
     assert accepting.call_model("limited", messages).content == "ok"
     accepting_model.invoke.assert_called_once()
 
@@ -563,9 +560,7 @@ def test_response_byte_limit_counts_utf8_content_exactly() -> None:
 
 
 def test_response_byte_limit_includes_normalized_tool_arguments() -> None:
-    tool_calls: list[dict[str, object]] = [
-        {"id": "1", "name": "large_args", "args": {"value": "🧪" * 20}}
-    ]
+    tool_calls: list[dict[str, object]] = [{"id": "1", "name": "large_args", "args": {"value": "🧪" * 20}}]
     cache = MagicMock()
     cache.get.return_value = None
     budget = MagicMock()
@@ -706,7 +701,8 @@ def test_get_chat_model_uses_aliases_and_binds_tools_without_invocation() -> Non
 
     returned = gateway.get_chat_model("limited", tools=tools)
 
-    assert returned is bound_model
+    assert isinstance(returned, _LimitedChatModel)
+    assert returned._inner is bound_model
     provider_factory.assert_called_once_with(
         model="test-model",
         api_key="secret-value",
@@ -771,7 +767,8 @@ def test_get_chat_model_omits_unresolved_aliases_and_warns_for_unbound_tools(
         tools=[{"type": "function", "function": {"name": "safe"}}],
     )
 
-    assert returned is raw_model
+    assert isinstance(returned, _LimitedChatModel)
+    assert returned._inner is raw_model
     provider_factory.assert_called_once_with(model="test-model")
     assert "does not support bind_tools" in caplog.text
 
@@ -787,7 +784,8 @@ def test_get_chat_model_constructs_minimal_model_without_aliases_or_tools() -> N
 
     returned = gateway.get_chat_model("limited")
 
-    assert returned is raw_model
+    assert isinstance(returned, _LimitedChatModel)
+    assert returned._inner is raw_model
     provider_factory.assert_called_once_with(model="test-model")
 
 
@@ -847,9 +845,7 @@ def test_profile_change_survives_redacted_worker_broadcast_failure(
     event_bus = MagicMock()
     hooks = MagicMock()
     broadcaster = MagicMock()
-    broadcaster.broadcast_model_update.side_effect = RuntimeError(
-        "https://private.example.invalid/token"
-    )
+    broadcaster.broadcast_model_update.side_effect = RuntimeError("https://private.example.invalid/token")
     gateway = ModelGateway(
         event_bus=event_bus,
         hook_system=hooks,

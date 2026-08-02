@@ -97,7 +97,8 @@ from general_ludd.remediation.blocker_detector import RemediationConfig
 from general_ludd.replay.recorder import RunRecorder
 from general_ludd.retrieval.searcher import SemanticSearcher
 from general_ludd.review.estimation_tracker import EstimationTracker
-from general_ludd.sandbox.enforcer import SandboxConfig
+from general_ludd.sandbox.capability_router import SandboxCapabilityRouter
+from general_ludd.sandbox.contracts import IsolationLevel, SandboxConfig
 from general_ludd.sandbox_exec.executor import SandboxExecutor
 from general_ludd.scoring.pareto import ParetoRouter
 from general_ludd.scoring.router import AdaptiveRouter
@@ -1912,6 +1913,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         sandbox_executor = SandboxExecutor(timeout=30)
         sandbox_config = SandboxConfig(
             backend=vm_sandbox_cfg.image_type if vm_sandbox_cfg.enabled else "auto",
+            isolation=IsolationLevel.NONE,
             image_path=vm_sandbox_cfg.default_image,
             vsock_port=vm_sandbox_cfg.vsock_port,
             memory_mb=vm_sandbox_cfg.mem_mib,
@@ -1924,6 +1926,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         sandbox_profile = resolve_sandbox_profile(vm_sandbox_cfg.profile)
         sandbox_attestation_store = DurableSandboxAttestationStore(session_factory)
         app.state._sandbox_config = sandbox_config
+        app.state._sandbox_router = SandboxCapabilityRouter(sandbox_config)
         app.state._vm_sandbox_config = vm_sandbox_cfg
         app.state._sandbox_profile = sandbox_profile
 
@@ -3439,6 +3442,13 @@ def create_daemon_app(
         worktree,
     )
     from general_ludd.routers import azure_cost as azure_cost_router
+    from general_ludd.routers.azure_cost import (
+        CostHealthResponse,
+        CostIngestRequest,
+        CostIngestResponse,
+    )
+
+    _ = (CostIngestRequest, CostIngestResponse, CostHealthResponse)
     from general_ludd.routers import (
         dispatch as dispatch_router,
     )
@@ -3585,6 +3595,13 @@ def create_daemon_app(
 
     _approval_router.register(app, daemon_state)
     from general_ludd.routers import sts as sts_router
+    from general_ludd.routers.sts import (
+        MintRequest,
+        MintResponse,
+        RevokeRequest,
+    )
+
+    _ = (MintRequest, MintResponse, RevokeRequest)
 
     sts_router.register(app, daemon_state)
     from general_ludd.routers import compaction_aggressiveness as _compaction_aggr_router
