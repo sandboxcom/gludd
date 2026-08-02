@@ -27,7 +27,6 @@ or:
 from __future__ import annotations
 
 import ast
-import asyncio
 import importlib.util
 import os
 import re
@@ -1123,7 +1122,7 @@ class TestDaemonGameBuilding:
             prompt_text=SNAKE_PROMPT,
             model_profile="deepseek_coder",
         )
-        result = asyncio.run(engine.execute_async(job))
+        result = await engine.execute_async(job)
         print(f"  exit_code={result.exit_code}, artifacts={result.artifacts}")
 
         py_files = sorted(ws.glob("*.py"))
