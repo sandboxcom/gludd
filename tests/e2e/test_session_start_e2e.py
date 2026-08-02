@@ -343,6 +343,7 @@ def test_reads_done_but_no_dispatches_still_blocks(tmp_path):
         env_override={
             "GLUDD_SESSION_STATE": state_path,
             "GLUDD_SESSION_START_ENFORCE": "1",
+            "GLUDD_SESSION_START_MIN_DISPATCHES": "1",
         },
         cwd=str(tmp_path),
     )
