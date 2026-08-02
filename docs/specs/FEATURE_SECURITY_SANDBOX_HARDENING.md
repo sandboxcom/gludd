@@ -459,7 +459,57 @@ test expectation is not remediation.
 | D-26 | P2 | Schedule bounded database maintenance using incremental vacuum where supported, a single leader, free-page/size thresholds, IO/time budgets and backup coordination. | Concurrent read/write availability meets the declared SLO during maintenance; file growth is reclaimed; interruption is recoverable and never runs N times under N workers. |
 | D-30 | P1 | Enforce model request bytes/tokens, response bytes/tokens/chunks, stream duration, idle timeout, decompression ratio, tool-call count and cumulative fallback budget at the gateway. | Oversized buffered and streamed responses cancel upstream promptly, retain bounded diagnostics, never enter cache/DB/event payloads, and return a typed size error. |
 
-### 8.1 D-13 Phase 1: bounded connection defaults
+### 8.1 D-09 Phase 1: bounded `JobSpec` ingress
+
+`JobSpec` now rejects unknown fields and performs a resource walk before
+Pydantic field coercion. The walk accepts JSON-compatible scalars and plain
+built-in containers (with tuples retained for safe internal compatibility),
+rejects cycles and non-string mapping keys, and bounds aggregate
+collection items, nesting depth, and compact UTF-8 JSON bytes. `job_id` is a
+filesystem-safe letter/digit/hyphen/underscore identifier, `queue` is an
+identifier-like slug, and `playbook` is a relative POSIX path composed only of
+safe segments; absolute, parent, backslash and ambiguous-whitespace forms fail
+closed. Existing extensionless playbook names and safe nested playbook paths
+remain valid. Byte accounting is incremental and rejects an over-limit scalar
+before serializing the enclosing structure, so validation does not materialize
+a second whole-payload copy.
+
+The effective limits are pinned once when a worker generation imports the
+schema. Invalid configuration aborts that generation; values cannot exceed the
+compiled hard ceilings:
+
+| Environment variable | Default | Accepted range |
+|---|---:|---:|
+| `GLUDD_JOB_INGRESS_MAX_DEPTH` | 16 | 2..64 |
+| `GLUDD_JOB_INGRESS_MAX_COLLECTION_ITEMS` | 10000 | 16..100000 |
+| `GLUDD_JOB_INGRESS_MAX_SERIALIZED_BYTES` | 1048576 | 256..8388608 |
+| `GLUDD_JOB_INGRESS_MAX_IDENTIFIER_CHARS` | 128 | 16..256 |
+| `GLUDD_JOB_INGRESS_MAX_PLAYBOOK_CHARS` | 255 | 16..1024 |
+| `GLUDD_JOB_INGRESS_MAX_QUEUE_CHARS` | 128 | 8..256 |
+
+ZDD changes use prepare/verify/switch/drain: start replacement Gunicorn workers
+with the complete new environment, submit boundary canaries to every worker,
+route new jobs only after all replacements are ready, and drain workers whose
+in-flight jobs remain pinned to the prior limits. Rollback starts a fresh
+generation with the previous immutable environment. Operators SHALL NOT mutate
+these variables in a live worker or represent a mixed worker generation as one
+policy version.
+
+This application-level bound deliberately does not claim to cap bytes before
+the ASGI server parses a request. The long-lived Starlette user discussion
+[“Limit max request size” #1516](https://github.com/encode/starlette/discussions/1516)
+records operator reports from 2020 through a 2023 follow-up that reverse-proxy
+body limits alone still leave timeout and deployment gaps. Gludd therefore
+requires both the separate transport/request-size control and this decoded
+schema boundary; neither substitutes for the other.
+
+D-09 remains **OPEN**. This phase does not yet provide a versioned schema and
+policy hash, authenticated tenant/project ownership checks, cross-tenant ID
+rejection, per-work-type time/resource/cost ceilings, a bounded denial audit, or
+side-effect-free fuzz acceptance across every ingress route. Those controls and
+the original table acceptance criteria must land before D-09 can be promoted.
+
+### 8.2 D-13 Phase 1: bounded connection defaults
 
 Every SQLite connection now installs validated, per-database
 `journal_size_limit_bytes`, `wal_autocheckpoint_pages`, and `busy_timeout_ms`
