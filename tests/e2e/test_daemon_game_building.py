@@ -878,7 +878,7 @@ class TestDaemonGameBuilding:
             model_profile="deepseek_coder",
         )
 
-        result = asyncio.run(engine.execute_async(job))
+        result = await engine.execute_async(job)
         print(f"  TaskReturn: return_id={result.return_id}")
         print(f"  exit_code={result.exit_code}")
         print(f"  summary={result.result_summary[:300]}")
