@@ -215,3 +215,123 @@ class TestRegistryRoundTrip:
         data = resp.json()
         assert data["matches"][0]["namespace"] == "general_ludd"
         assert data["matches"][0]["score"] == 1.0
+
+
+# ── Travel collection dispatch routing ────────────────────────────────────
+
+
+def _travel_registry() -> CapabilityRegistry:
+    reg = CapabilityRegistry()
+    reg.add_collection(
+        CollectionMeta(
+            name="travel",
+            namespace="general_ludd",
+            version="0.1.0",
+            description=(
+                "Travel planning collection — flight search, hotel search, and trip itinerary planning modules."
+            ),
+            tags=frozenset({"travel", "flights", "hotels", "itinerary", "planning"}),
+            raw_tags=["travel", "flights", "hotels", "itinerary", "planning"],
+        )
+    )
+    return reg
+
+
+class TestTravelDispatchRouting:
+    """Verify the travel collection's galaxy.yml tags route correctly through
+    the generic POST /api/dispatch/capability endpoint."""
+
+    def test_route_by_travel_tag(self):
+        reg = _travel_registry()
+        client = _make_client(reg)
+        resp = client.post("/api/dispatch/capability", json={"capability": "travel"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert data["capability"] == "travel"
+        assert len(data["matches"]) == 1
+        assert data["matches"][0]["collection"] == "travel"
+        assert data["matches"][0]["namespace"] == "general_ludd"
+        assert data["matches"][0]["score"] == 1.0
+
+    def test_route_by_flights_tag(self):
+        client = _make_client(_travel_registry())
+        resp = client.post("/api/dispatch/capability", json={"capability": "flights"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert data["matches"][0]["collection"] == "travel"
+
+    def test_route_by_hotels_tag(self):
+        client = _make_client(_travel_registry())
+        resp = client.post("/api/dispatch/capability", json={"capability": "hotels"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert data["matches"][0]["collection"] == "travel"
+
+    def test_route_by_itinerary_tag(self):
+        client = _make_client(_travel_registry())
+        resp = client.post("/api/dispatch/capability", json={"capability": "itinerary"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert data["matches"][0]["collection"] == "travel"
+
+    def test_route_by_planning_tag(self):
+        client = _make_client(_travel_registry())
+        resp = client.post("/api/dispatch/capability", json={"capability": "planning"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert data["matches"][0]["collection"] == "travel"
+
+    def test_travel_tag_routes_via_collection_lookup(self):
+        """Direct collection-lookup also works for travel."""
+        client = _make_client(_travel_registry())
+        resp = client.post("/api/dispatch/capability", json={"collection": "travel"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert len(data["matches"]) == 1
+        assert data["matches"][0]["collection"] == "travel"
+
+    def test_list_capabilities_includes_travel_tags(self):
+        client = _make_client(_travel_registry())
+        resp = client.get("/api/dispatch/capabilities")
+        data = resp.json()
+        for tag in ("travel", "flights", "hotels", "itinerary", "planning"):
+            assert tag in data["capabilities"], f"missing {tag}"
+
+    def test_registry_endpoint_exposes_travel(self):
+        client = _make_client(_travel_registry())
+        resp = client.get("/api/dispatch/capability/registry")
+        data = resp.json()
+        assert "travel" in data["collections"]
+        assert data["tag_index"]["travel"] == ["travel"]
+        assert data["tag_index"]["flights"] == ["travel"]
+
+    def test_route_travel_with_payload(self):
+        client = _make_client(_travel_registry())
+        payload = {
+            "origin": "SFO",
+            "destination": "NRT",
+            "departure_date": "2026-09-01",
+            "return_date": "2026-09-15",
+        }
+        resp = client.post(
+            "/api/dispatch/capability",
+            json={"capability": "travel", "payload": payload},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert data["payload"] == payload
+
+    def test_unknown_travel_related_tag_returns_not_found(self):
+        """A tag not in the travel collection returns ok=False."""
+        client = _make_client(_travel_registry())
+        resp = client.post("/api/dispatch/capability", json={"capability": "vacation"})
+        data = resp.json()
+        assert data["ok"] is False
+        assert data["error"] is not None

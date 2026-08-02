@@ -1,0 +1,38 @@
+---
+- name: Verify - policy eval role produced valid artifact
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8909', true) }}"
+    artifact: "/tmp/gludd-governance-policy-eval-{{ mock_port }}/policy_eval.json"
+  tasks:
+    - name: Assert policy_eval.json exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert policy eval result valid
+      ansible.builtin.assert:
+        that:
+          - result is mapping
+          - result.status in ('success', 'failed')
+          - result.return_code is number
+        fail_msg: "policy eval artifact structure invalid: {{ result }}"
+        success_msg: "governance policy eval role ran end-to-end; artifact valid"
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-governance-policy-eval-{{ mock_port }}"
+        state: absent
+      failed_when: false

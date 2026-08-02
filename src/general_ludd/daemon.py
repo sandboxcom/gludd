@@ -3438,6 +3438,7 @@ def create_daemon_app(
         webmcp,
         worktree,
     )
+    from general_ludd.routers import azure_cost as azure_cost_router
     from general_ludd.routers import (
         dispatch as dispatch_router,
     )
@@ -3478,6 +3479,7 @@ def create_daemon_app(
     replays.register(app, daemon_state)
     worktree.register(app, daemon_state)
     ansible.register(app, daemon_state)
+    azure_cost_router.register(app, daemon_state)
     slurm.register(app, daemon_state)
     self_improve.register(app, daemon_state)
     self_update.register(app, daemon_state)
@@ -3582,6 +3584,9 @@ def create_daemon_app(
     from general_ludd.routers import approval as _approval_router
 
     _approval_router.register(app, daemon_state)
+    from general_ludd.routers import sts as sts_router
+
+    sts_router.register(app, daemon_state)
     from general_ludd.routers import compaction_aggressiveness as _compaction_aggr_router
 
     _compaction_aggr_router.register(app, daemon_state)

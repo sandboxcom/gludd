@@ -746,6 +746,12 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         metavar="TOKENS",
         help="Maximum context window size in tokens (enables sliding-window trimming)",
     )
+    chat_parser.add_argument(
+        "--daemon-url", default=None, metavar="URL", help="Delegate session list/search to daemon at URL"
+    )
+    chat_parser.add_argument(
+        "--search", default=None, metavar="QUERY", help="Search chat sessions by content (requires --daemon-url)"
+    )
     chat_parser.set_defaults(func=_cmd_chat)
 
     help_p = sub.add_parser("help", help="Show full manual")
@@ -1108,6 +1114,12 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
 
     add_core_changes_subparser(sub)
     core_changes_parser = sub.choices["core-changes"]
+
+    # `gludd language` — language detection, translation, and transliteration.
+    from general_ludd.cli_language import add_language_subparser
+
+    add_language_subparser(sub)
+    sub.choices["language"]
 
     make_parser = sub.add_parser("make", help="Run a make target via MakeRunner")
     make_parser.add_argument("target", help="Make target to run (e.g. test, lint, gate)")
@@ -2612,12 +2624,62 @@ def _cmd_chat(args: argparse.Namespace) -> None:
 
     from general_ludd.chat import ChatSession
 
+    daemon_url = getattr(args, "daemon_url", None)
+
+    if getattr(args, "search", None) is not None:
+        if not daemon_url:
+            print("Error: --search requires --daemon-url", file=sys.stderr)
+            sys.exit(1)
+        try:
+            resp = httpx.post(
+                f"{daemon_url}/api/chat/sessions/search",
+                json={"query": args.search, "limit": 20},
+                timeout=10.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            results = data.get("results", [])
+            if not results:
+                print(f"No sessions matching {args.search!r}.")
+                return
+            print(f"Search results for {args.search!r} ({len(results)}):")
+            for s in results:
+                ts = str(s.get("timestamp", "?"))
+                model = str(s.get("model", "?"))
+                count = s.get("message_count", 0)
+                preview = str(s.get("preview", ""))[:72]
+                file_path = str(s.get("file", "?"))
+                match = str(s.get("match_source", "preview"))
+                print(f"  {ts}  model={model}  messages={count}  match={match}")
+                print(f"    file: {file_path}")
+                if preview:
+                    print(f"    preview: {preview}")
+                print()
+        except Exception as exc:
+            print(f"Daemon error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        return
+
     if getattr(args, "list_sessions", False):
-        sessions = ChatSession.list_sessions()
+        if daemon_url:
+            try:
+                resp = httpx.get(
+                    f"{daemon_url}/api/chat/sessions",
+                    timeout=10.0,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                sessions = data.get("sessions", [])
+            except Exception as exc:
+                print(f"Daemon error: {exc}", file=sys.stderr)
+                sys.exit(1)
+        else:
+            sessions = ChatSession.list_sessions()
         if not sessions:
             print("No saved chat sessions.")
             return
-        print(f"Saved sessions ({len(sessions)}):")
+        source = " (daemon)" if daemon_url else ""
+        print(f"Saved sessions{source} ({len(sessions)}):")
         for s in sessions:
             ts = s.get("timestamp", "?")
             model = s.get("model", "?")
@@ -2630,6 +2692,11 @@ def _cmd_chat(args: argparse.Namespace) -> None:
                 preview_str = preview[:72] + ("..." if len(preview) > 72 else "")
                 print(f"    preview: {preview_str}")
             print()
+        return
+
+    if daemon_url and not getattr(args, "eval", None):
+        print("Error: --daemon-url requires --list-sessions, --search, or --eval", file=sys.stderr)
+        sys.exit(1)
         return
 
     history_file = getattr(args, "history", None)

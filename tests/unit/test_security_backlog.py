@@ -22,7 +22,7 @@ from general_ludd.security.security_backlog import (
     run_backlog_checks,
 )
 
-_EXPLICIT_OPEN_IDS = frozenset({"D-15", "D-17", "D-26", "D-30"})
+_EXPLICIT_OPEN_IDS: frozenset[str] = frozenset()
 _PROBE_IDS = frozenset(
     {
         "D-07",
@@ -33,15 +33,22 @@ _PROBE_IDS = frozenset(
         "D-12",
         "D-13",
         "D-14",
+        "D-15",
         "D-16",
+        "D-17",
         "D-18",
         "D-19",
+        "D-20",
         "D-21",
+        "D-22",
+        "D-23",
         "D-24",
         "D-25",
+        "D-26",
         "D-27",
         "D-28",
         "D-29",
+        "D-30",
     }
 )
 

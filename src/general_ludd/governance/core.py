@@ -1,4 +1,4 @@
-"""Governance core — policy engine and compliance checker."""
+"""Governance core — policy engine, compliance checker, and capability router."""
 
 from __future__ import annotations
 
@@ -11,6 +11,51 @@ from general_ludd.governance.contracts import (
     Policy,
     Rule,
 )
+
+
+class CapabilityRouter:
+    """Routes policy rule conditions to subject capability evaluations.
+
+    Maintains a set of capabilities for a given subject and interprets
+    rule condition strings against that set. Supported condition formats:
+
+    - ``has:<cap>`` — subject must possess the capability (default positive).
+    - ``missing:<cap>`` — subject must NOT possess the capability.
+    - ``all_of:<a>,<b>`` — subject must possess all listed capabilities.
+    - ``any_of:<a>,<b>`` — subject must possess at least one listed capability.
+    - Bare string — treated as ``has:<condition>``.
+    - Unrecognised prefix — defaults to passing (fail-open for safety).
+    """
+
+    def __init__(self, capabilities: set[str] | None = None) -> None:
+        self._capabilities: set[str] = set(capabilities) if capabilities is not None else set()
+
+    def add(self, capability: str) -> None:
+        self._capabilities.add(capability)
+
+    def remove(self, capability: str) -> None:
+        self._capabilities.discard(capability)
+
+    def has_any(self, caps: set[str]) -> bool:
+        return bool(self._capabilities & caps)
+
+    def has_all(self, caps: set[str]) -> bool:
+        return caps <= self._capabilities
+
+    def interpret_condition(self, condition: str, subject_capabilities: set[str]) -> bool:
+        if condition.startswith("has:"):
+            cap = condition[len("has:") :]
+            return cap in subject_capabilities
+        if condition.startswith("missing:"):
+            cap = condition[len("missing:") :]
+            return cap not in subject_capabilities
+        if condition.startswith("all_of:"):
+            needed = set(c.strip() for c in condition[len("all_of:") :].split(",") if c.strip())
+            return needed <= subject_capabilities
+        if condition.startswith("any_of:"):
+            candidates = set(c.strip() for c in condition[len("any_of:") :].split(",") if c.strip())
+            return bool(subject_capabilities & candidates)
+        return True
 
 
 class PolicyEngine:

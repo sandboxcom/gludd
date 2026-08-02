@@ -14,6 +14,7 @@ def register_all(app: FastAPI, daemon_state: dict[str, object]) -> None:
     from general_ludd.routers.adversarial import register as register_adversarial
     from general_ludd.routers.ansible import register as register_ansible
     from general_ludd.routers.benchmark import register as register_benchmark
+    from general_ludd.routers.chat import register as register_chat
     from general_ludd.routers.compute import register as register_compute
     from general_ludd.routers.coordination import register as register_coordination
     from general_ludd.routers.estimation import register as register_estimation
@@ -47,6 +48,7 @@ def register_all(app: FastAPI, daemon_state: dict[str, object]) -> None:
     register_ansible(app, daemon_state)
     register_adversarial(app, daemon_state)
     register_benchmark(app, daemon_state)
+    register_chat(app, daemon_state)
     register_compute(app, daemon_state)
     register_coordination(app, daemon_state)
     register_estimation(app, daemon_state)

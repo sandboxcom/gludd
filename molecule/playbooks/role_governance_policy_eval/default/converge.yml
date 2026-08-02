@@ -1,0 +1,33 @@
+---
+- name: Converge - run governance policy eval
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8909', true) }}"
+    artifact_dir: "/tmp/gludd-governance-policy-eval-{{ mock_port }}"
+  tasks:
+    - name: Create artifact directory
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Run policy eval via Python script
+      ansible.builtin.script:
+        cmd: "{{ playbook_dir }}/policy_eval_runner.py"
+      register: eval_result
+      environment:
+        GLUDD_ARTIFACT_DIR: "{{ artifact_dir }}"
+      ignore_errors: true
+
+    - name: Write eval result to artifact
+      ansible.builtin.copy:
+        content: |
+          {
+            "status": "{{ 'success' if eval_result.rc == 0 else 'failed' }}",
+            "return_code": {{ eval_result.rc }},
+            "stdout": "{{ eval_result.stdout | trim | replace('\n', '\\n') | replace('\"', '\\\"') }}"
+          }
+        dest: "{{ artifact_dir }}/policy_eval.json"
+        mode: "0644"

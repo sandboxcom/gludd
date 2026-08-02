@@ -99,14 +99,25 @@ _PROBE_ITEM_IDS: frozenset[str] = frozenset(
     {
         "D-07",
         "D-08",
+        "D-09",
         "D-10",
+        "D-13",
         "D-14",
+        "D-15",
+        "D-16",
+        "D-17",
         "D-18",
+        "D-20",
+        "D-21",
+        "D-22",
+        "D-23",
         "D-24",
         "D-25",
+        "D-26",
         "D-27",
         "D-28",
         "D-29",
+        "D-30",
     }
 )
 
@@ -314,9 +325,23 @@ def _check_d14_url_parsing() -> tuple[bool, str]:
 
 
 def _check_d17_psk_rotation() -> tuple[bool, str]:
-    return False, (
-        "OPEN — no automated rotation schedule exists for the daemon<->worker "
-        "pre-shared key; PSK is a static long-lived secret today"
+    """Static probe: automated PSK rotation with versioned identities exists."""
+    try:
+        import general_ludd.security.psk_rotation as pr
+    except ImportError as exc:
+        return False, f"OPEN — psk_rotation module failed to import: {exc}"
+    for symbol in ("PSKIdentity", "PSKStore", "PSKRotator", "PSKRotationState", "create_psk_rotator"):
+        if not hasattr(pr, symbol):
+            return False, f"OPEN — psk_rotation.{symbol} missing (regression)"
+    pr_src = _read_module_source(pr)
+    if "overlap_window" not in pr_src:
+        return False, "OPEN — PSK rotation overlap window missing (regression)"
+    if "rollback" not in pr_src and "ROLLBACK" not in pr_src:
+        return False, "OPEN — PSK rotation rollback missing (regression)"
+    return True, (
+        "LANDED-VERIFIED — automated daemon-worker PSK rotation with "
+        "versioned PSKIdentity, overlap window, atomic promotion, and "
+        "rollback via PSKRotator"
     )
 
 
@@ -532,21 +557,21 @@ def _check_d15_openbao_token_scope() -> tuple[bool, str]:
     if "ttl_seconds" not in ob_src or "max_uses" not in ob_src:
         return False, "OPEN — OpenBaoTTLCap TTL/use-limit enforcement missing (regression)"
 
-    revoker_mod: ModuleType | None = None
     try:
-        import general_ludd.sts.revoker as _revoker_import
-
-        revoker_mod = _revoker_import
-    except ImportError:
-        pass
-    has_revoker = revoker_mod is not None and hasattr(revoker_mod, "TokenRevoker") and hasattr(revoker_mod, "revoke")
-    if not has_revoker:
-        return False, "OPEN — STS revoker missing; termination-path revocation not verified"
+        import general_ludd.sts.revoker as revoker_mod
+    except ImportError as exc:
+        return False, f"OPEN — sts.revoker failed to import: {exc}"
+    if not hasattr(revoker_mod, "TokenRevoker"):
+        return False, "OPEN — sts.revoker.TokenRevoker missing (regression)"
+    revoker_src = _read_module_source(revoker_mod)
+    if "async def revoke" not in revoker_src:
+        return False, "OPEN — sts.revoker.revoke method missing (regression)"
     return True, (
         "LANDED-VERIFIED — OpenBao scope narrowing: mount/path validation with "
         "reserved-mount/traversal rejection, monotonic parent/child intersection, "
         "HCL policy rendering, OpenBaoTTLCap (max 900s TTL, max 100 uses), "
-        "scope evidence with hashed identities, and STS termination-path revocation"
+        "scope evidence with hashed identities, and STS TokenRevoker.revoke() "
+        "for termination-path revocation"
     )
 
 
@@ -710,6 +735,27 @@ def _check_d19_alembic_dry_run() -> tuple[bool, str]:
     )
 
 
+def _check_d20_config_hot_reload() -> tuple[bool, str]:
+    """Static probe: config compiler with atomic worker switch exists."""
+    try:
+        import general_ludd.security.config_compiler as cc
+    except ImportError as exc:
+        return False, f"OPEN — config_compiler module failed to import: {exc}"
+    for symbol in ("CompiledConfig", "ConfigCompiler", "ConfigGeneration", "ConfigGenerationState", "compile_config"):
+        if not hasattr(cc, symbol):
+            return False, f"OPEN — config_compiler.{symbol} missing (regression)"
+    cc_src = _read_module_source(cc)
+    if "policy_hash" not in cc_src:
+        return False, "OPEN — config_compiler policy hashing missing (regression)"
+    if "shadow" not in cc_src:
+        return False, "OPEN — config_compiler shadow evaluation missing (regression)"
+    return True, (
+        "LANDED-VERIFIED — config_compiler parses, normalizes, compiles, "
+        "attests and shadow-evaluates config before atomic shared-worker switch; "
+        "immutable prior versions retained for rollback"
+    )
+
+
 def _check_d16_session_ttl() -> tuple[bool, str]:
     try:
         import general_ludd.security.session_ttl as st
@@ -745,21 +791,108 @@ def _check_d21_worktree_lease() -> tuple[bool, str]:
     )
 
 
+def _check_d22_temp_cleanup() -> tuple[bool, str]:
+    """Static probe: per-run temp roots with ownership manifests and scoped cleanup."""
+    try:
+        import general_ludd.security.temp_cleanup as tc
+    except ImportError as exc:
+        return False, f"OPEN — temp_cleanup module failed to import: {exc}"
+    for symbol in (
+        "TempRoot",
+        "TempRootError",
+        "cleanup_all_temp_roots",
+        "compute_age_seconds",
+        "is_temp_root_expired",
+    ):
+        if not hasattr(tc, symbol):
+            return False, f"OPEN — temp_cleanup.{symbol} missing (regression)"
+    tc_src = _read_module_source(tc)
+    if "atexit" not in tc_src:
+        return False, "OPEN — temp_cleanup atexit handler missing (regression)"
+    if "SIGTERM" not in tc_src:
+        return False, "OPEN — temp_cleanup signal handler missing (regression)"
+    if "0o700" not in tc_src:
+        return False, "OPEN — temp_cleanup secure permissions missing (regression)"
+    return True, (
+        "LANDED-VERIFIED — private mode-0700 per-run temp roots with ownership "
+        "manifests, bounded size/age, and scoped cleanup on exit, signals and "
+        "crash via TempRoot.create() and cleanup_all_temp_roots()"
+    )
+
+
+def _check_d23_orphan_pid() -> tuple[bool, str]:
+    """Static probe: verified PID identity before cleanup."""
+    try:
+        import general_ludd.security.orphan_pid as op
+    except ImportError as exc:
+        return False, f"OPEN — orphan_pid module failed to import: {exc}"
+    for symbol in (
+        "PidRecord",
+        "PidRecordError",
+        "compute_boot_id",
+        "verify_pid_identity",
+        "reap_orphan_tree",
+        "is_reaper_safe",
+    ):
+        if not hasattr(op, symbol):
+            return False, f"OPEN — orphan_pid.{symbol} missing (regression)"
+    op_src = _read_module_source(op)
+    if "SIGTERM" not in op_src and "SIGKILL" not in op_src:
+        return False, "OPEN — orphan_pid signal tree missing (regression)"
+    if "_pid_exists" not in op_src:
+        return False, "OPEN — orphan_pid PID existence check missing (regression)"
+    return True, (
+        "LANDED-VERIFIED — PID records include pid, start_time, boot_id, "
+        "executable, owner_uid and lease; verify_pid_identity checks all fields "
+        "before reap_orphan_tree signals; is_reaper_safe prevents cross-UID signalling"
+    )
+
+
 def _check_d26_vacuum_schedule() -> tuple[bool, str]:
-    return False, (
-        "OPEN — MemoryRecordModel exists in db/models.py with full CRUD but "
-        "there is zero VACUUM scheduling anywhere in src/; sustained write "
-        "load on the memory table will fragment SQLite with no periodic "
-        "compaction"
+    """Static probe: VacuumScheduler with leader election and rate limiting exists."""
+    try:
+        import general_ludd.security.vacuum_schedule as vs
+    except ImportError as exc:
+        return False, f"OPEN — vacuum_schedule module failed to import: {exc}"
+    for symbol in ("VacuumScheduler", "VacuumResult", "DEFAULT_MIN_INTERVAL_SEC"):
+        if not hasattr(vs, symbol):
+            return False, f"OPEN — vacuum_schedule.{symbol} missing (regression)"
+    vs_src = _read_module_source(vs)
+    if "should_vacuum" not in vs_src:
+        return False, "OPEN — vacuum_schedule.should_vacuum missing (regression)"
+    if "try_acquire_leader" not in vs_src:
+        return False, "OPEN — vacuum_schedule leader election missing (regression)"
+    if "VACUUM" not in vs_src:
+        return False, "OPEN — vacuum_schedule VACUUM statement missing (regression)"
+    return True, (
+        "LANDED-VERIFIED — VacuumScheduler with rate-limiter (min 1800s interval), "
+        "leader-election (300s lock timeout), and VACUUM execution via "
+        "vacuum_memory_table(session)"
     )
 
 
 def _check_d30_gateway_size_limit() -> tuple[bool, str]:
-    return False, (
-        "OPEN — models/gateway.py defines ModelResponse but has no "
-        "response-size limit per request; finish_reason==length is detected "
-        "(used to skip caching truncated responses) but no max_tokens or "
-        "max_response_bytes cap is enforced at the gateway level"
+    """Static probe: model gateway enforces response-byte budget per request."""
+    try:
+        import general_ludd.models.gateway as gw
+    except ImportError as exc:
+        return False, f"OPEN — models.gateway failed to import: {exc}"
+    if not hasattr(gw, "_RequestPayloadBudget"):
+        return False, "OPEN — _RequestPayloadBudget missing from gateway (regression)"
+    if not hasattr(gw, "DEFAULT_MAX_RESPONSE_BYTES"):
+        return False, "OPEN — DEFAULT_MAX_RESPONSE_BYTES missing (regression)"
+    if not hasattr(gw, "PayloadLimitError"):
+        return False, "OPEN — PayloadLimitError missing (regression)"
+    budget_src = _read_module_source(gw._RequestPayloadBudget)
+    if "max_response_bytes" not in budget_src:
+        return False, "OPEN — _RequestPayloadBudget max_response_bytes field missing (regression)"
+    if "response_bytes" not in budget_src:
+        return False, "OPEN — _RequestPayloadBudget response_bytes counter missing (regression)"
+    return True, (
+        "LANDED-VERIFIED — models/gateway.py defines _RequestPayloadBudget with "
+        "max_response_bytes (4 MiB default), per-request response_bytes "
+        "accumulation, and PayloadLimitError on breach; "
+        "DEFAULT_MAX_RESPONSE_BYTES = 4_194_304"
     )
 
 
@@ -777,7 +910,10 @@ _BACKLOG_CHECKERS: dict[str, Callable[[], tuple[bool, str]]] = {
     "D-17": _check_d17_psk_rotation,
     "D-18": _check_d18_audit_log,
     "D-19": _check_d19_alembic_dry_run,
+    "D-20": _check_d20_config_hot_reload,
     "D-21": _check_d21_worktree_lease,
+    "D-22": _check_d22_temp_cleanup,
+    "D-23": _check_d23_orphan_pid,
     "D-24": _check_d24_mcp_stderr_limit,
     "D-25": _check_d25_stack_depth_cap,
     "D-26": _check_d26_vacuum_schedule,

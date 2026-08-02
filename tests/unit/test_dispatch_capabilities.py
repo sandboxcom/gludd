@@ -512,8 +512,14 @@ def test_end_to_end_discover_real_collections() -> None:
     assert "chemistry" in reg.collections
     assert "web" in reg.collections
     assert "ai_ml" in reg.collections
+    assert "travel" in reg.collections
 
     assert len(reg.tag_index) > 0
+    assert "travel" in reg.tag_index
+    assert "flights" in reg.tag_index
+    assert "hotels" in reg.tag_index
+    assert "itinerary" in reg.tag_index
+    assert "planning" in reg.tag_index
 
     for name, meta in reg.collections.items():
         assert meta.name == name
