@@ -56,6 +56,7 @@ def daemon_with_psk(monkeypatch: pytest.MonkeyPatch) -> TestClient:
 @pytest.fixture
 def daemon_no_psk_fail_closed(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.delenv("GLUDD_PSK", raising=False)
+    monkeypatch.delenv("GLUDD_PSK_DISABLE", raising=False)
     monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "0")
 
     from general_ludd.daemon import create_daemon_app
