@@ -594,7 +594,7 @@ class TestModelGatewayDynamicE2E:
         router = ModelRouter()
         gateway = ModelGateway(profiles={}, provider_registry=registry, router=router)
 
-        gateway.add_profile("gpt-5", provider="openai", model="gpt-5", api_key_env="OPENAI_KEY")
+        gateway.add_profile("gpt-5", provider="local", model="gpt-5", api_metered=False)
         profile_ids = [p.model_profile_id for p in gateway.list_profiles()]
         assert "gpt-5" in profile_ids
 
@@ -603,7 +603,7 @@ class TestModelGatewayDynamicE2E:
         router = ModelRouter()
         gateway = ModelGateway(profiles={}, provider_registry=registry, router=router)
 
-        gateway.add_profile("gpt-5", provider="openai", model="gpt-5", api_key_env="OPENAI_KEY")
+        gateway.add_profile("gpt-5", provider="local", model="gpt-5", api_metered=False)
         gateway.remove_profile("gpt-5")
         profile_ids = [p.model_profile_id for p in gateway.list_profiles()]
         assert "gpt-5" not in profile_ids
@@ -620,7 +620,7 @@ class TestModelGatewayDynamicE2E:
             router=router,
             event_bus=bus,
         )
-        gateway.add_profile("gpt-5", provider="openai", model="gpt-5", api_key_env="OPENAI_KEY")
+        gateway.add_profile("gpt-5", provider="local", model="gpt-5", api_metered=False)
         assert len(events) == 1
         assert events[0].payload["model_id"] == "gpt-5"
 
@@ -636,7 +636,7 @@ class TestModelGatewayDynamicE2E:
             router=router,
             event_bus=bus,
         )
-        gateway.add_profile("gpt-5", provider="openai", model="gpt-5", api_key_env="OPENAI_KEY")
+        gateway.add_profile("gpt-5", provider="local", model="gpt-5", api_metered=False)
         gateway.remove_profile("gpt-5")
         assert len(events) == 1
         assert events[0].payload["model_id"] == "gpt-5"
@@ -899,9 +899,9 @@ class TestDaemonReloadEndpointsE2E:
                 "/admin/models",
                 json={
                     "model_id": "gpt-5",
-                    "provider": "openai",
+                    "provider": "local",
                     "model": "gpt-5-turbo",
-                    "api_key_env": "OPENAI_KEY",
+                    "api_metered": False,
                 },
             )
             assert resp.status_code == 200
@@ -921,9 +921,9 @@ class TestDaemonReloadEndpointsE2E:
                 "/admin/models",
                 json={
                     "model_id": "gpt-5",
-                    "provider": "openai",
+                    "provider": "local",
                     "model": "gpt-5-turbo",
-                    "api_key_env": "OPENAI_KEY",
+                    "api_metered": False,
                 },
             )
             resp = client.delete("/admin/models/gpt-5")
@@ -1135,7 +1135,7 @@ class TestHotReloadFullIntegration:
 
         with patch("httpx.post") as mock_post:
             mock_post.return_value = MagicMock(status_code=200)
-            gateway.add_profile("gpt-5", provider="openai", model="gpt-5-turbo", api_key_env="KEY")
+            gateway.add_profile("gpt-5", provider="local", model="gpt-5-turbo", api_metered=False)
 
         assert len(hook_events) == 1
         assert len(bus_events) == 1
@@ -1214,7 +1214,7 @@ class TestHotReloadFullIntegration:
             worker_broadcaster=broadcaster,
         )
 
-        gateway.add_profile("gpt-5", provider="openai", model="gpt-5", api_key_env="KEY")
+        gateway.add_profile("gpt-5", provider="local", model="gpt-5", api_metered=False)
         profile_ids = [p.model_profile_id for p in gateway.list_profiles()]
         assert "gpt-5" in profile_ids
 
@@ -1250,7 +1250,7 @@ class TestHotReloadFullIntegration:
             patch("general_ludd.events.hooks.resolve_and_pin", return_value=[]),
             patch("httpx.AsyncClient", return_value=mock_client),
         ):
-            gateway.add_profile("gpt-5", provider="openai", model="gpt-5", api_key_env="KEY")
+            gateway.add_profile("gpt-5", provider="local", model="gpt-5", api_metered=False)
 
             webhook_calls = [c for c in mock_client.post.call_args_list if "hooks.example.com" in str(c)]
             assert len(webhook_calls) >= 1
