@@ -178,23 +178,113 @@ def _parse_ratchet_entries() -> dict[str, str]:
     return entries
 
 
-def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
-    """Serialize every hook-liveness test that shares HARDCODED_TMP_PATHS onto a
-    single xdist worker, AND apply ratchet strict-xfail markers.
+ENFORCEMENT_SHARED_STATE_GROUP = "enforcement-shared-state"
+_LEGACY_ENFORCEMENT_XDIST_GROUPS = frozenset(
+    {
+        ENFORCEMENT_SHARED_STATE_GROUP,
+        "hook-hardcoded-tmp",
+        "gludd-watchdog-ci-cache",
+        "enforcement_plugin_state_files",
+        "enforcement_state_files",
+        "deadline_e2e_state",
+    }
+)
 
-    The ``hook_plugin_env`` fixture (tests/unit/_hook_fixtures.py) drives the
-    real Node plugins, which write un-namespaced, env-override-free
-    ``/tmp/gludd-*.json`` counter files (enforce-stop.ts / enforce-floor).
-    The fixture's only isolation is a per-test snapshot/restore of those exact
-    paths — safe against a live opencode session, but NOT against concurrent
-    xdist workers: under CI's ``-n>1 --dist loadgroup`` two such tests on
-    different workers race, and one test's teardown ``_restore()`` deletes a
-    sibling's freshly-written counter in the window before it is read, yielding
-    ``FileNotFoundError``. Pinning all consumers of the fixture to one
-    ``xdist_group`` restores serialization (same pattern as
-    ``test_port_8000_occupied.py``'s ``xdist_group("port_8000")``). Tests that
-    only use the ``tmp_path``-redirected env-var state files are unaffected and
-    stay fully parallel.
+
+def _xdist_group_name(marker: object) -> str | None:
+    """Return an xdist group name from either a Mark or MarkDecorator."""
+    mark = getattr(marker, "mark", marker)
+    kwargs = getattr(mark, "kwargs", {})
+    name = kwargs.get("name")
+    if name is not None:
+        return str(name)
+    args = getattr(mark, "args", ())
+    return str(args[0]) if args else None
+
+
+def _item_xdist_groups(item: pytest.Item) -> set[str]:
+    iter_markers = getattr(item, "iter_markers", None)
+    if callable(iter_markers):
+        markers = iter_markers("xdist_group")
+    else:
+        markers = (
+            marker
+            for marker in getattr(item, "own_markers", ())
+            if getattr(getattr(marker, "mark", marker), "name", None)
+            == "xdist_group"
+        )
+    return {
+        name
+        for marker in markers
+        if (name := _xdist_group_name(marker)) is not None
+    }
+
+
+@functools.cache
+def _source_touches_hardcoded_gludd_tmp(path: Path) -> bool:
+    """Detect a source-level absolute Gludd tmp path once per test module."""
+    try:
+        return "/tmp/gludd-" in path.read_text()
+    except (OSError, UnicodeError):
+        return False
+
+
+def _item_touches_hardcoded_gludd_tmp(item: pytest.Item) -> bool:
+    if "hook_plugin_env" in getattr(item, "fixturenames", ()):
+        return True
+    raw_path = getattr(item, "path", None)
+    if raw_path is None:
+        raw_path = getattr(item, "fspath", None)
+    if raw_path is None:
+        return False
+    return _source_touches_hardcoded_gludd_tmp(Path(str(raw_path)))
+
+
+def _remove_legacy_enforcement_groups(item: pytest.Item) -> None:
+    """Remove inherited and direct legacy aliases before adding one group."""
+    listchain = getattr(item, "listchain", None)
+    nodes = listchain() if callable(listchain) else [item]
+    for node in nodes:
+        markers = getattr(node, "own_markers", None)
+        if markers is None:
+            continue
+        markers[:] = [
+            marker
+            for marker in markers
+            if not (
+                getattr(getattr(marker, "mark", marker), "name", None)
+                == "xdist_group"
+                and _xdist_group_name(marker) in _LEGACY_ENFORCEMENT_XDIST_GROUPS
+            )
+        ]
+
+
+def _pin_enforcement_shared_state(item: pytest.Item) -> None:
+    """Normalize shared-state tests while retaining unrelated serialization."""
+    groups = _item_xdist_groups(item)
+    enforcement_groups = groups & _LEGACY_ENFORCEMENT_XDIST_GROUPS
+    touches_shared_state = _item_touches_hardcoded_gludd_tmp(item)
+    if not enforcement_groups and not touches_shared_state:
+        return
+
+    unrelated_groups = groups - _LEGACY_ENFORCEMENT_XDIST_GROUPS
+    _remove_legacy_enforcement_groups(item)
+    if unrelated_groups:
+        return
+    item.add_marker(
+        pytest.mark.xdist_group(name=ENFORCEMENT_SHARED_STATE_GROUP)
+    )
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Serialize shared enforcement state and apply strict ratchet markers.
+
+    Any collected test source containing an absolute ``/tmp/gludd-*`` path, or
+    using ``hook_plugin_env``, is pinned to one canonical xdist group. Legacy
+    enforcement group aliases are normalized so their teardown cannot race a
+    sibling group. Existing non-enforcement resource groups (for example port
+    and hot-reload groups) remain unchanged. Sources that only use tmp_path or
+    env-var redirects stay fully parallel.
 
     **Ratchet strict-xfail:** config/ratchet.yml tracks known test failures.
     Each entry is a ``node_id: reason`` pair.  At collection time, matching
@@ -209,8 +299,7 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     """
     # 1. xdist group pinning
     for item in items:
-        if "hook_plugin_env" in getattr(item, "fixturenames", ()):
-            item.add_marker(pytest.mark.xdist_group(name="hook-hardcoded-tmp"))
+        _pin_enforcement_shared_state(item)
 
     # 2. Ratchet strict-xfail markers
     entries = _parse_ratchet_entries()

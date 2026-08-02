@@ -24,14 +24,15 @@ import pytest
 from tests.unit._hook_fixtures import (
     HookEnv,
     hook_plugin_env_impl,
+    read_optional_bytes,
 )
 
 ROOT = Path(__file__).parent.parent.parent
 PERSIST_BLOCK_ENV = "GLUDD_PERSIST_STOP_BLOCK_FILE"
 CI_CACHE_PATH = Path("/tmp/gludd-watchdog-ci.json")
 
-# CI cache is shared — serialize onto one xdist worker
-pytestmark = pytest.mark.xdist_group("gludd-watchdog-ci-cache")
+# Shared enforcement files serialize onto the canonical xdist worker.
+pytestmark = pytest.mark.xdist_group("enforcement-shared-state")
 
 
 @pytest.fixture
@@ -41,8 +42,8 @@ def hook_plugin_env(tmp_path: Path):
 
 @pytest.fixture(autouse=True)
 def _ci_cache_guard():
-    old_ci = CI_CACHE_PATH.read_bytes() if CI_CACHE_PATH.exists() else None
-    old_mt = MULTITASK_STATE_PATH.read_bytes() if MULTITASK_STATE_PATH.exists() else None
+    old_ci = read_optional_bytes(CI_CACHE_PATH)
+    old_mt = read_optional_bytes(MULTITASK_STATE_PATH)
     try:
         yield
     finally:

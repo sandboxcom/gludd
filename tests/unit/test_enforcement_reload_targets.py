@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[2]
 # Under xdist (--dist loadgroup), concurrent workers corrupt each other's
 # setup (worker B deletes /tmp/gludd-tool-streak.json while worker A reads it).
 # Force the whole module onto a single worker to eliminate the race.
-pytestmark = pytest.mark.xdist_group("enforcement_state_files")
+pytestmark = pytest.mark.xdist_group("enforcement-shared-state")
 
 ENFORCEMENT_STATE_FILES = [
     "/tmp/gludd-floor-override",

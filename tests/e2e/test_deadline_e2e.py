@@ -28,7 +28,7 @@ WARNINGS_LOG = "/tmp/gludd-task-deadlines-e2e.warnings.log"
 # The plugin intentionally persists deadline state across hook invocations.
 # Keep this module on one xdist worker so its fixed, shared E2E paths cannot be
 # cleaned by a neighboring test while another hook is recording a breach.
-pytestmark = pytest.mark.xdist_group("deadline_e2e_state")
+pytestmark = pytest.mark.xdist_group("enforcement-shared-state")
 
 
 def _clean_state() -> None:

@@ -103,6 +103,28 @@ The implementation source of truth is
 entrypoint so loader isolation is retained without duplicating configuration
 values in the runtime-discovered module.
 
+## Shared-state test isolation
+
+Some compatibility paths still use machine-global `/tmp/gludd-*` state. Tests
+that snapshot and restore those paths are safe relative to a live OpenCode
+session, but independent xdist workers were not safe relative to one another:
+one worker could restore absence by unlinking a file after another worker's
+existence check and before its read. The resulting stepwise failure was a
+`FileNotFoundError`, even though each individual suite passed in isolation.
+
+Collection now scans each test source once. A source containing an absolute
+`/tmp/gludd-*` path, or any test using `hook_plugin_env`, is assigned to the
+single `enforcement-shared-state` xdist group. Historical enforcement group
+names normalize to that group. Explicit groups for independent resources such
+as port 8000 and namespaced hot-reload modules remain unchanged, preserving
+parallelism where shared-state serialization is unnecessary.
+
+Snapshots use `read_optional_bytes()` from `tests/unit/_hook_fixtures.py`. It
+attempts the read directly and treats `FileNotFoundError` as an absent optional
+file, eliminating the `exists()`/`read_bytes()` time-of-check/time-of-use
+window. Other I/O failures remain visible rather than being silently converted
+to absence.
+
 ## Verification
 
 The acceptance sequence is:

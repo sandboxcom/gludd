@@ -51,7 +51,7 @@ FLOOR_OVERRIDE_FILE = "/tmp/gludd-floor-override"
 # same class of hardcoded-/tmp-path hazard). Pin the whole module to the
 # same xdist group conftest.py uses for that hazard class so it is always
 # serialized onto one worker.
-pytestmark = pytest.mark.xdist_group(name="hook-hardcoded-tmp")
+pytestmark = pytest.mark.xdist_group(name="enforcement-shared-state")
 
 
 @pytest.fixture(autouse=True)

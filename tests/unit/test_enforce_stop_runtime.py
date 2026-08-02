@@ -22,6 +22,7 @@ import pytest
 from tests.unit._hook_fixtures import (
     HookEnv,
     hook_plugin_env_impl,
+    read_optional_bytes,
 )
 
 ROOT = Path(__file__).parent.parent.parent
@@ -44,10 +45,8 @@ def _clean_leaked_state_files() -> None:
             Path(p).unlink(missing_ok=True)
 
 
-# Several tests seed the SHARED /tmp/gludd-watchdog-ci.json CI cache that
-# hasRealPendingWork() reads — serialize onto one xdist worker (same group as
-# test_enforce_stop_mixed_response.py) so concurrent seeds can't race.
-pytestmark = pytest.mark.xdist_group("gludd-watchdog-ci-cache")
+# Shared enforcement files serialize onto the canonical xdist worker.
+pytestmark = pytest.mark.xdist_group("enforcement-shared-state")
 
 # Hardcoded files touched by enforce-stop.ts that the fixture does NOT redirect.
 # We pass env_overrides for these so writes go into the fixture's isolated tmp dir.
@@ -190,7 +189,7 @@ def test_stop_text_complete_false_done_with_evidence_passes(hook_plugin_env: Hoo
     # hasRealPendingWork() reads /tmp/gludd-watchdog-ci.json directly.
     # Seed a clean CI cache so live CI state doesn't interfere.
     ci_path = Path("/tmp/gludd-watchdog-ci.json")
-    _old_ci = ci_path.read_bytes() if ci_path.exists() else None
+    _old_ci = read_optional_bytes(ci_path)
     ci_path.write_text(
         json.dumps(
             {
@@ -276,7 +275,7 @@ def test_stop_text_complete_disengage_allows_through(hook_plugin_env: HookEnv):
 
     # hasRealPendingWork() reads /tmp/gludd-watchdog-ci.json directly.
     ci_path = Path("/tmp/gludd-watchdog-ci.json")
-    _old_ci = ci_path.read_bytes() if ci_path.exists() else None
+    _old_ci = read_optional_bytes(ci_path)
     ci_path.write_text(
         json.dumps(
             {
@@ -551,9 +550,7 @@ def test_disengage_does_NOT_bypass_text_only_with_pending_work(
     # CI cache with RED status
     (hook_plugin_env.cwd / "..").mkdir(exist_ok=True)
     ci_path = Path("/tmp/gludd-watchdog-ci.json")
-    _old_ci = None
-    if ci_path.exists():
-        _old_ci = ci_path.read_bytes()
+    _old_ci = read_optional_bytes(ci_path)
     ci_path.write_text(
         json.dumps(
             {
@@ -644,9 +641,7 @@ def test_disengage_still_allows_completion_smell_when_no_work(
     # (NOT from the pre-seeded state). Write a clean CI cache so the
     # live CI state from prior tests doesn't carry over.
     ci_path = Path("/tmp/gludd-watchdog-ci.json")
-    _old_ci = None
-    if ci_path.exists():
-        _old_ci = ci_path.read_bytes()
+    _old_ci = read_optional_bytes(ci_path)
     ci_path.write_text(
         json.dumps(
             {
@@ -748,7 +743,7 @@ def test_post_results_text_only_block_fires_after_subagent_results(
     # hasRealPendingWork() reads CI cache directly; clean it so CI doesn't
     # interfere with the post-results path
     ci_path = Path("/tmp/gludd-watchdog-ci.json")
-    _old_ci = ci_path.read_bytes() if ci_path.exists() else None
+    _old_ci = read_optional_bytes(ci_path)
     ci_path.write_text(
         json.dumps(
             {
@@ -845,7 +840,7 @@ def test_post_results_text_only_not_blocked_with_tool_calls(
     (hook_plugin_env.cwd / "TASKS.md").write_text("- [ ] Task A\n")
 
     ci_path = Path("/tmp/gludd-watchdog-ci.json")
-    _old_ci = ci_path.read_bytes() if ci_path.exists() else None
+    _old_ci = read_optional_bytes(ci_path)
     ci_path.write_text(
         json.dumps(
             {

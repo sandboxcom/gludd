@@ -269,11 +269,23 @@ class HookEnv:
         return json.loads(p.read_text())
 
 
+def read_optional_bytes(path: str | Path) -> bytes | None:
+    """Read bytes or return None when a concurrently removed file is absent.
+
+    Reading directly and handling ``FileNotFoundError`` avoids the
+    ``exists()``/``read_bytes()`` TOCTOU window shared enforcement-state tests
+    previously hit under xdist.
+    """
+    try:
+        return Path(path).read_bytes()
+    except FileNotFoundError:
+        return None
+
+
 def _snapshot(paths: list[str]) -> dict[str, bytes | None]:
     snap: dict[str, bytes | None] = {}
     for p in paths:
-        path_obj = Path(p)
-        snap[p] = path_obj.read_bytes() if path_obj.exists() else None
+        snap[p] = read_optional_bytes(p)
     return snap
 
 

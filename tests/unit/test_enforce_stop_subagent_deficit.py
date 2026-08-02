@@ -30,6 +30,7 @@ import pytest
 from tests.unit._hook_fixtures import (
     HookEnv,
     hook_plugin_env_impl,
+    read_optional_bytes,
 )
 
 ROOT = Path(__file__).parent.parent.parent
@@ -38,7 +39,7 @@ PERSIST_BLOCK_ENV = "GLUDD_PERSIST_STOP_BLOCK_FILE"
 # hasRealPendingWork() reads the live /tmp/gludd-watchdog-ci.json CI cache.
 CI_CACHE_PATH = Path("/tmp/gludd-watchdog-ci.json")
 
-pytestmark = pytest.mark.xdist_group("gludd-watchdog-ci-cache")
+pytestmark = pytest.mark.xdist_group("enforcement-shared-state")
 
 
 @pytest.fixture
@@ -162,7 +163,7 @@ def test_subagent_deficit_text_complete_blanks_3_dispatch_summary(
     _clean_leaked_state_files()
     now_ms = int(_time.time() * 1000)
 
-    _old_ci = CI_CACHE_PATH.read_bytes() if CI_CACHE_PATH.exists() else None
+    _old_ci = read_optional_bytes(CI_CACHE_PATH)
     _seed_ci_cache("SUCCESS")
 
     # Create TASKS.md with unchecked items so hasRealPendingWork() finds work
@@ -217,7 +218,7 @@ def test_subagent_deficit_text_complete_blanks_text_only_summary(
     _clean_leaked_state_files()
     now_ms = int(_time.time() * 1000)
 
-    _old_ci = CI_CACHE_PATH.read_bytes() if CI_CACHE_PATH.exists() else None
+    _old_ci = read_optional_bytes(CI_CACHE_PATH)
     _seed_ci_cache("SUCCESS")
 
     (hook_plugin_env.cwd / "TASKS.md").write_text("- [ ] Write remaining unit tests\n")
@@ -263,7 +264,7 @@ def test_subagent_deficit_not_blocked_at_full_floor(
     _clean_leaked_state_files()
     int(_time.time() * 1000)
 
-    _old_ci = CI_CACHE_PATH.read_bytes() if CI_CACHE_PATH.exists() else None
+    _old_ci = read_optional_bytes(CI_CACHE_PATH)
     _seed_ci_cache("SUCCESS")
 
     (hook_plugin_env.cwd / "TASKS.md").write_text("- [ ] Task A\n")
@@ -303,7 +304,7 @@ def test_subagent_deficit_not_blocked_on_plain_text(
     _clean_leaked_state_files()
     now_ms = int(_time.time() * 1000)
 
-    _old_ci = CI_CACHE_PATH.read_bytes() if CI_CACHE_PATH.exists() else None
+    _old_ci = read_optional_bytes(CI_CACHE_PATH)
     _seed_ci_cache("SUCCESS")
 
     (hook_plugin_env.cwd / "TASKS.md").write_text("- [ ] Task A\n")
@@ -350,7 +351,7 @@ def test_under_floor_alone_makes_has_pending_work_true(
     _clean_leaked_state_files()
     now_ms = int(_time.time() * 1000)
 
-    _old_ci = CI_CACHE_PATH.read_bytes() if CI_CACHE_PATH.exists() else None
+    _old_ci = read_optional_bytes(CI_CACHE_PATH)
     _seed_ci_cache("SUCCESS")
 
     # No TASKS.md — no file-based pending work
@@ -407,7 +408,7 @@ def test_subagent_deficit_blocks_even_with_evidence_in_text(
     _clean_leaked_state_files()
     now_ms = int(_time.time() * 1000)
 
-    _old_ci = CI_CACHE_PATH.read_bytes() if CI_CACHE_PATH.exists() else None
+    _old_ci = read_optional_bytes(CI_CACHE_PATH)
     _seed_ci_cache("SUCCESS")
 
     (hook_plugin_env.cwd / "TASKS.md").write_text("- [ ] Task A\n")
