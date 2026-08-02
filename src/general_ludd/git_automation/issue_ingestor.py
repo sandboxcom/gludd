@@ -3,11 +3,33 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 from general_ludd.security.url_fetch import FetchPolicy, secure_fetch
 
 logger = logging.getLogger(__name__)
+
+
+def _validated_issue_payload(payload: object) -> list[dict[str, Any]] | None:
+    """Return a safe issue list, or fail closed before mutating dedup state."""
+    if not isinstance(payload, list):
+        return None
+
+    for issue in payload:
+        if not isinstance(issue, dict):
+            return None
+        labels = issue.get("labels", [])
+        if not isinstance(labels, list):
+            return None
+        for label in labels:
+            if isinstance(label, str):
+                continue
+            if not isinstance(label, dict):
+                return None
+            if not isinstance(label.get("name", ""), str):
+                return None
+
+    return cast(list[dict[str, Any]], payload)
 
 
 class GitHubIssueIngestor:
@@ -34,7 +56,11 @@ class GitHubIssueIngestor:
     async def poll_issues(self) -> list[dict[str, Any]]:
         if not self.is_configured():
             return []
-        issues = await self._fetch_labeled_issues()
+        payload: object = await self._fetch_labeled_issues()
+        issues = _validated_issue_payload(payload)
+        if issues is None:
+            logger.warning("GitHub issue adapter returned an invalid payload")
+            return []
         new_todos: list[dict[str, Any]] = []
         for issue in issues:
             # GitHub's /issues endpoint returns both issues and PRs; PRs carry a

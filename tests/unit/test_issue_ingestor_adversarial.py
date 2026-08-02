@@ -14,6 +14,7 @@ gap is documented and marked ``xfail``.
 from __future__ import annotations
 
 from typing import Any
+from unittest import mock
 
 import pytest
 
@@ -236,6 +237,42 @@ async def test_pull_requests_should_be_skipped() -> None:
 async def test_empty_fetch_yields_no_todos() -> None:
     ing = _StubIngestor([])
     assert await ing.poll_issues() == []
+
+
+@pytest.mark.parametrize("payload", [None, {"error": "oops"}, "not-a-list"])
+async def test_poll_rejects_non_list_fetch_payload(payload: Any) -> None:
+    ing = GitHubIssueIngestor(owner="octo", repo="demo")
+
+    with mock.patch.object(ing, "_fetch_labeled_issues", return_value=payload):
+        assert await ing.poll_issues() == []
+
+    assert ing._seen_ids == set()
+
+
+async def test_poll_rejects_payload_with_non_mapping_item_atomically() -> None:
+    ing = GitHubIssueIngestor(owner="octo", repo="demo")
+    payload: list[Any] = [
+        {"id": 1, "number": 1, "title": "valid", "labels": []},
+        "not-an-issue",
+    ]
+
+    with mock.patch.object(ing, "_fetch_labeled_issues", return_value=payload):
+        assert await ing.poll_issues() == []
+
+    assert ing._seen_ids == set()
+
+
+@pytest.mark.parametrize("labels", [None, {}, [42], [{"name": 42}]])
+async def test_poll_rejects_malformed_labels_without_poisoning_dedup(
+    labels: Any,
+) -> None:
+    ing = GitHubIssueIngestor(owner="octo", repo="demo")
+    payload = [{"id": 1, "number": 1, "title": "unsafe", "labels": labels}]
+
+    with mock.patch.object(ing, "_fetch_labeled_issues", return_value=payload):
+        assert await ing.poll_issues() == []
+
+    assert ing._seen_ids == set()
 
 
 async def test_label_string_with_spaces_does_not_match() -> None:
