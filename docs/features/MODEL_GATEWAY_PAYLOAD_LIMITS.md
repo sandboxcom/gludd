@@ -1,19 +1,21 @@
-# Model Gateway Buffered Payload Limits (D-30 Phase 1)
+# Model Gateway Buffered Payload Limits (D-30 Phases 1–2)
 
 ## Status and boundary
 
-D-30 phase 1 is implemented for buffered calls that pass through
+D-30 phases 1–2 are implemented for buffered calls that pass through
 `ModelGateway.call_model` and its retry/fallback/cache paths. The gateway rejects
 oversized logical requests before provider construction or invocation, then
 validates buffered provider responses and cache hits before any billing,
 success metric, token-learning record, LangSmith trace, or cache write.
+Retries and fallback hops share one request-scoped cumulative ledger, so walking
+the chain cannot reset byte, token, tool-call, or provider-attempt ceilings.
 
-This phase deliberately does not claim the full D-30 control. Streaming chunk
+These phases deliberately do not claim the full D-30 control. Streaming chunk
 count/bytes, stream duration and idle timeout, compressed-to-decompressed ratio,
 prompt bytes introduced by provider-specific serialization, raw
-`get_chat_model` runnables, and a cumulative budget shared across every fallback
-hop remain open. Those controls require a cancellable streaming adapter rather
-than pretending a post-buffer check can stop upstream allocation.
+`get_chat_model` runnables, and cancellation of an already-running buffered
+provider invocation remain open. Those controls require a cancellable streaming
+adapter rather than pretending a post-buffer check can stop upstream allocation.
 
 ## Configuration
 
@@ -26,11 +28,28 @@ Each `ModelProfile` has positive integer limits:
 | `max_response_bytes` | 4 MiB | retained UTF-8 text plus normalized tool-call JSON |
 | `max_output_tokens` | 8,000 | consistent LangChain usage metadata, with fail-closed fallback |
 | `max_tool_calls` | 64 | raw provider tool-call list, before normalization can drop malformed calls |
+| `max_cumulative_request_bytes` | 1 MiB | outbound logical request bytes summed across provider attempts |
+| `max_cumulative_input_tokens` | 120,000 | outbound input tokens summed across provider attempts |
+| `max_cumulative_response_bytes` | 4 MiB | buffered response bytes summed across retries and fallbacks |
+| `max_cumulative_output_tokens` | 8,000 | validated/fail-closed output tokens summed across responses |
+| `max_cumulative_tool_calls` | 64 | raw tool calls summed before normalization across responses |
+| `max_provider_attempts` | 16 | provider constructions/invocations admitted for one logical request |
 
 `ModelGateway(request_token_counter=...)` accepts a model-specific, local token
 counter with the signature `(profile, messages) -> int`. The return is trusted
 only when it is an exact non-boolean, non-negative integer. A counter failure or
 invalid value does not disable the limit.
+
+The initiating profile owns the cumulative limits for the lifetime of the
+logical request. When an explicitly named primary is absent, the first
+configured profile in the explicit fallback list is the policy anchor; if no
+such profile exists, the request fails before provider construction. This keeps
+the established missing-primary recovery path without permitting an unconfigured
+name to create an unmetered ledger. Every fallback still enforces its own
+ordinary per-attempt profile limits, but it cannot replace or enlarge the policy
+anchor's ledger. All cumulative settings are positive integers and flow through
+the existing `ModelProfile` loading, dynamic-profile event, hook, and worker
+broadcast paths; no parallel configuration framework is introduced.
 
 ## Accounting and fail-closed behavior
 
@@ -75,6 +94,33 @@ before `record_spend`, health success, metrics, token tracker, LangSmith, and
 cache set; therefore rejection cannot bill, trace, meter, learn, persist, or
 recache the payload.
 
+Before each cache-miss provider hop, the ledger atomically reserves one provider
+attempt plus that hop's request bytes and tokens. A failed invocation retains
+that reservation because the outbound work already happened; exhaustion rejects
+the next retry/fallback before provider lookup, credential resolution, client
+construction, or invocation. Each buffered provider result is then atomically
+reserved after per-profile validation and before the empty-response retry gate or
+any billing/observability side effect. Cache hits reserve only returned response
+dimensions because they send no provider request and consume no provider attempt.
+An over-limit reservation changes none of the ledger counters.
+
+Request-wide exhaustion raises `CumulativePayloadLimitError`, a typed subclass of
+`PayloadLimitError`, with the same payload-free bounded scalar fields and
+`count_source="request_wide_cumulative"`. Existing payload-error propagation thus
+still hard-stops retry/fallback walkers, while callers can distinguish a
+cumulative cancellation from a single-hop limit.
+
+## ZDD and multi-worker boundary
+
+The ledger is private to a logical request, has atomic reservations, and is
+passed explicitly through the retry and fallback walkers. It is neither a
+process-global counter nor shared between tenants, requests, Gunicorn workers, or
+xdist workers. A dynamic profile replacement therefore affects newly admitted
+requests while an in-flight request completes under its immutable initiating
+limits; no restart or partially applied cross-worker counter reset is required.
+Existing model add/remove events still carry every limit to worker broadcasters,
+which preserves the project's zero-downtime profile-update path.
+
 ## Existing-facility research and decisions
 
 - LangChain defines `UsageMetadata` as the cross-model standard containing
@@ -115,8 +161,10 @@ recache the payload.
 boundaries, structured tool-schema bytes, trusted and failing token counters,
 metadata validation, tool-argument bytes, raw tool-call count, cache hits,
 side-effect suppression, fail-closed fallback propagation, guarded raw-model
-construction, profile fan-out, and broadcaster-log redaction. Its 23 tests pass;
-the selected 297-test gateway regression set passes at 85.03% branch-inclusive
-coverage for `gateway.py`. The existing fallback cost fixture now keeps its
-synthetic 50-token response at the declared 50-token boundary instead of relying
-on an invalid over-limit response.
+construction, profile fan-out, broadcaster-log redaction, and all six cumulative
+dimensions independently across both retry and fallback chains. Its 35 tests
+pass, and the current 143-test retry, fallback, health, router, circuit-breaker,
+S3, and payload-limit regression slice passes. The regression slice also covers
+the explicit missing-primary recovery contract and enabled metered profiles with
+non-zero pricing; neither route can bypass the cumulative ledger or fail-closed
+cost validation.

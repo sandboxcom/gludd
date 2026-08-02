@@ -38,7 +38,12 @@ class TestTenacityIsTheOnlyRetryPath:
 
         tracker = ModelHealthTracker()
         profile = ModelProfile(
-            model_profile_id="p1", provider="openai", model_name="m1", enabled=True
+            model_profile_id="p1",
+            provider="openai",
+            model_name="m1",
+            enabled=True,
+            cost_per_input_token=0.000001,
+            cost_per_output_token=0.000002,
         )
         gateway = ModelGateway(profiles=[profile], health_tracker=tracker)
 
@@ -77,10 +82,12 @@ class TestTenacityIsTheOnlyRetryPath:
         primary = ModelProfile(
             model_profile_id="primary", provider="openai", model_name="gpt-4",
             enabled=True, fallback_profiles=["fallback"],
+            cost_per_input_token=0.000001, cost_per_output_token=0.000002,
         )
         fallback = ModelProfile(
             model_profile_id="fallback", provider="openai", model_name="gpt-3.5",
             enabled=True,
+            cost_per_input_token=0.000001, cost_per_output_token=0.000002,
         )
         gateway = ModelGateway(profiles=[primary, fallback], health_tracker=tracker)
 
@@ -120,7 +127,12 @@ class TestTenacityIsTheOnlyRetryPath:
 
         tracker = ModelHealthTracker()
         profile = ModelProfile(
-            model_profile_id="auth-test", provider="openai", model_name="m1", enabled=True
+            model_profile_id="auth-test",
+            provider="openai",
+            model_name="m1",
+            enabled=True,
+            cost_per_input_token=0.000001,
+            cost_per_output_token=0.000002,
         )
         gateway = ModelGateway(profiles=[profile], health_tracker=tracker)
 

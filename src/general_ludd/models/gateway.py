@@ -48,6 +48,16 @@ DEFAULT_MAX_INPUT_TOKENS = 120_000
 DEFAULT_MAX_RESPONSE_BYTES = 4_194_304
 DEFAULT_MAX_OUTPUT_TOKENS = 8_000
 DEFAULT_MAX_TOOL_CALLS = 64
+DEFAULT_MAX_CUMULATIVE_REQUEST_BYTES = DEFAULT_MAX_REQUEST_BYTES
+DEFAULT_MAX_CUMULATIVE_INPUT_TOKENS = DEFAULT_MAX_INPUT_TOKENS
+DEFAULT_MAX_CUMULATIVE_RESPONSE_BYTES = DEFAULT_MAX_RESPONSE_BYTES
+DEFAULT_MAX_CUMULATIVE_OUTPUT_TOKENS = DEFAULT_MAX_OUTPUT_TOKENS
+DEFAULT_MAX_CUMULATIVE_TOOL_CALLS = DEFAULT_MAX_TOOL_CALLS
+DEFAULT_MAX_PROVIDER_ATTEMPTS = 16
+
+PayloadStage = Literal["request", "response"]
+PayloadDimension = Literal["bytes", "tokens", "tool_calls", "provider_attempts"]
+PayloadSource = Literal["gateway", "provider", "cache"]
 
 
 def _positive_profile_limit(profile: object, field_name: str, default: int) -> int:
@@ -201,11 +211,11 @@ class PayloadLimitError(Exception):
         self,
         *,
         profile_id: str,
-        stage: Literal["request", "response"],
-        dimension: Literal["bytes", "tokens", "tool_calls"],
+        stage: PayloadStage,
+        dimension: PayloadDimension,
         actual: int,
         limit: int,
-        source: Literal["gateway", "provider", "cache"],
+        source: PayloadSource,
         count_source: str,
     ) -> None:
         self.profile_id = profile_id
@@ -220,6 +230,170 @@ class PayloadLimitError(Exception):
             f"profile={profile_id!r}, stage={stage}, dimension={dimension}, "
             f"actual={actual}, limit={limit}, source={source}, count_source={count_source}"
         )
+
+
+class CumulativePayloadLimitError(PayloadLimitError):
+    """Typed rejection when one logical request exhausts its shared budget.
+
+    Retries and fallback hops retain the same private ledger. The error remains
+    a ``PayloadLimitError`` for existing fail-closed propagation while giving
+    callers a distinct type for request-wide cancellation/rejection handling.
+    """
+
+
+@dataclass
+class _RequestPayloadBudget:
+    """Thread-safe accounting shared by every provider hop of one request."""
+
+    max_request_bytes: int
+    max_input_tokens: int
+    max_response_bytes: int
+    max_output_tokens: int
+    max_tool_calls: int
+    max_provider_attempts: int
+    request_bytes: int = 0
+    input_tokens: int = 0
+    response_bytes: int = 0
+    output_tokens: int = 0
+    tool_calls: int = 0
+    provider_attempts: int = 0
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
+    @classmethod
+    def from_profile(cls, profile: ModelProfile) -> _RequestPayloadBudget:
+        """Build a finite ledger from the initiating profile's configuration."""
+        return cls(
+            max_request_bytes=_positive_profile_limit(
+                profile,
+                "max_cumulative_request_bytes",
+                DEFAULT_MAX_CUMULATIVE_REQUEST_BYTES,
+            ),
+            max_input_tokens=_positive_profile_limit(
+                profile,
+                "max_cumulative_input_tokens",
+                DEFAULT_MAX_CUMULATIVE_INPUT_TOKENS,
+            ),
+            max_response_bytes=_positive_profile_limit(
+                profile,
+                "max_cumulative_response_bytes",
+                DEFAULT_MAX_CUMULATIVE_RESPONSE_BYTES,
+            ),
+            max_output_tokens=_positive_profile_limit(
+                profile,
+                "max_cumulative_output_tokens",
+                DEFAULT_MAX_CUMULATIVE_OUTPUT_TOKENS,
+            ),
+            max_tool_calls=_positive_profile_limit(
+                profile,
+                "max_cumulative_tool_calls",
+                DEFAULT_MAX_CUMULATIVE_TOOL_CALLS,
+            ),
+            max_provider_attempts=_positive_profile_limit(
+                profile,
+                "max_provider_attempts",
+                DEFAULT_MAX_PROVIDER_ATTEMPTS,
+            ),
+        )
+
+    @staticmethod
+    def _reject(
+        *,
+        profile_id: str,
+        stage: PayloadStage,
+        dimension: PayloadDimension,
+        actual: int,
+        limit: int,
+    ) -> None:
+        raise CumulativePayloadLimitError(
+            profile_id=profile_id,
+            stage=stage,
+            dimension=dimension,
+            actual=actual,
+            limit=limit,
+            source="gateway",
+            count_source="request_wide_cumulative",
+        )
+
+    def reserve_provider_attempt(
+        self,
+        profile_id: str,
+        *,
+        request_bytes: int,
+        input_tokens: int,
+    ) -> None:
+        """Atomically reserve one outbound attempt before provider construction."""
+        with self._lock:
+            next_attempts = self.provider_attempts + 1
+            next_bytes = self.request_bytes + request_bytes
+            next_tokens = self.input_tokens + input_tokens
+            if next_attempts > self.max_provider_attempts:
+                self._reject(
+                    profile_id=profile_id,
+                    stage="request",
+                    dimension="provider_attempts",
+                    actual=next_attempts,
+                    limit=self.max_provider_attempts,
+                )
+            if next_bytes > self.max_request_bytes:
+                self._reject(
+                    profile_id=profile_id,
+                    stage="request",
+                    dimension="bytes",
+                    actual=next_bytes,
+                    limit=self.max_request_bytes,
+                )
+            if next_tokens > self.max_input_tokens:
+                self._reject(
+                    profile_id=profile_id,
+                    stage="request",
+                    dimension="tokens",
+                    actual=next_tokens,
+                    limit=self.max_input_tokens,
+                )
+            self.provider_attempts = next_attempts
+            self.request_bytes = next_bytes
+            self.input_tokens = next_tokens
+
+    def reserve_response(
+        self,
+        profile_id: str,
+        *,
+        response_bytes: int,
+        output_tokens: int,
+        tool_calls: int,
+    ) -> None:
+        """Atomically account a buffered response before any side effect."""
+        with self._lock:
+            next_bytes = self.response_bytes + response_bytes
+            next_tokens = self.output_tokens + output_tokens
+            next_tool_calls = self.tool_calls + tool_calls
+            if next_bytes > self.max_response_bytes:
+                self._reject(
+                    profile_id=profile_id,
+                    stage="response",
+                    dimension="bytes",
+                    actual=next_bytes,
+                    limit=self.max_response_bytes,
+                )
+            if next_tokens > self.max_output_tokens:
+                self._reject(
+                    profile_id=profile_id,
+                    stage="response",
+                    dimension="tokens",
+                    actual=next_tokens,
+                    limit=self.max_output_tokens,
+                )
+            if next_tool_calls > self.max_tool_calls:
+                self._reject(
+                    profile_id=profile_id,
+                    stage="response",
+                    dimension="tool_calls",
+                    actual=next_tool_calls,
+                    limit=self.max_tool_calls,
+                )
+            self.response_bytes = next_bytes
+            self.output_tokens = next_tokens
+            self.tool_calls = next_tool_calls
 
 
 class ModelProfile(BaseModel):
@@ -237,6 +411,12 @@ class ModelProfile(BaseModel):
     max_response_bytes: int = DEFAULT_MAX_RESPONSE_BYTES
     max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS
     max_tool_calls: int = DEFAULT_MAX_TOOL_CALLS
+    max_cumulative_request_bytes: int = DEFAULT_MAX_CUMULATIVE_REQUEST_BYTES
+    max_cumulative_input_tokens: int = DEFAULT_MAX_CUMULATIVE_INPUT_TOKENS
+    max_cumulative_response_bytes: int = DEFAULT_MAX_CUMULATIVE_RESPONSE_BYTES
+    max_cumulative_output_tokens: int = DEFAULT_MAX_CUMULATIVE_OUTPUT_TOKENS
+    max_cumulative_tool_calls: int = DEFAULT_MAX_CUMULATIVE_TOOL_CALLS
+    max_provider_attempts: int = DEFAULT_MAX_PROVIDER_ATTEMPTS
     cost_per_input_token: float = 0.0
     cost_per_output_token: float = 0.0
     api_metered: bool = True
@@ -275,6 +455,12 @@ class ModelProfile(BaseModel):
         "max_response_bytes",
         "max_output_tokens",
         "max_tool_calls",
+        "max_cumulative_request_bytes",
+        "max_cumulative_input_tokens",
+        "max_cumulative_response_bytes",
+        "max_cumulative_output_tokens",
+        "max_cumulative_tool_calls",
+        "max_provider_attempts",
         "fallback_max_concurrency",
     )
     @classmethod
@@ -717,7 +903,7 @@ class ModelGateway:
         profile_id: str,
         messages: list[dict[str, str]],
         request_kwargs: dict[str, Any],
-    ) -> None:
+    ) -> tuple[int, int]:
         request_bytes, structured_body_bytes = self._request_utf8_bytes(messages, request_kwargs)
         max_request_bytes = _positive_profile_limit(profile, "max_request_bytes", DEFAULT_MAX_REQUEST_BYTES)
         if request_bytes > max_request_bytes:
@@ -747,6 +933,7 @@ class ModelGateway:
                 source="gateway",
                 count_source=count_source,
             )
+        return request_bytes, input_tokens
 
     @staticmethod
     def _response_utf8_bytes(
@@ -791,7 +978,7 @@ class ModelGateway:
         raw_tool_call_count: int,
         tool_calls: list[dict[str, object]] | None,
         source: Literal["provider", "cache"],
-    ) -> None:
+    ) -> tuple[int, int]:
         max_tool_calls = _positive_profile_limit(profile, "max_tool_calls", DEFAULT_MAX_TOOL_CALLS)
         if raw_tool_call_count > max_tool_calls:
             raise PayloadLimitError(
@@ -827,19 +1014,21 @@ class ModelGateway:
                 source=source,
                 count_source=count_source,
             )
+        return response_bytes, output_tokens
 
     def _cached_response(
         self,
         profile: ModelProfile,
         profile_id: str,
         cached: dict[str, object],
+        request_payload_budget: _RequestPayloadBudget,
     ) -> ModelResponse:
         content = str(cached.get("content", ""))
         usage_obj = cached.get("usage_metadata", {})
         usage = usage_obj if isinstance(usage_obj, dict) else {}
         tool_calls_obj = cached.get("tool_calls")
         tool_calls = cast(list[dict[str, object]] | None, tool_calls_obj) if isinstance(tool_calls_obj, list) else None
-        self._enforce_response_limits(
+        response_bytes, output_tokens = self._enforce_response_limits(
             profile,
             profile_id,
             content=content,
@@ -847,6 +1036,12 @@ class ModelGateway:
             raw_tool_call_count=len(tool_calls) if tool_calls is not None else 0,
             tool_calls=tool_calls,
             source="cache",
+        )
+        request_payload_budget.reserve_response(
+            profile_id,
+            response_bytes=response_bytes,
+            output_tokens=output_tokens,
+            tool_calls=len(tool_calls) if tool_calls is not None else 0,
         )
         return ModelResponse(**cast(dict[str, Any], cached))
 
@@ -1074,6 +1269,7 @@ class ModelGateway:
         budget_remaining: float = float("inf"),
         requested_max_output_tokens: int | None = None,
         _skip_health_check: bool = False,
+        _request_payload_budget: _RequestPayloadBudget | None = None,
         **kwargs: Any,
     ) -> ModelResponse:
         profile = self._profiles.get(profile_id)
@@ -1092,7 +1288,8 @@ class ModelGateway:
 
         # D-30 phase one: reject bounded buffered requests before budget/cache
         # activity and, critically, before constructing or invoking a provider.
-        self._enforce_request_limits(profile, profile_id, messages, kwargs)
+        request_bytes, input_tokens = self._enforce_request_limits(profile, profile_id, messages, kwargs)
+        request_payload_budget = _request_payload_budget or _RequestPayloadBudget.from_profile(profile)
 
         # requested_max_output_tokens (D-21 over-conservatism fix): when a caller
         # knows it will cap the model's output (e.g. the /admin/models/call
@@ -1121,7 +1318,12 @@ class ModelGateway:
             cached = self._response_cache.get(cache_key)
             if cached is not None:
                 logger.debug("Cache hit for profile=%s key=%s", profile_id, cache_key[:12])
-                return self._cached_response(profile, profile_id, cached)
+                return self._cached_response(
+                    profile,
+                    profile_id,
+                    cached,
+                    request_payload_budget,
+                )
 
         # Cache stampede single-flight: under concurrency N identical misses
         # would otherwise all hit the provider. Serialize identical misses on a
@@ -1139,12 +1341,35 @@ class ModelGateway:
                             profile_id,
                             cache_key[:12],
                         )
-                        return self._cached_response(profile, profile_id, cached)
-                    return self._invoke_and_bill(profile, profile_id, messages, cache_key, **kwargs)
+                        return self._cached_response(
+                            profile,
+                            profile_id,
+                            cached,
+                            request_payload_budget,
+                        )
+                    return self._invoke_and_bill(
+                        profile,
+                        profile_id,
+                        messages,
+                        cache_key,
+                        request_payload_budget=request_payload_budget,
+                        request_bytes=request_bytes,
+                        input_tokens=input_tokens,
+                        **kwargs,
+                    )
             finally:
                 self._cache_key_unref(cache_key)
 
-        return self._invoke_and_bill(profile, profile_id, messages, None, **kwargs)
+        return self._invoke_and_bill(
+            profile,
+            profile_id,
+            messages,
+            None,
+            request_payload_budget=request_payload_budget,
+            request_bytes=request_bytes,
+            input_tokens=input_tokens,
+            **kwargs,
+        )
 
     def _resolver_for_project(self, project_id: str | None) -> _SecretsResolver | None:
         """Return the secrets resolver scoped to ``project_id`` when possible.
@@ -1189,8 +1414,20 @@ class ModelGateway:
         profile_id: str,
         messages: list[dict[str, str]],
         cache_key: str | None,
+        *,
+        request_payload_budget: _RequestPayloadBudget,
+        request_bytes: int,
+        input_tokens: int,
         **kwargs: Any,
     ) -> ModelResponse:
+        # Reserve all outbound dimensions atomically before provider lookup or
+        # construction. Exhaustion therefore cancels the next retry/fallback hop
+        # without opening credentials, allocating a client, or emitting metrics.
+        request_payload_budget.reserve_provider_attempt(
+            profile_id,
+            request_bytes=request_bytes,
+            input_tokens=input_tokens,
+        )
         provider_name = profile.provider
         registry = self._registry
 
@@ -1373,7 +1610,7 @@ class ModelGateway:
         # D-30 phase one: this is deliberately before every bill, success
         # metric, token tracker, trace and cache write. An oversized provider
         # result is observed only as this bounded typed exception.
-        self._enforce_response_limits(
+        response_bytes, output_tokens_for_limit = self._enforce_response_limits(
             profile,
             profile_id,
             content=content,
@@ -1381,6 +1618,12 @@ class ModelGateway:
             raw_tool_call_count=raw_tool_call_count,
             tool_calls=tool_calls,
             source="provider",
+        )
+        request_payload_budget.reserve_response(
+            profile_id,
+            response_bytes=response_bytes,
+            output_tokens=output_tokens_for_limit,
+            tool_calls=raw_tool_call_count,
         )
 
         # Empty-200 guard: some providers return HTTP 200 with empty content on
@@ -1603,6 +1846,10 @@ class ModelGateway:
         profile = self._profiles.get(profile_id)
         if profile is None:
             raise ValueError(f"Profile '{profile_id}' not found")
+        # One finite ledger follows this logical request through every tenacity
+        # retry and every fallback hop. Internal callers cannot replace it via
+        # kwargs; the initiating profile owns the request-wide configuration.
+        kwargs["_request_payload_budget"] = _RequestPayloadBudget.from_profile(profile)
 
         tracker = self._health_tracker
         policy = TimeoutRetryPolicy(
@@ -2129,16 +2376,42 @@ class ModelGateway:
         budget_remaining: float = float("inf"),
         **kwargs: Any,
     ) -> ModelResponse:
+        profile = self._profiles.get(profile_id)
+        fallback_ids: list[str] = list(fallback_profiles or [])
+        if profile is None:
+            # Preserve the explicit missing-primary recovery contract while still
+            # requiring a configured profile to supply finite cumulative limits.
+            # The first configured explicit fallback becomes the immutable policy
+            # anchor; unknown fallback IDs cannot silently disable accounting.
+            policy_profile = next(
+                (
+                    candidate
+                    for fallback_id in fallback_ids
+                    if (candidate := self._profiles.get(fallback_id)) is not None
+                ),
+                None,
+            )
+            if policy_profile is None:
+                raise ValueError(f"Profile '{profile_id}' not found")
+        else:
+            policy_profile = profile
+            if not fallback_ids:
+                fallback_ids = list(profile.fallback_profiles)
+        request_payload_budget = _RequestPayloadBudget.from_profile(policy_profile)
         # S.3: gate primary on health tracker before attempting call,
         # using _try_call_model which has its own built-in health gate
         # and properly threads budget params through to call_model.
-        primary_healthy = self._health_tracker is None or self._health_tracker.is_healthy(profile_id)
+        primary_healthy = profile is None or self._health_tracker is None or self._health_tracker.is_healthy(profile_id)
         _call_kwargs: dict[str, Any] = {
+            **kwargs,
             "estimated_cost": estimated_cost,
             "budget_remaining": budget_remaining,
-            **kwargs,
+            "_request_payload_budget": request_payload_budget,
         }
-        if primary_healthy:
+        primary_exc: BaseException | None
+        if profile is None:
+            primary_exc = ValueError(f"Profile '{profile_id}' not found")
+        elif primary_healthy:
             try:
                 result = self._try_call_model(profile_id, messages, **_call_kwargs)
                 if result is not None:
@@ -2152,12 +2425,6 @@ class ModelGateway:
                 raise
         else:
             primary_exc = None
-
-        fallback_ids: list[str] = fallback_profiles or []
-        if not fallback_ids:
-            profile = self._profiles.get(profile_id)
-            if profile is not None:
-                fallback_ids = list(profile.fallback_profiles)
 
         all_attempts: list[dict[str, str]] = []
         if primary_exc is not None:

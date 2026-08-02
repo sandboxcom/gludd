@@ -5,11 +5,17 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from general_ludd.models.gateway import ModelGateway, ModelProfile, PayloadLimitError, SSRFRejectionError
+from general_ludd.models.gateway import (
+    CumulativePayloadLimitError,
+    ModelGateway,
+    ModelProfile,
+    PayloadLimitError,
+    SSRFRejectionError,
+)
 
 
 def _profile(profile_id: str = "limited", **overrides: Any) -> ModelProfile:
@@ -105,6 +111,12 @@ def test_profile_payload_limits_are_positive_configurable_integers() -> None:
         max_response_bytes=103,
         max_output_tokens=104,
         max_tool_calls=5,
+        max_cumulative_request_bytes=201,
+        max_cumulative_input_tokens=202,
+        max_cumulative_response_bytes=203,
+        max_cumulative_output_tokens=204,
+        max_cumulative_tool_calls=6,
+        max_provider_attempts=7,
     )
     assert (
         profile.max_request_bytes,
@@ -112,9 +124,27 @@ def test_profile_payload_limits_are_positive_configurable_integers() -> None:
         profile.max_response_bytes,
         profile.max_output_tokens,
         profile.max_tool_calls,
-    ) == (101, 102, 103, 104, 5)
+        profile.max_cumulative_request_bytes,
+        profile.max_cumulative_input_tokens,
+        profile.max_cumulative_response_bytes,
+        profile.max_cumulative_output_tokens,
+        profile.max_cumulative_tool_calls,
+        profile.max_provider_attempts,
+    ) == (101, 102, 103, 104, 5, 201, 202, 203, 204, 6, 7)
 
-    for field in ("max_request_bytes", "max_input_tokens", "max_response_bytes", "max_output_tokens", "max_tool_calls"):
+    for field in (
+        "max_request_bytes",
+        "max_input_tokens",
+        "max_response_bytes",
+        "max_output_tokens",
+        "max_tool_calls",
+        "max_cumulative_request_bytes",
+        "max_cumulative_input_tokens",
+        "max_cumulative_response_bytes",
+        "max_cumulative_output_tokens",
+        "max_cumulative_tool_calls",
+        "max_provider_attempts",
+    ):
         invalid: dict[str, Any] = {field: 0}
         with pytest.raises(ValueError, match="at least 1"):
             _profile(**invalid)
@@ -122,6 +152,222 @@ def test_profile_payload_limits_are_positive_configurable_integers() -> None:
     assert _profile("  bounded  ").model_profile_id == "bounded"
     with pytest.raises(ValueError, match="must not be empty"):
         _profile("   ")
+
+
+@pytest.mark.parametrize(
+    ("dimension_case", "expected_stage", "expected_dimension", "expected_actual", "provider_calls"),
+    [
+        ("request_bytes", "request", "bytes", None, 1),
+        ("request_tokens", "request", "tokens", 6, 1),
+        ("response_bytes", "response", "bytes", 2, 2),
+        ("response_tokens", "response", "tokens", 4, 2),
+        ("tool_calls", "response", "tool_calls", 2, 2),
+        ("provider_attempts", "request", "provider_attempts", 2, 1),
+    ],
+)
+def test_retry_chain_shares_one_cumulative_payload_budget(
+    dimension_case: str,
+    expected_stage: str,
+    expected_dimension: str,
+    expected_actual: int | None,
+    provider_calls: int,
+) -> None:
+    messages = [{"role": "user", "content": "retry me"}]
+    request_bytes = _compact_message_bytes(messages)
+    overrides: dict[str, int] = {
+        "max_cumulative_request_bytes": 4096,
+        "max_cumulative_input_tokens": 4096,
+        "max_cumulative_response_bytes": 4096,
+        "max_cumulative_output_tokens": 4096,
+        "max_cumulative_tool_calls": 8,
+        "max_provider_attempts": 8,
+    }
+    response = _response(
+        " ",
+        usage={"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+    )
+    counter: Callable[[ModelProfile, list[dict[str, str]]], int] | None = None
+
+    if dimension_case == "request_bytes":
+        overrides["max_cumulative_request_bytes"] = request_bytes
+        expected_actual = request_bytes * 2
+    elif dimension_case == "request_tokens":
+        overrides["max_cumulative_input_tokens"] = 3
+        counter = MagicMock(return_value=3)
+    elif dimension_case == "response_bytes":
+        overrides["max_cumulative_response_bytes"] = 1
+    elif dimension_case == "response_tokens":
+        overrides["max_cumulative_output_tokens"] = 2
+        response = _response(
+            " ",
+            usage={"input_tokens": 0, "output_tokens": 2, "total_tokens": 2},
+        )
+    elif dimension_case == "tool_calls":
+        overrides["max_cumulative_tool_calls"] = 1
+        response = _response(
+            "",
+            usage={"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+            tool_calls=[{"id": "malformed-without-name"}],
+        )
+    else:
+        overrides["max_provider_attempts"] = 1
+
+    cache = MagicMock()
+    cache.get.return_value = None
+    budget = MagicMock()
+    metrics = MagicMock()
+    tracer = MagicMock()
+    health = MagicMock()
+    health.is_healthy.return_value = True
+    gateway, _, chat_model = _gateway(
+        _profile(**overrides),
+        response,
+        request_token_counter=counter,
+        response_cache=cache,
+        budget_guard=budget,
+        metrics=metrics,
+        tracer=tracer,
+        health=health,
+    )
+
+    with (
+        patch("general_ludd.models.gateway.asyncio.sleep", new=AsyncMock()),
+        patch("general_ludd.models.gateway.default_token_tracker") as token_tracker,
+        pytest.raises(CumulativePayloadLimitError) as caught,
+    ):
+        gateway.call_model_with_retry(
+            "limited",
+            messages,
+            max_retries=3,
+            base_backoff_seconds=0,
+        )
+
+    error = caught.value
+    assert (error.stage, error.dimension, error.actual, error.source) == (
+        expected_stage,
+        expected_dimension,
+        expected_actual,
+        "gateway",
+    )
+    assert error.count_source == "request_wide_cumulative"
+    assert "retry me" not in str(error)
+    assert chat_model.invoke.call_count == provider_calls
+    token_tracker.assert_not_called()
+    _assert_no_post_response_side_effects(
+        cache=cache,
+        budget=budget,
+        metrics=metrics,
+        tracer=tracer,
+        health=health,
+    )
+
+
+@pytest.mark.parametrize(
+    ("dimension_case", "expected_stage", "expected_dimension", "provider_calls"),
+    [
+        ("request_bytes", "request", "bytes", 1),
+        ("request_tokens", "request", "tokens", 1),
+        ("response_bytes", "response", "bytes", 2),
+        ("response_tokens", "response", "tokens", 2),
+        ("tool_calls", "response", "tool_calls", 2),
+        ("provider_attempts", "request", "provider_attempts", 1),
+    ],
+)
+def test_fallback_chain_shares_one_cumulative_payload_budget(
+    dimension_case: str,
+    expected_stage: str,
+    expected_dimension: str,
+    provider_calls: int,
+) -> None:
+    messages = [{"role": "user", "content": "one logical request"}]
+    request_bytes = _compact_message_bytes(messages)
+    overrides: dict[str, int] = {
+        "max_cumulative_request_bytes": 4096,
+        "max_cumulative_input_tokens": 4096,
+        "max_cumulative_response_bytes": 4096,
+        "max_cumulative_output_tokens": 4096,
+        "max_cumulative_tool_calls": 8,
+        "max_provider_attempts": 8,
+    }
+    response = _response(
+        " ",
+        usage={"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+    )
+    counter: Callable[[ModelProfile, list[dict[str, str]]], int] | None = None
+    expected_actual = 2
+    if dimension_case == "request_bytes":
+        overrides["max_cumulative_request_bytes"] = request_bytes
+        expected_actual = request_bytes * 2
+    elif dimension_case == "request_tokens":
+        overrides["max_cumulative_input_tokens"] = 3
+        counter = MagicMock(return_value=3)
+        expected_actual = 6
+    elif dimension_case == "response_bytes":
+        overrides["max_cumulative_response_bytes"] = 1
+    elif dimension_case == "response_tokens":
+        overrides["max_cumulative_output_tokens"] = 2
+        response = _response(
+            " ",
+            usage={"input_tokens": 0, "output_tokens": 2, "total_tokens": 2},
+        )
+        expected_actual = 4
+    elif dimension_case == "tool_calls":
+        overrides["max_cumulative_tool_calls"] = 1
+        response = _response(
+            "",
+            usage={"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+            tool_calls=[{"id": "malformed-without-name"}],
+        )
+    else:
+        overrides["max_provider_attempts"] = 1
+
+    primary = _profile(
+        "primary",
+        fallback_profiles=["fallback"],
+        **overrides,
+    )
+    fallback = _profile("fallback")
+    chat_model = MagicMock()
+    chat_model.invoke.return_value = response
+    provider_factory = MagicMock(return_value=chat_model)
+    registry = MagicMock()
+    registry.is_installed.return_value = True
+    registry.get_provider_class.return_value = provider_factory
+    cache = MagicMock()
+    cache.get.return_value = None
+    budget = MagicMock()
+    metrics = MagicMock()
+    tracer = MagicMock()
+    gateway = ModelGateway(
+        [primary, fallback],
+        provider_registry=registry,
+        request_token_counter=counter,
+        response_cache=cache,
+        budget_guard=budget,
+        metrics_collector=metrics,
+        metrics_agent_id="agent-1",
+        langsmith_tracer=tracer,
+    )
+
+    with (
+        patch("general_ludd.models.gateway.default_token_tracker") as token_tracker,
+        pytest.raises(CumulativePayloadLimitError) as caught,
+    ):
+        gateway.call_model_with_fallback("primary", messages)
+
+    assert (caught.value.stage, caught.value.dimension, caught.value.actual) == (
+        expected_stage,
+        expected_dimension,
+        expected_actual,
+    )
+    assert caught.value.profile_id == "fallback"
+    assert provider_factory.call_count == provider_calls
+    assert chat_model.invoke.call_count == provider_calls
+    token_tracker.assert_not_called()
+    cache.set.assert_not_called()
+    budget.record_spend.assert_not_called()
+    metrics.record_model_call.assert_not_called()
+    tracer.is_enabled.assert_not_called()
 
 
 def test_request_byte_limit_uses_exact_compact_utf8_and_never_calls_provider() -> None:

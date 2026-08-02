@@ -42,6 +42,8 @@ def _make_profile(
         model_name=f"model-{pid}",
         credential_alias="openai_key",
         run_budget_usd=budget,
+        cost_per_input_token=0.000001,
+        cost_per_output_token=0.000002,
         fallback_profiles=fallback or [],
     )
 
