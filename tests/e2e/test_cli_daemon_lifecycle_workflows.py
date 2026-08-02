@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from general_ludd import __version__
@@ -44,6 +45,17 @@ def _make_config_dir(tmp_path: Path, extra: str = "") -> str:
     base = f"database:\n  url: 'sqlite+aiosqlite:///{db_path}'\n"
     (config_dir / "general-ludd.yml").write_text(base + extra)
     return str(config_dir)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_default_daemon_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep implicit daemon factories off persistent user database state."""
+    default_root = tmp_path / "default-daemon"
+    default_root.mkdir()
+    monkeypatch.setenv("GLUDD_CONFIG_DIR", _make_config_dir(default_root))
 
 
 class _FakeTask:
@@ -421,8 +433,13 @@ class TestAuthMiddleware:
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
             with TestClient(app) as client:
+                event_loop_task = app.state._event_loop_task
+                assert event_loop_task is not None
+                assert not event_loop_task.done()
                 assert client.get("/healthz").status_code == 200
-                assert client.get("/readyz").status_code == 503
+                ready_response = client.get("/readyz")
+                assert ready_response.status_code == 200
+                assert ready_response.json() == {"status": "ready"}
                 assert client.get("/docs").status_code == 200
                 assert client.get("/openapi.json").status_code == 200
 
