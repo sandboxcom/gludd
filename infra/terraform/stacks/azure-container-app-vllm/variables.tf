@@ -34,6 +34,17 @@ variable "timeout_minutes" {
   type = number
 }
 
+variable "use_spot" {
+  description = "Spot capacity is not supported for Azure Container Apps; retained as a false-only interface default."
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = !var.use_spot
+    error_message = "use_spot must remain false because Azure Container Apps GPU profiles do not support spot capacity."
+  }
+}
+
 variable "vllm_context_length" {
   type = number
 }
