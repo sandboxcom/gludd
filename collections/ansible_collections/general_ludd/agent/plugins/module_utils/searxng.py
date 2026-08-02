@@ -1,9 +1,11 @@
 """
-Shared SearXNG search client for general_ludd collections.
+SearXNG search client for general_ludd collections.
 
-Extracts the generic HTTP search infrastructure from the travel collection's
-searxng_search module so other collections can query SearXNG without
-re-implementing URL building, HTTP transport, or result extraction.
+Thin ansible-compatible wrapper around
+:class:`general_ludd.connectors.searx.SearXConnector`.  All HTTP
+execution, URL building, SSRF protection, retry logic, and JSON
+deserialisation are delegated to SearXConnector.  This module handles
+only ansible-specific parameter coercion and result shaping.
 
 Usage in a module
 -----------------
@@ -15,7 +17,6 @@ Usage in a module
         execute_search,
         extract_price,
         extract_stars,
-        normalise_url,
     )
 
     client = SearXNGClient(base_url="http://localhost:8080")
@@ -25,13 +26,13 @@ Usage in a module
 from __future__ import annotations
 
 import dataclasses as _dc
-import json as _json
 import re as _re
 from typing import Any
-from urllib import parse as _urlparse
-from urllib import request as _urllib_request
-from urllib.error import HTTPError as _HTTPError
-from urllib.error import URLError as _URLError
+from urllib.parse import parse_qs as _parse_qs
+from urllib.parse import urlencode as _urlencode
+from urllib.parse import urlparse as _urlparse
+
+from general_ludd.connectors.searx import SearXConnector
 
 _PRICE_RE = _re.compile(r"\$\s*(\d{1,6}(?:[.,]\d{1,2})?)")
 _STAR_RE = _re.compile(r"(\d(?:[.,]\d)?)[\s/]*(?:star|⭐|out of 5)")
@@ -49,9 +50,23 @@ _VALID_CATEGORIES: set[str] = {
     "map",
 }
 
+_ENGINE_MAP: dict[str, str] = {
+    "flights": "google_flights,google_travel",
+    "hotels": "booking,hotelscombined,tripadvisor",
+    "events": "google_events,ticketmaster,eventbrite",
+    "activities": "tripadvisor,wikivoyage,google_maps",
+    "restaurants": "yelp,tripadvisor,google_maps",
+    "general": "google,wikipedia,duckduckgo",
+}
+
 DEFAULT_BASE_URL: str = "http://localhost:8080"
 DEFAULT_TIMEOUT: int = 30
 DEFAULT_RETRIES: int = 2
+
+
+# ============================================================================
+# Standalone utilities — pure functions, zero HTTP
+# ============================================================================
 
 
 def normalise_url(base: str) -> str:
@@ -62,34 +77,66 @@ def normalise_url(base: str) -> str:
     return url
 
 
+def engines_per_category(category: str) -> str:
+    """Return default SearXNG engine list for a search category."""
+    return _ENGINE_MAP.get(category, "google,wikipedia")
+
+
+def extract_price(text: str) -> float | None:
+    """Extract a USD price from text (e.g. ``$ 150.00`` -> ``150.0``)."""
+    match = _PRICE_RE.search(text)
+    if match:
+        value = match.group(1).replace(",", "")
+        return float(value)
+    return None
+
+
+def extract_stars(text: str) -> float | None:
+    """Extract a star rating from text (e.g. ``4.5 stars`` -> ``4.5``)."""
+    match = _STAR_RE.search(text)
+    if match:
+        return float(match.group(1))
+    return None
+
+
+# ============================================================================
+# Connector helper
+# ============================================================================
+
+
+def _connector(base_url: str, timeout: float) -> SearXConnector:
+    """Build a SearXConnector for the given instance.
+
+    Allow private hosts by default — ansible modules typically talk to a
+    local or LAN SearXNG instance.
+    """
+    return SearXConnector(
+        {"base_url": base_url, "timeout": timeout, "allow_private": True},
+    )
+
+
+# ============================================================================
+# URL building  (kept for consumers that need the URL string separately)
+# ============================================================================
+
+
 def build_search_url(
     searxng_url: str,
     query: str,
-    category: str,
+    category: str,  # kept for backwards-compatible signature
     engines: str = "",
-    max_results: int = 10,
+    max_results: int = 10,  # URL carries no per-result cap
     safe_search: int = 0,
     language: str = "en",
 ) -> str:
     """Build a SearXNG JSON API search URL.
 
-    Parameters
-    ----------
-    searxng_url:
-        Base URL of the SearXNG instance.
-    query:
-        Free-text search query.
-    category:
-        Search category (``flights``, ``hotels``, ``general``, etc.).
-        Controls which engines are used via ``engines_per_category``.
-    engines:
-        Comma-separated override list; when empty the category default is used.
-    max_results:
-        Result page size.
-    safe_search:
-        Safe search level (0, 1, 2).
-    language:
-        Language code for results.
+    .. note::
+
+        This function is retained so callers can inspect the composed URL.
+        Actual HTTP execution is delegated to
+        :class:`~general_ludd.connectors.searx.SearXConnector` via
+        :func:`execute_search`.
     """
     params: dict[str, str] = {
         "q": query,
@@ -101,82 +148,52 @@ def build_search_url(
         "pageno": "1",
     }
     base = normalise_url(searxng_url)
-    return f"{base}/search?{_urlparse.urlencode(params)}"
+    return f"{base}/search?{_urlencode(params)}"
 
 
-def engines_per_category(category: str) -> str:
-    """Return default SearXNG engine list for a search category."""
-    _ENGINE_MAP: dict[str, str] = {
-        "flights": "google_flights,google_travel",
-        "hotels": "booking,hotelscombined,tripadvisor",
-        "events": "google_events,ticketmaster,eventbrite",
-        "activities": "tripadvisor,wikivoyage,google_maps",
-        "restaurants": "yelp,tripadvisor,google_maps",
-        "general": "google,wikipedia,duckduckgo",
-    }
-    return _ENGINE_MAP.get(category, "google,wikipedia")
+# ============================================================================
+# execute_search — delegates HTTP to SearXConnector
+# ============================================================================
 
 
 def execute_search(
     search_url: str,
     timeout: int = 10,
-    user_agent: str = "gludd-searxng/1.0",
+    user_agent: str = "gludd-searxng/1.0",  # delegate handles headers
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], str]:
-    """Execute a SearXNG JSON API search and return structured results.
+    """Execute a SearXNG JSON API search.
 
-    Parameters
-    ----------
-    search_url:
-        Full search URL (as built by :func:`build_search_url`).
-    timeout:
-        HTTP request timeout in seconds.
-    user_agent:
-        User-Agent header value.
+    **Delegates to SearXConnector** for SSRF-guarded HTTP transport,
+    TLS verification, and JSON deserialisation.
 
-    Returns
-    -------
-    ``(structured_results, raw_results, search_url)``.
-    On HTTP error, returns ``([], [], search_url)``.
+    Returns ``(structured_results, raw_results, search_url)``.
+    On error returns ``([], [], search_url)``.
     """
-    req = _urllib_request.Request(
-        search_url,
-        headers={
-            "User-Agent": user_agent,
-            "Accept": "application/json",
-        },
-    )
-
     try:
-        with _urllib_request.urlopen(req, timeout=timeout) as resp:
-            body = resp.read().decode("utf-8")
-    except (_HTTPError, _URLError):
+        parsed = _urlparse(search_url)
+        base_url = f"{parsed.scheme}://{parsed.netloc}"
+        flat_params: dict[str, str | int] = {}
+        for key, vals in _parse_qs(parsed.query).items():
+            flat_params[key] = vals[0] if len(vals) == 1 else ",".join(vals)
+    except Exception:
         return [], [], search_url
 
-    data = _json.loads(body)
-    raw_results: list[dict[str, Any]] = data.get("results", [])
-    return list(raw_results), list(raw_results), search_url
+    try:
+        conn = _connector(base_url, float(timeout))
+        status, body = conn._get("/search", params=flat_params)
+    except Exception:
+        return [], [], search_url
+
+    if not (200 <= status < 300) or not isinstance(body, dict):
+        return [], [], search_url
+
+    raw_results: list[dict[str, Any]] = list(body.get("results", []))
+    return raw_results, raw_results, search_url
 
 
-def extract_price(text: str) -> float | None:
-    """Extract a USD price from text (e.g. ``$ 150.00`` → ``150.0``)."""
-    match = _PRICE_RE.search(text)
-    if match:
-        value = match.group(1).replace(",", "")
-        return float(value)
-    return None
-
-
-def extract_stars(text: str) -> float | None:
-    """Extract a star rating from text (e.g. ``4.5 stars`` → ``4.5``)."""
-    match = _STAR_RE.search(text)
-    if match:
-        return float(match.group(1))
-    return None
-
-
-# ---------------------------------------------------------------------------
+# ============================================================================
 # SearxResult — typed result model
-# ---------------------------------------------------------------------------
+# ============================================================================
 
 
 @_dc.dataclass
@@ -217,9 +234,9 @@ class SearxResult:
         )
 
 
-# ---------------------------------------------------------------------------
+# ============================================================================
 # SearxResponse — aggregated search response
-# ---------------------------------------------------------------------------
+# ============================================================================
 
 
 @_dc.dataclass
@@ -256,36 +273,43 @@ class SearxResponse:
         return result
 
 
-# ---------------------------------------------------------------------------
-# SearXNGClient — OOP client
-# ---------------------------------------------------------------------------
+# ============================================================================
+# SearXNGClient — thin OOP wrapper around SearXConnector
+# ============================================================================
+
+
+def _deduplicate(results: list[SearxResult]) -> list[SearxResult]:
+    """Remove duplicate URLs, keeping the highest-score entry for each URL."""
+    seen: dict[str, SearxResult] = {}
+    for r in results:
+        if not r.url:
+            continue
+        if r.url not in seen or r.score > seen[r.url].score:
+            seen[r.url] = r
+    return sorted(seen.values(), key=lambda x: x.score, reverse=True)
 
 
 class SearXNGClient:
-    """HTTP client for a SearXNG instance.
+    """HTTP client for a SearXNG instance — thin wrapper around SearXConnector.
 
-    Parameters
-    ----------
-    base_url:
-        Base URL of the SearXNG instance. Defaults to ``http://localhost:8080``.
-    timeout:
-        HTTP request timeout in seconds (default 30).
-    retries:
-        Number of retry attempts on 5xx / transient errors (default 2).
+    All HTTP transport, URL building, SSRF protection, TLS verification,
+    and JSON parsing are delegated to the :class:`~general_ludd.connectors.searx.SearXConnector`
+    held in ``self._connector``.
     """
 
     def __init__(
         self,
         base_url: str = DEFAULT_BASE_URL,
         timeout: int = DEFAULT_TIMEOUT,
-        retries: int = DEFAULT_RETRIES,
+        retries: int = DEFAULT_RETRIES,  # connector handles transport
     ) -> None:
         self.base_url = normalise_url(base_url)
         self.timeout = timeout
         self.retries = retries
+        self._connector = _connector(base_url, float(timeout))
         self._indices: dict[str, list[str]] = {}
 
-    # -- search ---------------------------------------------------------------
+    # -- search (delegates HTTP to SearXConnector) ----------------------------
 
     def search(
         self,
@@ -297,72 +321,44 @@ class SearXNGClient:
         safe_search: int = 0,
         page: int = 1,
     ) -> SearxResponse:
-        """Run a search query against SearXNG.
+        """Run a search query — delegates HTTP to SearXConnector.
 
-        Parameters
-        ----------
-        query:
-            Free-text search query.
-        max_results:
-            Cap on returned results (applied after deduplication).
-        categories:
-            One or more search categories. Defaults to ``["general"]``.
-        engines:
-            Comma-separated engine list override. When ``None``, the
-            category default is used.
-        language:
-            Language code (default ``"en"``).
-        safe_search:
-            Safe search level 0-2 (default 0).
-        page:
-            Results page number (default 1).
-
-        Raises
-        ------
-        ValueError:
-            If an unknown category is supplied.
-        urllib.error.HTTPError, URLError:
-            After retries are exhausted.
+        Deduplication and max_results capping are applied locally on the
+        typed results.
         """
         cats = categories or ["general"]
         for c in cats:
             if c not in _VALID_CATEGORIES:
                 raise ValueError(f"Unknown category: {c}")
-        cat_str = ",".join(cats)
 
-        engines_str = ",".join(engines) if engines else ""
-
-        params: dict[str, str] = {
+        flat_params: dict[str, str | int] = {
             "q": query,
             "format": "json",
-            "categories": cat_str,
-            "engines": engines_str,
+            "categories": ",".join(cats),
+            "engines": ",".join(engines) if engines else "",
             "language": language,
             "safesearch": str(safe_search),
             "pageno": str(page),
         }
-        url = f"{self.base_url}/search?{_urlparse.urlencode(params)}"
 
-        data = _search_with_retries(url, self.timeout, self.retries)
+        status, body = self._connector._get("/search", params=flat_params)
 
-        raw_results = data.get("results", [])
+        if not (200 <= status < 300) or not isinstance(body, dict):
+            return SearxResponse(query=query)
+
+        raw_results = body.get("results", [])
         parsed = [SearxResult.from_raw(r) for r in raw_results]
         parsed = _deduplicate(parsed)
         if max_results < len(parsed):
             parsed = parsed[:max_results]
 
-        num_results = data.get("number_of_results", len(parsed))
-        suggestions = data.get("suggestions", [])
-        answers = data.get("answers", [])
-        unresponsive = data.get("unresponsive_engines", [])
-
         return SearxResponse(
             query=query,
             results=parsed,
-            number_of_results=num_results,
-            suggestions=suggestions,
-            answers=answers,
-            unresponsive_engines=unresponsive,
+            number_of_results=body.get("number_of_results", len(parsed)),
+            suggestions=body.get("suggestions", []),
+            answers=body.get("answers", []),
+            unresponsive_engines=body.get("unresponsive_engines", []),
         )
 
     def web_search(self, query: str, max_results: int = 10) -> SearxResponse:
@@ -377,7 +373,7 @@ class SearXNGClient:
         """Convenience search restricted to the ``images`` category."""
         return self.search(query, max_results=max_results, categories=["images"])
 
-    # -- index management -----------------------------------------------------
+    # -- index management (in-memory bookkeeping, HTTP delegated) ------------
 
     def create_index(self, name: str, engines: list[str]) -> dict[str, Any]:
         """Create a named engine index stored client-side."""
@@ -389,32 +385,39 @@ class SearXNGClient:
         return {"name": name, "engines": engines, "created": True}
 
     def index_status(self, name: str) -> dict[str, Any]:
-        """Check the health of a named engine index."""
+        """Check the health of a named engine index — HTTP delegates to SearXConnector."""
         if name not in self._indices:
             return {"exists": False, "error": f"Index '{name}' not found"}
 
         engines = self._indices[name]
-        engines_str = ",".join(engines)
-        params: dict[str, str] = {
+        params: dict[str, str | int] = {
             "q": "health check",
             "format": "json",
             "categories": "general",
-            "engines": engines_str,
+            "engines": ",".join(engines),
             "language": "en",
             "safesearch": "0",
             "pageno": "1",
         }
-        url = f"{self.base_url}/search?{_urlparse.urlencode(params)}"
 
         try:
-            raw = _search_with_retries(url, self.timeout, retries=0)
-        except (_URLError, _HTTPError) as exc:
+            status, raw = self._connector._get("/search", params=params)
+        except Exception as exc:
             return {
                 "exists": True,
                 "name": name,
                 "engines_total": len(engines),
                 "healthy": False,
                 "error": str(exc),
+            }
+
+        if not (200 <= status < 300) or not isinstance(raw, dict):
+            return {
+                "exists": True,
+                "name": name,
+                "engines_total": len(engines),
+                "healthy": False,
+                "error": f"HTTP {status}",
             }
 
         unresponsive_engines: list[list[str]] = raw.get("unresponsive_engines", [])
@@ -442,73 +445,27 @@ class SearXNGClient:
             engines=self._indices[index_name],
         )
 
-    # -- health ---------------------------------------------------------------
+    # -- health (delegates to SearXConnector) --------------------------------
 
     def health(self) -> dict[str, Any]:
-        """Check if the SearXNG instance is reachable."""
+        """Check if the SearXNG instance is reachable — delegates to SearXConnector."""
         try:
-            req = _urllib_request.Request(
-                f"{self.base_url}/healthz",
-                headers={
-                    "User-Agent": "gludd-searxng/1.0",
-                    "Accept": "text/plain",
-                },
-            )
-            with _urllib_request.urlopen(req, timeout=5) as resp:
-                resp.read()
-            return {"ok": True, "detail": "SearXNG reachable", "base_url": self.base_url}
-        except ConnectionError as exc:
-            return {"ok": False, "detail": f"SearXNG unreachable: {exc}"}
-        except (_URLError, _HTTPError, OSError) as exc:
+            result = self._connector.health()
+            ok = bool(result.get("ok", False))
+            if ok:
+                return {
+                    "ok": True,
+                    "detail": "SearXNG reachable",
+                    "base_url": self.base_url,
+                }
+            return {"ok": False, "detail": f"HTTP error: {result.get('error', 'unknown')}"}
+        except Exception as exc:
             return {"ok": False, "detail": str(exc)}
 
 
-# -- internal helpers ----------------------------------------------------------
-
-
-def _search_with_retries(url: str, timeout: int, retries: int) -> dict[str, Any]:
-    """Execute a SearXNG JSON API search with retry logic.
-
-    Returns the full JSON response dict.
-    4xx errors are NOT retried.  5xx, URLError, and OSError are.
-    """
-    last_exc: Exception | None = None
-    for _attempt in range(retries + 1):
-        try:
-            req = _urllib_request.Request(
-                url,
-                headers={
-                    "User-Agent": "gludd-searxng/1.0",
-                    "Accept": "application/json",
-                },
-            )
-            with _urllib_request.urlopen(req, timeout=timeout) as resp:
-                body = resp.read().decode("utf-8")
-            return _json.loads(body)
-        except _HTTPError as exc:
-            if exc.code is not None and 400 <= exc.code < 500:
-                raise
-            last_exc = exc
-        except (_URLError, OSError) as exc:
-            last_exc = exc
-
-    if last_exc is not None:
-        raise last_exc
-    return {}
-
-
-def _deduplicate(results: list[SearxResult]) -> list[SearxResult]:
-    """Remove duplicate URLs, keeping the highest-score entry for each URL.
-
-    Results are returned sorted by score descending.
-    """
-    seen: dict[str, SearxResult] = {}
-    for r in results:
-        if not r.url:
-            continue
-        if r.url not in seen or r.score > seen[r.url].score:
-            seen[r.url] = r
-    return sorted(seen.values(), key=lambda x: x.score, reverse=True)
+# ============================================================================
+# Module-level raw-result parsers (kept for backwards compatibility)
+# ============================================================================
 
 
 def parse_urls(raw: list[dict[str, Any]]) -> list[str]:

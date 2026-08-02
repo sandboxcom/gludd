@@ -48,6 +48,14 @@ DOCUMENTATION:
       description: HTTP request timeout in seconds.
       type: int
       default: 10
+    structured:
+      description:
+        - When true, uses JsonOutputParser to parse flight/hotel results
+          from structured JSON embedded in SearXNG result text.
+        - When false (default), uses the legacy regex-based extract_price/
+          extract_stars parsers.
+      type: bool
+      default: false
     daemon_url:
       description: Base URL of the daemon.
       type: str
@@ -69,6 +77,18 @@ EXAMPLES:
       query: "hotels in Tokyo Shinjuku"
       category: hotels
       max_results: 20
+
+  - name: Search for flights with structured JSON parsing
+    general_ludd.travel.searxng_search:
+      query: "flights NYC to Paris September 2026"
+      category: flights
+      structured: true
+
+  - name: Search for hotels with structured JSON parsing
+    general_ludd.travel.searxng_search:
+      query: "hotels in Tokyo Shinjuku"
+      category: hotels
+      structured: true
 
   - name: Search for activities in Barcelona
     general_ludd.travel.searxng_search:
@@ -106,6 +126,7 @@ RETURN:
 
 from __future__ import annotations
 
+import dataclasses as _dc
 import datetime as _datetime
 import re as _re
 import time as _time
@@ -113,9 +134,7 @@ from typing import Any
 
 from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
 from ansible_collections.general_ludd.agent.plugins.module_utils.searxng import (
-    build_search_url,
-    engines_per_category,
-    execute_search,
+    SearXNGClient,
     extract_price,
     extract_stars,
 )
@@ -133,6 +152,9 @@ from ansible_collections.general_ludd.travel.plugins.module_utils.contracts impo
     Money,
     ProviderInfo,
     RoomType,
+)
+from ansible_collections.general_ludd.travel.plugins.module_utils.output_parser import (
+    JsonOutputParser,
 )
 
 _FLIGHT_RE = _re.compile(
@@ -334,6 +356,16 @@ def _parse_general_result(
     }
 
 
+_TRAVEL_ENGINE_MAP: dict[str, list[str]] = {
+    "flights": ["google_flights", "google_travel"],
+    "hotels": ["booking", "hotelscombined", "tripadvisor"],
+    "events": ["google_events", "ticketmaster", "eventbrite"],
+    "activities": ["tripadvisor", "wikivoyage", "google_maps"],
+    "restaurants": ["yelp", "tripadvisor", "google_maps"],
+    "general": ["google", "wikipedia", "duckduckgo"],
+}
+
+
 _PARSER_MAP: dict[str, Any] = {
     "flights": _parse_flight_result,
     "hotels": _parse_hotel_result,
@@ -353,31 +385,41 @@ def search_searxng(
     safe_search: int,
     language: str,
     timeout: int,
+    structured: bool = False,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], str]:
-    resolved_engines = engines if engines else engines_per_category(category)
+    engines_list = [e.strip() for e in engines.split(",") if e.strip()] if engines else _TRAVEL_ENGINE_MAP.get(category)
 
-    search_url = build_search_url(
-        searxng_url,
-        query,
-        category,
-        engines=resolved_engines,
+    client = SearXNGClient(base_url=searxng_url, timeout=timeout)
+    resp = client.search(
+        query=query,
         max_results=max_results,
-        safe_search=safe_search,
+        categories=["general"],
+        engines=engines_list,
         language=language,
+        safe_search=safe_search,
     )
 
-    raw_results, _, search_url = execute_search(
-        search_url,
-        timeout=timeout,
-        user_agent="gludd-travel/1.0",
-    )
+    search_url = f"{client.base_url}/search?q={query}"
+    raw_results = [_dc.asdict(r) for r in resp.results]
+
+    if structured:
+        parser_obj = JsonOutputParser()
+        if category == "flights":
+            parsed: list[dict[str, Any]] = parser_obj.parse_flights(raw_results[:max_results], query)
+        elif category == "hotels":
+            parsed = parser_obj.parse_hotels(raw_results[:max_results], query)
+        elif category == "events":
+            parsed = parser_obj.parse_events(raw_results[:max_results], query)
+        else:
+            parsed = [_parse_general_result(item, query) for item in raw_results[:max_results]]
+        return parsed, raw_results[:max_results], search_url
 
     parser = _PARSER_MAP.get(category, _parse_general_result)
-    structured: list[dict[str, Any]] = []
+    structured_results: list[dict[str, Any]] = []
     for item in raw_results[:max_results]:
-        structured.append(parser(item, query))
+        structured_results.append(parser(item, query))
 
-    return structured, raw_results[:max_results], search_url
+    return structured_results, raw_results[:max_results], search_url
 
 
 def main() -> None:
@@ -395,6 +437,7 @@ def main() -> None:
             safe_search=dict(type="int", default=0, choices=[0, 1, 2]),
             language=dict(type="str", default="en"),
             timeout=dict(type="int", default=10),
+            structured=dict(type="bool", default=False),
             daemon_url=dict(type="str", default="http://localhost:8000"),
             psk=dict(type="str", default="", no_log=True),
         ),
@@ -412,6 +455,7 @@ def main() -> None:
             params["safe_search"],
             params["language"],
             params["timeout"],
+            params["structured"],
         )
         module.exit_json(
             changed=False,

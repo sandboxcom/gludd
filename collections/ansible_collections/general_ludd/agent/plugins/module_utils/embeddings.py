@@ -1,9 +1,17 @@
-"""
-Embedding and vector-store utilities for the general_ludd.agent collection.
+"""Embedding utilities for the general_ludd.agent collection.
 
-Provides a model-agnostic embedding client and an in-memory VectorStore that
-any Ansible collection or Python code can import for RAG (Retrieval-Augmented
-Generation) workflows.
+Thin Ansible-compatible wrapper.  All core logic — tokenizer, stemmer,
+HashEmbedder, OpenAIEmbedder, cosine_similarity — delegates to
+``src/general_ludd/skills/embeddings.py``.  This file only adapts the
+interface for ansible module consumption; it contains ZERO algorithmic
+reimplementations.
+
+Exports
+-------
+* ``Embedder``, ``HashEmbedder``, ``OpenAIEmbedder``, ``cosine_similarity``
+  — re-exported directly from ``general_ludd.skills.embeddings``.
+* ``EmbeddingClient`` — thin ansible wrapper around ``HashEmbedder``.
+* ``VectorStore`` — in-memory index delegating ``cosine_similarity`` to core.
 
 Usage (in a module or module_utils)::
 
@@ -20,108 +28,116 @@ Usage (in a module or module_utils)::
     store = VectorStore()
     store.add("doc-1", client.embed_text("document text here"))
     results = store.search(client.embed_text("query"), k=3)
-
-Dependencies
-------------
-Only stdlib.  The ``EmbeddingClient`` constructor is lazy — it does not
-instantiate a model gateway until ``embed_text`` / ``embed_batch`` is first
-called.  This allows the module_utils to be imported even when the daemon is
-not running in the same venv.
 """
 
 from __future__ import annotations
 
-import math
-from typing import Any
+from general_ludd.skills.embeddings import (  # type: ignore[import]  # ansible runtime path
+    Embedder,
+    HashEmbedder,
+    OpenAIEmbedder,
+    cosine_similarity,
+)
 
 # ---------------------------------------------------------------------------
-# EmbeddingClient — lazy model gateway adapter
+# Re-exports from core — no reimplementations
+# ---------------------------------------------------------------------------
+
+__all__ = (
+    "Embedder",
+    "EmbeddingClient",
+    "HashEmbedder",
+    "OpenAIEmbedder",
+    "VectorStore",
+    "cosine_similarity",
+)
+
+# ---------------------------------------------------------------------------
+# EmbeddingClient — thin ansible wrapper
 # ---------------------------------------------------------------------------
 
 
 class EmbeddingClient:
-    """Get vector embeddings from any supported embedding model.
+    """Thin ansible adapter around the core embedder interface.
+
+    Delegates all embedding work to :class:`HashEmbedder` (or
+    :class:`OpenAIEmbedder` when an API key is available and
+    ``use_openai_if_available=True``).  No ``ModelGateway`` dependency —
+    the core embedder is stdlib-only.
 
     Parameters
     ----------
     model_profile:
-        Model profile string understood by ``ModelGateway``, e.g.
-        ``"openai/text-embedding-3-small"``, ``"local/bge-small"``.
+        Hint for backend selection.  Any profile containing ``"openai"``
+        is treated the same as ``use_openai_if_available=True``.
+    use_openai_if_available:
+        When ``True`` and ``OPENAI_API_KEY`` is set, use
+        :class:`OpenAIEmbedder`; otherwise fall back to
+        :class:`HashEmbedder`.
     timeout:
-        Seconds before a gateway call is abandoned (default 60).
+        Preserved for call-site compatibility (unused by the default
+        embedders but reserved for future backends).
     """
 
-    def __init__(self, model_profile: str, timeout: int = 60) -> None:
+    def __init__(
+        self,
+        model_profile: str | None = None,
+        *,
+        use_openai_if_available: bool = False,
+        timeout: int = 60,
+    ) -> None:
+        if model_profile and "openai" in model_profile:
+            use_openai_if_available = True
         self._profile = model_profile
         self._timeout = timeout
-        self._gateway: Any = None
 
-    def _ensure_gateway(self) -> Any:
-        if self._gateway is not None:
-            return self._gateway
-        try:
-            from general_ludd.models.gateway import ModelGateway
+        import os
 
-            self._gateway = ModelGateway()
-        except ImportError as exc:
-            raise RuntimeError(
-                "EmbeddingClient requires the general_ludd daemon in the same venv; "
-                "set GLUDD_DAEMON_URL or run inside the daemon environment."
-            ) from exc
-        return self._gateway
+        if use_openai_if_available and os.environ.get("OPENAI_API_KEY"):
+            try:
+                self._embedder: Embedder = OpenAIEmbedder()
+            except RuntimeError:
+                self._embedder = HashEmbedder()
+        else:
+            self._embedder = HashEmbedder()
+
+    # ------------------------------------------------------------------
+    # delegate every embedding operation to the core embedder
+    # ------------------------------------------------------------------
 
     def embed_text(self, text: str) -> list[float]:
-        """Return an embedding vector for a single text string.
-
-        Returns a ``list[float]`` whose dimensionality depends on the
-        configured model (e.g. 1536 for text-embedding-3-small).
-        """
-        results = self.embed_batch([text])
-        return results[0]
+        """Return an embedding vector for a single text string."""
+        return self._embedder.embed(text)
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        """Return embedding vectors for multiple texts in one call.
+        """Return embedding vectors for multiple texts.
 
-        Each element of the returned list corresponds positionally to
-        ``texts``.  The gateway is responsible for batching; this method
-        does not impose its own chunking.
+        Each element corresponds positionally to ``texts``.
         """
         if not texts:
             return []
-        gw = self._ensure_gateway()
-        raw = gw.embed(texts=texts, model_profile=self._profile, timeout=self._timeout)
-        if isinstance(raw, list) and all(isinstance(v, list) for v in raw):
-            return raw
-        raise RuntimeError(f"Unexpected embed response shape: {type(raw).__name__}")
+        return [self._embedder.embed(t) for t in texts]
 
     @staticmethod
     def cosine_similarity(a: list[float], b: list[float]) -> float:
-        """Return the cosine similarity between two equal-length vectors.
-
-        Range: ``[-1.0, 1.0]`` where 1.0 = identical direction.
-        Returns 0.0 when either vector has zero magnitude.
-        """
-        if len(a) != len(b):
-            raise ValueError(f"Vector dimension mismatch: {len(a)} vs {len(b)}")
-        dot = sum(x * y for x, y in zip(a, b, strict=True))
-        mag_a = math.sqrt(sum(x * x for x in a))
-        mag_b = math.sqrt(sum(y * y for y in b))
-        if mag_a == 0.0 or mag_b == 0.0:
-            return 0.0
-        return dot / (mag_a * mag_b)
+        """Cosine similarity — delegates to core."""
+        return cosine_similarity(a, b)
 
 
 # ---------------------------------------------------------------------------
-# VectorStore — simple in-memory vector index
+# VectorStore — in-memory index delegating cosine_similarity to core
 # ---------------------------------------------------------------------------
 
 
 class VectorStore:
     """In-memory vector store for small-to-medium RAG workloads.
 
-    Stores ``(id, vector)`` pairs and supports brute-force cosine-similarity
-    search.  Not designed for datasets beyond ~100k vectors — for those,
-    use a dedicated vector DB (pgvector, Qdrant, etc.).
+    Stores ``(id, vector)`` pairs and supports brute-force
+    cosine-similarity search.  The similarity calculation delegates to
+    the core :func:`cosine_similarity` — no reimplementation lives here.
+
+    Not designed for datasets beyond ~100k vectors; for those, use a
+    dedicated vector DB (pgvector, Qdrant, etc.).
 
     Usage::
 
@@ -150,7 +166,7 @@ class VectorStore:
         self._entries[item_id] = list(vector)
 
     def remove(self, item_id: str) -> None:
-        """Remove a vector entry.  No-op if the id is not present."""
+        """Remove a vector entry.  No-op when *item_id* is absent."""
         self._entries.pop(item_id, None)
 
     def clear(self) -> None:
@@ -182,8 +198,7 @@ class VectorStore:
             return []
         scored: list[tuple[str, float]] = []
         for item_id, vec in self._entries.items():
-            sim = EmbeddingClient.cosine_similarity(query, vec)
-            scored.append((item_id, sim))
+            scored.append((item_id, cosine_similarity(query, vec)))
         scored.sort(key=lambda pair: pair[1], reverse=True)
         return scored[: max(1, min(k, len(scored)))]
 
@@ -192,17 +207,16 @@ class VectorStore:
         query: list[float],
         item_id: str,
     ) -> float:
-        """Return the cosine similarity between ``query`` and a stored vector.
+        """Return the cosine similarity between *query* and a stored vector.
 
-        Raises ``KeyError`` if ``item_id`` is not in the store.
+        Raises ``KeyError`` when *item_id* is absent.
         """
-        vec = self._entries[item_id]
-        return EmbeddingClient.cosine_similarity(query, vec)
+        return cosine_similarity(query, self._entries[item_id])
 
     def get(self, item_id: str) -> list[float]:
-        """Return the stored vector for ``item_id``.
+        """Return the stored vector for *item_id*.
 
-        Raises ``KeyError`` if ``item_id`` is not present.
+        Raises ``KeyError`` when *item_id* is absent.
         """
         return list(self._entries[item_id])
 

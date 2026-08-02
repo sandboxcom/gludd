@@ -2,17 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
-from unittest.mock import MagicMock, patch
-
 import pytest
 from plugins.module_utils.embeddings import EmbeddingClient, VectorStore
-
-
-def _make_mock_gateway(embeddings: Any) -> Any:
-    gw = MagicMock()
-    gw.embed.return_value = embeddings
-    return gw
 
 
 class TestCosineSimilarity:
@@ -41,12 +32,12 @@ class TestCosineSimilarity:
         assert EmbeddingClient.cosine_similarity(a, b) == 0.0
         assert EmbeddingClient.cosine_similarity(b, a) == 0.0
 
-    def test_dimension_mismatch_raises(self) -> None:
-        with pytest.raises(ValueError, match="dimension mismatch"):
+    def test_length_mismatch_raises(self) -> None:
+        with pytest.raises(ValueError, match="vector length mismatch"):
             EmbeddingClient.cosine_similarity([1.0, 2.0], [1.0, 2.0, 3.0])
 
     def test_empty_vectors(self) -> None:
-        with pytest.raises(ValueError, match="dimension mismatch"):
+        with pytest.raises(ValueError, match="vector length mismatch"):
             EmbeddingClient.cosine_similarity([], [1.0])
 
 
@@ -54,7 +45,7 @@ class TestEmbeddingClientConstruction:
     def test_default_construction(self) -> None:
         client = EmbeddingClient(model_profile="openai/text-embedding-3-small")
         assert client._profile == "openai/text-embedding-3-small"
-        assert client._gateway is None
+        assert client._timeout == 60
 
     def test_custom_timeout(self) -> None:
         client = EmbeddingClient(model_profile="local/bge-small", timeout=120)
@@ -62,61 +53,42 @@ class TestEmbeddingClientConstruction:
 
 
 class TestEmbeddingClientEmbed:
-    def test_embed_text_single(self) -> None:
-        client = EmbeddingClient(model_profile="test/model")
-        gw = _make_mock_gateway([[[0.1, 0.2, 0.3]]])
-        client._gateway = gw
+    def test_embed_text_returns_vector(self) -> None:
+        client = EmbeddingClient()
+        result = client.embed_text("hello world")
+        assert isinstance(result, list)
+        assert len(result) > 0
 
-        result = client.embed_text("hello")
-        assert result == [0.1, 0.2, 0.3]
-        gw.embed.assert_called_once_with(
-            texts=["hello"],
-            model_profile="test/model",
-            timeout=60,
-        )
+    def test_embed_text_different_inputs(self) -> None:
+        client = EmbeddingClient()
+        v1 = client.embed_text("hello")
+        v2 = client.embed_text("world")
+        assert v1 != v2
+
+    def test_embed_text_same_input(self) -> None:
+        client = EmbeddingClient()
+        v1 = client.embed_text("hello")
+        v2 = client.embed_text("hello")
+        assert v1 == v2
 
     def test_embed_batch_multiple(self) -> None:
-        client = EmbeddingClient(model_profile="test/model")
-        gw = _make_mock_gateway([[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]])
-        client._gateway = gw
-
+        client = EmbeddingClient()
         results = client.embed_batch(["a", "b", "c"])
-        assert results == [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]]
-        gw.embed.assert_called_once_with(
-            texts=["a", "b", "c"],
-            model_profile="test/model",
-            timeout=60,
-        )
+        assert len(results) == 3
+        for r in results:
+            assert isinstance(r, list)
+            assert len(r) > 0
 
     def test_embed_batch_empty(self) -> None:
-        client = EmbeddingClient(model_profile="test/model")
+        client = EmbeddingClient()
         results = client.embed_batch([])
         assert results == []
 
-    def test_embed_text_delegates_to_batch(self) -> None:
-        client = EmbeddingClient(model_profile="test/model")
-        gw = _make_mock_gateway([[0.42]])
-        client._gateway = gw
-        result = client.embed_text("x")
-        gw.embed.assert_called_once_with(texts=["x"], model_profile="test/model", timeout=60)
-        assert result == [0.42]
-
-
-class TestEmbeddingClientErrors:
-    def test_missing_gateway_raises(self) -> None:
-        client = EmbeddingClient(model_profile="test/model")
-        with (
-            patch.dict("sys.modules", {"general_ludd.models.gateway": None}),
-            pytest.raises(RuntimeError, match="general_ludd daemon"),
-        ):
-            client.embed_text("hello")
-
-    def test_bad_response_shape_raises(self) -> None:
-        client = EmbeddingClient(model_profile="test/model")
-        gw = _make_mock_gateway("not a list of lists")
-        client._gateway = gw
-        with pytest.raises(RuntimeError, match="Unexpected embed response shape"):
-            client.embed_text("hello")
+    def test_embed_text_empty(self) -> None:
+        client = EmbeddingClient()
+        result = client.embed_text("")
+        assert isinstance(result, list)
+        assert all(v == 0.0 for v in result)
 
 
 class TestVectorStoreBasic:
@@ -179,15 +151,15 @@ class TestVectorStoreBasic:
 class TestVectorStoreSearch:
     def test_search_returns_top_k(self) -> None:
         store = VectorStore()
-        store.add("close", [0.9, 0.9, 0.9])
-        store.add("far", [-1.0, -1.0, -1.0])
-        store.add("medium", [0.5, 0.5, 0.5])
+        store.add("first", [1.0, 0.0, 0.0])
+        store.add("second", [0.0, 0.0, 1.0])
+        store.add("third", [0.0, 1.0, 0.0])
 
-        query = [1.0, 1.0, 1.0]
+        query = [1.0, 0.0, 0.0]
         results = store.search(query, k=2)
         assert len(results) == 2
-        assert results[0][0] == "close"
-        assert results[0][1] > results[1][1]
+        assert results[0][0] == "first"
+        assert results[0][1] == pytest.approx(1.0)
 
     def test_search_empty_store(self) -> None:
         store = VectorStore()

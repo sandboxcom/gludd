@@ -1,39 +1,42 @@
 """
-RAG (Retrieval-Augmented Generation) pipeline for general_ludd.agent module_utils.
+RAG pipeline — thin Ansible wrapper delegating to core modules.
 
--- classes --
-:class:`RAGPipeline`  -- ties together embeddings + vector store + model
-:class:`Chunker`       -- splits text into overlapping chunks
-:class:`VectorStore`   -- in-memory vector index with cosine-similarity search
+Embeddings  → general_ludd.skills.embeddings (HashEmbedder, cosine_similarity)
+LLM calls   → general_ludd.models.gateway (ModelGateway, route_for_task+
+               call_model_with_retry)
+Store       → in-memory VectorStore following general_ludd.memory.embedding_store
+               pattern (dict-backed, cosine-similarity search)
+Doc loading → document_loader (Document, DocumentLoader)
 
-Usage in module_utils
----------------------
+Only Chunker stays local — simple text processing, no core equivalent.
+
+Usage::
+
     from ansible_collections.general_ludd.agent.plugins.module_utils.rag import (
         RAGPipeline,
     )
 
     pipeline = RAGPipeline(model_client=client)
-    pipeline.add_document("Chunking breaks long documents into pieces.", {"source": "docs"})
+    pipeline.add_document("Chunking breaks long documents.", {"source": "docs"})
+    pipeline.add_document_file("/path/to/file.md")
     answer = pipeline.query("What does chunking do?", top_k=3)
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-from ansible_collections.general_ludd.agent.plugins.module_utils.embeddings import (
-    Embedder,
-    HashEmbedder,
-    cosine_similarity,
-)
-from ansible_collections.general_ludd.agent.plugins.module_utils.model_client import (
-    Message,
-    ModelClient,
-)
+from general_ludd.skills.embeddings import HashEmbedder, cosine_similarity
+
+if TYPE_CHECKING:
+    from ansible_collections.general_ludd.agent.plugins.module_utils.document_loader import (
+        Document,
+    )
 
 # ---------------------------------------------------------------------------
-# Chunker
+# Chunker — stays local (no core equivalent)
 # ---------------------------------------------------------------------------
 
 
@@ -92,7 +95,7 @@ class Chunker:
 
 
 # ---------------------------------------------------------------------------
-# Vector store
+# Vector store — follows MemoryEmbeddingStore pattern
 # ---------------------------------------------------------------------------
 
 
@@ -105,10 +108,10 @@ class VectorEntry:
 
 
 class VectorStore:
-    """In-memory vector index with cosine-similarity search.
+    """In-memory vector index following MemoryEmbeddingStore pattern.
 
-    Stores :class:`VectorEntry` records and supports k-nearest-neighbor lookup
-    via brute-force cosine similarity.
+    Stores :class:`VectorEntry` records and supports k-nearest-neighbor
+    lookup via brute-force cosine similarity.
     """
 
     def __init__(self) -> None:
@@ -139,7 +142,7 @@ class VectorStore:
 
 
 # ---------------------------------------------------------------------------
-# RAG Pipeline
+# Prompt builder
 # ---------------------------------------------------------------------------
 
 
@@ -162,22 +165,32 @@ def _build_prompt(question: str, context_chunks: list[VectorEntry]) -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# RAG Pipeline
+# ---------------------------------------------------------------------------
+
+
 class RAGPipeline:
     """Retrieval-Augmented Generation pipeline.
 
-    Ties together a :class:`Chunker`, an :class:`Embedder`, a
-    :class:`VectorStore`, and a :class:`ModelClient` to:
+    Ties together a :class:`Chunker`, a
+    :class:`general_ludd.skills.embeddings.HashEmbedder`, a :class:`VectorStore`,
+    and a model backend.
 
-    * **add_document** — chunk + embed + store a text document.
-    * **query** — embed a question, retrieve top-k context chunks,
-      construct a prompt, and ask the model.
+    Delegation:
+        * **add_document** — chunk + :meth:`HashEmbedder.embed` + :meth:`VectorStore.add`.
+        * **query** — :meth:`HashEmbedder.embed` question, :meth:`VectorStore.search`
+          for top-k context chunks, :func:`_build_prompt`, then either
+          ``model_client.chat`` (backward-compat) or
+          :class:`general_ludd.models.gateway.ModelGateway.call_model_with_retry`.
 
     Parameters
     ----------
     model_client:
-        Used to send the constructed prompt to the model.
+        Optional HTTP model client (backward-compat). When absent, delegates
+        to :class:`general_ludd.models.gateway.ModelGateway`.
     embedder:
-        A pluggable embedder (defaults to :class:`HashEmbedder`(256)).
+        A pluggable embedder (defaults to ``HashEmbedder(dim=256)``).
     chunk_size:
         Characters per chunk (default 1000).
     chunk_overlap:
@@ -186,26 +199,65 @@ class RAGPipeline:
 
     def __init__(
         self,
-        model_client: ModelClient,
+        model_client: Any = None,
         *,
-        embedder: Embedder | None = None,
+        embedder: Any = None,
         chunk_size: int = 1000,
         chunk_overlap: int = 200,
     ) -> None:
         self._model = model_client
-        self._embedder: Embedder = embedder or HashEmbedder(dim=256)
+        self._embedder = embedder if embedder is not None else HashEmbedder(dim=256)
         self._chunker = Chunker(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
         self._store = VectorStore()
 
     def add_document(
         self,
-        text: str,
+        content: str | Document,
         metadata: dict[str, Any] | None = None,
     ) -> list[Chunk]:
-        """Chunk ``text``, embed each chunk, and store in the vector index.
+        """Chunk ``content``, embed each chunk, and store in the vector index.
+
+        ``content`` may be a plain ``str`` or a ``Document`` instance. When a
+        ``Document`` is passed its ``.content`` is used and its ``.metadata`` is
+        merged under any explicit ``metadata`` dict.
 
         Returns the list of created :class:`Chunk` objects.
         """
+        from ansible_collections.general_ludd.agent.plugins.module_utils.document_loader import (
+            Document,
+        )
+
+        if isinstance(content, Document):
+            doc_meta = dict(content.metadata)
+            if metadata:
+                doc_meta.update(metadata)
+            return self._ingest_text(content.content, doc_meta)
+
+        return self._ingest_text(content, metadata)
+
+    def add_document_file(self, path: str | Path) -> list[Chunk]:
+        """Load a file via :class:`DocumentLoader` and ingest it.
+
+        Auto-detects the file format from the extension and uses the resolved
+        path as ``source`` metadata.
+
+        Returns the list of created :class:`Chunk` objects.
+        """
+        from ansible_collections.general_ludd.agent.plugins.module_utils.document_loader import (
+            DocumentLoader,
+        )
+
+        loader = DocumentLoader()
+        doc = loader.load(path)
+        return self.add_document(doc)
+
+    # -- internal ---------------------------------------------------------------
+
+    def _ingest_text(
+        self,
+        text: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> list[Chunk]:
         chunks = self._chunker.split(text, metadata=metadata)
         entries: list[VectorEntry] = []
         for chunk in chunks:
@@ -223,15 +275,19 @@ class RAGPipeline:
     ) -> str:
         """Run a RAG query against stored documents.
 
-        1. Embed ``question``.
+        1. Embed ``question`` via :meth:`HashEmbedder.embed`.
         2. Search the vector store for the ``top_k`` closest chunks.
         3. Build a prompt with the chunks as context.
-        4. Send to ``model_client`` and return the answer.
+        4. Call the model backend and return the answer.
         """
         query_vec = self._embedder.embed(question)
         results = self._store.search(query_vec, top_k=top_k)
         prompt = _build_prompt(question, results)
-        return self._model.chat(messages=[Message(role="user", content=prompt)])
+
+        if self._model is not None:
+            return self._model.chat(messages=[{"role": "user", "content": prompt}])
+
+        return self._gateway_chat(prompt)
 
     @property
     def stored_count(self) -> int:
@@ -241,3 +297,17 @@ class RAGPipeline:
     def clear(self) -> None:
         """Remove all stored entries."""
         self._store = VectorStore()
+
+    # -- delegated model calls ------------------------------------------------
+
+    def _gateway_chat(self, prompt: str) -> str:
+        """Delegate to ModelGateway for LLM call."""
+        from general_ludd.models.gateway import ModelGateway
+
+        gw = ModelGateway()
+        profile_id = gw.route_for_task("general")
+        resp = gw.call_model_with_retry(
+            profile_id,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return resp.content

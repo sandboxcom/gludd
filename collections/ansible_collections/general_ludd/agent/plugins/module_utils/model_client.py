@@ -1,7 +1,17 @@
 """
-Reusable model client for general_ludd.agent — any collection can import it.
+Thin Ansible-compatible wrapper around core ModelGateway and HashEmbedder.
 
-    from ansible_collections.general_ludd.agent.plugins.module_utils.model_client import ModelClient
+All chat / stream / list logic delegates to ``ModelGateway``; all
+embedding to ``HashEmbedder``.  This module contains ZERO algorithmic
+reimplementations — only import-path setup, interface adaptation, and
+lazy gateway construction.
+
+Usage
+-----
+    from ansible_collections.general_ludd.agent.plugins.module_utils.model_client import (
+        ModelClient,
+        Message,
+    )
 
     client = ModelClient("default")
     response = client.chat([{"role": "user", "content": "Hello"}])
@@ -10,243 +20,234 @@ Reusable model client for general_ludd.agent — any collection can import it.
     embedding = client.embed("What is the meaning of life?")
     profiles = client.list_models()
 
-Environment variables:
-  GLUDD_DAEMON_URL — daemon base URL (falls back to DAEMON_URL, then localhost:8000)
-  GLUDD_PSK — pre-shared key for daemon auth (empty = no auth)
-  GLUDD_MODEL_TIMEOUT — per-request timeout in seconds (default 120)
+Environment variables
+---------------------
+GLUDD_MODEL_PROFILE_ID
+    Model profile ID used by the gateway (default ``"default"``).
+GLUDD_MODEL_PROVIDER
+    Provider name — ``openai``, ``deepseek``, etc. (default ``"deepseek"``).
+GLUDD_MODEL_NAME
+    Model name (default ``"deepseek-chat"``).
 """
 
 from __future__ import annotations
 
-import json
 import os
-import urllib.error
-import urllib.request
+import sys
 from collections.abc import Generator
+from pathlib import Path
 from typing import Any
 
-DEFAULT_DAEMON_URL = "http://localhost:8000"
-DEFAULT_TIMEOUT = 120
+# -- sys.path for ansible runtime ----------------------------------------
+_SRC = Path(__file__).resolve().parents[6] / "src"
+if _SRC.is_dir() and str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
+
+from general_ludd.models.gateway import ModelGateway, ModelProfile  # type: ignore[import]  # noqa: E402
+from general_ludd.models.provider_registry import ProviderRegistry  # type: ignore[import]  # noqa: E402
+from general_ludd.skills.embeddings import HashEmbedder  # type: ignore[import]  # noqa: E402
+
+
+# ---------------------------------------------------------------------------
+# Gateway singleton — constructed lazily from environment
+# ---------------------------------------------------------------------------
+
+_gateway: ModelGateway | None = None
+
+
+def _get_gateway() -> ModelGateway:  # pragma: no cover — live deps
+    """Return a lazily-built ModelGateway from env vars.
+
+    On first call creates a single ``ModelProfile`` from
+    ``GLUDD_MODEL_*`` env vars and builds a ``ModelGateway`` with a
+    ``ProviderRegistry`` seeded from that profile.  Subsequent calls
+    return the cached instance.
+
+    The lazy singleton avoids importing heavy langchain / pydantic deps
+    at module-load time — construction only happens on first use.
+    """
+    global _gateway
+    if _gateway is not None:
+        return _gateway
+
+    profile_id = os.environ.get("GLUDD_MODEL_PROFILE_ID", "default")
+    provider = os.environ.get("GLUDD_MODEL_PROVIDER", "deepseek")
+    model_name = os.environ.get("GLUDD_MODEL_NAME", "deepseek-chat")
+
+    profile = ModelProfile(
+        model_profile_id=profile_id,
+        provider=provider,
+        model_name=model_name,
+        enabled=True,
+        api_metered=False,
+    )
+
+    _gateway = ModelGateway(
+        profiles=[profile],
+        provider_registry=ProviderRegistry.from_profiles([profile]),
+    )
+    return _gateway
+
+
+# ---------------------------------------------------------------------------
+# Message helper
+# ---------------------------------------------------------------------------
 
 
 def Message(role: str, content: str) -> dict[str, str]:
+    """Build a ``{"role": …, "content": …}`` message dict."""
     return {"role": role, "content": content}
 
 
-def _env_daemon_url() -> str:
-    return os.environ.get("GLUDD_DAEMON_URL") or os.environ.get("DAEMON_URL") or DEFAULT_DAEMON_URL
-
-
-def _env_psk() -> str:
-    return os.environ.get("GLUDD_PSK", "")
-
-
-def _env_timeout() -> int:
-    try:
-        return int(os.environ.get("GLUDD_MODEL_TIMEOUT", str(DEFAULT_TIMEOUT)))
-    except ValueError:
-        return DEFAULT_TIMEOUT
+# ---------------------------------------------------------------------------
+# ModelClient — thin wrapper class (backward-compatible with prior HTTP impl)
+# ---------------------------------------------------------------------------
 
 
 class ModelClient:
-    """Synchronous client for the gludd daemon model gateway.
+    """Synchronous model client backed by :class:`ModelGateway`.
 
     Parameters
     ----------
     profile_name:
-        Model profile ID to use for chat/embed calls.  Default ``"default"``.
+        Model profile ID to use for ``chat`` / ``chat_stream`` calls.
+        Default ``"default"``.
     """
 
     def __init__(self, profile_name: str = "default") -> None:
         self._profile = profile_name
-        self._base_url = _env_daemon_url().rstrip("/")
-        self._psk = _env_psk()
-        self._timeout = _env_timeout()
+        self._gateway = _get_gateway()
+        self._embedder = HashEmbedder()
 
-    def _headers(self) -> dict[str, str]:
-        headers: dict[str, str] = {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        }
-        if self._psk:
-            headers["Authorization"] = "Bearer " + self._psk
-            headers["X-PSK"] = self._psk
-        return headers
+    # ------------------------------------------------------------------
+    # chat
+    # ------------------------------------------------------------------
 
-    def _url(self, path: str) -> str:
-        return self._base_url + "/" + path.lstrip("/")
+    def chat(
+        self,
+        messages: list[dict[str, str]],
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Synchronous chat completion via ModelGateway.call_model.
 
-    def chat(self, messages: list[dict[str, str]], **kwargs: Any) -> dict[str, Any]:
-        """Synchronous chat completion.
-
-        ``messages`` is an OpenAI-style list of ``{"role": "...", "content": "..."}``
-        dicts.  The daemon's single-turn endpoint is mapped: the first ``system``
-        message becomes the system prompt, and the content of the last ``user``
-        message becomes the prompt body.
-
-        Extra keyword arguments (``max_tokens``, ``temperature``, …) are passed
-        through to the daemon as top-level body keys.
+        Returns a dict with keys ``text``, ``model_profile_id``,
+        ``usage``, and ``_status``.
         """
-        prompt = ""
-        system = None
-        for msg in messages:
-            role = msg.get("role", "user")
-            content = msg.get("content", "")
-            if role == "system":
-                system = content or system
-            elif role == "user":
-                prompt = content or prompt
+        from general_ludd.models.gateway import ModelResponse  # type: ignore[import]
 
-        body: dict[str, Any] = {"prompt": prompt}
-        if system:
-            body["system"] = system
-        if self._profile and self._profile != "default":
-            body["model_profile"] = self._profile
-        body.update(kwargs)
-
-        return self._post("/admin/models/call", body)
-
-    def chat_stream(self, messages: list[dict[str, str]], **kwargs: Any) -> Generator[dict[str, Any], None, None]:
-        """Streaming chat completion via SSE.
-
-        Yields ``dict`` objects parsed from each ``data:`` line in the server's
-        SSE response.  The final event has ``done: True`` and includes usage
-        metadata.
-
-        ``messages`` is passed directly to the daemon's ``/admin/models/chat-stream``
-        endpoint.
-        """
-        body: dict[str, Any] = {
-            "messages": messages,
-            "model_profile_id": self._profile,
-        }
-        body.update(kwargs)
-
-        data = json.dumps(body).encode("utf-8")
-        req = urllib.request.Request(
-            url=self._url("/admin/models/chat-stream"),
-            data=data,
-            headers=self._headers(),
-            method="POST",
+        response: ModelResponse = self._gateway.call_model(
+            self._profile,
+            messages,
+            **kwargs,
         )
+        return {
+            "text": response.content,
+            "model_profile_id": self._profile,
+            "model_name": response.model_name,
+            "usage": response.usage_metadata,
+            "cost_estimate": response.cost_estimate,
+            "_status": 200,
+        }
 
-        try:
-            with urllib.request.urlopen(req, timeout=self._timeout) as resp:
-                for line_b in resp:
-                    line = line_b.decode("utf-8", errors="replace").strip()
-                    if not line or not line.startswith("data:"):
-                        continue
-                    payload_str = line[len("data:") :].strip()
-                    if not payload_str:
-                        continue
-                    try:
-                        yield json.loads(payload_str)
-                    except json.JSONDecodeError:
-                        yield {"_raw": payload_str}
-        except urllib.error.HTTPError as exc:
-            raw = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
-            yield {"_error": raw, "_status": exc.code}
-        except urllib.error.URLError as exc:
-            yield {"_error": str(exc.reason), "_status": 0}
-        except Exception as exc:
-            yield {"_error": str(exc), "_status": 0}
+    # ------------------------------------------------------------------
+    # chat_stream
+    # ------------------------------------------------------------------
 
-    def embed(self, texts: str | list[str], *, include_embedding: bool = True) -> dict[str, Any]:
-        """Get embeddings for one or more input strings.
+    def chat_stream(
+        self,
+        messages: list[dict[str, str]],
+        **kwargs: Any,
+    ) -> Generator[dict[str, Any], None, None]:
+        """Streaming chat completion via ModelGateway.call_model_stream.
 
-        When given a single string, returns a dict with the key ``embedding``
-        (the float vector) plus ``embedding_method`` and ``dim``.
+        Yields dicts with ``delta`` (the incremental text content).
+        """
+        for chunk in self._gateway.call_model_stream(
+            self._profile,
+            messages,
+            **kwargs,
+        ):
+            content = getattr(chunk, "content", "")
+            if content:
+                yield {"delta": str(content)}
 
-        When given a list, returns a dict with the key ``embeddings`` (a list
-        of vectors in the same order) plus ``embedding_method`` and ``dim``.
+    # ------------------------------------------------------------------
+    # embed
+    # ------------------------------------------------------------------
+
+    def embed(
+        self,
+        texts: str | list[str],
+        *,
+        include_embedding: bool = True,
+    ) -> dict[str, Any]:
+        """Get embeddings via :class:`HashEmbedder`.
+
+        Single-string input returns ``{"embedding": [...], "dim": N}``.
+        List input returns ``{"embeddings": [[...], ...], "dim": N}``.
         """
         if isinstance(texts, str):
-            return self._embed_single(texts, include_embedding=include_embedding)
+            vec = self._embedder.embed(texts)
+            return {
+                "embedding": vec,
+                "embedding_method": "hash",
+                "dim": len(vec),
+            }
 
-        results = []
-        method = "unknown"
-        dim = 0
-        for text in texts:
-            single = self._embed_single(text, include_embedding=include_embedding)
-            if single.get("_error"):
-                return {"_error": single["_error"], "_status": single.get("_status", 0)}
-            if results:
-                single_vec = single.get("embedding")
-                if isinstance(single_vec, list):
-                    results.append(single_vec)
-            else:
-                single_vec = single.get("embedding")
-                if isinstance(single_vec, list):
-                    results.append(single_vec)
-                method = single.get("embedding_method", method)
-                dim = single.get("dim", dim)
-
-        return {"embeddings": results, "embedding_method": method, "dim": dim}
-
-    def _embed_single(self, text: str, *, include_embedding: bool = True) -> dict[str, Any]:
-        body: dict[str, Any] = {
-            "text": text,
-            "top_k": 1,
-            "include_embedding": include_embedding,
-        }
-        resp = self._post("/api/embeddings/similar", body)
-        if resp.get("_error") is not None and resp.get("_status", 0) != 200:
-            return resp
-
-        embedding = resp.get("query_embedding")
+        results = [self._embedder.embed(t) for t in texts]
         return {
-            "embedding": embedding,
-            "embedding_method": resp.get("embedding_method", "unknown"),
-            "dim": resp.get("query_embedding_dim", len(embedding) if isinstance(embedding, list) else 0),
+            "embeddings": results,
+            "embedding_method": "hash",
+            "dim": len(results[0]) if results else 0,
         }
+
+    # ------------------------------------------------------------------
+    # list_models
+    # ------------------------------------------------------------------
 
     def list_models(self) -> dict[str, Any]:
-        """Return the list of available model profiles."""
-        return self._get("/admin/models")
+        """Return available model profiles from the gateway."""
+        profiles = self._gateway.list_profiles()
+        return {
+            "profiles": [p.model_dump() for p in profiles],
+            "_status": 200,
+        }
+
+    # ------------------------------------------------------------------
+    # reachable
+    # ------------------------------------------------------------------
 
     def reachable(self) -> bool:
-        """Return True if the daemon's health check responds 200."""
+        """Return ``True`` when at least one profile is configured."""
         try:
-            result = self._get("/healthz")
-            return result.get("_status", 0) == 200
+            return len(self._gateway.list_profiles()) > 0
         except Exception:
             return False
 
-    def _get(self, path: str) -> dict[str, Any]:
-        req = urllib.request.Request(
-            url=self._url(path),
-            headers=self._headers(),
-            method="GET",
-        )
-        return self._send(req)
 
-    def _post(self, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
-        data = json.dumps(body or {}).encode("utf-8")
-        req = urllib.request.Request(
-            url=self._url(path),
-            data=data,
-            headers=self._headers(),
-            method="POST",
-        )
-        return self._send(req)
+# ---------------------------------------------------------------------------
+# Top-level convenience functions (ansible-compatible, stdlib-only signature)
+# ---------------------------------------------------------------------------
 
-    def _send(self, req: urllib.request.Request) -> dict[str, Any]:
-        try:
-            with urllib.request.urlopen(req, timeout=self._timeout) as resp:
-                raw = resp.read().decode("utf-8", errors="replace")
-                status = resp.status
-        except urllib.error.HTTPError as exc:
-            raw = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
-            status = exc.code
-        except urllib.error.URLError as exc:
-            return {"_error": str(exc.reason), "_status": 0}
-        except Exception as exc:
-            return {"_error": str(exc), "_status": 0}
 
-        try:
-            parsed: dict[str, Any] = json.loads(raw)
-        except json.JSONDecodeError:
-            parsed = {"_raw": raw}
+def chat(messages: list[dict[str, str]], **kwargs: Any) -> dict[str, Any]:
+    """Top-level chat — delegates to :meth:`ModelClient.chat`."""
+    return ModelClient().chat(messages, **kwargs)
 
-        parsed["_status"] = status
-        return parsed
+
+def chat_stream(
+    messages: list[dict[str, str]],
+    **kwargs: Any,
+) -> Generator[dict[str, Any], None, None]:
+    """Top-level streaming chat — delegates to :meth:`ModelClient.chat_stream`."""
+    return ModelClient().chat_stream(messages, **kwargs)
+
+
+def embed(text: str) -> dict[str, Any]:
+    """Top-level embed — delegates to :meth:`ModelClient.embed`."""
+    return ModelClient().embed(text)
+
+
+def list_models() -> dict[str, Any]:
+    """Top-level profile listing — delegates to :meth:`ModelClient.list_models`."""
+    return ModelClient().list_models()

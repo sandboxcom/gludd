@@ -10,14 +10,17 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import FastAPI, HTTPException
 
+from general_ludd.dispatch.capabilities import CapabilityRegistry
 from general_ludd.dispatch.dynamic_dispatcher import (
     DispatchResult,
     DynamicDispatcher,
     parse_tool_calls,
 )
+from general_ludd.dispatch.router import CapabilityRouter
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +43,7 @@ def register(
     skill_handler: Handler | None = None,
     collection_handler: Handler | None = None,
     role: str | None = None,
+    capability_registry: CapabilityRegistry | None = None,
 ) -> None:
     """Register /api/dispatch routes on ``app``.
 
@@ -136,6 +140,63 @@ def register(
     async def api_dispatch_available() -> dict[str, list[str]]:
         """Return which handler kinds are registered on this daemon instance."""
         return dispatcher.list_available()
+
+    if capability_registry is not None:
+        _cap_router = CapabilityRouter(capability_registry)
+
+        @app.post(
+            "/api/dispatch/capability",
+            summary="Route a capability request to matching Ansible collections",
+            description=(
+                "Query the capability registry for collections that declare a "
+                "given capability (tag). Body: {capability: str[, payload: dict]} "
+                "or {collection: str[, payload: dict]} for direct lookup. "
+                "Returns RouteResult with matching collections."
+            ),
+        )
+        async def api_dispatch_capability(body: dict[str, object]) -> dict[str, object]:
+            capability = body.get("capability")
+            collection = body.get("collection")
+            has_capability = "capability" in body and isinstance(capability, str)
+            has_collection = "collection" in body and isinstance(collection, str)
+            raw_payload = body.get("payload")
+            payload: dict[str, Any] = {}
+            if isinstance(raw_payload, dict):
+                for k, v in raw_payload.items():
+                    payload[str(k)] = v
+
+            if has_capability:
+                result = _cap_router.route(str(capability), payload)
+            elif has_collection:
+                result = _cap_router.route_by_collection(str(collection), payload)
+            else:
+                from fastapi import HTTPException
+
+                raise HTTPException(
+                    status_code=422,
+                    detail="Provide 'capability' (tag) or 'collection' (namespace.name)",
+                )
+
+            return {
+                "ok": result.ok,
+                "capability": result.capability,
+                "matches": [
+                    {"collection": m.name, "namespace": m.collection.namespace, "score": m.score}
+                    for m in result.matches
+                ],
+                "payload": result.payload,
+                "error": result.error,
+            }
+
+        @app.get("/api/dispatch/capabilities")
+        async def api_dispatch_capabilities() -> dict[str, list[str]]:
+            """List all known capability tags in the registry."""
+            return {"capabilities": _cap_router.list_capabilities()}
+
+        @app.get("/api/dispatch/capability/registry")
+        async def api_dispatch_capability_registry() -> dict[str, object]:
+            """Return the full capability registry as a dict."""
+            return capability_registry.to_dict()
 
     # Expose a _dispatch_facet callable for facts.py (registered below).
     def _dispatch_facet() -> dict[str, object]:

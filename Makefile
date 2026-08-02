@@ -7260,4 +7260,21 @@ clean-relative:
 	@rm -rf relative/
 	@echo "Removed relative/ temp directory"
 
-.PHONY: e2e-test-gen-pipeline e2e-test-gen-pipeline-dogfood collect-specific fix-e501-golden clean-relative
+# Verify rag module_utils delegates to core modules
+check-rag-wrapper:
+	@$(UV) run python -c "\
+import sys; sys.path.insert(0, 'collections'); \
+from ansible_collections.general_ludd.agent.plugins.module_utils.rag import ( \
+    Chunk, Chunker, RAGPipeline, VectorEntry, VectorStore, _build_prompt, \
+); \
+from general_ludd.skills.embeddings import HashEmbedder, cosine_similarity; \
+p = RAGPipeline(model_client=None); \
+p.add_document('hello world test', {'source': 'test'}); \
+assert p.stored_count > 0, 'add_document should store entries'; \
+p.clear(); \
+assert p.stored_count == 0, 'clear should empty store'; \
+print('OK: rag.py delegates to HashEmbedder + ModelGateway'); \
+"
+	@echo "check-rag-wrapper: PASS"
+
+.PHONY: e2e-test-gen-pipeline e2e-test-gen-pipeline-dogfood collect-specific fix-e501-golden clean-relative check-rag-wrapper

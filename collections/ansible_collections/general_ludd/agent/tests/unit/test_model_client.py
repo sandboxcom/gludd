@@ -1,11 +1,9 @@
-"""Tests for module_utils/model_client.py — ModelClient for daemon model gateway."""
+"""Tests for module_utils/model_client.py — thin ModelGateway + HashEmbedder wrapper."""
 
 from __future__ import annotations
 
-import json
 import sys
 from types import ModuleType
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 
@@ -23,59 +21,20 @@ def _import_module() -> ModuleType:
 
 
 # ---------------------------------------------------------------------------
-# Env-var resolution helpers
+# Message helper
 # ---------------------------------------------------------------------------
 
 
-class TestEnvResolution:
-    def test_default_daemon_url(self) -> None:
+class TestMessage:
+    def test_creates_role_content_dict(self) -> None:
         mod = _import_module()
-        with patch.dict("os.environ", {}, clear=True):
-            assert mod._env_daemon_url() == mod.DEFAULT_DAEMON_URL
+        msg = mod.Message("user", "Hello")
+        assert msg == {"role": "user", "content": "Hello"}
 
-    def test_gludd_daemon_url_env(self) -> None:
+    def test_system_role(self) -> None:
         mod = _import_module()
-        with patch.dict("os.environ", {"GLUDD_DAEMON_URL": "http://daemon:9000"}, clear=True):
-            assert mod._env_daemon_url() == "http://daemon:9000"
-
-    def test_daemon_url_fallback(self) -> None:
-        mod = _import_module()
-        with patch.dict("os.environ", {"DAEMON_URL": "http://fallback:9000"}, clear=True):
-            assert mod._env_daemon_url() == "http://fallback:9000"
-
-    def test_gludd_daemon_url_priority(self) -> None:
-        mod = _import_module()
-        with patch.dict(
-            "os.environ",
-            {"GLUDD_DAEMON_URL": "http://primary:9000", "DAEMON_URL": "http://fallback:9000"},
-            clear=True,
-        ):
-            assert mod._env_daemon_url() == "http://primary:9000"
-
-    def test_default_psk_empty(self) -> None:
-        mod = _import_module()
-        with patch.dict("os.environ", {}, clear=True):
-            assert mod._env_psk() == ""
-
-    def test_psk_from_env(self) -> None:
-        mod = _import_module()
-        with patch.dict("os.environ", {"GLUDD_PSK": "secret-key-123"}, clear=True):
-            assert mod._env_psk() == "secret-key-123"
-
-    def test_default_timeout(self) -> None:
-        mod = _import_module()
-        with patch.dict("os.environ", {}, clear=True):
-            assert mod._env_timeout() == mod.DEFAULT_TIMEOUT
-
-    def test_custom_timeout(self) -> None:
-        mod = _import_module()
-        with patch.dict("os.environ", {"GLUDD_MODEL_TIMEOUT": "60"}, clear=True):
-            assert mod._env_timeout() == 60
-
-    def test_invalid_timeout_falls_back(self) -> None:
-        mod = _import_module()
-        with patch.dict("os.environ", {"GLUDD_MODEL_TIMEOUT": "abc"}, clear=True):
-            assert mod._env_timeout() == mod.DEFAULT_TIMEOUT
+        msg = mod.Message("system", "Be concise.")
+        assert msg == {"role": "system", "content": "Be concise."}
 
 
 # ---------------------------------------------------------------------------
@@ -86,53 +45,36 @@ class TestEnvResolution:
 class TestConstruction:
     def test_default_profile(self) -> None:
         mod = _import_module()
-        with patch.dict("os.environ", {}, clear=True):
+        with (
+            patch.object(mod, "_get_gateway") as mock_gw,
+            patch.object(mod, "HashEmbedder") as mock_embedder_cls,
+        ):
+            mock_embedder_cls.return_value = MagicMock()
             client = mod.ModelClient()
-        assert client._profile == "default"
-        assert client._base_url == mod.DEFAULT_DAEMON_URL
-        assert client._psk == ""
-        assert client._timeout == mod.DEFAULT_TIMEOUT
+            assert client._profile == "default"
+            mock_gw.assert_called_once()
 
     def test_custom_profile(self) -> None:
         mod = _import_module()
-        with patch.dict("os.environ", {}, clear=True):
-            client = mod.ModelClient(profile_name="openai-fast")
-        assert client._profile == "openai-fast"
+        with (
+            patch.object(mod, "_get_gateway") as mock_gw,
+            patch.object(mod, "HashEmbedder") as mock_embedder_cls,
+        ):
+            mock_embedder_cls.return_value = MagicMock()
+            client = mod.ModelClient(profile_name="deepseek-fast")
+            assert client._profile == "deepseek-fast"
+            mock_gw.assert_called_once()
 
-    def test_psk_auth_headers(self) -> None:
+    def test_embedder_is_hash_embedder(self) -> None:
         mod = _import_module()
-        with patch.dict("os.environ", {"GLUDD_PSK": "key-abc"}, clear=True):
+        with (
+            patch.object(mod, "_get_gateway"),
+            patch.object(mod, "HashEmbedder") as mock_embedder_cls,
+        ):
+            mock_embedder = MagicMock()
+            mock_embedder_cls.return_value = mock_embedder
             client = mod.ModelClient()
-        headers = client._headers()
-        assert headers["Authorization"] == "Bearer key-abc"
-        assert headers["X-PSK"] == "key-abc"
-
-    def test_no_psk_no_auth_headers(self) -> None:
-        mod = _import_module()
-        with patch.dict("os.environ", {}, clear=True):
-            client = mod.ModelClient()
-        headers = client._headers()
-        assert "Authorization" not in headers
-        assert "X-PSK" not in headers
-
-
-# ---------------------------------------------------------------------------
-# URL building
-# ---------------------------------------------------------------------------
-
-
-class TestUrlBuilding:
-    def test_url_simple_path(self) -> None:
-        mod = _import_module()
-        with patch.dict("os.environ", {}, clear=True):
-            client = mod.ModelClient()
-        assert client._url("/admin/models") == "http://localhost:8000/admin/models"
-
-    def test_url_path_strips_slash(self) -> None:
-        mod = _import_module()
-        with patch.dict("os.environ", {"GLUDD_DAEMON_URL": "http://host:8888/"}, clear=True):
-            client = mod.ModelClient()
-        assert client._url("/admin/models") == "http://host:8888/admin/models"
+            assert client._embedder is mock_embedder
 
 
 # ---------------------------------------------------------------------------
@@ -141,142 +83,103 @@ class TestUrlBuilding:
 
 
 class TestChat:
-    @patch("urllib.request.urlopen")
-    def test_simple_user_message(self, mock_urlopen: MagicMock) -> None:
+    def test_delegates_to_gateway_call_model(self) -> None:
         mod = _import_module()
-        mock_resp = MagicMock()
-        mock_resp.status = 200
-        mock_resp.read.return_value = json.dumps(
-            {
-                "text": "Hello, world!",
-                "model_profile_id": "default",
-                "usage": {"total_tokens": 10},
-            }
-        ).encode("utf-8")
-        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
-        mock_resp.__exit__ = MagicMock(return_value=False)
-        mock_urlopen.return_value = mock_resp
 
-        with patch.dict("os.environ", {}, clear=True):
-            client = mod.ModelClient()
-        result = client.chat([{"role": "user", "content": "Hi!"}])
+        mock_gateway = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = "Hello, world!"
+        mock_response.model_name = "deepseek-chat"
+        mock_response.usage_metadata = {"total_tokens": 10}
+        mock_response.cost_estimate = 0.001
+        mock_gateway.call_model.return_value = mock_response
+        mock_embedder = MagicMock()
+
+        with (
+            patch.object(mod, "_get_gateway", return_value=mock_gateway),
+            patch.object(mod, "HashEmbedder", return_value=mock_embedder),
+        ):
+            client = mod.ModelClient(profile_name="default")
+            result = client.chat([{"role": "user", "content": "Hi!"}])
+
         assert result["text"] == "Hello, world!"
         assert result["model_profile_id"] == "default"
+        assert result["model_name"] == "deepseek-chat"
+        assert result["usage"] == {"total_tokens": 10}
+        assert result["cost_estimate"] == 0.001
         assert result["_status"] == 200
+        mock_gateway.call_model.assert_called_once_with(
+            "default",
+            [{"role": "user", "content": "Hi!"}],
+        )
 
-    def test_system_and_user_message(self) -> None:
+    def test_passes_kwargs_to_gateway(self) -> None:
         mod = _import_module()
-        captured: list[bytes] = []
 
-        class FakeResp:
-            status = 200
+        mock_gateway = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = "ok"
+        mock_response.model_name = ""
+        mock_response.usage_metadata = {}
+        mock_response.cost_estimate = 0.0
+        mock_gateway.call_model.return_value = mock_response
 
-            def read(self) -> bytes:
-                return json.dumps({"text": "ok"}).encode("utf-8")
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a: object) -> None:
-                pass
-
-        def fake_urlopen(req: object, timeout: int = 30) -> FakeResp:
-            captured.append(req.data)  # type: ignore[attr-defined]
-            return FakeResp()
-
-        with patch("urllib.request.urlopen", fake_urlopen):
-            with patch.dict("os.environ", {}, clear=True):
-                client = mod.ModelClient()
-            client.chat(
-                [
-                    {"role": "system", "content": "Be helpful."},
-                    {"role": "user", "content": "Hi!"},
-                ]
-            )
-
-        body = json.loads(captured[0].decode("utf-8"))
-        assert body["prompt"] == "Hi!"
-        assert body["system"] == "Be helpful."
-
-    def test_passes_model_profile_for_non_default(self) -> None:
-        mod = _import_module()
-        captured: list[bytes] = []
-
-        class FakeResp:
-            status = 200
-
-            def read(self) -> bytes:
-                return json.dumps({"text": "ok"}).encode("utf-8")
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a: object) -> None:
-                pass
-
-        def fake_urlopen(req: object, timeout: int = 30) -> FakeResp:
-            captured.append(req.data)  # type: ignore[attr-defined]
-            return FakeResp()
-
-        with patch("urllib.request.urlopen", fake_urlopen):
-            with patch.dict("os.environ", {}, clear=True):
-                client = mod.ModelClient(profile_name="gpt4")
-            client.chat([{"role": "user", "content": "Test"}])
-
-        body = json.loads(captured[0].decode("utf-8"))
-        assert body["model_profile"] == "gpt4"
-
-    def test_passes_kwargs(self) -> None:
-        mod = _import_module()
-        captured: list[bytes] = []
-
-        class FakeResp:
-            status = 200
-
-            def read(self) -> bytes:
-                return json.dumps({"text": "ok"}).encode("utf-8")
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a: object) -> None:
-                pass
-
-        def fake_urlopen(req: object, timeout: int = 30) -> FakeResp:
-            captured.append(req.data)  # type: ignore[attr-defined]
-            return FakeResp()
-
-        with patch("urllib.request.urlopen", fake_urlopen):
-            with patch.dict("os.environ", {}, clear=True):
-                client = mod.ModelClient()
+        with (
+            patch.object(mod, "_get_gateway", return_value=mock_gateway),
+            patch.object(mod, "HashEmbedder", return_value=MagicMock()),
+        ):
+            client = mod.ModelClient()
             client.chat(
                 [{"role": "user", "content": "Test"}],
                 max_tokens=128,
                 temperature=0.7,
             )
 
-        body = json.loads(captured[0].decode("utf-8"))
-        assert body["max_tokens"] == 128
-        assert body["temperature"] == 0.7
+        mock_gateway.call_model.assert_called_once_with(
+            "default",
+            [{"role": "user", "content": "Test"}],
+            max_tokens=128,
+            temperature=0.7,
+        )
 
-    @patch("urllib.request.urlopen")
-    def test_http_error(self, mock_urlopen: MagicMock) -> None:
+    def test_uses_correct_profile(self) -> None:
         mod = _import_module()
-        mock_urlopen.side_effect = urllib_error("url", 503, "Down", {}, None)
-        with patch.dict("os.environ", {}, clear=True):
-            client = mod.ModelClient()
-        result = client.chat([{"role": "user", "content": "Test"}])
-        assert result["_status"] == 503
 
-    @patch("urllib.request.urlopen")
-    def test_url_error(self, mock_urlopen: MagicMock) -> None:
+        mock_gateway = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = "ok"
+        mock_response.model_name = ""
+        mock_response.usage_metadata = {}
+        mock_response.cost_estimate = 0.0
+        mock_gateway.call_model.return_value = mock_response
+
+        with (
+            patch.object(mod, "_get_gateway", return_value=mock_gateway),
+            patch.object(mod, "HashEmbedder", return_value=MagicMock()),
+        ):
+            client = mod.ModelClient(profile_name="gpt4")
+            client.chat([{"role": "user", "content": "Test"}])
+
+        mock_gateway.call_model.assert_called_once_with(
+            "gpt4",
+            [{"role": "user", "content": "Test"}],
+        )
+
+    def test_gateway_error_propagates(self) -> None:
         mod = _import_module()
-        mock_urlopen.side_effect = urllib_urlerror("connection refused")
-        with patch.dict("os.environ", {}, clear=True):
+
+        mock_gateway = MagicMock()
+        mock_gateway.call_model.side_effect = ValueError("profile not found")
+
+        with (
+            patch.object(mod, "_get_gateway", return_value=mock_gateway),
+            patch.object(mod, "HashEmbedder", return_value=MagicMock()),
+        ):
             client = mod.ModelClient()
-        result = client.chat([{"role": "user", "content": "Test"}])
-        assert result["_error"] == "connection refused"
-        assert result["_status"] == 0
+            import pytest
+
+            with pytest.raises(ValueError, match="profile not found"):
+                client.chat([{"role": "user", "content": "Test"}])
 
 
 # ---------------------------------------------------------------------------
@@ -285,106 +188,108 @@ class TestChat:
 
 
 class TestChatStream:
-    @patch("urllib.request.urlopen")
-    def test_yields_events(self, mock_urlopen: MagicMock) -> None:
+    def test_yields_delta_dicts(self) -> None:
         mod = _import_module()
-        resp = MagicMock()
-        resp.__enter__ = MagicMock(return_value=resp)
-        resp.__exit__ = MagicMock(return_value=False)
-        resp.__iter__ = MagicMock(
-            return_value=iter(
-                [
-                    b'data: {"delta": "Hello"}\n',
-                    b'data: {"delta": " world"}\n',
-                    b"data: [DONE]\n",
-                ]
-            )
-        )
-        mock_urlopen.return_value = resp
 
-        with patch.dict("os.environ", {}, clear=True):
+        chunk_a = MagicMock()
+        chunk_a.content = "Hello"
+        chunk_b = MagicMock()
+        chunk_b.content = " world"
+        chunk_c = MagicMock()
+        chunk_c.content = ""
+
+        mock_gateway = MagicMock()
+        mock_gateway.call_model_stream.return_value = iter([chunk_a, chunk_b, chunk_c])
+
+        with (
+            patch.object(mod, "_get_gateway", return_value=mock_gateway),
+            patch.object(mod, "HashEmbedder", return_value=MagicMock()),
+        ):
             client = mod.ModelClient()
-        events = list(client.chat_stream([{"role": "user", "content": "Say hi"}]))
+            events = list(client.chat_stream([{"role": "user", "content": "Say hi"}]))
+
         assert len(events) == 2
         assert events[0] == {"delta": "Hello"}
         assert events[1] == {"delta": " world"}
 
-    @patch("urllib.request.urlopen")
-    def test_empty_lines_skipped(self, mock_urlopen: MagicMock) -> None:
+    def test_empty_content_skipped(self) -> None:
         mod = _import_module()
-        resp = MagicMock()
-        resp.__enter__ = MagicMock(return_value=resp)
-        resp.__exit__ = MagicMock(return_value=False)
-        resp.__iter__ = MagicMock(
-            return_value=iter(
-                [
-                    b"\n",
-                    b'data: {"token": "abc"}\n',
-                    b"\n",
-                    b"\n",
-                ]
+
+        chunk = MagicMock()
+        chunk.content = ""
+
+        mock_gateway = MagicMock()
+        mock_gateway.call_model_stream.return_value = iter([chunk])
+
+        with (
+            patch.object(mod, "_get_gateway", return_value=mock_gateway),
+            patch.object(mod, "HashEmbedder", return_value=MagicMock()),
+        ):
+            client = mod.ModelClient()
+            events = list(client.chat_stream([{"role": "user", "content": "x"}]))
+
+        assert len(events) == 0
+
+    def test_non_string_content_converted(self) -> None:
+        mod = _import_module()
+
+        chunk = MagicMock()
+        chunk.content = 42
+
+        mock_gateway = MagicMock()
+        mock_gateway.call_model_stream.return_value = iter([chunk])
+
+        with (
+            patch.object(mod, "_get_gateway", return_value=mock_gateway),
+            patch.object(mod, "HashEmbedder", return_value=MagicMock()),
+        ):
+            client = mod.ModelClient()
+            events = list(client.chat_stream([{"role": "user", "content": "x"}]))
+
+        assert len(events) == 1
+        assert events[0] == {"delta": "42"}
+
+    def test_passes_kwargs_to_gateway(self) -> None:
+        mod = _import_module()
+
+        mock_gateway = MagicMock()
+        mock_gateway.call_model_stream.return_value = iter([])
+
+        with (
+            patch.object(mod, "_get_gateway", return_value=mock_gateway),
+            patch.object(mod, "HashEmbedder", return_value=MagicMock()),
+        ):
+            client = mod.ModelClient()
+            list(
+                client.chat_stream(
+                    [{"role": "user", "content": "x"}],
+                    temperature=0.5,
+                    tools=[],
+                )
             )
+
+        mock_gateway.call_model_stream.assert_called_once_with(
+            "default",
+            [{"role": "user", "content": "x"}],
+            temperature=0.5,
+            tools=[],
         )
-        mock_urlopen.return_value = resp
 
-        with patch.dict("os.environ", {}, clear=True):
-            client = mod.ModelClient()
-        events = list(client.chat_stream([{"role": "user", "content": "x"}]))
-        assert len(events) == 1
-        assert events[0] == {"token": "abc"}
-
-    @patch("urllib.request.urlopen")
-    def test_non_data_lines_skipped(self, mock_urlopen: MagicMock) -> None:
+    def test_gateway_error_propagates(self) -> None:
         mod = _import_module()
-        resp = MagicMock()
-        resp.__enter__ = MagicMock(return_value=resp)
-        resp.__exit__ = MagicMock(return_value=False)
-        resp.__iter__ = MagicMock(
-            return_value=iter(
-                [
-                    b":ping\n",
-                    b'data: {"real": true}\n',
-                ]
-            )
-        )
-        mock_urlopen.return_value = resp
 
-        with patch.dict("os.environ", {}, clear=True):
+        mock_gateway = MagicMock()
+        mock_gateway.call_model_stream.side_effect = ValueError("profile not found")
+
+        with (
+            patch.object(mod, "_get_gateway", return_value=mock_gateway),
+            patch.object(mod, "HashEmbedder", return_value=MagicMock()),
+        ):
             client = mod.ModelClient()
-        events = list(client.chat_stream([{"role": "user", "content": "x"}]))
-        assert len(events) == 1
-        assert events[0] == {"real": True}
+            import pytest
 
-    @patch("urllib.request.urlopen")
-    def test_malformed_json_yields_raw(self, mock_urlopen: MagicMock) -> None:
-        mod = _import_module()
-        resp = MagicMock()
-        resp.__enter__ = MagicMock(return_value=resp)
-        resp.__exit__ = MagicMock(return_value=False)
-        resp.__iter__ = MagicMock(
-            return_value=iter(
-                [
-                    b"data: not-json\n",
-                ]
-            )
-        )
-        mock_urlopen.return_value = resp
-
-        with patch.dict("os.environ", {}, clear=True):
-            client = mod.ModelClient()
-        events = list(client.chat_stream([{"role": "user", "content": "x"}]))
-        assert len(events) == 1
-        assert events[0] == {"_raw": "not-json"}
-
-    @patch("urllib.request.urlopen")
-    def test_http_error_yields_error_event(self, mock_urlopen: MagicMock) -> None:
-        mod = _import_module()
-        mock_urlopen.side_effect = urllib_error("url", 429, "Too Many", {}, None)
-        with patch.dict("os.environ", {}, clear=True):
-            client = mod.ModelClient()
-        events = list(client.chat_stream([{"role": "user", "content": "x"}]))
-        assert len(events) == 1
-        assert events[0]["_status"] == 429
+            with pytest.raises(ValueError, match="profile not found"):
+                list(client.chat_stream([{"role": "user", "content": "x"}]))
 
 
 # ---------------------------------------------------------------------------
@@ -393,94 +298,75 @@ class TestChatStream:
 
 
 class TestEmbed:
-    @patch("urllib.request.urlopen")
-    def test_single_text(self, mock_urlopen: MagicMock) -> None:
+    def test_single_text_delegates_to_hash_embedder(self) -> None:
         mod = _import_module()
-        mock_resp = MagicMock()
-        mock_resp.status = 200
-        mock_resp.read.return_value = json.dumps(
-            {
-                "query_embedding": [0.1, 0.2, 0.3],
-                "query_embedding_dim": 3,
-                "embedding_method": "hash",
-                "results": [],
-            }
-        ).encode("utf-8")
-        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
-        mock_resp.__exit__ = MagicMock(return_value=False)
-        mock_urlopen.return_value = mock_resp
 
-        with patch.dict("os.environ", {}, clear=True):
+        mock_embedder = MagicMock()
+        mock_embedder.embed.return_value = [0.1, 0.2, 0.3]
+
+        mock_gateway = MagicMock()
+
+        with (
+            patch.object(mod, "_get_gateway", return_value=mock_gateway),
+            patch.object(mod, "HashEmbedder", return_value=mock_embedder),
+        ):
             client = mod.ModelClient()
-        result = client.embed("test text")
+            result = client.embed("test text")
+
         assert result["embedding"] == [0.1, 0.2, 0.3]
         assert result["embedding_method"] == "hash"
         assert result["dim"] == 3
+        mock_embedder.embed.assert_called_once_with("test text")
 
-    @patch("urllib.request.urlopen")
-    def test_multiple_texts(self, mock_urlopen: MagicMock) -> None:
+    def test_multiple_texts(self) -> None:
         mod = _import_module()
-        call_count = 0
-        responses = [
-            json.dumps(
-                {
-                    "query_embedding": [1.0, 0.0],
-                    "query_embedding_dim": 2,
-                    "embedding_method": "hash",
-                    "results": [],
-                }
-            ).encode("utf-8"),
-            json.dumps(
-                {
-                    "query_embedding": [0.0, 1.0],
-                    "query_embedding_dim": 2,
-                    "embedding_method": "hash",
-                    "results": [],
-                }
-            ).encode("utf-8"),
-        ]
 
-        def fake_read() -> bytes:
-            nonlocal call_count
-            data = responses[call_count]
-            call_count += 1
-            return data
+        mock_embedder = MagicMock()
+        mock_embedder.embed.side_effect = [[1.0, 0.0], [0.0, 1.0]]
 
-        mock_resp = MagicMock()
-        mock_resp.status = 200
-        mock_resp.read = fake_read
-        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
-        mock_resp.__exit__ = MagicMock(return_value=False)
-        mock_urlopen.return_value = mock_resp
-
-        with patch.dict("os.environ", {}, clear=True):
+        with (
+            patch.object(mod, "_get_gateway", return_value=MagicMock()),
+            patch.object(mod, "HashEmbedder", return_value=mock_embedder),
+        ):
             client = mod.ModelClient()
-        result = client.embed(["first", "second"])
+            result = client.embed(["first", "second"])
+
         assert result["embedding_method"] == "hash"
         assert result["dim"] == 2
         assert result["embeddings"] == [[1.0, 0.0], [0.0, 1.0]]
+        assert mock_embedder.embed.call_count == 2
 
-    @patch("urllib.request.urlopen")
-    def test_no_embedding_in_response(self, mock_urlopen: MagicMock) -> None:
+    def test_empty_list(self) -> None:
         mod = _import_module()
-        mock_resp = MagicMock()
-        mock_resp.status = 200
-        mock_resp.read.return_value = json.dumps(
-            {
-                "query_embedding": None,
-                "query_embedding_dim": 0,
-                "embedding_method": "hash",
-            }
-        ).encode("utf-8")
-        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
-        mock_resp.__exit__ = MagicMock(return_value=False)
-        mock_urlopen.return_value = mock_resp
 
-        with patch.dict("os.environ", {}, clear=True):
+        mock_embedder = MagicMock()
+
+        with (
+            patch.object(mod, "_get_gateway", return_value=MagicMock()),
+            patch.object(mod, "HashEmbedder", return_value=mock_embedder),
+        ):
             client = mod.ModelClient()
-        result = client.embed("test")
-        assert result["embedding"] is None
+            result = client.embed([])
+
+        assert result["embeddings"] == []
         assert result["dim"] == 0
+        mock_embedder.embed.assert_not_called()
+
+    def test_single_text_empty_string(self) -> None:
+        mod = _import_module()
+
+        mock_embedder = MagicMock()
+        mock_embedder.embed.return_value = [0.0] * 256
+
+        with (
+            patch.object(mod, "_get_gateway", return_value=MagicMock()),
+            patch.object(mod, "HashEmbedder", return_value=mock_embedder),
+        ):
+            client = mod.ModelClient()
+            result = client.embed("")
+
+        assert len(result["embedding"]) == 256
+        assert result["dim"] == 256
 
 
 # ---------------------------------------------------------------------------
@@ -489,44 +375,51 @@ class TestEmbed:
 
 
 class TestListModels:
-    @patch("urllib.request.urlopen")
-    def test_returns_profiles(self, mock_urlopen: MagicMock) -> None:
+    def test_returns_profiles_from_gateway(self) -> None:
         mod = _import_module()
-        mock_resp = MagicMock()
-        mock_resp.status = 200
-        mock_resp.read.return_value = json.dumps(
-            {
-                "profiles": [
-                    {"model_profile_id": "default", "model_name": "gpt-4o"},
-                    {"model_profile_id": "deepseek", "model_name": "deepseek-chat"},
-                ],
-            }
-        ).encode("utf-8")
-        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
-        mock_resp.__exit__ = MagicMock(return_value=False)
-        mock_urlopen.return_value = mock_resp
 
-        with patch.dict("os.environ", {}, clear=True):
+        mock_profile_a = MagicMock()
+        mock_profile_a.model_dump.return_value = {
+            "model_profile_id": "default",
+            "model_name": "deepseek-chat",
+        }
+        mock_profile_b = MagicMock()
+        mock_profile_b.model_dump.return_value = {
+            "model_profile_id": "openai-fast",
+            "model_name": "gpt-4o-mini",
+        }
+
+        mock_gateway = MagicMock()
+        mock_gateway.list_profiles.return_value = [mock_profile_a, mock_profile_b]
+
+        with (
+            patch.object(mod, "_get_gateway", return_value=mock_gateway),
+            patch.object(mod, "HashEmbedder", return_value=MagicMock()),
+        ):
             client = mod.ModelClient()
-        result = client.list_models()
+            result = client.list_models()
+
         assert len(result["profiles"]) == 2
         assert result["profiles"][0]["model_profile_id"] == "default"
+        assert result["profiles"][1]["model_name"] == "gpt-4o-mini"
         assert result["_status"] == 200
+        mock_gateway.list_profiles.assert_called_once()
 
-    @patch("urllib.request.urlopen")
-    def test_empty_profiles(self, mock_urlopen: MagicMock) -> None:
+    def test_empty_profiles(self) -> None:
         mod = _import_module()
-        mock_resp = MagicMock()
-        mock_resp.status = 200
-        mock_resp.read.return_value = json.dumps({"profiles": []}).encode("utf-8")
-        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
-        mock_resp.__exit__ = MagicMock(return_value=False)
-        mock_urlopen.return_value = mock_resp
 
-        with patch.dict("os.environ", {}, clear=True):
+        mock_gateway = MagicMock()
+        mock_gateway.list_profiles.return_value = []
+
+        with (
+            patch.object(mod, "_get_gateway", return_value=mock_gateway),
+            patch.object(mod, "HashEmbedder", return_value=MagicMock()),
+        ):
             client = mod.ModelClient()
-        result = client.list_models()
+            result = client.list_models()
+
         assert result["profiles"] == []
+        assert result["_status"] == 200
 
 
 # ---------------------------------------------------------------------------
@@ -535,42 +428,87 @@ class TestListModels:
 
 
 class TestReachable:
-    @patch("urllib.request.urlopen")
-    def test_healthy(self, mock_urlopen: MagicMock) -> None:
+    def test_healthy_when_profiles_exist(self) -> None:
         mod = _import_module()
-        mock_resp = MagicMock()
-        mock_resp.status = 200
-        mock_resp.read.return_value = b'{"status":"ok"}'
-        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
-        mock_resp.__exit__ = MagicMock(return_value=False)
-        mock_urlopen.return_value = mock_resp
 
-        with patch.dict("os.environ", {}, clear=True):
+        mock_gateway = MagicMock()
+        mock_gateway.list_profiles.return_value = [MagicMock()]
+
+        with (
+            patch.object(mod, "_get_gateway", return_value=mock_gateway),
+            patch.object(mod, "HashEmbedder", return_value=MagicMock()),
+        ):
             client = mod.ModelClient()
-        assert client.reachable() is True
+            assert client.reachable() is True
 
-    @patch("urllib.request.urlopen")
-    def test_unhealthy(self, mock_urlopen: MagicMock) -> None:
+    def test_unhealthy_when_no_profiles(self) -> None:
         mod = _import_module()
-        mock_urlopen.side_effect = urllib_urlerror("no route")
-        with patch.dict("os.environ", {}, clear=True):
+
+        mock_gateway = MagicMock()
+        mock_gateway.list_profiles.return_value = []
+
+        with (
+            patch.object(mod, "_get_gateway", return_value=mock_gateway),
+            patch.object(mod, "HashEmbedder", return_value=MagicMock()),
+        ):
             client = mod.ModelClient()
-        assert client.reachable() is False
+            assert client.reachable() is False
+
+    def test_unhealthy_when_gateway_raises(self) -> None:
+        mod = _import_module()
+
+        mock_gateway = MagicMock()
+        mock_gateway.list_profiles.side_effect = RuntimeError("boom")
+
+        with (
+            patch.object(mod, "_get_gateway", return_value=mock_gateway),
+            patch.object(mod, "HashEmbedder", return_value=MagicMock()),
+        ):
+            client = mod.ModelClient()
+            assert client.reachable() is False
 
 
 # ---------------------------------------------------------------------------
-# Error helpers (imported once for use in exception side_effects)
+# _get_gateway — singleton construction behaviour
 # ---------------------------------------------------------------------------
 
 
-def urllib_error(url: str, code: int, msg: str, hdrs: Any, fp: Any) -> Any:
-    import urllib.error
+class TestGetGateway:
+    def test_returns_same_instance(self) -> None:
+        mod = _import_module()
+        gw1 = mod._get_gateway()
+        gw2 = mod._get_gateway()
+        assert gw1 is gw2
 
-    err = urllib.error.HTTPError(url=url, code=code, msg=msg, hdrs=hdrs, fp=fp)
-    return err
+    def test_builds_gateway_from_env(self) -> None:
+        mod = _import_module()
+        from unittest.mock import patch as _patch
 
+        with _patch.dict(
+            "os.environ",
+            {
+                "GLUDD_MODEL_PROFILE_ID": "my-profile",
+                "GLUDD_MODEL_PROVIDER": "openai",
+                "GLUDD_MODEL_NAME": "gpt-4o",
+            },
+        ):
+            # Reset singleton so env vars take effect
+            mod._gateway = None
+            gw = mod._get_gateway()
+            profiles = gw.list_profiles()
+            assert len(profiles) == 1
+            assert profiles[0].model_profile_id == "my-profile"
+            assert profiles[0].provider == "openai"
+            assert profiles[0].model_name == "gpt-4o"
+            assert profiles[0].enabled is True
 
-def urllib_urlerror(reason: str) -> Any:
-    import urllib.error
+    def test_env_defaults(self) -> None:
+        mod = _import_module()
+        from unittest.mock import patch as _patch
 
-    return urllib.error.URLError(reason)
+        with _patch.dict("os.environ", {}, clear=True):
+            mod._gateway = None
+            gw = mod._get_gateway()
+            profiles = gw.list_profiles()
+            assert len(profiles) == 1
+            assert profiles[0].model_profile_id == "default"

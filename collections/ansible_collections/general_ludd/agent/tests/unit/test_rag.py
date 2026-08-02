@@ -11,13 +11,15 @@ Run with:
 
 from __future__ import annotations
 
+import sys
+
 import pytest
+
+sys.path.insert(0, "collections")
+
 from ansible_collections.general_ludd.agent.plugins.module_utils.embeddings import (
     HashEmbedder,
     cosine_similarity,
-)
-from ansible_collections.general_ludd.agent.plugins.module_utils.model_client import (
-    Message,
 )
 from ansible_collections.general_ludd.agent.plugins.module_utils.rag import (
     Chunk,
@@ -269,10 +271,10 @@ class _FakeModelClient:
     """A model client that captures the last prompt sent."""
 
     def __init__(self, response: str | None = None) -> None:
-        self.last_messages: list[Message] = []
+        self.last_messages: list[dict[str, str]] = []
         self._response = response or "fake answer"
 
-    def chat(self, messages: list[Message], **kwargs: object) -> str:  # type: ignore[override]
+    def chat(self, messages: list[dict[str, str]], **kwargs: object) -> str:
         self.last_messages = list(messages)
         return self._response
 
@@ -319,9 +321,9 @@ class TestRAGPipeline:
 
         pipeline.query("How do rainbows form?", top_k=3)
         assert len(mc.last_messages) == 1
-        assert mc.last_messages[0].role == "user"
-        assert "How do rainbows form?" in mc.last_messages[0].content
-        assert "droplets" in mc.last_messages[0].content
+        assert mc.last_messages[0]["role"] == "user"
+        assert "How do rainbows form?" in mc.last_messages[0]["content"]
+        assert "droplets" in mc.last_messages[0]["content"]
 
     def test_query_with_no_documents(self):
         mc = _FakeModelClient(response="I don't know")
@@ -367,7 +369,7 @@ class TestRAGPipeline:
         pipeline.add_document("doc six")
 
         pipeline.query("query", top_k=2)
-        prompt = mc.last_messages[0].content
+        prompt = mc.last_messages[0]["content"]
         assert "[1]" in prompt
         assert "[2]" in prompt
         assert "[3]" not in prompt

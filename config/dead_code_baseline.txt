@@ -707,8 +707,6 @@ src/general_ludd/dependency/manager.py:InvalidPackageSpecError
 src/general_ludd/dependency/manager.py:OutdatedPackage
 src/general_ludd/dependency/manager.py:SyncResult
 src/general_ludd/dependency/manager.py:UpdateResult
-src/general_ludd/dispatch/capabilities.py:discover_capabilities
-src/general_ludd/dispatch/router.py:CapabilityRouter
 src/general_ludd/dispatch/router.py:RouteResult
 src/general_ludd/dispatch/variable_store.py:VariableStore
 src/general_ludd/dispatch/variable_store.py:apply_results

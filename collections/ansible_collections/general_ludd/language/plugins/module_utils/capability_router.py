@@ -1,21 +1,19 @@
-"""Capability-based dispatch for language operations.
+"""Capability-based dispatch for language operations via the reworked delegating wrapper.
 
-Uses ``CapabilityRouter`` from ``general_ludd.dispatch`` to route language
-requests (detection, translation, transliteration) to the appropriate
-collection and module. Imports from ``general_ludd.agent`` module_utils
-for policy enforcement.
+Uses ``dispatch`` from the agent's shared capability_router module_utils to
+route language requests through the daemon. Imports from
+``general_ludd.agent`` module_utils for policy enforcement.
 """
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, ClassVar
 
-_SRC = Path(__file__).resolve().parents[11] / "src"
-if str(_SRC) not in sys.path:
-    sys.path.insert(0, str(_SRC))
+from ansible_collections.general_ludd.agent.plugins.module_utils.capability_router import (
+    CapabilityDispatchError,
+    dispatch,
+)
 
 
 @dataclass
@@ -52,7 +50,7 @@ class RouteResult:
 
 
 class LanguageRouter:
-    """Routes language capability requests to the appropriate Ansible collection.
+    """Routes language capability requests through the daemon dispatch API.
 
     Provides dispatch for:
     - ``language_detection`` → ``general_ludd.language``
@@ -68,54 +66,42 @@ class LanguageRouter:
         "script_conversion": "transliterate",
     }
 
-    def __init__(self) -> None:
-        self._router = None
-        try:
-            from general_ludd.dispatch.capabilities import CapabilityRegistry
-            from general_ludd.dispatch.router import CapabilityRouter
-
-            registry = CapabilityRegistry()
-            self._router = CapabilityRouter(registry)
-        except Exception:
-            pass
-
     def route(self, request: RouteRequest) -> RouteResult:
         if not request.capability:
             return RouteResult(ok=False, capability="", error="empty capability")
 
-        if request.collection:
-            if self._router is not None:
-                try:
-                    result = self._router.route_by_collection(request.collection, request.payload)
-                    return RouteResult.from_generic(result)
-                except Exception:
-                    pass
+        try:
+            payload = dict(request.payload)
+            if request.collection:
+                payload["collection"] = request.collection
+            payload["capability"] = request.capability
+
+            result = dispatch(request.capability, payload)
+            counts = result.get("ok_count", 0)
+            if counts > 0:
+                return RouteResult(
+                    ok=True,
+                    capability=request.capability,
+                    collection=request.collection or "general_ludd.language",
+                )
             return RouteResult(
-                ok=True,
+                ok=False,
                 capability=request.capability,
-                collection=request.collection,
+                error=f"dispatch returned {counts} ok results",
             )
-
-        if self._router is not None:
-            try:
-                result = self._router.route(request.capability, request.payload)
-                return RouteResult.from_generic(result)
-            except Exception:
-                pass
-
-        role = self.CAPABILITY_MAP.get(request.capability)
-        if role:
+        except CapabilityDispatchError:
+            role = self.CAPABILITY_MAP.get(request.capability)
+            if role:
+                return RouteResult(
+                    ok=True,
+                    capability=request.capability,
+                    collection=f"general_ludd.language.{role}",
+                )
             return RouteResult(
-                ok=True,
+                ok=False,
                 capability=request.capability,
-                collection=f"general_ludd.language.{role}",
+                error=f"no handler for capability: {request.capability}",
             )
-
-        return RouteResult(
-            ok=False,
-            capability=request.capability,
-            error=f"no handler for capability: {request.capability}",
-        )
 
     def route_detect(self, text: str) -> RouteResult:
         return self.route(
@@ -153,12 +139,14 @@ class LanguageRouter:
         )
 
     def list_capabilities(self) -> list[str]:
-        if self._router is not None:
-            try:
-                return self._router.list_capabilities()
-            except Exception:
-                pass
-        return sorted(self.CAPABILITY_MAP.keys())
+        try:
+            from ansible_collections.general_ludd.agent.plugins.module_utils.capability_router import (
+                list_capabilities as _list,
+            )
+
+            return _list()
+        except Exception:
+            return sorted(self.CAPABILITY_MAP.keys())
 
 
 __all__ = [

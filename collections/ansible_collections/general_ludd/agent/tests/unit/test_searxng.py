@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import os
+import sys
 import types
-import urllib.error
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -26,9 +25,13 @@ _MODULE_FILE = os.path.abspath(
 def _import_mod():
     mod = types.ModuleType("searxng_module_utils")
     mod.__file__ = _MODULE_FILE
-    with open(_MODULE_FILE) as f:
-        code = compile(f.read(), _MODULE_FILE, "exec")
-    exec(code, mod.__dict__)
+    sys.modules["searxng_module_utils"] = mod
+    try:
+        with open(_MODULE_FILE) as f:
+            code = compile(f.read(), _MODULE_FILE, "exec")
+        exec(code, mod.__dict__)
+    finally:
+        sys.modules.pop("searxng_module_utils", None)
     return mod
 
 
@@ -245,12 +248,7 @@ class TestSearXNGClientInit:
 
 class TestSearch:
     def test_search_basic(self, client, sample_search_response):
-        with patch("urllib.request.urlopen") as mock_urlopen:
-            mock_resp = MagicMock()
-            mock_resp.__enter__.return_value = mock_resp
-            mock_resp.read.return_value = json.dumps(sample_search_response).encode()
-            mock_urlopen.return_value = mock_resp
-
+        with patch.object(client._connector, "_get", return_value=(200, sample_search_response)):
             resp = client.search("test query")
 
         assert resp.query == "test query"
@@ -260,12 +258,7 @@ class TestSearch:
         assert resp.answers == ["direct answer"]
 
     def test_search_max_results_caps(self, client, sample_search_response):
-        with patch("urllib.request.urlopen") as mock_urlopen:
-            mock_resp = MagicMock()
-            mock_resp.__enter__.return_value = mock_resp
-            mock_resp.read.return_value = json.dumps(sample_search_response).encode()
-            mock_urlopen.return_value = mock_resp
-
+        with patch.object(client._connector, "_get", return_value=(200, sample_search_response)):
             resp = client.search("q", max_results=1)
 
         assert len(resp.results) == 1
@@ -279,43 +272,26 @@ class TestSearch:
             client.search("q", categories=["bogus"])
 
     def test_search_with_engines(self, client, sample_search_response):
-        with patch("urllib.request.urlopen") as mock_urlopen:
-            mock_resp = MagicMock()
-            mock_resp.__enter__.return_value = mock_resp
-            mock_resp.read.return_value = json.dumps(sample_search_response).encode()
-            mock_urlopen.return_value = mock_resp
-
+        with patch.object(client._connector, "_get", return_value=(200, sample_search_response)) as mock_get:
             client.search("q", engines=["google", "arxiv"])
 
-        call_args = mock_urlopen.call_args[0][0]
-        url = call_args.full_url if hasattr(call_args, "full_url") else str(call_args)
-        assert "engines=google%2Carxiv" in url
+        params = mock_get.call_args[1]["params"]
+        assert params["engines"] == "google,arxiv"
 
     def test_search_params_in_url(self, client, sample_search_response):
-        with patch("urllib.request.urlopen") as mock_urlopen:
-            mock_resp = MagicMock()
-            mock_resp.__enter__.return_value = mock_resp
-            mock_resp.read.return_value = json.dumps(sample_search_response).encode()
-            mock_urlopen.return_value = mock_resp
-
+        with patch.object(client._connector, "_get", return_value=(200, sample_search_response)) as mock_get:
             client.search("hello world", language="fr", safe_search=2, page=3)
 
-        call_args = mock_urlopen.call_args[0][0]
-        url = call_args.full_url if hasattr(call_args, "full_url") else str(call_args)
-        assert "q=hello+world" in url
-        assert "language=fr" in url
-        assert "safesearch=2" in url
-        assert "pageno=3" in url
-        assert "categories=general" in url
+        params = mock_get.call_args[1]["params"]
+        assert params["q"] == "hello world"
+        assert params["language"] == "fr"
+        assert params["safesearch"] == "2"
+        assert params["pageno"] == "3"
+        assert params["categories"] == "general"
 
     def test_search_empty_results(self, client):
         empty = {"query": "q", "results": [], "number_of_results": 0}
-        with patch("urllib.request.urlopen") as mock_urlopen:
-            mock_resp = MagicMock()
-            mock_resp.__enter__.return_value = mock_resp
-            mock_resp.read.return_value = json.dumps(empty).encode()
-            mock_urlopen.return_value = mock_resp
-
+        with patch.object(client._connector, "_get", return_value=(200, empty)):
             resp = client.search("q")
 
         assert resp.results == []
@@ -329,25 +305,14 @@ class TestSearch:
 
 class TestWebSearch:
     def test_web_search(self, client, sample_search_response):
-        with patch("urllib.request.urlopen") as mock_urlopen:
-            mock_resp = MagicMock()
-            mock_resp.__enter__.return_value = mock_resp
-            mock_resp.read.return_value = json.dumps(sample_search_response).encode()
-            mock_urlopen.return_value = mock_resp
-
+        with patch.object(client._connector, "_get", return_value=(200, sample_search_response)) as mock_get:
             client.web_search("ansible")
 
-        call_args = mock_urlopen.call_args[0][0]
-        url = call_args.full_url if hasattr(call_args, "full_url") else str(call_args)
-        assert "categories=general" in url
+        params = mock_get.call_args[1]["params"]
+        assert params["categories"] == "general"
 
     def test_web_search_max_results(self, client, sample_search_response):
-        with patch("urllib.request.urlopen") as mock_urlopen:
-            mock_resp = MagicMock()
-            mock_resp.__enter__.return_value = mock_resp
-            mock_resp.read.return_value = json.dumps(sample_search_response).encode()
-            mock_urlopen.return_value = mock_resp
-
+        with patch.object(client._connector, "_get", return_value=(200, sample_search_response)):
             resp = client.web_search("q", max_results=5)
 
         assert len(resp.results) <= 5
@@ -355,32 +320,20 @@ class TestWebSearch:
 
 class TestNewsSearch:
     def test_news_search(self, client, sample_search_response):
-        with patch("urllib.request.urlopen") as mock_urlopen:
-            mock_resp = MagicMock()
-            mock_resp.__enter__.return_value = mock_resp
-            mock_resp.read.return_value = json.dumps(sample_search_response).encode()
-            mock_urlopen.return_value = mock_resp
-
+        with patch.object(client._connector, "_get", return_value=(200, sample_search_response)) as mock_get:
             client.news_search("breaking news")
 
-        call_args = mock_urlopen.call_args[0][0]
-        url = call_args.full_url if hasattr(call_args, "full_url") else str(call_args)
-        assert "categories=news" in url
+        params = mock_get.call_args[1]["params"]
+        assert params["categories"] == "news"
 
 
 class TestImageSearch:
     def test_image_search(self, client, sample_search_response):
-        with patch("urllib.request.urlopen") as mock_urlopen:
-            mock_resp = MagicMock()
-            mock_resp.__enter__.return_value = mock_resp
-            mock_resp.read.return_value = json.dumps(sample_search_response).encode()
-            mock_urlopen.return_value = mock_resp
-
+        with patch.object(client._connector, "_get", return_value=(200, sample_search_response)) as mock_get:
             client.image_search("cats")
 
-        call_args = mock_urlopen.call_args[0][0]
-        url = call_args.full_url if hasattr(call_args, "full_url") else str(call_args)
-        assert "categories=images" in url
+        params = mock_get.call_args[1]["params"]
+        assert params["categories"] == "images"
 
 
 # ---------------------------------------------------------------------------
@@ -422,12 +375,7 @@ class TestIndexStatus:
     def test_index_status_healthy(self, client, sample_search_response):
         client.create_index("idx", ["arxiv", "google"])
 
-        with patch("urllib.request.urlopen") as mock_urlopen:
-            mock_resp = MagicMock()
-            mock_resp.__enter__.return_value = mock_resp
-            mock_resp.read.return_value = json.dumps(sample_search_response).encode()
-            mock_urlopen.return_value = mock_resp
-
+        with patch.object(client._connector, "_get", return_value=(200, sample_search_response)):
             result = client.index_status("idx")
 
         assert result["exists"] is True
@@ -443,12 +391,7 @@ class TestIndexStatus:
             "unresponsive_engines": [["google", "timeout"]],
         }
 
-        with patch("urllib.request.urlopen") as mock_urlopen:
-            mock_resp = MagicMock()
-            mock_resp.__enter__.return_value = mock_resp
-            mock_resp.read.return_value = json.dumps(response).encode()
-            mock_urlopen.return_value = mock_resp
-
+        with patch.object(client._connector, "_get", return_value=(200, response)):
             result = client.index_status("idx")
 
         assert result["engines_responsive"] == 1
@@ -460,7 +403,7 @@ class TestIndexStatus:
     def test_index_status_network_error(self, client):
         client.create_index("idx", ["google"])
 
-        with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("refused")):
+        with patch.object(client._connector, "_get", side_effect=Exception("refused")):
             result = client.index_status("idx")
 
         assert result["exists"] is True
@@ -472,17 +415,11 @@ class TestSearchWithIndex:
     def test_search_with_index(self, client, sample_search_response):
         client.create_index("my_idx", ["google", "arxiv"])
 
-        with patch("urllib.request.urlopen") as mock_urlopen:
-            mock_resp = MagicMock()
-            mock_resp.__enter__.return_value = mock_resp
-            mock_resp.read.return_value = json.dumps(sample_search_response).encode()
-            mock_urlopen.return_value = mock_resp
-
+        with patch.object(client._connector, "_get", return_value=(200, sample_search_response)) as mock_get:
             client.search_with_index("query", "my_idx")
 
-        call_args = mock_urlopen.call_args[0][0]
-        url = call_args.full_url if hasattr(call_args, "full_url") else str(call_args)
-        assert "engines=google%2Carxiv" in url
+        params = mock_get.call_args[1]["params"]
+        assert params["engines"] == "google,arxiv"
 
     def test_search_with_index_not_found(self, client):
         with pytest.raises(ValueError, match="not found"):
@@ -491,12 +428,7 @@ class TestSearchWithIndex:
     def test_search_with_index_max_results(self, client, sample_search_response):
         client.create_index("idx", ["google"])
 
-        with patch("urllib.request.urlopen") as mock_urlopen:
-            mock_resp = MagicMock()
-            mock_resp.__enter__.return_value = mock_resp
-            mock_resp.read.return_value = json.dumps(sample_search_response).encode()
-            mock_urlopen.return_value = mock_resp
-
+        with patch.object(client._connector, "_get", return_value=(200, sample_search_response)):
             resp = client.search_with_index("q", "idx", max_results=1)
 
         assert len(resp.results) == 1
@@ -509,12 +441,7 @@ class TestSearchWithIndex:
 
 class TestHealth:
     def test_health_ok(self, client):
-        with patch("urllib.request.urlopen") as mock_urlopen:
-            mock_resp = MagicMock()
-            mock_resp.__enter__.return_value = mock_resp
-            mock_resp.read.return_value = b"OK"
-            mock_urlopen.return_value = mock_resp
-
+        with patch.object(client._connector, "health", return_value={"ok": True}):
             result = client.health()
 
         assert result["ok"] is True
@@ -522,96 +449,52 @@ class TestHealth:
         assert result["base_url"] == "http://searx:8080"
 
     def test_health_unreachable(self, client):
-        with patch("urllib.request.urlopen", side_effect=ConnectionError("refused")):
+        with patch.object(client._connector, "health", side_effect=Exception("refused")):
             result = client.health()
 
         assert result["ok"] is False
-        assert "unreachable" in result["detail"]
+        assert "refused" in result["detail"]
 
     def test_health_http_error(self, client):
-        with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("timeout")):
+        with patch.object(client._connector, "health", side_effect=Exception("timeout")):
             result = client.health()
 
         assert result["ok"] is False
 
 
 # ---------------------------------------------------------------------------
-# Error handling / retries
+# Error handling — SearXNGClient delegates transport to SearXConnector
 # ---------------------------------------------------------------------------
 
 
 class TestErrorHandling:
-    def test_http_500_retries_then_raises(self):
-        mod = _import_mod()
-        c = mod.SearXNGClient(base_url="http://searx:8080", retries=2)
+    def test_non_200_returns_empty_response(self, client):
+        with patch.object(client._connector, "_get", return_value=(500, None)):
+            resp = client.search("q")
 
-        call_count = {"n": 0}
+        assert resp.results == []
+        assert resp.query == "q"
 
-        def side_effect(req, timeout):
-            call_count["n"] += 1
-            raise urllib.error.HTTPError(
-                "http://searx:8080/search",
-                500,
-                "Internal Server Error",
-                {},
-                None,
-            )
+    def test_non_dict_body_returns_empty_response(self, client):
+        with patch.object(client._connector, "_get", return_value=(200, "not a dict")):
+            resp = client.search("q")
 
-        with patch("urllib.request.urlopen", side_effect=side_effect), pytest.raises(urllib.error.HTTPError):
-            c.search("q")
+        assert resp.results == []
+        assert resp.query == "q"
 
-        assert call_count["n"] == 3  # original + 2 retries
+    def test_get_exception_propagates(self, client):
+        with (
+            patch.object(client._connector, "_get", side_effect=Exception("boom")),
+            pytest.raises(Exception, match="boom"),
+        ):
+            client.search("q")
 
-    def test_http_4xx_no_retry(self):
-        mod = _import_mod()
-        c = mod.SearXNGClient(base_url="http://searx:8080", retries=3)
+    def test_non_2xx_client_error_returns_empty(self, client):
+        with patch.object(client._connector, "_get", return_value=(404, None)):
+            resp = client.search("q")
 
-        call_count = {"n": 0}
-
-        def side_effect(req, timeout):
-            call_count["n"] += 1
-            raise urllib.error.HTTPError(
-                "http://searx:8080/search",
-                400,
-                "Bad Request",
-                {},
-                None,
-            )
-
-        with patch("urllib.request.urlopen", side_effect=side_effect), pytest.raises(urllib.error.HTTPError):
-            c.search("q")
-
-        assert call_count["n"] == 1  # no retries on 4xx
-
-    def test_urlerror_retries(self):
-        mod = _import_mod()
-        c = mod.SearXNGClient(base_url="http://searx:8080", retries=2)
-
-        call_count = {"n": 0}
-
-        def side_effect(req, timeout):
-            call_count["n"] += 1
-            raise urllib.error.URLError("connection refused")
-
-        with patch("urllib.request.urlopen", side_effect=side_effect), pytest.raises(urllib.error.URLError):
-            c.search("q")
-
-        assert call_count["n"] == 3
-
-    def test_oserror_retries(self):
-        mod = _import_mod()
-        c = mod.SearXNGClient(base_url="http://searx:8080", retries=1)
-
-        call_count = {"n": 0}
-
-        def side_effect(req, timeout):
-            call_count["n"] += 1
-            raise OSError("broken pipe")
-
-        with patch("urllib.request.urlopen", side_effect=side_effect), pytest.raises(OSError):
-            c.search("q")
-
-        assert call_count["n"] == 2
+        assert resp.results == []
+        assert resp.query == "q"
 
 
 # ---------------------------------------------------------------------------

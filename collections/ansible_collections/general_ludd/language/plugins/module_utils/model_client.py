@@ -1,53 +1,34 @@
-"""LLM-based language detection and translation.
+"""LLM-based language detection and translation via the reworked delegating wrapper.
 
-Wraps the offline mock implementations (stopword-based detection, dictionary
-translation) with real LLM calls where beneficial. Calls the daemon's
-``/api/chat/completions`` endpoint when available, falling back to the
-offline implementations.
+Delegates all HTTP transport to ``ModelClient`` from the agent's shared
+module_utils. Falls back to the offline implementations when the daemon
+is unreachable.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import os
-import sys
-import urllib.error
-import urllib.request
-from pathlib import Path
+
+from ansible_collections.general_ludd.agent.plugins.module_utils.model_client import (
+    Message,
+    ModelClient,
+)
 
 logger = logging.getLogger(__name__)
 
-_DAEMON_URL = os.environ.get("GLUDD_DAEMON_URL", "http://localhost:8000")
-_SRC = Path(__file__).resolve().parents[11] / "src"
-if str(_SRC) not in sys.path:
-    sys.path.insert(0, str(_SRC))
+_client = ModelClient("default")
 
 
 def _call_llm(prompt: str, system_prompt: str = "") -> str | None:
+    messages: list[dict[str, str]] = []
+    if system_prompt:
+        messages.append(Message("system", system_prompt))
+    messages.append(Message("user", prompt))
     try:
-        payload = json.dumps(
-            {
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt},
-                ],
-                "provider": "openai",
-                "model": "gpt-4o-mini",
-                "temperature": 0.1,
-            }
-        ).encode("utf-8")
-
-        req = urllib.request.Request(
-            f"{_DAEMON_URL}/api/chat/completions",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
-            content = body.get("content", "") or body.get("message", {}).get("content", "")
-            return content if content else None
+        result = _client.chat(messages)
+        content = result.get("content", "") or result.get("message", {}).get("content", "")
+        return content if content else None
     except Exception:
         logger.debug("LLM daemon call failed, falling back to offline", exc_info=True)
         return None

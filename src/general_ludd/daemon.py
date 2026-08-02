@@ -1189,6 +1189,16 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             ", ".join(f"{e.source}={e.path}" for e in _collections_paths),
         )
 
+        from general_ludd.dispatch.capabilities import discover_capabilities
+
+        capability_registry = await asyncio.to_thread(discover_capabilities)
+        app.state._capability_registry = capability_registry
+        logger.info(
+            "CapabilityRegistry: %d collections, %d tags indexed",
+            len(capability_registry.collections),
+            len(capability_registry.tag_index),
+        )
+
         # Bill-4: Terraform watchdog for stack cost monitoring
         stacks_dir = os.environ.get(
             "GLUDD_TERRAFORM_STACKS_DIR",
@@ -3565,6 +3575,7 @@ def create_daemon_app(
         mcp_handler=_lazy_mcp_handler,
         skill_handler=_lazy_skill_handler,
         collection_handler=_lazy_collection_handler,
+        capability_registry=getattr(app.state, "_capability_registry", None),
     )
     spend.register(app, daemon_state)
     pause.register(app, daemon_state)

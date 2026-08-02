@@ -1,7 +1,7 @@
 # Gludd Core Module Utils Contract
 
-Status: **codified** — all existing libraries below document the current API surface.
-Planned libraries (not yet landed) are marked **planned**.
+Status: **codified** — all libraries below are landed and document their current API surface.
+Delegation-wrapper libraries in §5 follow the delegation pattern defined in §3.4–§3.5.
 
 ## 1. Location and import path
 
@@ -56,6 +56,49 @@ All collection modules depend on these libraries.  A breaking change (removed fu
 changed return shape, renamed parameter) must be treated as a release-level event —
 coordinated across all callers, documented in CHANGELOG.md, and gated behind a
 deprecation cycle where possible.
+
+### 3.4 Module_utils delegate to core — never reimplement
+
+**Every module_utils library MUST delegate to existing core Python code under
+`src/general_ludd/`.** It must never reimplement logic that already exists in
+the core package. A module_utils is an Ansible-runtime adapter — it wraps core
+behaviour, it does not duplicate it.
+
+**Before adding a module_utils**, check whether `src/general_ludd/` already has
+the implementation:
+
+- If yes → **wrap, don't rewrite.** Add a thin adapter in module_utils that
+  imports and calls the core module.
+- If no → implement in `src/general_ludd/` first (with full test coverage,
+  type hints, and observability), then add the module_utils wrapper.
+
+**Why this matters.** Duplicating core logic into an Ansible module_utils is a
+regression: the duplicate diverges from the core under maintenance, tests
+cover one path but not the other, and fixes applied to one copy silently miss
+the other. A thin adapter keeps the single source of truth in `src/` and lets
+the module_utils carry only the Ansible-specific glue (result-shaping,
+stdlib-only deps, error translation).
+
+### 3.5 Delegation map
+
+Each module_utils library delegates to one or more core Python modules:
+
+| Module_utils | Delegates to (core) | Path in `src/general_ludd/` |
+|---|---|---|
+| `model_client` | ModelGateway | `models/gateway.py` |
+| `embeddings` | SkillEmbedder, HashEmbedder | `skills/embeddings.py` |
+| `rag` | embeddings + model_client (→ ModelGateway) | `skills/embeddings.py` + `models/gateway.py` |
+| `searxng` | SearXConnector | `connectors/searx.py` |
+| `capability_router` | CapabilityRouter | `dispatch/router.py` |
+| `gludd` | ModelGateway (lazy, for `local_model_call`) | `models/gateway.py` |
+| `output_parser` | (greenfield — no core equivalent) | — |
+| `document_loader` | (greenfield — no core equivalent) | — |
+| `ansible_tools` | MCPClient, MCPToolRegistry (bridging) | `mcp/client.py`, `mcp/registry.py` |
+
+Libraries marked **greenfield** in the delegation map have no corresponding core
+implementation to delegate to. **Bridging** libraries adapt an existing subsystem
+(here, Ansible module discovery/calling) to a different protocol path (MCP tool
+interface) without duplicating the underlying logic.
 
 ## 4. Available libraries
 
@@ -160,11 +203,79 @@ Used by: `gludd_stream`.
 
 ---
 
-## 5. Planned libraries (not yet landed)
+### 4.7 `output_parser` — Structured-output parsers (greenfield)
 
-| Library | Purpose | Status |
+**File:** `module_utils/output_parser.py` (planned)  
+**Kind:** greenfield — no core equivalent; this is a standalone stdlib-only parser library.
+
+API surface:
+
+| Symbol | Kind | Purpose |
 |---|---|---|
-| `model_client` | Unified model-call interface abstracting model provider differences | **planned** — no spec yet |
-| `rag` | Higher-level retrieval-augmented generation pipeline (chunking, retrieval, prompt assembly) | **planned** — depends on `embeddings` landing first |
-| `searxng` | SearXNG client for web search as a tool capability | **planned** — no spec yet |
-| `capability_router` | Dynamic capability routing (which model/role handles which task type) | **planned** — no spec yet |
+| `JsonOutputParser` | class | Extracts a JSON object from arbitrary model output. Strips fences, handles partial JSON recovery (trailing commas, unclosed braces), validates against an optional schema. Method: `parse(text) -> tuple[dict | None, str | None]`. |
+| `PydanticOutputParser` | class | Validates parsed JSON against a Pydantic model at runtime. Constructed with a target model class. Method: `parse(text) -> tuple[BaseModel | None, str | None]`. Falls back to `JsonOutputParser` for the JSON extraction step. |
+| `MarkdownOutputParser` | class | Extracts a Markdown code block by language tag (e.g. ` ```json`), strips fences, and returns the raw inner content. Method: `parse(text) -> tuple[str | None, str | None]`. Useful as a preprocessor before piping to `JsonOutputParser` or `PydanticOutputParser`. |
+
+Design notes:
+- `parse()` returns `(parsed, error)` tuples — never raises on malformed input.
+- `PydanticOutputParser` imports `pydantic` lazily (stdlib-only constraint lifted only at parse time).
+- All three parsers are independent and composeable: `MarkdownOutputParser` → `JsonOutputParser` → `PydanticOutputParser`.
+
+---
+
+### 4.8 `document_loader` — File/document ingestion (greenfield)
+
+**File:** `module_utils/document_loader.py` (planned)  
+**Kind:** greenfield — no core equivalent; stdlib-only document loading from local paths.
+
+API surface:
+
+| Symbol | Kind | Purpose |
+|---|---|---|
+| `Document(text=..., metadata=... | None)` | dataclass | A single document chunk with content text and optional metadata dict (source path, page number, encoding). |
+| `TextLoader(path, encoding="utf-8")` | class | Reads a plain-text file and returns one `Document`. Method: `load() -> Document`. |
+| `HTMLLoader(path)` | class | Reads an HTML file, strips tags to plain text via `html.parser`, and returns one `Document`. Method: `load() -> Document`. No external deps (stdlib `html.parser` only). |
+| `DirectoryLoader(path, glob_pattern="**/*.txt", loader_cls=TextLoader)` | class | Recursively walks a directory, matches `glob_pattern`, and instantiates `loader_cls` for each file. Method: `load() -> list[Document]`. |
+
+Design notes:
+- All loaders follow the same `load()` interface — `DirectoryLoader` can wrap any loader.
+- File I/O errors raise `FileNotFoundError` or `PermissionError` natively; no custom exception class needed.
+- `DirectoryLoader` excludes dotfiles and `.git/` by default.
+
+---
+
+## 5. Delegation-wrapper libraries (landed — see §3.5)
+
+These libraries were formerly listed as planned; they are now built and follow the
+delegation pattern described in §3.4–§3.5. Each wraps an existing core module under
+`src/general_ludd/` with an Ansible-compatible (stdlib-only, urllib-based) adapter.
+
+| Library | File | Lines | Core delegate | Status |
+|---|---|---|---|---|
+| `model_client` | `module_utils/model_client.py` | 252 | `models/gateway.py` (via daemon HTTP) | **landed** |
+| `rag` | `module_utils/rag.py` | 243 | `skills/embeddings.py` + `models/gateway.py` | **landed** |
+| `searxng` | `module_utils/searxng.py` | 532 | `connectors/searx.py` | **landed** |
+| `capability_router` | `module_utils/capability_router.py` | 315 | `dispatch/router.py` | **landed** |
+| `ansible_tools` | `module_utils/ansible_tools.py` | planned | `mcp/client.py`, `mcp/registry.py` (bridging) | **planned** |
+
+### 5.1 `ansible_tools` — Ansible-to-MCP tool bridge (bridging)
+
+**File:** `module_utils/ansible_tools.py` (planned)  
+**Kind:** bridging — adapts Ansible module discovery and invocation to the MCP tool-call path so model agents can use Ansible modules through the same interface as external MCP servers.
+
+API surface:
+
+| Symbol | Kind | Purpose |
+|---|---|---|
+| `AnsibleToolAdapter(module_name, server_id="ansible")` | class | Wraps one Ansible module as an MCP-compatible tool. Methods: `tool_spec() -> dict` (returns the MCP `Tool` JSON schema derived from the module's `DOCUMENTATION`), `execute(args) -> dict` (runs the module via `ansible-runner` and shape the result as an MCP `CallToolResult`). |
+| `discover_tools(collection_path=None)` | function | Scans an Ansible collection for executable modules and returns a list of `AnsibleToolAdapter` instances, one per discoverable module. Filters to modules with `DOCUMENTATION` blocks. |
+| `call_tool(tool_name, args, server_id="ansible")` | function | One-shot: discovers the named tool, instantiates the adapter, calls `execute(args)`, and returns the result. Convenience wrapper for stateless callers that do not need to cache adapter instances. |
+
+**Delegation chain:**
+- `execute()` delegates to the core `ansible-runner` integration (same path used by the daemon's Ansible runner).
+- Tool specs (JSON Schema) are derived from Ansible module `DOCUMENTATION` strings at discovery time.
+- The `mcp/registry.py` and `mcp/client.py` patterns define the `Tool` schema shape and `CallToolResult` structure this adapter conforms to.
+
+**Why bridging, not greenfield:** Ansible modules already exist and are callable through the daemon's runner. This library does not reimplement module discovery or execution — it translates between the Ansible module interface (DOCUMENTATION, JSON args, JSON results) and the MCP tool interface (Tool schema, CallToolResult). The underlying execution path is the same core runner.
+
+Used by: modules that expose Ansible capabilities through the MCP tool path (model-driven playbook dispatch).
