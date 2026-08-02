@@ -590,9 +590,13 @@ class TestConcurrentPipeline:
         per_thread = 10
 
         def retain(worker_id: int):
-            for _i in range(per_thread):
+            for event_id in range(per_thread):
                 bank.retain(_make_entry(
-                    "Alice uses Python for backend development tasks",
+                    (
+                        "Alice uses Python for backend development tasks "
+                        f"in event {worker_id}-{event_id}"
+                    ),
+                    source=f"worker-{worker_id}",
                 ))
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:

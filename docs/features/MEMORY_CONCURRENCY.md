@@ -18,10 +18,19 @@ lose an item because two writers selected the same identifier.
   query tokens, preventing weak single-token matches from crossing sessions.
 - `ObservationStore` makes persistence transactional from the caller's point of
   view. If its durable write fails, `put`, `put_all`, `delete`, and `clear` restore
-  the prior in-memory snapshot and propagate the failure.
+  the prior in-memory snapshot and propagate the failure. Each snapshot is
+  flushed and synced through a private temporary file in the destination
+  directory before an atomic replace, so independent workers cannot collide on
+  a shared `.tmp` name or expose a partially written JSON document.
+- Separate `ObservationStore` instances retain last-writer-wins semantics. The
+  atomic-file boundary guarantees a complete valid snapshot, not a merge of two
+  independently cached snapshots; callers needing cross-process merge semantics
+  must use the configured durable multi-worker store.
 - Observation consolidation keeps compatible facts as supporting evidence and
   classifies only explicit, subject-related disagreement as a contradiction.
-  Empty updates return an independent unchanged snapshot.
+  Negations, replacement/exclusive language, and competing terse single-value
+  claims are recognized symmetrically, while claims about different contexts
+  remain compatible. Empty updates return an independent unchanged snapshot.
 
 ## Upstream evidence and operator reports
 
@@ -45,16 +54,23 @@ and avoiding duplicate retain webhook deliveries. These long-lived production
 signals shaped Gludd's atomic rollback, idempotence, and session-isolation tests:
 [Hindsight releases](https://github.com/vectorize-io/hindsight/releases).
 
+Mem0's maintained contradiction-linking prompt likewise treats a new memory as
+contradictory only when it conflicts about the same entity or topic, and warns
+against linking merely related themes. Gludd encodes that boundary in deterministic
+tests instead of delegating correctness to a model prompt:
+[Mem0 memory-linking prompt](https://github.com/mem0ai/mem0/blob/main/mem0/configs/prompts.py).
+
 ## Acceptance
 
 The focused regression command is:
 
 ```text
-make test-files TESTFILES='tests/unit/test_memory_bank.py tests/unit/test_hindsight_adapter.py tests/unit/test_memory_concurrency.py tests/unit/test_observation_consolidator.py'
+make test-files TESTFILES='tests/integration/test_memory_pipeline_e2e.py tests/unit/test_memory_concurrency.py tests/unit/test_observation_consolidator.py tests/unit/test_observation_contradiction_resilience.py tests/unit/test_observation_store_atomicity.py'
 ```
 
 It covers concurrent retain/recall, identical-content races, bank and session
 isolation, defensive-copy boundaries, failed-persistence rollback, parallel
-retrieval strategies, consolidation under load, and rapid put/delete cycles.
+retrieval strategies, symmetric contradiction handling, collision-free atomic
+snapshots, consolidation under load, and rapid put/delete cycles.
 Per-file coverage must remain at least 75%, and the repository gate remains at
 least 85% overall.

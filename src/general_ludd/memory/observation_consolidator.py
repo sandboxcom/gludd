@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import re
+import tempfile
 import threading
 import time
 from collections import defaultdict
@@ -247,7 +248,7 @@ class ObservationConsolidator:
             if cluster is not largest:
                 for fact in cluster:
                     if id(fact) not in seen:
-                        if _looks_contradictory(fact.content, primary):
+                        if _looks_contradictory(fact.content, primary, subject):
                             contradictory.append(fact)
                         else:
                             primary.append(fact)
@@ -472,10 +473,33 @@ class ObservationStore:
                 "stale": obs.stale,
                 "contradictions": obs.contradictions,
             }
-        tmp = self._path + ".tmp"
-        with open(tmp, "w") as fh:
-            json.dump(out, fh, indent=2, default=str)
-        os.replace(tmp, self._path)
+        prefix = f".{os.path.basename(self._path) or 'observations'}."
+        tmp_path = ""
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=dirname or ".",
+                prefix=prefix,
+                suffix=".tmp",
+                delete=False,
+            ) as fh:
+                tmp_path = fh.name
+                json.dump(out, fh, indent=2, default=str)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp_path, self._path)
+        except BaseException:
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    logger.warning(
+                        "failed to clean observation temp file %s",
+                        tmp_path,
+                        exc_info=True,
+                    )
+            raise
 
     @property
     def count(self) -> int:
@@ -522,17 +546,126 @@ _COMMON_NOUNS: frozenset[str] = frozenset({
 _CONTRADICTION_MARKERS = frozenset(
     {"hates", "dislikes", "opposes", "contradicts", "not", "never"}
 )
+_REPLACEMENT_MARKERS = frozenset(
+    {
+        "exclusively",
+        "instead",
+        "migrated",
+        "migrates",
+        "only",
+        "replaced",
+        "replaces",
+        "switched",
+        "switches",
+    }
+)
+_EXCLUSIVITY_MARKERS = frozenset({"exclusively", "instead", "only"})
+_RELATION_ALIASES = {
+    "choose": "choose",
+    "chooses": "choose",
+    "chose": "choose",
+    "prefer": "prefer",
+    "preferred": "prefer",
+    "prefers": "prefer",
+    "use": "use",
+    "uses": "use",
+    "using": "use",
+}
+_CLAIM_CONNECTORS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "at",
+        "by",
+        "for",
+        "from",
+        "in",
+        "of",
+        "on",
+        "or",
+        "the",
+        "to",
+        "with",
+    }
+)
 
 
-def _looks_contradictory(content: str, supporting: Sequence[MemoryFact]) -> bool:
-    candidate_tokens = set(_normalize(content).split())
-    if not candidate_tokens & _CONTRADICTION_MARKERS:
+def _looks_contradictory(
+    content: str,
+    supporting: Sequence[MemoryFact],
+    subject: str,
+) -> bool:
+    return any(
+        _claims_contradict(content, fact.content, subject) for fact in supporting
+    )
+
+
+def _claims_contradict(left: str, right: str, subject: str) -> bool:
+    """Return whether two claims explicitly disagree about the same subject.
+
+    Negative and replacement wording is checked symmetrically so input order
+    cannot change the result.  Terse ``subject + relation + value`` assertions
+    are treated as a single-value slot, while longer claims require shared topic
+    context and therefore remain compatible across independent domains.
+    """
+    if _normalize(left) == _normalize(right):
         return False
-    support_tokens: set[str] = set()
-    for fact in supporting:
-        support_tokens.update(_normalize(fact.content).split())
-    meaningful_overlap = (candidate_tokens & support_tokens) - _COMMON_NOUNS
-    return bool(meaningful_overlap - _CONTRADICTION_MARKERS)
+
+    left_tokens = _claim_tokens(left, subject)
+    right_tokens = _claim_tokens(right, subject)
+    shared_tokens = left_tokens & right_tokens
+    shared_topics = shared_tokens - set(_RELATION_ALIASES) - _CLAIM_CONNECTORS
+
+    has_negative = bool(
+        (left_tokens | right_tokens) & _CONTRADICTION_MARKERS
+    )
+    if has_negative and shared_topics - _CONTRADICTION_MARKERS:
+        return True
+
+    replacement_tokens = (left_tokens | right_tokens) & _REPLACEMENT_MARKERS
+    if replacement_tokens:
+        if shared_topics - _REPLACEMENT_MARKERS:
+            return True
+        shared_relations = shared_tokens & set(_RELATION_ALIASES)
+        if shared_relations and replacement_tokens & _EXCLUSIVITY_MARKERS:
+            return True
+
+    left_slot = _single_value_slot(left, subject)
+    right_slot = _single_value_slot(right, subject)
+    return bool(
+        left_slot
+        and right_slot
+        and left_slot[0] == right_slot[0]
+        and left_slot[1] != right_slot[1]
+    )
+
+
+def _claim_tokens(content: str, subject: str) -> set[str]:
+    subject_tokens = set(_normalize(subject).split())
+    return set(_normalize(content).split()) - subject_tokens
+
+
+def _single_value_slot(content: str, subject: str) -> tuple[str, str] | None:
+    subject_tokens = set(_normalize(subject).split())
+    tokens = [
+        token for token in _normalize(content).split() if token not in subject_tokens
+    ]
+    for index, token in enumerate(tokens):
+        relation = _RELATION_ALIASES.get(token)
+        if relation is None:
+            continue
+        values = [
+            value
+            for value in tokens[index + 1 :]
+            if value not in _CLAIM_CONNECTORS
+            and value not in _CONTRADICTION_MARKERS
+            and value not in _REPLACEMENT_MARKERS
+        ]
+        if len(values) == 1:
+            return relation, values[0]
+        return None
+    return None
 
 
 def _synthesize_statement(facts: list[MemoryFact]) -> str:
