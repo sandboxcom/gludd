@@ -162,6 +162,8 @@ def _extract_service_name(result: SearXResult) -> str | None:
         return None
     for delimiter in (" - ", " | ", " · ", " :: ", " — "):
         parts = title.split(delimiter, 1)
-        if len(parts) == 2 and len(parts[0]) >= 3 and len(parts[0]) <= 80:
-            return parts[0].strip()
-    return title[:80].strip()
+        candidate = parts[0].strip()
+        if len(parts) == 2 and 3 <= len(candidate) <= 80:
+            return candidate
+    candidate = title[:80].strip()
+    return candidate if len(candidate) >= 3 else None
