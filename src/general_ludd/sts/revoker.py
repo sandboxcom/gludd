@@ -10,6 +10,8 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
+from general_ludd.secrets.openbao_scope import policy_name_for_agent
+
 if TYPE_CHECKING:
     from general_ludd.secrets.manager import SecretsManager
     from general_ludd.sts.audit import StsAuditPipeline
@@ -18,6 +20,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 CascadeHook = Callable[[str], Awaitable[object]]
+_TERMINAL_STATES = frozenset(
+    {"cancelled", "cascade", "completed", "expired", "failed", "rotated", "timed_out"}
+)
 
 
 class TokenRevoker:
@@ -58,12 +63,14 @@ class TokenRevoker:
         """
         self._cascade_hook = hook
 
-    async def revoke(self, agent_id: str) -> None:
+    async def revoke(self, agent_id: str, *, terminal_state: str = "completed") -> None:
         """Destroy the OpenBao AppRole for *agent_id* and mark the token revoked.
 
         Idempotent: a missing token record or an already-revoked token is
         treated as a no-op (warning logged, no exception raised).
         """
+        if terminal_state not in _TERMINAL_STATES:
+            raise ValueError("unsupported STS terminal state")
         record = await self._token_store.get(agent_id)
         if record is None:
             logger.warning(
@@ -91,11 +98,12 @@ class TokenRevoker:
             )
 
         logger.info(
-            "STS audit — revoke: agent=%s role=%s role_id=%s token_id=%s",
+            "STS audit — revoke: agent=%s role=%s role_id=%s token_id=%s terminal_state=%s",
             agent_id,
             record.role_name,
             record.role_id,
             record.token_id,
+            terminal_state,
         )
 
         if self._cascade_hook is not None:
@@ -122,6 +130,18 @@ class TokenRevoker:
             logger.warning(
                 "STS revoke: failed to destroy AppRole %s for agent=%s: %s",
                 role_name,
+                agent_id,
+                type(exc).__name__,
+            )
+        # Scoped policies are one-per-agent and use a hash-derived name, so
+        # terminal cleanup can delete the policy without retaining raw paths or
+        # agent IDs in OpenBao.  Deleting a missing policy is idempotent.
+        policy_name = policy_name_for_agent(agent_id)
+        try:
+            client.sys.delete_policy(name=policy_name)
+        except Exception as exc:
+            logger.warning(
+                "STS revoke: failed to destroy scoped policy for agent=%s: %s",
                 agent_id,
                 type(exc).__name__,
             )

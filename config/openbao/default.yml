@@ -7,5 +7,12 @@ local_container_runtime: podman_preferred
 kv_mount: secret
 auth_method: approle
 approle_role_name: agentic-harness
+# D-15: zero is forbidden for every TTL/use bound. These defaults can be
+# tightened per deployment but cannot exceed the compiled OpenBaoConfig caps.
+approle_secret_id_ttl_seconds: 600
+approle_token_ttl_seconds: 3600
+approle_token_max_ttl_seconds: 3600
+approle_secret_id_num_uses: 1
+approle_token_num_uses: 128
 weekly_image_update_scan: true
 weekly_image_update_creates_manual_hold: true

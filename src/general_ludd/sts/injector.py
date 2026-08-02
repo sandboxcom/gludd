@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from general_ludd.agents.dispatcher import AgentDispatcher
     from general_ludd.agents.types import AgentTask
     from general_ludd.sts.minter import TokenMinter
+    from general_ludd.sts.revoker import TokenRevoker
     from general_ludd.sts.store import TokenStore
 
 logger = logging.getLogger(__name__)
@@ -33,10 +34,13 @@ class SubagentTokenInjector:
         minter: TokenMinter,
         store: TokenStore,
         dispatcher: AgentDispatcher,
+        *,
+        revoker: TokenRevoker | None = None,
     ) -> None:
         self._minter = minter
         self._store = store
         self._dispatcher = dispatcher
+        self._revoker = revoker
 
     async def enrich(self, task: AgentTask) -> None:
         """Mint a token for *task* and inject STS env vars into ``task.env``.
@@ -84,3 +88,16 @@ class SubagentTokenInjector:
             "GLUDD_STS_SECRET_ID": str(creds.secret_id),
             "GLUDD_STS_TOKEN_ID": f"tok-{agent_id}",
         }
+
+    async def finalize(self, agent_id: str, *, terminal_state: str) -> None:
+        """Revoke credentials after any terminal dispatch outcome.
+
+        The dispatcher invokes this from its ``finally`` block, covering
+        completion, failure, cancellation, and batch timeout.  Deployments
+        without a revoker retain the historical no-op behavior while the
+        OpenBao TTL remains the final safety bound.
+        """
+
+        if self._revoker is None:
+            return
+        await self._revoker.revoke(agent_id, terminal_state=terminal_state)

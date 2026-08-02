@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import logging
 import time
 from collections.abc import Callable, Coroutine, Sequence
@@ -386,6 +387,7 @@ class AgentDispatcher:
             async with self._lock:
                 self._active_count += 1
                 self._active_tasks[task.task_id] = task
+            terminal_state = "failed"
             try:
                 if self._sts_injector is not None:
                     sts_enrich = getattr(self._sts_injector, "enrich", None)
@@ -451,6 +453,7 @@ class AgentDispatcher:
                         ),
                         duration_seconds=duration,
                     )
+                terminal_state = "completed"
                 return AgentTaskResult(
                     task_id=task.task_id,
                     agent_name=task.agent_name,
@@ -466,6 +469,7 @@ class AgentDispatcher:
                 # code paths (and historically was an Exception subclass);
                 # an explicit re-raise keeps graceful shutdown / dispatch_many
                 # timeout cancellation distinguishable from genuine failures.
+                terminal_state = "cancelled"
                 raise
             except Exception as exc:
                 duration = time.monotonic() - start
@@ -494,6 +498,26 @@ class AgentDispatcher:
                     duration_seconds=duration,
                 )
             finally:
+                if self._sts_injector is not None:
+                    sts_finalize = getattr(self._sts_injector, "finalize", None)
+                    if sts_finalize is not None:
+                        try:
+                            finalized = sts_finalize(
+                                task.task_id,
+                                terminal_state=terminal_state,
+                            )
+                            if inspect.isawaitable(finalized):
+                                await finalized
+                        except Exception as exc:
+                            # Terminal cleanup failure must be visible but may
+                            # not replace the task's actual result. The finite
+                            # OpenBao TTL/use bounds remain the safety backstop.
+                            logger.warning(
+                                "STS terminal revoke failed for task=%s state=%s: %s",
+                                task.task_id,
+                                terminal_state,
+                                type(exc).__name__,
+                            )
                 async with self._lock:
                     self._active_count -= 1
                     self._active_tasks.pop(task.task_id, None)

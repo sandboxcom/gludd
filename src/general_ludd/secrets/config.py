@@ -2,7 +2,17 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, field_serializer, field_validator
+from typing import Self
+
+from pydantic import (
+    BaseModel,
+    Field,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
+
+from general_ludd.secrets.openbao_scope import validate_openbao_mount
 
 
 class OpenBaoConfig(BaseModel):
@@ -21,6 +31,14 @@ class OpenBaoConfig(BaseModel):
     kv_mount: str = "secret"
     auth_method: str = "approle"
     approle_role_name: str = "agentic-harness"
+    # D-15: every per-agent AppRole credential is finite.  Pydantic bounds are
+    # deliberately hard ceilings; operators can tighten them without being
+    # able to configure an unlimited (zero-use/zero-TTL) credential.
+    approle_secret_id_ttl_seconds: int = Field(default=600, ge=30, le=86_400)
+    approle_token_ttl_seconds: int = Field(default=3_600, ge=30, le=86_400)
+    approle_token_max_ttl_seconds: int = Field(default=3_600, ge=30, le=86_400)
+    approle_secret_id_num_uses: int = Field(default=1, ge=1, le=100)
+    approle_token_num_uses: int = Field(default=128, ge=1, le=100_000)
     weekly_image_update_scan: bool = True
     weekly_image_update_creates_manual_hold: bool = True
 
@@ -36,3 +54,16 @@ class OpenBaoConfig(BaseModel):
         if not v:
             raise ValueError("field must not be empty")
         return v
+
+    @field_validator("kv_mount")
+    @classmethod
+    def _validate_kv_mount(cls, value: str) -> str:
+        return validate_openbao_mount(value)
+
+    @model_validator(mode="after")
+    def _validate_approle_ttl_order(self) -> Self:
+        if self.approle_token_ttl_seconds > self.approle_token_max_ttl_seconds:
+            raise ValueError(
+                "AppRole token TTL must not exceed its explicit maximum TTL"
+            )
+        return self

@@ -15,6 +15,7 @@ import hvac
 
 from general_ludd.config.binary_paths import BinaryPathResolver
 from general_ludd.secrets.config import OpenBaoConfig
+from general_ludd.secrets.openbao_scope import validate_openbao_policy_name
 
 if TYPE_CHECKING:
     from general_ludd.security.permissions import PermissionSpec
@@ -152,6 +153,10 @@ class SecretAlias:
         if "\x00" in mount:
             raise ValueError(
                 f"SecretAlias mount {mount!r} contains null byte"
+            )
+        if any(segment in {"", ".", ".."} for segment in mount.split("/")):
+            raise ValueError(
+                f"SecretAlias mount {mount!r} contains traversal segment"
             )
         if not _ALIAS_MOUNT_RE.match(mount):
             raise ValueError(
@@ -377,20 +382,69 @@ class SecretsManager:
     # W5.1: bound the lifetime of AppRole credentials. An un-bounded secret_id /
     # token never expires, so a single leak is permanent. These defaults cap the
     # blast radius and are passed to OpenBao at role creation.
-    SECRET_ID_TTL = "24h"
+    SECRET_ID_TTL = "10m"
     TOKEN_TTL = "1h"
 
-    def setup_approle(self, role_name: str) -> AppRoleCreds:
+    def setup_approle(
+        self,
+        role_name: str,
+        *,
+        policy_name: str | None = None,
+        policy_hcl: str | None = None,
+    ) -> AppRoleCreds:
+        """Create a finite-use AppRole, optionally bound to one exact policy.
+
+        ``policy_name`` and ``policy_hcl`` are an all-or-nothing pair.  Scoped
+        roles suppress OpenBao's default policy so no implicit capability can
+        widen the already-computed parent/request intersection.  If role
+        creation fails after the policy write, the policy is deleted before
+        the error is re-raised.
+        """
         if self._client is None:
             raise RuntimeError("Not connected. Call connect() first.")
-        # W5.1: create the role with bounded secret_id / token TTLs so leaked
-        # credentials self-expire instead of living forever.
-        self._client.auth.approle.create_role(
-            role_name,
-            secret_id_ttl=self.SECRET_ID_TTL,
-            token_ttl=self.TOKEN_TTL,
-            token_max_ttl=self.TOKEN_TTL,
-        )
+        if (policy_name is None) != (policy_hcl is None):
+            raise ValueError("policy_name and policy_hcl must be provided together")
+        scoped = policy_name is not None
+        if policy_name is not None:
+            validate_openbao_policy_name(policy_name)
+        if policy_hcl is not None and (
+            not isinstance(policy_hcl, str)
+            or not policy_hcl
+            or len(policy_hcl.encode("utf-8")) > 65_536
+            or "\x00" in policy_hcl
+        ):
+            raise ValueError("OpenBao policy HCL must be non-empty and at most 65536 bytes")
+
+        role_options: dict[str, object] = {
+            "bind_secret_id": True,
+            "secret_id_ttl": self._config.approle_secret_id_ttl_seconds,
+            "secret_id_num_uses": self._config.approle_secret_id_num_uses,
+            "token_ttl": self._config.approle_token_ttl_seconds,
+            "token_max_ttl": self._config.approle_token_max_ttl_seconds,
+            "token_explicit_max_ttl": self._config.approle_token_max_ttl_seconds,
+            "token_num_uses": self._config.approle_token_num_uses,
+        }
+        policy_created = False
+        try:
+            if policy_name is not None and policy_hcl is not None:
+                self._client.sys.create_or_update_policy(
+                    name=policy_name,
+                    policy=policy_hcl,
+                )
+                policy_created = True
+                role_options["token_policies"] = [policy_name]
+                role_options["token_no_default_policy"] = True
+            self._client.auth.approle.create_role(role_name, **role_options)
+        except Exception:
+            if scoped and policy_created and policy_name is not None:
+                try:
+                    self._client.sys.delete_policy(name=policy_name)
+                except Exception as cleanup_exc:
+                    logger.warning(
+                        "OpenBao scoped policy rollback failed: %s",
+                        self._sanitize_error(cleanup_exc),
+                    )
+            raise
         role_id_resp = self._client.auth.approle.read_role_id(role_name)
         role_id = role_id_resp["data"]["role_id"]
         secret_id = self._generate_secret_id(role_name)
