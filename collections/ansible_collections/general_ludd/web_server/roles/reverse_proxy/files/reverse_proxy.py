@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
-
 NGINX_UPSTREAM_TEMPLATE = """\
 upstream {name} {{
     {lb_method}
@@ -115,7 +112,7 @@ def generate_nginx_proxy_server(
     connect_timeout: int = 5,
     read_timeout: int = 60,
     send_timeout: int = 60,
-    locations: Optional[list[dict[str, str]]] = None,
+    locations: list[dict[str, str]] | None = None,
 ) -> str:
     path_entries = locations or [{"path": "/", "upstream": f"http://{upstream_name}"}]
     location_blocks = []
@@ -146,7 +143,7 @@ def generate_nginx_proxy_server(
 def generate_haproxy_frontend(
     name: str,
     port: int = 443,
-    acls: Optional[list[str]] = None,
+    acls: list[str] | None = None,
 ) -> str:
     acl_entries = acls or []
     return HAPROXY_FRONTEND_TEMPLATE.format(
@@ -161,7 +158,7 @@ def generate_haproxy_backend(
     servers: list[dict[str, object]],
     lb_method: str = "roundrobin",
     health_check_path: str = "/health",
-    health_check_port: Optional[int] = None,
+    health_check_port: int | None = None,
 ) -> str:
     haproxy_lb_map = {
         "round_robin": "roundrobin",
@@ -199,7 +196,7 @@ def build_full_haproxy_config(
     port: int = 443,
     lb_method: str = "roundrobin",
     health_check_path: str = "/health",
-    acls: Optional[list[str]] = None,
+    acls: list[str] | None = None,
 ) -> str:
     frontend = generate_haproxy_frontend(name, port, acls)
     backend = generate_haproxy_backend(name, servers, lb_method, health_check_path)

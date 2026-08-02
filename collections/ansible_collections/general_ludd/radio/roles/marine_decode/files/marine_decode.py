@@ -12,10 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import os
-import struct
-import sys
 from typing import Any
 
 
@@ -225,9 +222,7 @@ def _decode_ais_field(bits: list[int], field_defs: list[tuple[str, int]]) -> dic
         if name in ("longitude", "latitude"):
             val = bits_to_int(val_bits, signed=True) / 600_000.0
             result[name] = round(val, 6)
-        elif name == "sog":
-            result[name] = round(bits_to_int(val_bits) / 10.0, 1)
-        elif name == "cog":
+        elif name == "sog" or name == "cog":
             result[name] = round(bits_to_int(val_bits) / 10.0, 1)
         elif name == "true_heading":
             val = bits_to_int(val_bits)
@@ -248,9 +243,7 @@ def _decode_ais_field(bits: list[int], field_defs: list[tuple[str, int]]) -> dic
             result[name] = SHIP_TYPES.get(val, f"unknown ({val})")
         elif name in ("imo", "mmsi", "year", "month", "day", "hour", "minute", "second"):
             result[name] = bits_to_int(val_bits)
-        elif name in ("draught", "dim_to_bow", "dim_to_stern", "dim_to_port", "dim_to_starboard"):
-            result[name] = round(bits_to_int(val_bits) / 10.0, 1)
-        elif name == "altitude":
+        elif name in ("draught", "dim_to_bow", "dim_to_stern", "dim_to_port", "dim_to_starboard") or name == "altitude":
             result[name] = round(bits_to_int(val_bits) / 10.0, 1)
         elif name == "aton_type":
             val = bits_to_int(val_bits)

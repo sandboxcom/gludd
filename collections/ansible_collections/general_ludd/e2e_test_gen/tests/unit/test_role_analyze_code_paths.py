@@ -6,9 +6,9 @@ import json
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 
 import yaml
-from pathlib import Path
 
 COLLECTION_ROOT = Path(__file__).resolve().parent.parent.parent
 ROLE_DIR = COLLECTION_ROOT / "roles" / "analyze_code_paths"

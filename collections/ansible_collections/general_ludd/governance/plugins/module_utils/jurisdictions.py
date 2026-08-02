@@ -527,15 +527,15 @@ def get_parents(code: str) -> frozenset[str] | None:
 
 __all__ = [
     "JURISDICTION_CODES",
-    "SUBDIVISION_CODES",
-    "SOVEREIGNTY_STATUSES",
     "JURISDICTION_PARENTS",
-    "list_jurisdictions",
+    "SOVEREIGNTY_STATUSES",
+    "SUBDIVISION_CODES",
     "get_jurisdiction",
+    "get_parents",
+    "get_sovereignty_status",
     "get_subdivisions",
     "is_sovereign",
-    "get_sovereignty_status",
+    "list_jurisdictions",
     "resolve_fips",
     "resolve_gleif",
-    "get_parents",
 ]

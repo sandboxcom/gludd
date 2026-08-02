@@ -3,9 +3,7 @@
 import argparse
 import json
 import os
-import sys
 import re
-
 
 REACT_COMPONENT_TEMPLATE = '''\
 import React, {{ useState, useEffect }} from 'react';
@@ -263,8 +261,8 @@ def parse_graphql_schema(schema_file: str) -> dict:
 
 
 def run_test_endpoint(endpoint_url: str) -> dict:
-    import urllib.request
     import urllib.error
+    import urllib.request
     try:
         req = urllib.request.Request(endpoint_url, headers={"Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=10) as resp:

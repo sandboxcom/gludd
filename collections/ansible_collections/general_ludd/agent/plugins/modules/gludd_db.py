@@ -1,5 +1,4 @@
 #!/usr/bin/python
-# -*- coding: utf-8 -*-
 # Copyright: Agentic Harness
 # SPDX-License-Identifier: MIT
 """
@@ -124,20 +123,20 @@ import os
 from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
 
 try:
+    from ansible_collections.general_ludd.agent.plugins.module_utils.capability_policy import (
+        CapabilityError,
+        for_role,
+    )
     from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
         GluddClient,
         error_result,
         ok_result,
     )
-    from ansible_collections.general_ludd.agent.plugins.module_utils.capability_policy import (  # noqa: E501
-        CapabilityError,
-        for_role,
-    )
 except ImportError:
     import sys
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "module_utils"))
-    from gludd import GluddClient, error_result, ok_result  # type: ignore[import]
     from capability_policy import CapabilityError, for_role  # type: ignore[import]
+    from gludd import GluddClient, error_result, ok_result  # type: ignore[import]
 
 
 def main() -> None:

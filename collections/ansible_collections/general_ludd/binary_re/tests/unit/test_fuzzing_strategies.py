@@ -2,35 +2,31 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
-
 from plugins.module_utils.fuzzing_strategies import (
-    FuzzingStrategy,
-    CrashSeverity,
-    CrashBucket,
+    ASAN_PATTERNS,
     CORPUS_SIZE_RULES,
+    CRASH_SEVERITY_SIGNALS,
+    CRASH_SIGNAL_BUCKETS,
     AflPlusPlusConfig,
-    LibFuzzerConfig,
-    HonggfuzzConfig,
-    ZzufConfig,
-    RadamsaConfig,
-    FuzzingJob,
+    CrashBucket,
     CrashInfo,
+    CrashSeverity,
+    FuzzingJob,
+    FuzzingStrategy,
+    HonggfuzzConfig,
+    LibFuzzerConfig,
+    RadamsaConfig,
+    ZzufConfig,
     classify_crash,
-    seed_selection,
-    minimize_corpus,
-    triage_crash,
-    seed_selection_strategy,
+    create_afl_config,
+    create_honggfuzz_config,
+    create_libfuzzer_config,
     generate_c_harness,
     generate_python_harness,
-    create_afl_config,
-    create_libfuzzer_config,
-    create_honggfuzz_config,
-    CRASH_SIGNAL_BUCKETS,
-    CRASH_SEVERITY_SIGNALS,
-    ASAN_PATTERNS,
+    minimize_corpus,
+    seed_selection,
+    seed_selection_strategy,
+    triage_crash,
 )
 
 

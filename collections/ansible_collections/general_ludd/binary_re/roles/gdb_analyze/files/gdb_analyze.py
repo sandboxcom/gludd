@@ -16,9 +16,9 @@ VALID_MODES = ("breakpoint", "stack_trace", "register_dump", "scripted")
 
 
 def gen_breakpoint(target: str, breakpoints: list[str]) -> dict:
-    cmds = ["file {}".format(shlex.quote(target))]
+    cmds = [f"file {shlex.quote(target)}"]
     for bp in breakpoints:
-        cmds.append("break {}".format(bp))
+        cmds.append(f"break {bp}")
     cmds.append("run")
     cmds.append("quit")
     return {"commands": cmds}
@@ -26,7 +26,7 @@ def gen_breakpoint(target: str, breakpoints: list[str]) -> dict:
 
 def gen_stack_trace(target: str) -> dict:
     cmds = [
-        "file {}".format(shlex.quote(target)),
+        f"file {shlex.quote(target)}",
         "set pagination off",
         "catch throw",
         "run",
@@ -39,7 +39,7 @@ def gen_stack_trace(target: str) -> dict:
 
 def gen_register_dump(target: str) -> dict:
     cmds = [
-        "file {}".format(shlex.quote(target)),
+        f"file {shlex.quote(target)}",
         "set pagination off",
         "break main",
         "run",
@@ -92,7 +92,7 @@ def gen_scripted(target: str) -> dict:
     return {
         "script": script,
         "commands": [
-            "file {}".format(shlex.quote(target)),
+            f"file {shlex.quote(target)}",
             "source /tmp/gludd-gdb-script.py",
         ],
         "log_file": log_file,
@@ -126,7 +126,7 @@ def main() -> None:
     elif args.mode == "scripted":
         payload = gen_scripted(args.target)
     else:
-        print("ERROR: unknown mode {}".format(args.mode), file=sys.stderr)
+        print(f"ERROR: unknown mode {args.mode}", file=sys.stderr)
         sys.exit(2)
 
     artifact = {

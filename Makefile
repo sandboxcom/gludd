@@ -6589,8 +6589,15 @@ test-sts:
 test-vm:
 	@$(UV) run python -m pytest tests/unit/test_vm_lifecycle.py tests/unit/test_security_sandboxes_vm_lifecycle.py tests/unit/test_vm_sandbox_backends.py tests/unit/test_vm_image_builder.py tests/unit/test_vm_image_builder_self_test.py tests/unit/test_vm_p4_real_executor.py tests/unit/test_vm_p5_real_firecracker.py tests/integration/test_vm_sandbox_integration.py tests/integration/sandboxes/test_vm_sandbox_integration.py tests/bench/test_vm_sandbox_overhead.py -v --tb=short
 
+# agent collection: module_utils (gludd, embeddings, capability_policy, fs_write_*, etc.) + roles
+test-agent:
+	@$(UV) run python -m pytest collections/ansible_collections/general_ludd/agent/tests/ -v \
+		--ignore=collections/ansible_collections/general_ludd/agent/tests/unit/test_capability_router.py \
+		--ignore=collections/ansible_collections/general_ludd/agent/tests/unit/test_model_client.py \
+		--ignore=collections/ansible_collections/general_ludd/agent/tests/unit/test_rag.py
+
 # Run all collection test suites
-test-collections: test-binary-re test-radio test-os-expert test-e2e-test-gen test-language test-governance
+test-collections: test-binary-re test-radio test-os-expert test-e2e-test-gen test-language test-governance test-agent
 
 # governance collection: 20 roles + 18 module_utils (borders, bodies, tax, currency, conflicts, treaties, civic services, etc.)
 test-governance:

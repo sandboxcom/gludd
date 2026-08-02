@@ -1,5 +1,4 @@
 #!/usr/bin/python
-# -*- coding: utf-8 -*-
 # Copyright: Agentic Harness
 # SPDX-License-Identifier: MIT
 """
@@ -67,7 +66,7 @@ except ImportError:
     import os
     import sys
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "module_utils"))
-    from gludd import GluddClient, error_result, ok_result  # type: ignore[import]
+    from gludd import GluddClient, ok_result  # type: ignore[import]
 
 
 def main() -> None:

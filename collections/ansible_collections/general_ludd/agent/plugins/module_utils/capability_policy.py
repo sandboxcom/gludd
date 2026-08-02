@@ -52,7 +52,7 @@ from dataclasses import dataclass, field, replace
 # re-implemented.  Both relative (collection-installed) and flat (importlib /
 # sys.path) layouts are supported, matching the gludd_* modules.
 try:  # pragma: no cover - exercised by whichever layout the runtime uses
-    from ansible_collections.general_ludd.agent.plugins.module_utils.fs_write_policy import (  # noqa: E501
+    from ansible_collections.general_ludd.agent.plugins.module_utils.fs_write_policy import (
         WritePolicy,
         WritePolicyError,
     )

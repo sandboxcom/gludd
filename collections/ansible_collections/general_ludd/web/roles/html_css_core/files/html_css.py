@@ -6,7 +6,6 @@ import re
 import sys
 from html.parser import HTMLParser
 
-
 VALID_HTML5_SEMANTIC = {
     "header", "nav", "main", "article", "section", "aside", "footer",
     "figure", "figcaption", "details", "summary", "time", "mark", "data",
@@ -84,7 +83,7 @@ class SemanticHTMLParser(HTMLParser):
 
 
 def validate_html(filepath):
-    with open(filepath, "r", encoding="utf-8") as f:
+    with open(filepath, encoding="utf-8") as f:
         content = f.read()
 
     parser = SemanticHTMLParser()
@@ -129,7 +128,7 @@ def validate_html(filepath):
 
 
 def check_css(css_filepath):
-    with open(css_filepath, "r", encoding="utf-8") as f:
+    with open(css_filepath, encoding="utf-8") as f:
         content = f.read()
 
     properties_found = []

@@ -1,5 +1,4 @@
 #!/usr/bin/python
-# -*- coding: utf-8 -*-
 # Copyright: Agentic Harness
 # SPDX-License-Identifier: MIT
 """
@@ -90,14 +89,12 @@ from __future__ import annotations
 
 import datetime as _dt
 import hashlib
-import json
 import os
 import urllib.error
 import urllib.request
 from typing import Any
 
 from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
-
 
 _SNAPSHOT_PATH = "/v1/sys/storage/raft/snapshot"
 _RESTORE_PATH = "/v1/sys/storage/raft/restore"

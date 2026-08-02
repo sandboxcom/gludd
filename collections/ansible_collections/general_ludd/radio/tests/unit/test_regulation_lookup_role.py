@@ -2,22 +2,18 @@
 
 from __future__ import annotations
 
-import json
-import os
 from pathlib import Path
 
-import pytest
 import yaml
 
 _COLLECTION_ROOT = Path(__file__).resolve().parent.parent.parent
 
 from plugins.module_utils.frequency_allocations import (
-    allocations_for,
-    lookup_frequency,
-    get_band_plan,
     bands_by_privilege,
-    get_marine_channel,
+    get_band_plan,
     get_itu_region2_bands,
+    get_marine_channel,
+    lookup_frequency,
 )
 
 

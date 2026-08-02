@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import json
-import os
 import struct
 import sys
 from pathlib import Path
 
-import pytest
 import yaml
 
 _COLLECTION_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -24,7 +21,7 @@ def _generate_test_iq(duration_ms: float = 100.0, sample_rate: int = 9600) -> by
     num_samples = int(sample_rate * duration_ms / 1000.0)
     samples = bytearray()
     for i in range(num_samples):
-        val = int(127 * (1 if (i % 20 < 10) else -1))
+        val = 127 * (1 if (i % 20 < 10) else -1)
         le = struct.pack("<h", val)
         samples.extend(le)
         samples.extend(le)

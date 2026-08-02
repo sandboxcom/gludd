@@ -2,20 +2,18 @@
 
 from __future__ import annotations
 
-import pytest
-
 from plugins.module_utils.authority_registry import (
     AUTHORITY_INSTRUMENTS,
-    PASSPORT_AUTHORITIES,
-    LICENSE_AUTHORITIES,
-    TREATY_DEPOSITARIES,
     EXPORT_CONTROL_AUTHORITIES,
-    get_authority,
-    get_passport_authority,
-    get_license_authority,
-    get_treaty_depositary,
-    get_export_control_authority,
+    LICENSE_AUTHORITIES,
+    PASSPORT_AUTHORITIES,
+    TREATY_DEPOSITARIES,
     authorities_by_instrument,
+    get_authority,
+    get_export_control_authority,
+    get_license_authority,
+    get_passport_authority,
+    get_treaty_depositary,
 )
 
 

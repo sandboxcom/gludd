@@ -107,16 +107,18 @@ RETURN:
 from __future__ import annotations
 
 import datetime as _datetime
-import json as _json
 import re as _re
 import time as _time
 from typing import Any
-from urllib import parse as _urlparse
-from urllib import request as _urllib_request
-from urllib.error import HTTPError as _HTTPError
-from urllib.error import URLError as _URLError
 
 from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
+from ansible_collections.general_ludd.agent.plugins.module_utils.searxng import (
+    build_search_url,
+    engines_per_category,
+    execute_search,
+    extract_price,
+    extract_stars,
+)
 from ansible_collections.general_ludd.travel.plugins.module_utils.contracts import (
     BookingStatus,
     EventBooking,
@@ -133,66 +135,11 @@ from ansible_collections.general_ludd.travel.plugins.module_utils.contracts impo
     RoomType,
 )
 
-_ENGINE_MAP: dict[str, str] = {
-    "flights": "google_flights,google_travel",
-    "hotels": "booking,hotelscombined,tripadvisor",
-    "events": "google_events,ticketmaster,eventbrite",
-    "activities": "tripadvisor,wikivoyage,google_maps",
-    "restaurants": "yelp,tripadvisor,google_maps",
-    "general": "google,wikipedia,duckduckgo",
-}
-
-_PRICE_RE = _re.compile(r"\$\s*(\d{1,6}(?:[.,]\d{1,2})?)")
-_STAR_RE = _re.compile(r"(\d(?:[.,]\d)?)[\s/]*(?:star|⭐|out of 5)")
 _FLIGHT_RE = _re.compile(
     r"(?P<from>[A-Z]{3})\s*(?:→|->|to|-)\s*(?P<to>[A-Z]{3})",
     _re.IGNORECASE,
 )
 _IATA_RE = _re.compile(r"\b([A-Z]{3})\b")
-
-
-def _normalise_url(base: str) -> str:
-    url = base.rstrip("/")
-    if not url.startswith(("http://", "https://")):
-        url = f"http://{url}"
-    return url
-
-
-def _build_search_url(
-    searxng_url: str,
-    query: str,
-    category: str,
-    engines: str,
-    max_results: int,
-    safe_search: int,
-    language: str,
-) -> str:
-    engines_param = engines if engines else _ENGINE_MAP.get(category, "google")
-    params: dict[str, str] = {
-        "q": query,
-        "format": "json",
-        "categories": "general",
-        "engines": engines_param,
-        "language": language,
-        "safesearch": str(safe_search),
-        "pageno": "1",
-    }
-    return f"{_normalise_url(searxng_url)}/search?{_urlparse.urlencode(params)}"
-
-
-def _extract_price(text: str) -> float | None:
-    match = _PRICE_RE.search(text)
-    if match:
-        value = match.group(1).replace(",", "")
-        return float(value)
-    return None
-
-
-def _extract_stars(text: str) -> float | None:
-    match = _STAR_RE.search(text)
-    if match:
-        return float(match.group(1))
-    return None
 
 
 def _extract_airport_codes(text: str) -> list[str]:
@@ -217,7 +164,7 @@ def _parse_flight_result(
     codes = _extract_airport_codes(text)
     origin = codes[0] if len(codes) >= 1 else "???"
     destination = codes[1] if len(codes) >= 2 else "???"
-    price = _extract_price(text)
+    price = extract_price(text)
 
     now = _datetime.datetime.now(_datetime.UTC)
     segment = FlightSegment(
@@ -267,8 +214,8 @@ def _parse_hotel_result(
     snippet = result.get("content", result.get("snippet", ""))
     url = result.get("url", "")
     text = f"{title} {snippet}"
-    price = _extract_price(text)
-    stars = _extract_stars(text)
+    price = extract_price(text)
+    stars = extract_stars(text)
 
     today = _datetime.date.today()
     now_htl = _datetime.datetime.now(_datetime.UTC)
@@ -324,7 +271,7 @@ def _parse_event_result(
     snippet = result.get("content", result.get("snippet", ""))
     url = result.get("url", "")
     text = f"{title} {snippet}"
-    price = _extract_price(text)
+    price = extract_price(text)
 
     now_evt = _datetime.datetime.now(_datetime.UTC)
     booking = EventBooking(
@@ -407,32 +354,23 @@ def search_searxng(
     language: str,
     timeout: int,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], str]:
-    search_url = _build_search_url(
+    resolved_engines = engines if engines else engines_per_category(category)
+
+    search_url = build_search_url(
         searxng_url,
         query,
         category,
-        engines,
-        max_results,
-        safe_search,
-        language,
+        engines=resolved_engines,
+        max_results=max_results,
+        safe_search=safe_search,
+        language=language,
     )
 
-    req = _urllib_request.Request(
+    raw_results, _, search_url = execute_search(
         search_url,
-        headers={
-            "User-Agent": "gludd-travel/1.0",
-            "Accept": "application/json",
-        },
+        timeout=timeout,
+        user_agent="gludd-travel/1.0",
     )
-
-    try:
-        with _urllib_request.urlopen(req, timeout=timeout) as resp:
-            body = resp.read().decode("utf-8")
-    except (_HTTPError, _URLError):
-        return [], [], search_url
-
-    data = _json.loads(body)
-    raw_results: list[dict[str, Any]] = data.get("results", [])
 
     parser = _PARSER_MAP.get(category, _parse_general_result)
     structured: list[dict[str, Any]] = []

@@ -1,5 +1,4 @@
 #!/usr/bin/python
-# -*- coding: utf-8 -*-
 # Copyright: Agentic Harness
 # SPDX-License-Identifier: MIT
 """
@@ -137,7 +136,6 @@ import time
 from typing import Any
 
 from ansible.module_utils.basic import AnsibleModule
-
 
 ACTION_MAKE_TARGETS: dict[str, str] = {
     "gate_check": "gate-fast",

@@ -6,8 +6,9 @@ import json
 import subprocess
 import sys
 import tempfile
-import yaml
 from pathlib import Path
+
+import yaml
 
 COLLECTION_ROOT = Path(__file__).resolve().parent.parent.parent
 ROLE_DIR = COLLECTION_ROOT / "roles" / "write_e2e_tests"

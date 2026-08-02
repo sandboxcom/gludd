@@ -1,15 +1,17 @@
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../../../../../src'))
 
 from general_ludd.language.phonetic_data import (
-    CMU_DICT_SUBSET,
     ARPABET_TO_IPA,
-    IPA_TO_ARPABET,
-    SOUNDEX_MAPPING,
-    METAPHONE_EXCEPTIONS,
+    CMU_DICT_SUBSET,
     DOUBLE_METAPHONE,
-    IPA_VOWELS,
     IPA_CONSONANTS,
+    IPA_TO_ARPABET,
+    IPA_VOWELS,
+    METAPHONE_EXCEPTIONS,
+    SOUNDEX_MAPPING,
 )
 
 

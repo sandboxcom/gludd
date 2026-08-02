@@ -40,17 +40,12 @@ _patch_sys_path()
 
 from plugins.module_utils.obfuscation_techniques import (  # noqa: E402
     detect_techniques as detect_obfuscation,
-    ObfuscationTechnique,
-    DetectionConfidence,
 )
 from plugins.module_utils.prompt_injection_detector import (  # noqa: E402
-    InjectionSeverity,
-    scan_text,
-    scan_file,
-    scan_binary,
     ScanReport,
+    scan_file,
+    scan_text,
 )
-
 
 SEVERITY_ORDER = {
     "info": 0,

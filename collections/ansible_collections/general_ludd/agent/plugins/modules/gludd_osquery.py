@@ -1,5 +1,4 @@
 #!/usr/bin/python
-# -*- coding: utf-8 -*-
 # Copyright: Agentic Harness
 # SPDX-License-Identifier: MIT
 """
@@ -184,7 +183,7 @@ def resolve_osquery_binary(explicit: str = "", module: object | None = None) -> 
         path = boot.get_binary_path("osquery")
         if path and os.path.isfile(path) and os.access(path, os.X_OK):
             return path
-    except Exception as exc:  # noqa: BLE001 - filestore unreachable; fall through to PATH
+    except Exception as exc:
         if module is not None:
             module.warn(f"osquery filestore probe failed, falling back to PATH: {exc}")  # type: ignore[attr-defined]
 

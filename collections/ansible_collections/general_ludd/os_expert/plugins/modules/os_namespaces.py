@@ -1,9 +1,6 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 
-from __future__ import absolute_import, division, print_function
 
-__metaclass__ = type
 
 
 DOCUMENTATION = r"""
@@ -124,8 +121,8 @@ bind_mount:
   returned: when type is not net and state=present
 """
 
-import os
 import glob
+import os
 import subprocess
 
 from ansible.module_utils.basic import AnsibleModule
@@ -244,7 +241,7 @@ def _bind_mount_ns_absent(name, ns_type, bind_mount_root):
         return 0
     try:
         os.unlink(bind_path)
-    except OSError as exc:
+    except OSError:
         return 1
     return 0
 

@@ -7,7 +7,6 @@ audit finding ID in the collection, markdown rendering, and edge cases.
 
 from __future__ import annotations
 
-import os
 import re
 import sys
 from pathlib import Path
@@ -21,8 +20,6 @@ if str(COLLECTION_ROOT) not in sys.path:
 from module_utils.hardening_guide import (  # noqa: E402
     HARDENING_KB,
     SEVERITY_RANK,
-    HardeningGuide,
-    HardeningRecommendation,
     format_markdown,
     generate_guide,
 )

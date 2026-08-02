@@ -10,7 +10,6 @@ from __future__ import annotations
 import re
 
 import pytest
-
 from plugins.module_utils.pattern_database import (
     DATABASE,
     PatternCategory,

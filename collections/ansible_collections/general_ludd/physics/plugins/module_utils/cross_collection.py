@@ -215,9 +215,9 @@ def roles_for_collection(collection: str) -> list[dict[str, str]]:
 
 
 __all__ = [
-    "list_topics",
-    "get_cross_collection_help",
     "call_collection_role",
     "collections_for_topic",
+    "get_cross_collection_help",
+    "list_topics",
     "roles_for_collection",
 ]

@@ -7,36 +7,28 @@ consistent output structures.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-
-import pytest
-import yaml
 
 _COLLECTION_ROOT = Path(__file__).resolve().parent.parent.parent
 
-from plugins.module_utils.radio_exam_data import (
-    get_questions,
-    grade_exam,
-    exam_list,
-    exam_sections,
-    questions_for,
-)
+from plugins.module_utils.antenna_types import antenna_info
 from plugins.module_utils.frequency_allocations import (
-    allocations_for,
-    lookup_frequency,
-    get_band_plan,
     bands_by_privilege,
-    get_marine_channel,
+    get_band_plan,
     get_itu_region2_bands,
+    get_marine_channel,
+    lookup_frequency,
 )
 from plugins.module_utils.propagation_models import (
     predict_path_loss,
-    free_space_loss,
-    hata_urban,
     rain_attenuation,
 )
-from plugins.module_utils.antenna_types import antenna_info, radiation_pattern
+from plugins.module_utils.radio_exam_data import (
+    exam_sections,
+    get_questions,
+    grade_exam,
+    questions_for,
+)
 
 
 class TestChainedRoles:
@@ -59,7 +51,7 @@ class TestChainedRoles:
         for role in ("exam_quiz", "regulation_lookup", "link_budget"):
             tasks = _COLLECTION_ROOT / "roles" / role / "tasks" / "main.yml"
             content = tasks.read_text()
-            assert f"_verdict" in content or f"verdict:" in content, \
+            assert "_verdict" in content or "verdict:" in content, \
                 f"{role} has no verdict"
 
 

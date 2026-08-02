@@ -1,5 +1,4 @@
 #!/usr/bin/python
-# -*- coding: utf-8 -*-
 # Copyright: Agentic Harness
 # SPDX-License-Identifier: MIT
 """
@@ -66,23 +65,23 @@ import os
 from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
 
 try:
-    from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
-        error_result,
-        ok_result,
+    from ansible_collections.general_ludd.agent.plugins.module_utils.fs_write_audit import (
+        IntegrityViolation,
+        WriteAuditLog,
     )
     from ansible_collections.general_ludd.agent.plugins.module_utils.fs_write_policy import (
         WritePolicyError,
         default_policy,
     )
-    from ansible_collections.general_ludd.agent.plugins.module_utils.fs_write_audit import (
-        IntegrityViolation,
-        WriteAuditLog,
+    from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
+        error_result,
+        ok_result,
     )
 except ImportError:
     import sys
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "module_utils"))
-    from fs_write_policy import WritePolicyError, default_policy  # type: ignore[import]
     from fs_write_audit import IntegrityViolation, WriteAuditLog  # type: ignore[import]
+    from fs_write_policy import WritePolicyError, default_policy  # type: ignore[import]
     from gludd import error_result, ok_result  # type: ignore[import]
 
 

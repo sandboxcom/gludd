@@ -1,5 +1,4 @@
 #!/usr/bin/python
-# -*- coding: utf-8 -*-
 # Copyright: Agentic Harness
 # SPDX-License-Identifier: MIT
 """
@@ -172,8 +171,7 @@ def main() -> None:
     # Role allowlist gate (fail-closed): only roles in the infra access
     # policy may deploy. An unknown/empty role is denied.
     try:
-        from general_ludd.permissions.infra_access import load_infra_access_policy
-        from general_ludd.permissions.infra_access import InfraAccessPolicy
+        from general_ludd.permissions.infra_access import InfraAccessPolicy, load_infra_access_policy
     except ImportError:
         try:
             sys_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..")

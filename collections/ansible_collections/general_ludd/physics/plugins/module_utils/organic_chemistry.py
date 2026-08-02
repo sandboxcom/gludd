@@ -21,7 +21,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 FUNCTIONAL_GROUPS: dict[str, dict[str, Any]] = {
     "alkane": {
         "formula_pattern": "C_nH_(2n+2); single C-C sigma bonds; sp3 carbon",
@@ -366,13 +365,13 @@ def identify_functional_groups(formula: str) -> list[dict[str, Any]]:
     elif "C6" in formula_upper and "H" in formula_upper:
         results.append({"group": "aromatic", "confidence": "low"})
 
-    if "C2H2" == formula_upper:
+    if formula_upper == "C2H2":
         results.append({"group": "alkyne", "confidence": "medium"})
-    elif "C2H4" == formula_upper:
+    elif formula_upper == "C2H4":
         results.append({"group": "alkene", "confidence": "medium"})
-    elif "C2H" == formula_upper[:3]:
+    elif formula_upper[:3] == "C2H":
         results.append({"group": "alkyne", "confidence": "low"})
-    elif "CH4" == formula_upper:
+    elif formula_upper == "CH4":
         results.append({"group": "alkane", "confidence": "high"})
 
     HC_atoms = ""

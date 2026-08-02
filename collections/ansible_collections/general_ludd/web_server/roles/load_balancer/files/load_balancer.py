@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 
 def generate_nginx_upstream(
     name: str,
@@ -11,7 +9,7 @@ def generate_nginx_upstream(
     lb_method: str = "round_robin",
     sticky_session: str = "cookie",
     sticky_name: str = "SERVERID",
-    backup_servers: Optional[list[dict[str, object]]] = None,
+    backup_servers: list[dict[str, object]] | None = None,
 ) -> str:
     lb_directives = {
         "round_robin": "",
@@ -99,7 +97,7 @@ def generate_haproxy_frontend(
     name: str,
     port: int = 80,
     sticky_session: str = "cookie",
-    acls: Optional[list[dict[str, str]]] = None,
+    acls: list[dict[str, str]] | None = None,
 ) -> str:
     lines = [
         f"frontend {name}_frontend",

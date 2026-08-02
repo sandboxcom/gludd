@@ -1,12 +1,14 @@
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../../../../../src'))
 
 from general_ludd.language.homoglyph_data import (
+    _INVISIBLE_SET,
+    ATTACK_VECTORS,
     HOMOGLYPH_GROUPS,
     INVISIBLE_CHARACTERS,
-    ATTACK_VECTORS,
     _codepoint_in_group,
-    _INVISIBLE_SET,
 )
 
 

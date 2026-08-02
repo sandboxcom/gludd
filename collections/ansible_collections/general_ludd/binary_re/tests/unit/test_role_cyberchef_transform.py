@@ -5,13 +5,12 @@ from __future__ import annotations
 import base64
 import codecs
 import json
-import os
 import subprocess
 import sys
 import urllib.parse
-import yaml
 from pathlib import Path
 
+import yaml
 
 COLLECTION_ROOT = Path(__file__).resolve().parent.parent.parent
 ROLE_DIR = COLLECTION_ROOT / "roles" / "cyberchef_transform"

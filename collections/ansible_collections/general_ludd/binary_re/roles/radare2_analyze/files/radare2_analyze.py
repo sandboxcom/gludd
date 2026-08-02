@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import shlex
 import sys
 from pathlib import Path
 
@@ -41,8 +40,8 @@ def gen_entropy_scan(target: str) -> dict:
 def gen_string_search(target: str, regex: str) -> dict:
     cmds = ["iz", "izz"]
     if regex:
-        cmds.append("/ {}".format(regex))
-        cmds.append("/j {}".format(regex))
+        cmds.append(f"/ {regex}")
+        cmds.append(f"/j {regex}")
     else:
         cmds.append("/ password")
     return {"commands": cmds, "regex": regex or "password"}
@@ -52,7 +51,7 @@ def gen_cfg_analysis(target: str) -> dict:
     out_dot = "/tmp/gludd-r2-cfg.dot"
     cmds = [
         "aaa",
-        "agCd > {}".format(out_dot),
+        f"agCd > {out_dot}",
         "agCj > /tmp/gludd-r2-cfg.json",
         "agl > /tmp/gludd-r2-cfg-callgraph.dot",
     ]
@@ -79,7 +78,7 @@ def main() -> None:
     elif args.mode == "cfg_analysis":
         payload = gen_cfg_analysis(args.target)
     else:
-        print("ERROR: unknown mode {}".format(args.mode), file=sys.stderr)
+        print(f"ERROR: unknown mode {args.mode}", file=sys.stderr)
         sys.exit(2)
 
     artifact = {

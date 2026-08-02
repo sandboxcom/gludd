@@ -6,7 +6,6 @@ import os
 import re
 import sys
 
-
 JS_ERROR_PATTERNS = {
     "unhandled_promise": re.compile(
         r"Unhandled\s*Promise\s*Rejection|unhandled\s*rejection", re.IGNORECASE
@@ -32,7 +31,7 @@ ASYNC_AWAIT = re.compile(r"\basync\s+(?:function|\(|\w+\s*\()", re.MULTILINE)
 
 
 def check_syntax(filepath):
-    with open(filepath, "r", encoding="utf-8") as f:
+    with open(filepath, encoding="utf-8") as f:
         content = f.read()
 
     errors = []
@@ -95,7 +94,7 @@ def check_syntax(filepath):
 
 
 def analyze_error_patterns(filepath):
-    with open(filepath, "r", encoding="utf-8") as f:
+    with open(filepath, encoding="utf-8") as f:
         content = f.read()
 
     patterns_found = {}
@@ -122,7 +121,7 @@ def verify_source_maps(js_filepath):
         }
 
     try:
-        with open(source_map_path, "r", encoding="utf-8") as f:
+        with open(source_map_path, encoding="utf-8") as f:
             data = json.load(f)
 
         required_keys = ["version", "sources", "mappings"]
@@ -137,7 +136,7 @@ def verify_source_maps(js_filepath):
             "missing_keys": missing,
             "has_source_content": "sourcesContent" in data,
         }
-    except (json.JSONDecodeError, IOError) as e:
+    except (OSError, json.JSONDecodeError) as e:
         return {
             "file": js_filepath,
             "source_map_found": True,
@@ -147,7 +146,7 @@ def verify_source_maps(js_filepath):
 
 
 def analyze_bundle(filepath):
-    with open(filepath, "r", encoding="utf-8") as f:
+    with open(filepath, encoding="utf-8") as f:
         content = f.read()
 
     lines = content.split("\n")

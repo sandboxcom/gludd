@@ -353,7 +353,7 @@ def main() -> None:
             args.call_cap,
         )
     else:
-        print("ERROR: unknown mode {}".format(args.mode), file=sys.stderr)
+        print(f"ERROR: unknown mode {args.mode}", file=sys.stderr)
         sys.exit(2)
 
     artifact = {

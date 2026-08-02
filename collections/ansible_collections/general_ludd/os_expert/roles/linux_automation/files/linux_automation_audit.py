@@ -145,7 +145,7 @@ def parse_cron_directory_listing(raw: str) -> dict[str, list[str]]:
         elif current_dir and stripped and not stripped.startswith("(no"):
             parts = stripped.split()
             for part in parts:
-                if not part.startswith("total") and "." in part or "-" in part:
+                if (not part.startswith("total") and "." in part) or "-" in part:
                     result[current_dir].append(part)
     return result
 

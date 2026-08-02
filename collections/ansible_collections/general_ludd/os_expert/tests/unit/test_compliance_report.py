@@ -17,17 +17,10 @@ if str(COLLECTION_ROOT) not in sys.path:
     sys.path.insert(0, str(COLLECTION_ROOT))
 
 from module_utils.compliance_report import (  # noqa: E402
-    CISControlStatus,
-    CISScore,
-    ComplianceReport,
-    NistControlMapping,
-    RemediationPhase,
-    StigStatus,
     format_compliance_markdown,
     generate_compliance_report,
 )
 from module_utils.hardening_guide import HARDENING_KB  # noqa: E402
-
 
 # ---- fixtures ----------------------------------------------------------------
 

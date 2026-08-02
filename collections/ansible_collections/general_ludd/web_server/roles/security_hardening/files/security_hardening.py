@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
-
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
@@ -20,8 +17,8 @@ SECURITY_HEADERS = {
 
 
 def generate_nginx_security_headers(
-    csp_policy: Optional[str] = None,
-    extra_headers: Optional[dict[str, str]] = None,
+    csp_policy: str | None = None,
+    extra_headers: dict[str, str] | None = None,
 ) -> str:
     headers = dict(SECURITY_HEADERS)
     if csp_policy:
@@ -36,8 +33,8 @@ def generate_nginx_security_headers(
 
 
 def generate_apache_security_headers(
-    csp_policy: Optional[str] = None,
-    extra_headers: Optional[dict[str, str]] = None,
+    csp_policy: str | None = None,
+    extra_headers: dict[str, str] | None = None,
 ) -> str:
     headers = dict(SECURITY_HEADERS)
     if csp_policy:
@@ -54,12 +51,12 @@ def generate_apache_security_headers(
 
 def build_csp_policy(
     default_src: str = "'self'",
-    script_src: Optional[str] = None,
-    style_src: Optional[str] = None,
-    img_src: Optional[str] = None,
-    font_src: Optional[str] = None,
-    connect_src: Optional[str] = None,
-    frame_src: Optional[str] = None,
+    script_src: str | None = None,
+    style_src: str | None = None,
+    img_src: str | None = None,
+    font_src: str | None = None,
+    connect_src: str | None = None,
+    frame_src: str | None = None,
     object_src: str = "'none'",
     base_uri: str = "'self'",
     form_action: str = "'self'",
@@ -86,7 +83,7 @@ def build_csp_policy(
 
 def validate_security_headers(
     response_headers: dict[str, str],
-    required_headers: Optional[set[str]] = None,
+    required_headers: set[str] | None = None,
 ) -> dict[str, object]:
     required = required_headers or {
         "X-Content-Type-Options",
@@ -196,8 +193,8 @@ def generate_nginx_request_limits(
 
 
 def generate_tls_hardening(
-    protocols: Optional[list[str]] = None,
-    ciphers: Optional[str] = None,
+    protocols: list[str] | None = None,
+    ciphers: str | None = None,
     dhparam_path: str = "/etc/nginx/dhparam.pem",
 ) -> str:
     proto_list = protocols or ["TLSv1.2", "TLSv1.3"]

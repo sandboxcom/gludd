@@ -28,11 +28,8 @@ if str(_MODULE_UTILS) not in sys.path:
 
 from radio_exam_data import (  # type: ignore[import-not-found]
     EXAM_QUESTIONS,
-    exam_list,
-    exam_sections,
-    grade_exam,
     get_questions,
-    questions_for,
+    grade_exam,
 )
 
 VALID_EXAMS = ("fcc_tech", "fcc_general", "fcc_extra", "roc_m", "gmdss")

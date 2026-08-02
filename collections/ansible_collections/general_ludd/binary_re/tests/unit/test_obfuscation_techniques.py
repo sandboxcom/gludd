@@ -2,21 +2,15 @@
 
 from __future__ import annotations
 
-import os
 import struct
-import tempfile
-from pathlib import Path
-
-import pytest
 
 from plugins.module_utils.obfuscation_techniques import (
-    ObfuscationTechnique,
-    DetectionConfidence,
-    Severity,
-    DetectionResult,
-    ToolSignature,
-    KNOWN_TOOL_SIGNATURES,
     DETECTION_HEURISTICS,
+    KNOWN_TOOL_SIGNATURES,
+    DetectionConfidence,
+    DetectionResult,
+    ObfuscationTechnique,
+    Severity,
     detect_techniques,
 )
 

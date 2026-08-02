@@ -21,9 +21,8 @@ by the caller via the guide's ``summary["unmapped_finding_ids"]``).
 from __future__ import annotations
 
 import re
-import sys
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -84,7 +83,7 @@ def _strip_powershell_wrapper(cmd: str) -> str:
 
 
 def _iso_timestamp() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 # ---- bash generation --------------------------------------------------------

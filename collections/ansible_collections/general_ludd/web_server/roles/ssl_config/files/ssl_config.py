@@ -3,10 +3,8 @@
 import argparse
 import datetime
 import json
-import ssl
 import sys
 from pathlib import Path
-
 
 MOZILLA_CIPHER_PROFILES = {
     "modern": {
@@ -76,7 +74,7 @@ def generate_nginx_ssl_config(profile, min_tls, hsts_max_age):
         "ssl_session_tickets off;",
         "",
         "# DH parameters",
-        f"ssl_dhparam /etc/nginx/dhparam.pem;",
+        "ssl_dhparam /etc/nginx/dhparam.pem;",
         "",
     ]
 
@@ -85,7 +83,7 @@ def generate_nginx_ssl_config(profile, min_tls, hsts_max_age):
             "# OCSP Stapling",
             "ssl_stapling on;",
             "ssl_stapling_verify on;",
-            f"ssl_trusted_certificate /etc/nginx/ssl/chain.pem;",
+            "ssl_trusted_certificate /etc/nginx/ssl/chain.pem;",
             "resolver 8.8.8.8 8.8.4.4 valid=300s;",
             "resolver_timeout 5s;",
             "",
@@ -151,7 +149,7 @@ def certificate_info(cert_path):
         info["not_before"] = cert.not_valid_before_utc.isoformat()
         info["not_after"] = cert.not_valid_after_utc.isoformat()
         info["days_remaining"] = (
-            cert.not_valid_after_utc - datetime.datetime.now(datetime.timezone.utc)
+            cert.not_valid_after_utc - datetime.datetime.now(datetime.UTC)
         ).days
     except ImportError:
         info["_warning"] = "cryptography package not installed; limited info"

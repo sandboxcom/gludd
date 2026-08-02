@@ -2,21 +2,18 @@
 
 from __future__ import annotations
 
-import pytest
-
 from plugins.module_utils.jurisdictions import (
     JURISDICTION_CODES,
-    SUBDIVISION_CODES,
     SOVEREIGNTY_STATUSES,
-    JURISDICTION_PARENTS,
-    list_jurisdictions,
+    SUBDIVISION_CODES,
     get_jurisdiction,
+    get_parents,
+    get_sovereignty_status,
     get_subdivisions,
     is_sovereign,
-    get_sovereignty_status,
+    list_jurisdictions,
     resolve_fips,
     resolve_gleif,
-    get_parents,
 )
 
 

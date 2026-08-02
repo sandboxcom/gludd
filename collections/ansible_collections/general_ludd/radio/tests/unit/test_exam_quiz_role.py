@@ -2,15 +2,10 @@
 
 from __future__ import annotations
 
-import json
-import os
-import tempfile
 from pathlib import Path
 
-import pytest
 import yaml
-
-from plugins.module_utils.radio_exam_data import get_questions, grade_exam, exam_list
+from plugins.module_utils.radio_exam_data import exam_list, get_questions, grade_exam
 
 _COLLECTION_ROOT = Path(__file__).resolve().parent.parent.parent
 

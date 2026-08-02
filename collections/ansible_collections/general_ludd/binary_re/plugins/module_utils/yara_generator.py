@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Optional
 
 from plugins.module_utils.pattern_database import (
     PatternDatabase,
@@ -93,7 +92,7 @@ class YaraGenerator:
     exposing ``all_entries()``) to control which patterns are translated.
     """
 
-    def __init__(self, database: Optional[PatternDatabase] = None) -> None:
+    def __init__(self, database: PatternDatabase | None = None) -> None:
         self._database: PatternDatabase = (
             database if database is not None else PatternDatabase()
         )

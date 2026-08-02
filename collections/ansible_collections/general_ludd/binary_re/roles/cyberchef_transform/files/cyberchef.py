@@ -10,11 +10,9 @@ import argparse
 import base64
 import codecs
 import json
-import sys
 import urllib.parse
 import urllib.request
 from pathlib import Path
-
 
 RECIPES: dict[str, dict] = {
     "base64_decode": {

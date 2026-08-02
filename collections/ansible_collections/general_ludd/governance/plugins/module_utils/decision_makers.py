@@ -938,19 +938,19 @@ def main() -> int:
 
 
 __all__ = [
-    "ROLE_TYPES",
-    "DECISION_MAKER_PROFILE_TEMPLATE",
-    "DECISION_MAKER_PROFILES",
-    "INFLUENCE_NETWORKS",
     "BIAS_INDICATORS",
-    "lookup_decision_maker",
+    "BRANCHES",
+    "DECISION_MAKERS",
+    "DECISION_MAKER_PROFILES",
+    "DECISION_MAKER_PROFILE_TEMPLATE",
+    "INFLUENCE_NETWORKS",
+    "ROLE_TYPES",
+    "assess_proclivity",
+    "find_decision_maker",
     "get_decision_authority",
     "get_influence_network",
-    "find_decision_maker",
-    "assess_proclivity",
-    "DECISION_MAKERS",
-    "BRANCHES",
     "list_countries",
+    "lookup_decision_maker",
     "lookup_decision_makers",
 ]
 

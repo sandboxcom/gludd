@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-import json
-import math
-import os
 from pathlib import Path
 
 import pytest
 import yaml
-
-from plugins.module_utils.propagation_models import predict_path_loss, free_space_loss, hata_urban
-from plugins.module_utils.antenna_types import antenna_info, radiation_pattern, design_antenna
+from plugins.module_utils.antenna_types import antenna_info, design_antenna
+from plugins.module_utils.propagation_models import free_space_loss, predict_path_loss
 
 _COLLECTION_ROOT = Path(__file__).resolve().parent.parent.parent
 

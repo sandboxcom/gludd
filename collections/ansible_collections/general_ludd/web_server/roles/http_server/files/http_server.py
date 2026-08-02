@@ -3,7 +3,6 @@
 import argparse
 import json
 import re
-import sys
 
 
 def parse_nginx_config(config_text):
@@ -62,15 +61,15 @@ def generate_nginx_vhost(server_name, port, document_root, proxy_pass=None,
         "",
     ]
     if proxy_pass:
-        lines.append(f"    location / {{")
+        lines.append("    location / {")
         lines.append(f"        proxy_pass {proxy_pass};")
-        lines.append(f"        proxy_set_header Host $host;")
-        lines.append(f"        proxy_set_header X-Real-IP $remote_addr;")
-        lines.append(f"    }}")
+        lines.append("        proxy_set_header Host $host;")
+        lines.append("        proxy_set_header X-Real-IP $remote_addr;")
+        lines.append("    }")
     else:
-        lines.append(f"    location / {{")
-        lines.append(f"        try_files $uri $uri/ =404;")
-        lines.append(f"    }}")
+        lines.append("    location / {")
+        lines.append("        try_files $uri $uri/ =404;")
+        lines.append("    }")
 
     if extra:
         for k, v in extra.items():

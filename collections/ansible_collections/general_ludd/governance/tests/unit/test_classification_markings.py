@@ -2,21 +2,19 @@
 
 from __future__ import annotations
 
-import pytest
-
 from plugins.module_utils.classification_markings import (
     BANNER_FORMATS,
-    PORTION_MARKINGS,
     CAVEAT_CODES,
-    DISSEM_CONTROLS,
     DECLASS_SCHEDULES,
+    DISSEM_CONTROLS,
+    PORTION_MARKINGS,
     get_banner_line,
-    get_portion_marking,
-    resolve_caveat,
-    get_dissem_control,
     get_declass_schedule,
-    list_systems,
+    get_dissem_control,
+    get_portion_marking,
     list_caveats,
+    list_systems,
+    resolve_caveat,
 )
 
 

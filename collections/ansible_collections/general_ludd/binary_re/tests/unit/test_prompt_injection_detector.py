@@ -4,29 +4,25 @@ from __future__ import annotations
 
 import base64
 import codecs
-import tempfile
 import urllib.parse
-from pathlib import Path
-
-import pytest
 
 from plugins.module_utils.prompt_injection_detector import (
-    InjectionSeverity,
+    PROMPT_INJECTION_PATTERNS,
     InjectionCategory,
     InjectionFinding,
+    InjectionSeverity,
     ScanReport,
-    PROMPT_INJECTION_PATTERNS,
-    scan_ascii,
-    scan_hex,
-    scan_base64,
-    scan_url_encoded,
-    scan_rot13,
     analyze_js_ast,
     analyze_python_ast,
-    score_severity,
-    scan_text,
-    scan_file,
+    scan_ascii,
+    scan_base64,
     scan_binary,
+    scan_file,
+    scan_hex,
+    scan_rot13,
+    scan_text,
+    scan_url_encoded,
+    score_severity,
 )
 
 

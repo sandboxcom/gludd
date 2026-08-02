@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from plugins.module_utils.modulation_schemes import (
     MODULATION_SCHEMES,
-    schemes_by_category,
-    scheme_info,
     all_scheme_names,
     classify_signal,
+    scheme_info,
+    schemes_by_category,
 )
 
 

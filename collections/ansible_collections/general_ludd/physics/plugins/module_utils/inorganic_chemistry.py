@@ -20,7 +20,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 PERIODIC_TABLE: dict[str, dict[str, Any]] = {
     "H":  {"atomic_number":1,  "symbol":"H",  "name":"Hydrogen",   "atomic_mass":1.008,     "electron_configuration":"1s1",    "electronegativity":2.20, "oxidation_states":[-1,1],         "group":1,  "period":1, "block":"s", "melting_point_k":14.01,   "boiling_point_k":20.28,   "density_gcm3":0.00008988, "atomic_radius_pm":53,  "ionization_energy_ev":13.598},
     "He": {"atomic_number":2,  "symbol":"He", "name":"Helium",      "atomic_mass":4.002602,  "electron_configuration":"1s2",    "electronegativity":None, "oxidation_states":[0],             "group":18, "period":1, "block":"s", "melting_point_k":0.95,    "boiling_point_k":4.22,    "density_gcm3":0.0001785,  "atomic_radius_pm":31,  "ionization_energy_ev":24.587},

@@ -447,14 +447,14 @@ def authorities_by_instrument(instrument_type: str) -> list[dict[str, Any]]:
 
 __all__ = [
     "AUTHORITY_INSTRUMENTS",
-    "PASSPORT_AUTHORITIES",
-    "LICENSE_AUTHORITIES",
-    "TREATY_DEPOSITARIES",
     "EXPORT_CONTROL_AUTHORITIES",
-    "get_authority",
-    "get_passport_authority",
-    "get_license_authority",
-    "get_treaty_depositary",
-    "get_export_control_authority",
+    "LICENSE_AUTHORITIES",
+    "PASSPORT_AUTHORITIES",
+    "TREATY_DEPOSITARIES",
     "authorities_by_instrument",
+    "get_authority",
+    "get_export_control_authority",
+    "get_license_authority",
+    "get_passport_authority",
+    "get_treaty_depositary",
 ]

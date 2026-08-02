@@ -14,7 +14,6 @@ import os
 import re
 import sys
 
-
 GETTEXT_RE = re.compile(
     r"(?:_|gettext|ngettext|pgettext)\s*\(\s*[\"'](.+?)[\"']", re.DOTALL
 )

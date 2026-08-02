@@ -2,20 +2,18 @@
 
 from __future__ import annotations
 
-import pytest
-
 from plugins.module_utils.pattern_database import (
+    ANTI_DEBUG_PATTERNS,
+    DATABASE,
+    MALWARE_FAMILY_PATTERNS,
+    OBFUSCATION_PATTERNS,
+    PACKER_PATTERNS,
+    SHELLCODE_PATTERNS,
     PatternCategory,
+    PatternDatabase,
+    PatternEntry,
     PatternPlatform,
     Severity,
-    PatternEntry,
-    PatternDatabase,
-    DATABASE,
-    SHELLCODE_PATTERNS,
-    PACKER_PATTERNS,
-    ANTI_DEBUG_PATTERNS,
-    OBFUSCATION_PATTERNS,
-    MALWARE_FAMILY_PATTERNS,
 )
 
 

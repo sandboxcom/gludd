@@ -2,24 +2,21 @@
 
 from __future__ import annotations
 
-import pytest
-
 from plugins.module_utils.governing_bodies import (
     BODY_TYPES,
     INTERNATIONAL_BODIES,
     NATIONAL_STRUCTURES,
-    BODY_RELATIONSHIPS,
-    lookup_body,
+    all_relationships_for,
+    bodies_by_type,
     get_children,
+    get_decision_process,
     get_descendants,
     get_jurisdiction,
-    get_decision_process,
-    bodies_by_type,
-    relationship,
-    relationship_detail,
-    all_relationships_for,
+    lookup_body,
     national_branches,
     national_ministries,
+    relationship,
+    relationship_detail,
 )
 
 
@@ -34,7 +31,7 @@ class TestBodyTypes:
             "tribal",
             "special_district",
         )
-        assert BODY_TYPES == expected
+        assert expected == BODY_TYPES
 
 
 class TestInternationalBodies:

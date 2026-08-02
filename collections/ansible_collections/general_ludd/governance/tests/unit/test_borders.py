@@ -2,38 +2,36 @@
 
 from __future__ import annotations
 
-import pytest
-
 from plugins.module_utils.borders import (
-    BORDER_TYPES,
-    RECOGNITION_STATUS,
-    VISA_TYPES,
     BORDER_DATA,
+    BORDER_TYPES,
     ENTITY_RECOGNITION,
+    RECOGNITION_STATUS,
     VISA_REGIME,
-    lookup_border,
+    VISA_TYPES,
     get_crossing_requirements,
     get_recognition_status,
     get_visa_requirements,
+    lookup_border,
 )
 
 
 class TestBorderTypes:
     def test_expected_types(self):
         expected = {"land", "maritime", "airspace", "customs", "administrative", "contested", "demilitarized"}
-        assert BORDER_TYPES == expected
+        assert expected == BORDER_TYPES
 
 
 class TestRecognitionStatus:
     def test_expected_statuses(self):
         expected = {"universal", "partial", "disputed", "unrecognised", "de_facto"}
-        assert RECOGNITION_STATUS == expected
+        assert expected == RECOGNITION_STATUS
 
 
 class TestVisaTypes:
     def test_expected_types(self):
         expected = {"tourist", "business", "transit", "student", "work", "diplomatic", "refugee", "digital_nomad"}
-        assert VISA_TYPES == expected
+        assert expected == VISA_TYPES
 
 
 class TestBorderData:

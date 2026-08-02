@@ -16,11 +16,8 @@ import argparse
 import json
 import math
 import os
-import sys
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass
 from typing import Any
-
 
 SPEED_OF_LIGHT_MS = 299_792_458.0
 VELOCITY_FACTORS: dict[str, float] = {

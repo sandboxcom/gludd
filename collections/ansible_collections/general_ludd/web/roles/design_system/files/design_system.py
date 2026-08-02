@@ -4,11 +4,9 @@ import argparse
 import json
 import os
 import re
-import sys
 import urllib.error
 import urllib.request
 from collections import Counter
-
 
 HEX_COLOR_RE = re.compile(r'#([0-9a-fA-F]{3,8})\b')
 RGB_COLOR_RE = re.compile(r'rgb\(?\s*(\d+)\s*[,/\s]\s*(\d+)\s*[,/\s]\s*(\d+)[^)]*\)')
@@ -26,7 +24,7 @@ def fetch_css(source: str) -> str:
         req = urllib.request.Request(source, headers={"User-Agent": "gludd-design-system/1.0"})
         with urllib.request.urlopen(req, timeout=15) as resp:
             return resp.read().decode("utf-8", errors="replace")
-    with open(source, "r", encoding="utf-8", errors="replace") as f:
+    with open(source, encoding="utf-8", errors="replace") as f:
         return f.read()
 
 

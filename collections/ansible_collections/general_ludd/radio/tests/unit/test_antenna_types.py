@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import pytest
-
 from plugins.module_utils.antenna_types import (
     ANTENNA_TYPES,
     antenna_info,
-    types_for_frequency,
     design_antenna,
     radiation_pattern,
+    types_for_frequency,
 )
 
 

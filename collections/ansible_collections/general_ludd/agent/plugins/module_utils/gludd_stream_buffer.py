@@ -17,7 +17,6 @@ current contents; ``peek`` returns them without clearing.
 from __future__ import annotations
 
 from collections import deque
-from typing import List
 
 
 class RollingBuffer:
@@ -142,6 +141,6 @@ class RollingBuffer:
         """Current number of bytes retained."""
         return self._size
 
-    def chunk_paths(self) -> List[str]:  # pragma: no cover - convenience accessor
+    def chunk_paths(self) -> list[str]:  # pragma: no cover - convenience accessor
         """Placeholder for module-side artifact tracking; unused by core tests."""
         return []

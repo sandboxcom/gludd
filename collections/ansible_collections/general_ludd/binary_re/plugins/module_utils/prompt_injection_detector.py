@@ -6,13 +6,11 @@ import ast
 import base64
 import codecs
 import enum
-import hashlib
 import re
-import struct
 import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
 class InjectionSeverity(enum.Enum):

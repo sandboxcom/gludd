@@ -16,11 +16,8 @@ import json
 import math
 import os
 import struct
-import sys
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
-
 
 FORMAT_BYTES: dict[str, int] = {
     "int8": 1,

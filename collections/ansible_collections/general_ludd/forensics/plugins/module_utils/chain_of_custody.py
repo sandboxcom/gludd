@@ -29,7 +29,7 @@ from __future__ import annotations
 import hashlib
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 # ═══════════════════════════════════════════════════════════════════
@@ -175,7 +175,7 @@ class ChainOfCustody:
     evidence_items: dict[str, EvidenceItem] = field(default_factory=dict)
     transfer_log: list[dict[str, Any]] = field(default_factory=list)
     digital_signatures: dict[str, list[dict[str, str]]] = field(default_factory=dict)
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     last_modified: str = ""
 
     def __post_init__(self) -> None:
@@ -190,7 +190,7 @@ class ChainOfCustody:
 
 def _ts() -> str:
     """Current UTC timestamp (ISO 8601)."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 def _evid() -> str:
     """Generate unique EVI-NNNNNN identifier."""

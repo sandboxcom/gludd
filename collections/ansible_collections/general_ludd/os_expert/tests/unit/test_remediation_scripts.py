@@ -7,7 +7,6 @@ verification step handling, reboot warnings, and edge cases.
 
 from __future__ import annotations
 
-import datetime as dt
 import sys
 from pathlib import Path
 
@@ -23,12 +22,10 @@ from module_utils.hardening_guide import (  # noqa: E402
     generate_guide,
 )
 from module_utils.remediation_scripts import (  # noqa: E402
-    GeneratedScript,
     generate_bash_script,
     generate_powershell_script,
     generate_scripts,
 )
-
 
 # ---- helpers ----------------------------------------------------------------
 

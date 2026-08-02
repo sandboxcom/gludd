@@ -21,7 +21,6 @@ import argparse
 import ast
 import json
 import sys
-from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -34,7 +33,7 @@ def _ensure_path() -> None:
 
 
 class _FunctionInfo:
-    __slots__ = ("name", "line_start", "line_end", "is_public", "calls")
+    __slots__ = ("calls", "is_public", "line_end", "line_start", "name")
 
     def __init__(
         self,
@@ -61,7 +60,7 @@ class _FunctionInfo:
 
 
 class _ClassInfo:
-    __slots__ = ("name", "line_start", "line_end", "is_public", "methods")
+    __slots__ = ("is_public", "line_end", "line_start", "methods", "name")
 
     def __init__(
         self,
@@ -139,18 +138,7 @@ class _CodePathAnalyzerAST:
     def _handle_class(self, node: ast.ClassDef) -> None:
         methods: list[_FunctionInfo] = []
         for child in ast.iter_child_nodes(node):
-            if isinstance(child, ast.FunctionDef):
-                calls = _extract_calls(child)
-                m = _FunctionInfo(
-                    name=child.name,
-                    line_start=child.lineno,
-                    line_end=child.end_lineno or child.lineno,
-                    is_public=not child.name.startswith("_"),
-                    calls=calls,
-                )
-                self._call_graph[f"{node.name}.{m.name}"] = set(calls)
-                methods.append(m)
-            elif isinstance(child, ast.AsyncFunctionDef):
+            if isinstance(child, ast.FunctionDef) or isinstance(child, ast.AsyncFunctionDef):
                 calls = _extract_calls(child)
                 m = _FunctionInfo(
                     name=child.name,

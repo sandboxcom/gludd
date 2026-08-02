@@ -119,9 +119,7 @@ def parse_codesign_status(raw: str) -> dict[str, Any]:
     if team_match:
         result["team_id"] = team_match.group(1)
 
-    if re.search(r"Signature[:\s]+valid", raw, re.IGNORECASE):
-        result["valid"] = True
-    elif re.search(r"CodeDirectory[:\s]+", raw):
+    if re.search(r"Signature[:\s]+valid", raw, re.IGNORECASE) or re.search(r"CodeDirectory[:\s]+", raw):
         result["valid"] = True
 
     for line in raw.strip().splitlines():

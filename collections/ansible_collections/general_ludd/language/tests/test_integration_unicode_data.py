@@ -1,15 +1,17 @@
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../../../../../src'))
 
 from general_ludd.language.unicode_data import (
-    UNICODE_VERSION_HISTORY,
-    UNICODE_CATEGORY_NAMES,
     UNICODE_BLOCK_NAMES,
+    UNICODE_CATEGORY_NAMES,
+    UNICODE_VERSION_HISTORY,
     UTF8_HEADER_BYTES,
-    plane_of,
-    is_surrogate,
     is_high_surrogate,
     is_low_surrogate,
+    is_surrogate,
+    plane_of,
     surrogates_to_codepoint,
 )
 

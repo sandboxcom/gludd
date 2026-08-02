@@ -13,7 +13,6 @@ import os
 import sys
 import unicodedata
 
-
 SEVERITY_RANK: dict[str, int] = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 
 

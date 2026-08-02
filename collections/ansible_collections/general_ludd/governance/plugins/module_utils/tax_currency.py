@@ -1385,9 +1385,7 @@ def get_tax_info(country: str, tax_type: str) -> dict[str, Any] | None:
         result["rate"] = country_data.get("standard_rate_vat")
     elif ttype == "digital_services":
         result["rate"] = country_data.get("digital_services_rate")
-    elif ttype == "carbon":
-        result["details"] = {"notes": country_data.get("notes")}
-    elif ttype in ("property", "wealth", "inheritance", "capital_gains", "sales"):
+    elif ttype == "carbon" or ttype in ("property", "wealth", "inheritance", "capital_gains", "sales"):
         result["details"] = {"notes": country_data.get("notes")}
     return result
 

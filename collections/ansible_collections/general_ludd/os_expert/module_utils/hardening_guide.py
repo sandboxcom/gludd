@@ -591,11 +591,11 @@ def format_markdown(guide: HardeningGuide) -> str:
 
 
 __all__ = [
+    "HARDENING_KB",
     "SEVERITY_RANK",
     "VALID_CHANGE_RISKS",
-    "HARDENING_KB",
-    "HardeningRecommendation",
     "HardeningGuide",
-    "generate_guide",
+    "HardeningRecommendation",
     "format_markdown",
+    "generate_guide",
 ]

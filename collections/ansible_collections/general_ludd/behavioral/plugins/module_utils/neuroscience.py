@@ -1451,7 +1451,7 @@ def analyze_neuropsychiatric_profile(symptoms: dict[str, Any] | None) -> dict[st
         ))
         symptom_score = symptom_hits / max(1, len(data["symptoms"]))
         course_score = 0.1 if any(c_pattern in course for c_pattern in data["course"]) else 0.0
-        age_score = 0.1 if age_of_onset and data["age"].replace(" ", "_").replace(",", "") in age_of_onset or "any" in data["age"] else 0.0
+        age_score = 0.1 if (age_of_onset and data["age"].replace(" ", "_").replace(",", "") in age_of_onset) or "any" in data["age"] else 0.0
         scores[condition] = round(symptom_score + course_score + age_score, 3)
 
     ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)

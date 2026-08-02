@@ -22,11 +22,7 @@ def _launcher(ghidra_path: str) -> str:
 
 def gen_headless(target: str, ghidra_path: str, project_dir: str) -> dict:
     launcher = _launcher(ghidra_path)
-    invocation = "{launcher} {project_dir} gludd_proj -import {target} -overwrite -deleteProject".format(
-        launcher=shlex.quote(launcher),
-        project_dir=shlex.quote(project_dir),
-        target=shlex.quote(target),
-    )
+    invocation = f"{shlex.quote(launcher)} {shlex.quote(project_dir)} gludd_proj -import {shlex.quote(target)} -overwrite -deleteProject"
     return {"invocation": invocation, "project_dir": project_dir}
 
 
@@ -49,13 +45,8 @@ def gen_scripted_export(target: str, ghidra_path: str, project_dir: str) -> dict
     launcher = _launcher(ghidra_path)
     postscript_path = "/tmp/gludd-ghidra-decompile.py"
     invocation = (
-        "{launcher} {project_dir} gludd_proj -import {target} -overwrite "
-        "-deleteProject -postScript {postscript}"
-    ).format(
-        launcher=shlex.quote(launcher),
-        project_dir=shlex.quote(project_dir),
-        target=shlex.quote(target),
-        postscript=shlex.quote(postscript_path),
+        f"{shlex.quote(launcher)} {shlex.quote(project_dir)} gludd_proj -import {shlex.quote(target)} -overwrite "
+        f"-deleteProject -postScript {shlex.quote(postscript_path)}"
     )
     return {
         "invocation": invocation,
@@ -79,13 +70,8 @@ def gen_function_signature(target: str, ghidra_path: str, project_dir: str) -> d
     launcher = _launcher(ghidra_path)
     postscript_path = "/tmp/gludd-ghidra-fnsig.py"
     invocation = (
-        "{launcher} {project_dir} gludd_proj -import {target} -overwrite "
-        "-deleteProject -postScript {postscript}"
-    ).format(
-        launcher=shlex.quote(launcher),
-        project_dir=shlex.quote(project_dir),
-        target=shlex.quote(target),
-        postscript=shlex.quote(postscript_path),
+        f"{shlex.quote(launcher)} {shlex.quote(project_dir)} gludd_proj -import {shlex.quote(target)} -overwrite "
+        f"-deleteProject -postScript {shlex.quote(postscript_path)}"
     )
     return {
         "invocation": invocation,
@@ -112,7 +98,7 @@ def main() -> None:
     elif args.mode == "function_signature":
         payload = gen_function_signature(args.target, args.ghidra_path, args.project_dir)
     else:
-        print("ERROR: unknown mode {}".format(args.mode), file=sys.stderr)
+        print(f"ERROR: unknown mode {args.mode}", file=sys.stderr)
         sys.exit(2)
 
     artifact = {

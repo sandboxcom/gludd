@@ -1,15 +1,17 @@
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../../../../../src'))
 
 from general_ludd.language.locale_data import (
-    LOCALE_FORMATS,
-    RTL_SCRIPTS,
-    RTL_LANGUAGES,
+    CLDR_FIRST_DAY_OF_WEEK,
+    CLDR_MEASUREMENT_SYSTEMS,
     COMMON_CURRENCIES,
     ISO_639_1_TO_NAME,
     ISO_3166_TO_NAME,
-    CLDR_FIRST_DAY_OF_WEEK,
-    CLDR_MEASUREMENT_SYSTEMS,
+    LOCALE_FORMATS,
+    RTL_LANGUAGES,
+    RTL_SCRIPTS,
 )
 
 

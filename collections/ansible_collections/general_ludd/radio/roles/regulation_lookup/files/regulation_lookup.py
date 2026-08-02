@@ -27,14 +27,9 @@ if str(_MODULE_UTILS) not in sys.path:
     sys.path.insert(0, str(_MODULE_UTILS))
 
 from frequency_allocations import (  # type: ignore[import-not-found]
-    allocations_for,
     bands_by_privilege,
-    bands_in_range,
     get_band_plan,
     get_itu_bands,
-    get_itu_region1_bands,
-    get_itu_region2_bands,
-    get_itu_region3_bands,
     get_marine_channel,
     lookup_frequency,
 )
@@ -100,7 +95,7 @@ def lookup(
     if band_name is not None:
         plan = get_band_plan(band_name, country)
         if plan is None:
-            verdict.error = (verdict.error or "") + f"; " if verdict.error else ""
+            verdict.error = (verdict.error or "") + "; " if verdict.error else ""
             verdict.error = (verdict.error or "") + f"No band plan found for '{band_name}' in {country}"
         else:
             verdict.band_plan = {

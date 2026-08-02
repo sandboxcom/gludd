@@ -4,10 +4,9 @@ import argparse
 import json
 import re
 import sys
-from urllib.request import urlopen, Request
-from urllib.error import URLError, HTTPError
 from html.parser import HTMLParser
-
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 HEX_COLOR = re.compile(r"#([0-9a-fA-F]{3,8})\b")
 RGB_COLOR = re.compile(
@@ -66,11 +65,11 @@ def fetch_url(url, timeout=10):
     try:
         with urlopen(req, timeout=timeout) as resp:
             return resp.read().decode("utf-8", errors="replace")
-    except HTTPError as e:
+    except HTTPError:
         return None
-    except URLError as e:
+    except URLError:
         return None
-    except Exception as e:
+    except Exception:
         return None
 
 

@@ -181,7 +181,7 @@ def gather(
 
     if gather_log:
         log_raw = _run(
-            ["log", "show", f"--last", log_window, "--style", "ndjson"],
+            ["log", "show", "--last", log_window, "--style", "ndjson"],
             timeout=60,
         )
         result["unified_log"] = parse_unified_log(log_raw)

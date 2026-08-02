@@ -13,7 +13,6 @@ import os
 import re
 import sys
 
-
 WORD_RE = re.compile(r"[A-Za-z]+")
 
 

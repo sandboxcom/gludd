@@ -5,7 +5,6 @@ from __future__ import annotations
 import struct
 
 import pytest
-
 from plugins.module_utils.protocol_decoder import (
     ACARS_ALPHABET,
     ADS_B_CALLSIGN_ALPHABET,
@@ -30,7 +29,7 @@ def _iq_square_wave(duration_ms: float, sample_rate: int, period: int = 20) -> b
     n = int(sample_rate * duration_ms / 1000.0)
     out = bytearray()
     for i in range(n):
-        v = struct.pack("<h", int(127 * (1 if (i % period < period // 2) else -1)))
+        v = struct.pack("<h", (127 * (1 if (i % period < period // 2) else -1)))
         out += v + v
     return bytes(out)
 

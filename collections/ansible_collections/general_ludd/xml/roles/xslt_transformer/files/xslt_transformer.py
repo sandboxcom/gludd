@@ -2,14 +2,13 @@
 """xslt_transformer — Apply and author XSLT transformations."""
 import argparse
 import json
-import sys
 import os
+import sys
 
 try:
     from lxml import etree
     HAS_LXML = True
 except ImportError:
-    import xml.etree.ElementTree as ET
     HAS_LXML = False
 
 

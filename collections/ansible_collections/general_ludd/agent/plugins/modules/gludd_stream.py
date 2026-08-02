@@ -1,5 +1,4 @@
 #!/usr/bin/python
-# -*- coding: utf-8 -*-
 # Copyright: Agentic Harness
 # SPDX-License-Identifier: MIT
 """
@@ -526,12 +525,12 @@ class _InputKeyState:
     """
 
     __slots__ = (
-        "mode",
-        "key_bytes",
         "include_key_in_after",
+        "key_bytes",
+        "key_index",
         "max_bytes_after",
         "max_bytes_before",
-        "key_index",
+        "mode",
         "post_key_active",
     )
 
@@ -790,7 +789,7 @@ def main() -> None:
     # Open the capture subprocess.
     try:
         cmd = _device_command(device, kind)
-        proc = subprocess.Popen(  # noqa: S603 - argv is constructed internally
+        proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -798,7 +797,7 @@ def main() -> None:
     except FileNotFoundError as exc:
         module.fail_json(**error_result(f"capture tool unavailable: {exc}"))
         return
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         module.fail_json(**error_result(f"failed to open device {device!r}: {exc}"))
         return
 
@@ -845,10 +844,10 @@ def main() -> None:
         try:
             proc.terminate()
             proc.wait(timeout=5)
-        except Exception:  # noqa: BLE001
+        except Exception:
             try:
                 proc.kill()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
 
     # Final drain dispatch if any bytes remain.

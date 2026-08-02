@@ -1,16 +1,18 @@
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../../../../../src'))
 
 from general_ludd.language.charset_map import (
-    BOM_SIGNATURES,
+    ALL_ENCODINGS,
     BOM_BY_SEQUENCE,
+    BOM_SIGNATURES,
     BOM_SIZE,
     CHARDET_CONFIDENCE_THRESHOLDS,
+    CJK_ENCODINGS,
     MOJIBAKE_SIGNATURES,
     SINGLE_BYTE_ENCODINGS,
-    ALL_ENCODINGS,
     WINDOWS_CODE_PAGES,
-    CJK_ENCODINGS,
 )
 
 

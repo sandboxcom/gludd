@@ -5,7 +5,6 @@ from __future__ import annotations
 import enum
 import re
 import struct
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 

@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 from plugins.module_utils.propagation_models import (
-    free_space_loss,
-    hata_urban,
-    hata_suburban,
-    hata_rural,
-    two_ray_loss,
-    itm_loss,
-    rain_attenuation,
-    itu_p452_loss,
-    gaseous_attenuation,
     cloud_attenuation,
+    free_space_loss,
+    gaseous_attenuation,
+    hata_rural,
+    hata_suburban,
+    hata_urban,
+    itm_loss,
+    itu_p452_loss,
     predict_path_loss,
+    rain_attenuation,
+    two_ray_loss,
 )
 
 

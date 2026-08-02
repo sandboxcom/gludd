@@ -2,25 +2,23 @@
 
 from __future__ import annotations
 
-import os
 import random
 import struct
 
 import pytest
-
 from plugins.module_utils.entropy_analyzer import (
-    PACKING_ENTROPY_THRESHOLD,
     ENCRYPTED_ENTROPY_THRESHOLD,
     HEATMAP_DEFAULT_BLOCK_SIZE,
-    SectionEntropy,
-    EntropyHeatmap,
+    PACKING_ENTROPY_THRESHOLD,
     EntropyAnalysisResult,
-    shannon_entropy,
-    compute_section_entropies,
-    build_entropy_heatmap,
-    detect_packing,
-    detect_encrypted_sections,
+    EntropyHeatmap,
+    SectionEntropy,
     analyze_entropy,
+    build_entropy_heatmap,
+    compute_section_entropies,
+    detect_encrypted_sections,
+    detect_packing,
+    shannon_entropy,
 )
 
 

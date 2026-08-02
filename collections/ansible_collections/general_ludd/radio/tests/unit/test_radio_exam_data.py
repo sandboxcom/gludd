@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from plugins.module_utils.radio_exam_data import (
     EXAM_QUESTIONS,
-    questions_for,
-    exam_sections,
     exam_list,
+    exam_sections,
     get_questions,
     grade_exam,
+    questions_for,
 )
 
 

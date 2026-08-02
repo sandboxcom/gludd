@@ -16,11 +16,8 @@ import argparse
 import json
 import math
 import os
-import sys
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
-
 
 KNOWN_BANDS: list[dict[str, Any]] = [
     {"name": "HF", "start_hz": 3_000_000, "end_hz": 30_000_000, "typical_uses": ["Maritime", "Aviation", "Amateur", "Broadcast"]},

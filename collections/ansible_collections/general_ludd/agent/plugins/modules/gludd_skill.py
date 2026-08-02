@@ -1,5 +1,4 @@
 #!/usr/bin/python
-# -*- coding: utf-8 -*-
 # Copyright: Agentic Harness
 # SPDX-License-Identifier: MIT
 """
@@ -154,7 +153,7 @@ def main() -> None:
     # Render — render_skill raises on missing StrictUndefined vars
     try:
         rendered = render_skill(found.body, variables)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         module.fail_json(**error_result(f"Skill render failed: {exc}", skill_name=found.name))
         return
 

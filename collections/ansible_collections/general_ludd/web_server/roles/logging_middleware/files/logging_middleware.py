@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 """logging_middleware — log format validator, rotation config generator."""
 import argparse
-import os
 import re
 import sys
 from pathlib import Path
-
 
 KNOWN_NGINX_VARS = frozenset({
     "$remote_addr", "$time_local", "$request", "$status",

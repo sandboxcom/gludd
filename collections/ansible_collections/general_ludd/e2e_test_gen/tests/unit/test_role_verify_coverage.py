@@ -6,8 +6,9 @@ import json
 import subprocess
 import sys
 import tempfile
-import yaml
 from pathlib import Path
+
+import yaml
 
 COLLECTION_ROOT = Path(__file__).resolve().parent.parent.parent
 ROLE_DIR = COLLECTION_ROOT / "roles" / "verify_coverage"
@@ -95,9 +96,9 @@ class TestScriptInvocation:
             source_module.write_text("def add(a, b):\n    return a + b\n")
 
             test_file = test_dir / "test_e2e_generated_adder.py"
-            test_file.write_text("""import sys
+            test_file.write_text(f"""import sys
 from pathlib import Path
-sys.path.insert(0, "{}")
+sys.path.insert(0, "{tmpdir}")
 from adder import add
 
 def test_add_positive():
@@ -105,7 +106,7 @@ def test_add_positive():
 
 def test_add_negative():
     assert add(-1, 1) == 0
-""".format(tmpdir))
+""")
 
             result = subprocess.run(
                 [

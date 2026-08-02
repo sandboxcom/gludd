@@ -9,7 +9,7 @@ Public surface:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +33,7 @@ def examine_trace_evidence(
         dict with analysis result + timestamp + evidence_type.
     """
     result = analyze_trace_evidence(evidence_type, sample_data, reference_data)
-    result["timestamp"] = datetime.now(timezone.utc).isoformat()
+    result["timestamp"] = datetime.now(UTC).isoformat()
     result["analysis_module"] = "trace_evidence_examiner"
     return result
 

@@ -41,9 +41,9 @@ except ImportError:
 
 try:
     from ansible_collections.general_ludd.physics.plugins.module_utils.physical_constants import (  # noqa: F401
-        C,
         EPSILON_0,
         MU_0,
+        C,
     )
     _HAS_PHYSICS_CONSTANTS = True
 except ImportError:
@@ -60,8 +60,8 @@ def physics_modules_available() -> dict[str, bool]:
 
 
 __all__ = [
-    "physics_modules_available",
     "antenna_gain",
     "compute_polarization_state",
     "compute_refraction",
+    "physics_modules_available",
 ]

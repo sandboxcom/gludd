@@ -1,10 +1,12 @@
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../../../../../src'))
 
 import re
 
 from general_ludd.language.charset_map import BOM_SIGNATURES, MOJIBAKE_SIGNATURES
-from general_ludd.language.homoglyph_data import HOMOGLYPH_GROUPS, _INVISIBLE_SET, _codepoint_in_group
+from general_ludd.language.homoglyph_data import _INVISIBLE_SET, HOMOGLYPH_GROUPS, _codepoint_in_group
 from general_ludd.language.locale_data import LOCALE_FORMATS
 from general_ludd.language.phonetic_data import CMU_DICT_SUBSET
 

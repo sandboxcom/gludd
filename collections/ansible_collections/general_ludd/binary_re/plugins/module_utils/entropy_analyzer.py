@@ -12,15 +12,14 @@ from __future__ import annotations
 
 import math
 import struct
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Sequence
 
 from plugins.module_utils.obfuscation_techniques import (
     DetectionConfidence,
     _identify_file_type,
 )
-
 
 PACKING_ENTROPY_THRESHOLD: float = 7.0
 ENCRYPTED_ENTROPY_THRESHOLD: float = 7.5
@@ -129,7 +128,7 @@ def _parse_elf_sections(data: bytes) -> list[tuple[str, int, int, bytes]]:
         if data[5] == 0:
             return sections
         if is_64:
-            if 64 > len(data):
+            if len(data) < 64:
                 return sections
             (
                 _e_type, _e_machine, _e_version, _e_entry, _e_phoff,
@@ -137,7 +136,7 @@ def _parse_elf_sections(data: bytes) -> list[tuple[str, int, int, bytes]]:
                 shentsize, shnum, shstrndx,
             ) = struct.unpack_from("<HHIQQQIHHHHHH", data, 16)
         else:
-            if 52 > len(data):
+            if len(data) < 52:
                 return sections
             (
                 _e_type, _e_machine, _e_version, _e_entry, _e_phoff,

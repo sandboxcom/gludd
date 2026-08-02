@@ -53,7 +53,8 @@ from __future__ import annotations
 
 import math
 import random
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 # ═══════════════════════════════════════════════════════════════════
 # Numerical epsilon and constants

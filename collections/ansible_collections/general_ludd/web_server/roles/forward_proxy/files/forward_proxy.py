@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 
 def build_squid_acls(
     allowed_networks: list[str],
-    blocked_domains: Optional[list[str]] = None,
-    allowed_ports: Optional[list[int]] = None,
+    blocked_domains: list[str] | None = None,
+    allowed_ports: list[int] | None = None,
 ) -> str:
     lines: list[str] = []
     lines.append("# ACL definitions")
@@ -89,11 +87,11 @@ def build_tinyproxy_config(**kwargs: object) -> str:
 
     lines: list[str] = []
     lines.append(f"Port {port}")
-    lines.append(f"User nobody")
-    lines.append(f"Group nogroup")
+    lines.append("User nobody")
+    lines.append("Group nogroup")
     lines.append(f"Timeout {timeout}")
     lines.append(f'LogFile "{logfile}"')
-    lines.append(f"LogLevel Info")
+    lines.append("LogLevel Info")
     if transparent:
         lines.append("DisableViaHeader Yes")
 

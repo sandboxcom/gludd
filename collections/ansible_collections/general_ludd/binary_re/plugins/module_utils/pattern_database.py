@@ -15,8 +15,8 @@ source of truth. New categories (shellcode, malware families) are added here.
 from __future__ import annotations
 
 import enum
-from dataclasses import dataclass, field
-from typing import Iterable, Optional
+from collections.abc import Iterable
+from dataclasses import dataclass
 
 
 class PatternCategory(enum.Enum):
@@ -84,8 +84,8 @@ class ScanMatch:
 _OBFUSCATION_TECHNIQUES_AVAILABLE = False
 try:
     from plugins.module_utils.obfuscation_techniques import (  # type: ignore
-        KNOWN_TOOL_SIGNATURES,
         _ANTI_DEBUG_PATTERNS,
+        KNOWN_TOOL_SIGNATURES,
         ObfuscationTechnique,
     )
     _OBFUSCATION_TECHNIQUES_AVAILABLE = True
@@ -365,9 +365,9 @@ OBFUSCATION_PATTERNS: list[PatternEntry] = _consolidated_obfuscation_markers()
 class PatternDatabase:
     """In-memory lookup table over every PatternEntry in the collection."""
 
-    _instance: Optional["PatternDatabase"] = None
+    _instance: PatternDatabase | None = None
 
-    def __new__(cls) -> "PatternDatabase":
+    def __new__(cls) -> PatternDatabase:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False  # type: ignore[attr-defined]
@@ -401,15 +401,15 @@ class PatternDatabase:
             if e.platform == platform or e.platform == PatternPlatform.CROSS_PLATFORM
         ]
 
-    def get(self, pattern_id: str) -> Optional[PatternEntry]:
+    def get(self, pattern_id: str) -> PatternEntry | None:
         return self._by_id.get(pattern_id)
 
     def scan_bytes(
         self,
         data: bytes,
         *,
-        categories: Optional[Iterable[PatternCategory]] = None,
-        min_severity: Optional[Severity] = None,
+        categories: Iterable[PatternCategory] | None = None,
+        min_severity: Severity | None = None,
     ) -> list[ScanMatch]:
         if not data:
             return []

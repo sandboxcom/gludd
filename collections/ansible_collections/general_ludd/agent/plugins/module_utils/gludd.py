@@ -104,7 +104,7 @@ def parse_structured(
         return None, "empty model output (None)"
     try:
         cleaned = strip_code_fences(text)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return None, f"fence-strip failed: {exc}"
     if not cleaned:
         return None, "empty model output after fence strip"
@@ -187,7 +187,7 @@ class GluddClient:
             status = exc.code
         except urllib.error.URLError as exc:
             return {"_error": str(exc.reason), "_status": 0, "_raw": ""}
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return {"_error": str(exc), "_status": 0, "_raw": ""}
 
         try:
@@ -203,7 +203,7 @@ class GluddClient:
         try:
             result = self.get("/healthz")
             return result.get("_status", 0) == 200
-        except Exception:  # noqa: BLE001
+        except Exception:
             return False
 
 
@@ -235,5 +235,5 @@ def local_model_call(
         return ok_result({"text": text, "transport": "local"})
     except ImportError:
         return error_result("general_ludd not importable; use daemon_url for HTTP transport")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return error_result(f"local model call failed: {exc}")

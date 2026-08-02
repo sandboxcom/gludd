@@ -13,7 +13,6 @@ import os
 import struct
 import sys
 
-
 WEB_FONT_FORMATS: frozenset[str] = frozenset({"woff", "woff2"})
 
 

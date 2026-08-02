@@ -14,7 +14,6 @@ import argparse
 import json
 import math
 import os
-import struct
 import sys
 from typing import Any
 
