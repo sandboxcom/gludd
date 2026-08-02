@@ -153,6 +153,21 @@ class PermissionSpec:
         return False
 
 
+def union_denied(*denied_lists: list[Capability]) -> list[Capability]:
+    """Return a stable union without collapsing differently scoped denials.
+
+    ``resource`` and ``actions`` alone do not identify a denial: two entries can
+    block the same action on different paths or hosts.  Exact dataclass equality
+    safely removes literal duplicates while retaining every distinct scope.
+    """
+    merged: list[Capability] = []
+    for denied in denied_lists:
+        for capability in denied:
+            if capability not in merged:
+                merged.append(capability)
+    return merged
+
+
 # ---------------------------------------------------------------------------
 # Default specs
 #
@@ -422,11 +437,19 @@ class PermissionSpecParser:
     @staticmethod
     def is_subset(requested: PermissionSpec, issuer: PermissionSpec) -> bool:
         for r in requested.capabilities:
-            # A denial on the issuer wins over any positive grant: a subject may
-            # not REQUEST an action its issuer explicitly denies, so a denied
-            # action can never be re-delegated down the chain.
+            # An unscoped denial blocks delegation of that action entirely. A
+            # path/host-scoped carve-out may travel with a broader capability:
+            # StsIssuer merges the denial into the child token, where runtime
+            # enforcement applies it to the operative target. Treating every
+            # scoped carve-out as a global deny would make safe sibling paths
+            # impossible to delegate.
             for action in r.actions:
-                if issuer.is_denied(r.resource, action):
+                if any(
+                    d.resource == r.resource
+                    and (not d.actions or action in d.actions)
+                    and not PermissionSpecParser._denial_has_scope(d)
+                    for d in issuer.denied
+                ):
                     return False
             issuer_cap = next(
                 (c for c in issuer.capabilities if c.resource == r.resource),
@@ -502,14 +525,7 @@ class PermissionSpecParser:
                 continue
             out_caps.append(Capability(resource=cap_a.resource, actions=actions, constraints=constraints))
 
-        denied_union: list[Capability] = []
-        seen_denied: set[tuple[str, tuple[str, ...]]] = set()
-        for d in list(a.denied) + list(b.denied):
-            key = (d.resource, tuple(sorted(d.actions)))
-            if key in seen_denied:
-                continue
-            seen_denied.add(key)
-            denied_union.append(d)
+        denied_union = union_denied(a.denied, b.denied)
 
         parent_agent_id = b.parent_agent_id or a.parent_agent_id
         if parent_human_id is None and a.subject == PermissionSubject.HUMAN:
@@ -602,6 +618,25 @@ class PermissionSpecParser:
             if resource.startswith(key):
                 return key
         return None
+
+    @staticmethod
+    def _denial_has_scope(denial: Capability) -> bool:
+        """Return whether a denial narrows itself to concrete targets."""
+        family = PermissionSpecParser._family(denial.resource)
+        if family == "secret:openbao":
+            paths = denial.constraints.get("openbao_paths")
+            return isinstance(paths, list) and bool(paths)
+        if family == "file:":
+            prefix = denial.constraints.get("path_prefix")
+            return isinstance(prefix, str) and bool(prefix)
+        if family == "net:":
+            hosts = denial.constraints.get("allowed_hosts")
+            ports = denial.constraints.get("allowed_ports")
+            return (
+                (isinstance(hosts, list) and bool(hosts))
+                or (isinstance(ports, list) and bool(ports))
+            )
+        return False
 
     @staticmethod
     def _constraints_narrower(

@@ -30,29 +30,10 @@ from general_ludd.security.permissions import (
     PermissionDeniedError,
     PermissionSpec,
     PermissionSpecParser,
+    union_denied,
 )
 
 DEFAULT_TTL_SECONDS: int = 3600
-
-
-def _union_denied(
-    subject_denied: list[Capability], issuer_denied: list[Capability]
-) -> list[Capability]:
-    """Union two ``denied`` lists, de-duplicating on (resource, actions).
-
-    Used when minting a delegated token so the issuer's denials propagate into
-    the child spec — a carve-out (deny X) can never be dropped by a hop of
-    delegation.
-    """
-    merged: list[Capability] = []
-    seen: set[tuple[str, tuple[str, ...]]] = set()
-    for d in list(subject_denied) + list(issuer_denied):
-        key = (d.resource, tuple(sorted(d.actions)))
-        if key in seen:
-            continue
-        seen.add(key)
-        merged.append(d)
-    return merged
 
 
 @dataclass(frozen=True)
@@ -185,7 +166,7 @@ class StsIssuer:
         # a carve-out (deny X) survives the hop and is enforced on the child. The
         # stored spec's own TTL ceiling is clamped so a further hop cannot raise
         # it back up.
-        merged_denied = _union_denied(
+        merged_denied = union_denied(
             subject_spec_request.denied, issuer_spec.denied
         )
         stored_spec = replace(

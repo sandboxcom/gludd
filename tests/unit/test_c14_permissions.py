@@ -324,6 +324,64 @@ def test_denied_grants_not_propagated() -> None:
         )
 
 
+def test_path_scoped_denial_propagates_without_blocking_delegation() -> None:
+    """A scoped carve-out travels with a broad grant instead of denying it all."""
+    denied_path = "secret/data/gludd/build/prod-signing-key"
+    issuer_spec = _spec(
+        [_secret_cap(["secret/data/gludd/build/*"], ["read"])],
+        denied=[_secret_cap([denied_path], ["read"])],
+    )
+    subject_request = _spec(
+        [_secret_cap(["secret/data/gludd/build/*"], ["read"])]
+    )
+
+    assert PermissionSpecParser.is_subset(subject_request, issuer_spec) is True
+    token = StsIssuer(clock=lambda: 1000.0).issue(
+        issuer_spec=issuer_spec,
+        subject_spec_request=subject_request,
+        issuer_id="agent-A",
+        subject_id="agent-B",
+        ttl_seconds=600,
+    )
+    assert token.spec.is_denied("secret:openbao", "read", denied_path) is True
+    assert (
+        token.spec.is_denied(
+            "secret:openbao", "read", "secret/data/gludd/build/safe-key"
+        )
+        is False
+    )
+
+
+def test_denied_union_preserves_distinct_scopes() -> None:
+    """Equal resource/actions with different constraints are separate denials."""
+    a = _spec(
+        [_secret_cap(["*"], ["read"])],
+        denied=[_secret_cap(["secret-a"], ["read"])],
+    )
+    b = _spec(
+        [_secret_cap(["*"], ["read"])],
+        denied=[_secret_cap(["secret-b"], ["read"])],
+    )
+
+    intersected = PermissionSpecParser.intersection(a, b)
+    denied_paths = {
+        tuple(cap.constraints["openbao_paths"]) for cap in intersected.denied
+    }
+    assert denied_paths == {("secret-a",), ("secret-b",)}
+
+    token = StsIssuer(clock=lambda: 1000.0).issue(
+        issuer_spec=a,
+        subject_spec_request=b,
+        issuer_id="agent-A",
+        subject_id="agent-B",
+        ttl_seconds=600,
+    )
+    delegated_paths = {
+        tuple(cap.constraints["openbao_paths"]) for cap in token.spec.denied
+    }
+    assert delegated_paths == {("secret-a",), ("secret-b",)}
+
+
 def test_secrets_manager_enforces_denied_paths() -> None:
     """A path-scoped ``denied`` carve-out is enforced at the secrets gate.
 
