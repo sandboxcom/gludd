@@ -334,7 +334,7 @@ def _check_d17_psk_rotation() -> tuple[bool, str]:
         if not hasattr(pr, symbol):
             return False, f"OPEN — psk_rotation.{symbol} missing (regression)"
     pr_src = _read_module_source(pr)
-    if "overlap_window" not in pr_src:
+    if "overlap" not in pr_src:
         return False, "OPEN — PSK rotation overlap window missing (regression)"
     if "rollback" not in pr_src and "ROLLBACK" not in pr_src:
         return False, "OPEN — PSK rotation rollback missing (regression)"

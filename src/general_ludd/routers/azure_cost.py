@@ -11,6 +11,7 @@ import logging
 from datetime import UTC, datetime
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from general_ludd.infra.azure_cost_export_ingestion import (
@@ -48,7 +49,7 @@ class CostHealthResponse(BaseModel):
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.post("/api/azure/cost/ingest", response_model=CostIngestResponse)
-    async def api_azure_cost_ingest(req: CostIngestRequest):
+    async def api_azure_cost_ingest(req: CostIngestRequest) -> CostIngestResponse | JSONResponse:
         try:
             effective_format = req.format.lower().strip()
             if effective_format not in ("csv", "json"):
@@ -96,16 +97,12 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             )
 
         except AzureCostExportParseError as exc:
-            from fastapi.responses import JSONResponse
-
             logger.warning("Azure cost ingest parse error: %s", exc)
             return JSONResponse(
                 status_code=422,
                 content={"detail": str(exc), "error_type": "ParseError"},
             )
         except AzureCostExportError as exc:
-            from fastapi.responses import JSONResponse
-
             logger.warning("Azure cost ingest error: %s", exc)
             return JSONResponse(
                 status_code=422,

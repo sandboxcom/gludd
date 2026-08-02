@@ -24,9 +24,8 @@ class TestResponseSizeLimit:
             max_tool_calls=100,
             max_provider_attempts=3,
         )
-        budget.response_bytes = 1001
         with pytest.raises(PayloadLimitError) as exc:
-            budget.check_budget("test-profile")
+            budget.reserve_response("test-profile", response_bytes=1001, output_tokens=0, tool_calls=0)
         assert exc.value.dimension == "bytes"
         assert exc.value.stage == "response"
         assert exc.value.limit == 1000
@@ -40,8 +39,7 @@ class TestResponseSizeLimit:
             max_tool_calls=100,
             max_provider_attempts=3,
         )
-        budget.response_bytes = 500
-        budget.check_budget("test-profile")  # should not raise
+        budget.reserve_response("test-profile", response_bytes=500, output_tokens=0, tool_calls=0)
 
     def test_max_response_bytes_stop_accumulation(self) -> None:
         budget = _RequestPayloadBudget(
@@ -52,11 +50,10 @@ class TestResponseSizeLimit:
             max_tool_calls=100,
             max_provider_attempts=3,
         )
-        budget.response_bytes = 499
-        budget.check_budget("p")
-        budget.response_bytes = 501
+        budget.reserve_response("p", response_bytes=499, output_tokens=0, tool_calls=0)
+        assert budget.response_bytes == 499
         with pytest.raises(PayloadLimitError, match="response"):
-            budget.check_budget("p")
+            budget.reserve_response("p", response_bytes=2, output_tokens=0, tool_calls=0)
 
     def test_budget_from_profile_uses_profile_limits(self) -> None:
         from general_ludd.models.gateway import ModelProfile

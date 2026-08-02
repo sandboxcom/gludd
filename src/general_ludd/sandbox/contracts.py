@@ -102,6 +102,8 @@ class SandboxBackend(Protocol):
     name: str
     """Human-readable backend identifier (``"process"``, ``"firecracker"``, …)."""
 
+    def __init__(self, config: SandboxConfig) -> None: ...
+
     def available(self) -> bool:
         """True iff this backend is usable on the current host."""
         ...

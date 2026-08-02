@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import time
 from pathlib import Path
 
@@ -78,7 +79,7 @@ class TestTempRootBounds:
         root.manifest_path.unlink()
         with pytest.raises(TempRootError, match="manifest"):
             root.check_bounds()
-        root.root.rmdir()  # manifest already gone, just remove root
+        shutil.rmtree(root.root)  # manifest already gone, clean up remaining work dir
 
     def test_is_temp_root_expired(self, tmp_path: Path) -> None:
         parent = tmp_path / "p"

@@ -104,12 +104,11 @@ class TestD26VacuumSchedule:
         assert isinstance(passed, bool)
         assert isinstance(detail, str)
 
-    def test_reports_open_honestly(self) -> None:
+    def test_reports_landed_honestly(self) -> None:
         passed, detail = sb._check_d26_vacuum_schedule()
-        assert passed is False
-        assert "OPEN" in detail
+        assert passed is True
+        assert "LANDED-VERIFIED" in detail
         assert "VACUUM" in detail
-        assert "MemoryRecordModel" in detail or "memory" in detail.lower()
 
     def test_item_in_backlog_items(self) -> None:
         assert "D-26" in sb.BACKLOG_ITEMS
@@ -122,8 +121,8 @@ class TestD26VacuumSchedule:
         d26 = [r for r in results if r.item_id == "D-26"]
         assert len(d26) == 1
         r = d26[0]
-        assert r.passed is False
-        assert r.status == sb.STATUS_OPEN
+        assert r.passed is True
+        assert r.status == sb.STATUS_LANDED
         assert r.deferred is False
         assert "VACUUM" in r.detail
 

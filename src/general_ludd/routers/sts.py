@@ -7,12 +7,17 @@ TokenRevoker. All endpoints require PSK auth (on /admin/ prefix).
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from general_ludd.db.models import AgentTokenModel
+
+if TYPE_CHECKING:
+    from general_ludd.sts.minter import TokenMinter
+    from general_ludd.sts.revoker import TokenRevoker
+    from general_ludd.sts.store import TokenStore
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +65,7 @@ def _token_to_dict(token: AgentTokenModel) -> dict[str, Any]:
     }
 
 
-def _get_store(app: FastAPI):
+def _get_store(app: FastAPI) -> TokenStore | None:
     """Return the TokenStore from daemon state, or None if unwired."""
     ds = getattr(app.state, "daemon_state", None) or {}
     reaper = ds.get("_sts_reaper")
@@ -69,7 +74,7 @@ def _get_store(app: FastAPI):
     return None
 
 
-def _get_revoker(app: FastAPI):
+def _get_revoker(app: FastAPI) -> TokenRevoker | None:
     """Return the TokenRevoker from daemon state, or None if unwired."""
     ds = getattr(app.state, "daemon_state", None) or {}
     reaper = ds.get("_sts_reaper")
@@ -78,7 +83,7 @@ def _get_revoker(app: FastAPI):
     return None
 
 
-def _get_minter(app: FastAPI):
+def _get_minter(app: FastAPI) -> TokenMinter | None:
     """Build a TokenMinter from the app's secrets resolver."""
     resolver = getattr(app.state, "_secrets_resolver", None)
     if resolver is None:

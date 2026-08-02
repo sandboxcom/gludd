@@ -1192,6 +1192,16 @@ _policy_engine = PolicyEngine()
 _compliance_checker = ComplianceChecker(_policy_engine)
 
 
+def _cmd_policy(args: argparse.Namespace) -> None:
+    """``gludd governance policy`` — list policies (default action)."""
+    policy_p = argparse.ArgumentParser()
+    subparser_actions = [a for a in policy_p._actions if isinstance(a, argparse._SubParsersAction)]
+    if subparser_actions:
+        subparser_actions[0].choices[getattr(args, "policy_command", "list")].print_help()
+        sys.exit(2)
+    _cmd_policy_list(args)
+
+
 def _cmd_policy_add(args: argparse.Namespace) -> None:
     """``gludd governance policy add`` — register a governance policy."""
     name = args.name
@@ -1509,6 +1519,7 @@ def add_governance_subparser(
 
     # policy <subcommand>
     policy_p = gov_sub.add_parser("policy", help="Governance policy management and evaluation")
+    policy_p.set_defaults(func=_cmd_policy)
     policy_sub = policy_p.add_subparsers(dest="policy_command")
 
     # policy add
@@ -1575,6 +1586,7 @@ __all__ = [
     "_cmd_list",
     "_cmd_military",
     "_cmd_navigate",
+    "_cmd_policy",
     "_cmd_policy_add",
     "_cmd_policy_check",
     "_cmd_policy_get",

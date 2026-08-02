@@ -105,7 +105,7 @@ class ChatConfig:
             api_key=a.get("api_key"),  # type: ignore[arg-type]
             project_dir=a.get("project_dir"),  # type: ignore[arg-type]
             history_file=a.get("history"),  # type: ignore[arg-type]
-            save_interval=int(str(a.get("save_interval", 5))),
+            save_interval=int(str(a.get("save_interval"))) if a.get("save_interval") is not None else 5,
             resume=bool(a.get("resume")),
             max_context=int(str(a.get("max_context"))) if a.get("max_context") is not None else None,
             stream=bool(a.get("stream", True)),
