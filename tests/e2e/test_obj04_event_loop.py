@@ -26,10 +26,12 @@ class TestEventLoopE2E:
             "check_service_credits",
             "flush_spend_ledger",
             "remediate_blocked_tasks",
+            "consolidate_memory",
             "self_improve",
             "poll_issue_sources",
             "service_discovery",
             "reap_expired_sts_tokens",
+            "purge_old_task_decisions",
             "emit_tick_metrics",
         ]
         assert expected == PHASE_ORDER
