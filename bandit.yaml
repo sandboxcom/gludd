@@ -12,7 +12,7 @@ skips:
   - B603
   - B607
   - B105
-  - B310
+#  - B310  ← SEC.2: re-enabled for medium-finding remediation
   - B314
   - B318
   - B405

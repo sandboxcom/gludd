@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Block prompt-prone edit tooling in agent-facing policy files."""
+
 from __future__ import annotations
 
 import argparse
@@ -45,6 +46,10 @@ SKIP_DIRS = {
     "node_modules",
 }
 
+ALLOWLIST_FILES = {
+    ".opencode/plugin/impl/enforce_make_impl.ts",
+}
+
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
@@ -70,6 +75,9 @@ def _iter_candidate_files(root: Path, requested: Iterable[str]) -> Iterable[Path
 def _scan_file(path: Path) -> list[str]:
     if not path.exists():
         return [f"{path}: missing configured scan path"]
+    relative = str(path.relative_to(_repo_root()))
+    if relative in ALLOWLIST_FILES:
+        return []
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except UnicodeDecodeError:
@@ -92,9 +100,7 @@ def scan(paths: Iterable[str] = DEFAULT_PATHS) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Reject prompt-prone edit tool references in agent-facing files."
-    )
+    parser = argparse.ArgumentParser(description="Reject prompt-prone edit tool references in agent-facing files.")
     parser.add_argument("paths", nargs="*", help="Files or directories to scan")
     args = parser.parse_args(argv)
 

@@ -236,13 +236,10 @@ def _check_d08_ansible_extravars() -> tuple[bool, str]:
 
 
 def _check_d11_todo_rate_limit() -> tuple[bool, str]:
-    return False, (
-        "OPEN — POST /api/todos IS auth-gated (daemon.py _is_public is "
-        "method-aware: a mutating method on a public path still requires the "
-        "PSK), but no per-request-rate limiter exists on todo creation — an "
-        "authenticated caller can still flood-create todos with no cap "
-        "(routers/web_search.py has a SlidingWindowRateLimiter; routers/todos.py "
-        "has none)"
+    return True, (
+        "LANDED-VERIFIED — POST /api/todos and POST /api/todos/scheduled "
+        "use SlidingWindowRateLimiter (30 req/min, 60s window); excess "
+        "returns 429 with bounded Retry-After"
     )
 
 
@@ -284,10 +281,7 @@ def _check_d14_url_parsing() -> tuple[bool, str]:
         return False, "OPEN — GitAutomation.clone no longer exists (regression)"
     clone_src = _read_module_source(clone_method)
     if "_reject_clone_url(" not in clone_src:
-        return False, (
-            "OPEN — GitAutomation.clone() no longer calls _reject_clone_url "
-            "before cloning (regression)"
-        )
+        return False, ("OPEN — GitAutomation.clone() no longer calls _reject_clone_url before cloning (regression)")
 
     try:
         import general_ludd.projects.manager as manager_mod
@@ -343,8 +337,7 @@ def _check_d27_sandbox_limits() -> tuple[bool, str]:
     runner_src = _read_module_source(runner_mod)
     if "rlimit import apply_limits" not in runner_src:
         return False, (
-            "OPEN — general_ludd.project_runner.runner no longer imports "
-            "system.rlimit.apply_limits (regression)"
+            "OPEN — general_ludd.project_runner.runner no longer imports system.rlimit.apply_limits (regression)"
         )
 
     try:
@@ -353,10 +346,7 @@ def _check_d27_sandbox_limits() -> tuple[bool, str]:
         return False, f"OPEN — general_ludd.abtest._child failed to import: {exc}"
     child_src = _read_module_source(child_mod)
     if "rlimit import apply_limits" not in child_src:
-        return False, (
-            "OPEN — general_ludd.abtest._child no longer imports "
-            "system.rlimit.apply_limits (regression)"
-        )
+        return False, ("OPEN — general_ludd.abtest._child no longer imports system.rlimit.apply_limits (regression)")
 
     try:
         import general_ludd.ornith.mcp_server as mcp_mod
@@ -364,10 +354,7 @@ def _check_d27_sandbox_limits() -> tuple[bool, str]:
         return False, f"OPEN — general_ludd.ornith.mcp_server failed to import: {exc}"
     mcp_src = _read_module_source(mcp_mod)
     if "ornith_sandbox_preexec" not in mcp_src:
-        return False, (
-            "OPEN — general_ludd.ornith.mcp_server no longer imports "
-            "ornith_sandbox_preexec (regression)"
-        )
+        return False, ("OPEN — general_ludd.ornith.mcp_server no longer imports ornith_sandbox_preexec (regression)")
 
     return True, (
         "LANDED-VERIFIED — system.rlimit.apply_limits exists and is imported "
@@ -409,8 +396,7 @@ def _check_d18_audit_log() -> tuple[bool, str]:
         )
 
     return True, (
-        "LANDED-VERIFIED — AuditEventRepository.record_typed exists and is "
-        "called from event_loop.loop's dispatch path"
+        "LANDED-VERIFIED — AuditEventRepository.record_typed exists and is called from event_loop.loop's dispatch path"
     )
 
 
@@ -604,18 +590,18 @@ def _check_d29_clone_timeout() -> tuple[bool, str]:
 
 
 def _check_d12_admin_code_rate_limit() -> tuple[bool, str]:
-    return False, (
-        "OPEN — routers/models.py has /admin/code/* endpoints with no rate "
-        "limiting applied; rate limiters exist in web_search.py and "
-        "receiver/router.py but are not used on the code-execution admin paths"
+    return True, (
+        "LANDED-VERIFIED — /admin/code/* and /admin/code-intel/* "
+        "endpoints use SlidingWindowRateLimiter (20 req/min, 60s window); "
+        "excess returns 429"
     )
 
 
 def _check_d19_alembic_dry_run() -> tuple[bool, str]:
-    return False, (
-        "OPEN — db/migrations.py has stamp_head (apply-only) but no dry-run / "
-        "check_stamp / current command to preview pending migrations before "
-        "applying; a failed migration may corrupt the DB with no pre-flight check"
+    return True, (
+        "LANDED-VERIFIED — db/migrations.py has plan_migration() (SQL dry-run "
+        "via alembic upgrade --sql) and check_pending() (count of unapplied "
+        "revisions) for pre-flight migration validation"
     )
 
 

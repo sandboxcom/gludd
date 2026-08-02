@@ -18,6 +18,7 @@ from general_ludd.db.repository import TodoRepository
 from general_ludd.filestore.bootstrap import BinaryBootstrapper
 from general_ludd.filestore.store import FileStore
 from general_ludd.quality.preflight import run_preflight
+from general_ludd.routers.web_search import SlidingWindowRateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -113,16 +114,18 @@ def _todo_to_dict(todo: TodoModel) -> dict[str, object]:
 def _todo_to_dict_scheduled(todo: TodoModel) -> dict[str, object]:
     """Serialize a todo including all scheduling fields."""
     base = _todo_to_dict(todo)
-    base.update({
-        "scheduled_at": str(todo.scheduled_at) if getattr(todo, "scheduled_at", None) else None,
-        "cron": getattr(todo, "cron", None),
-        "schedule_timezone": getattr(todo, "schedule_timezone", "UTC"),
-        "next_run_at": str(todo.next_run_at) if getattr(todo, "next_run_at", None) else None,
-        "last_run_at": str(todo.last_run_at) if getattr(todo, "last_run_at", None) else None,
-        "run_count": getattr(todo, "run_count", 0),
-        "max_runs": getattr(todo, "max_runs", None),
-        "schedule_paused": getattr(todo, "schedule_paused", False),
-    })
+    base.update(
+        {
+            "scheduled_at": str(todo.scheduled_at) if getattr(todo, "scheduled_at", None) else None,
+            "cron": getattr(todo, "cron", None),
+            "schedule_timezone": getattr(todo, "schedule_timezone", "UTC"),
+            "next_run_at": str(todo.next_run_at) if getattr(todo, "next_run_at", None) else None,
+            "last_run_at": str(todo.last_run_at) if getattr(todo, "last_run_at", None) else None,
+            "run_count": getattr(todo, "run_count", 0),
+            "max_runs": getattr(todo, "max_runs", None),
+            "schedule_paused": getattr(todo, "schedule_paused", False),
+        }
+    )
     return base
 
 
@@ -137,6 +140,8 @@ _PRIORITY_MAP: dict[str, int] = {"low": 0, "medium": 1, "high": 2, "critical": 3
 # drops the oldest entries once the cap is hit.
 _MAX_INMEMORY_TODOS = 1000
 
+_TODO_RATE_LIMITER = SlidingWindowRateLimiter(max_requests=30, window_seconds=60.0)
+
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     # Keep the factory's plain list untouched until degraded-mode writes need
@@ -144,9 +149,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     def _todos() -> collections.deque[dict[str, object]]:
         td = _daemon_state.get("todos")
         if not isinstance(td, collections.deque):
-            td = collections.deque(
-                td if isinstance(td, list) else [], maxlen=_MAX_INMEMORY_TODOS
-            )
+            td = collections.deque(td if isinstance(td, list) else [], maxlen=_MAX_INMEMORY_TODOS)
             _daemon_state["todos"] = td
         return cast(collections.deque[dict[str, object]], td)
 
@@ -158,6 +161,11 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.post("/api/todos", status_code=201)
     async def api_add_todo(req: AddTodoRequest) -> dict[str, object]:
+        if not _TODO_RATE_LIMITER.allow():
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded — max 30 todos per minute",
+            )
         # Cross-project create guard: a caller could previously pass ANY
         # project_id (including one belonging to a different tenant). When a
         # ProjectManager exists AND has at least one active project, a non-null
@@ -212,22 +220,18 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         # mode, refuse to leak all tenants' todos.  Single-project / no-PM
         # deployments fall through to the unscoped path for back-compat.
         _pm = getattr(app.state, "_project_manager", None)
-        _active_ids: set[str] = (
-            {p.project_id for p in _pm.list_active()} if _pm is not None else set()
-        )
+        _active_ids: set[str] = {p.project_id for p in _pm.list_active()} if _pm is not None else set()
         if project_id is None and _active_ids:
             return []
         factory = _get_session_factory(app)
         if factory is not None:
             async with factory() as session:
-                repo = (
-                    TodoRepository.scoped(session, project_id)
-                    if project_id is not None
-                    else TodoRepository(session)
-                )
+                repo = TodoRepository.scoped(session, project_id) if project_id is not None else TodoRepository(session)
                 todos = await repo.list_all(
-                    queue=queue, status=status,
-                    limit=_limit, offset=_offset,
+                    queue=queue,
+                    status=status,
+                    limit=_limit,
+                    offset=_offset,
                 )
                 return [_todo_to_dict(t) for t in todos][:limit]
         results = list(_todos())
@@ -237,7 +241,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             results = [t for t in results if t.get("status") == status]
         if project_id is not None:
             results = [t for t in results if t.get("project_id") == project_id]
-        return results[_offset:_offset + _limit]
+        return results[_offset : _offset + _limit]
 
     @app.post("/api/todos/scheduled", status_code=201)
     async def api_create_scheduled_todo(req: AddScheduledTodoRequest) -> dict[str, object]:
@@ -247,6 +251,11 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         recurring. At least one of the two must be supplied.  ``next_run_at``
         is computed automatically from ``cron`` when provided.
         """
+        if not _TODO_RATE_LIMITER.allow():
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded — max 30 todos per minute",
+            )
         if req.scheduled_at is None and req.cron is None:
             raise HTTPException(
                 status_code=422,
@@ -330,9 +339,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         # Cross-tenant isolation: when no project_id is supplied in multi-project
         # mode, refuse to leak all tenants' scheduled todos.
         _pm = getattr(app.state, "_project_manager", None)
-        _active_ids: set[str] = (
-            {p.project_id for p in _pm.list_active()} if _pm is not None else set()
-        )
+        _active_ids: set[str] = {p.project_id for p in _pm.list_active()} if _pm is not None else set()
         if project_id is None and _active_ids:
             return []
         # TG-1: a non-None but UNKNOWN project_id must 422 (not silently scope to
@@ -341,11 +348,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         factory = _get_session_factory(app)
         if factory is not None:
             async with factory() as session:
-                repo = (
-                    TodoRepository.scoped(session, project_id)
-                    if project_id is not None
-                    else TodoRepository(session)
-                )
+                repo = TodoRepository.scoped(session, project_id) if project_id is not None else TodoRepository(session)
                 todos = await repo.list_all(
                     status="scheduled",
                     limit=_limit,
@@ -405,27 +408,18 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         factory = _get_session_factory(app)
         if factory is not None:
             async with factory() as session:
-                repo = (
-                    TodoRepository.scoped(session, project_id)
-                    if project_id is not None
-                    else TodoRepository(session)
-                )
+                repo = TodoRepository.scoped(session, project_id) if project_id is not None else TodoRepository(session)
                 todo = await repo.get_by_id(todo_id)
                 if todo is not None:
                     return _todo_to_dict(todo)
                 raise HTTPException(status_code=404, detail="Todo not found")
         for _row in _todos():
-            if (
-                str(_row.get("todo_id", "")) == todo_id
-                and (project_id is None or _row.get("project_id") == project_id)
-            ):
+            if str(_row.get("todo_id", "")) == todo_id and (project_id is None or _row.get("project_id") == project_id):
                 return dict(_row)
         raise HTTPException(status_code=404, detail="Todo not found")
 
     @app.put("/api/todos/{todo_id}")
-    async def api_update_todo(
-        todo_id: str, req: AddTodoRequest, project_id: str | None = None
-    ) -> dict[str, object]:
+    async def api_update_todo(todo_id: str, req: AddTodoRequest, project_id: str | None = None) -> dict[str, object]:
         _validate_project_id(app, project_id)
         factory = _get_session_factory(app)
         updates: dict[str, object] = {
@@ -436,11 +430,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         }
         if factory is not None:
             async with factory() as session:
-                repo = (
-                    TodoRepository.scoped(session, project_id)
-                    if project_id is not None
-                    else TodoRepository(session)
-                )
+                repo = TodoRepository.scoped(session, project_id) if project_id is not None else TodoRepository(session)
                 todo = await repo.get_by_id(todo_id)
                 if todo is None:
                     raise HTTPException(status_code=404, detail="Todo not found")
@@ -450,10 +440,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 if updated is not None:
                     return _todo_to_dict(updated)
         for i, _row in enumerate(_todos()):
-            if (
-                str(_row.get("todo_id", "")) == todo_id
-                and (project_id is None or _row.get("project_id") == project_id)
-            ):
+            if str(_row.get("todo_id", "")) == todo_id and (project_id is None or _row.get("project_id") == project_id):
                 _todos()[i] = {**_row, **updates}
                 return dict(_todos()[i])
         raise HTTPException(status_code=404, detail="Todo not found")
@@ -506,9 +493,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 summary = await repo.status_summary()
                 todo_count = summary["total"]
                 for q, c in summary["by_queue"].items():
-                    queue_depths[q or "unknown"] = (
-                        queue_depths.get(q or "unknown", 0) + c
-                    )
+                    queue_depths[q or "unknown"] = queue_depths.get(q or "unknown", 0) + c
         else:
             for todo in _todos():
                 q = cast(str, todo.get("queue") or "unknown")
@@ -523,8 +508,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             filestore_available = bool(store.root_path) and os.path.isdir(store.root_path)
             boot = BinaryBootstrapper(store=store)
             bare_binaries = [
-                {"name": b["binary_name"], "version": b.get("version", "?")}
-                for b in boot.list_binaries_with_versions()
+                {"name": b["binary_name"], "version": b.get("version", "?")} for b in boot.list_binaries_with_versions()
             ]
             known_versions = boot.get_known_versions()
         except Exception:
@@ -533,10 +517,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         config_dir = getattr(app.state, "_config_dir", None)
         config_file_count = 0
         if config_dir and os.path.isdir(config_dir):
-            config_file_count = sum(
-                1 for f in os.listdir(config_dir)
-                if f.endswith(".yml") or f.endswith(".yaml")
-            )
+            config_file_count = sum(1 for f in os.listdir(config_dir) if f.endswith(".yml") or f.endswith(".yaml"))
 
         elapsed = cast(dict[str, object], _daemon_state.get("tick_metrics", {}))
         qg = _daemon_state.get("quality_gate", {})
