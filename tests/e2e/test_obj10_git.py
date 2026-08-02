@@ -10,38 +10,43 @@ from general_ludd.git_automation.repo import GitAutomation
 
 
 @pytest.fixture()
-def git_env():
-    with tempfile.TemporaryDirectory() as repo_dir:
-        subprocess.run(
-            ["git", "init"],
-            cwd=repo_dir,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        subprocess.run(
-            ["git", "config", "user.email", "agent@harness.local"],
-            cwd=repo_dir,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        subprocess.run(
-            ["git", "config", "user.name", "Agentic Harness Agent"],
-            cwd=repo_dir,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        subprocess.run(
-            ["git", "commit", "--allow-empty", "-m", "base"],
-            cwd=repo_dir,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        git = GitAutomation(repo_path=repo_dir)
-        yield git, repo_dir
+def git_env(tmp_path):
+    # Keep the repository and its worktree under one per-test parent.  This
+    # mirrors the production confinement contract while retaining xdist
+    # isolation; tempfile.gettempdir() may resolve to a different root than
+    # pytest's configured basetemp on macOS.
+    repo_dir = str(tmp_path / "repo")
+    os.makedirs(repo_dir)
+    subprocess.run(
+        ["git", "init"],
+        cwd=repo_dir,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "agent@harness.local"],
+        cwd=repo_dir,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Agentic Harness Agent"],
+        cwd=repo_dir,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "base"],
+        cwd=repo_dir,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    git = GitAutomation(repo_path=repo_dir)
+    yield git, repo_dir
 
 
 class TestGitAutonomyE2E:
