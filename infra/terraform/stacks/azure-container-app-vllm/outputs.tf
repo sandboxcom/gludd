@@ -23,3 +23,8 @@ output "resource_group_name" {
 output "workload_profile_type" {
   value = module.vllm_server.workload_profile_type
 }
+
+output "watchdog_user_data" {
+  description = "Rendered bounded-cost and TTL watchdog artifact for plan evidence."
+  value       = module.gpu_cost_watchdog.user_data
+}

@@ -18,6 +18,15 @@ provider "azurerm" {
   resource_provider_registrations = "none"
 }
 
+module "gpu_cost_watchdog" {
+  source = "../../modules/gpu-cost-watchdog"
+
+  max_cost_usd    = var.max_cost_usd
+  timeout_minutes = var.timeout_minutes
+  region          = var.region
+  cloud           = "azure"
+}
+
 module "vllm_server" {
   source = "../../modules/azure-container-app-vllm"
 
