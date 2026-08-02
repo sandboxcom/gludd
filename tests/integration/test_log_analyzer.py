@@ -45,6 +45,7 @@ def _run_role(log_glob: str, output_dir: str) -> dict:
     pb = Path(__file__).resolve().parent.parent.parent / "playbooks" / _PLAYBOOK_NAME
     if _PLAYBOOK_NAME not in adapter.list_playbooks():
         adapter.register_playbook(_PLAYBOOK_NAME, str(pb))
+    log_path = Path(log_glob)
     return adapter.run_playbook(
         _PLAYBOOK_NAME,
         extravars={
@@ -52,6 +53,13 @@ def _run_role(log_glob: str, output_dir: str) -> dict:
             "log_analyzer_output_dir": output_dir,
             "log_analyzer_error_rate_threshold": "0.3",
             "log_analyzer_min_cluster_size": "2",
+            # Keep the role's discovery pass inside the isolated fixture.  Its
+            # operator defaults intentionally include host paths such as
+            # /var/log/gludd, which need not exist on a test worker and make
+            # ansible.builtin.find fail before the analyzer is invoked.
+            "log_source_dirs": str(log_path.parent),
+            "daemon_log_glob": log_path.name,
+            "systemd_service_name": "",
         },
     )
 
@@ -71,6 +79,9 @@ class TestRoleInvocation:
         out_dir.mkdir()
         result = _run_role(str(log_dir / "*.log"), str(out_dir))
         assert result.get("rc", 1) == 0, f"role failed: {result}"
+        events = result.get("events", [])
+        assert any(event.get("event") == "runner_on_ok" for event in events)
+        assert not any(event.get("event") == "runner_on_failed" for event in events)
 
     def test_role_creates_output_directory(self, tmp_path: Path) -> None:
         log_dir = tmp_path / "logs"

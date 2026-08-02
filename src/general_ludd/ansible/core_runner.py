@@ -831,6 +831,14 @@ class CoreAnsibleRunner:
             loader=loader,
             passwords={},
         )
+        # ansible-core 2.19+ dispatches through the callback-method map built by
+        # ``_init_callback_methods``.  Callback loader normally performs this
+        # initialization, but this collector is registered programmatically.
+        # Without it, successful and failed task events are silently discarded
+        # and callers receive only an opaque executor return code.
+        init_callback_methods = getattr(callback, "_init_callback_methods", None)
+        if callable(init_callback_methods):
+            init_callback_methods()
         pb_exec._tqm._callback_plugins.append(callback)
 
         # HIGH (env leak): build a minimal allowlisted env so playbook tasks

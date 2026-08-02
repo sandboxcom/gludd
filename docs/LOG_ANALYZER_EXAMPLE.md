@@ -175,7 +175,11 @@ Run every hour via cron or the event loop. The report is incremental — each ru
 
 ## 7. Output Files
 
-All output lands in `artifact_dir` (default `/tmp/gludd-log-analyzer`):
+All output lands in `log_analyzer_output_dir` when it is set. Otherwise the
+role falls back to `artifact_dir` (default `/tmp/gludd-log-analyzer`). The same
+resolved directory is used for setup, the analyzer CLI, and every final
+artifact so a caller-selected test or tenant directory cannot leak output into
+the operator default.
 
 | File | Description |
 |---|---|
@@ -193,3 +197,19 @@ All output lands in `artifact_dir` (default `/tmp/gludd-log-analyzer`):
 | `journalctl: command not found` | Role gracefully skips systemd when command unavailable |
 | Model call timeout | Increase `analysis_max_tokens` or reduce `max_log_lines_per_chunk` |
 | PSK visible in logs | Set `no_log` via `psk` variable — the role already masks PSK on all daemon calls |
+
+## 9. Ansible Compatibility Evidence
+
+Gludd registers its structured event collector directly with ansible-core's
+task queue manager. ansible-core 2.19 builds an internal callback-method map;
+programmatically registered callbacks must initialize that map before the run
+or task successes and failures can disappear even though the playbook returns
+a nonzero code. Gludd feature-detects and initializes this API, then tests that
+successful events arrive and failure events are not silently lost.
+
+This compatibility guard follows the Ansible community's long-lived warning
+that 2.19 includes plugin API changes and compatibility corner cases:
+[Core 2.19 templating changes — preview and testing](https://forum.ansible.com/t/core-2-19-templating-changes-preview-and-testing/40759).
+The older request for real-time task output also documents why callback-backed
+progress is operationally important for long-running work:
+[Expose realtime output from shell](https://github.com/ansible/ansible/issues/3887).
