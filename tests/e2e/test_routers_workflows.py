@@ -481,19 +481,21 @@ class TestCoordinationEndpoints:
         assert resp.status_code == 200
 
     def test_overlaps_returns_200_no_worker(self, dispatch_app: TestClient):
-        resp = dispatch_app.get("/api/coordination/overlaps")
+        resp = dispatch_app.get(
+            "/api/coordination/overlaps?worker_id=unregistered-worker"
+        )
         assert resp.status_code == 200
 
     def test_claim_missing_worker_id_returns_422(self, dispatch_app: TestClient):
         resp = dispatch_app.post("/api/coordination/claim", json={})
         assert resp.status_code == 422
 
-    def test_claim_with_worker_id_returns_200(self, dispatch_app: TestClient):
+    def test_claim_with_worker_id_returns_201(self, dispatch_app: TestClient):
         resp = dispatch_app.post(
             "/api/coordination/claim",
             json={"worker_id": "worker-1", "files": ["file1.py"]},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 201
 
     def test_release_missing_worker_id_returns_422(self, dispatch_app: TestClient):
         resp = dispatch_app.post("/api/coordination/release", json={})
