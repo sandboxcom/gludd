@@ -76,8 +76,10 @@ def _profile(
 ) -> ModelProfile:
     kwargs: dict[str, Any] = {
         "model_profile_id": pid,
+        "provider": "local",
         "model_name": model_name or pid,
         "enabled": True,
+        "api_metered": False,
         "role_names": role_names or [],
     }
     kwargs.update(overrides)
@@ -285,7 +287,14 @@ class TestModelGatewayProfiles:
         assert resp.content == "ok"
 
     def test_call_model_budget_exceeded_raises(self):
-        p1 = _profile("p1", cost_per_input_token=0.01, cost_per_output_token=0.01, run_budget_usd=0.001)
+        p1 = _profile(
+            "p1",
+            provider="openai",
+            api_metered=True,
+            cost_per_input_token=0.01,
+            cost_per_output_token=0.01,
+            run_budget_usd=0.001,
+        )
         gw = _make_gateway([p1], budget_guard=_FakeBudgetGuard(remaining=0.0))
         with pytest.raises(BudgetExceededError):
             gw.call_model("p1", [{"content": "hello"}], estimated_cost=0.01, budget_remaining=0.0)
@@ -325,12 +334,28 @@ class TestModelGatewayBudget:
         assert gw.check_budget("no_such", 0.0, 10.0) is False
 
     def test_check_budget_metered_exceeded(self):
-        p1 = _profile("p1", api_metered=True, run_budget_usd=0.50)
+        p1 = _profile(
+            "p1",
+            "gpt-4",
+            provider="openai",
+            api_metered=True,
+            cost_per_input_token=0.00003,
+            cost_per_output_token=0.00006,
+            run_budget_usd=0.50,
+        )
         gw = _make_gateway([p1])
         assert gw.check_budget("p1", 1.0, 10.0) is False
 
     def test_check_budget_within_limits(self):
-        p1 = _profile("p1", api_metered=True, run_budget_usd=100.0)
+        p1 = _profile(
+            "p1",
+            "gpt-4",
+            provider="openai",
+            api_metered=True,
+            cost_per_input_token=0.00003,
+            cost_per_output_token=0.00006,
+            run_budget_usd=100.0,
+        )
         gw = _make_gateway([p1])
         assert gw.check_budget("p1", 0.01, 10.0) is True
 
