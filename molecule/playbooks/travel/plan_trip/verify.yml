@@ -1,0 +1,40 @@
+---
+- name: Verify - trip_planner completed and wrote artifact
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Assert artifact exists
+      ansible.builtin.stat:
+        path: "/tmp/gludd-travel-plan-trip/trip_planner_result.json"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load artifact
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-travel-plan-trip/trip_planner_result.json"
+      register: art_raw
+
+    - name: Parse artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact fields
+      ansible.builtin.assert:
+        that:
+          - result.role == 'trip_planner'
+          - result.status == 'completed'
+          - result.origin == 'JFK'
+          - result.destinations == ['CDG', 'LHR']
+          - result.start_date == '2026-09-01'
+          - result.end_date == '2026-09-10'
+          - result.itinerary is defined
+          - result.estimated_cost is defined
+        fail_msg: "trip_planner artifact wrong: {{ result }}"
+        success_msg: "trip_planner artifact valid — role {{ result.role }} status {{ result.status }}"
+
+    - name: Cleanup artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-travel-plan-trip"
+        state: absent
+      failed_when: false

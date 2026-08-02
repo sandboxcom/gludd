@@ -35,29 +35,19 @@ class TestBudgetExceededTransitions:
         assert validate_transition(TodoStatus.ACTIVE, TodoStatus.BUDGET_EXCEEDED)
 
     def test_awaiting_result_to_budget_exceeded(self):
-        assert validate_transition(
-            TodoStatus.AWAITING_RESULT, TodoStatus.BUDGET_EXCEEDED
-        )
+        assert validate_transition(TodoStatus.AWAITING_RESULT, TodoStatus.BUDGET_EXCEEDED)
 
     def test_reviewing_return_to_budget_exceeded(self):
-        assert validate_transition(
-            TodoStatus.REVIEWING_RETURN, TodoStatus.BUDGET_EXCEEDED
-        )
+        assert validate_transition(TodoStatus.REVIEWING_RETURN, TodoStatus.BUDGET_EXCEEDED)
 
     def test_backlog_cannot_transition_to_budget_exceeded(self):
-        assert not validate_transition(
-            TodoStatus.BACKLOG, TodoStatus.BUDGET_EXCEEDED
-        )
+        assert not validate_transition(TodoStatus.BACKLOG, TodoStatus.BUDGET_EXCEEDED)
 
     def test_complete_cannot_transition_to_budget_exceeded(self):
-        assert not validate_transition(
-            TodoStatus.COMPLETE, TodoStatus.BUDGET_EXCEEDED
-        )
+        assert not validate_transition(TodoStatus.COMPLETE, TodoStatus.BUDGET_EXCEEDED)
 
     def test_cancelled_cannot_transition_to_budget_exceeded(self):
-        assert not validate_transition(
-            TodoStatus.CANCELLED, TodoStatus.BUDGET_EXCEEDED
-        )
+        assert not validate_transition(TodoStatus.CANCELLED, TodoStatus.BUDGET_EXCEEDED)
 
     def test_todo_transition_to_budget_exceeded_from_active(self):
         todo = Todo(title="budget test", status=TodoStatus.ACTIVE)
@@ -185,6 +175,7 @@ class TestEventLoopBudgetGuard:
             status=TaskReturnStatus.CREATED,
         )
         loop._tick_state["claimed_returns"] = [tr]
+        mocks["http_client"].post.return_value = MagicMock(status_code=202)
 
         await loop._phase_dispatch_return_review_jobs()
 
@@ -274,6 +265,9 @@ class TestModelGatewayBudgetTracking:
             enabled=True,
             provider="openai",
             model_name="gpt-4",
+            cost_per_input_token=0.01,
+            cost_per_output_token=0.03,
+            max_output_tokens=1000,
             run_budget_usd=100.0,
         )
 
@@ -391,8 +385,8 @@ class TestBudgetManagerGatedExecutor:
             executor=executor,
             budget=budget,
             todo_id="todo-r",
-            projected_cost_usd=2.0,   # admitted on projection
-            realised_cost_usd=0.5,    # but actually cost less
+            projected_cost_usd=2.0,  # admitted on projection
+            realised_cost_usd=0.5,  # but actually cost less
         )
         assert await guarded() == "ran"
         assert budget.get_status()["daily_spend"] == pytest.approx(0.5)

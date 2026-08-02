@@ -1,0 +1,35 @@
+---
+- name: Converge - exercise searxng_search module
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Flight search via SearXNG
+      general_ludd.travel.searxng_search:
+        query: "flights JFK to CDG September 2026"
+        category: flights
+        max_results: 5
+        timeout: 10
+      register: flight_result
+      ignore_errors: true
+      check_mode: true
+
+    - name: Hotel search via SearXNG
+      general_ludd.travel.searxng_search:
+        query: "hotels near Eiffel Tower Paris"
+        category: hotels
+        max_results: 5
+        timeout: 10
+      register: hotel_result
+      ignore_errors: true
+      check_mode: true
+
+    - name: Event search via SearXNG
+      general_ludd.travel.searxng_search:
+        query: "events Paris September 2026"
+        category: events
+        max_results: 5
+        timeout: 10
+      register: event_result
+      ignore_errors: true
+      check_mode: true

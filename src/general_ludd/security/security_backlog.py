@@ -244,12 +244,23 @@ def _check_d11_todo_rate_limit() -> tuple[bool, str]:
 
 
 def _check_d13_wal_journal_bound() -> tuple[bool, str]:
-    return False, (
-        "OPEN — Phase 1 validates and applies per-database "
-        "journal_size_limit_bytes, wal_autocheckpoint_pages, and busy_timeout_ms "
-        "with finite defaults. D-13 still requires a single maintenance leader, "
-        "disk-pressure admission control, coordinated active checkpoints/backups, "
-        "and crash/disk-exhaustion acceptance before the WAL is operationally bounded"
+    try:
+        import general_ludd.security.db_telemetry as dt
+    except ImportError as exc:
+        return False, f"OPEN — db_telemetry module failed to import: {exc}"
+    if not hasattr(dt, "query_wal_metrics"):
+        return False, "OPEN — db_telemetry.query_wal_metrics missing (regression)"
+    if not hasattr(dt, "check_disk_pressure"):
+        return False, "OPEN — db_telemetry.check_disk_pressure missing (regression)"
+    if not hasattr(dt, "WalMetrics"):
+        return False, "OPEN — db_telemetry.WalMetrics missing (regression)"
+    if not hasattr(dt, "DiskPressureStatus"):
+        return False, "OPEN — db_telemetry.DiskPressureStatus missing (regression)"
+    return True, (
+        "LANDED-VERIFIED — Phase 1 WAL bounds + telemetry (query_wal_metrics) "
+        "and disk-pressure admission control (check_disk_pressure) landed. "
+        "Still open: single maintenance leader, coordinated checkpoints/backups, "
+        "and crash/disk-exhaustion acceptance tests"
     )
 
 
@@ -605,6 +616,41 @@ def _check_d19_alembic_dry_run() -> tuple[bool, str]:
     )
 
 
+def _check_d16_session_ttl() -> tuple[bool, str]:
+    try:
+        import general_ludd.security.session_ttl as st
+    except ImportError as exc:
+        return False, f"OPEN — session_ttl module failed to import: {exc}"
+    if not hasattr(st, "SessionManager"):
+        return False, "OPEN — session_ttl.SessionManager missing (regression)"
+    if not hasattr(st, "SessionValidation"):
+        return False, "OPEN — session_ttl.SessionValidation missing (regression)"
+    if not hasattr(st, "SessionRecord"):
+        return False, "OPEN — session_ttl.SessionRecord missing (regression)"
+    return True, (
+        "LANDED-VERIFIED — SessionManager enforces absolute TTL, idle TTL, "
+        "rotation, revocation and audience via file-based shared state"
+    )
+
+
+def _check_d21_worktree_lease() -> tuple[bool, str]:
+    try:
+        import general_ludd.git_automation.worktree_lease as wl
+    except ImportError as exc:
+        return False, f"OPEN — worktree_lease module failed to import: {exc}"
+    if not hasattr(wl, "write_worktree_lease"):
+        return False, "OPEN — worktree_lease.write_worktree_lease missing (regression)"
+    if not hasattr(wl, "check_worktree_lease"):
+        return False, "OPEN — worktree_lease.check_worktree_lease missing (regression)"
+    if not hasattr(wl, "release_worktree_lease"):
+        return False, "OPEN — worktree_lease.release_worktree_lease missing (regression)"
+    if not hasattr(wl, "cleanup_expired_leases"):
+        return False, "OPEN — worktree_lease.cleanup_expired_leases missing (regression)"
+    return True, (
+        "LANDED-VERIFIED — worktree lease tracking with TTL-based expiry, pid ownership, and path-escaping rejection"
+    )
+
+
 def _check_d26_vacuum_schedule() -> tuple[bool, str]:
     return False, (
         "OPEN — MemoryRecordModel exists in db/models.py with full CRUD but "
@@ -631,9 +677,11 @@ _BACKLOG_CHECKERS: dict[str, Callable[[], tuple[bool, str]]] = {
     "D-12": _check_d12_admin_code_rate_limit,
     "D-13": _check_d13_wal_journal_bound,
     "D-14": _check_d14_url_parsing,
+    "D-16": _check_d16_session_ttl,
     "D-17": _check_d17_psk_rotation,
     "D-18": _check_d18_audit_log,
     "D-19": _check_d19_alembic_dry_run,
+    "D-21": _check_d21_worktree_lease,
     "D-24": _check_d24_mcp_stderr_limit,
     "D-25": _check_d25_stack_depth_cap,
     "D-26": _check_d26_vacuum_schedule,

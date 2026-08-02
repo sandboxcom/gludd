@@ -1,0 +1,19 @@
+---
+- name: Converge - run trip_planner role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Invoke trip_planner role
+      ansible.builtin.include_role:
+        name: general_ludd.travel.trip_planner
+      vars:
+        origin: "JFK"
+        destinations: ["CDG", "LHR"]
+        start_date: "2026-09-01"
+        end_date: "2026-09-10"
+        budget: 5000.0
+        interests: ["museums", "food", "history"]
+        travelers: 2
+        trip_style: "comfort"
+        artifact_dir: "/tmp/gludd-travel-plan-trip"

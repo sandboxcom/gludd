@@ -1,0 +1,29 @@
+---
+- name: Verify - searxng_search modules executed cleanly
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Assert flight search executed
+      ansible.builtin.assert:
+        that:
+          - flight_result is defined
+          - flight_result is not failed
+        fail_msg: "flight_result missing or failed: {{ flight_result | default('undefined') }}"
+        success_msg: "flight search module executed cleanly"
+
+    - name: Assert hotel search executed
+      ansible.builtin.assert:
+        that:
+          - hotel_result is defined
+          - hotel_result is not failed
+        fail_msg: "hotel_result missing or failed: {{ hotel_result | default('undefined') }}"
+        success_msg: "hotel search module executed cleanly"
+
+    - name: Assert event search executed
+      ansible.builtin.assert:
+        that:
+          - event_result is defined
+          - event_result is not failed
+        fail_msg: "event_result missing or failed: {{ event_result | default('undefined') }}"
+        success_msg: "event search module executed cleanly"

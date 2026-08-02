@@ -1097,6 +1097,12 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     add_service_subparser(sub)
     sub.choices["service"]
 
+    # `gludd travel` — trip planning, flight/hotel search, event planning.
+    from general_ludd.cli_travel import add_travel_subparser
+
+    add_travel_subparser(sub)
+    travel_parser = sub.choices["travel"]
+
     # `gludd deploy-check` — static model-deployment misconfig detector.
     from general_ludd.cli_deploy_check import add_deploy_check_subparser
 
@@ -1261,6 +1267,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "self-improve": self_improve_parser,
         "remediation": remediation_parser,
         "ornith": ornith_parser,
+        "travel": travel_parser,
         "deploy-check": deploy_check_parser,
         "core-changes": core_changes_parser,
         "make": make_parser,
