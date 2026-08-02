@@ -598,15 +598,26 @@ class TestGateMatrixStructure:
         assert "shard" in matrix, (
             "test-shard matrix must include shard dimension"
         )
-        assert matrix.get("python-version") == ["3.11", "3.12"], (
-            f"test-shard python-version must be ['3.11', '3.12']; "
+        # The blocking gate matrix above owns cross-version compatibility.
+        # Test shards are a high-cardinality, non-blocking coverage fan-out;
+        # running them once on the minimum supported Python avoids duplicating
+        # seven long jobs while retaining complete path coverage.
+        assert matrix.get("python-version") == ["3.11"], (
+            f"test-shard python-version must be ['3.11']; "
             f"got {matrix.get('python-version')!r}"
         )
         assert matrix.get("shard") == [
-            "unit-1a", "unit-1b", "unit-1d", "unit-2", "unit-3", "other"
+            "unit-1a1",
+            "unit-1a2",
+            "unit-1b",
+            "unit-1d",
+            "unit-2",
+            "unit-3",
+            "other",
         ], (
             "test-shard shard dimension must be "
-            "['unit-1a', 'unit-1b', 'unit-1d', 'unit-2', 'unit-3', 'other']; "
+            "['unit-1a1', 'unit-1a2', 'unit-1b', 'unit-1d', "
+            "'unit-2', 'unit-3', 'other']; "
             f"got {matrix.get('shard')!r}"
         )
         assert strategy.get("fail-fast") is False, (

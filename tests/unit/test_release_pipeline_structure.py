@@ -231,16 +231,15 @@ class TestTestShardIsNonBlocking:
 
 
 class TestAllBuildsContinueOnError:
-    """All platform build jobs MUST have continue-on-error: true.
+    """Optional builds stay non-blocking; required artifacts fail closed.
 
-    A single platform's transient failure (pyinstaller hiccup, runner issue,
-    environment variability) must not sink an otherwise-good release. The
-    release job's pre-publish gate catches missing artifacts; the build jobs
-    themselves must be non-blocking so a tag always produces a Release with
-    whatever platforms succeeded.
+    Linux, macOS and Termux remain best-effort while their build environments
+    vary. Windows is a required beta artifact, so its job must stay blocking;
+    otherwise a missing zip/installer can be reported as a green pipeline.
     """
 
-    BUILD_JOBS: typing.ClassVar[list[str]] = ["linux", "macos", "windows", "termux"]
+    OPTIONAL_BUILD_JOBS: typing.ClassVar[list[str]] = ["linux", "macos", "termux"]
+    REQUIRED_BUILD_JOBS: typing.ClassVar[list[str]] = ["windows"]
 
     def test_each_build_job_has_continue_on_error(self):
         import yaml
@@ -249,7 +248,7 @@ class TestAllBuildsContinueOnError:
         data = yaml.safe_load(src)
         jobs = data.get("jobs", {})
         missing: list[str] = []
-        for job_name in self.BUILD_JOBS:
+        for job_name in self.OPTIONAL_BUILD_JOBS:
             job_spec = jobs.get(job_name)
             if not isinstance(job_spec, dict):
                 missing.append(f"{job_name}: job not found in build.yml")
@@ -259,9 +258,19 @@ class TestAllBuildsContinueOnError:
                     f"{job_name}: continue-on-error is not true "
                     f"(got {job_spec.get('continue-on-error')!r})"
                 )
+        for job_name in self.REQUIRED_BUILD_JOBS:
+            job_spec = jobs.get(job_name)
+            if not isinstance(job_spec, dict):
+                missing.append(f"{job_name}: job not found in build.yml")
+                continue
+            if job_spec.get("continue-on-error", False) is not False:
+                missing.append(
+                    f"{job_name}: required artifact job must be blocking "
+                    f"(got continue-on-error={job_spec.get('continue-on-error')!r})"
+                )
         assert not missing, (
-            "Platform build jobs must set continue-on-error: true so a single "
-            "platform failure does not block the release:\n  "
+            "Platform build policy drifted from optional/required artifact "
+            "semantics:\n  "
             + "\n  ".join(missing)
         )
 

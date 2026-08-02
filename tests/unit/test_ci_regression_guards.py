@@ -238,8 +238,9 @@ def test_every_molecule_scenario_is_structurally_complete() -> None:
     without its full file set, so ``make molecule-test-all`` ran an
     unverified/structurally-incomplete scenario and failed. A complete scenario
     must have molecule.yml plus converge.yml/verify.yml (under ``default/`` or
-    at the scenario root); the absence of a complete layout is the smell that
-    an un-runnable scenario slipped in.
+    at the scenario root). The sole exception is Molecule 26's canonical
+    discovery anchor: ``default/molecule.yml`` must be an exact, non-shared
+    no-op with an empty test sequence, so it cannot execute lifecycle work.
 
     This iterates the committed scenarios at runtime, so a future incomplete
     scenario fails here BEFORE it can break `make molecule-test-all` in CI.
@@ -259,6 +260,15 @@ def test_every_molecule_scenario_is_structurally_complete() -> None:
         ("molecule.yml", "converge.yml", "verify.yml"),
     )
     for scenario in scenario_dirs:
+        if scenario.name == "default":
+            anchor = scenario / "molecule.yml"
+            if anchor.is_file():
+                anchor_data = yaml.safe_load(anchor.read_text(encoding="utf-8"))
+                if anchor_data == {
+                    "shared_state": False,
+                    "scenario": {"test_sequence": []},
+                }:
+                    continue
         if not any(
             all((scenario / rel).is_file() for rel in layout)
             for layout in required_layouts

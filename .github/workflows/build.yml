@@ -228,6 +228,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # The blocking `gate` matrix above already exercises both 3.11 and
+        # 3.12.  Run the high-cardinality, non-blocking shard matrix once on
+        # the minimum supported Python so coverage stays complete without
+        # doubling seven long-running jobs.
         python-version: ["3.11"]
         shard: [unit-1a1, unit-1a2, unit-1b, unit-1d, unit-2, unit-3, other]
         include:
