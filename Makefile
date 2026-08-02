@@ -5047,6 +5047,10 @@ proactive-scan:
 check-dispatch-dedup:
 	@$(UV) run python scripts/check_dispatch_dedup.py
 
+# --- Dispatch diversity: validate wave shape (10 count, ≥3 topics, ≤50% concentration, ≥1 continuation) ---
+check-dispatch-diversity:
+	@$(UV) run python scripts/check_dispatch_diversity.py $(FILE)
+
 # --- Dead-code detection: flag classes/functions in src/ never imported in production code ---
 check-dead-code:
 	@$(UV) run python scripts/check_dead_code.py

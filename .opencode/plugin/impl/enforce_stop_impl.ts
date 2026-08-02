@@ -1447,10 +1447,12 @@ const defaultImpl: HotModule = {
     // this is the catch-all for any text-only response while pending work exists.
     // CI RED / CI PENDING COMPLETION CLAIM BLOCKED: keep a CI-specific reason
     // identifier for audit trails when the pending-work source is failed CI.
-    const mandatoryPendingBlock = blockMandatoryPendingText(text, output, workState)
-    if (mandatoryPendingBlock) {
-      turnState.blocked = true
-      return mandatoryPendingBlock
+    if (isTextOnly) {
+      const mandatoryPendingBlock = blockMandatoryPendingText(text, output, workState)
+      if (mandatoryPendingBlock) {
+        turnState.blocked = true
+        return mandatoryPendingBlock
+      }
     }
 
     // ── UPDATE POST-RESULTS STATE FOR NEXT TURN ────────────────────────────
