@@ -14,6 +14,7 @@ from typing import ClassVar
 from general_ludd.sandbox.backends.container_backend import ContainerBackend
 from general_ludd.sandbox.backends.firecracker_backend import FirecrackerBackend
 from general_ludd.sandbox.backends.process_backend import ProcessBackend
+from general_ludd.sandbox.backends.unikernel_backend import UnikernelBackend
 from general_ludd.sandbox.contracts import (
     IsolationLevel,
     SandboxBackend,
@@ -31,18 +32,20 @@ class SandboxCapabilityRouter:
 
     Backend resolution order for ``"auto"``:
 
-    1. ``FirecrackerBackend`` when isolation >= ``VM_HARDWARE`` and firecracker + KVM present.
+    1. ``UnikernelBackend`` when isolation >= ``VM_HARDWARE`` and a VM runtime
+       (firecracker or runsc) is present.
     2. ``ContainerBackend`` when isolation >= ``CONTAINER`` and container runtime present.
     3. ``ProcessBackend`` always (available on every host).
 
-    Explicit backend names (``"process"``, ``"container"``, ``"firecracker"``)
-    bypass the auto-detection chain.
+    Explicit backend names (``"process"``, ``"container"``, ``"firecracker"``,
+    ``"unikernel"``) bypass the auto-detection chain.
     """
 
     _BACKENDS: ClassVar[dict[str, type[SandboxBackend]]] = {
         "process": ProcessBackend,
         "container": ContainerBackend,
         "firecracker": FirecrackerBackend,
+        "unikernel": UnikernelBackend,
     }
 
     def __init__(self, config: SandboxConfig) -> None:
@@ -84,11 +87,11 @@ class SandboxCapabilityRouter:
 
         target_rank = isolation_rank(isolation)
 
-        firecracker_rank = isolation_rank(IsolationLevel.VM_HARDWARE)
-        if target_rank >= firecracker_rank:
-            fc = FirecrackerBackend(self.config)
-            if fc.available():
-                return fc
+        vm_rank = isolation_rank(IsolationLevel.VM_HARDWARE)
+        if target_rank >= vm_rank:
+            uk = UnikernelBackend(self.config)
+            if uk.available():
+                return uk
 
         container_rank = isolation_rank(IsolationLevel.CONTAINER)
         if target_rank >= container_rank:

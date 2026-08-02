@@ -1,6 +1,6 @@
 # Feature: NF.8 — Multitasking Enforcement Hardening
 
-**Status: IMPLEMENTED** | **Created: 2026-07-16** | **Target: v0.1.0-beta.2** | **Type: enforcement fix**
+**Status: IMPLEMENTED (expanded)** | **Created: 2026-07-16** | **Target: v0.1.0-beta.2** | **Type: enforcement fix**
 
 ## 1. Problem
 
@@ -54,30 +54,49 @@ Two gaps in `enforce-multitask.ts` + `enforce-delegate.ts`:
 |--------|------|
 | Modify | `.opencode/plugin/enforce-multitask.ts` |
 | Modify | `.opencode/plugin/enforce-delegate.ts` |
+| Create | `.opencode/plugin/enforce-additive-task.ts` |
+| Create | `.opencode/plugin/enforce-floor-v2.ts` |
+| Create | `scripts/check_dispatch_diversity.py` |
 | Create | `tests/unit/test_multitask_plugin.py` |
 | Create | `tests/unit/test_multitask_min_dispatch.py` |
 | Create | `tests/e2e/test_multitask_e2e.py` |
+| Create | `tests/unit/test_multitasking_enforcement.py` |
+| Create | `tests/unit/test_multitasking_grinding_block.py` |
+| Create | `tests/unit/test_multitasking_backlog.py` |
+| Create | `tests/unit/test_multitask_pressure_release.py` |
 
 ## 5. Test Plan
 
-- **Unit (28 tests)**: `test_multitask_plugin.py` + `test_multitask_min_dispatch.py`
-  — structural pin on constants + min-dispatch behavior
-- **E2E (97 tests)**: `test_multitask_e2e.py` — invokes actual hooks with
-  constructed arguments and asserts on `permissionDecision` + side effects;
-  verifies env-var disable, subagent guard, fail-open paths
+- **Unit (structural)**: `test_multitask_plugin.py` (973 lines) — structural pin
+  on constants, diversity classification, topic clustering, pressure-release state
+- **Unit (behavioral)**: `test_multitask_min_dispatch.py` (819 lines) — min-dispatch
+  config, subagent guard, disable path, fail-open, plugin export shape
+- **Unit (supplementary)**: `test_multitasking_enforcement.py`,
+  `test_multitasking_grinding_block.py`, `test_multitasking_backlog.py`,
+  `test_multitask_pressure_release.py` — grinding, backlog, pressure-release
+- **E2E (41 tests)**: `test_multitask_e2e.py` (1187 lines) — invokes actual hooks
+  with constructed arguments; verifies subagent guard, env disable, dispatch
+  counting, zero-streak, grinding block, under-floor block, diversity check,
+  pressure-release, topic boundary reset
 
 ## 6. Disabling
 
 | Mechanism | Effect |
 |-----------|--------|
-| `GLUDD_MULTITASK_FLOOR_ENFORCE=0` | Disables entirely |
+| `GLUDD_MULTITASK_FLOOR_ENFORCE=0` | Disables floor/grinding enforcement |
+| `GLUDD_MULTITASK_DIVERSITY_ENFORCE=0` | Disables topic diversity check |
+| `GLUDD_ADDITIVE_TASK_ENFORCE=0` | Disables additive-task (continuation) check |
 | `GLUDD_MIN_DISPATCHES=2` | Lower floor for focused single-file work |
 | `make disengage-enforcement` | Temporary emergency bypass |
 
 ## 7. Evidence
 
 - Commits: `6d45df65` (original fix, development), `db2699da` (hardened,
-  9-feature wave), `816d7be6` (latest HEAD)
-- 97 + 28 tests passing
+  9-feature wave), `816d7be6` (latest HEAD), `36e1ea1a` (current HEAD)
+- Enforcement plugins verified active: enforce-multitask.ts (615 lines),
+  enforce-additive-task.ts (192 lines), enforce-floor-v2.ts
+- Diversity script: `scripts/check_dispatch_diversity.py` (194 lines, 10 topics)
+- Test infrastructure: 6 unit files + 1 e2e file
 - node-v26 `--experimental-strip-types` compatibility verified (no `require()`,
   no forbidden `catch { try` patterns)
+- Config module: `.opencode/lib/multitask_config.ts` (39 lines, shared constants)
