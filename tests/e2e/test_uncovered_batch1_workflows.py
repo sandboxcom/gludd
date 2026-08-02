@@ -53,19 +53,25 @@ class TestIssueSourcesBase:
         assert issue["external_id"] == "123"
 
     def test_sync_engine_constructs(self):
-        from general_ludd.issue_sources.base import IssueSyncEngine
+        from general_ludd.issue_sources.base import IssueRegistry, IssueSyncEngine
 
+        registry = IssueRegistry()
         todo_store = MagicMock()
-        engine = IssueSyncEngine(todo_store)
-        assert engine is not None
+        engine = IssueSyncEngine(registry, todo_store)
+        assert engine.registry is registry
+        assert engine.todo_store is todo_store
 
     def test_sync_engine_inbound_creates_todo(self):
-        from general_ludd.issue_sources.base import IssueSyncEngine, NormalizedIssue
+        from general_ludd.issue_sources.base import (
+            IssueRegistry,
+            IssueSyncEngine,
+            NormalizedIssue,
+        )
 
         todo_store = MagicMock()
-        todo_store.find_by_external.return_value = None
-        todo_store.create_or_update.return_value = {"id": "t1"}
-        engine = IssueSyncEngine(todo_store)
+        todo_store.list_linked.return_value = {}
+        todo_store.create_from_issue.return_value = {"id": "t1"}
+        engine = IssueSyncEngine(IssueRegistry(), todo_store)
 
         issue: NormalizedIssue = {
             "source": "github",
@@ -75,18 +81,27 @@ class TestIssueSourcesBase:
             "status": "Open",
             "assignee": None,
             "labels": ["bug"],
+            "priority": None,
+            "url": "https://example.invalid/issues/42",
+            "updated_ts": None,
             "raw": {},
         }
-        report = engine.sync_in([issue])
-        assert report.ingested == 1
+        report = engine.sync_in("github", [issue])
         assert report.created == 1
+        todo_store.create_from_issue.assert_called_once()
 
     def test_sync_engine_dedup_skips_existing(self):
-        from general_ludd.issue_sources.base import IssueSyncEngine, NormalizedIssue
+        from general_ludd.issue_sources.base import (
+            IssueRegistry,
+            IssueSyncEngine,
+            NormalizedIssue,
+        )
 
         todo_store = MagicMock()
-        todo_store.find_by_external.return_value = {"id": "existing"}
-        engine = IssueSyncEngine(todo_store)
+        todo_store.list_linked.return_value = {
+            "ABC-1": {"id": "existing", "title": "Old", "status": "QUEUED"}
+        }
+        engine = IssueSyncEngine(IssueRegistry(), todo_store)
 
         issue: NormalizedIssue = {
             "source": "jira",
@@ -96,21 +111,26 @@ class TestIssueSourcesBase:
             "status": "Open",
             "assignee": None,
             "labels": [],
+            "priority": None,
+            "url": "https://example.invalid/issues/ABC-1",
+            "updated_ts": None,
             "raw": {},
         }
-        report = engine.sync_in([issue])
-        assert report.ingested == 1
+        report = engine.sync_in("jira", [issue])
         assert report.created == 0
         assert report.skipped == 1
 
     def test_sync_engine_outbound_updates_issue_source(self):
-        from general_ludd.issue_sources.base import IssueSyncEngine
+        from general_ludd.issue_sources.base import IssueRegistry, IssueSyncEngine
 
         todo_store = MagicMock()
+        todo_store.internal_status.return_value = "DONE"
         mock_source = MagicMock()
-        mock_source.update_status.return_value = True
-        engine = IssueSyncEngine(todo_store)
-        engine.register_source("test", mock_source)
+        mock_source.name = "test"
+        mock_source.SYSTEM = "test"
+        registry = IssueRegistry()
+        registry.register(mock_source)
+        engine = IssueSyncEngine(registry, todo_store)
 
         todo_row = {
             "id": "t7",
@@ -118,14 +138,15 @@ class TestIssueSourcesBase:
             "source": "test",
             "status": "DONE",
         }
-        engine.sync_out([todo_row])
-        mock_source.update_status.assert_called_once()
+        engine.sync_out("test", [todo_row])
+        mock_source.update_status.assert_called_once_with(
+            "123", "Done", "gludd has completed this issue"
+        )
 
     def test_sync_report_counts_are_zero_initially(self):
         from general_ludd.issue_sources.base import SyncReport
 
         report = SyncReport()
-        assert report.ingested == 0
         assert report.created == 0
         assert report.updated == 0
         assert report.skipped == 0
@@ -135,27 +156,30 @@ class TestIssueSourcesBase:
         from general_ludd.issue_sources.base import SyncReport
 
         report = SyncReport()
-        report.errors.append("timeout on item #3")
-        assert report.has_errors is True
+        report.errors.append(("3", "timeout on item #3"))
+        assert report.errors == [("3", "timeout on item #3")]
 
 
 class TestIssueSourceProtocol:
-    """Tests that the IssueSource protocol check works."""
+    """Tests that the sync-source protocol check works."""
 
     def test_protocol_is_runtime_checkable(self):
 
-        from general_ludd.issue_sources.base import IssueSource
+        from general_ludd.issue_sources.base import SyncSource
 
-        assert hasattr(IssueSource, "__runtime_checkable__")
+        assert getattr(SyncSource, "_is_runtime_protocol", False) is True
 
     def test_matching_impl_passes_check(self):
-        from general_ludd.issue_sources.base import IssueSource
+        from general_ludd.issue_sources.base import SyncSource
 
         class Good:
-            def health(self) -> str:
-                return "ok"
+            name = "good"
+            SYSTEM = "good"
 
-            def fetch_issues(self, since=None):
+            def health(self):
+                return {"ok": True}
+
+            def fetch_issues(self, spec):
                 return []
 
             def update_status(self, external_id, status, comment=None):
@@ -166,59 +190,77 @@ class TestIssueSourceProtocol:
 
 
         obj = Good()
-        assert isinstance(obj, IssueSource)
+        assert isinstance(obj, SyncSource)
 
 
 class TestJiraIngest:
     """Tests for Jira issue adapter."""
 
     def test_jira_imports(self):
-        from general_ludd.issue_sources.jira import JiraSource
+        from general_ludd.issue_sources.jira import JiraIssueSource
 
-        assert JiraSource is not None
+        assert JiraIssueSource is not None
 
     def test_jira_health_returns_string(self):
-        from general_ludd.issue_sources.jira import JiraSource
+        from general_ludd.issue_sources.jira import JiraIssueSource
 
-        src = JiraSource("https://example.atlassian.net", "user@example.com", "token")
-        health = src.health()
-        assert isinstance(health, str)
+        response = MagicMock(status_code=200)
+        transport = MagicMock()
+        transport.request.return_value = response
+        with patch.dict(
+            "os.environ", {"JIRA_EMAIL": "user@example.com", "JIRA_API_TOKEN": "token"}
+        ):
+            src = JiraIssueSource(
+                {"base_url": "https://example.atlassian.net", "project": "TEST"},
+                transport=transport,
+            )
+            health = src.health()
+        assert health == {"ok": True, "detail": "200 OK"}
 
     def test_jira_fetch_issues_returns_list(self):
-        from general_ludd.issue_sources.jira import JiraSource
+        from general_ludd.issue_sources.jira import JiraIssueSource
 
-        src = JiraSource("https://example.atlassian.net", "user@example.com", "token")
-        with patch.object(src, "_transport") as mock_t:
-            mock_t.return_value = (200, {"issues": []})
-            issues = src.fetch_issues()
-            assert isinstance(issues, list)
+        response = MagicMock(status_code=200)
+        response.json.return_value = {"issues": []}
+        transport = MagicMock()
+        transport.request.return_value = response
+        with patch.dict(
+            "os.environ", {"JIRA_EMAIL": "user@example.com", "JIRA_API_TOKEN": "token"}
+        ):
+            src = JiraIssueSource(
+                {"base_url": "https://example.atlassian.net", "project": "TEST"},
+                transport=transport,
+            )
+            issues = src.fetch_issues({})
+        assert issues == []
 
 
 class TestGitHubIssues:
     """Tests for GitHub issues adapter."""
 
     def test_github_imports(self):
-        from general_ludd.issue_sources.github_issues import GitHubIssueSource
+        from general_ludd.issue_sources.github_issues import GitHubIssuesSource
 
-        assert GitHubIssueSource is not None
+        assert GitHubIssuesSource is not None
 
     def test_github_health(self):
-        from general_ludd.issue_sources.github_issues import GitHubIssueSource
+        from general_ludd.issue_sources.github_issues import GitHubIssuesSource
 
-        src = GitHubIssueSource("test-org/test-repo", "fake-token")
-        with patch.object(src, "_transport") as mock_t:
-            mock_t.return_value = (200, {})
-            health = src.health()
-            assert isinstance(health, str)
+        src = GitHubIssuesSource(
+            {"repo": "test-org/test-repo"}, transport=lambda *_args: (200, [])
+        )
+        assert src.name == "github_issues"
+        assert src.base_url == "https://api.github.com"
 
     def test_github_fetch_issues(self):
-        from general_ludd.issue_sources.github_issues import GitHubIssueSource
+        from general_ludd.issue_sources.github_issues import GitHubIssuesSource
 
-        src = GitHubIssueSource("test-org/test-repo", "fake-token")
-        with patch.object(src, "_transport") as mock_t:
-            mock_t.return_value = (200, [{"number": 1, "title": "Bug"}])
-            issues = src.fetch_issues()
-            assert isinstance(issues, list)
+        src = GitHubIssuesSource(
+            {"repo": "test-org/test-repo"},
+            transport=lambda *_args: (200, [{"number": 1, "title": "Bug"}]),
+        )
+        issues = src.fetch({})
+        assert [issue["title"] for issue in issues] == ["Bug"]
 
 
 class TestGitLabIssues:
@@ -232,29 +274,41 @@ class TestGitLabIssues:
     def test_gitlab_health(self):
         from general_ludd.issue_sources.gitlab_issues import GitLabIssueSource
 
-        src = GitLabIssueSource("https://gitlab.example.com", "fake-token", "group/proj")
-        with patch.object(src, "_transport") as mock_t:
-            mock_t.return_value = (200, {})
-            health = src.health()
-            assert isinstance(health, str)
+        response = MagicMock(status_code=200)
+        transport = MagicMock(return_value=response)
+        src = GitLabIssueSource(
+            {"base_url": "https://gitlab.example.com", "project_id": "group/proj"},
+            transport=transport,
+            env={"GITLAB_TOKEN": "fake-token"},
+        )
+        health = src.health()
+        assert health["ok"] is True
 
 
 class TestLinearSource:
     """Tests for Linear issue adapter."""
 
     def test_linear_imports(self):
-        from general_ludd.issue_sources.linear import LinearSource
+        from general_ludd.issue_sources.linear import LinearIssueSource
 
-        assert LinearSource is not None
+        assert LinearIssueSource is not None
 
     def test_linear_health(self):
-        from general_ludd.issue_sources.linear import LinearSource
+        import httpx
 
-        src = LinearSource("fake-api-key")
-        with patch.object(src, "_transport") as mock_t:
-            mock_t.return_value = (200, {"data": {}})
+        from general_ludd.issue_sources.linear import LinearIssueSource
+
+        transport = httpx.MockTransport(
+            lambda _request: httpx.Response(
+                200, json={"data": {"viewer": {"id": "user-1"}}}
+            )
+        )
+        with patch.dict("os.environ", {"LINEAR_API_KEY": "fake-api-key"}):
+            src = LinearIssueSource(
+                {"base_url": "https://api.linear.app"}, transport=transport
+            )
             health = src.health()
-            assert isinstance(health, str)
+        assert health == {"ok": True, "detail": "linear reachable"}
 
 
 class TestCsvExcelSource:
@@ -265,23 +319,13 @@ class TestCsvExcelSource:
 
         assert CsvExcelSource is not None
 
-    def test_csv_excel_fetch_from_file(self):
+    def test_csv_excel_fetch_from_file(self, tmp_path: Path):
         from general_ludd.issue_sources.csv_excel import CsvExcelSource
 
-        src = CsvExcelSource(Path("/nonexistent/doesnt/matter"))
-        src._issues = [
-            {
-                "source": "csv",
-                "external_id": "1",
-                "title": "T1",
-                "description": "",
-                "status": "Open",
-                "assignee": None,
-                "labels": [],
-                "raw": {},
-            }
-        ]
-        issues = src.fetch_issues()
+        csv_path = tmp_path / "issues.csv"
+        csv_path.write_text("id,title,status\n1,T1,Open\n", encoding="utf-8")
+        src = CsvExcelSource({"path": str(csv_path), "root": str(tmp_path)})
+        issues = src.fetch({})
         assert len(issues) == 1
         assert issues[0]["title"] == "T1"
 
@@ -292,14 +336,17 @@ class TestIngestMain:
     def test_ingest_discover_finds_module(self):
         from general_ludd.issue_sources import ingest
 
-        assert hasattr(ingest, "discover_and_ingest")
+        assert hasattr(ingest, "ingest_records")
+        assert hasattr(ingest, "record_to_todo")
 
     def test_ingest_discover_returns_report_dict(self):
-        from general_ludd.issue_sources.ingest import discover_and_ingest
+        from general_ludd.issue_sources.base import new_issue_record
+        from general_ludd.issue_sources.ingest import ingest_records
 
-        result = discover_and_ingest()
-        assert isinstance(result, dict)
-        assert "reports" in result
+        record = new_issue_record(external_id="1", title="Imported")
+        todos, seen = ingest_records([record], "test-source")
+        assert todos[0]["title"] == "Imported"
+        assert seen == {"test-source:1"}
 
 
 # ============================================================================
@@ -358,12 +405,13 @@ class TestCompactionBase:
         from general_ludd.compaction.base import CompactionResult
 
         result = CompactionResult(original_tokens=100, compacted_tokens=30)
-        assert result.compression_pct == 70.0
+        assert result.tokens_saved == 70
+        assert result.tokens_saved / result.original_tokens * 100 == 70.0
 
     def test_compactor_protocol_is_runtime_checkable(self):
         from general_ludd.compaction.base import Compactor
 
-        assert hasattr(Compactor, "__runtime_checkable__")
+        assert getattr(Compactor, "_is_runtime_protocol", False) is True
 
 
 class TestCompactionBaselines:
@@ -381,9 +429,9 @@ class TestCompactionBaselines:
         msgs = [ContextMessage(role="user", content="hello")]
         req = CompactionRequest(messages=msgs, goal="test")
 
-        from general_ludd.compaction.baselines import NoopCompactor
+        from general_ludd.compaction.baselines import NoOpCompactor
 
-        compactor = NoopCompactor()
+        compactor = NoOpCompactor()
         result = compactor.compact(req)
         assert len(result.messages) == len(msgs)
 
@@ -441,22 +489,28 @@ class TestCompactionAggressive:
         assert aggressive is not None
 
     def test_aggressive_compactor_constructs(self):
-        from general_ludd.compaction.aggressive import AggressiveCompactor
+        from general_ludd.compaction.aggressive import LEVELS, level_at
 
-        compactor = AggressiveCompactor()
-        assert compactor is not None
+        level = level_at(1)
+        assert level is LEVELS[1]
+        assert level.preserve_recent == 4
 
     def test_aggressive_drops_more_than_baseline(self):
         from general_ludd.agents.context import ContextMessage
-        from general_ludd.compaction.aggressive import AggressiveCompactor
-        from general_ludd.compaction.base import CompactionRequest
+        from general_ludd.compaction.aggressive import compact_messages, level_at
 
-        msgs = [ContextMessage(role="user", content=f"msg {i}") for i in range(50)]
-        req = CompactionRequest(messages=msgs, goal="compress hard", target_tokens=20)
+        msgs = [
+            ContextMessage(
+                role="user", content=f"message {i} " + "x" * 80, token_estimate=22
+            )
+            for i in range(50)
+        ]
 
-        compactor = AggressiveCompactor()
-        result = compactor.compact(req)
-        assert result.dropped_messages > 0
+        result = compact_messages(
+            msgs, goal="compress hard", level=level_at(3), max_tokens=100
+        )
+        assert len(result) < len(msgs)
+        assert result[-1].content == msgs[-1].content
 
 
 class TestCompactionEvaluate:
@@ -468,10 +522,30 @@ class TestCompactionEvaluate:
         assert evaluate is not None
 
     def test_evaluate_compares_strategies(self):
-        from general_ludd.compaction.evaluate import compare_compact_strategies
+        from general_ludd.agents.context import ContextMessage
+        from general_ludd.compaction.baselines import NoOpCompactor, TruncationCompactor
+        from general_ludd.compaction.evaluate import EvalSample, Probe, evaluate
 
-        result = compare_compact_strategies()
-        assert isinstance(result, dict)
+        sample = EvalSample(
+            messages=[
+                ContextMessage(role="user", content="decision: use sqlite WAL"),
+                ContextMessage(role="assistant", content="recent status"),
+            ],
+            goal="preserve the storage decision",
+            probes=[Probe(question="storage?", expected=["sqlite WAL"])],
+            target_tokens=4,
+            preserve_recent=1,
+        )
+        result = {
+            metrics.compactor: metrics
+            for metrics in (
+                evaluate(NoOpCompactor(), [sample]),
+                evaluate(TruncationCompactor(), [sample]),
+            )
+        }
+        assert set(result) == {"noop", "truncate"}
+        assert result["noop"].mean_fidelity == 1.0
+        assert result["truncate"].mean_ratio <= result["noop"].mean_ratio
 
 
 class TestCompactionArena:
@@ -500,20 +574,23 @@ class TestRendererRegistry:
     def test_registry_constructs_empty(self):
         from general_ludd.renderers.registry import RendererRegistry
 
-        reg = RendererRegistry()
-        assert len(list(reg.iter())) == 0
+        reg = RendererRegistry(bundled_dir=Path("/nonexistent"), operator_dir=None)
+        reg.discover()
+        assert len(reg) == 0
+        assert reg.list_all() == []
 
     def test_registry_discovers_yml(self):
         from general_ludd.renderers.registry import RendererRegistry
 
-        reg = RendererRegistry()
         with tempfile.TemporaryDirectory() as tmp:
             playbook = Path(tmp) / "test.yml"
             playbook.write_text(
                 "[{'hosts': 'localhost', 'vars': {'renderer': True, 'renderer_description': 'desc'}}]"
             )
-            found = reg.discover(Path(tmp), Path(tmp))
-            assert isinstance(found, int)
+            reg = RendererRegistry(bundled_dir=Path(tmp), operator_dir=None)
+            reg.discover()
+            assert "test" in reg
+            assert reg.get("test").description == "desc"
 
     def test_renderer_spec_properties(self):
         from general_ludd.renderers.registry import RendererSpec
@@ -536,22 +613,34 @@ class TestRendererExecutor:
     """Tests for the renderer executor."""
 
     def test_executor_imports(self):
-        from general_ludd.renderers.executor import RendererExecutor
+        from general_ludd.renderers.executor import run_renderer
 
-        assert RendererExecutor is not None
+        assert callable(run_renderer)
 
     def test_executor_constructs(self):
-        from general_ludd.renderers.executor import RendererExecutor
+        import inspect
 
-        ex = RendererExecutor()
-        assert ex is not None
+        from general_ludd.renderers.executor import run_renderer
+
+        assert inspect.iscoroutinefunction(run_renderer)
 
     def test_executor_validate_schema_missing_file(self):
-        from general_ludd.renderers.executor import RendererExecutor
+        import asyncio
 
-        ex = RendererExecutor()
-        result = ex.validate(Path("/nonexistent.yml"), {})
-        assert not result.ok
+        from fastapi import FastAPI
+
+        from general_ludd.renderers.executor import RendererFailure, run_renderer
+        from general_ludd.renderers.registry import RendererSpec
+
+        app = FastAPI()
+        app.state._runner = MagicMock()
+        app.state._runner.run_playbook.return_value = {"status": "successful", "rc": 0}
+        spec = RendererSpec(name="missing", path=Path("/nonexistent.yml"))
+        try:
+            asyncio.run(run_renderer(app, spec))
+            raise AssertionError("missing render.json should fail closed")
+        except RendererFailure as exc:
+            assert "render.json not written" in exc.detail
 
 
 class TestRendererSchemaLoader:
@@ -615,7 +704,7 @@ class TestWriterSupervisor:
         assert WriterSupervisor is not None
 
     def test_supervisor_constructs(self):
-        from general_ludd.writer.supervisor import WriterSupervisor
+        from general_ludd.writer.supervisor import SupervisorState, WriterSupervisor
 
         event_bus = MagicMock()
         supervisor = WriterSupervisor(
@@ -625,79 +714,89 @@ class TestWriterSupervisor:
             max_backoff=0.1,
             max_retries=2,
         )
-        assert supervisor is not None
-        assert supervisor.max_retries == 2
+        assert supervisor.state is SupervisorState.STOPPED
+        assert supervisor.restart_count == 0
+        assert supervisor._next_backoff(0) == 0.01
 
     def test_supervisor_start_stop(self):
-        from general_ludd.writer.supervisor import WriterSupervisor
+        from general_ludd.writer.supervisor import SupervisorState, WriterSupervisor
 
         event_bus = MagicMock()
         mock_writer = MagicMock()
-        mock_writer.running = True
-        mock_writer.health.return_value = True
+        mock_writer.is_alive.return_value = True
 
         supervisor = WriterSupervisor(
             writer_process_factory=lambda: mock_writer,
             event_bus=event_bus,
-            health_interval=0.05,
+            health_check_interval=0.05,
             max_retries=2,
         )
         supervisor.start()
-        time.sleep(0.15)
         supervisor.stop()
-        assert True
+        mock_writer.start.assert_called_once_with()
+        mock_writer.stop.assert_called_once_with()
+        assert supervisor.state is SupervisorState.STOPPED
 
     def test_supervisor_recovery_emits_event(self):
-        from general_ludd.writer.supervisor import WriterSupervisor
+        from general_ludd.writer.supervisor import (
+            SupervisorRecoveryEvent,
+            SupervisorState,
+            WriterSupervisor,
+        )
 
         event_bus = MagicMock()
-        call_count = [0]
-
-        def failing_factory():
-            call_count[0] += 1
-            w = MagicMock()
-            w.running = False
-            w.exit_code = 1
-            w.health.return_value = False
-            w.start.side_effect = RuntimeError("fail")
-            return w
+        crashed_writer = MagicMock()
+        crashed_writer.exit_code = 1
+        crashed_writer.is_alive.return_value = False
+        recovered_writer = MagicMock()
+        recovered_writer.is_alive.return_value = True
+        writers = iter((crashed_writer, recovered_writer))
 
         supervisor = WriterSupervisor(
-            writer_process_factory=failing_factory,
+            writer_process_factory=lambda: next(writers),
             event_bus=event_bus,
-            health_interval=0.05,
+            health_check_interval=0.01,
             max_retries=2,
-            base_backoff=0.01,
+            base_backoff=0.0,
             max_backoff=0.05,
         )
         supervisor.start()
-        time.sleep(0.3)
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline and not event_bus.publish.called:
+            time.sleep(0.01)
         supervisor.stop()
-        assert event_bus.emit.call_count >= 0
+        event_bus.publish.assert_called_once()
+        event = event_bus.publish.call_args.args[0]
+        assert isinstance(event, SupervisorRecoveryEvent)
+        assert event.payload["exit_code"] == 1
+        assert supervisor.state is SupervisorState.STOPPED
 
 
 class TestWriterBridge:
     """Tests for writer bridge module."""
 
     def test_bridge_imports(self):
-        from general_ludd.writer.bridge import WriterBridge
+        from general_ludd.writer.bridge import QueueWriteSession, enqueue_or_commit
 
-        assert WriterBridge is not None
+        assert QueueWriteSession is not None
+        assert enqueue_or_commit is not None
 
     def test_bridge_constructs(self):
-        from general_ludd.writer.bridge import WriterBridge
+        from general_ludd.ipc import WriteQueue
+        from general_ludd.writer.bridge import QueueWriteSession
 
-        bridge = WriterBridge()
-        assert bridge is not None
+        bridge = QueueWriteSession("todo.create", WriteQueue(maxsize=2))
+        assert bridge.topic == "todo.create"
+        assert bridge.pending == ()
 
 
 class TestWriterChild:
     """Tests for writer child process."""
 
     def test_child_imports(self):
-        from general_ludd.writer._child import WriterChild
+        from general_ludd.writer._child import main
 
-        assert WriterChild is not None
+        assert callable(main)
 
 
 class TestWriterProcess:
@@ -733,7 +832,10 @@ class TestFileClaimRegistry:
 
         reg = FileClaimRegistry()
         reg.claim("worker-1", ["a.py", "b.py"])
-        assert reg.all_claims() == {"worker-1": frozenset({"a.py", "b.py"})}
+        assert reg.all_claims() == {
+            "a.py": ["worker-1"],
+            "b.py": ["worker-1"],
+        }
 
     def test_release_removes_worker(self):
         from general_ludd.coordination.file_claims import FileClaimRegistry
@@ -741,7 +843,7 @@ class TestFileClaimRegistry:
         reg = FileClaimRegistry()
         reg.claim("w1", ["x.py"])
         reg.release("w1")
-        assert "w1" not in reg.all_claims()
+        assert reg.all_claims() == {}
 
     def test_overlap_detects_conflict(self):
         from general_ludd.coordination.file_claims import FileClaimRegistry
@@ -749,7 +851,8 @@ class TestFileClaimRegistry:
         reg = FileClaimRegistry()
         reg.claim("w1", ["a.py", "b.py"])
         reg.claim("w2", ["b.py", "c.py"])
-        assert reg.overlapping_paths() == frozenset({"b.py"})
+        assert reg.overlaps("w1") == {"b.py": ["w2"]}
+        assert reg.overlaps("w2") == {"b.py": ["w1"]}
 
     def test_overlap_no_conflict(self):
         from general_ludd.coordination.file_claims import FileClaimRegistry
@@ -757,7 +860,8 @@ class TestFileClaimRegistry:
         reg = FileClaimRegistry()
         reg.claim("w1", ["a.py"])
         reg.claim("w2", ["b.py"])
-        assert reg.overlapping_paths() == frozenset()
+        assert reg.overlaps("w1") == {}
+        assert reg.overlaps("w2") == {}
 
     def test_should_wait_true_on_overlap(self):
         from general_ludd.coordination.file_claims import FileClaimRegistry
@@ -765,7 +869,7 @@ class TestFileClaimRegistry:
         reg = FileClaimRegistry()
         reg.claim("w1", ["a.py"])
         reg.claim("w2", ["a.py"])
-        assert reg.should_wait("w2") is True
+        assert reg.should_wait("w2") == ["w1"]
 
     def test_should_wait_false_no_overlap(self):
         from general_ludd.coordination.file_claims import FileClaimRegistry
@@ -773,7 +877,7 @@ class TestFileClaimRegistry:
         reg = FileClaimRegistry()
         reg.claim("w1", ["a.py"])
         reg.claim("w2", ["b.py"])
-        assert reg.should_wait("w2") is False
+        assert reg.should_wait("w2") == []
 
     def test_claim_or_conflict_blocks_overlapping(self):
         from general_ludd.coordination.file_claims import FileClaimRegistry
@@ -795,7 +899,7 @@ class TestFileClaimRegistry:
         reg = FileClaimRegistry(ttl_seconds=60.0, clock=fake_clock)
         reg.claim("w1", ["a.py"])
         clock[0] = 200.0
-        assert "w1" not in reg.all_claims()
+        assert reg.all_claims() == {}
 
     def test_merge_plan_returns_dict(self):
         from general_ludd.coordination.file_claims import FileClaimRegistry
@@ -861,9 +965,9 @@ class TestDynamicDispatcher:
     def test_dispatch_result_ok(self):
         from general_ludd.dispatch.dynamic_dispatcher import DispatchResult
 
-        result = DispatchResult(ok=True, result={"status": "done"})
+        result = DispatchResult(ok=True, output={"status": "done"})
         assert result.ok is True
-        assert result.result == {"status": "done"}
+        assert result.output == {"status": "done"}
 
     def test_dispatch_result_error(self):
         from general_ludd.dispatch.dynamic_dispatcher import DispatchResult
@@ -873,23 +977,46 @@ class TestDynamicDispatcher:
         assert result.error == "not found"
 
     def test_dispatcher_register_handler(self):
-        from general_ludd.dispatch.dynamic_dispatcher import DynamicDispatcher
+        import asyncio
 
-        dispatcher = DynamicDispatcher()
+        from general_ludd.dispatch.dynamic_dispatcher import (
+            UNRESTRICTED_ROLE,
+            DynamicDispatcher,
+            ToolCall,
+        )
+
 
         def my_handler(name, args):
             return {"handled": name, "args": args}
 
-        dispatcher.register("skill", "greet", my_handler)
-        result = dispatcher.dispatch("skill", "greet", {"name": "world"})
+        dispatcher = DynamicDispatcher(
+            skill_handler=my_handler, role=UNRESTRICTED_ROLE
+        )
+        result = asyncio.run(
+            dispatcher.dispatch(
+                ToolCall(kind="skill", name="greet", args={"name": "world"})
+            )
+        )
         assert result.ok is True
+        assert result.output == {"handled": "greet", "args": {"name": "world"}}
 
     def test_dispatcher_missing_handler(self):
-        from general_ludd.dispatch.dynamic_dispatcher import DynamicDispatcher
+        import asyncio
 
-        dispatcher = DynamicDispatcher()
-        result = dispatcher.dispatch("skill", "nonexistent_handler", {})
+        from general_ludd.dispatch.dynamic_dispatcher import (
+            UNRESTRICTED_ROLE,
+            DynamicDispatcher,
+            ToolCall,
+        )
+
+        dispatcher = DynamicDispatcher(role=UNRESTRICTED_ROLE)
+        result = asyncio.run(
+            dispatcher.dispatch(
+                ToolCall(kind="skill", name="nonexistent_handler", args={})
+            )
+        )
         assert result.ok is False
+        assert result.error == "unknown_kind:skill"
 
     def test_unrestricted_role_is_object_identity(self):
         from general_ludd.dispatch.dynamic_dispatcher import UNRESTRICTED_ROLE
@@ -918,39 +1045,40 @@ class TestVariableStore:
         from general_ludd.dispatch.variable_store import VariableStore
 
         store = VariableStore()
-        store.set("key1", "value1")
-        assert store.get("key1") == "value1"
+        store.set("test", "key1", "value1")
+        assert store.get("test", "key1") == "value1"
 
     def test_variable_store_missing_returns_none(self):
         from general_ludd.dispatch.variable_store import VariableStore
 
         store = VariableStore()
-        assert store.get("missing") is None
+        assert store.get("test", "missing") is None
 
     def test_variable_store_overwrite(self):
         from general_ludd.dispatch.variable_store import VariableStore
 
         store = VariableStore()
-        store.set("a", 1)
-        store.set("a", 2)
-        assert store.get("a") == 2
+        store.set("test", "a", 1)
+        store.set("test", "a", 2)
+        assert store.get("test", "a") == 2
 
     def test_variable_store_dump(self):
         from general_ludd.dispatch.variable_store import VariableStore
 
         store = VariableStore()
-        store.set("x", "hello")
-        store.set("y", 42)
-        d = store.dump()
-        assert d == {"x": "hello", "y": 42}
+        store.set("test", "x", "hello")
+        store.set("test", "y", 42)
+        d = store.all_vars()
+        assert d == {"test__x": "hello", "test__y": 42}
 
     def test_variable_store_clear(self):
         from general_ludd.dispatch.variable_store import VariableStore
 
         store = VariableStore()
-        store.set("k", "v")
-        store.clear()
-        assert store.get("k") is None
+        store.set("test", "k", "v")
+        snapshot = store.get_namespace("test")
+        snapshot.clear()
+        assert store.get("test", "k") == "v"
 
 
 # ============================================================================
@@ -962,15 +1090,18 @@ class TestGovernanceLoader:
     """Tests for governance policy loader."""
 
     def test_loader_imports(self):
-        from general_ludd.governance.loader import load_governance_policies
+        from general_ludd.governance.loader import get_borders, get_governing_bodies
 
-        assert load_governance_policies is not None
+        assert callable(get_borders)
+        assert callable(get_governing_bodies)
 
     def test_loader_returns_list(self):
-        from general_ludd.governance.loader import load_governance_policies
+        from types import ModuleType
 
-        policies = load_governance_policies()
-        assert isinstance(policies, list)
+        from general_ludd.governance.loader import get_borders, get_governing_bodies
+
+        policies = [get_borders(), get_governing_bodies()]
+        assert all(isinstance(policy, ModuleType) for policy in policies)
 
 
 # ============================================================================
@@ -993,29 +1124,37 @@ class TestApprovalGate:
         assert gate is not None
 
     def test_gate_approve(self):
-        from general_ludd.approval.gate import ApprovalGate
+        from general_ludd.approval.gate import (
+            ApprovalDecision,
+            ApprovalGate,
+            ApprovalRequest,
+        )
 
         gate = ApprovalGate()
-        gate.request("req-1", "deploy to prod")
-        result = gate.approve("req-1", "admin")
-        assert result is True
+        request = ApprovalRequest(
+            resource_id="req-1", action="deploy to prod", requester="agent-1"
+        )
+        result = gate.request_approval(request)
+        assert result.decision is ApprovalDecision.PENDING
+        assert result.request is request
 
     def test_gate_deny(self):
-        from general_ludd.approval.gate import ApprovalGate
+        from general_ludd.approval.gate import ApprovalGate, ApprovalRequest
 
         gate = ApprovalGate()
-        gate.request("req-2", "delete database")
-        result = gate.deny("req-2", "operator", "too risky")
-        assert result is True
+        request = ApprovalRequest(
+            resource_id="req-2", action="delete database", requester="agent-2"
+        )
+        result = gate.check(request)
+        assert result.allowed is False
+        assert result.reason == "pending"
 
     def test_gate_pending_returns_requests(self):
-        from general_ludd.approval.gate import ApprovalGate
+        from general_ludd.approval.gate import ApprovalDecision, ApprovalGate
 
         gate = ApprovalGate()
-        gate.request("r1", "action 1")
-        gate.request("r2", "action 2")
-        pending = gate.pending()
-        assert len(pending) == 2
+        assert gate.check_decision("r1") is ApprovalDecision.PENDING
+        assert gate.check_decision("r2") is ApprovalDecision.PENDING
 
 
 # ============================================================================
@@ -1027,15 +1166,15 @@ class TestCollectionImporter:
     """Tests for collection importer."""
 
     def test_importer_imports(self):
-        from general_ludd.collections.importer import CollectionImporter
+        from general_ludd.collections.importer import TerraformCollectionImporter
 
-        assert CollectionImporter is not None
+        assert TerraformCollectionImporter is not None
 
-    def test_importer_constructs(self):
-        from general_ludd.collections.importer import CollectionImporter
+    def test_importer_constructs(self, tmp_path: Path):
+        from general_ludd.collections.importer import TerraformCollectionImporter
 
-        importer = CollectionImporter()
-        assert importer is not None
+        importer = TerraformCollectionImporter(tmp_path)
+        assert importer.collection_path == tmp_path
 
 
 # ============================================================================
@@ -1054,5 +1193,8 @@ class TestNotificationDispatcher:
     def test_dispatcher_constructs(self):
         from general_ludd.notifications.dispatcher import NotificationDispatcher
 
-        dispatcher = NotificationDispatcher()
-        assert dispatcher is not None
+        dispatcher = NotificationDispatcher({})
+        assert dispatcher.dispatch({"priority": "urgent"}) == {
+            "ok": False,
+            "reason": "notifications disabled",
+        }
