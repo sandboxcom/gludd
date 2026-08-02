@@ -213,12 +213,17 @@ class TestDaemonHealthEndpoints:
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
-            with TestClient(app) as client:
-                resp = client.get("/readyz")
-                assert resp.status_code == 503
-                data = resp.json()
-                assert data["status"] == "not_ready"
-                assert data["reason"] == "daemon_not_initialized"
+            # Deliberately do not enter TestClient's context manager: Starlette
+            # runs the ASGI lifespan on context entry, which would initialize
+            # the database and event loop and contradict this test's premise.
+            assert getattr(app.state, "_event_loop_task", None) is None
+            client = TestClient(app)
+            resp = client.get("/readyz")
+            assert resp.status_code == 503
+            data = resp.json()
+            assert data["status"] == "not_ready"
+            assert data["reason"] == "daemon_not_initialized"
+            client.close()
 
     def test_readyz_200_when_ready(self, monkeypatch):
         import general_ludd.daemon as dm
