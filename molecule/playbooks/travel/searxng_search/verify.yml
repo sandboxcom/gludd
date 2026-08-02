@@ -7,23 +7,23 @@
     - name: Assert flight search executed
       ansible.builtin.assert:
         that:
-          - flight_result is defined
-          - flight_result is not failed
-        fail_msg: "flight_result missing or failed: {{ flight_result | default('undefined') }}"
+          - flight_success is defined
+          - flight_success | bool
+        fail_msg: "flight search failed or fact not cached: {{ flight_output | default('undefined') }}"
         success_msg: "flight search module executed cleanly"
 
     - name: Assert hotel search executed
       ansible.builtin.assert:
         that:
-          - hotel_result is defined
-          - hotel_result is not failed
-        fail_msg: "hotel_result missing or failed: {{ hotel_result | default('undefined') }}"
+          - hotel_success is defined
+          - hotel_success | bool
+        fail_msg: "hotel search failed or fact not cached: {{ hotel_output | default('undefined') }}"
         success_msg: "hotel search module executed cleanly"
 
     - name: Assert event search executed
       ansible.builtin.assert:
         that:
-          - event_result is defined
-          - event_result is not failed
-        fail_msg: "event_result missing or failed: {{ event_result | default('undefined') }}"
+          - event_success is defined
+          - event_success | bool
+        fail_msg: "event search failed or fact not cached: {{ event_output | default('undefined') }}"
         success_msg: "event search module executed cleanly"

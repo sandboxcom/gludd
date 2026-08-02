@@ -10,9 +10,15 @@
         category: flights
         max_results: 5
         timeout: 10
-      register: flight_result
+      register: _flight
       ignore_errors: true
       check_mode: true
+
+    - name: Cache flight search result for verify
+      ansible.builtin.set_fact:
+        flight_success: "{{ not (_flight is failed | default(false)) }}"
+        flight_output: "{{ _flight | default({}) }}"
+      cacheable: true
 
     - name: Hotel search via SearXNG
       general_ludd.travel.searxng_search:
@@ -20,9 +26,15 @@
         category: hotels
         max_results: 5
         timeout: 10
-      register: hotel_result
+      register: _hotel
       ignore_errors: true
       check_mode: true
+
+    - name: Cache hotel search result for verify
+      ansible.builtin.set_fact:
+        hotel_success: "{{ not (_hotel is failed | default(false)) }}"
+        hotel_output: "{{ _hotel | default({}) }}"
+      cacheable: true
 
     - name: Event search via SearXNG
       general_ludd.travel.searxng_search:
@@ -30,6 +42,12 @@
         category: events
         max_results: 5
         timeout: 10
-      register: event_result
+      register: _event
       ignore_errors: true
       check_mode: true
+
+    - name: Cache event search result for verify
+      ansible.builtin.set_fact:
+        event_success: "{{ not (_event is failed | default(false)) }}"
+        event_output: "{{ _event | default({}) }}"
+      cacheable: true
