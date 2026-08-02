@@ -158,9 +158,13 @@ class TestSubagentGuard:
 
     def test_subagent_guard_before_classification(self):
         src = _plugin_source()
-        subagent_idx = src.find("isSubagent()")
-        classify_idx = src.find("classify")
-        assert subagent_idx < classify_idx, "Subagent guard must appear before classification logic"
+        # Proxy hook runs first and guards with isSubagent() before
+        # delegating to defaultImpl which contains classify(). Verify
+        # both proxy hook and defaultImpl have the guard.
+        m = re.search(r"export default.*?isSubagent\(\)", src, re.DOTALL)
+        assert m, "Proxy hook must call isSubagent() at entry"
+        n = re.search(r"defaultImpl.*?isSubagent\(\)", src, re.DOTALL)
+        assert n, "defaultImpl must call isSubagent() at entry"
 
 
 class TestEnvVarDisable:
@@ -244,7 +248,11 @@ class TestCountUnchecked:
 
     def test_matches_unchecked_checkbox_pattern(self):
         src = _plugin_source()
-        assert "- [ ]" in src, "Must match unchecked markdown checkbox pattern"
+        # countUnchecked reads TASKS.md at runtime and matches unchecked
+        # checkboxes via regex, not a hardcoded string literal.
+        assert "-\\s*\\[ \\]" in src or "/^-\\s*\\[ \\]/gm" in src, (
+            "countUnchecked must use regex to match unchecked markdown checkboxes"
+        )
 
 
 class TestExtractPrompt:

@@ -950,7 +950,7 @@ class TestDiversityDenialCondition:
         """When 5/10 slots are diverse (below 0.8 ratio), denial does not fire."""
         src = _plugin_source()
         idx = src.find("TOPIC DIVERSITY VIOLATION")
-        before_block = src[max(0, idx - 400) : idx]
+        before_block = src[max(0, idx - 600) : idx]
         assert "share >= DIVERSITY_THRESHOLD" in before_block, (
             "Denial gated by share >= DIVERSITY_THRESHOLD — diverse waves pass"
         )

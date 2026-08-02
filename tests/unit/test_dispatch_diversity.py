@@ -8,9 +8,12 @@ from pathlib import Path
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "check_dispatch_diversity.py"
 
 
-def _run(wave_file: Path, tasks_dir: Path) -> tuple[int, str, str]:
+def _run(wave_file: Path, tasks_dir: Path, tasks_md: Path | None = None) -> tuple[int, str, str]:
+    cmd = [sys.executable, str(SCRIPT), str(wave_file)]
+    if tasks_md is not None:
+        cmd.append(str(tasks_md))
     proc = subprocess.run(
-        [sys.executable, str(SCRIPT), str(wave_file)],
+        cmd,
         cwd=tasks_dir,
         capture_output=True,
         text=True,

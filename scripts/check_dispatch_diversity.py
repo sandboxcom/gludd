@@ -122,7 +122,7 @@ def classify_prompt(prompt: str, in_progress_ids: set[str]) -> str:
 
 def main() -> int:
     if len(sys.argv) < 2:
-        print("Usage: check_dispatch_diversity.py <dispatch-wave.json>", file=sys.stderr)
+        print("Usage: check_dispatch_diversity.py <dispatch-wave.json> [tasks-md-path]", file=sys.stderr)
         return 2
 
     wave_file = Path(sys.argv[1])
@@ -130,8 +130,11 @@ def main() -> int:
     if prompts is None:
         return 2
 
-    repo_root = Path(__file__).resolve().parent.parent
-    tasks_path = repo_root / "TASKS.md"
+    if len(sys.argv) >= 3:
+        tasks_path = Path(sys.argv[2])
+    else:
+        repo_root = Path(__file__).resolve().parent.parent
+        tasks_path = repo_root / "TASKS.md"
     tasks_text = read_tasks_file(tasks_path)
     in_progress_ids = extract_in_progress_ids(tasks_text)
 
