@@ -10,6 +10,7 @@ import asyncio
 import logging
 import os
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,66 @@ from general_ludd.db.models import Base, QueueModel
 from general_ludd.schemas.queue import INITIAL_QUEUES
 
 logger = logging.getLogger(__name__)
+
+_DEFAULT_JOURNAL_SIZE_LIMIT_BYTES = 64 * 1024 * 1024
+_MIN_JOURNAL_SIZE_LIMIT_BYTES = 1024 * 1024
+_MAX_JOURNAL_SIZE_LIMIT_BYTES = 1024 * 1024 * 1024
+_DEFAULT_WAL_AUTOCHECKPOINT_PAGES = 1000
+_MAX_WAL_AUTOCHECKPOINT_PAGES = 100_000
+_DEFAULT_BUSY_TIMEOUT_MS = 5000
+_MAX_BUSY_TIMEOUT_MS = 60_000
+
+
+@dataclass(frozen=True, slots=True)
+class _SqliteWalSettings:
+    journal_size_limit_bytes: int
+    wal_autocheckpoint_pages: int
+    busy_timeout_ms: int
+
+
+def _bounded_int_setting(
+    config: dict[str, Any],
+    name: str,
+    *,
+    default: int,
+    minimum: int,
+    maximum: int,
+) -> int:
+    value = config.get(name, default)
+    if type(value) is not int or not minimum <= value <= maximum:
+        raise ValueError(
+            f"database.{name} must be an integer between {minimum} and {maximum}"
+        )
+    return value
+
+
+def _resolve_sqlite_wal_settings(
+    config: dict[str, Any] | None = None,
+) -> _SqliteWalSettings:
+    cfg = config or {}
+    return _SqliteWalSettings(
+        journal_size_limit_bytes=_bounded_int_setting(
+            cfg,
+            "journal_size_limit_bytes",
+            default=_DEFAULT_JOURNAL_SIZE_LIMIT_BYTES,
+            minimum=_MIN_JOURNAL_SIZE_LIMIT_BYTES,
+            maximum=_MAX_JOURNAL_SIZE_LIMIT_BYTES,
+        ),
+        wal_autocheckpoint_pages=_bounded_int_setting(
+            cfg,
+            "wal_autocheckpoint_pages",
+            default=_DEFAULT_WAL_AUTOCHECKPOINT_PAGES,
+            minimum=1,
+            maximum=_MAX_WAL_AUTOCHECKPOINT_PAGES,
+        ),
+        busy_timeout_ms=_bounded_int_setting(
+            cfg,
+            "busy_timeout_ms",
+            default=_DEFAULT_BUSY_TIMEOUT_MS,
+            minimum=1,
+            maximum=_MAX_BUSY_TIMEOUT_MS,
+        ),
+    )
 
 
 def _install_sqlite_async_pool_compat() -> None:
@@ -79,15 +140,24 @@ def is_sqlite_url(url: str | None) -> bool:
     return "sqlite" in url
 
 
-def run_wal_pragmas(engine: AsyncEngine) -> None:
+def run_wal_pragmas(
+    engine: AsyncEngine, config: dict[str, Any] | None = None
+) -> None:
     if not is_sqlite_url(str(engine.url)):
         return
+    settings = _resolve_sqlite_wal_settings(config)
 
     @event.listens_for(engine.sync_engine, "connect")
     def _set_sqlite_pragmas(dbapi_conn: Any, _connection_record: Any) -> None:
         cursor = dbapi_conn.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.execute(
+            f"PRAGMA journal_size_limit={settings.journal_size_limit_bytes}"
+        )
+        cursor.execute(
+            f"PRAGMA wal_autocheckpoint={settings.wal_autocheckpoint_pages}"
+        )
+        cursor.execute(f"PRAGMA busy_timeout={settings.busy_timeout_ms}")
         cursor.execute("PRAGMA synchronous=NORMAL")
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.execute("PRAGMA temp_store=MEMORY")
@@ -120,12 +190,14 @@ def init_engine_from_config(config: dict[str, Any] | None = None) -> AsyncEngine
     url = _compose_db_url(cfg)
     if not url:
         url = get_default_db_url()
+    if is_sqlite_url(url):
+        _resolve_sqlite_wal_settings(cfg)
     engine = create_async_engine(url)
     if is_sqlite_url(url):
         # ``create_async_engine`` does not create a file-backed SQLite database
         # until its first connection.  Callers use engine construction as the
         # provisioning boundary, so ensure the path exists immediately.
-        run_wal_pragmas(engine)
+        run_wal_pragmas(engine, cfg)
         db_path = str(engine.url).replace("sqlite+aiosqlite:///", "")
         if db_path:
             Path(db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -159,8 +231,10 @@ def init_read_only_engine_from_config(config: dict[str, Any] | None = None) -> A
     url = _compose_db_url(cfg)
     if not url:
         url = get_default_db_url()
+    if is_sqlite_url(url):
+        _resolve_sqlite_wal_settings(cfg)
     engine = create_async_engine(url)
-    run_wal_pragmas(engine)
+    run_wal_pragmas(engine, cfg)
     run_read_only_pragma(engine)
     if is_sqlite_url(url):
         db_path = str(engine.url).replace("sqlite+aiosqlite:///", "")

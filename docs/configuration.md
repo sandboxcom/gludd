@@ -88,9 +88,27 @@ it must be a `sqlite+aiosqlite:///` URL; any other URL is refused at startup.
 database:
   # Optional: override the default SQLite path
   url: sqlite+aiosqlite:////var/lib/general-ludd/gludd.db
+  # WAL retention after a successful reset/checkpoint (1 MiB..1 GiB).
+  journal_size_limit_bytes: 67108864
+  # Trigger a passive checkpoint after this many pages (1..100000).
+  wal_autocheckpoint_pages: 1000
+  # Bound lock waiting so a stalled writer cannot block forever (1..60000 ms).
+  busy_timeout_ms: 5000
 ```
 
 Environment variable `DATABASE_URL` overrides the above (must also be a SQLite URL).
+The same keys can be overridden through the nested `GLUDD_DATABASE` settings
+object. Invalid types, booleans, numeric strings, zero, negative, or out-of-range
+values fail startup before the SQLite file is provisioned.
+
+These settings bound retained WAL size after a successful reset and control when
+passive checkpoints are attempted; they are not an absolute file-size guarantee
+during checkpoint starvation. The SQLite user-forum reports
+[WAL growth past the auto-checkpoint threshold](https://sqlite.org/forum/info/915267efb1f68f9c525c32e3ae8ef4251285e1111c5f5c221fb348df50119640)
+when a read statement remains unfinished, and confirms that
+[passive auto-checkpoints cannot restart or truncate the WAL](https://sqlite.org/forum/forumpost/e37d976043a22458070ce00a4ae00dc6e49ef6dd34aa59e2c5ff7cf5fd543a93).
+Production operators should monitor the database, `-wal`, and filesystem as one
+capacity unit until the coordinated checkpoint/disk-pressure phase is available.
 
 ### agents
 

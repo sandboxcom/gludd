@@ -78,6 +78,66 @@ class TestWalModePragmas:
         await engine.dispose()
 
     @pytest.mark.asyncio
+    async def test_wal_growth_defaults_are_bounded(self, tmp_path):
+        db_path = tmp_path / "test_wal_bounds.db"
+        engine = init_engine_from_config(
+            {"url": f"sqlite+aiosqlite:///{db_path}"}
+        )
+        async with engine.begin() as conn:
+            journal_limit = await conn.execute(text("PRAGMA journal_size_limit"))
+            autocheckpoint = await conn.execute(text("PRAGMA wal_autocheckpoint"))
+
+            assert journal_limit.scalar() == 64 * 1024 * 1024
+            assert autocheckpoint.scalar() == 1000
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_wal_limits_are_configurable_per_database(self, tmp_path):
+        db_path = tmp_path / "test_custom_wal_bounds.db"
+        engine = init_engine_from_config(
+            {
+                "url": f"sqlite+aiosqlite:///{db_path}",
+                "journal_size_limit_bytes": 8 * 1024 * 1024,
+                "wal_autocheckpoint_pages": 256,
+                "busy_timeout_ms": 12_500,
+            }
+        )
+        async with engine.begin() as conn:
+            journal_limit = await conn.execute(text("PRAGMA journal_size_limit"))
+            autocheckpoint = await conn.execute(text("PRAGMA wal_autocheckpoint"))
+            busy_timeout = await conn.execute(text("PRAGMA busy_timeout"))
+
+            assert journal_limit.scalar() == 8 * 1024 * 1024
+            assert autocheckpoint.scalar() == 256
+            assert busy_timeout.scalar() == 12_500
+        await engine.dispose()
+
+    @pytest.mark.parametrize(
+        ("setting", "value"),
+        [
+            ("journal_size_limit_bytes", -1),
+            ("journal_size_limit_bytes", 1024 * 1024 * 1024 + 1),
+            ("wal_autocheckpoint_pages", 0),
+            ("wal_autocheckpoint_pages", 100_001),
+            ("busy_timeout_ms", 0),
+            ("busy_timeout_ms", 60_001),
+            ("busy_timeout_ms", True),
+            ("busy_timeout_ms", "5000"),
+        ],
+    )
+    def test_invalid_wal_settings_fail_before_provisioning(
+        self, tmp_path, setting, value
+    ):
+        db_path = tmp_path / "invalid.db"
+
+        with pytest.raises(ValueError, match=setting):
+            init_engine_from_config(
+                {"url": f"sqlite+aiosqlite:///{db_path}", setting: value}
+            )
+
+        assert not db_path.exists()
+
+    @pytest.mark.asyncio
     async def test_synchronous_normal(self, tmp_path):
         db_path = tmp_path / "test_sync.db"
         url = f"sqlite+aiosqlite:///{db_path}"
