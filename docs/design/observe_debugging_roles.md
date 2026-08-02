@@ -855,6 +855,41 @@ catalogs, query failures, and auth/transport failure. The production
 `ansible-lint` profile reports zero failures and zero warnings without skip
 rules.
 
+The `test_gludd_observe` Molecule scenario now closes the direct-module coverage
+item from Section 3.4. It runs all four operations against the reusable HTTP mock
+daemon, proves client-side time-window filtering when a source ignores bounds,
+checks deterministic topology and incident grouping, and verifies that a 503 from
+one registered connector becomes an isolated error while the other sources are
+returned. The scenario uses Molecule's local/default driver with no managed
+platform because the system under test is the Ansible module-to-daemon HTTP seam.
+That choice follows the operator guidance in the
+[Ansible forum's Molecule setup discussion](https://forum.ansible.com/t/molecule-setup-documentation-and-testing/626):
+scenario step playbooks are independent lifecycle units and simple cases may need
+only a converge play. It also avoids the long-lived delegated-driver inventory
+ambiguity reported in
+[ansible/molecule#1292](https://github.com/ansible/molecule/issues/1292), where
+maintainers explain that delegated users must supply their own connection setup.
+Gludd instead binds its namespaced mock daemon to loopback, records every request,
+and keeps its PID, async-job identifier, and result below Molecule's randomized
+ephemeral directory. That subdirectory is mode `0700`, the result and job ID are
+mode `0600`, launch/inspection/termination use argument-vector Ansible modules,
+and cleanup kills only a PID whose command line contains the exact server,
+port, and private PID-file path before removing that one directory. Repeated
+cleanup is idempotent and refuses to conceal a listener it did not stop.
+
+Molecule 26.2 changed scenario discovery for large and nested trees. Its
+[upstream discovery change](https://github.com/ansible/molecule/pull/4613)
+documents `MOLECULE_GLOB` as the supported selection boundary, and the earlier
+[Ansible forum release discussion](https://forum.ansible.com/t/release-announcement-molecule-v24-8-0/7906)
+records that Molecule commands were being aligned on that variable. Gludd's
+`molecule-test` target therefore points directly at the canonical
+`molecule/playbooks/*/molecule.yml` tree instead of copying a selected scenario
+into a transient second source tree. A checked-in, no-op `default` scenario
+declares `shared_state: false`; this satisfies Molecule's discovery probe without
+creating infrastructure or emitting a false critical error. `molecule-reset`
+uses Molecule's own scoped state reset rather than recursively deleting a source
+directory.
+
 ---
 
 ## 6. Change log
@@ -874,3 +909,7 @@ rules.
   replaced the partial duplicate networking role with canonical collection
   delegation, and documented operator reports behind the resolver/path-safety
   decisions.
+- **2026-08-02 (rev 4):** Added executable Molecule coverage for every
+  `gludd_observe` operation, bounded fan-out, topology/correlation, and isolated
+  connector failure; documented the relevant Molecule operator reports and
+  aligned scenario discovery/reset with the Molecule 26 contract.

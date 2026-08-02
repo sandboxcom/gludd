@@ -374,7 +374,8 @@ help:
 	@echo "  --- Ansible ---"
 	@echo "  ansible-syntax        Validate playbook syntax"
 	@echo "  playbook-list         List registered playbooks"
-	@echo "  molecule-test         Run molecule tests"
+	@echo "  molecule-test SCENARIO=<name>   Run one canonical Molecule scenario"
+	@echo "  molecule-reset SCENARIO=<name>  Clear one scenario's Molecule-owned state"
 	@echo ""
 	@echo "  --- CI ---"
 	@echo "  ci-kill-zombie          cancel a CI run via gh run cancel"
@@ -2035,14 +2036,7 @@ molecule-clean:
 molecule-test:
 	@if [ -z "$(SCENARIO)" ]; then echo "Usage: make molecule-test SCENARIO=noop|prompt_eval|runtime_validate"; exit 1; fi
 	@echo "Running molecule scenario: $(SCENARIO)"
-	@rm -rf "molecule/$(SCENARIO)"; \
-	mkdir -p "molecule/$(SCENARIO)"; \
-	cp "molecule/playbooks/$(SCENARIO)/molecule.yml" "molecule/$(SCENARIO)/"; \
-	cp -r "molecule/playbooks/$(SCENARIO)/default" "molecule/$(SCENARIO)/default"; \
-	$(UV) run molecule test -s "$(SCENARIO)"; \
-	EXIT_CODE=$$?; \
-	rm -rf "molecule/$(SCENARIO)"; \
-	exit $$EXIT_CODE
+	@MOLECULE_GLOB="molecule/playbooks/*/molecule.yml" $(UV) run molecule test -s "$(SCENARIO)"
 
 git-status:
 	@git status --short || echo "Not a git repo"
@@ -6794,8 +6788,7 @@ remove-workspace-file:
 molecule-reset:
 	@[ -n "$(SCENARIO)" ] || { echo "Usage: make molecule-reset SCENARIO=name"; exit 1; }
 	@$(MAKE) --no-print-directory cleanup-molecule-processes
-	@/bin/rm -rf "molecule/$(SCENARIO)"
-	@echo "Reset molecule scenario workspace: $(SCENARIO)"
+	@MOLECULE_GLOB="molecule/playbooks/*/molecule.yml" $(UV) run molecule reset -s "$(SCENARIO)"
 
 show-multitask-state:
 	@if [ -f /tmp/gludd-multitask-state.json ]; then ls -la /tmp/gludd-multitask-state.json; echo "---"; cat /tmp/gludd-multitask-state.json; else echo "File does not exist: /tmp/gludd-multitask-state.json"; fi

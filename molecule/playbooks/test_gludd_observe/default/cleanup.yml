@@ -1,0 +1,15 @@
+---
+- name: Cleanup - stop the gludd_observe mock daemon and remove private state
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8897', true) }}"
+    scenario_state_dir: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/gludd-observe-runtime"
+    pidfile: "{{ scenario_state_dir }}/daemon.pid"
+    async_jid_file: "{{ scenario_state_dir }}/ansible-job-id"
+    expected_server_path: "{{ project_dir }}/molecule/mock_daemon/server.py"
+  tasks:
+    - name: Stop the exact scenario-owned process and remove its private state
+      ansible.builtin.include_tasks: stop_mock.yml

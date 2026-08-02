@@ -1,0 +1,84 @@
+---
+- name: Inspect the private PID file
+  ansible.builtin.stat:
+    path: "{{ pidfile }}"
+    follow: false
+  register: mock_pid_file
+
+- name: Read the private PID file when it is a regular file
+  ansible.builtin.slurp:
+    src: "{{ pidfile }}"
+  register: mock_pid_raw
+  when:
+    - mock_pid_file.stat.exists
+    - mock_pid_file.stat.isreg | default(false)
+
+- name: Decode the validated PID candidate
+  ansible.builtin.set_fact:
+    mock_pid: "{{ mock_pid_raw.content | default('') | b64decode | trim }}"
+
+- name: Inspect only the validated PID candidate
+  ansible.builtin.command:
+    argv:
+      - /bin/ps
+      - -p
+      - "{{ mock_pid }}"
+      - -o
+      - command=
+  register: mock_process
+  changed_when: false
+  failed_when: false
+  when: mock_pid is match('^[1-9][0-9]*$')
+
+- name: Stop only the process owned by this exact scenario
+  ansible.builtin.command:
+    argv:
+      - /bin/kill
+      - "{{ mock_pid }}"
+  register: mock_kill
+  changed_when: mock_kill.rc == 0
+  failed_when: false
+  when:
+    - mock_process is not skipped
+    - mock_process.rc | default(1) == 0
+    - expected_server_path in mock_process.stdout
+    - ('--port ' ~ mock_port) in mock_process.stdout
+    - ('--pidfile ' ~ pidfile) in mock_process.stdout
+
+- name: Prove the scenario port is stopped before deleting lifecycle evidence
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ mock_port }}"
+    state: stopped
+    timeout: 10
+
+- name: Inspect the private async job identifier
+  ansible.builtin.stat:
+    path: "{{ async_jid_file }}"
+    follow: false
+  register: mock_async_file
+
+- name: Read the private async job identifier
+  ansible.builtin.slurp:
+    src: "{{ async_jid_file }}"
+  register: mock_async_raw
+  when:
+    - mock_async_file.stat.exists
+    - mock_async_file.stat.isreg | default(false)
+
+- name: Decode the async job identifier
+  ansible.builtin.set_fact:
+    mock_async_jid: "{{ mock_async_raw.content | default('') | b64decode | trim }}"
+
+- name: Remove the exact Ansible async job record
+  ansible.builtin.async_status:
+    jid: "{{ mock_async_jid }}"
+    mode: cleanup
+  changed_when: false
+  failed_when: false
+  when: mock_async_jid | length > 0
+
+- name: Remove only this scenario's private runtime directory
+  ansible.builtin.file:
+    path: "{{ scenario_state_dir }}"
+    state: absent

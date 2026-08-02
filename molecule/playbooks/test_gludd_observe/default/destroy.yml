@@ -1,0 +1,10 @@
+---
+- name: Destroy - confirm the local gludd_observe scenario owns no platform
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Record the no-platform lifecycle boundary
+      ansible.builtin.debug:
+        msg: "gludd_observe uses a loopback mock daemon cleaned by cleanup.yml"
+      changed_when: false

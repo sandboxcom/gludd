@@ -14,10 +14,13 @@ shape matches what each module parses:
   GET  /api/facts                     -> 200 work/todos/models/history/...  (gludd_facts)
   GET  /api/metrics                   -> 200 agents/usage/cost/rankings     (gludd_metrics)
   GET  /api/traces                    -> 200 recent/by_phase/otel status    (gludd_traces)
+  GET  /api/observe/sources           -> 200 registered source metadata     (gludd_observe discovery)
+  POST /api/observe/query             -> 200 source records / isolated 503  (gludd_observe fan-out)
   GET  /api/messages                  -> 200 {"messages":[...]}             (gludd_message receive)
   POST /api/messages                  -> 201 created message                (gludd_message send)
   POST /api/messages/<id>/ack         -> 200 {"acked":true}                 (gludd_message ack)
-  POST /admin/models/call             -> 200 {"text":..,"usage":..}         (gludd_model_call / gludd_agent_run / gludd_langchain_generate / gludd_langgraph_decision)
+  POST /admin/models/call             -> 200 {"text":..,"usage":..}
+                                             (model-call agent modules)
   POST /admin/models/workflow         -> 200 {"content":..,"quality_score":..} (gludd_langgraph_workflow)
   GET  /api/todos/<id>                 -> 200 todo record                    (gludd_db todo_get)
   PATCH /api/todos/<id>               -> 200 {"status":..}                  (gludd_db todo_update_status)
@@ -36,9 +39,11 @@ shape matches what each module parses:
   GET  /api/environment               -> 200 consolidated env brief          (gludd_environment snapshot)
   GET  /api/environment/advise        -> 200 per-work-type advice block      (gludd_environment advice merge)
   GET  /admin/processes               -> 200 {"processes":[...],"count":N}    (gludd_process list / gludd_proc_monitor)
-  GET  /admin/processes/<pid>/stats   -> 200 psutil-shaped stats snapshot     (gludd_process status / gludd_proc_monitor)
+  GET  /admin/processes/<pid>/stats   -> 200 psutil-shaped stats snapshot
+                                             (gludd_process status / gludd_proc_monitor)
   POST /admin/processes/<pid>/signal  -> 200 {"ok":true,"pid":..,"signal":..} (gludd_process signal)
-  GET  /admin/ornith/pairs            -> 200 {"pairs":[...],"count":N}        (gludd_ornith pairs — rejected training pairs)
+  GET  /admin/ornith/pairs            -> 200 {"pairs":[...],"count":N}
+                                             (gludd_ornith rejected pairs)
   GET  /process-audit                  -> 200 guardrail_health/plugin_footprint/.. (gludd_audit)
   POST /api/human-todos               -> 201 created human-todo               (gludd_human_todo present)
 
@@ -63,11 +68,10 @@ import json
 import os
 import sys
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
-
 
 # ---------------------------------------------------------------------------
 # In-memory request log
@@ -164,6 +168,77 @@ TRACES_SNAPSHOT = {
         "generate": {"span_count": 1, "total_cost_usd": 0.0021, "total_tokens": 150, "success_count": 1},
     },
     "otel_exporter_status": "disabled",
+}
+
+
+# Registered observability sources + normalized records used by the direct
+# gludd_observe scenario.  The mock intentionally ignores the query bounds so
+# the real facade's defensive post-filtering is exercised.  ``broken-events``
+# returns 503 in ``do_POST`` to prove one failing connector does not abort the
+# successful fan-out.
+OBSERVE_SOURCES = [
+    {"name": "prod-logs", "kind": "logs"},
+    {"name": "prod-metrics", "kind": "metrics"},
+    {"name": "prod-traces", "kind": "traces"},
+    {"name": "broken-events", "kind": "events"},
+]
+
+OBSERVE_RECORDS = {
+    "prod-logs": [
+        {
+            "ts": 20.0,
+            "source": "prod-logs",
+            "kind": "logs",
+            "level_or_status": "error",
+            "message": "checkout request timed out",
+            "labels": {
+                "trace_id": "incident-42",
+                "service": "checkout",
+                "host": "Web-01:8080",
+            },
+        },
+        {
+            "ts": 60.0,
+            "source": "prod-logs",
+            "kind": "logs",
+            "level_or_status": "info",
+            "message": "outside requested window",
+            "labels": {
+                "trace_id": "incident-42",
+                "service": "checkout",
+                "host": "Web-01:8080",
+            },
+        },
+    ],
+    "prod-metrics": [
+        {
+            "ts": 10.0,
+            "source": "prod-metrics",
+            "kind": "metrics",
+            "level_or_status": "warn",
+            "message": "latency elevated",
+            "value": 1.25,
+            "labels": {
+                "trace_id": "incident-42",
+                "service": "checkout",
+                "host": "web-01",
+            },
+        }
+    ],
+    "prod-traces": [
+        {
+            "ts": 30.0,
+            "source": "prod-traces",
+            "kind": "traces",
+            "level_or_status": "error",
+            "message": "upstream timeout",
+            "labels": {
+                "trace_id": "incident-42",
+                "service": "checkout",
+                "host": "WEB-01",
+            },
+        }
+    ],
 }
 
 FACTS_SNAPSHOT = {
@@ -730,10 +805,7 @@ def _ranking_response(task_type: str) -> dict:
         },
     ]
     q = (task_type or "").strip().lower()
-    if q:
-        filtered = [r for r in all_rankings if r["task_type"] == q]
-    else:
-        filtered = list(all_rankings)
+    filtered = [r for r in all_rankings if r["task_type"] == q] if q else list(all_rankings)
     filtered.sort(key=lambda r: r["composite_score"], reverse=True)
     return {"rankings": filtered, "task_type": task_type}
 
@@ -904,7 +976,7 @@ def _pid_from_proc_path(path: str) -> int | None:
 
 class MockDaemonHandler(BaseHTTPRequestHandler):
     # Silence default request logging to stderr noise; route to logfile if set.
-    def log_message(self, fmt: str, *args: object) -> None:  # noqa: A003
+    def log_message(self, fmt: str, *args: object) -> None:
         sys.stderr.write("[mock-daemon] " + (fmt % args) + "\n")
 
     def _send_json(self, status: int, body: dict) -> None:
@@ -933,7 +1005,7 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             return {}
 
     # ---- GET --------------------------------------------------------------
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         path = urlparse(self.path).path
         _record_request("GET", path)
         if path == "/__requests":
@@ -965,6 +1037,8 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             self._send_json(200, dict(METRICS_SNAPSHOT))
         elif path == "/api/traces":
             self._send_json(200, dict(TRACES_SNAPSHOT))
+        elif path == "/api/observe/sources":
+            self._send_json(200, {"sources": list(OBSERVE_SOURCES)})
         elif path == "/api/messages":
             self._send_json(200, {"messages": [
                 {"id": "MSG-MOCK-IN-1", "sender": "planner", "topic": "standup", "status": "unread"},
@@ -975,7 +1049,14 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
         elif path == "/api/resource-preferences":
             self._send_json(200, {"preference": "mock-profile", "value": "mock-profile"})
         elif path == "/api/features":
-            self._send_json(200, {"features": list(FEATURES_SNAPSHOT), "total": len(FEATURES_SNAPSHOT), "filtered": False})
+            self._send_json(
+                200,
+                {
+                    "features": list(FEATURES_SNAPSHOT),
+                    "total": len(FEATURES_SNAPSHOT),
+                    "filtered": False,
+                },
+            )
         elif path == "/api/spend":
             self._send_json(200, dict(SPEND_SNAPSHOT))
         elif path == "/api/accounting":
@@ -1040,15 +1121,45 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             })
         # ---- GitHub API mock routes (gha_usage role) ------------------------
         elif path == "/repos/mock-org/mock-repo/actions/runs":
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             self._send_json(200, {
                 "total_count": 5,
                 "workflow_runs": [
-                    {"id": 1, "name": "gate", "conclusion": "success", "status": "completed", "created_at": now.isoformat()},
-                    {"id": 2, "name": "pytest", "conclusion": "success", "status": "completed", "created_at": now.isoformat()},
-                    {"id": 3, "name": "lint", "conclusion": "success", "status": "completed", "created_at": (now - timedelta(hours=2)).isoformat()},
-                    {"id": 4, "name": "typecheck", "conclusion": "failure", "status": "completed", "created_at": (now - timedelta(hours=6)).isoformat()},
-                    {"id": 5, "name": "deploy", "conclusion": "success", "status": "completed", "created_at": (now - timedelta(hours=22)).isoformat()},
+                    {
+                        "id": 1,
+                        "name": "gate",
+                        "conclusion": "success",
+                        "status": "completed",
+                        "created_at": now.isoformat(),
+                    },
+                    {
+                        "id": 2,
+                        "name": "pytest",
+                        "conclusion": "success",
+                        "status": "completed",
+                        "created_at": now.isoformat(),
+                    },
+                    {
+                        "id": 3,
+                        "name": "lint",
+                        "conclusion": "success",
+                        "status": "completed",
+                        "created_at": (now - timedelta(hours=2)).isoformat(),
+                    },
+                    {
+                        "id": 4,
+                        "name": "typecheck",
+                        "conclusion": "failure",
+                        "status": "completed",
+                        "created_at": (now - timedelta(hours=6)).isoformat(),
+                    },
+                    {
+                        "id": 5,
+                        "name": "deploy",
+                        "conclusion": "success",
+                        "status": "completed",
+                        "created_at": (now - timedelta(hours=22)).isoformat(),
+                    },
                 ],
             })
         elif path == "/repos/mock-org/mock-repo/actions/workflows":
@@ -1072,7 +1183,7 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             self._send_json(404, {"detail": f"no mock route for GET {path}"})
 
     # ---- POST -------------------------------------------------------------
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         path = urlparse(self.path).path
         _record_request("POST", path)
         payload = self._read_body()
@@ -1102,6 +1213,14 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             self._send_json(200, _schedule_response(payload))
         elif path == "/api/dispatch":
             self._send_json(200, _dispatch_response(payload))
+        elif path == "/api/observe/query":
+            source = payload.get("source")
+            if source == "broken-events":
+                self._send_json(503, {"detail": "mock connector unavailable"})
+            elif source not in OBSERVE_RECORDS:
+                self._send_json(404, {"detail": "unknown registered source"})
+            else:
+                self._send_json(200, {"records": list(OBSERVE_RECORDS[source])})
         elif path == "/admin/stream/dispatch":
             self._send_json(200, _stream_dispatch_response(payload))
         elif path == "/api/human-todos":
@@ -1133,7 +1252,7 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             self._send_json(404, {"detail": f"no mock route for POST {path}"})
 
     # ---- PATCH ------------------------------------------------------------
-    def do_PATCH(self) -> None:  # noqa: N802
+    def do_PATCH(self) -> None:
         path = urlparse(self.path).path
         _record_request("PATCH", path)
         payload = self._read_body()

@@ -114,6 +114,38 @@ class TestMoleculeMakeTarget:
         assert "END failed molecule log" in recipe
         assert "tail -n $${MOLECULE_LOG_TAIL_LINES:-200}" in recipe
 
+    def test_single_scenario_uses_the_canonical_source_glob(self) -> None:
+        """Target one source scenario without provoking default discovery errors."""
+        content = _read_makefile()
+        match = re.search(
+            r"^molecule-test:\n(.*?)(?=^\S|\Z)", content, re.MULTILINE | re.DOTALL
+        )
+        assert match, "could not extract molecule-test recipe"
+        recipe = match.group(1)
+        assert 'MOLECULE_GLOB="molecule/playbooks/*/molecule.yml"' in recipe
+        assert 'molecule test -s "$(SCENARIO)"' in recipe
+        assert 'rm -rf "molecule/$(SCENARIO)"' not in recipe
+        assert 'cp "molecule/playbooks/$(SCENARIO)/molecule.yml"' not in recipe
+
+    def test_canonical_default_scenario_disables_shared_state(self) -> None:
+        """Molecule must not emit a false critical while probing shared state."""
+        default_config = SCENARIOS_ROOT / "default" / "molecule.yml"
+        assert default_config.is_file()
+        config = yaml.safe_load(default_config.read_text())
+        assert config["shared_state"] is False
+        assert config["scenario"]["test_sequence"] == []
+
+    def test_reset_clears_molecule_state_without_deleting_source(self) -> None:
+        content = _read_makefile()
+        match = re.search(
+            r"^molecule-reset:\n(.*?)(?=^\S|\Z)", content, re.MULTILINE | re.DOTALL
+        )
+        assert match, "could not extract molecule-reset recipe"
+        recipe = match.group(1)
+        assert 'MOLECULE_GLOB="molecule/playbooks/*/molecule.yml"' in recipe
+        assert 'molecule reset -s "$(SCENARIO)"' in recipe
+        assert 'rm -rf "molecule/$(SCENARIO)"' not in recipe
+
 
 # ---------------------------------------------------------------------------
 # scenario coverage

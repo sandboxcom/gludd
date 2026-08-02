@@ -116,6 +116,7 @@ _NOT_YET_COVERED_MODULES: set[str] = {
 #   gludd_introspect  -> test_gludd_introspect  (port 8838, GET /api/facts -> codebase block)
 #   gludd_abtest      -> test_gludd_abtest       (port 8839, in-proc run_ab: good promote + crasher reject)
 #   gludd_reload      -> test_gludd_reload       (port 8840, in-proc HotReloader: healthy swap + 404-gate rollback)
+#   gludd_observe     -> test_gludd_observe      (port 8897, all four cross-source ops + isolated connector failure)
 
 # Roles that DO NOT yet have a role_<name> molecule scenario.
 # New roles added in the observability batch (W-observe) that don't yet have

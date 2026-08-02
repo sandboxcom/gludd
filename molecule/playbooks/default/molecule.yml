@@ -1,0 +1,6 @@
+---
+# Canonical discovery anchor for Molecule 26.x. Individual Gludd scenarios own
+# their resources, so the default scenario deliberately has no lifecycle work.
+shared_state: false
+scenario:
+  test_sequence: []

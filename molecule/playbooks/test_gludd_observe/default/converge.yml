@@ -1,0 +1,108 @@
+---
+- name: Converge - exercise every gludd_observe operation over real HTTP
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8897', true) }}"
+    daemon_url: "http://127.0.0.1:{{ mock_port }}"
+    scenario_state_dir: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/gludd-observe-runtime"
+    result_file: "{{ scenario_state_dir }}/observe.json"
+  tasks:
+    - name: Reset the request log before this converge pass
+      ansible.builtin.uri:
+        url: "{{ daemon_url }}/__requests/reset"
+        method: POST
+        body_format: json
+        body: {}
+        status_code: 200
+      changed_when: false
+
+    - name: Query registered sources with a bounded window
+      general_ludd.agent.gludd_observe:
+        op: query_sources
+        role: molecule_observe_probe
+        kinds: [logs, metrics, traces]
+        spec:
+          query: timeout
+        start: 5.0
+        end: 35.0
+        daemon_url: "{{ daemon_url }}"
+      register: query_result
+
+    - name: Build a merged timeline while isolating one unavailable connector
+      general_ludd.agent.gludd_observe:
+        op: timeline
+        role: molecule_observe_probe
+        kinds: [logs, metrics, traces, events]
+        spec:
+          query: incident-42
+        start: 5.0
+        end: 35.0
+        daemon_url: "{{ daemon_url }}"
+      register: timeline_result
+
+    - name: Correlate the incident across three healthy sources
+      general_ludd.agent.gludd_observe:
+        op: correlate_incident
+        role: molecule_observe_probe
+        seed:
+          ts: 25.0
+          source: incident-seed
+          kind: events
+          labels:
+            trace_id: incident-42
+        kinds: [logs, metrics, traces]
+        by: trace_id
+        window_s: 20.0
+        spec:
+          query: incident-42
+        daemon_url: "{{ daemon_url }}"
+      register: correlate_result
+
+    - name: Derive service and host topology from the healthy sources
+      general_ludd.agent.gludd_observe:
+        op: topology
+        role: molecule_observe_probe
+        kinds: [logs, metrics, traces]
+        spec:
+          query: incident-42
+        daemon_url: "{{ daemon_url }}"
+      register: topology_result
+
+    - name: Assert all read-only operations returned their production contracts
+      ansible.builtin.assert:
+        that:
+          - query_result.changed == false
+          - query_result.ansible_facts.gludd_observe.operation == 'query_sources'
+          - query_result.ansible_facts.gludd_observe.role == 'molecule_observe_probe'
+          - query_result.ansible_facts.gludd_observe.records | map(attribute='ts') | list == [10.0, 20.0, 30.0]
+          - query_result.ansible_facts.gludd_observe.errors | length == 0
+          - timeline_result.changed == false
+          - timeline_result.ansible_facts.gludd_observe.records | length == 4
+          - timeline_result.ansible_facts.gludd_observe.records[0].source == 'prod-metrics'
+          - timeline_result.ansible_facts.gludd_observe.records[1].source == 'prod-logs'
+          - timeline_result.ansible_facts.gludd_observe.records[2].source == 'prod-traces'
+          - timeline_result.ansible_facts.gludd_observe.records[3].source == 'broken-events'
+          - timeline_result.ansible_facts.gludd_observe.errors | length == 1
+          - timeline_result.ansible_facts.gludd_observe.errors[0].message == 'query failed'
+          - correlate_result.changed == false
+          - correlate_result.ansible_facts.gludd_observe.groups['incident-42'] | length == 4
+          - topology_result.changed == false
+          - topology_result.ansible_facts.gludd_observe.topology.services.checkout == ['web-01']
+          - topology_result.ansible_facts.gludd_observe.topology.hosts['web-01'] == ['checkout']
+        fail_msg: "gludd_observe operation contract failed"
+
+    - name: Persist a deterministic result summary for verify
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'query_timestamps': query_result.ansible_facts.gludd_observe.records | map(attribute='ts') | list,
+            'timeline_sources': timeline_result.ansible_facts.gludd_observe.records | map(attribute='source') | list,
+            'timeline_error_count': timeline_result.ansible_facts.gludd_observe.errors | length,
+            'timeline_error_source': timeline_result.ansible_facts.gludd_observe.errors[0].source,
+            'correlation_group_size': correlate_result.ansible_facts.gludd_observe.groups['incident-42'] | length,
+            'topology': topology_result.ansible_facts.gludd_observe.topology
+          } | to_nice_json }}
+        dest: "{{ result_file }}"
+        mode: "0600"
