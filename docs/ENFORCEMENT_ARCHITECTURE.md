@@ -222,6 +222,29 @@ opencode.json: plugin[] ─┐
 | `make test-hook-runtime` | Functional hook runtime tests across all plugins. |
 | `make list-plugins` | Full roster with hooks and block conditions. |
 
+### 3.4 Deterministic OpenCode Boundary Tests
+
+Default enforcement tests do not use ``opencode run``. That subcommand opens
+a model session, couples a policy test to provider availability and cost, and
+has long-lived user reports of failing to terminate: OpenCode issue
+[#5888](https://github.com/anomalyco/opencode/issues/5888) reported recurring
+CLI hangs in December 2025, and issue
+[#17516](https://github.com/anomalyco/opencode/issues/17516) demonstrated in
+March 2026 that the process can remain alive after every tool call completes.
+
+Gludd therefore verifies the boundary in two bounded layers:
+
+1. ``tests/e2e/test_opencode_binary_boot.py`` starts the real
+   ``opencode serve`` loader on an ephemeral loopback port, observes its boot
+   log, and terminates the child deterministically.
+2. ``tests/e2e/test_opencode_enforce_make.py`` and
+   ``make test-hook-runtime`` load the real TypeScript source through the Node
+   hook harness and execute allow/deny inputs without a model or network call.
+
+Provider-backed agent loops belong only in explicitly live tests with their
+own credentials, budget and teardown contract; they are not a prerequisite
+for offline enforcement correctness.
+
 ---
 
 ## 4. Hook Surfaces
