@@ -40,6 +40,7 @@ _counter = 0
 def _run_plugin(
     ts_code: str,
     env_override: dict | None = None,
+    env_unset: tuple[str, ...] = ("GLUDD_PROJECT_ROOT",),
     cwd: str | None = None,
     timeout: int = 20,
 ) -> dict | None:
@@ -87,6 +88,8 @@ def _run_plugin(
             f"{state_prefix}-multitask-state.json"
         )
         env["GLUDD_WATCHDOG_CI_FILE"] = f"{state_prefix}-watchdog-ci.json"
+        for name in env_unset:
+            env.pop(name, None)
         if env_override:
             env.update(env_override)
         proc = subprocess.run(
@@ -144,6 +147,95 @@ def _extract_text(result: dict | None) -> str:
     out_text = result.get("output_text", "")
     res_text = result.get("result_text", "")
     return res_text if res_text else out_text
+
+
+def _resolve_project_root(
+    cwd: Path,
+    env_override: dict | None = None,
+) -> str:
+    """Invoke the real shared helper with an isolated environment and cwd."""
+    code = f"""\
+const mod = await import({json.dumps(str(ROOT / '.opencode' / 'lib' / 'shared.ts'))})
+console.log(JSON.stringify({{ project_root: mod.getProjectRoot() }}))
+"""
+    result = _run_plugin(code, env_override=env_override, cwd=str(cwd))
+    assert result is not None
+    return str(result["project_root"])
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 0: Project-root isolation — resolution may never borrow another checkout
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def test_project_root_without_override_or_markers_stays_at_cwd(tmp_path: Path):
+    """A clean temp cwd cannot inherit TASKS.md from a developer checkout."""
+    assert _resolve_project_root(tmp_path) == str(tmp_path)
+
+
+def test_shared_project_root_has_no_developer_checkout_fallback():
+    """The resolver must remain portable even when a historical path is absent."""
+    shared = (ROOT / ".opencode" / "lib" / "shared.ts").read_text()
+    assert "/Users/shawnwilson/gludd" not in shared
+
+
+def test_project_root_honors_valid_explicit_empty_directory(tmp_path: Path):
+    """A valid explicit root is authoritative even when it has no ledger."""
+    cwd = tmp_path / "caller"
+    explicit_root = tmp_path / "explicit"
+    cwd.mkdir()
+    explicit_root.mkdir()
+
+    assert _resolve_project_root(
+        cwd,
+        env_override={"GLUDD_PROJECT_ROOT": str(explicit_root)},
+    ) == str(explicit_root)
+
+
+def test_project_root_resolves_valid_relative_override_from_cwd(tmp_path: Path):
+    """Relative trusted configuration is normalized from the process cwd."""
+    explicit_root = tmp_path / "explicit"
+    explicit_root.mkdir()
+
+    assert _resolve_project_root(
+        tmp_path,
+        env_override={"GLUDD_PROJECT_ROOT": "explicit"},
+    ) == str(explicit_root)
+
+
+def test_project_root_walks_to_nearest_marker_without_override(tmp_path: Path):
+    """With no override, marker discovery is limited to cwd and its parents."""
+    project = tmp_path / "project"
+    nested = project / "work" / "deep"
+    nested.mkdir(parents=True)
+    (project / "opencode.json").write_text("{}\n")
+    (project / "Makefile").write_text("help:\n\t@true\n")
+
+    assert _resolve_project_root(nested) == str(project)
+
+
+def test_project_root_invalid_missing_override_falls_back_to_cwd(tmp_path: Path):
+    """A missing configured directory cannot redirect resolution elsewhere."""
+    missing = tmp_path / "does-not-exist"
+    assert _resolve_project_root(
+        tmp_path,
+        env_override={"GLUDD_PROJECT_ROOT": str(missing)},
+    ) == str(tmp_path)
+
+
+def test_project_root_invalid_file_override_falls_back_to_local_markers(tmp_path: Path):
+    """A non-directory override is ignored before the local marker walk."""
+    project = tmp_path / "project"
+    nested = project / "nested"
+    invalid_file = tmp_path / "not-a-directory"
+    nested.mkdir(parents=True)
+    invalid_file.write_text("not a root\n")
+    (project / "TASKS.md").write_text("- [x] local work only\n")
+
+    assert _resolve_project_root(
+        nested,
+        env_override={"GLUDD_PROJECT_ROOT": str(invalid_file)},
+    ) == str(project)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -64,7 +64,7 @@ All are optional unless marked **required**. Defaults are read from
 | `GLUDD_HIBERNATION_DIR` | Override the agent hibernation-store directory. | builtin | optional | `agents/hibernation.py:64` |
 | `GLUDD_BACKUP_DIR` | Override the account-backup destination directory. | system temp | optional | `account/backup.py:324` |
 | `GLUDD_PROJECT_DIR` | Override the active project working directory. | builtin | optional | `config/project_dir.py:31` |
-| `GLUDD_PROJECT_ROOT` | Root path for MCP builtin tool execution. | builtin | optional | `mcp/builtins.py:127` |
+| `GLUDD_PROJECT_ROOT` | Trusted explicit root for MCP builtin execution and enforcement-ledger discovery. It must name an existing directory; when unset or invalid, enforcement searches only `cwd` and its ancestors, then stays at `cwd`. | builtin | optional | `mcp/builtins.py:127`, `.opencode/lib/shared.ts:490` |
 | `GLUDD_WORKSPACE` | Workspace root (issue sources, model router, integrity router). | `""` | optional | `issue_sources/csv_excel.py:91` |
 | `GLUDD_REPO_ROOT` | Repo root for maintenance router operations. | `.` | optional | `routers/maintenance.py:27` |
 | `GLUDD_SELF_REPO_URL` | Override the git URL used for self-update. | builtin | optional | `projects/manager.py:70` |

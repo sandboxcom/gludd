@@ -256,15 +256,19 @@ export function writeHeartbeat(pluginName: string): void {
 // Resolution order: GLUDD_PROJECT_ROOT env (unconditional when the directory
 // exists — T34: an explicit root with no TASKS.md means "no pending work",
 // never "borrow another project's ledger") → walk up from cwd → cwd fallback.
+// Only the explicit environment override may select an unrelated directory;
+// marker discovery is restricted to cwd and its ancestors.
 // The cache is keyed on (GLUDD_PROJECT_ROOT, cwd) so a mid-session change to
 // either invalidates the cached resolution.
 
 let _cachedRoot: string | null = null
 let _cachedRootKey: string | null = null
 
-function _projectRootCacheKey(): string {
-  let cwd = ""
-  try { cwd = process.cwd() } catch { /* cwd deleted → key on env only */ }
+function _safeProjectCwd(): string {
+  try { return path.resolve(process.cwd()) } catch { return "." }
+}
+
+function _projectRootCacheKey(cwd: string): string {
   return `${process.env.GLUDD_PROJECT_ROOT || ""}\u0000${cwd}`
 }
 
@@ -484,18 +488,22 @@ export function recordSuccessfulDispatch(): void {
 }
 
 export function getProjectRoot(): string {
-  const key = _projectRootCacheKey()
+  const cwd = _safeProjectCwd()
+  const key = _projectRootCacheKey(cwd)
   if (_cachedRoot !== null && _cachedRootKey === key) return _cachedRoot
   try {
     const envRoot = process.env.GLUDD_PROJECT_ROOT
-    if (envRoot && fs.existsSync(envRoot) && fs.statSync(envRoot).isDirectory()) {
-      _cachedRoot = envRoot
+    const explicitRoot = envRoot
+      ? (path.isAbsolute(envRoot) ? path.normalize(envRoot) : path.resolve(cwd, envRoot))
+      : ""
+    if (explicitRoot && fs.statSync(explicitRoot).isDirectory()) {
+      _cachedRoot = explicitRoot
       _cachedRootKey = key
       return _cachedRoot
     }
   } catch { /* ignore */ }
   try {
-    let dir = process.cwd()
+    let dir = cwd
     for (let i = 0; i < 15; i++) {
       if (fs.existsSync(path.join(dir, "TASKS.md"))) {
         _cachedRoot = dir
@@ -512,19 +520,7 @@ export function getProjectRoot(): string {
       dir = parent
     }
   } catch { /* ignore */ }
-  // Hardcoded project root fallback: when the walk-up fails (e.g. opencode
-  // worker processes whose cwd is NOT the project root), try the known
-  // workspace path directly. This lets hasPendingWork() find TASKS.md and
-  // enables the enforce-multitask.ts UNDER-FLOOR block to fire.
-  const KNOWN_PROJECT_ROOT = "/Users/shawnwilson/gludd"
-  try {
-    if (fs.existsSync(path.join(KNOWN_PROJECT_ROOT, "TASKS.md"))) {
-      _cachedRoot = KNOWN_PROJECT_ROOT
-      _cachedRootKey = key
-      return _cachedRoot
-    }
-  } catch { /* ignore */ }
-  _cachedRoot = process.cwd()
+  _cachedRoot = cwd
   _cachedRootKey = key
   return _cachedRoot
 }
