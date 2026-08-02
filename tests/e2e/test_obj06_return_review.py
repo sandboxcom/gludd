@@ -40,11 +40,12 @@ class TestReturnReviewPipelineE2E:
     def test_reviewer_with_stub_model_produces_decision(self):
         profile = ModelProfile(
             model_profile_id="stub_reviewer",
-            provider="openai",
-            provider_package="langchain_openai",
-            provider_class_hint="ChatOpenAI",
+            provider="local",
+            provider_package="builtins",
+            provider_class_hint="object",
             model_name="stub",
             enabled=True,
+            api_metered=False,
         )
         secrets = EnvSecretsManager(overrides={"STUB_KEY": "test"})
         gateway = ModelGateway(profiles=[profile], secrets_manager=secrets)
