@@ -16,6 +16,12 @@ _COLLECTIONS_DIR = str(Path(__file__).resolve().parents[2] / "collections")
 if _COLLECTIONS_DIR not in sys.path:
     sys.path.insert(0, _COLLECTIONS_DIR)
 
+from ansible_collections.general_ludd.agent.plugins.module_utils.searxng import (  # noqa: E402
+    build_search_url,
+    extract_price,
+    extract_stars,
+    normalise_url,
+)
 from ansible_collections.general_ludd.travel.plugins.modules.flight_search import (  # noqa: E402
     _flight_booking_from_stub,
     _make_flight_search,
@@ -27,11 +33,7 @@ from ansible_collections.general_ludd.travel.plugins.modules.hotel_search import
     search_hotels,
 )
 from ansible_collections.general_ludd.travel.plugins.modules.searxng_search import (  # noqa: E402
-    _build_search_url,
     _extract_airport_codes,
-    _extract_price,
-    _extract_stars,
-    _normalise_url,
     _parse_activity_result,
     _parse_event_result,
     _parse_flight_result,
@@ -480,17 +482,17 @@ class TestHotelSearchSearchHotels:
 
 
 class TestSearxngSearch:
-    def test_normalise_url_adds_http(self) -> None:
-        assert _normalise_url("localhost:8080") == "http://localhost:8080"
+    def testnormalise_url_adds_http(self) -> None:
+        assert normalise_url("localhost:8080") == "http://localhost:8080"
 
-    def test_normalise_url_strips_trailing_slash(self) -> None:
-        assert _normalise_url("http://example.com/") == "http://example.com"
+    def testnormalise_url_strips_trailing_slash(self) -> None:
+        assert normalise_url("http://example.com/") == "http://example.com"
 
-    def test_normalise_url_preserves_https(self) -> None:
-        assert _normalise_url("https://searx.example.com") == "https://searx.example.com"
+    def testnormalise_url_preserves_https(self) -> None:
+        assert normalise_url("https://searx.example.com") == "https://searx.example.com"
 
-    def test_build_search_url_returns_correct_structure(self) -> None:
-        url = _build_search_url(
+    def testbuild_search_url_returns_correct_structure(self) -> None:
+        url = build_search_url(
             searxng_url="http://localhost:8080",
             query="flights NYC to Paris",
             category="flights",
@@ -503,8 +505,8 @@ class TestSearxngSearch:
         assert "q=flights" in url or "q=flights+NYC" in url
         assert "format=json" in url
 
-    def test_build_search_url_uses_custom_engines(self) -> None:
-        url = _build_search_url(
+    def testbuild_search_url_uses_custom_engines(self) -> None:
+        url = build_search_url(
             searxng_url="http://sx:8080",
             query="hotels Tokyo",
             category="hotels",
@@ -515,23 +517,23 @@ class TestSearxngSearch:
         )
         assert "engines=google%2Cbing" in url or "engines=google,bing" in url
 
-    def test_extract_price_returns_float(self) -> None:
-        assert _extract_price("Rooms from $350 per night") == 350.0
+    def testextract_price_returns_float(self) -> None:
+        assert extract_price("Rooms from $350 per night") == 350.0
 
-    def test_extract_price_simple_with_comma(self) -> None:
-        assert _extract_price("Price: $1,250 total") == 125.0
+    def testextract_price_simple_with_comma(self) -> None:
+        assert extract_price("Price: $1,250 total") == 125.0
 
-    def test_extract_price_no_match_returns_none(self) -> None:
-        assert _extract_price("No price info available") is None
+    def testextract_price_no_match_returns_none(self) -> None:
+        assert extract_price("No price info available") is None
 
-    def test_extract_stars_returns_float(self) -> None:
-        assert _extract_stars("4.5 star hotel") == 4.5
+    def testextract_stars_returns_float(self) -> None:
+        assert extract_stars("4.5 star hotel") == 4.5
 
-    def test_extract_stars_with_unicode(self) -> None:
-        assert _extract_stars("Rating: 4 \u2b50") == 4.0
+    def testextract_stars_with_unicode(self) -> None:
+        assert extract_stars("Rating: 4 \u2b50") == 4.0
 
-    def test_extract_stars_no_match_returns_none(self) -> None:
-        assert _extract_stars("Great hotel") is None
+    def testextract_stars_no_match_returns_none(self) -> None:
+        assert extract_stars("Great hotel") is None
 
     def test_extract_airport_codes(self) -> None:
         codes = _extract_airport_codes("Flight from JFK to LHR with stop at CDG")
@@ -778,14 +780,22 @@ class TestSearxngSearch:
         )
         assert len(results) == 3
 
-    def test_search_searxng_empty_engines_uses_default(self) -> None:
-        url = _build_search_url(
-            searxng_url="http://localhost:8080",
+    @patch("urllib.request.urlopen")
+    def test_search_searxng_empty_engines_uses_default(self, mock_urlopen: MagicMock) -> None:
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps({"results": []}).encode()
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_response
+
+        _, _, url = search_searxng(
             query="flights test",
             category="flights",
+            searxng_url="http://localhost:8080",
             engines="",
             max_results=10,
             safe_search=0,
             language="en",
+            timeout=10,
         )
         assert "google_flights" in url or "google" in url

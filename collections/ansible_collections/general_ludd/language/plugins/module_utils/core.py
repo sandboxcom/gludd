@@ -68,7 +68,6 @@ from general_ludd.language.locale_data import (
     RTL_LANGUAGES,
     format_currency,
     format_number,
-    get_locale_data as _get_locale_data,
     parse_bcp47,
 )
 from general_ludd.language.phonetic_data import (

@@ -1,0 +1,17 @@
+---
+# rag_example role defaults — demonstrates RAG using module_utils.rag.RAGPipeline
+
+# Output directory for artifacts
+artifact_dir: "/tmp/gludd-rag-example"
+
+# Daemon connectivity for model calls during query phase
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# RAG pipeline tuning (passed through to gludd_rag module)
+rag_top_k: 3
+rag_chunk_size: 1000
+rag_chunk_overlap: 200
+
+# Destructive ops guard — read-only (add_document is in-memory only)
+enable_git_push: false

@@ -29,6 +29,10 @@ DEFAULT_DAEMON_URL = "http://localhost:8000"
 DEFAULT_TIMEOUT = 120
 
 
+def Message(role: str, content: str) -> dict[str, str]:
+    return {"role": role, "content": content}
+
+
 def _env_daemon_url() -> str:
     return os.environ.get("GLUDD_DAEMON_URL") or os.environ.get("DAEMON_URL") or DEFAULT_DAEMON_URL
 

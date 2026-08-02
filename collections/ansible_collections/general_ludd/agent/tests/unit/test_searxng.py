@@ -335,7 +335,7 @@ class TestWebSearch:
             mock_resp.read.return_value = json.dumps(sample_search_response).encode()
             mock_urlopen.return_value = mock_resp
 
-            resp = client.web_search("ansible")
+            client.web_search("ansible")
 
         call_args = mock_urlopen.call_args[0][0]
         url = call_args.full_url if hasattr(call_args, "full_url") else str(call_args)

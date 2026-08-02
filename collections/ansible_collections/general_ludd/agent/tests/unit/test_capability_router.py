@@ -7,9 +7,7 @@ against mocked daemon HTTP responses.  No real daemon required.
 
 from __future__ import annotations
 
-import json
 import sys
-from copy import deepcopy
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -36,7 +34,6 @@ class TestDispatch:
 
     def test_dispatches_capability_to_daemon(self):
         """dispatch POSTs to /api/dispatch with kind=collection."""
-        from capability_router import _url
 
         mock_response = {
             "results": [{"ok": True, "capability": "agentic"}],
@@ -54,7 +51,7 @@ class TestDispatch:
             )
 
         mock_send.assert_called_once()
-        call_args, call_kwargs = mock_send.call_args
+        _call_args, call_kwargs = mock_send.call_args
         assert call_kwargs["method"] == "POST"
         assert call_kwargs["psk"] == FAKE_PSK
         body = call_kwargs["body"]
@@ -89,30 +86,36 @@ class TestDispatch:
 
     def test_dispatch_daemon_unreachable_raises(self):
         """dispatch with URLError raises CapabilityDispatchError."""
-        with patch(
-            "capability_router._send",
-            return_value={"_error": "connection refused", "_status": 0},
+        with (
+            patch(
+                "capability_router._send",
+                return_value={"_error": "connection refused", "_status": 0},
+            ),
+            pytest.raises(CapabilityDispatchError, match="daemon unreachable"),
         ):
-            with pytest.raises(CapabilityDispatchError, match="daemon unreachable"):
-                dispatch("tag", {}, daemon_url=DAEMON_URL, psk=FAKE_PSK)
+            dispatch("tag", {}, daemon_url=DAEMON_URL, psk=FAKE_PSK)
 
     def test_dispatch_unauthorized_raises(self):
         """dispatch with 401 raises CapabilityDispatchError."""
-        with patch(
-            "capability_router._send",
-            return_value={"_error": "", "_status": 401},
+        with (
+            patch(
+                "capability_router._send",
+                return_value={"_error": "", "_status": 401},
+            ),
+            pytest.raises(CapabilityDispatchError, match="unauthorized"),
         ):
-            with pytest.raises(CapabilityDispatchError, match="unauthorized"):
-                dispatch("tag", {}, daemon_url=DAEMON_URL, psk=FAKE_PSK)
+            dispatch("tag", {}, daemon_url=DAEMON_URL, psk=FAKE_PSK)
 
     def test_dispatch_http_error_raises(self):
         """dispatch with 422 raises CapabilityDispatchError."""
-        with patch(
-            "capability_router._send",
-            return_value={"_status": 422, "detail": "bad request"},
+        with (
+            patch(
+                "capability_router._send",
+                return_value={"_status": 422, "detail": "bad request"},
+            ),
+            pytest.raises(CapabilityDispatchError, match=r"failed.*bad request"),
         ):
-            with pytest.raises(CapabilityDispatchError, match="failed.*bad request"):
-                dispatch("tag", {}, daemon_url=DAEMON_URL, psk=FAKE_PSK)
+            dispatch("tag", {}, daemon_url=DAEMON_URL, psk=FAKE_PSK)
 
     def test_dispatch_forwards_model_profile(self):
         """dispatch includes model_profile in body when provided."""
@@ -229,30 +232,36 @@ class TestListCapabilities:
 
     def test_daemon_unreachable_raises(self):
         """URLError raises CapabilityDispatchError."""
-        with patch(
-            "capability_router._send",
-            return_value={"_error": "timed out", "_status": 0},
+        with (
+            patch(
+                "capability_router._send",
+                return_value={"_error": "timed out", "_status": 0},
+            ),
+            pytest.raises(CapabilityDispatchError, match="daemon unreachable"),
         ):
-            with pytest.raises(CapabilityDispatchError, match="daemon unreachable"):
-                list_capabilities(daemon_url=DAEMON_URL, psk=FAKE_PSK)
+            list_capabilities(daemon_url=DAEMON_URL, psk=FAKE_PSK)
 
     def test_unauthorized_raises(self):
         """401 raises CapabilityDispatchError."""
-        with patch(
-            "capability_router._send",
-            return_value={"_status": 401},
+        with (
+            patch(
+                "capability_router._send",
+                return_value={"_status": 401},
+            ),
+            pytest.raises(CapabilityDispatchError, match="unauthorized"),
         ):
-            with pytest.raises(CapabilityDispatchError, match="unauthorized"):
-                list_capabilities(daemon_url=DAEMON_URL, psk=FAKE_PSK)
+            list_capabilities(daemon_url=DAEMON_URL, psk=FAKE_PSK)
 
     def test_http_error_raises(self):
         """Non-200 HTTP status raises CapabilityDispatchError."""
-        with patch(
-            "capability_router._send",
-            return_value={"_status": 500, "detail": "internal error"},
+        with (
+            patch(
+                "capability_router._send",
+                return_value={"_status": 500, "detail": "internal error"},
+            ),
+            pytest.raises(CapabilityDispatchError, match=r"failed.*internal error"),
         ):
-            with pytest.raises(CapabilityDispatchError, match="failed.*internal error"):
-                list_capabilities(daemon_url=DAEMON_URL, psk=FAKE_PSK)
+            list_capabilities(daemon_url=DAEMON_URL, psk=FAKE_PSK)
 
     def test_returns_sorted_list(self):
         """Result is sorted alphabetically."""
@@ -350,42 +359,48 @@ class TestRegisterCapability:
 
     def test_daemon_unreachable_raises(self):
         """URLError during registration raises CapabilityDispatchError."""
-        with patch(
-            "capability_router._send",
-            return_value={"_error": "connection refused", "_status": 0},
+        with (
+            patch(
+                "capability_router._send",
+                return_value={"_error": "connection refused", "_status": 0},
+            ),
+            pytest.raises(CapabilityDispatchError, match="daemon unreachable"),
         ):
-            with pytest.raises(CapabilityDispatchError, match="daemon unreachable"):
-                register_capability(
-                    "cap",
-                    daemon_url=DAEMON_URL,
-                    psk=FAKE_PSK,
-                )
+            register_capability(
+                "cap",
+                daemon_url=DAEMON_URL,
+                psk=FAKE_PSK,
+            )
 
     def test_unauthorized_raises(self):
         """401 during registration raises CapabilityDispatchError."""
-        with patch(
-            "capability_router._send",
-            return_value={"_status": 401},
+        with (
+            patch(
+                "capability_router._send",
+                return_value={"_status": 401},
+            ),
+            pytest.raises(CapabilityDispatchError, match="unauthorized"),
         ):
-            with pytest.raises(CapabilityDispatchError, match="unauthorized"):
-                register_capability(
-                    "cap",
-                    daemon_url=DAEMON_URL,
-                    psk=FAKE_PSK,
-                )
+            register_capability(
+                "cap",
+                daemon_url=DAEMON_URL,
+                psk=FAKE_PSK,
+            )
 
     def test_http_error_raises(self):
         """Non-200/201 during registration raises CapabilityDispatchError."""
-        with patch(
-            "capability_router._send",
-            return_value={"_status": 422, "detail": "duplicate capability"},
+        with (
+            patch(
+                "capability_router._send",
+                return_value={"_status": 422, "detail": "duplicate capability"},
+            ),
+            pytest.raises(CapabilityDispatchError, match="duplicate capability"),
         ):
-            with pytest.raises(CapabilityDispatchError, match="duplicate capability"):
-                register_capability(
-                    "cap",
-                    daemon_url=DAEMON_URL,
-                    psk=FAKE_PSK,
-                )
+            register_capability(
+                "cap",
+                daemon_url=DAEMON_URL,
+                psk=FAKE_PSK,
+            )
 
     def test_multiple_registrations_accumulate(self):
         """Multiple register calls store all in the registry."""
@@ -465,7 +480,7 @@ class TestCapabilityDispatchError:
 
     def test_can_be_caught_as_exception(self):
         """CapabilityDispatchError can be caught via except Exception."""
-        with pytest.raises(Exception):
+        with pytest.raises(CapabilityDispatchError):
             raise CapabilityDispatchError("caught")
 
 
@@ -513,9 +528,9 @@ class TestSendHelper:
 
     def test_send_http_error_captures_body(self):
         """_send captures error body on HTTPError."""
-        from capability_router import _send
-
         import urllib.error
+
+        from capability_router import _send
 
         with patch(
             "capability_router.urllib.request.urlopen",
@@ -538,9 +553,9 @@ class TestSendHelper:
 
     def test_send_urllib_error_captures_reason(self):
         """_send captures URLError reason."""
-        from capability_router import _send
-
         import urllib.error
+
+        from capability_router import _send
 
         with patch(
             "capability_router.urllib.request.urlopen",
@@ -624,7 +639,7 @@ class TestDefaults:
         assert DEFAULT_TIMEOUT == 30
 
     def test_default_endpoints(self):
-        from capability_router import DISPATCH_ENDPOINT, DISPATCH_AVAILABLE_ENDPOINT
+        from capability_router import DISPATCH_AVAILABLE_ENDPOINT, DISPATCH_ENDPOINT
 
         assert DISPATCH_ENDPOINT == "/api/dispatch"
         assert DISPATCH_AVAILABLE_ENDPOINT == "/api/dispatch/available"

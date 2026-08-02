@@ -1,0 +1,22 @@
+---
+galaxy_info:
+  role_name: rag_example
+  author: Agentic Harness Agent
+  description: >
+    Demonstrates Retrieval-Augmented Generation (RAG) using the
+    general_ludd.agent collection's module_utils.rag.RAGPipeline.
+    Ingests travel brochures as documents, embeds them into a vector
+    store, and runs queries that retrieve relevant context for
+    model-generated answers. Shows how ANY collection can compose
+    the agent's rag.py, model_client.py, and embeddings.py module_utils
+    into a working RAG workflow. Uses the gludd_rag Ansible module.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

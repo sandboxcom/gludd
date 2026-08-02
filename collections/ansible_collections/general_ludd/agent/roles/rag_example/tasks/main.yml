@@ -1,0 +1,223 @@
+---
+# rag_example role — demonstrates RAG (Retrieval-Augmented Generation) using
+# the module_utils.rag.RAGPipeline via the gludd_rag Ansible module.
+#
+# This role ingests travel brochures as documents, then queries the RAG pipeline
+# to find relevant information. Any collection with access to the agent's
+# module_utils (rag.py, model_client.py, embeddings.py) can compose a RAG
+# workflow using this pattern.
+#
+# REQUIRES: a running gludd daemon on {{ daemon_url }} for model calls during
+# the query phase. Document ingestion (add_document) works offline using the
+# built-in HashEmbedder.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Ingest travel brochures ───────────────────────────────────────────────
+
+- name: Add Paris brochure
+  general_ludd.agent.gludd_rag:
+    op: add_document
+    text: |
+      Paris: The City of Light. Visit the Eiffel Tower for panoramic views,
+      the Louvre Museum to see the Mona Lisa and Venus de Milo, and
+      Notre-Dame Cathedral for Gothic architecture. Best visited April-June
+      or September-October. Famous for croissants, café culture on the
+      Left Bank, and Seine river cruises at sunset. Metro system makes
+      getting around easy. Day trip to Versailles Palace recommended.
+    metadata:
+      source: travel_brochure
+      destination: Paris
+      country: France
+      region: Europe
+      best_season: spring_fall
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: _rag_paris
+
+- name: Add Tokyo brochure
+  general_ludd.agent.gludd_rag:
+    op: add_document
+    text: |
+      Tokyo: Where tradition meets innovation. Explore Senso-ji Temple in
+      Asakusa, the Meiji Shrine surrounded by forest, and the Imperial
+      Palace gardens. Shibuya Crossing is the world's busiest pedestrian
+      intersection. Visit Akihabara for electronics and anime culture.
+      Cherry blossom season (late March-early April) is magical in Ueno
+      Park. The Tsukiji Outer Market offers the freshest sushi. Excellent
+      public transit with the JR Yamanote loop line.
+    metadata:
+      source: travel_brochure
+      destination: Tokyo
+      country: Japan
+      region: Asia
+      best_season: spring
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: _rag_tokyo
+
+- name: Add New York brochure
+  general_ludd.agent.gludd_rag:
+    op: add_document
+    text: |
+      New York City: The Big Apple. See the Statue of Liberty and Ellis
+      Island, walk across the Brooklyn Bridge, and visit the Metropolitan
+      Museum of Art (the Met) on Fifth Avenue's Museum Mile. Broadway
+      shows in the Theater District, Central Park for escape from the
+      concrete, and the High Line for elevated garden walks. Best in
+      fall (September-November) for crisp weather and foliage, or spring
+      (April-June). World-class food from street vendors to Michelin stars.
+      Subway runs 24/7.
+    metadata:
+      source: travel_brochure
+      destination: New York
+      country: USA
+      region: North America
+      best_season: fall_spring
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: _rag_nyc
+
+- name: Add Rome brochure
+  general_ludd.agent.gludd_rag:
+    op: add_document
+    text: |
+      Rome: The Eternal City. Visit the Colosseum and Roman Forum for
+      ancient history, Vatican City for St. Peter's Basilica and the
+      Sistine Chapel with Michelangelo's ceiling. Throw a coin in the
+      Trevi Fountain. The Pantheon is the best-preserved ancient Roman
+      building. Best visited April-May or September-October to avoid
+      summer crowds and heat. Famous for pasta carbonara, gelato, and
+      espresso at stand-up bars. Walkable historic center.
+    metadata:
+      source: travel_brochure
+      destination: Rome
+      country: Italy
+      region: Europe
+      best_season: spring_fall
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: _rag_rome
+
+- name: Report ingestion counts
+  ansible.builtin.debug:
+    msg: >-
+      Ingested {{ _rag_paris.chunk_count + _rag_tokyo.chunk_count +
+      _rag_nyc.chunk_count + _rag_rome.chunk_count }} chunks across
+      4 travel brochures ({{ _rag_paris.stored_total }} total
+      vector entries in store).
+
+# ── Query the RAG pipeline ────────────────────────────────────────────────
+
+- name: Query for European art museums
+  general_ludd.agent.gludd_rag:
+    op: query
+    text: "What are the best cities in Europe for art museums and historical architecture?"
+    top_k: 3
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: _rag_art_query
+
+- name: Query for spring travel destinations with good transit
+  general_ludd.agent.gludd_rag:
+    op: query
+    text: "Which cities are best to visit in spring with excellent public transportation?"
+    top_k: 3
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: _rag_spring_query
+
+- name: Query for food and culinary experiences
+  general_ludd.agent.gludd_rag:
+    op: query
+    text: "Where should I go for world-class food and unique culinary experiences?"
+    top_k: 3
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: _rag_food_query
+
+# ── Display results ───────────────────────────────────────────────────────
+
+- name: Show European art museums answer
+  ansible.builtin.debug:
+    msg:
+      - "=== European Art Museums ==="
+      - "Q: What are the best cities in Europe for art museums and historical architecture?"
+      - "A: {{ _rag_art_query.answer }}"
+      - "Retrieved {{ _rag_art_query.retrieved_chunks | length }} context chunks"
+
+- name: Show spring travel answer
+  ansible.builtin.debug:
+    msg:
+      - "=== Spring Travel ==="
+      - "Q: Which cities are best to visit in spring with excellent public transportation?"
+      - "A: {{ _rag_spring_query.answer }}"
+      - "Retrieved {{ _rag_spring_query.retrieved_chunks | length }} context chunks"
+
+- name: Show food travel answer
+  ansible.builtin.debug:
+    msg:
+      - "=== Culinary Travel ==="
+      - "Q: Where should I go for world-class food and unique culinary experiences?"
+      - "A: {{ _rag_food_query.answer }}"
+      - "Retrieved {{ _rag_food_query.retrieved_chunks | length }} context chunks"
+
+# ── Collect query results into a document ─────────────────────────────────
+
+- name: Build query result object
+  ansible.builtin.set_fact:
+    _rag_results:
+      queries:
+        - question: "What are the best cities in Europe for art museums?"
+          answer: "{{ _rag_art_query.answer }}"
+          retrieved_chunks: "{{ _rag_art_query.retrieved_chunks | length }}"
+        - question: "Best spring cities with good transit?"
+          answer: "{{ _rag_spring_query.answer }}"
+          retrieved_chunks: "{{ _rag_spring_query.retrieved_chunks | length }}"
+        - question: "Best cities for food and culinary experiences?"
+          answer: "{{ _rag_food_query.answer }}"
+          retrieved_chunks: "{{ _rag_food_query.retrieved_chunks | length }}"
+      brochure_count: 4
+      total_chunks: "{{ _rag_paris.stored_total }}"
+
+- name: Write RAG query results to artifact directory
+  ansible.builtin.copy:
+    content: "{{ _rag_results | to_nice_json }}"
+    dest: "{{ artifact_dir }}/rag_example.json"
+    mode: "0644"
+
+- name: Write summary markdown report
+  ansible.builtin.copy:
+    content: |
+      # RAG Example — Travel Brochure Queries
+
+      **Documents ingested:** 4 travel brochures (Paris, Tokyo, New York, Rome)
+      **Total vector entries:** {{ _rag_paris.stored_total }}
+
+      ## Query 1: European Art Museums
+      **Q:** What are the best cities in Europe for art museums and historical architecture?
+      **A:** {{ _rag_art_query.answer }}
+
+      ## Query 2: Spring Travel
+      **Q:** Which cities are best to visit in spring with excellent public transportation?
+      **A:** {{ _rag_spring_query.answer }}
+
+      ## Query 3: Culinary Travel
+      **Q:** Where should I go for world-class food and unique culinary experiences?
+      **A:** {{ _rag_food_query.answer }}
+
+      ---
+      *Generated by general_ludd.agent.rag_example — demonstrates RAGPipeline from module_utils.rag*
+    dest: "{{ artifact_dir }}/rag_example.md"
+    mode: "0644"
+
+- name: Report role completion
+  ansible.builtin.debug:
+    msg: >-
+      RAG example complete: {{ _rag_results.brochure_count }} brochures,
+      {{ _rag_results.total_chunks }} vector entries,
+      {{ _rag_results.queries | length }} queries answered.

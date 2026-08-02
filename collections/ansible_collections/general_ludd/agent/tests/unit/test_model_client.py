@@ -8,8 +8,6 @@ from types import ModuleType
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 
 def _import_module() -> ModuleType:
     sys.path.insert(

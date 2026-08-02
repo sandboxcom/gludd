@@ -11,7 +11,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 _SRC = Path(__file__).resolve().parents[11] / "src"
 if str(_SRC) not in sys.path:
@@ -61,7 +61,7 @@ class LanguageRouter:
     - ``script_conversion`` → ``general_ludd.language``
     """
 
-    CAPABILITY_MAP: dict[str, str] = {
+    CAPABILITY_MAP: ClassVar[dict[str, str]] = {
         "language_detection": "language_detect",
         "translation": "translate",
         "transliteration": "transliterate",
