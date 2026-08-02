@@ -1024,8 +1024,7 @@ def _configure_network_state(app: Any, network: Any) -> None:
     preserve_cidr = bool(getattr(app.state, "_allowed_cidr", None))
     if network.is_external_bind and bool(getattr(app.state, "_no_auth", True)):
         raise RuntimeError(
-            "External daemon binds require authenticated access; configure "
-            "GLUDD_PSK or use a loopback network host."
+            "External daemon binds require authenticated access; configure GLUDD_PSK or use a loopback network host."
         )
 
     if network.is_external_bind and not preserve_cidr:
@@ -1620,11 +1619,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             "Wired adversarial detector (%d patterns) and estimation tracker",
             len(adversarial_detector.get_all_categories()),
         )
-        if (
-            model_gateway is not None
-            and uc is not None
-            and uc.service_discovery_enabled
-        ):
+        if model_gateway is not None and uc is not None and uc.service_discovery_enabled:
             from general_ludd.review.reviewer import ReturnReviewer
 
             return_reviewer = ReturnReviewer(
@@ -2184,12 +2179,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 session_factory=session_factory,
                 wake=event_loop.wake,
                 worker_id=terraform_worker_id,
-                reconnect_min_seconds=float(
-                    os.environ.get("GLUDD_PG_WAKE_RECONNECT_SECONDS", "0.1")
-                ),
-                reconnect_max_seconds=float(
-                    os.environ.get("GLUDD_PG_WAKE_RECONNECT_SECONDS", "5.0")
-                ),
+                reconnect_min_seconds=float(os.environ.get("GLUDD_PG_WAKE_RECONNECT_SECONDS", "0.1")),
+                reconnect_max_seconds=float(os.environ.get("GLUDD_PG_WAKE_RECONNECT_SECONDS", "5.0")),
             )
 
         terraform_event_bridge = TerraformEventBridge(
@@ -3445,6 +3436,7 @@ def create_daemon_app(
         slurm,
         spend,
         todos,
+        travel,
         variants,
         webmcp,
         worktree,
@@ -3459,6 +3451,7 @@ def create_daemon_app(
     eval_router.register(app, daemon_state)
     webmcp.register(app, daemon_state)
     todos.register(app, daemon_state)
+    travel.register(app, daemon_state)
     messages.register(app, daemon_state)
     accounting.register(app, daemon_state)
     account_router.register(app, daemon_state)

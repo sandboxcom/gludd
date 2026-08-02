@@ -453,7 +453,98 @@ def _check_d24_mcp_stderr_limit() -> tuple[bool, str]:
     )
 
 
-# ── new probes (D-10, D-25, D-28, D-29) ──────────────────────────────────
+# ── new probes (D-09, D-10, D-15, D-25, D-28, D-29) ──────────────────────
+
+
+def _check_d09_job_spec_validation() -> tuple[bool, str]:
+    """Static probe: D-09 JobSpec ingress boundary exists and validates.
+
+    Probes schemas/job.py for: JobSpec with extra=forbid, JobIngressLimits
+    with configurable ceilings, OwnershipSpec with tenant/project/agent,
+    WorkCeilingSpec with per-work-type limits, denial audit records,
+    validate_cross_tenant function, and versioned policy hash.
+    """
+    try:
+        import general_ludd.schemas.job as job_mod
+    except ImportError as exc:
+        return False, f"OPEN — schemas.job failed to import: {exc}"
+
+    if not hasattr(job_mod, "JobSpec"):
+        return False, "OPEN — JobSpec missing (regression)"
+    if not hasattr(job_mod, "JobIngressLimits"):
+        return False, "OPEN — JobIngressLimits missing (regression)"
+    if not hasattr(job_mod, "OwnershipSpec"):
+        return False, "OPEN — OwnershipSpec missing (regression)"
+    if not hasattr(job_mod, "WorkCeilingSpec"):
+        return False, "OPEN — WorkCeilingSpec missing (regression)"
+    if not hasattr(job_mod, "validate_cross_tenant"):
+        return False, "OPEN — validate_cross_tenant missing (regression)"
+    if not hasattr(job_mod, "audit_invalid_job"):
+        return False, "OPEN — audit_invalid_job missing (regression)"
+
+    job_src = _read_module_source(job_mod)
+    if 'extra="forbid"' not in job_src:
+        return False, "OPEN — JobSpec no longer rejects unknown fields (regression)"
+    if "_validate_payload_bounds" not in job_src:
+        return False, "OPEN — payload bounds validation removed (regression)"
+
+    return True, (
+        "LANDED-VERIFIED — JobSpec ingress: extra=forbid, configurable "
+        "JobIngressLimits (depth/items/bytes), OwnershipSpec (tenant/project/agent), "
+        "WorkCeilingSpec (per-work-type), validate_cross_tenant, "
+        "denial audit records with redaction, policy version/hash"
+    )
+
+
+def _check_d15_openbao_token_scope() -> tuple[bool, str]:
+    """Static probe: D-15 OpenBao scope narrowing and token lifecycle.
+
+    Probes secrets/openbao_scope.py for: mount/path/policy-name validation,
+    OpenBaoPathScope with intersection semantics, OpenBaoScopeRequest for
+    parent/child monotonic grant, policy HCL rendering, OpenBaoTTLCap for
+    TTL/use-limit capping, scope evidence, and policy_name_for_agent.
+    Also probes sts/revoker.py for termination-path revocation.
+    """
+    try:
+        import general_ludd.secrets.openbao_scope as ob_mod
+    except ImportError as exc:
+        return False, f"OPEN — secrets.openbao_scope failed to import: {exc}"
+
+    for symbol in (
+        "validate_openbao_mount",
+        "validate_openbao_path",
+        "validate_openbao_policy_name",
+        "OpenBaoPathScope",
+        "OpenBaoScopeDenied",
+        "OpenBaoScopeEvidence",
+        "OpenBaoScopeRequest",
+        "OpenBaoTTLCap",
+        "policy_name_for_agent",
+    ):
+        if not hasattr(ob_mod, symbol):
+            return False, f"OPEN — openbao_scope.{symbol} missing (regression)"
+
+    ob_src = _read_module_source(ob_mod)
+    if "_RESERVED_MOUNTS" not in ob_src:
+        return False, "OPEN — reserved mount rejection removed (regression)"
+    if "intersect" not in ob_src:
+        return False, "OPEN — OpenBaoPathScope.intersect missing (regression)"
+    if "ttl_seconds" not in ob_src or "max_uses" not in ob_src:
+        return False, "OPEN — OpenBaoTTLCap TTL/use-limit enforcement missing (regression)"
+
+    try:
+        import general_ludd.sts.revoker as revoker_mod
+    except ImportError:
+        revoker_mod = None
+    has_revoker = revoker_mod is not None and hasattr(revoker_mod, "TokenRevoker") and hasattr(revoker_mod, "revoke")
+    if not has_revoker:
+        return False, "OPEN — STS revoker missing; termination-path revocation not verified"
+    return True, (
+        "LANDED-VERIFIED — OpenBao scope narrowing: mount/path validation with "
+        "reserved-mount/traversal rejection, monotonic parent/child intersection, "
+        "HCL policy rendering, OpenBaoTTLCap (max 900s TTL, max 100 uses), "
+        "scope evidence with hashed identities, and STS termination-path revocation"
+    )
 
 
 def _check_d10_body_size_limit() -> tuple[bool, str]:
@@ -672,11 +763,13 @@ def _check_d30_gateway_size_limit() -> tuple[bool, str]:
 _BACKLOG_CHECKERS: dict[str, Callable[[], tuple[bool, str]]] = {
     "D-07": _check_d07_input_validation,
     "D-08": _check_d08_ansible_extravars,
+    "D-09": _check_d09_job_spec_validation,
     "D-10": _check_d10_body_size_limit,
     "D-11": _check_d11_todo_rate_limit,
     "D-12": _check_d12_admin_code_rate_limit,
     "D-13": _check_d13_wal_journal_bound,
     "D-14": _check_d14_url_parsing,
+    "D-15": _check_d15_openbao_token_scope,
     "D-16": _check_d16_session_ttl,
     "D-17": _check_d17_psk_rotation,
     "D-18": _check_d18_audit_log,

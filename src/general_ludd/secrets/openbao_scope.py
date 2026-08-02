@@ -18,9 +18,7 @@ _SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
 _MOUNT_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 _POLICY_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 _RESERVED_MOUNTS = frozenset({"auth", "cubbyhole", "identity", "sys"})
-_ALLOWED_CAPABILITIES = frozenset(
-    {"create", "delete", "list", "patch", "read", "update"}
-)
+_ALLOWED_CAPABILITIES = frozenset({"create", "delete", "list", "patch", "read", "update"})
 _MAX_MOUNT_CHARS = 128
 _MAX_PATH_CHARS = 512
 _MAX_SCOPE_PATHS = 64
@@ -44,10 +42,7 @@ def validate_openbao_mount(mount: str, *, allow_reserved: bool = False) -> str:
     if "\\" in mount or "%" in mount or "\x00" in mount:
         raise ValueError("OpenBao mount contains forbidden characters")
     segments = mount.split("/")
-    if any(
-        segment in {"", ".", ".."} or _MOUNT_SEGMENT_RE.fullmatch(segment) is None
-        for segment in segments
-    ):
+    if any(segment in {"", ".", ".."} or _MOUNT_SEGMENT_RE.fullmatch(segment) is None for segment in segments):
         raise ValueError("OpenBao mount contains an invalid or traversal segment")
     if not allow_reserved and segments[0].lower() in _RESERVED_MOUNTS:
         raise ValueError("OpenBao system mounts cannot be delegated")
@@ -158,23 +153,13 @@ class OpenBaoPathScope:
         mount = validate_openbao_mount(self.mount)
         if not self.paths or len(self.paths) > _MAX_SCOPE_PATHS:
             raise ValueError("OpenBao scope requires 1..64 paths")
-        paths = tuple(
-            sorted(
-                {
-                    validate_openbao_path(path, allow_terminal_wildcard=True)
-                    for path in self.paths
-                }
-            )
-        )
+        paths = tuple(sorted({validate_openbao_path(path, allow_terminal_wildcard=True) for path in self.paths}))
         capabilities = frozenset(str(capability) for capability in self.capabilities)
         if not capabilities:
             raise ValueError("OpenBao scope requires at least one capability")
         unknown = capabilities - _ALLOWED_CAPABILITIES
         if unknown:
-            raise ValueError(
-                "OpenBao scope contains unsupported capabilities: "
-                + ", ".join(sorted(unknown))
-            )
+            raise ValueError("OpenBao scope contains unsupported capabilities: " + ", ".join(sorted(unknown)))
         object.__setattr__(self, "mount", mount)
         object.__setattr__(self, "paths", paths)
         object.__setattr__(self, "capabilities", capabilities)
@@ -270,11 +255,57 @@ def _digest(domain: str, value: str) -> str:
     return hashlib.sha256(f"{domain}\x00{value}".encode()).hexdigest()[:32]
 
 
+# ── D-15: TTL and use-limit capping ──
+
+
+class OpenBaoTTLCap:
+    """Enforce maximum TTL and use-count bounds on delegated OpenBao tokens.
+
+    Every minted token is capped at these hard maxima regardless of what the
+    requestor asks for. The defaults implement the SEC.1 D-15 requirement for
+    "per-agent short TTL/use limits".
+    """
+
+    def __init__(self, max_ttl_seconds: int = 900, max_uses: int = 100) -> None:
+        if max_ttl_seconds < 1:
+            raise ValueError("max_ttl_seconds must be positive")
+        if max_uses < 1:
+            raise ValueError("max_uses must be positive")
+        self.max_ttl_seconds = max_ttl_seconds
+        self.max_uses = max_uses
+
+    def apply(
+        self,
+        requested_ttl_seconds: int | float,
+        requested_uses: int,
+    ) -> dict[str, object]:
+        """Cap the requested TTL and use count at the configured maxima.
+
+        Returns a dict with ``ttl_seconds``, ``uses``, and ``reason`` fields.
+        Negative or zero values are clamped to their safe minimums.
+        """
+        ttl = max(0, int(requested_ttl_seconds))
+        uses = max(1, int(requested_uses))
+        reason = "ok"
+        if ttl > self.max_ttl_seconds:
+            ttl = self.max_ttl_seconds
+            reason = "capped: ttl"
+        if uses > self.max_uses:
+            uses = self.max_uses
+            reason = "capped: uses" if reason == "ok" else "capped: ttl+uses"
+        return {
+            "ttl_seconds": ttl,
+            "uses": uses,
+            "reason": reason,
+        }
+
+
 __all__ = [
     "OpenBaoPathScope",
     "OpenBaoScopeDenied",
     "OpenBaoScopeEvidence",
     "OpenBaoScopeRequest",
+    "OpenBaoTTLCap",
     "policy_name_for_agent",
     "validate_openbao_mount",
     "validate_openbao_path",

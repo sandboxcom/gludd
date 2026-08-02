@@ -304,6 +304,32 @@ class JobSpec(BaseModel):
         return h.hexdigest()
 
 
+# ── D-09: cross-tenant ownership validation ──
+
+
+def validate_cross_tenant(
+    ownership: OwnershipSpec | None,
+    request_tenant_id: str | None,
+) -> tuple[bool, str]:
+    """Reject a job whose ownership tenant does not match the authenticated tenant.
+
+    Returns ``(True, "ok")`` when the tenant matches. Returns ``(False, reason)``
+    when the request tenant is missing, empty, or mismatched with the ownership
+    spec. This function is side-effect free — it does not touch the filesystem,
+    network, or database.
+    """
+    if request_tenant_id is None or not request_tenant_id.strip():
+        return False, "CROSS_TENANT_MISMATCH: request tenant is missing or empty"
+
+    if ownership is None:
+        return False, "CROSS_TENANT_MISMATCH: job has no ownership spec, cannot verify tenant"
+
+    if ownership.tenant_id != request_tenant_id:
+        return False, ("CROSS_TENANT_MISMATCH: ownership tenant does not match request tenant")
+
+    return True, "ok"
+
+
 # ── D-09: OwnershipSpec ──
 
 _OWNER_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*\Z")

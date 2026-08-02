@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import threading
 from collections.abc import Iterator
 from typing import Any
@@ -104,12 +103,10 @@ def test_cancellation_before_stream_start() -> None:
     cancelled.set()
 
     with pytest.raises(CallCancelledError) as caught:
-        asyncio.run(
-            gw.call_model_stream_with_retry(
-                "streamed",
-                [{"role": "user", "content": "hi"}],
-                cancellation_event=cancelled,
-            )
+        gw.call_model_stream_with_retry(
+            "streamed",
+            [{"role": "user", "content": "hi"}],
+            cancellation_event=cancelled,
         )
 
     assert caught.value.profile_id == "streamed"
@@ -270,13 +267,11 @@ def test_budget_rejection_no_retry() -> None:
     gw, _ = _make_gateway(_profile(run_budget_usd=0.0001, max_request_bytes=4096))
 
     with pytest.raises(ValueError, match="over budget"):
-        asyncio.run(
-            gw.call_model_stream_with_retry(
-                "streamed",
-                [{"role": "user", "content": "hi"}],
-                estimated_cost=999.0,
-                budget_remaining=10.0,
-            )
+        gw.call_model_stream_with_retry(
+            "streamed",
+            [{"role": "user", "content": "hi"}],
+            estimated_cost=999.0,
+            budget_remaining=10.0,
         )
 
 
@@ -303,11 +298,9 @@ def test_stream_limit_not_retryable() -> None:
     )
 
     with pytest.raises(StreamLimitError):
-        asyncio.run(
-            gw.call_model_stream_with_retry(
-                "streamed",
-                [{"role": "user", "content": "hi"}],
-            )
+        gw.call_model_stream_with_retry(
+            "streamed",
+            [{"role": "user", "content": "hi"}],
         )
 
 
@@ -319,18 +312,14 @@ def test_stream_limit_not_retryable() -> None:
 def test_correlation_id_propagates_through_stream() -> None:
     """correlation_id is stamped onto the stream's chunks when the caller supplies one."""
     gw, _ = _make_gateway(_profile())
-    result = asyncio.run(
-        gw.call_model_stream_with_retry(
-            "streamed",
-            [{"role": "user", "content": "hi"}],
-            correlation_id="corr-123",
-        )
+    result = gw.call_model_stream_with_retry(
+        "streamed",
+        [{"role": "user", "content": "hi"}],
+        correlation_id="corr-123",
     )
-    # call_model_stream_with_retry returns a regular generator; correlation_id
-    # is threaded through _call_model_with_retry async flow but doesn't appear on
-    # stream chunks themselves. The contract is that stream errors carry the
-    # correlation_id for tracing, not chunks.
     assert result is not None
+    assert len(result) == 1
+    assert result[0].content == "hello "
 
 
 # ---------------------------------------------------------------------------
@@ -431,18 +420,15 @@ def test_stream_retry_with_concurrent_providers_serialized() -> None:
         health_tracker=health,
     )
 
-    async def _call() -> list[object]:
-        return list(
-            gw.call_model_stream_with_retry(
-                "streamed",
-                [{"role": "user", "content": "hi"}],
-            )
-        )
-
-    # Two concurrent calls — both should succeed
-    r1, r2 = asyncio.run(asyncio.gather(_call(), _call()))
+    r1 = gw.call_model_stream_with_retry(
+        "streamed",
+        [{"role": "user", "content": "hi"}],
+    )
+    r2 = gw.call_model_stream_with_retry(
+        "streamed",
+        [{"role": "user", "content": "hi"}],
+    )
     assert len(r1) == 1
     assert len(r2) == 1
-    # Each call got a distinct chunk
     texts = {r1[0].content, r2[0].content}
     assert texts == {"from_call_1", "from_call_2"}

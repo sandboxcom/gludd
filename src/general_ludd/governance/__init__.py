@@ -12,11 +12,16 @@ path so the CLI can access them without requiring the collection to be on
 from __future__ import annotations
 
 from general_ludd.governance.contracts import (
+    AuditTrail,
     ComplianceModel,
+    ComplianceReport,
     GovernancePolicy,
     GovernanceRule,
+    Policy,
     PolicyRegistry,
+    Rule,
 )
+from general_ludd.governance.core import ComplianceChecker, PolicyEngine
 from general_ludd.governance.loader import (
     get_authority_registry,
     get_borders,
@@ -38,10 +43,16 @@ from general_ludd.governance.loader import (
 )
 
 __all__ = [
+    "AuditTrail",
+    "ComplianceChecker",
     "ComplianceModel",
+    "ComplianceReport",
     "GovernancePolicy",
     "GovernanceRule",
+    "Policy",
+    "PolicyEngine",
     "PolicyRegistry",
+    "Rule",
     "get_authority_registry",
     "get_borders",
     "get_civic_services",

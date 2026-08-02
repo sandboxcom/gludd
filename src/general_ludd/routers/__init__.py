@@ -39,6 +39,7 @@ def register_all(app: FastAPI, daemon_state: dict[str, object]) -> None:
     from general_ludd.routers.stream import register as register_stream
     from general_ludd.routers.terraform_state import register as register_terraform_state
     from general_ludd.routers.todos import register as register_todos
+    from general_ludd.routers.travel import register as register_travel
     from general_ludd.routers.variants import register as register_variants
     from general_ludd.routers.web_search import register as register_web_search
     from general_ludd.routers.worktree import register as register_worktree
@@ -68,6 +69,7 @@ def register_all(app: FastAPI, daemon_state: dict[str, object]) -> None:
     register_slurm(app, daemon_state)
     register_stream(app, daemon_state)
     register_todos(app, daemon_state)
+    register_travel(app, daemon_state)
     register_variants(app, daemon_state)
     register_worktree(app, daemon_state)
     register_self_improve(app, daemon_state)

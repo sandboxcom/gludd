@@ -2005,7 +2005,7 @@ class ModelGateway:
         estimated_cost: float = 0.0,
         budget_remaining: float = float("inf"),
         **kwargs: Any,
-    ) -> Iterator[object]:
+    ) -> list[object]:
         """Stream with tenacity retry on the primary, then walk fallback chain.
 
         Each retry restarts the stream from scratch (streams are not resumable).
@@ -2065,7 +2065,7 @@ class ModelGateway:
         tools: list[dict[str, object]] | None = None,
         project_id: str | None = None,
         **kwargs: Any,
-    ) -> Iterator[object]:
+    ) -> list[object]:
         """Async core: retry + fallback for streamed model calls."""
         import httpx
 
@@ -2179,14 +2179,17 @@ class ModelGateway:
                         raise CallCancelledError(profile_id)
                     try:
                         return await asyncio.to_thread(
-                            self.call_model_stream,
-                            profile_id,
-                            messages,
-                            estimated_cost=estimated_cost,
-                            budget_remaining=budget_remaining,
-                            tools=tools,
-                            project_id=project_id,
-                            **kwargs,
+                            lambda: list(
+                                self.call_model_stream(
+                                    profile_id,
+                                    messages,
+                                    estimated_cost=estimated_cost,
+                                    budget_remaining=budget_remaining,
+                                    tools=tools,
+                                    project_id=project_id,
+                                    **kwargs,
+                                )
+                            )
                         )
                     except _non_retryable:
                         raise
@@ -2230,11 +2233,11 @@ class ModelGateway:
         estimated_cost: float = 0.0,
         budget_remaining: float = float("inf"),
         **kwargs: Any,
-    ) -> Iterator[object]:
+    ) -> list[object]:
         """Walk the fallback chain for streamed calls.
 
         Each fallback is attempted via ``call_model_stream``. On success, the
-        stream iterator is returned. On failure, the next fallback is tried.
+        stream is materialized and returned as a list. On failure, the next fallback is tried.
         Cycle-safe: already-visited profiles are skipped. Health-gated: unhealthy
         fallbacks are skipped with a timeout check.
         """
@@ -2289,14 +2292,17 @@ class ModelGateway:
 
             try:
                 result = await asyncio.to_thread(
-                    self.call_model_stream,
-                    fb_id,
-                    messages,
-                    estimated_cost=estimated_cost,
-                    budget_remaining=budget_remaining,
-                    tools=tools,
-                    project_id=project_id,
-                    **kwargs,
+                    lambda fb=fb_id: list(
+                        self.call_model_stream(
+                            fb,
+                            messages,
+                            estimated_cost=estimated_cost,
+                            budget_remaining=budget_remaining,
+                            tools=tools,
+                            project_id=project_id,
+                            **kwargs,
+                        )
+                    )
                 )
                 return result
             except StreamLimitError:
@@ -2339,7 +2345,7 @@ class ModelGateway:
         from_profile_id: str,
         from_error: BaseException | None = None,
         **kwargs: Any,
-    ) -> Iterator[object]:
+    ) -> list[object]:
         """Synchronous fallback walk for stream calls (no-asyncio path)."""
         try:
             asyncio.get_running_loop()

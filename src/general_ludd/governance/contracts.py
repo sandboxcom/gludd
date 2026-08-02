@@ -7,6 +7,7 @@ depend on these contracts, not on concrete data modules.
 
 from __future__ import annotations
 
+import datetime as dt
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 
@@ -55,6 +56,73 @@ class ComplianceModel:
     requirements_unmet: list[str] = field(default_factory=list)
     audit_trail: list[str] = field(default_factory=list)
     last_reviewed: str | None = None
+
+
+@dataclass(eq=True, unsafe_hash=True)
+class Policy:
+    """A governance policy with metadata about domain, level, and status.
+
+    Distinct from ``GovernancePolicy`` — this is the expert-level contract
+    used by ``PolicyEngine`` and ``ComplianceChecker``.
+    """
+
+    name: str
+    description: str
+    domain: str
+    level: str
+    status: str = "draft"
+    effective_date: str | None = None
+    rules: list[str] = field(default_factory=list, hash=False, compare=False)
+
+
+@dataclass(eq=True, unsafe_hash=True)
+class Rule:
+    """A rule within a governance policy, defining a condition and action.
+
+    Distinct from ``GovernanceRule`` — this is the expert-level contract
+    used by ``PolicyEngine`` and ``ComplianceChecker``.
+    """
+
+    policy_name: str
+    rule_id: str
+    condition: str
+    action: str
+    priority: int = 0
+    enforcement: str = "advisory"
+
+
+@dataclass(eq=True, unsafe_hash=True)
+class AuditTrail:
+    """An immutable audit trail entry recording a governance action.
+
+    Tracks who acted on what, when, and with what details.
+    """
+
+    entry_id: str
+    subject: str
+    action: str
+    details: str
+    timestamp: str
+
+
+@dataclass(eq=True)
+class ComplianceReport:
+    """Reports compliance of a subject against policies.
+
+    Includes violation details and an auto-generated audit trail.
+    Distinct from ``ComplianceModel``.
+    """
+
+    subject: str
+    policy_name: str
+    status: str
+    violations: list[str] = field(default_factory=list)
+    created_at: dt.datetime = field(default_factory=lambda: dt.datetime.now(dt.UTC))
+    audit_trail: list[AuditTrail] = field(default_factory=list)
+
+    @property
+    def is_compliant(self) -> bool:
+        return self.status == "compliant"
 
 
 class PolicyRegistry:
@@ -115,8 +183,12 @@ class PolicyRegistry:
 
 
 __all__ = [
+    "AuditTrail",
     "ComplianceModel",
+    "ComplianceReport",
     "GovernancePolicy",
     "GovernanceRule",
+    "Policy",
     "PolicyRegistry",
+    "Rule",
 ]

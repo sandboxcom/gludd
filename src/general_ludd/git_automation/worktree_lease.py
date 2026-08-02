@@ -69,6 +69,67 @@ def release_worktree_lease(repo_path: str, branch: str) -> None:
     lease_path.unlink(missing_ok=True)
 
 
+def is_pid_alive(pid: int) -> bool:
+    """Return True if the given PID exists in the process table.
+
+    Uses ``os.kill(pid, 0)`` which sends no signal but checks whether
+    the process exists. A PermissionError is treated as "alive" (we
+    cannot signal it, but it exists). Non-positive PIDs always return False.
+    """
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def verify_worktree_lease(
+    repo_path: str,
+    branch: str,
+) -> dict[str, object]:
+    """Check lease ownership with PID verification.
+
+    Returns a dict with fields:
+        - ``owned``: True if the lease file exists, is not expired,
+          and the owning PID is still alive.
+        - ``pid_alive``: True if the recorded PID exists in the process table.
+        - ``branch``: The branch name (for diagnostics).
+        - ``owner_pid``: The PID from the lease file (None if missing).
+    """
+    safe = _safe_branch_component(branch)
+    lease_path = _leases_dir(repo_path) / f"{safe}.lease.json"
+    try:
+        raw = json.loads(lease_path.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {
+            "owned": False,
+            "pid_alive": False,
+            "branch": branch,
+            "owner_pid": None,
+        }
+    created = raw.get("created_at", 0)
+    ttl = raw.get("ttl_seconds", 0)
+    pid = raw.get("owner_pid")
+    if ttl <= 0 or time.time() - created > ttl:
+        return {
+            "owned": False,
+            "pid_alive": False,
+            "branch": branch,
+            "owner_pid": pid,
+        }
+    pid_alive = is_pid_alive(pid) if isinstance(pid, int) else False
+    return {
+        "owned": pid_alive,
+        "pid_alive": pid_alive,
+        "branch": branch,
+        "owner_pid": pid,
+    }
+
+
 def cleanup_expired_leases(repo_path: str) -> int:
     leases = _leases_dir(repo_path)
     if not leases.is_dir():
