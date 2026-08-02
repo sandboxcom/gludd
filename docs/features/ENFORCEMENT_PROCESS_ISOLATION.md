@@ -74,6 +74,35 @@ diagnostic. These reports support a fail-fast build-time loader check and a
 minimal runtime export surface; they do not claim those upstream reports had
 Gludd's exact named-constant cause.
 
+## Adaptive delegation contract
+
+Delegation has no implicit mandatory minimum. A minimum becomes active only when
+an operator explicitly sets `GLUDD_MIN_DISPATCHES` or
+`GLUDD_MULTITASK_MIN_DISPATCHES`; the first variable takes precedence when both
+are present. The shared parser recommends ten for an explicit setting without a
+valid integer, but the runtime requirement is zero when neither variable exists.
+
+Configuration is bounded before enforcement:
+
+- `GLUDD_MULTITASK_MAX_DISPATCHES` can lower the per-message ceiling, but cannot
+  raise it above the absolute project ceiling of ten or lower it below one.
+- An explicit minimum is clamped to the configured ceiling, so contradictory
+  settings cannot create an impossible dispatch requirement.
+- `GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD`,
+  `GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS`, and `GLUDD_MSG_GAP_MS` tune the
+  mutation-grinding and message-boundary detectors.
+- Read-only `read`, `grep`, and `glob` operations do not increment the mutation
+  streak. Dispatches reset that streak, while edit/write/bash mutations remain
+  subject to an active configured minimum and pending-work checks.
+- `GLUDD_MULTITASK_FLOOR_ENFORCE=0` disables minimum and grinding policy, but
+  never disables the absolute dispatch ceiling or the independent stop and
+  security plugins.
+
+The implementation source of truth is
+`.opencode/lib/multitask_config.ts`. Tests combine that module with the plugin
+entrypoint so loader isolation is retained without duplicating configuration
+values in the runtime-discovered module.
+
 ## Verification
 
 The acceptance sequence is:

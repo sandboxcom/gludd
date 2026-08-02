@@ -1,10 +1,11 @@
-"""Tests for enforce-multitask.ts MIN_DISPATCHES enforcement.
+"""Tests for enforce-multitask.ts adaptive delegation enforcement.
 
 Rewritten 2026-07-14 to match the 2026-07-13 plugin rewrite:
 - No text.complete hook (removed from opencode >=1.17.9)
 - No session.idle hook
 - Single tool.execute.before hook with 5s-inter-call message boundary detection
-- UNDER-FLOOR HARD BLOCK (replaced FLOOR BREACH + INSUFFICIENT DISPATCHES)
+- Explicit configured-minimum block; no implicit mandatory floor
+- Absolute dispatch ceiling of ten
 - CONSECUTIVE NON-DISPATCH STREAK added
 - Subagent guard via isSubagent() (shared.ts)
 - Disengage via isDisengaged() (shared.ts)
@@ -18,11 +19,12 @@ import tempfile
 from pathlib import Path
 
 PLUGIN_PATH = Path(__file__).resolve().parents[2] / ".opencode/plugin/enforce-multitask.ts"
+CONFIG_PATH = Path(__file__).resolve().parents[2] / ".opencode/lib/multitask_config.ts"
 SHARED_PATH = Path(__file__).resolve().parents[2] / ".opencode/lib/shared.ts"
 
 
 def _plugin_source() -> str:
-    return PLUGIN_PATH.read_text()
+    return CONFIG_PATH.read_text() + "\n" + PLUGIN_PATH.read_text()
 
 
 def _shared_source() -> str:
@@ -45,6 +47,19 @@ def _extract_env_default(src: str, env_var: str) -> int:
     altm = altpat.search(src)
     if altm:
         return int(altm.group(1))
+    for call in re.finditer(
+        r"integerFromEnv\(\s*\[(?P<names>[^]]+)\]\s*,\s*"
+        r"(?P<default>\d+|[A-Z_]+)\s*,?\s*\)",
+        src,
+        re.DOTALL,
+    ):
+        if f'"{env_var}"' in call.group("names"):
+            default = call.group("default")
+            if default.isdigit():
+                return int(default)
+            constant = re.search(rf"{re.escape(default)}\s*=\s*(\d+)", src)
+            assert constant, f"default constant {default} not found in source"
+            return int(constant.group(1))
     raise AssertionError(f"env var {env_var} default not found in source")
 
 
@@ -95,11 +110,9 @@ class TestMinDispatchConstants:
 
     def test_min_dispatches_default_from_env_match(self):
         src = _plugin_source()
-        m = re.search(r'GLUDD_MULTITASK_MIN_DISPATCHES\s*\|\|\s*"(\d+)"', src)
-        assert m, "GLUDD_MULTITASK_MIN_DISPATCHES default string not found"
-        default_str = int(m.group(1))
-        expected = _min_dispatch_default()
-        assert default_str == expected
+        assert "MIN_DISPATCHES = integerFromEnv" in src
+        assert _extract_env_default(src, "GLUDD_MIN_DISPATCHES") == 10
+        assert _extract_env_default(src, "GLUDD_MULTITASK_MIN_DISPATCHES") == 10
 
     def test_min_dispatches_is_positive_integer(self):
         d = _min_dispatch_default()
@@ -126,19 +139,20 @@ class TestMinDispatchConstants:
     def test_max_dispatches_is_10(self):
         src = _plugin_source()
         assert "HARD_MAX_DISPATCHES = 10" in src
-        assert "Math.min(HARD_MAX_DISPATCHES" in src
+        assert re.search(r"Math\.min\(\s*HARD_MAX_DISPATCHES", src)
+        assert _extract_env_default(src, "GLUDD_MULTITASK_MAX_DISPATCHES") == 10
 
     def test_consecutive_non_dispatch_threshold_is_5(self):
         src = _plugin_source()
-        m = re.search(r"CONSECUTIVE_NON_DISPATCH_THRESHOLD\s*=\s*parseInt\([\s\S]*?\"(\d+)\"", src)
-        assert m, "CONSECUTIVE_NON_DISPATCH_THRESHOLD parseInt pattern not found"
-        assert int(m.group(1)) == 5
+        assert _extract_env_default(
+            src, "GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD"
+        ) == 5
 
     def test_consecutive_non_dispatch_window_is_30s(self):
         src = _plugin_source()
-        m = re.search(r"CONSECUTIVE_NON_DISPATCH_WINDOW_MS\s*=\s*parseInt\([\s\S]*?\"(\d+)\"", src)
-        assert m, "CONSECUTIVE_NON_DISPATCH_WINDOW_MS parseInt pattern not found"
-        assert int(m.group(1)) == 30000
+        assert _extract_env_default(
+            src, "GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS"
+        ) == 30000
 
     def test_wave_history_size_is_10(self):
         src = _plugin_source()
@@ -148,9 +162,7 @@ class TestMinDispatchConstants:
 
     def test_msg_gap_ms_default_is_5000(self):
         src = _plugin_source()
-        m = re.search(r"GLUDD_MSG_GAP_MS\s*\|\|\s*\"(\d+)\"", src)
-        assert m
-        assert int(m.group(1)) == 5000
+        assert _extract_env_default(src, "GLUDD_MSG_GAP_MS") == 5000
 
 
 class TestStateFileRoundTrip:
@@ -221,8 +233,8 @@ class TestStateFileRoundTrip:
         assert "lastTs = Date.now()" in src, "writeState must update lastTs"
 
 
-class TestUnderFloorHardBlock:
-    """UNDER-FLOOR HARD BLOCK: blocks edit/write/bash when thisMessageDispatches < MIN_DISPATCHES."""
+class TestConfiguredMinimumBlock:
+    """An explicit minimum blocks mutations until its requirement is met."""
 
     def _under_floor_triggers(self, count: int, min_disp: int) -> bool:
         return count < min_disp
@@ -271,7 +283,7 @@ class TestUnderFloorHardBlock:
 
     def test_under_floor_deny_message_present(self):
         src = _plugin_source()
-        assert "UNDER-FLOOR HARD BLOCK" in src, "Under-floor deny message must exist"
+        assert "CONFIGURED MINIMUM BLOCK" in src
 
     def test_under_floor_deny_message_mentions_configured_minimum(self):
         src = _plugin_source()
@@ -532,10 +544,9 @@ class TestEnvOverride:
 
     def test_env_var_parsed_with_parse_int(self):
         src = _plugin_source()
-        parsed = "parseInt(" in src and "GLUDD_MULTITASK_MIN_DISPATCHES" in src
-        assert parsed, (
-            "GLUDD_MULTITASK_MIN_DISPATCHES env var must appear within parseInt call"
-        )
+        assert "integerFromEnv" in src
+        assert "Number.parseInt(raw, 10)" in src
+        assert "GLUDD_MULTITASK_MIN_DISPATCHES" in src
 
     def test_env_default_is_integer(self):
         default = _min_dispatch_default()
@@ -544,9 +555,8 @@ class TestEnvOverride:
 
     def test_env_override_would_change_value(self):
         src = _plugin_source()
-        assert "process.env.GLUDD_MULTITASK_MIN_DISPATCHES" in src, (
-            "Environment override path must exist"
-        )
+        assert "process.env[name]" in src
+        assert "GLUDD_MULTITASK_MIN_DISPATCHES" in src
 
     def test_floor_enforce_env_var(self):
         src = _plugin_source()
@@ -730,22 +740,20 @@ class TestMessageBoundaryDetection:
         )
 
 
-class TestSpawnGateRefresh:
-    """Fire-and-forget gate refresh when .gate-status is stale."""
+class TestProcessPureEnforcement:
+    """Policy-hook evaluation must never launch background project work."""
 
-    def test_gate_refresh_function_present(self):
+    def test_gate_refresh_function_absent(self):
         src = _plugin_source()
-        assert "spawnGateRefresh" in src, "spawnGateRefresh function must exist"
+        assert "spawnGateRefresh" not in src
 
-    def test_gate_refresh_checks_mtime(self):
+    def test_detached_process_absent(self):
         src = _plugin_source()
-        assert "300_000" in src, "Gate refresh threshold must be 300s (5 min)"
+        assert "detached: true" not in src
 
-    def test_gate_refresh_is_fire_and_forget(self):
+    def test_unref_absent(self):
         src = _plugin_source()
-        handler = src.split("function spawnGateRefresh")[1].split("\n}", 1)[0]
-        assert "unref()" in handler, "Spawned process must be unref'd"
-        assert "detached: true" in handler, "Spawned process must be detached"
+        assert ".unref()" not in src
 
 
 class TestHookRegistration:

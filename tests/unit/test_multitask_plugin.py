@@ -1,9 +1,11 @@
 """Behavior pin for the enforce-multitask plugin.
 
-Per AGENTS.md cost-efficiency directive (2026-07-13 rewrite): floor is 10.
+Per AGENTS.md cost-efficiency directive: delegation is adaptive unless an
+operator configures a minimum; ten is always the hard dispatch ceiling.
 Only tool.execute.before hook — message boundaries detected via 5s inter-call
 timeout. Dispatch counting, zero-streak tracking, and per-message enforcement
-all happen in a single hook. Exports MIN_DISPATCHES (10), MAX_DISPATCHES (10),
+all happen in a single hook. Shared configuration exports the recommended
+MIN_DISPATCHES (10), MAX_DISPATCHES (10),
 MAX_ZERO_STREAK (2), WAVE_HISTORY_SIZE (10), CONSECUTIVE_NON_DISPATCH_THRESHOLD (5),
 CONSECUTIVE_NON_DISPATCH_WINDOW_MS (30000).
 """
@@ -13,10 +15,11 @@ import re
 from pathlib import Path
 
 PLUGIN_PATH = Path(__file__).resolve().parents[2] / ".opencode/plugin/enforce-multitask.ts"
+CONFIG_PATH = Path(__file__).resolve().parents[2] / ".opencode/lib/multitask_config.ts"
 
 
 def _plugin_source() -> str:
-    return PLUGIN_PATH.read_text()
+    return CONFIG_PATH.read_text() + "\n" + PLUGIN_PATH.read_text()
 
 
 def _extract_export_value(src: str, name: str) -> str:
@@ -53,6 +56,19 @@ def _extract_env_default(src: str, env_var: str) -> int:
     altm = altpat.search(src)
     if altm:
         return int(altm.group(1))
+    for call in re.finditer(
+        r"integerFromEnv\(\s*\[(?P<names>[^]]+)\]\s*,\s*"
+        r"(?P<default>\d+|[A-Z_]+)\s*,?\s*\)",
+        src,
+        re.DOTALL,
+    ):
+        if f'"{env_var}"' in call.group("names"):
+            default = call.group("default")
+            if default.isdigit():
+                return int(default)
+            constant = re.search(rf"{re.escape(default)}\s*=\s*(\d+)", src)
+            assert constant, f"default constant {default} not found in source"
+            return int(constant.group(1))
     raise AssertionError(f"env var {env_var} default not found in source")
 
 
@@ -89,12 +105,10 @@ class TestMinDispatchesDefault:
 
     def test_string_value_matches_default(self):
         src = _plugin_source()
-        m = re.search(r'MIN_DISPATCHES\s*=\s*parseInt\(', src)
-        assert m, "MIN_DISPATCHES export must use parseInt"
-        after = src[m.start():m.start() + 200]
-        assert '"10"' in after and '10,' in after, (
-            "MIN_DISPATCHES must fall back to '10' as string and 10 as radix"
-        )
+        assert "MIN_DISPATCHES = integerFromEnv" in src
+        assert "Number.parseInt(raw, 10)" in src
+        assert _extract_env_default(src, "GLUDD_MIN_DISPATCHES") == 10
+        assert _extract_env_default(src, "GLUDD_MULTITASK_MIN_DISPATCHES") == 10
 
 
 class TestMaxZeroStreak:
@@ -403,14 +417,11 @@ class TestPerMessageEnforcement:
 
 class TestMinDispatchesPerWave:
     def test_default_is_10(self):
-        """MIN_DISPATCHES falls back to '10' via GLUDD_MIN_DISPATCHES || GLUDD_MULTITASK_MIN_DISPATCHES || '10'."""
+        """The shared parser recommends 10 when an operator opts in."""
         src = _plugin_source()
-        m = re.search(r'MIN_DISPATCHES\s*=\s*parseInt\(', src)
-        assert m, "MIN_DISPATCHES export must use parseInt"
-        after = src[m.start():m.start() + 200]
-        assert '"10"' in after and '10,' in after, (
-            "MIN_DISPATCHES must fall back to '10' as string and 10 as radix"
-        )
+        assert "MIN_DISPATCHES = integerFromEnv" in src
+        assert _extract_env_default(src, "GLUDD_MIN_DISPATCHES") == 10
+        assert _extract_env_default(src, "GLUDD_MULTITASK_MIN_DISPATCHES") == 10
 
     def test_env_var_gludd_min_dispatches(self):
         src = _plugin_source()
@@ -491,21 +502,17 @@ class TestConsecutiveNonDispatchExports:
 
     def test_threshold_default_is_5(self):
         src = _plugin_source()
-        m = re.search(
-            r"process\.env\.GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD\s*\|\|\s*\"(\d+)\"",
-            src,
+        default = _extract_env_default(
+            src, "GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD"
         )
-        assert m, "Threshold default not found"
-        assert int(m.group(1)) == 5, f"Threshold default should be 5, got {m.group(1)}"
+        assert default == 5, f"Threshold default should be 5, got {default}"
 
     def test_window_default_is_30000(self):
         src = _plugin_source()
-        m = re.search(
-            r"process\.env\.GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS\s*\|\|\s*\"(\d+)\"",
-            src,
+        default = _extract_env_default(
+            src, "GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS"
         )
-        assert m, "Window default not found"
-        assert int(m.group(1)) == 30000, f"Window default should be 30000, got {m.group(1)}"
+        assert default == 30000, f"Window default should be 30000, got {default}"
 
 
 class TestConsecutiveNonDispatchStateFields:
@@ -787,18 +794,16 @@ class TestConsecutiveNonDispatchDenyMessage:
         )
 
 
-class TestTenAgentFloorHardEnforcement:
+class TestAdaptiveMinimumAndHardCeiling:
     """Ten is an absolute ceiling; mandatory minimums are explicit opt-ins."""
 
     def test_min_dispatches_exactly_10(self):
-        """MIN_DISPATCHES uses GLUDD_MIN_DISPATCHES || GLUDD_MULTITASK_MIN_DISPATCHES || '10'."""
+        """The recommended configured minimum is 10, parsed in one place."""
         src = _plugin_source()
-        m = re.search(r'MIN_DISPATCHES\s*=\s*parseInt\(', src)
-        assert m, "MIN_DISPATCHES export must use parseInt"
-        after = src[m.start():m.start() + 200]
-        assert '"10"' in after and '10,' in after, (
-            "MIN_DISPATCHES must fall back to '10' as string and 10 as radix"
-        )
+        assert "MIN_DISPATCHES = integerFromEnv" in src
+        assert "Number.parseInt(raw, 10)" in src
+        assert _extract_env_default(src, "GLUDD_MIN_DISPATCHES") == 10
+        assert _extract_env_default(src, "GLUDD_MULTITASK_MIN_DISPATCHES") == 10
 
     def test_max_dispatches_exactly_10(self):
         default = _extract_env_default(_plugin_source(), "GLUDD_MULTITASK_MAX_DISPATCHES")

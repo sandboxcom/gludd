@@ -1,4 +1,4 @@
-"""E2E test for enforce-multitask.ts: dispatch-per-wave enforcement.
+"""E2E test for explicitly configured enforce-multitask wave enforcement.
 
 Verifies: subagent guard, env disable, enough dispatches allowed,
 single dispatch blocked, zero-streak text blocked, dispatch resets streak.
@@ -46,6 +46,7 @@ def _run_plugin(
         env = os.environ.copy()
         env["OPENCODE_SUBAGENT"] = ""
         env["GLUDD_MULTITASK_FLOOR_ENFORCE"] = "1"
+        env["GLUDD_MIN_DISPATCHES"] = "10"
         env["GLUDD_DISENGAGE_PATH"] = str(
             Path(tempfile.mktemp(suffix=".json", prefix=f"gludd-disengage-e2e-{_ts_counter}-"))
         )
@@ -208,7 +209,7 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
     result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
     r = _last_json(result)
     assert r is not None and r.get("permissionDecision") == "deny", f"Single dispatch should block, got: {r}"
-    assert "UNDER-FLOOR HARD BLOCK" in r.get("message", "")
+    assert "CONFIGURED MINIMUM BLOCK" in r.get("message", "")
 
 
 def test_single_dispatch_then_bash_blocked(tmp_path):
@@ -464,7 +465,7 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
 
 def test_consecutive_non_dispatch_within_time_window(tmp_path):
     """4 consecutive non-dispatch calls with 100ms sleeps between them
-    (all within MSG_GAP_MS=500). UNDER-FLOOR HARD BLOCK now fires on
+    (all within MSG_GAP_MS=500). CONFIGURED MINIMUM BLOCK now fires on
     the first write because thisMessageDispatches=0 < floor=10.
     Previously all were allowed; now the plugin catches them."""
     ws = tmp_path / "time-window"
@@ -486,9 +487,9 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
     result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
     r = _last_json(result)
     assert r is not None and r.get("permissionDecision") == "deny", (
-        f"Second write should be blocked by UNDER-FLOOR HARD BLOCK, got: {r}"
+        f"Second write should be blocked by CONFIGURED MINIMUM BLOCK, got: {r}"
     )
-    assert "UNDER-FLOOR HARD BLOCK" in r.get("message", "")
+    assert "CONFIGURED MINIMUM BLOCK" in r.get("message", "")
 
 
 def test_first_call_bypass_no_prior_dispatch_with_pending_work(tmp_path):
@@ -514,7 +515,7 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
 
 def test_mixed_read_write_grinding_with_pending_work(tmp_path):
     """Read→Write→Read→Write in rapid succession with pending work.
-    The writes are now blocked by UNDER-FLOOR HARD BLOCK (0 dispatches).
+    The writes are now blocked by CONFIGURED MINIMUM BLOCK (0 dispatches).
     Previously they all bypassed enforcement; now the plugin catches them."""
     ws = tmp_path / "mixed-grind"
     ws.mkdir()
@@ -532,9 +533,9 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
     result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
     r = _last_json(result)
     assert r is not None and r.get("permissionDecision") == "deny", (
-        f"Write with 0 dispatches should be blocked by UNDER-FLOOR HARD BLOCK, got: {r}"
+        f"Write with 0 dispatches should be blocked by CONFIGURED MINIMUM BLOCK, got: {r}"
     )
-    assert "UNDER-FLOOR HARD BLOCK" in r.get("message", "")
+    assert "CONFIGURED MINIMUM BLOCK" in r.get("message", "")
 
 
 def test_time_boundary_exactly_at_threshold(tmp_path):
@@ -592,7 +593,7 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
     assert r is not None and r.get("permissionDecision") == "deny", (
         f"Partial wave floor breach should block, got: {r}"
     )
-    assert "UNDER-FLOOR HARD BLOCK" in r.get("message", "")
+    assert "CONFIGURED MINIMUM BLOCK" in r.get("message", "")
 
 
 def test_hot_module_applies_same_message_boundary(tmp_path):
@@ -672,12 +673,12 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
     assert r is not None and r.get("permissionDecision") == "deny", (
         f"BUG: 20 rapid non-dispatch calls (15 reads + 5 writes) with pending work. "
         f"At least the 5th write (and subsequent reads) should be blocked by "
-        f"CONSECUTIVE NON-DISPATCH STREAK or UNDER-FLOOR HARD BLOCK. "
+        f"CONSECUTIVE NON-DISPATCH STREAK or CONFIGURED MINIMUM BLOCK. "
         f"Got: {r}"
     )
     block_msg = r.get("message", "")
     assert ("CONSECUTIVE NON-DISPATCH STREAK" in block_msg
-            or "UNDER-FLOOR HARD BLOCK" in block_msg), (
+            or "CONFIGURED MINIMUM BLOCK" in block_msg), (
         f"Expected enforcement block, got message: {block_msg}"
     )
 
@@ -690,7 +691,7 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
 def test_eight_dispatches_then_write_should_be_blocked(tmp_path):
     """BUG: Dispatch 8 tasks (< floor of 10), then write with pending work.
     In the real session, the agent dispatched 7-8 subagents and then used
-    edit/write/bash freely. The UNDER-FLOOR HARD BLOCK should have prevented
+    edit/write/bash freely. The CONFIGURED MINIMUM BLOCK should have prevented
     this but message boundary detection made it unreliable.
     Test: 8 dispatches, message boundary (sleep > MSG_GAP_MS), then write."""
     ws = tmp_path / "eight-dispatch"
@@ -715,8 +716,8 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
         f"BUG: 8 dispatches then write with pending work SHOULD be blocked. "
         f"8 < floor=10. Got: {r}"
     )
-    assert "UNDER-FLOOR HARD BLOCK" in r.get("message", ""), (
-        f"Expected UNDER-FLOOR HARD BLOCK, got: {r.get('message', '')}"
+    assert "CONFIGURED MINIMUM BLOCK" in r.get("message", ""), (
+        f"Expected CONFIGURED MINIMUM BLOCK, got: {r.get('message', '')}"
     )
 
 
@@ -751,7 +752,7 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
 
 def test_nine_dispatches_blocks_non_dispatch(tmp_path):
     """Dispatch 9 tasks (< floor of 10) then write in same message -> DENIED
-    with UNDER-FLOOR HARD BLOCK message."""
+    with CONFIGURED MINIMUM BLOCK message."""
     ws = tmp_path / "nine"
     ws.mkdir()
     _make_working_workspace(ws)
@@ -772,12 +773,12 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
     assert r is not None and r.get("permissionDecision") == "deny", (
         f"9 dispatches (<10 floor) should block, got: {r}"
     )
-    assert "UNDER-FLOOR HARD BLOCK" in r.get("message", "")
+    assert "CONFIGURED MINIMUM BLOCK" in r.get("message", "")
 
 
 def test_zero_dispatches_then_write_with_pending_work(tmp_path):
     """Fresh session, no dispatches, pending work, write tool -> blocked by
-    UNDER-FLOOR HARD BLOCK regardless of zeroStreak or prevMessageDispatches."""
+    CONFIGURED MINIMUM BLOCK regardless of zeroStreak or prevMessageDispatches."""
     ws = tmp_path / "zero-dispatch-write"
     ws.mkdir()
     _make_working_workspace(ws)
@@ -793,7 +794,7 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
     assert r is not None and r.get("permissionDecision") == "deny", (
         f"First write with pending work MUST be blocked, got: {r}"
     )
-    assert "UNDER-FLOOR HARD BLOCK" in r.get("message", "")
+    assert "CONFIGURED MINIMUM BLOCK" in r.get("message", "")
 
 
 def test_consecutive_non_dispatch_blocked_at_five(tmp_path):
@@ -945,7 +946,7 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
 
 def test_ten_dispatches_required_message_explicit(tmp_path):
     """The deny message for under-floor waves explicitly says '10' (the literal
-    number) and contains 'UNDER-FLOOR HARD BLOCK'."""
+    number) and contains 'CONFIGURED MINIMUM BLOCK'."""
     ws = tmp_path / "msg-explicit"
     ws.mkdir()
     _make_working_workspace(ws)
@@ -964,14 +965,14 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
     result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
     r = _last_json(result)
     msg = r.get("message", "")
-    assert "UNDER-FLOOR HARD BLOCK" in msg, f"Expected UNDER-FLOOR HARD BLOCK, got: {msg}"
+    assert "CONFIGURED MINIMUM BLOCK" in msg, f"Expected CONFIGURED MINIMUM BLOCK, got: {msg}"
     assert "10" in msg, f"Deny message must mention floor=10 explicitly, got: {msg}"
 
 
 def test_under_floor_check_fires_without_zero_streak(tmp_path):
     """Under-floor check fires with 9 dispatches in same message + write.
     zeroStreak is 0 (never incremented because no message boundary was crossed),
-    yet the UNDER-FLOOR HARD BLOCK still fires because it does NOT check
+    yet the CONFIGURED MINIMUM BLOCK still fires because it does NOT check
     zeroStreak at all."""
     ws = tmp_path / "under-floor-no-streak"
     ws.mkdir()
@@ -1000,4 +1001,4 @@ console.log(JSON.stringify({{...r, zeroStreakBefore: state.zeroStreak}}))
     assert r.get("zeroStreakBefore") == 0, (
         f"zeroStreak should be 0 after 9 dispatches in same message, got: {r.get('zeroStreakBefore')}"
     )
-    assert "UNDER-FLOOR HARD BLOCK" in r.get("message", "")
+    assert "CONFIGURED MINIMUM BLOCK" in r.get("message", "")
