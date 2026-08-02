@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 import pytest
+from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 
-def _make_app_with_todos(n: int):
+def _make_app_with_todos(n: int) -> tuple[FastAPI, list[dict[str, object]]]:
     import collections
 
     import general_ludd.daemon as dm
 
     app = dm.create_daemon_app(tick_interval=0.01)
-    # No session factory — use in-memory daemon state.
-    todos = [
+    # No session factory — seed this app's authoritative in-memory state.  The
+    # module-level ``dm._daemon_state`` is only a legacy migration shim and must
+    # not be used by fixtures: each app intentionally owns an isolated state
+    # dictionary so parallel daemon instances cannot leak todos into each other.
+    todos: list[dict[str, object]] = [
         {
             "todo_id": f"TODO-{i:04d}",
             "title": f"Todo {i}",
@@ -26,27 +30,14 @@ def _make_app_with_todos(n: int):
         }
         for i in range(n)
     ]
-    # After register(), _daemon_state["todos"] is a bounded deque — not a list.
+    # After register(), daemon_state["todos"] is a bounded deque — not a list.
     # Slice assignment ([:]) fails on deque. Replace it wholesale instead.
-    dm._daemon_state["todos"] = collections.deque(todos, maxlen=1000)
+    app.state.daemon_state["todos"] = collections.deque(todos, maxlen=1000)
     return app, todos
 
 
-@pytest.fixture(autouse=True)
-def _clear_daemon_state():
-    import collections
-
-    import general_ludd.daemon as dm
-
-    if dm._daemon_state is None:
-        dm._daemon_state = {"todos": [], "tick_metrics": {}, "quality_gate": {}}
-    original = list(dm._daemon_state["todos"])
-    yield
-    dm._daemon_state["todos"] = collections.deque(original, maxlen=1000)
-
-
 @pytest.mark.asyncio
-async def test_default_limit_caps_at_100():
+async def test_default_limit_caps_at_100() -> None:
     app, _ = _make_app_with_todos(150)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         resp = await c.get("/api/todos")
@@ -56,7 +47,7 @@ async def test_default_limit_caps_at_100():
 
 
 @pytest.mark.asyncio
-async def test_explicit_limit_10():
+async def test_explicit_limit_10() -> None:
     app, _ = _make_app_with_todos(50)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         resp = await c.get("/api/todos?limit=10")
@@ -66,7 +57,7 @@ async def test_explicit_limit_10():
 
 
 @pytest.mark.asyncio
-async def test_overlarge_limit_capped_at_500():
+async def test_overlarge_limit_capped_at_500() -> None:
     app, _ = _make_app_with_todos(600)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         resp = await c.get("/api/todos?limit=9999")
@@ -76,7 +67,7 @@ async def test_overlarge_limit_capped_at_500():
 
 
 @pytest.mark.asyncio
-async def test_offset_pages_are_disjoint():
+async def test_offset_pages_are_disjoint() -> None:
     app, _ = _make_app_with_todos(30)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         resp1 = await c.get("/api/todos?limit=10&offset=0")
