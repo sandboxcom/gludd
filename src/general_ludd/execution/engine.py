@@ -312,8 +312,6 @@ class ExecutionEngine:
     def _verify_sandbox(self) -> str | None:
         if self._sandbox_enforcer is None:
             return None
-        if self._sandbox_verified:
-            return None
         try:
             self._sandbox_enforcer.verify_ready()
         except Exception:

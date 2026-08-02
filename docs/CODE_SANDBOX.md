@@ -60,11 +60,13 @@ with create_ornith_sandbox() as sandbox:
 ### Execution workspace admission
 
 `ExecutionEngine` treats the configured project workspace and the sandbox jail
-as one admission contract. Before a model is called, the engine verifies the
+as one admission contract. Before every model call, the engine verifies the
 backend and requires the workspace's symlink-resolved path to be the jail itself
-or one of its descendants. The returned confined real path becomes the effective
-workspace. A sibling or otherwise external workspace is a configuration denial;
-Gludd does not copy, remap, or silently run it outside the jail.
+or one of its descendants. Admission is repeated even after a prior successful
+call so a replaced or reconfigured workspace cannot reuse stale approval. The
+returned confined real path becomes the effective workspace. A sibling or
+otherwise external workspace is a configuration denial; Gludd does not copy,
+remap, or silently run it outside the jail.
 
 Admission is deliberately followed by per-operation defense in depth. Every
 model-supplied `FILE:` path and each unified-diff target is resolved again under

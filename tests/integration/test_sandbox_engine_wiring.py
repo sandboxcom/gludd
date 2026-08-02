@@ -301,3 +301,46 @@ class TestSandboxEngineWiring:
         result2 = asyncio.run(engine.execute_async(job))
         assert result2.exit_code == 1
         assert "No changes parsed" in result2.result_summary
+
+    def test_engine_rechecks_workspace_admission_before_each_model_call(
+        self, tmp_path: Path
+    ) -> None:
+        jail = tmp_path / "jail"
+        jail.mkdir()
+        workspace = jail / "workspace"
+        sibling = tmp_path / "sibling"
+        sibling.mkdir()
+        enforcer = SandboxEnforcer(SandboxConfig(jail_dir=str(jail)))
+
+        mock_gateway = MagicMock()
+        mock_gateway.call_model = MagicMock(
+            return_value=MagicMock(content="No changes needed.")
+        )
+        engine = ExecutionEngine(
+            model_gateway=mock_gateway,
+            workspace_path=str(workspace),
+            sandbox_enforcer=enforcer,
+        )
+        job = JobSpec(
+            job_id="JOB-SB-READMIT",
+            todo_id="TODO-SB-READMIT",
+            playbook="code",
+            queue="core",
+            work_type="code",
+            prompt_text="recheck workspace admission",
+        )
+
+        first = asyncio.run(engine.execute_async(job))
+        assert first.exit_code == 1
+        assert mock_gateway.call_model.call_count == 1
+
+        engine.workspace_path = str(sibling)
+        second = asyncio.run(engine.execute_async(job))
+
+        assert second.exit_code == 1
+        assert second.result_summary == (
+            "Sandbox enforcement failed: workspace is outside configured jail"
+        )
+        assert str(sibling) not in second.result_summary
+        assert str(jail) not in second.result_summary
+        assert mock_gateway.call_model.call_count == 1
