@@ -320,8 +320,8 @@ class TestModelRouterInGateway:
             model_name="gpt-4",
             enabled=True,
             run_budget_usd=999.0,
-            cost_per_input_token=0.0,
-            cost_per_output_token=0.0,
+            cost_per_input_token=0.00003,
+            cost_per_output_token=0.00006,
         )
         reg = MagicMock()
         reg.is_installed.return_value = True
@@ -352,9 +352,10 @@ class TestModelRouterInGateway:
         router.add_pattern_mapping("gap_analysis", "fast")
         profile = ModelProfile(
             model_profile_id="review_prof",
-            provider="openai",
+            provider="local",
             model_name="review-model",
             enabled=True,
+            api_metered=False,
             run_budget_usd=999.0,
             cost_per_input_token=0.0,
             cost_per_output_token=0.0,
