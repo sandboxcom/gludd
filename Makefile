@@ -7238,4 +7238,8 @@ collect-specific:
 fix-e501-golden:
 	@$(UV) run python /tmp/fix_e501_lines.py
 
-.PHONY: e2e-test-gen-pipeline e2e-test-gen-pipeline-dogfood collect-specific fix-e501-golden
+clean-relative:
+	@rm -rf relative/
+	@echo "Removed relative/ temp directory"
+
+.PHONY: e2e-test-gen-pipeline e2e-test-gen-pipeline-dogfood collect-specific fix-e501-golden clean-relative

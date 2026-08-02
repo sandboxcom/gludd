@@ -397,6 +397,7 @@ class TestPhaseClaimRunnableTodos:
         loop._tick_state = {}
         loop._pause_controller = None
         loop._tick_project_id = None
+        loop._project_manager = MagicMock()
         await loop._phase_claim_runnable_todos()
         assert loop._tick_state["claimed_todos"] == []
 

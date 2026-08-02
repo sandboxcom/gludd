@@ -6,8 +6,7 @@ DOCUMENTATION:
   module: flight_search
   short_description: Search flights between origin and destination with filters
   description:
-    - Queries the travel transport engine (C(travel.transport.FlightSearchEngine))
-      for available flights matching the given criteria.
+    - Queries the travel transport engine for available flights matching criteria.
     - Supports date range, passenger count, cabin class, max stops, and price ceiling.
     - Returns a ranked list of flight options with pricing and layover details.
   options:
@@ -97,8 +96,7 @@ import datetime as _datetime
 from typing import Any
 
 from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
-
-from general_ludd.travel.contracts import (
+from ansible_collections.general_ludd.travel.plugins.module_utils.contracts import (
     BookingStatus,
     CabinClass,
     FlightBooking,

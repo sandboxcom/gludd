@@ -6,8 +6,7 @@ DOCUMENTATION:
   module: trip_planner
   short_description: Plan a trip itinerary with dates, destinations, and activities
   description:
-    - Calls the travel core planning engine (C(travel.core.plan_trip)) to generate
-      a multi-day trip itinerary.
+    - Calls the travel core planning engine to generate a multi-day trip itinerary.
     - Accepts origin, destinations, date range, budget, interests, and traveler count.
     - Returns a structured itinerary with daily activities, estimated costs, and
       travel logistics between stops.
@@ -91,8 +90,7 @@ import datetime as _datetime
 from typing import Any
 
 from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
-
-from general_ludd.travel.contracts import (
+from ansible_collections.general_ludd.travel.plugins.module_utils.contracts import (
     Budget,
     BudgetLineItem,
     Itinerary,
@@ -149,7 +147,6 @@ def plan_trip(
 
     timeline: list[TimelineEntry] = []
     for i, dest in enumerate(destinations):
-        day_num = i + 1
         day_start = _datetime.datetime.combine(req.start_date, _datetime.time(8, 0)) + _datetime.timedelta(days=i)
         day_end = day_start + _datetime.timedelta(hours=16)
         timeline.append(

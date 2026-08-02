@@ -1,7 +1,6 @@
-"""Travel core module (general_ludd.travel).
+"""Travel core module — moved from src/general_ludd/travel/core.py.
 
 Implements the top 6 user-visible travel functions:
-
   - plan_trip            construct a trip plan from origin/destination/dates
   - search_flights       search flight availability with filters
   - search_hotels        search hotel availability with filters
@@ -218,7 +217,6 @@ def search_flights(
     if not origin_n or not dest_n:
         return []
 
-    key = _route_key(origin_n, dest_n)
     if origin_n not in _SUPPORTED_ORIGINS or dest_n not in _SUPPORTED_ROUTES.get(origin_n, []):
         return NO_RESULTS
 
@@ -240,7 +238,12 @@ def search_flights(
                 ),
                 "cabin_class": cabin_class,
                 "stops": 0,
-                "price": round(_ROUGH_DISTANCES.get(key, 3000) * _TRANSPORT_COST_PER_MILE["flight"] * passengers, 2),
+                "price": round(
+                    _ROUGH_DISTANCES.get(_route_key(origin_n, dest_n), 3000)
+                    * _TRANSPORT_COST_PER_MILE["flight"]
+                    * passengers,
+                    2,
+                ),
                 "currency": "USD",
             }
         )
@@ -261,7 +264,7 @@ def search_flights(
                 "cabin_class": cabin_class,
                 "stops": 0 if idx == 0 else 1,
                 "price": round(
-                    _ROUGH_DISTANCES.get(key, 3000)
+                    _ROUGH_DISTANCES.get(_route_key(origin_n, dest_n), 3000)
                     * _TRANSPORT_COST_PER_MILE["flight"]
                     * passengers
                     * (1.0 - idx * 0.1),
@@ -379,7 +382,7 @@ def optimize_multi_stop(stops: list[dict]) -> dict:
 
     return {
         "route_id": _new_id(),
-        "name": " → ".join(s.get("city", "?") for s in stops),
+        "name": " \u2192 ".join(s.get("city", "?") for s in stops),
         "optimized": len(stops) >= 2,
         "segments": segments,
         "total_cost": round(total_cost, 2),
@@ -551,4 +554,7 @@ __all__ = [
     "search_flights",
     "search_hotels",
     "validate_travel_docs",
+    "_ROUGH_DISTANCES",
+    "_TRANSPORT_COST_PER_MILE",
+    "_SUPPORTED_ROUTES",
 ]

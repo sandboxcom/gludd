@@ -140,7 +140,7 @@ def test_multitask_required_dispatches_is_opt_in():
 def test_multitask_required_minimum_is_clamped_to_ceiling():
     """An operator-provided minimum can never exceed the ten-agent cap."""
     src = _read(MULTITASK_CONFIG_TS)
-    assert "Math.min(HARD_MAX_DISPATCHES" in src
+    assert re.search(r"Math\.min\(\s*\n?\s*HARD_MAX_DISPATCHES", src)
 
 
 def test_multitask_floor_breach_uses_required_dispatches():
@@ -171,7 +171,7 @@ def test_multitask_max_dispatches_value_is_10():
     """HARD_MAX_DISPATCHES must be 10. Declared in multitask_config.ts."""
     src = _read(MULTITASK_CONFIG_TS)
     assert "HARD_MAX_DISPATCHES = 10" in src
-    assert "Math.min(HARD_MAX_DISPATCHES" in src
+    assert re.search(r"Math\.min\(\s*\n?\s*HARD_MAX_DISPATCHES", src)
 
 
 def test_multitask_max_dispatches_enforcement_exists():

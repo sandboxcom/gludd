@@ -1,0 +1,101 @@
+---
+# searxng_setup role — deploy SearXNG metasearch engine for travel data
+#
+# SearXNG is a privacy-respecting metasearch engine that aggregates results from
+# 70+ search engines.  The travel expert uses it for live flight, hotel, event,
+# and activity data instead of hard-coded stubs.
+#
+# Flow:
+#   1. Install Docker (podman-compatible) if not present
+#   2. Render SearXNG settings template with travel search engines
+#   3. Start SearXNG container
+#   4. Wait for health check and validate JSON API
+
+- name: Detect package manager
+  ansible.builtin.set_fact:
+    pkg_mgr: >-
+      {{ "brew" if ansible_os_family == "Darwin"
+         else "apt" if ansible_os_family == "Debian"
+         else "dnf" if ansible_os_family == "RedHat"
+         else "apk" if ansible_os_family == "Alpine"
+         else "unknown" }}
+
+- name: Install Docker (macOS)
+  ansible.builtin.homebrew:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - docker
+    - docker-compose
+  when: pkg_mgr == "brew"
+  ignore_errors: true
+
+- name: Install Docker (Debian/Ubuntu)
+  ansible.builtin.apt:
+    name: docker.io
+    state: present
+  when: pkg_mgr == "apt"
+  ignore_errors: true
+
+- name: Create SearXNG config directory
+  ansible.builtin.file:
+    path: "{{ searxng_config_dir | default('/etc/searxng') }}"
+    state: directory
+    mode: "0755"
+
+- name: Create SearXNG artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir | default('/tmp/gludd-searxng') }}"
+    state: directory
+    mode: "0755"
+
+- name: Render SearXNG settings
+  ansible.builtin.template:
+    src: searxng_settings.yml.j2
+    dest: "{{ searxng_config_dir | default('/etc/searxng') }}/settings.yml"
+    mode: "0644"
+  notify: restart searxng
+
+- name: Render docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ searxng_config_dir | default('/etc/searxng') }}/docker-compose.yml"
+    mode: "0644"
+  notify: restart searxng
+
+- name: Start SearXNG via Docker Compose
+  ansible.builtin.command:
+    cmd: docker compose up -d --wait
+    chdir: "{{ searxng_config_dir | default('/etc/searxng') }}"
+  register: compose_up
+  changed_when: "'Created' in compose_up.stdout or 'Started' in compose_up.stdout"
+  ignore_errors: true
+
+- name: Wait for SearXNG health check
+  ansible.builtin.uri:
+    url: "http://localhost:{{ searxng_port | default(8080) }}/healthz"
+    method: GET
+    timeout: 5
+  register: health
+  retries: 12
+  delay: 5
+  until: health.status == 200
+  ignore_errors: true
+
+- name: Validate JSON search API
+  ansible.builtin.uri:
+    url: >-
+      http://localhost:{{ searxng_port | default(8080) }}/search
+      ?format=json&q=test&categories=general
+    method: GET
+    timeout: 10
+    return_content: true
+  register: api_check
+  ignore_errors: true
+
+- name: Report SearXNG status
+  ansible.builtin.debug:
+    msg: >-
+      SearXNG {{ 'running' if health.status | default(0) == 200 else 'not healthy' }}
+      at http://localhost:{{ searxng_port | default(8080) }}
+      (JSON API: {{ 'OK' if api_check.status | default(0) == 200 else 'unreachable' }})

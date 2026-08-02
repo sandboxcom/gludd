@@ -6,8 +6,7 @@ DOCUMENTATION:
   module: hotel_search
   short_description: Search hotels at a destination with filters for dates, budget, and amenities
   description:
-    - Queries the travel accommodation engine (C(travel.accommodation.HotelSearchEngine))
-      for available hotels matching the given criteria.
+    - Queries the travel accommodation engine for available hotels matching criteria.
     - Supports check-in/check-out dates, guest count, star rating, price range,
       amenities, and proximity preferences.
     - Returns a ranked list of hotel options with pricing, ratings, and amenity details.
@@ -97,8 +96,7 @@ import datetime as _datetime
 from typing import Any
 
 from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
-
-from general_ludd.travel.contracts import (
+from ansible_collections.general_ludd.travel.plugins.module_utils.contracts import (
     BookingStatus,
     HotelBooking,
     HotelCancellationTerms,
