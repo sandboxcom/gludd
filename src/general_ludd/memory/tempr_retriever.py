@@ -73,8 +73,8 @@ def _cosine_similarity(vec_a: dict[str, float], vec_b: dict[str, float]) -> floa
     return dot / (mag_a * mag_b)
 
 
-def _parse_iso_datetime(value: str | None) -> datetime | None:
-    if not value:
+def _parse_iso_datetime(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
         return None
     try:
         dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -83,6 +83,25 @@ def _parse_iso_datetime(value: str | None) -> datetime | None:
         return dt
     except (ValueError, TypeError):
         return None
+
+
+def _is_within_date_range(
+    created: datetime | None,
+    date_range: tuple[datetime, datetime],
+) -> bool:
+    """Return whether ``created`` is inside an inclusive explicit range.
+
+    Explicit filtering is fail-closed: a document without a parseable creation
+    timestamp cannot be proven to belong to the requested range.
+    """
+    if created is None:
+        return False
+
+    start, end = date_range
+    normalized_created = created.replace(tzinfo=UTC) if created.tzinfo is None else created.astimezone(UTC)
+    normalized_start = start.replace(tzinfo=UTC) if start.tzinfo is None else start.astimezone(UTC)
+    normalized_end = end.replace(tzinfo=UTC) if end.tzinfo is None else end.astimezone(UTC)
+    return normalized_start <= normalized_created <= normalized_end
 
 
 # ── Reciprocal Rank Fusion ───────────────────────────────────────────────────
@@ -263,6 +282,13 @@ class TEMPRRetriever:
 
         # Parse temporal expression from query for temporal strategy
         temporal_start, temporal_end = parse_temporal_expression(query)
+        date_filtered_doc_ids: frozenset[str] | None = None
+        if date_range is not None:
+            date_filtered_doc_ids = frozenset(
+                doc["id"]
+                for doc in self._documents
+                if _is_within_date_range(_parse_iso_datetime(doc.get("created_at")), date_range)
+            )
 
         # Run strategies in parallel
         with ThreadPoolExecutor(max_workers=self._max_workers) as executor:
@@ -270,22 +296,28 @@ class TEMPRRetriever:
 
             weights = self.strategy_weights
             if weights.get("semantic", 0) > 0:
-                futures["semantic"] = executor.submit(self._semantic_search, query)
+                futures["semantic"] = executor.submit(self._semantic_search, query, date_filtered_doc_ids)
             if weights.get("bm25", 0) > 0:
-                futures["bm25"] = executor.submit(self._bm25_search, query)
+                futures["bm25"] = executor.submit(self._bm25_search, query, date_filtered_doc_ids)
             if weights.get("temporal", 0) > 0:
                 futures["temporal"] = executor.submit(
                     self._temporal_search, query, temporal_start, temporal_end, date_range,
                 )
             if weights.get("graph", 0) > 0:
-                futures["graph"] = executor.submit(self._graph_search, query)
+                futures["graph"] = executor.submit(self._graph_search, query, date_filtered_doc_ids)
 
             strategy_results: dict[str, list[tuple[str, float]]] = {}
             for future in as_completed(futures.values()):
                 for name, fut in futures.items():
                     if future is fut and name not in strategy_results:
                         try:
-                            strategy_results[name] = fut.result()
+                            scored_results = fut.result()
+                            if date_filtered_doc_ids is not None:
+                                scored_results = [
+                                    result for result in scored_results
+                                    if result[0] in date_filtered_doc_ids
+                                ]
+                            strategy_results[name] = scored_results
                         except Exception:
                             logger.warning("Strategy %s failed", name, exc_info=True)
                             strategy_results[name] = []
@@ -318,10 +350,16 @@ class TEMPRRetriever:
 
     # ── Semantic strategy ────────────────────────────────────────────────
 
-    def _semantic_search(self, query: str) -> list[tuple[str, float]]:
+    def _semantic_search(
+        self,
+        query: str,
+        eligible_doc_ids: frozenset[str] | None = None,
+    ) -> list[tuple[str, float]]:
         query_vec = self._text_to_tfidf_vector(query)
         scored: list[tuple[str, float]] = []
         for doc in self._documents:
+            if eligible_doc_ids is not None and doc["id"] not in eligible_doc_ids:
+                continue
             doc_vec = self._text_to_tfidf_vector(doc["content"])
             sim = _cosine_similarity(query_vec, doc_vec)
             scored.append((doc["id"], sim))
@@ -349,7 +387,11 @@ class TEMPRRetriever:
 
     # ── BM25 strategy ────────────────────────────────────────────────────
 
-    def _bm25_search(self, query: str) -> list[tuple[str, float]]:
+    def _bm25_search(
+        self,
+        query: str,
+        eligible_doc_ids: frozenset[str] | None = None,
+    ) -> list[tuple[str, float]]:
         query_terms = _tokenize(query)
         if not query_terms or not self._documents:
             return []
@@ -357,6 +399,8 @@ class TEMPRRetriever:
         n = len(self._documents)
         scored: list[tuple[str, float]] = []
         for idx, doc in enumerate(self._documents):
+            if eligible_doc_ids is not None and doc["id"] not in eligible_doc_ids:
+                continue
             score = 0.0
             tf_counter = self._doc_term_freqs[idx]
             doc_len = sum(tf_counter.values())
@@ -413,10 +457,12 @@ class TEMPRRetriever:
             created_str = doc.get("created_at")
             created = _parse_iso_datetime(created_str)
             if created is None:
+                if date_range is not None:
+                    continue
                 score = 0.0
             else:
                 # Date range filtering — exclude entirely, not zero-score
-                if date_range and (created < date_range[0] or created > date_range[1]):
+                if date_range is not None and not _is_within_date_range(created, date_range):
                     continue
 
                 # Temporal expression filtering — exclude entirely
@@ -438,13 +484,19 @@ class TEMPRRetriever:
 
     # ── Graph strategy ───────────────────────────────────────────────────
 
-    def _graph_search(self, query: str) -> list[tuple[str, float]]:
+    def _graph_search(
+        self,
+        query: str,
+        eligible_doc_ids: frozenset[str] | None = None,
+    ) -> list[tuple[str, float]]:
         query_entities = self._extract_entities(query)
         if not self._documents:
             return []
 
         scored: list[tuple[str, float]] = []
         for idx, doc in enumerate(self._documents):
+            if eligible_doc_ids is not None and doc["id"] not in eligible_doc_ids:
+                continue
             doc_ents = self._doc_entities[idx] if idx < len(self._doc_entities) else set()
             score = 0.0
             reasons = 0

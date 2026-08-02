@@ -291,6 +291,9 @@ class TestTemporal:
             {"id": "march", "content": "march event", "created_at": "2024-03-15T00:00:00+00:00"},
             {"id": "june", "content": "june event", "created_at": "2024-06-15T00:00:00+00:00"},
             {"id": "september", "content": "september event", "created_at": "2024-09-15T00:00:00+00:00"},
+            {"id": "missing", "content": "event without a timestamp"},
+            {"id": "malformed", "content": "event with a bad timestamp", "created_at": "not-a-date"},
+            {"id": "invalid-type", "content": "event with a non-string timestamp", "created_at": 42},
         ]
         retriever.index(docs)
         results = retriever.retrieve(
@@ -301,6 +304,9 @@ class TestTemporal:
         assert "march" not in ids
         assert "june" in ids
         assert "september" not in ids
+        assert "missing" not in ids
+        assert "malformed" not in ids
+        assert "invalid-type" not in ids
 
     def test_no_created_at_uses_default(self):
         retriever = TEMPRRetriever(strategy_weights={"temporal": 1.0})
