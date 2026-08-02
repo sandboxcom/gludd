@@ -1,0 +1,17 @@
+---
+- name: Ensure artifact directory exists
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Run transliteration
+  ansible.builtin.script:
+    cmd: "files/transliterate.py --text '{{ input_text }}' --target-script '{{ target_script | default('Latin') }}' {% if scheme | default('') %}--scheme '{{ scheme }}'{% endif %} --output '{{ artifact_dir }}/transliteration.json'"
+    executable: "{{ ansible_python_interpreter | default('python3') }}"
+  register: transliterate_result
+  changed_when: false
+
+- name: Print transliteration summary
+  ansible.builtin.debug:
+    msg: "{{ transliterate_result.stdout_lines }}"

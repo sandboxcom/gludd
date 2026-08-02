@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: translate
+  author: Agentic Harness Agent
+  description: >
+    Translate text between languages. Supports LibreTranslate (local/self-hosted)
+    and a built-in dictionary for common words across 10+ language pairs.
+    Produces JSON artifact with translation, confidence, and alternatives.
+    Wires to src/general_ludd/language/translation.py.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

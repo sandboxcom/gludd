@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import re
+
 from general_ludd.language.contracts import (
     LanguageDetectionResult,
     TranslationResult,
@@ -30,7 +32,7 @@ _SCRIPT_RANGES: list[tuple[int, int, str]] = [
 
 _LANG_KEYWORDS: dict[str, tuple[str, ...]] = {
     "en": ("the", "is", "are", "and", "you", "have", "that", "for"),
-    "es": ("el", "la", "los", "las", "que", "de", "en", "con", "por", "qué"),
+    "es": ("el", "la", "los", "las", "que", "de", "en", "con", "por", "qué", "es", "una", "un", "hola"),
     "fr": ("le", "la", "les", "des", "est", "que", "pas", "une", "dans", "vous"),
     "de": (
         "der",
@@ -44,7 +46,12 @@ _LANG_KEYWORDS: dict[str, tuple[str, ...]] = {
         "sich",
         "ein",
         "eine",
-        "Ihnen",
+        "ihnen",
+        "es",
+        "guten",
+        "tag",
+        "wie",
+        "geht",
     ),
     "pt": ("o", "a", "os", "as", "que", "de", "da", "do", "em", "não", "para"),
     "it": ("il", "la", "i", "le", "di", "che", "non", "una", "per", "con", "sono"),
@@ -354,9 +361,6 @@ class Translator:
         if source_lang == target_lang:
             raise ValueError("Cannot translate to the same language")
         translated = f"[{target_lang.upper()}] {text}"
-        if self.backend == "mock":
-            prefix = _lang_name(target_lang)
-            translated = f"[{prefix}] {text}"
         return TranslationResult(
             translated_text=translated,
             source_lang=source_lang,
@@ -429,7 +433,11 @@ def _classify(text: str, script: str) -> str:
     best_lang = "en"
     best_score = 0
     for lang, keywords in _LANG_KEYWORDS.items():
-        score = sum(1 for kw in keywords if kw in lower)
+        score = 0
+        for kw in keywords:
+            kw_lower = kw.lower()
+            if re.search(r"\b" + re.escape(kw_lower) + r"\b", lower):
+                score += 1
         if score > best_score:
             best_score = score
             best_lang = lang
@@ -443,7 +451,11 @@ def _confidence_for(text: str, lang: str) -> float:
     if not keywords:
         return 0.7
     lower = text.lower()
-    matches = sum(1 for kw in keywords if kw in lower)
+    matches = 0
+    for kw in keywords:
+        kw_lower = kw.lower()
+        if re.search(r"\b" + re.escape(kw_lower) + r"\b", lower):
+            matches += 1
     return min(1.0, max(0.55, matches / max(len(keywords), 1) + 0.4))
 
 

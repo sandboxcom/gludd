@@ -21,8 +21,13 @@ if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
 _COLL = os.path.join(
-    os.path.dirname(__file__), "..", "..",
-    "collections", "ansible_collections", "general_ludd", "language",
+    os.path.dirname(__file__),
+    "..",
+    "..",
+    "collections",
+    "ansible_collections",
+    "general_ludd",
+    "language",
 )
 
 
@@ -40,7 +45,7 @@ class TestBomEncodingWorkflow:
                 encoding = BOM_BY_SEQUENCE[sig]
                 break
         assert encoding == "UTF-8"
-        stripped = data[len(BOM_SIGNATURES[encoding]):]
+        stripped = data[len(BOM_SIGNATURES[encoding]) :]
         text = stripped.decode("utf-8")
         assert text == "Caf\u00e9"
         assert ord("\u00e9") == 0x00E9
@@ -56,7 +61,7 @@ class TestBomEncodingWorkflow:
                 encoding = BOM_BY_SEQUENCE[sig]
                 break
         assert encoding == "UTF-16-LE"
-        stripped = data[len(BOM_SIGNATURES[encoding]):]
+        stripped = data[len(BOM_SIGNATURES[encoding]) :]
         assert stripped.decode("utf-16-le") == "Hello"
 
     def test_no_bom_ascii_passes_through(self) -> None:
@@ -77,9 +82,7 @@ class TestMojibakeDetection:
         utf8_bytes = "caf\u00e9".encode("utf-8")
         misdecoded = utf8_bytes.decode("iso-8859-1")
         sigs = MOJIBAKE_SIGNATURES.get("UTF-8 viewed as ISO-8859-1", [])
-        assert any(sig in misdecoded for sig in sigs), (
-            f"No mojibake pattern matched '{misdecoded}'"
-        )
+        assert any(sig in misdecoded for sig in sigs), f"No mojibake pattern matched '{misdecoded}'"
 
     def test_latin1_as_utf8_causes_decode_error(self) -> None:
         from general_ludd.language.charset_map import MOJIBAKE_SIGNATURES
@@ -105,8 +108,10 @@ class TestMojibakeDetection:
         assert "UTF-8" in names or "utf-8" in names or "utf_8" in names
         confidence = 0.72
         level = (
-            "reliable" if confidence >= CHARDET_CONFIDENCE_THRESHOLDS["reliable"]
-            else "usable" if confidence >= CHARDET_CONFIDENCE_THRESHOLDS["usable"]
+            "reliable"
+            if confidence >= CHARDET_CONFIDENCE_THRESHOLDS["reliable"]
+            else "usable"
+            if confidence >= CHARDET_CONFIDENCE_THRESHOLDS["usable"]
             else "entry"
         )
         assert level == "usable"
@@ -123,10 +128,7 @@ class TestHomoglyphDomainSpoofing:
         )
 
         spoofed = chr(0x0430) + "pple.com"
-        confusable_found = any(
-            _codepoint_in_group(ord(ch), HOMOGLYPH_GROUPS) and ord(ch) > 0x007F
-            for ch in spoofed
-        )
+        confusable_found = any(_codepoint_in_group(ord(ch), HOMOGLYPH_GROUPS) and ord(ch) > 0x007F for ch in spoofed)
         assert confusable_found
         assert 0x200B in _INVISIBLE_SET
 
@@ -137,12 +139,8 @@ class TestHomoglyphDomainSpoofing:
             _codepoint_in_group,
         )
 
-        russian_goog = "".join(
-            chr(cp) for cp in [0x043E, 0x043E, 0x043E, 0x043E, 0x043E]
-        )
-        assert all(
-            _codepoint_in_group(ord(c), HOMOGLYPH_GROUPS) for c in russian_goog
-        )
+        russian_goog = "".join(chr(cp) for cp in [0x043E, 0x043E, 0x043E, 0x043E, 0x043E])
+        assert all(_codepoint_in_group(ord(c), HOMOGLYPH_GROUPS) for c in russian_goog)
         assert 0x00AD in _INVISIBLE_SET
 
     def test_invisible_characters_in_url(self) -> None:
@@ -196,9 +194,7 @@ class TestPhoneticCrossMethod:
                         continue
                     reversed_arp = IPA_TO_ARPABET.get(ipa)
                     if reversed_arp:
-                        assert reversed_arp == arp, (
-                            f"ARPABET {arp} -> IPA mismatch: {mapped_ipa} vs {ipa}"
-                        )
+                        assert reversed_arp == arp, f"ARPABET {arp} -> IPA mismatch: {mapped_ipa} vs {ipa}"
 
     def test_cmu_dict_words_all_have_stress(self) -> None:
         from general_ludd.language.phonetic_data import CMU_DICT_SUBSET
@@ -206,9 +202,9 @@ class TestPhoneticCrossMethod:
         for word, pronunciations in CMU_DICT_SUBSET.items():
             for pron in pronunciations:
                 phonemes = pron.split()
-                assert any(
-                    ph[-1] in "012" for ph in phonemes if len(ph) == 3
-                ), f"CMU word {word} has no stress marker: {pron}"
+                assert any(ph[-1] in "012" for ph in phonemes if len(ph) == 3), (
+                    f"CMU word {word} has no stress marker: {pron}"
+                )
 
 
 class TestLocaleFormatIntegration:
@@ -283,12 +279,12 @@ class TestUnicodeNormalizationIntegration:
         from general_ludd.language.charset_map import BOM_SIGNATURES
         from general_ludd.language.unicode_data import UTF8_HEADER_BYTES, plane_of
 
-        emoji = "\U0001F600"
+        emoji = "\U0001f600"
         assert plane_of(ord(emoji)) == "SMP"
         utf8_bytes = emoji.encode("utf-8")
         assert len(utf8_bytes) == 4
         assert UTF8_HEADER_BYTES.get(utf8_bytes[0]) == 4
-        assert emoji.encode("utf-16-be")[:2] == b"\xD8\x3D"
+        assert emoji.encode("utf-16-be")[:2] == b"\xd8\x3d"
         assert len(BOM_SIGNATURES) >= 5
 
     def test_utf8_overlong_sequences_detected(self) -> None:
@@ -317,9 +313,14 @@ class TestLanguageRoleFileIntegration:
 
     def test_all_roles_have_task_files_with_content(self) -> None:
         roles = [
-            "bom_detect", "encoding_detect", "font_analyze",
-            "homoglyph_scan", "i18n_extract", "locale_format",
-            "phonetic_transcribe", "unicode_analyze",
+            "bom_detect",
+            "encoding_detect",
+            "font_analyze",
+            "homoglyph_scan",
+            "i18n_extract",
+            "locale_format",
+            "phonetic_transcribe",
+            "unicode_analyze",
         ]
         for role in roles:
             tasks_file = os.path.join(_COLL, "roles", role, "tasks", "main.yml")
@@ -346,3 +347,15 @@ class TestLanguageRoleFileIntegration:
         assert hasattr(pd, "SOUNDEX_MAPPING")
         assert hasattr(hd, "HOMOGLYPH_GROUPS")
         assert hasattr(hd, "_INVISIBLE_SET")
+
+    def test_new_knowledge_modules_importable(self) -> None:
+        import general_ludd.language.detection as det
+        import general_ludd.language.translation as trans
+        import general_ludd.language.transliteration as translit
+
+        assert hasattr(det, "detect_language")
+        assert hasattr(det, "LANGUAGE_NAMES")
+        assert hasattr(trans, "translate")
+        assert hasattr(trans, "_DICTIONARY")
+        assert hasattr(translit, "transliterate")
+        assert hasattr(translit, "list_schemes")

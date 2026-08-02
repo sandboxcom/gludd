@@ -2334,7 +2334,7 @@ class ModelGateway:
             primary_reason = sanitize_error_message(str(from_error)) if from_error is not None else "unknown"
             full_attempts = [{"profile_id": from_profile_id, "reason": primary_reason}, *attempts]
             _enrich_all_down_message(last, full_attempts)
-            raise last from None
+            raise RuntimeError(str(last)) from last
         raise RuntimeError(f"_stream_walk_fallbacks: all stream fallbacks failed for '{from_profile_id}'")
 
     def _stream_walk_fallbacks_sync(

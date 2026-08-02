@@ -257,3 +257,223 @@ class TestRouterRegistration:
             client.post("/api/travel/plan", json={"origin": "JFK"})
         mock_runner.register_playbook.assert_not_called()
         mock_runner.run_playbook.assert_called_once()
+
+
+class TestLiveSearxngIntegration:
+    def test_flights_live_true_calls_searxng(self) -> None:
+        app = FastAPI()
+        mock_runner = MagicMock()
+        mock_runner.list_playbooks.return_value = []
+        mock_runner.run_playbook.return_value = {"status": "successful", "rc": 0}
+
+        with (
+            patch(
+                "general_ludd.ansible.runner.AnsibleRunnerAdapter",
+                return_value=mock_runner,
+            ),
+            patch(
+                "general_ludd.routers.travel._resolve_playbook_path",
+                return_value=Path("/fake/playbooks/travel_search_flights.yml"),
+            ),
+            patch(
+                "general_ludd.routers.travel._call_searxng",
+            ) as mock_searxng,
+        ):
+            mock_searxng.return_value = {"results": [], "result_count": 0}
+            register(app, {})
+            client = TestClient(app)
+            response = client.post(
+                "/api/travel/flights?live=true",
+                json={"origin": "JFK", "destination": "CDG"},
+            )
+        assert response.status_code == 200
+        data = response.json()
+        assert "live_data" in data
+        mock_searxng.assert_called_once_with("flights from JFK to CDG on any date", "flights")
+
+    def test_flights_live_false_omits_searxng(self) -> None:
+        app = FastAPI()
+        mock_runner = MagicMock()
+        mock_runner.list_playbooks.return_value = []
+        mock_runner.run_playbook.return_value = {"status": "successful", "rc": 0}
+
+        with (
+            patch(
+                "general_ludd.ansible.runner.AnsibleRunnerAdapter",
+                return_value=mock_runner,
+            ),
+            patch(
+                "general_ludd.routers.travel._resolve_playbook_path",
+                return_value=Path("/fake/playbooks/travel_search_flights.yml"),
+            ),
+            patch(
+                "general_ludd.routers.travel._call_searxng",
+            ) as mock_searxng,
+        ):
+            register(app, {})
+            client = TestClient(app)
+            response = client.post(
+                "/api/travel/flights",
+                json={"origin": "JFK", "destination": "CDG"},
+            )
+        assert response.status_code == 200
+        data = response.json()
+        assert "live_data" not in data
+        mock_searxng.assert_not_called()
+
+    def test_hotels_live_true_calls_searxng(self) -> None:
+        app = FastAPI()
+        mock_runner = MagicMock()
+        mock_runner.list_playbooks.return_value = []
+        mock_runner.run_playbook.return_value = {"status": "successful", "rc": 0}
+
+        with (
+            patch(
+                "general_ludd.ansible.runner.AnsibleRunnerAdapter",
+                return_value=mock_runner,
+            ),
+            patch(
+                "general_ludd.routers.travel._resolve_playbook_path",
+                return_value=Path("/fake/playbooks/travel_search_hotels.yml"),
+            ),
+            patch(
+                "general_ludd.routers.travel._call_searxng",
+            ) as mock_searxng,
+        ):
+            mock_searxng.return_value = {"results": [], "result_count": 0}
+            register(app, {})
+            client = TestClient(app)
+            response = client.post(
+                "/api/travel/hotels?live=true",
+                json={"destination": "Paris", "guests": 2},
+            )
+        assert response.status_code == 200
+        assert "live_data" in response.json()
+        mock_searxng.assert_called_once_with("hotels in Paris for 2 guest(s)", "hotels")
+
+    def test_hotels_live_false_omits_searxng(self) -> None:
+        app = FastAPI()
+        mock_runner = MagicMock()
+        mock_runner.list_playbooks.return_value = []
+        mock_runner.run_playbook.return_value = {"status": "successful", "rc": 0}
+
+        with (
+            patch(
+                "general_ludd.ansible.runner.AnsibleRunnerAdapter",
+                return_value=mock_runner,
+            ),
+            patch(
+                "general_ludd.routers.travel._resolve_playbook_path",
+                return_value=Path("/fake/playbooks/travel_search_hotels.yml"),
+            ),
+            patch(
+                "general_ludd.routers.travel._call_searxng",
+            ) as mock_searxng,
+        ):
+            register(app, {})
+            client = TestClient(app)
+            response = client.post(
+                "/api/travel/hotels",
+                json={"destination": "Paris"},
+            )
+        assert response.status_code == 200
+        assert "live_data" not in response.json()
+        mock_searxng.assert_not_called()
+
+    def test_event_live_true_calls_searxng(self) -> None:
+        app = FastAPI()
+        mock_runner = MagicMock()
+        mock_runner.list_playbooks.return_value = []
+        mock_runner.run_playbook.return_value = {"status": "successful", "rc": 0}
+
+        with (
+            patch(
+                "general_ludd.ansible.runner.AnsibleRunnerAdapter",
+                return_value=mock_runner,
+            ),
+            patch(
+                "general_ludd.routers.travel._resolve_playbook_path",
+                return_value=Path("/fake/playbooks/travel_event_plan.yml"),
+            ),
+            patch(
+                "general_ludd.routers.travel._call_searxng",
+            ) as mock_searxng,
+        ):
+            mock_searxng.return_value = {"results": [], "result_count": 0}
+            register(app, {})
+            client = TestClient(app)
+            response = client.post(
+                "/api/travel/event?live=true",
+                json={"destination": "Berlin", "event_type": "conference"},
+            )
+        assert response.status_code == 200
+        assert "live_data" in response.json()
+        mock_searxng.assert_called_once_with("conference in Berlin on any date", "events")
+
+    def test_event_live_false_omits_searxng(self) -> None:
+        app = FastAPI()
+        mock_runner = MagicMock()
+        mock_runner.list_playbooks.return_value = []
+        mock_runner.run_playbook.return_value = {"status": "successful", "rc": 0}
+
+        with (
+            patch(
+                "general_ludd.ansible.runner.AnsibleRunnerAdapter",
+                return_value=mock_runner,
+            ),
+            patch(
+                "general_ludd.routers.travel._resolve_playbook_path",
+                return_value=Path("/fake/playbooks/travel_event_plan.yml"),
+            ),
+            patch(
+                "general_ludd.routers.travel._call_searxng",
+            ) as mock_searxng,
+        ):
+            register(app, {})
+            client = TestClient(app)
+            response = client.post(
+                "/api/travel/event",
+                json={"destination": "Berlin"},
+            )
+        assert response.status_code == 200
+        assert "live_data" not in response.json()
+        mock_searxng.assert_not_called()
+
+    def test_live_data_structure_includes_keys(self) -> None:
+        app = FastAPI()
+        mock_runner = MagicMock()
+        mock_runner.list_playbooks.return_value = []
+        mock_runner.run_playbook.return_value = {"status": "successful", "rc": 0}
+
+        fake_live = {
+            "results": [{"title": "Cheap flight", "airline": "UA"}],
+            "raw_results": [],
+            "result_count": 1,
+            "query": "flights",
+            "category": "flights",
+            "search_url": "http://localhost:8080/search?q=flights",
+        }
+        with (
+            patch(
+                "general_ludd.ansible.runner.AnsibleRunnerAdapter",
+                return_value=mock_runner,
+            ),
+            patch(
+                "general_ludd.routers.travel._resolve_playbook_path",
+                return_value=Path("/fake/playbooks/travel_search_flights.yml"),
+            ),
+            patch(
+                "general_ludd.routers.travel._call_searxng",
+                return_value=fake_live,
+            ),
+        ):
+            register(app, {})
+            client = TestClient(app)
+            response = client.post(
+                "/api/travel/flights?live=true",
+                json={"origin": "JFK", "destination": "CDG"},
+            )
+        assert response.status_code == 200
+        live = response.json()["live_data"]
+        assert live["result_count"] == 1
+        assert live["category"] == "flights"

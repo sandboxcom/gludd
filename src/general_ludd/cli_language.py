@@ -9,6 +9,7 @@ Provides four subcommands:
 Each handler calls into the corresponding knowledge module under
 ``general_ludd.language.*`` and prints a JSON artifact.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -53,6 +54,7 @@ def _cmd_language_detect_encoding(args: argparse.Namespace) -> None:
     confidence = 0.0
     try:
         import chardet
+
         detection = chardet.detect(data)
         detected_encoding = detection.get("encoding", "unknown") or "unknown"
         confidence = detection.get("confidence", 0.0) or 0.0
@@ -135,9 +137,7 @@ def _cmd_language_scan_homoglyphs(args: argparse.Namespace) -> None:
             cp_to_skeleton[cp] = group["skeleton"]
 
     invisible_set: set[int] = {inv["codepoint"] for inv in INVISIBLE_CHARACTERS}
-    invisible_map: dict[int, dict[str, object]] = {
-        inv["codepoint"]: dict(inv) for inv in INVISIBLE_CHARACTERS
-    }
+    invisible_map: dict[int, dict[str, object]] = {inv["codepoint"]: dict(inv) for inv in INVISIBLE_CHARACTERS}
 
     findings: list[dict[str, object]] = []
     for idx, ch in enumerate(text):
@@ -147,15 +147,17 @@ def _cmd_language_scan_homoglyphs(args: argparse.Namespace) -> None:
         if cp in invisible_set:
             inv_info = invisible_map.get(cp, {})
             sev = "high" if inv_info.get("category") == "bidi-control" else "medium"
-            findings.append({
-                "type": "invisible",
-                "severity": sev,
-                "character": ch,
-                "codepoint": hex_cp,
-                "position": idx,
-                "name": inv_info.get("short_name", ""),
-                "description": str(inv_info.get("risk", "")),
-            })
+            findings.append(
+                {
+                    "type": "invisible",
+                    "severity": sev,
+                    "character": ch,
+                    "codepoint": hex_cp,
+                    "position": idx,
+                    "name": inv_info.get("short_name", ""),
+                    "description": str(inv_info.get("risk", "")),
+                }
+            )
             continue
 
         if cp in cp_to_skeleton:
@@ -163,19 +165,22 @@ def _cmd_language_scan_homoglyphs(args: argparse.Namespace) -> None:
             if skeleton and skeleton != ch:
                 try:
                     import unicodedata
+
                     name = unicodedata.name(ch, "")
                 except (ImportError, ValueError):
                     name = ""
-                findings.append({
-                    "type": "confusable",
-                    "severity": "medium",
-                    "character": ch,
-                    "codepoint": hex_cp,
-                    "position": idx,
-                    "skeleton": skeleton,
-                    "name": name,
-                    "description": f"Looks like '{skeleton}' but is {name or 'unknown'}",
-                })
+                findings.append(
+                    {
+                        "type": "confusable",
+                        "severity": "medium",
+                        "character": ch,
+                        "codepoint": hex_cp,
+                        "position": idx,
+                        "skeleton": skeleton,
+                        "name": name,
+                        "description": f"Looks like '{skeleton}' but is {name or 'unknown'}",
+                    }
+                )
 
     filtered = [f for f in findings if SEVERITY_RANK.get(str(f.get("severity", "low")), 0) >= min_sev]
     result["findings"] = filtered
@@ -249,13 +254,11 @@ def _cmd_language_detect_bom(args: argparse.Namespace) -> None:
             result["rfc_compliance"] = "none"
 
         if getattr(args, "strip", False):
-            stripped = data[len(BOM_SIGNATURES[bom_found]):]
+            stripped = data[len(BOM_SIGNATURES[bom_found]) :]
             result["stripped_preview"] = str(stripped[:100])
             with contextlib.suppress(LookupError, UnicodeDecodeError):
-                result["stripped_text_preview"] = (
-                    stripped[:200]
-                    .decode(bom_found.replace("_BOM", "").replace("_", "-"),
-                            errors="replace")
+                result["stripped_text_preview"] = stripped[:200].decode(
+                    bom_found.replace("_BOM", "").replace("_", "-"), errors="replace"
                 )
     else:
         result["bom_found"] = False
@@ -311,6 +314,7 @@ def _cmd_language_phonetic_transcribe(args: argparse.Namespace) -> None:
         return
 
     import re
+
     WORD_RE = re.compile(r"[A-Za-z]+")
     words = WORD_RE.findall(text)
 
@@ -461,15 +465,17 @@ def _cmd_language_unicode_analyze(args: argparse.Namespace) -> None:
         for ch in raw:
             cp_val = ord(ch)
             name = unicodedata.name(ch, "")
-            chars_out.append({
-                "character": ch,
-                "codepoint": cp_val,
-                "codepoint_hex": f"U+{cp_val:04X}",
-                "name": name,
-                "category": unicodedata.category(ch),
-                "plane": plane_of(cp_val),
-                "is_surrogate": is_surrogate(cp_val),
-            })
+            chars_out.append(
+                {
+                    "character": ch,
+                    "codepoint": cp_val,
+                    "codepoint_hex": f"U+{cp_val:04X}",
+                    "name": name,
+                    "category": unicodedata.category(ch),
+                    "plane": plane_of(cp_val),
+                    "is_surrogate": is_surrogate(cp_val),
+                }
+            )
         result_str: dict[str, object] = {
             "input": raw,
             "length": len(raw),
@@ -659,8 +665,7 @@ def _cmd_language_font_analyze(args: argparse.Namespace) -> None:
     if getattr(args, "tables", False):
         try:
             result["tables"] = [
-                {"tag": t["tag"], "offset": t["offset"], "length": t["length"]}
-                for t in list_font_tables(font_path)
+                {"tag": t["tag"], "offset": t["offset"], "length": t["length"]} for t in list_font_tables(font_path)
             ]
         except (OSError, struct.error):
             result["tables"] = []
@@ -675,6 +680,39 @@ def _cmd_language_font_analyze(args: argparse.Namespace) -> None:
         except (OSError, struct.error):
             result["metrics_error"] = "failed to read font header"
 
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+def _cmd_language_detect_language(args: argparse.Namespace) -> None:
+    from general_ludd.language.detection import detect_language
+
+    text = args.text or ""
+    result = detect_language(text)
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+def _cmd_language_translate(args: argparse.Namespace) -> None:
+    from general_ludd.language.translation import translate
+
+    text = args.text or ""
+    source = getattr(args, "source", "auto") or "auto"
+    target = getattr(args, "target", "en") or "en"
+    result = translate(text, source, target)
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+def _cmd_language_transliterate(args: argparse.Namespace) -> None:
+    from general_ludd.language.transliteration import list_schemes, transliterate
+
+    if getattr(args, "list_schemes", False):
+        schemes = list_schemes()
+        print(json.dumps(schemes, indent=2))
+        return
+
+    text = args.text or ""
+    target = getattr(args, "target_script", "Latin") or "Latin"
+    scheme = getattr(args, "scheme", None) or None
+    result = transliterate(text, target, scheme)
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
@@ -693,37 +731,43 @@ def _cmd_language_analyze_text(args: argparse.Namespace) -> None:
     findings: list[dict[str, object]] = []
 
     for confusable in detect_confusables(text):
-        findings.append({
-            "type": "confusable",
-            "severity": "medium",
-            "character": confusable["character"],
-            "codepoint": confusable["codepoint"],
-            "position": confusable["position"],
-            "skeleton": confusable["skeleton"],
-            "name": confusable["name"],
-        })
+        findings.append(
+            {
+                "type": "confusable",
+                "severity": "medium",
+                "character": confusable["character"],
+                "codepoint": confusable["codepoint"],
+                "position": confusable["position"],
+                "skeleton": confusable["skeleton"],
+                "name": confusable["name"],
+            }
+        )
 
     for invisible in detect_invisible_chars(text):
         sev = "high" if invisible["category"] == "bidi-control" else "medium"
-        findings.append({
-            "type": "invisible",
-            "severity": sev,
-            "character": invisible["character"],
-            "codepoint": invisible["codepoint"],
-            "position": invisible["position"],
-            "name": invisible["name"],
-            "category": invisible["category"],
-        })
+        findings.append(
+            {
+                "type": "invisible",
+                "severity": sev,
+                "character": invisible["character"],
+                "codepoint": invisible["codepoint"],
+                "position": invisible["position"],
+                "name": invisible["name"],
+                "category": invisible["category"],
+            }
+        )
 
     for bidi in detect_bidi_overrides(text):
-        findings.append({
-            "type": "bidi-override",
-            "severity": "critical",
-            "character": bidi["character"],
-            "codepoint": bidi["codepoint"],
-            "position": bidi["position"],
-            "name": bidi["name"],
-        })
+        findings.append(
+            {
+                "type": "bidi-override",
+                "severity": "critical",
+                "character": bidi["character"],
+                "codepoint": bidi["codepoint"],
+                "position": bidi["position"],
+                "name": bidi["name"],
+            }
+        )
 
     mixed = detect_mixed_script(text)
     skeleton = generate_skeleton(text)
@@ -759,91 +803,101 @@ def add_language_subparser(subparsers: Any) -> argparse.ArgumentParser:
     language_parser: argparse.ArgumentParser = subparsers.add_parser(
         "language",
         help="Language Expert operations (encoding, homoglyphs, BOM, phonetics, "
-             "unicode, locale, i18n, fonts, text analysis)",
+        "unicode, locale, i18n, fonts, text analysis)",
     )
     language_parser.set_defaults(func=None)
     lang_sub = language_parser.add_subparsers(dest="language_command")
 
     detect_enc = lang_sub.add_parser("detect-encoding", help="Detect character encoding of a file")
     detect_enc.add_argument("file", help="File to detect encoding for")
-    detect_enc.add_argument("--detect-mojibake", action="store_true", default=False,
-                            help="Check for mojibake patterns")
-    detect_enc.add_argument("--list-encodings", action="store_true", default=False,
-                            help="List all supported encodings")
+    detect_enc.add_argument("--detect-mojibake", action="store_true", default=False, help="Check for mojibake patterns")
+    detect_enc.add_argument("--list-encodings", action="store_true", default=False, help="List all supported encodings")
     detect_enc.set_defaults(func=_cmd_language_detect_encoding)
 
     scan_homoglyphs = lang_sub.add_parser("scan-homoglyphs", help="Scan text for confusable/homoglyph characters")
     scan_homoglyphs.add_argument("text", help="Text to scan for homoglyphs")
-    scan_homoglyphs.add_argument("--min-severity", default="low",
-                                  choices=["low", "medium", "high", "critical"],
-                                  help="Minimum severity threshold (default: low)")
+    scan_homoglyphs.add_argument(
+        "--min-severity",
+        default="low",
+        choices=["low", "medium", "high", "critical"],
+        help="Minimum severity threshold (default: low)",
+    )
     scan_homoglyphs.set_defaults(func=_cmd_language_scan_homoglyphs)
 
     detect_bom = lang_sub.add_parser("detect-bom", help="Detect and handle Byte Order Marks")
     detect_bom.add_argument("file", help="File to detect BOM for")
-    detect_bom.add_argument("--strip", action="store_true", default=False,
-                            help="Strip BOM from file (preview)")
-    detect_bom.add_argument("--audit-directory", default="",
-                            help="Directory to audit for BOMs across all files")
+    detect_bom.add_argument("--strip", action="store_true", default=False, help="Strip BOM from file (preview)")
+    detect_bom.add_argument("--audit-directory", default="", help="Directory to audit for BOMs across all files")
     detect_bom.set_defaults(func=_cmd_language_detect_bom)
 
     phonetic = lang_sub.add_parser("phonetic-transcribe", help="Convert text to phonetic representations")
     phonetic.add_argument("text", help="Text to transcribe phonetically")
-    phonetic.add_argument("--method", default="arpabet",
-                           choices=["arpabet", "ipa", "soundex", "metaphone", "double_metaphone"],
-                           help="Transcription method (default: arpabet)")
+    phonetic.add_argument(
+        "--method",
+        default="arpabet",
+        choices=["arpabet", "ipa", "soundex", "metaphone", "double_metaphone"],
+        help="Transcription method (default: arpabet)",
+    )
     phonetic.set_defaults(func=_cmd_language_phonetic_transcribe)
 
-    unicode_an = lang_sub.add_parser("unicode-analyze",
-                                      help="Analyze Unicode properties of a codepoint or string")
+    unicode_an = lang_sub.add_parser("unicode-analyze", help="Analyze Unicode properties of a codepoint or string")
     unicode_an.add_argument("input", help="Codepoint (U+XXXX, 0xXXXX, decimal) or string with --string")
-    unicode_an.add_argument("--string", action="store_true", default=False,
-                             help="Treat input as a string to analyze character-by-character")
+    unicode_an.add_argument(
+        "--string", action="store_true", default=False, help="Treat input as a string to analyze character-by-character"
+    )
     unicode_an.set_defaults(func=_cmd_language_unicode_analyze)
 
-    locale_fmt = lang_sub.add_parser("locale-format",
-                                      help="Format numbers/currency per locale, evaluate plurals, negotiate")
+    locale_fmt = lang_sub.add_parser(
+        "locale-format", help="Format numbers/currency per locale, evaluate plurals, negotiate"
+    )
     locale_fmt.add_argument("locale", help="BCP 47 locale tag (e.g. en-US, de-DE)")
     locale_fmt.add_argument("--number", default=None, help="Number to format")
-    locale_fmt.add_argument("--currency", nargs="+", default=None,
-                             help="Currency: AMOUNT CODE (e.g. 99.50 USD)")
+    locale_fmt.add_argument("--currency", nargs="+", default=None, help="Currency: AMOUNT CODE (e.g. 99.50 USD)")
     locale_fmt.add_argument("--plural", default=None, help="Count to evaluate plural category")
-    locale_fmt.add_argument("--negotiate", default=None,
-                             help="Accept-Language header to negotiate")
-    locale_fmt.add_argument("--available", default=None,
-                             help="Comma-separated available locales for negotiation")
-    locale_fmt.add_argument("--info", action="store_true", default=False,
-                             help="Show locale metadata")
+    locale_fmt.add_argument("--negotiate", default=None, help="Accept-Language header to negotiate")
+    locale_fmt.add_argument("--available", default=None, help="Comma-separated available locales for negotiation")
+    locale_fmt.add_argument("--info", action="store_true", default=False, help="Show locale metadata")
     locale_fmt.set_defaults(func=_cmd_language_locale_format)
 
-    i18n_ext = lang_sub.add_parser("i18n-extract",
-                                    help="Pseudolocalization, ICU extraction, .po parsing")
-    i18n_ext.add_argument("--pseudolocalize", default=None,
-                           help="Text to pseudolocalize")
-    i18n_ext.add_argument("--method", default="accent",
-                           choices=["accent", "bracket"],
-                           help="Pseudolocalization method (default: accent)")
-    i18n_ext.add_argument("--extract-icu", default=None,
-                           help="ICU message to extract placeholders from")
-    i18n_ext.add_argument("--parse-po", default=None,
-                           help=".po file to parse")
+    i18n_ext = lang_sub.add_parser("i18n-extract", help="Pseudolocalization, ICU extraction, .po parsing")
+    i18n_ext.add_argument("--pseudolocalize", default=None, help="Text to pseudolocalize")
+    i18n_ext.add_argument(
+        "--method", default="accent", choices=["accent", "bracket"], help="Pseudolocalization method (default: accent)"
+    )
+    i18n_ext.add_argument("--extract-icu", default=None, help="ICU message to extract placeholders from")
+    i18n_ext.add_argument("--parse-po", default=None, help=".po file to parse")
     i18n_ext.set_defaults(func=_cmd_language_i18n_extract)
 
-    font_an = lang_sub.add_parser("font-analyze",
-                                   help="Analyze font files: format, tables, metrics, system stacks")
-    font_an.add_argument("file", nargs="?", default=None,
-                          help="Font file to analyze")
-    font_an.add_argument("--tables", action="store_true", default=False,
-                          help="List OpenType/TrueType tables")
-    font_an.add_argument("--metrics", action="store_true", default=False,
-                          help="Extract font metrics")
-    font_an.add_argument("--system-stacks", action="store_true", default=False,
-                          help="Print system font stacks per OS")
+    font_an = lang_sub.add_parser("font-analyze", help="Analyze font files: format, tables, metrics, system stacks")
+    font_an.add_argument("file", nargs="?", default=None, help="Font file to analyze")
+    font_an.add_argument("--tables", action="store_true", default=False, help="List OpenType/TrueType tables")
+    font_an.add_argument("--metrics", action="store_true", default=False, help="Extract font metrics")
+    font_an.add_argument("--system-stacks", action="store_true", default=False, help="Print system font stacks per OS")
     font_an.set_defaults(func=_cmd_language_font_analyze)
 
-    analyze_txt = lang_sub.add_parser("analyze-text",
-                                       help="Comprehensive text health: homoglyphs, invisibles, bidi, mixed-script")
+    analyze_txt = lang_sub.add_parser(
+        "analyze-text", help="Comprehensive text health: homoglyphs, invisibles, bidi, mixed-script"
+    )
     analyze_txt.add_argument("text", help="Text to analyze")
     analyze_txt.set_defaults(func=_cmd_language_analyze_text)
+
+    detect_lang = lang_sub.add_parser("detect-language", help="Detect the human language of input text")
+    detect_lang.add_argument("text", help="Text to detect language for")
+    detect_lang.set_defaults(func=_cmd_language_detect_language)
+
+    translate_cmd = lang_sub.add_parser("translate", help="Translate text between languages")
+    translate_cmd.add_argument("text", help="Text to translate")
+    translate_cmd.add_argument("--source", default="auto", help="Source language (default: auto)")
+    translate_cmd.add_argument("--target", default="en", help="Target language (default: en)")
+    translate_cmd.set_defaults(func=_cmd_language_translate)
+
+    transliterate_cmd = lang_sub.add_parser("transliterate", help="Transliterate text between scripts")
+    transliterate_cmd.add_argument("text", help="Text to transliterate")
+    transliterate_cmd.add_argument("--target-script", default="Latin", help="Target script (default: Latin)")
+    transliterate_cmd.add_argument("--scheme", default=None, help="Transliteration scheme (auto-detected)")
+    transliterate_cmd.add_argument(
+        "--list-schemes", action="store_true", default=False, help="List available transliteration schemes"
+    )
+    transliterate_cmd.set_defaults(func=_cmd_language_transliterate)
 
     return language_parser

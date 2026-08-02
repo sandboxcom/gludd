@@ -1,0 +1,8 @@
+---
+name: translate
+input_text: ""
+source_language: "auto"
+target_language: "en"
+artifact_dir: "/tmp/gludd-translate"
+daemon_url: "http://localhost:8000"
+psk: ""

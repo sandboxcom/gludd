@@ -1,0 +1,17 @@
+---
+- name: Ensure artifact directory exists
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Run language_detect analysis
+  ansible.builtin.script:
+    cmd: "files/language_detect.py --text '{{ input_text }}' --output '{{ artifact_dir }}/language_detection.json'"
+    executable: "{{ ansible_python_interpreter | default('python3') }}"
+  register: detect_result
+  changed_when: false
+
+- name: Print language detection summary
+  ansible.builtin.debug:
+    msg: "{{ detect_result.stdout_lines }}"

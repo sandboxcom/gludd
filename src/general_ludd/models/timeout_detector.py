@@ -156,9 +156,7 @@ class TimeoutClassifier:
             response = getattr(exc, "response", None)
             status_code = getattr(exc, "status_code", None)
             if isinstance(response, httpx.Response):
-                wrapped = httpx.HTTPStatusError(
-                    str(exc), request=response.request, response=response
-                )
+                wrapped = httpx.HTTPStatusError(str(exc), request=response.request, response=response)
                 return cls._classify_http_error(wrapped, response_body=response_body)
             # No usable response object but we still have a status code: map it
             # with the same code-based rules.
@@ -330,11 +328,7 @@ class ModelHealthTracker:
                     # Any slot older than the cooldown window is stale — drop
                     # it now so the breaker can admit a fresh probe.
                     _now = time.monotonic()
-                    stale = [
-                        mid
-                        for mid, ts in self.__probe_in_flight.items()
-                        if _now - ts >= self._cooldown_seconds
-                    ]
+                    stale = [mid for mid, ts in self.__probe_in_flight.items() if _now - ts >= self._cooldown_seconds]
                     for mid in stale:
                         del self.__probe_in_flight[mid]
                     if model_id in self.__probe_in_flight:
@@ -445,7 +439,7 @@ class TimeoutRetryPolicy:
                 reason=f"max retries ({self._max_retries}) exhausted",
             )
 
-        if attempt >= self._failover_after:
+        if attempt > self._failover_after:
             wait = self._compute_backoff(kind, attempt, retry_after_seconds)
             return RetryDecision(
                 should_retry=False,

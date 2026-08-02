@@ -1,0 +1,17 @@
+---
+- name: Ensure artifact directory exists
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Run translation
+  ansible.builtin.script:
+    cmd: "files/translate.py --text '{{ input_text }}' --source '{{ source_language | default('auto') }}' --target '{{ target_language | default('en') }}' --output '{{ artifact_dir }}/translation.json'"
+    executable: "{{ ansible_python_interpreter | default('python3') }}"
+  register: translate_result
+  changed_when: false
+
+- name: Print translation summary
+  ansible.builtin.debug:
+    msg: "{{ translate_result.stdout_lines }}"

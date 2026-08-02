@@ -397,7 +397,7 @@ def test_stream_retry_with_concurrent_providers_serialized() -> None:
     """Concurrent stream calls on same profile_id are serialized at provider construction."""
     call_order: list[int] = [0]
 
-    def slow_stream() -> _ClosingIterator:
+    def slow_stream(messages: object = None) -> _ClosingIterator:
         call_order[0] += 1
         order = call_order[0]
         if order == 1:

@@ -1,0 +1,31 @@
+#!/usr/bin/env python3
+"""Standalone language detection script for the language_detect role."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+_SRC = Path(__file__).resolve().parents[11] / "src"
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Detect language of input text")
+    parser.add_argument("--text", required=True, help="Text to detect language for")
+    parser.add_argument("--output", required=True, help="Output JSON file path")
+    args = parser.parse_args()
+
+    from general_ludd.language.detection import detect_language
+
+    result = detect_language(args.text)
+    Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+    Path(args.output).write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    main()

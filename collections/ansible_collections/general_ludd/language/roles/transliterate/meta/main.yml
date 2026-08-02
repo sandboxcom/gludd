@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: transliterate
+  author: Agentic Harness Agent
+  description: >
+    Transliterate text between writing systems (Cyrillic, Greek, Arabic,
+    Devanagari, Korean, Japanese ↔ Latin). Uses ISO 9, ISO 843, ALA-LC,
+    IAST, Revised Romanization, and Hepburn standards. Produces JSON
+    artifact with source/target script and scheme info. Wires to
+    src/general_ludd/language/transliteration.py.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

@@ -10,15 +10,19 @@ over HTTP via the daemon::
 
 Each endpoint delegates to the ``AnsibleRunnerAdapter``, running the
 corresponding playbook from the ``playbooks/`` directory.
+
+Add ``?live=true`` to flights, hotels, or event endpoints to also query
+SearXNG for real-time search data, returned under the ``live_data`` key.
 """
 
 from __future__ import annotations
 
 import logging
+import sys
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -41,6 +45,40 @@ def _resolve_playbook_path(name: str) -> Path:
 def _ensure_playbook_registered(runner: Any, playbook_name: str, path: Path) -> None:
     if playbook_name not in runner.list_playbooks():
         runner.register_playbook(playbook_name, str(path))
+
+
+# ---------------------------------------------------------------------------
+# SearXNG live-data helper
+# ---------------------------------------------------------------------------
+
+
+def _call_searxng(query: str, category: str) -> dict[str, Any]:
+    """Query SearXNG directly and return structured travel results."""
+    collections = Path(__file__).resolve().parent.parent.parent.parent / "collections" / "ansible_collections"
+    collections_str = str(collections)
+    if collections_str not in sys.path:
+        sys.path.insert(0, collections_str)
+
+    from general_ludd.travel.plugins.modules.searxng_search import search_searxng  # type: ignore[import-untyped]
+
+    results, raw, search_url = search_searxng(
+        query=query,
+        category=category,
+        searxng_url="http://localhost:8080",
+        engines="",
+        max_results=10,
+        safe_search=0,
+        language="en",
+        timeout=10,
+    )
+    return {
+        "results": results,
+        "raw_results": raw,
+        "result_count": len(results),
+        "query": query,
+        "category": category,
+        "search_url": search_url,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -117,7 +155,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         return _travel_result(result)
 
     @app.post("/api/travel/flights")
-    async def travel_flights(body: TravelFlightsRequest) -> dict[str, Any]:
+    async def travel_flights(
+        body: TravelFlightsRequest,
+        live: bool = Query(False, description="Query SearXNG for live flight data"),
+    ) -> dict[str, Any]:
         from general_ludd.ansible.runner import AnsibleRunnerAdapter
 
         try:
@@ -139,10 +180,20 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         except Exception as err:
             logger.exception("travel flight search failed")
             raise HTTPException(status_code=500, detail="travel flight search failed") from err
-        return _travel_result(result)
+
+        output = _travel_result(result)
+        if live:
+            query_str = (
+                f"flights from {body.origin or ''} to {body.destination or ''} on {body.departure_date or 'any date'}"
+            )
+            output["live_data"] = _call_searxng(query_str, "flights")
+        return output
 
     @app.post("/api/travel/hotels")
-    async def travel_hotels(body: TravelHotelsRequest) -> dict[str, Any]:
+    async def travel_hotels(
+        body: TravelHotelsRequest,
+        live: bool = Query(False, description="Query SearXNG for live hotel data"),
+    ) -> dict[str, Any]:
         from general_ludd.ansible.runner import AnsibleRunnerAdapter
 
         try:
@@ -164,10 +215,18 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         except Exception as err:
             logger.exception("travel hotel search failed")
             raise HTTPException(status_code=500, detail="travel hotel search failed") from err
-        return _travel_result(result)
+
+        output = _travel_result(result)
+        if live:
+            query_str = f"hotels in {body.destination or ''} for {body.guests} guest(s)"
+            output["live_data"] = _call_searxng(query_str, "hotels")
+        return output
 
     @app.post("/api/travel/event")
-    async def travel_event(body: TravelEventRequest) -> dict[str, Any]:
+    async def travel_event(
+        body: TravelEventRequest,
+        live: bool = Query(False, description="Query SearXNG for live event data"),
+    ) -> dict[str, Any]:
         from general_ludd.ansible.runner import AnsibleRunnerAdapter
 
         try:
@@ -186,7 +245,12 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         except Exception as err:
             logger.exception("travel event plan failed")
             raise HTTPException(status_code=500, detail="travel event plan failed") from err
-        return _travel_result(result)
+
+        output = _travel_result(result)
+        if live:
+            query_str = f"{body.event_type or 'events'} in {body.destination or ''} on {body.event_date or 'any date'}"
+            output["live_data"] = _call_searxng(query_str, "events")
+        return output
 
 
 def _travel_result(result: dict[str, Any]) -> dict[str, Any]:

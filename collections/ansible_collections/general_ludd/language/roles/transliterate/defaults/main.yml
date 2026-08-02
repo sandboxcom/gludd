@@ -1,0 +1,8 @@
+---
+name: transliterate
+input_text: ""
+target_script: "Latin"
+scheme: ""
+artifact_dir: "/tmp/gludd-transliterate"
+daemon_url: "http://localhost:8000"
+psk: ""

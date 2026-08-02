@@ -4066,6 +4066,13 @@ delete-file:
 	@[ -n "$(FILES)" ] || { echo "Usage: make delete-file FILES='file1 file2'"; exit 1; }
 	@$(RM) $(FILES)
 
+delete-binary-re-core:
+	@echo "=== DELETE-BINARY-RE-CORE: deleting src/general_ludd/binary_re/ and test ==="
+	@rm -rf src/general_ludd/binary_re/ || true
+	@rm -f tests/unit/test_binary_re_contracts.py || true
+	@git rm -rf --ignore-unmatch src/general_ludd/binary_re/ tests/unit/test_binary_re_contracts.py
+	@echo "=== DELETE-BINARY-RE-CORE: COMPLETE ==="
+
 patch-test:
 	@[ -n "$(FILE)" ] || { echo "Usage: make patch-test FILE=path MATCH=old REPLACE=new"; exit 1; }
 	@OLD=$$(mktemp /tmp/gludd-patch-old.XXXXXX); NEW=$$(mktemp /tmp/gludd-patch-new.XXXXXX); \
