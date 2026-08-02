@@ -22,6 +22,22 @@ from general_ludd.secrets.manager import SecretsManager
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
+def _streaming_process(
+    output: bytes,
+    *,
+    returncode: int = 0,
+) -> asyncio.subprocess.Process:
+    """Model the stdout stream exposed by a real asyncio subprocess."""
+    proc = MagicMock(spec=asyncio.subprocess.Process)
+    proc.returncode = returncode
+    stream = asyncio.StreamReader()
+    stream.feed_data(output)
+    stream.feed_eof()
+    proc.stdout = stream
+    proc.wait = AsyncMock(return_value=returncode)
+    return proc
+
+
 class TestBinaryPathConfig:
     def test_binary_paths_defaults(self) -> None:
         paths = BinaryPaths()
@@ -129,13 +145,7 @@ class TestDeploymentLifecycle:
         dm = DeploymentManager()
 
         async def fake_exec(bin: str, *args: str, **kwargs: str) -> asyncio.subprocess.Process:
-            proc = MagicMock(spec=asyncio.subprocess.Process)
-            if "init" in args or "apply" in args or "output" in args:
-                proc.returncode = 0
-            else:
-                proc.returncode = 0
-            proc.communicate = AsyncMock(return_value=(b'{"instance_ip": {"value": "1.2.3.4"}}', b""))
-            return proc
+            return _streaming_process(b'{"instance_ip": {"value": "1.2.3.4"}}')
 
         with patch("asyncio.create_subprocess_exec", side_effect=fake_exec) as mock_exec:
             config = ComputeConfig(
@@ -158,12 +168,7 @@ class TestDeploymentLifecycle:
         dm = DeploymentManager(working_dir=str(tmp_path))
 
         async def fake_exec(bin: str, *args: str, **kwargs: str) -> asyncio.subprocess.Process:
-            proc = MagicMock(spec=asyncio.subprocess.Process)
-            proc.returncode = 0
-            proc.communicate = AsyncMock(
-                return_value=(b'{"instance_ip": {"value": "1.2.3.4"}}', b"")
-            )
-            return proc
+            return _streaming_process(b'{"instance_ip": {"value": "1.2.3.4"}}')
 
         config = ComputeConfig(
             provider=ComputeProvider.AWS,
@@ -217,10 +222,7 @@ class TestDeploymentLifecycle:
         dm = DeploymentManager()
 
         async def fake_exec(bin: str, *args: str, **kwargs: str) -> asyncio.subprocess.Process:
-            proc = MagicMock(spec=asyncio.subprocess.Process)
-            proc.returncode = 1
-            proc.communicate = AsyncMock(return_value=(b"", b"error: something failed"))
-            return proc
+            return _streaming_process(b"error: something failed\n", returncode=1)
 
         with patch("asyncio.create_subprocess_exec", side_effect=fake_exec):
             config = ComputeConfig(
