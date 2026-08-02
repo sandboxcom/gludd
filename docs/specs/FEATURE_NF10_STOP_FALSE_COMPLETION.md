@@ -83,7 +83,7 @@ disengage only skips heuristic checks (`COMPLETION_SMELL`,
 
 | Mechanism | Effect |
 |-----------|--------|
-| `GLUDD_STOP_ENFORCE=0` | Disables entirely |
+| `GLUDD_STOP_ENFORCE=0` | Disables optional heuristics and non-text hooks; the filesystem-backed pending-work `text.complete` guard remains mandatory |
 | `make disengage-enforcement` | Skips heuristics ONLY; `hasRealPendingWork()` block stays |
 
 ## 7. Evidence

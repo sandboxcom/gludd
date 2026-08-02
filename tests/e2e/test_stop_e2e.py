@@ -199,8 +199,8 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
 # ─── Env var disable skips enforcement ───────────────────────────────────────
 
 
-def test_gludd_stop_enforce_zero_skips_text_complete(tmp_path):
-    """GLUDD_STOP_ENFORCE=0 -> text.complete returns output unchanged."""
+def test_gludd_stop_enforce_zero_preserves_mandatory_text_complete(tmp_path):
+    """The env switch cannot bypass pending-work terminal-response safety."""
     cwd = _setup_pending_work_dir(tmp_path)
 
     code = f"""\
@@ -214,9 +214,8 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
     assert result is not None
     out_text = result.get("output_text", "")
     res_text = result.get("result_text", "")
-    assert out_text == "This message would be blocked when enforcement is enabled.", (
-        f"Enforce=0 should skip, got output_text={out_text!r} result_text={res_text!r}"
-    )
+    assert out_text == ""
+    assert "TEXT-ONLY RESPONSE BLOCKED" in res_text
 
 
 # ─── False-done completion phrases blocked without evidence ──────────────────

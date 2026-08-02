@@ -64,9 +64,9 @@ from the LLM. Do not add role-based guards; they are dead code.
 | 1 | enforce-make | `.opencode/plugin/enforce-make.ts` | Bash make-only: blocks non-make commands, shell metacharacters, concurrent gates, `.gate-status` writes, guardrail-defanging edits, opencode.json schema violations, TDD test-file requirement | `tool.execute.before`, `tool.execute.after`, `session.idle`, `system.transform`, `text.complete` | `GLUDD_MAKE_ENFORCE=0` | **BLOCKING** |
 | 2 | enforce-floor | `.opencode/plugin/enforce-floor.ts` | Agent floor/ceiling bands: streak-based grinding detection, session-start dispatch stall, post-result read limit, message-shape enforcement | `tool.execute.before`, `session.idle`, `text.complete` | `GLUDD_FLOOR_ENFORCE=0` | **BLOCKING** |
 | 3 | enforce-delegate | `.opencode/plugin/enforce-delegate.ts` | Model utilization (sonnet ratio), disk discipline (worktree ENOSPC guard), force-delegate grind guard, mainthread streak, read-grinding detection | `tool.execute.before`, `tool.execute.after` | `GLUDD_MAINTHREAD_STREAK_ENFORCE=0` (mainthread streak only; model-util: `GLUDD_MODEL_UTIL_ENFORCE=0`; force-delegate: `GLUDD_FORCE_DELEGATE=1` enables) | **BLOCKING** |
-| 4 | enforce-stop | `.opencode/plugin/enforce-stop.ts` | False-done claims, stop-pattern detection, question-blocking, after-results text-only block, persistent stop-block, Q&A response patterns, main-thread grinding | `event`, `tool.execute.before`, `system.transform`, `text.complete` | `GLUDD_STOP_ENFORCE=0` | **BLOCKING** |
+| 4 | enforce-stop | `.opencode/plugin/enforce-stop.ts` | False-done claims, stop-pattern detection, question-blocking, after-results text-only block, persistent stop-block, Q&A response patterns, main-thread grinding | `event`, `tool.execute.before`, `system.transform`, `text.complete` | `GLUDD_STOP_ENFORCE=0` disables optional heuristics only; pending-work `text.complete` remains mandatory | **BLOCKING** |
 | 5 | enforce-deadline | `.opencode/plugin/enforce-deadline.ts` | Task wall-clock timeout (5 min = 300,000ms). Records dispatch timestamps, warns on breach, writes stale task IDs for `scripts/task_watchdog.py` to kill. | `tool.execute.before`, `tool.execute.after` | `GLUDD_TASK_DEADLINE_ENABLED=0` | **BLOCKING** |
-| 6 | enforce-session-start | `.opencode/plugin/enforce-session-start.ts` | Session-start protocol: injects directive into system prompt; denies inline mutations before >=10 dispatches in a fresh session. Time gate: 60s warn, 120s deny. | `tool.execute.before`, `system.transform` | `GLUDD_SESSION_START_ENFORCE=0` | **BLOCKING** |
+| 6 | enforce-session-start | `.opencode/plugin/enforce-session-start.ts` | Session-start protocol: locates work before mutation and adaptively permits 0-10 dispatches; an explicit minimum enables the 60s warning/120s deny time gate. | `tool.execute.before`, `system.transform` | `GLUDD_SESSION_START_ENFORCE=0` | **BLOCKING** |
 | 7 | enforce-enhancement-ratio | `.opencode/plugin/enforce-enhancement-ratio.ts` | Per-wave enhancement/fix ratio: >=50% of dispatches must be enhancements (not just bug fixes). Classifies by prompt keywords. | `tool.execute.before`, `text.complete` | `GLUDD_ENHANCEMENT_RATIO_ENFORCE=0` | **BLOCKING** |
 | 8 | enforce-clean-tree | `.opencode/plugin/enforce-clean-tree.ts` | Clean git tree: denies Task/agent/workflow dispatch when `git status --porcelain` is non-empty | `tool.execute.before` | `GLUDD_CLEAN_TREE_ENFORCE=0` | **BLOCKING** |
 | 9 | enforce-verified-claims | `.opencode/plugin/enforce-verified-claims.ts` | Evidence-backed claims: blocks text containing done-words ("committed", "shipped", "done", "green", etc.) unless machine-produced evidence (commit hash, test pass count, gate marker) is also present | `text.complete` | `GLUDD_VERIFIED_CLAIMS_ENFORCE=0` | **BLOCKING** |
@@ -284,9 +284,9 @@ work, emergency hotfix), these mechanisms bypass enforcement.
 
 | Mechanism | Target | Effect |
 |---|---|---|
-| `make disengage-enforcement` | `make` target | Writes `{disengage_until: <now + 1h>}` to `/tmp/gludd-watchdog-disengage.json`. ALL plugins check this and suspend enforcement when the timestamp is valid (max 1h clamp). |
+| `make disengage-enforcement` | `make` target | Writes `{disengage_until: <now + 1h>}` to `/tmp/gludd-watchdog-disengage.json`. Optional heuristics may suspend for at most 1h; mandatory safety invariants, including stop-on-pending-work, remain active. |
 | `make reload-enforcement` | `make` target | Resets ALL enforcement state files to pick up env var changes. Does NOT reload plugin code (needs opencode restart). |
-| Env var `GLUDD_*_ENFORCE=0` | Per plugin | Disables that specific plugin only (see table in Section 2 for each plugin's env var). |
+| Env var `GLUDD_*_ENFORCE=0` | Per plugin | Disables the documented optional checks for that plugin; explicitly mandatory invariants remain active. |
 
 ### 6.2 Per-Plugin Escape Hatches
 
@@ -295,7 +295,7 @@ work, emergency hotfix), these mechanisms bypass enforcement.
 | enforce-make | `GLUDD_MAKE_ENFORCE=0` |
 | enforce-floor | `GLUDD_FLOOR_ENFORCE=0` |
 | enforce-delegate | `GLUDD_MAINTHREAD_STREAK_ENFORCE=0`, `GLUDD_MODEL_UTIL_ENFORCE=0`, `GLUDD_FORCE_DELEGATE=1` (opt-in) |
-| enforce-stop | `GLUDD_STOP_ENFORCE=0` |
+| enforce-stop | `GLUDD_STOP_ENFORCE=0` (optional heuristics only; mandatory pending-work text guard remains) |
 | enforce-deadline | `GLUDD_TASK_DEADLINE_ENABLED=0` |
 | enforce-session-start | `GLUDD_SESSION_START_ENFORCE=0` |
 | enforce-enhancement-ratio | `GLUDD_ENHANCEMENT_RATIO_ENFORCE=0` |
