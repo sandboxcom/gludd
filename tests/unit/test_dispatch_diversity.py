@@ -61,7 +61,7 @@ def test_valid_wave_exits_0(tmp_path: Path) -> None:
         ],
     )
 
-    rc, stdout, stderr = _run(wave_file, tasks_dir)
+    rc, stdout, stderr = _run(wave_file, tasks_dir, tasks_dir / "TASKS.md")
     assert rc == 0, f"exit={rc} stderr={stderr}"
     assert "PASS" in stdout
 
@@ -79,7 +79,7 @@ def test_exactly_10_required(tmp_path: Path) -> None:
     wave_file = tmp_path / "wave.json"
     _write_wave(wave_file, ["task 1", "task 2", "task 3"])
 
-    rc, _stdout, stderr = _run(wave_file, tasks_dir)
+    rc, _stdout, stderr = _run(wave_file, tasks_dir, tasks_dir / "TASKS.md")
     assert rc == 1
     assert "3" in stderr
 
@@ -111,7 +111,7 @@ def test_at_least_3_topics_required(tmp_path: Path) -> None:
         ],
     )
 
-    rc, _stdout, stderr = _run(wave_file, tasks_dir)
+    rc, _stdout, stderr = _run(wave_file, tasks_dir, tasks_dir / "TASKS.md")
     assert rc == 1
     assert "TOPIC DIVERSITY" in stderr
 
@@ -143,7 +143,7 @@ def test_no_single_topic_exceeds_50_percent(tmp_path: Path) -> None:
         ],
     )
 
-    rc, _stdout, stderr = _run(wave_file, tasks_dir)
+    rc, _stdout, stderr = _run(wave_file, tasks_dir, tasks_dir / "TASKS.md")
     assert rc == 1
     assert "SLOT CONCENTRATION" in stderr
 
@@ -176,7 +176,7 @@ def test_at_least_1_continuation_required(tmp_path: Path) -> None:
         ],
     )
 
-    rc, _stdout, stderr = _run(wave_file, tasks_dir)
+    rc, _stdout, stderr = _run(wave_file, tasks_dir, tasks_dir / "TASKS.md")
     assert rc == 1
     assert "NO CONTINUATIONS" in stderr
 
@@ -210,7 +210,7 @@ def test_multiple_continuations_pass(tmp_path: Path) -> None:
         ],
     )
 
-    rc, _stdout, stderr = _run(wave_file, tasks_dir)
+    rc, _stdout, stderr = _run(wave_file, tasks_dir, tasks_dir / "TASKS.md")
     assert rc == 0, f"exit={rc} stderr={stderr}"
 
 
@@ -225,7 +225,7 @@ def test_missing_file_exits_2(tmp_path: Path) -> None:
     )
 
     wave_file = tmp_path / "nonexistent.json"
-    rc, _stdout, _stderr = _run(wave_file, tasks_dir)
+    rc, _stdout, _stderr = _run(wave_file, tasks_dir, tasks_dir / "TASKS.md")
     assert rc == 2
 
 
@@ -242,7 +242,7 @@ def test_invalid_json_exits_2(tmp_path: Path) -> None:
     wave_file = tmp_path / "wave.json"
     wave_file.write_text("not json", encoding="utf-8")
 
-    rc, _stdout, _stderr = _run(wave_file, tasks_dir)
+    rc, _stdout, _stderr = _run(wave_file, tasks_dir, tasks_dir / "TASKS.md")
     assert rc == 2
 
 
@@ -271,7 +271,7 @@ def test_non_array_json_exits_2(tmp_path: Path) -> None:
     wave_file = tmp_path / "wave.json"
     wave_file.write_text('{"a": 1}', encoding="utf-8")
 
-    rc, _stdout, _stderr = _run(wave_file, tasks_dir)
+    rc, _stdout, _stderr = _run(wave_file, tasks_dir, tasks_dir / "TASKS.md")
     assert rc == 2
 
 
@@ -288,7 +288,7 @@ def test_non_string_entries_exits_2(tmp_path: Path) -> None:
     wave_file = tmp_path / "wave.json"
     wave_file.write_text("[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]", encoding="utf-8")
 
-    rc, _stdout, _stderr = _run(wave_file, tasks_dir)
+    rc, _stdout, _stderr = _run(wave_file, tasks_dir, tasks_dir / "TASKS.md")
     assert rc == 2
 
 
@@ -319,5 +319,5 @@ def test_without_id_uses_keyword_topics(tmp_path: Path) -> None:
         ],
     )
 
-    rc, _stdout, stderr = _run(wave_file, tasks_dir)
+    rc, _stdout, stderr = _run(wave_file, tasks_dir, tasks_dir / "TASKS.md")
     assert rc == 0, f"exit={rc} stderr={stderr}"
