@@ -296,14 +296,17 @@ class TestInitExports:
             from general_ludd.governance import __all__ as govexports
 
             expected = {
+                "get_authority_registry",
                 "get_borders",
                 "get_civic_services",
+                "get_classification_markings",
                 "get_conflicts_treaties",
                 "get_decision_makers",
                 "get_elections_voting",
                 "get_governing_bodies",
                 "get_info_classification",
                 "get_international_relations",
+                "get_jurisdictions",
                 "get_legal_systems",
                 "get_licenses_permits",
                 "get_military_service",
