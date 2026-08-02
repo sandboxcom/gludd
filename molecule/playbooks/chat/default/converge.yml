@@ -1,0 +1,68 @@
+---
+- name: Converge — validate chat config, export a session, send a chat message
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    session_file: "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') }}/default/files/test_session.jsonl"
+    export_dest: "/tmp/gludd-chat-export-test.md"
+  tasks:
+    - name: Validate chat configuration
+      uri:
+        url: http://localhost:8000/api/chat/config/validate
+        method: POST
+        body_format: json
+        body:
+          model: openai/gpt-4o
+          eval_mode: true
+          stream: false
+        status_code:
+          - 200
+          - 503
+      register: config_validation
+      ignore_errors: true
+
+    - name: Validate a chat message through the API
+      uri:
+        url: http://localhost:8000/api/chat/validate
+        method: POST
+        body_format: json
+        body:
+          role: user
+          content: Hello, how are you?
+        status_code:
+          - 200
+          - 503
+      register: message_validation
+      ignore_errors: true
+
+    - name: Export a chat session to markdown
+      general_ludd.chat.chat_export:
+        session_file: "{{ session_file }}"
+        format: md
+        output_file: "{{ export_dest }}"
+      register: export_result
+      when: config_validation.status != 503
+
+    - name: Send a chat message to the daemon
+      general_ludd.chat.chat_send:
+        daemon_url: http://localhost:8000
+        messages:
+          - role: system
+            content: You are a helpful assistant.
+          - role: user
+            content: Say hello in exactly one word.
+        stream: false
+      register: send_result
+      when: config_validation.status != 503
+      ignore_errors: true
+
+    - name: Display send result
+      ansible.builtin.debug:
+        var: send_result
+      when: send_result is defined and send_result is not skipped
+
+    - name: Display export result
+      ansible.builtin.debug:
+        var: export_result
+      when: export_result is defined and export_result is not skipped

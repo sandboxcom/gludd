@@ -6718,6 +6718,15 @@ molecule-test-language:
 		echo "language collection has no molecule scenarios in molecule/playbooks/"; \
 	fi
 
+# molecule-test-chat: runs molecule scenarios for chat collection roles
+molecule-test-chat:
+	@echo "=== molecule-test-chat ==="
+	@if [ -d molecule/playbooks/chat ]; then \
+		$(MAKE) --no-print-directory molecule-test SCENARIO=chat; \
+	else \
+		echo "chat collection has no molecule scenarios in molecule/playbooks/"; \
+	fi
+
 # Run networking role lint + syntax validation together
 networking-validate: networking-role-lint networking-role-syntax
 	@echo "networking role validation complete"

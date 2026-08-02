@@ -1,22 +1,33 @@
-"""Chat contracts daemon router: session listing, search, and message validation.
+"""Chat contracts daemon router: session listing, search, completions, and validation.
 
 Endpoints (PSK auth applied by daemon middleware — not in _PUBLIC_PATHS):
   GET  /api/chat/sessions                 -> list persisted chat sessions
   GET  /api/chat/sessions/{file_path:path} -> session detail + messages
   POST /api/chat/sessions/search           -> search sessions by query
+  POST /api/chat/completions               -> send chat completion request (streaming)
   POST /api/chat/validate                  -> validate a message against ChatMessage contract
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
 import urllib.parse
+from collections.abc import AsyncIterator
 from typing import Literal, cast
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from general_ludd.chat.contracts import ChatConfig, ChatMessage
 from general_ludd.chat.history import ChatHistory
+
+_SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
 
 
 class _SessionSearchRequest(BaseModel):
@@ -29,6 +40,14 @@ class _ValidateRequest(BaseModel):
     content: str
     timestamp: str | None = None
     model: str | None = None
+
+
+class _CompletionsRequest(BaseModel):
+    messages: list[dict[str, object]]
+    model_profile_id: str = "default"
+    stream: bool = True
+    temperature: float | None = None
+    max_tokens: int | None = None
 
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
@@ -74,6 +93,95 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     async def chat_stats() -> dict[str, object]:
         history = ChatHistory()
         return history.stats()
+
+    @app.post("/api/chat/completions")
+    async def chat_completions(body: _CompletionsRequest) -> StreamingResponse:
+        gateway = getattr(app.state, "_model_gateway", None)
+        if gateway is None:
+            raise HTTPException(status_code=503, detail="Model gateway not available")
+
+        messages: list[dict[str, str]] = []
+        for m in body.messages:
+            messages.append(
+                {
+                    "role": str(m.get("role", "user")),
+                    "content": str(m.get("content", "")),
+                }
+            )
+
+        valid_roles = {"system", "user", "assistant", "tool"}
+        for m in messages:
+            if m["role"] not in valid_roles:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Invalid role {m['role']!r}. Must be one of: {sorted(valid_roles)}",
+                )
+
+        async def _chunk_stream() -> AsyncIterator[str]:
+            try:
+                stream_iterator = await asyncio.to_thread(
+                    gateway.call_model_stream,
+                    profile_id=body.model_profile_id,
+                    messages=messages,
+                    temperature=body.temperature,
+                    max_tokens=body.max_tokens,
+                )
+                for chunk in stream_iterator:
+                    if isinstance(chunk, bytes):
+                        yield f"data: {chunk.decode('utf-8', errors='replace')}\n\n"
+                    elif isinstance(chunk, str):
+                        yield f"data: {chunk}\n\n"
+                    elif isinstance(chunk, dict):
+                        yield f"data: {json.dumps(chunk)}\n\n"
+                    else:
+                        yield f"data: {chunk!s}\n\n"
+                yield "data: [DONE]\n\n"
+            except Exception as exc:
+                yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+
+        return StreamingResponse(
+            _chunk_stream(),
+            media_type="text/event-stream",
+            headers=dict(_SSE_HEADERS),
+        )
+
+    @app.post("/api/chat/completions/sync")
+    async def chat_completions_sync(body: _CompletionsRequest) -> dict[str, object]:
+        gateway = getattr(app.state, "_model_gateway", None)
+        if gateway is None:
+            raise HTTPException(status_code=503, detail="Model gateway not available")
+
+        messages: list[dict[str, str]] = []
+        for m in body.messages:
+            messages.append(
+                {
+                    "role": str(m.get("role", "user")),
+                    "content": str(m.get("content", "")),
+                }
+            )
+
+        valid_roles = {"system", "user", "assistant", "tool"}
+        for m in messages:
+            if m["role"] not in valid_roles:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Invalid role {m['role']!r}. Must be one of: {sorted(valid_roles)}",
+                )
+
+        try:
+            response = await asyncio.to_thread(
+                gateway.call_model,
+                profile_id=body.model_profile_id,
+                messages=messages,
+                temperature=body.temperature,
+                max_tokens=body.max_tokens,
+            )
+            return {
+                "response": str(response) if not isinstance(response, dict) else response,
+                "model_profile_id": body.model_profile_id,
+            }
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     @app.post("/api/chat/validate")
     async def validate_message(body: _ValidateRequest) -> dict[str, object]:

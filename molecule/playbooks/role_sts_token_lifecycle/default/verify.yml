@@ -1,0 +1,55 @@
+---
+- name: Verify - assert STS token lifecycle contract
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8872', true) }}"
+    artifact_path: "/tmp/gludd-sts-lifecycle-{{ mock_port }}.json"
+  tasks:
+    - name: Read lifecycle artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact_path }}"
+      register: _artifact
+
+    - name: Parse artifact
+      ansible.builtin.set_fact:
+        _lifecycle: "{{ _artifact.content | b64decode | from_json }}"
+
+    - name: Mint created a token with valid fields
+      ansible.builtin.assert:
+        that:
+          - _lifecycle.mint.token_id | default('') != ''
+          - _lifecycle.mint.agent_id == 'molecule-agent-1'
+          - _lifecycle.mint.parent_agent_id == 'root'
+          - _lifecycle.mint.role_id | default('') != ''
+          - _lifecycle.mint.created_at | default('') != ''
+
+    - name: Validate reports token as valid
+      ansible.builtin.assert:
+        that:
+          - _lifecycle.validate_active.valid | default(false) == true
+          - _lifecycle.validate_active.token_id | default('') != ''
+          - _lifecycle.validate_active.revoked | default(true) == false
+
+    - name: Get token returns matching agent_id
+      ansible.builtin.assert:
+        that:
+          - _lifecycle.get_token.agent_id == 'molecule-agent-1'
+          - _lifecycle.get_token.token_id | default('') != ''
+
+    - name: List tokens includes the minted token
+      ansible.builtin.assert:
+        that:
+          - _lifecycle.list_tokens_count | int > 0
+
+    - name: Revoke reports successful revocation
+      ansible.builtin.assert:
+        that:
+          - _lifecycle.revoke.status | default('') == 'revoked'
+
+    - name: Validate after revoke reports invalid
+      ansible.builtin.assert:
+        that:
+          - _lifecycle.validate_revoked.valid | default(true) == false
+          - _lifecycle.validate_revoked.revoked | default(false) == true

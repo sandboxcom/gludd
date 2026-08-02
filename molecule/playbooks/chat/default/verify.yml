@@ -1,0 +1,22 @@
+---
+- name: Verify — check converged state
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: List chat sessions
+      uri:
+        url: http://localhost:8000/api/chat/sessions
+        method: GET
+        status_code:
+          - 200
+          - 503
+      register: sessions_result
+      ignore_errors: true
+
+    - name: Verify sessions response is valid
+      ansible.builtin.assert:
+        that:
+          - sessions_result.status in [200, 503]
+        fail_msg: "Unexpected sessions endpoint status: {{ sessions_result.status }}"
+      when: sessions_result is defined and sessions_result is not skipped

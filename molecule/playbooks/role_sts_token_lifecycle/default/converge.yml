@@ -1,0 +1,72 @@
+---
+# STS token lifecycle — mint a subagent token, validate it, then revoke it.
+# Exercises the /admin/sts/* daemon endpoints through the mock daemon.
+- name: Converge - exercise STS token lifecycle
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8872', true) }}"
+    daemon_url: "http://127.0.0.1:{{ mock_port }}"
+  tasks:
+    - name: Mint an STS token for a subagent
+      ansible.builtin.uri:
+        url: "{{ daemon_url }}/admin/sts/mint"
+        method: POST
+        body_format: json
+        body:
+          agent_id: "molecule-agent-1"
+          parent_agent_id: "root"
+        status_code: 201
+      register: _mint
+
+    - name: Validate the minted token
+      ansible.builtin.uri:
+        url: "{{ daemon_url }}/admin/sts/validate/molecule-agent-1"
+        method: GET
+        status_code: 200
+      register: _validate
+
+    - name: Get single token by agent id
+      ansible.builtin.uri:
+        url: "{{ daemon_url }}/admin/sts/tokens/molecule-agent-1"
+        method: GET
+        status_code: 200
+      register: _get_token
+
+    - name: List all tokens
+      ansible.builtin.uri:
+        url: "{{ daemon_url }}/admin/sts/tokens"
+        method: GET
+        status_code: 200
+      register: _list_tokens
+
+    - name: Revoke the token on completion
+      ansible.builtin.uri:
+        url: "{{ daemon_url }}/admin/sts/revoke/molecule-agent-1"
+        method: POST
+        body_format: json
+        body:
+          terminal_state: "completed"
+        status_code: 200
+      register: _revoke
+
+    - name: Validate revoked token returns invalid
+      ansible.builtin.uri:
+        url: "{{ daemon_url }}/admin/sts/validate/molecule-agent-1"
+        method: GET
+        status_code: 200
+      register: _validate_revoked
+
+    - name: Write lifecycle artifact
+      ansible.builtin.copy:
+        content: |
+          {
+            "mint": {{ _mint.json | to_json }},
+            "validate_active": {{ _validate.json | to_json }},
+            "get_token": {{ _get_token.json | to_json }},
+            "list_tokens_count": {{ _list_tokens.json | length }},
+            "revoke": {{ _revoke.json | to_json }},
+            "validate_revoked": {{ _validate_revoked.json | to_json }}
+          }
+        dest: "/tmp/gludd-sts-lifecycle-{{ mock_port }}.json"

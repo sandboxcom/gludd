@@ -9,6 +9,7 @@ from __future__ import annotations
 import datetime as dt
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from pathlib import Path
 
 
 @dataclass(eq=True, unsafe_hash=True)
@@ -146,11 +147,13 @@ class SpecAuditor:
     """Applies registered audit rules to behavioral spec entries.
 
     Accepts parsed spec entries and runs each active rule against them,
-    producing an ``AuditReport``.
+    producing an ``AuditReport``.  Also supports scanning the codebase
+    to verify that enforcement references in specs actually exist on disk.
     """
 
-    def __init__(self, registry: RuleRegistry) -> None:
+    def __init__(self, registry: RuleRegistry, repo_root: str = "") -> None:
         self._registry = registry
+        self._repo_root = repo_root
 
     @property
     def rules(self) -> list[AuditRule]:
@@ -170,6 +173,248 @@ class SpecAuditor:
             findings=findings,
             rules_applied=[r.rule_id for r in self._registry if r.active],
         )
+
+    def scan_codebase(
+        self,
+        entries: list[dict[str, object]] | None = None,
+        check_paths: list[str] | None = None,
+    ) -> AuditReport:
+        """Verify that enforcement references in specs exist in the codebase.
+
+        For each spec entry, extracts file paths, Makefile targets, plugin
+        names, and hook mentions from the Enforcement field, then checks
+        whether those references resolve to actual files or targets on disk.
+
+        If *entries* is None, no spec-text audit is performed and only
+        structural codebase checks run.
+        """
+
+        root = Path(self._repo_root) if self._repo_root else Path(".")
+        default_paths = [
+            "Makefile",
+            ".opencode/plugin/",
+            ".claude/hooks/",
+            "src/general_ludd/",
+            "scripts/",
+            "tests/unit/",
+            ".github/workflows/",
+        ]
+        if check_paths is None:
+            check_paths = default_paths
+
+        findings: list[AuditFinding] = []
+
+        if entries:
+            findings.extend(self._scan_enforcement_refs(entries, root))
+
+        findings.extend(self._check_makefile_targets(entries or [], root))
+        findings.extend(self._check_plugin_files(entries or [], root))
+        findings.extend(self._check_hook_files(entries or [], root))
+        findings.extend(self._check_workflow_files(entries or [], root))
+
+        applied = set()
+        for rule in self._registry:
+            if rule.active:
+                applied.add(rule.rule_id)
+        for built_in_id in ("SRC_001", "SRC_002", "SRC_003", "SRC_004"):
+            applied.add(built_in_id)
+
+        return AuditReport(
+            findings=findings,
+            rules_applied=sorted(applied),
+        )
+
+    def _scan_enforcement_refs(self, entries: list[dict[str, object]], root: Path) -> list[AuditFinding]:
+        import re
+
+        findings: list[AuditFinding] = []
+        enf_re = re.compile(r"\*\*Enforcement:\*\*\s*(.+)$", re.MULTILINE)
+
+        for entry in entries:
+            spec_id = str(entry.get("spec_id", ""))
+            body = str(entry.get("body", ""))
+            enf_match = enf_re.search(body)
+            if not enf_match:
+                continue
+            enf_text = enf_match.group(1)
+
+            file_refs = re.findall(r"`([\w./-]+\.[a-z]{2,4})`", enf_text)
+            for fref in file_refs:
+                candidate = root / fref.lstrip("/")
+                if not candidate.exists():
+                    findings.append(
+                        AuditFinding(
+                            rule_id="SRC_001",
+                            spec_id=spec_id,
+                            severity="error",
+                            message=f"Enforcement file '{fref}' referenced in spec {spec_id} not found on disk",
+                            evidence=enf_text,
+                        )
+                    )
+
+            script_refs = re.findall(r"`?(\w+\.(?:ts|py|sh|js|mjs))`?", enf_text)
+            for sref in script_refs:
+                if sref in {r[0] for r in file_refs}:
+                    continue
+                found = any((root / d).rglob(sref) for d in [".opencode/plugin", ".claude/hooks", "scripts"]) or (
+                    (root / "Makefile").exists() and _file_contains(root / "Makefile", sref)
+                )
+                if not found:
+                    findings.append(
+                        AuditFinding(
+                            rule_id="SRC_001",
+                            spec_id=spec_id,
+                            severity="warning",
+                            message=f"Enforcement script '{sref}' referenced in spec {spec_id} not found",
+                            evidence=enf_text,
+                        )
+                    )
+
+        return findings
+
+    def _check_makefile_targets(self, entries: list[dict[str, object]], root: Path) -> list[AuditFinding]:
+        import re
+
+        makefile = root / "Makefile"
+        findings: list[AuditFinding] = []
+        if not makefile.exists():
+            findings.append(
+                AuditFinding(
+                    rule_id="SRC_002",
+                    spec_id="",
+                    severity="error",
+                    message="Makefile not found at repo root",
+                    evidence="",
+                )
+            )
+            return findings
+
+        content = makefile.read_text()
+        target_re = re.compile(r"^([a-zA-Z][\w-]+)\s*:", re.MULTILINE)
+        declared_targets = {m.group(1) for m in target_re.finditer(content)}
+
+        enf_re = re.compile(r"\*\*Enforcement:\*\*\s*(.+)$", re.MULTILINE)
+        for entry in entries:
+            spec_id = str(entry.get("spec_id", ""))
+            body = str(entry.get("body", ""))
+            enf_match = enf_re.search(body)
+            if not enf_match:
+                continue
+            enf_text = enf_match.group(1)
+            make_refs = re.findall(r"`make\s+([\w-]+)`", enf_text)
+            for target in make_refs:
+                if target not in declared_targets:
+                    findings.append(
+                        AuditFinding(
+                            rule_id="SRC_002",
+                            spec_id=spec_id,
+                            severity="error",
+                            message=f"Makefile target '{target}' referenced in spec {spec_id} not declared",
+                            evidence=enf_text,
+                        )
+                    )
+
+        return findings
+
+    def _check_plugin_files(self, entries: list[dict[str, object]], root: Path) -> list[AuditFinding]:
+        import re
+
+        plugin_dir = root / ".opencode" / "plugin"
+        findings: list[AuditFinding] = []
+        if not plugin_dir.exists():
+            return findings
+
+        existing_plugins = {p.name for p in plugin_dir.iterdir() if p.suffix == ".ts"}
+
+        enf_re = re.compile(r"\*\*Enforcement:\*\*\s*(.+)$", re.MULTILINE)
+        for entry in entries:
+            spec_id = str(entry.get("spec_id", ""))
+            body = str(entry.get("body", ""))
+            enf_match = enf_re.search(body)
+            if not enf_match:
+                continue
+            enf_text = enf_match.group(1)
+            plugin_refs = re.findall(r"`?([\w-]+\.ts)`?", enf_text)
+            for pref in plugin_refs:
+                if pref.endswith(".ts") and "plugin" in enf_text.lower() and pref not in existing_plugins:
+                    findings.append(
+                        AuditFinding(
+                            rule_id="SRC_003",
+                            spec_id=spec_id,
+                            severity="error",
+                            message=f"Plugin '{pref}' referenced in spec {spec_id} not found",
+                            evidence=enf_text,
+                        )
+                    )
+
+        return findings
+
+    def _check_hook_files(self, entries: list[dict[str, object]], root: Path) -> list[AuditFinding]:
+        import re
+
+        hooks_dir = root / ".claude" / "hooks"
+        findings: list[AuditFinding] = []
+        if not hooks_dir.exists():
+            return findings
+
+        existing_hooks = {h.name for h in hooks_dir.iterdir() if h.suffix == ".sh"}
+
+        enf_re = re.compile(r"\*\*Enforcement:\*\*\s*(.+)$", re.MULTILINE)
+        for entry in entries:
+            spec_id = str(entry.get("spec_id", ""))
+            body = str(entry.get("body", ""))
+            enf_match = enf_re.search(body)
+            if not enf_match:
+                continue
+            enf_text = enf_match.group(1)
+            hook_refs = re.findall(r"`?([\w-]+\.sh)`?", enf_text)
+            for href in hook_refs:
+                if href.endswith(".sh") and href not in existing_hooks:
+                    findings.append(
+                        AuditFinding(
+                            rule_id="SRC_003",
+                            spec_id=spec_id,
+                            severity="error",
+                            message=f"Hook '{href}' referenced in spec {spec_id} not found",
+                            evidence=enf_text,
+                        )
+                    )
+
+        return findings
+
+    def _check_workflow_files(self, entries: list[dict[str, object]], root: Path) -> list[AuditFinding]:
+        import re
+
+        workflows_dir = root / ".github" / "workflows"
+        findings: list[AuditFinding] = []
+        if not workflows_dir.exists():
+            return findings
+
+        existing_wfs = {w.name for w in workflows_dir.iterdir() if w.suffix in (".yml", ".yaml")}
+
+        enf_re = re.compile(r"\*\*Enforcement:\*\*\s*(.+)$", re.MULTILINE)
+        for entry in entries:
+            spec_id = str(entry.get("spec_id", ""))
+            body = str(entry.get("body", ""))
+            enf_match = enf_re.search(body)
+            if not enf_match:
+                continue
+            enf_text = enf_match.group(1)
+            wf_refs = re.findall(r"\.github/workflows/([\w./-]+)", enf_text)
+            for wref in wf_refs:
+                wf_name = wref.split("/")[-1]
+                if wf_name not in existing_wfs:
+                    findings.append(
+                        AuditFinding(
+                            rule_id="SRC_004",
+                            spec_id=spec_id,
+                            severity="error",
+                            message=f"Workflow '{wref}' referenced in spec {spec_id} not found",
+                            evidence=enf_text,
+                        )
+                    )
+
+        return findings
 
     def _apply_rule(self, rule: AuditRule, entry: dict[str, object]) -> AuditFinding | None:
         """Apply a single rule to a single spec entry. Returns a finding or None."""
@@ -282,6 +527,13 @@ class SpecAuditor:
                 evidence=beh_text,
             )
         return None
+
+
+def _file_contains(path: Path, needle: str) -> bool:
+    try:
+        return needle in path.read_text()
+    except (OSError, UnicodeDecodeError):
+        return False
 
 
 __all__ = [

@@ -16,7 +16,25 @@ tags:
   - sdlc
   - llm
   - automation
+  - sts
+  - token-management
+  - openbao
+  - approle
+  - capability-narrowing
 dependencies: {}
+role_capabilities:
+  sts_mint:
+    - token_mint
+    - capability_narrowing
+  sts_validate:
+    - token_validate
+  sts_revoke:
+    - token_revoke
+    - cascade_revocation
+  sts_reap:
+    - token_reap
+  sts_audit:
+    - token_audit
 # Optional — terraform providers this collection's modules/stacks depend on.
 # The importer refuses the collection if any provider here is not in the
 # operator's trust list (infra/terraform/policies/data.json).

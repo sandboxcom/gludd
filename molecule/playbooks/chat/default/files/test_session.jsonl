@@ -1,0 +1,5 @@
+{"role":"system","content":"You are a helpful assistant."}
+{"role":"user","content":"Hello, can you help me?"}
+{"role":"assistant","content":"Of course! What do you need help with?"}
+{"role":"user","content":"How do I use Ansible?"}
+{"role":"assistant","content":"Ansible is an automation tool using YAML playbooks."}
