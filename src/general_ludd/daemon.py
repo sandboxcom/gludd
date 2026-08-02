@@ -9,7 +9,6 @@ import os
 import sys
 import threading
 import time
-from collections import deque
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -2911,7 +2910,11 @@ def create_daemon_app(
     # quality_gate cannot bleed across FastAPI instances in one process (the
     # module-level ``_daemon_state`` used to be shared — a test-isolation hazard).
     daemon_state: dict[str, Any] = {
-        "todos": deque(),
+        # Keep the public factory state as a plain empty list.  The todos
+        # router converts it to deque(maxlen=_MAX_INMEMORY_TODOS) on the first
+        # degraded-mode access, preserving the startup contract while ensuring
+        # the in-memory fallback cannot grow without bound.
+        "todos": [],
         "tick_metrics": {},
         "quality_gate": {},
     }

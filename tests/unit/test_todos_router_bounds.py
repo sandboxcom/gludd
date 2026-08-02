@@ -36,8 +36,13 @@ def _build_degraded_app() -> tuple[FastAPI, dict[str, Any]]:
     return app, daemon_state
 
 
-def test_register_converts_todos_to_bounded_deque():
-    _app, daemon_state = _build_degraded_app()
+def test_first_degraded_access_converts_todos_to_bounded_deque():
+    app, daemon_state = _build_degraded_app()
+    assert daemon_state["todos"] == []
+
+    response = TestClient(app).get("/api/todos")
+
+    assert response.status_code == 200
     assert isinstance(daemon_state["todos"], collections.deque)
     assert daemon_state["todos"].maxlen == _MAX_INMEMORY_TODOS
 
@@ -46,6 +51,10 @@ def test_register_preserves_preseeded_entries():
     app = FastAPI()
     daemon_state: dict[str, Any] = {"todos": [{"todo_id": "seed", "queue": "core"}]}
     todos_router.register(app, daemon_state)
+
+    response = TestClient(app).get("/api/todos")
+
+    assert response.status_code == 200
     assert isinstance(daemon_state["todos"], collections.deque)
     assert list(daemon_state["todos"]) == [{"todo_id": "seed", "queue": "core"}]
 
