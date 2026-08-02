@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import time
 from unittest.mock import MagicMock
 
@@ -9,7 +10,6 @@ import general_ludd.security.security_backlog as sb
 from general_ludd.security.vacuum_schedule import (
     DEFAULT_LEADER_LOCK_TIMEOUT_SEC,
     DEFAULT_MIN_INTERVAL_SEC,
-    VacuumResult,
     VacuumScheduler,
 )
 
@@ -62,13 +62,14 @@ class TestVacuumScheduler:
 
     def test_vacuum_rate_limited(self) -> None:
         s = VacuumScheduler(min_interval_sec=3600.0)
+        s.vacuum_memory_table(MagicMock())
         result = s.vacuum_memory_table(MagicMock())
         assert result.ran is False
         assert "rate-limited" in result.skipped_reason
 
     def test_vacuum_leader_election_blocks_second(self) -> None:
-        s = VacuumScheduler(min_interval_sec=0.0)
-        s.try_acquire_leader(now_epoch=100.0)
+        s = VacuumScheduler(min_interval_sec=0.0, leader_lock_timeout_sec=3600.0)
+        s.try_acquire_leader()
         result = s.vacuum_memory_table(MagicMock())
         assert result.ran is False
         assert "leader-election" in result.skipped_reason
@@ -86,10 +87,8 @@ class TestVacuumScheduler:
         session = MagicMock()
         session.execute.side_effect = RuntimeError("fail")
         s.try_acquire_leader(now_epoch=100.0)
-        try:
+        with contextlib.suppress(RuntimeError):
             s.vacuum_memory_table(session)
-        except RuntimeError:
-            pass
         assert s.try_acquire_leader(now_epoch=100.0) is True
 
 
