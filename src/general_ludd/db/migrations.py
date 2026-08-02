@@ -6,7 +6,7 @@ import logging
 import os
 from io import StringIO
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 from alembic import command
 from alembic.config import Config as AlembicConfig
