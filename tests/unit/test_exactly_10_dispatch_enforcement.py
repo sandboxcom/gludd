@@ -23,14 +23,17 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 SESSION_START_TS = ROOT / ".opencode" / "plugin" / "enforce-session-start.ts"
 MULTITASK_TS = ROOT / ".opencode" / "plugin" / "enforce-multitask.ts"
+MULTITASK_CONFIG_TS = ROOT / ".opencode" / "lib" / "multitask_config.ts"
 SHARED_TS = ROOT / ".opencode" / "lib" / "shared.ts"
 AGENTS_MD = ROOT / "AGENTS.md"
 
 
 # --- hook_plugin_env fixture (for behavioral tests) -----------------------
 
+
 def _lazy_import_hook_plugin_env():
     from tests.unit._hook_fixtures import hook_plugin_env_impl
+
     return hook_plugin_env_impl
 
 
@@ -62,15 +65,16 @@ def test_session_start_min_dispatches_hardcoded_10():
     src = _read(SESSION_START_TS)
     val = _env_default(src, "GLUDD_SESSION_START_MIN_DISPATCHES")
     assert val == 10, (
-        f"enforce-session-start.ts MIN_DISPATCHES default is {val}, expected 10. "
-        f"Was the hardcoded fallback changed?")
+        f"enforce-session-start.ts MIN_DISPATCHES default is {val}, expected 10. Was the hardcoded fallback changed?"
+    )
 
 
 def test_session_start_min_dispatches_env_var_name():
     """The env var override key matches expectations."""
     src = _read(SESSION_START_TS)
     assert "GLUDD_SESSION_START_MIN_DISPATCHES" in src, (
-        "Env var GLUDD_SESSION_START_MIN_DISPATCHES must exist for overrides.")
+        "Env var GLUDD_SESSION_START_MIN_DISPATCHES must exist for overrides."
+    )
 
 
 # ============================================================================
@@ -88,7 +92,8 @@ def test_session_start_effective_min_is_opt_in():
         src,
     ), "EFFECTIVE_MIN must be conditional on an explicit minimum"
     assert re.search(r":\s*0\s*$", src, re.MULTILINE), (
-        "Unconfigured session-start enforcement must allow zero dispatches")
+        "Unconfigured session-start enforcement must allow zero dispatches"
+    )
 
 
 # ============================================================================
@@ -110,16 +115,11 @@ def test_multitask_min_dispatches_hardcoded_10():
     at the end of the parseInt call is also asserted to be 10 (the radix,
     not the default value — they happen to coincide here).
     """
-    src = _read(MULTITASK_TS)
-    m = re.search(
-        r'(?:export\s+)?const MIN_DISPATCHES\s*=\s*parseInt\(\s*'
-        r'(?:process\.env\.\w+\s*\|\|\s*)+'
-        r'"(\d+)"',
-        src, re.DOTALL)
-    assert m, "MIN_DISPATCHES parseInt declaration not found"
+    src = _read(MULTITASK_CONFIG_TS)
+    m = re.search(r"integerFromEnv\(\s*\[.*?GLUDD_MIN_DISPATCHES.*?\][\s\S]*?,\s*(\d+)", src, re.DOTALL)
+    assert m, "MIN_DISPATCHES integerFromEnv call not found in multitask_config.ts"
     val = int(m.group(1))
-    assert val == 10, (
-        f"enforce-multitask.ts MIN_DISPATCHES env-fallback default is {val}, expected 10.")
+    assert val == 10, f"multitask_config.ts MIN_DISPATCHES default fallback is {val}, expected 10."
 
 
 def test_multitask_required_dispatches_is_opt_in():
@@ -164,9 +164,7 @@ def test_multitask_floor_breach_uses_required_dispatches():
 def test_multitask_has_max_dispatches_constant():
     """enforce-multitask.ts must export a MAX_DISPATCHES ceiling constant."""
     src = _read(MULTITASK_TS)
-    assert "MAX_DISPATCHES" in src, (
-        "enforce-multitask.ts must declare MAX_DISPATCHES to cap "
-        "dispatches per wave at 10.")
+    assert "MAX_DISPATCHES" in src, "enforce-multitask.ts must declare MAX_DISPATCHES to cap dispatches per wave at 10."
 
 
 def test_multitask_max_dispatches_value_is_10():
@@ -179,13 +177,11 @@ def test_multitask_max_dispatches_value_is_10():
 def test_multitask_max_dispatches_enforcement_exists():
     """The code that blocks >=MAX_DISPATCHES dispatches must exist."""
     src = _read(MULTITASK_TS)
-    assert ">= MAX_DISPATCHES" in src or "> MAX_DISPATCHES" in src, (
-        "Must block dispatches that exceed MAX_DISPATCHES.")
+    assert ">= MAX_DISPATCHES" in src or "> MAX_DISPATCHES" in src, "Must block dispatches that exceed MAX_DISPATCHES."
     # Deny message must reference MAX_DISPATCHES
     max_pos = src.find("MAX_DISPATCHES")
     deny_pos = src.find("deny", max_pos)
-    assert deny_pos > 0, (
-        "MAX_DISPATCHES must be used in a deny/block context to enforce the cap.")
+    assert deny_pos > 0, "MAX_DISPATCHES must be used in a deny/block context to enforce the cap."
 
 
 # ============================================================================
@@ -205,7 +201,7 @@ def test_agents_md_documents_ten_as_ceiling_not_floor():
     """The active directive must make ten a maximum rather than a minimum."""
     src = _read(AGENTS_MD)
     assert "Max 10 subagents per wave" in src
-    assert "OVERRIDES all \"10-agent floor\" rules" in src
+    assert 'OVERRIDES all "10-agent floor" rules' in src
 
 
 # ============================================================================
@@ -216,46 +212,44 @@ def test_agents_md_documents_ten_as_ceiling_not_floor():
 def test_is_dispatch_tool_function_present():
     """isDispatchTool must be defined in shared.ts."""
     src = _read(SHARED_TS)
-    assert "export function isDispatchTool" in src, (
-        "shared.ts must export isDispatchTool.")
+    assert "export function isDispatchTool" in src, "shared.ts must export isDispatchTool."
 
 
 def test_dispatch_tools_array_contains_task_agent_workflow():
     """DISPATCH_TOOLS must be exactly ["task", "agent", "workflow"]."""
     src = _read(SHARED_TS)
 
-    m = re.search(
-        r'DISPATCH_TOOLS\s*=\s*\w+\.freeze\(\s*\[(.*?)\]\s*\)',
-        src, re.DOTALL)
+    m = re.search(r"DISPATCH_TOOLS\s*=\s*\w+\.freeze\(\s*\[(.*?)\]\s*\)", src, re.DOTALL)
     assert m, "DISPATCH_TOOLS frozen array not found"
 
     raw = m.group(1)
     entries = re.findall(r'"(\w+)"', raw)
     assert sorted(entries) == ["agent", "task", "workflow"], (
-        f"DISPATCH_TOOLS = {entries}, expected "
-        "['agent', 'task', 'workflow'].")
+        f"DISPATCH_TOOLS = {entries}, expected ['agent', 'task', 'workflow']."
+    )
 
 
 def test_is_dispatch_tool_returns_true_for_task():
     """isDispatchTool('task') must return true."""
     src = _read(SHARED_TS)
     assert "DISPATCH_TOOLS.includes(tool)" in src, (
-        "isDispatchTool must use DISPATCH_TOOLS.includes for membership test.")
+        "isDispatchTool must use DISPATCH_TOOLS.includes for membership test."
+    )
 
 
 def test_is_dispatch_tool_returns_false_for_bash():
     """isDispatchTool must NOT classify 'bash' as a dispatch."""
     src = _read(SHARED_TS)
     assert "DISPATCH_TOOLS.includes(tool)" in src
-    assert '"bash"' not in src.split("DISPATCH_TOOLS")[1].split("\n", 1)[0], (
-        "'bash' must not be in DISPATCH_TOOLS.")
+    assert '"bash"' not in src.split("DISPATCH_TOOLS")[1].split("\n", 1)[0], "'bash' must not be in DISPATCH_TOOLS."
 
 
 def test_is_dispatch_tool_exported_via_es_module():
     """isDispatchTool must be an ES module export, not require()."""
     src = _read(SHARED_TS)
     assert "export function isDispatchTool" in src or "export const isDispatchTool" in src, (
-        "isDispatchTool must use ES module export.")
+        "isDispatchTool must use ES module export."
+    )
 
 
 # ============================================================================
@@ -274,8 +268,7 @@ def test_session_start_freshness_uses_effective_min():
 def test_session_start_primed_check_requires_10():
     """The primed condition uses the effective, possibly-zero minimum."""
     src = _read(SESSION_START_TS)
-    assert "dispatches >= EFFECTIVE_MIN" in src, (
-        "Primed condition must check dispatches >= EFFECTIVE_MIN.")
+    assert "dispatches >= EFFECTIVE_MIN" in src, "Primed condition must check dispatches >= EFFECTIVE_MIN."
     # EFFECTIVE_MIN must be 10 (tested above)
 
 
@@ -283,8 +276,7 @@ def test_session_start_freshness_warning_mentions_10():
     """Any warning/deny message about insufficient dispatches must reference 10."""
     src = _read(SESSION_START_TS)
     # The EFFECTIVE_MIN is used in messages — check it resolves to 10
-    assert "${EFFECTIVE_MIN}" in src, (
-        "Warning/deny messages must template EFFECTIVE_MIN.")
+    assert "${EFFECTIVE_MIN}" in src, "Warning/deny messages must template EFFECTIVE_MIN."
     # Pin: the EFFECTIVE_MIN resolution is tested above at 10
 
 
@@ -294,8 +286,7 @@ def test_session_start_hard_deny_uses_effective_min():
     # The template literal is in the defaultImpl's tool.execute.before block.
     # defaultImpl is the first "tool.execute.before" occurrence.
     default_impl = src.split('"tool.execute.before"')[1]
-    assert "${EFFECTIVE_MIN}" in default_impl, (
-        "Hard-deny message must template ${EFFECTIVE_MIN} (defaultImpl block).")
+    assert "${EFFECTIVE_MIN}" in default_impl, "Hard-deny message must template ${EFFECTIVE_MIN} (defaultImpl block)."
 
 
 def test_session_start_warning_uses_effective_min():
@@ -303,7 +294,8 @@ def test_session_start_warning_uses_effective_min():
     src = _read(SESSION_START_TS)
     default_impl = src.split('"tool.execute.before"')[1]
     assert "${EFFECTIVE_MIN}" in default_impl, (
-        "Dispatch-now warning must template ${EFFECTIVE_MIN} (defaultImpl block).")
+        "Dispatch-now warning must template ${EFFECTIVE_MIN} (defaultImpl block)."
+    )
 
 
 # ============================================================================
@@ -323,22 +315,22 @@ def test_is_dispatch_tool_case_variants():
     src = _read(SHARED_TS)
 
     # DISPATCH_TOOLS contains lowercase entries
-    m = re.search(
-        r'DISPATCH_TOOLS\s*=\s*\w+\.freeze\(\s*\[(.*?)\]\s*\)',
-        src, re.DOTALL)
+    m = re.search(r"DISPATCH_TOOLS\s*=\s*\w+\.freeze\(\s*\[(.*?)\]\s*\)", src, re.DOTALL)
     assert m, "DISPATCH_TOOLS frozen array not found"
     raw = m.group(1)
     entries = re.findall(r'"(\w+)"', raw)
     assert all(e == e.lower() for e in entries), (
         f"DISPATCH_TOOLS entries {entries} are not all lowercase. "
-        f"Case-sensitive .includes() will miss variant spellings from opencode.")
+        f"Case-sensitive .includes() will miss variant spellings from opencode."
+    )
 
     # isDispatchTool does no normalization (no .toLowerCase() call)
     # Verify the function body does NOT do any toLowerCase/normalization
     func_body = src.split("export function isDispatchTool")[1].split("export", 1)[0]
     assert ".toLowerCase()" not in func_body, (
         "isDispatchTool does not normalize case. If opencode passes 'Task', "
-        "dispatch counting breaks. Added this test so you know the gap exists.")
+        "dispatch counting breaks. Added this test so you know the gap exists."
+    )
 
     # Verify that NO plugin normalizes the tool name before calling isDispatchTool
     # This is the root cause: input.tool is passed through without .toLowerCase()
@@ -352,13 +344,13 @@ def test_is_dispatch_tool_case_variants():
         # This test documents the current state; if dispatch counting breaks,
         # the fix is to lowercase the tool name before isDispatchTool.
         tool_extractions = re.findall(
-            r"const tool\s*=\s*[^;]+",
-            ts_src.split('"tool.execute.before"')[1].split('"text.complete"')[0]
+            r"const tool\s*=\s*[^;]+", ts_src.split('"tool.execute.before"')[1].split('"text.complete"')[0]
         )
         for extraction in tool_extractions:
-            if "toLowerCase" in extraction or "toLowerCase" in ts_src[
-                ts_src.find(extraction):ts_src.find(extraction) + 200
-            ]:
+            if (
+                "toLowerCase" in extraction
+                or "toLowerCase" in ts_src[ts_src.find(extraction) : ts_src.find(extraction) + 200]
+            ):
                 break
         else:
             # No normalization found — the plugin trusts whatever opencode passes
@@ -376,9 +368,7 @@ def test_is_dispatch_tool_case_sensitive_enumeration():
     When dispatch counting is broken at 0, this test identifies the gap.
     """
     src = _read(SHARED_TS)
-    m = re.search(
-        r'DISPATCH_TOOLS\s*=\s*\w+\.freeze\(\s*\[(.*?)\]\s*\)',
-        src, re.DOTALL)
+    m = re.search(r"DISPATCH_TOOLS\s*=\s*\w+\.freeze\(\s*\[(.*?)\]\s*\)", src, re.DOTALL)
     assert m
     entries = re.findall(r'"(\w+)"', m.group(1))
 
@@ -386,10 +376,10 @@ def test_is_dispatch_tool_case_sensitive_enumeration():
     variants: dict[str, list[str]] = {}
     for entry in entries:
         variants[entry] = [
-            entry,                      # task
-            entry.capitalize(),         # Task
-            entry.upper(),              # TASK
-            entry.title(),              # Task (same as capitalize for single word)
+            entry,  # task
+            entry.capitalize(),  # Task
+            entry.upper(),  # TASK
+            entry.title(),  # Task (same as capitalize for single word)
         ]
 
     # Collect which variants match (case-sensitive includes)
@@ -407,7 +397,8 @@ def test_is_dispatch_tool_case_sensitive_enumeration():
         f"{matching}. But case variants {missing} would NOT match. "
         f"If opencode passes any of {missing}, dispatch counting breaks. "
         f"This test exists to make the gap visible — fix is to call "
-        f".toLowerCase() on the tool name before isDispatchTool check.")
+        f".toLowerCase() on the tool name before isDispatchTool check."
+    )
 
 
 # ============================================================================
@@ -428,6 +419,7 @@ def test_session_start_dispatch_increments_state(hook_plugin_env):
 
     if not NODE_OK:
         import pytest
+
         pytest.skip(HOOK_LIVE_SKIP_REASON)
 
     env = hook_plugin_env
@@ -449,15 +441,12 @@ def test_session_start_dispatch_increments_state(hook_plugin_env):
         stdout_data = json.loads(result.stdout) if result.stdout.strip() else None
         if stdout_data:
             perm = stdout_data.get("permissionDecision")
-            assert perm != "deny", (
-                f"Hook denied legitimate dispatch. stdout: {result.stdout}"
-            )
+            assert perm != "deny", f"Hook denied legitimate dispatch. stdout: {result.stdout}"
 
     # Verify state file was written/updated
     time.sleep(0.1)  # FS timestamp granularity
     assert state_path.exists(), (
-        f"State file {state_path} was not created after dispatch hook. "
-        f"stdout: {result.stdout}, stderr: {result.stderr}"
+        f"State file {state_path} was not created after dispatch hook. stdout: {result.stdout}, stderr: {result.stderr}"
     )
     mtime_after = state_path.stat().st_mtime
     assert mtime_after > mtime_before or not existed_before, (
@@ -467,9 +456,7 @@ def test_session_start_dispatch_increments_state(hook_plugin_env):
 
     # Verify dispatches incremented
     state_data = json.loads(state_path.read_text())
-    assert state_data.get("dispatches", 0) >= 1, (
-        f"Dispatch count not incremented. state={state_data}"
-    )
+    assert state_data.get("dispatches", 0) >= 1, f"Dispatch count not incremented. state={state_data}"
 
 
 def test_is_dispatch_tool_runtime_true_for_task():
@@ -484,12 +471,13 @@ def test_is_dispatch_tool_runtime_true_for_task():
 
     if not NODE_OK:
         import pytest
+
         pytest.skip(HOOK_LIVE_SKIP_REASON)
 
     shared_path = ROOT / ".opencode" / "lib" / "shared.ts"
     code = (
         f'import {{ isDispatchTool, DISPATCH_TOOLS }} from "{shared_path}";'
-        'console.log(JSON.stringify({'
+        "console.log(JSON.stringify({"
         '  task: isDispatchTool("task"),'
         '  Task: isDispatchTool("Task"),'
         '  TASK: isDispatchTool("TASK"),'
@@ -498,16 +486,16 @@ def test_is_dispatch_tool_runtime_true_for_task():
         '  workflow: isDispatchTool("workflow"),'
         '  Workflow: isDispatchTool("Workflow"),'
         '  bash: isDispatchTool("bash"),'
-        '  tools: DISPATCH_TOOLS'
-        '}));'
+        "  tools: DISPATCH_TOOLS"
+        "}));"
     )
     result = subprocess.run(
         ["node", "--experimental-strip-types", "-e", code],
-        capture_output=True, text=True, timeout=10,
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
-    assert result.returncode == 0, (
-        f"Node invocation failed: stderr={result.stderr}"
-    )
+    assert result.returncode == 0, f"Node invocation failed: stderr={result.stderr}"
     data = json.loads(result.stdout)
     assert data["task"] is True, f"isDispatchTool('task') = {data['task']}, expected True"
     assert data["agent"] is True, f"isDispatchTool('agent') = {data['agent']}, expected True"
@@ -521,9 +509,7 @@ def test_is_dispatch_tool_runtime_true_for_task():
         "isDispatchTool('Task') = True (capitalized matches). If this assertion "
         "flips from True→False, check whether .toLowerCase() was recently added."
     )
-    assert data["TASK"] is False, (
-        "isDispatchTool('TASK') = True (uppercase matches). Same note as above."
-    )
+    assert data["TASK"] is False, "isDispatchTool('TASK') = True (uppercase matches). Same note as above."
 
 
 def test_tool_name_extraction_matches_opencode_protocol():
