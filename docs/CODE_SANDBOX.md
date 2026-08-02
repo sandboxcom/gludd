@@ -16,8 +16,11 @@ filesystem containment with OS-level kernel enforcement (Landlock, bubblewrap, S
 └──────────────────────────────────────────────┘
 ```
 
-All layers FAIL OPEN: a sandbox load failure logs loudly and dispatches with a
-"no sandbox" warning rather than wedging the agent.
+Filesystem/input confinement fails closed. Backend capability negotiation may
+fall back only to an explicitly configured lower isolation layer and must emit a
+visible downgrade event; the security hardening specification requires an
+operator-selectable deny policy where no approved backend is available. A
+request must never silently disable path confinement to keep an agent running.
 
 ## Layer 1 — Process Boundary
 
@@ -46,9 +49,27 @@ with create_ornith_sandbox() as sandbox:
 - Agent CWD is the sandbox root; relative paths are confined automatically
 - `confine_export_path()` — validates any output path is within an allowlisted
   export root (`ORNITH_EXPORT_ROOT`, `GLUDD_DATA_DIR`)
+- The `/admin/ornith/export` route translates a rejected path to a stable 422
+  response without returning either the attempted host path or the private
+  allowlist. Valid explicit paths and generated default names use the same
+  confinement function.
 - Cleanup: `shutil.rmtree` on context exit or timeout kill
 - Weakness: no kernel enforcement — a determined subprocess can `chdir("/")`
   and escape. Paired with Landlock/bubblewrap on Linux for kernel enforcement.
+
+### Export-boundary operator evidence
+
+- A long-lived FastAPI discussion documents that generic `Exception` handlers
+  are routed through different Starlette middleware than typed handlers and can
+  be re-raised or miss normal middleware behavior. Gludd therefore maps the
+  known confinement `ValueError` at the route boundary instead of depending on
+  a generic handler:
+  [FastAPI discussion #9478](https://github.com/fastapi/fastapi/discussions/9478).
+- A long-running FastAPI query-validation discussion records application
+  `ValueError` escaping as an HTTP 500 when raised outside FastAPI's own request
+  validation. The explicit route mapping keeps user-controlled export paths a
+  bounded 422 contract:
+  [FastAPI discussion #8143](https://github.com/fastapi/fastapi/discussions/8143).
 
 ### 2b. Namespace Isolation (bubblewrap — Linux)
 

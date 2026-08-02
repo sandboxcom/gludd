@@ -194,9 +194,18 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             raise HTTPException(status_code=503, detail="No database available")
         async with factory() as session:
             repo = OrnithTrainingRepo(session)
-            path = await repo.export_dataset(
-                since=since, project_id=project_id, out_path=out_path
-            )
+            try:
+                path = await repo.export_dataset(
+                    since=since, project_id=project_id, out_path=out_path
+                )
+            except ValueError as exc:
+                # The confinement error contains both the rejected path and the
+                # private allowlist. Keep those diagnostics server-side and
+                # expose only the stable policy boundary to the caller.
+                raise HTTPException(
+                    status_code=422,
+                    detail="out_path is outside the configured Ornith export root",
+                ) from exc
         # Count rows OFF the event loop — a large export file would otherwise
         # block the loop for the full read.
         def _count_rows() -> int:

@@ -14,7 +14,10 @@ from general_ludd.daemon import create_daemon_app
 
 
 @pytest.fixture
-def client(tmp_path):
+def client(tmp_path, monkeypatch):
+    # Exercise the public confinement setting: endpoint exports may write only
+    # below the per-test root, including the explicit ``tmp_path`` used below.
+    monkeypatch.setenv("ORNITH_EXPORT_ROOT", str(tmp_path))
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     db_path = tmp_path / "test.db"
@@ -111,6 +114,22 @@ class TestOrnithEndpoints:
         data = resp.json()
         assert data["row_count"] == 1
         assert data["path"] == str(out_path)
+
+    def test_export_rejects_path_outside_configured_root_without_path_disclosure(
+        self, client, tmp_path
+    ):
+        out_path = tmp_path.parent / "outside-ornith-export.jsonl"
+
+        resp = client.get(
+            "/admin/ornith/export", params={"out_path": str(out_path)}
+        )
+
+        assert resp.status_code == 422
+        assert resp.json() == {
+            "detail": "out_path is outside the configured Ornith export root"
+        }
+        assert str(out_path) not in resp.text
+        assert str(tmp_path) not in resp.text
 
     def test_stats_returns_counts(self, client):
         rec1 = client.post("/admin/ornith/record", json=_RECORD_BODY)
