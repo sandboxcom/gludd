@@ -211,7 +211,7 @@ def is_temp_root_expired(root: TempRoot, *, max_age_seconds: float | None = None
 def compute_age_seconds(manifest_path: Path) -> float:
     try:
         manifest = json.loads(manifest_path.read_text())
-        created = manifest.get("created_at", 0.0)
+        created: float = float(manifest.get("created_at", 0.0))
     except (json.JSONDecodeError, OSError, KeyError):
         return float("inf")
     return time.time() - created

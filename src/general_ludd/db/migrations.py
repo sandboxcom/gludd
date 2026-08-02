@@ -50,19 +50,22 @@ def plan_migration(cfg: AlembicConfig) -> MigrationPlan:
     Returns a ``MigrationPlan`` with the SQL, pending count, and revision info.
     """
     script = ScriptDirectory.from_config(cfg)
-    head_rev = script.get_current_head()
+    head_rev_raw = script.get_current_head()
+    if head_rev_raw is None:
+        raise RuntimeError("No head revision found; run alembic upgrade head first")
+    head_rev: str = head_rev_raw
 
     from alembic.runtime.environment import EnvironmentContext
     from alembic.runtime.migration import MigrationContext
 
     buffer = StringIO()
 
-    def _dry_run(rev, context):
+    def _dry_run(rev: str, context: MigrationContext) -> list[tuple[str, str]] | Any:
         return script._upgrade_revs(head_rev, rev)
 
-    with EnvironmentContext(cfg, script, fn=_dry_run, as_sql=True) as ctx:
-        ctx.configure(output_buffer=buffer)
-        ctx.run_migrations()
+    with EnvironmentContext(cfg, script, fn=_dry_run, as_sql=True) as env_ctx:
+        env_ctx.configure(output_buffer=buffer)
+        env_ctx.run_migrations()
 
     sql = buffer.getvalue()
 
@@ -70,13 +73,14 @@ def plan_migration(cfg: AlembicConfig) -> MigrationPlan:
     pending_count = len(script.get_heads())
     try:
         conn = cfg.attributes.get("connection")
+        db_url = cfg.get_main_option("sqlalchemy.url") or ""
         if conn is None:
             from sqlalchemy import create_engine
 
-            engine = create_engine(cfg.get_main_option("sqlalchemy.url"))
+            engine = create_engine(db_url)
             with engine.connect() as connection:
-                ctx = MigrationContext.configure(connection)
-                current_rev = ctx.get_current_revision()
+                mig_ctx = MigrationContext.configure(connection)
+                current_rev = mig_ctx.get_current_revision()
                 if current_rev is not None and head_rev != current_rev:
                     revisions = script.iterate_revisions(head_rev, current_rev)
                     pending_count = len(list(revisions))
@@ -85,8 +89,8 @@ def plan_migration(cfg: AlembicConfig) -> MigrationPlan:
                 else:
                     pending_count = 0
         else:
-            ctx = MigrationContext.configure(conn)
-            current_rev = ctx.get_current_revision()
+            mig_ctx = MigrationContext.configure(conn)
+            current_rev = mig_ctx.get_current_revision()
             if current_rev is not None and head_rev != current_rev:
                 revisions = script.iterate_revisions(head_rev, current_rev)
                 pending_count = len(list(revisions))
@@ -123,10 +127,11 @@ def check_pending(cfg: AlembicConfig) -> int:
         from alembic.runtime.migration import MigrationContext
         from sqlalchemy import create_engine
 
-        engine = create_engine(cfg.get_main_option("sqlalchemy.url"))
+        db_url = cfg.get_main_option("sqlalchemy.url") or ""
+        engine = create_engine(db_url)
         with engine.connect() as connection:
-            ctx = MigrationContext.configure(connection)
-            current_rev = ctx.get_current_revision()
+            mig_ctx = MigrationContext.configure(connection)
+            current_rev = mig_ctx.get_current_revision()
             if current_rev is None:
                 return 1 if head_rev else 0
             if head_rev == current_rev:
