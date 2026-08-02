@@ -88,11 +88,12 @@ src/general_ludd/agents/task_decomposer.py:TaskDecomposer
 src/general_ludd/agents/test_generation/code_path_analyzer.py:CodePathAnalyzer
 src/general_ludd/agents/test_generation/contracts.py:PipelineStage
 src/general_ludd/agents/test_generation/contracts.py:TestGenerator
-src/general_ludd/agents/test_generation/contracts.py:TestHarness
-src/general_ludd/agents/test_generation/contracts.py:TestReport
-src/general_ludd/agents/test_generation/contracts.py:TestSpec
 src/general_ludd/agents/test_generation/scenario_generator.py:ScenarioGenerator
 src/general_ludd/agents/test_generation/scenario_generator.py:ScenarioStep
+src/general_ludd/agents/test_generation/test_generator.py:TestGeneratorImpl
+src/general_ludd/agents/test_generation/test_harness.py:TestHarnessRunner
+src/general_ludd/agents/test_generation/test_harness.py:TestResult
+src/general_ludd/agents/test_generation/test_reporter.py:TestReporter
 src/general_ludd/agents/test_generation/validator.py:ScenarioValidator
 src/general_ludd/ai_ml/accelerators.py:AcceleratorKind
 src/general_ludd/ai_ml/accelerators.py:AcceleratorPlanner
@@ -1549,6 +1550,11 @@ src/general_ludd/security/sandboxes/linux_bubblewrap.py:render_argv
 src/general_ludd/security/sandboxes/linux_selinux.py:render_fc
 src/general_ludd/security/sandboxes/linux_selinux.py:render_te
 src/general_ludd/security/sandboxes/vm/agent_executor.py:AgentCommand
+src/general_ludd/security/sandboxes/vm/contracts.py:BootConfig
+src/general_ludd/security/sandboxes/vm/contracts.py:ImageConfig
+src/general_ludd/security/sandboxes/vm/contracts.py:UnikernelBackend
+src/general_ludd/security/sandboxes/vm/contracts.py:validate_boot_config
+src/general_ludd/security/sandboxes/vm/contracts.py:validate_image_config
 src/general_ludd/security/sandboxes/vm/firecracker_backend.py:FirecrackerUnixHTTPConnection
 src/general_ludd/security/sandboxes/vm/image_builder.py:BuiltImage
 src/general_ludd/security/sandboxes/vm/image_builder.py:build_firecracker_image
