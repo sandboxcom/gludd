@@ -180,20 +180,24 @@ def _init_git_dir(path: str) -> None:
 
 
 @pytest.fixture()
-def git_repo() -> tuple[GitAutomation, str]:
-    with tempfile.TemporaryDirectory() as d:
-        _init_git_dir(d)
-        yield GitAutomation(repo_path=d), d
+def git_repo(tmp_path: Path) -> tuple[GitAutomation, str]:
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    repo_path = str(repo_dir)
+    _init_git_dir(repo_path)
+    yield GitAutomation(repo_path=repo_path), repo_path
 
 
 @pytest.fixture()
-def git_repo_with_dev() -> tuple[GitAutomation, str]:
-    with tempfile.TemporaryDirectory() as d:
-        _init_git_dir(d)
-        ga = GitAutomation(repo_path=d)
-        ga.create_branch("development")
-        ga._run_git("checkout", "master", "--", _cwd=d)
-        yield ga, d
+def git_repo_with_dev(tmp_path: Path) -> tuple[GitAutomation, str]:
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    repo_path = str(repo_dir)
+    _init_git_dir(repo_path)
+    ga = GitAutomation(repo_path=repo_path)
+    ga.create_branch("development")
+    ga._run_git("checkout", "master", "--", _cwd=repo_path)
+    yield ga, repo_path
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
