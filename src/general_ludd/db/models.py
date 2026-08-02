@@ -503,9 +503,7 @@ class DeploymentRecordModel(Base):
     destroy_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
     revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=_utcnow)
-    updated_at: Mapped[datetime] = mapped_column(
-        UTCDateTime(), nullable=False, default=_utcnow, onupdate=_utcnow
-    )
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=_utcnow, onupdate=_utcnow)
 
     __table_args__ = (
         CheckConstraint("revision > 0", name="ck_deployment_records_revision_positive"),
@@ -599,20 +597,12 @@ class AzureCostPredictionModel(Base):
     state_rank: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     not_before: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, index=True)
     lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    lease_expires_at: Mapped[datetime | None] = mapped_column(
-        UTCDateTime(), nullable=True, index=True
-    )
+    lease_expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True, index=True)
     fencing_token: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    state_changed_at: Mapped[datetime] = mapped_column(
-        UTCDateTime(), nullable=False, default=_utcnow
-    )
+    state_changed_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=_utcnow)
     finalized_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        UTCDateTime(), nullable=False, default=_utcnow
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        UTCDateTime(), nullable=False, default=_utcnow, onupdate=_utcnow
-    )
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=_utcnow, onupdate=_utcnow)
 
     @property
     def id(self) -> tuple[str, int]:
@@ -664,9 +654,7 @@ class AzureCostObservationModel(Base):
     payload: Mapped[str] = mapped_column(Text, nullable=False)
     fencing_token: Mapped[int] = mapped_column(Integer, nullable=False)
     observed_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        UTCDateTime(), nullable=False, default=_utcnow
-    )
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=_utcnow)
 
     __table_args__ = (
         ForeignKeyConstraint(
@@ -710,9 +698,7 @@ class AzureCostOutboxEventModel(Base):
     event_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     deduplication_key: Mapped[str] = mapped_column(String(256), nullable=False)
     payload: Mapped[str] = mapped_column(Text, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        UTCDateTime(), nullable=False, default=_utcnow
-    )
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=_utcnow)
     published_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
     __table_args__ = (
@@ -1319,4 +1305,37 @@ class SlurmJobModel(Base):
     __table_args__ = (
         Index("ix_slurm_jobs_status_daemon", "status", "daemon_pid"),
         Index("ix_slurm_jobs_deployment", "deployment_id"),
+    )
+
+
+class EventWorkTransportModel(Base):
+    """Durable event/work transport with fenced cross-worker claims.
+
+    Workers claim rows via ``SELECT ... FOR UPDATE SKIP LOCKED`` and progress
+    them through the lifecycle: pending → claimed → processing → completed/failed.
+    Stale claims (``claimed_at`` older than a configurable TTL) are reaped and
+    re-queued by a background reaper, giving at-least-once delivery semantics.
+
+    Immutable event identity lives in ``event_type`` + ``payload``; mutable
+    claim/lifecycle state is tracked via ``status``, ``claimed_by``,
+    ``claimed_at``, ``attempts``, and ``completed_at``.
+    """
+
+    __tablename__ = "event_work_transport"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    event_type: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    payload: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
+    claimed_by: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    claimed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=_utcnow, index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("length(payload) <= 65536", name="ck_event_work_transport_payload_len"),
+        Index("ix_event_work_transport_claim", "status", "claimed_at"),
+        Index("ix_event_work_transport_type_status", "event_type", "status", "created_at"),
     )

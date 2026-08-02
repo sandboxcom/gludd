@@ -46,6 +46,7 @@ PLUGINS_DIR = ROOT / ".opencode" / "plugins"
 def hook_plugin_env(tmp_path: Path):
     yield from hook_plugin_env_impl(tmp_path)
 
+
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
 
@@ -62,21 +63,23 @@ class TestEnforceStopWritesStateFiles:
     hook directly and assert the resulting state file's shape."""
 
     def test_stop_state_file_exists_and_is_dict(self, hook_plugin_env: HookEnv):
-        result = hook_plugin_env.invoke(
-            "enforce-stop.ts", "event", input={"event": {"type": "session.idle"}}
-        )
+        result = hook_plugin_env.invoke("enforce-stop.ts", "event", input={"event": {"type": "session.idle"}})
         assert result.returncode == 0, result.stderr
         data = hook_plugin_env.read_json("GLUDD_STOP_STATE_FILE")
         assert isinstance(data, dict), f"expected a dict, got {data!r}"
 
     def test_stop_state_has_expected_keys_and_types(self, hook_plugin_env: HookEnv):
-        hook_plugin_env.invoke(
-            "enforce-stop.ts", "event", input={"event": {"type": "session.idle"}}
-        )
+        hook_plugin_env.invoke("enforce-stop.ts", "event", input={"event": {"type": "session.idle"}})
         data = hook_plugin_env.read_json("GLUDD_STOP_STATE_FILE")
         expected_keys = {
-            "ts", "ratchetEntries", "tasksMdUnchecked", "gateStatusRed",
-            "repoPending", "hasPendingWork", "hasLocalWork", "healthScore",
+            "ts",
+            "ratchetEntries",
+            "tasksMdUnchecked",
+            "gateStatusRed",
+            "repoPending",
+            "hasPendingWork",
+            "hasLocalWork",
+            "healthScore",
         }
         missing = expected_keys - set(data.keys())
         assert not missing, f"missing expected keys: {missing}"
@@ -132,7 +135,7 @@ class TestEnforceDeadlineWritesStateFiles:
         now_ms = time.time() * 1000
         for task_id, start_time in data.items():
             age_ms = now_ms - start_time
-            assert age_ms < 60_000, f"task {task_id!r} timestamp is {age_ms/1000:.1f}s old"
+            assert age_ms < 60_000, f"task {task_id!r} timestamp is {age_ms / 1000:.1f}s old"
 
 
 # ── Test 3: enforce-session-start.ts writes files via tool.execute.before ─────
@@ -180,9 +183,7 @@ class TestEnforceDelegateWritesStateFiles:
 
     def test_mainthread_streak_file_increments(self, hook_plugin_env: HookEnv):
         for _ in range(3):
-            result = hook_plugin_env.invoke(
-                "enforce-delegate.ts", "tool.execute.after", input={"tool": "edit"}
-            )
+            result = hook_plugin_env.invoke("enforce-delegate.ts", "tool.execute.after", input={"tool": "edit"})
             assert result.returncode == 0, result.stderr
         data = hook_plugin_env.read_json("GLUDD_MAINTHREAD_STREAK_FILE")
         assert isinstance(data, dict)
@@ -235,19 +236,21 @@ class TestNoChatResponseTransformRegistrations:
                     if "chat.response.transform" in line:
                         stripped = line.strip()
                         is_comment = stripped.startswith("//") or stripped.startswith("*")
-                        violations.append({
-                            "file": str(ts_file.relative_to(ROOT)),
-                            "line": lineno,
-                            "content": stripped,
-                            "is_comment": is_comment,
-                        })
+                        violations.append(
+                            {
+                                "file": str(ts_file.relative_to(ROOT)),
+                                "line": lineno,
+                                "content": stripped,
+                                "is_comment": is_comment,
+                            }
+                        )
 
         real_violations = [v for v in violations if not v["is_comment"]]
         assert len(real_violations) == 0, (
             f"Found {len(real_violations)} chat.response.transform hook registration(s) "
             f"that are not in comments. These MUST be migrated to session.idle / "
-            f"text.complete. Violations:\n" +
-            "\n".join(f"  {v['file']}:{v['line']}: {v['content']}" for v in real_violations)
+            f"text.complete. Violations:\n"
+            + "\n".join(f"  {v['file']}:{v['line']}: {v['content']}" for v in real_violations)
         )
 
     def test_chat_response_transform_only_in_comments(self):
@@ -264,10 +267,11 @@ class TestNoChatResponseTransformRegistrations:
                 is_comment = stripped.startswith("//") or stripped.startswith("*")
                 is_empty = stripped == ""
                 is_not_a_hook_registration = (
-                    is_comment or is_empty or
-                    "migrated" in line.lower() or
-                    "dead" in line.lower() or
-                    "replaced" in line.lower()
+                    is_comment
+                    or is_empty
+                    or "migrated" in line.lower()
+                    or "dead" in line.lower()
+                    or "replaced" in line.lower()
                 )
                 assert is_not_a_hook_registration, (
                     f"{ts_file.relative_to(ROOT)}:{lineno}: "
@@ -298,10 +302,7 @@ class TestAllPluginsExportDefault:
     def test_plugin_count_matches_registered(self):
         """The number of .ts files should match what's expected (8 plugins)."""
         files = _plugin_ts_files()
-        assert len(files) >= 8, (
-            f"Expected at least 8 plugin files, found {len(files)}: "
-            f"{[f.name for f in files]}"
-        )
+        assert len(files) >= 8, f"Expected at least 8 plugin files, found {len(files)}: {[f.name for f in files]}"
 
     def test_each_plugin_has_hook_registration(self):
         """Each plugin should register at least one hook surface."""
@@ -319,9 +320,7 @@ class TestAllPluginsExportDefault:
             has_hook = any(hs in content for hs in hook_surfaces)
             if not has_hook:
                 missing_hooks.append(str(ts_file.relative_to(ROOT)))
-        assert not missing_hooks, (
-            f"Plugins with no hook registration: {missing_hooks}"
-        )
+        assert not missing_hooks, f"Plugins with no hook registration: {missing_hooks}"
 
 
 # ── Test 6: Block counter files (enforce-stop.ts false-positive cascade) ─────
@@ -345,16 +344,22 @@ class TestEnforceStopBlockCounter:
 
     def _seed_streak(self, hook_plugin_env: HookEnv, streak: int) -> None:
         streak_path = hook_plugin_env.state_path("GLUDD_STREAK_FILE")
-        streak_path.write_text(json.dumps({
-            "streak": streak, "lastDispatchTs": 0, "readStreak": 0,
-            "editStreak": streak, "lastUpdateTs": 0, "lastWriter": "",
-        }))
+        streak_path.write_text(
+            json.dumps(
+                {
+                    "streak": streak,
+                    "lastDispatchTs": 0,
+                    "readStreak": 0,
+                    "editStreak": streak,
+                    "lastUpdateTs": 0,
+                    "lastWriter": "",
+                }
+            )
+        )
 
     def test_grinding_streak_denies_and_writes_block_counter(self, hook_plugin_env: HookEnv):
         self._seed_streak(hook_plugin_env, 13)
-        result = hook_plugin_env.invoke(
-            "enforce-stop.ts", "tool.execute.before", input={"tool": "edit"}
-        )
+        result = hook_plugin_env.invoke("enforce-stop.ts", "tool.execute.before", input={"tool": "edit"})
         assert result.returncode == 0, result.stderr  # deny is a RETURN value, not a throw
         payload = json.loads(result.stdout)
         assert payload is not None and payload.get("permissionDecision") == "deny", payload
@@ -367,9 +372,7 @@ class TestEnforceStopBlockCounter:
 
     def test_grinding_streak_writes_block_reason(self, hook_plugin_env: HookEnv):
         self._seed_streak(hook_plugin_env, 13)
-        hook_plugin_env.invoke(
-            "enforce-stop.ts", "tool.execute.before", input={"tool": "edit"}
-        )
+        hook_plugin_env.invoke("enforce-stop.ts", "tool.execute.before", input={"tool": "edit"})
         data = json.loads(Path(hook_plugin_env.env["GLUDD_BLOCK_REASON_FILE"]).read_text())
         assert isinstance(data, dict)
         assert data["reason"] == "main-thread-grinding"
@@ -392,23 +395,26 @@ class TestEnforceStopTextComplete:
 
     def test_text_complete_count_increments_across_two_calls(self, hook_plugin_env: HookEnv):
         invoke_text_complete_and_confirm_increment(
-            hook_plugin_env, "enforce-stop.ts",
+            hook_plugin_env,
+            "enforce-stop.ts",
             hook_plugin_env.env["GLUDD_STOP_TEXT_COMPLETE_COUNT"],
         )
 
 
 class TestEnforceFloorTextComplete:
-    """enforce-floor.ts's experimental.text.complete writes
-    /tmp/gludd-floor-text-complete-count.json (HARDCODED path). Same
-    increment-across-two-calls proof as TestEnforceStopTextComplete."""
+    """enforce-floor.ts moved text.complete into tool.execute.before (self-
+    contained as of opencode >= 1.17.9). The text.complete hook is intentionally
+    absent — verify that the harness correctly reports it as unavailable."""
 
-    STATE_FILE = "/tmp/gludd-floor-text-complete-count.json"
-
-    def test_floor_text_complete_count_increments_across_two_calls(self, hook_plugin_env: HookEnv):
-        invoke_text_complete_and_confirm_increment(
-            hook_plugin_env, "enforce-floor.ts",
-            hook_plugin_env.env["GLUDD_FLOOR_TEXT_COMPLETE_COUNT"],
+    def test_floor_text_complete_hook_is_absent(self, hook_plugin_env: HookEnv):
+        result = hook_plugin_env.invoke(
+            "enforce-floor.ts",
+            "experimental.text.complete",
+            input={},
+            output={"text": "test response"},
         )
+        assert result.returncode != 0, f"expected non-zero for absent hook, got {result.returncode}"
+        assert "not found" in result.stderr.lower(), f"expected 'not found' in stderr, got {result.stderr!r}"
 
 
 # ── Test 9: enforce-stop.ts writes tool-counts file via tool.execute.before ─
@@ -421,9 +427,7 @@ class TestEnforceStopToolCounts:
     STATE_FILE = "/tmp/gludd-stop-tool-counts.json"
 
     def test_tool_counts_file_written_and_shape(self, hook_plugin_env: HookEnv):
-        result = hook_plugin_env.invoke(
-            "enforce-stop.ts", "tool.execute.before", input={"tool": "read"}
-        )
+        result = hook_plugin_env.invoke("enforce-stop.ts", "tool.execute.before", input={"tool": "read"})
         assert result.returncode == 0, result.stderr
         data = json.loads(Path(hook_plugin_env.env["GLUDD_STOP_TOOL_COUNTS_FILE"]).read_text())
         assert isinstance(data, dict)
@@ -567,8 +571,11 @@ class TestDeletionGateAuditLog:
             },
             env_overrides={"GLUDD_DELETION_GATE_THRESHOLD": "5"},
         )
-        assert result.returncode != 0, "deletion above threshold with no reason must be denied"
-        assert "BASH BLOCKED" in result.stderr or "threshold" in result.stderr.lower()
+        payload = json.loads(result.stdout)
+        assert payload.get("permissionDecision") == "deny", (
+            f"expected deny for deletion above threshold without reason, got {payload}"
+        )
+        assert "threshold" in payload.get("message", "").lower()
 
 
 # ── Test 13: opt-in live smoke test against a real opencode binary ──────────
@@ -593,9 +600,7 @@ class TestOpencodeBinaryLive:
         if not opencode_bin or not shutil.which(opencode_bin):
             pytest.skip("OPENCODE_BIN not set to a resolvable executable")
 
-        result = subprocess.run(
-            [opencode_bin, "--help"], capture_output=True, text=True, timeout=30
-        )
+        result = subprocess.run([opencode_bin, "--help"], capture_output=True, text=True, timeout=30)
         # Some CLIs exit non-zero on --help while still printing usage; either
         # a clean exit OR non-empty output proves the binary actually ran.
         assert result.returncode == 0 or result.stdout.strip() or result.stderr.strip(), (

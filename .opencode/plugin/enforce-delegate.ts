@@ -601,6 +601,10 @@ function readStreak(): MainthreadStreakState {
       const count = parseInt(obj.count, 10) || 0
       const ts = parseInt(obj.ts, 10) || 0
       if (storedPid !== 0 && storedPid !== process.pid) {
+        const recencyMs = 5000
+        if (ts > 0 && (Date.now() - ts) < recencyMs) {
+          return { count, ts, pid: process.pid }
+        }
         return { count: 0, ts, pid: process.pid }
       }
       return { count, ts, pid: storedPid || process.pid }
