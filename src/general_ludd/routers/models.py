@@ -8,7 +8,7 @@ from typing import Protocol, cast
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from general_ludd.code_intelligence.callgraph import CallGraph
 from general_ludd.code_intelligence.complexity_scorer import CodeComplexityScorer
@@ -108,9 +108,6 @@ async def _parse_request_body(request: Request) -> dict[str, object]:
 
 
 _VALID_ROLES = frozenset({"system", "user", "assistant", "tool"})
-
-
-from pydantic import field_validator
 
 
 class _ChatMessage(BaseModel):
@@ -852,11 +849,19 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         import asyncio
 
         try:
-            stream_iterator = await asyncio.to_thread(
-                gateway.call_model_stream,
-                model_profile_id,
-                messages,
-            )
+            if req.max_tokens is not None:
+                stream_iterator = await asyncio.to_thread(
+                    gateway.call_model_stream,
+                    model_profile_id,
+                    messages,
+                    requested_max_output_tokens=req.max_tokens,
+                )
+            else:
+                stream_iterator = await asyncio.to_thread(
+                    gateway.call_model_stream,
+                    model_profile_id,
+                    messages,
+                )
         except Exception as exc:
             logger.warning("chat-stream init failed: %s", exc, exc_info=True)
             raise HTTPException(status_code=502, detail="model stream failed") from exc

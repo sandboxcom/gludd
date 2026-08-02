@@ -125,24 +125,16 @@ class AzureCostPrediction:
             raise ValueError("meter_ids must contain at least one exact meter ID")
         if isinstance(self.prediction_version, bool) or self.prediction_version <= 0:
             raise ValueError("prediction_version must be a positive integer")
-        normalized_resources = tuple(
-            dict.fromkeys(resource_id.strip().lower() for resource_id in self.resource_ids)
-        )
+        normalized_resources = tuple(dict.fromkeys(resource_id.strip().lower() for resource_id in self.resource_ids))
         if any(not resource_id.startswith("/subscriptions/") for resource_id in normalized_resources):
             raise ValueError("resource_ids must be absolute Azure ARM resource IDs")
-        normalized_meters = tuple(
-            dict.fromkeys(meter_id.strip().lower() for meter_id in self.meter_ids)
-        )
+        normalized_meters = tuple(dict.fromkeys(meter_id.strip().lower() for meter_id in self.meter_ids))
         if any(not meter_id for meter_id in normalized_meters):
             raise ValueError("meter_ids must not contain empty values")
         _require_positive_finite("predicted_cost_usd", self.predicted_cost_usd)
-        _require_positive_finite(
-            "conservative_ceiling_usd", self.conservative_ceiling_usd
-        )
+        _require_positive_finite("conservative_ceiling_usd", self.conservative_ceiling_usd)
         if self.conservative_ceiling_usd < self.predicted_cost_usd:
-            raise ValueError(
-                "conservative_ceiling_usd must be at least predicted_cost_usd"
-            )
+            raise ValueError("conservative_ceiling_usd must be at least predicted_cost_usd")
         _require_aware("usage_started_at", self.usage_started_at)
         _require_aware("usage_ended_at", self.usage_ended_at)
         if self.usage_ended_at <= self.usage_started_at:
@@ -195,15 +187,13 @@ class AzureActualCostObservation:
             _require_text("payload key", key)
             normalized_payload[key] = value
         object.__setattr__(self, "currency", self.currency.upper())
-        object.__setattr__(self, "payload", MappingProxyType(normalized_payload))
+        object.__setattr__(self, "payload", normalized_payload)
 
 
 class AzureActualCostQueryClient(Protocol):
     """Adapter boundary for the mature Azure Cost Management query API."""
 
-    def query_actual_cost(
-        self, prediction: AzureCostPrediction
-    ) -> Sequence[AzureBilledCostLineItem]: ...
+    def query_actual_cost(self, prediction: AzureCostPrediction) -> Sequence[AzureBilledCostLineItem]: ...
 
 
 class _AzureQueryOperations(Protocol):
@@ -263,14 +253,10 @@ class AzureCostManagementQueryClient:
             subscription_id=subscription_id,
         )
 
-    def query_actual_cost(
-        self, prediction: AzureCostPrediction
-    ) -> list[AzureBilledCostLineItem]:
+    def query_actual_cost(self, prediction: AzureCostPrediction) -> list[AzureBilledCostLineItem]:
         """Return grouped ActualCost rows for only the prediction's ARM IDs."""
         if prediction.subscription_id != self._subscription_id:
-            raise AzureCostReconciliationError(
-                "prediction subscription does not match the Cost Management client"
-            )
+            raise AzureCostReconciliationError("prediction subscription does not match the Cost Management client")
         request: dict[str, object] = {
             "type": "ActualCost",
             "timeframe": "Custom",
@@ -280,9 +266,7 @@ class AzureCostManagementQueryClient:
             },
             "dataset": {
                 "granularity": "None",
-                "aggregation": {
-                    "totalCost": {"name": "CostUSD", "function": "Sum"}
-                },
+                "aggregation": {"totalCost": {"name": "CostUSD", "function": "Sum"}},
                 "grouping": [
                     {"type": "Dimension", "name": "ResourceId"},
                     {"type": "Dimension", "name": "MeterId"},
@@ -308,35 +292,21 @@ class AzureCostManagementQueryClient:
     def _parse_response(cls, response: object) -> list[AzureBilledCostLineItem]:
         raw_columns: object = getattr(response, "columns", None)
         raw_rows: object = getattr(response, "rows", None)
-        if not isinstance(raw_columns, Sequence) or isinstance(
-            raw_columns, (str, bytes)
-        ):
-            raise AzureCostReconciliationError(
-                "Azure Cost Management response has no columns sequence"
-            )
+        if not isinstance(raw_columns, Sequence) or isinstance(raw_columns, (str, bytes)):
+            raise AzureCostReconciliationError("Azure Cost Management response has no columns sequence")
         if not isinstance(raw_rows, Sequence) or isinstance(raw_rows, (str, bytes)):
-            raise AzureCostReconciliationError(
-                "Azure Cost Management response has no rows sequence"
-            )
+            raise AzureCostReconciliationError("Azure Cost Management response has no rows sequence")
 
         column_names: list[str] = []
         for column in raw_columns:
-            raw_name: object = (
-                column.get("name")
-                if isinstance(column, Mapping)
-                else getattr(column, "name", None)
-            )
+            raw_name: object = column.get("name") if isinstance(column, Mapping) else getattr(column, "name", None)
             if not isinstance(raw_name, str) or not raw_name:
-                raise AzureCostReconciliationError(
-                    "Azure Cost Management response contains an unnamed column"
-                )
+                raise AzureCostReconciliationError("Azure Cost Management response contains an unnamed column")
             column_names.append(raw_name)
         if len(set(column_names)) != len(column_names) or any(
             required not in column_names for required in cls._REQUIRED_COLUMNS
         ):
-            raise AzureCostReconciliationError(
-                "Azure Cost Management response columns are missing or duplicated"
-            )
+            raise AzureCostReconciliationError("Azure Cost Management response columns are missing or duplicated")
         indexes = {name: column_names.index(name) for name in cls._REQUIRED_COLUMNS}
 
         parsed: list[AzureBilledCostLineItem] = []
@@ -346,21 +316,18 @@ class AzureCostManagementQueryClient:
                 or isinstance(raw_row, (str, bytes))
                 or len(raw_row) != len(column_names)
             ):
-                raise AzureCostReconciliationError(
-                    "Azure Cost Management response row does not match its columns"
-                )
+                raise AzureCostReconciliationError("Azure Cost Management response row does not match its columns")
             resource_id = raw_row[indexes["ResourceId"]]
             meter_id = raw_row[indexes["MeterId"]]
             raw_cost = raw_row[indexes["CostUSD"]]
             service_name = raw_row[indexes["ServiceName"]]
             charge_type = raw_row[indexes["ChargeType"]]
-            if not all(
-                isinstance(value, str)
-                for value in (resource_id, meter_id, service_name, charge_type)
-            ) or isinstance(raw_cost, bool) or not isinstance(raw_cost, (int, float)):
-                raise AzureCostReconciliationError(
-                    "Azure Cost Management response row has invalid value types"
-                )
+            if (
+                not all(isinstance(value, str) for value in (resource_id, meter_id, service_name, charge_type))
+                or isinstance(raw_cost, bool)
+                or not isinstance(raw_cost, (int, float))
+            ):
+                raise AzureCostReconciliationError("Azure Cost Management response row has invalid value types")
             parsed.append(
                 AzureBilledCostLineItem(
                     resource_id=cast(str, resource_id).strip().lower(),
@@ -449,18 +416,10 @@ class AzureCostReconciler:
             resource_id = row.resource_id.strip().lower()
             meter_id = row.meter_id.strip().lower()
             if resource_id not in allowed_resources:
-                raise AzureCostReconciliationError(
-                    "Azure bill row did not match the prediction's exact resource IDs"
-                )
+                raise AzureCostReconciliationError("Azure bill row did not match the prediction's exact resource IDs")
             if row.currency.upper() != "USD":
-                raise AzureCostReconciliationError(
-                    f"Azure bill row currency must be USD, got {row.currency!r}"
-                )
-            if (
-                isinstance(row.cost_usd, bool)
-                or not math.isfinite(row.cost_usd)
-                or row.cost_usd < 0
-            ):
+                raise AzureCostReconciliationError(f"Azure bill row currency must be USD, got {row.currency!r}")
+            if isinstance(row.cost_usd, bool) or not math.isfinite(row.cost_usd) or row.cost_usd < 0:
                 raise AzureCostReconciliationError(
                     f"Azure bill row cost must be finite and non-negative, got {row.cost_usd!r}"
                 )
@@ -472,9 +431,7 @@ class AzureCostReconciler:
             if meter_id not in observed_meters:
                 observed_meters.append(meter_id)
         if actual_cost <= 0:
-            raise AzureCostReconciliationError(
-                "Azure billed rows summed to zero; final cost is not yet trustworthy"
-            )
+            raise AzureCostReconciliationError("Azure billed rows summed to zero; final cost is not yet trustworthy")
 
         signed_error = actual_cost - prediction.predicted_cost_usd
         absolute_percentage_error = abs(signed_error) / actual_cost * 100.0
@@ -527,12 +484,10 @@ def build_cohort_metrics(
     if len(cohort_keys) != 1:
         raise ValueError("cohort metrics require a homogeneous cohort")
     signed_percentages = [
-        signed_error / actual * 100.0
-        for signed_error, actual in zip(signed_errors, actuals, strict=True)
+        signed_error / actual * 100.0 for signed_error, actual in zip(signed_errors, actuals, strict=True)
     ]
     actual_to_predicted = [
-        actual / item.prediction.predicted_cost_usd
-        for actual, item in zip(actuals, reconciliations, strict=True)
+        actual / item.prediction.predicted_cost_usd for actual, item in zip(actuals, reconciliations, strict=True)
     ]
     bias_pct = statistics.fmean(signed_percentages)
     systematic_underprediction = bias_pct > 1e-9
@@ -541,11 +496,7 @@ def build_cohort_metrics(
     p95 = _nearest_rank_p95(absolute_percentages)
     if sample_count < min_samples:
         state = AzureCostCohortState.UNCALIBRATED
-    elif (
-        mape <= max_mape_pct
-        and p95 <= max_p95_pct
-        and not systematic_underprediction
-    ):
+    elif mape <= max_mape_pct and p95 <= max_p95_pct and not systematic_underprediction:
         state = AzureCostCohortState.CALIBRATED
     else:
         state = AzureCostCohortState.RECALIBRATION_REQUIRED

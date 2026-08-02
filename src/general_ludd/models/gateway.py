@@ -477,6 +477,7 @@ class ModelProfile(BaseModel):
     # separate, unrelated single-flight guard (ModelHealthTracker); this field
     # only gates the fallback-fan-out path (_call_fallback).
     fallback_max_concurrency: int = 2
+    stream_provider_max_concurrency: int = 1
 
     @field_validator("model_profile_id", mode="before")
     @classmethod
@@ -507,6 +508,7 @@ class ModelProfile(BaseModel):
         "max_stream_idle_seconds",
         "max_stream_decompression_ratio",
         "fallback_max_concurrency",
+        "stream_provider_max_concurrency",
     )
     @classmethod
     def _positive_int(cls, v: int) -> int:
@@ -877,6 +879,11 @@ class ModelGateway:
         # lazily on first use and sized from ModelProfile.fallback_max_concurrency.
         self._fallback_semaphores: dict[str, threading.Semaphore] = {}
         self._fallback_semaphore_lock = threading.Lock()
+        # Per-profile stream provider serialization: at most one caller per
+        # profile_id can construct and start a streaming provider at a time.
+        # Sized from ModelProfile.stream_provider_max_concurrency (default 1).
+        self._stream_provider_semaphores: dict[str, threading.Semaphore] = {}
+        self._stream_provider_semaphore_lock = threading.Lock()
         # Per-cache-key single-flight locks: under concurrency, N identical
         # cache misses would all call the provider (cache stampede). We serialize
         # identical misses on a per-key lock so only the first does the provider
@@ -1976,6 +1983,372 @@ class ModelGateway:
                 },
             )
 
+    def call_model_stream_with_retry(
+        self,
+        profile_id: str,
+        messages: list[dict[str, str]],
+        *,
+        max_retries: int = 3,
+        base_backoff_seconds: float = 1.0,
+        correlation_id: str | None = None,
+        cancellation_event: threading.Event | None = None,
+        estimated_cost: float = 0.0,
+        budget_remaining: float = float("inf"),
+        **kwargs: Any,
+    ) -> Iterator[object]:
+        """Stream with tenacity retry on the primary, then walk fallback chain.
+
+        Each retry restarts the stream from scratch (streams are not resumable).
+        After exhausting retries on the primary profile, the fallback chain is
+        walked, trying each fallback profile in order. On every retry and every
+        fallback hop, the provider is reconstructed from scratch — credentials,
+        base_url, and all init kwargs are re-resolved so a rotated secret or a
+        recovered endpoint is picked up.
+
+        ``cancellation_event`` suppresses every side effect when set before the
+        first provider attempt or between retries. ``correlation_id`` is
+        threaded through the walker and surfaced on the last exception.
+
+        StreamLimitError and PayloadLimitError are never retried (they indicate
+        the request itself is oversized, not a transient provider failure).
+
+        Returns a sync Iterator so callers can iterate with ``for chunk in ...``
+        or ``list(...)``. The iterator closes the upstream on any early exit.
+        """
+        if cancellation_event is not None and cancellation_event.is_set():
+            raise CallCancelledError(profile_id)
+
+        profile = self._profiles.get(profile_id)
+        if profile is None:
+            raise ValueError(f"Profile '{profile_id}' not found")
+        kwargs["_request_payload_budget"] = _RequestPayloadBudget.from_profile(profile)
+        if cancellation_event is not None:
+            kwargs["cancellation_event"] = cancellation_event
+        coro = self._call_model_stream_with_retry_async(
+            profile_id,
+            messages,
+            max_retries=max_retries,
+            base_backoff_seconds=base_backoff_seconds,
+            correlation_id=correlation_id,
+            cancellation_event=cancellation_event,
+            estimated_cost=estimated_cost,
+            budget_remaining=budget_remaining,
+            **kwargs,
+        )
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(coro)
+        return coro  # type: ignore[return-value]
+
+    async def _call_model_stream_with_retry_async(
+        self,
+        profile_id: str,
+        messages: list[dict[str, str]],
+        *,
+        max_retries: int = 3,
+        base_backoff_seconds: float = 1.0,
+        correlation_id: str | None = None,
+        cancellation_event: threading.Event | None = None,
+        estimated_cost: float = 0.0,
+        budget_remaining: float = float("inf"),
+        tools: list[dict[str, object]] | None = None,
+        project_id: str | None = None,
+        **kwargs: Any,
+    ) -> Iterator[object]:
+        """Async core: retry + fallback for streamed model calls."""
+        import httpx
+
+        if cancellation_event is not None and cancellation_event.is_set():
+            raise CallCancelledError(profile_id)
+
+        profile = self._profiles.get(profile_id)
+        if profile is None:
+            raise ValueError(f"Profile '{profile_id}' not found")
+
+        tracker = self._health_tracker
+        policy = TimeoutRetryPolicy(
+            max_retries=max_retries,
+            base_backoff_seconds=base_backoff_seconds,
+            failover_after_retries=profile.max_failover_retries,
+        )
+
+        # Primary already unhealthy → skip straight to fallbacks.
+        if tracker is not None and not tracker.is_healthy(profile_id):
+            return await self._stream_walk_fallbacks(
+                list(profile.fallback_profiles),
+                messages,
+                from_profile_id=profile_id,
+                tools=tools,
+                project_id=project_id,
+                estimated_cost=estimated_cost,
+                budget_remaining=budget_remaining,
+                correlation_id=correlation_id,
+                **kwargs,
+            )
+
+        _retryable_exc_types: tuple[type[BaseException], ...] = (
+            httpx.HTTPStatusError,
+            httpx.TimeoutException,
+            httpx.ConnectError,
+            TimeoutError,
+            ConnectionError,
+        )
+        try:
+            import openai as _openai
+
+            _retryable_exc_types = (
+                *_retryable_exc_types,
+                _openai.APIConnectionError,
+                _openai.APITimeoutError,
+                _openai.APIStatusError,
+            )
+        except Exception:
+            pass
+
+        # Non-retryable types: stream limits, payload limits, budget, cancellation.
+        _non_retryable: tuple[type[BaseException], ...] = (
+            StreamLimitError,
+            PayloadLimitError,
+            CallCancelledError,
+            CircuitBreakerOpenError,
+        )
+
+        _attempt_counter: list[int] = [0]
+        _last_exc: list[BaseException | None] = [None]
+
+        def _is_retryable(exc: BaseException) -> bool:
+            if isinstance(exc, _non_retryable):
+                return False
+            if cancellation_event is not None and cancellation_event.is_set():
+                return False
+            if not isinstance(exc, _retryable_exc_types):
+                return False
+            kind = TimeoutClassifier.classify(exc)
+            if kind in _NON_RETRYABLE_KINDS:
+                return False
+            if (
+                kind not in _OVERLOAD_KINDS
+                and tracker is not None
+                and not tracker.is_healthy(profile_id, admit_probe=False)
+            ):
+                return False
+            effective_cap = policy._overload_max_retries if kind in _OVERLOAD_KINDS else max_retries
+            if _attempt_counter[0] > effective_cap:
+                return False
+            decision = policy.decide(kind, _attempt_counter[0])
+            return bool(decision.should_retry)
+
+        async def _before_sleep(retry_state: tenacity.RetryCallState) -> None:
+            exc = retry_state.outcome.exception() if retry_state.outcome else None
+            if exc is not None and isinstance(exc, _retryable_exc_types):
+                kind = TimeoutClassifier.classify(exc)
+                is_overload = kind in _OVERLOAD_KINDS
+                retry_after = _extract_retry_after_seconds(exc)
+                wait_s = policy._compute_backoff(
+                    kind,
+                    _attempt_counter[0],
+                    retry_after,
+                    overload=is_overload,
+                )
+                if wait_s > 0:
+                    await asyncio.sleep(min(wait_s, 60.0))
+
+        _exhausted = False
+        try:
+            async for attempt in tenacity.AsyncRetrying(
+                retry=tenacity.retry_if_exception(_is_retryable),
+                wait=tenacity.wait_none(),
+                stop=tenacity.stop_after_attempt(policy._overload_max_retries),
+                before_sleep=_before_sleep,
+                reraise=True,
+            ):
+                with attempt:
+                    _attempt_counter[0] = attempt.retry_state.attempt_number
+                    if cancellation_event is not None and cancellation_event.is_set():
+                        raise CallCancelledError(profile_id)
+                    try:
+                        return await asyncio.to_thread(
+                            self.call_model_stream,
+                            profile_id,
+                            messages,
+                            estimated_cost=estimated_cost,
+                            budget_remaining=budget_remaining,
+                            tools=tools,
+                            project_id=project_id,
+                            **kwargs,
+                        )
+                    except _non_retryable:
+                        raise
+                    except _retryable_exc_types as exc:
+                        _last_exc[0] = exc
+                        self.record_timeout_on_failure(profile_id, exc)
+                        kind = TimeoutClassifier.classify(exc)
+                        if kind in _NON_RETRYABLE_KINDS:
+                            raise
+                        raise
+        except _retryable_exc_types as exc:
+            _last_exc[0] = exc
+            _exhausted = True
+
+        if not _exhausted:
+            raise RuntimeError("stream failover path exited without return or raise")
+
+        return await self._stream_walk_fallbacks(
+            list(profile.fallback_profiles),
+            messages,
+            from_profile_id=profile_id,
+            from_error=_last_exc[0],
+            tools=tools,
+            project_id=project_id,
+            estimated_cost=estimated_cost,
+            budget_remaining=budget_remaining,
+            correlation_id=correlation_id,
+            **kwargs,
+        )
+
+    async def _stream_walk_fallbacks(
+        self,
+        fallback_ids: list[str],
+        messages: list[dict[str, str]],
+        *,
+        from_profile_id: str,
+        from_error: BaseException | None = None,
+        correlation_id: str | None = None,
+        tools: list[dict[str, object]] | None = None,
+        project_id: str | None = None,
+        estimated_cost: float = 0.0,
+        budget_remaining: float = float("inf"),
+        **kwargs: Any,
+    ) -> Iterator[object]:
+        """Walk the fallback chain for streamed calls.
+
+        Each fallback is attempted via ``call_model_stream``. On success, the
+        stream iterator is returned. On failure, the next fallback is tried.
+        Cycle-safe: already-visited profiles are skipped. Health-gated: unhealthy
+        fallbacks are skipped with a timeout check.
+        """
+        import math as _math
+
+        tracker = self._health_tracker
+        last_exc = from_error
+        attempts: list[dict[str, str]] = []
+        visited: set[str] = {from_profile_id}
+        queue: list[str] = list(fallback_ids)
+        depth: int = 0
+        prev_id: str | None = from_profile_id
+
+        while queue:
+            fb_id = queue.pop(0)
+            depth += 1
+            if depth > self._max_fallback_depth:
+                continue
+            if fb_id in visited:
+                continue
+            visited.add(fb_id)
+
+            if tracker is not None and not _is_healthy_with_timeout(tracker, fb_id):
+                continue
+
+            if (
+                estimated_cost > 0.0
+                and not _math.isinf(estimated_cost)
+                and not self.check_budget(fb_id, estimated_cost, budget_remaining, messages=messages)
+            ):
+                attempts.append(
+                    {
+                        "profile_id": fb_id,
+                        "reason": f"budget exceeded before stream attempt (estimated={estimated_cost}, remaining={budget_remaining})",
+                    }
+                )
+                last_exc = BudgetExceededError(
+                    f"Fallback '{fb_id}' estimated cost {estimated_cost} exceeds remaining budget {budget_remaining}"
+                )
+                continue
+
+            if prev_id is not None:
+                self._record_failover(
+                    prev_id,
+                    fb_id,
+                    sanitize_error_message(str(last_exc)) if last_exc is not None else "",
+                    exception_type=type(last_exc).__qualname__ if last_exc is not None else None,
+                )
+
+            try:
+                result = await asyncio.to_thread(
+                    self.call_model_stream,
+                    fb_id,
+                    messages,
+                    estimated_cost=estimated_cost,
+                    budget_remaining=budget_remaining,
+                    tools=tools,
+                    project_id=project_id,
+                    **kwargs,
+                )
+                return result
+            except StreamLimitError:
+                raise
+            except PayloadLimitError:
+                raise
+            except BudgetExceededError:
+                raise
+            except SSRFRejectionError:
+                raise
+            except ModelPausedError:
+                raise
+            except CallCancelledError:
+                raise
+            except Exception as exc:
+                self.record_timeout_on_failure(fb_id, exc)
+                last_exc = exc
+                attempts.append({"profile_id": fb_id, "reason": sanitize_error_message(str(exc))})
+                prev_id = fb_id
+                next_profile = self._profiles.get(fb_id)
+                if next_profile is not None:
+                    for nxt in next_profile.fallback_profiles:
+                        if nxt not in visited and nxt not in queue:
+                            queue.append(nxt)
+                continue
+
+        last = last_exc or from_error
+        if last is not None:
+            primary_reason = sanitize_error_message(str(from_error)) if from_error is not None else "unknown"
+            full_attempts = [{"profile_id": from_profile_id, "reason": primary_reason}, *attempts]
+            _enrich_all_down_message(last, full_attempts)
+            raise last from None
+        raise RuntimeError(f"_stream_walk_fallbacks: all stream fallbacks failed for '{from_profile_id}'")
+
+    def _stream_walk_fallbacks_sync(
+        self,
+        fallback_ids: list[str],
+        messages: list[dict[str, str]],
+        *,
+        from_profile_id: str,
+        from_error: BaseException | None = None,
+        **kwargs: Any,
+    ) -> Iterator[object]:
+        """Synchronous fallback walk for stream calls (no-asyncio path)."""
+        try:
+            asyncio.get_running_loop()
+            coro = self._stream_walk_fallbacks(
+                fallback_ids,
+                messages,
+                from_profile_id=from_profile_id,
+                from_error=from_error,
+                **kwargs,
+            )
+            return coro  # type: ignore[return-value]
+        except RuntimeError:
+            return asyncio.run(
+                self._stream_walk_fallbacks(
+                    fallback_ids,
+                    messages,
+                    from_profile_id=from_profile_id,
+                    from_error=from_error,
+                    **kwargs,
+                )
+            )
+
     def _resolver_for_project(self, project_id: str | None) -> _SecretsResolver | None:
         """Return the secrets resolver scoped to ``project_id`` when possible.
 
@@ -2726,6 +3099,21 @@ class ModelGateway:
                 limit = profile.fallback_max_concurrency if profile is not None else 2
                 sem = threading.Semaphore(max(1, limit))
                 self._fallback_semaphores[fb_id] = sem
+            return sem
+
+    def _stream_provider_semaphore(self, profile_id: str) -> threading.Semaphore:
+        """Return (creating on first use) the serialization gate for ``profile_id``.
+
+        Sized from the profile's ``stream_provider_max_concurrency`` (default 1).
+        A missing profile gets a semaphore of 1 (safe default).
+        """
+        with self._stream_provider_semaphore_lock:
+            sem = self._stream_provider_semaphores.get(profile_id)
+            if sem is None:
+                profile = self._profiles.get(profile_id)
+                limit = profile.stream_provider_max_concurrency if profile is not None else 1
+                sem = threading.Semaphore(max(1, limit))
+                self._stream_provider_semaphores[profile_id] = sem
             return sem
 
     def _call_fallback(

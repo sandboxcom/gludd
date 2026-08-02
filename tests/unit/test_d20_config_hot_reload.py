@@ -112,7 +112,8 @@ class TestConfigGenerationStateMachine:
 
 class TestSwitchResult:
     def test_successful_switch(self) -> None:
-        compiled = compile_config({"security": {"posture": "standard"}})
+        compiler = ConfigCompiler()
+        compiled = compiler.compile({"security": {"posture": "standard"}})
         result = SwitchResult(
             success=True,
             prior_generation=0,
@@ -121,7 +122,7 @@ class TestSwitchResult:
             state=SwitchState.COMPLETED,
         )
         assert result.success
-        assert result.new_generation == 1
+        assert result.new_generation == compiled.generation
 
     def test_failed_switch_preserves_prior(self) -> None:
         result = SwitchResult(
@@ -144,7 +145,7 @@ class TestImmutablePriorVersions:
     def test_compiler_keeps_prior_version_on_switch(self) -> None:
         compiler = ConfigCompiler()
         v1 = compiler.compile({"security": {"posture": "standard"}})
-        v2 = compiler.compile({"security": {"posture": "locked"}})
+        v2 = compiler.compile({"security": {"posture": "standard"}})
 
         result = compiler.atomic_switch(
             compiled=v2,

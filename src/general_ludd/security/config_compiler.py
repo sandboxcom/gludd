@@ -200,6 +200,8 @@ class ConfigCompiler:
         """Compile a raw config dict into an immutable CompiledConfig."""
         compiled = _compile_config_impl(raw, self._next_generation())
         self._store_compiled(compiled)
+        if self._active_generation == 0:
+            self._active_generation = compiled.generation
         return compiled
 
     def atomic_switch(
@@ -338,7 +340,7 @@ def _compile_config_impl(raw: dict[str, object], generation: int) -> CompiledCon
         backend = str(sandbox.get("backend", "firecracker"))
 
     hash_input = json.dumps(
-        {"g": generation, "p": posture, "pf": profile, "b": backend, "r": raw},
+        {"p": posture, "pf": profile, "b": backend, "r": raw},
         sort_keys=True,
         ensure_ascii=False,
         separators=(",", ":"),
