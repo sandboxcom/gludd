@@ -48,7 +48,7 @@ class NetworkConfig(BaseModel):
     def _require_cidr_for_world_open(self) -> NetworkConfig:
         if self.is_unspecified_bind and not self.allowed_cidr:
             raise ValueError(
-                f"Host {self.host!r} is reachable beyond loopback. "
+                f"Host {self.host!r} binds to all interfaces and is reachable beyond loopback. "
                 f"Set allowed_cidr to an explicit allowlist "
                 f"(e.g. ['10.0.0.0/8']) or use 127.0.0.1 for loopback-only."
             )
