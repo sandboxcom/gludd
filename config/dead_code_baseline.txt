@@ -86,6 +86,11 @@ src/general_ludd/agents/task_decomposer.py:ManagerAgent
 src/general_ludd/agents/task_decomposer.py:RoleGoalBackstory
 src/general_ludd/agents/task_decomposer.py:TaskDecomposer
 src/general_ludd/agents/test_generation/code_path_analyzer.py:CodePathAnalyzer
+src/general_ludd/agents/test_generation/contracts.py:PipelineStage
+src/general_ludd/agents/test_generation/contracts.py:TestGenerator
+src/general_ludd/agents/test_generation/contracts.py:TestHarness
+src/general_ludd/agents/test_generation/contracts.py:TestReport
+src/general_ludd/agents/test_generation/contracts.py:TestSpec
 src/general_ludd/agents/test_generation/scenario_generator.py:ScenarioGenerator
 src/general_ludd/agents/test_generation/scenario_generator.py:ScenarioStep
 src/general_ludd/agents/test_generation/validator.py:ScenarioValidator
@@ -239,6 +244,10 @@ src/general_ludd/auth/browser_login.py:CredentialStore
 src/general_ludd/auth/browser_login.py:ServiceConfig
 src/general_ludd/auth/browser_login.py:login
 src/general_ludd/auth/browser_login.py:open_browser_auth
+src/general_ludd/auth/sts.py:TokenGrant
+src/general_ludd/auth/sts.py:TokenRequest
+src/general_ludd/auth/sts.py:TokenRevocation
+src/general_ludd/auth/sts.py:TokenValidation
 src/general_ludd/azure/contracts.py:AcrConfig
 src/general_ludd/azure/contracts.py:AzureRbacRole
 src/general_ludd/azure/contracts.py:ContainerAppDeployConfig
