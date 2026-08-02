@@ -109,13 +109,21 @@ class TestConsolidatedTestSubcommands:
             f"found: {subcmds}"
         )
 
-    def test_selftest_not_standalone(self) -> None:
-        """Standalone selftest should NOT be a top-level command."""
+    def test_selftest_compatibility_alias_is_standalone(self) -> None:
+        """Existing automation can keep using the legacy top-level spelling."""
         subcmds = _get_subcommands()
-        assert "selftest" not in subcmds, (
-            f"selftest should NOT be a standalone top-level command, "
-            f"found: {subcmds}"
-        )
+        assert "selftest" in subcmds, f"selftest compatibility alias missing from: {subcmds}"
+
+    def test_selftest_alias_matches_canonical_command(self) -> None:
+        from general_ludd.cli import _cmd_selftest, build_parser
+
+        parser, _ = build_parser()
+        url = "http://localhost:9123"
+        legacy = parser.parse_args(["selftest", "--daemon-url", url])
+        canonical = parser.parse_args(["test", "self", "--daemon-url", url])
+
+        assert legacy.daemon_url == canonical.daemon_url == url
+        assert legacy.func is canonical.func is _cmd_selftest
 
     def test_smoke_not_standalone(self) -> None:
         """Standalone smoke should NOT be a top-level command."""

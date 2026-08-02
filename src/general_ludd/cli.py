@@ -202,6 +202,12 @@ COMMANDS
       --store {env,openbao}  Credential storage backend (default: env)
 
     help                Show this manual
+
+    test self           Run daemon self-tests (canonical command)
+      --daemon-url URL    Daemon URL (default: http://localhost:8000)
+    selftest            Backward-compatible alias for ``test self``
+      --daemon-url URL    Daemon URL (default: http://localhost:8000)
+
     Pause state is managed via tasks/agents/infra API endpoints:
       POST /api/tasks/{task_id}/pause
       POST /api/tasks/{task_id}/resume
@@ -360,6 +366,12 @@ def _add_smoke_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _configure_selftest_parser(parser: argparse.ArgumentParser) -> None:
+    """Keep canonical and compatibility self-test commands behaviorally identical."""
+    parser.add_argument("--daemon-url", default="http://localhost:8000")
+    parser.set_defaults(func=_cmd_selftest)
+
+
 def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.ArgumentParser]]:
     parser = argparse.ArgumentParser(
         prog="gludd",
@@ -425,6 +437,12 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     health_parser = sub.add_parser("health", help="Check daemon health")
     health_parser.add_argument("--daemon-url", default="http://localhost:8000")
     health_parser.set_defaults(func=_cmd_health)
+
+    selftest_parser = sub.add_parser(
+        "selftest",
+        help="Backward-compatible alias for 'test self'",
+    )
+    _configure_selftest_parser(selftest_parser)
 
     models_parser = sub.add_parser("models", help="Model management commands")
     models_parser.set_defaults(func=None)
@@ -1152,8 +1170,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     tbg2_results.set_defaults(func=_cmd_testbg_results)
 
     test_self_parser = test_sub.add_parser("self", help="Run self-tests via molecule scenarios")
-    test_self_parser.add_argument("--daemon-url", default="http://localhost:8000")
-    test_self_parser.set_defaults(func=_cmd_selftest)
+    _configure_selftest_parser(test_self_parser)
 
     test_smoke_parser = test_sub.add_parser("smoke", help="Run provider/service smoke checks")
     _add_smoke_arguments(test_smoke_parser)
