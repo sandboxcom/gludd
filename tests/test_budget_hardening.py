@@ -770,6 +770,8 @@ class TestEngineBudgetPreCheckProjectedCost:
             model_name="claude-3-5-sonnet-20241022",
             max_input_tokens=2000,
             max_output_tokens=1000,
+            cost_per_input_token=0.003 / 1000.0,
+            cost_per_output_token=0.015 / 1000.0,
             enabled=True,
         )
 
