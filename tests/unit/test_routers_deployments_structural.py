@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from unittest.mock import MagicMock
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
+from starlette.responses import Response
 
 from general_ludd.infra.fix_approval import FixApprovalError
 from general_ludd.routers.deployments import (
@@ -22,6 +24,7 @@ from general_ludd.routers.deployments import (
     _get_health_checker,
     register,
 )
+from general_ludd.security.permissions import Capability, PermissionSpec
 
 # ---------------------------------------------------------------------------
 # Model tests
@@ -189,6 +192,18 @@ def _build_client(
     if fix_manager is not None:
         app.state._fix_approval_manager = fix_manager
     register(app, {})
+
+    @app.middleware("http")
+    async def authorized_deploy(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        request.state.auth_spec = PermissionSpec(
+            agent_type="operator",
+            capabilities=[Capability(resource="admin:deploy", actions=["write"])],
+        )
+        return await call_next(request)
+
     return TestClient(app)
 
 

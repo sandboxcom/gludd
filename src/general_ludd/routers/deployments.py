@@ -282,6 +282,7 @@ def register(app: FastAPI, daemon_state: dict[str, object]) -> None:
 
     @app.post(
         "/admin/deployments/suggest-fix",
+        dependencies=[Depends(RequireCapability(resource="admin:deploy", action="write"))],
         response_model=None,
     )
     async def post_suggest_fix(body: SuggestFixRequest) -> dict[str, object]:
@@ -369,6 +370,7 @@ def register(app: FastAPI, daemon_state: dict[str, object]) -> None:
 
     @app.post(
         "/admin/deployments/fixes/{fix_id}/reject",
+        dependencies=[Depends(RequireCapability(resource="admin:deploy", action="write"))],
         response_model=None,
     )
     async def post_reject_fix(fix_id: str, body: FixDecisionRequest | None = None) -> dict[str, object]:

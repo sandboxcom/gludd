@@ -102,12 +102,14 @@ class TestPskAdminDefaultSpec:
         assert "revoke" in granted.get("admin:sts", set())
         assert "write" in granted.get("admin:permissions", set())
         assert "destroy" in granted.get("admin:compute", set())
+        assert "write" in granted.get("admin:deploy", set())
 
     def test_psk_admin_passes_check_capability(self):
         spec = _psk_admin_default_spec()
         assert check_capability(spec, "admin:sts", "revoke") is True
         assert check_capability(spec, "admin:compute", "destroy") is True
         assert check_capability(spec, "admin:permissions", "write") is True
+        assert check_capability(spec, "admin:deploy", "write") is True
         assert check_capability(spec, "admin:account", "delete") is True
         assert check_capability(spec, "admin:account", "create") is True
         assert check_capability(spec, "admin:account", "cleanup") is True

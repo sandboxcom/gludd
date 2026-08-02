@@ -122,6 +122,37 @@ class TestPSKAuthHappyPath:
         resp = daemon_with_psk.get("/admin/projects", headers=_auth_header())
         assert resp.status_code == 200
 
+    def test_psk_admin_can_decide_deployment_fixes(
+        self,
+        daemon_with_psk: TestClient,
+    ) -> None:
+        request = {
+            "deployment": {
+                "engine": "vllm",
+                "gpu_memory_utilization": 0.99,
+                "quantization": "awq",
+            },
+            "gpu_type": "a100_80",
+        }
+
+        for decision, expected_status in (
+            ("approve", "approved"),
+            ("reject", "rejected"),
+        ):
+            suggestion = daemon_with_psk.post(
+                "/admin/deployments/suggest-fix",
+                json=request,
+                headers=_auth_header(),
+            )
+            assert suggestion.status_code == 200
+
+            response = daemon_with_psk.post(
+                f"/admin/deployments/fixes/{suggestion.json()['fix_id']}/{decision}",
+                headers=_auth_header(),
+            )
+            assert response.status_code == 200
+            assert response.json()["status"] == expected_status
+
     def test_public_healthz_exposes_security_posture(self, daemon_with_psk: TestClient):
         resp = daemon_with_psk.get("/healthz")
         assert resp.status_code == 200

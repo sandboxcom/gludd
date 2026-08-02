@@ -1,9 +1,9 @@
 """Tests for the SLM fix-loop endpoints on the deployments router.
 
 Covers POST /admin/deployments/suggest-fix and the
-fixes/{fix_id}/approve|reject decision endpoints. Builds a bare FastAPI app and
-calls ``deployments.register(app, {})`` (PSK auth is daemon middleware, so a bare
-app needs no auth headers — mirrors tests/routers/test_deployments_misconfig.py).
+fixes/{fix_id}/approve|reject decision endpoints. The bare FastAPI fixture
+installs the same authenticated operator capability that daemon PSK middleware
+adds before protected router dependencies run.
 """
 
 from __future__ import annotations
@@ -11,10 +11,11 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
 from general_ludd.routers.deployments import register
+from general_ludd.security.permissions import Capability, PermissionSpec
 
 
 class _StubResp:
@@ -35,10 +36,22 @@ class _StubGateway:
 
 
 def _make_client(
-    *, gateway: Any = None, redeploy: Any = None
+    *, gateway: Any = None, redeploy: Any = None, authorized: bool = True
 ) -> tuple[TestClient, FastAPI]:
     app = FastAPI()
     register(app, {})
+    if authorized:
+
+        @app.middleware("http")
+        async def authorized_deploy(request: Request, call_next: Any) -> Any:
+            request.state.auth_spec = PermissionSpec(
+                agent_type="operator",
+                capabilities=[
+                    Capability(resource="admin:deploy", actions=["write"]),
+                ],
+            )
+            return await call_next(request)
+
     if gateway is not None:
         app.state._model_gateway = gateway
     if redeploy is not None:
@@ -53,6 +66,30 @@ _BAD_DEPLOYMENT: dict[str, Any] = {
     "quantization": "awq",
 }
 _SUGGEST_URL = "/admin/deployments/suggest-fix"
+
+
+def test_fix_loop_mutations_require_deploy_write_capability() -> None:
+    client, app = _make_client(authorized=False)
+    proposal = app.state._fix_approval_manager.propose(
+        _BAD_DEPLOYMENT,
+        {"gpu_memory_utilization": 0.85},
+    )
+
+    responses = [
+        client.post(
+            _SUGGEST_URL,
+            json={"deployment": _BAD_DEPLOYMENT, "gpu_type": "a100_80"},
+        ),
+        client.post(f"/admin/deployments/fixes/{proposal.fix_id}/approve"),
+        client.post(f"/admin/deployments/fixes/{proposal.fix_id}/reject"),
+    ]
+
+    assert [response.status_code for response in responses] == [403, 403, 403]
+    for response in responses:
+        assert response.json()["detail"] == {
+            "error": "forbidden: no_auth_spec",
+            "required": "admin:deploy:write",
+        }
 
 
 def test_suggest_fix_no_gateway_is_failsoft_deterministic() -> None:

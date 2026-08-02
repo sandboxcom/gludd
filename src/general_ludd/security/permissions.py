@@ -733,6 +733,10 @@ def _psk_admin_default_spec() -> PermissionSpec:
                 resource="admin:compute",
                 actions=["destroy"],
             ),
+            Capability(
+                resource="admin:deploy",
+                actions=["write"],
+            ),
         ],
     )
 
