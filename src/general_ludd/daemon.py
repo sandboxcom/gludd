@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import logging
 import os
 import sys
@@ -1518,6 +1519,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             app.state._model_gateway = model_gateway
 
             semantic_searcher = SemanticSearcher()
+            app.state._semantic_searcher = semantic_searcher
             execution_engine = ExecutionEngine(
                 model_gateway=model_gateway,
                 benchmark_recorder=None,
@@ -2619,6 +2621,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             await _event_bus.drain()
     if _el is not None:
         _el.stop()
+        _shutdown_result = _el.shutdown()
+        if inspect.isawaitable(_shutdown_result):
+            await _shutdown_result
     if task is not None:
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
@@ -2630,6 +2635,31 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             await preflight_task_ref
     if execution_engine is not None:
         await execution_engine.shutdown()
+    _searx_client_ref = getattr(app.state, "_searx_client", None)
+    if _searx_client_ref is not None:
+        try:
+            await _searx_client_ref.close()
+        except Exception:
+            logger.warning("SearxNGClient.close() failed during shutdown", exc_info=True)
+    for _cache_attr in (
+        "_codebase_indexer",
+        "_research_index",
+        "_local_memory",
+        "_semantic_searcher",
+    ):
+        _cache_owner = getattr(app.state, _cache_attr, None)
+        if _cache_owner is not None:
+            try:
+                _cache_owner.close()
+            except Exception:
+                logger.warning("%s.close() failed during shutdown", _cache_attr, exc_info=True)
+    _web_retriever_ref = getattr(app.state, "_web_retriever", None)
+    _web_cache_ref = getattr(_web_retriever_ref, "_cache", None)
+    if _web_cache_ref is not None:
+        try:
+            _web_cache_ref.close()
+        except Exception:
+            logger.warning("WebRetriever cache close failed during shutdown", exc_info=True)
     _sw = getattr(app.state, "_stall_watchdog", None)
     if _sw is not None:
         with contextlib.suppress(Exception):
@@ -2650,12 +2680,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             # ~15s waiting on the subprocess to exit; run it off the event
             # loop so shutdown doesn't freeze the loop for that long.
             await asyncio.to_thread(_writer_process_ref.stop)
-    if engine is not None:
-        await engine.dispose()
     _embedding_session_ref = getattr(app.state, "_embedding_session", None)
     if _embedding_session_ref is not None:
         with contextlib.suppress(Exception):
             await _embedding_session_ref.close()
+    if engine is not None:
+        await engine.dispose()
     otel_bridge_ref = getattr(app.state, "_otel_bridge", None)
     if otel_bridge_ref is not None and hasattr(otel_bridge_ref, "shutdown"):
         otel_bridge_ref.shutdown()

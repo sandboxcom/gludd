@@ -13,6 +13,8 @@ confirm both the 401-on-missing-PSK contract AND the happy-path behavior.
 
 from __future__ import annotations
 
+import gc
+import warnings
 from typing import Any
 
 import pytest
@@ -25,7 +27,7 @@ from general_ludd.daemon import create_daemon_app
 def _config_dir(tmp_path: pytest.Path) -> str:
     """Write a minimal config dir pointing at a temp SQLite DB."""
     cdir = tmp_path / "config"
-    cdir.mkdir()
+    cdir.mkdir(parents=True)
     db_path = tmp_path / "test.db"
     (cdir / "general-ludd.yml").write_text(f"database:\n  url: 'sqlite+aiosqlite:///{db_path}'\n")
     return str(cdir)
@@ -33,6 +35,31 @@ def _config_dir(tmp_path: pytest.Path) -> str:
 
 def _psk_headers(psk: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {psk}"}
+
+
+def test_repeated_daemon_lifespans_close_sqlite_connections(
+    tmp_path: pytest.Path,
+) -> None:
+    """Daemon shutdown must not leave DB-API connections for cyclic GC."""
+    gc.collect()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", ResourceWarning)
+        for index in range(2):
+            config_dir = _config_dir(tmp_path / str(index))
+            with _patch_runner():
+                app = create_daemon_app(tick_interval=300.0, config_dir=config_dir)
+                with TestClient(app):
+                    pass
+            del app
+        gc.collect()
+
+    leaked = [
+        warning
+        for warning in caught
+        if warning.category is ResourceWarning
+        and "unclosed database" in str(warning.message)
+    ]
+    assert not leaked, [str(warning.message) for warning in leaked]
 
 
 # A primary-style issuer spec: broad caps so subset checks can narrow it.
