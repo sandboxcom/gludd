@@ -7,29 +7,26 @@ import argparse
 import json
 import sys
 from dataclasses import dataclass, field
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 
 __ROLE_DIR = Path(__file__).resolve().parent.parent
-_PLUGIN_ROOT = __ROLE_DIR.parent.parent / "plugins"
-if str(_PLUGIN_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PLUGIN_ROOT))
+_COLLECTION_ROOT = __ROLE_DIR.parent.parent
+if str(_COLLECTION_ROOT) not in sys.path:
+    sys.path.insert(0, str(_COLLECTION_ROOT))
 
-from module_utils.obfuscation_techniques import (
-    DetectionConfidence,
-    DetectionResult,
-    ObfuscationTechnique,
-    _ANTI_DEBUG_PATTERNS,
-    _compute_entropy,
-    _PACKER_SECTION_REGEX,
-    _read_elf_sections,
-    _read_pe_sections,
-    _identify_file_type,
-    DETECTION_HEURISTICS,
-    KNOWN_TOOL_SIGNATURES,
-    detect_techniques,
-)
-
+_techniques = import_module("plugins.module_utils.obfuscation_techniques")
+_ANTI_DEBUG_PATTERNS = _techniques._ANTI_DEBUG_PATTERNS
+_PACKER_SECTION_REGEX = _techniques._PACKER_SECTION_REGEX
+DETECTION_HEURISTICS = _techniques.DETECTION_HEURISTICS
+DetectionConfidence = _techniques.DetectionConfidence
+ObfuscationTechnique = _techniques.ObfuscationTechnique
+_compute_entropy = _techniques._compute_entropy
+_identify_file_type = _techniques._identify_file_type
+_read_elf_sections = _techniques._read_elf_sections
+_read_pe_sections = _techniques._read_pe_sections
+detect_techniques = _techniques.detect_techniques
 
 PACKER_ENTROPY_THRESHOLD = 7.0
 
@@ -152,7 +149,7 @@ def detect_cfg_flattening(binary_path: str | Path) -> dict[str, Any]:
         report.confidence = "medium"
 
     results = detect_techniques(data)
-    for t, c, e in results:
+    for t, c, _e in results:
         if t == ObfuscationTechnique.CFG_FLATTENING:
             markers.append(f"tool_match:{c.value}")
             report.confidence = "high" if c == DetectionConfidence.HIGH else report.confidence or "medium"
@@ -208,7 +205,13 @@ def deobfuscate_strings(binary_path: str | Path, key_hint: int | None = None) ->
     try:
         data = path.read_bytes()
     except OSError as exc:
-        return {"error": str(exc), "encrypted_strings": 0, "deobfuscated": 0, "confidence": "none", "deobfuscated_strings": []}
+        return {
+            "error": str(exc),
+            "encrypted_strings": 0,
+            "deobfuscated": 0,
+            "confidence": "none",
+            "deobfuscated_strings": [],
+        }
 
     results = detect_techniques(data)
     has_string_encryption = any(t == ObfuscationTechnique.STRING_ENCRYPTION for t, _, _ in results)
@@ -280,7 +283,7 @@ def detect_opaque_predicates(binary_path: str | Path) -> dict[str, Any]:
             patterns_found.append({"pattern": desc, "occurrences": count})
 
     results = detect_techniques(data)
-    for t, c, e in results:
+    for t, _c, e in results:
         if t == ObfuscationTechnique.OPAQUE_PREDICATES:
             for ev in e:
                 if any(
@@ -311,10 +314,15 @@ def main() -> None:
     parser.add_argument("--mode", choices=sorted(_MODES), required=True, help="Analysis mode")
     parser.add_argument("--binary", required=True, help="Path to target binary")
     parser.add_argument("--output", default="-", help="Output file path (default: stdout)")
-    parser.add_argument("--key-hint", type=lambda x: int(x, 0), default=None, help="XOR key hint for string deobfuscation")
+    parser.add_argument(
+        "--key-hint",
+        type=lambda x: int(x, 0),
+        default=None,
+        help="XOR key hint for string deobfuscation",
+    )
     args = parser.parse_args()
 
-    output_file, func = _MODES[args.mode]
+    _output_file, func = _MODES[args.mode]
 
     kwargs: dict[str, Any] = {}
     if args.mode == "strings" and args.key_hint is not None:

@@ -10,26 +10,24 @@ import random
 import sys
 import time
 from dataclasses import dataclass, field
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 
 __ROLE_DIR = Path(__file__).resolve().parent.parent
-_PLUGIN_ROOT = __ROLE_DIR.parent.parent / "plugins"
-if str(_PLUGIN_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PLUGIN_ROOT))
+_COLLECTION_ROOT = __ROLE_DIR.parent.parent
+if str(_COLLECTION_ROOT) not in sys.path:
+    sys.path.insert(0, str(_COLLECTION_ROOT))
 
-from module_utils.fuzzing_strategies import (
-    AflPlusPlusConfig,
-    CrashBucket,
-    CrashInfo,
-    CrashSeverity,
-    create_afl_config,
-    create_libfuzzer_config,
-    create_honggfuzz_config,
-    classify_crash,
-    minimize_corpus,
-    triage_crash,
-)
+_strategies = import_module("plugins.module_utils.fuzzing_strategies")
+CrashBucket = _strategies.CrashBucket
+CrashInfo = _strategies.CrashInfo
+classify_crash = _strategies.classify_crash
+create_afl_config = _strategies.create_afl_config
+create_honggfuzz_config = _strategies.create_honggfuzz_config
+create_libfuzzer_config = _strategies.create_libfuzzer_config
+minimize_corpus = _strategies.minimize_corpus
+triage_crash = _strategies.triage_crash
 
 
 @dataclass
