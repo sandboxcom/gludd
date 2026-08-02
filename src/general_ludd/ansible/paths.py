@@ -33,7 +33,7 @@ from __future__ import annotations
 import os
 import re
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import FrozenInstanceError, dataclass, field
 from pathlib import Path
 
 _BUNDLED_COLLECTIONS_ROOT_DEFAULT = (
@@ -50,7 +50,16 @@ def _bundled_collections_root() -> Path:
     return _BUNDLED_COLLECTIONS_ROOT_DEFAULT
 
 
-@dataclass
+class CollectionsPathMutationError(FrozenInstanceError, ValueError):
+    """Stable error raised when an immutable collections entry is mutated.
+
+    ``FrozenInstanceError`` is the dataclass-facing contract, while the
+    ``ValueError`` base preserves compatibility with callers that historically
+    treated invalid path-entry mutation as a validation error.
+    """
+
+
+@dataclass(slots=True)
 class CollectionsPathEntry:
     """One tier in the 3-tier collections search path.
 
@@ -65,12 +74,12 @@ class CollectionsPathEntry:
     precedence: int
 
     def __setattr__(self, name: str, value: object) -> None:
-        if name in self.__dict__:
-            # Preserve the public contract used by callers and the E2E suite:
-            # mutation attempts are reported as a validation error while the
-            # entry remains immutable.
-            raise ValueError(f"cannot assign to field {name!r}")
-        super().__setattr__(name, value)
+        if hasattr(self, name):
+            raise CollectionsPathMutationError(f"cannot assign to field {name!r}")
+        object.__setattr__(self, name, value)
+
+    def __delattr__(self, name: str) -> None:
+        raise CollectionsPathMutationError(f"cannot delete field {name!r}")
 
 
 def _user_collections_root() -> Path:
