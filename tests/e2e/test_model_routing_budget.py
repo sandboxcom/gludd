@@ -111,6 +111,8 @@ class TestGatewayFallbackChainIntegration:
             model_name="gpt-4",
             enabled=True,
             run_budget_usd=999.0,
+            cost_per_input_token=0.00003,
+            cost_per_output_token=0.00006,
             fallback_profiles=["fallback_prof"],
         )
         fallback = ModelProfile(
@@ -121,8 +123,8 @@ class TestGatewayFallbackChainIntegration:
             model_name="gpt-3.5-turbo",
             enabled=True,
             run_budget_usd=999.0,
-            cost_per_input_token=0.0,
-            cost_per_output_token=0.0,
+            cost_per_input_token=0.0000005,
+            cost_per_output_token=0.0000015,
         )
         gw, reg = _make_gateway_with_mock([primary, fallback])
 
@@ -176,6 +178,7 @@ class TestGatewayFallbackAllExhausted:
             provider_class_hint="ChatOpenAI",
             model_name="bad1-model",
             enabled=True,
+            api_metered=False,
             run_budget_usd=0.001,
             fallback_profiles=["bad2"],
         )
@@ -186,6 +189,7 @@ class TestGatewayFallbackAllExhausted:
             provider_class_hint="ChatOpenAI",
             model_name="bad2-model",
             enabled=True,
+            api_metered=False,
             run_budget_usd=0.001,
         )
         gw, reg = _make_gateway_with_mock([bad1, bad2])
