@@ -148,7 +148,10 @@ class TestFallbackPreservesCostTracking:
             "cheap",
             budget=999.0,
         )
-        cheap.max_output_tokens = 10
+        # The fake provider reports 50 output tokens below; keep this cost-
+        # tracking fixture at the new hard-limit boundary instead of asking the
+        # gateway to accept a response five times over its configured ceiling.
+        cheap.max_output_tokens = 50
         cheap.cost_per_input_token = 0.01
         cheap.cost_per_output_token = 0.03
         gw, reg = _make_gateway([primary, cheap])
