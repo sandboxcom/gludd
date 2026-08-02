@@ -330,7 +330,7 @@ class HotelBooker:
         check_in: date,
         check_out: date,
         *,
-        address: str = "",
+        address: str = "N/A",
         currency: str = "",
         property_id: str | None = None,
     ) -> HotelBooking:

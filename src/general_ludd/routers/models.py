@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 import logging
 import os
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from typing import Protocol, cast
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 
 from general_ludd.code_intelligence.callgraph import CallGraph
 from general_ludd.code_intelligence.complexity_scorer import CodeComplexityScorer
@@ -103,6 +105,30 @@ async def _parse_request_body(request: Request) -> dict[str, object]:
     if isinstance(body, str):
         body = json.loads(body)
     return body
+
+
+_VALID_ROLES = frozenset({"system", "user", "assistant", "tool"})
+
+
+from pydantic import field_validator
+
+
+class _ChatMessage(BaseModel):
+    role: str
+    content: str
+
+    @field_validator("role")
+    @classmethod
+    def _validate_role(cls, v: str) -> str:
+        if v not in _VALID_ROLES:
+            raise ValueError(f"invalid role {v!r}; must be one of {sorted(_VALID_ROLES)}")
+        return v
+
+
+class ChatStreamRequest(BaseModel):
+    messages: list[_ChatMessage] = Field(min_length=1, max_length=256)
+    model_profile_id: str = "default"
+    max_tokens: int | None = Field(default=None, ge=1, le=1_000_000)
 
 
 def _serialize_discovered_profile(p: dict[str, object], *, include_enabled: bool = False) -> dict[str, object]:
@@ -755,3 +781,117 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             logger.warning("workflow execution failed: %s", exc, exc_info=True)
             raise HTTPException(status_code=500, detail="workflow execution failed") from exc
         return result
+
+    @app.post(
+        "/admin/models/chat-stream",
+        summary="Chat-streaming endpoint (SSE)",
+        description=(
+            "Server-Sent Events streaming endpoint. Accepts messages + optional "
+            "model_profile_id, streams tokens as `data:` lines, and terminates "
+            "with a `done: true` event carrying usage metadata. "
+            "Budget-gated, PSK-authenticated."
+        ),
+    )
+    async def admin_models_chat_stream(req: ChatStreamRequest) -> StreamingResponse:
+        messages: list[dict[str, str]] = [{"role": m.role, "content": m.content} for m in req.messages]
+        model_profile_id = req.model_profile_id
+
+        # Budget pre-check — fail-closed guard exhausted or degraded startup
+        _BUDGET_UNSET = object()
+        _budget_guard = getattr(app.state, "_budget_guard", _BUDGET_UNSET)
+        _fail_closed_degraded = os.environ.get("GLUDD_BUDGET_FAIL_CLOSED_DEGRADED", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        if _budget_guard is _BUDGET_UNSET and _fail_closed_degraded:
+            raise HTTPException(
+                status_code=503,
+                detail="budget guard unavailable (degraded startup); GLUDD_BUDGET_FAIL_CLOSED_DEGRADED=1",
+            )
+        if (
+            _budget_guard is not _BUDGET_UNSET
+            and _budget_guard is not None
+            and hasattr(_budget_guard, "check_all_limits")
+        ):
+            try:
+                _verdict = cast(_CheckAllLimitsGuard, _budget_guard).check_all_limits(estimated_cost=0.0)
+            except Exception as _exc:
+                logger.warning("budget check raised: %s", _exc, exc_info=True)
+                raise HTTPException(status_code=503, detail="budget check failed") from _exc
+            if not isinstance(_verdict, dict) or not _verdict.get("allowed", False):
+                _reason = _verdict.get("reason", "budget exhausted") if isinstance(_verdict, dict) else "non-dict"
+                raise HTTPException(status_code=429, detail=f"budget exhausted: {_reason}")
+
+        gateway: ModelGateway | None = getattr(app.state, "_model_gateway", None)
+        if gateway is None:
+            subsys = _get_or_create_subsystems(app)
+            if not hasattr(app.state, "_health_tracker"):
+                app.state._health_tracker = ModelHealthTracker()
+            metrics_collector = getattr(app.state, "_metrics_collector", None)
+            gateway = ModelGateway(
+                provider_registry=ProviderRegistry.from_profiles([]),
+                router=ModelRouter(),
+                event_bus=subsys["bus"],
+                hook_system=subsys["hooks"],
+                worker_broadcaster=subsys["broadcaster"],
+                response_cache=ModelResponseCache(),
+                health_tracker=app.state._health_tracker,
+                metrics_collector=metrics_collector,
+            )
+            app.state._model_gateway = gateway
+
+        available_profiles = gateway.list_profiles()
+        if not available_profiles:
+            raise HTTPException(
+                status_code=503,
+                detail="No model profiles configured. Add a profile via POST /admin/models first.",
+            )
+
+        import asyncio
+
+        try:
+            stream_iterator = await asyncio.to_thread(
+                gateway.call_model_stream,
+                model_profile_id,
+                messages,
+            )
+        except Exception as exc:
+            logger.warning("chat-stream init failed: %s", exc, exc_info=True)
+            raise HTTPException(status_code=502, detail="model stream failed") from exc
+
+        async def _sse_events() -> AsyncIterator[str]:
+            try:
+                latest_usage: dict[str, object] = {}
+                for chunk in stream_iterator:
+                    content = getattr(chunk, "content", "") or ""
+                    usage_obj = getattr(chunk, "usage_metadata", None)
+                    if isinstance(usage_obj, dict) and usage_obj:
+                        latest_usage = usage_obj
+                    event = json.dumps(
+                        {"content": content, "done": False},
+                        ensure_ascii=False,
+                    )
+                    yield f"data: {event}\n\n"
+                final_event = json.dumps(
+                    {"content": "", "done": True, "usage": latest_usage},
+                    ensure_ascii=False,
+                )
+                yield f"data: {final_event}\n\n"
+            except Exception:
+                err_event = json.dumps(
+                    {"content": "", "done": True, "error": True},
+                    ensure_ascii=False,
+                )
+                yield f"data: {err_event}\n\n"
+
+        return StreamingResponse(
+            _sse_events(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )

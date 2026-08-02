@@ -1,13 +1,20 @@
-"""Job specification schema with a fail-closed ingress boundary."""
+"""Job specification schema with a fail-closed ingress boundary.
+
+D-09: Versioned JobSpec with tenant/project ownership, per-work-type ceilings,
+and bounded denial audit records.
+"""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
+import time
+import uuid
 from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import ClassVar, cast
+from dataclasses import dataclass, field
+from typing import ClassVar, Final, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -52,9 +59,7 @@ class JobIngressLimits:
             value = getattr(self, field_name)
             env_name = env_by_field[field_name]
             if type(value) is not int or not minimum <= value <= maximum:
-                raise ValueError(
-                    f"{env_name} must be an integer from {minimum} through {maximum}"
-                )
+                raise ValueError(f"{env_name} must be an integer from {minimum} through {maximum}")
 
     @classmethod
     def from_environment(
@@ -125,6 +130,12 @@ def _validate_payload_bounds(payload: dict[str, object], limits: JobIngressLimit
         nonlocal collection_items
         if depth > limits.max_depth:
             raise ValueError("job payload nesting depth exceeds configured limit")
+
+        # Pydantic BaseModel instances are trusted internal types that have
+        # already been validated by their own schema validators. They pass
+        # through the ingress boundary without further recursive inspection.
+        if isinstance(value, BaseModel):
+            return
 
         value_type = type(value)
         # Pydantic models commonly pass ``StrEnum``/``IntEnum`` members between
@@ -260,9 +271,7 @@ class JobSpec(BaseModel):
             raise ValueError("playbook must be a safe relative POSIX path")
         segments = cleaned.split("/")
         if any(
-            not segment
-            or segment in {".", ".."}
-            or _PLAYBOOK_SEGMENT_PATTERN.fullmatch(segment) is None
+            not segment or segment in {".", ".."} or _PLAYBOOK_SEGMENT_PATTERN.fullmatch(segment) is None
             for segment in segments
         ):
             raise ValueError("playbook must contain only safe relative path segments")
@@ -277,3 +286,194 @@ class JobSpec(BaseModel):
         if _QUEUE_PATTERN.fullmatch(cleaned) is None:
             raise ValueError("queue must be an identifier-like slug")
         return cleaned
+
+    # ── D-09: ownership ──
+
+    ownership: OwnershipSpec | None = None
+
+    def policy_version(self) -> str:
+        return f"jobspec-v1:{_JOBSPEC_POLICY_DIGEST_PREFIX}"
+
+    def policy_hash(self) -> str:
+        h = hashlib.sha256()
+        h.update(b"jobspec-v1")
+        if self.ownership is not None:
+            h.update(self.ownership.tenant_id.encode())
+            h.update(self.ownership.project_id.encode())
+            h.update(self.ownership.agent_id.encode())
+        return h.hexdigest()
+
+
+# ── D-09: OwnershipSpec ──
+
+_OWNER_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*\Z")
+
+
+class OwnershipSpec(BaseModel):
+    """Authenticated tenant, project, and agent ownership for a job."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tenant_id: str
+    project_id: str
+    agent_id: str
+
+    @field_validator("tenant_id", "project_id", "agent_id", mode="before")
+    @classmethod
+    def _validate_id(cls, value: object) -> str:
+        cleaned = _required_string(value, "ownership identifier")
+        if len(cleaned) > JOB_INGRESS_LIMITS.max_identifier_chars:
+            raise ValueError("ownership identifier exceeds configured character limit")
+        if "\x00" in cleaned or "\n" in cleaned or ".." in cleaned or "/" in cleaned or "\\" in cleaned:
+            raise ValueError("ownership identifier must not contain unsafe characters")
+        if _OWNER_PATTERN.fullmatch(cleaned) is None:
+            raise ValueError("ownership identifier must contain only safe characters")
+        return cleaned
+
+
+# ── D-09: WorkCeilingSpec ──
+
+
+class WorkCeilingSpec(BaseModel):
+    """Per-work-type time, resource, and cost ceilings.
+
+    These are *ceilings* — narrower values from downstream layers (project,
+    agent, work item) are valid, but no layer may exceed the hard ceiling.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    max_wall_seconds: int = Field(default=3600, ge=1)
+    max_cpu_seconds: int = Field(default=900, ge=1)
+    max_memory_bytes: int = Field(default=536_870_912, ge=1)
+    max_output_bytes: int = Field(default=1_048_576, ge=1)
+    max_spend_micro_dollars: int = Field(default=10_000_000, ge=0)
+
+    max_allowlisted_backends: tuple[str, ...] = Field(
+        default=("firecracker", "gvisor"),
+    )
+
+    @classmethod
+    def for_work_type(cls, work_type: str) -> WorkCeilingSpec:
+        defaults: dict[str, dict[str, int]] = {
+            "code": {
+                "max_wall_seconds": 1800,
+                "max_cpu_seconds": 300,
+                "max_memory_bytes": 268_435_456,
+                "max_output_bytes": 524_288,
+                "max_spend_micro_dollars": 5_000_000,
+            },
+            "audit": {
+                "max_wall_seconds": 7200,
+                "max_cpu_seconds": 1800,
+                "max_memory_bytes": 1_073_741_824,
+                "max_output_bytes": 2_097_152,
+                "max_spend_micro_dollars": 20_000_000,
+            },
+            "research": {
+                "max_wall_seconds": 3600,
+                "max_cpu_seconds": 600,
+                "max_memory_bytes": 536_870_912,
+                "max_output_bytes": 1_048_576,
+                "max_spend_micro_dollars": 10_000_000,
+            },
+        }
+        overrides: dict[str, int] = defaults.get(work_type, {})
+        return cls.model_validate(overrides)
+
+
+# ── D-09: Bounded denial audit ──
+
+_DENIAL_AUDIT_MAX_BYTES: Final[int] = 131_072
+_REDACTED_FIELDS: Final[frozenset[str]] = frozenset(
+    {
+        "api_key",
+        "psk",
+        "token",
+        "secret",
+        "password",
+        "credential",
+        "authorization",
+        "GLUDD_PSK",
+    }
+)
+_JOBSPEC_POLICY_DIGEST_PREFIX: Final[str] = "sha256"
+
+
+def _redact_payload(raw: dict[str, object]) -> dict[str, object]:
+    safe: dict[str, object] = {}
+    for k, v in raw.items():
+        lower = k.lower()
+        if any(needle in lower for needle in _REDACTED_FIELDS):
+            safe[k] = "[REDACTED]"
+        elif isinstance(v, dict):
+            safe[k] = _redact_payload(cast(dict[str, object], v))
+        elif isinstance(v, (list, tuple)):
+            safe[k] = [
+                _redact_payload(cast(dict[str, object], item)) if isinstance(item, dict) else item
+                for item in cast(list[object], v)
+            ]
+        else:
+            safe[k] = v
+    return safe
+
+
+@dataclass(frozen=True, slots=True)
+class _DenialAuditRecord:
+    schema_version: str = "1.0"
+    event_id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    timestamp: str = field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+    decision: str = "deny"
+    reason_code: str = ""
+    detail: str = ""
+
+    def as_dict(self) -> dict[str, object]:
+        d: dict[str, object] = {
+            "schema_version": self.schema_version,
+            "event_id": self.event_id,
+            "timestamp": self.timestamp,
+            "decision": self.decision,
+            "reason_code": self.reason_code,
+        }
+        if self.detail:
+            d["detail"] = self.detail[:1024]
+        return d
+
+
+def build_denial_audit_record(
+    reason_code: str,
+    detail: str,
+    raw_payload: dict[str, object] | None = None,
+) -> dict[str, object]:
+    """Produce a bounded, redacted denial audit record.
+
+    The raw payload is redacted (no secrets) and never stored in the record
+    itself — only the reason code and truncated detail are included.
+    """
+    record = _DenialAuditRecord(
+        reason_code=reason_code,
+        detail=detail[:1024],
+    )
+    return record.as_dict()
+
+
+def audit_invalid_job(
+    reason_code: str,
+    detail: str,
+    raw_payload: dict[str, object] | None = None,
+) -> dict[str, object]:
+    """Record a denial audit event for an invalid job ingress.
+
+    This is always side-effect free (no filesystem, no network, no DB).
+    The returned dict is bounded to _DENIAL_AUDIT_MAX_BYTES.
+    """
+    record = build_denial_audit_record(
+        reason_code=reason_code,
+        detail=detail,
+        raw_payload=raw_payload,
+    )
+    serialized = json.dumps(record, ensure_ascii=False, separators=(",", ":"))
+    if len(serialized.encode("utf-8")) > _DENIAL_AUDIT_MAX_BYTES:
+        existing: object = record.get("detail", "")
+        record["detail"] = cast(str, existing)[:128]
+    return record

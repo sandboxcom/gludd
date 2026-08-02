@@ -261,6 +261,19 @@ class StreamLimitError(PayloadLimitError):
     """Typed, payload-free rejection for an in-progress provider stream."""
 
 
+class CallCancelledError(Exception):
+    """Raised when a buffered model call is cancelled before provider invocation.
+
+    Carries only the profile_id so operators can distinguish which call was
+    cancelled. Distinct from PayloadLimitError (size-based) and not a subclass
+    of ValueError (not retryable — a cancelled call must not trigger failover).
+    """
+
+    def __init__(self, profile_id: str) -> None:
+        self.profile_id = profile_id
+        super().__init__(f"call to profile={profile_id!r} cancelled before provider invocation")
+
+
 @dataclass
 class _RequestPayloadBudget:
     """Thread-safe accounting shared by every provider hop of one request."""
@@ -747,6 +760,69 @@ def _extract_tool_calls(raw_response: object) -> list[dict[str, object]] | None:
     return normalized or None
 
 
+class _LimitedChatModel:
+    """LangChain runnable wrapper that enforces payload limits on every invoke.
+
+    ``ModelGateway.get_chat_model`` returns instances of this class so callers
+    that use the raw LangChain runnable (instead of ``call_model``) still get
+    bounded request/response size enforcement.  It does NOT bill, cache, or
+    record metrics — those remain on the ``call_model`` / ``call_model_stream``
+    paths.
+    """
+
+    def __init__(
+        self,
+        inner: object,
+        *,
+        profile: ModelProfile,
+        profile_id: str,
+        enforce_request: Callable[[list[dict[str, str]], dict[str, Any]], tuple[int, int]],
+    ) -> None:
+        self._inner = inner
+        self._profile = profile
+        self._profile_id = profile_id
+        self._enforce_request = enforce_request
+
+    def invoke(self, messages: list[dict[str, str]], **kwargs: object) -> object:
+        self._enforce_request(messages, dict(kwargs))
+        raw_response = self._inner.invoke(messages, **kwargs)  # type: ignore[attr-defined]
+        content = str(getattr(raw_response, "content", str(raw_response)))
+        usage_obj = getattr(raw_response, "usage_metadata", {}) or {}
+        usage = usage_obj if isinstance(usage_obj, dict) else {}
+        raw_tool_calls = getattr(raw_response, "tool_calls", None)
+        raw_tool_call_count = len(raw_tool_calls) if isinstance(raw_tool_calls, (list, tuple)) else 0
+        tool_calls = _extract_tool_calls(raw_response)
+        ModelGateway._enforce_response_limits(
+            ModelGateway.__new__(ModelGateway),
+            self._profile,
+            self._profile_id,
+            content=content,
+            usage=usage,
+            raw_tool_call_count=raw_tool_call_count,
+            tool_calls=tool_calls,
+            source="provider",
+        )
+        return raw_response
+
+    def stream(self, messages: list[dict[str, str]], **kwargs: object) -> object:
+        self._enforce_request(messages, dict(kwargs))
+        return self._inner.stream(messages, **kwargs)  # type: ignore[attr-defined]
+
+    def bind_tools(self, tools: list[dict[str, object]]) -> _LimitedChatModel:
+        inner = self._inner
+        if hasattr(inner, "bind_tools"):
+            inner = inner.bind_tools(tools)
+        return _LimitedChatModel(
+            inner,
+            profile=self._profile,
+            profile_id=self._profile_id,
+            enforce_request=self._enforce_request,
+        )
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._inner, name)
+
+
 class ModelGateway:
     def __init__(
         self,
@@ -1137,13 +1213,17 @@ class ModelGateway:
         *,
         tools: list[dict[str, object]] | None = None,
         project_id: str | None = None,
+        messages: list[dict[str, str]] | None = None,
     ) -> object:
         """Return a LangChain chat model for use with langgraph agents.
 
         Constructs the provider with the same credential + SSRF guards as
-        ``_invoke_and_bill``, optionally binds tools, and returns the raw
-        LangChain runnable so callers (e.g. ``create_react_agent``) can
-        invoke it directly.
+        ``_invoke_and_bill``, optionally binds tools, and returns a
+        ``_LimitedChatModel`` wrapper whose ``.invoke()`` applies the
+        profile's payload byte/token/tool-call limits.  Callers that already
+        supply ``messages`` at construction time get the request-byte and
+        token pre-check applied immediately; otherwise the limits are
+        enforced on each ``.invoke()`` call.
         """
         profile = self._profiles.get(profile_id)
         if profile is None:
@@ -1192,7 +1272,22 @@ class ModelGateway:
                     tools,
                     profile_id,
                 )
-        return chat_model
+        from functools import partial
+
+        enforce_request: Callable[[list[dict[str, str]], dict[str, Any]], tuple[int, int]]
+        enforce_request = partial(
+            self._enforce_request_limits,
+            profile,
+            profile_id,
+        )
+        if messages is not None:
+            enforce_request(messages, {})
+        return _LimitedChatModel(
+            chat_model,
+            profile=profile,
+            profile_id=profile_id,
+            enforce_request=enforce_request,
+        )
 
     def is_available(self, profile_id: str) -> bool:
         profile = self._profiles.get(profile_id)
@@ -1302,10 +1397,14 @@ class ModelGateway:
         estimated_cost: float = 0.0,
         budget_remaining: float = float("inf"),
         requested_max_output_tokens: int | None = None,
+        cancellation_event: threading.Event | None = None,
         _skip_health_check: bool = False,
         _request_payload_budget: _RequestPayloadBudget | None = None,
         **kwargs: Any,
     ) -> ModelResponse:
+        if cancellation_event is not None and cancellation_event.is_set():
+            raise CallCancelledError(profile_id)
+
         profile = self._profiles.get(profile_id)
         if profile is None:
             raise ValueError(f"Profile '{profile_id}' not found")
@@ -1469,17 +1568,10 @@ class ModelGateway:
         profile = self._profiles.get(profile_id)
         if profile is None:
             raise ValueError(f"Profile '{profile_id}' not found")
-        if self._pause_controller is not None and self._pause_controller.is_paused(
-            "model", profile_id
-        ):
+        if self._pause_controller is not None and self._pause_controller.is_paused("model", profile_id):
             raise ModelPausedError(f"Model profile '{profile_id}' is paused — call refused")
-        if (
-            self._health_tracker is not None
-            and not self._health_tracker.is_healthy(profile_id, admit_probe=False)
-        ):
-            raise CircuitBreakerOpenError(
-                f"Profile '{profile_id}' circuit is open; refusing call"
-            )
+        if self._health_tracker is not None and not self._health_tracker.is_healthy(profile_id, admit_probe=False):
+            raise CircuitBreakerOpenError(f"Profile '{profile_id}' circuit is open; refusing call")
 
         request_kwargs = dict(kwargs)
         if tools:
@@ -1537,8 +1629,7 @@ class ModelGateway:
 
                 if not is_safe_fetch_url(base_url):
                     raise SSRFRejectionError(
-                        "SSRF guard: refusing blocked api_base_alias URL "
-                        f"(redacted) for profile '{profile_id}'"
+                        f"SSRF guard: refusing blocked api_base_alias URL (redacted) for profile '{profile_id}'"
                     )
                 resolved_base_url = base_url
                 init_kwargs["base_url"] = base_url
@@ -1599,9 +1690,7 @@ class ModelGateway:
         chat_model = provider_cls(**init_kwargs)
         if tools:
             if not hasattr(chat_model, "bind_tools"):
-                raise ValueError(
-                    f"Provider for profile '{profile_id}' does not support streamed tools"
-                )
+                raise ValueError(f"Provider for profile '{profile_id}' does not support streamed tools")
             chat_model = chat_model.bind_tools(tools)
 
         try:
@@ -1690,9 +1779,7 @@ class ModelGateway:
                 last_chunk_at = now
 
                 try:
-                    chunk_content, chunk_bytes, chunk_tool_calls = (
-                        self._stream_chunk_payload(chunk)
-                    )
+                    chunk_content, chunk_bytes, chunk_tool_calls = self._stream_chunk_payload(chunk)
                 except Exception as exc:
                     raise StreamLimitError(
                         profile_id=profile_id,
@@ -1769,9 +1856,7 @@ class ModelGateway:
                             source="provider",
                             count_source="invalid_wire_byte_counter",
                         ) from exc
-                    if type(wire_delta) is not int or wire_delta < 0 or (
-                        chunk_bytes > 0 and wire_delta == 0
-                    ):
+                    if type(wire_delta) is not int or wire_delta < 0 or (chunk_bytes > 0 and wire_delta == 0):
                         raise StreamLimitError(
                             profile_id=profile_id,
                             stage="response",
@@ -1797,11 +1882,7 @@ class ModelGateway:
                     wire_delta = chunk_bytes
                     ratio_source = "identity_encoding"
                 next_wire_bytes = total_wire_bytes + wire_delta
-                decompression_ratio = (
-                    math.ceil(next_bytes / next_wire_bytes)
-                    if next_wire_bytes > 0
-                    else 0
-                )
+                decompression_ratio = math.ceil(next_bytes / next_wire_bytes) if next_wire_bytes > 0 else 0
                 if decompression_ratio > max_decompression_ratio:
                     raise StreamLimitError(
                         profile_id=profile_id,
@@ -1863,10 +1944,7 @@ class ModelGateway:
                 latest_usage.get("completion_tokens", output_tokens_for_limit),
             )
         )
-        cost = (
-            input_tokens * profile.cost_per_input_token
-            + output_tokens * profile.cost_per_output_token
-        )
+        cost = input_tokens * profile.cost_per_input_token + output_tokens * profile.cost_per_output_token
         if self._budget_guard is not None:
             self._budget_guard.record_spend(cost)
         if self._health_tracker is not None:
@@ -2322,14 +2400,18 @@ class ModelGateway:
         max_retries: int = 3,
         base_backoff_seconds: float = 1.0,
         correlation_id: str | None = None,
+        cancellation_event: threading.Event | None = None,
         **kwargs: Any,
     ) -> Any:
+        if cancellation_event is not None and cancellation_event.is_set():
+            raise CallCancelledError(profile_id)
         coro = self._call_model_with_retry_async(
             profile_id,
             messages,
             max_retries=max_retries,
             base_backoff_seconds=base_backoff_seconds,
             correlation_id=correlation_id,
+            cancellation_event=cancellation_event,
             **kwargs,
         )
         try:
@@ -2346,6 +2428,7 @@ class ModelGateway:
         max_retries: int = 3,
         base_backoff_seconds: float = 1.0,
         correlation_id: str | None = None,
+        cancellation_event: threading.Event | None = None,
         **kwargs: Any,
     ) -> ModelResponse:
         """Retry a model call using tenacity with TimeoutRetryPolicy semantics.
@@ -2360,6 +2443,11 @@ class ModelGateway:
         - Health tracker: records timeout events and checks profile health
           before attempting; unhealthy primary → skip to fallbacks immediately.
 
+        ``cancellation_event`` (optional): if set before the first provider
+        attempt or between retries, the call is rejected immediately with
+        ``CallCancelledError`` — no provider construction, billing, or side
+        effects occur.
+
         ``correlation_id`` (optional): when supplied, it is stamped onto the
         returned ``ModelResponse.correlation_id`` regardless of which profile
         in the chain ultimately served the call — so a caller can trace a
@@ -2368,6 +2456,9 @@ class ModelGateway:
         out of ``**kwargs`` (never forwarded to the provider constructor).
         See docs/audit/FAILOVER_GAPS.md (correlation-id-propagation).
         """
+        if cancellation_event is not None and cancellation_event.is_set():
+            raise CallCancelledError(profile_id)
+
         import httpx
 
         profile = self._profiles.get(profile_id)
@@ -2377,7 +2468,8 @@ class ModelGateway:
         # retry and every fallback hop. Internal callers cannot replace it via
         # kwargs; the initiating profile owns the request-wide configuration.
         kwargs["_request_payload_budget"] = _RequestPayloadBudget.from_profile(profile)
-
+        if cancellation_event is not None:
+            kwargs["cancellation_event"] = cancellation_event
         tracker = self._health_tracker
         policy = TimeoutRetryPolicy(
             max_retries=max_retries,

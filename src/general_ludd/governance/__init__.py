@@ -1,6 +1,7 @@
 """Governance knowledge package — exposes the governance collection's
 knowledge modules (borders, governing bodies, treaties, tax/currency,
-civic services, decision makers) to the Python application layer and CLI.
+civic services, decision makers) to the Python application layer and CLI,
+plus the governance contracts (policies, rules, compliance models).
 
 The data lives in the ansible collection's ``module_utils`` directory; this
 package provides a loader that dynamically imports those modules by file
@@ -10,6 +11,12 @@ path so the CLI can access them without requiring the collection to be on
 
 from __future__ import annotations
 
+from general_ludd.governance.contracts import (
+    ComplianceModel,
+    GovernancePolicy,
+    GovernanceRule,
+    PolicyRegistry,
+)
 from general_ludd.governance.loader import (
     get_authority_registry,
     get_borders,
@@ -31,6 +38,10 @@ from general_ludd.governance.loader import (
 )
 
 __all__ = [
+    "ComplianceModel",
+    "GovernancePolicy",
+    "GovernanceRule",
+    "PolicyRegistry",
     "get_authority_registry",
     "get_borders",
     "get_civic_services",
