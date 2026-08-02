@@ -37,6 +37,7 @@ import {
   writeDispatchOutcomes,
 } from "../lib/shared.ts"
 const FLOOR_ENFORCE = process.env.GLUDD_MULTITASK_FLOOR_ENFORCE !== "0"
+const DIVERSITY_ENFORCE = process.env.GLUDD_MULTITASK_DIVERSITY_ENFORCE !== "0"
 const CONFIGURED_MIN_DISPATCHES =
   process.env.GLUDD_MIN_DISPATCHES || process.env.GLUDD_MULTITASK_MIN_DISPATCHES
 const HAS_CONFIGURED_MIN_DISPATCHES = CONFIGURED_MIN_DISPATCHES !== undefined
@@ -44,6 +45,50 @@ const REQUIRED_DISPATCHES = HAS_CONFIGURED_MIN_DISPATCHES
   ? Math.max(0, Math.min(MAX_DISPATCHES, Number.isFinite(MIN_DISPATCHES) ? MIN_DISPATCHES : 0))
   : 0
 const WAVE_HISTORY_SIZE = 10
+const DIVERSITY_THRESHOLD = 0.8
+const TOPIC_CLUSTERS: Record<string, string[]> = {
+  "guardrails/enforcement": ["guardrail", "enforcement", "plugin", "hook", "enforce", "multitask", "delegate", "session-start", "stop"],
+  "testing/tdd": ["test", "tdd", "pytest", "coverage", "test file", "write test", "add test", "test-unit", "test-integration", "test-e2e"],
+  "ci/release/pipeline": ["ci", "pipeline", "release", "deploy", "build", "push", "batch-push", "ship-commit", "tag"],
+  "type system": ["type", "mypy", "typecheck", "annotation", "any ", "typing", "type-safety", "check-types"],
+  "security": ["security", "secrets", "sast", "secret", "vulnerability", "bandit", "sbom", "pip-audit"],
+  "docs": ["docs", "readme", "documentation", "changelog", "session.md"],
+  "git/infrastructure": ["git", "commit", "makefile", "branch", "merge", "worktree", "make target"],
+  "config/setup": ["config", "setup", "init", "bootstrap", "install", "sync"],
+  "code quality": ["refactor", "lint", "ruff", "dead code", "unused", "clean", "format", "suppression"],
+  "feature/implementation": ["feature", "implement", "add feature", "new", "create", "module", "role", "playbook", "ansible"],
+}
+function extractTopicPrompt(args: any): string {
+  if (!args) return ""
+  if (typeof args.prompt === "string") return args.prompt
+  if (typeof args.description === "string") return args.description
+  if (typeof args.message === "string") return args.message
+  try { return JSON.stringify(args).substring(0, 500) } catch { return "" }
+}
+function classifyTopic(prompt: string): string {
+  const lower = prompt.toLowerCase()
+  for (const [cluster, keywords] of Object.entries(TOPIC_CLUSTERS)) {
+    for (const kw of keywords) {
+      if (lower.includes(kw)) return cluster
+    }
+  }
+  return "uncategorized"
+}
+function countInProgressItems(): number {
+  try {
+    const root = getProjectRoot()
+    const tasksPath = path.join(root, "TASKS.md")
+    if (!fs.existsSync(tasksPath)) return 0
+    const content = fs.readFileSync(tasksPath, "utf8")
+    let count = 0
+    for (const line of content.split("\n")) {
+      if (/\bstatus:\s*in_progress\b/i.test(line)) count++
+    }
+    return count
+  } catch {
+    return 0
+  }
+}
 interface MultitaskState {
   pid: number
   thisMessageDispatches: number
@@ -60,6 +105,7 @@ interface MultitaskState {
   lastDispatchTs: number
   singleDispatchWaves: number
   sessionDispatchTotal: number
+  waveTopicCounts: Record<string, number>
 }
 function freshState(): MultitaskState {
   return {
@@ -78,6 +124,7 @@ function freshState(): MultitaskState {
     lastDispatchTs: 0,
     singleDispatchWaves: 0,
     sessionDispatchTotal: 0,
+    waveTopicCounts: {},
   }
 }
 function readState(): MultitaskState {
@@ -178,6 +225,7 @@ function handleMessageBoundary(s: MultitaskState): void {
     s.underFloorCount = 0
   }
   s.thisMessageDispatches = 0
+  s.waveTopicCounts = {}
 }
 let _state: MultitaskState = (() => {
   const s = readState()
@@ -193,6 +241,7 @@ let _state: MultitaskState = (() => {
   s.underFloorCount = 0
   s.singleDispatchWaves = 0
   s.lastDispatchTs = 0
+  s.waveTopicCounts = {}
   // Preserve sessionDispatchTotal across restarts so the cumulative counter survives
   writeState(s)
   return s
@@ -268,6 +317,39 @@ const defaultImpl: HotModule = {
         _state.sessionDispatchTotal++
         _state.estimatedInFlight++
         _state.lastDispatchTs = now
+        // --- Topic diversity check ---
+        // When >=2 in_progress items exist in TASKS.md and >=80% of dispatches
+        // in the current wave share one topic cluster, deny with guidance to
+        // add continuation slots for existing work.
+        if (DIVERSITY_ENFORCE && !disengaged) {
+          const prompt = extractTopicPrompt((input as any).args)
+          if (prompt) {
+            const topic = classifyTopic(prompt)
+            _state.waveTopicCounts[topic] = (_state.waveTopicCounts[topic] || 0) + 1
+            const waveSize = _state.thisMessageDispatches
+            if (waveSize >= 2) {
+              const maxCount = Math.max(...Object.values(_state.waveTopicCounts))
+              const share = maxCount / waveSize
+              if (share >= DIVERSITY_THRESHOLD) {
+                const inProgressCount = countInProgressItems()
+                if (inProgressCount >= 2) {
+                  const dominantTopic = Object.entries(_state.waveTopicCounts)
+                    .sort((a, b) => b[1] - a[1])[0][0]
+                  writeState(_state)
+                  return {
+                    permissionDecision: "deny" as const,
+                    message: [
+                      "TOPIC DIVERSITY VIOLATION: " + String((share * 100).toFixed(0)) + "% of dispatches (" + String(maxCount) + "/" + String(waveSize) + ") are topic '" + dominantTopic + "'.",
+                      "You have " + String(inProgressCount) + " in_progress items in TASKS.md.",
+                      "Add >=2 continuation slots for existing tasks across different topic clusters.",
+                      "Set GLUDD_MULTITASK_DIVERSITY_ENFORCE=0 to disable.",
+                    ].join("\n"),
+                  }
+                }
+              }
+            }
+          }
+        }
         writeState(_state)
         return
       }
