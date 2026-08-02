@@ -45,6 +45,7 @@ import subprocess
 import sys
 import time
 import uuid
+from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -312,6 +313,7 @@ GATE_MAX_RUNTIME_SECS = int(os.environ.get("GATE_WATCHDOG_TIMEOUT", "3600"))
 _TASKS_MD = _WORKSPACE / "TASKS.md"
 _RATCHET_YML = _WORKSPACE / "config" / "ratchet.yml"
 _GATE_STATUS = _WORKSPACE / ".gate-status"
+_CI_STATUS = _WORKSPACE / ".ci-status"
 
 # A watchdog is a singleton per project namespace.  The lock contains enough
 # identity to reject PID reuse and enough version information for an upgraded
@@ -2697,7 +2699,16 @@ def _check_under_floor_dispatch() -> None:
         Path(PURE_IDLE_DIRECTIVE).write_text(directive)
 
 
-def check_and_reset() -> dict:
+SecretsCheck = Callable[[], dict[str, object] | None]
+
+
+def check_and_reset(*, secrets_check: SecretsCheck | None = None) -> dict:
+    """Run one watchdog cycle.
+
+    ``secrets_check`` is an explicit dependency seam for deterministic unit
+    cycles. Production callers omit it and retain the fail-closed, periodic
+    repository-wide scan.
+    """
     global _POLL_CYCLE_COUNT
     result = {
         "ts": _now(),
@@ -2729,10 +2740,8 @@ def check_and_reset() -> dict:
         try:
             stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
             newline = chr(10)
-            ci_line = f"CI FAIL pending (run {ci_run_id}) at {stamp}" + newline
-            ci_status = _WORKSPACE / ".ci-status"
-            ci_status.parent.mkdir(parents=True, exist_ok=True)
-            ci_status.write_text(
+            _CI_STATUS.parent.mkdir(parents=True, exist_ok=True)
+            _CI_STATUS.write_text(
                 f"=== CI {stamp} ==="
                 + newline
                 + f"CI FAIL pending (run {ci_run_id})"
@@ -2740,13 +2749,6 @@ def check_and_reset() -> dict:
                 + "suggested_action: wait_for_ci"
                 + newline
             )
-            if not gate_red:
-                gate_text = _GATE_STATUS.read_text(encoding="utf-8") if _GATE_STATUS.exists() else ""
-                if ci_line not in gate_text:
-                    separator = "" if not gate_text or gate_text.endswith(newline) else newline
-                    _GATE_STATUS.parent.mkdir(parents=True, exist_ok=True)
-                    _GATE_STATUS.write_text(f"{gate_text}{separator}{ci_line}", encoding="utf-8")
-                gate_red = True
             has_pending_work = True
         except Exception:
             pass
@@ -3096,7 +3098,8 @@ def check_and_reset() -> dict:
         result["release_incomplete"] = release_status
 
     # ── New: Secrets committed detection ────────────────────────────────
-    secrets_violation = _check_secrets_committed()
+    selected_secrets_check = _check_secrets_committed if secrets_check is None else secrets_check
+    secrets_violation = selected_secrets_check()
     if secrets_violation:
         result["secrets_violation"] = secrets_violation
 

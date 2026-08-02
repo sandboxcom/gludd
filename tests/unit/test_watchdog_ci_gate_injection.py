@@ -31,8 +31,12 @@ aw = _load_module()
 _ci_is_pending_or_red = aw._ci_is_pending_or_red
 _gate_status_is_red = aw._gate_status_is_red
 _pending_work_exists = aw._pending_work_exists
-check_and_reset = aw.check_and_reset
 HEARTBEAT_FILE = aw.HEARTBEAT_FILE
+
+
+def check_and_reset() -> dict:
+    """Exercise CI injection without launching the repository scanner."""
+    return aw.check_and_reset(secrets_check=lambda: None)
 
 
 # ── Shared fixtures / helpers ─────────────────────────────────────────────────

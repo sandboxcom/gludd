@@ -4,6 +4,13 @@ completeness, secrets committed, stale release.
 All tests mock external APIs (git tags, gh release view, make secrets-scan,
 subprocess.run) using monkeypatch and temporary filesystem paths so they
 run fully offline and never touch the real repo or network.
+
+Design evidence: detect-secrets documents repository snapshots separately from
+lower-overhead hooks (https://github.com/Yelp/detect-secrets), while pytest's
+long-running dependency-injection discussion recommends argument passing when
+the real dependency must not execute accidentally
+(https://github.com/pytest-dev/pytest/issues/4576). Accordingly, cycle tests
+inject the scan dependency and this module retains the exact adapter contract.
 """
 
 from __future__ import annotations
@@ -259,13 +266,27 @@ class TestReleaseCompleteness:
 class TestSecretsCommitted:
     def test_clean_scan_writes_no_violation(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         _setup_aw_env(monkeypatch, tmp_path)
-        monkeypatch.setattr(aw.subprocess, "run", lambda cmd, **kwargs: type("R", (), {
-            "stdout": "No secrets found\n",
-            "stderr": "",
-            "returncode": 0,
-        })())
+        calls = []
+
+        def _run(cmd, **kwargs):
+            calls.append((cmd, kwargs))
+            return type("R", (), {
+                "stdout": "No secrets found\n",
+                "stderr": "",
+                "returncode": 0,
+            })()
+
+        monkeypatch.setattr(aw.subprocess, "run", _run)
         result = aw._check_secrets_committed()
         assert result is None
+        assert calls == [
+            (["make", "secrets-scan"], {
+                "capture_output": True,
+                "text": True,
+                "timeout": 60,
+                "cwd": str(aw._WORKSPACE),
+            })
+        ]
         data = json.loads((tmp_path / "secrets-violation.json").read_text())
         assert data["violation"] is False
 
@@ -499,7 +520,7 @@ class TestCheckAndResetIntegration:
         (tmp_path / "streak.json").write_text('{"count": 0, "last_tool": "write"}')
         (tmp_path / "streak.json").touch()
 
-        result = aw.check_and_reset()
+        result = aw.check_and_reset(secrets_check=lambda: None)
         assert "release_incomplete" in result
         assert result["release_incomplete"] is not None
         assert result["release_incomplete"]["incomplete"] is True
@@ -551,7 +572,7 @@ class TestCheckAndResetIntegration:
         (tmp_path / "streak.json").write_text('{"count": 0, "last_tool": "write"}')
         (tmp_path / "streak.json").touch()
 
-        result = aw.check_and_reset()
+        result = aw.check_and_reset(secrets_check=lambda: None)
         assert "ci_red_after_tag" in result
         assert result["ci_red_after_tag"]["tag"] == "v1.0.0"
         assert result["ci_red_after_tag"]["conclusion"] == "failure"

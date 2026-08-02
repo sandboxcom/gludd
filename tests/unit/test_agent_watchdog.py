@@ -40,7 +40,11 @@ POLL_SECS = aw.POLL_SECS
 STOP_STATE = aw.STOP_STATE
 FALSE_DONE_BLOCKS = aw.FALSE_DONE_BLOCKS
 CONTINUE_DIRECTIVE = aw.CONTINUE_DIRECTIVE
-check_and_reset = aw.check_and_reset
+
+
+def check_and_reset() -> dict:
+    """Run a deterministic cycle without launching a repository-wide scan."""
+    return aw.check_and_reset(secrets_check=lambda: None)
 _check_force_dispatch = aw._check_force_dispatch
 _is_force_dispatch_active = aw._is_force_dispatch_active
 FORCE_DISPATCH_FILE = aw.FORCE_DISPATCH_FILE
@@ -381,7 +385,7 @@ def test_check_and_reset_text_only_recent_streak_with_pending(tmp_path: Path, mo
     todo_file.write_text('[{"content": "fix bug", "status": "pending"}]')
     monkeypatch.setattr(aw, "TODOWRITE_STATE", str(todo_file))
 
-    result = aw.check_and_reset()
+    result = aw.check_and_reset(secrets_check=lambda: None)
     assert result["reset_applied"] is True
 
     # Also stub out stop-state / false-done so check_agent_stalled doesn't interfere
@@ -403,7 +407,7 @@ def test_check_and_reset_no_pending_no_reset(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(aw, "STOP_STATE", str(tmp_path / "nonexistent-stop.json"))
     monkeypatch.setattr(aw, "FALSE_DONE_BLOCKS", str(tmp_path / "nonexistent-blocks.json"))
 
-    result = aw.check_and_reset()
+    result = aw.check_and_reset(secrets_check=lambda: None)
     assert result["reset_applied"] is False
 
 
@@ -426,7 +430,7 @@ def test_check_and_reset_stalled_state_resets(tmp_path: Path, monkeypatch):
     directive_file = tmp_path / "continue.txt"
     monkeypatch.setattr(aw, "CONTINUE_DIRECTIVE", str(directive_file))
 
-    result = aw.check_and_reset()
+    result = aw.check_and_reset(secrets_check=lambda: None)
     assert result["reset_applied"] is True
     assert directive_file.exists()
     assert "FORCE_DISPATCH" in directive_file.read_text()
@@ -668,6 +672,29 @@ def _setup_full(monkeypatch, tmp_path):
     (tmp_path / "push-flag-nonexistent").write_text("")
 
 
+def test_check_and_reset_uses_injected_secrets_check_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A unit cycle can replace only the repository-wide secrets scan."""
+    _setup_full(monkeypatch, tmp_path)
+    (tmp_path / "TASKS.md").write_text("- [x] complete\n")
+    (tmp_path / "ratchet.yml").write_text("# empty\n")
+    (tmp_path / "gate-status").write_text("lint PASS 0\n")
+    monkeypatch.setattr(
+        aw,
+        "_should_run_check",
+        lambda name, cooldown_secs=aw._CHECK_COOLDOWN_SECS: False,
+    )
+    calls: list[str] = []
+
+    def _fast_secrets_check() -> None:
+        calls.append("scan")
+
+    aw.check_and_reset(secrets_check=_fast_secrets_check)
+
+    assert calls == ["scan"]
+
+
 def test_watchdog_detects_idle_without_streak_file(tmp_path, monkeypatch):
     _setup_full(monkeypatch, tmp_path)
     streak_path = tmp_path / "streak.json"
@@ -683,7 +710,7 @@ def test_watchdog_detects_idle_without_streak_file(tmp_path, monkeypatch):
 
     monkeypatch.setattr(aw, "_should_run_check", lambda name, cooldown_secs=aw._CHECK_COOLDOWN_SECS: True)
 
-    result = aw.check_and_reset()
+    result = aw.check_and_reset(secrets_check=lambda: None)
     assert result["stop_detected"] is True
 
 
@@ -702,7 +729,7 @@ def test_watchdog_writes_continue_directive_on_stop(tmp_path, monkeypatch):
 
     monkeypatch.setattr(aw, "_should_run_check", lambda name, cooldown_secs=aw._CHECK_COOLDOWN_SECS: True)
 
-    result = aw.check_and_reset()
+    result = aw.check_and_reset(secrets_check=lambda: None)
     assert result["reset_applied"] is True
     assert continue_path.exists()
     content = continue_path.read_text()
@@ -723,7 +750,7 @@ def test_watchdog_false_done_max_out_on_every_cycle(tmp_path, monkeypatch):
 
     monkeypatch.setattr(aw, "_should_run_check", lambda name, cooldown_secs=aw._CHECK_COOLDOWN_SECS: True)
 
-    aw.check_and_reset()
+    aw.check_and_reset(secrets_check=lambda: None)
     assert maxout_path.exists()
     data = json.loads(maxout_path.read_text())
     assert 0 <= data["count"] < 100  # counter wraps at 100
@@ -861,7 +888,7 @@ def test_check_and_reset_with_ci_only_pending(tmp_path: Path, monkeypatch: pytes
 
     monkeypatch.setattr(subprocess, "run", mock_subprocess_run)
 
-    result = aw.check_and_reset()
+    result = aw.check_and_reset(secrets_check=lambda: None)
 
     # Should detect that CI-pending is pending work but should NOT
     # flag a stop since the agent is actively polling CI
@@ -1033,7 +1060,7 @@ def test_check_and_reset_ci_only_pending_no_stop_flag(tmp_path, monkeypatch):
 
     monkeypatch.setattr(subprocess, "run", mock_run)
 
-    result = aw.check_and_reset()
+    result = aw.check_and_reset(secrets_check=lambda: None)
 
     # When only CI is pending and agent is active, stop_detected should be
     # false (or null/absent). The orchestrator state should reflect health.
@@ -1196,7 +1223,7 @@ def test_force_dispatch_lowers_idle_threshold(tmp_path: Path, monkeypatch: pytes
 
     monkeypatch.setattr(aw, "_should_run_check", lambda name, cooldown_secs=aw._CHECK_COOLDOWN_SECS: True)
 
-    result = aw.check_and_reset()
+    result = aw.check_and_reset(secrets_check=lambda: None)
     assert result["stop_detected"] is True
 
 
@@ -1441,7 +1468,7 @@ def test_check_and_reset_includes_under_floor_check(tmp_path: Path, monkeypatch:
 
     monkeypatch.setattr(subprocess, "run", mock_subprocess_run)
 
-    _ = aw.check_and_reset()
+    _ = aw.check_and_reset(secrets_check=lambda: None)
 
     directive_path = tmp_path / "pure-idle.txt"
     assert directive_path.exists(), (

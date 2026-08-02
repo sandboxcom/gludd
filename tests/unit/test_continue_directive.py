@@ -41,8 +41,12 @@ def _load_module():
 
 aw = _load_module()
 _build_continue_directive = aw._build_continue_directive
-check_and_reset = aw.check_and_reset
 CONTINUE_DIRECTIVE = aw.CONTINUE_DIRECTIVE
+
+
+def check_and_reset() -> dict:
+    """Exercise directive logic without launching the repository scanner."""
+    return aw.check_and_reset(secrets_check=lambda: None)
 
 
 # ── _build_continue_directive helper function ────────────────────────────────
