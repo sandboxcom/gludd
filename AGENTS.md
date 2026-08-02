@@ -106,7 +106,8 @@ The `enforce-enhancement-ratio.ts` plugin mechanically enforces the ratio rule:
 2. **NEVER merge to master from inside a worktree.** Merges to master happen on the main checkout only.
 3. **Before merging development→master:** verify `make gate` green on development, CI green, then `make release-promote`.
 4. **`make batch-push` pushes the CURRENT branch.** Verify which branch you're on with `make verify-state` before pushing.
-5. **Enforced by:** `.opencode/plugin/enforce-clean-tree.ts` and this section. A push to master that adds commits beyond what development has is a policy violation.
+5. **NEVER rebase shared branches (master or development).** Shared branches must never be rebased — only merge-forward. Rebase rewrites history that other agents depend on.
+6. **Enforced by:** `.opencode/plugin/enforce-clean-tree.ts` and this section. A push to master that adds commits beyond what development has is a policy violation.
 
 ## CRITICAL: Subagent Task Design — Fix, Don't Check
 
