@@ -1,0 +1,7 @@
+---
+- name: restart searxng
+  ansible.builtin.command:
+    cmd: docker compose restart
+    chdir: "{{ searxng_config_dir | default('/etc/searxng') }}"
+  changed_when: true
+  ignore_errors: true

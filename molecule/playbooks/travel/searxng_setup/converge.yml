@@ -1,0 +1,14 @@
+---
+- name: Converge - exercise searxng_setup role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Include searxng_setup role
+      ansible.builtin.include_role:
+        name: general_ludd.travel.searxng_setup
+      vars:
+        searxng_config_dir: "/tmp/gludd-searxng-test"
+        searxng_port: 18080
+        artifact_dir: "/tmp/gludd-searxng-test-artifacts"
+        searxng_enabled: false

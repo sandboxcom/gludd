@@ -22,11 +22,27 @@ from general_ludd.security.security_backlog import (
     run_backlog_checks,
 )
 
-_EXPLICIT_OPEN_IDS = frozenset(
-    {"D-11", "D-12", "D-13", "D-17", "D-19", "D-26", "D-30"}
-)
+_EXPLICIT_OPEN_IDS = frozenset({"D-15", "D-17", "D-26", "D-30"})
 _PROBE_IDS = frozenset(
-    {"D-07", "D-08", "D-10", "D-14", "D-18", "D-24", "D-25", "D-27", "D-28", "D-29"}
+    {
+        "D-07",
+        "D-08",
+        "D-09",
+        "D-10",
+        "D-11",
+        "D-12",
+        "D-13",
+        "D-14",
+        "D-16",
+        "D-18",
+        "D-19",
+        "D-21",
+        "D-24",
+        "D-25",
+        "D-27",
+        "D-28",
+        "D-29",
+    }
 )
 
 
@@ -100,9 +116,7 @@ class TestRunBacklogChecks:
         results = run_backlog_checks()
         for r in results:
             if r.item_id not in _PROBE_IDS:
-                assert r.status == STATUS_OPEN, (
-                    f"{r.item_id} is not a probed item but reports {r.status}"
-                )
+                assert r.status == STATUS_OPEN, f"{r.item_id} is not a probed item but reports {r.status}"
                 assert r.passed is False
 
     def test_explicit_open_items_report_open(self) -> None:
@@ -133,15 +147,16 @@ class TestRunBacklogChecks:
             assert r.status == STATUS_LANDED
             assert r.deferred is False
 
-    def test_d13_reports_phase_one_controls_and_remaining_work(self) -> None:
+    def test_d13_reports_phase_one_landed(self) -> None:
         result = {r.item_id: r for r in run_backlog_checks()}["D-13"]
 
-        assert result.status == STATUS_OPEN
-        assert "journal_size_limit_bytes" in result.detail
-        assert "wal_autocheckpoint_pages" in result.detail
-        assert "busy_timeout_ms" in result.detail
+        assert result.status == STATUS_LANDED
+        assert result.passed is True
+        assert result.deferred is False
+        assert "LANDED-VERIFIED" in result.detail
+        assert "query_wal_metrics" in result.detail
+        assert "check_disk_pressure" in result.detail
         assert "single maintenance leader" in result.detail
-        assert "no PRAGMA journal_size_limit" not in result.detail
 
 
 class TestD08ProbeRegressionDetection:

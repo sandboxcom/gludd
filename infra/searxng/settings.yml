@@ -164,6 +164,31 @@ search:
       weight: 1.0
       timeout: 6.0
 
+    # ---- Supplementary / disabled by default ----
+    - name: google cache
+      engine: google_cache
+      disabled: true
+
+    - name: google play apps
+      engine: google_play_apps
+      disabled: true
+
+    - name: google play movies
+      engine: google_play_movies
+      disabled: true
+
+    - name: google images
+      engine: google_images
+      disabled: true
+
+    - name: google videos
+      engine: google_videos
+      disabled: true
+
+    - name: google maps
+      engine: google_maps
+      disabled: true
+
 server:
   secret_key: "${SEARXNG_SECRET}"
   bind_address: "0.0.0.0:8080"
@@ -188,28 +213,3 @@ outgoing:
   pool_connections: 100
   pool_maxsize: 20
   enable_http2: true
-
-engines:
-  - name: google cache
-    engine: google_cache
-    disabled: true
-
-  - name: google play apps
-    engine: google_play_apps
-    disabled: true
-
-  - name: google play movies
-    engine: google_play_movies
-    disabled: true
-
-  - name: google images
-    engine: google_images
-    disabled: true
-
-  - name: google videos
-    engine: google_videos
-    disabled: true
-
-  - name: google maps
-    engine: google_maps
-    disabled: true
