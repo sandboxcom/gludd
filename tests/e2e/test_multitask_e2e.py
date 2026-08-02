@@ -59,8 +59,11 @@ def _run_plugin(
             env.update(env_override)
         proc = subprocess.run(
             ["node", "--experimental-strip-types", str(tmp)],
-            capture_output=True, text=True, timeout=timeout,
-            cwd=cwd or str(ROOT), env=env,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=cwd or str(ROOT),
+            env=env,
         )
         if proc.returncode != 0:
             raise AssertionError(
@@ -237,10 +240,7 @@ def test_full_dispatch_wave_unblocks_non_dispatch(tmp_path):
     ws.mkdir()
     _make_working_workspace(ws)
 
-    dispatches = "\n".join(
-        "await plugin['tool.execute.before']({tool: 'task'}, undefined)"
-        for _ in range(10)
-    )
+    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(10))
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
@@ -279,9 +279,7 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
 """
     result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
     r = _last_json(result)
-    assert r is not None and r.get("permissionDecision") == "deny", (
-        f"Zero-dispatch streak should block, got: {r}"
-    )
+    assert r is not None and r.get("permissionDecision") == "deny", f"Zero-dispatch streak should block, got: {r}"
     assert "ZERO-DISPATCH STREAK" in r.get("message", "")
 
 
@@ -295,10 +293,7 @@ def test_dispatch_resets_zero_streak(tmp_path):
     _make_working_workspace(ws)
 
     # Same shape as the zero-streak test, except message 3 dispatches a full wave.
-    dispatches = "\n".join(
-        "await plugin['tool.execute.before']({tool: 'task'}, undefined)"
-        for _ in range(10)
-    )
+    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(10))
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
@@ -576,10 +571,7 @@ def test_partial_wave_then_grind(tmp_path):
     ws.mkdir()
     _make_working_workspace(ws)
 
-    dispatches = "\n".join(
-        "await plugin['tool.execute.before']({tool: 'task'}, undefined)"
-        for _ in range(5)
-    )
+    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(5))
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
@@ -590,9 +582,7 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
 """
     result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
     r = _last_json(result)
-    assert r is not None and r.get("permissionDecision") == "deny", (
-        f"Partial wave floor breach should block, got: {r}"
-    )
+    assert r is not None and r.get("permissionDecision") == "deny", f"Partial wave floor breach should block, got: {r}"
     assert "CONFIGURED MINIMUM BLOCK" in r.get("message", "")
 
 
@@ -677,8 +667,7 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
         f"Got: {r}"
     )
     block_msg = r.get("message", "")
-    assert ("CONSECUTIVE NON-DISPATCH STREAK" in block_msg
-            or "CONFIGURED MINIMUM BLOCK" in block_msg), (
+    assert "CONSECUTIVE NON-DISPATCH STREAK" in block_msg or "CONFIGURED MINIMUM BLOCK" in block_msg, (
         f"Expected enforcement block, got message: {block_msg}"
     )
 
@@ -698,10 +687,7 @@ def test_eight_dispatches_then_write_should_be_blocked(tmp_path):
     ws.mkdir()
     _make_working_workspace(ws)
 
-    dispatches = "\n".join(
-        "await plugin['tool.execute.before']({tool: 'task'}, undefined)"
-        for _ in range(8)
-    )
+    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(8))
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
@@ -713,8 +699,7 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
     result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
     r = _last_json(result)
     assert r is not None and r.get("permissionDecision") == "deny", (
-        f"BUG: 8 dispatches then write with pending work SHOULD be blocked. "
-        f"8 < floor=10. Got: {r}"
+        f"BUG: 8 dispatches then write with pending work SHOULD be blocked. 8 < floor=10. Got: {r}"
     )
     assert "CONFIGURED MINIMUM BLOCK" in r.get("message", ""), (
         f"Expected CONFIGURED MINIMUM BLOCK, got: {r.get('message', '')}"
@@ -732,10 +717,7 @@ def test_exactly_ten_dispatches_allows_non_dispatch(tmp_path):
     ws.mkdir()
     _make_working_workspace(ws)
 
-    dispatches = "\n".join(
-        "await plugin['tool.execute.before']({tool: 'task'}, undefined)"
-        for _ in range(10)
-    )
+    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(10))
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
@@ -757,10 +739,7 @@ def test_nine_dispatches_blocks_non_dispatch(tmp_path):
     ws.mkdir()
     _make_working_workspace(ws)
 
-    dispatches = "\n".join(
-        "await plugin['tool.execute.before']({tool: 'task'}, undefined)"
-        for _ in range(9)
-    )
+    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(9))
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
@@ -770,9 +749,7 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
 """
     result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
     r = _last_json(result)
-    assert r is not None and r.get("permissionDecision") == "deny", (
-        f"9 dispatches (<10 floor) should block, got: {r}"
-    )
+    assert r is not None and r.get("permissionDecision") == "deny", f"9 dispatches (<10 floor) should block, got: {r}"
     assert "CONFIGURED MINIMUM BLOCK" in r.get("message", "")
 
 
@@ -849,12 +826,8 @@ console.log(JSON.stringify({{
 """
     result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
     r = _last_json(result)
-    assert r.get("consecutiveBefore") == 4, (
-        f"Before dispatch: consecutiveNonDispatch should be 4, got: {r}"
-    )
-    assert r.get("consecutiveAfter") == 0, (
-        f"After dispatch: consecutiveNonDispatch should be reset to 0, got: {r}"
-    )
+    assert r.get("consecutiveBefore") == 4, f"Before dispatch: consecutiveNonDispatch should be 4, got: {r}"
+    assert r.get("consecutiveAfter") == 0, f"After dispatch: consecutiveNonDispatch should be reset to 0, got: {r}"
 
 
 def test_read_tools_dont_count_toward_consecutive_streak(tmp_path):
@@ -893,10 +866,7 @@ def test_env_disable_skips_under_floor_check(tmp_path):
     ws.mkdir()
     _make_working_workspace(ws)
 
-    dispatches = "\n".join(
-        "await plugin['tool.execute.before']({tool: 'task'}, undefined)"
-        for _ in range(9)
-    )
+    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(9))
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
@@ -910,9 +880,7 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
         cwd=str(ws),
     )
     r = _last_json(result)
-    assert r is None or r.get("permissionDecision") != "deny", (
-        f"Env disable should skip under-floor check, got: {r}"
-    )
+    assert r is None or r.get("permissionDecision") != "deny", f"Env disable should skip under-floor check, got: {r}"
 
 
 def test_subagent_skips_under_floor_check(tmp_path):
@@ -922,10 +890,7 @@ def test_subagent_skips_under_floor_check(tmp_path):
     ws.mkdir()
     _make_working_workspace(ws)
 
-    dispatches = "\n".join(
-        "await plugin['tool.execute.before']({tool: 'task'}, undefined)"
-        for _ in range(9)
-    )
+    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(9))
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
@@ -951,10 +916,7 @@ def test_ten_dispatches_required_message_explicit(tmp_path):
     ws.mkdir()
     _make_working_workspace(ws)
 
-    dispatches = "\n".join(
-        "await plugin['tool.execute.before']({tool: 'task'}, undefined)"
-        for _ in range(9)
-    )
+    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(9))
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
@@ -978,10 +940,7 @@ def test_under_floor_check_fires_without_zero_streak(tmp_path):
     ws.mkdir()
     _make_working_workspace(ws)
 
-    dispatches = "\n".join(
-        "await plugin['tool.execute.before']({tool: 'task'}, undefined)"
-        for _ in range(9)
-    )
+    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(9))
     code = f"""\
 import * as fs from 'node:fs'
 const mod = await import('{PLUGIN_PATH}')
@@ -995,10 +954,234 @@ console.log(JSON.stringify({{...r, zeroStreakBefore: state.zeroStreak}}))
 """
     result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
     r = _last_json(result)
-    assert r is not None and r.get("permissionDecision") == "deny", (
-        f"Under-floor check must fire, got: {r}"
-    )
+    assert r is not None and r.get("permissionDecision") == "deny", f"Under-floor check must fire, got: {r}"
     assert r.get("zeroStreakBefore") == 0, (
         f"zeroStreak should be 0 after 9 dispatches in same message, got: {r.get('zeroStreakBefore')}"
     )
     assert "CONFIGURED MINIMUM BLOCK" in r.get("message", "")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DIVERSITY ENFORCEMENT — topic concentration detection
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def _make_diversity_workspace(path: Path) -> None:
+    """Workspace with >=2 unchecked items for diversity check."""
+    (path / "TASKS.md").write_text(
+        "- [ ] guardrail enforcement plugin hardening\n"
+        "- [ ] enforcement stop hook fix\n"
+        "- [ ] agent floor enforcement bug\n"
+    )
+    subprocess.run(["git", "init"], cwd=path, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@test"], cwd=path, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=path, capture_output=True)
+
+
+def test_diversity_check_fires_when_wave_is_single_topic(tmp_path):
+    """2 dispatches both classified as same topic (guardrails/enforcement)
+    with >=2 unchecked items → TOPIC DIVERSITY VIOLATION fires."""
+    ws = tmp_path / "diversity-fire"
+    ws.mkdir()
+    _make_diversity_workspace(ws)
+
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Fix the enforce-multitask enforcement plugin guardrail'}}}}, undefined)
+const r = await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Add enforcement hook for the agent floor guardrail'}}}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
+    r = _last_json(result)
+    assert r is not None and r.get("permissionDecision") == "deny", (
+        f"Diversity check should deny when 2/2 dispatches are same topic, got: {r}"
+    )
+    assert "TOPIC DIVERSITY VIOLATION" in r.get("message", "")
+
+
+def test_diversity_allows_diverse_wave(tmp_path):
+    """1 enforcement dispatch + 1 testing dispatch = diverse wave (50% each)
+    with >=2 unchecked items → NO denial (below 80% threshold)."""
+    ws = tmp_path / "diversity-allow"
+    ws.mkdir()
+    _make_diversity_workspace(ws)
+
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Fix the enforce-multitask enforcement plugin guardrail'}}}}, undefined)
+const r = await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Write pytest unit test for coverage'}}}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
+    r = _last_json(result)
+    assert r is None or r.get("permissionDecision") != "deny", (
+        f"Diverse wave (2 topics) should not trigger diversity denial, got: {r}"
+    )
+
+
+def test_diversity_skipped_when_no_unchecked_items(tmp_path):
+    """0 unchecked items in TASKS.md → diversity check does not fire
+    even when 100% of dispatches are same topic."""
+    ws = tmp_path / "diversity-no-items"
+    ws.mkdir()
+    _make_clean_workspace(ws)
+
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Fix the enforce-multitask enforcement plugin guardrail'}}}}, undefined)
+const r = await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Add enforcement hook for the agent floor guardrail'}}}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
+    r = _last_json(result)
+    assert r is None or r.get("permissionDecision") != "deny", f"No unchecked items should allow wave, got: {r}"
+
+
+def test_diversity_skipped_with_single_dispatch(tmp_path):
+    """Only 1 dispatch in wave → diversity check requires waveSize >= 2."""
+    ws = tmp_path / "diversity-single"
+    ws.mkdir()
+    _make_diversity_workspace(ws)
+
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+const r = await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Fix the enforce-multitask enforcement plugin guardrail'}}}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
+    r = _last_json(result)
+    assert r is None or r.get("permissionDecision") != "deny", (
+        f"Single dispatch should not trigger diversity check, got: {r}"
+    )
+
+
+def test_diversity_env_disable(tmp_path):
+    """GLUDD_MULTITASK_DIVERSITY_ENFORCE=0 disables diversity check."""
+    ws = tmp_path / "diversity-env-off"
+    ws.mkdir()
+    _make_diversity_workspace(ws)
+
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Fix the enforce-multitask enforcement plugin guardrail'}}}}, undefined)
+const r = await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Add enforcement hook for the agent floor guardrail'}}}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
+"""
+    result = _run_plugin(
+        code,
+        env_override={**_GAP_ENV, "GLUDD_MULTITASK_DIVERSITY_ENFORCE": "0"},
+        cwd=str(ws),
+    )
+    r = _last_json(result)
+    assert r is None or r.get("permissionDecision") != "deny", f"Env disable should skip diversity check, got: {r}"
+
+
+def test_diversity_subagent_skips(tmp_path):
+    """OPENCODE_SUBAGENT=1 skips diversity enforcement."""
+    ws = tmp_path / "diversity-subagent"
+    ws.mkdir()
+    _make_diversity_workspace(ws)
+
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Fix the enforce-multitask enforcement plugin guardrail'}}}}, undefined)
+const r = await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Add enforcement hook for the agent floor guardrail'}}}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
+"""
+    result = _run_plugin(
+        code,
+        env_override={**_GAP_ENV, "OPENCODE_SUBAGENT": "1"},
+        cwd=str(ws),
+    )
+    r = _last_json(result)
+    assert r is None or r.get("permissionDecision") != "deny", f"Subagent should skip diversity check, got: {r}"
+
+
+def test_diversity_deny_message_includes_details(tmp_path):
+    """Deny message includes topic name, percentage, and in_progress count."""
+    ws = tmp_path / "diversity-msg"
+    ws.mkdir()
+    _make_diversity_workspace(ws)
+
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Fix the enforce-multitask enforcement plugin guardrail'}}}}, undefined)
+const r = await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Add enforcement hook for the agent floor guardrail'}}}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
+    r = _last_json(result)
+    msg = r.get("message", "")
+    assert "TOPIC DIVERSITY VIOLATION" in msg
+    assert "100%" in msg
+    assert "2/2" in msg
+    assert "in_progress" in msg.lower()
+
+
+def test_diversity_wave_topic_counts_reset_on_boundary(tmp_path):
+    """After a message boundary, waveTopicCounts resets and new wave is not
+    affected by previous wave's topic distribution."""
+    ws = tmp_path / "diversity-boundary"
+    ws.mkdir()
+    _make_diversity_workspace(ws)
+
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Fix the enforce-multitask enforcement plugin guardrail'}}}}, undefined)
+{_GAP_SLEEP_JS}
+await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Write pytest test for coverage'}}}}, undefined)
+const r = await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Add new type-safety check'}}}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
+    r = _last_json(result)
+    assert r is None or r.get("permissionDecision") != "deny", (
+        f"After boundary, old topic counts should be reset, got: {r}"
+    )
+
+
+def test_diversity_uncategorized_topic_tracking(tmp_path):
+    """Dispatches with no matching topic keywords are classified as 'uncategorized'
+    and 2/2 uncategorized dispatches DO trigger the diversity check."""
+    ws = tmp_path / "diversity-uncat"
+    ws.mkdir()
+    _make_diversity_workspace(ws)
+
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'xyzzy frob the wibble'}}}}, undefined)
+const r = await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'quux flarn the garble'}}}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
+    r = _last_json(result)
+    assert r is not None and r.get("permissionDecision") == "deny", (
+        f"2/2 uncategorized dispatches should trigger diversity violation, got: {r}"
+    )

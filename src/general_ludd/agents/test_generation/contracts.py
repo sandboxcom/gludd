@@ -73,7 +73,7 @@ class TestHarness(BaseModel):
     pytest_args: list[str] = Field(default_factory=lambda: ["-v"])
     fixtures: list[str] = Field(default_factory=list)
     timeout_seconds: int = Field(default=300, gt=0)
-    coverage_config: dict = Field(default_factory=lambda: {"branch": True, "source": []})
+    coverage_config: dict[str, object] = Field(default_factory=lambda: {"branch": True, "source": []})
 
 
 # ---------------------------------------------------------------------------

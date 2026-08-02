@@ -1,0 +1,19 @@
+---
+namespace: general_ludd
+name: chat
+version: 0.1.0
+readme: README.md
+description: >
+  Chat CLI collection — modules for sending chat messages and
+  exporting chat session history.
+license:
+  - MIT
+authors:
+  - Agentic Harness Agent <agent@harness.local>
+tags:
+  - chat
+  - ai
+  - llm
+  - repl
+  - export
+dependencies: {}

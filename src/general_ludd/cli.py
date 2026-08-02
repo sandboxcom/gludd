@@ -790,7 +790,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     from general_ludd.cli_audit_plugins import add_audit_plugins_subparser
 
     add_audit_plugins_subparser(sub)
-    audit_plugins_parser = sub.choices["audit-plugins"]
+    sub.choices["audit-plugins"]
 
     # `gludd collection` — multi-version collection management.
     from general_ludd.cli_collection import add_collection_subparser
@@ -1097,12 +1097,6 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     add_service_subparser(sub)
     sub.choices["service"]
 
-    # `gludd travel` — trip planning, flight/hotel search, event planning.
-    from general_ludd.cli_travel import add_travel_subparser
-
-    add_travel_subparser(sub)
-    travel_parser = sub.choices["travel"]
-
     # `gludd deploy-check` — static model-deployment misconfig detector.
     from general_ludd.cli_deploy_check import add_deploy_check_subparser
 
@@ -1146,12 +1140,6 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     iam_validate.add_argument("--provider", required=True, choices=["azure", "aws", "gcp"], help="Cloud provider")
     iam_validate.add_argument("--file", required=True, help="Path to JSON file containing the role definition")
     iam_validate.set_defaults(func=_cmd_cloud_iam_validate)
-
-    # `gludd language` — language expert toolkit (encoding, homoglyphs, BOM, phonetics).
-    from general_ludd.cli_language import add_language_subparser
-
-    add_language_subparser(sub)
-    language_parser = sub.choices["language"]
 
     # account removed from CLI — access via prompting. Code retained in cli_account.py for programmatic use.
     # from general_ludd.cli_account import add_account_subparser
@@ -1267,12 +1255,9 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "self-improve": self_improve_parser,
         "remediation": remediation_parser,
         "ornith": ornith_parser,
-        "travel": travel_parser,
         "deploy-check": deploy_check_parser,
         "core-changes": core_changes_parser,
         "make": make_parser,
-        "language": language_parser,
-        "audit-plugins": audit_plugins_parser,
         "collection": collection_parser,
         "config": config_parser,
         "searx": searx_parser,

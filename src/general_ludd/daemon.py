@@ -67,16 +67,8 @@ from general_ludd.filestore.store import FileStore as _FS
 # Each from-import places the symbol name in daemon.py's source text, which the
 # text-based dead-code checker detects as a production reference. Symbols are
 # assigned to _-prefixed locals and collected in a list to satisfy ruff F401.
-from general_ludd.governance.cli_governance import add_governance_subparser as _dc_add_governance_subparser
 from general_ludd.infra.utilization import UtilizationTracker
 from general_ludd.ipc import WriteQueue
-from general_ludd.language.corpus import CorpusAnalyzer as _dc_CorpusAnalyzer
-from general_ludd.language.polyglot import (
-    cross_language_homoglyph_scan as _dc_cross_language_homoglyph_scan,
-)
-from general_ludd.language.polyglot import (
-    detect_languages_in_directory as _dc_detect_languages_in_directory,
-)
 from general_ludd.logging.project_log import ProjectLogAdapter
 from general_ludd.mcp.loader import load_mcp_config
 from general_ludd.memory.local import LocalAgentMemory
@@ -166,10 +158,6 @@ from general_ludd.sts.rotator import (
 from general_ludd.writer import WriterProcess
 
 _DEAD_CODE_REFS: list[object] = [
-    _dc_add_governance_subparser,
-    _dc_CorpusAnalyzer,
-    _dc_cross_language_homoglyph_scan,
-    _dc_detect_languages_in_directory,
     _dc_VMSandboxHealth,
     _dc_VMSandboxMetricsCollector,
     _dc_VMSandboxMetricsSnapshot,
@@ -3436,7 +3424,6 @@ def create_daemon_app(
         slurm,
         spend,
         todos,
-        travel,
         variants,
         webmcp,
         worktree,
@@ -3451,7 +3438,6 @@ def create_daemon_app(
     eval_router.register(app, daemon_state)
     webmcp.register(app, daemon_state)
     todos.register(app, daemon_state)
-    travel.register(app, daemon_state)
     messages.register(app, daemon_state)
     accounting.register(app, daemon_state)
     account_router.register(app, daemon_state)

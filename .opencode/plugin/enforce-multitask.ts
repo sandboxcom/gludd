@@ -80,11 +80,8 @@ function countInProgressItems(): number {
     const tasksPath = path.join(root, "TASKS.md")
     if (!fs.existsSync(tasksPath)) return 0
     const content = fs.readFileSync(tasksPath, "utf8")
-    let count = 0
-    for (const line of content.split("\n")) {
-      if (/\bstatus:\s*in_progress\b/i.test(line)) count++
-    }
-    return count
+    const matches = content.match(/^-\s*\[ \]/gm)
+    return matches ? matches.length : 0
   } catch {
     return 0
   }

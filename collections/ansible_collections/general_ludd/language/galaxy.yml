@@ -26,3 +26,11 @@ tags:
   - text-processing
 dependencies:
   general_ludd.agent: ">=0.1.0"
+role_capabilities:
+  language_detect:
+    - language_detection
+  translate:
+    - translation
+  transliterate:
+    - transliteration
+    - script_conversion

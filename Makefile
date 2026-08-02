@@ -3414,7 +3414,7 @@ test-bg:
 	@if [ -z "$(TESTFILE)" ] && [ -z "$(FILES)" ]; then echo "Usage: make test-bg TESTFILE='...' OR make test-bg FILES='...'"; exit 1; fi
 	@mkdir -p .gate-logs
 	@if [ -n "$(FILES)" ]; then \
-		nohup $(UV) run python -m pytest $(FILES) $(_XD) -v --tb=short > .gate-logs/test-bg-$$(date +%Y%m%d%H%M%S).log 2>&1 & echo $$! | tee .gate-logs/test-bg.pid; \
+		nohup $(UV) run python -m pytest $(FILES) $(_XD) -v --tb=short > .gate-logs/test-bg-$$(date +%Y%m%d%H%M%S)-$$$$.log 2>&1 & echo $$! | tee .gate-logs/test-bg-$$$$.pid; \
 	else \
 		nohup $(UV) run python -m pytest $(TESTFILE) -v --tb=short > .gate-logs/test-bg-$$(date +%Y%m%d%H%M%S).log 2>&1 & echo $$! | tee .gate-logs/test-bg.pid; \
 	fi

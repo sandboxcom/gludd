@@ -891,6 +891,14 @@ class TestDiversityExports:
         before_block = src[max(0, idx - 800) : idx]
         assert "inProgressCount >= 2" in before_block, "Diversity must check inProgressCount >= 2"
 
+    def test_count_in_progress_items_counts_checkboxes(self):
+        """countInProgressItems() counts `- [ ]` unchecked markdown checkboxes (not
+        status: in_progress which doesn't match TASKS.md format)."""
+        src = _plugin_source()
+        assert "/^-\\s*\\[ \\]/gm" in src or "^-\\s*\\[ \\]" in src, (
+            "countInProgressItems must count unchecked markdown checkboxes"
+        )
+
 
 class TestDiversityTopicTracking:
     """State interface includes waveTopicCounts tracking field."""

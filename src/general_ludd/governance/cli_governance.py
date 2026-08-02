@@ -20,6 +20,11 @@ import json
 import sys
 from typing import Any, TextIO
 
+from general_ludd.governance.contracts import (
+    Policy,
+    Rule,
+)
+from general_ludd.governance.core import ComplianceChecker, PolicyEngine
 from general_ludd.governance.loader import (
     get_authority_registry,
     get_borders,
@@ -1183,6 +1188,143 @@ def _cmd_list(args: argparse.Namespace) -> None:
 # ── Subparser registration ────────────────────────────────────────────────────
 
 
+_policy_engine = PolicyEngine()
+_compliance_checker = ComplianceChecker(_policy_engine)
+
+
+def _cmd_policy_add(args: argparse.Namespace) -> None:
+    """``gludd governance policy add`` — register a governance policy."""
+    name = args.name
+    if name in _policy_engine:
+        print(f"Policy '{name}' already exists", file=sys.stderr)
+        sys.exit(1)
+    policy = Policy(
+        name=name,
+        description=getattr(args, "description", ""),
+        domain=getattr(args, "domain", ""),
+        level=getattr(args, "level", "enterprise"),
+        status=getattr(args, "status", "draft"),
+        effective_date=getattr(args, "effective_date", None),
+    )
+    _policy_engine.register_policy(policy)
+    data = {
+        "name": policy.name,
+        "domain": policy.domain,
+        "level": policy.level,
+        "status": policy.status,
+        "description": policy.description,
+    }
+    _print_result(data, json_output=args.json)
+
+
+def _cmd_policy_list(args: argparse.Namespace) -> None:
+    """``gludd governance policy list`` — list registered policies."""
+    domain = getattr(args, "domain", None)
+    level = getattr(args, "level", None)
+    policies = _policy_engine.list_policies(domain=domain, level=level)
+    result = []
+    for p in policies:
+        result.append(
+            {
+                "name": p.name,
+                "domain": p.domain,
+                "level": p.level,
+                "status": p.status,
+                "description": p.description,
+                "rule_count": len(_policy_engine.get_rules(p.name)),
+            }
+        )
+    _print_result({"policies": result, "count": len(result)}, json_output=args.json)
+
+
+def _cmd_policy_get(args: argparse.Namespace) -> None:
+    """``gludd governance policy get`` — show a policy with its rules."""
+    policy = _policy_engine.get_policy(args.name)
+    if policy is None:
+        print(f"Policy '{args.name}' not found", file=sys.stderr)
+        sys.exit(1)
+    rules = _policy_engine.get_rules(args.name)
+    data = {
+        "name": policy.name,
+        "domain": policy.domain,
+        "level": policy.level,
+        "status": policy.status,
+        "description": policy.description,
+        "effective_date": policy.effective_date,
+        "rules": [
+            {
+                "rule_id": r.rule_id,
+                "condition": r.condition,
+                "action": r.action,
+                "priority": r.priority,
+                "enforcement": r.enforcement,
+            }
+            for r in rules
+        ],
+        "rule_count": len(rules),
+    }
+    _print_result(data, json_output=args.json)
+
+
+def _cmd_policy_remove(args: argparse.Namespace) -> None:
+    """``gludd governance policy remove`` — remove a policy."""
+    if args.name not in _policy_engine:
+        print(f"Policy '{args.name}' not found", file=sys.stderr)
+        sys.exit(1)
+    _policy_engine._policies.pop(args.name, None)
+    _policy_engine._rules.pop(args.name, None)
+    _print_result({"removed": args.name}, json_output=args.json)
+
+
+def _cmd_policy_rule_add(args: argparse.Namespace) -> None:
+    """``gludd governance policy rule-add`` — add a rule to a policy."""
+    if args.policy not in _policy_engine:
+        print(f"Policy '{args.policy}' not found", file=sys.stderr)
+        sys.exit(1)
+    rule = Rule(
+        policy_name=args.policy,
+        rule_id=args.rule_id,
+        condition=getattr(args, "condition", ""),
+        action=getattr(args, "action", "advisory"),
+        priority=getattr(args, "priority", 0),
+        enforcement=getattr(args, "enforcement", "advisory"),
+    )
+    _policy_engine.register_rule(rule)
+    data = {
+        "policy_name": rule.policy_name,
+        "rule_id": rule.rule_id,
+        "condition": rule.condition,
+        "action": rule.action,
+        "priority": rule.priority,
+        "enforcement": rule.enforcement,
+    }
+    _print_result(data, json_output=args.json)
+
+
+def _cmd_policy_check(args: argparse.Namespace) -> None:
+    """``gludd governance policy check`` — evaluate policy compliance."""
+    report = _compliance_checker.check(args.subject)
+    data = {
+        "subject": report.subject,
+        "status": report.status,
+        "is_compliant": report.is_compliant,
+        "violations": report.violations,
+        "audit_trail": [
+            {
+                "entry_id": a.entry_id,
+                "subject": a.subject,
+                "action": a.action,
+                "details": a.details,
+                "timestamp": a.timestamp,
+            }
+            for a in report.audit_trail
+        ],
+    }
+    _print_result(data, json_output=args.json)
+    if not report.is_compliant:
+        sys.exit(1)
+
+
 def add_governance_subparser(
     sub: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
@@ -1365,6 +1507,57 @@ def add_governance_subparser(
     licenses_p.add_argument("--json", action="store_true", dest="json", help="Output as JSON")
     licenses_p.set_defaults(func=_cmd_licenses)
 
+    # policy <subcommand>
+    policy_p = gov_sub.add_parser("policy", help="Governance policy management and evaluation")
+    policy_sub = policy_p.add_subparsers(dest="policy_command")
+
+    # policy add
+    pa_p = policy_sub.add_parser("add", help="Register a governance policy")
+    pa_p.add_argument("name", help="Policy name")
+    pa_p.add_argument("--domain", default="", help="Policy domain (e.g. security, data)")
+    pa_p.add_argument("--level", default="enterprise", help="Policy level (e.g. enterprise, project)")
+    pa_p.add_argument("--description", default="", help="Policy description")
+    pa_p.add_argument("--status", default="draft", help="Policy status (draft, active, deprecated)")
+    pa_p.add_argument("--effective-date", default=None, help="Effective date (ISO 8601)")
+    pa_p.add_argument("--json", action="store_true", dest="json", help="Output as JSON")
+    pa_p.set_defaults(func=_cmd_policy_add)
+
+    # policy list
+    pl_p = policy_sub.add_parser("list", help="List registered policies")
+    pl_p.add_argument("--domain", default=None, help="Filter by domain")
+    pl_p.add_argument("--level", default=None, help="Filter by level")
+    pl_p.add_argument("--json", action="store_true", dest="json", help="Output as JSON")
+    pl_p.set_defaults(func=_cmd_policy_list)
+
+    # policy get <name>
+    pg_p = policy_sub.add_parser("get", help="Show a policy and its rules")
+    pg_p.add_argument("name", help="Policy name")
+    pg_p.add_argument("--json", action="store_true", dest="json", help="Output as JSON")
+    pg_p.set_defaults(func=_cmd_policy_get)
+
+    # policy remove <name>
+    pr_p = policy_sub.add_parser("remove", help="Remove a policy")
+    pr_p.add_argument("name", help="Policy name")
+    pr_p.add_argument("--json", action="store_true", dest="json", help="Output as JSON")
+    pr_p.set_defaults(func=_cmd_policy_remove)
+
+    # policy rule-add --policy <name> --rule-id <id> ...
+    pra_p = policy_sub.add_parser("rule-add", help="Add a rule to a policy")
+    pra_p.add_argument("--policy", required=True, help="Policy name")
+    pra_p.add_argument("--rule-id", required=True, help="Rule identifier")
+    pra_p.add_argument("--condition", default="", help="Rule condition")
+    pra_p.add_argument("--action", default="advisory", help="Rule action")
+    pra_p.add_argument("--priority", type=int, default=0, help="Rule priority")
+    pra_p.add_argument("--enforcement", default="advisory", help="Rule enforcement level")
+    pra_p.add_argument("--json", action="store_true", dest="json", help="Output as JSON")
+    pra_p.set_defaults(func=_cmd_policy_rule_add)
+
+    # policy check <subject>
+    pc_p = policy_sub.add_parser("check", help="Evaluate compliance of a subject")
+    pc_p.add_argument("subject", help="Subject to evaluate (e.g. repo-1, project-x)")
+    pc_p.add_argument("--json", action="store_true", dest="json", help="Output as JSON")
+    pc_p.set_defaults(func=_cmd_policy_check)
+
 
 __all__ = [
     "_cmd_authority",
@@ -1382,6 +1575,12 @@ __all__ = [
     "_cmd_list",
     "_cmd_military",
     "_cmd_navigate",
+    "_cmd_policy_add",
+    "_cmd_policy_check",
+    "_cmd_policy_get",
+    "_cmd_policy_list",
+    "_cmd_policy_remove",
+    "_cmd_policy_rule_add",
     "_cmd_postal",
     "_cmd_relations",
     "_cmd_service",
