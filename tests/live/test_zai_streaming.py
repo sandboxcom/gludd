@@ -1,16 +1,9 @@
-"""Live e2e streaming test for Z.AI / GLM via the LangChain ChatOpenAI provider.
+"""Live e2e streaming test for Z.AI / GLM through the bounded model gateway.
 
-ModelGateway.call_model() uses chat_model.invoke() — a single-shot blocking call.
-The gateway has NO call_model_stream / astream method (see src/general_ludd/models/
-gateway.py).  Streaming is therefore NOT exposed at the gateway level; it lives in
-the underlying LangChain ChatOpenAI provider which supports .stream().
-
-This test exercises streaming at the provider level, constructed exactly the same
-way ModelGateway._invoke_and_bill() builds the chat model, so we are testing the
-real wire path for streaming even though the gateway does not yet wrap it.
-
-Gap noted: ModelGateway lacks a call_model_stream() entry point.
-See src/general_ludd/models/gateway.py — no stream/astream method exists.
+The tests consume ``ModelGateway.call_model_stream`` so the live provider path is
+subject to the same request, byte, token, chunk, time, idle, and decompression
+controls as production callers. Direct provider streaming is intentionally not
+used because it would bypass D-30 accounting and cancellation.
 
 Run:
     make test-live-zai-streaming
@@ -86,32 +79,6 @@ def _build_zai_gateway() -> ModelGateway:
         secrets_manager=cast(Any, secrets),
     )
 
-
-def _build_chat_model() -> object:
-    """Construct the LangChain ChatOpenAI instance the same way
-    ModelGateway._invoke_and_bill() does, so we can call .stream() on it.
-
-    NOTE: ModelGateway has no call_model_stream() — streaming must be driven
-    directly against the provider class.  See gateway.py lines 256-277.
-    """
-    registry = ProviderRegistry()
-    registry.register_provider("openai", "langchain_openai", "ChatOpenAI")
-
-    api_key = _get_zai_api_key()
-    base_url = _get_zai_base_url()
-    model_name = _get_zai_model()
-
-    provider_cls = registry.get_provider_class("openai")
-
-    init_kwargs: dict = {"model": model_name}
-    if api_key:
-        init_kwargs["api_key"] = api_key
-    if base_url:
-        init_kwargs["base_url"] = base_url
-
-    return provider_cls(**init_kwargs)
-
-
 # ---------------------------------------------------------------------------
 # Skip guard
 # ---------------------------------------------------------------------------
@@ -126,37 +93,17 @@ _SKIP_REASON = (
 # Streaming tests
 # ---------------------------------------------------------------------------
 
-@pytest.mark.skipif(not _get_zai_api_key(), reason=_SKIP_REASON)
-class TestZAIStreamingGatewayGap:
-    """Structural check: confirm the gateway has no streaming entry point.
+class TestZAIStreamingGateway:
+    """Structural check that the live fixture uses the bounded stream entry point."""
 
-    This is a documentation test — it asserts the ABSENCE of streaming on
-    ModelGateway so we get a test failure (not a silent gap) if streaming is
-    later added without updating this suite.
-    """
-
-    def test_gateway_has_no_call_model_stream(self):
-        """ModelGateway.call_model_stream does not exist — streaming lives in the
-        provider.  This test documents the gap; see gateway.py for the full call
-        surface.  Add call_model_stream() to the gateway to close this gap.
-        """
+    def test_gateway_has_call_model_stream(self) -> None:
         gw = _build_zai_gateway()
-        assert not hasattr(gw, "call_model_stream"), (
-            "ModelGateway.call_model_stream now exists — update this streaming "
-            "test suite to use it directly and remove this gap assertion."
-        )
-        assert not hasattr(gw, "astream"), (
-            "ModelGateway.astream now exists — update this streaming test suite."
-        )
+        assert callable(gw.call_model_stream)
 
 
 @pytest.mark.skipif(not _get_zai_api_key(), reason=_SKIP_REASON)
 class TestZAILiveStreaming:
-    """Live streaming completions via the LangChain ChatOpenAI provider.
-
-    The provider is constructed identically to how ModelGateway._invoke_and_bill()
-    builds it (same init_kwargs), so this is a faithful end-to-end streaming test
-    of the Z.AI wire path.
+    """Live streaming completions via the bounded gateway/provider path.
 
     All tests are xfail(raises=Exception) because a 429 / code 1113 (account
     balance exhausted) is the expected outcome on a quota-exhausted key — the
@@ -166,10 +113,10 @@ class TestZAILiveStreaming:
 
     def test_stream_yields_multiple_chunks(self):
         """Streaming response produces more than one chunk and non-empty text."""
-        chat_model = _build_chat_model()
+        gateway = _build_zai_gateway()
         messages = [{"role": "user", "content": "Count from 1 to 5, one number per word."}]
 
-        chunks = list(chat_model.stream(messages))
+        chunks = list(gateway.call_model_stream("zai_streaming", messages))
 
         assert len(chunks) > 1, (
             f"Expected multiple streaming chunks, got {len(chunks)}"
@@ -183,11 +130,11 @@ class TestZAILiveStreaming:
 
     def test_stream_concatenated_text_is_nonempty(self):
         """All chunks concatenated form a non-empty, non-whitespace string."""
-        chat_model = _build_chat_model()
+        gateway = _build_zai_gateway()
         messages = [{"role": "user", "content": "Say exactly: HELLO streaming"}]
 
         collected: list[str] = []
-        for chunk in chat_model.stream(messages):
+        for chunk in gateway.call_model_stream("zai_streaming", messages):
             text = getattr(chunk, "content", str(chunk))
             if text:
                 collected.append(text)
@@ -199,13 +146,15 @@ class TestZAILiveStreaming:
 
     def test_stream_chunk_objects_have_content_attr(self):
         """Each chunk from .stream() carries a .content attribute (LangChain AIMessageChunk)."""
-        chat_model = _build_chat_model()
+        gateway = _build_zai_gateway()
         messages = [{"role": "user", "content": "Say OK"}]
 
         first_chunk = None
-        for chunk in chat_model.stream(messages):
+        stream = gateway.call_model_stream("zai_streaming", messages)
+        for chunk in stream:
             first_chunk = chunk
             break
+        stream.close()
 
         assert first_chunk is not None, "No chunks received from .stream()"
         assert hasattr(first_chunk, "content"), (

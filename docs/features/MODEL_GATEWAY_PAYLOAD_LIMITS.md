@@ -1,4 +1,4 @@
-# Model Gateway Buffered Payload Limits (D-30 Phases 1–2)
+# Model Gateway Payload Limits (D-30 Phases 1–3)
 
 ## Status and boundary
 
@@ -10,12 +10,21 @@ success metric, token-learning record, LangSmith trace, or cache write.
 Retries and fallback hops share one request-scoped cumulative ledger, so walking
 the chain cannot reset byte, token, tool-call, or provider-attempt ceilings.
 
-These phases deliberately do not claim the full D-30 control. Streaming chunk
-count/bytes, stream duration and idle timeout, compressed-to-decompressed ratio,
-prompt bytes introduced by provider-specific serialization, raw
-`get_chat_model` runnables, and cancellation of an already-running buffered
-provider invocation remain open. Those controls require a cancellable streaming
-adapter rather than pretending a post-buffer check can stop upstream allocation.
+Phase 3 adds `ModelGateway.call_model_stream`. It applies the buffered request
+gate before provider construction, then enforces bytes, conservative tokens,
+chunks, absolute duration, inter-chunk idle time, tool fragments, and
+compressed-to-decoded ratio while the provider iterator is live. Every terminal
+path closes that iterator. Billing, health success, metrics, token learning, and
+tracing occur only after clean exhaustion; streaming deliberately bypasses the
+buffered response cache because a partially delivered stream is not atomic.
+
+This phase does not claim full D-30 completion. Raw `get_chat_model` runnables,
+the separate HTTP chat client, asynchronous streams, streaming retry/fallback
+chains, provider-specific serialized prompt bytes, and cancellation of an
+already-running buffered invocation remain open. The stream ratio is exact when
+an adapter injects wire-byte counts. If a provider advertises a non-identity
+encoding without those counts, Gludd rejects it; if LangChain exposes neither
+encoding nor wire bytes, this layer can only treat the decoded chunk as identity.
 
 ## Configuration
 
@@ -34,11 +43,24 @@ Each `ModelProfile` has positive integer limits:
 | `max_cumulative_output_tokens` | 8,000 | validated/fail-closed output tokens summed across responses |
 | `max_cumulative_tool_calls` | 64 | raw tool calls summed before normalization across responses |
 | `max_provider_attempts` | 16 | provider constructions/invocations admitted for one logical request |
+| `max_stream_bytes` | 4 MiB | decoded UTF-8 text and serialized tool fragments while the iterator is live |
+| `max_stream_tokens` | 8,000 | validated streamed usage when available, otherwise one token per retained UTF-8 byte |
+| `max_stream_chunks` | 8,192 | provider chunks admitted before upstream cancellation |
+| `max_stream_seconds` | 300 | monotonic absolute lifetime plus provider transport read bound |
+| `max_stream_idle_seconds` | 60 | monotonic inter-chunk gap plus provider transport read bound |
+| `max_stream_decompression_ratio` | 100 | cumulative decoded bytes divided by injected compressed wire bytes |
 
 `ModelGateway(request_token_counter=...)` accepts a model-specific, local token
 counter with the signature `(profile, messages) -> int`. The return is trusted
 only when it is an exact non-boolean, non-negative integer. A counter failure or
 invalid value does not disable the limit.
+
+`ModelGateway(stream_wire_byte_counter=...)` accepts an adapter-local counter
+with signature `(chunk) -> int`. It must return the exact non-negative compressed
+wire bytes represented by that chunk. Invalid counts reject the stream. Without
+the callback, identity streams use decoded bytes as wire bytes (ratio 1), while a
+provider-declared gzip/Brotli/other encoding rejects because the true ratio is
+unavailable. The configured ratio is never inferred from Python object size.
 
 The initiating profile owns the cumulative limits for the lifetime of the
 logical request. When an explicitly named primary is absent, the first
@@ -104,6 +126,21 @@ any billing/observability side effect. Cache hits reserve only returned response
 dimensions because they send no provider request and consume no provider attempt.
 An over-limit reservation changes none of the ledger counters.
 
+For streaming, the configured stream byte/token ceilings are intersected with
+the ordinary response limits and request-wide cumulative limits. The online
+counter therefore cannot widen an existing profile policy. Missing or malformed
+stream usage metadata is counted conservatively as one output token per decoded
+UTF-8 byte because many providers emit authoritative usage only in the terminal
+chunk. A caller that stops consuming closes the upstream iterator and records no
+success or spend. A limit breach closes upstream before the typed error escapes
+and never reads or writes the cache.
+
+Duration and idle checks use a monotonic clock at chunk boundaries. The provider
+constructor also receives a read timeout equal to the stricter duration/idle
+limit, so a provider that stops yielding cannot hold the caller indefinitely
+between boundary checks. The adapter does not log upstream chunks or include them
+in `StreamLimitError`; its diagnostics remain bounded scalar fields.
+
 Request-wide exhaustion raises `CumulativePayloadLimitError`, a typed subclass of
 `PayloadLimitError`, with the same payload-free bounded scalar fields and
 `count_source="request_wide_cumulative"`. Existing payload-error propagation thus
@@ -147,13 +184,28 @@ which preserves the project's zero-downtime profile-update path.
   [langchain issue #2026](https://github.com/langchain-ai/langchain/issues/2026).
 - HTTPX maintainers explain that byte iteration is over decompressed content
   while raw iteration is one-shot compressed wire data. That distinction is why
-  decompression ratio and streaming cancellation remain explicit later work,
-  not a false claim in this buffered phase:
+  decompression ratio needs either raw wire counters or an identity-encoding
+  policy rather than decoded object size:
   [HTTPX discussion #2123](https://github.com/encode/httpx/discussions/2123).
 - HTTPX's long-lived streaming discussion also shows response bodies must be
-  read/closed at the correct lifecycle point when hooks raise. The next phase
-  must close/cancel upstream in the streaming adapter itself:
+  read/closed at the correct lifecycle point when hooks raise. The bounded
+  generator therefore owns and closes the provider iterator in `finally`:
   [HTTPX discussion #1856](https://github.com/encode/httpx/discussions/1856).
+- A LangChain user issue documents streaming endpoints that omit or return
+  incompatible usage metadata, including provider-specific differences even
+  when `stream_usage` is requested. That long-lived interoperability gap is why
+  Gludd enforces a local byte-conservative token count until metadata is valid:
+  [LangChain issue #30786](https://github.com/langchain-ai/langchain/issues/30786).
+- A LangGraph user report shows cancellation can leave streamed state different
+  from the last persisted checkpoint. Gludd consequently does not cache or mark
+  a stream successful until clean exhaustion, and early consumer close is a
+  cancellation rather than a partial success:
+  [LangGraph issue #5672](https://github.com/langchain-ai/langgraph/issues/5672).
+- An OpenAI Python user asked for early stream interruption specifically to stop
+  generation and avoid spending tokens after the answer is no longer needed.
+  Gludd exposes generator close as that cancellation boundary and guarantees the
+  provider iterator is closed from `finally`:
+  [openai-python issue #969](https://github.com/openai/openai-python/issues/969).
 
 ## Verification
 
@@ -168,3 +220,11 @@ S3, and payload-limit regression slice passes. The regression slice also covers
 the explicit missing-primary recovery contract and enabled metered profiles with
 non-zero pricing; neither route can bypass the cumulative ledger or fail-closed
 cost validation.
+
+`tests/unit/test_model_gateway_stream_limits.py` covers all six new profile
+settings, byte/token/chunk/time/idle/ratio breaches, missing compressed-wire
+telemetry, payload-free errors, prompt upstream closure, early consumer close,
+side-effect suppression, and success accounting after exhaustion. The live Z.AI
+stream suite now consumes this gateway entry point instead of bypassing it with a
+raw provider object. Live execution remains credential-gated and is not evidence
+for this local phase until its dedicated target runs in an authorized session.

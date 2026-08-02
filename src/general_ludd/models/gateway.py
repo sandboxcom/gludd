@@ -7,7 +7,8 @@ import json
 import logging
 import math
 import threading
-from collections.abc import Callable
+import time
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, cast
 
@@ -54,9 +55,24 @@ DEFAULT_MAX_CUMULATIVE_RESPONSE_BYTES = DEFAULT_MAX_RESPONSE_BYTES
 DEFAULT_MAX_CUMULATIVE_OUTPUT_TOKENS = DEFAULT_MAX_OUTPUT_TOKENS
 DEFAULT_MAX_CUMULATIVE_TOOL_CALLS = DEFAULT_MAX_TOOL_CALLS
 DEFAULT_MAX_PROVIDER_ATTEMPTS = 16
+DEFAULT_MAX_STREAM_BYTES = DEFAULT_MAX_RESPONSE_BYTES
+DEFAULT_MAX_STREAM_TOKENS = DEFAULT_MAX_OUTPUT_TOKENS
+DEFAULT_MAX_STREAM_CHUNKS = 8192
+DEFAULT_MAX_STREAM_SECONDS = 300
+DEFAULT_MAX_STREAM_IDLE_SECONDS = 60
+DEFAULT_MAX_STREAM_DECOMPRESSION_RATIO = 100
 
 PayloadStage = Literal["request", "response"]
-PayloadDimension = Literal["bytes", "tokens", "tool_calls", "provider_attempts"]
+PayloadDimension = Literal[
+    "bytes",
+    "tokens",
+    "tool_calls",
+    "provider_attempts",
+    "chunks",
+    "duration_seconds",
+    "idle_seconds",
+    "decompression_ratio",
+]
 PayloadSource = Literal["gateway", "provider", "cache"]
 
 
@@ -241,6 +257,10 @@ class CumulativePayloadLimitError(PayloadLimitError):
     """
 
 
+class StreamLimitError(PayloadLimitError):
+    """Typed, payload-free rejection for an in-progress provider stream."""
+
+
 @dataclass
 class _RequestPayloadBudget:
     """Thread-safe accounting shared by every provider hop of one request."""
@@ -417,6 +437,12 @@ class ModelProfile(BaseModel):
     max_cumulative_output_tokens: int = DEFAULT_MAX_CUMULATIVE_OUTPUT_TOKENS
     max_cumulative_tool_calls: int = DEFAULT_MAX_CUMULATIVE_TOOL_CALLS
     max_provider_attempts: int = DEFAULT_MAX_PROVIDER_ATTEMPTS
+    max_stream_bytes: int = DEFAULT_MAX_STREAM_BYTES
+    max_stream_tokens: int = DEFAULT_MAX_STREAM_TOKENS
+    max_stream_chunks: int = DEFAULT_MAX_STREAM_CHUNKS
+    max_stream_seconds: int = DEFAULT_MAX_STREAM_SECONDS
+    max_stream_idle_seconds: int = DEFAULT_MAX_STREAM_IDLE_SECONDS
+    max_stream_decompression_ratio: int = DEFAULT_MAX_STREAM_DECOMPRESSION_RATIO
     cost_per_input_token: float = 0.0
     cost_per_output_token: float = 0.0
     api_metered: bool = True
@@ -461,6 +487,12 @@ class ModelProfile(BaseModel):
         "max_cumulative_output_tokens",
         "max_cumulative_tool_calls",
         "max_provider_attempts",
+        "max_stream_bytes",
+        "max_stream_tokens",
+        "max_stream_chunks",
+        "max_stream_seconds",
+        "max_stream_idle_seconds",
+        "max_stream_decompression_ratio",
         "fallback_max_concurrency",
     )
     @classmethod
@@ -735,6 +767,7 @@ class ModelGateway:
         langsmith_tracer: LangSmithTracer | None = None,
         max_fallback_depth: int = 3,
         request_token_counter: Callable[[ModelProfile, list[dict[str, str]]], int] | None = None,
+        stream_wire_byte_counter: Callable[[object], int] | None = None,
     ) -> None:
         self._profiles: dict[str, ModelProfile] = {}
         if profiles:
@@ -757,6 +790,7 @@ class ModelGateway:
         self._langsmith_tracer = langsmith_tracer
         self._max_fallback_depth = max_fallback_depth
         self._request_token_counter = request_token_counter
+        self._stream_wire_byte_counter = stream_wire_byte_counter
         # Gateway-wide failover event log (not tied to any single profile's
         # own chain config): every hop walked by _walk_fallbacks is recorded
         # here for audit/debugging, independent of whether a metrics collector
@@ -1370,6 +1404,499 @@ class ModelGateway:
             input_tokens=input_tokens,
             **kwargs,
         )
+
+    @staticmethod
+    def _stream_content_encoding(chunk: object) -> str:
+        """Return a normalized provider-declared content encoding, if exposed."""
+        metadata = getattr(chunk, "response_metadata", None)
+        if not isinstance(metadata, dict):
+            return ""
+        encoding = metadata.get("content_encoding") or metadata.get("content-encoding")
+        headers = metadata.get("headers")
+        if not encoding and isinstance(headers, dict):
+            encoding = headers.get("content-encoding") or headers.get("Content-Encoding")
+        return str(encoding or "").strip().lower()
+
+    @staticmethod
+    def _stream_chunk_payload(chunk: object) -> tuple[str, int, int]:
+        """Return retained text, decoded bytes, and raw tool-fragment count."""
+        content_obj = getattr(chunk, "content", "")
+        if isinstance(content_obj, str):
+            content = content_obj
+        else:
+            content = json.dumps(
+                content_obj,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+                default=str,
+            )
+        decoded_bytes = len(content.encode("utf-8"))
+        raw_tool_calls = getattr(chunk, "tool_calls", None)
+        raw_tool_call_count = 0
+        if isinstance(raw_tool_calls, (list, tuple)) and raw_tool_calls:
+            raw_tool_call_count = len(raw_tool_calls)
+            decoded_bytes += len(
+                json.dumps(
+                    raw_tool_calls,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                    default=str,
+                ).encode("utf-8")
+            )
+        return content, decoded_bytes, raw_tool_call_count
+
+    def call_model_stream(
+        self,
+        profile_id: str,
+        messages: list[dict[str, str]],
+        *,
+        estimated_cost: float = 0.0,
+        budget_remaining: float = float("inf"),
+        requested_max_output_tokens: int | None = None,
+        tools: list[dict[str, object]] | None = None,
+        project_id: str | None = None,
+        **kwargs: Any,
+    ) -> Iterator[object]:
+        """Yield a bounded provider stream and finalize accounting on exhaustion.
+
+        The iterator is closed on every terminal path, including a caller closing
+        this generator early. Cache lookup/write is intentionally absent: a
+        partially delivered stream is not an atomic cache value. Billing and all
+        success side effects happen only after clean upstream exhaustion.
+        """
+        profile = self._profiles.get(profile_id)
+        if profile is None:
+            raise ValueError(f"Profile '{profile_id}' not found")
+        if self._pause_controller is not None and self._pause_controller.is_paused(
+            "model", profile_id
+        ):
+            raise ModelPausedError(f"Model profile '{profile_id}' is paused — call refused")
+        if (
+            self._health_tracker is not None
+            and not self._health_tracker.is_healthy(profile_id, admit_probe=False)
+        ):
+            raise CircuitBreakerOpenError(
+                f"Profile '{profile_id}' circuit is open; refusing call"
+            )
+
+        request_kwargs = dict(kwargs)
+        if tools:
+            request_kwargs["tools"] = tools
+        request_bytes, input_tokens_for_limit = self._enforce_request_limits(
+            profile,
+            profile_id,
+            messages,
+            request_kwargs,
+        )
+        if not self.check_budget(
+            profile_id,
+            estimated_cost,
+            budget_remaining,
+            messages=messages,
+            requested_max_output_tokens=requested_max_output_tokens,
+        ):
+            raise BudgetExceededError(
+                f"Call to '{profile_id}' rejected: over budget "
+                f"(estimated={estimated_cost}, remaining={budget_remaining}, "
+                f"profile_budget={profile.run_budget_usd}"
+            )
+
+        request_payload_budget = _RequestPayloadBudget.from_profile(profile)
+        request_payload_budget.reserve_provider_attempt(
+            profile_id,
+            request_bytes=request_bytes,
+            input_tokens=input_tokens_for_limit,
+        )
+
+        provider_name = profile.provider
+        registry = self._registry
+        if registry is not None and not registry.is_installed(provider_name):
+            registry.install_provider(provider_name)
+            raise ImportError(
+                f"Provider '{provider_name}' is not installed. A dependency update todo has been created."
+            )
+        if registry is None:
+            raise ValueError(f"No provider registry configured for '{profile_id}'")
+        provider_cls = registry.get_provider_class(provider_name)
+
+        job_secrets = self._resolver_for_project(str(project_id) if project_id else None)
+        api_key: str | None = None
+        if job_secrets and profile.credential_alias:
+            api_key = job_secrets.resolve(profile.credential_alias)
+
+        init_kwargs: dict[str, object] = {"model": profile.model_name}
+        if api_key:
+            init_kwargs["api_key"] = api_key
+        resolved_base_url = ""
+        if profile.api_base_alias and job_secrets:
+            base_url = job_secrets.resolve(profile.api_base_alias)
+            if base_url:
+                from general_ludd.security.auth import is_safe_fetch_url
+
+                if not is_safe_fetch_url(base_url):
+                    raise SSRFRejectionError(
+                        "SSRF guard: refusing blocked api_base_alias URL "
+                        f"(redacted) for profile '{profile_id}'"
+                    )
+                resolved_base_url = base_url
+                init_kwargs["base_url"] = base_url
+
+        provider_kwargs = dict(kwargs)
+        work_type_obj = provider_kwargs.pop("work_type", "unknown")
+        work_type = str(work_type_obj) if work_type_obj else "unknown"
+        caller_base_url = provider_kwargs.pop("base_url", None)
+        caller_api_key = provider_kwargs.pop("api_key", None)
+        provider_kwargs.pop("request_timeout", None)
+        provider_kwargs.pop("timeout", None)
+        if caller_base_url is not None:
+            logger.warning(
+                "Ignoring caller-supplied base_url for streamed profile=%s",
+                profile_id,
+            )
+        if caller_api_key is not None:
+            logger.warning(
+                "Ignoring caller-supplied api_key for streamed profile=%s",
+                profile_id,
+            )
+
+        extra_body_obj = provider_kwargs.pop("extra_body", {})
+        extra_body = dict(extra_body_obj) if isinstance(extra_body_obj, dict) else {}
+        for key in (
+            "guided_json",
+            "guided_regex",
+            "guided_choice",
+            "guided_grammar",
+            "guided_whitespace_pattern",
+        ):
+            value = provider_kwargs.pop(key, None)
+            if value is not None:
+                extra_body[key] = value
+        if extra_body:
+            provider_kwargs["extra_body"] = extra_body
+
+        import httpx as _httpx
+
+        stream_seconds = _positive_profile_limit(
+            profile,
+            "max_stream_seconds",
+            DEFAULT_MAX_STREAM_SECONDS,
+        )
+        idle_seconds = _positive_profile_limit(
+            profile,
+            "max_stream_idle_seconds",
+            DEFAULT_MAX_STREAM_IDLE_SECONDS,
+        )
+        transport_wait = float(min(stream_seconds, idle_seconds))
+        init_kwargs["request_timeout"] = _httpx.Timeout(
+            connect=min(10.0, transport_wait),
+            read=transport_wait,
+            write=min(60.0, transport_wait),
+            pool=min(10.0, transport_wait),
+        )
+        init_kwargs.update(provider_kwargs)
+        chat_model = provider_cls(**init_kwargs)
+        if tools:
+            if not hasattr(chat_model, "bind_tools"):
+                raise ValueError(
+                    f"Provider for profile '{profile_id}' does not support streamed tools"
+                )
+            chat_model = chat_model.bind_tools(tools)
+
+        try:
+            upstream = iter(chat_model.stream(messages))
+        except Exception as exc:
+            _redact_url_in_exception(exc, resolved_base_url)
+            self.record_timeout_on_failure(profile_id, exc)
+            raise
+
+        max_stream_bytes = min(
+            _positive_profile_limit(
+                profile,
+                "max_stream_bytes",
+                DEFAULT_MAX_STREAM_BYTES,
+            ),
+            _positive_profile_limit(
+                profile,
+                "max_response_bytes",
+                DEFAULT_MAX_RESPONSE_BYTES,
+            ),
+            request_payload_budget.max_response_bytes,
+        )
+        max_stream_tokens = min(
+            _positive_profile_limit(
+                profile,
+                "max_stream_tokens",
+                DEFAULT_MAX_STREAM_TOKENS,
+            ),
+            _positive_profile_limit(
+                profile,
+                "max_output_tokens",
+                DEFAULT_MAX_OUTPUT_TOKENS,
+            ),
+            request_payload_budget.max_output_tokens,
+        )
+        max_stream_chunks = _positive_profile_limit(
+            profile,
+            "max_stream_chunks",
+            DEFAULT_MAX_STREAM_CHUNKS,
+        )
+        max_decompression_ratio = _positive_profile_limit(
+            profile,
+            "max_stream_decompression_ratio",
+            DEFAULT_MAX_STREAM_DECOMPRESSION_RATIO,
+        )
+        max_tool_calls = _positive_profile_limit(
+            profile,
+            "max_tool_calls",
+            DEFAULT_MAX_TOOL_CALLS,
+        )
+
+        total_bytes = 0
+        total_wire_bytes = 0
+        total_chunks = 0
+        total_tool_calls = 0
+        full_content: list[str] = []
+        latest_usage: dict[str, object] = {}
+        started_at = time.monotonic()
+        last_chunk_at = started_at
+        completed = False
+        try:
+            for chunk in upstream:
+                now = time.monotonic()
+                elapsed = now - started_at
+                idle_elapsed = now - last_chunk_at
+                if elapsed > stream_seconds:
+                    raise StreamLimitError(
+                        profile_id=profile_id,
+                        stage="response",
+                        dimension="duration_seconds",
+                        actual=max(stream_seconds + 1, math.ceil(elapsed)),
+                        limit=stream_seconds,
+                        source="provider",
+                        count_source="monotonic_clock",
+                    )
+                if idle_elapsed > idle_seconds:
+                    raise StreamLimitError(
+                        profile_id=profile_id,
+                        stage="response",
+                        dimension="idle_seconds",
+                        actual=max(idle_seconds + 1, math.ceil(idle_elapsed)),
+                        limit=idle_seconds,
+                        source="provider",
+                        count_source="monotonic_clock",
+                    )
+                last_chunk_at = now
+
+                try:
+                    chunk_content, chunk_bytes, chunk_tool_calls = (
+                        self._stream_chunk_payload(chunk)
+                    )
+                except Exception as exc:
+                    raise StreamLimitError(
+                        profile_id=profile_id,
+                        stage="response",
+                        dimension="bytes",
+                        actual=max_stream_bytes + 1,
+                        limit=max_stream_bytes,
+                        source="provider",
+                        count_source="unserializable_stream_chunk",
+                    ) from exc
+
+                next_chunks = total_chunks + 1
+                next_bytes = total_bytes + chunk_bytes
+                next_tool_calls = total_tool_calls + chunk_tool_calls
+                if next_chunks > max_stream_chunks:
+                    raise StreamLimitError(
+                        profile_id=profile_id,
+                        stage="response",
+                        dimension="chunks",
+                        actual=next_chunks,
+                        limit=max_stream_chunks,
+                        source="provider",
+                        count_source="provider_stream_chunks",
+                    )
+                if next_bytes > max_stream_bytes:
+                    raise StreamLimitError(
+                        profile_id=profile_id,
+                        stage="response",
+                        dimension="bytes",
+                        actual=next_bytes,
+                        limit=max_stream_bytes,
+                        source="provider",
+                        count_source="retained_stream_utf8",
+                    )
+                if next_tool_calls > max_tool_calls:
+                    raise StreamLimitError(
+                        profile_id=profile_id,
+                        stage="response",
+                        dimension="tool_calls",
+                        actual=next_tool_calls,
+                        limit=max_tool_calls,
+                        source="provider",
+                        count_source="provider_stream_tool_fragments",
+                    )
+
+                usage_obj = getattr(chunk, "usage_metadata", None)
+                if isinstance(usage_obj, dict) and usage_obj:
+                    latest_usage = usage_obj
+                output_tokens_for_limit, token_source = self._response_token_count(
+                    latest_usage,
+                    next_bytes,
+                )
+                if output_tokens_for_limit > max_stream_tokens:
+                    raise StreamLimitError(
+                        profile_id=profile_id,
+                        stage="response",
+                        dimension="tokens",
+                        actual=output_tokens_for_limit,
+                        limit=max_stream_tokens,
+                        source="provider",
+                        count_source=token_source,
+                    )
+
+                if self._stream_wire_byte_counter is not None:
+                    try:
+                        wire_delta = self._stream_wire_byte_counter(chunk)
+                    except Exception as exc:
+                        raise StreamLimitError(
+                            profile_id=profile_id,
+                            stage="response",
+                            dimension="decompression_ratio",
+                            actual=max_decompression_ratio + 1,
+                            limit=max_decompression_ratio,
+                            source="provider",
+                            count_source="invalid_wire_byte_counter",
+                        ) from exc
+                    if type(wire_delta) is not int or wire_delta < 0 or (
+                        chunk_bytes > 0 and wire_delta == 0
+                    ):
+                        raise StreamLimitError(
+                            profile_id=profile_id,
+                            stage="response",
+                            dimension="decompression_ratio",
+                            actual=max_decompression_ratio + 1,
+                            limit=max_decompression_ratio,
+                            source="provider",
+                            count_source="invalid_wire_byte_counter",
+                        )
+                    ratio_source = "configured_wire_byte_counter"
+                else:
+                    encoding = self._stream_content_encoding(chunk)
+                    if encoding not in {"", "identity"}:
+                        raise StreamLimitError(
+                            profile_id=profile_id,
+                            stage="response",
+                            dimension="decompression_ratio",
+                            actual=max_decompression_ratio + 1,
+                            limit=max_decompression_ratio,
+                            source="provider",
+                            count_source="compressed_wire_bytes_unavailable",
+                        )
+                    wire_delta = chunk_bytes
+                    ratio_source = "identity_encoding"
+                next_wire_bytes = total_wire_bytes + wire_delta
+                decompression_ratio = (
+                    math.ceil(next_bytes / next_wire_bytes)
+                    if next_wire_bytes > 0
+                    else 0
+                )
+                if decompression_ratio > max_decompression_ratio:
+                    raise StreamLimitError(
+                        profile_id=profile_id,
+                        stage="response",
+                        dimension="decompression_ratio",
+                        actual=decompression_ratio,
+                        limit=max_decompression_ratio,
+                        source="provider",
+                        count_source=ratio_source,
+                    )
+
+                total_chunks = next_chunks
+                total_bytes = next_bytes
+                total_wire_bytes = next_wire_bytes
+                total_tool_calls = next_tool_calls
+                full_content.append(chunk_content)
+                yield chunk
+            completed = True
+        except PayloadLimitError:
+            raise
+        except Exception as exc:
+            _redact_url_in_exception(exc, resolved_base_url)
+            self.record_timeout_on_failure(profile_id, exc)
+            raise
+        finally:
+            close = getattr(upstream, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    logger.debug(
+                        "Provider stream close failed for profile=%s",
+                        profile_id,
+                    )
+
+        if not completed:
+            return
+        output_tokens_for_limit, _ = self._response_token_count(
+            latest_usage,
+            total_bytes,
+        )
+        request_payload_budget.reserve_response(
+            profile_id,
+            response_bytes=total_bytes,
+            output_tokens=output_tokens_for_limit,
+            tool_calls=total_tool_calls,
+        )
+        if not "".join(full_content).strip() and total_tool_calls == 0:
+            empty_exc = self._empty_response_error(profile_id)
+            self.record_timeout_on_failure(profile_id, empty_exc)
+            raise empty_exc
+
+        input_tokens = _coerce_token_count(
+            latest_usage.get("input_tokens", latest_usage.get("prompt_tokens", input_tokens_for_limit))
+        )
+        output_tokens = _coerce_token_count(
+            latest_usage.get(
+                "output_tokens",
+                latest_usage.get("completion_tokens", output_tokens_for_limit),
+            )
+        )
+        cost = (
+            input_tokens * profile.cost_per_input_token
+            + output_tokens * profile.cost_per_output_token
+        )
+        if self._budget_guard is not None:
+            self._budget_guard.record_spend(cost)
+        if self._health_tracker is not None:
+            self._health_tracker.record_success(profile_id)
+        if self._metrics_collector is not None and self._metrics_agent_id:
+            self._metrics_collector.record_model_call(
+                agent_id=self._metrics_agent_id,
+                model_id=profile_id,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                success=True,
+                cost_per_input_token=profile.cost_per_input_token,
+                cost_per_output_token=profile.cost_per_output_token,
+            )
+        default_token_tracker().record(work_type, input_tokens, output_tokens)
+        if self._langsmith_tracer is not None and self._langsmith_tracer.is_enabled():
+            self._langsmith_tracer.trace_call(
+                model_name=profile.model_name,
+                messages=messages,
+                response="".join(full_content),
+                tokens={"input": input_tokens, "output": output_tokens},
+                cost=cost,
+                metadata={
+                    "profile_id": profile_id,
+                    "provider": provider_name,
+                    "work_type": work_type,
+                    "project_id": str(project_id) if project_id else "",
+                    "streamed": "true",
+                },
+            )
 
     def _resolver_for_project(self, project_id: str | None) -> _SecretsResolver | None:
         """Return the secrets resolver scoped to ``project_id`` when possible.
