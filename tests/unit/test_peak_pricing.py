@@ -1,11 +1,14 @@
-"""Tests for budget/peak_pricing."""
+"""Tests for budget/peak_pricing and peak_pricing."""
 
 from __future__ import annotations
 
 import datetime
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+import yaml
 
 from general_ludd.budget.peak_pricing import (
     PeakPricingSchedule,
@@ -20,6 +23,15 @@ from general_ludd.budget.peak_pricing import (
     list_rate_tiers,
     next_off_peak_window,
     peak_rate_for_model,
+)
+from general_ludd.peak_pricing import (
+    ComputeInstance,
+    ProviderPricing,
+    ProviderRate,
+    build_provider_billing_table,
+    load_compute_instances,
+    load_provider_rates,
+    provider_rate_dict,
 )
 
 
@@ -526,3 +538,289 @@ class TestBackwardCompatTracker:
         t.record_call(10.0, 15.0)
         assert t.cumulative_savings == 0.0
         assert t.cumulative_full_cost == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Tests for general_ludd.peak_pricing (standalone provider rate module)
+# ---------------------------------------------------------------------------
+
+
+class TestProviderRate:
+    def test_basic_creation(self):
+        rate = ProviderRate(
+            provider="openai",
+            model_id="gpt-4o",
+            input_usd_per_1k=5.00,
+            output_usd_per_1k_peak=15.00,
+            output_usd_per_1k_offpeak=7.50,
+        )
+        assert rate.provider == "openai"
+        assert rate.model_id == "gpt-4o"
+        assert rate.input_usd_per_1k == 5.00
+        assert rate.output_usd_per_1k_peak == 15.00
+        assert rate.output_usd_per_1k_offpeak == 7.50
+        assert rate.context_window is None
+        assert rate.flat is False
+
+    def test_with_context_window(self):
+        rate = ProviderRate("openai", "gpt-4o", 5.0, 15.0, 7.5, context_window=128000)
+        assert rate.context_window == 128000
+
+    def test_flat_pricing(self):
+        rate = ProviderRate("openai", "gpt-4o", 5.0, 15.0, 7.5, flat=True)
+        assert rate.flat is True
+
+
+class TestProviderPricing:
+    def test_basic_creation(self):
+        pp = ProviderPricing(
+            provider="openai",
+            display_name="OpenAI",
+            billing="token",
+            source="https://openai.com/pricing",
+            flat=False,
+        )
+        assert pp.provider == "openai"
+        assert pp.display_name == "OpenAI"
+        assert pp.billing == "token"
+        assert pp.source == "https://openai.com/pricing"
+        assert pp.flat is False
+        assert pp.rates == []
+        assert pp.off_peak_windows == []
+
+    def test_with_rates(self):
+        pp = ProviderPricing(
+            provider="openai",
+            display_name="OpenAI",
+            billing="token",
+            source="",
+            flat=False,
+            rates=[
+                ProviderRate("openai", "gpt-4o", 5.0, 15.0, 7.5),
+                ProviderRate("openai", "gpt-4o-mini", 0.15, 0.60, 0.30),
+            ],
+        )
+        assert len(pp.rates) == 2
+
+    def test_with_off_peak_windows(self):
+        pp = ProviderPricing(
+            provider="openai",
+            display_name="OpenAI",
+            billing="token",
+            source="",
+            flat=False,
+            off_peak_windows=[{"days": "mon-fri", "start": "18:00", "end": "08:00"}],
+        )
+        assert len(pp.off_peak_windows) == 1
+        assert pp.off_peak_windows[0]["days"] == "mon-fri"
+
+
+class TestComputeInstance:
+    def test_basic_creation(self):
+        ci = ComputeInstance(
+            provider="aws",
+            key="p4d.24xlarge",
+            gpu="A100",
+            gpu_count=8,
+            on_demand_usd_hr=32.77,
+        )
+        assert ci.provider == "aws"
+        assert ci.key == "p4d.24xlarge"
+        assert ci.gpu == "A100"
+        assert ci.gpu_count == 8
+        assert ci.on_demand_usd_hr == 32.77
+        assert ci.vcpus is None
+        assert ci.memory_gb is None
+        assert ci.spot_discount is None
+
+    def test_with_optionals(self):
+        ci = ComputeInstance("aws", "p4d.24xlarge", "A100", 8, 32.77, vcpus=96, memory_gb=1152, spot_discount=0.7)
+        assert ci.vcpus == 96
+        assert ci.memory_gb == 1152
+        assert ci.spot_discount == 0.7
+
+
+class TestLoadProviderRates:
+    def test_missing_file_returns_empty_list(self):
+        with patch("general_ludd.peak_pricing._config_dir") as mock_dir:
+            mock_dir.return_value = Path("/nonexistent/path")
+            result = load_provider_rates()
+            assert result == []
+
+    def test_loads_providers_yml(self):
+        temp_dir = Path(tempfile.mkdtemp())
+        providers_data = {
+            "pricing": {
+                "openai": {
+                    "display_name": "OpenAI",
+                    "billing": "token",
+                    "source": "https://openai.com",
+                    "flat": False,
+                    "off_peak_windows": [
+                        {"days": "mon-fri", "start": "18:00", "end": "08:00"},
+                    ],
+                    "rates": [
+                        {
+                            "model_id": "gpt-4o",
+                            "input_usd_per_1k": 5.00,
+                            "output_usd_per_1k_peak": 15.00,
+                            "output_usd_per_1k_offpeak": 7.50,
+                        },
+                    ],
+                },
+                "anthropic": {
+                    "display_name": "Anthropic",
+                    "billing": "token",
+                    "source": "https://anthropic.com",
+                    "flat": True,
+                    "rates": [
+                        {
+                            "model_id": "claude-sonnet",
+                            "input_usd_per_1k": 3.00,
+                            "output_usd_per_1k_peak": 15.00,
+                            "output_usd_per_1k_offpeak": 7.50,
+                            "context_window": 200000,
+                        },
+                    ],
+                },
+            }
+        }
+        (temp_dir / "providers.yml").write_text(yaml.dump(providers_data))
+        with patch("general_ludd.peak_pricing._config_dir", return_value=temp_dir):
+            results = load_provider_rates()
+        assert len(results) == 2
+        openai = next(pp for pp in results if pp.provider == "openai")
+        assert openai.display_name == "OpenAI"
+        assert openai.flat is False
+        assert len(openai.rates) == 1
+        assert len(openai.off_peak_windows) == 1
+        anthropic = next(pp for pp in results if pp.provider == "anthropic")
+        assert anthropic.flat is True
+        assert anthropic.rates[0].context_window == 200000
+
+    def test_loads_empty_pricing_section(self):
+        temp_dir = Path(tempfile.mkdtemp())
+        (temp_dir / "providers.yml").write_text("pricing: {}\n")
+        with patch("general_ludd.peak_pricing._config_dir", return_value=temp_dir):
+            results = load_provider_rates()
+        assert results == []
+
+
+class TestLoadComputeInstances:
+    def test_missing_file_returns_empty_list(self):
+        with patch("general_ludd.peak_pricing._config_dir") as mock_dir:
+            mock_dir.return_value = Path("/nonexistent/path")
+            result = load_compute_instances()
+            assert result == []
+
+    def test_loads_compute_yml(self):
+        temp_dir = Path(tempfile.mkdtemp())
+        compute_data = {
+            "instances": {
+                "aws": {
+                    "entries": [
+                        {
+                            "key": "p4d.24xlarge",
+                            "gpu": "A100",
+                            "gpu_count": 8,
+                            "on_demand_usd_hr": 32.77,
+                            "vcpus": 96,
+                            "memory_gb": 1152,
+                            "spot_discount": 0.7,
+                        },
+                    ],
+                },
+                "gcp": {
+                    "entries": [
+                        {
+                            "key": "a2-highgpu-8g",
+                            "gpu": "A100",
+                            "gpu_count": 8,
+                            "on_demand_usd_hr": 29.45,
+                        },
+                    ],
+                },
+            }
+        }
+        (temp_dir / "compute.yml").write_text(yaml.dump(compute_data))
+        with patch("general_ludd.peak_pricing._config_dir", return_value=temp_dir):
+            results = load_compute_instances()
+        assert len(results) == 2
+        aws = [ci for ci in results if ci.provider == "aws"]
+        assert len(aws) == 1
+        assert aws[0].vcpus == 96
+        assert aws[0].spot_discount == 0.7
+        gcp = [ci for ci in results if ci.provider == "gcp"]
+        assert len(gcp) == 1
+        assert gcp[0].vcpus is None
+        assert gcp[0].spot_discount is None
+
+
+class TestProviderRateDict:
+    def test_builds_lookup(self):
+        pp = ProviderPricing(
+            provider="openai",
+            display_name="OpenAI",
+            billing="token",
+            source="",
+            flat=False,
+            rates=[
+                ProviderRate("openai", "gpt-4o", 5.0, 15.0, 7.5),
+                ProviderRate("openai", "gpt-4o-mini", 0.15, 0.60, 0.30),
+            ],
+        )
+        lookup = provider_rate_dict([pp])
+        assert len(lookup) == 2
+        assert ("openai", "gpt-4o") in lookup
+        assert lookup[("openai", "gpt-4o")].input_usd_per_1k == 5.0
+
+    def test_handles_multiple_providers(self):
+        pp1 = ProviderPricing(
+            provider="openai",
+            display_name="",
+            billing="",
+            source="",
+            flat=False,
+            rates=[ProviderRate("openai", "gpt-4o", 5.0, 15.0, 7.5)],
+        )
+        pp2 = ProviderPricing(
+            provider="anthropic",
+            display_name="",
+            billing="",
+            source="",
+            flat=False,
+            rates=[ProviderRate("anthropic", "claude-sonnet", 3.0, 15.0, 7.5)],
+        )
+        lookup = provider_rate_dict([pp1, pp2])
+        assert len(lookup) == 2
+        assert ("anthropic", "claude-sonnet") in lookup
+
+    def test_empty_list(self):
+        assert provider_rate_dict([]) == {}
+
+
+class TestBuildProviderBillingTable:
+    def test_builds_table(self):
+        pp = ProviderPricing(
+            provider="openai",
+            display_name="OpenAI",
+            billing="token",
+            source="https://openai.com",
+            flat=False,
+        )
+        table = build_provider_billing_table([pp])
+        assert "openai" in table
+        assert table["openai"]["display_name"] == "OpenAI"
+        assert table["openai"]["billing"] == "token"
+        assert table["openai"]["source"] == "https://openai.com"
+        assert table["openai"]["flat"] is False
+
+    def test_multiple_providers(self):
+        pp1 = ProviderPricing("openai", "OpenAI", "token", "https://oai.com", False)
+        pp2 = ProviderPricing("anthropic", "Anthropic", "token", "https://anthro.com", True)
+        table = build_provider_billing_table([pp1, pp2])
+        assert len(table) == 2
+        assert table["anthropic"]["flat"] is True
+
+    def test_empty_list(self):
+        assert build_provider_billing_table([]) == {}

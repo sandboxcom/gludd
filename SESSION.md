@@ -12,67 +12,71 @@
 
 ## Current Gate Status (2026-08-03)
 <!-- gate:begin -->
-- lint: PASS 0 (HEAD `67760d2e`)
-- typecheck: PASS 0 (HEAD `67760d2e`)
-- test: PASS
+- Gate data: **STALE** — last run from `67760d2e` (2026-08-02T23:21:32Z), predates HEAD `b27faafd`. Re-run pending on running test completion.
+- lint: PASS 0 (last run, `67760d2e`)
+- typecheck: PASS 0 (last run, `67760d2e`)
+- test: PASS (last run)
 - hook-runtime: PASS 0
 - coverage-gaps: PASS
 - verify-enforcement: PASS
 - dead-code: FAIL (baseline churn)
-- env-writes: FAIL (check_test_env_writes.py, 2 modules still flagged)
+- env-writes: FAIL (check_test_env_writes.py, 2 modules flagged)
 - **gate: PASS** (core phases all green; dead-code + env-writes non-critical)
-- **Collection: 58,417 tests, 0 errors** (1 deselected)
+- **Collection (last run): 58,417 tests, 0 errors** (1 deselected)
 - **Remaining failures: 2 non-critical** (dead-code baseline + env-writes)
 <!-- gate:end -->
 
 ---
 
-## SESSION 66 — 2026-08-03 (CURRENT)
+## SESSION 67 — 2026-08-03 (CURRENT)
 
-- **HEAD: `67760d2e`** on `development`
-- **TASKS.md: 225/225 Active items complete (100%)**, 185 Archived = 410 total, ~170 Codex/legacy pending
-- **Test collection: 58,417 tests, 0 errors** (1 deselected)
-- **Test fixes: 51 failures resolved across 7 files** (travel, behavioral, enforce-objective, batch_push, cost, HITL, small_models)
-- **Gate: PASS** (lint 0, typecheck 0, test PASS, hook-runtime PASS, coverage-gaps PASS, verify-enforcement PASS)
-- **Non-critical failures: dead-code FAIL** (baseline churn), **env-writes FAIL** (2 modules flagged)
+- **HEAD: `b27faafd`** on `development`
+- **TASKS.md: 226/226 Active items complete (100%)**, 185 Archived = 411 total, ~170 Codex/legacy pending
+- **Test collection: 58,417 tests, 0 errors** (last gate run, from `67760d2e`; gate stale — needs re-run)
+- **Test fixes (S66+S67): 51 failures (S66) + remaining (S67) resolved** across batch-push plugin, behavioral enforcement, travel, enforce-objective, cost, HITL, small_models
+- **Gate: stale** (last run PASS from `67760d2e`, Aug 2; re-run pending on test completion)
+- **Non-critical failures: dead-code FAIL** (baseline churn), **env-writes FAIL** (2 modules flagged) — unchanged
 - **Remaining failures: 2 non-critical**
-- **Integration health: operational** — DeploymentHealthChecker fully wired daemon→router→event_loop→gateway chain; test PASS confirms
-- **Tree: DIRTY** — 2 modified files:
-  - `.opencode/plugin/enforce-batch-push.ts`
-  - `tests/unit/test_behavioral_enforcement.py`
-- **CI: RED** — no run found for HEAD `67760d2e` (not yet pushed to remote)
+- **Integration health: operational + streaming** — DeploymentHealthChecker fully wired daemon→router→event_loop→gateway (S65/S66); streaming health check added (scripts/check_integration_health.py +149 lines, `b27faafd`) for live integration telemetry
+- **Coverage gaps: PASS** (gate phase green, unchanged from S66)
+- **Verify suites: PASS** (`b27faafd`)
+- **Tree: DIRTY** — 3 files unstaged:
+  - `SESSION.md` (session state update)
+  - `TASKS.md` (evidence ledger update)
+  - `tests/unit/test_budget_wiring.py` (unstaged test change)
+- **CI: RED** — no run found for HEAD `b27faafd` (not yet pushed to remote)
 - **Branches: main checkout only**, clean
 - **Release beta.3: BLOCKED** on push + CI green
 
-### Session 66 — Test Fixes + Feature Wiring (2026-08-03, HEAD `67760d2e`, 3 commits)
+### Session 67 — Remaining Test Fixes + Integration-Health Streaming + Verify Suites (2026-08-03, HEAD `b27faafd`, 1 commit)
 
-3 commits since Session 65 HEAD `70865846`. 51 test failures fixed + bundled binary + integration health checker + CostAwareRouter wiring committed.
+1 commit since Session 66 HEAD `67760d2e`. Finishes outstanding S66 work: remaining test failures fixed, S66 dirty files committed, integration-health streaming operational.
 
 | Commit | Description |
 |--------|-------------|
-| `a71d3cc5` | fix: models.py imports and typecheck, resolve merge conflicts |
-| `079f619e` | feat: bundled llama-quantize, integration health checker, CostAwareRouter gateway wiring, architecture violation fixes |
-| `67760d2e` | fix: 51 test failures across 7 files (travel, behavioral, enforce-objective, batch_push, cost, HITL, small_models) |
+| `b27faafd` | fix: remaining test failures, integration-health streaming, verify suites |
 
 ### Remaining work
 
 | Item | Status |
 |------|--------|
-| Commit 2 modified files (enforce-batch-push.ts, test_behavioral_enforcement.py) | DIRTY |
+| Gate re-run on HEAD `b27faafd` | PENDING (stale gate from `67760d2e`) |
+| Commit 3 modified files (SESSION.md, TASKS.md, test_budget_wiring.py) | DIRTY |
 | Push accumulated commits to sandboxcom | NOT PUSHED |
-| CI green on development HEAD `67760d2e` | RED (no run) |
+| CI green on development HEAD `b27faafd` | RED (no run) |
 | Fix dead-code FAIL (baseline regeneration needed) | NON-CRITICAL |
 | Fix env-writes FAIL (2 remaining os.environ writes) | NON-CRITICAL |
 | `make release-cut TAG=v0.1.0-beta.3` | BLOCKED on push + CI green |
 
 ### Next
 
-1. Commit 2 modified files
-2. Push accumulated commits to sandboxcom
-3. Wait for CI green
-4. Release cut for beta.3
+1. Re-run `make gate` when running tests complete
+2. Commit 3 modified files
+3. Push accumulated commits to sandboxcom
+4. Wait for CI green
+5. Release cut for beta.3
 
-- **Last Updated: 2026-08-03 — Session 66.** HEAD `67760d2e` on `development`. Gate PASS (lint 0, typecheck 0, test PASS). 58,417 tests collected, 0 errors. 225/225 Active TASKS.md items complete (100%). 185/185 Archived (100%). ~170 Codex/legacy backlogs pending. Tree DIRTY (2 files). CI RED (no run). 51 test failures fixed; 2 non-critical failures remain. Release beta.3 blocked on push + CI green.
+- **Last Updated: 2026-08-03 — Session 67.** HEAD `b27faafd` on `development`. Gate stale (last run PASS from `67760d2e`, Aug 2). 58,417 tests collected, 0 errors (last run). 226/226 Active TASKS.md items complete (100%). 185/185 Archived (100%). ~170 Codex/legacy backlogs pending. Tree DIRTY (3 files). CI RED (no run). 51 + remaining test failures fixed; 2 non-critical failures remain. Integration-health streaming operational. Release beta.3 blocked on push + CI green.
 
 ---
 
