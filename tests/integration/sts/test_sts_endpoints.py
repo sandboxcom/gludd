@@ -45,10 +45,8 @@ class TestStsEndpoints:
     """STS endpoint integration tests with mocked backend."""
 
     @pytest.fixture
-    def client(self) -> TestClient:
-        import os
-
-        os.environ["GLUDD_PSK_DISABLE"] = "1"
+    def client(self, monkeypatch) -> TestClient:
+        monkeypatch.setenv("GLUDD_PSK_DISABLE", "1")
         app = create_daemon_app(tick_interval=0.1)
         app.state._no_auth = True
         app.state._allow_no_auth = True
