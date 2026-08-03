@@ -9,6 +9,7 @@ block_cipher = None
 # "Missing base YAML definition file (bad install?)".
 # collect_data_files pulls all non-.py files from the ansible package.
 _ansible_datas = collect_data_files('ansible')
+_safehttpx_datas = collect_data_files('safehttpx')
 _ansible_binaries = []
 
 datas = [
@@ -17,7 +18,7 @@ datas = [
     ('playbooks', 'playbooks'),
     ('LICENSE', '.'),
     ('THIRD_PARTY_LICENSES.md', '.'),
-] + _ansible_datas
+] + _ansible_datas + _safehttpx_datas
 
 # Also collect ansible submodules that aren't auto-detected by the static
 # analyzer (module_utils, plugins, etc. are imported dynamically).
