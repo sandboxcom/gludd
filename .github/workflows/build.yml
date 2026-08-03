@@ -262,6 +262,26 @@ jobs:
         env:
           GLUDD_PSK: ""
 
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2 (node24)
+        id: css_changes
+        with:
+          filters: |
+            css:
+              - '**/*.css'
+              - '**/*.scss'
+              - '**/*.less'
+
+      - name: CSS Lint (stylelint)
+        if: steps.css_changes.outputs.css == 'true'
+        run: |
+          echo "=== CI PHASE: css-lint ==="
+          npx stylelint "**/*.css" "**/*.scss" "**/*.less" --allow-empty-input --config '{"rules":{"block-no-empty":true,"color-no-invalid-hex":true,"declaration-block-no-duplicate-properties":true}}' || {
+            echo "::error::CSS LINT FAILED — stylelint found violations. Fix the CSS above."
+            exit 1
+          }
+        env:
+          GLUDD_PSK: ""
+
       - name: CI Summary
         if: always()
         run: |
@@ -281,6 +301,7 @@ jobs:
           echo "  Enforcement       : check step 'Enforcement hook runtime tests' above"
           echo "  Status table      : check step 'Check status table current' above"
           echo "  Secrets baseline  : check step 'Verify secrets baseline' above"
+          echo "  CSS Lint          : check step 'CSS Lint (stylelint)' above"
           echo "============================================="
           echo "See step annotations above for individual pass/fail status."
           echo "============================================="
