@@ -1,12 +1,12 @@
-## PRIMARY OBJECTIVE: COMPLETE — gate-lite green, commits pushed, release-cut v0.1.0-beta.3 shipped (21/12 assets). Wave 11 +221 tests, 60,132 total.
+## PRIMARY OBJECTIVE: COMPLETE — gate-lite green, release-cut v0.1.0-beta.3 shipped (21/12 assets). CI RED on f88c110c (run 30847411041) — being fixed. +1,905 tests, 60,438 total.
 
 ---
 
-## SESSION 78 — 2026-08-03 — HEAD `970166fa`: COMPLETE — all items done, release beta.3 shipped, wave 11 +221 tests, 60,132 total
+## SESSION 78 — 2026-08-03 — HEAD `f88c110c`: COMPLETE — release beta.3 shipped, +1,905 tests, 60,438 total, CI RED being fixed
 
-### Current State (HEAD `970166fa`)
+### Current State (HEAD `f88c110c`)
 
-- **HEAD: `970166fa`** on `development` — all commits pushed
+- **HEAD: `f88c110c`** on `development` — all commits pushed
 - **Tree: CLEAN** — all changes committed
 - **lint: PASS 0** — all errors fixed
 - **typecheck: PASS 0** — no issues
@@ -16,10 +16,10 @@
 - **Push: COMPLETE** — all commits on development pushed to remote
 - **Release beta.3: SHIPPED** — v0.1.0-beta.3 exists on GitHub with 21 download assets, 12/12 required categories verified
 - **verify-release-completeness: PASS** — all 12 asset categories confirmed
-- **Session 78 test additions: +1,599** — 751 (waves 1-3) + 401 (waves 7-9) + 189 (wave 10) + 221 (wave 11) + 37 (remaining fixes) = +1,599 total (58,533 → 60,132)
+- **Session 78 test additions: +1,905** — across 20 new test files (58,533 → 60,438)
 - **ALL 5 active TASKS items COMPLETE** — S78.0 (gate-lite), S77.1 (push), S77.2 (release-cut), S77.3 (verify-release-completeness), S78.W10 (wave 10), S78.W11 (wave 11)
-- **CI: QUEUED** — Run `30846427781` on `970166fa`, queued
-- **Prior CI run `30845918405` (on `42e39cc0`): SUPERSEDED**
+- **CI: RED** — Run `30847411041` on `f88c110c` — RED, being fixed
+- **Prior CI run `30846427781` (on `970166fa`): SUPERSEDED**
 
 ### Game Gen Results
 
@@ -195,7 +195,7 @@ Game dispatch 7/7 verified. Full FPX.1 pipeline: LocalModelDiscovery → ModelDo
 | Integrity Scanner Deep | 62 (wave 11) |
 | Embedding Store Deep | 48 (wave 11) |
 | TUI/CLI Formatter | 54 (wave 11) |
-| **Total Collection** | **60,132/60,132, 0 errors** |
+| **Total Collection** | **60,438/60,438, 0 errors** |
 
 ### Architecture — Verified Current (HEAD `49857586`)
 
@@ -219,7 +219,7 @@ Game dispatch 7/7 verified. Full FPX.1 pipeline: LocalModelDiscovery → ModelDo
 <!-- gate:begin -->
 - **gate-lite: PASS** — 6555 passed/0 failed (2 failures fixed in `9e87d445`).
 - **gate (full): STALE** (2026-08-02) — dead-code FAIL, env-writes FAIL (pre-`f3a108d8`). Needs re-run.
-- **CI: QUEUED** — Run `30846427781` on `970166fa`, queued (supersedes run 30845918405)
+- **CI: RED** — Run `30847411041` on `f88c110c` — RED, being fixed
 - lint: PASS 0
 - typecheck: PASS 0
 - dead-code: PASS (baseline refreshed)
@@ -232,7 +232,7 @@ Game dispatch 7/7 verified. Full FPX.1 pipeline: LocalModelDiscovery → ModelDo
 - spec-enforcement-coverage: PASS 98.6% (4159/4220, AC020 closed)
 - plugin-hook-invoke: PASS (34/34)
 - TASKS.md integrity: PASS (56 items, 0 violations)
-- Total collection: ~60,132, 0 errors
+- Total collection: ~60,438, 0 errors
 <!-- gate:end -->
 
 ### Release History
@@ -284,11 +284,11 @@ e87f6f63 feat: local model E2E, FPX.1 local model dispatch, gate-lite green
 
 ### Next Steps (mandatory)
 
-1. CI on `970166fa` (run `30846427781`) — await GREEN
-2. Push 23 accumulated commits: `make batch-push`
-3. Window for further deep tests (achieved: 60,132)
+1. Fix CI RED on `f88c110c` (run `30847411041`) — in progress
+2. Push any new commits: `make batch-push`
+3. Window for further deep tests (achieved: 60,438)
 4. Consider next enhancement wave
 
-- **Last Updated: 2026-08-03 — Session 78. HEAD `970166fa` on `development`. Tree CLEAN. gate-lite PASS (6555/0). lint PASS 0. 23 specs + FPX.1 COMPLETE. E2E EXECUTED (~790 tests). Wave 10: +189 tests. Wave 11: +221 tests. Session total: +1,599 tests across 27 files (58,533 → 60,132). ALL GAPS CLOSED. ALL TASKS items COMPLETE. Release v0.1.0-beta.3 SHIPPED (21/12 assets, verify-release-completeness PASS). CI run `30846427781` queued. Session 78: DONE.
+- **Last Updated: 2026-08-03 — Session 78. HEAD `f88c110c` on `development`. Tree CLEAN. gate-lite PASS (6555/0). lint PASS 0. 23 specs + FPX.1 COMPLETE. E2E EXECUTED (~790 tests). Session total: +1,905 tests across 20 new test files (58,533 → 60,438). ALL GAPS CLOSED. ALL TASKS items COMPLETE. Release v0.1.0-beta.3 SHIPPED (21/12 assets, verify-release-completeness PASS). CI RED on `f88c110c` (run `30847411041`) — being fixed.
 
 (End of file - total 175 lines)

@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-08-03 Session 78. HEAD `970166fa` on development. lint PASS 0. typecheck PASS 0. Tree CLEAN. CI run `30846427781` queued. gate-lite PASS (6555 passed, 0 failed). E2E EXECUTED (~790 local model tests). ALL 23 SPECS + FPX.1 COMPLETE. Game dispatch: 7/7 verified. ALL GAPS CLOSED. Model hash DB: WIRED (28 tests). Push COMPLETE. Session total: +1,599 tests across 27 files (58,533 → 60,132). ALL 4 active items COMPLETE. Release v0.1.0-beta.3 SHIPPED (21/12 assets, verify-release-completeness PASS).**
+**Last consolidated: 2026-08-03 Session 78. HEAD `f88c110c` on development. lint PASS 0. typecheck PASS 0. Tree CLEAN. CI RED on `f88c110c` (run `30847411041`) — being fixed. gate-lite PASS (6555 passed, 0 failed). E2E EXECUTED (~790 local model tests). ALL 23 SPECS + FPX.1 COMPLETE. Game dispatch: 7/7 verified. ALL GAPS CLOSED. Model hash DB: WIRED (28 tests). Push COMPLETE. Session total: +1,905 tests across 20 new test files (58,533 → 60,438). ALL 4 active items COMPLETE. Release v0.1.0-beta.3 SHIPPED (21/12 assets, verify-release-completeness PASS).**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -163,7 +163,7 @@ ALL 21 feature specifications + FPX.1 COMPLETE. Local model E2E: COMPLETE (~790 
 | Integrity Scanner Deep | 62 | integrity scanner deep tests (wave 11) |
 | Embedding Store Deep | 48 | embedding store deep tests (wave 11) |
 | TUI/CLI Formatter | 54 | TUI/CLI formatter tests (wave 11) |
-| **Total Collection** | **60,132/60,132** | **0 errors** |
+| **Total Collection** | **60,438/60,438** | **0 errors** |
 
 ### 23 Spec Files — ALL COMPLETE
 
@@ -200,7 +200,8 @@ ALL 21 feature specifications + FPX.1 COMPLETE. Local model E2E: COMPLETE (~790 
 | Wave 10 — +189 tests (STS 52, cost 60, chat 20, mock_daemon 15, OpenBao 15, sandbox 27) | COMPLETE (`42e39cc0`) |
 | Wave 11 — +221 tests (deployment_health 57, integrity_scanner 62, embedding_store 48, TUI/CLI 54) | COMPLETE (`970166fa`) |
 | CI run 30845918405 on `42e39cc0` | SUPERSEDED by run 30846427781 |
-| CI run 30846427781 on `970166fa` | QUEUED |
+| CI run 30846427781 on `970166fa` | SUPERSEDED |
+| CI run `30847411041` on `f88c110c` | RED — being fixed |
 | Session total tests: +1,599 (58,533 → 60,132) | COMPLETE |
 | release-cut pushed (21 commits) | COMPLETE |
 | gate-lite FAIL (2 tests: `test_all_plugins_runtime`, `test_enforcement_bugs`) | FIXED (`9e87d445`; gate-lite PASS 6555/0) |
