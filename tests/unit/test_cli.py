@@ -38,11 +38,26 @@ class TestCLIParsing:
             assert args.workers == 1
 
     def test_daemon_command_custom_args(self):
-        with patch(
-            "sys.argv",
-            ["gludd", "daemon", "--host", "127.0.0.1", "--port", "9000", "--log-level", "debug",
-             "--tick-interval", "2.5", "--workers", "4"],
-        ), patch("general_ludd.cli._cmd_daemon") as mock_cmd:
+        with (
+            patch(
+                "sys.argv",
+                [
+                    "gludd",
+                    "daemon",
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    "9000",
+                    "--log-level",
+                    "debug",
+                    "--tick-interval",
+                    "2.5",
+                    "--workers",
+                    "4",
+                ],
+            ),
+            patch("general_ludd.cli._cmd_daemon") as mock_cmd,
+        ):
             main()
             args = mock_cmd.call_args[0][0]
             assert args.host == "127.0.0.1"
@@ -58,11 +73,25 @@ class TestCLIParsing:
             assert exc_info.value.code != 0
 
     def test_add_command_options(self):
-        with patch(
-            "sys.argv",
-            ["gludd", "add", "Fix the login bug", "--queue", "core", "--priority", "high",
-             "--work-type", "code", "--description", "desc"],
-        ), patch("general_ludd.cli._cmd_add") as mock_cmd:
+        with (
+            patch(
+                "sys.argv",
+                [
+                    "gludd",
+                    "add",
+                    "Fix the login bug",
+                    "--queue",
+                    "core",
+                    "--priority",
+                    "high",
+                    "--work-type",
+                    "code",
+                    "--description",
+                    "desc",
+                ],
+            ),
+            patch("general_ludd.cli._cmd_add") as mock_cmd,
+        ):
             main()
             args = mock_cmd.call_args[0][0]
             assert args.title == "Fix the login bug"
@@ -79,26 +108,28 @@ class TestCLIParsing:
             assert args.todo_id is None
 
     def test_status_command_with_id(self):
-        with patch("sys.argv", ["gludd", "status", "TODO-001"]), patch(
-            "general_ludd.cli._cmd_status",
-        ) as mock_cmd:
+        with (
+            patch("sys.argv", ["gludd", "status", "TODO-001"]),
+            patch(
+                "general_ludd.cli._cmd_status",
+            ) as mock_cmd,
+        ):
             main()
             args = mock_cmd.call_args[0][0]
             assert args.todo_id == "TODO-001"
 
     def test_list_command_filters(self):
-        with patch("sys.argv", ["gludd", "list", "--queue", "core", "--status", "queued"]), patch(
-            "general_ludd.cli._cmd_list"
-        ) as mock_cmd:
+        with (
+            patch("sys.argv", ["gludd", "list", "--queue", "core", "--status", "queued"]),
+            patch("general_ludd.cli._cmd_list") as mock_cmd,
+        ):
             main()
             args = mock_cmd.call_args[0][0]
             assert args.queue == "core"
             assert args.status == "queued"
 
     def test_log_level_command_choices(self):
-        with patch("sys.argv", ["gludd", "log-level", "debug"]), patch(
-            "general_ludd.cli._cmd_log_level"
-        ) as mock_cmd:
+        with patch("sys.argv", ["gludd", "log-level", "debug"]), patch("general_ludd.cli._cmd_log_level") as mock_cmd:
             main()
             args = mock_cmd.call_args[0][0]
             assert args.level == "debug"
@@ -108,9 +139,7 @@ class TestCLIParsing:
             main()
 
     def test_deployments_command(self):
-        with patch("sys.argv", ["gludd", "deployments"]), patch(
-            "general_ludd.cli._cmd_deployments"
-        ) as mock_cmd:
+        with patch("sys.argv", ["gludd", "deployments"]), patch("general_ludd.cli._cmd_deployments") as mock_cmd:
             main()
             mock_cmd.assert_called_once()
 
@@ -120,33 +149,34 @@ class TestCLIParsing:
             mock_cmd.assert_called_once()
 
     def test_models_search_command(self):
-        with patch("sys.argv", ["gludd", "models", "search", "llama"]), patch(
-            "general_ludd.cli._cmd_models_search"
-        ) as mock_cmd:
+        with (
+            patch("sys.argv", ["gludd", "models", "search", "llama"]),
+            patch("general_ludd.cli._cmd_models_search") as mock_cmd,
+        ):
             main()
             args = mock_cmd.call_args[0][0]
             assert args.query == "llama"
             assert args.limit == 20
 
     def test_models_search_default_query(self):
-        with patch("sys.argv", ["gludd", "models", "search"]), patch(
-            "general_ludd.cli._cmd_models_search"
-        ) as mock_cmd:
+        with patch("sys.argv", ["gludd", "models", "search"]), patch("general_ludd.cli._cmd_models_search") as mock_cmd:
             main()
             args = mock_cmd.call_args[0][0]
             assert args.query == ""
 
     def test_models_downloaded_command(self):
-        with patch("sys.argv", ["gludd", "models", "downloaded"]), patch(
-            "general_ludd.cli._cmd_models_downloaded"
-        ) as mock_cmd:
+        with (
+            patch("sys.argv", ["gludd", "models", "downloaded"]),
+            patch("general_ludd.cli._cmd_models_downloaded") as mock_cmd,
+        ):
             main()
             mock_cmd.assert_called_once()
 
     def test_local_serve_command(self):
-        with patch(
-            "sys.argv", ["gludd", "local-serve", "--model", "llama-7b", "--engine", "vllm"]
-        ), patch("general_ludd.cli._cmd_local_serve") as mock_cmd:
+        with (
+            patch("sys.argv", ["gludd", "local-serve", "--model", "llama-7b", "--engine", "vllm"]),
+            patch("general_ludd.cli._cmd_local_serve") as mock_cmd,
+        ):
             main()
             args = mock_cmd.call_args[0][0]
             assert args.model == "llama-7b"
@@ -163,9 +193,14 @@ class TestClientCommands:
             import argparse
 
             from general_ludd.cli import _cmd_add
+
             args = argparse.Namespace(
-                title="Fix bug", queue="core", priority="medium",
-                work_type="code", description="", daemon_url="http://localhost:9000",
+                title="Fix bug",
+                queue="core",
+                priority="medium",
+                work_type="code",
+                description="",
+                daemon_url="http://localhost:9000",
             )
             _cmd_add(args)
             mock_req.assert_called_once()
@@ -184,6 +219,7 @@ class TestClientCommands:
             import argparse
 
             from general_ludd.cli import _cmd_status
+
             args = argparse.Namespace(todo_id="TODO-001", daemon_url="http://localhost:8000")
             _cmd_status(args)
         mock_get.assert_called_once()
@@ -198,6 +234,7 @@ class TestClientCommands:
             import argparse
 
             from general_ludd.cli import _cmd_status
+
             args = argparse.Namespace(todo_id=None, daemon_url="http://localhost:8000")
             _cmd_status(args)
         mock_get.assert_called_once()
@@ -218,6 +255,7 @@ class TestClientCommands:
             import argparse
 
             from general_ludd.cli import _cmd_status
+
             args = argparse.Namespace(todo_id=None, daemon_url="http://localhost:8000", project=None)
             _cmd_status(args)
         captured = capsys.readouterr()
@@ -242,6 +280,7 @@ class TestClientCommands:
             import argparse
 
             from general_ludd.cli import _cmd_status
+
             args = argparse.Namespace(todo_id=None, daemon_url="http://localhost:8000", project=None)
             _cmd_status(args)
         captured = capsys.readouterr()
@@ -258,6 +297,7 @@ class TestClientCommands:
             import argparse
 
             from general_ludd.cli import _cmd_status
+
             args = argparse.Namespace(todo_id=None, daemon_url="http://localhost:8000", project=None)
             _cmd_status(args)
         captured = capsys.readouterr()
@@ -272,8 +312,11 @@ class TestClientCommands:
             import argparse
 
             from general_ludd.cli import _cmd_list
+
             args = argparse.Namespace(
-                queue="core", status="queued", daemon_url="http://localhost:8000",
+                queue="core",
+                status="queued",
+                daemon_url="http://localhost:8000",
             )
             _cmd_list(args)
         mock_req.assert_called_once()
@@ -292,6 +335,7 @@ class TestClientCommands:
             import argparse
 
             from general_ludd.cli import _cmd_log_level
+
             args = argparse.Namespace(level="debug", daemon_url="http://localhost:8000")
             _cmd_log_level(args)
         mock_req.assert_called_once()
@@ -309,6 +353,7 @@ class TestClientCommands:
             import argparse
 
             from general_ludd.cli import _cmd_deployments
+
             args = argparse.Namespace(daemon_url="http://localhost:8000")
             _cmd_deployments(args)
         mock_req.assert_called_once()
@@ -324,6 +369,7 @@ class TestClientCommands:
             import argparse
 
             from general_ludd.cli import _cmd_health
+
             args = argparse.Namespace(daemon_url="http://localhost:8000")
             _cmd_health(args)
         mock_req.assert_called_once()
@@ -335,6 +381,7 @@ class TestClientCommands:
             import argparse
 
             from general_ludd.cli import _cmd_health
+
             args = argparse.Namespace(daemon_url="http://localhost:8000")
             with pytest.raises(SystemExit) as exc_info:
                 _cmd_health(args)
@@ -350,6 +397,7 @@ class TestClientCommands:
             import argparse
 
             from general_ludd.cli import _cmd_compute_unregister
+
             args = argparse.Namespace(endpoint_id="test-ep", daemon_url="http://localhost:8000")
             _cmd_compute_unregister(args)
         mock_delete.assert_called_once()
@@ -360,6 +408,7 @@ class TestClientCommands:
             import argparse
 
             from general_ludd.cli import _cmd_status
+
             args = argparse.Namespace(todo_id=None, daemon_url="http://localhost:8000")
             _cmd_status(args)
         captured = capsys.readouterr()
@@ -372,8 +421,15 @@ class TestClientCommands:
             import argparse
 
             from general_ludd.cli import _cmd_add
-            args = argparse.Namespace(title="test", queue="core", priority="medium",
-                                       work_type="code", description="", daemon_url="http://localhost:8000")
+
+            args = argparse.Namespace(
+                title="test",
+                queue="core",
+                priority="medium",
+                work_type="code",
+                description="",
+                daemon_url="http://localhost:8000",
+            )
             with pytest.raises(SystemExit) as exc_info:
                 _cmd_add(args)
             assert exc_info.value.code == 1
@@ -384,14 +440,13 @@ class TestClientCommands:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "results": [
-                {"model_id": "meta-llama/Llama-3-8B", "pipeline_tag": "text-generation", "downloads": 100000}
-            ]
+            "results": [{"model_id": "meta-llama/Llama-3-8B", "pipeline_tag": "text-generation", "downloads": 100000}]
         }
         with patch("httpx.post", return_value=mock_response) as mock_req:
             import argparse
 
             from general_ludd.cli import _cmd_models_search
+
             args = argparse.Namespace(query="llama", limit=10, daemon_url="http://localhost:8000")
             _cmd_models_search(args)
         mock_req.assert_called_once()
@@ -406,6 +461,7 @@ class TestClientCommands:
             import argparse
 
             from general_ludd.cli import _cmd_models_downloaded
+
             args = argparse.Namespace(daemon_url="http://localhost:8000")
             _cmd_models_downloaded(args)
         mock_req.assert_called_once()
@@ -420,14 +476,20 @@ class TestClientCommands:
             import argparse
 
             from general_ludd.cli import _cmd_local_serve
+
             args = argparse.Namespace(
-                engine="vllm", model="llama-7b", host="localhost", port=8001,
-                gpu_layers=-1, context_size=4096, daemon_url="http://localhost:8000",
+                engine="vllm",
+                model="llama-7b",
+                host="localhost",
+                port=8001,
+                gpu_layers=-1,
+                context_size=4096,
+                daemon_url="http://localhost:8000",
             )
             _cmd_local_serve(args)
         mock_req.assert_called_once()
         call_args = mock_req.call_args
-        assert "/admin/local-inference/start" in call_args[0][0]
+        assert "/admin/models/local/serve" in call_args[0][0]
 
 
 class TestHotLoading:
@@ -441,6 +503,7 @@ class TestHotLoading:
         import inspect
 
         import general_ludd.cli as cli_mod
+
         source = inspect.getsource(cli_mod)
         tree = ast.parse(source)
         top_level_imports = []
@@ -449,7 +512,7 @@ class TestHotLoading:
                 for alias in node.names:
                     top_level_imports.append(alias.name)
             elif isinstance(node, ast.ImportFrom) and node.module:
-                    top_level_imports.append(node.module)
+                top_level_imports.append(node.module)
         heavy_prefixes = [
             "general_ludd.event_loop.loop",
             "general_ludd.models.gateway",
@@ -473,44 +536,46 @@ class TestHotLoading:
         assert exc_info.value.code == 0
 
     def test_model_performance_command(self):
-        with patch("sys.argv", ["gludd", "models", "performance"]), patch(
-            "general_ludd.cli._cmd_model_performance"
-        ) as mock_cmd:
+        with (
+            patch("sys.argv", ["gludd", "models", "performance"]),
+            patch("general_ludd.cli._cmd_model_performance") as mock_cmd,
+        ):
             main()
             args = mock_cmd.call_args[0][0]
             assert args.service is None
             assert args.task_type is None
 
     def test_model_performance_command_with_filters(self):
-        with patch("sys.argv", ["gludd", "models", "performance", "--service", "openai", "--task-type", "code"]), patch(
-            "general_ludd.cli._cmd_model_performance"
-        ) as mock_cmd:
+        with (
+            patch("sys.argv", ["gludd", "models", "performance", "--service", "openai", "--task-type", "code"]),
+            patch("general_ludd.cli._cmd_model_performance") as mock_cmd,
+        ):
             main()
             args = mock_cmd.call_args[0][0]
             assert args.service == "openai"
             assert args.task_type == "code"
 
     def test_model_ranking_command(self):
-        with patch("sys.argv", ["gludd", "models", "ranking", "--task-type", "code", "--strategy", "quality"]), patch(
-            "general_ludd.cli._cmd_model_ranking"
-        ) as mock_cmd:
+        with (
+            patch("sys.argv", ["gludd", "models", "ranking", "--task-type", "code", "--strategy", "quality"]),
+            patch("general_ludd.cli._cmd_model_ranking") as mock_cmd,
+        ):
             main()
             args = mock_cmd.call_args[0][0]
             assert args.task_type == "code"
             assert args.strategy == "quality"
 
     def test_model_router_status_command(self):
-        with patch("sys.argv", ["gludd", "models", "router-status"]), patch(
-            "general_ludd.cli._cmd_model_router_status"
-        ) as mock_cmd:
+        with (
+            patch("sys.argv", ["gludd", "models", "router-status"]),
+            patch("general_ludd.cli._cmd_model_router_status") as mock_cmd,
+        ):
             main()
             mock_cmd.assert_called_once()
 
     def test_model_router_set_command(self):
         argv = ["gludd", "models", "router-set", "--task-type", "code", "--strategy", "cheapest"]
-        with patch("sys.argv", argv), patch(
-            "general_ludd.cli._cmd_model_router_set"
-        ) as mock_cmd:
+        with patch("sys.argv", argv), patch("general_ludd.cli._cmd_model_router_set") as mock_cmd:
             main()
             args = mock_cmd.call_args[0][0]
             assert args.task_type == "code"
@@ -532,8 +597,10 @@ class TestHotLoading:
         assert exc_info.value.code == 0
 
     def test_compute_unregister_parsing(self):
-        with patch.object(sys, "argv", ["gludd", "compute", "unregister", "my-endpoint"]), \
-             patch("general_ludd.cli._cmd_compute_unregister") as mock_cmd:
+        with (
+            patch.object(sys, "argv", ["gludd", "compute", "unregister", "my-endpoint"]),
+            patch("general_ludd.cli._cmd_compute_unregister") as mock_cmd,
+        ):
             main()
             args = mock_cmd.call_args[0][0]
             assert args.endpoint_id == "my-endpoint"

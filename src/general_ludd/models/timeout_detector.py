@@ -439,7 +439,7 @@ class TimeoutRetryPolicy:
                 reason=f"max retries ({self._max_retries}) exhausted",
             )
 
-        if attempt > self._failover_after:
+        if attempt >= self._failover_after:  # >= triggers failover AT failover_after
             wait = self._compute_backoff(kind, attempt, retry_after_seconds)
             return RetryDecision(
                 should_retry=False,

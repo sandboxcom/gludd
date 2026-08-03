@@ -12,15 +12,17 @@ OPENCODE_JSON = ROOT / "opencode.json"
 
 PLUGIN_DIRS = [d for d in (PLUGIN_DIR, PLUGINS_DIR) if d.exists()]
 
-HOOK_NAMES = frozenset([
-    "tool.execute.before",
-    "tool.execute.after",
-    "text.complete",
-    "session.idle",
-    "event",
-    "experimental.chat.system.transform",
-    "experimental.text.complete",
-])
+HOOK_NAMES = frozenset(
+    [
+        "tool.execute.before",
+        "tool.execute.after",
+        "text.complete",
+        "session.idle",
+        "event",
+        "experimental.chat.system.transform",
+        "experimental.text.complete",
+    ]
+)
 
 PLUGIN_TO_TEST = {
     "enforce-clean-tree": ["test_clean_tree_plugin.py"],
@@ -54,6 +56,7 @@ PLUGIN_TO_TEST = {
     "enforce-worktree": ["test_behavioral_specs.py"],
     "enforce-audit": ["test_behavioral_specs.py"],
     "enforce-context": ["test_behavioral_specs.py"],
+    "enforce-additive-task": ["test_extended_enforcement_plugins_runtime.py"],
     "enforce-directives": ["test_extended_enforcement_plugins_runtime.py"],
     "enforce-deliverable": ["test_extended_enforcement_plugins_runtime.py"],
     "enforce-no-ci-poll": ["test_extended_enforcement_plugins_runtime.py"],
@@ -94,14 +97,13 @@ class TestAllPluginsSyntax:
         for f in _collect_plugin_files():
             result = subprocess.run(
                 ["node", "--check", str(f)],
-                capture_output=True, text=True, timeout=30,
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
             if result.returncode != 0:
                 errors.append(f"{f.name}: {result.stderr.strip()}")
-        assert not errors, (
-            f"{len(errors)} plugin file(s) have node --check errors:\n"
-            + "\n".join(errors)
-        )
+        assert not errors, f"{len(errors)} plugin file(s) have node --check errors:\n" + "\n".join(errors)
 
 
 class TestAllPluginsDefaultExport:
@@ -111,10 +113,7 @@ class TestAllPluginsDefaultExport:
             content = _read(f)
             if "export default" not in content:
                 missing.append(f.name)
-        assert not missing, (
-            f"{len(missing)} plugin(s) missing export default:\n"
-            + "\n".join(missing)
-        )
+        assert not missing, f"{len(missing)} plugin(s) missing export default:\n" + "\n".join(missing)
 
 
 class TestAllPluginsHookRegistration:
@@ -129,10 +128,7 @@ class TestAllPluginsHookRegistration:
                     break
             if not found:
                 missing.append(f.name)
-        assert not missing, (
-            f"{len(missing)} plugin(s) missing hook registration:\n"
-            + "\n".join(missing)
-        )
+        assert not missing, f"{len(missing)} plugin(s) missing hook registration:\n" + "\n".join(missing)
 
 
 class TestAllPluginsTestCoverage:
@@ -154,10 +150,7 @@ class TestAllPluginsTestCoverage:
                     not_found.append(test_file)
             if not found:
                 untested.append(f"{name} → expected {expected}, found none")
-        assert not untested, (
-            f"{len(untested)} plugin(s) lack test coverage:\n"
-            + "\n".join(untested)
-        )
+        assert not untested, f"{len(untested)} plugin(s) lack test coverage:\n" + "\n".join(untested)
 
     def test_all_plugin_test_files_exist(self):
         missing = []
@@ -165,10 +158,7 @@ class TestAllPluginsTestCoverage:
             for tf in test_files:
                 if not (TEST_DIR / tf).exists():
                     missing.append(f"{name} → {tf} (missing)")
-        assert not missing, (
-            f"{len(missing)} test file(s) referenced but not found:\n"
-            + "\n".join(missing)
-        )
+        assert not missing, f"{len(missing)} test file(s) referenced but not found:\n" + "\n".join(missing)
 
     def test_test_files_import_or_reference_plugin(self):
         stale = []
@@ -181,7 +171,4 @@ class TestAllPluginsTestCoverage:
                 content = test_path.read_text()
                 if plugin_filename not in content and name not in content:
                     stale.append(f"{tf}: no reference to {plugin_filename} or '{name}'")
-        assert not stale, (
-            f"{len(stale)} test file(s) may be stale (no reference to plugin):\n"
-            + "\n".join(stale)
-        )
+        assert not stale, f"{len(stale)} test file(s) may be stale (no reference to plugin):\n" + "\n".join(stale)

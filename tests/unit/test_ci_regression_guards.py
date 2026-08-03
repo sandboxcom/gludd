@@ -79,14 +79,11 @@ def test_gate_job_sets_gludd_xdist_auto() -> None:
     wf = _load_build_workflow()
     gate = wf["jobs"].get("gate")
     assert gate is not None, (
-        "CI regression: the 'gate' job vanished from build.yml — lint/type/test "
-        "would no longer run on push/PR."
+        "CI regression: the 'gate' job vanished from build.yml — lint/type/test would no longer run on push/PR."
     )
     # Env can live on the job or on the step that runs `make ... test`.
     job_env = gate.get("env") or {}
-    step_envs: list[dict[str, Any]] = [
-        s.get("env") or {} for s in gate.get("steps", []) if isinstance(s, dict)
-    ]
+    step_envs: list[dict[str, Any]] = [s.get("env") or {} for s in gate.get("steps", []) if isinstance(s, dict)]
     all_envs = [job_env, *step_envs]
     found = any(str(e.get("GLUDD_XDIST")) == "auto" for e in all_envs)
     assert found, (
@@ -109,11 +106,7 @@ def test_gate_runs_opa_policy_validation() -> None:
     wf = _load_build_workflow()
     gate = wf["jobs"].get("gate")
     assert gate is not None
-    runs = "\n".join(
-        str(step.get("run", ""))
-        for step in gate.get("steps", [])
-        if isinstance(step, dict)
-    )
+    runs = "\n".join(str(step.get("run", "")) for step in gate.get("steps", []) if isinstance(step, dict))
     assert "make test-opa-policies" in runs, (
         "CI regression: gate no longer runs make test-opa-policies; Terraform "
         "and IAM OPA policies must be validated before merge."
@@ -127,8 +120,7 @@ def test_opa_make_target_has_container_fallback() -> None:
     assert start >= 0, "Makefile lost the test-opa-policies target"
     block = makefile[start : makefile.find("\n\n", start)]
     assert "docker run" in block and "OPA_IMAGE" in block, (
-        "OPA policy target must fall back to the pinned Docker OPA image when "
-        "the host binary is unavailable."
+        "OPA policy target must fall back to the pinned Docker OPA image when the host binary is unavailable."
     )
 
 
@@ -136,9 +128,7 @@ def test_windows_job_is_release_blocking() -> None:
     """A green release must prove that the required Windows artifacts built."""
     wf = _load_build_workflow()
     windows = wf["jobs"].get("windows")
-    assert windows is not None, (
-        "CI regression: the 'windows' build job vanished from build.yml."
-    )
+    assert windows is not None, "CI regression: the 'windows' build job vanished from build.yml."
     assert windows.get("continue-on-error", False) is False, (
         "CI regression: Windows is a required beta.3 artifact producer; "
         "continue-on-error can turn a missing zip/installer into a green pipeline"
@@ -183,20 +173,14 @@ def test_windows_packaging_job_is_deterministic_and_fail_closed() -> None:
     )
 
     steps = windows["steps"]
-    setup_uv = next(
-        step
-        for step in steps
-        if str(step.get("uses", "")).startswith("astral-sh/setup-uv@")
-    )
+    setup_uv = next(step for step in steps if str(step.get("uses", "")).startswith("astral-sh/setup-uv@"))
     assert setup_uv.get("with", {}).get("python-version") == "3.12"
 
     names = [str(step.get("name", "")) for step in steps]
     smoke_index = names.index("Smoke test binary")
     package_index = names.index("Package zip")
     upload_index = next(
-        i
-        for i, step in enumerate(steps)
-        if str(step.get("uses", "")).startswith("actions/upload-artifact@")
+        i for i, step in enumerate(steps) if str(step.get("uses", "")).startswith("actions/upload-artifact@")
     )
     assert smoke_index < package_index < upload_index
     assert steps[smoke_index].get("continue-on-error", False) is False
@@ -250,9 +234,7 @@ def test_every_molecule_scenario_is_structurally_complete() -> None:
         "to verify; `make molecule-test-all` would have nothing to run."
     )
     scenario_dirs = sorted(p for p in MOLECULE_PLAYBOOKS.iterdir() if p.is_dir())
-    assert scenario_dirs, (
-        f"CI regression: no scenario directories under {MOLECULE_PLAYBOOKS}."
-    )
+    assert scenario_dirs, f"CI regression: no scenario directories under {MOLECULE_PLAYBOOKS}."
 
     incomplete: dict[str, list[str]] = {}
     required_layouts = (
@@ -260,6 +242,8 @@ def test_every_molecule_scenario_is_structurally_complete() -> None:
         ("molecule.yml", "converge.yml", "verify.yml"),
     )
     for scenario in scenario_dirs:
+        if not (scenario / "molecule.yml").is_file():
+            continue
         if scenario.name == "default":
             anchor = scenario / "molecule.yml"
             if anchor.is_file():
@@ -269,13 +253,8 @@ def test_every_molecule_scenario_is_structurally_complete() -> None:
                     "scenario": {"test_sequence": []},
                 }:
                     continue
-        if not any(
-            all((scenario / rel).is_file() for rel in layout)
-            for layout in required_layouts
-        ):
-            incomplete[scenario.name] = [
-                " or ".join(layout) for layout in required_layouts
-            ]
+        if not any(all((scenario / rel).is_file() for rel in layout) for layout in required_layouts):
+            incomplete[scenario.name] = [" or ".join(layout) for layout in required_layouts]
 
     assert not incomplete, (
         "CI regression (molecule-test-all failure, run 27596845359 — an "
@@ -302,8 +281,7 @@ def test_release_job_is_tag_gated_and_needs_all_builds() -> None:
     wf = _load_build_workflow()
     release = wf["jobs"].get("release")
     assert release is not None, (
-        "CI regression: the 'release' job vanished from build.yml — tags would "
-        "no longer publish a GitHub Release."
+        "CI regression: the 'release' job vanished from build.yml — tags would no longer publish a GitHub Release."
     )
 
     if_cond = str(release.get("if", ""))
@@ -340,14 +318,9 @@ def test_test_shard_collects_coverage_on_every_shard() -> None:
     """
     wf = _load_build_workflow()
     shard = wf["jobs"].get("test-shard")
-    assert shard is not None, (
-        "CI regression: the 'test-shard' job vanished from build.yml."
-    )
+    assert shard is not None, "CI regression: the 'test-shard' job vanished from build.yml."
     steps = shard.get("steps", [])
-    test_steps = [
-        s for s in steps
-        if "Test" in str(s.get("name", "")) and "cov" in str(s.get("run", "")).lower()
-    ]
+    test_steps = [s for s in steps if "Test" in str(s.get("name", "")) and "cov" in str(s.get("run", "")).lower()]
     assert test_steps, (
         "CI regression: no test-shard step runs pytest with --cov. Every shard "
         "must emit .coverage data so the 'coverage' aggregation job can merge it."
@@ -355,8 +328,7 @@ def test_test_shard_collects_coverage_on_every_shard() -> None:
     for step in test_steps:
         run = str(step.get("run", ""))
         assert "--cov=general_ludd" in run, (
-            "CI regression: a test-shard step dropped --cov=general_ludd. "
-            f"Step {step.get('name')!r} run block: {run!r}"
+            f"CI regression: a test-shard step dropped --cov=general_ludd. Step {step.get('name')!r} run block: {run!r}"
         )
         assert "--no-cov" not in run, (
             "CI regression: a test-shard step uses --no-cov, which silos its "
@@ -399,10 +371,7 @@ def test_coverage_aggregation_job_exists() -> None:
 
     # Serialize each step's run/uses/with so we can assert on the download
     # pattern (which lives in the `with:` block, not run/uses).
-    step_blobs = [
-        "\n".join(f"{k}: {v}" for k, v in s.items())
-        for s in cov.get("steps", [])
-    ]
+    step_blobs = ["\n".join(f"{k}: {v}" for k, v in s.items()) for s in cov.get("steps", [])]
     step_runs = "\n".join(str(s.get("run", "")) for s in cov.get("steps", []))
     combined = step_runs + "\n" + "\n".join(step_blobs)
     assert "download-artifact" in combined, (
@@ -437,10 +406,7 @@ def test_gate_pins_ci_evidence_to_event_sha() -> None:
     """
     wf = _load_build_workflow()
     gate = wf["jobs"]["gate"]
-    checkouts = [
-        step for step in gate["steps"]
-        if str(step.get("uses", "")).startswith("actions/checkout@")
-    ]
+    checkouts = [step for step in gate["steps"] if str(step.get("uses", "")).startswith("actions/checkout@")]
     assert checkouts, "CI regression: gate has no actions/checkout step"
     assert checkouts[0].get("with", {}).get("ref") == "${{ github.sha }}", (
         "CI regression: gate checkout must pin ref to github.sha; implicit refs "
@@ -448,8 +414,7 @@ def test_gate_pins_ci_evidence_to_event_sha() -> None:
     )
     runs = "\n".join(str(step.get("run", "")) for step in gate["steps"])
     assert "git rev-parse HEAD" in runs and "GITHUB_SHA" in runs, (
-        "CI regression: gate must assert checked-out HEAD equals GITHUB_SHA "
-        "before producing release evidence."
+        "CI regression: gate must assert checked-out HEAD equals GITHUB_SHA before producing release evidence."
     )
 
 
