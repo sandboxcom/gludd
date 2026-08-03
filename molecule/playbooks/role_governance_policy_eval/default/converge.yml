@@ -21,13 +21,15 @@
         GLUDD_ARTIFACT_DIR: "{{ artifact_dir }}"
       ignore_errors: true
 
+    - name: Prepare eval result dict
+      ansible.builtin.set_fact:
+        eval_data:
+          status: "{{ 'success' if eval_result.rc == 0 else 'failed' }}"
+          return_code: "{{ eval_result.rc | int }}"
+          stdout: "{{ eval_result.stdout | trim }}"
+
     - name: Write eval result to artifact
       ansible.builtin.copy:
-        content: |
-          {
-            "status": "{{ 'success' if eval_result.rc == 0 else 'failed' }}",
-            "return_code": {{ eval_result.rc }},
-            "stdout": "{{ eval_result.stdout | trim | replace('\n', '\\n') | replace('\"', '\\\"') }}"
-          }
+        content: "{{ eval_data | to_json }}"
         dest: "{{ artifact_dir }}/policy_eval.json"
         mode: "0644"

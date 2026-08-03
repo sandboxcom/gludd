@@ -1028,14 +1028,19 @@ jobs:
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
       - name: Build executable
         run: |
+          echo "=== CI PHASE: build-linux-aarch64 ==="
           uv sync
-          uv run pyinstaller gludd.spec --clean --noconfirm
+          uv run pyinstaller gludd.spec --clean --noconfirm || {
+            echo "::error::TERMUX BUILD FAILED — pyinstaller failed for linux-aarch64. Check gludd.spec."
+            exit 1
+          }
       - name: Smoke test binary
         # Post-build smoke test: catches binaries that built successfully but
         # crash at runtime (e.g. the "Missing base YAML definition file" ansible
         # data-file error). Runs BEFORE packaging and upload-artifact so a
         # broken binary never reaches the release artifacts.
         run: |
+          echo "=== CI PHASE: smoke-linux-aarch64 ==="
           set -e
           echo "--- gludd version ---"
           ./dist/gludd version
@@ -1043,12 +1048,14 @@ jobs:
           ./dist/gludd --help | head -5
           OUT="$(./dist/gludd version 2>&1; ./dist/gludd --help 2>&1 | head -5)"
           if echo "$OUT" | grep -qiE 'traceback|Missing base YAML definition file'; then
+            echo "::error::TERMUX SMOKE FAILED — binary crash signature detected."
             echo "FAIL: smoke test output contained a crash signature:"
             echo "$OUT"
             exit 1
           fi
       - name: Package tarball
         run: |
+          echo "=== CI PHASE: package-tarball-linux-aarch64 ==="
           mkdir -p dist/release
           cp dist/gludd dist/release/gludd
           cp dist/install.sh dist/release/install.sh && chmod +x dist/release/install.sh
@@ -1056,8 +1063,23 @@ jobs:
           cp -r templates dist/release/templates
           cp -r playbooks dist/release/playbooks
           cd dist/release
-          tar czf "../gludd-${VERSION}-linux-aarch64.tar.gz" .
+          tar czf "../gludd-${VERSION}-linux-aarch64.tar.gz" . || {
+            echo "::error::TARBALL PACKAGE FAILED — tarball creation for linux-aarch64 failed."
+            exit 1
+          }
           sha256sum "../gludd-${VERSION}-linux-aarch64.tar.gz" > "../gludd-${VERSION}-linux-aarch64.tar.gz.sha256"
+      - name: CI Summary
+        if: always()
+        run: |
+          echo "============================================="
+          echo "=== CI SUMMARY: linux-aarch64 (Termux) build ==="
+          echo "============================================="
+          echo "  Platform          : linux-aarch64 (ubuntu-24.04-arm)"
+          echo "  Build executable  : check step 'Build executable' above"
+          echo "  Smoke test        : check step 'Smoke test binary' above"
+          echo "  Package tarball   : check step 'Package tarball' above"
+          echo "  Artifacts         : tarball + .sha256 checksum"
+          echo "============================================="
       - if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
@@ -1089,6 +1111,7 @@ jobs:
           ref: ${{ github.sha }}
       - name: Inject version
         run: |
+          echo "=== CI PHASE: container-version-inject ==="
           sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" src/general_ludd/__init__.py
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
       - name: Set up Buildx
@@ -1111,6 +1134,7 @@ jobs:
             type=ref,event=branch
             type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')) }}
       - name: Build and push image
+        id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6.19.2 (node24)
         with:
           context: .
@@ -1122,6 +1146,18 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: CI Summary
+        if: always()
+        run: |
+          echo "============================================="
+          echo "=== CI SUMMARY: container build ==="
+          echo "============================================="
+          echo "  Platform          : linux/amd64 (ubuntu-latest)"
+          echo "  Registry          : ghcr.io/\${{ github.repository }}"
+          echo "  Image tags        : \${{ steps.meta.outputs.tags }}"
+          echo "  Push enabled      : \${{ github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master') }}"
+          echo "  Cache             : type=gha (mode=max)"
+          echo "============================================="
 
   # Manual-dispatch-only E2E job for the local-provider tests
   # (tests/e2e/providers/). NEVER runs on push or PR — the whole point of the
@@ -1201,14 +1237,22 @@ jobs:
       - name: Verify status table current (release gate)
         # On tag builds the release must not be cut with a stale status table.
         run: |
+          echo "=== CI PHASE: release-status-table ==="
           uv sync
-          make check-status-table
+          make check-status-table || {
+            echo "::error::RELEASE STATUS TABLE STALE — README.md status table does not match docs/features.yml. Run 'make gen-status-table' and commit the result."
+            exit 1
+          }
         env:
           GLUDD_PSK: ""
       - name: Generate SBOM
         run: |
+          echo "=== CI PHASE: release-sbom ==="
           uv sync
-          make sbom
+          make sbom || {
+            echo "::error::RELEASE SBOM FAILED — CycloneDX SBOM generation failed. Run 'make sbom' locally for details."
+            exit 1
+          }
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1 (node24)
         with:
           path: artifacts
@@ -1216,6 +1260,7 @@ jobs:
           merge-multiple: true
       - name: Stage release assets
         run: |
+          echo "=== CI PHASE: release-stage-assets ==="
           mkdir -p release-assets
           cp -v artifacts/* release-assets/
           cp -v dist/sbom.json release-assets/sbom.json
@@ -1230,6 +1275,7 @@ jobs:
         # for with NO exceptions." Optional categories weaken the gate and
         # allowed incomplete releases through. Fix builds, not lower the bar.
         run: |
+          echo "=== CI PHASE: release-pre-publish-gate ==="
           set -e
           cd release-assets
           missing=0
@@ -1262,6 +1308,7 @@ jobs:
           echo "PRE-PUBLISH GATE: PASS — all 12 asset categories present."
       - name: Generate SHA256SUMS aggregate
         run: |
+          echo "=== CI PHASE: release-sha256sums ==="
           cd release-assets
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
@@ -1273,7 +1320,9 @@ jobs:
         # gh bug as the verify step) — without it the delete silently no-ops.
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release delete ${{ github.ref_name }} --yes || true
+        run: |
+          echo "=== CI PHASE: release-clean-stale ==="
+          gh release delete ${{ github.ref_name }} --yes || true
       - uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0 (node24)
         with:
           # Use the REAL git tag (with "v" prefix), not the PEP 440 version.
@@ -1303,10 +1352,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          echo "=== CI PHASE: release-verify-completeness ==="
           uv run python scripts/verify_release_completeness.py \
-            ${{ github.ref_name }} ${{ github.repository }}
+            ${{ github.ref_name }} ${{ github.repository }} || {
+            echo "::error::RELEASE COMPLETENESS CHECK FAILED — one or more required artifact categories missing or invalid. See verify_release_completeness.py output above."
+            exit 1
+          }
       - name: Post-deploy smoke test — Linux binary
         run: |
+          echo "=== CI PHASE: release-post-deploy-smoke ==="
           set -e
           TAG="${{ github.ref_name }}"
           echo "--- Downloading Linux x86_64 binary from release $TAG ---"
@@ -1347,6 +1401,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
       - name: Post-deploy verify — .deb package validity
         run: |
+          echo "=== CI PHASE: release-post-deploy-deb ==="
           set -e
           TAG="${{ github.ref_name }}"
           echo "--- Downloading .deb from release $TAG ---"
@@ -1362,7 +1417,25 @@ jobs:
           echo "--- dpkg-deb --contents $DEB ---"
           dpkg-deb --contents "$DEB"
           echo "--- Verifying gludd binary inside .deb ---"
-          dpkg-deb --contents "$DEB" | grep -q 'gludd' && echo "PASS: gludd binary found in .deb" || { echo "FAIL: gludd binary not found in .deb"; exit 1; }
+          dpkg-deb --contents "$DEB" | grep -q 'gludd' && echo "PASS: gludd binary found in .deb" || { echo "::error::RELEASE .deb INVALID — gludd binary not found in .deb"; exit 1; }
           echo "PASS: .deb package is valid"
         env:
           GH_TOKEN: ${{ github.token }}
+      - name: CI Summary
+        if: always()
+        run: |
+          echo "============================================="
+          echo "=== CI SUMMARY: release job ==="
+          echo "============================================="
+          echo "  Tag               : \${{ github.ref_name }}"
+          echo "  Version           : \${{ env.VERSION }}"
+          echo "  Status table      : check step 'Verify status table current' above"
+          echo "  SBOM              : check step 'Generate SBOM' above"
+          echo "  Stage assets      : check step 'Stage release assets' above"
+          echo "  Pre-publish gate  : check step 'Verify staged assets' above"
+          echo "  SHA256SUMS        : check step 'Generate SHA256SUMS aggregate' above"
+          echo "  GitHub Release    : check step 'softprops/action-gh-release' above"
+          echo "  Completeness      : check step 'Verify release completeness' above"
+          echo "  Post-deploy smoke : check step 'Post-deploy smoke test' above"
+          echo "  Post-deploy .deb  : check step 'Post-deploy verify' above"
+          echo "============================================="
