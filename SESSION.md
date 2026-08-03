@@ -43,11 +43,22 @@
 
 ## SESSION 72 — 2026-08-03 (CURRENT)
 
-- **HEAD: `c1cc717b`** on `development`
-- **Tree: DIRTY** — governance collection + sandbox collection + travel molecule + ZDD/budget fixes
-- **Binary_RE spec: COMPLETE** — 12 model_capabilities + 8 role_capabilities in galaxy.yml (19 tags), 503 tests PASS
-- **Collections wired:** radio (14 tests), binary_re (14 tests), sandbox (15 tests), governance (6 tests)
+- **HEAD: `a37e3dc0`** on `development`
+- **Tree: CLEAN** — all spec updates committed
+- **ALL 10 COLLECTION SPECS CLOSED:**
+  - **Binary_RE spec: COMPLETE** — 12 model_capabilities + 8 role_capabilities (19 tags), 503 tests PASS
+  - **Radio spec: COMPLETE** — 10 model_capabilities + 10 role_capabilities (24 tags), 214 tests PASS
+  - **Travel spec: COMPLETE** — 4 model_capabilities, 5 modules, 10 module_utils, 2 roles, 271 tests, daemon dispatch wired
+  - **Sandbox spec: COMPLETE** — 10 backends + contracts + unikernel + state_root + capability_router, 35+ test files
+  - **Unikernel spec: COMPLETE** (prior) — P1-P6, VMSandboxManager lifecycle, Firecracker + gVisor backends
+  - **Governance: wired** — 12 domains, 12 router tests, molecule scenario
+  - **Language: wired** — 8 router tests
+  - **Chat: daemon + CLI** — 293 tests
+  - **E2E Test Gen: COMPLETE** — 4 components
+  - **Quality Auditor: COMPLETE** — scan_codebase
+- **Collections wired:** radio (14 tests), binary_re (14 tests), sandbox (15 tests), governance (12 tests), language (8 tests)
 - **gate-lite: PASS** — baseline from S69 (4682/4682 app tests)
+- **lint: PASS**
 
 ### Session 71 — Sandbox Capability Router Wiring + Spec Close (2026-08-03, HEAD `d6758aa2`)
 

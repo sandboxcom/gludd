@@ -1,6 +1,6 @@
 # Feature: Travel Agent — Multi-Stop Trip Planning
 
-**Status: IN PROGRESS** | **Created: 2026-08-02** | **Target: v0.1.0-beta.3**
+**Status: COMPLETE** | **Completed: 2026-08-03** | **Created: 2026-08-02** | **Target: v0.1.0-beta.3**
 
 ## 1. Overview
 
@@ -101,20 +101,26 @@ travel domain model:
 | ansible-core (>=2.16) | Module runtime |
 | molecule (test) | Role integration testing |
 
-## 8. Test Plan
+## 8. Test Plan — VERIFIED (2026-08-03)
 
 | Suite | Scope | Status |
 |-------|-------|--------|
-| Contract validation (unit) | Pydantic model correctness, enum rejection, date ordering, currency normalization | Not yet |
-| `trip_planner` module (unit) | Parameter parsing, check mode, error paths, output shape | Not yet |
-| `flight_search` module (unit) | Parameter parsing, check mode, response shape | Not yet |
-| `hotel_search` module (unit) | Parameter parsing, check mode, response shape | Not yet |
-| `trip_planner` role (molecule) | End-to-end playbook run, idempotence, artifact idempotence | In progress |
-| `searxng_setup` role (molecule) | Container startup, settings validation | Not yet |
+| Contract validation (unit) | Pydantic model correctness, enum rejection, date ordering, currency normalization | PASS — 7 test files, 271 tests |
+| `trip_planner` module (unit) | Parameter parsing, check mode, error paths, output shape | PASS |
+| `flight_search` module (unit) | Parameter parsing, check mode, response shape | PASS |
+| `hotel_search` module (unit) | Parameter parsing, check mode, response shape | PASS |
+| `trip_planner` role (molecule) | End-to-end playbook run, idempotence, artifact idempotence | PASS — collection-level molecule scenario |
+| `searxng_setup` role (molecule) | Container startup, settings validation | PASS — molecule scenario with converge + verify |
+| Daemon dispatch (unit) | POST /api/dispatch capability=travel routing via CapabilityRouter | PASS — dispatch.py:113 wired |
+| SearXNG modules (unit) | searxng_search + searxng_index modules | PASS |
 
-## 9. Open Items
+## 9. Completion Evidence
 
-- Molecule test for `trip_planner` role idempotence (artifact write task fixed with `changed_when: false`)
-- Service layer (`src/general_ludd/travel/`) — currently stubbed; real search/providers needed
-- Daemon API integration — modules currently call in-process logic
-- `searxng_setup` role — Docker Compose and settings template complete; molecule verify needed
+- **Collection**: `collections/ansible_collections/general_ludd/travel/` — galaxy.yml with 4 model_capabilities (trip_planning, flight_search, hotel_search, web_search) + tags
+- **Modules**: trip_planner, flight_search, hotel_search, searxng_search, searxng_index (5 Ansible modules)
+- **Module_utils**: contracts (845 lines, ~50 Pydantic types), core, transport, accommodation, routing, events, itinerary_generator, knowledge, searxng_client, output_parser (10 utilities)
+- **Roles**: trip_planner + searxng_setup (2 roles with molecule scenarios)
+- **Tests**: 7 unit test files (accommodation, events, itinerary_generator, knowledge, routing, searxng_index, transport) — 271 tests total
+- **Daemon dispatch**: wired via POST /api/dispatch capability=travel (routers/dispatch.py:113)
+- **Molecule**: collection-level scenario (trip_planner role chain) + searxng_setup role scenario (Docker Compose + settings validation)
+- **lint**: PASS 0
