@@ -2,7 +2,7 @@ import os
 import re
 
 ENFORCE_MAKE_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "..", ".opencode", "plugin", "enforce-make.ts"
+    os.path.dirname(__file__), "..", "..", ".opencode", "plugin", "impl", "enforce_make_impl.ts"
 )
 
 
@@ -33,6 +33,7 @@ def _find_function_body(source: str, func_search: str) -> str:
 # 1. No blanket `if (OPENCODE_SUBAGENT) return` before the bash check
 # ---------------------------------------------------------------------------
 
+
 def test_no_blanket_subagent_return_before_bash_check():
     """The bash make-only check must NOT be behind an early OPENCODE_SUBAGENT guard."""
     source = _read_source()
@@ -44,7 +45,8 @@ def test_no_blanket_subagent_return_before_bash_check():
     assert len(isSubagent_set) <= 1, "isSubagent declared at most once before bash check"
 
     subagent_returns = [
-        m for m in re.finditer(r"if\s*\(\s*isSubagent\s*\)\s*return", before_bash)
+        m
+        for m in re.finditer(r"if\s*\(\s*isSubagent\s*\)\s*return", before_bash)
         if "OPENCODE_SUBAGENT" in before_bash[m.start() : m.start() + 200]
     ]
     assert len(subagent_returns) == 0, (
@@ -56,8 +58,9 @@ def test_no_blanket_subagent_return_before_bash_check():
     # is a variable *declaration*, not a guard. We only flag guard-like patterns:
     # `if (isSubagent) return` or `if (process.env.OPENCODE_SUBAGENT ...) return`.
     guard_returns = [
-        m for m in re.finditer(
-            r'if\s*\(\s*(?:isSubagent|process\.env\.OPENCODE_SUBAGENT)',
+        m
+        for m in re.finditer(
+            r"if\s*\(\s*(?:isSubagent|process\.env\.OPENCODE_SUBAGENT)",
             before_bash,
         )
         if "return" in before_bash[m.start() : m.start() + 150]
@@ -73,11 +76,12 @@ def test_no_blanket_subagent_return_before_bash_check():
 # 2. Bash pattern checks are NOT behind the OPENCODE_SUBAGENT guard
 # ---------------------------------------------------------------------------
 
+
 def test_bash_checks_not_behind_subagent_guard():
     """The make-only, metacharacters, and invalid-pattern checks must fire for subagents."""
     source = _read_source()
     tool_before = _find_function_body(source, '"tool.execute.before"')
-    after_bash = tool_before[tool_before.index('if (input.tool === "bash")'):]
+    after_bash = tool_before[tool_before.index('if (input.tool === "bash")') :]
 
     subagent_guard_pos = after_bash.find("if (isSubagent) return")
     bash_block_end = after_bash.index("}") if "}" in after_bash else len(after_bash)
@@ -92,26 +96,22 @@ def test_bash_checks_not_behind_subagent_guard():
 
     bash_body = _find_function_body(tool_before, 'if (input.tool === "bash")')
 
-    assert "make " in bash_body or 'startsWith("make")' in bash_body, (
-        "Bash block missing make-prefix enforcement"
-    )
-    assert "SHELL_META_CHARS" in bash_body, (
-        "Bash block missing metacharacter enforcement"
-    )
+    assert "make " in bash_body or 'startsWith("make")' in bash_body, "Bash block missing make-prefix enforcement"
+    assert "SHELL_META_CHARS" in bash_body, "Bash block missing metacharacter enforcement"
     assert "Forbidden command" in bash_body or "invalidPatterns" in bash_body, (
         "Bash block missing invalid-pattern/bare-command enforcement"
     )
 
     isSubagent_declared = "const isSubagent" in tool_before
     assert isSubagent_declared, (
-        "isSubagent is not declared in tool.execute.before at all. "
-        "It should still exist to guard edit/write checks."
+        "isSubagent is not declared in tool.execute.before at all. It should still exist to guard edit/write checks."
     )
 
 
 # ---------------------------------------------------------------------------
 # 3. Text-injection hooks (text.complete, system.transform) STILL guarded
 # ---------------------------------------------------------------------------
+
 
 def test_text_complete_still_has_subagent_guard():
     """experimental.text.complete MUST still skip for subagents."""
@@ -131,17 +131,14 @@ def test_text_complete_still_has_subagent_guard():
     guard_pos = text_complete_body.index(guard.group())
     early_enough = text_complete_body[:guard_pos].count("\n") < 8
     assert early_enough, (
-        "OPENCODE_SUBAGENT guard in experimental.text.complete is too deep. "
-        "It should be near the top of the function."
+        "OPENCODE_SUBAGENT guard in experimental.text.complete is too deep. It should be near the top of the function."
     )
 
 
 def test_system_transform_still_has_subagent_guard():
     """experimental.chat.system.transform MUST still skip for subagents."""
     source = _read_source()
-    system_transform_body = _find_function_body(
-        source, '"experimental.chat.system.transform"'
-    )
+    system_transform_body = _find_function_body(source, '"experimental.chat.system.transform"')
 
     guard = re.search(
         r'OPENCODE_SUBAGENT\s*===?\s*["\']1["\']\s*\)\s*return\s+output',
@@ -164,14 +161,13 @@ def test_system_transform_still_has_subagent_guard():
 # 4. tool.execute.after — no subagent guard needed (completion reminder is harmless)
 # ---------------------------------------------------------------------------
 
+
 def test_tool_execute_after_no_subagent_guard_needed():
     """tool.execute.after runs the commit reminder; subagent guard is optional here."""
     source = _read_source()
     after_body = _find_function_body(source, '"tool.execute.after"')
 
-    has_guard = re.search(
-        r'OPENCODE_SUBAGENT\s*===?\s*["\']1["\']', after_body
-    )
+    has_guard = re.search(r'OPENCODE_SUBAGENT\s*===?\s*["\']1["\']', after_body)
     if has_guard:
         pass  # guarded is fine
     else:
@@ -186,14 +182,13 @@ def test_tool_execute_after_no_subagent_guard_needed():
 # 5. session.idle — no subagent guard needed
 # ---------------------------------------------------------------------------
 
+
 def test_session_idle_no_subagent_guard_needed():
     """session.idle resets per-turn state; subagent guard is not required."""
     source = _read_source()
     idle_body = _find_function_body(source, '"session.idle"')
 
-    has_guard = re.search(
-        r'OPENCODE_SUBAGENT\s*===?\s*["\']1["\']', idle_body
-    )
+    has_guard = re.search(r'OPENCODE_SUBAGENT\s*===?\s*["\']1["\']', idle_body)
     if has_guard:
         pass
     else:
