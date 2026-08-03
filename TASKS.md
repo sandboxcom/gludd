@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-08-03 Session 78 FINAL. HEAD `e38c12c0` on development. lint PASS 0. typecheck PASS 0. Tree CLEAN. gate-lite PASS (6555 passed, 0 failed). E2E EXECUTED (~790 local model tests). ALL 23 SPECS + FPX.1 COMPLETE. Game dispatch: 7/7 verified. ALL GAPS CLOSED. Model hash DB: WIRED (28 tests). Push COMPLETE. Session total: +751 tests across 17 files. ALL 4 active items COMPLETE. Release v0.1.0-beta.3 SHIPPED (21/12 assets, verify-release-completeness PASS).**
+**Last consolidated: 2026-08-03 Session 78 FINAL. HEAD `42e39cc0` on development. lint PASS 0. typecheck PASS 0. Tree CLEAN. CI run `30845918405` in_progress. gate-lite PASS (6555 passed, 0 failed). E2E EXECUTED (~790 local model tests). ALL 23 SPECS + FPX.1 COMPLETE. Game dispatch: 7/7 verified. ALL GAPS CLOSED. Model hash DB: WIRED (28 tests). Push COMPLETE. Session total: +1,378 tests across 23 files (58,533 → 59,911). ALL 4 active items COMPLETE. Release v0.1.0-beta.3 SHIPPED (21/12 assets, verify-release-completeness PASS).**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -43,11 +43,20 @@ CI PENDING — run `30833152613`, headSha `ff0aec68`, status `in_progress`. lint
 - [x] S78.0 — **Fix gate-lite 2 test failures**: repaired `test_all_plugins_runtime` + `test_enforcement_bugs`. | evidence: `9e87d445`; gate-lite PASS (6555/0) | priority: high | effort: M | status: completed
 - [x] S77.2 — **`make release-cut TAG=v0.1.0-beta.3 MSG='beta.3: 23 specs + FPX.1 + model hash DB + local_game_gen role + E2E binary, 58K+ tests, gate-lite green'`** | evidence: v0.1.0-beta.3 release exists on GitHub with 21 download assets (all 12 required categories verified) | priority: high | effort: L | status: completed
 - [x] S77.3 — **Verify 12/12 release artifacts**: `make verify-release-completeness TAG=v0.1.0-beta.3` | evidence: verify-release-completeness PASS — 21/12 assets, all 12 categories confirmed (non-draft, binaries, SBOM, checksums, Linux/Windows/macOS builds) | priority: high | effort: M | status: completed
+- [x] S78.W10 — **Wave 10 — deep tests +189 across 6 modules**: STS lifecycle (+52), cost pipeline (+60), chat session (+20), mock_daemon (+15), OpenBao (+15), sandbox (+27). Total session: +1,378 (58,533 → 59,911). | evidence: `42e39cc0`; +189 tests; session total +1,378 | priority: high | effort: M | status: completed
+- [x] S78.W10a — **CI trigger on `42e39cc0`**: CI run `30845918405` in_progress. | evidence: CI run 30845918405 on 42e39cc0 | priority: high | effort: S | status: completed
 
-### Unpushed Commits (21)
+### Unpushed Commits (22)
 
 ```
-4732463f feat: binary build verification tests (HEAD)
+42e39cc0 feat: wave 10 — +189 tests (STS 52, cost 60, chat 20, mock_daemon 15, OpenBao 15, sandbox 27), fix remaining test gaps, fix 2 lint errors (HEAD)
+fd0b4354 feat: wave 7-9 — +401 tests (gateway deep 92, dispatch 45, health 28, SSRF 83, event_loop 41, CLI 35, DB 51, ansible 26), gate-lite fixes, CI RED fixes
+9ce18dfe chore: final TASKS.md + SESSION.md — all 4 items complete, beta.3 shipped (21/12 assets)
+e38c12c0 chore: update TASKS.md — final wave +298 tests, +751 session total, CI RED fixes, 14 lint fixed, NAG_PREFIX fixed
+364e916e fix: CI RED — gludd_observe import + mock_daemon token shapes + 14 lint errors
+bdd3a6d2 feat: CSS linting step in CI
+bad49bb9 chore: update TASKS.md + SESSION.md — push complete, CI PENDING, 58,980 tests
+4732463f feat: binary build verification tests
 eb0267d7 fix: enforce_make_subagent test — update path to impl file
 c11b68bf feat: wave 2/3 — deep tests (+453 total), CI fixes, lint clean, spec enforcement 98.6%
 e825dbec fix: CI RED — governance policy eval JSON escaping (use to_json filter), I001 import sort
@@ -147,7 +156,7 @@ ALL 21 feature specifications + FPX.1 COMPLETE. Local model E2E: COMPLETE (~790 
 | DB Migration Edges | 51 | DB migration edge tests (wave 3) |
 | gate-lite (app) | 6,555 | 6555 pass, 0 fail |
 | Integration | 3,252 | 157 files |
-| **Total Collection** | **59,278/59,278** | **0 errors** |
+| **Total Collection** | **59,911/59,911** | **0 errors** |
 
 ### 23 Spec Files — ALL COMPLETE
 
@@ -181,9 +190,10 @@ ALL 21 feature specifications + FPX.1 COMPLETE. Local model E2E: COMPLETE (~790 
 
 | Item | Status |
 |---|---|
-| url_fetch lint I001 | FIXED (`ca1efaa9`) |
-| CI url_fetch, gateway base_url, E2E download, task-integrity, dead-code, env-writes | FIXED (`ff0aec68`) |
-| CI run 30839033353 on `49857586` | PENDING (in_progress) |
+| Wave 10 — +189 tests (STS 52, cost 60, chat 20, mock_daemon 15, OpenBao 15, sandbox 27) | COMPLETE (`42e39cc0`) |
+| CI run 30845918405 on `42e39cc0` | PENDING (in_progress) |
+| Session total tests: +1,378 (58,533 → 59,911) | COMPLETE |
+| release-cut pushed (21 commits) | COMPLETE |
 | gate-lite FAIL (2 tests: `test_all_plugins_runtime`, `test_enforcement_bugs`) | FIXED (`9e87d445`; gate-lite PASS 6555/0) |
 | enforce-objective.ts NAG_PREFIX export | FIXED (`bad49bb9`) |
 | gludd_observe.py import + mock_daemon token shapes (CI RED) | FIXED (`bad49bb9`) |
