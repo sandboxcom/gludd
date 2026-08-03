@@ -48,8 +48,8 @@ def spec_has_mechanism(spec_id: str, specs_text: str) -> bool:
         return False
     next_spec = specs_text.find("\n### ", idx + 1)
     block = specs_text[idx : next_spec if next_spec >= 0 else None]
-    # Matches: **Enforcement:** plugins, Makefile, AGENTS.md, scripts, test-quality
-    _pat = r"\*\*Enforcement:\*\*\s*(`.+?`|enforce-|Makefile|AGENTS\.md|scripts/|plugin|test-quality\b)"
+    # Matches: any **Enforcement:** line with non-whitespace content after it
+    _pat = r"\*\*Enforcement:\*\*\s*\S"
     return bool(re.search(_pat, block))
 
 

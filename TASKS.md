@@ -1,31 +1,32 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-08-03 Session 76. HEAD `6c8d4261` on development. ALL 23 SPECS + FPX.1 COMPLETE. Local model E2E: COMPLETE (~790 tests). FPX.1 local model dispatch wiring: COMPLETE (697 tests, `e87f6f63`). Deploy path aligned: local_game_gen Ansible role (467 lines, 7 files, molecule-tested). Model hash DB: WIRED into small_models public API (34 tests). gate-lite quality phases: ALL PASS (lint 0, dead-code PASS, tdd-compliance PASS, coverage-gaps PASS, typecheck 0, collect OK, env-writes PASS, hook-runtime 34/34, 40/40 plugins with guards). Gate full: FAIL stale (last run before fixes in `8f80694b`/`6c8d4261`). Test collection: ~58,500, 0 errors. Spec enforcement: 207/220 = 94.1%. lint PASS. Tree CLEAN. 10 commits unpushed. CI: PENDING (run 30805136413 for `6c8d4261`). Release beta.3 BLOCKED on CI green.**
+**Last consolidated: 2026-08-03 Session 76. HEAD `448b607e` on development. ALL CODE GAPS CLOSED — 23 SPECS + FPX.1 COMPLETE. Local model E2E: COMPLETE (~790 tests). FPX.1 local model dispatch wiring: COMPLETE (697 tests, `e87f6f63`). Deploy path aligned: local_game_gen Ansible role (467 lines, 7 files, molecule-tested). Model hash DB: WIRED into small_models public API (34 tests). gate-lite quality phases: ALL PASS (lint 0, dead-code PASS, tdd-compliance PASS, coverage-gaps PASS 849/7/447/0, typecheck 0, collect OK, env-writes PASS, hook-runtime 34/34, 40/40 plugins with guards, skills-frontmatter 17/17, lint-specs 220/0, spec-enforcement 94.1%, plugin-hook-invoke 34/34, TASKS.md integrity 37 items/0 violations). gate-lite test phase: timed out (>5min). Gate full: FAIL stale (last run 2026-08-02T23:21:32Z, predates `8f80694b`/`6c8d4261`/`448b607e`). Test collection: ~58,500, 0 errors. lint PASS. Tree CLEAN. 10 commits unpushed. CI: RED — no run for HEAD `448b607e`. Release beta.3 BLOCKED on push + CI green.**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
 ---
 
-## Session 76 — All Fixes Committed, Tree CLEAN, CI PENDING (2026-08-03, HEAD `6c8d4261`)
+## Session 76 — ALL CODE GAPS CLOSED, CI RED (no run for `448b607e`), gate-lite QUALITY GREEN (2026-08-03, HEAD `448b607e`)
 
-Gate full: FAIL stale (last run 2026-08-02T23:21:32Z, predates fixes). gate-lite quality phases: ALL PASS. Lint PASS 0, typecheck PASS 0, collect OK. hook-runtime 34/34, verify-enforcement PASS, coverage-gaps PASS, skills-frontmatter PASS, lint-specs 220/0, spec-enforcement-coverage 94.1%, plugin-hook-invoke PASS. Tree CLEAN. 10 commits unpushed (remote `f1148690`, local `6c8d4261`). CI PENDING (run 30805136413, in_progress).
+Gate full: FAIL stale (last run 2026-08-02T23:21:32Z, predates fixes). gate-lite quality phases: ALL PASS — lint 0, dead-code PASS, tdd-compliance PASS, coverage-gaps PASS (849 OK, 7 UNTESTED, 447 ALLOWED, 0 NEW), typecheck 0, collect OK, env-writes PASS, hook-runtime 34/34, 40/40 plugins with guards, skills-frontmatter 17/17, lint-specs 220/0, spec-enforcement 94.1%, plugin-hook-invoke 34/34, TASKS.md integrity 37/0. gate-lite test phase: timed out (>5min). Tree CLEAN. 10 commits unpushed (remote `f1148690`, local `448b607e`). CI RED — no run for HEAD `448b607e` (prior run 30805136413 was for `6c8d4261`).
 
 - [x] S76.0 — **`scripts/run_game_gen_local.py` + make target**: script elevated to 304 lines with `make run-game-gen-local` target (Makefile:1811). Q5_K_M quant (was Q4_K_M). E2E model URL and game gen server fixes in commit `8f80694b`. | evidence: Makefile:1811; commit `8f80694b` | priority: high | effort: M | status: completed
 - [x] S76.2 — **HF Auth Fix**: `src/general_ludd/infra/local_inference.py` +40 lines — HF_TOKEN threaded through ModelDownloader → download. `tests/e2e/test_small_model_pipeline_real.py` updated. E2E model URL + game gen server fixed. Commit `8f80694b`. | evidence: `8f80694b` | priority: high | effort: S | status: completed
 - [x] S76.1 — **Model Hash DB**: `src/general_ludd/small_models/model_hash_db.py` (226 lines) + `tests/unit/test_small_models_model_hash_db.py` (291 lines, 28 tests). FileHash, KnownModels (4 models), ModelHashDB (CRUD + verify + import_from_hf + persist). WIRED: `small_models/__init__.py` exports FileHash/KnownModels/ModelHashDB/ModelIntegrityError. `small_models/download.py` (+19 lines) — ModelDownloader._hash_db + verify_hash kwarg. Committed in `6c8d4261`. | evidence: `6c8d4261`; 28 tests; gate-lite dead-code PASS | priority: high | effort: M | status: completed
 - [x] S76.1a — **Local deploy path alignment — Ansible role `local_game_gen`**: `collections/ansible_collections/general_ludd/agent/roles/local_game_gen/` (7 files, 467 lines total). tasks/main.yml (178 lines): 5-step pipeline — validate → download (huggingface-cli) → start llama.cpp server (nohup + health poll) → generate via /v1/completions → verify (AST + import + runtime) → shutdown. defaults/main.yml (46 lines): Qwen2.5-0.5B Q5_K_M, localhost:9999, 2048 ctx, snake prompt. meta/main.yml (18 lines): role_name=local_game_gen. molecule/default/ (converge.yml + molecule.yml + verify.yml, 225 lines): full structure + YAML + step verification. `scripts/run_game_gen_local.py` refactored to thin caller. Committed in `6c8d4261`. | evidence: `6c8d4261` | priority: high | effort: M | status: completed
 - [x] S76.1b — **Game dispatch wiring — small_models __init__ + download**: ModelHashDB imported/exported in `small_models/__init__.py` (+10 lines). ModelDownloader download() wired with `_hash_db` + `verify_hash` kwarg in `small_models/download.py` (+19 lines). `routers/models.py` updated for hash-DB-aware model routing. Committed in `6c8d4261`. | evidence: `6c8d4261` | priority: high | effort: S | status: completed
-- [x] S76.3 — **Commit model_hash_db + test + dead-code/env-writes fixes**: All fixes committed in `8f80694b` and `6c8d4261`. Dead-code baseline refreshed, env-writes fixed. | evidence: `8f80694b`, `6c8d4261`; gate-lite dead-code PASS, env-writes PASS; tree CLEAN | priority: high | effort: M | status: completed
+- [x] S76.3 — **Commit model_hash_db + test + dead-code/env-writes fixes**: All fixes committed in `8f80694b` and `6c8d4261`. Dead-code baseline refreshed, env-writes fixed. CHORE commit `448b607e`: SESSION.md/TASKS.md update. | evidence: `8f80694b`, `6c8d4261`, `448b607e`; gate-lite dead-code PASS, env-writes PASS; tree CLEAN | priority: high | effort: M | status: completed
 - [x] S76.6 — **Fix gate FAIL: dead-code baseline**: Dead-code baseline refreshed. gate-lite dead-code PASS. | evidence: gate-lite dead-code PASS; `6c8d4261` ("dead-code refresh") | priority: high | effort: S | status: completed
 - [x] S76.7 — **Fix gate FAIL: env-writes**: Env-writes fixes applied. gate-lite env-writes PASS. | evidence: gate-lite env-writes PASS; `8f80694b` ("env-writes") | priority: high | effort: S | status: completed
-- [ ] S76.4 — **Push 10 accumulated commits**: `make batch-push` | evidence: pending | priority: high | effort: M | status: pending
-- [ ] S76.5 — **CI green on development HEAD `6c8d4261`**: CI is PENDING (run 30805136413, in_progress). Previously RED for `8f80694b`. | evidence: CI PENDING (run 30805136413 for `6c8d4261`) | priority: high | effort: M | status: pending
-- [ ] S76.8 — **Run `make gate` for fresh baseline** after CI green | evidence: pending (stale gate from 2026-08-02 predates fixes) | priority: high | effort: L | status: pending
+- [ ] S76.4 — **Push 10 accumulated commits**: `make batch-push` — triggers CI run for HEAD `448b607e`. | evidence: pending | priority: high | effort: M | status: pending
+- [ ] S76.5 — **CI green on development HEAD `448b607e`**: CI is RED — no run for `448b607e`. Prior run 30805136413 was for `6c8d4261` (status='in_progress', likely stale now). Push required to trigger new CI. | evidence: CI RED (no run for `448b607e`) | priority: high | effort: M | status: pending
+- [ ] S76.8 — **Run `make gate` for fresh baseline** after CI green | evidence: pending (stale gate from 2026-08-02 predates `8f80694b`/`6c8d4261`/`448b607e`) | priority: high | effort: L | status: pending
 - [ ] S76.9 — **`make release-cut TAG=v0.1.0-beta.3`** | evidence: pending (BLOCKED on CI green) | priority: high | effort: L | status: pending
 
 ### Unpushed Commits (10)
 
 ```
+448b607e chore: update SESSION.md and TASKS.md
 6c8d4261 feat: local deploy via ansible, game E2E dispatch, model hash DB (34 tests), dead-code refresh, playbooks, events
 8f80694b fix: CI, gate green, E2E model URL, game gen server, dead-code/env-writes
 7f0c3035 fix: ruff I001 import sort in url_fetch.py
@@ -35,7 +36,6 @@ Gate full: FAIL stale (last run 2026-08-02T23:21:32Z, predates fixes). gate-lite
 e87f6f63 feat: local model E2E, FPX.1 local model dispatch, gate-lite green
 414e34c7 feat: close travel+sandbox — all 21 specs COMPLETE
 a37e3dc0 feat: close 8 specs (unikernel/radio/binary_re/chat/e2e_test_gen/quality_auditor/language/governance)
-93865ca6 feat: dispatch capabilities enum, governance core expansions
 ```
 
 ---
@@ -134,9 +134,9 @@ ALL 21 feature specifications + FPX.1 COMPLETE. Local model E2E: COMPLETE (~790 
 
 | Item | Status |
 |---|---|
-| Push 10 accumulated commits (`93865ca6`→`6c8d4261`) | NOT PUSHED |
-| CI green on development HEAD `6c8d4261` | **PENDING** (run 30805136413, in_progress) |
-| Run `make gate` for fresh full baseline | PENDING (stale gate predates fixes) |
+| Push 10 accumulated commits (`93865ca6`→`448b607e`) | NOT PUSHED |
+| CI green on development HEAD `448b607e` | **RED** (no CI run for current HEAD; push required) |
+| Run `make gate` for fresh full baseline | PENDING (stale gate predates `8f80694b`/`6c8d4261`/`448b607e`) |
 | `make release-cut TAG=v0.1.0-beta.3` | BLOCKED on CI green |
 | 13 specs lack enforcement (AA012 et al.) | 207/220 = 94.1% |
 | C.29 LangGraph budget bypass | DEFERRED (archived) |

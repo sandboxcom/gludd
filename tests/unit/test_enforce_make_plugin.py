@@ -14,7 +14,9 @@ Validates that:
 import os
 import re
 
-ENFORCE_MAKE_PATH = os.path.join(os.path.dirname(__file__), "..", "..", ".opencode", "plugin", "enforce-make.ts")
+ENFORCE_MAKE_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "..", ".opencode", "plugin", "impl", "enforce_make_impl.ts"
+)
 
 
 def _read_source():
