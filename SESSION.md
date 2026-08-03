@@ -1,4 +1,8 @@
-# Session State
+## PRIMARY OBJECTIVE: GREEN CI ON DEVELOPMENT → v0.1.0-beta.3 WITH 12/12 ARTIFACTS
+
+---
+
+## Session State
 
 > Authoritative state: `make gate` output and `TASKS.md` evidence.
 > SESSION.md is derived from gate output, not the other way around.

@@ -296,7 +296,7 @@ class LangGraphModelCallError(Exception):
 # (scripts/dogfood.py, test fixtures); it starts unset and is rebound to the
 # most recently created app's dict by ``create_daemon_app()``.
 # New code MUST NOT access this global — use explicit injection instead.
-_daemon_state: Any = None
+_daemon_state: Any = {}
 
 
 def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:

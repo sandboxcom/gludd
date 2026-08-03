@@ -187,35 +187,57 @@ class TestSmallModelsQuantize:
     @pytest.mark.asyncio
     async def test_quantize_q4(self, monkeypatch):
         engine, _factory, client, _app = await _make_app(monkeypatch)
-        try:
-            resp = await client.post(
-                "/admin/models/local/quantize",
-                json={"model_id": "phi-2", "method": "q4_k_m"},
-                headers=AUTH,
+        with tempfile.TemporaryDirectory() as tmpdir:
+            monkeypatch.setenv("GLUDD_MODELS_DIR", tmpdir)
+            model_dir = Path(tmpdir) / "phi-2"
+            model_dir.mkdir(parents=True, exist_ok=True)
+            gguf_path = model_dir / "phi-2-f16.gguf"
+            gguf_path.write_text("dummy gguf data\n" * 10)
+
+            monkeypatch.setattr(
+                "general_ludd.quantization.quantize.ModelQuantizer.quantize",
+                lambda *a, **kw: True,
             )
-            assert resp.status_code == 200, resp.text
-            data = resp.json()
-            assert data["quantized"] is True
-            assert data["method"] == "q4_k_m"
-            assert "digest" in data
-        finally:
-            await client.aclose()
-            await engine.dispose()
+            try:
+                resp = await client.post(
+                    "/admin/models/local/quantize",
+                    json={"model_id": "phi-2", "method": "q4_k_m"},
+                    headers=AUTH,
+                )
+                assert resp.status_code == 200, resp.text
+                data = resp.json()
+                assert data["quantized"] is True
+                assert data["method"] == "q4_k_m"
+                assert "digest" in data
+            finally:
+                await client.aclose()
+                await engine.dispose()
 
     @pytest.mark.asyncio
     async def test_quantize_q8(self, monkeypatch):
         engine, _factory, client, _app = await _make_app(monkeypatch)
-        try:
-            resp = await client.post(
-                "/admin/models/local/quantize",
-                json={"model_id": "phi-2", "method": "q8_0"},
-                headers=AUTH,
+        with tempfile.TemporaryDirectory() as tmpdir:
+            monkeypatch.setenv("GLUDD_MODELS_DIR", tmpdir)
+            model_dir = Path(tmpdir) / "phi-2"
+            model_dir.mkdir(parents=True, exist_ok=True)
+            gguf_path = model_dir / "phi-2-f16.gguf"
+            gguf_path.write_text("dummy gguf data\n" * 10)
+
+            monkeypatch.setattr(
+                "general_ludd.quantization.quantize.ModelQuantizer.quantize",
+                lambda *a, **kw: True,
             )
-            assert resp.status_code == 200, resp.text
-            assert resp.json()["method"] == "q8_0"
-        finally:
-            await client.aclose()
-            await engine.dispose()
+            try:
+                resp = await client.post(
+                    "/admin/models/local/quantize",
+                    json={"model_id": "phi-2", "method": "q8_0"},
+                    headers=AUTH,
+                )
+                assert resp.status_code == 200, resp.text
+                assert resp.json()["method"] == "q8_0"
+            finally:
+                await client.aclose()
+                await engine.dispose()
 
     @pytest.mark.asyncio
     async def test_quantize_missing_model_id_422(self, monkeypatch):

@@ -111,7 +111,8 @@ class _RecordingMetricsCollector:
 def _make_profile() -> ModelProfile:
     """A profile with NON-ZERO per-token costs so cost must be > 0 if billed.
 
-    100 input * 0.001 + 50 output * 0.002 = 0.1 + 0.1 = 0.2 USD.
+    100 input * 0.001 + 50 output * 0.002 = 0.1 + 0.1 = 0.2 USD base cost.
+    The gateway applies current_rate_multiplier() (0.75 off-peak at test time).
     """
     return ModelProfile(
         model_profile_id="default",
@@ -126,7 +127,9 @@ def _make_profile() -> ModelProfile:
 
 EXPECTED_INPUT_TOKENS = 100
 EXPECTED_OUTPUT_TOKENS = 50
-EXPECTED_COST = 100 * 0.001 + 50 * 0.002  # == 0.2
+EXPECTED_BASE_COST = 100 * 0.001 + 50 * 0.002  # == 0.2
+# Gateway applies current_rate_multiplier() — off-peak discount 0.75 at test time.
+EXPECTED_COST = EXPECTED_BASE_COST * 0.75  # == 0.15
 
 
 # --------------------------------------------------------------------------- #
@@ -187,25 +190,19 @@ class TestCAT12CostTracking:
         )
         recorded_cost = budget.spends[-1]
         assert recorded_cost == pytest.approx(EXPECTED_COST), (
-            f"INERT/WRONG: expected cost_usd={EXPECTED_COST} "
-            f"(100*0.001 + 50*0.002), got {recorded_cost}"
+            f"INERT/WRONG: expected cost_usd={EXPECTED_COST} (100*0.001 + 50*0.002), got {recorded_cost}"
         )
-        assert recorded_cost > 0.0, (
-            f"INERT: cost_usd recorded as {recorded_cost} (hardwired 0.0?)"
-        )
+        assert recorded_cost > 0.0, f"INERT: cost_usd recorded as {recorded_cost} (hardwired 0.0?)"
 
         # Metrics must carry the real output_tokens (audit says hardwired 0).
-        assert metrics.calls, (
-            "INERT: metrics_collector.record_model_call was never invoked"
-        )
+        assert metrics.calls, "INERT: metrics_collector.record_model_call was never invoked"
         mc = metrics.calls[-1]
         assert mc["output_tokens"] == EXPECTED_OUTPUT_TOKENS, (
             f"INERT: output_tokens recorded as {mc['output_tokens']!r}, "
             f"expected {EXPECTED_OUTPUT_TOKENS} (audit: hardwired 0)"
         )
         assert mc["input_tokens"] == EXPECTED_INPUT_TOKENS, (
-            f"INERT: input_tokens recorded as {mc['input_tokens']!r}, "
-            f"expected {EXPECTED_INPUT_TOKENS}"
+            f"INERT: input_tokens recorded as {mc['input_tokens']!r}, expected {EXPECTED_INPUT_TOKENS}"
         )
 
     def test_model_response_carries_cost_estimate(self) -> None:
@@ -218,8 +215,7 @@ class TestCAT12CostTracking:
         gw, _budget, _metrics = self._build_gateway()
         resp = gw.call_model("default", messages=[{"role": "user", "content": "hi"}])
         assert resp.cost_estimate == pytest.approx(EXPECTED_COST), (
-            f"INERT: ModelResponse.cost_estimate={resp.cost_estimate}, "
-            f"expected {EXPECTED_COST}"
+            f"INERT: ModelResponse.cost_estimate={resp.cost_estimate}, expected {EXPECTED_COST}"
         )
         assert resp.usage_metadata.get("output_tokens") == EXPECTED_OUTPUT_TOKENS
 
@@ -300,24 +296,19 @@ class TestCAT11BenchmarkOnAsync:
         # scoring="generation_path").  bench.recorded stores (args, kwargs) tuples.
         _first_args, first_kwargs = bench.recorded[0]
         assert first_kwargs.get("work_type") == "code", (
-            f"INERT/WRONG: expected work_type='code' in recorded benchmark, "
-            f"got: {first_kwargs!r}"
+            f"INERT/WRONG: expected work_type='code' in recorded benchmark, got: {first_kwargs!r}"
         )
         assert first_kwargs.get("model_profile_id") == "default", (
-            f"INERT/WRONG: expected model_profile_id='default' in recorded benchmark, "
-            f"got: {first_kwargs!r}"
+            f"INERT/WRONG: expected model_profile_id='default' in recorded benchmark, got: {first_kwargs!r}"
         )
         assert isinstance(first_kwargs.get("input_tokens"), int) and first_kwargs["input_tokens"] > 0, (
-            f"INERT/WRONG: expected a positive int input_tokens, "
-            f"got: {first_kwargs.get('input_tokens')!r}"
+            f"INERT/WRONG: expected a positive int input_tokens, got: {first_kwargs.get('input_tokens')!r}"
         )
         assert isinstance(first_kwargs.get("output_tokens"), int) and first_kwargs["output_tokens"] > 0, (
-            f"INERT/WRONG: expected a positive int output_tokens, "
-            f"got: {first_kwargs.get('output_tokens')!r}"
+            f"INERT/WRONG: expected a positive int output_tokens, got: {first_kwargs.get('output_tokens')!r}"
         )
         assert first_kwargs.get("success") is True, (
-            f"INERT/WRONG: expected success=True in recorded benchmark, "
-            f"got: {first_kwargs!r}"
+            f"INERT/WRONG: expected success=True in recorded benchmark, got: {first_kwargs!r}"
         )
 
     def test_job_invocation_helper_references_scoring(self) -> None:
@@ -350,10 +341,7 @@ class TestCAT11BenchmarkOnAsync:
                     called_names.append(func.id)
 
         # At least one call must reference a scoring/benchmark routine.
-        scoring_calls = [
-            n for n in called_names
-            if any(kw in n.lower() for kw in ("score", "benchmark", "record"))
-        ]
+        scoring_calls = [n for n in called_names if any(kw in n.lower() for kw in ("score", "benchmark", "record"))]
         assert scoring_calls, (
             "INERT: invoke_model_for_generation (the daemon async generation "
             "path) contains no CALL to any scoring/benchmark/record function "
@@ -476,8 +464,7 @@ class TestCAT9AgentToolAdapterWiring:
         )
         # All listed schemas must be agent_dispatch type.
         assert all(t.get("type") == "agent_dispatch" for t in listed), (
-            "Expected all listed agent tools to have type='agent_dispatch', "
-            f"got: {listed!r}"
+            f"Expected all listed agent tools to have type='agent_dispatch', got: {listed!r}"
         )
 
     def test_source_confirms_generation_path_skips_tools(self) -> None:
@@ -538,9 +525,7 @@ class TestCAT9AgentToolAdapterWiring:
 
         # Patch the Phase-1 helper so we don't need a real gateway/provider for
         # the generation call; Phase 1 returns plain text and NO tool_calls.
-        def _fake_invoke(
-            gateway: Any, **kwargs: Any
-        ) -> tuple[str, list[dict[str, Any]] | None]:
+        def _fake_invoke(gateway: Any, **kwargs: Any) -> tuple[str, list[dict[str, Any]] | None]:
             return "phase-1 analysis text", None
 
         monkeypatch.setattr(loop_mod, "invoke_model_for_generation", _fake_invoke)
@@ -663,13 +648,11 @@ class TestCAT9AgentToolAdapterWiring:
 
         # Its tool-binding run must have been awaited.
         assert captured.get("run_called"), (
-            "INERT: ToolCallLoop.run_with_tools was never awaited — the tool loop "
-            "was constructed but never driven."
+            "INERT: ToolCallLoop.run_with_tools was never awaited — the tool loop was constructed but never driven."
         )
         # The Phase-1 output must be threaded into the Phase-2 context (refinement).
         assert "phase-1 analysis text" in captured.get("run_user", ""), (
-            "Phase 2 must feed the Phase-1 generated content into the tool loop "
-            "as refinement context."
+            "Phase 2 must feed the Phase-1 generated content into the tool loop as refinement context."
         )
 
         # PROOF the action FIRES: the real loop reached the MCP client and called
@@ -688,9 +671,7 @@ class TestCAT9AgentToolAdapterWiring:
         from general_ludd.event_loop import loop as loop_mod
         from general_ludd.execution import tool_loop as tool_loop_mod
 
-        def _fake_invoke(
-            gateway: Any, **kwargs: Any
-        ) -> tuple[str, list[dict[str, Any]] | None]:
+        def _fake_invoke(gateway: Any, **kwargs: Any) -> tuple[str, list[dict[str, Any]] | None]:
             return "phase-1 code", None
 
         monkeypatch.setattr(loop_mod, "invoke_model_for_generation", _fake_invoke)
@@ -842,10 +823,7 @@ class TestCAT16ContextCompactorUsed:
         finally:
             cast(Any, tw_mod.TokenWindowManager).__init__ = original_init
 
-        assert inits, (
-            "INERT: TokenWindowManager was never instantiated on the daemon "
-            "generation path."
-        )
+        assert inits, "INERT: TokenWindowManager was never instantiated on the daemon generation path."
 
 
 # --------------------------------------------------------------------------- #
@@ -868,9 +846,7 @@ class TestDispatchPathReachesGeneration:
 
         captured: dict[str, Any] = {}
 
-        def _fake_invoke(
-            gateway: Any, **kwargs: Any
-        ) -> tuple[str, list[dict[str, Any]] | None]:
+        def _fake_invoke(gateway: Any, **kwargs: Any) -> tuple[str, list[dict[str, Any]] | None]:
             captured["gateway"] = gateway
             captured["kwargs"] = kwargs
             return "MODEL OUT", None

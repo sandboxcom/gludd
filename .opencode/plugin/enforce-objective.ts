@@ -11,7 +11,7 @@ const nodeRequire = typeof require === "function" ? require : createRequire(impo
 function execSync(...args: any[]): Buffer {
   return nodeRequire("node:child_" + "process").execSync(...args);
 }
-const NAG_PREFIX = "███  NO PRIMARY OBJECTIVE SET";
+export const NAG_PREFIX = "███  NO PRIMARY OBJECTIVE SET";
 const SPEC_VELOCITY_FILE = "/tmp/gludd-spec-velocity.json";
 const SPEC_BEHAVIOR_FILE = "/tmp/gludd-spec-behavior.json";
 // AB002: minimum specs per 5-minute window to maintain velocity.
@@ -25,7 +25,7 @@ const MAX_CI_CHECKS_PER_SPEC_WINDOW = 3;
 const OBJECTIVE_STACK_FILE = "/tmp/gludd-objective-stack.json";
 // AB008: behavioral failure recurrence tracking.
 const MAX_RECURRENCE_BEFORE_BLOCK = 3;
-function getPrimaryObjective(): string {
+export function getPrimaryObjective(): string {
   try {
     const root = getProjectRoot();
     const sessionPath = path.join(root, "SESSION.md");
@@ -65,7 +65,7 @@ function persistObjectiveToStack(objective: string): void {
     }
   } catch { /* fail-open */ }
 }
-function isCiGreenFromCache(): boolean {
+export function isCiGreenFromCache(): boolean {
   try {
     const p = "/tmp/gludd-watchdog-ci.json";
     if (!fs.existsSync(p)) return false;
@@ -77,7 +77,7 @@ function isCiGreenFromCache(): boolean {
     return false;
   }
 }
-function isObjectiveMet(): boolean {
+export function isObjectiveMet(): boolean {
   const obj = getPrimaryObjective();
   if (!obj) return true;
   if (/\bCI\s*GREEN\b|\bGREEN\s*CI\b/i.test(obj)) {
