@@ -18,6 +18,17 @@ tags:
   - disassembly
   - deobfuscation
   - security
+  - ghidra_analyze
+  - gdb_analyze
+  - radare2_analyze
+  - frida_instrument
+  - deobfuscate
+  - fuzz_target
+  - cyberchef_transform
+  - prompt_injection_scan
+  - pe_analyze
+  - elf_analyze
+  - macho_analyze
 dependencies: {}
 model_capabilities:
   - name: ghidra_analyze

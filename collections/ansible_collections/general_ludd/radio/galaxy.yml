@@ -22,6 +22,16 @@ tags:
   - propagation
   - spectrum
   - digital_modes
+  - spectrum_scan
+  - sdr_capture
+  - decode_digital
+  - signal_identify
+  - regulation_lookup
+  - link_budget
+  - propagation_model
+  - antenna_design
+  - exam_quiz
+  - marine_decode
 dependencies: {}
 model_capabilities:
   - name: spectrum_scan

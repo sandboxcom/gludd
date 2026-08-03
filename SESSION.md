@@ -12,7 +12,7 @@
 
 ## Current Gate Status (2026-08-03)
 <!-- gate:begin -->
-- **gate-lite: PASS** (2026-08-03, HEAD `55685e52`) — ALL GREEN, 4682/4682 app tests
+- **gate-lite: PASS** (2026-08-03, HEAD `e5f2e18c`) — ALL GREEN, 4682/4682 app tests
 - **Test run: 4682 passed, 0 failed** — all 4682 app tests passing
 - **Molecule fixes: 3 resolved** (ci-regression-guards structural check)
 - lint: PASS 0
@@ -34,6 +34,9 @@
 - **13 specs lack enforcement:** AA012, AA017, AA057, AA074, AA075, AA081, AA084, AA089, AA090, AA093, AA094, AA096, AC020
 - **Total collection: 58,461 tests, 0 errors** (Session 67 probe; concurrent pytest prevents fresh collection)
 - **Remaining failures: 0**
+- **Tree: DIRTY** (1 file: `tests/unit/test_sandbox_exec.py`)
+- **HEAD: `e5f2e18c`** on `development`, 10 commits unpushed (remote `f1148690`)
+- **CI: NO RUN** for HEAD `e5f2e18c`
 <!-- gate:end -->
 
 ---
@@ -124,14 +127,10 @@
 - **Spec enforcement: 207/220 = 94.1%** (threshold 90%). 13 specs lack enforcement: AA012, AA017, AA057, AA074, AA075, AA081, AA084, AA089, AA090, AA093, AA094, AA096, AC020.
 - **Coverage gaps: CLOSED** (848 OK, 7 untested all allowed, 0 new gaps)
 - **Verify suites: PASS** (40/40 plugins with subagent guards)
-- **Tree: DIRTY** — 4 files modified:
-  - `src/general_ludd/cli.py`
-  - `tests/unit/test_all_plugins_runtime.py`
-  - `tests/unit/test_anti_stop_fuzz.py`
-  - `tests/unit/test_cli_branches.py`
+- **Tree: WAS DIRTY** — 4 files (cli.py, test_all_plugins_runtime.py, test_anti_stop_fuzz.py, test_cli_branches.py) — cleaned in S69 commits `36752a89` + `e5f2e18c`
 - **CI: NO RUN** for HEAD `55685e52`
-- **Push: NOT PUSHED** — 7 commits ahead of remote (remote at `47c70bf5`, local at `55685e52`)
-- **Release beta.3: BLOCKED** on commit dirty files + push + CI green
+- **Push: WAS NOT PUSHED** — 7 commits ahead of remote (remote at `47c70bf5`, local at `55685e52`) — now 10 commits ahead at S69 HEAD `e5f2e18c`
+- **Release beta.3: BLOCKED** on push + CI green
 
 ### Session 68 — gate-lite ALL GREEN, 4682/4682 tests, 3 molecule fixes (2026-08-03, HEAD `55685e52`, 7 commits + 4 dirty files since S67)
 
@@ -237,7 +236,7 @@ Documentation consolidation session — 5 built-and-wired systems codified into 
 | Metric | Value |
 |--------|-------|
 | gate-lite | PASS — ALL GREEN, 4682/4682 tests, 0 failures |
-| Molecule fixes | 3 resolved (ci-regression-guards structural check) |
+| Molecule fixes | 5 resolved (2 in S69: coverage gaps + gate-lite all green) |
 | Test run | 4682 passed, 0 failed |
 | Collection | BLOCKED (concurrent gate); last known 58,461 (S67) |
 | Spec enforcement | 207/220 = 94.1% (threshold 90%) |
@@ -245,9 +244,9 @@ Documentation consolidation session — 5 built-and-wired systems codified into 
 | Coverage gaps | CLOSED (848 OK, 7 untested all allowed, 0 new) |
 | Integration health | 3,252 collected, partial green (timed out at 30s); all executed suites green |
 | E2E test files | ~100 files in `tests/e2e/` |
-| CI (development) | NO RUN for HEAD `55685e52` |
-| Push | NOT PUSHED — 7 commits ahead of remote (`47c70bf5` vs `55685e52`) |
-| Tree | DIRTY (4 files) |
+| CI (development) | NO RUN for HEAD `e5f2e18c` |
+| Push | NOT PUSHED — 10 commits ahead of remote (`f1148690` vs `e5f2e18c`) |
+| Tree | DIRTY (1 file: `tests/unit/test_sandbox_exec.py`) |
 
 ### Completion Percentages (2026-08-03)
 
@@ -276,7 +275,7 @@ Documentation consolidation session — 5 built-and-wired systems codified into 
 3. Wait for CI green
 4. Release cut for beta.3
 
-- **Last Updated: 2026-08-03 — Session 67.** HEAD `7e21f077` on `development`. gate-lite all green. 58,461 tests collected. Spec enforcement 207/220 (94.1%). Coverage gaps closed. 715 TASKS.md items, 0 violations. Tree DIRTY (3 files). CI RED (no run). 1 non-critical failure (AC020). Release beta.3 blocked on push + CI green.
+- **Last Updated: 2026-08-03 — Session 67.** HEAD `7e21f077` on `development`. gate-lite all green. 58,461 tests collected. Spec enforcement 207/220 (94.1%). Coverage gaps closed. 715 TASKS.md items, 0 violations. Tree DIRTY (3 files, committed in S68/S69). CI RED (no run). 1 non-critical failure (AC020). Release beta.3 blocked on push + CI green.
 
 ---
 

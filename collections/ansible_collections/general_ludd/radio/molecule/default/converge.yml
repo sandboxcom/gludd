@@ -1,0 +1,44 @@
+---
+- name: "Radio collection — capability validation"
+  hosts: localhost
+  gather_facts: true
+  vars:
+    test_base: "/tmp/gludd-radio-capability-test"
+    test_freq: 146520000
+    test_band: "2m"
+  tasks:
+    - name: "Ensure test directories exist"
+      ansible.builtin.file:
+        path: "{{ test_base }}"
+        state: directory
+        mode: "0755"
+
+    - name: "Validate frequency allocation contract"
+      ansible.builtin.include_role:
+        name: regulation_lookup
+      vars:
+        country_code: "US"
+        frequency_hz: "{{ test_freq }}"
+
+    - name: "Validate propagation model"
+      ansible.builtin.include_role:
+        name: propagation_model
+      vars:
+        frequency_mhz: 146.52
+        distance_km: 10.0
+        tx_height_m: 30.0
+        rx_height_m: 2.0
+
+    - name: "Validate link budget"
+      ansible.builtin.include_role:
+        name: link_budget
+      vars:
+        frequency_mhz: 146.52
+        distance_km: 50.0
+        tx_power_dbm: 37
+        tx_gain_dbi: 6.0
+        rx_gain_dbi: 2.15
+
+    - name: "Report collection capability check"
+      ansible.builtin.debug:
+        msg: "Radio collection capabilities — regulation_lookup, propagation_model, link_budget — validated"
