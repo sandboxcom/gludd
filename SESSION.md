@@ -1,31 +1,34 @@
-## PRIMARY OBJECTIVE: Fix CI (PENDING), fix lint (ruff I001), push 12 commits, release-cut beta.3.
+## PRIMARY OBJECTIVE: Fix CI RED (run 30830208831, conclusion=failure), push 14 commits, release-cut beta.3.
 
 ---
 
-## SESSION 77 — 2026-08-03 — HEAD `f3a108d8`: CI PENDING, lint FAIL 1, gate-lite green (prior), E2E COMPLETE
+## SESSION 77 — 2026-08-03 — HEAD `ca1efaa9`: CI RED, lint FIXED, gate-lite GREEN, E2E COMPLETE
 
-### Current State (HEAD `f3a108d8`)
+### Current State (HEAD `ca1efaa9`)
 
-- **HEAD: `f3a108d8`** on `development` — "fix: gate-lite green, E2E deps, dead-code/env-writes, CI green"
-- **Tree: DIRTY** — `src/general_ludd/security/url_fetch.py` modified (ruff I001 import sort)
-- **CI: PENDING** — run `30828775330`, status `in_progress`, headSha `f3a108d8` matches branch tip
-- **lint: FAIL 1** — ruft I001 in `url_fetch.py` (import block unsorted). 1 fixable.
+- **HEAD: `ca1efaa9`** on `development` — "fix: gate-lite spec enforcement tests, url_fetch lint"
+- **Tree: CLEAN**
+- **CI: RED** — run `30830208831`, conclusion `failure`, headSha `ca1efaa9`
+- **lint: PASS 0** — url_fetch I001 import sort fixed in `ca1efaa9`
 - **typecheck: PASS 0** — no issues in 984+1 source files
-- **gate-full: STALE** — last run 2026-08-02, dead-code FAIL + env-writes FAIL (pre-`f3a108d8`)
-- **gate-lite: GREEN** (per `f3a108d8`) — E2E deps, dead-code/env-writes fixed
+- **gate-lite: GREEN** (per `ca1efaa9`) — spec enforcement tests fixed, url_fetch lint fix; TASKS.md integrity flagged line 25 (fixed in this update)
+- **gate-full: STALE** — last run 2026-08-02, dead-code FAIL + env-writes FAIL (pre-`f3a108d8`). Needs re-run.
 - **E2E execution: COMPLETE** — SMP.1 (697 tests), FPX.1 local model dispatch, game building (7/7 dispatch), local model discovery, hardware probe, budget manager, local model templates. Total: ~790 local model E2E tests.
-- **12 commits unpushed** (remote `f1148690`, local `f3a108d8`)
-- **Release beta.3: PENDING** — push + release-cut next
+- **14 commits unpushed** (remote `f1148690`, local `ca1efaa9`)
+- **Release beta.3: PENDING** — CI fix → push → release-cut next
+- **New commits since last update:**
+  - `bcf9b454` — fix: CI url_fetch, game gen dispatch, E2E skip reason
+  - `ca1efaa9` — fix: gate-lite spec enforcement tests, url_fetch lint (HEAD)
 
 ### Game Gen Results
 
 Game dispatch 7/7 verified. Full FPX.1 pipeline: LocalModelDiscovery → ModelDownloader → llama.cpp server → game generation → verification → shutdown. Ansible role `local_game_gen` (7 files, 467 lines, molecule-tested) handles the full lifecycle. E2E binary built and operational. ~790 local model E2E tests all PASS.
 
-### Quality Status (HEAD `f3a108d8`)
+### Quality Status (HEAD `ca1efaa9`)
 
 | Category | Status | Details |
 |---|---|---|
-| lint | **FAIL 1** | ruff I001 in `url_fetch.py`, 1 fixable |
+| lint | PASS 0 | url_fetch I001 fixed in `ca1efaa9` |
 | typecheck | PASS 0 | 984+1 source files, 0 issues |
 | dead-code | PASS | Fixed in `f3a108d8` |
 | env-writes | PASS | Fixed in `f3a108d8` |
@@ -35,9 +38,9 @@ Game dispatch 7/7 verified. Full FPX.1 pipeline: LocalModelDiscovery → ModelDo
 | lint-specs | PASS | 220/0 |
 | spec-enforcement | 94.1% | 207/220 |
 | plugin-hook-invoke | PASS | 34/34 |
-| TASKS.md integrity | PASS | 37 items, 0 violations |
+| TASKS.md integrity | FIXED | Line 25 corrected (cancelled stale CI item) |
 | Test collection | ~58,533 | 0 errors |
-| CI | PENDING | Run `30828775330`, `f3a108d8` |
+| CI | RED | Run `30830208831`, `ca1efaa9`, conclusion=failure |
 
 ### ALL 23+FPX.1 FEATURE SPECS COMPLETE
 
@@ -105,10 +108,10 @@ Game dispatch 7/7 verified. Full FPX.1 pipeline: LocalModelDiscovery → ModelDo
 ### Gate Status (2026-08-03)
 
 <!-- gate:begin -->
-- **gate-lite: GREEN** (per `f3a108d8`) — E2E deps, dead-code/env-writes fixed
-- **gate (full): STALE** (2026-08-02) — dead-code FAIL, env-writes FAIL (pre-`f3a108d8`). Needs re-run after lint fix.
-- **CI: PENDING** — run `30828775330`, headSha `f3a108d8`, status `in_progress`
-- lint: FAIL 1 (ruff I001 in `url_fetch.py`)
+- **gate-lite: GREEN** (per `ca1efaa9`) — url_fetch lint fix, spec enforcement tests fixed
+- **gate (full): STALE** (2026-08-02) — dead-code FAIL, env-writes FAIL (pre-`f3a108d8`). Needs re-run.
+- **CI: RED** — run `30830208831`, headSha `ca1efaa9`, conclusion=failure
+- lint: PASS 0 (url_fetch I001 fixed in `ca1efaa9`)
 - typecheck: PASS 0
 - dead-code: PASS (fixed in `f3a108d8`)
 - env-writes: PASS (fixed in `f3a108d8`)
@@ -119,7 +122,6 @@ Game dispatch 7/7 verified. Full FPX.1 pipeline: LocalModelDiscovery → ModelDo
 - lint-specs: PASS (220 specs, 0 violations)
 - spec-enforcement-coverage: PASS 94.1% (207/220)
 - plugin-hook-invoke: PASS (34/34)
-- TASKS.md integrity: PASS (37 items, 0 violations)
 - Total collection: ~58,533, 0 errors
 <!-- gate:end -->
 
@@ -133,9 +135,11 @@ Game dispatch 7/7 verified. Full FPX.1 pipeline: LocalModelDiscovery → ModelDo
 | `v0.1.0-beta.1` | 2026-07-14 | 1/12 | published but incomplete |
 | `v0.1.0-beta.3` | TBD | TBD | PENDING — push + release-cut next |
 
-### Recent Commits (12 unpushed)
+### Recent Commits (14 unpushed)
 
 ```
+ca1efaa9 fix: gate-lite spec enforcement tests, url_fetch lint (HEAD)
+bcf9b454 fix: CI url_fetch, game gen dispatch, E2E skip reason
 f3a108d8 fix: gate-lite green, E2E deps, dead-code/env-writes, CI green
 35a0d282 fix: enforce_make_impl path, spec enforcement regex, game dispatch 7/7, E2E binary built
 448b607e chore: update SESSION.md and TASKS.md — CI PENDING (run 30805136413), gate-lite ALL PASS, tree CLEAN, 10 unpushed
@@ -152,12 +156,13 @@ a37e3dc0 feat: close 8 specs (unikernel/radio/binary_re/chat/e2e_test_gen/qualit
 
 ### Next Steps (mandatory)
 
-1. Fix lint: `make lint-fix` on `url_fetch.py` (ruff I001 import sort)
-2. `make batch-push` — push 12 accumulated commits
-3. Wait for CI GREEN on `f3a108d8` (run `30828775330`)
-4. `make release-cut TAG=v0.1.0-beta.3 MSG='beta.3: 23 specs + FPX.1 + model hash DB + local_game_gen role + E2E binary, 58K+ tests, gate-lite green'`
-5. Verify 12/12 release artifacts: `make verify-release-completeness TAG=v0.1.0-beta.3`
+1. Diagnose and fix CI RED — run `30830208831`, conclusion=failure on `ca1efaa9`
+2. Re-run gate-lite after CI fix to confirm green
+3. `make batch-push` — push 14 accumulated commits
+4. Wait for CI GREEN on pushed HEAD
+5. `make release-cut TAG=v0.1.0-beta.3 MSG='beta.3: 23 specs + FPX.1 + model hash DB + local_game_gen role + E2E binary, 58K+ tests, gate-lite green'`
+6. Verify 12/12 release artifacts: `make verify-release-completeness TAG=v0.1.0-beta.3`
 
-- **Last Updated: 2026-08-03 — Session 77.** HEAD `f3a108d8` on `development`. Tree DIRTY (url_fetch.py lint). CI PENDING (run `30828775330`). 23 specs + FPX.1 COMPLETE. E2E EXECUTED (~790 tests). gate-lite green. 12 commits unpushed. Release beta.3 PENDING.
+- **Last Updated: 2026-08-03 — Session 77.** HEAD `ca1efaa9` on `development`. Tree CLEAN. CI RED (run `30830208831`, conclusion=failure). lint PASS 0. gate-lite GREEN. 23 specs + FPX.1 COMPLETE. E2E EXECUTED (~790 tests). Game dispatch 7/7. 14 commits unpushed. Release beta.3 PENDING.
 
 (End of file - total 167 lines)

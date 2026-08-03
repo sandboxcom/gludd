@@ -1,14 +1,14 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-08-03 Session 77. HEAD `f3a108d8` on development. CI PENDING (run 30828775330, in_progress). lint FAIL 1 (ruff I001 in url_fetch.py). typecheck PASS 0. Tree DIRTY (url_fetch.py). gate-lite GREEN (per `f3a108d8`). E2E EXECUTED (~790 local model tests). ALL 23 SPECS + FPX.1 COMPLETE. Game dispatch: 7/7 verified. Model hash DB: WIRED (34 tests). 12 commits unpushed. Release beta.3 PENDING (lint fix → push → release-cut).**
+**Last consolidated: 2026-08-03 Session 77. HEAD `ca1efaa9` on development. CI RED (run 30830208831, conclusion=failure on ca1efaa9). lint PASS 0 (url_fetch I001 fixed in ca1efaa9). typecheck PASS 0. Tree CLEAN. gate-lite GREEN (url_fetch lint fix, spec enforcement tests). E2E EXECUTED (~790 local model tests). ALL 23 SPECS + FPX.1 COMPLETE. Game dispatch: 7/7 verified. Model hash DB: WIRED (34 tests). 14 commits unpushed (remote f1148690). Release beta.3 PENDING (CI fix → push → release-cut).**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
 ---
 
-## Session 77 — CI PENDING, lint FAIL 1, gate-lite GREEN, E2E EXECUTED, ALL SPECS COMPLETE (2026-08-03, HEAD `f3a108d8`)
+## Session 77 — CI RED, lint FIXED, gate-lite GREEN, E2E EXECUTED, ALL SPECS COMPLETE (2026-08-03, HEAD `ca1efaa9`)
 
-CI PENDING — run `30828775330`, headSha `f3a108d8`, status `in_progress`. lint FAIL 1 (ruff I001 in `url_fetch.py`, 1 fixable). typecheck PASS 0. gate-lite GREEN (per `f3a108d8`: E2E deps, dead-code/env-writes fixed). E2E execution: COMPLETE (~790 local model tests, game dispatch 7/7). All 23 specs + FPX.1 COMPLETE. Tree DIRTY (url_fetch.py lint). 12 commits unpushed.
+CI RED — run `30830208831`, headSha `ca1efaa9`, conclusion=failure. lint PASS 0 (url_fetch I001 fixed in `ca1efaa9`). typecheck PASS 0. gate-lite GREEN (spec enforcement tests fixed). E2E execution: COMPLETE (~790 local model tests, game dispatch 7/7). All 23 specs + FPX.1 COMPLETE. Tree CLEAN. 14 commits unpushed (remote `f1148690`, local `ca1efaa9`).
 
 - [x] S76.0 — **`scripts/run_game_gen_local.py` + make target**: script elevated to 304 lines with `make run-game-gen-local` target (Makefile:1811). Q5_K_M quant (was Q4_K_M). E2E model URL and game gen server fixes in commit `8f80694b`. | evidence: Makefile:1811; commit `8f80694b` | priority: high | effort: M | status: completed
 - [x] S76.2 — **HF Auth Fix**: `src/general_ludd/infra/local_inference.py` +40 lines — HF_TOKEN threaded through ModelDownloader → download. `tests/e2e/test_small_model_pipeline_real.py` updated. Commit `8f80694b`. | evidence: `8f80694b` | priority: high | effort: S | status: completed
@@ -22,15 +22,20 @@ CI PENDING — run `30828775330`, headSha `f3a108d8`, status `in_progress`. lint
 - [x] S76.8 — **Run `make gate` for fresh baseline**: gate (full) PASS — lint 0, dead-code PASS, env-writes PASS, hook-runtime PASS, test PASS, verify-enforcement PASS, coverage-gaps PASS, typecheck 0, collect OK. | evidence: gate PASS | priority: high | effort: L | status: completed
 - [x] S76.5 — **CI green on development HEAD `35a0d282`**: CI GREEN — headSha matches branch tip. | evidence: CI GREEN (headSha == `35a0d282`) | priority: high | effort: M | status: completed
 - [x] S77.3a — **gate-lite green, E2E deps, dead-code/env-writes fix**: gate-lite green, E2E deps fixed, dead-code/env-writes PASS. Committed in `f3a108d8`. | evidence: `f3a108d8`; gate-lite green | priority: high | effort: M | status: completed
-- [x] S76.5a — **CI PENDING on `f3a108d8`**: Run `30828775330` in_progress, headSha `f3a108d8`. Awaiting conclusion. | priority: high | effort: M | status: in_progress
-- [ ] S77.3b — **Fix lint: ruff I001 in `url_fetch.py`**: `make lint-fix` to sort imports. Tree is dirty. | evidence: pending | priority: high | effort: S | status: pending
-- [ ] S77.1 — **Push 12 accumulated commits**: `make batch-push`. | evidence: pending | priority: high | effort: M | status: pending
+- [-] S76.5a — **CI PENDING on `f3a108d8` — superseded**: Run `30828775330` completed (status unknown). Superseded by run `30830208831` (RED, conclusion=failure) on HEAD `ca1efaa9`. | evidence: CI RED run 30830208831 on ca1efaa9 | priority: high | effort: M | status: cancelled
+- [x] S77.3b — **Fix lint: ruff I001 in `url_fetch.py`**: Sorted imports in `url_fetch.py`. Committed in `ca1efaa9`. | evidence: `ca1efaa9`; lint PASS 0 | priority: high | effort: S | status: completed
+- [x] S77.4 — **Fix gate-lite spec enforcement tests**: gate-lite spec enforcement tests fixed. Committed in `ca1efaa9`. | evidence: `ca1efaa9`; gate-lite PASS | priority: high | effort: S | status: completed
+- [x] S77.5 — **CI url_fetch + game gen dispatch + E2E skip reason**: CI fix for url_fetch, game gen dispatch, E2E skip reason. Committed in `bcf9b454`. | evidence: `bcf9b454` | priority: high | effort: M | status: completed
+- [ ] S77.6 — **Fix CI RED (run 30830208831, conclusion=failure)**: CI failed on `ca1efaa9`. Must diagnose and fix root cause. | evidence: pending | priority: high | effort: M | status: pending
+- [ ] S77.1 — **Push 14 accumulated commits**: `make batch-push`. | evidence: pending | priority: high | effort: M | status: pending
 - [ ] S77.2 — **`make release-cut TAG=v0.1.0-beta.3 MSG='beta.3: 23 specs + FPX.1 + model hash DB + local_game_gen role + E2E binary, 58K+ tests, gate-lite green'`** | evidence: pending | priority: high | effort: L | status: pending
 - [ ] S77.3 — **Verify 12/12 release artifacts**: `make verify-release-completeness TAG=v0.1.0-beta.3` | evidence: pending | priority: high | effort: M | status: pending
 
-### Unpushed Commits (12)
+### Unpushed Commits (14)
 
 ```
+ca1efaa9 fix: gate-lite spec enforcement tests, url_fetch lint (HEAD)
+bcf9b454 fix: CI url_fetch, game gen dispatch, E2E skip reason
 f3a108d8 fix: gate-lite green, E2E deps, dead-code/env-writes, CI green
 35a0d282 fix: enforce_make_impl path, spec enforcement regex, game dispatch 7/7, E2E binary built
 448b607e chore: update SESSION.md and TASKS.md — CI PENDING (run 30805136413), gate-lite ALL PASS, tree CLEAN, 10 unpushed
@@ -141,11 +146,11 @@ ALL 21 feature specifications + FPX.1 COMPLETE. Local model E2E: COMPLETE (~790 
 
 | Item | Status |
 |---|---|---|
-| Fix lint I001 in url_fetch.py | TREE DIRTY |
-| Push 12 accumulated commits (remote `f1148690` → local `f3a108d8`) | NOT PUSHED |
+| url_fetch lint I001 | FIXED (`ca1efaa9`) |
+| Fix CI RED — run 30830208831 (conclusion=failure) on `ca1efaa9` | TODO |
+| Push 14 accumulated commits (remote `f1148690` → local `ca1efaa9`) | NOT PUSHED |
 | `make release-cut TAG=v0.1.0-beta.3` | PENDING |
 | `make verify-release-completeness TAG=v0.1.0-beta.3` | PENDING |
-| CI run 30828775330 | PENDING (in_progress) |
 | 13 specs lack enforcement (AA012 et al.) | 207/220 = 94.1% |
 | C.29 LangGraph budget bypass | DEFERRED (archived) |
 | X.1.3-X.1.10 XML sub-roles | DEFERRED (archived) |
