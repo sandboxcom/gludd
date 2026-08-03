@@ -55,11 +55,12 @@ class TestSmallModelsDownload:
                 return dummy_path
 
             monkeypatch.setattr("huggingface_hub.hf_hub_download", _fake_download)
+            monkeypatch.setattr("huggingface_hub.snapshot_download", _fake_download)
 
             try:
                 resp = await client.post(
                     "/admin/small-models/download",
-                    json={"model_id": "microsoft/phi-2", "source": "huggingface"},
+                    json={"model_id": "microsoft/phi-2", "source": "huggingface", "filename": "pytorch_model.bin"},
                     headers=AUTH,
                 )
                 assert resp.status_code == 200, resp.text
@@ -114,6 +115,7 @@ class TestSmallModelsDownload:
                 return dummy_path
 
             monkeypatch.setattr("huggingface_hub.hf_hub_download", _fake_download)
+            monkeypatch.setattr("huggingface_hub.snapshot_download", _fake_download)
 
             try:
                 resp = await client.post(
@@ -121,6 +123,7 @@ class TestSmallModelsDownload:
                     json={
                         "model_id": "test-org/test-model",
                         "source": "huggingface",
+                        "filename": "pytorch_model.bin",
                     },
                     headers=AUTH,
                 )

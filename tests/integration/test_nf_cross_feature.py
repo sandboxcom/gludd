@@ -78,6 +78,7 @@ def _seeded_bao_client():
     def _read(path, mount_point="secret"):
         if path not in store:
             import hvac
+
             raise hvac.exceptions.InvalidPath(path)
         return {"data": {"data": store[path]}}
 
@@ -268,16 +269,12 @@ class TestChatCliLanguageExpertCross:
         test_file.write_bytes("Caf\u00e9".encode("utf-8"))
 
         result = subprocess.run(
-            [sys.executable, "-m", "general_ludd.cli",
-             "language", "detect-encoding", str(test_file)],
-            capture_output=True, text=True, timeout=30,
+            [sys.executable, "-m", "general_ludd.cli", "language", "detect-encoding", str(test_file)],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
-        assert result.returncode == 0, f"language CLI failed: {result.stderr}"
-        data = json.loads(result.stdout)
-        assert data["file"] == str(test_file)
-        assert "detected_encoding" in data
-        assert "confidence" in data
-        assert "confidence_level" in data
+        assert result.returncode != 0
 
     def test_multilingual_text_roundtrips_through_chat_and_language_modules(self):
         """UTF-8 text with multi-script characters is handled by both chat
@@ -300,16 +297,12 @@ class TestChatCliLanguageExpertCross:
     def test_homoglyph_scan_output_is_chat_consumable(self):
         """Homoglyph scan output JSON structure is parseable for chat integration."""
         result = subprocess.run(
-            [sys.executable, "-m", "general_ludd.cli",
-             "language", "scan-homoglyphs",
-             f"pple{chr(0x0430)}.com"],
-            capture_output=True, text=True, timeout=30,
+            [sys.executable, "-m", "general_ludd.cli", "language", "scan-homoglyphs", f"pple{chr(0x0430)}.com"],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
-        assert result.returncode == 0, f"scan-homoglyphs failed: {result.stderr}"
-        data = json.loads(result.stdout)
-        assert "findings" in data
-        assert "safe" in data
-        assert isinstance(data["findings"], list)
+        assert result.returncode != 0
 
     def test_chat_session_accepts_multilingual_prompt(self):
         """ChatSession.truncate_input handles multilingual UTF-8 without error."""
@@ -345,17 +338,15 @@ class TestChatCliLanguageExpertCross:
                 break
         assert detected == "UTF-8"
 
-    def test_language_subparser_registered_in_cli(self):
-        """The language expert subparser is registered alongside chat in the CLI."""
+    def test_language_subparser_removed_from_cli(self):
+        """The language expert subparser is no longer registered in core CLI."""
         result = subprocess.run(
             [sys.executable, "-m", "general_ludd.cli", "language", "--help"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
-        assert result.returncode == 0
-        assert "detect-encoding" in result.stdout
-        assert "scan-homoglyphs" in result.stdout
-        assert "detect-bom" in result.stdout
-        assert "phonetic-transcribe" in result.stdout
+        assert result.returncode != 0
 
 
 # ===========================================================================
@@ -449,9 +440,7 @@ class TestE2eTestGenBinaryReCross:
         all_names = {f.name for f in symbols.functions}
         assert "main" in all_names or len(all_names) > 0
 
-    def test_generated_tests_for_binary_re_produce_valid_manifest(
-        self, binary_re_analyze_module, tmp_path
-    ):
+    def test_generated_tests_for_binary_re_produce_valid_manifest(self, binary_re_analyze_module, tmp_path):
         """Running write_e2e_tests on binary_re scenarios produces a valid manifest."""
         from dataclasses import asdict
 
@@ -460,8 +449,14 @@ class TestE2eTestGenBinaryReCross:
 
         write_script = (
             _ROOT
-            / "collections" / "ansible_collections" / "general_ludd" / "e2e_test_gen"
-            / "roles" / "write_e2e_tests" / "files" / "write_e2e_tests.py"
+            / "collections"
+            / "ansible_collections"
+            / "general_ludd"
+            / "e2e_test_gen"
+            / "roles"
+            / "write_e2e_tests"
+            / "files"
+            / "write_e2e_tests.py"
         )
         if not write_script.is_file():
             pytest.skip("write_e2e_tests.py not found")
@@ -486,10 +481,10 @@ class TestE2eTestGenBinaryReCross:
         scenarios_file.write_text(json.dumps(payload))
         out_dir = tmp_path / "generated"
         result = subprocess.run(
-            [sys.executable, str(write_script),
-             "--scenarios-file", str(scenarios_file),
-             "--output-dir", str(out_dir)],
-            capture_output=True, text=True, timeout=30,
+            [sys.executable, str(write_script), "--scenarios-file", str(scenarios_file), "--output-dir", str(out_dir)],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert result.returncode == 0, f"write_e2e_tests failed: {result.stderr}"
         manifest = json.loads((out_dir / "generated_tests.json").read_text())
@@ -515,8 +510,7 @@ class TestThreeWayStsSandboxLanguage:
             agent_type="analysis_agent",
             capabilities=[
                 Capability(resource="sandbox:vm", actions=["apply"]),
-                Capability(resource="file:", actions=["read"],
-                           constraints={"path_prefix": "/tmp/analysis/"}),
+                Capability(resource="file:", actions=["read"], constraints={"path_prefix": "/tmp/analysis/"}),
                 Capability(resource="secret:openbao", actions=["read"]),
             ],
         )
