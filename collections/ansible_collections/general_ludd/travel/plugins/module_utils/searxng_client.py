@@ -39,6 +39,13 @@ TRAVEL_INDEX_ENGINES: list[str] = [
     "expedia",
 ]
 
+_SIMULATED_RESULT_TEMPLATE: dict[str, str] = {
+    "title_format": "[{engine}] Result {index} for: {query}",
+    "url_format": "https://{engine}.example.com/search?q={query}",
+    "content_format": "Simulated {engine} result matching '{query}'.",
+    "category": "travel",
+}
+
 
 class SearXNGIndexNotFoundError(Exception):
     pass
@@ -147,12 +154,16 @@ class TravelIndexManager:
                     break
                 results.append(
                     {
-                        "title": f"[{engine}] Result {j + 1} for: {query_text[:80]}",
-                        "url": f"https://{engine}.example.com/search?q={query_text[:60]}",
+                        "title": _SIMULATED_RESULT_TEMPLATE["title_format"].format(
+                            engine=engine, index=j + 1, query=query_text[:80]
+                        ),
+                        "url": _SIMULATED_RESULT_TEMPLATE["url_format"].format(engine=engine, query=query_text[:60]),
                         "engine": engine,
                         "score": round(1.0 - (i * 0.1 + j * 0.05), 2),
-                        "content": f"Simulated {engine} result matching '{query_text[:60]}'.",
-                        "category": "travel",
+                        "content": _SIMULATED_RESULT_TEMPLATE["content_format"].format(
+                            engine=engine, query=query_text[:60]
+                        ),
+                        "category": _SIMULATED_RESULT_TEMPLATE["category"],
                     }
                 )
         return results[:max_results]
