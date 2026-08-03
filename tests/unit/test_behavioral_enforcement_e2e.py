@@ -161,7 +161,8 @@ class TestAdaptiveDispatchEnforcement:
     def test_min_dispatches_constant_defined(self):
         """The recommendation stays ten, while the effective default is zero."""
         src = _plugin_source(ENFORCE_MULTITASK)
-        assert "HARD_MAX_DISPATCHES = 10" in src
+        cfg = (PLUGIN_DIR / ".." / "lib" / "multitask_config.ts").resolve().read_text()
+        assert "HARD_MAX_DISPATCHES = 10" in cfg
         assert "HAS_CONFIGURED_MIN_DISPATCHES" in src
         assert re.search(r"REQUIRED_DISPATCHES\s*=.*?\?", src, re.DOTALL)
         assert re.search(r"REQUIRED_DISPATCHES\s*=.*?:\s*0", src, re.DOTALL)
@@ -208,9 +209,7 @@ class TestAdaptiveDispatchEnforcement:
             r'lt\s*===\s*"(?:edit|write|bash)"',
             src,
         )
-        assert tool_block, (
-            "Configured-minimum check must block edit/write/bash when dispatch count is low"
-        )
+        assert tool_block, "Configured-minimum check must block edit/write/bash when dispatch count is low"
 
     def test_zero_streak_enforcement_exists(self):
         """MAX_ZERO_STREAK consecutive zero-dispatch messages must be denied."""
@@ -245,9 +244,7 @@ class TestSubagentContextIsolation:
     def test_enforce_make_respects_subagent_env(self):
         """enforce-make.ts must use the shared subagent detector."""
         src = _plugin_source(ENFORCE_MAKE)
-        assert "isSubagent" in src, (
-            "enforce-make.ts must use isSubagent() before blocking subagent calls"
-        )
+        assert "isSubagent" in src, "enforce-make.ts must use isSubagent() before blocking subagent calls"
 
     def test_enforce_make_subagent_bypass_skips_bash_block(self):
         """When OPENCODE_SUBAGENT=1, the bare-command block must be skipped."""
@@ -282,9 +279,7 @@ class TestSubagentContextIsolation:
     def test_enforce_multitask_respects_subagent_env(self):
         """enforce-multitask.ts must use the shared subagent detector."""
         src = _plugin_source(ENFORCE_MULTITASK)
-        assert "isSubagent" in src, (
-            "enforce-multitask.ts must use isSubagent() to skip subagent checks"
-        )
+        assert "isSubagent" in src, "enforce-multitask.ts must use isSubagent() to skip subagent checks"
 
     def test_enforce_multitask_subagent_bypass_early_return(self):
         """When OPENCODE_SUBAGENT=1, the tool.execute.before must return early."""
@@ -527,9 +522,7 @@ class TestSystemIntegrity:
             ("enforce-stop.ts", ENFORCE_STOP),
         ]:
             src = _plugin_source(path_obj)
-            assert "isSubagent" in src, (
-                f"{name} does not use isSubagent() — subagent tool calls may be blocked"
-            )
+            assert "isSubagent" in src, f"{name} does not use isSubagent() — subagent tool calls may be blocked"
 
     def test_all_plugins_fail_open(self):
         """No plugin must wedge the session on internal error."""

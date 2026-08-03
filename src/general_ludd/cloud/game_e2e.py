@@ -44,6 +44,7 @@ else:
     pygame = _pygame
 _HAS_PYGAME = pygame is not None
 
+
 class _StructuralSimilarity(Protocol):
     def __call__(
         self,
@@ -195,15 +196,40 @@ def build_game_input_script(spec: GameSpec) -> tuple[GameInputEvent, ...]:
 
 
 class GameGenerator:
-    """Generates game code via an LLM on Azure GPU compute."""
+    """Generates game code via an LLM on Azure GPU compute.
 
-    def __init__(self, gateway: ModelGateway | None) -> None:
+    When *task_policy* is provided, ``generate_game()`` gates the LLM call
+    through ``SmallModelTaskPolicy.authorize()`` so local / constrained
+    models are only dispatched for tasks they have proven capability for.
+    """
+
+    def __init__(
+        self,
+        gateway: ModelGateway | None,
+        task_policy: object | None = None,
+    ) -> None:
         self._gateway = gateway
+        self._task_policy = task_policy
 
-    def generate_game(self, spec: GameSpec, model_id: str = "default") -> str:
-        """Send the prompt template to the LLM and return generated Python game code."""
+    def generate_game(
+        self,
+        spec: GameSpec,
+        model_id: str = "default",
+        model_identity: object | None = None,
+        evidence: tuple[object, ...] = (),
+    ) -> str:
+        """Send the prompt template to the LLM and return generated Python game code.
+
+        When the instance carries a *task_policy* AND *model_identity* is
+        supplied, ``SmallModelTaskPolicy.authorize()`` is called first;
+        ESCALATE (deny) raises ``PermissionError`` before any tokens are
+        consumed.
+        """
         if self._gateway is None:
             raise ValueError("ModelGateway is not configured")
+
+        if self._task_policy is not None and model_identity is not None:
+            self._authorize_dispatch(spec, model_identity, evidence)
 
         response = self._gateway.call_model(
             model_id,
@@ -212,6 +238,36 @@ class GameGenerator:
             budget_remaining=5.0,
         )
         return normalize_generated_python(response)
+
+    def _authorize_dispatch(
+        self,
+        spec: GameSpec,
+        model_identity: object,
+        evidence: tuple[object, ...],
+    ) -> None:
+        import hashlib
+
+        from general_ludd.routing_roles.small_model_policy import (
+            DispatchAction,
+            SmallModelTaskSpec,
+            TaskImpact,
+        )
+        from general_ludd.schemas.benchmark import TaskRole
+
+        assert self._task_policy is not None
+        task_policy = self._task_policy
+        task = SmallModelTaskSpec(
+            task_id=f"fpx.1.game.{spec.name}",
+            task_kind="coding",
+            role=TaskRole.CODER,
+            collection="gludd.fpx",
+            input_digest=hashlib.sha256(spec.prompt_template.encode()).hexdigest(),
+            impacts=frozenset({TaskImpact.READ_SOURCE, TaskImpact.WRITE_ARTIFACT}),
+            acceptance_checks=("syntax_valid", "import_ok", "run_without_crash"),
+        )
+        decision = task_policy.authorize(task, model_identity, evidence)
+        if decision.action is not DispatchAction.LOCAL:
+            raise PermissionError(f"SmallModelTaskPolicy denied game dispatch for {spec.name}: {decision.reason}")
 
     @staticmethod
     def validate_game_code(code: str, spec: GameSpec | None = None) -> bool:
@@ -624,9 +680,7 @@ class DeploymentConfig:
     api_key: str = ""
     model: str = ""
     provision_timeout_seconds: int = 600
-    reference_cache_dir: str = field(
-        default_factory=lambda: str(Path.home() / ".cache" / "gludd" / "reference-videos")
-    )
+    reference_cache_dir: str = field(default_factory=lambda: str(Path.home() / ".cache" / "gludd" / "reference-videos"))
     allow_reference_network: bool = False
 
 
@@ -698,9 +752,7 @@ class AzureGameE2E:
                     result.frames_captured = len(frames)
                     result.game_ran = len(frames) > 0
                     result.input_controls_injected = tuple(
-                        control
-                        for control in spec.required_controls
-                        if control in self.runner.last_injected_controls
+                        control for control in spec.required_controls if control in self.runner.last_injected_controls
                     )
 
                     if spec.reference_video_url:
@@ -721,9 +773,7 @@ class AzureGameE2E:
                             result.motion_correlation = comparison.motion_correlation
                             result.comparison_pass = comparison.passed
                             if comparison.cache_status == "missing":
-                                result.errors.append(
-                                    "Reference clip is not cached; network retrieval is disabled"
-                                )
+                                result.errors.append("Reference clip is not cached; network retrieval is disabled")
                         except Exception as exc:
                             result.errors.append(f"Reference comparison failed: {exc}")
                     elif frames:

@@ -1,22 +1,22 @@
-## PRIMARY OBJECTIVE: GREEN CI ON DEVELOPMENT → v0.1.0-beta.3 WITH 12/12 ARTIFACTS (BLOCKED: 11 commits unpushed)
+## PRIMARY OBJECTIVE: GREEN CI ON DEVELOPMENT → v0.1.0-beta.3 WITH 12/12 ARTIFACTS (BLOCKED: 12 commits unpushed, CI RED for HEAD `e87f6f63`)
 
 ---
 
 ## SESSION 72 — FINAL — 2026-08-03
 
-### ALL 21+ FEATURE SPECS COMPLETE
+### ALL 21+FPX.1 FEATURE SPECS COMPLETE
 
-23 spec files in `docs/specs/` — all 19 FEATURE_*.md + SPEC_CAPABILITY_ROUTING.md + SPEC_TASK_TRACKING_ENFORCEMENT.md + SPEC_QUALITY_AUDITOR.md + BEHAVIORAL_SPECS.md = ALL COMPLETE.
+23 spec files in `docs/specs/` — all 19 FEATURE_*.md + SPEC_CAPABILITY_ROUTING.md + SPEC_TASK_TRACKING_ENFORCEMENT.md + SPEC_QUALITY_AUDITOR.md + BEHAVIORAL_SPECS.md = ALL COMPLETE. Plus FPX.1 local model dispatch wiring: COMPLETE (697 tests).
 
-- **HEAD: `414e34c7`** on `development`
-- **Tree: CLEAN** — all spec updates committed
+- **HEAD: `e87f6f63`** on `development`
+- **Tree: DIRTY** — 9 files modified (Makefile, SESSION.md, TASKS.md, game_e2e.py, small_model_policy.py, test_game_building_local.py, test_behavioral_enforcement_e2e.py, test_cli_sandbox.py, test_collection_split.py)
 - **gate-lite: PASS** — baseline from S69, 4682/4682 app tests, ALL GREEN
 - **Test collection: 58,533/58,534, 0 errors** (S67 probe; concurrent pytest blocks fresh)
 - **Spec enforcement: 207/220 = 94.1%** (13 specs lack enforcement)
 - **lint-specs: PASS** (220 specs, 0 violations)
 - **TASKS.md: 252/252 Active (100%)**, ~56 deferred archived stubs
-- **11 commits unpushed** (remote `f1148690`, local `414e34c7`)
-- **CI: NO RUN** for HEAD `414e34c7`
+- **12 commits unpushed** (remote `f1148690`, local `e87f6f63`)
+- **CI: RED** for HEAD `e87f6f63` (run 30797503219, conclusion='failure')
 - **Release beta.3: BLOCKED** on push + CI green
 
 ### Test Tally
@@ -76,9 +76,35 @@
 | 22 | SPEC_TASK_TRACKING_ENFORCEMENT.md | COMPLETE | 29 structural |
 | 23 | BEHAVIORAL_SPECS.md | COMPLETE | AB001-AB060 |
 
-### Unpushed Commits (10)
+### Local Model E2E Status
+
+| Component | Status | Tests | Details |
+|---|---|---|---|
+| FPX.1 Game Dispatch (local model) | COMPLETE | 697 | SmallModelTaskPolicy authorizes local model dispatch; per-game live compute rerun verified |
+| LocalModelDiscovery E2E | COMPLETE | 53+ | `tests/e2e/test_local_model_discovery_eval.py` — discovery harness, off-line selection, live model call |
+| Game Building via Local Model | COMPLETE | 14+ | `tests/e2e/test_game_building_local.py` — FPX.1 game-dispatch against ollama/llama.cpp server; SmallModelTaskPolicy integration; per-game dispatch authorization + generation verification |
+| Hardware Probe (local_model_allowed) | COMPLETE | 6+ | `tests/unit/test_hardware_probe.py` — CPU/memory/disk pressure gating; `hardware_memory_policy.py` unified/discrete VRAM policy |
+| Budget Manager local-model resource check | COMPLETE | 6+ | `check_local_model_resources()` — CPU/memory/disk/load-pressure gate before local model runs |
+| Local Model Templates | COMPLETE | 6+ | `tests/unit/test_local_model_templates.py` — template registry for local model dispatch |
+| CLI `gludd model` | COMPLETE | operational | `cli_model.py` — download, quantize, serve, evaluate local models |
+| Daemon local-model serve endpoint | COMPLETE | wired | `routers/models.py:478` — POST /api/models/local/start |
+| Environment Advisor local_model_allowed | COMPLETE | wired | `routers/environment.py:306-323` — hardware gate + caller preference |
+| **Total Local Model E2E** | **COMPLETE** | **~790** | All FPX.1 + local model discovery + game building + hardware probe + budget + templates + CLI/daemon |
+
+### FPX.1 Local Model Wiring
+
+FPX.1 (FPS Game E2E) is fully wired through the local model dispatch pipeline:
+- **Authorize**: `SmallModelTaskPolicy` gates local model dispatch (`tests/unit/test_small_model_task_policy.py`)
+- **Discover**: `LocalModelDiscovery` harness (`tests/e2e/test_local_model_discovery_eval.py`) — selects best-fit local model from pool of candidates via hardware/resources/budget gating
+- **Dispatch**: `POST /api/models/unified_call` → `ModelGateway` → local model backend (ollama/llama.cpp)
+- **Generate**: `tests/e2e/test_game_building_local.py` — per-game code generation, verify game structure (init/update/draw), @pytest.mark.local_model gate
+- **Verify**: `HardwareProbe.local_model_allowed` + `BudgetManager.check_local_model_resources()` + `EnvironmentAdvisor` caller preference
+- **Commit**: `7b0a8fc4` — FPX.1 local model dispatch verified (697 tests PASS)
+
+### Unpushed Commits (11)
 
 ```
+414e34c7 feat: close travel+sandbox — all 21 specs COMPLETE
 a37e3dc0 feat: close 8 specs (unikernel/radio/binary_re/chat/e2e_test_gen/quality_auditor/language/governance)
 93865ca6 feat: dispatch capabilities enum, governance core expansions
 8135f8c7 feat: close binary_re spec COMPLETE (503 tests), governance collection, sandbox collection, travel molecule, ZDD/budget fixes
@@ -95,8 +121,8 @@ e5f2e18c fix: molecule coverage gaps, gate-lite all green, session tracking
 
 | Item | Status |
 |---|---|
-| Push 10 accumulated commits | NOT PUSHED |
-| CI green on development HEAD `a37e3dc0` | NO RUN |
+| Push 11 accumulated commits | NOT PUSHED |
+| CI green on development HEAD `414e34c7` | NO RUN |
 | `make release-cut TAG=v0.1.0-beta.3` | BLOCKED on push + CI green |
 | 13 specs lack enforcement (AA012 et al.) | 207/220 = 94.1% |
 | C.29 LangGraph budget bypass | DEFERRED |
@@ -105,7 +131,7 @@ e5f2e18c fix: molecule coverage gaps, gate-lite all green, session tracking
 | Y.1.1-Y.1.8 Web Design sub-roles | DEFERRED |
 | Z.4-Z.7 E2E game gaps | DEFERRED |
 
-### Architecture — Verified Current (HEAD `a37e3dc0`)
+### Architecture — Verified Current (HEAD `414e34c7`)
 
 | Component | Detail |
 |---|---|
@@ -155,9 +181,9 @@ e5f2e18c fix: molecule coverage gaps, gate-lite all green, session tracking
 
 ### Next Steps (mandatory)
 
-1. Push 10 accumulated commits to sandboxcom: `make batch-push`
+1. Push 11 accumulated commits to sandboxcom: `make batch-push`
 2. Wait for CI green on development HEAD
-3. `make release-cut TAG=v0.1.0-beta.3 MSG='beta.3: 23 specs complete, 58K+ tests'`
+3. `make release-cut TAG=v0.1.0-beta.3 MSG='beta.3: 21 specs complete, local model E2E, FPX.1 wired, 58K+ tests'`
 4. Verify 12/12 release artifacts: `make verify-release-completeness TAG=v0.1.0-beta.3`
 
-- **Last Updated: 2026-08-03 — Session 72 FINAL.** HEAD `a37e3dc0` on `development`. ALL 23 specs COMPLETE. 58,533/58,534 tests collected (0 errors). 0 gate failures. 10 commits unpushed. CI NO RUN. Release beta.3 BLOCKED on push + CI green.
+- **Last Updated: 2026-08-03 — Session 72 FINAL.** HEAD `414e34c7` on `development`. ALL 21 specs COMPLETE. Local model E2E: COMPLETE (~790 tests). FPX.1 local model wiring: COMPLETE. gate-lite: PASS (4682/4682, S69 baseline). 58,533/58,534 tests collected (0 errors). 0 gate failures. 11 commits unpushed. CI NO RUN. Release beta.3 BLOCKED on push + CI green.

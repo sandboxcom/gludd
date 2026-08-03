@@ -27,9 +27,7 @@ _CHECK_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
 
 def _stable_digest(payload: Mapping[str, object]) -> str:
-    encoded = json.dumps(
-        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True
-    ).encode()
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -128,6 +126,13 @@ DEFAULT_TASK_CONTRACTS: Mapping[str, TaskContract] = MappingProxyType(
             "no_duplicates",
             "schema_valid",
         ),
+        "coding": _contract(
+            "coding",
+            TaskRole.CODER,
+            "syntax_valid",
+            "import_ok",
+            "run_without_crash",
+        ),
         "context_compaction": _contract(
             "context_compaction",
             TaskRole.COMPACTOR,
@@ -156,6 +161,14 @@ DEFAULT_TASK_CONTRACTS: Mapping[str, TaskContract] = MappingProxyType(
             "schema_valid",
             "semantic_equivalence",
         ),
+        "game_logic": _contract(
+            "game_logic",
+            TaskRole.CODER,
+            "lifecycle_initial_state",
+            "lifecycle_start",
+            "lifecycle_restart",
+            "lifecycle_game_over",
+        ),
         "schema_extraction": _contract(
             "schema_extraction",
             TaskRole.EDITOR,
@@ -177,10 +190,7 @@ class PolicyConfig:
     def __post_init__(self) -> None:
         if isinstance(self.max_attempts, bool) or not 1 <= self.max_attempts <= 3:
             raise ValueError("max_attempts must be between 1 and 3")
-        if (
-            isinstance(self.min_evaluation_cases, bool)
-            or not 1 <= self.min_evaluation_cases <= 10_000
-        ):
+        if isinstance(self.min_evaluation_cases, bool) or not 1 <= self.min_evaluation_cases <= 10_000:
             raise ValueError("min_evaluation_cases must be between 1 and 10000")
 
 
@@ -292,9 +302,7 @@ class CapabilityEvidence:
         _require_pattern("collection", self.collection, _COLLECTION_RE)
         _require_pattern("suite_id", self.suite_id, _IDENTIFIER_RE)
         _require_pattern("suite_revision", self.suite_revision, _IDENTIFIER_RE)
-        _require_digest(
-            "acceptance_contract_digest", self.acceptance_contract_digest
-        )
+        _require_digest("acceptance_contract_digest", self.acceptance_contract_digest)
         _require_digest("evidence_digest", self.evidence_digest)
         if not isinstance(self.collection_ok, bool):
             raise ValueError("collection_ok must be a boolean")
@@ -302,11 +310,7 @@ class CapabilityEvidence:
             raise ValueError("local_only must be a boolean")
         if isinstance(self.total_cases, bool) or self.total_cases < 1:
             raise ValueError("total_cases must be a positive integer")
-        if (
-            isinstance(self.passed_cases, bool)
-            or self.passed_cases < 0
-            or self.passed_cases > self.total_cases
-        ):
+        if isinstance(self.passed_cases, bool) or self.passed_cases < 0 or self.passed_cases > self.total_cases:
             raise ValueError("passed_cases must be between 0 and total_cases")
 
 
@@ -355,9 +359,7 @@ class CompletionEvidence:
             raise ValueError("acceptance_results values must be booleans")
         if not isinstance(self.collection_ok, bool):
             raise ValueError("collection_ok must be a boolean")
-        object.__setattr__(
-            self, "acceptance_results", MappingProxyType(dict(self.acceptance_results))
-        )
+        object.__setattr__(self, "acceptance_results", MappingProxyType(dict(self.acceptance_results)))
 
 
 @dataclass(frozen=True)
@@ -428,8 +430,7 @@ class SmallModelTaskPolicy:
             and proof.task_kind == task.task_kind
             and proof.role is task.role
             and proof.collection == task.collection
-            and proof.acceptance_contract_digest
-            == task.acceptance_contract_digest
+            and proof.acceptance_contract_digest == task.acceptance_contract_digest
         ]
         if not exact:
             return self._escalate(fingerprint, "capability_evidence_missing")
@@ -439,9 +440,7 @@ class SmallModelTaskPolicy:
             reason = self._proof_failure_reason(proof)
             if reason is None:
                 self._claims_by_id[task.task_id] = fingerprint
-                self._claims[fingerprint] = _Claim(
-                    task=task, model_identity=model_identity
-                )
+                self._claims[fingerprint] = _Claim(task=task, model_identity=model_identity)
                 return DispatchDecision(
                     action=DispatchAction.LOCAL,
                     task_fingerprint=fingerprint,
@@ -451,16 +450,12 @@ class SmallModelTaskPolicy:
             failure_reasons.append(reason)
         return self._escalate(fingerprint, failure_reasons[0])
 
-    def record_completion(
-        self, evidence: CompletionEvidence
-    ) -> CompletionDecision:
+    def record_completion(self, evidence: CompletionEvidence) -> CompletionDecision:
         """Accept, retry, or escalate using exact acceptance evidence."""
 
         claim = self._claims.get(evidence.task_fingerprint)
         if claim is None:
-            return CompletionDecision(
-                CompletionAction.ESCALATE, "task_not_authorized", 0
-            )
+            return CompletionDecision(CompletionAction.ESCALATE, "task_not_authorized", 0)
         replay = claim.seen.get(evidence.evidence_digest)
         if replay is not None:
             return CompletionDecision(
@@ -485,9 +480,7 @@ class SmallModelTaskPolicy:
         expected_checks = set(claim.task.acceptance_checks)
         supplied_checks = set(evidence.acceptance_results)
         complete = (
-            evidence.collection_ok
-            and supplied_checks == expected_checks
-            and all(evidence.acceptance_results.values())
+            evidence.collection_ok and supplied_checks == expected_checks and all(evidence.acceptance_results.values())
         )
         if complete:
             decision = CompletionDecision(

@@ -16,6 +16,7 @@ EXPECTED_COLLECTIONS = sorted(
         "behavioral",
         "binary_re",
         "business",
+        "chat",
         "chemistry",
         "e2e_test_gen",
         "forensics",
@@ -30,7 +31,9 @@ EXPECTED_COLLECTIONS = sorted(
         "os_expert",
         "physics",
         "radio",
+        "sandbox",
         "security",
+        "travel",
         "web",
         "web_server",
         "xml",
@@ -63,26 +66,17 @@ def _agent_role_names() -> set[str]:
 
 
 def _collection_galaxy_paths() -> dict[str, Path]:
-    return {
-        c: NS_DIR / c / "galaxy.yml"
-        for c in EXPECTED_COLLECTIONS
-    }
+    return {c: NS_DIR / c / "galaxy.yml" for c in EXPECTED_COLLECTIONS}
 
 
 class TestCollectionGalaxyFiles:
     def test_all_collections_have_galaxy_yml(self):
         for name, path in _collection_galaxy_paths().items():
-            assert path.is_file(), (
-                f"Collection '{name}' missing galaxy.yml at {path}"
-            )
+            assert path.is_file(), f"Collection '{name}' missing galaxy.yml at {path}"
 
     def test_no_extra_collection_dirs(self):
-        actual = sorted(
-            d.name for d in NS_DIR.iterdir() if d.is_dir()
-        )
-        assert actual == EXPECTED_COLLECTIONS, (
-            f"Expected collection dirs {EXPECTED_COLLECTIONS}, got {actual}"
-        )
+        actual = sorted(d.name for d in NS_DIR.iterdir() if d.is_dir())
+        assert actual == EXPECTED_COLLECTIONS, f"Expected collection dirs {EXPECTED_COLLECTIONS}, got {actual}"
 
 
 class TestMovedRolesInDestination:
@@ -91,8 +85,11 @@ class TestMovedRolesInDestination:
         assert formal_roles.is_dir(), "formal/roles directory missing"
         names = {d.name for d in formal_roles.iterdir() if d.is_dir()}
         expected = {
-            "tla_check", "tla_parse", "tla_pluscal",
-            "tla_scaffold", "tla_trace_interpret",
+            "tla_check",
+            "tla_parse",
+            "tla_pluscal",
+            "tla_scaffold",
+            "tla_trace_interpret",
         }
         assert names == expected, f"formal roles mismatch: {names}"
 
@@ -100,16 +97,12 @@ class TestMovedRolesInDestination:
         business_roles = NS_DIR / "business" / "roles"
         assert business_roles.is_dir(), "business/roles directory missing"
         names = {d.name for d in business_roles.iterdir() if d.is_dir()}
-        assert "entity_research" in names, (
-            f"entity_research missing from business roles: {names}"
-        )
+        assert "entity_research" in names, f"entity_research missing from business roles: {names}"
 
     def test_empty_collections_have_roles_dir(self):
         for coll in ["security", "infrastructure", "networking"]:
             roles_dir = NS_DIR / coll / "roles"
-            assert roles_dir.is_dir(), (
-                f"Collection '{coll}' missing roles directory at {roles_dir}"
-            )
+            assert roles_dir.is_dir(), f"Collection '{coll}' missing roles directory at {roles_dir}"
 
 
 class TestListAllCollections:
@@ -137,43 +130,32 @@ class TestListAllCollections:
             Path("/nonexistent"),
             namespace="general_ludd",
         )
-        assert result == [], (
-            f"Expected empty list for missing dir, got {result}"
-        )
+        assert result == [], f"Expected empty list for missing dir, got {result}"
 
 
 class TestAgentCoreRolesPresent:
     def test_core_roles_exist(self):
         names = _agent_role_names()
         missing = AGENT_CORE_ROLES - names
-        assert not missing, (
-            f"Agent collection missing core roles: {missing}"
-        )
+        assert not missing, f"Agent collection missing core roles: {missing}"
 
     def test_agent_has_many_roles(self):
         names = _agent_role_names()
-        assert len(names) >= 100, (
-            f"Expected 100+ roles in agent collection, found {len(names)}"
-        )
+        assert len(names) >= 100, f"Expected 100+ roles in agent collection, found {len(names)}"
 
 
 class TestMovedRolesNotInAgent:
     def test_moved_roles_absent_from_agent(self):
         names = _agent_role_names()
         still_present = ROLES_MOVED_OUT & names
-        assert not still_present, (
-            f"Roles should be moved out of agent but still present: {still_present}"
-        )
+        assert not still_present, f"Roles should be moved out of agent but still present: {still_present}"
 
 
 class TestIntegration:
     def test_bundled_root_points_at_real_collections(self):
         bundled = _bundle_import()
         ac = bundled / "ansible_collections" / "general_ludd"
-        assert ac.is_dir(), (
-            f"_bundled_collections_root resolved to {bundled}, "
-            f"but {ac} does not exist"
-        )
+        assert ac.is_dir(), f"_bundled_collections_root resolved to {bundled}, but {ac} does not exist"
 
     def test_galaxy_yml_parsable_as_yaml(self):
         import yaml
@@ -181,12 +163,6 @@ class TestIntegration:
         for name, path in _collection_galaxy_paths().items():
             with open(path) as fh:
                 data = yaml.safe_load(fh)
-            assert isinstance(data, dict), (
-                f"galaxy.yml for '{name}' is not a dict: {type(data)}"
-            )
-            assert "namespace" in data, (
-                f"galaxy.yml for '{name}' missing 'namespace' key"
-            )
-            assert "name" in data, (
-                f"galaxy.yml for '{name}' missing 'name' key"
-            )
+            assert isinstance(data, dict), f"galaxy.yml for '{name}' is not a dict: {type(data)}"
+            assert "namespace" in data, f"galaxy.yml for '{name}' missing 'namespace' key"
+            assert "name" in data, f"galaxy.yml for '{name}' missing 'name' key"

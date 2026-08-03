@@ -77,12 +77,12 @@ def _build_task_spec(game_id: str) -> dict[str, Any]:
     input_digest = hashlib.sha256(prompt.encode()).hexdigest()
     return {
         "task_id": f"fpx.1.game.{game_id}",
-        "task_kind": "bounded_enumeration",
-        "role": TaskRole.ENUMERATOR,
+        "task_kind": "coding",
+        "role": TaskRole.CODER,
         "collection": "gludd.fpx",
         "input_digest": input_digest,
         "impacts": frozenset({TaskImpact.READ_SOURCE, TaskImpact.WRITE_ARTIFACT}),
-        "acceptance_checks": ("coverage_bounded", "no_duplicates", "schema_valid"),
+        "acceptance_checks": ("syntax_valid", "import_ok", "run_without_crash"),
     }
 
 
@@ -292,12 +292,12 @@ class TestSmallModelTaskPolicyFPX1:
 
         task = SmallModelTaskSpec(
             task_id="fpx.1.game.snake.bad",
-            task_kind="bounded_enumeration",
-            role=TaskRole.ENUMERATOR,
+            task_kind="coding",
+            role=TaskRole.CODER,
             collection="gludd.fpx",
             input_digest=hashlib.sha256(b"test").hexdigest(),
             impacts=frozenset({TaskImpact.READ_SOURCE, TaskImpact.DEPLOYMENT}),
-            acceptance_checks=("coverage_bounded", "no_duplicates", "schema_valid"),
+            acceptance_checks=("syntax_valid", "import_ok", "run_without_crash"),
         )
         identity_data = _build_model_identity()
         identity = ModelIdentity(**identity_data)
@@ -622,3 +622,140 @@ class TestLocalModelGameGeneration:
         assert generated == len(results), "Some games failed code generation"
         assert ast_ok == len(results), "Some games failed AST parsing"
         assert imported == len(results), "Some games failed module import"
+
+
+@pytest.mark.e2e
+class TestGameGeneratorWiredPolicy:
+    """Prove SmallModelTaskPolicy gates GameGenerator.generate_game() correctly.
+
+    These tests exercise the wired production dispatch path
+    (GameGenerator._authorize_dispatch) rather than the manually
+    orchestrated ``authorize + _call_local_model`` pattern in
+    ``TestLocalModelGameGeneration``.
+    """
+
+    def test_game_generator_policy_rejects_without_evidence(self, local_gateway: Any) -> None:
+        from general_ludd.cloud.game_e2e import GameGenerator, GameSpec
+        from general_ludd.routing_roles.small_model_policy import (
+            ModelIdentity,
+            SmallModelTaskPolicy,
+        )
+
+        gen = GameGenerator(local_gateway, task_policy=SmallModelTaskPolicy())
+        spec = GameSpec(
+            name="snake",
+            genre="arcade",
+            description="Snake game",
+            prompt_template=GAME_DEFINITIONS["snake"]["prompt"],
+            expected_frames=30,
+            similarity_threshold=0.0,
+        )
+        identity = ModelIdentity(**_build_model_identity())
+        evidence = ()  # no evidence — should fail
+
+        with pytest.raises(PermissionError, match="SmallModelTaskPolicy denied"):
+            gen.generate_game(spec, model_identity=identity, evidence=evidence)
+
+    def test_game_generator_policy_accepts_with_valid_evidence(self, local_gateway: Any) -> None:
+        from general_ludd.cloud.game_e2e import GameGenerator, GameSpec
+        from general_ludd.routing_roles.small_model_policy import (
+            CapabilityEvidence,
+            ModelIdentity,
+            SmallModelTaskPolicy,
+        )
+
+        gen = GameGenerator(local_gateway, task_policy=SmallModelTaskPolicy())
+        spec = GameSpec(
+            name="snake",
+            genre="arcade",
+            description="Snake game",
+            prompt_template=GAME_DEFINITIONS["snake"]["prompt"],
+            expected_frames=30,
+        )
+        identity_data = _build_model_identity()
+        identity = ModelIdentity(**identity_data)
+        evidence_data = _build_capability_evidence(identity_data, _build_task_spec("snake"))
+        evidence = (CapabilityEvidence(**evidence_data),)
+
+        code = gen.generate_game(spec, model_identity=identity, evidence=evidence)
+        assert code, "generate_game returned empty code"
+        assert "class" in code.lower(), f"No class in generated code: {code[:200]}"
+
+    def test_game_generator_without_policy_bypasses_gate(self, local_gateway: Any) -> None:
+        from general_ludd.cloud.game_e2e import GameGenerator, GameSpec
+
+        gen = GameGenerator(local_gateway)  # no policy — backward compatible
+        spec = GameSpec(
+            name="snake",
+            genre="arcade",
+            description="Snake game",
+            prompt_template=GAME_DEFINITIONS["snake"]["prompt"],
+            expected_frames=30,
+            similarity_threshold=0.0,
+        )
+        code = gen.generate_game(spec)
+        assert code, "generate_game returned empty code"
+        assert "class" in code.lower(), f"No class in generated code: {code[:200]}"
+
+    def test_game_logic_task_kind_authorizes(self, local_gateway: Any) -> None:
+        import hashlib
+
+        from general_ludd.routing_roles.small_model_policy import (
+            CapabilityEvidence,
+            ModelIdentity,
+            SmallModelTaskPolicy,
+            SmallModelTaskSpec,
+            TaskImpact,
+            _stable_digest,
+        )
+        from general_ludd.schemas.benchmark import TaskRole
+
+        game_id = "snake"
+        prompt = GAME_DEFINITIONS[game_id]["prompt"]
+        input_digest = hashlib.sha256(prompt.encode()).hexdigest()
+
+        task = SmallModelTaskSpec(
+            task_id=f"fpx.1.game.{game_id}.logic",
+            task_kind="game_logic",
+            role=TaskRole.CODER,
+            collection="gludd.fpx",
+            input_digest=input_digest,
+            impacts=frozenset({TaskImpact.READ_SOURCE, TaskImpact.WRITE_ARTIFACT}),
+            acceptance_checks=(
+                "lifecycle_initial_state",
+                "lifecycle_start",
+                "lifecycle_restart",
+                "lifecycle_game_over",
+            ),
+        )
+        identity_data = _build_model_identity()
+        identity = ModelIdentity(**identity_data)
+
+        acceptance_contract = {
+            "acceptance_checks": sorted(task.acceptance_checks),
+            "collection": task.collection,
+            "role": task.role.value,
+            "task_kind": task.task_kind,
+        }
+        acceptance_digest = _stable_digest(acceptance_contract)
+        evidence = (
+            CapabilityEvidence(
+                model_profile_id=identity_data["model_profile_id"],
+                model_identity_digest=identity.fingerprint,
+                task_kind=task.task_kind,
+                role=task.role,
+                collection=task.collection,
+                suite_id="fpx.1.game_gen_v2",
+                suite_revision="v1",
+                acceptance_contract_digest=acceptance_digest,
+                passed_cases=20,
+                total_cases=20,
+                collection_ok=True,
+                local_only=True,
+                evidence_digest=hashlib.sha256(b"game_logic_evidence").hexdigest(),
+            ),
+        )
+
+        policy = SmallModelTaskPolicy()
+        decision = policy.authorize(task, identity, evidence)
+        assert decision.approved, f"game_logic dispatch denied: {decision.reason}"

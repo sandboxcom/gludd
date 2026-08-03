@@ -7394,4 +7394,36 @@ print('OK: rag.py delegates to HashEmbedder + ModelGateway'); \
 user-test-batch:
 	@$(UV) run python scripts/run_user_test_batch.py
 
-.PHONY: e2e-test-gen-pipeline e2e-test-gen-pipeline-dogfood collect-specific fix-e501-golden clean-relative check-rag-wrapper user-test-batch
+# --- Azure Event Guard (Azure Activity Log smoke-test guard) ---
+# Wraps scripts/azure_event_guard.sh: monitors Azure Activity Log to catch
+# expensive GPU types, duplicate resource names, and wrong-subscription usage.
+# --once: one-shot check (exit 0=clean, 1=violation, 2=auth error)
+# --watch: poll every 60s; exit 1 on first violation
+azure-event-guard-start:
+	@echo "Starting Azure Event Guard (watch mode)..."
+	@nohup bash scripts/azure_event_guard.sh --watch > .gate-logs/azure-event-guard.log 2>&1 & echo $$! > .gate-logs/azure-event-guard.pid; echo "azure-event-guard PID=$$(cat .gate-logs/azure-event-guard.pid)"
+
+azure-event-guard-stop:
+	@if [ -f .gate-logs/azure-event-guard.pid ]; then \
+		kill $$(cat .gate-logs/azure-event-guard.pid) 2>/dev/null || true; \
+		rm -f .gate-logs/azure-event-guard.pid; \
+		echo "Azure Event Guard stopped"; \
+	else \
+		echo "No Azure Event Guard running"; \
+	fi
+
+azure-event-guard-check:
+	@bash scripts/azure_event_guard.sh --once
+
+azure-event-guard-status:
+	@echo "=== Azure Event Guard status ==="
+	@if [ -f .gate-logs/azure-event-guard.pid ]; then \
+		echo "PID: $$(cat .gate-logs/azure-event-guard.pid)"; \
+		ps -p $$(cat .gate-logs/azure-event-guard.pid) > /dev/null 2>&1 && echo "Status: running" || echo "Status: stopped"; \
+	else \
+		echo "No PID file — Azure Event Guard not started"; \
+	fi
+	@echo "--- Last 15 log lines ---"
+	@tail -15 .gate-logs/azure-event-guard.log 2>/dev/null || echo "No log yet"
+
+.PHONY: e2e-test-gen-pipeline e2e-test-gen-pipeline-dogfood collect-specific fix-e501-golden clean-relative check-rag-wrapper user-test-batch azure-event-guard-start azure-event-guard-stop azure-event-guard-check azure-event-guard-status
