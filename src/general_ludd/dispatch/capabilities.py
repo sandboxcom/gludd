@@ -29,6 +29,8 @@ class CollectionMeta:
     tags: frozenset[str] = field(default_factory=frozenset)
     roles: list[dict[str, str]] = field(default_factory=list)
     raw_tags: list[str] = field(default_factory=list)
+    model_capabilities: list[dict[str, object]] = field(default_factory=list)
+    role_capabilities: dict[str, list[str]] = field(default_factory=dict)
 
     @staticmethod
     def from_galaxy(data: dict[str, Any]) -> CollectionMeta:
@@ -36,6 +38,34 @@ class CollectionMeta:
         if not isinstance(tags_raw, list):
             tags_raw = []
         tags_raw = [str(t) for t in tags_raw]
+
+        model_caps: list[dict[str, object]] = []
+        model_caps_raw = data.get("model_capabilities")
+        if isinstance(model_caps_raw, list):
+            for mc in model_caps_raw:
+                if isinstance(mc, dict):
+                    entry: dict[str, object] = {
+                        "name": str(mc.get("name", "")),
+                        "description": str(mc.get("description", "")),
+                        "quality_class": str(mc.get("quality_class", "medium")),
+                    }
+                    roles_raw = mc.get("roles")
+                    entry["roles"] = [str(r) for r in roles_raw] if isinstance(roles_raw, list) else []
+                    model_needs_raw = mc.get("model_needs")
+                    entry["model_needs"] = (
+                        [str(mn) for mn in model_needs_raw] if isinstance(model_needs_raw, list) else []
+                    )
+                    aliases_raw = mc.get("aliases")
+                    entry["aliases"] = [str(a) for a in aliases_raw] if isinstance(aliases_raw, list) else []
+                    model_caps.append(entry)
+
+        role_caps: dict[str, list[str]] = {}
+        role_caps_raw = data.get("role_capabilities")
+        if isinstance(role_caps_raw, dict):
+            for role_name, cap_list in role_caps_raw.items():
+                if isinstance(cap_list, list):
+                    role_caps[str(role_name)] = [str(c) for c in cap_list]
+
         return CollectionMeta(
             name=str(data.get("name", "")),
             namespace=str(data.get("namespace", "")),
@@ -43,10 +73,12 @@ class CollectionMeta:
             description=str(data.get("description", "")).strip(),
             tags=frozenset(tags_raw),
             raw_tags=tags_raw,
+            model_capabilities=model_caps,
+            role_capabilities=role_caps,
         )
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        result: dict[str, object] = {
             "name": self.name,
             "namespace": self.namespace,
             "version": self.version,
@@ -54,6 +86,11 @@ class CollectionMeta:
             "tags": sorted(self.tags),
             "roles": self.roles,
         }
+        if self.model_capabilities:
+            result["model_capabilities"] = self.model_capabilities
+        if self.role_capabilities:
+            result["role_capabilities"] = self.role_capabilities
+        return result
 
 
 @dataclass
@@ -90,6 +127,13 @@ class CapabilityRegistry:
                 tags_set = frozenset(str(t) for t in tags) if isinstance(tags, list) else frozenset()
                 roles_raw = coll_data.get("roles")
                 roles: list[dict[str, str]] = roles_raw if isinstance(roles_raw, list) else []
+                model_caps_raw = coll_data.get("model_capabilities")
+                model_caps: list[dict[str, object]] = model_caps_raw if isinstance(model_caps_raw, list) else []
+                role_caps_raw = coll_data.get("role_capabilities")
+                role_caps: dict[str, list[str]] = {}
+                if isinstance(role_caps_raw, dict):
+                    for rk, rv in role_caps_raw.items():
+                        role_caps[str(rk)] = [str(c) for c in rv] if isinstance(rv, list) else []
                 meta = CollectionMeta(
                     name=str(coll_data.get("name", "")),
                     namespace=str(coll_data.get("namespace", "")),
@@ -98,6 +142,8 @@ class CapabilityRegistry:
                     tags=tags_set,
                     raw_tags=sorted(tags_set),
                     roles=roles,
+                    model_capabilities=model_caps,
+                    role_capabilities=role_caps,
                 )
                 reg.add_collection(meta)
         return reg

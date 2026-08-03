@@ -30,6 +30,26 @@ class CapabilityRouter:
     def __init__(self, capabilities: set[str] | None = None) -> None:
         self._capabilities: set[str] = set(capabilities) if capabilities is not None else set()
 
+    @classmethod
+    def from_model_capabilities(cls, model_caps: list[dict[str, object]]) -> CapabilityRouter:
+        caps: set[str] = set()
+        for mc in model_caps:
+            name = str(mc.get("name", ""))
+            if name:
+                caps.add(name)
+            aliases = mc.get("aliases")
+            if isinstance(aliases, list):
+                for alias in aliases:
+                    caps.add(str(alias))
+        return cls(caps)
+
+    @classmethod
+    def from_role_declarations(cls, role_caps: dict[str, list[str]]) -> CapabilityRouter:
+        caps: set[str] = set()
+        for capability_list in role_caps.values():
+            caps.update(capability_list)
+        return cls(caps)
+
     def add(self, capability: str) -> None:
         self._capabilities.add(capability)
 
