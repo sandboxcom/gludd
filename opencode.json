@@ -105,7 +105,6 @@
     "./.opencode/plugin/enforce-no-ci-poll.ts",
     "./.opencode/plugin/enforce-release-deadline.ts",
     "./.opencode/plugin/enforce-task-tracking.ts",
-    "./.opencode/plugin/enforce-additive-task.ts",
     "./.opencode/plugins/watchdog.ts"
   ]
 }

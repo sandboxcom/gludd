@@ -210,14 +210,9 @@ def _item_xdist_groups(item: pytest.Item) -> set[str]:
         markers = (
             marker
             for marker in getattr(item, "own_markers", ())
-            if getattr(getattr(marker, "mark", marker), "name", None)
-            == "xdist_group"
+            if getattr(getattr(marker, "mark", marker), "name", None) == "xdist_group"
         )
-    return {
-        name
-        for marker in markers
-        if (name := _xdist_group_name(marker)) is not None
-    }
+    return {name for marker in markers if (name := _xdist_group_name(marker)) is not None}
 
 
 @functools.cache
@@ -252,8 +247,7 @@ def _remove_legacy_enforcement_groups(item: pytest.Item) -> None:
             marker
             for marker in markers
             if not (
-                getattr(getattr(marker, "mark", marker), "name", None)
-                == "xdist_group"
+                getattr(getattr(marker, "mark", marker), "name", None) == "xdist_group"
                 and _xdist_group_name(marker) in _LEGACY_ENFORCEMENT_XDIST_GROUPS
             )
         ]
@@ -271,9 +265,7 @@ def _pin_enforcement_shared_state(item: pytest.Item) -> None:
     _remove_legacy_enforcement_groups(item)
     if unrelated_groups:
         return
-    item.add_marker(
-        pytest.mark.xdist_group(name=ENFORCEMENT_SHARED_STATE_GROUP)
-    )
+    item.add_marker(pytest.mark.xdist_group(name=ENFORCEMENT_SHARED_STATE_GROUP))
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
@@ -673,6 +665,13 @@ requires_postgres = pytest.mark.skipif(
 
 @pytest.fixture(autouse=True, scope="session")
 def _ensure_gludd_dir_exists():
+    """Ensure .gludd/ directory exists once per test session.
+
+    The .gludd/ directory is gitignored and absent from fresh CI checkouts.
+    Many source modules default their cache/store paths to subdirectories of
+    .gludd/. This fixture creates it once for the session lifetime; session
+    scope avoids xdist workers racing on mkdir/rmdir.
+    """
     gludd_dir = _REPO_ROOT / ".gludd"
     gludd_dir.mkdir(exist_ok=True)
     yield
@@ -734,6 +733,15 @@ def _reset_httpx_and_abtest_runner():
 
 @pytest.fixture(autouse=True, scope="session")
 def _patch_aiosqlite_worker_for_closed_loop_teardown():
+    """Patch aiosqlite's background worker to survive event-loop shutdown.
+
+    aiosqlite.Connection creates a daemon thread that calls
+    ``loop.call_soon_threadsafe()``. When the event loop is closed before the
+    thread processes its stop sentinel, ``call_soon_threadsafe`` raises
+    ``RuntimeError``, the thread dies with an unhandled exception, and xdist
+    workers crash. This session-scoped fixture wraps the worker with a
+    try/except RuntimeError so a closed loop is handled gracefully.
+    """
     try:
         import aiosqlite.core as _ac
     except ImportError:
