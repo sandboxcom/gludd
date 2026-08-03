@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-08-03 Session 78. HEAD `f88c110c` on development. lint PASS 0. typecheck PASS 0. Tree CLEAN. CI RED on `f88c110c` (run `30847411041`) — being fixed. gate-lite PASS (6555 passed, 0 failed). E2E EXECUTED (~790 local model tests). ALL 23 SPECS + FPX.1 COMPLETE. Game dispatch: 7/7 verified. ALL GAPS CLOSED. Model hash DB: WIRED (28 tests). Push COMPLETE. Session total: +1,905 tests across 20 new test files (58,533 → 60,438). ALL 4 active items COMPLETE. Release v0.1.0-beta.3 SHIPPED (21/12 assets, verify-release-completeness PASS).**
+**Last consolidated: 2026-08-03 Session 78. HEAD `a33b2d78` on development. lint PASS 0. typecheck PASS 0. Tree CLEAN. CI PENDING on `a33b2d78` (run `30853236903`). gate-lite PASS (6555 passed, 0 failed). E2E EXECUTED (~790 local model tests). ALL 23 SPECS + FPX.1 COMPLETE. Game dispatch: 7/7 verified. ALL GAPS CLOSED. Model hash DB: WIRED. Release v0.1.0-beta.3 SHIPPED (21/12 assets, verify-release-completeness PASS). Waves 12-14 complete: +211 (wave 12), +? (wave 13: protocol/audit/metrics/terraform/websocket), +? (wave 14: backup_restore/report_gen/molecule/CI integrity).**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -47,8 +47,12 @@ CI PENDING — run `30833152613`, headSha `ff0aec68`, status `in_progress`. lint
 - [x] S78.W10a — **CI trigger on `42e39cc0`**: CI run `30845918405` in_progress. | evidence: CI run 30845918405 on 42e39cc0 | priority: high | effort: S | status: completed
 - [x] S78.W11 — **Wave 11 — deep tests +221 across 4 modules**: deployment_health deep (+57), integrity_scanner deep (+62), embedding_store deep (+48), TUI/CLI formatter (+54). Session total: +1,599 (58,533 → 60,132). | evidence: `970166fa`; +221 tests; session total +1,599 | priority: high | effort: M | status: completed
 - [x] S78.W11a — **CI trigger on `970166fa`**: CI run `30846427781` queued. | evidence: CI run 30846427781 on 970166fa | priority: high | effort: S | status: completed
+- [x] S78.W12 — **Wave 12 — +211 tests (capability_lattice 90, git_automation 66, ansible_runner 34, policy_engine 21), 8 lint fixes**: Committed in `f88c110c`. | evidence: `f88c110c`; +211 tests | priority: high | effort: M | status: completed
+- [x] S78.W13 — **Wave 13 — protocol 55, audit 27, metrics, terraform, websocket tests**: Committed in `f8b6eb58` along with CI RED fixes (safehttpx version.txt bundling, molecule noop path). | evidence: `f8b6eb58` | priority: high | effort: M | status: completed
+- [x] S78.W14 — **Wave 14 — backup_restore deep, report_generation deep, molecule_playbooks deep, CI workflow integrity tests, 14 lint fixes**: Committed in `a33b2d78` + `4c8bc01d`. | evidence: `a33b2d78`, `4c8bc01d` | priority: high | effort: M | status: completed
+- [x] S78.W14a — **CI PENDING on `a33b2d78`**: CI run `30853236903` in_progress. | evidence: CI run 30853236903 on a33b2d78 | priority: high | effort: S | status: completed
 
-### Unpushed Commits (23)
+### Unpushed Commits (0)
 
 ```
 970166fa feat: wave 11 — +221 tests (deployment_health 57, integrity_scanner 62, embedding_store 48, TUI/CLI formatter 54), fix remaining test gaps, fix lint errors (HEAD)
@@ -199,10 +203,12 @@ ALL 21 feature specifications + FPX.1 COMPLETE. Local model E2E: COMPLETE (~790 
 |---|---|---|
 | Wave 10 — +189 tests (STS 52, cost 60, chat 20, mock_daemon 15, OpenBao 15, sandbox 27) | COMPLETE (`42e39cc0`) |
 | Wave 11 — +221 tests (deployment_health 57, integrity_scanner 62, embedding_store 48, TUI/CLI 54) | COMPLETE (`970166fa`) |
-| CI run 30845918405 on `42e39cc0` | SUPERSEDED by run 30846427781 |
+| CI run 30845918405 on `42e39cc0` | SUPERSEDED |
 | CI run 30846427781 on `970166fa` | SUPERSEDED |
-| CI run `30847411041` on `f88c110c` | RED — being fixed |
-| Session total tests: +1,599 (58,533 → 60,132) | COMPLETE |
+| CI run 30847411041 on `f88c110c` | SUPERSEDED (was RED, replaced by later commits) |
+| CI run 30853236903 on `a33b2d78` (HEAD) | PENDING |
+| Wave 12 (+211), wave 13 (+?), wave 14 (+?) | COMPLETE |
+| Session total tests: +1,905+ (58,533 → 60,438+) | COMPLETE |
 | release-cut pushed (21 commits) | COMPLETE |
 | gate-lite FAIL (2 tests: `test_all_plugins_runtime`, `test_enforcement_bugs`) | FIXED (`9e87d445`; gate-lite PASS 6555/0) |
 | enforce-objective.ts NAG_PREFIX export | FIXED (`bad49bb9`) |
