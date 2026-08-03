@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: local_game_gen
+  author: Agentic Harness Agent
+  description: >
+    Full local game-generation pipeline: download a small GGUF model,
+    serve it via llama.cpp, generate a game with the local model,
+    verify the generated code, and shut down the server.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

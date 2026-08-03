@@ -7,6 +7,10 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from general_ludd.small_models.model_hash_db import ModelHashDB
 
 logger = logging.getLogger(__name__)
 
@@ -54,11 +58,13 @@ class ModelDownloader:
         cache_dir: str | None = None,
         hf_token: str | None = None,
         timeout: float | None = None,
+        hash_db: ModelHashDB | None = None,
     ) -> None:
         self.cache_dir = cache_dir or DEFAULT_CACHE_DIR
         Path(self.cache_dir).mkdir(parents=True, exist_ok=True)
         self.hf_token = hf_token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
         self.timeout = timeout if timeout is not None else DEFAULT_DOWNLOAD_TIMEOUT
+        self._hash_db = hash_db
         self._downloaded: dict[str, DownloadedModel] = {}
         self._progress: DownloadProgress = DownloadProgress()
         self._last_bytes: int = 0
@@ -201,6 +207,7 @@ class ModelDownloader:
         filename: str | None = None,
         revision: str | None = None,
         force: bool = False,
+        verify_hash: bool = True,
     ) -> DownloadedModel:
         from general_ludd.small_models.cost import should_defer_download
 
@@ -214,8 +221,20 @@ class ModelDownloader:
             )
 
         if filename and filename.lower().endswith(".gguf"):
-            return self.download_gguf(model_id=model_id, filename=filename, revision=revision)
-        return self.download_huggingface(model_id=model_id, filename=filename, revision=revision)
+            result = self.download_gguf(model_id=model_id, filename=filename, revision=revision)
+        else:
+            result = self.download_huggingface(model_id=model_id, filename=filename, revision=revision)
+
+        if verify_hash and self._hash_db is not None:
+            from general_ludd.small_models.model_hash_db import ModelIntegrityError
+
+            try:
+                self._hash_db.verify_download(model_id, result.local_path)
+            except ModelIntegrityError:
+                self._downloaded.pop(model_id, None)
+                raise
+
+        return result
 
     def check_download_scheduling(self, size_gb: float) -> dict[str, object]:
         from general_ludd.small_models.cost import is_off_peak, next_off_peak_window, should_defer_download

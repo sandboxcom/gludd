@@ -38,6 +38,12 @@ from general_ludd.small_models.lm_eval_runner import (
     run_benchmark,
     to_capability_evidence,
 )
+from general_ludd.small_models.model_hash_db import (
+    FileHash,
+    KnownModels,
+    ModelHashDB,
+    ModelIntegrityError,
+)
 from general_ludd.small_models.radar_profile import (
     ModelRadarProfile,
     RadarProfile,
@@ -62,9 +68,13 @@ __all__ = [
     "DownloadedModel",
     "EleutherAIHarness",
     "EvalTask",
+    "FileHash",
     "HarnessConfig",
+    "KnownModels",
     "LMEvalRunner",
     "ModelDownloader",
+    "ModelHashDB",
+    "ModelIntegrityError",
     "ModelRadarProfile",
     "ModelRecommendation",
     "ParsedResult",

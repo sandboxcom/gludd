@@ -1,0 +1,56 @@
+---
+- name: Stop local model inference server
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    server_id: "local-0"
+    server_pid: null
+    pid_file: "/tmp/gludd-model-{{ server_id }}.pid"
+
+  tasks:
+    - name: Read PID from file if not provided
+      ansible.builtin.slurp:
+        path: "{{ pid_file }}"
+      register: _pid_slurp
+      when: server_pid is none and pid_file is defined
+
+    - name: Parse PID from file
+      ansible.builtin.set_fact:
+        resolved_pid: "{{ server_pid | string if server_pid is not none else _pid_slurp.content | b64decode | trim }}"
+      when: server_pid is not none or _pid_slurp is defined
+
+    - name: Kill server process with SIGTERM
+      ansible.builtin.command: "kill -TERM {{ resolved_pid }}"
+      ignore_errors: true
+      register: _term_result
+      when: resolved_pid is defined and resolved_pid | int > 0
+
+    - name: Wait for process to exit
+      ansible.builtin.shell: "ps -p {{ resolved_pid }} > /dev/null 2>&1 && echo running || echo stopped"
+      register: _ps_result
+      until: "'stopped' in _ps_result.stdout"
+      retries: 10
+      delay: 1
+      when: resolved_pid is defined and resolved_pid | int > 0
+
+    - name: Force kill if still running
+      ansible.builtin.command: "kill -KILL {{ resolved_pid }}"
+      ignore_errors: true
+      when:
+        - resolved_pid is defined
+        - resolved_pid | int > 0
+        - "'stopped' not in _ps_result.stdout"
+
+    - name: Remove PID file
+      ansible.builtin.file:
+        path: "{{ pid_file }}"
+        state: absent
+      when: pid_file is defined
+
+    - name: Capture server stopped fact
+      ansible.builtin.set_fact:
+        gludd_local_server:
+          server_id: "{{ server_id }}"
+          status: stopped

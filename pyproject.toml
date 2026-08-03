@@ -79,7 +79,7 @@ dev = [
     "setuptools>=83.0.0",
 ]
 local-inference = [
-    "llama-cpp-python>=0.1.0-beta.2",
+    "llama-cpp-python[server]>=0.1.0-beta.2",
     "vllm>=0.1.0-beta.2",
 ]
 aws = [

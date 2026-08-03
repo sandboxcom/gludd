@@ -553,7 +553,7 @@ sync-local-inference:
 	@$(UV) sync --locked --extra local-inference
 
 sync-llama-cpp:
-	@$(UV) pip install "llama-cpp-python>=0.1.0-beta.2"
+	@$(UV) pip install "llama-cpp-python[server]>=0.1.0-beta.2"
 
 # Regenerate uv.lock from pyproject (after adding/removing a dependency) and
 # install it. Use this instead of `sync` when pyproject deps changed.
@@ -985,13 +985,13 @@ check-ratchet-staleness:
 # AB033 — _dead-code-baseline-refresh: auto-regenerates dead-code baseline if
 # older than 24h before running check-dead-code. Prevents false positives.
 _dead-code-baseline-refresh:
-	@if [ -f .dead-code-baseline.json ]; then \
+	@if [ -f config/dead_code_baseline.txt ]; then \
 		NOW=$$(date +%s); \
-		MTIME=$$(stat -f %m .dead-code-baseline.json 2>/dev/null || echo 0); \
+		MTIME=$$(stat -f %m config/dead_code_baseline.txt 2>/dev/null || echo 0); \
 		AGE=$$(( NOW - MTIME )); \
 		if [ "$$AGE" -gt 86400 ]; then \
 			echo "DEAD-CODE-BASELINE: stale ($$(( AGE / 3600 ))h old) — auto-regenerating..."; \
-			$(MAKE) --no-print-directory check-dead-code > /dev/null 2>&1 || true; \
+			$(MAKE) --no-print-directory dead-code-baseline > /dev/null 2>&1 || true; \
 		fi; \
 	fi
 	@echo "_dead-code-baseline-refresh: PASS"
@@ -1208,7 +1208,7 @@ gate-fast: lint typecheck collect-check
 _check-windows-tracked-paths:
 	@BT="/tmp/gludd-windows-paths-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest tests/unit/test_cross_platform_binary.py::test_tracked_paths_are_windows_checkout_compatible -q -n 0 --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
 
-gate: _check-windows-tracked-paths check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-task-registration check-task-integrity check-make-target-contract check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets validate-aws-iam 	validate-azure-iam check-azure-actions-crossref validate-gcp-iam validate-all-cloud-iam check-dependency-pinning integration-health check-runbook-currency check-version-bump-atomicity
+gate: _dead-code-baseline-refresh _check-windows-tracked-paths check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-task-registration check-task-integrity check-make-target-contract check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets validate-aws-iam 	validate-azure-iam check-azure-actions-crossref validate-gcp-iam validate-all-cloud-iam check-dependency-pinning integration-health check-runbook-currency check-version-bump-atomicity
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
@@ -1286,7 +1286,7 @@ gate: _check-windows-tracked-paths check-opencode-integrity check-plugin-hooks o
 # "No Unseen Events" invariant in AGENTS.md). The _gate-fresh-check used by
 # commit targets still requires the FULL `make gate`; gate-lite is for fast
 # local feedback between commits, not a commit prerequisite.
-gate-lite: check-opencode-integrity verify-opencode-backup check-subagent-guards check-skills-frontmatter check-coverage-gaps check-make-help check-plugin-syntax check-plugin-runtime check-plugin-imports check-no-prompt-prone-edit-tools check-task-integrity lint-specs check-spec-enforcement-coverage check-plugin-hook-invoke
+gate-lite: _dead-code-baseline-refresh check-opencode-integrity verify-opencode-backup check-subagent-guards check-skills-frontmatter check-coverage-gaps check-make-help check-plugin-syntax check-plugin-runtime check-plugin-imports check-no-prompt-prone-edit-tools check-task-integrity lint-specs check-spec-enforcement-coverage check-plugin-hook-invoke
 	@rm -f .gate-lite-failed
 	@echo "=== GATE-LITE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-lite-status
 	@# OBSERVABILITY INVARIANT (AGENTS.md "No unseen events"): every phase
@@ -1805,11 +1805,56 @@ test-e2e-games-local-model:
 	 LOCAL_MODEL_GAME="$${LOCAL_MODEL_GAME:-}" \
 	 $(UV) run pytest tests/e2e/test_game_building_local.py -v $(PYTEST_ARGS)
 
+# ── Local model serving (ollama) ────────────────────────────────────────────
+# OLLAMA_MODEL: model to pull (default: qwen2.5:0.5b, small + fast for E2E)
+OLLAMA_MODEL ?= qwen2.5:0.5b
+_OLLAMA_BIN := $(shell command -v ollama 2>/dev/null || echo "")
+_OLLAMA_URL := http://localhost:11434
+
+local-model-ollama: _local-model-ollama-install-check _local-model-ollama-serve
+
+_local-model-ollama-install-check:
+	@if [ -z "$(_OLLAMA_BIN)" ]; then \
+		echo "ollama not found — install via: brew install ollama"; \
+		exit 1; \
+	fi
+	@echo "  ollama found at $(_OLLAMA_BIN)"
+
+_local-model-ollama-serve:
+	@if curl -sSf -o /dev/null "$(_OLLAMA_URL)/api/tags" 2>/dev/null; then \
+		echo "  ollama already running"; \
+	else \
+		echo "  starting ollama serve..."; \
+		ollama serve > /tmp/ollama-serve.log 2>&1 & \
+		sleep 2; \
+	fi
+	@if ! curl -sSf -o /dev/null "$(_OLLAMA_URL)/api/tags" 2>/dev/null; then \
+		echo "  ollama still not reachable — check /tmp/ollama-serve.log"; \
+		exit 1; \
+	fi
+	@echo "  pulling model $(OLLAMA_MODEL)..."
+	@ollama pull $(OLLAMA_MODEL)
+	@echo "  local model ready: $(OLLAMA_MODEL) at $(_OLLAMA_URL)"
+
+local-model-stop:
+	@if curl -sSf -o /dev/null "$(_OLLAMA_URL)/api/tags" 2>/dev/null; then \
+		echo "  stopping ollama..."; \
+		pkill -f "ollama serve" 2>/dev/null || true; \
+		echo "  stopped"; \
+	else \
+		echo "  ollama not running"; \
+	fi
+
+local-model-status:
+	@if curl -sSf -o /dev/null "$(_OLLAMA_URL)/api/tags" 2>/dev/null; then \
+		echo "  ollama RUNNING at $(_OLLAMA_URL)"; \
+		curl -sSf "$(_OLLAMA_URL)/api/tags" | python3 -m json.tool 2>/dev/null || true; \
+	else \
+		echo "  ollama NOT running at $(_OLLAMA_URL)"; \
+	fi
+
 game-audit:
 	@$(PYTHON) scripts/game_audit.py
-
-run-game-gen-local:
-	@$(UV) run python scripts/run_game_gen_local.py
 
 gen-mcp-tools:
 	@$(UV) run python scripts/gen_mcp_tools.py
@@ -5408,6 +5453,8 @@ container-push:
 
 SANDBOX_CACHE ?= $(HOME)/.cache/gludd/sandbox
 SANDBOX_IMAGE ?= $(SANDBOX_CACHE)/rootfs.ext4
+GLUDD_SANDBOX_STATE_DIR ?=
+GLUDD_PROJECT_ROOT ?=
 
 build-sandbox-image:
 	@mkdir -p "$(SANDBOX_CACHE)"
@@ -5447,13 +5494,13 @@ clean-sandbox-images:
 # --- FEATURE_SANDBOX_STATE_ROOT: host-side sandbox runtime-state directory ---
 
 sandbox-state-dir:
-	@$(UV) run python -c "from general_ludd.security.sandboxes.state import SandboxState; s = SandboxState.discover(); print(s.project_dir)"
+	@export GLUDD_SANDBOX_STATE_DIR="$(GLUDD_SANDBOX_STATE_DIR)" && export GLUDD_PROJECT_ROOT="$(GLUDD_PROJECT_ROOT)" && $(UV) run python -c "from general_ludd.security.sandboxes.state import SandboxState; s = SandboxState.discover(); print(s.project_dir)"
 
 sandbox-state-list:
-	@$(UV) run python -c "from general_ludd.security.sandboxes.state import SandboxState; s = SandboxState.discover(); from pathlib import Path; [print(str(p.relative_to(s.project_dir)) if p.is_relative_to(s.project_dir) else str(p)) for p in sorted(s.project_dir.rglob('*'))] if s.project_dir.exists() else print('(empty)')"
+	@export GLUDD_SANDBOX_STATE_DIR="$(GLUDD_SANDBOX_STATE_DIR)" && export GLUDD_PROJECT_ROOT="$(GLUDD_PROJECT_ROOT)" && $(UV) run python -c "from general_ludd.security.sandboxes.state import SandboxState; s = SandboxState.discover(); from pathlib import Path; [print(str(p.relative_to(s.project_dir)) if p.is_relative_to(s.project_dir) else str(p)) for p in sorted(s.project_dir.rglob('*'))] if s.project_dir.exists() else print('(empty)')"
 
 sandbox-state-clean:
-	@$(UV) run python -c "from general_ludd.security.sandboxes.state import SandboxState; s = SandboxState.discover(create=False); removed = s.cleanup_project() if s.project_dir.exists() else False; print(f'Removed {s.project_dir}' if removed else '(nothing to clean)')"
+	@export GLUDD_SANDBOX_STATE_DIR="$(GLUDD_SANDBOX_STATE_DIR)" && export GLUDD_PROJECT_ROOT="$(GLUDD_PROJECT_ROOT)" && $(UV) run python -c "from general_ludd.security.sandboxes.state import SandboxState; s = SandboxState.discover(create=False); removed = s.cleanup_project() if s.project_dir.exists() else False; print(f'Removed {s.project_dir}' if removed else '(nothing to clean)')"
 
 # Reproduce CI's Linux "Gate" step locally — no GitHub login needed. Runs the
 # EXACT CI command (make lint typecheck test-count test smoke) inside a Linux
@@ -7429,4 +7476,11 @@ azure-event-guard-status:
 	@echo "--- Last 15 log lines ---"
 	@tail -15 .gate-logs/azure-event-guard.log 2>/dev/null || echo "No log yet"
 
-.PHONY: e2e-test-gen-pipeline e2e-test-gen-pipeline-dogfood collect-specific fix-e501-golden clean-relative check-rag-wrapper user-test-batch azure-event-guard-start azure-event-guard-stop azure-event-guard-check azure-event-guard-status
+.PHONY: e2e-test-gen-pipeline e2e-test-gen-pipeline-dogfood collect-specific fix-e501-golden clean-relative check-rag-wrapper user-test-batch azure-event-guard-start azure-event-guard-stop azure-event-guard-check azure-event-guard-status check-e2e-small-model-prereq
+
+check-e2e-small-model-prereq:
+	@echo "=== E2E small model pipeline prerequisites ==="
+	@$(UV) run python -c "import huggingface_hub; print('huggingface_hub:', huggingface_hub.__version__)" && echo "  huggingface_hub: OK" || echo "  huggingface_hub: MISSING"
+	@$(UV) run python -c "import llama_cpp; print('llama_cpp:', llama_cpp.__version__); print('llama_cpp.server:', type(llama_cpp))" && echo "  llama_cpp: OK" || echo "  llama_cpp: MISSING"
+	@if [ -f external/llamacpp/build/bin/llama-quantize ] && [ -x external/llamacpp/build/bin/llama-quantize ]; then echo "  llama-quantize (bundled): external/llamacpp/build/bin/llama-quantize OK"; else echo "  llama-quantize (bundled): MISSING"; fi
+	@which llama-quantize >/dev/null 2>&1 && echo "  llama-quantize (PATH): $(shell which llama-quantize) OK" || echo "  llama-quantize (PATH): not on PATH"

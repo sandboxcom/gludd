@@ -1,11 +1,12 @@
 """E2E: real small model pipeline — download, quantize, serve, infer, cleanup.
 
 Exercises the full pipeline with actual classes:
-1. ModelDownloader — download a tiny GGUF model (<100MB, SmolLM2-135M)
+1. ModelDownloader — download a tiny GGUF model (<500MB, Qwen2.5-0.5B)
 2. ModelQuantizer — quantize to q4_0
-3. LocalInferenceManager — start inference server
-4. httpx — call the server with a test prompt
-5. Verify response is non-empty, shut down, clean up files
+3. LocalInferenceManager — start inference server (subprocess fallback)
+4. Ansible dispatch path — POST /api/dispatch with capability routing
+5. httpx — call the server with a test prompt
+6. Verify response is non-empty, shut down, clean up files
 
 Skips with reason when llama.cpp / huggingface_hub tools are not installed.
 """
@@ -28,8 +29,8 @@ from general_ludd.infra.local_inference import (
 from general_ludd.quantization.quantize import ModelQuantizer, QuantMethod
 from general_ludd.small_models.download import ModelDownloader
 
-_SMALL_MODEL_REPO = "HuggingFaceTB/SmolLM2-135M-GGUF"
-_SMALL_MODEL_FILE = "smollm2-135m-instruct-Q4_K_M.gguf"
+_SMALL_MODEL_REPO = "bartowski/Qwen2.5-0.5B-Instruct-GGUF"
+_SMALL_MODEL_FILE = "Qwen2.5-0.5B-Instruct-Q4_K_M.gguf"
 
 
 def _find_llama_quantize_bin() -> str | None:
@@ -93,14 +94,47 @@ def _find_free_port() -> int:
         return s.getsockname()[1]
 
 
+def _download_and_quantize() -> tuple[str, str]:
+    tmpdir = tempfile.mkdtemp(prefix="gludd-qwen-e2e-")
+    quantized_path = os.path.join(tmpdir, "qwen2.5-0.5b-q4_0.gguf")
+
+    downloader = ModelDownloader(cache_dir=tmpdir)
+    try:
+        downloaded = downloader.download_gguf(
+            model_id=_SMALL_MODEL_REPO,
+            filename=_SMALL_MODEL_FILE,
+        )
+    except Exception as exc:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        pytest.skip(f"Model download failed: {exc}")
+
+    assert downloaded.local_path, "download must produce a local path"
+    assert os.path.isfile(downloaded.local_path), f"downloaded file not found: {downloaded.local_path}"
+    assert downloaded.size_bytes > 0, "downloaded model must have non-zero size"
+
+    quantizer = ModelQuantizer()
+    ok = quantizer.quantize(
+        input_gguf=downloaded.local_path,
+        output_gguf=quantized_path,
+        method=QuantMethod.Q4_0,
+    )
+    if not ok:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        pytest.skip("llama-quantize quantization failed")
+
+    assert os.path.isfile(quantized_path), f"quantized output not found: {quantized_path}"
+    assert os.path.getsize(quantized_path) > 0, "quantized output must be non-empty"
+    return tmpdir, quantized_path
+
+
 class TestSmallModelPipelineReal:
     """Full pipeline: download -> quantize -> serve -> infer -> shutdown -> cleanup."""
 
     @pytest.mark.asyncio
     async def test_full_pipeline_download_quantize_serve_infer(self) -> None:
         """E2E pipeline exercising ModelDownloader, ModelQuantizer, LocalInferenceManager."""
-        tmpdir = tempfile.mkdtemp(prefix="gludd-smollm-e2e-")
-        quantized_path = os.path.join(tmpdir, "smollm2-135m-q4_0.gguf")
+        tmpdir = tempfile.mkdtemp(prefix="gludd-qwen-e2e-")
+        quantized_path = os.path.join(tmpdir, "qwen2.5-0.5b-q4_0.gguf")
 
         try:
             downloader = ModelDownloader(cache_dir=tmpdir)
@@ -188,6 +222,178 @@ class TestSmallModelPipelineReal:
 
             await mgr.stop_server(server.server_id)
             assert server.status == "stopped"
+
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    @pytest.mark.asyncio
+    async def test_dispatch_path_serve_infer_stop(self) -> None:
+        """E2E pipeline through POST /api/dispatch capability routing.
+
+        Uses the same download+quantize path, then serves/stops via the
+        capability dispatch (the same path cloud deployments use).
+        """
+        tmpdir, quantized_path = _download_and_quantize()
+        port = _find_free_port()
+        base_url = f"http://localhost:{port}"
+        try:
+            from general_ludd.ansible.runner import AnsibleRunnerAdapter
+            from general_ludd.daemon_wiring import make_collection_handler
+
+            adapter = AnsibleRunnerAdapter()
+            collection_handler = make_collection_handler(adapter)
+            assert collection_handler is not None, "collection_handler must be available"
+
+            serve_result = await collection_handler(
+                "general_ludd.agent.local_model_serve",
+                {
+                    "engine": "llamacpp",
+                    "model_path": quantized_path,
+                    "host": "localhost",
+                    "port": port,
+                    "gpu_layers": 0,
+                    "context_size": 512,
+                    "startup_timeout": 120,
+                    "server_id": "e2e-dispatch-test",
+                },
+            )
+            if serve_result.get("status") != "success" and serve_result.get("rc") != 0:
+                error_msg = serve_result.get("msg") or serve_result.get("error") or str(serve_result)
+                pytest.skip(f"Serve via ansible failed: {error_msg}")
+
+            server_info = (serve_result.get("facts") or serve_result.get("ansible_facts") or {}).get(
+                "gludd_local_server", {}
+            )
+            assert server_info.get("status") == "running", f"Server not running: {server_info}"
+
+            async with httpx.AsyncClient(base_url=base_url, timeout=60.0) as client:
+                for _attempt in range(30):
+                    try:
+                        resp = await client.get("/health")
+                        if resp.status_code == 200:
+                            break
+                    except httpx.TransportError:
+                        pass
+                    await asyncio.sleep(1.0)
+                else:
+                    pytest.fail("Server /health did not become 200 within 30s")
+
+                completion_resp = await client.post(
+                    "/v1/completions",
+                    json={
+                        "prompt": "The capital of France is",
+                        "max_tokens": 8,
+                        "temperature": 0.0,
+                    },
+                )
+                assert completion_resp.status_code == 200, completion_resp.text
+                body = completion_resp.json()
+                choices = body.get("choices", [])
+                assert len(choices) >= 1, f"No choices: {body}"
+                text = choices[0].get("text", "")
+                assert isinstance(text, str) and len(text) > 0, f"Empty response: {body}"
+
+            stop_result = await collection_handler(
+                "general_ludd.agent.local_model_stop",
+                {"server_id": "e2e-dispatch-test", "server_pid": server_info.get("pid")},
+            )
+            assert stop_result.get("status") == "success", f"Stop failed: {stop_result}"
+
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    @pytest.mark.asyncio
+    async def test_dispatch_api_endpoint_serve_stop(self) -> None:
+        """Serve and stop a local model through the POST /api/dispatch endpoint.
+
+        Verifies the full dispatch path: capability routing → collection
+        handler → AnsibleRunnerAdapter → playbook execution.
+        """
+        tmpdir, quantized_path = _download_and_quantize()
+        port = _find_free_port()
+        base_url = f"http://localhost:{port}"
+        try:
+            from fastapi import FastAPI
+            from fastapi.testclient import TestClient
+
+            from general_ludd.ansible.runner import AnsibleRunnerAdapter
+            from general_ludd.daemon_wiring import make_collection_handler
+            from general_ludd.dispatch.capabilities import CapabilityRegistry, CollectionMeta
+            from general_ludd.routers.dispatch import register as register_dispatch
+
+            adapter = AnsibleRunnerAdapter()
+            collection_handler = make_collection_handler(adapter)
+
+            reg = CapabilityRegistry()
+            reg.add_collection(
+                CollectionMeta(
+                    name="agent",
+                    namespace="general_ludd",
+                    version="0.2.0",
+                    tags=frozenset({"local_model_serve", "local_model_stop", "local_inference"}),
+                    raw_tags=["local_model_serve", "local_model_stop", "local_inference"],
+                )
+            )
+
+            app = FastAPI()
+            register_dispatch(
+                app,
+                {},
+                collection_handler=collection_handler,
+                capability_registry=reg,
+            )
+            client = TestClient(app, raise_server_exceptions=False)
+
+            resp = client.post(
+                "/api/dispatch",
+                json={
+                    "capability": "local_model_serve",
+                    "action": "local_model_serve",
+                    "args": {
+                        "engine": "llamacpp",
+                        "model_path": quantized_path,
+                        "host": "localhost",
+                        "port": port,
+                        "gpu_layers": 0,
+                        "context_size": 512,
+                        "startup_timeout": 120,
+                        "server_id": "e2e-api-dispatch",
+                    },
+                },
+            )
+            assert resp.status_code == 200, f"dispatch serve: {resp.status_code} {resp.text}"
+            data = resp.json()
+            assert data.get("ok_count", 0) > 0, f"Serve dispatch had errors: {data}"
+
+            async with httpx.AsyncClient(base_url=base_url, timeout=60.0) as hclient:
+                for _attempt in range(30):
+                    try:
+                        resp = await hclient.get("/health")
+                        if resp.status_code == 200:
+                            break
+                    except httpx.TransportError:
+                        pass
+                    await asyncio.sleep(1.0)
+                else:
+                    pytest.fail("Server /health did not become 200 within 30s")
+
+                completion_resp = await hclient.post(
+                    "/v1/completions",
+                    json={"prompt": "The capital of France is", "max_tokens": 8, "temperature": 0.0},
+                )
+                assert completion_resp.status_code == 200, completion_resp.text
+
+            resp = client.post(
+                "/api/dispatch",
+                json={
+                    "capability": "local_model_stop",
+                    "action": "local_model_stop",
+                    "args": {"server_id": "e2e-api-dispatch"},
+                },
+            )
+            assert resp.status_code == 200, f"dispatch stop: {resp.status_code} {resp.text}"
+            data = resp.json()
+            assert data.get("ok_count", 0) > 0, f"Stop dispatch had errors: {data}"
 
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)

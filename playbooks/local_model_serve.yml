@@ -1,0 +1,78 @@
+---
+- name: Deploy local model inference server
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    engine: "llamacpp"
+    model_path: ""
+    host: "localhost"
+    port: 9999
+    gpu_layers: -1
+    context_size: 4096
+    extra_args: []
+    startup_timeout: 120
+    server_id: "local-0"
+    pid_file: "/tmp/gludd-model-{{ server_id }}.pid"
+
+  tasks:
+    - name: Validate model_path exists
+      ansible.builtin.stat:
+        path: "{{ model_path }}"
+      register: _model_stat
+      failed_when: not _model_stat.stat.exists
+      when: engine == "llamacpp"
+
+    - name: Build llama.cpp server command
+      ansible.builtin.set_fact:
+        _server_cmd: >-
+          python3 -m llama_cpp.server
+          --model {{ model_path }}
+          --host {{ host }}
+          --port {{ port }}
+          --n_gpu_layers {{ gpu_layers }}
+          --n_ctx {{ context_size }}
+      when: engine == "llamacpp"
+
+    - name: Build vllm server command
+      ansible.builtin.set_fact:
+        _server_cmd: "vllm serve {{ model_path }} --host {{ host }} --port {{ port }}"
+      when: engine == "vllm"
+
+    - name: Start inference server in background
+      ansible.builtin.shell: |
+        nohup {{ _server_cmd }} > /tmp/gludd-model-{{ server_id }}.log 2>&1 &
+        echo $! > {{ pid_file }}
+      changed_when: true
+      register: _server_start
+
+    - name: Read PID from file
+      ansible.builtin.slurp:
+        path: "{{ pid_file }}"
+      register: _pid_slurp
+
+    - name: Parse server PID
+      ansible.builtin.set_fact:
+        server_pid: "{{ _pid_slurp.content | b64decode | trim }}"
+
+    - name: Wait for /health endpoint
+      ansible.builtin.uri:
+        url: "http://{{ host }}:{{ port }}/health"
+        timeout: 5
+        status_code: 200
+      register: _health_result
+      until: _health_result.status == 200
+      retries: "{{ (startup_timeout / 2) | int }}"
+      delay: 2
+      when: startup_timeout > 0
+
+    - name: Capture server ready fact
+      ansible.builtin.set_fact:
+        gludd_local_server:
+          server_id: "{{ server_id }}"
+          engine: "{{ engine }}"
+          endpoint_url: "http://{{ host }}:{{ port }}/v1"
+          pid: "{{ server_pid }}"
+          status: running
+          pid_file: "{{ pid_file }}"

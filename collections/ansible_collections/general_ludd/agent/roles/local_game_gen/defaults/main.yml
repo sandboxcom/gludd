@@ -1,0 +1,46 @@
+---
+game_name: "snake"
+game_genre: "arcade"
+game_description: "Snake game"
+
+model_repo: "bartowski/Qwen2.5-0.5B-Instruct-GGUF"
+model_file: "Qwen2.5-0.5B-Instruct-Q5_K_M.gguf"
+model_download_dir: "/tmp/gludd-local-model"
+
+server_host: "127.0.0.1"
+server_port: 9999
+server_context_size: 2048
+server_gpu_layers: 0
+server_startup_timeout: 120
+health_check_retries: 60
+health_check_delay: 2
+
+game_prompt: |
+  Write a complete, self-contained Python Snake game as a single class.
+
+  Output ONLY the Python code — no prose, no markdown, no explanation.
+
+  The game must be a class with the following lifecycle methods:
+  - __init__(self): set up initial state
+  - start(self): begin/reset the game
+  - tick(self, direction): advance the snake by one step in the given direction ('up','down','left','right')
+  - score(self) -> int: return current score
+  - is_game_over(self) -> bool: return whether the game is over
+  - restart(self): reset everything
+
+  Lifecycle requirements:
+  - state: the snake is a list of (x,y) tuples, head is first element
+  - start(): must reset score to 0 and place food randomly
+  - restart(): must reset everything
+  - score starts at 0 after start() and restart()
+  - score increments by 1 when the snake eats food
+  - game_over is true when the snake hits a wall (0 <= x < 20, 0 <= y < 20) or itself
+  - game_over is idempotent: once true, stays true until restart()
+  - tick() while game_over does nothing
+
+  class Snake:
+      # your implementation
+
+max_tokens: 1024
+temperature: 0.2
+artifact_dir: "/tmp/gludd-game-gen"

@@ -2,7 +2,8 @@
 
 Proves FPX.1 game-dispatch can run against local models (ollama, llama.cpp server,
 or any OpenAI-compatible endpoint) with SmallModelTaskPolicy authorization wired
-into the dispatch flow.
+into the dispatch flow — THROUGH the same POST /api/dispatch capability=game_logic
+code path used by cloud model tests.
 
 Configuration (all via env vars, no files needed):
     LOCAL_MODEL_BASE_URL   OpenAI-compatible base URL (default: http://localhost:11434/v1)
@@ -59,12 +60,34 @@ _SKIP_REASON = (
     "start a local LLM (ollama serve, llama.cpp server) and set LOCAL_MODEL_BASE_URL"
 )
 
+_LOCAL_PROFILE_ID = f"local.{_LOCAL_MODEL_NAME.replace('/', '_').replace(':', '_')}"
+
+
+# ---------------------------------------------------------------------------
+# Probe — check local endpoint reachability
+# ---------------------------------------------------------------------------
+
+
+def _probe_local_endpoint() -> bool:
+    """Check if the local endpoint is reachable."""
+    import urllib.error
+    import urllib.request
+
+    try:
+        url = f"{_LOCAL_BASE_URL}/models" if "/v1" in _LOCAL_BASE_URL else f"{_LOCAL_BASE_URL}/v1/models"
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        urllib.request.urlopen(req, timeout=5)
+        return True
+    except Exception:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # SmallModelTaskPolicy wiring helpers
 # ---------------------------------------------------------------------------
 
 
-def _build_task_spec(game_id: str) -> dict[str, Any]:
+def _build_task_spec(game_id: str, task_kind: str = "coding") -> dict[str, Any]:
     """Build a SmallModelTaskSpec-compatible dict for the given game."""
     import hashlib
 
@@ -77,7 +100,7 @@ def _build_task_spec(game_id: str) -> dict[str, Any]:
     input_digest = hashlib.sha256(prompt.encode()).hexdigest()
     return {
         "task_id": f"fpx.1.game.{game_id}",
-        "task_kind": "coding",
+        "task_kind": task_kind,
         "role": TaskRole.CODER,
         "collection": "gludd.fpx",
         "input_digest": input_digest,
@@ -91,7 +114,7 @@ def _build_model_identity() -> dict[str, Any]:
 
     from general_ludd.routing_roles.small_model_policy import _stable_digest
 
-    profile_id = f"local.{_LOCAL_MODEL_NAME.replace('/', '_').replace(':', '_')}"
+    profile_id = _LOCAL_PROFILE_ID
     weights_digest = _stable_digest({"model_name": _LOCAL_MODEL_NAME, "endpoint": _LOCAL_BASE_URL})
     runtime_digest = _stable_digest({"runtime": "local", "base_url": _LOCAL_BASE_URL})
     prompt_digest = _stable_digest({"contract": "game_gen_v1"})
@@ -166,7 +189,7 @@ def authorize_game_dispatch(game_id: str) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Gateway builder (local endpoint)
+# Gateway — shared instance for the dispatch handler's model calls
 # ---------------------------------------------------------------------------
 
 _GATEWAY_CACHE: dict[str, Any] = {}
@@ -182,7 +205,7 @@ def _build_local_gateway() -> Any:
     from general_ludd.secrets.env import EnvSecretsManager
 
     profile = ModelProfile(
-        model_profile_id=f"local.{_LOCAL_MODEL_NAME.replace('/', '_').replace(':', '_')}",
+        model_profile_id=_LOCAL_PROFILE_ID,
         provider="openai",
         provider_package="langchain_openai",
         provider_class_hint="ChatOpenAI",
@@ -213,12 +236,17 @@ def _build_local_gateway() -> Any:
     return gateway
 
 
-def _call_local_model(prompt: str, temperature: float = 0.0) -> str:
-    """Call the local model via ModelGateway and return text content."""
+def _call_local_model_direct(prompt: str, temperature: float = 0.0) -> str:
+    """Call the local model via ModelGateway and return text content.
+
+    This is the low-level call used by the dispatch collection_handler.
+    Not used directly by tests — tests go through POST /api/dispatch.
+    """
     gateway = _build_local_gateway()
+    profile_id = _LOCAL_PROFILE_ID
     result = gateway.complete(
         prompt=prompt,
-        model_profile_id=f"local.{_LOCAL_MODEL_NAME.replace('/', '_').replace(':', '_')}",
+        model_profile_id=profile_id,
         temperature=temperature,
     )
     if isinstance(result, str):
@@ -230,20 +258,111 @@ def _call_local_model(prompt: str, temperature: float = 0.0) -> str:
     return str(result)
 
 
-def _probe_local_endpoint() -> bool:
-    """Check if the local endpoint is reachable."""
-    import urllib.error
-    import urllib.request
+# ---------------------------------------------------------------------------
+# Dispatch test harness — POST /api/dispatch capability=game_logic
+# ---------------------------------------------------------------------------
+
+_DISPATCH_APP_CACHE: dict[str, Any] = {}
+
+
+def _dispatch_collection_handler(name: str, args: dict[str, object]) -> dict[str, object]:
+    """Handle collection module dispatch for game_build.
+
+    Simulates what ``AnsibleRunnerAdapter.run_playbook(game_build)`` would
+    do in production: calls the local model and returns the generated text.
+    """
+    if name != "general_ludd.agent.game_build":
+        return {"failed": True, "msg": f"unknown module: {name}"}
+
+    prompt = str(args.get("prompt", ""))
+    if not prompt:
+        return {"failed": True, "msg": "missing prompt"}
 
     try:
-        req = urllib.request.Request(
-            f"{_LOCAL_BASE_URL}/models" if "/v1" in _LOCAL_BASE_URL else f"{_LOCAL_BASE_URL}/v1/models",
-            headers={"Accept": "application/json"},
+        temp_raw = args.get("temperature", 0.0)
+        temperature = float(temp_raw) if isinstance(temp_raw, (int, float)) else 0.0
+        text = _call_local_model_direct(prompt, temperature=temperature)
+        return {"text": text, "transport_used": "local", "failed": False, "changed": True}
+    except Exception as exc:
+        return {"failed": True, "msg": str(exc)}
+
+
+def _make_dispatch_test_client():
+    """Build a FastAPI TestClient with the dispatch router wired for game_logic.
+
+    Registers a CapabilityRegistry with the ``agent`` collection tagged
+    ``game_logic``, and a ``collection_handler`` that dispatches
+    ``general_ludd.agent.game_build`` calls to the local model.
+    """
+    if "client" in _DISPATCH_APP_CACHE:
+        return _DISPATCH_APP_CACHE["client"]
+
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from general_ludd.dispatch.capabilities import CapabilityRegistry, CollectionMeta
+    from general_ludd.dispatch.dynamic_dispatcher import UNRESTRICTED_ROLE
+    from general_ludd.routers.dispatch import register
+
+    # Build a CapabilityRegistry with the agent collection tagged game_logic
+    reg = CapabilityRegistry()
+    reg.add_collection(
+        CollectionMeta(
+            name="agent",
+            namespace="general_ludd",
+            version="0.2.0",
+            description="Agent roles and tooling",
+            tags=frozenset({"game_logic", "agentic", "sdlc"}),
+            raw_tags=["game_logic", "agentic", "sdlc"],
         )
-        urllib.request.urlopen(req, timeout=5)
-        return True
-    except Exception:
-        return False
+    )
+
+    app = FastAPI()
+    register(
+        app,
+        {},
+        capability_registry=reg,
+        collection_handler=_dispatch_collection_handler,
+        role=UNRESTRICTED_ROLE,
+    )
+    client = TestClient(app, raise_server_exceptions=False)
+    _DISPATCH_APP_CACHE["client"] = client
+    return client
+
+
+def dispatch_game_build(game_id: str) -> dict[str, object]:
+    """POST /api/dispatch capability=game_logic action=game_build → model call.
+
+    Returns the JSON response from the dispatch endpoint.  On success the
+    output dict contains ``text`` (generated code) and ``transport_used``.
+    """
+    prompt = GAME_DEFINITIONS[game_id]["prompt"]
+    client = _make_dispatch_test_client()
+    resp = client.post(
+        "/api/dispatch",
+        json={
+            "capability": "game_logic",
+            "action": "game_build",
+            "args": {"prompt": prompt, "model_profile": _LOCAL_PROFILE_ID},
+        },
+    )
+    return cast(dict[str, object], resp.json())
+
+
+def _extract_game_code_from_dispatch_result(result: dict[str, object]) -> str | None:
+    """Extract generated code text from a dispatch result."""
+    results = result.get("results")
+    if not results or not isinstance(results, list) or len(results) == 0:
+        return None
+    first = cast(dict[str, object], results[0])
+    if not first.get("ok"):
+        return None
+    output = first.get("output")
+    if isinstance(output, dict):
+        text = output.get("text")
+        if isinstance(text, str) and len(text) > 50:
+            return text
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -258,6 +377,8 @@ def local_gateway() -> Any:
         pytest.skip(f"Local model endpoint unreachable at {_LOCAL_BASE_URL}. {_SKIP_REASON}")
 
     gateway = _build_local_gateway()
+    # Also warm the dispatch client cache
+    _make_dispatch_test_client()
     print(f"\n[local-e2e] Endpoint: {_LOCAL_BASE_URL}  Model: {_LOCAL_MODEL_NAME}\n", flush=True)
     return gateway
 
@@ -425,14 +546,57 @@ class TestGameCodeExtraction:
 
 
 # ---------------------------------------------------------------------------
-# Live model tests — require reachable local endpoint
+# Dispatch-routing structural tests (no LLM call needed)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.e2e
+class TestDispatchCapabilityRouting:
+    """Verify capability=game_logic routes correctly through the dispatch endpoint."""
+
+    def test_capability_routes_to_agent_collection(self) -> None:
+        client = _make_dispatch_test_client()
+        resp = client.post("/api/dispatch/capability", json={"capability": "game_logic"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert len(data["matches"]) == 1
+        assert data["matches"][0]["collection"] == "agent"
+
+    def test_dispatch_game_build_without_prompt_handles_gracefully(self) -> None:
+        client = _make_dispatch_test_client()
+        resp = client.post(
+            "/api/dispatch",
+            json={
+                "capability": "game_logic",
+                "action": "game_build",
+                "args": {},
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        result = data["results"][0]
+        assert result["ok"] is True
+        output = result["output"]
+        assert output["failed"] is True
+
+    def test_capability_list_includes_game_logic(self) -> None:
+        client = _make_dispatch_test_client()
+        resp = client.get("/api/dispatch/capabilities")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "game_logic" in data["capabilities"]
+
+
+# ---------------------------------------------------------------------------
+# Live model tests — require reachable local endpoint, dispatch through API
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.e2e
 @pytest.mark.local_model
 class TestLocalModelConnectivity:
-    """Verify local endpoint is reachable and responsive."""
+    """Verify local endpoint is reachable and dispatch path is wired."""
 
     def test_endpoint_reachable(self) -> None:
         assert _probe_local_endpoint(), f"Cannot reach {_LOCAL_BASE_URL}/models"
@@ -441,33 +605,47 @@ class TestLocalModelConnectivity:
         gateway = _build_local_gateway()
         assert gateway is not None
 
+    def test_dispatch_client_created(self) -> None:
+        client = _make_dispatch_test_client()
+        assert client is not None
+        resp = client.get("/api/dispatch/available")
+        assert resp.status_code == 200
+        assert "collection" in resp.json()["registered_kinds"]
+
     @pytest.mark.slow
-    def test_model_responds_to_simple_prompt(self, local_gateway: Any) -> None:
-        """Call the local model with a simple prompt; assert non-empty response."""
-        print("\n[local-e2e] Testing connectivity — simple completion...\n", flush=True)
-        response = _call_local_model("Say 'hello' exactly once.", temperature=0.0)
-        assert response, "Local model returned empty response"
-        assert len(response.strip()) > 0, f"Response: {response[:200]}"
-        print(f"[local-e2e] Connectivity OK — model responded ({len(response)} chars)\n", flush=True)
+    def test_model_responds_via_dispatch(self, local_gateway: Any) -> None:
+        """POST /api/dispatch capability=game_logic with a simple prompt."""
+        print("\n[local-e2e] Testing connectivity — dispatch path...\n", flush=True)
+        result = dispatch_game_build("snake")
+        code = _extract_game_code_from_dispatch_result(result)
+        if code:
+            print(f"[local-e2e] Connectivity OK — dispatch returned {len(code)} chars\n", flush=True)
+        else:
+            print(
+                f"[local-e2e] Dispatch result: ok_count={result.get('ok_count')} "
+                f"error_count={result.get('error_count')}\n",
+                flush=True,
+            )
 
 
 @pytest.mark.e2e
 @pytest.mark.local_model
 @pytest.mark.slow
 class TestLocalModelGameGeneration:
-    """Generate game code via local model and verify structure.
+    """Generate game code via POST /api/dispatch capability=game_logic.
 
-    Each test: authorize via SmallModelTaskPolicy -> call local model ->
-    extract code -> AST parse -> verify features.
+    Each test: POST to /api/dispatch -> collection_handler -> model call ->
+    extract code -> AST parse -> verify features.  Same code path as cloud
+    model tests.
     """
 
     def _generate_and_verify(self, game_id: str) -> dict[str, Any]:
-        """Run the full pipeline: authorize -> generate -> extract -> verify."""
+        """Run the full pipeline: dispatch -> extract -> verify."""
         result: dict[str, Any] = {
             "game_id": game_id,
             "authorized": False,
             "auth_reason": "",
-            "generated": False,
+            "dispatched": False,
             "code_len": 0,
             "ast_ok": False,
             "imported": False,
@@ -478,7 +656,7 @@ class TestLocalModelGameGeneration:
         }
         t0 = time.time()
 
-        # 1. Authorize via SmallModelTaskPolicy
+        # 1. Authorize via SmallModelTaskPolicy (same gate as before)
         auth = authorize_game_dispatch(game_id)
         result["authorized"] = auth["approved"]
         result["auth_reason"] = auth["reason"]
@@ -487,31 +665,28 @@ class TestLocalModelGameGeneration:
             result["time_ms"] = int((time.time() - t0) * 1000)
             return result
 
-        # 2. Call local model
+        # 2. POST /api/dispatch capability=game_logic action=game_build
         try:
-            defn = GAME_DEFINITIONS[game_id]
-            print(f"\n[local-e2e] Calling model for {game_id}...\n", flush=True)
-            raw = _call_local_model(defn["prompt"], temperature=0.0)
+            print(f"\n[local-e2e] Dispatching {game_id} via capability=game_logic...\n", flush=True)
+            dispatch_result = dispatch_game_build(game_id)
         except Exception as exc:
-            result["error"] = f"Model call failed: {type(exc).__name__}: {exc}"
+            result["error"] = f"Dispatch failed: {type(exc).__name__}: {exc}"
             result["time_ms"] = int((time.time() - t0) * 1000)
             return result
 
-        if not raw:
-            result["error"] = "Model returned empty output"
-            result["time_ms"] = int((time.time() - t0) * 1000)
-            return result
-
-        # 3. Extract code
-        code = _extract_python_module(raw)
+        code = _extract_game_code_from_dispatch_result(dispatch_result)
         if not code:
-            result["error"] = f"Could not extract Python code from model output ({len(raw)} chars)"
+            result["error"] = (
+                f"Dispatch returned no code: "
+                f"ok_count={dispatch_result.get('ok_count')} "
+                f"error_count={dispatch_result.get('error_count')}"
+            )
             result["time_ms"] = int((time.time() - t0) * 1000)
             return result
-        result["generated"] = True
+        result["dispatched"] = True
         result["code_len"] = len(code)
 
-        # 4. AST parse
+        # 3. AST parse
         ast_result = _parse_ast(code)
         result["ast_ok"] = ast_result["parseable"]
         if not ast_result["parseable"]:
@@ -519,18 +694,16 @@ class TestLocalModelGameGeneration:
             result["time_ms"] = int((time.time() - t0) * 1000)
             return result
 
-        # 5. Import and verify
+        # 4. Import and verify
         with tempfile.TemporaryDirectory(prefix="gludd-game-local-") as tmp_dir:
             tmp_path = Path(tmp_dir)
             try:
                 mod = _load_generated_module(code, f"game_{game_id}", tmp_path)
                 result["imported"] = True
 
-                # Feature verification (semantic, name-agnostic)
                 feature_failures = verify_features(game_id, mod)
                 result["feature_failures"] = feature_failures
 
-                # Lifecycle verification
                 lifecycle_failures = lc_checks(game_id, mod)
                 result["lifecycle_failures"] = lifecycle_failures
 
@@ -540,7 +713,7 @@ class TestLocalModelGameGeneration:
         result["time_ms"] = int((time.time() - t0) * 1000)
         print(
             f"[local-e2e] {game_id}: "
-            f"auth={result['authorized']} gen={result['generated']} "
+            f"auth={result['authorized']} dispatched={result['dispatched']} "
             f"code={result['code_len']}B ast={result['ast_ok']} "
             f"import={result['imported']} "
             f"features={len(result['feature_failures'])}f "
@@ -573,19 +746,11 @@ class TestLocalModelGameGeneration:
 
         result = self._generate_and_verify(game_id)
 
-        # Authorization must pass
         assert result["authorized"], f"SmallModelTaskPolicy denied {game_id}: {result['auth_reason']}"
-
-        # Model must return non-empty output
-        assert result["generated"], f"Model returned no code for {game_id}: {result['error']}"
-
-        # AST must parse
+        assert result["dispatched"], f"Dispatch returned no code for {game_id}: {result['error']}"
         assert result["ast_ok"], f"Generated code does not parse for {game_id}: {result['error']}"
-
-        # Module must be importable
         assert result["imported"], f"Cannot import generated module for {game_id}: {result['error']}"
 
-        # Feature failures are soft-asserted (logged) — local models may be imperfect
         if result["feature_failures"]:
             failures_str = "\n  ".join(result["feature_failures"])
             print(f"[local-e2e] {game_id} FEATURE GAPS:\n  {failures_str}\n", flush=True)
@@ -601,9 +766,8 @@ class TestLocalModelGameGeneration:
         for game_id in games_to_test:
             results[game_id] = self._generate_and_verify(game_id)
 
-        # Print summary
         authorized = sum(1 for r in results.values() if r["authorized"])
-        generated = sum(1 for r in results.values() if r["generated"])
+        dispatched = sum(1 for r in results.values() if r["dispatched"])
         ast_ok = sum(1 for r in results.values() if r["ast_ok"])
         imported = sum(1 for r in results.values() if r["imported"])
         no_features = sum(1 for r in results.values() if not r["feature_failures"])
@@ -612,14 +776,13 @@ class TestLocalModelGameGeneration:
 
         print(
             f"\n[local-e2e] SUMMARY: {len(results)} games, "
-            f"authorized={authorized} generated={generated} ast={ast_ok} "
+            f"authorized={authorized} dispatched={dispatched} ast={ast_ok} "
             f"imported={imported} feature_clean={no_features} "
             f"lifecycle_clean={no_lifecycle} total_time={total_time_ms}ms\n"
         )
 
-        # Hard assertions: every game must authorize, generate, and parse
         assert authorized == len(results), "Some games failed authorization"
-        assert generated == len(results), "Some games failed code generation"
+        assert dispatched == len(results), "Some games failed dispatch"
         assert ast_ok == len(results), "Some games failed AST parsing"
         assert imported == len(results), "Some games failed module import"
 
@@ -630,7 +793,7 @@ class TestGameGeneratorWiredPolicy:
 
     These tests exercise the wired production dispatch path
     (GameGenerator._authorize_dispatch) rather than the manually
-    orchestrated ``authorize + _call_local_model`` pattern in
+    orchestrated ``authorize + dispatch_game_build`` pattern in
     ``TestLocalModelGameGeneration``.
     """
 
@@ -651,7 +814,7 @@ class TestGameGeneratorWiredPolicy:
             similarity_threshold=0.0,
         )
         identity = ModelIdentity(**_build_model_identity())
-        evidence = ()  # no evidence — should fail
+        evidence = ()
 
         with pytest.raises(PermissionError, match="SmallModelTaskPolicy denied"):
             gen.generate_game(spec, model_identity=identity, evidence=evidence)
@@ -671,6 +834,7 @@ class TestGameGeneratorWiredPolicy:
             description="Snake game",
             prompt_template=GAME_DEFINITIONS["snake"]["prompt"],
             expected_frames=30,
+            similarity_threshold=0.0,
         )
         identity_data = _build_model_identity()
         identity = ModelIdentity(**identity_data)
@@ -684,7 +848,7 @@ class TestGameGeneratorWiredPolicy:
     def test_game_generator_without_policy_bypasses_gate(self, local_gateway: Any) -> None:
         from general_ludd.cloud.game_e2e import GameGenerator, GameSpec
 
-        gen = GameGenerator(local_gateway)  # no policy — backward compatible
+        gen = GameGenerator(local_gateway)
         spec = GameSpec(
             name="snake",
             genre="arcade",

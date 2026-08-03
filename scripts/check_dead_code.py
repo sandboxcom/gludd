@@ -31,9 +31,7 @@ SRC_ROOT = PROJECT_ROOT / "src"
 TESTS_ROOT = PROJECT_ROOT / "tests"
 BASELINE_FILE = PROJECT_ROOT / "config" / "dead_code_baseline.txt"
 
-SKIP_NAMES: frozenset[str] = frozenset(
-    {"__init__", "__main__", "main"}
-)
+SKIP_NAMES: frozenset[str] = frozenset({"__init__", "__main__", "main"})
 
 IGNORE_FILES: frozenset[str] = frozenset({"__init__.py"})
 
@@ -91,9 +89,7 @@ def _module_path(file_path: Path, src_root: Path) -> str:
 
 
 def _collect_files(root: Path) -> list[Path]:
-    return sorted(
-        f for f in root.rglob("*.py") if f.name not in IGNORE_FILES
-    )
+    return sorted(f for f in root.rglob("*.py") if f.name not in IGNORE_FILES)
 
 
 def _extract_symbols(file_path: Path, repo_root: Path) -> list[Symbol]:
@@ -146,9 +142,7 @@ def _referenced_names(file_path: Path, name_set: set[str]) -> set[str]:
     return found
 
 
-def _build_ref_map(
-    symbols: list[Symbol], files: list[Path], repo_root: Path
-) -> dict[str, set[str]]:
+def _build_ref_map(symbols: list[Symbol], files: list[Path], repo_root: Path) -> dict[str, set[str]]:
     """For each symbol name, find which files reference it.
 
     Parses each file once and indexes Python identifiers instead of running a
@@ -182,12 +176,8 @@ def run(repo_root: Path | None = None) -> ScanResult:
     for f in py_files:
         symbols.extend(_extract_symbols(f, root))
 
-    all_src_files = sorted(
-        f for f in (root / "src").rglob("*.py") if f.name not in IGNORE_FILES
-    )
-    all_test_files = sorted(
-        f for f in (root / "tests").rglob("*.py") if f.name not in IGNORE_FILES
-    )
+    all_src_files = sorted(f for f in (root / "src").rglob("*.py"))
+    all_test_files = sorted(f for f in (root / "tests").rglob("*.py"))
 
     src_refs = _build_ref_map(symbols, all_src_files, root)
     test_refs = _build_ref_map(symbols, all_test_files, root)
@@ -339,19 +329,13 @@ def main(argv: list[str] | None = None) -> int:
                 f"({baselined} baselined) across {result.files_scanned} file(s)"
             )
         else:
-            print(
-                f"dead-code: 0 new dead symbol(s) "
-                f"({baselined} baselined) across {result.files_scanned} file(s)"
-            )
+            print(f"dead-code: 0 new dead symbol(s) ({baselined} baselined) across {result.files_scanned} file(s)")
     else:
         if new_dead:
             print(format_text(ScanResult(symbols=result.symbols, dead=new_dead, files_scanned=result.files_scanned)))
             print(f"({baselined} additional symbol(s) are in the baseline)")
         else:
-            print(
-                f"dead-code: 0 new dead symbol(s) "
-                f"({baselined} baselined) across {result.files_scanned} file(s)\n"
-            )
+            print(f"dead-code: 0 new dead symbol(s) ({baselined} baselined) across {result.files_scanned} file(s)\n")
 
     return 0 if not new_dead else 1
 

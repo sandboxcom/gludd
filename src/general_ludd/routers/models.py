@@ -46,7 +46,7 @@ from general_ludd.routing_roles.small_model_policy import (
 )
 from general_ludd.scoring.router import AdaptiveRouter
 from general_ludd.security.sanitize import is_path_within
-from general_ludd.small_models import ModelDownloader
+from general_ludd.small_models import ModelDownloader, ModelHashDB
 from general_ludd.small_models.download import DownloadedModel, DownloadSource
 from general_ludd.small_models.lm_eval_runner import _DEFAULT_TASKS, LMEvalRunner, to_capability_evidence
 
@@ -218,11 +218,13 @@ def _can_run_local(inventory: HardwareInventory | None, model_name: str) -> bool
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     if not hasattr(app.state, "_local_inference_manager"):
-        app.state._local_inference_manager = LocalInferenceManager()
+        app.state._local_inference_manager = LocalInferenceManager(
+            ansible_adapter=getattr(app.state, "_runner", None),
+        )
     if not hasattr(app.state, "_small_model_task_policy"):
         app.state._small_model_task_policy = SmallModelTaskPolicy()
     if not hasattr(app.state, "_model_downloader"):
-        app.state._model_downloader = ModelDownloader()
+        app.state._model_downloader = ModelDownloader(hash_db=ModelHashDB.from_known_models())
     if not hasattr(app.state, "_sm_server_store"):
         app.state._sm_server_store = cast(dict[str, LocalServerConfig], {})
     if not hasattr(app.state, "_sm_capability_store"):

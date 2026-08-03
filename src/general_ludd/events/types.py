@@ -23,6 +23,9 @@ class EventType(_enum.StrEnum):
     HOOK_TRIGGERED = "hook_triggered"
     STALL_DETECTED = "stall_detected"
     SLOW_OPERATION = "slow_operation"
+    MODEL_DEPLOY_STARTED = "model_deploy_started"
+    MODEL_READY = "model_ready"
+    MODEL_ERROR = "model_error"
     CUSTOM = "custom"
     SELF_UPDATE_APPLIED = "self_update_applied"
     BRANCH_EXECUTED = "branch_executed"
@@ -85,6 +88,72 @@ class StallDetectedEvent(Event):
                 "elapsed_s": elapsed_s,
                 "deadline_s": deadline_s,
                 "thread_stacks": thread_stacks,
+            },
+            **kwargs,
+        )
+
+
+@dataclass
+class ModelDeployStartedEvent(Event):
+    def __init__(
+        self,
+        server_id: str,
+        engine: str,
+        model_path: str,
+        host: str,
+        port: int,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(
+            type=EventType.MODEL_DEPLOY_STARTED,
+            payload={
+                "server_id": server_id,
+                "engine": engine,
+                "model_path": model_path,
+                "host": host,
+                "port": port,
+            },
+            **kwargs,
+        )
+
+
+@dataclass
+class ModelReadyEvent(Event):
+    def __init__(
+        self,
+        server_id: str,
+        engine: str,
+        endpoint_url: str,
+        pid: int | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(
+            type=EventType.MODEL_READY,
+            payload={
+                "server_id": server_id,
+                "engine": engine,
+                "endpoint_url": endpoint_url,
+                "pid": pid,
+            },
+            **kwargs,
+        )
+
+
+@dataclass
+class ModelErrorEvent(Event):
+    def __init__(
+        self,
+        server_id: str,
+        engine: str,
+        error: str,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(
+            type=EventType.MODEL_ERROR,
+            payload={
+                "server_id": server_id,
+                "engine": engine,
+                "error": error,
             },
             **kwargs,
         )

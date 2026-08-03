@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Full pipeline: download tiny model, serve locally, generate a Snake game, verify.
 
-Run with: uv run python scripts/run_game_gen_local.py
+Run with: make run-game-gen-local
 """
 
 from __future__ import annotations
@@ -12,6 +12,8 @@ import sys
 import time
 import traceback
 from pathlib import Path
+
+import httpx
 
 SNAKE_PROMPT = """Write a complete, self-contained Python Snake game as a single class.
 
@@ -54,12 +56,12 @@ def main():
         print("huggingface_hub not installed", flush=True)
         return 1
 
-    # ── Step 1: Download model ──
+    # ── Step 1: Download model from bartowski (Q5_K_M — different quant than Q4_K_M) ──
     print("=== STEP 1: Download model ===", flush=True)
     from general_ludd.small_models.download import ModelDownloader
 
-    MODEL_REPO = "Qwen/Qwen2.5-0.5B-Instruct-GGUF"
-    MODEL_FILE = "qwen2.5-0.5b-instruct-q4_k_m.gguf"
+    MODEL_REPO = "bartowski/Qwen2.5-0.5B-Instruct-GGUF"
+    MODEL_FILE = "Qwen2.5-0.5B-Instruct-Q5_K_M.gguf"
 
     downloader = ModelDownloader()
     try:
@@ -87,77 +89,51 @@ def main():
 
     async def run_pipeline():
         mgr = LocalInferenceManager()
-
-        # Patch _wait_for_ready to capture server stderr on failure
-        original_start = mgr.start_server
-
-        async def start_with_debug(server_id):
-            server_obj = mgr._servers[server_id]
-
-            # Skip health check to let us see startup errors
-            server_obj.config.startup_timeout = 0
-
-            cmd = mgr._build_command(server_obj.config)
-            print(f"  Command: {' '.join(cmd)}", flush=True)
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                start_new_session=True,
-            )
-            server_obj.process = process
-            server_obj.started_at = time.time()
-            server_obj.pid = process.pid
-
-            # Wait briefly for it to either accept or crash
-            await asyncio.sleep(5)
-
-            if process.returncode is not None:
-                stderr_data = await process.stderr.read()
-                print(f"  Server CRASHED (exit={process.returncode})", flush=True)
-                print(f"  STDERR:\n{stderr_data.decode()[-2000:]}", flush=True)
-                raise RuntimeError(f"Server exited with {process.returncode}")
-            else:
-                # Try health check
-                import httpx
-
-                health_url = f"http://{server_obj.config.host}:{server_obj.config.port}/health"
-                for _ in range(10):
-                    try:
-                        async with httpx.AsyncClient(timeout=2.0) as client:
-                            resp = await client.get(health_url)
-                        if resp.status_code == 200:
-                            break
-                    except Exception:
-                        pass
-                    await asyncio.sleep(2)
-                else:
-                    stderr_data = await process.stderr.read()
-                    print(f"  Server not healthy after 20s", flush=True)
-                    print(f"  STDERR:\n{stderr_data.decode()[-2000:]}", flush=True)
-                    process.kill()
-                    raise RuntimeError("Server not healthy")
-
-            server_obj.status = "running"
-            return server_obj
-
         server = mgr.create_server(config)
         print(f"  Server ID: {server.server_id}", flush=True)
 
         try:
-            server = await start_with_debug(server.server_id)
+            cmd = mgr._build_command(server.config)
+            print(f"  Command: {' '.join(cmd)}", flush=True)
+
+            server = await mgr.start_server(server.server_id)
             print(f"  Server running at {server.endpoint_url} (PID={server.pid})", flush=True)
 
-            # ── Step 3: Build gateway and generate game ──
-            print("=== STEP 3: Generate Snake game ===", flush=True)
+            # ── Step 3: Verify server endpoints ──
+            print("=== STEP 3: Verify server endpoints ===", flush=True)
+
+            completions_url = f"http://{server.config.host}:{server.config.port}/v1/completions"
+            health_url = f"http://{server.config.host}:{server.config.port}/health"
+
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(health_url)
+                print(f"  /health: {resp.status_code}", flush=True)
+
+                resp = await client.post(
+                    completions_url,
+                    json={"prompt": "Hello", "max_tokens": 1},
+                )
+                print(f"  /v1/completions: {resp.status_code} (not streaming)", flush=True)
+                if resp.status_code == 200:
+                    body = resp.json()
+                    if "choices" in body:
+                        print(f"  /v1/completions response OK — {len(body['choices'])} choice(s)", flush=True)
+                    else:
+                        print(f"  /v1/completions response: {body}", flush=True)
+                else:
+                    print(f"  /v1/completions returned {resp.status_code}: {resp.text[:300]}", flush=True)
+
+            # ── Step 4: Build gateway and generate game ──
+            print("=== STEP 4: Generate Snake game ===", flush=True)
 
             from general_ludd.cloud.game_e2e import GameGenerator, GameSpec
             from general_ludd.models.gateway import ModelGateway, ModelProfile
             from general_ludd.models.provider_registry import ProviderRegistry
             from general_ludd.secrets.env import EnvSecretsManager
 
+            profile_id = "local-snake-test"
             profile = ModelProfile(
-                model_profile_id="local-snake-test",
+                model_profile_id=profile_id,
                 provider="openai",
                 provider_package="langchain_openai",
                 provider_class_hint="ChatOpenAI",
@@ -201,13 +177,13 @@ def main():
                 similarity_threshold=0.0,
             )
 
-            code = gen.generate_game(spec)
+            code = gen.generate_game(spec, model_id=profile_id)
             elapsed = time.time() - t0
             print(f"  Generation took {elapsed:.1f}s", flush=True)
             print(f"  Code length: {len(code)} chars", flush=True)
 
-            # ── Step 4: Verify code ──
-            print("=== STEP 4: Verify generated code ===", flush=True)
+            # ── Step 5: Verify code ──
+            print("=== STEP 5: Verify generated code ===", flush=True)
 
             import ast
 
@@ -267,7 +243,7 @@ def main():
                 print("  No game class in module", flush=True)
                 return 1
 
-            print("=== STEP 5: Runtime verification ===", flush=True)
+            print("=== STEP 6: Runtime verification ===", flush=True)
             try:
                 game = game_cls()
                 print(f"  Instantiated {game_cls.__name__}", flush=True)
@@ -312,6 +288,10 @@ def main():
             print("--- end ---")
 
             return 0
+
+        except RuntimeError as e:
+            print(f"\n  Server start failed: {e}", flush=True)
+            return 1
 
         finally:
             print("\n=== CLEANUP: Stopping server ===", flush=True)

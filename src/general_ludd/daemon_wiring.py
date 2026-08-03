@@ -214,13 +214,29 @@ def make_collection_handler(
         # — reject it before embedding.
         if not re.match(_FQCN_RE, name):
             raise ValueError(
-                f"collection module name must be a dotted FQCN "
-                f"(e.g. 'ansible.builtin.command'), got {name!r}"
+                f"collection module name must be a dotted FQCN (e.g. 'ansible.builtin.command'), got {name!r}"
             )
 
         # Copy so dispatch metadata can be peeled without mutating caller state.
         task_args = dict(args)
         timeout = task_args.pop("_timeout", None)
+
+        # ── local model playbook dispatch ───────────────────────────────
+        # When the FQCN matches a known local model action, run the
+        # corresponding playbook directly instead of building a transient
+        # module-based playbook. This is the same dispatch path the cloud
+        # path uses (POST /api/dispatch with capability routing).
+        _LOCAL_MODEL_PLAYBOOKS: dict[str, str] = {
+            "general_ludd.agent.local_model_serve": "local_model_serve.yml",
+            "general_ludd.agent.local_model_stop": "local_model_stop.yml",
+        }
+        _playbook_name = _LOCAL_MODEL_PLAYBOOKS.get(name)
+        if _playbook_name is not None:
+            timeout_val = float(timeout) if isinstance(timeout, (int, float)) and timeout else None
+            result: dict[str, Any] = runner_adapter.run_playbook(
+                _playbook_name, extravars=task_args, timeout=timeout_val
+            )
+            return result
         hosts = task_args.pop("_hosts", "localhost")
 
         # Persist Ansible's native ``!unsafe`` tag for every untrusted string.
@@ -233,13 +249,9 @@ def make_collection_handler(
         # PyYAML exposes its dumper base without usable type metadata, so build
         # the isolated subclass dynamically instead of weakening project type
         # checks with a suppression.
-        _TransientPlaybookDumper = type(
-            "_TransientPlaybookDumper", (yaml.SafeDumper,), {}
-        )
+        _TransientPlaybookDumper = type("_TransientPlaybookDumper", (yaml.SafeDumper,), {})
 
-        def _represent_unsafe_text(
-            dumper: yaml.SafeDumper, value: _UnsafePlaybookText
-        ) -> yaml.nodes.ScalarNode:
+        def _represent_unsafe_text(dumper: yaml.SafeDumper, value: _UnsafePlaybookText) -> yaml.nodes.ScalarNode:
             return dumper.represent_scalar("!unsafe", str(value))
 
         yaml.add_representer(
@@ -273,9 +285,7 @@ def make_collection_handler(
             }
         ]
 
-        dispatch_dir = os.path.join(
-            runner_adapter.private_data_dir, "dispatch_playbooks"
-        )
+        dispatch_dir = os.path.join(runner_adapter.private_data_dir, "dispatch_playbooks")
         os.makedirs(dispatch_dir, exist_ok=True)
         playbook_path = os.path.join(dispatch_dir, f"{uuid.uuid4().hex}.yml")
 
@@ -295,8 +305,8 @@ def make_collection_handler(
         transient_name = f"_dispatch_{uuid.uuid4().hex}"
         runner_adapter.register_playbook(transient_name, playbook_path)
         try:
-            result: dict[str, Any] = runner_adapter.run_playbook(transient_name, timeout=timeout)
-            return result
+            run_result: dict[str, Any] = runner_adapter.run_playbook(transient_name, timeout=timeout)
+            return run_result
         finally:
             runner_adapter.unregister_playbook(transient_name)
 

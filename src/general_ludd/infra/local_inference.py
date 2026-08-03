@@ -8,13 +8,21 @@ import re
 import signal
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from general_ludd.events.bus import EventBus
-from general_ludd.events.types import CustomEvent
+from general_ludd.events.types import (
+    CustomEvent,
+    ModelDeployStartedEvent,
+    ModelErrorEvent,
+    ModelReadyEvent,
+)
 from general_ludd.infra.slurm import SlurmAdapter
+
+if TYPE_CHECKING:
+    from general_ludd.ansible.runner import AnsibleRunnerAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -136,10 +144,23 @@ class LocalServer:
 
 
 class LocalInferenceManager:
-    def __init__(self, event_bus: EventBus | None = None) -> None:
+    def __init__(
+        self,
+        event_bus: EventBus | None = None,
+        ansible_adapter: AnsibleRunnerAdapter | None = None,
+    ) -> None:
         self._servers: dict[str, LocalServer] = {}
         self._event_bus = event_bus
+        self._ansible_adapter = ansible_adapter
         self._next_id = 0
+
+    @property
+    def ansible_adapter(self) -> AnsibleRunnerAdapter | None:
+        return self._ansible_adapter
+
+    @ansible_adapter.setter
+    def ansible_adapter(self, adapter: AnsibleRunnerAdapter | None) -> None:
+        self._ansible_adapter = adapter
 
     def create_server(self, config: LocalServerConfig) -> LocalServer:
         server_id = f"local-{self._next_id}"
@@ -169,40 +190,130 @@ class LocalInferenceManager:
         if server.config.engine == "slurm":
             return await self._start_slurm_server(server)
 
-        cmd = self._build_command(server.config)
-        logger.info("Starting local inference server %s: %s", server_id, " ".join(cmd))
+        config = server.config
+        model_path = _validate_model(config.model_name or config.model_path)
+        engine = config.engine
+        host = _validate_host(config.host, allow_nonloopback=config.allow_nonloopback)
+        port = _validate_port(config.port)
+
+        self._emit(
+            ModelDeployStartedEvent(
+                server_id=server_id,
+                engine=engine,
+                model_path=model_path,
+                host=host,
+                port=port,
+            )
+        )
+
+        adapter = self._ansible_adapter
+        if adapter is not None and hasattr(adapter, "run_playbook"):
+            return await self._start_via_ansible(server, model_path, host, port, engine, config, adapter)
+
+        return await self._start_via_subprocess(server, config)
+
+    async def _start_via_ansible(
+        self,
+        server: LocalServer,
+        model_path: str,
+        host: str,
+        port: int,
+        engine: str,
+        config: LocalServerConfig,
+        adapter: Any,
+    ) -> LocalServer:
+        extravars: dict[str, Any] = {
+            "engine": engine,
+            "model_path": model_path,
+            "host": host,
+            "port": port,
+            "gpu_layers": config.gpu_layers,
+            "context_size": config.context_size,
+            "extra_args": list(config.extra_args),
+            "startup_timeout": config.startup_timeout,
+            "server_id": server.server_id,
+        }
+        result = await asyncio.to_thread(
+            adapter.run_playbook,
+            playbook_name="local_model_serve.yml",
+            extravars=extravars,
+            timeout=config.startup_timeout + 30,
+        )
+        if result.get("status") != "success" and result.get("rc") != 0:
+            error_msg = result.get("error") or result.get("msg") or str(result)
+            server.status = "error"
+            self._emit(
+                ModelErrorEvent(
+                    server_id=server.server_id,
+                    engine=engine,
+                    error=f"ansible playbook failed: {error_msg}",
+                )
+            )
+            raise RuntimeError(f"Local inference server {server.server_id!r} ansible playbook failed: {error_msg}")
+
+        facts = result.get("facts") or result.get("ansible_facts") or {}
+        gludd_server = facts.get("gludd_local_server", {})
+        if gludd_server.get("status") == "running" and gludd_server.get("pid"):
+            server.status = "running"
+            server.started_at = time.time()
+            try:
+                server.pid = int(gludd_server["pid"])
+            except (ValueError, TypeError):
+                server.pid = None
+            self._emit(
+                ModelReadyEvent(
+                    server_id=server.server_id,
+                    engine=engine,
+                    endpoint_url=server.endpoint_url,
+                    pid=server.pid,
+                )
+            )
+            logger.info("Ansible-deployed local inference server %s (pid=%s)", server.server_id, server.pid)
+        else:
+            server.status = "error"
+            self._emit(
+                ModelErrorEvent(
+                    server_id=server.server_id,
+                    engine=engine,
+                    error=f"playbook completed but server not running: {gludd_server}",
+                )
+            )
+            raise RuntimeError(
+                f"Local inference server {server.server_id!r} playbook completed but server not reported as running"
+            )
+        return server
+
+    async def _start_via_subprocess(
+        self,
+        server: LocalServer,
+        config: LocalServerConfig,
+    ) -> LocalServer:
+        cmd = self._build_command(config)
+        logger.info("Starting local inference server %s: %s", server.server_id, " ".join(cmd))
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            # Place the child in its own process group so that when we stop the
-            # server we can send SIGTERM/SIGKILL to the *entire* process group,
-            # catching vllm/llama.cpp worker grandchildren that would otherwise
-            # be orphaned if we only signal the direct child.
             start_new_session=True,
         )
         server.process = process
         server.started_at = time.time()
         server.pid = process.pid
-
-        # Wait for the server to become ready before advertising it as "running".
-        # This prevents callers from sending requests to a not-yet-initialised
-        # model, and surfaces launch failures (OOM, bad model path, etc.) early.
         await self._wait_for_ready(server)
-
         server.status = "running"
-        if self._event_bus:
-            self._event_bus.publish(
-                CustomEvent(
-                    name="local_server_started",
-                    payload={
-                        "server_id": server_id,
-                        "engine": server.config.engine,
-                        "url": server.endpoint_url,
-                    },
-                )
+        self._emit(
+            ModelReadyEvent(
+                server_id=server.server_id,
+                engine=config.engine,
+                endpoint_url=server.endpoint_url,
+                pid=server.pid,
             )
+        )
         return server
+
+    def _emit(self, event: Any) -> None:
+        if self._event_bus:
+            self._event_bus.publish(event)
 
     async def _wait_for_ready(self, server: LocalServer) -> None:
         """Poll the /health endpoint until the server is ready or times out.
@@ -323,13 +434,13 @@ class LocalInferenceManager:
 
     async def stop_server(self, server_id: str) -> None:
         server = self._servers.get(server_id)
-        if server is None or not server.is_running:
+        if server is None:
             return
+
+        adapter = self._ansible_adapter
+
         if server.process and server.process.returncode is None:
             pid = server.process.pid
-            # Signal the entire process group so that vllm/llama.cpp worker
-            # grandchildren (which were placed in their own session by
-            # start_new_session=True) receive SIGTERM and don't become orphans.
             with contextlib.suppress(ProcessLookupError):
                 os.killpg(os.getpgid(pid), signal.SIGTERM)
             try:
@@ -339,6 +450,31 @@ class LocalInferenceManager:
                     os.killpg(os.getpgid(pid), signal.SIGKILL)
                 with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(server.process.wait(), timeout=5.0)
+        elif adapter is not None and hasattr(adapter, "run_playbook"):
+            extravars: dict[str, object] = {
+                "server_id": server_id,
+                "server_pid": server.pid,
+            }
+            try:
+                await asyncio.to_thread(
+                    adapter.run_playbook,
+                    playbook_name="local_model_stop.yml",
+                    extravars=extravars,
+                    timeout=30,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "ansible stop playbook failed for %s: %s; falling back to subprocess",
+                    server_id,
+                    exc,
+                )
+                if server.pid is not None:
+                    with contextlib.suppress(ProcessLookupError):
+                        os.kill(server.pid, signal.SIGKILL)
+        elif server.pid is not None:
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(server.pid, signal.SIGTERM)
+
         server.status = "stopped"
         server.process = None
         server.pid = None

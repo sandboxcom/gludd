@@ -1,0 +1,12 @@
+---
+- name: Converge — local_game_gen role structure validation
+  hosts: localhost
+  gather_facts: false
+  vars:
+    role_root: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/collections/ansible_collections/general_ludd/agent/roles/local_game_gen"
+  tasks:
+    - name: "Assert role root directory exists"
+      ansible.builtin.stat:
+        path: "{{ role_root }}"
+      register: _role_stat
+      failed_when: not _role_stat.stat.exists
