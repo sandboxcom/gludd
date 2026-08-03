@@ -43,7 +43,7 @@ def register(
     mcp_handler: Handler | None = None,
     skill_handler: Handler | None = None,
     collection_handler: Handler | None = None,
-    role: str | None = None,
+    role: str | object | None = None,
     capability_registry: CapabilityRegistry | None = None,
 ) -> None:
     """Register /api/dispatch routes on ``app``.

@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import datetime
 import json
 import logging
 import math
+import os
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -2645,9 +2645,20 @@ class ModelGateway:
         init_kwargs: dict[str, object] = {"model": profile.model_name}
         if api_key:
             init_kwargs["api_key"] = api_key
+        base_url: str | None = None
+        _local = (
+            os.environ.get("GLUDD_ALLOW_LOCAL_MODEL_BASE_URLS") == "1"
+            or profile_id.lower().startswith("local-")
+            or profile_id.lower().startswith("ollama-")
+        )
         if profile.api_base_alias and job_secrets:
             base_url = job_secrets.resolve(profile.api_base_alias)
-            if base_url:
+        if not base_url and _local:
+            base_url = os.environ.get("LOCAL_MODEL_BASE_URL", "http://localhost:11434/v1")
+        if base_url:
+            if _local:
+                init_kwargs["base_url"] = base_url
+            else:
                 from general_ludd.security.auth import is_safe_fetch_url
 
                 if not is_safe_fetch_url(base_url):

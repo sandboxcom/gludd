@@ -9,6 +9,9 @@ Exercises the full pipeline with actual classes:
 6. Verify response is non-empty, shut down, clean up files
 
 Skips with reason when llama.cpp / huggingface_hub tools are not installed.
+
+Pre-cached model: set GLUDD_E2E_MODEL_CACHE_DIR to a directory containing
+the pre-downloaded GGUF + pre-quantized q4_0 GGUF to skip the download step.
 """
 
 from __future__ import annotations
@@ -31,6 +34,7 @@ from general_ludd.small_models.download import ModelDownloader
 
 _SMALL_MODEL_REPO = "bartowski/Qwen2.5-0.5B-Instruct-GGUF"
 _SMALL_MODEL_FILE = "Qwen2.5-0.5B-Instruct-Q4_K_M.gguf"
+_QUANTIZED_FILENAME = "qwen2.5-0.5b-q4_0.gguf"
 
 
 def _find_llama_quantize_bin() -> str | None:
@@ -94,9 +98,35 @@ def _find_free_port() -> int:
         return s.getsockname()[1]
 
 
+def _find_cached_model_dir() -> str | None:
+    candidates = [
+        os.environ.get("GLUDD_E2E_MODEL_CACHE_DIR", ""),
+        "/tmp/gludd-qwen-e2e-model",
+    ]
+    for d in candidates:
+        if not d:
+            continue
+        qpath = os.path.join(d, _QUANTIZED_FILENAME)
+        gpath = os.path.join(d, _SMALL_MODEL_FILE)
+        if os.path.isfile(qpath) and os.path.getsize(qpath) > 0:
+            return d
+        if os.path.isfile(gpath) and os.path.getsize(gpath) > 0:
+            return d
+    return None
+
+
+def _cached_or_download() -> tuple[str, str]:
+    cached_dir = _find_cached_model_dir()
+    if cached_dir is not None:
+        qpath = os.path.join(cached_dir, _QUANTIZED_FILENAME)
+        if os.path.isfile(qpath) and os.path.getsize(qpath) > 0:
+            return cached_dir, qpath
+    return _download_and_quantize()
+
+
 def _download_and_quantize() -> tuple[str, str]:
     tmpdir = tempfile.mkdtemp(prefix="gludd-qwen-e2e-")
-    quantized_path = os.path.join(tmpdir, "qwen2.5-0.5b-q4_0.gguf")
+    quantized_path = os.path.join(tmpdir, _QUANTIZED_FILENAME)
 
     downloader = ModelDownloader(cache_dir=tmpdir)
     try:
@@ -187,7 +217,7 @@ class TestSmallModelPipelineReal:
             async with httpx.AsyncClient(base_url=base_url, timeout=60.0) as client:
                 for _attempt in range(30):
                     try:
-                        resp = await client.get("/health")
+                        resp = await client.get("/v1/models")
                         if resp.status_code == 200:
                             break
                     except httpx.TransportError:
@@ -195,7 +225,7 @@ class TestSmallModelPipelineReal:
                     await asyncio.sleep(1.0)
                 else:
                     await mgr.stop_server(server.server_id)
-                    pytest.fail("Server /health did not become 200 within 30s")
+                    pytest.fail("Server /v1/models did not become 200 within 30s")
 
                 model_resp = await client.get("/v1/models")
                 assert model_resp.status_code == 200, model_resp.text
@@ -269,14 +299,14 @@ class TestSmallModelPipelineReal:
             async with httpx.AsyncClient(base_url=base_url, timeout=60.0) as client:
                 for _attempt in range(30):
                     try:
-                        resp = await client.get("/health")
+                        resp = await client.get("/v1/models")
                         if resp.status_code == 200:
                             break
                     except httpx.TransportError:
                         pass
                     await asyncio.sleep(1.0)
                 else:
-                    pytest.fail("Server /health did not become 200 within 30s")
+                    pytest.fail("Server /v1/models did not become 200 within 30s")
 
                 completion_resp = await client.post(
                     "/v1/completions",
@@ -319,6 +349,7 @@ class TestSmallModelPipelineReal:
             from general_ludd.ansible.runner import AnsibleRunnerAdapter
             from general_ludd.daemon_wiring import make_collection_handler
             from general_ludd.dispatch.capabilities import CapabilityRegistry, CollectionMeta
+            from general_ludd.dispatch.dynamic_dispatcher import UNRESTRICTED_ROLE
             from general_ludd.routers.dispatch import register as register_dispatch
 
             adapter = AnsibleRunnerAdapter()
@@ -341,6 +372,7 @@ class TestSmallModelPipelineReal:
                 {},
                 collection_handler=collection_handler,
                 capability_registry=reg,
+                role=UNRESTRICTED_ROLE,
             )
             client = TestClient(app, raise_server_exceptions=False)
 
@@ -368,14 +400,14 @@ class TestSmallModelPipelineReal:
             async with httpx.AsyncClient(base_url=base_url, timeout=60.0) as hclient:
                 for _attempt in range(30):
                     try:
-                        resp = await hclient.get("/health")
+                        resp = await hclient.get("/v1/models")
                         if resp.status_code == 200:
                             break
                     except httpx.TransportError:
                         pass
                     await asyncio.sleep(1.0)
                 else:
-                    pytest.fail("Server /health did not become 200 within 30s")
+                    pytest.fail("Server /v1/models did not become 200 within 30s")
 
                 completion_resp = await hclient.post(
                     "/v1/completions",

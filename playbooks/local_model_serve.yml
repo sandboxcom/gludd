@@ -56,9 +56,9 @@
       ansible.builtin.set_fact:
         server_pid: "{{ _pid_slurp.content | b64decode | trim }}"
 
-    - name: Wait for /health endpoint
+    - name: Wait for /v1/models endpoint
       ansible.builtin.uri:
-        url: "http://{{ host }}:{{ port }}/health"
+        url: "http://{{ host }}:{{ port }}/v1/models"
         timeout: 5
         status_code: 200
       register: _health_result
