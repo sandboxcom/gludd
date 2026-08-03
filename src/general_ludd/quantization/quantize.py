@@ -259,6 +259,7 @@ class ModelQuantizer:
         quant_type = self._QUANT_MAP[method]
         cmd = [
             self.llama_cpp_quantize_path or self._LLAMA_QUANTIZE_BIN,
+            "--allow-requantize",
             input_gguf,
             output_gguf,
             quant_type,
