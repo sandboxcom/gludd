@@ -1,6 +1,7 @@
 """Unit tests for model gateway."""
 
 from general_ludd.models.gateway import ModelGateway, ModelProfile
+from general_ludd.routers.models import ChatStreamRequest
 
 
 class TestModelGateway:
@@ -73,6 +74,10 @@ class TestModelGateway:
             ]
         )
         assert gw.is_available("local_llm") is False
+
+    def test_chat_stream_request_schema(self):
+        assert ChatStreamRequest.model_fields["messages"].annotation is not None
+        assert ChatStreamRequest.model_fields["model_profile_id"].default == "default"
 
     def test_list_profiles(self):
         profiles = [

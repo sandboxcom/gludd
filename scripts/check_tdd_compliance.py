@@ -52,6 +52,7 @@ ALLOWLIST = (
     re.compile(r".*/type_defs\.py$"),
     re.compile(r".*/protocols\.py$"),
     re.compile(r".*/_types\.py$"),
+    re.compile(r".*/__init__\.py$"),
 )
 
 
@@ -82,7 +83,9 @@ def _git_changed_source_files() -> list[Path]:
     try:
         result = subprocess.run(
             ["git", "diff", "--cached", "--name-only"],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         )
         for line in result.stdout.strip().splitlines():
             p = Path(line)
@@ -99,7 +102,9 @@ def _git_all_staged_files() -> set[str]:
     try:
         result = subprocess.run(
             ["git", "diff", "--cached", "--name-only"],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         )
         for line in result.stdout.strip().splitlines():
             if line:
@@ -133,10 +138,7 @@ def _is_init_in_empty_dir(path: Path) -> bool:
     if not parent.is_dir():
         return False
     try:
-        siblings = [
-            p for p in parent.iterdir()
-            if p.is_file() and p.suffix == ".py" and p.name != "__init__.py"
-        ]
+        siblings = [p for p in parent.iterdir() if p.is_file() and p.suffix == ".py" and p.name != "__init__.py"]
     except OSError:
         return False
     return len(siblings) == 0
@@ -165,7 +167,9 @@ def _candidate_test_paths(src_file: Path) -> list[Path]:
     candidates: list[Path] = []
     candidates.append(TESTS_DIR / "unit" / f"test_{stem}.py")
     if len(parts) > 1:
+        parent = parts[-2]
         leaf = parts[-1]
+        candidates.append(TESTS_DIR / "unit" / f"test_{parent}_{leaf}.py")
         candidates.append(TESTS_DIR / "unit" / f"test_{leaf}.py")
     return candidates
 
@@ -245,9 +249,7 @@ def _find_unused_import_names(test_file: Path, module_path: str) -> list[str]:
     return [name for name in scoped_names if name not in used]
 
 
-def _find_valid_test(
-    src_file: Path, module_path: str, staged_set: set[str]
-) -> tuple[Path | None, str]:
+def _find_valid_test(src_file: Path, module_path: str, staged_set: set[str]) -> tuple[Path | None, str]:
     for candidate in _candidate_test_paths(src_file):
         if not candidate.is_file():
             continue
@@ -261,16 +263,12 @@ def _find_valid_test(
         candidate_str = str(candidate)
         if candidate_str not in staged_set:
             return candidate, (
-                f"test file {candidate} exists but was NOT modified "
-                f"alongside source file — stage the test changes too"
+                f"test file {candidate} exists but was NOT modified alongside source file — stage the test changes too"
             )
 
         unused = _find_unused_import_names(candidate, module_path)
         if unused:
-            return candidate, (
-                f"test file {candidate} imports {module_path} "
-                f"but never uses: {', '.join(unused)}"
-            )
+            return candidate, (f"test file {candidate} imports {module_path} but never uses: {', '.join(unused)}")
 
         return candidate, "ok"
 
