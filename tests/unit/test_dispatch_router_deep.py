@@ -233,6 +233,7 @@ class TestConcurrentDispatch:
         client = _make_client(
             collection_handler=_mock_handler,
             mcp_handler=_mock_handler,
+            role=UNRESTRICTED_ROLE,
         )
         resp = client.post(
             "/api/dispatch",
@@ -514,7 +515,7 @@ class TestJsonStringParsing:
         """parse_tool_calls accepts a JSON-encoded string."""
         import json
 
-        client = _make_client(collection_handler=_mock_handler)
+        client = _make_client(collection_handler=_mock_handler, role=UNRESTRICTED_ROLE)
         resp = client.post(
             "/api/dispatch",
             content=json.dumps({"kind": "collection", "name": "ns.coll.mod", "args": {}}),

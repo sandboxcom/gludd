@@ -887,7 +887,6 @@ class TestStreamSemaphoreDeep:
     def test_two_streams_on_different_profiles_do_not_block(self) -> None:
         p1 = _profile("p1", stream_provider_max_concurrency=1)
         p2 = _profile("p2", stream_provider_max_concurrency=1)
-        _ClosingIterator([_chunk("x")])
 
         def stream_fn(msgs, **kw):
             return iter(_ClosingIterator([_chunk("x")]))

@@ -294,7 +294,11 @@ class TestGluddPing:
 
             def __init__(self, *args, **kwargs):
                 CaptureCheckMode.flag = kwargs.get("supports_check_mode")
-                self.params = {}
+                self.params = {
+                    "daemon_url": "http://localhost:8000",
+                    "psk": "",
+                    "timeout": 10,
+                }
 
             def exit_json(self, **kwargs):
                 raise SystemExit(0)
@@ -577,7 +581,7 @@ class TestGluddFeatures:
         mock = self._run(
             gludd_features,
             {"state": "list"},
-            client_responses={"get_error": "invalid token", "get_status": 401},
+            client_responses={"get_status": 401},
         )
 
         assert len(mock.captured_fail) == 1
@@ -767,7 +771,7 @@ class TestGluddMetrics:
         mock = self._run(
             gludd_metrics,
             {},
-            client_responses={"get_error": "invalid psk", "get_status": 401},
+            client_responses={"get_status": 401},
         )
 
         assert len(mock.captured_fail) == 1
