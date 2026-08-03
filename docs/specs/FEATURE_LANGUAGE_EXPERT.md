@@ -1,6 +1,6 @@
 # Feature: Language Expert Collection
 
-**Status: DRAFT** | **Created: 2026-07-14** | **Target: v0.1.0-beta.2**
+**Status: CLOSED** | **Created: 2026-07-14** | **Closed: 2026-08-03** | **Target: v0.1.0-beta.3**
 
 ## 1. Overview
 
@@ -11,18 +11,21 @@ language standards, and text processing. Serves as the authoritative in-process
 reference for every character-, encoding-, locale-, and script-level concern
 the agent encounters.
 
-## 2. Roles (8)
+## 2. Roles (11) — All Built & Verified
 
-| Role | Category | Purpose |
-|------|----------|---------|
-| `unicode_analyze` | Unicode | Analyze Unicode properties: script, block, plane, category, normalization form |
-| `bom_detect` | BOM | Detect, strip, add Byte Order Marks per encoding |
-| `encoding_detect` | Charsets | chardet-based encoding detection, conversion, mojibake repair |
-| `locale_format` | L10n | Format dates/numbers/currency per locale via CLDR data |
-| `i18n_extract` | I18n | Extract translatable strings from source code (xgettext-style) |
-| `font_analyze` | Fonts | Analyze font files: metrics, features, tables, web-font validation |
-| `phonetic_transcribe` | Phonetics | Text-to-phoneme conversion (IPA, ARPABET, metaphone) |
-| `homoglyph_scan` | Text | Detect confusable/homoglyph characters and invisible codepoints |
+| Role | Category | Purpose | Status |
+|------|----------|---------|--------|
+| `unicode_analyze` | Unicode | Analyze Unicode properties: script, block, plane, category, normalization form | DONE |
+| `bom_detect` | BOM | Detect, strip, add Byte Order Marks per encoding | DONE |
+| `encoding_detect` | Charsets | chardet-based encoding detection, conversion, mojibake repair | DONE |
+| `locale_format` | L10n | Format dates/numbers/currency per locale via CLDR data | DONE |
+| `i18n_extract` | I18n | Extract translatable strings from source code (xgettext-style) | DONE |
+| `font_analyze` | Fonts | Analyze font files: metrics, features, tables, web-font validation | DONE |
+| `phonetic_transcribe` | Phonetics | Text-to-phoneme conversion (IPA, ARPABET, metaphone) | DONE |
+| `homoglyph_scan` | Text | Detect confusable/homoglyph characters and invisible codepoints | DONE |
+| `language_detect` | Detection | Statistical + stopword language detection, LLM fallback | DONE |
+| `translate` | Translation | Multi-language translation (dictionary + LLM fallback) | DONE |
+| `transliterate` | Transliteration | Script-to-script conversion (Cyrillic, Arabic, CJK) | DONE |
 
 ## 3. Knowledge Modules
 

@@ -18,6 +18,7 @@ from general_ludd.dispatch.capabilities import CapabilityRegistry
 from general_ludd.dispatch.dynamic_dispatcher import (
     DispatchResult,
     DynamicDispatcher,
+    ToolCall,
     parse_tool_calls,
 )
 from general_ludd.dispatch.router import CapabilityRouter
@@ -80,13 +81,20 @@ def register(
         while len(_recent_dispatches) > _MAX_RECENT_DISPATCHES:
             _recent_dispatches.pop(0)
 
+    _cap_router: CapabilityRouter | None = None
+    if capability_registry is not None:
+        _cap_router = CapabilityRouter(capability_registry)
+
     @app.post(
         "/api/dispatch",
-        summary="Dispatch tool calls (MCP/skill/role/collection)",
+        summary="Dispatch tool calls (MCP/skill/role/collection) or capability-based dispatch",
         description=(
             "HTTP shim over DynamicDispatcher: supply tool_calls "
             "[{kind,name,args}]. Capability-gated; capped at 20 calls/request "
-            "(D-16). PSK-authenticated."
+            "(D-16). PSK-authenticated. "
+            "Also accepts capability-based dispatch: "
+            "{capability: str, action: str[, args: dict]} which resolves the "
+            "capability tag to a collection and dispatches the named module."
         ),
     )
     async def api_dispatch(body: dict[str, object]) -> dict[str, object]:
@@ -100,15 +108,53 @@ def register(
 
             {"tool_calls": [{"kind": "mcp", "name": "fs", "args": {}}]}
 
+        Capability-based dispatch::
+
+            {"capability": "travel", "action": "flight_search", "args": {...}}
+
         Returns a list of DispatchResult dicts.
         """
+        capability_raw = body.get("capability")
+        if isinstance(capability_raw, str) and capability_raw:
+            if _cap_router is None:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Capability registry not available on this daemon instance",
+                )
+            action_raw = body.get("action")
+            if not isinstance(action_raw, str) or not action_raw:
+                raise HTTPException(
+                    status_code=422,
+                    detail="capability-based dispatch requires 'action' (module name)",
+                )
+            route_result = _cap_router.route(capability_raw)
+            if not route_result.ok:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"no collection found for capability: {capability_raw}",
+                )
+            collection = route_result.matches[0].collection
+            module_name = f"{collection.namespace}.{collection.name}.{action_raw}"
+            args_raw = body.get("args", {})
+            args: dict[str, object] = args_raw if isinstance(args_raw, dict) else {}
+            call = ToolCall(kind="collection", name=module_name, args=args)
+            results = await dispatcher.dispatch_all([call])
+            _record(results)
+            return {
+                "results": [r.to_dict() for r in results],
+                "count": len(results),
+                "ok_count": sum(1 for r in results if r.ok),
+                "error_count": sum(1 for r in results if not r.ok),
+            }
+
         calls = parse_tool_calls(body)
         if not calls:
             raise HTTPException(
                 status_code=422,
                 detail=(
                     "Could not parse any tool calls from request body. "
-                    "Expected {kind, name[, args]} or {tool_calls: [...]}"
+                    "Expected {kind, name[, args]}, {tool_calls: [...]}, "
+                    "or {capability, action[, args]}"
                 ),
             )
         # D-16: cap per-request tool_calls to bound model cost.
@@ -141,8 +187,7 @@ def register(
         """Return which handler kinds are registered on this daemon instance."""
         return dispatcher.list_available()
 
-    if capability_registry is not None:
-        _cap_router = CapabilityRouter(capability_registry)
+    if _cap_router is not None:
 
         @app.post(
             "/api/dispatch/capability",
