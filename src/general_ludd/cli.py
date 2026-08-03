@@ -1121,6 +1121,12 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     add_language_subparser(sub)
     sub.choices["language"]
 
+    # `gludd spec-quality` — behavioral spec quality audit.
+    from general_ludd.cli_spec_quality import add_spec_quality_subparser
+
+    add_spec_quality_subparser(sub)
+    sub.choices["spec-quality"]
+
     make_parser = sub.add_parser("make", help="Run a make target via MakeRunner")
     make_parser.add_argument("target", help="Make target to run (e.g. test, lint, gate)")
     make_parser.add_argument("--cwd", default=None, help="Working directory for make")

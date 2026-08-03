@@ -393,7 +393,7 @@ def _read_pe_sections_full(data: bytes) -> list[PESection]:
             name_bytes = data[hdr : hdr + 8]
             name = name_bytes.rstrip(b"\x00").decode("ascii", errors="ignore")
             (vsize, vaddr, raw_size, raw_offset, _reloc_ptr, _line_ptr, _reloc_count, _line_count, characteristics) = (
-                struct.unpack_from("<IIIIIIHHI", data, hdr)
+                struct.unpack_from("<IIIIIIHHI", data, hdr + 8)
             )
             entropy = 0.0
             if raw_offset > 0 and raw_size > 0 and raw_offset + raw_size <= len(data):

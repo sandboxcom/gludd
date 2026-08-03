@@ -71,7 +71,7 @@ def _make_minimal_pe(num_sections: int = 1, section_size: int = 0x200) -> bytes:
         struct.pack_into("<I", buf, hdr + 16, section_size)  # raw size
         raw_offset = 0x400 + (i * section_size)
         struct.pack_into("<I", buf, hdr + 20, raw_offset)  # raw offset
-        struct.pack_into("<I", buf, hdr + 28, 0x60000020)  # characteristics
+        struct.pack_into("<I", buf, hdr + 36, 0x60000020)  # characteristics
     total_size = sec_table + (num_sections * 40)
     buf.extend(b"\x00" * (total_size - len(buf)))
     for i in range(num_sections):
@@ -115,7 +115,7 @@ def _make_minimal_pe32(num_sections: int = 1) -> bytes:
         struct.pack_into("<I", buf, hdr + 12, 0x1000 + (i * 0x1000))
         struct.pack_into("<I", buf, hdr + 16, 0x200)
         struct.pack_into("<I", buf, hdr + 20, 0x400 + (i * 0x200))
-        struct.pack_into("<I", buf, hdr + 28, 0x60000020)
+        struct.pack_into("<I", buf, hdr + 36, 0x60000020)
     total_size = sec_table + (num_sections * 40)
     buf.extend(b"\x00" * (total_size - len(buf)))
     for i in range(num_sections):
@@ -141,9 +141,10 @@ class TestConstants:
 
 class TestDOSHeader:
     def test_parse_dos_header(self):
-        data = b"MZ" + b"\x00" * 0x3A
-        struct.pack_into("<I", bytearray(data), 0x3C, 0x80)
-        hdr = _read_dos_header(bytes(data))
+        data = b"MZ" + b"\x00" * 0x3E
+        buf = bytearray(data)
+        struct.pack_into("<I", buf, 0x3C, 0x80)
+        hdr = _read_dos_header(bytes(buf))
         assert hdr is not None
         assert hdr.e_magic == "MZ"
         assert hdr.e_lfanew == 0x80

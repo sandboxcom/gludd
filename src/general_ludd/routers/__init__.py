@@ -38,6 +38,7 @@ def register_all(app: FastAPI, daemon_state: dict[str, object]) -> None:
     from general_ludd.routers.skills import register as register_skills
     from general_ludd.routers.slurm import register as register_slurm
     from general_ludd.routers.small_models import register as register_small_models
+    from general_ludd.routers.spec_quality import register as register_spec_quality
     from general_ludd.routers.stream import register as register_stream
     from general_ludd.routers.terraform_state import register as register_terraform_state
     from general_ludd.routers.todos import register as register_todos
@@ -79,3 +80,4 @@ def register_all(app: FastAPI, daemon_state: dict[str, object]) -> None:
     register_security(app, daemon_state)
     register_web_search(app, daemon_state)
     register_terraform_state(app, daemon_state)
+    register_spec_quality(app, daemon_state)
