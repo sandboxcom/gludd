@@ -12,7 +12,7 @@ import math
 from general_ludd.models.gateway import ModelGateway, ModelProfile
 
 
-def _profile(cost_in=0.001, cost_out=0.003, max_out=1000):
+def _profile(cost_in=0.001, cost_out=0.003, max_out=1000, api_metered=True):
     return ModelProfile(
         model_profile_id="p",
         model_name="gpt-test",
@@ -20,6 +20,7 @@ def _profile(cost_in=0.001, cost_out=0.003, max_out=1000):
         cost_per_output_token=cost_out,
         max_output_tokens=max_out,
         run_budget_usd=10.0,
+        api_metered=api_metered,
         enabled=True,
     )
 
@@ -63,29 +64,29 @@ def test_server_estimate_governs_when_caller_underreports_remaining():
     # Output leg alone: 1000 max_out * 0.003 = 3.0 USD. Input: tiny. Total ~3.
     # That's under run_budget_usd=10 -> accepted.
     msg = [{"role": "user", "content": "hi"}]
-    assert gw.check_budget(
-        "p", estimated_cost=0.0, budget_remaining=math.inf, messages=msg
-    ) is True
+    assert gw.check_budget("p", estimated_cost=0.0, budget_remaining=math.inf, messages=msg) is True
 
     # Now a profile whose output leg ALONE exceeds run_budget_usd.
     gw2 = _gateway(_profile(cost_out=0.05, max_out=1000))  # 1000*0.05 = 50 > 10
-    assert gw2.check_budget(
-        "p2_placeholder",  # will be missing -> False; covered separately
-        estimated_cost=0.0,
-        budget_remaining=math.inf,
-        messages=msg,
-    ) is False or True  # sanity, replaced below
+    assert (
+        gw2.check_budget(
+            "p2_placeholder",  # will be missing -> False; covered separately
+            estimated_cost=0.0,
+            budget_remaining=math.inf,
+            messages=msg,
+        )
+        is False
+        or True
+    )  # sanity, replaced below
 
 
 def test_server_estimate_uses_max_of_caller_and_server():
-    gw = _gateway(_profile(cost_in=0.0, cost_out=0.0))  # free model
+    gw = _gateway(_profile(cost_in=0.0, cost_out=0.0, api_metered=False))  # free model
     msg = [{"role": "user", "content": "hi"}]
     # Server estimate is 0; caller claims 5.0. With budget_remaining=1.0,
     # the gate must reject (5.0 > 1.0) -- i.e. caller's claim is still honored
     # when it is the larger of the two.
-    assert gw.check_budget(
-        "p", estimated_cost=5.0, budget_remaining=1.0, messages=msg
-    ) is False
+    assert gw.check_budget("p", estimated_cost=5.0, budget_remaining=1.0, messages=msg) is False
 
 
 def test_missing_messages_falls_back_to_caller_estimate_only():
@@ -97,15 +98,14 @@ def test_missing_messages_falls_back_to_caller_estimate_only():
 
 def test_profile_missing_returns_false_with_messages():
     gw = _gateway()
-    assert gw.check_budget(
-        "nope", estimated_cost=0.0, budget_remaining=1e9, messages=[{"role": "user", "content": "x"}]
-    ) is False
+    assert (
+        gw.check_budget("nope", estimated_cost=0.0, budget_remaining=1e9, messages=[{"role": "user", "content": "x"}])
+        is False
+    )
 
 
 # Fix the placeholder above by exercising the real reject path:
 def test_output_leg_alone_exceeding_run_budget_rejects():
     gw = _gateway(_profile(cost_out=0.05, max_out=1000))  # 50 USD output leg > 10 budget
     msg = [{"role": "user", "content": "hi"}]
-    assert gw.check_budget(
-        "p", estimated_cost=0.0, budget_remaining=math.inf, messages=msg
-    ) is False
+    assert gw.check_budget("p", estimated_cost=0.0, budget_remaining=math.inf, messages=msg) is False

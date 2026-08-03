@@ -38,6 +38,8 @@ def _build_gateway_with_always_failing_primary(
         model_profile_id="primary",
         provider="openai",
         model_name="m1",
+        cost_per_input_token=0.001,
+        cost_per_output_token=0.001,
         enabled=True,
     )
     gateway = ModelGateway(profiles=[primary], health_tracker=tracker)
@@ -70,10 +72,9 @@ class TestRetryAfterHeaderHonored:
             headers={"retry-after": "30"},
             request=httpx.Request("POST", "http://x/y"),
         )
-        exc = httpx.HTTPStatusError(
-            "429", request=response.request, response=response
-        )
+        exc = httpx.HTTPStatusError("429", request=response.request, response=response)
         assert _extract_retry_after_seconds(exc) == 30.0
+
     """A 429 carrying ``Retry-After: <seconds>`` MUST cause the retry sleep to
     be at least that many seconds (per TimeoutRetryPolicy._compute_backoff
     returning ``max(retry_after, 1.0)`` for RATE_LIMITED)."""
@@ -96,14 +97,14 @@ class TestRetryAfterHeaderHonored:
 
         # The gateway performs backoff via ``await asyncio.sleep`` (non-blocking
         # event loop), NOT time.sleep — patch the coroutine it actually awaits.
-        with patch("asyncio.sleep", side_effect=_capture_sleep), pytest.raises(
-            httpx.HTTPStatusError
-        ):
-            asyncio.run(gateway.call_model_with_retry(
-                "primary",
-                [{"role": "user", "content": "hi"}],
-                base_backoff_seconds=0.0,
-            ))
+        with patch("asyncio.sleep", side_effect=_capture_sleep), pytest.raises(httpx.HTTPStatusError):
+            asyncio.run(
+                gateway.call_model_with_retry(
+                    "primary",
+                    [{"role": "user", "content": "hi"}],
+                    base_backoff_seconds=0.0,
+                )
+            )
 
         assert sleeps, "asyncio.sleep was never called by the retry path"
         # _compute_backoff returns max(retry_after, 1.0) for RATE_LIMITED when
@@ -140,14 +141,14 @@ class TestRetryAfterHeaderHonored:
 
         # The gateway performs backoff via ``await asyncio.sleep`` (non-blocking
         # event loop), NOT time.sleep — patch the coroutine it actually awaits.
-        with patch("asyncio.sleep", side_effect=_capture_sleep), pytest.raises(
-            httpx.HTTPStatusError
-        ):
-            asyncio.run(cast(Any, gateway).call_model_with_retry(
-                "primary",
-                [{"role": "user", "content": "hi"}],
-                base_backoff_seconds=0.0,
-            ))
+        with patch("asyncio.sleep", side_effect=_capture_sleep), pytest.raises(httpx.HTTPStatusError):
+            asyncio.run(
+                cast(Any, gateway).call_model_with_retry(
+                    "primary",
+                    [{"role": "user", "content": "hi"}],
+                    base_backoff_seconds=0.0,
+                )
+            )
 
         assert sleeps, "asyncio.sleep was never called by the retry path"
         # Without a header we must NOT invent a 30s wait — backoff should be

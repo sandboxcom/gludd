@@ -861,6 +861,11 @@ check-ratchet-population:
 check-spec-enforcement-coverage:
 	@$(UV) run python3 scripts/check_spec_enforcement_coverage.py
 
+# Fix enforcement text format in BEHAVIORAL_SPECS.md: converts "`target` in Makefile"
+# to "Makefile `target`" so check_spec_enforcement_coverage recognizes mechanisms.
+fix-spec-enforcement:
+	@$(UV) run python3 scripts/fix_spec_enforcement_format.py
+
 # AA058 — check-structural-test-fragility: identifies tests that read source
 # files as plaintext, flagging them for migration to behavioral tests.
 check-structural-test-fragility:
@@ -5130,6 +5135,23 @@ integration-health-watch:
 		fi; \
 		sleep 10; \
 	done
+
+integration-health-background:
+	@echo "[integration-health-background] Launching integration-health via nohup..."
+	@nohup $(MAKE) integration-health > /tmp/gludd-integration-run.log 2>&1 & \
+	echo "  PID: $$!"; \
+	echo "  Log: /tmp/gludd-integration-run.log"; \
+	echo "  Failures JSON: /tmp/gludd-integration-failures.json"
+
+integration-health-report:
+	@sleep 300; \
+	if [ -f /tmp/gludd-integration-failures.json ]; then \
+		echo "=== FAILURES ==="; \
+		cat /tmp/gludd-integration-failures.json; \
+	else \
+		echo "=== LOG (last 100 lines) ==="; \
+		tail -100 /tmp/gludd-integration-run.log; \
+	fi
 
 # --- Audit untested code: plugins with no tests, hooks without test coverage, Python modules without tests ---
 audit-untested-code:

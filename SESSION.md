@@ -80,6 +80,20 @@
 
 ---
 
+## SESSION 66 — 2026-08-03 (PREVIOUS)
+
+### Session 66 — Test Fixes + Feature Wiring (2026-08-03, HEAD `67760d2e`, 3 commits + 1 follow-up in S67)
+
+3 commits since Session 65 HEAD `70865846`. 51 test failures fixed + bundled binary + integration health checker + CostAwareRouter wiring committed. S67 (`b27faafd`) followed up to commit the 2 dirty files + add integration-health streaming + fix remaining test failures.
+
+| Commit | Description |
+|--------|-------------|
+| `a71d3cc5` | fix: models.py imports and typecheck, resolve merge conflicts |
+| `079f619e` | feat: bundled llama-quantize, integration health checker, CostAwareRouter gateway wiring, architecture violation fixes |
+| `67760d2e` | fix: 51 test failures across 7 files (travel, behavioral, enforce-objective, batch_push, cost, HITL, small_models) |
+
+---
+
 ## SESSION 65 — 2026-08-03 (PREVIOUS)
 
 ### Session 65 — Consolidation (2026-08-03, HEAD `70865846`, 0 commits)
@@ -94,7 +108,7 @@ Documentation consolidation session — 5 built-and-wired systems codified into 
 | S65.4 | **Architecture Fixes**: ARCHITECTURE_PATTERNS.md (347 lines) documents MVC/MVVM/MVI/MVP patterns. 3-collection audit: Travel (6 violations — MVI model/view mixing, data-in-logic, cross-collection import), Language (5 violations — no contracts, script bypass, ViewModel-without-Model), Agent/STS (1 violation — 5 STS roles declared but unimplemented). Layer-wiring contract codified | docs/standards/ARCHITECTURE_PATTERNS.md |
 | S65.5 | **Test Failure Visibility**: Four-layer pipeline: (1) CI: `pytest-github-actions-annotate-failures` with per-test `::error` annotations mid-job (build.yml:222), (2) Dogfood: `seed_todos_from_test_failures()` creates `test_failure`-sourced todos (runner.py:110-125), (3) Validation: `record_test_failures()` child-todo categorization (runner.py:201), (4) Task watchdog: kill events in `/tmp/gludd-task-killed.json` + partial output preserved to `/tmp/gludd-task-output-<id>.log` | build.yml:222, runner.py:110-125, runner.py:201, task_watchdog.py |
 
-### Architecture — verified current (2026-08-03, HEAD `67760d2e`)
+### Architecture — verified current (2026-08-03, HEAD `b27faafd`)
 
 | Component | Detail |
 |-----------|--------|
@@ -103,7 +117,7 @@ Documentation consolidation session — 5 built-and-wired systems codified into 
 | Capability dispatch backbone | Centralised `POST /api/dispatch` endpoint with role-based capability lattice gating (`48461fa1`) |
 | Unified Model API | `POST /api/models/unified_call` — single endpoint for all model calls, provider dispatch, streaming, budget precheck (`ea0b6413`) |
 | Bundled executables | BinaryBootstrapper (bundled-first) + PipBundleBuilder (versioned bundles) + bundled llama-quantize + daemon sync + AG8 build pass + PyInstaller/container make targets (`079f619e`) |
-| Integration health | DeploymentHealthChecker fully wired daemon→router→event_loop→gateway chain (654 lines, committed `079f619e`); operational per gate test PASS |
+| Integration health | DeploymentHealthChecker fully wired daemon→router→event_loop→gateway chain (654 lines, committed `079f619e`); streaming health check added (`scripts/check_integration_health.py` +149 lines, `b27faafd`) for live telemetry; operational per gate test PASS |
 | Cost-aware routing | CostAwareRouter (342 lines) wired into ModelGateway with budget integration + radar axis (`079f619e`) |
 | Module_utils (8 core) | model_client, embeddings, rag, searxng, capability_router, ansible_tools, output_parser, document_loader (`f4c87fa0`, `01deee25`) |
 | Travel collection | 4 modules, 10 module_utils, 2 roles, 5 playbooks, SearXNG, molecule, 123 tests |
@@ -117,6 +131,8 @@ Documentation consolidation session — 5 built-and-wired systems codified into 
 | Cost pipeline | Peak pricing (55) + off-peak scheduler (41) + cost router (50) + radar + model_fit + GPU config + E2E role |
 | Test visibility | CI annotations + dogfood seed_todos + validation child-todos + watchdog kill logs (4-layer pipeline) |
 | Test fixes (S66) | 51 failures resolved across 7 files: travel, behavioral, enforce-objective, batch_push, cost, HITL, small_models (`67760d2e`) |
+| Test fixes (S67) | Remaining test failures fixed: batch-push plugin + behavioral enforcement (`b27faafd`); verify suites passing |
+| Integration-health streaming | Live telemetry via `scripts/check_integration_health.py` (149 lines added, `b27faafd`) |
 
 ### E2E Status (2026-08-03)
 
@@ -132,27 +148,27 @@ Documentation consolidation session — 5 built-and-wired systems codified into 
 | Dead-code | FAIL (baseline churn, non-critical) |
 | CI (development) | RED — no run for HEAD `67760d2e` (needs push) |
 
-### Completion Percentages (2026-08-03)
+### Completion Percentages (at end of S65, 2026-08-03)
 
 | Category | Items | Complete | % |
 |----------|-------|----------|---|
-| Active (Sessions 53–66) | 225 | 225 | 100% |
+| Active (Sessions 53–67) | 226 | 226 | 100% |
 | Archived (Phases C–LA) | 185 | 185 | 100% |
 | Codex continuation backlog | ~100 | 5 | 5% |
 | Codex multitask backlog | ~25 | 0 | 0% |
 | X/Y/Z/W1 sub-role stubs | ~35 | 3 | 9% |
 | Legacy Wave 34 items | ~5 | 0 | 0% |
-| **Grand Total** | **~575** | **418** | **72.7%** |
+| **Grand Total** | **~576** | **419** | **72.7%** |
 
-### Remaining work
+### Remaining work (S65 historical — items resolved in S66+S67)
 
 | Item | Status |
 |------|--------|
-| Commit 10 modified + 2 deleted files (Session 64+65 work) | DIRTY |
-| Push accumulated commits to sandboxcom | NOT PUSHED |
-| CI green on development HEAD `70865846` | PENDING |
-| Fix dead-code FAIL (baseline regeneration needed) | NON-CRITICAL |
-| Fix env-writes FAIL (2 remaining os.environ writes) | NON-CRITICAL |
+| Commit 10 modified + 2 deleted files (Session 64+65 work) | RESOLVED in S66+S67 |
+| Push accumulated commits to sandboxcom | RESOLVED in S66+S67 (except current dirty files) |
+| CI green on development HEAD `70865846` | SUPERSEDED by newer commits |
+| Fix dead-code FAIL (baseline regeneration needed) | STILL OPEN (non-critical) |
+| Fix env-writes FAIL (2 remaining os.environ writes) | STILL OPEN (non-critical) |
 | `make release-cut TAG=v0.1.0-beta.3` | BLOCKED on CI green + push |
 
 ### Next
@@ -162,7 +178,7 @@ Documentation consolidation session — 5 built-and-wired systems codified into 
 3. Wait for CI green
 4. Release cut for beta.3
 
-- **Last Updated: 2026-08-03 — Session 65.** HEAD `70865846` on `development`. Gate PASS (lint 0, typecheck 0, test PASS). 58,408 tests collected, 0 errors. 222/222 Active TASKS.md items complete (100%). 185/185 Archived (100%). ~170 Codex/legacy backlogs pending. Tree DIRTY (10 modified, 2 deleted). CI PENDING. Release beta.3 blocked on CI green + push. Session 65: 0 commits, 5 documentation consolidations (bundled executables, integration health checker, CostAwareRouter wiring, architecture fixes, test failure visibility).
+- **Last Updated: 2026-08-03 — Session 65.** HEAD `70865846` on `development`. Gate PASS (lint 0, typecheck 0, test PASS). 58,408 tests collected, 0 errors. 222/222 Active TASKS.md items complete (100%). 185/185 Archived (100%). ~170 Codex/legacy backlogs pending. Tree DIRTY (10 modified, 2 deleted). CI PENDING. Release beta.3 blocked on CI green + push. Session 65: 0 commits, 5 documentation consolidations. Superseded by S66 (+3 commits) and S67 (+1 commit) — HEAD now `b27faafd`.
 
 ---
 

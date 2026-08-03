@@ -33,6 +33,9 @@ def _make_profile(
     return ModelProfile(
         model_profile_id=pid,
         enabled=True,
+        api_metered=True,
+        cost_per_input_token=0.001,
+        cost_per_output_token=0.001,
         provider="openai",
         provider_package="langchain-openai",
         provider_class_hint="ChatOpenAI",
@@ -48,9 +51,7 @@ def _make_gateway(profiles: list[ModelProfile]) -> tuple[ModelGateway, ProviderR
     reg.register_provider("openai", "langchain-openai", "ChatOpenAI")
 
     fake_secret_client = MagicMock()
-    fake_secret_client.secrets.kv.v2.read_secret_version.return_value = {
-        "data": {"data": {"value": "sk-test"}}
-    }
+    fake_secret_client.secrets.kv.v2.read_secret_version.return_value = {"data": {"data": {"value": "sk-test"}}}
     secrets = SecretsManager(
         client=fake_secret_client,
         aliases={"openai_key": SecretAlias("openai_key", "keys/openai", "secret")},
@@ -163,9 +164,7 @@ class TestD22FallbackHealthCheck:
         primary = _make_profile("primary_sick", fallback=["fb_sick_1", "fb_sick_2"])
         fb_1 = _make_profile("fb_sick_1")
         fb_2 = _make_profile("fb_sick_2")
-        tracker = _FakeHealthTracker(
-            unhealthy={"primary_sick", "fb_sick_1", "fb_sick_2"}
-        )
+        tracker = _FakeHealthTracker(unhealthy={"primary_sick", "fb_sick_1", "fb_sick_2"})
         gw, reg = _make_gateway([primary, fb_1, fb_2])
         gw._health_tracker = tracker
 
