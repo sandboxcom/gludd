@@ -549,9 +549,9 @@ class TestEnforceObjective:
         content = (PLUGIN_DIR / "enforce-objective.ts").read_text()
         assert "last_ci_status" in content, "CI GREEN objective detection missing"
 
-    def test_objective_plugin_nag_prefix_exported(self):
+    def test_objective_plugin_nag_prefix_present(self):
         content = (PLUGIN_DIR / "enforce-objective.ts").read_text()
-        assert "NAG_PREFIX" in content, "NAG_PREFIX must be exported for test inspection"
+        assert "NAG_PREFIX" in content, "NAG_PREFIX must be present"
 
 
 class TestEnforceBatchPush:

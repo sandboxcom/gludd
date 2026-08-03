@@ -11,7 +11,7 @@ const nodeRequire = typeof require === "function" ? require : createRequire(impo
 function execSync(...args: any[]): Buffer {
   return nodeRequire("node:child_" + "process").execSync(...args);
 }
-export const NAG_PREFIX = "███  NO PRIMARY OBJECTIVE SET";
+const NAG_PREFIX = "███  NO PRIMARY OBJECTIVE SET";
 const SPEC_VELOCITY_FILE = "/tmp/gludd-spec-velocity.json";
 const SPEC_BEHAVIOR_FILE = "/tmp/gludd-spec-behavior.json";
 // AB002: minimum specs per 5-minute window to maintain velocity.

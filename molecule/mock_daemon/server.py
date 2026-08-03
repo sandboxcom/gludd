@@ -983,9 +983,18 @@ def _agent_id_from_sts_path(path: str) -> str | None:
     return None
 
 
-def _mint_token(agent_id: str) -> dict:
-    token = f"sts-mock-{agent_id}-{os.urandom(8).hex()}"
-    record = {"token": token, "agent_id": agent_id, "valid": True, "minted_at": datetime.now(UTC).isoformat()}
+def _mint_token(agent_id: str, parent_agent_id: str = "root") -> dict:
+    token_id = f"tok-{agent_id}"
+    role_name = f"agent-{agent_id}"
+    record = {
+        "token_id": token_id,
+        "agent_id": agent_id,
+        "parent_agent_id": parent_agent_id,
+        "role_name": role_name,
+        "role_id": f"mock-role-{agent_id}",
+        "created_at": datetime.now(UTC).isoformat(),
+        "expires_at": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+    }
     with _STS_TOKEN_LOCK:
         _STS_TOKENS[agent_id] = record
     return record
@@ -993,12 +1002,22 @@ def _mint_token(agent_id: str) -> dict:
 
 def _validate_token(agent_id: str) -> dict:
     with _STS_TOKEN_LOCK:
-        rec = _STS_TOKENS.get(agent_id, {})
+        rec = _STS_TOKENS.get(agent_id)
+    if rec is None:
+        return {
+            "valid": False,
+            "token_id": "",
+            "agent_id": None,
+            "revoked": False,
+            "revoked_at": None,
+        }
+    is_revoked = rec.get("revoked_at") is not None
     return {
+        "valid": not is_revoked,
+        "token_id": rec.get("token_id", ""),
         "agent_id": agent_id,
-        "valid": rec.get("valid", False),
-        "token": rec.get("token", ""),
-        "minted_at": rec.get("minted_at", ""),
+        "revoked": is_revoked,
+        "revoked_at": rec.get("revoked_at"),
     }
 
 
@@ -1016,8 +1035,8 @@ def _revoke_token(agent_id: str) -> dict:
     with _STS_TOKEN_LOCK:
         rec = _STS_TOKENS.get(agent_id)
         if rec is not None:
-            rec["valid"] = False
-        return {"agent_id": agent_id, "revoked": True}
+            rec["revoked_at"] = datetime.now(UTC).isoformat()
+    return {"status": "revoked", "agent_id": agent_id}
 
 
 def _pid_from_proc_path(path: str) -> int | None:
@@ -1345,7 +1364,8 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
         # ---- STS token lifecycle ------------------------------------------
         elif path == "/admin/sts/mint":
             agent_id = payload.get("agent_id", "unknown")
-            self._send_json(201, _mint_token(agent_id))
+            parent_agent_id = payload.get("parent_agent_id", "root")
+            self._send_json(201, _mint_token(agent_id, parent_agent_id=parent_agent_id))
         elif path.startswith("/admin/sts/revoke/"):
             agent_id = _agent_id_from_sts_path(path)
             if agent_id is None:

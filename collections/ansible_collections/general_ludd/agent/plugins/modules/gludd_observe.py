@@ -105,7 +105,8 @@ from typing import Any
 
 from ansible.module_utils.basic import AnsibleModule
 
-from general_ludd.observe.facade import GluddObserve
+# Moved inside main() — module-level import of general_ludd fails
+# when src/ is not on PYTHONPATH (e.g., CI molecule tests).
 
 try:
     from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
@@ -218,6 +219,8 @@ def main() -> None:
         module.fail_json(**error_result("unable to discover registered observability sources"))
         return
 
+    from general_ludd.observe.facade import GluddObserve
+
     try:
         observe = GluddObserve(_source_provider(source_response, client))
         operation: str = module.params["op"]
@@ -255,17 +258,13 @@ def main() -> None:
                 spec=spec,
             )
         else:
-            payload["topology"] = _json_topology(
-                observe.topology(kinds=kinds, spec=spec)
-            )
+            payload["topology"] = _json_topology(observe.topology(kinds=kinds, spec=spec))
         payload["errors"] = observe.errors
     except (TypeError, ValueError):
         module.fail_json(**error_result("invalid observability response or request"))
         return
 
-    module.exit_json(
-        **ok_result({"ansible_facts": {"gludd_observe": payload}}, changed=False)
-    )
+    module.exit_json(**ok_result({"ansible_facts": {"gludd_observe": payload}}, changed=False))
 
 
 if __name__ == "__main__":

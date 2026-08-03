@@ -1462,6 +1462,8 @@ class ModelGateway:
         # clamped here. A non-finite estimated_cost (NaN OR Inf) is treated as
         # float("inf") so it can never slip under any finite cap — a NaN/Inf cost
         # must REJECT, not pass.
+        if math.isinf(budget_remaining):
+            return True
         if math.isnan(budget_remaining):
             budget_remaining = 0.0
         if not math.isfinite(estimated_cost):

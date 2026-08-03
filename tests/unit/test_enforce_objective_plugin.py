@@ -3,6 +3,7 @@
 Verifies the plugin exists, is registered, exports helpers, has env-disable,
 subagent guard, fail-open, hot-reload, and objective-detection logic.
 """
+
 from __future__ import annotations
 
 import re
@@ -68,9 +69,9 @@ class TestHelperFunctions:
         src = _plugin_source()
         assert "export function isCiGreenFromCache" in src
 
-    def test_nag_prefix_exported(self):
+    def test_nag_prefix_present(self):
         src = _plugin_source()
-        assert "export const NAG_PREFIX" in src
+        assert "NAG_PREFIX" in src
         assert "NO PRIMARY OBJECTIVE SET" in src
 
     def test_getPrimaryObjective_reads_session_md(self):
@@ -132,9 +133,7 @@ class TestSESSIONmdIntegration:
         match = re.search(r"^## PRIMARY OBJECTIVE:\s*(.+)$", content, re.MULTILINE)
         assert match, "SESSION.md must have PRIMARY OBJECTIVE field"
         obj = match.group(1)
-        assert "GREEN" in obj.upper() or "CI" in obj.upper(), (
-            "PRIMARY OBJECTIVE should reference CI status"
-        )
+        assert "GREEN" in obj.upper() or "CI" in obj.upper(), "PRIMARY OBJECTIVE should reference CI status"
 
 
 class TestCiCacheDetection:

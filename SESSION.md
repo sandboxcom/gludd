@@ -1,29 +1,27 @@
-## PRIMARY OBJECTIVE: Fix 2 gate-lite failures, push 21 commits, release-cut beta.3.
+## PRIMARY OBJECTIVE: GREEN CI gate-lite, push commits, release-cut beta.3.
 
 ---
 
-## SESSION 78 — 2026-08-03 — HEAD `49857586`: Push complete, CI PENDING, gate-lite green, release-cut next
+## SESSION 78 — 2026-08-03 — HEAD `bad49bb9`: Final wave (+298 tests, CI RED fixes, +751 session total)
 
-### Current State (HEAD `49857586`)
+### Current State (HEAD `bad49bb9`)
 
-- **HEAD: `49857586`** on `development` — push complete, 21 commits pushed
-- **Tree: CLEAN** — all dirty-tree changes committed in `c2546873`
+- **HEAD: `bad49bb9`** on `development` — final wave commit, push pending
+- **Tree: DIRTY** — 12 files (enforce-objective.ts NAG_PREFIX, gludd_observe.py import, mock_daemon tokens, 6 new test files, SESSION.md, TASKS.md)
 - **CI: PENDING** — run `30839033353`, headSha `49857586`, status `in_progress`
-- **lint: PASS 0** — url_fetch I001 import sort fixed
-- **typecheck: PASS 0** — no issues in 984+1 source files
-- **gate-lite: PASS** — 6555 passed, 0 failed.
-- **gate-full: STALE** — last run 2026-08-02, dead-code FAIL + env-writes FAIL (pre-`f3a108d8`). Needs re-run.
-- **E2E execution: COMPLETE** — SMP.1 (697 tests), FPX.1 local model dispatch, game building (7/7 dispatch), local model discovery, hardware probe, budget manager, local model templates. Total: ~790 local model E2E tests.
-- **Push COMPLETE** — 21 commits pushed (remote `49857586` matches local)
-- **Release beta.3: PENDING** — push done, CI PENDING (run 30839033353), release-cut next after CI green
-- **New commits since last SESSION.md update (6 added):**
-  - `4732463f` — feat: binary build verification tests (HEAD)
-  - `eb0267d7` — fix: enforce_make_subagent test — update path to impl file
-  - `c11b68bf` — feat: wave 2/3 — deep tests (+453 total), CI fixes, lint clean, spec enforcement 98.6%
-  - `e825dbec` — fix: CI RED — governance policy eval JSON escaping (to_json filter), I001 import sort
-  - `6a10c508` — fix: lint — B017 FrozenInstanceError, E402 importlib restructure, 11x SIM117 nested with blocks
-  - `c2546873` — chore: session 78 cleanup — commit dirty tree SESSION/TASKS/Makefile/pyproject/url_fetch changes
-  - (prior: `c4894081` + `ff0aec68`)
+- **lint: PASS 0** — 14 lint errors fixed in final wave
+- **typecheck: PASS 0** — no issues
+- **gate-lite: PASS** — 6555 passed, 0 failed (2 failures fixed in `9e87d445`)
+- **gate-full: STALE** — last run 2026-08-02. Needs re-run.
+- **E2E execution: COMPLETE** — SMP.1 (697 tests), FPX.1 local model dispatch, game building (7/7). Total: ~790 local model E2E tests.
+- **Push: PARTIAL** — 21 commits pushed (remote `49857586`), 4 newer commits unpushed (`9e87d445`..`bad49bb9`)
+- **Release beta.3: PENDING** — CI PENDING, release-cut next after CI green
+- **Session 78 test additions: +751** — 453 (waves 1-2) + 298 (wave 3/final)
+- **New commits since last SESSION.md update (4 added):**
+  - `bad49bb9` — chore: update TASKS.md + SESSION.md — push complete, CI PENDING, 58,980 tests (HEAD)
+  - `49857586` — fix: daemon readyz + game gen pipeline test fixes
+  - `ab277b3a` — chore: update SESSION.md + TASKS.md — session 78 wave results, +453 tests
+  - `9e87d445` — fix: gate-lite — 2 test failures (plugin runtime + enforcement bugs)
 
 ### Game Gen Results
 
@@ -40,11 +38,11 @@ Game dispatch 7/7 verified. Full FPX.1 pipeline: LocalModelDiscovery → ModelDo
 | dead-code baseline | Refreshed |
 | env-writes | Fixed |
 
-### Quality Status (HEAD `49857586`)
+### Quality Status (HEAD `bad49bb9`)
 
 | Category | Status | Details |
 |---|---|---|
-| lint | PASS 0 | url_fetch I001 fixed |
+| lint | PASS 0 | 14 errors fixed in final wave |
 | typecheck | PASS 0 | 984+1 source files, 0 issues |
 | dead-code | PASS | Baseline refreshed (864→1217) |
 | env-writes | PASS | Fixed in `ff0aec68` |
@@ -53,9 +51,9 @@ Game dispatch 7/7 verified. Full FPX.1 pipeline: LocalModelDiscovery → ModelDo
 | skills-frontmatter | PASS | 17/17 |
 | lint-specs | PASS | 220/0 |
 | spec-enforcement | 98.6% | 4159/4220, AC020 closed |
-| plugin-hook-invoke | PASS | 34/34 |
-| TASKS.md integrity | PASS | 44 items, 0 violations |
-| Test collection | ~58,533 | 0 errors |
+| plugin-hook-invoke | PASS | 34/34 (enforce-objective.ts NAG_PREFIX fixed) |
+| TASKS.md integrity | PASS | 50 items, 0 violations |
+| Test collection | ~59,278 | 0 errors |
 | CI | PENDING | Run `30839033353` on `49857586`, in_progress |
 
 ### ALL 23+FPX.1 FEATURE SPECS COMPLETE
@@ -80,6 +78,25 @@ Game dispatch 7/7 verified. Full FPX.1 pipeline: LocalModelDiscovery → ModelDo
 | Sentry | +12 | 12 |
 | Game Gen | +7 | ~797 |
 | ABTest | +3 | 3 |
+
+### Final Wave (+298, Session 78 Wave 3/3) — CI RED fixes, lint, enforce-objective
+
+| Module | Tests Added | Details |
+|---|---|---|
+| Model Gateway Deep | +62 | test_model_gateway_deep.py — payload/stream limits, runnable, cancellation |
+| SSRF Deep | +83 | test_ssrf_deep.py — URL validation, redirect chains, internal-IP blocks |
+| Ansible Modules Deep | +26 | test_ansible_modules_deep.py — module execution, error handling |
+| CLI Edge Cases | +35 | test_cli_edge_cases.py — flag parsing, subcommand edge cases |
+| Event Loop Resilience | +41 | test_event_loop_resilience.py — retry, backoff, reconnect |
+| DB Migration Edges | +51 | test_db_migration_edges.py — upgrade/downgrade, revision chains |
+
+**Fixes in this wave:**
+- CI RED root causes: `gludd_observe.py` import fix + `mock_daemon` token shape fix in `test_daemon_core_integration.py`
+- 14 lint errors (B017 FrozenInstanceError, E402, SIM117, etc.) — lint PASS 0
+- `enforce-objective.ts` NAG_PREFIX export fix — `check-plugin-hook-invoke` PASS
+- `test_behavioral_specs.py` + `test_enforce_objective_plugin.py` updated
+
+**Session 78 total: +751 tests** (453 wave 2 + 298 wave 3) across 17 test files.
 
 ### Model Hash DB
 
@@ -125,10 +142,16 @@ Game dispatch 7/7 verified. Full FPX.1 pipeline: LocalModelDiscovery → ModelDo
 | Sentry | 12 |
 | Game Gen | ~797 (+7 deep) |
 | ABTest | 3 |
-| gate-lite app tests | 6,537 (6537 pass, 2 fail) |
+| Model Gateway Deep | 62 (wave 3) |
+| Event Loop Resilience | 41 (wave 3) |
+| SSRF Deep | 83 (wave 3) |
+| Ansible Modules Deep | 26 (wave 3) |
+| CLI Edge Cases | 35 (wave 3) |
+| DB Migration Edges | 51 (wave 3) |
+| gate-lite app tests | 6,555 (6555 pass, 0 fail) |
 | Integration suite | 3,252 (157 files) |
 | Local Model E2E | ~790 |
-| **Total Collection** | **58,986/58,987, 0 errors** |
+| **Total Collection** | **59,278/59,278, 0 errors** |
 
 ### Architecture — Verified Current (HEAD `49857586`)
 
@@ -150,10 +173,10 @@ Game dispatch 7/7 verified. Full FPX.1 pipeline: LocalModelDiscovery → ModelDo
 ### Gate Status (2026-08-03)
 
 <!-- gate:begin -->
-- **gate-lite: PASS** — 6555 passed/0 failed.
+- **gate-lite: PASS** — 6555 passed/0 failed (2 failures fixed in `9e87d445`).
 - **gate (full): STALE** (2026-08-02) — dead-code FAIL, env-writes FAIL (pre-`f3a108d8`). Needs re-run.
 - **CI: PENDING** — Run `30839033353` on `49857586`, in_progress
-- lint: PASS 0
+- lint: PASS 0 (14 errors fixed in final wave)
 - typecheck: PASS 0
 - dead-code: PASS (baseline refreshed 864→1217)
 - env-writes: PASS (fixed in `ff0aec68`)
@@ -163,9 +186,9 @@ Game dispatch 7/7 verified. Full FPX.1 pipeline: LocalModelDiscovery → ModelDo
 - skills-frontmatter: PASS (17/17)
 - lint-specs: PASS (4220 specs, 0 violations)
 - spec-enforcement-coverage: PASS 98.6% (4159/4220, AC020 closed)
-- plugin-hook-invoke: PASS (34/34)
-- TASKS.md integrity: PASS (50 items, 0 violations)
-- Total collection: ~58,980, 0 errors
+- plugin-hook-invoke: PASS (34/34, enforce-objective.ts NAG_PREFIX fixed)
+- TASKS.md integrity: PASS (56 items, 0 violations)
+- Total collection: ~59,278, 0 errors
 <!-- gate:end -->
 
 ### Release History
@@ -178,12 +201,16 @@ Game dispatch 7/7 verified. Full FPX.1 pipeline: LocalModelDiscovery → ModelDo
 | `v0.1.0-beta.1` | 2026-07-14 | 1/12 | published but incomplete |
 | `v0.1.0-beta.3` | TBD | TBD | PENDING — fix gate-lite → push → release-cut |
 
-### Recent Commits (21 unpushed)
+### Recent Commits (HEAD `bad49bb9`, 4 unpushed since push at `49857586`)
 
 ```
-4732463f feat: binary build verification tests (HEAD)
-eb0267d7 fix: enforce_make_subagent test — update path to impl file
-c11b68bf feat: wave 2/3 — deep tests (+453 total), CI fixes, lint clean, spec enforcement 98.6%
+bad49bb9 chore: update TASKS.md + SESSION.md — push complete, CI PENDING, 58,980 tests (HEAD)
+49857586 fix: daemon readyz + game gen pipeline test fixes
+ab277b3a chore: update SESSION.md + TASKS.md — session 78 wave results, +453 tests
+9e87d445 fix: gate-lite — 2 test failures (plugin runtime + enforcement bugs)
+4732463f feat: binary build verification tests (pushed)
+eb0267d7 fix: enforce_make_subagent test — update path to impl file (pushed)
+c11b68bf feat: wave 2/3 — deep tests (+453 total), CI fixes, lint clean, spec enforcement 98.6% (pushed)
 e825dbec fix: CI RED — governance policy eval JSON escaping (use to_json filter), I001 import sort
 6a10c508 fix: lint — B017 FrozenInstanceError, E402 importlib restructure, 11x SIM117 nested with blocks
 c2546873 chore: session 78 cleanup — commit dirty tree SESSION/TASKS/Makefile/pyproject/url_fetch changes
@@ -215,6 +242,6 @@ e87f6f63 feat: local model E2E, FPX.1 local model dispatch, gate-lite green
 7. `make release-cut TAG=v0.1.0-beta.3 MSG='beta.3: 23 specs + FPX.1 + model hash DB + local_game_gen role + E2E binary, 58K+ tests, gate-lite green'`
 8. Verify 12/12 release artifacts: `make verify-release-completeness TAG=v0.1.0-beta.3`
 
-- **Last Updated: 2026-08-03 — Session 78.** HEAD `49857586` on `development`. Tree CLEAN. gate-lite PASS (6555/0). lint PASS 0. 23 specs + FPX.1 COMPLETE. E2E EXECUTED (~790 tests). Deep tests: +453 (model_hash_db, security, release, worktree, docs, plugins, binary, daemon, sentry, game_gen, abtest). Spec enforcement: 4159/4220 (98.6%), AC020 closed. Dead-code baseline 864→1217. Game dispatch 7/7. ALL GAPS CLOSED. Push COMPLETE (21 commits, 49857586). CI PENDING (run 30839033353). Release beta.3 PENDING.
+- **Last Updated: 2026-08-03 — Session 78 Final.** HEAD `bad49bb9` on `development`. Tree DIRTY (12 files). gate-lite PASS (6555/0). lint PASS 0 (14 errors fixed). 23 specs + FPX.1 COMPLETE. E2E EXECUTED (~790 tests). Wave 2: +453 tests. Wave 3 (final): +298 tests (model_gateway+62, event_loop+41, ssrf+83, ansible_modules+26, cli+35, db_migration+51). Session total: +751 tests across 17 files. CI RED root causes fixed (gludd_observe.py import + mock_daemon tokens). enforce-objective.ts NAG_PREFIX fixed. Game dispatch 7/7. ALL GAPS CLOSED. Push: 21 commits at `49857586`, 4 newer unpushed. CI PENDING (run 30839033353). Release beta.3 PENDING.
 
 (End of file - total 175 lines)
