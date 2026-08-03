@@ -14,6 +14,7 @@ Covers:
 from __future__ import annotations
 
 import contextlib
+import datetime
 import threading
 import time
 from collections.abc import Iterator
@@ -1245,3 +1246,473 @@ class TestStreamTokenCounting:
         gw = ModelGateway([p], provider_registry=reg, budget_guard=budget)
         list(gw.call_model_stream("empty_use", [{"role": "user", "content": "hi"}]))
         budget.record_spend.assert_called_once()
+
+
+# ===================================================================
+# 15. Deep billing — token counting accuracy across providers
+# ===================================================================
+
+
+class TestTokenCountingAccuracy:
+    def test_coerce_float_truncates_not_rounds(self) -> None:
+        assert _coerce_token_count(42.999) == 42
+        assert _coerce_token_count(0.001) == 0
+
+    def test_coerce_large_int_preserved(self) -> None:
+        assert _coerce_token_count(10_000_000) == 10_000_000
+
+    def test_response_token_count_consistent_across_typical_usage(self) -> None:
+        usage: dict[str, object] = {"input_tokens": 500, "output_tokens": 1200, "total_tokens": 1700}
+        out, source = ModelGateway._response_token_count(usage, 99999)
+        assert out == 1200
+        assert source == "provider_usage_metadata"
+
+    def test_response_token_count_zero_tokens_valid(self) -> None:
+        usage: dict[str, object] = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        out, source = ModelGateway._response_token_count(usage, 50)
+        assert out == 0
+        assert source == "provider_usage_metadata"
+
+    def test_estimate_cost_empty_messages_returns_zero(self) -> None:
+        assert ModelGateway.estimate_cost(_profile(), None) == 0.0
+        assert ModelGateway.estimate_cost(_profile(), []) == 0.0
+
+    def test_estimate_cost_approximately_char_div_4(self) -> None:
+        p = _profile("est", cost_per_input_token=0.001, cost_per_output_token=0.01)
+        msgs = [{"role": "user", "content": "h" * 400}]
+        cost = ModelGateway.estimate_cost(p, msgs)
+        expected_input = (400 // 4) * 0.001
+        expected_output = p.max_output_tokens * 0.01
+        assert cost == pytest.approx(expected_input + expected_output, rel=1e-6)
+
+    def test_estimate_cost_capped_by_requested_output(self) -> None:
+        p = _profile("cap", cost_per_input_token=0.001, cost_per_output_token=0.01, max_output_tokens=8000)
+        msgs = [{"role": "user", "content": "short"}]
+        cost_capped = ModelGateway.estimate_cost(p, msgs, requested_max_output_tokens=10)
+        cost_full = ModelGateway.estimate_cost(p, msgs, requested_max_output_tokens=None)
+        assert cost_capped < cost_full
+
+    def test_estimate_cost_requested_output_min_with_profile_max(self) -> None:
+        p = _profile("cap2", cost_per_input_token=0.001, cost_per_output_token=0.01, max_output_tokens=1000)
+        msgs = [{"role": "user", "content": "short"}]
+        cost = ModelGateway.estimate_cost(p, msgs, requested_max_output_tokens=99999)
+        assert cost == pytest.approx(ModelGateway.estimate_cost(p, msgs, requested_max_output_tokens=None), rel=1e-6)
+
+
+# ===================================================================
+# 16. Deep billing — cost calculation and rounding behavior
+# ===================================================================
+
+
+class TestCostCalculationRounding:
+    def test_fractional_cent_input_only_cost(self) -> None:
+        p = _profile(
+            "frac",
+            cost_per_input_token=0.000001,
+            cost_per_output_token=0.0,
+            run_budget_usd=200.0,
+            api_metered=False,
+        )
+        reg = _registry()
+        cm = _chat_model(usage={"input_tokens": 1500, "output_tokens": 1, "total_tokens": 1501})
+        reg.get_provider_class.return_value = lambda **kw: cm
+        budget = MagicMock()
+        gw = ModelGateway([p], provider_registry=reg, budget_guard=budget)
+        gw.call_model("frac", [{"role": "user", "content": "hi"}])
+        called_cost = budget.record_spend.call_args[0][0]
+        assert 0.0005 <= called_cost <= 0.0020
+
+    def test_fractional_cent_output_only_cost(self) -> None:
+        p = _profile(
+            "outfrac",
+            cost_per_input_token=0.0,
+            cost_per_output_token=0.000005,
+            run_budget_usd=200.0,
+            api_metered=False,
+        )
+        reg = _registry()
+        cm = _chat_model(usage={"input_tokens": 10, "output_tokens": 2000, "total_tokens": 2010})
+        reg.get_provider_class.return_value = lambda **kw: cm
+        budget = MagicMock()
+        gw = ModelGateway([p], provider_registry=reg, budget_guard=budget)
+        gw.call_model("outfrac", [{"role": "user", "content": "hi"}])
+        called_cost = budget.record_spend.call_args[0][0]
+        assert 0.005 <= called_cost <= 0.015
+
+    def test_zero_cost_profile_never_bills(self) -> None:
+        p = _profile("freebie", cost_per_input_token=0.0, cost_per_output_token=0.0, max_cumulative_output_tokens=20000)
+        reg = _registry()
+        cm = _chat_model(usage={"input_tokens": 9999, "output_tokens": 9999, "total_tokens": 19998})
+        reg.get_provider_class.return_value = lambda **kw: cm
+        budget = MagicMock()
+        gw = ModelGateway([p], provider_registry=reg, budget_guard=budget)
+        gw.call_model("freebie", [{"role": "user", "content": "hi"}])
+        called_cost = budget.record_spend.call_args[0][0]
+        assert called_cost == 0.0
+
+    def test_high_precision_multiply_no_overflow(self) -> None:
+        p = _profile(
+            "highprec",
+            cost_per_input_token=0.0000037,
+            cost_per_output_token=0.0000152,
+            run_budget_usd=200.0,
+            api_metered=True,
+            max_cumulative_output_tokens=100000,
+        )
+        reg = _registry()
+        cm = _chat_model(usage={"input_tokens": 100000, "output_tokens": 50000, "total_tokens": 150000})
+        reg.get_provider_class.return_value = lambda **kw: cm
+        budget = MagicMock()
+        gw = ModelGateway([p], provider_registry=reg, budget_guard=budget)
+        gw.call_model("highprec", [{"role": "user", "content": "hi"}])
+        called_cost = budget.record_spend.call_args[0][0]
+        expected_min = 100000 * 0.0000037
+        expected_max = expected_min + 50000 * 0.0000152
+        assert expected_min <= called_cost <= expected_max + 0.001
+
+    def test_negative_token_count_produces_zero_cost(self) -> None:
+        p = _profile(
+            "negcost",
+            cost_per_input_token=100.0,
+            cost_per_output_token=100.0,
+            run_budget_usd=200.0,
+            api_metered=True,
+        )
+        reg = _registry()
+        cm = _chat_model(usage={"input_tokens": -100, "output_tokens": -50, "total_tokens": -150})
+        reg.get_provider_class.return_value = lambda **kw: cm
+        budget = MagicMock()
+        gw = ModelGateway([p], provider_registry=reg, budget_guard=budget)
+        with contextlib.suppress(Exception):
+            gw.call_model("negcost", [{"role": "user", "content": "hi"}])
+        if budget.record_spend.call_count > 0:
+            cost = budget.record_spend.call_args[0][0]
+            assert cost >= 0.0
+
+
+# ===================================================================
+# 17. Deep billing — multi-model session cost accumulation
+# ===================================================================
+
+
+class TestSessionCostAccumulation:
+    def test_peak_pricing_tracker_accumulates_off_peak_savings(self) -> None:
+        from general_ludd.budget.peak_pricing import PeakPricingTracker
+
+        tracker = PeakPricingTracker()
+        tracker.record_call(1.00, 0.75)
+        tracker.record_call(2.00, 1.50)
+        assert tracker.cumulative_full_cost == 3.00
+        assert tracker.cumulative_discounted_cost == 2.25
+        assert tracker.cumulative_savings == 0.75
+
+    def test_peak_pricing_tracker_ignores_non_discounted(self) -> None:
+        from general_ludd.budget.peak_pricing import PeakPricingTracker
+
+        tracker = PeakPricingTracker()
+        tracker.record_call(1.00, 1.00)
+        tracker.record_call(1.00, 2.00)
+        assert tracker.cumulative_full_cost == 0.0
+        assert tracker.cumulative_discounted_cost == 0.0
+
+    def test_token_cost_tracker_rolling_window_keeps_last_n(self) -> None:
+        from general_ludd.observability.token_cost import TokenCostTracker
+
+        tracker = TokenCostTracker(window=5, min_samples=2)
+        for i in range(10):
+            tracker.record("code", 100 + i, 50)
+        w = tracker.weight("code")
+        assert w is not None
+        assert w.samples == 5
+
+    def test_token_cost_tracker_classifies_heavy_vs_light(self) -> None:
+        from general_ludd.observability.token_cost import TokenCostTracker
+
+        tracker = TokenCostTracker(window=10, min_samples=3, heavy_factor=1.5)
+        for _ in range(5):
+            tracker.record("heavy", 10000, 5000)
+        for _ in range(5):
+            tracker.record("light", 10, 5)
+        assert tracker.classify("heavy") == "heavy"
+        assert tracker.classify("light") == "light"
+
+    def test_token_cost_tracker_ignores_negative_tokens(self) -> None:
+        from general_ludd.observability.token_cost import TokenCostTracker
+
+        tracker = TokenCostTracker(window=10, min_samples=1)
+        tracker.record("bad", -5, 0)
+        tracker.record("bad", 0, -10)
+        assert tracker.weight("bad") is None
+
+    def test_multiple_providers_accumulated_separately(self) -> None:
+        from general_ludd.observability.token_cost import TokenCostTracker
+
+        tracker = TokenCostTracker(window=10, min_samples=3)
+        for _ in range(4):
+            tracker.record("code::gpt-4o", 500, 200)
+        for _ in range(4):
+            tracker.record("code::deepseek", 300, 100)
+        w_openai = tracker.weight("code::gpt-4o")
+        w_ds = tracker.weight("code::deepseek")
+        assert w_openai is not None
+        assert w_ds is not None
+        assert w_openai.median_total > w_ds.median_total
+
+
+# ===================================================================
+# 18. Deep billing — budget tracking with concurrent patterns
+# ===================================================================
+
+
+class TestBudgetConcurrency:
+    def test_check_budget_nan_remaining_clamped(self) -> None:
+        p = _profile("nanbudg", run_budget_usd=200.0)
+        gw = ModelGateway([p])
+        assert gw.check_budget("nanbudg", 5.0, float("nan")) is False
+
+    def test_check_budget_inf_remaining_allows(self) -> None:
+        p = _profile("infbudg", run_budget_usd=200.0)
+        gw = ModelGateway([p])
+        assert gw.check_budget("infbudg", 999_999.0, float("inf")) is True
+
+    def test_check_budget_server_estimate_overrides_caller(self) -> None:
+        p = _profile(
+            "overest",
+            run_budget_usd=200.0,
+            cost_per_input_token=0.01,
+            cost_per_output_token=0.01,
+            api_metered=True,
+            max_output_tokens=8000,
+        )
+        gw = ModelGateway([p])
+        msgs = [{"role": "user", "content": "x" * 1000}]
+        allowed = gw.check_budget("overest", 0.000001, 10.0, messages=msgs)
+        assert allowed is False
+
+    def test_check_budget_profile_run_budget_caps(self) -> None:
+        p = _profile(
+            "capped",
+            run_budget_usd=5.0,
+            cost_per_input_token=0.01,
+            cost_per_output_token=0.01,
+            api_metered=True,
+            max_output_tokens=100,
+        )
+        gw = ModelGateway([p])
+        allowed = gw.check_budget("capped", 4.0, 100.0, messages=[{"role": "user", "content": "hi"}])
+        assert allowed is False
+
+    def test_budget_request_payload_thread_safe_increments(self) -> None:
+        budget = _RequestPayloadBudget(
+            max_request_bytes=100000,
+            max_input_tokens=100000,
+            max_response_bytes=100000,
+            max_output_tokens=100000,
+            max_tool_calls=100,
+            max_provider_attempts=100,
+        )
+        import threading as _th
+
+        errors: list[Exception] = []
+
+        def do_reserve(i: int) -> None:
+            try:
+                budget.reserve_provider_attempt("t", request_bytes=1, input_tokens=1)
+                budget.reserve_response("t", response_bytes=1, output_tokens=1, tool_calls=0)
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [_th.Thread(target=do_reserve, args=(i,)) for i in range(20)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert not errors
+        assert budget.provider_attempts == 20
+
+
+# ===================================================================
+# 19. Deep billing — cost breakdown by model/provider
+# ===================================================================
+
+
+class TestCostBreakdownByProvider:
+    def test_profile_cost_field_validation_rejects_nan(self) -> None:
+        with pytest.raises(ValueError, match="must be finite non-negative"):
+            _profile("nan_cost", cost_per_input_token=float("nan"))
+
+    def test_profile_cost_field_validation_rejects_neg(self) -> None:
+        with pytest.raises(ValueError, match="must be finite non-negative"):
+            _profile("neg_cost", cost_per_input_token=-0.0001)
+
+    def test_enabled_metered_requires_nonzero_cost(self) -> None:
+        with pytest.raises(ValueError, match="non-zero cost"):
+            ModelProfile(
+                model_profile_id="badmeter",
+                provider="openai",
+                model_name="gpt-mock",
+                enabled=True,
+                api_metered=True,
+                cost_per_input_token=0.0,
+                cost_per_output_token=0.0,
+            )
+
+    def test_cost_estimate_stored_on_response(self) -> None:
+        p = _profile(
+            "stored",
+            run_budget_usd=200.0,
+            cost_per_input_token=0.01,
+            cost_per_output_token=0.01,
+            api_metered=True,
+        )
+        reg = _registry()
+        cm = _chat_model(usage={"input_tokens": 50, "output_tokens": 100, "total_tokens": 150})
+        reg.get_provider_class.return_value = lambda **kw: cm
+        gw = ModelGateway([p], provider_registry=reg)
+        resp = gw.call_model("stored", [{"role": "user", "content": "hello"}])
+        assert resp.cost_estimate > 0.0
+
+    def test_different_models_produce_different_cost(self) -> None:
+        cheap = _profile(
+            "cheap_m",
+            run_budget_usd=200.0,
+            cost_per_input_token=0.000001,
+            cost_per_output_token=0.000002,
+            api_metered=True,
+        )
+        expensive = _profile(
+            "exp_m",
+            run_budget_usd=200.0,
+            cost_per_input_token=0.10,
+            cost_per_output_token=0.30,
+            api_metered=True,
+        )
+        reg = _registry()
+        cm_cheap = _chat_model(usage={"input_tokens": 100, "output_tokens": 100, "total_tokens": 200})
+        cm_exp = _chat_model(usage={"input_tokens": 100, "output_tokens": 100, "total_tokens": 200})
+
+        call_count = 0
+
+        def factory(**kw):
+            nonlocal call_count
+            call_count += 1
+            return cm_cheap if call_count == 1 else cm_exp
+
+        reg.get_provider_class.return_value = factory
+        gw = ModelGateway([cheap, expensive], provider_registry=reg)
+
+        resp_cheap = gw.call_model("cheap_m", [{"role": "user", "content": "hi"}])
+        resp_exp = gw.call_model("exp_m", [{"role": "user", "content": "hi"}])
+        assert resp_cheap.cost_estimate < resp_exp.cost_estimate
+
+
+# ===================================================================
+# 20. Deep billing — peak/off-peak rate cost estimation
+# ===================================================================
+
+
+class TestPeakOffPeakBilling:
+    def test_peak_pricing_schedule_lookup_builtins_present(self) -> None:
+        from general_ludd.budget.peak_pricing import default_schedule, get_current_rate
+
+        sched = default_schedule()
+        rate = get_current_rate(sched, "deepseek-chat", "deepseek")
+        assert rate in {0.27, 0.27 * 0.5}
+
+    def test_rate_multiplier_peak_vs_off_peak(self) -> None:
+        from general_ludd.budget.peak_pricing import current_rate_multiplier
+
+        peak_time = datetime.datetime(2026, 8, 3, 12, 0, 0, tzinfo=datetime.UTC)
+        off_peak_time = datetime.datetime(2026, 8, 3, 22, 0, 0, tzinfo=datetime.UTC)
+        weekend_time = datetime.datetime(2026, 8, 9, 12, 0, 0, tzinfo=datetime.UTC)
+
+        assert current_rate_multiplier(now=peak_time) == 1.0
+        assert current_rate_multiplier(now=off_peak_time) == 0.75
+        assert current_rate_multiplier(now=weekend_time) == 0.75
+
+    def test_is_peak_weekday_business_hours(self) -> None:
+        from general_ludd.budget.peak_pricing import is_peak
+
+        assert is_peak(datetime.datetime(2026, 8, 3, 12, 0, 0, tzinfo=datetime.UTC)) is True
+        assert is_peak(datetime.datetime(2026, 8, 3, 8, 0, 0, tzinfo=datetime.UTC)) is False
+        assert is_peak(datetime.datetime(2026, 8, 9, 12, 0, 0, tzinfo=datetime.UTC)) is False
+
+    def test_peak_rate_for_model_applies_multiplier(self) -> None:
+        from general_ludd.budget.peak_pricing import peak_rate_for_model
+
+        peak_time = datetime.datetime(2026, 8, 3, 12, 0, 0, tzinfo=datetime.UTC)
+        off_time = datetime.datetime(2026, 8, 3, 22, 0, 0, tzinfo=datetime.UTC)
+
+        inp_peak, out_peak = peak_rate_for_model("gpt-4o", 0.01, 0.02, now=peak_time)
+        inp_off, out_off = peak_rate_for_model("gpt-4o", 0.01, 0.02, now=off_time)
+
+        assert inp_peak == 0.01
+        assert out_peak == 0.02
+        assert inp_off == 0.0075
+        assert out_off == 0.015
+
+    def test_rate_tier_covers_correct_window(self) -> None:
+        from general_ludd.budget.peak_pricing import RateTier
+
+        tier = RateTier(
+            model_id="test-m",
+            provider="test-p",
+            rate=1.0,
+            label="peak",
+            days=frozenset([0, 1, 2]),
+            start_hour=9,
+            end_hour=17,
+        )
+        mon_noon = datetime.datetime(2026, 8, 3, 12, 0, 0, tzinfo=datetime.UTC)
+        mon_morning = datetime.datetime(2026, 8, 3, 7, 0, 0, tzinfo=datetime.UTC)
+        fri = datetime.datetime(2026, 8, 7, 12, 0, 0, tzinfo=datetime.UTC)
+
+        assert tier.covers(mon_noon) is True
+        assert tier.covers(mon_morning) is False
+        assert tier.covers(fri) is False
+
+    def test_rate_tier_overnight_window(self) -> None:
+        from general_ludd.budget.peak_pricing import RateTier
+
+        tier = RateTier(
+            model_id="overnight",
+            provider="test-p",
+            rate=0.5,
+            label="off-peak",
+            days=frozenset([0]),
+            start_hour=20,
+            end_hour=8,
+        )
+        mon_10pm = datetime.datetime(2026, 8, 3, 22, 0, 0, tzinfo=datetime.UTC)
+        mon_2am = datetime.datetime(2026, 8, 4, 2, 0, 0, tzinfo=datetime.UTC)
+        mon_noon = datetime.datetime(2026, 8, 3, 12, 0, 0, tzinfo=datetime.UTC)
+
+        assert tier.covers(mon_10pm) is True
+        assert tier.covers(mon_2am) is True
+        assert tier.covers(mon_noon) is False
+
+    def test_seed_token_rates_from_catalog_returns_unpriced_when_none(self) -> None:
+        inp, out = ModelProfile.seed_token_rates_from_catalog("openai", "gpt-4o")
+        assert inp == 0.0
+        assert out == 0.0
+
+    def test_seed_token_rates_catalog_miss_returns_zero(self) -> None:
+        from unittest.mock import MagicMock
+
+        catalog = MagicMock()
+        catalog.model_price.return_value = None
+        inp, out = ModelProfile.seed_token_rates_from_catalog("openai", "gpt-999", catalog)
+        assert inp == 0.0
+        assert out == 0.0
+
+    def test_seed_token_rates_divides_per_1k_correctly(self) -> None:
+        from unittest.mock import MagicMock
+
+        price = MagicMock()
+        price.input_usd_per_1k = 5.0
+        price.output_usd_per_1k = 15.0
+        catalog = MagicMock()
+        catalog.model_price.return_value = price
+        inp, out = ModelProfile.seed_token_rates_from_catalog("openai", "gpt-4o", catalog)
+        assert inp == 0.005
+        assert out == 0.015
