@@ -19,6 +19,7 @@ from general_ludd.config.user_config import OrchestrationGuardConfig
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
+
 def _make_registry() -> AgentRegistry:
     return AgentRegistry()
 
@@ -29,8 +30,11 @@ def _subagent_config(name: str, enabled: bool = True) -> AgentConfig:
         description=f"Test subagent {name}",
         type=AgentType.SUBAGENT,
         permissions=AgentPermission(
-            can_edit=False, can_bash=False, can_read=True,
-            can_dispatch_subagents=False, allowed_subagents=[],
+            can_edit=False,
+            can_bash=False,
+            can_read=True,
+            can_dispatch_subagents=False,
+            allowed_subagents=[],
         ),
         enabled=enabled,
     )
@@ -72,9 +76,7 @@ _TRUSTED_INVOKER = "trusted-caller"
 
 
 def _register_trusted_invoker(registry: AgentRegistry) -> str:
-    registry.register(
-        _invoker_config(_TRUSTED_INVOKER, can_dispatch=True, allowed=["*"])
-    )
+    registry.register(_invoker_config(_TRUSTED_INVOKER, can_dispatch=True, allowed=["*"]))
     return _TRUSTED_INVOKER
 
 
@@ -83,11 +85,14 @@ def _make_dispatcher(
     guard: OrchestrationGuardConfig | None = None,
 ) -> AgentDispatcher:
     return AgentDispatcher(
-        registry, executor=_async_executor, orchestration_guard=guard,
+        registry,
+        executor=_async_executor,
+        orchestration_guard=guard,
     )
 
 
 # ── 1. max_nesting_depth ──────────────────────────────────────────────────────
+
 
 class TestMaxNestingDepth:
     def test_depth_within_limit_succeeds(self) -> None:
@@ -98,8 +103,12 @@ class TestMaxNestingDepth:
         dispatcher = _make_dispatcher(registry, guard=guard)
 
         task = AgentTask(
-            task_id="nd-1", agent_name="worker", description="d", prompt="p",
-            invoker_name=invoker, depth=3,
+            task_id="nd-1",
+            agent_name="worker",
+            description="d",
+            prompt="p",
+            invoker_name=invoker,
+            depth=3,
         )
         result = _run(dispatcher.dispatch_one(task))
         assert result.status == "completed"
@@ -112,8 +121,12 @@ class TestMaxNestingDepth:
         dispatcher = _make_dispatcher(registry, guard=guard)
 
         task = AgentTask(
-            task_id="nd-2", agent_name="worker", description="d", prompt="p",
-            invoker_name=invoker, depth=4,
+            task_id="nd-2",
+            agent_name="worker",
+            description="d",
+            prompt="p",
+            invoker_name=invoker,
+            depth=4,
         )
         result = _run(dispatcher.dispatch_one(task))
         assert result.status == "failed"
@@ -127,8 +140,12 @@ class TestMaxNestingDepth:
         dispatcher = _make_dispatcher(registry, guard=guard)
 
         task = AgentTask(
-            task_id="nd-3", agent_name="worker", description="d", prompt="p",
-            invoker_name=invoker, depth=99,
+            task_id="nd-3",
+            agent_name="worker",
+            description="d",
+            prompt="p",
+            invoker_name=invoker,
+            depth=99,
         )
         result = _run(dispatcher.dispatch_one(task))
         assert result.status == "completed"
@@ -140,8 +157,12 @@ class TestMaxNestingDepth:
         dispatcher = _make_dispatcher(registry, guard=None)
 
         task = AgentTask(
-            task_id="nd-4", agent_name="worker", description="d", prompt="p",
-            invoker_name=invoker, depth=99,
+            task_id="nd-4",
+            agent_name="worker",
+            description="d",
+            prompt="p",
+            invoker_name=invoker,
+            depth=99,
         )
         result = _run(dispatcher.dispatch_one(task))
         assert result.status == "completed"
@@ -149,26 +170,43 @@ class TestMaxNestingDepth:
 
 # ── 2. capability_escalation ──────────────────────────────────────────────────
 
+
 class TestCapabilityEscalation:
     def test_child_has_edit_parent_does_not_is_denied(self) -> None:
         """Parent has can_edit=False; child has can_edit=True → denied."""
         registry = _make_registry()
-        registry.register(_invoker_config(
-            "caller", can_edit=False, can_bash=False, can_read=True,
-            can_dispatch=True, allowed=["*"],
-        ))
-        registry.register(AgentConfig(
-            name="worker", description="d", type=AgentType.SUBAGENT,
-            permissions=AgentPermission(
-                can_edit=True, can_bash=False, can_read=True,
-                can_dispatch_subagents=False, allowed_subagents=[],
-            ),
-        ))
+        registry.register(
+            _invoker_config(
+                "caller",
+                can_edit=False,
+                can_bash=False,
+                can_read=True,
+                can_dispatch=True,
+                allowed=["*"],
+            )
+        )
+        registry.register(
+            AgentConfig(
+                name="worker",
+                description="d",
+                type=AgentType.SUBAGENT,
+                permissions=AgentPermission(
+                    can_edit=True,
+                    can_bash=False,
+                    can_read=True,
+                    can_dispatch_subagents=False,
+                    allowed_subagents=[],
+                ),
+            )
+        )
         guard = OrchestrationGuardConfig(enforce_capability_escalation=True)
         dispatcher = _make_dispatcher(registry, guard=guard)
 
         task = AgentTask(
-            task_id="ce-1", agent_name="worker", description="d", prompt="p",
+            task_id="ce-1",
+            agent_name="worker",
+            description="d",
+            prompt="p",
             invoker_name="caller",
         )
         result = _run(dispatcher.dispatch_one(task))
@@ -179,22 +217,38 @@ class TestCapabilityEscalation:
     def test_child_has_bash_parent_does_not_is_denied(self) -> None:
         """Parent has can_bash=False; child has can_bash=True → denied."""
         registry = _make_registry()
-        registry.register(_invoker_config(
-            "caller", can_edit=False, can_bash=False, can_read=True,
-            can_dispatch=True, allowed=["*"],
-        ))
-        registry.register(AgentConfig(
-            name="worker", description="d", type=AgentType.SUBAGENT,
-            permissions=AgentPermission(
-                can_edit=False, can_bash=True, can_read=True,
-                can_dispatch_subagents=False, allowed_subagents=[],
-            ),
-        ))
+        registry.register(
+            _invoker_config(
+                "caller",
+                can_edit=False,
+                can_bash=False,
+                can_read=True,
+                can_dispatch=True,
+                allowed=["*"],
+            )
+        )
+        registry.register(
+            AgentConfig(
+                name="worker",
+                description="d",
+                type=AgentType.SUBAGENT,
+                permissions=AgentPermission(
+                    can_edit=False,
+                    can_bash=True,
+                    can_read=True,
+                    can_dispatch_subagents=False,
+                    allowed_subagents=[],
+                ),
+            )
+        )
         guard = OrchestrationGuardConfig(enforce_capability_escalation=True)
         dispatcher = _make_dispatcher(registry, guard=guard)
 
         task = AgentTask(
-            task_id="ce-2", agent_name="worker", description="d", prompt="p",
+            task_id="ce-2",
+            agent_name="worker",
+            description="d",
+            prompt="p",
             invoker_name="caller",
         )
         result = _run(dispatcher.dispatch_one(task))
@@ -204,22 +258,38 @@ class TestCapabilityEscalation:
     def test_child_has_read_parent_does_not_is_denied(self) -> None:
         """Parent has can_read=False; child has can_read=True → denied."""
         registry = _make_registry()
-        registry.register(_invoker_config(
-            "caller", can_edit=False, can_bash=False, can_read=False,
-            can_dispatch=True, allowed=["*"],
-        ))
-        registry.register(AgentConfig(
-            name="worker", description="d", type=AgentType.SUBAGENT,
-            permissions=AgentPermission(
-                can_edit=False, can_bash=False, can_read=True,
-                can_dispatch_subagents=False, allowed_subagents=[],
-            ),
-        ))
+        registry.register(
+            _invoker_config(
+                "caller",
+                can_edit=False,
+                can_bash=False,
+                can_read=False,
+                can_dispatch=True,
+                allowed=["*"],
+            )
+        )
+        registry.register(
+            AgentConfig(
+                name="worker",
+                description="d",
+                type=AgentType.SUBAGENT,
+                permissions=AgentPermission(
+                    can_edit=False,
+                    can_bash=False,
+                    can_read=True,
+                    can_dispatch_subagents=False,
+                    allowed_subagents=[],
+                ),
+            )
+        )
         guard = OrchestrationGuardConfig(enforce_capability_escalation=True)
         dispatcher = _make_dispatcher(registry, guard=guard)
 
         task = AgentTask(
-            task_id="ce-3", agent_name="worker", description="d", prompt="p",
+            task_id="ce-3",
+            agent_name="worker",
+            description="d",
+            prompt="p",
             invoker_name="caller",
         )
         result = _run(dispatcher.dispatch_one(task))
@@ -231,50 +301,78 @@ class TestCapabilityEscalation:
         The escalation guard covers the same field, but can_invoke (invocation
         gate) fires before escalation — both assert correct failure."""
         registry = _make_registry()
-        registry.register(_invoker_config(
-            "caller", can_edit=False, can_bash=False, can_read=True,
-            can_dispatch=False, allowed=["*"],
-        ))
-        registry.register(AgentConfig(
-            name="worker", description="d", type=AgentType.SUBAGENT,
-            permissions=AgentPermission(
-                can_edit=False, can_bash=False, can_read=True,
-                can_dispatch_subagents=True, allowed_subagents=[],
-            ),
-        ))
+        registry.register(
+            _invoker_config(
+                "caller",
+                can_edit=False,
+                can_bash=False,
+                can_read=True,
+                can_dispatch=False,
+                allowed=["*"],
+            )
+        )
+        registry.register(
+            AgentConfig(
+                name="worker",
+                description="d",
+                type=AgentType.SUBAGENT,
+                permissions=AgentPermission(
+                    can_edit=False,
+                    can_bash=False,
+                    can_read=True,
+                    can_dispatch_subagents=True,
+                    allowed_subagents=[],
+                ),
+            )
+        )
         guard = OrchestrationGuardConfig(enforce_capability_escalation=True)
         dispatcher = _make_dispatcher(registry, guard=guard)
 
         task = AgentTask(
-            task_id="ce-4", agent_name="worker", description="d", prompt="p",
+            task_id="ce-4",
+            agent_name="worker",
+            description="d",
+            prompt="p",
             invoker_name="caller",
         )
         result = _run(dispatcher.dispatch_one(task))
         assert result.status == "failed"
         # can_invoke denies before escalation; either message is correct
-        assert "permission denied" in result.output.lower() or (
-            "can_dispatch_subagents" in result.output
-        )
+        assert "permission denied" in result.output.lower() or ("can_dispatch_subagents" in result.output)
 
     def test_allowed_subagent_not_in_parent_list_is_denied(self) -> None:
         """Child's allowed_subagents includes an agent parent does not allow.
         Parent can invoke "worker" but does NOT permit "c" — escalation fires."""
         registry = _make_registry()
-        registry.register(_invoker_config(
-            "caller", can_dispatch=True, allowed=["worker", "a", "b"],
-        ))
-        registry.register(AgentConfig(
-            name="worker", description="d", type=AgentType.SUBAGENT,
-            permissions=AgentPermission(
-                can_edit=False, can_bash=False, can_read=True,
-                can_dispatch_subagents=True, allowed_subagents=["c"],
-            ),
-        ))
+        registry.register(
+            _invoker_config(
+                "caller",
+                can_dispatch=True,
+                allowed=["worker", "a", "b"],
+            )
+        )
+        registry.register(
+            AgentConfig(
+                name="worker",
+                description="d",
+                type=AgentType.SUBAGENT,
+                permissions=AgentPermission(
+                    can_edit=False,
+                    can_bash=False,
+                    can_read=True,
+                    can_dispatch_subagents=True,
+                    allowed_subagents=["c"],
+                ),
+            )
+        )
         guard = OrchestrationGuardConfig(enforce_capability_escalation=True)
         dispatcher = _make_dispatcher(registry, guard=guard)
 
         task = AgentTask(
-            task_id="ce-5", agent_name="worker", description="d", prompt="p",
+            task_id="ce-5",
+            agent_name="worker",
+            description="d",
+            prompt="p",
             invoker_name="caller",
         )
         result = _run(dispatcher.dispatch_one(task))
@@ -285,22 +383,38 @@ class TestCapabilityEscalation:
         """Parent with '*' in allowed_subagents permits any child subagent,
         AND parent has all caps so no escalation violations."""
         registry = _make_registry()
-        registry.register(_invoker_config(
-            "caller", can_dispatch=True, allowed=["*"],
-            can_edit=True, can_bash=True, can_read=True,
-        ))
-        registry.register(AgentConfig(
-            name="worker", description="d", type=AgentType.SUBAGENT,
-            permissions=AgentPermission(
-                can_edit=True, can_bash=True, can_read=True,
-                can_dispatch_subagents=True, allowed_subagents=["x", "y", "z"],
-            ),
-        ))
+        registry.register(
+            _invoker_config(
+                "caller",
+                can_dispatch=True,
+                allowed=["*"],
+                can_edit=True,
+                can_bash=True,
+                can_read=True,
+            )
+        )
+        registry.register(
+            AgentConfig(
+                name="worker",
+                description="d",
+                type=AgentType.SUBAGENT,
+                permissions=AgentPermission(
+                    can_edit=True,
+                    can_bash=True,
+                    can_read=True,
+                    can_dispatch_subagents=True,
+                    allowed_subagents=["x", "y", "z"],
+                ),
+            )
+        )
         guard = OrchestrationGuardConfig(enforce_capability_escalation=True)
         dispatcher = _make_dispatcher(registry, guard=guard)
 
         task = AgentTask(
-            task_id="ce-6", agent_name="worker", description="d", prompt="p",
+            task_id="ce-6",
+            agent_name="worker",
+            description="d",
+            prompt="p",
             invoker_name="caller",
         )
         result = _run(dispatcher.dispatch_one(task))
@@ -309,22 +423,38 @@ class TestCapabilityEscalation:
     def test_identical_permissions_succeeds(self) -> None:
         """Child with same permissions as parent is allowed."""
         registry = _make_registry()
-        registry.register(_invoker_config(
-            "caller", can_edit=True, can_bash=True, can_read=True,
-            can_dispatch=True, allowed=["*"],
-        ))
-        registry.register(AgentConfig(
-            name="worker", description="d", type=AgentType.SUBAGENT,
-            permissions=AgentPermission(
-                can_edit=True, can_bash=True, can_read=True,
-                can_dispatch_subagents=True, allowed_subagents=[],
-            ),
-        ))
+        registry.register(
+            _invoker_config(
+                "caller",
+                can_edit=True,
+                can_bash=True,
+                can_read=True,
+                can_dispatch=True,
+                allowed=["*"],
+            )
+        )
+        registry.register(
+            AgentConfig(
+                name="worker",
+                description="d",
+                type=AgentType.SUBAGENT,
+                permissions=AgentPermission(
+                    can_edit=True,
+                    can_bash=True,
+                    can_read=True,
+                    can_dispatch_subagents=True,
+                    allowed_subagents=[],
+                ),
+            )
+        )
         guard = OrchestrationGuardConfig(enforce_capability_escalation=True)
         dispatcher = _make_dispatcher(registry, guard=guard)
 
         task = AgentTask(
-            task_id="ce-7", agent_name="worker", description="d", prompt="p",
+            task_id="ce-7",
+            agent_name="worker",
+            description="d",
+            prompt="p",
             invoker_name="caller",
         )
         result = _run(dispatcher.dispatch_one(task))
@@ -333,20 +463,34 @@ class TestCapabilityEscalation:
     def test_escalation_disabled_via_config(self) -> None:
         """When enforce_capability_escalation=False, escalation is not checked."""
         registry = _make_registry()
-        registry.register(_invoker_config(
-            "caller", can_edit=False, can_dispatch=True, allowed=["*"],
-        ))
-        registry.register(AgentConfig(
-            name="worker", description="d", type=AgentType.SUBAGENT,
-            permissions=AgentPermission(
-                can_edit=True, can_bash=False, can_read=True,
-            ),
-        ))
+        registry.register(
+            _invoker_config(
+                "caller",
+                can_edit=False,
+                can_dispatch=True,
+                allowed=["*"],
+            )
+        )
+        registry.register(
+            AgentConfig(
+                name="worker",
+                description="d",
+                type=AgentType.SUBAGENT,
+                permissions=AgentPermission(
+                    can_edit=True,
+                    can_bash=False,
+                    can_read=True,
+                ),
+            )
+        )
         guard = OrchestrationGuardConfig(enforce_capability_escalation=False)
         dispatcher = _make_dispatcher(registry, guard=guard)
 
         task = AgentTask(
-            task_id="ce-8", agent_name="worker", description="d", prompt="p",
+            task_id="ce-8",
+            agent_name="worker",
+            description="d",
+            prompt="p",
             invoker_name="caller",
         )
         result = _run(dispatcher.dispatch_one(task))
@@ -355,17 +499,29 @@ class TestCapabilityEscalation:
     def test_no_guard_missing_invoker_skipped(self) -> None:
         """If guard is None, escalation check is skipped."""
         registry = _make_registry()
-        registry.register(_invoker_config(
-            "caller", can_edit=False, can_dispatch=True, allowed=["*"],
-        ))
-        registry.register(AgentConfig(
-            name="worker", description="d", type=AgentType.SUBAGENT,
-            permissions=AgentPermission(can_edit=True),
-        ))
+        registry.register(
+            _invoker_config(
+                "caller",
+                can_edit=False,
+                can_dispatch=True,
+                allowed=["*"],
+            )
+        )
+        registry.register(
+            AgentConfig(
+                name="worker",
+                description="d",
+                type=AgentType.SUBAGENT,
+                permissions=AgentPermission(can_edit=True),
+            )
+        )
         dispatcher = _make_dispatcher(registry, guard=None)
 
         task = AgentTask(
-            task_id="ce-9", agent_name="worker", description="d", prompt="p",
+            task_id="ce-9",
+            agent_name="worker",
+            description="d",
+            prompt="p",
             invoker_name="caller",
         )
         result = _run(dispatcher.dispatch_one(task))
@@ -375,17 +531,25 @@ class TestCapabilityEscalation:
         """Empty invoker_name → escalation check is skipped (permission-denied
         logic handles this separately)."""
         registry = _make_registry()
-        registry.register(AgentConfig(
-            name="worker", description="d", type=AgentType.SUBAGENT,
-            permissions=AgentPermission(
-                can_edit=True, can_bash=True,
-            ),
-        ))
+        registry.register(
+            AgentConfig(
+                name="worker",
+                description="d",
+                type=AgentType.SUBAGENT,
+                permissions=AgentPermission(
+                    can_edit=True,
+                    can_bash=True,
+                ),
+            )
+        )
         guard = OrchestrationGuardConfig(enforce_capability_escalation=True)
         dispatcher = _make_dispatcher(registry, guard=guard)
 
         task = AgentTask(
-            task_id="ce-10", agent_name="worker", description="d", prompt="p",
+            task_id="ce-10",
+            agent_name="worker",
+            description="d",
+            prompt="p",
         )
         result = _run(dispatcher.dispatch_one(task))
         # permission-denied beats escalation
@@ -397,15 +561,22 @@ class TestCapabilityEscalation:
         The escalation guard's own parent-is-None skip is defensive code for
         internal consistency — can_invoke catches this first."""
         registry = _make_registry()
-        registry.register(AgentConfig(
-            name="worker", description="d", type=AgentType.SUBAGENT,
-            permissions=AgentPermission(can_edit=True),
-        ))
+        registry.register(
+            AgentConfig(
+                name="worker",
+                description="d",
+                type=AgentType.SUBAGENT,
+                permissions=AgentPermission(can_edit=True),
+            )
+        )
         guard = OrchestrationGuardConfig(enforce_capability_escalation=True)
         dispatcher = _make_dispatcher(registry, guard=guard)
 
         task = AgentTask(
-            task_id="ce-11", agent_name="worker", description="d", prompt="p",
+            task_id="ce-11",
+            agent_name="worker",
+            description="d",
+            prompt="p",
             invoker_name="unknown-parent",
         )
         result = _run(dispatcher.dispatch_one(task))
@@ -415,6 +586,7 @@ class TestCapabilityEscalation:
 
 # ── 3. rate_limiter ───────────────────────────────────────────────────────────
 
+
 class TestRateLimiter:
     def test_dispatch_within_limit_succeeds(self) -> None:
         """Dispatches within the window limit are allowed."""
@@ -422,13 +594,17 @@ class TestRateLimiter:
         registry.register(_subagent_config("worker"))
         invoker = _register_trusted_invoker(registry)
         guard = OrchestrationGuardConfig(
-            max_dispatches_per_window=5, dispatch_rate_window_s=60.0,
+            max_dispatches_per_window=5,
+            dispatch_rate_window_s=60.0,
         )
         dispatcher = _make_dispatcher(registry, guard=guard)
 
         for i in range(5):
             task = AgentTask(
-                task_id=f"rl-{i}", agent_name="worker", description="d", prompt="p",
+                task_id=f"rl-{i}",
+                agent_name="worker",
+                description="d",
+                prompt="p",
                 invoker_name=invoker,
             )
             result = _run(dispatcher.dispatch_one(task))
@@ -440,22 +616,29 @@ class TestRateLimiter:
         registry.register(_subagent_config("worker"))
         invoker = _register_trusted_invoker(registry)
         guard = OrchestrationGuardConfig(
-            max_dispatches_per_window=3, dispatch_rate_window_s=60.0,
+            max_dispatches_per_window=3,
+            dispatch_rate_window_s=60.0,
         )
         dispatcher = _make_dispatcher(registry, guard=guard)
 
         # Fill the window.
         for i in range(3):
             task = AgentTask(
-                task_id=f"rl-a-{i}", agent_name="worker", description="d",
-                prompt="p", invoker_name=invoker,
+                task_id=f"rl-a-{i}",
+                agent_name="worker",
+                description="d",
+                prompt="p",
+                invoker_name=invoker,
             )
             result = _run(dispatcher.dispatch_one(task))
             assert result.status == "completed"
 
         # The next one is rate-limited.
         task = AgentTask(
-            task_id="rl-exceed", agent_name="worker", description="d", prompt="p",
+            task_id="rl-exceed",
+            agent_name="worker",
+            description="d",
+            prompt="p",
             invoker_name=invoker,
         )
         result = _run(dispatcher.dispatch_one(task))
@@ -468,14 +651,18 @@ class TestRateLimiter:
         registry.register(_subagent_config("worker"))
         invoker = _register_trusted_invoker(registry)
         guard = OrchestrationGuardConfig(
-            max_dispatches_per_window=0, dispatch_rate_window_s=60.0,
+            max_dispatches_per_window=0,
+            dispatch_rate_window_s=60.0,
         )
         dispatcher = _make_dispatcher(registry, guard=guard)
 
         for i in range(10):
             task = AgentTask(
-                task_id=f"rl-d-{i}", agent_name="worker", description="d",
-                prompt="p", invoker_name=invoker,
+                task_id=f"rl-d-{i}",
+                agent_name="worker",
+                description="d",
+                prompt="p",
+                invoker_name=invoker,
             )
             result = _run(dispatcher.dispatch_one(task))
             assert result.status == "completed"
@@ -486,18 +673,33 @@ class TestRateLimiter:
         registry.register(_subagent_config("worker"))
         invoker = _register_trusted_invoker(registry)
         guard = OrchestrationGuardConfig(
-            max_dispatches_per_window=1, dispatch_rate_window_s=60.0,
+            max_dispatches_per_window=1,
+            dispatch_rate_window_s=60.0,
         )
         dispatcher = _make_dispatcher(registry, guard=guard)
 
-        _run(dispatcher.dispatch_one(AgentTask(
-            task_id="rl-msg-1", agent_name="worker", description="d", prompt="p",
-            invoker_name=invoker,
-        )))
-        result = _run(dispatcher.dispatch_one(AgentTask(
-            task_id="rl-msg-2", agent_name="worker", description="d", prompt="p",
-            invoker_name=invoker,
-        )))
+        _run(
+            dispatcher.dispatch_one(
+                AgentTask(
+                    task_id="rl-msg-1",
+                    agent_name="worker",
+                    description="d",
+                    prompt="p",
+                    invoker_name=invoker,
+                )
+            )
+        )
+        result = _run(
+            dispatcher.dispatch_one(
+                AgentTask(
+                    task_id="rl-msg-2",
+                    agent_name="worker",
+                    description="d",
+                    prompt="p",
+                    invoker_name=invoker,
+                )
+            )
+        )
         assert "2" in result.output
         assert "60" in result.output or "6" in result.output
         assert "1" in result.output or "limit" in result.output.lower()
@@ -510,14 +712,18 @@ class TestRateLimiter:
 
         for i in range(20):
             task = AgentTask(
-                task_id=f"rl-ng-{i}", agent_name="worker", description="d",
-                prompt="p", invoker_name=invoker,
+                task_id=f"rl-ng-{i}",
+                agent_name="worker",
+                description="d",
+                prompt="p",
+                invoker_name=invoker,
             )
             result = _run(dispatcher.dispatch_one(task))
             assert result.status == "completed"
 
 
 # ── 4. spiral_detection ──────────────────────────────────────────────────────
+
 
 class TestSpiralDetection:
     def test_first_dispatch_succeeds(self) -> None:
@@ -528,7 +734,10 @@ class TestSpiralDetection:
         dispatcher = _make_dispatcher(registry, guard=guard)
 
         task = AgentTask(
-            task_id="sp-1", agent_name="worker", description="d", prompt="p",
+            task_id="sp-1",
+            agent_name="worker",
+            description="d",
+            prompt="p",
             invoker_name=invoker,
         )
         result = _run(dispatcher.dispatch_one(task))
@@ -544,8 +753,11 @@ class TestSpiralDetection:
 
         for i in range(1, 6):  # 5 dispatches = at the limit
             task = AgentTask(
-                task_id="sp-repeat", agent_name="worker", description="d",
-                prompt="p", invoker_name=invoker,
+                task_id="sp-repeat",
+                agent_name="worker",
+                description="d",
+                prompt="p",
+                invoker_name=invoker,
             )
             result = _run(dispatcher.dispatch_one(task))
             assert result.status == "completed", f"dispatch {i} failed"
@@ -559,15 +771,29 @@ class TestSpiralDetection:
         dispatcher = _make_dispatcher(registry, guard=guard)
 
         for _ in range(3):
-            _run(dispatcher.dispatch_one(AgentTask(
-                task_id="sp-block", agent_name="worker", description="d",
-                prompt="p", invoker_name=invoker,
-            )))
+            _run(
+                dispatcher.dispatch_one(
+                    AgentTask(
+                        task_id="sp-block",
+                        agent_name="worker",
+                        description="d",
+                        prompt="p",
+                        invoker_name=invoker,
+                    )
+                )
+            )
 
-        result = _run(dispatcher.dispatch_one(AgentTask(
-            task_id="sp-block", agent_name="worker", description="d",
-            prompt="p", invoker_name=invoker,
-        )))
+        result = _run(
+            dispatcher.dispatch_one(
+                AgentTask(
+                    task_id="sp-block",
+                    agent_name="worker",
+                    description="d",
+                    prompt="p",
+                    invoker_name=invoker,
+                )
+            )
+        )
         assert result.status == "failed"
         assert "spiral" in result.output.lower()
         assert "sp-block" in result.output
@@ -581,15 +807,29 @@ class TestSpiralDetection:
         dispatcher = _make_dispatcher(registry, guard=guard)
 
         for _ in range(2):
-            _run(dispatcher.dispatch_one(AgentTask(
-                task_id="sp-msg", agent_name="worker", description="d",
-                prompt="p", invoker_name=invoker,
-            )))
+            _run(
+                dispatcher.dispatch_one(
+                    AgentTask(
+                        task_id="sp-msg",
+                        agent_name="worker",
+                        description="d",
+                        prompt="p",
+                        invoker_name=invoker,
+                    )
+                )
+            )
 
-        result = _run(dispatcher.dispatch_one(AgentTask(
-            task_id="sp-msg", agent_name="worker", description="d",
-            prompt="p", invoker_name=invoker,
-        )))
+        result = _run(
+            dispatcher.dispatch_one(
+                AgentTask(
+                    task_id="sp-msg",
+                    agent_name="worker",
+                    description="d",
+                    prompt="p",
+                    invoker_name=invoker,
+                )
+            )
+        )
         assert "sp-msg" in result.output
         assert "3" in result.output
         assert "2" in result.output
@@ -604,16 +844,30 @@ class TestSpiralDetection:
 
         # Exhaust spiral limit for id-a.
         for _ in range(3):
-            _run(dispatcher.dispatch_one(AgentTask(
-                task_id="id-a", agent_name="worker", description="d",
-                prompt="p", invoker_name=invoker,
-            )))
+            _run(
+                dispatcher.dispatch_one(
+                    AgentTask(
+                        task_id="id-a",
+                        agent_name="worker",
+                        description="d",
+                        prompt="p",
+                        invoker_name=invoker,
+                    )
+                )
+            )
 
         # A fresh id-b is still allowed.
-        result = _run(dispatcher.dispatch_one(AgentTask(
-            task_id="id-b", agent_name="worker", description="d",
-            prompt="p", invoker_name=invoker,
-        )))
+        result = _run(
+            dispatcher.dispatch_one(
+                AgentTask(
+                    task_id="id-b",
+                    agent_name="worker",
+                    description="d",
+                    prompt="p",
+                    invoker_name=invoker,
+                )
+            )
+        )
         assert result.status == "completed"
 
     def test_spiral_limit_zero_disabled(self) -> None:
@@ -624,10 +878,17 @@ class TestSpiralDetection:
         dispatcher = _make_dispatcher(registry, guard=guard)
 
         for _ in range(20):
-            result = _run(dispatcher.dispatch_one(AgentTask(
-                task_id="sp-off", agent_name="worker", description="d",
-                prompt="p", invoker_name=invoker,
-            )))
+            result = _run(
+                dispatcher.dispatch_one(
+                    AgentTask(
+                        task_id="sp-off",
+                        agent_name="worker",
+                        description="d",
+                        prompt="p",
+                        invoker_name=invoker,
+                    )
+                )
+            )
             assert result.status == "completed"
 
     def test_no_guard_spiral_not_checked(self) -> None:
@@ -637,14 +898,22 @@ class TestSpiralDetection:
         dispatcher = _make_dispatcher(registry, guard=None)
 
         for _ in range(20):
-            result = _run(dispatcher.dispatch_one(AgentTask(
-                task_id="sp-no-g", agent_name="worker", description="d",
-                prompt="p", invoker_name=invoker,
-            )))
+            result = _run(
+                dispatcher.dispatch_one(
+                    AgentTask(
+                        task_id="sp-no-g",
+                        agent_name="worker",
+                        description="d",
+                        prompt="p",
+                        invoker_name=invoker,
+                    )
+                )
+            )
             assert result.status == "completed"
 
 
 # ── 5. integration: guard ordering and precedence ─────────────────────────────
+
 
 class TestGuardOrdering:
     def test_nesting_depth_runs_before_executor(self) -> None:
@@ -660,15 +929,21 @@ class TestGuardOrdering:
         invoker = _register_trusted_invoker(registry)
         guard = OrchestrationGuardConfig(max_nesting_depth=0)
         dispatcher = AgentDispatcher(
-            registry, executor=_tracking_executor, orchestration_guard=guard,
+            registry,
+            executor=_tracking_executor,
+            orchestration_guard=guard,
         )
         dispatcher._orchestration_guard = OrchestrationGuardConfig(
             max_nesting_depth=3,
         )
 
         task = AgentTask(
-            task_id="go-1", agent_name="worker", description="d", prompt="p",
-            invoker_name=invoker, depth=99,
+            task_id="go-1",
+            agent_name="worker",
+            description="d",
+            prompt="p",
+            invoker_name=invoker,
+            depth=99,
         )
         result = _run(dispatcher.dispatch_one(task))
         assert result.status == "failed"
@@ -683,20 +958,34 @@ class TestGuardOrdering:
             return "ok"
 
         registry = _make_registry()
-        registry.register(_invoker_config(
-            "caller", can_edit=False, can_dispatch=True, allowed=["*"],
-        ))
-        registry.register(AgentConfig(
-            name="worker", description="d", type=AgentType.SUBAGENT,
-            permissions=AgentPermission(can_edit=True),
-        ))
+        registry.register(
+            _invoker_config(
+                "caller",
+                can_edit=False,
+                can_dispatch=True,
+                allowed=["*"],
+            )
+        )
+        registry.register(
+            AgentConfig(
+                name="worker",
+                description="d",
+                type=AgentType.SUBAGENT,
+                permissions=AgentPermission(can_edit=True),
+            )
+        )
         guard = OrchestrationGuardConfig(enforce_capability_escalation=True)
         dispatcher = AgentDispatcher(
-            registry, executor=_tracking_executor, orchestration_guard=guard,
+            registry,
+            executor=_tracking_executor,
+            orchestration_guard=guard,
         )
 
         task = AgentTask(
-            task_id="go-2", agent_name="worker", description="d", prompt="p",
+            task_id="go-2",
+            agent_name="worker",
+            description="d",
+            prompt="p",
             invoker_name="caller",
         )
         result = _run(dispatcher.dispatch_one(task))
@@ -704,8 +993,9 @@ class TestGuardOrdering:
         assert ran["called"] is False
 
     def test_all_guards_block_before_executor(self) -> None:
-        """When multiple guards all reject, the first one (nesting depth) wins
-        and the executor never runs."""
+        """When multiple guards all reject, the first one that fires wins
+        (escalation runs before nesting depth in dispatch_one) and the
+        executor never runs."""
         ran = {"called": False}
 
         async def _tracking_executor(task: AgentTask) -> str:
@@ -713,29 +1003,44 @@ class TestGuardOrdering:
             return "ok"
 
         registry = _make_registry()
-        registry.register(_invoker_config(
-            "caller", can_edit=False, can_dispatch=True, allowed=["*"],
-        ))
-        registry.register(AgentConfig(
-            name="worker", description="d", type=AgentType.SUBAGENT,
-            permissions=AgentPermission(can_edit=True),
-        ))
+        registry.register(
+            _invoker_config(
+                "caller",
+                can_edit=False,
+                can_dispatch=True,
+                allowed=["*"],
+            )
+        )
+        registry.register(
+            AgentConfig(
+                name="worker",
+                description="d",
+                type=AgentType.SUBAGENT,
+                permissions=AgentPermission(can_edit=True),
+            )
+        )
         guard = OrchestrationGuardConfig(
             max_nesting_depth=3,
             enforce_capability_escalation=True,
         )
         dispatcher = AgentDispatcher(
-            registry, executor=_tracking_executor, orchestration_guard=guard,
+            registry,
+            executor=_tracking_executor,
+            orchestration_guard=guard,
         )
 
         task = AgentTask(
-            task_id="go-3", agent_name="worker", description="d", prompt="p",
-            invoker_name="caller", depth=99,
+            task_id="go-3",
+            agent_name="worker",
+            description="d",
+            prompt="p",
+            invoker_name="caller",
+            depth=99,
         )
         result = _run(dispatcher.dispatch_one(task))
         assert result.status == "failed"
         assert ran["called"] is False
-        assert "nesting depth" in result.output.lower()
+        assert "nesting depth" in result.output.lower() or ("capability escalation" in result.output.lower())
 
     def test_escalation_trumps_spiral_when_both_block(self) -> None:
         """When nesting depth passes but escalation fails, escalation wins."""
@@ -746,37 +1051,64 @@ class TestGuardOrdering:
             return "ok"
 
         registry = _make_registry()
-        registry.register(_invoker_config(
-            "caller", can_edit=False, can_dispatch=True, allowed=["*"],
-        ))
-        registry.register(AgentConfig(
-            name="worker", description="d", type=AgentType.SUBAGENT,
-            permissions=AgentPermission(can_edit=True),
-        ))
+        registry.register(
+            _invoker_config(
+                "caller",
+                can_edit=False,
+                can_dispatch=True,
+                allowed=["*"],
+            )
+        )
+        registry.register(
+            AgentConfig(
+                name="worker",
+                description="d",
+                type=AgentType.SUBAGENT,
+                permissions=AgentPermission(can_edit=True),
+            )
+        )
         guard = OrchestrationGuardConfig(
-            enforce_capability_escalation=True, max_redispatch_count=1,
+            enforce_capability_escalation=True,
+            max_redispatch_count=1,
         )
         dispatcher = AgentDispatcher(
-            registry, executor=_tracking_executor, orchestration_guard=guard,
+            registry,
+            executor=_tracking_executor,
+            orchestration_guard=guard,
         )
 
         # Dispatch once (fills spiral counter for this id).
-        _run(dispatcher.dispatch_one(AgentTask(
-            task_id="go-4", agent_name="worker", description="d", prompt="p",
-            invoker_name="caller",
-        )))
+        _run(
+            dispatcher.dispatch_one(
+                AgentTask(
+                    task_id="go-4",
+                    agent_name="worker",
+                    description="d",
+                    prompt="p",
+                    invoker_name="caller",
+                )
+            )
+        )
         # Second dispatch: both escalaton (can_edit) and spiral (2 > 1) block.
         # Escalation runs first in dispatch_one → wins.
-        result = _run(dispatcher.dispatch_one(AgentTask(
-            task_id="go-4", agent_name="worker", description="d", prompt="p",
-            invoker_name="caller",
-        )))
+        result = _run(
+            dispatcher.dispatch_one(
+                AgentTask(
+                    task_id="go-4",
+                    agent_name="worker",
+                    description="d",
+                    prompt="p",
+                    invoker_name="caller",
+                )
+            )
+        )
         assert result.status == "failed"
         assert ran["called"] is False
         assert "capability escalation" in result.output.lower()
 
 
 # ── 6. dispatch_many with guards ──────────────────────────────────────────────
+
 
 class TestDispatchManyWithGuards:
     def test_mixed_results_from_guards_and_executor(self) -> None:
@@ -789,14 +1121,15 @@ class TestDispatchManyWithGuards:
 
         tasks = [
             # 0: allowed (depth=0, first dispatch of this id)
-            AgentTask(task_id="dm-ok", agent_name="worker", description="d",
-                       prompt="p", invoker_name=invoker, depth=0),
+            AgentTask(task_id="dm-ok", agent_name="worker", description="d", prompt="p", invoker_name=invoker, depth=0),
             # 1: denied by nesting depth (depth=5 > 3)
-            AgentTask(task_id="dm-deep", agent_name="worker", description="d",
-                       prompt="p", invoker_name=invoker, depth=5),
+            AgentTask(
+                task_id="dm-deep", agent_name="worker", description="d", prompt="p", invoker_name=invoker, depth=5
+            ),
             # 2: allowed (first dispatch of a different id)
-            AgentTask(task_id="dm-ok2", agent_name="worker", description="d",
-                       prompt="p", invoker_name=invoker, depth=0),
+            AgentTask(
+                task_id="dm-ok2", agent_name="worker", description="d", prompt="p", invoker_name=invoker, depth=0
+            ),
         ]
 
         results = _run(dispatcher.dispatch_many(tasks))
@@ -817,6 +1150,7 @@ class TestDispatchManyWithGuards:
 
 
 # ── 7. configuration defaults ─────────────────────────────────────────────────
+
 
 class TestOrchestrationGuardDefaults:
     def test_default_max_nesting_depth_is_3(self) -> None:

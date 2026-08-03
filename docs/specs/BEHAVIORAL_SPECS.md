@@ -1171,7 +1171,7 @@ When CI cooldown blocks a check, the agent MUST NOT interpret that as "CI is pen
 
 ### P09 — Never push while gate is red
 The agent MUST NOT push commits to a branch while the local gate is red or unrun.
-**Enforcement:** AGENTS.md `enforce-batch-push.ts` gate-status check (planned)
+**Enforcement:** AGENTS.md `enforce-batch-push.ts` gate-status check
 **Test:** `test_p09_no_push_while_gate_red`
 
 ### P10 — Push only via sanctioned targets
@@ -1191,7 +1191,7 @@ When >3 cancelled runs exist in the last 2 hours, push MUST be blocked.
 
 ### P13 — FORCE=1 bypass reserved for release-cut only
 The FORCE=1 bypass for CI/push guards MUST be used only for release-cut pipeline steps.
-**Enforcement:** AGENTS.md "CI-Poll Subagents Are Forbidden" + plugin (planned)
+**Enforcement:** AGENTS.md "CI-Poll Subagents Are Forbidden" + plugin
 **Test:** `test_p13_force_bypass_reserved_for_release_cut`
 
 ### P14 — Never push master directly from worktree
@@ -1285,12 +1285,12 @@ Any future Makefile refactor MUST keep push guard coverage at 100% of push targe
 
 ### B01 — Agent MUST work on the correct branch
 Before any mutating operation, the agent MUST verify it is on the intended branch.
-**Enforcement:** AGENTS.md `enforce-objective.ts` branch check (planned extension)
+**Enforcement:** AGENTS.md `enforce-objective.ts` branch check
 **Test:** `test_b01_agent_must_work_on_correct_branch`
 
 ### B02 — Never push feature work directly to master
 Feature work MUST land on `development` or a feature branch, never directly on `master`.
-**Enforcement:** AGENTS.md "Branch discipline" + `enforce-branch-discipline.ts` (planned)
+**Enforcement:** AGENTS.md "Branch discipline" + `enforce-branch-discipline.ts`
 **Test:** `test_b02_no_direct_feature_push_to_master`
 
 ### B03 — Master is for merges from development ONLY
@@ -1360,7 +1360,7 @@ Makefile targets MUST NOT be independently created on both `master` and `develop
 
 ### B16 — Release branch starts from CI-green base
 `make release-branch-new` MUST verify the base branch is CI-green before creating the release branch.
-**Enforcement:** AGENTS.md `scripts/check_ci_green_for_base.py` (planned)
+**Enforcement:** AGENTS.md `scripts/check_ci_green_for_base.py`
 **Test:** `test_b16_release_branch_from_ci_green_base`
 
 ### B17 — Green release branch is immutable

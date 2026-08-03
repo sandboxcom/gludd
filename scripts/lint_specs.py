@@ -33,14 +33,22 @@ def _parse_specs() -> list[dict]:
     current: dict | None = None
     fields: set[str] = set()
 
+    SPEC_ID_RE = re.compile(r"^### ([A-Z][A-Z]?\d+) — (.+)$")
+    A_SPEC_RE = re.compile(r"^### A[A-Z]\d+ ")
+
     for line in text.split("\n"):
-        m = re.match(r"^### (A[A-Z]\d+) — (.+)$", line)
+        m = SPEC_ID_RE.match(line)
         if m:
             if current and current.get("id"):
                 current["_fields"] = fields.copy()
                 specs.append(current)
-            current = {"id": m.group(1), "title": m.group(2), "enforcement": "", "behavior": "", "category": ""}
-            fields = set()
+            sid = m.group(1)
+            if A_SPEC_RE.match(line):
+                current = {"id": sid, "title": m.group(2), "enforcement": "", "behavior": "", "category": ""}
+                fields = set()
+            else:
+                current = None
+                fields = set()
             continue
 
         if not current:
