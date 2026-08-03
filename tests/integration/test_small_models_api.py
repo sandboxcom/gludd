@@ -1,13 +1,27 @@
 from __future__ import annotations
 
+import os
+import tempfile
+from pathlib import Path
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from general_ludd.db.models import Base
+from general_ludd.small_models import ModelDownloader
 
 PSK = "test-psk-sm"
 AUTH = {"Authorization": f"Bearer {PSK}"}
+
+
+def _make_dummy_file(cache_dir: str, model_id: str) -> str:
+    dirname = "models--" + model_id.replace("/", "--")
+    model_dir = Path(cache_dir) / dirname
+    model_dir.mkdir(parents=True, exist_ok=True)
+    file_path = model_dir / "pytorch_model.bin"
+    file_path.write_text("dummy model data\n" * 100)
+    return str(file_path)
 
 
 async def _make_app(monkeypatch):
@@ -30,38 +44,96 @@ async def _make_app(monkeypatch):
 class TestSmallModelsDownload:
     @pytest.mark.asyncio
     async def test_download_huggingface(self, monkeypatch):
-        engine, _factory, client, _app = await _make_app(monkeypatch)
-        try:
-            resp = await client.post(
-                "/admin/small-models/download",
-                json={"model_id": "microsoft/phi-2", "source": "huggingface"},
-                headers=AUTH,
-            )
-            assert resp.status_code == 200, resp.text
-            data = resp.json()
-            assert data["downloaded"] is True
-            assert data["model_id"] == "microsoft/phi-2"
-            assert data["source"] == "huggingface"
-            assert "profile_key" in data
-        finally:
-            await client.aclose()
-            await engine.dispose()
+        engine, _factory, client, app = await _make_app(monkeypatch)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            monkeypatch.setattr(app.state, "_model_downloader", ModelDownloader(cache_dir=tmpdir))
+            dummy_path = _make_dummy_file(tmpdir, "microsoft/phi-2")
+
+            def _fake_download(*_a, **_kw):
+                return dummy_path
+
+            monkeypatch.setattr("huggingface_hub.hf_hub_download", _fake_download)
+
+            try:
+                resp = await client.post(
+                    "/admin/small-models/download",
+                    json={"model_id": "microsoft/phi-2", "source": "huggingface"},
+                    headers=AUTH,
+                )
+                assert resp.status_code == 200, resp.text
+                data = resp.json()
+                assert data["downloaded"] is True
+                assert data["model_id"] == "microsoft/phi-2"
+                assert data["source"] == "huggingface"
+                assert "profile_key" in data
+                assert "local_path" in data
+                assert data["local_path"] == dummy_path
+                assert data["size_bytes"] > 0
+            finally:
+                await client.aclose()
+                await engine.dispose()
 
     @pytest.mark.asyncio
     async def test_download_ollama(self, monkeypatch):
-        engine, _factory, client, _app = await _make_app(monkeypatch)
-        try:
-            resp = await client.post(
-                "/admin/small-models/download",
-                json={"model_id": "llama3.2:3b", "source": "ollama"},
-                headers=AUTH,
-            )
-            assert resp.status_code == 200, resp.text
-            data = resp.json()
-            assert data["source"] == "ollama"
-        finally:
-            await client.aclose()
-            await engine.dispose()
+        engine, _factory, client, app = await _make_app(monkeypatch)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            monkeypatch.setattr(app.state, "_model_downloader", ModelDownloader(cache_dir=tmpdir))
+            dummy_path = _make_dummy_file(tmpdir, "llama3.2:3b")
+
+            def _fake_snapshot(*_a, **_kw):
+                return str(Path(dummy_path).parent)
+
+            monkeypatch.setattr("huggingface_hub.snapshot_download", _fake_snapshot)
+
+            try:
+                resp = await client.post(
+                    "/admin/small-models/download",
+                    json={"model_id": "llama3.2:3b", "source": "ollama"},
+                    headers=AUTH,
+                )
+                assert resp.status_code == 200, resp.text
+                data = resp.json()
+                assert data["source"] == "ollama"
+                assert "local_path" in data
+                assert data["local_path"] == _fake_snapshot()
+                assert data["size_bytes"] > 0
+            finally:
+                await client.aclose()
+                await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_download_writes_file_to_disk(self, monkeypatch):
+        engine, _factory, client, app = await _make_app(monkeypatch)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            monkeypatch.setattr(app.state, "_model_downloader", ModelDownloader(cache_dir=tmpdir))
+            dummy_path = _make_dummy_file(tmpdir, "test-org/test-model")
+
+            def _fake_download(*_a, **_kw):
+                return dummy_path
+
+            monkeypatch.setattr("huggingface_hub.hf_hub_download", _fake_download)
+
+            try:
+                resp = await client.post(
+                    "/admin/small-models/download",
+                    json={
+                        "model_id": "test-org/test-model",
+                        "source": "huggingface",
+                    },
+                    headers=AUTH,
+                )
+                assert resp.status_code == 200, resp.text
+                data = resp.json()
+                assert data["downloaded"] is True
+                local_path = data["local_path"]
+                assert isinstance(local_path, str)
+                assert os.path.isfile(local_path), f"Expected file at {local_path} but it does not exist"
+                file_size = os.path.getsize(local_path)
+                assert file_size > 0
+                assert data["size_bytes"] == file_size
+            finally:
+                await client.aclose()
+                await engine.dispose()
 
     @pytest.mark.asyncio
     async def test_download_missing_model_id_422(self, monkeypatch):

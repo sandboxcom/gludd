@@ -2080,6 +2080,10 @@ molecule-test:
 	@echo "Running molecule scenario: $(SCENARIO)"
 	@MOLECULE_GLOB="molecule/playbooks/*/molecule.yml" $(UV) run molecule test -s "$(SCENARIO)"
 
+molecule-test-model-pipeline:
+	@echo "=== model pipeline molecule test (download->quantize->evaluate->register->serve) ==="
+	@cd collections/ansible_collections/general_ludd/agent && $(UV) run molecule test -s default
+
 git-status:
 	@git status --short || echo "Not a git repo"
 

@@ -2,10 +2,9 @@
 dependency:
   name: galaxy
 driver:
-  name: delegated
+  name: default
 platforms:
   - name: localhost
-    ansible_connection: local
 provisioner:
   name: ansible
   config_options:

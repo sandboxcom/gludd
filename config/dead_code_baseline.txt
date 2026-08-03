@@ -827,9 +827,6 @@ src/general_ludd/governance/contracts.py:ComplianceModel
 src/general_ludd/governance/contracts.py:GovernancePolicy
 src/general_ludd/governance/contracts.py:GovernanceRule
 src/general_ludd/governance/contracts.py:PolicyRegistry
-src/general_ludd/governance/spec_quality_contracts.py:AuditRule
-src/general_ludd/governance/spec_quality_contracts.py:RuleRegistry
-src/general_ludd/governance/spec_quality_contracts.py:SpecAuditor
 src/general_ludd/hardware/model_fit.py:FitResult
 src/general_ludd/hardware/model_fit.py:gpu_info_to_gpu_table
 src/general_ludd/hardware/model_fit.py:unified_probe
@@ -1640,10 +1637,6 @@ src/general_ludd/small_models/eval_harness.py:result_to_evidence
 src/general_ludd/small_models/eval_harness.py:score_passing
 src/general_ludd/small_models/lm_eval_runner.py:LMEvalRunner
 src/general_ludd/small_models/lm_eval_runner.py:to_capability_evidence
-src/general_ludd/small_models/radar.py:profile_distance
-src/general_ludd/small_models/radar.py:profile_similarity
-src/general_ludd/small_models/radar.py:radar_svg
-src/general_ludd/small_models/radar_profile.py:ModelRadarProfile
 src/general_ludd/small_models/radar_profile.py:best_for_task
 src/general_ludd/small_models/recommender.py:ModelRecommendation
 src/general_ludd/small_models/recommender.py:list_tasks_for_model

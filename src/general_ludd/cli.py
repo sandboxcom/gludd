@@ -91,6 +91,27 @@ COMMANDS
       --live             Allow cheap live metadata probes
       --json             Emit logs, metrics, and events as JSON
 
+    model               Local model management (download, quantize, serve, evaluate)
+      download NAME        Download a model from HuggingFace
+        --revision REV       Model revision/tag
+        --cache-dir DIR      Override cache directory
+      quantize NAME         Quantize a downloaded model
+        --method METHOD      q4_k_m (default), q4_0, q5_k_m, q8_0
+        --output-dir DIR     Output directory for quantized model
+      serve NAME            Start a local inference server
+        --engine ENGINE      llamacpp (default), vllm, mlx
+        --host HOST          Bind address (default: 127.0.0.1)
+        --port PORT          Port (default: 8080)
+        --gpu-layers N       GPU layers to offload
+        --context-size N     Context window size (default: 4096)
+      evaluate NAME          Run evaluation benchmarks
+        --benchmark NAME     Specific benchmark
+        --limit N            Sample limit per benchmark
+      recommend              Recommend models for a task
+        --task TASK           Task description (required)
+        --max-params N        Max parameter count in billions
+      radar NAME             Show capability radar for a model
+
     models              Model management commands
       search              Search HuggingFace models
         [QUERY]             Search query
@@ -1067,6 +1088,12 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     add_human_todo_subparser(sub)
     human_todo_parser = sub.choices["human-todo"]
 
+    # `gludd model` — local model management (download, quantize, serve, evaluate).
+    from general_ludd.cli_model import add_model_subparser
+
+    add_model_subparser(sub)
+    model_parser = sub.choices["model"]
+
     # `gludd self-improve` — human approval gate for self-authored todos.
     from general_ludd.cli_self_improve import add_self_improve_subparser
 
@@ -1269,6 +1296,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "connectors": connectors_parser,
         "perm": perm_parser,
         "payment": payment_parser,
+        "model": model_parser,
         "human-todo": human_todo_parser,
         "self-improve": self_improve_parser,
         "remediation": remediation_parser,

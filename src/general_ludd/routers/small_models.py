@@ -3,14 +3,27 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
+from pathlib import Path
 from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException, Request
 
 from general_ludd.infra.local_inference import LocalInferenceManager, LocalServerConfig
+from general_ludd.quantization.quantize import ModelQuantizer
 from general_ludd.routing_roles.small_model_policy import (
     DEFAULT_TASK_CONTRACTS,
     SmallModelTaskPolicy,
+)
+from general_ludd.small_models import (
+    DownloadedModel,
+    DownloadSource,
+    ModelDownloader,
+)
+from general_ludd.small_models.lm_eval_runner import (
+    LMEvalRunner,
+    _DEFAULT_TASKS,
+    to_capability_evidence,
 )
 
 logger = logging.getLogger(__name__)
@@ -24,9 +37,28 @@ def _get_task_policy(app: FastAPI) -> SmallModelTaskPolicy | None:
     return getattr(app.state, "_small_model_task_policy", None)
 
 
+def _get_model_quantizer(app: FastAPI) -> ModelQuantizer | None:
+    return getattr(app.state, "_sm_model_quantizer", None)
+
+
+def _models_dir() -> str:
+    from general_ludd.small_models.download import DEFAULT_CACHE_DIR
+
+    return os.environ.get("GLUDD_MODELS_DIR", DEFAULT_CACHE_DIR)
+
+
 def _digest(payload: object) -> str:
     data = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode()
     return hashlib.sha256(data).hexdigest()
+
+
+def _compute_size_disk(path: str) -> int:
+    p = Path(path)
+    if p.is_file():
+        return p.stat().st_size
+    if p.is_dir():
+        return sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
+    return 0
 
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
@@ -35,6 +67,8 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         app.state._local_inference_manager = LocalInferenceManager()
     if not hasattr(app.state, "_small_model_task_policy"):
         app.state._small_model_task_policy = SmallModelTaskPolicy()
+    if not hasattr(app.state, "_model_downloader"):
+        app.state._model_downloader = ModelDownloader()
     if not hasattr(app.state, "_sm_server_store"):
         app.state._sm_server_store = {}
     if not hasattr(app.state, "_sm_capability_store"):
@@ -45,6 +79,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         app.state._sm_rollout_store = {}
     if not hasattr(app.state, "_sm_radar_store"):
         app.state._sm_radar_store = {}
+    if not hasattr(app.state, "_sm_quantize_store"):
+        app.state._sm_quantize_store = {}
+    if not hasattr(app.state, "_sm_model_quantizer"):
+        app.state._sm_model_quantizer = ModelQuantizer()
 
     @app.post("/admin/small-models/download")
     async def small_models_download(request: Request) -> dict[str, object]:
@@ -57,19 +95,54 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         if source not in ("huggingface", "ollama", "local"):
             raise HTTPException(status_code=422, detail="source must be huggingface, ollama, or local")
 
+        filename = str(body.get("filename", "")) or None
+        revision = str(body.get("revision", "")) or None
+
+        downloader: ModelDownloader = request.app.state._model_downloader
+
+        if source == "local":
+            model_path = str(body.get("model_path", f"./models/{model_id}"))
+            size_bytes = _compute_size_disk(model_path)
+            downloaded = DownloadedModel(
+                model_id=model_id,
+                local_path=model_path,
+                source=DownloadSource.CACHE,
+                size_bytes=size_bytes,
+            )
+        elif source == "ollama":
+            downloaded = downloader.pull_ollama(model_id=model_id, revision=revision)
+        else:
+            downloaded = downloader.download(
+                model_id=model_id,
+                filename=filename,
+                revision=revision,
+            )
+
         key = f"{source}/{model_id}"
         store: dict[str, LocalServerConfig] = request.app.state._sm_server_store
         store[key] = LocalServerConfig(
             engine=cast(str, body.get("engine", "llamacpp")),
-            model_path=cast(str, body.get("model_path", f"./models/{model_id}")),
+            model_path=downloaded.local_path,
             model_name=model_id,
             host=cast(str, body.get("host", "localhost")),
             port=cast(int, body.get("port", 8000)),
             gpu_layers=cast(int, body.get("gpu_layers", -1)),
             context_size=cast(int, body.get("context_size", 4096)),
         )
-        logger.info("small-model download registered: %s", key)
-        return {"downloaded": True, "model_id": model_id, "source": source, "profile_key": key}
+        logger.info(
+            "small-model downloaded: %s → %s (%.1f MB)",
+            key,
+            downloaded.local_path,
+            downloaded.size_bytes / 1e6,
+        )
+        return {
+            "downloaded": True,
+            "model_id": model_id,
+            "source": source,
+            "profile_key": key,
+            "local_path": downloaded.local_path,
+            "size_bytes": downloaded.size_bytes,
+        }
 
     @app.post("/admin/small-models/quantize")
     async def small_models_quantize(request: Request) -> dict[str, object]:
@@ -91,9 +164,73 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         body: dict[str, object] = {}
         body = await request.json()
         model_id = str(body.get("model_id") or "")
-        task_kind = str(body.get("task_kind") or "")
         if not model_id:
             raise HTTPException(status_code=422, detail="model_id required")
+
+        run_benchmark_flag = bool(body.get("benchmark", False))
+
+        if run_benchmark_flag:
+            tasks_raw = body.get("tasks", [])
+            tasks = [str(t) for t in tasks_raw] if isinstance(tasks_raw, list) and tasks_raw else list(_DEFAULT_TASKS)
+
+            limit_val = body.get("limit")
+            limit = int(limit_val) if isinstance(limit_val, (int, float, str)) else None
+            device_val = body.get("device")
+            device = str(device_val) if device_val else None
+            batch_size = str(body.get("batch_size", "auto"))
+
+            runner = LMEvalRunner(
+                model_id=model_id,
+                batch_size=batch_size,
+                device=device,
+                limit=limit,
+            )
+
+            scores = runner.run_benchmark(tasks)
+            evidence_objects = to_capability_evidence(scores, model_id)
+
+            key = f"cap:{model_id}"
+            capability_store: dict[str, list[dict[str, object]]] = request.app.state._sm_capability_store
+            eval_store: dict[str, dict[str, object]] = request.app.state._sm_eval_store
+
+            evidence_dicts: list[dict[str, object]] = []
+            for ev in evidence_objects:
+                entry: dict[str, object] = {
+                    "model_id": model_id,
+                    "task_kind": ev.task_kind,
+                    "collection": ev.collection,
+                    "role": str(ev.role),
+                    "suite_id": ev.suite_id,
+                    "suite_revision": ev.suite_revision,
+                    "total_cases": ev.total_cases,
+                    "passed_cases": ev.passed_cases,
+                    "passed": ev.passed_cases == ev.total_cases,
+                    "collection_ok": ev.collection_ok,
+                    "local_only": ev.local_only,
+                    "evidence_digest": ev.evidence_digest,
+                    "acceptance_contract_digest": ev.acceptance_contract_digest,
+                }
+                capability_store.setdefault(key, []).append(entry)
+                eval_store[f"eval:{model_id}:{ev.task_kind}"] = entry
+                evidence_dicts.append(entry)
+                logger.info(
+                    "small-model benchmark: %s task=%s passed=%s/%s",
+                    model_id,
+                    ev.task_kind,
+                    ev.passed_cases,
+                    ev.total_cases,
+                )
+
+            return {
+                "evaluated": True,
+                "model_id": model_id,
+                "benchmark": True,
+                "tasks_run": tasks,
+                "scores": scores,
+                "evidence": evidence_dicts,
+            }
+
+        task_kind = str(body.get("task_kind") or "")
         if not task_kind:
             raise HTTPException(status_code=422, detail="task_kind required")
         if task_kind not in DEFAULT_TASK_CONTRACTS:
