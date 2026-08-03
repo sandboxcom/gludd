@@ -12,8 +12,9 @@
 
 ## Current Gate Status (2026-08-03)
 <!-- gate:begin -->
-- **gate-lite: PASS** (2026-08-03, HEAD `4b907848`) — all phases green
+- **gate-lite: PASS** (2026-08-03, HEAD `55685e52`) — ALL GREEN, 4682/4682 app tests
 - **Test run: 4682 passed, 0 failed** — all 4682 app tests passing
+- **Molecule fixes: 3 resolved** (ci-regression-guards structural check)
 - lint: PASS 0
 - dead-code: PASS 0
 - tdd-compliance: PASS
@@ -39,26 +40,28 @@
 
 ## SESSION 68 — 2026-08-03 (CURRENT)
 
-- **HEAD: `4b907848`** on `development`
+- **HEAD: `55685e52`** on `development`
 - **TASKS.md: 715 items, 0 integrity violations**
 - **Total collection: 58,461 tests, 0 errors** (S67 probe, 2026-08-02)
-- **gate-lite: PASS — all 4682 app tests passing, 0 failures**
+- **gate-lite: PASS — all 4682 app tests passing, 0 failures** (ALL GREEN, 4682/4682)
   - All phases: lint 0, dead-code 0, tdd-compliance PASS, coverage-gaps PASS (0 new), typecheck 0, collect 0, env-writes PASS, hook-runtime PASS (34/34), skills-frontmatter PASS, lint-specs PASS (220 specs 0 violations), spec-enforcement-coverage PASS 94.1%, plugin-hook-invoke PASS, smoke PASS, verify-enforcement PASS (40/40)
+- **Molecule fixes: 3 resolved** (ci-regression-guards structural check)
 - **Integration test suite: 3,252 collected** (157 files), ran partial in 30s timeout — all executed suites green (sts, chemistry, materials, ai_ml, git_release, sandboxes)
 - **Spec enforcement: 207/220 = 94.1%** (threshold 90%). 13 specs lack enforcement: AA012, AA017, AA057, AA074, AA075, AA081, AA084, AA089, AA090, AA093, AA094, AA096, AC020.
 - **Coverage gaps: CLOSED** (848 OK, 7 untested all allowed, 0 new gaps)
 - **Verify suites: PASS** (40/40 plugins with subagent guards)
-- **Tree: DIRTY** — 3 files modified:
-  - `TASKS.md`
-  - `src/general_ludd/models/timeout_detector.py`
-  - `tests/unit/test_ci_regression_guards.py`
-- **CI: NO RUN** for HEAD `4b907848`
-- **Push: NOT PUSHED** — 3 commits ahead of remote (remote at `47c70bf5`, local at `4b907848`)
+- **Tree: DIRTY** — 4 files modified:
+  - `src/general_ludd/cli.py`
+  - `tests/unit/test_all_plugins_runtime.py`
+  - `tests/unit/test_anti_stop_fuzz.py`
+  - `tests/unit/test_cli_branches.py`
+- **CI: NO RUN** for HEAD `55685e52`
+- **Push: NOT PUSHED** — 7 commits ahead of remote (remote at `47c70bf5`, local at `55685e52`)
 - **Release beta.3: BLOCKED** on commit dirty files + push + CI green
 
-### Session 68 — gate-lite green, all 4682 tests passing (2026-08-03, HEAD `4b907848`, 4 commits + 3 dirty files since S67)
+### Session 68 — gate-lite ALL GREEN, 4682/4682 tests, 3 molecule fixes (2026-08-03, HEAD `55685e52`, 7 commits + 4 dirty files since S67)
 
-4 commits since Session 67 HEAD `7e21f077`. The 2 gate-lite failures (overload-retry, ci-regression-guards) resolved. Spec enforcement at 94.1%. 3 files dirty with TASKS.md, timeout_detector, and ci-regression-guards work.
+7 commits since Session 67 HEAD `7e21f077`. The 2 gate-lite failures (overload-retry, ci-regression-guards) resolved. Molecule structural check fixed (3 scenarios). Spec enforcement at 94.1%. 4 files dirty with cli/plugin/fuzz test work.
 
 | Commit | Description |
 |--------|-------------|
@@ -66,32 +69,37 @@
 | `a46a1184` | fix: spec enforcement 94.1%, gate-lite green, d11 guard ordering, lint-specs parser fix |
 | `a148e557` | fix: gate-lite test failures, d18 accounts, security post-commit, budget/cost pre-existing |
 | `4b907848` | chore: session/task updates, spec enforcement fixes, test adjustments |
+| `6a746804` | fix: failover >= trigger, cli serve URL, plugin test mapping, gate-lite green |
+| `38daa9bb` | chore: session/task updates, timeout detector, CI regression test fixes |
+| `63fe0724` | fix: timeout_detector model correction |
+| `55685e52` | chore: update session tracking |
 
 ### Dirty tree work (uncommitted)
 
 | File | Change | Category |
 |------|--------|----------|
-| `TASKS.md` | session/task updates | ledger |
-| `src/general_ludd/models/timeout_detector.py` | timeout detector fix | fix |
-| `tests/unit/test_ci_regression_guards.py` | ci regression guard test fix | fix |
+| `src/general_ludd/cli.py` | CLI fix | fix |
+| `tests/unit/test_all_plugins_runtime.py` | plugin runtime test fix | fix |
+| `tests/unit/test_anti_stop_fuzz.py` | anti-stop fuzz test fix | fix |
+| `tests/unit/test_cli_branches.py` | CLI branches test fix | fix |
 
 ### Remaining work
 
 | Item | Status |
 |------|--------|
-| Commit 3 dirty files | DIRTY |
-| Push accumulated commits (3 unpushed) | NOT PUSHED |
-| CI green on development HEAD `4b907848` | NO RUN |
+| Commit 4 dirty files | DIRTY |
+| Push accumulated commits (7 unpushed) | NOT PUSHED |
+| CI green on development HEAD `55685e52` | NO RUN |
 | `make release-cut TAG=v0.1.0-beta.3` | BLOCKED on push + CI green |
 
 ### Next
 
-1. Commit 3 dirty files (TASKS.md, timeout_detector, ci-regression-guards)
+1. Commit 4 dirty files (cli.py, test_all_plugins_runtime.py, test_anti_stop_fuzz.py, test_cli_branches.py)
 2. Push accumulated commits to sandboxcom
 3. Wait for CI green
 4. Release cut for beta.3
 
-- **Last Updated: 2026-08-03 — Session 68.** HEAD `4b907848` on `development`. gate-lite PASS (4682/4682 tests passing, 0 failures). Total collection: 58,461 tests, 0 errors. Integration suite: 3,252 collected, partial green (timed out at 30s). Spec enforcement 207/220 (94.1%). Coverage gaps closed (0 new). TASKS.md 715 items, 0 violations. Tree DIRTY (3 files: TASKS.md, timeout_detector.py, test_ci_regression_guards.py). CI NO RUN. 3 commits unpushed (remote at `47c70bf5`). Release beta.3 blocked on push + CI green.
+- **Last Updated: 2026-08-03 — Session 68.** HEAD `55685e52` on `development`. gate-lite ALL GREEN (4682/4682 tests passing, 0 failures). 3 molecule fixes resolved. Total collection: 58,461 tests, 0 errors. Integration suite: 3,252 collected, partial green (timed out at 30s). Spec enforcement 207/220 (94.1%). Coverage gaps closed (0 new). TASKS.md 715 items, 0 violations. Tree DIRTY (4 files: cli.py, test_all_plugins_runtime.py, test_anti_stop_fuzz.py, test_cli_branches.py). CI NO RUN. 7 commits unpushed (remote at `47c70bf5`). Release beta.3 blocked on push + CI green.
 
 ---
 
@@ -123,7 +131,7 @@ Documentation consolidation session — 5 built-and-wired systems codified into 
 | S65.4 | **Architecture Fixes**: ARCHITECTURE_PATTERNS.md (347 lines) documents MVC/MVVM/MVI/MVP patterns. 3-collection audit: Travel (6 violations — MVI model/view mixing, data-in-logic, cross-collection import), Language (5 violations — no contracts, script bypass, ViewModel-without-Model), Agent/STS (1 violation — 5 STS roles declared but unimplemented). Layer-wiring contract codified | docs/standards/ARCHITECTURE_PATTERNS.md |
 | S65.5 | **Test Failure Visibility**: Four-layer pipeline: (1) CI: `pytest-github-actions-annotate-failures` with per-test `::error` annotations mid-job (build.yml:222), (2) Dogfood: `seed_todos_from_test_failures()` creates `test_failure`-sourced todos (runner.py:110-125), (3) Validation: `record_test_failures()` child-todo categorization (runner.py:201), (4) Task watchdog: kill events in `/tmp/gludd-task-killed.json` + partial output preserved to `/tmp/gludd-task-output-<id>.log` | build.yml:222, runner.py:110-125, runner.py:201, task_watchdog.py |
 
-### Architecture — verified current (2026-08-03, HEAD `4b907848`)
+### Architecture — verified current (2026-08-03, HEAD `55685e52`)
 
 | Component | Detail |
 |-----------|--------|
@@ -154,7 +162,8 @@ Documentation consolidation session — 5 built-and-wired systems codified into 
 
 | Metric | Value |
 |--------|-------|
-| gate-lite | PASS — all 4682 tests passing, 0 failures |
+| gate-lite | PASS — ALL GREEN, 4682/4682 tests, 0 failures |
+| Molecule fixes | 3 resolved (ci-regression-guards structural check) |
 | Test run | 4682 passed, 0 failed |
 | Collection | BLOCKED (concurrent gate); last known 58,461 (S67) |
 | Spec enforcement | 207/220 = 94.1% (threshold 90%) |
@@ -162,9 +171,9 @@ Documentation consolidation session — 5 built-and-wired systems codified into 
 | Coverage gaps | CLOSED (848 OK, 7 untested all allowed, 0 new) |
 | Integration health | 3,252 collected, partial green (timed out at 30s); all executed suites green |
 | E2E test files | ~100 files in `tests/e2e/` |
-| CI (development) | NO RUN for HEAD `4b907848` |
-| Push | NOT PUSHED — 3 commits ahead of remote (`47c70bf5` vs `4b907848`) |
-| Tree | DIRTY (3 files) |
+| CI (development) | NO RUN for HEAD `55685e52` |
+| Push | NOT PUSHED — 7 commits ahead of remote (`47c70bf5` vs `55685e52`) |
+| Tree | DIRTY (4 files) |
 
 ### Completion Percentages (2026-08-03)
 

@@ -97,6 +97,7 @@ _NOT_YET_COVERED_MODULES: set[str] = {
     "gludd_open_code",  # TODO: add molecule scenario
     "gludd_ornith",  # TODO: add molecule scenario
     "gludd_proc_monitor",
+    "gludd_rag",
     "gludd_scapy",
     "gludd_slurm_deploy",
     "gludd_stream",
@@ -131,11 +132,12 @@ _NOT_YET_COVERED_ROLES: set[str] = {
     "backlog_guard_audit",
     "ci_annotations_poll",
     "cost_audit",
+    "cost_optimizer",
     "coverage_audit",
     "credit_audit",
     "delegate_discipline_check",
     "deletion_gate",
-        "enforce_disengage",
+    "enforce_disengage",
     "enforcement_gate",
     "enforcement_verify",
     "feature_evidence_audit",
@@ -147,6 +149,12 @@ _NOT_YET_COVERED_ROLES: set[str] = {
     "log_prompt_evaluator",
     "guardrail_pattern",
     "manage_processes",
+    "model_benchmark",
+    "model_download",
+    "model_evaluate",
+    "model_quantize",
+    "model_register",
+    "model_serve",
     "networking",
     "multitasking_backlog_check",
     "observe_deploy_correlator",
@@ -156,6 +164,7 @@ _NOT_YET_COVERED_ROLES: set[str] = {
     "observe_saturation_capacity",
     "observe_security_signal",
     "ornith_self_improve",
+    "rag_example",
     "scan_conflict_markers",
     "service_login",
     "spec_lifecycle",
@@ -227,9 +236,7 @@ class TestMoleculeHarnessExists:
         for exemplar in ("test_gludd_ping", "test_gludd_facts"):
             prep = SCENARIOS_DIR / exemplar / "default" / "prepare.yml"
             assert prep.is_file(), f"{exemplar}: module scenario must have prepare.yml"
-            assert "mock_daemon/server.py" in prep.read_text(), (
-                f"{exemplar}: prepare.yml must launch the mock daemon"
-            )
+            assert "mock_daemon/server.py" in prep.read_text(), f"{exemplar}: prepare.yml must launch the mock daemon"
 
 
 class TestModuleCoverageChecklist:
@@ -247,14 +254,10 @@ class TestModuleCoverageChecklist:
 
         # Every not-yet-covered module must be in the declared checklist.
         undeclared = not_covered - _NOT_YET_COVERED_MODULES
-        assert not undeclared, (
-            f"modules with no scenario and not on the checklist: {sorted(undeclared)}"
-        )
+        assert not undeclared, f"modules with no scenario and not on the checklist: {sorted(undeclared)}"
         # Every checklist entry must really be uncovered (tick it off when added).
         stale = _NOT_YET_COVERED_MODULES - not_covered
-        assert not stale, (
-            f"checklist lists modules that now HAVE a scenario — remove them: {sorted(stale)}"
-        )
+        assert not stale, f"checklist lists modules that now HAVE a scenario — remove them: {sorted(stale)}"
 
     def test_at_least_two_module_scenarios_exist(self):
         modules = _module_names()
@@ -271,13 +274,9 @@ class TestRoleCoverageChecklist:
         not_covered = roles - covered
 
         undeclared = not_covered - _NOT_YET_COVERED_ROLES
-        assert not undeclared, (
-            f"roles with no scenario and not on the checklist: {sorted(undeclared)}"
-        )
+        assert not undeclared, f"roles with no scenario and not on the checklist: {sorted(undeclared)}"
         stale = _NOT_YET_COVERED_ROLES - not_covered
-        assert not stale, (
-            f"checklist lists roles that now HAVE a scenario — remove them: {sorted(stale)}"
-        )
+        assert not stale, f"checklist lists roles that now HAVE a scenario — remove them: {sorted(stale)}"
 
     def test_at_least_one_role_scenario_exists(self):
         roles = _role_names()
@@ -352,12 +351,8 @@ class TestStreamExampleScenarios:
     def test_stream_dispatch_handler_in_mock_daemon(self):
         """Mock daemon MUST implement POST /admin/stream/dispatch."""
         src = MOCK_DAEMON.read_text()
-        assert "/admin/stream/dispatch" in src, (
-            "mock_daemon/server.py missing POST /admin/stream/dispatch handler"
-        )
-        assert "_stream_dispatch_response" in src, (
-            "mock_daemon/server.py missing _stream_dispatch_response helper"
-        )
+        assert "/admin/stream/dispatch" in src, "mock_daemon/server.py missing POST /admin/stream/dispatch handler"
+        assert "_stream_dispatch_response" in src, "mock_daemon/server.py missing _stream_dispatch_response helper"
 
     def test_stream_scenarios_present(self):
         scenarios = _scenario_names()
@@ -377,9 +372,7 @@ class TestStreamExampleScenarios:
         for name in _STREAM_SCENARIOS:
             prep = SCENARIOS_DIR / name / "default" / "prepare.yml"
             text = prep.read_text()
-            assert "mock_daemon/server.py" in text, (
-                f"{name}: prepare.yml must launch the mock daemon"
-            )
+            assert "mock_daemon/server.py" in text, f"{name}: prepare.yml must launch the mock daemon"
 
     def test_stream_scenarios_target_stream_dispatch_endpoint(self):
         """Each stream scenario's converge.yml MUST invoke gludd_stream."""
