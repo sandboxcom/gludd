@@ -173,35 +173,34 @@ async def _send_once(
 
     transport = safehttpx.AsyncSecureTransport(target.ip)
     timeout = httpx.Timeout(policy.timeout_seconds)
-    async with httpx.AsyncClient(
-        transport=transport,
-        timeout=timeout,
-        follow_redirects=False,
-        trust_env=False,
-    ) as client, client.stream(
-        method,
-        url,
-        headers=headers,
-        content=content,
-    ) as response:
+    async with (
+        httpx.AsyncClient(
+            transport=transport,
+            timeout=timeout,
+            follow_redirects=False,
+            trust_env=False,
+        ) as client,
+        client.stream(
+            method,
+            url,
+            headers=headers,
+            content=content,
+        ) as response,
+    ):
         response_headers = {key.lower(): value for key, value in response.headers.items()}
         if response.status_code in _REDIRECT_STATUSES and response_headers.get("location"):
             return _HopResult(response.status_code, response_headers, b"")
 
         content_length = response_headers.get("content-length", "")
         if content_length.isdigit() and int(content_length) > policy.max_bytes:
-            raise ResponseTooLarge(
-                f"response exceeded the {policy.max_bytes}-byte limit"
-            )
+            raise ResponseTooLarge(f"response exceeded the {policy.max_bytes}-byte limit")
 
         chunks: list[bytes] = []
         received = 0
         async for chunk in response.aiter_bytes():
             received += len(chunk)
             if received > policy.max_bytes:
-                raise ResponseTooLarge(
-                    f"response exceeded the {policy.max_bytes}-byte limit"
-                )
+                raise ResponseTooLarge(f"response exceeded the {policy.max_bytes}-byte limit")
             chunks.append(chunk)
         return _HopResult(response.status_code, response_headers, b"".join(chunks))
 
@@ -228,19 +227,11 @@ def _redirect_request(
     next_content = content
 
     if _origin(old_url) != _origin(new_url):
-        next_headers = {
-            key: value
-            for key, value in next_headers.items()
-            if key.lower() not in _SENSITIVE_HEADERS
-        }
+        next_headers = {key: value for key, value in next_headers.items() if key.lower() not in _SENSITIVE_HEADERS}
     if status_code == 303 or (status_code in {301, 302} and method == "POST"):
         next_method = "GET"
         next_content = None
-        next_headers = {
-            key: value
-            for key, value in next_headers.items()
-            if key.lower() not in _CONTENT_HEADERS
-        }
+        next_headers = {key: value for key, value in next_headers.items() if key.lower() not in _CONTENT_HEADERS}
     return next_method, next_headers, next_content
 
 
@@ -273,9 +264,7 @@ async def _fetch_with_redirects(
         if hop.status_code not in _REDIRECT_STATUSES or not location:
             return FetchResult(vetted_url, hop.status_code, hop.headers, hop.content)
         if redirect_count >= policy.max_redirects:
-            raise RedirectLimitExceeded(
-                f"response exceeded the {policy.max_redirects}-redirect limit"
-            )
+            raise RedirectLimitExceeded(f"response exceeded the {policy.max_redirects}-redirect limit")
 
         next_url = urljoin(vetted_url, location)
         current_method, current_headers, current_content = _redirect_request(
@@ -288,9 +277,7 @@ async def _fetch_with_redirects(
         )
         current_url = next_url
 
-    raise RedirectLimitExceeded(
-        f"response exceeded the {policy.max_redirects}-redirect limit"
-    )
+    raise RedirectLimitExceeded(f"response exceeded the {policy.max_redirects}-redirect limit")
 
 
 async def secure_fetch_async(
@@ -316,9 +303,7 @@ async def secure_fetch_async(
                 policy=policy,
             )
     except (TimeoutError, httpx.TimeoutException) as exc:
-        raise URLFetchTimeout(
-            f"outbound fetch exceeded {policy.timeout_seconds:g}s"
-        ) from exc
+        raise URLFetchTimeout(f"outbound fetch exceeded {policy.timeout_seconds:g}s") from exc
 
 
 def secure_fetch(
