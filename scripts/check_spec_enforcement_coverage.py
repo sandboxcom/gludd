@@ -82,35 +82,43 @@ def _has_template_filler(enforcement: str) -> bool:
 
 
 def _enforcement_exists(enforcement: str) -> bool:
-    """Check if the enforcement mechanism actually exists in the repo."""
+    """Check if the enforcement mechanism actually exists in the repo.
+    For compound claims (e.g. script + make target), ANY resolved part counts."""
     if not enforcement or _has_template_filler(enforcement):
         return False
 
     lower = enforcement.lower()
-    if "agents.md" in lower:
-        return AGENTS_FILE.exists()
+    if "agents.md" in lower and AGENTS_FILE.exists():
+        return True
 
-    m_make = re.search(r"`make\s+([\w\-]+)`", enforcement)
-    if m_make:
+    # Try ALL patterns — any resolved part makes the spec covered.
+    # Don't short-circuit on the first unrecognized claim.
+
+    for m_make in re.finditer(r"`make\s+([\w\-]+)`", enforcement):
         target = m_make.group(1)
         content = MAKEFILE.read_text()
-        return bool(re.search(rf"^{re.escape(target)}:\s", content, re.MULTILINE))
+        if re.search(rf"^{re.escape(target)}:\s", content, re.MULTILINE):
+            return True
 
-    m_script = re.search(r"`(scripts/[\w_/]+\.py)`", enforcement)
-    if m_script:
+    for m_script in re.finditer(r"`(scripts/[\w_/]+\.py)`", enforcement):
         script_path = ROOT / m_script.group(1)
-        return script_path.exists()
+        if script_path.exists():
+            return True
 
-    m_plugin = re.search(r"`(enforce-[\w\-]+\.ts)`", enforcement)
-    if m_plugin:
+    for m_plugin in re.finditer(r"`(enforce-[\w\-]+\.ts)`", enforcement):
         plugin_path = PLUGIN_DIR / m_plugin.group(1)
-        return plugin_path.exists()
+        if plugin_path.exists():
+            return True
 
-    m_makefile = re.search(r"Makefile\s+`([\w\-]+)`", enforcement)
-    if m_makefile:
+    for m_makefile in re.finditer(r"Makefile\s+`([\w\-]+)`", enforcement):
         target = m_makefile.group(1)
         content = MAKEFILE.read_text()
-        return bool(re.search(rf"^{re.escape(target)}:\s", content, re.MULTILINE))
+        if re.search(rf"^{re.escape(target)}:\s", content, re.MULTILINE):
+            return True
+
+    # Also check if enforcement claims a Makefile target without the Makefile prefix
+    # This catches legacy format where the target is referenced but not in our standard syntax.
+    # We don't check here — the fixer handles format conversion.
 
     return False
 

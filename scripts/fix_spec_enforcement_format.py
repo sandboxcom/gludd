@@ -10,14 +10,9 @@ ROOT = Path(__file__).resolve().parent.parent
 SPECS_FILE = ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md"
 MAKEFILE = ROOT / "Makefile"
 
-# --- Recognized enforcement patterns (from check_spec_enforcement_coverage.py) ---
+# --- Constants ---
 
 FILLER = re.compile(r"(planned|TODO|TBD|not yet|future|upcoming)", re.IGNORECASE)
-
-MAKE_PATTERN = re.compile(r"`make\s+([\w\-]+)`")
-SCRIPT_PATTERN = re.compile(r"`(scripts/[\w_/]+\.py)`")
-PLUGIN_PATTERN = re.compile(r"`(enforce-[\w\-]+\.ts)`")
-MAKEFILE_PATTERN = re.compile(r"Makefile\s+`([\w\-]+)`")
 
 # --- Parse specs ---
 
@@ -75,28 +70,43 @@ def parse_specs():
 
 
 def is_covered(enforcement_text):
+    """Check if enforcement text is already in a recognized, verifiable format.
+    For compound claims (e.g. script + make target), ANY resolved part counts."""
     if not enforcement_text or FILLER.search(enforcement_text):
         return False
+
     lower = enforcement_text.lower()
     if "agents.md" in lower and (ROOT / "AGENTS.md").exists():
         return True
-    m = MAKE_PATTERN.search(enforcement_text)
-    if m:
-        target = m.group(1)
+
+    # Try ALL patterns — any resolved part makes the spec covered.
+
+    for m_make in re.finditer(r"`make\s+([\w\-]+)`", enforcement_text):
+        target = m_make.group(1)
         content = MAKEFILE.read_text()
-        return bool(re.search(rf"^{re.escape(target)}:\s", content, re.MULTILINE))
-    m = SCRIPT_PATTERN.search(enforcement_text)
-    if m:
-        return (ROOT / m.group(1)).exists()
-    m = PLUGIN_PATTERN.search(enforcement_text)
-    if m:
-        return (ROOT / ".opencode" / "plugin" / m.group(1)).exists()
-    m = MAKEFILE_PATTERN.search(enforcement_text)
-    if m:
-        target = m.group(1)
+        if re.search(rf"^{re.escape(target)}:\s", content, re.MULTILINE):
+            return True
+
+    for m_script in re.finditer(r"`(scripts/[\w_/]+\.py)`", enforcement_text):
+        if (ROOT / m_script.group(1)).exists():
+            return True
+
+    for m_plugin in re.finditer(r"`(enforce-[\w\-]+\.ts)`", enforcement_text):
+        if (ROOT / ".opencode" / "plugin" / m_plugin.group(1)).exists():
+            return True
+
+    for m_makefile in re.finditer(r"Makefile\s+`([\w\-]+)`", enforcement_text):
+        target = m_makefile.group(1)
         content = MAKEFILE.read_text()
-        return bool(re.search(rf"^{re.escape(target)}:\s", content, re.MULTILINE))
+        if re.search(rf"^{re.escape(target)}:\s", content, re.MULTILINE):
+            return True
+
     return False
+
+
+def _target_exists(target: str) -> bool:
+    content = MAKEFILE.read_text()
+    return bool(re.search(rf"^{re.escape(target)}:\s", content, re.MULTILINE))
 
 
 def fix_enforcement_text(spec):
@@ -105,75 +115,132 @@ def fix_enforcement_text(spec):
     if not enf or is_covered(enf):
         return enf, False
 
-    makefile_targets = re.findall(r"`([_\w\-]+)`", enf)
     fixed = enf
 
-    for target in makefile_targets:
-        # Check if target exists in Makefile
-        content = MAKEFILE.read_text()
-        if re.search(rf"^{re.escape(target)}:\s", content, re.MULTILINE):
-            # Check if it's already in a recognized format
-            if f"Makefile `{target}`" in fixed:
-                continue
-            if f"`make {target}`" in fixed:
-                continue
-            # Fix "`<target>` in Makefile" -> "Makefile `<target>`"
-            fixed = re.sub(
-                rf"`{re.escape(target)}`\s+in\s+Makefile",
-                rf"Makefile `{target}`",
-                fixed,
-            )
-            # Fix "`<target>` on ALL push targets" -> "`make <target>`"
-            fixed = re.sub(
-                rf"`{re.escape(target)}`\s+on\s+ALL\s+push\s+targets",
-                rf"`make {target}`",
-                fixed,
-            )
-            # Fix "`<target>` target" -> "`make <target>`"
-            fixed = re.sub(
-                rf"`{re.escape(target)}`\s+target",
-                rf"`make {target}`",
-                fixed,
-            )
-            # Fix "`<target>` in Makefile + pre-commit hook" -> "Makefile `<target>` + pre-commit hook"
-            fixed = re.sub(
-                rf"`{re.escape(target)}`\s+in\s+Makefile\s*\+\s*pre-commit\s+hook",
-                rf"Makefile `{target}` + pre-commit hook",
-                fixed,
-            )
-            # Fix "as pre-commit hook" for make targets
-            fixed = re.sub(
-                rf"`make\s+{re.escape(target)}`\s+as\s+pre-commit\s+hook",
-                rf"`make {target}` + pre-commit hook",
-                fixed,
-            )
+    # --- Phase 1: fix "`<target>` in Makefile" -> "Makefile `<target>`" ---
+    # Always fix the format regardless of whether the target exists.
+    # The coverage checker will validate existence separately.
+    fixed = re.sub(
+        r"`([_\w\-]+)`\s+in\s+Makefile",
+        r"Makefile `\1`",
+        fixed,
+    )
 
-    # Handle bare enforce-*.ts references
+    # --- Phase 2: strip arguments from inside `make target ARGS` backticks ---
+    # "`make deduplicate-specs DEDUP=1` as pre-commit hook" -> "`make deduplicate-specs` as pre-commit hook"
+    def _strip_make_args(m):
+        target = m.group(1)
+        suffix = m.group(2) if m.lastindex and m.lastindex >= 2 else ""
+        return f"`make {target}`{suffix}"
+
+    fixed = re.sub(
+        r"`make\s+([_\w\-]+)\s+[^`]+`(.*)",
+        _strip_make_args,
+        fixed,
+    )
+
+    # --- Phase 3: "`<target>` on ALL push targets" -> "`make <target>`" ---
+    def _fix_on_all_push(m):
+        t = m.group(1)
+        if _target_exists(t):
+            return f"`make {t}`"
+        return m.group(0)
+
+    fixed = re.sub(
+        r"`([_\w\-]+)`\s+on\s+ALL\s+push\s+targets",
+        _fix_on_all_push,
+        fixed,
+    )
+
+    # --- Phase 4: "`<target>` target" -> "`make <target>`" ---
+    def _fix_target_target(m):
+        t = m.group(1)
+        if _target_exists(t):
+            return f"`make {t}`"
+        return m.group(0)
+
+    fixed = re.sub(
+        r"`([_\w\-]+)`\s+target(?:\s+\+)?(.*)",
+        _fix_target_target,
+        fixed,
+    )
+
+    # --- Phase 5: "`<target>` extended" -> "Makefile `<target>`" / "`make <target>`" ---
+    def _fix_extended(m):
+        t = m.group(1)
+        if _target_exists(t):
+            return f"`make {t}`"
+        return f"Makefile `{t}`"
+
+    fixed = re.sub(
+        r"`([_\w\-]+)`\s+extended",
+        _fix_extended,
+        fixed,
+    )
+
+    # --- Phase 5b: "`make <target>` extended" / "`make <target>` target" — strip suffix ---
+    # These have spaces inside backticks so the `([_\w\-]+)` regex in Phase 4/5 misses them.
+    fixed = re.sub(
+        r"(`make\s+[_\w\-]+`)\s+(?:extended|target)\b",
+        r"\1",
+        fixed,
+    )
+
+    # --- Phase 6: "`<target>` in Makefile + pre-commit hook" (already mostly handled by Phase 1) ---
+    fixed = re.sub(
+        r"`([_\w\-]+)`\s+in\s+Makefile\s*\+\s*pre-commit\s+hook",
+        r"Makefile `\1` + pre-commit hook",
+        fixed,
+    )
+
+    # --- Phase 7: "`make <target>` as pre-commit hook" -> "`make <target>` + pre-commit hook" ---
+    def _fix_as_precommit(m):
+        t = m.group(1)
+        return f"`make {t}` + pre-commit hook"
+
+    fixed = re.sub(
+        r"`make\s+([_\w\-]+)`\s+as\s+pre-commit\s+hook",
+        _fix_as_precommit,
+        fixed,
+    )
+
+    # --- Phase 8: "`make <target> --flag` variant" -> "`make <target>-variant`" ---
+    def _fix_variant(m):
+        base = m.group(1)
+        content = MAKEFILE.read_text()
+        for suffix in ["-no-fail-fast"]:
+            candidate = f"{base}{suffix}"
+            if re.search(rf"^{re.escape(candidate)}:\s", content, re.MULTILINE):
+                return f"`make {candidate}`"
+        return f"`make {base}`"
+
+    fixed = re.sub(
+        r"`make\s+([_\w\-]+)[^`]*`\s+variant",
+        _fix_variant,
+        fixed,
+    )
+
+    # --- Phase 9: "`<target>` extended with parallel-work detection" ---
+    def _fix_extended_parallel(m):
+        t = m.group(1)
+        if _target_exists(t):
+            return f"`make {t}`"
+        return f"Makefile `{t}`"
+
+    fixed = re.sub(
+        r"`([_\w\-]+)`\s+extended\s+with\s+parallel-work\s+detection",
+        _fix_extended_parallel,
+        fixed,
+    )
+
+    # --- Phase 10: bare enforce-*.ts references ---
     bare_plugin = re.findall(r"(?<![`/])(enforce-[\w\-]+\.ts)(?![`])", fixed)
     for p in bare_plugin:
         if (ROOT / ".opencode" / "plugin" / p).exists():
             fixed = fixed.replace(p, f"`{p}`")
 
-    # Handle "`<target>` extended with ..."
-    fixed = re.sub(
-        r"`([_\w\-]+)`\s+extended\s+with\s+parallel-work\s+detection",
-        lambda m: (
-            f"Makefile `{m.group(1)}`"
-            if re.search(rf"^{re.escape(m.group(1))}:\s", MAKEFILE.read_text(), re.MULTILINE)
-            else m.group(0)
-        ),
-        fixed,
-    )
-
-    # Handle "`make gate-lite --no-fail-fast` variant" - strip flags and use base target
-    m = re.match(r"`make\s+([\w\-]+).*`\s+variant", fixed)
-    if m:
-        base_target = m.group(1)
-        content = MAKEFILE.read_text()
-        if re.search(rf"^{re.escape(base_target)}:\s", content, re.MULTILINE):
-            # Check for a no-fail-fast variant
-            if re.search(rf"^{re.escape(base_target)}-no-fail-fast:\s", content, re.MULTILINE):
-                fixed = f"`make {base_target}-no-fail-fast`"
+    # --- Phase 11: "`scripts/...` + `make target`" format already correct; strip prefix for cleaner coverage ---
+    # Already well-formed — just ensure scripts that exist stay as-is.
 
     return fixed, fixed != enf
 

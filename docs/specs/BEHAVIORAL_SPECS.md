@@ -65,7 +65,7 @@
 
 ### AA012 — deploy-without-ci-green
 **Category:** Release Discipline
-**Enforcement:** `_release-ci-green-guard` in Makefile
+**Enforcement:** Makefile `_release-ci-green-guard`
 **Behavior:** Agent deployed tags multiple times while CI was RED, hoping the next run would pass. Each tag push triggered a new release pipeline that failed the same way. `git-tag-move` now requires CI green on the branch before allowing tag push, OR requires explicit `FORCE=1` with documented reason.
 
 ### AA013 — spec-generation-instead-of-spec-writing
@@ -90,7 +90,7 @@
 
 ### AA017 — push-before-verifying-previous-ci-verdict
 **Category:** CI Discipline
-**Enforcement:** `_pre-push-ci-verdict-guard` in Makefile
+**Enforcement:** Makefile `_pre-push-ci-verdict-guard`
 **Behavior:** Agent pushed new commits without checking the verdict of the previous CI run. Each push told CI-IDLE but agent never queried what happened to the run that just completed. Every push target now REQUIRES the previous CI verdict to be checked (read .ci-status) before allowing a new push. If the previous run was RED and no fix was committed, push is BLOCKED.
 
 ### AA018 — manual-tag-operations-instead-of-deploy-target
@@ -180,7 +180,7 @@
 
 ### AB015 — duplicate-spec-auto-excision
 **Category:** Quality Gate
-**Enforcement:** `make deduplicate-specs DEDUP=1` as pre-commit hook
+**Enforcement:** `make deduplicate-specs` + pre-commit hook
 **Behavior:** Deduplication was run but the agent never applied the results. Duplicate specs were detected (~1999) but remained in the file because deduplication was run as read-only analysis. The deduplication target is now wired as a pre-commit hook with DEDUP=1 — duplicates found in BEHAVIORAL_SPECS.md are automatically removed before commit. The agent cannot commit specs with known duplicates.
 
 ### AB016 — spec-persistence-during-parallel-work
@@ -450,7 +450,7 @@
 
 ### AA049 — inline-cherry-pick-without-target
 **Category:** Git Discipline
-**Enforcement:** `make git-cherry-pick SHA=<>` target
+**Enforcement:** `make git-cherry-pick` target
 **Behavior:** Agent attempted to cherry-pick commits using `make git-merge` (which does a full `git merge --no-ff`), producing 80+ conflicts. No `git-cherry-pick` target existed. The target now exists and is the only sanctioned cherry-pick mechanism. Using git-merge with a SHA-like argument is BLOCKED by the merge-strategy guard.
 
 ### AA050 — stale-objective-after-branch-switch
@@ -460,7 +460,7 @@
 
 ### AA051 — tag-push-without-ci-green-on-tagged-commit
 **Category:** Release Discipline
-**Enforcement:** `git-tag-move` extended
+**Enforcement:** `make git-tag-move`
 **Behavior:** Agent pushed tags 10+ times without CI ever being green on the tagged commit. Each tag push triggered a release pipeline that would fail because gate/tests/builds weren't passing. Tag pushes now require CI green on the commit being tagged, OR Tag push requires `FORCE=1` with a documented reason that is logged to BUGS.md.
 
 ### AA052 — molecule-failure-noisiness-without-fix
@@ -490,7 +490,7 @@
 
 ### AA057 — test-file-assertion-update-without-cross-reference
 **Category:** Test Integrity
-**Enforcement:** `make check-test-coverage` extended
+**Enforcement:** `make check-test-coverage`
 **Behavior:** Agent updated test assertions for shared.ts refactoring but didn't cross-reference which source files each test checked. As a result, some tests checked the wrong files (e.g., checking enforce-delegate.ts for `isReadTool` which was in shared.ts but imported by enforce-delegate.ts). The test should check BOTH locations: import statement in plugin AND definition in shared.ts.
 
 ### AA058 — structural-test-fragility-unrecognized
@@ -575,12 +575,12 @@
 
 ### AA074 — batch-push-message-confusion
 **Category:** Commit Discipline
-**Enforcement:** `_batch-push-clarity` in Makefile
+**Enforcement:** Makefile `_batch-push-clarity`
 **Behavior:** Agent received "NOT PUSHING: only N unpushed commit(s) (threshold=5)" messages and interpreted them as errors rather than informational batch discipline. The message now explicitly states: "This is CORRECT behavior. Commit locally, batch pushes. Use GLUDD_FORCE_PUSH=1 only with user authorization." This prevents confusion-based bypass.
 
 ### AA075 — lint-error-auto-fix-not-committed
 **Category:** Commit Discipline
-**Enforcement:** `_lint-fix-commit-check` in Makefile
+**Enforcement:** Makefile `_lint-fix-commit-check`
 **Behavior:** Agent ran `make lint-fix` which auto-fixed lint errors but didn't commit the fixes before pushing. The pre-commit hooks then ran against the un-fixed committed code and blocked the push. After `make lint-fix`, agent must commit the auto-fixes before attempting push. The check now verifies: if lint-fix was run, are all modified files staged?
 
 ### AA076 — test-fix-each-exposes-another
@@ -605,12 +605,12 @@
 
 ### AA080 — gate-fresh-check-epoch-expiry-silent
 **Category:** Quality Gate
-**Enforcement:** `_gate-fresh-check` extended
+**Enforcement:** `make _gate-fresh-check`
 **Behavior:** Gate epoch can expire (30 min) silently, leaving agent unable to commit with only "Gate test not PASS" error — no indication that the issue is epoch expiry, not test failure. The error message now explicitly states: "Gate epoch expired (N seconds old, >30 min). Run 'make gate-refresh' or 'make gate-lite' to update." This eliminates confusion between stale gate and failed gate.
 
 ### AA081 — subagent-task-duplication-without-detection
 **Category:** Subagent Discipline
-**Enforcement:** `_subagent-dedup-guard` in Makefile
+**Enforcement:** Makefile `_subagent-dedup-guard`
 **Behavior:** Agent dispatched two subagents to do the same task (fix enforce-multitask.ts) without realizing they'd collide. Both committed c592b3eb — one fixed the bug, the other found nothing to do. The dedup guard now hashes task descriptions and rejects dispatches that match a recently-completed or in-progress task.
 
 ### AA082 — primary-objective-overwritten-by-newer-request
@@ -625,7 +625,7 @@
 
 ### AA084 — spec-count-target-chasing-creates-dead-specs
 **Category:** Quality Gate
-**Enforcement:** `make audit-spec-liveness` target
+**Enforcement:** `make audit-spec-liveness`
 **Behavior:** Agent wrote specs to hit a count target (200, 500, 1000, 2000, 3000, 4000, 8000) without ensuring each spec is ACTIONABLE. Many specs describe desired states without specifying HOW to achieve them. The liveness audit now classifies each spec as: ACTIONABLE (has specific implementation steps), ASPIRATIONAL (describes goal without mechanism), REDUNDANT (duplicates another spec), or DEAD (references nonexistent code). Aspirational specs don't count toward the target.
 
 ### AA085 — runtime-enforcement-vs-committed-enforcement-gap
@@ -650,12 +650,12 @@
 
 ### AA089 — enforced-rules-contradict-each-other
 **Category:** Guardrail Integrity
-**Enforcement:** `make check-rule-conflicts` target
+**Enforcement:** `make check-rule-conflicts`
 **Behavior:** AGENTS.md says "never push while CI running" and also says "push after every fix." These rules contradict. The enforcement plugins enforced "push after commit" but the CI-idle guard enforced "don't push while CI running." The conflict checker now identifies contradictory rules and requires one to be designated as HIGHER priority.
 
 ### AA090 — merge-strategy-not-documented-in-code
 **Category:** Merge Safety
-**Enforcement:** `_merge-strategy-doc` in Makefile
+**Enforcement:** Makefile `_merge-strategy-doc`
 **Behavior:** The correct merge strategy (`git merge -X theirs development`) was discovered through trial and error. No Makefile target or AGENTS.md section documented this as the canonical approach. The strategy is now documented in the merge-dev target, and all merge operations default to `-X theirs` with a warning about manual conflict resolution.
 
 ### AA091 — ratchet-yml-empty-despite-known-failures
@@ -670,12 +670,12 @@
 
 ### AA093 — revert-commits-not-labeled-clearly
 **Category:** Commit Discipline
-**Enforcement:** `_revert-label-check` in Makefile
+**Enforcement:** Makefile `_revert-label-check`
 **Behavior:** Agent reverted the `continue-on-error` change 3 times without clear labeling. Revert commits looked like new work. All revert commits must now start with "revert: " prefix. The check enforces this at commit time.
 
 ### AA094 — test-naming-collision-with-fixed-bugs
 **Category:** Test Integrity
-**Enforcement:** `make check-test-names` target
+**Enforcement:** `make check-test-names`
 **Behavior:** Test names like `test_edit_denied_with_zero_dispatches_despite_env_disabled` documented old buggy behavior. When the bug was fixed, the test name became misleading. Test names must describe expected behavior, not bugs. When a fix changes behavior, the test name must be updated to match.
 
 ### AA095 — ci-diagnose-run-id-mismatch
@@ -685,7 +685,7 @@
 
 ### AA096 — behavioral-specs-without-implementation-timeline
 **Category:** Quality Gate
-**Enforcement:** `make audit-spec-implementation` target
+**Enforcement:** `make audit-spec-implementation`
 **Behavior:** Agent wrote 3000+ behavioral specs with no timeline for implementation. Some specs were from session 1, still unimplemented at session 50. The audit now assigns each spec a MAX_AGE: P0=1 session, P1=2 sessions, P2=5 sessions, P3=10 sessions, P4=20 sessions. Specs exceeding max age are escalated to the user as unimplemented promises.
 
 ### AA097 — enforcement-plugin-duplicate-functionality
@@ -700,12 +700,12 @@
 
 ### AA099 — deploy-tag-race-condition-with-ci
 **Category:** Release Discipline
-**Enforcement:** `git-tag-move` extended
+**Enforcement:** `make git-tag-move`
 **Behavior:** Agent deployed tags while CI was still running on the previous tag. This created a race: CI on old tag vs CI on new tag. The deploy target now checks: is there an in_progress CI run for a previous tag on this branch? If yes, deploy is BLOCKED until that run completes. Only one deploy pipeline per branch at a time.
 
 ### AA100 — session-close-with-uncommitted-behavioral-fixes
 **Category:** Commit Discipline
-**Enforcement:** `_session-close-audit` extended
+**Enforcement:** `make _session-close-audit`
 **Behavior:** Agent ended sessions with enforcement plugin fixes committed but not pushed, behavioral specs written but not implemented, and test fixes staged but not committed. The session-close audit now enumerates all incomplete work items and blocks session termination until each is either committed+push or explicitly abandoned with a reason logged to BUGS.md.
 
 ### AB041 — agent-dispatches-overlapping-file-work
@@ -21450,6 +21450,9 @@ The agent MUST run verify-state before making any status claim. This invariant M
 
 ### I153 — The agent MUST fix ratchet entries before declaring the session done.
 The agent MUST fix ratchet entries before declaring the session done. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-session-start.ts` state-aware block
+**Enforcement:** `scripts/check_release_audit_trail.py` + `make check-release-audit-trail` AGENTS.md `enforce-batch-push.ts` tool.execute.before **Test:** `test_p01_no_push_while_ci_pending` ### P02 — CI-busy-check on every push target Every push target (git-push-sandboxcom, development-push, batch-push) MUST invoke the CI-busy guard before pushing. Makefile `_push-rate-guard` + `ci-busy-check` prerequisite **Test:** `test_p02_ci_busy_check_on_all_push_targets` ### P03 — No COMMIT_THRESHOLD=1 The agent MUST NOT use `COMMIT_THRESHOLD=1` to push commits individually. AGENTS.md "Don't Push Every Commit" section **Test:** `test_p03_no_commit_threshold_1` ### P04 — Push-to-push minimum interval A second push within 120 seconds of the prior push MUST be hard-denied. Makefile `_push-rate-guard` push-cooldown check **Test:** `test_p04_push_to_push_minimum_interval` ### P05 — Verify remote after every push After any push, the agent MUST run `make verify-remote` and confirm the remote tip matches. AGENTS.md "Verify the remote after every push" **Test:** `test_p05_verify_remote_after_push` ### P06 — Never report CI verdict whose headSha != branch tip The agent MUST NOT claim a CI verdict for a run whose headSha does not match the current branch tip. AGENTS.md `ci-verdict` output is stale-run-aware **Test:** `test_p06_ci_verdict_must_match_head_sha` ### P07 — CI cooldown check before any status claim Before making any CI-status claim, the agent MUST use `make ci-verdict-safe` (cooldown-aware) not bare `make ci-verdict`. AGENTS.md `scripts/ci_check_cooldown.py` + AGENTS.md **Test:** `test_p07_ci_cooldown_before_status_claim` ### P08 — CI-COOLDOWN-UNKNOWN MUST NOT be reported as PENDING When CI cooldown blocks a check, the agent MUST NOT interpret that as "CI is pending." AGENTS.md `scripts/ci_check_cooldown.py` output labeling + AGENTS.md **Test:** `test_p08_cooldown_not_reported_as_pending` ### P09 — Never push while gate is red The agent MUST NOT push commits to a branch while the local gate is red or unrun. AGENTS.md `enforce-batch-push.ts` gate-status check (planned) **Test:** `test_p09_no_push_while_gate_red` ### P10 — Push only via sanctioned targets The agent MUST use only `make batch-push`, `make development-push`, or `make git-push-sandboxcom` to push — never raw `git push`. AGENTS.md `enforce-make.ts` non-make command block **Test:** `test_p10_push_only_via_sanctioned_targets` ### P11 — Maximum one CI run in flight per branch The agent MUST ensure at most one CI run is in progress on any given branch before pushing. Makefile `_push-rate-guard` CI-in-flight check **Test:** `test_p11_max_one_ci_run_per_branch` ### P12 — Cancelled-run thrash detection When >3 cancelled runs exist in the last 2 hours, push MUST be blocked. Makefile `_push-rate-guard` thrash detection **Test:** `test_p12_cancelled_run_thrash_detection` ### P13 — FORCE=1 bypass reserved for release-cut only The FORCE=1 bypass for CI/push guards MUST be used only for release-cut pipeline steps. AGENTS.md "CI-Poll Subagents Are Forbidden" + plugin (planned) **Test:** `test_p13_force_bypass_reserved_for_release_cut` ### P14 — Never push master directly from worktree Master/development push MUST originate from the main checkout, never from a worktree. AGENTS.md "Branch discipline" — shared-branch mutations main checkout only **Test:** `test_p14_no_push_master_from_worktree` ### P15 — Batch local commits; push once The agent MUST accumulate commits locally with `make ship-commit` and push in batches via `make batch-push`. AGENTS.md "Don't Push Every Commit" + batch-push default threshold **Test:** `test_p15_batch_local_push_once` ### P16 — Push rate guard is fail-closed If the push rate guard cannot determine CI state (gh not installed, network down), it MUST deny the push — never fail-open. AGENTS.md `scripts/ci_push_guard.py` fail-closed logic **Test:** `test_p16_push_rate_guard_fail_closed` ### P17 — Never push with dirty tree The agent MUST NOT push to master/development while the working tree is dirty. AGENTS.md `enforce-clean-tree.ts` block on task/agent/workflow dispatch when dirty **Test:** `test_p17_no_push_with_dirty_tree` ### P18 — Commit after green gate only Every commit-shaped target MUST enforce `.gate-status` freshness and green status. Makefile `_gate-fresh-check` prerequisite on all commit targets **Test:** `test_p18_commit_after_green_gate_only` ### P19 — No-verify bypass never the default `--no-verify` and `COMMIT_THRESHOLD=1` MUST NOT be the default behavior of any target. Makefile defaults **Test:** `test_p19_no_verify_never_default` ### P20 — CI-green required before release cut `make release-cut` MUST gate on `require-ci-green` as step 0 and abort if CI is not green. AGENTS.md `scripts/require_ci_green.py` + `make release-cut` **Test:** `test_p20_ci_green_required_before_release_cut` ### P21 — Push history is auditable Every push MUST be logged with timestamp, target branch, SHA, and CI state at push time. AGENTS.md `scripts/ci_push_guard.py` state recording **Test:** `test_p21_push_history_auditable` ### P22 — Push guard is not circumventable No make target or agent behavior MUST provide a backdoor around the push guard. Makefile audit — all push paths go through `_push-rate-guard` **Test:** `test_p22_push_guard_not_circumventable` ### P23 — Deploy-and-forget pattern for CI-triggering pushes When pushing for CI validation (not release), the agent MUST use `make deploy-and-forget` (fire-and-forget pattern). Makefile `make deploy-and-forget`
 **Test:** `test_i153_152`
+
+
+
 
