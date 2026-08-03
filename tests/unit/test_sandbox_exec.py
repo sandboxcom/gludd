@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import shlex
 import subprocess
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 from general_ludd.sandbox_exec.executor import SandboxExecutor
 
@@ -26,6 +26,7 @@ class TestSandboxExecutor:
                 capture_output=True,
                 text=True,
                 timeout=5,
+                env=ANY,
             )
             assert result.returncode == 0
             assert result.stdout == "hello\n"
@@ -46,6 +47,7 @@ class TestSandboxExecutor:
                 capture_output=True,
                 text=True,
                 timeout=10,
+                env=ANY,
             )
             assert result.returncode == 0
 
