@@ -17,7 +17,14 @@ from plugins.module_utils.obfuscation_techniques import (
 
 class TestTechniqueEnum:
     def test_all_six_techniques_exist(self):
-        expected = {"packing", "virtualization", "cfg_flattening", "string_encryption", "anti_debug", "opaque_predicates"}
+        expected = {
+            "packing",
+            "virtualization",
+            "cfg_flattening",
+            "string_encryption",
+            "anti_debug",
+            "opaque_predicates",
+        }
         values = {t.value for t in ObfuscationTechnique}
         assert values == expected
 
@@ -108,12 +115,12 @@ class TestKnownToolSignatures:
         assert "Tigress" in names
 
     def test_upx_has_byte_patterns(self):
-        upx = [s for s in KNOWN_TOOL_SIGNATURES[ObfuscationTechnique.PACKING] if s.name == "UPX"][0]
+        upx = next(s for s in KNOWN_TOOL_SIGNATURES[ObfuscationTechnique.PACKING] if s.name == "UPX")
         assert b"UPX0" in upx.byte_patterns
         assert "UPX0" in upx.section_names
 
     def test_vmprotect_has_string_markers(self):
-        vmp = [s for s in KNOWN_TOOL_SIGNATURES[ObfuscationTechnique.VIRTUALIZATION] if s.name == "VMProtect"][0]
+        vmp = next(s for s in KNOWN_TOOL_SIGNATURES[ObfuscationTechnique.VIRTUALIZATION] if s.name == "VMProtect")
         assert "VMProtect" in vmp.string_markers
 
 
@@ -189,7 +196,7 @@ class TestDetectTechniques:
             assert isinstance(item[2], list)
 
     def test_pe_magic_triggers_section_analysis(self):
-        e_lfanew_offset = 0x3c
+        e_lfanew_offset = 0x3C
         header = bytearray(0x200)
         header[0] = ord("M")
         header[1] = ord("Z")
@@ -247,7 +254,7 @@ class TestDetectTechniques:
         js_file.write_text('var a = "ZXZhbA=="; eval(atob(a));')
         result = detect_techniques(str(js_file))
         assert len(result) >= 1
-        for t, c, e in result:
+        for t, c, _e in result:
             if t == ObfuscationTechnique.STRING_ENCRYPTION:
                 assert c in (DetectionConfidence.HIGH, DetectionConfidence.MEDIUM)
 

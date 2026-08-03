@@ -64,7 +64,7 @@ class TestPromptInjectionPatterns:
         assert len(PROMPT_INJECTION_PATTERNS) >= 15
 
     def test_each_pattern_has_category_and_severity(self):
-        for pattern, category, severity in PROMPT_INJECTION_PATTERNS:
+        for _pattern, category, severity in PROMPT_INJECTION_PATTERNS:
             assert isinstance(category, InjectionCategory)
             assert isinstance(severity, InjectionSeverity)
 
@@ -388,11 +388,10 @@ class TestScanText:
 
     def test_scan_with_python(self):
         report = scan_text(
-            'eval(user_input)',
+            "eval(user_input)",
             check_python=True,
         )
-        py_findings = [f for f in report.findings
-                       if f.encoding_layer in ("python_ast", "python_ast_dynamic")]
+        py_findings = [f for f in report.findings if f.encoding_layer in ("python_ast", "python_ast_dynamic")]
         assert len(py_findings) >= 1
 
     def test_scan_duration_tracked(self):
@@ -411,8 +410,7 @@ class TestScanFile:
         f = tmp_path / "dangerous.py"
         f.write_text('exec(input("> "))')
         report = scan_file(str(f))
-        py_findings = [f_ for f_ in report.findings
-                       if f_.encoding_layer in ("python_ast", "python_ast_dynamic")]
+        py_findings = [f_ for f_ in report.findings if f_.encoding_layer in ("python_ast", "python_ast_dynamic")]
         assert len(py_findings) >= 1
 
     def test_scan_clean_js_file(self, tmp_path):

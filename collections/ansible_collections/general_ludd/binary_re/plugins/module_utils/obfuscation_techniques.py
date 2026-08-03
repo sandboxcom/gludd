@@ -392,7 +392,7 @@ def _read_elf_sections(data: bytes) -> list[tuple[str, bytes]]:
                     "<IIQQQQ", data, sec_offset
                 )
             else:
-                sec_name_idx, sec_type, sec_flags, _sec_addr, sec_off, sec_size = struct.unpack_from(
+                sec_name_idx, sec_type, _sec_flags, _sec_addr, sec_off, sec_size = struct.unpack_from(
                     "<IIIII", data, sec_offset
                 )
             if sec_type == 8:
@@ -426,10 +426,7 @@ def _read_pe_sections(data: bytes) -> list[tuple[str, bytes]]:
         num_sections = struct.unpack_from("<H", data, coff_header_offset + 2)[0]
         optional_header_offset = coff_header_offset + 20
         magic = struct.unpack_from("<H", data, optional_header_offset)[0]
-        if magic == 0x20B:
-            section_offset_base = optional_header_offset + 112
-        else:
-            section_offset_base = optional_header_offset + 96
+        section_offset_base = optional_header_offset + 112 if magic == 0x20B else optional_header_offset + 96
         for i in range(num_sections):
             sec_hdr = section_offset_base + (i * 40)
             if sec_hdr + 40 > len(data):
@@ -517,7 +514,7 @@ def _detect_pe_techniques(data: bytes, sections: list[tuple[str, bytes]]) -> lis
             for pattern in sig.byte_patterns:
                 if pattern in data:
                     technique = (
-                        [t for t, sigs in KNOWN_TOOL_SIGNATURES.items() if sig in sigs][0]
+                        next(t for t, sigs in KNOWN_TOOL_SIGNATURES.items() if sig in sigs)
                         if isinstance(sig_group, list)
                         else None
                     )

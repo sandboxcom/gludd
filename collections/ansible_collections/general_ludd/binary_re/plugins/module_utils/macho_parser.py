@@ -155,6 +155,16 @@ class MachOAnalysisResult:
     architectures: list[str] = field(default_factory=list)
 
 
+def _magic_name(magic: int) -> str:
+    names = {
+        MH_MAGIC: "MH_MAGIC",
+        MH_MAGIC_64: "MH_MAGIC_64",
+        MH_CIGAM: "MH_CIGAM",
+        MH_CIGAM_64: "MH_CIGAM_64",
+    }
+    return names.get(magic, f"MH_{magic:#x}")
+
+
 def _read_macho_header(data: bytes) -> MachOHeader | None:
     if len(data) < 28:
         return None
@@ -196,16 +206,6 @@ def _read_macho_header(data: bytes) -> MachOHeader | None:
         sizeofcmds=sizeofcmds,
         flags=_decode_flags(flags),
     )
-
-
-def _magic_name(magic: int) -> str:
-    names = {
-        MH_MAGIC: "MH_MAGIC",
-        MH_MAGIC_64: "MH_MAGIC_64",
-        MH_CIGAM: "MH_CIGAM",
-        MH_CIGAM_64: "MH_CIGAM_64",
-    }
-    return names.get(magic, f"MH_{magic:#x}")
 
 
 def _decode_flags(flags: int) -> list[str]:

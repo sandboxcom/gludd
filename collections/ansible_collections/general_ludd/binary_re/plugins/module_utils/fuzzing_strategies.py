@@ -135,12 +135,18 @@ class HonggfuzzConfig:
     def to_command(self) -> list[str]:
         cmd = [
             self.honggfuzz_path,
-            "-i", self.input_dir,
-            "-o", self.output_dir,
-            "-t", str(self.timeout),
-            "-F", str(self.max_file_size),
-            "-n", str(self.threads),
-            "--", self.target_binary,
+            "-i",
+            self.input_dir,
+            "-o",
+            self.output_dir,
+            "-t",
+            str(self.timeout),
+            "-F",
+            str(self.max_file_size),
+            "-n",
+            str(self.threads),
+            "--",
+            self.target_binary,
         ]
         if self.dictionary:
             cmd.extend(["-w", self.dictionary])
@@ -255,7 +261,9 @@ ASAN_PATTERNS: list[tuple[str, CrashBucket, CrashSeverity]] = [
 ]
 
 
-def classify_crash(signal_number: int, fault_address: str, sanitizer_output: str = "") -> tuple[CrashBucket, CrashSeverity]:
+def classify_crash(
+    signal_number: int, fault_address: str, sanitizer_output: str = ""
+) -> tuple[CrashBucket, CrashSeverity]:
     if sanitizer_output:
         for pattern, bucket, severity in ASAN_PATTERNS:
             if pattern in sanitizer_output.lower():
@@ -285,7 +293,7 @@ def seed_selection(corpus: list[str], strategy: FuzzingStrategy) -> list[str]:
 
     if strategy == FuzzingStrategy.MUTATION:
         selected = [c for c in corpus if Path(c).exists()]
-        selected = sorted(selected, key=lambda p: Path(p).stat().st_size)[:rules["min_seeds"]]
+        selected = sorted(selected, key=lambda p: Path(p).stat().st_size)[: rules["min_seeds"]]
         return selected
 
     if strategy == FuzzingStrategy.GENERATION:
@@ -294,7 +302,7 @@ def seed_selection(corpus: list[str], strategy: FuzzingStrategy) -> list[str]:
     if strategy == FuzzingStrategy.COVERAGE_GUIDED:
         selected = [c for c in corpus if Path(c).exists()]
         if len(selected) > rules["min_seeds"]:
-            selected = sorted(selected, key=lambda p: Path(p).stat().st_size, reverse=True)[:rules["min_seeds"]]
+            selected = sorted(selected, key=lambda p: Path(p).stat().st_size, reverse=True)[: rules["min_seeds"]]
         return selected
 
     if strategy == FuzzingStrategy.SYMBOLIC_CONCOLIC:
@@ -347,21 +355,30 @@ def triage_crash(crash_info: CrashInfo) -> dict[str, Any]:
     }
 
     if crash_info.crash_type in exploitable_buckets:
-        if crash_info.crash_type in {CrashBucket.HEAP_USE_AFTER_FREE, CrashBucket.HEAP_BUFFER_OVERFLOW,
-                                      CrashBucket.HEAP_DOUBLE_FREE}:
+        if crash_info.crash_type in {
+            CrashBucket.HEAP_USE_AFTER_FREE,
+            CrashBucket.HEAP_BUFFER_OVERFLOW,
+            CrashBucket.HEAP_DOUBLE_FREE,
+        }:
             report["exploitability_notes"].append("heap corruption — potentially exploitable")
-            report["recommended_action"] = "Prioritize for exploit development. Run under ASAN with detailed heap profiling."
+            report["recommended_action"] = (
+                "Prioritize for exploit development. Run under ASAN with detailed heap profiling."
+            )
         elif crash_info.crash_type in {CrashBucket.STACK_BUFFER_OVERFLOW, CrashBucket.OUT_OF_BOUNDS_WRITE}:
             report["exploitability_notes"].append("stack/memory corruption — check overwritten return addresses")
             report["recommended_action"] = "Check for RIP/EIP control. Attempt to determine overwrite offset."
         elif crash_info.crash_type == CrashBucket.USE_AFTER_RETURN:
-            report["exploitability_notes"].append("use-after-return — may be exploitable if return value is controllable")
+            report["exploitability_notes"].append(
+                "use-after-return — may be exploitable if return value is controllable"
+            )
             report["recommended_action"] = "Test with address sanitizer and track allocation lifetime."
     elif crash_info.crash_type == CrashBucket.NULL_DEREFERENCE:
         report["exploitability_notes"].append("null dereference — typically DoS only unless paired with another bug")
         report["recommended_action"] = "Fix for stability. Low exploitation priority unless chainable."
     else:
-        report["recommended_action"] = "Investigate crash root cause. Determine if attacker-controlled input reaches crash site."
+        report["recommended_action"] = (
+            "Investigate crash root cause. Determine if attacker-controlled input reaches crash site."
+        )
 
     if crash_info.sanitizer_report:
         report["has_sanitizer_report"] = True

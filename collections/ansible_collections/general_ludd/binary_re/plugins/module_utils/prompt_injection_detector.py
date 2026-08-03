@@ -217,12 +217,14 @@ def scan_ascii(data: str) -> list[dict[str, object]]:
     findings: list[dict[str, object]] = []
     for pattern, category, severity in PROMPT_INJECTION_PATTERNS:
         for match in pattern.finditer(data):
-            findings.append({
-                "category": category.value,
-                "severity": severity.value,
-                "match": match.group(),
-                "position": match.start(),
-            })
+            findings.append(
+                {
+                    "category": category.value,
+                    "severity": severity.value,
+                    "match": match.group(),
+                    "position": match.start(),
+                }
+            )
     return findings
 
 
@@ -235,7 +237,7 @@ def scan_hex(data: bytes) -> list[dict[str, object]]:
         pass
 
     hex_str = data.hex()
-    for encoding_name, decoder in _ENCODING_DECODERS.items():
+    for encoding_name, _decoder in _ENCODING_DECODERS.items():
         if encoding_name in ("hex",):
             continue
     try:
@@ -326,17 +328,20 @@ def analyze_js_ast(source: str) -> list[dict[str, object]]:
 
     for pattern in _JS_EVAL_PATTERNS:
         for match in pattern.finditer(source):
-            findings.append({
-                "category": InjectionCategory.EVAL_INJECTION.value,
-                "severity": InjectionSeverity.HIGH.value,
-                "match": match.group()[:120],
-                "position": match.start(),
-                "encoding_layer": "javascript",
-                "pattern": pattern.pattern[:80],
-            })
+            findings.append(
+                {
+                    "category": InjectionCategory.EVAL_INJECTION.value,
+                    "severity": InjectionSeverity.HIGH.value,
+                    "match": match.group()[:120],
+                    "position": match.start(),
+                    "encoding_layer": "javascript",
+                    "pattern": pattern.pattern[:80],
+                }
+            )
 
     try:
         import esprima
+
         tree = esprima.parseScript(source, {"range": True, "tolerant": True})
         findings.extend(_walk_esprima_tree(tree, source))
     except ImportError:
@@ -370,13 +375,15 @@ def _walk_esprima_tree(node: Any, source: str, depth: int = 0) -> list[dict[str,
                     snippet = source[start:end] if isinstance(source, str) else str(node)[:120]
                 else:
                     snippet = str(node)[:120]
-                findings.append({
-                    "category": InjectionCategory.EVAL_INJECTION.value,
-                    "severity": InjectionSeverity.HIGH.value,
-                    "match": snippet[:120],
-                    "position": node.get("range", [0])[0] if node.get("range") else 0,
-                    "encoding_layer": "javascript_ast",
-                })
+                findings.append(
+                    {
+                        "category": InjectionCategory.EVAL_INJECTION.value,
+                        "severity": InjectionSeverity.HIGH.value,
+                        "match": snippet[:120],
+                        "position": node.get("range", [0])[0] if node.get("range") else 0,
+                        "encoding_layer": "javascript_ast",
+                    }
+                )
 
         for _key, value in node.items():
             if isinstance(value, (dict, list)):
@@ -414,13 +421,15 @@ def _walk_python_ast(tree: ast.AST, source: str) -> list[dict[str, object]]:
                 evidence = f"{func_name}("
                 if hasattr(node, "lineno"):
                     evidence += f" at line {node.lineno}"
-                findings.append({
-                    "category": InjectionCategory.EVAL_INJECTION.value,
-                    "severity": InjectionSeverity.CRITICAL.value,
-                    "match": f"{evidence})",
-                    "position": node.lineno if hasattr(node, "lineno") else 0,
-                    "encoding_layer": "python_ast",
-                })
+                findings.append(
+                    {
+                        "category": InjectionCategory.EVAL_INJECTION.value,
+                        "severity": InjectionSeverity.CRITICAL.value,
+                        "match": f"{evidence})",
+                        "position": node.lineno if hasattr(node, "lineno") else 0,
+                        "encoding_layer": "python_ast",
+                    }
+                )
 
             args = getattr(node, "args", [])
             has_var_args = False
@@ -429,13 +438,15 @@ def _walk_python_ast(tree: ast.AST, source: str) -> list[dict[str, object]]:
                     has_var_args = True
                     break
             if func_name in ("eval", "exec") and has_var_args:
-                findings.append({
-                    "category": InjectionCategory.EVAL_INJECTION.value,
-                    "severity": InjectionSeverity.CRITICAL.value,
-                    "match": f"{func_name} with dynamic arguments at line {getattr(node, 'lineno', 0)}",
-                    "position": node.lineno if hasattr(node, "lineno") else 0,
-                    "encoding_layer": "python_ast_dynamic",
-                })
+                findings.append(
+                    {
+                        "category": InjectionCategory.EVAL_INJECTION.value,
+                        "severity": InjectionSeverity.CRITICAL.value,
+                        "match": f"{func_name} with dynamic arguments at line {getattr(node, 'lineno', 0)}",
+                        "position": node.lineno if hasattr(node, "lineno") else 0,
+                        "encoding_layer": "python_ast_dynamic",
+                    }
+                )
 
     return findings
 
@@ -497,67 +508,79 @@ def scan_text(
 ) -> ScanReport:
     report = ScanReport()
     import time
+
     start = time.time()
 
     for pattern, category, severity in PROMPT_INJECTION_PATTERNS:
         for match in pattern.finditer(text):
-            report.findings.append(InjectionFinding(
-                category=category,
-                severity=severity,
-                match=match.group(),
-                position=match.start(),
-            ))
+            report.findings.append(
+                InjectionFinding(
+                    category=category,
+                    severity=severity,
+                    match=match.group(),
+                    position=match.start(),
+                )
+            )
 
     if check_encodings:
         encoding_findings = scan_base64(text)
         for f in encoding_findings:
-            report.findings.append(InjectionFinding(
-                category=InjectionCategory(
-                    f.get("encoding", "base64_injection")
-                    if f.get("encoding") == "base64" else f.get("category", "")
-                ) if f.get("encoding") == "base64" else category,
-                severity=InjectionSeverity(f.get("severity", "medium")),
-                match=str(f.get("match", "")),
-                position=int(f.get("position", 0)),
-                encoding_layer=str(f.get("encoding", "")),
-                decoded_from=str(f.get("decoded_from", "")),
-            ))
+            report.findings.append(
+                InjectionFinding(
+                    category=InjectionCategory(
+                        f.get("encoding", "base64_injection")
+                        if f.get("encoding") == "base64"
+                        else f.get("category", "")
+                    )
+                    if f.get("encoding") == "base64"
+                    else category,
+                    severity=InjectionSeverity(f.get("severity", "medium")),
+                    match=str(f.get("match", "")),
+                    position=int(f.get("position", 0)),
+                    encoding_layer=str(f.get("encoding", "")),
+                    decoded_from=str(f.get("decoded_from", "")),
+                )
+            )
 
         url_findings = scan_url_encoded(text)
         for f in url_findings:
             if f.get("encoding") == "url":
-                report.findings.append(InjectionFinding(
-                    category=InjectionCategory(
-                        f.get("category", "direct_prompt")
-                    ),
-                    severity=InjectionSeverity(f.get("severity", "medium")),
-                    match=str(f.get("match", "")),
-                    position=int(f.get("position", 0)),
-                    encoding_layer="url",
-                    decoded_from=str(f.get("decoded_from", "")),
-                ))
+                report.findings.append(
+                    InjectionFinding(
+                        category=InjectionCategory(f.get("category", "direct_prompt")),
+                        severity=InjectionSeverity(f.get("severity", "medium")),
+                        match=str(f.get("match", "")),
+                        position=int(f.get("position", 0)),
+                        encoding_layer="url",
+                        decoded_from=str(f.get("decoded_from", "")),
+                    )
+                )
 
     if check_js:
         js_findings = analyze_js_ast(text)
         for f in js_findings:
-            report.findings.append(InjectionFinding(
-                category=InjectionCategory(f.get("category", "eval_injection")),
-                severity=InjectionSeverity(f.get("severity", "high")),
-                match=str(f.get("match", "")),
-                position=int(f.get("position", 0)),
-                encoding_layer=str(f.get("encoding_layer", "javascript")),
-            ))
+            report.findings.append(
+                InjectionFinding(
+                    category=InjectionCategory(f.get("category", "eval_injection")),
+                    severity=InjectionSeverity(f.get("severity", "high")),
+                    match=str(f.get("match", "")),
+                    position=int(f.get("position", 0)),
+                    encoding_layer=str(f.get("encoding_layer", "javascript")),
+                )
+            )
 
     if check_python:
         py_findings = analyze_python_ast(text)
         for f in py_findings:
-            report.findings.append(InjectionFinding(
-                category=InjectionCategory(f.get("category", "eval_injection")),
-                severity=InjectionSeverity(f.get("severity", "critical")),
-                match=str(f.get("match", "")),
-                position=int(f.get("position", 0)),
-                encoding_layer=str(f.get("encoding_layer", "python_ast")),
-            ))
+            report.findings.append(
+                InjectionFinding(
+                    category=InjectionCategory(f.get("category", "eval_injection")),
+                    severity=InjectionSeverity(f.get("severity", "critical")),
+                    match=str(f.get("match", "")),
+                    position=int(f.get("position", 0)),
+                    encoding_layer=str(f.get("encoding_layer", "python_ast")),
+                )
+            )
 
     report.scan_duration_ms = (time.time() - start) * 1000
 
@@ -591,18 +614,26 @@ def scan_binary(path: str | Path) -> ScanReport:
 
     report = ScanReport()
 
-    for sig_marker in [b"DAN", b"jailbreak", b"system prompt override",
-                        b"ignore previous instructions", b"as DAN",
-                        b"developer mode", b"token smuggling"]:
+    for sig_marker in [
+        b"DAN",
+        b"jailbreak",
+        b"system prompt override",
+        b"ignore previous instructions",
+        b"as DAN",
+        b"developer mode",
+        b"token smuggling",
+    ]:
         if sig_marker.lower() in data.lower():
-            report.findings.append(InjectionFinding(
-                category=InjectionCategory.JAILBREAK,
-                severity=InjectionSeverity.HIGH,
-                match=sig_marker.decode("ascii", errors="ignore"),
-                position=data.lower().find(sig_marker.lower()),
-                encoding_layer="binary_raw",
-                source_path=str(p),
-            ))
+            report.findings.append(
+                InjectionFinding(
+                    category=InjectionCategory.JAILBREAK,
+                    severity=InjectionSeverity.HIGH,
+                    match=sig_marker.decode("ascii", errors="ignore"),
+                    position=data.lower().find(sig_marker.lower()),
+                    encoding_layer="binary_raw",
+                    source_path=str(p),
+                )
+            )
 
     try:
         text = data.decode("utf-8", errors="ignore")

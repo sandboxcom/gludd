@@ -68,9 +68,8 @@ class PatternEntry:
             if pat and pat in data:
                 return True
         for marker in self.string_markers:
-            if marker:
-                if marker.encode("ascii", errors="ignore") in data:
-                    return True
+            if marker and marker.encode("ascii", errors="ignore") in data:
+                return True
         return False
 
 
@@ -88,6 +87,7 @@ try:
         KNOWN_TOOL_SIGNATURES,
         ObfuscationTechnique,
     )
+
     _OBFUSCATION_TECHNIQUES_AVAILABLE = True
 except Exception:  # pragma: no cover - exercised when sibling module is absent
     KNOWN_TOOL_SIGNATURES = None  # type: ignore
@@ -276,7 +276,7 @@ SHELLCODE_PATTERNS: list[PatternEntry] = [
     PatternEntry(
         id="shellcode-execve-bin-sh",
         category=PatternCategory.SHELLCODE,
-        name="Linux execve(\"/bin/sh\")",
+        name='Linux execve("/bin/sh")',
         byte_patterns=(
             b"\x31\xc0\x50\x68\x2f\x2f\x73\x68\x68\x2f\x62\x69\x6e",
             b"\x48\x31\xd2\x48\xbb\x2f\x2f\x62\x69\x6e\x2f\x73\x68",
@@ -396,10 +396,7 @@ class PatternDatabase:
         return [e for e in self._entries if e.severity == severity]
 
     def by_platform(self, platform: PatternPlatform) -> list[PatternEntry]:
-        return [
-            e for e in self._entries
-            if e.platform == platform or e.platform == PatternPlatform.CROSS_PLATFORM
-        ]
+        return [e for e in self._entries if e.platform == platform or e.platform == PatternPlatform.CROSS_PLATFORM]
 
     def get(self, pattern_id: str) -> PatternEntry | None:
         return self._by_id.get(pattern_id)

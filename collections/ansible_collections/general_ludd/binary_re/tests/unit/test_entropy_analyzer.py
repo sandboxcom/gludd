@@ -148,18 +148,18 @@ class TestComputeSectionEntropies:
         header[0] = ord("M")
         header[1] = ord("Z")
         e_lfanew = 0x80
-        struct.pack_into("<I", header, 0x3c, e_lfanew)
+        struct.pack_into("<I", header, 0x3C, e_lfanew)
         header[e_lfanew : e_lfanew + 4] = b"PE\x00\x00"
         coff = e_lfanew + 4
         struct.pack_into("<H", header, coff + 2, 1)  # num_sections = 1
         opt_hdr = coff + 20
-        struct.pack_into("<H", header, opt_hdr, 0x20b)  # PE32+ magic
+        struct.pack_into("<H", header, opt_hdr, 0x20B)  # PE32+ magic
         sec_table = opt_hdr + 112
         name = b".text\x00\x00\x00"
         header[sec_table : sec_table + 8] = name
-        struct.pack_into("<I", header, sec_table + 8, 0x200)    # virtual size
-        struct.pack_into("<I", header, sec_table + 16, 0x200)   # raw size
-        struct.pack_into("<I", header, sec_table + 20, 0x200)   # raw offset (right after header)
+        struct.pack_into("<I", header, sec_table + 8, 0x200)  # virtual size
+        struct.pack_into("<I", header, sec_table + 16, 0x200)  # raw size
+        struct.pack_into("<I", header, sec_table + 20, 0x200)  # raw offset (right after header)
         sec_data = bytes(range(256)) * 2  # uniform -> high entropy
         full = bytes(header) + sec_data
         sections = compute_section_entropies(full)
@@ -175,12 +175,12 @@ class TestComputeSectionEntropies:
         header[0] = ord("M")
         header[1] = ord("Z")
         e_lfanew = 0x80
-        struct.pack_into("<I", header, 0x3c, e_lfanew)
+        struct.pack_into("<I", header, 0x3C, e_lfanew)
         header[e_lfanew : e_lfanew + 4] = b"PE\x00\x00"
         coff = e_lfanew + 4
         struct.pack_into("<H", header, coff + 2, 1)
         opt_hdr = coff + 20
-        struct.pack_into("<H", header, opt_hdr, 0x20b)
+        struct.pack_into("<H", header, opt_hdr, 0x20B)
         sec_table = opt_hdr + 112
         header[sec_table : sec_table + 8] = b".data\x00\x00\x00"
         struct.pack_into("<I", header, sec_table + 8, 0x200)
@@ -195,23 +195,23 @@ class TestComputeSectionEntropies:
 
 class TestDetectPacking:
     def test_no_sections_not_packed(self):
-        packed, conf, evidence = detect_packing([])
+        packed, _conf, _evidence = detect_packing([])
         assert packed is False
-        assert evidence == []
+        assert _evidence == []
 
     def test_low_entropy_sections_not_packed(self):
         sections = [
             SectionEntropy(name=".text", offset=0, size=100, entropy=5.5, is_high_entropy=False),
             SectionEntropy(name=".data", offset=100, size=50, entropy=4.0, is_high_entropy=False),
         ]
-        packed, conf, evidence = detect_packing(sections)
+        packed, _conf, _evidence = detect_packing(sections)
         assert packed is False
 
     def test_single_high_entropy_section_packed(self):
         sections = [
             SectionEntropy(name=".text", offset=0, size=1000, entropy=7.5, is_high_entropy=True),
         ]
-        packed, conf, evidence = detect_packing(sections)
+        packed, _conf, evidence = detect_packing(sections)
         assert packed is True
         assert any("7.5" in e for e in evidence)
 
@@ -221,7 +221,7 @@ class TestDetectPacking:
             SectionEntropy(name=".rdata", offset=1000, size=800, entropy=7.8, is_high_entropy=True),
             SectionEntropy(name=".data", offset=2000, size=500, entropy=7.4, is_high_entropy=True),
         ]
-        packed, conf, evidence = detect_packing(sections)
+        packed, _conf, _evidence = detect_packing(sections)
         assert packed is True
 
 
@@ -281,11 +281,11 @@ class TestAnalyzeEntropy:
         header = bytearray(0x200)
         header[0] = ord("M")
         header[1] = ord("Z")
-        struct.pack_into("<I", header, 0x3c, 0x80)
-        header[0x80 : 0x84] = b"PE\x00\x00"
+        struct.pack_into("<I", header, 0x3C, 0x80)
+        header[0x80:0x84] = b"PE\x00\x00"
         struct.pack_into("<H", header, 0x84 + 2, 1)
         opt_hdr = 0x84 + 20
-        struct.pack_into("<H", header, opt_hdr, 0x20b)
+        struct.pack_into("<H", header, opt_hdr, 0x20B)
         sec_table = opt_hdr + 112
         header[sec_table : sec_table + 8] = b".text\x00\x00\x00"
         struct.pack_into("<I", header, sec_table + 8, 0x200)
@@ -302,11 +302,11 @@ class TestAnalyzeEntropy:
         header = bytearray(0x200)
         header[0] = ord("M")
         header[1] = ord("Z")
-        struct.pack_into("<I", header, 0x3c, 0x80)
-        header[0x80 : 0x84] = b"PE\x00\x00"
+        struct.pack_into("<I", header, 0x3C, 0x80)
+        header[0x80:0x84] = b"PE\x00\x00"
         struct.pack_into("<H", header, 0x84 + 2, 1)
         opt_hdr = 0x84 + 20
-        struct.pack_into("<H", header, opt_hdr, 0x20b)
+        struct.pack_into("<H", header, opt_hdr, 0x20B)
         sec_table = opt_hdr + 112
         header[sec_table : sec_table + 8] = b".upx0\x00\x00\x00"
         struct.pack_into("<I", header, sec_table + 8, 0x1000)

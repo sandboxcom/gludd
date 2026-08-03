@@ -178,13 +178,15 @@ class PEAnalysisResult:
 
 
 def _read_dos_header(data: bytes) -> PEDOSHeader | None:
-    if len(data) < 64:
+    if len(data) < 0x40:
         return None
     if data[:2] != PE_MAGIC:
         return None
     try:
         e_lfanew = struct.unpack_from("<I", data, 0x3C)[0]
     except struct.error:
+        return None
+    if e_lfanew < 0x40:
         return None
     return PEDOSHeader(e_magic="MZ", e_lfanew=e_lfanew)
 
