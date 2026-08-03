@@ -211,6 +211,9 @@ class LocalInferenceManager:
         - the subprocess exits before becoming healthy (crash / bad model path),
         - the startup_timeout expires before /health returns 200.
 
+        On any failure, captures and includes the process stderr in the error
+        message so the caller can diagnose the root cause without guessing.
+
         If ``startup_timeout <= 0`` the probe is skipped (test/dev shortcut).
         """
         if server.config.startup_timeout <= 0:
@@ -220,30 +223,51 @@ class LocalInferenceManager:
         deadline = time.time() + server.config.startup_timeout
         poll_interval = 2.0
 
+        async def _read_stderr(process: asyncio.subprocess.Process) -> str:
+            if process.stderr is None:
+                return "(stderr not captured)"
+            try:
+                raw = await process.stderr.read()
+                return raw.decode(errors="replace")[-4000:]
+            except Exception:
+                return "(could not read stderr)"
+
         while time.time() < deadline:
-            # Check whether the process exited prematurely.
             if server.process is not None and server.process.returncode is not None:
                 server.status = "error"
+                stderr_tail = await _read_stderr(server.process)
+                logger.error(
+                    "Server %s crashed (exit=%d). stderr tail:\n%s",
+                    server.server_id,
+                    server.process.returncode,
+                    stderr_tail,
+                )
                 raise RuntimeError(
                     f"Local inference server {server.server_id!r} exited "
-                    f"(returncode={server.process.returncode}) before becoming ready."
+                    f"(returncode={server.process.returncode}) before becoming ready.\n"
+                    f"stderr tail:\n{stderr_tail}"
                 )
 
             try:
                 async with httpx.AsyncClient(timeout=5.0) as client:
                     resp = await client.get(health_url)
                 if resp.status_code == 200:
-                    return  # ready
+                    return
             except (httpx.TransportError, httpx.TimeoutException):
-                pass  # server not yet accepting connections
+                pass
 
             await asyncio.sleep(poll_interval)
 
-        # Timed out — mark error and raise.
         server.status = "error"
+        stderr_tail = ""
+        if server.process is not None:
+            stderr_tail = await _read_stderr(server.process)
         raise RuntimeError(
             f"Local inference server {server.server_id!r} did not become ready "
             f"within {server.config.startup_timeout}s (health URL: {health_url})."
+            f"\nstderr tail:\n{stderr_tail}"
+            if stderr_tail
+            else ""
         )
 
     async def _start_slurm_server(self, server: LocalServer) -> LocalServer:
@@ -340,11 +364,7 @@ class LocalInferenceManager:
         self._servers.pop(server_id, None)
 
     def get_endpoints(self) -> dict[str, str]:
-        return {
-            sid: s.endpoint_url
-            for sid, s in self._servers.items()
-            if s.is_running
-        }
+        return {sid: s.endpoint_url for sid, s in self._servers.items() if s.is_running}
 
     def _build_command(self, config: LocalServerConfig) -> list[str]:
         # Validate every config value that is interpolated into the argv (or,

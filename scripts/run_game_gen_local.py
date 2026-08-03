@@ -1,0 +1,324 @@
+#!/usr/bin/env python3
+"""Full pipeline: download tiny model, serve locally, generate a Snake game, verify.
+
+Run with: uv run python scripts/run_game_gen_local.py
+"""
+
+from __future__ import annotations
+
+import asyncio
+import os
+import sys
+import time
+import traceback
+from pathlib import Path
+
+SNAKE_PROMPT = """Write a complete, self-contained Python Snake game as a single class.
+
+Output ONLY the Python code — no prose, no markdown, no explanation.
+
+The game must be a class with the following lifecycle methods:
+- __init__(self): set up initial state
+- start(self): begin/reset the game
+- tick(self, direction): advance the snake by one step in the given direction ('up','down','left','right')
+- score(self) -> int: return current score
+- is_game_over(self) -> bool: return whether the game is over
+- restart(self): reset everything
+
+Lifecycle requirements:
+- state: the snake is a list of (x,y) tuples, head is first element
+- start(): must reset score to 0 and place food randomly
+- restart(): must reset everything
+- score starts at 0 after start() and restart()
+- score increments by 1 when the snake eats food
+- game_over is true when the snake hits a wall (0 <= x < 20, 0 <= y < 20) or itself
+- game_over is idempotent: once true, stays true until restart()
+- tick() while game_over does nothing
+
+class Snake:
+    # your implementation
+"""
+
+
+def main():
+    # ── Step 0: Check deps ──
+    try:
+        import llama_cpp  # noqa: F401
+    except ImportError:
+        print("llama-cpp-python not installed. Run: make sync-llama-cpp", flush=True)
+        return 1
+
+    try:
+        import huggingface_hub  # noqa: F401
+    except ImportError:
+        print("huggingface_hub not installed", flush=True)
+        return 1
+
+    # ── Step 1: Download model ──
+    print("=== STEP 1: Download model ===", flush=True)
+    from general_ludd.small_models.download import ModelDownloader
+
+    MODEL_REPO = "Qwen/Qwen2.5-0.5B-Instruct-GGUF"
+    MODEL_FILE = "qwen2.5-0.5b-instruct-q4_k_m.gguf"
+
+    downloader = ModelDownloader()
+    try:
+        model = downloader.download_gguf(MODEL_REPO, MODEL_FILE)
+    except Exception as e:
+        print(f"Download failed: {e}", flush=True)
+        traceback.print_exc()
+        return 1
+    print(f"  Downloaded: {model.local_path} ({model.size_bytes / 1e6:.1f} MB)", flush=True)
+
+    # ── Step 2: Start llama.cpp server ──
+    print("=== STEP 2: Start local inference server ===", flush=True)
+    from general_ludd.infra.local_inference import LocalInferenceManager, LocalServerConfig
+
+    port = 9999
+    config = LocalServerConfig(
+        engine="llamacpp",
+        model_path=model.local_path,
+        host="localhost",
+        port=port,
+        gpu_layers=0,
+        context_size=2048,
+        startup_timeout=120.0,
+    )
+
+    async def run_pipeline():
+        mgr = LocalInferenceManager()
+
+        # Patch _wait_for_ready to capture server stderr on failure
+        original_start = mgr.start_server
+
+        async def start_with_debug(server_id):
+            server_obj = mgr._servers[server_id]
+
+            # Skip health check to let us see startup errors
+            server_obj.config.startup_timeout = 0
+
+            cmd = mgr._build_command(server_obj.config)
+            print(f"  Command: {' '.join(cmd)}", flush=True)
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,
+            )
+            server_obj.process = process
+            server_obj.started_at = time.time()
+            server_obj.pid = process.pid
+
+            # Wait briefly for it to either accept or crash
+            await asyncio.sleep(5)
+
+            if process.returncode is not None:
+                stderr_data = await process.stderr.read()
+                print(f"  Server CRASHED (exit={process.returncode})", flush=True)
+                print(f"  STDERR:\n{stderr_data.decode()[-2000:]}", flush=True)
+                raise RuntimeError(f"Server exited with {process.returncode}")
+            else:
+                # Try health check
+                import httpx
+
+                health_url = f"http://{server_obj.config.host}:{server_obj.config.port}/health"
+                for _ in range(10):
+                    try:
+                        async with httpx.AsyncClient(timeout=2.0) as client:
+                            resp = await client.get(health_url)
+                        if resp.status_code == 200:
+                            break
+                    except Exception:
+                        pass
+                    await asyncio.sleep(2)
+                else:
+                    stderr_data = await process.stderr.read()
+                    print(f"  Server not healthy after 20s", flush=True)
+                    print(f"  STDERR:\n{stderr_data.decode()[-2000:]}", flush=True)
+                    process.kill()
+                    raise RuntimeError("Server not healthy")
+
+            server_obj.status = "running"
+            return server_obj
+
+        server = mgr.create_server(config)
+        print(f"  Server ID: {server.server_id}", flush=True)
+
+        try:
+            server = await start_with_debug(server.server_id)
+            print(f"  Server running at {server.endpoint_url} (PID={server.pid})", flush=True)
+
+            # ── Step 3: Build gateway and generate game ──
+            print("=== STEP 3: Generate Snake game ===", flush=True)
+
+            from general_ludd.cloud.game_e2e import GameGenerator, GameSpec
+            from general_ludd.models.gateway import ModelGateway, ModelProfile
+            from general_ludd.models.provider_registry import ProviderRegistry
+            from general_ludd.secrets.env import EnvSecretsManager
+
+            profile = ModelProfile(
+                model_profile_id="local-snake-test",
+                provider="openai",
+                provider_package="langchain_openai",
+                provider_class_hint="ChatOpenAI",
+                model_name="local-model",
+                api_base_alias="LOCAL_MODEL_BASE",
+                credential_alias="LOCAL_MODEL_KEY",
+                context_window=2048,
+                max_input_tokens=1500,
+                max_output_tokens=1024,
+                cost_per_input_token=0.0,
+                cost_per_output_token=0.0,
+                api_metered=False,
+                run_budget_usd=0.0,
+                enabled=True,
+                resource_profile="ai_light",
+                roles=["coder"],
+                latency_class="medium",
+                quality_class="variable",
+            )
+            registry = ProviderRegistry()
+            registry.register_provider("openai", "langchain_openai", "ChatOpenAI")
+            secrets = EnvSecretsManager()
+            secrets.set("LOCAL_MODEL_BASE", server.endpoint_url)
+            secrets.set("LOCAL_MODEL_KEY", "not-needed")
+
+            gateway = ModelGateway(
+                profiles=[profile],
+                provider_registry=registry,
+                secrets_manager=secrets,
+            )
+
+            t0 = time.time()
+
+            gen = GameGenerator(gateway)
+            spec = GameSpec(
+                name="snake",
+                genre="arcade",
+                description="Snake game",
+                prompt_template=SNAKE_PROMPT,
+                expected_frames=30,
+                similarity_threshold=0.0,
+            )
+
+            code = gen.generate_game(spec)
+            elapsed = time.time() - t0
+            print(f"  Generation took {elapsed:.1f}s", flush=True)
+            print(f"  Code length: {len(code)} chars", flush=True)
+
+            # ── Step 4: Verify code ──
+            print("=== STEP 4: Verify generated code ===", flush=True)
+
+            import ast
+
+            try:
+                tree = ast.parse(code)
+                print("  AST parse: OK", flush=True)
+            except SyntaxError as e:
+                print(f"  AST parse: FAILED — {e}", flush=True)
+                print("  Generated code:\n" + code[:2000])
+                return 1
+
+            classes = [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+            class_names = [c.name for c in classes]
+            print(f"  Classes: {class_names}", flush=True)
+
+            methods: dict[str, bool] = {}
+            for cls in classes:
+                for node in ast.walk(cls):
+                    if isinstance(node, ast.FunctionDef):
+                        methods[node.name] = True
+            print(f"  Methods: {list(methods.keys())}", flush=True)
+
+            required = {"__init__", "start", "tick", "score", "is_game_over", "restart"}
+            missing = required - set(methods.keys())
+            if missing:
+                print(f"  WARNING: Missing methods: {missing}", flush=True)
+
+            # Write to temp and import
+            import importlib.util
+            import tempfile
+
+            tmp_dir = tempfile.mkdtemp(prefix="gludd-game-")
+            game_path = Path(tmp_dir) / "game_snake.py"
+            game_path.write_text(code)
+
+            spec_obj = importlib.util.spec_from_file_location("game_snake", str(game_path))
+            if spec_obj is None or spec_obj.loader is None:
+                print("  Import: FAILED", flush=True)
+                return 1
+
+            try:
+                mod = importlib.util.module_from_spec(spec_obj)
+                spec_obj.loader.exec_module(mod)
+                print("  Import: OK", flush=True)
+            except Exception as e:
+                print(f"  Import: FAILED — {e}", flush=True)
+                traceback.print_exc()
+                return 1
+
+            # Instantiate
+            game_cls = None
+            for name in class_names:
+                if hasattr(mod, name):
+                    game_cls = getattr(mod, name)
+                    break
+            if game_cls is None:
+                print("  No game class in module", flush=True)
+                return 1
+
+            print("=== STEP 5: Runtime verification ===", flush=True)
+            try:
+                game = game_cls()
+                print(f"  Instantiated {game_cls.__name__}", flush=True)
+
+                if hasattr(game, "start"):
+                    game.start()
+                    print("  start(): OK", flush=True)
+
+                if hasattr(game, "score"):
+                    print(f"  score(): {game.score()}", flush=True)
+
+                if hasattr(game, "is_game_over"):
+                    print(f"  is_game_over(): {game.is_game_over()}", flush=True)
+
+                if hasattr(game, "tick"):
+                    for _ in range(5):
+                        if hasattr(game, "is_game_over") and not game.is_game_over():
+                            game.tick("right")
+                    print("  tick() x5: OK", flush=True)
+
+                if hasattr(game, "restart"):
+                    game.restart()
+                    print("  restart(): OK", flush=True)
+                    if hasattr(game, "score"):
+                        print(f"  score after restart: {game.score()}", flush=True)
+
+            except Exception as e:
+                print(f"  Runtime FAILED: {type(e).__name__}: {e}", flush=True)
+                traceback.print_exc()
+
+            print("=== SUMMARY ===", flush=True)
+            print(f"  Generated: {len(code)} chars", flush=True)
+            print(f"  AST parse: OK", flush=True)
+            print(f"  Import: OK", flush=True)
+            print(f"  Classes: {class_names}", flush=True)
+            print(f"  Methods: {list(methods.keys())}", flush=True)
+            if missing:
+                print(f"  Missing methods: {missing}", flush=True)
+            print(f"  Total time: {elapsed:.1f}s", flush=True)
+            print("\n--- Generated code (first 800 chars) ---")
+            print(code[:800])
+            print("--- end ---")
+
+            return 0
+
+        finally:
+            print("\n=== CLEANUP: Stopping server ===", flush=True)
+            await mgr.stop_all()
+
+    return asyncio.run(run_pipeline())
+
+
+if __name__ == "__main__":
+    sys.exit(main())

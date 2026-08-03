@@ -35,15 +35,8 @@ def read_specs() -> str:
 
 
 def spec_ids(specs_text: str) -> list[str]:
-    """Extract all spec IDs like P01, B01, etc. from the spec doc."""
-    _pat = (
-        r"^###\s+(P\d{2,3}|B\d{2,3}|O\d{2,3}|T\d{2,3}|D\d{2,3}|"
-        r"S\d{2,3}|E\d{2,3}|M\d{2,3}|G\d{2,3}|R\d{2,3}|"
-        r"W\d{2,3}|F\d{2,3}|C\d{2,3}|Q\d{2,3}|X\d{2,3}|"
-        r"A\d{2,3}|N\d{2,3}|K\d{2,3}|U\d{2,3}|Z\d{2,3}|"
-        r"H\d{2,3}|V\d{2,3}|J\d{2,3}|L\d{2,3}|Y\d{2,3}|"
-        r"I\d{2,3})\b"
-    )
+    """Extract all spec IDs like AA001, I123, P01, etc. from the spec doc."""
+    _pat = r"^###\s+([A-Z]{1,2}\d{2,3})\b"
     matches = re.findall(_pat, specs_text, re.MULTILINE)
     return matches
 

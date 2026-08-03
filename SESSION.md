@@ -1,19 +1,22 @@
-## PRIMARY OBJECTIVE: GREEN CI ON DEVELOPMENT → v0.1.0-beta.3 WITH 12/12 ARTIFACTS (BLOCKED: 12 commits unpushed, CI RED for HEAD `e87f6f63`)
+## PRIMARY OBJECTIVE: GREEN CI ON DEVELOPMENT → v0.1.0-beta.3 WITH 12/12 ARTIFACTS (BLOCKED: 10 commits unpushed, CI RED for HEAD `121afdea`)
 
 ---
 
-## SESSION 73 — 2026-08-03 — FPX.1 + Phase Z CLOSED
+## SESSION 74 — 2026-08-03 — CI RED, Gate FAIL, Tree Clean
 
-### FPX.1 + Game Gaps CLOSURE
+### Current State (HEAD `121afdea`)
+
+- **HEAD: `121afdea`** on `development`
+- **Tree: CLEAN**
+- **gate-lite: PASS** — S69 baseline, 4682/4682 app tests
+- **gate (full): FAIL** — dead-code FAIL, env-writes FAIL (`check-make-target-contract`: sandbox-state-dir/list/clean vars missing; `check-plugin-hooks`: enforce-objective.ts export shape issue)
+- **10 commits unpushed** (remote `f1148690`, local `121afdea`)
+- **CI: RED** (run 30799201489, conclusion='failure' for HEAD `121afdea`)
+- **Release beta.3: BLOCKED** on CI green
+
+### FPX.1 + Game Gaps CLOSURE (from S73)
 
 FPX.1 (FPS Game E2E) spec CLOSED. `docs/research/FPS_GAME_E2E_RELIABILITY.md` status: COMPLETE. All Phase Z game gaps (Z.4-Z.7) marked COMPLETE. Full FPX.1 pipeline verified: authorize (SmallModelTaskPolicy) → discover (LocalModelDiscovery) → dispatch (unified_call via ModelGateway → local model) → generate (per-game code) → verify (HardwareProbe + BudgetManager + EnvironmentAdvisor). 697 SMP.1 tests + 14 game-building local tests PASS.
-
-- **HEAD: `e87f6f63`** on `development`
-- **Tree: DIRTY** (9 files modified — Makefile, SESSION.md, TASKS.md, game_e2e.py, small_model_policy.py, test_game_building_local.py, test_behavioral_enforcement_e2e.py, test_cli_sandbox.py, test_collection_split.py)
-- **gate-lite: PASS** — baseline from S69, 4682/4682 app tests, ALL GREEN
-- **12 commits unpushed** (remote `f1148690`, local `e87f6f63`)
-- **CI: RED** (run 30797503219, conclusion='failure')
-- **Release beta.3: BLOCKED** on CI green
 
 ### FPX.1 Local Model Wiring — CLOSED
 
@@ -27,15 +30,16 @@ FPX.1 (FPS Game E2E) is fully wired through the local model dispatch pipeline:
 
 23 spec files in `docs/specs/` — all 19 FEATURE_*.md + SPEC_CAPABILITY_ROUTING.md + SPEC_TASK_TRACKING_ENFORCEMENT.md + SPEC_QUALITY_AUDITOR.md + BEHAVIORAL_SPECS.md = ALL COMPLETE. Plus FPX.1 local model dispatch wiring: COMPLETE (697 tests).
 
-- **HEAD: `e87f6f63`** on `development`
-- **Tree: DIRTY** — 9 files modified (Makefile, SESSION.md, TASKS.md, game_e2e.py, small_model_policy.py, test_game_building_local.py, test_behavioral_enforcement_e2e.py, test_cli_sandbox.py, test_collection_split.py)
+- **HEAD: `121afdea`** on `development`
+- **Tree: CLEAN**
 - **gate-lite: PASS** — baseline from S69, 4682/4682 app tests, ALL GREEN
-- **Test collection: 58,533/58,534, 0 errors** (S67 probe; concurrent pytest blocks fresh)
+- **gate (full): FAIL** — dead-code FAIL, env-writes FAIL
+- **Test collection: ~58,500, 0 errors** (concurrent pytest blocks fresh count)
 - **Spec enforcement: 207/220 = 94.1%** (13 specs lack enforcement)
 - **lint-specs: PASS** (220 specs, 0 violations)
-- **TASKS.md: 252/252 Active (100%)**, ~56 deferred archived stubs
-- **12 commits unpushed** (remote `f1148690`, local `e87f6f63`)
-- **CI: RED** for HEAD `e87f6f63` (run 30797503219, conclusion='failure')
+- **TASKS.md: Active 252/252 (100%)**, ~56 deferred archived stubs
+- **10 commits unpushed** (remote `f1148690`, local `121afdea`)
+- **CI: RED** for HEAD `121afdea` (run 30799201489, conclusion='failure')
 - **Release beta.3: BLOCKED** on push + CI green
 
 ### Test Tally
@@ -120,9 +124,12 @@ FPX.1 (FPS Game E2E) is fully wired through the local model dispatch pipeline:
 - **Verify**: `HardwareProbe.local_model_allowed` + `BudgetManager.check_local_model_resources()` + `EnvironmentAdvisor` caller preference
 - **Commit**: `7b0a8fc4` — FPX.1 local model dispatch verified (697 tests PASS)
 
-### Unpushed Commits (12)
+### Unpushed Commits (10)
 
 ```
+121afdea chore: SESSION.md update, CI trigger
+5675dab1 chore: update SESSION.md, TASKS.md, stash-pop restores, fix Sequence import
+41a05083 fix: CI molecule failures, gate-lite green, E2E rebuild
 e87f6f63 feat: local model E2E, FPX.1 local model dispatch, gate-lite green
 414e34c7 feat: close travel+sandbox — all 21 specs COMPLETE
 a37e3dc0 feat: close 8 specs (unikernel/radio/binary_re/chat/e2e_test_gen/quality_auditor/language/governance)
@@ -130,21 +137,19 @@ a37e3dc0 feat: close 8 specs (unikernel/radio/binary_re/chat/e2e_test_gen/qualit
 8135f8c7 feat: close binary_re spec COMPLETE (503 tests), governance collection, sandbox collection, travel molecule, ZDD/budget fixes
 c1cc717b feat: close language/governance/sandbox/chat/e2e_test_gen, travel daemon, ZDD, budget fixes
 9268aa02 feat: close language/governance/sandbox/chat/e2e_test_gen, travel daemon, ZDD, budget fixes
-d6758aa2 chore: binary_re module_utils updates
-49cbf690 chore: TASKS.md update, binary_re module_utils, radio/binary_re capability test
-04ced553 chore: SESSION.md update, molecule dirs
-9d0b5d2d fix: D-26 (24/24), ZDD, binary_re, budget/cost, sandbox_exec, radio/binary_re spec close
-e5f2e18c fix: molecule coverage gaps, gate-lite all green, session tracking
 ```
 
 ### Remaining Work
 
 | Item | Status |
 |---|---|---|
-| Push 12 accumulated commits | NOT PUSHED |
-| CI green on development HEAD `e87f6f63` | **RED** (run 30797503219, conclusion='failure') |
+| Push 10 accumulated commits | NOT PUSHED |
+| CI green on development HEAD `121afdea` | **RED** (run 30799201489, conclusion='failure') |
 | `make release-cut TAG=v0.1.0-beta.3` | BLOCKED on push + CI green |
-| Fix CI RED for HEAD `e87f6f63` | NOT STARTED |
+| Fix CI RED for HEAD `121afdea` | NOT STARTED |
+| Fix gate FAIL: dead-code | NOT STARTED |
+| Fix gate FAIL: env-writes (make-target-contract sandbox vars) | NOT STARTED |
+| Fix gate FAIL: enforce-objective.ts export shape | NOT STARTED |
 | 13 specs lack enforcement (AA012 et al.) | 207/220 = 94.1% |
 | C.29 LangGraph budget bypass | DEFERRED |
 | X.1.3-X.1.10 XML sub-roles | DEFERRED |
@@ -152,7 +157,7 @@ e5f2e18c fix: molecule coverage gaps, gate-lite all green, session tracking
 | Y.1.1-Y.1.8 Web Design sub-roles | DEFERRED |
 | Z.4-Z.7 E2E game gaps | COMPLETE (FPX.1 pipeline, `e87f6f63`) |
 
-### Architecture — Verified Current (HEAD `e87f6f63`)
+### Architecture — Verified Current (HEAD `121afdea`)
 
 | Component | Detail |
 |---|---|
@@ -170,14 +175,16 @@ e5f2e18c fix: molecule coverage gaps, gate-lite all green, session tracking
 ### Gate Status (2026-08-03)
 
 <!-- gate:begin -->
-- **gate-lite: PASS** (S69 baseline, HEAD `e5f2e18c`) — ALL GREEN, 4682/4682
+- **gate-lite: PASS** (S69 baseline) — ALL GREEN, 4682/4682
+- **gate (full): FAIL** — dead-code FAIL, env-writes FAIL
+- **Last gate run:** 2026-08-02T23:21:32Z — lint PASS 0, dead-code FAIL, env-writes FAIL, hook-runtime PASS 0, test PASS (1/1), verify-enforcement PASS, coverage-gaps PASS, typecheck PASS 0, collect OK
+- **Known failures:**
+  - dead-code FAIL
+  - env-writes FAIL: `check-make-target-contract` — sandbox-state-dir/list/clean targets missing GLUDD_SANDBOX_STATE_DIR + GLUDD_PROJECT_ROOT vars
+  - `check-plugin-hooks`: enforce-objective.ts export shape issue (legacy loader crash)
 - lint: PASS 0
-- dead-code: PASS 0
-- tdd-compliance: PASS
-- coverage-gaps: PASS 0
 - typecheck: PASS 0
-- collect: PASS 0
-- env-writes: PASS
+- collect: OK
 - hook-runtime: PASS (34/34)
 - skills-frontmatter: PASS
 - lint-specs: PASS (220 specs, 0 violations)
@@ -187,7 +194,7 @@ e5f2e18c fix: molecule coverage gaps, gate-lite all green, session tracking
 - verify-enforcement: PASS (40/40)
 - TASKS.md integrity: PASS
 - integration-health: 3,252 collected
-- Total collection: 58,533/58,534, 0 errors
+- Total collection: ~58,500, 0 errors
 <!-- gate:end -->
 
 ### Release History
@@ -202,10 +209,13 @@ e5f2e18c fix: molecule coverage gaps, gate-lite all green, session tracking
 
 ### Next Steps (mandatory)
 
-1. Fix CI RED (run 30797503219, conclusion='failure') for HEAD `e87f6f63`
-2. Push 12 accumulated commits to sandboxcom: `make batch-push`
-3. Wait for CI green on development HEAD
-4. `make release-cut TAG=v0.1.0-beta.3 MSG='beta.3: 21 specs complete + FPX.1 local model, 58K+ tests'`
-5. Verify 12/12 release artifacts: `make verify-release-completeness TAG=v0.1.0-beta.3`
+1. Fix gate FAIL: dead-code
+2. Fix gate FAIL: env-writes (make-target-contract sandbox vars)
+3. Fix gate FAIL: enforce-objective.ts export shape
+4. Fix CI RED (run 30799201489, conclusion='failure') for HEAD `121afdea`
+5. Push 10 accumulated commits to sandboxcom: `make batch-push`
+6. Wait for CI green on development HEAD
+7. `make release-cut TAG=v0.1.0-beta.3 MSG='beta.3: 21 specs complete + FPX.1 local model, 58K+ tests'`
+8. Verify 12/12 release artifacts: `make verify-release-completeness TAG=v0.1.0-beta.3`
 
-- **Last Updated: 2026-08-03 — Session 73.** HEAD `e87f6f63` on `development`. ALL 21 specs + FPX.1 + Phase Z (Z.4-Z.7) COMPLETE. FPX.1 spec CLOSED (`docs/research/FPS_GAME_E2E_RELIABILITY.md`). Local model E2E: COMPLETE (~790 tests). gate-lite: PASS (4682/4682, S69 baseline). 58,533/58,534 tests collected (0 errors). Tree DIRTY (9 files). 12 commits unpushed. CI RED (run 30797503219, conclusion='failure'). Release beta.3 BLOCKED on CI green.
+- **Last Updated: 2026-08-03 — Session 74.** HEAD `121afdea` on `development`. Tree CLEAN. ALL 21 specs + FPX.1 + Phase Z (Z.4-Z.7) COMPLETE. FPX.1 spec CLOSED. Local model E2E: COMPLETE (~790 tests). gate-lite: PASS (4682/4682, S69 baseline). gate (full): FAIL (dead-code, env-writes, enforce-objective.ts export shape). ~58,500 tests collected (0 errors). 10 commits unpushed. CI RED (run 30799201489, conclusion='failure'). Release beta.3 BLOCKED on CI green. Gate failures must be fixed before push.

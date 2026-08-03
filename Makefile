@@ -1808,6 +1808,9 @@ test-e2e-games-local-model:
 game-audit:
 	@$(PYTHON) scripts/game_audit.py
 
+run-game-gen-local:
+	@$(UV) run python scripts/run_game_gen_local.py
+
 gen-mcp-tools:
 	@$(UV) run python scripts/gen_mcp_tools.py
 
