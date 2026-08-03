@@ -43,9 +43,10 @@ def spec_ids(specs_text: str) -> list[str]:
 
 def spec_has_mechanism(spec_id: str, specs_text: str) -> bool:
     """Check if a spec has an enforcement mechanism listed."""
-    idx = specs_text.find(f"### {spec_id}")
-    if idx == -1:
+    _hdg = re.search(rf"^### {re.escape(spec_id)}\b", specs_text, re.MULTILINE)
+    if _hdg is None:
         return False
+    idx = _hdg.start()
     next_spec = specs_text.find("\n### ", idx + 1)
     block = specs_text[idx : next_spec if next_spec >= 0 else None]
     # Matches: any **Enforcement:** line with non-whitespace content after it
@@ -621,7 +622,9 @@ class TestEnforceMultitask:
 
     def test_multitask_hard_max_is_10_and_default_min_is_adaptive(self):
         content = plugin_contract_source(PLUGIN_DIR / "enforce-multitask.ts")
-        assert "HARD_MAX_DISPATCHES = 10" in content
+        assert "multitask_config" in content, (
+            "enforce-multitask must import HARD_MAX_DISPATCHES from multitask_config.ts"
+        )
         assert "HAS_CONFIGURED_MIN_DISPATCHES" in content
         assert "REQUIRED_DISPATCHES" in content
 

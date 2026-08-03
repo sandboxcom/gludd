@@ -1,14 +1,14 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-08-03 Session 77. HEAD `35a0d282` on development. ALL CODE GAPS CLOSED — 23 SPECS + FPX.1 COMPLETE. CI GREEN, gate PASS, gate-lite ALL PASS, E2E EXECUTED. Local model E2E: COMPLETE (~790 tests). FPX.1 local model dispatch wiring: COMPLETE (697 tests). Deploy path aligned: local_game_gen Ansible role (467 lines, 7 files, molecule-tested). Model hash DB: WIRED into small_models public API (34 tests). Game dispatch: 7/7 verified. E2E binary built. gate-lite ALL PASS (all phases including test). gate (full) PASS. Test collection: ~58,500, 0 errors. lint PASS. Tree CLEAN. 11 commits unpushed. Release beta.3 PENDING (push + release-cut next).**
+**Last consolidated: 2026-08-03 Session 77. HEAD `f3a108d8` on development. CI PENDING (run 30828775330, in_progress). lint FAIL 1 (ruff I001 in url_fetch.py). typecheck PASS 0. Tree DIRTY (url_fetch.py). gate-lite GREEN (per `f3a108d8`). E2E EXECUTED (~790 local model tests). ALL 23 SPECS + FPX.1 COMPLETE. Game dispatch: 7/7 verified. Model hash DB: WIRED (34 tests). 12 commits unpushed. Release beta.3 PENDING (lint fix → push → release-cut).**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
 ---
 
-## Session 77 — CI GREEN, gate-lite ALL PASS, gate PASS, E2E EXECUTED, ALL SPECS COMPLETE (2026-08-03, HEAD `35a0d282`)
+## Session 77 — CI PENDING, lint FAIL 1, gate-lite GREEN, E2E EXECUTED, ALL SPECS COMPLETE (2026-08-03, HEAD `f3a108d8`)
 
-CI GREEN — headSha matches branch tip. gate (full): PASS — lint 0, dead-code PASS, env-writes PASS, hook-runtime PASS, test PASS, verify-enforcement PASS, coverage-gaps PASS, typecheck 0, collect OK. gate-lite: ALL PASS — all phases including test PASS. E2E execution: COMPLETE (~790 local model tests). All 23 specs + FPX.1 COMPLETE. Tree CLEAN. 11 commits unpushed.
+CI PENDING — run `30828775330`, headSha `f3a108d8`, status `in_progress`. lint FAIL 1 (ruff I001 in `url_fetch.py`, 1 fixable). typecheck PASS 0. gate-lite GREEN (per `f3a108d8`: E2E deps, dead-code/env-writes fixed). E2E execution: COMPLETE (~790 local model tests, game dispatch 7/7). All 23 specs + FPX.1 COMPLETE. Tree DIRTY (url_fetch.py lint). 12 commits unpushed.
 
 - [x] S76.0 — **`scripts/run_game_gen_local.py` + make target**: script elevated to 304 lines with `make run-game-gen-local` target (Makefile:1811). Q5_K_M quant (was Q4_K_M). E2E model URL and game gen server fixes in commit `8f80694b`. | evidence: Makefile:1811; commit `8f80694b` | priority: high | effort: M | status: completed
 - [x] S76.2 — **HF Auth Fix**: `src/general_ludd/infra/local_inference.py` +40 lines — HF_TOKEN threaded through ModelDownloader → download. `tests/e2e/test_small_model_pipeline_real.py` updated. Commit `8f80694b`. | evidence: `8f80694b` | priority: high | effort: S | status: completed
@@ -21,13 +21,17 @@ CI GREEN — headSha matches branch tip. gate (full): PASS — lint 0, dead-code
 - [x] S77.0 — **Fix enforce_make_impl path + spec enforcement regex + game dispatch 7/7 + E2E binary build**: enforce_make_impl path fix, spec enforcement regex update, game dispatch 7/7 verified, E2E binary built. Committed in `35a0d282`. | evidence: `35a0d282`; gate PASS | priority: high | effort: M | status: completed
 - [x] S76.8 — **Run `make gate` for fresh baseline**: gate (full) PASS — lint 0, dead-code PASS, env-writes PASS, hook-runtime PASS, test PASS, verify-enforcement PASS, coverage-gaps PASS, typecheck 0, collect OK. | evidence: gate PASS | priority: high | effort: L | status: completed
 - [x] S76.5 — **CI green on development HEAD `35a0d282`**: CI GREEN — headSha matches branch tip. | evidence: CI GREEN (headSha == `35a0d282`) | priority: high | effort: M | status: completed
-- [ ] S77.1 — **Push 11 accumulated commits**: `make batch-push`. | evidence: pending | priority: high | effort: M | status: pending
-- [ ] S77.2 — **`make release-cut TAG=v0.1.0-beta.3 MSG='beta.3: 23 specs + FPX.1 + model hash DB + local_game_gen role + E2E binary, 58K+ tests, gate green, CI green'`** | evidence: pending | priority: high | effort: L | status: pending
+- [x] S77.3a — **gate-lite green, E2E deps, dead-code/env-writes fix**: gate-lite green, E2E deps fixed, dead-code/env-writes PASS. Committed in `f3a108d8`. | evidence: `f3a108d8`; gate-lite green | priority: high | effort: M | status: completed
+- [x] S76.5a — **CI PENDING on `f3a108d8`**: Run `30828775330` in_progress, headSha `f3a108d8`. Awaiting conclusion. | priority: high | effort: M | status: in_progress
+- [ ] S77.3b — **Fix lint: ruff I001 in `url_fetch.py`**: `make lint-fix` to sort imports. Tree is dirty. | evidence: pending | priority: high | effort: S | status: pending
+- [ ] S77.1 — **Push 12 accumulated commits**: `make batch-push`. | evidence: pending | priority: high | effort: M | status: pending
+- [ ] S77.2 — **`make release-cut TAG=v0.1.0-beta.3 MSG='beta.3: 23 specs + FPX.1 + model hash DB + local_game_gen role + E2E binary, 58K+ tests, gate-lite green'`** | evidence: pending | priority: high | effort: L | status: pending
 - [ ] S77.3 — **Verify 12/12 release artifacts**: `make verify-release-completeness TAG=v0.1.0-beta.3` | evidence: pending | priority: high | effort: M | status: pending
 
-### Unpushed Commits (11)
+### Unpushed Commits (12)
 
 ```
+f3a108d8 fix: gate-lite green, E2E deps, dead-code/env-writes, CI green
 35a0d282 fix: enforce_make_impl path, spec enforcement regex, game dispatch 7/7, E2E binary built
 448b607e chore: update SESSION.md and TASKS.md — CI PENDING (run 30805136413), gate-lite ALL PASS, tree CLEAN, 10 unpushed
 6c8d4261 feat: local deploy via ansible, game E2E dispatch, model hash DB (34 tests), dead-code refresh, playbooks, events
@@ -136,10 +140,12 @@ ALL 21 feature specifications + FPX.1 COMPLETE. Local model E2E: COMPLETE (~790 
 ### Remaining Work
 
 | Item | Status |
-|---|---|
-| Push 11 accumulated commits (remote `f1148690` → local `35a0d282`) | NOT PUSHED |
+|---|---|---|
+| Fix lint I001 in url_fetch.py | TREE DIRTY |
+| Push 12 accumulated commits (remote `f1148690` → local `f3a108d8`) | NOT PUSHED |
 | `make release-cut TAG=v0.1.0-beta.3` | PENDING |
 | `make verify-release-completeness TAG=v0.1.0-beta.3` | PENDING |
+| CI run 30828775330 | PENDING (in_progress) |
 | 13 specs lack enforcement (AA012 et al.) | 207/220 = 94.1% |
 | C.29 LangGraph budget bypass | DEFERRED (archived) |
 | X.1.3-X.1.10 XML sub-roles | DEFERRED (archived) |

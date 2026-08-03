@@ -5429,6 +5429,10 @@ build-llamacpp-tools:
 		echo "  llama-quantize -> external/llamacpp/build/bin/llama-quantize"; \
 	fi
 
+diagnose-e2e-tools:
+	@echo "=== E2E Tool Diagnostics ==="
+	@$(UV) run python scripts/diagnose_e2e_tools.py
+
 # Restore specific files from a historical ref into the working tree (files
 # deleted from HEAD can only come back from history; used to recover dist/
 # tarball inputs like install.sh). REF=<sha|ref> FILES='<path> [path ...]'.

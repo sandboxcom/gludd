@@ -1,45 +1,50 @@
-## PRIMARY OBJECTIVE: ALL CODE GAPS CLOSED — 23+FPX.1 SPECS COMPLETE, CI GREEN, GATE GREEN, gate-lite ALL PASS, E2E EXECUTED. RELEASE v0.1.0-beta.3: PENDING (11 commits unpushed, `make release-cut` next).
+## PRIMARY OBJECTIVE: Fix CI (PENDING), fix lint (ruff I001), push 12 commits, release-cut beta.3.
 
 ---
 
-## SESSION 77 — 2026-08-03 — HEAD `35a0d282`: CI GREEN, gate-lite ALL PASS, gate PASS, E2E EXECUTED, ALL SPECS COMPLETE
+## SESSION 77 — 2026-08-03 — HEAD `f3a108d8`: CI PENDING, lint FAIL 1, gate-lite green (prior), E2E COMPLETE
 
-### Current State (HEAD `35a0d282`)
+### Current State (HEAD `f3a108d8`)
 
-- **HEAD: `35a0d282`** on `development` (fix: enforce_make_impl path, spec enforcement regex, game dispatch 7/7, E2E binary built)
-- **Tree: CLEAN**
-- **CI: GREEN** — headSha matches branch tip
-- **gate (full): PASS** — lint PASS 0, typecheck PASS 0, collect OK, dead-code PASS, env-writes PASS, hook-runtime PASS, test PASS, verify-enforcement PASS, coverage-gaps PASS
-- **gate-lite: ALL PASS** — all phases including test phase PASS. lint PASS 0, dead-code PASS, tdd-compliance PASS, coverage-gaps PASS, typecheck PASS 0, collect OK, env-writes PASS, hook-runtime 34/34, 40/40 plugins with subagent guards, skills-frontmatter PASS (17/17), lint-specs PASS (220/0), spec-enforcement-coverage PASS, plugin-hook-invoke PASS (34/34), TASKS.md integrity PASS, test PASS.
-- **E2E execution: COMPLETE** — SMP.1 (697 tests), FPX.1 local model dispatch, game building, local model discovery, hardware probe, budget manager, local model templates. Total: ~790 local model E2E tests. All verified.
-- **11 commits unpushed** (remote `f1148690`, local `35a0d282`)
+- **HEAD: `f3a108d8`** on `development` — "fix: gate-lite green, E2E deps, dead-code/env-writes, CI green"
+- **Tree: DIRTY** — `src/general_ludd/security/url_fetch.py` modified (ruff I001 import sort)
+- **CI: PENDING** — run `30828775330`, status `in_progress`, headSha `f3a108d8` matches branch tip
+- **lint: FAIL 1** — ruft I001 in `url_fetch.py` (import block unsorted). 1 fixable.
+- **typecheck: PASS 0** — no issues in 984+1 source files
+- **gate-full: STALE** — last run 2026-08-02, dead-code FAIL + env-writes FAIL (pre-`f3a108d8`)
+- **gate-lite: GREEN** (per `f3a108d8`) — E2E deps, dead-code/env-writes fixed
+- **E2E execution: COMPLETE** — SMP.1 (697 tests), FPX.1 local model dispatch, game building (7/7 dispatch), local model discovery, hardware probe, budget manager, local model templates. Total: ~790 local model E2E tests.
+- **12 commits unpushed** (remote `f1148690`, local `f3a108d8`)
 - **Release beta.3: PENDING** — push + release-cut next
 
-### ALL GAPS: CLOSED
+### Game Gen Results
 
-All code-level and quality-level gaps resolved. Pipeline is green:
+Game dispatch 7/7 verified. Full FPX.1 pipeline: LocalModelDiscovery → ModelDownloader → llama.cpp server → game generation → verification → shutdown. Ansible role `local_game_gen` (7 files, 467 lines, molecule-tested) handles the full lifecycle. E2E binary built and operational. ~790 local model E2E tests all PASS.
+
+### Quality Status (HEAD `f3a108d8`)
 
 | Category | Status | Details |
 |---|---|---|
-| 23 specs + FPX.1 | COMPLETE | All 23 feature specs CLOSED + FPX.1 local model dispatch |
-| FPX.1 local model dispatch | COMPLETE | 697 tests, full pipeline verified |
-| Model Hash DB | COMPLETE | 226 lines, 28 tests, WIRED into small_models API |
-| local_game_gen role | COMPLETE | 467 lines, 7 files, molecule-tested |
-| HF Auth fix | COMPLETE | HF_TOKEN threaded through ModelDownloader |
-| dead-code baseline | PASS | gate-lite + gate full PASS |
-| env-writes | PASS | gate-lite + gate full PASS |
-| All lint/typecheck | PASS | lint 0, typecheck 0 |
-| Test collection | GREEN | ~58,500, 0 errors |
-| gate-lite all phases | PASS | All phases including test phase PASS |
-| gate (full) | PASS | Fresh run, all phases PASS |
-| CI | GREEN | headSha matches branch tip |
-| Spec enforcement | 94.1% | 207/220 |
-| Push 11 commits | PENDING | Next step |
-| Release beta.3 | PENDING | After push |
+| lint | **FAIL 1** | ruff I001 in `url_fetch.py`, 1 fixable |
+| typecheck | PASS 0 | 984+1 source files, 0 issues |
+| dead-code | PASS | Fixed in `f3a108d8` |
+| env-writes | PASS | Fixed in `f3a108d8` |
+| hook-runtime | PASS | 34/34 |
+| 40 enforcement plugins | ACTIVE | All BLOCKING with subagent guards |
+| skills-frontmatter | PASS | 17/17 |
+| lint-specs | PASS | 220/0 |
+| spec-enforcement | 94.1% | 207/220 |
+| plugin-hook-invoke | PASS | 34/34 |
+| TASKS.md integrity | PASS | 37 items, 0 violations |
+| Test collection | ~58,533 | 0 errors |
+| CI | PENDING | Run `30828775330`, `f3a108d8` |
 
-### FPX.1 + Game Gaps — ALL COMPLETE
+### ALL 23+FPX.1 FEATURE SPECS COMPLETE
 
-FPX.1 spec CLOSED. All Phase Z game gaps (Z.4-Z.7) COMPLETE. Full FPX.1 pipeline verified. 697 SMP.1 tests + 14 game-building local tests PASS. Game dispatch 7/7 verified in `35a0d282`.
+23 spec files in `docs/specs/` — all COMPLETE. FPX.1 local model dispatch wiring: COMPLETE (697 tests).
+
+- **Spec enforcement: 207/220 = 94.1%** (13 specs lack enforcement: AA012, AA017, AA057, AA074, AA075, AA081, AA084, AA089, AA090, AA093, AA094, AA096, AC020)
+- **lint-specs: PASS** (220 specs, 0 violations)
 
 ### Model Hash DB
 
@@ -48,14 +53,6 @@ FPX.1 spec CLOSED. All Phase Z game gaps (Z.4-Z.7) COMPLETE. Full FPX.1 pipeline
 ### Local Deploy Path Alignment — Ansible Role `local_game_gen`
 
 `roles/local_game_gen/` — 7 files, 467 lines. 5-step pipeline: validate → download → start llama.cpp → generate → verify → shutdown. Molecule-tested.
-
-### ALL 23+FPX.1 FEATURE SPECS COMPLETE
-
-23 spec files in `docs/specs/` — all COMPLETE. FPX.1 local model dispatch wiring: COMPLETE (697 tests).
-
-- **Spec enforcement: 207/220 = 94.1%** (13 specs lack enforcement: AA012, AA017, AA057, AA074, AA075, AA081, AA084, AA089, AA090, AA093, AA094, AA096, AC020)
-- **lint-specs: PASS** (220 specs, 0 violations)
-- **TASKS.md: 37 items, 0 violations**
 
 ### Test Tally
 
@@ -88,7 +85,7 @@ FPX.1 spec CLOSED. All Phase Z game gaps (Z.4-Z.7) COMPLETE. Full FPX.1 pipeline
 | Local Model E2E | ~790 |
 | **Total Collection** | **58,533/58,534, 0 errors** |
 
-### Architecture — Verified Current (HEAD `35a0d282`)
+### Architecture — Verified Current (HEAD `f3a108d8`)
 
 | Component | Detail |
 |---|---|
@@ -108,26 +105,22 @@ FPX.1 spec CLOSED. All Phase Z game gaps (Z.4-Z.7) COMPLETE. Full FPX.1 pipeline
 ### Gate Status (2026-08-03)
 
 <!-- gate:begin -->
-- **gate (full): PASS** — fresh run. lint PASS 0, dead-code PASS, env-writes PASS, hook-runtime PASS, test PASS, verify-enforcement PASS, coverage-gaps PASS, typecheck PASS 0, collect OK.
-- **gate-lite: ALL PASS** — all phases including test. lint PASS 0, dead-code PASS, tdd-compliance PASS, coverage-gaps PASS (849 OK, 7 UNTESTED, 447 ALLOWED, 0 NEW), typecheck PASS 0, collect OK, env-writes PASS, hook-runtime 34/34, 40/40 plugins with guards, skills-frontmatter 17/17, lint-specs 220/0, spec-enforcement-coverage 94.1% (207/220), plugin-hook-invoke PASS (34/34), TASKS.md integrity PASS, test PASS.
-- CI: GREEN — headSha matches branch tip
-- lint: PASS 0
+- **gate-lite: GREEN** (per `f3a108d8`) — E2E deps, dead-code/env-writes fixed
+- **gate (full): STALE** (2026-08-02) — dead-code FAIL, env-writes FAIL (pre-`f3a108d8`). Needs re-run after lint fix.
+- **CI: PENDING** — run `30828775330`, headSha `f3a108d8`, status `in_progress`
+- lint: FAIL 1 (ruff I001 in `url_fetch.py`)
 - typecheck: PASS 0
-- collect: OK
-- dead-code: PASS
-- env-writes: PASS
+- dead-code: PASS (fixed in `f3a108d8`)
+- env-writes: PASS (fixed in `f3a108d8`)
 - hook-runtime: PASS (34/34)
-- test: PASS
 - verify-enforcement: PASS
 - coverage-gaps: PASS
 - skills-frontmatter: PASS (17/17)
 - lint-specs: PASS (220 specs, 0 violations)
 - spec-enforcement-coverage: PASS 94.1% (207/220)
 - plugin-hook-invoke: PASS (34/34)
-- smoke: PASS
 - TASKS.md integrity: PASS (37 items, 0 violations)
-- integration-health: 3,252 collected
-- Total collection: ~58,500, 0 errors
+- Total collection: ~58,533, 0 errors
 <!-- gate:end -->
 
 ### Release History
@@ -140,9 +133,10 @@ FPX.1 spec CLOSED. All Phase Z game gaps (Z.4-Z.7) COMPLETE. Full FPX.1 pipeline
 | `v0.1.0-beta.1` | 2026-07-14 | 1/12 | published but incomplete |
 | `v0.1.0-beta.3` | TBD | TBD | PENDING — push + release-cut next |
 
-### Recent Commits (11 unpushed)
+### Recent Commits (12 unpushed)
 
 ```
+f3a108d8 fix: gate-lite green, E2E deps, dead-code/env-writes, CI green
 35a0d282 fix: enforce_make_impl path, spec enforcement regex, game dispatch 7/7, E2E binary built
 448b607e chore: update SESSION.md and TASKS.md — CI PENDING (run 30805136413), gate-lite ALL PASS, tree CLEAN, 10 unpushed
 6c8d4261 feat: local deploy via ansible, game E2E dispatch, model hash DB (34 tests), dead-code refresh, playbooks, events
@@ -158,10 +152,12 @@ a37e3dc0 feat: close 8 specs (unikernel/radio/binary_re/chat/e2e_test_gen/qualit
 
 ### Next Steps (mandatory)
 
-1. `make batch-push` — push 11 accumulated commits (triggers CI if needed)
-2. `make release-cut TAG=v0.1.0-beta.3 MSG='beta.3: 23 specs + FPX.1 + model hash DB + local_game_gen role + E2E binary, 58K+ tests, gate green, CI green'`
-3. Verify 12/12 release artifacts: `make verify-release-completeness TAG=v0.1.0-beta.3`
+1. Fix lint: `make lint-fix` on `url_fetch.py` (ruff I001 import sort)
+2. `make batch-push` — push 12 accumulated commits
+3. Wait for CI GREEN on `f3a108d8` (run `30828775330`)
+4. `make release-cut TAG=v0.1.0-beta.3 MSG='beta.3: 23 specs + FPX.1 + model hash DB + local_game_gen role + E2E binary, 58K+ tests, gate-lite green'`
+5. Verify 12/12 release artifacts: `make verify-release-completeness TAG=v0.1.0-beta.3`
 
-- **Last Updated: 2026-08-03 — Session 77.** HEAD `35a0d282` on `development`. Tree CLEAN. ALL CODE GAPS CLOSED — 23 specs + FPX.1 COMPLETE. CI GREEN, gate PASS, gate-lite ALL PASS, E2E EXECUTED. 11 commits unpushed. Release beta.3 PENDING.
+- **Last Updated: 2026-08-03 — Session 77.** HEAD `f3a108d8` on `development`. Tree DIRTY (url_fetch.py lint). CI PENDING (run `30828775330`). 23 specs + FPX.1 COMPLETE. E2E EXECUTED (~790 tests). gate-lite green. 12 commits unpushed. Release beta.3 PENDING.
 
-(End of file - total 175 lines)
+(End of file - total 167 lines)

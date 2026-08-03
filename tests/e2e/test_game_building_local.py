@@ -244,18 +244,12 @@ def _call_local_model_direct(prompt: str, temperature: float = 0.0) -> str:
     """
     gateway = _build_local_gateway()
     profile_id = _LOCAL_PROFILE_ID
-    result = gateway.complete(
-        prompt=prompt,
-        model_profile_id=profile_id,
+    response = gateway.call_model(
+        profile_id,
+        messages=[{"role": "user", "content": prompt}],
         temperature=temperature,
     )
-    if isinstance(result, str):
-        return result
-    if hasattr(result, "content"):
-        return cast(str, result.content)
-    if hasattr(result, "choices"):
-        return cast(str, result.choices[0].message.content)
-    return str(result)
+    return response.content
 
 
 # ---------------------------------------------------------------------------
