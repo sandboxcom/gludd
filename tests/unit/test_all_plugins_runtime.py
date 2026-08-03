@@ -56,7 +56,7 @@ PLUGIN_TO_TEST = {
     "enforce-worktree": ["test_behavioral_specs.py"],
     "enforce-audit": ["test_behavioral_specs.py"],
     "enforce-context": ["test_behavioral_specs.py"],
-    "enforce-additive-task": ["test_extended_enforcement_plugins_runtime.py"],
+    "enforce-additive-task": ["test_enforce_additive_task.py"],
     "enforce-directives": ["test_extended_enforcement_plugins_runtime.py"],
     "enforce-deliverable": ["test_extended_enforcement_plugins_runtime.py"],
     "enforce-no-ci-poll": ["test_extended_enforcement_plugins_runtime.py"],

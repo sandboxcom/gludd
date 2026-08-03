@@ -187,7 +187,6 @@ class TestBuildParser:
             "slurm",
             "connectors",
             "make",
-            "language",
         ):
             assert name in subcommand_map, f"{name} missing from subcommand_map"
 

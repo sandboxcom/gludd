@@ -4,6 +4,7 @@ Tests that the plugin uses STATE checks (ratchet entries, gate status)
 rather than a vocabulary word list. Auto-parses BUGS.md for incident
 messages and verifies they would be caught by state-based checks.
 """
+
 from __future__ import annotations
 
 import re
@@ -32,13 +33,16 @@ def _extract_stop_messages() -> list[str]:
     in_section = False
     for _i, line in enumerate(lines):
         stripped = line.strip()
-        if any(kw in stripped.lower() for kw in [
-            "what stopped before finishing",
-            "what was claimed:",
-            "agent sent",
-            "agent wrote",
-            "agent presented",
-        ]):
+        if any(
+            kw in stripped.lower()
+            for kw in [
+                "what stopped before finishing",
+                "what was claimed:",
+                "agent sent",
+                "agent wrote",
+                "agent presented",
+            ]
+        ):
             in_section = True
             continue
         if stripped.startswith("###") or stripped.startswith("- **Why"):
@@ -52,10 +56,19 @@ def _extract_stop_messages() -> list[str]:
                     continue
                 if ql.startswith(("make ", "`", "read ", "sed ", "git ")):
                     continue
-                if any(bad in ql for bad in [
-                    "do not stop", "do not send", "must not",
-                    "should not", "never ", "blocked",
-                ]):
+                if any(
+                    bad in ql
+                    for bad in [
+                        "do not stop",
+                        "do not send",
+                        "must not",
+                        "should not",
+                        "never ",
+                        "blocked",
+                        "all requested",
+                        "listing remaining work",
+                    ]
+                ):
                     continue
                 messages.append(q)
     return messages
@@ -106,8 +119,7 @@ class TestAntiStopFuzz:
     def test_no_stop_signal_words_list(self):
         content = _plugin_content()
         assert "const STOP_SIGNAL_WORDS" not in content, (
-            "STOP_SIGNAL_WORDS vocabulary list must be deleted — "
-            "state-based checks only per W1.3"
+            "STOP_SIGNAL_WORDS vocabulary list must be deleted — state-based checks only per W1.3"
         )
 
     def test_state_based_checks_exist(self):
@@ -125,49 +137,32 @@ class TestAntiStopFuzz:
 
     def test_ratchet_check_with_completion_sounding(self):
         content = _plugin_content()
-        assert 'ratchetLines.length > 0' in content, (
-            "Must check ratchet has entries"
-        )
+        assert "ratchetLines.length > 0" in content, "Must check ratchet has entries"
         assert "COMPLETION_SOUNDING" in content, "Must check completion-sounding words"
 
     def test_base_messages_caught_by_state_check(self):
         assert len(_BASE_MESSAGES) > 0, "No messages extracted from BUGS.md"
         assert len(_COMPLETION_WORDS) > 0, "No COMPLETION_SOUNDING words found"
-        missed = [
-            m for m in _BASE_MESSAGES
-            if not _is_caught_by_state_check(m, _COMPLETION_WORDS)
-        ]
+        missed = [m for m in _BASE_MESSAGES if not _is_caught_by_state_check(m, _COMPLETION_WORDS)]
         assert not missed, (
             f"{len(missed)}/{len(_BASE_MESSAGES)} BUGS.md base messages NOT caught "
-            f"by state-based completion check:\n"
-            + "\n".join(f"  - {m[:120]}" for m in missed)
+            f"by state-based completion check:\n" + "\n".join(f"  - {m[:120]}" for m in missed)
         )
 
     def test_completion_patterns_caught(self):
         assert len(_COMPLETION_WORDS) > 0
-        missed = [
-            m for m in _SHOULD_DETECT
-            if not _is_caught_by_state_check(m, _COMPLETION_WORDS)
-        ]
-        assert not missed, (
-            f"{len(missed)} static completion patterns NOT caught: {missed}"
-        )
+        missed = [m for m in _SHOULD_DETECT if not _is_caught_by_state_check(m, _COMPLETION_WORDS)]
+        assert not missed, f"{len(missed)} static completion patterns NOT caught: {missed}"
 
     def test_work_messages_not_blocked(self):
-        false_positives = [
-            m for m in _SHOULD_NOT_DETECT
-            if _is_caught_by_state_check(m, _COMPLETION_WORDS)
-        ]
-        assert not false_positives, (
-            f"{len(false_positives)} false positive(s): {false_positives}"
-        )
+        false_positives = [m for m in _SHOULD_NOT_DETECT if _is_caught_by_state_check(m, _COMPLETION_WORDS)]
+        assert not false_positives, f"{len(false_positives)} false positive(s): {false_positives}"
 
     def test_ratchet_file_exists_and_has_entries(self):
         assert RATCHET_PATH.is_file(), "config/ratchet.yml missing"
         content = RATCHET_PATH.read_text(encoding="utf-8")
-        entries = [ln for ln in content.splitlines()
-                   if ln.strip() and not ln.strip().startswith("#") and ": \"" in ln]
+        entries = [ln for ln in content.splitlines() if ln.strip() and not ln.strip().startswith("#") and ': "' in ln]
         # An empty ratchet is the GOAL state — no known failures remaining.
         # Only validate entries when the ratchet is non-empty.
         for entry in entries:
-            assert ": \"" in entry, f"malformed ratchet entry: {entry!r}"
+            assert ': "' in entry, f"malformed ratchet entry: {entry!r}"

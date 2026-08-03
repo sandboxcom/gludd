@@ -817,7 +817,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     from general_ludd.cli_audit_plugins import add_audit_plugins_subparser
 
     add_audit_plugins_subparser(sub)
-    sub.choices["audit-plugins"]
+    audit_plugins_parser = sub.choices["audit-plugins"]
 
     # `gludd collection` — multi-version collection management.
     from general_ludd.cli_collection import add_collection_subparser
@@ -1305,6 +1305,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "test-bg": test_bg_parser,
         "test": test_parser,
         "chat": chat_parser,
+        "audit-plugins": audit_plugins_parser,
         "pause": pause_parser,
         "resume": resume_parser,
     }
