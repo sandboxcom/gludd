@@ -1,0 +1,78 @@
+---
+- name: "Validate evaluation inputs"
+  ansible.builtin.assert:
+    that:
+      - model_id | length > 0 or model_args | length > 0
+      - tasks | length > 0
+    fail_msg: >-
+      model_evaluate requires model_id (or model_args) and at least one task.
+      Got model_id={{ model_id | default('<undefined>') }},
+      model_args={{ model_args | default('<undefined>') }},
+      tasks={{ tasks | default([]) }}.
+
+- name: "Ensure output directory exists"
+  ansible.builtin.file:
+    path: "{{ output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: "Install lm-evaluation-harness"
+  ansible.builtin.pip:
+    name:
+      - lm-eval
+      - accelerate
+    state: present
+
+- name: "Build task list string"
+  ansible.builtin.set_fact:
+    _tasks_arg: "{{ tasks | join(',') }}"
+
+- name: "Build lm_eval command args"
+  ansible.builtin.set_fact:
+    _model_spec: >-
+      {%- if model_args | length > 0 -%}
+      {{ model_args }}
+      {%- elif model_id | length > 0 -%}
+      pretrained={{ model_id }}
+      {%- endif -%}
+
+- name: "Run lm-evaluation-harness"
+  ansible.builtin.command: >-
+    lm_eval
+    --model hf
+    --model_args {{ _model_spec }}
+    --tasks {{ _tasks_arg }}
+    --batch_size {{ batch_size }}
+    --output_path {{ output_dir }}
+    --device {{ device }}
+    {% if limit is not none %}--limit {{ limit }}{% endif %}
+    {% if num_fewshot is not none %}--num_fewshot {{ num_fewshot }}{% endif %}
+    {% if extra_args | length > 0 %}{{ extra_args }}{% endif %}
+    --log_samples
+  register: _eval_result
+  changed_when: true
+
+- name: "Find results JSON file"
+  ansible.builtin.find:
+    paths: "{{ output_dir }}"
+    patterns: "results_*.json"
+    file_type: file
+  register: _eval_files
+
+- name: "Report evaluation results"
+  ansible.builtin.debug:
+    msg: >-
+      Evaluation complete. {{ _eval_files.matched }} result file(s) found in
+      {{ output_dir }}. Check {{ output_dir }}/results_*.json for scores.
+
+- name: "Parse and display scores"
+  when: _eval_files.matched > 0
+  block:
+    - name: "Read latest results"
+      ansible.builtin.slurp:
+        src: "{{ (_eval_files.files | sort(attribute='mtime', reverse=true) | first).path }}"
+      register: _raw_results
+
+    - name: "Display benchmark scores"
+      ansible.builtin.debug:
+        msg: "{{ _raw_results.content | b64decode | from_json }}"

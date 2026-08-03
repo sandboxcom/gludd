@@ -1,0 +1,7 @@
+---
+model_path: ""
+quant_type: "q4_K_M"
+output_dir: "/opt/models/quantized"
+llama_cpp_dir: "/opt/llama.cpp"
+force_rebuild: false
+keep_fp16: false

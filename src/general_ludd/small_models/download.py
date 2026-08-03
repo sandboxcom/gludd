@@ -1,0 +1,239 @@
+from __future__ import annotations
+
+import logging
+import os
+import time
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from enum import StrEnum
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_CACHE_DIR = os.path.expanduser("~/.cache/general-ludd/models")
+
+
+class DownloadSource(StrEnum):
+    HUGGINGFACE = "huggingface"
+    GGUF = "gguf"
+    OLLAMA = "ollama"
+    CACHE = "cache"
+
+
+@dataclass
+class DownloadedModel:
+    model_id: str
+    local_path: str
+    source: DownloadSource = DownloadSource.HUGGINGFACE
+    filename: str | None = None
+    size_bytes: int = 0
+    revision: str | None = None
+    downloaded_at: float = field(default_factory=time.time)
+
+
+@dataclass
+class DownloadProgress:
+    filename: str = ""
+    total_bytes: int = 0
+    downloaded_bytes: int = 0
+    speed_bytes_per_sec: float = 0.0
+    status: str = "idle"
+
+    @property
+    def percent(self) -> float:
+        if self.total_bytes <= 0:
+            return 0.0
+        return min(100.0, (self.downloaded_bytes / self.total_bytes) * 100.0)
+
+
+class ModelDownloader:
+    def __init__(
+        self,
+        cache_dir: str | None = None,
+        hf_token: str | None = None,
+    ) -> None:
+        self.cache_dir = cache_dir or DEFAULT_CACHE_DIR
+        Path(self.cache_dir).mkdir(parents=True, exist_ok=True)
+        self.hf_token = hf_token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+        self._downloaded: dict[str, DownloadedModel] = {}
+        self._progress: DownloadProgress = DownloadProgress()
+        self._last_bytes: int = 0
+        self._last_time: float = 0.0
+        self._on_progress: Callable[[DownloadProgress], None] | None = None
+
+    def on_progress(self, callback: Callable[[DownloadProgress], None]) -> None:
+        self._on_progress = callback
+
+    def get_progress(self) -> DownloadProgress:
+        return self._progress
+
+    def download_huggingface(
+        self,
+        model_id: str,
+        filename: str | None = None,
+        revision: str | None = None,
+    ) -> DownloadedModel:
+        from huggingface_hub import hf_hub_download, snapshot_download
+
+        if revision is None:
+            logger.warning(
+                "Downloading model %s without a pinned revision; tracking mutable main HEAD.",
+                model_id,
+            )
+
+        if filename:
+            local_path = hf_hub_download(
+                repo_id=model_id,
+                filename=filename,
+                token=self.hf_token,
+                revision=revision,
+            )
+        else:
+            local_path = snapshot_download(
+                repo_id=model_id,
+                token=self.hf_token,
+                revision=revision,
+            )
+
+        downloaded = DownloadedModel(
+            model_id=model_id,
+            local_path=local_path,
+            source=DownloadSource.HUGGINGFACE,
+            filename=filename,
+            revision=revision,
+            downloaded_at=time.time(),
+        )
+
+        self._compute_size(downloaded)
+        self._downloaded[model_id] = downloaded
+        logger.info("Downloaded HF model %s to %s (%.1f MB)", model_id, local_path, downloaded.size_bytes / 1e6)
+        return downloaded
+
+    def download_gguf(
+        self,
+        model_id: str,
+        filename: str,
+        revision: str | None = None,
+    ) -> DownloadedModel:
+        import time as _time
+
+        from huggingface_hub import hf_hub_download
+
+        local_path = hf_hub_download(
+            repo_id=model_id,
+            filename=filename,
+            token=self.hf_token,
+            revision=revision,
+        )
+
+        downloaded = DownloadedModel(
+            model_id=model_id,
+            local_path=local_path,
+            source=DownloadSource.GGUF,
+            filename=filename,
+            revision=revision,
+            downloaded_at=_time.time(),
+        )
+
+        self._compute_size(downloaded)
+        self._downloaded[model_id] = downloaded
+        logger.info(
+            "Downloaded GGUF model %s (%s) to %s (%.1f MB)", model_id, filename, local_path, downloaded.size_bytes / 1e6
+        )
+        return downloaded
+
+    def pull_ollama(
+        self,
+        model_id: str,
+        revision: str | None = None,
+    ) -> DownloadedModel:
+        import time as _time
+
+        from huggingface_hub import snapshot_download
+
+        stripped_id = model_id.split(":")[0] if ":" in model_id else model_id
+
+        if revision is None:
+            logger.warning(
+                "Pulling ollama model %s without a pinned revision.",
+                model_id,
+            )
+
+        local_path = snapshot_download(
+            repo_id=stripped_id,
+            token=self.hf_token,
+            revision=revision,
+        )
+
+        downloaded = DownloadedModel(
+            model_id=model_id,
+            local_path=local_path,
+            source=DownloadSource.OLLAMA,
+            revision=revision,
+            downloaded_at=_time.time(),
+        )
+
+        self._compute_size(downloaded)
+        self._downloaded[model_id] = downloaded
+        logger.info(
+            "Pulled ollama model %s (resolved to %s) to %s (%.1f MB)",
+            model_id,
+            stripped_id,
+            local_path,
+            downloaded.size_bytes / 1e6,
+        )
+        return downloaded
+
+    def download(
+        self,
+        model_id: str,
+        filename: str | None = None,
+        revision: str | None = None,
+    ) -> DownloadedModel:
+        if filename and filename.lower().endswith(".gguf"):
+            return self.download_gguf(model_id=model_id, filename=filename, revision=revision)
+        return self.download_huggingface(model_id=model_id, filename=filename, revision=revision)
+
+    def list_downloaded(self) -> list[DownloadedModel]:
+        return list(self._downloaded.values())
+
+    def get_downloaded(self, model_id: str) -> DownloadedModel | None:
+        return self._downloaded.get(model_id)
+
+    def remove_downloaded(self, model_id: str) -> None:
+        self._downloaded.pop(model_id, None)
+
+    def _compute_size(self, model: DownloadedModel) -> None:
+        p = Path(model.local_path)
+        if p.is_dir():
+            model.size_bytes = sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
+        elif p.is_file():
+            model.size_bytes = p.stat().st_size
+
+    def _make_progress_callback(self, filename: str, total_bytes: int) -> Callable[[int, int, int], None]:
+        self._progress = DownloadProgress(
+            filename=filename,
+            total_bytes=total_bytes,
+            downloaded_bytes=0,
+            status="downloading",
+        )
+        self._last_bytes = 0
+        self._last_time = time.time()
+
+        def _cb(current: int, increment: int, total: int) -> None:
+            now = time.time()
+            elapsed = now - self._last_time
+            if elapsed > 0:
+                self._progress.speed_bytes_per_sec = (increment - self._last_bytes) / elapsed
+            self._last_bytes = increment
+            self._last_time = now
+            self._progress.downloaded_bytes = increment
+            self._progress.total_bytes = total
+
+            if self._progress.percent >= 100.0:
+                self._progress.status = "done"
+
+            if self._on_progress:
+                self._on_progress(self._progress)
+
+        return _cb

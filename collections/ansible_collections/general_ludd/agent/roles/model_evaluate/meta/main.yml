@@ -1,0 +1,30 @@
+---
+galaxy_info:
+  role_name: model_evaluate
+  author: general_ludd
+  description: >-
+    Runs EleutherAI LM Evaluation Harness against a model to measure
+    benchmark performance on standard NLP tasks.
+  license: MIT
+  platforms:
+    - name: EL
+      versions:
+        - "8"
+        - "9"
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+  galaxy_tags:
+    - agent
+    - ml
+    - evaluation
+    - benchmark
+    - eleuther
+    - lm-eval
+dependencies: []

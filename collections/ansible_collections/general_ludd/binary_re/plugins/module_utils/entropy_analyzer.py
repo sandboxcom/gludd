@@ -56,9 +56,7 @@ class EntropyAnalysisResult:
     file_type: str
     overall_entropy: float
     sections: list[SectionEntropy] = field(default_factory=list)
-    heatmap: EntropyHeatmap = field(
-        default_factory=lambda: EntropyHeatmap(buckets=[], block_size=0, total_size=0)
-    )
+    heatmap: EntropyHeatmap = field(default_factory=lambda: EntropyHeatmap(buckets=[], block_size=0, total_size=0))
     packed: bool = False
     packing_confidence: DetectionConfidence = DetectionConfidence.LOW
     encrypted_sections: list[SectionEntropy] = field(default_factory=list)
@@ -131,18 +129,38 @@ def _parse_elf_sections(data: bytes) -> list[tuple[str, int, int, bytes]]:
             if len(data) < 64:
                 return sections
             (
-                _e_type, _e_machine, _e_version, _e_entry, _e_phoff,
-                shoff, _e_flags, _e_ehsize, _e_phentsize, _e_phnum,
-                shentsize, shnum, shstrndx,
+                _e_type,
+                _e_machine,
+                _e_version,
+                _e_entry,
+                _e_phoff,
+                shoff,
+                _e_flags,
+                _e_ehsize,
+                _e_phentsize,
+                _e_phnum,
+                shentsize,
+                shnum,
+                shstrndx,
             ) = struct.unpack_from("<HHIQQQIHHHHHH", data, 16)
         else:
             if len(data) < 52:
                 return sections
             (
-                _e_type, _e_machine, _e_version, _e_entry, _e_phoff,
-                shoff, _e_flags, _e_ehsize, _e_phentsize, _e_phnum,
-                shentsize, shnum, shstrndx,
-            ) = struct.unpack_from("<HHIIIIIHHHHH", data, 16)
+                _e_type,
+                _e_machine,
+                _e_version,
+                _e_entry,
+                _e_phoff,
+                shoff,
+                _e_flags,
+                _e_ehsize,
+                _e_phentsize,
+                _e_phnum,
+                shentsize,
+                shnum,
+                shstrndx,
+            ) = struct.unpack_from("<HHIIIIIHHHHHH", data, 16)
         if shoff <= 0 or shnum == 0:
             return sections
         strtab_hdr = shoff + (shstrndx * shentsize)
@@ -245,8 +263,7 @@ def detect_encrypted_sections(
             continue
         if heatmap is not None and heatmap.buckets:
             overlapping = [
-                be for off, be in heatmap.buckets
-                if off + heatmap.block_size > s.offset and off < s.offset + s.size
+                be for off, be in heatmap.buckets if off + heatmap.block_size > s.offset and off < s.offset + s.size
             ]
             if overlapping and not all(be > PACKING_ENTROPY_THRESHOLD for be in overlapping):
                 continue

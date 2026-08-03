@@ -1,506 +1,272 @@
-"""Tests for G2 offline eval harness."""
+"""Deterministic tests for EleutherAI LM eval harness integration."""
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+import hashlib
 
-from general_ludd.eval.harness import EvalHarness
-from general_ludd.eval.model import ModelEvaluator
-from general_ludd.eval.schema import EvalCase, EvalResult
-from general_ludd.eval.scorers import (
-    check_assertions,
-    composite_eval_score,
-    compute_patch_similarity,
+import pytest
+
+from general_ludd.routing_roles.small_model_policy import CapabilityEvidence
+from general_ludd.schemas.benchmark import TaskRole
+from general_ludd.small_models.eval_harness import (
+    STANDARD_TASKS,
+    EleutherAIHarness,
+    EvalTask,
+    HarnessConfig,
+    ParsedResult,
+    parse_lm_eval_output,
+    result_to_evidence,
+    score_passing,
 )
-from general_ludd.models.gateway import ModelGateway, ModelResponse
-
-# ── schema tests ──────────────────────────────────────────────────────────
 
 
-def test_eval_case_and_result_dataclasses():
-    """EvalCase and EvalResult can be instantiated with required fields."""
-    patch_text = (
-        "--- a/main.py\n+++ b/main.py\n@@ -1,2 +1,2 @@\n"
-        " def foo(x):\n-    return x.bar()\n+    return x.bar() if x else None\n"
+def _digest(value: str) -> str:
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def _raw_output(*, task: str = "hellaswag", score: float = 0.72) -> dict:
+    return {
+        "results": {
+            task: {
+                "acc,none": score,
+                "acc_norm,none": score + 0.02,
+            }
+        }
+    }
+
+
+def test_parse_lm_eval_output_extracts_scores() -> None:
+    results = parse_lm_eval_output(_raw_output())
+    assert len(results) == 1
+    assert results[0].task_name == "hellaswag"
+    assert results[0].score == pytest.approx(0.72)
+    assert results[0].raw_metrics == {"acc": 0.72, "acc_norm": 0.74}
+
+
+def test_parse_lm_eval_output_handles_empty_results() -> None:
+    assert parse_lm_eval_output({"results": {}}) == []
+
+
+def test_parse_lm_eval_output_skips_invalid_scores() -> None:
+    output = {
+        "results": {
+            "hellaswag": {"acc,none": "pending"},
+            "mmlu": {"acc,none": 0.55},
+        }
+    }
+    results = parse_lm_eval_output(output)
+    assert len(results) == 1
+    assert results[0].task_name == "mmlu"
+
+
+def test_parse_lm_eval_output_aggregates_metrics() -> None:
+    output = {
+        "results": {
+            "arc_easy": {"acc,none": 0.80, "acc_norm,none": 0.82, "f1,none": 0.79},
+        }
+    }
+    results = parse_lm_eval_output(output)
+    assert len(results) == 1
+    assert results[0].raw_metrics == {"acc": 0.80, "acc_norm": 0.82, "f1": 0.79}
+
+
+def test_score_passing_uses_default_threshold() -> None:
+    assert score_passing("hellaswag", 0.55) is True
+    assert score_passing("hellaswag", 0.40) is True
+    assert score_passing("hellaswag", 0.20) is False
+
+
+def test_score_passing_unknown_task_defaults_sane() -> None:
+    assert score_passing("unknown_task", 0.55) is True
+    assert score_passing("unknown_task", 0.30) is False
+
+
+def test_score_passing_custom_threshold() -> None:
+    assert score_passing("hellaswag", 0.60, threshold=0.65) is False
+    assert score_passing("hellaswag", 0.70, threshold=0.65) is True
+
+
+def test_result_to_evidence_produces_capability_evidence() -> None:
+    result = ParsedResult(
+        task_name="hellaswag",
+        score=0.72,
+        raw_metrics={"acc": 0.72, "acc_norm": 0.74},
     )
-    case = EvalCase(
-        id="test_001",
-        description="Fix a null pointer dereference",
-        input_files={"main.py": "def foo(x):\n    return x.bar()\n"},
-        expected_patch=patch_text,
-        task_type="bug_fix",
-    )
-    result = EvalResult(
-        case_id="test_001",
-        passed=True,
-        actual_patch=patch_text,
-        score=0.95,
-        tokens_used=1240,
-        duration_ms=3421,
+    evidence = result_to_evidence(
+        result=result,
+        model_profile_id="test-model",
+        model_identity_digest=_digest("test-weights"),
+        task_kind="bounded_enumeration",
+        role=TaskRole.ENUMERATOR,
+        collection="general_ludd.agent",
+        suite_id="lm-eval-harness",
+        suite_revision="v0.4.5",
     )
 
-    assert case.id == "test_001"
-    assert case.input_files == {"main.py": "def foo(x):\n    return x.bar()\n"}
-    assert result.case_id == "test_001"
-    assert result.passed is True
-    assert result.score == 0.95
+    assert isinstance(evidence, CapabilityEvidence)
+    assert evidence.model_profile_id == "test-model"
+    assert evidence.task_kind == "bounded_enumeration"
+    assert evidence.role == TaskRole.ENUMERATOR
+    assert evidence.collection == "general_ludd.agent"
+    assert evidence.suite_id == "lm-eval-harness"
+    assert evidence.suite_revision == "v0.4.5"
+    assert evidence.passed_cases == 1
+    assert evidence.total_cases == 1
+    assert evidence.collection_ok is True
+    assert evidence.local_only is True
+    assert len(evidence.evidence_digest) == 64
 
 
-def test_eval_case_assertions_default():
-    """EvalCase.assertions defaults to empty dict."""
-    case = EvalCase(
-        id="c1",
-        description="test",
-        input_files={},
-        expected_patch="",
+def test_result_to_evidence_failing_score_produces_zero_passed() -> None:
+    result = ParsedResult(task_name="hellaswag", score=0.15, raw_metrics={})
+    evidence = result_to_evidence(
+        result=result,
+        model_profile_id="test-model",
+        model_identity_digest=_digest("test-weights"),
+        task_kind="bounded_enumeration",
+        role=TaskRole.ENUMERATOR,
+        collection="general_ludd.agent",
+        suite_id="lm-eval-harness",
+        suite_revision="v0.4.5",
     )
-    assert case.assertions == {}
+    assert evidence.passed_cases == 0
+    assert evidence.total_cases == 1
 
 
-def test_eval_case_with_assertions():
-    """EvalCase stores assertions dict."""
-    case = EvalCase(
-        id="c1",
-        description="test",
-        input_files={},
-        expected_patch="",
-        assertions={"patch_contains": "def foo", "filename": "main.py"},
+def test_harness_config_defaults() -> None:
+    config = HarnessConfig()
+    assert config.model == "hf"
+    assert config.model_args == ""
+    assert config.batch_size == "auto"
+    assert config.device is None
+    assert config.limit is None
+
+
+def test_harness_config_with_overrides() -> None:
+    config = HarnessConfig(
+        model="hf-causal-experimental",
+        model_args="pretrained=gpt2,trust_remote_code=True",
+        batch_size="1",
+        device="cuda:0",
+        limit=20,
     )
-    assert case.assertions["patch_contains"] == "def foo"
-    assert case.assertions["filename"] == "main.py"
+    assert config.model == "hf-causal-experimental"
+    assert config.model_args == "pretrained=gpt2,trust_remote_code=True"
+    assert config.batch_size == "1"
+    assert config.device == "cuda:0"
+    assert config.limit == 20
 
 
-# ── harness tests ─────────────────────────────────────────────────────────
-
-
-def test_eval_harness_benchmark_stub():
-    """EvalHarness.run_benchmark returns a list of EvalResult."""
-    harness = EvalHarness(model="sonnet")
-    cases = [
-        EvalCase(
-            id="case_1",
-            description="Add type hints",
-            input_files={"lib.py": "def add(a, b):\n    return a + b\n"},
-            expected_patch="",
-            task_type="feature",
-        ),
-    ]
-    results = harness.run_benchmark(cases)
-
-    assert isinstance(results, list)
-    assert len(results) == len(cases)
-    for r in results:
-        assert isinstance(r, EvalResult)
-
-
-# ── ModelEvaluator tests ──────────────────────────────────────────────────
-
-
-def test_model_evaluator_dry_run_returns_prompt():
-    """dry_run=True returns the constructed prompt without calling model."""
-    gateway = ModelGateway()
-    evaluator = ModelEvaluator(gateway, profile_id="test-profile", dry_run=True)
-    case = EvalCase(
-        id="e1",
-        description="Add null check",
-        input_files={"app.py": "def go():\n    return None\n"},
-        expected_patch="",
+def test_harness_config_to_cli_args() -> None:
+    config = HarnessConfig(
+        model="hf-causal-experimental",
+        model_args="pretrained=gpt2",
+        batch_size="4",
+        device="cpu",
+        limit=50,
     )
-    result = evaluator.generate_patch(case)
-    assert isinstance(result, str)
-    assert "Add null check" in result
-    assert "app.py" in result
-    assert "def go():" in result
-    assert "unified diff patch" in result.lower()
+    args = config.to_cli_args()
+    assert "--model" in args
+    assert "hf-causal-experimental" in args
+    assert "--model_args" in args
+    assert "pretrained=gpt2" in args
+    assert "--batch_size" in args
+    assert "4" in args
+    assert "--device" in args
+    assert "cpu" in args
+    assert "--limit" in args
+    assert "50" in args
 
 
-def test_model_evaluator_calls_gateway():
-    """generate_patch calls ModelGateway.call_model and returns content."""
-    gateway = MagicMock(spec=ModelGateway)
-    response = MagicMock(spec=ModelResponse)
-    response.content = "+ return x.bar() if x else None\n"
-    gateway.call_model.return_value = response
+def test_harness_config_to_cli_args_omits_none() -> None:
+    config = HarnessConfig(model="hf")
+    args = config.to_cli_args()
+    assert "--device" not in args
+    assert "--limit" not in args
 
-    evaluator = ModelEvaluator(gateway, profile_id="sonnet")
-    case = EvalCase(
-        id="e1",
-        description="Fix NPE",
-        input_files={"main.py": "def foo(x): return x.bar()\n"},
-        expected_patch="",
+
+def test_harness_build_command_includes_tasks() -> None:
+    config = HarnessConfig(model="hf")
+    harness = EleutherAIHarness(config)
+    cmd = harness._build_command(tasks=[EvalTask.HELLASWAG, EvalTask.MMLU])
+    assert cmd[0] == "lm_eval"
+    assert "--model" in cmd
+    assert "--tasks" in cmd
+    task_idx = cmd.index("--tasks")
+    assert "hellaswag" in cmd[task_idx + 1]
+    assert "mmlu" in cmd[task_idx + 1]
+
+
+def test_harness_parse_and_evidence_returns_capability_evidence_list() -> None:
+    config = HarnessConfig(model="hf")
+    harness = EleutherAIHarness(config)
+    output = {
+        "results": {
+            "hellaswag": {"acc,none": 0.72, "acc_norm,none": 0.74},
+            "mmlu": {"acc,none": 0.55},
+        }
+    }
+    evidence_list = harness.parse_and_evidence(
+        output=output,
+        model_profile_id="test-model",
+        model_identity_digest=_digest("test-weights"),
+        task_kind="bounded_enumeration",
+        role=TaskRole.ENUMERATOR,
     )
-    result = evaluator.generate_patch(case)
-
-    gateway.call_model.assert_called_once()
-    call_args = gateway.call_model.call_args
-    assert call_args[0][0] == "sonnet"
-    assert len(call_args[0][1]) == 1
-    assert call_args[0][1][0]["role"] == "user"
-    assert "Fix NPE" in call_args[0][1][0]["content"]
-    assert result == "+ return x.bar() if x else None\n"
+    assert len(evidence_list) == 2
+    for ev in evidence_list:
+        assert isinstance(ev, CapabilityEvidence)
+        assert ev.model_profile_id == "test-model"
 
 
-def test_model_evaluator_respects_profile_id():
-    """ModelEvaluator uses the configured profile_id."""
-    gateway = MagicMock(spec=ModelGateway)
-    response = MagicMock(spec=ModelResponse)
-    response.content = "patch"
-    gateway.call_model.return_value = response
-
-    evaluator = ModelEvaluator(gateway, profile_id="opus")
-    case = EvalCase(
-        id="e1", description="test", input_files={}, expected_patch=""
+def test_harness_parse_and_evidence_empty_results() -> None:
+    config = HarnessConfig(model="hf")
+    harness = EleutherAIHarness(config)
+    evidence_list = harness.parse_and_evidence(
+        output={"results": {}},
+        model_profile_id="test-model",
+        model_identity_digest=_digest("test-weights"),
+        task_kind="bounded_enumeration",
+        role=TaskRole.ENUMERATOR,
     )
-    evaluator.generate_patch(case)
-    assert gateway.call_model.call_args[0][0] == "opus"
+    assert evidence_list == []
 
 
-# ── compute_patch_similarity tests ────────────────────────────────────────
+def test_standard_tasks_includes_expected() -> None:
+    assert EvalTask.HELLASWAG in STANDARD_TASKS
+    assert EvalTask.MMLU in STANDARD_TASKS
+    assert EvalTask.ARC_EASY in STANDARD_TASKS
+    assert EvalTask.ARC_CHALLENGE in STANDARD_TASKS
+    assert EvalTask.TRUTHFULQA in STANDARD_TASKS
+    assert len(STANDARD_TASKS) == 5
 
 
-def test_similarity_identical_patches():
-    assert compute_patch_similarity("abc", "abc") == 1.0
+def test_eval_task_values_are_valid_lm_eval_task_names() -> None:
+    assert EvalTask.HELLASWAG == "hellaswag"
+    assert EvalTask.MMLU == "mmlu"
+    assert EvalTask.ARC_EASY == "arc_easy"
+    assert EvalTask.ARC_CHALLENGE == "arc_challenge"
+    assert EvalTask.TRUTHFULQA == "truthfulqa_mc2"
 
 
-def test_similarity_completely_different():
-    assert compute_patch_similarity("abc", "xyz") < 0.5
+def test_harness_config_device_is_optional() -> None:
+    config = HarnessConfig()
+    args = config.to_cli_args()
+    assert "--device" not in args
 
 
-def test_similarity_both_empty():
-    assert compute_patch_similarity("", "") == 1.0
+def test_parsed_result_repr() -> None:
+    result = ParsedResult(task_name="hellaswag", score=0.72, raw_metrics={"acc": 0.72})
+    r = repr(result)
+    assert "hellaswag" in r
+    assert "0.72" in r
 
 
-def test_similarity_one_empty():
-    assert compute_patch_similarity("abc", "") == 0.0
+def test_result_to_evidence_different_tasks_produce_different_digests() -> None:
+    r1 = ParsedResult(task_name="hellaswag", score=0.80, raw_metrics={"acc": 0.80})
+    r2 = ParsedResult(task_name="mmlu", score=0.80, raw_metrics={"acc": 0.80})
+    identity = _digest("weights")
 
-
-def test_similarity_partial_overlap():
-    score = compute_patch_similarity("hello world", "hello earth")
-    assert 0.0 < score < 1.0
-
-
-# ── check_assertions tests ────────────────────────────────────────────────
-
-
-def test_assertions_patch_contains():
-    results = check_assertions(
-        {"patch_contains": "return x + 1"},
-        "def add(x):\n    return x + 1\n",
-    )
-    assert results["patch_contains"] is True
-
-
-def test_assertions_patch_contains_missing():
-    results = check_assertions(
-        {"patch_contains": "import os"},
-        "def add(x):\n    return x + 1\n",
-    )
-    assert results["patch_contains"] is False
-
-
-def test_assertions_filename():
-    results = check_assertions(
-        {"filename": "main.py"},
-        "--- a/main.py\n+++ b/main.py\n@@ -1 +1 @@\n-foo\n+bar\n",
-    )
-    assert results["filename"] is True
-
-
-def test_assertions_filename_missing():
-    results = check_assertions(
-        {"filename": "lib.py"},
-        "--- a/main.py\n+++ b/main.py\n",
-    )
-    assert results["filename"] is False
-
-
-def test_assertions_line_count_min_meets_threshold():
-    results = check_assertions(
-        {"line_count_min": "3"},
-        "line1\nline2\nline3\n",
-    )
-    assert results["line_count_min"] is True
-
-
-def test_assertions_line_count_min_below_threshold():
-    results = check_assertions(
-        {"line_count_min": "10"},
-        "a\nb\nc\n",
-    )
-    assert results["line_count_min"] is False
-
-
-def test_assertions_line_count_min_invalid_value():
-    results = check_assertions(
-        {"line_count_min": "not_a_number"},
-        "a\nb\n",
-    )
-    assert results["line_count_min"] is False
-
-
-def test_assertions_multiple_keys():
-    results = check_assertions(
-        {"patch_contains": "return x", "filename": "main.py"},
-        "--- a/main.py\n+++ b/main.py\ndef foo(x):\n    return x\n",
-    )
-    assert results == {"patch_contains": True, "filename": True}
-
-
-def test_assertions_empty_dict():
-    assert check_assertions({}, "any patch") == {}
-
-
-def test_assertions_unknown_key_defaults_to_contains():
-    results = check_assertions(
-        {"custom_check": "hello"},
-        "hello world\n",
-    )
-    assert results["custom_check"] is True
-
-
-# ── composite_eval_score tests ────────────────────────────────────────────
-
-
-def test_composite_score_perfect_match():
-    patch = "--- a/app.py\n+++ b/app.py\n@@ -1 +1 @@\n-old\n+new\n"
-    case = EvalCase(
-        id="c1",
-        description="test",
-        input_files={},
-        expected_patch=patch,
-    )
-    result = composite_eval_score(case, patch, tokens_used=100, duration_ms=500)
-    assert result.passed is True
-    assert result.score > 0.9
-    assert result.actual_patch == patch
-    assert result.tokens_used == 100
-    assert result.duration_ms == 500
-
-
-def test_composite_score_total_mismatch():
-    case = EvalCase(
-        id="c1",
-        description="test",
-        input_files={},
-        expected_patch="--- a/foo.py\n+++ b/foo.py\n@@ -1 +1 @@\n-a\n+b\n",
-    )
-    result = composite_eval_score(case, "unrelated output", tokens_used=0, duration_ms=0)
-    assert result.passed is False
-    assert result.score < 0.5
-    assert "low_similarity" in " ".join(result.errors)
-
-
-def test_composite_score_with_assertions():
-    patch = "--- a/main.py\n+++ b/main.py\ndef add(x):\n    return x + 1\n"
-    case = EvalCase(
-        id="c1",
-        description="test",
-        input_files={},
-        expected_patch=patch,
-        assertions={"patch_contains": "return x + 1", "filename": "main.py"},
-    )
-    result = composite_eval_score(case, patch, tokens_used=50, duration_ms=200)
-    assert result.passed is True
-    assert result.score == 1.0
-
-
-def test_composite_score_failing_assertion_adds_error():
-    case = EvalCase(
-        id="c2",
-        description="test",
-        input_files={},
-        expected_patch="patch",
-        assertions={"patch_contains": "NO_SUCH_STRING"},
-    )
-    result = composite_eval_score(case, "patch content here", tokens_used=0, duration_ms=0)
-    assert "assertion_failed:patch_contains" in result.errors
-
-
-def test_composite_score_no_assertions_returns_result():
-    case = EvalCase(
-        id="c3",
-        description="test",
-        input_files={},
-        expected_patch="same\ntext\n",
-    )
-    result = composite_eval_score(case, "same\ntext\n", tokens_used=10, duration_ms=100)
-    assert isinstance(result, EvalResult)
-    assert result.score == 1.0
-    assert result.errors == []
-
-
-def test_composite_score_empty_assertions_uses_default():
-    case = EvalCase(
-        id="c4",
-        description="test",
-        input_files={},
-        expected_patch="content",
-    )
-    result = composite_eval_score(case, "content", tokens_used=0, duration_ms=0)
-    assert result.score >= 0.0
-
-
-# ── harness run_single tests ─────────────────────────────────────────────
-
-
-def test_harness_run_single_no_evaluator():
-    harness = EvalHarness(model="sonnet")
-    case = EvalCase(
-        id="s1",
-        description="test",
-        input_files={},
-        expected_patch="",
-    )
-    result = harness.run_single(case)
-    assert isinstance(result, EvalResult)
-    assert result.passed is False
-    assert "no evaluator" in " ".join(result.errors)
-
-
-def test_harness_run_single_with_mock_evaluator():
-    gateway = MagicMock(spec=ModelGateway)
-    response = MagicMock(spec=ModelResponse)
-    response.content = "mock patch output"
-    gateway.call_model.return_value = response
-    evaluator = ModelEvaluator(gateway, profile_id="sonnet")
-
-    harness = EvalHarness(model="sonnet", evaluator=evaluator)
-    case = EvalCase(
-        id="s2",
-        description="Add null check to function",
-        input_files={"lib.py": "def foo(): return None"},
-        expected_patch="",
-    )
-    result = harness.run_single(case)
-    assert isinstance(result, EvalResult)
-    assert result.actual_patch == "mock patch output"
-
-
-def test_harness_run_benchmark_with_evaluator():
-    gateway = MagicMock(spec=ModelGateway)
-    response = MagicMock(spec=ModelResponse)
-    response.content = "diff --git a/app.py b/app.py"
-    gateway.call_model.return_value = response
-    evaluator = ModelEvaluator(gateway, profile_id="sonnet")
-
-    harness = EvalHarness(model="sonnet", evaluator=evaluator)
-    cases = [
-        EvalCase(id="b1", description="Fix 1", input_files={"a.py": "x"}, expected_patch=""),
-        EvalCase(id="b2", description="Fix 2", input_files={"b.py": "y"}, expected_patch=""),
-    ]
-    results = harness.run_benchmark(cases)
-    assert len(results) == 2
-    assert all(isinstance(r, EvalResult) for r in results)
-
-
-def test_harness_last_results_preserved():
-    harness = EvalHarness(model="sonnet")
-    cases = [EvalCase(id="lr1", description="test", input_files={}, expected_patch="")]
-    harness.run_benchmark(cases)
-    assert len(harness._last_results) == 1
-    assert harness._last_results[0].case_id == "lr1"
-
-
-# ── ModelEvaluator additional tests ──────────────────────────────────────
-
-
-def test_model_evaluator_dry_run_does_not_call_gateway():
-    gateway = MagicMock(spec=ModelGateway)
-    evaluator = ModelEvaluator(gateway, profile_id="sonnet", dry_run=True)
-    case = EvalCase(
-        id="dry1",
-        description="Add type hints",
-        input_files={"utils.py": "def calc(a, b): return a + b"},
-        expected_patch="",
-    )
-    result = evaluator.generate_patch(case)
-    assert gateway.call_model.call_count == 0
-    assert "diff --git" in result or "unified diff" in result.lower()
-
-
-def test_model_evaluator_prompt_includes_file_contents():
-    gateway = MagicMock(spec=ModelGateway)
-    evaluator = ModelEvaluator(gateway, profile_id="sonnet", dry_run=True)
-    case = EvalCase(
-        id="e2",
-        description="Refactor to use pathlib",
-        input_files={"io.py": "import os\nos.path.join('a', 'b')", "config.py": "DEBUG = True"},
-        expected_patch="",
-    )
-    result = evaluator.generate_patch(case)
-    assert "io.py" in result
-    assert "config.py" in result
-    assert "import os" in result
-    assert "DEBUG = True" in result
-
-
-# ── compute_patch_similarity additional tests ────────────────────────────
-
-
-def test_similarity_utf8_content():
-    assert compute_patch_similarity("café", "café") == 1.0
-
-
-def test_similarity_multiline_diff():
-    a = "--- a/f.py\n+++ b/f.py\n@@ -1,3 +1,3 @@\n-def old():\n-    pass\n+def new():\n+    return 1\n"
-    b = "--- a/f.py\n+++ b/f.py\n@@ -1,3 +1,3 @@\n-def old():\n-    pass\n+def new():\n+    return 2\n"
-    score = compute_patch_similarity(a, b)
-    assert 0.5 < score < 1.0
-
-
-# ── composite_eval_score additional tests ────────────────────────────────
-
-
-def test_composite_score_qualifies_as_passed_threshold():
-    case = EvalCase(
-        id="c5",
-        description="test",
-        input_files={},
-        expected_patch="abc123",
-    )
-    result = composite_eval_score(case, "abc123", tokens_used=10, duration_ms=100)
-    assert result.passed is True
-    assert result.score == 1.0
-
-
-def test_composite_score_zero_tokens_still_reported():
-    case = EvalCase(
-        id="c6",
-        description="test",
-        input_files={},
-        expected_patch="same",
-    )
-    result = composite_eval_score(case, "same", tokens_used=0, duration_ms=0)
-    assert result.tokens_used == 0
-    assert result.duration_ms == 0
-    assert result.score == 1.0
-
-
-# ── check_assertions additional tests ────────────────────────────────────
-
-
-def test_assertions_multiple_checks_all_pass():
-    results = check_assertions(
-        {
-            "patch_contains": "return value",
-            "filename": "service.py",
-            "line_count_min": "3",
-        },
-        "--- a/service.py\n+++ b/service.py\ndef handle():\n    return value\n",
-    )
-    assert results == {"patch_contains": True, "filename": True, "line_count_min": True}
-
-
-def test_assertions_unknown_keys_checked_as_contains():
-    results = check_assertions(
-        {"custom_tag": "IMPORTANT"},
-        "This is an IMPORTANT patch",
-    )
-    assert results["custom_tag"] is True
-
-
-def test_assertions_empty_patch_all_containment_fails():
-    results = check_assertions(
-        {"patch_contains": "needle"},
-        "",
-    )
-    assert results["patch_contains"] is False
+    e1 = result_to_evidence(r1, "m", identity, "k", TaskRole.ENUMERATOR, "general_ludd.agent", "s", "r")
+    e2 = result_to_evidence(r2, "m", identity, "k", TaskRole.ENUMERATOR, "general_ludd.agent", "s", "r")
+    assert e1.evidence_digest != e2.evidence_digest

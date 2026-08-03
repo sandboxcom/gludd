@@ -14,6 +14,7 @@
 - collect-check: OK on HEAD 36e1ea1a (57,697 tests, 0 errors)
 - node-v26-compat: 5/5 PASS on HEAD 36e1ea1a
 - gate: lint/typecheck regressions block green
+- **GRAND TOTAL unique tests: ~57,776** (57,697 at 36e1ea1a + ~44 at 1dd97a7d + ~35 at cbbda4b4)
 
 <!-- gate:end -->
 
@@ -114,7 +115,7 @@
 4. Re-run full gate when hardware permits
 5. Release cut for beta.3 (blocked on CI green + full gate)
 
-- **Last Updated: 2026-08-02 — Session 59 Final.** HEAD `36e1ea1a` on `development`. 197/197 TASKS.md items complete (100%). 57,697 tests collected, 0 errors. ~1,900+ new tests across 80+ files. SEC.1–SEC.4 all closed (24/24 controls). 8 core module_utils built in `agent/plugins/module_utils/`. Architecture: capability dispatch backbone replacing hardcoded expert routers, centralised POST /api/dispatch, per-collection capability declarations. Travel agent: 10 module_utils, 123 tests. Lint 4 errors, typecheck 13 errors (unikernel_backend.py). Dead-code 0 new. Tree DIRTY (2 untracked VM contracts files). 15 commits this continuous session. Release beta.3 blocked on CI green + full gate.
+- **Last Updated: 2026-08-02 — Session 61.** HEAD `cbbda4b4` on `development`. 197/197 TASKS.md items complete (100%). **Grand total unique tests: ~57,776** (57,697 collected at 36e1ea1a + ~44 unikernel contracts at 1dd97a7d + ~35 chat/STS/NF10 at cbbda4b4). ~1,900+ new tests across 80+ files. SEC.1–SEC.4 all closed (24/24 controls). 8 core module_utils built in `agent/plugins/module_utils/`. Architecture: capability dispatch backbone replacing hardcoded expert routers, centralised POST /api/dispatch, per-collection capability declarations. Travel agent: 10 module_utils, 123 tests. Lint 4 errors, typecheck 13 errors (unikernel_backend.py). Dead-code 0 new. Tree DIRTY (2 untracked VM contracts files). 17 commits this continuous session (S59–S61). Release beta.3 blocked on CI green + full gate.
 
 ---
 

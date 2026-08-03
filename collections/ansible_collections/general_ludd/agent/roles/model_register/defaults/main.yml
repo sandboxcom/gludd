@@ -1,0 +1,8 @@
+---
+model_name: ""
+model_quant: ""
+eval_results_dir: "/opt/models/eval"
+registry_dir: "/opt/models/registry"
+artifact_dir: "/opt/models/artifacts"
+tasks_required: []
+metadata: {}

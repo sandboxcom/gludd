@@ -100,14 +100,9 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         if gateway is None:
             raise HTTPException(status_code=503, detail="Model gateway not available")
 
-        messages: list[dict[str, str]] = []
-        for m in body.messages:
-            messages.append(
-                {
-                    "role": str(m.get("role", "user")),
-                    "content": str(m.get("content", "")),
-                }
-            )
+        messages: list[dict[str, str]] = [
+            {"role": str(m.get("role", "user")), "content": str(m.get("content", ""))} for m in body.messages
+        ]
 
         valid_roles = {"system", "user", "assistant", "tool"}
         for m in messages:
@@ -151,14 +146,9 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         if gateway is None:
             raise HTTPException(status_code=503, detail="Model gateway not available")
 
-        messages: list[dict[str, str]] = []
-        for m in body.messages:
-            messages.append(
-                {
-                    "role": str(m.get("role", "user")),
-                    "content": str(m.get("content", "")),
-                }
-            )
+        messages: list[dict[str, str]] = [
+            {"role": str(m.get("role", "user")), "content": str(m.get("content", ""))} for m in body.messages
+        ]
 
         valid_roles = {"system", "user", "assistant", "tool"}
         for m in messages:

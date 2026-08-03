@@ -279,6 +279,7 @@ src/general_ludd/budget/envelope.py:PerTaskEnvelope
 src/general_ludd/budget/envelope.py:PerToolEnvelope
 src/general_ludd/business/entity_graph.py:build_graph
 src/general_ludd/business/entity_graph.py:find_related
+src/general_ludd/chat/daemon_runner.py:DaemonChatRunner
 src/general_ludd/chemistry/analytical.py:CalibrationCurve
 src/general_ludd/chemistry/analytical.py:MethodValidation
 src/general_ludd/chemistry/analytical.py:detect_outliers_grubbs
@@ -1550,9 +1551,6 @@ src/general_ludd/security/sandboxes/linux_bubblewrap.py:render_argv
 src/general_ludd/security/sandboxes/linux_selinux.py:render_fc
 src/general_ludd/security/sandboxes/linux_selinux.py:render_te
 src/general_ludd/security/sandboxes/vm/agent_executor.py:AgentCommand
-src/general_ludd/security/sandboxes/vm/contracts.py:BootConfig
-src/general_ludd/security/sandboxes/vm/contracts.py:ImageConfig
-src/general_ludd/security/sandboxes/vm/contracts.py:UnikernelBackend
 src/general_ludd/security/sandboxes/vm/contracts.py:validate_boot_config
 src/general_ludd/security/sandboxes/vm/contracts.py:validate_image_config
 src/general_ludd/security/sandboxes/vm/firecracker_backend.py:FirecrackerUnixHTTPConnection

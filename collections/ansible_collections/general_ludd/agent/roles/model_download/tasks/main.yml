@@ -1,0 +1,60 @@
+---
+- name: "Validate model download inputs"
+  ansible.builtin.assert:
+    that:
+      - (model_id | length > 0) or (gguf_url | length > 0)
+    fail_msg: >-
+      model_download requires model_id or gguf_url.
+      Got model_id={{ model_id | default('<undefined>') }},
+      gguf_url={{ gguf_url | default('<undefined>') }}.
+
+- name: "Ensure download directory exists"
+  ansible.builtin.file:
+    path: "{{ download_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: "Install huggingface_hub"
+  ansible.builtin.pip:
+    name: huggingface_hub
+    state: present
+    extra_args: "{% if not verify_ssl %}--trusted-host pypi.org --trusted-host files.pythonhosted.org{% endif %}"
+
+- name: "Download model from HuggingFace Hub"
+  when: model_id | length > 0
+  block:
+    - name: "Login to HuggingFace Hub"
+      when: hf_token | length > 0
+      ansible.builtin.command: "huggingface-cli login --token {{ hf_token }}"
+      changed_when: false
+      no_log: true
+
+    - name: "Download model via huggingface-cli"
+      ansible.builtin.command: >-
+        huggingface-cli download {{ model_id }}
+        --local-dir {{ download_dir }}/{{ model_id | regex_replace('/', '_') }}
+        {% if force_redownload %}--force{% endif %}
+        {% if hf_token | length > 0 %}--token {{ hf_token }}{% endif %}
+      args:
+        creates: "{{ download_dir }}/{{ model_id | regex_replace('/', '_') }}/config.json"
+      changed_when: true
+
+- name: "Download GGUF model from URL"
+  when: gguf_url | length > 0
+  block:
+    - name: "Extract GGUF filename from URL"
+      ansible.builtin.set_fact:
+        _gguf_filename: "{{ gguf_url | basename }}"
+
+    - name: "Download GGUF file"
+      ansible.builtin.get_url:
+        url: "{{ gguf_url }}"
+        dest: "{{ download_dir }}/{{ _gguf_filename }}"
+        mode: "0644"
+        validate_certs: "{{ verify_ssl }}"
+        force: "{{ force_redownload }}"
+      register: _gguf_download_result
+
+    - name: "Report GGUF download result"
+      ansible.builtin.debug:
+        msg: "Downloaded GGUF model {{ _gguf_filename }} to {{ download_dir }}"

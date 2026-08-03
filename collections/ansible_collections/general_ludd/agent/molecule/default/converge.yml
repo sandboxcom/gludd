@@ -1,0 +1,94 @@
+---
+- name: "Model deployment pipeline — full integration"
+  hosts: localhost
+  gather_facts: true
+  vars:
+    test_base: "/tmp/gludd-model-pipeline-test"
+    pipeline_model_id: "HuggingFaceTB/SmolLM2-135M-Instruct"
+    pipeline_download_dir: "{{ test_base }}/hub"
+    pipeline_quant_type: "q4_K_M"
+    pipeline_quant_output_dir: "{{ test_base }}/quantized"
+    pipeline_eval_output_dir: "{{ test_base }}/eval"
+    pipeline_eval_tasks:
+      - hellaswag
+    pipeline_eval_limit: 10
+    pipeline_registry_dir: "{{ test_base }}/registry"
+    pipeline_artifact_dir: "{{ test_base }}/artifacts"
+    pipeline_server_log_dir: "{{ test_base }}/logs"
+    pipeline_serve_host: "127.0.0.1"
+    pipeline_serve_port: 18989
+  tasks:
+    - name: "Ensure test directories exist"
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ test_base }}"
+        - "{{ pipeline_download_dir }}"
+        - "{{ pipeline_quant_output_dir }}"
+        - "{{ pipeline_eval_output_dir }}"
+        - "{{ pipeline_registry_dir }}"
+        - "{{ pipeline_artifact_dir }}"
+        - "{{ pipeline_server_log_dir }}"
+
+    - name: "Download SMolLM2-135M model"
+      ansible.builtin.include_role:
+        name: model_download
+      vars:
+        model_id: "{{ pipeline_model_id }}"
+        download_dir: "{{ pipeline_download_dir }}"
+        force_redownload: false
+
+    - name: "Quantize model with llama.cpp"
+      ansible.builtin.include_role:
+        name: model_quantize
+      vars:
+        model_path: "{{ pipeline_download_dir }}/{{ pipeline_model_id | regex_replace('/', '_') }}"
+        quant_type: "{{ pipeline_quant_type }}"
+        output_dir: "{{ pipeline_quant_output_dir }}"
+
+    - name: "Evaluate model on benchmark tasks"
+      ansible.builtin.include_role:
+        name: model_evaluate
+      vars:
+        model_id: "{{ pipeline_model_id }}"
+        tasks: "{{ pipeline_eval_tasks }}"
+        output_dir: "{{ pipeline_eval_output_dir }}"
+        limit: "{{ pipeline_eval_limit }}"
+        batch_size: "1"
+
+    - name: "Register capability evidence"
+      ansible.builtin.include_role:
+        name: model_register
+      vars:
+        model_name: "{{ pipeline_model_id }}"
+        model_quant: "{{ pipeline_quant_type }}"
+        eval_results_dir: "{{ pipeline_eval_output_dir }}"
+        registry_dir: "{{ pipeline_registry_dir }}"
+        artifact_dir: "{{ pipeline_artifact_dir }}"
+
+    - name: "Start inference server"
+      ansible.builtin.include_role:
+        name: model_serve
+      vars:
+        backend: llama_cpp
+        model_path: "{{ pipeline_quant_output_dir }}/{{ pipeline_model_id | regex_replace('/', '_') }}-{{ pipeline_quant_type }}.gguf"
+        host: "{{ pipeline_serve_host }}"
+        port: "{{ pipeline_serve_port }}"
+        server_log_dir: "{{ pipeline_server_log_dir }}"
+        health_check_retries: 5
+        health_check_delay: 2
+
+    - name: "Verify model server health"
+      ansible.builtin.uri:
+        url: "http://{{ pipeline_serve_host }}:{{ pipeline_serve_port }}/health"
+        method: GET
+        timeout: 5
+        status_code: 200
+      ignore_errors: true
+      register: _pipeline_health
+
+    - name: "Report pipeline health check"
+      ansible.builtin.debug:
+        msg: "Server health check status: {{ _pipeline_health.status | default('N/A') }}"

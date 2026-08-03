@@ -1,0 +1,30 @@
+---
+galaxy_info:
+  role_name: model_quantize
+  author: general_ludd
+  description: >-
+    Quantizes a downloaded model for local inference using llama.cpp quantize tool.
+    Supports FP16-to-GGUF conversion and configurable quantization types.
+  license: MIT
+  platforms:
+    - name: EL
+      versions:
+        - "8"
+        - "9"
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+  galaxy_tags:
+    - agent
+    - ml
+    - model
+    - quantize
+    - llama.cpp
+    - gguf
+dependencies: []

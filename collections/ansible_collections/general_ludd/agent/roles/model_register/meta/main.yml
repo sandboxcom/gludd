@@ -1,0 +1,31 @@
+---
+galaxy_info:
+  role_name: model_register
+  author: general_ludd
+  description: >-
+    Registers capability evidence for a model after evaluation.
+    Parses benchmark scores, generates a capability manifest,
+    and records entries in a model registry.
+  license: MIT
+  platforms:
+    - name: EL
+      versions:
+        - "8"
+        - "9"
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+  galaxy_tags:
+    - agent
+    - ml
+    - model
+    - registry
+    - capability
+    - evidence
+dependencies: []

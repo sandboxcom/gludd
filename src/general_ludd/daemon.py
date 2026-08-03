@@ -3435,6 +3435,7 @@ def create_daemon_app(
         signing,
         skills,
         slurm,
+        small_models,
         spend,
         todos,
         variants,
@@ -3491,6 +3492,7 @@ def create_daemon_app(
     ansible.register(app, daemon_state)
     azure_cost_router.register(app, daemon_state)
     slurm.register(app, daemon_state)
+    small_models.register(app, daemon_state)
     self_improve.register(app, daemon_state)
     self_update.register(app, daemon_state)
     maintenance.register(app, daemon_state)

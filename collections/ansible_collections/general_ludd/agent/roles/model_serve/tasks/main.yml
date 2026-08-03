@@ -1,0 +1,112 @@
+---
+- name: "Validate serve inputs"
+  ansible.builtin.assert:
+    that:
+      - model_path | length > 0
+      - backend in ["llama_cpp", "vllm"]
+    fail_msg: >-
+      model_serve requires model_path and a valid backend (llama_cpp or vllm).
+      Got model_path={{ model_path | default('<undefined>') }},
+      backend={{ backend | default('<undefined>') }}.
+
+- name: "Ensure server log directory exists"
+  ansible.builtin.file:
+    path: "{{ server_log_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: "Set server name and log path"
+  ansible.builtin.set_fact:
+    _server_name: "{{ backend }}-{{ model_path | basename | regex_replace('\\.gguf$', '') }}"
+    _server_log: "{{ server_log_dir }}/{{ backend }}-{{ model_path | basename | regex_replace('\\.gguf$', '') }}.log"
+
+- name: "Check if server already running"
+  ansible.builtin.uri:
+    url: "http://{{ host }}:{{ port }}/health"
+    method: GET
+    timeout: 2
+  register: _health_check_before
+  ignore_errors: true
+  changed_when: false
+
+- name: "Report existing server"
+  when: _health_check_before.status == 200
+  ansible.builtin.debug:
+    msg: "Inference server already running on {{ host }}:{{ port }}"
+
+- name: "Setup llama.cpp server"
+  when:
+    - _health_check_before.status != 200
+    - backend == "llama_cpp"
+  block:
+    - name: "Install llama-cpp-python with server extras"
+      ansible.builtin.pip:
+        name:
+          - llama-cpp-python[server]
+        state: present
+
+    - name: "Start llama.cpp server"
+      ansible.builtin.shell: |
+        nohup python3 -m llama_cpp.server \
+          --model "{{ model_path }}" \
+          --host {{ host }} \
+          --port {{ port }} \
+          --n_ctx {{ context_size }} \
+          --n_gpu_layers {{ gpu_layers }} \
+          --n_threads {{ threads }} \
+          {% if extra_args | length > 0 %}{{ extra_args }}{% endif %} \
+          > "{{ _server_log }}" 2>&1 &
+      changed_when: true
+      environment:
+        PATH: "{{ ansible_env.PATH }}"
+
+- name: "Setup vllm server"
+  when:
+    - _health_check_before.status != 200
+    - backend == "vllm"
+  block:
+    - name: "Install vllm"
+      ansible.builtin.pip:
+        name:
+          - vllm
+        state: present
+
+    - name: "Start vllm server"
+      ansible.builtin.shell: |
+        nohup python3 -m vllm.entrypoints.openai.api_server \
+          --model "{{ model_path }}" \
+          --host {{ host }} \
+          --port {{ port }} \
+          {% if extra_args | length > 0 %}{{ extra_args }}{% endif %} \
+          > "{{ _server_log }}" 2>&1 &
+      changed_when: true
+      environment:
+        PATH: "{{ ansible_env.PATH }}"
+
+- name: "Wait for inference server to be ready"
+  when: _health_check_before.status != 200
+  block:
+    - name: "Poll health endpoint until ready"
+      ansible.builtin.uri:
+        url: "http://{{ host }}:{{ port }}/health"
+        method: GET
+        timeout: 5
+      register: _health_poll
+      until: _health_poll.status == 200
+      retries: "{{ health_check_retries }}"
+      delay: "{{ health_check_delay }}"
+      changed_when: false
+
+    - name: "Print startup log tail on failure"
+      when: _health_poll is not defined or _health_poll.status != 200
+      ansible.builtin.debug:
+        msg: "Server failed to start. Last log lines:\n{{ lookup('ansible.builtin.file', _server_log) }}"
+      ignore_errors: true
+
+- name: "Report server status"
+  ansible.builtin.debug:
+    msg: >-
+      Inference server running: http://{{ host }}:{{ port }}
+      Backend: {{ backend }}
+      Model: {{ model_path }}
+      Log: {{ _server_log }}

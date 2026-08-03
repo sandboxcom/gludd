@@ -150,12 +150,22 @@ KNOWN_TOOL_SIGNATURES: dict[ObfuscationTechnique, list[ToolSignature]] = {
 DETECTION_HEURISTICS: dict[ObfuscationTechnique, dict] = {
     ObfuscationTechnique.PACKING: {
         "byte_patterns": [
-            b"UPX0", b"UPX1", b"UPX!", b"MPRESS", b"PEC2", b"pec2",
-            b".aspack", b".adata",
+            b"UPX0",
+            b"UPX1",
+            b"UPX!",
+            b"MPRESS",
+            b"PEC2",
+            b"pec2",
+            b".aspack",
+            b".adata",
         ],
         "api_calls": [
-            "LoadLibraryA", "GetProcAddress", "VirtualAlloc",
-            "VirtualProtect", "VirtualFree", "GetModuleHandleA",
+            "LoadLibraryA",
+            "GetProcAddress",
+            "VirtualAlloc",
+            "VirtualProtect",
+            "VirtualFree",
+            "GetModuleHandleA",
             "GlobalAlloc",
         ],
         "structural_markers": [
@@ -171,13 +181,23 @@ DETECTION_HEURISTICS: dict[ObfuscationTechnique, dict] = {
     },
     ObfuscationTechnique.VIRTUALIZATION: {
         "byte_patterns": [
-            b".vmp0", b".vmp1", b"VMProtect",
-            b"Themida", b"WinLicense", b"CV", b"CODEV",
+            b".vmp0",
+            b".vmp1",
+            b"VMProtect",
+            b"Themida",
+            b"WinLicense",
+            b"CV",
+            b"CODEV",
         ],
         "api_calls": [
-            "FindResourceA", "SizeofResource", "LockResource",
-            "CreateThread", "ResumeThread", "SuspendThread",
-            "VirtualProtect", "NtAllocateVirtualMemory",
+            "FindResourceA",
+            "SizeofResource",
+            "LockResource",
+            "CreateThread",
+            "ResumeThread",
+            "SuspendThread",
+            "VirtualProtect",
+            "NtAllocateVirtualMemory",
         ],
         "structural_markers": [
             "custom_vm_handler_loop",
@@ -200,10 +220,13 @@ DETECTION_HEURISTICS: dict[ObfuscationTechnique, dict] = {
     },
     ObfuscationTechnique.STRING_ENCRYPTION: {
         "byte_patterns": [
-            b"__strdecrypt", b"decrypt_string", b"xstr",
+            b"__strdecrypt",
+            b"decrypt_string",
+            b"xstr",
         ],
         "api_calls": [
-            "CryptDecrypt", "CryptStringToBinaryA",
+            "CryptDecrypt",
+            "CryptStringToBinaryA",
             "RtlDecryptMemory",
         ],
         "structural_markers": [
@@ -216,15 +239,22 @@ DETECTION_HEURISTICS: dict[ObfuscationTechnique, dict] = {
     },
     ObfuscationTechnique.ANTI_DEBUG: {
         "byte_patterns": [
-            b"\x0f\x0b", b"\xcd\x01",
+            b"\x0f\x0b",
+            b"\xcd\x01",
         ],
         "api_calls": [
-            "IsDebuggerPresent", "CheckRemoteDebuggerPresent",
-            "NtQueryInformationProcess", "NtSetInformationThread",
-            "OutputDebugStringA", "ZwQueryInformationProcess",
-            "DebugBreak", "RtlRemoteCall",
-            "BlockInput", "NtYieldExecution",
-            "SetDebugPrivilege", "GetTickCount",
+            "IsDebuggerPresent",
+            "CheckRemoteDebuggerPresent",
+            "NtQueryInformationProcess",
+            "NtSetInformationThread",
+            "OutputDebugStringA",
+            "ZwQueryInformationProcess",
+            "DebugBreak",
+            "RtlRemoteCall",
+            "BlockInput",
+            "NtYieldExecution",
+            "SetDebugPrivilege",
+            "GetTickCount",
         ],
         "structural_markers": [
             "ptrace_self_check",
@@ -271,16 +301,22 @@ _PACKER_SECTION_REGEX = re.compile(
 )
 
 _BASE64_INJECTION_MARKERS = [
-    b"eval(", b"exec(", b"__import__(", b"compile(",
+    b"eval(",
+    b"exec(",
+    b"__import__(",
+    b"compile(",
 ]
 _BASE64_REGEX = re.compile(rb"[A-Za-z0-9+/]{4,}={0,2}")
 
 _ELF_MAGIC = b"\x7fELF"
 _PE_MAGIC = b"MZ"
 _MACHO_MAGICS = [
-    b"\xfe\xed\xfa\xce", b"\xfe\xed\xfa\xcf",
-    b"\xce\xfa\xed\xfe", b"\xcf\xfa\xed\xfe",
-    b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca",
+    b"\xfe\xed\xfa\xce",
+    b"\xfe\xed\xfa\xcf",
+    b"\xce\xfa\xed\xfe",
+    b"\xcf\xfa\xed\xfe",
+    b"\xca\xfe\xba\xbe",
+    b"\xbe\xba\xfe\xca",
 ]
 
 
@@ -299,18 +335,36 @@ def _read_elf_sections(data: bytes) -> list[tuple[str, bytes]]:
         shstrndx: int
         if bitness == "64":
             (
-                _e_type, _e_machine, _e_version,
-                _e_entry, _e_phoff,
-                shoff, _e_flags, _e_ehsize, _e_phentsize,
-                _e_phnum, shentsize, shnum, shstrndx,
+                _e_type,
+                _e_machine,
+                _e_version,
+                _e_entry,
+                _e_phoff,
+                shoff,
+                _e_flags,
+                _e_ehsize,
+                _e_phentsize,
+                _e_phnum,
+                shentsize,
+                shnum,
+                shstrndx,
             ) = struct.unpack_from("<HHIQQQIHHHHHH", data, 16)
         else:
             (
-                _e_type, _e_machine, _e_version,
-                _e_entry, _e_phoff,
-                shoff, _e_flags, _e_ehsize, _e_phentsize,
-                _e_phnum, shentsize, shnum, shstrndx,
-            ) = struct.unpack_from("<HHIIIIIHHHHH", data, 16)
+                _e_type,
+                _e_machine,
+                _e_version,
+                _e_entry,
+                _e_phoff,
+                shoff,
+                _e_flags,
+                _e_ehsize,
+                _e_phentsize,
+                _e_phnum,
+                shentsize,
+                shnum,
+                shstrndx,
+            ) = struct.unpack_from("<HHIIIIIHHHHHH", data, 16)
         if shoff <= 0:
             return sections
         strtab_offset = shoff + (shstrndx * shentsize)
@@ -362,7 +416,7 @@ def _read_pe_sections(data: bytes) -> list[tuple[str, bytes]]:
     try:
         if data[:2] != b"MZ":
             return sections
-        pe_offset = struct.unpack_from("<I", data, 0x3c)[0]
+        pe_offset = struct.unpack_from("<I", data, 0x3C)[0]
         if pe_offset <= 0 or pe_offset + 4 > len(data):
             return sections
         sig = data[pe_offset : pe_offset + 4]
@@ -372,7 +426,7 @@ def _read_pe_sections(data: bytes) -> list[tuple[str, bytes]]:
         num_sections = struct.unpack_from("<H", data, coff_header_offset + 2)[0]
         optional_header_offset = coff_header_offset + 20
         magic = struct.unpack_from("<H", data, optional_header_offset)[0]
-        if magic == 0x20b:
+        if magic == 0x20B:
             section_offset_base = optional_header_offset + 112
         else:
             section_offset_base = optional_header_offset + 96
@@ -411,6 +465,7 @@ def _compute_entropy(data: bytes) -> float:
         counts[b] += 1
     n = len(data)
     import math
+
     entropy = 0.0
     for c in counts:
         if c > 0:
@@ -429,11 +484,13 @@ def _detect_pe_techniques(data: bytes, sections: list[tuple[str, bytes]]) -> lis
             evidence = [f"section {sec_name} entropy {entropy:.2f} > 7.0"]
             if import_count < DETECTION_HEURISTICS[ObfuscationTechnique.PACKING]["import_count_threshold"]:
                 evidence.append(f"low import count ({import_count})")
-            results.append(DetectionResult(
-                technique=ObfuscationTechnique.PACKING,
-                confidence=DetectionConfidence.HIGH if import_count < 5 else DetectionConfidence.MEDIUM,
-                evidence=evidence,
-            ))
+            results.append(
+                DetectionResult(
+                    technique=ObfuscationTechnique.PACKING,
+                    confidence=DetectionConfidence.HIGH if import_count < 5 else DetectionConfidence.MEDIUM,
+                    evidence=evidence,
+                )
+            )
             break
 
     for sec_name, _ in sections:
@@ -446,39 +503,47 @@ def _detect_pe_techniques(data: bytes, sections: list[tuple[str, bytes]]) -> lis
                     found = True
                     break
             if not found:
-                results.append(DetectionResult(
-                    technique=ObfuscationTechnique.PACKING,
-                    confidence=DetectionConfidence.HIGH,
-                    evidence=[f"packer section: {sec_name}"],
-                ))
+                results.append(
+                    DetectionResult(
+                        technique=ObfuscationTechnique.PACKING,
+                        confidence=DetectionConfidence.HIGH,
+                        evidence=[f"packer section: {sec_name}"],
+                    )
+                )
             break
 
     for sig_group in KNOWN_TOOL_SIGNATURES.values():
         for sig in sig_group:
             for pattern in sig.byte_patterns:
                 if pattern in data:
-                    technique = [t for t, sigs in KNOWN_TOOL_SIGNATURES.items()
-                                 if sig in sigs][0] if isinstance(sig_group, list) else None
+                    technique = (
+                        [t for t, sigs in KNOWN_TOOL_SIGNATURES.items() if sig in sigs][0]
+                        if isinstance(sig_group, list)
+                        else None
+                    )
                     if technique:
                         tool_match_already = any(
-                            r.technique == technique and sig.name in r.tool_matches
-                            for r in results
+                            r.technique == technique and sig.name in r.tool_matches for r in results
                         )
                         if not tool_match_already:
-                            results.append(DetectionResult(
-                                technique=technique,
-                                confidence=DetectionConfidence.HIGH,
-                                evidence=[f"detected {sig.name}: {sig.description}"],
-                                tool_matches=[sig.name],
-                            ))
+                            results.append(
+                                DetectionResult(
+                                    technique=technique,
+                                    confidence=DetectionConfidence.HIGH,
+                                    evidence=[f"detected {sig.name}: {sig.description}"],
+                                    tool_matches=[sig.name],
+                                )
+                            )
 
     for pattern, desc in _ANTI_DEBUG_PATTERNS:
         if pattern in data:
-            results.append(DetectionResult(
-                technique=ObfuscationTechnique.ANTI_DEBUG,
-                confidence=DetectionConfidence.MEDIUM,
-                evidence=[f"anti-debug pattern: {desc}"],
-            ))
+            results.append(
+                DetectionResult(
+                    technique=ObfuscationTechnique.ANTI_DEBUG,
+                    confidence=DetectionConfidence.MEDIUM,
+                    evidence=[f"anti-debug pattern: {desc}"],
+                )
+            )
 
     return results
 
@@ -490,27 +555,33 @@ def _detect_elf_techniques(data: bytes, sections: list[tuple[str, bytes]]) -> li
         entropy = _compute_entropy(sec_data)
         if entropy > DETECTION_HEURISTICS[ObfuscationTechnique.PACKING]["section_entropy_threshold"]:
             evidence = [f"section {sec_name} entropy {entropy:.2f} > 7.0"]
-            results.append(DetectionResult(
-                technique=ObfuscationTechnique.PACKING,
-                confidence=DetectionConfidence.HIGH if entropy > 7.5 else DetectionConfidence.MEDIUM,
-                evidence=evidence,
-            ))
+            results.append(
+                DetectionResult(
+                    technique=ObfuscationTechnique.PACKING,
+                    confidence=DetectionConfidence.HIGH if entropy > 7.5 else DetectionConfidence.MEDIUM,
+                    evidence=evidence,
+                )
+            )
             break
 
     for pattern, desc in _ANTI_DEBUG_PATTERNS:
         if pattern in data:
-            results.append(DetectionResult(
-                technique=ObfuscationTechnique.ANTI_DEBUG,
-                confidence=DetectionConfidence.MEDIUM,
-                evidence=[f"anti-debug pattern: {desc}"],
-            ))
+            results.append(
+                DetectionResult(
+                    technique=ObfuscationTechnique.ANTI_DEBUG,
+                    confidence=DetectionConfidence.MEDIUM,
+                    evidence=[f"anti-debug pattern: {desc}"],
+                )
+            )
 
     if b"ptrace" in data:
-        results.append(DetectionResult(
-            technique=ObfuscationTechnique.ANTI_DEBUG,
-            confidence=DetectionConfidence.MEDIUM,
-            evidence=["ptrace anti-debug call detected"],
-        ))
+        results.append(
+            DetectionResult(
+                technique=ObfuscationTechnique.ANTI_DEBUG,
+                confidence=DetectionConfidence.MEDIUM,
+                evidence=["ptrace anti-debug call detected"],
+            )
+        )
 
     return results
 
@@ -520,29 +591,35 @@ def _detect_js_techniques(source: str) -> list[DetectionResult]:
     eval_count = source.count("eval(")
     constructor_count = source.count("Function(")
     if eval_count >= 3 or constructor_count >= 1:
-        results.append(DetectionResult(
-            technique=ObfuscationTechnique.STRING_ENCRYPTION,
-            confidence=DetectionConfidence.MEDIUM,
-            evidence=[
-                f"eval chains: {eval_count} eval() calls",
-                f"Function constructors: {constructor_count}",
-            ],
-        ))
+        results.append(
+            DetectionResult(
+                technique=ObfuscationTechnique.STRING_ENCRYPTION,
+                confidence=DetectionConfidence.MEDIUM,
+                evidence=[
+                    f"eval chains: {eval_count} eval() calls",
+                    f"Function constructors: {constructor_count}",
+                ],
+            )
+        )
     if _BASE64_REGEX.search(source.encode("ascii", errors="ignore")):
         for marker in _BASE64_INJECTION_MARKERS:
             if marker in source.encode("ascii", errors="ignore"):
-                results.append(DetectionResult(
-                    technique=ObfuscationTechnique.STRING_ENCRYPTION,
-                    confidence=DetectionConfidence.HIGH,
-                    evidence=["base64-encoded dynamic code execution detected"],
-                ))
+                results.append(
+                    DetectionResult(
+                        technique=ObfuscationTechnique.STRING_ENCRYPTION,
+                        confidence=DetectionConfidence.HIGH,
+                        evidence=["base64-encoded dynamic code execution detected"],
+                    )
+                )
                 break
     if "_0x" in source:
-        results.append(DetectionResult(
-            technique=ObfuscationTechnique.STRING_ENCRYPTION,
-            confidence=DetectionConfidence.LOW,
-            evidence=["hex-encoded variable names detected"],
-        ))
+        results.append(
+            DetectionResult(
+                technique=ObfuscationTechnique.STRING_ENCRYPTION,
+                confidence=DetectionConfidence.LOW,
+                evidence=["hex-encoded variable names detected"],
+            )
+        )
     return results
 
 
@@ -557,10 +634,7 @@ def detect_techniques(
         path = Path(binary_path_or_bytes)
         if path.suffix in (".js", ".mjs", ".cjs"):
             source = path.read_text(encoding="utf-8", errors="ignore")
-            return [
-                (r.technique, r.confidence, r.evidence)
-                for r in _detect_js_techniques(source)
-            ]
+            return [(r.technique, r.confidence, r.evidence) for r in _detect_js_techniques(source)]
         try:
             data = path.read_bytes()
         except OSError:
@@ -580,11 +654,13 @@ def detect_techniques(
     else:
         for pattern, desc in _ANTI_DEBUG_PATTERNS:
             if pattern in data:
-                results.append(DetectionResult(
-                    technique=ObfuscationTechnique.ANTI_DEBUG,
-                    confidence=DetectionConfidence.MEDIUM,
-                    evidence=[f"anti-debug pattern: {desc}"],
-                ))
+                results.append(
+                    DetectionResult(
+                        technique=ObfuscationTechnique.ANTI_DEBUG,
+                        confidence=DetectionConfidence.MEDIUM,
+                        evidence=[f"anti-debug pattern: {desc}"],
+                    )
+                )
 
     for technique, sigs in KNOWN_TOOL_SIGNATURES.items():
         for sig in sigs:
@@ -592,12 +668,14 @@ def detect_techniques(
                 if pattern in data:
                     already = any(r.technique == technique and sig.name in r.tool_matches for r in results)
                     if not already:
-                        results.append(DetectionResult(
-                            technique=technique,
-                            confidence=DetectionConfidence.HIGH,
-                            evidence=[f"detected {sig.name}: {sig.description}"],
-                            tool_matches=[sig.name],
-                        ))
+                        results.append(
+                            DetectionResult(
+                                technique=technique,
+                                confidence=DetectionConfidence.HIGH,
+                                evidence=[f"detected {sig.name}: {sig.description}"],
+                                tool_matches=[sig.name],
+                            )
+                        )
                         break
             for marker in sig.string_markers:
                 encoded = marker.encode("ascii", errors="ignore")
@@ -606,12 +684,14 @@ def detect_techniques(
                     if technique2:
                         already = any(r.technique == technique2 and sig.name in r.tool_matches for r in results)
                         if not already:
-                            results.append(DetectionResult(
-                                technique=technique2,
-                                confidence=DetectionConfidence.HIGH,
-                                evidence=[f"string marker: {marker}"],
-                                tool_matches=[sig.name],
-                            ))
+                            results.append(
+                                DetectionResult(
+                                    technique=technique2,
+                                    confidence=DetectionConfidence.HIGH,
+                                    evidence=[f"string marker: {marker}"],
+                                    tool_matches=[sig.name],
+                                )
+                            )
 
     return [(r.technique, r.confidence, r.evidence) for r in results]
 

@@ -1,0 +1,7 @@
+---
+model_id: ""
+gguf_url: ""
+download_dir: "/opt/models/hub"
+hf_token: ""
+verify_ssl: true
+force_redownload: false

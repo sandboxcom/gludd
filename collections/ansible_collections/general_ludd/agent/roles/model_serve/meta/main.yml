@@ -1,0 +1,30 @@
+---
+galaxy_info:
+  role_name: model_serve
+  author: general_ludd
+  description: >-
+    Starts a local model inference server using llama.cpp server or vllm.
+    Supports health-check polling until the server is ready.
+  license: MIT
+  platforms:
+    - name: EL
+      versions:
+        - "8"
+        - "9"
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+  galaxy_tags:
+    - agent
+    - ml
+    - inference
+    - server
+    - llama.cpp
+    - vllm
+dependencies: []

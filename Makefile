@@ -121,6 +121,7 @@ _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-wor
          verify-release-artifact verify-release-completeness git-tag-rm git-tag-delete git-tag-move release-cut release-recut release-create release-delete \
          release-upload-assets git-restore-from release-deploy \
         build-sandbox-image verify-sandbox-image clean-sandbox-images \
+        sandbox-state-dir sandbox-state-list sandbox-state-clean \
         vm-image-build vm-image-list vm-image-clean \
         verify-feature-claims audit-coverage gate-audit coverage-json \
         tf-cache-setup tf-init tf-validate tf-cache-warm tf-versions-check tf-clean \
@@ -365,6 +366,9 @@ help:
 	@echo "  vm-image-clean            Remove all cached VM sandbox images"
 	@echo "  verify-sandbox-image      Integrity check on cached sandbox rootfs"
 	@echo "  clean-sandbox-images      Remove cached sandbox images"
+	@echo "  sandbox-state-dir         Print sandbox runtime-state directory"
+	@echo "  sandbox-state-list        List sandbox runtime-state contents"
+	@echo "  sandbox-state-clean       Clean sandbox runtime-state for current project"
 	@echo ""
 	@echo "  --- Governance ---"
 	@echo "  test-governance       Run governance collection unit tests"
@@ -5346,6 +5350,17 @@ clean-sandbox-images:
 	@echo "=== Clean cached sandbox images ==="
 	@rm -rf "$(SANDBOX_CACHE)"
 	@echo "Removed $(SANDBOX_CACHE)"
+
+# --- FEATURE_SANDBOX_STATE_ROOT: host-side sandbox runtime-state directory ---
+
+sandbox-state-dir:
+	@$(UV) run python -c "from general_ludd.security.sandboxes.state import SandboxState; s = SandboxState.discover(); print(s.project_dir)"
+
+sandbox-state-list:
+	@$(UV) run python -c "from general_ludd.security.sandboxes.state import SandboxState; s = SandboxState.discover(); from pathlib import Path; [print(str(p.relative_to(s.project_dir)) if p.is_relative_to(s.project_dir) else str(p)) for p in sorted(s.project_dir.rglob('*'))] if s.project_dir.exists() else print('(empty)')"
+
+sandbox-state-clean:
+	@$(UV) run python -c "from general_ludd.security.sandboxes.state import SandboxState; s = SandboxState.discover(create=False); removed = s.cleanup_project() if s.project_dir.exists() else False; print(f'Removed {s.project_dir}' if removed else '(nothing to clean)')"
 
 # Reproduce CI's Linux "Gate" step locally — no GitHub login needed. Runs the
 # EXACT CI command (make lint typecheck test-count test smoke) inside a Linux

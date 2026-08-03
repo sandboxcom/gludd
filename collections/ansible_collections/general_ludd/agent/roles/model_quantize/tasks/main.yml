@@ -1,0 +1,96 @@
+---
+- name: "Validate quantization inputs"
+  ansible.builtin.assert:
+    that:
+      - model_path | length > 0
+    fail_msg: >-
+      model_quantize requires model_path pointing to the source model directory or GGUF file.
+      Got model_path={{ model_path | default('<undefined>') }}.
+
+- name: "Set expected quantized output path"
+  ansible.builtin.set_fact:
+    _source_base: "{{ model_path | basename | regex_replace('\\.gguf$', '') }}"
+    _output_file: "{{ output_dir }}/{{ model_path | basename | regex_replace('\\.gguf$', '') }}-{{ quant_type }}.gguf"
+
+- name: "Ensure output directory exists"
+  ansible.builtin.file:
+    path: "{{ output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: "Check if llama.cpp is installed"
+  ansible.builtin.stat:
+    path: "{{ llama_cpp_dir }}/build/bin/quantize"
+  register: _quantize_binary
+
+- name: "Build llama.cpp from source"
+  when: not _quantize_binary.stat.exists or force_rebuild
+  block:
+    - name: "Install build dependencies"
+      ansible.builtin.package:
+        name:
+          - cmake
+          - gcc-c++
+          - make
+        state: present
+      when: ansible_os_family == "RedHat"
+
+    - name: "Install build dependencies (Debian)"
+      ansible.builtin.package:
+        name:
+          - cmake
+          - g++
+          - make
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: "Clone llama.cpp repository"
+      ansible.builtin.git:
+        repo: https://github.com/ggerganov/llama.cpp.git
+        dest: "{{ llama_cpp_dir }}"
+        depth: 1
+        force: "{{ force_rebuild | default(false) }}"
+
+    - name: "Build llama.cpp with cmake"
+      ansible.builtin.shell: |
+        cmake -B build -DBUILD_SHARED_LIBS=OFF -DLLAMA_CUDA=OFF
+        cmake --build build --config Release -j {{ ansible_processor_vcpus // 2 }}
+      args:
+        chdir: "{{ llama_cpp_dir }}"
+        creates: "{{ llama_cpp_dir }}/build/bin/quantize"
+
+- name: "Convert model to FP16 GGUF if needed"
+  when: not (model_path | regex_search('\\.gguf$'))
+  block:
+    - name: "Run HF-to-GGUF conversion"
+      ansible.builtin.shell: >-
+        python3 {{ llama_cpp_dir }}/convert_hf_to_gguf.py
+        {{ model_path }}
+        --outfile {{ output_dir }}/{{ _source_base }}-fp16.gguf
+        {% if keep_fp16 %}--outtype f16{% endif %}
+      args:
+        creates: "{{ output_dir }}/{{ _source_base }}-fp16.gguf"
+      environment:
+        PATH: "{{ ansible_env.PATH }}"
+
+    - name: "Point source to FP16 GGUF"
+      ansible.builtin.set_fact:
+        _gguf_source: "{{ output_dir }}/{{ _source_base }}-fp16.gguf"
+
+- name: "Use existing GGUF as source"
+  when: model_path | regex_search('\\.gguf$')
+  ansible.builtin.set_fact:
+    _gguf_source: "{{ model_path }}"
+
+- name: "Quantize model"
+  ansible.builtin.command: >-
+    {{ llama_cpp_dir }}/build/bin/quantize
+    {{ _gguf_source }}
+    {{ _output_file }}
+    {{ quant_type }}
+  args:
+    creates: "{{ _output_file }}"
+
+- name: "Report quantization result"
+  ansible.builtin.debug:
+    msg: "Quantized {{ quant_type }} model written to {{ _output_file }}"

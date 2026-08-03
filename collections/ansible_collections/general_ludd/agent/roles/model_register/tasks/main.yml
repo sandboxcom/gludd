@@ -1,0 +1,130 @@
+---
+- name: "Validate registration inputs"
+  ansible.builtin.assert:
+    that:
+      - model_name | length > 0
+    fail_msg: >-
+      model_register requires model_name.
+      Got model_name={{ model_name | default('<undefined>') }}.
+
+- name: "Ensure registry and artifact directories exist"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ registry_dir }}"
+    - "{{ artifact_dir }}"
+
+- name: "Set timestamp for registration entry"
+  ansible.builtin.set_fact:
+    _register_time: "{{ ansible_date_time.iso8601 }}"
+    _register_epoch: "{{ ansible_date_time.epoch }}"
+
+- name: "Find evaluation result files"
+  ansible.builtin.find:
+    paths: "{{ eval_results_dir }}"
+    patterns: "results_*.json"
+    file_type: file
+  register: _eval_files
+
+- name: "Parse evaluation scores"
+  when: _eval_files.matched > 0
+  block:
+    - name: "Read latest evaluation results"
+      ansible.builtin.slurp:
+        src: "{{ (_eval_files.files | sort(attribute='mtime', reverse=true) | first).path }}"
+      register: _raw_eval
+
+    - name: "Decode eval results"
+      ansible.builtin.set_fact:
+        _eval_data: "{{ _raw_eval.content | b64decode | from_json }}"
+
+    - name: "Extract benchmark scores"
+      ansible.builtin.set_fact:
+        _scores: "{{ _eval_data.results | default({}) }}"
+
+- name: "Set empty scores when no results found"
+  when: _eval_files.matched == 0
+  ansible.builtin.set_fact:
+    _scores: {}
+
+- name: "Build task summary from scores"
+  ansible.builtin.set_fact:
+    _task_summary: >-
+      {%- set ns = namespace(items=[]) -%}
+      {%- for task, data in _scores.items() -%}
+      {%- set entry = {
+           'task': task,
+           'score': data.get('acc,none', data.get('acc', 'N/A')),
+           'stderr': data.get('acc_stderr,none', data.get('acc_stderr', 'N/A'))
+         } -%}
+      {%- set ns.items = ns.items + [entry] -%}
+      {%- endfor -%}
+      {{ ns.items }}
+
+- name: "Build capability manifest"
+  ansible.builtin.set_fact:
+    _capability_manifest:
+      model: "{{ model_name }}"
+      quantization: "{{ model_quant | default('N/A') }}"
+      evaluated_at: "{{ _register_time }}"
+      eval_results_file: "{{ (_eval_files.files | sort(attribute='mtime', reverse=true) | first).path | default('N/A') }}"
+      tasks: "{{ _task_summary | from_json | default([]) }}"
+      metadata: "{{ metadata }}"
+      required_tasks_passed: >-
+        {%- if tasks_required | length > 0 -%}
+        {%- set ns = namespace(all_passed=true) -%}
+        {%- for req in tasks_required -%}
+        {%- if req not in _scores -%}
+        {%- set ns.all_passed = false -%}
+        {%- endif -%}
+        {%- endfor -%}
+        {{ ns.all_passed }}
+        {%- else -%}
+        N/A
+        {%- endif -%}
+
+- name: "Write capability manifest"
+  ansible.builtin.copy:
+    content: "{{ _capability_manifest | to_nice_json }}"
+    dest: "{{ artifact_dir }}/{{ model_name | regex_replace('/', '_') }}-capability.json"
+    mode: "0644"
+
+- name: "Build registry entry"
+  ansible.builtin.set_fact:
+    _registry_entry:
+      id: "{{ model_name | regex_replace('/', '_') }}-{{ _register_epoch }}"
+      model: "{{ model_name }}"
+      quantization: "{{ model_quant | default('N/A') }}"
+      registered_at: "{{ _register_time }}"
+      task_count: "{{ (_scores | length) }}"
+      tasks: "{{ _scores.keys() | list }}"
+      capability_manifest: "{{ artifact_dir }}/{{ model_name | regex_replace('/', '_') }}-capability.json"
+
+- name: "Write registry entry"
+  ansible.builtin.copy:
+    content: "{{ _registry_entry | to_nice_json }}"
+    dest: "{{ registry_dir }}/{{ model_name | regex_replace('/', '_') }}-{{ _register_epoch }}.json"
+    mode: "0644"
+
+- name: "Build and write registry index"
+  ansible.builtin.set_fact:
+    _index_entry:
+      model: "{{ model_name }}"
+      quantization: "{{ model_quant | default('N/A') }}"
+      last_registered: "{{ _register_time }}"
+      task_count: "{{ (_scores | length) }}"
+
+- name: "Update registry index"
+  ansible.builtin.copy:
+    content: "{{ _index_entry | to_nice_json }}"
+    dest: "{{ registry_dir }}/{{ model_name | regex_replace('/', '_') }}-index.json"
+    mode: "0644"
+
+- name: "Report registration result"
+  ansible.builtin.debug:
+    msg: >-
+      Model {{ model_name }} registered at {{ _register_time }}.
+      Registry entry: {{ registry_dir }}/{{ model_name | regex_replace('/', '_') }}-{{ _register_epoch }}.json
+      Capability manifest: {{ artifact_dir }}/{{ model_name | regex_replace('/', '_') }}-capability.json

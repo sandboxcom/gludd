@@ -24,6 +24,10 @@ tags:
   - charset
   - locale
   - text-processing
+  - language_detection
+  - translation
+  - transliteration
+  - script_conversion
 dependencies:
   general_ludd.agent: ">=0.1.0"
 role_capabilities:

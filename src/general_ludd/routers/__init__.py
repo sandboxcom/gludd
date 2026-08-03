@@ -37,6 +37,7 @@ def register_all(app: FastAPI, daemon_state: dict[str, object]) -> None:
     from general_ludd.routers.signing import register as register_signing
     from general_ludd.routers.skills import register as register_skills
     from general_ludd.routers.slurm import register as register_slurm
+    from general_ludd.routers.small_models import register as register_small_models
     from general_ludd.routers.stream import register as register_stream
     from general_ludd.routers.terraform_state import register as register_terraform_state
     from general_ludd.routers.todos import register as register_todos
@@ -68,6 +69,7 @@ def register_all(app: FastAPI, daemon_state: dict[str, object]) -> None:
     register_signing(app, daemon_state)
     register_skills(app, daemon_state)
     register_slurm(app, daemon_state)
+    register_small_models(app, daemon_state)
     register_stream(app, daemon_state)
     register_todos(app, daemon_state)
     register_variants(app, daemon_state)
