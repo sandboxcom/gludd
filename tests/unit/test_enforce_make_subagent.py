@@ -1,3 +1,4 @@
+# Tests subagent-aware behavior of the enforce-make.ts plugin.
 import os
 import re
 

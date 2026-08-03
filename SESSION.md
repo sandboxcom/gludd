@@ -1,14 +1,14 @@
-## PRIMARY OBJECTIVE: CI GREEN on `ff0aec68`, push 15 commits, release-cut beta.3.
+## PRIMARY OBJECTIVE: Fix 2 gate-lite failures, push 21 commits, release-cut beta.3.
 
 ---
 
-## SESSION 78 — 2026-08-03 — HEAD `ff0aec68`: CI PENDING, gate-lite FAIL (1 test + dead-code), ALL SPECS COMPLETE
+## SESSION 78 — 2026-08-03 — HEAD `4732463f`: Deep tests +453, spec enforcement 98.6%, gate-lite 2 failures
 
-### Current State (HEAD `ff0aec68`)
+### Current State (HEAD `4732463f`)
 
-- **HEAD: `ff0aec68`** on `development` — "fix: CI url_fetch I001, gateway local base_url, E2E download, task-integrity, dead-code/env-writes"
-- **Tree: DIRTY** — 4 modified files (playbooks/local_model_serve.yml, src/general_ludd/models/gateway.py, src/general_ludd/routers/dispatch.py, tests/e2e/test_small_model_pipeline_real.py)
-- **CI: PENDING** — run `30833152613`, headSha `ff0aec68`, status `in_progress`
+- **HEAD: `4732463f`** on `development` — "feat: binary build verification tests"
+- **Tree: CLEAN** — all dirty-tree changes committed in `c2546873`
+- **CI: STALE** — last checked run `30833152613` on `ff0aec68`; superseded by `4732463f`
 - **lint: PASS 0** — url_fetch I001 import sort fixed
 - **typecheck: PASS 0** — no issues in 984+1 source files
 - **gate-lite: FAILED** — 1 test failure (`test_active_status_reports_project_and_lease_identity`) + dead-code baseline non-zero exit. 6537 passed, 1 failed, 17 skipped.

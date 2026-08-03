@@ -3,6 +3,7 @@
 Each test asserts on the CORRECT behavior, which will FAIL until the bug is fixed.
 All tests are structural source-parsing only (no runtime execution).
 """
+
 from __future__ import annotations
 
 import re
@@ -43,7 +44,7 @@ class TestMultitaskDeadFloorBreach:
         # The zeroStreak reset path in handleMessageBoundary: when thisMessageDispatches
         # !== 0 (i.e. the message had dispatches), zeroStreak = 0
         start = src.index("function handleMessageBoundary")
-        end = src.index("function spawnGateRefresh", start)
+        end = src.index("const defaultImpl", start)
         boundary = src[start:end]
         assert "s.prevMessageDispatches = s.thisMessageDispatches" in boundary
         assert "if (s.thisMessageDispatches === 0)" in boundary
@@ -119,13 +120,9 @@ class TestTaskFileReadInputShape:
         checks_inp_top_path = "inp?.filePath" in src
         checks_tool_input_path = "toolInput?.filePath" in src
 
-        assert checks_inp_top_path, (
-            "FIX MISSING: isTaskFileRead should check top-level input.filePath "
-            "(inp?.filePath)"
-        )
+        assert checks_inp_top_path, "FIX MISSING: isTaskFileRead should check top-level input.filePath (inp?.filePath)"
         assert checks_tool_input_path, (
-            "FIX VERIFICATION: isTaskFileRead should also check tool_input?.filePath "
-            "as a fallback shape"
+            "FIX VERIFICATION: isTaskFileRead should also check tool_input?.filePath as a fallback shape"
         )
 
     def test_stringify_fallback_is_brittle(self):
@@ -183,12 +180,10 @@ class TestRunningGateIsPending:
         src = _src(FLOOR_PATH)
 
         # Find the gate status check block
-        re.search(
-            r"\.gate-status.*?=>.*?(?:\n\s+)", src, re.DOTALL
-        )
+        re.search(r"\.gate-status.*?=>.*?(?:\n\s+)", src, re.DOTALL)
         # More precise: find the gatePath check
         gate_match = re.search(
-            r'const gatePath.*?\.gate-status.*?\{.*?\n\s+\}',
+            r"const gatePath.*?\.gate-status.*?\{.*?\n\s+\}",
             src,
             re.DOTALL,
         )
@@ -228,7 +223,7 @@ class TestGitIndexMtimeFalsePositive:
         src = _src(FLOOR_PATH)
         assert "idxMtime" not in src
         assert "refMtime" not in src
-        assert 'git status --porcelain' in src
+        assert "git status --porcelain" in src
 
 
 # ===============================================================================
@@ -246,6 +241,5 @@ class TestDispatchTypo:
         src = _src(FLOOR_PATH)
 
         assert "DISPTACH" not in src, (
-            "BUG: Typo 'DISPTACH' in refill-needed console.warn message. "
-            "Should be 'DISPATCH'."
+            "BUG: Typo 'DISPTACH' in refill-needed console.warn message. Should be 'DISPATCH'."
         )
