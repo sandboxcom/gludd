@@ -549,10 +549,11 @@ class TestDeepPipelineValidation:
         tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
         for t in tasks:
             if "v1/completions" in str(t):
-                timeout_val = t.get("timeout")
-                if timeout_val is not None:
-                    assert timeout_val == 300, f"Generation timeout must be 300, got {timeout_val}"
-                    return
+                for v in t.values():
+                    if isinstance(v, dict) and "timeout" in v:
+                        timeout_val = v["timeout"]
+                        assert timeout_val == 300, f"Generation timeout must be 300, got {timeout_val}"
+                        return
         pytest.fail("No v1/completions task with timeout found")
 
 

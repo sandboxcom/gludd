@@ -109,6 +109,7 @@ class TestSpecsExist:
 # ── Enforcement mechanism tests ──────────────────────────────────────────────
 
 
+@pytest.mark.xdist_group("behavioral-specs")
 class TestEnforcementMechanisms:
     """Every spec must have an enforcement mechanism."""
 
