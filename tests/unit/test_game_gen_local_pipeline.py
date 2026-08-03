@@ -32,6 +32,16 @@ def _gather_commands(tasks: list[dict[str, Any]]) -> list[str]:
     return cmds
 
 
+def _iter_all_tasks(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for t in tasks:
+        result.append(t)
+        for block_key in ("block", "always", "rescue"):
+            if block_key in t:
+                result.extend(_iter_all_tasks(cast(list[dict[str, Any]], t[block_key])))
+    return result
+
+
 # =============================================================================
 #  1. Pipeline configuration validation
 # =============================================================================
@@ -380,12 +390,14 @@ class TestPipelineResilienceConfig:
 
     def test_model_download_uses_creates_for_idempotency(self) -> None:
         tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
-        for t in tasks:
+        all_tasks = _iter_all_tasks(tasks)
+        for t in all_tasks:
             if "args" in t and isinstance(t.get("args"), dict):
                 args_kw = cast(dict[str, Any], t["args"])
                 if "creates" in args_kw:
                     assert args_kw.get("creates") is not None
                     return
+        pytest.fail("No task with args.creates idempotency guard found")
 
     def test_shutdown_always_block_contains_kill_and_cleanup(self) -> None:
         tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
@@ -398,7 +410,7 @@ class TestPipelineResilienceConfig:
 
 
 # =============================================================================
-#  7. Script ↔ role mirror
+#  7. Script <-> role mirror
 # =============================================================================
 
 
@@ -476,6 +488,72 @@ class TestEdgeCases:
     def test_defaults_file_is_not_empty_and_parses(self) -> None:
         defaults = cast(dict[str, Any], _load_yaml("defaults/main.yml"))
         assert len(defaults) >= 16, f"Expected >=16 keys in defaults, got {len(defaults)}"
+
+
+# =============================================================================
+#  9. Deep pipeline validation
+# =============================================================================
+
+
+class TestDeepPipelineValidation:
+    def test_model_path_uses_download_dir_and_regex_escaped_repo(self) -> None:
+        tasks_text = (ROLE_ROOT / "tasks" / "main.yml").read_text()
+        assert "{{ model_download_dir }}" in tasks_text
+        assert "{{ model_repo | regex_replace('/', '_') }}" in tasks_text
+        assert "{{ model_file }}" in tasks_text
+
+    def test_server_pid_file_roundtrip(self) -> None:
+        tasks_text = (ROLE_ROOT / "tasks" / "main.yml").read_text()
+        assert 'echo $! > "{{ artifact_dir }}/server.pid"' in tasks_text
+        assert "{{ artifact_dir }}/server.pid" in tasks_text
+        assert "ansible.builtin.slurp" in tasks_text
+        assert "b64decode" in tasks_text
+
+    def test_health_poll_has_until_retries_and_delay(self) -> None:
+        tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
+        for t in tasks:
+            if "health" in str(t).lower() and "uri" in str(t):
+                assert "retries" in t, "Health poll missing retries"
+                assert "delay" in t, "Health poll missing delay"
+                assert "until" in t, "Health poll missing until condition"
+                assert t.get("changed_when") is False, "Health poll is read-only"
+                return
+        pytest.fail("No health URI poll task found")
+
+    def test_code_extraction_from_completions_response(self) -> None:
+        tasks_text = (ROLE_ROOT / "tasks" / "main.yml").read_text()
+        json_path = "_model_response.json.choices[0].text"
+        assert json_path in tasks_text, f"Code extraction must reference {json_path}"
+        assert "{{ _generated_code }}" in tasks_text, "Generated code must be written from set_fact"
+
+    def test_block_recursion_covers_all_nested_tasks(self) -> None:
+        tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
+        all_tasks = _iter_all_tasks(tasks)
+        assert len(all_tasks) > len(tasks), (
+            f"Recursive walk ({len(all_tasks)}) must find more tasks than top-level ({len(tasks)})"
+        )
+        nested_names = [t.get("name", "") for t in all_tasks if t.get("name")]
+        assert "Install huggingface_hub" in nested_names
+        assert "Read server PID" in nested_names
+        assert "Kill server process" in nested_names
+        assert "Remove PID file" in nested_names
+
+    def test_shutdown_block_names_not_in_top_level_names(self) -> None:
+        tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
+        top_names = set(_task_names(tasks))
+        shutdown_subtask_names = {"Read server PID", "Kill server process", "Remove PID file"}
+        for name in shutdown_subtask_names:
+            assert name not in top_names, f"Shutdown subtask '{name}' must be nested, not top-level"
+
+    def test_generation_timeout_is_300_seconds(self) -> None:
+        tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
+        for t in tasks:
+            if "v1/completions" in str(t):
+                timeout_val = t.get("timeout")
+                if timeout_val is not None:
+                    assert timeout_val == 300, f"Generation timeout must be 300, got {timeout_val}"
+                    return
+        pytest.fail("No v1/completions task with timeout found")
 
 
 # =============================================================================

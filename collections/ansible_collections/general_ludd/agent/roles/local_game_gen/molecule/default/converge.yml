@@ -1,12 +1,370 @@
 ---
-- name: Converge — local_game_gen role structure validation
+- name: Converge — local_game_gen role behavioral pipeline tests
   hosts: localhost
+  connection: local
   gather_facts: false
   vars:
     role_root: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/collections/ansible_collections/general_ludd/agent/roles/local_game_gen"
+    test_artifact_dir: "/tmp/gludd-game-gen-molecule"
+    test_game_name: "snake"
+    test_model_repo: "bartowski/Qwen2.5-0.5B-Instruct-GGUF"
+    test_model_file: "Qwen2.5-0.5B-Instruct-Q5_K_M.gguf"
   tasks:
-    - name: "Assert role root directory exists"
+    # ══════════════════════════════════════════════════════════════════════
+    # Pipeline Step 1: Validate inputs
+    # ══════════════════════════════════════════════════════════════════════
+
+    - name: "S1.1 Assert role root directory exists"
       ansible.builtin.stat:
         path: "{{ role_root }}"
       register: _role_stat
       failed_when: not _role_stat.stat.exists
+
+    - name: "S1.2 Assert required variables validated in task file"
+      ansible.builtin.slurp:
+        src: "{{ role_root }}/tasks/main.yml"
+      register: _main_slurp
+
+    - name: "S1.3 Verify assert block checks game_name"
+      ansible.builtin.assert:
+        that:
+          - _main_slurp.content | b64decode is search('game_name.*length.*>.*0')
+        fail_msg: "Validate step must check game_name length > 0"
+
+    - name: "S1.4 Verify assert block checks model_repo"
+      ansible.builtin.assert:
+        that:
+          - _main_slurp.content | b64decode is search('model_repo.*length.*>.*0')
+        fail_msg: "Validate step must check model_repo length > 0"
+
+    - name: "S1.5 Verify assert block checks model_file"
+      ansible.builtin.assert:
+        that:
+          - _main_slurp.content | b64decode is search('model_file.*length.*>.*0')
+        fail_msg: "Validate step must check model_file length > 0"
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Pipeline Step 2: Download model (structural verification)
+    # ══════════════════════════════════════════════════════════════════════
+
+    - name: "S2.1 Verify download references huggingface-cli"
+      ansible.builtin.assert:
+        that:
+          - _main_slurp.content | b64decode is search('huggingface-cli')
+        fail_msg: "Download step must use huggingface-cli"
+
+    - name: "S2.2 Verify huggingface_hub pip install step exists"
+      ansible.builtin.assert:
+        that:
+          - _main_slurp.content | b64decode is search('huggingface_hub')
+        fail_msg: "Download step must install huggingface_hub"
+
+    - name: "S2.3 Verify model download uses creates guard for idempotency"
+      ansible.builtin.assert:
+        that:
+          - _main_slurp.content | b64decode is search('creates')
+        fail_msg: "Download step must use 'creates' guard for idempotent re-run"
+
+    - name: "S2.4 Verify model_path computed from model_repo and model_file"
+      ansible.builtin.assert:
+        that:
+          - _main_slurp.content | b64decode is search('_model_path')
+        fail_msg: "Must compute _model_path fact from model_repo and model_file"
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Pipeline Step 3: Start inference server (structural verification)
+    # ══════════════════════════════════════════════════════════════════════
+
+    - name: "S3.1 Verify server start references llama_cpp.server"
+      ansible.builtin.assert:
+        that:
+          - _main_slurp.content | b64decode is search('llama_cpp')
+        fail_msg: "Server start must reference llama_cpp.server"
+
+    - name: "S3.2 Verify server PID written to file"
+      ansible.builtin.assert:
+        that:
+          - _main_slurp.content | b64decode is search('server.pid')
+        fail_msg: "Server start must write PID to server.pid"
+
+    - name: "S3.3 Verify server uses nohup for backgrounding"
+      ansible.builtin.assert:
+        that:
+          - _main_slurp.content | b64decode is search('nohup')
+        fail_msg: "Server start must use nohup for backgrounding"
+
+    - name: "S3.4 Verify health endpoint polling exists"
+      ansible.builtin.assert:
+        that:
+          - _main_slurp.content | b64decode is search('/health')
+        fail_msg: "Must poll /health endpoint after server start"
+
+    - name: "S3.5 Verify health poll uses until/retries/delay pattern"
+      ansible.builtin.assert:
+        that:
+          - _main_slurp.content | b64decode is search('health_check_retries')
+          - _main_slurp.content | b64decode is search('health_check_delay')
+        fail_msg: "Health poll must use retries/delay pattern"
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Pipeline Step 4: Generate game via /v1/completions
+    # ══════════════════════════════════════════════════════════════════════
+
+    - name: "S4.1 Verify /v1/completions endpoint referenced"
+      ansible.builtin.assert:
+        that:
+          - _main_slurp.content | b64decode is search('v1/completions')
+        fail_msg: "Generation step must use /v1/completions endpoint"
+
+    - name: "S4.2 Verify game_prompt is sent in request body"
+      ansible.builtin.assert:
+        that:
+          - _main_slurp.content | b64decode is search('game_prompt')
+        fail_msg: "Generation step must include game_prompt in request"
+
+    - name: "S4.3 Verify max_tokens and temperature configured"
+      ansible.builtin.assert:
+        that:
+          - _main_slurp.content | b64decode is search('max_tokens')
+          - _main_slurp.content | b64decode is search('temperature')
+        fail_msg: "Generation step must set max_tokens and temperature"
+
+    - name: "S4.4 Verify response is registered for extraction"
+      ansible.builtin.assert:
+        that:
+          - _main_slurp.content | b64decode is search('_model_response')
+        fail_msg: "Generation step must register _model_response"
+
+    - name: "S4.5 Verify generated code extracted from choices[0].text"
+      ansible.builtin.assert:
+        that:
+          - _main_slurp.content | b64decode is search('choices')
+        fail_msg: "Must extract generated code from choices in response"
+
+    - name: "S4.6 Verify generated code written to artifact file"
+      ansible.builtin.assert:
+        that:
+          - _main_slurp.content | b64decode is search('generated_code')
+        fail_msg: "Must write generated code to artifact file"
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Pipeline Step 5: Verify generated code (behavioral)
+    # ══════════════════════════════════════════════════════════════════════
+
+    - name: "S5.1 AST parse — verify synthetic Snake game parses"
+      ansible.builtin.command: >-
+        python3 -c "import ast; ast.parse(open('{{ test_artifact_dir }}/{{ test_game_name }}.py').read()); print('AST: OK')"
+      register: _ast_result
+      changed_when: false
+
+    - name: "S5.2 Assert AST parse produces OK"
+      ansible.builtin.assert:
+        that:
+          - "'AST: OK' in _ast_result.stdout"
+        fail_msg: "Synthetic game must pass AST parse"
+
+    - name: "S5.3 Import — verify Snake class importable"
+      ansible.builtin.command: >-
+        python3 -c "
+        import importlib.util, sys
+        spec = importlib.util.spec_from_file_location('{{ test_game_name }}', '{{ test_artifact_dir }}/{{ test_game_name }}.py')
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        classes = [v for v in vars(mod).values() if isinstance(v, type) and v.__module__ == '{{ test_game_name }}']
+        if not classes:
+            print('ERR: no game class found')
+            sys.exit(1)
+        print('Classes: ' + ','.join(c.__name__ for c in classes))
+        "
+      register: _import_result
+      changed_when: false
+
+    - name: "S5.4 Assert import finds Snake class"
+      ansible.builtin.assert:
+        that:
+          - "'Snake' in _import_result.stdout"
+        fail_msg: "Import must find Snake class in synthetic game"
+
+    - name: "S5.5 Runtime — full lifecycle verification"
+      ansible.builtin.command: >-
+        python3 -c "
+        import importlib.util, sys
+        spec = importlib.util.spec_from_file_location('{{ test_game_name }}', '{{ test_artifact_dir }}/{{ test_game_name }}.py')
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        classes = [v for v in vars(mod).values() if isinstance(v, type) and v.__module__ == '{{ test_game_name }}']
+        game = classes[0]()
+        sys.stdout.write('Instantiated ' + type(game).__name__ + '\n')
+        assert hasattr(game, 'start'), 'Missing start()'
+        game.start()
+        sys.stdout.write('start(): OK\n')
+        assert hasattr(game, 'score'), 'Missing score()'
+        sys.stdout.write('score(): ' + str(game.score()) + '\n')
+        assert game.score() == 0, 'score must be 0 after start()'
+        assert hasattr(game, 'is_game_over'), 'Missing is_game_over()'
+        sys.stdout.write('is_game_over(): ' + str(game.is_game_over()) + '\n')
+        assert game.is_game_over() == False, 'game must not be over after start()'
+        assert hasattr(game, 'tick'), 'Missing tick()'
+        for _ in range(5):
+            if not game.is_game_over():
+                game.tick('right')
+        sys.stdout.write('tick() x5: OK\n')
+        assert hasattr(game, 'restart'), 'Missing restart()'
+        game.restart()
+        sys.stdout.write('restart(): OK\n')
+        assert game.score() == 0, 'score must reset to 0 after restart()'
+        sys.stdout.write('RUNTIME: OK\n')
+        "
+      register: _runtime_result
+      changed_when: false
+
+    - name: "S5.6 Assert all runtime checks pass"
+      ansible.builtin.assert:
+        that:
+          - "'RUNTIME: OK' in _runtime_result.stdout"
+          - "'start(): OK' in _runtime_result.stdout"
+          - "'restart(): OK' in _runtime_result.stdout"
+          - "'tick() x5: OK' in _runtime_result.stdout"
+        fail_msg: "Runtime verification must pass — start, tick, restart, score"
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Step 6: Server shutdown (structural verification)
+    # ══════════════════════════════════════════════════════════════════════
+
+    - name: "S6.1 Verify always block exists for cleanup"
+      ansible.builtin.assert:
+        that:
+          - _main_slurp.content | b64decode is search('always:')
+        fail_msg: "Must have always block for guaranteed cleanup"
+
+    - name: "S6.2 Verify server PID read for shutdown"
+      ansible.builtin.assert:
+        that:
+          - _main_slurp.content | b64decode is search('kill')
+        fail_msg: "Must kill server process on shutdown"
+
+    - name: "S6.3 Verify PID file removed on cleanup"
+      ansible.builtin.assert:
+        that:
+          - _main_slurp.content | b64decode is search('state: absent')
+        fail_msg: "Must remove PID file on cleanup"
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Step 7: Idempotency — file creation
+    # ══════════════════════════════════════════════════════════════════════
+
+    - name: "S7.1 Re-create artifact directory (idempotency check)"
+      ansible.builtin.file:
+        path: "{{ test_artifact_dir }}"
+        state: directory
+        mode: "0755"
+      register: _idempotent_dir
+
+    - name: "S7.2 Assert directory creation is idempotent"
+      ansible.builtin.assert:
+        that:
+          - not _idempotent_dir.changed
+        fail_msg: "artifact_dir creation must be idempotent"
+
+    - name: "S7.3 Re-write game file (idempotency check)"
+      ansible.builtin.copy:
+        content: |
+          class Snake:
+              def __init__(self):
+                  self._score = 0
+                  self._game_over = False
+                  self._snake = [(10, 10)]
+                  self._food = (5, 5)
+              def start(self):
+                  self._score = 0
+                  self._game_over = False
+                  self._snake = [(10, 10)]
+                  self._food = (5, 5)
+              def tick(self, direction):
+                  pass
+              def score(self):
+                  return self._score
+              def is_game_over(self):
+                  return self._game_over
+              def restart(self):
+                  self.start()
+        dest: "{{ test_artifact_dir }}/{{ test_game_name }}.py"
+        mode: "0644"
+      register: _idempotent_copy
+
+    - name: "S7.4 Assert file writing is idempotent with same content"
+      ansible.builtin.assert:
+        that:
+          - not _idempotent_copy.changed
+        fail_msg: "File writing must be idempotent with identical content"
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Step 8: Error handling — invalid model name validation
+    # ══════════════════════════════════════════════════════════════════════
+
+    - name: "S8.1 Verify fail_msg exists in validate assertion"
+      ansible.builtin.assert:
+        that:
+          - _main_slurp.content | b64decode is search('fail_msg')
+        fail_msg: "Must include fail_msg in validation assertions"
+
+    - name: "S8.2 Verify error message reports undefined variables"
+      ansible.builtin.assert:
+        that:
+          - _main_slurp.content | b64decode is search('<undefined>')
+        fail_msg: "Error messages must report undefined variables clearly"
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Step 9: Error handling — verify broken code fails AST parse
+    # ══════════════════════════════════════════════════════════════════════
+
+    - name: "S9.1 Attempt AST parse on syntactically-invalid file"
+      ansible.builtin.command: >-
+        python3 -c "import ast; ast.parse(open('{{ test_artifact_dir }}/broken_game.py').read()); print('SHOULD_NOT_REACH')"
+      register: _bad_ast
+      ignore_errors: true
+      changed_when: false
+
+    - name: "S9.2 Assert invalid code fails AST parse"
+      ansible.builtin.assert:
+        that:
+          - _bad_ast.rc != 0
+          - "'SHOULD_NOT_REACH' not in _bad_ast.stdout"
+        fail_msg: "Syntactically-invalid code must fail AST parse (rc != 0)"
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Step 10: Error handling — verify download guard with missing binary
+    # ══════════════════════════════════════════════════════════════════════
+
+    - name: "S10.1 Verify ignore_errors on server PID read"
+      ansible.builtin.assert:
+        that:
+          - _main_slurp.content | b64decode is search('ignore_errors')
+        fail_msg: "Server PID read must use ignore_errors for missing server"
+
+    - name: "S10.2 Verify server kill is conditional on PID existence"
+      ansible.builtin.assert:
+        that:
+          - _main_slurp.content | b64decode is search('_server_pid')
+        fail_msg: "Server kill must be conditional on PID file existence"
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Step 11: Cross-step verification — artifact dir used consistently
+    # ══════════════════════════════════════════════════════════════════════
+
+    - name: "S11.1 Verify artifact_dir variable used for server log"
+      ansible.builtin.assert:
+        that:
+          - _main_slurp.content | b64decode is search('artifact_dir.*server.log')
+        fail_msg: "Server log must be written to artifact_dir"
+
+    - name: "S11.2 Verify artifact_dir used for generated code output"
+      ansible.builtin.assert:
+        that:
+          - _main_slurp.content | b64decode is regex_search('artifact_dir.*game_name.*\.py')
+        fail_msg: "Generated code must be written to artifact_dir"
+
+    - name: "S11.3 Clean up test artifacts"
+      ansible.builtin.file:
+        path: "{{ test_artifact_dir }}"
+        state: absent

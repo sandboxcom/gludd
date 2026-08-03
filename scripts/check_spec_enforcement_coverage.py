@@ -36,7 +36,7 @@ def _parse_specs() -> list[dict]:
     in_behavior = False
 
     for line in text.split("\n"):
-        m = re.match(r"^### (A[A-Z]\d+) — (.+)$", line)
+        m = re.match(r"^### ([A-Z]+\d+) — (.+)$", line)
         if m:
             if current and current.get("id"):
                 specs.append(current)

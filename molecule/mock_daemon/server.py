@@ -43,9 +43,14 @@ shape matches what each module parses:
                                              (gludd_process status / gludd_proc_monitor)
   POST /admin/processes/<pid>/signal  -> 200 {"ok":true,"pid":..,"signal":..} (gludd_process signal)
   GET  /admin/ornith/pairs            -> 200 {"pairs":[...],"count":N}
-                                             (gludd_ornith rejected pairs)
+                                              (gludd_ornith rejected pairs)
   GET  /process-audit                  -> 200 guardrail_health/plugin_footprint/.. (gludd_audit)
   POST /api/human-todos               -> 201 created human-todo               (gludd_human_todo present)
+  POST /admin/sts/mint                -> 201 {"token":"sts-mock-..."}         (STS token mint)
+  GET  /admin/sts/validate/<agent_id>  -> 200 {"valid":true,...}              (STS token validate)
+  GET  /admin/sts/tokens/<agent_id>   -> 200 single token record              (STS token get)
+  GET  /admin/sts/tokens              -> 200 {"tokens":[...]}                 (STS token list)
+  POST /admin/sts/revoke/<agent_id>   -> 200 {"revoked":true}                 (STS token revoke)
 
 Plus an in-memory request-log introspection seam (NOT a daemon endpoint — a
 test affordance) so verify plays can prove, per role-invocation, which
@@ -156,10 +161,14 @@ TRACES_SNAPSHOT = {
             "success_rate": 1.0,
             "span_count": 2,
             "spans": [
-                {"span_id": "span-a", "phase": "plan", "status": "success",
-                 "output_tokens": 40, "cost_usd": 0.0005},
-                {"span_id": "span-b", "phase": "generate", "status": "success",
-                 "output_tokens": 150, "cost_usd": 0.0021},
+                {"span_id": "span-a", "phase": "plan", "status": "success", "output_tokens": 40, "cost_usd": 0.0005},
+                {
+                    "span_id": "span-b",
+                    "phase": "generate",
+                    "status": "success",
+                    "output_tokens": 150,
+                    "cost_usd": 0.0021,
+                },
             ],
         },
     ],
@@ -386,11 +395,7 @@ SPEND_SNAPSHOT = {
 # blob so the molecule verify play can assert that what the role wrote matches
 # what the mock served, and that the GPG-encrypted tarball is well-formed.
 OPENBAO_FAKE_SNAPSHOT = (
-    b"OPENBAO-RAFT-SNAPSHOT-MOCK\n"
-    b"version: 1\n"
-    b"nodes: 1\n"
-    b"index: 42\n"
-    + b"\x00\x01\x02\x03mock-raft-payload" * 8
+    b"OPENBAO-RAFT-SNAPSHOT-MOCK\nversion: 1\nnodes: 1\nindex: 42\n" + b"\x00\x01\x02\x03mock-raft-payload" * 8
 )
 OPENBAO_RESTORE_LAST_PAYLOAD: dict[str, Any] = {}
 
@@ -963,6 +968,58 @@ def _signal_response(pid: int, payload: dict) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# STS token lifecycle canned responses
+# ---------------------------------------------------------------------------
+_STS_TOKENS: dict[str, dict[str, Any]] = {}
+_STS_TOKEN_LOCK = threading.Lock()
+
+
+def _agent_id_from_sts_path(path: str) -> str | None:
+    parts = path.strip("/").split("/")
+    # "/admin/sts/tokens/<agent_id>", "/admin/sts/validate/<agent_id>", "/admin/sts/revoke/<agent_id>"
+    if len(parts) >= 4 and parts[0] == "admin" and parts[1] == "sts":
+        return parts[-1]
+    return None
+
+
+def _mint_token(agent_id: str) -> dict:
+    token = f"sts-mock-{agent_id}-{os.urandom(8).hex()}"
+    record = {"token": token, "agent_id": agent_id, "valid": True, "minted_at": datetime.now(UTC).isoformat()}
+    with _STS_TOKEN_LOCK:
+        _STS_TOKENS[agent_id] = record
+    return record
+
+
+def _validate_token(agent_id: str) -> dict:
+    with _STS_TOKEN_LOCK:
+        rec = _STS_TOKENS.get(agent_id, {})
+    return {
+        "agent_id": agent_id,
+        "valid": rec.get("valid", False),
+        "token": rec.get("token", ""),
+        "minted_at": rec.get("minted_at", ""),
+    }
+
+
+def _get_token(agent_id: str) -> dict | None:
+    with _STS_TOKEN_LOCK:
+        return dict(_STS_TOKENS.get(agent_id, {}))
+
+
+def _list_tokens() -> list[dict]:
+    with _STS_TOKEN_LOCK:
+        return [dict(v) for v in _STS_TOKENS.values()]
+
+
+def _revoke_token(agent_id: str) -> dict:
+    with _STS_TOKEN_LOCK:
+        rec = _STS_TOKENS.get(agent_id)
+        if rec is not None:
+            rec["valid"] = False
+        return {"agent_id": agent_id, "revoked": True}
+
+
 def _pid_from_proc_path(path: str) -> int | None:
     """Extract <pid> from /admin/processes/<pid>/(stats|signal). None if unparseable."""
     parts = path.strip("/").split("/")
@@ -1024,14 +1081,17 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             # as UNHEALTHY and rolls the hot-swapped module back (fail-closed gate).
             self._send_json(200, {"status": "degraded", "degraded": True})
         elif path == "/ci-status":
-            self._send_json(200, {
-                "status": "completed",
-                "conclusion": "success",
-                "passed": True,
-                "run_id": "mock-run-001",
-                "commit_sha": "abc1234",
-                "failed_job_logs": [],
-            })
+            self._send_json(
+                200,
+                {
+                    "status": "completed",
+                    "conclusion": "success",
+                    "passed": True,
+                    "run_id": "mock-run-001",
+                    "commit_sha": "abc1234",
+                    "failed_job_logs": [],
+                },
+            )
         elif path == "/api/facts":
             self._send_json(200, dict(FACTS_SNAPSHOT))
         elif path == "/api/metrics":
@@ -1041,9 +1101,14 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
         elif path == "/api/observe/sources":
             self._send_json(200, {"sources": list(OBSERVE_SOURCES)})
         elif path == "/api/messages":
-            self._send_json(200, {"messages": [
-                {"id": "MSG-MOCK-IN-1", "sender": "planner", "topic": "standup", "status": "unread"},
-            ]})
+            self._send_json(
+                200,
+                {
+                    "messages": [
+                        {"id": "MSG-MOCK-IN-1", "sender": "planner", "topic": "standup", "status": "unread"},
+                    ]
+                },
+            )
         elif path.startswith("/api/todos/"):
             todo_id = path.rsplit("/", 1)[-1]
             self._send_json(200, _todo_record(todo_id))
@@ -1063,7 +1128,7 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
         elif path == "/api/accounting":
             self._send_json(200, {"accounting": list(ACCOUNTING_SNAPSHOT), "total": len(ACCOUNTING_SNAPSHOT)})
         elif path.startswith("/api/accounting/"):
-            project_id = path[len("/api/accounting/"):]
+            project_id = path[len("/api/accounting/") :]
             snap = next((s for s in ACCOUNTING_SNAPSHOT if s["project_id"] == project_id), None)
             if snap is None:
                 self._send_json(404, {"detail": f"Project not found: {project_id}"})
@@ -1107,79 +1172,107 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             limit = int((qs.get("limit", ["10"]) or ["10"])[0])
             self._send_json(200, _ornith_pairs_response(status_csv, limit))
         elif path == "/process-audit":
-            self._send_json(200, {
-                "guardrail_health": {
-                    "state_based_checks": 5,
-                    "pattern_list_checks": 35,
-                    "health_score": 0.125,
-                    "overfitted": True,
+            self._send_json(
+                200,
+                {
+                    "guardrail_health": {
+                        "state_based_checks": 5,
+                        "pattern_list_checks": 35,
+                        "health_score": 0.125,
+                        "overfitted": True,
+                    },
+                    "plugin_footprint": {
+                        "total_lines": 4200,
+                        "files": 8,
+                    },
+                    "recent_false_positive_blocks": 3,
                 },
-                "plugin_footprint": {
-                    "total_lines": 4200,
-                    "files": 8,
-                },
-                "recent_false_positive_blocks": 3,
-            })
+            )
         # ---- GitHub API mock routes (gha_usage role) ------------------------
         elif path == "/repos/mock-org/mock-repo/actions/runs":
             now = datetime.now(UTC)
-            self._send_json(200, {
-                "total_count": 5,
-                "workflow_runs": [
-                    {
-                        "id": 1,
-                        "name": "gate",
-                        "conclusion": "success",
-                        "status": "completed",
-                        "created_at": now.isoformat(),
-                    },
-                    {
-                        "id": 2,
-                        "name": "pytest",
-                        "conclusion": "success",
-                        "status": "completed",
-                        "created_at": now.isoformat(),
-                    },
-                    {
-                        "id": 3,
-                        "name": "lint",
-                        "conclusion": "success",
-                        "status": "completed",
-                        "created_at": (now - timedelta(hours=2)).isoformat(),
-                    },
-                    {
-                        "id": 4,
-                        "name": "typecheck",
-                        "conclusion": "failure",
-                        "status": "completed",
-                        "created_at": (now - timedelta(hours=6)).isoformat(),
-                    },
-                    {
-                        "id": 5,
-                        "name": "deploy",
-                        "conclusion": "success",
-                        "status": "completed",
-                        "created_at": (now - timedelta(hours=22)).isoformat(),
-                    },
-                ],
-            })
+            self._send_json(
+                200,
+                {
+                    "total_count": 5,
+                    "workflow_runs": [
+                        {
+                            "id": 1,
+                            "name": "gate",
+                            "conclusion": "success",
+                            "status": "completed",
+                            "created_at": now.isoformat(),
+                        },
+                        {
+                            "id": 2,
+                            "name": "pytest",
+                            "conclusion": "success",
+                            "status": "completed",
+                            "created_at": now.isoformat(),
+                        },
+                        {
+                            "id": 3,
+                            "name": "lint",
+                            "conclusion": "success",
+                            "status": "completed",
+                            "created_at": (now - timedelta(hours=2)).isoformat(),
+                        },
+                        {
+                            "id": 4,
+                            "name": "typecheck",
+                            "conclusion": "failure",
+                            "status": "completed",
+                            "created_at": (now - timedelta(hours=6)).isoformat(),
+                        },
+                        {
+                            "id": 5,
+                            "name": "deploy",
+                            "conclusion": "success",
+                            "status": "completed",
+                            "created_at": (now - timedelta(hours=22)).isoformat(),
+                        },
+                    ],
+                },
+            )
         elif path == "/repos/mock-org/mock-repo/actions/workflows":
-            self._send_json(200, {
-                "total_count": 3,
-                "workflows": [
-                    {"id": 1, "name": "gate", "path": ".github/workflows/gate.yml", "state": "active"},
-                    {"id": 2, "name": "build", "path": ".github/workflows/build.yml", "state": "active"},
-                    {"id": 3, "name": "release", "path": ".github/workflows/release.yml", "state": "active"},
-                ],
-            })
+            self._send_json(
+                200,
+                {
+                    "total_count": 3,
+                    "workflows": [
+                        {"id": 1, "name": "gate", "path": ".github/workflows/gate.yml", "state": "active"},
+                        {"id": 2, "name": "build", "path": ".github/workflows/build.yml", "state": "active"},
+                        {"id": 3, "name": "release", "path": ".github/workflows/release.yml", "state": "active"},
+                    ],
+                },
+            )
         elif path == "/orgs/mock-org/settings/billing/actions":
-            self._send_json(200, {
-                "total_minutes_used": 320,
-                "total_paid_minutes_used": 0,
-                "included_minutes": 2000,
-                "usable_minutes": 1680,
-                "pending_cancellation_minutes": 0,
-            })
+            self._send_json(
+                200,
+                {
+                    "total_minutes_used": 320,
+                    "total_paid_minutes_used": 0,
+                    "included_minutes": 2000,
+                    "usable_minutes": 1680,
+                    "pending_cancellation_minutes": 0,
+                },
+            )
+        # ---- STS token lifecycle ------------------------------------------
+        elif path == "/admin/sts/tokens":
+            self._send_json(200, {"tokens": _list_tokens()})
+        elif path.startswith("/admin/sts/tokens/"):
+            agent_id = _agent_id_from_sts_path(path)
+            rec = _get_token(agent_id) if agent_id else None
+            if rec is None:
+                self._send_json(404, {"detail": f"no token for agent {agent_id}"})
+            else:
+                self._send_json(200, rec)
+        elif path.startswith("/admin/sts/validate/"):
+            agent_id = _agent_id_from_sts_path(path)
+            if agent_id is None:
+                self._send_json(404, {"detail": f"bad validate path {path}"})
+            else:
+                self._send_json(200, _validate_token(agent_id))
         else:
             self._send_json(404, {"detail": f"no mock route for GET {path}"})
 
@@ -1249,6 +1342,16 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             self.send_response(204)
             self.send_header("Content-Length", "0")
             self.end_headers()
+        # ---- STS token lifecycle ------------------------------------------
+        elif path == "/admin/sts/mint":
+            agent_id = payload.get("agent_id", "unknown")
+            self._send_json(201, _mint_token(agent_id))
+        elif path.startswith("/admin/sts/revoke/"):
+            agent_id = _agent_id_from_sts_path(path)
+            if agent_id is None:
+                self._send_json(404, {"detail": f"bad revoke path {path}"})
+            else:
+                self._send_json(200, _revoke_token(agent_id))
         else:
             self._send_json(404, {"detail": f"no mock route for POST {path}"})
 

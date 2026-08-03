@@ -9,6 +9,7 @@ import pytest
 from general_ludd.connectors.sentry import (
     SentrySource,
     Transport,
+    _CallableTransport,
     _SentryResponse,
 )
 
@@ -28,6 +29,7 @@ class FakeTransport:
 
 def _resp(status: int, body: Any = None) -> _SentryResponse:
     import json
+
     raw = json.dumps(body).encode() if body is not None else b"{}"
     return _SentryResponse(status=status, body=raw)
 
@@ -40,9 +42,14 @@ def _cfg(**kw: Any) -> dict[str, Any]:
 
 CANNED_ISSUES = [
     {
-        "id": "1", "title": "TypeError in handler", "culprit": "app.py:42",
-        "status": "unresolved", "level": "error", "count": "5",
-        "lastSeen": "2026-01-15T10:30:00Z", "shortId": "PROJ-1",
+        "id": "1",
+        "title": "TypeError in handler",
+        "culprit": "app.py:42",
+        "status": "unresolved",
+        "level": "error",
+        "count": "5",
+        "lastSeen": "2026-01-15T10:30:00Z",
+        "shortId": "PROJ-1",
         "project": {"slug": "myproject"},
     }
 ]
@@ -225,7 +232,9 @@ class TestFetchEvent:
     def test_fetch_event_trace_context(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("SENTRY_TOKEN", "tok")
         event = {
-            "id": "evt1", "title": "Test", "culprit": "x",
+            "id": "evt1",
+            "title": "Test",
+            "culprit": "x",
             "contexts": {"trace": {"trace_id": "abc123", "span_id": "span1"}},
             "dateCreated": "2026-01-01T00:00:00Z",
         }
@@ -235,3 +244,99 @@ class TestFetchEvent:
         assert result is not None
         assert result["labels"]["trace_id"] == "abc123"
         assert result["labels"]["span_id"] == "span1"
+
+
+class TestSentryResponse:
+    def test_text_with_bytes_body(self) -> None:
+        r = _SentryResponse(200, b"hello world")
+        assert r.text == "hello world"
+
+    def test_text_with_str_body(self) -> None:
+        r = _SentryResponse(200, "plain string")
+        assert r.text == "plain string"
+
+    def test_json_with_empty_body_returns_none(self) -> None:
+        r = _SentryResponse(200, b"  ")
+        assert r.json() is None
+
+    def test_json_with_empty_bytes(self) -> None:
+        r = _SentryResponse(200, b"")
+        assert r.json() is None
+
+
+class TestCallableTransport:
+    def test_callable_transport_returns_response(self) -> None:
+        transport = _CallableTransport(lambda method, url, headers=None, timeout=None: (200, {"key": "val"}))
+        resp = transport.get("http://example.com", headers={}, timeout=10.0)
+        assert resp.status == 200
+        assert resp.json() == {"key": "val"}
+
+    def test_callable_transport_returns_raw_response(self) -> None:
+        canned = _SentryResponse(201, b'{"ok": true}')
+        transport = _CallableTransport(lambda method, url, headers=None, timeout=None: canned)
+        resp = transport.get("http://example.com", headers={}, timeout=10.0)
+        assert resp.status == 201
+        assert resp.json() == {"ok": True}
+
+
+class TestInitEdgeCases:
+    def test_timeout_value_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SENTRY_TOKEN", "tok")
+        with pytest.raises(ValueError, match="timeout"):
+            SentrySource(_cfg(timeout="not-a-number"))
+
+    def test_callable_config_transport(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SENTRY_TOKEN", "tok")
+
+        def transport_fn(method, url, headers=None, timeout=None):
+            return (200, [])
+
+        src = SentrySource(_cfg(transport=transport_fn))
+        assert src.query({}) == []
+
+
+class TestQueryEdgeCases:
+    def test_invalid_limit_falls_back_to_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SENTRY_TOKEN", "tok")
+        t = FakeTransport([_resp(200, CANNED_ISSUES)])
+        src = SentrySource(_cfg(transport=t))
+        records = src.query({"limit": "not-a-number"})
+        assert len(records) == 1
+
+    def test_skips_non_dict_issues_in_payload(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SENTRY_TOKEN", "tok")
+        payload = [CANNED_ISSUES[0], "not-a-dict", 42]
+        t = FakeTransport([_resp(200, payload)])
+        src = SentrySource(_cfg(transport=t))
+        records = src.query({})
+        assert len(records) == 1
+
+
+class TestFetchEventEdgeCases:
+    def test_normalize_event_with_os_context(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SENTRY_TOKEN", "tok")
+        event = {
+            "id": "evt1",
+            "title": "Test",
+            "culprit": "x",
+            "contexts": {"os": {"name": "Linux"}},
+        }
+        t = FakeTransport([_resp(200, event)])
+        src = SentrySource(_cfg(transport=t))
+        result = src.fetch_event("issue-1")
+        assert result is not None
+        assert result["labels"]["os"] == "Linux"
+
+    def test_normalize_event_with_top_level_trace_id(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SENTRY_TOKEN", "tok")
+        event = {
+            "id": "evt1",
+            "title": "Test",
+            "culprit": "x",
+            "trace_id": "top-level-trace",
+        }
+        t = FakeTransport([_resp(200, event)])
+        src = SentrySource(_cfg(transport=t))
+        result = src.fetch_event("issue-1")
+        assert result is not None
+        assert result["labels"]["trace_id"] == "top-level-trace"

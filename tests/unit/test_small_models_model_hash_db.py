@@ -6,6 +6,7 @@ import contextlib
 import dataclasses
 import hashlib
 import json
+import os
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -707,3 +708,379 @@ class TestImportFromHFDeep:
         with patch("huggingface_hub.hf_hub_download", side_effect=ConnectionError("no network")):
             result = db.import_from_hf("nonexistent/offline")
         assert result is False
+
+
+# — edge-case and fuzzing tests —
+
+
+class TestUnicodeFileHash:
+    def test_filehash_unicode_filename_to_dict(self) -> None:
+        fh = FileHash(filename="モデル.safetensors", sha256="a" * 64)
+        d = fh.to_dict()
+        assert d["filename"] == "モデル.safetensors"
+
+    def test_filehash_unicode_filename_from_dict_roundtrip(self) -> None:
+        original = FileHash(filename="über/tokenizer.json", sha256="b" * 64)
+        restored = FileHash.from_dict(original.to_dict())
+        assert restored == original
+        assert restored.filename == "über/tokenizer.json"
+
+    def test_json_persistence_with_unicode_model_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "db.json"
+            db = ModelHashDB(db_path=str(db_path))
+            db.register_model("org/über_model", [FileHash("файл.bin", "c" * 64)])
+            db2 = ModelHashDB(db_path=str(db_path))
+            files = db2.get_hashes("org/über_model")
+            assert files is not None
+            assert files[0].filename == "файл.bin"
+
+    def test_verify_download_with_unicode_filename(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            content = b"unicode test"
+            sha = hashlib.sha256(content).hexdigest()
+            fname = "テストデータ.bin"
+            (Path(tmpdir) / fname).write_bytes(content)
+            db = ModelHashDB()
+            db.register_model("org/model", [FileHash(fname, sha)])
+            db.verify_download("org/model", tmpdir)
+
+
+class TestLongFilenames:
+    def test_filehash_with_very_long_filename(self) -> None:
+        fname = "x" * 500 + ".safetensors"
+        assert len(fname) > 255
+        fh = FileHash(filename=fname, sha256="d" * 64)
+        assert fh.filename == fname
+        assert len(fh.filename) == len(fname)
+
+    def test_json_persistence_with_long_filename(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "db.json"
+            db = ModelHashDB(db_path=str(db_path))
+            fname = "a" * 300 + ".bin"
+            db.register_model("org/model", [FileHash(fname, "e" * 64)])
+            db2 = ModelHashDB(db_path=str(db_path))
+            files = db2.get_hashes("org/model")
+            assert files is not None
+            assert files[0].filename == fname
+
+    def test_long_model_id_persists(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "db.json"
+            db = ModelHashDB(db_path=str(db_path))
+            long_id = "org/" + "x" * 200
+            db.register_model(long_id, [FileHash("f.bin", "a" * 64)])
+            db2 = ModelHashDB(db_path=str(db_path))
+            assert db2.get_hashes(long_id) is not None
+
+
+class TestSHA256CaseSensitivity:
+    def test_verify_rejects_uppercase_sha_when_computed_is_lowercase(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            content = b"case test"
+            fpath = Path(tmpdir) / "model.bin"
+            fpath.write_bytes(content)
+            actual_lower = hashlib.sha256(content).hexdigest()
+            uppercased = actual_lower.upper()
+            assert uppercased != actual_lower
+            db = ModelHashDB()
+            db.register_model("org/model", [FileHash("model.bin", uppercased)])
+            with pytest.raises(ModelIntegrityError):
+                db.verify_download("org/model", str(fpath))
+
+    def test_filehash_stores_sha_as_is_no_normalization(self) -> None:
+        fh = FileHash(filename="f.bin", sha256="A" * 64)
+        assert fh.sha256 == "A" * 64
+        assert fh.sha256 != "a" * 64
+
+    def test_filehash_inequality_different_case(self) -> None:
+        a = FileHash(filename="f.bin", sha256="A")
+        b = FileHash(filename="f.bin", sha256="a")
+        assert a != b
+
+
+class TestEmptyFileVerification:
+    def test_verify_empty_file_matches(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fpath = Path(tmpdir) / "empty.bin"
+            fpath.write_bytes(b"")
+            sha_empty = hashlib.sha256(b"").hexdigest()
+            db = ModelHashDB()
+            db.register_model("org/model", [FileHash("empty.bin", sha_empty)])
+            db.verify_download("org/model", str(fpath))
+
+    def test_verify_empty_file_mismatch_raises(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fpath = Path(tmpdir) / "empty.bin"
+            fpath.write_bytes(b"")
+            db = ModelHashDB()
+            db.register_model("org/model", [FileHash("empty.bin", "f" * 64)])
+            with pytest.raises(ModelIntegrityError):
+                db.verify_download("org/model", str(fpath))
+
+    def test_empty_file_sha_known_constant(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fpath = Path(tmpdir) / "e.bin"
+            fpath.write_bytes(b"")
+            assert _sha256_file(str(fpath)) == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+
+class TestOverlappingHashes:
+    def test_same_file_same_hash_different_models(self) -> None:
+        db = ModelHashDB()
+        fh = FileHash("shared.bin", "a" * 64)
+        db.register_model("org/model-a", [fh])
+        db.register_model("org/model-b", [fh])
+        assert "org/model-a" in db.list_models()
+        assert "org/model-b" in db.list_models()
+
+    def test_different_files_same_hash(self) -> None:
+        db = ModelHashDB()
+        db.register_model(
+            "org/m",
+            [
+                FileHash("a.bin", "s" * 64),
+                FileHash("b.bin", "s" * 64),
+            ],
+        )
+        files = db.get_hashes("org/m")
+        assert files is not None
+        assert len(files) == 2
+        assert files[0].sha256 == files[1].sha256
+
+    def test_verify_same_hash_for_multiple_files_in_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            content = b"same"
+            sha = hashlib.sha256(content).hexdigest()
+            (Path(tmpdir) / "x.bin").write_bytes(content)
+            (Path(tmpdir) / "y.bin").write_bytes(content)
+            db = ModelHashDB()
+            db.register_model(
+                "org/model",
+                [
+                    FileHash("x.bin", sha),
+                    FileHash("y.bin", sha),
+                ],
+            )
+            db.verify_download("org/model", tmpdir)
+
+
+class TestPermissionErrors:
+    def test_persist_to_readonly_file_raises(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "db.json"
+            db_path.write_text("{}")
+            db_path.chmod(0o444)
+            db = ModelHashDB(db_path=str(db_path))
+            with pytest.raises(PermissionError):
+                db.register_model("org/model", [FileHash("f.bin", "a" * 64)])
+            assert db_path.exists()  # file not deleted on persist failure
+
+    def test_load_unreadable_then_writable_roundtrip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "unreadable.json"
+            db_path.write_text('{"org/a": [{"filename": "f.bin", "sha256": "a"}]}')
+            db_path.chmod(0o000)
+            try:
+                with pytest.raises(PermissionError):
+                    ModelHashDB(db_path=str(db_path))
+            finally:
+                db_path.chmod(0o644)
+            db = ModelHashDB(db_path=str(db_path))
+            models = db.list_models()
+            assert set(models) == {"org/a"}
+
+    def test_persist_to_nonexistent_directory_raises(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "newdir" / "sub" / "db.json"
+            db = ModelHashDB(db_path=str(db_path))
+            with pytest.raises(FileNotFoundError):
+                db.register_model("org/model", [FileHash("f.bin", "a" * 64)])
+            assert not db_path.exists()  # directory not auto-created
+
+
+class TestFuzzingHashDB:
+    def test_fuzz_random_bytes_roundtrip(self) -> None:
+        import random
+
+        random.seed(42)
+        for _i in range(20):
+            content = bytes(random.randint(0, 255) for _ in range(random.randint(1, 16384)))
+            sha = hashlib.sha256(content).hexdigest()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                fpath = Path(tmpdir) / "fuzz.bin"
+                fpath.write_bytes(content)
+                db = ModelHashDB()
+                db.register_model("org/fuzz", [FileHash("fuzz.bin", sha)])
+                db.verify_download("org/fuzz", str(fpath))
+                should_fail_sha = hashlib.sha256(content + b"!").hexdigest()
+                db2 = ModelHashDB()
+                db2.register_model("org/fuzz", [FileHash("fuzz.bin", should_fail_sha)])
+                with pytest.raises(ModelIntegrityError):
+                    db2.verify_download("org/fuzz", str(fpath))
+
+    def test_fuzz_model_ids(self) -> None:
+        import random
+        import string
+
+        random.seed(99)
+        db = ModelHashDB()
+        for _i in range(50):
+            chars = string.ascii_letters + string.digits + "/._-"
+            model_id = "".join(random.choice(chars) for _ in range(random.randint(1, 120)))
+            sha = hashlib.sha256(str(random.random()).encode()).hexdigest()
+            db.register_model(model_id, [FileHash("f.bin", sha)])
+            assert db.get_hashes(model_id) is not None
+            db.remove_model(model_id)
+            assert db.get_hashes(model_id) is None
+
+    def test_fuzz_json_persistence_many_models(self) -> None:
+        import random
+
+        random.seed(7)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "fuzz.json"
+            db = ModelHashDB(db_path=str(db_path))
+            registered: list[str] = []
+            for i in range(40):
+                model_id = f"org/model-{i:04d}"
+                n_files = random.randint(1, 5)
+                files = [FileHash(f"file_{j}.bin", hashlib.sha256(os.urandom(16)).hexdigest()) for j in range(n_files)]
+                db.register_model(model_id, files)
+                registered.append(model_id)
+            db2 = ModelHashDB(db_path=str(db_path))
+            for mid in registered:
+                assert db2.get_hashes(mid) is not None
+
+    def test_fuzz_sha256_boundary_hex_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            content = b"boundary"
+            actual_sha = hashlib.sha256(content).hexdigest()
+            fpath = Path(tmpdir) / "boundary.bin"
+            fpath.write_bytes(content)
+            all_zeros = "0" * 64
+            all_f = "f" * 64
+            db = ModelHashDB()
+            db.register_model("org/model", [FileHash("boundary.bin", actual_sha)])
+            db.verify_download("org/model", str(fpath))
+            assert fpath.exists()  # matching hash preserves file
+            db.register_model("org/model", [FileHash("boundary.bin", all_zeros)])
+            with pytest.raises(ModelIntegrityError):
+                db.verify_download("org/model", str(fpath))
+            assert not fpath.exists()  # mismatched file deleted
+            fpath.write_bytes(content)
+            db.register_model("org/model", [FileHash("boundary.bin", all_f)])
+            with pytest.raises(ModelIntegrityError):
+                db.verify_download("org/model", str(fpath))
+
+    def test_fuzz_concurrent_registration(self) -> None:
+        import threading
+
+        errors: list[Exception] = []
+        db = ModelHashDB()
+
+        def register_batch(prefix: str) -> None:
+            try:
+                for i in range(30):
+                    db.register_model(f"org/{prefix}-{i}", [FileHash("f.bin", "a" * 64)])
+                for i in range(30):
+                    _files = db.get_hashes(f"org/{prefix}-{i}")
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=register_batch, args=(f"thread-{t}",)) for t in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert not errors
+        all_models = db.list_models()
+        for t in range(4):
+            for i in range(30):
+                assert f"org/thread-{t}-{i}" in all_models
+
+    def test_fuzz_concurrent_verify_read_only(self) -> None:
+        import threading
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            content = b"thread-verify-test-data"
+            sha = hashlib.sha256(content).hexdigest()
+            fpath = Path(tmpdir) / "shared.bin"
+            fpath.write_bytes(content)
+            db = ModelHashDB()
+            db.register_model("org/model", [FileHash("shared.bin", sha)])
+            errors: list[Exception] = []
+
+            def verify() -> None:
+                try:
+                    for _ in range(50):
+                        db.verify_download("org/model", str(fpath))
+                except Exception as e:
+                    errors.append(e)
+
+            threads = [threading.Thread(target=verify) for _ in range(4)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+            assert not errors
+
+    def test_fuzz_json_special_characters_roundtrip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "special.json"
+            db = ModelHashDB(db_path=str(db_path))
+            special_ids = [
+                "org/model with spaces",
+                'org/"quoted"/model',
+                "org/model\nnewline",
+                "org/model\ttab",
+                "org/model\\backslash",
+                "org/model/slash",
+                "org/😀/model",
+            ]
+            for mid in special_ids:
+                db.register_model(mid, [FileHash("f.bin", "x" * 64)])
+            db2 = ModelHashDB(db_path=str(db_path))
+            for mid in special_ids:
+                assert db2.get_hashes(mid) is not None
+
+    def test_fuzz_sha256_file_nonexistent_raises(self) -> None:
+        with pytest.raises(FileNotFoundError):
+            _sha256_file("/tmp/gludd-nonexistent-file-for-fuzz-test-12345.bin")
+
+    def test_fuzz_sha256_file_large_random(self) -> None:
+        import random
+
+        random.seed(12345)
+        size = 1024 * 1024 * 2
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fpath = Path(tmpdir) / "large_random.bin"
+            with open(fpath, "wb") as f:
+                remaining = size
+                while remaining > 0:
+                    chunk = bytes(random.randint(0, 255) for _ in range(min(65536, remaining)))
+                    f.write(chunk)
+                    remaining -= len(chunk)
+            sha = _sha256_file(str(fpath))
+            h = hashlib.sha256()
+            with open(fpath, "rb") as f:
+                while chunk := f.read(65536):
+                    h.update(chunk)
+            assert sha == h.hexdigest()
+
+    def test_fuzz_filehash_to_dict_all_byte_values_in_filename(self) -> None:
+        fname = "file_" + "".join(chr(b) for b in range(32, 127)) + ".bin"
+        sha = "f" * 64
+        fh = FileHash(filename=fname, sha256=sha)
+        d = fh.to_dict()
+        assert d["filename"] == fname
+        assert d["sha256"] == sha
+
+    def test_fuzz_filehash_very_long_sha256(self) -> None:
+        sha = "0123456789abcdef" * 10
+        assert len(sha) == 160
+        fh = FileHash(filename="f.bin", sha256=sha)
+        d = fh.to_dict()
+        restored = FileHash.from_dict(d)
+        assert restored.sha256 == sha

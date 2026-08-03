@@ -1,0 +1,78 @@
+---
+- name: Prepare — create synthetic Snake game for verification tests
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    test_artifact_dir: "/tmp/gludd-game-gen-molecule"
+    test_game_name: "snake"
+  tasks:
+    - name: "Ensure test artifact directory exists"
+      ansible.builtin.file:
+        path: "{{ test_artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: "Create a valid synthetic Snake game class"
+      ansible.builtin.copy:
+        content: |
+          class Snake:
+              def __init__(self):
+                  self._score = 0
+                  self._game_over = False
+                  self._snake = [(10, 10)]
+                  self._food = (5, 5)
+                  self._direction = 'right'
+
+              def start(self):
+                  self._score = 0
+                  self._game_over = False
+                  self._snake = [(10, 10)]
+                  self._food = (5, 5)
+
+              def tick(self, direction):
+                  if self._game_over:
+                      return
+                  self._direction = direction
+                  head = list(self._snake[0])
+                  if direction == 'up':
+                      head[1] -= 1
+                  elif direction == 'down':
+                      head[1] += 1
+                  elif direction == 'left':
+                      head[0] -= 1
+                  elif direction == 'right':
+                      head[0] += 1
+                  head = tuple(head)
+                  if head[0] < 0 or head[0] >= 20 or head[1] < 0 or head[1] >= 20:
+                      self._game_over = True
+                      return
+                  if head in self._snake:
+                      self._game_over = True
+                      return
+                  self._snake.insert(0, head)
+                  if head == self._food:
+                      self._score += 1
+                      self._food = ((self._food[0] + 3) % 20, (self._food[1] + 7) % 20)
+                  else:
+                      self._snake.pop()
+
+              def score(self):
+                  return self._score
+
+              def is_game_over(self):
+                  return self._game_over
+
+              def restart(self):
+                  self.start()
+        dest: "{{ test_artifact_dir }}/{{ test_game_name }}.py"
+        mode: "0644"
+
+    - name: "Create a syntactically-invalid game file for error handling test"
+      ansible.builtin.copy:
+        content: |
+          class BrokenGame:
+              def __init__(self)
+                  self.x = 1  # missing colon above — syntax error
+        dest: "{{ test_artifact_dir }}/broken_game.py"
+        mode: "0644"
