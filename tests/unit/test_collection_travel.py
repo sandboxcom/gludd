@@ -7,7 +7,6 @@ hotel_search.search_hotels, searxng_search.search_searxng.
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -629,10 +628,10 @@ class TestSearxngSearch:
         assert data["score"] == 0.95
         assert "google" in data["source"]
 
-    @patch("urllib.request.urlopen")
-    def test_search_searxng_returns_structured_results(self, mock_urlopen: MagicMock) -> None:
-        mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(
+    @patch("general_ludd.connectors.searx.SearXConnector._get")
+    def test_search_searxng_returns_structured_results(self, mock_get: MagicMock) -> None:
+        mock_get.return_value = (
+            200,
             {
                 "results": [
                     {
@@ -648,11 +647,8 @@ class TestSearxngSearch:
                         "engine": "google_travel",
                     },
                 ]
-            }
-        ).encode()
-        mock_response.__enter__ = MagicMock(return_value=mock_response)
-        mock_response.__exit__ = MagicMock(return_value=False)
-        mock_urlopen.return_value = mock_response
+            },
+        )
 
         results, raw, search_url = search_searxng(
             query="flights JFK to LHR",
@@ -668,17 +664,10 @@ class TestSearxngSearch:
         assert len(raw) == 2
         assert search_url.startswith("http://localhost:8080/search?")
 
-    @patch("urllib.request.urlopen")
-    def test_search_searxng_http_error_returns_empty(self, mock_urlopen: MagicMock) -> None:
-        from urllib.error import HTTPError
+    @patch("general_ludd.connectors.searx.SearXConnector._get")
+    def test_search_searxng_http_error_returns_empty(self, mock_get: MagicMock) -> None:
+        mock_get.return_value = (500, None)
 
-        mock_urlopen.side_effect = HTTPError(
-            url="http://localhost:8080/search",
-            code=500,
-            msg="Internal Server Error",
-            hdrs={},  # type: ignore[arg-type]
-            fp=None,
-        )
         results, raw, _ = search_searxng(
             query="test",
             category="general",
@@ -692,10 +681,10 @@ class TestSearxngSearch:
         assert results == []
         assert raw == []
 
-    @patch("urllib.request.urlopen")
-    def test_search_searxng_hotel_category(self, mock_urlopen: MagicMock) -> None:
-        mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(
+    @patch("general_ludd.connectors.searx.SearXConnector._get")
+    def test_search_searxng_hotel_category(self, mock_get: MagicMock) -> None:
+        mock_get.return_value = (
+            200,
             {
                 "results": [
                     {
@@ -705,11 +694,8 @@ class TestSearxngSearch:
                         "engine": "booking",
                     }
                 ]
-            }
-        ).encode()
-        mock_response.__enter__ = MagicMock(return_value=mock_response)
-        mock_response.__exit__ = MagicMock(return_value=False)
-        mock_urlopen.return_value = mock_response
+            },
+        )
 
         results, _, _ = search_searxng(
             query="hotels Paris",
@@ -725,10 +711,10 @@ class TestSearxngSearch:
         assert "hotel_name" in results[0]
         assert results[0]["total_price"] > 0
 
-    @patch("urllib.request.urlopen")
-    def test_search_searxng_activities_category(self, mock_urlopen: MagicMock) -> None:
-        mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(
+    @patch("general_ludd.connectors.searx.SearXConnector._get")
+    def test_search_searxng_activities_category(self, mock_get: MagicMock) -> None:
+        mock_get.return_value = (
+            200,
             {
                 "results": [
                     {
@@ -739,11 +725,8 @@ class TestSearxngSearch:
                         "category": "sightseeing",
                     }
                 ]
-            }
-        ).encode()
-        mock_response.__enter__ = MagicMock(return_value=mock_response)
-        mock_response.__exit__ = MagicMock(return_value=False)
-        mock_urlopen.return_value = mock_response
+            },
+        )
 
         results, _, _ = search_searxng(
             query="things to do Paris",
@@ -758,15 +741,22 @@ class TestSearxngSearch:
         assert len(results) == 1
         assert results[0]["title"] == "Louvre Museum Tour"
 
-    @patch("urllib.request.urlopen")
-    def test_search_searxng_max_results_truncates(self, mock_urlopen: MagicMock) -> None:
-        mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(
-            {"results": [{"title": f"Result {i}", "content": "", "url": "", "engine": "google"} for i in range(10)]}
-        ).encode()
-        mock_response.__enter__ = MagicMock(return_value=mock_response)
-        mock_response.__exit__ = MagicMock(return_value=False)
-        mock_urlopen.return_value = mock_response
+    @patch("general_ludd.connectors.searx.SearXConnector._get")
+    def test_search_searxng_max_results_truncates(self, mock_get: MagicMock) -> None:
+        mock_get.return_value = (
+            200,
+            {
+                "results": [
+                    {
+                        "title": f"Result {i}",
+                        "content": "",
+                        "url": f"https://example.com/result-{i}",
+                        "engine": "google",
+                    }
+                    for i in range(10)
+                ]
+            },
+        )
 
         results, _, _ = search_searxng(
             query="test",
@@ -780,15 +770,11 @@ class TestSearxngSearch:
         )
         assert len(results) == 3
 
-    @patch("urllib.request.urlopen")
-    def test_search_searxng_empty_engines_uses_default(self, mock_urlopen: MagicMock) -> None:
-        mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({"results": []}).encode()
-        mock_response.__enter__ = MagicMock(return_value=mock_response)
-        mock_response.__exit__ = MagicMock(return_value=False)
-        mock_urlopen.return_value = mock_response
+    @patch("general_ludd.connectors.searx.SearXConnector._get")
+    def test_search_searxng_empty_engines_uses_default(self, mock_get: MagicMock) -> None:
+        mock_get.return_value = (200, {"results": []})
 
-        _, _, url = search_searxng(
+        _, _, _url = search_searxng(
             query="flights test",
             category="flights",
             searxng_url="http://localhost:8080",
@@ -798,4 +784,6 @@ class TestSearxngSearch:
             language="en",
             timeout=10,
         )
-        assert "google_flights" in url or "google" in url
+        mock_get.assert_called_once()
+        params = mock_get.call_args[1]["params"]
+        assert "google_flights" in params["engines"] or "google" in params["engines"]

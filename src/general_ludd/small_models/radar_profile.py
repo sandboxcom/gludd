@@ -70,12 +70,30 @@ def _map_task_kind_to_axis(task_kind: str) -> str | None:
 
 
 class _ScoresDict(dict[str, float]):
-    """Dict that clamps values to [0.0, 1.0] on setitem."""
+    """Dict that clamps values to [0.0, 1.0] on setitem; delegates 'cost' to parent."""
+
+    def __init__(self, *args: Any, parent: ModelRadarProfile | None = None, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._parent = parent
 
     def __setitem__(self, key: str, value: float) -> None:
         if key not in _MT_BENCH_AXES:
             raise KeyError(key)
-        super().__setitem__(key, max(0.0, min(1.0, float(value))))
+        clamped = max(0.0, min(1.0, float(value)))
+        if key == "cost" and self._parent is not None:
+            object.__setattr__(self._parent, "cost_score", clamped)
+        else:
+            super().__setitem__(key, clamped)
+
+    def __getitem__(self, key: str) -> float:
+        if key == "cost" and self._parent is not None:
+            return self._parent.cost_score
+        return super().__getitem__(key)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        if key == "cost" and self._parent is not None:
+            return self._parent.cost_score
+        return super().get(key, default)
 
 
 @dataclass
@@ -93,14 +111,15 @@ class ModelRadarProfile:
     def __post_init__(self) -> None:
         if not isinstance(self.model_profile_id, str) or not self.model_profile_id.strip():
             raise ValueError("model_profile_id must be a non-empty string")
-        self._scores = _ScoresDict({axis: 0.0 for axis in _MT_BENCH_AXES})
+        object.__setattr__(self, "cost_score", max(0.0, min(1.0, float(self.cost_score))))
+        self._scores = _ScoresDict({axis: 0.0 for axis in _MT_BENCH_AXES}, parent=self)
 
     @property
     def scores(self) -> dict[str, float]:
-        """Axis→score mapping.  Setting a value clamps it to [0.0, 1.0]."""
-        result = dict(self._scores)
-        result["cost"] = self.cost_score
-        return result
+        """Axis→score mapping.  Returns the internal _ScoresDict directly so
+        mutations (e.g. ``profile.scores[\"writing\"] = 0.8``) clamp in-place.
+        The \"cost\" key delegates to ``self.cost_score`` via _ScoresDict."""
+        return self._scores
 
     @scores.setter
     def scores(self, value: dict[str, float]) -> None:

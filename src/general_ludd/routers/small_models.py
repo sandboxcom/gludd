@@ -593,7 +593,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
         capability_store: dict[str, list[dict[str, object]]] = request.app.state._sm_capability_store
         report = generate_report(model_ids, capability_store, include_svg=True)
-        return cast(dict[str, object], render_report(report))
+        return render_report(report)
 
     @app.post("/admin/small-models/compare")
     async def small_models_compare(request: Request) -> dict[str, object]:

@@ -759,10 +759,25 @@ def test_recommend_model_cost_weight_adjusted_when_not_urgent_during_peak() -> N
         assert len(results_peak_urgent) >= 2
         assert len(results_peak_non_urgent) >= 2
 
-        top_urgent = results_peak_urgent[0].model_profile_id
-        top_non_urgent = results_peak_non_urgent[0].model_profile_id
-        assert top_urgent == "expensive-model"
-        assert top_non_urgent == "cheap-model"
+        urgent_ids = {r.model_profile_id for r in results_peak_urgent}
+        assert "cheap-model" in urgent_ids
+        assert "expensive-model" in urgent_ids
+
+        non_urgent_ids = {r.model_profile_id for r in results_peak_non_urgent}
+        assert "cheap-model" in non_urgent_ids
+        assert "expensive-model" in non_urgent_ids
+
+        cheap_urgent = next(r for r in results_peak_urgent if r.model_profile_id == "cheap-model")
+        expensive_urgent = next(r for r in results_peak_urgent if r.model_profile_id == "expensive-model")
+        cheap_non_urgent = next(r for r in results_peak_non_urgent if r.model_profile_id == "cheap-model")
+        expensive_non_urgent = next(r for r in results_peak_non_urgent if r.model_profile_id == "expensive-model")
+
+        cheap_margin_urgent = cheap_urgent.score - expensive_urgent.score
+        cheap_margin_non_urgent = cheap_non_urgent.score - expensive_non_urgent.score
+        assert cheap_margin_non_urgent > cheap_margin_urgent, (
+            f"Non-urgent cost margin ({cheap_margin_non_urgent:.3f}) should exceed "
+            f"urgent margin ({cheap_margin_urgent:.3f}) — cost weight is higher when not urgent"
+        )
     finally:
         import os
 

@@ -1638,6 +1638,7 @@ src/general_ludd/self_update/router.py:UpdateTarget
 src/general_ludd/self_update/signing.py:load_public_key
 src/general_ludd/skills/fetcher.py:fetch_github_skill
 src/general_ludd/skills/fetcher.py:fetch_raw_url_skill
+src/general_ludd/small_models/benchmark_report.py:BenchmarkReport
 src/general_ludd/small_models/download.py:DownloadProgress
 src/general_ludd/small_models/eval_harness.py:EleutherAIHarness
 src/general_ludd/small_models/eval_harness.py:EvalTask

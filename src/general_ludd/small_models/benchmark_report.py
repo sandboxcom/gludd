@@ -81,7 +81,8 @@ def generate_report(
         evidence_dicts = _query_evidence(store, model_id)
         profile = _build_profile_from_evidence(model_id, evidence_dicts)
         profiles.append(profile)
-        per_model_scores[model_id] = dict(profile.normalized())
+        normalized = dict(profile.normalized())
+        per_model_scores[model_id] = normalized if any(v > 0.0 for v in normalized.values()) else {}
         cost_analysis[model_id] = _build_cost_analysis(model_id)
         if include_svg:
             radar_svgs[model_id] = render_radar_svg(profile)
@@ -91,7 +92,12 @@ def generate_report(
     best_per_axis = _compute_best_per_axis(profiles, cleaned)
 
     ranking = comparison.get("ranking", [])
-    overall_winner = str(ranking[0]) if isinstance(ranking, list) and ranking else None
+    overall_winner: str | None = None
+    if isinstance(ranking, list) and ranking:
+        candidate = str(ranking[0])
+        candidate_scores = per_model_scores.get(candidate, {})
+        if candidate_scores and any(v > 0.0 for v in candidate_scores.values()):
+            overall_winner = candidate
 
     return BenchmarkReport(
         models=cleaned,
@@ -149,6 +155,7 @@ def _build_profile_from_evidence(
     for ed in evidence_dicts:
         try:
             converted = dict(ed)
+            converted.pop("registered_at", None)
             role_val = converted.get("role")
             if isinstance(role_val, str):
                 from general_ludd.schemas.benchmark import TaskRole

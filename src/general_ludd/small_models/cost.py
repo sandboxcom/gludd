@@ -67,7 +67,7 @@ def _infer_tier(model_id: str) -> str:
     if "gpt-3" in lower:
         return "medium_api"
     size = _resolve_model_size(model_id)
-    if size < 4.0:
+    if size <= 4.0:
         return "small_local"
     if size < 20.0:
         return "medium_api"
@@ -104,7 +104,10 @@ def estimate_inference_cost(model_id: str) -> dict[str, object]:
         tokens_per_hour = 2_000_000
 
     token_cost_per_hour = round((tokens_per_hour / 1_000_000.0) * ((input_m1m + output_m1m) / 2.0), 4)
-    estimated_usd_per_hour = round(max(token_cost_per_hour, gpu_usd_per_hour * 0.1), 6)
+    if tier == "small_local":
+        estimated_usd_per_hour = round(token_cost_per_hour, 6)
+    else:
+        estimated_usd_per_hour = round(max(token_cost_per_hour, gpu_usd_per_hour * 0.1), 6)
 
     return {
         "model_id": model_id,

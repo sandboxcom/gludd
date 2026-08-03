@@ -322,10 +322,8 @@ class TestCreditTrackerE2E:
 
 class TestWorkerAppE2E:
     @pytest.fixture
-    def unauthed_client(self):
-        import os as _os
-
-        _os.environ["GLUDD_PSK_DISABLE"] = "1"
+    def unauthed_client(self, monkeypatch):
+        monkeypatch.setenv("GLUDD_PSK_DISABLE", "1")
         app = create_app(gateway=None, dispatcher=None)
         return TestClient(app)
 
