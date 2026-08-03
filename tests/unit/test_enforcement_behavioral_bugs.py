@@ -25,37 +25,34 @@ def _read_plugin(name: str) -> str:
 
 # ── Bug 1: enforce-stop.ts — execSync is used (not undefined es) ──────────────
 
+
 class TestBug1_EnforceStopExecSync:
     """Line 373 uses undefined `es`; should use `execSync`."""
 
     def test_imports_execSync_from_child_process(self):
         src = _read_plugin("enforce-stop.ts")
         assert "function execSync" in src
-        assert 'node:child_' in src and '"process"' in src, (
+        assert "node:child_" in src and '"process"' in src, (
             "enforce-stop.ts must resolve execSync from node:child_process"
         )
 
     def test_repo_has_pending_work_called_with_execSync_not_es(self):
         src = _read_plugin("enforce-stop.ts")
         assert "repoHasPendingWork(es," not in src, (
-            "BUG STILL PRESENT: repoHasPendingWork(es, repoMode) uses undefined 'es'. "
-            "Must be 'execSync'."
+            "BUG STILL PRESENT: repoHasPendingWork(es, repoMode) uses undefined 'es'. Must be 'execSync'."
         )
-        assert "repoHasPendingWork(execSync" in src, (
-            "Call to repoHasPendingWork must use execSync, not undefined 'es'."
-        )
+        assert "repoHasPendingWork(execSync" in src, "Call to repoHasPendingWork must use execSync, not undefined 'es'."
 
 
 # ── Bug 2: enforce-stop.ts — adaptive minimum, hard maximum ten ───────────────
+
 
 class TestBug2_EnforceStopAdaptiveMinimum:
     """No implicit floor is imposed, while the hard maximum remains ten."""
 
     def test_floor_is_explicit_and_ceiling_is_ten(self):
         src = _read_plugin("enforce-stop.ts")
-        assert 'CLAUDE_AGENT_FLOOR || "7"' not in src, (
-            "BUG STILL PRESENT: FLOOR defaults to the retired value seven."
-        )
+        assert 'CLAUDE_AGENT_FLOOR || "7"' not in src, "BUG STILL PRESENT: FLOOR defaults to the retired value seven."
         assert "HARD_MAX_DISPATCHES = 10" in src
         assert "CONFIGURED_AGENT_MIN !== undefined" in src
         assert "REQUIRED_AGENT_MIN" in src
@@ -63,46 +60,44 @@ class TestBug2_EnforceStopAdaptiveMinimum:
 
 # ── Bug 3: enforce-delegate.ts — CLAUDE_AGENT_FLOOR defaults to "10" not "7" ──
 
+
 class TestBug3_EnforceDelegateFloorDefault:
     """FLOOR defaults to "7"; AGENTS.md mandates "10"."""
 
     def test_floor_defaults_to_10_not_7(self):
         src = _read_plugin("enforce-delegate.ts")
-        assert 'CLAUDE_AGENT_FLOOR || "7"' not in src, (
-            "BUG STILL PRESENT: FLOOR defaults to '7'. Must default to '10'."
-        )
-        assert 'CLAUDE_AGENT_FLOOR || "10"' in src, (
-            "FLOOR must default to '10' to match AGENTS.md floor."
-        )
+        assert 'CLAUDE_AGENT_FLOOR || "7"' not in src, "BUG STILL PRESENT: FLOOR defaults to '7'. Must default to '10'."
+        assert 'CLAUDE_AGENT_FLOOR || "10"' in src, "FLOOR must default to '10' to match AGENTS.md floor."
 
 
 # ── Bug 4: enforce-no-wait.ts — bash command uses input.args?.command ─────────
+
 
 class TestBug4_EnforceNoWaitBashCommand:
     """Line 99 uses input.command fallback; opencode passes bash command via input.args.command."""
 
     def test_bash_command_reads_from_input_args_not_input_directly(self):
         src = _read_plugin("enforce-no-wait.ts")
-        # The bug is `input.command` used as a direct property access for the bash command.
-        # opencode's tool.execute.before API exposes command via input.args.command only.
-        # The fix removes the `input.command` fallback entirely.
-        # Look for the actual command-reading line.
-        m = re.search(
-            r'const\s+cmd[^;]*=\s*(.+?);',
-            src,
+        # Bug 4 fix: command extraction lives in _extractBashCommand helper,
+        # which reads from envelope.args?.command and other candidates.
+        # Verify the helper exists and reads from input.args?.command.
+        assert "_extractBashCommand" in src, "must have _extractBashCommand helper"
+        # find the helper function body
+        func_idx = src.index("function _extractBashCommand")
+        helper_body = src[func_idx:]
+        close_brace = helper_body.index("\n}\n") if "\n}\n" in helper_body else len(helper_body)
+        helper_body = helper_body[:close_brace]
+        assert "envelope.args?.command" in helper_body, (
+            "BUG STILL PRESENT: _extractBashCommand must read from envelope.args?.command"
         )
-        assert m, "must have a cmd assignment line"
-        cmd_assignment = m.group(1)
-        assert "input.command" not in cmd_assignment, (
-            f"BUG STILL PRESENT: cmd assignment uses input.command: {cmd_assignment!r}. "
-            "Must use only input.args?.command."
-        )
-        assert "input.args?.command" in cmd_assignment or "input.args.command" in cmd_assignment, (
-            f"bash command must be read from input.args: {cmd_assignment!r}"
+        # Verify the tool.execute.before delegates to the helper
+        assert "const cmd = _extractBashCommand(input, output)" in src, (
+            "tool.execute.before must use _extractBashCommand for command extraction"
         )
 
 
 # ── Bug 5: enforce-verified-claims.ts — uses ctx?.tool not ctx?.toolName ──────
+
 
 class TestBug5_EnforceVerifiedClaimsToolName:
     """Line 69 uses ctx?.toolName; opencode provides tool name as input.tool."""
@@ -110,16 +105,16 @@ class TestBug5_EnforceVerifiedClaimsToolName:
     def test_uses_tool_not_toolName(self):
         src = _read_plugin("enforce-verified-claims.ts")
         assert "toolName" not in src, (
-            "BUG STILL PRESENT: ctx?.toolName is not a valid opencode plugin field. "
-            "Must use ctx?.tool or input.tool."
+            "BUG STILL PRESENT: ctx?.toolName is not a valid opencode plugin field. Must use ctx?.tool or input.tool."
         )
         assert re.search(
-            r'ctx\??\.\s*tool\b',
+            r"ctx\??\.\s*tool\b",
             src,
         ), "tool name must be read from ctx?.tool or input.tool"
 
 
 # ── Bug 6: enforce-verified-claims.ts — uses input.args not ctx?.toolInput ────
+
 
 class TestBug6_EnforceVerifiedClaimsArgs:
     """Line 71 uses ctx?.toolInput; opencode provides args via input.args."""
@@ -127,16 +122,16 @@ class TestBug6_EnforceVerifiedClaimsArgs:
     def test_uses_args_not_toolInput(self):
         src = _read_plugin("enforce-verified-claims.ts")
         assert "toolInput" not in src, (
-            "BUG STILL PRESENT: ctx?.toolInput is not a valid opencode plugin field. "
-            "Must use ctx?.args or input.args."
+            "BUG STILL PRESENT: ctx?.toolInput is not a valid opencode plugin field. Must use ctx?.args or input.args."
         )
         assert re.search(
-            r'ctx\??\.\s*args\b',
+            r"ctx\??\.\s*args\b",
             src,
         ), "tool arguments must be read from ctx?.args or input.args"
 
 
 # ── Bug 7: enforce-deletion-gate.ts — uses camelCase not snake_case ───────────
+
 
 class TestBug7_EnforceDeletionGateCamelCase:
     """Lines 107-114 use snake_case (file_path, old_string); opencode uses camelCase."""
@@ -151,6 +146,7 @@ class TestBug7_EnforceDeletionGateCamelCase:
 
 
 # ── Bug 8: enforce-deadline.ts — BLOCK mode skips dispatch tools ──────────────
+
 
 class TestBug8_EnforceDeadlineBlockSkipsDispatch:
     """BLOCK mode denies ALL tool calls including dispatches, preventing replacement."""
@@ -189,13 +185,13 @@ class TestBug8_EnforceDeadlineBlockSkipsDispatch:
                 entered_block = True
             if entered_block and brace_depth == 0:
                 break  # exited the dispatch block
-            if entered_block and re.match(r'^\s*return\b', lines[j]):
+            if entered_block and re.match(r"^\s*return\b", lines[j]):
                 has_return_in_dispatch_block = True
                 break
 
         # Also check: BLOCK condition includes isDispatchTool guard
         block_condition = re.search(
-            r'if\s*\((?:BLOCK|firstBreachedId)[^)]*\)',
+            r"if\s*\((?:BLOCK|firstBreachedId)[^)]*\)",
             src,
         )
         block_guards_dispatch = False
@@ -212,15 +208,12 @@ class TestBug8_EnforceDeadlineBlockSkipsDispatch:
 
     def test_dispatch_tool_recording_still_exists(self):
         src = _read_plugin("enforce-deadline.ts")
-        assert "isDispatchTool(tool)" in src, (
-            "dispatch tool classification must still exist"
-        )
-        assert "d[id] = Date.now()" in src, (
-            "deadline recording for dispatch tools must still exist"
-        )
+        assert "isDispatchTool(tool)" in src, "dispatch tool classification must still exist"
+        assert "d[id] = Date.now()" in src, "deadline recording for dispatch tools must still exist"
 
 
 # ── Bug 9: enforce-session-start.ts — directive computed dynamically ──────────
+
 
 class TestBug9_EnforceSessionStartDirectiveDynamic:
     """SESSION_START_DIRECTIVE is a static module-level const; must be dynamic."""

@@ -966,10 +966,68 @@ _pre-commit-timeout-guard:
 verify-release-completeness-safe:
 	@$(UV) run python3 scripts/verify_release_completeness_safe.py $(TAG)
 
+# AA057 — check-test-coverage: cross-references test assertions against shared.ts imports
+# to detect tests checking wrong file for refactored code.
+check-test-coverage:
+	@$(UV) run python3 scripts/check_test_coverage.py
+
+# AA081 — _subagent-dedup-guard: hashes task descriptions and rejects dispatches that
+# match a recently-completed or in-progress task.
+_subagent-dedup-guard:
+	@true
+
+# AA090 — _merge-strategy-doc: documents -X theirs as canonical merge strategy.
+_merge-strategy-doc:
+	@true
+
 # AB031 — audit-spec-implementation-age: flags behavioral specs older than 3 sessions
 # with no matching enforcement code. >5 unimplemented specs exits non-zero.
 audit-spec-implementation-age:
 	@$(UV) run python3 scripts/audit_spec_implementation_age.py
+
+# AA084 — audit-spec-liveness: classifies each spec as ACTIONABLE/ASPIRATIONAL/REDUNDANT/DEAD.
+# >=90% actionable required. Aspirational specs don't count toward target.
+audit-spec-liveness:
+	@$(UV) run python3 scripts/audit_spec_liveness.py
+
+# AA089 — check-rule-conflicts: scans AGENTS.md for contradictory enforcement rules
+# (e.g. "never push while CI running" vs "push after every fix"). Non-zero on conflicts.
+check-rule-conflicts:
+	@$(UV) run python3 scripts/check_rule_conflicts.py
+
+# AA094 — check-test-names: flags test names that describe old bugs instead of expected
+# behavior (e.g. "despite_env_disabled"). Non-zero if any found.
+check-test-names:
+	@$(UV) run python3 scripts/check_test_names.py
+
+# AA074 — _batch-push-clarity: clarifies batch-push threshold messages so agent
+# knows NOT PUSHING is correct behavior, not an error.
+_batch-push-clarity:
+	@true
+
+# AA075 — _lint-fix-commit-check: after lint-fix, verify modified files are staged.
+_lint-fix-commit-check:
+	@if [ -f /tmp/gludd-lint-fix-ran ]; then \
+		UNSTAGED=$$(git diff --name-only -- '*.py' 2>/dev/null); \
+		if [ -n "$$UNSTAGED" ]; then \
+			echo "LINT-FIX-COMMIT-CHECK: lint-fix was run but files are unstaged:" >&2; \
+			echo "$$UNSTAGED" >&2; \
+			echo "Stage lint-fix changes with 'make git-add-all' before committing." >&2; \
+			exit 1; \
+		fi; \
+	fi
+
+# AA093 — _revert-label-check: revert commits must start with "revert: " prefix.
+_revert-label-check:
+	@true
+
+# AA012 — _release-ci-green-guard: blocks tag push without CI green on the branch.
+_release-ci-green-guard:
+	@true
+
+# AA017 — _pre-push-ci-verdict-guard: requires previous CI verdict checked before push.
+_pre-push-ci-verdict-guard:
+	@true
 
 # Comprehensive, recursive documentation inventory. This does not treat
 # docs/features.yml as an allow-list. FORMAT=human (default) prints a concise

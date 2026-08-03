@@ -956,9 +956,6 @@ src/general_ludd/routers/spend.py:ConfigureSpendRequest
 src/general_ludd/routers/stream.py:StreamDispatchRequest
 src/general_ludd/routers/todos.py:AddScheduledTodoRequest
 src/general_ludd/routing_roles/small_model_policy.py:CompletionDecision
-src/general_ludd/routing_roles/small_model_policy.py:CompletionEvidence
-src/general_ludd/routing_roles/small_model_policy.py:TaskContract
-src/general_ludd/routing_roles/weights.py:RoleWeights
 src/general_ludd/rules/engine.py:ActionType
 src/general_ludd/rules/engine.py:default_rules
 src/general_ludd/runner/background_test_runner.py:cli

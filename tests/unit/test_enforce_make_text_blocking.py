@@ -7,11 +7,12 @@ Validates:
   3. CI FAIL only (no .gate-status file or no FAIL in it) → output passes through
   4. Subagent context (isSubagent() → true) → output passes through unchanged
 """
+
 import os
 import re
 
 ENFORCE_MAKE_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "..", ".opencode", "plugin", "enforce-make.ts"
+    os.path.dirname(__file__), "..", "..", ".opencode", "plugin", "impl", "enforce_make_impl.ts"
 )
 
 
@@ -49,18 +50,16 @@ def _get_text_complete_body() -> str:
 
 # -- 1. Subagent guard: isSubagent() → return output unchanged ---------------
 
+
 def test_text_complete_has_subagent_guard():
     body = _get_text_complete_body()
-    assert "OPENCODE_SUBAGENT" in body, (
-        "text.complete must guard on OPENCODE_SUBAGENT env var"
-    )
+    assert "OPENCODE_SUBAGENT" in body, "text.complete must guard on OPENCODE_SUBAGENT env var"
     subagent_return = re.search(
         r"if\s*\(\s*process\.env\.OPENCODE_SUBAGENT\s*===\s*\"1\"\s*\)\s*return\s+output",
         body,
     )
     assert subagent_return is not None, (
-        "Subagent guard must be: "
-        'if (process.env.OPENCODE_SUBAGENT === "1") return output'
+        'Subagent guard must be: if (process.env.OPENCODE_SUBAGENT === "1") return output'
     )
 
 
@@ -68,26 +67,22 @@ def test_subagent_returns_before_gate_check():
     body = _get_text_complete_body()
     subagent_pos = body.index("OPENCODE_SUBAGENT")
     gate_status_pos = body.index(".gate-status")
-    assert subagent_pos < gate_status_pos, (
-        "Subagent guard must fire BEFORE .gate-status read"
-    )
+    assert subagent_pos < gate_status_pos, "Subagent guard must fire BEFORE .gate-status read"
 
 
 # -- 2. Non-string guard: typeof output !== 'string' → return output --------
 
+
 def test_text_complete_has_non_string_guard():
     body = _get_text_complete_body()
     assert "typeof output" in body, "text.complete must check typeof output"
-    non_string = re.search(
-        r"typeof\s+output\s*!==\s*['\"]string['\"]", body
-    )
+    non_string = re.search(r"typeof\s+output\s*!==\s*['\"]string['\"]", body)
     assert non_string is not None, "Must guard typeof output !== 'string'"
-    assert "return output" in body[body.index("typeof output"):], (
-        "Non-string output must be returned as-is"
-    )
+    assert "return output" in body[body.index("typeof output") :], "Non-string output must be returned as-is"
 
 
 # -- 3. .gate-status read and FAIL detection ---------------------------------
+
 
 def test_text_complete_reads_gate_status():
     body = _get_text_complete_body()
@@ -96,21 +91,16 @@ def test_text_complete_reads_gate_status():
 
 def test_text_complete_checks_fail_in_gate_status():
     body = _get_text_complete_body()
-    assert "/FAIL/" in body or "/FAIL/i" in body, (
-        "Must test .gate-status content for FAIL marker"
-    )
+    assert "/FAIL/" in body or "/FAIL/i" in body, "Must test .gate-status content for FAIL marker"
 
 
 # -- 4. Gate red → "[GATE RED]" prefix prepended ------------------------------
 
+
 def test_text_complete_gate_red_prepends_warning():
     body = _get_text_complete_body()
-    assert "GATE RED" in body, (
-        "When .gate-status has FAIL, MUST prepend [GATE RED] warning"
-    )
-    gate_red_line = next(
-        (line.strip() for line in body.splitlines() if "GATE RED" in line), ""
-    )
+    assert "GATE RED" in body, "When .gate-status has FAIL, MUST prepend [GATE RED] warning"
+    gate_red_line = next((line.strip() for line in body.splitlines() if "GATE RED" in line), "")
     assert "Fix failures" in gate_red_line or "GATE RED" in gate_red_line, (
         "[GATE RED] warning must tell agent to fix failures"
     )
@@ -119,32 +109,24 @@ def test_text_complete_gate_red_prepends_warning():
 
 # -- 5. Clean gate / CI FAIL only → output passes through ---------------------
 
+
 def test_text_complete_clean_gate_passes_through():
     body = _get_text_complete_body()
     lines = body.strip().splitlines()
     last_lines = "\n".join(lines[-8:])
-    assert "return output" in last_lines, (
-        "Final line must return output unchanged when no FAIL in .gate-status"
-    )
+    assert "return output" in last_lines, "Final line must return output unchanged when no FAIL in .gate-status"
 
 
 def test_text_complete_no_gate_status_file_passes_through():
     body = _get_text_complete_body()
-    assert "fs.existsSync" in body, (
-        "Must check .gate-status existence — missing file = pass through"
-    )
-    has_exists_protection = re.search(
-        r"if\s*\(\s*fs\.existsSync\s*\(\s*p\s*\)\s*\)", body
-    )
-    assert has_exists_protection is not None, (
-        "existsSync guard must prevent read of missing .gate-status"
-    )
+    assert "fs.existsSync" in body, "Must check .gate-status existence — missing file = pass through"
+    has_exists_protection = re.search(r"if\s*\(\s*fs\.existsSync\s*\(\s*p\s*\)\s*\)", body)
+    assert has_exists_protection is not None, "existsSync guard must prevent read of missing .gate-status"
 
 
 # -- 6. Fail-open on read errors ----------------------------------------------
 
+
 def test_text_complete_fail_open_on_read_error():
     body = _get_text_complete_body()
-    assert "catch" in body[body.index(".gate-status"):], (
-        "Read of .gate-status must be try/catch wrapped (fail-open)"
-    )
+    assert "catch" in body[body.index(".gate-status") :], "Read of .gate-status must be try/catch wrapped (fail-open)"

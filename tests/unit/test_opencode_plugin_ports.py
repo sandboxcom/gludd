@@ -32,7 +32,11 @@ Plugin coverage map (claude shell hook → opencode TS plugin):
     - no_blocking_questions_pretool.sh (question-tool deny in tool.execute.before)
 """
 
+import contextlib
 import json
+import os
+import subprocess
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
@@ -63,15 +67,11 @@ class TestPluginsRegistered:
 
     def test_enforce_delegate_registered(self):
         plugins = _plugin_list()
-        assert any("enforce-delegate" in p for p in plugins), (
-            "enforce-delegate.ts must be registered in opencode.json"
-        )
+        assert any("enforce-delegate" in p for p in plugins), "enforce-delegate.ts must be registered in opencode.json"
 
     def test_enforce_stop_registered(self):
         plugins = _plugin_list()
-        assert any("enforce-stop" in p for p in plugins), (
-            "enforce-stop.ts must be registered in opencode.json"
-        )
+        assert any("enforce-stop" in p for p in plugins), "enforce-stop.ts must be registered in opencode.json"
 
 
 # --------------------------------------------------------------------------- #
@@ -158,9 +158,7 @@ class TestEnforceMakeFlagFileWriteBlock:
 
     def test_flag_file_write_block_present(self):
         content = ENFORCE_MAKE.read_text()
-        assert ".gate-status" in content, (
-            "enforce-make.ts must block Edit/Write to .gate-status files"
-        )
+        assert ".gate-status" in content, "enforce-make.ts must block Edit/Write to .gate-status files"
 
     def test_flag_file_block_lists_guarded_basenames(self):
         content = ENFORCE_MAKE.read_text()
@@ -179,8 +177,9 @@ class TestEnforceMakeAssertionCheckScopedToTestFiles:
 
     def _is_test_expr(self) -> str:
         import re
+
         src = ENFORCE_MAKE.read_text()
-        m = re.search(r'const isTest\s*=\s*([^\n]+)', src)
+        m = re.search(r"const isTest\s*=\s*([^\n]+)", src)
         assert m, "isTest classification must exist in enforce-make.ts"
         return m.group(1)
 
@@ -188,8 +187,7 @@ class TestEnforceMakeAssertionCheckScopedToTestFiles:
         expr = self._is_test_expr()
         # conftest.py must NOT be classified as a test file.
         assert "conftest" in expr.lower(), (
-            f"isTest must explicitly exclude conftest.py (fixtures, not tests). "
-            f"Current expr: {expr!r}"
+            f"isTest must explicitly exclude conftest.py (fixtures, not tests). Current expr: {expr!r}"
         )
 
     def test_is_test_narrowed_beyond_tests_dir(self):
@@ -198,8 +196,7 @@ class TestEnforceMakeAssertionCheckScopedToTestFiles:
         # Either a test_ prefix filter or a conftest exclusion qualifies.
         narrowed = "conftest" in expr.lower() or "/test_" in expr or "\\test_" in expr
         assert narrowed, (
-            f"isTest must be narrowed beyond '/tests/' substring to exclude "
-            f"non-test files. Current expr: {expr!r}"
+            f"isTest must be narrowed beyond '/tests/' substring to exclude non-test files. Current expr: {expr!r}"
         )
 
 
@@ -220,7 +217,7 @@ class TestEnforceMakeTddCheckScopedToTestMethods:
         idx = content.find("TDD QUALITY VIOLATION")
         assert idx != -1, "TDD QUALITY VIOLATION throw must exist in enforce-make.ts"
         # Return the chars immediately preceding the throw to inspect its gate.
-        return content[max(0, idx - 700):idx]
+        return content[max(0, idx - 700) : idx]
 
     def test_tdd_throw_gated_on_test_method_body(self):
         block = self._tdd_block()
@@ -251,17 +248,14 @@ class TestEnforceMakeForegroundBlock:
     def test_gate_background_alternative_mentioned(self):
         content = ENFORCE_MAKE.read_text()
         assert "gate-background" in content, (
-            "enforce-make.ts must mention the 'gate-background' alternative when "
-            "blocking bare 'make gate'"
+            "enforce-make.ts must mention the 'gate-background' alternative when blocking bare 'make gate'"
         )
 
     def test_bare_make_gate_blocked(self):
         content = ENFORCE_MAKE.read_text()
         # Must reference a bare 'make gate' pattern (not 'make gate-background').
         # The block targets the long-running foreground command specifically.
-        assert "make gate" in content, (
-            "enforce-make.ts must reference 'make gate' for the foreground block"
-        )
+        assert "make gate" in content, "enforce-make.ts must reference 'make gate' for the foreground block"
 
     def test_make_lint_not_blocked(self):
         content = ENFORCE_MAKE.read_text()
@@ -495,8 +489,7 @@ class TestSessionStartOrchestratePort:
         # layer — enforce-session-start.ts is the canonical owner now.
         session_start_src = ENFORCE_SESSION_START.read_text()
         assert "FLOOR" in session_start_src or "floor" in session_start_src.lower(), (
-            "Floor directive must live in enforce-session-start.ts after the "
-            "dedup trim removed it from enforce-stop.ts"
+            "Floor directive must live in enforce-session-start.ts after the dedup trim removed it from enforce-stop.ts"
         )
 
     def test_system_transform_hook(self):
@@ -556,3 +549,341 @@ class TestAgentsMdOpencodeReferences:
         assert "enforce-stop" in content or "enforce-stop.ts" in content, (
             "AGENTS.md must reference the opencode enforce-stop.ts plugin"
         )
+
+
+# ============================================================================ #
+# BEHAVIORAL TESTS — env-var disable, subagent guard, corrupt-state fail-open
+# ============================================================================ #
+# These invoke actual plugin hook functions via node --experimental-strip-types
+# and assert on runtime behavior, complementing the structural tests above.
+# Pattern matches scripts/test_hook_runtime.py.
+
+_tmp_counter = 0
+
+
+def _run_ts(ts_code: str, env_override: dict | None = None, timeout: int = 15):
+    """Write TS code to temp file, run with node --experimental-strip-types, return parsed JSON."""
+    global _tmp_counter
+    _tmp_counter += 1
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        suffix=".ts",
+        dir="/tmp",
+        prefix=f"ports_test_{_tmp_counter}_",
+        delete=False,
+    ) as f:
+        f.write(ts_code)
+        tmp = f.name
+    try:
+        env = os.environ.copy()
+        env["OPENCODE_SUBAGENT"] = "0"
+        env["GLUDD_DISENGAGE_PATH"] = f"/tmp/gludd-disengage-hermetic-{os.getpid()}.json"
+        if env_override:
+            env.update(env_override)
+        proc = subprocess.run(
+            ["node", "--experimental-strip-types", tmp],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=str(ROOT),
+            env=env,
+        )
+        if proc.returncode != 0:
+            raise AssertionError(
+                f"Node exit {proc.returncode}:\nstderr: {proc.stderr[:800]}\nstdout: {proc.stdout[:400]}"
+            )
+        stdout = proc.stdout.strip()
+        if not stdout:
+            return None
+        for line in reversed(stdout.split("\n")):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                return json.loads(line)
+            except json.JSONDecodeError:
+                continue
+        return None
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+
+
+# --------------------------------------------------------------------------- #
+# enforce-tdd.ts — env-disable, subagent-guard, fail-open
+# --------------------------------------------------------------------------- #
+class TestEnforceTddBehavioral:
+    PLUGIN = ".opencode/plugin/enforce-tdd.ts"
+
+    def test_tdd_env_disable_allows_src_edit(self):
+        """GLUDD_TDD_ENFORCE=0 → edit to src/ is allowed."""
+        code = f"""\
+const mod = await import('{ROOT / self.PLUGIN}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+    {{tool: 'edit', tool_input: {{filePath: '{ROOT}/src/general_ludd/foo.py', newString: 'x'}}}},
+    undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+        result = _run_ts(code, env_override={"GLUDD_TDD_ENFORCE": "0"})
+        assert result is None or result.get("permissionDecision") != "deny", (
+            f"GLUDD_TDD_ENFORCE=0 should skip enforcement, got: {result}"
+        )
+
+    def test_tdd_subagent_guard(self):
+        """OPENCODE_SUBAGENT=1 → edit to src/ is allowed (subagent inherits orchestrator's test files)."""
+        code = f"""\
+const mod = await import('{ROOT / self.PLUGIN}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+    {{tool: 'edit', tool_input: {{filePath: '{ROOT}/src/general_ludd/foo.py', newString: 'x'}}}},
+    undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+        result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+        assert result is None or result.get("permissionDecision") != "deny", (
+            f"OPENCODE_SUBAGENT=1 should skip, got: {result}"
+        )
+
+    def test_tdd_non_src_file_not_blocked(self):
+        """Edit to non-src/ path is always allowed (not a TDD concern)."""
+        code = f"""\
+const mod = await import('{ROOT / self.PLUGIN}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+    {{tool: 'edit', tool_input: {{filePath: '{ROOT}/tests/unit/test_foo.py', newString: 'x'}}}},
+    undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+        result = _run_ts(code)
+        assert result is None or result.get("permissionDecision") != "deny"
+
+
+# --------------------------------------------------------------------------- #
+# enforce-deliverable.ts — env-disable, subagent-guard
+# --------------------------------------------------------------------------- #
+class TestEnforceDeliverableBehavioral:
+    PLUGIN = ".opencode/plugin/enforce-deliverable.ts"
+
+    def test_deliverable_env_disable(self):
+        """GLUDD_DELIVERABLE_ENFORCE=0 → check-only dispatch not warned."""
+        code = f"""\
+const mod = await import('{ROOT / self.PLUGIN}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+    {{tool: 'task', args: {{prompt: 'check CI status and report back'}}}},
+    undefined
+)
+console.log(JSON.stringify({{blocked: result?.permissionDecision === 'deny'}}))
+"""
+        result = _run_ts(code, env_override={"GLUDD_DELIVERABLE_ENFORCE": "0"})
+        assert result is not None
+        assert result["blocked"] is False, f"GLUDD_DELIVERABLE_ENFORCE=0 should skip, got: {result}"
+
+    def test_deliverable_subagent_guard(self):
+        """OPENCODE_SUBAGENT=1 → dispatch skipped entirely."""
+        code = f"""\
+const mod = await import('{ROOT / self.PLUGIN}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+    {{tool: 'task', args: {{prompt: 'check CI status'}}}},
+    undefined
+)
+console.log(JSON.stringify({{blocked: result?.permissionDecision === 'deny'}}))
+"""
+        result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+        assert result is not None
+        assert result["blocked"] is False
+
+    def test_deliverable_check_only_patterns_detected(self):
+        """'check CI' dispatch prompt is processed without crashing (warn-only, never denies)."""
+        code = f"""\
+const mod = await import('{ROOT / self.PLUGIN}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+    {{tool: 'task', args: {{prompt: 'check CI status and report'}}}},
+    undefined
+)
+const denied = result?.permissionDecision === 'deny'
+console.log(JSON.stringify({{doesNotCrash: true, denied}}))
+"""
+        result = _run_ts(code)
+        assert result is not None
+        assert result["doesNotCrash"] is True, "Hook must not crash on check-only prompt"
+        assert result["denied"] is False, "Deliverable plugin is warn-only, never denies"
+
+
+# --------------------------------------------------------------------------- #
+# enforce-context.ts — env-disable, subagent-guard, fail-open
+# --------------------------------------------------------------------------- #
+class TestEnforceContextBehavioral:
+    PLUGIN = ".opencode/plugin/enforce-context.ts"
+
+    def test_context_env_disable(self):
+        """GLUDD_CONTEXT_ENFORCE=0 → stale-SESSION check skipped."""
+        code = f"""\
+const mod = await import('{ROOT / self.PLUGIN}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+    {{tool: 'edit', tool_input: {{filePath: '{ROOT}/src/test.py', newString: 'x'}}}},
+    undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+        result = _run_ts(code, env_override={"GLUDD_CONTEXT_ENFORCE": "0"})
+        assert result is None or result.get("permissionDecision") != "deny"
+
+    def test_context_subagent_guard(self):
+        """OPENCODE_SUBAGENT=1 → check skipped."""
+        code = f"""\
+const mod = await import('{ROOT / self.PLUGIN}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+    {{tool: 'write', tool_input: {{filePath: '{ROOT}/src/test.py'}}}},
+    undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+        result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+        assert result is None or result.get("permissionDecision") != "deny"
+
+    def test_context_corrupt_state_fail_open(self):
+        """Corrupt state file (invalid JSON) → does not crash, does not deny."""
+        sf = "/tmp/gludd-context-check.json"
+        with open(sf, "w") as f:
+            f.write("not valid json {{{")
+        try:
+            code = f"""\
+const mod = await import('{ROOT / self.PLUGIN}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+    {{tool: 'edit', tool_input: {{filePath: '{ROOT}/src/test.py', newString: 'x'}}}},
+    undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+            result = _run_ts(code)
+            assert result is None or result.get("permissionDecision") != "deny", (
+                f"Corrupt state must fail-open, got: {result}"
+            )
+        finally:
+            with contextlib.suppress(OSError):
+                os.unlink(sf)
+
+
+# --------------------------------------------------------------------------- #
+# enforce-batch-push.ts — env-disable, subagent-guard
+# --------------------------------------------------------------------------- #
+class TestEnforceBatchPushBehavioral:
+    PLUGIN = ".opencode/plugin/enforce-batch-push.ts"
+
+    def test_batch_push_env_disable(self):
+        """GLUDD_BATCH_PUSH_ENFORCE=0 → push command not blocked."""
+        code = f"""\
+const mod = await import('{ROOT / self.PLUGIN}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+    {{tool: 'bash', tool_input: {{command: 'make batch-push'}}}},
+    undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+        result = _run_ts(code, env_override={"GLUDD_BATCH_PUSH_ENFORCE": "0"})
+        assert result is None or result.get("permissionDecision") != "deny"
+
+    def test_batch_push_subagent_guard(self):
+        """OPENCODE_SUBAGENT=1 → push command not blocked."""
+        code = f"""\
+const mod = await import('{ROOT / self.PLUGIN}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+    {{tool: 'bash', tool_input: {{command: 'make batch-push'}}}},
+    undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+        result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+        assert result is None or result.get("permissionDecision") != "deny"
+
+    def test_batch_push_non_push_command_not_blocked(self):
+        """Non-push bash command is not checked by batch-push plugin."""
+        code = f"""\
+const mod = await import('{ROOT / self.PLUGIN}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+    {{tool: 'bash', tool_input: {{command: 'make lint'}}}},
+    undefined
+)
+console.log(JSON.stringify({{blocked: result?.permissionDecision === 'deny'}}))
+"""
+        result = _run_ts(code)
+        assert result is not None
+        assert result["blocked"] is False
+
+
+# --------------------------------------------------------------------------- #
+# enforce-deletion-gate.ts — corrupt-state fail-open
+# --------------------------------------------------------------------------- #
+class TestEnforceDeletionGateBehavioral:
+    PLUGIN = ".opencode/plugin/enforce-deletion-gate.ts"
+
+    def test_deletion_corrupt_state_fail_open(self):
+        """Corrupt state file (invalid JSON) → does not crash, does not deny write."""
+        sf = "/tmp/gludd-deletion-state.json"
+        with open(sf, "w") as f:
+            f.write("{{{broken json")
+        try:
+            code = f"""\
+const mod = await import('{ROOT / self.PLUGIN}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+    {{tool: 'write', tool_input: {{filePath: '{ROOT}/new_file.py'}}}},
+    undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+            result = _run_ts(code)
+            assert result is None or result.get("permissionDecision") != "deny", (
+                f"Corrupt state must fail-open, got: {result}"
+            )
+        finally:
+            with contextlib.suppress(OSError):
+                os.unlink(sf)
+
+
+# --------------------------------------------------------------------------- #
+# enforce-objective.ts — env-disable, subagent-guard
+# --------------------------------------------------------------------------- #
+class TestEnforceObjectiveBehavioral:
+    PLUGIN = ".opencode/plugin/enforce-objective.ts"
+
+    def test_objective_env_disable(self):
+        """GLUDD_OBJECTIVE_ENFORCE=0 → edit is allowed."""
+        code = f"""\
+const mod = await import('{ROOT / self.PLUGIN}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+    {{tool: 'edit', tool_input: {{filePath: '{ROOT}/src/test.py', newString: 'x'}}}},
+    undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+        result = _run_ts(code, env_override={"GLUDD_OBJECTIVE_ENFORCE": "0"})
+        assert result is None or result.get("permissionDecision") != "deny"
+
+    def test_objective_subagent_guard(self):
+        """OPENCODE_SUBAGENT=1 → edit is allowed."""
+        code = f"""\
+const mod = await import('{ROOT / self.PLUGIN}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+    {{tool: 'edit', tool_input: {{filePath: '{ROOT}/src/test.py', newString: 'x'}}}},
+    undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+        result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+        assert result is None or result.get("permissionDecision") != "deny"
