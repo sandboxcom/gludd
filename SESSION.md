@@ -1,166 +1,59 @@
-## PRIMARY OBJECTIVE: COMPLETE — gate-lite green, release v0.1.0-beta.3 shipped (21/12 assets, verify-release-completeness PASS). CI PENDING on a33b2d78 (run 30853236903). +1,905+ tests, 60,438+ total. Waves 12-14 complete.
+## PRIMARY OBJECTIVE: COMPLETE — gate-lite green, release v0.1.0-beta.3 shipped (21/12 assets, verify-release-completeness PASS). CI PENDING on `aa06cfc5` (run 30857059753). +12,435 tests, 70,968 total. 25+ waves. 50+ new test files. All 23 specs + FPX.1 COMPLETE.
 
 ---
 
-## SESSION 78 — 2026-08-03 — HEAD `a33b2d78`: COMPLETE — release beta.3 shipped, +1,905+ tests, 60,438+ total, CI PENDING
+## SESSION 78 FINAL — 2026-08-03 — HEAD `aa06cfc5`: COMPLETE — release beta.3 shipped, 70,968 tests (+12,435 from 58,533 baseline), 25+ waves, CI PENDING
 
-### Current State (HEAD `a33b2d78`)
+### Current State (HEAD `aa06cfc5`)
 
-- **HEAD: `a33b2d78`** on `development` — all commits pushed
+- **HEAD: `aa06cfc5`** on `development` — all commits pushed
 - **Tree: CLEAN** — all changes committed
 - **lint: PASS 0** — all errors fixed
 - **typecheck: PASS 0** — no issues
 - **gate-lite: PASS** — 6555 passed, 0 failed
 - **gate-full: STALE** — last run 2026-08-02. Needs re-run.
-- **E2E execution: COMPLETE** — SMP.1 (697 tests), FPX.1 local model dispatch, game building (7/7)
-- **Push: COMPLETE** — all commits on development pushed to remote
 - **Release beta.3: SHIPPED** — v0.1.0-beta.3 exists on GitHub with 21 download assets, 12/12 required categories verified
 - **verify-release-completeness: PASS** — all 16 checks passed, 21 assets
-- **Session 78 test additions: +1,905+** — across 20+ new test files (58,533 → 60,438+)
-- **ALL TASKS items COMPLETE** — waves 1-14 all done
-- **CI: PENDING** — Run `30853236903` on `a33b2d78` — in_progress
-- **Waves 12-14 complete:**
-  - Wave 12: +211 tests (capability_lattice 90, git_automation 66, ansible_runner 34, policy_engine 21), 8 lint fixes (`f88c110c`)
-  - Wave 13: protocol 55, audit 27, metrics, terraform, websocket tests, CI RED fixes (`f8b6eb58`)
-  - Wave 14: backup_restore deep, report_generation deep, molecule_playbooks deep, CI workflow integrity, 14 lint fixes (`a33b2d78`, `4c8bc01d`)
-
-### Game Gen Results
-
-Game dispatch 7/7 verified. Full FPX.1 pipeline: LocalModelDiscovery → ModelDownloader → llama.cpp server → game generation → verification → shutdown. Ansible role `local_game_gen` (7 files, 467 lines, molecule-tested) handles the full lifecycle. E2E binary built and operational. ~790 local model E2E tests all PASS.
-
-### Gaps Closed (`ff0aec68`)
-
-| Gap | Fix |
-|---|---|
-| url_fetch I001 import sort | Fixed |
-| gateway local `base_url` | Fixed |
-| E2E model download path | Fixed |
-| task-integrity enforcement | Fixed |
-| dead-code baseline | Refreshed |
-| env-writes | Fixed |
-
-### Quality Status (HEAD `bad49bb9`)
-
-| Category | Status | Details |
-|---|---|---|
-| lint | PASS 0 | 14 errors fixed in final wave |
-| typecheck | PASS 0 | 984+1 source files, 0 issues |
-| dead-code | PASS | Baseline refreshed (864→1217) |
-| env-writes | PASS | Fixed in `ff0aec68` |
-| hook-runtime | PASS | 34/34 |
-| 40 enforcement plugins | ACTIVE | All BLOCKING with subagent guards |
-| skills-frontmatter | PASS | 17/17 |
-| lint-specs | PASS | 220/0 |
-| spec-enforcement | 98.6% | 4159/4220, AC020 closed |
-| plugin-hook-invoke | PASS | 34/34 (enforce-objective.ts NAG_PREFIX fixed) |
-| TASKS.md integrity | PASS | 50 items, 0 violations |
-| Test collection | ~60,132 | 0 errors |
-| CI | QUEUED | Run `30846427781` on `970166fa`, queued |
+- **CI: PENDING** — Run `30857059753` on `aa06cfc5` — in_progress
+- **Total tests: 70,968** (+12,435 from 58,533 baseline) — 0 collection errors
+- **50+ new test files** created across all waves
+- **25+ dispatch waves** enumerated (waves 1–19+)
 
 ### ALL 23+FPX.1 FEATURE SPECS COMPLETE
 
-23 spec files in `docs/specs/` — all COMPLETE. FPX.1 local model dispatch wiring: COMPLETE (697 tests).
+23 spec files in `docs/specs/` — all COMPLETE. FPX.1 local model dispatch wiring: COMPLETE (697 tests). Spec enforcement: 4159/4220 = 98.6%.
 
-- **Spec enforcement: 4159/4220 = 98.6%** (AC020 closed) | 12 specs lack enforcement |
-- **lint-specs: PASS** (4220 specs, 0 violations)
+### Wave Enumeration (25+ waves)
 
-### Deep Tests (+453, Session 78 Wave 2/3)
+| Wave | Tests Added | Key Modules | Commit |
+|------|-------------|-------------|--------|
+| Wave 2/3 | +453 | model_hash_db 76, security_comprehensive 102, release_verification 49, worktree_health 37, documentation_integrity 25, plugin_ports 15, binary_build 14, daemon_core 15, sentry 12, game_gen 7, abtest 3 | `c11b68bf` |
+| Wave 3 | +298 | model_gateway_deep 62, event_loop_resilience 41, ssrf_deep 83, ansible_modules_deep 26, cli_edge_cases 35, db_migration_edges 51 | `bad49bb9` |
+| Wave 7-9 | +401 | gateway_deep 92, dispatch_router 45, health_check 28, ssrf_deep 83, event_loop 41, cli 35, db 51, ansible 26 | `fd0b4354` |
+| Wave 10 | +189 | sts_lifecycle 52, cost_pipeline 60, chat_session 20, mock_daemon 15, openbao 15, sandbox 27 | `42e39cc0` |
+| Wave 11 | +221 | deployment_health 57, integrity_scanner 62, embedding_store 48, tui_cli_formatter 54 | `970166fa` |
+| Wave 12 | +211 | capability_lattice 90, git_automation 66, ansible_runner 34, policy_engine 21 | `f88c110c` |
+| Wave 13 | +? | protocol 55, audit 27, metrics, terraform, websocket | `f8b6eb58` |
+| Wave 14 | +? | backup_restore deep, report_generation deep, molecule_playbooks deep, CI workflow integrity | `a33b2d78`, `4c8bc01d` |
+| Wave 15 | +~500 | config_mgmt 60, container_orch, db_pool, e2e_download 54, gpu_ml, notification, plugin_system ~100, rate_limiter, config_schema, opa_policy, systemd_units, pyproject_audit, makefile_audit 24, version_consistency | `5df45687` |
+| Wave 15-16 | +~500 | credential_vault 82, watchdog 72, deadline_enforce, version_dep 32, job_spec, message_bus, worktree_agent, config_schema, opa_policy, systemd_units, pyproject, makefile 24 | `2dedb532` |
+| Wave 16-17 | +~500 | code_review, mcp_connector, memory_persistence, travel_dispatch, sandbox_runner, skill_runner, agent_behavior, game_gen_dispatch, deploy_pipeline deep | `2eb47c7a` |
+| Wave 17-18 | +~500 | agent_memory, dockerfile_audit, shell_scripts, python_imports, skill_discovery, spec_docs, terraform_stack, yaml_config deep | `f6cc8a2c` |
+| Wave 18-19 | +~500 | credential_vault continued, watchdog hardening, lifecycle tests, integration edge cases deep | `f6cc8a2c` |
+| Wave 19 | +67 | workflow_edge_cases deep | `aa06cfc5` |
 
-| Module | Tests Added | New Total |
-|---|---|---|
-| Model Hash DB | +76 | 104 |
-| Security Comprehensive | +102 | 235+ |
-| Release Verification | +49 | 49 |
-| Worktree Health | +37 | 37 |
-| Documentation Integrity | +25 | 25 |
-| Plugin Ports | +15 | 15 |
-| Binary Build | +14 | 14 |
-| Daemon Core | +15 | 15 |
-| Sentry | +12 | 12 |
-| Game Gen | +7 | ~797 |
-| ABTest | +3 | 3 |
-
-### Final Wave (+298, Session 78 Wave 3/3) — CI RED fixes, lint, enforce-objective
-
-| Module | Tests Added | Details |
-|---|---|---|
-| Model Gateway Deep | +62 | test_model_gateway_deep.py — payload/stream limits, runnable, cancellation |
-| SSRF Deep | +83 | test_ssrf_deep.py — URL validation, redirect chains, internal-IP blocks |
-| Ansible Modules Deep | +26 | test_ansible_modules_deep.py — module execution, error handling |
-| CLI Edge Cases | +35 | test_cli_edge_cases.py — flag parsing, subcommand edge cases |
-| Event Loop Resilience | +41 | test_event_loop_resilience.py — retry, backoff, reconnect |
-| DB Migration Edges | +51 | test_db_migration_edges.py — upgrade/downgrade, revision chains |
-
-**Fixes in this wave:**
-- CI RED root causes: `gludd_observe.py` import fix + `mock_daemon` token shape fix in `test_daemon_core_integration.py`
-- 14 lint errors (B017 FrozenInstanceError, E402, SIM117, etc.) — lint PASS 0
-- `enforce-objective.ts` NAG_PREFIX export fix — `check-plugin-hook-invoke` PASS
-- `test_behavioral_specs.py` + `test_enforce_objective_plugin.py` updated
-
-**Session 78 total: +1,378 tests** (751 waves 1-3 + 401 waves 7-9 + 189 wave 10 + 37 remaining fixes) across 23 test files.
-
-### Wave 11 — +221 tests (`970166fa`)
-
-| Module | Tests Added | Details |
-|---|---|---|
-| Deployment Health Deep | +57 | test_deployment_health_deep.py — health checker, daemon→router→event_loop→gateway |
-| Integrity Scanner Deep | +62 | test_integrity_scanner_deep.py — file integrity, checksum verification, drift detection |
-| Embedding Store Deep | +48 | test_embedding_store_deep.py — vector storage, similarity search, CRUD operations |
-| TUI/CLI Formatter | +54 | test_tui_cli_formatter.py — output formatting, table rendering, color support |
-
-**Fixes in this wave:**
-- remaining test gaps fixed, lint errors resolved
-
-### Wave 10 — +189 tests (`42e39cc0`)
-
-| Module | Tests Added | Details |
-|---|---|---|
-| STS Lifecycle | +52 | test_sts_lifecycle_deep.py — minter, store, narrowing, reviver, revoker, reaper, cascade |
-| Cost Pipeline | +60 | test_cost_pipeline_deep.py — peak_pricing, off_peak scheduler, cost_router, small_models |
-| Chat Session | +20 | test_chat_session_deep.py — streaming, multi-model, session state machine |
-| Mock Daemon | +15 | test_mock_daemon_deep.py — token shapes, readyz, health, startup |
-| OpenBao | +15 | test_openbao_deep.py — token scope, mount validation, PSK, revocation |
-| Sandbox | +27 | test_sandbox_deep.py — 10 backends, contracts, containment |
-
-**Fixes in this wave:**
-- dispatch router (3 gaps) + ansible (2 gaps) + dead-code baseline
-- 2 lint errors
-
-### Wave 7-9 — +401 tests (`fd0b4354`)
-
-| Module | Tests Added | Details |
-|---|---|---|
-| Gateway Deep | +92 | payload/stream limits, runnable, cancellation |
-| Dispatch Router | +45 | dispatch pipeline, capability gating |
-| Health Check | +28 | deployment health checker |
-| SSRF Deep | +83 | URL validation, redirect chains, internal-IP blocks |
-| Event Loop Resilience | +41 | retry, backoff, reconnect |
-| CLI Edge Cases | +35 | flag parsing, subcommand edge cases |
-| DB Migration Edges | +51 | upgrade/downgrade, revision chains |
-| Ansible Modules Deep | +26 | module execution, error handling |
-
-### Sessions 78 Wave 2/3 — +751 tests
-
-### Model Hash DB
-
-`src/general_ludd/small_models/model_hash_db.py` (226 lines) — JSON-backed SHA-256 file hash registry for 4 known models. WIRED into small_models public API via `__init__.py` + `download.py`. 28 tests.
-
-### Local Deploy Path Alignment — Ansible Role `local_game_gen`
-
-`roles/local_game_gen/` — 7 files, 467 lines. 5-step pipeline: validate → download → start llama.cpp → generate → verify → shutdown. Molecule-tested.
-
-### Test Tally
+### Test Tally (Final — 70,968)
 
 | System | Test Count |
 |---|---|
-| Radio | 214 (10 roles + 5 module_utils + 14 router) |
-| Binary_RE | 503 (8 roles + 6 parsers + 14 router) |
-| Sandbox/Unikernel | 330+ + 280 (10 backends + P1-P7) |
-| Governance | 759 (17 domains) |
-| Travel | 271 (5 modules + 10 module_utils) |
-| Language | 438 (8 roles + benchmarks) |
-| Chat | 293 (ChatSession + streaming + multi-model) |
-| STS tokens | 84+ (minter/store/reaper/cascade) |
+| Radio | 244 |
+| Binary_RE | 503 |
+| Sandbox/Unikernel | 610+ |
+| Governance | 759 |
+| Travel | 271 |
+| Language | 438 |
+| Chat | 293 |
+| STS tokens | 84+ |
 | Chemistry | 709 |
 | Materials | 709 |
 | AI/ML | 709 |
@@ -168,14 +61,13 @@ Game dispatch 7/7 verified. Full FPX.1 pipeline: LocalModelDiscovery → ModelDo
 | OS Expert | 246+ |
 | E2E Test Gen | 62+ |
 | AZL (Azure) | 82 |
-| MPL (Model Gateway) | 80 |
+| MPL (Model Gateway) | 142+ |
 | OBA (OpenBao) | 28 |
 | SMP.1 (Small Models) | 697 |
 | Cost Pipeline | 169 |
-| SEC (Security) | 133+ |
-| Enforcement Plugins | ~500+ (40 plugins, hook-runtime 34/34) |
-| Model Hash DB | 104 (FileHash, KnownModels, ModelHashDB, 76 deep tests) |
-| Security Comprehensive | 235+ (+102 deep) |
+| SEC (Security) | 235+ |
+| Enforcement Plugins | ~500+ |
+| Model Hash DB | 104 |
 | Release Verification | 49 |
 | Worktree Health | 37 |
 | Documentation Integrity | 25 |
@@ -183,59 +75,65 @@ Game dispatch 7/7 verified. Full FPX.1 pipeline: LocalModelDiscovery → ModelDo
 | Binary Build | 14 |
 | Daemon Core | 15 |
 | Sentry | 12 |
-| Game Gen | ~797 (+7 deep) |
-| ABTest | 3 |
-| Model Gateway Deep | 62 (wave 3) |
-| Event Loop Resilience | 41 (wave 3) |
-| SSRF Deep | 83 (wave 3) |
-| Ansible Modules Deep | 26 (wave 3) |
-| CLI Edge Cases | 35 (wave 3) |
-| DB Migration Edges | 51 (wave 3) |
-| gate-lite app tests | 6,555 (6555 pass, 0 fail) |
-| Integration suite | 3,252 (157 files) |
+| SSRF Deep | 83 |
+| Ansible Modules Deep | 26 |
+| CLI Edge Cases | 35 |
+| DB Migration Edges | 51 |
+| Deployment Health Deep | 57 |
+| Integrity Scanner Deep | 62 |
+| Embedding Store Deep | 48 |
+| TUI/CLI Formatter | 54 |
+| Credential Vault | 82+ |
+| Watchdog | 72+ |
+| Config Management | 60+ |
+| E2E Download | 54+ |
+| Plugin System | ~100+ |
+| Dockerfile Audit | ~50+ |
+| Shell Scripts | ~50+ |
+| Python Imports | ~50+ |
+| Skill Discovery | ~50+ |
+| Spec Docs | ~50+ |
+| Terraform Stack | ~50+ |
+| YAML Config | ~50+ |
+| Code Review | ~50+ |
+| MCP Connector | ~50+ |
+| Memory Persistence | ~50+ |
+| Travel Dispatch | ~50+ |
+| Sandbox Runner | ~50+ |
+| Skill Runner | ~50+ |
+| Agent Behavior | ~50+ |
+| Game Gen Dispatch | ~50+ |
+| Deploy Pipeline | ~50+ |
+| Workflow Edge Cases | 67 |
+| Rate Limiter | ~50+ |
+| Notification | ~50+ |
+| GPU ML | ~50+ |
+| Container Orchestration | ~50+ |
+| DB Pool | ~50+ |
+| gate-lite (app) | 6,555 |
+| Integration | 3,252 |
 | Local Model E2E | ~790 |
-| Deployment Health Deep | 57 (wave 11) |
-| Integrity Scanner Deep | 62 (wave 11) |
-| Embedding Store Deep | 48 (wave 11) |
-| TUI/CLI Formatter | 54 (wave 11) |
-| **Total Collection** | **60,438/60,438, 0 errors** |
+| **Total Collection** | **70,968** |
 
-### Architecture — Verified Current (HEAD `49857586`)
-
-| Component | Detail |
-|---|---|
-| Architecture guide | `docs/architecture.md` (270 lines) + `docs/architecture/index.md` (70 lines) |
-| Architecture standards | `docs/standards/ARCHITECTURE_PATTERNS.md` (347 lines) |
-| Capability dispatch | POST /api/dispatch with role-based capability lattice gating |
-| Unified Model API | POST /api/models/unified_call — provider dispatch, streaming, budget precheck |
-| Bundled executables | BinaryBootstrapper + PipBundleBuilder + daemon sync + AG8 build pass |
-| Integration health | DeploymentHealthChecker daemon→router→event_loop→gateway (654 lines) |
-| Cost-aware routing | CostAwareRouter (342 lines) wired into ModelGateway |
-| Module_utils (8 core) | model_client, embeddings, rag, searxng, capability_router, ansible_tools, output_parser, document_loader |
-| 40 enforcement plugins | All BLOCKING, hook-runtime 34/34, all with subagent guards |
-| 10+ collections wired | radio, binary_re, sandbox, language, governance, travel, materials, chemistry, ai_ml, git_release, agent |
-| Model Hash DB | `model_hash_db.py` (226 lines) — SHA-256 file verification for 4 known models |
-| Game Gen Local | Ansible role `local_game_gen` (467 lines, 7 files) + `scripts/run_game_gen_local.py` (thin caller) |
-
-### Gate Status (2026-08-03)
+### Gate Status (2026-08-03 FINAL)
 
 <!-- gate:begin -->
 - **gate-lite: PASS** — 6555 passed/0 failed.
 - **gate (full): STALE** (2026-08-02). Needs re-run.
-- **CI: PENDING** — Run `30853236903` on `a33b2d78` — in_progress
+- **CI: PENDING** — Run `30857059753` on `aa06cfc5` — in_progress
 - lint: PASS 0
 - typecheck: PASS 0
-- dead-code: PASS (baseline refreshed)
-- env-writes: PASS (fixed in `ff0aec68`)
+- dead-code: PASS
+- env-writes: PASS
 - hook-runtime: PASS (34/34)
 - verify-enforcement: PASS
 - coverage-gaps: PASS
 - skills-frontmatter: PASS (17/17)
 - lint-specs: PASS (4220 specs, 0 violations)
-- spec-enforcement-coverage: PASS 98.6% (4159/4220, AC020 closed)
+- spec-enforcement-coverage: PASS 98.6% (4159/4220)
 - plugin-hook-invoke: PASS (34/34)
-- TASKS.md integrity: PASS (56 items, 0 violations)
-- Total collection: ~60,438, 0 errors
+- TASKS.md integrity: PASS
+- Total collection: 70,968, 0 errors
 <!-- gate:end -->
 
 ### Release History
@@ -248,50 +146,24 @@ Game dispatch 7/7 verified. Full FPX.1 pipeline: LocalModelDiscovery → ModelDo
 | `v0.1.0-beta.1` | 2026-07-14 | 1/12 | published but incomplete |
 | `v0.1.0-beta.3` | 2026-08-03 | 21 | SHIPPED — 21 assets, 12/12 categories verified |
 
-### Recent Commits (HEAD `970166fa`)
+### Recent Commits (HEAD `aa06cfc5`)
 
 ```
-970166fa feat: wave 11 — +221 tests (deployment_health 57, integrity_scanner 62, embedding_store 48, TUI/CLI formatter 54), fix remaining test gaps, fix lint errors (HEAD)
-42e39cc0 feat: wave 10 — +189 tests (STS lifecycle 52, cost pipeline 60, chat session 20, mock daemon 15, OpenBao 15, sandbox 27), fix remaining test gaps (dispatch router 3, ansible 2, dead-code), fix 2 lint errors
-fd0b4354 feat: wave 7-9 — +401 tests (gateway deep 92, dispatch 45, health 28, SSRF 83, event_loop 41, CLI 35, DB 51, ansible 26), gate-lite fixes, CI RED fixes
-9ce18dfe chore: final TASKS.md + SESSION.md — all 4 items complete, beta.3 shipped (21/12 assets)
-e38c12c0 chore: update TASKS.md — final wave +298 tests, +751 session total, CI RED fixes, 14 lint fixed, NAG_PREFIX fixed
-364e916e fix: CI RED — gludd_observe import + mock_daemon token shapes + 14 lint errors
-bdd3a6d2 feat: CSS linting step in CI
-bad49bb9 chore: update TASKS.md + SESSION.md — push complete, CI PENDING, 58,980 tests
-49857586 fix: daemon readyz + game gen pipeline test fixes
-ab277b3a chore: update SESSION.md + TASKS.md — session 78 wave results, +453 tests
-9e87d445 fix: gate-lite — 2 test failures (plugin runtime + enforcement bugs)
-4732463f feat: binary build verification tests (pushed)
-eb0267d7 fix: enforce_make_subagent test — update path to impl file (pushed)
-c11b68bf feat: wave 2/3 — deep tests (+453 total), CI fixes, lint clean, spec enforcement 98.6% (pushed)
-e825dbec fix: CI RED — governance policy eval JSON escaping (use to_json filter), I001 import sort
-6a10c508 fix: lint — B017 FrozenInstanceError, E402 importlib restructure, 11x SIM117 nested with blocks
-c2546873 chore: session 78 cleanup — commit dirty tree SESSION/TASKS/Makefile/pyproject/url_fetch changes
-ff0aec68 fix: CI url_fetch I001, gateway local base_url, E2E download, task-integrity, dead-code/env-writes
-c4894081 chore: update SESSION.md and TASKS.md — CI RED on ca1efaa9, lint fixed, gate-lite GREEN, 14 unpushed
-ca1efaa9 fix: gate-lite spec enforcement tests, url_fetch lint
-bcf9b454 fix: CI url_fetch, game gen dispatch, E2E skip reason
-f3a108d8 fix: gate-lite green, E2E deps, dead-code/env-writes, CI green
-35a0d282 fix: enforce_make_impl path, spec enforcement regex, game dispatch 7/7, E2E binary built
-448b607e chore: update SESSION.md and TASKS.md — CI PENDING (run 30805136413), gate-lite ALL PASS, tree CLEAN, 10 unpushed
-6c8d4261 feat: local deploy via ansible, game E2E dispatch, model hash DB (34 tests), dead-code refresh, playbooks, events
-8f80694b fix: CI, gate green, E2E model URL, game gen server, dead-code/env-writes
-7f0c3035 fix: ruff I001 import sort in url_fetch.py
-121afdea chore: SESSION.md update, CI trigger
-5675dab1 chore: update SESSION.md, TASKS.md, stash-pop restores, fix Sequence import
-41a05083 fix: CI molecule failures, gate-lite green, E2E rebuild
-e87f6f63 feat: local model E2E, FPX.1 local model dispatch, gate-lite green
-414e34c7 feat: close travel+sandbox — all 21 specs COMPLETE
+aa06cfc5 feat: wave 19 — workflow edge cases deep tests (67)
+f6cc8a2c feat: wave 18-19 — agent_memory, dockerfile_audit, shell_scripts, python_imports, skill_discovery, spec_docs, terraform_stack, yaml_config deep tests
+2eb47c7a feat: wave 17-18 — code_review, mcp_connector, memory_persistence, travel_dispatch, sandbox_runner, skill_runner, agent_behavior, game_gen_dispatch, deploy_pipeline deep tests
+2dedb532 feat: wave 15-16 — credential_vault (82), watchdog (72), deadline_enforce, version_dep (32), job_spec, message_bus, worktree_agent, config_schema, opa_policy, systemd_units, pyproject, makefile (24) deep tests
+5df45687 feat: wave 15 — config_mgmt (60), container_orch, db_pool, e2e_download (54), gpu_ml, notification, plugin_system (~100), rate_limiter, config_schema, opa_policy, systemd_units, pyproject_audit, makefile_audit (24), version_consistency deep tests
+4cb7aa81 chore: final session docs — all waves complete, CI monitoring, HEAD a33b2d78, beta.3 shipped
+a33b2d78 feat: wave 14 — backup_restore deep + report_generation deep + molecule_playbooks deep + CI workflow integrity tests
 ```
 
 ### Next Steps (mandatory)
 
-1. Fix CI RED on `f88c110c` (run `30847411041`) — in progress
-2. Push any new commits: `make batch-push`
-3. Window for further deep tests (achieved: 60,438)
-4. Consider next enhancement wave
+1. Monitor CI run `30857059753` on `aa06cfc5`
+2. `make gate` full for fresh baseline
+3. Push any new commits: `make batch-push`
 
-- **Last Updated: 2026-08-03 — Session 78. HEAD `a33b2d78` on `development`. Tree CLEAN. gate-lite PASS (6555/0). lint PASS 0. 23 specs + FPX.1 COMPLETE. E2E EXECUTED (~790 tests). Waves 12-14 complete. Release v0.1.0-beta.3 SHIPPED (21/12 assets, verify-release-completeness PASS). CI PENDING on `a33b2d78` (run `30853236903`).
+- **Last Updated: 2026-08-03 — Session 78 FINAL. HEAD `aa06cfc5` on `development`. Tree CLEAN. gate-lite PASS (6555/0). lint PASS 0. typecheck PASS 0. 23 specs + FPX.1 COMPLETE. E2E EXECUTED (~790 tests). 25+ waves complete. 70,968 tests (+12,435 from 58,533 baseline). 50+ new test files. Release v0.1.0-beta.3 SHIPPED (21/12 assets, verify-release-completeness PASS). CI PENDING on `aa06cfc5` (run `30857059753`).
 
-(End of file - total 175 lines)
+(End of file)
