@@ -90,7 +90,7 @@ Documentation consolidation session — 5 built-and-wired systems codified into 
 | S65.4 | **Architecture Fixes**: ARCHITECTURE_PATTERNS.md (347 lines) documents MVC/MVVM/MVI/MVP patterns. 3-collection audit: Travel (6 violations — MVI model/view mixing, data-in-logic, cross-collection import), Language (5 violations — no contracts, script bypass, ViewModel-without-Model), Agent/STS (1 violation — 5 STS roles declared but unimplemented). Layer-wiring contract codified | docs/standards/ARCHITECTURE_PATTERNS.md |
 | S65.5 | **Test Failure Visibility**: Four-layer pipeline: (1) CI: `pytest-github-actions-annotate-failures` with per-test `::error` annotations mid-job (build.yml:222), (2) Dogfood: `seed_todos_from_test_failures()` creates `test_failure`-sourced todos (runner.py:110-125), (3) Validation: `record_test_failures()` child-todo categorization (runner.py:201), (4) Task watchdog: kill events in `/tmp/gludd-task-killed.json` + partial output preserved to `/tmp/gludd-task-output-<id>.log` | build.yml:222, runner.py:110-125, runner.py:201, task_watchdog.py |
 
-### Architecture — verified current (2026-08-03)
+### Architecture — verified current (2026-08-03, HEAD `67760d2e`)
 
 | Component | Detail |
 |-----------|--------|
@@ -98,9 +98,9 @@ Documentation consolidation session — 5 built-and-wired systems codified into 
 | Architecture standards | `docs/standards/ARCHITECTURE_PATTERNS.md` (347 lines) — MVC/MVVM/MVI/MVP patterns, 3-collection audit (12 violations), layer-wiring contract, priority fix ranking |
 | Capability dispatch backbone | Centralised `POST /api/dispatch` endpoint with role-based capability lattice gating (`48461fa1`) |
 | Unified Model API | `POST /api/models/unified_call` — single endpoint for all model calls, provider dispatch, streaming, budget precheck (`ea0b6413`) |
-| Bundled executables | BinaryBootstrapper (bundled-first) + PipBundleBuilder (versioned bundles) + daemon sync + AG8 build pass + PyInstaller/container make targets |
-| Integration health | DeploymentHealthChecker fully wired daemon→router→event_loop→gateway chain (654 lines) |
-| Cost-aware routing | CostAwareRouter (342 lines) wired into ModelGateway with budget integration + radar axis |
+| Bundled executables | BinaryBootstrapper (bundled-first) + PipBundleBuilder (versioned bundles) + bundled llama-quantize + daemon sync + AG8 build pass + PyInstaller/container make targets (`079f619e`) |
+| Integration health | DeploymentHealthChecker fully wired daemon→router→event_loop→gateway chain (654 lines, committed `079f619e`); operational per gate test PASS |
+| Cost-aware routing | CostAwareRouter (342 lines) wired into ModelGateway with budget integration + radar axis (`079f619e`) |
 | Module_utils (8 core) | model_client, embeddings, rag, searxng, capability_router, ansible_tools, output_parser, document_loader (`f4c87fa0`, `01deee25`) |
 | Travel collection | 4 modules, 10 module_utils, 2 roles, 5 playbooks, SearXNG, molecule, 123 tests |
 | Language contracts | 32 tests |
@@ -112,6 +112,7 @@ Documentation consolidation session — 5 built-and-wired systems codified into 
 | Chat daemon+CLI | Session state machine + streaming formatter + multi-model (293 tests) |
 | Cost pipeline | Peak pricing (55) + off-peak scheduler (41) + cost router (50) + radar + model_fit + GPU config + E2E role |
 | Test visibility | CI annotations + dogfood seed_todos + validation child-todos + watchdog kill logs (4-layer pipeline) |
+| Test fixes (S66) | 51 failures resolved across 7 files: travel, behavioral, enforce-objective, batch_push, cost, HITL, small_models (`67760d2e`) |
 
 ### E2E Status (2026-08-03)
 

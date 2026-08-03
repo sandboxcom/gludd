@@ -249,7 +249,7 @@ class TestModelGatewayBudgetTracking:
         ):
             resp = gw.call_model("gpt4_budget", [{"role": "user", "content": "hi"}])
 
-        expected_cost = 100 * 0.01 + 50 * 0.03
+        expected_cost = (100 * 0.01 + 50 * 0.03) * 0.75  # off-peak multiplier
         assert resp.cost_estimate == pytest.approx(expected_cost)
         assert guard.get_total_spend() == pytest.approx(expected_cost)
 
