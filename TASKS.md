@@ -27,7 +27,7 @@ CI PENDING — run `30833152613`, headSha `ff0aec68`, status `in_progress`. lint
 - [x] S77.4 — **Fix gate-lite spec enforcement tests**: gate-lite spec enforcement tests fixed. Committed in `ca1efaa9`. | evidence: `ca1efaa9`; gate-lite PASS | priority: high | effort: S | status: completed
 - [x] S77.5 — **CI url_fetch + game gen dispatch + E2E skip reason**: CI fix for url_fetch, game gen dispatch, E2E skip reason. Committed in `bcf9b454`. | evidence: `bcf9b454` | priority: high | effort: M | status: completed
 - [x] S77.6 — **Fix CI RED (run 30830208831) — ALL GAPS CLOSED**: CI fixes for url_fetch I001, gateway local base_url, E2E download, task-integrity, dead-code, env-writes all applied in `ff0aec68`. | evidence: `ff0aec68`; CI run `30833152613` in_progress | priority: high | effort: M | status: completed
-- [ ] S78.0 — **Fix gate-lite 2 test failures**: repair `test_all_plugins_runtime` + `test_enforcement_bugs`. | evidence: pending | priority: high | effort: M | status: pending
+
 - [x] S78.1 — **Clean dirty tree**: commit dirty-tree changes (SESSION.md, TASKS.md, Makefile, pyproject.toml, url_fetch). | evidence: `c2546873`; tree CLEAN | priority: high | effort: S | status: completed
 - [x] S78.2 — **Lint fixes**: B017 FrozenInstanceError, E402 importlib restructure, 11x SIM117 nested with blocks. | evidence: `6a10c508`; lint PASS 0 | priority: high | effort: M | status: completed
 - [x] S78.3 — **CI RED fix**: governance policy eval JSON escaping (`to_json` filter), STS mock routes, url_fetch I001 import sort. | evidence: `e825dbec` | priority: high | effort: M | status: completed
