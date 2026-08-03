@@ -29,7 +29,14 @@ def _mock_ansible_module(
 
         def __init__(self, argument_spec=None, supports_check_mode=False):
             MockModule.captured_spec = dict(argument_spec or {})
-            self.params = dict(params)
+            self.params = {}
+            if argument_spec:
+                for k, v in argument_spec.items():
+                    if isinstance(v, dict) and "default" in v:
+                        self.params[k] = v["default"]
+                    else:
+                        self.params[k] = None
+            self.params.update(dict(params))
             self.check_mode = check_mode
             self._supports_check_mode = supports_check_mode
 
@@ -160,8 +167,8 @@ class TestGluddPing:
         FakeClient = _make_fake_client(reachable=True)
 
         with (
-            patch("ansible.module_utils.basic.AnsibleModule", new=MockAnsible),
-            patch(f"{COLLECTION_MODULES}.gludd_ping.GluddClient", new=FakeClient),
+            patch.object(gludd_ping, "AnsibleModule", MockAnsible),
+            patch.object(gludd_ping, "GluddClient", FakeClient),
         ):
             MockAnsible.reset()
             FakeClient.reset()
@@ -184,8 +191,8 @@ class TestGluddPing:
         FakeClient = _make_fake_client(reachable=False)
 
         with (
-            patch("ansible.module_utils.basic.AnsibleModule", new=MockAnsible),
-            patch(f"{COLLECTION_MODULES}.gludd_ping.GluddClient", new=FakeClient),
+            patch.object(gludd_ping, "AnsibleModule", MockAnsible),
+            patch.object(gludd_ping, "GluddClient", FakeClient),
         ):
             MockAnsible.reset()
             with contextlib.suppress(SystemExit):
@@ -207,8 +214,8 @@ class TestGluddPing:
             MockAnsible = _mock_ansible_module({"daemon_url": "http://127.0.0.1:8000"})
             FakeClient = _make_fake_client(reachable=reachable_val)
             with (
-                patch("ansible.module_utils.basic.AnsibleModule", new=MockAnsible),
-                patch(f"{COLLECTION_MODULES}.gludd_ping.GluddClient", new=FakeClient),
+                patch.object(gludd_ping, "AnsibleModule", MockAnsible),
+                patch.object(gludd_ping, "GluddClient", FakeClient),
             ):
                 MockAnsible.reset()
                 with contextlib.suppress(SystemExit):
@@ -225,8 +232,8 @@ class TestGluddPing:
             MockAnsible = _mock_ansible_module({"daemon_url": "http://localhost:8000"})
             FakeClient = _make_fake_client(reachable=True)
             with (
-                patch("ansible.module_utils.basic.AnsibleModule", new=MockAnsible),
-                patch(f"{COLLECTION_MODULES}.gludd_ping.GluddClient", new=FakeClient),
+                patch.object(gludd_ping, "AnsibleModule", MockAnsible),
+                patch.object(gludd_ping, "GluddClient", FakeClient),
             ):
                 MockAnsible.reset()
                 with contextlib.suppress(SystemExit):
@@ -250,8 +257,8 @@ class TestGluddPing:
         FakeClient = _make_fake_client(reachable=True)
 
         with (
-            patch("ansible.module_utils.basic.AnsibleModule", new=MockAnsible),
-            patch(f"{COLLECTION_MODULES}.gludd_ping.GluddClient", new=FakeClient),
+            patch.object(gludd_ping, "AnsibleModule", MockAnsible),
+            patch.object(gludd_ping, "GluddClient", FakeClient),
         ):
             MockAnsible.reset()
             FakeClient.reset()
@@ -267,8 +274,8 @@ class TestGluddPing:
         FakeClient = _make_fake_client(reachable=True)
 
         with (
-            patch("ansible.module_utils.basic.AnsibleModule", new=MockAnsible),
-            patch(f"{COLLECTION_MODULES}.gludd_ping.GluddClient", new=FakeClient),
+            patch.object(gludd_ping, "AnsibleModule", MockAnsible),
+            patch.object(gludd_ping, "GluddClient", FakeClient),
         ):
             MockAnsible.reset()
             FakeClient.reset()
@@ -280,7 +287,6 @@ class TestGluddPing:
     def test_check_mode_supported(self):
         """Module declares supports_check_mode=True."""
         gludd_ping = self._load_module()
-        _mock_ansible_module({})
         FakeClient = _make_fake_client()
 
         class CaptureCheckMode:
@@ -288,13 +294,14 @@ class TestGluddPing:
 
             def __init__(self, *args, **kwargs):
                 CaptureCheckMode.flag = kwargs.get("supports_check_mode")
+                self.params = {}
 
             def exit_json(self, **kwargs):
                 raise SystemExit(0)
 
         with (
-            patch("ansible.module_utils.basic.AnsibleModule", new=CaptureCheckMode),
-            patch(f"{COLLECTION_MODULES}.gludd_ping.GluddClient", new=FakeClient),
+            patch.object(gludd_ping, "AnsibleModule", CaptureCheckMode),
+            patch.object(gludd_ping, "GluddClient", FakeClient),
             contextlib.suppress(SystemExit),
         ):
             gludd_ping.main()
@@ -329,7 +336,6 @@ class TestGluddFeatures:
 
     def _run(self, gludd_features, params, client_responses=None, check_mode=False):
         MockAnsible = _mock_ansible_module(params, check_mode=check_mode)
-        _make_fake_client(**client_responses or {})
 
         class RealFakeClient:
             def __init__(self, base_url="", psk="", timeout=30):
@@ -358,8 +364,8 @@ class TestGluddFeatures:
                 return merged
 
         with (
-            patch("ansible.module_utils.basic.AnsibleModule", new=MockAnsible),
-            patch(f"{COLLECTION_MODULES}.gludd_features.GluddClient", new=RealFakeClient),
+            patch.object(gludd_features, "AnsibleModule", MockAnsible),
+            patch.object(gludd_features, "GluddClient", RealFakeClient),
         ):
             MockAnsible.reset()
             with contextlib.suppress(SystemExit):
@@ -437,8 +443,8 @@ class TestGluddFeatures:
         MockAnsible = _mock_ansible_module({"state": "list", "status": "verified", "category": "api"})
 
         with (
-            patch("ansible.module_utils.basic.AnsibleModule", new=MockAnsible),
-            patch(f"{COLLECTION_MODULES}.gludd_features.GluddClient", new=CapturingFakeClient),
+            patch.object(gludd_features, "AnsibleModule", MockAnsible),
+            patch.object(gludd_features, "GluddClient", CapturingFakeClient),
         ):
             MockAnsible.reset()
             with contextlib.suppress(SystemExit):
@@ -506,8 +512,8 @@ class TestGluddFeatures:
         MockAnsible = _mock_ansible_module({"state": "verify", "project_id": "alpha"})
 
         with (
-            patch("ansible.module_utils.basic.AnsibleModule", new=MockAnsible),
-            patch(f"{COLLECTION_MODULES}.gludd_features.GluddClient", new=CapturingFakeClient),
+            patch.object(gludd_features, "AnsibleModule", MockAnsible),
+            patch.object(gludd_features, "GluddClient", CapturingFakeClient),
         ):
             MockAnsible.reset()
             with contextlib.suppress(SystemExit):
@@ -536,8 +542,8 @@ class TestGluddFeatures:
         MockAnsible = _mock_ansible_module({"state": "verify"}, check_mode=True)
 
         with (
-            patch("ansible.module_utils.basic.AnsibleModule", new=MockAnsible),
-            patch(f"{COLLECTION_MODULES}.gludd_features.GluddClient", new=NeverCalledClient),
+            patch.object(gludd_features, "AnsibleModule", MockAnsible),
+            patch.object(gludd_features, "GluddClient", NeverCalledClient),
         ):
             MockAnsible.reset()
             with contextlib.suppress(SystemExit):
@@ -657,8 +663,8 @@ class TestGluddMetrics:
                 return merged
 
         with (
-            patch("ansible.module_utils.basic.AnsibleModule", new=MockAnsible),
-            patch(f"{COLLECTION_MODULES}.gludd_metrics.GluddClient", new=RealFakeClient),
+            patch.object(gludd_metrics, "AnsibleModule", MockAnsible),
+            patch.object(gludd_metrics, "GluddClient", RealFakeClient),
         ):
             MockAnsible.reset()
             with contextlib.suppress(SystemExit):
@@ -826,8 +832,8 @@ class TestGluddMetrics:
         MockAnsible = _mock_ansible_module({"agent_id": "agent-42"})
 
         with (
-            patch("ansible.module_utils.basic.AnsibleModule", new=MockAnsible),
-            patch(f"{COLLECTION_MODULES}.gludd_metrics.GluddClient", new=CapturingFakeClient),
+            patch.object(gludd_metrics, "AnsibleModule", MockAnsible),
+            patch.object(gludd_metrics, "GluddClient", CapturingFakeClient),
         ):
             MockAnsible.reset()
             with contextlib.suppress(SystemExit):
@@ -858,8 +864,8 @@ class TestGluddMetrics:
         MockAnsible = _mock_ansible_module({"project_id": "alpha"})
 
         with (
-            patch("ansible.module_utils.basic.AnsibleModule", new=MockAnsible),
-            patch(f"{COLLECTION_MODULES}.gludd_metrics.GluddClient", new=CapturingFakeClient),
+            patch.object(gludd_metrics, "AnsibleModule", MockAnsible),
+            patch.object(gludd_metrics, "GluddClient", CapturingFakeClient),
         ):
             MockAnsible.reset()
             with contextlib.suppress(SystemExit):

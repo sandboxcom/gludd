@@ -177,6 +177,9 @@ class TestUpgradeDowngradeSymmetry:
             with patch.object(mod, "op") as mock_op, contextlib.suppress(Exception):
                 mod.upgrade()
             create_count = len(mock_op.create_index.call_args_list)
+            if mock_op.batch_alter_table.call_args_list:
+                batch_ctx = mock_op.batch_alter_table.return_value.__enter__.return_value
+                create_count += len(batch_ctx.create_index.call_args_list)
             with (
                 patch.object(mod, "op") as mock_op2,
                 patch.dict(os.environ, {"ALEMBIC_DOWNGRADE_CONFIRMED": "yes"}),
@@ -184,8 +187,7 @@ class TestUpgradeDowngradeSymmetry:
             ):
                 mod.downgrade()
             drop_count = len(mock_op2.drop_index.call_args_list)
-            # Also count batch-level drop_index calls (e.g. 018)
-            for _call_args in mock_op2.batch_alter_table.call_args_list:
+            if mock_op2.batch_alter_table.call_args_list:
                 batch_ctx = mock_op2.batch_alter_table.return_value.__enter__.return_value
                 drop_count += len(batch_ctx.drop_index.call_args_list)
             assert create_count == drop_count, (
@@ -716,11 +718,10 @@ class TestCheckConstraints:
         with patch.object(mod, "op") as mock_op, patch.dict(os.environ, {"ALEMBIC_DOWNGRADE_CONFIRMED": "yes"}):
             mod.downgrade()
         drop_count = 0
-        for _call_args in mock_op.batch_alter_table.call_args_list:
-            batch_ctx = mock_op.batch_alter_table.return_value.__enter__.return_value
-            for c in batch_ctx.drop_constraint.call_args_list:
-                if c.kwargs.get("type_") == "check":
-                    drop_count += 1
+        batch_ctx = mock_op.batch_alter_table.return_value.__enter__.return_value
+        for c in batch_ctx.drop_constraint.call_args_list:
+            if c.kwargs.get("type_") == "check":
+                drop_count += 1
         assert drop_count == 7, f"026 downgrade should drop 7 check constraints, got {drop_count}"
 
     def test_036_priority_check_constraint_exists(self):

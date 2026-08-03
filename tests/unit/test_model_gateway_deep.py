@@ -35,6 +35,7 @@ from general_ludd.models.gateway import (
     SSRFRejectionError,
     StreamLimitError,
     _coerce_token_count,
+    _extract_retry_after_seconds,
     _extract_tool_calls,
     _LimitedChatModel,
     _positive_profile_limit,
@@ -859,3 +860,389 @@ class TestCostAwareRouting:
         gw = ModelGateway([p])
         with pytest.raises(ValueError, match="No enabled profile"):
             gw.route_for_task("code")
+
+
+# ===================================================================
+# 9. Stream semaphore exhaustion and concurrency
+# ===================================================================
+
+
+class TestStreamSemaphoreDeep:
+    def test_stream_semaphore_exhausted_raises_runtime_error(self) -> None:
+        p = _profile("sema1", stream_provider_max_concurrency=1)
+        chunks = _ClosingIterator([_chunk("hello")])
+        reg = MagicMock()
+        reg.is_installed.return_value = True
+        reg.get_provider_class.return_value = lambda **kw: MagicMock(stream=lambda msgs, **kw2: chunks)
+
+        gw = ModelGateway([p], provider_registry=reg)
+        sem = gw._stream_provider_semaphore("sema1")
+        sem.acquire()
+        try:
+            with pytest.raises(RuntimeError, match="Stream provider construction"):
+                list(gw.call_model_stream("sema1", [{"role": "user", "content": "hi"}]))
+        finally:
+            sem.release()
+
+    def test_two_streams_on_different_profiles_do_not_block(self) -> None:
+        p1 = _profile("p1", stream_provider_max_concurrency=1)
+        p2 = _profile("p2", stream_provider_max_concurrency=1)
+        _ClosingIterator([_chunk("x")])
+
+        def stream_fn(msgs, **kw):
+            return iter(_ClosingIterator([_chunk("x")]))
+
+        cm = MagicMock()
+        cm.stream = stream_fn
+        reg = MagicMock()
+        reg.is_installed.return_value = True
+        reg.get_provider_class.return_value = lambda **kw: cm
+
+        gw = ModelGateway([p1, p2], provider_registry=reg)
+        r1 = list(gw.call_model_stream("p1", [{"role": "user", "content": "hi"}]))
+        r2 = list(gw.call_model_stream("p2", [{"role": "user", "content": "hi"}]))
+        assert len(r1) == 1
+        assert len(r2) == 1
+
+    def test_semaphore_released_after_stream_error(self) -> None:
+        p = _profile("sema_err", stream_provider_max_concurrency=1, max_stream_chunks=1)
+        chunks = _ClosingIterator([_chunk("a"), _chunk("b")])
+        reg = MagicMock()
+        reg.is_installed.return_value = True
+        reg.get_provider_class.return_value = lambda **kw: MagicMock(stream=lambda msgs, **kw2: chunks)
+
+        gw = ModelGateway([p], provider_registry=reg)
+        with contextlib.suppress(StreamLimitError):
+            list(gw.call_model_stream("sema_err", [{"role": "user", "content": "hi"}]))
+
+        sem = gw._stream_provider_semaphore("sema_err")
+        assert sem.acquire(blocking=False)
+
+    def test_semaphore_released_after_no_chunks_yielded(self) -> None:
+        p = _profile("sema_empty")
+        tl = _chunk("")
+        tl.tool_calls = [{"id": "t1", "name": "f", "args": {"k": "v"}, "type": "tool_call"}]
+        cm = MagicMock()
+        cm.stream.return_value = iter([tl])
+        reg = MagicMock()
+        reg.is_installed.return_value = True
+        reg.get_provider_class.return_value = lambda **kw: cm
+
+        gw = ModelGateway([p], provider_registry=reg)
+        result = list(gw.call_model_stream("sema_empty", [{"role": "user", "content": "hi"}]))
+        assert len(result) == 1
+
+
+# ===================================================================
+# 10. Stream cancellation mid-chunk
+# ===================================================================
+
+
+class TestStreamCancellationDeep:
+    def test_cancellation_event_set_before_stream_raises(self) -> None:
+        p = _profile("cs1")
+        gw = ModelGateway([p], provider_registry=_registry())
+        evt = threading.Event()
+        evt.set()
+        with pytest.raises(CallCancelledError) as exc_info:
+            list(
+                gw.call_model_stream_with_retry(
+                    "cs1",
+                    [{"role": "user", "content": "hi"}],
+                    max_retries=0,
+                    cancellation_event=evt,
+                )
+            )
+        assert exc_info.value.profile_id == "cs1"
+
+    def test_cancellation_during_retry_loop_raises(self) -> None:
+        p = _profile("cs2")
+        gw = ModelGateway([p], provider_registry=_registry())
+        evt = threading.Event()
+        evt.set()
+        with pytest.raises(CallCancelledError):
+            list(
+                gw.call_model_stream_with_retry(
+                    "cs2",
+                    [{"role": "user", "content": "hi"}],
+                    max_retries=2,
+                    cancellation_event=evt,
+                )
+            )
+
+    def test_cancellation_after_semaphore_acquire_cleans_up(self) -> None:
+        p = _profile("cs3", stream_provider_max_concurrency=1)
+        cm = MagicMock()
+        cm.stream.side_effect = httpx.HTTPStatusError(
+            "429",
+            request=httpx.Request("POST", "https://x"),
+            response=httpx.Response(429, request=httpx.Request("POST", "https://x")),
+        )
+        reg = MagicMock()
+        reg.is_installed.return_value = True
+        reg.get_provider_class.return_value = lambda **kw: cm
+
+        gw = ModelGateway([p], provider_registry=reg)
+        with contextlib.suppress(httpx.HTTPStatusError):
+            list(gw.call_model_stream("cs3", [{"role": "user", "content": "hi"}]))
+
+        sem = gw._stream_provider_semaphore("cs3")
+        assert sem.acquire(blocking=False)
+
+
+# ===================================================================
+# 11. Stream chunk ordering verification
+# ===================================================================
+
+
+class TestStreamChunkOrdering:
+    def test_chunks_yielded_in_provider_order(self) -> None:
+        p = _profile("ord")
+        words = ["alpha", "beta", "gamma", "delta", "epsilon"]
+        chunks = _ClosingIterator([_chunk(w) for w in words])
+        reg = MagicMock()
+        reg.is_installed.return_value = True
+        reg.get_provider_class.return_value = lambda **kw: MagicMock(stream=lambda msgs, **kw2: chunks)
+
+        gw = ModelGateway([p], provider_registry=reg)
+        result = list(gw.call_model_stream("ord", [{"role": "user", "content": "hi"}]))
+        assert [c.content for c in result] == words
+
+    def test_chunk_count_matches_provider_yield(self) -> None:
+        p = _profile("cnt")
+        chunks = _ClosingIterator([_chunk(str(i)) for i in range(20)])
+        reg = MagicMock()
+        reg.is_installed.return_value = True
+        reg.get_provider_class.return_value = lambda **kw: MagicMock(stream=lambda msgs, **kw2: chunks)
+
+        gw = ModelGateway([p], provider_registry=reg)
+        result = list(gw.call_model_stream("cnt", [{"role": "user", "content": "hi"}]))
+        assert len(result) == 20
+
+    def test_stream_with_tool_call_chunks_preserves_all(self) -> None:
+        p = _profile("tc_ord")
+        tc1 = _chunk("")
+        tc1.tool_calls = [{"id": "c1", "name": "read", "args": {"path": "/a"}}]
+        tc2 = _chunk("final")
+        tc2.tool_calls = []
+        chunks = _ClosingIterator([tc1, tc2])
+        reg = MagicMock()
+        reg.is_installed.return_value = True
+        reg.get_provider_class.return_value = lambda **kw: MagicMock(stream=lambda msgs, **kw2: chunks)
+
+        gw = ModelGateway([p], provider_registry=reg)
+        result = list(gw.call_model_stream("tc_ord", [{"role": "user", "content": "hi"}]))
+        assert len(result) == 2
+        assert result[0].tool_calls == [{"id": "c1", "name": "read", "args": {"path": "/a"}}]
+        assert result[1].content == "final"
+
+
+# ===================================================================
+# 12. Stream error recovery
+# ===================================================================
+
+
+class TestStreamErrorRecovery:
+    def test_first_stream_fails_second_succeeds_in_retry(self) -> None:
+        p = _profile("rec1")
+        call_count: list[int] = [0]
+
+        def stream_fn(msgs, **kw):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise httpx.ConnectError("first fail")
+            return iter(_ClosingIterator([_chunk("recovered")]))
+
+        cm = MagicMock()
+        cm.stream = stream_fn
+        reg = MagicMock()
+        reg.is_installed.return_value = True
+        reg.get_provider_class.return_value = lambda **kw: cm
+
+        gw = ModelGateway([p], provider_registry=reg)
+        result = list(
+            gw.call_model_stream_with_retry(
+                "rec1",
+                [{"role": "user", "content": "hi"}],
+                max_retries=3,
+                base_backoff_seconds=0.0,
+            )
+        )
+        assert len(result) == 1
+        assert result[0].content == "recovered"
+
+    def test_stream_limit_error_not_retried(self) -> None:
+        p = _profile("rec2", max_stream_chunks=2)
+        chunks = _ClosingIterator([_chunk(str(i)) for i in range(5)])
+        reg = MagicMock()
+        reg.is_installed.return_value = True
+        reg.get_provider_class.return_value = lambda **kw: MagicMock(stream=lambda msgs, **kw2: chunks)
+
+        gw = ModelGateway([p], provider_registry=reg)
+        with pytest.raises(StreamLimitError):
+            list(
+                gw.call_model_stream_with_retry(
+                    "rec2",
+                    [{"role": "user", "content": "hi"}],
+                    max_retries=3,
+                    base_backoff_seconds=0.0,
+                )
+            )
+
+    def test_connection_error_reconstruction_happens(self) -> None:
+        p = _profile("rec3")
+        cm = MagicMock()
+        cm.stream.side_effect = httpx.ConnectError("network down")
+        reg = MagicMock()
+        reg.is_installed.return_value = True
+        reg.get_provider_class.return_value = lambda **kw: cm
+
+        gw = ModelGateway([p], provider_registry=reg)
+        with pytest.raises(httpx.ConnectError):
+            list(gw.call_model_stream("rec3", [{"role": "user", "content": "hi"}]))
+
+
+# ===================================================================
+# 13. Rate limit header parsing
+# ===================================================================
+
+
+class TestRateLimitHeaderParsing:
+    def test_retry_after_integer_parsed(self) -> None:
+        resp = httpx.Response(429, headers={"Retry-After": "42"}, request=httpx.Request("POST", "https://x"))
+        exc = httpx.HTTPStatusError("too many", request=httpx.Request("POST", "https://x"), response=resp)
+        assert _extract_retry_after_seconds(exc) == 42.0
+
+    def test_retry_after_lowercase_parsed(self) -> None:
+        resp = httpx.Response(429, headers={"retry-after": "17"}, request=httpx.Request("POST", "https://x"))
+        exc = httpx.HTTPStatusError("too many", request=httpx.Request("POST", "https://x"), response=resp)
+        assert _extract_retry_after_seconds(exc) == 17.0
+
+    def test_retry_after_float_parsed(self) -> None:
+        resp = httpx.Response(429, headers={"Retry-After": "3.5"}, request=httpx.Request("POST", "https://x"))
+        exc = httpx.HTTPStatusError("too many", request=httpx.Request("POST", "https://x"), response=resp)
+        assert _extract_retry_after_seconds(exc) == 3.5
+
+    def test_retry_after_missing_returns_none(self) -> None:
+        resp = httpx.Response(429, headers={}, request=httpx.Request("POST", "https://x"))
+        exc = httpx.HTTPStatusError("too many", request=httpx.Request("POST", "https://x"), response=resp)
+        assert _extract_retry_after_seconds(exc) is None
+
+    def test_retry_after_garbage_returns_none(self) -> None:
+        resp = httpx.Response(429, headers={"Retry-After": "next-week"}, request=httpx.Request("POST", "https://x"))
+        exc = httpx.HTTPStatusError("too many", request=httpx.Request("POST", "https://x"), response=resp)
+        assert _extract_retry_after_seconds(exc) is None
+
+    def test_retry_after_negative_clamped_to_zero(self) -> None:
+        resp = httpx.Response(429, headers={"Retry-After": "-5"}, request=httpx.Request("POST", "https://x"))
+        exc = httpx.HTTPStatusError("too many", request=httpx.Request("POST", "https://x"), response=resp)
+        assert _extract_retry_after_seconds(exc) == 0.0
+
+    def test_retry_after_zero_parsed(self) -> None:
+        resp = httpx.Response(429, headers={"Retry-After": "0"}, request=httpx.Request("POST", "https://x"))
+        exc = httpx.HTTPStatusError("too many", request=httpx.Request("POST", "https://x"), response=resp)
+        assert _extract_retry_after_seconds(exc) == 0.0
+
+    def test_no_response_returns_none(self) -> None:
+        exc = httpx.ConnectError("no response object at all")
+        assert _extract_retry_after_seconds(exc) is None
+
+    def test_response_without_headers_returns_none(self) -> None:
+        exc = httpx.HTTPStatusError(
+            "no headers",
+            request=httpx.Request("POST", "https://x"),
+            response=httpx.Response(429, request=httpx.Request("POST", "https://x")),
+        )
+        assert _extract_retry_after_seconds(exc) is None
+
+
+# ===================================================================
+# 14. Token counting accuracy during streaming
+# ===================================================================
+
+
+class TestStreamTokenCounting:
+    def test_usage_metadata_on_last_chunk_used_for_billing(self) -> None:
+        p = _profile(
+            "tokens",
+            run_budget_usd=200.0,
+            cost_per_input_token=0.01,
+            cost_per_output_token=0.01,
+            api_metered=True,
+        )
+        budget = MagicMock()
+        cm = MagicMock()
+        cm.stream.return_value = _ClosingIterator([_chunk("hello "), _chunk("world")])
+        reg = MagicMock()
+        reg.is_installed.return_value = True
+        reg.get_provider_class.return_value = lambda **kw: cm
+
+        gw = ModelGateway([p], provider_registry=reg, budget_guard=budget)
+        list(gw.call_model_stream("tokens", [{"role": "user", "content": "hi"}]))
+        budget.record_spend.assert_called_once()
+
+    def test_response_token_count_uses_utf8_fallback(self) -> None:
+        assert ModelGateway._response_token_count({}, 150) == (150, "utf8_bytes_conservative")
+
+    def test_response_token_count_uses_metadata_when_consistent(self) -> None:
+        usage: dict[str, object] = {"input_tokens": 10, "output_tokens": 30, "total_tokens": 40}
+        assert ModelGateway._response_token_count(usage, 999) == (30, "provider_usage_metadata")
+
+    def test_response_token_count_rejects_mismatched_totals(self) -> None:
+        usage: dict[str, object] = {"input_tokens": 10, "output_tokens": 30, "total_tokens": 99}
+        assert ModelGateway._response_token_count(usage, 150) == (150, "utf8_bytes_conservative")
+
+    def test_response_token_count_rejects_non_int_usage(self) -> None:
+        usage: dict[str, object] = {"input_tokens": "10", "output_tokens": 30, "total_tokens": 40}
+        assert ModelGateway._response_token_count(usage, 100) == (100, "utf8_bytes_conservative")
+
+    def test_response_token_count_rejects_negative_output(self) -> None:
+        usage: dict[str, object] = {"input_tokens": 10, "output_tokens": -5, "total_tokens": 5}
+        assert ModelGateway._response_token_count(usage, 200) == (200, "utf8_bytes_conservative")
+
+    def test_usage_on_chunk_is_picked_up_during_stream(self) -> None:
+        p = _profile(
+            "chunk_use",
+            run_budget_usd=200.0,
+            cost_per_input_token=0.01,
+            cost_per_output_token=0.01,
+            api_metered=True,
+        )
+        c1 = _chunk("part1")
+        c1.usage_metadata = {"input_tokens": 5, "output_tokens": 50, "total_tokens": 55}
+        c2 = _chunk("part2")
+        c2.usage_metadata = {}
+        chunks = _ClosingIterator([c1, c2])
+        budget = MagicMock()
+        cm = MagicMock()
+        cm.stream.return_value = chunks
+        reg = MagicMock()
+        reg.is_installed.return_value = True
+        reg.get_provider_class.return_value = lambda **kw: cm
+
+        gw = ModelGateway([p], provider_registry=reg, budget_guard=budget)
+        result = list(gw.call_model_stream("chunk_use", [{"role": "user", "content": "hi"}]))
+        assert len(result) == 2
+        budget.record_spend.assert_called_once()
+
+    def test_empty_usage_defaults_to_utf8_fallback_in_stream(self) -> None:
+        p = _profile(
+            "empty_use",
+            run_budget_usd=200.0,
+            cost_per_input_token=0.01,
+            cost_per_output_token=0.01,
+            api_metered=True,
+        )
+        c = _chunk("ok")
+        c.usage_metadata = {}
+        chunks = _ClosingIterator([c])
+        budget = MagicMock()
+        cm = MagicMock()
+        cm.stream.return_value = chunks
+        reg = MagicMock()
+        reg.is_installed.return_value = True
+        reg.get_provider_class.return_value = lambda **kw: cm
+
+        gw = ModelGateway([p], provider_registry=reg, budget_guard=budget)
+        list(gw.call_model_stream("empty_use", [{"role": "user", "content": "hi"}]))
+        budget.record_spend.assert_called_once()

@@ -73,7 +73,7 @@ class TestMultitaskDeadFloorBreach:
         )
 
         # The replacement: direct thisMessageDispatches check in text.complete
-        assert "const _tef = getPressureReleaseFloor(MIN_DISPATCHES)" in src
+        assert "getPressureReleaseFloor(REQUIRED_DISPATCHES)" in src
         fix_pattern = re.compile(
             r"_state\.thisMessageDispatches\s*>\s*0\s*&&\s*"
             r"_state\.thisMessageDispatches\s*<\s*_tef",
