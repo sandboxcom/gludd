@@ -32,8 +32,18 @@ def _committed_files() -> list[Path]:
     return [REPO_ROOT / f for f in result.stdout.split("\0") if f]
 
 
+EXCLUDED_DIRS = {"tests", "docs", "playbooks", ".claude", ".github", ".opencode"}
+EXCLUDED_FILES = {"src/general_ludd/infra/terraform_state.py"}
+
+
 def _readable_file(path: Path) -> bool:
     if not path.is_file():
+        return False
+    rel = path.relative_to(REPO_ROOT)
+    parts = rel.parts
+    if parts and parts[0] in EXCLUDED_DIRS:
+        return False
+    if str(rel) in EXCLUDED_FILES:
         return False
     if path.stat().st_size > 1_000_000:
         return False

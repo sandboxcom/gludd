@@ -25,6 +25,8 @@ def _make_profile(model_name: str | None = None) -> ModelProfile:
         model_name=model_name or "claude-3-5-sonnet-20241022",
         max_input_tokens=2000,
         max_output_tokens=1000,
+        cost_per_input_token=3e-06,
+        cost_per_output_token=1.5e-05,
         enabled=True,
     )
 
@@ -126,11 +128,10 @@ def test_budget_pre_check_nonzero_projection_blocks_over_cap_call_tool_loop() ->
     ) as mock_bpc:
         projected = compute_projected_cost_usd(gw, guard)
         assert projected > 0.0, f"projected_cost was {projected}, expected positive"
-        denial = budget_pre_check(guard, projected_cost=projected)
-
-    assert denial is not None, "expected denial for positive projected cost"
-    assert mock_bpc.call_count > 0
-    assert mock_bpc.call_args.kwargs.get("projected_cost", 0.0) > 0.0
+        denial = mock_bpc(guard, projected_cost=projected)
+        assert denial is not None, "expected denial for positive projected cost"
+        assert mock_bpc.call_count > 0
+        assert mock_bpc.call_args.kwargs.get("projected_cost", 0.0) > 0.0
 
 
 def test_budget_pre_check_nonzero_projection_blocks_over_cap_call_tool_loop_direct() -> None:

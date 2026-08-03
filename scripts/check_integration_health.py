@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import re
+import signal
 import subprocess
 import sys
 import threading
@@ -157,6 +158,35 @@ def _write_output(data: dict) -> None:
     tmp_path.rename(OUTPUT_FILE)
 
 
+_accumulated_lines: list[str] = []
+_accumulated_lock = threading.Lock()
+_test_file_count: int = 0
+_start_time: float = 0.0
+
+
+def _signal_handler(signum: int, frame: object) -> None:
+    with _accumulated_lock:
+        accumulated = "".join(_accumulated_lines)
+    failures = _parse_failures(accumulated)
+    failed_files_set = {f.get("file", "") for f in failures if f.get("file")}
+    data: dict[str, object] = {
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "elapsed_sec": round(time.time() - _start_time, 1),
+        "status": "interrupted",
+        "returncode": None,
+        "total_files": _test_file_count,
+        "failed_files": len(failed_files_set),
+        "total_failures": len(failures),
+        "failures": failures,
+    }
+    _write_output(data)
+    raise SystemExit(1)
+
+
+signal.signal(signal.SIGTERM, _signal_handler)
+signal.signal(signal.SIGINT, _signal_handler)
+
+
 def main() -> int:
     test_files = _find_integration_test_files()
     if not test_files:
@@ -177,50 +207,72 @@ def main() -> int:
     ]
 
     start = time.time()
-    accumulated_lines: list[str] = []
+    global _test_file_count, _start_time
+    _test_file_count = len(test_files)
+    _start_time = start
     last_write = start
     test_count = 0
-    lock = threading.Lock()
     error_msg: str | None = None
 
     def _reader(proc: subprocess.Popen) -> None:
         nonlocal test_count, last_write, error_msg
+        prev_failure_count = 0
         assert proc.stdout is not None
         try:
             for line in proc.stdout:
                 sys.stdout.write(line)
                 sys.stdout.flush()
-                with lock:
-                    accumulated_lines.append(line)
+                with _accumulated_lock:
+                    _accumulated_lines.append(line)
 
-                if RESULT_LINE_RE.search(line):
-                    with lock:
+                is_result = RESULT_LINE_RE.search(line)
+                if is_result:
+                    with _accumulated_lock:
                         test_count += 1
                         if test_count % PROGRESS_INTERVAL_FILES == 0:
-                            failures_so_far = _parse_failures("".join(accumulated_lines))
+                            failures_so_far = _parse_failures("".join(_accumulated_lines))
                             print(
                                 f"\n--- Progress: ~{test_count} results, "
                                 f"{len(failures_so_far)} failures "
-                                f"({time.time() - start:.1f}s) ---\n"
+                                f"({time.time() - _start_time:.1f}s) ---\n"
                             )
+
+                    with _accumulated_lock:
+                        failures_now = _parse_failures("".join(_accumulated_lines))
+                        if len(failures_now) > prev_failure_count:
+                            prev_failure_count = len(failures_now)
+                            now = time.time()
+                            data = {
+                                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                "elapsed_sec": round(now - _start_time, 1),
+                                "status": "running",
+                                "returncode": None,
+                                "total_files": _test_file_count,
+                                "failures_so_far": len(failures_now),
+                                "failures": failures_now,
+                            }
+                            _write_output(data)
+                            last_write = now
 
                 now = time.time()
                 if now - last_write >= INTERMEDIATE_INTERVAL_SEC:
-                    with lock:
-                        failures_now = _parse_failures("".join(accumulated_lines))
+                    with _accumulated_lock:
+                        failures_now = _parse_failures("".join(_accumulated_lines))
+                        if len(failures_now) > prev_failure_count:
+                            prev_failure_count = len(failures_now)
                         data = {
                             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                            "elapsed_sec": round(now - start, 1),
+                            "elapsed_sec": round(now - _start_time, 1),
                             "status": "running",
                             "returncode": None,
-                            "total_files": len(test_files),
+                            "total_files": _test_file_count,
                             "failures_so_far": len(failures_now),
                             "failures": failures_now,
                         }
                         _write_output(data)
                         last_write = now
         except Exception as exc:
-            with lock:
+            with _accumulated_lock:
                 error_msg = str(exc)
 
     print(f"Running {len(test_files)} integration test files (timeout {TIMEOUT_SEC}s)...")
@@ -254,25 +306,24 @@ def main() -> int:
 
     elapsed = time.time() - start
 
-    with lock:
-        combined = "".join(accumulated_lines)
+    with _accumulated_lock:
+        combined = "".join(_accumulated_lines)
 
     if timed_out:
         print(f"\nTIMEOUT: integration tests exceeded {TIMEOUT_SEC}s")
-        with lock:
-            failures_timeout = _parse_failures(combined)
-            output_data = {
-                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                "elapsed_sec": round(elapsed, 1),
-                "status": "timeout",
-                "returncode": returncode,
-                "total_files": len(test_files),
-                "failed_files": len({f["file"] for f in failures_timeout if f.get("file")}),
-                "total_failures": len(failures_timeout),
-                "failures": failures_timeout,
-            }
-            _write_output(output_data)
-            print(f"Partial results: {len(failures_timeout)} failures captured")
+        failures_timeout = _parse_failures(combined)
+        output_data = {
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "elapsed_sec": round(elapsed, 1),
+            "status": "timeout",
+            "returncode": returncode,
+            "total_files": len(test_files),
+            "failed_files": len({f["file"] for f in failures_timeout if f.get("file")}),
+            "total_failures": len(failures_timeout),
+            "failures": failures_timeout,
+        }
+        _write_output(output_data)
+        print(f"Partial results: {len(failures_timeout)} failures captured")
         return 2
 
     if error_msg is not None:

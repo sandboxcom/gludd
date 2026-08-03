@@ -1,4 +1,4 @@
-## PRIMARY OBJECTIVE: GREEN CI ON DEVELOPMENT → v0.1.0-beta.3 WITH 12/12 ARTIFACTS
+## PRIMARY OBJECTIVE: GREEN CI ON DEVELOPMENT → v0.1.0-beta.3 WITH 12/12 ARTIFACTS (BLOCKED: 2 gate-lite test failures + 10 commits unpushed)
 
 ---
 
@@ -12,74 +12,83 @@
 
 ## Current Gate Status (2026-08-03)
 <!-- gate:begin -->
-- **gate-lite: ALL GREEN** (2026-08-03, HEAD `7e21f077`)
+- **gate-lite: FAILED** (2026-08-03, HEAD `a46a1184`) — 2 unit test failures, all other phases green
+- **FAILED tests (2):**
+  - `tests/unit/test_a05_overload_retry_cap.py::TestFastFailoverKinds::test_failovers_at_failover_after[TimeoutKind.CONNECTION_TIMEOUT]`
+  - `tests/unit/test_ci_regression_guards.py::test_every_molecule_scenario_is_structurally_complete`
+- **PASSED: 888 passed, 13 skipped, 26 warnings** in 71.9s
 - lint: PASS 0
-- typecheck: PASS 0 (984 files)
-- collect: NOT RUN (pytest already running)
-- test: NOT RUN (gate-lite does not run full test suite)
-- hook-runtime: PASS 0 (34/34 plugin files)
-- coverage-gaps: PASS (848 OK, 7 untested all allowed, 0 new gaps)
+- dead-code: PASS 0
+- tdd-compliance: PASS
+- coverage-gaps: PASS 0 (848 OK, 7 untested all allowed, 0 new gaps)
+- typecheck: PASS 0
+- collect: PASS 0
+- env-writes: PASS
+- hook-runtime: PASS (34/34 plugin files)
+- skills-frontmatter: PASS
+- lint-specs: PASS (220 specs, 0 violations)
+- spec-enforcement-coverage: PASS 94.1% (207/220, threshold 90%)
+- plugin-hook-invoke: PASS
+- smoke: PASS
 - verify-enforcement: PASS (40/40 subagent guards)
 - TASKS.md integrity: PASS (715 items, 0 violations)
-- spec-enforcement: PASS 94.1% (207/220, threshold 90%)
-- spec-lint: 1 remaining violation (AC020 — enforcement filler `\(planned\)`)
-- dead-code: NOT RUN (gate-lite skips)
-- env-writes: NOT RUN (gate-lite skips)
-- **gate: PASS** (all core phases green; 1 non-critical spec-lint remaining)
-- **Collection (last known): 58,461 tests, 0 errors** (from `test-failures` probe)
-- **Remaining failures: 1 non-critical** (AC020 spec lint)
+- **13 specs lack enforcement:** AA012, AA017, AA057, AA074, AA075, AA081, AA084, AA089, AA090, AA093, AA094, AA096, AC020
+- **Collection: BLOCKED** (concurrent gate in progress)
+- **Last known collection: 58,461 tests, 0 errors** (Session 67 probe)
+- **Remaining failures: 2** — the 2 unit test failures above
 <!-- gate:end -->
 
 ---
 
-## SESSION 67 — 2026-08-03 (CURRENT)
+## SESSION 68 — 2026-08-03 (CURRENT)
 
-- **HEAD: `7e21f077`** on `development`
+- **HEAD: `a46a1184`** on `development`
 - **TASKS.md: 715 items, 0 integrity violations**
-- **Test collection: 58,461 tests** (last probe, 0 collection errors)
-- **gate-lite: all green** — lint 0, typecheck 0, coverage-gaps PASS, hook-runtime PASS, verify-enforcement PASS
-- **Spec enforcement: 207/220 = 94.1% PASS** (threshold 90%). 13 specs lack enforcement (AA012, AA017, AA057, AA074, AA075, AA081, AA084, AA089, AA090, AA093, AA094, AA096, AC020).
-- **Coverage gaps: CLOSED** (848 OK, 7 untested but all allowed gaps, 0 new gaps)
-- **Remaining failures: 1 non-critical** — AC020 spec-lint (filler pattern `\(planned\)` in one spec)
-- **Integration health: operational + streaming** — DeploymentHealthChecker fully wired daemon→router→event_loop→gateway (S65/S66); streaming health check added (`scripts/check_integration_health.py` +149 lines)
+- **Test collection: BLOCKED** (concurrent gate in progress). Last known: 58,461 tests, 0 errors (S67 probe).
+- **gate-lite: FAILED** (2 unit test failures; all other phases green)
+  - `test_a05_overload_retry_cap.py::TestFastFailoverKinds::test_failovers_at_failover_after[TimeoutKind.CONNECTION_TIMEOUT]`
+  - `test_ci_regression_guards.py::test_every_molecule_scenario_is_structurally_complete`
+  - All other phases: lint 0, dead-code 0, tdd-compliance PASS, coverage-gaps PASS (0 new), typecheck 0, collect 0, env-writes PASS, hook-runtime PASS, skills-frontmatter PASS, lint-specs PASS (220 specs 0 violations), plugin-hook-invoke PASS, smoke PASS
+- **Spec enforcement: 207/220 = 94.1%** (threshold 90%). 13 specs lack enforcement: AA012, AA017, AA057, AA074, AA075, AA081, AA084, AA089, AA090, AA093, AA094, AA096, AC020.
+- **Coverage gaps: CLOSED** (848 OK, 7 untested all allowed, 0 new gaps)
 - **Verify suites: PASS** (40/40 plugins with subagent guards)
-- **Tree: DIRTY** — 3 files unstaged:
-  - `docs/specs/BEHAVIORAL_SPECS.md` (spec updates)
-  - `scripts/check_spec_enforcement_coverage.py` (coverage checker updates)
-  - `scripts/fix_spec_enforcement_format.py` (format fixer updates)
-- **CI: RED** — no run found for HEAD `7e21f077` (not yet pushed to remote)
-- **Branches: main checkout only**, clean
+- **Tree: DIRTY** — 4 files modified:
+  - `src/general_ludd/agents/capabilities.py` (staged + unstaged)
+  - `tests/unit/test_c_budget_precheck_nonzero_projection.py` (unstaged)
+  - `tests/unit/test_d18_accounts.py` (staged + unstaged)
+  - `tests/unit/test_security_post_commit.py` (unstaged)
+- **CI: NO RUN** for HEAD `a46a1184`
+- **Push: NOT PUSHED** — 10 commits unpushed (remote at `f1148690`, local at `a46a1184`)
 - **Release beta.3: BLOCKED** on push + CI green
 
-### Session 67 — Remaining Test Fixes + Integration-Health Streaming + Verify Suites (2026-08-03, HEAD `7e21f077`, 4 commits since S66)
+### Session 68 — Spec Enforcement Polishing + Guard Ordering (2026-08-03, HEAD `a46a1184`, 2 commits since S67)
 
-4 commits since Session 66 HEAD `67760d2e`. Finishes outstanding S66 work: remaining test failures fixed, S66 dirty files committed, integration-health streaming operational. Spec enforcement coverage raised to 94.1%, coverage gaps closed, gate-lite all green.
+2 commits since Session 67 HEAD `7e21f077`. Spec enforcement coverage at 94.1%, gate-lite phase gating tightened, d11 guard ordering fix, lint-specs parser fix.
 
 | Commit | Description |
 |--------|-------------|
-| `b27faafd` | fix: remaining test failures, integration-health streaming, verify suites |
-| `ef87316f` | chore: session/task updates, budget wiring test fix, hardware router tests |
-| `4ceb36f2` | fix: coverage gaps, budget wiring, integration-health streaming, travel SEC.1 test fixes |
-| `7e21f077` | fix: ModelProfile tests, budget wiring, secrets baseline, coverage gaps closed |
+| `47c70bf5` | fix: spec enforcement 94.1%, coverage gaps closed, ModelProfile tests, budget wiring |
+| `a46a1184` | fix: spec enforcement 94.1%, gate-lite green, d11 guard ordering, lint-specs parser fix |
 
 ### Remaining work
 
 | Item | Status |
 |------|--------|
-| Commit 3 modified spec files | DIRTY |
-| Push accumulated commits to sandboxcom | NOT PUSHED |
-| CI green on development HEAD `7e21f077` | RED (no run) |
-| Fix AC020 spec-lint (filler pattern) | NON-CRITICAL, 1 violation |
+| Commit 4 modified files | DIRTY |
+| Fix 2 gate-lite test failures | FAILING (overload-retry, ci-regression-guards) |
+| Push accumulated commits (10 unpushed) | NOT PUSHED |
+| CI green on development HEAD `a46a1184` | NO RUN |
 | `make release-cut TAG=v0.1.0-beta.3` | BLOCKED on push + CI green |
 
 ### Next
 
-1. Commit 3 modified spec files
-2. Push accumulated commits to sandboxcom
-3. Wait for CI green
-4. Release cut for beta.3
+1. Fix 2 gate-lite test failures
+2. Commit 4 dirty files
+3. Push accumulated commits to sandboxcom
+4. Wait for CI green
+5. Release cut for beta.3
 
-- **Last Updated: 2026-08-03 — Session 67.** HEAD `7e21f077` on `development`. gate-lite all green (lint 0, typecheck 0, coverage-gaps PASS, hook-runtime PASS, verify-enforcement PASS). 58,461 tests collected, 0 errors. Spec enforcement 207/220 (94.1%). Coverage gaps closed (0 new). TASKS.md 715 items, 0 violations. Tree DIRTY (3 files). CI RED (no run). 1 non-critical failure (AC020 spec lint). Integration-health streaming operational. Release beta.3 blocked on push + CI green.
+- **Last Updated: 2026-08-03 — Session 68.** HEAD `a46a1184` on `development`. gate-lite FAILED (2 unit test failures; all other phases green). Spec enforcement 207/220 (94.1%). Coverage gaps closed (0 new). TASKS.md 715 items, 0 violations. Tree DIRTY (4 files). CI NO RUN. 10 commits unpushed. Release beta.3 blocked on push + CI green.
 
 ---
 
@@ -111,7 +120,7 @@ Documentation consolidation session — 5 built-and-wired systems codified into 
 | S65.4 | **Architecture Fixes**: ARCHITECTURE_PATTERNS.md (347 lines) documents MVC/MVVM/MVI/MVP patterns. 3-collection audit: Travel (6 violations — MVI model/view mixing, data-in-logic, cross-collection import), Language (5 violations — no contracts, script bypass, ViewModel-without-Model), Agent/STS (1 violation — 5 STS roles declared but unimplemented). Layer-wiring contract codified | docs/standards/ARCHITECTURE_PATTERNS.md |
 | S65.5 | **Test Failure Visibility**: Four-layer pipeline: (1) CI: `pytest-github-actions-annotate-failures` with per-test `::error` annotations mid-job (build.yml:222), (2) Dogfood: `seed_todos_from_test_failures()` creates `test_failure`-sourced todos (runner.py:110-125), (3) Validation: `record_test_failures()` child-todo categorization (runner.py:201), (4) Task watchdog: kill events in `/tmp/gludd-task-killed.json` + partial output preserved to `/tmp/gludd-task-output-<id>.log` | build.yml:222, runner.py:110-125, runner.py:201, task_watchdog.py |
 
-### Architecture — verified current (2026-08-03, HEAD `7e21f077`)
+### Architecture — verified current (2026-08-03, HEAD `a46a1184`)
 
 | Component | Detail |
 |-----------|--------|
@@ -142,15 +151,17 @@ Documentation consolidation session — 5 built-and-wired systems codified into 
 
 | Metric | Value |
 |--------|-------|
-| gate-lite | PASS (lint 0, typecheck 0, coverage-gaps PASS, hook-runtime PASS, verify-enforcement PASS) |
-| Collection | 58,461 tests (last probe) |
+| gate-lite | FAILED — 2 test failures; all other phases PASS (lint 0, typecheck 0, collect 0, coverage-gaps PASS, hook-runtime PASS, verify-enforcement PASS) |
+| Test run | 888 passed, 2 failed, 13 skipped, 26 warnings (71.9s) |
+| Collection | BLOCKED (concurrent gate); last known 58,461 (S67) |
 | Spec enforcement | 207/220 = 94.1% (threshold 90%) |
-| Remaining failures | 1 non-critical (AC020 spec lint filler pattern) |
+| Remaining failures | 2 (overload-retry, ci-regression-guards) |
 | Coverage gaps | CLOSED (848 OK, 7 untested all allowed, 0 new) |
 | Integration health | DeploymentHealthChecker fully wired + operational (gate test PASS) |
 | E2E test files | ~100 files in `tests/e2e/` |
-| CI (development) | RED — no run for HEAD `7e21f077` (needs push) |
-| Push | NOT PUSHED (tree DIRTY, 3 files) |
+| CI (development) | NO RUN for HEAD `a46a1184` |
+| Push | NOT PUSHED — 10 commits behind remote (`f1148690` vs `a46a1184`) |
+| Tree | DIRTY (4 files) |
 
 ### Completion Percentages (2026-08-03)
 

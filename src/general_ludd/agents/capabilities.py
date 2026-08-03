@@ -196,6 +196,9 @@ class AgentCapabilities:
         mcp_registry: object = None,
         budget_guard: object = None,
         chat_model: object = None,
+        adversarial_detector: object = None,
+        tool_auditor: object = None,
+        max_total_tokens: int | None = None,
     ) -> LangGraphAgentLoop:
         """Build a LangGraphAgentLoop backed by ``create_react_agent``.
 
@@ -225,6 +228,9 @@ class AgentCapabilities:
             mcp_registry=cast(MCPToolRegistry | None, mcp_registry),
             role=role,
             budget_guard=budget_guard,
+            adversarial_detector=adversarial_detector,
+            tool_auditor=tool_auditor,
+            max_total_tokens=max_total_tokens,
         )
 
     def make_graph_gateway(

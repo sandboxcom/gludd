@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
 from general_ludd.account.ephemeral import (
@@ -21,6 +22,7 @@ from general_ludd.account.ephemeral import (
     EphemeralAccountManager,
 )
 from general_ludd.account.lifecycle_policy import PolicyConfig
+from general_ludd.security.permissions import Capability, PermissionSpec
 
 # ---------------------------------------------------------------------------
 # Fake backend (so tests never shell out to aws/gcloud/az CLIs)
@@ -54,6 +56,24 @@ def _make_ephemeral_manager(tmp_path: str) -> EphemeralAccountManager:
     )
 
 
+def _make_app(authorized: bool = True) -> FastAPI:
+    app = FastAPI()
+
+    if authorized:
+
+        @app.middleware("http")
+        async def _inject_auth(request: Request, call_next: Any) -> Any:
+            request.state.auth_spec = PermissionSpec(
+                agent_type="operator",
+                capabilities=[
+                    Capability(resource="admin:account", actions=["create", "backup", "delete", "cleanup"]),
+                ],
+            )
+            return await call_next(request)
+
+    return app
+
+
 # ---------------------------------------------------------------------------
 # 501 on non-ephemeral creation
 # ---------------------------------------------------------------------------
@@ -63,11 +83,9 @@ class TestNonEphemeral501:
     """POST /api/account/create must return 501 when ephemeral=false."""
 
     def test_non_ephemeral_returns_501(self) -> None:
-        from fastapi import FastAPI
-
         from general_ludd.routers.account import register
 
-        app = FastAPI()
+        app = _make_app()
         app.state._ephemeral_account_manager = MagicMock()
         register(app, {})
 
@@ -82,16 +100,13 @@ class TestNonEphemeral501:
         assert "ephemeral=true" in detail
 
     def test_non_ephemeral_missing_ephemeral_field_defaults_to_false(self) -> None:
-        from fastapi import FastAPI
-
         from general_ludd.routers.account import register
 
-        app = FastAPI()
+        app = _make_app()
         app.state._ephemeral_account_manager = MagicMock()
         register(app, {})
 
         client = TestClient(app)
-        # The schema defaults ephemeral=False, so omitting it triggers 501.
         resp = client.post(
             "/api/account/create",
             json={"provider": "aws", "budget": 10.0},
@@ -99,11 +114,9 @@ class TestNonEphemeral501:
         assert resp.status_code == 501
 
     def test_non_ephemeral_message_is_actionable(self) -> None:
-        from fastapi import FastAPI
-
         from general_ludd.routers.account import register
 
-        app = FastAPI()
+        app = _make_app()
         app.state._ephemeral_account_manager = MagicMock()
         register(app, {})
 
@@ -113,16 +126,13 @@ class TestNonEphemeral501:
             json={"provider": "gcp", "budget": 20.0, "ephemeral": False},
         )
         detail = resp.json()["detail"]
-        # Must point the caller at the working path.
         assert "ephemeral=true" in detail
 
     def test_provider_validated_before_ephemeral_check(self) -> None:
         """Provider validation fires first: bad provider → 422 even with ephemeral=false."""
-        from fastapi import FastAPI
-
         from general_ludd.routers.account import register
 
-        app = FastAPI()
+        app = _make_app()
         app.state._ephemeral_account_manager = MagicMock()
         register(app, {})
 
@@ -131,16 +141,12 @@ class TestNonEphemeral501:
             "/api/account/create",
             json={"provider": "nonexistent", "budget": 10.0, "ephemeral": False},
         )
-        # Provider check fires first — 422 takes priority over 501.
-        # This is correct: an unknown provider is always invalid.
         assert resp.status_code == 422
 
     def test_ephemeral_true_still_works(self, tmp_path) -> None:
-        from fastapi import FastAPI
-
         from general_ludd.routers.account import register
 
-        app = FastAPI()
+        app = _make_app()
         registry = str(tmp_path / "test_d18.json")
         mgr = _make_ephemeral_manager(registry)
         app.state._ephemeral_account_manager = mgr
@@ -165,11 +171,9 @@ class TestNonEphemeral501:
 
 class TestCreateAccountValidation:
     def test_unsupported_provider_with_ephemeral_true_returns_422(self) -> None:
-        from fastapi import FastAPI
-
         from general_ludd.routers.account import register
 
-        app = FastAPI()
+        app = _make_app()
         app.state._ephemeral_account_manager = MagicMock()
         register(app, {})
 
@@ -181,11 +185,9 @@ class TestCreateAccountValidation:
         assert resp.status_code == 422
 
     def test_missing_manager_returns_503(self) -> None:
-        from fastapi import FastAPI
-
         from general_ludd.routers.account import register
 
-        app = FastAPI()
+        app = _make_app()
         register(app, {})
 
         client = TestClient(app)
@@ -197,12 +199,10 @@ class TestCreateAccountValidation:
         assert "ephemeral account manager not wired" in resp.json()["detail"]
 
     def test_all_supported_providers_accept_ephemeral(self, tmp_path) -> None:
-        from fastapi import FastAPI
-
         from general_ludd.routers.account import register
 
         for provider in sorted(SUPPORTED_PROVIDERS):
-            app = FastAPI()
+            app = _make_app()
             mgr = _make_ephemeral_manager(str(tmp_path / f"test_d18_{provider}.json"))
             app.state._ephemeral_account_manager = mgr
             register(app, {})
@@ -216,11 +216,9 @@ class TestCreateAccountValidation:
             assert resp.json()["provider"] == provider
 
     def test_negative_budget_rejected(self) -> None:
-        from fastapi import FastAPI
-
         from general_ludd.routers.account import register
 
-        app = FastAPI()
+        app = _make_app()
         app.state._ephemeral_account_manager = MagicMock()
         register(app, {})
 
@@ -232,11 +230,9 @@ class TestCreateAccountValidation:
         assert resp.status_code == 422
 
     def test_empty_provider_rejected(self) -> None:
-        from fastapi import FastAPI
-
         from general_ludd.routers.account import register
 
-        app = FastAPI()
+        app = _make_app()
         app.state._ephemeral_account_manager = MagicMock()
         register(app, {})
 
@@ -256,8 +252,6 @@ class TestCreateAccountValidation:
 
 class TestPolicyEndpointAgnostic:
     def test_policy_works_regardless_of_account_type(self) -> None:
-        from fastapi import FastAPI
-
         from general_ludd.routers.account import register
 
         app = FastAPI()
@@ -326,10 +320,7 @@ class TestCliAccountSubcommand:
         assert "account" in sub.choices
 
         acct_parser = sub.choices["account"]
-        sub_actions = [
-            a for a in acct_parser._actions
-            if isinstance(a, argparse._SubParsersAction)
-        ]
+        sub_actions = [a for a in acct_parser._actions if isinstance(a, argparse._SubParsersAction)]
         assert sub_actions
         account_sub = sub_actions[0]
         assert "create" in account_sub.choices
@@ -342,7 +333,5 @@ class TestCliAccountSubcommand:
         parser = argparse.ArgumentParser()
         sub = parser.add_subparsers(dest="command")
         add_account_subparser(sub)
-        args = parser.parse_args(
-            ["account", "create", "--provider", "aws"]
-        )
+        args = parser.parse_args(["account", "create", "--provider", "aws"])
         assert args.ephemeral is False
