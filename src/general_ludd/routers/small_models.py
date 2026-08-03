@@ -10,7 +10,7 @@ from typing import Any, cast
 from fastapi import FastAPI, HTTPException, Request
 
 from general_ludd.infra.local_inference import LocalInferenceManager, LocalServerConfig
-from general_ludd.quantization.quantize import ModelQuantizer
+from general_ludd.quantization.quantize import ModelQuantizer, QuantMethod
 from general_ludd.routing_roles.small_model_policy import (
     DEFAULT_TASK_CONTRACTS,
     SmallModelTaskPolicy,
@@ -21,8 +21,8 @@ from general_ludd.small_models import (
     ModelDownloader,
 )
 from general_ludd.small_models.lm_eval_runner import (
-    LMEvalRunner,
     _DEFAULT_TASKS,
+    LMEvalRunner,
     to_capability_evidence,
 )
 
@@ -149,15 +149,93 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         body: dict[str, object] = {}
         body = await request.json()
         model_id = str(body.get("model_id") or "")
-        method = str(body.get("method") or "q4_k_m")
+        method_name = str(body.get("method") or "q4_k_m")
+        input_path_override: str | None = cast(str | None, body.get("input_path"))
+        output_path_override: str | None = cast(str | None, body.get("output_path"))
+
         if not model_id:
             raise HTTPException(status_code=422, detail="model_id required")
-        if method not in ("q4_k_m", "q5_k_m", "q8_0", "f16"):
-            raise HTTPException(status_code=422, detail="method must be q4_k_m, q5_k_m, q8_0, or f16")
+        if method_name not in ("q4_k_m", "q5_k_m", "q8_0", "f16", "q4_0"):
+            raise HTTPException(status_code=422, detail="method must be q4_0, q4_k_m, q5_k_m, q8_0, or f16")
 
-        quant_digest = _digest({"model_id": model_id, "method": method})
-        logger.info("small-model quantize requested: %s → %s", model_id, method)
-        return {"quantized": True, "model_id": model_id, "method": method, "digest": quant_digest}
+        quantizer = _get_model_quantizer(app)
+        if quantizer is None:
+            raise HTTPException(status_code=503, detail="ModelQuantizer not available")
+
+        sanitized_id = model_id.replace("/", "_")
+        models_root = _models_dir()
+
+        if input_path_override:
+            input_gguf = input_path_override
+        else:
+            download_store_raw: dict[str, object] = request.app.state._sm_server_store
+            download_store = cast(dict[str, LocalServerConfig], download_store_raw)
+            candidate_gguf = os.path.join(models_root, sanitized_id, f"{sanitized_id}-f16.gguf")
+            existent_ggufs: list[str] = []
+            model_dir = os.path.join(models_root, sanitized_id)
+            if os.path.isdir(model_dir):
+                for entry in os.listdir(model_dir):
+                    if entry.endswith(".gguf"):
+                        existent_ggufs.append(os.path.join(model_dir, entry))
+
+            conf = download_store.get(f"huggingface/{model_id}") or download_store.get(f"gguf/{model_id}")
+            conf_path = str(conf.model_path) if conf else ""
+
+            if existent_ggufs:
+                existent_ggufs.sort(key=lambda p: ("-f16" in os.path.basename(p), p), reverse=True)
+                input_gguf = existent_ggufs[0]
+            elif conf_path and os.path.isfile(conf_path) and conf_path.endswith(".gguf"):
+                input_gguf = conf_path
+            elif os.path.isfile(candidate_gguf):
+                input_gguf = candidate_gguf
+            else:
+                logger.warning("No GGUF input found for %s in %s", model_id, models_root)
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"No GGUF file found for {model_id}. Download the model first or specify input_path.",
+                )
+
+        if output_path_override:
+            output_gguf = output_path_override
+        else:
+            quant_out_dir = os.path.join(models_root, sanitized_id, "quantized")
+            os.makedirs(quant_out_dir, exist_ok=True)
+            output_gguf = os.path.join(quant_out_dir, f"{sanitized_id}-{method_name}.gguf")
+
+        method = QuantMethod.from_string(method_name)
+        success = quantizer.quantize(input_gguf, output_gguf, method)
+
+        quantize_store: dict[str, dict[str, object]] = request.app.state._sm_quantize_store
+        quant_digest = _digest(
+            {"model_id": model_id, "method": method_name, "input": input_gguf, "output": output_gguf}
+        )
+        entry: dict[str, object] = {
+            "model_id": model_id,
+            "method": method.value,
+            "method_name": method_name,
+            "input_path": input_gguf,
+            "output_path": output_gguf,
+            "output_size_bytes": os.path.getsize(output_gguf) if success and os.path.isfile(output_gguf) else 0,
+            "success": success,
+            "digest": quant_digest,
+        }
+        quantize_store[f"quant:{sanitized_id}:{method_name}"] = entry
+
+        logger.info(
+            "small-model quantize: %s method=%s success=%s output=%s",
+            model_id,
+            method_name,
+            success,
+            output_gguf if success else "n/a",
+        )
+        return {
+            "quantized": success,
+            "model_id": model_id,
+            "method": method_name,
+            "method_value": method.value,
+            "output_path": output_gguf,
+            "digest": quant_digest,
+        }
 
     @app.post("/admin/small-models/evaluate")
     async def small_models_evaluate(request: Request) -> dict[str, object]:

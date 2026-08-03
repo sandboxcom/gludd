@@ -776,3 +776,199 @@ class TestSmallModelsTasks:
         finally:
             await client.aclose()
             await engine.dispose()
+
+
+class TestSmallModelsBenchmark:
+    @pytest.mark.asyncio
+    async def test_benchmark_runs_evaluation_and_stores_evidence(self, monkeypatch):
+        mock_results = {
+            "results": {
+                "mmlu": {"acc,none": 0.55, "acc_norm,none": 0.57},
+                "hellaswag": {"acc,none": 0.72, "acc_norm,none": 0.74},
+            }
+        }
+        mock_lm_eval = MagicMock()
+        mock_lm_eval.simple_evaluate = MagicMock(return_value=mock_results)
+
+        monkeypatch.setitem(sys.modules, "lm_eval", mock_lm_eval)
+        monkeypatch.setattr(
+            "general_ludd.small_models.lm_eval_runner._try_import_lm_eval",
+            lambda: True,
+        )
+
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/evaluate",
+                json={
+                    "model_id": "gpt2",
+                    "benchmark": True,
+                    "tasks": ["mmlu", "hellaswag"],
+                    "limit": 10,
+                },
+                headers=AUTH,
+            )
+            assert resp.status_code == 200, resp.text
+            data = resp.json()
+            assert data["evaluated"] is True
+            assert data["benchmark"] is True
+            assert data["model_id"] == "gpt2"
+            assert data["tasks_run"] == ["mmlu", "hellaswag"]
+            assert data["scores"] == {"mmlu": 0.55, "hellaswag": 0.72}
+            assert len(data["evidence"]) == 2
+            for entry in data["evidence"]:
+                assert entry["collection"] == "general_ludd.agent"
+                assert entry["suite_id"] == "lm-eval-runner"
+                assert "evidence_digest" in entry
+                assert entry["task_kind"] in ("mmlu", "hellaswag")
+                if entry["task_kind"] == "mmlu":
+                    assert entry["passed_cases"] == 1
+                else:
+                    assert entry["passed_cases"] == 1
+        finally:
+            del sys.modules["lm_eval"]
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_benchmark_defaults_tasks_when_not_specified(self, monkeypatch):
+        mock_results = {
+            "results": {
+                "mmlu": {"acc,none": 0.55},
+                "gsm8k": {"acc,none": 0.20},
+                "hellaswag": {"acc,none": 0.72},
+                "arc_easy": {"acc,none": 0.60},
+                "arc_challenge": {"acc,none": 0.40},
+                "truthfulqa_mc2": {"acc,none": 0.35},
+            }
+        }
+        mock_lm_eval = MagicMock()
+        mock_lm_eval.simple_evaluate = MagicMock(return_value=mock_results)
+
+        monkeypatch.setitem(sys.modules, "lm_eval", mock_lm_eval)
+        monkeypatch.setattr(
+            "general_ludd.small_models.lm_eval_runner._try_import_lm_eval",
+            lambda: True,
+        )
+
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/evaluate",
+                json={"model_id": "gpt2", "benchmark": True},
+                headers=AUTH,
+            )
+            assert resp.status_code == 200, resp.text
+            data = resp.json()
+            assert len(data["evidence"]) == 6
+        finally:
+            del sys.modules["lm_eval"]
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_benchmark_not_available_returns_empty(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/evaluate",
+                json={"model_id": "gpt2", "benchmark": True},
+                headers=AUTH,
+            )
+            assert resp.status_code == 200, resp.text
+            data = resp.json()
+            assert data["evaluated"] is True
+            assert data["scores"] == {}
+            assert data["evidence"] == []
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_benchmark_stores_results_in_capability_store(self, monkeypatch):
+        mock_results = {"results": {"mmlu": {"acc,none": 0.55}}}
+        mock_lm_eval = MagicMock()
+        mock_lm_eval.simple_evaluate = MagicMock(return_value=mock_results)
+
+        monkeypatch.setitem(sys.modules, "lm_eval", mock_lm_eval)
+        monkeypatch.setattr(
+            "general_ludd.small_models.lm_eval_runner._try_import_lm_eval",
+            lambda: True,
+        )
+
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            await client.post(
+                "/admin/small-models/evaluate",
+                json={"model_id": "gpt2", "benchmark": True, "tasks": ["mmlu"]},
+                headers=AUTH,
+            )
+
+            resp = await client.get(
+                "/admin/small-models/evidence",
+                params={"model_id": "gpt2"},
+                headers=AUTH,
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert len(data["evidence"]) == 1
+            assert data["evidence"][0]["suite_id"] == "lm-eval-runner"
+        finally:
+            del sys.modules["lm_eval"]
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_benchmark_no_auth_returns_401(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/evaluate",
+                json={"model_id": "gpt2", "benchmark": True},
+            )
+            assert resp.status_code == 401, resp.text
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_benchmark_passed_and_failed_evidence(self, monkeypatch):
+        mock_results = {
+            "results": {
+                "mmlu": {"acc,none": 0.25},
+                "hellaswag": {"acc,none": 0.80},
+            }
+        }
+        mock_lm_eval = MagicMock()
+        mock_lm_eval.simple_evaluate = MagicMock(return_value=mock_results)
+
+        monkeypatch.setitem(sys.modules, "lm_eval", mock_lm_eval)
+        monkeypatch.setattr(
+            "general_ludd.small_models.lm_eval_runner._try_import_lm_eval",
+            lambda: True,
+        )
+
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/evaluate",
+                json={
+                    "model_id": "gpt2",
+                    "benchmark": True,
+                    "tasks": ["mmlu", "hellaswag"],
+                },
+                headers=AUTH,
+            )
+            assert resp.status_code == 200, resp.text
+            data = resp.json()
+            for entry in data["evidence"]:
+                if entry["task_kind"] == "mmlu":
+                    assert entry["passed_cases"] == 0
+                    assert entry["passed"] is False
+                else:
+                    assert entry["passed_cases"] == 1
+                    assert entry["passed"] is True
+        finally:
+            del sys.modules["lm_eval"]
+            await client.aclose()
+            await engine.dispose()
