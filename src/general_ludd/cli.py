@@ -1142,12 +1142,6 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     add_core_changes_subparser(sub)
     core_changes_parser = sub.choices["core-changes"]
 
-    # `gludd language` — language detection, translation, and transliteration.
-    from general_ludd.cli_language import add_language_subparser
-
-    add_language_subparser(sub)
-    sub.choices["language"]
-
     # `gludd spec-quality` — behavioral spec quality audit.
     from general_ludd.cli_spec_quality import add_spec_quality_subparser
 

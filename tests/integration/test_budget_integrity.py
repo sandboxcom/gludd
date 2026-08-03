@@ -243,13 +243,13 @@ class TestGuardBlocksWhenRealCostReachesIt:
             input_tokens=1000,
             output_tokens=1000,
         )
-        # cost per call = 1000*0.00003 + 1000*0.00006 = 0.09 USD
+        # cost per call = (1000*0.00003 + 1000*0.00006) * 0.75 = 0.0675 USD
 
         with patches[0], patches[1]:
             resp = gw.call_model("default", [{"role": "user", "content": "hi"}])
-            assert resp.cost_estimate == pytest.approx(0.09)
+            assert resp.cost_estimate == pytest.approx(0.0675)
 
-        assert guard.get_total_spend() == pytest.approx(0.09)
+        assert guard.get_total_spend() == pytest.approx(0.0675)
         # 0.09 > 0.05 cap => the run-budget check now (correctly) blocks.
         verdict = guard.check_run_budget()
         assert verdict["allowed"] is False
@@ -403,7 +403,7 @@ class TestModelProfileRatesNonzeroByDefault:
         ):
             resp = gw.call_model("gpt-4o-seeded", [{"role": "user", "content": "hi"}])
 
-        expected_cost = 500 * 0.000005 + 600 * 0.000015  # 0.0025 + 0.009 = 0.0115
+        expected_cost = (500 * 0.000005 + 600 * 0.000015) * 0.75  # (0.0025 + 0.009) * 0.75 = 0.008625
         assert resp.cost_estimate == pytest.approx(expected_cost)
         assert guard.get_total_spend() == pytest.approx(expected_cost)
         assert guard.get_total_spend() > 0.0, (

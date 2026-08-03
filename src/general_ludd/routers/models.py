@@ -145,7 +145,87 @@ def _serialize_discovered_profile(p: dict[str, object], *, include_enabled: bool
     return result
 
 
+_MODEL_VRAM_GB: dict[str, float] = {
+    "llama3-8b": 6.0,
+    "llama3-70b": 40.0,
+    "mistral-7b": 6.0,
+    "mixtral-8x7b": 48.0,
+    "phi3-mini": 4.0,
+    "phi3-medium": 12.0,
+    "gemma2-9b": 8.0,
+    "gemma2-27b": 24.0,
+    "codestral-22b": 18.0,
+    "deepseek-coder-7b": 6.0,
+    "deepseek-coder-33b": 24.0,
+    "qwen2-7b": 6.0,
+    "qwen2-72b": 40.0,
+    "starcoder2-15b": 12.0,
+}
+
+
+def _get_inference_mgr(app: FastAPI) -> LocalInferenceManager | None:
+    return getattr(app.state, "_local_inference_manager", None)
+
+
+def _get_task_policy(app: FastAPI) -> SmallModelTaskPolicy | None:
+    return getattr(app.state, "_small_model_task_policy", None)
+
+
+def _get_model_quantizer(app: FastAPI) -> ModelQuantizer | None:
+    return getattr(app.state, "_sm_model_quantizer", None)
+
+
+def _models_dir() -> str:
+    from general_ludd.small_models.download import DEFAULT_CACHE_DIR
+
+    return os.environ.get("GLUDD_MODELS_DIR", DEFAULT_CACHE_DIR)
+
+
+def _digest(payload: object) -> str:
+    data = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode()
+    return hashlib.sha256(data).hexdigest()
+
+
+def _compute_size_disk(path: str) -> int:
+    p = Path(path)
+    if p.is_file():
+        return p.stat().st_size
+    if p.is_dir():
+        return sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
+    return 0
+
+
+def _can_run_local(inventory: HardwareInventory | None, model_name: str) -> bool:
+    if inventory is None:
+        return False
+    required_vram = _MODEL_VRAM_GB.get(model_name.lower(), 4.0)
+    gpu_vram = max((g.vram_gb for g in inventory.gpus), default=0.0)
+    extra_ram = max(0.0, inventory.total_ram_gb - 2.0)
+    return gpu_vram >= required_vram or extra_ram >= required_vram
+
+
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+
+    if not hasattr(app.state, "_local_inference_manager"):
+        app.state._local_inference_manager = LocalInferenceManager()
+    if not hasattr(app.state, "_small_model_task_policy"):
+        app.state._small_model_task_policy = SmallModelTaskPolicy()
+    if not hasattr(app.state, "_model_downloader"):
+        app.state._model_downloader = ModelDownloader()
+    if not hasattr(app.state, "_sm_server_store"):
+        app.state._sm_server_store = cast(dict[str, LocalServerConfig], {})
+    if not hasattr(app.state, "_sm_capability_store"):
+        app.state._sm_capability_store = cast(dict[str, list[dict[str, object]]], {})
+    if not hasattr(app.state, "_sm_eval_store"):
+        app.state._sm_eval_store = cast(dict[str, dict[str, object]], {})
+    if not hasattr(app.state, "_sm_rollout_store"):
+        app.state._sm_rollout_store = cast(dict[str, dict[str, object]], {})
+    if not hasattr(app.state, "_sm_radar_store"):
+        app.state._sm_radar_store = cast(dict[str, object], {})
+    if not hasattr(app.state, "_sm_quantize_store"):
+        app.state._sm_quantize_store = cast(dict[str, dict[str, object]], {})
+    if not hasattr(app.state, "_sm_model_quantizer"):
+        app.state._sm_model_quantizer = ModelQuantizer()
 
     @app.post("/admin/models")
     async def admin_add_model(req: AddModelRequest) -> dict[str, object]:
@@ -295,9 +375,18 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.get("/admin/models")
     async def admin_list_models() -> dict[str, object]:
+        inventory: HardwareInventory | None = getattr(app.state, "_hardware_inventory", None)
+        result: dict[str, object] = {}
         if hasattr(app.state, "_model_gateway") and app.state._model_gateway is not None:
             profiles = app.state._model_gateway.list_profiles()
-            return {"profiles": [p.model_dump() for p in profiles]}
+            result["profiles"] = [
+                {
+                    **p.model_dump(),
+                    "can_run_local": _can_run_local(inventory, p.model_dump().get("model", "")),
+                }
+                for p in profiles
+            ]
+            return result
         return {"profiles": []}
 
     @app.get("/admin/models/health")

@@ -125,9 +125,7 @@ def test_negative_tokens_credit_budget():
     assert guard.get_total_spend() == pytest.approx(0.50)
 
     def chat(**kw):
-        return _FakeChatModel(
-            content="x", usage={"input_tokens": -1_000_000, "output_tokens": 0}
-        )
+        return _FakeChatModel(content="x", usage={"input_tokens": -1_000_000, "output_tokens": 0})
 
     gw = _gateway_with(chat, [_profile()], budget_guard=guard)
     resp = gw.call_model("p1", [{"role": "user", "content": "hi"}])
@@ -143,9 +141,7 @@ def test_bool_tokens_treated_as_one():
     silently count as 1 token."""
 
     def chat(**kw):
-        return _FakeChatModel(
-            content="x", usage={"input_tokens": True, "output_tokens": False}
-        )
+        return _FakeChatModel(content="x", usage={"input_tokens": True, "output_tokens": False})
 
     gw = _gateway_with(chat, [_profile()])
     resp = gw.call_model("p1", [{"role": "user", "content": "hi"}])
@@ -165,8 +161,8 @@ def test_missing_token_keys_meter_as_free():
 
     gw = _gateway_with(chat, [_profile()])
     resp = gw.call_model("p1", [{"role": "user", "content": "hi"}])
-    # 5000 * 0.00001 + 5000 * 0.00002 == 0.15
-    assert resp.cost_estimate == pytest.approx(0.15)
+    # (5000 * 0.00001 + 5000 * 0.00002) * 0.75 == 0.1125
+    assert resp.cost_estimate == pytest.approx(0.1125)
 
 
 def test_huge_tokens_do_not_overflow_holds():
@@ -277,11 +273,7 @@ def test_rate_limited_never_unhealthy():
     tracker = ModelHealthTracker(failure_threshold=3, cooldown_seconds=60.0)
     now = __import__("time").monotonic()
     for _ in range(10):
-        tracker.record_event(
-            TimeoutEvent(
-                model_id="m", kind=TimeoutKind.RATE_LIMITED, timestamp=now, duration_s=0.0
-            )
-        )
+        tracker.record_event(TimeoutEvent(model_id="m", kind=TimeoutKind.RATE_LIMITED, timestamp=now, duration_s=0.0))
     # Rate-limited model is now unhealthy (was permanently healthy before the fix).
     assert tracker.is_healthy("m") is False
 
@@ -289,9 +281,7 @@ def test_rate_limited_never_unhealthy():
     tracker2 = ModelHealthTracker(failure_threshold=3, cooldown_seconds=60.0)
     for _ in range(10):
         tracker2.record_event(
-            TimeoutEvent(
-                model_id="m", kind=TimeoutKind.CONNECTION_TIMEOUT, timestamp=now, duration_s=0.0
-            )
+            TimeoutEvent(model_id="m", kind=TimeoutKind.CONNECTION_TIMEOUT, timestamp=now, duration_s=0.0)
         )
     assert tracker2.is_healthy("m") is False
 

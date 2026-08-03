@@ -11,6 +11,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 DEFAULT_CACHE_DIR = os.path.expanduser("~/.cache/general-ludd/models")
+DEFAULT_DOWNLOAD_TIMEOUT = float(os.environ.get("GLUDD_HF_DOWNLOAD_TIMEOUT", "30"))
 _LARGE_DOWNLOAD_GB = 1.0
 
 
@@ -52,10 +53,12 @@ class ModelDownloader:
         self,
         cache_dir: str | None = None,
         hf_token: str | None = None,
+        timeout: float | None = None,
     ) -> None:
         self.cache_dir = cache_dir or DEFAULT_CACHE_DIR
         Path(self.cache_dir).mkdir(parents=True, exist_ok=True)
         self.hf_token = hf_token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+        self.timeout = timeout if timeout is not None else DEFAULT_DOWNLOAD_TIMEOUT
         self._downloaded: dict[str, DownloadedModel] = {}
         self._progress: DownloadProgress = DownloadProgress()
         self._last_bytes: int = 0
@@ -75,6 +78,9 @@ class ModelDownloader:
         revision: str | None = None,
     ) -> DownloadedModel:
         from huggingface_hub import hf_hub_download, snapshot_download
+
+        os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", str(self.timeout))
+        os.environ.setdefault("HF_HUB_ETAG_TIMEOUT", str(self.timeout))
 
         if revision is None:
             logger.warning(
@@ -120,6 +126,8 @@ class ModelDownloader:
 
         from huggingface_hub import hf_hub_download
 
+        os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", str(self.timeout))
+
         local_path = hf_hub_download(
             repo_id=model_id,
             filename=filename,
@@ -151,6 +159,8 @@ class ModelDownloader:
         import time as _time
 
         from huggingface_hub import snapshot_download
+
+        os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", str(self.timeout))
 
         stripped_id = model_id.split(":")[0] if ":" in model_id else model_id
 
