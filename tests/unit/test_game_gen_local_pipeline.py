@@ -547,13 +547,13 @@ class TestDeepPipelineValidation:
 
     def test_generation_timeout_is_300_seconds(self) -> None:
         tasks = cast(list[dict[str, Any]], _load_yaml("tasks/main.yml"))
-        for t in tasks:
-            if "v1/completions" in str(t):
-                for v in t.values():
-                    if isinstance(v, dict) and "timeout" in v:
-                        timeout_val = v["timeout"]
-                        assert timeout_val == 300, f"Generation timeout must be 300, got {timeout_val}"
-                        return
+        for t in _iter_all_tasks(tasks):
+            uri_block = t.get("ansible.builtin.uri")
+            if isinstance(uri_block, dict) and "/v1/completions" in str(uri_block.get("url", "")):
+                timeout_val = uri_block.get("timeout")
+                assert timeout_val is not None, "v1/completions task missing timeout"
+                assert timeout_val == 300, f"Generation timeout must be 300, got {timeout_val}"
+                return
         pytest.fail("No v1/completions task with timeout found")
 
 

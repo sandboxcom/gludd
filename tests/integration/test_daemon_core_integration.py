@@ -93,12 +93,14 @@ class TestHealthEndpoint:
     @pytest.mark.asyncio
     async def test_readyz_returns_200_when_healthy(self):
         """GET /readyz returns 200 when daemon is healthy."""
-        with patch.dict(os.environ, {"GLUDD_ALLOW_NO_AUTH": "1"}):
+        from unittest.mock import patch as _patch
+
+        with _patch.dict(os.environ, {"GLUDD_ALLOW_NO_AUTH": "1"}):
             app = create_daemon_app(tick_interval=999.0)
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get("/readyz")
-        assert resp.status_code == 200
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get("/readyz")
+            assert resp.status_code == 200
 
 
 # ── 2. Dispatch endpoint error handling ────────────────────────────────────
