@@ -6,10 +6,10 @@ import logging
 import os
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
 from general_ludd.code_intelligence.callgraph import CallGraph
@@ -39,11 +39,16 @@ from general_ludd.models.response_cache import ModelResponseCache
 from general_ludd.models.router import ModelRouter
 from general_ludd.models.timeout_detector import ModelHealthTracker
 from general_ludd.observability.comparison import ModelComparison
-from general_ludd.quantization.quantize import ModelQuantizer
-from general_ludd.routing_roles.small_model_policy import SmallModelTaskPolicy
+from general_ludd.quantization.quantize import ModelQuantizer, QuantMethod
+from general_ludd.routing_roles.small_model_policy import (
+    DEFAULT_TASK_CONTRACTS,
+    SmallModelTaskPolicy,
+)
 from general_ludd.scoring.router import AdaptiveRouter
 from general_ludd.security.sanitize import is_path_within
 from general_ludd.small_models import ModelDownloader
+from general_ludd.small_models.download import DownloadedModel, DownloadSource
+from general_ludd.small_models.lm_eval_runner import _DEFAULT_TASKS, LMEvalRunner, to_capability_evidence
 
 logger = logging.getLogger(__name__)
 
@@ -1331,20 +1336,44 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         mgr = _get_inference_mgr(app)
         if mgr is None:
             raise HTTPException(status_code=503, detail="LocalInferenceManager not available")
+        servers = mgr.list_servers()
+        target = None
+        for s in servers:
+            if s.server_id == server_id:
+                target = s
+                break
+        if target is None:
+            raise HTTPException(status_code=404, detail=f"Server {server_id} not found")
+        if target.status != "running":
+            raise HTTPException(status_code=503, detail=f"Server {server_id} not running (status={target.status})")
 
         max_tokens = cast(int, body.get("max_tokens", 256))
-        try:
-            result = await mgr.generate(server_id, prompt, max_tokens=max_tokens)
-            return {
-                "server_id": server_id,
-                "text": result.get("text", ""),
-                "usage": result.get("usage", {}),
-            }
-        except KeyError:
-            raise HTTPException(status_code=404, detail=f"Server {server_id} not found")
-        except Exception as exc:
-            logger.warning("local consume failed: %s", exc, exc_info=True)
-            raise HTTPException(status_code=502, detail="local model call failed") from exc
+        import httpx
+
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+            try:
+                resp = await client.post(
+                    f"{target.endpoint_url}/completions",
+                    json={
+                        "prompt": prompt,
+                        "max_tokens": max_tokens,
+                    },
+                )
+                resp.raise_for_status()
+                raw = resp.json()
+                text = ""
+                choices = raw.get("choices")
+                if choices:
+                    text = choices[0].get("text", "")
+                usage = raw.get("usage", {})
+                return {
+                    "server_id": server_id,
+                    "text": text,
+                    "usage": usage,
+                }
+            except httpx.HTTPError as exc:
+                logger.warning("local consume failed: %s", exc, exc_info=True)
+                raise HTTPException(status_code=502, detail="local model call failed") from exc
 
     @app.post("/admin/models/local/shutdown")
     async def admin_models_local_shutdown(request: Request) -> dict[str, object]:
@@ -1362,7 +1391,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             logger.info("local server shut down: server_id=%s", server_id)
             return {"shutdown": True, "server_id": server_id}
         except KeyError:
-            raise HTTPException(status_code=404, detail=f"Server {server_id} not found")
+            raise HTTPException(status_code=404, detail=f"Server {server_id} not found") from None
 
     @app.post("/admin/models/rollout")
     async def admin_models_rollout(request: Request) -> dict[str, object]:

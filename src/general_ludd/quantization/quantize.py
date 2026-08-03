@@ -161,6 +161,24 @@ class ModelQuantizer:
         QuantMethod.Q8_0: "q8_0",
     }
 
+    @staticmethod
+    def _find_bundled_llama_quantize() -> str | None:
+        bundled = os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "..",
+            "..",
+            "external",
+            "llamacpp",
+            "build",
+            "bin",
+            "llama-quantize",
+        )
+        bundled = os.path.abspath(bundled)
+        if os.path.isfile(bundled) and os.access(bundled, os.X_OK):
+            return bundled
+        return shutil.which(ModelQuantizer._LLAMA_QUANTIZE_BIN)
+
     def __init__(
         self,
         *,
@@ -168,7 +186,7 @@ class ModelQuantizer:
         llama_cpp_quantize_path: str | None = None,
     ) -> None:
         self.convert_script_path = convert_script_path or shutil.which(self._GGUF_CONVERT_SCRIPT)
-        self.llama_cpp_quantize_path = llama_cpp_quantize_path or shutil.which(self._LLAMA_QUANTIZE_BIN)
+        self.llama_cpp_quantize_path = llama_cpp_quantize_path or self._find_bundled_llama_quantize()
 
     def available_methods(self) -> set[QuantMethod]:
         methods: set[QuantMethod] = {QuantMethod.FP16}

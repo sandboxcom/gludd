@@ -397,6 +397,8 @@ src/general_ludd/cloud/video_compare.py:download_youtube_video
 src/general_ludd/cloud/video_compare.py:extract_frames
 src/general_ludd/cloud/video_compare.py:preflight_reference_videos
 src/general_ludd/cloud/video_compare.py:resize_frames
+src/general_ludd/code_intelligence/callgraph.py:CallGraph
+src/general_ludd/code_intelligence/complexity_scorer.py:CodeComplexityScorer
 src/general_ludd/code_intelligence/complexity_scorer.py:ComplexityScore
 src/general_ludd/code_intelligence/complexity_scorer.py:DirectoryComplexityReport
 src/general_ludd/code_intelligence/git_intel.py:GitIntelError
@@ -404,6 +406,7 @@ src/general_ludd/code_intelligence/introspect.py:PerfBuffer
 src/general_ludd/code_intelligence/rg_search.py:RgMatch
 src/general_ludd/code_intelligence/rg_search.py:RgResult
 src/general_ludd/code_intelligence/rg_search.py:RgSearch
+src/general_ludd/code_intelligence/search.py:CodeSearch
 src/general_ludd/collections/importer.py:ImportIssue
 src/general_ludd/commands/make.py:MakeResult
 src/general_ludd/compaction/arena.py:ArenaResult
@@ -683,7 +686,9 @@ src/general_ludd/coordination/file_overlap.py:FileOverlapCoordinator
 src/general_ludd/coordination/file_overlap.py:OverlapTimeout
 src/general_ludd/coordination/file_overlap.py:globs_overlap
 src/general_ludd/coordination/file_overlap.py:paths_to_resources
+src/general_ludd/daemon.py:AddModelRequest
 src/general_ludd/daemon.py:LangGraphModelCallError
+src/general_ludd/daemon.py:ModelSearchRequest
 src/general_ludd/daemon.py:build_event_loop_mcp_dispatcher
 src/general_ludd/daemon.py:build_secrets_resolver
 src/general_ludd/daemon.py:create_daemon_app
@@ -971,6 +976,9 @@ src/general_ludd/language/contracts.py:TranslationRequest
 src/general_ludd/language/contracts.py:TransliterationBatchRequest
 src/general_ludd/language/contracts.py:TransliterationBatchResult
 src/general_ludd/language/contracts.py:TransliterationRequest
+src/general_ludd/language/core.py:LanguageDetector
+src/general_ludd/language/core.py:Translator
+src/general_ludd/language/core.py:Transliterator
 src/general_ludd/language/corpus.py:CorpusAnalyzer
 src/general_ludd/language/cross_patterns.py:detect_cross_language_imports
 src/general_ludd/language/cross_patterns.py:detect_ffi_patterns
@@ -1179,6 +1187,7 @@ src/general_ludd/metrics/collector.py:CostEstimate
 src/general_ludd/metrics/collector.py:ModelUsage
 src/general_ludd/model_weights/loader.py:apply_routing_weights
 src/general_ludd/model_weights/loader.py:load_seed_data
+src/general_ludd/models/auto_configurator.py:ModelPrioritizer
 src/general_ludd/models/cost_router.py:CostAwareRouter
 src/general_ludd/models/cost_router.py:ModelRoute
 src/general_ludd/models/deployment_health.py:AuditRepo
@@ -1198,12 +1207,16 @@ src/general_ludd/models/gateway.py:StreamLimitError
 src/general_ludd/models/langchain_retry.py:GatewayCallerProtocol
 src/general_ludd/models/langgraph_gateway.py:GraphState
 src/general_ludd/models/langgraph_gateway.py:ReviewVerdict
+src/general_ludd/models/openrouter_discovery.py:OpenRouterScraper
+src/general_ludd/models/provider_presets.py:detect_credential_alias
 src/general_ludd/models/provider_presets.py:get_provider_flagship_model
+src/general_ludd/models/provider_presets.py:list_configured_providers
 src/general_ludd/models/quantization.py:Precision
 src/general_ludd/models/quantization.py:QuantizationInfo
 src/general_ludd/models/quantization.py:adjust_quality_for_quantization
 src/general_ludd/models/quantization.py:rank_models_for_task
 src/general_ludd/models/quantization.py:task_precision_suitability
+src/general_ludd/models/response_cache.py:ModelResponseCache
 src/general_ludd/models/router.py:RouterProfileProtocol
 src/general_ludd/models/timeout_detector.py:RetryDecision
 src/general_ludd/networking/scapy_adapter.py:AsnInfo
@@ -1224,6 +1237,7 @@ src/general_ludd/networking/scapy_adapter.py:send_packet
 src/general_ludd/networking/scapy_adapter.py:sniff_packets
 src/general_ludd/networking/scapy_adapter.py:tshark_available
 src/general_ludd/networking/scapy_adapter.py:write_pcap
+src/general_ludd/observability/comparison.py:ModelComparison
 src/general_ludd/observability/metrics_exporter.py:CorrelatedLogAdapter
 src/general_ludd/observability/metrics_exporter.py:MetricsExporter
 src/general_ludd/observability/metrics_exporter.py:get_correlated_logger
@@ -1326,6 +1340,8 @@ src/general_ludd/quality/tools.py:QualityGateResult
 src/general_ludd/quality/tools.py:check_quality_gates
 src/general_ludd/quantization/monitor.py:QuantizationScore
 src/general_ludd/quantization/quantize.py:HardwareCapacity
+src/general_ludd/quantization/quantize.py:ModelQuantizer
+src/general_ludd/quantization/quantize.py:QuantMethod
 src/general_ludd/quantization/quantize.py:QuantSelection
 src/general_ludd/quantization/quantize.py:select_quant_for_hardware
 src/general_ludd/receiver/parsers.py:parse_syslog
@@ -1405,7 +1421,6 @@ src/general_ludd/routers/human_todos.py:PatchHumanTodoRequest
 src/general_ludd/routers/memory.py:MemoryCreateRequest
 src/general_ludd/routers/memory.py:MemoryRecordResponse
 src/general_ludd/routers/messages.py:SendMessageRequest
-src/general_ludd/routers/models.py:ChatStreamRequest
 src/general_ludd/routers/observe.py:ObserveQueryRequest
 src/general_ludd/routers/ornith.py:OrnithConfigUpdateRequest
 src/general_ludd/routers/ornith.py:RecordPairRequest
@@ -1639,7 +1654,10 @@ src/general_ludd/self_update/signing.py:load_public_key
 src/general_ludd/skills/fetcher.py:fetch_github_skill
 src/general_ludd/skills/fetcher.py:fetch_raw_url_skill
 src/general_ludd/small_models/benchmark_report.py:BenchmarkReport
+src/general_ludd/small_models/cost.py:estimate_quantize_cost
 src/general_ludd/small_models/download.py:DownloadProgress
+src/general_ludd/small_models/download.py:DownloadSource
+src/general_ludd/small_models/download.py:ModelDownloader
 src/general_ludd/small_models/eval_harness.py:EleutherAIHarness
 src/general_ludd/small_models/eval_harness.py:EvalTask
 src/general_ludd/small_models/eval_harness.py:HarnessConfig
@@ -1647,6 +1665,8 @@ src/general_ludd/small_models/eval_harness.py:ParsedResult
 src/general_ludd/small_models/eval_harness.py:parse_lm_eval_output
 src/general_ludd/small_models/eval_harness.py:result_to_evidence
 src/general_ludd/small_models/eval_harness.py:score_passing
+src/general_ludd/small_models/lm_eval_runner.py:LMEvalRunner
+src/general_ludd/small_models/lm_eval_runner.py:to_capability_evidence
 src/general_ludd/small_models/radar_profile.py:best_for_task
 src/general_ludd/small_models/recommender.py:ModelRecommendation
 src/general_ludd/small_models/recommender.py:list_tasks_for_model

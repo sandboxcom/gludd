@@ -175,7 +175,83 @@ def nearest_airport(city_input: str, supported: frozenset[str] | None = None) ->
     return resolved
 
 
+_HOTEL_DB: dict[str, list[dict]] = {
+    "NYC": [
+        {"hotel_name": "Midtown Grand", "price_per_night": 320.0, "currency": "USD", "rating": 4.5},
+        {"hotel_name": "SoHo Boutique", "price_per_night": 280.0, "currency": "USD", "rating": 4.2},
+        {"hotel_name": "Brooklyn Lodge", "price_per_night": 150.0, "currency": "USD", "rating": 3.8},
+    ],
+    "LON": [
+        {"hotel_name": "Kensington Palace Hotel", "price_per_night": 280.0, "currency": "GBP", "rating": 4.4},
+        {"hotel_name": "Shoreditch House", "price_per_night": 220.0, "currency": "GBP", "rating": 4.3},
+        {"hotel_name": "Camden Hostel", "price_per_night": 45.0, "currency": "GBP", "rating": 3.5},
+    ],
+    "PAR": [
+        {"hotel_name": "Le Marais Grand", "price_per_night": 350.0, "currency": "EUR", "rating": 4.6},
+        {"hotel_name": "Montmartre View", "price_per_night": 190.0, "currency": "EUR", "rating": 4.1},
+    ],
+    "TYO": [
+        {"hotel_name": "Shinjuku Tower", "price_per_night": 28000.0, "currency": "JPY", "rating": 4.7},
+        {"hotel_name": "Asakusa Inn", "price_per_night": 12000.0, "currency": "JPY", "rating": 4.0},
+    ],
+    "LAX": [
+        {"hotel_name": "Santa Monica Shoreline", "price_per_night": 340.0, "currency": "USD", "rating": 4.3},
+        {"hotel_name": "Hollywood Hills Inn", "price_per_night": 210.0, "currency": "USD", "rating": 3.9},
+    ],
+    "MIA": [
+        {"hotel_name": "South Beach Resort", "price_per_night": 380.0, "currency": "USD", "rating": 4.6},
+        {"hotel_name": "Coral Gables Inn", "price_per_night": 180.0, "currency": "USD", "rating": 4.0},
+    ],
+    "LHR": [
+        {"hotel_name": "Heathrow Marriott", "price_per_night": 180.0, "currency": "GBP", "rating": 4.1},
+    ],
+    "CDG": [
+        {"hotel_name": "Roissy Airport Hotel", "price_per_night": 160.0, "currency": "EUR", "rating": 3.9},
+    ],
+    "NRT": [
+        {"hotel_name": "Narita Garden", "price_per_night": 15000.0, "currency": "JPY", "rating": 4.2},
+    ],
+    "DXB": [
+        {"hotel_name": "Deira Gold Souk Hotel", "price_per_night": 450.0, "currency": "AED", "rating": 4.4},
+    ],
+}
+
+_TRANSPORT_COST_PER_MILE: dict[str, float] = {
+    "flight": 0.15,
+    "train": 0.08,
+    "bus": 0.04,
+    "car": 0.10,
+}
+
+_ROUGH_DISTANCES: dict[tuple[str, str], int] = {
+    ("NYC", "LON"): 3450,
+    ("JFK", "LHR"): 3450,
+    ("NYC", "PAR"): 3630,
+    ("JFK", "CDG"): 3630,
+    ("NYC", "LAX"): 2470,
+    ("JFK", "LAX"): 2470,
+    ("NYC", "MIA"): 1090,
+    ("JFK", "NRT"): 6730,
+    ("SFO", "NRT"): 5130,
+    ("SFO", "LHR"): 5370,
+    ("LHR", "DXB"): 3420,
+    ("LHR", "CDG"): 214,
+    ("LHR", "FRA"): 396,
+    ("LHR", "SIN"): 6750,
+    ("LAX", "NRT"): 5470,
+    ("LAX", "HNL"): 2560,
+    ("LAX", "CDG"): 5670,
+    ("LON", "PAR"): 214,
+    ("PAR", "TYO"): 6050,
+}
+
+_VISA_REQUIRED: frozenset[str] = frozenset({"CHN", "RUS", "IND", "BRA", "NGA", "VNM", "EGY"})
+
 __all__ = [
+    "_HOTEL_DB",
+    "_ROUGH_DISTANCES",
+    "_TRANSPORT_COST_PER_MILE",
+    "_VISA_REQUIRED",
     "city_country",
     "city_to_iata",
     "country_name",

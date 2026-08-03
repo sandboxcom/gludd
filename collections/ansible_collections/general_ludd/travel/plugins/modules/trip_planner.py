@@ -143,7 +143,6 @@ def plan_trip(
     trip_style: str,
 ) -> dict[str, Any]:
     req = _make_trip_request(origin, destinations, start_date, end_date, budget, travelers, trip_style)
-    days_count = max(1, len(destinations) * 2)
 
     timeline: list[TimelineEntry] = []
     for i, dest in enumerate(destinations):
@@ -168,32 +167,7 @@ def plan_trip(
         total_cost=Money(amount=req.budget.total, currency=req.budget.currency),
     )
 
-    result = itinerary.model_dump(mode="json")
-
-    result["trip"] = {
-        "origin": origin,
-        "destinations": destinations,
-        "start_date": start_date,
-        "end_date": end_date,
-        "travelers": travelers,
-        "style": trip_style,
-    }
-    result["days"] = []
-    for i, dest in enumerate(destinations):
-        day_num = i + 1
-        result["days"].append(
-            {
-                "day": day_num,
-                "location": dest,
-                "activities": [f"Arrive in {dest}", f"Explore {dest} highlights"],
-                "meals": ["breakfast", "lunch", "dinner"],
-                "accommodation": dest,
-                "estimated_daily_cost": (req.budget.total / max(1, days_count) if req.budget.total > 0 else 0),
-            }
-        )
-    result["total_estimated_cost"] = req.budget.total
-
-    return result
+    return itinerary.model_dump(mode="json")
 
 
 def main() -> None:
@@ -225,10 +199,11 @@ def main() -> None:
 
     try:
         result = plan_trip(origin, destinations, start_date, end_date, budget, interests, travelers, trip_style)
+        total_cost = result.get("total_cost", {}) or {}
         module.exit_json(
             changed=False,
             itinerary=result,
-            estimated_cost={"total": result.get("total_estimated_cost", 0)},
+            estimated_cost=total_cost,
         )
     except Exception as exc:
         module.fail_json(msg=f"trip_planner failed: {exc}")

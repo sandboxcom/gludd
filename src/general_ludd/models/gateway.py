@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import logging
 import math
@@ -16,9 +17,11 @@ import tenacity
 
 if TYPE_CHECKING:
     from general_ludd.pricing_intel.catalog import PricingCatalog
+
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from general_ludd.events.types import ModelAddedEvent, ModelRemovedEvent
+from general_ludd.models.cost_router import CostAwareRouter, ModelRoute
 from general_ludd.models.failover import ModelFailoverChain
 from general_ludd.models.provider_registry import ProviderRegistry
 from general_ludd.models.response_cache import _make_cache_key
@@ -833,6 +836,7 @@ class ModelGateway:
         secrets_manager: _SecretsResolver | None = None,
         budget_guard: _BudgetGuardProtocol | None = None,
         router: ModelRouter | None = None,
+        cost_router: CostAwareRouter | None = None,
         event_bus: _EventBusProtocol | None = None,
         hook_system: _HookSystemProtocol | None = None,
         worker_broadcaster: _WorkerBroadcasterProtocol | None = None,
@@ -856,6 +860,7 @@ class ModelGateway:
         self._secrets = secrets_manager
         self._budget_guard = budget_guard
         self._router = router
+        self._cost_router = cost_router
         self._event_bus = event_bus
         self._hooks = hook_system
         self._broadcaster = worker_broadcaster
@@ -1197,6 +1202,130 @@ class ModelGateway:
                 return profile_id
 
         raise ValueError(f"No enabled profile available for task_kind='{task_kind}' (preferences: {preferences})")
+
+    def route_for_task_with_cost(
+        self,
+        task_kind: str,
+        budget_remaining: float | None = None,
+        *,
+        now: datetime.datetime | None = None,
+    ) -> str:
+        """Select the cheapest capable model using cost-aware routing.
+
+        Delegates to ``CostAwareRouter.route_by_cost`` when wired, then maps
+        the returned ``model_id`` (``provider/model_name``) to a gateway
+        ``profile_id``. Falls back to ``route_for_task`` when the cost router
+        is not configured.
+
+        Args:
+            task_kind: Task type (``code``, ``ansible``, ``general``, ``game``).
+            budget_remaining: Explicit remaining budget override (USD). When
+                omitted and a ``cost_tracker`` is wired, reads from the tracker.
+            now: Override wall clock for peak/off-peak determination (tests).
+
+        Returns:
+            The best ``profile_id`` within budget, accounting for peak pricing.
+        """
+        if self._cost_router is None:
+            return self.route_for_task(task_kind)
+
+        route = asyncio.run(
+            self._cost_router.route_by_cost(
+                task_kind,
+                budget_remaining=budget_remaining,
+                now=now,
+            )
+        )
+        return self._map_cost_route_to_profile(route, task_kind)
+
+    def call_model_cost_aware(
+        self,
+        task_kind: str,
+        messages: list[dict[str, str]],
+        *,
+        estimated_cost: float = 0.0,
+        budget_remaining: float = float("inf"),
+        now: datetime.datetime | None = None,
+        **kwargs: Any,
+    ) -> ModelResponse:
+        """Route via cost-aware model selection, verify budget, then call.
+
+        Steps:
+        1. Route to cheapest capable model via ``CostAwareRouter.route_by_cost``.
+        2. Confirm projected cost is within budget via ``CostAwareRouter.check_budget``.
+        3. Delegate to ``call_model`` with the resolved profile.
+
+        Falls back to ``route_for_task`` → ``call_model`` when the cost router
+        is not configured.
+        """
+        if self._cost_router is None:
+            profile_id = self.route_for_task(task_kind)
+            return self.call_model(
+                profile_id,
+                messages,
+                estimated_cost=estimated_cost,
+                budget_remaining=budget_remaining,
+                **kwargs,
+            )
+
+        route = asyncio.run(
+            self._cost_router.route_by_cost(
+                task_kind,
+                budget_remaining=budget_remaining,
+                now=now,
+            )
+        )
+
+        budget_result = self._cost_router.check_budget(route.estimated_cost)
+        if not cast(bool, budget_result.get("allowed", False)):
+            reason = cast(str, budget_result.get("reason", "budget guard denied"))
+            raise BudgetExceededError(
+                f"Cost-aware routing for '{task_kind}' rejected by budget guard: "
+                f"{reason} (estimated_cost={route.estimated_cost})"
+            )
+
+        profile_id = self._map_cost_route_to_profile(route, task_kind)
+        return self.call_model(
+            profile_id,
+            messages,
+            estimated_cost=max(estimated_cost, route.estimated_cost),
+            budget_remaining=budget_remaining,
+            **kwargs,
+        )
+
+    def _map_cost_route_to_profile(self, route: ModelRoute, task_kind: str) -> str:
+        """Map a ``ModelRoute.model_id`` to a gateway ``profile_id``.
+
+        The ``model_id`` format is ``provider/model_name`` (e.g.
+        ``openai/gpt-4o-mini``). We match against profile entries on both
+        provider prefix and model name substring, then fall back to
+        ``route_for_task`` when no direct match exists.
+        """
+        provider, _, model_name = route.model_id.partition("/")
+        provider_lower = provider.lower()
+        model_lower = model_name.lower()
+
+        best: str | None = None
+        best_score = -1
+        for pid, profile in self._profiles.items():
+            if not profile.enabled:
+                continue
+            score = 0
+            pid_lower = pid.lower()
+            prof_model_lower = profile.model_name.lower()
+            if provider_lower and provider_lower in pid_lower:
+                score += 3
+            if model_lower and model_lower in pid_lower:
+                score += 2
+            if model_lower and model_lower in prof_model_lower:
+                score += 1
+            if score > best_score:
+                best_score = score
+                best = pid
+
+        if best is not None:
+            return best
+        return self.route_for_task(task_kind)
 
     def _best_profile_for(self, name_hint: str) -> str | None:
         """Find the best enabled profile matching a name hint.

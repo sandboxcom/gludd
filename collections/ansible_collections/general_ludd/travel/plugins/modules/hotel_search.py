@@ -216,7 +216,7 @@ def search_hotels(
         },
     ]
 
-    bookings: list[dict[str, Any]] = []
+    filtered: list[dict[str, Any]] = []
     for h in raw_hotels:
         if min_stars > 0 and h["stars"] < min_stars:
             continue
@@ -224,7 +224,19 @@ def search_hotels(
             continue
         if amenities and not all(a in h["amenities"] for a in amenities):
             continue
+        filtered.append(h)
 
+    if sort_by == "price":
+        filtered.sort(key=lambda h: h["price_per_night"])
+    elif sort_by == "rating":
+        filtered.sort(key=lambda h: h["rating"], reverse=True)
+    elif sort_by == "distance":
+        filtered.sort(key=lambda h: h["distance_km"])
+    elif sort_by == "name":
+        filtered.sort(key=lambda h: h["name"])
+
+    bookings: list[dict[str, Any]] = []
+    for h in filtered:
         booking = _hotel_booking_from_stub(
             destination=destination,
             name=h["name"],
@@ -238,21 +250,7 @@ def search_hotels(
             check_out=check_out,
             rooms=rooms,
         )
-        booking_dict = booking.model_dump(mode="json")
-        booking_dict["stars"] = h["stars"]
-        booking_dict["rating"] = h["rating"]
-        booking_dict["amenities"] = h["amenities"]
-        booking_dict["distance_km"] = h["distance_km"]
-        bookings.append(booking_dict)
-
-    if sort_by == "price":
-        bookings.sort(key=lambda b: b.get("stars", 0))
-    elif sort_by == "rating":
-        bookings.sort(key=lambda b: b.get("rating", 0), reverse=True)
-    elif sort_by == "distance":
-        bookings.sort(key=lambda b: b.get("distance_km", 999))
-    elif sort_by == "name":
-        bookings.sort(key=lambda b: b.get("hotel_name", ""))
+        bookings.append(booking.model_dump(mode="json"))
 
     return bookings, nights, _search.model_dump(mode="json")
 

@@ -59,7 +59,7 @@ class TestSmallModelsDownload:
 
             try:
                 resp = await client.post(
-                    "/admin/small-models/download",
+                    "/admin/models/local/download",
                     json={"model_id": "microsoft/phi-2", "source": "huggingface", "filename": "pytorch_model.bin"},
                     headers=AUTH,
                 )
@@ -90,7 +90,7 @@ class TestSmallModelsDownload:
 
             try:
                 resp = await client.post(
-                    "/admin/small-models/download",
+                    "/admin/models/local/download",
                     json={"model_id": "llama3.2:3b", "source": "ollama"},
                     headers=AUTH,
                 )
@@ -119,7 +119,7 @@ class TestSmallModelsDownload:
 
             try:
                 resp = await client.post(
-                    "/admin/small-models/download",
+                    "/admin/models/local/download",
                     json={
                         "model_id": "test-org/test-model",
                         "source": "huggingface",
@@ -145,7 +145,7 @@ class TestSmallModelsDownload:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
-                "/admin/small-models/download",
+                "/admin/models/local/download",
                 json={"source": "huggingface"},
                 headers=AUTH,
             )
@@ -160,7 +160,7 @@ class TestSmallModelsDownload:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
-                "/admin/small-models/download",
+                "/admin/models/local/download",
                 json={"model_id": "phi-2", "source": "invalid"},
                 headers=AUTH,
             )
@@ -174,7 +174,7 @@ class TestSmallModelsDownload:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
-                "/admin/small-models/download",
+                "/admin/models/local/download",
                 json={"model_id": "phi-2"},
             )
             assert resp.status_code == 401, resp.text
@@ -189,7 +189,7 @@ class TestSmallModelsQuantize:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
-                "/admin/small-models/quantize",
+                "/admin/models/local/quantize",
                 json={"model_id": "phi-2", "method": "q4_k_m"},
                 headers=AUTH,
             )
@@ -207,7 +207,7 @@ class TestSmallModelsQuantize:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
-                "/admin/small-models/quantize",
+                "/admin/models/local/quantize",
                 json={"model_id": "phi-2", "method": "q8_0"},
                 headers=AUTH,
             )
@@ -222,7 +222,7 @@ class TestSmallModelsQuantize:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
-                "/admin/small-models/quantize",
+                "/admin/models/local/quantize",
                 json={"method": "q4_k_m"},
                 headers=AUTH,
             )
@@ -236,7 +236,7 @@ class TestSmallModelsQuantize:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
-                "/admin/small-models/quantize",
+                "/admin/models/local/quantize",
                 json={"model_id": "phi-2", "method": "fp8"},
                 headers=AUTH,
             )
@@ -250,7 +250,7 @@ class TestSmallModelsQuantize:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
-                "/admin/small-models/quantize",
+                "/admin/models/local/quantize",
                 json={"model_id": "phi-2", "method": "q4_k_m"},
             )
             assert resp.status_code == 401, resp.text
@@ -265,7 +265,7 @@ class TestSmallModelsEvaluate:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
-                "/admin/small-models/evaluate",
+                "/admin/models/local/evaluate",
                 json={
                     "model_id": "phi-2",
                     "task_kind": "context_compaction",
@@ -288,7 +288,7 @@ class TestSmallModelsEvaluate:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
-                "/admin/small-models/evaluate",
+                "/admin/models/local/evaluate",
                 json={
                     "model_id": "tinyllama",
                     "task_kind": "bounded_enumeration",
@@ -310,7 +310,7 @@ class TestSmallModelsEvaluate:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
-                "/admin/small-models/evaluate",
+                "/admin/models/local/evaluate",
                 json={"task_kind": "context_compaction"},
                 headers=AUTH,
             )
@@ -324,7 +324,7 @@ class TestSmallModelsEvaluate:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
-                "/admin/small-models/evaluate",
+                "/admin/models/local/evaluate",
                 json={"model_id": "phi-2"},
                 headers=AUTH,
             )
@@ -338,7 +338,7 @@ class TestSmallModelsEvaluate:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
-                "/admin/small-models/evaluate",
+                "/admin/models/local/evaluate",
                 json={"model_id": "phi-2", "task_kind": "nonexistent"},
                 headers=AUTH,
             )
@@ -352,7 +352,7 @@ class TestSmallModelsEvaluate:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
-                "/admin/small-models/evaluate",
+                "/admin/models/local/evaluate",
                 json={"model_id": "phi-2", "task_kind": "context_compaction"},
             )
             assert resp.status_code == 401, resp.text
@@ -367,12 +367,12 @@ class TestSmallModelsEvidence:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             await client.post(
-                "/admin/small-models/evaluate",
+                "/admin/models/local/evaluate",
                 json={"model_id": "phi-2", "task_kind": "context_compaction"},
                 headers=AUTH,
             )
             resp = await client.get(
-                "/admin/small-models/evidence",
+                "/admin/models/local/evidence",
                 params={"model_id": "phi-2"},
                 headers=AUTH,
             )
@@ -389,7 +389,7 @@ class TestSmallModelsEvidence:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.get(
-                "/admin/small-models/evidence",
+                "/admin/models/local/evidence",
                 params={"model_id": "nonexistent"},
                 headers=AUTH,
             )
@@ -404,7 +404,7 @@ class TestSmallModelsEvidence:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.get(
-                "/admin/small-models/evidence",
+                "/admin/models/local/evidence",
                 headers=AUTH,
             )
             assert resp.status_code == 200, resp.text
@@ -416,7 +416,7 @@ class TestSmallModelsEvidence:
     async def test_evidence_no_auth_returns_401(self, monkeypatch):
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
-            resp = await client.get("/admin/small-models/evidence")
+            resp = await client.get("/admin/models/local/evidence")
             assert resp.status_code == 401, resp.text
         finally:
             await client.aclose()
@@ -429,7 +429,7 @@ class TestSmallModelsServe:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
-                "/admin/small-models/serve",
+                "/admin/models/local/serve",
                 json={"model_id": "phi-2", "port": 9090, "startup_timeout": 0},
                 headers=AUTH,
             )
@@ -447,7 +447,7 @@ class TestSmallModelsServe:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
-                "/admin/small-models/serve",
+                "/admin/models/local/serve",
                 json={"port": 9090},
                 headers=AUTH,
             )
@@ -461,7 +461,7 @@ class TestSmallModelsServe:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
-                "/admin/small-models/serve",
+                "/admin/models/local/serve",
                 json={"model_id": "phi-2", "port": 80},
                 headers=AUTH,
             )
@@ -475,7 +475,7 @@ class TestSmallModelsServe:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
-                "/admin/small-models/serve",
+                "/admin/models/local/serve",
                 json={"model_id": "phi-2", "port": 9090},
             )
             assert resp.status_code == 401, resp.text
@@ -490,11 +490,11 @@ class TestSmallModelsStatus:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             await client.post(
-                "/admin/small-models/serve",
+                "/admin/models/local/serve",
                 json={"model_id": "phi-2", "port": 9090, "startup_timeout": 0},
                 headers=AUTH,
             )
-            resp = await client.get("/admin/small-models/status", headers=AUTH)
+            resp = await client.get("/admin/models/local/status", headers=AUTH)
             assert resp.status_code == 200, resp.text
             data = resp.json()
             assert data["total"] == 1
@@ -508,7 +508,7 @@ class TestSmallModelsStatus:
     async def test_status_empty(self, monkeypatch):
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
-            resp = await client.get("/admin/small-models/status", headers=AUTH)
+            resp = await client.get("/admin/models/local/status", headers=AUTH)
             assert resp.status_code == 200, resp.text
             assert resp.json()["total"] == 0
         finally:
@@ -519,7 +519,7 @@ class TestSmallModelsStatus:
     async def test_status_no_auth_returns_401(self, monkeypatch):
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
-            resp = await client.get("/admin/small-models/status")
+            resp = await client.get("/admin/models/local/status")
             assert resp.status_code == 401, resp.text
         finally:
             await client.aclose()
@@ -532,12 +532,12 @@ class TestSmallModelsRollout:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             await client.post(
-                "/admin/small-models/evaluate",
+                "/admin/models/local/evaluate",
                 json={"model_id": "phi-2", "task_kind": "context_compaction"},
                 headers=AUTH,
             )
             resp = await client.post(
-                "/admin/small-models/rollout",
+                "/admin/models/rollout",
                 json={
                     "model_id": "phi-2",
                     "target": "canary",
@@ -560,7 +560,7 @@ class TestSmallModelsRollout:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
-                "/admin/small-models/rollout",
+                "/admin/models/rollout",
                 json={
                     "model_id": "phi-2",
                     "target": "full",
@@ -579,7 +579,7 @@ class TestSmallModelsRollout:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
-                "/admin/small-models/rollout",
+                "/admin/models/rollout",
                 json={"model_id": "phi-2", "target": "local"},
                 headers=AUTH,
             )
@@ -595,7 +595,7 @@ class TestSmallModelsRollout:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
-                "/admin/small-models/rollout",
+                "/admin/models/rollout",
                 json={"target": "local"},
                 headers=AUTH,
             )
@@ -609,7 +609,7 @@ class TestSmallModelsRollout:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
-                "/admin/small-models/rollout",
+                "/admin/models/rollout",
                 json={"model_id": "phi-2", "target": "production"},
                 headers=AUTH,
             )
@@ -623,7 +623,7 @@ class TestSmallModelsRollout:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
-                "/admin/small-models/rollout",
+                "/admin/models/rollout",
                 json={"model_id": "phi-2", "target": "local"},
             )
             assert resp.status_code == 401, resp.text
@@ -638,12 +638,12 @@ class TestSmallModelsRecommend:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             await client.post(
-                "/admin/small-models/evaluate",
+                "/admin/models/local/evaluate",
                 json={"model_id": "phi-2", "task_kind": "context_compaction", "total_cases": 25, "passed_cases": 25},
                 headers=AUTH,
             )
             await client.post(
-                "/admin/small-models/evaluate",
+                "/admin/models/local/evaluate",
                 json={
                     "model_id": "tinyllama",
                     "task_kind": "context_compaction",
@@ -653,7 +653,7 @@ class TestSmallModelsRecommend:
                 headers=AUTH,
             )
             await client.post(
-                "/admin/small-models/evaluate",
+                "/admin/models/local/evaluate",
                 json={
                     "model_id": "llama3.2:3b",
                     "task_kind": "bounded_enumeration",
@@ -662,9 +662,7 @@ class TestSmallModelsRecommend:
                 },
                 headers=AUTH,
             )
-            resp = await client.get(
-                "/admin/small-models/recommend", params={"task": "context_compaction"}, headers=AUTH
-            )
+            resp = await client.get("/admin/models/recommend", params={"task": "context_compaction"}, headers=AUTH)
             assert resp.status_code == 200, resp.text
             data = resp.json()
             assert data["task"] == "context_compaction"
@@ -686,7 +684,7 @@ class TestSmallModelsRecommend:
     async def test_recommend_empty_for_unknown_task(self, monkeypatch):
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
-            resp = await client.get("/admin/small-models/recommend", params={"task": "unknown_task"}, headers=AUTH)
+            resp = await client.get("/admin/models/recommend", params={"task": "unknown_task"}, headers=AUTH)
             assert resp.status_code == 200, resp.text
             data = resp.json()
             assert data["task"] == "unknown_task"
@@ -700,7 +698,7 @@ class TestSmallModelsRecommend:
     async def test_recommend_no_auth_returns_401(self, monkeypatch):
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
-            resp = await client.get("/admin/small-models/recommend", params={"task": "context_compaction"})
+            resp = await client.get("/admin/models/recommend", params={"task": "context_compaction"})
             assert resp.status_code == 401, resp.text
         finally:
             await client.aclose()
@@ -713,16 +711,16 @@ class TestSmallModelsTasks:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             await client.post(
-                "/admin/small-models/evaluate",
+                "/admin/models/local/evaluate",
                 json={"model_id": "phi-2", "task_kind": "context_compaction", "total_cases": 25, "passed_cases": 25},
                 headers=AUTH,
             )
             await client.post(
-                "/admin/small-models/evaluate",
+                "/admin/models/local/evaluate",
                 json={"model_id": "phi-2", "task_kind": "bounded_enumeration", "total_cases": 25, "passed_cases": 22},
                 headers=AUTH,
             )
-            resp = await client.get("/admin/small-models/tasks", params={"model": "phi-2"}, headers=AUTH)
+            resp = await client.get("/admin/models/tasks", params={"model": "phi-2"}, headers=AUTH)
             assert resp.status_code == 200, resp.text
             data = resp.json()
             assert data["model_id"] == "phi-2"
@@ -742,7 +740,7 @@ class TestSmallModelsTasks:
     async def test_tasks_empty_for_unknown_model(self, monkeypatch):
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
-            resp = await client.get("/admin/small-models/tasks", params={"model": "nonexistent"}, headers=AUTH)
+            resp = await client.get("/admin/models/tasks", params={"model": "nonexistent"}, headers=AUTH)
             assert resp.status_code == 200, resp.text
             data = resp.json()
             assert data["model_id"] == "nonexistent"
@@ -757,16 +755,16 @@ class TestSmallModelsTasks:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             await client.post(
-                "/admin/small-models/evaluate",
+                "/admin/models/local/evaluate",
                 json={"model_id": "phi-2", "task_kind": "context_compaction", "total_cases": 25, "passed_cases": 25},
                 headers=AUTH,
             )
             await client.post(
-                "/admin/small-models/evaluate",
+                "/admin/models/local/evaluate",
                 json={"model_id": "phi-2", "task_kind": "context_compaction", "total_cases": 30, "passed_cases": 28},
                 headers=AUTH,
             )
-            resp = await client.get("/admin/small-models/tasks", params={"model": "phi-2"}, headers=AUTH)
+            resp = await client.get("/admin/models/tasks", params={"model": "phi-2"}, headers=AUTH)
             assert resp.status_code == 200, resp.text
             data = resp.json()
             assert data["total"] == 1
@@ -778,7 +776,7 @@ class TestSmallModelsTasks:
     async def test_tasks_no_auth_returns_401(self, monkeypatch):
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
-            resp = await client.get("/admin/small-models/tasks", params={"model": "phi-2"})
+            resp = await client.get("/admin/models/tasks", params={"model": "phi-2"})
             assert resp.status_code == 401, resp.text
         finally:
             await client.aclose()
@@ -791,7 +789,7 @@ class TestSmallModelsCost:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.get(
-                "/admin/small-models/cost",
+                "/admin/models/cost",
                 params={"model": "phi-2"},
                 headers=AUTH,
             )
@@ -815,7 +813,7 @@ class TestSmallModelsCost:
     async def test_cost_endpoint_no_auth_returns_401(self, monkeypatch):
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
-            resp = await client.get("/admin/small-models/cost", params={"model": "phi-2"})
+            resp = await client.get("/admin/models/cost", params={"model": "phi-2"})
             assert resp.status_code == 401, resp.text
         finally:
             await client.aclose()
@@ -843,7 +841,7 @@ class TestSmallModelsBenchmark:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
-                "/admin/small-models/evaluate",
+                "/admin/models/local/evaluate",
                 json={
                     "model_id": "gpt2",
                     "benchmark": True,
@@ -898,7 +896,7 @@ class TestSmallModelsBenchmark:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
-                "/admin/small-models/evaluate",
+                "/admin/models/local/evaluate",
                 json={"model_id": "gpt2", "benchmark": True},
                 headers=AUTH,
             )
@@ -915,7 +913,7 @@ class TestSmallModelsBenchmark:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
-                "/admin/small-models/evaluate",
+                "/admin/models/local/evaluate",
                 json={"model_id": "gpt2", "benchmark": True},
                 headers=AUTH,
             )
@@ -943,13 +941,13 @@ class TestSmallModelsBenchmark:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             await client.post(
-                "/admin/small-models/evaluate",
+                "/admin/models/local/evaluate",
                 json={"model_id": "gpt2", "benchmark": True, "tasks": ["mmlu"]},
                 headers=AUTH,
             )
 
             resp = await client.get(
-                "/admin/small-models/evidence",
+                "/admin/models/local/evidence",
                 params={"model_id": "gpt2"},
                 headers=AUTH,
             )
@@ -967,7 +965,7 @@ class TestSmallModelsBenchmark:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
-                "/admin/small-models/evaluate",
+                "/admin/models/local/evaluate",
                 json={"model_id": "gpt2", "benchmark": True},
             )
             assert resp.status_code == 401, resp.text
@@ -995,7 +993,7 @@ class TestSmallModelsBenchmark:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
-                "/admin/small-models/evaluate",
+                "/admin/models/local/evaluate",
                 json={
                     "model_id": "gpt2",
                     "benchmark": True,

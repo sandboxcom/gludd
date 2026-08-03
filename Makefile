@@ -146,7 +146,8 @@ log-agent-result disk-guard disk-check check-disk check-system-load disk tmp-glu
 git-tag-delete git-tag-move release-deploy append-text write-text-b64 replace-text-b64 mkdir-p replace-lines _no-raw-git-guard _no-bypass-guard _pre-commit-stage-guard _merge-strategy-guard _stash-leak-guard \
           _force-push-audit _recursive-merge-guard _commit-msg-audit \
           check-spec-enforcement-coverage check-structural-test-fragility lint-specs triage-failures audit-spec-completeness \
-          git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head provider-smoke mac-unified-memory-smoke gpu-hardware-smoke check-no-prompt-prone-edit-tools add-target edit-target edit-makefile-target validate-makefile
+          git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head provider-smoke mac-unified-memory-smoke gpu-hardware-smoke check-no-prompt-prone-edit-tools add-target edit-target edit-makefile-target validate-makefile \
+         build-llamacpp-tools
 
 help:
 	@echo "Usage: make [target]"
@@ -1202,7 +1203,7 @@ gate-fast: lint typecheck collect-check
 _check-windows-tracked-paths:
 	@BT="/tmp/gludd-windows-paths-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest tests/unit/test_cross_platform_binary.py::test_tracked_paths_are_windows_checkout_compatible -q -n 0 --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
 
-gate: _check-windows-tracked-paths check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-task-registration check-task-integrity check-make-target-contract check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets validate-aws-iam 	validate-azure-iam check-azure-actions-crossref validate-gcp-iam validate-all-cloud-iam check-dependency-pinning check-runbook-currency check-version-bump-atomicity
+gate: _check-windows-tracked-paths check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-task-registration check-task-integrity check-make-target-contract check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets validate-aws-iam 	validate-azure-iam check-azure-actions-crossref validate-gcp-iam validate-all-cloud-iam check-dependency-pinning integration-health check-runbook-currency check-version-bump-atomicity
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
@@ -5113,6 +5114,23 @@ generate-coverage-gaps-baseline:
 check-coverage-missing:
 	@$(UV) run python scripts/check_coverage_missing.py
 
+integration-health:
+	@$(UV) run python scripts/check_integration_health.py
+
+integration-health-watch:
+	@while true; do \
+		echo "[$$(date -u +%Y-%m-%dT%H:%M:%SZ)] Running integration-health..."; \
+		$(UV) run python scripts/check_integration_health.py; \
+		RC=$$?; \
+		if [ $$RC -ne 0 ]; then \
+			echo "[$$(date -u +%Y-%m-%dT%H:%M:%SZ)] FAILURES DETECTED (exit $$RC)"; \
+			cat /tmp/gludd-integration-failures.json 2>/dev/null || true; \
+		else \
+			echo "[$$(date -u +%Y-%m-%dT%H:%M:%SZ)] PASS"; \
+		fi; \
+		sleep 10; \
+	done
+
 # --- Audit untested code: plugins with no tests, hooks without test coverage, Python modules without tests ---
 audit-untested-code:
 	@$(UV) run python scripts/audit_untested_code.py
@@ -5308,6 +5326,30 @@ bundle-ripgrep:
 		chmod +x dist/binaries/rg && \
 		echo "  bundled -> dist/binaries/rg" || \
 		{ echo "WARNING: ripgrep bundle failed (network unavailable or sha unset?); search degrades to in-process"; rm -f dist/binaries/rg; }
+
+# Build llama-quantize from source into external/llamacpp/build/bin/.
+# Clones llama.cpp shallow if not already present, then cmake-builds just the
+# quantize tool.  Gracefully skips (exit 0) when cmake or a C++ compiler is
+# missing — tests that depend on the binary will skip too.
+_LLAMACPP_URL ?= https://github.com/ggerganov/llama.cpp.git
+build-llamacpp-tools:
+	@echo "=== Building llama.cpp tools ==="
+	@mkdir -p external
+	@if [ ! -d external/llamacpp ]; then \
+		echo "  cloning llama.cpp (shallow)..."; \
+		git clone --depth 1 $(_LLAMACPP_URL) external/llamacpp; \
+	fi
+	@if ! command -v cmake >/dev/null 2>&1; then \
+		echo "WARNING: cmake not found — cannot build llama.cpp tools"; \
+	elif ! command -v cc >/dev/null 2>&1 && ! command -v gcc >/dev/null 2>&1 && ! command -v clang >/dev/null 2>&1; then \
+		echo "WARNING: no C compiler found — cannot build llama.cpp tools"; \
+	else \
+		mkdir -p external/llamacpp/build && \
+		cd external/llamacpp/build && \
+		cmake .. -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=OFF -DLLAMA_CURL=OFF -DGGML_CUDA=OFF -DGGML_METAL=OFF -DGGML_VULKAN=OFF -DGGML_BLAS=OFF -DGGML_SYCL=OFF && \
+		cmake --build . --target llama-quantize -- -j $$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4) && \
+		echo "  llama-quantize -> external/llamacpp/build/bin/llama-quantize"; \
+	fi
 
 # Restore specific files from a historical ref into the working tree (files
 # deleted from HEAD can only come back from history; used to recover dist/

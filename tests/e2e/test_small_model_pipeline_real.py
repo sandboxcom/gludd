@@ -32,8 +32,25 @@ _SMALL_MODEL_REPO = "HuggingFaceTB/SmolLM2-135M-GGUF"
 _SMALL_MODEL_FILE = "smollm2-135m-instruct-Q4_K_M.gguf"
 
 
+def _find_llama_quantize_bin() -> str | None:
+    bundled = os.path.join(
+        os.path.dirname(__file__),
+        "..",
+        "..",
+        "external",
+        "llamacpp",
+        "build",
+        "bin",
+        "llama-quantize",
+    )
+    bundled = os.path.abspath(bundled)
+    if os.path.isfile(bundled) and os.access(bundled, os.X_OK):
+        return bundled
+    return shutil.which("llama-quantize")
+
+
 def _has_llama_quantize() -> bool:
-    return shutil.which("llama-quantize") is not None
+    return _find_llama_quantize_bin() is not None
 
 
 def _has_llama_cpp_server() -> bool:

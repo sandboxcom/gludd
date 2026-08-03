@@ -2402,7 +2402,7 @@ def _cmd_local_serve(args: argparse.Namespace) -> None:
     }
     data = _http_call(
         "POST",
-        f"{args.daemon_url}/admin/local-inference/start",
+        f"{args.daemon_url}/admin/models/local/serve",
         json=payload,
         timeout=30.0,
         ok_codes=(200, 201),
