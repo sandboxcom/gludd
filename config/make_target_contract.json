@@ -265,6 +265,21 @@
       "name": "feature-spec-inventory",
       "make_variables": ["FORMAT"],
       "behavior": "make feature-spec-inventory FORMAT=json"
+    },
+    {
+      "name": "sandbox-state-dir",
+      "make_variables": ["GLUDD_SANDBOX_STATE_DIR", "GLUDD_PROJECT_ROOT"],
+      "behavior": "make sandbox-state-dir"
+    },
+    {
+      "name": "sandbox-state-list",
+      "make_variables": ["GLUDD_SANDBOX_STATE_DIR", "GLUDD_PROJECT_ROOT"],
+      "behavior": "make sandbox-state-list"
+    },
+    {
+      "name": "sandbox-state-clean",
+      "make_variables": ["GLUDD_SANDBOX_STATE_DIR", "GLUDD_PROJECT_ROOT"],
+      "behavior": "make sandbox-state-clean"
     }
   ]
 }
