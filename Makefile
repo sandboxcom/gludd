@@ -232,6 +232,7 @@ help:
 	@echo "  test-e2e-providers    All E2E provider tests"
 	@echo "  test-e2e-games        Game generation E2E — AI generates games, compares frames (no Azure provision)"
 	@echo "  test-e2e-games-local  Game unit tests only — video compare, game gen, no Azure needed"
+	@echo "  test-e2e-games-local-model  Local model game E2E — SmallModelTaskPolicy + local LLM endpoint"
 	@echo "  game-reference-preflight  Acquire/verify approved FPS clips before Azure provisioning"
 	@echo "  test-e2e-games-provision  Source AZURE_E2E_ENV_FILE; Azure game E2E (GAME_E2E_TIMEOUT_SECS>=3600)"
 	@echo "  e2e-audit-azure     List all E2E runs with PASS/FAIL/RUNNING status"
@@ -1790,6 +1791,13 @@ test-games:
 
 test-e2e-games-local:
 	@$(UV) run --extra game-e2e pytest tests/unit/test_video_compare.py tests/unit/test_game_gen.py tests/unit/test_game_e2e.py -v $(PYTEST_ARGS)
+
+test-e2e-games-local-model:
+	@LOCAL_MODEL_BASE_URL="$${LOCAL_MODEL_BASE_URL:-http://localhost:11434/v1}" \
+	 LOCAL_MODEL_NAME="$${LOCAL_MODEL_NAME:-qwen2.5:0.5b}" \
+	 LOCAL_MODEL_KEY="$${LOCAL_MODEL_KEY:-}" \
+	 LOCAL_MODEL_GAME="$${LOCAL_MODEL_GAME:-}" \
+	 $(UV) run pytest tests/e2e/test_game_building_local.py -v $(PYTEST_ARGS)
 
 game-audit:
 	@$(PYTHON) scripts/game_audit.py

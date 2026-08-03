@@ -17,6 +17,9 @@
 
 ``gludd model radar <name>``
     Show a capability radar chart for a model.
+
+``gludd model report <name> [--compare <model2>]``
+    Generate a benchmark report with radar comparison and cost analysis.
 """
 
 from __future__ import annotations
@@ -75,6 +78,22 @@ def _cmd_recommend(args: argparse.Namespace) -> None:
     recommendations = _get_recommendations(args.task)
     for i, rec in enumerate(recommendations, 1):
         print(f"  {i}. {rec['name']:<30} {rec['params']:<8}  Quality: {rec['quality']}  {rec['note']}")
+
+
+def _cmd_report(args: argparse.Namespace) -> None:
+    import json
+
+    from general_ludd.small_models.benchmark_report import generate_report, render_report
+
+    model_ids = [args.name]
+    compare_label = getattr(args, "compare", None) or getattr(args, "compare_model", None)
+    if compare_label:
+        model_ids.append(compare_label)
+
+    empty: dict[str, list[dict[str, object]]] = {}
+    report = generate_report(model_ids, empty, include_svg=False)
+    output = render_report(report)
+    print(json.dumps(output, indent=2, default=str))
 
 
 def _cmd_radar(args: argparse.Namespace) -> None:
@@ -192,3 +211,9 @@ def add_model_subparser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
     radar = ssub.add_parser("radar", help="Show capability radar for a model")
     radar.add_argument("name", help="Model name")
     radar.set_defaults(func=_cmd_radar)
+
+    # --- report ---
+    report_p = ssub.add_parser("report", help="Generate a benchmark report with radar comparison and cost analysis")
+    report_p.add_argument("name", help="Primary model name")
+    report_p.add_argument("--compare", default=None, help="Optional model to compare against")
+    report_p.set_defaults(func=_cmd_report)

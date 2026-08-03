@@ -1,5 +1,10 @@
 """Small models module — download, local inference, and eval harness."""
 
+from general_ludd.small_models.benchmark_report import (
+    BenchmarkReport,
+    generate_report,
+    render_report,
+)
 from general_ludd.small_models.cost import (
     compute_cost_score,
     estimate_download_cost,
@@ -42,11 +47,6 @@ from general_ludd.small_models.radar_profile import (
     generate_radar,
     render_radar_svg,
 )
-from general_ludd.small_models.benchmark_report import (
-    BenchmarkReport,
-    generate_report,
-    render_report,
-)
 from general_ludd.small_models.recommender import (
     ModelRecommendation,
     list_tasks_for_model,
@@ -73,11 +73,11 @@ __all__ = [
     "build_profile",
     "compare_models",
     "compute_cost_score",
-    "generate_report",
     "estimate_download_cost",
     "estimate_inference_cost",
     "estimate_quantize_cost",
     "generate_radar",
+    "generate_report",
     "is_off_peak",
     "list_tasks_for_model",
     "next_off_peak_window",

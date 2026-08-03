@@ -98,8 +98,13 @@ def _compute_score(
     hardware: HardwareInventory,
     model_id: str,
     radar_profile: ModelRadarProfile | None = None,
+    *,
+    urgent: bool = False,
 ) -> tuple[float, float, float]:
     """Compute composite 0.0-1.0 score from evidence quality + hardware fit + radar breadth + cost.
+
+    When *urgent* is False and the current time is peak, the cost factor weight
+    is doubled to prefer cheaper models during expensive hours.
 
     Returns (score, cost_score, estimated_cost_usd_per_hour).
     """
@@ -127,14 +132,30 @@ def _compute_score(
 
     _, cost_score, estimated_cost = _compute_cost_factors(model_id)
 
+    currently_off_peak = is_off_peak()
+    if not urgent and not currently_off_peak:
+        pass_weight = 0.25
+        collection_weight = 0.15
+        evidence_weight = 0.12
+        hw_weight = 0.10
+        radar_weight = 0.13
+        cost_weight = 0.25
+    else:
+        pass_weight = 0.30
+        collection_weight = 0.20
+        evidence_weight = 0.15
+        hw_weight = 0.10
+        radar_weight = 0.15
+        cost_weight = 0.10
+
     return (
         float(
-            0.30 * avg_pass_rate
-            + 0.20 * collection_ok_rate
-            + 0.15 * evidence_count_score
-            + 0.10 * hw_score
-            + 0.15 * radar_breadth
-            + 0.10 * cost_score
+            pass_weight * avg_pass_rate
+            + collection_weight * collection_ok_rate
+            + evidence_weight * evidence_count_score
+            + hw_weight * hw_score
+            + radar_weight * radar_breadth
+            + cost_weight * cost_score
         ),
         cost_score,
         estimated_cost,

@@ -11,13 +11,21 @@ Core types
 * :func:`unified_probe` — runs all 3 probes, returns best-match
   :class:`HardwareInventory`.
 * :func:`can_run_model` — the main public API.
+* :func:`_extract_model_params` — dynamic model parameter extraction from
+  model names; no hardcoded MODEL_PARAMS dict.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from general_ludd.hardware.survey import GpuInfo, HardwareInventory, HardwareSurvey
+
+if TYPE_CHECKING:
+    from general_ludd.pricing_intel import PricingCatalog
+    from general_ludd.small_models import CapabilityEvidenceStore
 
 # ---------------------------------------------------------------------------
 # FitResult
@@ -67,25 +75,67 @@ def gpu_info_to_gpu_table(gpu: GpuInfo) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# Known local model profiles (VRAM sizing)
+# Dynamic model parameter extraction
 # ---------------------------------------------------------------------------
 
-_KNOWN_MODELS: dict[str, dict[str, int | float | bool]] = {
-    "deepseek-v3": {"params_b": 671.0, "is_moe": True, "active_params_b": 37.0},
-    "deepseek-r1": {"params_b": 671.0, "is_moe": True, "active_params_b": 37.0},
-    "llama-3.1-8b": {"params_b": 8.0},
-    "llama-3.1-70b": {"params_b": 70.0},
-    "llama-3.1-405b": {"params_b": 405.0},
-    "mistral-7b": {"params_b": 7.0},
-    "mixtral-8x7b": {"params_b": 47.0, "is_moe": True, "active_params_b": 13.0},
-    "qwen-2.5-72b": {"params_b": 72.0},
-    "qwen-2.5-7b": {"params_b": 7.0},
-    "gemma-2-2b": {"params_b": 2.0},
-    "gemma-2-9b": {"params_b": 9.0},
-    "codestral-22b": {"params_b": 22.0},
+_PARAM_RE = re.compile(r"(\d+\.?\d*)\s*[bB]\b")
+_MOE_RE = re.compile(r"(\d+)\s*x\s*(\d+\.?\d*)\s*[bB]\b")
+
+_MOE_KEYWORDS: frozenset[str] = frozenset({"moe", "mixtral", "expert"})
+
+# Minimal overrides for models whose names don't carry usable param counts.
+_NAME_OVERRIDES: dict[str, dict[str, int | float | bool]] = {
     "phi-3-mini": {"params_b": 3.8},
     "phi-3-medium": {"params_b": 14.0},
+    "deepseek-v3": {"params_b": 671.0, "is_moe": True, "active_params_b": 37.0},
+    "deepseek-r1": {"params_b": 671.0, "is_moe": True, "active_params_b": 37.0},
+    "mixtral-8x7b": {"params_b": 47.0, "is_moe": True, "active_params_b": 13.0},
+    "dbrx-16x12b": {"params_b": 132.0, "is_moe": True},
 }
+
+# Fallback overlap ratio for unknown MoE "NxMB" patterns.
+_MOE_FALLBACK_OVERLAP = 0.75
+
+
+def _extract_model_params(model_name: str) -> dict[str, int | float | bool] | None:
+    """Extract parameter count and MoE status from a model name.
+
+    Returns a dict with ``params_b``, ``is_moe``, and optionally
+    ``active_params_b``, or ``None`` if the name can't be parsed.
+    """
+    key = model_name.lower().strip()
+    if not key:
+        return None
+
+    override = _NAME_OVERRIDES.get(key)
+    if override is not None:
+        return dict(override)
+
+    is_moe = False
+    params_b: float | None = None
+
+    moe_match = _MOE_RE.search(key)
+    if moe_match:
+        expert_count = float(moe_match.group(1))
+        base_params = float(moe_match.group(2))
+        is_moe = True
+        params_b = expert_count * base_params * _MOE_FALLBACK_OVERLAP
+    else:
+        param_match = _PARAM_RE.search(key)
+        if param_match:
+            params_b = float(param_match.group(1))
+
+    if params_b is None:
+        return None
+
+    if any(kw in key for kw in _MOE_KEYWORDS):
+        is_moe = True
+
+    result: dict[str, int | float | bool] = {"params_b": params_b}
+    if is_moe:
+        result["is_moe"] = True
+    return result
+
 
 # Quant ladder: bytes-per-param, highest quality first.
 _QUANT_LADDER: tuple[tuple[str, float], ...] = (
@@ -138,11 +188,20 @@ def unified_probe(*, survey: HardwareSurvey | None = None) -> HardwareInventory:
 # ---------------------------------------------------------------------------
 
 
-def can_run_model(inventory: HardwareInventory, model_name: str) -> FitResult:
+def can_run_model(
+    inventory: HardwareInventory,
+    model_name: str,
+    *,
+    pricing_catalog: PricingCatalog | None = None,
+    evidence_store: CapabilityEvidenceStore | None = None,
+) -> FitResult:
     model_key = model_name.lower().strip()
-    spec = _KNOWN_MODELS.get(model_key)
+    spec = _extract_model_params(model_key)
 
     if spec is None:
+        known = _model_is_known(model_key, pricing_catalog, evidence_store)
+        if known:
+            return FitResult(reason=f"cannot determine parameters for known model {model_name!r}")
         return FitResult(reason=f"unknown model {model_name!r}")
 
     if not inventory.gpus:
@@ -168,3 +227,19 @@ def can_run_model(inventory: HardwareInventory, model_name: str) -> FitResult:
         backend=backend,
         reason=f"model requires {params_b * 2.0:.1f}GB at fp16, only {total_vram:.1f}GB VRAM available",
     )
+
+
+def _model_is_known(
+    name: str,
+    pricing_catalog: PricingCatalog | None,
+    evidence_store: CapabilityEvidenceStore | None,
+) -> bool:
+    if pricing_catalog is not None:
+        for info in pricing_catalog.all_model_info():
+            if info.model_id.lower() == name:
+                return True
+    if evidence_store is not None:
+        for record in evidence_store.list_all():
+            if record.get("model_profile_id", "").lower() == name:
+                return True
+    return False

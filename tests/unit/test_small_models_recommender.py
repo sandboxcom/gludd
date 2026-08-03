@@ -6,6 +6,7 @@ import hashlib
 import tempfile
 from dataclasses import FrozenInstanceError
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
@@ -61,6 +62,25 @@ def _hw(
 
 def _gpu(name: str = "Apple M2", vram: float = 10.0, backend: str = "metal") -> GpuInfo:
     return GpuInfo(name=name, vram_gb=vram, backend=backend)
+
+
+def _default_rec_kwargs(**overrides: Any) -> dict[str, Any]:
+    defaults: dict[str, Any] = {
+        "model_profile_id": "local-qwen-2.5",
+        "task_kind": "context_compaction",
+        "role": TaskRole.COMPACTOR,
+        "score": 0.85,
+        "cost_score": 0.9,
+        "estimated_cost_usd_per_hour": 0.003,
+        "evidence_count": 3,
+        "hardware_fit": "fits",
+        "evidence_details": [],
+        "can_run": False,
+        "peak_status": "unknown",
+        "prefer_off_peak": False,
+    }
+    defaults.update(overrides)
+    return defaults
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -157,6 +177,9 @@ def test_model_recommendation_dataclass_shape() -> None:
         evidence_count=3,
         hardware_fit="fits",
         evidence_details=[{"passed_cases": 24, "total_cases": 24}],
+        can_run=True,
+        peak_status="off_peak",
+        prefer_off_peak=False,
     )
     assert rec.model_profile_id == "local-qwen-2.5"
     assert rec.task_kind == "context_compaction"
@@ -164,6 +187,9 @@ def test_model_recommendation_dataclass_shape() -> None:
     assert rec.cost_score == 0.9
     assert rec.estimated_cost_usd_per_hour == 0.003
     assert rec.role == TaskRole.COMPACTOR
+    assert rec.can_run is True
+    assert rec.peak_status == "off_peak"
+    assert rec.prefer_off_peak is False
 
 
 def test_model_recommendation_is_frozen() -> None:
@@ -179,9 +205,53 @@ def test_model_recommendation_is_frozen() -> None:
         evidence_count=3,
         hardware_fit="fits",
         evidence_details=[],
+        can_run=False,
+        peak_status="unknown",
+        prefer_off_peak=False,
     )
     with pytest.raises(FrozenInstanceError):
         rec.score = 0.5  # type: ignore[misc]
+
+
+def test_model_recommendation_rejects_invalid_peak_status() -> None:
+    from general_ludd.small_models.recommender import ModelRecommendation
+
+    with pytest.raises(ValueError, match="peak_status"):
+        ModelRecommendation(
+            model_profile_id="x",
+            task_kind="context_compaction",
+            role=TaskRole.COMPACTOR,
+            score=0.5,
+            cost_score=0.5,
+            estimated_cost_usd_per_hour=0.0,
+            evidence_count=0,
+            hardware_fit="fits",
+            evidence_details=[],
+            can_run=False,
+            peak_status="bogus",
+            prefer_off_peak=False,
+        )
+
+
+def test_model_recommendation_accepts_all_valid_peak_statuses() -> None:
+    from general_ludd.small_models.recommender import ModelRecommendation
+
+    for status in ("peak", "off_peak", "unknown"):
+        rec = ModelRecommendation(
+            model_profile_id="x",
+            task_kind="context_compaction",
+            role=TaskRole.COMPACTOR,
+            score=0.5,
+            cost_score=0.5,
+            estimated_cost_usd_per_hour=0.0,
+            evidence_count=0,
+            hardware_fit="fits",
+            evidence_details=[],
+            can_run=False,
+            peak_status=status,
+            prefer_off_peak=False,
+        )
+        assert rec.peak_status == status
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -214,7 +284,8 @@ def test_recommend_model_returns_ranked_recommendations() -> None:
         )
 
         hw = _hw(gpus=[_gpu(vram=12.0)])
-        results = recommend_model("summarize and compact this context", hw, store)
+        with patch("general_ludd.small_models.recommender.is_off_peak", return_value=False):
+            results = recommend_model("summarize and compact this context", hw, store)
 
         assert len(results) >= 1
         assert results[0].model_profile_id == "model-a"
@@ -239,13 +310,14 @@ def test_recommend_model_maps_natural_language_to_capabilities() -> None:
 
         hw = _hw(gpus=[_gpu(vram=16.0)])
 
-        doc_results = recommend_model("draft documentation for this module", hw, store)
-        assert len(doc_results) >= 1
-        assert any(r.task_kind == "documentation_draft" for r in doc_results)
+        with patch("general_ludd.small_models.recommender.is_off_peak", return_value=False):
+            doc_results = recommend_model("draft documentation for this module", hw, store)
+            assert len(doc_results) >= 1
+            assert any(r.task_kind == "documentation_draft" for r in doc_results)
 
-        enum_results = recommend_model("enumerate all possible options", hw, store)
-        assert len(enum_results) >= 1
-        assert any(r.task_kind == "bounded_enumeration" for r in enum_results)
+            enum_results = recommend_model("enumerate all possible options", hw, store)
+            assert len(enum_results) >= 1
+            assert any(r.task_kind == "bounded_enumeration" for r in enum_results)
     finally:
         import os
 
@@ -297,7 +369,8 @@ def test_recommend_model_ranks_by_evidence_quality() -> None:
         )
 
         hw = _hw(gpus=[_gpu(vram=16.0)])
-        results = recommend_model("normalize the format of this data", hw, store)
+        with patch("general_ludd.small_models.recommender.is_off_peak", return_value=False):
+            results = recommend_model("normalize the format of this data", hw, store)
         assert len(results) >= 2
         assert results[0].model_profile_id == "perfect-model"
         assert results[0].score > results[1].score
@@ -318,15 +391,18 @@ def test_recommend_model_annotates_hardware_fit() -> None:
         store.register_evidence(_make_evidence_record(model_profile_id="model-x", task_kind="context_compaction"))
 
         hw_good = _hw(gpus=[_gpu(vram=24.0)])
-        results_good = recommend_model("compact this context", hw_good, store)
+        with patch("general_ludd.small_models.recommender.is_off_peak", return_value=False):
+            results_good = recommend_model("compact this context", hw_good, store)
         assert any(r.hardware_fit == "fits" for r in results_good)
 
         hw_none = _hw(gpus=[])
-        results_none = recommend_model("compact this context", hw_none, store)
+        with patch("general_ludd.small_models.recommender.is_off_peak", return_value=False):
+            results_none = recommend_model("compact this context", hw_none, store)
         assert any(r.hardware_fit == "insufficient" for r in results_none)
 
         hw_tiny = _hw(gpus=[_gpu(vram=0.5)])
-        results_tiny = recommend_model("compact this context", hw_tiny, store)
+        with patch("general_ludd.small_models.recommender.is_off_peak", return_value=False):
+            results_tiny = recommend_model("compact this context", hw_tiny, store)
         fits_tiny = [r.hardware_fit for r in results_tiny]
         assert all(f in ("fits", "marginal", "insufficient") for f in fits_tiny)
     finally:
@@ -351,7 +427,8 @@ def test_recommend_model_maps_multiple_task_kinds_from_description() -> None:
         )
 
         hw = _hw(gpus=[_gpu(vram=16.0)])
-        results = recommend_model("document and extract schema", hw, store)
+        with patch("general_ludd.small_models.recommender.is_off_peak", return_value=False):
+            results = recommend_model("document and extract schema", hw, store)
         task_kinds = {r.task_kind for r in results}
         assert "documentation_draft" in task_kinds
         assert "schema_extraction" in task_kinds
@@ -395,28 +472,10 @@ def test_recommend_model_filters_failed_collection_evidence() -> None:
         )
 
         hw = _hw(gpus=[_gpu(vram=16.0)])
-        results = recommend_model("compact this context", hw, store)
+        with patch("general_ludd.small_models.recommender.is_off_peak", return_value=False):
+            results = recommend_model("compact this context", hw, store)
         model_ids = {r.model_profile_id for r in results}
         assert "good-model" in model_ids
-    finally:
-        import os
-
-        os.unlink(path)
-
-
-def test_recommend_model_no_hardware_constraint_when_evidence_exists() -> None:
-    from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
-    from general_ludd.small_models.recommender import recommend_model
-
-    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-        path = f.name
-    try:
-        store = CapabilityEvidenceStore(path)
-        store.register_evidence(_make_evidence_record())
-
-        hw = _hw(gpus=[_gpu(vram=32.0)])
-        results = recommend_model("compact context", hw, store)
-        assert len(results) >= 1
     finally:
         import os
 
@@ -437,9 +496,273 @@ def test_recommend_model_score_in_range() -> None:
         )
 
         hw = _hw(gpus=[_gpu(vram=16.0)])
-        results = recommend_model("compact context", hw, store)
+        with patch("general_ludd.small_models.recommender.is_off_peak", return_value=False):
+            results = recommend_model("compact context", hw, store)
         for rec in results:
             assert 0.0 <= rec.score <= 1.0
+    finally:
+        import os
+
+        os.unlink(path)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# can_run_model filtering
+# ─────────────────────────────────────────────────────────────────────
+
+
+def test_recommend_model_excludes_model_that_cannot_run() -> None:
+    """A model known to the fitter that cannot run on available hardware is excluded."""
+    from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
+    from general_ludd.small_models.recommender import recommend_model
+
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+        path = f.name
+    try:
+        store = CapabilityEvidenceStore(path)
+        store.register_evidence(
+            _make_evidence_record(
+                model_profile_id="llama-3.1-70b",
+                task_kind="context_compaction",
+                passed_cases=24,
+                total_cases=24,
+            )
+        )
+        store.register_evidence(
+            _make_evidence_record(
+                model_profile_id="mistral-7b",
+                task_kind="context_compaction",
+                passed_cases=24,
+                total_cases=24,
+            )
+        )
+
+        hw = _hw(gpus=[_gpu(vram=8.0)])
+        with patch("general_ludd.small_models.recommender.is_off_peak", return_value=False):
+            results = recommend_model("compact this context", hw, store)
+
+        model_ids = {r.model_profile_id for r in results}
+        assert "mistral-7b" in model_ids
+        assert "llama-3.1-70b" not in model_ids
+    finally:
+        import os
+
+        os.unlink(path)
+
+
+def test_recommend_model_includes_unknown_model() -> None:
+    """A model unknown to the fitter is NOT excluded — we lack data to judge."""
+    from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
+    from general_ludd.small_models.recommender import recommend_model
+
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+        path = f.name
+    try:
+        store = CapabilityEvidenceStore(path)
+        store.register_evidence(
+            _make_evidence_record(
+                model_profile_id="some-custom-model",
+                task_kind="context_compaction",
+                passed_cases=24,
+                total_cases=24,
+            )
+        )
+
+        hw = _hw(gpus=[])
+        with patch("general_ludd.small_models.recommender.is_off_peak", return_value=False):
+            results = recommend_model("compact this context", hw, store)
+
+        assert len(results) == 1
+        assert results[0].model_profile_id == "some-custom-model"
+        assert results[0].can_run is False
+    finally:
+        import os
+
+        os.unlink(path)
+
+
+def test_recommend_model_marks_known_runnable_model_can_run_true() -> None:
+    from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
+    from general_ludd.small_models.recommender import recommend_model
+
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+        path = f.name
+    try:
+        store = CapabilityEvidenceStore(path)
+        store.register_evidence(
+            _make_evidence_record(
+                model_profile_id="mistral-7b",
+                task_kind="context_compaction",
+                passed_cases=24,
+                total_cases=24,
+            )
+        )
+
+        hw = _hw(gpus=[_gpu(vram=24.0)])
+        with patch("general_ludd.small_models.recommender.is_off_peak", return_value=False):
+            results = recommend_model("compact this context", hw, store)
+
+        assert len(results) == 1
+        assert results[0].can_run is True
+        assert results[0].model_profile_id == "mistral-7b"
+    finally:
+        import os
+
+        os.unlink(path)
+
+
+def test_recommend_model_excludes_all_when_no_model_fits() -> None:
+    """When no model can run and all are known, returns empty list."""
+    from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
+    from general_ludd.small_models.recommender import recommend_model
+
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+        path = f.name
+    try:
+        store = CapabilityEvidenceStore(path)
+        store.register_evidence(
+            _make_evidence_record(
+                model_profile_id="llama-3.1-70b",
+                task_kind="context_compaction",
+                passed_cases=24,
+                total_cases=24,
+            )
+        )
+        store.register_evidence(
+            _make_evidence_record(
+                model_profile_id="llama-3.1-405b",
+                task_kind="context_compaction",
+                passed_cases=24,
+                total_cases=24,
+            )
+        )
+
+        hw = _hw(gpus=[_gpu(vram=4.0)])
+        with patch("general_ludd.small_models.recommender.is_off_peak", return_value=False):
+            results = recommend_model("compact this context", hw, store)
+
+        assert results == []
+    finally:
+        import os
+
+        os.unlink(path)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# peak pricing — prefer off-peak when not urgent
+# ─────────────────────────────────────────────────────────────────────
+
+
+def test_recommend_model_urgent_false_during_peak_prefers_off_peak() -> None:
+    """When not urgent and currently peak, recommendations mark prefer_off_peak=True."""
+    from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
+    from general_ludd.small_models.recommender import recommend_model
+
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+        path = f.name
+    try:
+        store = CapabilityEvidenceStore(path)
+        store.register_evidence(_make_evidence_record(model_profile_id="model-a", passed_cases=24, total_cases=24))
+        store.register_evidence(_make_evidence_record(model_profile_id="model-b", passed_cases=12, total_cases=24))
+
+        hw = _hw(gpus=[_gpu(vram=16.0)])
+        with patch("general_ludd.small_models.recommender.is_off_peak", return_value=False):
+            results = recommend_model("compact context", hw, store, urgent=False)
+
+        assert len(results) >= 1
+        assert all(r.peak_status == "peak" for r in results)
+        assert all(r.prefer_off_peak is True for r in results)
+    finally:
+        import os
+
+        os.unlink(path)
+
+
+def test_recommend_model_urgent_true_during_peak_does_not_prefer_off_peak() -> None:
+    """When urgent, prefer_off_peak is False regardless of peak status."""
+    from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
+    from general_ludd.small_models.recommender import recommend_model
+
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+        path = f.name
+    try:
+        store = CapabilityEvidenceStore(path)
+        store.register_evidence(_make_evidence_record(model_profile_id="model-a", passed_cases=24, total_cases=24))
+
+        hw = _hw(gpus=[_gpu(vram=16.0)])
+        with patch("general_ludd.small_models.recommender.is_off_peak", return_value=False):
+            results = recommend_model("compact context", hw, store, urgent=True)
+
+        assert len(results) >= 1
+        assert all(r.peak_status == "peak" for r in results)
+        assert all(r.prefer_off_peak is False for r in results)
+    finally:
+        import os
+
+        os.unlink(path)
+
+
+def test_recommend_model_during_off_peak_never_prefers_off_peak() -> None:
+    """During off-peak hours, prefer_off_peak is always False."""
+    from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
+    from general_ludd.small_models.recommender import recommend_model
+
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+        path = f.name
+    try:
+        store = CapabilityEvidenceStore(path)
+        store.register_evidence(_make_evidence_record(model_profile_id="model-a", passed_cases=24, total_cases=24))
+
+        hw = _hw(gpus=[_gpu(vram=16.0)])
+        with patch("general_ludd.small_models.recommender.is_off_peak", return_value=True):
+            results = recommend_model("compact context", hw, store, urgent=False)
+
+        assert len(results) >= 1
+        assert all(r.peak_status == "off_peak" for r in results)
+        assert all(r.prefer_off_peak is False for r in results)
+    finally:
+        import os
+
+        os.unlink(path)
+
+
+def test_recommend_model_cost_weight_adjusted_when_not_urgent_during_peak() -> None:
+    """When non-urgent during peak, cheaper models should be preferred in scoring."""
+    from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
+    from general_ludd.small_models.recommender import recommend_model
+
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+        path = f.name
+    try:
+        store = CapabilityEvidenceStore(path)
+        store.register_evidence(
+            _make_evidence_record(model_profile_id="expensive-model", passed_cases=24, total_cases=24)
+        )
+        store.register_evidence(
+            _make_evidence_record(
+                model_profile_id="cheap-model", passed_cases=24, total_cases=24, evidence_digest=_digest("c2")
+            )
+        )
+
+        hw = _hw(gpus=[_gpu(vram=16.0)])
+
+        with (
+            patch(
+                "general_ludd.small_models.recommender._compute_cost_factors",
+                side_effect=lambda mid: (0.9, 0.9, 0.001) if mid == "cheap-model" else (0.1, 0.1, 0.100),
+            ),
+            patch("general_ludd.small_models.recommender.is_off_peak", return_value=False),
+        ):
+            results_peak_urgent = recommend_model("compact context", hw, store, urgent=True)
+            results_peak_non_urgent = recommend_model("compact context", hw, store, urgent=False)
+
+        assert len(results_peak_urgent) >= 2
+        assert len(results_peak_non_urgent) >= 2
+
+        top_urgent = results_peak_urgent[0].model_profile_id
+        top_non_urgent = results_peak_non_urgent[0].model_profile_id
+        assert top_urgent == "expensive-model"
+        assert top_non_urgent == "cheap-model"
     finally:
         import os
 

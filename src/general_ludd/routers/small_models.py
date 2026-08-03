@@ -585,26 +585,15 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.get("/admin/small-models/report")
     async def small_models_report(request: Request, model: str, compare: str | None = None) -> dict[str, object]:
-        from general_ludd.small_models.benchmark_report import generate_report
-        from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
+        from general_ludd.small_models.benchmark_report import generate_report, render_report
 
         model_ids = [model]
         if compare:
             model_ids.append(compare)
 
         capability_store: dict[str, list[dict[str, object]]] = request.app.state._sm_capability_store
-        report_store = CapabilityEvidenceStore.__new__(CapabilityEvidenceStore)
-        report_store._path = ""
-        report_store._lock = None
-        report_store._records = []
-        for mid in model_ids:
-            records = capability_store.get(f"cap:{mid}", [])
-            for rec in records:
-                report_store._records.append(dict(rec))
-
-        report = generate_report(model_ids, report_store, include_svg=True)
-        result = _render_report_to_json(report)
-        return cast(dict[str, object], result)
+        report = generate_report(model_ids, capability_store, include_svg=True)
+        return cast(dict[str, object], render_report(report))
 
     @app.post("/admin/small-models/compare")
     async def small_models_compare(request: Request) -> dict[str, object]:

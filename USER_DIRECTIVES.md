@@ -24,9 +24,22 @@ ALL directives are simultaneously active. New directives ADD, never replace.
 
 10. **SearXNG integration for travel** — Travel expert must reference SearXNG indexes for live data.
 
+## STATUS UPDATE — 2026-08-03 Session 62
+
+1. **Subagent nesting depth 3** — ACTIVE. Not yet dispatched depth 2+. Infrastructure exists in capability lattice but no subagent has exercised nested dispatch. Remains a gap.
+2. **Exactly 10 subagents per wave** — ACTIVE and enforced via enforce-multitask.ts.
+3. **≥3 distinct topic areas per wave** — ACTIVE and enforced.
+4. **≥1 continuation slot per wave** — ACTIVE.
+5. **Finish all specs before starting new ones** — COMPLYING. SEC.1 (24/24), MPL.2 (45/45), SMP.1 (6 components), TRV (4 modules), OBA.1 (28/28) all completed. Remaining sub-role stubs (X.1.3-X.1.11, W1, Y, Z.4-Z.5) are cosmetic-only, not blocking specs.
+6. **Travel expert in ansible collection** — DONE. 4 modules, 10 module_utils, 1 skill, SearXNG, 5 playbooks, molecule, 123 tests. `src/general_ludd/travel/` removed as dead code.
+7. **Audit core code for unnecessary expert code** — DONE. os_expert, physics, travel removed from `src/`. Remaining experts (language, governance, etc.) properly placed in ansible collections.
+8. **Never text-only response with pending work** — ACTIVE and enforced via enforce-stop.ts.
+9. **Answer direct questions directly first** — ACTIVE.
+10. **SearXNG integration for travel** — DONE. searxng_client module_utils in travel collection; SearXNG model search wired into model gateway (L.1-L.3).
+
 ## COMPLETED DIRECTIVES
 
-(None yet — all above still active)
+(None — all 10 remain active. Travel and SearXNG (#6, #7, #10) are implemented but the directives stay active as ongoing constraints.)
 
 ## VERIFICATION
 

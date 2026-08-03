@@ -6,6 +6,7 @@ import pytest
 
 from general_ludd.hardware.model_fit import (
     FitResult,
+    _extract_model_params,
     _gpu_name_to_table_key,
     can_run_model,
     gpu_info_to_gpu_table,
@@ -223,6 +224,76 @@ class TestCanRunModel:
         )
         r = can_run_model(inv, "llama-3.1-70b")
         assert r.can_run is True
+
+
+class TestExtractModelParams:
+    def test_standard_b_suffix(self):
+        assert _extract_model_params("llama-3.1-8b") == {"params_b": 8.0}
+        assert _extract_model_params("mistral-7b") == {"params_b": 7.0}
+        assert _extract_model_params("llama-3.1-70b") == {"params_b": 70.0}
+        assert _extract_model_params("qwen-2.5-72b") == {"params_b": 72.0}
+
+    def test_standard_b_suffix_variants(self):
+        assert _extract_model_params("qwen-2.5-7b") == {"params_b": 7.0}
+        assert _extract_model_params("gemma-2-2b") == {"params_b": 2.0}
+        assert _extract_model_params("gemma-2-9b") == {"params_b": 9.0}
+        assert _extract_model_params("codestral-22b") == {"params_b": 22.0}
+        assert _extract_model_params("llama-3.1-405b") == {"params_b": 405.0}
+
+    def test_decimal_param_count(self):
+        assert _extract_model_params("phi-3-mini") == {"params_b": 3.8}
+        assert _extract_model_params("phi-3-medium") == {"params_b": 14.0}
+
+    def test_moe_pattern_mixtral(self):
+        result = _extract_model_params("mixtral-8x7b")
+        assert result is not None
+        assert result["params_b"] == 47.0
+        assert result["is_moe"] is True
+        assert result["active_params_b"] == 13.0
+
+    def test_moe_pattern_deepseek(self):
+        for name in ("deepseek-v3", "deepseek-r1"):
+            result = _extract_model_params(name)
+            assert result is not None
+            assert result["params_b"] == 671.0
+            assert result["is_moe"] is True
+            assert result["active_params_b"] == 37.0
+
+    def test_moe_detection_from_name(self):
+        result = _extract_model_params("some-moe-model-8b")
+        assert result is not None
+        assert result["params_b"] == 8.0
+        assert result["is_moe"] is True
+
+    def test_mixtral_anywhere_detected_as_moe(self):
+        result = _extract_model_params("mixtral-8x22b")
+        assert result is not None
+        assert result["is_moe"] is True
+
+    def test_case_insensitive(self):
+        assert _extract_model_params("MISTRAL-7B") == {"params_b": 7.0}
+        assert _extract_model_params("Llama-3.1-8B") == {"params_b": 8.0}
+
+    def test_stripped_whitespace(self):
+        assert _extract_model_params("  mistral-7b  ") == {"params_b": 7.0}
+
+    def test_unknown_model_returns_none(self):
+        assert _extract_model_params("nonexistent-model-xyz") is None
+
+    def test_no_param_indicator_returns_none(self):
+        assert _extract_model_params("some-model-name") is None
+
+    def test_nx_m_b_pattern_extraction(self):
+        result = _extract_model_params("dbrx-16x12b")
+        assert result is not None
+        assert result["is_moe"] is True
+        assert result["params_b"] == 132.0  # 16 * 12 * (1 - overlap_ratio) ≈ 132
+
+    def test_nx_m_b_fallback_overlap(self):
+        result = _extract_model_params("experts-4x7b")
+        assert result is not None
+        assert result["is_moe"] is True
+        assert result["params_b"] == 21.0  # 4 * 7 * 0.75
 
 
 class TestUnifiedProbe:
