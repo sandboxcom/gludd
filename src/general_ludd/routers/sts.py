@@ -7,6 +7,7 @@ TokenRevoker. All endpoints require PSK auth (on /admin/ prefix).
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, HTTPException
@@ -124,6 +125,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             role_name=role_name,
             role_id=creds.role_id,
             scope_hash="",
+            created_at=datetime.now(UTC),
         )
         await store.store(record)
         logger.info(

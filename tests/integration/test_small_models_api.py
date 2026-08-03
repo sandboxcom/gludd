@@ -1,0 +1,706 @@
+from __future__ import annotations
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from general_ludd.db.models import Base
+
+PSK = "test-psk-sm"
+AUTH = {"Authorization": f"Bearer {PSK}"}
+
+
+async def _make_app(monkeypatch):
+    engine = create_async_engine("sqlite+aiosqlite://", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    monkeypatch.setenv("GLUDD_PSK", PSK)
+    from general_ludd.daemon import create_daemon_app
+
+    app = create_daemon_app(tick_interval=1.0)
+    app.state._session_factory = factory
+
+    transport = ASGITransport(app=app)
+    client = AsyncClient(transport=transport, base_url="http://test")
+    return engine, factory, client, app
+
+
+class TestSmallModelsDownload:
+    @pytest.mark.asyncio
+    async def test_download_huggingface(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/download",
+                json={"model_id": "microsoft/phi-2", "source": "huggingface"},
+                headers=AUTH,
+            )
+            assert resp.status_code == 200, resp.text
+            data = resp.json()
+            assert data["downloaded"] is True
+            assert data["model_id"] == "microsoft/phi-2"
+            assert data["source"] == "huggingface"
+            assert "profile_key" in data
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_download_ollama(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/download",
+                json={"model_id": "llama3.2:3b", "source": "ollama"},
+                headers=AUTH,
+            )
+            assert resp.status_code == 200, resp.text
+            data = resp.json()
+            assert data["source"] == "ollama"
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_download_missing_model_id_422(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/download",
+                json={"source": "huggingface"},
+                headers=AUTH,
+            )
+            assert resp.status_code == 422, resp.text
+            assert "model_id" in resp.text
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_download_invalid_source_422(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/download",
+                json={"model_id": "phi-2", "source": "invalid"},
+                headers=AUTH,
+            )
+            assert resp.status_code == 422, resp.text
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_download_no_auth_returns_401(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/download",
+                json={"model_id": "phi-2"},
+            )
+            assert resp.status_code == 401, resp.text
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+
+class TestSmallModelsQuantize:
+    @pytest.mark.asyncio
+    async def test_quantize_q4(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/quantize",
+                json={"model_id": "phi-2", "method": "q4_k_m"},
+                headers=AUTH,
+            )
+            assert resp.status_code == 200, resp.text
+            data = resp.json()
+            assert data["quantized"] is True
+            assert data["method"] == "q4_k_m"
+            assert "digest" in data
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_quantize_q8(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/quantize",
+                json={"model_id": "phi-2", "method": "q8_0"},
+                headers=AUTH,
+            )
+            assert resp.status_code == 200, resp.text
+            assert resp.json()["method"] == "q8_0"
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_quantize_missing_model_id_422(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/quantize",
+                json={"method": "q4_k_m"},
+                headers=AUTH,
+            )
+            assert resp.status_code == 422, resp.text
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_quantize_invalid_method_422(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/quantize",
+                json={"model_id": "phi-2", "method": "fp8"},
+                headers=AUTH,
+            )
+            assert resp.status_code == 422, resp.text
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_quantize_no_auth_returns_401(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/quantize",
+                json={"model_id": "phi-2", "method": "q4_k_m"},
+            )
+            assert resp.status_code == 401, resp.text
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+
+class TestSmallModelsEvaluate:
+    @pytest.mark.asyncio
+    async def test_evaluate_all_pass(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/evaluate",
+                json={
+                    "model_id": "phi-2",
+                    "task_kind": "context_compaction",
+                    "total_cases": 25,
+                    "passed_cases": 25,
+                },
+                headers=AUTH,
+            )
+            assert resp.status_code == 200, resp.text
+            data = resp.json()
+            assert data["evaluated"] is True
+            assert data["evidence"]["passed"] is True
+            assert data["evidence"]["total_cases"] == 25
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_evaluate_partial_fail(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/evaluate",
+                json={
+                    "model_id": "tinyllama",
+                    "task_kind": "bounded_enumeration",
+                    "total_cases": 25,
+                    "passed_cases": 22,
+                },
+                headers=AUTH,
+            )
+            assert resp.status_code == 200, resp.text
+            data = resp.json()
+            assert data["evidence"]["passed"] is False
+            assert data["evidence"]["passed_cases"] == 22
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_evaluate_missing_model_id_422(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/evaluate",
+                json={"task_kind": "context_compaction"},
+                headers=AUTH,
+            )
+            assert resp.status_code == 422, resp.text
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_evaluate_missing_task_kind_422(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/evaluate",
+                json={"model_id": "phi-2"},
+                headers=AUTH,
+            )
+            assert resp.status_code == 422, resp.text
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_evaluate_unknown_task_kind_422(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/evaluate",
+                json={"model_id": "phi-2", "task_kind": "nonexistent"},
+                headers=AUTH,
+            )
+            assert resp.status_code == 422, resp.text
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_evaluate_no_auth_returns_401(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/evaluate",
+                json={"model_id": "phi-2", "task_kind": "context_compaction"},
+            )
+            assert resp.status_code == 401, resp.text
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+
+class TestSmallModelsEvidence:
+    @pytest.mark.asyncio
+    async def test_evidence_for_model(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            await client.post(
+                "/admin/small-models/evaluate",
+                json={"model_id": "phi-2", "task_kind": "context_compaction"},
+                headers=AUTH,
+            )
+            resp = await client.get(
+                "/admin/small-models/evidence",
+                params={"model_id": "phi-2"},
+                headers=AUTH,
+            )
+            assert resp.status_code == 200, resp.text
+            data = resp.json()
+            assert data["model_id"] == "phi-2"
+            assert len(data["evidence"]) == 1
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_evidence_empty_for_unknown(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.get(
+                "/admin/small-models/evidence",
+                params={"model_id": "nonexistent"},
+                headers=AUTH,
+            )
+            assert resp.status_code == 200, resp.text
+            assert resp.json()["evidence"] == []
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_evidence_all(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.get(
+                "/admin/small-models/evidence",
+                headers=AUTH,
+            )
+            assert resp.status_code == 200, resp.text
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_evidence_no_auth_returns_401(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.get("/admin/small-models/evidence")
+            assert resp.status_code == 401, resp.text
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+
+class TestSmallModelsServe:
+    @pytest.mark.asyncio
+    async def test_serve_creates_server(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/serve",
+                json={"model_id": "phi-2", "port": 9090, "startup_timeout": 0},
+                headers=AUTH,
+            )
+            assert resp.status_code == 200, resp.text
+            data = resp.json()
+            assert "server_id" in data
+            assert data["model_id"] == "phi-2"
+            assert data["status"] == "stopped"
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_serve_missing_model_id_422(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/serve",
+                json={"port": 9090},
+                headers=AUTH,
+            )
+            assert resp.status_code == 422, resp.text
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_serve_invalid_port_422(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/serve",
+                json={"model_id": "phi-2", "port": 80},
+                headers=AUTH,
+            )
+            assert resp.status_code == 422, resp.text
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_serve_no_auth_returns_401(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/serve",
+                json={"model_id": "phi-2", "port": 9090},
+            )
+            assert resp.status_code == 401, resp.text
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+
+class TestSmallModelsStatus:
+    @pytest.mark.asyncio
+    async def test_status_active(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            await client.post(
+                "/admin/small-models/serve",
+                json={"model_id": "phi-2", "port": 9090, "startup_timeout": 0},
+                headers=AUTH,
+            )
+            resp = await client.get("/admin/small-models/status", headers=AUTH)
+            assert resp.status_code == 200, resp.text
+            data = resp.json()
+            assert data["total"] == 1
+            assert len(data["servers"]) == 1
+            assert data["servers"][0]["model_name"] == "phi-2"
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_status_empty(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.get("/admin/small-models/status", headers=AUTH)
+            assert resp.status_code == 200, resp.text
+            assert resp.json()["total"] == 0
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_status_no_auth_returns_401(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.get("/admin/small-models/status")
+            assert resp.status_code == 401, resp.text
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+
+class TestSmallModelsRollout:
+    @pytest.mark.asyncio
+    async def test_rollout_with_evidence(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            await client.post(
+                "/admin/small-models/evaluate",
+                json={"model_id": "phi-2", "task_kind": "context_compaction"},
+                headers=AUTH,
+            )
+            resp = await client.post(
+                "/admin/small-models/rollout",
+                json={
+                    "model_id": "phi-2",
+                    "target": "canary",
+                    "task_kind": "context_compaction",
+                },
+                headers=AUTH,
+            )
+            assert resp.status_code == 200, resp.text
+            data = resp.json()
+            assert data["status"] == "initiated"
+            assert data["target"] == "canary"
+            assert data["has_evidence"] is True
+            assert "rollout_id" in data
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_rollout_without_evidence_412(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/rollout",
+                json={
+                    "model_id": "phi-2",
+                    "target": "full",
+                    "task_kind": "context_compaction",
+                },
+                headers=AUTH,
+            )
+            assert resp.status_code == 412, resp.text
+            assert "evidence" in resp.text
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_rollout_without_task_kind_allowed(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/rollout",
+                json={"model_id": "phi-2", "target": "local"},
+                headers=AUTH,
+            )
+            assert resp.status_code == 200, resp.text
+            data = resp.json()
+            assert data["has_evidence"] is False
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_rollout_missing_model_id_422(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/rollout",
+                json={"target": "local"},
+                headers=AUTH,
+            )
+            assert resp.status_code == 422, resp.text
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_rollout_invalid_target_422(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/rollout",
+                json={"model_id": "phi-2", "target": "production"},
+                headers=AUTH,
+            )
+            assert resp.status_code == 422, resp.text
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_rollout_no_auth_returns_401(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.post(
+                "/admin/small-models/rollout",
+                json={"model_id": "phi-2", "target": "local"},
+            )
+            assert resp.status_code == 401, resp.text
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+
+class TestSmallModelsRecommend:
+    @pytest.mark.asyncio
+    async def test_recommend_ranked_by_pass_ratio(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            await client.post(
+                "/admin/small-models/evaluate",
+                json={"model_id": "phi-2", "task_kind": "context_compaction", "total_cases": 25, "passed_cases": 25},
+                headers=AUTH,
+            )
+            await client.post(
+                "/admin/small-models/evaluate",
+                json={
+                    "model_id": "tinyllama",
+                    "task_kind": "context_compaction",
+                    "total_cases": 25,
+                    "passed_cases": 20,
+                },
+                headers=AUTH,
+            )
+            await client.post(
+                "/admin/small-models/evaluate",
+                json={
+                    "model_id": "llama3.2:3b",
+                    "task_kind": "bounded_enumeration",
+                    "total_cases": 25,
+                    "passed_cases": 25,
+                },
+                headers=AUTH,
+            )
+            resp = await client.get(
+                "/admin/small-models/recommend", params={"task": "context_compaction"}, headers=AUTH
+            )
+            assert resp.status_code == 200, resp.text
+            data = resp.json()
+            assert data["task"] == "context_compaction"
+            assert data["total"] == 2
+            recs = data["recommendations"]
+            assert len(recs) == 2
+            assert recs[0]["model_id"] == "phi-2"
+            assert recs[0]["passed"] is True
+            assert recs[0]["pass_ratio"] == 1.0
+            assert recs[1]["model_id"] == "tinyllama"
+            assert recs[1]["passed"] is False
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_recommend_empty_for_unknown_task(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.get("/admin/small-models/recommend", params={"task": "unknown_task"}, headers=AUTH)
+            assert resp.status_code == 200, resp.text
+            data = resp.json()
+            assert data["task"] == "unknown_task"
+            assert data["recommendations"] == []
+            assert data["total"] == 0
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_recommend_no_auth_returns_401(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.get("/admin/small-models/recommend", params={"task": "context_compaction"})
+            assert resp.status_code == 401, resp.text
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+
+class TestSmallModelsTasks:
+    @pytest.mark.asyncio
+    async def test_tasks_for_model(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            await client.post(
+                "/admin/small-models/evaluate",
+                json={"model_id": "phi-2", "task_kind": "context_compaction", "total_cases": 25, "passed_cases": 25},
+                headers=AUTH,
+            )
+            await client.post(
+                "/admin/small-models/evaluate",
+                json={"model_id": "phi-2", "task_kind": "bounded_enumeration", "total_cases": 25, "passed_cases": 22},
+                headers=AUTH,
+            )
+            resp = await client.get("/admin/small-models/tasks", params={"model": "phi-2"}, headers=AUTH)
+            assert resp.status_code == 200, resp.text
+            data = resp.json()
+            assert data["model_id"] == "phi-2"
+            assert data["total"] == 2
+            task_kinds = {t["task_kind"] for t in data["tasks"]}
+            assert task_kinds == {"bounded_enumeration", "context_compaction"}
+            for t in data["tasks"]:
+                assert "passed_cases" in t
+                assert "total_cases" in t
+                assert "passed" in t
+                assert "role" in t
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_tasks_empty_for_unknown_model(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.get("/admin/small-models/tasks", params={"model": "nonexistent"}, headers=AUTH)
+            assert resp.status_code == 200, resp.text
+            data = resp.json()
+            assert data["model_id"] == "nonexistent"
+            assert data["tasks"] == []
+            assert data["total"] == 0
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_tasks_deduplicates_duplicate_evidence(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            await client.post(
+                "/admin/small-models/evaluate",
+                json={"model_id": "phi-2", "task_kind": "context_compaction", "total_cases": 25, "passed_cases": 25},
+                headers=AUTH,
+            )
+            await client.post(
+                "/admin/small-models/evaluate",
+                json={"model_id": "phi-2", "task_kind": "context_compaction", "total_cases": 30, "passed_cases": 28},
+                headers=AUTH,
+            )
+            resp = await client.get("/admin/small-models/tasks", params={"model": "phi-2"}, headers=AUTH)
+            assert resp.status_code == 200, resp.text
+            data = resp.json()
+            assert data["total"] == 1
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_tasks_no_auth_returns_401(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.get("/admin/small-models/tasks", params={"model": "phi-2"})
+            assert resp.status_code == 401, resp.text
+        finally:
+            await client.aclose()
+            await engine.dispose()

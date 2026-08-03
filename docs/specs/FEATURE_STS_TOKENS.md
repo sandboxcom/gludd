@@ -1,6 +1,7 @@
 # Feature: STS Tokens for Subagents
 
-**Status: IMPLEMENTED** | **Created: 2026-07-14** | **Target: v0.1.0-beta.2**
+**Status: CLOSED** | **Created: 2026-07-14** | **Closed: 2026-08-02** | **Target: v0.1.0-beta.2**
+**Evidence: 411/411 tests pass (contracts 40, store 13, minter 14, revoker 17, daemon 15, E2E 14, + molecules/integration/e2e lifecycle). HEAD `558e661c`.**
 
 ## 1. Overview
 

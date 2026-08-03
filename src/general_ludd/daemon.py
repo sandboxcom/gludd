@@ -2980,8 +2980,16 @@ def create_daemon_app(
     app.state.plan_critique = PlanCritique()
 
     from general_ludd.hardware.probe import probe_hardware
+    from general_ludd.hardware.survey import HardwareSurvey
 
     app.state._hardware = probe_hardware()
+    app.state._hardware_inventory = HardwareSurvey().survey()
+    logger.info(
+        "Hardware inventory surveyed: GPU=%d RAM=%.1fGB Disk=%.1fGB",
+        app.state._hardware_inventory.gpu_count,
+        app.state._hardware_inventory.total_ram_gb,
+        app.state._hardware_inventory.disk_free_gb,
+    )
 
     # C20: use the SHARED load_auth_posture helper so the daemon and worker
     # cannot drift. GLUDD_PSK_DISABLE and GLUDD_ALLOW_NO_AUTH are both accepted
@@ -3443,6 +3451,9 @@ def create_daemon_app(
         worktree,
     )
     from general_ludd.routers import azure_cost as azure_cost_router
+    from general_ludd.routers import (
+        hardware as hardware_router,
+    )
     from general_ludd.routers.azure_cost import (
         CostHealthResponse,
         CostIngestRequest,
@@ -3480,6 +3491,7 @@ def create_daemon_app(
     processes.register(app, daemon_state)
     filestore.register(app, daemon_state)
     git_history.register(app, daemon_state)
+    hardware_router.register(app, daemon_state)
     human_todos.register(app, daemon_state)
     integrity.register(app, daemon_state)
     signing.register(app, daemon_state)

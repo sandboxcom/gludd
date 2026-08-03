@@ -1,0 +1,254 @@
+---
+- name: "Validate benchmark inputs"
+  ansible.builtin.assert:
+    that:
+      - model_profile | length > 0
+      - judge_profile | length > 0
+      - benchmark_questions | length > 0
+    fail_msg: >-
+      model_benchmark requires model_profile, judge_profile, and at least one
+      benchmark question. Got model_profile={{ model_profile | default('<undefined>') }},
+      judge_profile={{ judge_profile | default('<undefined>') }},
+      questions={{ benchmark_questions | default([]) | length }}.
+
+- name: "Ensure output directory exists"
+  ansible.builtin.file:
+    path: "{{ output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: "Render evaluation script"
+  ansible.builtin.copy:
+    dest: "{{ output_dir }}/_mt_bench.py"
+    mode: "0700"
+    content: |
+      #!/usr/bin/env python3
+      """MT-Bench evaluation pipeline using model_client for API calls."""
+      from __future__ import annotations
+
+      import json
+      import os
+      import sys
+      import time
+      from pathlib import Path
+
+      _SRC = Path(__file__).resolve().parents[6] / "src"
+      if _SRC.is_dir() and str(_SRC) not in sys.path:
+          sys.path.insert(0, str(_SRC))
+
+      _COLLECTION = Path(__file__).resolve().parents[3]
+      if str(_COLLECTION) not in sys.path:
+          sys.path.insert(0, str(_COLLECTION))
+
+      from ansible_collections.general_ludd.agent.plugins.module_utils.model_client import (
+          ModelClient,
+      )
+
+
+      def gen_model_answers(questions, model_profile, model_kwargs):
+          answers = []
+          client = ModelClient(model_profile)
+          for idx, item in enumerate(questions):
+              q_answers = []
+              for turn_idx, turn_text in enumerate(item["turns"]):
+                  messages = [{"role": "user", "content": turn_text}]
+                  resp = client.chat(messages, **model_kwargs)
+                  q_answers.append({
+                      "turn": turn_idx,
+                      "question": turn_text,
+                      "answer": resp.get("text", ""),
+                      "model_name": resp.get("model_name", ""),
+                      "usage": resp.get("usage"),
+                  })
+              answers.append({
+                  "question_id": idx,
+                  "category": item.get("category", "general"),
+                  "turns": q_answers,
+              })
+          return answers
+
+
+      def gen_judgments(answers, judge_profile, judge_kwargs, judge_prompt_tpl):
+          client = ModelClient(judge_profile)
+          judgments = []
+          for item in answers:
+            item_judgments = []
+            for turn in item["turns"]:
+                prompt = (
+                    judge_prompt_tpl
+                    .replace("{{ question }}", turn["question"])
+                    .replace("{{ answer }}", turn["answer"])
+                    .replace("{{ reference }}", "[no reference answer available]")
+                )
+                messages = [{"role": "user", "content": prompt}]
+                resp = client.chat(messages, **judge_kwargs)
+                raw = resp.get("text", "{}")
+                try:
+                    scores = json.loads(raw)
+                except json.JSONDecodeError:
+                    scores = {"helpfulness": 0, "accuracy": 0, "coherence": 0, "completeness": 0, "justification": "parse error", "_raw": raw}
+                item_judgments.append(scores)
+            judgments.append({
+                "question_id": item["question_id"],
+                "category": item["category"],
+                "judgments": item_judgments,
+            })
+          return judgments
+
+
+      def collect_scores(judgments):
+          category_scores = {}
+          overall_scores = []
+          total_score = 0.0
+          total_count = 0
+          for entry in judgments:
+              cat = entry["category"]
+              if cat not in category_scores:
+                  category_scores[cat] = []
+              for j in entry["judgments"]:
+                  dims = ["helpfulness", "accuracy", "coherence", "completeness"]
+                  avg = sum(j.get(d, 0) for d in dims) / len(dims)
+                  category_scores[cat].append(avg)
+                  overall_scores.append(avg)
+                  total_score += avg
+                  total_count += 1
+
+          overall_avg = total_score / total_count if total_count else 0.0
+          by_category = {}
+          for cat, scores in sorted(category_scores.items()):
+              by_category[cat] = {
+                  "count": len(scores),
+                  "average": sum(scores) / len(scores) if scores else 0.0,
+                  "min": min(scores) if scores else 0.0,
+                  "max": max(scores) if scores else 0.0,
+              }
+
+          num_questions = len(judgments)
+          num_passed = sum(
+              1 for j in judgments for jj in j["judgments"]
+              if sum(jj.get(d, 0) for d in ["helpfulness", "accuracy", "coherence", "completeness"]) / 4 >= 5.0
+          )
+          return {
+              "overall_average": round(overall_avg, 2),
+              "total_questions": num_questions,
+              "total_turns": total_count,
+              "passed_turns": num_passed,
+              "by_category": by_category,
+          }
+
+
+      def write_evidence(scores_output, output_dir):
+          """Write capability evidence consumable by CapabilityEvidenceStore."""
+          evidence = {
+              "model_profile_id": model_profile,
+              "model_identity_digest": "mt-bench-{}".format(hasattr(sys, "argv") and sys.argv[0] or "unknown"),
+              "task_kind": "benchmark",
+              "role": "coder",
+              "collection": "mt-bench",
+              "suite_id": "mt-bench-v1",
+              "suite_revision": "1.0.0",
+              "acceptance_contract_digest": "mt-bench-score-5.0",
+              "passed_cases": scores_output.get("passed_turns", 0),
+              "total_cases": scores_output.get("total_turns", 0),
+              "collection_ok": True,
+              "local_only": True,
+              "evidence_digest": hashlib.sha256(
+                  json.dumps(scores_output, sort_keys=True).encode()
+              ).hexdigest(),
+          }
+          evidence_path = os.path.join(output_dir, "capability_evidence.json")
+          with open(evidence_path, "w") as fh:
+              json.dump(evidence, fh, indent=2)
+          return evidence_path
+
+
+      if __name__ == "__main__":
+          import hashlib
+
+          model_profile = sys.argv[1]
+          judge_profile = sys.argv[2]
+          output_dir = sys.argv[3]
+
+          questions = {{ benchmark_questions | to_json }}
+          model_kwargs = {{ model_kwargs | to_json }}
+          judge_kwargs = {{ judge_kwargs | to_json }}
+          judge_prompt = {{ judge_prompt | to_json }}
+
+          print("=== PHASE: gen_model_answer ===")
+          t0 = time.time()
+          answers = gen_model_answers(questions, model_profile, model_kwargs)
+          answers_path = os.path.join(output_dir, "model_answers.json")
+          with open(answers_path, "w") as fh:
+              json.dump(answers, fh, indent=2, default=str)
+          print("Generated {} answers in {:.1f}s → {}".format(len(answers), time.time() - t0, answers_path))
+
+          print("=== PHASE: gen_judgment ===")
+          t0 = time.time()
+          judgments = gen_judgments(answers, judge_profile, judge_kwargs, judge_prompt)
+          judgments_path = os.path.join(output_dir, "judgments.json")
+          with open(judgments_path, "w") as fh:
+              json.dump(judgments, fh, indent=2, default=str)
+          print("Judged {} responses in {:.1f}s → {}".format(len(judgments), time.time() - t0, judgments_path))
+
+          print("=== PHASE: collect_scores ===")
+          scores = collect_scores(judgments)
+          scores_path = os.path.join(output_dir, "scores.json")
+          with open(scores_path, "w") as fh:
+              json.dump(scores, fh, indent=2)
+          print("Overall average: {:.2f}/10".format(scores["overall_average"]))
+          for cat, stats in sorted(scores["by_category"].items()):
+              print("  {}: {:.2f} (n={})".format(cat, stats["average"], stats["count"]))
+          print("Passed {}/{} turns (threshold 5.0)".format(scores["passed_turns"], scores["total_turns"]))
+
+          print("=== PHASE: write_evidence ===")
+          evidence_path = write_evidence(scores, output_dir)
+          print("Evidence written → {}".format(evidence_path))
+
+          metadata = {
+              "model_profile": model_profile,
+              "judge_profile": judge_profile,
+              "num_questions": len(questions),
+              "score_overall": scores["overall_average"],
+              "scores_by_category": scores["by_category"],
+              "passed": scores["passed_turns"],
+              "total": scores["total_turns"],
+          }
+          metadata_path = os.path.join(output_dir, "benchmark_metadata.json")
+          with open(metadata_path, "w") as fh:
+              json.dump(metadata, fh, indent=2)
+
+          print(json.dumps(metadata, indent=2))
+
+- name: "Run MT-Bench evaluation pipeline"
+  ansible.builtin.command: "{{ ansible_python_interpreter | default('python3') }} {{ output_dir }}/_mt_bench.py {{ model_profile }} {{ judge_profile }} {{ output_dir }}"
+  register: _bench_result
+  changed_when: true
+  environment:
+    GLUDD_MODEL_PROFILE_ID: "{{ model_profile }}"
+    GLUDD_MODEL_PROVIDER: "{{ model_provider | default('deepseek') }}"
+    GLUDD_MODEL_NAME: "{{ model_name | default('') }}"
+    PYTHONPATH: "{{ lookup('ansible.builtin.env', 'PYTHONPATH') | default('') }}:{{ playbook_dir | default(omit) }}"
+
+- name: "Report benchmark stdout"
+  ansible.builtin.debug:
+    msg: "{{ _bench_result.stdout_lines }}"
+
+- name: "Report errors if any"
+  when: _bench_result.rc != 0
+  ansible.builtin.fail:
+    msg: "MT-Bench evaluation failed (rc={{ _bench_result.rc }}): {{ _bench_result.stderr }}"
+
+- name: "Read capability evidence"
+  ansible.builtin.slurp:
+    src: "{{ output_dir }}/capability_evidence.json"
+  register: _raw_evidence
+
+- name: "Display capability evidence"
+  ansible.builtin.debug:
+    msg: "{{ _raw_evidence.content | b64decode | from_json }}"
+
+- name: "Set evidence fact for downstream consumption"
+  ansible.builtin.set_fact:
+    model_benchmark_evidence: "{{ _raw_evidence.content | b64decode | from_json }}"
+    model_benchmark_scores: "{{ lookup('ansible.builtin.file', output_dir + '/scores.json') | from_json }}"
+    model_benchmark_passed: "{{ (_raw_evidence.content | b64decode | from_json).passed_cases >= (_raw_evidence.content | b64decode | from_json).total_cases * 0.6 }}"

@@ -30,8 +30,16 @@ def run_module() -> None:
             format=export_format,
             output_file=Path(output_file) if output_file else None,
         )
+
+        changed = True
+        if output_file:
+            out_path = Path(output_file)
+            expected = result if isinstance(result, str) else str(result)
+            if out_path.exists() and out_path.read_text(encoding="utf-8") == expected:
+                changed = False
+
         module.exit_json(
-            changed=True,
+            changed=changed,
             output=str(result) if output_file else result,
         )
     except Exception as exc:

@@ -195,6 +195,8 @@ def _session_factory_e2e(with_row: object | None = None) -> object:
     sf = MagicMock()
     sf.return_value.__aenter__ = AsyncMock(return_value=session)
     sf.return_value.__aexit__ = AsyncMock()
+    sf.begin.return_value.__aenter__ = AsyncMock(return_value=session)
+    sf.begin.return_value.__aexit__ = AsyncMock()
     return sf
 
 

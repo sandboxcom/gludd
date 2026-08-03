@@ -136,6 +136,8 @@ class TestChatCompletionsEndpoint:
 
 class TestChatSendModule:
     def test_chat_send_module_spec_is_valid(self) -> None:
+        import json
+        from unittest.mock import patch
 
         from ansible.module_utils.basic import AnsibleModule
 
@@ -147,5 +149,10 @@ class TestChatSendModule:
             "max_tokens": {"type": "int", "required": False, "default": None},
             "stream": {"type": "bool", "default": False},
         }
-        mod = AnsibleModule(argument_spec=module_args, check_invalid_arguments=False)
+        fake_params = json.dumps({"ANSIBLE_MODULE_ARGS": {"messages": [{"role": "user", "content": "Hi"}]}}).encode()
+        with patch(
+            "ansible.module_utils._internal._debugging.load_params",
+            return_value=(fake_params, "legacy"),
+        ):
+            mod = AnsibleModule(argument_spec=module_args)
         assert mod is not None

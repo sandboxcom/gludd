@@ -15,6 +15,7 @@ from typing import Any
 
 from general_ludd.routing_roles.small_model_policy import (
     _IDENTIFIER_RE,
+    _TASK_KIND_RE,
     CapabilityEvidence,
 )
 from general_ludd.schemas.benchmark import TaskRole
@@ -98,6 +99,13 @@ class CapabilityEvidenceStore:
             raise ValueError("model_profile_id has an invalid format")
         with self._lock:
             return [dict(r) for r in self._records if r.get("model_profile_id") == model_profile_id]
+
+    def query_by_task_kind(self, task_kind: str) -> list[dict[str, Any]]:
+        """Return every record for *task_kind* across all models."""
+        if not isinstance(task_kind, str) or _TASK_KIND_RE.fullmatch(task_kind) is None:
+            raise ValueError("task_kind has an invalid format")
+        with self._lock:
+            return [dict(r) for r in self._records if r.get("task_kind") == task_kind]
 
     def list_all(self) -> list[dict[str, Any]]:
         """Return a shallow copy of every stored record."""

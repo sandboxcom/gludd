@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from typing import cast
+from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException, Request
 
@@ -12,13 +12,14 @@ from general_ludd.routing_roles.small_model_policy import (
     DEFAULT_TASK_CONTRACTS,
     SmallModelTaskPolicy,
 )
+from general_ludd.small_models.radar_profile import (
+    ModelRadarProfile,
+    compare_models,
+    generate_radar,
+    render_radar_svg,
+)
 
 logger = logging.getLogger(__name__)
-
-_SERVER_STORE = {}
-_CAPABILITY_STORE = {}
-_EVAL_STORE = {}
-_ROLLOUT_STORE = {}
 
 
 def _get_inference_mgr(app: FastAPI) -> LocalInferenceManager | None:
@@ -41,13 +42,15 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     if not hasattr(app.state, "_small_model_task_policy"):
         app.state._small_model_task_policy = SmallModelTaskPolicy()
     if not hasattr(app.state, "_sm_server_store"):
-        app.state._sm_server_store: dict[str, LocalServerConfig] = {}
+        app.state._sm_server_store = {}
     if not hasattr(app.state, "_sm_capability_store"):
-        app.state._sm_capability_store: dict[str, list[dict[str, object]]] = {}
+        app.state._sm_capability_store = {}
     if not hasattr(app.state, "_sm_eval_store"):
-        app.state._sm_eval_store: dict[str, dict[str, object]] = {}
+        app.state._sm_eval_store = {}
     if not hasattr(app.state, "_sm_rollout_store"):
-        app.state._sm_rollout_store: dict[str, dict[str, object]] = {}
+        app.state._sm_rollout_store = {}
+    if not hasattr(app.state, "_sm_radar_store"):
+        app.state._sm_radar_store = {}
 
     @app.post("/admin/small-models/download")
     async def small_models_download(request: Request) -> dict[str, object]:
@@ -61,7 +64,8 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             raise HTTPException(status_code=422, detail="source must be huggingface, ollama, or local")
 
         key = f"{source}/{model_id}"
-        _SERVER_STORE[key] = LocalServerConfig(
+        store: dict[str, LocalServerConfig] = request.app.state._sm_server_store
+        store[key] = LocalServerConfig(
             engine=cast(str, body.get("engine", "llamacpp")),
             model_path=cast(str, body.get("model_path", f"./models/{model_id}")),
             model_name=model_id,
@@ -138,19 +142,22 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             "acceptance_contract_digest": _digest({"task_kind": task_kind, "collection": collection}),
         }
         key = f"cap:{model_id}"
-        _CAPABILITY_STORE.setdefault(key, []).append(evidence_entry)
-        _EVAL_STORE[f"eval:{model_id}:{task_kind}"] = evidence_entry
+        capability_store: dict[str, list[dict[str, object]]] = request.app.state._sm_capability_store
+        eval_store: dict[str, dict[str, object]] = request.app.state._sm_eval_store
+        capability_store.setdefault(key, []).append(evidence_entry)
+        eval_store[f"eval:{model_id}:{task_kind}"] = evidence_entry
         logger.info("small-model evaluate: %s task=%s passed=%s/%s", model_id, task_kind, passed_cases, total_cases)
         return {"evaluated": True, "model_id": model_id, "evidence": evidence_entry}
 
     @app.get("/admin/small-models/evidence")
-    async def small_models_evidence(model_id: str | None = None) -> dict[str, object]:
+    async def small_models_evidence(request: Request, model_id: str | None = None) -> dict[str, object]:
+        capability_store: dict[str, list[dict[str, object]]] = request.app.state._sm_capability_store
         if model_id:
             return {
                 "model_id": model_id,
-                "evidence": _CAPABILITY_STORE.get(f"cap:{model_id}", []),
+                "evidence": capability_store.get(f"cap:{model_id}", []),
             }
-        return {"evidence": list(_CAPABILITY_STORE.values())}
+        return {"evidence": list(capability_store.values())}
 
     @app.post("/admin/small-models/serve")
     async def small_models_serve(request: Request) -> dict[str, object]:
@@ -228,7 +235,8 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         if policy is None:
             raise HTTPException(status_code=503, detail="SmallModelTaskPolicy not wired")
 
-        evidence_list = _CAPABILITY_STORE.get(f"cap:{model_id}", [])
+        capability_store: dict[str, list[dict[str, object]]] = request.app.state._sm_capability_store
+        evidence_list = capability_store.get(f"cap:{model_id}", [])
         if not evidence_list and task_kind:
             raise HTTPException(
                 status_code=412,
@@ -244,6 +252,97 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             "status": "initiated",
             "has_evidence": len(evidence_list) > 0,
         }
-        _ROLLOUT_STORE[rollout_id] = rollout_entry
+        rollout_store: dict[str, dict[str, object]] = request.app.state._sm_rollout_store
+        rollout_store[rollout_id] = rollout_entry
         logger.info("small-model rollout initiated: %s target=%s", model_id, target)
         return rollout_entry
+
+    @app.get("/admin/small-models/recommend")
+    async def small_models_recommend(request: Request, task: str) -> dict[str, object]:
+        eval_store: dict[str, dict[str, object]] = request.app.state._sm_eval_store
+        candidates: list[dict[str, object]] = []
+
+        for key, evidence in eval_store.items():
+            if not key.startswith("eval:"):
+                continue
+            if evidence.get("task_kind") != task:
+                continue
+            _tv = evidence.get("total_cases", 0)
+            _pv = evidence.get("passed_cases", 0)
+            total = int(_tv) if isinstance(_tv, (int, float, str)) else 0
+            passed = int(_pv) if isinstance(_pv, (int, float, str)) else 0
+            ratio = passed / total if total > 0 else 0.0
+            candidates.append(
+                {
+                    "model_id": evidence.get("model_id", ""),
+                    "task_kind": task,
+                    "passed_cases": passed,
+                    "total_cases": total,
+                    "pass_ratio": round(ratio, 4),
+                    "passed": evidence.get("passed", False),
+                    "evidence_digest": evidence.get("evidence_digest", ""),
+                }
+            )
+
+        candidates.sort(key=lambda c: (c["passed"], c["pass_ratio"]), reverse=True)
+        return {"task": task, "recommendations": candidates, "total": len(candidates)}
+
+    @app.get("/admin/small-models/tasks")
+    async def small_models_tasks(request: Request, model: str) -> dict[str, object]:
+        capability_store: dict[str, list[dict[str, object]]] = request.app.state._sm_capability_store
+        evidence_list = capability_store.get(f"cap:{model}", [])
+
+        tasks: list[dict[str, object]] = []
+        seen: set[str] = set()
+        for entry in evidence_list:
+            task_kind = str(entry.get("task_kind", ""))
+            if not task_kind or task_kind in seen:
+                continue
+            seen.add(task_kind)
+            tasks.append(
+                {
+                    "task_kind": task_kind,
+                    "passed_cases": entry.get("passed_cases", 0),
+                    "total_cases": entry.get("total_cases", 0),
+                    "passed": entry.get("passed", False),
+                    "role": entry.get("role", ""),
+                }
+            )
+
+        tasks.sort(key=lambda t: str(t["task_kind"]))
+        return {"model_id": model, "tasks": tasks, "total": len(tasks)}
+
+    @app.get("/admin/small-models/radar")
+    async def small_models_radar(request: Request, model: str) -> Any:
+        capability_store: dict[str, list[dict[str, object]]] = request.app.state._sm_capability_store
+        evidence_list = capability_store.get(f"cap:{model}", [])
+
+        profile = build_profile(model, [dict(e) for e in evidence_list])
+
+        radar_store: dict[str, RadarProfile] = request.app.state._sm_radar_store
+        radar_store[model] = profile
+
+        svg_output = radar_svg([profile])
+
+        from fastapi.responses import Response
+
+        return Response(content=svg_output, media_type="image/svg+xml")
+
+    @app.post("/admin/small-models/compare")
+    async def small_models_compare(request: Request) -> dict[str, object]:
+        body = await request.json()
+        model_ids_raw = body.get("model_ids", [])
+        model_ids = [str(m) for m in model_ids_raw] if isinstance(model_ids_raw, list) else []
+
+        if not model_ids:
+            raise HTTPException(status_code=422, detail="model_ids list required")
+        if len(model_ids) < 2:
+            raise HTTPException(status_code=422, detail="at least 2 model_ids required")
+
+        capability_store: dict[str, list[dict[str, object]]] = request.app.state._sm_capability_store
+        all_evidence: dict[str, list[dict[str, Any]]] = {}
+        for mid in model_ids:
+            all_evidence[mid] = [dict(e) for e in capability_store.get(f"cap:{mid}", [])]
+
+        result = compare_models(model_ids, all_evidence)
+        return cast(dict[str, object], result)

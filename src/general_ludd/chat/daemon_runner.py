@@ -63,10 +63,13 @@ class DaemonChatRunner:
                 resp.raise_for_status()
                 data = resp.json()
         except httpx.ConnectError:
+            self.history.pop()
             return "[Error: Could not connect to the daemon. Is gludd daemon running?]"
         except httpx.HTTPStatusError as exc:
+            self.history.pop()
             return f"[Error: Daemon returned {exc.response.status_code}]"
         except Exception as exc:
+            self.history.pop()
             return f"[Error: {exc}]"
 
         content = str(data.get("response", "") or "")

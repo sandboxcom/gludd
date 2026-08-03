@@ -1,0 +1,71 @@
+---
+model_profile: "default"
+judge_profile: "default"
+
+benchmark_questions:
+  - category: "coding"
+    turns:
+      - "Implement a Python function `binary_search(arr, target)` that returns the index of `target` in a sorted list `arr`, or -1 if not found."
+      - "Add a docstring with type annotations and a working example to your binary_search implementation."
+  - category: "coding"
+    turns:
+      - "Write a Python function `merge_intervals(intervals)` that merges overlapping intervals. Each interval is a list of [start, end]."
+      - "Write a unit test for your merge_intervals function covering at least 4 edge cases."
+  - category: "coding"
+    turns:
+      - "Implement a Python function `lru_cache(capacity)` that works as a decorator implementing a least-recently-used cache."
+      - "Explain the time complexity of each operation in your LRU cache implementation."
+  - category: "reasoning"
+    turns:
+      - "Alice is twice as old as Bob was when Alice was half as old as Bob will be when Bob is three times as old as Alice was when Alice was three times as old as Bob. How old is Alice?"
+      - "Solve the same problem using a system of equations, showing your work step by step."
+  - category: "reasoning"
+    turns:
+      - "A train leaves Station A traveling east at 60 mph. Another train leaves Station B, 300 miles east of Station A, traveling west at 40 mph. When and where do they meet?"
+      - "If the first train instead leaves 30 minutes late, recalculate when and where they meet."
+  - category: "math"
+    turns:
+      - "Prove that the square root of 2 is irrational using proof by contradiction."
+      - "Show that there are infinitely many prime numbers using Euclid's proof."
+  - category: "writing"
+    turns:
+      - "Write a professional email to a client explaining that their project will be delayed by two weeks due to an unexpected technical issue. Be honest but reassuring."
+      - "Revise the same email to be more concise while maintaining the key facts and tone."
+  - category: "writing"
+    turns:
+      - "Write a 100-word summary of the importance of open-source software for scientific research."
+      - "Rewrite the summary from the perspective of a skeptical corporate executive who sees open-source as a security risk. Keep the same word count."
+  - category: "roleplay"
+    turns:
+      - "You are a career counselor. A client tells you they feel stuck in their tech job and want to transition to a more creative field. What advice do you give?"
+      - "The client responds that they're worried about the pay cut. How do you address this concern?"
+  - category: "knowledge"
+    turns:
+      - "Explain how a transformer model's self-attention mechanism works, in terms a software engineer with no ML background can understand."
+      - "Now explain multi-head attention and why using multiple heads improves performance over single-head attention."
+
+judge_prompt: |
+  You are evaluating the quality of an AI assistant's response to a user question.
+  Please compare the assistant's answer against a reference answer.
+
+  Question: {{ question }}
+  Assistant's Answer: {{ answer }}
+  Reference Answer: {{ reference }}
+
+  Rate the assistant's answer on a scale of 1-10 for each dimension:
+  1. Helpfulness: Does it address the user's request?
+  2. Accuracy: Is the information correct?
+  3. Coherence: Is the response well-structured and logical?
+  4. Completeness: Does it cover the necessary aspects?
+
+  Output ONLY a JSON object with the four scores and a brief justification:
+  {"helpfulness": N, "accuracy": N, "coherence": N, "completeness": N, "justification": "..."}
+
+output_dir: "/opt/models/benchmark"
+model_kwargs:
+  temperature: 0.7
+  max_tokens: 1024
+
+judge_kwargs:
+  temperature: 0.0
+  max_tokens: 512

@@ -7,14 +7,21 @@ from general_ludd.small_models.download import (
     ModelDownloader,
 )
 from general_ludd.small_models.eval_harness import (
-    STANDARD_TASKS,
     EleutherAIHarness,
     EvalTask,
     HarnessConfig,
     ParsedResult,
+    STANDARD_TASKS,
     parse_lm_eval_output,
     result_to_evidence,
     score_passing,
+)
+from general_ludd.small_models.radar_profile import (
+    ModelRadarProfile,
+    best_for_task,
+    compare_models,
+    generate_radar,
+    render_radar_svg,
 )
 
 __all__ = [
@@ -26,8 +33,13 @@ __all__ = [
     "EvalTask",
     "HarnessConfig",
     "ModelDownloader",
+    "ModelRadarProfile",
     "ParsedResult",
+    "best_for_task",
+    "compare_models",
+    "generate_radar",
     "parse_lm_eval_output",
+    "render_radar_svg",
     "result_to_evidence",
     "score_passing",
 ]

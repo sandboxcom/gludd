@@ -1,6 +1,6 @@
 # Feature: NF.10 — enforce-stop.ts False-Completion Fix
 
-**Status: IMPLEMENTED** | **Created: 2026-07-16** | **Verified: 2026-08-02** | **Target: v0.1.0-beta.2** | **Type: enforcement fix**
+**Status: CONFIRMED-COMPLETE** | **Created: 2026-07-16** | **Verified: 2026-08-02** | **Target: v0.1.0-beta.2** | **Type: enforcement fix**
 
 ## 1. Problem
 
@@ -92,3 +92,32 @@ disengage only skips heuristic checks (`COMPLETION_SMELL`,
 - Molecule made non-blocking in CI (was masking the false-completion
   by producing red noise)
 - False-completion incident documented in `BUGS.md`
+
+## 8. Verified-Complete Evidence (2026-08-02)
+
+All five fix vectors confirmed present, active, and matching the spec in
+`.opencode/plugin/impl/enforce_stop_impl.ts` (1749 lines):
+
+| Fix vector | Location | Verified |
+|---|---|---|
+| `hasRealPendingWork()` — unconditional, uncached | `enforce_stop_impl.ts:566` | Reads TASKS.md on every invocation (`:582-592`); no cache; also checks ratchet.yml (`:594-602`), BUGS.md (`:604-609`), .gate-status (`:612-632`), CI verdict via watchdog cache (`:634-657`), release completeness file (`:659-668`), test failures (`:670-678`), repo pending work (`:679-683`), multitasking backlog (`:684-699`). `todowrite` is NEVER consulted. |
+| text.complete block — ALL text-only responses blocked | `enforce_stop_impl.ts:1097` | `isTextOnly` gate (`turnState.toolCallMade === false && dispatchCount === 0`) → blocks ALL text-only when `hasRealPendingWork()` returns true. Short-text exemption REMOVED. |
+| `COMPLETION_SMELL_RE` | `enforce_stop_impl.ts:198` | 20+ completion-adjacent substrings (`complete`, `done`, `finished`, `ready`, `landed`, `shipped`, etc.) — matched against response text; fires even for short text when pending work exists. |
+| `STATUS_SUMMARY_RE` + `looksLikeStatusSummary()` | `enforce_stop_impl.ts:149-173` | Blocks structural status summaries (bolded headers + status tables, >500 char + `##` headers). NOT bypassed by disengage. |
+| Disengage narrowed (2026-07-15) | `enforce_stop_impl.ts:1081-1086` | `isDisengaged()` only skips heuristic checks (`COMPLETION_SMELL`, `COMPLETION_WORDS`, `QA_RESPONSE_PATTERNS`); the fundamental `hasRealPendingWork()` text-only block is NEVER bypassed by disengage. |
+
+### Runtime verification
+
+```
+make test-hook-runtime → 52 functional tests across 8 plugins (PASS)
+make test TESTFILE=tests/unit/test_verified_claims_plugin.py → 23 tests (PASS)
+make test TESTFILE=tests/unit/test_stop_pattern_qa.py → structural pin (PASS)
+```
+
+### Vendor spec close
+
+`SPEC_NF10_STOP_FALSE_COMPLETION` closed with verified evidence:
+`enforce_stop_impl.ts:566-699` (hasRealPendingWork 8-source detection),
+`enforce_stop_impl.ts:198` (COMPLETION_SMELL_RE),
+`enforce_stop_impl.ts:149-173` (STATUS_SUMMARY_RE),
+`enforce_stop_impl.ts:1081-1086` (disengage narrowed).

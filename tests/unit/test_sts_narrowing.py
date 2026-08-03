@@ -206,7 +206,7 @@ class TestCapabilityNarrowingToOpenbaoPolicy:
         chain = {"admin": frozenset({"coder"}), "coder": frozenset({"writer"}), "writer": frozenset()}
         lattice = CapabilityLattice(chain=chain)
         narrowing = CapabilityNarrowing(lattice)
-        child_actions = {"edit"}
+        child_actions = {"admin"}
         hcl = narrowing.to_openbao_policy(child_actions, role_name="narrowed")
         assert "narrowed" in hcl
         assert len(hcl) > 0

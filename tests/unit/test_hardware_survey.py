@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+from dataclasses import FrozenInstanceError
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -22,8 +23,8 @@ class TestGpuInfo:
 
     def test_frozen(self):
         gpu = GpuInfo(name="T4", vram_gb=16.0, index=0, backend="nvidia")
-        with pytest.raises(TypeError):
-            object.__setattr__(gpu, "name", "changed")
+        with pytest.raises(FrozenInstanceError):
+            gpu.name = "changed"
         assert gpu.name == "T4"
 
     def test_equality(self):
@@ -105,7 +106,7 @@ class TestHardwareSurveyNvidia:
         survey = HardwareSurvey()
         mock = MagicMock()
         mock.returncode = 0
-        mock.stdout = "Tesla T4, 15360 MiB\n"
+        mock.stdout = "Tesla T4, 15360\n"
         with patch("subprocess.run", return_value=mock):
             gpus = survey.probe_gpu_nvidia()
         assert len(gpus) == 1
@@ -117,7 +118,7 @@ class TestHardwareSurveyNvidia:
         survey = HardwareSurvey()
         mock = MagicMock()
         mock.returncode = 0
-        mock.stdout = "NVIDIA H100, 81559 MiB\nNVIDIA H100, 81559 MiB\n"
+        mock.stdout = "NVIDIA H100, 81559\nNVIDIA H100, 81559\n"
         with patch("subprocess.run", return_value=mock):
             gpus = survey.probe_gpu_nvidia()
         assert len(gpus) == 2
@@ -137,7 +138,7 @@ class TestHardwareSurveyNvidia:
         survey = HardwareSurvey()
         mock = MagicMock()
         mock.returncode = 0
-        mock.stdout = "A100, 40960 MiB\n\n\n"
+        mock.stdout = "A100, 40960\n\n\n"
         with patch("subprocess.run", return_value=mock):
             gpus = survey.probe_gpu_nvidia()
         assert len(gpus) == 1
@@ -236,7 +237,7 @@ class TestHardwareSurveyProbeGpus:
         survey = HardwareSurvey()
         nvidia_mock = MagicMock()
         nvidia_mock.returncode = 0
-        nvidia_mock.stdout = "Tesla V100, 16384 MiB\n"
+        nvidia_mock.stdout = "Tesla V100, 16384\n"
 
         def run_side_effect(args, **kwargs):
             cmd = args[0] if args else ""
@@ -277,14 +278,20 @@ class TestHardwareSurveyProbeGpus:
 class TestHardwareSurveySystem:
     def test_probe_ram_psutil(self):
         survey = HardwareSurvey()
-        with patch("general_ludd.hardware.survey.psutil", create=True) as mock_psutil:
-            mock_psutil.virtual_memory.return_value.total = 64 * 1024**3
+        import sys as _sys
+
+        mock_psutil = MagicMock()
+        mock_psutil.virtual_memory.return_value.total = 64 * 1024**3
+        with patch.dict(_sys.modules, {"psutil": mock_psutil}):
             assert survey.probe_ram() == 64.0
 
     def test_probe_ram_sysctl_fallback(self):
         survey = HardwareSurvey()
-        with patch("general_ludd.hardware.survey.psutil", create=True) as mock_psutil:
-            mock_psutil.virtual_memory.side_effect = ImportError
+        import sys as _sys
+
+        mock_psutil = MagicMock()
+        mock_psutil.virtual_memory.side_effect = ImportError
+        with patch.dict(_sys.modules, {"psutil": mock_psutil}):
             mock = MagicMock()
             mock.returncode = 0
             mock.stdout = "34359738368\n"
@@ -293,10 +300,15 @@ class TestHardwareSurveySystem:
 
     def test_probe_ram_zero_on_failure(self):
         survey = HardwareSurvey()
-        with patch("general_ludd.hardware.survey.psutil", create=True) as mock_psutil:
-            mock_psutil.virtual_memory.side_effect = ImportError
-            with patch("subprocess.run", side_effect=FileNotFoundError):
-                assert survey.probe_ram() == 0.0
+        import sys as _sys
+
+        mock_psutil = MagicMock()
+        mock_psutil.virtual_memory.side_effect = ImportError
+        with (
+            patch.dict(_sys.modules, {"psutil": mock_psutil}),
+            patch("subprocess.run", side_effect=FileNotFoundError),
+        ):
+            assert survey.probe_ram() == 0.0
 
     def test_probe_disk(self):
         survey = HardwareSurvey()
@@ -365,7 +377,7 @@ class TestHardwareSurveyFull:
         ):
             inv = survey.survey()
         d = inv.to_dict()
-        assert d["gpu_count"] is None or "gpus" in d
+        assert d.get("gpu_count") is None or "gpus" in d
         assert d["total_ram_gb"] == 256.0
         assert d["disk_free_gb"] == 2000.0
         assert d["cpu_cores"] == 64

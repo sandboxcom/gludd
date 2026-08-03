@@ -173,7 +173,7 @@ disallow_untyped_defs = true
 exclude = ["scripts/", "tests/unit/test_injection_patterns.py", "tests/unit/test_sql_injection_patterns.py", "tests/unit/test_ci_push_guard.py", "abtest/"]
 
 [[tool.mypy.overrides]]
-module = ["pygments", "pygments.*", "ansible.*", "ansible_collections.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "croniter.*", "jsonschema", "googleapiclient.*", "google.*", "azure.*", "ansible_runner", "xmlsec", "lxml", "lxml.etree", "pyVim.*", "pyVmomi", "openai"]
+module = ["pygments", "pygments.*", "ansible.*", "ansible_collections.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "croniter.*", "jsonschema", "googleapiclient.*", "google.*", "azure.*", "ansible_runner", "xmlsec", "lxml", "lxml.etree", "pyVim.*", "pyVmomi", "openai", "lm_eval", "lm_eval.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

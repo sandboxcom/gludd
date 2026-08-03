@@ -132,7 +132,7 @@ class HardwareSurvey:
 
         for line in result.stdout.splitlines():
             stripped = line.strip()
-            if stripped.startswith("Chipset Model:") or stripped.startswith("Vendor:"):
+            if stripped.startswith("Chipset Model:"):
                 if current_name and current_vram is not None and current_vram >= _MIN_GPU_VRAM_GB:
                     gpus.append(
                         GpuInfo(
@@ -144,6 +144,9 @@ class HardwareSurvey:
                     )
                 current_name = stripped.split(":", 1)[1].strip()
                 current_vram = None
+            elif stripped.startswith("Vendor:"):
+                if not current_name:
+                    current_name = stripped.split(":", 1)[1].strip()
             elif stripped.startswith("VRAM (Total):") or stripped.startswith("VRAM (Dynamic, Max):"):
                 vram_str = stripped.split(":", 1)[1].strip()
                 vram_str = vram_str.replace("GB", "").replace("MB", "").strip()

@@ -1,0 +1,31 @@
+---
+galaxy_info:
+  role_name: model_benchmark
+  author: general_ludd
+  description: >-
+    Runs MT-Bench evaluation pipeline (gen_model_answer → gen_judgment →
+    collect_scores) against a model, producing CapabilityEvidence consumable
+    by the evidence_store.
+  license: MIT
+  platforms:
+    - name: EL
+      versions:
+        - "8"
+        - "9"
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+  galaxy_tags:
+    - agent
+    - ml
+    - evaluation
+    - benchmark
+    - mt-bench
+    - capability_evidence
+dependencies: []

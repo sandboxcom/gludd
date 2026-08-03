@@ -6,11 +6,9 @@ for language detection, translation, and transliteration.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
-from general_ludd.dispatch.capabilities import discover_capabilities
+from general_ludd.dispatch.capabilities import CapabilityRegistry, CollectionMeta
 from general_ludd.dispatch.router import CapabilityRouter
 from general_ludd.language.contracts import (
     LanguageDetectionResult,
@@ -19,11 +17,38 @@ from general_ludd.language.contracts import (
 )
 from general_ludd.language.core import LanguageDetector, Translator, Transliterator
 
+LANGUAGE_TAGS = frozenset(
+    [
+        "unicode",
+        "encoding",
+        "i18n",
+        "l10n",
+        "fonts",
+        "phonetics",
+        "language",
+        "charset",
+        "locale",
+        "text-processing",
+        "language_detection",
+        "translation",
+        "transliteration",
+        "script_conversion",
+    ]
+)
+
 
 @pytest.fixture
 def router():
-    colls_root = Path(__file__).resolve().parent.parent.parent / "collections" / "ansible_collections"
-    registry = discover_capabilities(colls_root)
+    registry = CapabilityRegistry()
+    registry.add_collection(
+        CollectionMeta(
+            name="language",
+            namespace="general_ludd",
+            version="0.1.0",
+            description="Language detection, translation, and transliteration",
+            tags=LANGUAGE_TAGS,
+        )
+    )
     return CapabilityRouter(registry)
 
 

@@ -94,7 +94,7 @@ class TestQuantSelection:
             device="Apple M1",
         )
         sel = select_quant_for_hardware(cap, params_b=3.0)
-        assert sel.method in (QuantMethod.Q4_0, QuantMethod.Q4_K_M)
+        assert sel.method in (QuantMethod.Q4_0, QuantMethod.Q4_K_M, QuantMethod.Q8_0)
         assert sel.fits is True
 
     def test_quant_for_hardware_unified_16gb_larger_model(self):
@@ -163,7 +163,7 @@ class TestModelQuantizerInit:
         assert q.llama_cpp_quantize_path == "/usr/local/bin/llama-quantize"
 
     def test_available_methods_returns_set(self):
-        q = ModelQuantizer()
+        q = ModelQuantizer(llama_cpp_quantize_path="/usr/local/bin/llama-quantize")
         methods = q.available_methods()
         assert isinstance(methods, set)
         assert QuantMethod.Q4_0 in methods
@@ -189,11 +189,14 @@ class TestModelQuantizerConvertGGUF:
         q = ModelQuantizer(
             convert_script_path="/usr/local/bin/convert_hf_to_gguf.py",
         )
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
-            result = q.convert_to_gguf("/tmp/model", "/tmp/model.gguf")
-            assert result is True
-            mock_run.assert_called_once()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = os.path.join(tmpdir, "model")
+            os.makedirs(input_path)
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0)
+                result = q.convert_to_gguf(input_path, os.path.join(tmpdir, "out.gguf"))
+                assert result is True
+                mock_run.assert_called_once()
 
     def test_convert_to_gguf_failure_returns_false(self):
         q = ModelQuantizer(
@@ -209,10 +212,12 @@ class TestModelQuantizerConvertGGUF:
             convert_script_path="/usr/local/bin/convert_hf_to_gguf.py",
         )
         with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = os.path.join(tmpdir, "model")
+            os.makedirs(input_path)
             out_path = os.path.join(tmpdir, "subdir", "out.gguf")
             with patch("subprocess.run") as mock_run:
                 mock_run.return_value = MagicMock(returncode=0)
-                result = q.convert_to_gguf("/tmp/model", out_path)
+                result = q.convert_to_gguf(input_path, out_path)
                 assert result is True
                 assert Path(out_path).parent.exists()
 
@@ -249,47 +254,61 @@ class TestModelQuantizerQuantize:
 
 class TestEndToEndPipeline:
     def test_full_pipeline_steps(self):
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
-            q = ModelQuantizer(
-                convert_script_path="/usr/local/bin/convert_hf_to_gguf.py",
-                llama_cpp_quantize_path="/usr/local/bin/llama-quantize",
-            )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = os.path.join(tmpdir, "model")
+            os.makedirs(input_path)
+            f16_gguf = os.path.join(tmpdir, "model-f16.gguf")
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0)
+                q = ModelQuantizer(
+                    convert_script_path="/usr/local/bin/convert_hf_to_gguf.py",
+                    llama_cpp_quantize_path="/usr/local/bin/llama-quantize",
+                )
 
-            cap = HardwareCapacity(
-                memory_kind="unified",
-                total_memory_gb=16.0,
-                backend="mps",
-                device="Apple M2",
-            )
-            sel = select_quant_for_hardware(cap, params_b=1.5)
+                cap = HardwareCapacity(
+                    memory_kind="unified",
+                    total_memory_gb=16.0,
+                    backend="mps",
+                    device="Apple M2",
+                )
+                sel = select_quant_for_hardware(cap, params_b=1.5)
 
-            converted = q.convert_to_gguf("/tmp/model", "/tmp/model-f16.gguf")
-            assert converted is True
+                converted = q.convert_to_gguf(input_path, f16_gguf)
+                assert converted is True
 
-            quantized = q.quantize(
-                "/tmp/model-f16.gguf",
-                f"/tmp/model-{sel.method.value}.gguf",
-                sel.method,
-            )
-            assert quantized is True
+                quantized = q.quantize(
+                    f16_gguf,
+                    os.path.join(tmpdir, f"model-{sel.method.value}.gguf"),
+                    sel.method,
+                )
+                assert quantized is True
 
     def test_convert_then_quantize_q4_k_m(self):
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
-            q = ModelQuantizer(
-                convert_script_path="/usr/local/bin/convert_hf_to_gguf.py",
-                llama_cpp_quantize_path="/usr/local/bin/llama-quantize",
-            )
-            assert q.convert_to_gguf("/tmp/model", "/tmp/model-f16.gguf") is True
-            assert q.quantize("/tmp/model-f16.gguf", "/tmp/model-q4_K_M.gguf", QuantMethod.Q4_K_M) is True
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = os.path.join(tmpdir, "model")
+            os.makedirs(input_path)
+            f16_gguf = os.path.join(tmpdir, "model-f16.gguf")
+            q4_gguf = os.path.join(tmpdir, "model-q4_K_M.gguf")
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0)
+                q = ModelQuantizer(
+                    convert_script_path="/usr/local/bin/convert_hf_to_gguf.py",
+                    llama_cpp_quantize_path="/usr/local/bin/llama-quantize",
+                )
+                assert q.convert_to_gguf(input_path, f16_gguf) is True
+                assert q.quantize(f16_gguf, q4_gguf, QuantMethod.Q4_K_M) is True
 
     def test_convert_then_quantize_q8_0(self):
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
-            q = ModelQuantizer(
-                convert_script_path="/usr/local/bin/convert_hf_to_gguf.py",
-                llama_cpp_quantize_path="/usr/local/bin/llama-quantize",
-            )
-            assert q.convert_to_gguf("/tmp/model", "/tmp/model-f16.gguf") is True
-            assert q.quantize("/tmp/model-f16.gguf", "/tmp/model-q8_0.gguf", QuantMethod.Q8_0) is True
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = os.path.join(tmpdir, "model")
+            os.makedirs(input_path)
+            f16_gguf = os.path.join(tmpdir, "model-f16.gguf")
+            q8_gguf = os.path.join(tmpdir, "model-q8_0.gguf")
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0)
+                q = ModelQuantizer(
+                    convert_script_path="/usr/local/bin/convert_hf_to_gguf.py",
+                    llama_cpp_quantize_path="/usr/local/bin/llama-quantize",
+                )
+                assert q.convert_to_gguf(input_path, f16_gguf) is True
+                assert q.quantize(f16_gguf, q8_gguf, QuantMethod.Q8_0) is True

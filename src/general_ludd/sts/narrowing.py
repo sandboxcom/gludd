@@ -37,7 +37,7 @@ _ROLE_TO_OPENBAO_PATH: dict[str, str] = {
 }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, unsafe_hash=True)
 class PolicyFragment:
     """A single HCL path rule within an OpenBao policy.
 
@@ -49,7 +49,7 @@ class PolicyFragment:
 
     path: str
     capabilities: frozenset[str]
-    constraints: dict[str, object] = field(default_factory=dict)
+    constraints: dict[str, object] = field(default_factory=dict, hash=False, compare=False)
 
 
 class OpenBaoPolicyRenderer:
@@ -79,9 +79,7 @@ class OpenBaoPolicyRenderer:
         if not actions:
             return ""
 
-        action_strs = sorted(
-            str(a.value if hasattr(a, "value") else a) for a in actions
-        )
+        action_strs = sorted(str(a.value if hasattr(a, "value") else a) for a in actions)
 
         path_verbs: dict[str, set[str]] = {}
         for a in action_strs:
@@ -97,7 +95,7 @@ class OpenBaoPolicyRenderer:
         for bao_path, verb_set in sorted(path_verbs.items()):
             verb_list = ", ".join(sorted(verb_set))
             lines.append(f'path "{bao_path}" {{')
-            lines.append(f"  capabilities = [\"{verb_list}\"]")
+            lines.append(f'  capabilities = ["{verb_list}"]')
             lines.append("}")
 
         return "\n".join(lines) + "\n"
@@ -141,9 +139,7 @@ class CapabilityNarrowing:
             the given role.
         """
         parent_all = self._parent_lattice.all_actions(parent_role)
-        child_action_strs = {
-            str(a.value if hasattr(a, "value") else a) for a in child_actions
-        }
+        child_action_strs = {str(a.value if hasattr(a, "value") else a) for a in child_actions}
 
         narrowed = child_action_strs & parent_all
         if narrowed != child_action_strs:
@@ -165,12 +161,8 @@ class CapabilityNarrowing:
         does not exceed parent). Returns False if child requests any action
         absent from parent — this is an escalation attempt.
         """
-        parent_set: set[str] = {
-            str(a.value if hasattr(a, "value") else a) for a in parent_actions
-        }
-        child_set: set[str] = {
-            str(a.value if hasattr(a, "value") else a) for a in child_actions
-        }
+        parent_set: set[str] = {str(a.value if hasattr(a, "value") else a) for a in parent_actions}
+        child_set: set[str] = {str(a.value if hasattr(a, "value") else a) for a in child_actions}
         return child_set.issubset(parent_set)
 
     def to_openbao_policy(

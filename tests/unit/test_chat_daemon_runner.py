@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from general_ludd.chat.daemon_runner import DaemonChatRunner
 
@@ -38,8 +38,9 @@ class TestDaemonChatRunnerSendMessage:
     @patch("general_ludd.chat.daemon_runner.httpx.AsyncClient")
     async def test_send_message_success(self, mock_client_cls: AsyncMock) -> None:
         mock_client = AsyncMock()
+        mock_client_cls.return_value = AsyncMock()
         mock_client_cls.return_value.__aenter__.return_value = mock_client
-        mock_resp = AsyncMock()
+        mock_resp = MagicMock()
         mock_resp.json.return_value = {"response": "Hello!"}
         mock_resp.raise_for_status.return_value = None
         mock_client.post.return_value = mock_resp
@@ -54,8 +55,9 @@ class TestDaemonChatRunnerSendMessage:
     @patch("general_ludd.chat.daemon_runner.httpx.AsyncClient")
     async def test_send_message_empty_response(self, mock_client_cls: AsyncMock) -> None:
         mock_client = AsyncMock()
+        mock_client_cls.return_value = AsyncMock()
         mock_client_cls.return_value.__aenter__.return_value = mock_client
-        mock_resp = AsyncMock()
+        mock_resp = MagicMock()
         mock_resp.json.return_value = {"response": ""}
         mock_resp.raise_for_status.return_value = None
         mock_client.post.return_value = mock_resp
@@ -69,6 +71,7 @@ class TestDaemonChatRunnerSendMessage:
         import httpx
 
         mock_client = AsyncMock()
+        mock_client_cls.return_value = AsyncMock()
         mock_client_cls.return_value.__aenter__.return_value = mock_client
         mock_client.post.side_effect = httpx.ConnectError("boom")
 
@@ -82,10 +85,11 @@ class TestDaemonChatRunnerSendMessage:
         import httpx
 
         mock_client = AsyncMock()
+        mock_client_cls.return_value = AsyncMock()
         mock_client_cls.return_value.__aenter__.return_value = mock_client
-        mock_resp = AsyncMock()
+        mock_resp = MagicMock()
         mock_resp.status_code = 500
-        mock_client.post.side_effect = httpx.HTTPStatusError("err", request=AsyncMock(), response=mock_resp)
+        mock_client.post.side_effect = httpx.HTTPStatusError("err", request=MagicMock(), response=mock_resp)
 
         runner = DaemonChatRunner()
         result = await runner.send_message("Hi")

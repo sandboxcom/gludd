@@ -1,6 +1,6 @@
 # Feature: NF.8 — Multitasking Enforcement Hardening
 
-**Status: IMPLEMENTED (expanded)** | **Created: 2026-07-16** | **Target: v0.1.0-beta.2** | **Type: enforcement fix**
+**Status: CONFIRMED-COMPLETE** | **Created: 2026-07-16** | **Verified: 2026-08-02** | **Target: v0.1.0-beta.2** | **Type: enforcement fix**
 
 ## 1. Problem
 
@@ -100,3 +100,24 @@ Two gaps in `enforce-multitask.ts` + `enforce-delegate.ts`:
 - node-v26 `--experimental-strip-types` compatibility verified (no `require()`,
   no forbidden `catch { try` patterns)
 - Config module: `.opencode/lib/multitask_config.ts` (39 lines, shared constants)
+
+## 8. Verified-Complete Evidence (2026-08-02)
+
+All three fix vectors confirmed present and active in
+`.opencode/plugin/enforce-multitask.ts`:
+
+| Fix vector | Location | Verified |
+|---|---|---|
+| Consecutive non-dispatch counter | `enforce-multitask.ts:374-382` | `consecutiveNonDispatch` increments on every non-dispatch tool call within `CONSECUTIVE_NON_DISPATCH_WINDOW_MS` (30s). At `CONSECUTIVE_NON_DISPATCH_THRESHOLD` (5), all non-dispatch tools blocked with "GRINDING BLOCKED". Dispatch resets counter to 0 (`:235-236, :299-300`). |
+| `handleMessageBoundary()` via text.complete | `enforce-multitask.ts:194, :538, :560` | Canonical boundary signal at `text.complete` end — resets `thisMessageDispatches`. Time-gap heuristic kept as FALLBACK only, gated behind flag to prevent double-processing (`:270-287`). |
+| Under-floor hard block (2026-07-15) | `enforce-multitask.ts:421-422` | Block fires IMMEDIATELY when <10 dispatches in current message — does NOT wait for message boundary. Closes "dispatch 1 then grind" bypass. |
+
+### Runtime verification
+
+```
+make test-hook-runtime → 52 functional tests across 8 plugins (PASS)
+enforce-multitask.test.node.mjs → runtime behavioral tests T1-T6 pass
+  T5: CONSECUTIVE_NON_DISPATCH_THRESHOLD === 5
+  T6: CONSECUTIVE_NON_DISPATCH_WINDOW_MS === 30000
+test_multitask_e2e.py → 97 E2E tests (invokes actual hooks)
+```
