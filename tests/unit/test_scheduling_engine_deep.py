@@ -9,6 +9,8 @@ integration boundaries.
 
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
+
 import pytest
 
 from general_ludd.scheduling.scheduler import (
@@ -45,7 +47,7 @@ class TestWorkItemConstruction:
 
     def test_frozen_prevents_mutation(self):
         wi = WorkItem(id="task-3")
-        with pytest.raises(Exception):
+        with pytest.raises(FrozenInstanceError):
             wi.id = "changed"  # type: ignore[misc]
 
     def test_equality(self):

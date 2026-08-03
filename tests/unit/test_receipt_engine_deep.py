@@ -13,7 +13,7 @@ All tests use injected fakes — no live daemon, no DB, no network.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import FrozenInstanceError, dataclass
 from typing import cast
 
 import pytest
@@ -686,7 +686,7 @@ class TestTokenCostBaselines:
 
     def test_token_weight_immutable(self):
         w = TokenWeight(key="k", samples=10, median_input=5.0, median_output=7.0, median_total=12.0)
-        with pytest.raises(Exception):
+        with pytest.raises(FrozenInstanceError):
             w.key = "other"  # type: ignore[misc]
 
 

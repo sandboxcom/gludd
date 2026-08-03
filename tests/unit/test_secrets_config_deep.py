@@ -380,7 +380,7 @@ class TestScopeIntersection:
 
 class TestScopeValidation:
     def test_empty_paths_rejected(self):
-        with pytest.raises(ValueError, match="1..64 paths"):
+        with pytest.raises(ValueError, match=r"1\.\.64 paths"):
             OpenBaoPathScope(
                 mount="secret",
                 paths=(),
