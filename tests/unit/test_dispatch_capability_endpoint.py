@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from general_ludd.dispatch.capabilities import CapabilityRegistry, CollectionMeta
 
 
@@ -335,3 +337,141 @@ class TestTravelDispatchRouting:
         data = resp.json()
         assert data["ok"] is False
         assert data["error"] is not None
+
+
+# ── POST /api/dispatch capability-based dispatch ──────────────────────────
+
+
+def _make_cap_dispatch_client(
+    registry: CapabilityRegistry | None = None,
+    collection_handler: "Callable[[str, dict[str, object]], object] | None" = None,
+):
+    """Build a TestClient with both capability_registry and a mock collection_handler."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from general_ludd.routers.dispatch import register
+
+    app = FastAPI()
+    register(
+        app,
+        {},
+        capability_registry=registry,
+        collection_handler=collection_handler,
+    )
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def _mock_collection_handler(name: str, args: dict[str, object]) -> dict[str, object]:
+    return {"invoked": name, "args": args, "status": "ok"}
+
+
+class TestCapabilityBasedDispatch:
+    def test_dispatch_by_capability_and_action(self):
+        reg = _travel_registry()
+        client = _make_cap_dispatch_client(reg, collection_handler=_mock_collection_handler)
+        resp = client.post(
+            "/api/dispatch",
+            json={
+                "capability": "travel",
+                "action": "flight_search",
+                "args": {"origin": "SFO", "destination": "NRT"},
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok_count"] == 1
+        assert data["error_count"] == 0
+        result = data["results"][0]
+        assert result["ok"] is True
+        assert result["kind"] == "collection"
+        assert result["name"] == "general_ludd.travel.flight_search"
+        output = result["output"]
+        assert output["invoked"] == "general_ludd.travel.flight_search"
+        assert output["args"] == {"origin": "SFO", "destination": "NRT"}
+
+    def test_dispatch_by_flights_tag(self):
+        reg = _travel_registry()
+        client = _make_cap_dispatch_client(reg, collection_handler=_mock_collection_handler)
+        resp = client.post(
+            "/api/dispatch",
+            json={"capability": "flights", "action": "flight_search", "args": {}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok_count"] == 1
+        assert data["results"][0]["name"] == "general_ludd.travel.flight_search"
+
+    def test_dispatch_by_hotels_tag(self):
+        reg = _travel_registry()
+        client = _make_cap_dispatch_client(reg, collection_handler=_mock_collection_handler)
+        resp = client.post(
+            "/api/dispatch",
+            json={"capability": "hotels", "action": "hotel_search", "args": {}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["results"][0]["name"] == "general_ludd.travel.hotel_search"
+
+    def test_dispatch_by_itinerary_tag(self):
+        reg = _travel_registry()
+        client = _make_cap_dispatch_client(reg, collection_handler=_mock_collection_handler)
+        resp = client.post(
+            "/api/dispatch",
+            json={
+                "capability": "itinerary",
+                "action": "trip_planner",
+                "args": {
+                    "origin": "SFO",
+                    "destinations": ["NRT"],
+                    "start_date": "2026-09-01",
+                    "end_date": "2026-09-15",
+                },
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["results"][0]["name"] == "general_ludd.travel.trip_planner"
+
+    def test_dispatch_missing_action_returns_422(self):
+        reg = _travel_registry()
+        client = _make_cap_dispatch_client(reg, collection_handler=_mock_collection_handler)
+        resp = client.post("/api/dispatch", json={"capability": "travel"})
+        assert resp.status_code == 422
+
+    def test_dispatch_unknown_capability_returns_404(self):
+        reg = _travel_registry()
+        client = _make_cap_dispatch_client(reg, collection_handler=_mock_collection_handler)
+        resp = client.post(
+            "/api/dispatch",
+            json={"capability": "vacation", "action": "search", "args": {}},
+        )
+        assert resp.status_code == 404
+
+    def test_dispatch_no_registry_returns_503(self):
+        client = _make_cap_dispatch_client(registry=None)
+        resp = client.post(
+            "/api/dispatch",
+            json={"capability": "travel", "action": "search"},
+        )
+        assert resp.status_code == 503
+
+    def test_dispatch_empty_capability_falls_through_to_tool_calls_parse(self):
+        """Empty string capability is falsy, falls through to parse_tool_calls (422)."""
+        reg = _travel_registry()
+        client = _make_cap_dispatch_client(reg, collection_handler=_mock_collection_handler)
+        resp = client.post("/api/dispatch", json={"capability": "", "action": "search"})
+        assert resp.status_code == 422
+
+    def test_capability_dispatch_still_allows_kind_based_dispatch(self):
+        """When capability is absent, the endpoint handles kind-based dispatch normally."""
+        reg = _travel_registry()
+        client = _make_cap_dispatch_client(reg, collection_handler=_mock_collection_handler)
+        resp = client.post(
+            "/api/dispatch",
+            json={"kind": "collection", "name": "general_ludd.travel.flight_search", "args": {"origin": "SFO"}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok_count"] == 1
+        assert data["results"][0]["name"] == "general_ludd.travel.flight_search"

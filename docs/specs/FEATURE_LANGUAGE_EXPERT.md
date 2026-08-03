@@ -27,15 +27,29 @@ the agent encounters.
 | `translate` | Translation | Multi-language translation (dictionary + LLM fallback) | DONE |
 | `transliterate` | Transliteration | Script-to-script conversion (Cyrillic, Arabic, CJK) | DONE |
 
-## 3. Knowledge Modules
+## 3. Knowledge Modules (12 Total)
 
-| Module | Content |
-|--------|---------|
-| `unicode_data.py` | Unicode property lookup, normalization forms (NFC/NFD/NFKC/NFKD), grapheme cluster boundaries, Unicode planes (BMP/SIP/SMP/SSP/SPUA), version history, character categories |
-| `charset_map.py` | Encoding tables, BOM byte sequences per encoding, code page mappings (ISO 8859-x, Windows-125x, Shift-JIS, EUC-*, GB*, Big5, KOI8-*), chardet confidence thresholds, mojibake patterns |
-| `locale_data.py` | CLDR-derived locale data: number formats, date formats, currency formats, plural rules, RTL script map, locale negotiation priorities, BCP 47 tag parsing |
-| `phonetic_data.py` | IPA character table, X-SAMPA to IPA mapping, ARPABET phoneme set, CMU Pronouncing Dictionary subset, Soundex/Metaphone/Double Metaphone algorithm data |
-| `homoglyph_data.py` | Unicode confusables table (UTS #39), invisible character codepoints (zero-width, bidi control, soft hyphen), homoglyph categories (Latin/Cyrillic/Greek lookalikes), attack vector mapping |
+### Core Modules (8) — `src/general_ludd/language/`
+
+| Module | Content | Status |
+|--------|---------|--------|
+| `unicode_data.py` | Unicode property lookup, normalization forms (NFC/NFD/NFKC/NFKD), grapheme cluster boundaries, Unicode planes (BMP/SIP/SMP/SSP/SPUA) | DONE |
+| `charset_map.py` | Encoding tables, BOM byte sequences per encoding, code page mappings, chardet confidence thresholds, mojibake patterns | DONE |
+| `locale_data.py` | CLDR-derived locale data: number/date/currency formats, plural rules, RTL script map, BCP 47 tag parsing | DONE |
+| `phonetic_data.py` | IPA character table, X-SAMPA to IPA, ARPABET phoneme set, CMU Pronouncing Dictionary, Soundex/Metaphone/Double Metaphone | DONE |
+| `homoglyph_data.py` | Unicode confusables table (UTS #39), invisible character codepoints, homoglyph categories, attack vector mapping | DONE |
+| `font_data.py` | OpenType table definitions, font format specs, variable font axes, font metric functions | DONE |
+| `i18n_data.py` | ICU placeholder extraction, untranslated string detection, PO parse/serialize, pseudolocalization | DONE |
+| `cross_patterns.py` | Cross-language import detection, FFI pattern detection, polyglot build detection, script invocation detection | DONE |
+
+### Collection Module Utils (4) — `plugins/module_utils/`
+
+| Module | Content | Status |
+|--------|---------|--------|
+| `contracts.py` | Pydantic contracts: language detection, translation, transliteration, homoglyph scan, phonetic, font analysis, locale | DONE |
+| `core.py` | Delegating wrapper: imports from 8 src modules into Ansible module_utils namespace with typed wrappers | DONE |
+| `capability_router.py` | Capability-based dispatch via agent daemon: `LanguageRouter` with `route()`, `route_detect()`, `route_translate()`, `route_transliterate()` | DONE |
+| `model_client.py` | LLM-based language detection and translation via `ModelClient`, with offline fallback | DONE |
 
 ## 4. Coverage Domains
 
@@ -101,34 +115,89 @@ ISO/IEC JTC 1/SC 2 (coded character sets), CLDR technical committee.
 | C | L10n + I18n: 2 roles, CLDR locale data population | Days 4-5 |
 | D | Fonts + Phonetics + Homoglyph: 3 roles, font/phone/homoglyph data | Days 6-7 |
 
-## 6. Files
+## 6. Files (Actual — Built)
 
 ```
 collections/ansible_collections/general_ludd/language/
-├── galaxy.yml
+├── galaxy.yml                         (model_capabilities 11, role_capabilities 11, capability tags 11)
 ├── README.md
 ├── roles/
-│   ├── unicode_analyze/tasks/main.yml
-│   ├── bom_detect/tasks/main.yml
-│   ├── encoding_detect/tasks/main.yml
-│   ├── locale_format/tasks/main.yml
-│   ├── i18n_extract/tasks/main.yml
-│   ├── font_analyze/tasks/main.yml
-│   ├── phonetic_transcribe/tasks/main.yml
-│   └── homoglyph_scan/tasks/main.yml
+│   ├── unicode_analyze/{files,tasks,defaults,vars,meta}/
+│   ├── bom_detect/{files,tasks,defaults,vars,meta,README}/
+│   ├── encoding_detect/{files,tasks,defaults,vars,meta,README}/
+│   ├── locale_format/{files,tasks,defaults,vars,meta,README}/
+│   ├── i18n_extract/{files,tasks,defaults,vars,meta,README}/
+│   ├── font_analyze/{files,tasks,defaults,vars,meta,README}/
+│   ├── phonetic_transcribe/{files,tasks,defaults,vars,meta,README}/
+│   ├── homoglyph_scan/{files,tasks,defaults,vars,meta,README}/
+│   ├── language_detect/{files,tasks,defaults,meta}/
+│   ├── translate/{files,tasks,defaults,meta}/
+│   └── transliterate/{files,tasks,defaults,meta}/
 ├── plugins/
 │   └── module_utils/
-│       └── (reserved for future Ansible module_utils)/
+│       ├── __init__.py
+│       ├── contracts.py              (237 lines, 18 pydantic models)
+│       ├── core.py                   (240 lines, 23 wrappers)
+│       ├── capability_router.py      (156 lines, LanguageRouter class)
+│       └── model_client.py           (174 lines, LLM detect + translate)
+├── tests/
+│   ├── test_language_analysis_behavior.py
+│   ├── test_integration_phonetic_data.py
+│   ├── test_integration_homoglyph_data.py
+│   ├── test_integration_locale_data.py
+│   ├── test_integration_charset_map.py
+│   ├── test_integration_role_paths.py
+│   └── test_integration_unicode_data.py
 src/general_ludd/language/
 ├── __init__.py
 ├── unicode_data.py
 ├── charset_map.py
 ├── locale_data.py
 ├── phonetic_data.py
-└── homoglyph_data.py
-tests/unit/
-└── test_language_expert_collection.py
+├── homoglyph_data.py
+├── font_data.py
+├── i18n_data.py
+├── cross_patterns.py
+├── core.py
+├── corpus.py
+├── contracts.py
+├── detection.py
+├── polyglot.py
+├── tooling.py
+├── translation.py
+└── transliteration.py
 ```
+
+## 9. Completion Record
+
+Closed 2026-08-03 against `d6758aa2` on `development`.
+
+### What was built (vs planned)
+
+| Component | Planned | Built |
+|-----------|---------|-------|
+| Roles | 8 | 11 (added language_detect, translate, transliterate) |
+| Core modules (`src/`) | 5 | 17 (added font_data, i18n_data, cross_patterns, core, corpus, contracts, detection, polyglot, tooling, translation, transliteration) |
+| Module_utils (`plugins/`) | 0 | 4 (contracts, core, capability_router, model_client) |
+| Collection tests | 1 | 7 |
+| galaxy.yml | skeleton | full (11 model_capabilities, 11 role_capabilities, capability tags) |
+
+### Capability Router Wiring
+
+11 capabilities declared in galaxy.yml: `language_detection`, `translation`, `transliteration`, `unicode_analyze`, `encoding_detect`, `font_analyze`, `homoglyph_scan`, `phonetic_transcribe`, `locale_format`, `i18n_extract`, `bom_detect`.
+
+Capability router verification test: `tests/unit/test_capability_router_language.py` — collection discovery, tag index lookups, cross-collection isolation.
+
+### Architecture S65.4 Fixes Applied
+
+The architecture audit (S65.4) identified 5 language collection violations:
+- No contracts module → RESOLVED (`contracts.py`, 237 lines, 18 pydantic models)
+- ViewModel-without-Model in locale_format → RESOLVED (core.py with proper delegation)
+- Model bypass via script calls in roles → RESOLVED (capability_router.py + model_client.py)
+- ViewModel gating destructive ops → RESOLVED (contracts enforce input validation)
+- Deployment constraint on core.py → RESOLVED (core.py is pure delegation, no deployment dependency)
+
+All 5 architecture violations closed.
 
 ## 7. Dependencies
 
