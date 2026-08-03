@@ -2209,6 +2209,9 @@ molecule-test:
 	@echo "Running molecule scenario: $(SCENARIO)"
 	@MOLECULE_GLOB="molecule/playbooks/*/molecule.yml" $(UV) run molecule test -s "$(SCENARIO)"
 
+check-molecule-integrity:
+	@python3 /tmp/gludd-molecule-audit.py
+
 molecule-test-model-pipeline:
 	@echo "=== model pipeline molecule test (download->quantize->evaluate->register->serve) ==="
 	@cd collections/ansible_collections/general_ludd/agent && $(UV) run molecule test -s default
