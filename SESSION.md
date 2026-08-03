@@ -150,9 +150,9 @@ e5f2e18c fix: molecule coverage gaps, gate-lite all green, session tracking
 | X.1.3-X.1.10 XML sub-roles | DEFERRED |
 | W1.1-W1.1.10 Web Server sub-roles | DEFERRED |
 | Y.1.1-Y.1.8 Web Design sub-roles | DEFERRED |
-| Z.4-Z.7 E2E game gaps | DEFERRED |
+| Z.4-Z.7 E2E game gaps | COMPLETE (FPX.1 pipeline, `e87f6f63`) |
 
-### Architecture — Verified Current (HEAD `414e34c7`)
+### Architecture — Verified Current (HEAD `e87f6f63`)
 
 | Component | Detail |
 |---|---|
@@ -208,4 +208,4 @@ e5f2e18c fix: molecule coverage gaps, gate-lite all green, session tracking
 4. `make release-cut TAG=v0.1.0-beta.3 MSG='beta.3: 21 specs complete + FPX.1 local model, 58K+ tests'`
 5. Verify 12/12 release artifacts: `make verify-release-completeness TAG=v0.1.0-beta.3`
 
-- **Last Updated: 2026-08-03 — Session 72 FINAL.** HEAD `e87f6f63` on `development`. ALL 21 specs + FPX.1 COMPLETE. Local model E2E: COMPLETE (~790 tests). FPX.1 local model wiring: COMPLETE (697 tests, commit `e87f6f63`). gate-lite: PASS (4682/4682, S69 baseline). 58,533/58,534 tests collected (0 errors). 0 gate failures. Tree DIRTY (9 files). 12 commits unpushed. CI RED (run 30797503219, conclusion='failure'). Release beta.3 BLOCKED on CI green.
+- **Last Updated: 2026-08-03 — Session 73.** HEAD `e87f6f63` on `development`. ALL 21 specs + FPX.1 + Phase Z (Z.4-Z.7) COMPLETE. FPX.1 spec CLOSED (`docs/research/FPS_GAME_E2E_RELIABILITY.md`). Local model E2E: COMPLETE (~790 tests). gate-lite: PASS (4682/4682, S69 baseline). 58,533/58,534 tests collected (0 errors). Tree DIRTY (9 files). 12 commits unpushed. CI RED (run 30797503219, conclusion='failure'). Release beta.3 BLOCKED on CI green.
