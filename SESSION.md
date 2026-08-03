@@ -1,4 +1,4 @@
-## PRIMARY OBJECTIVE: GREEN CI ON DEVELOPMENT → v0.1.0-beta.3 WITH 12/12 ARTIFACTS (BLOCKED: 2 gate-lite test failures + 10 commits unpushed + 5 dirty files)
+## PRIMARY OBJECTIVE: GREEN CI ON DEVELOPMENT → v0.1.0-beta.3 WITH 12/12 ARTIFACTS (BLOCKED: 3 commits unpushed + 3 dirty files)
 
 ---
 
@@ -12,11 +12,8 @@
 
 ## Current Gate Status (2026-08-03)
 <!-- gate:begin -->
-- **gate-lite: FAILED** (2026-08-03, HEAD `a46a1184`) — 2 unit test failures, all other phases green
-- **FAILED tests (2):**
-  - `tests/unit/test_a05_overload_retry_cap.py::TestFastFailoverKinds::test_failovers_at_failover_after[TimeoutKind.CONNECTION_TIMEOUT]`
-  - `tests/unit/test_ci_regression_guards.py::test_every_molecule_scenario_is_structurally_complete`
-- **PASSED: 888 passed, 2 failed, 13 skipped, 26 warnings** in 71.9s
+- **gate-lite: PASS** (2026-08-03, HEAD `4b907848`) — all phases green
+- **Test run: 4682 passed, 0 failed** — all 4682 app tests passing
 - lint: PASS 0
 - dead-code: PASS 0
 - tdd-compliance: PASS
@@ -32,10 +29,10 @@
 - smoke: PASS
 - verify-enforcement: PASS (40/40 subagent guards)
 - TASKS.md integrity: PASS (715 items, 0 violations)
-- **integration-health: 3,252 collected, ran partial, timed out at 30s** — sts suite green, chemistry/materials green, ai_ml green, git_release green through assess_to_plan+zdd_lifecycle
+- **integration-health: 3,252 collected, ran partial, timed out at 30s** — all executed suites green (sts, chemistry, materials, ai_ml, git_release, sandboxes)
 - **13 specs lack enforcement:** AA012, AA017, AA057, AA074, AA075, AA081, AA084, AA089, AA090, AA093, AA094, AA096, AC020
 - **Total collection: 58,461 tests, 0 errors** (Session 67 probe; concurrent pytest prevents fresh collection)
-- **Remaining failures: 2** — the 2 unit test failures above
+- **Remaining failures: 0**
 <!-- gate:end -->
 
 ---
