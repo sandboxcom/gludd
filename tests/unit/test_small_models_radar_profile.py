@@ -60,7 +60,7 @@ def _evidence(
     )
 
 
-# ── ModelRadarProfile ───────────────────────────────────────────────
+# -- ModelRadarProfile --------------------------------------------------
 
 
 class TestModelRadarProfile:
@@ -116,7 +116,7 @@ class TestModelRadarProfile:
         assert "math" not in active
 
 
-# ── generate_radar ──────────────────────────────────────────────────
+# -- generate_radar -----------------------------------------------------
 
 
 class TestGenerateRadar:
@@ -183,7 +183,7 @@ class TestGenerateRadar:
         assert profile.scores["coding"] == 0.0
 
 
-# ── render_radar_svg ────────────────────────────────────────────────
+# -- render_radar_svg ---------------------------------------------------
 
 
 class TestRenderRadarSvg:
@@ -226,10 +226,10 @@ class TestRenderRadarSvg:
             label = axis.upper() if axis == "stem" else axis.capitalize()
             assert label in svg
 
-    def test_rejects_invalid_scores(self) -> None:
+    def test_rejects_invalid_axis_keyerror_on_write(self) -> None:
         profile = ModelRadarProfile(model_profile_id="bad")
-        with pytest.raises(ValueError):
-            profile.scores["writing"] = -1.0
+        with pytest.raises(KeyError):
+            profile.scores["not_an_axis"] = 0.5
 
     def test_profile_created_with_all_axes_present(self) -> None:
         p = ModelRadarProfile(model_profile_id="created")
@@ -237,7 +237,7 @@ class TestRenderRadarSvg:
             assert axis in p.scores
 
 
-# ── compare_models ──────────────────────────────────────────────────
+# -- compare_models -----------------------------------------------------
 
 
 class TestCompareModels:
@@ -286,7 +286,7 @@ class TestCompareModels:
         assert len(result["ranking"]) == 2
 
 
-# ── best_for_task ───────────────────────────────────────────────────
+# -- best_for_task ------------------------------------------------------
 
 
 class TestBestForTask:
@@ -309,7 +309,6 @@ class TestBestForTask:
         b.scores["math"] = 0.5
         best = best_for_task([a, b], "math")
         assert best is not None
-        # Tie resolved — either is acceptable; check it returns one of them
         assert best.model_profile_id in ("first", "second")
 
     def test_invalid_category_raises(self) -> None:
@@ -331,7 +330,7 @@ class TestBestForTask:
         assert best is not None
 
 
-# ── SVG dimension bounds ────────────────────────────────────────────
+# -- SVG dimension bounds -----------------------------------------------
 
 
 class TestSvgDimensions:

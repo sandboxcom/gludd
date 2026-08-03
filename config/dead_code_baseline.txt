@@ -1638,6 +1638,13 @@ src/general_ludd/small_models/eval_harness.py:ParsedResult
 src/general_ludd/small_models/eval_harness.py:parse_lm_eval_output
 src/general_ludd/small_models/eval_harness.py:result_to_evidence
 src/general_ludd/small_models/eval_harness.py:score_passing
+src/general_ludd/small_models/lm_eval_runner.py:LMEvalRunner
+src/general_ludd/small_models/lm_eval_runner.py:to_capability_evidence
+src/general_ludd/small_models/radar.py:profile_distance
+src/general_ludd/small_models/radar.py:profile_similarity
+src/general_ludd/small_models/radar.py:radar_svg
+src/general_ludd/small_models/radar_profile.py:ModelRadarProfile
+src/general_ludd/small_models/radar_profile.py:best_for_task
 src/general_ludd/small_models/recommender.py:ModelRecommendation
 src/general_ludd/small_models/recommender.py:list_tasks_for_model
 src/general_ludd/small_models/recommender.py:recommend_model

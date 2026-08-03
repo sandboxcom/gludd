@@ -9,7 +9,7 @@ from typing import Any, cast
 from general_ludd.hardware.survey import HardwareInventory
 from general_ludd.schemas.benchmark import TaskRole
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
-from general_ludd.small_models.radar import RadarProfile, build_profile
+from general_ludd.small_models.radar_profile import ModelRadarProfile, build_profile
 
 _MIN_VRAM_GB = 1.0
 _RECOMMENDED_VRAM_GB = 4.0
@@ -84,7 +84,7 @@ def _assess_hardware_fit(hardware: HardwareInventory) -> str:
 def _compute_score(
     records: list[dict[str, Any]],
     hardware: HardwareInventory,
-    radar_profile: RadarProfile | None = None,
+    radar_profile: ModelRadarProfile | None = None,
 ) -> float:
     """Compute composite 0.0-1.0 score from evidence quality + hardware fit + radar breadth."""
     if not records:
@@ -103,7 +103,8 @@ def _compute_score(
 
     radar_breadth = 0.0
     if radar_profile is not None:
-        vec = radar_profile.vector()
+        scores = radar_profile.normalized()
+        vec = list(scores.values())
         nonzero = sum(1 for v in vec if v > 0.0)
         avg_profile = sum(vec) / len(vec) if vec else 0.0
         radar_breadth = (nonzero / len(vec)) * 0.6 + avg_profile * 0.4

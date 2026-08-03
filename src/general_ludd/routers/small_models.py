@@ -12,12 +12,6 @@ from general_ludd.routing_roles.small_model_policy import (
     DEFAULT_TASK_CONTRACTS,
     SmallModelTaskPolicy,
 )
-from general_ludd.small_models.radar_profile import (
-    ModelRadarProfile,
-    compare_models,
-    generate_radar,
-    render_radar_svg,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -314,15 +308,15 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.get("/admin/small-models/radar")
     async def small_models_radar(request: Request, model: str) -> Any:
+        from general_ludd.routing_roles.small_model_policy import CapabilityEvidence
+        from general_ludd.small_models.radar_profile import generate_radar, render_radar_svg
+
         capability_store: dict[str, list[dict[str, object]]] = request.app.state._sm_capability_store
-        evidence_list = capability_store.get(f"cap:{model}", [])
+        evidence_dicts = capability_store.get(f"cap:{model}", [])
+        evidence_objects = [CapabilityEvidence(**cast(dict[str, Any], e)) for e in evidence_dicts]
 
-        profile = build_profile(model, [dict(e) for e in evidence_list])
-
-        radar_store: dict[str, RadarProfile] = request.app.state._sm_radar_store
-        radar_store[model] = profile
-
-        svg_output = radar_svg([profile])
+        profile = generate_radar(evidence_objects)
+        svg_output = render_radar_svg(profile)
 
         from fastapi.responses import Response
 
@@ -330,6 +324,9 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.post("/admin/small-models/compare")
     async def small_models_compare(request: Request) -> dict[str, object]:
+        from general_ludd.routing_roles.small_model_policy import CapabilityEvidence
+        from general_ludd.small_models.radar_profile import compare_models, generate_radar
+
         body = await request.json()
         model_ids_raw = body.get("model_ids", [])
         model_ids = [str(m) for m in model_ids_raw] if isinstance(model_ids_raw, list) else []
@@ -340,9 +337,11 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             raise HTTPException(status_code=422, detail="at least 2 model_ids required")
 
         capability_store: dict[str, list[dict[str, object]]] = request.app.state._sm_capability_store
-        all_evidence: dict[str, list[dict[str, Any]]] = {}
+        profiles = []
         for mid in model_ids:
-            all_evidence[mid] = [dict(e) for e in capability_store.get(f"cap:{mid}", [])]
+            evidence_dicts = capability_store.get(f"cap:{mid}", [])
+            evidence_objects = [CapabilityEvidence(**cast(dict[str, Any], e)) for e in evidence_dicts]
+            profiles.append(generate_radar(evidence_objects))
 
-        result = compare_models(model_ids, all_evidence)
+        result = compare_models(profiles)
         return cast(dict[str, object], result)

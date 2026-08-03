@@ -66,7 +66,7 @@ def _map_task_kind_to_axis(task_kind: str) -> str | None:
     return None
 
 
-class _ScoresDict(dict):
+class _ScoresDict(dict[str, float]):
     """Dict that clamps values to [0.0, 1.0] on setitem."""
 
     def __setitem__(self, key: str, value: float) -> None:
@@ -105,9 +105,16 @@ class ModelRadarProfile:
         """Return a normalized 0.0-1.0 copy of scores."""
         return {axis: max(0.0, min(1.0, self._scores.get(axis, 0.0))) for axis in _MT_BENCH_AXES}
 
+    def vector(self) -> list[float]:
+        """Return scores as a list in MT-Bench axis order."""
+        return [self._scores.get(axis, 0.0) for axis in _MT_BENCH_AXES]
+
     def active_axes(self) -> list[str]:
         """Return axis names with non-zero scores."""
         return [axis for axis in _MT_BENCH_AXES if self._scores.get(axis, 0.0) > 0.0]
+
+
+RadarProfile = ModelRadarProfile  # backward-compatible alias
 
 
 def generate_radar(evidences: list[CapabilityEvidence]) -> ModelRadarProfile:
@@ -139,6 +146,36 @@ def generate_radar(evidences: list[CapabilityEvidence]) -> ModelRadarProfile:
             scores[axis] = axis_sums[axis] / axis_counts[axis]
         else:
             scores[axis] = 0.0
+    profile.scores = scores
+    return profile
+
+
+def build_profile(
+    model_id: str,
+    evidence_list: list[dict[str, Any]],
+) -> ModelRadarProfile:
+    """Aggregate capability evidence dicts into a ModelRadarProfile.
+
+    Maps each task_kind to an MT-Bench axis and takes the best
+    pass rate across evidence records per axis.
+    """
+    axis_scores: dict[str, float] = {a: -1.0 for a in _MT_BENCH_AXES}
+
+    for rec in evidence_list:
+        task_kind = str(rec.get("task_kind", ""))
+        axis = _map_task_kind_to_axis(task_kind)
+        if axis is None:
+            continue
+        _tv = rec.get("total_cases", 0)
+        _pv = rec.get("passed_cases", 0)
+        total = int(_tv) if isinstance(_tv, (int, float, str)) else 0
+        passed = int(_pv) if isinstance(_pv, (int, float, str)) else 0
+        ratio = (passed / total) if total > 0 else 0.0
+        if ratio > axis_scores[axis]:
+            axis_scores[axis] = ratio
+
+    profile = ModelRadarProfile(model_profile_id=model_id)
+    scores = {a: max(0.0, axis_scores[a]) for a in _MT_BENCH_AXES}
     profile.scores = scores
     return profile
 
@@ -297,7 +334,9 @@ def best_for_task(
 __all__ = [
     "_MT_BENCH_AXES",
     "ModelRadarProfile",
+    "RadarProfile",
     "best_for_task",
+    "build_profile",
     "compare_models",
     "generate_radar",
     "render_radar_svg",
