@@ -100,9 +100,9 @@
 | App tests (gate-lite) | 4682 | 4682 | 100% |
 | Total collection | 58,461 | 58,461 | 100% (0 errors) |
 | Integration suite | 3,252 | all executed green | 100% |
-| Active items | 237 | 237 | 100% |
+| Active items | 251 | 251 | 100% |
 | Archived items | 185 | 185 | 100% |
-| **Grand total** | **422** | **422** | **100%** |
+| **Grand total** | **436** | **436** | **100%** |
 
 ### Next
 

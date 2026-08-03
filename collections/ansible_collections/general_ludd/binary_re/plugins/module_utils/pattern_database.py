@@ -67,10 +67,7 @@ class PatternEntry:
         for pat in self.byte_patterns:
             if pat and pat in data:
                 return True
-        for marker in self.string_markers:
-            if marker and marker.encode("ascii", errors="ignore") in data:
-                return True
-        return False
+        return any(marker and marker.encode("ascii", errors="ignore") in data for marker in self.string_markers)
 
 
 @dataclass(frozen=True)

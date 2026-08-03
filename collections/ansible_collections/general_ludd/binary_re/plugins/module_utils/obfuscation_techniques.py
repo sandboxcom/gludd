@@ -388,7 +388,7 @@ def _read_elf_sections(data: bytes) -> list[tuple[str, bytes]]:
             if sec_offset + shentsize > len(data):
                 break
             if bitness == "64":
-                sec_name_idx, sec_type, sec_flags, _sec_addr, sec_off, sec_size = struct.unpack_from(
+                sec_name_idx, sec_type, _sec_flags, _sec_addr, sec_off, sec_size = struct.unpack_from(
                     "<IIQQQQ", data, sec_offset
                 )
             else:
