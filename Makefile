@@ -5349,6 +5349,14 @@ bundle-ripgrep:
 		echo "  bundled -> dist/binaries/rg" || \
 		{ echo "WARNING: ripgrep bundle failed (network unavailable or sha unset?); search degrades to in-process"; rm -f dist/binaries/rg; }
 
+# install cmake via brew
+install-cmake:
+	@command -v cmake >/dev/null 2>&1 && { cmake --version | head -1; exit 0; } || true
+	@command -v brew >/dev/null 2>&1 || { echo "brew MISSING — cannot install cmake"; exit 1; }
+	@echo "Installing cmake via brew ..."
+	@brew install cmake 2>&1 | tail -5 || echo "brew-install-cmake-failed"
+	@command -v cmake >/dev/null 2>&1 && cmake --version | head -1 || echo "cmake still missing after install"
+
 # Build llama-quantize from source into external/llamacpp/build/bin/.
 # Clones llama.cpp shallow if not already present, then cmake-builds just the
 # quantize tool.  Gracefully skips (exit 0) when cmake or a C++ compiler is
