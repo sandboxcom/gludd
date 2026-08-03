@@ -7480,7 +7480,7 @@ azure-event-guard-status:
 	@echo "--- Last 15 log lines ---"
 	@tail -15 .gate-logs/azure-event-guard.log 2>/dev/null || echo "No log yet"
 
-.PHONY: e2e-test-gen-pipeline e2e-test-gen-pipeline-dogfood collect-specific fix-e501-golden clean-relative check-rag-wrapper user-test-batch azure-event-guard-start azure-event-guard-stop azure-event-guard-check azure-event-guard-status check-e2e-small-model-prereq
+.PHONY: e2e-test-gen-pipeline e2e-test-gen-pipeline-dogfood collect-specific fix-e501-golden clean-relative check-rag-wrapper user-test-batch azure-event-guard-start azure-event-guard-stop azure-event-guard-check azure-event-guard-status check-e2e-small-model-prereq e2e-download-small-model
 
 check-e2e-small-model-prereq:
 	@echo "=== E2E small model pipeline prerequisites ==="
@@ -7488,3 +7488,10 @@ check-e2e-small-model-prereq:
 	@$(UV) run python -c "import llama_cpp; print('llama_cpp:', llama_cpp.__version__); print('llama_cpp.server:', type(llama_cpp))" && echo "  llama_cpp: OK" || echo "  llama_cpp: MISSING"
 	@if [ -f external/llamacpp/build/bin/llama-quantize ] && [ -x external/llamacpp/build/bin/llama-quantize ]; then echo "  llama-quantize (bundled): external/llamacpp/build/bin/llama-quantize OK"; else echo "  llama-quantize (bundled): MISSING"; fi
 	@which llama-quantize >/dev/null 2>&1 && echo "  llama-quantize (PATH): $(shell which llama-quantize) OK" || echo "  llama-quantize (PATH): not on PATH"
+
+e2e-download-small-model:
+	@mkdir -p /tmp/gludd-qwen-e2e-model
+	@echo "=== Downloading Qwen2.5-0.5B GGUF to /tmp/gludd-qwen-e2e-model/ ==="
+	@$(UV) run python scripts/e2e_download_small_model.py
+	@echo "=== Model cached at /tmp/gludd-qwen-e2e-model/ ==="
+	@ls -lh /tmp/gludd-qwen-e2e-model/

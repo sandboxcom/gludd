@@ -164,6 +164,7 @@ select = ["E", "F", "I", "W", "UP", "B", "SIM", "RUF"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["general_ludd"]
+known-third-party = ["safehttpx"]
 
 [tool.mypy]
 python_version = "3.11"
