@@ -1,4 +1,4 @@
-## PRIMARY OBJECTIVE: GREEN CI ON DEVELOPMENT → v0.1.0-beta.3 WITH 12/12 ARTIFACTS (BLOCKED: 2 gate-lite test failures + 10 commits unpushed)
+## PRIMARY OBJECTIVE: GREEN CI ON DEVELOPMENT → v0.1.0-beta.3 WITH 12/12 ARTIFACTS (BLOCKED: 2 gate-lite test failures + 10 commits unpushed + 5 dirty files)
 
 ---
 
@@ -16,7 +16,7 @@
 - **FAILED tests (2):**
   - `tests/unit/test_a05_overload_retry_cap.py::TestFastFailoverKinds::test_failovers_at_failover_after[TimeoutKind.CONNECTION_TIMEOUT]`
   - `tests/unit/test_ci_regression_guards.py::test_every_molecule_scenario_is_structurally_complete`
-- **PASSED: 888 passed, 13 skipped, 26 warnings** in 71.9s
+- **PASSED: 888 passed, 2 failed, 13 skipped, 26 warnings** in 71.9s
 - lint: PASS 0
 - dead-code: PASS 0
 - tdd-compliance: PASS
@@ -32,9 +32,9 @@
 - smoke: PASS
 - verify-enforcement: PASS (40/40 subagent guards)
 - TASKS.md integrity: PASS (715 items, 0 violations)
+- **integration-health: 3,252 collected, ran partial, timed out at 30s** — sts suite green, chemistry/materials green, ai_ml green, git_release green through assess_to_plan+zdd_lifecycle
 - **13 specs lack enforcement:** AA012, AA017, AA057, AA074, AA075, AA081, AA084, AA089, AA090, AA093, AA094, AA096, AC020
-- **Collection: BLOCKED** (concurrent gate in progress)
-- **Last known collection: 58,461 tests, 0 errors** (Session 67 probe)
+- **Total collection: 58,461 tests, 0 errors** (Session 67 probe; concurrent pytest prevents fresh collection)
 - **Remaining failures: 2** — the 2 unit test failures above
 <!-- gate:end -->
 
@@ -44,37 +44,47 @@
 
 - **HEAD: `a46a1184`** on `development`
 - **TASKS.md: 715 items, 0 integrity violations**
-- **Test collection: BLOCKED** (concurrent gate in progress). Last known: 58,461 tests, 0 errors (S67 probe).
-- **gate-lite: FAILED** (2 unit test failures; all other phases green)
+- **Total collection: 58,461 tests, 0 errors** (S67 probe, 2026-08-02)
+- **Integration test suite: 3,252 collected** (157 files), ran partial in 30s timeout — sts (reaper+e2e), chemistry (identity+reaction), materials (selection+strength), ai_ml (evidence+research), git_release (assess+zdd) all green; sandbox integration green; remaining files unexecuted due to timeout
+- **gate-lite: FAILED** (2 unit test failures out of 890 run; all other phases green)
   - `test_a05_overload_retry_cap.py::TestFastFailoverKinds::test_failovers_at_failover_after[TimeoutKind.CONNECTION_TIMEOUT]`
   - `test_ci_regression_guards.py::test_every_molecule_scenario_is_structurally_complete`
-  - All other phases: lint 0, dead-code 0, tdd-compliance PASS, coverage-gaps PASS (0 new), typecheck 0, collect 0, env-writes PASS, hook-runtime PASS, skills-frontmatter PASS, lint-specs PASS (220 specs 0 violations), plugin-hook-invoke PASS, smoke PASS
+  - 888 passed, 2 failed, 13 skipped (unit-test subset; gate-lite runs ~4w parallel)
+  - All phases: lint 0, dead-code 0, tdd-compliance PASS, coverage-gaps PASS (0 new), typecheck 0, collect 0, env-writes PASS, hook-runtime PASS (34/34), skills-frontmatter PASS, lint-specs PASS (220 specs 0 violations), spec-enforcement-coverage PASS 94.1%, plugin-hook-invoke PASS, smoke PASS, verify-enforcement PASS (40/40)
 - **Spec enforcement: 207/220 = 94.1%** (threshold 90%). 13 specs lack enforcement: AA012, AA017, AA057, AA074, AA075, AA081, AA084, AA089, AA090, AA093, AA094, AA096, AC020.
 - **Coverage gaps: CLOSED** (848 OK, 7 untested all allowed, 0 new gaps)
 - **Verify suites: PASS** (40/40 plugins with subagent guards)
-- **Tree: DIRTY** — 4 files modified:
-  - `src/general_ludd/agents/capabilities.py` (staged + unstaged)
-  - `tests/unit/test_c_budget_precheck_nonzero_projection.py` (unstaged)
-  - `tests/unit/test_d18_accounts.py` (staged + unstaged)
-  - `tests/unit/test_security_post_commit.py` (unstaged)
+- **Tree: DIRTY** — 5 files modified (2 staged, 3 unstaged only):
+  - **Staged+unstaged:** `src/general_ludd/agents/capabilities.py` (+6 lines — AgentCapabilities import additions), `tests/unit/test_d18_accounts.py` (75 lines refactored — d18 non-ephemeral account test restructuring)
+  - **Unstaged only:** `tests/unit/test_c_budget_precheck_nonzero_projection.py` (+11/-1), `tests/unit/test_security_post_commit.py` (+10 lines — post-commit secret-scan assertions), `SESSION.md`
+- **d18/security work (dirty tree):** d18 accounts test refactored with FakeBackend pattern + PermissionSpec auth middleware; security post-commit scans committed files for API keys, tokens, passwords, private keys, JWT tokens across 6 regex patterns; budget precheck nonzero projection test expanded; capabilities.py import additions for AgentCapabilities bundle
 - **CI: NO RUN** for HEAD `a46a1184`
 - **Push: NOT PUSHED** — 10 commits unpushed (remote at `f1148690`, local at `a46a1184`)
-- **Release beta.3: BLOCKED** on push + CI green
+- **Release beta.3: BLOCKED** on commit dirty files + push + CI green
 
-### Session 68 — Spec Enforcement Polishing + Guard Ordering (2026-08-03, HEAD `a46a1184`, 2 commits since S67)
+### Session 68 — Spec Enforcement Polishing + Guard Ordering (2026-08-03, HEAD `a46a1184`, 2 commits + 5 dirty files since S67)
 
-2 commits since Session 67 HEAD `7e21f077`. Spec enforcement coverage at 94.1%, gate-lite phase gating tightened, d11 guard ordering fix, lint-specs parser fix.
+2 commits since Session 67 HEAD `7e21f077`. Spec enforcement coverage at 94.1%, gate-lite phase gating tightened, d11 guard ordering fix, lint-specs parser fix. 5 files dirty with d18/security/budget-precheck/capabilities work.
 
 | Commit | Description |
 |--------|-------------|
 | `47c70bf5` | fix: spec enforcement 94.1%, coverage gaps closed, ModelProfile tests, budget wiring |
 | `a46a1184` | fix: spec enforcement 94.1%, gate-lite green, d11 guard ordering, lint-specs parser fix |
 
+### Dirty tree work (uncommitted)
+
+| File | Change | Category |
+|------|--------|----------|
+| `tests/unit/test_d18_accounts.py` | 75 lines refactored — FakeBackend, PermissionSpec auth middleware, 501 test restructuring | d18 accounts fix |
+| `tests/unit/test_security_post_commit.py` | +10 lines — post-commit secret-scan assertions (6 regex patterns: private keys, API tokens, passwords, GH tokens, OpenAI keys, JWTs) | security fix |
+| `src/general_ludd/agents/capabilities.py` | +6 lines — import additions for AgentCapabilities bundle | capabilities |
+| `tests/unit/test_c_budget_precheck_nonzero_projection.py` | +11/-1 — budget precheck test expansion | budget fix |
+
 ### Remaining work
 
 | Item | Status |
 |------|--------|
-| Commit 4 modified files | DIRTY |
+| Commit 5 dirty files | DIRTY |
 | Fix 2 gate-lite test failures | FAILING (overload-retry, ci-regression-guards) |
 | Push accumulated commits (10 unpushed) | NOT PUSHED |
 | CI green on development HEAD `a46a1184` | NO RUN |
@@ -83,12 +93,12 @@
 ### Next
 
 1. Fix 2 gate-lite test failures
-2. Commit 4 dirty files
+2. Commit 5 dirty files (d18/security/budget/capabilities)
 3. Push accumulated commits to sandboxcom
 4. Wait for CI green
 5. Release cut for beta.3
 
-- **Last Updated: 2026-08-03 — Session 68.** HEAD `a46a1184` on `development`. gate-lite FAILED (2 unit test failures; all other phases green). Spec enforcement 207/220 (94.1%). Coverage gaps closed (0 new). TASKS.md 715 items, 0 violations. Tree DIRTY (4 files). CI NO RUN. 10 commits unpushed. Release beta.3 blocked on push + CI green.
+- **Last Updated: 2026-08-03 — Session 68.** HEAD `a46a1184` on `development`. gate-lite FAILED (2 unit test failures: overload-retry, ci-regression-guards; 888 passed, 2 failed, 13 skipped; all other phases green). Total collection: 58,461 tests, 0 errors. Integration suite: 3,252 collected, partial green (timed out at 30s). Spec enforcement 207/220 (94.1%). Coverage gaps closed (0 new). TASKS.md 715 items, 0 violations. Tree DIRTY (5 files: d18 accounts, security post-commit, capabilities, budget precheck, SESSION.md). CI NO RUN. 10 commits unpushed. Release beta.3 blocked on push + CI green.
 
 ---
 
