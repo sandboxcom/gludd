@@ -16,7 +16,7 @@ import os
 import subprocess
 import sys
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
@@ -248,14 +248,17 @@ class GameGenerator:
         import hashlib
 
         from general_ludd.routing_roles.small_model_policy import (
+            CapabilityEvidence,
             DispatchAction,
+            ModelIdentity,
+            SmallModelTaskPolicy,
             SmallModelTaskSpec,
             TaskImpact,
         )
         from general_ludd.schemas.benchmark import TaskRole
 
         assert self._task_policy is not None
-        task_policy = self._task_policy
+        task_policy = cast(SmallModelTaskPolicy, self._task_policy)
         task = SmallModelTaskSpec(
             task_id=f"fpx.1.game.{spec.name}",
             task_kind="coding",
@@ -265,7 +268,9 @@ class GameGenerator:
             impacts=frozenset({TaskImpact.READ_SOURCE, TaskImpact.WRITE_ARTIFACT}),
             acceptance_checks=("syntax_valid", "import_ok", "run_without_crash"),
         )
-        decision = task_policy.authorize(task, model_identity, evidence)
+        decision = task_policy.authorize(
+            task, cast(ModelIdentity, model_identity), cast(Sequence["CapabilityEvidence"], evidence)
+        )
         if decision.action is not DispatchAction.LOCAL:
             raise PermissionError(f"SmallModelTaskPolicy denied game dispatch for {spec.name}: {decision.reason}")
 

@@ -15,13 +15,13 @@ from pydantic import ValidationError
 
 class TestTestSpecContracts:
     def test_spec_requires_target_module(self):
-        from src.general_ludd.agents.test_generation.contracts import TestSpec
+        from general_ludd.agents.test_generation.contracts import TestSpec
 
         spec = TestSpec(target_module="src/example.py")
         assert spec.target_module == "src/example.py"
 
     def test_spec_defaults(self):
-        from src.general_ludd.agents.test_generation.contracts import TestSpec
+        from general_ludd.agents.test_generation.contracts import TestSpec
 
         spec = TestSpec(target_module="src/example.py")
         assert spec.coverage_threshold == 85.0
@@ -30,13 +30,13 @@ class TestTestSpecContracts:
         assert spec.include_patterns == []
 
     def test_spec_rejects_empty_target_module(self):
-        from src.general_ludd.agents.test_generation.contracts import TestSpec
+        from general_ludd.agents.test_generation.contracts import TestSpec
 
         with pytest.raises(ValidationError):
             TestSpec(target_module="")
 
     def test_spec_coverage_threshold_bounded_0_100(self):
-        from src.general_ludd.agents.test_generation.contracts import TestSpec
+        from general_ludd.agents.test_generation.contracts import TestSpec
 
         TestSpec(target_module="src/x.py", coverage_threshold=0.0)
         TestSpec(target_module="src/x.py", coverage_threshold=100.0)
@@ -46,13 +46,13 @@ class TestTestSpecContracts:
             TestSpec(target_module="src/x.py", coverage_threshold=100.1)
 
     def test_spec_include_patterns_is_list(self):
-        from src.general_ludd.agents.test_generation.contracts import TestSpec
+        from general_ludd.agents.test_generation.contracts import TestSpec
 
         spec = TestSpec(target_module="src/x.py", include_patterns=["test_*.py"])
         assert spec.include_patterns == ["test_*.py"]
 
     def test_spec_extra_fields_forbidden(self):
-        from src.general_ludd.agents.test_generation.contracts import TestSpec
+        from general_ludd.agents.test_generation.contracts import TestSpec
 
         with pytest.raises(ValidationError):
             TestSpec(target_module="src/x.py", unknown_field=True)
@@ -63,7 +63,7 @@ class TestTestSpecContracts:
 
 class TestTestHarnessContracts:
     def test_harness_defaults(self):
-        from src.general_ludd.agents.test_generation.contracts import TestHarness
+        from general_ludd.agents.test_generation.contracts import TestHarness
 
         h = TestHarness()
         assert h.pytest_args == ["-v"]
@@ -72,19 +72,19 @@ class TestTestHarnessContracts:
         assert h.coverage_config == {"branch": True, "source": []}
 
     def test_harness_custom_pytest_args(self):
-        from src.general_ludd.agents.test_generation.contracts import TestHarness
+        from general_ludd.agents.test_generation.contracts import TestHarness
 
         h = TestHarness(pytest_args=["-v", "--tb=short", "-x"])
         assert h.pytest_args == ["-v", "--tb=short", "-x"]
 
     def test_harness_custom_fixtures(self):
-        from src.general_ludd.agents.test_generation.contracts import TestHarness
+        from general_ludd.agents.test_generation.contracts import TestHarness
 
         h = TestHarness(fixtures=["TestClient", "_run_cli"])
         assert h.fixtures == ["TestClient", "_run_cli"]
 
     def test_harness_timeout_positive(self):
-        from src.general_ludd.agents.test_generation.contracts import TestHarness
+        from general_ludd.agents.test_generation.contracts import TestHarness
 
         TestHarness(timeout_seconds=1)
         with pytest.raises(ValidationError):
@@ -93,7 +93,7 @@ class TestTestHarnessContracts:
             TestHarness(timeout_seconds=-5)
 
     def test_harness_extra_fields_forbidden(self):
-        from src.general_ludd.agents.test_generation.contracts import TestHarness
+        from general_ludd.agents.test_generation.contracts import TestHarness
 
         with pytest.raises(ValidationError):
             TestHarness(unknown=True)
@@ -104,13 +104,13 @@ class TestTestHarnessContracts:
 
 class TestTestReportContracts:
     def test_report_requires_verdict(self):
-        from src.general_ludd.agents.test_generation.contracts import TestReport
+        from general_ludd.agents.test_generation.contracts import TestReport
 
         report = TestReport(verdict="pass")
         assert report.verdict == "pass"
 
     def test_report_verdict_only_valid_values(self):
-        from src.general_ludd.agents.test_generation.contracts import TestReport
+        from general_ludd.agents.test_generation.contracts import TestReport
 
         TestReport(verdict="pass")
         TestReport(verdict="fail")
@@ -118,7 +118,7 @@ class TestTestReportContracts:
         TestReport(verdict="partial")
 
     def test_report_defaults(self):
-        from src.general_ludd.agents.test_generation.contracts import TestReport
+        from general_ludd.agents.test_generation.contracts import TestReport
 
         report = TestReport(verdict="pass")
         assert report.coverage_percent == 0.0
@@ -129,7 +129,7 @@ class TestTestReportContracts:
         assert report.duration_seconds == 0.0
 
     def test_report_coverage_percent_bounded(self):
-        from src.general_ludd.agents.test_generation.contracts import TestReport
+        from general_ludd.agents.test_generation.contracts import TestReport
 
         TestReport(verdict="pass", coverage_percent=0.0)
         TestReport(verdict="pass", coverage_percent=100.0)
@@ -139,7 +139,7 @@ class TestTestReportContracts:
             TestReport(verdict="pass", coverage_percent=100.1)
 
     def test_report_full_structure(self):
-        from src.general_ludd.agents.test_generation.contracts import TestReport
+        from general_ludd.agents.test_generation.contracts import TestReport
 
         report = TestReport(
             verdict="pass",
@@ -157,7 +157,7 @@ class TestTestReportContracts:
         assert report.duration_seconds == 12.3
 
     def test_report_errors_is_list_of_strings(self):
-        from src.general_ludd.agents.test_generation.contracts import TestReport
+        from general_ludd.agents.test_generation.contracts import TestReport
 
         report = TestReport(verdict="error", errors=["Timeout"])
         assert report.errors == ["Timeout"]
@@ -168,7 +168,7 @@ class TestTestReportContracts:
 
 class TestTestGeneratorContracts:
     def test_generator_requires_spec_and_harness(self):
-        from src.general_ludd.agents.test_generation.contracts import (
+        from general_ludd.agents.test_generation.contracts import (
             TestGenerator,
             TestHarness,
             TestSpec,
@@ -181,7 +181,7 @@ class TestTestGeneratorContracts:
         assert gen.harness == harness
 
     def test_generator_pipeline_stages_enum(self):
-        from src.general_ludd.agents.test_generation.contracts import (
+        from general_ludd.agents.test_generation.contracts import (
             PipelineStage,
             TestGenerator,
             TestHarness,
@@ -200,7 +200,7 @@ class TestTestGeneratorContracts:
         ]
 
     def test_generator_extra_fields_forbidden(self):
-        from src.general_ludd.agents.test_generation.contracts import (
+        from general_ludd.agents.test_generation.contracts import (
             TestGenerator,
             TestHarness,
             TestSpec,
@@ -212,7 +212,7 @@ class TestTestGeneratorContracts:
             TestGenerator(spec=spec, harness=harness, unknown=True)
 
     def test_generator_optional_pipeline_stages(self):
-        from src.general_ludd.agents.test_generation.contracts import (
+        from general_ludd.agents.test_generation.contracts import (
             PipelineStage,
             TestGenerator,
             TestHarness,
@@ -236,7 +236,7 @@ class TestTestGeneratorContracts:
 
 class TestPipelineStageEnum:
     def test_all_five_stages_exist(self):
-        from src.general_ludd.agents.test_generation.contracts import PipelineStage
+        from general_ludd.agents.test_generation.contracts import PipelineStage
 
         assert hasattr(PipelineStage, "ANALYZE")
         assert hasattr(PipelineStage, "GENERATE")
@@ -245,7 +245,7 @@ class TestPipelineStageEnum:
         assert hasattr(PipelineStage, "VERIFY")
 
     def test_stage_values_match_role_names(self):
-        from src.general_ludd.agents.test_generation.contracts import PipelineStage
+        from general_ludd.agents.test_generation.contracts import PipelineStage
 
         assert PipelineStage.ANALYZE.value == "analyze_code_paths"
         assert PipelineStage.GENERATE.value == "generate_scenarios"
@@ -259,7 +259,7 @@ class TestPipelineStageEnum:
 
 class TestSchemaVersion:
     def test_schema_version_is_semver_string(self):
-        from src.general_ludd.agents.test_generation.contracts import SCHEMA_VERSION
+        from general_ludd.agents.test_generation.contracts import SCHEMA_VERSION
 
         assert isinstance(SCHEMA_VERSION, str)
         parts = SCHEMA_VERSION.split(".")

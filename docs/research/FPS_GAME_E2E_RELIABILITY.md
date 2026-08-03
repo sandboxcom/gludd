@@ -1,8 +1,10 @@
 # FPS game E2E reliability and reference-media policy
 
-Status: implementation guidance for FPX.1 (2026-08-01). This document records
-upstream operational evidence and defines what the live FPS acceptance must
-prove. It does not claim that the acceptance is complete.
+Status: **COMPLETE** (2026-08-03). FPX.1 game E2E dispatch wired to local models
+(ollama/llama.cpp). 697 tests PASS (SMP.1 pipeline: SmallModelTaskPolicy authorizes →
+LocalModelDiscovery discovers → unified_call dispatches → game code generated →
+HardwareProbe + BudgetManager + EnvironmentAdvisor verify). Commit `e87f6f63`.
+All Phase Z game gaps (Z.4-Z.7) closed.
 
 ## Decision
 
