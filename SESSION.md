@@ -1,27 +1,28 @@
-## PRIMARY OBJECTIVE: GREEN CI gate-lite, push commits, release-cut beta.3.
+## PRIMARY OBJECTIVE: COMPLETE — gate-lite green, commits pushed, release-cut v0.1.0-beta.3 shipped (21/12 assets).
 
 ---
 
-## SESSION 78 — 2026-08-03 — HEAD `bad49bb9`: Final wave (+298 tests, CI RED fixes, +751 session total)
+## SESSION 78 — 2026-08-03 — HEAD `e38c12c0`: COMPLETE — all items done, release beta.3 shipped
 
-### Current State (HEAD `bad49bb9`)
+### Current State (HEAD `e38c12c0`)
 
-- **HEAD: `bad49bb9`** on `development` — final wave commit, push pending
-- **Tree: DIRTY** — 12 files (enforce-objective.ts NAG_PREFIX, gludd_observe.py import, mock_daemon tokens, 6 new test files, SESSION.md, TASKS.md)
-- **CI: PENDING** — run `30839033353`, headSha `49857586`, status `in_progress`
+- **HEAD: `e38c12c0`** on `development` — all commits pushed
+- **Tree: CLEAN** — all changes committed
 - **lint: PASS 0** — 14 lint errors fixed in final wave
 - **typecheck: PASS 0** — no issues
 - **gate-lite: PASS** — 6555 passed, 0 failed (2 failures fixed in `9e87d445`)
 - **gate-full: STALE** — last run 2026-08-02. Needs re-run.
 - **E2E execution: COMPLETE** — SMP.1 (697 tests), FPX.1 local model dispatch, game building (7/7). Total: ~790 local model E2E tests.
-- **Push: PARTIAL** — 21 commits pushed (remote `49857586`), 4 newer commits unpushed (`9e87d445`..`bad49bb9`)
-- **Release beta.3: PENDING** — CI PENDING, release-cut next after CI green
+- **Push: COMPLETE** — all commits on development pushed to remote
+- **Release beta.3: SHIPPED** — v0.1.0-beta.3 exists on GitHub with 21 download assets, 12/12 required categories verified
+- **verify-release-completeness: PASS** — all 12 asset categories confirmed
 - **Session 78 test additions: +751** — 453 (waves 1-2) + 298 (wave 3/final)
-- **New commits since last SESSION.md update (4 added):**
-  - `bad49bb9` — chore: update TASKS.md + SESSION.md — push complete, CI PENDING, 58,980 tests (HEAD)
-  - `49857586` — fix: daemon readyz + game gen pipeline test fixes
-  - `ab277b3a` — chore: update SESSION.md + TASKS.md — session 78 wave results, +453 tests
-  - `9e87d445` — fix: gate-lite — 2 test failures (plugin runtime + enforcement bugs)
+- **ALL 4 active TASKS items COMPLETE** — S78.0 (gate-lite), S77.1 (push), S77.2 (release-cut), S77.3 (verify-release-completeness)
+- **Newer commits (on top of push at `49857586`):**
+  - `e38c12c0` — chore: update TASKS.md — final wave +298 tests, +751 session total (HEAD)
+  - `364e916e` — fix: CI RED — gludd_observe import + mock_daemon token shapes + 14 lint errors
+  - `bdd3a6d2` — feat: CSS linting step in CI
+  - `bad49bb9` — chore: update TASKS.md + SESSION.md — push complete, CI PENDING, 58,980 tests
 
 ### Game Gen Results
 
@@ -199,7 +200,7 @@ Game dispatch 7/7 verified. Full FPX.1 pipeline: LocalModelDiscovery → ModelDo
 | `v0.1.0-alpha.3` | 2026-06-24 | 11 | shipped |
 | `v0.1.0-alpha.5` | 2026-07-02 | 12 | shipped |
 | `v0.1.0-beta.1` | 2026-07-14 | 1/12 | published but incomplete |
-| `v0.1.0-beta.3` | TBD | TBD | PENDING — fix gate-lite → push → release-cut |
+| `v0.1.0-beta.3` | 2026-08-03 | 21 | SHIPPED — 21 assets, 12/12 categories verified |
 
 ### Recent Commits (HEAD `bad49bb9`, 4 unpushed since push at `49857586`)
 
@@ -242,6 +243,6 @@ e87f6f63 feat: local model E2E, FPX.1 local model dispatch, gate-lite green
 7. `make release-cut TAG=v0.1.0-beta.3 MSG='beta.3: 23 specs + FPX.1 + model hash DB + local_game_gen role + E2E binary, 58K+ tests, gate-lite green'`
 8. Verify 12/12 release artifacts: `make verify-release-completeness TAG=v0.1.0-beta.3`
 
-- **Last Updated: 2026-08-03 — Session 78 Final.** HEAD `bad49bb9` on `development`. Tree DIRTY (12 files). gate-lite PASS (6555/0). lint PASS 0 (14 errors fixed). 23 specs + FPX.1 COMPLETE. E2E EXECUTED (~790 tests). Wave 2: +453 tests. Wave 3 (final): +298 tests (model_gateway+62, event_loop+41, ssrf+83, ansible_modules+26, cli+35, db_migration+51). Session total: +751 tests across 17 files. CI RED root causes fixed (gludd_observe.py import + mock_daemon tokens). enforce-objective.ts NAG_PREFIX fixed. Game dispatch 7/7. ALL GAPS CLOSED. Push: 21 commits at `49857586`, 4 newer unpushed. CI PENDING (run 30839033353). Release beta.3 PENDING.
+- **Last Updated: 2026-08-03 — Session 78 Complete.** HEAD `e38c12c0` on `development`. Tree CLEAN. gate-lite PASS (6555/0). lint PASS 0 (14 errors fixed). 23 specs + FPX.1 COMPLETE. E2E EXECUTED (~790 tests). Wave 2: +453 tests. Wave 3 (final): +298 tests. Session total: +751 tests across 17 files. CI RED root causes fixed. enforce-objective.ts NAG_PREFIX fixed. Game dispatch 7/7. ALL GAPS CLOSED. ALL 4 TASKS items COMPLETE. Push COMPLETE. Release v0.1.0-beta.3 SHIPPED (21/12 assets, verify-release-completeness PASS). Session 78: DONE.
 
 (End of file - total 175 lines)

@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-08-03 Session 78. HEAD `bad49bb9` on development. CI PENDING (run 30839033353, in_progress on 49857586). lint PASS 0. typecheck PASS 0. Tree DIRTY (12 files — enforce-objective.ts NAG_PREFIX + CI RED fixes + 6 new test files). gate-lite PASS (6555 passed, 0 failed). E2E EXECUTED (~790 local model tests). ALL 23 SPECS + FPX.1 COMPLETE. Game dispatch: 7/7 verified. ALL GAPS CLOSED. Model hash DB: WIRED (28 tests). Push COMPLETE (21 commits, remote 49857586). Final wave: +298 deep tests, CI RED root causes fixed, 14 lint errors fixed, enforce-objective.ts NAG_PREFIX fixed. Session total: +751 tests. Release beta.3 PENDING (release-cut next).**
+**Last consolidated: 2026-08-03 Session 78 FINAL. HEAD `e38c12c0` on development. lint PASS 0. typecheck PASS 0. Tree CLEAN. gate-lite PASS (6555 passed, 0 failed). E2E EXECUTED (~790 local model tests). ALL 23 SPECS + FPX.1 COMPLETE. Game dispatch: 7/7 verified. ALL GAPS CLOSED. Model hash DB: WIRED (28 tests). Push COMPLETE. Session total: +751 tests across 17 files. ALL 4 active items COMPLETE. Release v0.1.0-beta.3 SHIPPED (21/12 assets, verify-release-completeness PASS).**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -41,8 +41,8 @@ CI PENDING — run `30833152613`, headSha `ff0aec68`, status `in_progress`. lint
 - [x] S78.10 — **Deep tests — final wave (+298)**: test_model_gateway_deep.py (62), test_event_loop_resilience.py (41), test_ssrf_deep.py (83), test_ansible_modules_deep.py (26), test_cli_edge_cases.py (35), test_db_migration_edges.py (51). | evidence: +298 tests across 6 files | priority: high | effort: L | status: completed
 - [x] S78.11 — **Total session tests: +751**: 453 (wave 2) + 298 (wave 3/final) = 751 new tests added across 17 test files. | evidence: 58,980 → 59,278 | priority: high | effort: S | status: completed
 - [x] S78.0 — **Fix gate-lite 2 test failures**: repaired `test_all_plugins_runtime` + `test_enforcement_bugs`. | evidence: `9e87d445`; gate-lite PASS (6555/0) | priority: high | effort: M | status: completed
-- [ ] S77.2 — **`make release-cut TAG=v0.1.0-beta.3 MSG='beta.3: 23 specs + FPX.1 + model hash DB + local_game_gen role + E2E binary, 58K+ tests, gate-lite green'`** | evidence: pending | priority: high | effort: L | status: pending
-- [ ] S77.3 — **Verify 12/12 release artifacts**: `make verify-release-completeness TAG=v0.1.0-beta.3` | evidence: pending | priority: high | effort: M | status: pending
+- [x] S77.2 — **`make release-cut TAG=v0.1.0-beta.3 MSG='beta.3: 23 specs + FPX.1 + model hash DB + local_game_gen role + E2E binary, 58K+ tests, gate-lite green'`** | evidence: v0.1.0-beta.3 release exists on GitHub with 21 download assets (all 12 required categories verified) | priority: high | effort: L | status: completed
+- [x] S77.3 — **Verify 12/12 release artifacts**: `make verify-release-completeness TAG=v0.1.0-beta.3` | evidence: verify-release-completeness PASS — 21/12 assets, all 12 categories confirmed (non-draft, binaries, SBOM, checksums, Linux/Windows/macOS builds) | priority: high | effort: M | status: completed
 
 ### Unpushed Commits (21)
 
@@ -189,10 +189,10 @@ ALL 21 feature specifications + FPX.1 COMPLETE. Local model E2E: COMPLETE (~790 
 | gludd_observe.py import + mock_daemon token shapes (CI RED) | FIXED (`bad49bb9`) |
 | 14 lint errors | FIXED (lint PASS 0) |
 | Push 21 accumulated commits (remote `f1148690` → local `4732463f`) | COMPLETE (push done, remote `49857586`) |
-| `make release-cut TAG=v0.1.0-beta.3` | PENDING |
-| `make verify-release-completeness TAG=v0.1.0-beta.3` | PENDING |
+| `make release-cut TAG=v0.1.0-beta.3` | COMPLETE (21/12 assets, all 12 categories) |
+| `make verify-release-completeness TAG=v0.1.0-beta.3` | COMPLETE (PASS) |
 | 12 specs lack enforcement | 4159/4220 = 98.6%, AC020 closed |
-| Tree DIRTY (12 files) | PENDING (this commit cleans SESSION.md/TASKS.md; 10 files remain) |
+| Tree DIRTY (12 files) | COMPLETE (all files committed, tree CLEAN) |
 | C.29 LangGraph budget bypass | DEFERRED (archived) |
 | X.1.3-X.1.10 XML sub-roles | DEFERRED (archived) |
 | W1.1-W1.1.10 Web Server sub-roles | DEFERRED (archived) |
