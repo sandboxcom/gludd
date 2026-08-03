@@ -1,4 +1,4 @@
-"""Unit tests for governance core: PolicyEngine, ComplianceChecker."""
+"""Unit tests for governance core: PolicyEngine, ComplianceChecker, CapabilityRouter."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from general_ludd.governance.contracts import (
     Policy,
     Rule,
 )
-from general_ludd.governance.core import ComplianceChecker, PolicyEngine
+from general_ludd.governance.core import CapabilityRouter, ComplianceChecker, PolicyEngine
 
 
 class TestPolicyEngine:
@@ -288,3 +288,179 @@ class TestComplianceChecker:
         checker = ComplianceChecker(engine)
         report = checker.check("repo-1")
         assert report.created_at is not None
+
+
+class TestCapabilityRouter:
+    def test_init_empty(self):
+        router = CapabilityRouter()
+        assert router.has_all(set()) is True
+        assert router.has_any(set()) is False
+
+    def test_add_and_has(self):
+        router = CapabilityRouter()
+        router.add("encryption")
+        router.add("audit_log")
+        assert router.has_all({"encryption"}) is True
+        assert router.has_all({"encryption", "audit_log"}) is True
+        assert router.has_any({"encryption"}) is True
+
+    def test_remove(self):
+        router = CapabilityRouter({"encryption", "audit_log"})
+        router.remove("encryption")
+        assert router.has_all({"encryption"}) is False
+        assert router.has_all({"audit_log"}) is True
+
+    def test_interpret_condition_has(self):
+        router = CapabilityRouter()
+        caps = {"encryption", "audit_log"}
+        assert router.interpret_condition("has:encryption", caps) is True
+        assert router.interpret_condition("has:missing_cap", caps) is False
+
+    def test_interpret_condition_missing(self):
+        router = CapabilityRouter()
+        caps = {"encryption"}
+        assert router.interpret_condition("missing:audit_log", caps) is True
+        assert router.interpret_condition("missing:encryption", caps) is False
+
+    def test_interpret_condition_all_of(self):
+        router = CapabilityRouter()
+        caps = {"encryption", "audit_log", "backup"}
+        assert router.interpret_condition("all_of:encryption,audit_log", caps) is True
+        assert router.interpret_condition("all_of:encryption,missing_cap", caps) is False
+
+    def test_interpret_condition_any_of(self):
+        router = CapabilityRouter()
+        caps = {"encryption"}
+        assert router.interpret_condition("any_of:encryption,audit_log", caps) is True
+        assert router.interpret_condition("any_of:missing_a,missing_b", caps) is False
+
+    def test_interpret_condition_bare_string_defaults_pass(self):
+        router = CapabilityRouter()
+        assert router.interpret_condition("unknown_format", set()) is True
+
+    def test_interpret_condition_unrecognised_prefix_defaults_pass(self):
+        router = CapabilityRouter()
+        assert router.interpret_condition("x:something", set()) is True
+
+
+class TestComplianceCheckerWithCapabilityRouter:
+    def test_check_with_capabilities_all_pass(self):
+        engine = PolicyEngine()
+        policy = Policy(
+            name="Security",
+            description="d",
+            domain="security",
+            level="e",
+        )
+        engine.register_policy(policy)
+        engine.register_rule(
+            Rule(
+                policy_name="Security",
+                rule_id="S-1",
+                condition="has:encryption",
+                action="require",
+            )
+        )
+        engine.register_rule(
+            Rule(
+                policy_name="Security",
+                rule_id="S-2",
+                condition="all_of:audit_log,backup",
+                action="require",
+            )
+        )
+
+        router = CapabilityRouter({"encryption", "audit_log", "backup"})
+        checker = ComplianceChecker(engine, capability_router=router)
+        report = checker.check_with_capabilities("repo-1", {"encryption", "audit_log", "backup"})
+        assert report.status == "compliant"
+        assert report.violations == []
+        assert report.is_compliant is True
+
+    def test_check_with_capabilities_violations(self):
+        engine = PolicyEngine()
+        policy = Policy(
+            name="Security",
+            description="d",
+            domain="security",
+            level="e",
+        )
+        engine.register_policy(policy)
+        engine.register_rule(
+            Rule(
+                policy_name="Security",
+                rule_id="S-1",
+                condition="has:encryption",
+                action="require",
+            )
+        )
+        engine.register_rule(
+            Rule(
+                policy_name="Security",
+                rule_id="S-2",
+                condition="missing:backdoor",
+                action="require",
+            )
+        )
+
+        router = CapabilityRouter()
+        checker = ComplianceChecker(engine, capability_router=router)
+        report = checker.check_with_capabilities("repo-1", set())
+        assert report.status == "non_compliant"
+        assert "S-1" in report.violations
+        assert "S-2" not in report.violations  # missing:backdoor passes when backdoor absent
+
+    def test_check_with_capabilities_missing_capability(self):
+        engine = PolicyEngine()
+        policy = Policy(
+            name="Security",
+            description="d",
+            domain="security",
+            level="e",
+        )
+        engine.register_policy(policy)
+        engine.register_rule(
+            Rule(
+                policy_name="Security",
+                rule_id="S-1",
+                condition="missing:pii_access",
+                action="require",
+            )
+        )
+
+        router = CapabilityRouter({"pii_access"})
+        checker = ComplianceChecker(engine, capability_router=router)
+        report = checker.check_with_capabilities("repo-1", {"pii_access"})
+        assert report.status == "non_compliant"
+        assert "S-1" in report.violations
+
+    def test_check_with_capabilities_no_router_raises(self):
+        engine = PolicyEngine()
+        checker = ComplianceChecker(engine)
+        with pytest.raises(RuntimeError, match="CapabilityRouter"):
+            checker.check_with_capabilities("repo-1", set())
+
+    def test_check_with_capabilities_includes_audit_trail(self):
+        engine = PolicyEngine()
+        policy = Policy(
+            name="Security",
+            description="d",
+            domain="security",
+            level="e",
+        )
+        engine.register_policy(policy)
+        engine.register_rule(
+            Rule(
+                policy_name="Security",
+                rule_id="S-1",
+                condition="has:encryption",
+                action="require",
+            )
+        )
+
+        router = CapabilityRouter({"encryption"})
+        checker = ComplianceChecker(engine, capability_router=router)
+        report = checker.check_with_capabilities("repo-1", {"encryption"})
+        assert len(report.audit_trail) == 1
+        assert isinstance(report.audit_trail[0], AuditTrail)
+        assert "PASS" in report.audit_trail[0].details

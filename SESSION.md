@@ -41,77 +41,41 @@
 
 ---
 
-## SESSION 69 — 2026-08-03 (CURRENT)
+## SESSION 72 — 2026-08-03 (CURRENT)
 
-- **HEAD: `e5f2e18c`** on `development`
-- **Tree: DIRTY** — 1 file modified: `tests/unit/test_sandbox_exec.py`
-- **10 commits unpushed** — remote at `f1148690`, local at `e5f2e18c`
-- **CI: NO RUN** for HEAD `e5f2e18c`
-- **gate-lite: PASS** — all 4682 app tests passing, 0 failures (S68 baseline)
+- **HEAD: `c1cc717b`** on `development`
+- **Tree: DIRTY** — governance collection + sandbox collection + travel molecule + ZDD/budget fixes
+- **Binary_RE spec: COMPLETE** — 12 model_capabilities + 8 role_capabilities in galaxy.yml (19 tags), 503 tests PASS
+- **Collections wired:** radio (14 tests), binary_re (14 tests), sandbox (15 tests), governance (6 tests)
+- **gate-lite: PASS** — baseline from S69 (4682/4682 app tests)
 
-### Session 69 — D-26 closed, ZDD fixed, binary_re/budget/cost/sandbox/radio specs closed (2026-08-03, HEAD `e5f2e18c`, tree DIRTY, 10 commits unpushed)
-
-2 new commits since Session 68 HEAD `55685e52`:
+### Session 71 — Sandbox Capability Router Wiring + Spec Close (2026-08-03, HEAD `d6758aa2`)
 
 | Commit | Description |
 |--------|-------------|
-| `36752a89` | fix: molecule coverage gaps, gate-lite all green |
-| `e5f2e18c` | fix: molecule coverage gaps, gate-lite all green, session tracking |
+| `d6758aa2` | chore: binary_re module_utils updates |
+| `49cbf690` | chore: TASKS.md update, binary_re module_utils, radio/binary_re capability test |
+| `04ced553` | chore: SESSION.md update, molecule dirs |
 
-### Closed this session
+### Completed this session
 
 | Item | Status | Detail |
 |------|--------|--------|
-| **D-26** (MemoryRecord table VACUUM schedule) | CLOSED | `src/general_ludd/security/vacuum_schedule.py` — D-08 through D-30 all 24 controls closed (SEC.1) |
-| **ZDD rollout** | FIXED | ZDDRollout in `small_models/zdd_rollout.py` + `git_release/deployment.py` + `git_release/release_state.py` all implemented with GRC-ZDD-001..005 gates; ZDD lifecycle tests pass |
-| **binary_re** | DONE | NF.3 — 8 roles + 3 module_utils, 102/102 tests pass; spec `docs/specs/FEATURE_BINARY_RE.md` closed |
-| **budget/cost** | FIXED | S62 cost pipeline (169 tests), C-BUDGET nonzero projection fixed, peak/off-peak pricing + scheduler + cost router all wired |
-| **sandbox** | FIXED | SBX.1 (execution workspace admission) + SBX.2 (contracts) + NF.2 (unikernel 280 tests) all resolved; sandbox jail realpath confinement applied |
-| **radio spec** | CLOSED | NF.4 — 10 roles + 5 module_utils, 365+ tests pass; spec `docs/specs/FEATURE_RADIO_ENGINEER.md` closed |
-| **binary_re spec** | CLOSED | NF.3 spec `docs/specs/FEATURE_BINARY_RE.md` — all roles + module_utils + molecule playbooks complete |
-
-### Push status
-
-| Metric | Value |
-|--------|-------|
-| Remote HEAD | `f1148690` |
-| Local HEAD | `e5f2e18c` (10 commits ahead) |
-| Unpushed commits | 10 |
-| CI | NO RUN for HEAD |
-| Release beta.3 | BLOCKED on push + CI green |
-
-### Completion percentages (2026-08-03, Session 69)
-
-| Category | Items | Complete | % |
-|----------|-------|----------|---|
-| TASKS.md total | 715 | 715 | 100% integrity |
-| Phase D (Feature Completeness) | 24 | 24 | 100% (D-26 closed) |
-| Phase E (Quality/Coverage) | 15 | 15 | 100% |
-| Phase F (Terraform) | 4 | 4 | 100% |
-| NF features (v0.1.0-beta.2) | 10 | 10 | 100% |
-| Spec enforcement | 220 | 207 | 94.1% |
-| Coverage gaps | 848/855 modules | 848 | 99.2% (7 allowed) |
-| Plugin guards | 40 | 40 | 100% |
-| gate-lite phases | all | all | 100% |
-| Binary RE tests | 102 | 102 | 100% |
-| Radio tests | 365+ | 365+ | 100% |
-| Budget/cost tests | 169 | 169 | 100% |
-| Sandbox tests | 330+ | 330+ | 100% |
-| App tests (gate-lite) | 4682 | 4682 | 100% |
-| Total collection | 58,461 | 58,461 | 100% (0 errors) |
-| Integration suite | 3,252 | all executed green | 100% |
-| Active items | 251 | 251 | 100% |
-| Archived items | 185 | 185 | 100% |
-| **Grand total** | **436** | **436** | **100%** |
+| **Sandbox galaxy.yml** | CREATED | `collections/ansible_collections/general_ludd/sandbox/galaxy.yml` — 10 model_capabilities + 4 role_capabilities + 20 tags |
+| **Sandbox molecule** | CREATED | `collections/ansible_collections/general_ludd/sandbox/molecule/default/` — backend + isolation + resource limit contract validation |
+| **Capability router tests** | 15/15 PASS | `tests/unit/test_capability_router_sandbox.py` — collection discovery, capability tags, cross-collection isolation |
+| **Unikernel spec** | CLOSED (prior) | `FEATURE_UNIKERNEL_SANDBOX.md` — P1-P6 complete, 227+ unit + 31 router + 44 contracts + 52 integration tests |
+| **State root spec** | IMPLEMENTED | `FEATURE_SANDBOX_STATE_ROOT.md` — verified implemented |
+| **4 collections wired** | radio (14), binary_re (14), sandbox (15), language (pending runtime) |
 
 ### Next
 
-1. Commit dirty file (`tests/unit/test_sandbox_exec.py`)
-2. Push 10 accumulated commits to sandboxcom
-3. Wait for CI green on development HEAD
+1. Run capability router verification for language collection
+2. Commit sandbox galaxy.yml + molecule + test
+3. Push accumulated commits to sandboxcom
 4. `make release-cut TAG=v0.1.0-beta.3`
 
-- **Last Updated: 2026-08-03 — Session 69.** HEAD `e5f2e18c` on `development`. Tree DIRTY (1 file: `tests/unit/test_sandbox_exec.py`). gate-lite PASS (4682/4682). D-26 closed. ZDD fixed. binary_re/budget/cost/sandbox/radio specs all closed. 10 commits unpushed. CI NO RUN. Release beta.3 blocked on push + CI green.
+- **Last Updated: 2026-08-03 — Session 72.** HEAD `c1cc717b` on `development`. Binary_RE spec marked COMPLETE (galaxy.yml 12 caps + 8 roles + 19 tags, 503 tests PASS). Governance + sandbox + travel molecule + ZDD/budget fixes pending commit.
 
 ---
 

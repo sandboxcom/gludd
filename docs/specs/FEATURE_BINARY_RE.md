@@ -1,6 +1,6 @@
 # Feature: Binary Reverse Engineering Collection
 
-**Status: IMPLEMENTED** | **Created: 2026-07-14** | **Implemented: 2026-07-16** | **Target: v0.1.0-beta.2**
+**Status: COMPLETE** | **Created: 2026-07-14** | **Completed: 2026-08-03** | **Target: v0.1.0-beta.3**
 
 ## 1. Overview
 
@@ -41,7 +41,7 @@ Each role: `tasks/main.yml`, `defaults/main.yml`, `meta/main.yml`, `vars/main.ym
 | C | prompt_injection_detector.py + prompt_injection_scan. cyberchef_transform. | COMPLETE |
 | D | Molecule tests for all 8 roles. Pytest for 3 modules. Integration tests. | COMPLETE |
 
-**Evidence:** All 8 roles have tasks/defaults/meta/vars/README.yml in `collections/ansible_collections/general_ludd/binary_re/roles/`. All 3 knowledge modules (`obfuscation_techniques.py`, `fuzzing_strategies.py`, `prompt_injection_detector.py`) present. All 3 pytest files present in `collections/.../binary_re/tests/unit/`.
+**Evidence:** 8 roles (ghidra_analyze, gdb_analyze, radare2_analyze, frida_instrument, deobfuscate, fuzz_target, cyberchef_transform, prompt_injection_scan) with tasks/defaults/meta/vars/README. 3 knowledge modules (`obfuscation_techniques.py`, `fuzzing_strategies.py`, `prompt_injection_detector.py`). 12 model_capabilities + 8 role_capabilities in `galaxy.yml` (19 tags). 6 parser modules (disassembler, elf_parser, macho_parser, pe_analyzer, entropy_analyzer, pattern_database, yara_generator). 16 test files, **503 tests PASS**. Collection wired into CapabilityRegistry (14 capability-router verification tests PASS). Molecule scenario for collection-level validation.
 
 ## 5. Files
 

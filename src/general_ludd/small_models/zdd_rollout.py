@@ -112,8 +112,6 @@ class ZDDRollout:
         self._observations.append(observation)
 
         if not enforced:
-            if underlying.approved:
-                policy._claims_by_id.pop(task.task_id, None)
             return DispatchDecision(
                 action=DispatchAction.ESCALATE,
                 task_fingerprint=task.fingerprint,

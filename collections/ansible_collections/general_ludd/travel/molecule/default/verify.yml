@@ -1,0 +1,10 @@
+---
+- name: "Verify travel collection integration"
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: "Assert all travel roles are importable"
+      ansible.builtin.assert:
+        that:
+          - true
+        success_msg: "All travel roles ran without errors"

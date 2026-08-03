@@ -113,14 +113,20 @@ class ComplianceChecker:
 
     Evaluates every rule across every policy and produces a single
     ``ComplianceReport`` with violations and an audit trail.
+
+    When a ``CapabilityRouter`` is provided, rule conditions are evaluated
+    against the subject's declared capabilities using the router's condition
+    interpreter (``has:``, ``missing:``, ``all_of:``, ``any_of:``).
     """
 
     def __init__(
         self,
         engine: PolicyEngine,
         evaluate_fn: Callable[[Rule, str], bool] | None = None,
+        capability_router: CapabilityRouter | None = None,
     ) -> None:
         self._engine = engine
+        self._capability_router = capability_router
         self._evaluate_fn = evaluate_fn or self._evaluate_default
 
     @staticmethod
@@ -136,6 +142,47 @@ class ComplianceChecker:
         for policy in self._engine:
             for rule in self._engine.get_rules(policy.name):
                 passed = self._evaluate_fn(rule, subject)
+                if not passed:
+                    violations.append(rule.rule_id)
+
+                audit_entries.append(
+                    AuditTrail(
+                        entry_id=f"audit-{rule.rule_id}-{now_iso}",
+                        subject=subject,
+                        action="compliance_check",
+                        details=(f"Rule {rule.rule_id} ({rule.condition}): {'PASS' if passed else 'FAIL'}"),
+                        timestamp=now_iso,
+                    )
+                )
+
+        status = "compliant" if not violations else "non_compliant"
+
+        return ComplianceReport(
+            subject=subject,
+            policy_name="",
+            status=status,
+            violations=violations,
+            created_at=dt.datetime.now(dt.UTC),
+            audit_trail=audit_entries,
+        )
+
+    def check_with_capabilities(self, subject: str, capabilities: set[str]) -> ComplianceReport:
+        """Check compliance using the CapabilityRouter to evaluate rule conditions.
+
+        Each rule's ``condition`` string is interpreted by the router against
+        the subject's capability set (``has:<cap>``, ``missing:<cap>``,
+        ``all_of:...``, ``any_of:...``).
+        """
+        if self._capability_router is None:
+            raise RuntimeError("ComplianceChecker was not configured with a CapabilityRouter")
+
+        violations: list[str] = []
+        audit_entries: list[AuditTrail] = []
+        now_iso = dt.datetime.now(dt.UTC).isoformat()
+
+        for policy in self._engine:
+            for rule in self._engine.get_rules(policy.name):
+                passed = self._capability_router.interpret_condition(rule.condition, capabilities)
                 if not passed:
                     violations.append(rule.rule_id)
 

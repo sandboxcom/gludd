@@ -1,0 +1,20 @@
+---
+dependency:
+  name: galaxy
+driver:
+  name: default
+platforms:
+  - name: localhost
+provisioner:
+  name: ansible
+  config_options:
+    defaults:
+      gathering: explicit
+      callbacks_enabled: ansible.posix.profile_tasks
+      connection: local
+      interpreter_python: auto_silent
+      host_key_checking: false
+  playbooks:
+    converge: converge.yml
+verifier:
+  name: ansible

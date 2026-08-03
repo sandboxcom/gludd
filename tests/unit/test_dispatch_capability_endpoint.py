@@ -344,7 +344,7 @@ class TestTravelDispatchRouting:
 
 def _make_cap_dispatch_client(
     registry: CapabilityRegistry | None = None,
-    collection_handler: "Callable[[str, dict[str, object]], object] | None" = None,
+    collection_handler: Callable[[str, dict[str, object]], object] | None = None,
 ):
     """Build a TestClient with both capability_registry and a mock collection_handler."""
     from fastapi import FastAPI

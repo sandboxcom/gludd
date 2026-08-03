@@ -21,7 +21,7 @@ from general_ludd.governance.contracts import (
     PolicyRegistry,
     Rule,
 )
-from general_ludd.governance.core import ComplianceChecker, PolicyEngine
+from general_ludd.governance.core import CapabilityRouter, ComplianceChecker, PolicyEngine
 from general_ludd.governance.loader import (
     get_authority_registry,
     get_borders,
@@ -44,6 +44,7 @@ from general_ludd.governance.loader import (
 
 __all__ = [
     "AuditTrail",
+    "CapabilityRouter",
     "ComplianceChecker",
     "ComplianceModel",
     "ComplianceReport",

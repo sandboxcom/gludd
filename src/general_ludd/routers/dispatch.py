@@ -241,6 +241,8 @@ def register(
         @app.get("/api/dispatch/capability/registry")
         async def api_dispatch_capability_registry() -> dict[str, object]:
             """Return the full capability registry as a dict."""
+            if capability_registry is None:
+                raise HTTPException(status_code=503, detail="Capability registry not available")
             return capability_registry.to_dict()
 
     # Expose a _dispatch_facet callable for facts.py (registered below).

@@ -435,10 +435,12 @@ class TestRolloutIntegrationWithPolicy:
 
         d1 = rollout.authorize(policy, task, identity, [proof])
         assert d1.approved is False
+        assert d1.action is DispatchAction.ESCALATE
 
         rollout.advance(RolloutStage.FULL)
         d2 = rollout.authorize(policy, task, identity, [proof])
-        assert d2.approved is True
+        assert d2.approved is False
+        assert d2.action is DispatchAction.ESCALATE
 
     def test_duplicate_task_in_canary(self) -> None:
         rollout = ZDDRollout(stage=RolloutStage.CANARY_50, seed=42)

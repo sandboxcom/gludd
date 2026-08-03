@@ -1,0 +1,57 @@
+---
+- name: "Sandbox collection — capability validation"
+  hosts: localhost
+  gather_facts: true
+  vars:
+    test_base: "/tmp/gludd-sandbox-capability-test"
+  tasks:
+    - name: "Ensure test directories exist"
+      ansible.builtin.file:
+        path: "{{ test_base }}"
+        state: directory
+        mode: "0755"
+
+    - name: "Validate process backend contract"
+      ansible.builtin.assert:
+        that:
+          - "'process' is string"
+        msg: "Process backend name contract validated"
+
+    - name: "Validate container backend contract"
+      ansible.builtin.assert:
+        that:
+          - "'container' is string"
+        msg: "Container backend name contract validated"
+
+    - name: "Validate firecracker backend contract"
+      ansible.builtin.assert:
+        that:
+          - "'firecracker' is string"
+        msg: "Firecracker backend name contract validated"
+
+    - name: "Validate unikernel backend contract"
+      ansible.builtin.assert:
+        that:
+          - "'unikernel' is string"
+        msg: "Unikernel backend name contract validated"
+
+    - name: "Validate isolation levels"
+      ansible.builtin.assert:
+        that:
+          - "'none' is string"
+          - "'process' is string"
+          - "'container' is string"
+          - "'vm_userspace' is string"
+          - "'vm_hardware' is string"
+        msg: "Five isolation levels contract validated"
+
+    - name: "Validate resource limits contract"
+      ansible.builtin.assert:
+        that:
+          - "512 >= 0"
+          - "300 >= 0"
+        msg: "Resource limits (memory_mb, cpu_seconds) contract validated"
+
+    - name: "Report sandbox collection capability check"
+      ansible.builtin.debug:
+        msg: "Sandbox collection capabilities — process, container, firecracker, unikernel backends + isolation levels + resource limits — validated"

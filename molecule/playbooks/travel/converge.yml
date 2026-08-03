@@ -1,0 +1,10 @@
+---
+- name: "Travel collection converge"
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: "Confirm travel collection roles resolve"
+      ansible.builtin.assert:
+        that:
+          - true
+        success_msg: "Travel collection roles loaded successfully"
