@@ -1,6 +1,6 @@
 # Feature: Unikernel/NanoVM Sandboxed Agent Execution
 
-**Status: CLOSED** (P1-P6 complete, 227+ unit tests + 31 router integration tests + 44 contracts tests; wiring done via `SandboxCapabilityRouter._BACKENDS` and `_auto_detect()`; lint green) | **Closed: 2026-08-02** | **Created: 2026-07-14** | **Target: v0.1.0-beta.2**
+**Status: COMPLETE** (P1-P6 complete, 227+ unit tests + 31 router integration tests + 44 contracts tests + 15 capability-router verification tests; wiring done via `SandboxCapabilityRouter._BACKENDS` and `_auto_detect()`; capability dispatch wired via galaxy.yml + capability registry; lint green; gate-lite PASS) | **Completed: 2026-08-03** | **Created: 2026-07-14** | **Target: v0.1.0-beta.2**
 **P3 progress (2026-07-15):** VM lifecycle manager wired into the daemon-dispatch
 surface. ``src/general_ludd/security/sandboxes/vm/lifecycle.py`` adds
 ``VMSandboxManager`` (boot/dispatch/verify/release/list/observe), ``VMInstance``
