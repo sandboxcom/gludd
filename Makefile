@@ -1985,6 +1985,9 @@ test-opencode-binary:
 check-molecule-yaml:
 	@$(UV) run python scripts/check_molecule_yaml.py
 
+check-workflow-yaml:
+	@$(UV) run python -c "import yaml, sys; f=sys.argv[1] if len(sys.argv)>1 else '.github/workflows/build.yml'; yaml.safe_load(open(f)); print(f'YAML valid ({f})')" .github/workflows/build.yml
+
 check-node-v26-compat:
 	@BT="/tmp/gludd-node-v26-$${ID:-$$$$}"; /bin/rm -rf "$$BT"; $(UV) run python -m pytest tests/unit/test_opencode_node_v26_compat.py $(_XD) -v --basetemp="$$BT"; RC=$$?; /bin/rm -rf "$$BT"; exit $$RC
 

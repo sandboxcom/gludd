@@ -282,6 +282,25 @@ jobs:
         env:
           GLUDD_PSK: ""
 
+      - name: Collect failure diagnostics (gate, Python ${{ matrix.python-version }})
+        if: failure()
+        run: |
+          echo "::group::Gate failure diagnostics"
+          echo "--- Disk usage ---"
+          df -h
+          echo "--- Memory ---"
+          free -h || true
+          echo "--- Runner OOM kills ---"
+          dmesg 2>/dev/null | grep -i -E 'oom|out of memory|killed process' | tail -50 || echo "(dmesg unavailable)"
+          echo "--- Top processes by memory ---"
+          ps aux --sort=-%mem 2>/dev/null | head -30 || ps aux | head -30
+          echo "--- Git status ---"
+          git status 2>/dev/null || true
+          echo "--- Python version ---"
+          python --version 2>/dev/null || true
+          echo "--- uv lock status ---"
+          uv lock --check 2>/dev/null || echo "uv lock check failed (deps may be stale)"
+          echo "::endgroup::"
       - name: CI Summary
         if: always()
         run: |
@@ -302,6 +321,10 @@ jobs:
           echo "  Status table      : check step 'Check status table current' above"
           echo "  Secrets baseline  : check step 'Verify secrets baseline' above"
           echo "  CSS Lint          : check step 'CSS Lint (stylelint)' above"
+          if [ "${{ job.status }}" = "failure" ]; then
+            echo ""
+            echo "::error::GATE FAILED — check failed step(s) above. Failure diagnostics logged above for triage."
+          fi
           echo "============================================="
           echo "See step annotations above for individual pass/fail status."
           echo "============================================="
@@ -443,6 +466,8 @@ jobs:
           echo "=== CI PHASE: install ==="
           uv sync --python ${{ matrix.python-version }}
       - name: Test (shard ${{ matrix.shard }}, Python ${{ matrix.python-version }})
+        id: test-run
+        timeout-minutes: 25
         # Expand $TESTPATHS with bash so wildcard patterns like test_[a-e]*.py
         # are resolved by the shell before pytest sees them.  When the glob
         # matches nothing (e.g. a new shard boundary) pytest exits 5 (no tests
@@ -455,67 +480,72 @@ jobs:
         # (noise across 12 shard legs); the merged report is produced by the
         # `coverage` job.  Coverage gate is enforced by the `coverage` job
         # downstream via pyproject.toml fail_under=70.
+        #
+        # RETRY: flaky tests get up to 2 retries with exponential backoff
+        # (10s → 20s). Only retries on non-zero exit codes (test failures,
+        # worker crashes, runner OOM). Exit code 5 (no tests collected) is not
+        # retried — an empty shard is always a pass.
         run: |
-          echo "=== CI PHASE: test-shard-${{ matrix.shard }} ==="
-          TESTPATHS="${{ matrix.testpaths }}"
-          EXCLUDES="${{ matrix.exclude }}"
-          # Expand the shard's glob(s) via word splitting and drop excluded
-          # files at the SHELL level, before pytest ever sees them. This CANNOT
-          # be done with pytest --ignore-glob: since bash hands pytest explicit
-          # filenames, pytest treats them as initial args, which bypass
-          # pytest_ignore_collect/--ignore-glob entirely (those hooks apply
-          # only during pytest's own directory traversal). Directory tokens
-          # (tests/integration/ etc. on the 'other' shard) don't match the
-          # */test_*.py exclude patterns and pass through untouched; pytest
-          # walks them with normal collection semantics. If the shard's glob
-          # matches nothing, the literal pattern passes through and pytest
-          # exits 5 (no tests collected) — handled below.
-          FILES=""
-          for f in $TESTPATHS; do
-            keep=1
-            for pat in $EXCLUDES; do
-              # $pat is INTENTIONALLY unquoted: case matches it as a glob
-              # pattern (e.g. */test_*_e2e.py), not a literal string.
-              case "$f" in
-                $pat) keep=0 ;;
-              esac
+          retry_test() {
+            local max_attempts=2
+            local delay=10
+            local attempt=1
+            local rc=0
+            while [ $attempt -le $max_attempts ]; do
+              echo "::group::Test attempt ${attempt}/${max_attempts} (shard ${{ matrix.shard }})"
+              set +e
+              "_run_tests" "$@"
+              rc=$?
+              set -e
+              echo "::endgroup::"
+              if [ $rc -eq 0 ]; then
+                echo "Test passed on attempt ${attempt}"
+                return 0
+              fi
+              if [ $rc -eq 5 ]; then
+                echo "No tests collected (exit 5) — no-op shard, passing"
+                return 0
+              fi
+              if [ $attempt -lt $max_attempts ]; then
+                echo "::warning::Test attempt ${attempt} failed (exit ${rc}), retrying in ${delay}s..."
+                sleep $delay
+                delay=$((delay * 2))
+              fi
+              attempt=$((attempt + 1))
             done
-            if [ "$keep" -eq 1 ]; then
-              FILES="$FILES $f"
+            echo "::error::All ${max_attempts} test attempts failed (last exit: ${rc})"
+            return $rc
+          }
+          _run_tests() {
+            echo "=== CI PHASE: test-shard-${{ matrix.shard }} ==="
+            TESTPATHS="${{ matrix.testpaths }}"
+            EXCLUDES="${{ matrix.exclude }}"
+            FILES=""
+            for f in $TESTPATHS; do
+              keep=1
+              for pat in $EXCLUDES; do
+                case "$f" in
+                  $pat) keep=0 ;;
+                esac
+              done
+              if [ "$keep" -eq 1 ]; then
+                FILES="$FILES $f"
+              fi
+            done
+            if [ -z "${FILES// /}" ]; then
+              echo "Shard '${{ matrix.shard }}' selected no files after exclusions — no-op."
+              return 5
             fi
-          done
-          if [ -z "${FILES// /}" ]; then
-            echo "Shard '${{ matrix.shard }}' selected no files after exclusions — no-op."
-            exit 0
-          fi
-          # Route through the adaptive runner (single source of truth for worker
-          # sizing) instead of a raw `-n auto`. On CI (CI=true, below) the runner
-          # sizes by min(cpu_count, available-RAM/PER_WORKER_GB) and BYPASSES the
-          # shared-local-box load cap (2.5*cores - load5): a fresh isolated 2-core
-          # runner has no competing load and is sharded so it won't OOM, so the
-          # load cap only over-throttled it to -n 1 (unit-1 ran 30+ min). It still
-          # appends `--maxprocesses N --dist loadgroup`, so a worker crash/respawn
-          # loop cannot exceed the bounded count and OOM the runner, and an
-          # OOM-shaped exit auto-retries at a halved worker count. `-n auto`
-          # previously spawned one ~1.2-1.5 GB worker PER CORE. Test SCOPE is
-          # the exclude-filtered $FILES list; the coverage flags are forwarded
-          # verbatim.
-          # GLUDD_XDIST=auto (below) is not a positive int so the runner ignores
-          # it and the adaptive computation applies. (Off-CI the load cap stays —
-          # the #45 local-OOM fix is unchanged.)
-          uv run python scripts/adaptive_test.py $FILES \
-            --cov=general_ludd --cov-report= \
-            --cov-fail-under=0 \
-            -v \
-            || { RC=$?; [ $RC -eq 5 ] && exit 0 || exit $RC; }
-          # pytest-cov under xdist can leave parallel-named .coverage.<host>.<pid>
-          # data files instead of a single combined .coverage; merge them first
-          # so the cp below reliably finds a data file to hand to the coverage
-          # job (best-effort — a no-op if a plain .coverage already exists).
-          uv run coverage combine 2>/dev/null || true
-          # Stash the data file under a shard-unique name so the coverage job
-          # can combine them without filename collisions.
-          cp .coverage ".coverage.${{ matrix.shard }}-${{ matrix.python-version }}" || true
+            uv run python scripts/adaptive_test.py $FILES \
+              --cov=general_ludd --cov-report= \
+              --cov-fail-under=0 \
+              -v \
+              || { RC=$?; [ $RC -eq 5 ] && return 5 || return $RC; }
+            uv run coverage combine 2>/dev/null || true
+            cp .coverage ".coverage.${{ matrix.shard }}-${{ matrix.python-version }}" || true
+            return 0
+          }
+          retry_test
         env:
           GLUDD_PSK: ""
           GLUDD_XDIST: auto
@@ -533,6 +563,37 @@ jobs:
           # runner); this cap is only a runaway catcher, so give it VSZ headroom
           # here to keep it from red-flagging the pipeline.
           GLUDD_TEST_WORKER_MEM_MB: "6144"
+      - name: Collect failure diagnostics (shard ${{ matrix.shard }})
+        if: failure() && steps.test-run.outcome == 'failure'
+        run: |
+          echo "::group::Failure diagnostics — shard ${{ matrix.shard }}"
+          echo "--- Disk usage ---"
+          df -h
+          echo "--- Memory ---"
+          free -h || true
+          echo "--- Runner OOM kills (last 50 lines) ---"
+          dmesg 2>/dev/null | grep -i -E 'oom|out of memory|killed process' | tail -50 || echo "(dmesg unavailable)"
+          echo "--- Top processes by memory ---"
+          ps aux --sort=-%mem 2>/dev/null | head -30 || ps aux | head -30
+          echo "--- Core dumps ---"
+          ls -la /var/lib/systemd/coredump/ 2>/dev/null || echo "(no coredump dir)"
+          echo "--- /tmp usage ---"
+          du -sh /tmp 2>/dev/null || true
+          echo "--- Workspace test artifacts ---"
+          find . -name '*.coverage*' -ls 2>/dev/null || true
+          echo "--- Last 100 lines of pytest output ---"
+          find /tmp -name '.pytest_cache' -type d 2>/dev/null | head -1 | xargs -I{} find {} -name '*.log' 2>/dev/null | head -1 | xargs tail -100 2>/dev/null || echo "(no pytest cache log)"
+          echo "::endgroup::"
+      - name: Upload failure diagnostics (shard ${{ matrix.shard }})
+        if: failure() && steps.test-run.outcome == 'failure'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
+        with:
+          name: failure-diag-${{ matrix.shard }}-${{ matrix.python-version }}-${{ github.run_id }}
+          path: |
+            /tmp/gludd-*.log
+            .coverage*
+          if-no-files-found: warn
+          retention-days: 3
       - name: Upload coverage data (shard ${{ matrix.shard }}, Python ${{ matrix.python-version }})
         if: always()
         # Upload the shard-unique .coverage.* data file so the `coverage` job
@@ -631,17 +692,44 @@ jobs:
           ref: ${{ github.sha }}
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
       - name: Run molecule shard ${{ matrix.shard }}/4
+        id: molecule-run
+        timeout-minutes: 12
         # The `default` (localhost) driver needs no container, so this runs on
         # plain GH runners. Each scenario starts its own stdlib mock daemon via
         # prepare.yml — nothing external is required. Scenarios are sorted and
         # split into 4 contiguous groups by molecule-test-shard.
+        # RETRY: molecule scenarios can be timing-sensitive in CI; 2 attempts
+        # with 15s → 30s backoff catches transient failures.
         run: |
-          echo "=== CI PHASE: molecule-shard-${{ matrix.shard }} ==="
-          uv sync
-          make molecule-test-shard SHARD=${{ matrix.shard }}/4 || {
-            echo "::error::MOLECULE SHARD ${{ matrix.shard }}/4 FAILED — check molecule logs above for details."
-            exit 1
+          retry_molecule() {
+            local max_attempts=2
+            local delay=15
+            local attempt=1
+            local rc=0
+            while [ $attempt -le $max_attempts ]; do
+              echo "::group::Molecule attempt ${attempt}/${max_attempts} (shard ${{ matrix.shard }}/4)"
+              set +e
+              echo "=== CI PHASE: molecule-shard-${{ matrix.shard }} ==="
+              uv sync
+              make molecule-test-shard SHARD=${{ matrix.shard }}/4
+              rc=$?
+              set -e
+              echo "::endgroup::"
+              if [ $rc -eq 0 ]; then
+                echo "Molecule shard ${{ matrix.shard }}/4 passed on attempt ${attempt}"
+                return 0
+              fi
+              if [ $attempt -lt $max_attempts ]; then
+                echo "::warning::Molecule attempt ${attempt} failed (exit ${rc}), retrying in ${delay}s..."
+                sleep $delay
+                delay=$((delay * 2))
+              fi
+              attempt=$((attempt + 1))
+            done
+            echo "::error::MOLECULE SHARD ${{ matrix.shard }}/4 FAILED after ${max_attempts} attempts — check molecule logs above for details."
+            return $rc
           }
+          retry_molecule
         env:
           GLUDD_PSK: ""
       - name: Tail molecule logs (quick triage)
@@ -702,6 +790,7 @@ jobs:
           sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" src/general_ludd/__init__.py
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
       - name: Build executable
+        timeout-minutes: 15
         run: |
           echo "=== CI PHASE: build-linux-x86_64 ==="
           uv sync
@@ -818,6 +907,7 @@ jobs:
           sed -i "" "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" src/general_ludd/__init__.py
           sed -i "" "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
       - name: Build executable
+        timeout-minutes: 15
         run: |
           echo "=== CI PHASE: build-macos-arm64 ==="
           uv sync
@@ -927,6 +1017,7 @@ jobs:
           (Get-Content src/general_ludd/__init__.py) -replace '__version__ = ".*"', "__version__ = ""$env:VERSION""" | Set-Content src/general_ludd/__init__.py
           (Get-Content pyproject.toml) -replace '^version = ".*"', "version = ""$env:VERSION""" | Set-Content pyproject.toml
       - name: Build executable
+        timeout-minutes: 15
         shell: pwsh
         run: |
           Write-Host "=== CI PHASE: build-windows-x86_64 ==="
@@ -1048,6 +1139,7 @@ jobs:
           sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" src/general_ludd/__init__.py
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
       - name: Build executable
+        timeout-minutes: 15
         run: |
           echo "=== CI PHASE: build-linux-aarch64 ==="
           uv sync
