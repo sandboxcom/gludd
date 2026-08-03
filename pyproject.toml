@@ -80,7 +80,10 @@ dev = [
 ]
 local-inference = [
     "llama-cpp-python[server]>=0.1.0-beta.2",
+]
+cuda-inference = [
     "vllm>=0.1.0-beta.2",
+    "torch>=2.6.0",
 ]
 aws = [
     "boto3>=0.1.0-beta.2",

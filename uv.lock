@@ -1860,6 +1860,10 @@ azure = [
     { name = "azure-mgmt-costmanagement" },
     { name = "azure-mgmt-resource" },
 ]
+cuda-inference = [
+    { name = "torch" },
+    { name = "vllm" },
+]
 dev = [
     { name = "aiosqlite" },
     { name = "ansible-dev-tools" },
@@ -1912,7 +1916,6 @@ gcp = [
 ]
 local-inference = [
     { name = "llama-cpp-python", extra = ["server"] },
-    { name = "vllm" },
 ]
 observability = [
     { name = "opentelemetry-api" },
@@ -2031,18 +2034,19 @@ requires-dist = [
     { name = "starlette", specifier = ">=0.1.0b2" },
     { name = "structlog", specifier = ">=0.1.0b2" },
     { name = "tenacity", specifier = ">=0.1.0b2" },
+    { name = "torch", marker = "extra == 'cuda-inference'", specifier = ">=2.6.0" },
     { name = "tree-sitter", specifier = ">=0.1.0b2" },
     { name = "tree-sitter-python", specifier = ">=0.1.0b2" },
     { name = "types-defusedxml", marker = "extra == 'dev'", specifier = ">=0.7.0.20240218" },
     { name = "types-psutil", marker = "extra == 'dev'", specifier = ">=0.1.0b2" },
     { name = "types-requests", marker = "extra == 'dev'", specifier = ">=0.1.0b2" },
     { name = "uvicorn-worker", specifier = ">=0.1.0b2" },
-    { name = "vllm", marker = "extra == 'local-inference'", specifier = ">=0.1.0b2" },
+    { name = "vllm", marker = "extra == 'cuda-inference'", specifier = ">=0.1.0b2" },
     { name = "watchdog", specifier = ">=0.1.0b2" },
     { name = "yt-dlp", marker = "extra == 'e2e-all'", specifier = ">=2025.1.15" },
     { name = "yt-dlp", marker = "extra == 'game-e2e'", specifier = ">=2025.1.15" },
 ]
-provides-extras = ["dev", "local-inference", "aws", "gcp", "azure", "observability", "sandbox", "game-e2e", "e2e-all"]
+provides-extras = ["dev", "local-inference", "cuda-inference", "aws", "gcp", "azure", "observability", "sandbox", "game-e2e", "e2e-all"]
 
 [package.metadata.requires-dev]
 dev = [
