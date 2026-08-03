@@ -7319,4 +7319,7 @@ print('OK: rag.py delegates to HashEmbedder + ModelGateway'); \
 "
 	@echo "check-rag-wrapper: PASS"
 
-.PHONY: e2e-test-gen-pipeline e2e-test-gen-pipeline-dogfood collect-specific fix-e501-golden clean-relative check-rag-wrapper
+user-test-batch:
+	@$(UV) run python scripts/run_user_test_batch.py
+
+.PHONY: e2e-test-gen-pipeline e2e-test-gen-pipeline-dogfood collect-specific fix-e501-golden clean-relative check-rag-wrapper user-test-batch
