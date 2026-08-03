@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-08-03 Session 78. HEAD `ff0aec68` on development. CI PENDING (run 30833152613, in_progress on ff0aec68). lint PASS 0. typecheck PASS 0. Tree DIRTY (4 modified files). gate-lite FAILED (1 test failure + dead-code non-zero exit; 6537 passed, 1 failed, 17 skipped). E2E EXECUTED (~790 local model tests). ALL 23 SPECS + FPX.1 COMPLETE. Game dispatch: 7/7 verified. ALL GAPS CLOSED (ff0aec68: url_fetch, gateway base_url, E2E download, task-integrity, dead-code, env-writes). Model hash DB: WIRED (28 tests). 15 commits unpushed (remote f1148690). Release beta.3 PENDING (fix gate-lite → push → release-cut).**
+**Last consolidated: 2026-08-03 Session 78. HEAD `49857586` on development. CI PENDING (run 30839033353, in_progress on 49857586). lint PASS 0. typecheck PASS 0. Tree CLEAN. gate-lite PASS (6555 passed, 0 failed). E2E EXECUTED (~790 local model tests). ALL 23 SPECS + FPX.1 COMPLETE. Game dispatch: 7/7 verified. ALL GAPS CLOSED. Model hash DB: WIRED (28 tests). Push COMPLETE (21 commits, remote 49857586). Release beta.3 PENDING (release-cut next).**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -34,7 +34,7 @@ CI PENDING — run `30833152613`, headSha `ff0aec68`, status `in_progress`. lint
 - [x] S78.4 — **Deep tests wave (+453), spec enforcement 98.6%, dead-code baseline refresh**: +453 tests across 11 modules (model_hash_db +76, security_comprehensive +102, release_verification +49, worktree_health +37, documentation_integrity +25, plugin_ports +15, binary_build +14, daemon_core +15, sentry +12, game_gen +7, abtest +3). Spec enforcement 207/220→4159/4220 (98.6%), AC020 closed. Dead-code baseline 864→1217. | evidence: `c11b68bf`; +453 tests; spec enforcement 98.6% | priority: high | effort: L | status: completed
 - [x] S78.5 — **enforce_make_subagent test fix**: update path to impl file. | evidence: `eb0267d7` | priority: high | effort: S | status: completed
 - [x] S78.6 — **Binary build verification tests**: +14 tests for binary_build. | evidence: `4732463f`; +14 tests | priority: high | effort: S | status: completed
-- [ ] S77.1 — **Push 21 accumulated commits**: `make batch-push`. | evidence: pending | priority: high | effort: M | status: pending
+- [x] S77.1 — **Push 21 accumulated commits**: `make batch-push` → remote `49857586` matches local. CI run `30839033353` triggered. | evidence: `49857586`; VERIFIED development@49857586; CI run 30839033353 in_progress | priority: high | effort: M | status: completed
 - [ ] S77.2 — **`make release-cut TAG=v0.1.0-beta.3 MSG='beta.3: 23 specs + FPX.1 + model hash DB + local_game_gen role + E2E binary, 58K+ tests, gate-lite green'`** | evidence: pending | priority: high | effort: L | status: pending
 - [ ] S77.3 — **Verify 12/12 release artifacts**: `make verify-release-completeness TAG=v0.1.0-beta.3` | evidence: pending | priority: high | effort: M | status: pending
 
@@ -135,7 +135,7 @@ ALL 21 feature specifications + FPX.1 COMPLETE. Local model E2E: COMPLETE (~790 
 | Sentry | 12 | error tracking integration |
 | gate-lite (app) | 6,537 | 6537 pass, 2 fail |
 | Integration | 3,252 | 157 files |
-| **Total Collection** | **58,986/58,987** | **0 errors** |
+| **Total Collection** | **58,980/58,980** | **0 errors** |
 
 ### 23 Spec Files — ALL COMPLETE
 

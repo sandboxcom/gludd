@@ -2,20 +2,20 @@
 
 ---
 
-## SESSION 78 — 2026-08-03 — HEAD `4732463f`: Deep tests +453, spec enforcement 98.6%, gate-lite 2 failures
+## SESSION 78 — 2026-08-03 — HEAD `49857586`: Push complete, CI PENDING, gate-lite green, release-cut next
 
-### Current State (HEAD `4732463f`)
+### Current State (HEAD `49857586`)
 
-- **HEAD: `4732463f`** on `development` — "feat: binary build verification tests"
+- **HEAD: `49857586`** on `development` — push complete, 21 commits pushed
 - **Tree: CLEAN** — all dirty-tree changes committed in `c2546873`
-- **CI: STALE** — last checked run `30833152613` on `ff0aec68`; superseded by `4732463f`
+- **CI: PENDING** — run `30839033353`, headSha `49857586`, status `in_progress`
 - **lint: PASS 0** — url_fetch I001 import sort fixed
 - **typecheck: PASS 0** — no issues in 984+1 source files
-- **gate-lite: FAILED** — 2 test failures (`test_all_plugins_runtime`, `test_enforcement_bugs`). 6537 passed, 2 failed.
+- **gate-lite: PASS** — 6555 passed, 0 failed.
 - **gate-full: STALE** — last run 2026-08-02, dead-code FAIL + env-writes FAIL (pre-`f3a108d8`). Needs re-run.
 - **E2E execution: COMPLETE** — SMP.1 (697 tests), FPX.1 local model dispatch, game building (7/7 dispatch), local model discovery, hardware probe, budget manager, local model templates. Total: ~790 local model E2E tests.
-- **21 commits unpushed** (remote `f1148690`, local `4732463f`)
-- **Release beta.3: PENDING** — CI fix → gate-lite green → push → release-cut next
+- **Push COMPLETE** — 21 commits pushed (remote `49857586` matches local)
+- **Release beta.3: PENDING** — push done, CI PENDING (run 30839033353), release-cut next after CI green
 - **New commits since last SESSION.md update (6 added):**
   - `4732463f` — feat: binary build verification tests (HEAD)
   - `eb0267d7` — fix: enforce_make_subagent test — update path to impl file
@@ -40,7 +40,7 @@ Game dispatch 7/7 verified. Full FPX.1 pipeline: LocalModelDiscovery → ModelDo
 | dead-code baseline | Refreshed |
 | env-writes | Fixed |
 
-### Quality Status (HEAD `4732463f`)
+### Quality Status (HEAD `49857586`)
 
 | Category | Status | Details |
 |---|---|---|
@@ -56,7 +56,7 @@ Game dispatch 7/7 verified. Full FPX.1 pipeline: LocalModelDiscovery → ModelDo
 | plugin-hook-invoke | PASS | 34/34 |
 | TASKS.md integrity | PASS | 44 items, 0 violations |
 | Test collection | ~58,533 | 0 errors |
-| CI | STALE | Run `30833152613` superseded by `4732463f` |
+| CI | PENDING | Run `30839033353` on `49857586`, in_progress |
 
 ### ALL 23+FPX.1 FEATURE SPECS COMPLETE
 
@@ -130,7 +130,7 @@ Game dispatch 7/7 verified. Full FPX.1 pipeline: LocalModelDiscovery → ModelDo
 | Local Model E2E | ~790 |
 | **Total Collection** | **58,986/58,987, 0 errors** |
 
-### Architecture — Verified Current (HEAD `4732463f`)
+### Architecture — Verified Current (HEAD `49857586`)
 
 | Component | Detail |
 |---|---|
@@ -150,9 +150,9 @@ Game dispatch 7/7 verified. Full FPX.1 pipeline: LocalModelDiscovery → ModelDo
 ### Gate Status (2026-08-03)
 
 <!-- gate:begin -->
-- **gate-lite: FAILED** — 2 test failures (`test_all_plugins_runtime`, `test_enforcement_bugs`). 6537 passed/2 failed.
+- **gate-lite: PASS** — 6555 passed/0 failed.
 - **gate (full): STALE** (2026-08-02) — dead-code FAIL, env-writes FAIL (pre-`f3a108d8`). Needs re-run.
-- **CI: STALE** — Run `30833152613` superseded by `4732463f`
+- **CI: PENDING** — Run `30839033353` on `49857586`, in_progress
 - lint: PASS 0
 - typecheck: PASS 0
 - dead-code: PASS (baseline refreshed 864→1217)
@@ -165,7 +165,7 @@ Game dispatch 7/7 verified. Full FPX.1 pipeline: LocalModelDiscovery → ModelDo
 - spec-enforcement-coverage: PASS 98.6% (4159/4220, AC020 closed)
 - plugin-hook-invoke: PASS (34/34)
 - TASKS.md integrity: PASS (50 items, 0 violations)
-- Total collection: ~58,986, 0 errors
+- Total collection: ~58,980, 0 errors
 <!-- gate:end -->
 
 ### Release History
@@ -215,6 +215,6 @@ e87f6f63 feat: local model E2E, FPX.1 local model dispatch, gate-lite green
 7. `make release-cut TAG=v0.1.0-beta.3 MSG='beta.3: 23 specs + FPX.1 + model hash DB + local_game_gen role + E2E binary, 58K+ tests, gate-lite green'`
 8. Verify 12/12 release artifacts: `make verify-release-completeness TAG=v0.1.0-beta.3`
 
-- **Last Updated: 2026-08-03 — Session 78.** HEAD `4732463f` on `development`. Tree CLEAN. gate-lite FAILED (2 test failures: `test_all_plugins_runtime`, `test_enforcement_bugs`). lint PASS 0. 23 specs + FPX.1 COMPLETE. E2E EXECUTED (~790 tests). Deep tests: +453 (model_hash_db, security, release, worktree, docs, plugins, binary, daemon, sentry, game_gen, abtest). Spec enforcement: 4159/4220 (98.6%), AC020 closed. Dead-code baseline 864→1217. Game dispatch 7/7. ALL GAPS CLOSED. 21 commits unpushed. Release beta.3 PENDING.
+- **Last Updated: 2026-08-03 — Session 78.** HEAD `49857586` on `development`. Tree CLEAN. gate-lite PASS (6555/0). lint PASS 0. 23 specs + FPX.1 COMPLETE. E2E EXECUTED (~790 tests). Deep tests: +453 (model_hash_db, security, release, worktree, docs, plugins, binary, daemon, sentry, game_gen, abtest). Spec enforcement: 4159/4220 (98.6%), AC020 closed. Dead-code baseline 864→1217. Game dispatch 7/7. ALL GAPS CLOSED. Push COMPLETE (21 commits, 49857586). CI PENDING (run 30839033353). Release beta.3 PENDING.
 
 (End of file - total 175 lines)
