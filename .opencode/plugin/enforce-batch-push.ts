@@ -12,51 +12,20 @@ const nodeRequire = typeof require === "function" ? require : createRequire(impo
 function execSync(...args: any[]): Buffer {
   return nodeRequire("node:child_" + "process").execSync(...args);
 }
-function getMakefile(): string {
-  try {
-    return fs.readFileSync(MAKEFILE_PATH, "utf8");
-  } catch {
-    return "";
-  }
-}
-function hasTarget(targetName: string): boolean {
-  const mf = getMakefile();
-  const re = new RegExp(`^${targetName}:`, "m");
-  return re.test(mf);
-}
-function branchForCommand(cmd: string): string | null {
-  if (/\bmake\s+git-push-sandboxcom\b/.test(cmd)) return "master";
-  if (/\bmake\s+development-push\b/.test(cmd)) return "development";
-  if (/\bmake\s+batch-push\b/.test(cmd)) return "master";
-  return null;
-}
-function isCiPending(branch: string): boolean {
-  try {
-    const result = execSync(
-      `make ci-verdict BRANCH=${branch}`,
-      {
-        cwd: "/Users/shawnwilson/gludd",
-        timeout: 15000,
-        stdio: ["pipe", "pipe", "pipe"],
-      },
-    );
-    return false;
-  } catch (e) {
-    if (typeof e === "object" && e !== null && "status" in e && (e as { status?: number }).status === 2) return true;
-    return false;
-  }
-}
+
 const PUSH_PATTERNS: readonly RegExp[] = Object.freeze([
   /\bmake\s+git-push-sandboxcom\b/,
   /\bmake\s+development-push\b/,
   /\bmake\s+batch-push\b/,
 ]) as readonly RegExp[];
+
 const DENY_MESSAGE =
   "CI-BUSY: a CI run is in_progress on the target branch. " +
   "Pushing now would cancel the running CI, producing zero validation. " +
   "Wait for CI to complete (use `make ci-verdict` to check), then push. " +
   "Use FORCE=1 to bypass (hotfix only). " +
   "Set GLUDD_BATCH_PUSH_ENFORCE=0 to disable.";
+
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input, output) => {
     if (isSubagent()) return;
@@ -79,6 +48,45 @@ const defaultImpl: HotModule = {
     }
   },
 };
+
+function getMakefile(): string {
+  try {
+    return fs.readFileSync(MAKEFILE_PATH, "utf8");
+  } catch {
+    return "";
+  }
+}
+
+function hasTarget(targetName: string): boolean {
+  const mf = getMakefile();
+  const re = new RegExp(`^${targetName}:`, "m");
+  return re.test(mf);
+}
+
+function branchForCommand(cmd: string): string | null {
+  if (/\bmake\s+git-push-sandboxcom\b/.test(cmd)) return "master";
+  if (/\bmake\s+development-push\b/.test(cmd)) return "development";
+  if (/\bmake\s+batch-push\b/.test(cmd)) return "master";
+  return null;
+}
+
+function isCiPending(branch: string): boolean {
+  try {
+    const result = execSync(
+      `make ci-verdict BRANCH=${branch}`,
+      {
+        cwd: "/Users/shawnwilson/gludd",
+        timeout: 15000,
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    );
+    return false;
+  } catch (e) {
+    if (typeof e === "object" && e !== null && "status" in e && (e as { status?: number }).status === 2) return true;
+    return false;
+  }
+}
+
 export default (({ }) => {
   return {
     "tool.execute.before": async (input, output) => {

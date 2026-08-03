@@ -12,33 +12,71 @@
 
 ## Current Gate Status (2026-08-03)
 <!-- gate:begin -->
-- lint: PASS 0 (HEAD `70865846`)
-- typecheck: PASS 0 (HEAD `70865846`)
+- lint: PASS 0 (HEAD `67760d2e`)
+- typecheck: PASS 0 (HEAD `67760d2e`)
 - test: PASS
 - hook-runtime: PASS 0
 - coverage-gaps: PASS
 - verify-enforcement: PASS
-- dead-code: FAIL (baseline churn, 10 modified files)
+- dead-code: FAIL (baseline churn)
 - env-writes: FAIL (check_test_env_writes.py, 2 modules still flagged)
 - **gate: PASS** (core phases all green; dead-code + env-writes non-critical)
-- **Collection: 58,408 tests, 0 errors** (1 deselected)
+- **Collection: 58,417 tests, 0 errors** (1 deselected)
+- **Remaining failures: 2 non-critical** (dead-code baseline + env-writes)
 <!-- gate:end -->
 
 ---
 
-## SESSION 65 — 2026-08-03 (CURRENT)
+## SESSION 66 — 2026-08-03 (CURRENT)
 
-- **HEAD: `70865846`** on `development`
-- **TASKS.md: 222/222 Active items complete (100%)**, 185 Archived = 407 total, ~170 Codex/legacy pending
-- **Test collection: 58,408 tests, 0 errors**
-- **Gate: PASS** (lint 0, typecheck 0, test PASS, hook-runtime PASS, coverage-gaps PASS)
-- **Non-critical failures: dead-code FAIL** (baseline churn from 10 modified files), **env-writes FAIL** (2 modules flagged)
-- **Tree: DIRTY** — 10 modified, 2 deleted (session 64+65 work uncommitted):
-  - Modified: `.secrets.baseline`, `config/dead_code_baseline.txt`, `docs/standards/ARCHITECTURE_PATTERNS.md`, `SESSION.md`, `TASKS.md`, `cli.py`, `daemon.py`, `routers/models.py`, `routers/__init__.py`, `tests/integration/test_small_models_api.py`
-  - Deleted: `routers/small_models.py`, `cli_language.py`
-- **CI: PENDING** — cooldown active
+- **HEAD: `67760d2e`** on `development`
+- **TASKS.md: 225/225 Active items complete (100%)**, 185 Archived = 410 total, ~170 Codex/legacy pending
+- **Test collection: 58,417 tests, 0 errors** (1 deselected)
+- **Test fixes: 51 failures resolved across 7 files** (travel, behavioral, enforce-objective, batch_push, cost, HITL, small_models)
+- **Gate: PASS** (lint 0, typecheck 0, test PASS, hook-runtime PASS, coverage-gaps PASS, verify-enforcement PASS)
+- **Non-critical failures: dead-code FAIL** (baseline churn), **env-writes FAIL** (2 modules flagged)
+- **Remaining failures: 2 non-critical**
+- **Integration health: operational** — DeploymentHealthChecker fully wired daemon→router→event_loop→gateway chain; test PASS confirms
+- **Tree: DIRTY** — 2 modified files:
+  - `.opencode/plugin/enforce-batch-push.ts`
+  - `tests/unit/test_behavioral_enforcement.py`
+- **CI: RED** — no run found for HEAD `67760d2e` (not yet pushed to remote)
 - **Branches: main checkout only**, clean
-- **Release beta.3: BLOCKED** on CI green + push
+- **Release beta.3: BLOCKED** on push + CI green
+
+### Session 66 — Test Fixes + Feature Wiring (2026-08-03, HEAD `67760d2e`, 3 commits)
+
+3 commits since Session 65 HEAD `70865846`. 51 test failures fixed + bundled binary + integration health checker + CostAwareRouter wiring committed.
+
+| Commit | Description |
+|--------|-------------|
+| `a71d3cc5` | fix: models.py imports and typecheck, resolve merge conflicts |
+| `079f619e` | feat: bundled llama-quantize, integration health checker, CostAwareRouter gateway wiring, architecture violation fixes |
+| `67760d2e` | fix: 51 test failures across 7 files (travel, behavioral, enforce-objective, batch_push, cost, HITL, small_models) |
+
+### Remaining work
+
+| Item | Status |
+|------|--------|
+| Commit 2 modified files (enforce-batch-push.ts, test_behavioral_enforcement.py) | DIRTY |
+| Push accumulated commits to sandboxcom | NOT PUSHED |
+| CI green on development HEAD `67760d2e` | RED (no run) |
+| Fix dead-code FAIL (baseline regeneration needed) | NON-CRITICAL |
+| Fix env-writes FAIL (2 remaining os.environ writes) | NON-CRITICAL |
+| `make release-cut TAG=v0.1.0-beta.3` | BLOCKED on push + CI green |
+
+### Next
+
+1. Commit 2 modified files
+2. Push accumulated commits to sandboxcom
+3. Wait for CI green
+4. Release cut for beta.3
+
+- **Last Updated: 2026-08-03 — Session 66.** HEAD `67760d2e` on `development`. Gate PASS (lint 0, typecheck 0, test PASS). 58,417 tests collected, 0 errors. 225/225 Active TASKS.md items complete (100%). 185/185 Archived (100%). ~170 Codex/legacy backlogs pending. Tree DIRTY (2 files). CI RED (no run). 51 test failures fixed; 2 non-critical failures remain. Release beta.3 blocked on push + CI green.
+
+---
+
+## SESSION 65 — 2026-08-03 (PREVIOUS)
 
 ### Session 65 — Consolidation (2026-08-03, HEAD `70865846`, 0 commits)
 
@@ -79,24 +117,27 @@ Documentation consolidation session — 5 built-and-wired systems codified into 
 
 | Metric | Value |
 |--------|-------|
-| Gate | PASS (lint 0, typecheck 0, test PASS, hook-runtime PASS, coverage-gaps PASS) |
-| Collection | 58,408 tests, 0 errors (1 deselected) |
-| E2E test files | ~100 files in `tests/e2e/` across auth, STS, CI, daemon, CLI, TUI, enforcement, model, infra, terraform, sandbox, games, governance, connectors |
+| Gate | PASS (lint 0, typecheck 0, test PASS, hook-runtime PASS, coverage-gaps PASS, verify-enforcement PASS) |
+| Collection | 58,417 tests, 0 errors (1 deselected) |
+| Test fixes (S66) | 51 failures resolved across 7 files |
+| Remaining failures | 2 non-critical (dead-code baseline + env-writes) |
+| Integration health | DeploymentHealthChecker fully wired + operational (gate test PASS) |
+| E2E test files | ~100 files in `tests/e2e/` |
 | Env-writes | FAIL (2 modules flagged, non-critical) |
 | Dead-code | FAIL (baseline churn, non-critical) |
-| CI (development) | PENDING — cooldown active |
+| CI (development) | RED — no run for HEAD `67760d2e` (needs push) |
 
 ### Completion Percentages (2026-08-03)
 
 | Category | Items | Complete | % |
 |----------|-------|----------|---|
-| Active (Sessions 53–65) | 222 | 222 | 100% |
+| Active (Sessions 53–66) | 225 | 225 | 100% |
 | Archived (Phases C–LA) | 185 | 185 | 100% |
 | Codex continuation backlog | ~100 | 5 | 5% |
 | Codex multitask backlog | ~25 | 0 | 0% |
 | X/Y/Z/W1 sub-role stubs | ~35 | 3 | 9% |
 | Legacy Wave 34 items | ~5 | 0 | 0% |
-| **Grand Total** | **~572** | **415** | **72.6%** |
+| **Grand Total** | **~575** | **418** | **72.7%** |
 
 ### Remaining work
 

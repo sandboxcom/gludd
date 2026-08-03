@@ -19,6 +19,20 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 ---
 
+## Session 66 — Test Fixes + Bundled Executables + Integration Health + Cost Router (2026-08-03, HEAD `67760d2e`, gate PASS, tree DIRTY)
+
+3 commits on `development` since Session 65 HEAD `70865846`. All fixes + feature wiring.
+
+- [x] S66.1 — **51 Test Failures Fixed Across 7 Files**: travel, behavioral, enforce-objective, batch_push, cost, HITL, small_models (`67760d2e`) | paths: `tests/unit/test_travel*.py`, `tests/unit/test_behavioral_enforcement.py`, `tests/unit/test_enforce_objective*.py`, `tests/unit/test_enforce_batch_push*.py`, `tests/unit/test_budget_*.py`, `tests/unit/test_hitl*.py`, `tests/unit/test_small_models*.py` | evidence: commit `67760d2e` — gate test PASS, 51 failures resolved | priority: high | effort: M | status: completed
+- [x] S66.2 — **Bundled llama-quantize + Integration Health Checker + CostAwareRouter Gateway Wiring + Architecture Violation Fixes** (`079f619e`) | paths: `src/general_ludd/filestore/bootstrap.py`, `src/general_ludd/models/deployment_health.py`, `src/general_ludd/models/cost_router.py`, `src/general_ludd/models/gateway.py`, `docs/standards/ARCHITECTURE_PATTERNS.md` | evidence: commit `079f619e` — bundled binary + health checker daemon→router→gateway wiring + cost router gateway import + architecture doc committed | priority: high | effort: M | status: completed
+- [x] S66.3 — **models.py Imports and Typecheck Fix + Merge Conflict Resolution** (`a71d3cc5`) | evidence: commit `a71d3cc5` — typecheck PASS 0, lint PASS 0 | priority: high | effort: S | status: completed
+
+**Session 66 Summary:** 3 commits: `a71d3cc5` (imports/typecheck/merge), `079f619e` (bundled binary + health checker + cost router wiring + architecture doc), `67760d2e` (51 test failures fixed). Gate PASS (lint 0, typecheck 0, test PASS, hook-runtime PASS, coverage-gaps PASS, verify-enforcement PASS). Non-critical: dead-code FAIL, env-writes FAIL. **58,417 tests collected, 0 errors**. Tree DIRTY (2 files: `.opencode/plugin/enforce-batch-push.ts`, `tests/unit/test_behavioral_enforcement.py`). CI RED — no run for HEAD `67760d2e` (needs push).
+
+Remaining failures: 2 non-critical (dead-code baseline churn + env-writes check). Integration health: fully wired + operational per gate test PASS.
+
+---
+
 ## Session 65 — Consolidation: Bundled Executables, Integration Health, Cost Router Wiring, Architecture Fixes, Test Visibility (2026-08-03, HEAD `70865846`, gate PASS, tree DIRTY)
 
 All items are documentation consolidation and verification of systems already built and wired. No new commits — this session codifies existing built infrastructure into the evidence ledger.
@@ -124,12 +138,13 @@ An audit of this ledger against the source tree found:
 | S63 | Session 63 — 2026-08-03 (SMP.1 Finalize, Env-Writes, Quality, Benchmark Dashboard, Local Model E2E) | 0 | 10 | 100% |
 | S64 | Session 64 — 2026-08-03 (Unified API, Test Fixes, Task Audit, Architecture Verification) | 0 | 4 | 100% |
 | S65 | Session 65 — 2026-08-03 (Bundled Executables, Integration Health, Cost Router Wiring, Architecture Fixes, Test Visibility) | 0 | 5 | 100% |
-| **Total Active** | | **0** | **222** | **100%** |
+| S66 | Session 66 — 2026-08-03 (51 Test Fixes, Bundled llama-quantize, Integration Health Checker, Cost Router Wiring) | 0 | 3 | 100% |
+| **Total Active** | | **0** | **225** | **100%** |
 | *Archived (13 detail phases)* | *Phase C 28/28 closed, X/Y/Z/W1 sub-roles deferred* | *0* | *185* | *100%* |
 | *Legacy blocks* | *incl. Codex/Multitask spec backlogs (future)* | *~150* | *~200* | *n/a* |
 | **Grand Total (Active + Archived)** | | **0** | **407** | **100%** |
 
-**Verification (2026-08-03):** 58,408 tests collected (1 deselected), 0 errors. Gate PASS (lint 0, typecheck 0, test PASS, hook-runtime PASS, coverage-gaps PASS, verify-enforcement PASS; dead-code FAIL + env-writes FAIL non-critical). HEAD `70865846`. Session 64 (4 commits): unified model API (`ea0b6413`), SMP.1 test fixes + typecheck + dead-code baseline (`66ba049d`), binary_re 102/102 + small_models updates (`ca9919b1`), termux binary smoke test + skip game-building on PRs (`70865846`). Session 65 (0 commits, documentation consolidation): bundled executables (BinaryBootstrapper+PipBundleBuilder+daemon sync), integration health checker (DeploymentHealthChecker daemon→router→gateway chain), CostAwareRouter wiring (gateway import + budget integration), architecture fixes (ARCHITECTURE_PATTERNS.md + 3-collection audit), test failure visibility (CI annotations + dogfood seed_todos + validation child-todos + watchdog kill logs). Architecture guide (`docs/architecture.md` 270 lines, `docs/architecture/index.md` 70 lines) verified current. Architecture standards (`docs/standards/ARCHITECTURE_PATTERNS.md` 347 lines, 12 violations across 3 collections).
+**Verification (2026-08-03):** 58,417 tests collected (1 deselected), 0 errors. Gate PASS (lint 0, typecheck 0, test PASS, hook-runtime PASS, coverage-gaps PASS, verify-enforcement PASS; dead-code FAIL + env-writes FAIL non-critical). HEAD `67760d2e`. 3 commits since S65: models.py imports/typecheck fix + merge resolution (`a71d3cc5`), bundled llama-quantize + integration health checker + CostAwareRouter gateway wiring + architecture doc (`079f619e`), 51 test failures fixed across 7 files (`67760d2e`). Tree DIRTY (2 files: `enforce-batch-push.ts`, `test_behavioral_enforcement.py`). Integration health: DeploymentHealthChecker fully wired daemon→router→event_loop→gateway (test PASS). CI RED — no run for HEAD `67760d2e` (needs push). Remaining: 2 non-critical failures (dead-code baseline + env-writes).
 
 ---
 

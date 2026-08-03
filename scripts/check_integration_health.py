@@ -2,16 +2,17 @@
 """
 check_integration_health.py — integration test health checker.
 
-Runs all integration test files with --tb=short -q, captures failures with
-file:line:reason, writes structured failure data to
-/tmp/gludd-integration-failures.json, and exits non-zero if any failures exist.
+Runs all integration test files with --tb=short -q, streams output live,
+writes incremental failure data to /tmp/gludd-integration-failures.json,
+and exits non-zero if any failures exist.
 
 Output:
-  - stdout: summary of failed files + total failures
+  - stdout: live pytest output + periodic progress markers
   - /tmp/gludd-integration-failures.json: structured failure list
+    (written incrementally every 30s while running, finalized on completion)
   - Exit 0: no failures
   - Exit 1: one or more failures
-  - Exit 2: internal error
+  - Exit 2: internal error (timeout, subprocess failure)
 """
 
 from __future__ import annotations
@@ -20,12 +21,17 @@ import json
 import re
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 TESTS_DIR = PROJECT_ROOT / "tests" / "integration"
 OUTPUT_FILE = Path("/tmp/gludd-integration-failures.json")
+
+TIMEOUT_SEC = 600
+INTERMEDIATE_INTERVAL_SEC = 30
+PROGRESS_INTERVAL_FILES = 5
 
 FAILURE_RE = re.compile(
     r"^(FAILED\s+.*?\n.*?test_.*?\n(?:.*?\n)*?E\s+.*)",
@@ -55,6 +61,10 @@ FILE_ERROR_RE = re.compile(
 COLLECT_ERROR_RE = re.compile(
     r"^ERROR collecting\s+(\S+)",
     re.MULTILINE,
+)
+
+RESULT_LINE_RE = re.compile(
+    r"(?:PASSED|FAILED|ERROR)\s+\S*tests/integration/",
 )
 
 
@@ -123,11 +133,8 @@ def _parse_short_summary_failures(output: str) -> list[dict]:
         if line.startswith("FAILURES") or line.startswith("== FAILURES =="):
             in_failures_section = True
             continue
-        if (
-            in_failures_section
-            and line.startswith("==")
-            or in_failures_section
-            and line.startswith("short test summary")
+        if (in_failures_section and line.startswith("==")) or (
+            in_failures_section and line.startswith("short test summary")
         ):
             break
         if in_failures_section and line.strip().startswith("FAILED"):
@@ -141,6 +148,13 @@ def _parse_short_summary_failures(output: str) -> list[dict]:
                 )
 
     return failures
+
+
+def _write_output(data: dict) -> None:
+    OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = OUTPUT_FILE.with_suffix(".tmp")
+    tmp_path.write_text(json.dumps(data, indent=2))
+    tmp_path.rename(OUTPUT_FILE)
 
 
 def main() -> int:
@@ -163,19 +177,106 @@ def main() -> int:
     ]
 
     start = time.time()
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        cwd=PROJECT_ROOT,
-        timeout=600,
-    )
+    accumulated_lines: list[str] = []
+    last_write = start
+    test_count = 0
+    lock = threading.Lock()
+    error_msg: str | None = None
+
+    def _reader(proc: subprocess.Popen) -> None:
+        nonlocal test_count, last_write, error_msg
+        assert proc.stdout is not None
+        try:
+            for line in proc.stdout:
+                sys.stdout.write(line)
+                sys.stdout.flush()
+                with lock:
+                    accumulated_lines.append(line)
+
+                if RESULT_LINE_RE.search(line):
+                    with lock:
+                        test_count += 1
+                        if test_count % PROGRESS_INTERVAL_FILES == 0:
+                            failures_so_far = _parse_failures("".join(accumulated_lines))
+                            print(
+                                f"\n--- Progress: ~{test_count} results, "
+                                f"{len(failures_so_far)} failures "
+                                f"({time.time() - start:.1f}s) ---\n"
+                            )
+
+                now = time.time()
+                if now - last_write >= INTERMEDIATE_INTERVAL_SEC:
+                    with lock:
+                        failures_now = _parse_failures("".join(accumulated_lines))
+                        data = {
+                            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                            "elapsed_sec": round(now - start, 1),
+                            "status": "running",
+                            "returncode": None,
+                            "total_files": len(test_files),
+                            "failures_so_far": len(failures_now),
+                            "failures": failures_now,
+                        }
+                        _write_output(data)
+                        last_write = now
+        except Exception as exc:
+            with lock:
+                error_msg = str(exc)
+
+    print(f"Running {len(test_files)} integration test files (timeout {TIMEOUT_SEC}s)...")
+    print(f"Command: {' '.join(cmd)}\n")
+
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            cwd=PROJECT_ROOT,
+            bufsize=1,
+        )
+    except OSError as exc:
+        print(f"ERROR: failed to start pytest: {exc}", file=sys.stderr)
+        return 2
+
+    reader_thread = threading.Thread(target=_reader, args=(proc,), daemon=True)
+    reader_thread.start()
+
+    timed_out = False
+    try:
+        returncode = proc.wait(timeout=TIMEOUT_SEC)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        returncode = proc.wait(timeout=5)
+        timed_out = True
+
+    reader_thread.join(timeout=10)
+
     elapsed = time.time() - start
 
-    stdout = result.stdout
-    stderr = result.stderr
-    combined = stdout + "\n" + stderr
-    returncode = result.returncode
+    with lock:
+        combined = "".join(accumulated_lines)
+
+    if timed_out:
+        print(f"\nTIMEOUT: integration tests exceeded {TIMEOUT_SEC}s")
+        with lock:
+            failures_timeout = _parse_failures(combined)
+            output_data = {
+                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "elapsed_sec": round(elapsed, 1),
+                "status": "timeout",
+                "returncode": returncode,
+                "total_files": len(test_files),
+                "failed_files": len({f["file"] for f in failures_timeout if f.get("file")}),
+                "total_failures": len(failures_timeout),
+                "failures": failures_timeout,
+            }
+            _write_output(output_data)
+            print(f"Partial results: {len(failures_timeout)} failures captured")
+        return 2
+
+    if error_msg is not None:
+        print(f"ERROR reading pytest output: {error_msg}", file=sys.stderr)
 
     failures = _parse_failures(combined)
 
@@ -195,6 +296,7 @@ def main() -> int:
     output_data = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "elapsed_sec": round(elapsed, 1),
+        "status": "complete",
         "returncode": returncode,
         "total_files": len(test_files),
         "failed_files": len(failed_files_set),
@@ -202,10 +304,9 @@ def main() -> int:
         "failures": failures,
     }
 
-    OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT_FILE.write_text(json.dumps(output_data, indent=2))
+    _write_output(output_data)
 
-    print(f"Integration Health — {len(test_files)} test files, {elapsed:.1f}s")
+    print(f"\nIntegration Health — {len(test_files)} test files, {elapsed:.1f}s")
     if failures:
         print(f"FAIL: {len(failed_files_set)} failed files, {len(failures)} total failures")
         for f in failures:
