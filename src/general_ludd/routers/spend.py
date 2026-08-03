@@ -1,11 +1,13 @@
 """Spend-limiter API endpoints.
 
 Endpoints:
-    GET  /api/spend           — current window spend, limit, remaining
-    POST /api/spend/configure — update limit_usd and window_seconds at runtime
-    GET  /api/costs           — combined model API + infra cost breakdown
-    GET  /api/credits         — prepaid service credit balances (per provider)
-    GET  /admin/costs         — administrative cost-accounting summary
+    GET  /api/spend              — current window spend, limit, remaining
+    POST /api/spend/configure    — update limit_usd and window_seconds at runtime
+    GET  /api/costs              — combined model API + infra cost breakdown
+    GET  /api/credits            — prepaid service credit balances (per provider)
+    GET  /admin/costs            — administrative cost-accounting summary
+    GET  /admin/budget/rates     — current peak/off-peak rates for all models
+    GET  /admin/budget/savings   — cumulative off-peak savings
 
 PSK authentication is applied globally by the daemon middleware, so these
 endpoints follow the same pattern as the rest of the router modules: they are
@@ -228,9 +230,79 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 return {}
         cached: dict[str, object] = {
             svc: result
-            for svc, result in (
-                (svc, tracker.last_balance(svc)) for svc in tracker._last_balance
-            )
+            for svc, result in ((svc, tracker.last_balance(svc)) for svc in tracker._last_balance)
             if result is not None
         }
         return cached
+
+    @app.get("/admin/budget/rates")
+    async def admin_budget_rates() -> dict[str, object]:
+        """Return current peak/off-peak rate info for all models.
+
+        Also resolves per-model effective rates from the model gateway when
+        available, so callers can see the actual per-token cost right now.
+
+        Returns:
+            JSON with ``current_period`` (peak/off-peak), ``rate_multiplier``,
+            ``peak_start_utc``, ``peak_end_utc``, and ``models`` (a dict of
+            model_id -> effective rates).
+        """
+        from general_ludd.budget.peak_pricing import (
+            current_rate_multiplier,
+            is_peak,
+        )
+
+        peak = is_peak()
+        multiplier = current_rate_multiplier()
+
+        models_rates: dict[str, object] = {}
+        gateway = getattr(app.state, "_model_gateway", None)
+        if gateway is not None:
+            try:
+                for profile in gateway.list_profiles():
+                    if not profile.enabled:
+                        continue
+                    eff_in = profile.cost_per_input_token * multiplier
+                    eff_out = profile.cost_per_output_token * multiplier
+                    models_rates[profile.model_profile_id] = {
+                        "model_name": profile.model_name,
+                        "base_cost_per_input_token": profile.cost_per_input_token,
+                        "base_cost_per_output_token": profile.cost_per_output_token,
+                        "effective_cost_per_input_token": eff_in,
+                        "effective_cost_per_output_token": eff_out,
+                    }
+            except Exception as exc:
+                logger.warning("Failed to enumerate model rates: %s", exc)
+
+        return {
+            "current_period": "peak" if peak else "off-peak",
+            "rate_multiplier": multiplier,
+            "peak_start_utc": 9,
+            "peak_end_utc": 17,
+            "models": models_rates,
+        }
+
+    @app.get("/admin/budget/savings")
+    async def admin_budget_savings() -> dict[str, object]:
+        """Return cumulative off-peak savings across all model calls.
+
+        Reads from the :class:`PeakPricingTracker` singleton, which is updated
+        on every billed model call by the model gateway.
+
+        Returns:
+            JSON with ``cumulative_full_cost``, ``cumulative_discounted_cost``,
+            ``cumulative_savings``, and ``savings_percentage``.
+        """
+        from general_ludd.budget.peak_pricing import PeakPricingTracker
+
+        tracker = PeakPricingTracker.singleton()
+        full = tracker.cumulative_full_cost
+        discounted = tracker.cumulative_discounted_cost
+        savings = tracker.cumulative_savings
+        pct = (savings / full * 100.0) if full > 0.0 else 0.0
+        return {
+            "cumulative_full_cost": full,
+            "cumulative_discounted_cost": discounted,
+            "cumulative_savings": savings,
+            "savings_percentage": round(pct, 2),
+        }

@@ -1,0 +1,224 @@
+---
+- name: Verify — cost_optimizer role structure and YAML integrity
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    role_root: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/collections/ansible_collections/general_ludd/agent/roles/cost_optimizer"
+    task_files:
+      - main.yml
+    required_dirs:
+      - tasks
+      - defaults
+      - meta
+    required_defaults:
+      - daemon_url
+      - psk
+      - savings_threshold_usd
+      - max_deferral_hours
+      - peak_hour_start
+      - peak_hour_end
+      - off_peak_end
+      - artifact_dir
+    required_meta_fields:
+      - role_name
+      - author
+      - description
+      - license
+      - min_ansible_version
+
+  tasks:
+    # ── 1. Directory and file existence ──────────────────────────────────
+
+    - name: "1a. Assert role root directory exists"
+      ansible.builtin.stat:
+        path: "{{ role_root }}"
+      register: _role_stat
+      failed_when: not _role_stat.stat.exists
+
+    - name: "1b. Assert required subdirectories exist"
+      ansible.builtin.stat:
+        path: "{{ role_root }}/{{ item }}"
+      register: _subdirs
+      loop: "{{ required_dirs }}"
+      failed_when: not _subdirs.results | map(attribute='stat.exists') | list is all
+
+    - name: "1c. Assert required task files exist"
+      ansible.builtin.stat:
+        path: "{{ role_root }}/tasks/{{ item }}"
+      register: _task_files
+      loop: "{{ task_files }}"
+      failed_when: not _task_files.results | map(attribute='stat.exists') | list is all
+
+    - name: "1d. Assert defaults/main.yml exists"
+      ansible.builtin.stat:
+        path: "{{ role_root }}/defaults/main.yml"
+      register: _defaults_stat
+      failed_when: not _defaults_stat.stat.exists
+
+    - name: "1e. Assert meta/main.yml exists"
+      ansible.builtin.stat:
+        path: "{{ role_root }}/meta/main.yml"
+      register: _meta_stat
+      failed_when: not _meta_stat.stat.exists
+
+    - name: "1f. Assert README.md exists"
+      ansible.builtin.stat:
+        path: "{{ role_root }}/README.md"
+      register: _readme_stat
+      failed_when: not _readme_stat.stat.exists
+
+    # ── 2. YAML validity ─────────────────────────────────────────────────
+
+    - name: "2a. Slurp task files"
+      ansible.builtin.slurp:
+        src: "{{ role_root }}/tasks/{{ item }}"
+      register: _slurped_tasks
+      loop: "{{ task_files }}"
+
+    - name: "2b. Assert task file YAML parses as list with >=1 item"
+      ansible.builtin.assert:
+        that:
+          - "{{ (_slurped_tasks.results | selectattr('item', 'eq', item) | first).content | b64decode | from_yaml is iterable }}"
+          - "{{ ((_slurped_tasks.results | selectattr('item', 'eq', item) | first).content | b64decode | from_yaml) | length >= 1 }}"
+        fail_msg: "{{ item }} must parse as a non-empty list of tasks"
+      loop: "{{ task_files }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: "2c. Assert defaults/main.yml parses as dict"
+      ansible.builtin.slurp:
+        src: "{{ role_root }}/defaults/main.yml"
+      register: _slurped_defaults
+
+    - name: "2d. Validate defaults YAML structure"
+      ansible.builtin.assert:
+        that:
+          - "{{ (_slurped_defaults.content | b64decode | from_yaml) is mapping }}"
+        fail_msg: "defaults/main.yml must parse as a dict"
+
+    - name: "2e. Assert meta/main.yml parses as dict"
+      ansible.builtin.slurp:
+        src: "{{ role_root }}/meta/main.yml"
+      register: _slurped_meta
+
+    - name: "2f. Validate meta YAML structure"
+      ansible.builtin.assert:
+        that:
+          - "{{ (_slurped_meta.content | b64decode | from_yaml) is mapping }}"
+        fail_msg: "meta/main.yml must parse as a dict"
+
+    # ── 3. Task file content assertions ─────────────────────────────────
+
+    - name: "3a. Slurp tasks/main.yml for module references"
+      ansible.builtin.slurp:
+        src: "{{ role_root }}/tasks/main.yml"
+      register: _main_slurp
+
+    - name: "3b. Assert cost_optimizer calls gludd_spend module"
+      ansible.builtin.assert:
+        that:
+          - "{{ _main_slurp.content | b64decode is search('gludd_spend') }}"
+        fail_msg: "cost_optimizer tasks/main.yml must reference gludd_spend module"
+
+    - name: "3c. Assert cost_optimizer queries daemon pricing API"
+      ansible.builtin.assert:
+        that:
+          - "{{ _main_slurp.content | b64decode is search('pricing/catalog') }}"
+        fail_msg: "cost_optimizer must query /api/pricing/catalog"
+
+    - name: "3d. Assert cost_optimizer has on-peak classification"
+      ansible.builtin.assert:
+        that:
+          - "{{ _main_slurp.content | b64decode is search('_co_is_on_peak') }}"
+          - "{{ _main_slurp.content | b64decode is search('_co_is_off_peak') }}"
+        fail_msg: "cost_optimizer must classify on-peak vs off-peak"
+
+    - name: "3e. Assert cost_optimizer has savings calculation"
+      ansible.builtin.assert:
+        that:
+          - "{{ _main_slurp.content | b64decode is search('_co_savings_per_1k') }}"
+          - "{{ _main_slurp.content | b64decode is search('savings_threshold_usd') }}"
+        fail_msg: "cost_optimizer must compute savings and use threshold"
+
+    - name: "3f. Assert cost_optimizer has deferral recommendation"
+      ansible.builtin.assert:
+        that:
+          - "{{ _main_slurp.content | b64decode is search('_co_defer_recommended') }}"
+          - "{{ _main_slurp.content | b64decode is search('_co_savings_verdict') }}"
+        fail_msg: "cost_optimizer must produce a deferral recommendation"
+
+    - name: "3g. Assert cost_optimizer writes artifact"
+      ansible.builtin.assert:
+        that:
+          - "{{ _main_slurp.content | b64decode is search('artifact_dir') }}"
+          - "{{ _main_slurp.content | b64decode is search('copy:') or _main_slurp.content | b64decode is search('ansible.builtin.copy') }}"
+        fail_msg: "cost_optimizer must write an artifact"
+
+    - name: "3h. Assert cost_optimizer is read-only"
+      ansible.builtin.assert:
+        that:
+          - "{{ _main_slurp.content | b64decode is not search('spend/configure') }}"
+          - "{{ _main_slurp.content | b64decode is not search('POST /api') }}"
+          - "{{ _main_slurp.content | b64decode is not search('method: POST') }}"
+        fail_msg: "cost_optimizer is read-only — must not mutate daemon state"
+
+    # ── 4. Meta galaxy_info fields ───────────────────────────────────────
+
+    - name: "4a. Parse meta/main.yml"
+      ansible.builtin.set_fact:
+        _meta_doc: "{{ _slurped_meta.content | b64decode | from_yaml }}"
+
+    - name: "4b. Assert galaxy_info.role_name is cost_optimizer"
+      ansible.builtin.assert:
+        that:
+          - _meta_doc.galaxy_info.role_name == 'cost_optimizer'
+        fail_msg: "meta galaxy_info.role_name must be 'cost_optimizer', got {{ _meta_doc.galaxy_info.role_name | default('(missing)') }}"
+
+    - name: "4c. Assert galaxy_info has required fields"
+      ansible.builtin.assert:
+        that:
+          - _meta_doc.galaxy_info['{{ item }}'] is defined
+        fail_msg: "meta galaxy_info missing field: {{ item }}"
+      loop: "{{ required_meta_fields }}"
+      loop_control:
+        label: "galaxy_info.{{ item }}"
+
+    # ── 5. Defaults completeness ─────────────────────────────────────────
+
+    - name: "5a. Parse defaults/main.yml"
+      ansible.builtin.set_fact:
+        _defaults: "{{ _slurped_defaults.content | b64decode | from_yaml }}"
+
+    - name: "5b. Assert all required default keys exist"
+      ansible.builtin.assert:
+        that:
+          - "'{{ item }}' in _defaults"
+        fail_msg: "defaults/main.yml missing key: {{ item }}"
+      loop: "{{ required_defaults }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: "5c. Assert savings_threshold_usd is non-negative"
+      ansible.builtin.assert:
+        that:
+          - (_defaults.savings_threshold_usd | float) >= 0
+        fail_msg: "savings_threshold_usd must be >= 0"
+
+    - name: "5d. Assert max_deferral_hours is positive"
+      ansible.builtin.assert:
+        that:
+          - (_defaults.max_deferral_hours | int) > 0
+        fail_msg: "max_deferral_hours must be > 0"
+
+    - name: "5e. Assert peak_hour_start < peak_hour_end"
+      ansible.builtin.assert:
+        that:
+          - (_defaults.peak_hour_start | int) < (_defaults.peak_hour_end | int)
+        fail_msg: "peak_hour_start must be < peak_hour_end"
+
+    - name: "5f. Assert off_peak_end >= peak_hour_end"
+      ansible.builtin.assert:
+        that:
+          - (_defaults.off_peak_end | int) >= (_defaults.peak_hour_end | int)
+        fail_msg: "off_peak_end must be >= peak_hour_end"

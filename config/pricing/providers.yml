@@ -1,0 +1,264 @@
+# =============================================================================
+# providers.yml — Model-provider rate cards with peak/off-peak windows.
+# =============================================================================
+#
+# Rates are USD per 1,000 output tokens.  Input tokens are typically bundled
+# at a lower rate (see input_usd_per_1k under each model).
+#
+# Peak window definition (per provider):
+#   Standard: 08:00-23:59 UTC, Mon-Fri
+#   Off-peak: 00:00-07:59 UTC, Mon-Fri + all day Sat-Sun
+#
+# Providers with flat rates (no peak/off-peak discrimination):
+#   DeepSeek, Together AI, Fireworks, Groq, Mistral
+# =============================================================================
+
+pricing:
+  # -------------------------------------------------------------------------
+  # OpenAI
+  # -------------------------------------------------------------------------
+  openai:
+    display_name: OpenAI
+    billing: postpaid_per_use
+    source: https://openai.com/api/pricing
+    rates:
+      - model_id: gpt-4o
+        input_usd_per_1k: 0.0025
+        output_usd_per_1k_peak: 0.01
+        output_usd_per_1k_offpeak: 0.005
+        context_window: 128000
+      - model_id: gpt-4o-mini
+        input_usd_per_1k: 0.00015
+        output_usd_per_1k_peak: 0.0006
+        output_usd_per_1k_offpeak: 0.0003
+        context_window: 128000
+      - model_id: o3
+        input_usd_per_1k: 0.01
+        output_usd_per_1k_peak: 0.04
+        output_usd_per_1k_offpeak: 0.02
+        context_window: 200000
+      - model_id: o4-mini
+        input_usd_per_1k: 0.0011
+        output_usd_per_1k_peak: 0.0044
+        output_usd_per_1k_offpeak: 0.0022
+        context_window: 200000
+      - model_id: gpt-4-turbo
+        input_usd_per_1k: 0.01
+        output_usd_per_1k_peak: 0.03
+        output_usd_per_1k_offpeak: 0.015
+        context_window: 128000
+      - model_id: gpt-4
+        input_usd_per_1k: 0.03
+        output_usd_per_1k_peak: 0.06
+        output_usd_per_1k_offpeak: 0.03
+        context_window: 8192
+      - model_id: gpt-3.5-turbo
+        input_usd_per_1k: 0.0005
+        output_usd_per_1k_peak: 0.0015
+        output_usd_per_1k_offpeak: 0.00075
+        context_window: 16385
+    off_peak_windows:
+      - days: Mon-Fri
+        hours: "00:00-07:59"
+      - days: Sat-Sun
+
+  # -------------------------------------------------------------------------
+  # Anthropic
+  # -------------------------------------------------------------------------
+  anthropic:
+    display_name: Anthropic
+    billing: postpaid_monthly
+    source: https://www.anthropic.com/pricing
+    rates:
+      - model_id: claude-3-opus-20240229
+        input_usd_per_1k: 0.015
+        output_usd_per_1k_peak: 0.075
+        output_usd_per_1k_offpeak: 0.0375
+        context_window: 200000
+      - model_id: claude-3-5-sonnet-20241022
+        input_usd_per_1k: 0.003
+        output_usd_per_1k_peak: 0.015
+        output_usd_per_1k_offpeak: 0.0075
+        context_window: 200000
+      - model_id: claude-3-5-haiku-20241022
+        input_usd_per_1k: 0.0008
+        output_usd_per_1k_peak: 0.004
+        output_usd_per_1k_offpeak: 0.002
+        context_window: 200000
+      - model_id: claude-3-sonnet-20240229
+        input_usd_per_1k: 0.003
+        output_usd_per_1k_peak: 0.015
+        output_usd_per_1k_offpeak: 0.0075
+        context_window: 200000
+      - model_id: claude-3-haiku-20240307
+        input_usd_per_1k: 0.00025
+        output_usd_per_1k_peak: 0.00125
+        output_usd_per_1k_offpeak: 0.000625
+        context_window: 200000
+    off_peak_windows:
+      - days: Mon-Fri
+        hours: "00:00-07:59"
+      - days: Sat-Sun
+
+  # -------------------------------------------------------------------------
+  # Google
+  # -------------------------------------------------------------------------
+  google:
+    display_name: Google (Vertex AI)
+    billing: postpaid_monthly
+    source: https://cloud.google.com/vertex-ai/pricing
+    rates:
+      - model_id: gemini-1.5-pro
+        input_usd_per_1k: 0.00125
+        output_usd_per_1k_peak: 0.005
+        output_usd_per_1k_offpeak: 0.0025
+        context_window: 1048576
+      - model_id: gemini-1.5-flash
+        input_usd_per_1k: 0.000075
+        output_usd_per_1k_peak: 0.0003
+        output_usd_per_1k_offpeak: 0.00015
+        context_window: 1048576
+      - model_id: gemini-2.0-flash
+        input_usd_per_1k: 0.0001
+        output_usd_per_1k_peak: 0.0004
+        output_usd_per_1k_offpeak: 0.0002
+        context_window: 1048576
+    off_peak_windows:
+      - days: Mon-Fri
+        hours: "00:00-07:59"
+      - days: Sat-Sun
+
+  # -------------------------------------------------------------------------
+  # DeepSeek — flat rates, no peak/off-peak discrimination
+  # -------------------------------------------------------------------------
+  deepseek:
+    display_name: DeepSeek
+    billing: postpaid_per_use
+    source: https://platform.deepseek.com/api-docs/pricing
+    flat: true
+    rates:
+      - model_id: deepseek-chat
+        input_usd_per_1k: 0.00014
+        output_usd_per_1k_peak: 0.00028
+        output_usd_per_1k_offpeak: 0.00028
+        context_window: 65536
+      - model_id: deepseek-reasoner
+        input_usd_per_1k: 0.00055
+        output_usd_per_1k_peak: 0.00219
+        output_usd_per_1k_offpeak: 0.00219
+        context_window: 65536
+
+  # -------------------------------------------------------------------------
+  # Together AI — flat rates
+  # -------------------------------------------------------------------------
+  together:
+    display_name: Together AI
+    billing: prepaid_balance
+    source: https://www.together.ai/pricing
+    flat: true
+    rates:
+      - model_id: meta-llama/Llama-3.3-70B-Instruct-Turbo
+        input_usd_per_1k: 0.00088
+        output_usd_per_1k_peak: 0.00088
+        output_usd_per_1k_offpeak: 0.00088
+        context_window: 131072
+      - model_id: meta-llama/Llama-3.1-8B-Instruct
+        input_usd_per_1k: 0.00018
+        output_usd_per_1k_peak: 0.00018
+        output_usd_per_1k_offpeak: 0.00018
+        context_window: 131072
+      - model_id: Qwen/Qwen2.5-72B-Instruct
+        input_usd_per_1k: 0.0009
+        output_usd_per_1k_peak: 0.0009
+        output_usd_per_1k_offpeak: 0.0009
+        context_window: 32768
+      - model_id: deepseek-ai/DeepSeek-R1
+        input_usd_per_1k: 0.00055
+        output_usd_per_1k_peak: 0.00219
+        output_usd_per_1k_offpeak: 0.00219
+        context_window: 163840
+
+  # -------------------------------------------------------------------------
+  # Fireworks — flat rates
+  # -------------------------------------------------------------------------
+  fireworks:
+    display_name: Fireworks AI
+    billing: prepaid_balance
+    source: https://fireworks.ai/pricing
+    flat: true
+    rates:
+      - model_id: accounts/fireworks/models/llama-v3p3-70b-instruct
+        input_usd_per_1k: 0.0009
+        output_usd_per_1k_peak: 0.0009
+        output_usd_per_1k_offpeak: 0.0009
+        context_window: 131072
+      - model_id: accounts/fireworks/models/qwen2p5-72b-instruct
+        input_usd_per_1k: 0.0009
+        output_usd_per_1k_peak: 0.0009
+        output_usd_per_1k_offpeak: 0.0009
+        context_window: 32768
+      - model_id: accounts/fireworks/models/mixtral-8x22b-instruct
+        input_usd_per_1k: 0.0009
+        output_usd_per_1k_peak: 0.0009
+        output_usd_per_1k_offpeak: 0.0009
+        context_window: 65536
+
+  # -------------------------------------------------------------------------
+  # Groq — flat rates
+  # -------------------------------------------------------------------------
+  groq:
+    display_name: Groq
+    billing: prepaid_balance
+    source: https://groq.com/pricing
+    flat: true
+    rates:
+      - model_id: llama-3.3-70b-versatile
+        input_usd_per_1k: 0.00059
+        output_usd_per_1k_peak: 0.00079
+        output_usd_per_1k_offpeak: 0.00079
+        context_window: 131072
+      - model_id: llama-3.1-8b-instant
+        input_usd_per_1k: 0.00005
+        output_usd_per_1k_peak: 0.00008
+        output_usd_per_1k_offpeak: 0.00008
+        context_window: 131072
+      - model_id: mixtral-8x7b-32768
+        input_usd_per_1k: 0.00024
+        output_usd_per_1k_peak: 0.00024
+        output_usd_per_1k_offpeak: 0.00024
+        context_window: 32768
+      - model_id: gemma2-9b-it
+        input_usd_per_1k: 0.0002
+        output_usd_per_1k_peak: 0.0002
+        output_usd_per_1k_offpeak: 0.0002
+        context_window: 8192
+
+  # -------------------------------------------------------------------------
+  # Mistral — flat rates
+  # -------------------------------------------------------------------------
+  mistral:
+    display_name: Mistral AI
+    billing: postpaid_per_use
+    source: https://mistral.ai/technology/#pricing
+    flat: true
+    rates:
+      - model_id: mistral-large-latest
+        input_usd_per_1k: 0.002
+        output_usd_per_1k_peak: 0.006
+        output_usd_per_1k_offpeak: 0.006
+        context_window: 131072
+      - model_id: mistral-small-latest
+        input_usd_per_1k: 0.0001
+        output_usd_per_1k_peak: 0.0003
+        output_usd_per_1k_offpeak: 0.0003
+        context_window: 32768
+      - model_id: codestral-latest
+        input_usd_per_1k: 0.0002
+        output_usd_per_1k_peak: 0.0006
+        output_usd_per_1k_offpeak: 0.0006
+        context_window: 32768
+      - model_id: ministral-8b-latest
+        input_usd_per_1k: 0.0001
+        output_usd_per_1k_peak: 0.0001
+        output_usd_per_1k_offpeak: 0.0001
+        context_window: 131072

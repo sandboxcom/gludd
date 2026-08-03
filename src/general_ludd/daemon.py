@@ -2537,6 +2537,39 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception as ornith_exc:
             logger.warning("Failed to launch Ornith MCP subprocess: %s", ornith_exc)
 
+    # AG.12: Off-peak scheduler — defer expensive model-API tasks to cheaper
+    # off-peak hours. Runs as a background asyncio task polling every 60s.
+    app.state._off_peak_scheduler = None
+    app.state._off_peak_stop = None
+    app.state._off_peak_task = None
+    try:
+        from general_ludd.budget.off_peak_scheduler import OffPeakScheduler
+
+        off_peak_cfg = getattr(uc, "off_peak", None) if uc else None
+        _op_start = getattr(off_peak_cfg, "start_hour", 0)
+        _op_end = getattr(off_peak_cfg, "end_hour", 6)
+        _op_enabled = getattr(off_peak_cfg, "enabled", False)
+        _op_cost_tracker = getattr(app.state, "_combined_cost_tracker", None)
+
+        if _op_enabled:
+            _op_sched = OffPeakScheduler(
+                cost_tracker=_op_cost_tracker,
+                off_peak_start=_op_start,
+                off_peak_end=_op_end,
+            )
+            app.state._off_peak_scheduler = _op_sched
+            app.state._off_peak_stop = asyncio.Event()
+            app.state._off_peak_task = asyncio.create_task(
+                _op_sched._background_loop(stop_event=app.state._off_peak_stop)
+            )
+            logger.info(
+                "Off-peak scheduler started: %02d:00-%02d:00",
+                _op_start,
+                _op_end,
+            )
+    except Exception as _op_exc:
+        logger.warning("Off-peak scheduler startup failed (continuing degraded): %s", _op_exc)
+
     # S.1: Seal the process registry so no code path can modify it
     # (register/deregister/reap) after daemon initialization.
     from general_ludd.process.registry import default_registry as _proc_default_registry
@@ -2544,6 +2577,23 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     _proc_default_registry().seal()
 
     yield
+
+    # ── Off-peak scheduler shutdown ──────────────────────────────────────
+    _op_stop = getattr(app.state, "_off_peak_stop", None)
+    _op_task = getattr(app.state, "_off_peak_task", None)
+    if _op_stop is not None:
+        _op_stop.set()
+    if _op_task is not None and not _op_task.done():
+        _op_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await _op_task
+    _op_scheduler = getattr(app.state, "_off_peak_scheduler", None)
+    if _op_scheduler is not None:
+        logger.info(
+            "Off-peak scheduler shut down: %s deferred, $%.4f saved",
+            _op_scheduler.savings.total_deferred,
+            _op_scheduler.savings.total_savings,
+        )
 
     # ── Slurm shutdown: scancel all active jobs owned by this daemon ──────
     _session_factory = getattr(app.state, "_session_factory", None)

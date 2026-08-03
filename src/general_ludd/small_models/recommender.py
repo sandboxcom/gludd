@@ -6,14 +6,17 @@ import re
 from dataclasses import dataclass
 from typing import Any, cast
 
+from general_ludd.hardware.model_fit import can_run_model
 from general_ludd.hardware.survey import HardwareInventory
 from general_ludd.schemas.benchmark import TaskRole
+from general_ludd.small_models.cost import is_off_peak
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 from general_ludd.small_models.radar_profile import ModelRadarProfile, build_profile
 
 _MIN_VRAM_GB = 1.0
 _RECOMMENDED_VRAM_GB = 4.0
 _DEFAULT_SCORE = 0.5
+_VALID_PEAK_STATUSES = ("peak", "off_peak", "unknown")
 
 
 @dataclass(frozen=True)
@@ -24,17 +27,26 @@ class ModelRecommendation:
     task_kind: str
     role: TaskRole
     score: float
+    cost_score: float
+    estimated_cost_usd_per_hour: float
     evidence_count: int
     hardware_fit: str
     evidence_details: list[dict[str, Any]]
+    can_run: bool
+    peak_status: str
+    prefer_off_peak: bool
 
     def __post_init__(self) -> None:
         if not isinstance(self.score, (int, float)) or not (0.0 <= self.score <= 1.0):
             raise ValueError("score must be between 0.0 and 1.0")
+        if not isinstance(self.cost_score, (int, float)) or not (0.0 <= self.cost_score <= 1.0):
+            raise ValueError("cost_score must be between 0.0 and 1.0")
         if isinstance(self.evidence_count, bool) or self.evidence_count < 0:
             raise ValueError("evidence_count must be a non-negative integer")
         if self.hardware_fit not in ("fits", "marginal", "insufficient"):
             raise ValueError("hardware_fit must be 'fits', 'marginal', or 'insufficient'")
+        if self.peak_status not in _VALID_PEAK_STATUSES:
+            raise ValueError(f"peak_status must be one of {_VALID_PEAK_STATUSES}")
 
 
 # ── natural language → task_kind keyword mapping ──────────────────
@@ -84,11 +96,15 @@ def _assess_hardware_fit(hardware: HardwareInventory) -> str:
 def _compute_score(
     records: list[dict[str, Any]],
     hardware: HardwareInventory,
+    model_id: str,
     radar_profile: ModelRadarProfile | None = None,
-) -> float:
-    """Compute composite 0.0-1.0 score from evidence quality + hardware fit + radar breadth."""
+) -> tuple[float, float, float]:
+    """Compute composite 0.0-1.0 score from evidence quality + hardware fit + radar breadth + cost.
+
+    Returns (score, cost_score, estimated_cost_usd_per_hour).
+    """
     if not records:
-        return 0.0
+        return (0.0, 1.0, 0.0)
 
     avg_pass_rate = sum(
         cast(float, r.get("passed_cases", 0)) / max(cast(int, r.get("total_cases", 1)), 1) for r in records
@@ -109,13 +125,30 @@ def _compute_score(
         avg_profile = sum(vec) / len(vec) if vec else 0.0
         radar_breadth = (nonzero / len(vec)) * 0.6 + avg_profile * 0.4
 
-    return float(
-        0.35 * avg_pass_rate
-        + 0.25 * collection_ok_rate
-        + 0.15 * evidence_count_score
-        + 0.10 * hw_score
-        + 0.15 * radar_breadth
+    _, cost_score, estimated_cost = _compute_cost_factors(model_id)
+
+    return (
+        float(
+            0.30 * avg_pass_rate
+            + 0.20 * collection_ok_rate
+            + 0.15 * evidence_count_score
+            + 0.10 * hw_score
+            + 0.15 * radar_breadth
+            + 0.10 * cost_score
+        ),
+        cost_score,
+        estimated_cost,
     )
+
+
+def _compute_cost_factors(model_id: str) -> tuple[float, float, float]:
+    from general_ludd.small_models.cost import compute_cost_score, estimate_inference_cost
+
+    cost_score = compute_cost_score(model_id)
+    cost_info = estimate_inference_cost(model_id)
+    est_raw = cost_info.get("estimated_usd_per_hour", 0.0)
+    estimated_cost = float(est_raw) if isinstance(est_raw, (int, float)) else 0.0
+    return (cost_score, cost_score, estimated_cost)
 
 
 def _build_evidence_details(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -139,8 +172,17 @@ def recommend_model(
     task_description: str,
     hardware: HardwareInventory,
     store: CapabilityEvidenceStore,
+    *,
+    urgent: bool = False,
 ) -> list[ModelRecommendation]:
     """Rank models for *task_description* using capability evidence and hardware fit.
+
+    Models that cannot run on *hardware* (per :func:`can_run_model`) are
+    excluded unless the model is unknown to the hardware fitter.
+
+    When *urgent* is ``False`` and the current time is peak, the score
+    prefers models that are cheaper to run (off-peak-friendly).  When
+    it is already off-peak, no adjustment is applied.
 
     Returns a list sorted by descending ``score``.  Empty list when no capability
     evidence matches any mapped task kind.
@@ -169,23 +211,47 @@ def recommend_model(
                 }
             model_evidence[model_id]["records"].append(rec)
 
+    currently_off_peak = is_off_peak()
+
     recommendations: list[ModelRecommendation] = []
     hw_fit = _assess_hardware_fit(hardware)
 
     for model_id, info in model_evidence.items():
+        fit_result = can_run_model(hardware, model_id)
+        model_can_run = fit_result.can_run
+        unknown_model = "unknown model" in fit_result.reason
+
+        if not model_can_run and not unknown_model:
+            continue
+
         records = info["records"]
         all_model_records = store.query_by_model(model_id)
         radar_profile = build_profile(model_id, all_model_records) if all_model_records else None
-        score = _compute_score(records, hardware, radar_profile=radar_profile)
+        score, cost_score, estimated_cost = _compute_score(
+            records, hardware, model_id, radar_profile=radar_profile, urgent=urgent
+        )
+
+        if currently_off_peak:
+            peak_status = "off_peak"
+            prefer_off_peak = False
+        else:
+            peak_status = "peak"
+            prefer_off_peak = not urgent
+
         recommendations.append(
             ModelRecommendation(
                 model_profile_id=model_id,
                 task_kind=info["task_kind"],
                 role=info["role"],
                 score=score,
+                cost_score=cost_score,
+                estimated_cost_usd_per_hour=estimated_cost,
                 evidence_count=len(records),
                 hardware_fit=hw_fit,
                 evidence_details=_build_evidence_details(records),
+                can_run=model_can_run,
+                peak_status=peak_status,
+                prefer_off_peak=prefer_off_peak,
             )
         )
 

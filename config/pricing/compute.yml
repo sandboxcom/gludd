@@ -1,0 +1,409 @@
+# =============================================================================
+# compute.yml — GPU instance pricing with spot/preemptible options.
+# =============================================================================
+#
+# All prices are USD per GPU-hour unless otherwise noted.
+# Each instance type lists on-demand rate and (where available) spot/preemptible
+# discount as a fraction of on-demand.
+#
+# Naming convention for instance keys: <provider>__<gpu_family>__<description>
+#   e.g. aws__a100_80__p4d_large
+#
+# Fields per instance:
+#   gpu:               GPU model identifier (t4, a100_80, h100, etc.)
+#   gpu_count:         Number of GPUs per instance
+#   on_demand_usd_hr:  On-demand price per GPU-hour (already multiplied by gpu_count)
+#   spot_discount:     Fractional discount for spot/preemptible (0.60 = 60% off)
+#   vcpus:             vCPU count
+#   memory_gb:         System RAM in GB
+# =============================================================================
+
+instances:
+  # ---------------------------------------------------------------------------
+  # AWS
+  # ---------------------------------------------------------------------------
+  aws:
+    display_name: Amazon Web Services
+    billing: postpaid_monthly
+    spot_available: true
+    entries:
+      - key: t4__g4dn_xlarge
+        gpu: t4
+        gpu_count: 1
+        vcpus: 4
+        memory_gb: 16
+        on_demand_usd_hr: 0.526
+        spot_discount: 0.70
+      - key: a10g__g5_xlarge
+        gpu: a10g
+        gpu_count: 1
+        vcpus: 4
+        memory_gb: 16
+        on_demand_usd_hr: 1.006
+        spot_discount: 0.65
+      - key: a10g__g5_12xlarge
+        gpu: a10g
+        gpu_count: 4
+        vcpus: 48
+        memory_gb: 192
+        on_demand_usd_hr: 5.672
+        spot_discount: 0.65
+      - key: a100_80__p4d_24xlarge
+        gpu: a100_80
+        gpu_count: 8
+        vcpus: 96
+        memory_gb: 1152
+        on_demand_usd_hr: 32.77
+        spot_discount: 0.70
+      - key: a100_80__p5_48xlarge
+        gpu: h100
+        gpu_count: 8
+        vcpus: 192
+        memory_gb: 2048
+        on_demand_usd_hr: 98.32
+        spot_discount: 0.65
+
+  # ---------------------------------------------------------------------------
+  # GCP
+  # ---------------------------------------------------------------------------
+  gcp:
+    display_name: Google Cloud Platform
+    billing: postpaid_monthly
+    spot_available: true
+    entries:
+      - key: l4__g2_standard_4
+        gpu: l4
+        gpu_count: 1
+        vcpus: 4
+        memory_gb: 16
+        on_demand_usd_hr: 0.22
+        spot_discount: 0.60
+      - key: l4__g2_standard_96
+        gpu: l4
+        gpu_count: 8
+        vcpus: 96
+        memory_gb: 384
+        on_demand_usd_hr: 1.76
+        spot_discount: 0.60
+      - key: a100_80__a2_highgpu_1g
+        gpu: a100_80
+        gpu_count: 1
+        vcpus: 12
+        memory_gb: 85
+        on_demand_usd_hr: 3.67
+        spot_discount: 0.60
+      - key: a100_80__a2_megagpu_16g
+        gpu: a100_80
+        gpu_count: 16
+        vcpus: 192
+        memory_gb: 1360
+        on_demand_usd_hr: 58.72
+        spot_discount: 0.55
+      - key: h100__a3_highgpu_8g
+        gpu: h100
+        gpu_count: 8
+        vcpus: 208
+        memory_gb: 1872
+        on_demand_usd_hr: 52.88
+        spot_discount: 0.55
+
+  # ---------------------------------------------------------------------------
+  # Azure
+  # ---------------------------------------------------------------------------
+  azure:
+    display_name: Microsoft Azure
+    billing: postpaid_monthly
+    spot_available: true
+    entries:
+      - key: t4__nc4as_t4_v3
+        gpu: t4
+        gpu_count: 1
+        vcpus: 4
+        memory_gb: 28
+        on_demand_usd_hr: 0.53
+        spot_discount: 0.65
+      - key: a100_80__nc24ads_a100_v4
+        gpu: a100_80
+        gpu_count: 1
+        vcpus: 24
+        memory_gb: 220
+        on_demand_usd_hr: 3.67
+        spot_discount: 0.65
+      - key: a100_80__nc48ads_a100_v4
+        gpu: a100_80
+        gpu_count: 2
+        vcpus: 48
+        memory_gb: 440
+        on_demand_usd_hr: 7.34
+        spot_discount: 0.65
+      - key: h100__nd96isr_h100_v5
+        gpu: h100
+        gpu_count: 8
+        vcpus: 96
+        memory_gb: 1800
+        on_demand_usd_hr: 79.84
+        spot_discount: 0.60
+
+  # ---------------------------------------------------------------------------
+  # RunPod
+  # ---------------------------------------------------------------------------
+  runpod:
+    display_name: RunPod
+    billing: prepaid_balance
+    spot_available: true
+    entries:
+      - key: l4__1x_secure
+        gpu: l4
+        gpu_count: 1
+        vcpus: 4
+        memory_gb: 24
+        on_demand_usd_hr: 0.39
+        spot_discount: 0.50
+      - key: rtx_4090__1x_secure
+        gpu: rtx_4090
+        gpu_count: 1
+        vcpus: 8
+        memory_gb: 32
+        on_demand_usd_hr: 0.69
+        spot_discount: 0.50
+      - key: a100_sxm4_80gb__1x_secure
+        gpu: a100_80
+        gpu_count: 1
+        vcpus: 16
+        memory_gb: 125
+        on_demand_usd_hr: 1.39
+        spot_discount: 0.55
+      - key: a100_sxm4_80gb__8x_secure
+        gpu: a100_80
+        gpu_count: 8
+        vcpus: 128
+        memory_gb: 1000
+        on_demand_usd_hr: 11.12
+        spot_discount: 0.55
+      - key: h100_sxm5__1x_secure
+        gpu: h100
+        gpu_count: 1
+        vcpus: 16
+        memory_gb: 188
+        on_demand_usd_hr: 2.49
+        spot_discount: 0.55
+      - key: h100_sxm5__8x_secure
+        gpu: h100
+        gpu_count: 8
+        vcpus: 128
+        memory_gb: 1504
+        on_demand_usd_hr: 19.92
+        spot_discount: 0.55
+
+  # ---------------------------------------------------------------------------
+  # Lambda Labs
+  # ---------------------------------------------------------------------------
+  lambda_labs:
+    display_name: Lambda Labs
+    billing: prepaid_balance
+    spot_available: false
+    entries:
+      - key: a100_sxm4_80gb__1x
+        gpu: a100_80
+        gpu_count: 1
+        vcpus: 30
+        memory_gb: 200
+        on_demand_usd_hr: 2.79
+      - key: a100_sxm4_80gb__8x
+        gpu: a100_80
+        gpu_count: 8
+        vcpus: 240
+        memory_gb: 1600
+        on_demand_usd_hr: 22.32
+      - key: h100_sxm5__1x
+        gpu: h100
+        gpu_count: 1
+        vcpus: 30
+        memory_gb: 200
+        on_demand_usd_hr: 3.79
+      - key: h100_sxm5__8x
+        gpu: h100
+        gpu_count: 8
+        vcpus: 240
+        memory_gb: 1600
+        on_demand_usd_hr: 30.32
+      - key: b200__8x
+        gpu: b200
+        gpu_count: 8
+        vcpus: 240
+        memory_gb: 1600
+        on_demand_usd_hr: 30.96
+
+  # ---------------------------------------------------------------------------
+  # Vast.ai
+  # ---------------------------------------------------------------------------
+  vast_ai:
+    display_name: Vast.ai
+    billing: prepaid_balance
+    spot_available: true
+    entries:
+      - key: rtx_4090__1x
+        gpu: rtx_4090
+        gpu_count: 1
+        vcpus: 8
+        memory_gb: 32
+        on_demand_usd_hr: 0.40
+        spot_discount: 0.50
+      - key: a100_pcie__1x
+        gpu: a100_40
+        gpu_count: 1
+        vcpus: 16
+        memory_gb: 64
+        on_demand_usd_hr: 0.55
+        spot_discount: 0.55
+      - key: a100_sxm4_80gb__1x
+        gpu: a100_80
+        gpu_count: 1
+        vcpus: 16
+        memory_gb: 125
+        on_demand_usd_hr: 1.20
+        spot_discount: 0.55
+      - key: rtx_6000_ada__1x
+        gpu: rtx_6000_ada
+        gpu_count: 1
+        vcpus: 16
+        memory_gb: 64
+        on_demand_usd_hr: 0.78
+        spot_discount: 0.50
+
+  # ---------------------------------------------------------------------------
+  # CoreWeave
+  # ---------------------------------------------------------------------------
+  coreweave:
+    display_name: CoreWeave
+    billing: prepaid_balance
+    spot_available: true
+    entries:
+      - key: l40s__1x
+        gpu: l40s
+        gpu_count: 1
+        vcpus: 16
+        memory_gb: 64
+        on_demand_usd_hr: 2.25
+        spot_discount: 0.75
+      - key: a100_80__1x
+        gpu: a100_80
+        gpu_count: 1
+        vcpus: 16
+        memory_gb: 125
+        on_demand_usd_hr: 2.70
+        spot_discount: 0.75
+      - key: h100__1x
+        gpu: h100
+        gpu_count: 1
+        vcpus: 16
+        memory_gb: 188
+        on_demand_usd_hr: 4.25
+        spot_discount: 0.70
+      - key: h100__8x
+        gpu: h100
+        gpu_count: 8
+        vcpus: 128
+        memory_gb: 1504
+        on_demand_usd_hr: 34.00
+        spot_discount: 0.70
+
+  # ---------------------------------------------------------------------------
+  # Modal
+  # ---------------------------------------------------------------------------
+  modal:
+    display_name: Modal
+    billing: prepaid_balance
+    spot_available: false
+    entries:
+      - key: t4__1x
+        gpu: t4
+        gpu_count: 1
+        on_demand_usd_hr: 0.59
+      - key: l4__1x
+        gpu: l4
+        gpu_count: 1
+        on_demand_usd_hr: 0.79
+      - key: a100_40__1x
+        gpu: a100_40
+        gpu_count: 1
+        on_demand_usd_hr: 1.99
+      - key: a100_80__1x
+        gpu: a100_80
+        gpu_count: 1
+        on_demand_usd_hr: 2.50
+      - key: h100__1x
+        gpu: h100
+        gpu_count: 1
+        on_demand_usd_hr: 3.79
+
+  # ---------------------------------------------------------------------------
+  # Together AI — compute instances
+  # ---------------------------------------------------------------------------
+  together:
+    display_name: Together AI
+    billing: prepaid_balance
+    spot_available: false
+    entries:
+      - key: a100_40__1x
+        gpu: a100_40
+        gpu_count: 1
+        on_demand_usd_hr: 1.50
+      - key: a100_80__1x
+        gpu: a100_80
+        gpu_count: 1
+        on_demand_usd_hr: 1.90
+      - key: h100__1x
+        gpu: h100
+        gpu_count: 1
+        on_demand_usd_hr: 2.50
+      - key: h100__8x
+        gpu: h100
+        gpu_count: 8
+        on_demand_usd_hr: 20.00
+
+  # ---------------------------------------------------------------------------
+  # DigitalOcean
+  # ---------------------------------------------------------------------------
+  digital_ocean:
+    display_name: DigitalOcean
+    billing: postpaid_monthly
+    spot_available: false
+    entries:
+      - key: rtx_6000_ada__1x
+        gpu: rtx_6000_ada
+        gpu_count: 1
+        vcpus: 8
+        memory_gb: 32
+        on_demand_usd_hr: 1.49
+      - key: h100__1x
+        gpu: h100
+        gpu_count: 1
+        vcpus: 20
+        memory_gb: 160
+        on_demand_usd_hr: 7.99
+
+  # ---------------------------------------------------------------------------
+  # Replicate
+  # ---------------------------------------------------------------------------
+  replicate:
+    display_name: Replicate
+    billing: prepaid_balance
+    spot_available: false
+    entries:
+      - key: t4__1x
+        gpu: t4
+        gpu_count: 1
+        on_demand_usd_hr: 0.50
+      - key: a40__1x
+        gpu: a40
+        gpu_count: 1
+        on_demand_usd_hr: 0.80
+      - key: a100_40__1x
+        gpu: a100_40
+        gpu_count: 1
+        on_demand_usd_hr: 1.15
+      - key: a100_80__1x
+        gpu: a100_80
+        gpu_count: 1
+        on_demand_usd_hr: 1.60

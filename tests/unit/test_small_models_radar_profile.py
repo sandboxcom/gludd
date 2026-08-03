@@ -67,11 +67,11 @@ class TestModelRadarProfile:
     def test_creates_with_default_scores(self) -> None:
         profile = ModelRadarProfile(model_profile_id="model-a")
         assert profile.model_profile_id == "model-a"
-        assert len(profile.scores) == 8
+        assert len(profile.scores) == 9
         assert all(s == 0.0 for s in profile.scores.values())
 
     def test_has_correct_axis_count(self) -> None:
-        assert len(_MT_BENCH_AXES) == 8
+        assert len(_MT_BENCH_AXES) == 9
         assert "writing" in _MT_BENCH_AXES
         assert "roleplay" in _MT_BENCH_AXES
         assert "extraction" in _MT_BENCH_AXES
@@ -80,6 +80,7 @@ class TestModelRadarProfile:
         assert "coding" in _MT_BENCH_AXES
         assert "stem" in _MT_BENCH_AXES
         assert "humanities" in _MT_BENCH_AXES
+        assert "cost" in _MT_BENCH_AXES
 
     def test_scores_clamped_to_0_1(self) -> None:
         profile = ModelRadarProfile(model_profile_id="clamped")
@@ -217,10 +218,13 @@ class TestRenderRadarSvg:
         root = ET.fromstring(svg)
         assert root is not None
 
-    def test_svg_full_profile_renders_all_8_axes(self) -> None:
+    def test_svg_full_profile_renders_all_9_axes(self) -> None:
         profile = ModelRadarProfile(model_profile_id="full")
         for axis in _MT_BENCH_AXES:
-            profile.scores[axis] = 0.75
+            if axis == "cost":
+                profile.cost_score = 0.75
+            else:
+                profile.scores[axis] = 0.75
         svg = render_radar_svg(profile)
         for axis in _MT_BENCH_AXES:
             label = axis.upper() if axis == "stem" else axis.capitalize()
@@ -235,6 +239,17 @@ class TestRenderRadarSvg:
         p = ModelRadarProfile(model_profile_id="created")
         for axis in _MT_BENCH_AXES:
             assert axis in p.scores
+
+    def test_cost_score_included_in_scores(self) -> None:
+        p = ModelRadarProfile(model_profile_id="cost-test", cost_score=0.85)
+        assert p.scores["cost"] == 0.85
+        assert "cost" in p.scores
+
+    def test_cost_score_clamped(self) -> None:
+        p = ModelRadarProfile(model_profile_id="clamp-cost", cost_score=1.5)
+        assert p.cost_score == 1.0
+        p2 = ModelRadarProfile(model_profile_id="clamp-cost-neg", cost_score=-0.5)
+        assert p2.cost_score == 0.0
 
 
 # -- compare_models -----------------------------------------------------

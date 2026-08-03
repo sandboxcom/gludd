@@ -11,6 +11,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 DEFAULT_CACHE_DIR = os.path.expanduser("~/.cache/general-ludd/models")
+_LARGE_DOWNLOAD_GB = 1.0
 
 
 class DownloadSource(StrEnum):
@@ -189,10 +190,39 @@ class ModelDownloader:
         model_id: str,
         filename: str | None = None,
         revision: str | None = None,
+        force: bool = False,
     ) -> DownloadedModel:
+        from general_ludd.small_models.cost import should_defer_download
+
+        defer_info = should_defer_download(_LARGE_DOWNLOAD_GB + 0.1)
+        if defer_info.get("defer") and not force:
+            logger.warning(
+                "Download of %s deferred: peak pricing active, large download (%s). "
+                "Use force=True to override or wait for off-peak window.",
+                model_id,
+                defer_info.get("next_off_peak", {}),
+            )
+
         if filename and filename.lower().endswith(".gguf"):
             return self.download_gguf(model_id=model_id, filename=filename, revision=revision)
         return self.download_huggingface(model_id=model_id, filename=filename, revision=revision)
+
+    def check_download_scheduling(self, size_gb: float) -> dict[str, object]:
+        from general_ludd.small_models.cost import is_off_peak, next_off_peak_window, should_defer_download
+
+        defer_info = should_defer_download(size_gb)
+        return {
+            "size_gb": round(size_gb, 2),
+            "is_off_peak_now": is_off_peak(),
+            "should_defer": defer_info.get("defer", False),
+            "reason": defer_info.get("reason", "unknown"),
+            "next_off_peak": next_off_peak_window(),
+        }
+
+    def estimate_download_cost(self, size_gb: float) -> dict[str, object]:
+        from general_ludd.small_models.cost import estimate_download_cost as _estimate
+
+        return _estimate("", size_gb=size_gb)
 
     def list_downloaded(self) -> list[DownloadedModel]:
         return list(self._downloaded.values())

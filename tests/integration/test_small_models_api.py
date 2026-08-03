@@ -671,6 +671,8 @@ class TestSmallModelsRecommend:
             assert recs[0]["model_id"] == "phi-2"
             assert recs[0]["passed"] is True
             assert recs[0]["pass_ratio"] == 1.0
+            assert "cost" in recs[0]
+            assert "inference_usd_per_hour" in recs[0]["cost"]
             assert recs[1]["model_id"] == "tinyllama"
             assert recs[1]["passed"] is False
         finally:
@@ -774,6 +776,43 @@ class TestSmallModelsTasks:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.get("/admin/small-models/tasks", params={"model": "phi-2"})
+            assert resp.status_code == 401, resp.text
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+
+class TestSmallModelsCost:
+    @pytest.mark.asyncio
+    async def test_cost_endpoint_returns_estimates(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.get(
+                "/admin/small-models/cost",
+                params={"model": "phi-2"},
+                headers=AUTH,
+            )
+            assert resp.status_code == 200, resp.text
+            data = resp.json()
+            assert data["model_id"] == "phi-2"
+            assert "inference" in data
+            assert "download" in data
+            assert "quantize" in data
+            assert "off_peak" in data
+            assert "scheduling" in data
+            assert "estimated_usd_per_hour" in data["inference"]
+            assert "size_gb" in data["download"]
+            assert "estimated_cost_usd" in data["quantize"]
+            assert isinstance(data["off_peak"]["is_off_peak_now"], bool)
+        finally:
+            await client.aclose()
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_cost_endpoint_no_auth_returns_401(self, monkeypatch):
+        engine, _factory, client, _app = await _make_app(monkeypatch)
+        try:
+            resp = await client.get("/admin/small-models/cost", params={"model": "phi-2"})
             assert resp.status_code == 401, resp.text
         finally:
             await client.aclose()

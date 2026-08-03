@@ -81,7 +81,10 @@ def compute_projected_cost_usd(gateway: _GatewayProfile | None, budget_guard: ob
 
     from general_ludd.infra.pricing import token_cost_usd as _static
 
-    return float(_static(model, proj_in, proj_out))
+    base_cost = float(_static(model, proj_in, proj_out))
+    from general_ludd.budget.peak_pricing import current_rate_multiplier
+
+    return base_cost * current_rate_multiplier()
 
 
 def budget_pre_check(guard: object | None, projected_cost: float = 0.0) -> str | None:

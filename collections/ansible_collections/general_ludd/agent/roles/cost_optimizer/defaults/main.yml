@@ -1,0 +1,27 @@
+---
+# cost_optimizer role defaults — defer expensive tasks to off-peak windows
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Cost policy
+# Minimum USD savings required to recommend deferral of a task.
+# Set to 0 to always recommend off-peak when available.
+savings_threshold_usd: 0.05
+
+# Maximum hours a task may be deferred before it must run regardless.
+max_deferral_hours: 12
+
+# Peak-pricing window (UTC hour range, 24-hour clock).
+# Tasks launched inside [peak_hour_start, peak_hour_end) are
+# considered on-peak and eligible for off-peak deferral.
+peak_hour_start: 8
+peak_hour_end: 20
+
+# Off-peak window end (UTC hour); the recommended deferral target
+# falls within [peak_hour_end, off_peak_end).
+off_peak_end: 23
+
+# Artifact output
+artifact_dir: "/tmp/gludd-cost-optimizer"

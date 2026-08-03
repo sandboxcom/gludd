@@ -23,6 +23,7 @@ _MT_BENCH_AXES: tuple[str, ...] = (
     "coding",
     "stem",
     "humanities",
+    "cost",
 )
 
 _AXIS_LABELS: dict[str, str] = {
@@ -34,6 +35,7 @@ _AXIS_LABELS: dict[str, str] = {
     "coding": "Coding",
     "stem": "STEM",
     "humanities": "Humanities",
+    "cost": "Cost",
 }
 
 _TASK_TO_AXIS: dict[str, str] = {
@@ -50,6 +52,7 @@ _TASK_TO_AXIS: dict[str, str] = {
     "humanities": "humanities",
     "writing": "writing",
     "roleplay": "roleplay",
+    "_cost_awareness": "cost",
 }
 
 
@@ -77,7 +80,7 @@ class _ScoresDict(dict[str, float]):
 
 @dataclass
 class ModelRadarProfile:
-    """Per-model radar chart data across the 8 MT-Bench capability axes.
+    """Per-model radar chart data across the 9 MT-Bench + Cost capability axes.
 
     Scores range 0.0-1.0 and are clamped on assignment via __setitem__
     on the scores dict-like interface through dataclass field validation.
@@ -85,6 +88,7 @@ class ModelRadarProfile:
 
     model_profile_id: str
     _scores: dict[str, float] = field(default_factory=dict, repr=False, init=False)
+    cost_score: float = 0.0
 
     def __post_init__(self) -> None:
         if not isinstance(self.model_profile_id, str) or not self.model_profile_id.strip():
@@ -94,24 +98,30 @@ class ModelRadarProfile:
     @property
     def scores(self) -> dict[str, float]:
         """Axis→score mapping.  Setting a value clamps it to [0.0, 1.0]."""
-        return self._scores
+        result = dict(self._scores)
+        result["cost"] = self.cost_score
+        return result
 
     @scores.setter
     def scores(self, value: dict[str, float]) -> None:
         valid = {axis: max(0.0, min(1.0, float(value.get(axis, 0.0)))) for axis in _MT_BENCH_AXES}
+        if "cost" in value:
+            object.__setattr__(self, "cost_score", max(0.0, min(1.0, float(value["cost"]))))
         object.__setattr__(self, "_scores", valid)
 
     def normalized(self) -> dict[str, float]:
-        """Return a normalized 0.0-1.0 copy of scores."""
-        return {axis: max(0.0, min(1.0, self._scores.get(axis, 0.0))) for axis in _MT_BENCH_AXES}
+        """Return a normalized 0.0-1.0 copy of scores, including cost."""
+        result = {axis: max(0.0, min(1.0, self._scores.get(axis, 0.0))) for axis in _MT_BENCH_AXES}
+        result["cost"] = self.cost_score
+        return result
 
     def vector(self) -> list[float]:
-        """Return scores as a list in MT-Bench axis order."""
-        return [self._scores.get(axis, 0.0) for axis in _MT_BENCH_AXES]
+        """Return scores as a list in MT-Bench + Cost axis order."""
+        return [self.scores.get(axis, 0.0) for axis in _MT_BENCH_AXES]
 
     def active_axes(self) -> list[str]:
         """Return axis names with non-zero scores."""
-        return [axis for axis in _MT_BENCH_AXES if self._scores.get(axis, 0.0) > 0.0]
+        return [axis for axis in _MT_BENCH_AXES if self.scores.get(axis, 0.0) > 0.0]
 
 
 RadarProfile = ModelRadarProfile  # backward-compatible alias
@@ -121,7 +131,8 @@ def generate_radar(evidences: list[CapabilityEvidence]) -> ModelRadarProfile:
     """Generate a radar profile by aggregating CapabilityEvidence across MT-Bench axes.
 
     Per-axis scores are the mean of passed_cases/total_cases ratios
-    for all evidence items mapping to that axis.
+    for all evidence items mapping to that axis.  Cost axis is computed
+    from the small-models cost module.
     """
     if not evidences:
         return ModelRadarProfile(model_profile_id="unknown")
@@ -139,7 +150,11 @@ def generate_radar(evidences: list[CapabilityEvidence]) -> ModelRadarProfile:
         axis_sums[axis] += clamped
         axis_counts[axis] += 1
 
-    profile = ModelRadarProfile(model_profile_id=model_id)
+    from general_ludd.small_models.cost import compute_cost_score
+
+    cost = compute_cost_score(model_id)
+
+    profile = ModelRadarProfile(model_profile_id=model_id, cost_score=cost)
     scores: dict[str, float] = {}
     for axis in _MT_BENCH_AXES:
         if axis_counts[axis] > 0:
@@ -157,7 +172,8 @@ def build_profile(
     """Aggregate capability evidence dicts into a ModelRadarProfile.
 
     Maps each task_kind to an MT-Bench axis and takes the best
-    pass rate across evidence records per axis.
+    pass rate across evidence records per axis.  Cost axis is computed
+    from the small-models cost module.
     """
     axis_scores: dict[str, float] = {a: -1.0 for a in _MT_BENCH_AXES}
 
@@ -174,7 +190,11 @@ def build_profile(
         if ratio > axis_scores[axis]:
             axis_scores[axis] = ratio
 
-    profile = ModelRadarProfile(model_profile_id=model_id)
+    from general_ludd.small_models.cost import compute_cost_score
+
+    cost = compute_cost_score(model_id)
+
+    profile = ModelRadarProfile(model_profile_id=model_id, cost_score=cost)
     scores = {a: max(0.0, axis_scores[a]) for a in _MT_BENCH_AXES}
     profile.scores = scores
     return profile

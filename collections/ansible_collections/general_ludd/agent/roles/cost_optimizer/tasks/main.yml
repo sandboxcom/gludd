@@ -1,0 +1,232 @@
+---
+# cost_optimizer role — defer expensive tasks to off-peak windows
+#
+# Uses the daemon pricing API to check current model/compute rates,
+# classifies the current time as on-peak/off-peak, computes potential
+# savings from deferring work, and writes a recommendation artifact.
+#
+# READ-ONLY: never mutates spend limits or daemon state.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Fetch current spend snapshot ──────────────────────────────────────────────
+
+- name: Fetch spend snapshot from daemon
+  general_ludd.agent.gludd_spend:
+    state: get
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: _co_spend_result
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Set spend facts
+  ansible.builtin.set_fact:
+    _co_limit: "{{ _co_spend_result.spend.limit_usd | float }}"
+    _co_used: "{{ _co_spend_result.spend.used_usd | float }}"
+    _co_remaining: "{{ _co_spend_result.spend.remaining_usd | float }}"
+
+# ── Fetch pricing catalog ────────────────────────────────────────────────────
+
+- name: Fetch pricing catalog from daemon
+  ansible.builtin.uri:
+    url: "{{ daemon_url }}/api/pricing/catalog"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ psk }}"
+      X-PSK: "{{ psk }}"
+      Accept: application/json
+    return_content: true
+    timeout: 30
+  register: _co_catalog_resp
+  no_log: "{{ psk | length > 0 }}"
+  ignore_errors: true
+
+- name: Set pricing facts (catalog available)
+  ansible.builtin.set_fact:
+    _co_catalog: "{{ _co_catalog_resp.json }}"
+    _co_catalog_ok: true
+  when:
+    - _co_catalog_resp is success
+    - _co_catalog_resp.status == 200
+
+- name: Set empty pricing facts (catalog unavailable)
+  ansible.builtin.set_fact:
+    _co_catalog:
+      model_prices: []
+      compute_prices: []
+      billing: []
+      counts:
+        model_prices: 0
+        compute_prices: 0
+    _co_catalog_ok: false
+  when: _co_catalog_ok is not defined
+
+# ── Time-of-day classification ───────────────────────────────────────────────
+
+- name: Determine current UTC hour
+  ansible.builtin.set_fact:
+    _co_now_utc: "{{ ansible_date_time.epoch | int }}"
+    _co_now_hour: "{{ (ansible_date_time.epoch | int) // 3600 % 24 | int }}"
+
+- name: Classify on-peak vs off-peak
+  ansible.builtin.set_fact:
+    _co_is_on_peak: "{{ _co_now_hour | int >= peak_hour_start | int and _co_now_hour | int < peak_hour_end | int }}"
+    _co_is_off_peak: "{{ not (_co_now_hour | int >= peak_hour_start | int and _co_now_hour | int < peak_hour_end | int) }}"
+
+# ── Compute deferral window ──────────────────────────────────────────────────
+
+- name: Compute deferral hours remaining (if on-peak)
+  ansible.builtin.set_fact:
+    _co_hours_until_off_peak: >-
+      {{ peak_hour_end | int - _co_now_hour | int }}
+    _co_off_peak_end_hour: "{{ off_peak_end | int }}"
+  when: _co_is_on_peak | bool
+
+- name: Set zero deferral (already off-peak)
+  ansible.builtin.set_fact:
+    _co_hours_until_off_peak: 0
+  when: not (_co_is_on_peak | bool)
+
+# ── Compute estimated savings ────────────────────────────────────────────────
+
+- name: Compute average model rate from catalog
+  ansible.builtin.set_fact:
+    _co_avg_model_rate: >-
+      {{
+        _co_catalog.counts.model_prices | int > 0
+        | ternary(
+          (_co_catalog.model_prices | map(attribute='price_per_1k_tokens') | map('float') | sum / _co_catalog.counts.model_prices | int) | round(6),
+          0.0 | float
+        )
+      }}
+
+- name: Estimate off-peak discount ratio (standard 30% off-peak discount)
+  ansible.builtin.set_fact:
+    _co_off_peak_discount: 0.30
+
+- name: Compute estimated savings per 1k tokens
+  ansible.builtin.set_fact:
+    _co_savings_per_1k: >-
+      {{ (_co_avg_model_rate | float * _co_off_peak_discount | float) | round(6) }}
+
+- name: Compute savings verdict
+  ansible.builtin.set_fact:
+    _co_defer_recommended: >-
+      {{
+        (_co_is_on_peak | bool)
+        and (_co_avg_model_rate | float > 0)
+        and (_co_hours_until_off_peak | int < max_deferral_hours | int)
+        and (_co_savings_per_1k | float > savings_threshold_usd | float)
+      }}
+    _co_savings_verdict: >-
+      {{
+        {
+          True: 'DEFER_RECOMMENDED',
+          False: 'RUN_NOW'
+        }.get(
+          (_co_is_on_peak | bool)
+          and (_co_avg_model_rate | float > 0)
+          and (_co_hours_until_off_peak | int < max_deferral_hours | int)
+          and (_co_savings_per_1k | float > savings_threshold_usd | float),
+          'RUN_NOW'
+        )
+      }}
+
+# ── Write JSON artifact ──────────────────────────────────────────────────────
+
+- name: Write cost optimizer JSON artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'cost_optimizer',
+        'verdict': _co_savings_verdict,
+        'is_on_peak': _co_is_on_peak,
+        'current_utc_hour': _co_now_hour,
+        'hours_until_off_peak': _co_hours_until_off_peak | int,
+        'off_peak_end_hour': _co_off_peak_end_hour | int,
+        'peak_window': (peak_hour_start | string) + '-' + (peak_hour_end | string),
+        'avg_model_rate_per_1k_usd': _co_avg_model_rate | float,
+        'off_peak_discount_ratio': _co_off_peak_discount | float,
+        'savings_per_1k_usd': _co_savings_per_1k | float,
+        'savings_threshold_usd': savings_threshold_usd | float,
+        'max_deferral_hours': max_deferral_hours | int,
+        'defer_recommended': _co_defer_recommended | bool,
+        'spend': {
+          'limit_usd': _co_limit | float,
+          'used_usd': _co_used | float,
+          'remaining_usd': _co_remaining | float
+        },
+        'catalog_model_count': _co_catalog.counts.model_prices | int,
+        'catalog_compute_count': _co_catalog.counts.compute_prices | int
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/cost_optimizer.json"
+    mode: "0644"
+
+# ── Write Markdown artifact ──────────────────────────────────────────────────
+
+- name: Write cost optimizer markdown artifact
+  ansible.builtin.copy:
+    content: |
+      # Cost Optimizer Report
+
+      **Verdict:** {{ _co_savings_verdict }}
+      **On-Peak:** {{ _co_is_on_peak }}
+
+      ## Pricing Snapshot
+
+      | Metric                    | Value             |
+      |---------------------------|-------------------|
+      | Current UTC Hour          | {{ _co_now_hour }} |
+      | Peak Window               | {{ peak_hour_start }}-{{ peak_hour_end }} UTC |
+      | Hours Until Off-Peak      | {{ _co_hours_until_off_peak }} |
+      | Off-Peak End              | {{ _co_off_peak_end_hour }}:00 UTC |
+      | Avg Model Rate (per 1k)   | ${{ _co_avg_model_rate }} |
+      | Off-Peak Discount         | {{ (_co_off_peak_discount | float * 100) | int }}% |
+      | Savings per 1k tokens     | ${{ _co_savings_per_1k }} |
+      | Savings Threshold         | ${{ savings_threshold_usd }} |
+      | Max Deferral (hours)      | {{ max_deferral_hours }} |
+      | Defer Recommended         | {{ _co_defer_recommended }} |
+
+      ## Spend Status
+
+      | Metric      | Value           |
+      |-------------|-----------------|
+      | Limit USD   | ${{ _co_limit }} |
+      | Used USD    | ${{ _co_used }} |
+      | Remaining   | ${{ _co_remaining }} |
+
+      {% if _co_defer_recommended | bool %}
+      ## RECOMMENDATION: DEFER TO OFF-PEAK
+
+      Current time is within the peak pricing window. Deferring work until
+      after {{ peak_hour_end }}:00 UTC could save approximately
+      ${{ _co_savings_per_1k }} per 1 000 tokens — a
+      {{ (_co_off_peak_discount | float * 100) | int }}% discount over
+      peak rates.
+      {% elif _co_is_on_peak | bool and not (_co_defer_recommended | bool) %}
+      ## RECOMMENDATION: RUN NOW
+
+      Currently on-peak, but expected savings (${{ _co_savings_per_1k }} per 1k)
+      fall below threshold (${{ savings_threshold_usd }}), or the off-peak
+      window is more than {{ max_deferral_hours }} hours away.
+      {% else %}
+      ## RECOMMENDATION: RUN NOW
+
+      Currently off-peak — no deferral benefit available.
+      {% endif %}
+
+      ---
+      *Generated by general_ludd.agent.cost_optimizer — read-only, no daemon mutations.*
+    dest: "{{ artifact_dir }}/cost_optimizer.md"
+    mode: "0644"
+
+- name: Report cost optimizer verdict
+  ansible.builtin.debug:
+    msg: >-
+      Cost optimizer: {{ _co_savings_verdict }} — on-peak={{ _co_is_on_peak }},
+      savings_per_1k=${{ _co_savings_per_1k }},
+      hours_until_off_peak={{ _co_hours_until_off_peak }}.

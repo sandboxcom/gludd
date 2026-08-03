@@ -1961,7 +1961,22 @@ class ModelGateway:
                 latest_usage.get("completion_tokens", output_tokens_for_limit),
             )
         )
-        cost = input_tokens * profile.cost_per_input_token + output_tokens * profile.cost_per_output_token
+        base_cost = input_tokens * profile.cost_per_input_token + output_tokens * profile.cost_per_output_token
+
+        from general_ludd.budget.peak_pricing import (
+            PeakPricingTracker,
+            current_rate_multiplier,
+            is_peak,
+        )
+
+        "peak" if is_peak() else "off-peak"
+        multiplier = current_rate_multiplier()
+        effective_cost = base_cost * multiplier
+
+        if not is_peak():
+            PeakPricingTracker.singleton().record_call(base_cost, effective_cost)
+
+        cost = effective_cost
         if self._budget_guard is not None:
             self._budget_guard.record_spend(cost)
         if self._health_tracker is not None:
@@ -2648,14 +2663,33 @@ class ModelGateway:
         #   are not silently metered at $0
         input_tokens = _coerce_token_count(usage.get("input_tokens", usage.get("prompt_tokens", 0)))
         output_tokens = _coerce_token_count(usage.get("output_tokens", usage.get("completion_tokens", 0)))
-        cost = input_tokens * profile.cost_per_input_token + output_tokens * profile.cost_per_output_token
+        base_cost = input_tokens * profile.cost_per_input_token + output_tokens * profile.cost_per_output_token
+
+        from general_ludd.budget.peak_pricing import (
+            PeakPricingTracker,
+            current_rate_multiplier,
+            is_peak,
+        )
+
+        rate_info = "peak" if is_peak() else "off-peak"
+        multiplier = current_rate_multiplier()
+        effective_cost = base_cost * multiplier
+
+        if not is_peak():
+            PeakPricingTracker.singleton().record_call(base_cost, effective_cost)
+
+        cost = effective_cost
 
         logger.debug(
-            "Model call complete: profile=%s, input_tokens=%s, output_tokens=%s, cost=%.6f",
+            "Model call complete: profile=%s, input_tokens=%s, output_tokens=%s, "
+            "base_cost=%.6f, rate=%s(x%.2f), effective_cost=%.6f",
             profile_id,
             input_tokens,
             output_tokens,
-            cost,
+            base_cost,
+            rate_info,
+            multiplier,
+            effective_cost,
         )
 
         if self._budget_guard is not None:

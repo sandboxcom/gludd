@@ -174,9 +174,9 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             existent_ggufs: list[str] = []
             model_dir = os.path.join(models_root, sanitized_id)
             if os.path.isdir(model_dir):
-                for entry in os.listdir(model_dir):
-                    if entry.endswith(".gguf"):
-                        existent_ggufs.append(os.path.join(model_dir, entry))
+                for filename in os.listdir(model_dir):
+                    if filename.endswith(".gguf"):
+                        existent_ggufs.append(os.path.join(model_dir, filename))
 
             conf = download_store.get(f"huggingface/{model_id}") or download_store.get(f"gguf/{model_id}")
             conf_path = str(conf.model_path) if conf else ""
@@ -209,7 +209,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         quant_digest = _digest(
             {"model_id": model_id, "method": method_name, "input": input_gguf, "output": output_gguf}
         )
-        entry: dict[str, object] = {
+        quant_entry: dict[str, object] = {
             "model_id": model_id,
             "method": method.value,
             "method_name": method_name,
@@ -219,7 +219,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             "success": success,
             "digest": quant_digest,
         }
-        quantize_store[f"quant:{sanitized_id}:{method_name}"] = entry
+        quantize_store[f"quant:{sanitized_id}:{method_name}"] = quant_entry
 
         logger.info(
             "small-model quantize: %s method=%s success=%s output=%s",
@@ -351,10 +351,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             "acceptance_contract_digest": _digest({"task_kind": task_kind, "collection": collection}),
         }
         key = f"cap:{model_id}"
-        capability_store: dict[str, list[dict[str, object]]] = request.app.state._sm_capability_store
-        eval_store: dict[str, dict[str, object]] = request.app.state._sm_eval_store
-        capability_store.setdefault(key, []).append(evidence_entry)
-        eval_store[f"eval:{model_id}:{task_kind}"] = evidence_entry
+        cap_store = request.app.state._sm_capability_store
+        ev_store = request.app.state._sm_eval_store
+        cap_store.setdefault(key, []).append(evidence_entry)
+        ev_store[f"eval:{model_id}:{task_kind}"] = evidence_entry
         logger.info("small-model evaluate: %s task=%s passed=%s/%s", model_id, task_kind, passed_cases, total_cases)
         return {"evaluated": True, "model_id": model_id, "evidence": evidence_entry}
 
@@ -468,6 +468,11 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.get("/admin/small-models/recommend")
     async def small_models_recommend(request: Request, task: str) -> dict[str, object]:
+        from general_ludd.small_models.cost import (
+            estimate_download_cost,
+            estimate_inference_cost,
+        )
+
         eval_store: dict[str, dict[str, object]] = request.app.state._sm_eval_store
         candidates: list[dict[str, object]] = []
 
@@ -481,20 +486,61 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             total = int(_tv) if isinstance(_tv, (int, float, str)) else 0
             passed = int(_pv) if isinstance(_pv, (int, float, str)) else 0
             ratio = passed / total if total > 0 else 0.0
+            model_id = str(evidence.get("model_id", ""))
+            cost_inference = estimate_inference_cost(model_id)
+            cost_download = estimate_download_cost(model_id)
             candidates.append(
                 {
-                    "model_id": evidence.get("model_id", ""),
+                    "model_id": model_id,
                     "task_kind": task,
                     "passed_cases": passed,
                     "total_cases": total,
                     "pass_ratio": round(ratio, 4),
                     "passed": evidence.get("passed", False),
                     "evidence_digest": evidence.get("evidence_digest", ""),
+                    "cost": {
+                        "inference_usd_per_hour": cost_inference.get("estimated_usd_per_hour", 0.0),
+                        "inference_tier": cost_inference.get("tier", "small_local"),
+                        "download_size_gb": cost_download.get("size_gb", 0.0),
+                        "download_data_transfer_usd": cost_download.get("data_transfer_usd", 0.0),
+                        "storage_usd_per_month": cost_download.get("estimated_storage_usd_per_month", 0.0),
+                    },
                 }
             )
 
         candidates.sort(key=lambda c: (c["passed"], c["pass_ratio"]), reverse=True)
         return {"task": task, "recommendations": candidates, "total": len(candidates)}
+
+    @app.get("/admin/small-models/cost")
+    async def small_models_cost(request: Request, model: str) -> dict[str, object]:
+        from general_ludd.small_models.cost import (
+            estimate_download_cost,
+            estimate_inference_cost,
+            estimate_quantize_cost,
+            is_off_peak,
+            next_off_peak_window,
+            should_defer_download,
+        )
+
+        inference = estimate_inference_cost(model)
+        download = estimate_download_cost(model)
+        size_gb_val = download.get("size_gb", 0.0)
+        size_gb = float(size_gb_val) if isinstance(size_gb_val, (int, float)) else 0.0
+        quantize = estimate_quantize_cost(model, size_gb=size_gb)
+        defer = should_defer_download(size_gb)
+        off_peak_window = next_off_peak_window()
+
+        return {
+            "model_id": model,
+            "inference": inference,
+            "download": download,
+            "quantize": quantize,
+            "off_peak": {
+                "is_off_peak_now": is_off_peak(),
+                "next_window": off_peak_window,
+            },
+            "scheduling": defer,
+        }
 
     @app.get("/admin/small-models/tasks")
     async def small_models_tasks(request: Request, model: str) -> dict[str, object]:
@@ -536,6 +582,29 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         from fastapi.responses import Response
 
         return Response(content=svg_output, media_type="image/svg+xml")
+
+    @app.get("/admin/small-models/report")
+    async def small_models_report(request: Request, model: str, compare: str | None = None) -> dict[str, object]:
+        from general_ludd.small_models.benchmark_report import generate_report
+        from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
+
+        model_ids = [model]
+        if compare:
+            model_ids.append(compare)
+
+        capability_store: dict[str, list[dict[str, object]]] = request.app.state._sm_capability_store
+        report_store = CapabilityEvidenceStore.__new__(CapabilityEvidenceStore)
+        report_store._path = ""
+        report_store._lock = None
+        report_store._records = []
+        for mid in model_ids:
+            records = capability_store.get(f"cap:{mid}", [])
+            for rec in records:
+                report_store._records.append(dict(rec))
+
+        report = generate_report(model_ids, report_store, include_svg=True)
+        result = _render_report_to_json(report)
+        return cast(dict[str, object], result)
 
     @app.post("/admin/small-models/compare")
     async def small_models_compare(request: Request) -> dict[str, object]:

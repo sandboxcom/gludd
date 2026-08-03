@@ -547,6 +547,12 @@ init: setup-dirs
 sync:
 	@$(UV) sync --locked
 
+sync-local-inference:
+	@$(UV) sync --locked --extra local-inference
+
+sync-llama-cpp:
+	@$(UV) pip install "llama-cpp-python>=0.1.0-beta.2"
+
 # Regenerate uv.lock from pyproject (after adding/removing a dependency) and
 # install it. Use this instead of `sync` when pyproject deps changed.
 relock:

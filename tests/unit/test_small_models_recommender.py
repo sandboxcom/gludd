@@ -152,6 +152,8 @@ def test_model_recommendation_dataclass_shape() -> None:
         task_kind="context_compaction",
         role=TaskRole.COMPACTOR,
         score=0.85,
+        cost_score=0.9,
+        estimated_cost_usd_per_hour=0.003,
         evidence_count=3,
         hardware_fit="fits",
         evidence_details=[{"passed_cases": 24, "total_cases": 24}],
@@ -159,6 +161,8 @@ def test_model_recommendation_dataclass_shape() -> None:
     assert rec.model_profile_id == "local-qwen-2.5"
     assert rec.task_kind == "context_compaction"
     assert rec.score == 0.85
+    assert rec.cost_score == 0.9
+    assert rec.estimated_cost_usd_per_hour == 0.003
     assert rec.role == TaskRole.COMPACTOR
 
 
@@ -170,6 +174,8 @@ def test_model_recommendation_is_frozen() -> None:
         task_kind="context_compaction",
         role=TaskRole.COMPACTOR,
         score=0.85,
+        cost_score=0.9,
+        estimated_cost_usd_per_hour=0.003,
         evidence_count=3,
         hardware_fit="fits",
         evidence_details=[],
