@@ -8,7 +8,7 @@ Priority: O(1) push/pop (ordered input), O(1) peek-min/peek-max.
 
 from __future__ import annotations
 
-from typing import Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 T = TypeVar("T")
 
@@ -68,7 +68,7 @@ class Deep(Generic[T]):
     def __init__(
         self,
         prefix: list[T],
-        middle: Empty | Single | Deep,
+        middle: Empty | Single[Any] | Deep[Any],
         suffix: list[T],
     ) -> None:
         self.prefix = prefix
@@ -82,7 +82,7 @@ class Deep(Generic[T]):
         return self._size
 
 
-FingerTree = Empty | Single[T] | Deep[T]
+FingerTree = Empty | Single[Any] | Deep[Any]
 
 
 def _elem_count(x: object) -> int:
@@ -93,7 +93,7 @@ def _elem_count(x: object) -> int:
     return 1
 
 
-def _deconstruct_first(item: object) -> tuple[object, list]:
+def _deconstruct_first(item: object) -> tuple[object, list[Any]]:
     if isinstance(item, Node2):
         return item.a, [item.b]
     if isinstance(item, Node3):
@@ -101,7 +101,7 @@ def _deconstruct_first(item: object) -> tuple[object, list]:
     return item, []
 
 
-def _deconstruct_last(item: object) -> tuple[object, list]:
+def _deconstruct_last(item: object) -> tuple[object, list[Any]]:
     if isinstance(item, Node3):
         return item.c, [item.a, item.b]
     if isinstance(item, Node2):
@@ -109,7 +109,7 @@ def _deconstruct_last(item: object) -> tuple[object, list]:
     return item, []
 
 
-def _deep_size(m: Empty | Single | Deep) -> int:
+def _deep_size(m: Empty | Single[Any] | Deep[Any]) -> int:
     if isinstance(m, Empty):
         return 0
     if isinstance(m, Single):
@@ -118,13 +118,13 @@ def _deep_size(m: Empty | Single | Deep) -> int:
         return sum(_elem_count(x) for x in m.prefix) + _deep_size(m.middle) + sum(_elem_count(x) for x in m.suffix)
 
 
-def _tree_to_list(z: FingerTree) -> list:
-    result: list = []
+def _tree_to_list(z: FingerTree) -> list[Any]:
+    result: list[Any] = []
     _preorder(z, result)
     return result
 
 
-def _preorder(z: FingerTree, out: list) -> None:
+def _preorder(z: FingerTree, out: list[Any]) -> None:
     if isinstance(z, Empty):
         return
     if isinstance(z, Single):
@@ -152,7 +152,7 @@ def _preorder(z: FingerTree, out: list) -> None:
                 out.append(x)
 
 
-def _preorder_flatten(node: Node2 | Node3, out: list) -> None:
+def _preorder_flatten(node: Node2[Any] | Node3[Any], out: list[Any]) -> None:
     for x in node.to_list():
         if isinstance(x, (Node2, Node3)):
             _preorder_flatten(x, out)
@@ -160,9 +160,9 @@ def _preorder_flatten(node: Node2 | Node3, out: list) -> None:
             out.append(x)
 
 
-def _nodes_of(prefix: list, suffix: list) -> list:
+def _nodes_of(prefix: list[Any], suffix: list[Any]) -> list[Any]:
     all_items = list(prefix) + list(suffix)
-    result: list = []
+    result: list[Any] = []
     i = 0
     n = len(all_items)
     while i < n:
@@ -200,8 +200,8 @@ def is_empty(z: FingerTree) -> bool:
     return isinstance(z, Empty)
 
 
-def _digit_to_leaves(items: list) -> list:
-    out: list = []
+def _digit_to_leaves(items: list[Any]) -> list[Any]:
+    out: list[Any] = []
     for x in items:
         if isinstance(x, Node2):
             out.extend(_digit_to_leaves([x.a, x.b]))
@@ -223,7 +223,7 @@ def push_left(z: FingerTree, v: T) -> Single[T] | Deep[T]:
     if isinstance(z, Single):
         return Deep([v], Empty(), [z.v])
     if isinstance(z, Deep):
-        pf: list = z.prefix
+        pf: list[Any] = z.prefix
         if len(pf) >= 4:
             return Deep(
                 [v, pf[0]],
@@ -234,7 +234,9 @@ def push_left(z: FingerTree, v: T) -> Single[T] | Deep[T]:
     raise TypeError(f"Unexpected tree shape: {z!r}")
 
 
-def _push_left_deep(m: Empty | Single | Deep, node: Node2 | Node3) -> Empty | Single | Deep:
+def _push_left_deep(
+    m: Empty | Single[Any] | Deep[Any], node: Node2[Any] | Node3[Any]
+) -> Empty | Single[Any] | Deep[Any]:
     if isinstance(m, Empty):
         return Single(node)
     if isinstance(m, Single):
@@ -251,13 +253,13 @@ def _push_left_deep(m: Empty | Single | Deep, node: Node2 | Node3) -> Empty | Si
     raise TypeError(f"Unexpected middle shape: {m!r}")
 
 
-def pop_left(z: FingerTree) -> tuple[T, FingerTree]:
+def pop_left(z: FingerTree) -> tuple[Any, FingerTree]:
     if isinstance(z, Empty):
         raise IndexError("pop from empty finger tree")
     if isinstance(z, Single):
         return z.v, Empty()
     if isinstance(z, Deep):
-        pf: list = z.prefix
+        pf: list[Any] = z.prefix
         first = pf[0]
         val, extra = _deconstruct_first(first)
         rest = pf[1:]
@@ -268,7 +270,7 @@ def pop_left(z: FingerTree) -> tuple[T, FingerTree]:
     raise TypeError(f"Unexpected tree shape: {z!r}")
 
 
-def _absorb_left(m: Empty | Single | Deep, suffix: list) -> FingerTree:
+def _absorb_left(m: Empty | Single[Any] | Deep[Any], suffix: list[Any]) -> FingerTree:
     if isinstance(m, Empty):
         if not suffix:
             return Empty()
@@ -292,7 +294,7 @@ def _absorb_left(m: Empty | Single | Deep, suffix: list) -> FingerTree:
     return Empty()
 
 
-def _parts_to_tree(parts: list) -> FingerTree:
+def _parts_to_tree(parts: list[Any]) -> FingerTree:
     if not parts:
         return Empty()
     if len(parts) == 1:
@@ -302,7 +304,7 @@ def _parts_to_tree(parts: list) -> FingerTree:
     return Deep(parts[:2], Empty(), parts[2:])
 
 
-def peek_left(z: FingerTree) -> T:
+def peek_left(z: FingerTree) -> Any:
     if isinstance(z, Empty):
         raise IndexError("peek from empty finger tree")
     if isinstance(z, Single):
@@ -333,7 +335,7 @@ def push_right(z: FingerTree, v: T) -> Single[T] | Deep[T]:
     if isinstance(z, Single):
         return Deep([z.v], Empty(), [v])
     if isinstance(z, Deep):
-        sf: list = z.suffix
+        sf: list[Any] = z.suffix
         if len(sf) >= 4:
             return Deep(
                 z.prefix,
@@ -344,7 +346,9 @@ def push_right(z: FingerTree, v: T) -> Single[T] | Deep[T]:
     raise TypeError(f"Unexpected tree shape: {z!r}")
 
 
-def _push_right_deep(m: Empty | Single | Deep, node: Node2 | Node3) -> Empty | Single | Deep:
+def _push_right_deep(
+    m: Empty | Single[Any] | Deep[Any], node: Node2[Any] | Node3[Any]
+) -> Empty | Single[Any] | Deep[Any]:
     if isinstance(m, Empty):
         return Single(node)
     if isinstance(m, Single):
@@ -361,13 +365,13 @@ def _push_right_deep(m: Empty | Single | Deep, node: Node2 | Node3) -> Empty | S
     raise TypeError(f"Unexpected middle shape: {m!r}")
 
 
-def pop_right(z: FingerTree) -> tuple[T, FingerTree]:
+def pop_right(z: FingerTree) -> tuple[Any, FingerTree]:
     if isinstance(z, Empty):
         raise IndexError("pop from empty finger tree")
     if isinstance(z, Single):
         return z.v, Empty()
     if isinstance(z, Deep):
-        sf: list = z.suffix
+        sf: list[Any] = z.suffix
         last = sf[-1]
         val, extra = _deconstruct_last(last)
         rest = sf[:-1]
@@ -378,7 +382,7 @@ def pop_right(z: FingerTree) -> tuple[T, FingerTree]:
     raise TypeError(f"Unexpected tree shape: {z!r}")
 
 
-def _absorb_right(prefix: list, m: Empty | Single | Deep) -> FingerTree:
+def _absorb_right(prefix: list[Any], m: Empty | Single[Any] | Deep[Any]) -> FingerTree:
     if isinstance(m, Empty):
         if not prefix:
             return Empty()
@@ -402,7 +406,7 @@ def _absorb_right(prefix: list, m: Empty | Single | Deep) -> FingerTree:
     return Empty()
 
 
-def peek_right(z: FingerTree) -> T:
+def peek_right(z: FingerTree) -> Any:
     if isinstance(z, Empty):
         raise IndexError("peek from empty finger tree")
     if isinstance(z, Single):
@@ -452,11 +456,11 @@ def concat(t1: FingerTree, t2: FingerTree) -> FingerTree:
 
 
 def _merge_middles(
-    m1: Empty | Single | Deep,
-    s1: list,
-    p2: list,
-    m2: Empty | Single | Deep,
-) -> Empty | Single | Deep:
+    m1: Empty | Single[Any] | Deep[Any],
+    s1: list[Any],
+    p2: list[Any],
+    m2: Empty | Single[Any] | Deep[Any],
+) -> Empty | Single[Any] | Deep[Any]:
     nodes = _nodes_of(s1, p2)
     result = m1
     for n in nodes:
@@ -464,7 +468,9 @@ def _merge_middles(
     return _merge_trees(result, m2)
 
 
-def _merge_trees(a: Empty | Single | Deep, b: Empty | Single | Deep) -> Empty | Single | Deep:
+def _merge_trees(
+    a: Empty | Single[Any] | Deep[Any], b: Empty | Single[Any] | Deep[Any]
+) -> Empty | Single[Any] | Deep[Any]:
     if isinstance(a, Empty):
         return b
     if isinstance(b, Empty):
@@ -486,7 +492,7 @@ def _merge_trees(a: Empty | Single | Deep, b: Empty | Single | Deep) -> Empty | 
 # ---------------------------------------------------------------------------
 
 
-def get(z: FingerTree, idx: int) -> T:
+def get(z: FingerTree, idx: int) -> Any:
     sz = size(z)
     if idx < 0:
         idx += sz
@@ -495,7 +501,7 @@ def get(z: FingerTree, idx: int) -> T:
     return _get_index(z, idx)
 
 
-def _get_index(z: FingerTree, idx: int) -> T:
+def _get_index(z: FingerTree, idx: int) -> Any:
     if isinstance(z, Single):
         return _get_from_value(z.v, idx)
     if isinstance(z, Deep):
@@ -503,7 +509,7 @@ def _get_index(z: FingerTree, idx: int) -> T:
     raise IndexError("index out of range")
 
 
-def _get_from_value(v: object, idx: int) -> T:
+def _get_from_value(v: object, idx: int) -> Any:
     if isinstance(v, Node2):
         if idx == 0:
             return _get_from_value(v.a, 0) if idx < _elem_count(v.a) else _get_from_value(v.b, 0)
@@ -524,7 +530,7 @@ def _get_from_value(v: object, idx: int) -> T:
     raise IndexError("index out of range")
 
 
-def _get_deep(z: Deep, idx: int) -> T:
+def _get_deep(z: Deep[Any], idx: int) -> Any:
     offset = 0
     for x in z.prefix:
         ec = _elem_count(x)
@@ -611,7 +617,7 @@ def _split_at(z: FingerTree, idx: int) -> tuple[FingerTree, FingerTree]:
     return Empty(), z
 
 
-def _split_value(v: object, pos: int) -> tuple[list, list]:
+def _split_value(v: object, pos: int) -> tuple[list[Any], list[Any]]:
     if isinstance(v, Node2):
         left_sz = _elem_count(v.a)
         if pos < left_sz:
@@ -635,7 +641,7 @@ def _split_value(v: object, pos: int) -> tuple[list, list]:
     return [v], []
 
 
-def _build_deep(prefix: list, middle: Empty | Single | Deep, suffix: list) -> FingerTree:
+def _build_deep(prefix: list[Any], middle: Empty | Single[Any] | Deep[Any], suffix: list[Any]) -> FingerTree:
     if not prefix and isinstance(middle, Empty) and not suffix:
         return Empty()
     if not prefix and isinstance(middle, Empty) and len(suffix) == 1:

@@ -8,23 +8,21 @@ Pure-Python, stdlib only.
 from __future__ import annotations
 
 import heapq
-from typing import Generic, TypeVar
+from typing import TypeVar
 
-from general_ludd.algorithms.splay_tree import Comparable
-
-K = TypeVar("K", bound=Comparable)
+K = TypeVar("K", bound=float)
 _Point = tuple[K, ...]
 
 
-class KDNode(Generic[K]):
+class KDNode:
     __slots__ = ("axis", "left", "point", "right")
 
     def __init__(
         self,
-        point: _Point[K],
+        point: _Point[float],
         axis: int,
-        left: KDNode[K] | None = None,
-        right: KDNode[K] | None = None,
+        left: KDNode | None = None,
+        right: KDNode | None = None,
     ) -> None:
         self.point = point
         self.axis = axis
@@ -32,7 +30,7 @@ class KDNode(Generic[K]):
         self.right = right
 
 
-def _build(points: list[_Point[K]], depth: int = 0) -> KDNode[K] | None:
+def _build(points: list[_Point[float]], depth: int = 0) -> KDNode | None:
     if not points:
         return None
     k = len(points[0])
@@ -47,15 +45,15 @@ def _build(points: list[_Point[K]], depth: int = 0) -> KDNode[K] | None:
     )
 
 
-def _squared_dist(a: _Point[K], b: _Point[K]) -> float:
+def _squared_dist(a: _Point[float], b: _Point[float]) -> float:
     return sum((ai - bi) ** 2 for ai, bi in zip(a, b, strict=False))
 
 
 def _nn(
-    node: KDNode[K] | None,
-    target: _Point[K],
-    best: tuple[float, _Point[K] | None],
-) -> tuple[float, _Point[K] | None]:
+    node: KDNode | None,
+    target: _Point[float],
+    best: tuple[float, _Point[float] | None],
+) -> tuple[float, _Point[float] | None]:
     if node is None:
         return best
 
@@ -78,11 +76,11 @@ def _nn(
 
 
 def _knn(
-    node: KDNode[K] | None,
-    target: _Point[K],
+    node: KDNode | None,
+    target: _Point[float],
     k: int,
-    heap: list[tuple[float, _Point[K]]],
-) -> list[tuple[float, _Point[K]]]:
+    heap: list[tuple[float, _Point[float]]],
+) -> list[tuple[float, _Point[float]]]:
     if node is None:
         return heap
 
@@ -107,11 +105,11 @@ def _knn(
 
 
 def _range_search(
-    node: KDNode[K] | None,
-    lower: _Point[K],
-    upper: _Point[K],
-    results: list[_Point[K]],
-) -> list[_Point[K]]:
+    node: KDNode | None,
+    lower: _Point[float],
+    upper: _Point[float],
+    results: list[_Point[float]],
+) -> list[_Point[float]]:
     if node is None:
         return results
 
@@ -129,10 +127,10 @@ def _range_search(
     return results
 
 
-class KDTree(Generic[K]):
+class KDTree:
     __slots__ = ("_k", "_root")
 
-    def __init__(self, points: list[_Point[K]]) -> None:
+    def __init__(self, points: list[_Point[float]]) -> None:
         if not points:
             raise ValueError("must provide at least one point")
         k = len(points[0])
@@ -145,13 +143,13 @@ class KDTree(Generic[K]):
     def k(self) -> int:
         return self._k
 
-    def nearest(self, target: _Point[K]) -> _Point[K] | None:
+    def nearest(self, target: _Point[float]) -> _Point[float] | None:
         if len(target) != self._k:
             raise ValueError("target dimensionality mismatch")
         _, pt = _nn(self._root, target, (float("inf"), None))
         return pt
 
-    def knn(self, target: _Point[K], k: int) -> list[_Point[K]]:
+    def knn(self, target: _Point[float], k: int) -> list[_Point[float]]:
         if len(target) != self._k:
             raise ValueError("target dimensionality mismatch")
         if k <= 0:
@@ -159,11 +157,11 @@ class KDTree(Generic[K]):
         heap = _knn(self._root, target, k, [])
         return [pt for _, pt in sorted(heap, key=lambda x: -x[0])]
 
-    def range_search(self, lower: _Point[K], upper: _Point[K]) -> list[_Point[K]]:
+    def range_search(self, lower: _Point[float], upper: _Point[float]) -> list[_Point[float]]:
         if len(lower) != self._k or len(upper) != self._k:
             raise ValueError("bound dimensionality mismatch")
         return _range_search(self._root, lower, upper, [])
 
 
-def build_kdtree(points: list[_Point[K]]) -> KDTree[K]:
+def build_kdtree(points: list[_Point[float]]) -> KDTree:
     return KDTree(points)

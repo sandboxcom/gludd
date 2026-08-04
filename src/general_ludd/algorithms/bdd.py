@@ -46,7 +46,9 @@ def _repr(x: object) -> str:
         return "0"
     if x == 1:
         return "1"
-    return f"<node var={x.var}>"  # type: ignore[union-attr]
+    if isinstance(x, BDDNode):
+        return f"<node var={x.var}>"
+    return f"<node {x}>"
 
 
 def id_of(x: object) -> int:
@@ -54,7 +56,9 @@ def id_of(x: object) -> int:
         return -1
     if x == 1:
         return -2
-    return id(x)  # type: ignore[arg-type]
+    if isinstance(x, BDDNode):
+        return id(x)
+    return hash(x)
 
 
 class BDD:
@@ -297,7 +301,8 @@ class BDD:
     # ── satcount ───────────────────────────────────────────────────────────
 
     def satcount(self, u: object) -> int:
-        return self._satcount(u, {})  # type: ignore[no-any-return]
+        result: int = self._satcount(u, {})
+        return result
 
     def _satcount(self, u: object, memo: dict[object, int]) -> int:
         if u == 0:

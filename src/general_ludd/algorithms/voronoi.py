@@ -12,18 +12,16 @@ from __future__ import annotations
 
 import heapq
 import math
+from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Generic, TypeVar
 
 # ---------------------------------------------------------------------------
 # Geometry primitives
 # ---------------------------------------------------------------------------
 
-T = TypeVar("T", bound="Point")
-
 
 @dataclass(frozen=True, slots=True, order=True)
-class Point(Generic[T]):
+class Point:
     """Immutable 2-d point with lexicographic ordering (y, then x)."""
 
     x: float
@@ -86,10 +84,10 @@ class Triangle:
     b: int
     c: int
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[int]:
         return iter((self.a, self.b, self.c))
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash((self.a, self.b, self.c))
 
     def edges(self) -> list[tuple[int, int]]:
@@ -326,7 +324,7 @@ class Voronoi:
         return min(r1, r2)
 
     def _find_arc(self, root: _Arc, x: float, sweep_y: float) -> _Arc | None:
-        cur = root
+        cur: _Arc | None = root
         while cur is not None:
             left = float("-inf")
             right = float("inf")

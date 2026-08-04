@@ -11,7 +11,7 @@ from __future__ import annotations).
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, TypeVar, cast
 
 T = TypeVar("T")
 
@@ -123,7 +123,7 @@ class PersistentVector(Generic[T]):
     @staticmethod
     def from_iterable(items: Iterable[T]) -> PersistentVector[T]:
         """Build a persistent vector from an iterable."""
-        tv = TransientVector.empty()
+        tv: TransientVector[T] = TransientVector.empty()
         for item in items:
             tv = tv.conj(item)
         return tv.persistent()
@@ -133,7 +133,7 @@ class PersistentVector(Generic[T]):
     def __len__(self) -> int:
         return self._cnt
 
-    def __getitem__(self, index: int) -> T:
+    def __getitem__(self, index: int) -> Any:
         if index < 0:
             index += self._cnt
         if not (0 <= index < self._cnt):
@@ -141,7 +141,7 @@ class PersistentVector(Generic[T]):
         arr = self._array_for(index)
         return arr[index & _MASK]
 
-    def __iter__(self) -> Iterator[T]:
+    def __iter__(self) -> Iterator[Any]:
         for i in range(self._cnt):
             yield self[i]
 
@@ -237,7 +237,7 @@ class PersistentVector(Generic[T]):
     def peek(self) -> T | None:
         if self._cnt == 0:
             return None
-        return self[self._cnt - 1]
+        return cast(T, self[self._cnt - 1])
 
     def _array_for(self, index: int) -> list[Any]:
         if index >= _tailoff(self._cnt):
@@ -401,7 +401,7 @@ class TransientVector(Generic[T]):
     def __len__(self) -> int:
         return self._cnt
 
-    def __getitem__(self, index: int) -> T:
+    def __getitem__(self, index: int) -> Any:
         if index < 0:
             index += self._cnt
         if not (0 <= index < self._cnt):
