@@ -2,9 +2,16 @@ from __future__ import annotations
 
 import math
 import random
-from typing import Generic, TypeVar
+from collections.abc import Iterator
+from typing import Generic, Protocol, TypeVar
 
-K = TypeVar("K")
+
+class _Comparable(Protocol):
+    def __lt__(self, other: _Comparable) -> bool: ...
+    def __le__(self, other: _Comparable) -> bool: ...
+
+
+K = TypeVar("K", bound=_Comparable)
 V = TypeVar("V")
 
 
@@ -28,10 +35,11 @@ class SkipList(Generic[K, V]):
 
     def __init__(self) -> None:
         self._max_level: int = 1
-        self._head: _SkipNode[K, V] = _SkipNode(key=None, value=None, level=self._max_level)  # type: ignore[arg-type]
+        sentinel = _SkipNode.__new__(_SkipNode)
+        sentinel.forward = [None]
+        self._head: _SkipNode[K, V] = sentinel
         self._size: int = 0
         self._level_count: int = 1
-        self._sentinel_key: K = self._head.key  # type: ignore[assignment]
 
     def _random_level(self) -> int:
         level = 1
@@ -49,15 +57,18 @@ class SkipList(Generic[K, V]):
 
     def insert(self, key: K, value: V) -> None:
         update: list[_SkipNode[K, V] | None] = [None] * self._level_count
-        current = self._head
+        current: _SkipNode[K, V] | None = self._head
         for i in range(self._level_count - 1, -1, -1):
-            while current.forward[i] is not None and current.forward[i].key < key:  # type: ignore[operator]
-                current = current.forward[i]
+            while current is not None:
+                nxt = current.forward[i]
+                if nxt is not None and nxt.key < key:
+                    current = nxt
+                else:
+                    break
             update[i] = current
-
-        current = current.forward[0] if current.forward[0] is not None else None
-        if current is not None and current.key == key:  # type: ignore[operator]
-            current.value = value
+        nxt0: _SkipNode[K, V] | None = current.forward[0] if current is not None else None
+        if nxt0 is not None and nxt0.key == key:
+            nxt0.value = value
             return
 
         new_level = self._random_level()
@@ -69,36 +80,47 @@ class SkipList(Generic[K, V]):
 
         node = _SkipNode(key, value, new_level)
         for i in range(new_level):
-            node.forward[i] = update[i].forward[i] if update[i] is not None else None
-            if update[i] is not None:
-                update[i].forward[i] = node
+            u = update[i]
+            if u is not None:
+                node.forward[i] = u.forward[i]
+                u.forward[i] = node
+            else:
+                node.forward[i] = None
         self._size += 1
 
     def search(self, key: K) -> V | None:
-        current = self._head
+        current: _SkipNode[K, V] | None = self._head
         for i in range(self._level_count - 1, -1, -1):
-            while current.forward[i] is not None and current.forward[i].key < key:  # type: ignore[operator]
-                current = current.forward[i]
-        current = current.forward[0] if current.forward[0] is not None else None
-        if current is not None and current.key == key:  # type: ignore[operator]
-            return current.value
+            while current is not None:
+                nxt = current.forward[i]
+                if nxt is not None and nxt.key < key:
+                    current = nxt
+                else:
+                    break
+        nxt0 = current.forward[0] if current is not None else None
+        if nxt0 is not None and nxt0.key == key:
+            return nxt0.value
         return None
 
     def delete(self, key: K) -> bool:
         update: list[_SkipNode[K, V] | None] = [None] * self._level_count
-        current = self._head
+        current: _SkipNode[K, V] | None = self._head
         for i in range(self._level_count - 1, -1, -1):
-            while current.forward[i] is not None and current.forward[i].key < key:  # type: ignore[operator]
-                current = current.forward[i]
+            while current is not None:
+                nxt = current.forward[i]
+                if nxt is not None and nxt.key < key:
+                    current = nxt
+                else:
+                    break
             update[i] = current
-
-        current = current.forward[0] if current.forward[0] is not None else None
-        if current is None or current.key != key:  # type: ignore[operator]
+        nxt0 = current.forward[0] if current is not None else None
+        if nxt0 is None or nxt0.key != key:
             return False
 
         for i in range(self._level_count):
-            if update[i] is not None and update[i].forward[i] == current:
-                update[i].forward[i] = current.forward[i]
+            u = update[i]
+            if u is not None and u.forward[i] == nxt0:
+                u.forward[i] = nxt0.forward[i]
 
         while self._level_count > 1 and self._head.forward[self._level_count - 1] is None:
             self._level_count -= 1
@@ -109,21 +131,21 @@ class SkipList(Generic[K, V]):
 
     def range_query(self, low: K, high: K) -> list[tuple[K, V]]:
         result: list[tuple[K, V]] = []
-        current = self._head.forward[0]
-        while current is not None and current.key < low:  # type: ignore[operator]
+        current: _SkipNode[K, V] | None = self._head.forward[0]
+        while current is not None and current.key < low:
             current = current.forward[0]
-        while current is not None and current.key <= high:  # type: ignore[operator]
+        while current is not None and current.key <= high:
             result.append((current.key, current.value))
             current = current.forward[0]
         return result
 
-    def __iter__(self):
-        current = self._head.forward[0]
+    def __iter__(self) -> Iterator[tuple[K, V]]:
+        current: _SkipNode[K, V] | None = self._head.forward[0]
         while current is not None:
             yield (current.key, current.value)
             current = current.forward[0]
 
-    def __reversed__(self):
+    def __reversed__(self) -> Iterator[tuple[K, V]]:
         keys_vals: list[tuple[K, V]] = list(self)
         yield from reversed(keys_vals)
 
