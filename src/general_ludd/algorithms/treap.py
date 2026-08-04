@@ -13,9 +13,16 @@ from __future__ import annotations
 
 import random
 from collections.abc import Callable
-from typing import Generic, TypeVar
+from typing import Generic, Protocol, TypeVar
 
-K = TypeVar("K")
+
+class Comparable(Protocol):
+    def __lt__(self, other: object, /) -> bool: ...
+    def __gt__(self, other: object, /) -> bool: ...
+    def __le__(self, other: object, /) -> bool: ...
+
+
+K = TypeVar("K", bound=Comparable)
 V = TypeVar("V")
 
 
@@ -146,8 +153,8 @@ def _inorder(node: TreapNode[K, V] | None, out: list[tuple[K, V]]) -> None:
 
 def treap_split(root: TreapNode[K, V] | None, key: K) -> tuple[TreapNode[K, V] | None, TreapNode[K, V] | None]:
     """Split tree into (≤key, >key). Iterative — no recursion depth issues."""
-    left_parts: list[tuple[TreapNode[K, V] | None, int]] = []
-    right_parts: list[tuple[TreapNode[K, V] | None, int]] = []
+    left_parts: list[tuple[TreapNode[K, V], int]] = []
+    right_parts: list[tuple[TreapNode[K, V], int]] = []
     cur: TreapNode[K, V] | None = root
     while cur is not None:
         if cur.key <= key:
@@ -249,8 +256,8 @@ def _implicit_rotate_left(p: ImplicitNode[V]) -> ImplicitNode[V]:
 
 def implicit_split(root: ImplicitNode[V] | None, pos: int) -> tuple[ImplicitNode[V] | None, ImplicitNode[V] | None]:
     """Split so that left subtree contains exactly *pos* elements. Iterative."""
-    left_parts: list[tuple[ImplicitNode[V] | None, int]] = []
-    right_parts: list[tuple[ImplicitNode[V] | None, int]] = []
+    left_parts: list[tuple[ImplicitNode[V], int]] = []
+    right_parts: list[tuple[ImplicitNode[V], int]] = []
     cur: ImplicitNode[V] | None = root
     while cur is not None:
         left_sz = _implicit_size(cur.left)
