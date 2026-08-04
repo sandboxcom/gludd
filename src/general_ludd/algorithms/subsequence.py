@@ -9,10 +9,10 @@ import bisect
 from collections.abc import Sequence
 from typing import TypeVar
 
-T = TypeVar("T", bound=Sequence)
+T = TypeVar("T", bound=Sequence[object])
 
 
-def longest_common_subsequence(a: Sequence, b: Sequence) -> list:
+def longest_common_subsequence(a: Sequence[object], b: Sequence[object]) -> list[object]:
     """Return one longest common subsequence of sequences *a* and *b*.
 
     O(|a|·|b|) time and space via classic DP. Ties are broken by
@@ -29,7 +29,7 @@ def longest_common_subsequence(a: Sequence, b: Sequence) -> list:
                 row[j] = prev[j - 1] + 1
             else:
                 row[j] = max(prev[j], row[j - 1])
-    result: list = []
+    result: list[object] = []
     i, j = m, n
     while i > 0 and j > 0:
         if a[i - 1] == b[j - 1]:
@@ -44,7 +44,7 @@ def longest_common_subsequence(a: Sequence, b: Sequence) -> list:
     return result
 
 
-def lcs_length(a: Sequence, b: Sequence) -> int:
+def lcs_length(a: Sequence[object], b: Sequence[object]) -> int:
     """Return the length of the longest common subsequence. O(|a|·|b|)."""
     return len(longest_common_subsequence(a, b))
 
@@ -120,7 +120,7 @@ def lrs_length(s: str) -> int:
     return len(longest_repeated_subsequence(s))
 
 
-def shortest_common_supersequence(a: Sequence, b: Sequence) -> list:
+def shortest_common_supersequence(a: Sequence[object], b: Sequence[object]) -> list[object]:
     """Return one shortest common supersequence (SCS) that contains both
     *a* and *b* as subsequences. O(|a|·|b|).
 
@@ -128,7 +128,7 @@ def shortest_common_supersequence(a: Sequence, b: Sequence) -> list:
     """
     m, n = len(a), len(b)
     lcs_seq = longest_common_subsequence(a, b)
-    result: list = []
+    result: list[object] = []
     i = j = 0
     for c in lcs_seq:
         while i < m and a[i] != c:
@@ -145,13 +145,13 @@ def shortest_common_supersequence(a: Sequence, b: Sequence) -> list:
     return result
 
 
-def scs_length(a: Sequence, b: Sequence) -> int:
+def scs_length(a: Sequence[object], b: Sequence[object]) -> int:
     """Return the length of the SCS: |a|+|b|-|LCS(a,b)|."""
     return len(a) + len(b) - lcs_length(a, b)
 
 
 def needleman_wunsch(
-    a: Sequence, b: Sequence, match: int = 1, mismatch: int = -1, gap: int = -1
+    a: Sequence[object], b: Sequence[object], match: int = 1, mismatch: int = -1, gap: int = -1
 ) -> tuple[int, str, str]:
     """Needleman-Wunsch global sequence alignment.
 
@@ -196,7 +196,7 @@ def needleman_wunsch(
     return score, "".join(aligned_a), "".join(aligned_b)
 
 
-def alignment_score(a: Sequence, b: Sequence, match: int = 1, mismatch: int = -1, gap: int = -1) -> int:
+def alignment_score(a: Sequence[object], b: Sequence[object], match: int = 1, mismatch: int = -1, gap: int = -1) -> int:
     """Return the Needleman-Wunsch score. Convenience wrapper."""
     score, _, _ = needleman_wunsch(a, b, match, mismatch, gap)
     return score
