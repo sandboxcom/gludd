@@ -15,13 +15,12 @@ from unittest.mock import patch
 import pytest
 
 from general_ludd.small_models.hf_auth import (
+    _DEFAULT_TTL_SEC,
+    _OIDC_BUFFER_SEC,
     HfOidcAuth,
     OidcToken,
-    _OIDC_BUFFER_SEC,
-    _DEFAULT_TTL_SEC,
 )
 from general_ludd.small_models.oidc import acquire_oidc_token
-
 
 # ── helpers ────────────────────────────────────────────────────────────────
 
@@ -136,7 +135,9 @@ class TestTokenCaching:
         with patch.dict("os.environ", {"OIDC_TOKEN": "first"}, clear=True):
             t1 = auth.get_token()
         assert t1 == "first"
-        auth._cached.expires_at = time.time() - 1
+        cached = auth._cached
+        assert cached is not None
+        cached.expires_at = time.time() - 1
         with patch.dict("os.environ", {"OIDC_TOKEN": "second"}, clear=True):
             t2 = auth.get_token()
         assert t2 == "second"
@@ -161,7 +162,9 @@ class TestTokenExpiryRefresh:
         with patch.dict("os.environ", {"OIDC_TOKEN": "expiring_soon"}, clear=True):
             t1 = auth.get_token()
         assert t1 == "expiring_soon"
-        auth._cached.expires_at = time.time() + (_OIDC_BUFFER_SEC - 5)
+        cached = auth._cached
+        assert cached is not None
+        cached.expires_at = time.time() + (_OIDC_BUFFER_SEC - 5)
         with patch.dict("os.environ", {"OIDC_TOKEN": "refreshed"}, clear=True):
             t2 = auth.get_token()
         assert t2 == "refreshed"
@@ -171,10 +174,12 @@ class TestTokenExpiryRefresh:
         with patch.dict("os.environ", {"OIDC_TOKEN": "cached_token"}, clear=True):
             t1 = auth.get_token()
         assert t1 == "cached_token"
-        auth._cached.expires_at = time.time() + 120
+        cached = auth._cached
+        assert cached is not None
+        cached.expires_at = time.time() + 120
         with (
             patch.dict("os.environ", {}, clear=True),
-            patch.object(general_ludd.small_models.hf_auth, "acquire_oidc_token", return_value=None),
+            patch("general_ludd.small_models.hf_auth.acquire_oidc_token", return_value=None),
         ):
             t2 = auth.get_token()
         assert t2 == "cached_token"
@@ -183,7 +188,9 @@ class TestTokenExpiryRefresh:
         auth = HfOidcAuth(provider="env", token_ttl=1)
         with patch.dict("os.environ", {"OIDC_TOKEN": "old_token"}, clear=True):
             auth.get_token()
-        auth._cached.expires_at = time.time() - 10
+        cached = auth._cached
+        assert cached is not None
+        cached.expires_at = time.time() - 10
         with (
             patch.dict("os.environ", {}, clear=True),
             patch("general_ludd.small_models.oidc.acquire_oidc_token", return_value=None),
@@ -197,7 +204,9 @@ class TestTokenExpiryRefresh:
         with patch.dict("os.environ", {"OIDC_TOKEN": "new_token"}, clear=True):
             result = auth.refresh()
         assert result == "new_token"
-        assert auth._cached.token == "new_token"
+        cached = auth._cached
+        assert cached is not None
+        assert cached.token == "new_token"
 
     def test_invalidate_clears_cache(self):
         auth = HfOidcAuth(provider="env", token_ttl=3600)
@@ -214,7 +223,9 @@ class TestTokenExpiryRefresh:
             assert not auth.has_valid_token()
             auth.get_token()
             assert auth.has_valid_token()
-        auth._cached.expires_at = time.time() - 1
+        cached = auth._cached
+        assert cached is not None
+        cached.expires_at = time.time() - 1
         assert not auth.has_valid_token()
 
 
@@ -264,15 +275,17 @@ class TestMultiThreadConcurrentAccess:
     def test_concurrent_get_token_acquires_only_once(self):
         acquire_count = [0]
         lock = threading.Lock()
+        barrier = threading.Barrier(8)
 
-        def counting_acquire(*args, **kwargs):  # noqa: ANN002,ANN003
+        def counting_acquire(*args, **kwargs):
+            barrier.wait()
             with lock:
                 acquire_count[0] += 1
             time.sleep(0.05)
-            return "shared_token"
+            return OidcToken(token="shared_token", expires_at=time.time() + 3600, provider="aws")
 
         auth = HfOidcAuth(provider="aws", token_ttl=3600)
-        results = []
+        results: list[str | None] = []
 
         def worker():
             results.append(auth.get_token())
@@ -292,23 +305,35 @@ class TestMultiThreadConcurrentAccess:
         with patch.dict("os.environ", {"OIDC_TOKEN": "t1"}, clear=True):
             auth.get_token()
 
-        invalidation_seen = []
+        invalidation_seen: list[str] = []
+        read_ready = threading.Event()
+        invalidated = threading.Event()
 
         def reader():
+            read_ready.wait()
             if auth.has_valid_token():
                 invalidation_seen.append("valid")
             else:
                 invalidation_seen.append("invalid")
 
         def invalidator():
+            read_ready.wait()
             auth.invalidate()
+            invalidated.set()
 
         threads = [threading.Thread(target=reader) for _ in range(4)]
         threads.append(threading.Thread(target=invalidator))
         for t in threads:
             t.start()
-        for t in threads:
-            t.join()
+
+        time.sleep(0.02)
+        read_ready.set()
+        invalidated.wait(timeout=2)
+
+        main = threading.current_thread()
+        for t in threading.enumerate():
+            if t is not main and t.is_alive():
+                t.join(timeout=1)
 
         assert "invalid" in invalidation_seen
 
@@ -354,7 +379,9 @@ class TestInvalidationPropagation:
         auth = HfOidcAuth(provider="env", token_ttl=3600)
         with patch.dict("os.environ", {"OIDC_TOKEN": "stale"}, clear=True):
             auth.get_token()
-        auth._cached.expires_at = 0
+        cached = auth._cached
+        assert cached is not None
+        cached.expires_at = 0
         with patch.dict("os.environ", {"OIDC_TOKEN": "fresh"}, clear=True):
             token = auth.refresh()
         assert token == "fresh"
@@ -441,4 +468,6 @@ class TestE2EAcquireCache:
             token = auth.get_token()
         assert token is not None
         assert auth.has_valid_token()
-        assert auth._cached.provider == "custom_endpoint"
+        cached = auth._cached
+        assert cached is not None
+        assert cached.provider == "custom_endpoint"

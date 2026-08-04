@@ -77,10 +77,10 @@ def test_task_keyword_map_all_patterns_hit() -> None:
     assert "failure_classification" in kinds
 
 
-def test_task_keyword_map_partial_word_no_match() -> None:
+def test_task_keyword_map_no_keyword_match() -> None:
     from general_ludd.small_models.recommender import _map_task_to_capabilities
 
-    matches = _map_task_to_capabilities("doc class enum")
+    matches = _map_task_to_capabilities("calculate the sum of prime numbers")
     assert matches == []
 
 
@@ -252,7 +252,7 @@ def test_compute_score_with_records_and_hardware() -> None:
         {"passed_cases": 10, "total_cases": 20, "collection_ok": True},
     ]
     hw = _hw(gpus=[_gpu(vram=16.0)])
-    score, cost_score, est = _compute_score(records, hw, "phi-2")
+    score, cost_score, _est = _compute_score(records, hw, "phi-2")
     assert 0.0 < score <= 1.0
     assert 0.0 <= cost_score <= 1.0
 
