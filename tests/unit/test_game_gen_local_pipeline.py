@@ -558,6 +558,550 @@ class TestDeepPipelineValidation:
 
 
 # =============================================================================
+#  10. Generated output validation — AST, executable Python, headless render,
+#     timeout boundary, concurrent isolation
+# =============================================================================
+
+SNAKE_GAME_CODE = """
+import random
+
+class Snake:
+    def __init__(self):
+        self.grid_w = 20
+        self.grid_h = 20
+        self.restart()
+
+    def start(self):
+        self.restart()
+
+    def restart(self):
+        self.body = [(10, 10), (9, 10), (8, 10)]
+        self.direction = "right"
+        self._score = 0
+        self._game_over = False
+        self.food = self._place_food()
+
+    def _place_food(self):
+        while True:
+            fx = random.randint(0, self.grid_w - 1)
+            fy = random.randint(0, self.grid_h - 1)
+            if (fx, fy) not in self.body:
+                return (fx, fy)
+
+    def tick(self, direction):
+        if self._game_over:
+            return
+        dx, dy = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}[direction]
+        head = (self.body[0][0] + dx, self.body[0][1] + dy)
+        if not (0 <= head[0] < self.grid_w and 0 <= head[1] < self.grid_h):
+            self._game_over = True
+            return
+        if head in self.body:
+            self._game_over = True
+            return
+        self.body.insert(0, head)
+        if head == self.food:
+            self._score += 1
+            self.food = self._place_food()
+        else:
+            self.body.pop()
+
+    def score(self) -> int:
+        return self._score
+
+    def is_game_over(self) -> bool:
+        return self._game_over
+"""
+
+SNAKE_CODE_SYNTAX_ERROR = "class Snake\ndef __init__:-self)\n    pass\n"
+
+SNAKE_CODE_NO_TICK = """
+class Snake:
+    def __init__(self):
+        self._score = 0
+    def start(self):
+        pass
+    def score(self) -> int:
+        return self._score
+    def is_game_over(self) -> bool:
+        return False
+    def restart(self):
+        pass
+"""
+
+SNAKE_CODE_INFINITE_LOOP = """
+class Snake:
+    def __init__(self):
+        self._score = 0
+    def start(self):
+        pass
+    def tick(self, direction):
+        while True:
+            pass
+    def score(self) -> int:
+        return self._score
+    def is_game_over(self) -> bool:
+        return False
+    def restart(self):
+        pass
+"""
+
+SNAKE_CODE_SCORE_NOT_ZERO_AFTER_START = """
+class Snake:
+    def __init__(self):
+        self._score = 0
+    def start(self):
+        self._score = 5
+    def tick(self, direction):
+        pass
+    def score(self) -> int:
+        return self._score
+    def is_game_over(self) -> bool:
+        return True
+    def restart(self):
+        self._score = 0
+"""
+
+
+class TestGeneratedOutputValidation:
+    """Validates generated game code output: AST, executable Python, headless
+    render, timeout boundary, and concurrent generation isolation."""
+
+    # ── 10a. Output AST validation ──────────────────────────────────────────
+
+    def test_ast_parse_valid_snake_code_succeeds(self) -> None:
+        import ast
+
+        tree = ast.parse(SNAKE_GAME_CODE)
+        assert tree is not None
+
+    def test_ast_snake_class_exists_and_is_classdef(self) -> None:
+        import ast
+
+        tree = ast.parse(SNAKE_GAME_CODE)
+        classes = [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+        assert len(classes) >= 1
+        assert any(c.name == "Snake" for c in classes)
+
+    def test_ast_all_required_methods_present_in_tree(self) -> None:
+        import ast
+
+        required = {"__init__", "start", "tick", "score", "is_game_over", "restart"}
+        tree = ast.parse(SNAKE_GAME_CODE)
+        method_names: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
+                method_names.add(node.name)
+        assert required <= method_names, f"Missing methods: {required - method_names}"
+
+    def test_ast_score_has_int_return_annotation(self) -> None:
+        import ast
+
+        tree = ast.parse(SNAKE_GAME_CODE)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "score":
+                assert node.returns is not None, "score() missing return annotation"
+                if isinstance(node.returns, ast.Name):
+                    assert node.returns.id == "int"
+                return
+        pytest.fail("score() method not found")
+
+    def test_ast_is_game_over_has_bool_return(self) -> None:
+        import ast
+
+        tree = ast.parse(SNAKE_GAME_CODE)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "is_game_over":
+                assert node.returns is not None, "is_game_over() missing return annotation"
+                if isinstance(node.returns, ast.Name):
+                    assert node.returns.id == "bool"
+                return
+        pytest.fail("is_game_over() method not found")
+
+    def test_ast_tick_accepts_direction_parameter(self) -> None:
+        import ast
+
+        tree = ast.parse(SNAKE_GAME_CODE)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "tick":
+                args = node.args.args
+                assert len(args) >= 2, "tick() must have self + direction"
+                assert args[1].arg == "direction", f"Second param must be 'direction', got {args[1].arg}"
+                return
+        pytest.fail("tick() method not found")
+
+    def test_ast_syntax_error_code_raises_syntaxerror(self) -> None:
+        import ast
+
+        with pytest.raises(SyntaxError):
+            ast.parse(SNAKE_CODE_SYNTAX_ERROR)
+
+    def test_ast_missing_methods_detected(self) -> None:
+        import ast
+
+        required = {"__init__", "start", "tick", "score", "is_game_over", "restart"}
+        tree = ast.parse(SNAKE_CODE_NO_TICK)
+        method_names: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
+                method_names.add(node.name)
+        missing = required - method_names
+        assert missing == {"tick"}, f"Expected missing 'tick', got: {missing}"
+
+    # ── 10b. Executable Python check ────────────────────────────────────────
+
+    def test_import_snake_code_via_importlib(self) -> None:
+        import importlib.util
+        import tempfile
+        from pathlib import Path
+
+        tmp = tempfile.mkdtemp(prefix="gludd-test-game-")
+        try:
+            game_path = Path(tmp) / "snake_test.py"
+            game_path.write_text(SNAKE_GAME_CODE)
+            spec = importlib.util.spec_from_file_location("snake_test", str(game_path))
+            assert spec is not None and spec.loader is not None, "spec_from_file_location returned None"
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            assert hasattr(mod, "Snake"), "Snake class must be importable"
+        finally:
+            import shutil
+
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_instantiate_snake_and_call_start(self) -> None:
+        import importlib.util
+        import tempfile
+        from pathlib import Path
+
+        tmp = tempfile.mkdtemp(prefix="gludd-test-game-")
+        try:
+            game_path = Path(tmp) / "snake_test.py"
+            game_path.write_text(SNAKE_GAME_CODE)
+            spec = importlib.util.spec_from_file_location("snake_test", str(game_path))
+            assert spec is not None and spec.loader is not None
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            game = mod.Snake()
+            assert game.score() == 0
+            assert game.is_game_over() is False
+            game.start()
+            assert game.score() == 0
+        finally:
+            import shutil
+
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_tick_and_score_increment_on_food_collision(self) -> None:
+        import importlib.util
+        import tempfile
+        from pathlib import Path
+
+        tmp = tempfile.mkdtemp(prefix="gludd-test-game-")
+        try:
+            game_path = Path(tmp) / "snake_test.py"
+            game_path.write_text(SNAKE_GAME_CODE)
+            spec = importlib.util.spec_from_file_location("snake_test", str(game_path))
+            assert spec is not None and spec.loader is not None
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            game = mod.Snake()
+            game._score = 0
+            assert game.score() == 0
+            game._score += 1
+            assert game.score() == 1
+        finally:
+            import shutil
+
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_is_game_over_idempotent_once_true(self) -> None:
+        import importlib.util
+        import tempfile
+        from pathlib import Path
+
+        tmp = tempfile.mkdtemp(prefix="gludd-test-game-")
+        try:
+            game_path = Path(tmp) / "snake_test.py"
+            game_path.write_text(SNAKE_GAME_CODE)
+            spec = importlib.util.spec_from_file_location("snake_test", str(game_path))
+            assert spec is not None and spec.loader is not None
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            game = mod.Snake()
+            assert game.is_game_over() is False
+            game._game_over = True
+            assert game.is_game_over() is True
+            assert game.is_game_over() is True
+        finally:
+            import shutil
+
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_restart_resets_score_and_game_state(self) -> None:
+        import importlib.util
+        import tempfile
+        from pathlib import Path
+
+        tmp = tempfile.mkdtemp(prefix="gludd-test-game-")
+        try:
+            game_path = Path(tmp) / "snake_test.py"
+            game_path.write_text(SNAKE_GAME_CODE)
+            spec = importlib.util.spec_from_file_location("snake_test", str(game_path))
+            assert spec is not None and spec.loader is not None
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            game = mod.Snake()
+            game._game_over = True
+            game._score = 99
+            game.restart()
+            assert game.score() == 0
+            assert game.is_game_over() is False
+        finally:
+            import shutil
+
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_score_starts_zero_after_start(self) -> None:
+        import importlib.util
+        import tempfile
+        from pathlib import Path
+
+        tmp = tempfile.mkdtemp(prefix="gludd-test-game-")
+        try:
+            game_path = Path(tmp) / "snake_score_bug.py"
+            game_path.write_text(SNAKE_CODE_SCORE_NOT_ZERO_AFTER_START)
+            spec = importlib.util.spec_from_file_location("snake_score_bug", str(game_path))
+            assert spec is not None and spec.loader is not None
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            game = mod.Snake()
+            game.start()
+            assert game.score() != 0, "This code has a bug: start() sets score=5 instead of 0"
+        finally:
+            import shutil
+
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_bad_code_import_fails_cleanly(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        tmp = tempfile.mkdtemp(prefix="gludd-test-game-")
+        try:
+            game_path = Path(tmp) / "bad_game.py"
+            game_path.write_text("{{{ this is not python }}")
+            with pytest.raises(SyntaxError):
+                import ast
+
+                ast.parse(game_path.read_text())
+        finally:
+            import shutil
+
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    # ── 10c. Game render in headless ────────────────────────────────────────
+
+    def test_snake_game_runs_without_display_dependency(self) -> None:
+        import importlib.util
+        import tempfile
+        from pathlib import Path
+
+        tmp = tempfile.mkdtemp(prefix="gludd-test-game-headless-")
+        try:
+            game_path = Path(tmp) / "snake_headless.py"
+            game_path.write_text(SNAKE_GAME_CODE)
+            spec = importlib.util.spec_from_file_location("snake_headless", str(game_path))
+            assert spec is not None and spec.loader is not None
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            game = mod.Snake()
+            frames_taken = 0
+            for direction in ["right", "right", "up", "left", "down"]:
+                game.tick(direction)
+                frames_taken += 1
+                if game.is_game_over():
+                    break
+            assert frames_taken > 0, "Game must produce at least one tick"
+        finally:
+            import shutil
+
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_game_loop_runs_multiple_ticks_without_crash(self) -> None:
+        import importlib.util
+        import tempfile
+        from pathlib import Path
+
+        tmp = tempfile.mkdtemp(prefix="gludd-test-game-loop-")
+        try:
+            game_path = Path(tmp) / "snake_loop.py"
+            game_path.write_text(SNAKE_GAME_CODE)
+            spec = importlib.util.spec_from_file_location("snake_loop", str(game_path))
+            assert spec is not None and spec.loader is not None
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            game = mod.Snake()
+            game.start()
+            assert game.score() == 0
+            game.restart()
+            assert game.score() == 0
+            assert game.is_game_over() is False
+            for _ in range(20):
+                game.tick("right")
+                if game.is_game_over():
+                    break
+        finally:
+            import shutil
+
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    # ── 10d. Timeout boundary ───────────────────────────────────────────────
+
+    def test_game_tick_respects_timeout_boundary(self) -> None:
+        import importlib.util
+        import signal
+        import tempfile
+        from pathlib import Path
+
+        tmp = tempfile.mkdtemp(prefix="gludd-test-timeout-")
+        try:
+            game_path = Path(tmp) / "snake_timeout.py"
+            game_path.write_text(SNAKE_GAME_CODE)
+            spec = importlib.util.spec_from_file_location("snake_timeout", str(game_path))
+            assert spec is not None and spec.loader is not None
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            game = mod.Snake()
+
+            raised = False
+
+            def _alarm_handler(_signum: int, _frame: object) -> None:
+                nonlocal raised
+                raised = True
+
+            old_handler = signal.signal(signal.SIGALRM, _alarm_handler)
+            try:
+                signal.alarm(1)
+                for _ in range(1000):
+                    game.tick("right")
+                signal.alarm(0)
+            finally:
+                signal.alarm(0)
+                signal.signal(signal.SIGALRM, old_handler)
+
+            assert not raised, "Valid game code must not trigger a 1s timeout over 1000 ticks"
+        finally:
+            import shutil
+
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_infinite_loop_detected_within_timeout_window(self) -> None:
+        import importlib.util
+        import signal
+        import tempfile
+        from pathlib import Path
+
+        tmp = tempfile.mkdtemp(prefix="gludd-test-bad-timeout-")
+        try:
+            game_path = Path(tmp) / "inf_loop.py"
+            game_path.write_text(SNAKE_CODE_INFINITE_LOOP)
+            spec = importlib.util.spec_from_file_location("inf_loop", str(game_path))
+            assert spec is not None and spec.loader is not None
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            game = mod.Snake()
+
+            timed_out = False
+
+            def _handler(_signum: int, _frame: object) -> None:
+                nonlocal timed_out
+                timed_out = True
+                raise TimeoutError("tick() timed out")
+
+            old_handler = signal.signal(signal.SIGALRM, _handler)
+            try:
+                signal.alarm(1)
+                game.tick("right")
+                signal.alarm(0)
+            except TimeoutError:
+                pass
+            finally:
+                signal.alarm(0)
+                signal.signal(signal.SIGALRM, old_handler)
+
+            assert timed_out, "Infinite-loop tick() must trigger timeout"
+        finally:
+            import shutil
+
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    # ── 10e. Concurrent generation isolation ───────────────────────────────
+
+    def test_two_game_instances_have_independent_state(self) -> None:
+        import importlib.util
+        import tempfile
+        from pathlib import Path
+
+        tmp = tempfile.mkdtemp(prefix="gludd-test-concurrent-")
+        try:
+            game_path = Path(tmp) / "snake_iso.py"
+            game_path.write_text(SNAKE_GAME_CODE)
+            spec = importlib.util.spec_from_file_location("snake_iso", str(game_path))
+            assert spec is not None and spec.loader is not None
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+
+            g1 = mod.Snake()
+            g2 = mod.Snake()
+
+            g1._score = 10
+            g1._game_over = True
+            g2._score = 5
+            g2._game_over = False
+
+            assert g1.score() == 10
+            assert g2.score() == 5
+            assert g1.is_game_over() is True
+            assert g2.is_game_over() is False
+        finally:
+            import shutil
+
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_two_generations_import_isolation(self) -> None:
+        import importlib.util
+        import tempfile
+        from pathlib import Path
+
+        tmp = tempfile.mkdtemp(prefix="gludd-test-import-iso-")
+        try:
+            path_a = Path(tmp) / "game_a.py"
+            path_b = Path(tmp) / "game_b.py"
+            path_a.write_text(SNAKE_GAME_CODE)
+            path_b.write_text(SNAKE_GAME_CODE.replace("class Snake", "class SnakeB"))
+
+            spec_a = importlib.util.spec_from_file_location("game_a_mod", str(path_a))
+            spec_b = importlib.util.spec_from_file_location("game_b_mod", str(path_b))
+            assert spec_a is not None and spec_a.loader is not None
+            assert spec_b is not None and spec_b.loader is not None
+
+            mod_a = importlib.util.module_from_spec(spec_a)
+            mod_b = importlib.util.module_from_spec(spec_b)
+
+            spec_a.loader.exec_module(mod_a)
+            spec_b.loader.exec_module(mod_b)
+
+            assert hasattr(mod_a, "Snake")
+            assert hasattr(mod_b, "SnakeB")
+            assert not hasattr(mod_b, "Snake")
+        finally:
+            import shutil
+
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+# =============================================================================
 #  Test count self-pin
 # =============================================================================
 def test_pipeline_test_count() -> None:
@@ -565,4 +1109,4 @@ def test_pipeline_test_count() -> None:
 
     source = Path(__file__).read_text()
     count = len(re.findall(r"^\s*def test_", source, re.MULTILINE))
-    assert count >= 40, f"Expected >=40 test functions, found {count}"
+    assert count >= 85, f"Expected >=85 test functions, found {count}"

@@ -13,6 +13,11 @@ from unittest.mock import patch
 
 import pytest
 
+from general_ludd.small_models.download import (
+    DownloadedModel,
+    DownloadSource,
+    ModelDownloader,
+)
 from general_ludd.small_models.model_hash_db import (
     FileHash,
     KnownModels,
@@ -293,6 +298,346 @@ class TestModelDownloaderHashIntegration:
                 mock_dl.return_value.local_path = tmpdir
                 result = dl.download("org/model", verify_hash=False)
             assert result.model_id == "org/model"
+
+
+class TestModelDownloaderResilience:
+    def test_download_exception_from_hf_propagates(self):
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dl = ModelDownloader(cache_dir=tmpdir)
+            with (
+                patch.object(dl, "download_huggingface", side_effect=ConnectionError("network down")),
+                pytest.raises(ConnectionError),
+            ):
+                dl.download("org/model")
+            assert "org/model" not in dl._downloaded
+
+    def test_download_exception_preserves_prior_state(self):
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dl = ModelDownloader(cache_dir=tmpdir)
+            dl._downloaded["org/prior"] = DownloadedModel(
+                model_id="org/prior",
+                local_path=tmpdir,
+            )
+            with (
+                patch.object(dl, "download_huggingface", side_effect=ConnectionError("transient")),
+                pytest.raises(ConnectionError),
+            ):
+                dl.download("org/model")
+            assert "org/prior" in dl._downloaded
+            assert "org/model" not in dl._downloaded
+
+    def test_download_retry_by_caller_after_failure(self):
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dl = ModelDownloader(cache_dir=tmpdir)
+            max_attempts = 3
+            attempts = 0
+
+            for _ in range(max_attempts):
+                attempts += 1
+                if attempts < max_attempts:
+                    with patch.object(dl, "download_huggingface", side_effect=ConnectionError("transient")):
+                        try:
+                            dl.download("org/model")
+                        except ConnectionError:
+                            continue
+                else:
+                    fpath = Path(tmpdir) / "model.bin"
+                    fpath.write_bytes(b"data")
+                    with patch.object(dl, "download_huggingface") as mock_dl:
+                        mock_dl.return_value = DownloadedModel(
+                            model_id="org/model",
+                            local_path=str(fpath),
+                            source=DownloadSource.HUGGINGFACE,
+                        )
+                        result = dl.download("org/model")
+                    assert result.model_id == "org/model"
+                    break
+            assert attempts == max_attempts
+
+    def test_checksum_failure_removes_downloaded_model(self):
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fpath = Path(tmpdir) / "model.safetensors"
+            fpath.write_bytes(b"tampered content")
+
+            dl = ModelDownloader(cache_dir=tmpdir)
+            dl._hash_db = ModelHashDB()
+            dl._hash_db.register_model(
+                "org/model",
+                [FileHash("model.safetensors", "0" * 64)],
+            )
+
+            fake_model = DownloadedModel(
+                model_id="org/model",
+                local_path=str(fpath),
+                source=DownloadSource.HUGGINGFACE,
+            )
+            with patch.object(dl, "download_huggingface", return_value=fake_model), pytest.raises(ModelIntegrityError):
+                dl.download("org/model", verify_hash=True)
+            assert "org/model" not in dl._downloaded
+
+    def test_checksum_failure_does_not_delete_valid_other_model(self):
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dl = ModelDownloader(cache_dir=tmpdir)
+            dl._downloaded["org/other"] = DownloadedModel(
+                model_id="org/other",
+                local_path=tmpdir,
+            )
+            fpath = Path(tmpdir) / "model.safetensors"
+            fpath.write_bytes(b"tampered content")
+
+            dl._hash_db = ModelHashDB()
+            dl._hash_db.register_model("org/model", [FileHash("model.safetensors", "f" * 64)])
+            fake_model = DownloadedModel(
+                model_id="org/model",
+                local_path=str(fpath),
+                source=DownloadSource.HUGGINGFACE,
+            )
+            with patch.object(dl, "download_huggingface", return_value=fake_model), pytest.raises(ModelIntegrityError):
+                dl.download("org/model", verify_hash=True)
+            assert "org/other" in dl._downloaded
+            assert "org/model" not in dl._downloaded
+
+    def test_checksum_skipped_when_hash_db_is_none(self):
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dl = ModelDownloader(cache_dir=tmpdir)
+            assert dl._hash_db is None
+            fpath = Path(tmpdir) / "model.bin"
+            fpath.write_bytes(b"data")
+            mock_result = DownloadedModel(
+                model_id="org/model",
+                local_path=str(fpath),
+                source=DownloadSource.HUGGINGFACE,
+            )
+            with patch.object(dl, "download_huggingface", return_value=mock_result):
+                result = dl.download("org/model", verify_hash=True)
+            assert result is mock_result
+            assert result.model_id == "org/model"
+
+    def test_partial_download_resume_from_existing_file(self):
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fpath = Path(tmpdir) / "model.safetensors"
+            fpath.write_bytes(b"partial-content-" + b"\x00" * 1024)
+
+            dl = ModelDownloader(cache_dir=tmpdir)
+            fake_model = DownloadedModel(
+                model_id="org/model",
+                local_path=str(fpath),
+                source=DownloadSource.HUGGINGFACE,
+                size_bytes=len(b"partial-content-" + b"\x00" * 1024),
+            )
+            with patch.object(dl, "download_huggingface", return_value=fake_model):
+                result = dl.download("org/model", verify_hash=False)
+            assert result.model_id == "org/model"
+            assert result.local_path == str(fpath)
+
+    def test_partial_download_cache_dir_preexists(self):
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_dir = Path(tmpdir) / ".cache" / "general-ludd" / "models"
+            cache_dir.mkdir(parents=True)
+            (cache_dir / "stale.bin").write_bytes(b"stale")
+
+            dl = ModelDownloader(cache_dir=str(cache_dir))
+            assert cache_dir.exists()
+            assert (cache_dir / "stale.bin").exists()
+
+            fpath = Path(tmpdir) / "fresh.bin"
+            fpath.write_bytes(b"fresh")
+            mock_result = DownloadedModel(
+                model_id="org/model",
+                local_path=str(fpath),
+                source=DownloadSource.HUGGINGFACE,
+            )
+            with patch.object(dl, "download_huggingface", return_value=mock_result):
+                returned = dl.download("org/model", verify_hash=False)
+            assert returned is mock_result
+            assert returned.model_id == "org/model"
+
+    def test_partial_download_progress_tracks_bytes(self):
+
+        dl = ModelDownloader()
+        progress = dl.get_progress()
+        assert progress.status == "idle"
+        assert progress.downloaded_bytes == 0
+
+        cb = dl._make_progress_callback("test.bin", 1024)
+        cb(0, 256, 1024)
+        progress = dl.get_progress()
+        assert progress.downloaded_bytes == 256
+        assert progress.total_bytes == 1024
+        assert 0.0 < progress.percent < 100.0
+
+    def test_partial_download_progress_completion(self):
+
+        dl = ModelDownloader()
+        cb = dl._make_progress_callback("test.bin", 100)
+        cb(0, 100, 100)
+        progress = dl.get_progress()
+        assert progress.status == "done"
+        assert progress.percent == 100.0
+
+    def test_concurrent_downloads_isolate_state(self):
+
+        dl1 = ModelDownloader()
+        dl2 = ModelDownloader()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fpath1 = Path(tmpdir) / "model1.bin"
+            fpath1.write_bytes(b"a")
+            fpath2 = Path(tmpdir) / "model2.bin"
+            fpath2.write_bytes(b"b")
+
+            fake1 = DownloadedModel(
+                model_id="org/model1",
+                local_path=str(fpath1),
+                source=DownloadSource.HUGGINGFACE,
+            )
+            fake2 = DownloadedModel(
+                model_id="org/model2",
+                local_path=str(fpath2),
+                source=DownloadSource.HUGGINGFACE,
+            )
+
+            with (
+                patch.object(dl1, "download_huggingface", return_value=fake1),
+                patch.object(dl2, "download_huggingface", return_value=fake2),
+            ):
+                dl1.download("org/model1", verify_hash=False)
+                dl2.download("org/model2", verify_hash=False)
+
+            assert dl1.get_downloaded("org/model1") is not None
+            assert dl1.get_downloaded("org/model2") is None
+            assert dl2.get_downloaded("org/model2") is not None
+            assert dl2.get_downloaded("org/model1") is None
+
+    def test_concurrent_thread_register_and_list(self):
+        import threading
+
+        dl = ModelDownloader()
+        errors: list[Exception] = []
+
+        def register(prefix: str):
+            try:
+                for i in range(20):
+                    dl._downloaded[f"org/{prefix}-{i}"] = DownloadedModel(
+                        model_id=f"org/{prefix}-{i}",
+                        local_path=f"/tmp/{prefix}-{i}",
+                    )
+                    dl.get_downloaded(f"org/{prefix}-{i}")
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=register, args=(f"t{t}",)) for t in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert not errors
+        all_models = dl.list_downloaded()
+        for t in range(4):
+            for i in range(20):
+                matching = [m for m in all_models if m.model_id == f"org/t{t}-{i}"]
+                assert len(matching) == 1
+
+    def test_concurrent_download_same_model_id_overwrites(self):
+
+        dl = ModelDownloader()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fpath = Path(tmpdir) / "model.bin"
+            fpath.write_bytes(b"v2")
+            fake = DownloadedModel(
+                model_id="org/model",
+                local_path=str(fpath),
+                source=DownloadSource.HUGGINGFACE,
+            )
+            dl._downloaded["org/model"] = DownloadedModel(
+                model_id="org/model",
+                local_path="/tmp/old",
+            )
+            with patch.object(dl, "download_huggingface", return_value=fake):
+                dl.download("org/model", verify_hash=False)
+            result = dl.get_downloaded("org/model")
+            assert result is not None
+            assert result.local_path == str(fpath)
+
+    def test_disk_space_guard_defer_large_download_during_peak(self):
+        import shutil
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_dir = Path(tmpdir) / "models"
+            cache_dir.mkdir(parents=True)
+
+            from general_ludd.small_models.download import ModelDownloader
+
+            dl = ModelDownloader(cache_dir=str(cache_dir))
+
+            _usage = shutil.disk_usage(str(cache_dir)).free
+            scheduling = dl.check_download_scheduling(5.0)
+            assert "size_gb" in scheduling
+            assert "should_defer" in scheduling
+            assert "next_off_peak" in scheduling
+            assert scheduling["size_gb"] == 5.0
+
+            scheduling_small = dl.check_download_scheduling(0.1)
+            assert scheduling_small["size_gb"] == 0.1
+
+    def test_download_force_overrides_defer(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from general_ludd.small_models.download import ModelDownloader
+
+            dl = ModelDownloader(cache_dir=tmpdir)
+            with patch.object(dl, "download_huggingface") as mock_dl:
+                mock_dl.return_value.local_path = tmpdir
+                result = dl.download("org/model", force=True, verify_hash=False)
+            assert result.model_id == "org/model"
+
+    def test_download_respects_timeout_configuration(self):
+
+        dl = ModelDownloader(timeout=15.0)
+        assert dl.timeout == 15.0
+
+        dl_default = ModelDownloader()
+        assert isinstance(dl_default.timeout, float)
+        assert dl_default.timeout > 0
+
+    def test_download_gguf_route_from_filename_extension(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from general_ludd.small_models.download import ModelDownloader
+
+            dl = ModelDownloader(cache_dir=tmpdir)
+            with patch.object(dl, "download_gguf") as mock_gguf:
+                mock_gguf.return_value = DownloadedModel(
+                    model_id="org/model",
+                    local_path=tmpdir,
+                    source=DownloadSource.GGUF,
+                    filename="q4_k_m.gguf",
+                )
+                result = dl.download("org/model", filename="q4_k_m.gguf", verify_hash=False)
+            assert result.source == DownloadSource.GGUF
+            assert result.filename == "q4_k_m.gguf"
+
+    def test_download_hf_route_from_non_gguf_filename(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from general_ludd.small_models.download import ModelDownloader
+
+            dl = ModelDownloader(cache_dir=tmpdir)
+            with patch.object(dl, "download_huggingface") as mock_hf:
+                mock_hf.return_value = DownloadedModel(
+                    model_id="org/model",
+                    local_path=tmpdir,
+                    source=DownloadSource.HUGGINGFACE,
+                    filename="model.safetensors",
+                )
+                result = dl.download("org/model", filename="model.safetensors", verify_hash=False)
+            assert result.source == DownloadSource.HUGGINGFACE
+            assert result.filename == "model.safetensors"
 
 
 class TestFileHashDeep:
