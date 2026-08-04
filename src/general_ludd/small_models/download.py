@@ -14,7 +14,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_CACHE_DIR = os.path.expanduser("~/.cache/general-ludd/models")
+DEFAULT_CACHE_DIR = os.environ.get(
+    "GLUDD_MODEL_DIR",
+    os.path.expanduser("~/.cache/general-ludd/models"),
+)
 DEFAULT_DOWNLOAD_TIMEOUT = float(os.environ.get("GLUDD_HF_DOWNLOAD_TIMEOUT", "30"))
 _LARGE_DOWNLOAD_GB = 1.0
 

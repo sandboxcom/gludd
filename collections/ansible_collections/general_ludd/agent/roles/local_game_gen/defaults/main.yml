@@ -5,7 +5,7 @@ game_description: "Snake game"
 
 model_repo: "bartowski/Qwen2.5-0.5B-Instruct-GGUF"
 model_file: "Qwen2.5-0.5B-Instruct-Q5_K_M.gguf"
-model_download_dir: "/tmp/gludd-local-model"
+model_download_dir: "{{ lookup('env', 'GLUDD_MODEL_DIR') | default(lookup('env', 'HOME') + '/.cache/general-ludd/models', true) }}"
 
 server_host: "127.0.0.1"
 server_port: 9999
