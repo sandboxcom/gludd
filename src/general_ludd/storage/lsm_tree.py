@@ -338,6 +338,88 @@ class LevelCompaction:
         )
 
 
+def _range_overlaps(
+    min_a: bytes | None,
+    max_a: bytes | None,
+    min_b: bytes | None,
+    max_b: bytes | None,
+) -> bool:
+    if min_a is None or max_a is None or min_b is None or max_b is None:
+        return False
+    return max_a >= min_b and max_b >= min_a
+
+
+@dataclass
+class TieredCompaction:
+    """Merge all SSTables at a level into one, removing tombstones."""
+
+    level: int
+    source_paths: list[Path]
+    source_meta_paths: list[Path]
+
+    def run(self, directory: str, basename: str) -> SSTable:
+        merged: dict[bytes, bytes] = {}
+        for sp, mp in zip(self.source_paths, self.source_meta_paths, strict=False):
+            try:
+                sst = SSTable.load(sp, mp)
+            except (OSError, json.JSONDecodeError):
+                continue
+            for k, v in sst.iter_all():
+                merged[k] = v
+
+        for sp in self.source_paths:
+            with contextlib.suppress(OSError):
+                sp.unlink(missing_ok=True)
+        for mp in self.source_meta_paths:
+            with contextlib.suppress(OSError):
+                mp.unlink(missing_ok=True)
+
+        return SSTable.write(
+            [(k, v) for k, v in merged.items()],
+            basename=basename,
+            directory=directory,
+        )
+
+
+@dataclass
+class LeveledCompaction:
+    """Merge overlapping SSTables across adjacent levels, removing tombstones."""
+
+    source_level: int
+    source_sst: SSTable
+    target_ssts: list[SSTable]
+
+    def run(self, directory: str, basename: str) -> list[SSTable]:
+        merged: dict[bytes, bytes] = {}
+        for sst in self.target_ssts:
+            for k, v in sst.iter_all():
+                merged[k] = v
+        for k, v in self.source_sst.iter_all():
+            merged[k] = v
+
+        tombstone_keys = [k for k, v in merged.items() if v == _TOMBSTONE]
+        for k in tombstone_keys:
+            del merged[k]
+
+        for sst in self.target_ssts:
+            with contextlib.suppress(OSError):
+                sst.path.unlink(missing_ok=True)
+                sst.meta_path.unlink(missing_ok=True)
+        with contextlib.suppress(OSError):
+            self.source_sst.path.unlink(missing_ok=True)
+            self.source_sst.meta_path.unlink(missing_ok=True)
+
+        if not merged:
+            return []
+
+        sst = SSTable.write(
+            [(k, v) for k, v in merged.items()],
+            basename=basename,
+            directory=directory,
+        )
+        return [sst]
+
+
 @dataclass
 class LSMEngine:
     """LSM tree storage engine with MemTable, SSTable levels, flush, and compaction."""
@@ -419,6 +501,70 @@ class LSMEngine:
                 if level_idx + 1 >= len(self.levels):
                     self.levels.append([])
                 self.levels[level_idx + 1].append(merged)
+                return compaction
+        return None
+
+    def find_overlapping(self, source_level: int, source_sst: SSTable) -> list[SSTable]:
+        overlapping: list[SSTable] = []
+        target_level = source_level + 1
+        if target_level >= len(self.levels):
+            return overlapping
+        for sst in self.levels[target_level]:
+            if sst._min_key is None or sst._max_key is None:
+                continue
+            if source_sst._min_key is None or source_sst._max_key is None:
+                continue
+            if _range_overlaps(
+                source_sst._min_key,
+                source_sst._max_key,
+                sst._min_key,
+                sst._max_key,
+            ):
+                overlapping.append(sst)
+        return overlapping
+
+    def leveled_compact(self) -> LeveledCompaction | None:
+        for level_idx in range(len(self.levels)):
+            if level_idx + 1 >= len(self.levels):
+                break
+            for sst in list(self.levels[level_idx]):
+                overlapping = self.find_overlapping(level_idx, sst)
+                if not overlapping:
+                    continue
+                compaction = LeveledCompaction(
+                    source_level=level_idx,
+                    source_sst=sst,
+                    target_ssts=overlapping,
+                )
+                result = compaction.run(
+                    str(self.directory),
+                    f"sst_leveled_L{level_idx}_{self._next_sst_id:04d}",
+                )
+                self._next_sst_id += 1
+                self.levels[level_idx].remove(sst)
+                for old in overlapping:
+                    self.levels[level_idx + 1].remove(old)
+                if result:
+                    if level_idx + 1 >= len(self.levels):
+                        self.levels.append([])
+                    self.levels[level_idx + 1].extend(result)
+                return compaction
+        return None
+
+    def tiered_compact(self) -> TieredCompaction | None:
+        for level_idx, level in enumerate(self.levels):
+            if len(level) >= 2:
+                compaction = TieredCompaction(
+                    level=level_idx,
+                    source_paths=[s.path for s in level],
+                    source_meta_paths=[s.meta_path for s in level],
+                )
+                merged = compaction.run(
+                    str(self.directory),
+                    f"sst_tiered_L{level_idx}_{self._next_sst_id:04d}",
+                )
+                self._next_sst_id += 1
+                self.levels[level_idx] = [merged]
                 return compaction
         return None
 

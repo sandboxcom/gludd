@@ -53,7 +53,7 @@ class BPlusTree:
 
     def search_range(self, start_key: Any, end_key: Any) -> list[tuple[Any, Any]]:
         results: list[tuple[Any, Any]] = []
-        leaf = self._find_leaf(self._root, start_key)
+        leaf: _Node | None = self._find_leaf(self._root, start_key)
         while leaf is not None:
             for i, k in enumerate(leaf.keys):
                 if k > end_key:
@@ -79,7 +79,7 @@ class BPlusTree:
 
     def keys(self) -> list[Any]:
         result: list[Any] = []
-        leaf = self._leftmost_leaf()
+        leaf: _Node | None = self._leftmost_leaf()
         while leaf is not None:
             result.extend(leaf.keys)
             leaf = leaf.next_leaf
@@ -87,7 +87,7 @@ class BPlusTree:
 
     def items(self) -> list[tuple[Any, Any]]:
         result: list[tuple[Any, Any]] = []
-        leaf = self._leftmost_leaf()
+        leaf: _Node | None = self._leftmost_leaf()
         while leaf is not None:
             for k, v in zip(leaf.keys, leaf.values, strict=False):
                 result.append((k, v))
