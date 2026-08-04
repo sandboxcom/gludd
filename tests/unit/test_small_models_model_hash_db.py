@@ -24,6 +24,8 @@ from general_ludd.small_models.model_hash_db import (
     ModelHashDB,
     ModelIntegrityError,
     _sha256_file,
+    load_known_models_from_config,
+    merge_known_models,
 )
 
 
@@ -83,6 +85,16 @@ class TestKnownModels:
     def test_has_entry_for_phi2(self):
         files = KnownModels.get("microsoft/phi-2")
         assert files is not None
+
+    def test_has_entry_for_qwen_gguf(self):
+        files = KnownModels.get("Qwen/Qwen2.5-0.5B-GGUF")
+        assert files is not None
+        assert isinstance(files, list)
+        assert len(files) == 3
+        filenames = [fh.filename for fh in files]
+        assert "qwen2.5-0.5b-q4_k_m.gguf" in filenames
+        assert "config.json" in filenames
+        assert "tokenizer.json" in filenames
 
     def test_missing_model_returns_none(self):
         assert KnownModels.get("nonexistent/model-v99") is None
@@ -266,6 +278,7 @@ base_model: HuggingFaceTB/SmolLM2-135M
         models = db.list_models()
         assert "HuggingFaceTB/SmolLM2-135M" in models
         assert "Qwen/Qwen2.5-0.5B" in models
+        assert "Qwen/Qwen2.5-0.5B-GGUF" in models
         assert "TinyLlama/TinyLlama-1.1B-Chat-v1.0" in models
         assert "microsoft/phi-2" in models
 
@@ -1429,3 +1442,101 @@ class TestFuzzingHashDB:
         d = fh.to_dict()
         restored = FileHash.from_dict(d)
         assert restored.sha256 == sha
+
+
+class TestLoadKnownModelsFromConfig:
+    def test_loads_all_models_from_config_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "known_models.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "org/model-a": [
+                            {"filename": "a.bin", "sha256": "a" * 64},
+                        ],
+                        "org/model-b": [
+                            {"filename": "b.bin", "sha256": "b" * 64},
+                            {"filename": "c.bin", "sha256": "c" * 64},
+                        ],
+                    }
+                )
+            )
+
+            result = load_known_models_from_config(str(config_path))
+            assert len(result) == 2
+            assert "org/model-a" in result
+            assert "org/model-b" in result
+            files_a = result["org/model-a"]
+            assert len(files_a) == 1
+            assert files_a[0].filename == "a.bin"
+            assert files_a[0].sha256 == "a" * 64
+            files_b = result["org/model-b"]
+            assert len(files_b) == 2
+
+    def test_missing_file_returns_empty_dict(self) -> None:
+        result = load_known_models_from_config("/nonexistent/path/known_models.json")
+        assert result == {}
+
+    def test_empty_json_file_returns_empty_dict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "empty.json"
+            config_path.write_text("{}")
+            result = load_known_models_from_config(str(config_path))
+            assert result == {}
+
+    def test_corrupt_json_file_returns_empty_dict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "corrupt.json"
+            config_path.write_text("{not valid")
+            with pytest.raises(json.JSONDecodeError):
+                load_known_models_from_config(str(config_path))
+
+    def test_respects_env_var_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "custom.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "org/custom": [{"filename": "x.bin", "sha256": "d" * 64}],
+                    }
+                )
+            )
+            with patch.dict(os.environ, {"GLUDD_KNOWN_MODELS_FILE": str(config_path)}):
+                result = load_known_models_from_config()
+            assert "org/custom" in result
+
+
+class TestMergeKnownModels:
+    def test_merges_multiple_sources(self) -> None:
+        src_a = {
+            "org/a": [FileHash("a.bin", "a" * 64)],
+        }
+        src_b = {
+            "org/b": [FileHash("b.bin", "b" * 64)],
+        }
+        merged = merge_known_models(src_a, src_b)
+        assert len(merged) == 2
+        assert "org/a" in merged
+        assert "org/b" in merged
+
+    def test_later_source_overwrites_earlier(self) -> None:
+        src_a = {
+            "org/model": [FileHash("v1.bin", "1" * 64)],
+        }
+        src_b = {
+            "org/model": [FileHash("v2.bin", "2" * 64)],
+        }
+        merged = merge_known_models(src_a, src_b)
+        assert len(merged) == 1
+        files = merged["org/model"]
+        assert files[0].filename == "v2.bin"
+
+    def test_empty_sources_yields_empty(self) -> None:
+        merged = merge_known_models()
+        assert merged == {}
+
+    def test_does_not_mutate_sources(self) -> None:
+        src = {"org/model": [FileHash("f.bin", "a" * 64)]}
+        copy_src = dict(src)
+        merge_known_models(src)
+        assert src == copy_src

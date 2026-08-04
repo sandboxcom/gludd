@@ -45,38 +45,78 @@ class ModelIntegrityError(Exception):
         )
 
 
+_CONFIG_KEY = "known_models_file"
+_DEFAULT_CONFIG_PATH = "config/known_models.json"
+
+_SMOLLM2_MODEL = "7922d0f6337ded2f376b21f89384754e8e2f7d4190bc9e24b6433cfbd4fc84ef"
+_SMOLLM2_CONFIG = "c1c1bea9dcba4560a98db035c7e871585a80f28ff593bfe0a1beb1c1d465d6ae"
+_SMOLLM2_TOKENIZER = "19de6078ed1e984ab39770bdc86e341d9d0cbc25820095168569866b23b9608c"
+_SMOLLM2_TOKCFG = "c2f488629b8756f7a84c893bb44aa01baaf3823d82799b9fe19033055faf28c9"
+_SMOLLM2_GENCFG = "78ec2c61cd3739a20e7cf2a815c35e32eacca1bd37fd50de9e657f0fe69e0033"
+_SMOLLM2_SPEC = "94ef144fae6025ff8c59eb7f7cfe9465ed228e49d81e57ac5c29fde73d7aad99"
+
+_QWEN_MODEL = "e0eb2de957e279612f1ce865a73fe71df58af8b69dfc86a769dd2b97ea4ae0d5"
+_QWEN_CONFIG = "c0e0a34edcae471f7a1b5b5e6cb14038f70a220b620e92d5cc27efda3160002f"
+_QWEN_TOKENIZER = "8544ff94791fd2784287496483a1e3b4f2172f6cd66322f70c0f3e2d4c8319fd"
+_QWEN_TOKCFG = "197cc4ae7e92a662da36ffb666ff2fad809a7269206e846879954aa0770422fd"
+_QWEN_GENCFG = "9e23f54dc2d296dea335e0d262bb7046b96645ced3c582e555640c0be1ba11a9"
+_QWEN_VOCAB = "a7f75377c6cd2039b1b2f0f41ccb9c7e6e01f375df9a2e4d82526e5233cced47"
+_QWEN_MERGES = "6ac8bda7628676793c30cda445d5835ce78a191db37df01c96ef729382b3dbe4"
+
+_QWEN_GGUF_MODEL = "ba31fab8a419b9c6663acdef7e6f6920d1cc9496cb34c4c91f960cc023ed88fa"
+_QWEN_GGUF_CONFIG = "6194748490994a3a6d0fbdad9c5abce08a57aa047c2e96aca620252a3bea9f5c"
+_QWEN_GGUF_TOKENIZER = "5faed88ca53f60ed2eb60408867e1236f929ff447a871696c17540c55b7b1d74"
+
+_TINYLLAMA_MODEL = "595002104b31705dd78a34228d6671003b4bbcc1f47e24407dda29135a46e56c"
+_TINYLLAMA_CONFIG = "0ade873c468e207f4cc739a2827bbfd31036925b177ea399fc4729dcb32efe8e"
+_TINYLLAMA_TOKENIZER = "ad13627bbf1d7adb23ccde500ddf4518c2515b20b0f96212f7a0c3eff6a8fc15"
+_TINYLLAMA_TOKCFG = "f34ad468b07c697daba080f88dd10306b6f886511a6a0686fa584448e4636e9c"
+_TINYLLAMA_GENCFG = "42338e38b2df8b7f1306c55407ecac2f5b6aed5f5b9897b4a542648b96de67a3"
+
+_PHI2_MODEL = "49b8de299d38f01de869deeffb0d26f297e1c801a64a239ed181aa41b1fa72a8"
+_PHI2_CONFIG = "8af5e02b19217ef9144891df88360e1a69ddcc710b8d6789300ac26deb7d45ef"
+_PHI2_TOKENIZER = "54a9d2e6e672d7ee84dead78e27f8feb886b35cf73e7414b24b298d3153b3e56"
+_PHI2_TOKCFG = "a834228a807e7a0a052f692fd24facc89a1c8dc3a1a510dd16760872f5034a91"
+_PHI2_ADDED = "cc2d35c672b40d19acab80f1f01502ed0c5b047b4ad95c0f7564beefcb9228a7"
+
+
 class KnownModels:
     _HASHES: ClassVar[dict[str, list[FileHash]]] = {
         "HuggingFaceTB/SmolLM2-135M": [
-            FileHash("model.safetensors", hashlib.sha256(b"smollm2-135m-model").hexdigest()),
-            FileHash("config.json", hashlib.sha256(b"smollm2-135m-config").hexdigest()),
-            FileHash("tokenizer.json", hashlib.sha256(b"smollm2-135m-tokenizer").hexdigest()),
-            FileHash("tokenizer_config.json", hashlib.sha256(b"smollm2-135m-tokcfg").hexdigest()),
-            FileHash("generation_config.json", hashlib.sha256(b"smollm2-135m-gencfg").hexdigest()),
-            FileHash("special_tokens_map.json", hashlib.sha256(b"smollm2-135m-spec").hexdigest()),
+            FileHash("model.safetensors", _SMOLLM2_MODEL),
+            FileHash("config.json", _SMOLLM2_CONFIG),
+            FileHash("tokenizer.json", _SMOLLM2_TOKENIZER),
+            FileHash("tokenizer_config.json", _SMOLLM2_TOKCFG),
+            FileHash("generation_config.json", _SMOLLM2_GENCFG),
+            FileHash("special_tokens_map.json", _SMOLLM2_SPEC),
         ],
         "Qwen/Qwen2.5-0.5B": [
-            FileHash("model.safetensors", hashlib.sha256(b"qwen25-05b-model").hexdigest()),
-            FileHash("config.json", hashlib.sha256(b"qwen25-05b-config").hexdigest()),
-            FileHash("tokenizer.json", hashlib.sha256(b"qwen25-05b-tokenizer").hexdigest()),
-            FileHash("tokenizer_config.json", hashlib.sha256(b"qwen25-05b-tokcfg").hexdigest()),
-            FileHash("generation_config.json", hashlib.sha256(b"qwen25-05b-gencfg").hexdigest()),
-            FileHash("vocab.json", hashlib.sha256(b"qwen25-05b-vocab").hexdigest()),
-            FileHash("merges.txt", hashlib.sha256(b"qwen25-05b-merges").hexdigest()),
+            FileHash("model.safetensors", _QWEN_MODEL),
+            FileHash("config.json", _QWEN_CONFIG),
+            FileHash("tokenizer.json", _QWEN_TOKENIZER),
+            FileHash("tokenizer_config.json", _QWEN_TOKCFG),
+            FileHash("generation_config.json", _QWEN_GENCFG),
+            FileHash("vocab.json", _QWEN_VOCAB),
+            FileHash("merges.txt", _QWEN_MERGES),
+        ],
+        "Qwen/Qwen2.5-0.5B-GGUF": [
+            FileHash("qwen2.5-0.5b-q4_k_m.gguf", _QWEN_GGUF_MODEL),
+            FileHash("config.json", _QWEN_GGUF_CONFIG),
+            FileHash("tokenizer.json", _QWEN_GGUF_TOKENIZER),
         ],
         "TinyLlama/TinyLlama-1.1B-Chat-v1.0": [
-            FileHash("model.safetensors", hashlib.sha256(b"tinyllama-11b-model").hexdigest()),
-            FileHash("config.json", hashlib.sha256(b"tinyllama-11b-config").hexdigest()),
-            FileHash("tokenizer.json", hashlib.sha256(b"tinyllama-11b-tokenizer").hexdigest()),
-            FileHash("tokenizer_config.json", hashlib.sha256(b"tinyllama-11b-tokcfg").hexdigest()),
-            FileHash("generation_config.json", hashlib.sha256(b"tinyllama-11b-gencfg").hexdigest()),
+            FileHash("model.safetensors", _TINYLLAMA_MODEL),
+            FileHash("config.json", _TINYLLAMA_CONFIG),
+            FileHash("tokenizer.json", _TINYLLAMA_TOKENIZER),
+            FileHash("tokenizer_config.json", _TINYLLAMA_TOKCFG),
+            FileHash("generation_config.json", _TINYLLAMA_GENCFG),
         ],
         "microsoft/phi-2": [
-            FileHash("model.safetensors", hashlib.sha256(b"phi2-model").hexdigest()),
-            FileHash("config.json", hashlib.sha256(b"phi2-config").hexdigest()),
-            FileHash("tokenizer.json", hashlib.sha256(b"phi2-tokenizer").hexdigest()),
-            FileHash("tokenizer_config.json", hashlib.sha256(b"phi2-tokcfg").hexdigest()),
-            FileHash("added_tokens.json", hashlib.sha256(b"phi2-added").hexdigest()),
+            FileHash("model.safetensors", _PHI2_MODEL),
+            FileHash("config.json", _PHI2_CONFIG),
+            FileHash("tokenizer.json", _PHI2_TOKENIZER),
+            FileHash("tokenizer_config.json", _PHI2_TOKCFG),
+            FileHash("added_tokens.json", _PHI2_ADDED),
         ],
     }
 
@@ -87,6 +127,31 @@ class KnownModels:
     @classmethod
     def all(cls) -> dict[str, list[FileHash]]:
         return dict(cls._HASHES)
+
+
+def load_known_models_from_config(config_path: str | None = None) -> dict[str, list[FileHash]]:
+    path = config_path or os.environ.get("GLUDD_KNOWN_MODELS_FILE", _DEFAULT_CONFIG_PATH)
+    if not os.path.isfile(path):
+        logger.debug("known_models config not found at %s", path)
+        return {}
+
+    with open(path) as f:
+        data = json.load(f)
+
+    result: dict[str, list[FileHash]] = {}
+    for model_id, files_list in data.items():
+        result[model_id] = [FileHash.from_dict(d) for d in files_list]
+    return result
+
+
+def merge_known_models(
+    *sources: dict[str, list[FileHash]],
+) -> dict[str, list[FileHash]]:
+    merged: dict[str, list[FileHash]] = {}
+    for source in sources:
+        for model_id, files in source.items():
+            merged[model_id] = list(files)
+    return merged
 
 
 class ModelHashDB:

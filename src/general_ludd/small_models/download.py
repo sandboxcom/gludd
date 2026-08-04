@@ -62,10 +62,12 @@ class ModelDownloader:
         hf_token: str | None = None,
         timeout: float | None = None,
         hash_db: ModelHashDB | None = None,
+        oidc_auth: object | None = None,
     ) -> None:
         self.cache_dir = cache_dir or DEFAULT_CACHE_DIR
         Path(self.cache_dir).mkdir(parents=True, exist_ok=True)
         self.hf_token = hf_token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+        self._oidc_auth = oidc_auth
         self.timeout = timeout if timeout is not None else DEFAULT_DOWNLOAD_TIMEOUT
         self._hash_db = hash_db
         self._downloaded: dict[str, DownloadedModel] = {}
@@ -79,6 +81,16 @@ class ModelDownloader:
 
     def get_progress(self) -> DownloadProgress:
         return self._progress
+
+    def _resolve_token(self) -> str | None:
+        if self._oidc_auth is not None:
+            from general_ludd.small_models.hf_auth import HfOidcAuth
+
+            if isinstance(self._oidc_auth, HfOidcAuth):
+                oidc_token = self._oidc_auth.get_token()
+                if oidc_token:
+                    return oidc_token
+        return self.hf_token
 
     def download_huggingface(
         self,
@@ -97,17 +109,19 @@ class ModelDownloader:
                 model_id,
             )
 
+        token = self._resolve_token()
+
         if filename:
             local_path = hf_hub_download(
                 repo_id=model_id,
                 filename=filename,
-                token=self.hf_token,
+                token=token,
                 revision=revision,
             )
         else:
             local_path = snapshot_download(
                 repo_id=model_id,
-                token=self.hf_token,
+                token=token,
                 revision=revision,
             )
 
@@ -137,10 +151,12 @@ class ModelDownloader:
 
         os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", str(self.timeout))
 
+        token = self._resolve_token()
+
         local_path = hf_hub_download(
             repo_id=model_id,
             filename=filename,
-            token=self.hf_token,
+            token=token,
             revision=revision,
         )
 
@@ -179,9 +195,11 @@ class ModelDownloader:
                 model_id,
             )
 
+        token = self._resolve_token()
+
         local_path = snapshot_download(
             repo_id=stripped_id,
-            token=self.hf_token,
+            token=token,
             revision=revision,
         )
 

@@ -1,0 +1,38 @@
+{
+  "HuggingFaceTB/SmolLM2-135M": [
+    {"filename": "model.safetensors", "sha256": "7922d0f6337ded2f376b21f89384754e8e2f7d4190bc9e24b6433cfbd4fc84ef"},
+    {"filename": "config.json", "sha256": "c1c1bea9dcba4560a98db035c7e871585a80f28ff593bfe0a1beb1c1d465d6ae"},
+    {"filename": "tokenizer.json", "sha256": "19de6078ed1e984ab39770bdc86e341d9d0cbc25820095168569866b23b9608c"},
+    {"filename": "tokenizer_config.json", "sha256": "c2f488629b8756f7a84c893bb44aa01baaf3823d82799b9fe19033055faf28c9"},
+    {"filename": "generation_config.json", "sha256": "78ec2c61cd3739a20e7cf2a815c35e32eacca1bd37fd50de9e657f0fe69e0033"},
+    {"filename": "special_tokens_map.json", "sha256": "94ef144fae6025ff8c59eb7f7cfe9465ed228e49d81e57ac5c29fde73d7aad99"}
+  ],
+  "Qwen/Qwen2.5-0.5B": [
+    {"filename": "model.safetensors", "sha256": "e0eb2de957e279612f1ce865a73fe71df58af8b69dfc86a769dd2b97ea4ae0d5"},
+    {"filename": "config.json", "sha256": "c0e0a34edcae471f7a1b5b5e6cb14038f70a220b620e92d5cc27efda3160002f"},
+    {"filename": "tokenizer.json", "sha256": "8544ff94791fd2784287496483a1e3b4f2172f6cd66322f70c0f3e2d4c8319fd"},
+    {"filename": "tokenizer_config.json", "sha256": "197cc4ae7e92a662da36ffb666ff2fad809a7269206e846879954aa0770422fd"},
+    {"filename": "generation_config.json", "sha256": "9e23f54dc2d296dea335e0d262bb7046b96645ced3c582e555640c0be1ba11a9"},
+    {"filename": "vocab.json", "sha256": "a7f75377c6cd2039b1b2f0f41ccb9c7e6e01f375df9a2e4d82526e5233cced47"},
+    {"filename": "merges.txt", "sha256": "6ac8bda7628676793c30cda445d5835ce78a191db37df01c96ef729382b3dbe4"}
+  ],
+  "Qwen/Qwen2.5-0.5B-GGUF": [
+    {"filename": "qwen2.5-0.5b-q4_k_m.gguf", "sha256": "ba31fab8a419b9c6663acdef7e6f6920d1cc9496cb34c4c91f960cc023ed88fa"},
+    {"filename": "config.json", "sha256": "6194748490994a3a6d0fbdad9c5abce08a57aa047c2e96aca620252a3bea9f5c"},
+    {"filename": "tokenizer.json", "sha256": "5faed88ca53f60ed2eb60408867e1236f929ff447a871696c17540c55b7b1d74"}
+  ],
+  "TinyLlama/TinyLlama-1.1B-Chat-v1.0": [
+    {"filename": "model.safetensors", "sha256": "595002104b31705dd78a34228d6671003b4bbcc1f47e24407dda29135a46e56c"},
+    {"filename": "config.json", "sha256": "0ade873c468e207f4cc739a2827bbfd31036925b177ea399fc4729dcb32efe8e"},
+    {"filename": "tokenizer.json", "sha256": "ad13627bbf1d7adb23ccde500ddf4518c2515b20b0f96212f7a0c3eff6a8fc15"},
+    {"filename": "tokenizer_config.json", "sha256": "f34ad468b07c697daba080f88dd10306b6f886511a6a0686fa584448e4636e9c"},
+    {"filename": "generation_config.json", "sha256": "42338e38b2df8b7f1306c55407ecac2f5b6aed5f5b9897b4a542648b96de67a3"}
+  ],
+  "microsoft/phi-2": [
+    {"filename": "model.safetensors", "sha256": "49b8de299d38f01de869deeffb0d26f297e1c801a64a239ed181aa41b1fa72a8"},
+    {"filename": "config.json", "sha256": "8af5e02b19217ef9144891df88360e1a69ddcc710b8d6789300ac26deb7d45ef"},
+    {"filename": "tokenizer.json", "sha256": "54a9d2e6e672d7ee84dead78e27f8feb886b35cf73e7414b24b298d3153b3e56"},
+    {"filename": "tokenizer_config.json", "sha256": "a834228a807e7a0a052f692fd24facc89a1c8dc3a1a510dd16760872f5034a91"},
+    {"filename": "added_tokens.json", "sha256": "cc2d35c672b40d19acab80f1f01502ed0c5b047b4ad95c0f7564beefcb9228a7"}
+  ]
+}

@@ -7553,6 +7553,9 @@ check-e2e-small-model-prereq:
 	@if [ -f external/llamacpp/build/bin/llama-quantize ] && [ -x external/llamacpp/build/bin/llama-quantize ]; then echo "  llama-quantize (bundled): external/llamacpp/build/bin/llama-quantize OK"; else echo "  llama-quantize (bundled): MISSING"; fi
 	@which llama-quantize >/dev/null 2>&1 && echo "  llama-quantize (PATH): $(shell which llama-quantize) OK" || echo "  llama-quantize (PATH): not on PATH"
 
+compute-model-hashes:
+	@$(UV) run python scripts/compute_model_hashes.py
+
 e2e-download-small-model:
 	@mkdir -p /tmp/gludd-qwen-e2e-model
 	@echo "=== Downloading Qwen2.5-0.5B GGUF to /tmp/gludd-qwen-e2e-model/ ==="
