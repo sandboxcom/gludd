@@ -9,14 +9,16 @@ import sys
 import anyio
 import anyio.from_thread
 import pytest
-from starlette._utils import AwaitableOrContextManager
 
 from general_ludd.issue_sources.gitlab_issues import HTTPResponse, HTTPTransport
 
 pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 12),
-    reason="typing.get_protocol_members requires Python 3.12+",
+    reason="typing.get_protocol_members + AwaitableOrContextManager require Python 3.12+",
 )
+
+if sys.version_info >= (3, 12):
+    from starlette._utils import AwaitableOrContextManager
 
 
 def test_gitlab_protocols_do_not_corrupt_starlette_awaitability() -> None:
