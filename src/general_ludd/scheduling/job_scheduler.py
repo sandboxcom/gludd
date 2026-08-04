@@ -138,7 +138,7 @@ class CronJob(Job):
     cron_expr: str = "* * * * *"
     _schedule: CronSchedule | None = field(default=None, repr=False)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self._schedule = CronSchedule.parse(self.cron_expr)
 
     @property

@@ -13,10 +13,10 @@ F = TypeVar("F", bound=Callable[..., Any])
 
 
 class _CacheBackend:
-    def get(self, key: tuple) -> Any | None:
+    def get(self, key: tuple[Any, ...]) -> Any | None:
         raise NotImplementedError
 
-    def put(self, key: tuple, value: Any) -> None:
+    def put(self, key: tuple[Any, ...], value: Any) -> None:
         raise NotImplementedError
 
     def clear(self) -> None:
@@ -32,12 +32,12 @@ class _CacheBackend:
 class _LRUBackend(_CacheBackend):
     def __init__(self, maxsize: int) -> None:
         self._maxsize = max(0, maxsize)
-        self._data: OrderedDict[tuple, Any] = OrderedDict()
+        self._data: OrderedDict[tuple[Any, ...], Any] = OrderedDict()
         self._hits = 0
         self._misses = 0
         self._evictions = 0
 
-    def get(self, key: tuple) -> Any | None:
+    def get(self, key: tuple[Any, ...]) -> Any | None:
         if key not in self._data:
             self._misses += 1
             return None
@@ -45,7 +45,7 @@ class _LRUBackend(_CacheBackend):
         self._hits += 1
         return self._data[key]
 
-    def put(self, key: tuple, value: Any) -> None:
+    def put(self, key: tuple[Any, ...], value: Any) -> None:
         if self._maxsize == 0:
             return
         if key in self._data:
@@ -71,13 +71,13 @@ class _LRUBackend(_CacheBackend):
 class _LFUBackend(_CacheBackend):
     def __init__(self, maxsize: int) -> None:
         self._maxsize = max(0, maxsize)
-        self._data: dict[tuple, Any] = {}
-        self._freq: dict[tuple, int] = {}
+        self._data: dict[tuple[Any, ...], Any] = {}
+        self._freq: dict[tuple[Any, ...], int] = {}
         self._hits = 0
         self._misses = 0
         self._evictions = 0
 
-    def get(self, key: tuple) -> Any | None:
+    def get(self, key: tuple[Any, ...]) -> Any | None:
         if key not in self._data:
             self._misses += 1
             return None
@@ -85,7 +85,7 @@ class _LFUBackend(_CacheBackend):
         self._hits += 1
         return self._data[key]
 
-    def put(self, key: tuple, value: Any) -> None:
+    def put(self, key: tuple[Any, ...], value: Any) -> None:
         if self._maxsize == 0:
             return
         if key not in self._data:
@@ -115,13 +115,13 @@ class _TTLBackend(_CacheBackend):
     def __init__(self, ttl_seconds: float, maxsize: int) -> None:
         self._ttl = ttl_seconds
         self._maxsize = max(0, maxsize)
-        self._data: dict[tuple, tuple[Any, float]] = {}
+        self._data: dict[tuple[Any, ...], tuple[Any, float]] = {}
         self._hits = 0
         self._misses = 0
         self._evictions = 0
         self._lock = threading.Lock()
 
-    def get(self, key: tuple) -> Any | None:
+    def get(self, key: tuple[Any, ...]) -> Any | None:
         with self._lock:
             if key not in self._data:
                 self._misses += 1
@@ -135,7 +135,7 @@ class _TTLBackend(_CacheBackend):
             self._hits += 1
             return value
 
-    def put(self, key: tuple, value: Any) -> None:
+    def put(self, key: tuple[Any, ...], value: Any) -> None:
         with self._lock:
             if self._maxsize == 0:
                 return
@@ -165,7 +165,7 @@ class _SizeBackend(_CacheBackend):
     def __init__(self, maxsize: int, max_item_bytes: int) -> None:
         self._maxsize = max(0, maxsize)
         self._max_item_bytes = max_item_bytes
-        self._data: OrderedDict[tuple, tuple[Any, int]] = OrderedDict()
+        self._data: OrderedDict[tuple[Any, ...], tuple[Any, int]] = OrderedDict()
         self._total_bytes = 0
         self._hits = 0
         self._misses = 0
@@ -177,7 +177,7 @@ class _SizeBackend(_CacheBackend):
         except TypeError:
             return 0
 
-    def get(self, key: tuple) -> Any | None:
+    def get(self, key: tuple[Any, ...]) -> Any | None:
         if key not in self._data:
             self._misses += 1
             return None
@@ -186,7 +186,7 @@ class _SizeBackend(_CacheBackend):
         self._hits += 1
         return value
 
-    def put(self, key: tuple, value: Any) -> None:
+    def put(self, key: tuple[Any, ...], value: Any) -> None:
         if self._maxsize == 0:
             return
         item_bytes = self._item_size(value)

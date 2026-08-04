@@ -163,7 +163,7 @@ class BucketGroup:
     def __len__(self) -> int:
         return len(self._buckets)
 
-    def __getitem__(self, index: Any) -> Bucket:
+    def __getitem__(self, index: int) -> Bucket:
         return self._buckets[index]
 
     @property

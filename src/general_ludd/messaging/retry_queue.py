@@ -174,7 +174,7 @@ class RetryQueue:
     def _backoff_delay(self, attempt: int) -> float:
         """Exponential backoff: ``base_delay * 2^attempt``, capped at *max_delay*."""
         raw = self.base_delay * (2**attempt)
-        return min(raw, self.max_delay)
+        return float(min(raw, self.max_delay))
 
     # ------------------------------------------------------------------ enqueue / deque
 

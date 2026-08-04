@@ -216,8 +216,8 @@ class ThreadPoolBulkhead:
         try:
             if blocking and timeout is not None:
 
-                def _enqueue_with_timeout():
-                    return self._queue.put(work_item, block=True, timeout=timeout)
+                def _enqueue_with_timeout() -> None:
+                    self._queue.put(work_item, block=True, timeout=timeout)
 
                 _enqueue_with_timeout()
             elif blocking and timeout is None:

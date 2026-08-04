@@ -410,7 +410,7 @@ def sticky_dispatch(
 ) -> T | None:
     existing = session_store.get(session_key)
     if existing is not None:
-        healthy = hasattr(balancer, "_backends") and getattr(balancer._backends.get(existing, None), "healthy", True)  # type: ignore[union-attr]
+        healthy = hasattr(balancer, "_backends") and getattr(balancer._backends.get(existing, None), "healthy", True)
         if healthy:
             return existing
         session_store.remove(session_key)

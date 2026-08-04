@@ -207,7 +207,7 @@ class SupervisorTree:
             affected = self._children[idx:]
             for s in affected:
                 self._stop_child_locked(s)
-            restarted: list[str] = []
+            restarted = []
             for s in affected:
                 self._restart_child(s, error_msg)
                 restarted.append(s.spec.name)
