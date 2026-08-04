@@ -8,7 +8,8 @@ Priority: O(1) push/pop (ordered input), O(1) peek-min/peek-max.
 
 from __future__ import annotations
 
-from typing import Any, Generic, TypeVar
+from collections.abc import Iterator
+from typing import Any, Generic, TypeVar, cast
 
 T = TypeVar("T")
 
@@ -242,7 +243,7 @@ def _push_left_deep(
     if isinstance(m, Single):
         return Deep([node], Empty(), [m.v])
     if isinstance(m, Deep):
-        pf: list = m.prefix
+        pf: list[Node2[Any] | Node3[Any]] = m.prefix
         if len(pf) >= 4:
             return Deep(
                 [node, pf[0]],
@@ -354,7 +355,7 @@ def _push_right_deep(
     if isinstance(m, Single):
         return Deep([m.v], Empty(), [node])
     if isinstance(m, Deep):
-        sf: list = m.suffix
+        sf: list[Node2[Any] | Node3[Any]] = m.suffix
         if len(sf) >= 4:
             return Deep(
                 m.prefix,
@@ -691,20 +692,20 @@ class Deque(Generic[T]):
             raise IndexError("pop from empty deque")
         v, self._root = pop_right(self._root)
         self._len -= 1
-        return v
+        return cast(T, v)
 
     def pop_left(self) -> T:
         if self._len == 0:
             raise IndexError("pop from empty deque")
         v, self._root = pop_left(self._root)
         self._len -= 1
-        return v
+        return cast(T, v)
 
     def peek(self) -> T:
-        return peek_right(self._root)
+        return cast(T, peek_right(self._root))
 
     def peek_left(self) -> T:
-        return peek_left(self._root)
+        return cast(T, peek_left(self._root))
 
     def extend(self, items: list[T]) -> None:
         for v in items:
@@ -723,7 +724,7 @@ class Deque(Generic[T]):
     def to_list(self) -> list[T]:
         return _tree_to_list(self._root)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[T]:
         return iter(self.to_list())
 
     def __repr__(self) -> str:
@@ -756,7 +757,7 @@ class Sequence(Generic[T]):
         return self._size > 0
 
     def __getitem__(self, idx: int) -> T:
-        return get(self._root, idx)
+        return cast(T, get(self._root, idx))
 
     def push(self, v: T) -> None:
         self._root = push_right(self._root, v)
@@ -771,20 +772,20 @@ class Sequence(Generic[T]):
             raise IndexError("pop from empty sequence")
         v, self._root = pop_right(self._root)
         self._size -= 1
-        return v
+        return cast(T, v)
 
     def pop_left(self) -> T:
         if self._size == 0:
             raise IndexError("pop from empty sequence")
         v, self._root = pop_left(self._root)
         self._size -= 1
-        return v
+        return cast(T, v)
 
     def peek(self) -> T:
-        return peek_right(self._root)
+        return cast(T, peek_right(self._root))
 
     def peek_left(self) -> T:
-        return peek_left(self._root)
+        return cast(T, peek_left(self._root))
 
     def extend(self, items: list[T]) -> None:
         for v in items:
@@ -807,7 +808,7 @@ class Sequence(Generic[T]):
     def to_list(self) -> list[T]:
         return _tree_to_list(self._root)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[T]:
         return iter(self.to_list())
 
     def __repr__(self) -> str:
@@ -842,20 +843,20 @@ class PriorityDeque(Generic[T]):
             raise IndexError("pop from empty priority deque")
         v, self._root = pop_left(self._root)
         self._size -= 1
-        return v
+        return cast(T, v)
 
     def pop_max(self) -> T:
         if self._size == 0:
             raise IndexError("pop from empty priority deque")
         v, self._root = pop_right(self._root)
         self._size -= 1
-        return v
+        return cast(T, v)
 
     def peek_min(self) -> T:
-        return peek_left(self._root)
+        return cast(T, peek_left(self._root))
 
     def peek_max(self) -> T:
-        return peek_right(self._root)
+        return cast(T, peek_right(self._root))
 
     def to_list(self) -> list[T]:
         return _tree_to_list(self._root)
