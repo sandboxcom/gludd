@@ -1,0 +1,858 @@
+"""2-3 finger tree: deque, sequence, and priority-queue adaptations.
+
+Pure-Python, stdlib only.  Based on Hinze & Paterson (2006).
+Deque: O(1) push/pop both ends, O(log n) concat.
+Sequence: O(log n) random access by index, O(log n) split/concat.
+Priority: O(1) push/pop (ordered input), O(1) peek-min/peek-max.
+"""
+
+from __future__ import annotations
+
+from typing import Generic, TypeVar
+
+T = TypeVar("T")
+
+
+class Node2(Generic[T]):
+    __slots__ = ("a", "b")
+
+    def __init__(self, a: T, b: T) -> None:
+        self.a = a
+        self.b = b
+
+    def to_list(self) -> list[T]:
+        return [self.a, self.b]
+
+    def __repr__(self) -> str:
+        return f"Node2({self.a!r}, {self.b!r})"
+
+
+class Node3(Generic[T]):
+    __slots__ = ("a", "b", "c")
+
+    def __init__(self, a: T, b: T, c: T) -> None:
+        self.a = a
+        self.b = b
+        self.c = c
+
+    def to_list(self) -> list[T]:
+        return [self.a, self.b, self.c]
+
+    def __repr__(self) -> str:
+        return f"Node3({self.a!r}, {self.b!r}, {self.c!r})"
+
+
+class Empty:
+    __slots__ = ()
+    _instance: Empty | None = None
+
+    def __new__(cls) -> Empty:
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __bool__(self) -> bool:
+        return False
+
+
+class Single(Generic[T]):
+    __slots__ = ("v",)
+
+    def __init__(self, v: T) -> None:
+        self.v = v
+
+
+class Deep(Generic[T]):
+    __slots__ = ("_size", "middle", "prefix", "suffix")
+
+    def __init__(
+        self,
+        prefix: list[T],
+        middle: Empty | Single | Deep,
+        suffix: list[T],
+    ) -> None:
+        self.prefix = prefix
+        self.middle = middle
+        self.suffix = suffix
+        self._size: int = -1
+
+    def size(self) -> int:
+        if self._size < 0:
+            self._size = len(self.prefix) + _deep_size(self.middle) + len(self.suffix)
+        return self._size
+
+
+FingerTree = Empty | Single[T] | Deep[T]
+
+
+def _elem_count(x: object) -> int:
+    if isinstance(x, Node2):
+        return _elem_count(x.a) + _elem_count(x.b)
+    if isinstance(x, Node3):
+        return _elem_count(x.a) + _elem_count(x.b) + _elem_count(x.c)
+    return 1
+
+
+def _deconstruct_first(item: object) -> tuple[object, list]:
+    if isinstance(item, Node2):
+        return item.a, [item.b]
+    if isinstance(item, Node3):
+        return item.a, [item.b, item.c]
+    return item, []
+
+
+def _deconstruct_last(item: object) -> tuple[object, list]:
+    if isinstance(item, Node3):
+        return item.c, [item.a, item.b]
+    if isinstance(item, Node2):
+        return item.b, [item.a]
+    return item, []
+
+
+def _deep_size(m: Empty | Single | Deep) -> int:
+    if isinstance(m, Empty):
+        return 0
+    if isinstance(m, Single):
+        return _elem_count(m.v)
+    if isinstance(m, Deep):
+        return sum(_elem_count(x) for x in m.prefix) + _deep_size(m.middle) + sum(_elem_count(x) for x in m.suffix)
+
+
+def _tree_to_list(z: FingerTree) -> list:
+    result: list = []
+    _preorder(z, result)
+    return result
+
+
+def _preorder(z: FingerTree, out: list) -> None:
+    if isinstance(z, Empty):
+        return
+    if isinstance(z, Single):
+        v = z.v
+        if isinstance(v, (Node2, Node3)):
+            for x in v.to_list():
+                if isinstance(x, (Node2, Node3)):
+                    _preorder_flatten(x, out)
+                else:
+                    out.append(x)
+        else:
+            out.append(v)
+        return
+    if isinstance(z, Deep):
+        for x in z.prefix:
+            if isinstance(x, (Node2, Node3)):
+                _preorder_flatten(x, out)
+            else:
+                out.append(x)
+        _preorder(z.middle, out)
+        for x in z.suffix:
+            if isinstance(x, (Node2, Node3)):
+                _preorder_flatten(x, out)
+            else:
+                out.append(x)
+
+
+def _preorder_flatten(node: Node2 | Node3, out: list) -> None:
+    for x in node.to_list():
+        if isinstance(x, (Node2, Node3)):
+            _preorder_flatten(x, out)
+        else:
+            out.append(x)
+
+
+def _nodes_of(prefix: list, suffix: list) -> list:
+    all_items = list(prefix) + list(suffix)
+    result: list = []
+    i = 0
+    n = len(all_items)
+    while i < n:
+        remaining = n - i
+        if remaining >= 3:
+            result.append(Node3(all_items[i], all_items[i + 1], all_items[i + 2]))
+            i += 3
+        elif remaining == 2:
+            result.append(Node2(all_items[i], all_items[i + 1]))
+            i += 2
+        elif result:
+            prev = result.pop()
+            parts = [*prev.to_list(), all_items[i]]
+            if len(parts) >= 3:
+                result.append(Node3(parts[0], parts[1], parts[2]))
+            else:
+                result.append(Node2(parts[0], parts[1]))
+            i += 1
+        else:
+            break
+    return result
+
+
+def size(z: FingerTree) -> int:
+    if isinstance(z, Empty):
+        return 0
+    if isinstance(z, Single):
+        return _elem_count(z.v)
+    if isinstance(z, Deep):
+        return z.size()
+    return 0
+
+
+def is_empty(z: FingerTree) -> bool:
+    return isinstance(z, Empty)
+
+
+def _digit_to_leaves(items: list) -> list:
+    out: list = []
+    for x in items:
+        if isinstance(x, Node2):
+            out.extend(_digit_to_leaves([x.a, x.b]))
+        elif isinstance(x, Node3):
+            out.extend(_digit_to_leaves([x.a, x.b, x.c]))
+        else:
+            out.append(x)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Push / Pop — left end
+# ---------------------------------------------------------------------------
+
+
+def push_left(z: FingerTree, v: T) -> Single[T] | Deep[T]:
+    if isinstance(z, Empty):
+        return Single(v)
+    if isinstance(z, Single):
+        return Deep([v], Empty(), [z.v])
+    if isinstance(z, Deep):
+        pf: list = z.prefix
+        if len(pf) >= 4:
+            return Deep(
+                [v, pf[0]],
+                _push_left_deep(z.middle, Node3(pf[1], pf[2], pf[3])),
+                z.suffix,
+            )
+        return Deep([v, *pf], z.middle, z.suffix)
+    raise TypeError(f"Unexpected tree shape: {z!r}")
+
+
+def _push_left_deep(m: Empty | Single | Deep, node: Node2 | Node3) -> Empty | Single | Deep:
+    if isinstance(m, Empty):
+        return Single(node)
+    if isinstance(m, Single):
+        return Deep([node], Empty(), [m.v])
+    if isinstance(m, Deep):
+        pf: list = m.prefix
+        if len(pf) >= 4:
+            return Deep(
+                [node, pf[0]],
+                _push_left_deep(m.middle, Node3(pf[1], pf[2], pf[3])),
+                m.suffix,
+            )
+        return Deep([node, *pf], m.middle, m.suffix)
+    raise TypeError(f"Unexpected middle shape: {m!r}")
+
+
+def pop_left(z: FingerTree) -> tuple[T, FingerTree]:
+    if isinstance(z, Empty):
+        raise IndexError("pop from empty finger tree")
+    if isinstance(z, Single):
+        return z.v, Empty()
+    if isinstance(z, Deep):
+        pf: list = z.prefix
+        first = pf[0]
+        val, extra = _deconstruct_first(first)
+        rest = pf[1:]
+        new_pf = extra + rest
+        if new_pf:
+            return val, Deep(new_pf, z.middle, z.suffix)
+        return val, _absorb_left(z.middle, z.suffix)
+    raise TypeError(f"Unexpected tree shape: {z!r}")
+
+
+def _absorb_left(m: Empty | Single | Deep, suffix: list) -> FingerTree:
+    if isinstance(m, Empty):
+        if not suffix:
+            return Empty()
+        if len(suffix) == 1:
+            return Single(suffix[0])
+        return Deep(suffix[:2], Empty(), suffix[2:])
+    if isinstance(m, Single):
+        parts = _digit_to_leaves([m.v]) + suffix
+        return _parts_to_tree(parts)
+    if isinstance(m, Deep):
+        if not m.prefix:
+            return _absorb_left(m.middle, suffix)
+        pf0 = m.prefix[0]
+        elements = _digit_to_leaves([pf0])
+        rest = m.prefix[1:]
+        if rest or not isinstance(m.middle, Empty):
+            new_mid = Deep(rest, m.middle, m.suffix)
+            return Deep(elements, new_mid, suffix)
+        leaves = _digit_to_leaves(m.suffix)
+        return _parts_to_tree(elements + leaves + suffix)
+    return Empty()
+
+
+def _parts_to_tree(parts: list) -> FingerTree:
+    if not parts:
+        return Empty()
+    if len(parts) == 1:
+        return Single(parts[0])
+    if len(parts) == 2:
+        return Deep([parts[0]], Empty(), [parts[1]])
+    return Deep(parts[:2], Empty(), parts[2:])
+
+
+def peek_left(z: FingerTree) -> T:
+    if isinstance(z, Empty):
+        raise IndexError("peek from empty finger tree")
+    if isinstance(z, Single):
+        v = z.v
+        if isinstance(v, Node2):
+            return v.a
+        if isinstance(v, Node3):
+            return v.a
+        return v
+    if isinstance(z, Deep):
+        first = z.prefix[0]
+        if isinstance(first, Node2):
+            return first.a
+        if isinstance(first, Node3):
+            return first.a
+        return first
+    raise TypeError(f"Unexpected tree shape: {z!r}")
+
+
+# ---------------------------------------------------------------------------
+# Push / Pop — right end
+# ---------------------------------------------------------------------------
+
+
+def push_right(z: FingerTree, v: T) -> Single[T] | Deep[T]:
+    if isinstance(z, Empty):
+        return Single(v)
+    if isinstance(z, Single):
+        return Deep([z.v], Empty(), [v])
+    if isinstance(z, Deep):
+        sf: list = z.suffix
+        if len(sf) >= 4:
+            return Deep(
+                z.prefix,
+                _push_right_deep(z.middle, Node3(sf[0], sf[1], sf[2])),
+                [sf[3], v],
+            )
+        return Deep(z.prefix, z.middle, [*sf, v])
+    raise TypeError(f"Unexpected tree shape: {z!r}")
+
+
+def _push_right_deep(m: Empty | Single | Deep, node: Node2 | Node3) -> Empty | Single | Deep:
+    if isinstance(m, Empty):
+        return Single(node)
+    if isinstance(m, Single):
+        return Deep([m.v], Empty(), [node])
+    if isinstance(m, Deep):
+        sf: list = m.suffix
+        if len(sf) >= 4:
+            return Deep(
+                m.prefix,
+                _push_right_deep(m.middle, Node3(sf[0], sf[1], sf[2])),
+                [sf[3], node],
+            )
+        return Deep(m.prefix, m.middle, [*sf, node])
+    raise TypeError(f"Unexpected middle shape: {m!r}")
+
+
+def pop_right(z: FingerTree) -> tuple[T, FingerTree]:
+    if isinstance(z, Empty):
+        raise IndexError("pop from empty finger tree")
+    if isinstance(z, Single):
+        return z.v, Empty()
+    if isinstance(z, Deep):
+        sf: list = z.suffix
+        last = sf[-1]
+        val, extra = _deconstruct_last(last)
+        rest = sf[:-1]
+        new_sf = rest + extra
+        if new_sf:
+            return val, Deep(z.prefix, z.middle, new_sf)
+        return val, _absorb_right(z.prefix, z.middle)
+    raise TypeError(f"Unexpected tree shape: {z!r}")
+
+
+def _absorb_right(prefix: list, m: Empty | Single | Deep) -> FingerTree:
+    if isinstance(m, Empty):
+        if not prefix:
+            return Empty()
+        if len(prefix) == 1:
+            return Single(prefix[0])
+        return Deep(prefix[:-1], Empty(), [prefix[-1]])
+    if isinstance(m, Single):
+        parts = prefix + _digit_to_leaves([m.v])
+        return _parts_to_tree(parts)
+    if isinstance(m, Deep):
+        if not m.suffix:
+            return _absorb_right(prefix, m.middle)
+        sf0 = m.suffix[-1]
+        elements = _digit_to_leaves([sf0])
+        rest = m.suffix[:-1]
+        if rest or not isinstance(m.middle, Empty):
+            new_mid = Deep(m.prefix, m.middle, rest)
+            return Deep(prefix, new_mid, elements)
+        leaves = _digit_to_leaves(m.prefix)
+        return _parts_to_tree(prefix + leaves + elements)
+    return Empty()
+
+
+def peek_right(z: FingerTree) -> T:
+    if isinstance(z, Empty):
+        raise IndexError("peek from empty finger tree")
+    if isinstance(z, Single):
+        v = z.v
+        if isinstance(v, Node3):
+            return v.c
+        if isinstance(v, Node2):
+            return v.b
+        return v
+    if isinstance(z, Deep):
+        last = z.suffix[-1]
+        if isinstance(last, Node3):
+            return last.c
+        if isinstance(last, Node2):
+            return last.b
+        return last
+    raise TypeError(f"Unexpected tree shape: {z!r}")
+
+
+# ---------------------------------------------------------------------------
+# Concatenation — O(log n)
+# ---------------------------------------------------------------------------
+
+
+def concat(t1: FingerTree, t2: FingerTree) -> FingerTree:
+    if isinstance(t1, Empty):
+        return t2
+    if isinstance(t2, Empty):
+        return t1
+    if isinstance(t1, Single) and isinstance(t2, Single):
+        return Deep([t1.v], Empty(), [t2.v])
+    if isinstance(t1, Single) and isinstance(t2, Deep):
+        parts = [t1.v, *_digit_to_leaves(t2.prefix)]
+        return Deep(parts, t2.middle, t2.suffix)
+    if isinstance(t1, Deep) and isinstance(t2, Single):
+        parts = [*_digit_to_leaves(t1.suffix), t2.v]
+        return Deep(t1.prefix, t1.middle, parts)
+    if isinstance(t1, Deep) and isinstance(t2, Deep):
+        mid = _merge_middles(
+            t1.middle,
+            _digit_to_leaves(t1.suffix),
+            _digit_to_leaves(t2.prefix),
+            t2.middle,
+        )
+        return Deep(t1.prefix, mid, t2.suffix)
+    raise TypeError(f"Unexpected concat shapes: {t1!r} {t2!r}")
+
+
+def _merge_middles(
+    m1: Empty | Single | Deep,
+    s1: list,
+    p2: list,
+    m2: Empty | Single | Deep,
+) -> Empty | Single | Deep:
+    nodes = _nodes_of(s1, p2)
+    result = m1
+    for n in nodes:
+        result = _push_right_deep(result, n)
+    return _merge_trees(result, m2)
+
+
+def _merge_trees(a: Empty | Single | Deep, b: Empty | Single | Deep) -> Empty | Single | Deep:
+    if isinstance(a, Empty):
+        return b
+    if isinstance(b, Empty):
+        return a
+    if isinstance(a, Single) and isinstance(b, Single):
+        return Deep([a.v], Empty(), [b.v])
+    if isinstance(a, Single) and isinstance(b, Deep):
+        return Deep([a.v, *b.prefix], b.middle, b.suffix)
+    if isinstance(a, Deep) and isinstance(b, Single):
+        return Deep(a.prefix, a.middle, [*a.suffix, b.v])
+    if isinstance(a, Deep) and isinstance(b, Deep):
+        mid = _merge_middles(a.middle, a.suffix, b.prefix, b.middle)
+        return Deep(a.prefix, mid, b.suffix)
+    return a
+
+
+# ---------------------------------------------------------------------------
+# Indexed access — O(log n) via iterative walk
+# ---------------------------------------------------------------------------
+
+
+def get(z: FingerTree, idx: int) -> T:
+    sz = size(z)
+    if idx < 0:
+        idx += sz
+    if idx < 0 or idx >= sz:
+        raise IndexError(f"index {idx} out of range [0, {sz})")
+    return _get_index(z, idx)
+
+
+def _get_index(z: FingerTree, idx: int) -> T:
+    if isinstance(z, Single):
+        return _get_from_value(z.v, idx)
+    if isinstance(z, Deep):
+        return _get_deep(z, idx)
+    raise IndexError("index out of range")
+
+
+def _get_from_value(v: object, idx: int) -> T:
+    if isinstance(v, Node2):
+        if idx == 0:
+            return _get_from_value(v.a, 0) if idx < _elem_count(v.a) else _get_from_value(v.b, 0)
+        left_sz = _elem_count(v.a)
+        if idx < left_sz:
+            return _get_from_value(v.a, idx)
+        return _get_from_value(v.b, idx - left_sz)
+    if isinstance(v, Node3):
+        left_sz = _elem_count(v.a)
+        if idx < left_sz:
+            return _get_from_value(v.a, idx)
+        mid_sz = _elem_count(v.b)
+        if idx < left_sz + mid_sz:
+            return _get_from_value(v.b, idx - left_sz)
+        return _get_from_value(v.c, idx - left_sz - mid_sz)
+    if idx == 0:
+        return v
+    raise IndexError("index out of range")
+
+
+def _get_deep(z: Deep, idx: int) -> T:
+    offset = 0
+    for x in z.prefix:
+        ec = _elem_count(x)
+        if idx < offset + ec:
+            return _get_from_value(x, idx - offset)
+        offset += ec
+
+    msize = _deep_size(z.middle)
+    if idx < offset + msize:
+        return _get_index(z.middle, idx - offset)
+    offset += msize
+
+    for x in z.suffix:
+        ec = _elem_count(x)
+        if idx < offset + ec:
+            return _get_from_value(x, idx - offset)
+        offset += ec
+
+    raise IndexError("index out of range")
+
+
+# ---------------------------------------------------------------------------
+# Split at index
+# ---------------------------------------------------------------------------
+
+
+def split_at_index(z: FingerTree, idx: int) -> tuple[FingerTree, FingerTree]:
+    sz = size(z)
+    if idx < 0:
+        idx += sz
+    if idx <= 0:
+        return Empty(), z
+    if idx >= sz:
+        return z, Empty()
+    return _split_at(z, idx)
+
+
+def _split_at(z: FingerTree, idx: int) -> tuple[FingerTree, FingerTree]:
+    if isinstance(z, Single):
+        return Empty(), z
+    if isinstance(z, Deep):
+        offset = 0
+        for i, x in enumerate(z.prefix):
+            ec = _elem_count(x)
+            if idx <= offset + ec:
+                pos = idx - offset
+                if ec == 1:
+                    return (
+                        _parts_to_tree(z.prefix[:i]),
+                        _build_deep(z.prefix[i:], z.middle, z.suffix),
+                    )
+                left_parts, right_parts = _split_value(x, pos)
+                lp = z.prefix[:i] + left_parts
+                rp = right_parts + z.prefix[i + 1 :]
+                left = _parts_to_tree(lp)
+                r = _build_deep(rp, z.middle, z.suffix)
+                return left, r
+            offset += ec
+
+        msize = _deep_size(z.middle)
+        if idx <= offset + msize:
+            ml, mr = _split_at(z.middle, idx - offset)
+            return (
+                _build_deep(z.prefix, ml, []),
+                _build_deep([], mr, z.suffix),
+            )
+        offset += msize
+
+        for i, x in enumerate(z.suffix):
+            ec = _elem_count(x)
+            if idx <= offset + ec:
+                pos = idx - offset
+                if ec == 1:
+                    return (
+                        _build_deep(z.prefix, z.middle, z.suffix[: i + 1]),
+                        _parts_to_tree(z.suffix[i + 1 :]),
+                    )
+                left_parts, right_parts = _split_value(x, pos)
+                return (
+                    _build_deep(z.prefix, z.middle, z.suffix[:i] + left_parts),
+                    _parts_to_tree(right_parts + z.suffix[i + 1 :]),
+                )
+            offset += ec
+    return Empty(), z
+
+
+def _split_value(v: object, pos: int) -> tuple[list, list]:
+    if isinstance(v, Node2):
+        left_sz = _elem_count(v.a)
+        if pos < left_sz:
+            la, ra = _split_value(v.a, pos)
+            return la, [*ra, v.b]
+        la2, ra2 = _split_value(v.b, pos - left_sz)
+        return [v.a, *la2], ra2
+    if isinstance(v, Node3):
+        left_sz = _elem_count(v.a)
+        if pos < left_sz:
+            la, ra = _split_value(v.a, pos)
+            return la, [*ra, v.b, v.c]
+        mid_sz = _elem_count(v.b)
+        if pos < left_sz + mid_sz:
+            lb, rb = _split_value(v.b, pos - left_sz)
+            return [v.a, *lb], [*rb, v.c]
+        lc, rc = _split_value(v.c, pos - left_sz - mid_sz)
+        return [v.a, v.b, *lc], rc
+    if pos == 0:
+        return [], [v]
+    return [v], []
+
+
+def _build_deep(prefix: list, middle: Empty | Single | Deep, suffix: list) -> FingerTree:
+    if not prefix and isinstance(middle, Empty) and not suffix:
+        return Empty()
+    if not prefix and isinstance(middle, Empty) and len(suffix) == 1:
+        return Single(suffix[0])
+    if not suffix and isinstance(middle, Empty) and len(prefix) == 1:
+        return Single(prefix[0])
+    if isinstance(middle, Single) and not prefix and not suffix:
+        return middle
+    return Deep(prefix or [], middle, suffix or [])
+
+
+# ---------------------------------------------------------------------------
+# Deque
+# ---------------------------------------------------------------------------
+
+
+class Deque(Generic[T]):
+    __slots__ = ("_len", "_root")
+
+    def __init__(self) -> None:
+        self._root: FingerTree = Empty()
+        self._len = 0
+
+    @classmethod
+    def from_iter(cls, items: list[T]) -> Deque[T]:
+        dq: Deque[T] = cls()
+        for v in items:
+            dq.push(v)
+        return dq
+
+    def __len__(self) -> int:
+        return self._len
+
+    def __bool__(self) -> bool:
+        return self._len > 0
+
+    def push(self, v: T) -> None:
+        self._root = push_right(self._root, v)
+        self._len += 1
+
+    def push_left(self, v: T) -> None:
+        self._root = push_left(self._root, v)
+        self._len += 1
+
+    def pop(self) -> T:
+        if self._len == 0:
+            raise IndexError("pop from empty deque")
+        v, self._root = pop_right(self._root)
+        self._len -= 1
+        return v
+
+    def pop_left(self) -> T:
+        if self._len == 0:
+            raise IndexError("pop from empty deque")
+        v, self._root = pop_left(self._root)
+        self._len -= 1
+        return v
+
+    def peek(self) -> T:
+        return peek_right(self._root)
+
+    def peek_left(self) -> T:
+        return peek_left(self._root)
+
+    def extend(self, items: list[T]) -> None:
+        for v in items:
+            self.push(v)
+
+    def extend_left(self, items: list[T]) -> None:
+        for v in reversed(items):
+            self.push_left(v)
+
+    def rotate(self, n: int = 1) -> None:
+        if self._len == 0:
+            return
+        for _ in range(n % self._len):
+            self.push_left(self.pop())
+
+    def to_list(self) -> list[T]:
+        return _tree_to_list(self._root)
+
+    def __iter__(self):
+        return iter(self.to_list())
+
+    def __repr__(self) -> str:
+        return f"Deque({self.to_list()!r})"
+
+
+# ---------------------------------------------------------------------------
+# Sequence
+# ---------------------------------------------------------------------------
+
+
+class Sequence(Generic[T]):
+    __slots__ = ("_root", "_size")
+
+    def __init__(self) -> None:
+        self._root: FingerTree = Empty()
+        self._size = 0
+
+    @classmethod
+    def from_iter(cls, items: list[T]) -> Sequence[T]:
+        seq: Sequence[T] = cls()
+        for v in items:
+            seq.push(v)
+        return seq
+
+    def __len__(self) -> int:
+        return self._size
+
+    def __bool__(self) -> bool:
+        return self._size > 0
+
+    def __getitem__(self, idx: int) -> T:
+        return get(self._root, idx)
+
+    def push(self, v: T) -> None:
+        self._root = push_right(self._root, v)
+        self._size += 1
+
+    def push_left(self, v: T) -> None:
+        self._root = push_left(self._root, v)
+        self._size += 1
+
+    def pop(self) -> T:
+        if self._size == 0:
+            raise IndexError("pop from empty sequence")
+        v, self._root = pop_right(self._root)
+        self._size -= 1
+        return v
+
+    def pop_left(self) -> T:
+        if self._size == 0:
+            raise IndexError("pop from empty sequence")
+        v, self._root = pop_left(self._root)
+        self._size -= 1
+        return v
+
+    def peek(self) -> T:
+        return peek_right(self._root)
+
+    def peek_left(self) -> T:
+        return peek_left(self._root)
+
+    def extend(self, items: list[T]) -> None:
+        for v in items:
+            self.push(v)
+
+    def concat(self, other: Sequence[T]) -> None:
+        self._root = concat(self._root, other._root)
+        self._size += len(other)
+
+    def split_at(self, idx: int) -> tuple[Sequence[T], Sequence[T]]:
+        left, r = split_at_index(self._root, idx)
+        ls = Sequence[T]()
+        ls._root = left
+        ls._size = size(left)
+        rs = Sequence[T]()
+        rs._root = r
+        rs._size = size(r)
+        return ls, rs
+
+    def to_list(self) -> list[T]:
+        return _tree_to_list(self._root)
+
+    def __iter__(self):
+        return iter(self.to_list())
+
+    def __repr__(self) -> str:
+        return f"Sequence({self.to_list()!r})"
+
+
+# ---------------------------------------------------------------------------
+# Priority deque
+# ---------------------------------------------------------------------------
+
+
+class PriorityDeque(Generic[T]):
+    __slots__ = ("_root", "_size")
+
+    def __init__(self) -> None:
+        self._root: FingerTree = Empty()
+        self._size = 0
+
+    def __len__(self) -> int:
+        return self._size
+
+    def push_min(self, v: T) -> None:
+        self._root = push_left(self._root, v)
+        self._size += 1
+
+    def push_max(self, v: T) -> None:
+        self._root = push_right(self._root, v)
+        self._size += 1
+
+    def pop_min(self) -> T:
+        if self._size == 0:
+            raise IndexError("pop from empty priority deque")
+        v, self._root = pop_left(self._root)
+        self._size -= 1
+        return v
+
+    def pop_max(self) -> T:
+        if self._size == 0:
+            raise IndexError("pop from empty priority deque")
+        v, self._root = pop_right(self._root)
+        self._size -= 1
+        return v
+
+    def peek_min(self) -> T:
+        return peek_left(self._root)
+
+    def peek_max(self) -> T:
+        return peek_right(self._root)
+
+    def to_list(self) -> list[T]:
+        return _tree_to_list(self._root)
+
+    def __repr__(self) -> str:
+        return f"PriorityDeque({self.to_list()!r})"
