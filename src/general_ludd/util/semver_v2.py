@@ -271,7 +271,7 @@ class Satisfier:
     def _cmp(version: SemVer, op: str, ref_str: str) -> bool:
         ref = parse(ref_str) if ref_str else version
         method = _OP_TO_CMP.get(op, "eq")
-        return getattr(version, f"__{method}__")(ref)
+        return bool(getattr(version, f"__{method}__")(ref))
 
     @staticmethod
     def _tilde(version: SemVer, spec: str) -> bool:
