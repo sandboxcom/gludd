@@ -1,4 +1,5 @@
-"""Suffix array construction (SA-IS), LCP array (Kasai), and binary
+"""Suffix array construction (SA-IS), LCP array (Kasai), sparse-table
+RMQ for O(1) LCP queries, longest repeated substring, and binary
 search for pattern matching. Pure-Python, stdlib only.
 
 Appends a unique sentinel (0) to the integer sequence during construction
@@ -221,3 +222,98 @@ def sa_find_all(sa: list[int], text: str, pattern: str) -> tuple[int, int]:
 def sa_contains(sa: list[int], text: str, pattern: str) -> bool:
     lo, _ = sa_find_all(sa, text, pattern)
     return lo < len(sa) and text[sa[lo] :].startswith(pattern)
+
+
+def longest_repeated_substring(s: str | list[int], sa: list[int], lcp: list[int]) -> tuple[int, int, int]:
+    """Return (length, start_a, start_b) of the longest repeated substring.
+
+    Uses the LCP array: the maximum LCP value (and its position) identifies
+    the longest shared prefix between two adjacent suffixes in sorted order.
+    start_a and start_b are the two distinct suffix start positions.
+    Returns (0, 0, 0) when no repeat exists (|s| < 2 or all chars distinct).
+    """
+    if len(lcp) < 2:
+        return (0, 0, 0)
+    best = 0
+    best_idx = 0
+    for i in range(1, len(lcp)):
+        if lcp[i] > best:
+            best = lcp[i]
+            best_idx = i
+    if best == 0:
+        return (0, 0, 0)
+    pos_a = sa[best_idx]
+    pos_b = sa[best_idx - 1]
+    if pos_a > pos_b:
+        pos_a, pos_b = pos_b, pos_a
+    return (best, pos_a, pos_b)
+
+
+def _floor_log2(x: int) -> int:
+    """Floor of log2(x) for x > 0, via bit_length."""
+    return x.bit_length() - 1
+
+
+def build_lcp_sparse_table(lcp: list[int]) -> list[list[int]]:
+    """Build a sparse table for O(1) range-minimum queries on the LCP array.
+
+    st[j][i] = min(LCP[i .. i + 2^j - 1])  (inclusive range).
+    Returns st[0..logN] where st[0] is a copy of lcp.
+    For an empty LCP array, returns [[0]].
+    """
+    n = len(lcp)
+    if n == 0:
+        return [[0]]
+    k = _floor_log2(n) + 1
+    st = [lcp[:]]
+    for j in range(1, k):
+        step = 1 << (j - 1)
+        prev = st[j - 1]
+        cur = [0] * n
+        limit = n - (1 << j) + 1
+        for i in range(limit):
+            cur[i] = min(prev[i], prev[i + step])
+        st.append(cur)
+    return st
+
+
+def lcp_query(st: list[list[int]], left: int, right_exclusive: int) -> int:
+    """O(1) range-minimum query into the LCP sparse table.
+
+    Returns min(LCP[left .. right_exclusive - 1]).
+    When left >= right_exclusive, returns a large sentinel.
+    """
+    if left >= right_exclusive:
+        return 1 << 60
+    length = right_exclusive - left
+    j = _floor_log2(length)
+    row = st[j]
+    return min(row[left], row[right_exclusive - (1 << j)])
+
+
+def lcp_of_suffixes(sa: list[int], rank: list[int], st: list[list[int]], pos_a: int, pos_b: int) -> int:
+    """O(1) LCP of the suffixes starting at pos_a and pos_b in the original text.
+
+    Requires the SA, inverse rank array, and LCP sparse table already built.
+    When pos_a == pos_b, returns the remaining suffix length as a sentinel
+    (the caller should pass the text length).
+    """
+    if pos_a == pos_b:
+        return 1 << 60
+    r_a, r_b = rank[pos_a], rank[pos_b]
+    if r_a > r_b:
+        r_a, r_b = r_b, r_a
+    return lcp_query(st, r_a + 1, r_b + 1)
+
+
+def build_sa_lcp_rmq(
+    s: str | list[int],
+) -> tuple[list[int], list[int], list[list[int]]]:
+    """Convenience: build SA + LCP + RMQ sparse table in one call.
+
+    Returns (sa, lcp, st).
+    """
+    sa = build_sa(s)
+    lcp = build_lcp(s, sa)
+    st = build_lcp_sparse_table(lcp)
+    return sa, lcp, st

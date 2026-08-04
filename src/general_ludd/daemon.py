@@ -1312,7 +1312,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             app.state._embedding_store = _embedding_store
             app.state._embedding_session = _embedding_session
         except Exception:
-            logger.error("TaskEmbeddingStore seeding failed", exc_info=True)
+            logger.error("TaskEmbeddingStore seeding failed")
             with contextlib.suppress(Exception):
                 if "_embedding_session" in locals():
                     await _embedding_session.close()
@@ -1349,7 +1349,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             app.state._sts_reaper = _sts_reaper
             logger.info("STS TokenReaper wired into daemon tick")
         except Exception:
-            logger.warning("STS TokenReaper construction failed; reaping disabled", exc_info=True)
+            logger.warning("STS TokenReaper construction failed; reaping disabled")
 
         model_profiles = startup_config.get("model_profiles", [])
 
@@ -1379,7 +1379,6 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception:
             logger.warning(
                 "Auto-config: env-var profile discovery failed; continuing with explicit config only",
-                exc_info=True,
             )
 
         if model_profiles and hasattr(secrets_resolver, "write_secret"):

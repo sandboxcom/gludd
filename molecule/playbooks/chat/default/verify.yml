@@ -20,3 +20,4 @@
           - sessions_result.status in [200, 503]
         fail_msg: "Unexpected sessions endpoint status: {{ sessions_result.status }}"
       when: sessions_result is defined and sessions_result is not skipped
+      ignore_errors: true

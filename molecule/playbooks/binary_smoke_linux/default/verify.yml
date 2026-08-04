@@ -123,7 +123,7 @@
     - name: Assert daemon accepted the job (todo_id present)
       ansible.builtin.assert:
         that:
-          - "{{ _job_json | from_json }}.todo_id is defined"
+          - "(_job_json | from_json).todo_id is defined"
         fail_msg: >-
           Daemon did not accept the job via POST /api/todos.
           result={{ _job_json }}
