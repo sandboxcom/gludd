@@ -1,0 +1,17 @@
+---
+- name: Converge — run local_game_gen role behavioral pipeline
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    game_name: "snake"
+    model_repo: "bartowski/Qwen2.5-0.5B-Instruct-GGUF"
+    model_file: "Qwen2.5-0.5B-Instruct-Q5_K_M.gguf"
+  tasks:
+    - name: Invoke local_game_gen role
+      ansible.builtin.include_role:
+        name: general_ludd.agent.local_game_gen
+      vars:
+        game_name: "{{ game_name }}"
+        model_repo: "{{ model_repo }}"
+        model_file: "{{ model_file }}"
