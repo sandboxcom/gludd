@@ -6,8 +6,9 @@ operations. All use open addressing (no chaining).
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Generic, TypeVar
+from typing import Generic, TypeVar, cast
 
 K = TypeVar("K")
 V = TypeVar("V")
@@ -91,17 +92,13 @@ class RobinHoodHashMap(Generic[K, V]):
         return self._entries[i].value if i != -1 else default
 
     def items(self) -> list[tuple[K, V]]:
-        return [
-            (e.key, e.value)  # type: ignore[return-value]
-            for e in self._entries
-            if e.is_occupied
-        ]
+        return [(cast(K, e.key), cast(V, e.value)) for e in self._entries if e.is_occupied]
 
     def keys(self) -> list[K]:
-        return [e.key for e in self._entries if e.is_occupied]  # type: ignore[return-value]
+        return [cast(K, e.key) for e in self._entries if e.is_occupied]
 
     def values(self) -> list[V]:
-        return [e.value for e in self._entries if e.is_occupied]  # type: ignore[return-value]
+        return [cast(V, e.value) for e in self._entries if e.is_occupied]
 
     def _hash(self, key: object) -> int:
         return _fmix64(hash(key) & 0xFFFFFFFFFFFFFFFF) % self._cap
@@ -124,14 +121,14 @@ class RobinHoodHashMap(Generic[K, V]):
         self._size = 0
         for e in old:
             if e.is_occupied:
-                self._insert(e.key, e.value)  # type: ignore[arg-type]
+                self._insert(cast(K, e.key), cast(V, e.value))
 
     def _insert(self, key: K, value: V) -> None:
         if self._size + 1 > int(self._cap * 0.7):
             self._resize()
         h = self._hash(key)
         dist = 0
-        cur_key = key
+        cur_key: object = key
         cur_val = value
         for _ in range(self._cap):
             i = (h + dist) % self._cap
@@ -153,7 +150,7 @@ class RobinHoodHashMap(Generic[K, V]):
         self._resize()
         self._insert(key, value)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[K]:
         return iter(self.keys())
 
     def __repr__(self) -> str:
@@ -212,14 +209,14 @@ class SwissHashMap(Generic[K, V]):
         result: list[tuple[K, V]] = []
         for i in range(self._cap):
             if self._ctrl[i] != _EMPTY and self._ctrl[i] != 0xFE:
-                result.append((self._keys[i], self._values[i]))  # type: ignore[return-value]
+                result.append((cast(K, self._keys[i]), cast(V, self._values[i])))
         return result
 
     def keys(self) -> list[K]:
-        return [self._keys[i] for i in range(self._cap) if self._ctrl[i] != _EMPTY and self._ctrl[i] != 0xFE]  # type: ignore[return-value]
+        return [cast(K, self._keys[i]) for i in range(self._cap) if self._ctrl[i] != _EMPTY and self._ctrl[i] != 0xFE]
 
     def values(self) -> list[V]:
-        return [self._values[i] for i in range(self._cap) if self._ctrl[i] != _EMPTY and self._ctrl[i] != 0xFE]  # type: ignore[return-value]
+        return [cast(V, self._values[i]) for i in range(self._cap) if self._ctrl[i] != _EMPTY and self._ctrl[i] != 0xFE]
 
     def _h1(self, key: object) -> int:
         return _fmix64(hash(key) & 0xFFFFFFFFFFFFFFFF) % self._cap
@@ -251,7 +248,7 @@ class SwissHashMap(Generic[K, V]):
         self._tombstones = 0
         for i, c in enumerate(old_ctrl):
             if c != _EMPTY and c != 0xFE:
-                self._insert(old_keys[i], old_vals[i])
+                self._insert(cast(K, old_keys[i]), cast(V, old_vals[i]))
 
     def _insert(self, key: K, value: V) -> None:
         if self._size + self._tombstones + 1 > int(self._cap * 0.875):
@@ -273,7 +270,7 @@ class SwissHashMap(Generic[K, V]):
                 self._values[i] = value
                 return
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[K]:
         return iter(self.keys())
 
     def __repr__(self) -> str:
@@ -323,14 +320,14 @@ class LinearProbingHashMap(Generic[K, V]):
         result: list[tuple[K, V]] = []
         for i in range(self._cap):
             if self._is_occupied(i):
-                result.append((self._keys[i], self._values[i]))  # type: ignore[return-value]
+                result.append((cast(K, self._keys[i]), cast(V, self._values[i])))
         return result
 
     def keys(self) -> list[K]:
-        return [self._keys[i] for i in range(self._cap) if self._is_occupied(i)]  # type: ignore[return-value]
+        return [cast(K, self._keys[i]) for i in range(self._cap) if self._is_occupied(i)]
 
     def values(self) -> list[V]:
-        return [self._values[i] for i in range(self._cap) if self._is_occupied(i)]  # type: ignore[return-value]
+        return [cast(V, self._values[i]) for i in range(self._cap) if self._is_occupied(i)]
 
     def _is_occupied(self, i: int) -> bool:
         return self._keys[i] is not _SENTINEL and self._keys[i] is not _TOMBSTONE
@@ -358,7 +355,7 @@ class LinearProbingHashMap(Generic[K, V]):
         self._size = 0
         for i in range(len(old_keys)):
             if old_keys[i] is not _SENTINEL and old_keys[i] is not _TOMBSTONE:
-                self._insert(old_keys[i], old_vals[i])
+                self._insert(cast(K, old_keys[i]), cast(V, old_vals[i]))
 
     def _insert(self, key: K, value: V) -> None:
         if self._size + 1 > int(self._cap * 0.7):
@@ -376,7 +373,7 @@ class LinearProbingHashMap(Generic[K, V]):
                 self._values[i] = value
                 return
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[K]:
         return iter(self.keys())
 
     def __repr__(self) -> str:
@@ -430,14 +427,14 @@ class QuadraticProbingHashMap(Generic[K, V]):
         result: list[tuple[K, V]] = []
         for i in range(self._cap):
             if self._is_occupied(i):
-                result.append((self._keys[i], self._values[i]))  # type: ignore[return-value]
+                result.append((cast(K, self._keys[i]), cast(V, self._values[i])))
         return result
 
     def keys(self) -> list[K]:
-        return [self._keys[i] for i in range(self._cap) if self._is_occupied(i)]  # type: ignore[return-value]
+        return [cast(K, self._keys[i]) for i in range(self._cap) if self._is_occupied(i)]
 
     def values(self) -> list[V]:
-        return [self._values[i] for i in range(self._cap) if self._is_occupied(i)]  # type: ignore[return-value]
+        return [cast(V, self._values[i]) for i in range(self._cap) if self._is_occupied(i)]
 
     def _is_occupied(self, i: int) -> bool:
         return self._keys[i] is not _SENTINEL and self._keys[i] is not _TOMBSTONE
@@ -465,7 +462,7 @@ class QuadraticProbingHashMap(Generic[K, V]):
         self._size = 0
         for i in range(len(old_keys)):
             if old_keys[i] is not _SENTINEL and old_keys[i] is not _TOMBSTONE:
-                self._insert(old_keys[i], old_vals[i])
+                self._insert(cast(K, old_keys[i]), cast(V, old_vals[i]))
 
     def _insert(self, key: K, value: V) -> None:
         if self._size + 1 > int(self._cap * 0.7):
@@ -483,7 +480,7 @@ class QuadraticProbingHashMap(Generic[K, V]):
                 self._values[i] = value
                 return
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[K]:
         return iter(self.keys())
 
     def __repr__(self) -> str:

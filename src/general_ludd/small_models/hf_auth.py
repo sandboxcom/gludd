@@ -125,7 +125,7 @@ class HfOidcAuth:
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode())
                 token = data.get("token") or data.get("access_token") or data.get("id_token")
-                return token
+                return token if isinstance(token, str) else None
         except Exception:
             logger.exception("Failed to fetch OIDC token from endpoint %s", endpoint)
             return None

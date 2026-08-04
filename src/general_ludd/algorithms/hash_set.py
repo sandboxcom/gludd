@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import Iterable, Iterator
-from typing import Generic, TypeVar
+from typing import Generic, TypeVar, cast
 
 T = TypeVar("T")
 
@@ -39,7 +39,7 @@ class HashSet(Generic[T]):
     def __iter__(self) -> Iterator[T]:
         for slot in self._slots:
             if slot is not _SENTINEL and slot is not _TOMBSTONE:
-                yield slot  # type: ignore[return-value]
+                yield cast(T, slot)
 
     def __repr__(self) -> str:
         return f"HashSet({list(self)!r})"

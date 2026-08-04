@@ -555,6 +555,9 @@ sync-local-inference:
 sync-llama-cpp:
 	@$(UV) pip install "llama-cpp-python[server]>=0.1.0-beta.2"
 
+sync-models:
+	@$(PYTHON) scripts/sync_local_models.py
+
 # Regenerate uv.lock from pyproject (after adding/removing a dependency) and
 # install it. Use this instead of `sync` when pyproject deps changed.
 relock:

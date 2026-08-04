@@ -39,7 +39,8 @@ def _fetch_aws_oidc_token() -> str | None:
             req = urllib.request.Request(url)
             with urllib.request.urlopen(req, timeout=5) as resp:
                 data = json.loads(resp.read().decode())
-                return data.get("Token") or data.get("AccessKeyId")
+                result = data.get("Token") or data.get("AccessKeyId")
+                return result if isinstance(result, str) else None
         except Exception:
             logger.exception("AWS OIDC: failed to fetch container credentials")
             return None
@@ -47,7 +48,9 @@ def _fetch_aws_oidc_token() -> str | None:
     web_identity_file = os.environ.get("AWS_WEB_IDENTITY_TOKEN_FILE", "")
     if web_identity_file:
         try:
-            return open(web_identity_file).read().strip()
+            with open(web_identity_file) as f:
+                result = f.read().strip()
+            return result if result else None
         except Exception:
             logger.exception("AWS OIDC: failed to read web identity token file")
             return None
@@ -64,7 +67,8 @@ def _fetch_gcp_oidc_token(client_id: str | None = None) -> str | None:
         req = urllib.request.Request(url)
         req.add_header("Metadata-Flavor", "Google")
         with urllib.request.urlopen(req, timeout=5) as resp:
-            return resp.read().decode()
+            result = resp.read().decode()
+            return result if result else None
     except Exception:
         logger.exception("GCP OIDC: failed to fetch identity token")
         return None
@@ -84,7 +88,8 @@ def _fetch_azure_oidc_token(client_id: str | None = None) -> str | None:
         req.add_header("X-IDENTITY-HEADER", identity_header)
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode())
-            return data.get("access_token") or data.get("token")
+            result = data.get("access_token") or data.get("token")
+            return result if isinstance(result, str) else None
     except Exception:
         logger.exception("Azure OIDC: failed to fetch identity token")
         return None
@@ -108,7 +113,8 @@ def _fetch_custom_oidc_token(client_id: str | None = None) -> str | None:
             req.add_header("X-Client-ID", client_id)
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode())
-            return data.get("token") or data.get("access_token") or data.get("id_token")
+            result = data.get("token") or data.get("access_token") or data.get("id_token")
+            return result if isinstance(result, str) else None
     except Exception:
         logger.exception("Custom OIDC: failed to fetch token from %s", url)
         return None
