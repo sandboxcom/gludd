@@ -239,4 +239,4 @@ class LSH:
                     del self._buckets[bucket]
 
     def similarity_threshold(self) -> float:
-        return (1.0 / self._bands) ** (1.0 / self._rows)
+        return float((1.0 / self._bands) ** (1.0 / self._rows))
