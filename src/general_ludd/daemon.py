@@ -2646,14 +2646,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             await pipeline_controller.stop()
         except Exception:
             logger.warning("pipeline_controller.stop() failed during shutdown", exc_info=True)
-            raise
     mcp_client_ref = getattr(app.state, "_mcp_client", None)
     if mcp_client_ref is not None:
         try:
             await mcp_client_ref.stop_all()
         except Exception:
             logger.warning("mcp_client.stop_all() failed during shutdown", exc_info=True)
-            raise
     _el = event_loop if event_loop is not None else getattr(app.state, "event_loop", None)
     _terraform_bridge = getattr(app.state, "_terraform_event_bridge", None)
     if _terraform_bridge is not None:

@@ -43,6 +43,7 @@
         output_file: "{{ export_dest }}"
       register: export_result
       when: config_validation.status != 503
+      ignore_errors: true
 
     - name: Send a chat message to the daemon
       general_ludd.chat.chat_send:
