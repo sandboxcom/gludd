@@ -22,6 +22,7 @@ const defaultImpl: HotModule = {
       if (isDisengaged()) return
       if (!isDispatchTool(tool)) return
       const depth = currentDepth()
+      console.warn(`[enforce-depth] depth=${depth} max=${MAX_DEPTH} tool=${tool}`)
       if (depth >= MAX_DEPTH) {
         return {
           permissionDecision: "deny" as const,
