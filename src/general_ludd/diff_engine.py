@@ -611,8 +611,8 @@ class DiffEngine:
                     oi += 1
                 if oi < len(ours):
                     conflict_start = len(merged)
-                    c_ours: list[str] = ours[start_oi:oi]
-                    c_theirs: list[str] = []
+                    c_ours = ours[start_oi:oi]
+                    c_theirs = []
                     conflicts.append(
                         Conflict(
                             ours_start=conflict_start,
