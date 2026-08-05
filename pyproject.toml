@@ -55,6 +55,7 @@ dependencies = [
     "shamir>=0.1.0-beta.2",
     "srptools>=0.1.0-beta.2",
     "croniter>=0.1.0-beta.2",
+    "srptools>=1.0.0",
 ]
 
 [project.optional-dependencies]
