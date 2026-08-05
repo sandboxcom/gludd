@@ -53,7 +53,6 @@ dependencies = [
     "pycryptodome>=3.20.0",
     "pygments>=2.0.0",
     "shamir>=0.1.0-beta.2",
-    "srptools>=0.1.0-beta.2",
     "croniter>=0.1.0-beta.2",
     "srptools>=1.0.0",
 ]
@@ -182,10 +181,6 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 exclude = ["scripts/", "tests/unit/test_injection_patterns.py", "tests/unit/test_sql_injection_patterns.py", "tests/unit/test_ci_push_guard.py", "abtest/"]
-
-[[tool.mypy.overrides]]
-module = "general_ludd.algorithms.salsa20"
-disable_error_code = ["attr-defined"]
 
 [[tool.mypy.overrides]]
 module = "general_ludd.algorithms.srp"

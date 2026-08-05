@@ -2673,7 +2673,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         with contextlib.suppress(asyncio.CancelledError):
             await preflight_task_ref
     if execution_engine is not None:
-        await execution_engine.shutdown()
+        try:
+            await execution_engine.shutdown()
+        except Exception:
+            logger.warning("execution_engine.shutdown() failed", exc_info=True)
     _searx_client_ref = getattr(app.state, "_searx_client", None)
     if _searx_client_ref is not None:
         try:
@@ -2724,7 +2727,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         with contextlib.suppress(Exception):
             await _embedding_session_ref.close()
     if engine is not None:
-        await engine.dispose()
+        try:
+            await engine.dispose()
+        except Exception:
+            logger.warning("engine.dispose() failed", exc_info=True)
     otel_bridge_ref = getattr(app.state, "_otel_bridge", None)
     if otel_bridge_ref is not None and hasattr(otel_bridge_ref, "shutdown"):
         otel_bridge_ref.shutdown()
