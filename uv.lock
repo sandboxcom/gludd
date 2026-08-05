@@ -1952,6 +1952,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pygments" },
+    { name = "pyspx" },
     { name = "pyyaml" },
     { name = "requests" },
     { name = "rich" },
@@ -2142,6 +2143,7 @@ requires-dist = [
     { name = "pygame", marker = "extra == 'game-e2e'", specifier = ">=2.5.0" },
     { name = "pygments", specifier = ">=2.0.0" },
     { name = "pyinstaller", marker = "extra == 'dev'", specifier = ">=0.1.0b2" },
+    { name = "pyspx", specifier = ">=0.1.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=0.1.0b2" },
     { name = "pytest-ansible", marker = "extra == 'dev'", specifier = ">=0.1.0b2" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.1.0b2" },
@@ -5333,6 +5335,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/62/62/0fe346fe380b1aafaf819c8cb195d3241bb4f355f908e6339814131a830b/pyproject_api-1.10.1.tar.gz", hash = "sha256:c2b2726bd7aa9217b6c50b621fef5b2ae5def4d55b779c9e0694c15e0a8517ba", size = 23477, upload-time = "2026-05-28T14:22:14.049Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/79/d7/29e1e5e882f79133631f7bcace42d23db493f616463c157a1ab614bf69dd/pyproject_api-1.10.1-py3-none-any.whl", hash = "sha256:fa9e6f66c35b5017e909825d8f2b5d5482ea699d7be809d21c03bd1f7317f36a", size = 12992, upload-time = "2026-05-28T14:22:12.711Z" },
+]
+
+[[package]]
+name = "pyspx"
+version = "0.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cffi" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/98/d5/2a5a52edc715e0cb3b3b1d6f67668b9f07775e2ec19c63742552780e1c6f/PySPX-0.5.0.tar.gz", hash = "sha256:e3544229e2bee9ef13a8468693491374080beb3f91080c3a86c698be8ece2baa", size = 454434, upload-time = "2022-08-02T19:34:17.878Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b7/d2/cf1bdd5b20fe3a93c11fc9cd80d2590ca0ee806f9f81610889dc3cc33596/PySPX-0.5.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:aa64aa0e2aa523a6a4484a2721d33694147730d0910493aa23bf1f452f4fba45", size = 1398196, upload-time = "2022-08-02T19:34:00.539Z" },
 ]
 
 [[package]]

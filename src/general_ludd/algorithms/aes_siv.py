@@ -9,11 +9,12 @@ Pure-Python wrappers around the cryptography library's AEAD AESGCMSIV and AESSIV
 
 from __future__ import annotations
 
-import hashlib
 import secrets
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCMSIV as _AESGCMSIV
 from cryptography.hazmat.primitives.ciphers.aead import AESSIV as _AESSIV
+from cryptography.hazmat.primitives.hashes import SHA256
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 
 class AESSIVError(Exception):
@@ -105,5 +106,5 @@ def decrypt_siv(
 
 
 def hash_key(password: bytes, salt: bytes) -> bytes:
-    derived = hashlib.pbkdf2_hmac("sha256", password, salt, 600_000, dklen=32)
-    return derived
+    kdf = PBKDF2HMAC(algorithm=SHA256(), length=32, salt=salt, iterations=600_000)
+    return kdf.derive(password)

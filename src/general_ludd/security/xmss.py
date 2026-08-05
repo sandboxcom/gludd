@@ -1,8 +1,10 @@
 """XMSS (RFC 8391) — Stateful Hash-Based Signature Scheme.
 
-Implements the eXtended Merkle Signature Scheme using standard hash
-primitives (hashlib/hmac). Self-contained — the ``cryptography`` library's
-XMSS module is not available on macOS ARM64 (BoringSSL omits it).
+Implements the eXtended Merkle Signature Scheme using the ``cryptography``
+library for all hash and HMAC primitives.  The ``cryptography`` library's
+XMSS module is not available on macOS ARM64 (BoringSSL omits it), so the
+WOTS+ / Merkle-tree construction is a platform fallback, but the underlying
+SHA-256 and HMAC-SHA256 calls use the well-maintained ``cryptography`` library.
 
 XMSS is **stateful**: each keypair signs exactly ``2^height`` messages.
 Reusing a leaf index irreversibly compromises security.
@@ -20,11 +22,12 @@ Provides
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import os
 import struct
 from typing import Final
+
+from cryptography.hazmat.primitives import hashes as _hashes
+from cryptography.hazmat.primitives.hmac import HMAC as _HMAC
 
 DEFAULT_HEIGHT: Final[int] = 10
 DEFAULT_DIGEST: Final[str] = "SHA256"
@@ -40,33 +43,45 @@ class XMSSError(Exception):
     """Error in XMSS operations."""
 
 
+def _sha256(data: bytes) -> bytes:
+    digest = _hashes.Hash(_hashes.SHA256())
+    digest.update(data)
+    return digest.finalize()
+
+
+def _hmac_sha256(key: bytes, data: bytes) -> bytes:
+    h = _HMAC(key, _hashes.SHA256())
+    h.update(data)
+    return h.finalize()
+
+
 def _n(digest_name: str) -> int:
     return 32 if digest_name in ("SHA256", "SHAKE256") else 64
 
 
 def _prf(seed: bytes, data: bytes, digest_name: str) -> bytes:
     n_out = _n(digest_name)
-    result = hmac.new(seed, data, hashlib.sha256).digest()
+    result = _hmac_sha256(seed, data)
     if n_out <= 32:
         return result[:n_out]
-    return result + hmac.new(seed, result + data + b"\x00", hashlib.sha256).digest()[: n_out - 32]
+    return result + _hmac_sha256(seed, result + data + b"\x00")[: n_out - 32]
 
 
 def _h(seed: bytes, data: bytes, digest_name: str) -> bytes:
     n_out = _n(digest_name)
-    h1 = hashlib.sha256(seed + data).digest()
+    h1 = _sha256(seed + data)
     if n_out <= 32:
         return h1[:n_out]
-    return h1 + hashlib.sha256(seed + data + b"\x01").digest()[: n_out - 32]
+    return h1 + _sha256(seed + data + b"\x01")[: n_out - 32]
 
 
 def _msg_hash(r: bytes, root: bytes, index: int, message: bytes, digest_name: str) -> bytes:
     n_out = _n(digest_name)
     idx_bytes = struct.pack(">Q", index)
-    h_val = hashlib.sha256(r + root + idx_bytes + message).digest()
+    h_val = _sha256(r + root + idx_bytes + message)
     if n_out <= 32:
         return h_val[:n_out]
-    return h_val + hashlib.sha256(r + root + idx_bytes + message + b"\x01").digest()[: n_out - 32]
+    return h_val + _sha256(r + root + idx_bytes + message + b"\x01")[: n_out - 32]
 
 
 def _wots_len(n_out: int) -> int:
