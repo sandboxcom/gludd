@@ -143,11 +143,12 @@ def wavelet_synthesis_matrix(wavelet: str, length: int) -> list[list[float]]:
     high: list[float] = _from_signal(rec_hi)
     f_len = len(low)
     half = length // 2
+    offset = f_len - 1
 
     matrix: list[list[float]] = [[0.0] * length for _ in range(length)]
     for col in range(half):
         for k in range(f_len):
-            row = (col * 2 + k) % length
+            row = (col * 2 + k - offset) % length
             matrix[row][col] += low[k]
             matrix[row][col + half] += high[k]
     return matrix
