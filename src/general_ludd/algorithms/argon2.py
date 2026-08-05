@@ -327,7 +327,7 @@ def argon2id_hash(
     return f"$argon2id$v={ARGON2_VERSION}$m={memory_cost},t={time_cost},p={parallelism}${salt}${encoded_hash}"
 
 
-def _decode_hash(encoded: str):
+def _decode_hash(encoded: str) -> tuple[int, dict[str, int], str, str]:
     parts = encoded.split("$")
     if len(parts) != 6 or parts[1] != "argon2id":
         _raise("Invalid Argon2 hash format")
