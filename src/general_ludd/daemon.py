@@ -613,7 +613,7 @@ async def _restore_persisted_projects(project_manager: Any, session_factory: Any
                     workspace_path=proj.workspace_path or proj.project_id,
                 )
     except Exception:  # pragma: no cover - defensive startup guard
-        logger.error("Failed to restore persisted projects", exc_info=True)
+        logger.error("Failed to restore persisted projects (non-critical — daemon continues)")
 
 
 async def _restore_persisted_spend(
@@ -1391,7 +1391,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     len(cast("list[str]", result["skipped"])),
                 )
             except Exception:
-                logger.error("Secret migration failed", exc_info=True)
+                logger.error("Secret migration failed (non-critical — daemon continues)")
 
         templates_dir = getattr(app.state, "_templates_dir", None)
         # Phase 2: prepend project .gludd/templates/ so project-local templates

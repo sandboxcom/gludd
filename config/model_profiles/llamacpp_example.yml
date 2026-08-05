@@ -41,7 +41,7 @@ cost_per_input_token: 0.0
 cost_per_output_token: 0.0
 api_metered: false
 run_budget_usd: 0.0
-enabled: false
+enabled: true
 resource_profile: local_heavy
 roles:
   - coder

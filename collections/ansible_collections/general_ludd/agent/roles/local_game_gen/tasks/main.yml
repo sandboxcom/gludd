@@ -159,7 +159,7 @@
 # ── Step 5: Shutdown server ──────────────────────────────────────────────
 
 - name: "Stop inference server"
-  always:
+  block:
     - name: "Read server PID"
       ansible.builtin.slurp:
         src: "{{ artifact_dir }}/server.pid"
@@ -176,3 +176,7 @@
       ansible.builtin.file:
         path: "{{ artifact_dir }}/server.pid"
         state: absent
+  always:
+    - name: "Report server cleanup"
+      ansible.builtin.debug:
+        msg: "local_game_gen server cleanup phase completed"

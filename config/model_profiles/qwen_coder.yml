@@ -43,7 +43,7 @@ cost_per_input_token: 0.0005
 cost_per_output_token: 0.0015
 api_metered: true
 run_budget_usd: 1.0
-enabled: false
+enabled: true
 resource_profile: ai_heavy
 roles:
   - coder
