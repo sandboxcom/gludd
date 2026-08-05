@@ -2063,7 +2063,7 @@ requires-dist = [
     { name = "prompt-toolkit", specifier = ">=3.0.0" },
     { name = "psutil", specifier = ">=0.1.0b2" },
     { name = "psycopg", extras = ["binary"], specifier = ">=0.1.0b2" },
-    { name = "pycryptodome", specifier = ">=0.1.0b2" },
+    { name = "pycryptodome", specifier = ">=3.20.0" },
     { name = "pydantic", specifier = ">=0.1.0b2" },
     { name = "pydantic-settings", specifier = ">=0.1.0b2" },
     { name = "pygame", marker = "extra == 'e2e-all'", specifier = ">=2.5.0" },

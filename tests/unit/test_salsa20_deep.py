@@ -1,4 +1,7 @@
-"""Deep tests for Salsa20/XSalsa20: quarter-round, block, stream, edge cases."""
+"""Deep tests for Salsa20/XSalsa20: block, stream, HSalsa20, XSalsa20, edge cases.
+
+Stream encrypt/decrypt and block generation are backed by PyCryptodome.
+"""
 
 from __future__ import annotations
 
@@ -9,48 +12,13 @@ import pytest
 
 from general_ludd.algorithms.salsa20 import (
     Salsa20Error,
-    _bytes_to_words,
-    _words_to_bytes,
     hsalsa20,
-    quarter_round,
     salsa20_block,
     stream_decrypt,
     stream_encrypt,
     xsalsa20_decrypt,
     xsalsa20_encrypt,
 )
-
-
-class TestQuarterRound:
-    def test_quarter_round_known_vector(self) -> None:
-        y = [0x00000000, 0x00000000, 0x00000000, 0x00000000]
-        quarter_round(y, 0, 1, 2, 3)
-        assert y == [0x00000000, 0x00000000, 0x00000000, 0x00000000]
-
-    def test_quarter_round_single_bit_diffusion(self) -> None:
-        y = [0x00000001, 0x00000000, 0x00000000, 0x00000000]
-        quarter_round(y, 0, 1, 2, 3)
-        assert not all(v == 0 for v in y)
-
-    def test_quarter_round_is_deterministic(self) -> None:
-        a = [0xDEADBEEF, 0xCAFEBABE, 0x8BADF00D, 0xFEEDFACE]
-        b = [0xDEADBEEF, 0xCAFEBABE, 0x8BADF00D, 0xFEEDFACE]
-        quarter_round(a, 0, 1, 2, 3)
-        quarter_round(b, 0, 1, 2, 3)
-        assert a == b
-
-    def test_quarter_round_mutates_in_place(self) -> None:
-        y = [1, 2, 3, 4]
-        original_id = id(y)
-        quarter_round(y, 0, 1, 2, 3)
-        assert id(y) == original_id
-
-    def test_quarter_round_rotates_all_three(self) -> None:
-        y = [1111111111, 2222222222, 3333333333, 4444444444]
-        before = y[:]
-        quarter_round(y, 0, 1, 2, 3)
-        for i in range(4):
-            assert y[i] != before[i]
 
 
 class TestSalsa20Block:
@@ -238,19 +206,6 @@ class TestHSalsa20:
         a = hsalsa20(key, b"\x00" * 16)
         b = hsalsa20(key, b"\x01" * 16)
         assert a != b
-
-
-class TestSerialization:
-    def test_bytes_to_words_roundtrip(self) -> None:
-        data = secrets.token_bytes(64)
-        words = _bytes_to_words(data)
-        back = _words_to_bytes(words)
-        assert back == data
-
-    def test_words_to_bytes_little_endian(self) -> None:
-        w = [0x41424344, 0x45464748]
-        b = _words_to_bytes(w)
-        assert b == b"DCBAHGFE"
 
 
 class TestStreamProperties:

@@ -1,4 +1,4 @@
-"""Deep tests for Shamir secret sharing: split, combine, Lagrange, edge cases."""
+"""Deep tests for Shamir secret sharing: split, combine, invariants."""
 
 from __future__ import annotations
 
@@ -10,10 +10,6 @@ import pytest
 from general_ludd.algorithms.shamir import (
     DEFAULT_PRIME,
     ShamirError,
-    _evaluate_polynomial,
-    _lagrange_basis,
-    _mod_inverse,
-    _random_polynomial,
     combine,
     split,
 )
@@ -134,69 +130,9 @@ class TestCombine:
 
     def test_combine_value_out_of_range_raises(self) -> None:
         shares = split(42, threshold=3, num_shares=5, prime=101)
-        bad_share = (99, 777, 101)  # y >= prime
+        bad_share = (99, 777, 101)
         with pytest.raises(ShamirError, match="range"):
             combine([bad_share, shares[0], shares[1]], prime=101)
-
-
-class TestLagrangeAndPolynomial:
-    def test_evaluate_polynomial_constant(self) -> None:
-        y = _evaluate_polynomial([42], 7, 101)
-        assert y == 42 % 101
-
-    def test_evaluate_polynomial_linear(self) -> None:
-        y = _evaluate_polynomial([3, 5], 2, 101)
-        expected = (3 + 5 * 2) % 101
-        assert y == expected
-
-    def test_evaluate_polynomial_known(self) -> None:
-        coeffs = [1, 2, 3]
-        y = _evaluate_polynomial(coeffs, 4, 1000000007)
-        expected = (1 + 2 * 4 + 3 * 16) % 1000000007
-        assert y == expected
-
-    def test_lagrange_basis_sum_identity(self) -> None:
-        xs = [1, 2, 3, 4]
-        p = 2**127 - 1
-        for target in xs:
-            bases = [_lagrange_basis(target, xs, j, p) for j in range(len(xs))]
-            total = sum(bases) % p
-            assert total == 1
-
-    def test_lagrange_reconstruct_linear(self) -> None:
-        p = 2**127 - 1
-        points = [(1, 10), (2, 20)]
-        bases_0 = [_lagrange_basis(0, [1, 2], j, p) for j in range(2)]
-        result = sum(points[j][1] * bases_0[j] for j in range(2)) % p
-        assert result == 0
-
-    def test_random_polynomial_correct_degree(self) -> None:
-        coeffs = _random_polynomial(secret=0, threshold=5, prime=2**127 - 1)
-        assert len(coeffs) == 5
-        assert coeffs[0] == 0
-
-
-class TestModInverse:
-    @pytest.mark.parametrize(
-        "a,prime,expected",
-        [(3, 7, 5), (5, 7, 3), (1, 7, 1), (6, 7, 6)],
-    )
-    def test_mod_inverse_small(self, a: int, prime: int, expected: int) -> None:
-        assert _mod_inverse(a, prime) == expected
-
-    def test_mod_inverse_fermat(self) -> None:
-        for prime in [2**31 - 1, 2**61 - 1]:
-            for a in range(1, 20):
-                inv = _mod_inverse(a, prime)
-                assert (a * inv) % prime == 1
-
-    def test_mod_inverse_zero_raises(self) -> None:
-        with pytest.raises(ShamirError, match="inverse"):
-            _mod_inverse(0, 7)
-
-    def test_mod_inverse_large_prime(self) -> None:
-        inv = _mod_inverse(123456, 2**127 - 1)
-        assert (123456 * inv) % (2**127 - 1) == 1
 
 
 class TestInvariants:

@@ -1,57 +1,26 @@
 """Shamir secret sharing over finite fields.
 
+Wraps the ``shamir`` PyPI package for core GF(prime) arithmetic.
 Splits a secret into n shares such that any k (threshold) shares recover it,
-while any k-1 shares reveal nothing. Uses Lagrange interpolation over GF(prime).
-
-Pure-Python, stdlib only.
+while any k-1 shares reveal nothing.
 """
 
 from __future__ import annotations
 
-import secrets as _secrets
+from typing import cast
+
+from shamir import _PRIME as _LIB_PRIME
+from shamir import _eval_at as _lib_eval_at
+from shamir import _lagrange_interpolate as _lib_lagrange
+from shamir import _rint as _lib_rint
+from shamir import recover_secret as _lib_recover_secret
 
 
 class ShamirError(ValueError):
     """Base exception for Shamir secret sharing operations."""
 
 
-DEFAULT_PRIME: int = 2**127 - 1
-
-
-def _mod_inverse(a: int, prime: int) -> int:
-    if a == 0:
-        raise ShamirError("Cannot compute modular inverse of 0")
-    if prime <= 1:
-        raise ShamirError(f"Modulus must be prime, got {prime}")
-    return pow(a, prime - 2, prime)
-
-
-def _evaluate_polynomial(coeffs: list[int], x: int, prime: int) -> int:
-    result = 0
-    x_pow = 1
-    for c in coeffs:
-        result = (result + c * x_pow) % prime
-        x_pow = (x_pow * x) % prime
-    return result
-
-
-def _random_polynomial(secret: int, threshold: int, prime: int) -> list[int]:
-    coeffs = [secret]
-    for _ in range(1, threshold):
-        coeffs.append(_secrets.randbelow(prime))
-    return coeffs
-
-
-def _lagrange_basis(x_target: int, xs: list[int], j: int, prime: int) -> int:
-    num = 1
-    den = 1
-    xj = xs[j]
-    for m, xm in enumerate(xs):
-        if m == j:
-            continue
-        num = (num * (x_target - xm)) % prime
-        den = (den * (xj - xm)) % prime
-    return (num * _mod_inverse(den, prime)) % prime
+DEFAULT_PRIME: int = _LIB_PRIME
 
 
 def split(
@@ -66,26 +35,23 @@ def split(
     if secret < 0 or secret >= prime:
         raise ShamirError(f"secret must be in [0, {prime})")
 
-    coeffs = _random_polynomial(secret, threshold, prime)
-    [_secrets.randbits(_max_id := max(threshold, num_shares).bit_length()) for _ in range(num_shares)]
-    while True:
-        used: set[int] = set()
-        xs: list[int] = []
-        for _ in range(num_shares):
-            while True:
-                x = _secrets.randbelow(prime)
-                if x < 1:
-                    continue
-                if x not in used:
-                    used.add(x)
-                    xs.append(x)
-                    break
-        if len(xs) == num_shares:
-            break
+    coeffs = [secret] + [_lib_rint(prime) for _ in range(1, threshold)]
+
+    used: set[int] = set()
+    xs: list[int] = []
+    for _ in range(num_shares):
+        while True:
+            x = _lib_rint(prime)
+            if x < 1:
+                continue
+            if x not in used:
+                used.add(x)
+                xs.append(x)
+                break
 
     shares: list[tuple[int, int, int]] = []
     for x in xs:
-        y = _evaluate_polynomial(coeffs, x, prime)
+        y = _lib_eval_at(tuple(coeffs), x, prime)
         shares.append((x, y, prime))
     return shares
 
@@ -99,17 +65,15 @@ def combine(
     if not shares:
         raise ShamirError("Need at least 1 share to combine")
 
-    xs: list[int] = []
-    ys: list[int] = []
     primes: set[int] = set()
+    points: list[tuple[int, int]] = []
 
     for x, y, p in shares:
         if x_0 is not None and x == x_0:
             return y
         if y < 0 or y >= p:
             raise ShamirError(f"Share y={y} out of range [0, {p})")
-        xs.append(x)
-        ys.append(y)
+        points.append((x, y))
         primes.add(p)
 
     if len(primes) > 1:
@@ -118,14 +82,16 @@ def combine(
         raise ShamirError(f"Provided prime {prime} does not match shares' prime {next(iter(primes))}")
 
     p = prime if prime is not None else next(iter(primes))
-    k = len(xs)
 
-    if len(set(xs)) != k:
+    xs = [pt[0] for pt in points]
+    if len(set(xs)) != len(xs):
         raise ShamirError("Shares must have distinct x-coordinates")
 
-    secret = 0
-    for j in range(k):
-        basis = _lagrange_basis(x_0, xs, j, p)
-        secret = (secret + ys[j] * basis) % p
+    if len(points) == 1:
+        return points[0][1]
 
-    return secret
+    ys = [pt[1] for pt in points]
+    if x_0 == 0:
+        return cast(int, _lib_recover_secret(points, prime=p))
+
+    return cast(int, _lib_lagrange(x_0, xs, ys, p))

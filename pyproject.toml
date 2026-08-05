@@ -50,7 +50,7 @@ dependencies = [
     "diskcache>=0.1.0-beta.2",
     "defusedxml>=0.7.1,<1",
     "prompt_toolkit>=3.0.0",
-    "pycryptodome>=0.1.0-beta.2",
+    "pycryptodome>=3.20.0",
     "pygments>=2.0.0",
     "shamir>=0.1.0-beta.2",
     "srptools>=0.1.0-beta.2",
@@ -184,7 +184,7 @@ disallow_untyped_defs = true
 exclude = ["scripts/", "tests/unit/test_injection_patterns.py", "tests/unit/test_sql_injection_patterns.py", "tests/unit/test_ci_push_guard.py", "abtest/"]
 
 [[tool.mypy.overrides]]
-module = ["pygments", "pygments.*", "ansible.*", "ansible_collections.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "croniter.*", "jsonschema", "googleapiclient.*", "google.*", "azure.*", "ansible_runner", "xmlsec", "lxml", "lxml.etree", "pyVim.*", "pyVmomi", "openai", "lm_eval", "lm_eval.*", "argon2", "blake3", "shamir"]
+module = ["pygments", "pygments.*", "ansible.*", "ansible_collections.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "croniter.*", "jsonschema", "googleapiclient.*", "google.*", "azure.*", "ansible_runner", "xmlsec", "lxml", "lxml.etree", "pyVim.*", "pyVmomi", "openai", "lm_eval", "lm_eval.*", "argon2", "blake3", "shamir", "Crypto", "Crypto.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
