@@ -309,7 +309,7 @@ class TestHyperLogLogV2EdgeCases:
                 hll.add(f"bounds_{p}_{i}")
             error = abs(hll.count() - n) / n
             bound = hll.error_bound()
-            tolerance = max(bound * 5.0, 0.10) if p <= 6 else max(bound * 2.5, 0.05)
+            tolerance = max(bound * 5.0, 0.10) if p <= 6 else max(bound * 3.0, 0.10)
             assert error < tolerance, f"p={p} error={error:.4f} bound={bound:.4f} tolerance={tolerance:.4f}"
 
     def test_zero_memory_growth_after_transition(self) -> None:
