@@ -77,7 +77,7 @@ def salsa20_block(key: bytes, nonce: bytes, block_counter: int) -> bytes:
         raise Salsa20Error(f"Nonce must be 8 bytes, got {len(nonce)}")
 
     cipher = _PyCryptodomeSalsa20.new(key=key, nonce=nonce)
-    cipher.seek(block_counter * 64)
+    cipher.seek(block_counter * 64)  # type: ignore[attr-defined]
     return cipher.encrypt(b"\x00" * 64)
 
 
@@ -90,7 +90,7 @@ def stream_encrypt(
     """Encrypt or decrypt *data* with Salsa20 (symmetric XOR with keystream)."""
     cipher = _PyCryptodomeSalsa20.new(key=key, nonce=nonce)
     if counter:
-        cipher.seek(counter * 64)
+        cipher.seek(counter * 64)  # type: ignore[attr-defined]
     return cipher.encrypt(data)
 
 

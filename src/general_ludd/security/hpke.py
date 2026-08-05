@@ -48,15 +48,15 @@ class HPKE_Suite(enum.Enum):
 
     @property
     def kem_id(self) -> int:
-        return self._kem_id  # type: ignore[return]
+        return self._kem_id
 
     @property
     def kdf_id(self) -> int:
-        return self._kdf_id  # type: ignore[return]
+        return self._kdf_id
 
     @property
     def aead_id(self) -> int:
-        return self._aead_id  # type: ignore[return]
+        return self._aead_id
 
     @property
     def Nk(self) -> int:

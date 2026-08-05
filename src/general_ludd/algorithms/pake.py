@@ -510,13 +510,13 @@ class OPAQUERegistration:
         oprf_seed = os.urandom(32)
 
         if config.curve == "ed25519":
-            _spriv, spub = _opaque_ed25519_keygen()
+            _, spub = _opaque_ed25519_keygen()
             server_public_bytes = spub.public_bytes(
                 encoding=serialization.Encoding.Raw,
                 format=serialization.PublicFormat.Raw,
             )
         else:
-            _spriv, spub = _opaque_ec_keygen(config.curve)
+            _, spub = _opaque_ec_keygen(config.curve)  # type: ignore[assignment]
             server_public_bytes = spub.public_bytes(
                 encoding=serialization.Encoding.X962,
                 format=serialization.PublicFormat.UncompressedPoint,
@@ -591,7 +591,7 @@ class OPAQUEClient:
                 format=serialization.PublicFormat.Raw,
             )
         else:
-            cpriv = ec.generate_private_key(_CURVE_OBJ_MAP[self._config.curve])
+            cpriv = ec.generate_private_key(_CURVE_OBJ_MAP[self._config.curve])  # type: ignore[assignment]
             cpub = cpriv.public_key()
             client_bytes = cpub.public_bytes(
                 encoding=serialization.Encoding.X962,
