@@ -176,7 +176,8 @@ def ecdsa_sign(msg_hash: bytes, private: int, curve: ECCurve | None = None) -> t
     while True:
         k = _nonce_rfc6979(msg_hash, private, curve)
         R = G * k
-        r = R.x % n  # type: ignore[union-attr]
+        assert R.x is not None
+        r = R.x % n
         if r == 0:
             continue
         k_inv = pow(k, -1, n)
@@ -201,7 +202,8 @@ def ecdsa_verify(msg_hash: bytes, signature: tuple[int, int], public: ECPoint) -
     R = G * u1 + public * u2
     if R.is_identity:
         return False
-    return (R.x % n) == r  # type: ignore[union-attr]
+    assert R.x is not None
+    return (R.x % n) == r
 
 
 def _nonce_rfc6979(msg_hash: bytes, private: int, curve: ECCurve) -> int:
