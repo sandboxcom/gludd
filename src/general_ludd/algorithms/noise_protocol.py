@@ -467,19 +467,23 @@ class HandshakeState:
                     raise NoiseError("Missing ephemeral keys for DH(ee)")
                 self.symmetric_state.mix_key(dh(self.e.private, self.re))
             elif token.type == TokenType.DH_ES:
-                if self.e is None or self.rs is None:
-                    raise NoiseError("Missing keys for DH(es)")
                 if self.role == Direction.INITIATOR:
+                    if self.e is None or self.rs is None:
+                        raise NoiseError("Missing keys for DH(es)")
                     self.symmetric_state.mix_key(dh(self.e.private, self.rs))
                 else:
-                    self.symmetric_state.mix_key(dh(self.s.private, self.re))  # type: ignore[union-attr,type-arg]
+                    if self.s is None or self.re is None:
+                        raise NoiseError("Missing keys for DH(es)")
+                    self.symmetric_state.mix_key(dh(self.s.private, self.re))
             elif token.type == TokenType.DH_SE:
-                if self.s is None or self.re is None:
-                    raise NoiseError("Missing keys for DH(se)")
                 if self.role == Direction.INITIATOR:
+                    if self.s is None or self.re is None:
+                        raise NoiseError("Missing keys for DH(se)")
                     self.symmetric_state.mix_key(dh(self.s.private, self.re))
                 else:
-                    self.symmetric_state.mix_key(dh(self.e.private, self.rs))  # type: ignore[union-attr,type-arg]
+                    if self.e is None or self.rs is None:
+                        raise NoiseError("Missing keys for DH(se)")
+                    self.symmetric_state.mix_key(dh(self.e.private, self.rs))
             elif token.type == TokenType.DH_SS:
                 if self.s is None or self.rs is None:
                     raise NoiseError("Missing keys for DH(ss)")
@@ -525,19 +529,23 @@ class HandshakeState:
                     raise NoiseError("Missing ephemeral keys for DH(ee)")
                 self.symmetric_state.mix_key(dh(self.e.private, self.re))
             elif token.type == TokenType.DH_ES:
-                if self.e is None or self.rs is None:
-                    raise NoiseError("Missing keys for DH(es)")
                 if self.role == Direction.INITIATOR:
+                    if self.e is None or self.rs is None:
+                        raise NoiseError("Missing keys for DH(es)")
                     self.symmetric_state.mix_key(dh(self.e.private, self.rs))
                 else:
-                    self.symmetric_state.mix_key(dh(self.s.private, self.re))  # type: ignore[union-attr,type-arg]
+                    if self.s is None or self.re is None:
+                        raise NoiseError("Missing keys for DH(es)")
+                    self.symmetric_state.mix_key(dh(self.s.private, self.re))
             elif token.type == TokenType.DH_SE:
-                if self.s is None or self.re is None:
-                    raise NoiseError("Missing keys for DH(se)")
                 if self.role == Direction.INITIATOR:
+                    if self.s is None or self.re is None:
+                        raise NoiseError("Missing keys for DH(se)")
                     self.symmetric_state.mix_key(dh(self.s.private, self.re))
                 else:
-                    self.symmetric_state.mix_key(dh(self.e.private, self.rs))  # type: ignore[union-attr,type-arg]
+                    if self.e is None or self.rs is None:
+                        raise NoiseError("Missing keys for DH(se)")
+                    self.symmetric_state.mix_key(dh(self.e.private, self.rs))
             elif token.type == TokenType.DH_SS:
                 if self.s is None or self.rs is None:
                     raise NoiseError("Missing keys for DH(ss)")

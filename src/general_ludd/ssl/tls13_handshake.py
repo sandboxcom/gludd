@@ -352,32 +352,41 @@ class KeyExchange:
     @property
     def public_bytes(self) -> bytes:
         if self._group == NamedGroup.X25519:
-            priv = cast(x25519.X25519PrivateKey, self._private)
-            return priv.public_key().public_bytes(
-                encoding=serialization.Encoding.Raw,
-                format=serialization.PublicFormat.Raw,
+            return (
+                cast(x25519.X25519PrivateKey, self._private)
+                .public_key()
+                .public_bytes(
+                    encoding=serialization.Encoding.Raw,
+                    format=serialization.PublicFormat.Raw,
+                )
             )
         if self._group == NamedGroup.X448:
-            priv = cast(x448.X448PrivateKey, self._private)
-            return priv.public_key().public_bytes(
-                encoding=serialization.Encoding.Raw,
-                format=serialization.PublicFormat.Raw,
+            return (
+                cast(x448.X448PrivateKey, self._private)
+                .public_key()
+                .public_bytes(
+                    encoding=serialization.Encoding.Raw,
+                    format=serialization.PublicFormat.Raw,
+                )
             )
-        priv = cast(ec.EllipticCurvePrivateKey, self._private)  # type: ignore[assignment]
-        return priv.public_key().public_bytes(
-            encoding=serialization.Encoding.X962,
-            format=serialization.PublicFormat.UncompressedPoint,
+        return (
+            cast(ec.EllipticCurvePrivateKey, self._private)
+            .public_key()
+            .public_bytes(
+                encoding=serialization.Encoding.X962,
+                format=serialization.PublicFormat.UncompressedPoint,
+            )
         )
 
     def exchange(self, peer_public_bytes: bytes) -> bytes:
         if self._group == NamedGroup.X25519:
-            priv = cast(x25519.X25519PrivateKey, self._private)
-            peer_key = x25519.X25519PublicKey.from_public_bytes(peer_public_bytes)
-            return priv.exchange(peer_key)
+            return cast(x25519.X25519PrivateKey, self._private).exchange(
+                x25519.X25519PublicKey.from_public_bytes(peer_public_bytes)
+            )
         if self._group == NamedGroup.X448:
-            priv = cast(x448.X448PrivateKey, self._private)  # type: ignore[assignment]
-            peer_key = x448.X448PublicKey.from_public_bytes(peer_public_bytes)
-            return priv.exchange(peer_key)
+            return cast(x448.X448PrivateKey, self._private).exchange(
+                x448.X448PublicKey.from_public_bytes(peer_public_bytes)
+            )
         raise HandshakeError(f"Key exchange not implemented for {self._group}")
 
 
