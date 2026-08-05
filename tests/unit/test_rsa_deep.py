@@ -46,7 +46,7 @@ def test_is_probable_prime_carmichael_number():
     assert not _is_probable_prime(561)
 
 
-# ── Integer / octet conversions ──────────────────────────────────────
+# -- Integer / octet conversions --------------------------------------
 
 
 def test_i2osp_os2ip_roundtrip():
@@ -60,7 +60,7 @@ def test_i2osp_prepends_zeros():
     assert encoded == b"\x00\x00\xab\xcd"
 
 
-# ── Modular inverse ──────────────────────────────────────────────────
+# -- Modular inverse --------------------------------------------------
 
 
 def test_mod_inverse_basic():
@@ -74,12 +74,12 @@ def test_mod_inverse_no_inverse():
         _mod_inverse(6, 9)
 
 
-# ── Key generation ───────────────────────────────────────────────────
+# -- Key generation ---------------------------------------------------
 
 
 def test_generate_key_basic():
-    key = generate_keypair(bits=512)
-    assert key.n.bit_length() >= 511
+    key = generate_keypair(bits=1024)
+    assert key.n.bit_length() >= 1023
     assert key.e == 65537
     assert key.is_private
     assert key.p is not None and key.q is not None
@@ -88,7 +88,7 @@ def test_generate_key_basic():
 
 
 def test_generate_key_public_key_view():
-    key = generate_keypair(bits=512)
+    key = generate_keypair(bits=1024)
     pub = key.public_key
     assert pub.n == key.n
     assert pub.e == key.e
@@ -96,26 +96,26 @@ def test_generate_key_public_key_view():
 
 
 def test_generate_key_invalid_size():
-    with pytest.raises(RSAError, match=">= 512"):
+    with pytest.raises(RSAError, match=">= 1024"):
         generate_keypair(bits=256)
     with pytest.raises(RSAError, match="even"):
-        generate_keypair(bits=513)
+        generate_keypair(bits=1025)
 
 
 def test_generate_key_even_exponent():
     with pytest.raises(RSAError, match="odd"):
-        generate_keypair(bits=512, e=2)
+        generate_keypair(bits=1024, e=2)
 
 
 def test_generate_key_phi_invariant():
     """d x e = 1 mod phi(n)."""
-    key = generate_keypair(bits=512)
+    key = generate_keypair(bits=1024)
     assert key.p is not None and key.q is not None and key.d is not None
     phi = (key.p - 1) * (key.q - 1)
     assert (key.d * key.e) % phi == 1
 
 
-# ── PKCS#1 v1.5 padding ──────────────────────────────────────────────
+# -- PKCS#1 v1.5 padding ----------------------------------------------
 
 
 def test_pkcs1_encode_decode_roundtrip():
@@ -155,7 +155,7 @@ def test_pkcs1_decode_wrong_length():
         pkcs1_v15_decode(encoded, 100)
 
 
-# ── Encrypt / decrypt round-trip ─────────────────────────────────────
+# -- Encrypt / decrypt round-trip -------------------------------------
 
 
 def test_encrypt_decrypt_roundtrip():
@@ -182,14 +182,14 @@ def test_encrypt_decrypt_max_message():
 
 
 def test_decrypt_wrong_key():
-    key1 = generate_keypair(bits=1024)
+    key1 = generate_keypair(bits=2048)
     key2 = generate_keypair(bits=1024)
     ct = encrypt(key1.public_key, b"secret")
     with pytest.raises(DecryptionError):
         decrypt(key2, ct)
 
 
-# ── CRT decryption ───────────────────────────────────────────────────
+# -- CRT decryption ---------------------------------------------------
 
 
 def test_decrypt_crt_roundtrip():
@@ -214,7 +214,7 @@ def test_decrypt_crt_missing_p_q():
         decrypt_crt(key, b"\x00" * 3)
 
 
-# ── Property tests ───────────────────────────────────────────────────
+# -- Property tests ---------------------------------------------------
 
 
 def test_encrypted_outputs_are_distinct():
@@ -229,7 +229,7 @@ def test_encrypted_outputs_are_distinct():
 
 
 def test_many_keys_independent():
-    keys = [generate_keypair(bits=512) for _ in range(5)]
+    keys = [generate_keypair(bits=1024) for _ in range(5)]
     for i in range(len(keys)):
         for j in range(i + 1, len(keys)):
             assert keys[i].n != keys[j].n
@@ -256,7 +256,7 @@ def test_sign_and_verify_like_property():
 
 def test_crt_tamper_resistant():
     """Decrypting ciphertext derived from a different key should fail."""
-    sender_key = generate_keypair(bits=1024)
+    sender_key = generate_keypair(bits=2048)
     attacker_key = generate_keypair(bits=1024)
     ct = encrypt(attacker_key.public_key, b"tamper test")
     with pytest.raises((DecryptionError, ValueError)):

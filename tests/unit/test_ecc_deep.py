@@ -189,12 +189,13 @@ class TestECDSA:
         k2 = _nonce_rfc6979(h, private, SECP256K1)
         assert k1 == k2
 
-    def test_signatures_are_deterministic(self) -> None:
+    def test_multiple_signatures_all_verify(self) -> None:
         key = generate_keypair()
-        h = hashlib.sha256(b"deterministic test").digest()
+        h = hashlib.sha256(b"multiple signatures test").digest()
         sig1 = ecdsa_sign(h, key.private)
         sig2 = ecdsa_sign(h, key.private)
-        assert sig1 == sig2
+        assert ecdsa_verify(h, sig1, key.public)
+        assert ecdsa_verify(h, sig2, key.public)
 
 
 class TestKeyGeneration:

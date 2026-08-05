@@ -1,19 +1,21 @@
 """HKDF, HMAC-based KDF, and PBKDF2 — RFC 5869, RFC 2104, RFC 8018.
 
-Pure-Python, stdlib only.  Provides HKDF-Extract, HKDF-Expand, a combined
-HKDF interface, HMAC-KB (NIST SP 800-108 counter mode), and PBKDF2-HMAC-SHA256.
+Uses stdlib `hmac` for HMAC operations and `cryptography` for HKDF and PBKDF2.
 """
 
 from __future__ import annotations
 
-import hashlib
-import struct
+import hmac as _stdlib_hmac
 from typing import Final
+
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF as _CryptoHKDF
+from cryptography.hazmat.primitives.kdf.hkdf import HKDFExpand as _CryptoHKDFExpand
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC as _CryptoPBKDF2
 
 HASH_SHA256: Final[str] = "sha256"
 HASH_SHA512: Final[str] = "sha512"
 HASHLEN: Final[dict[str, int]] = {"sha256": 32, "sha512": 64}
-HMAC_BLOCK_SIZE: Final[dict[str, int]] = {"sha256": 64, "sha512": 128}
 MAX_HKDF_OUTPUT: Final[int] = 255 * 32
 
 
@@ -21,24 +23,13 @@ class HKDFError(ValueError):
     """Base exception for HKDF / KDF operations."""
 
 
-def _xor_bytes(a: bytes, b: bytes) -> bytes:
-    return bytes(x ^ y for x, y in zip(a, b, strict=False))
-
-
-def _hmac_digest(key: bytes, data: bytes, hash_name: str) -> bytes:
-    """HMAC (RFC 2104) computed manually — no type: ignore needed."""
-    block_size = HMAC_BLOCK_SIZE[hash_name]
-    if len(key) > block_size:
-        key = hashlib.new(hash_name, key).digest()
-    if len(key) < block_size:
-        key = key.ljust(block_size, b"\x00")
-    o_key_pad = _xor_bytes(key, b"\x5c" * block_size)
-    i_key_pad = _xor_bytes(key, b"\x36" * block_size)
-    inner = hashlib.new(hash_name, i_key_pad + data).digest()
-    return hashlib.new(hash_name, o_key_pad + inner).digest()
-
-
-# ── HKDF-Extract ─────────────────────────────────────────────────────────
+def _hash_alg(hash_name: str) -> hashes.HashAlgorithm:
+    """Convert string hash name to cryptography :class:`~cryptography.hazmat.primitives.hashes.HashAlgorithm`."""
+    if hash_name == "sha256":
+        return hashes.SHA256()
+    if hash_name == "sha512":
+        return hashes.SHA512()
+    raise HKDFError(f"Unsupported hash: {hash_name}")
 
 
 def hkdf_extract(salt: bytes, ikm: bytes, hash_name: str = HASH_SHA256) -> bytes:
@@ -50,14 +41,11 @@ def hkdf_extract(salt: bytes, ikm: bytes, hash_name: str = HASH_SHA256) -> bytes
         raise HKDFError(f"Unsupported hash: {hash_name}")
     if not salt:
         salt = b"\x00" * HASHLEN[hash_name]
-    return _hmac_digest(salt, ikm, hash_name)
-
-
-# ── HKDF-Expand ──────────────────────────────────────────────────────────
+    return _stdlib_hmac.new(salt, ikm, hash_name).digest()
 
 
 def hkdf_expand(prk: bytes, info: bytes, length: int, hash_name: str = HASH_SHA256) -> bytes:
-    """HKDF-Expand (RFC 5869 §2.3): OKM = T(1) || T(2) || ... || T(N).
+    """HKDF-Expand (RFC 5869 §2.3). Uses cryptography's HKDFExpand.
 
     PRK must be at least HashLen bytes.  Output length must not exceed
     255 * HashLen.
@@ -70,15 +58,11 @@ def hkdf_expand(prk: bytes, info: bytes, length: int, hash_name: str = HASH_SHA2
     if length > 255 * hl:
         raise HKDFError(f"Requested length {length} exceeds max {255 * hl}")
 
-    okm = b""
-    t_prev = b""
-    for i in range(1, (length + hl - 1) // hl + 1):
-        t_prev = _hmac_digest(prk, t_prev + info + bytes([i]), hash_name)
-        okm += t_prev
-    return okm[:length]
-
-
-# ── Combined HKDF ────────────────────────────────────────────────────────
+    return _CryptoHKDFExpand(
+        algorithm=_hash_alg(hash_name),
+        length=length,
+        info=info,
+    ).derive(prk)
 
 
 def hkdf(
@@ -88,12 +72,13 @@ def hkdf(
     info: bytes = b"",
     hash_name: str = HASH_SHA256,
 ) -> bytes:
-    """HKDF (RFC 5869 §3): Extract-then-Expand."""
-    prk = hkdf_extract(salt, ikm, hash_name)
-    return hkdf_expand(prk, info, length, hash_name)
-
-
-# ── HMAC-based KDF (NIST SP 800-108 counter mode) ────────────────────────
+    """HKDF (RFC 5869 §3): Extract-then-Expand. Uses cryptography's HKDF."""
+    return _CryptoHKDF(
+        algorithm=_hash_alg(hash_name),
+        length=length,
+        salt=salt,
+        info=info,
+    ).derive(ikm)
 
 
 def hmac_kb_kdf(
@@ -112,19 +97,15 @@ def hmac_kb_kdf(
         raise HKDFError(f"Unsupported hash: {hash_name}")
     if length == 0:
         return b""
-    HASHLEN[hash_name]
     okm = b""
     counter = 1
     while len(okm) < length:
         i_bytes = counter.to_bytes(counter_width, "big")
         l_bytes = (length * 8).to_bytes(counter_width, "big")
         ki = i_bytes + label + b"\x00" + context + l_bytes
-        okm += _hmac_digest(key, ki, hash_name)
+        okm += _stdlib_hmac.new(key, ki, hash_name).digest()
         counter += 1
     return okm[:length]
-
-
-# ── PBKDF2 ───────────────────────────────────────────────────────────────
 
 
 def pbkdf2(
@@ -134,12 +115,12 @@ def pbkdf2(
     dklen: int,
     hash_name: str = HASH_SHA256,
 ) -> bytes:
-    """PBKDF2-HMAC (RFC 8018 §5.2).
+    """PBKDF2-HMAC (RFC 8018 §5.2). Uses cryptography's PBKDF2HMAC.
 
     Args:
         password: Master password (bytes).
         salt: Cryptographic salt (bytes).
-        iterations: Count (≥ 1; ≥ 100_000 recommended for production).
+        iterations: Count (>= 1; >= 100_000 recommended for production).
         dklen: Derived key length in bytes.
         hash_name: "sha256" or "sha512".
 
@@ -152,21 +133,13 @@ def pbkdf2(
     if hash_name not in HASHLEN:
         raise HKDFError(f"Unsupported hash: {hash_name}")
     if iterations < 1:
-        raise HKDFError(f"iterations must be ≥ 1, got {iterations}")
+        raise HKDFError(f"iterations must be >= 1, got {iterations}")
     if dklen == 0:
         return b""
 
-    hl = HASHLEN[hash_name]
-    n_blocks = (dklen + hl - 1) // hl
-    if n_blocks > 2**32 - 1:
-        raise HKDFError(f"dklen {dklen} too large for {hash_name}")
-
-    dk = b""
-    for i in range(1, n_blocks + 1):
-        u = _hmac_digest(password, salt + struct.pack(">I", i), hash_name)
-        t = u
-        for _ in range(1, iterations):
-            u = _hmac_digest(password, u, hash_name)
-            t = _xor_bytes(t, u)
-        dk += t
-    return dk[:dklen]
+    return _CryptoPBKDF2(
+        algorithm=_hash_alg(hash_name),
+        length=dklen,
+        salt=salt,
+        iterations=iterations,
+    ).derive(password)

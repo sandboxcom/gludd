@@ -2,17 +2,11 @@
 
 from __future__ import annotations
 
-import hashlib
-import hmac as std_hmac
-
 import pytest
 
 from general_ludd.algorithms.hkdf import (
     HASHLEN,
-    HMAC_BLOCK_SIZE,
     HKDFError,
-    _hmac_digest,
-    _xor_bytes,
     hkdf,
     hkdf_expand,
     hkdf_extract,
@@ -20,7 +14,7 @@ from general_ludd.algorithms.hkdf import (
     pbkdf2,
 )
 
-# ── Test vectors (RFC 5869 Appendix A) ───────────────────────────────────
+# ── HKDF-Extract RFC 5869 test vectors ──────────────────────────────────
 
 _RFC5869_IKM = bytes.fromhex("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b")
 _RFC5869_SALT = bytes.fromhex("000102030405060708090a0b0c")
@@ -29,28 +23,13 @@ _RFC5869_L = 42
 _RFC5869_PRK = bytes.fromhex("077709362c2e32df0ddc3f0dc47bba6390b6c73bb50f9c3122ec844ad7c2b3e5")
 _RFC5869_OKM = bytes.fromhex("3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865")
 
-_RFC5869_IKM2 = bytes.fromhex(
-    "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
-    "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
-    "404142434445464748495051525354555758595a5b5c5d5e5f6061626364656667"
-    "68696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f8081828384858687"
-    "88898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7"
-    "a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7"
-    "c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7"
-    "e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
-)
-_RFC5869_SALT2 = bytes.fromhex(
-    "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f"
-    "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f"
-    "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf"
-)
+_RFC5869_PRK2 = bytes.fromhex("06a6b88c5853361a06104c9ceb35b45cef760014904671014a193f40c15fc244")
 _RFC5869_INFO2 = bytes.fromhex(
     "b0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf"
     "d0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeef"
     "f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
 )
 _RFC5869_L2 = 82
-_RFC5869_PRK2 = bytes.fromhex("06a6b88c5853361a06104c9ceb35b45cef760014904671014a193f40c15fc244")
 _RFC5869_OKM2 = bytes.fromhex(
     "b11e398dc80327a1c8e7f78c596a49344f012eda2d4efad8a050cc4c19afa97c"
     "59045a99cac7827271cb41c65e590e09da3275600c2f09b8367793a9aca3db71"
@@ -62,66 +41,6 @@ _RFC5869_ZSALT_PRK = bytes.fromhex("19ef24a32c717b167f33a91d6f648bdf96596776afdb
 _RFC5869_ZSALT_OKM = bytes.fromhex(
     "8da4e775a563c18f715f802a063c5a31b8a11f5c5ee1879ec3454e5f3c738d2d9d201395faa4b61a96c8"
 )
-
-
-# ── _xor_bytes ──────────────────────────────────────────────────────────
-
-
-def test_xor_empty():
-    assert _xor_bytes(b"", b"") == b""
-
-
-def test_xor_identity():
-    assert _xor_bytes(b"abc", b"\x00\x00\x00") == b"abc"
-
-
-def test_xor_symmetric():
-    a = b"\x01\x02\x03"
-    b = b"\x04\x05\x06"
-    assert _xor_bytes(_xor_bytes(a, b), b) == a
-
-
-# ── _hmac_digest matches stdlib hmac ────────────────────────────────────
-
-
-def test_hmac_digest_matches_stdlib_sha256():
-    key = b"secret"
-    msg = b"hello"
-    expected = std_hmac.new(key, msg, hashlib.sha256).digest()
-    assert _hmac_digest(key, msg, "sha256") == expected
-
-
-def test_hmac_digest_matches_stdlib_sha512():
-    key = b"secret"
-    msg = b"hello"
-    expected = std_hmac.new(key, msg, hashlib.sha512).digest()
-    assert _hmac_digest(key, msg, "sha512") == expected
-
-
-def test_hmac_digest_key_longer_than_block():
-    key = b"x" * 128
-    msg = b"data"
-    assert _hmac_digest(key, msg, "sha256") == std_hmac.new(key, msg, hashlib.sha256).digest()
-
-
-def test_hmac_digest_same_key_same_msg():
-    k, m = b"key", b"message"
-    assert _hmac_digest(k, m, "sha256") == _hmac_digest(k, m, "sha256")
-
-
-def test_hmac_digest_differs_on_key():
-    h1 = _hmac_digest(b"key1", b"msg", "sha256")
-    h2 = _hmac_digest(b"key2", b"msg", "sha256")
-    assert h1 != h2
-
-
-def test_hmac_digest_differs_on_msg():
-    h1 = _hmac_digest(b"key", b"msg1", "sha256")
-    h2 = _hmac_digest(b"key", b"msg2", "sha256")
-    assert h1 != h2
-
-
-# ── HKDF-Extract RFC 5869 test vectors ──────────────────────────────────
 
 
 def test_hkdf_extract_test_vector():
@@ -384,8 +303,3 @@ def test_hmac_kb_rejects_bad_hash():
 def test_hashlen_values():
     assert HASHLEN["sha256"] == 32
     assert HASHLEN["sha512"] == 64
-
-
-def test_block_size_values():
-    assert HMAC_BLOCK_SIZE["sha256"] == 64
-    assert HMAC_BLOCK_SIZE["sha512"] == 128

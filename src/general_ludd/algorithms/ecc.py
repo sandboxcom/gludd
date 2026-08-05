@@ -1,14 +1,26 @@
-"""Elliptic curve cryptography: Weierstrass curves, point ops, ECDH, ECDSA.
+"""Elliptic curve cryptography backed by the `cryptography` library.
 
-Pure-Python, stdlib only. Default curve: secp256k1.
+Key generation, ECDH shared secret, and ECDSA sign/verify delegate to
+``cryptography.hazmat.primitives.asymmetric.ec``.  Point arithmetic
+(_double, _add, scalar multiplication) stays pure-Python because
+cryptography does not expose raw point operations.
 """
 
 from __future__ import annotations
 
-import hashlib
-import hmac
+import hashlib as _hashlib
+import hmac as _hmac
 import secrets
 from dataclasses import dataclass
+
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes as _hashes
+from cryptography.hazmat.primitives.asymmetric import ec as _ec
+from cryptography.hazmat.primitives.asymmetric.utils import (
+    Prehashed,
+    decode_dss_signature,
+    encode_dss_signature,
+)
 
 
 class ECCError(Exception):
@@ -150,17 +162,75 @@ class ECKeyPair:
     curve: ECCurve
 
 
+def _is_secp256k1(curve: ECCurve) -> bool:
+    return (
+        curve.p == SECP256K1.p
+        and curve.a == SECP256K1.a
+        and curve.b == SECP256K1.b
+        and curve.Gx == SECP256K1.Gx
+        and curve.Gy == SECP256K1.Gy
+        and curve.n == SECP256K1.n
+    )
+
+
+def _crypto_curve(curve: ECCurve) -> _ec.EllipticCurve:
+    if _is_secp256k1(curve):
+        return _ec.SECP256K1()
+    raise ECCError(
+        "cryptography backend does not support this custom curve; "
+        "only secp256k1 is supported by the cryptography backend"
+    )
+
+
+def _private_key_from_int(private_int: int, curve: ECCurve) -> _ec.EllipticCurvePrivateKey:
+    crypto_curve = _crypto_curve(curve)
+    return _ec.derive_private_key(private_int, crypto_curve, default_backend())
+
+
+def _public_key_from_point(point: ECPoint) -> _ec.EllipticCurvePublicKey:
+    crypto_curve = _crypto_curve(point.curve)
+    if point.x is None or point.y is None:
+        raise ECCError("cannot convert identity point to public key")
+    return _ec.EllipticCurvePublicNumbers(
+        point.x,
+        point.y,
+        crypto_curve,
+    ).public_key(default_backend())
+
+
+def _hash_alg_for_msg(msg_hash: bytes) -> _hashes.HashAlgorithm:
+    size = len(msg_hash)
+    if size <= 32:
+        return _hashes.SHA256()
+    if size <= 48:
+        return _hashes.SHA384()
+    return _hashes.SHA512()
+
+
 def generate_keypair(curve: ECCurve | None = None) -> ECKeyPair:
     if curve is None:
         curve = SECP256K1
+
+    if _is_secp256k1(curve):
+        crypto_curve = _ec.SECP256K1()
+        priv = _ec.generate_private_key(crypto_curve, default_backend())
+        priv_int = priv.private_numbers().private_value
+        pub_nums = priv.public_key().public_numbers()
+        public = ECPoint(pub_nums.x, pub_nums.y, curve)
+        return ECKeyPair(private=priv_int, public=public, curve=curve)
+
     private = secrets.randbelow(curve.n - 1) + 1
-    public = curve.identity
     G = ECPoint(curve.Gx, curve.Gy, curve)
     public = G * private
     return ECKeyPair(private=private, public=public, curve=curve)
 
 
 def ecdh_shared_secret(private: int, public: ECPoint) -> bytes:
+    if _is_secp256k1(public.curve):
+        priv_key = _private_key_from_int(private, public.curve)
+        pub_key = _public_key_from_point(public)
+        return priv_key.exchange(_ec.ECDH(), pub_key)
+
     S = public * private
     if S.is_identity:
         raise ECCError("shared secret is identity point")
@@ -170,6 +240,66 @@ def ecdh_shared_secret(private: int, public: ECPoint) -> bytes:
 def ecdsa_sign(msg_hash: bytes, private: int, curve: ECCurve | None = None) -> tuple[int, int]:
     if curve is None:
         curve = SECP256K1
+
+    if _is_secp256k1(curve):
+        priv_key = _private_key_from_int(private, curve)
+        hash_alg = _hash_alg_for_msg(msg_hash)
+        der_sig = priv_key.sign(msg_hash, _ec.ECDSA(Prehashed(hash_alg)))
+        r, s = decode_dss_signature(der_sig)
+        return (r, s)
+
+    return _ecdsa_sign_fallback(msg_hash, private, curve)
+
+
+def ecdsa_verify(msg_hash: bytes, signature: tuple[int, int], public: ECPoint) -> bool:
+    r, s = signature
+    curve = public.curve
+    n = curve.n
+
+    if not (1 <= r < n and 1 <= s < n):
+        return False
+
+    if _is_secp256k1(curve):
+        pub_key = _public_key_from_point(public)
+        hash_alg = _hash_alg_for_msg(msg_hash)
+        der_sig = encode_dss_signature(r, s)
+        try:
+            pub_key.verify(der_sig, msg_hash, _ec.ECDSA(Prehashed(hash_alg)))
+        except Exception:
+            return False
+        return True
+
+    return _ecdsa_verify_fallback(msg_hash, (r, s), public)
+
+
+# ── Fallback implementations for non-secp256k1 curves ──────────────────
+
+
+def _nonce_rfc6979(msg_hash: bytes, private: int, curve: ECCurve) -> int:
+    n = curve.n
+    qlen = n.bit_length()
+    holen = 32
+    rolen = (qlen + 7) // 8
+    bx = private.to_bytes(rolen, "big") + msg_hash[:rolen]
+    v = b"\x01" * holen
+    k = b"\x00" * holen
+    k = _hmac.new(k, v + b"\x00" + bx, _hashlib.sha256).digest()
+    v = _hmac.new(k, v, _hashlib.sha256).digest()
+    k = _hmac.new(k, v + b"\x01" + bx, _hashlib.sha256).digest()
+    v = _hmac.new(k, v, _hashlib.sha256).digest()
+    while True:
+        t = b""
+        while len(t) < rolen:
+            v = _hmac.new(k, v, _hashlib.sha256).digest()
+            t += v
+        k_candidate = int.from_bytes(t[:rolen], "big")
+        if 1 <= k_candidate < n:
+            return k_candidate
+        k = _hmac.new(k, v + b"\x00", _hashlib.sha256).digest()
+        v = _hmac.new(k, v, _hashlib.sha256).digest()
+
+
+def _ecdsa_sign_fallback(msg_hash: bytes, private: int, curve: ECCurve) -> tuple[int, int]:
     n = curve.n
     G = ECPoint(curve.Gx, curve.Gy, curve)
     z = int.from_bytes(msg_hash, "big") % n
@@ -188,12 +318,10 @@ def ecdsa_sign(msg_hash: bytes, private: int, curve: ECCurve | None = None) -> t
     return (r, s)
 
 
-def ecdsa_verify(msg_hash: bytes, signature: tuple[int, int], public: ECPoint) -> bool:
+def _ecdsa_verify_fallback(msg_hash: bytes, signature: tuple[int, int], public: ECPoint) -> bool:
     r, s = signature
     curve = public.curve
     n = curve.n
-    if not (1 <= r < n and 1 <= s < n):
-        return False
     z = int.from_bytes(msg_hash, "big") % n
     s_inv = pow(s, -1, n)
     u1 = (z * s_inv) % n
@@ -204,27 +332,3 @@ def ecdsa_verify(msg_hash: bytes, signature: tuple[int, int], public: ECPoint) -
         return False
     assert R.x is not None
     return (R.x % n) == r
-
-
-def _nonce_rfc6979(msg_hash: bytes, private: int, curve: ECCurve) -> int:
-    n = curve.n
-    qlen = n.bit_length()
-    holen = 32
-    rolen = (qlen + 7) // 8
-    bx = private.to_bytes(rolen, "big") + msg_hash[:rolen]
-    v = b"\x01" * holen
-    k = b"\x00" * holen
-    k = hmac.new(k, v + b"\x00" + bx, hashlib.sha256).digest()
-    v = hmac.new(k, v, hashlib.sha256).digest()
-    k = hmac.new(k, v + b"\x01" + bx, hashlib.sha256).digest()
-    v = hmac.new(k, v, hashlib.sha256).digest()
-    while True:
-        t = b""
-        while len(t) < rolen:
-            v = hmac.new(k, v, hashlib.sha256).digest()
-            t += v
-        k_candidate = int.from_bytes(t[:rolen], "big")
-        if 1 <= k_candidate < n:
-            return k_candidate
-        k = hmac.new(k, v + b"\x00", hashlib.sha256).digest()
-        v = hmac.new(k, v, hashlib.sha256).digest()

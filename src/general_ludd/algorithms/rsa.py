@@ -266,8 +266,8 @@ def _build_private_key(key: RSAKey) -> crypto_rsa.RSAPrivateKey:
 
 
 def generate_keypair(bits: int = 2048, e: int = 65537) -> RSAKey:
-    if bits < 512:
-        raise RSAError(f"key size must be >= 512 bits, got {bits}")
+    if bits < 1024:
+        raise RSAError(f"key size must be >= 1024 bits, got {bits}")
     if bits % 2 != 0:
         raise RSAError(f"key size must be even, got {bits}")
     if e % 2 == 0:

@@ -1,8 +1,9 @@
-"""Diffie-Hellman key exchange: DH, DHE, safe prime generation.
+"""Diffie-Hellman key exchange backed by the `cryptography` library.
 
-Pure-Python, stdlib only. Uses modular exponentiation with
-Miller-Rabin primality testing. Compliant with RFC 3526 groups
-and ephemeral (DHE) key agreement patterns.
+Key generation, shared-secret computation, and parameter generation
+delegate to ``cryptography.hazmat.primitives.asymmetric.dh`` when the
+modulus is large enough (>=512 bits).  Small groups used in testing
+fall back to modular exponentiation.
 """
 
 from __future__ import annotations
@@ -10,6 +11,9 @@ from __future__ import annotations
 import secrets
 from dataclasses import dataclass
 from typing import Final
+
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.asymmetric import dh as _dh
 
 
 class DHError(Exception):
@@ -196,22 +200,27 @@ def _is_probable_prime(n: int, rounds: int = 40) -> bool:
 
 
 def generate_safe_prime(bits: int) -> int:
-    """Generate a safe prime of exactly *bits* length.
+    """Generate a safe prime using the ``cryptography`` DH backend.
 
-    A safe prime p satisfies p = 2q + 1 where q is also prime
-    (a Sophie Germain prime).
-
-    Args:
-        bits: Desired bit length of p. Must be >= 8.
-
-    Returns:
-        A safe prime p of exactly *bits* bits.
-
-    Raises:
-        DHError: If bits < 8.
+    For bit sizes >= 512 the ``dh.generate_parameters`` call is used.
+    Smaller sizes (used by tests) fall back to Miller-Rabin search.
     """
     if bits < 8:
         raise DHError(f"bits must be >= 8, got {bits}")
+
+    if bits >= 512:
+        params = _dh.generate_parameters(generator=2, key_size=bits, backend=default_backend())
+        p = params.parameter_numbers().p
+        if p.bit_length() == bits:
+            return p
+        # Retry — dh.generate_parameters may produce a prime with a
+        # different bit length.
+        while True:
+            params = _dh.generate_parameters(generator=2, key_size=bits, backend=default_backend())
+            p = params.parameter_numbers().p
+            if p.bit_length() == bits:
+                return p
+
     while True:
         q = secrets.randbits(bits - 1) | (1 << (bits - 2)) | 1
         if _is_probable_prime(q):
@@ -221,19 +230,6 @@ def generate_safe_prime(bits: int) -> int:
 
 
 def generate_dh_group(bits: int, g: int = 2, name: str = "custom") -> DHGroup:
-    """Generate a fresh DHGroup with a safe prime of the given size.
-
-    Args:
-        bits: Modulus bit length. Must be >= 16.
-        g: Generator (default 2).
-        name: Human-readable group name.
-
-    Returns:
-        A DHGroup with p, g, q populated.
-
-    Raises:
-        DHError: If bits < 16 or g is not a valid generator.
-    """
     if bits < 16:
         raise DHError(f"bits must be >= 16, got {bits}")
     p = generate_safe_prime(bits)
@@ -244,11 +240,6 @@ def generate_dh_group(bits: int, g: int = 2, name: str = "custom") -> DHGroup:
 
 
 def _is_valid_generator(g: int, p: int, q: int) -> bool:
-    """Check that g generates a non-trivial subgroup in Z_p*.
-
-    For a safe prime p = 2q + 1, g^q ≡ 1 (order q) or g^q ≡ -1 (order 2q).
-    Both are valid DH generators.
-    """
     if g < 2 or g >= p - 1:
         return False
     r = pow(g, q, p)
@@ -257,28 +248,35 @@ def _is_valid_generator(g: int, p: int, q: int) -> bool:
 
 @dataclass(slots=True)
 class DHKeyPair:
-    """A Diffie-Hellman key pair.
-
-    Attributes:
-        private: Secret exponent x in [1, q-1].
-        public: g^x mod p.
-        group: The DHGroup this key belongs to.
-    """
+    """A Diffie-Hellman key pair."""
 
     private: int
     public: int
     group: DHGroup
 
 
+def _to_parameters(group: DHGroup) -> _dh.DHParameters:
+    pn = _dh.DHParameterNumbers(p=group.p, g=group.g, q=group.q)
+    return pn.parameters(default_backend())
+
+
 def generate_keypair(group: DHGroup) -> DHKeyPair:
-    """Generate a fresh DH key pair in the given group."""
+    if group.p.bit_length() >= 512:
+        parameters = _to_parameters(group)
+        priv = parameters.generate_private_key()
+        nums = priv.private_numbers()
+        return DHKeyPair(
+            private=nums.x,
+            public=nums.public_numbers.y,
+            group=group,
+        )
+
     private = secrets.randbelow(group.q - 1) + 1
     public = pow(group.g, private, group.p)
     return DHKeyPair(private=private, public=public, group=group)
 
 
 def compute_shared_secret(private_key: int, peer_public: int, p: int) -> int:
-    """Compute the shared secret: (peer_public)^private_key mod p."""
     return pow(peer_public, private_key, p)
 
 
@@ -290,12 +288,10 @@ class DHEExchange:
     group: DHGroup
 
     def compute(self, peer_public: int) -> int:
-        """Complete the exchange: produce the shared secret."""
         return compute_shared_secret(self.own_keypair.private, peer_public, self.group.p)
 
 
 def dhe_initiate(group: DHGroup) -> DHEExchange:
-    """Initiate a DHE session: generate a fresh keypair."""
     return DHEExchange(
         own_keypair=generate_keypair(group),
         group=group,
@@ -303,20 +299,6 @@ def dhe_initiate(group: DHGroup) -> DHEExchange:
 
 
 def derive_key(shared_secret: int, length: int = 32) -> bytes:
-    """Derive a symmetric key from the shared secret using SHA-256 KDF.
-
-    Uses HKDF-like construction: SHA-256(shared_secret || counter).
-
-    Args:
-        shared_secret: The shared integer secret.
-        length: Desired output key length in bytes (default 32).
-
-    Returns:
-        Key material of the requested length.
-
-    Raises:
-        DHError: If length > 255 * 32 (HKDF output limit).
-    """
     import hashlib
 
     if length > 255 * 32:
