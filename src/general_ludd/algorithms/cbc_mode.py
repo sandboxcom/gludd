@@ -1,15 +1,16 @@
 """CBC mode block cipher: encrypt, decrypt with PKCS#7 padding,
 and padding oracle resistance via constant-time validation.
 
-Pure-Python wrapper around the cryptography library's AES block cipher
-in CBC mode.  IV is prepended to ciphertext; decryption uses
-constant-time padding validation to resist padding oracle attacks.
+Uses the cryptography library's AES-CBC mode and PKCS#7 padding.
+IV is prepended to ciphertext; decryption uses constant-time
+padding validation to resist padding oracle attacks.
 """
 
 from __future__ import annotations
 
 import secrets
 
+from cryptography.hazmat.primitives import padding as _padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 
@@ -22,19 +23,16 @@ _VALID_KEY_SIZES: frozenset[int] = frozenset({16, 24, 32})
 
 
 def _pkcs7_pad(data: bytes, block_size: int) -> bytes:
-    pad_len = block_size - (len(data) % block_size)
-    return data + bytes([pad_len] * pad_len)
+    padder = _padding.PKCS7(block_size * 8).padder()
+    return padder.update(data) + padder.finalize()
 
 
 def _pkcs7_unpad(data: bytes, block_size: int) -> bytes:
-    if len(data) == 0 or len(data) % block_size != 0:
-        raise CBCError("Invalid padded data length")
-    pad_len = data[-1]
-    if pad_len == 0 or pad_len > block_size:
-        raise CBCError("Invalid padding byte")
-    if data[-pad_len:] != bytes([pad_len] * pad_len):
-        raise CBCError("Invalid PKCS#7 padding")
-    return data[:-pad_len]
+    unpadder = _padding.PKCS7(block_size * 8).unpadder()
+    try:
+        return unpadder.update(data) + unpadder.finalize()
+    except ValueError as exc:
+        raise CBCError(str(exc)) from exc
 
 
 def _constant_time_unpad(data: bytes, block_size: int) -> bytes:

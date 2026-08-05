@@ -1,7 +1,7 @@
 """Deep Ed25519 tests: key generation, signing, verification, curve operations,
 point arithmetic, encoding, edge cases, and RFC 8032 compliance.
 
-Pure-Python, stdlib only implementation.
+Uses the `cryptography` library for cryptographic operations.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from general_ludd.algorithms.ed25519 import (
     decode_point,
     derive_public_from_private,
     encode_point,
+    from_affine,
     generate_keypair,
     is_on_curve,
     sign,
@@ -202,7 +203,7 @@ class TestCurveOperations:
         assert not is_on_curve(1, 1)
 
     def test_point_from_affine(self) -> None:
-        p = EDPoint.from_affine(0, 1)
+        p = from_affine(0, 1)
         assert p == EDPoint.identity()
 
     def test_point_add_identity(self) -> None:

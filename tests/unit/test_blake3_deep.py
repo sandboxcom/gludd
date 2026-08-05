@@ -1,8 +1,7 @@
-"""Deep BLAKE3 hash tests: compression function, chunk hashing, tree
-building, incremental hashing, keyed hash, key derivation, XOF output,
-and consistency across modes.
+"""Deep BLAKE3 hash tests: hashing, incremental hashing, keyed hash,
+key derivation, XOF output, and consistency across modes.
 
-Pure-Python, stdlib only implementation.
+Uses blake3 PyPI package.
 """
 
 from __future__ import annotations
@@ -13,11 +12,8 @@ from general_ludd.algorithms.blake3 import (
     CHUNK_LEN,
     KEY_LEN,
     Blake3,
-    _build_tree,
-    _hash_chunk,
     blake3,
     blake3_hex,
-    compress,
     derive_key,
     keyed_hash,
 )
@@ -25,35 +21,6 @@ from general_ludd.algorithms.blake3 import (
 
 def _b(s: str) -> bytes:
     return s.encode()
-
-
-class TestCompressFunction:
-    def test_empty_block_produces_output(self) -> None:
-        cv = [0] * 8
-        block = [0] * 16
-        out = compress(cv, block, 0, 0, 0)
-        assert len(out) == 8
-        assert all(isinstance(w, int) for w in out)
-
-    def test_nonzero_counter_changes_output(self) -> None:
-        cv = [1, 2, 3, 4, 5, 6, 7, 8]
-        block = list(range(16))
-        out0 = compress(cv, block, 0, 64, 0)
-        out1 = compress(cv, block, 1, 64, 0)
-        assert out0 != out1
-
-    def test_different_block_data_changes_output(self) -> None:
-        cv = [0x11111111] * 8
-        b1 = [0] * 16
-        b2 = [1] * 16
-        assert compress(cv, b1, 0, 64, 0) != compress(cv, b2, 0, 64, 0)
-
-    def test_chunk_start_flag_changes_output(self) -> None:
-        cv = list(range(8))
-        block = list(range(16))
-        a = compress(cv, block, 0, 64, 0)
-        b = compress(cv, block, 0, 64, 1)  # CHUNK_START
-        assert a != b
 
 
 class TestEmptyHash:
@@ -256,38 +223,6 @@ class TestHexDigest:
     def test_hexdigest_matches_digest(self) -> None:
         h = Blake3().update(b"test")
         assert h.hexdigest() == h.digest().hex()
-
-
-class TestHashChunk:
-    def test_hash_empty_chunk(self) -> None:
-        cv = [1, 2, 3, 4, 5, 6, 7, 8]
-        out = _hash_chunk(cv, b"", 0, 0)
-        assert len(out) == 8
-
-    def test_hash_chunk_skips_empty(self) -> None:
-        cv = list(range(8))
-        out = _hash_chunk(cv, b"", 0, 0)
-        assert any(w != 0 for w in out)
-
-
-class TestBuildTree:
-    def test_single_chunk_tree(self) -> None:
-        cv = list(range(8))
-        chunks = [[1] * 8]
-        out = _build_tree(chunks, cv, 0)
-        assert len(out) == 8
-
-    def test_two_chunk_tree(self) -> None:
-        cv = list(range(8))
-        chunks = [[1] * 8, [2] * 8]
-        out = _build_tree(chunks, cv, 0)
-        assert len(out) == 8
-
-    def test_three_chunk_tree(self) -> None:
-        cv = list(range(8))
-        chunks = [[1] * 8, [2] * 8, [3] * 8]
-        out = _build_tree(chunks, cv, 0)
-        assert len(out) == 8
 
 
 class TestFluidAPI:

@@ -1,13 +1,16 @@
 """Ed25519 digital signatures (RFC 8032): key generation, signing, verification.
 
-Pure-Python, stdlib only.  Uses extended twisted Edwards coordinates.
+Uses the `cryptography` library for cryptographic operations.
+Mathematical primitives are retained for compatibility and testing.
 """
 
 from __future__ import annotations
 
 import hashlib
-import secrets
 from dataclasses import dataclass
+
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey as _CryptoPrivateKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey as _CryptoPublicKey
 
 P = 2**255 - 19
 D = 37095705934669439343138083508754565189542113879843219016388785533085940283555
@@ -176,31 +179,44 @@ class Ed25519KeyPair:
     public_bytes: bytes
     secret_scalar: int
     public_point: EDPoint
+    _crypto_key: _CryptoPrivateKey
 
     @classmethod
     def generate(cls) -> Ed25519KeyPair:
-        return cls.from_seed(secrets.token_bytes(32))
+        crypto_key = _CryptoPrivateKey.generate()
+        seed = crypto_key.private_bytes_raw()
+        pub_bytes = crypto_key.public_key().public_bytes_raw()
+        h = hashlib.sha512(seed).digest()
+        a = _scalar_clamp(h[:32])
+        A = B * a
+        return cls(
+            private_bytes=seed,
+            public_bytes=pub_bytes,
+            secret_scalar=a,
+            public_point=A,
+            _crypto_key=crypto_key,
+        )
 
     @classmethod
     def from_seed(cls, seed: bytes) -> Ed25519KeyPair:
         if len(seed) != 32:
             raise Ed25519Error(f"Seed must be 32 bytes, got {len(seed)}")
+        crypto_key = _CryptoPrivateKey.from_private_bytes(seed)
+        pub_bytes = crypto_key.public_key().public_bytes_raw()
         h = hashlib.sha512(seed).digest()
         a = _scalar_clamp(h[:32])
         A = B * a
-        return cls(private_bytes=seed, public_bytes=encode_point(A), secret_scalar=a, public_point=A)
+        return cls(
+            private_bytes=seed,
+            public_bytes=pub_bytes,
+            secret_scalar=a,
+            public_point=A,
+            _crypto_key=crypto_key,
+        )
 
     def sign(self, message: bytes | str) -> bytes:
         msg_bytes = _ensure_bytes(message)
-        h = hashlib.sha512(self.private_bytes).digest()
-        a = _scalar_clamp(h[:32])
-        prefix = h[32:]
-        r = int.from_bytes(hashlib.sha512(prefix + msg_bytes).digest(), "little") % Q
-        R = B * r
-        Renc = encode_point(R)
-        k = int.from_bytes(hashlib.sha512(Renc + self.public_bytes + msg_bytes).digest(), "little") % Q
-        S = (r + k * a) % Q
-        return Renc + S.to_bytes(32, "little")
+        return self._crypto_key.sign(msg_bytes)
 
 
 def verify(public_key: bytes, message: bytes | str, signature: bytes) -> bool:
@@ -209,27 +225,18 @@ def verify(public_key: bytes, message: bytes | str, signature: bytes) -> bool:
     if len(signature) != 64:
         return False
     try:
-        A = decode_point(public_key)
-    except Ed25519Error:
+        pub = _CryptoPublicKey.from_public_bytes(public_key)
+        msg_bytes = _ensure_bytes(message)
+        pub.verify(signature, msg_bytes)
+        return True
+    except Exception:
         return False
-    try:
-        R = decode_point(signature[:32])
-    except Ed25519Error:
-        return False
-    S = int.from_bytes(signature[32:], "little")
-    if S >= Q:
-        return False
-    msg_bytes = _ensure_bytes(message)
-    k = int.from_bytes(hashlib.sha512(signature[:32] + public_key + msg_bytes).digest(), "little") % Q
-    SB = B * S
-    Rplus = R + A * k
-    return Rplus == SB
 
 
 def derive_public_from_private(private_key: bytes) -> bytes:
     if len(private_key) != 32:
         raise Ed25519Error(f"Private key must be 32 bytes, got {len(private_key)}")
-    return Ed25519KeyPair.from_seed(private_key).public_bytes
+    return _CryptoPrivateKey.from_private_bytes(private_key).public_key().public_bytes_raw()
 
 
 def generate_keypair() -> Ed25519KeyPair:

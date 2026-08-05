@@ -1,8 +1,7 @@
-"""RSA cryptosystem: key generation, PKCS#1 v1.5 padding, encryption,
-decryption, and CRT-accelerated decryption.
+"""RSA cryptosystem backed by the `cryptography` library.
 
-Pure-Python, stdlib only. Uses Miller-Rabin primality testing and
-square-and-multiply modular exponentiation.
+Public API: RSAKey, RSAError, DecryptionError, generate_keypair, encrypt,
+decrypt, decrypt_crt, pkcs1_v15_encode, pkcs1_v15_decode.
 """
 
 from __future__ import annotations
@@ -11,11 +10,16 @@ import math
 import secrets
 from dataclasses import dataclass
 
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.asymmetric import rsa as crypto_rsa
+from cryptography.hazmat.primitives.asymmetric.rsa import (
+    RSAPrivateNumbers,
+    RSAPublicNumbers,
+)
+
 
 @dataclass(slots=True)
 class RSAKey:
-    """An RSA key pair (public or private)."""
-
     n: int
     e: int
     d: int | None = None
@@ -146,7 +150,6 @@ _SMALL_PRIMES = frozenset(
 
 
 def _is_probable_prime(n: int, rounds: int = 40) -> bool:
-    """Miller-Rabin probabilistic primality test."""
     if n < 2:
         return False
     if n in _SMALL_PRIMES:
@@ -164,7 +167,6 @@ def _is_probable_prime(n: int, rounds: int = 40) -> bool:
         d //= 2
         s += 1
 
-    n.bit_length()
     for _ in range(rounds):
         a = secrets.randbelow(n - 3) + 2
         x = pow(a, d, n)
@@ -180,7 +182,6 @@ def _is_probable_prime(n: int, rounds: int = 40) -> bool:
 
 
 def _generate_prime(bits: int, e: int = 65537) -> int:
-    """Generate a prime of exactly *bits* length, coprime to *e*."""
     while True:
         candidate = secrets.randbits(bits) | (1 << (bits - 1)) | 1
         if _is_probable_prime(candidate) and math.gcd(candidate - 1, e) == 1:
@@ -188,7 +189,6 @@ def _generate_prime(bits: int, e: int = 65537) -> int:
 
 
 def _mod_inverse(a: int, m: int) -> int:
-    """Extended Euclidean algorithm — returns x such that (a * x) % m == 1."""
     t, newt = 0, 1
     r, newr = m, a
     while newr != 0:
@@ -203,59 +203,14 @@ def _mod_inverse(a: int, m: int) -> int:
 
 
 def _i2osp(x: int, length: int) -> bytes:
-    """Integer-to-Octet-String primitive (RFC 8017 §4.1)."""
     return x.to_bytes(length, byteorder="big")
 
 
 def _os2ip(octets: bytes) -> int:
-    """Octet-String-to-Integer primitive (RFC 8017 §4.2)."""
     return int.from_bytes(octets, byteorder="big")
 
 
-def generate_keypair(bits: int = 2048, e: int = 65537) -> RSAKey:
-    """Generate a new RSA key pair with the specified modulus size.
-
-    Args:
-        bits: Modulus size in bits (must be >= 512 and even).
-        e: Public exponent (default F4 = 65537).
-
-    Returns:
-        An RSAKey with n, e, d, p, q populated.
-    """
-    if bits < 512:
-        raise RSAError(f"key size must be >= 512 bits, got {bits}")
-    if bits % 2 != 0:
-        raise RSAError(f"key size must be even, got {bits}")
-    if e % 2 == 0:
-        raise RSAError(f"public exponent must be odd, got {e}")
-
-    half = bits // 2
-    while True:
-        p = _generate_prime(half, e)
-        q = _generate_prime(half, e)
-        if p != q:
-            break
-
-    n = p * q
-    phi = (p - 1) * (q - 1)
-    d = _mod_inverse(e, phi)
-
-    return RSAKey(n=n, e=e, d=d, p=p, q=q)
-
-
-# ── PKCS#1 v1.5 padding (RFC 8017 §7.2) ──────────────────────────────
-
-
 def pkcs1_v15_encode(message: bytes, k: int) -> bytes:
-    """EME-PKCS1-v1_5-ENCODE. Returns *k*-length padded message.
-
-    Args:
-        message: Plaintext to pad.
-        k: Length of the RSA modulus in bytes.
-
-    Returns:
-        Padded message of exactly *k* bytes.
-    """
     if len(message) > k - 11:
         raise RSAError(f"message too long: {len(message)} > {k - 11}")
     ps_len = k - 3 - len(message)
@@ -269,18 +224,6 @@ def pkcs1_v15_encode(message: bytes, k: int) -> bytes:
 
 
 def pkcs1_v15_decode(encoded: bytes, k: int) -> bytes:
-    """EME-PKCS1-v1_5-DECODE. Strips padding, returns plaintext.
-
-    Args:
-        encoded: *k*-length padded message.
-        k: Length of the RSA modulus in bytes.
-
-    Returns:
-        Plaintext with padding stripped.
-
-    Raises:
-        DecryptionError: If the padding is malformed.
-    """
     if len(encoded) != k:
         raise DecryptionError(f"decrypted data length {len(encoded)} != expected {k}")
     if encoded[:2] != b"\x00\x02":
@@ -291,81 +234,67 @@ def pkcs1_v15_decode(encoded: bytes, k: int) -> bytes:
     return encoded[sep + 1 :]
 
 
-# ── RSA core operations ───────────────────────────────────────────────
+def _crypto_key_to_rsa_key(private_key: crypto_rsa.RSAPrivateKey) -> RSAKey:
+    numbers = private_key.private_numbers()
+    return RSAKey(
+        n=numbers.public_numbers.n,
+        e=numbers.public_numbers.e,
+        d=numbers.d,
+        p=numbers.p,
+        q=numbers.q,
+    )
+
+
+def _build_private_key(key: RSAKey) -> crypto_rsa.RSAPrivateKey:
+    if key.d is None:
+        raise RSAError("private key requires d")
+    if key.p is None or key.q is None:
+        raise RSAError("private key requires p and q")
+    dmp1 = key.d % (key.p - 1)
+    dmq1 = key.d % (key.q - 1)
+    iqmp = _mod_inverse(key.q, key.p)
+    private_numbers = RSAPrivateNumbers(
+        p=key.p,
+        q=key.q,
+        d=key.d,
+        dmp1=dmp1,
+        dmq1=dmq1,
+        iqmp=iqmp,
+        public_numbers=RSAPublicNumbers(e=key.e, n=key.n),
+    )
+    return private_numbers.private_key()
+
+
+def generate_keypair(bits: int = 2048, e: int = 65537) -> RSAKey:
+    if bits < 512:
+        raise RSAError(f"key size must be >= 512 bits, got {bits}")
+    if bits % 2 != 0:
+        raise RSAError(f"key size must be even, got {bits}")
+    if e % 2 == 0:
+        raise RSAError(f"public exponent must be odd, got {e}")
+
+    private_key = crypto_rsa.generate_private_key(
+        public_exponent=e,
+        key_size=bits,
+    )
+    return _crypto_key_to_rsa_key(private_key)
 
 
 def encrypt(key: RSAKey, plaintext: bytes) -> bytes:
-    """RSAES-PKCS1-v1_5-ENCRYPT.
-
-    Args:
-        key: Public key (n, e).
-        plaintext: Data to encrypt.
-
-    Returns:
-        Ciphertext as bytes (same length as modulus in bytes).
-    """
-    k = (key.n.bit_length() + 7) // 8
-    padded = pkcs1_v15_encode(plaintext, k)
-    m = _os2ip(padded)
-    c = pow(m, key.e, key.n)
-    return _i2osp(c, k)
+    public_numbers = RSAPublicNumbers(e=key.e, n=key.n)
+    public_key = public_numbers.public_key()
+    return public_key.encrypt(plaintext, padding.PKCS1v15())
 
 
 def decrypt(key: RSAKey, ciphertext: bytes) -> bytes:
-    """RSAES-PKCS1-v1_5-DECRYPT (basic, non-CRT).
-
-    Args:
-        key: Private key (n, e, d).
-        ciphertext: Data to decrypt.
-
-    Returns:
-        Plaintext bytes.
-
-    Raises:
-        DecryptionError: If padding is invalid.
-    """
-    if key.d is None:
-        raise RSAError("decrypt requires a private key with d")
-    k = (key.n.bit_length() + 7) // 8
-    c = _os2ip(ciphertext)
-    m = pow(c, key.d, key.n)
-    encoded = _i2osp(m, k)
-    return pkcs1_v15_decode(encoded, k)
+    private_key = _build_private_key(key)
+    try:
+        return private_key.decrypt(ciphertext, padding.PKCS1v15())
+    except ValueError as exc:
+        raise DecryptionError(str(exc)) from exc
 
 
 def decrypt_crt(key: RSAKey, ciphertext: bytes) -> bytes:
-    """RSA decryption using the Chinese Remainder Theorem (approx 4x faster).
-
-    Requires *p* and *q* on the key.  Fails with RSAError if either
-    is missing.
-
-    Args:
-        key: Private key (n, e, d, p, q).
-        ciphertext: Data to decrypt.
-
-    Returns:
-        Plaintext bytes.
-
-    Raises:
-        RSAError: If p or q is missing from the key.
-    """
-    p = key.p
-    q = key.q
-    d = key.d
-    if p is None or q is None or d is None:
+    if key.p is None or key.q is None or key.d is None:
         raise RSAError("decrypt_crt requires p, q, and d on the key")
-
-    k = (key.n.bit_length() + 7) // 8
-    c = _os2ip(ciphertext)
-
-    dp = d % (p - 1)
-    dq = d % (q - 1)
-    qinv = _mod_inverse(q, p)
-
-    m1 = pow(c, dp, p)
-    m2 = pow(c, dq, q)
-    h = (qinv * (m1 - m2)) % p
-    m = m2 + h * q
-
-    encoded = _i2osp(m, k)
-    return pkcs1_v15_decode(encoded, k)
+    return decrypt(key, ciphertext)

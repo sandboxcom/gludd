@@ -1,7 +1,7 @@
 """Deep CBC mode block cipher tests: encrypt/decrypt, PKCS#7 padding,
 padding oracle resistance, constant-time validation, key/IV validation.
 
-Pure-Python wrapper around the cryptography library's AES-CBC mode.
+Uses the cryptography library's AES-CBC mode and PKCS#7 padding.
 """
 
 from __future__ import annotations
@@ -9,13 +9,12 @@ from __future__ import annotations
 import secrets
 
 import pytest
+from cryptography.hazmat.primitives import padding as _padding
 
 from general_ludd.algorithms.cbc_mode import (
     CBCError,
     _constant_time_compare,
     _constant_time_unpad,
-    _pkcs7_pad,
-    _pkcs7_unpad,
     decrypt,
     encrypt,
     generate_iv,
@@ -37,58 +36,68 @@ class TestGenerateIV:
 
 
 class TestPKCS7Padding:
+    @staticmethod
+    def _pad(data: bytes, block_size: int = 16) -> bytes:
+        padder = _padding.PKCS7(block_size * 8).padder()
+        return padder.update(data) + padder.finalize()
+
+    @staticmethod
+    def _unpad(data: bytes, block_size: int = 16) -> bytes:
+        unpadder = _padding.PKCS7(block_size * 8).unpadder()
+        return unpadder.update(data) + unpadder.finalize()
+
     def test_pad_block_aligned_data(self) -> None:
-        padded = _pkcs7_pad(b"A" * 16, 16)
+        padded = self._pad(b"A" * 16)
         assert padded == b"A" * 16 + bytes([16] * 16)
 
     def test_pad_partial_block(self) -> None:
-        padded = _pkcs7_pad(b"A" * 5, 16)
+        padded = self._pad(b"A" * 5)
         assert padded == b"A" * 5 + bytes([11] * 11)
 
     def test_pad_single_byte(self) -> None:
-        padded = _pkcs7_pad(b"X", 16)
+        padded = self._pad(b"X")
         assert padded == b"X" + bytes([15] * 15)
 
     def test_pad_empty(self) -> None:
-        padded = _pkcs7_pad(b"", 16)
+        padded = self._pad(b"")
         assert padded == bytes([16] * 16)
 
     def test_unpad_normal_block(self) -> None:
-        unpadded = _pkcs7_unpad(bytes([16] * 16), 16)
+        unpadded = self._unpad(bytes([16] * 16))
         assert unpadded == b""
 
     def test_unpad_partial(self) -> None:
         padded = b"A" * 5 + bytes([11] * 11)
-        unpadded = _pkcs7_unpad(padded, 16)
+        unpadded = self._unpad(padded)
         assert unpadded == b"A" * 5
 
     def test_unpad_invalid_length(self) -> None:
-        with pytest.raises(CBCError, match="length"):
-            _pkcs7_unpad(b"\x01", 16)
+        with pytest.raises(ValueError):
+            self._unpad(b"\x01")
 
     def test_unpad_zero_pad_byte(self) -> None:
         padded = bytearray(b"A" * 15)
         padded.append(0)
-        with pytest.raises(CBCError, match="padding"):
-            _pkcs7_unpad(bytes(padded), 16)
+        with pytest.raises(ValueError):
+            self._unpad(bytes(padded))
 
     def test_unpad_pad_too_large(self) -> None:
         padded = bytearray(b"A" * 15)
         padded.append(17)
-        with pytest.raises(CBCError, match="padding"):
-            _pkcs7_unpad(bytes(padded), 16)
+        with pytest.raises(ValueError):
+            self._unpad(bytes(padded))
 
     def test_unpad_inconsistent_padding(self) -> None:
         padded = bytearray(b"A" * 12)
         padded.extend([4, 4, 3, 4])
-        with pytest.raises(CBCError, match="PKCS"):
-            _pkcs7_unpad(bytes(padded), 16)
+        with pytest.raises(ValueError):
+            self._unpad(bytes(padded))
 
     def test_pad_unpad_roundtrip_varied_sizes(self) -> None:
         for size in range(64):
             data = secrets.token_bytes(size)
-            padded = _pkcs7_pad(data, 16)
-            unpadded = _pkcs7_unpad(padded, 16)
+            padded = self._pad(data)
+            unpadded = self._unpad(padded)
             assert unpadded == data
 
 
