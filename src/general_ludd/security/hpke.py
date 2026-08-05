@@ -19,6 +19,7 @@ import struct
 from dataclasses import dataclass
 from typing import Final
 
+from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives import hashes, hmac
 from cryptography.hazmat.primitives.asymmetric.x25519 import (
     X25519PrivateKey,
@@ -258,11 +259,38 @@ class HPKERecipient:
         if self._st.seq == 0:
             raise ValueError("message limit exceeded")
         aead = AESGCM(self._st.key)
-        return aead.decrypt(nonce, ciphertext, self._aad)
+        try:
+            return aead.decrypt(nonce, ciphertext, self._aad)
+        except InvalidTag:
+            raise ValueError("decrypt failed") from None
 
     def export(self, label: bytes, length: int) -> bytes:
         sid = self._st.suite.suite_id()
         return _labeled_expand(self._st.exporter_secret, b"sec", label, length, sid)
+
+
+# ---------------------------------------------------------------------------
+# Convenience: single-shot seal / open
+# ---------------------------------------------------------------------------
+
+
+def hpke_seal(
+    plaintext: bytes,
+    recipient_public_key: X25519PublicKey,
+    info: bytes = b"",
+) -> HPKEEncryptedBlob:
+    sender = HPKESender(recipient_public_key, info=info)
+    ciphertext = sender.encrypt(plaintext)
+    return HPKEEncryptedBlob(encap=sender.encap, ciphertext=ciphertext)
+
+
+def hpke_open(
+    blob: HPKEEncryptedBlob,
+    recipient_private_key: X25519PrivateKey,
+    info: bytes = b"",
+) -> bytes:
+    recipient = HPKERecipient(recipient_private_key, blob.encap, info=info)
+    return recipient.decrypt(blob.ciphertext)
 
 
 # ---------------------------------------------------------------------------

@@ -2086,7 +2086,6 @@ requires-dist = [
     { name = "setuptools", marker = "extra == 'dev'", specifier = ">=83.0.0" },
     { name = "shamir", specifier = ">=0.1.0b2" },
     { name = "sqlalchemy", specifier = ">=0.1.0b2" },
-    { name = "srptools", specifier = ">=0.1.0b2" },
     { name = "srptools", specifier = ">=1.0.0" },
     { name = "starlette", specifier = ">=0.1.0b2" },
     { name = "structlog", specifier = ">=0.1.0b2" },

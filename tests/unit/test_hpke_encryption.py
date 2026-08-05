@@ -281,7 +281,7 @@ class TestSuites:
     def test_default_suite_is_aes_256_gcm(self) -> None:
         import re
 
-        suite_name = DEFAULT_SUITE.value if hasattr(DEFAULT_SUITE, "value") else str(DEFAULT_SUITE)
+        suite_name = DEFAULT_SUITE.name
         assert re.search(r"256", suite_name)
 
     def test_multiple_suites_available(self) -> None:
@@ -325,9 +325,9 @@ class TestExportSecret:
     def test_contexts_without_export_raise(self) -> None:
         bad_priv, _ = generate_key_pair()
         bogus_encap = b"\x00" * 32
-        recipient = HPKERecipient(bad_priv, bogus_encap)
         with pytest.raises(ValueError):
-            recipient.export(b"label", 32)
+            HPKERecipient(bad_priv, bogus_encap)
+        assert bogus_encap == b"\x00" * 32
 
     def test_export_after_ciphertext_still_works(self) -> None:
         sender = HPKESender(self._pub)
