@@ -1,10 +1,15 @@
-"""Kyber ML-KEM (FIPS 203): post-quantum key encapsulation mechanism.
+# Experimental — no mature Python library for Kyber ML-KEM
 
-Implements Kyber-512, Kyber-768, Kyber-1024 over the polynomial ring
-Z_q[X]/(X^256 + 1) with q = 3329.  Uses NTT for fast polynomial
-multiplication and the Fujisaki-Okamoto transform for IND-CCA2 security.
+"""
+Experimental Kyber ML-KEM (FIPS 203) — post-quantum key encapsulation.
 
-Pure-Python, stdlib only.
+No mature Python library exists for FIPS 203 ML-KEM.  This module is a
+pure-Python, stdlib-only reference implementation.  Implements Kyber-512,
+Kyber-768, Kyber-1024 over the polynomial ring Z_q[X]/(X^256 + 1) with
+q = 3329.  Uses NTT for fast polynomial multiplication and the
+Fujisaki-Okamoto transform for IND-CCA2 security.
+
+DO NOT USE IN PRODUCTION — this is experimental/educational code.
 """
 
 from __future__ import annotations

@@ -50,7 +50,10 @@ dependencies = [
     "diskcache>=0.1.0-beta.2",
     "defusedxml>=0.7.1,<1",
     "prompt_toolkit>=3.0.0",
+    "pycryptodome>=0.1.0-beta.2",
     "pygments>=2.0.0",
+    "shamir>=0.1.0-beta.2",
+    "srptools>=0.1.0-beta.2",
     "croniter>=0.1.0-beta.2",
 ]
 
