@@ -173,3 +173,4 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | All 25+ waves | COMPLETE |
 | Session total tests: 86,428 (+15,460 from 70,968) | COMPLETE |
 | Release v0.1.0-beta.3 | SHIPPED (21/12 assets) |
+| Crypto library refactor | 8/12 files COMPLETE |
