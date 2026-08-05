@@ -17,6 +17,7 @@ from __future__ import annotations
 import math
 import struct
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(slots=True)
@@ -238,14 +239,14 @@ class TDigest:
     # pickle support
     # ------------------------------------------------------------------
 
-    def __getstate__(self) -> dict:
+    def __getstate__(self) -> dict[str, Any]:
         return {
             "compression": self._compression,
             "centroids": [(c.mean, c.weight) for c in self._centroids],
             "count": self._count,
         }
 
-    def __setstate__(self, state: dict) -> None:
+    def __setstate__(self, state: dict[str, Any]) -> None:
         self._compression = float(state["compression"])
         self._centroids = [Centroid(mean=m, weight=w) for m, w in state["centroids"]]
         self._count = int(state["count"])

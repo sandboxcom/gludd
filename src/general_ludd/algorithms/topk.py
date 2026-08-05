@@ -116,14 +116,14 @@ def topk_streaming(
         heap.sort(reverse=True)
         return heap
     else:
-        heap: list[T] = []
+        min_heap: list[T] = []
         for item in stream:
-            if len(heap) < k:
-                heapq.heappush(heap, item)
-            elif item < max(heap):
-                heap[heap.index(max(heap))] = item
-                heapq.heapify(heap)
-        return sorted(heap)
+            if len(min_heap) < k:
+                heapq.heappush(min_heap, item)
+            elif item < max(min_heap):
+                min_heap[min_heap.index(max(min_heap))] = item
+                heapq.heapify(min_heap)
+        return sorted(min_heap)
 
 
 def median(arr: list[T]) -> T | None:

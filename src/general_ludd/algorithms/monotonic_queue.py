@@ -17,7 +17,7 @@ PriorityMonotonic[T] - monotonic priority queue (min or max)
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from typing import Generic, Protocol, TypeVar
 
 
@@ -95,8 +95,8 @@ class MonotonicQueue(Generic[T]):
     def __bool__(self) -> bool:
         return bool(self._dq)
 
-    def __iter__(self):
-        return iter(self._dq)
+    def __iter__(self) -> Iterator[T]:
+        return (item for _, item in self._dq)
 
 
 class MinQueue(MonotonicQueue[T]):
