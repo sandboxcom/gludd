@@ -23,7 +23,7 @@ const ENABLED = (process.env.GLUDD_DELIVERABLE_ENFORCE || "1") !== "0"
 
 const MAX_PROMPT_LINES = 20
 
-const CHECK_ONLY_PATTERNS = /\b(check|audit|scan|review|survey|report|summarize)\s+(CI|lint|typecheck|dead\s*code|dirty\s*tree|coverage|secrets|vulnerabilities|status)\b/i
+const CHECK_ONLY_PATTERNS = /\b(check|audit|scan|review|survey|report|summarize|run|poll|wait|watch|find|read|list)\b.*?\b(report|summarize|CI|lint|typecheck|type\s*errors|dead\s*code|dirty\s*tree|coverage|secrets|vulnerabilities|status|git\s*status|unused|files|completion|imports)\b/i
 
 function extractPrompt(args: any): string {
   if (!args) return ""
