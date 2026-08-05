@@ -667,7 +667,7 @@ def _init_project_workspaces(project_manager: Any) -> dict[str, Any]:
                 workspaces[pid] = ProjectWorkspace(project_id=pid)
                 workspaces[pid].ensure_dirs()
         except Exception as exc:
-            logger.warning("Failed to initialize project workspaces: %s", exc, exc_info=True)
+            logger.warning("Failed to initialize project workspaces: %s", exc)
     return workspaces
 
 
@@ -987,7 +987,6 @@ def _build_self_update_audit_sink(
             logger.error(
                 "self_update audit-sink write failed (outcome=%s)",
                 getattr(record, "outcome", "?"),
-                exc_info=True,
             )
 
     def _sink(record: Any) -> None:
@@ -1140,7 +1139,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     ", ".join(j.job_id for j in orphans),
                 )
         except Exception:
-            logger.warning("Orphan Slurm job detection failed", exc_info=True)
+            logger.warning("Orphan Slurm job detection failed")
 
         # Bill-3: preemption handler for Slurm jobs
         from general_ludd.infra.slurm_preemption import SlurmPreemptionHandler
@@ -1657,7 +1656,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                         )
                         return response.content
                     except Exception as exc:
-                        logger.debug("langgraph model call failed", exc_info=True)
+                        logger.debug("langgraph model call failed")
                         raise LangGraphModelCallError(exc) from exc
 
                 langgraph_reviewer = LangGraphReflexiveReviewer(
@@ -1787,19 +1786,17 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     except Exception:
                         logger.warning(
                             "builtin MCP tool registration failed; continuing with external MCP servers only",
-                            exc_info=True,
                         )
                     logger.info("MCPClient started with %d server(s)", len(typed_configs))
                 except Exception as _mcp_exc:
                     logger.error(
                         "MCP startup failed (continuing without MCP)",
-                        exc_info=True,
                     )
                     if mcp_client is not None:
                         try:
                             await mcp_client.stop_all()
                         except Exception:
-                            logger.warning("MCP cleanup during startup failure also failed", exc_info=True)
+                            logger.warning("MCP cleanup during startup failure also failed")
                     mcp_client = None
         app.state._mcp_client = mcp_client
 
@@ -1960,7 +1957,6 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             except Exception:
                 logger.warning(
                     "VM sandbox auto_build failed — continuing without pre-built image",
-                    exc_info=True,
                 )
 
         _cfg_dir = getattr(app.state, "_config_dir", None)
@@ -2062,7 +2058,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             try:
                 searx_model_discoverer.sync_models()
             except Exception:
-                logger.info("SearX model discoverer sync skipped at startup", exc_info=True)
+                logger.info("SearX model discoverer sync skipped at startup")
             app.state._searx_model_discoverer = searx_model_discoverer
             logger.info(
                 "SearxModelDiscoverer wired: searx=%s index=%d",
@@ -2626,7 +2622,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                             cancel_exc,
                         )
         except Exception:
-            logger.warning("Slurm shutdown hook failed", exc_info=True)
+            logger.warning("Slurm shutdown hook failed")
 
     # Bill-2: stop all Slurm cost-cap monitors on shutdown
     monitors: dict[str, Any] = getattr(app.state, "_slurm_monitors", None) or {}
@@ -2644,13 +2640,13 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
             await pipeline_controller.stop()
         except Exception:
-            logger.warning("pipeline_controller.stop() failed during shutdown", exc_info=True)
+            logger.warning("pipeline_controller.stop() failed during shutdown")
     mcp_client_ref = getattr(app.state, "_mcp_client", None)
     if mcp_client_ref is not None:
         try:
             await mcp_client_ref.stop_all()
         except Exception:
-            logger.warning("mcp_client.stop_all() failed during shutdown", exc_info=True)
+            logger.warning("mcp_client.stop_all() failed during shutdown")
     _el = event_loop if event_loop is not None else getattr(app.state, "event_loop", None)
     _terraform_bridge = getattr(app.state, "_terraform_event_bridge", None)
     if _terraform_bridge is not None:
@@ -2659,10 +2655,13 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         if _event_bus is not None:
             await _event_bus.drain()
     if _el is not None:
-        _el.stop()
-        _shutdown_result = _el.shutdown()
-        if inspect.isawaitable(_shutdown_result):
-            await _shutdown_result
+        try:
+            _el.stop()
+            _shutdown_result = _el.shutdown()
+            if inspect.isawaitable(_shutdown_result):
+                await _shutdown_result
+        except Exception:
+            logger.warning("event_loop shutdown failed")
     if task is not None:
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
@@ -2676,13 +2675,13 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
             await execution_engine.shutdown()
         except Exception:
-            logger.warning("execution_engine.shutdown() failed", exc_info=True)
+            logger.warning("execution_engine.shutdown() failed")
     _searx_client_ref = getattr(app.state, "_searx_client", None)
     if _searx_client_ref is not None:
         try:
             await _searx_client_ref.close()
         except Exception:
-            logger.warning("SearxNGClient.close() failed during shutdown", exc_info=True)
+            logger.warning("SearxNGClient.close() failed during shutdown")
     for _cache_attr in (
         "_codebase_indexer",
         "_research_index",
@@ -2694,14 +2693,14 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             try:
                 _cache_owner.close()
             except Exception:
-                logger.warning("%s.close() failed during shutdown", _cache_attr, exc_info=True)
+                logger.warning("%s.close() failed during shutdown", _cache_attr)
     _web_retriever_ref = getattr(app.state, "_web_retriever", None)
     _web_cache_ref = getattr(_web_retriever_ref, "_cache", None)
     if _web_cache_ref is not None:
         try:
             _web_cache_ref.close()
         except Exception:
-            logger.warning("WebRetriever cache close failed during shutdown", exc_info=True)
+            logger.warning("WebRetriever cache close failed during shutdown")
     _sw = getattr(app.state, "_stall_watchdog", None)
     if _sw is not None:
         with contextlib.suppress(Exception):
@@ -2730,7 +2729,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
             await engine.dispose()
         except Exception:
-            logger.warning("engine.dispose() failed", exc_info=True)
+            logger.warning("engine.dispose() failed")
     otel_bridge_ref = getattr(app.state, "_otel_bridge", None)
     if otel_bridge_ref is not None and hasattr(otel_bridge_ref, "shutdown"):
         otel_bridge_ref.shutdown()
@@ -2753,7 +2752,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
             await _quant_monitor.stop()
         except Exception:
-            logger.warning("QuantizationMonitor.stop() failed during shutdown", exc_info=True)
+            logger.warning("QuantizationMonitor.stop() failed during shutdown")
 
 
 def _build_sts_reaper(session_factory: Any, secrets_resolver: Any) -> Any:
