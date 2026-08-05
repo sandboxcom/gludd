@@ -4205,6 +4205,14 @@ ship-commit-files: _commit-lock-acquire
 	@$(MAKE) --no-print-directory git-add FILES='$(FILES)'
 	@$(MAKE) --no-print-directory ship-commit MSG='$(MSG)'
 
+commit-and-ship: lint-fix git-add-all
+	@$(MAKE) --no-print-directory ship-commit MSG='$(MSG)'
+
+commit-and-ship-push: lint-fix git-add-all
+	@$(MAKE) --no-print-directory ship-commit MSG='$(MSG)'
+	@$(MAKE) --no-print-directory development-push
+	@$(MAKE) --no-print-directory ci-verdict
+
 delete-file:
 	@[ -n "$(FILES)" ] || { echo "Usage: make delete-file FILES='file1 file2'"; exit 1; }
 	@$(RM) $(FILES)
