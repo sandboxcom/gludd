@@ -140,6 +140,53 @@ class TestDepthBlock:
         assert result["permissionDecision"] == "deny"
 
 
+class TestDepthNegativeClamping:
+    """Negative or NaN OPENCODE_DEPTH clamps to 0 (safe, allows dispatch)."""
+
+    def test_negative_1_is_clamped_to_0(self):
+        result = _invoke_hook("task", -1)
+        assert result is None, f"depth=-1 should clamp to 0, allow dispatch, got={result}"
+
+    def test_negative_5_is_clamped_to_0(self):
+        result = _invoke_hook("task", -5)
+        assert result is None, f"depth=-5 should clamp to 0, allow dispatch, got={result}"
+
+    def test_negative_100_does_not_block(self):
+        result = _invoke_hook("agent", -100)
+        assert result is None, f"depth=-100 should clamp to 0, allow dispatch, got={result}"
+
+    def test_negative_depth_allows_sub_subagent(self):
+        """A subagent with OPENCODE_DEPTH=-1 can still dispatch sub-subagents."""
+        result = _invoke_hook("task", -1)
+        assert result is None, "negative depth must not block dispatch"
+
+    def test_max_depth_5_with_negative_depth_allows(self):
+        result = _invoke_hook("task", -3, max_depth=5)
+        assert result is None, "negative depth must be clamped to 0 even with custom max"
+
+
+class TestDepthNaNClamping:
+    """NaN OPENCODE_DEPTH after parseInt would clamp to 0 in the plugin.
+
+    These tests verify the behavioral invariant: _invoke_hook uses Python
+    int depth, which is always valid. The NaN path is tested structurally
+    in test_enforce_depth_deep.py TestOpenCodeDepthEnvParsing.
+    """
+
+    def test_depth_0_still_allowed(self):
+        result = _invoke_hook("task", 0)
+        assert result is None
+
+    def test_depth_2_still_allowed_for_sub_subagent(self):
+        result = _invoke_hook("workflow", 2)
+        assert result is None
+
+    def test_depth_3_still_blocked(self):
+        result = _invoke_hook("task", 3)
+        assert result is not None
+        assert result["permissionDecision"] == "deny"
+
+
 class TestDepthEnforceDisable:
     def test_depth_3_allows_when_enforce_false(self):
         result = _invoke_hook("task", 3, enforce=False)

@@ -1,6 +1,9 @@
-"""Deep tests for LZ77, LZ78, LZW, DEFLATE decompress: round-trip correctness,
+"""Deep tests for LZ77, LZ78, LZW, DEFLATE, LZMA, BZ2: round-trip correctness,
 edge cases, repetition sensitivity, dictionary growth, sliding-window
 behavior, token serialization, and interoperability invariants.
+
+Educational LZ77/LZ78/LZW remain tested for correctness; new stdlib wrappers
+(zlib DEFLATE, lzma LZMA, bz2 BZ2) are tested alongside.
 """
 
 from __future__ import annotations
@@ -11,6 +14,9 @@ import zlib
 import pytest
 
 from general_ludd.algorithms.lz import (
+    bz2_compress,
+    bz2_decompress,
+    deflate_compress,
     deflate_decompress,
     deflate_decompress_auto,
     lz77_compress,
@@ -19,6 +25,8 @@ from general_ludd.algorithms.lz import (
     lz77_tokens_to_binary,
     lz78_compress,
     lz78_decompress,
+    lzma_compress,
+    lzma_decompress,
     lzw_compress,
     lzw_decompress,
 )
@@ -35,7 +43,7 @@ def _repeating_pattern(pattern: bytes, repeats: int) -> bytes:
     return pattern * repeats
 
 
-# ── LZ77 ────────────────────────────────────────────────────────────────────
+# ── Educational LZ77 ─────────────────────────────────────────────────────────
 
 
 def test_lz77_empty():
@@ -84,7 +92,7 @@ def test_lz77_small_window():
     assert lz77_decompress(lz77_compress(data, window_size=64)) == data
 
 
-# ── LZ78 ────────────────────────────────────────────────────────────────────
+# ── Educational LZ78 ─────────────────────────────────────────────────────────
 
 
 def test_lz78_empty():
@@ -126,7 +134,7 @@ def test_lz78_all_unique():
     assert lz78_decompress(lz78_compress(data)) == data
 
 
-# ── LZW ─────────────────────────────────────────────────────────────────────
+# ── Educational LZW ──────────────────────────────────────────────────────────
 
 
 def test_lzw_empty():
@@ -178,7 +186,43 @@ def test_lzw_all_bytes_range():
     assert lzw_decompress(lzw_compress(data)) == data
 
 
-# ── DEFLATE decompress ──────────────────────────────────────────────────────
+# ── DEFLATE (stdlib zlib) ────────────────────────────────────────────────────
+
+
+def test_deflate_compress_decompress_roundtrip():
+    original = b"hello world " * 100
+    compressed = deflate_compress(original)
+    assert isinstance(compressed, bytes)
+    assert len(compressed) < len(original)
+    assert deflate_decompress(compressed) == original
+
+
+def test_deflate_compress_empty():
+    assert deflate_decompress(deflate_compress(b"")) == b""
+
+
+def test_deflate_compress_single_byte():
+    original = b"X"
+    assert deflate_decompress(deflate_compress(original)) == original
+
+
+def test_deflate_compress_random():
+    for size in [1, 10, 100, 1000, 5000]:
+        data = _generate_bytes(size, seed=size + 300)
+        result = deflate_decompress(deflate_compress(data))
+        assert result == data, f"failed at size={size}"
+
+
+def test_deflate_compress_zlib_wrapped():
+    original = b"zlib wrapped " * 50
+    compressed = deflate_compress(original, wbits=15)
+    assert deflate_decompress(compressed, wbits=15) == original
+
+
+def test_deflate_compress_gzip_wrapped():
+    original = b"gzip wrapped " * 50
+    compressed = deflate_compress(original, wbits=31)
+    assert deflate_decompress(compressed, wbits=31) == original
 
 
 def test_deflate_decompress_raw():
@@ -224,7 +268,77 @@ def test_deflate_decompress_auto_invalid():
         deflate_decompress_auto(b"not valid compressed data at all!!!")
 
 
-# ── LZ77 token serialization ────────────────────────────────────────────────
+# ── LZMA (stdlib lzma) ───────────────────────────────────────────────────────
+
+
+def test_lzma_compress_decompress_roundtrip():
+    original = b"hello world " * 100
+    compressed = lzma_compress(original)
+    assert isinstance(compressed, bytes)
+    assert lzma_decompress(compressed) == original
+
+
+def test_lzma_compress_empty():
+    assert lzma_decompress(lzma_compress(b"")) == b""
+
+
+def test_lzma_compress_single_byte():
+    assert lzma_decompress(lzma_compress(b"Z")) == b"Z"
+
+
+def test_lzma_compress_random():
+    for size in [1, 50, 200, 1000, 5000]:
+        data = _generate_bytes(size, seed=size + 400)
+        result = lzma_decompress(lzma_compress(data))
+        assert result == data, f"failed at size={size}"
+
+
+def test_lzma_compress_repeated_data_ratio():
+    original = b"A" * 10000
+    compressed = lzma_compress(original)
+    assert len(compressed) < 200
+
+
+def test_lzma_compress_preset_levels():
+    original = b"pattern " * 200
+    for preset in [0, 3, 6, 9]:
+        compressed = lzma_compress(original, preset=preset)
+        assert lzma_decompress(compressed) == original
+
+
+# ── BZ2 (stdlib bz2) ─────────────────────────────────────────────────────────
+
+
+def test_bz2_compress_decompress_roundtrip():
+    original = b"hello world " * 100
+    compressed = bz2_compress(original)
+    assert isinstance(compressed, bytes)
+    assert bz2_decompress(compressed) == original
+
+
+def test_bz2_compress_empty():
+    assert bz2_decompress(bz2_compress(b"")) == b""
+
+
+def test_bz2_compress_single_byte():
+    assert bz2_decompress(bz2_compress(b"Q")) == b"Q"
+
+
+def test_bz2_compress_random():
+    for size in [1, 50, 200, 1000, 5000]:
+        data = _generate_bytes(size, seed=size + 500)
+        result = bz2_decompress(bz2_compress(data))
+        assert result == data, f"failed at size={size}"
+
+
+def test_bz2_compress_levels():
+    original = b"level test " * 200
+    for level in [1, 5, 9]:
+        compressed = bz2_compress(original, compresslevel=level)
+        assert bz2_decompress(compressed) == original
+
+
+# ── LZ77 token serialization ─────────────────────────────────────────────────
 
 
 def test_lz77_tokens_binary_roundtrip():
@@ -242,7 +356,7 @@ def test_lz77_tokens_binary_empty():
     assert unpacked == []
 
 
-# ── cross-algorithm invariants ──────────────────────────────────────────────
+# ── cross-algorithm invariants ───────────────────────────────────────────────
 
 
 def test_all_algorithms_agree_on_same_input():
@@ -270,6 +384,13 @@ def test_lzw_reproduces_exact_length():
     for n in [1, 8, 16, 200, 1024]:
         data = _generate_bytes(n, seed=n + 50)
         assert len(lzw_decompress(lzw_compress(data))) == n
+
+
+def test_all_stdlib_wrappers_agree():
+    original = b"cross check " * 100
+    assert deflate_decompress(deflate_compress(original)) == original
+    assert lzma_decompress(lzma_compress(original)) == original
+    assert bz2_decompress(bz2_compress(original)) == original
 
 
 if __name__ == "__main__":

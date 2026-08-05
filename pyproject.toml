@@ -13,6 +13,9 @@ dependencies = [
     "bcrypt>=4.0.0",
     "blake3>=1.0.0",
     "numpy>=1.26.0",
+    "scipy>=1.11.0",
+    "scipy>=1.10.0",
+    "scipy>=1.11.0",
     "fastapi>=0.1.0-beta.2",
     "starlette>=0.1.0-beta.2",
     "uvicorn-worker>=0.1.0-beta.2",
@@ -37,6 +40,7 @@ dependencies = [
     "jinja2>=0.1.0-beta.2",
     "jsonschema>=4.21",
     "pyyaml>=0.1.0-beta.2",
+    "rapidfuzz>=3.0.0",
     "hvac>=0.1.0-beta.2",
     "requests>=0.1.0-beta.2",
     "tree-sitter>=0.1.0-beta.2",
@@ -57,6 +61,7 @@ dependencies = [
     "croniter>=0.1.0-beta.2",
     "srptools>=1.0.0",
     "pyspx>=0.1.0",
+    "PyWavelets>=1.4",
 ]
 
 [project.optional-dependencies]
@@ -198,7 +203,7 @@ follow_imports = "skip"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["pygments", "pygments.*", "ansible.*", "ansible_collections.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "croniter.*", "jsonschema", "googleapiclient.*", "google.*", "azure.*", "ansible_runner", "xmlsec", "lxml", "lxml.etree", "pyVim.*", "pyVmomi", "openai", "lm_eval", "lm_eval.*", "argon2", "blake3", "shamir", "srptools", "srptools.*", "pyspx", "pyspx.*"]
+module = ["pygments", "pygments.*", "ansible.*", "ansible_collections.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "croniter.*", "jsonschema", "googleapiclient.*", "google.*", "azure.*", "ansible_runner", "xmlsec", "lxml", "lxml.etree", "pyVim.*", "pyVmomi", "openai", "lm_eval", "lm_eval.*", "argon2", "blake3", "shamir", "srptools", "srptools.*", "pyspx", "pyspx.*", "scipy.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

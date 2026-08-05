@@ -1,24 +1,30 @@
-"""Lempel-Ziv compression family: LZ77, LZ78, LZW, DEFLATE decompress.
+"""Lempel-Ziv compression family: LZ77, LZ78, LZW, DEFLATE, LZMA, BZ2.
 
 Pure-Python, stdlib only.  Each algorithm provides compress/decompress on bytes.
-LZ77 / LZ78 / LZW are self-contained educational implementations.
-DEFLATE decompress wraps stdlib `zlib` for production use.
+LZ77 / LZ78 / LZW are self-contained EDUCATIONAL implementations — for production
+use, prefer the stdlib wrappers (DEFLATE via zlib, LZMA via lzma, BZ2 via bz2).
 """
 
 from __future__ import annotations
 
+import bz2
+import lzma
 import struct
 import zlib
 
-# ── LZ77 ────────────────────────────────────────────────────────────────────
+# ── Educational LZ77 ─────────────────────────────────────────────────────────
+# The implementations below faithfully model the classic LZ algorithms to aid
+# understanding.  They are NOT optimized for speed or ratio; for real workloads,
+# use the stdlib wrappers in the sections below (zlib for DEFLATE, lzma for
+# LZMA/xz, bz2 for BZ2).
 
 
 def lz77_compress(data: bytes, window_size: int = 4096, lookahead_size: int = 258) -> list[tuple[int, int, int]]:
-    """Compress data with LZ77 sliding-window.
+    """Educational LZ77 sliding-window compressor (naive O(n²) search).
 
-    Returns list of (offset, length, _) tokens.  Tokens with offset==0 and
-    length==0 encode a single literal byte in the third field.  Tokens with
-    offset>0 encode a back-reference of the given length.
+    Returns list of (offset, length, literal) tokens.  offset==0 + length==0
+    encodes a single literal byte in the third field.  For production DEFLATE
+    compression (LZ77 + Huffman), use `deflate_compress()` below.
     """
     tokens: list[tuple[int, int, int]] = []
     i = 0
@@ -45,7 +51,7 @@ def lz77_compress(data: bytes, window_size: int = 4096, lookahead_size: int = 25
 
 
 def lz77_decompress(tokens: list[tuple[int, int, int]]) -> bytes:
-    """Decompress LZ77 tokens back to original bytes."""
+    """Educational LZ77 decompressor.  Reverses `lz77_compress()`."""
     out = bytearray()
     for offset, length, literal in tokens:
         if offset == 0 and length == 0:
@@ -58,11 +64,16 @@ def lz77_decompress(tokens: list[tuple[int, int, int]]) -> bytes:
     return bytes(out)
 
 
-# ── LZ78 ────────────────────────────────────────────────────────────────────
+# ── Educational LZ78 ─────────────────────────────────────────────────────────
 
 
 def lz78_compress(data: bytes) -> list[tuple[int, int]]:
-    """Compress data with LZ78 dictionary. Returns list of (index, byte)."""
+    """Educational LZ78 dictionary compressor (index-byte pairs).
+
+    Token (0, b) encodes literal byte b; (i, b) encodes dictionary phrase i
+    followed by byte b.  For production, prefer `deflate_compress()` or
+    `lzma_compress()` below.
+    """
     dictionary: dict[bytes, int] = {}
     tokens: list[tuple[int, int]] = []
     w = b""
@@ -82,7 +93,7 @@ def lz78_compress(data: bytes) -> list[tuple[int, int]]:
 
 
 def lz78_decompress(tokens: list[tuple[int, int]]) -> bytes:
-    """Decompress LZ78 tokens back to original bytes."""
+    """Educational LZ78 decompressor.  Reverses `lz78_compress()`."""
     dictionary: dict[int, bytes] = {}
     out = bytearray()
     for idx, b in tokens:
@@ -92,17 +103,18 @@ def lz78_decompress(tokens: list[tuple[int, int]]) -> bytes:
     return bytes(out)
 
 
-# ── LZW ─────────────────────────────────────────────────────────────────────
+# ── Educational LZW ──────────────────────────────────────────────────────────
 
 _CLEAR_CODE = 256
 _INIT_SIZE = 256
 
 
 def lzw_compress(data: bytes, max_bits: int = 16) -> list[int]:
-    """Compress data with LZW. Returns list of dictionary codes.
+    """Educational LZW compressor (dictionary codes, reset-on-full).
 
-    Dictionary starts at 257 (single bytes 0-255, clear-code 256).
-    Grows to 1<<max_bits; emits clear-code and resets when full.
+    Dictionary starts at 257 (single bytes 0-255, clear-code 256).  Grows to
+    1<<max_bits; emits clear-code and resets when full.  For production,
+    prefer `deflate_compress()` (LZW-like but with Huffman) below.
     """
     if not data:
         return []
@@ -133,7 +145,7 @@ def lzw_compress(data: bytes, max_bits: int = 16) -> list[int]:
 
 
 def lzw_decompress(codes: list[int], max_bits: int = 16) -> bytes:
-    """Decompress LZW codes back to original bytes."""
+    """Educational LZW decompressor.  Reverses `lzw_compress()`."""
     if not codes:
         return b""
 
@@ -167,14 +179,21 @@ def lzw_decompress(codes: list[int], max_bits: int = 16) -> bytes:
     return bytes(out)
 
 
-# ── DEFLATE decompress (stdlib wrapper) ─────────────────────────────────────
+# ── DEFLATE (stdlib zlib) ────────────────────────────────────────────────────
+
+
+def deflate_compress(data: bytes, level: int = 6, wbits: int = -15) -> bytes:
+    """Compress data with DEFLATE via stdlib zlib.
+
+    wbits=-15: raw DEFLATE (no header/trailer).  wbits=15: zlib-wrapped.
+    wbits=31: gzip-wrapped.  level: 0 (none) to 9 (max).
+    """
+    compressor = zlib.compressobj(level, zlib.DEFLATED, wbits)
+    return compressor.compress(data) + compressor.flush()
 
 
 def deflate_decompress(data: bytes, wbits: int = -15) -> bytes:
-    """Decompress DEFLATE data using stdlib zlib.
-
-    wbits: -15 for raw DEFLATE (no header/trailer), 15 for zlib, 31 for gzip.
-    """
+    """Decompress DEFLATE data via stdlib zlib."""
     return zlib.decompress(data, wbits)
 
 
@@ -189,11 +208,40 @@ def deflate_decompress_auto(data: bytes) -> bytes:
     raise ValueError(f"Deflate decompress failed for all formats: {'; '.join(errors)}")
 
 
-# ── LZ77 token serialization ────────────────────────────────────────────────
+# ── LZMA (stdlib lzma) ───────────────────────────────────────────────────────
+
+
+def lzma_compress(data: bytes, *, preset: int | None = None, check: int = lzma.CHECK_CRC32) -> bytes:
+    """Compress data with LZMA (xz container) via stdlib lzma.
+
+    preset: compression level 0-9 (default 6).  check: integrity check type.
+    """
+    return lzma.compress(data, preset=preset, check=check)
+
+
+def lzma_decompress(data: bytes) -> bytes:
+    """Decompress LZMA/xz data via stdlib lzma."""
+    return lzma.decompress(data)
+
+
+# ── BZ2 (stdlib bz2) ─────────────────────────────────────────────────────────
+
+
+def bz2_compress(data: bytes, compresslevel: int = 9) -> bytes:
+    """Compress data with BZ2 (Burrows-Wheeler + Huffman) via stdlib bz2."""
+    return bz2.compress(data, compresslevel)
+
+
+def bz2_decompress(data: bytes) -> bytes:
+    """Decompress BZ2 data via stdlib bz2."""
+    return bz2.decompress(data)
+
+
+# ── LZ77 token serialization ─────────────────────────────────────────────────
 
 
 def lz77_tokens_to_binary(tokens: list[tuple[int, int, int]]) -> bytes:
-    """Pack LZ77 tokens into binary format (little-endian)."""
+    """Pack LZ77 educational tokens into binary format (little-endian)."""
     out = bytearray()
     for offset, length, literal in tokens:
         out.extend(struct.pack("<HHB", offset, length, literal))
@@ -201,7 +249,7 @@ def lz77_tokens_to_binary(tokens: list[tuple[int, int, int]]) -> bytes:
 
 
 def lz77_tokens_from_binary(data: bytes) -> list[tuple[int, int, int]]:
-    """Unpack binary LZ77 tokens."""
+    """Unpack binary LZ77 educational tokens."""
     tokens: list[tuple[int, int, int]] = []
     for i in range(0, len(data) - 4, 5):
         offset, length, literal = struct.unpack_from("<HHB", data, i)

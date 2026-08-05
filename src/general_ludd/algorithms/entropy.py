@@ -1,8 +1,9 @@
 """Shannon entropy, joint, conditional, mutual information, KL divergence, cross-entropy.
 
-Pure-Python, stdlib only. All functions operate on probability dictionaries
-mapping outcome -> probability.  Logarithms are base-2 by default (bits);
-pass `base` to use nats (base=math.e) or dits (base=10).
+Uses scipy.stats.entropy for base Shannon-entropy computation. All functions
+operate on probability dictionaries mapping outcome -> probability.  Logarithms
+are base-2 by default (bits); pass `base` to use nats (base=math.e) or dits
+(base=10).
 """
 
 from __future__ import annotations
@@ -10,15 +11,10 @@ from __future__ import annotations
 import math
 from typing import TypeVar
 
+import numpy as np
+from scipy.stats import entropy as _scipy_entropy
+
 T = TypeVar("T")
-
-
-def _log(x: float, base: float) -> float:
-    if base == 2.0:
-        return math.log2(x)
-    if base == math.e:
-        return math.log(x)
-    return math.log(x) / math.log(base)
 
 
 def _validate_distribution(dist: dict[T, float]) -> None:
@@ -32,22 +28,19 @@ def _validate_distribution(dist: dict[T, float]) -> None:
             raise ValueError(f"probabilities must be <= 1.0, got {val}")
 
 
-def _clean_zeros(dist: dict[T, float]) -> dict[T, float]:
-    return {k: v for k, v in dist.items() if v > 0.0}
+def _log(x: float, base: float) -> float:
+    return math.log(x) / math.log(base)
 
 
 def shannon_entropy(dist: dict[T, float], *, base: float = 2.0) -> float:
-    """H(X) = -Σ p(x) log p(x)."""
+    """H(X) = -Sum p(x) log p(x)."""
     _validate_distribution(dist)
-    total = 0.0
-    for p in dist.values():
-        if p > 0.0:
-            total -= p * _log(p, base)
-    return total
+    values = np.array(list(dist.values()), dtype=np.float64)
+    return float(_scipy_entropy(values, base=base))
 
 
 def joint_entropy(joint: dict[tuple[T, T], float], *, base: float = 2.0) -> float:
-    """H(X,Y) = -Σ p(x,y) log p(x,y)."""
+    """H(X,Y) = -Sum p(x,y) log p(x,y)."""
     return shannon_entropy(joint, base=base)
 
 
@@ -65,7 +58,7 @@ def conditional_entropy(
     *,
     base: float = 2.0,
 ) -> float:
-    """H(X|Y) = H(X,Y) - H(Y) = -Σ p(x,y) log(p(x,y) / p(y))."""
+    """H(X|Y) = H(X,Y) - H(Y) = -Sum p(x,y) log(p(x,y) / p(y))."""
     _validate_distribution(joint)
     marginal_y = marginal_from_joint(joint, axis=1)
     total = 0.0
@@ -82,7 +75,7 @@ def mutual_information(
     *,
     base: float = 2.0,
 ) -> float:
-    """I(X;Y) = Σ p(x,y) log(p(x,y) / (p(x)p(y)))."""
+    """I(X;Y) = Sum p(x,y) log(p(x,y) / (p(x)p(y)))."""
     _validate_distribution(joint)
     px = marginal_from_joint(joint, axis=0)
     py = marginal_from_joint(joint, axis=1)
@@ -103,7 +96,7 @@ def kl_divergence(
     base: float = 2.0,
     epsilon: float = 1e-12,
 ) -> float:
-    """D_KL(P||Q) = Σ P(x) log(P(x) / Q(x)).
+    """D_KL(P||Q) = Sum P(x) log(P(x) / Q(x)).
 
     *epsilon* replaces zero entries in *q* to avoid log(0).  The caller is
     responsible for ensuring the support of Q contains the support of P.
@@ -129,7 +122,7 @@ def cross_entropy(
     base: float = 2.0,
     epsilon: float = 1e-12,
 ) -> float:
-    """H(P,Q) = -Σ P(x) log Q(x) = H(P) + D_KL(P||Q)."""
+    """H(P,Q) = -Sum P(x) log Q(x) = H(P) + D_KL(P||Q)."""
     _validate_distribution(p)
     total = 0.0
     for k, pk in p.items():

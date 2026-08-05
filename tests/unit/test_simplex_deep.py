@@ -1,6 +1,4 @@
-"""Deep tests for simplex-family algorithms: tableau simplex, two-phase,
-dual simplex, integer branch-and-bound with Gomory cuts, transportation simplex.
-"""
+"""Deep tests for simplex-family algorithms wrapping scipy.optimize.linprog."""
 
 from __future__ import annotations
 
@@ -23,7 +21,7 @@ from general_ludd.algorithms.simplex import (
 class TestSimplexMax:
     def test_trivial(self) -> None:
         obj, x = simplex_max([3.0, 5.0], [[1.0, 0.0], [0.0, 2.0]], [4.0, 12.0])
-        assert obj == pytest.approx(34.0)
+        assert obj == pytest.approx(42.0)
         assert x[0] == pytest.approx(4.0)
         assert x[1] == pytest.approx(6.0)
 
@@ -73,8 +71,8 @@ class TestSimplexMin:
 
     def test_min_with_active_constraint(self) -> None:
         obj, x = simplex_min([1.0, 2.0], [[1.0, 1.0], [1.0, 0.0]], [3.0, 2.0])
-        assert obj == pytest.approx(2.0)
-        assert x[0] == pytest.approx(2.0)
+        assert obj == pytest.approx(0.0)
+        assert x[0] == pytest.approx(0.0)
         assert x[1] == pytest.approx(0.0)
 
 
@@ -89,51 +87,49 @@ class TestSimplexTwoPhase:
             [4.0, 5.0],
             ["=", ">="],
         )
-        assert obj == pytest.approx(8.0)
-        assert x[0] == pytest.approx(1.0)
-        assert x[1] == pytest.approx(3.0)
-
-    def test_greater_than_constraints(self) -> None:
-        obj, x = simplex_two_phase(
-            [2.0, 1.0],
-            [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
-            [2.0, 2.0, 6.0],
-            [">=", ">=", ">="],
-        )
-        assert obj == pytest.approx(10.0)
+        assert obj == pytest.approx(12.0)
         assert x[0] == pytest.approx(4.0)
-        assert x[1] == pytest.approx(2.0)
+        assert x[1] == pytest.approx(0.0)
+
+    def test_bounded_mixed_senses(self) -> None:
+        obj, x = simplex_two_phase(
+            [2.0, 3.0],
+            [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
+            [1.0, 1.0, 5.0],
+            [">=", ">=", "<="],
+        )
+        assert obj == pytest.approx(14.0)
+        assert x[0] == pytest.approx(1.0)
+        assert x[1] == pytest.approx(4.0)
+
+    def test_unbounded_lower_only(self) -> None:
+        with pytest.raises(ValueError, match="Unbounded"):
+            simplex_two_phase(
+                [1.0, 1.0],
+                [[1.0, 1.0]],
+                [10.0],
+                [">="],
+            )
 
     def test_infeasible(self) -> None:
         with pytest.raises(ValueError, match="infeasible"):
             simplex_two_phase(
-                [1.0, 1.0],
-                [[1.0, 1.0]],
-                [10.0],
-                [">="],
-            )
-        with pytest.raises(ValueError, match="infeasible"):
-            simplex_two_phase(
-                [-1.0, -1.0],
-                [[1.0, 1.0]],
-                [10.0],
-                [">="],
-            )
-            simplex_two_phase(
-                [1.0, 1.0],
-                [[1.0, 0.0], [0.0, 1.0]],
-                [5.0, 10.0],
-                [">=", ">="],
+                [1.0],
+                [[1.0], [1.0]],
+                [5.0, 3.0],
+                [">=", "<="],
             )
 
-    def test_non_infeasible_case(self) -> None:
-        obj, _x = simplex_two_phase(
+    def test_feasible_greater_than(self) -> None:
+        obj, x = simplex_two_phase(
             [1.0, 1.0],
-            [[1.0, 0.0], [0.0, 1.0]],
-            [5.0, 10.0],
-            [">=", ">="],
+            [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 1.0]],
+            [2.0, 2.0, 6.0, 5.0, 5.0],
+            [">=", ">=", ">=", "<=", "<="],
         )
-        assert obj == pytest.approx(15.0)
+        assert obj == pytest.approx(10.0)
+        assert x[0] == pytest.approx(5.0)
+        assert x[1] == pytest.approx(5.0)
 
 
 # ── integer_simplex ────────────────────────────────────────────────────
@@ -252,20 +248,18 @@ class TestTransportationSimplex:
 
 class TestSimplexEdgeCases:
     def test_high_precision(self) -> None:
-        from general_ludd.algorithms.simplex import _extract_solution, _make_tableau, _simplex_iterate
-
         c = [1e10, 1.0]
         A = [[1.0, 0.0], [0.0, 1.0]]
         b = [1000.0, 1000.0]
-        tableau, basic, nonbasic = _make_tableau(c, A, b, ["<="] * len(b))
-        _simplex_iterate(tableau, basic, nonbasic, len(c))
-        obj, _x = _extract_solution(tableau, basic, len(c))
+        obj, x = simplex_max(c, A, b)
         assert obj == pytest.approx(1e10 * 1000 + 1000.0)
+        assert x[0] == pytest.approx(1000.0)
+        assert x[1] == pytest.approx(1000.0)
 
     def test_large_scale(self) -> None:
         n = 50
         c = [1.0] * n
-        A = [[int(i == j) for j in range(n)] for i in range(n)]
+        A = [[float(i == j) for j in range(n)] for i in range(n)]
         b = [1.0] * n
         obj, _x = simplex_max(c, A, b)
         assert obj == pytest.approx(n * 1.0)

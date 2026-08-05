@@ -7565,3 +7565,24 @@ e2e-download-small-model:
 	@$(UV) run python scripts/e2e_download_small_model.py
 	@echo "=== Model cached at /tmp/gludd-qwen-e2e-model/ ==="
 	@ls -lh /tmp/gludd-qwen-e2e-model/
+
+.PHONY: test-local-model-inference
+test-local-model-inference:
+	@echo "=== Local model inference test ==="
+	@$(UV) run python -c '\
+import llama_cpp, glob, os, sys;\
+model_dir = "/tmp/gludd-qwen-e2e-model";\
+ggufs = glob.glob(os.path.join(model_dir, "*.gguf"));\
+assert ggufs, f"No GGUF found in {model_dir}";\
+gguf = ggufs[0];\
+print(f"Model: {gguf}");\
+print(f"llama_cpp version: {llama_cpp.__version__}");\
+print("Loading model...");\
+llm = llama_cpp.Llama(model_path=gguf, n_ctx=256, verbose=False);\
+print("Running inference...");\
+output = llm("def hello(): return", max_tokens=32, echo=True);\
+text = output["choices"][0]["text"];\
+print(f"Output: {repr(text)}");\
+print("SUCCESS: Local model inference works.");\
+'
+

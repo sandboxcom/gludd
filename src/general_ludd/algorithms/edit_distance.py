@@ -1,16 +1,24 @@
 """Edit-distance and sequence-alignment algorithms.
 
-Pure-Python, stdlib only. Provides six classic measures:
-
-- Levenshtein (insert, delete, substitute)
-- Damerau-Levenshtein (OSA variant: + adjacent transposition)
-- Needleman-Wunsch (global alignment with traceback)
-- Smith-Waterman (local alignment with traceback)
-- Hamming (substitution only, equal-length)
-- Jaro-Winkler (prefix-biased similarity)
+Delegates Levenshtein, Damerau-Levenshtein (OSA), Hamming, Jaro,
+and Jaro-Winkler to rapidfuzz (C-optimised).  Needleman-Wunsch and
+Smith-Waterman remain pure-Python for alignment with traceback.
 """
 
 from __future__ import annotations
+
+from rapidfuzz.distance import (
+    DamerauLevenshtein as _DL,
+)
+from rapidfuzz.distance import (
+    Hamming as _Hamming,
+)
+from rapidfuzz.distance import (
+    Jaro as _Jaro,
+)
+from rapidfuzz.distance import (
+    Levenshtein as _Lev,
+)
 
 # ── helpers ──────────────────────────────────────────────────────────────
 
@@ -27,24 +35,7 @@ def levenshtein(a: str, b: str) -> int:
 
     ``levenshtein("kitten", "sitting") == 3``
     """
-    n, m = len(a), len(b)
-    if n == 0:
-        return m
-    if m == 0:
-        return n
-    prev = list(range(m + 1))
-    curr = [0] * (m + 1)
-    for i in range(1, n + 1):
-        curr[0] = i
-        for j in range(1, m + 1):
-            cost = 0 if a[i - 1] == b[j - 1] else 1
-            curr[j] = min(
-                prev[j] + 1,
-                curr[j - 1] + 1,
-                prev[j - 1] + cost,
-            )
-        prev, curr = curr, prev
-    return prev[m]
+    return _Lev.distance(a, b)
 
 
 # ── Damerau-Levenshtein (Optimal String Alignment) ───────────────────────
@@ -56,27 +47,7 @@ def damerau_levenshtein(a: str, b: str) -> int:
     Adds adjacent transposition to the Levenshtein set.
     ``damerau_levenshtein("ca", "ac") == 1`` (one transposition).
     """
-    n, m = len(a), len(b)
-    if n == 0:
-        return m
-    if m == 0:
-        return n
-    d = _dp_matrix(n + 1, m + 1)
-    for i in range(n + 1):
-        d[i][0] = i
-    for j in range(m + 1):
-        d[0][j] = j
-    for i in range(1, n + 1):
-        for j in range(1, m + 1):
-            cost = 0 if a[i - 1] == b[j - 1] else 1
-            d[i][j] = min(
-                d[i - 1][j] + 1,
-                d[i][j - 1] + 1,
-                d[i - 1][j - 1] + cost,
-            )
-            if i > 1 and j > 1 and a[i - 1] == b[j - 2] and a[i - 2] == b[j - 1]:
-                d[i][j] = min(d[i][j], d[i - 2][j - 2] + cost)
-    return d[n][m]
+    return _DL.distance(a, b)
 
 
 # ── Needleman-Wunsch (global alignment) ──────────────────────────────────
@@ -195,7 +166,7 @@ def hamming(a: str, b: str) -> int:
     """
     if len(a) != len(b):
         raise ValueError(f"Hamming requires equal-length strings: {len(a)} != {len(b)}")
-    return sum(1 for ca, cb in zip(a, b, strict=False) if ca != cb)
+    return _Hamming.distance(a, b)
 
 
 # ── Jaro-Winkler ─────────────────────────────────────────────────────────
@@ -203,41 +174,7 @@ def hamming(a: str, b: str) -> int:
 
 def jaro_similarity(a: str, b: str) -> float:
     """Jaro similarity in [0.0, 1.0].  Higher = more similar."""
-    la, lb = len(a), len(b)
-    if la == 0 and lb == 0:
-        return 1.0
-    if la == 0 or lb == 0:
-        return 0.0
-
-    match_distance = max(0, max(la, lb) // 2 - 1)
-    a_matched = [False] * la
-    b_matched = [False] * lb
-    matches = 0
-
-    for i in range(la):
-        start = max(0, i - match_distance)
-        end = min(lb, i + match_distance + 1)
-        for j in range(start, end):
-            if not b_matched[j] and a[i] == b[j]:
-                a_matched[i] = b_matched[j] = True
-                matches += 1
-                break
-
-    if matches == 0:
-        return 0.0
-
-    transpositions = 0
-    k = 0
-    for i in range(la):
-        if a_matched[i]:
-            while not b_matched[k]:
-                k += 1
-            if a[i] != b[k]:
-                transpositions += 1
-            k += 1
-    transpositions //= 2
-
-    return (matches / la + matches / lb + (matches - transpositions) / matches) / 3.0
+    return _Jaro.similarity(a, b)
 
 
 def jaro_winkler(a: str, b: str, scaling: float = 0.1, prefix_len: int = 4) -> float:
@@ -245,7 +182,7 @@ def jaro_winkler(a: str, b: str, scaling: float = 0.1, prefix_len: int = 4) -> f
 
     Boosts the Jaro score when strings share a common prefix.
     """
-    sim = jaro_similarity(a, b)
+    sim = _Jaro.similarity(a, b)
     if sim < 0.7:
         return sim
     prefix = 0

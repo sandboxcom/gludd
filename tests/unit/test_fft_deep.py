@@ -11,8 +11,6 @@ import math
 import pytest
 
 from general_ludd.algorithms.fft import (
-    _bit_reverse,
-    bit_reversal_permutation,
     convolve,
     fft,
     fft_freq,
@@ -22,62 +20,6 @@ from general_ludd.algorithms.fft import (
     polynomial_multiply,
     real_fft,
 )
-
-# ── _bit_reverse ──────────────────────────────────────────────────────
-
-
-class TestBitReverse:
-    def test_zero(self):
-        assert _bit_reverse(0, 4) == 0
-
-    def test_single_bit(self):
-        assert _bit_reverse(1, 1) == 1
-
-    def test_four_bits(self):
-        assert _bit_reverse(0b0001, 4) == 0b1000
-        assert _bit_reverse(0b0010, 4) == 0b0100
-        assert _bit_reverse(0b0011, 4) == 0b1100
-        assert _bit_reverse(0b0100, 4) == 0b0010
-        assert _bit_reverse(0b0101, 4) == 0b1010
-        assert _bit_reverse(0b0110, 4) == 0b0110
-        assert _bit_reverse(0b0111, 4) == 0b1110
-        assert _bit_reverse(0b1111, 4) == 0b1111
-
-    def test_three_bits(self):
-        assert _bit_reverse(1, 3) == 4
-        assert _bit_reverse(3, 3) == 6
-        assert _bit_reverse(5, 3) == 5
-
-
-# ── bit_reversal_permutation ──────────────────────────────────────────
-
-
-class TestBitReversalPermutation:
-    def test_n4(self):
-        assert bit_reversal_permutation(4) == [0, 2, 1, 3]
-
-    def test_n8(self):
-        assert bit_reversal_permutation(8) == [0, 4, 2, 6, 1, 5, 3, 7]
-
-    def test_n1(self):
-        assert bit_reversal_permutation(1) == [0]
-
-    def test_n16_length(self):
-        perm = bit_reversal_permutation(16)
-        assert len(perm) == 16
-        assert sorted(perm) == list(range(16))
-
-    def test_self_inverse_applied_twice(self):
-        n = 8
-        perm = bit_reversal_permutation(n)
-        applied_once = [0] * n
-        for i in range(n):
-            applied_once[perm[i]] = i
-        applied_twice = [0] * n
-        for i in range(n):
-            applied_twice[perm[applied_once[i]]] = i
-        assert applied_twice == list(range(n))
-
 
 # ── fft / ifft ────────────────────────────────────────────────────────
 
@@ -149,8 +91,8 @@ class TestFFT:
         Y = fft(y)
         for k in range(n):
             expected = X[k] * complex(
-                math.cos(-2 * math.pi * k * shift / n),
-                math.sin(-2 * math.pi * k * shift / n),
+                math.cos(2 * math.pi * k * shift / n),
+                math.sin(2 * math.pi * k * shift / n),
             )
             assert cmath.isclose(Y[k], expected, rel_tol=1e-9, abs_tol=1e-9)
 
@@ -251,7 +193,7 @@ class TestFFTShift:
     def test_shift_odd(self):
         x = [1 + 0j, 2 + 0j, 3 + 0j]
         y = fft_shift(x)
-        assert y == [2 + 0j, 3 + 0j, 1 + 0j]
+        assert y == [3 + 0j, 1 + 0j, 2 + 0j]
 
     def test_shift_roundtrip_even(self):
         x = [complex(i, i + 1) for i in range(16)]

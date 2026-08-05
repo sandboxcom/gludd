@@ -6,7 +6,8 @@ import { isSubagent, reportAlive, isDisengaged } from "../lib/shared.ts"
 const ENFORCE = process.env.GLUDD_DEPTH_ENFORCE !== "0"
 const MAX_DEPTH = parseInt(process.env.GLUDD_MAX_DEPTH || "3", 10)
 function currentDepth(): number {
-  return parseInt(process.env.OPENCODE_DEPTH || "0", 10)
+  const depth = parseInt(process.env.OPENCODE_DEPTH || "0", 10)
+  return isNaN(depth) || depth < 0 ? 0 : depth
 }
 function isDispatchTool(tool: string): boolean {
   const lt = tool.toLowerCase()

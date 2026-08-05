@@ -23,6 +23,18 @@ from general_ludd.util.base_encoding import (
 )
 
 # ---------------------------------------------------------------------------
+# Shared fixtures for xdist-safe random-data parametrization
+# ---------------------------------------------------------------------------
+
+RANDOM_SIZES = [8, 16, 32, 64, 128, 256]
+
+
+@pytest.fixture
+def random_data(request: pytest.FixtureRequest) -> bytes:
+    return os.urandom(request.param)
+
+
+# ---------------------------------------------------------------------------
 # Roundtrip tests
 # ---------------------------------------------------------------------------
 
@@ -53,71 +65,50 @@ class TestRoundtrip:
             b"foobar",
             b"\x00\x01\x02\x03",
             b"\xff\xfe\xfd\xfc",
-            os.urandom(8),
-            os.urandom(16),
-            os.urandom(32),
-            os.urandom(64),
-            os.urandom(128),
-            os.urandom(256),
         ],
     )
     def test_base32_roundtrip(self, data: bytes) -> None:
         encoded = base_encode(data, ALPHABET_BASE32)
         assert base_decode(encoded, ALPHABET_BASE32) == data
 
+    @pytest.mark.parametrize("random_data", RANDOM_SIZES, indirect=True)
+    def test_base32_roundtrip_random(self, random_data: bytes) -> None:
+        encoded = base_encode(random_data, ALPHABET_BASE32)
+        assert base_decode(encoded, ALPHABET_BASE32) == random_data
+
     @pytest.mark.parametrize(
         "data",
         [
             b"hello",
             b"Hello, World!",
             b"\x00\x01\x02\x03",
-            os.urandom(8),
-            os.urandom(16),
-            os.urandom(32),
-            os.urandom(64),
-            os.urandom(128),
-            os.urandom(256),
         ],
     )
     def test_base32hex_roundtrip(self, data: bytes) -> None:
         encoded = base_encode(data, ALPHABET_BASE32HEX)
         assert base_decode(encoded, ALPHABET_BASE32HEX) == data
 
+    @pytest.mark.parametrize("random_data", RANDOM_SIZES, indirect=True)
+    def test_base32hex_roundtrip_random(self, random_data: bytes) -> None:
+        encoded = base_encode(random_data, ALPHABET_BASE32HEX)
+        assert base_decode(encoded, ALPHABET_BASE32HEX) == random_data
+
     @pytest.mark.parametrize(
         "data",
         [
             b"hello",
             b"Hello, World!",
             b"\x00\x01\x02\x03",
-            os.urandom(8),
-            os.urandom(16),
-            os.urandom(32),
-            os.urandom(64),
-            os.urandom(128),
-            os.urandom(256),
         ],
     )
     def test_base58_roundtrip(self, data: bytes) -> None:
         encoded = base_encode(data, ALPHABET_BASE58)
         assert base_decode(encoded, ALPHABET_BASE58) == data
 
-    @pytest.mark.parametrize(
-        "data",
-        [
-            b"hello",
-            b"Hello, World!",
-            b"\x00\x01\x02\x03",
-            os.urandom(8),
-            os.urandom(16),
-            os.urandom(32),
-            os.urandom(64),
-            os.urandom(128),
-            os.urandom(256),
-        ],
-    )
-    def test_base62_roundtrip(self, data: bytes) -> None:
-        encoded = base_encode(data, ALPHABET_BASE62)
-        assert base_decode(encoded, ALPHABET_BASE62) == data
+    @pytest.mark.parametrize("random_data", RANDOM_SIZES, indirect=True)
+    def test_base58_roundtrip_random(self, random_data: bytes) -> None:
+        encoded = base_encode(random_data, ALPHABET_BASE58)
+        assert base_decode(encoded, ALPHABET_BASE58) == random_data
 
     @pytest.mark.parametrize(
         "data",
@@ -125,17 +116,33 @@ class TestRoundtrip:
             b"hello",
             b"Hello, World!",
             b"\x00\x01\x02\x03",
-            os.urandom(8),
-            os.urandom(16),
-            os.urandom(32),
-            os.urandom(64),
-            os.urandom(128),
-            os.urandom(256),
+        ],
+    )
+    def test_base62_roundtrip(self, data: bytes) -> None:
+        encoded = base_encode(data, ALPHABET_BASE62)
+        assert base_decode(encoded, ALPHABET_BASE62) == data
+
+    @pytest.mark.parametrize("random_data", RANDOM_SIZES, indirect=True)
+    def test_base62_roundtrip_random(self, random_data: bytes) -> None:
+        encoded = base_encode(random_data, ALPHABET_BASE62)
+        assert base_decode(encoded, ALPHABET_BASE62) == random_data
+
+    @pytest.mark.parametrize(
+        "data",
+        [
+            b"hello",
+            b"Hello, World!",
+            b"\x00\x01\x02\x03",
         ],
     )
     def test_base85_roundtrip(self, data: bytes) -> None:
         encoded = base_encode(data, ALPHABET_BASE85)
         assert base_decode(encoded, ALPHABET_BASE85) == data
+
+    @pytest.mark.parametrize("random_data", RANDOM_SIZES, indirect=True)
+    def test_base85_roundtrip_random(self, random_data: bytes) -> None:
+        encoded = base_encode(random_data, ALPHABET_BASE85)
+        assert base_decode(encoded, ALPHABET_BASE85) == random_data
 
     def test_all_bases_agree_on_zero(self) -> None:
         alphabets = [ALPHABET_BASE32, ALPHABET_BASE32HEX, ALPHABET_BASE58, ALPHABET_BASE62, ALPHABET_BASE85]
