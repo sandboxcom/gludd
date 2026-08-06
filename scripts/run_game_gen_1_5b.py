@@ -75,7 +75,7 @@ def main() -> int:
         print(f"{'=' * 60}")
 
         t0 = time.time()
-        output = llm(prompt, max_tokens=600, echo=False, temperature=0.1, stop=["<|im_end|>", "<|im_start|>"])
+        output = llm(prompt, max_tokens=1024, echo=False, temperature=0.1, stop=["<|im_end|>", "<|im_start|>"])
         elapsed = time.time() - t0
         raw = output["choices"][0]["text"]
         tokens = output["usage"]["completion_tokens"]
@@ -87,7 +87,7 @@ def main() -> int:
         print(f"  Tokens: {tokens} in {elapsed:.1f}s ({tok_s:.1f} tok/s)")
         print(f"  Raw (first 150): {repr(raw[:150])}")
         if not parse_ok:
-            print(f"  Code (first 200): {repr(code[:200])}")
+            print(f"  Code LAST 200: {repr(code[-200:])}")
         print(f"  AST: {'OK' if parse_ok else 'FAIL'} {parse_err}")
         print(f"  Classes: {sorted(classes) if classes else '-'}")
 

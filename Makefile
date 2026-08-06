@@ -1869,7 +1869,8 @@ test-e2e-games-local-model:
 .PHONY: test-llama-game-gen
 test-llama-game-gen: sync-llama-cpp
 	@echo "=== Llama-3.2-1B Game Gen Test ==="
-	@$(UV) run python scripts/test_llama_3_2_game_gen.py
+	@mkdir -p /tmp/gludd-hf-cache
+	@HF_HOME=/tmp/gludd-hf-cache HF_HUB_CACHE=/tmp/gludd-hf-cache $(UV) run python scripts/test_llama_3_2_game_gen.py
 
 # ── Local model serving (ollama) ────────────────────────────────────────────
 # OLLAMA_MODEL: model to pull (default: qwen2.5:0.5b, small + fast for E2E)
@@ -6251,7 +6252,20 @@ gate-cleanup:
 	@echo "[gate-cleanup] removing gate and gate-lite logs older than 24h..."
 	@find .gate-logs -name "gate-*.log" -mtime +0 2>/dev/null -delete
 	@find .gate-logs -name "gate-lite-*.log" -mtime +0 2>/dev/null -delete
+	@echo "[gate-cleanup] also removing coverage data..."
+	@rm -f .gate-logs/coverage-branch.json .gate-logs/coverage-data-*.json .gate-logs/coverage-data-*.json.progress.json
 	@echo "[gate-cleanup] done"
+
+.PHONY: clean-hf-cache
+clean-hf-cache:
+	@echo "=== Cleaning HuggingFace model cache ==="
+	@du -sh ~/.cache/huggingface/hub/models--*/ 2>/dev/null | sort -h | tail -10 || echo "  No HF hub cache found"
+	@rm -rf ~/.cache/huggingface/hub/models--bartowski--Qwen2.5-0.5B-Instruct-GGUF 2>/dev/null || true
+	@rm -rf ~/.cache/huggingface/hub/models--bartowski--Qwen2.5-1.5B-Instruct-GGUF 2>/dev/null || true
+	@rm -rf ~/.cache/huggingface/hub/models--bartowski--DeepSeek-Coder-1.3B-Base-GGUF 2>/dev/null || true
+	@rm -rf ~/.cache/huggingface/hub/models--bartowski--Llama-3.2-1B-Instruct-GGUF 2>/dev/null || true
+	@rm -rf ~/.cache/huggingface/hub/models--bartowski--Phi-3-mini-4k-instruct-GGUF 2>/dev/null || true
+	@echo "=== HF cache cleaned ==="
 
 # ---------------------------------------------------------------------------
 # Coverage audit: per-file coverage check with configurable threshold.
