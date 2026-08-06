@@ -117,7 +117,6 @@ class ModelDownloader:
                 filename=filename,
                 token=token,
                 revision=revision,
-                callback=self._make_progress_callback(filename, -1),
             )
         else:
             local_path = snapshot_download(
@@ -159,7 +158,6 @@ class ModelDownloader:
             filename=filename,
             token=token,
             revision=revision,
-            callback=self._make_progress_callback(filename, -1),
         )
 
         downloaded = DownloadedModel(
