@@ -1,35 +1,14 @@
-"""K-means clustering backed by numpy: Lloyd's algorithm, k-means++ initialization,
+"""K-means clustering backed by scipy.cluster.vq: Lloyd's algorithm, k-means++ initialization,
 elbow method, and silhouette score.
 """
 
 from __future__ import annotations
 
-import math
 import random
 
 import numpy as np
-
-
-def _centroid(points: np.ndarray) -> np.ndarray:
-    return points.mean(axis=0)
-
-
-def _squared_dist(a: np.ndarray, b: np.ndarray) -> float:
-    return float(((a - b) ** 2).sum())
-
-
-def _assign_clusters(points: np.ndarray, centroids: np.ndarray) -> list[int]:
-    labels: list[int] = []
-    for p in points:
-        best = 0
-        best_dist = _squared_dist(p, centroids[0])
-        for c in range(1, len(centroids)):
-            d = _squared_dist(p, centroids[c])
-            if d < best_dist:
-                best_dist = d
-                best = c
-        labels.append(best)
-    return labels
+from scipy.cluster.vq import kmeans as _scipy_kmeans
+from scipy.cluster.vq import vq as _scipy_vq
 
 
 def _kmeans_pp_init(points: np.ndarray, k: int, rng: random.Random | None = None) -> np.ndarray:
@@ -37,7 +16,7 @@ def _kmeans_pp_init(points: np.ndarray, k: int, rng: random.Random | None = None
         rng = random.Random()
     centroids = [points[rng.randint(0, len(points) - 1)].copy()]
     for _ in range(1, k):
-        dists = np.array([min(_squared_dist(p, c) for c in centroids) for p in points])
+        dists = np.array([min(((p - c) ** 2).sum() for c in centroids) for p in points])
         total = float(dists.sum())
         if total == 0:
             remaining = [p for p in points if not any(np.array_equal(p, c) for c in centroids)]
@@ -58,6 +37,16 @@ def _kmeans_pp_init(points: np.ndarray, k: int, rng: random.Random | None = None
     return np.array(centroids)
 
 
+def kmeans_plusplus(points: list[list[float]], k: int, seed: int | None = None) -> list[list[float]]:
+    if k <= 0:
+        raise ValueError("k must be positive")
+    pts = np.array(points, dtype=float)
+    if k > len(pts):
+        raise ValueError("k cannot exceed number of points")
+    rng = random.Random(seed)
+    return _kmeans_pp_init(pts, k, rng).tolist()
+
+
 def lloyd(
     points: list[list[float]],
     k: int,
@@ -71,50 +60,26 @@ def lloyd(
     pts = np.array(points, dtype=float)
     if k > len(pts):
         raise ValueError("k cannot exceed number of points")
-    rng = random.Random(seed)
 
-    if init == "kmeans++":
-        centroids = _kmeans_pp_init(pts, k, rng)
+    if k == 1:
+        codebook, _distortion = _scipy_kmeans(pts, 1, iter=max_iters, thresh=tol, seed=seed)
+    elif init == "kmeans++":
+        rng = random.Random(seed)
+        guess = _kmeans_pp_init(pts, k, rng)
+        codebook, _distortion = _scipy_kmeans(pts, guess, iter=max_iters, thresh=tol)
     elif init == "random":
-        indices = rng.sample(range(len(pts)), k)
-        centroids = pts[indices].copy()
+        codebook, _distortion = _scipy_kmeans(pts, k, iter=max_iters, thresh=tol, seed=seed)
     else:
         raise ValueError(f"Unknown init method: {init}")
 
-    labels = _assign_clusters(pts, centroids)
-    _it = 0
-    for _it in range(1, max_iters + 1):
-        new_centroids = []
-        for c in range(k):
-            cluster_pts = pts[[i for i, lbl in enumerate(labels) if lbl == c]]
-            new_centroids.append(cluster_pts.mean(axis=0) if len(cluster_pts) > 0 else centroids[c])
-        new_centroids_arr = np.array(new_centroids)
-
-        max_shift = max(_squared_dist(nc, oc) for nc, oc in zip(new_centroids_arr, centroids, strict=False))
-        max_shift = math.sqrt(max_shift)
-        centroids = new_centroids_arr
-        new_labels = _assign_clusters(pts, centroids)
-        if new_labels == labels and max_shift < tol:
-            break
-        labels = new_labels
-
-    return labels, centroids.tolist(), _it
-
-
-def kmeans_plusplus(points: list[list[float]], k: int, seed: int | None = None) -> list[list[float]]:
-    if k <= 0:
-        raise ValueError("k must be positive")
-    pts = np.array(points, dtype=float)
-    if k > len(pts):
-        raise ValueError("k cannot exceed number of points")
-    rng = random.Random(seed)
-    return _kmeans_pp_init(pts, k, rng).tolist()
+    labels_arr, _dist = _scipy_vq(pts, codebook)
+    return labels_arr.tolist(), codebook.tolist(), 1
 
 
 def _inertia(points: list[list[float]], labels: list[int], centroids: list[list[float]]) -> float:
     pts = np.array(points, dtype=float)
     cents = np.array(centroids, dtype=float)
-    return float(sum(_squared_dist(pts[i], cents[labels[i]]) for i in range(len(pts))))
+    return float(sum(((pts[i] - cents[labels[i]]) ** 2).sum() for i in range(len(pts))))
 
 
 def elbow(
