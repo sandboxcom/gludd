@@ -530,7 +530,8 @@ async function handleTextComplete(_input: unknown, output: unknown): Promise<unk
     const _tef = REQUIRED_DISPATCHES > 0
       ? getPressureReleaseFloor(REQUIRED_DISPATCHES)
       : 0
-    if (REQUIRED_DISPATCHES > 0 && _state.thisMessageDispatches < _tef && _state.sessionDispatchTotal > 0) {
+    const everDispatched = _state.sessionDispatchTotal > 0 || _state.thisMessageDispatches > 0
+    if (REQUIRED_DISPATCHES > 0 && _state.thisMessageDispatches < _tef && everDispatched) {
       const dispatched = _state.thisMessageDispatches
       handleMessageBoundary(_state)
       // MT.1: escalate when under-floor waves keep happening
