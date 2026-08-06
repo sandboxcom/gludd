@@ -1866,6 +1866,11 @@ test-e2e-games-local-model:
 	 LOCAL_MODEL_GAME="$${LOCAL_MODEL_GAME:-}" \
 	 $(UV) run pytest tests/e2e/test_game_building_local.py -v $(PYTEST_ARGS)
 
+.PHONY: test-llama-game-gen
+test-llama-game-gen: sync-llama-cpp
+	@echo "=== Llama-3.2-1B Game Gen Test ==="
+	@$(UV) run python scripts/test_llama_3_2_game_gen.py
+
 # ── Local model serving (ollama) ────────────────────────────────────────────
 # OLLAMA_MODEL: model to pull (default: qwen2.5:0.5b, small + fast for E2E)
 OLLAMA_MODEL ?= qwen2.5:0.5b
@@ -7555,7 +7560,7 @@ azure-event-guard-status:
 	@echo "--- Last 15 log lines ---"
 	@tail -15 .gate-logs/azure-event-guard.log 2>/dev/null || echo "No log yet"
 
-.PHONY: e2e-test-gen-pipeline e2e-test-gen-pipeline-dogfood collect-specific fix-e501-golden clean-relative check-rag-wrapper user-test-batch azure-event-guard-start azure-event-guard-stop azure-event-guard-check azure-event-guard-status check-e2e-small-model-prereq e2e-download-small-model download-1.5b-model download-phi3-mini test-phi3-mini-game-gen
+.PHONY: e2e-test-gen-pipeline e2e-test-gen-pipeline-dogfood collect-specific fix-e501-golden clean-relative check-rag-wrapper user-test-batch azure-event-guard-start azure-event-guard-stop azure-event-guard-check azure-event-guard-status check-e2e-small-model-prereq e2e-download-small-model download-1.5b-model download-phi3-mini test-phi3-mini-game-gen download-deepseek-1.3b benchmark-codegen-quality
 
 check-e2e-small-model-prereq:
 	@echo "=== E2E small model pipeline prerequisites ==="
@@ -7625,4 +7630,19 @@ text = output["choices"][0]["text"];\
 print(f"Output: {repr(text)}");\
 print("SUCCESS: Local model inference works.");\
 '
+
+download-deepseek-1.3b:
+	@echo "=== Downloading DeepSeek-Coder-1.3B-Instruct-Q4_K_M GGUF (~0.8 GB) ==="
+	@$(UV) run python scripts/download_deepseek_1_3b.py
+	@echo "=== Model cached at /tmp/gludd-deepseek-1.3b-model/ ==="
+	@ls -lhS /tmp/gludd-deepseek-1.3b-model/
+
+benchmark-codegen-quality:
+	@echo "=== Code generation quality: DeepSeek-Coder-1.3B vs Qwen2.5-1.5B ==="
+	@$(UV) run python scripts/benchmark_codegen_quality.py
+
+.PHONY: compare-models
+compare-models:
+	@echo "=== Multi-model comparison benchmark ==="
+	@$(UV) run python scripts/compare_models.py
 
