@@ -971,3 +971,32 @@ class TestDiversityDenialCondition:
         """waveTopicCounts must reset in the message boundary handler."""
         src = _plugin_source()
         assert "waveTopicCounts = {}" in src, "waveTopicCounts must reset to {} at message boundaries"
+
+
+class TestZeroDispatchTextBlock:
+    """text.complete handler MUST block text when thisMessageDispatches < _tef AND
+    sessionDispatchTotal > 0. Previously only blocked thin waves (1-9 dispatches);
+    zero-dispatch waves passed through unblocked. The fix replaces
+    `thisMessageDispatches > 0` with `sessionDispatchTotal > 0` so zero-dispatch
+    text is blocked after dispatches have been made, while session-start
+    (no dispatches yet) still passes."""
+
+    def test_text_complete_blocks_zero_dispatch_after_prior_dispatch(self):
+        src = _plugin_source()
+        condition = "_state.thisMessageDispatches < _tef && _state.sessionDispatchTotal > 0"
+        assert condition in src, f"text.complete block condition must be: {condition}"
+
+    def test_text_complete_no_longer_only_checks_gt_zero(self):
+        src = _plugin_source()
+        assert "_state.thisMessageDispatches > 0 && _state.thisMessageDispatches < _tef" not in src, (
+            "old `> 0` guard removed — now uses sessionDispatchTotal > 0"
+        )
+
+    def test_session_start_text_not_blocked(self):
+        """When sessionDispatchTotal === 0, zero-dispatch text passes (session start)."""
+        src = _plugin_source()
+        condition = "_state.sessionDispatchTotal > 0"
+        idx = src.find("_tef &&")
+        assert idx > 0
+        after = src[idx : idx + 200]
+        assert condition in after, "text.complete must gate on sessionDispatchTotal > 0 for zero-dispatch allow"

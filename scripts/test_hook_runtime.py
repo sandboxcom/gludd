@@ -53,9 +53,7 @@ def _run_ts(ts_code: str, env_override: dict | None = None, timeout: int = 15):
     """
     global _tmp_counter
     _tmp_counter += 1
-    false_done_path = (
-        f"/tmp/gludd-false-done-blocks-test-{os.getpid()}-{_tmp_counter}.json"
-    )
+    false_done_path = f"/tmp/gludd-false-done-blocks-test-{os.getpid()}-{_tmp_counter}.json"
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".ts", dir="/tmp", prefix=f"hook_test_{_tmp_counter}_", delete=False
     ) as f:
@@ -75,8 +73,11 @@ def _run_ts(ts_code: str, env_override: dict | None = None, timeout: int = 15):
             env.update(env_override)
         proc = subprocess.run(
             ["node", "--experimental-strip-types", tmp],
-            capture_output=True, text=True, timeout=timeout,
-            cwd=str(ROOT), env=env,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=str(ROOT),
+            env=env,
         )
         if proc.returncode != 0:
             raise AssertionError(
@@ -530,7 +531,9 @@ console.log(JSON.stringify({{
     assert result["r2_deny"] == True, f"Second dispatch (100% fixes, wave=2) should deny: {result}"
     assert "ENHANCEMENT RATIO VIOLATION" in result["r2_msg"], f"Deny message missing VIOLATION: {result['r2_msg']}"
     # r3 is allowed because wave was reset after r2's denial
-    assert result["r3_deny"] == False, f"Third dispatch (67% fixes, wave=3) should be allowed after wave reset: {result}"
+    assert result["r3_deny"] == False, (
+        f"Third dispatch (67% fixes, wave=3) should be allowed after wave reset: {result}"
+    )
     _clean_state_files(state_file)
 
 
@@ -593,10 +596,13 @@ const plugin = await mod.default({{}})
         textPreserved: typeof output !== 'string' ? (output?.text ?? '') === 'hello' : false,
     }}))
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_ENHANCEMENT_RATIO_STATE": state_file,
-        "GLUDD_ENHANCEMENT_RATIO_BLOCK": "0",
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_ENHANCEMENT_RATIO_STATE": state_file,
+            "GLUDD_ENHANCEMENT_RATIO_BLOCK": "0",
+        },
+    )
     assert result["notBlocked"] == True, f"With BLOCK=0, output should not be string, got: {result}"
     assert result["textPreserved"] == True, "Original text should be preserved when BLOCK=0"
     _clean_state_files(state_file)
@@ -628,19 +634,21 @@ await plugin['tool.execute.before']({{tool: 'task', args: {{prompt: 'fix bug A'}
 def test_delegate_streak_zero_allowed():
     """mainthreadBudgetBefore returns null when streak=0."""
     sf = f"/tmp/gludd-mainthread-streak-test-{os.getpid()}.json"
-    _clean_state_files(sf, "/tmp/gludd-hot-delegate.js",
-                       "/tmp/gludd-watchdog-disengage.json")
+    _clean_state_files(sf, "/tmp/gludd-hot-delegate.js", "/tmp/gludd-watchdog-disengage.json")
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-delegate.ts')
 const plugin = await mod.default({{}})
 const result = await plugin['tool.execute.before']({{tool: 'edit'}}, {{args: {{}}}})
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_MAINTHREAD_STREAK_ENFORCE": "1",
-        "GLUDD_MAINTHREAD_STREAK_FILE": sf,
-        "CLAUDE_AGENT_TARGET": "6",
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_MAINTHREAD_STREAK_ENFORCE": "1",
+            "GLUDD_MAINTHREAD_STREAK_FILE": sf,
+            "CLAUDE_AGENT_TARGET": "6",
+        },
+    )
     assert result is None or result.get("allowed") == True
     _clean_state_files(sf)
 
@@ -650,9 +658,7 @@ def test_delegate_streak_at_threshold_denied():
     sf = f"/tmp/gludd-mainthread-streak-test-{os.getpid()}.json"
     fd = f"/tmp/gludd-force-dispatch-test-{os.getpid()}.json"
     tasks_path = f"/tmp/gludd-test-tasks-delegate-{os.getpid()}.md"
-    _clean_state_files(sf, fd, tasks_path,
-                       "/tmp/gludd-watchdog-disengage.json",
-                       "/tmp/gludd-hot-delegate.js")
+    _clean_state_files(sf, fd, tasks_path, "/tmp/gludd-watchdog-disengage.json", "/tmp/gludd-hot-delegate.js")
     # Write streak state at threshold
     with open(sf, "w") as f:
         json.dump({"count": 2, "ts": int(time.time() * 1000)}, f)
@@ -671,14 +677,17 @@ try {{
   console.log(JSON.stringify({{permissionDecision: "deny", message: e.message}}))
 }}
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_LIVE_AGENTS_COUNT": "0",
-        "GLUDD_TASKS_MD": tasks_path,
-        "GLUDD_MAINTHREAD_STREAK_ENFORCE": "1",
-        "GLUDD_MAINTHREAD_STREAK_FILE": sf,
-        "GLUDD_FORCE_DISPATCH_PATH": fd,
-        "CLAUDE_AGENT_TARGET": "6",
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_LIVE_AGENTS_COUNT": "0",
+            "GLUDD_TASKS_MD": tasks_path,
+            "GLUDD_MAINTHREAD_STREAK_ENFORCE": "1",
+            "GLUDD_MAINTHREAD_STREAK_FILE": sf,
+            "GLUDD_FORCE_DISPATCH_PATH": fd,
+            "CLAUDE_AGENT_TARGET": "6",
+        },
+    )
     assert result.get("permissionDecision") == "deny", f"Expected deny, got: {result}"
     _clean_state_files(sf, fd, tasks_path)
 
@@ -695,9 +704,12 @@ const plugin = await mod.default({{}})
 const result = await plugin['tool.execute.before']({{tool: 'read'}}, {{}})
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_MAINTHREAD_STREAK_FILE": sf,
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_MAINTHREAD_STREAK_FILE": sf,
+        },
+    )
     assert result is None or result.get("allowed") == True
     _clean_state_files(sf)
 
@@ -714,8 +726,7 @@ const plugin = await mod.default({{}})
 const result = await plugin['tool.execute.before']({{tool: 'edit'}}, {{}})
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
-    result = _run_ts(code, env_override={"GLUDD_MAINTHREAD_STREAK_ENFORCE": "0",
-                                          "GLUDD_MAINTHREAD_STREAK_FILE": sf})
+    result = _run_ts(code, env_override={"GLUDD_MAINTHREAD_STREAK_ENFORCE": "0", "GLUDD_MAINTHREAD_STREAK_FILE": sf})
     assert result is None or result.get("allowed") == True
     _clean_state_files(sf)
 
@@ -753,10 +764,13 @@ const plugin = await mod.default({{}})
 const result = await plugin['tool.execute.before']({{tool: 'write', args: {{}}}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_TASK_DEADLINE_STATE": stale_state,
-        "GLUDD_TASK_STALE_FILE": stale_file,
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_TASK_DEADLINE_STATE": stale_state,
+            "GLUDD_TASK_STALE_FILE": stale_file,
+        },
+    )
     assert result is not None, "Expected deny object, got None (allowed)"
     assert result.get("permissionDecision") == "deny", f"Expected deny, got: {result}"
     assert "DEADLINE EXCEEDED" in result.get("message", ""), f"Message missing DEADLINE EXCEEDED: {result}"
@@ -776,10 +790,13 @@ await plugin['tool.execute.before']({{tool: 'edit', args: {{}}}}, undefined)
 const staleFile = process.env.GLUDD_TASK_STALE_FILE || '/tmp/gludd-task-stale.json'
 console.log(JSON.stringify({{ignored: true}}))
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_TASK_DEADLINE_STATE": stale_state,
-        "GLUDD_TASK_DEADLINE_ENABLED": "0",
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_TASK_DEADLINE_STATE": stale_state,
+            "GLUDD_TASK_DEADLINE_ENABLED": "0",
+        },
+    )
     assert result["ignored"] == True
     _clean_state_files(stale_state)
 
@@ -796,11 +813,14 @@ const plugin = await mod.default({{}})
 const result = await plugin['tool.execute.before']({{tool: 'write', args: {{}}}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_TASK_DEADLINE_STATE": stale_state,
-        "GLUDD_TASK_STALE_FILE": stale_file,
-        "GLUDD_TASK_DEADLINE_BLOCK": "0",
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_TASK_DEADLINE_STATE": stale_state,
+            "GLUDD_TASK_STALE_FILE": stale_file,
+            "GLUDD_TASK_DEADLINE_BLOCK": "0",
+        },
+    )
     assert result is None or result.get("allowed") == True, f"Expected allowed with BLOCK=0, got: {result}"
     _clean_state_files(stale_state, stale_file)
 
@@ -817,11 +837,14 @@ const plugin = await mod.default({{}})
 const result = await plugin['tool.execute.before']({{tool: 'write', args: {{}}}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_TASK_DEADLINE_STATE": stale_state,
-        "GLUDD_TASK_STALE_FILE": stale_file,
-        "OPENCODE_SUBAGENT": "1",
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_TASK_DEADLINE_STATE": stale_state,
+            "GLUDD_TASK_STALE_FILE": stale_file,
+            "OPENCODE_SUBAGENT": "1",
+        },
+    )
     assert result is None or result.get("allowed") == True, f"Expected allowed for subagent, got: {result}"
     _clean_state_files(stale_state, stale_file)
 
@@ -837,9 +860,12 @@ const plugin = await mod.default({{}})
 const result = await plugin['tool.execute.before']({{tool: 'write', args: {{}}}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_TASK_DEADLINE_STATE": stale_state,
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_TASK_DEADLINE_STATE": stale_state,
+        },
+    )
     assert result is None or result.get("allowed") == True, f"Expected fail-open, got: {result}"
     _clean_state_files(stale_state)
 
@@ -852,9 +878,12 @@ const plugin = await mod.default({{}})
 const result = await plugin['tool.execute.before']({{tool: 'edit', args: {{}}}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_TASK_DEADLINE_STATE": "/tmp/nonexistent-deadline-state.json",
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_TASK_DEADLINE_STATE": "/tmp/nonexistent-deadline-state.json",
+        },
+    )
     assert result is None or result.get("allowed") == True
 
 
@@ -899,11 +928,11 @@ def test_floor_streak_max_plus_one_denied():
     /tmp/gludd-session-start.json) which would tighten max to 1.
     """
     import time
+
     tasks_path = f"/tmp/gludd-test-tasks-floor-{os.getpid()}.md"
     todowrite_path = f"/tmp/gludd-todowrite-state-{os.getpid()}.json"
     session_state = f"/tmp/gludd-session-start-null-{os.getpid()}.json"
-    _clean_state_files(tasks_path, todowrite_path, session_state,
-                       "/tmp/gludd-watchdog-disengage.json")
+    _clean_state_files(tasks_path, todowrite_path, session_state, "/tmp/gludd-watchdog-disengage.json")
     with open(tasks_path, "w") as f:
         f.write("- [ ] floor test task 1\n- [ ] floor test task 2\n")
     with open(todowrite_path, "w") as f:
@@ -929,11 +958,14 @@ console.log(JSON.stringify({{
   'r3_hasMsg': typeof r3?.message === 'string',
 }}))
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_TASKS_MD": tasks_path,
-        "GLUDD_TODOWRITE_STATE": todowrite_path,
-        "GLUDD_SESSION_STATE": session_state,
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_TASKS_MD": tasks_path,
+            "GLUDD_TODOWRITE_STATE": todowrite_path,
+            "GLUDD_SESSION_STATE": session_state,
+        },
+    )
     assert result["r1"] is None, f"Call 1 should be allowed, got: {result['r1']}"
     assert result["r2"] is None, f"Call 2 should be allowed, got: {result['r2']}"
     assert result["r3_deny"] == True, f"Call 3 should be denied, got: {result}"
@@ -1028,12 +1060,15 @@ const blocked = finalText.includes('FLOOR BREACH')
 const originalGone = !finalText.includes('hello from test')
 console.log(JSON.stringify({{blocked, originalGone}}))
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_TASKS_MD": tasks_path,
-        "GLUDD_TODOWRITE_STATE": todowrite_path,
-        "GLUDD_SESSION_STATE": session_state,
-        "GLUDD_STREAK_FILE": streak_file,
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_TASKS_MD": tasks_path,
+            "GLUDD_TODOWRITE_STATE": todowrite_path,
+            "GLUDD_SESSION_STATE": session_state,
+            "GLUDD_STREAK_FILE": streak_file,
+        },
+    )
     assert result["blocked"] == True, f"Expected FLOOR BREACH in text.complete output, got: {result}"
     assert result["originalGone"] == True, f"Original text must be replaced: {result}"
     _clean_state_files(tasks_path, todowrite_path, session_state, streak_file)
@@ -1072,12 +1107,15 @@ const deny = result?.permissionDecision === 'deny'
 const hasMsgShape = typeof result?.message === 'string' && result.message.includes('MESSAGE-SHAPE')
 console.log(JSON.stringify({{deny, hasMsgShape}}))
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_TASKS_MD": tasks_path,
-        "GLUDD_TODOWRITE_STATE": todowrite_path,
-        "GLUDD_SESSION_STATE": session_state,
-        "GLUDD_STREAK_FILE": streak_file,
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_TASKS_MD": tasks_path,
+            "GLUDD_TODOWRITE_STATE": todowrite_path,
+            "GLUDD_SESSION_STATE": session_state,
+            "GLUDD_STREAK_FILE": streak_file,
+        },
+    )
     assert result["deny"] == True, f"Expected deny for 1-dispatch message shape, got: {result}"
     assert result["hasMsgShape"] == True, f"Expected MESSAGE-SHAPE in deny message: {result}"
     _clean_state_files(tasks_path, todowrite_path, session_state, streak_file)
@@ -1163,13 +1201,16 @@ console.log(JSON.stringify({{
     r3_ok: r3 === undefined || r3 === null,
 }}))
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_TASKS_MD": tasks_path,
-        "GLUDD_TODOWRITE_STATE": todowrite_path,
-        "GLUDD_SESSION_STATE": session_state,
-        "GLUDD_STREAK_FILE": streak_file,
-        "GLUDD_DISENGAGE_PATH": disengage_path,
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_TASKS_MD": tasks_path,
+            "GLUDD_TODOWRITE_STATE": todowrite_path,
+            "GLUDD_SESSION_STATE": session_state,
+            "GLUDD_STREAK_FILE": streak_file,
+            "GLUDD_DISENGAGE_PATH": disengage_path,
+        },
+    )
     assert result["r1_ok"] == True, f"Call 1 (streak 0→1) must be allowed: {result}"
     assert result["r2_ok"] == True, f"Call 2 (streak 1→2) must be allowed: {result}"
     assert result["r3_ok"] == True, f"Disengage must allow call 3 despite streak=2: {result}"
@@ -1184,9 +1225,7 @@ console.log(JSON.stringify({{
 def test_multitask_text_complete_blocks_thin_wave():
     """experimental.text.complete MUST blank text for thin dispatch waves."""
     state_file = "/tmp/gludd-multitask-state.json"
-    _clean_state_files(state_file,
-                       "/tmp/gludd-watchdog-disengage.json",
-                       "/tmp/gludd-force-dispatch.json")
+    _clean_state_files(state_file, "/tmp/gludd-watchdog-disengage.json", "/tmp/gludd-force-dispatch.json")
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
 const plugin = await mod.default({{}})
@@ -1210,14 +1249,15 @@ console.log(JSON.stringify({{
   resultText: output && typeof output === 'object' ? (output.text || '')?.slice(0, 200) : String(output || '').slice(0, 120),
 }}))
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_MIN_DISPATCHES": "10",
-        "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
-    })
-
-    assert result.get("threw") is False, (
-        f"experimental.text.complete must run without throwing. Result: {result}"
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_MIN_DISPATCHES": "10",
+            "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
+        },
     )
+
+    assert result.get("threw") is False, f"experimental.text.complete must run without throwing. Result: {result}"
     assert result["textWasBlocked"] == True, (
         f"Expected THIN WAVE BLOCKED but text passed through unmodified. "
         f"Hook ran without error but did not detect the thin wave. Result: {result}"
@@ -1306,20 +1346,21 @@ def test_multitask_configured_minimum_hard_block():
     that fires BEFORE the consecutive-non-dispatch counter.
     """
     state_file = f"/tmp/gludd-multitask-test-uf-{os.getpid()}.json"
-    _clean_state_files(state_file,
-                       "/tmp/gludd-watchdog-disengage.json",
-                       "/tmp/gludd-force-dispatch.json")
+    _clean_state_files(state_file, "/tmp/gludd-watchdog-disengage.json", "/tmp/gludd-force-dispatch.json")
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
 const plugin = await mod.default({{}})
 const result = await plugin['tool.execute.before']({{tool: 'edit'}}, undefined)
 console.log(JSON.stringify(result ?? null))
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_MULTITASK_STATE_FILE": state_file,
-        "GLUDD_MIN_DISPATCHES": "2",
-        "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_MULTITASK_STATE_FILE": state_file,
+            "GLUDD_MIN_DISPATCHES": "2",
+            "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
+        },
+    )
     assert result is not None, f"Expected deny object, got None: {result}"
     assert result.get("permissionDecision") == "deny", f"Expected deny, got: {result}"
     message = result.get("message", "")
@@ -1335,9 +1376,7 @@ def test_multitask_dispatch_ceiling_blocked():
     permissionDecision: 'deny' with 'DISPATCH CEILING BREACH' in the message.
     """
     state_file = f"/tmp/gludd-multitask-test-ceil-{os.getpid()}.json"
-    _clean_state_files(state_file,
-                       "/tmp/gludd-watchdog-disengage.json",
-                       "/tmp/gludd-force-dispatch.json")
+    _clean_state_files(state_file, "/tmp/gludd-watchdog-disengage.json", "/tmp/gludd-force-dispatch.json")
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
 const plugin = await mod.default({{}})
@@ -1353,11 +1392,14 @@ console.log(JSON.stringify({{
     r4_hasCeiling: typeof r4?.message === 'string' && r4.message.includes('DISPATCH CEILING BREACH'),
 }}))
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_MULTITASK_STATE_FILE": state_file,
-        "GLUDD_MULTITASK_MAX_DISPATCHES": "3",
-        "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_MULTITASK_STATE_FILE": state_file,
+            "GLUDD_MULTITASK_MAX_DISPATCHES": "3",
+            "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
+        },
+    )
     assert result["r3_ok"] == True, f"3rd dispatch should be allowed (at ceiling), got: {result}"
     assert result["r4_denied"] == True, f"4th dispatch should be denied (above ceiling), got: {result}"
     assert result["r4_hasCeiling"] == True, f"Deny message missing DISPATCH CEILING BREACH: {result}"
@@ -1374,9 +1416,7 @@ def test_multitask_consecutive_non_dispatch_blocked():
     doesn't fire first.
     """
     state_file = f"/tmp/gludd-multitask-test-cons-{os.getpid()}.json"
-    _clean_state_files(state_file,
-                       "/tmp/gludd-watchdog-disengage.json",
-                       "/tmp/gludd-force-dispatch.json")
+    _clean_state_files(state_file, "/tmp/gludd-watchdog-disengage.json", "/tmp/gludd-force-dispatch.json")
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
 const plugin = await mod.default({{}})
@@ -1394,13 +1434,16 @@ console.log(JSON.stringify({{
     r3_hasConsecutive: typeof r3?.message === 'string' && r3.message.includes('CONSECUTIVE NON-DISPATCH STREAK'),
 }}))
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_MULTITASK_STATE_FILE": state_file,
-        "GLUDD_MIN_DISPATCHES": "2",
-        "GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD": "3",
-        "GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS": "60000",
-        "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_MULTITASK_STATE_FILE": state_file,
+            "GLUDD_MIN_DISPATCHES": "2",
+            "GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD": "3",
+            "GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS": "60000",
+            "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
+        },
+    )
     assert result["r1_ok"] == True, f"1st non-dispatch should be allowed, got: {result}"
     assert result["r2_ok"] == True, f"2nd non-dispatch should be allowed, got: {result}"
     assert result["r3_denied"] == True, f"3rd non-dispatch should be denied (at threshold), got: {result}"
@@ -1417,9 +1460,7 @@ def test_multitask_corrupt_state_fail_open():
     behavior (the plugin loaded and operated, it didn't die).
     """
     state_file = f"/tmp/gludd-multitask-test-corr-{os.getpid()}.json"
-    _clean_state_files(state_file,
-                       "/tmp/gludd-watchdog-disengage.json",
-                       "/tmp/gludd-force-dispatch.json")
+    _clean_state_files(state_file, "/tmp/gludd-watchdog-disengage.json", "/tmp/gludd-force-dispatch.json")
     with open(state_file, "w") as f:
         f.write("not valid json {{{[[[")
     code = f"""\
@@ -1428,10 +1469,13 @@ const plugin = await mod.default({{}})
 const result = await plugin['tool.execute.before']({{tool: 'edit'}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_MULTITASK_STATE_FILE": state_file,
-        "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_MULTITASK_STATE_FILE": state_file,
+            "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
+        },
+    )
     # Fail-open means: no crash, structured result returned. The plugin may
     # deny (with a clean fresh state) — that is ok, it loaded and operated.
     assert result is not None, "Corrupt state must not crash: expected a result object"
@@ -1462,9 +1506,7 @@ def test_multitask_grind_inline_no_prior_dispatch():
     Call 5 (bash): consecutive=3 >= threshold → CONSECUTIVE NON-DISPATCH STREAK.
     """
     state_file = f"/tmp/gludd-multitask-grind-{os.getpid()}.json"
-    _clean_state_files(state_file,
-                       "/tmp/gludd-watchdog-disengage.json",
-                       "/tmp/gludd-force-dispatch.json")
+    _clean_state_files(state_file, "/tmp/gludd-watchdog-disengage.json", "/tmp/gludd-force-dispatch.json")
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
 const plugin = await mod.default({{}})
@@ -1485,20 +1527,19 @@ console.log(JSON.stringify({{
     r5_hasStreak: typeof r5?.message === 'string' && r5.message.includes('CONSECUTIVE NON-DISPATCH STREAK'),
 }}))
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_MULTITASK_STATE_FILE": state_file,
-        "GLUDD_MIN_DISPATCHES": "0",
-        "GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD": "3",
-        "GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS": "60000",
-        "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_MULTITASK_STATE_FILE": state_file,
+            "GLUDD_MIN_DISPATCHES": "0",
+            "GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD": "3",
+            "GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS": "60000",
+            "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
+        },
+    )
     # Calls 1-2 (read/grep): ALLOWED — read tools excluded from counter.
-    assert result["r1_denied"] == False, (
-        f"Call 1 (read) must be allowed — reads excluded from counter. Got: {result}"
-    )
-    assert result["r2_denied"] == False, (
-        f"Call 2 (grep) must be allowed — reads excluded from counter. Got: {result}"
-    )
+    assert result["r1_denied"] == False, f"Call 1 (read) must be allowed — reads excluded from counter. Got: {result}"
+    assert result["r2_denied"] == False, f"Call 2 (grep) must be allowed — reads excluded from counter. Got: {result}"
     # Call 3 (edit): consecutive=1 < threshold=3 → ALLOWED
     assert result["r3_denied"] == False, f"Call 3 (edit) must be allowed (counter=1 < 3). Got: {result}"
     # Call 4 (write): consecutive=2 < threshold=3 → ALLOWED
@@ -1526,9 +1567,7 @@ def test_multitask_text_only_response_next_tool_blocked():
     Call 4 (edit): consecutive=4 >= THRESHOLD → CONSECUTIVE GRINDING
     """
     state_file = f"/tmp/gludd-multitask-text-only-{os.getpid()}.json"
-    _clean_state_files(state_file,
-                       "/tmp/gludd-watchdog-disengage.json",
-                       "/tmp/gludd-force-dispatch.json")
+    _clean_state_files(state_file, "/tmp/gludd-watchdog-disengage.json", "/tmp/gludd-force-dispatch.json")
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
 const plugin = await mod.default({{}})
@@ -1553,18 +1592,19 @@ console.log(JSON.stringify({{
     r4_msg: r4?.message || '',
 }}))
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_MULTITASK_STATE_FILE": state_file,
-        "GLUDD_MIN_DISPATCHES": "10",
-        "GLUDD_MULTITASK_MAX_DISPATCHES": "20",
-        "GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD": "3",
-        "GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS": "60000",
-        "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
-    })
-    # Calls 1-2 are allowed: floor satisfied (15 >= 10), counter below threshold
-    assert result["r1_allowed"] == True, (
-        f"Call 1 (edit) must be ALLOWED: floor satisfied, counter=1 < 3. Got: {result}"
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_MULTITASK_STATE_FILE": state_file,
+            "GLUDD_MIN_DISPATCHES": "10",
+            "GLUDD_MULTITASK_MAX_DISPATCHES": "20",
+            "GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD": "3",
+            "GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS": "60000",
+            "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
+        },
     )
+    # Calls 1-2 are allowed: floor satisfied (15 >= 10), counter below threshold
+    assert result["r1_allowed"] == True, f"Call 1 (edit) must be ALLOWED: floor satisfied, counter=1 < 3. Got: {result}"
     assert result["r2_allowed"] == True, (
         f"Call 2 (write) must be ALLOWED: floor satisfied, counter=2 < 3. Got: {result}"
     )
@@ -1583,6 +1623,50 @@ console.log(JSON.stringify({{
     _clean_state_files(state_file)
 
 
+def test_multitask_zero_dispatch_text_blocked_after_prior_dispatch():
+    """text.complete blocks text for zero-dispatch waves after dispatches made.
+
+    Step 1: dispatch 1 agent (sessionDispatchTotal > 0).
+    Step 2: text.complete → thin-wave block (1 < 2), handleMessageBoundary runs.
+    Step 3: text.complete for new message → thisMessageDispatches=0, sessionDispatchTotal=1 → TEXT BLOCKED.
+
+    Before the fix, the condition was `thisMessageDispatches > 0`, so
+    zero-dispatch waves passed through unblocked. The fix replaces this
+    with `sessionDispatchTotal > 0`.
+    """
+    state_file = f"/tmp/gludd-multitask-zd-{os.getpid()}.json"
+    _clean_state_files(state_file, "/tmp/gludd-watchdog-disengage.json", "/tmp/gludd-force-dispatch.json")
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
+const plugin = await mod.default({{}})
+await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+const r1 = await plugin['experimental.text.complete'](undefined, {{text: 'wave 1 text'}})
+const r2 = await plugin['experimental.text.complete'](undefined, {{text: 'wave 2 text (zero dispatch)'}})
+const wave1Blocked = r1 !== null && r1 !== undefined && (r1.text || '').includes('THIN WAVE')
+const wave2Blocked = r2 !== null && r2 !== undefined && (r2.text || '').includes('THIN WAVE')
+const wave2ZeroBlocked = r2 !== null && r2 !== undefined && (r2.text || '').includes('MUST DISPATCH')
+console.log(JSON.stringify({{
+    wave1Blocked,
+    wave2Blocked,
+    wave2ZeroBlocked,
+    wave1Text: r1?.text || '(none)',
+    wave2Text: r2?.text || '(none)',
+}}))
+"""
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_MULTITASK_STATE_FILE": state_file,
+            "GLUDD_MIN_DISPATCHES": "2",
+            "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
+        },
+    )
+    assert result is not None, f"Expected blocked text, got None"
+    assert result["wave1Blocked"] == True, f"Wave 1 (1 dispatch) must be blocked as thin wave. Got: {result}"
+    assert result["wave2ZeroBlocked"] == True, f"Wave 2 (0 dispatches) must be blocked. Got: {result}"
+    _clean_state_files(state_file)
+
+
 # ---------------------------------------------------------------------------
 # enforce-stop.ts  —  text.complete block for pending work + stop patterns
 # ---------------------------------------------------------------------------
@@ -1594,17 +1678,20 @@ def test_stop_pending_work_text_blanked():
     state_file = os.path.join("/tmp", f"test-stop-state-{os.getpid()}.json")
     _clean_state_files("/tmp/gludd-block-counter.json")
     with open(state_file, "w") as f:
-        json.dump({
-            "ts": int(time.time() * 1000),
-            "ratchetEntries": 3,
-            "tasksMdUnchecked": True,
-            "gateStatusRed": False,
-            "repoPending": False,
-            "hasLocalWork": True,
-            "hasPendingWork": True,
-            "ciVerdictPendingOrRed": False,
-            "healthScore": 30,
-        }, f)
+        json.dump(
+            {
+                "ts": int(time.time() * 1000),
+                "ratchetEntries": 3,
+                "tasksMdUnchecked": True,
+                "gateStatusRed": False,
+                "repoPending": False,
+                "hasLocalWork": True,
+                "hasPendingWork": True,
+                "ciVerdictPendingOrRed": False,
+                "healthScore": 30,
+            },
+            f,
+        )
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
 const plugin = await mod.default({{}})
@@ -1614,9 +1701,12 @@ const finalText = result?.text ?? output.text
 const blocked = finalText !== 'Done. All tasks complete.'
 console.log(JSON.stringify({{blocked, finalText: finalText.slice(0, 200)}}))
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_STOP_STATE_FILE": state_file,
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_STOP_STATE_FILE": state_file,
+        },
+    )
     assert result["blocked"] == True, f"Expected text to be blanked, got: {result}"
     _clean_state_files(state_file)
 
@@ -1624,20 +1714,27 @@ console.log(JSON.stringify({{blocked, finalText: finalText.slice(0, 200)}}))
 @pytest.mark.skip(reason="text.complete removed in opencode 1.17.9")
 def test_stop_no_pending_work():
     state_file = os.path.join("/tmp", f"test-stop-clean-{os.getpid()}.json")
-    _clean_state_files(state_file, "/tmp/gludd-post-results-state.json",
-                       "/tmp/gludd-text-only-state.json", "/tmp/gludd-block-counter.json")
+    _clean_state_files(
+        state_file,
+        "/tmp/gludd-post-results-state.json",
+        "/tmp/gludd-text-only-state.json",
+        "/tmp/gludd-block-counter.json",
+    )
     with open(state_file, "w") as f:
-        json.dump({
-            "ts": int(time.time() * 1000),
-            "ratchetEntries": 0,
-            "tasksMdUnchecked": False,
-            "gateStatusRed": False,
-            "repoPending": False,
-            "hasLocalWork": False,
-            "hasPendingWork": False,
-            "ciVerdictPendingOrRed": False,
-            "healthScore": 100,
-        }, f)
+        json.dump(
+            {
+                "ts": int(time.time() * 1000),
+                "ratchetEntries": 0,
+                "tasksMdUnchecked": False,
+                "gateStatusRed": False,
+                "repoPending": False,
+                "hasLocalWork": False,
+                "hasPendingWork": False,
+                "ciVerdictPendingOrRed": False,
+                "healthScore": 100,
+            },
+            f,
+        )
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
 const plugin = await mod.default({{}})
@@ -1655,17 +1752,20 @@ console.log(JSON.stringify({{passedThrough: finalText === 'All good, no pending 
 def test_stop_env_disabled():
     state_file = os.path.join("/tmp", f"test-stop-disable-{os.getpid()}.json")
     with open(state_file, "w") as f:
-        json.dump({
-            "ts": int(time.time() * 1000),
-            "ratchetEntries": 5,
-            "tasksMdUnchecked": True,
-            "gateStatusRed": False,
-            "repoPending": False,
-            "hasLocalWork": True,
-            "hasPendingWork": True,
-            "ciVerdictPendingOrRed": False,
-            "healthScore": 20,
-        }, f)
+        json.dump(
+            {
+                "ts": int(time.time() * 1000),
+                "ratchetEntries": 5,
+                "tasksMdUnchecked": True,
+                "gateStatusRed": False,
+                "repoPending": False,
+                "hasLocalWork": True,
+                "hasPendingWork": True,
+                "ciVerdictPendingOrRed": False,
+                "healthScore": 20,
+            },
+            f,
+        )
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
 const plugin = await mod.default({{}})
@@ -1674,10 +1774,13 @@ const result = await plugin['experimental.text.complete'](undefined, output)
 const finalText = result?.text ?? output.text
 console.log(JSON.stringify({{passedThrough: finalText === 'Done.'}}))
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_STOP_STATE_FILE": state_file,
-        "GLUDD_STOP_ENFORCE": "0",
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_STOP_STATE_FILE": state_file,
+            "GLUDD_STOP_ENFORCE": "0",
+        },
+    )
     assert result["passedThrough"] == True, f"Expected text to pass through when disabled, got: {result}"
     _clean_state_files(state_file)
 
@@ -1710,17 +1813,20 @@ def test_stop_block_persists_across_turns():
     block_file = os.path.join("/tmp", f"gludd-persist-stop-block-persist-{os.getpid()}.json")
     _clean_state_files(state_file, block_file, "/tmp/gludd-block-counter.json")
     with open(state_file, "w") as f:
-        json.dump({
-            "ts": int(time.time() * 1000),
-            "ratchetEntries": 3,
-            "tasksMdUnchecked": True,
-            "gateStatusRed": False,
-            "repoPending": False,
-            "hasLocalWork": True,
-            "hasPendingWork": True,
-            "ciVerdictPendingOrRed": False,
-            "healthScore": 30,
-        }, f)
+        json.dump(
+            {
+                "ts": int(time.time() * 1000),
+                "ratchetEntries": 3,
+                "tasksMdUnchecked": True,
+                "gateStatusRed": False,
+                "repoPending": False,
+                "hasLocalWork": True,
+                "hasPendingWork": True,
+                "ciVerdictPendingOrRed": False,
+                "healthScore": 30,
+            },
+            f,
+        )
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
 const plugin = await mod.default({{}})
@@ -1739,10 +1845,13 @@ const r4 = await plugin['tool.execute.before']({{tool: 'edit', args: {{}}}}, und
 const editAllowedAfter = r4 === undefined || r4 === null
 console.log(JSON.stringify({{textBlanked, editDenied, dispatchAllowed, editAllowedAfter}}))
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_STOP_STATE_FILE": state_file,
-        "GLUDD_PERSIST_STOP_BLOCK_FILE": block_file,
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_STOP_STATE_FILE": state_file,
+            "GLUDD_PERSIST_STOP_BLOCK_FILE": block_file,
+        },
+    )
     assert result["textBlanked"] == True, f"Expected text to be blanked, got: {result}"
     assert result["editDenied"] == True, f"Expected edit to be denied by persist block, got: {result}"
     assert result["dispatchAllowed"] == True, f"Expected dispatch to be allowed, got: {result}"
@@ -1776,21 +1885,28 @@ console.log(JSON.stringify({{dispatchAllowed, blockFile: '{block_file}'}}))
 def test_stop_no_pending_work_allows():
     state_file = os.path.join("/tmp", f"test-stop-nopending-{os.getpid()}.json")
     block_file = os.path.join("/tmp", f"gludd-persist-stop-block-nopend-{os.getpid()}.json")
-    _clean_state_files(state_file, block_file, "/tmp/gludd-block-counter.json",
-                       "/tmp/gludd-post-results-state.json",
-                       "/tmp/gludd-text-only-state.json")
+    _clean_state_files(
+        state_file,
+        block_file,
+        "/tmp/gludd-block-counter.json",
+        "/tmp/gludd-post-results-state.json",
+        "/tmp/gludd-text-only-state.json",
+    )
     with open(state_file, "w") as f:
-        json.dump({
-            "ts": int(time.time() * 1000),
-            "ratchetEntries": 0,
-            "tasksMdUnchecked": False,
-            "gateStatusRed": False,
-            "repoPending": False,
-            "hasLocalWork": False,
-            "hasPendingWork": False,
-            "ciVerdictPendingOrRed": False,
-            "healthScore": 100,
-        }, f)
+        json.dump(
+            {
+                "ts": int(time.time() * 1000),
+                "ratchetEntries": 0,
+                "tasksMdUnchecked": False,
+                "gateStatusRed": False,
+                "repoPending": False,
+                "hasLocalWork": False,
+                "hasPendingWork": False,
+                "ciVerdictPendingOrRed": False,
+                "healthScore": 100,
+            },
+            f,
+        )
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
 const plugin = await mod.default({{}})
@@ -1803,10 +1919,13 @@ const r2 = await plugin['tool.execute.before']({{tool: 'edit', args: {{}}}}, und
 const editAllowed = r2 === undefined || r2 === null
 console.log(JSON.stringify({{passedThrough, editAllowed}}))
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_STOP_STATE_FILE": state_file,
-        "GLUDD_PERSIST_STOP_BLOCK_FILE": block_file,
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_STOP_STATE_FILE": state_file,
+            "GLUDD_PERSIST_STOP_BLOCK_FILE": block_file,
+        },
+    )
     assert result["passedThrough"] == True, f"Expected text to pass through, got: {result}"
     assert result["editAllowed"] == True, f"Expected edit to be allowed, got: {result}"
     _clean_state_files(state_file, block_file)
@@ -1827,10 +1946,13 @@ const r1 = await plugin['tool.execute.before']({{tool: 'edit', args: {{}}}}, und
 const editAllowed = r1 === undefined || r1 === null
 console.log(JSON.stringify({{editAllowed}}))
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_PERSIST_STOP_BLOCK_FILE": block_file,
-        "OPENCODE_SUBAGENT": "1",
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_PERSIST_STOP_BLOCK_FILE": block_file,
+            "OPENCODE_SUBAGENT": "1",
+        },
+    )
     assert result["editAllowed"] == True, f"Subagent should bypass persist block, got: {result}"
     _clean_state_files(block_file)
 
@@ -1838,20 +1960,27 @@ console.log(JSON.stringify({{editAllowed}}))
 @pytest.mark.skip(reason="text.complete removed in opencode 1.17.9")
 def test_stop_task_result_passes_through_gate_red():
     state_file = os.path.join("/tmp", f"test-stop-taskresult-{os.getpid()}.json")
-    _clean_state_files(state_file, "/tmp/gludd-post-results-state.json",
-                       "/tmp/gludd-text-only-state.json", "/tmp/gludd-block-counter.json")
+    _clean_state_files(
+        state_file,
+        "/tmp/gludd-post-results-state.json",
+        "/tmp/gludd-text-only-state.json",
+        "/tmp/gludd-block-counter.json",
+    )
     with open(state_file, "w") as f:
-        json.dump({
-            "ts": int(time.time() * 1000),
-            "ratchetEntries": 0,
-            "tasksMdUnchecked": True,
-            "gateStatusRed": True,
-            "repoPending": True,
-            "hasLocalWork": True,
-            "hasPendingWork": True,
-            "ciVerdictPendingOrRed": False,
-            "healthScore": 20,
-        }, f)
+        json.dump(
+            {
+                "ts": int(time.time() * 1000),
+                "ratchetEntries": 0,
+                "tasksMdUnchecked": True,
+                "gateStatusRed": True,
+                "repoPending": True,
+                "hasLocalWork": True,
+                "hasPendingWork": True,
+                "ciVerdictPendingOrRed": False,
+                "healthScore": 20,
+            },
+            f,
+        )
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
 const plugin = await mod.default({{}})
@@ -1861,9 +1990,12 @@ const finalText = result?.text ?? output.text
 const passedThrough = finalText === 'task result: test agent completed. Fixed 3 files.'
 console.log(JSON.stringify({{passedThrough}}))
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_STOP_STATE_FILE": state_file,
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_STOP_STATE_FILE": state_file,
+        },
+    )
     assert result["passedThrough"] == True, (
         f"Subagent task_result text MUST pass through even with gate red. Got: {result}"
     )
@@ -2461,7 +2593,9 @@ const result = await plugin['tool.execute.before']({{tool: 'edit', args: {{fileP
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
-    assert result is None or result.get("allowed") == True or result.get("permissionDecision") != "deny", f"Subagent should bypass deletion gate, got: {result}"
+    assert result is None or result.get("allowed") == True or result.get("permissionDecision") != "deny", (
+        f"Subagent should bypass deletion gate, got: {result}"
+    )
 
 
 def test_deletion_env_disabled():
@@ -2556,10 +2690,13 @@ try {{
   console.log(JSON.stringify(result))
 }}
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_SESSION_STATE": state_file,
-        "OPENCODE_SUBAGENT": "1",
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_SESSION_STATE": state_file,
+            "OPENCODE_SUBAGENT": "1",
+        },
+    )
     assert result is not None, "Expected output"
     assert result.get("allowed") == True, f"Subagent should bypass enforcement, got: {result}"
     _clean_state_files(state_file)
@@ -2581,10 +2718,13 @@ try {{
   console.log(JSON.stringify(result))
 }}
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_SESSION_STATE": state_file,
-        "GLUDD_SESSION_START_ENFORCE": "0",
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_SESSION_STATE": state_file,
+            "GLUDD_SESSION_START_ENFORCE": "0",
+        },
+    )
     assert result is not None, "Expected output"
     assert result.get("allowed") == True, f"With ENFORCE=0, tool should be allowed, got: {result}"
     _clean_state_files(state_file)
@@ -2640,8 +2780,7 @@ console.log(JSON.stringify({{readsDone: state.readsDone}}))
     result = _run_ts(code, env_override={"GLUDD_SESSION_STATE": state_file})
     assert result is not None, "Expected JSON output from test"
     assert result["readsDone"] == True, (
-        f"readsDone must be true after reading TASKS.md via output.args.filePath. "
-        f"Got: {result}"
+        f"readsDone must be true after reading TASKS.md via output.args.filePath. Got: {result}"
     )
     _clean_state_files(state_file, hot_module)
 
@@ -2688,17 +2827,13 @@ console.log(JSON.stringify({{readsDone: state.readsDone}}))
 """
     result = _run_ts(code, env_override={"GLUDD_SESSION_STATE": state_file})
     assert result is not None
-    assert result["readsDone"] == False, (
-        f"readsDone must remain false for non-task files. Got: {result}"
-    )
+    assert result["readsDone"] == False, f"readsDone must remain false for non-task files. Got: {result}"
     _clean_state_files(state_file, hot_module)
 
 
 def _session_start_dispatch_then_bash(configured_min: str | None) -> dict:
     label = configured_min or "adaptive"
-    state_file = os.path.join(
-        "/tmp", f"test-ss-dispatch-inc-{label}-{os.getpid()}.json"
-    )
+    state_file = os.path.join("/tmp", f"test-ss-dispatch-inc-{label}-{os.getpid()}.json")
     _fresh_session_state(state_file, readsDone=True, dispatches=0)
     code = f"""\
 const fs = await import('node:fs')
@@ -2739,9 +2874,7 @@ def test_session_start_explicit_minimum_denies_under_dispatch():
     result = _session_start_dispatch_then_bash(configured_min="10")
     assert result["dp1"] == 1, f"Expected dispatches=1 after task call, got: {result}"
     assert result["denied"] is True, f"Configured minimum must deny under-dispatch: {result}"
-    assert result["hasProtocol"] is True, (
-        f"Deny message missing SESSION START PROTOCOL: {result}"
-    )
+    assert result["hasProtocol"] is True, f"Deny message missing SESSION START PROTOCOL: {result}"
 
 
 # ---------------------------------------------------------------------------
@@ -3074,10 +3207,13 @@ const plugin = await mod.default({{}})
 const result = await plugin['tool.execute.before']({{tool: 'bash', command: 'make ship-commit MSG=test'}})
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_COMMIT_LOCK_PATH": lock_path,
-        "OPENCODE_SUBAGENT": "1",
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_COMMIT_LOCK_PATH": lock_path,
+            "OPENCODE_SUBAGENT": "1",
+        },
+    )
     assert result is None or result.get("allowed") == True, f"Subagent should skip, got: {result}"
     _clean_state_files(lock_path)
 
@@ -3094,10 +3230,13 @@ const plugin = await mod.default({{}})
 const result = await plugin['tool.execute.before']({{tool: 'bash', command: 'make ship-commit MSG=test'}})
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
-    result = _run_ts(code, env_override={
-        "GLUDD_COMMIT_LOCK_PATH": lock_path,
-        "GLUDD_COMMIT_LOCK_ENFORCE": "0",
-    })
+    result = _run_ts(
+        code,
+        env_override={
+            "GLUDD_COMMIT_LOCK_PATH": lock_path,
+            "GLUDD_COMMIT_LOCK_ENFORCE": "0",
+        },
+    )
     assert result is None or result.get("allowed") == True, f"Disabled should allow, got: {result}"
     _clean_state_files(lock_path)
 
@@ -3159,4 +3298,5 @@ console.log(JSON.stringify({{
 
 if __name__ == "__main__":
     import pytest
+
     sys.exit(pytest.main([__file__, "-v", *sys.argv[1:]]))
