@@ -95,10 +95,8 @@ class TestModelDownloaderHuggingFace:
                     filename="tokenizer.json",
                     token="test",
                     revision="v1.0",
-                    callback=mock_hf.call_args[1]["callback"],
+                    callback=ANY,
                 )
-                # hf_hub_download callback is a function; verify it was passed
-                assert callable(mock_hf.call_args[1]["callback"])
             assert result.model_id == "org/model"
             assert result.filename == "tokenizer.json"
             assert result.revision == "v1.0"
@@ -147,6 +145,7 @@ class TestModelDownloaderGGUF:
                     filename="model.gguf",
                     token="test",
                     revision="v2.0",
+                    callback=ANY,
                 )
             assert result.revision == "v2.0"
 

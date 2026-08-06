@@ -21,10 +21,7 @@ from pathlib import Path
 
 import yaml
 
-_SCENARIO_ROOT = (
-    Path(__file__).resolve().parents[2]
-    / "molecule" / "playbooks" / "daemon_lifecycle"
-)
+_SCENARIO_ROOT = Path(__file__).resolve().parents[2] / "molecule" / "playbooks" / "daemon_lifecycle"
 _REQUIRED_FILES = (
     "molecule.yml",
     "default/converge.yml",
@@ -91,9 +88,7 @@ class TestDaemonLifecycleConvergePhases:
 
     def test_converge_polls_health_endpoint(self) -> None:
         text = self._converge_text()
-        assert "/healthz" in text, (
-            "converge.yml must poll /healthz — health-readiness is the startup gate."
-        )
+        assert "/healthz" in text, "converge.yml must poll /healthz — health-readiness is the startup gate."
         assert "retries: 30" in text, (
             "converge.yml must poll /healthz with retries: 30 — the 30-second "
             "startup budget is mandated by the scenario spec."
@@ -102,43 +97,37 @@ class TestDaemonLifecycleConvergePhases:
     def test_converge_calls_api_facts(self) -> None:
         text = self._converge_text()
         assert "/api/facts" in text, (
-            "converge.yml must GET /api/facts — verifies the facts aggregator "
-            "responds after startup."
+            "converge.yml must GET /api/facts — verifies the facts aggregator responds after startup."
         )
 
-    def test_converge_calls_api_tasks(self) -> None:
+    def test_converge_calls_api_todos(self) -> None:
         text = self._converge_text()
-        assert "/api/tasks" in text, (
-            "converge.yml must GET /api/tasks — verifies the tasks facet endpoint. "
+        assert "/api/todos" in text, (
+            "converge.yml must call /api/todos — verifies the todos facet endpoint. "
             "(If unimplemented, this scenario is the spec that drives the contract.)"
         )
 
-    def test_converge_posts_playbook_run(self) -> None:
+    def test_converge_posts_todo_submit(self) -> None:
         text = self._converge_text()
-        assert "/api/playbook/run" in text, (
-            "converge.yml must POST /api/playbook/run — verifies the daemon "
-            "accepts playbook-run requests."
+        assert "work_type" in text, (
+            "converge.yml must POST a job body to /api/todos — verifies the daemon accepts job-submission requests."
         )
 
     def test_converge_calls_health_endpoint(self) -> None:
         text = self._converge_text()
         assert "/health" in text, (
-            "converge.yml must GET /health — distinct from /healthz; this is "
-            "the public status probe."
+            "converge.yml must GET /health — distinct from /healthz; this is the public status probe."
         )
 
     def test_converge_sends_sigterm(self) -> None:
         text = self._converge_text()
         assert "SIGTERM" in text or "kill -TERM" in text, (
-            "converge.yml must send SIGTERM to the daemon — graceful shutdown "
-            "is the lifecycle phase under test."
+            "converge.yml must send SIGTERM to the daemon — graceful shutdown is the lifecycle phase under test."
         )
 
     def test_converge_verifies_clean_exit(self) -> None:
         text = self._converge_text()
-        assert "exit" in text.lower(), (
-            "converge.yml must verify the daemon exits cleanly after SIGTERM."
-        )
+        assert "exit" in text.lower(), "converge.yml must verify the daemon exits cleanly after SIGTERM."
 
     def test_converge_verifies_port_released(self) -> None:
         text = self._converge_text()
@@ -157,43 +146,37 @@ class TestDaemonLifecycleVerifyAssertions:
     def test_verify_asserts_startup_within_30s(self) -> None:
         text = self._verify_text()
         assert "Daemon must start within 30 seconds" in text, (
-            "verify.yml must assert 'Daemon must start within 30 seconds' — "
-            "exact mandated error message."
+            "verify.yml must assert 'Daemon must start within 30 seconds' — exact mandated error message."
         )
 
     def test_verify_asserts_health_endpoint_200(self) -> None:
         text = self._verify_text()
         assert "Health endpoint must return 200" in text, (
-            "verify.yml must assert 'Health endpoint must return 200' — "
-            "exact mandated error message."
+            "verify.yml must assert 'Health endpoint must return 200' — exact mandated error message."
         )
 
     def test_verify_asserts_api_facts_list(self) -> None:
         text = self._verify_text()
         assert "/api/facts must return" in text, (
-            "verify.yml must assert /api/facts returns a JSON list/object — "
-            "exact mandated error message."
+            "verify.yml must assert /api/facts returns a JSON list/object — exact mandated error message."
         )
 
-    def test_verify_asserts_playbook_run_accepted(self) -> None:
+    def test_verify_asserts_job_submission_accepted(self) -> None:
         text = self._verify_text()
-        assert "Daemon must accept playbook run requests" in text, (
-            "verify.yml must assert 'Daemon must accept playbook run requests' — "
-            "exact mandated error message."
+        assert "Daemon must accept job submission requests" in text, (
+            "verify.yml must assert 'Daemon must accept job submission requests' — exact mandated error message."
         )
 
     def test_verify_asserts_clean_shutdown(self) -> None:
         text = self._verify_text()
         assert "Daemon must shut down cleanly on SIGTERM" in text, (
-            "verify.yml must assert 'Daemon must shut down cleanly on SIGTERM' — "
-            "exact mandated error message."
+            "verify.yml must assert 'Daemon must shut down cleanly on SIGTERM' — exact mandated error message."
         )
 
     def test_verify_asserts_port_free_after_shutdown(self) -> None:
         text = self._verify_text()
         assert "must be free after shutdown" in text, (
-            "verify.yml must assert 'Port 8000 must be free after shutdown' — "
-            "exact mandated error message."
+            "verify.yml must assert 'Port 8000 must be free after shutdown' — exact mandated error message."
         )
 
 
@@ -207,27 +190,21 @@ class TestDaemonLifecycleSideEffectChecks:
     def test_verify_checks_no_zombie_processes(self) -> None:
         text = self._verify_text()
         assert "zombie" in text.lower(), (
-            "verify.yml must check for zombie processes after shutdown — "
-            "side-effect hygiene requirement."
+            "verify.yml must check for zombie processes after shutdown — side-effect hygiene requirement."
         )
 
     def test_verify_checks_no_leftover_sockets(self) -> None:
         text = self._verify_text()
         assert "socket" in text.lower(), (
-            "verify.yml must check for leftover socket files — "
-            "side-effect hygiene requirement."
+            "verify.yml must check for leftover socket files — side-effect hygiene requirement."
         )
 
     def test_verify_checks_no_tracebacks_in_log(self) -> None:
         text = self._verify_text()
-        assert "Traceback" in text, (
-            "verify.yml must scan daemon log for tracebacks — "
-            "side-effect hygiene requirement."
-        )
+        assert "Traceback" in text, "verify.yml must scan daemon log for tracebacks — side-effect hygiene requirement."
 
     def test_verify_checks_pidfile_cleanup(self) -> None:
         text = self._verify_text()
         assert "PID file" in text or "pid file" in text.lower(), (
-            "verify.yml must verify the PID file is cleaned up after shutdown — "
-            "side-effect hygiene requirement."
+            "verify.yml must verify the PID file is cleaned up after shutdown — side-effect hygiene requirement."
         )

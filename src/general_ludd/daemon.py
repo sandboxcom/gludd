@@ -62,6 +62,7 @@ from general_ludd.execution.engine import ExecutionEngine
 from general_ludd.execution.graph_checkpointer import get_checkpointer
 from general_ludd.filestore.bootstrap import BinaryBootstrapper
 from general_ludd.filestore.store import FileStore as _FS
+from general_ludd.health.local_model_check import local_model_health_check
 
 # Dead-code wiring: ensure all production modules are importable from daemon startup.
 # Each from-import places the symbol name in daemon.py's source text, which the
@@ -73,7 +74,6 @@ from general_ludd.logging.project_log import ProjectLogAdapter
 from general_ludd.mcp.loader import load_mcp_config
 from general_ludd.memory.local import LocalAgentMemory
 from general_ludd.metrics.collector import MetricsCollector
-from general_ludd.health.local_model_check import local_model_health_check
 from general_ludd.models.deployment_health import (
     DeploymentHealthChecker,
     SelfHealingRouter,
@@ -3309,6 +3309,10 @@ def create_daemon_app(
         # headroom. Only the coarse boolean `budget_exhausted` is public; the
         # full numbers live behind the auth'd surface (/api/spend, dashboard).
         budget_exhausted = bool(budget_status.get("paused", False))
+        try:
+            local_model = await local_model_health_check()
+        except Exception:
+            local_model = {"model_exists": False, "llama_cpp_available": False, "memory": {}}
         # N1/C6: a dead/cancelled event-loop task after a successful startup must
         # NOT serve green — the daemon is alive but no longer processing work.
         # Mirror /readyz's check so /healthz also reports degraded in that case
@@ -3325,6 +3329,7 @@ def create_daemon_app(
                 "allow_no_auth": allow_no_auth,
                 "auth_degraded": auth_degraded,
                 "budget_exhausted": budget_exhausted,
+                "local_model": local_model,
             }
         return {
             "status": "healthy",
@@ -3333,6 +3338,7 @@ def create_daemon_app(
             "allow_no_auth": allow_no_auth,
             "auth_degraded": auth_degraded,
             "budget_exhausted": budget_exhausted,
+            "local_model": local_model,
         }
 
     @app.get(

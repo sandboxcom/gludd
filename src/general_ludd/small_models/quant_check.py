@@ -124,14 +124,20 @@ class QuantCheckResult:
         errors: list[str] = list(raw_errors) if isinstance(raw_errors, list) else []
         warnings: list[str] = list(raw_warnings) if isinstance(raw_warnings, list) else []
         tensor_types: dict[str, int] = dict(raw_tensor_types) if isinstance(raw_tensor_types, dict) else {}
+        raw_layer_count = data.get("layer_count", 0)
+        raw_header_version = data.get("header_version", 0)
+        layer_count: int = raw_layer_count if isinstance(raw_layer_count, int) else int(str(raw_layer_count))
+        header_version: int = (
+            raw_header_version if isinstance(raw_header_version, int) else int(str(raw_header_version))
+        )
         return cls(
             valid=bool(data.get("valid", True)),
             errors=errors,
             warnings=warnings,
-            layer_count=int(data.get("layer_count", 0)),  # type: ignore[arg-type]
+            layer_count=layer_count,
             quantization_level=str(data.get("quantization_level", "unknown")),
             tensor_types=tensor_types,
-            header_version=int(data.get("header_version", 0)),  # type: ignore[arg-type]
+            header_version=header_version,
             file_path=str(data.get("file_path", "")),
         )
 

@@ -297,13 +297,35 @@ class LocalInferenceManager:
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.DEVNULL,
-                stderr=stderr_file,
+                stderr=asyncio.subprocess.PIPE,
                 start_new_session=True,
             )
-        server.process = process
-        server.started_at = time.time()
-        server.pid = process.pid
-        await self._wait_for_ready(server)
+            stderr_reader = process.stderr
+            assert stderr_reader is not None
+
+            async def _drain_stderr() -> None:
+                try:
+                    while True:
+                        chunk = await stderr_reader.read(65536)
+                        if not chunk:
+                            break
+                        stderr_file.write(chunk)
+                        stderr_file.flush()
+                except Exception:
+                    pass
+
+            drain_task = asyncio.ensure_future(_drain_stderr())
+            server.process = process
+            server.started_at = time.time()
+            server.pid = process.pid
+
+            try:
+                await self._wait_for_ready(server)
+            finally:
+                drain_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await drain_task
+
         server.status = "running"
         self._emit(
             ModelReadyEvent(

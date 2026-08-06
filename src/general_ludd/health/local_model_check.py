@@ -30,10 +30,7 @@ async def _has_local_gguf(cache_dir: str | None = None) -> bool:
         root = Path(cache_dir or DEFAULT_MODEL_CACHE).expanduser().resolve()
         if not root.is_dir():
             return False
-        for entry in root.rglob("*.gguf"):
-            if entry.is_file() and entry.stat().st_size > 0:
-                return True
-        return False
+        return any(entry.is_file() and entry.stat().st_size > 0 for entry in root.rglob("*.gguf"))
 
     return await asyncio.to_thread(_scan)
 
