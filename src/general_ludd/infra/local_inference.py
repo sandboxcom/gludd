@@ -296,7 +296,7 @@ class LocalInferenceManager:
             server.stderr_path = stderr_file.name
             process = await asyncio.create_subprocess_exec(
                 *cmd,
-                stdout=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.DEVNULL,
                 stderr=stderr_file,
                 start_new_session=True,
             )
