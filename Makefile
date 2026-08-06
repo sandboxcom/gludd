@@ -7574,6 +7574,10 @@ e2e-download-small-model:
 	@echo "=== Model cached at /tmp/gludd-qwen-e2e-model/ ==="
 	@ls -lh /tmp/gludd-qwen-e2e-model/
 
+.PHONY: verify-local-model-quality
+verify-local-model-quality:
+	@$(UV) run python scripts/verify_local_model_quality.py
+
 .PHONY: test-local-model-inference
 test-local-model-inference:
 	@echo "=== Local model inference test ==="

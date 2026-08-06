@@ -38,12 +38,10 @@ import {
 } from "../lib/shared.ts"
 const FLOOR_ENFORCE = process.env.GLUDD_MULTITASK_FLOOR_ENFORCE !== "0"
 const DIVERSITY_ENFORCE = process.env.GLUDD_MULTITASK_DIVERSITY_ENFORCE !== "0"
-const CONFIGURED_MIN_DISPATCHES =
-  process.env.GLUDD_MIN_DISPATCHES || process.env.GLUDD_MULTITASK_MIN_DISPATCHES
-const HAS_CONFIGURED_MIN_DISPATCHES = CONFIGURED_MIN_DISPATCHES !== undefined
-const REQUIRED_DISPATCHES = HAS_CONFIGURED_MIN_DISPATCHES
-  ? Math.max(0, Math.min(MAX_DISPATCHES, Number.isFinite(MIN_DISPATCHES) ? MIN_DISPATCHES : 0))
-  : 0
+// MIN_DISPATCHES is resolved by multitask_config.ts from env vars with a
+// default of 10.  The floor is always active — ten is a hard floor, not a
+// recommendation.  Set GLUDD_MIN_DISPATCHES=0 to disable the floor entirely.
+const REQUIRED_DISPATCHES = Math.max(0, Math.min(MAX_DISPATCHES, Number.isFinite(MIN_DISPATCHES) ? MIN_DISPATCHES : 0))
 const WAVE_HISTORY_SIZE = 10
 const DIVERSITY_THRESHOLD = 0.8
 const TOPIC_CLUSTERS: Record<string, string[]> = {
@@ -214,8 +212,8 @@ function handleMessageBoundary(s: MultitaskState): void {
   if (s.waveHistory.length > WAVE_HISTORY_SIZE) {
     s.waveHistory = s.waveHistory.slice(-WAVE_HISTORY_SIZE)
   }
-  // Count only an operator-configured minimum. Ten is a hard ceiling and a
-  // recommendation for large waves, never an unconditional floor.
+  // REQUIRED_DISPATCHES is always active (default 10). The floor is a hard
+  // block, not a recommendation. Set GLUDD_MIN_DISPATCHES=0 to disable.
   if (REQUIRED_DISPATCHES > 0 && s.prevMessageDispatches < REQUIRED_DISPATCHES) {
     s.underFloorCount++
   } else {
@@ -435,9 +433,8 @@ const defaultImpl: HotModule = {
       // counter (above) is still below threshold. When the streak has already
       // hit threshold, the streak block wins.
       //
-      // A minimum is enforced only when the operator explicitly configured it.
-      // Pressure release may lower that configured requirement, never invent
-      // a minimum for an otherwise adaptive session.
+      // The floor is always active (MIN_DISPATCHES defaults to 10).
+      // Pressure release may temporarily lower the requirement.
       const _isUnderFloorRead = lt === "read" || lt === "grep" || lt === "glob"
       const _isUnderFloorMutation = lt === "edit" || lt === "write" || lt === "bash"
       const _effectiveFloor = REQUIRED_DISPATCHES > 0
