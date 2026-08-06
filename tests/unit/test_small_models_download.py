@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 from general_ludd.small_models.download import (
     DownloadedModel,
@@ -95,7 +95,10 @@ class TestModelDownloaderHuggingFace:
                     filename="tokenizer.json",
                     token="test",
                     revision="v1.0",
+                    callback=mock_hf.call_args[1]["callback"],
                 )
+                # hf_hub_download callback is a function; verify it was passed
+                assert callable(mock_hf.call_args[1]["callback"])
             assert result.model_id == "org/model"
             assert result.filename == "tokenizer.json"
             assert result.revision == "v1.0"
@@ -179,7 +182,7 @@ class TestModelDownloaderProgress:
     def test_progress_callback_updates_state(self):
         d = ModelDownloader(cache_dir="/tmp")
         cb = d._make_progress_callback("test.gguf", 5000)
-        cb(100, 2500, 5000)
+        cb(2500, 5000)
         progress = d.get_progress()
         assert progress.filename == "test.gguf"
         assert progress.downloaded_bytes == 2500
@@ -190,9 +193,9 @@ class TestModelDownloaderProgress:
     def test_progress_callback_resets_on_new_file(self):
         d = ModelDownloader(cache_dir="/tmp")
         cb1 = d._make_progress_callback("a.gguf", 3000)
-        cb1(0, 1500, 3000)
+        cb1(1500, 3000)
         cb2 = d._make_progress_callback("b.gguf", 2000)
-        cb2(0, 500, 2000)
+        cb2(500, 2000)
         progress = d.get_progress()
         assert progress.filename == "b.gguf"
         assert progress.total_bytes == 2000
@@ -201,15 +204,15 @@ class TestModelDownloaderProgress:
     def test_progress_last_bytes_reset_only_when_restart(self):
         d = ModelDownloader(cache_dir="/tmp")
         cb = d._make_progress_callback("test.gguf", 10000)
-        cb(0, 3000, 10000)
-        cb(0, 7000, 10000)
+        cb(3000, 10000)
+        cb(7000, 10000)
         progress = d.get_progress()
         assert progress.downloaded_bytes == 7000
 
     def test_progress_status_done(self):
         d = ModelDownloader(cache_dir="/tmp")
         cb = d._make_progress_callback("test.gguf", 5000)
-        cb(0, 5000, 5000)
+        cb(5000, 5000)
         progress = d.get_progress()
         assert progress.percent == 100.0
 

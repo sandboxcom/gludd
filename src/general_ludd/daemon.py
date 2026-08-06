@@ -73,6 +73,7 @@ from general_ludd.logging.project_log import ProjectLogAdapter
 from general_ludd.mcp.loader import load_mcp_config
 from general_ludd.memory.local import LocalAgentMemory
 from general_ludd.metrics.collector import MetricsCollector
+from general_ludd.health.local_model_check import local_model_health_check
 from general_ludd.models.deployment_health import (
     DeploymentHealthChecker,
     SelfHealingRouter,
@@ -1037,6 +1038,52 @@ def _configure_network_state(app: Any, network: Any) -> None:
     app.state._network_port = network.port
 
 
+_LOCAL_PROVIDERS: frozenset[str] = frozenset({"llamacpp", "vllm"})
+
+
+async def _warm_start_local_models(model_gateway: object) -> None:
+    import httpx
+
+    local: list[object] = []
+    for _pid, _profile in getattr(model_gateway, "_profiles", {}).items():
+        if (
+            getattr(_profile, "resource_profile", "") == "local_heavy"
+            or getattr(_profile, "provider", "") in _LOCAL_PROVIDERS
+        ):
+            local.append(_profile)
+
+    if not local:
+        return
+
+    logger.info("Warm-start: pre-loading %d local model(s)...", len(local))
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
+        for _profile in local:
+            _alias = getattr(_profile, "api_base_alias", None)
+            _base = os.environ.get(_alias) if isinstance(_alias, str) else None
+            if not _base:
+                logger.info(
+                    "Warm-start: skipping %s — no base URL resolved",
+                    getattr(_profile, "model_profile_id", "?"),
+                )
+                continue
+
+            try:
+                _url = _base.rstrip("/") + "/health"
+                _r = await client.get(_url)
+                logger.info(
+                    "Warm-start: %s ping OK (%d)",
+                    getattr(_profile, "model_profile_id", "?"),
+                    _r.status_code,
+                )
+            except Exception as _exc:
+                logger.info(
+                    "Warm-start: %s warm-up skipped (%s)",
+                    getattr(_profile, "model_profile_id", "?"),
+                    _exc,
+                )
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     tick_interval = app.state.tick_interval
@@ -1513,6 +1560,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 langsmith_tracer=app.state.langsmith_tracer,
             )
             app.state._model_gateway = model_gateway
+
+            await _warm_start_local_models(model_gateway)
 
             semantic_searcher = SemanticSearcher()
             app.state._semantic_searcher = semantic_searcher

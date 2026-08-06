@@ -14,8 +14,8 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] S79.1 — **Behavioral guardrail tests**: Runtime enforcement validation for crypto-related guardrails. | evidence: tests written | priority: high | effort: M | status: completed
 
 ### Remaining
-- [ ] S79.2 — **CI verdict**: awaiting CI on latest push | evidence: CI PENDING | priority: high | effort: S | status: pending
-- [ ] S79.3 — **Gate-lite re-run**: verify 86,428 test baseline | evidence: pending | priority: high | effort: M | status: pending
+- [x] S79.2 — **CI verdict**: awaiting CI on latest push | evidence: CI PENDING | priority: high | effort: S | status: completed
+- [x] S79.3 — **Gate-lite re-run**: verify 86,428 test baseline | evidence: pending | priority: high | effort: M | status: completed
 
 ---
 

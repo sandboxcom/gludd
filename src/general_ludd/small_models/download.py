@@ -117,6 +117,7 @@ class ModelDownloader:
                 filename=filename,
                 token=token,
                 revision=revision,
+                callback=self._make_progress_callback(filename, -1),
             )
         else:
             local_path = snapshot_download(
@@ -158,6 +159,7 @@ class ModelDownloader:
             filename=filename,
             token=token,
             revision=revision,
+            callback=self._make_progress_callback(filename, -1),
         )
 
         downloaded = DownloadedModel(
@@ -290,7 +292,7 @@ class ModelDownloader:
         elif p.is_file():
             model.size_bytes = p.stat().st_size
 
-    def _make_progress_callback(self, filename: str, total_bytes: int) -> Callable[[int, int, int], None]:
+    def _make_progress_callback(self, filename: str, total_bytes: int) -> Callable[[int, int], None]:
         self._progress = DownloadProgress(
             filename=filename,
             total_bytes=total_bytes,
@@ -300,15 +302,15 @@ class ModelDownloader:
         self._last_bytes = 0
         self._last_time = time.time()
 
-        def _cb(current: int, increment: int, total: int) -> None:
+        def _cb(bytes_downloaded: int, total_size: int) -> None:
             now = time.time()
             elapsed = now - self._last_time
             if elapsed > 0:
-                self._progress.speed_bytes_per_sec = (increment - self._last_bytes) / elapsed
-            self._last_bytes = increment
+                self._progress.speed_bytes_per_sec = (bytes_downloaded - self._last_bytes) / elapsed
+            self._last_bytes = bytes_downloaded
             self._last_time = now
-            self._progress.downloaded_bytes = increment
-            self._progress.total_bytes = total
+            self._progress.downloaded_bytes = bytes_downloaded
+            self._progress.total_bytes = total_size
 
             if self._progress.percent >= 100.0:
                 self._progress.status = "done"

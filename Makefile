@@ -7578,6 +7578,10 @@ e2e-download-small-model:
 verify-local-model-quality:
 	@$(UV) run python scripts/verify_local_model_quality.py
 
+.PHONY: benchmark-local-model
+benchmark-local-model:
+	@$(UV) run python scripts/benchmark_local_model.py
+
 .PHONY: test-local-model-inference
 test-local-model-inference:
 	@echo "=== Local model inference test ==="

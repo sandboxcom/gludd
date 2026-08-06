@@ -26,6 +26,19 @@ import pytest
 
 _MODEL_REPO = "bartowski/Qwen2.5-0.5B-Instruct-GGUF"
 _MODEL_FILE = "Qwen2.5-0.5B-Instruct-Q4_K_M.gguf"
+_E2E_MODEL_CACHE_DIR = "/tmp/gludd-qwen-e2e-model"
+
+
+def _find_cached_gguf() -> str | None:
+    """Return path to first .gguf file in the E2E cache dir, or None."""
+    cache = Path(_E2E_MODEL_CACHE_DIR)
+    if not cache.is_dir():
+        return None
+    for f in cache.iterdir():
+        if f.suffix == ".gguf" and f.is_file():
+            return str(f)
+    return None
+
 
 _SNAKE_PROMPT = """Write a complete, self-contained Python Snake game as a single class.
 
@@ -113,7 +126,7 @@ class TestGameGenRealModel:
         from general_ludd.models.gateway import ModelGateway, ModelProfile
         from general_ludd.models.provider_registry import ProviderRegistry
         from general_ludd.secrets.env import EnvSecretsManager
-        from general_ludd.small_models.download import ModelDownloader
+        from general_ludd.small_models.download import DownloadedModel, DownloadSource, ModelDownloader
 
         global _TMPDIR
 
@@ -122,15 +135,25 @@ class TestGameGenRealModel:
         mgr = None
 
         try:
-            # ── Step 1: Download model ──
-            downloader = ModelDownloader(cache_dir=tmpdir)
-            try:
-                model = downloader.download_gguf(_MODEL_REPO, _MODEL_FILE)
-            except Exception as exc:
-                pytest.skip(f"Model download failed: {exc}")
+            # ── Step 1: Download model (skip if cache hit) ──
+            cached_path = _find_cached_gguf()
+            if cached_path is not None and os.path.isfile(cached_path):
+                model = DownloadedModel(
+                    model_id=_MODEL_REPO,
+                    local_path=cached_path,
+                    source=DownloadSource.CACHE,
+                    filename=os.path.basename(cached_path),
+                    size_bytes=os.path.getsize(cached_path),
+                )
+            else:
+                downloader = ModelDownloader(cache_dir=tmpdir)
+                try:
+                    model = downloader.download_gguf(_MODEL_REPO, _MODEL_FILE)
+                except Exception as exc:
+                    pytest.skip(f"Model download failed: {exc}")
 
             assert model.local_path, "download must produce a local path"
-            assert os.path.isfile(model.local_path), f"downloaded file not found: {model.local_path}"
+            assert os.path.isfile(model.local_path), f"model file not found: {model.local_path}"
             assert model.size_bytes > 0, "downloaded model must have non-zero size"
 
             # ── Step 2: Start llama.cpp server ──
