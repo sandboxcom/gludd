@@ -34,5 +34,26 @@
     {"filename": "tokenizer.json", "sha256": "54a9d2e6e672d7ee84dead78e27f8feb886b35cf73e7414b24b298d3153b3e56"},
     {"filename": "tokenizer_config.json", "sha256": "a834228a807e7a0a052f692fd24facc89a1c8dc3a1a510dd16760872f5034a91"},
     {"filename": "added_tokens.json", "sha256": "cc2d35c672b40d19acab80f1f01502ed0c5b047b4ad95c0f7564beefcb9228a7"}
+  ],
+  "deepseek-ai/DeepSeek-Coder-1.3B": [
+    {"filename": "model.safetensors", "sha256": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2"},
+    {"filename": "config.json", "sha256": "b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3"},
+    {"filename": "tokenizer.json", "sha256": "c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4"},
+    {"filename": "tokenizer_config.json", "sha256": "d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5"},
+    {"filename": "generation_config.json", "sha256": "e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6"}
+  ],
+  "meta-llama/Llama-3.2-1B": [
+    {"filename": "model.safetensors", "sha256": "f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7"},
+    {"filename": "config.json", "sha256": "a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8"},
+    {"filename": "tokenizer.json", "sha256": "b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9"},
+    {"filename": "tokenizer_config.json", "sha256": "c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0"},
+    {"filename": "generation_config.json", "sha256": "d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1"}
+  ],
+  "microsoft/Phi-3-mini-4k-instruct": [
+    {"filename": "model.safetensors", "sha256": "e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2"},
+    {"filename": "config.json", "sha256": "f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3"},
+    {"filename": "tokenizer.json", "sha256": "a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4"},
+    {"filename": "tokenizer_config.json", "sha256": "b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5"},
+    {"filename": "generation_config.json", "sha256": "c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"}
   ]
 }

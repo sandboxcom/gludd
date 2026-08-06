@@ -1,0 +1,30 @@
+# Model Profile: Llama 3.2 1B
+# ================================
+# PURPOSE: Lightweight local/cloud inference for general coding and chat tasks.
+# REQUIRED: Set LLAMA_API_KEY and LLAMA_BASE_URL environment variables.
+#
+model_profile_id: llama_32
+role_names:
+  - coder
+  - reviewer
+provider: openai
+provider_package: langchain_openai
+provider_class_hint: ChatOpenAI
+model_name: meta-llama/Llama-3.2-1B
+credential_alias: LLAMA_API_KEY
+api_base_alias: LLAMA_BASE_URL
+context_window: 131072
+max_input_tokens: 120000
+max_output_tokens: 4096
+cost_per_input_token: 0.00015
+cost_per_output_token: 0.0003
+api_metered: true
+run_budget_usd: 2.0
+enabled: true
+resource_profile: ai_heavy
+roles:
+  - coder
+latency_class: fast
+quality_class: medium
+fallback_profiles: []
+probe_enabled: false

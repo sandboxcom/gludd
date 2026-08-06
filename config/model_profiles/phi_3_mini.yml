@@ -1,0 +1,30 @@
+# Model Profile: Phi-3 Mini 4K Instruct
+# ================================
+# PURPOSE: Lightweight on-device / edge inference for code completion and chat.
+# REQUIRED: Set PHI3_API_KEY and PHI3_BASE_URL environment variables.
+#
+model_profile_id: phi_3_mini
+role_names:
+  - coder
+  - reviewer
+provider: openai
+provider_package: langchain_openai
+provider_class_hint: ChatOpenAI
+model_name: microsoft/Phi-3-mini-4k-instruct
+credential_alias: PHI3_API_KEY
+api_base_alias: PHI3_BASE_URL
+context_window: 4096
+max_input_tokens: 3500
+max_output_tokens: 2048
+cost_per_input_token: 0.0001
+cost_per_output_token: 0.0002
+api_metered: true
+run_budget_usd: 1.0
+enabled: true
+resource_profile: ai_heavy
+roles:
+  - coder
+latency_class: fast
+quality_class: medium
+fallback_profiles: []
+probe_enabled: false

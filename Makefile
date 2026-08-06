@@ -7555,7 +7555,7 @@ azure-event-guard-status:
 	@echo "--- Last 15 log lines ---"
 	@tail -15 .gate-logs/azure-event-guard.log 2>/dev/null || echo "No log yet"
 
-.PHONY: e2e-test-gen-pipeline e2e-test-gen-pipeline-dogfood collect-specific fix-e501-golden clean-relative check-rag-wrapper user-test-batch azure-event-guard-start azure-event-guard-stop azure-event-guard-check azure-event-guard-status check-e2e-small-model-prereq e2e-download-small-model
+.PHONY: e2e-test-gen-pipeline e2e-test-gen-pipeline-dogfood collect-specific fix-e501-golden clean-relative check-rag-wrapper user-test-batch azure-event-guard-start azure-event-guard-stop azure-event-guard-check azure-event-guard-status check-e2e-small-model-prereq e2e-download-small-model download-1.5b-model download-phi3-mini test-phi3-mini-game-gen
 
 check-e2e-small-model-prereq:
 	@echo "=== E2E small model pipeline prerequisites ==="
@@ -7574,6 +7574,22 @@ e2e-download-small-model:
 	@echo "=== Model cached at /tmp/gludd-qwen-e2e-model/ ==="
 	@ls -lh /tmp/gludd-qwen-e2e-model/
 
+download-1.5b-model:
+	@echo "=== Downloading Qwen2.5-1.5B-Instruct-Q4_K_M GGUF (~1.0 GB) ==="
+	@$(UV) run python scripts/download_1_5b_model.py
+	@echo "=== Model cached at /tmp/gludd-qwen-1.5b-model/ ==="
+	@ls -lhS /tmp/gludd-qwen-1.5b-model/
+
+download-phi3-mini:
+	@echo "=== Downloading Phi-3.1-mini-4k-instruct GGUF (~2.2 GB) ==="
+	@$(UV) run python scripts/download_phi3_mini.py
+	@echo "=== Model cached at /tmp/gludd-phi3-mini-model/ ==="
+	@ls -lhS /tmp/gludd-phi3-mini-model/
+
+test-phi3-mini-game-gen: download-phi3-mini
+	@echo "=== Phi-3.1-mini-4k game gen quality + speed benchmark ==="
+	@$(UV) run python scripts/download_phi3_mini.py
+
 .PHONY: verify-local-model-quality
 verify-local-model-quality:
 	@$(UV) run python scripts/verify_local_model_quality.py
@@ -7581,6 +7597,14 @@ verify-local-model-quality:
 .PHONY: benchmark-local-model
 benchmark-local-model:
 	@$(UV) run python scripts/benchmark_local_model.py
+
+.PHONY: benchmark-models
+benchmark-models:
+	@$(UV) run python scripts/benchmark_models.py
+
+.PHONY: run-game-gen-1.5b
+run-game-gen-1.5b:
+	@$(UV) run python scripts/run_game_gen_1_5b.py
 
 .PHONY: test-local-model-inference
 test-local-model-inference:
