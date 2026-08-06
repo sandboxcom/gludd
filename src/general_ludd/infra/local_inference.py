@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import signal
+import tempfile
 import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -131,6 +132,7 @@ class LocalServer:
     started_at: float = 0.0
     endpoint_url: str = ""
     pid: int | None = None
+    stderr_path: str | None = None
 
     @property
     def uptime_seconds(self) -> float:
@@ -290,12 +292,14 @@ class LocalInferenceManager:
     ) -> LocalServer:
         cmd = self._build_command(config)
         logger.info("Starting local inference server %s: %s", server.server_id, " ".join(cmd))
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            start_new_session=True,
-        )
+        with tempfile.NamedTemporaryFile(mode="w+b", delete=False, prefix="gludd-llama-stderr-") as stderr_file:
+            server.stderr_path = stderr_file.name
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=stderr_file,
+                start_new_session=True,
+            )
         server.process = process
         server.started_at = time.time()
         server.pid = process.pid
@@ -334,11 +338,17 @@ class LocalInferenceManager:
         deadline = time.time() + server.config.startup_timeout
         poll_interval = 2.0
 
-        async def _read_stderr(process: asyncio.subprocess.Process) -> str:
-            if process.stderr is None:
+        async def _read_stderr(stderr_path: str | None) -> str:
+            if stderr_path is None:
                 return "(stderr not captured)"
             try:
-                raw = await process.stderr.read()
+
+                def _read_file(path: str) -> bytes:
+                    with open(path, "rb") as f:
+                        return f.read()
+
+                loop = asyncio.get_running_loop()
+                raw = await loop.run_in_executor(None, _read_file, stderr_path)
                 return raw.decode(errors="replace")[-4000:]
             except Exception:
                 return "(could not read stderr)"
@@ -346,7 +356,7 @@ class LocalInferenceManager:
         while time.time() < deadline:
             if server.process is not None and server.process.returncode is not None:
                 server.status = "error"
-                stderr_tail = await _read_stderr(server.process)
+                stderr_tail = await _read_stderr(server.stderr_path)
                 logger.error(
                     "Server %s crashed (exit=%d). stderr tail:\n%s",
                     server.server_id,
@@ -371,8 +381,8 @@ class LocalInferenceManager:
 
         server.status = "error"
         stderr_tail = ""
-        if server.process is not None:
-            stderr_tail = await _read_stderr(server.process)
+        if server.stderr_path is not None:
+            stderr_tail = await _read_stderr(server.stderr_path)
         raise RuntimeError(
             f"Local inference server {server.server_id!r} did not become ready "
             f"within {server.config.startup_timeout}s (health URL: {health_url})."
@@ -478,6 +488,10 @@ class LocalInferenceManager:
         server.status = "stopped"
         server.process = None
         server.pid = None
+        if server.stderr_path is not None:
+            with contextlib.suppress(OSError):
+                os.unlink(server.stderr_path)
+            server.stderr_path = None
         logger.info("Stopped local inference server %s", server_id)
 
     async def stop_all(self) -> None:
