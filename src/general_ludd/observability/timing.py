@@ -139,9 +139,7 @@ class DurationTracker:
         return verdict
 
     @contextmanager
-    def track(
-        self, key: str, *, on_anomaly: Callable[[DurationVerdict], None] | None = None
-    ) -> Iterator[None]:
+    def track(self, key: str, *, on_anomaly: Callable[[DurationVerdict], None] | None = None) -> Iterator[None]:
         """Time the wrapped block, record it, and act on an anomalous duration.
 
         On exit records the elapsed time; if it is anomalously slow, logs a
@@ -161,7 +159,7 @@ class DurationTracker:
                     try:
                         on_anomaly(verdict)
                     except Exception:  # a callback must never break the caller
-                        logger.exception("on_anomaly callback failed for %s", key)
+                        logger.warning("on_anomaly callback failed for %s", key)
 
 
 @dataclass
@@ -176,10 +174,7 @@ class StallReport:
     thread_stacks: dict[str, str] = field(default_factory=dict)
 
     def __str__(self) -> str:  # pragma: no cover - trivial
-        return (
-            f"STALL {self.key} (op {self.op_id}): {self.elapsed_s:.1f}s elapsed, "
-            f"deadline {self.deadline_s:.1f}s"
-        )
+        return f"STALL {self.key} (op {self.op_id}): {self.elapsed_s:.1f}s elapsed, deadline {self.deadline_s:.1f}s"
 
 
 def capture_thread_stacks() -> dict[str, str]:
@@ -278,7 +273,7 @@ class StallWatchdog:
                 try:
                     self._on_stall(report)
                 except Exception:  # a callback must never break the sweep
-                    logger.exception("on_stall callback failed for %s", report.op_id)
+                    logger.warning("on_stall callback failed for %s", report.op_id)
         return newly
 
     def start_sweeper(self, interval_s: float = 5.0) -> None:
@@ -292,11 +287,9 @@ class StallWatchdog:
                 try:
                     self.poll()
                 except Exception:  # pragma: no cover - the sweep must never die
-                    logger.exception("stall sweeper poll failed")
+                    logger.warning("stall sweeper poll failed")
 
-        self._sweeper = threading.Thread(
-            target=_run, name="stall-watchdog", daemon=True
-        )
+        self._sweeper = threading.Thread(target=_run, name="stall-watchdog", daemon=True)
         self._sweeper.start()
 
     def stop_sweeper(self) -> None:
