@@ -31,9 +31,9 @@
         name: huggingface_hub
         state: present
 
-    - name: "Download GGUF via huggingface-cli"
+    - name: "Download GGUF via hf"
       ansible.builtin.command: >-
-        huggingface-cli download {{ model_repo }} {{ model_file }}
+        hf download {{ model_repo }} {{ model_file }}
         --local-dir {{ model_download_dir }}/{{ model_repo | regex_replace('/', '_') }}
       args:
         creates: "{{ _model_path }}"
