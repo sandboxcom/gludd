@@ -1,0 +1,1 @@
+/Users/shawnwilson/gludd/.opencode/plugin/enforce-depth.test.node.mjs

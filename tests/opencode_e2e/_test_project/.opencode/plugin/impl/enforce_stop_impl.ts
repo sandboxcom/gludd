@@ -1,0 +1,1 @@
+/Users/shawnwilson/gludd/.opencode/plugin/impl/enforce_stop_impl.ts

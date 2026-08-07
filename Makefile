@@ -1983,6 +1983,15 @@ test-opencode-e2e:
 	@$(UV) run python -m pytest tests/e2e/test_opencode_plugin_load.py tests/opencode_e2e/test_multitask_behavior.py -v
 test-multitask-e2e:
 	@TMPDIR=$${TMPDIR:-/tmp} $(UV) run python -m pytest tests/opencode_e2e/test_multitask_behavior.py -v --timeout=3600 --tb=short
+test-spawner-e2e:
+	@$(UV) run python tests/opencode_e2e/run_spawner_test.py
+diag-opencode:
+	@opencode --help 2>&1 || echo "EXIT: $$?"
+	@opencode --version 2>&1 || echo "EXIT: $$?"
+	@echo "---"
+	@ls -la /tmp/gludd-opencode-e2e/ 2>&1 || true
+diag-opencode-run:
+	@opencode run --help 2>&1
 bisect-ts-parse:
 	@$(PYTHON) scripts/bisect_ts_parse.py
 

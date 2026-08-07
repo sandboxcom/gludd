@@ -1,0 +1,1 @@
+/Users/shawnwilson/gludd/.opencode/plugin/enforce-tdd.test.node.mjs
