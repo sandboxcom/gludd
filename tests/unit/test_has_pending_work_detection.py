@@ -20,7 +20,7 @@ def _plugin_source() -> str:
 
 def _extract_has_pending_work_body() -> str:
     src = _plugin_source()
-    m = re.search(r"function hasPendingWork\(\).*?\{([\s\S]*?)^\s*\}", src, re.MULTILINE)
+    m = re.search(r"function hasPendingWork\(\).*?\{([\s\S]*?)\n\}", src)
     assert m, "could not extract hasPendingWork body"
     return m.group(1)
 

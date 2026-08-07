@@ -42,8 +42,7 @@ class ReloadRequest(BaseModel):
 class RollbackRequest(BaseModel):
     module_names: list[str] | None = Field(
         default=None,
-        description="Module names to restore. When None, restores all modules "
-        "in the most recent snapshot.",
+        description="Module names to restore. When None, restores all modules in the most recent snapshot.",
     )
 
 
@@ -57,8 +56,7 @@ class RegisterWorkerRequest(BaseModel):
         """Reject non-safe worker addresses at registration time (SSRF/PSK-leak guard)."""
         if not is_safe_fetch_url(v):
             raise ValueError(
-                "address must use https and must not target loopback, link-local, "
-                "RFC-1918, or cloud-metadata addresses"
+                "address must use https and must not target loopback, link-local, RFC-1918, or cloud-metadata addresses"
             )
         return v
 
@@ -76,8 +74,7 @@ class RegisterHookRequest(BaseModel):
         """Reject non-safe URLs at registration time (SSRF guard)."""
         if not is_safe_fetch_url(v):
             raise ValueError(
-                "url must use https and must not target loopback, link-local, "
-                "RFC-1918, or cloud-metadata addresses"
+                "url must use https and must not target loopback, link-local, RFC-1918, or cloud-metadata addresses"
             )
         return v
 
@@ -89,21 +86,15 @@ class RegisterHookRequest(BaseModel):
             return v
         for key, val in v.items():
             if len(key) > _MAX_HEADER_KEY_LEN:
-                raise ValueError(
-                    f"header key exceeds maximum length of {_MAX_HEADER_KEY_LEN}: {key!r}"
-                )
+                raise ValueError(f"header key exceeds maximum length of {_MAX_HEADER_KEY_LEN}: {key!r}")
             if len(val) > _MAX_HEADER_VAL_LEN:
-                raise ValueError(
-                    f"header value for {key!r} exceeds maximum length of {_MAX_HEADER_VAL_LEN}"
-                )
+                raise ValueError(f"header value for {key!r} exceeds maximum length of {_MAX_HEADER_VAL_LEN}")
             if key.lower() in _FORBIDDEN_HEADERS:
-                raise ValueError(
-                    f"header {key!r} is not permitted in webhook registrations"
-                )
+                raise ValueError(f"header {key!r} is not permitted in webhook registrations")
         return v
 
 
-def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+def _register_admin_routes(app: FastAPI) -> None:
 
     @app.post("/admin/reload")
     async def admin_reload(req: ReloadRequest) -> dict[str, object]:
@@ -122,24 +113,22 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         # Snapshot modules before reload so a failed reload can be rolled back.
         import logging
         import sys
+
         _rl_logger = logging.getLogger(__name__)
         names_to_snapshot = req.snapshot_modules
         if names_to_snapshot is None:
-            names_to_snapshot = [
-                n for n in sys.modules
-                if n.startswith("general_ludd") and sys.modules[n] is not None
-            ]
+            names_to_snapshot = [n for n in sys.modules if n.startswith("general_ludd") and sys.modules[n] is not None]
         if names_to_snapshot:
             pre_snapshot = snapshot_modules(names_to_snapshot)
             app.state._module_snapshot = pre_snapshot
             _rl_logger.info(
                 "module snapshot taken: %d modules, %d warnings",
-                len(pre_snapshot.modules), len(pre_snapshot.warnings),
+                len(pre_snapshot.modules),
+                len(pre_snapshot.warnings),
             )
 
         reloader = HotReloader(
-            config_dir=app.state._config_dir
-            or str(project_state().directory("config")),
+            config_dir=app.state._config_dir or str(project_state().directory("config")),
             event_bus=subsys["bus"],
             hook_system=subsys["hooks"],
             worker_broadcaster=subsys["broadcaster"],
@@ -165,9 +154,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.post("/admin/rollback")
     async def admin_rollback(req: RollbackRequest) -> dict[str, object]:
-        snapshot: ModuleSnapshot | None = getattr(
-            app.state, "_module_snapshot", None
-        )
+        snapshot: ModuleSnapshot | None = getattr(app.state, "_module_snapshot", None)
         if snapshot is None or not snapshot.modules:
             return {
                 "success": False,
@@ -175,10 +162,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 "restored": [],
             }
         if req.module_names is not None:
-            filtered = {
-                n: m for n, m in snapshot.modules.items()
-                if n in set(req.module_names)
-            }
+            filtered = {n: m for n, m in snapshot.modules.items() if n in set(req.module_names)}
             snapshot = ModuleSnapshot(
                 modules=filtered,
                 snapshot_at=snapshot.snapshot_at,
@@ -240,10 +224,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     async def admin_reload_status() -> dict[str, object]:
         subsys = _get_or_create_subsystems(app)
         history = subsys["bus"].get_history()
-        recent = [
-            {"type": e.type, "payload": e.payload, "timestamp": e.timestamp}
-            for e in history[-20:]
-        ]
+        recent = [{"type": e.type, "payload": e.payload, "timestamp": e.timestamp} for e in history[-20:]]
         return {"recent_events": recent, "total_events": len(history)}
 
     @app.post("/admin/templates/refresh")
@@ -324,9 +305,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         subsys = _get_or_create_subsystems(app)
         from general_ludd.reload.worker_broadcast import WorkerInfo
 
-        subsys["broadcaster"].register(
-            WorkerInfo(worker_id=req.worker_id, address=req.address)
-        )
+        subsys["broadcaster"].register(WorkerInfo(worker_id=req.worker_id, address=req.address))
         registered = subsys["broadcaster"].list_workers()
         was_registered = any(w.worker_id == req.worker_id for w in registered)
         return {
@@ -356,6 +335,9 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 for w in workers
             ]
         }
+
+
+def _register_agent_routes(app: FastAPI) -> None:
 
     @app.get("/admin/agents")
     async def admin_list_agents() -> dict[str, object]:
@@ -420,3 +402,8 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     async def admin_metrics_report() -> dict[str, object]:
         ext = _get_or_create_extended_subsystems(app)
         return cast(dict[str, object], ext["metrics"].get_full_report())
+
+
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+    _register_admin_routes(app)
+    _register_agent_routes(app)
