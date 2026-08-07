@@ -1,0 +1,9 @@
+---
+# trip_planner role defaults
+
+trip_destination: ""
+trip_origin: ""
+trip_start_date: ""
+trip_end_date: ""
+trip_budget: ""
+trip_travelers: 1

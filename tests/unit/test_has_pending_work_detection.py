@@ -65,7 +65,7 @@ class TestCheckboxDetection:
         # Checkbox regex is delegated to hasTasksMdPendingWork() in shared.ts.
         # Verify delegation exists and the regex is present in shared.ts.
         assert "hasTasksMdPendingWork" in body
-        import_path = PLUGIN_PATH.parent / "lib" / "shared.ts"
+        import_path = PLUGIN_PATH.parent.parent / "lib" / "shared.ts"
         shared_src = import_path.read_text() if import_path.exists() else ""
         assert "/^\\s*[-*]\\s*\\[\\s*\\]/" in shared_src.replace(" ", "").replace("\t", "")
 
@@ -107,13 +107,21 @@ class TestTableRowDetection:
                 f"unexpected keyword '{kw}' in hasPendingWork — "
                 "table-row detection was NOT expected but appears present"
             )
-        # "pending" appears legitimately in function name hasTasksMdPendingWork;
-        # strip those references then verify no table-row detection remains.
-        cleaned = re.sub(r"\bhastasksmdpendingwork\b", "", body_lower)
+        # "pending" appears in hasTasksMdPendingWork function name + todowrite check;
+        # strip both references then verify no table-row detection remains.
+        cleaned = body_lower
+        cleaned = re.sub(r"\bhastasksmdpendingwork\b", "", cleaned)
+        cleaned = re.sub(r'"pending"', "", cleaned)
         assert "pending" not in cleaned, (
-            "unexpected keyword 'pending' in hasPendingWork outside function-name context — "
+            "unexpected keyword 'pending' in hasPendingWork outside function-name / todowrite context — "
             "table-row detection was NOT expected but appears present"
         )
+        # Verify table-row detection IS in shared.ts (hasTasksMdPendingWork delegate)
+        shared_import = PLUGIN_PATH.parent.parent / "lib" / "shared.ts"
+        shared_src = shared_import.read_text() if shared_import.exists() else ""
+        assert "NOT STARTED" in shared_src
+        assert "IN PROGRESS" in shared_src
+        assert "PENDING" in shared_src
 
 
 # ── 3. Unresolved BUGS.md entries ─────────────────────────────────────────────
@@ -365,7 +373,7 @@ class TestStructuralPins:
 
     def test_called_from_text_complete(self):
         src = _plugin_source()
-        assert "handleMessageBoundary" in src.split("handleTextComplete")[1]
+        assert "handleMessageBoundary" in src.split("handleTextComplete")[3]
 
     def test_wrapped_in_try_catch(self):
         body = _extract_has_pending_work_body()

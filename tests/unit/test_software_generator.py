@@ -185,7 +185,13 @@ class TestGenerateReturnsString:
         assert "hello" in result or "print" in result
 
     def test_generate_multi_uses_pipeline(self):
-        gw = _make_gateway(["DESIGN: game", "CODE: print('ok')", "REVIEW: passed"])
+        gw = _make_gateway(
+            [
+                "name:test\ngenre:puzzle\narchitecture:plan\ncomponents:a,b\ntech:pygame\nacceptance:c1,c2",
+                "CODE: print('ok')",
+                "passed:true\nscore:0.9",
+            ]
+        )
         gen = SoftwareGenerator(gateway=gw)
         result = gen.generate_multi(
             _spec(prompt_template="Build a game about trees"),
@@ -215,7 +221,7 @@ class TestGenerateReturnsString:
         gen.generate(_spec(prompt_template="Build a platformer game"))
         gw.call_model.assert_called()
         call = gw.call_model.call_args_list[0]
-        messages = call[0][1]
+        messages = call.kwargs["messages"]
         assert any("platformer" in str(m) for m in messages)
 
 

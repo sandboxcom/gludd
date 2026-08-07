@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: ci_pipeline_verify
+  author: Agentic Harness Agent
+  description: >
+    Verifies CI pipeline status for a given branch or commit. Pushes the branch
+    (optionally), polls CI until completion or timeout, and registers a ci_verdict
+    fact. Read-only — never mutates git unless ci_push is true.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

@@ -1,0 +1,13 @@
+---
+galaxy_info:
+  role_name: searxng_setup
+  author: Agentic Harness Agent
+  description: Set up SearXNG metasearch engine.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+dependencies: []

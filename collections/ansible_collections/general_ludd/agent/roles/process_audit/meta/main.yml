@@ -1,0 +1,13 @@
+---
+galaxy_info:
+  role_name: process_audit
+  author: Agentic Harness Agent
+  description: Audit running processes and resource usage.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+dependencies: []
