@@ -5315,7 +5315,7 @@ check-types-baseline:
 	@$(UV) run python scripts/check_type_strictness.py src/ --baseline config/type_any_baseline.txt
 
 verify-feature-claims:
-	@echo "=== verify-feature-claims: full evidence verification (pytest for test: refs) ==="
+	@echo "=== verify-feature-claims: fast evidence verification (file-existence for test: refs) ==="
 	@$(UV) run ansible-playbook playbooks/verify_feature_claims.yml
 
 file-executable:

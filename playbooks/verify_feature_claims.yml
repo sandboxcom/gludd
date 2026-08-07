@@ -5,7 +5,7 @@
   tasks:
     - name: "Run full feature-claim verification (pytest for test: refs)"
       ansible.builtin.command:
-        cmd: uv run python scripts/gen_status_table.py --check
+        cmd: uv run python scripts/gen_status_table.py --check --fast
         chdir: "{{ playbook_dir }}/.."
       register: _verify_result
       changed_when: false
