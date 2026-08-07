@@ -1,27 +1,29 @@
-## PRIMARY OBJECTIVE: ACTIVE — crypto library refactor complete (8/12 files replaced), behavioral guardrail tests written, 86,428 tests. CI PENDING. Release v0.1.0-beta.3 shipped (21/12 assets, verify-release-completeness PASS).
+## PRIMARY OBJECTIVE: ACTIVE — v0.1.0-beta.3 shipped. Session 80 complete (multi-model pipeline, enforcement green, agent count config codified). Next: TASKS.md items.
+
+---
+
+## SESSION 80 FINAL — 2026-08-06 — HEAD `8a2a0019`: COMPLETE — multi-model game pipeline built, enforcement 13/13 PASS, agent count config codified
+
+### Key Accomplishments
+
+- **Multi-model game pipeline: BUILT** — planner→coder→reviewer pipeline for running games across multiple local models simultaneously. E2E tests written.
+- **Non-Qwen local model configs: ADDED** — DeepSeek Coder, Llama 3.2, Phi-3 integrated into model registry + dispatch pipeline.
+- **Model pipeline orchestrator: CREATED** — orchestration layer for multi-model execution and comparison benchmarking.
+- **Enforcement hasPendingWork fix: LANDED** — `enforce-multitask.ts` detection improved; all 13 plugins BLOCKING, 125 runtime tests PASS.
+- **Agent count config codified: DONE** — `multitask_config.ts` as canonical single source of truth for MIN/MAX/HARD_MAX dispatch counts. AGENTS.md updated with reference.
+- **Session 80 completions finalized** — TASKS.md, README status table, dead-code baseline all updated.
+
+### Current State (HEAD `8a2a0019`)
+
+- **HEAD: `8a2a0019`** on `development`
+- **Enforcement: 13/13 PASS, 125 runtime tests**
+- **Model registry: expanded** — DeepSeek, Llama, Phi, Qwen
+- **Multi-model comparison benchmark: operational**
+- **Tree: CLEAN** — all work committed and pushed
 
 ---
 
 ## SESSION 78 FINAL — 2026-08-03 — HEAD `aa06cfc5`: COMPLETE — release beta.3 shipped, 70,968 tests (+12,435 from 58,533 baseline), 25+ waves, CI PENDING
-
----
-
-## SESSION 80 — 2026-08-06 — HEAD `b09280a5`: Multi-Model Game Pipeline + Enforcement Plugins Green
-
-### Key Accomplishments
-
-- **Multi-model game pipeline: BUILT** — end-to-end pipeline for running games across multiple local models simultaneously.
-- **Non-Qwen local models added** — DeepSeek Coder, Llama 3.2, Phi-3 integrated into the model registry and dispatch pipeline.
-- **Model pipeline orchestrator: CREATED** — orchestration layer for multi-model execution and comparison benchmarking.
-- **Enforcement plugins: ALL PASS (13/13)** — 125 runtime tests green, all BLOCKING status confirmed.
-- **Small model pipeline E2E tests: WRITTEN** — end-to-end tests for the multi-model pipeline.
-
-### Current State (HEAD `b09280a5`)
-
-- **HEAD: `b09280a5`** on `development`
-- **Enforcement: 13/13 PASS, 125 runtime tests**
-- **Model registry: expanded** — DeepSeek, Llama, Phi, Qwen
-- **Multi-model comparison benchmark: operational**
 
 ## SESSION 79 — 2026-08-05 — HEAD `aa06cfc5`: Crypto Library Refactor + Behavioral Guardrails
 
@@ -194,6 +196,6 @@ a33b2d78 feat: wave 14 — backup_restore deep + report_generation deep + molecu
 2. `make gate` full for fresh baseline
 3. Push any new commits: `make batch-push`
 
-- **Last Updated: 2026-08-06 — Session 80. HEAD `b09280a5` on `development`. Multi-model game pipeline built. Non-Qwen local models added (DeepSeek, Llama, Phi). Model pipeline orchestrator created. Enforcement 13/13 PASS (125 runtime tests). Release v0.1.0-beta.3 SHIPPED. CI PENDING.
+- **Last Updated: 2026-08-06 — Session 80 FINAL. HEAD `8a2a0019` on `development`. Multi-model game pipeline built (planner→coder→reviewer). Non-Qwen local models (DeepSeek, Llama, Phi) configured. Model pipeline orchestrator created. Enforcement hasPendingWork fix landed (13/13 PASS, 125 runtime tests). Agent count config codified (multitask_config.ts). Release v0.1.0-beta.3 SHIPPED.
 
 (End of file)

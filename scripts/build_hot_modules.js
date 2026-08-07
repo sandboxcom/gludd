@@ -15,6 +15,7 @@ const HOT_PREFIX = process.env.GLUDD_HOT_MODULE_PREFIX || path.join(OUT_DIR, "gl
 const BUILD_FAILURES = [];
 
 const PLUGINS = [
+  "enforce-additive-task",
   "enforce-anti-essay",
   "enforce-audit",
   "enforce-batch-push",
