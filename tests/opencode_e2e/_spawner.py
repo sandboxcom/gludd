@@ -320,8 +320,11 @@ class OpencodeSpawner:
                 data = json.loads(line)
             except json.JSONDecodeError:
                 return tc
-            tc.name = str(data.get("name", data.get("tool_name", "unknown")))
-            tc.args = data.get("input", {}) if isinstance(data.get("input"), dict) else {}
+            part = data.get("part", {}) if isinstance(data.get("part"), dict) else {}
+            state = part.get("state", {}) if isinstance(part, dict) else {}
+            tc.name = str(data.get("tool") or part.get("tool") or data.get("name") or "unknown")
+            raw_input = data.get("input") or state.get("input") or part.get("input")
+            tc.args = raw_input if isinstance(raw_input, dict) else {}
         else:
             m = TASK_TOOL_NAME_RE.search(line)
             if m:
@@ -329,6 +332,17 @@ class OpencodeSpawner:
             else:
                 tc.name = "unknown"
         return tc
+
+    @staticmethod
+    def _extract_text(line: str) -> str:
+        if not line.startswith("{"):
+            return ""
+        try:
+            data = json.loads(line)
+        except json.JSONDecodeError:
+            return ""
+        part = data.get("part", {}) if isinstance(data.get("part"), dict) else {}
+        return str(part.get("text", data.get("text", "")))
 
     # ------------------------------------------------------------------
     # analysis
