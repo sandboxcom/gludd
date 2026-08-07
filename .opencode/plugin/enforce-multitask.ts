@@ -498,7 +498,6 @@ async function handleTextComplete(_input: unknown, output: unknown): Promise<unk
     const text = tx
     if (!text || text.trim().length === 0) { return output }
     if (isDisengaged()) { return output }
-    if (!hasPendingWork()) { return output }
     // RESEARCH FINDING: opencode text.complete never receives tool output.
     // Result markers here are assistant text, so they must feed the same
     // message-boundary logic as any other assistant response. The next
