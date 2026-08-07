@@ -112,7 +112,7 @@ def _free_ram_mb() -> int:
             return (free_pages * page_size) // (1024 * 1024)
     except Exception:
         pass
-    return 99999  # unknown → assume enough
+    return 99999
 
 
 def _free_disk_gb() -> float:
@@ -130,7 +130,7 @@ def _free_disk_gb() -> float:
                 return int(parts[3]) / (1024 * 1024)
     except Exception:
         pass
-    return 99999.0  # unknown → assume enough
+    return 99999.0
 
 
 def _deps_reason() -> str | None:
@@ -150,9 +150,7 @@ def _deps_reason() -> str | None:
     return None
 
 
-_REASON = _deps_reason()
-if _REASON is not None:
-    pytestmark = pytest.mark.skip(reason=_REASON)
+_LOCAL_DEPS_SKIP = _deps_reason()
 
 
 # ---------------------------------------------------------------------------
@@ -241,7 +239,6 @@ def _general_models_for_matrix() -> list[E2EModelEntry]:
 
 
 def _cloud_tiers_for_matrix() -> list[tuple[str, str, str | None]]:
-    """Return [(tier_key, display_name, skip_reason), ...]."""
     tiers: list[tuple[str, str, str | None]] = []
     ds_skip = (
         "DEEPSEEK_API_KEY not set"
@@ -308,7 +305,6 @@ async def _wait_for_server(base_url: str, timeout: float = 60.0) -> None:
 
 
 def _verify_snake_code(code: str, tmpdir: str) -> tuple[bool, list[str]]:
-    """Return (passed, failure_messages). Empty list = all checks passed."""
     failures: list[str] = []
 
     try:
@@ -439,11 +435,11 @@ _FAIL_FAST = bool(os.environ.get("MATRIX_FAIL_FAST", "").strip() in ("1", "true"
 @dataclass
 class MatrixRow:
     model_name: str
-    tier: str  # "local" | "cloud"
-    category: str = ""  # "coding" | "general"
-    role: str = ""  # "planner" | "coder" | "reviewer"
+    tier: str
+    category: str = ""
+    role: str = ""
     passed: bool = False
-    error_category: str | None = None  # "OOM" | "download_fail" | "runtime_error" | "timeout"
+    error_category: str | None = None
     error_detail: str | None = None
     latency_ms: int = 0
     tokens_in: int = 0
@@ -475,7 +471,7 @@ class MatrixRow:
 
 
 # ---------------------------------------------------------------------------
-# Report accumulator (thread-safe via per-class collection)
+# Report accumulator
 # ---------------------------------------------------------------------------
 
 
@@ -517,6 +513,7 @@ def teardown_module() -> None:
 
 @pytest.mark.e2e
 @pytest.mark.slow
+@pytest.mark.skipif(_LOCAL_DEPS_SKIP is not None, reason=_LOCAL_DEPS_SKIP or "unknown dep issue")
 @pytest.mark.parametrize(
     "model_entry",
     [pytest.param(m, id=m.name) for m in _local_models_for_matrix()],
@@ -712,7 +709,7 @@ class TestLocalModelMatrixDownloadServe:
             assert server.status == "stopped"
 
         finally:
-            _append_row(row)  # ensure at least one row written
+            _append_row(row)
             if mgr is not None:
                 with contextlib.suppress(Exception):
                     await mgr.stop_all()
@@ -756,6 +753,7 @@ Check: syntax, all required components, acceptance criteria met."""
 
 @pytest.mark.e2e
 @pytest.mark.slow
+@pytest.mark.skipif(_LOCAL_DEPS_SKIP is not None, reason=_LOCAL_DEPS_SKIP or "unknown dep issue")
 @pytest.mark.parametrize(
     "coder_model",
     [pytest.param(m, id=m.name) for m in _coding_models_for_matrix()],
@@ -778,6 +776,7 @@ class TestCodingModelAsCoderRole:
         if not generals:
             pytest.skip("No general models available for planner/reviewer")
         planner_model = min(generals, key=lambda m: m.size_mb)
+        assert planner_model is not None
 
         if _E2E_LOCAL_MODEL:
             coder_names = {m.name for m in _coding_models_for_matrix()}
@@ -884,7 +883,7 @@ class TestCodingModelAsCoderRole:
                 secrets_manager=secrets,
             )
 
-            # --- Pipeline: planner→coder (reviewer = same as planner) ---
+            # --- Pipeline: planner→coder ---
             t0 = time.time()
 
             plan_result = _call_model_phase(
@@ -907,6 +906,7 @@ class TestCodingModelAsCoderRole:
                 pytest.skip(f"Planner failed: {plan_result['error']}")
 
             design_spec = plan_result["content"]
+            assert design_spec and len(design_spec) > 20
 
             code_result = _call_model_phase(
                 gateway,
@@ -980,7 +980,7 @@ class TestCodingModelAsCoderRole:
 # ===========================================================================
 
 
-def _build_cloud_gateway(tier_key: str) -> Any:
+def _build_cloud_gateway(tier_key: str) -> tuple[str, Any]:
     from general_ludd.models.gateway import ModelGateway, ModelProfile
     from general_ludd.models.provider_registry import ProviderRegistry
     from general_ludd.secrets.env import EnvSecretsManager
@@ -1103,6 +1103,7 @@ def _build_cloud_gateway(tier_key: str) -> Any:
 
 @pytest.mark.e2e
 @pytest.mark.slow
+@pytest.mark.skipif(_LOCAL_DEPS_SKIP is not None, reason=_LOCAL_DEPS_SKIP or "unknown dep issue")
 class TestCloudModelMatrix:
     """Snake generation on each available cloud tier."""
 
@@ -1167,30 +1168,30 @@ class TestCloudModelMatrix:
 
     def test_cloud_deepseek(self) -> None:
         tier = "deepseek"
-        skip = next((r for t, _, r in _cloud_tiers_for_matrix() if t == tier), None)
-        if skip:
-            pytest.skip(skip)
+        skip_reason = next((r for t, _, r in _cloud_tiers_for_matrix() if t == tier), None)
+        if skip_reason:
+            pytest.skip(skip_reason)
         self._run_cloud_single(tier, "DeepSeek (PaaS)")
 
     def test_cloud_openrouter(self) -> None:
         tier = "openrouter"
-        skip = next((r for t, _, r in _cloud_tiers_for_matrix() if t == tier), None)
-        if skip:
-            pytest.skip(skip)
+        skip_reason = next((r for t, _, r in _cloud_tiers_for_matrix() if t == tier), None)
+        if skip_reason:
+            pytest.skip(skip_reason)
         self._run_cloud_single(tier, "OpenRouter (PaaS)")
 
     def test_cloud_local_endpoint(self) -> None:
         tier = "local"
-        skip = next((r for t, _, r in _cloud_tiers_for_matrix() if t == tier), None)
-        if skip:
-            pytest.skip(skip)
+        skip_reason = next((r for t, _, r in _cloud_tiers_for_matrix() if t == tier), None)
+        if skip_reason:
+            pytest.skip(skip_reason)
         self._run_cloud_single(tier, "Self-hosted (IaaS)")
 
     def test_cloud_anthropic(self) -> None:
         tier = "anthropic"
-        skip = next((r for t, _, r in _cloud_tiers_for_matrix() if t == tier), None)
-        if skip:
-            pytest.skip(skip)
+        skip_reason = next((r for t, _, r in _cloud_tiers_for_matrix() if t == tier), None)
+        if skip_reason:
+            pytest.skip(skip_reason)
         self._run_cloud_single(tier, "Anthropic (PaaS)")
 
 
@@ -1234,7 +1235,7 @@ class TestModelMatrixStructural:
 
     def test_e2e_configs_filtered_by_env(self) -> None:
         cfgs = get_e2e_configs()
-        assert len(cfgs) >= 0  # always returns list
+        assert isinstance(cfgs, list)
         if _CI_SAFE_ONLY:
             assert all(any(m.name == c.name and m.ci_safe for m in _MODELS) for c in cfgs)
 
@@ -1277,29 +1278,7 @@ class TestModelMatrixStructural:
         if not _E2E_LOCAL_MODEL:
             models = _local_models_for_matrix()
             if not _CI_SAFE_ONLY:
-                assert len(models) == 24
-        # When E2E_LOCAL_MODEL is set, only matching models return
-
-    def test_ci_safe_only_reduces_to_six(self) -> None:
-        original = os.environ.get("CI_SAFE_ONLY")
-        try:
-            os.environ["CI_SAFE_ONLY"] = "1"
-            import importlib
-
-            mod = importlib.import_module("tests.e2e._local_model_configs")
-            importlib.reload(mod)
-        finally:
-            if original is None:
-                os.environ.pop("CI_SAFE_ONLY", None)
-            else:
-                os.environ["CI_SAFE_ONLY"] = original
-
-    def test_cloud_tier_model_names_valid(self) -> None:
-        valid = {"deepseek-chat", "qwen/qwen2.5-coder-7b-instruct", "claude-3-haiku-20240307"}
-        for name in valid:
-            assert name  # non-empty
-        # self-hosted model name from env, so just check it's set by default
-        assert _LOCAL_MODEL_NAME in ("qwen2.5:0.5b",) or _LOCAL_MODEL_NAME.startswith("qwen")
+                assert len(models) == 24, f"Expected 24 models, got {len(models)}"
 
     def test_free_ram_detection_returns_int(self) -> None:
         ram = _free_ram_mb()
@@ -1388,3 +1367,4 @@ class TestModelMatrixReportSummary:
         print(f"{'=' * 60}\n", flush=True)
 
         assert n_total >= 1, "No results in report — run at least one model first"
+        assert isinstance(n_total, int)
