@@ -847,6 +847,9 @@ check-plugin-hooks:
 check-plugin-hook-invoke:
 	@node --experimental-strip-types scripts/validate_plugins_runtime.mjs
 
+check-enforcement-all: verify-enforcement check-plugin-hook-invoke check-node-v26-compat check-duplicate-targets
+	@echo "=== check-enforcement-all: PASSED ==="
+
 check-plugin-registration:
 	@$(UV) run python3 scripts/check_plugin_registration.py
 
@@ -7587,7 +7590,7 @@ azure-event-guard-status:
 	@echo "--- Last 15 log lines ---"
 	@tail -15 .gate-logs/azure-event-guard.log 2>/dev/null || echo "No log yet"
 
-.PHONY: e2e-test-gen-pipeline e2e-test-gen-pipeline-dogfood collect-specific fix-e501-golden clean-relative check-rag-wrapper user-test-batch azure-event-guard-start azure-event-guard-stop azure-event-guard-check azure-event-guard-status check-e2e-small-model-prereq e2e-download-small-model download-1.5b-model download-phi3-mini test-phi3-mini-game-gen download-deepseek-1.3b benchmark-codegen-quality
+.PHONY: e2e-test-gen-pipeline e2e-test-gen-pipeline-dogfood collect-specific fix-e501-golden clean-relative check-rag-wrapper user-test-batch azure-event-guard-start azure-event-guard-stop azure-event-guard-check azure-event-guard-status check-e2e-small-model-prereq check-deepseek-key check-openrouter-key e2e-download-small-model download-1.5b-model download-phi3-mini test-phi3-mini-game-gen download-deepseek-1.3b benchmark-codegen-quality
 
 check-e2e-small-model-prereq:
 	@echo "=== E2E small model pipeline prerequisites ==="
@@ -7667,6 +7670,28 @@ download-deepseek-1.3b:
 benchmark-codegen-quality:
 	@echo "=== Code generation quality: DeepSeek-Coder-1.3B vs Qwen2.5-1.5B ==="
 	@$(UV) run python scripts/benchmark_codegen_quality.py
+
+deepseek-key-dir := $(HOME)/.config/gludd/keys
+deepseek-key-file := $(deepseek-key-dir)/deepseek.key
+openrouter-key-file := $(deepseek-key-dir)/openrouter.key
+
+check-deepseek-key:
+	@if [ -n "$$DEEPSEEK_API_KEY" ]; then \
+		echo "DEEPSEEK_API_KEY: env var OK"; exit 0; \
+	elif [ -f "$(deepseek-key-file)" ]; then \
+		echo "DEEPSEEK_API_KEY: key file OK ($(deepseek-key-file))"; exit 0; \
+	else \
+		echo "DEEPSEEK_API_KEY: MISSING (set DEEPSEEK_API_KEY env var or create $(deepseek-key-file))"; exit 1; \
+	fi
+
+check-openrouter-key:
+	@if [ -n "$$OPENROUTER_API_KEY" ]; then \
+		echo "OPENROUTER_API_KEY: env var OK"; exit 0; \
+	elif [ -f "$(openrouter-key-file)" ]; then \
+		echo "OPENROUTER_API_KEY: key file OK ($(openrouter-key-file))"; exit 0; \
+	else \
+		echo "OPENROUTER_API_KEY: MISSING (set OPENROUTER_API_KEY env var or create $(openrouter-key-file))"; exit 1; \
+	fi
 
 .PHONY: compare-models
 compare-models:

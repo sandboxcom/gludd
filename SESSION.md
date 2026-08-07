@@ -1,4 +1,4 @@
-## PRIMARY OBJECTIVE: IN PROGRESS — v0.1.0-beta.3 shipped. Session 81: Gate-lite ALL GREEN (commit `b9fa74e5`). 88,291 tests. Enforcement 40/40 PASS. Model source mirrors added (Ollama/direct/S3). Model matrix test created. CI multi-model E2E test created. Gate-background RUNNING (PID 2471, in test phase). HEAD `b71cca96`. 10 commits since `763ad6f5`. Next: gate-background finish → commit → push → CI.
+## PRIMARY OBJECTIVE: IN PROGRESS — v0.1.0-beta.3 shipped. Session 81: Gate-lite ALL GREEN, gate-refresh ALL GREEN. 88,291 tests, 0 collection errors. Enforcement 40/40 PASS. Model source mirrors added (Ollama/direct/S3). Model matrix test created. CI multi-model E2E test created. HEAD `fcb98aa1` pushed. 12 commits since `763ad6f5`. Next: CI verdict.
 
 ---
 
@@ -27,9 +27,20 @@
 
 ### Next Steps (mandatory)
 
-1. Commit any remaining unstaged changes
-2. Push commits: `make batch-push`
-3. Monitor CI verdict on pushed HEAD
+1. ~~Commit any remaining unstaged changes~~ — DONE, committed `fcb98aa1`
+2. ~~Push commits: `make batch-push`~~ — DONE, pushed `fcb98aa1`
+3. Monitor CI verdict on pushed HEAD `fcb98aa1`
+
+### Gate-Refresh (2026-08-07)
+
+| Phase | Result |
+|---|---|
+| lint | PASS 0 |
+| typecheck | PASS 0 |
+| verify-hot-reload | PASS |
+| env-writes | PASS |
+| collect | PASS 0 — 88,291 tests, 0 errors |
+| gate-refresh | **ALL GREEN** → committed `fcb98aa1` |
 
 ## SESSION 80 — 2026-08-06 — HEAD `08b51949`: Gate-lite pre-test green (lint/typecheck/env-writes/hook-runtime/plugin-hook-invoke ALL PASS). Test phase timed out at 300s. Tree DIRTY (13 modified files). CI RED on `51a8dfff` fixed by `08b51949` (RunResult Protocol @runtime_checkable). Next: commit + push + CI re-trigger.
 
@@ -230,6 +241,6 @@ a33b2d78 feat: wave 14 — backup_restore deep + report_generation deep + molecu
 2. `make gate` full for fresh baseline
 3. Push any new commits: `make batch-push`
 
-- **Last Updated: 2026-08-07 — Session 81. HEAD `b71cca96` on `development`. Gate-lite ALL GREEN. 88,291 tests. Enforcement 40/40 PASS. Model source mirrors (Ollama/direct/S3) added. Model matrix test + CI multi-model E2E test created. Gate-background RUNNING (PID 2471). Release v0.1.0-beta.3 shipped.**
+- **Last Updated: 2026-08-07 — Session 81. HEAD `fcb98aa1` on `development`, pushed. Gate-refresh ALL GREEN (lint 0, typecheck 0, verify-hot-reload PASS, env-writes PASS, collect 0). 88,291 tests. Enforcement 40/40 PASS. Model source mirrors (Ollama/direct/S3) added. Model matrix test + CI multi-model E2E test created. Release v0.1.0-beta.3 shipped.**
 
 (End of file)

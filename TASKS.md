@@ -192,6 +192,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] S81.9 — **CI multi-model E2E test**: CI multi-model E2E test created for cross-model routing with fallback. | evidence: test created | priority: high | effort: M | status: completed
 - [x] S81.10 — **Gate-lite ALL GREEN**: commit `b9fa74e5` — all gate gaps closed. | evidence: `b9fa74e5`, gate-lite ALL GREEN | priority: high | effort: M | status: completed
 - [x] S81.11 — **Gate-background launched**: PID 2471, in test phase. | evidence: gate-background RUNNING | priority: high | effort: S | status: completed
+- [x] S81.12 — **gate-refresh ALL GREEN**: lint 0, typecheck 0, verify-hot-reload PASS, env-writes PASS, collect 0 (88,291). Committed + pushed `fcb98aa1`. | evidence: `fcb98aa1`, gate-refresh ALL GREEN | priority: high | effort: M | status: completed
 
 ### Test Tally — 88,291
 
