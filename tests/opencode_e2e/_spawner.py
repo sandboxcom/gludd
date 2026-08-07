@@ -28,14 +28,21 @@ from dataclasses import dataclass, field
 OPENCODE_BIN = "opencode"
 
 TOOL_CALL_RE = re.compile(r'(?:tool_use|"type"\s*:\s*"tool_use"|"type":"tool_use")')
-TASK_TOOL_NAME_RE = re.compile(r'(?:"name"\s*:\s*"(task|agent|workflow)"|\(task\b|\(agent\b|\(workflow\b)')
+TASK_TOOL_NAME_RE = re.compile(
+    r'(?:"name"\s*:\s*"(task|agent|workflow)"'
+    r'|"tool"\s*:\s*"(task|agent|workflow)"'
+    r"|\(task\b|\(agent\b|\(workflow\b)"
+)
 ASSISTANT_DELTA_RE = re.compile(r'(?:content_block_delta|"type"\s*:\s*"content_block_delta")')
 ASSISTANT_START_RE = re.compile(r'(?:content_block_start|"type"\s*:\s*"content_block_start")')
+STEP_START_RE = re.compile(r'(?:step_start|"type"\s*:\s*"step_start"|"type":"step_start")')
+STEP_FINISH_RE = re.compile(r'(?:step_finish|"type"\s*:\s*"step_finish"|"type":"step_finish")')
 MESSAGE_START_RE = re.compile(r'(?:message_start|"type"\s*:\s*"message_start")')
 MESSAGE_ROLE_RE = re.compile(r'(?:role"\s*:\s*"assistant|\bassistant\b)')
 TOOL_RESULT_RE = re.compile(r'(?:tool_result|"type"\s*:\s*"tool_result")')
 DISPATCH_TEXT_RE = re.compile(r"(?:\btask\s*\(|\bagent\s*\(|\bworkflow\s*\()")
 TEXT_ASSISTANT_RE = re.compile(r"^\s*(?:assistant|Assistant|ASSISTANT)\s*[>:]")
+TEXT_EVENT_RE = re.compile(r'(?:"type"\s*:\s*"text"|"type":"text")')
 
 
 @dataclass
@@ -152,6 +159,7 @@ class OpencodeSpawner:
         killed = False
         t0 = time.time()
         stderr_lines: list[str] = []
+        raw_stdout_lines: list[str] = []
 
         def _read_stderr() -> None:
             try:
@@ -178,12 +186,21 @@ class OpencodeSpawner:
                 if not line:
                     time.sleep(0.05)
                     continue
+                raw_stdout_lines.append(line.rstrip("\n"))
                 stripped = line.strip()
                 if not stripped:
                     continue
                 current.raw_lines.append(stripped)
 
                 _is_json = stripped.startswith("{") and '"type"' in stripped
+
+                if _is_json and STEP_START_RE.search(stripped):
+                    if in_assistant and (current.text_content or current.tool_calls):
+                        frames.append(current)
+                        current = ResponseFrame(sequence=len(frames), timestamp=time.time())
+                    in_assistant = True
+                    current.is_text_only = True
+                    continue
 
                 if _is_json and MESSAGE_START_RE.search(stripped):
                     if in_assistant and (current.text_content or current.tool_calls):
@@ -201,6 +218,12 @@ class OpencodeSpawner:
                     continue
 
                 if not in_assistant:
+                    continue
+
+                if _is_json and TEXT_EVENT_RE.search(stripped):
+                    current.is_text_only = False
+                    text = self._extract_text(stripped)
+                    current.text_content += text + "\n"
                     continue
 
                 if TOOL_CALL_RE.search(stripped):
@@ -225,6 +248,13 @@ class OpencodeSpawner:
                     continue
                 if ASSISTANT_START_RE.search(stripped):
                     current.is_text_only = False
+                    continue
+
+                if _is_json and STEP_FINISH_RE.search(stripped):
+                    in_assistant = False
+                    if current.tool_calls or current.text_content:
+                        frames.append(current)
+                        current = ResponseFrame(sequence=len(frames), timestamp=time.time())
                     continue
 
                 if TOOL_RESULT_RE.search(stripped):
@@ -257,7 +287,7 @@ class OpencodeSpawner:
         if in_assistant and (current.text_content or current.tool_calls):
             frames.append(current)
 
-        return frames, elapsed, killed
+        return frames, elapsed, killed, raw_stdout_lines, stderr_lines
 
     def _build_command(self) -> list[str]:
         cmd = [

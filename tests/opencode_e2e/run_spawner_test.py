@@ -1,5 +1,6 @@
 """E2E spawner test: launch opencode against _test_project/ for 120s, verify it dispatches subagents."""
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -7,6 +8,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 TEST_PROJECT = ROOT / "tests" / "opencode_e2e" / "_test_project"
 OPENCODE_BIN = "opencode"
+
+
+def _reset_tasks_file(tasks_path: Path) -> None:
+    """Reset all checkboxes in TASKS.md to unchecked."""
+    content = tasks_path.read_text()
+    content = re.sub(r"- \[x\] ", "- [ ] ", content)
+    tasks_path.write_text(content)
 
 
 def main():
@@ -17,7 +25,12 @@ def main():
         print(f"ERROR: {OPENCODE_BIN} binary not found on PATH")
         sys.exit(1)
 
-    # 2. Run setup.sh
+    # 2. Reset TASKS.md checkboxes
+    tasks_path = TEST_PROJECT / "TASKS.md"
+    _reset_tasks_file(tasks_path)
+    print(f"Reset checkboxes in {tasks_path}")
+
+    # 3. Run setup.sh
     print("Running setup.sh...")
     rc = subprocess.run(
         ["bash", "setup.sh", str(ROOT)], cwd=str(TEST_PROJECT), capture_output=True, text=True, timeout=30

@@ -1,12 +1,3 @@
-=== GATE-REFRESH 2026-08-07T09:12:33Z ===
-lint PASS 0
-verify-feature-claims PASS
-hot-reload PASS
-verify-hot-reload PASS
-restart-needed PASS
-check-status-table PASS
-env-writes PASS
-hook-runtime PASS
-typecheck PASS 0
-collect PASS 0
-test 
+=== GATE-REFRESH 2026-08-07T09:30:20Z ===
+lint FAIL 5
+verify-feature-claims 
