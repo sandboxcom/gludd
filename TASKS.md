@@ -171,11 +171,11 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] S80.2 — **Non-Qwen local model configs**: add SmolLM2, TinyLlama, Phi-2 to local download+serve pipeline. Parametrize tests. | evidence: `_local_model_configs.py` exists, tests parametrized | priority: high | effort: M | status: completed
 - [x] S80.3 — **Model pipeline orchestration**: generic ModelPipeline class for multi-step LLM workflows. | evidence: `model_pipeline.py` exists | priority: high | effort: M | status: completed
 - [x] S80.4 — **E2E tests for multi-model pipeline**: test planner→coder→reviewer flow, fallback, authorization. | evidence: `test_multi_model_game_pipeline.py` exists | priority: high | effort: M | status: completed
-- [ ] S80.5 — **Unit tests for ModelPipeline**: mock-based tests for orchestration class. | priority: high | effort: M | status: in_progress
-- [ ] S80.6 — **Architecture doc**: MULTI_MODEL_GAME_PIPELINE.md documenting design. | priority: medium | effort: S | status: in_progress
+- [x] S80.5 — **Unit tests for ModelPipeline**: mock-based tests for orchestration class. | evidence: `test_cloud_model_pipeline.py` exists | priority: high | effort: M | status: completed
+- [x] S80.6 — **Architecture doc**: MULTI_MODEL_GAME_PIPELINE.md documenting design. | evidence: `MULTI_MODEL_GAME_PIPELINE.md` exists | priority: medium | effort: S | status: completed
 - [ ] S80.7 — **Gate-lite green**: run gate-lite, fix any failures. | priority: high | effort: M | status: in_progress
 - [ ] S80.8 — **CI verdict**: check CI on development. | priority: high | effort: S | status: in_progress
-- [ ] S80.9 — **Fix enforcement plugin hasPendingWork() detection**: add table-format and NOT_STARTED/IN_PROGRESS/PENDING keyword detection to shared.ts, then have all enforcement plugins use it. | priority: high | effort: M | status: in_progress
+- [x] S80.9 — **Fix enforcement plugin hasPendingWork() detection**: add table-format and NOT_STARTED/IN_PROGRESS/PENDING keyword detection to shared.ts, then have all enforcement plugins use it. | evidence: `shared.ts` + `enforce_stop_impl.ts` updated | priority: high | effort: M | status: completed
 - [ ] S80.10 — **Register coverage_gaps_baseline.json**: register `config/coverage_gaps_baseline.json` in task ledger. | priority: medium | effort: S | status: pending
 - [ ] S80.11 — **Register dead_code_baseline.txt**: register `config/dead_code_baseline.txt` in task ledger. | priority: medium | effort: S | status: pending
 - [ ] S80.12 — **Register check_subagent_guards.py**: register `scripts/check_subagent_guards.py` in task ledger. | priority: medium | effort: S | status: pending
