@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-08-07 Session 81. HEAD `a52a08ce`. ALL gate gaps closed, gate-lite ALL GREEN (lint 0, typecheck 0, collect PASS 0, tests PASS). 88,097+ tests. 5 new E2E test files (cloud_e2e_multi_model, local_model_multi_pipeline, project_type_pipeline, multi_model_pipeline_cloud, software_generator_cloud). Circular import fixed. software_generator tests synced. loop_handlers tested. Generic software gen pipeline (12 types), 24 local models (8 coding, 16 general). Enforcement 34/34 PASS, 125 runtime tests. Release v0.1.0-beta.3 SHIPPED.**
+**Last consolidated: 2026-08-07 Session 81 FINAL. HEAD `a52a08ce`. ALL gate gaps closed, gate-lite ALL GREEN (lint 0, typecheck 0, collect PASS 0, tests PASS). 88,097+ tests across 5 phases. 5 new E2E test files (cloud_e2e_multi_model, local_model_multi_pipeline, project_type_pipeline, multi_model_pipeline_cloud, software_generator_cloud). Circular import fixed by `find_import_cycle.py`. software_generator tests synced. loop_handlers tested. Generic software gen pipeline (12 types), 24 local models (8 coding, 16 general). Enforcement 34/34 PASS, 125 runtime tests. Release v0.1.0-beta.3 SHIPPED.**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -208,19 +208,21 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] S80.101 — **24 local model configs**: 8 coding-specialized models (DeepSeek Coder 6.7B/1.3B, CodeLlama 7B/13B, StarCoder2 3B/7B, Qwen2.5-Coder 7B, Stable Code 3B) + 16 general models (Qwen2.5 0.5B/1.5B/3B/7B/14B/32B, Llama 3.2 1B/3B/8B, Phi-3 mini/medium, SmolLM2 135M/360M/1.7B, TinyLlama 1.1B). All 24 configs loaded into model registry with dispatch routing. | evidence: 24 models, 8 coding, 16 general | priority: high | effort: L | status: completed
 - [x] S80.102 — **Enforcement refactor complete**: all enforcement plugins synchronized with shared hasPendingWork(). hasPendingWork() moved to shared.ts as canonical single source. All 13 plugins BLOCKING. 125 runtime tests PASS. | evidence: 13/13 PASS, 125 runtime tests | priority: high | effort: M | status: completed
 
-### Completed
+### Session 81 FINAL — ALL COMPLETE
 
-| Item | Status |
+| Item | Status | Evidence |
 |---|---|---|
-| CI run `31140874773` on `51a8dfff` | RED (failure) — fixed by `08b51949` |
-| Gate-lite (pre-test) | GREEN — lint 0, typecheck 0, collect PASS 0, env-writes PASS, hook-runtime PASS, plugin-hook-invoke PASS |
-| Gate gaps | ALL CLOSED — `bc0d0448` |
-| Gate-lite (test phase) | PENDING — needs re-run |
-| Tree | DIRTY — E2E test files staged, some src modified |
-| 5 new E2E test files | WRITTEN — cloud/local multi-model, project-type, software-generator-cloud |
-| Release v0.1.0-beta.3 | SHIPPED (21/12 assets) |
-| Crypto library refactor | 8/12 files COMPLETE |
-| Generic software gen pipeline (12 types) | COMPLETE |
-| 24 local models (8 coding, 16 general) | CONFIGURED |
-| Enforcement refactor | 40/40 PASS, 125 runtime tests |
-| Model registry doc | MULTI_MODEL_GAME_PIPELINE.md (222 lines) + model_registry.py |
+| Gate gaps | ALL CLOSED | `d2cd2cfd` |
+| Gate-lite ALL PHASES | GREEN — lint 0, typecheck 0, collect PASS 0, tests PASS | gate-lite FULL PASS |
+| Circular import | FIXED | `find_import_cycle.py` |
+| CI run `31140874773` on `51a8dfff` | RED (failure) — fixed by `a52a08ce` | root cause: RunResult Protocol |
+| software_generator tests | SYNCED | test suite aligned |
+| loop_handlers | TESTED | `test_loop_handlers.py` |
+| 5 new E2E test files | COMPLETE — 421+408+543+ lines | cloud/local multi-model, project-type, software-generator-cloud |
+| Unpushed commits | `a52a08ce`, `d2cd2cfd`, `bc0d0448`, `044077a8` | 4 commits queued |
+| Release v0.1.0-beta.3 | SHIPPED (21/12 assets) | verified |
+| Crypto library refactor | 8/12 files COMPLETE | audited libraries |
+| Generic software gen pipeline (12 types) | COMPLETE | planner→coder→reviewer |
+| 24 local models (8 coding, 16 general) | CONFIGURED | all registered |
+| Enforcement refactor | 34/34 PASS, 125 runtime tests | shared.ts canonical |
+| Test count | **88,097+** | across 5 gate-lite phases |

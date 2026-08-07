@@ -23,17 +23,18 @@ from collections import deque
 from typing import Any, cast
 
 from general_ludd.mcp.config import MCPServerConfig
+from general_ludd.mcp.exceptions import MCPTransportError
 from general_ludd.mcp.registry import MCPTool
 from general_ludd.security.sanitize import sanitize_error_message
 
 logger = logging.getLogger(__name__)
 
+__all__ = ("MCPStdioClient", "MCPTransportError")
+
 # Package managers / runtimes that are explicitly permitted as MCP launchers.
 # Anything not on this list is rejected by default (operator can opt out via
 # GLUDD_MCP_ALLOW_ANY_EXEC=1).
-_MCP_EXEC_ALLOWLIST = frozenset(
-    {"npx", "npm", "pnpm", "yarn", "bunx", "uvx", "python", "python3", "node"}
-)
+_MCP_EXEC_ALLOWLIST = frozenset({"npx", "npm", "pnpm", "yarn", "bunx", "uvx", "python", "python3", "node"})
 
 # Package managers that fetch-and-run code from a remote index.
 # D8: bunx added here so _REMOTE_FETCH_LAUNCHERS includes it and the pin gate fires.
@@ -50,6 +51,7 @@ _UVX_VERSION_PINNED_RE = re.compile(r"^[^<>=!~*]+(?:==[\w.+\-]+|@[\w.+\-]+)$")
 
 def _is_uvx_version_pinned_spec(spec: str) -> bool:
     return bool(_UVX_VERSION_PINNED_RE.match(spec))
+
 
 # Shell metacharacters that must never appear in a package spec or binary name
 # passed to a remote-fetch launcher. These would be harmless in exec()-land
@@ -79,10 +81,10 @@ def _strip_suffix(name: str) -> str:
 # (including pre-release and build metadata). Rejects ``@latest``, ``@^1.x``,
 # ``@~1.0`` and any other range or tag specifiers so only exact versions pass.
 _VERSION_PINNED_RE = re.compile(
-    r"@"                      # version separator
-    r"(?!latest$|next$)"      # NOT the special "latest"/"next" dist-tags
-    r"\d"                     # must start with a digit (not ^, ~, >, <, =, *, etc.)
-    r"[0-9a-zA-Z.\-+]*$"      # allow semver-compat chars (pre-release + build meta)
+    r"@"  # version separator
+    r"(?!latest$|next$)"  # NOT the special "latest"/"next" dist-tags
+    r"\d"  # must start with a digit (not ^, ~, >, <, =, *, etc.)
+    r"[0-9a-zA-Z.\-+]*$"  # allow semver-compat chars (pre-release + build meta)
 )
 
 
@@ -111,7 +113,7 @@ def _is_version_pinned_spec(spec: str) -> bool:
     if at_pos < 0:
         # No version separator at all.
         return False
-    version_part = remainder[at_pos:]   # includes the leading '@'
+    version_part = remainder[at_pos:]  # includes the leading '@'
     return bool(_VERSION_PINNED_RE.match(version_part))
 
 
@@ -140,13 +142,13 @@ def _validate_launch_command(cmd: list[str]) -> None:
        argument is required (C27).
     """
     if not cmd:
-        raise MCPTransportError(
-            "Refusing to spawn MCP subprocess: empty command (argv is empty)."
-        )
+        raise MCPTransportError("Refusing to spawn MCP subprocess: empty command (argv is empty).")
 
     launcher = _launcher_basename(cmd[0])
     allow_any = os.environ.get("GLUDD_MCP_ALLOW_ANY_EXEC", "").strip() in {
-        "1", "true", "yes",
+        "1",
+        "true",
+        "yes",
     }
 
     if not allow_any and launcher not in _MCP_EXEC_ALLOWLIST:
@@ -292,17 +294,12 @@ def _validate_python_node_argv(cmd: list[str], launcher: str) -> None:
     * Requires at least one module or script argument (bare-flag-only argv is
       semantically broken and likely injection).
     """
-    code_exec_flags = (
-        _PYTHON_CODE_EXEC_FLAGS
-        if launcher in _PYTHON_FAMILY_LAUNCHERS
-        else _NODE_CODE_EXEC_FLAGS
-    )
+    code_exec_flags = _PYTHON_CODE_EXEC_FLAGS if launcher in _PYTHON_FAMILY_LAUNCHERS else _NODE_CODE_EXEC_FLAGS
 
     args_after_launcher = cmd[1:]
     if not args_after_launcher:
         raise MCPTransportError(
-            f"MCP launcher {launcher!r} requires a module name or script path "
-            "but none was provided."
+            f"MCP launcher {launcher!r} requires a module name or script path but none was provided."
         )
 
     found_module_or_script = False
@@ -382,10 +379,6 @@ _STDERR_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _ENV_ALLOWLIST = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR")
 
 
-class MCPTransportError(Exception):
-    pass
-
-
 def _stderr_limit(
     explicit: int | None,
     *,
@@ -403,9 +396,7 @@ def _stderr_limit(
         raise MCPTransportError(f"{env_name} must be a positive integer") from exc
     ceiling = _STDERR_LIMIT_CEILINGS[limit_name]
     if value <= 0 or value > ceiling:
-        raise MCPTransportError(
-            f"{env_name} must be between 1 and {ceiling}, got {value}"
-        )
+        raise MCPTransportError(f"{env_name} must be between 1 and {ceiling}, got {value}")
     return value
 
 
@@ -483,9 +474,7 @@ class MCPStdioClient:
             "observed_bytes": self._stderr_observed_bytes,
             "observed_lines": self._stderr_observed_lines,
             "truncated": bool(
-                self._stderr_truncated_bytes
-                or self._stderr_truncated_lines
-                or self._stderr_policy_reason
+                self._stderr_truncated_bytes or self._stderr_truncated_lines or self._stderr_policy_reason
             ),
             "truncated_bytes": self._stderr_truncated_bytes,
             "truncated_lines": self._stderr_truncated_lines,
@@ -549,8 +538,7 @@ class MCPStdioClient:
         self._stderr_tail.append(line)
 
         while (
-            len(self._stderr_tail) > self._stderr_tail_lines_limit
-            or self._tail_size() > self._stderr_tail_bytes_limit
+            len(self._stderr_tail) > self._stderr_tail_lines_limit or self._tail_size() > self._stderr_tail_bytes_limit
         ):
             removed = self._stderr_tail.popleft()
             self._stderr_truncated_lines += 1
@@ -622,9 +610,7 @@ class MCPStdioClient:
 
                 self._stderr_observed_bytes += len(chunk)
                 if self._stderr_observed_bytes > self._stderr_max_bytes:
-                    self._stderr_truncated_bytes += (
-                        self._stderr_observed_bytes - self._stderr_max_bytes
-                    )
+                    self._stderr_truncated_bytes += self._stderr_observed_bytes - self._stderr_max_bytes
                     await self._stderr_policy_breach("max_bytes")
                     return
 
@@ -730,8 +716,7 @@ class MCPStdioClient:
         except TimeoutError as exc:
             await self._force_terminate()
             raise MCPTransportError(
-                f"MCP server timed out after {self._config.timeout_seconds}s "
-                f"waiting for response (method read)"
+                f"MCP server timed out after {self._config.timeout_seconds}s waiting for response (method read)"
             ) from exc
         except (ValueError, asyncio.LimitOverrunError) as exc:
             # asyncio raises LimitOverrunError (subclass of Exception) or
@@ -755,9 +740,7 @@ class MCPStdioClient:
         except ProcessLookupError:
             return
         with contextlib.suppress(TimeoutError):
-            await asyncio.wait_for(
-                proc.wait(), timeout=self._config.timeout_seconds
-            )
+            await asyncio.wait_for(proc.wait(), timeout=self._config.timeout_seconds)
 
     async def _drain_with_timeout(self) -> None:
         """stdin.drain() bounded by the configured timeout. Finding 1."""
@@ -771,17 +754,14 @@ class MCPStdioClient:
         except TimeoutError as exc:
             await self._force_terminate()
             raise MCPTransportError(
-                f"MCP server timed out after {self._config.timeout_seconds}s "
-                f"draining stdin"
+                f"MCP server timed out after {self._config.timeout_seconds}s draining stdin"
             ) from exc
 
     def _next_id(self) -> int:
         self._request_id += 1
         return self._request_id
 
-    async def _send_request(
-        self, method: str, params: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
+    async def _send_request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         self._raise_stderr_policy_breach()
         if self._process is None or self._process.returncode is not None:
             raise MCPTransportError("Process not running")
@@ -790,7 +770,9 @@ class MCPStdioClient:
 
         request_id = self._next_id()
         request: dict[str, Any] = {
-            "jsonrpc": "2.0", "id": request_id, "method": method,
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": method,
         }
         if params is not None:
             request["params"] = params
@@ -813,24 +795,20 @@ class MCPStdioClient:
                 if skips >= _MAX_INTERLEAVE_SKIPS:
                     await self._force_terminate()
                     raise MCPTransportError(
-                        f"Exceeded {_MAX_INTERLEAVE_SKIPS} interleaved frames "
-                        f"without a response for id {request_id}"
+                        f"Exceeded {_MAX_INTERLEAVE_SKIPS} interleaved frames without a response for id {request_id}"
                     )
                 continue
             if "error" in response:
-                raise MCPTransportError(
-                    f"JSON-RPC error: {response['error']}"
-                )
+                raise MCPTransportError(f"JSON-RPC error: {response['error']}")
             return dict[str, Any](response.get("result", {}))
 
-    async def _send_notification(
-        self, method: str, params: dict[str, Any] | None = None
-    ) -> None:
+    async def _send_notification(self, method: str, params: dict[str, Any] | None = None) -> None:
         if self._process is None or self._process.returncode is not None:
             return
         assert self._process.stdin is not None
         notification: dict[str, Any] = {
-            "jsonrpc": "2.0", "method": method,
+            "jsonrpc": "2.0",
+            "method": method,
         }
         if params is not None:
             notification["params"] = params
@@ -874,7 +852,8 @@ class MCPStdioClient:
                 "protocolVersion": "2024-11-05",
                 "capabilities": {},
                 "clientInfo": {
-                    "name": "general-ludd-agent", "version": "0.1.0",
+                    "name": "general-ludd-agent",
+                    "version": "0.1.0",
                 },
             },
         )
@@ -904,9 +883,7 @@ class MCPStdioClient:
             {"uri": uri},
         )
 
-    async def call_tool(
-        self, tool_name: str, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return await self._send_request(
             "tools/call",
             {"name": tool_name, "arguments": arguments},

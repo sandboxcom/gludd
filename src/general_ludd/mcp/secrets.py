@@ -15,16 +15,18 @@ from general_ludd.mcp.config import MCPServerConfig
 
 logger = logging.getLogger(__name__)
 
-SENSITIVE_ENV_KEYS = frozenset({
-    "API_KEY",
-    "TOKEN",
-    "SECRET",
-    "PASSWORD",
-    "PRIVATE_KEY",
-    "ACCESS_TOKEN",
-    "AUTH_TOKEN",
-    "CREDENTIAL",
-})
+SENSITIVE_ENV_KEYS = frozenset(
+    {
+        "API_KEY",
+        "TOKEN",
+        "SECRET",
+        "PASSWORD",
+        "PRIVATE_KEY",
+        "ACCESS_TOKEN",
+        "AUTH_TOKEN",
+        "CREDENTIAL",
+    }
+)
 
 
 def resolve_mcp_env(
@@ -60,8 +62,7 @@ def resolve_mcp_env(
                 config.server_id,
             )
         else:
-            # Lazy import to avoid an import cycle (transport imports config).
-            from general_ludd.mcp.transport import MCPTransportError
+            from general_ludd.mcp.exceptions import MCPTransportError
 
             raise MCPTransportError(
                 f"Required MCP env alias {alias_name} ({env_var}) could not be "

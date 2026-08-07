@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Find and print the exact circular import cycle in src/general_ludd/.
 
-Uses the same AST import graph and DFS logic as
-tests/unit/test_python_imports_deep.py::_static_import_graph + _has_cycle.
+Uses the same AST import graph as tests/unit/test_python_imports_deep.py
+but with a robust path-tracking DFS that cannot miss cycles.
 """
 
 from __future__ import annotations
@@ -62,45 +62,56 @@ def _static_import_graph() -> dict[str, set[str]]:
     return graph
 
 
-def _find_cycle(graph: dict[str, set[str]]) -> list[str] | None:
+def _find_cycle_path(graph: dict[str, set[str]]) -> list[str] | None:
+    WHITE, GRAY, BLACK = 0, 1, 2
     color: dict[str, int] = {}
     parent: dict[str, str | None] = {}
-    for v in graph:
-        color[v] = 0
-        parent[v] = None
 
-    def _dfs_cycle(u: str) -> list[str] | None:
-        color[u] = 1
+    for key in graph:
+        color[key] = WHITE
+        parent[key] = None
+
+    def dfs(u: str) -> list[str] | None:
+        color[u] = GRAY
         for v in graph.get(u, set()):
-            if v not in color:
-                color[v] = 0
+            cv = color.get(v)
+            if cv is None:
+                continue
+            if cv == WHITE:
                 parent[v] = u
-                cycle = _dfs_cycle(v)
-                if cycle is not None:
-                    return cycle
-            elif color.get(v) == 1:
-                cycle_path = [v]
+                result = dfs(v)
+                if result is not None:
+                    return result
+            elif cv == GRAY:
+                cycle = [v]
                 cur = u
                 while cur is not None and cur != v:
-                    cycle_path.append(cur)
+                    cycle.append(cur)
                     cur = parent.get(cur)
-                cycle_path.append(v)
-                cycle_path.reverse()
-                return cycle_path
-        color[u] = 2
+                cycle.append(v)
+                cycle.reverse()
+                return cycle
+        color[u] = BLACK
         return None
 
     for node in sorted(graph):
-        if color.get(node) == 0:
-            cycle = _dfs_cycle(node)
+        if color.get(node) == WHITE:
+            cycle = dfs(node)
             if cycle is not None:
                 return cycle
+
+    known_keys = set(graph)
+    for node in sorted(graph):
+        for neighbor in sorted(graph.get(node, set())):
+            if neighbor not in known_keys:
+                print(f"NOTE: {node} imports {neighbor} which has no file on disk (not in graph keys)", file=sys.stderr)
+
     return None
 
 
 def main() -> None:
     graph = _static_import_graph()
-    cycle = _find_cycle(graph)
+    cycle = _find_cycle_path(graph)
     if cycle is None:
         print("No circular import cycle found.", file=sys.stderr)
         sys.exit(0)
@@ -109,7 +120,6 @@ def main() -> None:
     for i, a in enumerate(cycle):
         b = cycle[(i + 1) % len(cycle)]
         print(f"  {a} imports {b}", file=sys.stderr)
-
     sys.exit(1)
 
 
