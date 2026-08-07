@@ -2512,10 +2512,14 @@ When all work is done, the plugin is silent.
 
 ### Enforcement layers
 
-1. **Plugin** — `.opencode/plugin/enforce-multitask.ts` (MIN_DISPATCHES=10,
-   MIN_DISPATCHES_PER_WAVE=10, MAX_DISPATCHES=10).
-2. **Prompt** — this section.
-3. **Test** — `tests/unit/test_multitask_plugin.py`
+1. **Config** — `.opencode/lib/multitask_config.ts` (canonical constants:
+   `MIN_DISPATCHES=10`, `MAX_DISPATCHES=10`, `HARD_MAX_DISPATCHES=10`,
+   `MAX_ZERO_STREAK=2`). Edits to the floor/ceiling go here — it is the
+   single source of truth shared by all enforcement plugins.
+2. **Plugin** — `.opencode/plugin/enforce-multitask.ts` imports from
+   `multitask_config.ts` and mechanically enforces the configured limits.
+3. **Prompt** — this section.
+4. **Test** — `tests/unit/test_multitask_plugin.py`
    `TestTenAgentFloorHardEnforcement`, `tests/unit/test_multitask_min_dispatch.py`.
 
 ## CRITICAL: Minimum 10 Subagents at All Times
@@ -2786,6 +2790,8 @@ Subagents fail when they try to run long operations. To maximize success rate:
 4. **Read-only research tasks are the most reliable** — they never conflict and rarely time out.
 5. **File-editing tasks must specify exactly one file** — multiple-file edits risk conflicts with parallel agents.
 6. **Dispatch immediately when any agent completes** — do not wait for the batch to drain. The floor must stay at 10.
+
+**Canonical limits:** `MIN_DISPATCHES` (default 10), `MAX_DISPATCHES` (default 10), and `HARD_MAX_DISPATCHES` (10) are defined in `.opencode/lib/multitask_config.ts`. All enforcement plugins import from this single source of truth.
 
 ### Main-thread command restriction (ANTI-STALL RULE)
 

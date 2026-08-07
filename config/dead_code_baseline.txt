@@ -662,6 +662,11 @@ src/general_ludd/cloud/lifecycle_validator.py:LifecyclePhase
 src/general_ludd/cloud/lifecycle_validator.py:LifecycleResult
 src/general_ludd/cloud/lifecycle_validator.py:ResourceLifecycleTester
 src/general_ludd/cloud/lifecycle_validator.py:run_lifecycle_smoke
+src/general_ludd/cloud/model_pipeline.py:ModelPipeline
+src/general_ludd/cloud/model_pipeline.py:PipelineResult
+src/general_ludd/cloud/model_pipeline.py:PipelineStep
+src/general_ludd/cloud/multi_model_game_pipeline.py:DesignSpec
+src/general_ludd/cloud/multi_model_game_pipeline.py:ReviewResult
 src/general_ludd/cloud/resource_lifecycle.py:ResourceLifecycleManager
 src/general_ludd/cloud/resource_lifecycle.py:TrackedResource
 src/general_ludd/cloud/validate_all.py:validate_monitor_roles
@@ -1332,6 +1337,8 @@ src/general_ludd/load_balancer.py:StickySessionStore
 src/general_ludd/load_balancer.py:WeightedBalancer
 src/general_ludd/load_balancer.py:sticky_dispatch
 src/general_ludd/load_balancer.py:sticky_dispatch_ch
+src/general_ludd/local_model/_local_model_configs.py:LocalModelConfig
+src/general_ludd/local_model/_local_model_configs.py:get_e2e_models
 src/general_ludd/log_analysis/prompt_evaluator.py:ab_compare
 src/general_ludd/log_analysis/prompt_evaluator.py:analyze_cot_quality
 src/general_ludd/log_analysis/prompt_evaluator.py:classify_prompt
@@ -1710,7 +1717,6 @@ src/general_ludd/sagas/orchestrator.py:SagaStep
 src/general_ludd/sagas/orchestrator.py:SagaStepFailure
 src/general_ludd/sagas/orchestrator.py:SagaStore
 src/general_ludd/sagas/orchestrator.py:SagaTimeout
-src/general_ludd/sagas/orchestrator.py:StepResult
 src/general_ludd/sandbox/cleanup.py:CleanupManager
 src/general_ludd/sandbox/cleanup.py:CleanupRecord
 src/general_ludd/sandbox/contracts.py:is_valid_isolation_level
