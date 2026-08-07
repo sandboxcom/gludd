@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-08-07 Session 81. HEAD `b71cca96` on `development`. Gate-lite ALL GREEN (commit `b9fa74e5`). 88,291 tests. Enforcement 40/40 PASS. Model source mirrors added (Ollama/direct/S3). Model matrix test created. CI multi-model E2E test created. Gate-background RUNNING (PID 2471, in test phase). Release v0.1.0-beta.3 SHIPPED (21/12 assets). 10 commits since `763ad6f5`.**
+**Last consolidated: 2026-08-07 Session 81. HEAD `fcb98aa1` on `development`, pushed. gate-refresh ALL GREEN (lint 0, typecheck 0, verify-hot-reload PASS, env-writes PASS, collect 0). 88,291 tests. Enforcement 40/40 PASS. Model source mirrors added (Ollama/direct/S3). Model matrix test created. CI multi-model E2E test created. Release v0.1.0-beta.3 SHIPPED. 12 commits since `763ad6f5`.**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
