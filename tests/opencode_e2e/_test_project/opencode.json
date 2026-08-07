@@ -1,0 +1,80 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "read": {
+      "*": "deny",
+      "__PROJECT_DIR__/**": "allow",
+      "/tmp/**": "allow"
+    },
+    "write": {
+      "*": "deny",
+      "__PROJECT_DIR__/**": "allow",
+      "/tmp/**": "allow"
+    },
+    "edit": {
+      "*": "deny",
+      "__PROJECT_DIR__/**": "allow",
+      "/tmp/**": "allow"
+    },
+    "glob": {
+      "*": "deny",
+      "__PROJECT_DIR__/**": "allow",
+      "/tmp/**": "allow"
+    },
+    "grep": {
+      "*": "deny",
+      "__PROJECT_DIR__/**": "allow",
+      "/tmp/**": "allow"
+    },
+    "bash": {
+      "*": "deny",
+      "make *": "allow"
+    },
+    "external_directory": {
+      "*": "deny",
+      "/tmp/**": "allow"
+    },
+    "doom_loop": "deny"
+  },
+  "compaction": {
+    "prune": true,
+    "reserved": 5000
+  },
+  "formatter": true,
+  "lsp": true,
+  "snapshot": false,
+  "plugin": [
+    "./.opencode/plugin/enforce-floor.ts",
+    "./.opencode/plugin/enforce-make.ts",
+    "./.opencode/plugin/enforce-stop.ts",
+    "./.opencode/plugin/enforce-delegate.ts",
+    "./.opencode/plugin/enforce-multitask.ts",
+    "./.opencode/plugin/enforce-depth.ts",
+    "./.opencode/plugin/enforce-clean-tree.ts",
+    "./.opencode/plugin/enforce-deadline.ts",
+    "./.opencode/plugin/enforce-session-start.ts",
+    "./.opencode/plugin/enforce-no-wait.ts",
+    "./.opencode/plugin/enforce-no-suppressions.ts",
+    "./.opencode/plugin/enforce-no-ci-poll.ts",
+    "./.opencode/plugin/enforce-test-integrity.ts",
+    "./.opencode/plugin/enforce-verified-claims.ts",
+    "./.opencode/plugin/enforce-enhancement-ratio.ts",
+    "./.opencode/plugin/enforce-batch-push.ts",
+    "./.opencode/plugin/enforce-branch-discipline.ts",
+    "./.opencode/plugin/enforce-worktree.ts",
+    "./.opencode/plugin/enforce-deletion-gate.ts",
+    "./.opencode/plugin/enforce-objective.ts",
+    "./.opencode/plugin/enforce-tdd.ts",
+    "./.opencode/plugin/enforce-commit-lock.ts",
+    "./.opencode/plugin/enforce-task-tracking.ts",
+    "./.opencode/plugin/enforce-additive-task.ts",
+    "./.opencode/plugin/enforce-anti-essay.ts",
+    "./.opencode/plugin/enforce-audit.ts",
+    "./.opencode/plugin/enforce-context.ts",
+    "./.opencode/plugin/enforce-deliverable.ts",
+    "./.opencode/plugin/enforce-directives.ts",
+    "./.opencode/plugin/enforce-release-deadline.ts",
+    "./.opencode/plugin/enforce-floor-v2.ts",
+    "./.opencode/plugins/watchdog.ts"
+  ]
+}
