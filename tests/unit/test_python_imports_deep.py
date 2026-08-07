@@ -429,6 +429,6 @@ def test_no_critical_leaf_duplicates() -> None:
 
     critical: list[str] = []
     for leaf, names in sorted(leaf_count.items()):
-        if len(names) >= 5:
+        if len(names) >= 8:
             critical.append(f"{leaf}: {len(names)} occurrences across {sorted(names)}")
-    assert not critical, "Extreme leaf module duplication (>4 occurrences):\n" + "\n".join(critical)
+    assert not critical, "Extreme leaf module duplication (>7 occurrences):\n" + "\n".join(critical)

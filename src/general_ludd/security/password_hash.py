@@ -16,17 +16,19 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+from typing import Any, cast
 
 from argon2 import PasswordHasher as Argon2Hasher
 from argon2.exceptions import VerificationError as Argon2VerificationError
 
 _BCRYPT_AVAILABLE = False
+_bcrypt: Any = None
 try:
     import bcrypt as _bcrypt
 
     _BCRYPT_AVAILABLE = True
-except ImportError:  # pragma: no cover — build-time guard
-    pass
+except ImportError:
+    _bcrypt = None
 
 _ARGON2_HASHER = Argon2Hasher()
 
@@ -140,14 +142,14 @@ def _hash_bcrypt(password: str) -> str:
     if not _BCRYPT_AVAILABLE:
         raise RuntimeError("bcrypt library not installed")
     raw = password.encode("utf-8")
-    return _bcrypt.hashpw(raw, _bcrypt.gensalt(rounds=_BCRYPT_ROUNDS)).decode("ascii")
+    return cast(str, _bcrypt.hashpw(raw, _bcrypt.gensalt(rounds=_BCRYPT_ROUNDS)).decode("ascii"))
 
 
 def _verify_bcrypt(password: str, stored_hash: str) -> bool:
     if not _BCRYPT_AVAILABLE:
         raise RuntimeError("bcrypt library not installed")
     try:
-        return _bcrypt.checkpw(password.encode("utf-8"), stored_hash.encode("utf-8"))
+        return cast(bool, _bcrypt.checkpw(password.encode("utf-8"), stored_hash.encode("utf-8")))
     except Exception:
         return False
 

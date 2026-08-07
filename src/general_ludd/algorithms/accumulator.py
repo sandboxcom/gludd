@@ -384,12 +384,10 @@ class RSAUniversalAccumulator:
         p = _hash_to_prime(element)
         if p in self._elements:
             return None
-        product = 1
+        full_product = 1
         for q in self._elements:
-            product = (product * q) % ((self.config.p - 1) * (self.config.q - 1))
-        a, b = _extended_gcd(p, product)
-        a %= product
-        b %= p
+            full_product *= q
+        a, b = _extended_gcd(p, full_product)
         return (pow(self.config.G, a, self.config.N), b)
 
     def verify_non_membership(self, element: bytes, proof: tuple[int, int]) -> bool:
