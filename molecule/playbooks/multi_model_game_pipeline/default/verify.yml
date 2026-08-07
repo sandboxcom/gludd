@@ -159,7 +159,7 @@
       ansible.builtin.assert:
         that:
           - "'FEEDBACK: OK' in _feedback_check.stdout"
-          - "_feedback_check.stdout | regex_replace('.*FEEDBACK_LEN: ([0-9]+).*', '\\1') | int > 20"
+          - "_feedback_check.stdout | regex_search('FEEDBACK_LEN: [0-9]+') | split(':') | last | trim | int > 20"
         fail_msg: "ReviewResult.to_feedback_prompt() must generate feedback for issues"
 
     # ── Section D: AST validation of generated code ────────────────────────
@@ -309,7 +309,7 @@
           - "'DATAFLOW: OK' in _dataflow_check.stdout"
           - "'PLANNER->SPEC: Snake (arcade)' in _dataflow_check.stdout"
           - "'REVIEWER_PASSED: True' in _dataflow_check.stdout"
-          - "_dataflow_check.stdout | regex_replace('.*CODER_OUTPUT_LEN: ([0-9]+).*', '\\1') | int > 200"
+          - "_dataflow_check.stdout | regex_search('CODER_OUTPUT_LEN: [0-9]+') | split(':') | last | trim | int > 200"
         fail_msg: "Planner→coder→reviewer data flow must pass with synthetic data"
 
     # ── Section G: Error code path — exhausted review rounds ───────────────

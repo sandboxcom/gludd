@@ -119,8 +119,8 @@
     - name: "Write synthetic reviewer response (key:value format)"
       ansible.builtin.copy:
         content: |
-          issues:
-          fixes:
+          issues:none
+          fixes:none
           score:0.95
           passed:true
         dest: "{{ test_artifact_dir }}/reviewer_response.txt"
