@@ -119,16 +119,17 @@ class OpencodeSpawner:
     def run(self) -> SpawnResult:
         log_name = f"opencode-e2e-{int(time.time())}.ndjson"
         self._log_path = os.path.join(self._log_dir, log_name)
-        frames, elapsed, killed = self._spawn_and_capture()
+        frames, elapsed, killed, raw_stdout, raw_stderr = self._spawn_and_capture()
         result = self._analyze(frames, elapsed, killed)
         self._write_structured_log(result, frames)
+        self._write_raw_log(raw_stdout, raw_stderr)
         return result
 
     # ------------------------------------------------------------------
     # subprocess lifecycle
     # ------------------------------------------------------------------
 
-    def _spawn_and_capture(self) -> tuple[list[ResponseFrame], float, bool]:
+    def _spawn_and_capture(self) -> tuple[list[ResponseFrame], float, bool, list[str], list[str]]:
         cmd = self._build_command()
         proc = subprocess.Popen(
             cmd,
@@ -150,6 +151,7 @@ class OpencodeSpawner:
         in_assistant = False
         killed = False
         t0 = time.time()
+        stderr_lines: list[str] = []
 
         def _read_stderr() -> None:
             try:
@@ -158,6 +160,7 @@ class OpencodeSpawner:
                     if not line:
                         time.sleep(0.05)
                         continue
+                    stderr_lines.append(line.rstrip("\n"))
             except Exception:
                 pass
 
@@ -180,11 +183,21 @@ class OpencodeSpawner:
                     continue
                 current.raw_lines.append(stripped)
 
-                if MESSAGE_START_RE.search(stripped):
+                _is_json = stripped.startswith("{") and '"type"' in stripped
+
+                if _is_json and MESSAGE_START_RE.search(stripped):
                     if in_assistant and (current.text_content or current.tool_calls):
                         frames.append(current)
                         current = ResponseFrame(sequence=len(frames), timestamp=time.time())
                     in_assistant = bool(MESSAGE_ROLE_RE.search(stripped))
+                    continue
+
+                if TEXT_ASSISTANT_RE.search(stripped):
+                    if in_assistant and (current.text_content or current.tool_calls):
+                        frames.append(current)
+                        current = ResponseFrame(sequence=len(frames), timestamp=time.time())
+                    in_assistant = True
+                    current.is_text_only = False
                     continue
 
                 if not in_assistant:
@@ -197,6 +210,14 @@ class OpencodeSpawner:
                     current.is_text_only = False
                     if TASK_TOOL_NAME_RE.search(stripped):
                         current.dispatch_count += 1
+                    continue
+
+                if DISPATCH_TEXT_RE.search(stripped):
+                    current.dispatch_count += 1
+                    current.tool_call_count += 1
+                    current.is_text_only = False
+                    tc = ToolCallSnapshot(name="dispatch", timestamp=time.time())
+                    current.tool_calls.append(tc)
                     continue
 
                 if ASSISTANT_DELTA_RE.search(stripped):
@@ -212,6 +233,8 @@ class OpencodeSpawner:
                         frames.append(current)
                         current = ResponseFrame(sequence=len(frames), timestamp=time.time())
                     continue
+
+                current.text_content += stripped + "\n"
 
         finally:
             elapsed = time.time() - t0
@@ -240,6 +263,9 @@ class OpencodeSpawner:
         cmd = [
             OPENCODE_BIN,
             "run",
+            "--format",
+            "json",
+            "--auto",
             "--print-logs",
             "--log-level",
             "ERROR",
@@ -259,12 +285,19 @@ class OpencodeSpawner:
     @staticmethod
     def _extract_tool_call(line: str) -> ToolCallSnapshot:
         tc = ToolCallSnapshot(name="unknown", timestamp=time.time())
-        try:
-            data = json.loads(line)
-        except json.JSONDecodeError:
-            return tc
-        tc.name = str(data.get("name", "unknown"))
-        tc.args = data.get("input", {}) if isinstance(data.get("input"), dict) else {}
+        if line.startswith("{"):
+            try:
+                data = json.loads(line)
+            except json.JSONDecodeError:
+                return tc
+            tc.name = str(data.get("name", data.get("tool_name", "unknown")))
+            tc.args = data.get("input", {}) if isinstance(data.get("input"), dict) else {}
+        else:
+            m = TASK_TOOL_NAME_RE.search(line)
+            if m:
+                tc.name = m.group(1) or "dispatch"
+            else:
+                tc.name = "unknown"
         return tc
 
     # ------------------------------------------------------------------
@@ -364,3 +397,19 @@ class OpencodeSpawner:
                     "is_text_only": frame.is_text_only,
                 }
                 fh.write(json.dumps(record) + "\n")
+
+    # ------------------------------------------------------------------
+    # raw log (write all captured data for debugging)
+    # ------------------------------------------------------------------
+
+    def _write_raw_log(self, raw_stdout_lines: list[str], stderr_lines: list[str]) -> None:
+        raw_path = self._log_path.replace(".ndjson", ".raw.log") if self._log_path else ""
+        if not raw_path:
+            return
+        with open(raw_path, "w") as fh:
+            fh.write("=== RAW STDOUT ===\n")
+            for line in raw_stdout_lines:
+                fh.write(line + "\n")
+            fh.write("\n=== RAW STDERR ===\n")
+            for line in stderr_lines:
+                fh.write(line + "\n")
