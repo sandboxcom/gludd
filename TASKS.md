@@ -186,6 +186,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] S81.3 — **test_project_type_pipeline.py** (543 lines): E2E tests for 12 project-type pipeline — game, website, scraper, database, CLI, API, word processor, kernel, pipeline, chatbot, desktop, test suite. | evidence: `bc0d0448`, 543 lines | priority: high | effort: M | status: completed
 - [x] S81.4 — **test_multi_model_pipeline_cloud.py**: Cloud multi-model pipeline E2E — cross-model routing, fallback, authorization. | evidence: untracked file written | priority: high | effort: M | status: completed
 - [x] S81.5 — **test_software_generator_cloud.py**: Software generator cloud E2E — 12 project types via cloud dispatch. | evidence: untracked file written | priority: high | effort: M | status: completed
+- [x] S81.6 — **test_multi_model_pipeline_integration.py**: Integration test for multi-model pipeline — cross-model routing, fallback, authorization at integration level. | evidence: untracked file written | priority: high | effort: M | status: completed
 
 ### Test Tally — 88,097+
 
