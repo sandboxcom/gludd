@@ -1,32 +1,32 @@
-## PRIMARY OBJECTIVE: ACTIVE — v0.1.0-beta.3 shipped. Session 81: ALL gate gaps closed. 5 new cloud/local E2E test files (cloud_e2e_multi_model, local_model_multi_pipeline, project_type_pipeline, multi_model_pipeline_cloud, software_generator_cloud). 88,097+ tests. Enforcement 34/34 PASS. HEAD `bc0d0448`. Gate-lite pre-test green (lint 0, typecheck 0, collect PASS 0). Next: gate-lite full re-run, commit remaining E2E files, push.
+## PRIMARY OBJECTIVE: ACTIVE — v0.1.0-beta.3 shipped. Session 81: ALL gate gaps closed, gate-lite ALL GREEN (lint 0, typecheck 0, collect PASS 0, tests PASS). Circular import fixed, software_generator tests synced, loop_handlers tested, all 5 E2E multi-model test files created. 88,097+ tests. Enforcement 34/34 PASS. HEAD `a52a08ce`. Next: commit + push.
 
 ---
 
-## SESSION 81 — 2026-08-07 — HEAD `bc0d0448`: ALL gate gaps closed. 5 new cloud/local E2E test files (cloud_e2e_multi_model 421L, local_model_multi_pipeline 408L, project_type_pipeline 543L, multi_model_pipeline_cloud, software_generator_cloud). 88,097+ tests. Gate-lite pre-test green (lint 0, typecheck 0, collect PASS 0, hook-runtime PASS, plugin-hook-invoke PASS). Enforcement 34/34 PASS.
+## SESSION 81 — 2026-08-07 — HEAD `a52a08ce`: ALL gate gaps closed, gate-lite ALL GREEN (lint 0, typecheck 0, collect PASS 0, tests PASS). Circular import fixed, software_generator tests synced, loop_handlers tested, all 5 E2E multi-model test files created. 88,097+ tests. Enforcement 34/34 PASS.
 
 ### Key Accomplishments
 
-- **ALL gate gaps closed: DONE** — accumulator.py dead-code fix, CI RED root causes resolved. Commit `bc0d0448`.
+- **ALL gate gaps closed: DONE** — accumulator.py dead-code fix, CI RED root causes resolved, circular import fixed. Commits `bc0d0448`, `d2cd2cfd`, `a52a08ce`.
+- **Gate-lite ALL GREEN: DONE** — lint 0, typecheck 0, collect PASS 0, all tests pass.
 - **5 new E2E cloud/local test files: WRITTEN** — test_cloud_e2e_multi_model.py (421L), test_local_model_multi_pipeline.py (408L), test_project_type_pipeline.py (543L), test_multi_model_pipeline_cloud.py, test_software_generator_cloud.py.
-- **Test count: 88,097+** — up from 86,428 baseline. Includes +1,372 new E2E test lines + deep test fixes.
+- **software_generator tests: SYNCED** — test suite aligned with implementation.
+- **loop_handlers: TESTED** — test_loop_handlers.py added.
+- **Test count: 88,097+** — up from 86,428 baseline.
 - **Enforcement: 34/34 PASS** — all plugin hooks verified.
 
-### Current State (HEAD `bc0d0448`)
+### Current State (HEAD `a52a08ce`)
 
-- **HEAD: `bc0d0448`** on `development`
+- **HEAD: `a52a08ce`** on `development`
 - **Enforcement: 34/34 PASS, 125 runtime tests**
-- **Gate-lite pre-test: GREEN** — lint 0, typecheck 0, collect PASS 0
-- **Gate-lite test phase: PENDING** — needs re-run
-- **5 new E2E test files: COMPLETE** — 3 staged, 2 untracked
-- **Tree: DIRTY** — accumulator.py, loop.py, password_hash.py modified; E2E files staged/untracked
+- **Gate-lite: ALL GREEN** — lint 0, typecheck 0, collect PASS 0, tests PASS
+- **5 E2E test files: COMPLETE**
 - **Release v0.1.0-beta.3: SHIPPED**
 
 ### Next Steps (mandatory)
 
-1. Commit remaining E2E test files + src modifications
-2. Re-run gate-lite with longer timeout: `make gate-lite`
-3. Push commits: `make batch-push`
-4. Monitor CI verdict on pushed HEAD
+1. Commit any remaining unstaged changes
+2. Push commits: `make batch-push`
+3. Monitor CI verdict on pushed HEAD
 
 ## SESSION 80 — 2026-08-06 — HEAD `08b51949`: Gate-lite pre-test green (lint/typecheck/env-writes/hook-runtime/plugin-hook-invoke ALL PASS). Test phase timed out at 300s. Tree DIRTY (13 modified files). CI RED on `51a8dfff` fixed by `08b51949` (RunResult Protocol @runtime_checkable). Next: commit + push + CI re-trigger.
 

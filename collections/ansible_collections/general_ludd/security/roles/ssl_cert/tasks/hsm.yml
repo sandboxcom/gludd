@@ -80,6 +80,7 @@
       -{{ ssl_cert_digest }}
     environment:
       OPENSSL_CONF: "{{ ssl_cert_output_dir }}/openssl-pkcs11.cnf"
+  changed_when: ssl_cert_sign | bool
   no_log: "{{ psk | length > 0 }}"
   when:
     - ssl_cert_sign | bool
@@ -99,6 +100,7 @@
       --label "{{ ssl_cert_hsm_import_label | default('gludd-' + ssl_cert_cn) }}"
       --login
       --pin {{ ssl_cert_pkcs11_pin }}
+  changed_when: ssl_cert_import_hsm | bool
   no_log: "{{ psk | length > 0 }}"
   when:
     - ssl_cert_import_hsm | bool

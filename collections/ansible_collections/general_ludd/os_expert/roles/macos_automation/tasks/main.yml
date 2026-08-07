@@ -127,30 +127,35 @@
       ansible.builtin.command: launchctl load "{{ item.path }}"
       loop: "{{ launchd_load_plists | default([]) }}"
       when: launchd_load_plists | default([]) | length > 0
+      changed_when: true
       ignore_errors: true
 
     - name: Unload launchd plists
       ansible.builtin.command: launchctl unload "{{ item.path }}"
       loop: "{{ launchd_unload_plists | default([]) }}"
       when: launchd_unload_plists | default([]) | length > 0
+      changed_when: true
       ignore_errors: true
 
     - name: Enable launchd bootstrap entries
       ansible.builtin.command: launchctl enable "{{ item }}"
       loop: "{{ launchd_enable_services | default([]) }}"
       when: launchd_enable_services | default([]) | length > 0
+      changed_when: true
       ignore_errors: true
 
     - name: Disable launchd bootstrap entries
       ansible.builtin.command: launchctl disable "{{ item }}"
       loop: "{{ launchd_disable_services | default([]) }}"
       when: launchd_disable_services | default([]) | length > 0
+      changed_when: true
       ignore_errors: true
 
     - name: Kickstart launchd services
       ansible.builtin.command: launchctl kickstart -k "{{ item }}"
       loop: "{{ launchd_kickstart_services | default([]) }}"
       when: launchd_kickstart_services | default([]) | length > 0
+      changed_when: true
       ignore_errors: true
 
 # ------------------------------------------------------------------ #
@@ -261,11 +266,13 @@
     - name: Run brew upgrade
       ansible.builtin.command: brew upgrade
       when: homebrew_upgrade_all | default(false) | bool
+      changed_when: true
       ignore_errors: true
 
     - name: Run brew cleanup
       ansible.builtin.command: brew cleanup
       when: homebrew_cleanup | default(false) | bool
+      changed_when: true
       ignore_errors: true
 
 # ------------------------------------------------------------------ #
@@ -344,6 +351,7 @@
       ansible.builtin.command: defaults write {{ item.domain }} {{ item.key }} {{ item.type | default('') }} {{ item.value }}
       loop: "{{ defaults_write | default([]) }}"
       when: defaults_write | default([]) | length > 0
+      changed_when: true
       ignore_errors: true
       become: "{{ item.become | default(false) | bool }}"
 
@@ -351,6 +359,7 @@
       ansible.builtin.command: defaults delete {{ item.domain }} {{ item.key }}
       loop: "{{ defaults_delete | default([]) }}"
       when: defaults_delete | default([]) | length > 0
+      changed_when: true
       ignore_errors: true
       become: "{{ item.become | default(false) | bool }}"
 
@@ -410,6 +419,7 @@
     - name: Install recommended updates
       ansible.builtin.command: softwareupdate --install --recommended
       when: swupdate_install_recommended | default(false) | bool
+      changed_when: true
       ignore_errors: true
       become: true
 
@@ -417,12 +427,14 @@
       ansible.builtin.command: softwareupdate --install "{{ item }}"
       loop: "{{ swupdate_install_labels | default([]) }}"
       when: swupdate_install_labels | default([]) | length > 0
+      changed_when: true
       ignore_errors: true
       become: true
 
     - name: Set automatic check enabled
       ansible.builtin.command: softwareupdate --schedule on
       when: swupdate_auto_check | default(true) | bool
+      changed_when: true
       ignore_errors: true
       become: true
 
@@ -430,6 +442,7 @@
       ansible.builtin.command: >-
         defaults write /Library/Preferences/com.apple.SoftwareUpdate.plist
         AutomaticDownload -bool "{{ 'TRUE' if swupdate_auto_download | default(true) else 'FALSE' }}"
+      changed_when: true
       ignore_errors: true
       become: true
 
@@ -499,6 +512,7 @@
       ansible.builtin.command: profiles install -path "{{ item }}"
       loop: "{{ profiles_install | default([]) }}"
       when: profiles_install | default([]) | length > 0
+      changed_when: true
       ignore_errors: true
       become: true
 
@@ -506,5 +520,6 @@
       ansible.builtin.command: profiles remove -identifier "{{ item }}"
       loop: "{{ profiles_remove | default([]) }}"
       when: profiles_remove | default([]) | length > 0
+      changed_when: true
       ignore_errors: true
       become: true

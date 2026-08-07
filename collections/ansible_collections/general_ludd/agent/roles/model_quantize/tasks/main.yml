@@ -58,6 +58,7 @@
       args:
         chdir: "{{ llama_cpp_dir }}"
         creates: "{{ llama_cpp_dir }}/build/bin/quantize"
+      changed_when: true
 
 - name: "Convert model to FP16 GGUF if needed"
   when: not (model_path | regex_search('\\.gguf$'))
@@ -70,6 +71,7 @@
         {% if keep_fp16 %}--outtype f16{% endif %}
       args:
         creates: "{{ output_dir }}/{{ _source_base }}-fp16.gguf"
+      changed_when: true
       environment:
         PATH: "{{ ansible_env.PATH }}"
 
@@ -90,6 +92,7 @@
     {{ quant_type }}
   args:
     creates: "{{ _output_file }}"
+  changed_when: true
 
 - name: "Report quantization result"
   ansible.builtin.debug:

@@ -50,6 +50,7 @@
     executable: /bin/bash
     creates: "{{ lookup('env', 'HOME') }}/.gnupg/pubring.kbx"
   when: (gpg_key_check.stdout | default('')) == ''
+  changed_when: true
   no_log: true
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -96,6 +97,7 @@
       --encrypt {{ snapshot_temp_path }}
   args:
     creates: "{{ backup_path }}"
+  changed_when: true
   no_log: true
 
 - name: Shred the unencrypted snapshot

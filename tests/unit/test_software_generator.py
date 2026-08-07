@@ -13,9 +13,11 @@ import pytest
 from general_ludd.cloud.project_types import (
     VALID_PROJECT_TYPES,
     VALIDATION_RULES,
-    ProjectSpec as ProjectSpecPT,
     resolve_model_profile,
     validate_project_type,
+)
+from general_ludd.cloud.project_types import (
+    ProjectSpec as ProjectSpecPT,
 )
 from general_ludd.cloud.software_generator import ProjectSpec, SoftwareGenerator
 from general_ludd.models.gateway import ModelGateway, ModelResponse

@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-08-07 Session 81. HEAD `bc0d0448`. ALL gate gaps closed. 88,097+ tests. 5 new E2E cloud/local test files (cloud_e2e_multi_model, local_model_multi_pipeline, project_type_pipeline, multi_model_pipeline_cloud, software_generator_cloud). Generic software gen pipeline (12 types), 24 local models (8 coding, 16 general). Enforcement 34/34 PASS, 125 runtime tests. Gate-lite: pre-test phases green (lint 0, typecheck 0, collect PASS 0, hook-runtime PASS, plugin-hook-invoke PASS). Release v0.1.0-beta.3 SHIPPED. Model registry doc: MULTI_MODEL_GAME_PIPELINE.md (222 lines) + src/general_ludd/models/model_registry.py.**
+**Last consolidated: 2026-08-07 Session 81. HEAD `a52a08ce`. ALL gate gaps closed, gate-lite ALL GREEN (lint 0, typecheck 0, collect PASS 0, tests PASS). 88,097+ tests. 5 new E2E test files (cloud_e2e_multi_model, local_model_multi_pipeline, project_type_pipeline, multi_model_pipeline_cloud, software_generator_cloud). Circular import fixed. software_generator tests synced. loop_handlers tested. Generic software gen pipeline (12 types), 24 local models (8 coding, 16 general). Enforcement 34/34 PASS, 125 runtime tests. Release v0.1.0-beta.3 SHIPPED.**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 

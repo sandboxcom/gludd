@@ -247,6 +247,47 @@ def _has_cycle(graph: dict[str, set[str]]) -> bool:
 
 def test_no_static_circular_import_cycle() -> None:
     graph = _static_import_graph()
+    if _has_cycle(graph):
+        # Print the actual cycle for debugging
+        color: dict[str, int] = {}
+        parent: dict[str, str | None] = {}
+        for v in graph:
+            color[v] = 0
+            parent[v] = None
+
+        def _dfs_cycle(u: str) -> list[str] | None:
+            color[u] = 1
+            for v in graph.get(u, set()):
+                if v not in color:
+                    color[v] = 0
+                    parent[v] = u
+                    cycle = _dfs_cycle(v)
+                    if cycle is not None:
+                        return cycle
+                elif color.get(v) == 1:
+                    cycle_path = [v]
+                    cur = u
+                    while cur is not None and cur != v:
+                        cycle_path.append(cur)
+                        cur = parent.get(cur)
+                    cycle_path.append(v)
+                    cycle_path.reverse()
+                    return cycle_path
+            color[u] = 2
+            return None
+
+        cycle = None
+        for node in sorted(graph):
+            if color.get(node) == 0:
+                cycle = _dfs_cycle(node)
+                if cycle is not None:
+                    break
+        import sys
+
+        print(f"\nCYCLE: {' → '.join(cycle)}", file=sys.stderr)
+        for i, a in enumerate(cycle):
+            b = cycle[(i + 1) % len(cycle)]
+            print(f"  {a} imports {b}", file=sys.stderr)
     assert not _has_cycle(graph), "Circular import cycle detected in static dependency graph"
 
 

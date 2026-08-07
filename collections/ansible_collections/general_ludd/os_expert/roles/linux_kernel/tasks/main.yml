@@ -140,7 +140,7 @@
       failed_when: false
 
     - name: Read init process namespaces
-      ansible.builtin.shell: ls -la /proc/1/ns/
+      ansible.builtin.command: ls -la /proc/1/ns/
       register: _pid1_ns
       changed_when: false
       ignore_errors: true

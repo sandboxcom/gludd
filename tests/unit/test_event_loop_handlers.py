@@ -39,6 +39,7 @@ def _make_handlers(**overrides):
         "_adaptive_router": None,
         "_bounded_to_thread": AsyncMock(side_effect=lambda fn, *a, **kw: fn(*a, **kw)),
         "_resolve_repo_root": MagicMock(return_value="/tmp/repo"),
+        "_persist_self_improve_todos": AsyncMock(return_value=0),
     }
     defaults.update(overrides)
     for k, v in defaults.items():
