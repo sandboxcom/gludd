@@ -36,9 +36,9 @@
       ansible.builtin.assert:
         that:
           - "'IMPORT: OK' in _import_check.stdout"
-          - "_import_check.stdout | regex_search('PLANNER_PROMPT_LEN: ([0-9]+)', '\\1') | int > 50"
-          - "_import_check.stdout | regex_search('CODER_PROMPT_LEN: ([0-9]+)', '\\1') | int > 50"
-          - "_import_check.stdout | regex_search('REVIEWER_PROMPT_LEN: ([0-9]+)', '\\1') | int > 50"
+          - "_import_check.stdout | regex_search('PLANNER_PROMPT_LEN: [0-9]+') | split(':') | last | trim | int > 50"
+          - "_import_check.stdout | regex_search('CODER_PROMPT_LEN: [0-9]+') | split(':') | last | trim | int > 50"
+          - "_import_check.stdout | regex_search('REVIEWER_PROMPT_LEN: [0-9]+') | split(':') | last | trim | int > 50"
         fail_msg: "All pipeline imports must succeed with non-empty system prompts"
 
     # ── Section B: DesignSpec creation and to_prompt() output ──────────────
@@ -91,7 +91,7 @@
           - "'DESIGNSPEC: OK' in _designspec_check.stdout"
           - "'NAME: Snake' in _designspec_check.stdout"
           - "'GENRE: arcade' in _designspec_check.stdout"
-          - "_designspec_check.stdout | regex_search('COMPONENTS: ([0-9]+)', '\\1') | int >= 2"
+          - "_designspec_check.stdout | regex_search('COMPONENTS: [0-9]+') | split(':') | last | trim | int >= 2"
         fail_msg: "DesignSpec must parse planner output and produce valid spec"
 
     # ── Section C: ReviewResult creation and to_feedback_prompt() ──────────
@@ -159,7 +159,7 @@
       ansible.builtin.assert:
         that:
           - "'FEEDBACK: OK' in _feedback_check.stdout"
-          - "_feedback_check.stdout | regex_search('FEEDBACK_LEN: ([0-9]+)', '\\1') | int > 20"
+          - "_feedback_check.stdout | regex_replace('.*FEEDBACK_LEN: ([0-9]+).*', '\\1') | int > 20"
         fail_msg: "ReviewResult.to_feedback_prompt() must generate feedback for issues"
 
     # ── Section D: AST validation of generated code ────────────────────────
@@ -309,7 +309,7 @@
           - "'DATAFLOW: OK' in _dataflow_check.stdout"
           - "'PLANNER->SPEC: Snake (arcade)' in _dataflow_check.stdout"
           - "'REVIEWER_PASSED: True' in _dataflow_check.stdout"
-          - "_dataflow_check.stdout | regex_search('CODER_OUTPUT_LEN: ([0-9]+)', '\\1') | int > 200"
+          - "_dataflow_check.stdout | regex_replace('.*CODER_OUTPUT_LEN: ([0-9]+).*', '\\1') | int > 200"
         fail_msg: "Planner→coder→reviewer data flow must pass with synthetic data"
 
     # ── Section G: Error code path — exhausted review rounds ───────────────
