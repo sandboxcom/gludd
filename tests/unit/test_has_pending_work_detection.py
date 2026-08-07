@@ -97,11 +97,18 @@ class TestTableRowDetection:
     def test_no_table_row_pattern_in_has_pending_work(self):
         body = _extract_has_pending_work_body()
         body_lower = body.lower()
-        for kw in ["not started", "in progress", "pending"]:
+        for kw in ["not started", "in progress"]:
             assert kw not in body_lower, (
                 f"unexpected keyword '{kw}' in hasPendingWork — "
                 "table-row detection was NOT expected but appears present"
             )
+        # "pending" appears legitimately in function name hasTasksMdPendingWork;
+        # strip those references then verify no table-row detection remains.
+        cleaned = re.sub(r"\bhastasksmdpendingwork\b", "", body_lower)
+        assert "pending" not in cleaned, (
+            "unexpected keyword 'pending' in hasPendingWork outside function-name context — "
+            "table-row detection was NOT expected but appears present"
+        )
 
 
 # ── 3. Unresolved BUGS.md entries ─────────────────────────────────────────────
