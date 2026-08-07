@@ -361,6 +361,7 @@ class TestProtocolStructuralCompleteness:
             "__aenter__",
             "__aexit__",
             "__await__",
+            "__getattr__",
         }
     )
 
@@ -370,8 +371,8 @@ class TestProtocolStructuralCompleteness:
         if not _has_runtime_checkable(proto_cls):
             return
         members: set[str] = set()
-        for name in vars(proto_cls):
-            if name in (
+        _IGNORE = frozenset(
+            {
                 "__annotations__",
                 "__protocol_attrs__",
                 "__init__",
@@ -385,13 +386,20 @@ class TestProtocolStructuralCompleteness:
                 "__subclasshook__",
                 "_is_protocol",
                 "_is_runtime_protocol",
-            ):
+            }
+        )
+        for cls in proto_cls.__mro__:
+            if not _is_protocol(cls):
                 continue
-            if name.startswith("_") and name not in self._DUNDER_PROTOCOL_METHODS:
-                continue
-            members.add(name)
-        annotations = getattr(proto_cls, "__annotations__", {})
-        members.update(name for name in annotations if not name.startswith("_"))
+            for name in vars(cls):
+                if name in _IGNORE:
+                    continue
+                if name.startswith("_") and name not in self._DUNDER_PROTOCOL_METHODS:
+                    continue
+                members.add(name)
+        for cls in proto_cls.__mro__:
+            annotations = getattr(cls, "__annotations__", {})
+            members.update(name for name in annotations if not name.startswith("_"))
 
         assert members, (
             f"{proto_qname} is @runtime_checkable but defines no members; isinstance checks will always return False"

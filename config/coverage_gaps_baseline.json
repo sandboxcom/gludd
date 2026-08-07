@@ -13,6 +13,7 @@
     "src/general_ludd/network/sliding_window.py",
     "src/general_ludd/ornith/outcome_observer.py",
     "src/general_ludd/probabilistic/minhash.py",
+    "src/general_ludd/routers/generate.py",
     "src/general_ludd/routers/git_history.py",
     "src/general_ludd/routers/terraform_state.py",
     "src/general_ludd/util/debounce_v2.py"

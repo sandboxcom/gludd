@@ -16,7 +16,7 @@ import os
 import subprocess
 import sys
 import tempfile
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
@@ -25,8 +25,11 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 import numpy as np
 from numpy.typing import NDArray
 
-from general_ludd.cloud.game_generation import normalize_generated_python
-from general_ludd.cloud.multi_model_game_pipeline import MultiModelGamePipeline
+from general_ludd.cloud.software_generator import (
+    GenerationCache,
+    ProjectSpec,
+    SoftwareGenerator,
+)
 from general_ludd.cloud.video_compare import REFERENCE_VIDEO_SPECS, compare_gameplay_to_reference
 
 if TYPE_CHECKING:
@@ -199,6 +202,9 @@ def build_game_input_script(spec: GameSpec) -> tuple[GameInputEvent, ...]:
 class GameGenerator:
     """Generates game code via an LLM on Azure GPU compute.
 
+    Delegates to :class:`SoftwareGenerator` with ``project_type="game"``.
+    Maintained for backward compatibility.
+
     When *task_policy* is provided, ``generate_game()`` gates the LLM call
     through ``SmallModelTaskPolicy.authorize()`` so local / constrained
     models are only dispatched for tasks they have proven capability for.
@@ -211,6 +217,7 @@ class GameGenerator:
     ) -> None:
         self._gateway = gateway
         self._task_policy = task_policy
+        self._generator = SoftwareGenerator(gateway, task_policy)
 
     def generate_game(
         self,
@@ -219,26 +226,14 @@ class GameGenerator:
         model_identity: object | None = None,
         evidence: tuple[object, ...] = (),
     ) -> str:
-        """Send the prompt template to the LLM and return generated Python game code.
-
-        When the instance carries a *task_policy* AND *model_identity* is
-        supplied, ``SmallModelTaskPolicy.authorize()`` is called first;
-        ESCALATE (deny) raises ``PermissionError`` before any tokens are
-        consumed.
-        """
-        if self._gateway is None:
-            raise ValueError("ModelGateway is not configured")
-
-        if self._task_policy is not None and model_identity is not None:
-            self._authorize_dispatch(spec, model_identity, evidence)
-
-        response = self._gateway.call_model(
-            model_id,
-            messages=[{"role": "user", "content": spec.prompt_template}],
-            estimated_cost=0.0,
-            budget_remaining=5.0,
+        """Send the prompt template to the LLM and return generated Python game code."""
+        project_spec = self._to_project_spec(spec)
+        return self._generator.generate(
+            project_spec,
+            model_id=model_id,
+            model_identity=model_identity,
+            evidence=evidence,
         )
-        return normalize_generated_python(response)
 
     def generate_game_multi(
         self,
@@ -247,64 +242,23 @@ class GameGenerator:
         model_identity: object | None = None,
         evidence: tuple[object, ...] = (),
     ) -> str:
-        """Generate game code using role-specific models via :class:`MultiModelGamePipeline`.
-
-        *model_profiles* maps :class:`TaskRole` (PLANNER / CODER / REVIEWER)
-        to ``model_id`` strings. Delegates to :class:`MultiModelGamePipeline`
-        which runs PLANNER → CODER → REVIEWER with iterative review rounds.
-        """
-        from general_ludd.schemas.benchmark import TaskRole
-
-        if self._gateway is None:
-            raise ValueError("ModelGateway is not configured")
-
-        if self._task_policy is not None and model_identity is not None:
-            self._authorize_dispatch(spec, model_identity, evidence)
-
-        pipeline = MultiModelGamePipeline(self._gateway)
-        return normalize_generated_python(
-            pipeline.generate(
-                spec.description,
-                planner_model=model_profiles.get(TaskRole.PLANNER, "default"),
-                coder_model=model_profiles.get(TaskRole.CODER, "default"),
-                reviewer_model=model_profiles.get(TaskRole.REVIEWER, "default"),
-            )
+        """Generate game code using role-specific models via :class:`MultiModelGamePipeline`."""
+        project_spec = self._to_project_spec(spec)
+        return self._generator.generate_multi(
+            project_spec,
+            model_profiles=model_profiles,
+            model_identity=model_identity,
+            evidence=evidence,
         )
 
-    def _authorize_dispatch(
-        self,
-        spec: GameSpec,
-        model_identity: object,
-        evidence: tuple[object, ...],
-    ) -> None:
-        import hashlib
-
-        from general_ludd.routing_roles.small_model_policy import (
-            CapabilityEvidence,
-            DispatchAction,
-            ModelIdentity,
-            SmallModelTaskPolicy,
-            SmallModelTaskSpec,
-            TaskImpact,
+    @staticmethod
+    def _to_project_spec(spec: GameSpec) -> ProjectSpec:
+        return ProjectSpec(
+            name=spec.name,
+            project_type="game",
+            description=spec.description,
+            prompt_template=spec.prompt_template,
         )
-        from general_ludd.schemas.benchmark import TaskRole
-
-        assert self._task_policy is not None
-        task_policy = cast(SmallModelTaskPolicy, self._task_policy)
-        task = SmallModelTaskSpec(
-            task_id=f"fpx.1.game.{spec.name}",
-            task_kind="coding",
-            role=TaskRole.CODER,
-            collection="gludd.fpx",
-            input_digest=hashlib.sha256(spec.prompt_template.encode()).hexdigest(),
-            impacts=frozenset({TaskImpact.READ_SOURCE, TaskImpact.WRITE_ARTIFACT}),
-            acceptance_checks=("syntax_valid", "import_ok", "run_without_crash"),
-        )
-        decision = task_policy.authorize(
-            task, cast(ModelIdentity, model_identity), cast(Sequence["CapabilityEvidence"], evidence)
-        )
-        if decision.action is not DispatchAction.LOCAL:
-            raise PermissionError(f"SmallModelTaskPolicy denied game dispatch for {spec.name}: {decision.reason}")
 
     @staticmethod
     def validate_game_code(code: str, spec: GameSpec | None = None) -> bool:
@@ -350,17 +304,27 @@ class GameGenerator:
     @staticmethod
     def save_game(code: str, path: str) -> None:
         """Write generated game code to file."""
-        file_path = Path(path)
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        file_path.write_text(code, encoding="utf-8")
+        SoftwareGenerator.save_output(code, path)
 
 
 class GameGenerationCache:
-    """Session cache keyed by fixture prompt, model id, and model settings."""
+    """Session cache keyed by fixture prompt, model id, and model settings.
+
+    Delegates to :class:`GenerationCache` for the generic storage layer
+    while preserving the game-specific key shape.
+    """
 
     def __init__(self) -> None:
+        self._cache = GenerationCache()
         self._generated: dict[tuple[str, str, str, tuple[tuple[str, str], ...]], str] = {}
-        self.miss_count = 0
+
+    @property
+    def miss_count(self) -> int:
+        return self._cache.miss_count
+
+    @miss_count.setter
+    def miss_count(self, value: int) -> None:
+        self._cache.miss_count = value
 
     def generate(
         self,
@@ -377,7 +341,7 @@ class GameGenerationCache:
             return cached
         generated = generator.generate_game(spec, model_id=model_id)
         self._generated[key] = generated
-        self.miss_count += 1
+        self._cache.miss_count += 1
         return generated
 
 

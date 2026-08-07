@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from unittest.mock import MagicMock
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -31,7 +32,10 @@ class TestRegisterGameRouter:
         app = FastAPI()
         register(app, {})
         client = TestClient(app)
-        resp = client.post("/api/game/generate-multi", json={"description": "test game"})
+        resp = client.post(
+            "/api/game/generate-multi",
+            json={"description": "test game", "planner_model": "gpt-4"},
+        )
         assert resp.status_code == 503
         assert "gateway" in resp.json()["detail"].lower()
 
@@ -44,9 +48,21 @@ class TestRegisterGameRouter:
         client = TestClient(app)
         resp = client.post("/api/game/generate-multi", json={})
         assert resp.status_code == 422
-        assert "description" in resp.json()["detail"].lower()
 
-    def test_endpoint_accepts_valid_request(self) -> None:
+    def test_endpoint_rejects_all_default_models(self) -> None:
+        from general_ludd.routers.game import register
+
+        app = FastAPI()
+        app.state._model_gateway = MagicMock()
+        register(app, {})
+        client = TestClient(app)
+        resp = client.post(
+            "/api/game/generate-multi",
+            json={"description": "A game"},
+        )
+        assert resp.status_code == 422
+
+    def test_endpoint_accepts_description_with_planner_model(self) -> None:
         from general_ludd.routers.game import register
 
         mock_gateway = MagicMock()
@@ -70,7 +86,10 @@ class TestRegisterGameRouter:
 
         resp = client.post(
             "/api/game/generate-multi",
-            json={"description": "A space shooter game with enemy waves"},
+            json={
+                "description": "A space shooter game with enemy waves",
+                "planner_model": "gpt-4",
+            },
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -127,7 +146,42 @@ class TestRegisterGameRouter:
 
         resp = client.post(
             "/api/game/generate-multi",
-            json={"description": "A game"},
+            json={"description": "A game", "coder_model": "gpt-4"},
         )
         assert resp.status_code == 500
         assert "error" in resp.json()["detail"]
+
+    def test_request_model_validates_at_least_one_non_default(self) -> None:
+        from general_ludd.routers.game import GameGenerateMultiRequest
+
+        with pytest.raises(ValueError, match="at least one"):
+            GameGenerateMultiRequest(description="test")
+
+    def test_request_model_accepts_planner_only(self) -> None:
+        from general_ludd.routers.game import GameGenerateMultiRequest
+
+        req = GameGenerateMultiRequest(description="test", planner_model="gpt-4")
+        assert req.planner_model == "gpt-4"
+        assert req.coder_model == "default"
+        assert req.reviewer_model == "default"
+
+    def test_request_model_accepts_coder_only(self) -> None:
+        from general_ludd.routers.game import GameGenerateMultiRequest
+
+        req = GameGenerateMultiRequest(description="test", coder_model="claude-3")
+        assert req.coder_model == "claude-3"
+
+    def test_request_model_accepts_reviewer_only(self) -> None:
+        from general_ludd.routers.game import GameGenerateMultiRequest
+
+        req = GameGenerateMultiRequest(description="test", reviewer_model="claude-3")
+        assert req.reviewer_model == "claude-3"
+
+    def test_task_role_values_cover_game_roles(self) -> None:
+        from general_ludd.routers.game import _VALID_GAME_ROLES
+        from general_ludd.schemas.benchmark import TaskRole
+
+        assert TaskRole.PLANNER in _VALID_GAME_ROLES
+        assert TaskRole.CODER in _VALID_GAME_ROLES
+        assert TaskRole.REVIEWER in _VALID_GAME_ROLES
+        assert len(_VALID_GAME_ROLES) == 3

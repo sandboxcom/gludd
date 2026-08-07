@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from datetime import datetime
-from typing import Protocol, TypedDict, cast
+from typing import Protocol, TypedDict, cast, runtime_checkable
 
 from general_ludd.connectors.exc_sanitizer import sanitize_exc_for_health
 
@@ -144,6 +144,7 @@ class NormalizedRecord(TypedDict):
 # --------------------------------------------------------------------------- #
 
 
+@runtime_checkable
 class _Client(Protocol):
     """Minimal structural type for an AWS service client.
 

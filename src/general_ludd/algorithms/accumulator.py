@@ -128,6 +128,9 @@ class MerkleTree:
         current = leaf_hash
         idx = index
         for sibling, is_right in proof:
+            expected_is_right = idx % 2 == 0
+            if is_right != expected_is_right:
+                return False
             current = pair(current, sibling) if is_right else pair(sibling, current)
             idx //= 2
         return current == root

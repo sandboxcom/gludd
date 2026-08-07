@@ -1184,7 +1184,13 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     game_parser.set_defaults(func=None)
     game_sub = game_parser.add_subparsers(dest="game_command")
 
-    game_gen = game_sub.add_parser("generate-multi", help="Generate game code via PLANNER→CODER→REVIEWER pipeline")
+    game_gen = game_sub.add_parser(
+        "generate-multi",
+        help=(
+            "Generate game code via PLANNER→CODER→REVIEWER pipeline "
+            "(delegates to `gludd cloud generate create --type game`)"
+        ),
+    )
     game_gen.add_argument("--description", required=True, help="Game description for the planner")
     game_gen.add_argument("--planner", default="default", help="Planner model ID")
     game_gen.add_argument("--coder", default="default", help="Coder model ID")
@@ -1192,6 +1198,33 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     game_gen.add_argument("--review-rounds", type=int, default=3, help="Max review/fix rounds")
     game_gen.add_argument("--daemon-url", default="http://localhost:8000")
     game_gen.set_defaults(func=_cmd_cloud_game_generate_multi)
+
+    # `gludd cloud generate` — generic project generation for any registered type.
+    gen_parser = cloud_sub.add_parser("generate", help="Generic project generation for any registered type")
+    gen_parser.set_defaults(func=None)
+    gen_sub = gen_parser.add_subparsers(dest="generate_command")
+
+    gen_list = gen_sub.add_parser("list-types", help="List all registered project types")
+    gen_list.add_argument("--daemon-url", default="http://localhost:8000")
+    gen_list.set_defaults(func=_cmd_cloud_generate_list_types)
+
+    gen_create = gen_sub.add_parser("create", help="Generate a project via PLANNER→CODER→REVIEWER pipeline")
+    gen_create.add_argument(
+        "--type", required=True, dest="project_type", help="Project type (e.g. game, cli_tool, website)"
+    )
+    gen_create.add_argument("--description", required=True, help="Project description for the planner")
+    gen_create.add_argument("--planner", default="default", help="Planner model ID")
+    gen_create.add_argument("--coder", default="default", help="Coder model ID")
+    gen_create.add_argument("--reviewer", default="default", help="Reviewer model ID")
+    gen_create.add_argument("--review-rounds", type=int, default=3, help="Max review/fix rounds")
+    gen_create.add_argument("--daemon-url", default="http://localhost:8000")
+    gen_create.set_defaults(func=_cmd_cloud_generate_create)
+
+    gen_validate = gen_sub.add_parser("validate", help="Validate a generated project against type rules")
+    gen_validate.add_argument("path", help="Path to the generated project directory")
+    gen_validate.add_argument("--type", required=True, dest="project_type", help="Project type to validate against")
+    gen_validate.add_argument("--daemon-url", default="http://localhost:8000")
+    gen_validate.set_defaults(func=_cmd_cloud_generate_validate)
 
     # account removed from CLI — access via prompting. Code retained in cli_account.py for programmatic use.
     # from general_ludd.cli_account import add_account_subparser
@@ -1586,10 +1619,12 @@ def _cmd_cloud_iam_validate(args: argparse.Namespace) -> None:
 
 
 def _cmd_cloud_game_generate_multi(args: argparse.Namespace) -> None:
+    """Delegates to /api/generate/create with --type game."""
     data = _http_call(
         "POST",
-        f"{args.daemon_url}/api/game/generate-multi",
+        f"{args.daemon_url}/api/generate/create",
         json={
+            "project_type": "game",
             "description": args.description,
             "planner_model": args.planner,
             "coder_model": args.coder,
@@ -1599,6 +1634,50 @@ def _cmd_cloud_game_generate_multi(args: argparse.Namespace) -> None:
         timeout=120.0,
     )
     print(json.dumps(data, indent=2, default=str))
+    sys.exit(0)
+
+
+def _cmd_cloud_generate_list_types(args: argparse.Namespace) -> None:
+    data = _http_call(
+        "POST",
+        f"{args.daemon_url}/api/generate/list-types",
+        timeout=10.0,
+    )
+    print(json.dumps(data, indent=2, default=str))
+    sys.exit(0)
+
+
+def _cmd_cloud_generate_create(args: argparse.Namespace) -> None:
+    data = _http_call(
+        "POST",
+        f"{args.daemon_url}/api/generate/create",
+        json={
+            "project_type": args.project_type,
+            "description": args.description,
+            "planner_model": args.planner,
+            "coder_model": args.coder,
+            "reviewer_model": args.reviewer,
+            "max_review_rounds": args.review_rounds,
+        },
+        timeout=120.0,
+    )
+    print(json.dumps(data, indent=2, default=str))
+    sys.exit(0)
+
+
+def _cmd_cloud_generate_validate(args: argparse.Namespace) -> None:
+    data = _http_call(
+        "POST",
+        f"{args.daemon_url}/api/generate/validate",
+        json={
+            "project_type": args.project_type,
+            "project_dir": args.path,
+        },
+        timeout=10.0,
+    )
+    print(json.dumps(data, indent=2, default=str))
+    if not data.get("valid", False):
+        sys.exit(1)
     sys.exit(0)
 
 

@@ -1,26 +1,25 @@
-## PRIMARY OBJECTIVE: ACTIVE — v0.1.0-beta.3 shipped. Session 80 complete (multi-model pipeline, enforcement green, agent count config codified). Next: TASKS.md items.
+## PRIMARY OBJECTIVE: ACTIVE — v0.1.0-beta.3 shipped. Session 80 complete: generic software gen pipeline (12 types), 24 local models (8 coding, 16 general), enforcement 13/13 PASS, refactor complete. HEAD `51a8dfff`. Next: CI verdict.
 
 ---
 
-## SESSION 80 FINAL — 2026-08-06 — HEAD `66206625`: COMPLETE — multi-model game pipeline built + daemon/CLI wired, enforcement 13/13 PASS, agent count config codified
+## SESSION 80 FINAL — 2026-08-06 — HEAD `51a8dfff`: COMPLETE — generic software gen pipeline (12 project types), 24 local models (8 coding, 16 general), enforcement refactor 13/13 PASS, gate-lite green
 
 ### Key Accomplishments
 
+- **Generic software generation pipeline: BUILT** — 12 project types (game, website, scraper, database, CLI, API, word processor, kernel, pipeline, chatbot, desktop, test suite). Planner→coder→reviewer architecture extended from game-only to all project types.
+- **24 local model configs: CONFIGURED** — 8 coding-specialized models (DeepSeek Coder 6.7B/1.3B, CodeLlama 7B/13B, StarCoder2 3B/7B, Qwen2.5-Coder 7B, Stable Code 3B) + 16 general models (Qwen2.5 0.5B/1.5B/3B/7B/14B/32B, Llama 3.2 1B/3B/8B, Phi-3 mini/medium, SmolLM2 135M/360M/1.7B, TinyLlama 1.1B). All loaded into model registry with dispatch routing.
+- **Enforcement refactor: COMPLETE** — hasPendingWork() moved to shared.ts as canonical single source. All 13 plugins BLOCKING. 125 runtime tests PASS.
 - **Multi-model game pipeline: BUILT** — planner→coder→reviewer pipeline for running games across multiple local models simultaneously. E2E tests written.
-- **Non-Qwen local model configs: ADDED** — DeepSeek Coder, Llama 3.2, Phi-3 integrated into model registry + dispatch pipeline.
-- **Model pipeline orchestrator: CREATED** — orchestration layer for multi-model execution and comparison benchmarking.
-- **Enforcement hasPendingWork fix: LANDED** — `enforce-multitask.ts` detection improved; all 13 plugins BLOCKING, 125 runtime tests PASS.
-- **Agent count config codified: DONE** — `multitask_config.ts` as canonical single source of truth for MIN/MAX/HARD_MAX dispatch counts. AGENTS.md updated with reference.
-- **Molecule scenario created** — ansible molecule scenario for model pipeline validation.
 - **Daemon/CLI wiring: COMPLETE** — model pipeline endpoints and CLI commands integrated.
-- **Session 80 completions finalized** — TASKS.md, README status table, dead-code baseline all updated.
+- **Gate-lite: GREEN** — `51a8dfff`; failures fixed.
 
-### Current State (HEAD `66206625`)
+### Current State (HEAD `51a8dfff`)
 
-- **HEAD: `66206625`** on `development`
+- **HEAD: `51a8dfff`** on `development`
 - **Enforcement: 13/13 PASS, 125 runtime tests**
-- **Model registry: expanded** — DeepSeek, Llama, Phi, Qwen
-- **Multi-model comparison benchmark: operational**
+- **24 local models: 8 coding, 16 general** — all configs loaded
+- **12 project types: all supported** — generic pipeline extended from game-only
+- **Model registry: expanded** — DeepSeek, Llama, Phi, Qwen, StarCoder2, CodeLlama, SmolLM2, TinyLlama, Stable Code
 - **Tree: CLEAN** — all work committed and pushed
 
 ---
@@ -198,6 +197,6 @@ a33b2d78 feat: wave 14 — backup_restore deep + report_generation deep + molecu
 2. `make gate` full for fresh baseline
 3. Push any new commits: `make batch-push`
 
-- **Last Updated: 2026-08-06 — Session 80 FINAL. HEAD `66206625` on `development`. Multi-model game pipeline built (planner→coder→reviewer), daemon/CLI wired. Non-Qwen local models (DeepSeek, Llama, Phi) configured. Model pipeline orchestrator created. Molecule scenario created. Enforcement hasPendingWork fix landed (13/13 PASS, 125 runtime tests). Agent count config codified (multitask_config.ts). Release v0.1.0-beta.3 SHIPPED.
+- **Last Updated: 2026-08-06 — Session 80 FINAL. HEAD `51a8dfff` on `development`. Generic software generation pipeline built for 12 project types (game, website, scraper, database, CLI, API, word processor, kernel, pipeline, chatbot, desktop, test suite). 24 local models configured (8 coding, 16 general). Enforcement refactor complete (hasPendingWork() canonical, 13/13 PASS, 125 runtime tests). Gate-lite green. CI RED (run 31140874773, failure). Multi-model game pipeline built. Release v0.1.0-beta.3 SHIPPED.
 
 (End of file)

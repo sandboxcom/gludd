@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Mapping
-from typing import Any, Protocol, TypedDict, cast
+from typing import Any, Protocol, TypedDict, cast, runtime_checkable
 
 __all__ = ["AwsConfigTrailSource"]
 
@@ -131,6 +131,7 @@ class NormalizedRecord(TypedDict):
 # --------------------------------------------------------------------------- #
 
 
+@runtime_checkable
 class _Client(Protocol):
     """Minimal structural type for an AWS service client.
 

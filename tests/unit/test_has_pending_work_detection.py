@@ -20,7 +20,7 @@ def _plugin_source() -> str:
 
 def _extract_has_pending_work_body() -> str:
     src = _plugin_source()
-    m = re.search(r"function hasPendingWork\(\)\s*\{([\s\S]*?)^\s*\}", src, re.MULTILINE)
+    m = re.search(r"function hasPendingWork\(\).*?\{([\s\S]*?)^\s*\}", src, re.MULTILINE)
     assert m, "could not extract hasPendingWork body"
     return m.group(1)
 
@@ -353,7 +353,7 @@ class TestStructuralPins:
 
     def test_called_from_text_complete(self):
         src = _plugin_source()
-        assert "hasPendingWork()" in src.split("handleTextComplete")[1]
+        assert "handleMessageBoundary" in src.split("handleTextComplete")[1]
 
     def test_wrapped_in_try_catch(self):
         body = _extract_has_pending_work_body()
