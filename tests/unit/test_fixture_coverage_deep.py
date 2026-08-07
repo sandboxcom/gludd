@@ -59,8 +59,7 @@ class TestRestoreLeakyEnvVarsEffect:
 
     def test_mutation_is_restored_by_fixture(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setenv("GLUDD_PSK", "before")
-        os.environ["GLUDD_PSK"] = "mutated"
-        # The autouse fixture will restore it after this test
+        monkeypatch.setenv("GLUDD_PSK", "mutated")
         assert os.environ["GLUDD_PSK"] == "mutated"
 
 

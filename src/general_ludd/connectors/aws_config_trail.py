@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Mapping
-from typing import Any, Protocol, TypedDict, cast, runtime_checkable
+from typing import Any, Protocol, TypedDict, cast
 
 __all__ = ["AwsConfigTrailSource"]
 
@@ -131,7 +131,6 @@ class NormalizedRecord(TypedDict):
 # --------------------------------------------------------------------------- #
 
 
-@runtime_checkable
 class _Client(Protocol):
     """Minimal structural type for an AWS service client.
 
@@ -197,9 +196,7 @@ class AwsConfigTrailSource:
         timeout_raw = config.get("timeout", 10.0)
         self._timeout = float(timeout_raw) if isinstance(timeout_raw, (int, float)) else 10.0
         max_results_raw = config.get("max_results", 100)
-        self._max_results = (
-            int(max_results_raw) if isinstance(max_results_raw, (int, float)) else 100
-        )
+        self._max_results = int(max_results_raw) if isinstance(max_results_raw, (int, float)) else 100
         default_resource_type_raw = config.get("resource_type", "AWS::EC2::Instance")
         self._default_resource_type = (
             str(default_resource_type_raw)
@@ -246,11 +243,7 @@ class AwsConfigTrailSource:
         status_val = self._first(item, "configurationItemStatus")
         status = str(status_val) if status_val is not None else "UNKNOWN"
         region_val = self._first(item, "awsRegion")
-        region = (
-            str(region_val)
-            if region_val is not None
-            else (self._region or "")
-        )
+        region = str(region_val) if region_val is not None else (self._region or "")
         message = " ".join(p for p in (resource_type, resource_id) if p).strip()
         az_val = self._first(item, "availabilityZone")
         labels: dict[str, str] = {
@@ -277,11 +270,7 @@ class AwsConfigTrailSource:
         event_source_val = self._first(event, "EventSource")
         event_source = str(event_source_val) if event_source_val is not None else ""
         region_val = self._first(event, "AwsRegion", "awsRegion")
-        region = (
-            str(region_val)
-            if region_val is not None
-            else (self._region or "")
-        )
+        region = str(region_val) if region_val is not None else (self._region or "")
         message = " ".join(p for p in (event_name, username) if p).strip()
         labels: dict[str, str] = {
             "EventSource": event_source,
@@ -309,46 +298,30 @@ class AwsConfigTrailSource:
             if callable(lookup):
                 response = lookup(LookupAttributes=[])
                 events = response.get("Events", []) if isinstance(response, Mapping) else []
-                return [
-                    self._normalize_event(cast(CloudTrailLookupEvent, e))
-                    for e in events
-                    if isinstance(e, Mapping)
-                ]
+                return [self._normalize_event(cast(CloudTrailLookupEvent, e)) for e in events if isinstance(e, Mapping)]
             return []
         resource_type_val = spec.get("resourceType", self._default_resource_type)
-        resource_type = (
-            resource_type_val
-            if isinstance(resource_type_val, str)
-            else self._default_resource_type
-        )
+        resource_type = resource_type_val if isinstance(resource_type_val, str) else self._default_resource_type
         limit_val = spec.get("limit", self._max_results)
         limit = int(limit_val) if isinstance(limit_val, (int, float)) else self._max_results
         listed: ListDiscoveredResourcesResponse = client.list_discovered_resources(
             resourceType=resource_type, limit=limit
         )
-        identifiers_raw = (
-            listed.get("resourceIdentifiers", []) if isinstance(listed, dict) else []
-        )
+        identifiers_raw = listed.get("resourceIdentifiers", []) if isinstance(listed, dict) else []
         rows: list[NormalizedRecord] = []
         for ident in identifiers_raw:
             resource_id_raw = ident.get("resourceId")
             if not resource_id_raw:
                 continue
-            resource_id = (
-                resource_id_raw if isinstance(resource_id_raw, str) else str(resource_id_raw)
-            )
+            resource_id = resource_id_raw if isinstance(resource_id_raw, str) else str(resource_id_raw)
             ident_type_raw = ident.get("resourceType", resource_type)
-            ident_type = (
-                ident_type_raw if isinstance(ident_type_raw, str) else resource_type
-            )
+            ident_type = ident_type_raw if isinstance(ident_type_raw, str) else resource_type
             history: GetResourceConfigHistoryResponse = client.get_resource_config_history(
                 resourceType=ident_type,
                 resourceId=resource_id,
                 limit=1,
             )
-            items = (
-                history.get("configurationItems", []) if isinstance(history, dict) else []
-            )
+            items = history.get("configurationItems", []) if isinstance(history, dict) else []
             for item in items:
                 rows.append(self._normalize_config_item(item))
         return rows
@@ -358,9 +331,7 @@ class AwsConfigTrailSource:
         if client is None:
             return []
         limit_val = spec.get("limit", self._max_results)
-        limit = (
-            int(limit_val) if isinstance(limit_val, (int, float)) else self._max_results
-        )
+        limit = int(limit_val) if isinstance(limit_val, (int, float)) else self._max_results
         kwargs: dict[str, object] = {"MaxResults": limit}
         if spec.get("lookup_attributes"):
             kwargs["LookupAttributes"] = spec["lookup_attributes"]

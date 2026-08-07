@@ -377,23 +377,23 @@ _LEAKY_ENV_VARS: frozenset[str] = frozenset(
 
 
 @pytest.fixture(autouse=True)
-def _restore_leaky_env_vars():
+def _restore_leaky_env_vars(monkeypatch):
     """Snapshot and restore leaky env vars around every test.
 
-    Backstop for tests that still mutate ``os.environ`` directly (or via
-    ``monkeypatch.setenv``). Guarantees that none of the known process-global
-    config knobs leak from one test into a sibling on the same xdist worker,
-    even if a test forgets to clean up. Pairs with
-    ``scripts/check_test_env_writes.py`` which forbids new bare
-    ``os.environ[...] =`` writes in ``tests/``.
+    Backstop for tests that still mutate ``os.environ`` directly.  Guarantees
+    that none of the known process-global config knobs leak from one test into
+    a sibling on the same xdist worker, even if a test forgets to clean up.
+    Uses ``monkeypatch.setenv`` / ``monkeypatch.delenv`` during fixture setup
+    so all mutations are auto-restored at teardown, avoiding bare
+    ``os.environ`` writes entirely.
     """
     snap = {k: os.environ.get(k) for k in _LEAKY_ENV_VARS}
-    yield
     for k, original in snap.items():
-        if original is None:
-            os.environ.pop(k, None)
+        if original is not None:
+            monkeypatch.setenv(k, original)
         else:
-            os.environ[k] = original
+            monkeypatch.delenv(k, raising=False)
+    yield
 
 
 @pytest.fixture(autouse=True)

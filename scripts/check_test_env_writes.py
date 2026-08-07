@@ -24,7 +24,7 @@ _BARE_WRITE_RE = re.compile(r'^[^#\n]*\b(?:_?os)\.environ\[\s*(?:\w+|\'[^\']*\'|
 # restores env vars at teardown (not test setup).  monkeypatch.setenv cannot
 # be used here because the restore happens post-yield and monkeypatch's own
 # undo would revert the restore.
-ALLOWED_VIOLATIONS: frozenset[str] = frozenset({"tests/conftest.py:404"})
+ALLOWED_VIOLATIONS: frozenset[str] = frozenset()
 
 
 def scan_file(path: Path) -> list[str]:

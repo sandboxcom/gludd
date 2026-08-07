@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from datetime import datetime
-from typing import Protocol, TypedDict, cast, runtime_checkable
+from typing import Protocol, TypedDict, cast
 
 from general_ludd.connectors.exc_sanitizer import sanitize_exc_for_health
 
@@ -144,7 +144,6 @@ class NormalizedRecord(TypedDict):
 # --------------------------------------------------------------------------- #
 
 
-@runtime_checkable
 class _Client(Protocol):
     """Minimal structural type for an AWS service client.
 
@@ -214,9 +213,7 @@ class AwsObservabilitySource:
         self.region: str | None = region_raw if isinstance(region_raw, str) else None
         # Injectable factory; default lazily imports boto3 (guarded).
         self._client_factory: ClientFactory = (
-            client_factory
-            if client_factory is not None
-            else _default_client_factory(self.region)
+            client_factory if client_factory is not None else _default_client_factory(self.region)
         )
 
     # ----------------------------------------------------------------- #
@@ -377,18 +374,10 @@ class AwsObservabilitySource:
         for summary in resp.get("TraceSummaries", []):
             service_ids = summary.get("ServiceIds") or []
             first_service = service_ids[0] if service_ids else None
-            service_name: str | None = (
-                first_service.get("Name")
-                if first_service is not None
-                else None
-            )
+            service_name: str | None = first_service.get("Name") if first_service is not None else None
             has_error = bool(summary.get("HasError"))
             duration_raw = summary.get("Duration")
-            duration: float | None = (
-                float(duration_raw)
-                if isinstance(duration_raw, (int, float))
-                else None
-            )
+            duration: float | None = float(duration_raw) if isinstance(duration_raw, (int, float)) else None
             records.append(
                 self._record(
                     ts=_epoch_seconds(summary.get("StartTime")),
