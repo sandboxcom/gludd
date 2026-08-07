@@ -27,13 +27,15 @@ from dataclasses import dataclass, field
 
 OPENCODE_BIN = "opencode"
 
-TOOL_CALL_RE = re.compile(r'"type"\s*:\s*"tool_use"')
-TASK_TOOL_NAME_RE = re.compile(r'"name"\s*:\s*"(task|agent|workflow)"')
-ASSISTANT_DELTA_RE = re.compile(r'"type"\s*:\s*"content_block_delta"')
-ASSISTANT_START_RE = re.compile(r'"type"\s*:\s*"content_block_start"')
-MESSAGE_START_RE = re.compile(r'"type"\s*:\s*"message_start"')
-MESSAGE_ROLE_RE = re.compile(r'"role"\s*:\s*"assistant"')
-TOOL_RESULT_RE = re.compile(r'"type"\s*:\s*"tool_result"')
+TOOL_CALL_RE = re.compile(r'(?:tool_use|"type"\s*:\s*"tool_use"|"type":"tool_use")')
+TASK_TOOL_NAME_RE = re.compile(r'(?:"name"\s*:\s*"(task|agent|workflow)"|\(task\b|\(agent\b|\(workflow\b)')
+ASSISTANT_DELTA_RE = re.compile(r'(?:content_block_delta|"type"\s*:\s*"content_block_delta")')
+ASSISTANT_START_RE = re.compile(r'(?:content_block_start|"type"\s*:\s*"content_block_start")')
+MESSAGE_START_RE = re.compile(r'(?:message_start|"type"\s*:\s*"message_start")')
+MESSAGE_ROLE_RE = re.compile(r'(?:role"\s*:\s*"assistant|\bassistant\b)')
+TOOL_RESULT_RE = re.compile(r'(?:tool_result|"type"\s*:\s*"tool_result")')
+DISPATCH_TEXT_RE = re.compile(r"(?:\btask\s*\(|\bagent\s*\(|\bworkflow\s*\()")
+TEXT_ASSISTANT_RE = re.compile(r"^\s*(?:assistant|Assistant|ASSISTANT)\s*[>:]")
 
 
 @dataclass
@@ -238,8 +240,6 @@ class OpencodeSpawner:
         cmd = [
             OPENCODE_BIN,
             "run",
-            "--format",
-            "json",
             "--print-logs",
             "--log-level",
             "ERROR",
