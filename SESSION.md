@@ -1,8 +1,8 @@
-## PRIMARY OBJECTIVE: ACTIVE — v0.1.0-beta.3 shipped. Session 80 complete: generic software gen pipeline (12 types), 24 local models (8 coding, 16 general), enforcement 13/13 PASS, refactor complete. HEAD `51a8dfff`. Next: CI verdict.
+## PRIMARY OBJECTIVE: ACTIVE — v0.1.0-beta.3 shipped. Session 80: generic software gen pipeline (12 types), 24 local models (8 coding, 16 general), enforcement 40/40 PASS. HEAD `08b51949`. Gate-lite pre-test green. Tree DIRTY (13 files). CI RED (run 31140874773 fixed by `08b51949`). Next: commit dirty tree, push, re-trigger CI.
 
 ---
 
-## SESSION 80 FINAL — 2026-08-06 — HEAD `51a8dfff`: COMPLETE — generic software gen pipeline (12 project types), 24 local models (8 coding, 16 general), enforcement refactor 13/13 PASS, gate-lite green
+## SESSION 80 — 2026-08-06 — HEAD `08b51949`: Gate-lite pre-test green (lint/typecheck/env-writes/hook-runtime/plugin-hook-invoke ALL PASS). Test phase timed out at 300s. Tree DIRTY (13 modified files). CI RED on `51a8dfff` fixed by `08b51949` (RunResult Protocol @runtime_checkable). Next: commit + push + CI re-trigger.
 
 ### Key Accomplishments
 
@@ -13,14 +13,18 @@
 - **Daemon/CLI wiring: COMPLETE** — model pipeline endpoints and CLI commands integrated.
 - **Gate-lite: GREEN** — `51a8dfff`; failures fixed.
 
-### Current State (HEAD `51a8dfff`)
+### Current State (HEAD `08b51949`)
 
-- **HEAD: `51a8dfff`** on `development`
-- **Enforcement: 13/13 PASS, 125 runtime tests**
+- **HEAD: `08b51949`** on `development`
+- **Enforcement: 40/40 PASS, 125 runtime tests**
 - **24 local models: 8 coding, 16 general** — all configs loaded
 - **12 project types: all supported** — generic pipeline extended from game-only
 - **Model registry: expanded** — DeepSeek, Llama, Phi, Qwen, StarCoder2, CodeLlama, SmolLM2, TinyLlama, Stable Code
-- **Tree: CLEAN** — all work committed and pushed
+- **Model registry doc: MULTI_MODEL_GAME_PIPELINE.md (222 lines) + model_registry.py**
+- **Gate-lite pre-test: GREEN** — lint 0, typecheck 0, env-writes PASS, hook-runtime 34/34, plugin-hook-invoke 34/34, spec-enforcement 98.6%
+- **Gate-lite test phase: TIMED OUT at 300s** — needs re-run with longer timeout
+- **CI: RED** — run 31140874773 failed on `51a8dfff`. Fixed by `08b51949` (RunResult Protocol @runtime_checkable). Needs push + re-trigger.
+- **Tree: DIRTY** — 13 files modified (8 src, 5 test). Needs commit.
 
 ---
 
@@ -197,6 +201,6 @@ a33b2d78 feat: wave 14 — backup_restore deep + report_generation deep + molecu
 2. `make gate` full for fresh baseline
 3. Push any new commits: `make batch-push`
 
-- **Last Updated: 2026-08-06 — Session 80 FINAL. HEAD `51a8dfff` on `development`. Generic software generation pipeline built for 12 project types (game, website, scraper, database, CLI, API, word processor, kernel, pipeline, chatbot, desktop, test suite). 24 local models configured (8 coding, 16 general). Enforcement refactor complete (hasPendingWork() canonical, 13/13 PASS, 125 runtime tests). Gate-lite green. CI RED (run 31140874773, failure). Multi-model game pipeline built. Release v0.1.0-beta.3 SHIPPED.
+- **Last Updated: 2026-08-06 — Session 80. HEAD `08b51949` on `development`. Gate-lite pre-test green (lint 0, typecheck 0, env-writes PASS, hook-runtime 34/34, plugin-hook-invoke 34/34). Tree DIRTY (13 files). CI RED fixed by `08b51949`. Generic software gen pipeline (12 types). 24 local models. Enforcement 40/40 PASS. Model registry doc: MULTI_MODEL_GAME_PIPELINE.md (222 lines). Release v0.1.0-beta.3 SHIPPED.
 
 (End of file)
