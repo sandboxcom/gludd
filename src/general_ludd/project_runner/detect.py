@@ -26,8 +26,10 @@ import json
 import os
 import shlex
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from general_ludd.project_runner.profile import ProjectProfile
+if TYPE_CHECKING:
+    from general_ludd.project_runner.profile import ProjectProfile
 
 # Marker filename → ecosystem identifier. ORDER MATTERS: the first present
 # marker wins (so a polyglot repo with both pyproject.toml + Makefile resolves
@@ -152,6 +154,8 @@ class ToolchainDetector:
                 # package.json with no scripts). Skip rather than emit an empty
                 # profile — the next marker in the precedence order may apply.
                 continue
+            from general_ludd.project_runner.profile import ProjectProfile  # lazy — breaks import cycle
+
             return ProjectProfile(
                 name=f"{ecosystem}-detected",
                 commands=commands,
@@ -160,9 +164,7 @@ class ToolchainDetector:
         return None
 
     @staticmethod
-    def _commands_for(
-        ecosystem: str, workspace: Path, marker_path: Path
-    ) -> dict[str, str]:
+    def _commands_for(ecosystem: str, workspace: Path, marker_path: Path) -> dict[str, str]:
         if ecosystem == "python":
             return _python_commands()
         if ecosystem == "node":

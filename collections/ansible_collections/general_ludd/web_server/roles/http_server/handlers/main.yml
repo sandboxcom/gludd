@@ -1,0 +1,10 @@
+---
+- name: reload nginx
+  ansible.builtin.service:
+    name: nginx
+    state: restarted
+
+- name: reload apache
+  ansible.builtin.service:
+    name: "{{ 'httpd' if ansible_os_family == 'RedHat' else 'apache2' }}"
+    state: restarted

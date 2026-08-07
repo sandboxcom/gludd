@@ -40,6 +40,44 @@ def _collect_py_files() -> list[Path]:
     return sorted(pf)
 
 
+def _is_type_checking_guard(node: ast.AST) -> bool:
+    """Return True when *node* is ``if TYPE_CHECKING:``."""
+    return isinstance(node, ast.If) and isinstance(node.test, ast.Name) and node.test.id == "TYPE_CHECKING"
+
+
+def _inside_type_checking_or_function(node: ast.AST, ancestors: list[ast.AST]) -> bool:
+    """Return True when *node* is inside ``if TYPE_CHECKING:`` or a function body.
+
+    Lazy imports (func-scoped) don't create module-load-time cycles;
+    TYPE_CHECKING imports are never runtime.
+    """
+    for anc in ancestors:
+        if _is_type_checking_guard(anc):
+            return True
+        if isinstance(anc, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            return True
+    return False
+
+
+def _iter_imports(root: ast.AST):
+    """Yield every (import_node, ancestors_path) in *root*, excluding those
+    inside ``if TYPE_CHECKING:`` guards or function bodies.
+    """
+    ancestors: list[ast.AST] = [root]
+    for child in ast.iter_child_nodes(root):
+        yield from _iter_imports_walk(child, ancestors)
+
+
+def _iter_imports_walk(node: ast.AST, ancestors: list[ast.AST]):
+    ancestors.append(node)
+    for child in ast.iter_child_nodes(node):
+        yield from _iter_imports_walk(child, ancestors)
+    if isinstance(node, (ast.Import, ast.ImportFrom)):
+        if not _inside_type_checking_or_function(node, ancestors):
+            yield (node, ancestors)
+    ancestors.pop()
+
+
 def _static_import_graph() -> dict[str, set[str]]:
     graph: dict[str, set[str]] = {}
     for p in _collect_py_files():
@@ -49,7 +87,7 @@ def _static_import_graph() -> dict[str, set[str]]:
             continue
         src = p.read_text()
         tree = ast.parse(src)
-        for node in ast.walk(tree):
+        for node, _ancestors in _iter_imports(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     if _subpackage_of(alias.name, PKG_NAME):

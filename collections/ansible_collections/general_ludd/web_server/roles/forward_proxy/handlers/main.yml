@@ -1,0 +1,15 @@
+---
+- name: reload squid
+  ansible.builtin.service:
+    name: squid
+    state: restarted
+
+- name: reload tinyproxy
+  ansible.builtin.service:
+    name: tinyproxy
+    state: restarted
+
+- name: reload privoxy
+  ansible.builtin.service:
+    name: privoxy
+    state: restarted

@@ -238,8 +238,11 @@ def test_handler_notifications_match_existing_handlers() -> None:
             handlers = _load_yaml(handler_file)
             if handlers and isinstance(handlers, list):
                 for h in handlers:
-                    if isinstance(h, dict) and "name" in h:
-                        handler_names.add(h["name"])
+                    if isinstance(h, dict):
+                        if "name" in h:
+                            handler_names.add(h["name"])
+                        if "listen" in h:
+                            handler_names.add(h["listen"])
 
         tasks_dir = role_dir / "tasks"
         for tf in sorted(tasks_dir.rglob("*.yml")):

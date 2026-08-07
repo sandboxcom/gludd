@@ -1,0 +1,20 @@
+---
+- name: reload nginx
+  ansible.builtin.service:
+    name: nginx
+    state: restarted
+
+- name: reload haproxy
+  ansible.builtin.service:
+    name: haproxy
+    state: restarted
+
+- name: reload traefik
+  ansible.builtin.service:
+    name: traefik
+    state: restarted
+
+- name: reload envoy
+  ansible.builtin.service:
+    name: envoy
+    state: restarted
