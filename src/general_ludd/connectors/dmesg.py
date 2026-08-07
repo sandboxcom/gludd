@@ -29,6 +29,7 @@ class CommandRunner(Protocol):
     def __call__(self, argv: Sequence[str]) -> RunResult: ...
 
 
+@runtime_checkable
 class RunResult(Protocol):
     """Minimal result shape a runner must return."""
 
