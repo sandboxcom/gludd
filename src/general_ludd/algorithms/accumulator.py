@@ -187,13 +187,14 @@ class MerkleTree:
             return None
         target_h = self._hash_leaf(target)
         hashes_sorted = sorted(enumerate(self._leaves), key=lambda x: x[1])
+        sorted_raw = [self._leaves[i] for i, _ in hashes_sorted]
         sorted_leaf_hashes = [self._leaf_hashes[i] for i, _ in hashes_sorted]
-        lo, hi = 0, len(sorted_leaf_hashes)
+        lo, hi = 0, len(sorted_raw)
         while lo < hi:
             mid = (lo + hi) // 2
-            if sorted_leaf_hashes[mid] == target_h:
+            if sorted_raw[mid] == target:
                 return None
-            if sorted_leaf_hashes[mid] < target_h:
+            if sorted_raw[mid] < target:
                 lo = mid + 1
             else:
                 hi = mid

@@ -667,6 +667,10 @@ src/general_ludd/cloud/model_pipeline.py:PipelineResult
 src/general_ludd/cloud/model_pipeline.py:PipelineStep
 src/general_ludd/cloud/multi_model_game_pipeline.py:DesignSpec
 src/general_ludd/cloud/multi_model_game_pipeline.py:ReviewResult
+src/general_ludd/cloud/project_types.py:ProjectType
+src/general_ludd/cloud/project_types.py:register_project_type
+src/general_ludd/cloud/project_types.py:resolve_model_profile
+src/general_ludd/cloud/project_types.py:validate_project_type
 src/general_ludd/cloud/resource_lifecycle.py:ResourceLifecycleManager
 src/general_ludd/cloud/resource_lifecycle.py:TrackedResource
 src/general_ludd/cloud/validate_all.py:validate_monitor_roles
@@ -1659,6 +1663,9 @@ src/general_ludd/routers/estimation.py:SuspectCompletion
 src/general_ludd/routers/experts.py:ChemistryResolveRequest
 src/general_ludd/routers/experts.py:ExpertQueryRequest
 src/general_ludd/routers/experts.py:MaterialsSelectRequest
+src/general_ludd/routers/game.py:GameGenerateMultiRequest
+src/general_ludd/routers/generate.py:GenerateCreateRequest
+src/general_ludd/routers/generate.py:GenerateValidateRequest
 src/general_ludd/routers/human_todos.py:AddTagRequest
 src/general_ludd/routers/human_todos.py:CreateHumanTodoRequest
 src/general_ludd/routers/human_todos.py:PatchHumanTodoRequest
