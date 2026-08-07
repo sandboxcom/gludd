@@ -1180,6 +1180,19 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     iam_validate.add_argument("--file", required=True, help="Path to JSON file containing the role definition")
     iam_validate.set_defaults(func=_cmd_cloud_iam_validate)
 
+    game_parser = cloud_sub.add_parser("game", help="Multi-model game generation")
+    game_parser.set_defaults(func=None)
+    game_sub = game_parser.add_subparsers(dest="game_command")
+
+    game_gen = game_sub.add_parser("generate-multi", help="Generate game code via PLANNER→CODER→REVIEWER pipeline")
+    game_gen.add_argument("--description", required=True, help="Game description for the planner")
+    game_gen.add_argument("--planner", default="default", help="Planner model ID")
+    game_gen.add_argument("--coder", default="default", help="Coder model ID")
+    game_gen.add_argument("--reviewer", default="default", help="Reviewer model ID")
+    game_gen.add_argument("--review-rounds", type=int, default=3, help="Max review/fix rounds")
+    game_gen.add_argument("--daemon-url", default="http://localhost:8000")
+    game_gen.set_defaults(func=_cmd_cloud_game_generate_multi)
+
     # account removed from CLI — access via prompting. Code retained in cli_account.py for programmatic use.
     # from general_ludd.cli_account import add_account_subparser
     # add_account_subparser(sub)
@@ -1570,6 +1583,23 @@ def _cmd_cloud_iam_validate(args: argparse.Namespace) -> None:
     print(json.dumps(validated, indent=2, default=str))
     if validated["status"] == "invalid" or validated["status"] == "error":
         sys.exit(1)
+
+
+def _cmd_cloud_game_generate_multi(args: argparse.Namespace) -> None:
+    data = _http_call(
+        "POST",
+        f"{args.daemon_url}/api/game/generate-multi",
+        json={
+            "description": args.description,
+            "planner_model": args.planner,
+            "coder_model": args.coder,
+            "reviewer_model": args.reviewer,
+            "max_review_rounds": args.review_rounds,
+        },
+        timeout=120.0,
+    )
+    print(json.dumps(data, indent=2, default=str))
+    sys.exit(0)
 
 
 def _cmd_searx(args: argparse.Namespace) -> None:

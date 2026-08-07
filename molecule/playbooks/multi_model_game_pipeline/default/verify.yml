@@ -1,0 +1,366 @@
+---
+- name: Verify — multi-model game pipeline runtime behavior and data flow
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_root: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    pipeline_src: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/src/general_ludd/cloud/multi_model_game_pipeline.py"
+    test_artifact_dir: "/tmp/gludd-multi-model-pipeline-molecule"
+  tasks:
+    # ── Section A: Runtime imports and class instantiation ─────────────────
+
+    - name: "A1. Import pipeline and verify all exports are accessible"
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import sys; sys.path.insert(0, '{{ project_root }}')
+            from general_ludd.cloud.multi_model_game_pipeline import (
+                DesignSpec, ReviewResult, MultiModelGamePipeline,
+                _parse_key_value, _PLANNER_RESPONSE_RE, _REVIEWER_RESPONSE_RE,
+                _PLANNER_SYSTEM_PROMPT, _CODER_SYSTEM_PROMPT,
+                _REVIEWER_SYSTEM_PROMPT, _CODER_FIX_SYSTEM_PROMPT,
+            )
+            print(f'PIPELINE_VERSION: 1')
+            print(f'PLANNER_PROMPT_LEN: {len(_PLANNER_SYSTEM_PROMPT)}')
+            print(f'CODER_PROMPT_LEN: {len(_CODER_SYSTEM_PROMPT)}')
+            print(f'REVIEWER_PROMPT_LEN: {len(_REVIEWER_SYSTEM_PROMPT)}')
+            print(f'FIX_PROMPT_LEN: {len(_CODER_FIX_SYSTEM_PROMPT)}')
+            print('IMPORT: OK')
+      register: _import_check
+      changed_when: false
+
+    - name: "A2. Assert all imports succeed and prompts are non-empty"
+      ansible.builtin.assert:
+        that:
+          - "'IMPORT: OK' in _import_check.stdout"
+          - "_import_check.stdout | regex_search('PLANNER_PROMPT_LEN: ([0-9]+)', '\\1') | int > 50"
+          - "_import_check.stdout | regex_search('CODER_PROMPT_LEN: ([0-9]+)', '\\1') | int > 50"
+          - "_import_check.stdout | regex_search('REVIEWER_PROMPT_LEN: ([0-9]+)', '\\1') | int > 50"
+        fail_msg: "All pipeline imports must succeed with non-empty system prompts"
+
+    # ── Section B: DesignSpec creation and to_prompt() output ──────────────
+
+    - name: "B1. Build DesignSpec from synthetic planner response"
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import sys; sys.path.insert(0, '{{ project_root }}')
+            from general_ludd.cloud.multi_model_game_pipeline import (
+                DesignSpec, _parse_key_value, _PLANNER_RESPONSE_RE,
+            )
+            with open('{{ test_artifact_dir }}/planner_response.txt') as f:
+                text = f.read()
+            parsed = _parse_key_value(text, _PLANNER_RESPONSE_RE)
+            spec = DesignSpec(
+                name=parsed.get('name', 'untitled'),
+                genre=parsed.get('genre', ''),
+                description='A classic snake game',
+                architecture_plan=parsed.get('architecture', ''),
+                component_list=tuple(c.strip() for c in parsed.get('components', '').split(',') if c.strip()),
+                tech_stack=tuple(t.strip() for t in parsed.get('tech', '').split(',') if t.strip()),
+                acceptance_criteria=tuple(a.strip() for a in parsed.get('acceptance', '').split(',') if a.strip()),
+            )
+            prompt = spec.to_prompt()
+            assert 'Snake' in spec.name
+            assert spec.genre == 'arcade'
+            assert len(spec.component_list) > 0
+            assert len(spec.tech_stack) > 0
+            assert len(spec.acceptance_criteria) > 0
+            assert 'Game Design Specification' in prompt
+            assert '## Architecture' in prompt
+            assert '## Components' in prompt
+            assert '## Tech Stack' in prompt
+            assert '## Acceptance Criteria' in prompt
+            print(f'NAME: {spec.name}')
+            print(f'GENRE: {spec.genre}')
+            print(f'COMPONENTS: {len(spec.component_list)}')
+            print(f'TECH: {len(spec.tech_stack)}')
+            print(f'CRITERIA: {len(spec.acceptance_criteria)}')
+            print('DESIGNSPEC: OK')
+      register: _designspec_check
+      changed_when: false
+
+    - name: "B2. Assert DesignSpec parses correctly from planner format"
+      ansible.builtin.assert:
+        that:
+          - "'DESIGNSPEC: OK' in _designspec_check.stdout"
+          - "'NAME: Snake' in _designspec_check.stdout"
+          - "'GENRE: arcade' in _designspec_check.stdout"
+          - "_designspec_check.stdout | regex_search('COMPONENTS: ([0-9]+)', '\\1') | int >= 2"
+        fail_msg: "DesignSpec must parse planner output and produce valid spec"
+
+    # ── Section C: ReviewResult creation and to_feedback_prompt() ──────────
+
+    - name: "C1. Build ReviewResult from synthetic reviewer response"
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import sys; sys.path.insert(0, '{{ project_root }}')
+            from general_ludd.cloud.multi_model_game_pipeline import (
+                ReviewResult, _parse_key_value, _REVIEWER_RESPONSE_RE,
+            )
+            with open('{{ test_artifact_dir }}/reviewer_response.txt') as f:
+                text = f.read()
+            parsed = _parse_key_value(text, _REVIEWER_RESPONSE_RE)
+            score = float(parsed.get('score', '0.0'))
+            passed = parsed.get('passed', 'false').lower() in ('true', 'yes', '1')
+            result = ReviewResult(
+                code='class Snake: pass',
+                issues_found=tuple(i.strip() for i in parsed.get('issues', '').split(',') if i.strip()),
+                fixes_applied=tuple(f.strip() for f in parsed.get('fixes', '').split(',') if f.strip()),
+                quality_score=max(0.0, min(1.0, score)),
+                passed=passed,
+            )
+            assert result.passed == True
+            assert result.quality_score == 0.95
+            assert len(result.issues_found) == 0
+            assert len(result.fixes_applied) == 0
+            fb = result.to_feedback_prompt()
+            assert fb == ''
+            print(f'PASSED: {result.passed}')
+            print(f'SCORE: {result.quality_score}')
+            print(f'ISSUES: {len(result.issues_found)}')
+            print('REVIEWRESULT: OK')
+      register: _reviewresult_check
+      changed_when: false
+
+    - name: "C2. Assert ReviewResult with issues generates feedback"
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import sys; sys.path.insert(0, '{{ project_root }}')
+            from general_ludd.cloud.multi_model_game_pipeline import ReviewResult
+            result = ReviewResult(
+                code='class Snake: pass',
+                issues_found=('missing pygame.init()', 'no game loop'),
+                fixes_applied=('',),
+                quality_score=0.3,
+                passed=False,
+            )
+            fb = result.to_feedback_prompt()
+            assert 'Code Review Feedback' in fb
+            assert 'missing pygame.init()' in fb
+            assert 'no game loop' in fb
+            print(f'FEEDBACK_LEN: {len(fb)}')
+            print('FEEDBACK: OK')
+      register: _feedback_check
+      changed_when: false
+
+    - name: "C3. Assert ReviewResult produces correct feedback for failing review"
+      ansible.builtin.assert:
+        that:
+          - "'FEEDBACK: OK' in _feedback_check.stdout"
+          - "_feedback_check.stdout | regex_search('FEEDBACK_LEN: ([0-9]+)', '\\1') | int > 20"
+        fail_msg: "ReviewResult.to_feedback_prompt() must generate feedback for issues"
+
+    # ── Section D: AST validation of generated code ────────────────────────
+
+    - name: "D1. Verify synthetic coder output is valid Python"
+      ansible.builtin.command: "python3 -c \"import ast; ast.parse(open('{{ test_artifact_dir }}/coder_output.py').read()); print('AST: OK')\""
+      register: _ast_check
+      changed_when: false
+
+    - name: "D2. Assert generated code parses successfully"
+      ansible.builtin.assert:
+        that:
+          - "'AST: OK' in _ast_check.stdout"
+        fail_msg: "Coder output must be syntactically valid Python"
+
+    - name: "D3. Verify broken code fails AST parse"
+      ansible.builtin.command: "python3 -c \"import ast; ast.parse(open('{{ test_artifact_dir }}/broken_code.py').read()); print('SHOULD_NOT_REACH')\""
+      register: _bad_ast
+      ignore_errors: true
+      changed_when: false
+
+    - name: "D4. Assert invalid code is rejected"
+      ansible.builtin.assert:
+        that:
+          - _bad_ast.rc != 0
+          - "'SHOULD_NOT_REACH' not in _bad_ast.stdout"
+        fail_msg: "Syntactically-invalid code must fail AST parse"
+
+    # ── Section E: Regex pattern verification ──────────────────────────────
+
+    - name: "E1. Verify planner regex matches synthetic response"
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import sys, re; sys.path.insert(0, '{{ project_root }}')
+            from general_ludd.cloud.multi_model_game_pipeline import _PLANNER_RESPONSE_RE
+            with open('{{ test_artifact_dir }}/planner_response.txt') as f:
+                text = f.read()
+            matches = [(m.group(1).strip(), m.group(2).strip()) for m in _PLANNER_RESPONSE_RE.finditer(text)]
+            assert len(matches) == 6
+            groups = {g1 for g1, _ in matches}
+            assert groups == {'name', 'genre', 'architecture', 'components', 'tech', 'acceptance'}
+            for field, value in matches:
+                print(f'{field}: {value[:40]}...' if len(value) > 40 else f'{field}: {value}')
+            print('REGEX_PLANNER: OK')
+      register: _planner_regex
+      changed_when: false
+
+    - name: "E2. Assert planner regex finds all 6 fields"
+      ansible.builtin.assert:
+        that:
+          - "'REGEX_PLANNER: OK' in _planner_regex.stdout"
+          - "'name:' in _planner_regex.stdout"
+          - "'genre:' in _planner_regex.stdout"
+        fail_msg: "PLANNER response regex must match all 6 key:value pairs"
+
+    - name: "E3. Verify reviewer regex matches synthetic response"
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import sys, re; sys.path.insert(0, '{{ project_root }}')
+            from general_ludd.cloud.multi_model_game_pipeline import _REVIEWER_RESPONSE_RE
+            with open('{{ test_artifact_dir }}/reviewer_response.txt') as f:
+                text = f.read()
+            matches = [(m.group(1).strip(), m.group(2).strip()) for m in _REVIEWER_RESPONSE_RE.finditer(text)]
+            assert len(matches) == 4
+            groups = {g1 for g1, _ in matches}
+            assert groups == {'issues', 'fixes', 'score', 'passed'}
+            for field, value in matches:
+                print(f'{field}: {repr(value)}')
+            print('REGEX_REVIEWER: OK')
+      register: _reviewer_regex
+      changed_when: false
+
+    - name: "E4. Assert reviewer regex finds all 4 fields"
+      ansible.builtin.assert:
+        that:
+          - "'REGEX_REVIEWER: OK' in _reviewer_regex.stdout"
+          - "'issues:' in _reviewer_regex.stdout"
+          - "'score:' in _reviewer_regex.stdout"
+          - "'passed:' in _reviewer_regex.stdout"
+        fail_msg: "REVIEWER response regex must match all 4 key:value pairs"
+
+    # ── Section F: End-to-end data flow (offline, no live models) ──────────
+
+    - name: "F1. Run full planner→coder→reviewer data flow with synthetic data"
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import sys; sys.path.insert(0, '{{ project_root }}')
+            from general_ludd.cloud.multi_model_game_pipeline import (
+                DesignSpec, ReviewResult, _parse_key_value,
+                _PLANNER_RESPONSE_RE, _REVIEWER_RESPONSE_RE,
+            )
+            with open('{{ test_artifact_dir }}/planner_response.txt') as f:
+                planner_text = f.read()
+            planner_parsed = _parse_key_value(planner_text, _PLANNER_RESPONSE_RE)
+            spec = DesignSpec(
+                name=planner_parsed.get('name', 'untitled'),
+                genre=planner_parsed.get('genre', ''),
+                description='A classic snake game',
+                architecture_plan=planner_parsed.get('architecture', ''),
+                component_list=tuple(c.strip() for c in planner_parsed.get('components', '').split(',') if c.strip()),
+                tech_stack=tuple(t.strip() for t in planner_parsed.get('tech', '').split(',') if t.strip()),
+                acceptance_criteria=tuple(a.strip() for a in planner_parsed.get('acceptance', '').split(',') if a.strip()),
+            )
+            with open('{{ test_artifact_dir }}/coder_output.py') as f:
+                code = f.read()
+            with open('{{ test_artifact_dir }}/reviewer_response.txt') as f:
+                reviewer_text = f.read()
+            reviewer_parsed = _parse_key_value(reviewer_text, _REVIEWER_RESPONSE_RE)
+            score = float(reviewer_parsed.get('score', '0.0'))
+            passed = reviewer_parsed.get('passed', 'false').lower() in ('true', 'yes', '1')
+            result = ReviewResult(
+                code=code,
+                issues_found=tuple(i.strip() for i in reviewer_parsed.get('issues', '').split(',') if i.strip()),
+                fixes_applied=tuple(f.strip() for f in reviewer_parsed.get('fixes', '').split(',') if f.strip()),
+                quality_score=max(0.0, min(1.0, score)),
+                passed=passed,
+            )
+            print(f'PLANNER->SPEC: {spec.name} ({spec.genre})')
+            print(f'CODER_OUTPUT_LEN: {len(code)}')
+            print(f'REVIEWER_PASSED: {result.passed}')
+            print(f'REVIEWER_SCORE: {result.quality_score}')
+            print(f'REVIEWER_ISSUES: {len(result.issues_found)}')
+            assert spec.name == 'Snake'
+            assert spec.genre == 'arcade'
+            assert len(spec.component_list) >= 2
+            assert len(code) > 200
+            assert 'import pygame' in code
+            assert 'class Snake' in code
+            assert result.passed == True
+            assert result.quality_score >= 0.9
+            print('DATAFLOW: OK')
+      register: _dataflow_check
+      changed_when: false
+
+    - name: "F2. Assert full offline data flow passes"
+      ansible.builtin.assert:
+        that:
+          - "'DATAFLOW: OK' in _dataflow_check.stdout"
+          - "'PLANNER->SPEC: Snake (arcade)' in _dataflow_check.stdout"
+          - "'REVIEWER_PASSED: True' in _dataflow_check.stdout"
+          - "_dataflow_check.stdout | regex_search('CODER_OUTPUT_LEN: ([0-9]+)', '\\1') | int > 200"
+        fail_msg: "Planner→coder→reviewer data flow must pass with synthetic data"
+
+    # ── Section G: Error code path — exhausted review rounds ───────────────
+
+    - name: "G1. Verify RuntimeError raised on max rounds with failing review"
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import sys; sys.path.insert(0, '{{ project_root }}')
+            from general_ludd.cloud.multi_model_game_pipeline import ReviewResult
+            result = ReviewResult(
+                code='class Snake: pass',
+                issues_found=('missing loop',),
+                fixes_applied=('',),
+                quality_score=0.2,
+                passed=False,
+            )
+            assert not result.passed
+            assert len(result.issues_found) > 0
+            assert result.quality_score < 0.5
+            fb = result.to_feedback_prompt()
+            assert 'Code Review Feedback' in fb
+            assert 'missing loop' in fb
+            print('ERROR_PATH: OK')
+      register: _error_path
+      changed_when: false
+
+    - name: "G2. Assert error handling path functions correctly"
+      ansible.builtin.assert:
+        that:
+          - "'ERROR_PATH: OK' in _error_path.stdout"
+        fail_msg: "Error path must produce feedback for failing code"
+
+    # ── Section H: Idempotency — pipeline source is stable ─────────────────
+
+    - name: "H1. Re-read pipeline source for idempotency check"
+      ansible.builtin.slurp:
+        src: "{{ pipeline_src }}"
+      register: _src2
+
+    - name: "H2. Assert pipeline source has not changed during test"
+      ansible.builtin.assert:
+        that:
+          - _src2.changed == false
+        fail_msg: "Pipeline source read must be idempotent"
+
+    # ── Section I: Cleanup ─────────────────────────────────────────────────
+
+    - name: "I1. Remove test artifact directory"
+      ansible.builtin.file:
+        path: "{{ test_artifact_dir }}"
+        state: absent

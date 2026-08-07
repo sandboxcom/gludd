@@ -1,0 +1,253 @@
+---
+- name: Converge — multi-model game pipeline (planner→coder→reviewer) structural tests
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    pipeline_src: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/src/general_ludd/cloud/multi_model_game_pipeline.py"
+    test_artifact_dir: "/tmp/gludd-multi-model-pipeline-molecule"
+  tasks:
+    # ── Phase 1: Pipeline source structure ────────────────────────────────
+
+    - name: "Slurp pipeline source for structural assertions"
+      ansible.builtin.slurp:
+        src: "{{ pipeline_src }}"
+      register: _src
+
+    # ── Phase 2: PLANNER stage assertions ──────────────────────────────────
+
+    - name: "Assert PLANNER system prompt defines key:value output format"
+      ansible.builtin.assert:
+        that:
+          - _src.content | b64decode is search('_PLANNER_SYSTEM_PROMPT')
+          - _src.content | b64decode is search('name:<game-name>')
+          - _src.content | b64decode is search('genre:<genre>')
+          - _src.content | b64decode is search('architecture:<')
+          - _src.content | b64decode is search('components:<')
+          - _src.content | b64decode is search('acceptance:<')
+        fail_msg: "PLANNER system prompt must define key:value output format with name, genre, architecture, components, acceptance"
+
+    - name: "Assert DesignSpec dataclass has all required fields"
+      ansible.builtin.assert:
+        that:
+          - _src.content | b64decode is search('class DesignSpec')
+          - _src.content | b64decode is search('name:')
+          - _src.content | b64decode is search('genre:')
+          - _src.content | b64decode is search('description:')
+          - _src.content | b64decode is search('architecture_plan')
+          - _src.content | b64decode is search('component_list')
+          - _src.content | b64decode is search('tech_stack')
+          - _src.content | b64decode is search('acceptance_criteria')
+        fail_msg: "DesignSpec must contain all required fields"
+
+    - name: "Assert DesignSpec.to_prompt() generates structured markdown"
+      ansible.builtin.assert:
+        that:
+          - _src.content | b64decode is search('def to_prompt')
+          - _src.content | b64decode is search('Game Design Specification')
+          - _src.content | b64decode is search('## Architecture')
+          - _src.content | b64decode is search('## Components')
+          - _src.content | b64decode is search('## Tech Stack')
+          - _src.content | b64decode is search('## Acceptance Criteria')
+        fail_msg: "DesignSpec.to_prompt() must generate structured markdown sections"
+
+    - name: "Assert planner regex parses key:value lines"
+      ansible.builtin.assert:
+        that:
+          - _src.content | b64decode is search('_PLANNER_RESPONSE_RE')
+          - _src.content | b64decode is search('name|genre|architecture|components|tech|acceptance')
+        fail_msg: "PLANNER response regex must parse all six fields"
+
+    - name: "Assert plan() method calls gateway and parses response"
+      ansible.builtin.assert:
+        that:
+          - _src.content | b64decode is search('def plan')
+          - _src.content | b64decode is search('_gateway.call_model')
+          - _src.content | b64decode is search('_PLANNER_SYSTEM_PROMPT')
+          - _src.content | b64decode is search('_parse_key_value')
+          - _src.content | b64decode is search('_PLANNER_RESPONSE_RE')
+        fail_msg: "plan() must call model gateway with planner prompt and parse response"
+
+    - name: "Assert plan() returns DesignSpec with parsed fields"
+      ansible.builtin.assert:
+        that:
+          - _src.content | b64decode is search('DesignSpec')
+          - _src.content | b64decode is search('parsed.get')
+        fail_msg: "plan() must construct and return a DesignSpec"
+
+    # ── Phase 3: CODER stage assertions ────────────────────────────────────
+
+    - name: "Assert CODER system prompt requires self-contained Python"
+      ansible.builtin.assert:
+        that:
+          - _src.content | b64decode is search('_CODER_SYSTEM_PROMPT')
+          - _src.content | b64decode is search('self-contained')
+          - _src.content | b64decode is search('pygame for graphics')
+          - _src.content | b64decode is search('pygame.init()')
+          - _src.content | b64decode is search('pygame.quit()')
+        fail_msg: "CODER system prompt must require self-contained pygame code"
+
+    - name: "Assert CODER has fix mode with review feedback"
+      ansible.builtin.assert:
+        that:
+          - _src.content | b64decode is search('_CODER_FIX_SYSTEM_PROMPT')
+          - _src.content | b64decode is search('review feedback')
+        fail_msg: "CODER must have fix system prompt for iterative review"
+
+    - name: "Assert code() method supports initial and fix paths"
+      ansible.builtin.assert:
+        that:
+          - _src.content | b64decode is search('def code')
+          - _src.content | b64decode is search('previous_code')
+          - _src.content | b64decode is search('feedback')
+          - _src.content | b64decode is search('_CODER_FIX_SYSTEM_PROMPT')
+          - _src.content | b64decode is search('_CODER_SYSTEM_PROMPT')
+        fail_msg: "code() must support initial generation and fix-with-feedback paths"
+
+    - name: "Assert code() builds conversation messages correctly"
+      ansible.builtin.assert:
+        that:
+          - _src.content | b64decode is search('user.*spec.to_prompt')
+          - _src.content | b64decode is search('assistant.*previous_code')
+        fail_msg: "code() must build conversation messages with spec and prior code"
+
+    # ── Phase 4: REVIEWER stage assertions ─────────────────────────────────
+
+    - name: "Assert REVIEWER system prompt defines key:value output"
+      ansible.builtin.assert:
+        that:
+          - _src.content | b64decode is search('_REVIEWER_SYSTEM_PROMPT')
+          - _src.content | b64decode is search('GAME CODE REVIEWER')
+        fail_msg: "REVIEWER system prompt must define role as GAME CODE REVIEWER"
+
+    - name: "Assert reviewer regex parses review fields"
+      ansible.builtin.assert:
+        that:
+          - _src.content | b64decode is search('_REVIEWER_RESPONSE_RE')
+          - _src.content | b64decode is search('issues|fixes|score|passed')
+        fail_msg: "REVIEWER response regex must parse issues, fixes, score, passed"
+
+    - name: "Assert ReviewResult dataclass has all fields"
+      ansible.builtin.assert:
+        that:
+          - _src.content | b64decode is search('class ReviewResult')
+          - _src.content | b64decode is search('code:')
+          - _src.content | b64decode is search('issues_found')
+          - _src.content | b64decode is search('fixes_applied')
+          - _src.content | b64decode is search('quality_score')
+          - _src.content | b64decode is search('passed.*bool')
+        fail_msg: "ReviewResult must contain code, issues_found, fixes_applied, quality_score, passed"
+
+    - name: "Assert ReviewResult.to_feedback_prompt() generates feedback"
+      ansible.builtin.assert:
+        that:
+          - _src.content | b64decode is search('def to_feedback_prompt')
+          - _src.content | b64decode is search('Code Review Feedback')
+        fail_msg: "ReviewResult.to_feedback_prompt() must generate structured feedback"
+
+    - name: "Assert review() method examines code against spec"
+      ansible.builtin.assert:
+        that:
+          - _src.content | b64decode is search('def review')
+          - _src.content | b64decode is search('_REVIEWER_SYSTEM_PROMPT')
+          - _src.content | b64decode is search('spec.to_prompt()')
+        fail_msg: "review() must examine code against the design spec"
+
+    - name: "Assert review() parses score as float 0.0-1.0"
+      ansible.builtin.assert:
+        that:
+          - _src.content | b64decode is search('float(score_str)')
+          - _src.content | b64decode is search('max(0.0, min(1.0')
+        fail_msg: "review() must clamp quality_score to 0.0-1.0 range"
+
+    - name: "Assert review() parses passed as boolean"
+      ansible.builtin.assert:
+        that:
+          - _src.content | b64decode is search("passed_str.lower() in")
+          - _src.content | b64decode is search('true.*yes.*1')
+        fail_msg: "review() must parse passed field as boolean"
+
+    # ── Phase 5: Pipeline orchestration assertions ─────────────────────────
+
+    - name: "Assert generate() method exists with all parameters"
+      ansible.builtin.assert:
+        that:
+          - _src.content | b64decode is search('def generate')
+          - _src.content | b64decode is search('planner_model')
+          - _src.content | b64decode is search('coder_model')
+          - _src.content | b64decode is search('reviewer_model')
+          - _src.content | b64decode is search('max_review_rounds')
+        fail_msg: "generate() must accept per-stage model IDs and max_review_rounds"
+
+    - name: "Assert generate() calls plan→code→review in order"
+      ansible.builtin.assert:
+        that:
+          - _src.content | b64decode is search('self.plan')
+          - _src.content | b64decode is search('self.code')
+          - _src.content | b64decode is search('self.review')
+        fail_msg: "generate() must call plan(), code(), review() in sequence"
+
+    - name: "Assert generate() iterates review-fix cycles"
+      ansible.builtin.assert:
+        that:
+          - _src.content | b64decode is search('for _round in range')
+          - _src.content | b64decode is search('max_review_rounds')
+          - _src.content | b64decode is search('result.passed')
+        fail_msg: "generate() must iterate review-fix until passed or rounds exhausted"
+
+    - name: "Assert generate() raises on max rounds exhausted"
+      ansible.builtin.assert:
+        that:
+          - _src.content | b64decode is search('RuntimeError')
+          - _src.content | b64decode is search('did not pass review')
+        fail_msg: "generate() must raise RuntimeError when review never passes"
+
+    - name: "Assert generate() returns code on first passed review"
+      ansible.builtin.assert:
+        that:
+          - _src.content | b64decode is search('return result.code')
+        fail_msg: "generate() must return polished code when review passes"
+
+    - name: "Assert _parse_key_value utility function exists"
+      ansible.builtin.assert:
+        that:
+          - _src.content | b64decode is search('def _parse_key_value')
+          - _src.content | b64decode is search('pattern.finditer')
+        fail_msg: "_parse_key_value must parse key:value lines with regex pattern"
+
+    - name: "Assert MultiModelGamePipeline class is exportable"
+      ansible.builtin.assert:
+        that:
+          - _src.content | b64decode is search('class MultiModelGamePipeline')
+          - _src.content | b64decode is search("__all__")
+          - _src.content | b64decode is search("DesignSpec")
+          - _src.content | b64decode is search("ReviewResult")
+        fail_msg: "MultiModelGamePipeline must be in __all__ with DesignSpec and ReviewResult"
+
+    - name: "Assert gateway and task_policy stored at construction"
+      ansible.builtin.assert:
+        that:
+          - _src.content | b64decode is search('_gateway')
+          - _src.content | b64decode is search('_task_policy')
+        fail_msg: "Pipeline must store gateway and task_policy references"
+
+    # ── Phase 6: Cross-cutting data flow assertions ────────────────────────
+
+    - name: "Assert DesignSpec flows from planner to coder"
+      ansible.builtin.assert:
+        that:
+          - _src.content | b64decode is search('spec.to_prompt()')
+        fail_msg: "DesignSpec.to_prompt() must be consumed by code() as user message"
+
+    - name: "Assert previous_code flows from coder to reviewer"
+      ansible.builtin.assert:
+        that:
+          - _src.content | b64decode is search('previous_code')
+        fail_msg: "Failed code must flow from code() to review-fix cycle"
+
+    - name: "Assert review feedback flows back to coder"
+      ansible.builtin.assert:
+        that:
+          - _src.content | b64decode is search('to_feedback_prompt')
+          - _src.content | b64decode is search('feedback')
+        fail_msg: "ReviewResult.to_feedback_prompt() must feed back to code()"

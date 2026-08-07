@@ -1,0 +1,153 @@
+---
+- name: Prepare — create synthetic pipeline artifacts for structural verification
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    test_artifact_dir: "/tmp/gludd-multi-model-pipeline-molecule"
+    pipeline_src: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/src/general_ludd/cloud/multi_model_game_pipeline.py"
+    test_game: "snake"
+    test_genre: "arcade"
+    test_description: "A classic snake game where the player navigates a growing snake"
+  tasks:
+    - name: "Ensure test artifact directory exists"
+      ansible.builtin.file:
+        path: "{{ test_artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: "Verify pipeline source file exists"
+      ansible.builtin.stat:
+        path: "{{ pipeline_src }}"
+      register: _pipeline_stat
+      failed_when: not _pipeline_stat.stat.exists
+
+    - name: "Write synthetic planner response (key:value format)"
+      ansible.builtin.copy:
+        content: |
+          name:Snake
+          genre:arcade
+          architecture:Game loop with grid-based movement, food spawning, collision detection
+          components:Snake head/body, Food, Score tracker, Game-over screen
+          tech:pygame, random, sys
+          acceptance:Snake moves in four directions, score increments on eating food, game ends on wall/self collision, restart resets state
+        dest: "{{ test_artifact_dir }}/planner_response.txt"
+        mode: "0644"
+
+    - name: "Write synthetic coder output (valid Python game)"
+      ansible.builtin.copy:
+        content: |
+          import pygame
+          import random
+          import sys
+
+          class Snake:
+              def __init__(self):
+                  pygame.init()
+                  self._screen = pygame.display.set_mode((400, 400))
+                  pygame.display.set_caption("Snake")
+                  self._clock = pygame.time.Clock()
+                  self._font = pygame.font.Font(None, 36)
+                  self.start()
+
+              def start(self):
+                  self._score = 0
+                  self._game_over = False
+                  self._snake = [(10, 10)]
+                  self._food = self._spawn_food()
+                  self._direction = "right"
+
+              def _spawn_food(self):
+                  while True:
+                      pos = (random.randint(0, 19), random.randint(0, 19))
+                      if pos not in self._snake:
+                          return pos
+
+              def tick(self, direction):
+                  if self._game_over:
+                      return
+                  self._direction = direction
+                  head = list(self._snake[0])
+                  if direction == "up": head[1] -= 1
+                  elif direction == "down": head[1] += 1
+                  elif direction == "left": head[0] -= 1
+                  elif direction == "right": head[0] += 1
+                  head = tuple(head)
+                  if head[0] < 0 or head[0] >= 20 or head[1] < 0 or head[1] >= 20:
+                      self._game_over = True
+                      return
+                  if head in self._snake:
+                      self._game_over = True
+                      return
+                  self._snake.insert(0, head)
+                  if head == self._food:
+                      self._score += 1
+                      self._food = self._spawn_food()
+                  else:
+                      self._snake.pop()
+
+              def score(self):
+                  return self._score
+
+              def is_game_over(self):
+                  return self._game_over
+
+              def restart(self):
+                  self.start()
+
+              def run(self):
+                  while not self._game_over:
+                      for event in pygame.event.get():
+                          if event.type == pygame.QUIT:
+                              pygame.quit()
+                              sys.exit()
+                      self._screen.fill((0, 0, 0))
+                      for seg in self._snake:
+                          pygame.draw.rect(self._screen, (0, 255, 0), (seg[0]*20, seg[1]*20, 20, 20))
+                      pygame.draw.rect(self._screen, (255, 0, 0), (self._food[0]*20, self._food[1]*20, 20, 20))
+                      score_text = self._font.render(f"Score: {self._score}", True, (255, 255, 255))
+                      self._screen.blit(score_text, (10, 10))
+                      pygame.display.flip()
+                      self._clock.tick(10)
+                  pygame.quit()
+
+          if __name__ == "__main__":
+              Snake().run()
+        dest: "{{ test_artifact_dir }}/coder_output.py"
+        mode: "0644"
+
+    - name: "Write synthetic reviewer response (key:value format)"
+      ansible.builtin.copy:
+        content: |
+          issues:
+          fixes:
+          score:0.95
+          passed:true
+        dest: "{{ test_artifact_dir }}/reviewer_response.txt"
+        mode: "0644"
+
+    - name: "Write syntactically-invalid code for error handling tests"
+      ansible.builtin.copy:
+        content: |
+          class Broken:
+              def __init__(self)
+                  self.x = 1
+        dest: "{{ test_artifact_dir }}/broken_code.py"
+        mode: "0644"
+
+    - name: "Run pipeline unit tests to confirm source health"
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import sys; sys.path.insert(0, '{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}')
+            from general_ludd.cloud.multi_model_game_pipeline import (
+                DesignSpec, ReviewResult, MultiModelGamePipeline, _parse_key_value,
+                _PLANNER_RESPONSE_RE, _REVIEWER_RESPONSE_RE,
+                _PLANNER_SYSTEM_PROMPT, _CODER_SYSTEM_PROMPT, _REVIEWER_SYSTEM_PROMPT,
+                _CODER_FIX_SYSTEM_PROMPT,
+            )
+            print('IMPORTS: OK')
+      register: _import_check
+      changed_when: false

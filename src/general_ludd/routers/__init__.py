@@ -20,6 +20,7 @@ def register_all(app: FastAPI, daemon_state: dict[str, object]) -> None:
     from general_ludd.routers.estimation import register as register_estimation
     from general_ludd.routers.eval import register as register_eval
     from general_ludd.routers.filestore import register as register_filestore
+    from general_ludd.routers.game import register as register_game
     from general_ludd.routers.human_todos import register as register_human_todos
     from general_ludd.routers.integrity import register as register_integrity
     from general_ludd.routers.mcp import register as register_mcp
@@ -55,6 +56,7 @@ def register_all(app: FastAPI, daemon_state: dict[str, object]) -> None:
     register_estimation(app, daemon_state)
     register_eval(app, daemon_state)
     register_filestore(app, daemon_state)
+    register_game(app, daemon_state)
     register_human_todos(app, daemon_state)
     register_integrity(app, daemon_state)
     register_mcp(app, daemon_state)
