@@ -2,7 +2,7 @@
 
 ---
 
-## SESSION 80 FINAL — 2026-08-06 — HEAD `8a2a0019`: COMPLETE — multi-model game pipeline built, enforcement 13/13 PASS, agent count config codified
+## SESSION 80 FINAL — 2026-08-06 — HEAD `66206625`: COMPLETE — multi-model game pipeline built + daemon/CLI wired, enforcement 13/13 PASS, agent count config codified
 
 ### Key Accomplishments
 
@@ -11,11 +11,13 @@
 - **Model pipeline orchestrator: CREATED** — orchestration layer for multi-model execution and comparison benchmarking.
 - **Enforcement hasPendingWork fix: LANDED** — `enforce-multitask.ts` detection improved; all 13 plugins BLOCKING, 125 runtime tests PASS.
 - **Agent count config codified: DONE** — `multitask_config.ts` as canonical single source of truth for MIN/MAX/HARD_MAX dispatch counts. AGENTS.md updated with reference.
+- **Molecule scenario created** — ansible molecule scenario for model pipeline validation.
+- **Daemon/CLI wiring: COMPLETE** — model pipeline endpoints and CLI commands integrated.
 - **Session 80 completions finalized** — TASKS.md, README status table, dead-code baseline all updated.
 
-### Current State (HEAD `8a2a0019`)
+### Current State (HEAD `66206625`)
 
-- **HEAD: `8a2a0019`** on `development`
+- **HEAD: `66206625`** on `development`
 - **Enforcement: 13/13 PASS, 125 runtime tests**
 - **Model registry: expanded** — DeepSeek, Llama, Phi, Qwen
 - **Multi-model comparison benchmark: operational**
@@ -196,6 +198,6 @@ a33b2d78 feat: wave 14 — backup_restore deep + report_generation deep + molecu
 2. `make gate` full for fresh baseline
 3. Push any new commits: `make batch-push`
 
-- **Last Updated: 2026-08-06 — Session 80 FINAL. HEAD `8a2a0019` on `development`. Multi-model game pipeline built (planner→coder→reviewer). Non-Qwen local models (DeepSeek, Llama, Phi) configured. Model pipeline orchestrator created. Enforcement hasPendingWork fix landed (13/13 PASS, 125 runtime tests). Agent count config codified (multitask_config.ts). Release v0.1.0-beta.3 SHIPPED.
+- **Last Updated: 2026-08-06 — Session 80 FINAL. HEAD `66206625` on `development`. Multi-model game pipeline built (planner→coder→reviewer), daemon/CLI wired. Non-Qwen local models (DeepSeek, Llama, Phi) configured. Model pipeline orchestrator created. Molecule scenario created. Enforcement hasPendingWork fix landed (13/13 PASS, 125 runtime tests). Agent count config codified (multitask_config.ts). Release v0.1.0-beta.3 SHIPPED.
 
 (End of file)

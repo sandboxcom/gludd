@@ -83,8 +83,8 @@
           - _src.content | b64decode is search('_CODER_SYSTEM_PROMPT')
           - _src.content | b64decode is search('self-contained')
           - _src.content | b64decode is search('pygame for graphics')
-          - _src.content | b64decode is search('pygame.init()')
-          - _src.content | b64decode is search('pygame.quit()')
+          - _src.content | b64decode is search('pygame\.init\(\)')
+          - _src.content | b64decode is search('pygame\.quit\(\)')
         fail_msg: "CODER system prompt must require self-contained pygame code"
 
     - name: "Assert CODER has fix mode with review feedback"
@@ -150,20 +150,20 @@
         that:
           - _src.content | b64decode is search('def review')
           - _src.content | b64decode is search('_REVIEWER_SYSTEM_PROMPT')
-          - _src.content | b64decode is search('spec.to_prompt()')
+          - _src.content | b64decode is search('spec\.to_prompt\(\)')
         fail_msg: "review() must examine code against the design spec"
 
     - name: "Assert review() parses score as float 0.0-1.0"
       ansible.builtin.assert:
         that:
-          - _src.content | b64decode is search('float(score_str)')
-          - _src.content | b64decode is search('max(0.0, min(1.0')
+          - _src.content | b64decode is search('float\(score_str\)')
+          - _src.content | b64decode is search('max\(0\.0, min\(1\.0')
         fail_msg: "review() must clamp quality_score to 0.0-1.0 range"
 
     - name: "Assert review() parses passed as boolean"
       ansible.builtin.assert:
         that:
-          - _src.content | b64decode is search("passed_str.lower() in")
+          - _src.content | b64decode is search("passed_str\.lower\(\) in")
           - _src.content | b64decode is search('true.*yes.*1')
         fail_msg: "review() must parse passed field as boolean"
 
@@ -236,7 +236,7 @@
     - name: "Assert DesignSpec flows from planner to coder"
       ansible.builtin.assert:
         that:
-          - _src.content | b64decode is search('spec.to_prompt()')
+          - _src.content | b64decode is search('spec\.to_prompt\(\)')
         fail_msg: "DesignSpec.to_prompt() must be consumed by code() as user message"
 
     - name: "Assert previous_code flows from coder to reviewer"
