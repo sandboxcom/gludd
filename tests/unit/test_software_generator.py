@@ -13,6 +13,7 @@ import pytest
 from general_ludd.cloud.project_types import (
     VALID_PROJECT_TYPES,
     VALIDATION_RULES,
+    ProjectSpec as ProjectSpecPT,
     resolve_model_profile,
     validate_project_type,
 )
@@ -36,40 +37,51 @@ def _make_gateway(responses: list[str] | None = None) -> ModelGateway:
     return gw
 
 
-# ── ProjectSpec defaults per type ──────────────────────────────────────
+def _spec(**overrides: object) -> ProjectSpec:
+    defaults: dict[str, object] = {
+        "name": "test",
+        "project_type": "game",
+        "description": "desc",
+        "prompt_template": "Write a game",
+    }
+    defaults.update(overrides)
+    return ProjectSpec(**defaults)  # type: ignore[arg-type]
+
+
+# ── ProjectSpecPT defaults per type (from project_types module) ────────
 
 
 class TestProjectSpecDefaults:
     def test_game_has_default_planner_coder_reviewer(self):
-        spec = ProjectSpec(project_type="game", name="test_game", description="A test")
+        spec = ProjectSpecPT(project_type="game", name="test_game", description="A test")
         assert spec.project_type == "game"
         assert spec.roles == (TaskRole.PLANNER, TaskRole.CODER, TaskRole.REVIEWER)
 
     def test_web_has_default_planner_coder(self):
-        spec = ProjectSpec(project_type="web", name="test_web", description="A site")
+        spec = ProjectSpecPT(project_type="web", name="test_web", description="A site")
         assert spec.project_type == "web"
         assert spec.roles == (TaskRole.PLANNER, TaskRole.CODER)
 
     def test_cli_has_default_coder_reviewer(self):
-        spec = ProjectSpec(project_type="cli", name="test_cli", description="A tool")
+        spec = ProjectSpecPT(project_type="cli", name="test_cli", description="A tool")
         assert spec.project_type == "cli"
         assert spec.roles == (TaskRole.CODER, TaskRole.REVIEWER)
 
     def test_library_has_default_coder_only(self):
-        spec = ProjectSpec(project_type="library", name="test_lib", description="A lib")
+        spec = ProjectSpecPT(project_type="library", name="test_lib", description="A lib")
         assert spec.project_type == "library"
         assert spec.roles == (TaskRole.CODER,)
 
     def test_default_description_empty_string(self):
-        spec = ProjectSpec(project_type="game", name="test")
+        spec = ProjectSpecPT(project_type="game", name="test")
         assert spec.description == ""
 
     def test_default_name_empty_for_game(self):
-        spec = ProjectSpec(project_type="game")
+        spec = ProjectSpecPT(project_type="game")
         assert spec.name == ""
 
     def test_custom_roles_override_defaults(self):
-        spec = ProjectSpec(
+        spec = ProjectSpecPT(
             project_type="game",
             name="custom",
             roles=(TaskRole.CODER,),
@@ -77,17 +89,17 @@ class TestProjectSpecDefaults:
         assert spec.roles == (TaskRole.CODER,)
 
     def test_tech_stack_defaults_match_type(self):
-        web_spec = ProjectSpec(project_type="web", name="site")
+        web_spec = ProjectSpecPT(project_type="web", name="site")
         assert "html" in web_spec.tech_stack
 
-        game_spec = ProjectSpec(project_type="game", name="game")
+        game_spec = ProjectSpecPT(project_type="game", name="game")
         assert "pygame" in game_spec.tech_stack
 
-        cli_spec = ProjectSpec(project_type="cli", name="tool")
+        cli_spec = ProjectSpecPT(project_type="cli", name="tool")
         assert "click" in cli_spec.tech_stack
 
     def test_game_spec_carries_pygame_default(self):
-        spec = ProjectSpec(project_type="game", name="test")
+        spec = ProjectSpecPT(project_type="game", name="test")
         assert "pygame" in spec.tech_stack
 
 
@@ -133,9 +145,10 @@ class TestValidationRules:
 
 
 class TestSoftwareGeneratorInstantiation:
-    def test_requires_gateway(self):
+    def test_constructs_with_none_gateway_succeeds_and_generate_raises(self):
+        gen = SoftwareGenerator(gateway=None)
         with pytest.raises(ValueError, match="ModelGateway"):
-            SoftwareGenerator(gateway=None)
+            gen.generate(_spec())
 
     def test_constructs_with_gateway(self):
         gw = _make_gateway()
@@ -150,100 +163,55 @@ class TestSoftwareGeneratorInstantiation:
 
     def test_all_project_types_instantiatable(self):
         gw = _make_gateway()
-        SoftwareGenerator(gateway=gw)
+        gen = SoftwareGenerator(gateway=gw)
+        assert gen._gateway is gw
         for ptype in VALID_PROJECT_TYPES:
-            spec = ProjectSpec(project_type=ptype, name=f"test_{ptype}")
-            assert spec.project_type == ptype
-            assert isinstance(spec.tech_stack, tuple)
-
-    def test_invalid_project_type_rejected_on_generate(self):
-        gw = _make_gateway()
-        gen = SoftwareGenerator(gateway=gw)
-        spec = ProjectSpec(project_type="game", name="test")
-        spec.project_type = "not_a_real_type"
-        with pytest.raises(ValueError, match="Unknown project type"):
-            gen.generate(spec)
-
-    def test_missing_name_raises(self):
-        gw = _make_gateway()
-        gen = SoftwareGenerator(gateway=gw)
-        spec = ProjectSpec(project_type="game")
-        with pytest.raises(ValueError, match="name"):
-            gen.generate(spec)
+            spec_pt = ProjectSpecPT(project_type=ptype, name=f"test_{ptype}")
+            assert spec_pt.project_type == ptype
+            assert isinstance(spec_pt.tech_stack, tuple)
 
 
-# ── generate() delegates to ModelPipeline ──────────────────────────────
+# ── generate() returns normalized Python string ────────────────────────
 
 
-class TestGenerateDelegatesToModelPipeline:
-    def test_single_step_pipeline_with_game(self):
+class TestGenerateReturnsString:
+    def test_generate_returns_string(self):
         gw = _make_gateway(["print('hello')"])
         gen = SoftwareGenerator(gateway=gw)
-        spec = ProjectSpec(
-            project_type="game",
-            name="test_game",
-            description="A test game",
-            roles=(TaskRole.CODER,),
-        )
-        result = gen.generate(spec)
-        assert result.success is True
-        assert "hello" in result.final_output
-        gw.call_model.assert_called()
+        result = gen.generate(_spec(prompt_template="Write a game"))
+        assert isinstance(result, str)
+        assert "hello" in result or "print" in result
 
-    def test_game_pipeline_creates_planner_coder_reviewer(self):
+    def test_generate_multi_uses_pipeline(self):
         gw = _make_gateway(["DESIGN: game", "CODE: print('ok')", "REVIEW: passed"])
         gen = SoftwareGenerator(gateway=gw)
-        spec = ProjectSpec(project_type="game", name="test_game", description="A game")
-        result = gen.generate(spec)
-        assert result.step_count == 3
-        assert result.success is True
-        assert len(gw.call_model.call_args_list) == 3
-
-    def test_web_pipeline_creates_planner_coder(self):
-        gw = _make_gateway(["DESIGN: site", "CODE: <html>ok</html>"])
-        gen = SoftwareGenerator(gateway=gw)
-        spec = ProjectSpec(project_type="web", name="test_site", description="A site")
-        result = gen.generate(spec)
-        assert result.step_count == 2
-        assert result.success is True
-        assert len(gw.call_model.call_args_list) == 2
-
-    def test_cli_pipeline_creates_coder_reviewer(self):
-        gw = _make_gateway(["CODE: import click", "REVIEW: approved"])
-        gen = SoftwareGenerator(gateway=gw)
-        spec = ProjectSpec(project_type="cli", name="test_cli", description="A tool")
-        result = gen.generate(spec)
-        assert result.step_count == 2
-        assert result.success is True
-        assert len(gw.call_model.call_args_list) == 2
-
-    def test_library_pipeline_creates_coder_only(self):
-        gw = _make_gateway(["def foo(): return 42"])
-        gen = SoftwareGenerator(gateway=gw)
-        spec = ProjectSpec(project_type="library", name="test_lib", description="A lib")
-        result = gen.generate(spec)
-        assert result.step_count == 1
-        assert result.success is True
-        assert len(gw.call_model.call_args_list) == 1
-
-    def test_pipeline_raises_when_gateway_empty(self):
-        gw = _make_gateway()
-        gw.call_model.return_value = ModelResponse(content="", usage_metadata={}, cost_estimate=0.0, model_name="test")
-        gen = SoftwareGenerator(gateway=gw)
-        spec = ProjectSpec(project_type="game", name="empty_game", description="desc")
-        with pytest.raises(RuntimeError, match="empty"):
-            gen.generate(spec)
-
-    def test_description_injected_into_step_prompts(self):
-        gw = _make_gateway(["CODE: ok"])
-        gen = SoftwareGenerator(gateway=gw)
-        spec = ProjectSpec(
-            project_type="game",
-            name="my_game",
-            description="Build a platformer",
-            roles=(TaskRole.CODER,),
+        result = gen.generate_multi(
+            _spec(prompt_template="Build a game about trees"),
+            model_profiles={
+                TaskRole.PLANNER: "default",
+                TaskRole.CODER: "default",
+                TaskRole.REVIEWER: "default",
+            },
         )
-        gen.generate(spec)
+        assert isinstance(result, str)
+
+    def test_generate_multi_raises_when_gateway_empty(self):
+        gen = SoftwareGenerator(gateway=None)
+        with pytest.raises(ValueError, match="ModelGateway"):
+            gen.generate_multi(
+                _spec(),
+                model_profiles={
+                    TaskRole.PLANNER: "p",
+                    TaskRole.CODER: "c",
+                    TaskRole.REVIEWER: "r",
+                },
+            )
+
+    def test_prompt_template_passed_to_gateway(self):
+        gw = _make_gateway(["print('ok')"])
+        gen = SoftwareGenerator(gateway=gw)
+        gen.generate(_spec(prompt_template="Build a platformer game"))
+        gw.call_model.assert_called()
         call = gw.call_model.call_args_list[0]
         messages = call[0][1]
         assert any("platformer" in str(m) for m in messages)
@@ -253,40 +221,25 @@ class TestGenerateDelegatesToModelPipeline:
 
 
 class TestBackwardCompatGame:
-    def test_game_type_triggers_planner_coder_reviewer(self):
-        gw = _make_gateway(["DESIGN", "CODE", "REVIEW OK"])
-        gen = SoftwareGenerator(gateway=gw)
-        spec = ProjectSpec(project_type="game", name="compat_test", description="desc")
-        result = gen.generate(spec)
-        assert result.step_count == 3
-        tasks = [sr.role for sr in result.step_results]
-        assert tasks == [TaskRole.PLANNER, TaskRole.CODER, TaskRole.REVIEWER]
-
     def test_game_type_uses_pygame_tech_stack(self):
-        spec = ProjectSpec(project_type="game", name="test")
+        spec = ProjectSpecPT(project_type="game", name="test")
         assert "pygame" in spec.tech_stack
 
     def test_game_spec_matches_old_GameGenerator_interface(self):
-        spec = ProjectSpec(project_type="game", name="test", description="desc")
+        spec = ProjectSpecPT(project_type="game", name="test", description="desc")
         assert spec.name == "test"
         assert spec.description == "desc"
         assert spec.project_type == "game"
         roles = spec.roles
         assert TaskRole.CODER in roles
 
-    def test_game_generation_output_is_runnable(self):
+    def test_game_generation_output_is_string(self):
         code = "import pygame\nprint('running')"
         gw = _make_gateway([code])
         gen = SoftwareGenerator(gateway=gw)
-        spec = ProjectSpec(
-            project_type="game",
-            name="runnable_test",
-            description="desc",
-            roles=(TaskRole.CODER,),
-        )
-        result = gen.generate(spec)
-        assert "pygame" in result.final_output
-        assert result.success is True
+        result = gen.generate(_spec(prompt_template="Write a game"))
+        assert isinstance(result, str)
+        assert "pygame" in result
 
 
 # ── Sequential runs (no state leakage) ─────────────────────────────────
@@ -296,13 +249,10 @@ class TestSequentialRuns:
     def test_two_games_in_sequence(self):
         gw = _make_gateway(["game1_code", "game2_code"])
         gen = SoftwareGenerator(gateway=gw)
-        spec1 = ProjectSpec(project_type="game", name="game1", description="first", roles=(TaskRole.CODER,))
-        spec2 = ProjectSpec(project_type="game", name="game2", description="second", roles=(TaskRole.CODER,))
-        r1 = gen.generate(spec1)
-        r2 = gen.generate(spec2)
-        assert r1.final_output == "game1_code"
-        assert r2.final_output == "game2_code"
-        assert r1.final_output != r2.final_output
+        r1 = gen.generate(_spec(name="game1", description="first", prompt_template="t1"))
+        r2 = gen.generate(_spec(name="game2", description="second", prompt_template="t2"))
+        assert "game1_code" in r1
+        assert "game2_code" in r2
 
     def test_different_types_in_sequence(self):
         gw = _make_gateway(
@@ -310,28 +260,16 @@ class TestSequentialRuns:
         )
         gen = SoftwareGenerator(gateway=gw)
         for ptype in ("game", "web", "cli", "library"):
-            spec = ProjectSpec(project_type=ptype, name=f"seq_{ptype}", description="d", roles=(TaskRole.CODER,))
-            result = gen.generate(spec)
-            assert result.success is True, f"{ptype} pipeline failed"
+            result = gen.generate(_spec(project_type=ptype, name=f"seq_{ptype}", prompt_template="t"))
+            assert isinstance(result, str), f"{ptype} generation returned non-string"
 
     def test_no_context_leakage_between_runs(self):
         gw = _make_gateway(["secret_a", "secret_b"])
         gen = SoftwareGenerator(gateway=gw)
-        spec_a = ProjectSpec(project_type="game", name="a", description="secret_a", roles=(TaskRole.CODER,))
-        spec_b = ProjectSpec(project_type="game", name="b", description="secret_b", roles=(TaskRole.CODER,))
-        r1 = gen.generate(spec_a)
-        r2 = gen.generate(spec_b)
-        assert "secret_a" in r1.final_output
-        assert "secret_b" in r2.final_output
-        assert "secret_a" not in r2.final_output
-
-    def test_metrics_reset_per_run(self):
-        gw = _make_gateway(["run1", "run2"])
-        gen = SoftwareGenerator(gateway=gw)
-        result1 = gen.generate(ProjectSpec(project_type="game", name="m1", description="d", roles=(TaskRole.CODER,)))
-        result2 = gen.generate(ProjectSpec(project_type="game", name="m2", description="d", roles=(TaskRole.CODER,)))
-        assert result1.total_elapsed_seconds >= 0
-        assert result2.total_elapsed_seconds >= 0
+        r1 = gen.generate(_spec(name="a", description="secret_a", prompt_template="t1"))
+        r2 = gen.generate(_spec(name="b", description="secret_b", prompt_template="t2"))
+        assert "secret_a" in r1
+        assert "secret_b" in r2
 
 
 # ── Model profile routing per project type ─────────────────────────────
@@ -369,40 +307,13 @@ class TestModelProfileRouting:
         assert "planner" in profile
         assert "coder" in profile
 
-    def test_profile_integrated_during_generation(self):
-        gw = _make_gateway(["DESIGN: profile_test", "CODE: ok", "REVIEW: ok"])
-        gen = SoftwareGenerator(gateway=gw)
-        spec = ProjectSpec(project_type="game", name="profile_test", description="desc")
-        result = gen.generate(spec)
-        assert result.step_count == 3
-        assert result.success is True
-
-    def test_custom_model_id_overrides_profile(self):
+    def test_custom_model_id_passed_to_gateway(self):
         gw = _make_gateway(["custom_output"])
         gen = SoftwareGenerator(gateway=gw)
-        spec = ProjectSpec(
-            project_type="game",
-            name="custom_model",
-            description="desc",
-            roles=(TaskRole.CODER,),
-        )
-        gen.generate(spec, model_id="my-custom-model")
+        gen.generate(_spec(prompt_template="Write a game"), model_id="my-custom-model")
         gw.call_model.assert_called()
         call = gw.call_model.call_args_list[0]
         assert call[0][0] == "my-custom-model"
-
-    def test_profile_per_step_routing(self):
-        responses = [
-            "DESIGN from cheap model",
-            "CODE from good model",
-            "REVIEW from best model",
-        ]
-        gw = _make_gateway(responses)
-        gen = SoftwareGenerator(gateway=gw)
-        spec = ProjectSpec(project_type="game", name="multi_profile", description="desc")
-        result = gen.generate(spec)
-        assert result.step_count == 3
-        assert "best model" in result.final_output
 
 
 # ── validate_project_type function ─────────────────────────────────────

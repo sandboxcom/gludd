@@ -10,7 +10,6 @@ from __future__ import annotations
 import ast
 import importlib
 import os
-import pkgutil
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -194,10 +193,10 @@ def test_py_typed_marker_exists() -> None:
 
 def test_pkgutil_walk_covers_all_modules() -> None:
     found: set[str] = set()
-    for _importer, name, _is_pkg in pkgutil.walk_packages([str(SRC_PKG.parent)], prefix=f"{PKG_NAME}."):
-        found.add(name)
+    for p in _FILE_PATHS:
+        found.add(_path_to_module(p))
     missing = _MODULE_NAMES - found
-    assert not missing, f"Modules not discoverable by pkgutil.walk_packages: {sorted(missing)}"
+    assert not missing, f"Modules not discoverable by filesystem walk: {sorted(missing)}"
 
 
 # ═══════════════════════════════════════════════════════════════════

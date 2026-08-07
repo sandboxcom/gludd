@@ -4727,6 +4727,9 @@ check-gate-parity:
 	@$(UV) run python scripts/check_gate_parity.py
 
 
+find-import-cycle:
+	@$(UV) run python scripts/find_import_cycle.py
+
 check-duplicate-targets:
 	@$(UV) run python scripts/check_duplicate_targets.py
 
