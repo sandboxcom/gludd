@@ -1,37 +1,23 @@
-## PRIMARY OBJECTIVE: IN PROGRESS — v0.1.0-beta.3 shipped. Session 81: Gate-lite ALL GREEN, gate-refresh ALL GREEN. 88,291 tests, 0 collection errors. Enforcement 40/40 PASS. Model source mirrors added (Ollama/direct/S3). Model matrix test created. CI multi-model E2E test created. HEAD `fcb98aa1` pushed. 12 commits since `763ad6f5`. Next: CI verdict.
+## PRIMARY OBJECTIVE: IN PROGRESS — v0.1.0-beta.3 shipped. Session 81: Gate-refresh ALL GREEN (lint 0, typecheck 0, verify-hot-reload PASS, env-writes PASS, collect PASS 0, hook-runtime PASS). 88,291 tests. Enforcement 40/40 PASS. Opencode spawner E2E harness + test project template + 3x depth enforcement added. Key detection targets + opencode E2E test fixes. HEAD `54b29bf3` (7 commits past `fcb98aa1`), unpushed. CI RED (no run on `54b29bf3`). Tree DIRTY. Next: push + CI.
 
 ---
 
-## SESSION 81 — 2026-08-07 — HEAD `b71cca96`: Gate-lite ALL GREEN, 88,291 tests, model source mirrors, matrix test, CI multi-model E2E
+## SESSION 81 — 2026-08-07 — HEAD `54b29bf3`: Gate-refresh ALL GREEN, spawner E2E harness, key detection targets, opencode E2E test fixes
 
-### Key Accomplishments
+### Recent Commits (HEAD `54b29bf3`, 7 since `fcb98aa1`)
 
-- **ALL gate gaps closed: DONE** — accumulator.py dead-code fix, CI RED root causes resolved, circular import fixed. Commits `bc0d0448`, `d2cd2cfd`, `a52a08ce`.
-- **Gate-lite ALL GREEN: DONE** — lint 0, typecheck 0, collect PASS 0, all tests pass.
-- **5 new E2E cloud/local test files: WRITTEN** — test_cloud_e2e_multi_model.py (421L), test_local_model_multi_pipeline.py (408L), test_project_type_pipeline.py (543L), test_multi_model_pipeline_cloud.py, test_software_generator_cloud.py.
-- **software_generator tests: SYNCED** — test suite aligned with implementation.
-- **loop_handlers: TESTED** — test_loop_handlers.py added.
-- **Test count: 88,097+** — up from 86,428 baseline.
-- **Enforcement: 34/34 PASS** — all plugin hooks verified.
+```
+54b29bf3 fix: gate-refresh lint + opencode E2E test fixes
+c72caad9 fix: opencode E2E test fixes + remaining test results
+38aa2ef7 feat: opencode E2E multitask test harness + 3x depth enforcement + test project template + spawner v1.18.11 fix
+f8149c3a chore: final test pass totals
+26a96e8f chore: final test pass totals
+903ba6a2 chore: update TASKS.md
+99aa4915 feat: key detection targets + test results
+fcb98aa1 chore: fresh gate-status + all Session 80 deliverables
+```
 
-### Current State (HEAD `763ad6f5`)
-
-- **HEAD: `763ad6f5`** on `development`
-- **Enforcement: 40/40 guards, 34/34 plugin load PASS**
-- **Gate-lite: pre-test ALL GREEN** — lint 0, typecheck 0, collect PASS 0, hook-runtime 34/34, plugin-hook-invoke 34/34
-- **Gate-lite test phase: TIMED OUT at 600s** — NOT confirmed
-- **Tree: DIRTY** — 2 unstaged files (`security_hardening/tasks/main.yml`, `test_has_pending_work_detection.py`)
-- **detect.py import cycle: FIXED** — `find_import_cycle.py` added
-- **8 commits unpushed** from `d2cd2cfd`..`763ad6f5`
-- **Release v0.1.0-beta.3: SHIPPED**
-
-### Next Steps (mandatory)
-
-1. ~~Commit any remaining unstaged changes~~ — DONE, committed `fcb98aa1`
-2. ~~Push commits: `make batch-push`~~ — DONE, pushed `fcb98aa1`
-3. Monitor CI verdict on pushed HEAD `fcb98aa1`
-
-### Gate-Refresh (2026-08-07)
+### Active Gate-Refresh (2026-08-07)
 
 | Phase | Result |
 |---|---|
@@ -40,7 +26,16 @@
 | verify-hot-reload | PASS |
 | env-writes | PASS |
 | collect | PASS 0 — 88,291 tests, 0 errors |
-| gate-refresh | **ALL GREEN** → committed `fcb98aa1` |
+| hook-runtime | PASS |
+| **gate-refresh** | **ALL GREEN** |
+
+### Current State
+
+- **HEAD: `54b29bf3`** on `development`
+- **Tree: DIRTY** — .gate-status, Makefile, TASKS.md modified; _test_project plugins + agent + lib + output untracked
+- **CI: RED** — no run found for `54b29bf3`
+- **Enforcement: 40/40 PASS**
+- **Release v0.1.0-beta.3: SHIPPED**
 
 ## SESSION 80 — 2026-08-06 — HEAD `08b51949`: Gate-lite pre-test green (lint/typecheck/env-writes/hook-runtime/plugin-hook-invoke ALL PASS). Test phase timed out at 300s. Tree DIRTY (13 modified files). CI RED on `51a8dfff` fixed by `08b51949` (RunResult Protocol @runtime_checkable). Next: commit + push + CI re-trigger.
 
@@ -241,6 +236,6 @@ a33b2d78 feat: wave 14 — backup_restore deep + report_generation deep + molecu
 2. `make gate` full for fresh baseline
 3. Push any new commits: `make batch-push`
 
-- **Last Updated: 2026-08-07 — Session 81. HEAD `fcb98aa1` on `development`, pushed. Gate-refresh ALL GREEN (lint 0, typecheck 0, verify-hot-reload PASS, env-writes PASS, collect 0). 88,291 tests. Enforcement 40/40 PASS. Model source mirrors (Ollama/direct/S3) added. Model matrix test + CI multi-model E2E test created. Release v0.1.0-beta.3 shipped.**
+- **Last Updated: 2026-08-07 — Session 81. HEAD `54b29bf3` on `development`, unpushed. Gate-refresh ALL GREEN (lint 0, typecheck 0, verify-hot-reload PASS, env-writes PASS, collect PASS 0, hook-runtime PASS). 88,291 tests. Enforcement 40/40 PASS. Opencode spawner E2E harness + test project template + 3x depth enforcement added (`38aa2ef7`). Key detection targets + opencode E2E test fixes. CI RED (no run on `54b29bf3`). Tree DIRTY. Release v0.1.0-beta.3 shipped.**
 
 (End of file)

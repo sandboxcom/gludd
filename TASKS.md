@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-08-07 Session 81. HEAD `fcb98aa1` on `development`, pushed. gate-refresh ALL GREEN (lint 0, typecheck 0, verify-hot-reload PASS, env-writes PASS, collect 0). 88,291 tests. Enforcement 40/40 PASS. Model source mirrors added (Ollama/direct/S3). Model matrix test created. CI multi-model E2E test created. Release v0.1.0-beta.3 SHIPPED. 12 commits since `763ad6f5`.**
+**Last consolidated: 2026-08-07 Session 81. HEAD `54b29bf3` on `development`, unpushed. gate-refresh ALL GREEN (lint 0, typecheck 0, verify-hot-reload PASS, env-writes PASS, collect PASS 0, hook-runtime PASS). 88,291 tests. Enforcement 40/40 PASS. Opencode spawner E2E harness + test project template + 3x depth enforcement added (`38aa2ef7`). Key detection targets + opencode E2E test fixes. CI RED (no run on `54b29bf3`). Tree DIRTY. 12 commits since `763ad6f5`, 7 since `fcb98aa1`.**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -215,7 +215,18 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] S80.101 — **24 local model configs**: 8 coding-specialized models (DeepSeek Coder 6.7B/1.3B, CodeLlama 7B/13B, StarCoder2 3B/7B, Qwen2.5-Coder 7B, Stable Code 3B) + 16 general models (Qwen2.5 0.5B/1.5B/3B/7B/14B/32B, Llama 3.2 1B/3B/8B, Phi-3 mini/medium, SmolLM2 135M/360M/1.7B, TinyLlama 1.1B). All 24 configs loaded into model registry with dispatch routing. | evidence: 24 models, 8 coding, 16 general | priority: high | effort: L | status: completed
 - [x] S80.102 — **Enforcement refactor complete**: all enforcement plugins synchronized with shared hasPendingWork(). hasPendingWork() moved to shared.ts as canonical single source. All 13 plugins BLOCKING. 125 runtime tests PASS. | evidence: 13/13 PASS, 125 runtime tests | priority: high | effort: M | status: completed
 
-### Session 81 — ACTUAL STATUS (2026-08-07, HEAD `763ad6f5`)
+### New since `fcb98aa1` (2026-08-07)
+
+| Item | Status | Evidence |
+|---|---|---|
+| gate-refresh lint + opencode E2E test fixes | `54b29bf3` | passed |
+| opencode E2E test fixes + remaining test results | `c72caad9` | passed |
+| opencode E2E multitask harness + 3x depth + test project template + spawner | `38aa2ef7` | passed |
+| final test pass totals | `f8149c3a`, `26a96e8f` | passed |
+| update TASKS.md | `903ba6a2` | passed |
+| key detection targets + test results | `99aa4915` | passed |
+
+### Session 81 — ACTUAL STATUS (2026-08-07, HEAD `54b29bf3`)
 
 | Item | Status | Evidence |
 |---|---|---|

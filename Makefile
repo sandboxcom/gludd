@@ -1992,6 +1992,13 @@ diag-opencode:
 	@ls -la /tmp/gludd-opencode-e2e/ 2>&1 || true
 diag-opencode-run:
 	@opencode run --help 2>&1
+diag-opencode-raw-json:
+	@echo "=== Capturing raw opencode --format json output ==="
+	@rm -f /tmp/gludd-raw-json-*.log
+	@cd /Users/shawnwilson/gludd/tests/opencode_e2e/_test_project && printf 'Say hello and then exit.\n' | opencode run --format json --agent build --auto --log-level ERROR --model opencode/deepseek-v4-pro 2>/tmp/gludd-raw-json-stderr.log > /tmp/gludd-raw-json-stdout.log
+	@echo "EXIT: $$?"
+	@echo "--- STDOUT first 200 lines ---"
+	@head -200 /tmp/gludd-raw-json-stdout.log 2>/dev/null || true
 bisect-ts-parse:
 	@$(PYTHON) scripts/bisect_ts_parse.py
 
