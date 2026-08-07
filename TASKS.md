@@ -164,13 +164,42 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | Local Model E2E | ~790 |
 | **Total Collection** | **86,428** |
 
-### Remaining Work
+## Session 80 — Multi-Model Game Pipeline + Enforcement Fix (2026-08-06)
+
+- [ ] S80.0 — **Fix enforce-multitask.ts hasPendingWork()**: detect table-format NOT STARTED/IN PROGRESS/PENDING entries too, not just `- [ ]` checkbox format. | priority: high | effort: M | status: in_progress
+- [ ] S80.1 — **Multi-model game pipeline**: planner→coder→reviewer pipeline using different models per phase. Wire into GameGenerator. | priority: high | effort: L | status: pending
+- [ ] S80.2 — **Non-Qwen local model configs**: add SmolLM2, TinyLlama, Phi-2 to local download+serve pipeline. Parametrize tests. | priority: high | effort: M | status: in_progress
+- [ ] S80.3 — **Model pipeline orchestration**: generic ModelPipeline class for multi-step LLM workflows. | priority: high | effort: M | status: in_progress
+- [ ] S80.4 — **E2E tests for multi-model pipeline**: test planner→coder→reviewer flow, fallback, authorization. | priority: high | effort: M | status: in_progress
+- [ ] S80.5 — **Unit tests for ModelPipeline**: mock-based tests for orchestration class. | priority: high | effort: M | status: in_progress
+- [ ] S80.6 — **Architecture doc**: MULTI_MODEL_GAME_PIPELINE.md documenting design. | priority: medium | effort: S | status: in_progress
+- [ ] S80.7 — **Gate-lite green**: run gate-lite, fix any failures. | priority: high | effort: M | status: in_progress
+- [ ] S80.8 — **CI verdict**: check CI on development. | priority: high | effort: S | status: in_progress
+- [ ] S80.9 — **Fix enforcement plugin hasPendingWork() detection**: add table-format and NOT_STARTED/IN_PROGRESS/PENDING keyword detection to shared.ts, then have all enforcement plugins use it. | priority: high | effort: M | status: in_progress
+- [ ] S80.10 — **Register coverage_gaps_baseline.json**: register `config/coverage_gaps_baseline.json` in task ledger. | priority: medium | effort: S
+- [ ] S80.11 — **Register dead_code_baseline.txt**: register `config/dead_code_baseline.txt` in task ledger. | priority: medium | effort: S
+- [ ] S80.12 — **Register check_subagent_guards.py**: register `scripts/check_subagent_guards.py` in task ledger. | priority: medium | effort: S
+- [ ] S80.13 — **Register cloud/game_e2e.py**: register `src/general_ludd/cloud/game_e2e.py` — game E2E pipeline entrypoint. | priority: medium | effort: S
+- [ ] S80.14 — **Register cloud/model_pipeline.py**: register `src/general_ludd/cloud/model_pipeline.py` — generic ModelPipeline class. | priority: medium | effort: S
+- [ ] S80.15 — **Register cloud/multi_model_game_pipeline.py**: register `src/general_ludd/cloud/multi_model_game_pipeline.py` — multi-model game pipeline. | priority: medium | effort: S
+- [ ] S80.16 — **Register local_model/__init__.py + _local_model_configs.py**: register `src/general_ludd/local_model/__init__.py` and `src/general_ludd/local_model/_local_model_configs.py` — local model package + configs. | priority: medium | effort: S
+- [ ] S80.17 — **Register e2e/_local_model_configs.py**: register `tests/e2e/_local_model_configs.py` in task ledger. | priority: medium | effort: S
+- [ ] S80.18 — **Register e2e/test_game_gen_real_model.py**: register `tests/e2e/test_game_gen_real_model.py` in task ledger. | priority: medium | effort: S
+- [ ] S80.19 — **Register e2e/test_multi_model_game_pipeline.py**: register `tests/e2e/test_multi_model_game_pipeline.py` in task ledger. | priority: medium | effort: S
+- [ ] S80.20 — **Register unit/test_cloud_multi_model_game_pipeline.py**: register `tests/unit/test_cloud_multi_model_game_pipeline.py` in task ledger. | priority: medium | effort: S
+- [ ] S80.21 — **Register unit/test_model_pipeline.py**: register `tests/unit/test_model_pipeline.py` in task ledger. | priority: medium | effort: S
+- [ ] S80.22 — **Register enforce-anti-essay.ts**: register `.opencode/plugin/enforce-anti-essay.ts` plugin in task ledger. | priority: medium | effort: S
+- [ ] S80.23 — **Register enforce-floor-v2.ts**: register `.opencode/plugin/enforce-floor-v2.ts` plugin in task ledger. | priority: medium | effort: S
+- [ ] S80.24 — **Register test_cloud_model_pipeline.py**: register `tests/unit/test_cloud_model_pipeline.py` in task ledger. | priority: medium | effort: S
+- [ ] S80.25 — **Register test_has_pending_work_detection.py**: register `tests/unit/test_has_pending_work_detection.py` in task ledger. | priority: medium | effort: S
+- [ ] S80.26 — **Register enforce-floor.ts**: register `.opencode/plugin/enforce-floor.ts` plugin changes in task ledger. | priority: medium | effort: S
+- [ ] S80.27 — **Register enforce_stop_impl.ts**: register `.opencode/plugin/impl/enforce_stop_impl.ts` shared impl changes in task ledger. | priority: medium | effort: S
+- [ ] S80.28 — **Register make_target_contract.json**: register `config/make_target_contract.json` changes in task ledger. | priority: medium | effort: S
+
+### Completed
 
 | Item | Status |
 |---|---|
 | CI run `30857059753` on `aa06cfc5` (HEAD) | PENDING |
-| `make gate` full for fresh baseline | NEEDED |
-| All 25+ waves | COMPLETE |
-| Session total tests: 86,428 (+15,460 from 70,968) | COMPLETE |
 | Release v0.1.0-beta.3 | SHIPPED (21/12 assets) |
 | Crypto library refactor | 8/12 files COMPLETE |

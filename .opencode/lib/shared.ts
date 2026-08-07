@@ -524,3 +524,21 @@ export function getProjectRoot(): string {
   _cachedRootKey = key
   return _cachedRoot
 }
+
+// ── TASKS.md pending-work detection ──────────────────────────────────────
+// Checks both checkbox format (- [ ]) AND table-format entries
+// (| NOT STARTED |, | IN PROGRESS |, | PENDING |). Prior to 2026-08-06,
+// only checkbox format was detected, so table-format task entries silently
+// bypassed the 10-agent floor enforcement.
+
+export function hasTasksMdPendingWork(tasksMdPath: string): boolean {
+  try {
+    if (!fs.existsSync(tasksMdPath)) return false
+    const content = fs.readFileSync(tasksMdPath, "utf8")
+    if (/^\s*[-*]\s*\[\s*\]/m.test(content)) return true
+    if (/\|\s*(NOT STARTED|IN PROGRESS|PENDING)\s*\|/im.test(content)) return true
+    return false
+  } catch {
+    return false
+  }
+}

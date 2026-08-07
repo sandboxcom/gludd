@@ -26,6 +26,7 @@ import {
   readJsonFile,
   writeJsonFile,
   getProjectRoot,
+  hasTasksMdPendingWork,
   isStateFileMtimeStale,
   isInPressureRelease,
   isInInlineRecovery,
@@ -137,10 +138,7 @@ function hasPendingWork(): boolean {
     const root = getProjectRoot()
 
     const tasksPath = path.join(root, "TASKS.md")
-    if (fs.existsSync(tasksPath)) {
-      const content = fs.readFileSync(tasksPath, "utf8")
-      if (/^\s*[-*]\s*\[\s*\]/m.test(content)) return true
-    }
+    if (hasTasksMdPendingWork(tasksPath)) return true
 
     const ratchetPath = path.join(root, "config", "ratchet.yml")
     if (fs.existsSync(ratchetPath)) {
@@ -494,13 +492,13 @@ const defaultImpl: HotModule = {
 }
 
 async function handleTextComplete(_input: unknown, output: unknown): Promise<unknown> {
-    if (isSubagent()) return output
-    if (!FLOOR_ENFORCE) return undefined
-    const text = typeof output === "string" ? output
-      : (output as any)?.text ? String((output as any).text) : ""
-    if (!text || text.trim().length === 0) return output
-    if (isDisengaged()) return output
-    if (!hasPendingWork()) return output
+    const tx = typeof output === "string" ? output : (output as any)?.text ? String((output as any).text) : ""
+    if (isSubagent()) { return output }
+    if (!FLOOR_ENFORCE) { return undefined }
+    const text = tx
+    if (!text || text.trim().length === 0) { return output }
+    if (isDisengaged()) { return output }
+    if (!hasPendingWork()) { return output }
     // RESEARCH FINDING: opencode text.complete never receives tool output.
     // Result markers here are assistant text, so they must feed the same
     // message-boundary logic as any other assistant response. The next
@@ -583,13 +581,6 @@ async function handleTextComplete(_input: unknown, output: unknown): Promise<unk
 // PROXY PLUGIN (hot-reload aware)
 // ============================================================================
 export default (({ }) => {
-  try {
-    fs.appendFileSync(
-      "/tmp/gludd-plugin-loaded.log",
-      `${new Date().toISOString()} LOADED enforce-multitask pid=${process.pid}\n`, "utf8",
-    )
-  } catch { // fail-open
- }
   return {
     "tool.execute.before": async (input: { tool?: string }) => {
       // process.env.OPENCODE_SUBAGENT guard

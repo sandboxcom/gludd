@@ -16,6 +16,7 @@ import {
   isDispatchTool,
   isDisengaged,
   getProjectRoot,
+  hasTasksMdPendingWork,
 } from "../lib/shared.ts"
 const nodeRequire = typeof require === "function" ? require : createRequire(import.meta.url)
 function spawn(...args: any[]): any {
@@ -73,10 +74,7 @@ function hasPendingWork(): boolean {
   try {
     const root = getProjectRoot()
     const tasksPath = path.join(root, "TASKS.md")
-    if (fs.existsSync(tasksPath)) {
-      const content = fs.readFileSync(tasksPath, "utf8")
-      if (/^\s*[-*]\s*\[\s*\]/m.test(content)) return true
-    }
+    if (hasTasksMdPendingWork(tasksPath)) return true
     const ratchetPath = path.join(root, "config", "ratchet.yml")
     if (fs.existsSync(ratchetPath)) {
       const content = fs.readFileSync(ratchetPath, "utf8")

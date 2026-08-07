@@ -3,7 +3,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 import { createRequire } from "node:module"
-import { isSubagent, isDisengaged, reportAlive, readJsonFile, writeJsonFile, isDispatchTool, isReadTool, ALIVE_PATH, DISENGAGE_PATH, updateSharedStreak, writeHeartbeat, getProjectRoot, getSessionStartMtimeMs, isInPressureRelease, isInInlineRecovery, readDispatchOutcomes } from "../lib/shared.ts"
+import { isSubagent, isDisengaged, reportAlive, readJsonFile, writeJsonFile, isDispatchTool, isReadTool, ALIVE_PATH, DISENGAGE_PATH, updateSharedStreak, writeHeartbeat, getProjectRoot, getSessionStartMtimeMs, isInPressureRelease, isInInlineRecovery, readDispatchOutcomes, hasTasksMdPendingWork } from "../lib/shared.ts"
 const nodeRequire = typeof require === "function" ? require : createRequire(import.meta.url)
 function execSync(...args: any[]): Buffer {
   return nodeRequire("node:child_" + "process").execSync(...args)
@@ -175,12 +175,7 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
     } catch {}
     const tasksMd = process.env.GLUDD_TASKS_MD || path.join(root, "TASKS.md")
     try {
-      if (fs.existsSync(tasksMd)) {
-        const unchecked = fs.readFileSync(tasksMd, "utf8")
-          .split("\n")
-          .filter(l => /^\s*[-*]\s+\[\s*\]/.test(l))
-        if (unchecked.length > 0) return true
-      }
+      if (hasTasksMdPendingWork(tasksMd)) return true
     } catch {}
     const bugsMd = process.env.GLUDD_BUGS_MD || path.join(root, "BUGS.md")
     try {

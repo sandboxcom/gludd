@@ -26,6 +26,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from general_ludd.cloud.game_generation import normalize_generated_python
+from general_ludd.cloud.multi_model_game_pipeline import MultiModelGamePipeline
 from general_ludd.cloud.video_compare import REFERENCE_VIDEO_SPECS, compare_gameplay_to_reference
 
 if TYPE_CHECKING:
@@ -238,6 +239,37 @@ class GameGenerator:
             budget_remaining=5.0,
         )
         return normalize_generated_python(response)
+
+    def generate_game_multi(
+        self,
+        spec: GameSpec,
+        model_profiles: dict[Any, str],
+        model_identity: object | None = None,
+        evidence: tuple[object, ...] = (),
+    ) -> str:
+        """Generate game code using role-specific models via :class:`MultiModelGamePipeline`.
+
+        *model_profiles* maps :class:`TaskRole` (PLANNER / CODER / REVIEWER)
+        to ``model_id`` strings. Delegates to :class:`MultiModelGamePipeline`
+        which runs PLANNER → CODER → REVIEWER with iterative review rounds.
+        """
+        from general_ludd.schemas.benchmark import TaskRole
+
+        if self._gateway is None:
+            raise ValueError("ModelGateway is not configured")
+
+        if self._task_policy is not None and model_identity is not None:
+            self._authorize_dispatch(spec, model_identity, evidence)
+
+        pipeline = MultiModelGamePipeline(self._gateway)
+        return normalize_generated_python(
+            pipeline.generate(
+                spec.description,
+                planner_model=model_profiles.get(TaskRole.PLANNER, "default"),
+                coder_model=model_profiles.get(TaskRole.CODER, "default"),
+                reviewer_model=model_profiles.get(TaskRole.REVIEWER, "default"),
+            )
+        )
 
     def _authorize_dispatch(
         self,

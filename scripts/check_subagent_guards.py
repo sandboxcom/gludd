@@ -12,21 +12,20 @@ from pathlib import Path
 
 PLUGIN_DIR = Path(__file__).resolve().parent.parent / ".opencode" / "plugin"
 
-TOOL_BEFORE_RE = re.compile(
-    r'"tool\.execute\.before"\s*:\s*async\s*\(|api\.tool\.execute\.before\s*\('
-)
-TEXT_COMPLETE_RE = re.compile(
-    r'"experimental\.text\.complete"\s*:\s*async\s*\(|api\.experimental\.text\.complete\s*\('
-)
-SYSTEM_TRANSFORM_RE = re.compile(
-    r'"experimental\.(?:chat\.)?system\.transform"\s*:\s*async\s*\('
-)
+TOOL_BEFORE_RE = re.compile(r'"tool\.execute\.before"\s*:\s*async\s*\(|api\.tool\.execute\.before\s*\(')
+TEXT_COMPLETE_RE = re.compile(r'"experimental\.text\.complete"\s*:\s*async\s*\(|api\.experimental\.text\.complete\s*\(')
+SYSTEM_TRANSFORM_RE = re.compile(r'"experimental\.(?:chat\.)?system\.transform"\s*:\s*async\s*\(')
 
-SUBAGENT_GUARD_RE = re.compile(
-    r'process\.env\.OPENCODE_SUBAGENT\s*===?\s*"1"'
-)
+SUBAGENT_GUARD_RE = re.compile(r'process\.env\.OPENCODE_SUBAGENT\s*===?\s*"1"')
 
-ISUBAGENT_CALL_RE = re.compile(r'\b(isSubagent|_isSubagent)\(\)')
+ISUBAGENT_CALL_RE = re.compile(r"\b(isSubagent|_isSubagent)\(\)")
+
+# Plugins that intentionally omit the subagent guard for documented reasons.
+# enforce-depth uses OPENCODE_DEPTH (framework-managed per-nesting-level depth)
+# and MUST fire at every level to prevent infinite recursion.
+ALLOWLIST_NO_GUARD = {
+    "enforce-depth.ts",
+}
 
 BLANK_LINE_RE = re.compile(r"^\s*$")
 COMMENT_LINE_RE = re.compile(r"^\s*(//|/\*|\*)\s")
@@ -133,19 +132,42 @@ def check_plugin(filepath):
     content = filepath.read_text()
     lines = content.splitlines()
 
+    is_allowlisted = filepath.name in ALLOWLIST_NO_GUARD
+
     tbe_finding = _check_hook_type(lines, TOOL_BEFORE_RE, "tool.execute.before")
     if tbe_finding is not None:
         tbe_finding["plugin"] = filepath.name
+        if (
+            is_allowlisted
+            and tbe_finding["status"] == "FAIL"
+            and tbe_finding.get("reason") == "missing OPENCODE_SUBAGENT guard"
+        ):
+            tbe_finding["status"] = "PASS"
+            tbe_finding["reason"] = "guard intentionally omitted (allowlisted)"
         findings.append(tbe_finding)
 
     tc_finding = _check_hook_type(lines, TEXT_COMPLETE_RE, "text.complete")
     if tc_finding is not None:
         tc_finding["plugin"] = filepath.name
+        if (
+            is_allowlisted
+            and tc_finding["status"] == "FAIL"
+            and tc_finding.get("reason") == "missing OPENCODE_SUBAGENT guard"
+        ):
+            tc_finding["status"] = "PASS"
+            tc_finding["reason"] = "guard intentionally omitted (allowlisted)"
         findings.append(tc_finding)
 
     st_finding = _check_hook_type(lines, SYSTEM_TRANSFORM_RE, "system.transform")
     if st_finding is not None:
         st_finding["plugin"] = filepath.name
+        if (
+            is_allowlisted
+            and st_finding["status"] == "FAIL"
+            and st_finding.get("reason") == "missing OPENCODE_SUBAGENT guard"
+        ):
+            st_finding["status"] = "PASS"
+            st_finding["reason"] = "guard intentionally omitted (allowlisted)"
         findings.append(st_finding)
 
     return findings
@@ -169,11 +191,7 @@ def main():
     total = len(all_findings)
     passed = 0
     for f in all_findings:
-        print(
-            "CHECK: {} — {} — {} ({})".format(
-                f["plugin"], f["hook"], f["status"], f["reason"]
-            )
-        )
+        print("CHECK: {} — {} — {} ({})".format(f["plugin"], f["hook"], f["status"], f["reason"]))
         if f["status"] == "PASS":
             passed += 1
 

@@ -280,6 +280,12 @@
       "name": "sandbox-state-clean",
       "make_variables": ["GLUDD_SANDBOX_STATE_DIR", "GLUDD_PROJECT_ROOT"],
       "behavior": "make sandbox-state-clean GLUDD_SANDBOX_STATE_DIR=/tmp/gludd-sandbox-state GLUDD_PROJECT_ROOT=."
+    },
+    {
+      "name": "check-plugin-liveness",
+      "make_variables": [],
+      "environment_variables": ["GLUDD_MIN_DISPATCHES"],
+      "behavior": "make check-plugin-liveness GLUDD_MIN_DISPATCHES=10"
     }
   ]
 }

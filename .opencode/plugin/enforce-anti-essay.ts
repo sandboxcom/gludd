@@ -8,6 +8,7 @@ import {
   reportAlive,
   readJsonFile,
   getProjectRoot,
+  hasTasksMdPendingWork,
 } from "../lib/shared.ts"
 const ESSAY_WORD_THRESHOLD = parseInt(
   process.env.GLUDD_ESSAY_WORD_THRESHOLD || "50",
@@ -21,11 +22,7 @@ function hasPendingWork(): boolean {
   const root = getProjectRoot()
   try {
     const tasksPath = path.join(root, "TASKS.md")
-    if (fs.existsSync(tasksPath)) {
-      const content = fs.readFileSync(tasksPath, "utf8")
-      const unchecked = content.split("\n").filter(l => /^\s*[-*]\s+\[\s*\]/.test(l))
-      if (unchecked.length > 0) return true
-    }
+    if (hasTasksMdPendingWork(tasksPath)) return true
     const ratchetPath = path.join(root, "config", "ratchet.yml")
     if (fs.existsSync(ratchetPath)) {
       const entries = fs.readFileSync(ratchetPath, "utf8")

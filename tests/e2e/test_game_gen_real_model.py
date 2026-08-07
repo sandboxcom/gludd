@@ -2,12 +2,14 @@
 
 Pipeline:
 1. Check dependencies (llama-cpp-python, huggingface_hub)
-2. Download Qwen2.5-0.5B GGUF to temp dir via ModelDownloader
+2. Download a GGUF model to temp dir via ModelDownloader
 3. Start llama.cpp server via LocalInferenceManager
 4. Build ModelGateway → generate snake game via GameGenerator
 5. Verify output is valid Python (AST parse, import, required methods)
 6. Clean up server + temp files
 
+Models tested are defined in tests/e2e/_local_model_configs.py (LOCAL_GGUF_MODELS).
+Filter via E2E_LOCAL_MODEL env var (e.g. E2E_LOCAL_MODEL=SmolLM2-360M).
 Skip if deps unavailable. Model not stored in repo; downloaded at runtime to temp dir.
 """
 
@@ -24,14 +26,16 @@ from pathlib import Path
 
 import pytest
 
-_MODEL_REPO = "bartowski/Qwen2.5-0.5B-Instruct-GGUF"
-_MODEL_FILE = "Qwen2.5-0.5B-Instruct-Q4_K_M.gguf"
-_E2E_MODEL_CACHE_DIR = "/tmp/gludd-qwen-e2e-model"
+from general_ludd.local_model._local_model_configs import LocalModelConfig
+
+from ._local_model_configs import get_e2e_configs
+
+_E2E_MODELS = get_e2e_configs()
 
 
-def _find_cached_gguf() -> str | None:
+def _find_cached_gguf(cache_dir: str) -> str | None:
     """Return path to first .gguf file in the E2E cache dir, or None."""
-    cache = Path(_E2E_MODEL_CACHE_DIR)
+    cache = Path(cache_dir)
     if not cache.is_dir():
         return None
     for f in cache.iterdir():
@@ -115,11 +119,15 @@ def teardown_module() -> None:
 
 @pytest.mark.e2e
 @pytest.mark.slow
+@pytest.mark.parametrize(
+    "model_config",
+    [pytest.param(m, id=m.name) for m in _E2E_MODELS],
+)
 class TestGameGenRealModel:
     """Full pipeline: download real model → start server → generate snake → verify → cleanup."""
 
     @pytest.mark.asyncio
-    async def test_download_serve_generate_verify_cleanup(self) -> None:
+    async def test_download_serve_generate_verify_cleanup(self, model_config: LocalModelConfig) -> None:
         """End-to-end with real model download, local server, game generation, verification."""
         from general_ludd.cloud.game_e2e import GameGenerator, GameSpec
         from general_ludd.infra.local_inference import LocalInferenceManager, LocalServerConfig
@@ -130,16 +138,17 @@ class TestGameGenRealModel:
 
         global _TMPDIR
 
+        cache_dir = f"/tmp/gludd-{model_config.name}-e2e-model"
         tmpdir = tempfile.mkdtemp(prefix="gludd-game-gen-e2e-")
         _TMPDIR = tmpdir
         mgr = None
 
         try:
             # ── Step 1: Download model (skip if cache hit) ──
-            cached_path = _find_cached_gguf()
+            cached_path = _find_cached_gguf(cache_dir)
             if cached_path is not None and os.path.isfile(cached_path):
                 model = DownloadedModel(
-                    model_id=_MODEL_REPO,
+                    model_id=model_config.repo,
                     local_path=cached_path,
                     source=DownloadSource.CACHE,
                     filename=os.path.basename(cached_path),
@@ -148,7 +157,7 @@ class TestGameGenRealModel:
             else:
                 downloader = ModelDownloader(cache_dir=tmpdir)
                 try:
-                    model = downloader.download_gguf(_MODEL_REPO, _MODEL_FILE)
+                    model = downloader.download_gguf(model_config.repo, model_config.filename)
                 except Exception as exc:
                     pytest.skip(f"Model download failed: {exc}")
 
@@ -167,7 +176,7 @@ class TestGameGenRealModel:
                 host="localhost",
                 port=port,
                 gpu_layers=0,
-                context_size=2048,
+                context_size=model_config.context_size,
                 startup_timeout=120.0,
             )
             server = mgr.create_server(config)
