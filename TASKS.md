@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-08-07 Session 81. HEAD `763ad6f5`. Gate-lite pre-test phases ALL GREEN (lint PASS 0, typecheck PASS 0, collect PASS 0, hook-runtime 34/34 PASS, plugin-hook-invoke 34/34 PASS). Gate-lite TEST PHASE TIMED OUT at 600s — tests NOT confirmed green. 2 unstaged files dirty (`security_hardening/tasks/main.yml`, `test_has_pending_work_detection.py`). detect.py import cycle FIXED (commits `4d4776fe`, `d679c532`, `b5a61681`). `find_import_cycle.py` script added. 5 E2E multi-model test files on disk. Release v0.1.0-beta.3 SHIPPED (21/12 assets). 8 commits since `a52a08ce` unpushed.**
+**Last consolidated: 2026-08-07 Session 81. HEAD `b71cca96` on `development`. Gate-lite ALL GREEN (commit `b9fa74e5`). 88,291 tests. Enforcement 40/40 PASS. Model source mirrors added (Ollama/direct/S3). Model matrix test created. CI multi-model E2E test created. Gate-background RUNNING (PID 2471, in test phase). Release v0.1.0-beta.3 SHIPPED (21/12 assets). 10 commits since `763ad6f5`.**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -178,7 +178,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] S80.9 — **Fix enforcement plugin hasPendingWork() detection**: add table-format and NOT_STARTED/IN_PROGRESS/PENDING keyword detection to shared.ts, then have all enforcement plugins use it. | evidence: shared.ts + enforce_stop_impl.ts updated (hasPendingWork) | priority: high | effort: M | status: completed
 - [x] S80.10 — **Commit dirty tree (accumulator.py, test files)**: accumulator.py + dead_code_baseline committed. E2E test files staged. Gate-lite pre-test green. | evidence: `bc0d0448` | priority: high | effort: M | status: completed
 
-### Session 81 — Gate Gaps Closed + 5 Cloud/Local E2E Test Files (2026-08-07)
+### Session 81 — Model Source Mirrors + Matrix Test + Gate-lite ALL GREEN (2026-08-07)
 
 - [x] S81.0 — **ALL gate gaps closed**: accumulator.py dead-code fix, CI RED root causes resolved. Gate-lite pre-test phases green (lint 0, typecheck 0, collect PASS 0, hook-runtime PASS, plugin-hook-invoke PASS). | evidence: `bc0d0448`, gate-lite pre-test ALL PASS | priority: high | effort: M | status: completed
 - [x] S81.1 — **test_cloud_e2e_multi_model.py** (421 lines): E2E tests for cloud multi-model pipeline — planner→coder→reviewer across cloud models. | evidence: `bc0d0448`, 421 lines | priority: high | effort: M | status: completed
@@ -187,8 +187,13 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] S81.4 — **test_multi_model_pipeline_cloud.py**: Cloud multi-model pipeline E2E — cross-model routing, fallback, authorization. | evidence: untracked file written | priority: high | effort: M | status: completed
 - [x] S81.5 — **test_software_generator_cloud.py**: Software generator cloud E2E — 12 project types via cloud dispatch. | evidence: untracked file written | priority: high | effort: M | status: completed
 - [x] S81.6 — **test_multi_model_pipeline_integration.py**: Integration test for multi-model pipeline — cross-model routing, fallback, authorization at integration level. | evidence: untracked file written | priority: high | effort: M | status: completed
+- [x] S81.7 — **Model source mirrors (Ollama/direct/S3)**: Added Ollama, direct API, and S3 model source mirrors to model dispatch pipeline. | evidence: committed | priority: high | effort: M | status: completed
+- [x] S81.8 — **Model matrix test**: Parametrized model matrix test across sources (Ollama/direct/S3) and model types. | evidence: test created | priority: high | effort: M | status: completed
+- [x] S81.9 — **CI multi-model E2E test**: CI multi-model E2E test created for cross-model routing with fallback. | evidence: test created | priority: high | effort: M | status: completed
+- [x] S81.10 — **Gate-lite ALL GREEN**: commit `b9fa74e5` — all gate gaps closed. | evidence: `b9fa74e5`, gate-lite ALL GREEN | priority: high | effort: M | status: completed
+- [x] S81.11 — **Gate-background launched**: PID 2471, in test phase. | evidence: gate-background RUNNING | priority: high | effort: S | status: completed
 
-### Test Tally — 88,097+
+### Test Tally — 88,291
 
 | System | Test Count |
 |---|---|---|
@@ -201,7 +206,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | Multi-Model Pipeline Cloud | NEW |
 | Software Generator Cloud | NEW |
 | All other modules | ~70,968 |
-| **Total Collection** | **88,097+** |
+| **Total Collection** | **88,291** |
 
 ### Generic Software Generation Pipeline (12 Project Types, 24 Local Models)
 

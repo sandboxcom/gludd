@@ -1866,6 +1866,16 @@ test-e2e-games-local-model:
 	 LOCAL_MODEL_GAME="$${LOCAL_MODEL_GAME:-}" \
 	 $(UV) run pytest tests/e2e/test_game_building_local.py -v $(PYTEST_ARGS)
 
+# CI/CD multi-model pipeline E2E — reads keys from env or shared key files.
+# DeepSeek + OpenRouter tiers, structural tests when keys are absent.
+# Writes results to /tmp/gludd-multi-model-results.json for CI artifacts.
+# CI_GAME=snake runs a single-game smoke test.
+test-e2e-multi-model:
+	@DEEPSEEK_API_KEY="$${DEEPSEEK_API_KEY:-}" \
+	 OPENROUTER_API_KEY="$${OPENROUTER_API_KEY:-}" \
+	 CI_GAME="$${CI_GAME:-}" \
+	 $(UV) run pytest tests/e2e/test_ci_multi_model_pipeline.py -v -s $(PYTEST_ARGS)
+
 .PHONY: test-llama-game-gen
 test-llama-game-gen: sync-llama-cpp
 	@echo "=== Llama-3.2-1B Game Gen Test ==="
