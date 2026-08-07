@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-08-07 Session 81 FINAL. HEAD `a52a08ce`. ALL gate gaps closed, gate-lite ALL GREEN (lint 0, typecheck 0, collect PASS 0, tests PASS). 88,097+ tests across 5 phases. 5 new E2E test files (cloud_e2e_multi_model, local_model_multi_pipeline, project_type_pipeline, multi_model_pipeline_cloud, software_generator_cloud). Circular import fixed by `find_import_cycle.py`. software_generator tests synced. loop_handlers tested. Generic software gen pipeline (12 types), 24 local models (8 coding, 16 general). Enforcement 34/34 PASS, 125 runtime tests. Release v0.1.0-beta.3 SHIPPED.**
+**Last consolidated: 2026-08-07 Session 81. HEAD `763ad6f5`. Gate-lite pre-test phases ALL GREEN (lint PASS 0, typecheck PASS 0, collect PASS 0, hook-runtime 34/34 PASS, plugin-hook-invoke 34/34 PASS). Gate-lite TEST PHASE TIMED OUT at 600s — tests NOT confirmed green. 2 unstaged files dirty (`security_hardening/tasks/main.yml`, `test_has_pending_work_detection.py`). detect.py import cycle FIXED (commits `4d4776fe`, `d679c532`, `b5a61681`). `find_import_cycle.py` script added. 5 E2E multi-model test files on disk. Release v0.1.0-beta.3 SHIPPED (21/12 assets). 8 commits since `a52a08ce` unpushed.**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -208,21 +208,17 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] S80.101 — **24 local model configs**: 8 coding-specialized models (DeepSeek Coder 6.7B/1.3B, CodeLlama 7B/13B, StarCoder2 3B/7B, Qwen2.5-Coder 7B, Stable Code 3B) + 16 general models (Qwen2.5 0.5B/1.5B/3B/7B/14B/32B, Llama 3.2 1B/3B/8B, Phi-3 mini/medium, SmolLM2 135M/360M/1.7B, TinyLlama 1.1B). All 24 configs loaded into model registry with dispatch routing. | evidence: 24 models, 8 coding, 16 general | priority: high | effort: L | status: completed
 - [x] S80.102 — **Enforcement refactor complete**: all enforcement plugins synchronized with shared hasPendingWork(). hasPendingWork() moved to shared.ts as canonical single source. All 13 plugins BLOCKING. 125 runtime tests PASS. | evidence: 13/13 PASS, 125 runtime tests | priority: high | effort: M | status: completed
 
-### Session 81 FINAL — ALL COMPLETE
+### Session 81 — ACTUAL STATUS (2026-08-07, HEAD `763ad6f5`)
 
 | Item | Status | Evidence |
 |---|---|---|
-| Gate gaps | ALL CLOSED | `d2cd2cfd` |
-| Gate-lite ALL PHASES | GREEN — lint 0, typecheck 0, collect PASS 0, tests PASS | gate-lite FULL PASS |
-| Circular import | FIXED | `find_import_cycle.py` |
-| CI run `31140874773` on `51a8dfff` | RED (failure) — fixed by `a52a08ce` | root cause: RunResult Protocol |
-| software_generator tests | SYNCED | test suite aligned |
-| loop_handlers | TESTED | `test_loop_handlers.py` |
-| 5 new E2E test files | COMPLETE — 421+408+543+ lines | cloud/local multi-model, project-type, software-generator-cloud |
-| Unpushed commits | `a52a08ce`, `d2cd2cfd`, `bc0d0448`, `044077a8` | 4 commits queued |
+| Gate-lite pre-test phases | ALL GREEN — lint 0, typecheck 0, collect PASS 0, hook-runtime 34/34, plugin-hook-invoke 34/34 | gate-lite output |
+| Gate-lite test phase | **TIMED OUT at 600s** — NOT confirmed green | gate-lite killed at 10min |
+| detect.py import cycle | FIXED | commits `4d4776fe`, `d679c532`, `b5a61681` |
+| Circular import finder | `find_import_cycle.py` script added | `d679c532` |
+| CI run `31140874773` on `51a8dfff` | RED — RunResult Protocol @runtime_checkable fix in `08b51949` | CI failure |
+| 5 E2E test files | on disk (untracked/unstaged) | cloud/local multi-model, project-type, software-generator |
+| Git tree | **DIRTY** — 2 unstaged files | `security_hardening/tasks/main.yml`, `test_has_pending_work_detection.py` |
+| Unpushed commits | 8 commits from `d2cd2cfd`..`763ad6f5` | `763ad6f5` = HEAD |
 | Release v0.1.0-beta.3 | SHIPPED (21/12 assets) | verified |
-| Crypto library refactor | 8/12 files COMPLETE | audited libraries |
-| Generic software gen pipeline (12 types) | COMPLETE | planner→coder→reviewer |
-| 24 local models (8 coding, 16 general) | CONFIGURED | all registered |
-| Enforcement refactor | 34/34 PASS, 125 runtime tests | shared.ts canonical |
-| Test count | **88,097+** | across 5 gate-lite phases |
+| Enforcement plugins | 40/40 guards, 34/34 load PASS | gate-lite output |

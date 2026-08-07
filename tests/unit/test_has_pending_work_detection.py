@@ -62,7 +62,12 @@ class TestCheckboxDetection:
 
     def test_pin_ts_source_uses_same_regex(self):
         body = _extract_has_pending_work_body()
-        assert "/^\\s*[-*]\\s*\\[\\s*\\]/" in body.replace(" ", "").replace("\t", "")
+        # Checkbox regex is delegated to hasTasksMdPendingWork() in shared.ts.
+        # Verify delegation exists and the regex is present in shared.ts.
+        assert "hasTasksMdPendingWork" in body
+        import_path = PLUGIN_PATH.parent / "lib" / "shared.ts"
+        shared_src = import_path.read_text() if import_path.exists() else ""
+        assert "/^\\s*[-*]\\s*\\[\\s*\\]/" in shared_src.replace(" ", "").replace("\t", "")
 
 
 # ── 2. Table rows with NOT STARTED / IN PROGRESS / PENDING ─────────────────────

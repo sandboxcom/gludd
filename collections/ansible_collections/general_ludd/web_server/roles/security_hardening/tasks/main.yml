@@ -23,9 +23,9 @@
       when: hide_server_tokens | bool
       ansible.builtin.lineinfile:
         path: /etc/nginx/nginx.conf
-        regexp: "^\s*server_tokens"
-        line: "    server_tokens off;"
-        insertafter: "^\s*http \{"
+        regexp: '^\s*server_tokens'
+        line: '    server_tokens off;'
+        insertafter: '^\s*http \{'
       notify: reload nginx
 
     - name: "Set security headers"
@@ -40,17 +40,17 @@
       when: disable_directory_listing | bool
       ansible.builtin.lineinfile:
         path: /etc/nginx/nginx.conf
-        regexp: "^\s*autoindex"
-        line: "    autoindex off;"
-        insertafter: "^\s*http \{"
+        regexp: '^\s*autoindex'
+        line: '    autoindex off;'
+        insertafter: '^\s*http \{'
       notify: reload nginx
 
     - name: "Set request limits"
       ansible.builtin.lineinfile:
         path: /etc/nginx/nginx.conf
-        regexp: "^\s*client_max_body_size"
-        line: "    client_max_body_size {{ max_body_size_mb }}m;"
-        insertafter: "^\s*http \{"
+        regexp: '^\s*client_max_body_size'
+        line: '    client_max_body_size {{ client_max_body_size }};'
+        insertafter: '^\s*http \{'
       notify: reload nginx
 
     - name: "Configure TLS hardening"
@@ -72,7 +72,7 @@
       when: hide_server_tokens | bool
       ansible.builtin.lineinfile:
         path: "{{ '/etc/httpd/conf/httpd.conf' if ansible_os_family == 'RedHat' else '/etc/apache2/apache2.conf' }}"
-        regexp: "^\s*ServerTokens"
+        regexp: '^\s*ServerTokens'
         line: "ServerTokens Prod"
       notify: reload apache
 
@@ -80,7 +80,7 @@
       when: hide_server_tokens | bool
       ansible.builtin.lineinfile:
         path: "{{ '/etc/httpd/conf/httpd.conf' if ansible_os_family == 'RedHat' else '/etc/apache2/apache2.conf' }}"
-        regexp: "^\s*ServerSignature"
+        regexp: '^\s*ServerSignature'
         line: "ServerSignature Off"
       notify: reload apache
 
@@ -96,7 +96,7 @@
       when: disable_directory_listing | bool
       ansible.builtin.lineinfile:
         path: "{{ '/etc/httpd/conf/httpd.conf' if ansible_os_family == 'RedHat' else '/etc/apache2/apache2.conf' }}"
-        regexp: "^\s*Options.*Indexes"
+        regexp: '^\s*Options.*Indexes'
         line: "    Options -Indexes"
       notify: reload apache
 
