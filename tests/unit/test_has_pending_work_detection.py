@@ -74,9 +74,10 @@ class TestCheckboxDetection:
 
 
 class TestTableRowDetection:
-    """Current hasPendingWork() does NOT scan table rows.  These tests
-    document the gap: status-table entries are invisible to the detection
-    logic unless they also appear as - [ ] checkboxes."""
+    """hasTasksMdPendingWork() in shared.ts now scans table rows via
+    /\\|\\s*(NOT STARTED|IN PROGRESS|PENDING)\\s*\\|/im.  The checkbox
+    regex is the primary detector; table-row detection is a secondary pass
+    that catches TASKS.md entries in status-table format."""
 
     MARKDOWN_TABLE = """
 | Task | Status |
@@ -122,6 +123,52 @@ class TestTableRowDetection:
         assert "NOT STARTED" in shared_src
         assert "IN PROGRESS" in shared_src
         assert "PENDING" in shared_src
+
+    # ── Table-row regex detection (added when hasTasksMdPendingWork gained table-row support) ──
+
+    TABLE_ROW_RE = re.compile(r"\|\s*(NOT STARTED|IN PROGRESS|PENDING)\s*\|", re.IGNORECASE)
+
+    def test_table_row_regex_matches_NOT_STARTED(self):
+        assert self.TABLE_ROW_RE.search("| NOT STARTED |")
+
+    def test_table_row_regex_matches_IN_PROGRESS(self):
+        assert self.TABLE_ROW_RE.search("| IN PROGRESS |")
+
+    def test_table_row_regex_matches_PENDING(self):
+        assert self.TABLE_ROW_RE.search("| PENDING |")
+
+    def test_table_row_regex_case_insensitive(self):
+        assert self.TABLE_ROW_RE.search("| not started |")
+        assert self.TABLE_ROW_RE.search("| in progress |")
+        assert self.TABLE_ROW_RE.search("| pending |")
+
+    def test_table_row_regex_does_not_match_COMPLETED(self):
+        assert not self.TABLE_ROW_RE.search("| COMPLETED |")
+        assert not self.TABLE_ROW_RE.search("| DONE |")
+        assert not self.TABLE_ROW_RE.search("| CANCELLED |")
+
+    def test_table_row_regex_with_extra_whitespace(self):
+        assert self.TABLE_ROW_RE.search("|   NOT STARTED   |")
+        assert self.TABLE_ROW_RE.search("|  IN PROGRESS  |")
+
+    def test_has_tasks_md_pending_work_with_table_rows(self):
+        """Structural pin: hasTasksMdPendingWork in shared.ts uses the table-row regex."""
+        shared_path = PLUGIN_PATH.parent.parent / "lib" / "shared.ts"
+        assert shared_path.exists(), "shared.ts missing"
+        shared_src = shared_path.read_text()
+        assert re.search(r"/\\\|\\s\*\(NOT\s+STARTED", shared_src) or "NOT STARTED" in shared_src, (
+            "shared.ts missing table-row NOT STARTED regex"
+        )
+
+    def test_table_row_in_full_has_pending_work_chain(self):
+        """Verify table-row keywords appear in hasTasksMdPendingWork function body."""
+        shared_path = PLUGIN_PATH.parent.parent / "lib" / "shared.ts"
+        shared_src = shared_path.read_text()
+        func_body = shared_src.split("function hasTasksMdPendingWork")[1]
+        assert "NOT STARTED" in func_body
+        assert "IN PROGRESS" in func_body
+        assert "PENDING" in func_body
+        assert "|\\s*" in func_body.replace("|\\s", "|\\s").replace("| ", "| ")
 
 
 # ── 3. Unresolved BUGS.md entries ─────────────────────────────────────────────
