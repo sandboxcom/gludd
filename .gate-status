@@ -1,4 +1,11 @@
-=== GATE-REFRESH 2026-08-07T08:41:49Z ===
+=== GATE-REFRESH 2026-08-07T08:42:19Z ===
 lint PASS 0
 verify-feature-claims PASS
-hot-reload 
+hot-reload PASS
+verify-hot-reload PASS
+restart-needed PASS
+check-status-table PASS
+env-writes PASS
+hook-runtime PASS
+typecheck PASS 0
+collect 
