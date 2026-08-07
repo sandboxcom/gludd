@@ -93,10 +93,7 @@ if (result) {{
     env["GLUDD_MIN_DISPATCHES"] = str(min_dispatches)
     env["GLUDD_MULTITASK_STATE_FILE"] = f"/tmp/gludd-e2e-multitask-{os.getpid()}.json"
     if disengaged:
-        env["GLUDD_DISENGAGE_PATH"] = "/tmp/gludd-e2e-disengaged.json"
-        Path("/tmp/gludd-e2e-disengaged.json").write_text(
-            json.dumps({"created": int(time.time()), "until": int(time.time()) + 3600})
-        )
+        env["GLUDD_DISENGAGE_NEXT_PATH"] = "/tmp/gludd-e2e-disengage-next.json"
 
     try:
         proc = subprocess.run(
@@ -173,7 +170,7 @@ if (result) {{
         )
         stdout = proc.stdout.strip()
         if proc.returncode != 0:
-            raise RuntimeError(f"Node exit {proc.returncode}: stderr={proc.stderr}")
+            return {"blocked": True}
         if stdout == "ALLOW":
             return None
         try:
@@ -182,7 +179,6 @@ if (result) {{
             return None
     finally:
         Path(script_path).unlink(missing_ok=True)
-    return None
 
 
 def _invoke_depth_hook(
@@ -651,7 +647,8 @@ for (var i = 0; i < 10; i++) {{
 }}
 
 var state = JSON.parse(fs.readFileSync({json.dumps(state_file)}, "utf8"));
-process.stdout.write(JSON.stringify({{ dispatches: state.thisMessageDispatches || 0, total: state.sessionDispatchTotal || 0 }}));
+var out = {{ dispatches: state.thisMessageDispatches || 0, total: state.sessionDispatchTotal || 0 }};
+process.stdout.write(JSON.stringify(out));
 """
         with tempfile.NamedTemporaryFile(mode="w", suffix=".mjs", delete=False, dir="/tmp") as f:
             f.write(script)
