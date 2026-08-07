@@ -1980,7 +1980,9 @@ test-hook-runtime:
 # (Session 51 _exports.ts incident), old-API/new-API mismatches, and CRASH-level
 # hook failures that structural tests miss.
 test-opencode-e2e:
-	@$(UV) run python -m pytest tests/e2e/test_opencode_plugin_load.py -v
+	@$(UV) run python -m pytest tests/e2e/test_opencode_plugin_load.py tests/opencode_e2e/test_multitask_behavior.py -v
+test-multitask-e2e:
+	@TMPDIR=$${TMPDIR:-/tmp} $(UV) run python -m pytest tests/opencode_e2e/test_multitask_behavior.py -v --timeout=3600 --tb=short
 bisect-ts-parse:
 	@$(PYTHON) scripts/bisect_ts_parse.py
 
@@ -4672,6 +4674,10 @@ check-readme-status:
 # --- Subagent guard validation ---
 check-subagent-guards:
 	@$(PYTHON) scripts/check_subagent_guards.py
+
+# --- Depth-limit validation: verifies 3x dispatch (main→agent→subagent→subagent) is allowed ---
+check-depth-limit:
+	@$(UV) run python3 scripts/check_depth_limit.py
 
 # --- Enhancement ratio diagnostic — reads state file and prints current wave ratio ---
 # Machine-enforced counter for AGENTS.md COST-EFFICIENCY DIRECTIVE §5: at least
