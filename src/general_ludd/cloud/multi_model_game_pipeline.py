@@ -116,8 +116,8 @@ You are a GAME CODER fixing review feedback. Given the original code, the design
 and review feedback listing specific issues, produce fixed Python code that addresses
 every issue. Output ONLY the fixed Python code, no explanation."""
 
-_PLANNER_RESPONSE_RE = re.compile(r"^(name|genre|architecture|components|tech|acceptance):(.+)$", re.MULTILINE)
-_REVIEWER_RESPONSE_RE = re.compile(r"^(issues|fixes|score|passed):(.+)$", re.MULTILINE)
+_PLANNER_RESPONSE_RE = re.compile(r"^(name|genre|architecture|components|tech|acceptance):(.*)$", re.MULTILINE)
+_REVIEWER_RESPONSE_RE = re.compile(r"^(issues|fixes|score|passed):(.*)$", re.MULTILINE)
 
 
 def _parse_key_value(text: str, pattern: re.Pattern[str]) -> dict[str, str]:
