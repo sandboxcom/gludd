@@ -177,7 +177,25 @@ function isGateAlreadyRunning(): boolean {
     if (process.env.GLUDD_GATE_PYTEST_RUNNING === "0") return false
     // Signal A (definitive): pgrep -f pytest. Exit 0 = match found.
     try {
-      execSync("pgrep -f pytest", { stdio: ["pipe", "pipe", "pipe"] })
+      const pids = execSync("pgrep -f pytest", { stdio: ["pipe", "pipe", "pipe"] }).toString().trim()
+      if (!pids) return false
+      // Check if the oldest pytest process is stale (>30 min). Stale processes
+      // from prior sessions are not active gates and should not block tests.
+      const oldestPid = pids.split("\n")[0]
+      try {
+        const etime = execSync(`ps -o etime= -p ${oldestPid}`, { stdio: ["pipe", "pipe", "pipe"] }).toString().trim()
+        // etime format: "DD-HH:MM:SS" or "HH:MM:SS"
+        const daysMatch = etime.match(/^(\d+)-/)
+        const days = daysMatch ? parseInt(daysMatch[1], 10) : 0
+        if (days >= 1) return false // Processes older than 1 day are definitely stale
+        const timeMatch = etime.match(/(\d+):(\d+):(\d+)$/)
+        if (timeMatch) {
+          const hours = parseInt(timeMatch[1], 10) + (days * 24)
+          if (hours >= 1) return false // Processes older than 1 hour are stale
+        }
+      } catch {
+        // Can't check age — fall back to assuming active
+      }
       return true
     } catch (e) {
       if (typeof e === "object" && e !== null && "code" in e && (e as { code?: unknown }).code === "ENOENT") {
