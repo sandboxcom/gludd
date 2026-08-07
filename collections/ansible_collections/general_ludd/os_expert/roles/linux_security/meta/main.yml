@@ -1,0 +1,15 @@
+---
+galaxy_info:
+  role_name: linux_security
+  author: Agentic Harness Agent
+  description: >
+    Linux security hardening: CIS benchmarks, kernel hardening,
+    and security audit tooling.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+dependencies: []
