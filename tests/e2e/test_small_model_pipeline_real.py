@@ -1,12 +1,15 @@
 """E2E: real small model pipeline — download, quantize, serve, infer, cleanup.
 
 Exercises the full pipeline with actual classes:
-1. ModelDownloader — download a tiny GGUF model (<500MB, Qwen2.5-0.5B)
+1. ModelDownloader — download a tiny GGUF model (<500MB)
 2. ModelQuantizer — quantize to q4_0
 3. LocalInferenceManager — start inference server (subprocess fallback)
 4. Ansible dispatch path — POST /api/dispatch with capability routing
 5. httpx — call the server with a test prompt
 6. Verify response is non-empty, shut down, clean up files
+
+Models are defined in tests/e2e/_local_model_configs.py (LOCAL_GGUF_MODELS).
+Filter via E2E_LOCAL_MODEL env var (e.g. E2E_LOCAL_MODEL=SmolLM2-360M).
 
 Skips with reason when llama.cpp / huggingface_hub tools are not installed.
 
@@ -29,12 +32,17 @@ from general_ludd.infra.local_inference import (
     LocalInferenceManager,
     LocalServerConfig,
 )
+from general_ludd.local_model._local_model_configs import LocalModelConfig
 from general_ludd.quantization.quantize import ModelQuantizer, QuantMethod
 from general_ludd.small_models.download import ModelDownloader
 
-_SMALL_MODEL_REPO = "bartowski/Qwen2.5-0.5B-Instruct-GGUF"
-_SMALL_MODEL_FILE = "Qwen2.5-0.5B-Instruct-Q4_K_M.gguf"
-_QUANTIZED_FILENAME = "qwen2.5-0.5b-q4_0.gguf"
+from ._local_model_configs import get_e2e_configs
+
+_E2E_MODELS = get_e2e_configs()
+
+
+def _quantized_filename(config: LocalModelConfig) -> str:
+    return f"{config.name.lower()}-q4_0.gguf"
 
 
 def _find_llama_quantize_bin() -> str | None:
@@ -98,16 +106,17 @@ def _find_free_port() -> int:
         return s.getsockname()[1]
 
 
-def _find_cached_model_dir() -> str | None:
+def _find_cached_model_dir(config: LocalModelConfig) -> str | None:
     candidates = [
         os.environ.get("GLUDD_E2E_MODEL_CACHE_DIR", ""),
         "/tmp/gludd-qwen-e2e-model",
     ]
+    qfname = _quantized_filename(config)
     for d in candidates:
         if not d:
             continue
-        qpath = os.path.join(d, _QUANTIZED_FILENAME)
-        gpath = os.path.join(d, _SMALL_MODEL_FILE)
+        qpath = os.path.join(d, qfname)
+        gpath = os.path.join(d, config.filename)
         if os.path.isfile(qpath) and os.path.getsize(qpath) > 0:
             return d
         if os.path.isfile(gpath) and os.path.getsize(gpath) > 0:
@@ -115,24 +124,15 @@ def _find_cached_model_dir() -> str | None:
     return None
 
 
-def _cached_or_download() -> tuple[str, str]:
-    cached_dir = _find_cached_model_dir()
-    if cached_dir is not None:
-        qpath = os.path.join(cached_dir, _QUANTIZED_FILENAME)
-        if os.path.isfile(qpath) and os.path.getsize(qpath) > 0:
-            return cached_dir, qpath
-    return _download_and_quantize()
-
-
-def _download_and_quantize() -> tuple[str, str]:
-    tmpdir = tempfile.mkdtemp(prefix="gludd-qwen-e2e-")
-    quantized_path = os.path.join(tmpdir, _QUANTIZED_FILENAME)
+def _download_and_quantize(config: LocalModelConfig) -> tuple[str, str]:
+    tmpdir = tempfile.mkdtemp(prefix=f"gludd-{config.name.lower()}-e2e-")
+    quantized_path = os.path.join(tmpdir, _quantized_filename(config))
 
     downloader = ModelDownloader(cache_dir=tmpdir)
     try:
         downloaded = downloader.download_gguf(
-            model_id=_SMALL_MODEL_REPO,
-            filename=_SMALL_MODEL_FILE,
+            model_id=config.repo,
+            filename=config.filename,
         )
     except Exception as exc:
         shutil.rmtree(tmpdir, ignore_errors=True)
@@ -157,21 +157,22 @@ def _download_and_quantize() -> tuple[str, str]:
     return tmpdir, quantized_path
 
 
+@pytest.mark.parametrize("model_config", _E2E_MODELS, ids=[c.name for c in _E2E_MODELS])
 class TestSmallModelPipelineReal:
     """Full pipeline: download -> quantize -> serve -> infer -> shutdown -> cleanup."""
 
     @pytest.mark.asyncio
-    async def test_full_pipeline_download_quantize_serve_infer(self) -> None:
+    async def test_full_pipeline_download_quantize_serve_infer(self, model_config: LocalModelConfig) -> None:
         """E2E pipeline exercising ModelDownloader, ModelQuantizer, LocalInferenceManager."""
-        tmpdir = tempfile.mkdtemp(prefix="gludd-qwen-e2e-")
-        quantized_path = os.path.join(tmpdir, "qwen2.5-0.5b-q4_0.gguf")
+        tmpdir = tempfile.mkdtemp(prefix=f"gludd-{model_config.name.lower()}-e2e-")
+        quantized_path = os.path.join(tmpdir, _quantized_filename(model_config))
 
         try:
             downloader = ModelDownloader(cache_dir=tmpdir)
             try:
                 downloaded = downloader.download_gguf(
-                    model_id=_SMALL_MODEL_REPO,
-                    filename=_SMALL_MODEL_FILE,
+                    model_id=model_config.repo,
+                    filename=model_config.filename,
                 )
             except Exception as exc:
                 pytest.skip(f"Model download failed: {exc}")
@@ -257,13 +258,13 @@ class TestSmallModelPipelineReal:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
     @pytest.mark.asyncio
-    async def test_dispatch_path_serve_infer_stop(self) -> None:
+    async def test_dispatch_path_serve_infer_stop(self, model_config: LocalModelConfig) -> None:
         """E2E pipeline through POST /api/dispatch capability routing.
 
         Uses the same download+quantize path, then serves/stops via the
         capability dispatch (the same path cloud deployments use).
         """
-        tmpdir, quantized_path = _download_and_quantize()
+        tmpdir, quantized_path = _download_and_quantize(model_config)
         port = _find_free_port()
         base_url = f"http://localhost:{port}"
         try:
@@ -333,13 +334,13 @@ class TestSmallModelPipelineReal:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
     @pytest.mark.asyncio
-    async def test_dispatch_api_endpoint_serve_stop(self) -> None:
+    async def test_dispatch_api_endpoint_serve_stop(self, model_config: LocalModelConfig) -> None:
         """Serve and stop a local model through the POST /api/dispatch endpoint.
 
         Verifies the full dispatch path: capability routing → collection
         handler → AnsibleRunnerAdapter → playbook execution.
         """
-        tmpdir, quantized_path = _download_and_quantize()
+        tmpdir, quantized_path = _download_and_quantize(model_config)
         port = _find_free_port()
         base_url = f"http://localhost:{port}"
         try:
