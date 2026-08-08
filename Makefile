@@ -7,6 +7,7 @@ MYPY_MAX := 0
 OPENCODE_DB ?= ~/.local/share/opencode/opencode.db
 VERIFY_POLLS ?= 30
 GLUDD_TASK_TIMEOUT ?= 300
+TIMEOUT ?= 3600
 GATE_POLL_INTERVAL ?= 60
 INTERVAL ?= 300
 COUNT ?= 1
@@ -126,7 +127,7 @@ _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-wor
         verify-feature-claims audit-coverage gate-audit coverage-json \
         tf-cache-setup tf-init tf-validate tf-cache-warm tf-versions-check tf-clean \
         deck deck-serve deck-preview deck-data deck-honesty \
-        script-count strip-enforce-stop test-hooks-live test-hook-runtime test-opencode-e2e \
+        script-count strip-enforce-stop test-hooks-live test-hook-runtime test-opencode-e2e test-opencode-e2e-hour \
         verify-enforcement \
 ci-view ci-rerun ci-trigger ci-active ci-job-log ci-shards-log-context \
         ci-busy-check ci-safe-push pre-push-check push-guarded ci-await \
@@ -244,6 +245,7 @@ help:
 	@echo "  podman-project-recreate  Recreate one gludd-namespaced Podman test machine"
 	@echo "  podman-project-delete  Delete one gludd-namespaced Podman machine with bounded progress"
 	@echo "  test-opencode-e2e     .opencode/ plugin load+invocation tests"
+	@echo "  test-opencode-e2e-hour  1-hour E2E spawner test (TIMEOUT=3600)"
 	@echo "  test-specific         Single test (TESTFILE=path::TestClass::test_name)"
 	@echo "  test-files            Multiple tests (TESTFILES=tests/unit/a.py tests/unit/b.py)"
 	@echo "  grep                  Repository text search (Q=regex SEARCH_PATH=path)"
@@ -1985,6 +1987,10 @@ test-multitask-e2e:
 	@TMPDIR=$${TMPDIR:-/tmp} $(UV) run python -m pytest tests/opencode_e2e/test_multitask_behavior.py -v --timeout=3600 --tb=short
 test-spawner-e2e:
 	@$(UV) run python tests/opencode_e2e/run_spawner_test.py
+test-opencode-e2e-hour:
+	@mkdir -p /tmp/gludd-opencode-e2e
+	@echo "=== E2E HOUR TEST: timeout=$(TIMEOUT)s ==="
+	@$(UV) run python tests/opencode_e2e/run_spawner_test.py --timeout=$(TIMEOUT)
 diag-opencode:
 	@opencode --help 2>&1 || echo "EXIT: $$?"
 	@opencode --version 2>&1 || echo "EXIT: $$?"

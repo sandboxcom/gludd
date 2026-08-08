@@ -1,0 +1,16 @@
+total 72
+drwxr-xr-x@ 15 shawnwilson  staff   480 Aug  7 07:13 .
+drwxr-xr-x@  8 shawnwilson  staff   256 Aug  7 07:13 ..
+drwxr-xr-x@  3 shawnwilson  staff    96 Aug  7 05:09 .gate-logs
+drwxr-xr-x@  8 shawnwilson  staff   256 Aug  7 07:12 .opencode
+-rw-r--r--@  1 shawnwilson  staff  1684 Aug  7 07:12 AGENTS.md
+-rw-r--r--@  1 shawnwilson  staff     5 Aug  7 07:13 count.txt
+-rw-r--r--@  1 shawnwilson  staff     9 Aug  7 07:13 hello.txt
+-rw-r--r--@  1 shawnwilson  staff     0 Aug  7 07:13 listing.txt
+-rw-r--r--@  1 shawnwilson  staff  4328 Aug  7 07:13 Makefile
+-rw-r--r--@  1 shawnwilson  staff  2415 Aug  7 04:59 opencode.json
+drwxr-xr-x@ 12 shawnwilson  staff   384 Aug  7 05:21 output
+-rw-r--r--@  1 shawnwilson  staff  3026 Aug  7 05:01 setup.sh
+-rw-r--r--@  1 shawnwilson  staff   631 Aug  7 07:12 TASKS.md
+drwxr-xr-x@  2 shawnwilson  staff    64 Aug  7 07:13 test_dir
+-rw-r--r--@  1 shawnwilson  staff    29 Aug  7 07:13 time.txt

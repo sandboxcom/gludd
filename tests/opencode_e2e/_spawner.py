@@ -6,13 +6,17 @@ Usage::
 
     spawner = OpencodeSpawner(
         project_dir="/tmp/opencode-e2e-test/",
-        prompt="Write a Python function that returns the sum of two numbers.",
-        timeout_sec=60,
+        prompt="Read TASKS.md, dispatch 10 subagents to complete tasks.",
+        timeout_sec=3600,
+        prompt_sequence=["Read TASKS.md and dispatch 10 subagents.",
+                         "Keep working. Complete all remaining tasks."],
+        prompt_interval_sec=300,
     )
     result = spawner.run()
     print(result.verdict)          # "PASS" or "FAIL"
     print(result.dispatch_waves)   # list[dict]
-    print(result.text_only_stops)  # list[dict]
+    print(result.per_wave_violations)  # waves with <10 dispatches
+    print(result.depth_count)      # max nesting depth observed
 """
 
 from __future__ import annotations
@@ -28,6 +32,7 @@ from dataclasses import dataclass, field
 OPENCODE_BIN = "opencode"
 
 TOOL_CALL_RE = re.compile(r'(?:tool_use|"type"\s*:\s*"tool_use"|"type":"tool_use")')
+TOOL_RESULT_RE = re.compile(r'(?:tool_result|"type"\s*:\s*"tool_result")')
 TASK_TOOL_NAME_RE = re.compile(
     r'(?:"name"\s*:\s*"(task|agent|workflow)"'
     r'|"tool"\s*:\s*"(task|agent|workflow)"'
@@ -39,10 +44,13 @@ STEP_START_RE = re.compile(r'(?:step_start|"type"\s*:\s*"step_start"|"type":"ste
 STEP_FINISH_RE = re.compile(r'(?:step_finish|"type"\s*:\s*"step_finish"|"type":"step_finish")')
 MESSAGE_START_RE = re.compile(r'(?:message_start|"type"\s*:\s*"message_start")')
 MESSAGE_ROLE_RE = re.compile(r'(?:role"\s*:\s*"assistant|\bassistant\b)')
-TOOL_RESULT_RE = re.compile(r'(?:tool_result|"type"\s*:\s*"tool_result")')
 DISPATCH_TEXT_RE = re.compile(r"(?:\btask\s*\(|\bagent\s*\(|\bworkflow\s*\()")
 TEXT_ASSISTANT_RE = re.compile(r"^\s*(?:assistant|Assistant|ASSISTANT)\s*[>:]")
 TEXT_EVENT_RE = re.compile(r'(?:"type"\s*:\s*"text"|"type":"text")')
+NESTED_DISPATCH_RE = re.compile(
+    r'(?:tool_use.*"(?:task|agent|workflow)")'
+    r'|(?:"type":"tool_use".*"(?:task|agent|workflow)")'
+)
 
 
 @dataclass
@@ -69,7 +77,9 @@ class ResponseFrame:
 @dataclass
 class SpawnResult:
     verdict: str  # "PASS" | "FAIL" | "ERROR"
+    verdict_reason: str = ""
     dispatch_waves: list[dict[str, object]] = field(default_factory=list)
+    per_wave_violations: list[dict[str, object]] = field(default_factory=list)
     text_only_stops: list[dict[str, object]] = field(default_factory=list)
     responses: list[dict[str, object]] = field(default_factory=list)
     total_tool_calls: int = 0
@@ -78,6 +88,9 @@ class SpawnResult:
     elapsed_sec: float = 0.0
     killed: bool = False
     log_path: str = ""
+    progress_log: str = ""
+    depth_count: int = 0
+    prompts_sent: int = 0
 
 
 class OpencodeSpawner:
@@ -93,9 +106,15 @@ class OpencodeSpawner:
         agent: str = "build",
         model: str | None = None,
         env: dict[str, str] | None = None,
+        prompt_sequence: list[str] | None = None,
+        prompt_interval_sec: int = 300,
+        progress_interval_sec: int = 30,
     ) -> None:
         self._project_dir = os.path.abspath(project_dir)
         self._prompt = prompt
+        self._prompt_sequence = prompt_sequence or []
+        self._prompt_interval_sec = prompt_interval_sec
+        self._progress_interval_sec = progress_interval_sec
         self._timeout_sec = timeout_sec
         self._agent = agent
         self._model = model
@@ -118,16 +137,20 @@ class OpencodeSpawner:
         os.makedirs(log_dir, exist_ok=True)
         self._log_dir = log_dir
         self._log_path = ""
+        self._progress_log_path = ""
+        self._prompts_sent = 0
+        self._progress_stop = threading.Event()
 
     # ------------------------------------------------------------------
     # public API
     # ------------------------------------------------------------------
 
     def run(self) -> SpawnResult:
-        log_name = f"opencode-e2e-{int(time.time())}.ndjson"
-        self._log_path = os.path.join(self._log_dir, log_name)
-        frames, elapsed, killed, raw_stdout, raw_stderr = self._spawn_and_capture()
-        result = self._analyze(frames, elapsed, killed)
+        ts = int(time.time())
+        self._log_path = os.path.join(self._log_dir, f"opencode-e2e-{ts}.ndjson")
+        self._progress_log_path = os.path.join(self._log_dir, f"opencode-e2e-{ts}.progress.log")
+        frames, elapsed, killed, raw_stdout, raw_stderr, depth_count = self._spawn_and_capture()
+        result = self._analyze(frames, elapsed, killed, depth_count)
         self._write_structured_log(result, frames)
         self._write_raw_log(raw_stdout, raw_stderr)
         return result
@@ -136,7 +159,9 @@ class OpencodeSpawner:
     # subprocess lifecycle
     # ------------------------------------------------------------------
 
-    def _spawn_and_capture(self) -> tuple[list[ResponseFrame], float, bool, list[str], list[str]]:
+    def _spawn_and_capture(
+        self,
+    ) -> tuple[list[ResponseFrame], float, bool, list[str], list[str], int]:
         cmd = self._build_command()
         proc = subprocess.Popen(
             cmd,
@@ -148,10 +173,9 @@ class OpencodeSpawner:
             text=True,
             bufsize=1,
         )
-        if proc.stdin is not None:
-            proc.stdin.write(self._prompt + "\n")
-            proc.stdin.flush()
-            proc.stdin.close()
+
+        if proc.stdin is None:
+            raise RuntimeError("Failed to open stdin for opencode subprocess")
 
         frames: list[ResponseFrame] = []
         current = ResponseFrame(sequence=0, timestamp=time.time())
@@ -160,6 +184,10 @@ class OpencodeSpawner:
         t0 = time.time()
         stderr_lines: list[str] = []
         raw_stdout_lines: list[str] = []
+        depth_count = 0
+        nesting_stack: list[bool] = []
+
+        _lock = threading.Lock()
 
         def _read_stderr() -> None:
             try:
@@ -172,8 +200,49 @@ class OpencodeSpawner:
             except Exception:
                 pass
 
+        def _send_prompts() -> None:
+            try:
+                proc.stdin.write(self._prompt + "\n")
+                proc.stdin.flush()
+                with _lock:
+                    self._prompts_sent += 1
+                for prompt_text in self._prompt_sequence:
+                    if self._progress_stop.wait(self._prompt_interval_sec):
+                        break
+                    if proc.poll() is not None:
+                        break
+                    try:
+                        proc.stdin.write(prompt_text + "\n")
+                        proc.stdin.flush()
+                        with _lock:
+                            self._prompts_sent += 1
+                    except (BrokenPipeError, OSError):
+                        break
+            except Exception:
+                pass
+
+        def _write_progress() -> None:
+            with open(self._progress_log_path, "w") as pfh:
+                while not self._progress_stop.wait(self._progress_interval_sec):
+                    elapsed = time.time() - t0
+                    with _lock:
+                        wave_count = len(frames)
+                        total_disp = sum(f.dispatch_count for f in frames)
+                    pfh.write(
+                        f"PROGRESS {time.strftime('%H:%M:%S')}  "
+                        f"elapsed={elapsed:.0f}s  waves={wave_count}  "
+                        f"dispatches={total_disp}  prompts_sent={self._prompts_sent}\n"
+                    )
+                    pfh.flush()
+
         stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
         stderr_thread.start()
+
+        prompt_thread = threading.Thread(target=_send_prompts, daemon=True)
+        prompt_thread.start()
+
+        progress_thread = threading.Thread(target=_write_progress, daemon=True)
+        progress_thread.start()
 
         try:
             while True:
@@ -196,22 +265,26 @@ class OpencodeSpawner:
 
                 if _is_json and STEP_START_RE.search(stripped):
                     if in_assistant and (current.text_content or current.tool_calls):
-                        frames.append(current)
+                        with _lock:
+                            frames.append(current)
                         current = ResponseFrame(sequence=len(frames), timestamp=time.time())
                     in_assistant = True
                     current.is_text_only = True
+                    nesting_stack.append(False)
                     continue
 
                 if _is_json and MESSAGE_START_RE.search(stripped):
                     if in_assistant and (current.text_content or current.tool_calls):
-                        frames.append(current)
+                        with _lock:
+                            frames.append(current)
                         current = ResponseFrame(sequence=len(frames), timestamp=time.time())
                     in_assistant = bool(MESSAGE_ROLE_RE.search(stripped))
                     continue
 
                 if TEXT_ASSISTANT_RE.search(stripped):
                     if in_assistant and (current.text_content or current.tool_calls):
-                        frames.append(current)
+                        with _lock:
+                            frames.append(current)
                         current = ResponseFrame(sequence=len(frames), timestamp=time.time())
                     in_assistant = True
                     current.is_text_only = False
@@ -233,6 +306,8 @@ class OpencodeSpawner:
                     current.is_text_only = False
                     if TASK_TOOL_NAME_RE.search(stripped):
                         current.dispatch_count += 1
+                        if nesting_stack:
+                            nesting_stack[-1] = True
                     continue
 
                 if DISPATCH_TEXT_RE.search(stripped):
@@ -241,6 +316,8 @@ class OpencodeSpawner:
                     current.is_text_only = False
                     tc = ToolCallSnapshot(name="dispatch", timestamp=time.time())
                     current.tool_calls.append(tc)
+                    if nesting_stack:
+                        nesting_stack[-1] = True
                     continue
 
                 if ASSISTANT_DELTA_RE.search(stripped):
@@ -253,20 +330,29 @@ class OpencodeSpawner:
                 if _is_json and STEP_FINISH_RE.search(stripped):
                     in_assistant = False
                     if current.tool_calls or current.text_content:
-                        frames.append(current)
+                        with _lock:
+                            frames.append(current)
                         current = ResponseFrame(sequence=len(frames), timestamp=time.time())
+                    if nesting_stack and nesting_stack.pop():
+                        current_depth = len(nesting_stack) + 1
+                        if current_depth > depth_count:
+                            depth_count = current_depth
                     continue
 
                 if TOOL_RESULT_RE.search(stripped):
                     in_assistant = False
                     if current.tool_calls or current.text_content:
-                        frames.append(current)
+                        with _lock:
+                            frames.append(current)
                         current = ResponseFrame(sequence=len(frames), timestamp=time.time())
+                    if nesting_stack:
+                        nesting_stack.append(False)
                     continue
 
                 current.text_content += stripped + "\n"
 
         finally:
+            self._progress_stop.set()
             elapsed = time.time() - t0
             if killed:
                 proc.terminate()
@@ -283,11 +369,14 @@ class OpencodeSpawner:
                     proc.kill()
                     proc.wait(timeout=5)
             stderr_thread.join(timeout=2)
+            prompt_thread.join(timeout=2)
+            progress_thread.join(timeout=2)
 
         if in_assistant and (current.text_content or current.tool_calls):
-            frames.append(current)
+            with _lock:
+                frames.append(current)
 
-        return frames, elapsed, killed, raw_stdout_lines, stderr_lines
+        return frames, elapsed, killed, raw_stdout_lines, stderr_lines, depth_count
 
     def _build_command(self) -> list[str]:
         cmd = [
@@ -348,8 +437,15 @@ class OpencodeSpawner:
     # analysis
     # ------------------------------------------------------------------
 
-    def _analyze(self, frames: list[ResponseFrame], elapsed: float, killed: bool) -> SpawnResult:
+    def _analyze(
+        self,
+        frames: list[ResponseFrame],
+        elapsed: float,
+        killed: bool,
+        depth_count: int,
+    ) -> SpawnResult:
         dispatch_waves: list[dict[str, object]] = []
+        per_wave_violations: list[dict[str, object]] = []
         text_only_stops: list[dict[str, object]] = []
         total_tool_calls = 0
         total_dispatch = 0
@@ -366,6 +462,16 @@ class OpencodeSpawner:
                 }
             )
 
+            if 0 < f.dispatch_count < 10:
+                per_wave_violations.append(
+                    {
+                        "sequence": f.sequence,
+                        "timestamp": f.timestamp,
+                        "dispatch_count": f.dispatch_count,
+                        "reason": f"Wave {f.sequence} had {f.dispatch_count} dispatches (floor=10)",
+                    }
+                )
+
             if f.is_text_only:
                 text_only_stops.append(
                     {
@@ -375,16 +481,37 @@ class OpencodeSpawner:
                     }
                 )
 
-        if total_dispatch >= 2 and killed:
-            verdict = "PASS"
-        elif total_dispatch == 0:
-            verdict = "ERROR"
-        else:
+        non_zero_waves = [w for w in dispatch_waves if isinstance(w["dispatch_count"], int) and w["dispatch_count"] > 0]
+        num_waves = len(non_zero_waves)
+
+        if total_dispatch == 0 and not killed:
             verdict = "FAIL"
+            reason = "No dispatches and not killed by timeout"
+        elif total_dispatch == 0 and killed:
+            verdict = "FAIL"
+            reason = "Killed by timeout with 0 dispatches"
+        elif num_waves < 5 and killed and total_dispatch > 0:
+            verdict = "PASS"
+            reason = f"Killed by timeout with {total_dispatch} dispatches across {num_waves} waves"
+        elif num_waves < 5 and not killed:
+            verdict = "FAIL"
+            reason = f"Fewer than 5 dispatch waves ({num_waves}) and not killed by timeout"
+        elif num_waves >= 5:
+            verdict = "PASS"
+            reason = f"Completed with {num_waves} dispatch waves, {total_dispatch} dispatches"
+        else:
+            verdict = "ERROR"
+            reason = "Unexpected state"
+
+        if depth_count < 2 and total_dispatch > 0:
+            verdict = "FAIL"
+            reason += f"; depth never reached 2+ (max={depth_count})"
 
         return SpawnResult(
             verdict=verdict,
+            verdict_reason=reason,
             dispatch_waves=dispatch_waves,
+            per_wave_violations=per_wave_violations,
             text_only_stops=text_only_stops,
             responses=self._serialize_frames(frames),
             total_tool_calls=total_tool_calls,
@@ -393,6 +520,9 @@ class OpencodeSpawner:
             elapsed_sec=elapsed,
             killed=killed,
             log_path=self._log_path,
+            progress_log=self._progress_log_path,
+            depth_count=depth_count,
+            prompts_sent=self._prompts_sent,
         )
 
     @staticmethod
@@ -421,11 +551,16 @@ class OpencodeSpawner:
             header = {
                 "type": "spawn_meta",
                 "verdict": result.verdict,
+                "verdict_reason": result.verdict_reason,
                 "project_dir": self._project_dir,
                 "prompt": self._prompt[:500],
                 "timeout_sec": self._timeout_sec,
                 "elapsed_sec": result.elapsed_sec,
                 "killed": result.killed,
+                "depth_count": result.depth_count,
+                "prompts_sent": result.prompts_sent,
+                "wave_count": len(result.dispatch_waves),
+                "per_wave_violation_count": len(result.per_wave_violations),
                 "total_messages": result.total_messages,
                 "total_tool_calls": result.total_tool_calls,
                 "total_dispatch_calls": result.total_dispatch_calls,

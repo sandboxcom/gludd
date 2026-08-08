@@ -1,59 +1,92 @@
 # E2E Test Project — Minimal Makefile
-# All tasks are simple, sub-second operations.
+# All tasks are trivial sub-second or 1-second operations.
 
-.PHONY: all t1-hello t2-count t3-math t4-list-txt t5-date t6-identity t7-numbers t8-line-count t9-multiply t10-json clean help
+.PHONY: all help clean \
+	task1 task2 task3 task4 task5 task6 task7 task8 task9 task10 \
+	task11 task12 task13 task14 task15 task16 task17 task18
 
-all: t1-hello t2-count t3-math t4-list-txt t5-date t6-identity t7-numbers t8-line-count t9-multiply t10-json
+all: task1 task2 task3 task4 task5 task6 task7 task8 task9 task10 \
+     task11 task12 task13 task14 task15 task16 task17 task18
 
-## Task targets
-
-t1-hello:
+task1:
 	@mkdir -p output
-	@echo "hello world" > output/hello.txt
+	@echo "hello world" > output/task1.txt
 
-t2-count:
-	@ls output/ | wc -l | tr -d ' ' > output/count.txt
-
-t3-math:
+task2:
 	@mkdir -p output
-	@echo "4" > output/math.txt
+	@date > output/task2.txt
 
-t4-list-txt:
-	@ls *.txt 2>/dev/null | sort > output/txt_files.txt
-
-t5-date:
+task3:
 	@mkdir -p output
-	@date -u +%Y-%m-%dT%H:%M:%SZ > output/date.txt
+	@for i in $$(seq 1 10); do echo $$i; done > output/task3.txt
 
-t6-identity:
+task4:
 	@mkdir -p output
-	@echo 'import sys; print(sys.argv[1])' > output/identity.py
+	@echo "pong" > output/task4.txt
 
-t7-numbers:
+task5:
 	@mkdir -p output
-	@for i in $$(seq 1 10); do echo $$i; done > output/numbers.txt
+	@sleep 1 && echo "awake" > output/task5.txt
 
-t8-line-count:
-	@wc -l < output/numbers.txt | tr -d ' ' > output/line_count.txt
-
-t9-multiply:
-	@echo "21" >> output/math.txt
-
-t10-json:
+task6:
 	@mkdir -p output
-	@echo '{"greeting": "hello", "target": "world"}' > output/hello.json
+	@for i in $$(seq 1 5); do echo $$i; done > output/task6.txt
 
-## Utility targets
+task7:
+	@mkdir -p output
+	@echo "lorem ipsum" > output/task7.txt
+
+task8:
+	@mkdir -p output
+	@ls output/ 2>/dev/null | wc -l | tr -d ' ' > output/task8.txt
+
+task9:
+	@mkdir -p output
+	@echo "foo bar baz" > output/task9.txt
+
+task10:
+	@mkdir -p output
+	@echo "quick brown fox" > output/task10.txt
+
+task11:
+	@mkdir -p output
+	@echo "alpha beta gamma" > output/task11.txt
+
+task12:
+	@mkdir -p output
+	@echo "one two three four five" > output/task12.txt
+
+task13:
+	@mkdir -p output
+	@echo "test 13 complete" > output/task13.txt
+
+task14:
+	@mkdir -p output
+	@echo "task fourteen done" > output/task14.txt
+
+task15:
+	@mkdir -p output
+	@echo "@15 -- first wave final" > output/task15.txt
+
+task16:
+	@mkdir -p output
+	@wc -l < output/task6.txt 2>/dev/null | tr -d ' ' > output/task16.txt
+
+task17:
+	@mkdir -p output
+	@echo "seventeen" > output/task17.txt
+
+task18:
+	@mkdir -p output
+	@echo "all eighteen done" > output/task18.txt
 
 clean:
 	rm -rf output/
 
 help:
-	@echo "Targets: all t1-hello t2-count t3-math t4-list-txt t5-date"
-	@echo "        t6-identity t7-numbers t8-line-count t9-multiply t10-json"
+	@echo "Targets: task1..task18, all, clean, help"
 
 ## Shim targets for enforcement plugin compatibility
-## (plugins reference these; they must exist but can be no-ops here)
 
 .PHONY: git-status git-log git-diff git-staged git-add git-add-all git-commit git-reset
 .PHONY: git-stash git-stash-pop git-branch git-checkout git-merge git-rm git-mv

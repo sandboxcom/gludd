@@ -1,14 +1,24 @@
 # E2E Test Tasks
 
-## Wave 1 — Simple Operations (10 tasks)
+## Wave 1 — Trivial Operations (18 tasks)
 
-- [ ] T1: Create `output/hello.txt` with content "hello world"
-- [ ] T2: Count files in `output/` directory, write count to `output/count.txt`
-- [ ] T3: Compute 2+2, write result to `output/math.txt`
-- [ ] T4: List all `.txt` files in project root, write list to `output/txt_files.txt`
-- [ ] T5: Write current date (ISO 8601) to `output/date.txt`
-- [ ] T6: Create `output/identity.py` — a Python script that prints its first argument
-- [ ] T7: Write numbers 1-10 (one per line) to `output/numbers.txt`
-- [ ] T8: Count lines in `output/numbers.txt`, write count to `output/line_count.txt`
-- [ ] T9: Compute 3*7, append result to `output/math.txt`
-- [ ] T10: Create `output/hello.json` with `{"greeting": "hello", "target": "world"}`
+Each task = exactly ONE trivial command. No code generation. No multi-step logic.
+
+- [ ] T1: Write "hello world" to output/task1.txt using `make task1`
+- [ ] T2: Write current time (date command) to output/task2.txt using `make task2`
+- [ ] T3: Count to 10 and write to output/task3.txt using `make task3`
+- [ ] T4: Write "pong" to output/task4.txt using `make task4`
+- [ ] T5: Sleep 1 second then write "awake" to output/task5.txt using `make task5`
+- [ ] T6: Write numbers 1 to 5 (one per line) to output/task6.txt using `make task6`
+- [ ] T7: Write "lorem ipsum" to output/task7.txt using `make task7`
+- [ ] T8: List files in output/ dir, write count to output/task8.txt using `make task8`
+- [ ] T9: Write "foo bar baz" to output/task9.txt using `make task9`
+- [ ] T10: Write "quick brown fox" to output/task10.txt using `make task10`
+- [ ] T11: Write "alpha beta gamma" to output/task11.txt using `make task11`
+- [ ] T12: Echo "one two three four five" to output/task12.txt using `make task12`
+- [ ] T13: Write "test 13 complete" to output/task13.txt using `make task13`
+- [ ] T14: Write "task fourteen done" to output/task14.txt using `make task14`
+- [ ] T15: Write "@15 -- first wave final" to output/task15.txt using `make task15`
+- [ ] T16: Count lines in output/task6.txt, write to output/task16.txt using `make task16`
+- [ ] T17: Write "seventeen" to output/task17.txt using `make task17`
+- [ ] T18: Write "all eighteen done" to output/task18.txt using `make task18`
