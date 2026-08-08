@@ -2323,6 +2323,76 @@ opencode-clean-hard: ## Aggressive opencode cleanup: delete all tool-output + ol
 	@echo "=== done ==="
 	@$(MAKE) --no-print-directory opencode-disk
 
+opencode-db-stats: ## Show opencode DB table sizes and row counts (read-only, safe while opencode runs)
+	@echo "=== opencode.db table stats ==="
+	@DB=~/.local/share/opencode/opencode.db; \
+	for table in $$(sqlite3 "$$DB" "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;" 2>/dev/null); do \
+		rows=$$(sqlite3 "$$DB" "SELECT COUNT(*) FROM [$$table];" 2>/dev/null); \
+		echo "  $$table: $$rows rows"; \
+	done
+	@echo ""
+	@echo "Total DB size: $$(du -sh ~/.local/share/opencode/opencode.db | cut -f1)"
+
+opencode-db-schema: ## Show opencode DB schema (column names for each table)
+	@echo "=== opencode.db schema ==="
+	@DB=~/.local/share/opencode/opencode.db; \
+	for table in $$(sqlite3 "$$DB" "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;" 2>/dev/null); do \
+		echo "--- $$table ---"; \
+		sqlite3 "$$DB" "PRAGMA table_info([$$table]);" 2>/dev/null; \
+		echo ""; \
+	done
+
+opencode-db-sample: ## Sample timestamps to determine epoch format (seconds vs ms)
+	@echo "=== opencode.db timestamp samples ==="
+	@DB=~/.local/share/opencode/opencode.db; \
+	echo "session time_created:"; \
+	sqlite3 "$$DB" "SELECT MIN(time_created) FROM session;" 2>/dev/null; \
+	sqlite3 "$$DB" "SELECT MAX(time_created) FROM session;" 2>/dev/null; \
+	echo "message time_created:"; \
+	sqlite3 "$$DB" "SELECT MIN(time_created) FROM message;" 2>/dev/null; \
+	sqlite3 "$$DB" "SELECT MAX(time_created) FROM message;" 2>/dev/null
+
+opencode-db-prune: ## Delete old sessions/messages/parts from opencode DB (keeps last 30 days). Safe while opencode runs.
+	@echo "=== pruning old opencode data ==="
+	@echo "Before: $$(du -sh ~/.local/share/opencode/opencode.db | cut -f1)"
+	@DB=~/.local/share/opencode/opencode.db; \
+	CUTOFF=$$(($$(date +%s)000 - 2592000000)); \
+	echo "Cutoff epoch ms: $$CUTOFF (30 days ago)"; \
+	event_before=$$(sqlite3 "$$DB" "SELECT COUNT(*) FROM event;" 2>/dev/null); \
+	msg_before=$$(sqlite3 "$$DB" "SELECT COUNT(*) FROM message;" 2>/dev/null); \
+	part_before=$$(sqlite3 "$$DB" "SELECT COUNT(*) FROM part;" 2>/dev/null); \
+	session_before=$$(sqlite3 "$$DB" "SELECT COUNT(*) FROM session;" 2>/dev/null); \
+	echo "  event: $$event_before rows"; \
+	echo "  message: $$msg_before rows"; \
+	echo "  part: $$part_before rows"; \
+	echo "  session: $$session_before rows"; \
+	echo ""; \
+	echo "Deleting old todos..."; \
+	sqlite3 "$$DB" "DELETE FROM todo WHERE time_created < $$CUTOFF;" 2>/dev/null || true; \
+	echo "Deleting old session_messages..."; \
+	sqlite3 "$$DB" "DELETE FROM session_message WHERE time_created < $$CUTOFF;" 2>/dev/null || true; \
+	echo "Deleting old parts..."; \
+	sqlite3 "$$DB" "DELETE FROM part WHERE time_created < $$CUTOFF;" 2>/dev/null || true; \
+	echo "Deleting old messages..."; \
+	sqlite3 "$$DB" "DELETE FROM message WHERE time_created < $$CUTOFF;" 2>/dev/null || true; \
+	echo "Deleting old sessions..."; \
+	sqlite3 "$$DB" "DELETE FROM session WHERE time_created < $$CUTOFF;" 2>/dev/null || true; \
+	echo "Checkpointing WAL..."; \
+	sqlite3 "$$DB" "PRAGMA wal_checkpoint(TRUNCATE);" 2>/dev/null || true; \
+	event_after=$$(sqlite3 "$$DB" "SELECT COUNT(*) FROM event;" 2>/dev/null); \
+	msg_after=$$(sqlite3 "$$DB" "SELECT COUNT(*) FROM message;" 2>/dev/null); \
+	part_after=$$(sqlite3 "$$DB" "SELECT COUNT(*) FROM part;" 2>/dev/null); \
+	session_after=$$(sqlite3 "$$DB" "SELECT COUNT(*) FROM session;" 2>/dev/null); \
+	echo ""; \
+	echo "After:"; \
+	echo "  event: $$event_after (removed $$((event_before - event_after)))"; \
+	echo "  message: $$msg_after (removed $$((msg_before - msg_after)))"; \
+	echo "  part: $$part_after (removed $$((part_before - part_after)))"; \
+	echo "  session: $$session_after (removed $$((session_before - session_after)))"; \
+	echo ""; \
+	echo "DB size: $$(du -sh ~/.local/share/opencode/opencode.db | cut -f1)"; \
+	echo "NOTE: DB file won't shrink until VACUUM runs with opencode STOPPED. Run: make opencode-clean after stopping opencode."
+
 tmp-gludd-worktree-usage:
 	@du -sh /tmp/gludd-worktrees /tmp/gludd-worktrees/* /tmp/gludd-worktrees/*/.venv /tmp/gludd-worktrees/*/.pytest_cache /tmp/gludd-worktrees/*/.mypy_cache /tmp/gludd-worktrees/*/.ruff_cache 2>/dev/null | sort -h | tail -40 || true
 
