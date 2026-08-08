@@ -2293,6 +2293,10 @@ opencode-clean: ## Clean opencode's tool-output cache and vacuum the DB
 	@echo "Remaining: $$(ls ~/.local/share/opencode/tool-output/ 2>/dev/null | wc -l | tr -d ' ') files"
 	@echo ""
 	@echo "=== vacuuming opencode.db ==="
+	@$(MAKE) --no-print-directory _opencode-running-guard \
+		|| { echo "  SKIPPED: opencode appears to be running. VACUUM while opencode is active WILL crash it."; \
+		     echo "  Stop opencode first, or use FORCE=1 to vacuum anyway."; \
+		     exit 0; }
 	@sqlite3 ~/.local/share/opencode/opencode.db "PRAGMA wal_checkpoint(TRUNCATE); VACUUM;" 2>/dev/null || echo "  skipped (sqlite3 not available or DB locked)"
 	@du -sh ~/.local/share/opencode/opencode.db 2>/dev/null || true
 	@rm -f ~/.local/share/opencode/opencode.db-wal ~/.local/share/opencode/opencode.db-shm 2>/dev/null || true
@@ -2303,6 +2307,14 @@ opencode-clean: ## Clean opencode's tool-output cache and vacuum the DB
 	@echo ""
 	@echo "=== done ==="
 	@$(MAKE) --no-print-directory opencode-disk
+
+_opencode-running-guard:
+	@if [ -n "$$FORCE" ]; then exit 0; fi
+	@if pgrep -q -f "[o]pencode" 2>/dev/null; then \
+		echo "  opencode process detected — VACUUM will lock its DB and crash it."; \
+		exit 1; \
+	fi
+	@echo "  opencode not running — safe to vacuum."
 opencode-clean-hard: ## Aggressive opencode cleanup: delete all tool-output + old logs
 	@echo "=== AGGRESSIVE opencode cleanup ==="
 	@rm -rf ~/.local/share/opencode/tool-output/ 2>/dev/null || true
