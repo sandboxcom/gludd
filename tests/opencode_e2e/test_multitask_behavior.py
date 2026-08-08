@@ -186,7 +186,7 @@ def _invoke_depth_hook(
     tool: str,
     depth: int,
     *,
-    max_depth: int = 3,
+    max_depth: int = 4,
     enforce: bool = True,
 ) -> dict | None:
     """Invoke enforce-depth.ts hook via Node subprocess."""
@@ -577,14 +577,13 @@ class TestDepthEnforcement:
         result = _invoke_depth_hook(temp_project, "task", depth=2)
         assert result is None, f"depth=2 should allow dispatch, got={result}"
 
-    def test_depth_3_blocks_dispatch(self, temp_project):
-        """Depth=3 (4th level) blocks dispatch."""
+    def test_depth_3_allows_dispatch(self, temp_project):
+        """Depth=3 (4th level, main->agent->agent->agent) allows dispatch."""
         result = _invoke_depth_hook(temp_project, "task", depth=3)
-        assert result is not None, "depth=3 should block dispatch"
-        assert result.get("permissionDecision") == "deny"
+        assert result is None, f"depth=3 should allow dispatch, got={result}"
 
     def test_depth_4_blocks_dispatch(self, temp_project):
-        """Depth=4 blocks dispatch."""
+        """Depth=4 (5th level) blocks dispatch."""
         result = _invoke_depth_hook(temp_project, "task", depth=4)
         assert result is not None
         assert result.get("permissionDecision") == "deny"

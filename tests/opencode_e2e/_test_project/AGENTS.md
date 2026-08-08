@@ -24,8 +24,10 @@ Subagents MUST do TRIVIAL low-token work only. Each subagent:
 
 ## Depth Rules
 - Layer 0 (orchestrator): dispatches exactly 10 agents, ingests results
-- Layer 1 (agent/subagent): does exactly one trivial `make taskN` operation and returns
-- Subagents MUST NOT dispatch further subagents
+- Layer 1 (agent): does exactly one trivial `make taskN` operation and returns
+- Layers 2-3 (sub-agents): MAY dispatch further subagents up to MAX_DEPTH=4
+- 3x deep dispatch is ALLOWED: main -> agent -> agent -> agent (depths 0-3)
+- 4x deep dispatch (depth=4) is BLOCKED by enforce-depth.ts
 
 ## Bash = Make Only
 All bash commands MUST use `make <target>`. No bare commands, no pipes, no redirects.

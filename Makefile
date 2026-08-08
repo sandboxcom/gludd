@@ -127,7 +127,7 @@ _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-wor
         verify-feature-claims audit-coverage gate-audit coverage-json \
         tf-cache-setup tf-init tf-validate tf-cache-warm tf-versions-check tf-clean \
         deck deck-serve deck-preview deck-data deck-honesty \
-        script-count strip-enforce-stop test-hooks-live test-hook-runtime test-opencode-e2e test-opencode-e2e-hour \
+        script-count strip-enforce-stop test-hooks-live test-hook-runtime e2e-setup-test-project test-opencode-e2e test-opencode-e2e-hour \
         verify-enforcement \
 ci-view ci-rerun ci-trigger ci-active ci-job-log ci-shards-log-context \
         ci-busy-check ci-safe-push pre-push-check push-guarded ci-await \
@@ -1268,6 +1268,16 @@ test-opencode-boot-e2e:
 	@echo "=== E2E: opencode boot with full plugin suite ==="
 	@BT="/tmp/gludd-oc-boot-$$$${ID:-$$$$}"; /bin/rm -rf "$$BT"; $(UV) run python -m pytest tests/e2e/test_opencode_boot_e2e.py $(_XD) -v --basetemp="$$BT" --timeout=60; RC=$$?; /bin/rm -rf "$$BT"; exit $$RC
 
+opencode-models:
+	@GLUDD_MAINTHREAD_STREAK_ENFORCE=0 opencode models 2>&1 | head -30
+
+opencode-hello:
+	@/bin/bash /tmp/opencode-hello.sh
+	@echo "=== stdout (first 5 lines) ==="
+	@head -5 /tmp/opencode-hello-stdout.log
+	@echo "=== stderr ==="
+	@cat /tmp/opencode-hello-stderr.log
+
 gate-fast: lint typecheck collect-check
 	@echo "=== GATE-FAST: PASS ==="
 
@@ -1981,16 +1991,29 @@ test-hook-runtime:
 # invokes hooks, verifies no crashes. Catches auto-discovered non-plugin files
 # (Session 51 _exports.ts incident), old-API/new-API mismatches, and CRASH-level
 # hook failures that structural tests miss.
+# E2E test project setup: symlinks .opencode/plugin/, .opencode/lib/, etc. from
+# the main repo into tests/opencode_e2e/_test_project/
+e2e-setup-test-project:
+	@bash tests/opencode_e2e/_test_project/setup.sh
+
 test-opencode-e2e:
 	@$(UV) run python -m pytest tests/e2e/test_opencode_plugin_load.py tests/opencode_e2e/test_multitask_behavior.py -v
 test-multitask-e2e:
 	@TMPDIR=$${TMPDIR:-/tmp} $(UV) run python -m pytest tests/opencode_e2e/test_multitask_behavior.py -v --timeout=3600 --tb=short
 test-spawner-e2e:
-	@$(UV) run python tests/opencode_e2e/run_spawner_test.py
+	@$(UV) run python tests/opencode_e2e/run_spawner_test.py --timeout $(TIMEOUT) --progress-interval $(PROGRESS) --no-cleanup
+test-spawner-e2e-quick:
+	@$(UV) run python tests/opencode_e2e/run_spawner_test.py --timeout 60 --progress-interval 15
+test-spawner-e2e-notemp:
+	@$(UV) run python tests/opencode_e2e/run_spawner_test.py --timeout $(TIMEOUT) --progress-interval $(PROGRESS) --no-temp --no-cleanup
 test-opencode-e2e-hour:
 	@mkdir -p /tmp/gludd-opencode-e2e
 	@echo "=== E2E HOUR TEST: timeout=$(TIMEOUT)s ==="
-	@$(UV) run python tests/opencode_e2e/run_spawner_test.py --timeout=$(TIMEOUT)
+	@$(UV) run python tests/opencode_e2e/run_hour_e2e.py --timeout=$(TIMEOUT)
+test-opencode-e2e-quick:
+	@mkdir -p /tmp/gludd-opencode-e2e
+	@echo "=== E2E QUICK TEST: 5min ==="
+	@$(UV) run python tests/opencode_e2e/run_hour_e2e.py --quick
 diag-opencode:
 	@opencode --help 2>&1 || echo "EXIT: $$?"
 	@opencode --version 2>&1 || echo "EXIT: $$?"
@@ -2001,10 +2024,42 @@ diag-opencode-run:
 diag-opencode-raw-json:
 	@echo "=== Capturing raw opencode --format json output ==="
 	@rm -f /tmp/gludd-raw-json-*.log
-	@cd /Users/shawnwilson/gludd/tests/opencode_e2e/_test_project && printf 'Say hello and then exit.\n' | opencode run --format json --agent build --auto --log-level ERROR --model opencode/deepseek-v4-pro 2>/tmp/gludd-raw-json-stderr.log > /tmp/gludd-raw-json-stdout.log
+	@cd /Users/shawnwilson/gludd/tests/opencode_e2e/_test_project && printf 'Say hello and then exit.\n' | opencode run --format json --agent build --auto --log-level ERROR --model deepseek/deepseek-v4-pro 2>/tmp/gludd-raw-json-stderr.log > /tmp/gludd-raw-json-stdout.log
 	@echo "EXIT: $$?"
 	@echo "--- STDOUT first 200 lines ---"
 	@head -200 /tmp/gludd-raw-json-stdout.log 2>/dev/null || true
+diag-opencode-raw-json-pure:
+	@echo "=== opencode --pure: bypass all plugins ==="
+	@rm -f /tmp/gludd-raw-json-pure-*.log
+	@cd /Users/shawnwilson/gludd/tests/opencode_e2e/_test_project && printf 'Say hello and then exit.\n' | opencode run --format json --auto --pure --log-level ERROR --model deepseek/deepseek-v4-pro 2>/tmp/gludd-raw-json-pure-stderr.log > /tmp/gludd-raw-json-pure-stdout.log
+	@echo "EXIT: $$?"
+	@echo "--- STDOUT first 100 lines ---"
+	@head -100 /tmp/gludd-raw-json-pure-stdout.log 2>/dev/null || true
+	@echo "--- STDERR ---"
+	@head -20 /tmp/gludd-raw-json-pure-stderr.log 2>/dev/null || true
+diag-opencode-e2e-simple:
+	@echo "=== opencode E2E with --agent build ==="
+	@rm -f /tmp/gludd-raw-json-e2e-*.log
+	@cd /Users/shawnwilson/gludd/tests/opencode_e2e/_test_project && printf 'Write "hello" to output/e2e-hello.txt using make task1.\n' | opencode run --format json --agent build --auto --log-level ERROR --model deepseek/deepseek-v4-pro 2>/tmp/gludd-raw-json-e2e-stderr.log > /tmp/gludd-raw-json-e2e-stdout.log
+	@echo "EXIT: $$?"
+	@echo "--- STDOUT first 100 lines ---"
+	@head -100 /tmp/gludd-raw-json-e2e-stdout.log 2>/dev/null || true
+	@echo "--- STDERR ---"
+	@head -20 /tmp/gludd-raw-json-e2e-stderr.log 2>/dev/null || true
+diag-opencode-e2e-full:
+	@echo "=== E2E full prompt direct ==="
+	@rm -f /tmp/gludd-diag-e2e-*.log
+	@cd /Users/shawnwilson/gludd/tests/opencode_e2e/_test_project && GLUDD_MODEL_UTIL_ENFORCE=0 GLUDD_FLOOR_ENFORCE=0 GLUDD_ENHANCEMENT_RATIO_BLOCK=0 GLUDD_CLEAN_TREE_ENFORCE=0 GLUDD_TDD_ENFORCE=0 GLUDD_TASK_DEADLINE_BLOCK=0 GLUDD_MAKE_ENFORCE=0 GLUDD_VERIFIED_CLAIMS_ENFORCE=0 opencode run --format json --auto --agent build --log-level ERROR "Read TASKS.md. There are 18 tasks. Dispatch EXACTLY 10 task subagents to complete tasks T1 through T10. Each subagent should run: make taskN. Do NOT wait for results before dispatching. Dispatch ALL 10 in ONE response. After dispatching, say the word DISPATCHED and exit." 2>/tmp/gludd-diag-e2e-stderr.log > /tmp/gludd-diag-e2e-stdout.log
+	@echo "EXIT: $$?"
+	@echo "Line count:" && wc -l /tmp/gludd-diag-e2e-stdout.log
+	@echo "=== grep for task ==="
+	@grep -c '"tool":"task"' /tmp/gludd-diag-e2e-stdout.log 2>/dev/null || echo "0 task dispatches"
+	@echo "=== grep for ERROR ==="
+	@grep -c 'MODEL-RATIO\|MODEL.UTIL' /tmp/gludd-diag-e2e-stdout.log 2>/dev/null || echo "0 model-ratio blocks"
+	@echo "=== last 10 lines ==="
+	@tail -10 /tmp/gludd-diag-e2e-stdout.log 2>/dev/null || true
+	@echo "=== STDERR ==="
+	@head -20 /tmp/gludd-diag-e2e-stderr.log 2>/dev/null || true
 bisect-ts-parse:
 	@$(PYTHON) scripts/bisect_ts_parse.py
 
@@ -2218,6 +2273,43 @@ disk:
 	@du -sh /tmp/gludd-* 2>/dev/null | tail -5 || true
 tmp-gludd-usage:
 	@du -sh /tmp/gludd-* 2>/dev/null | sort -h | tail -40 || true
+opencode-disk: ## Show opencode's own data directories and their disk usage
+	@echo "=== opencode.db ==="
+	@du -sh ~/.local/share/opencode/opencode.db ~/.local/share/opencode/opencode.db-wal ~/.local/share/opencode/opencode.db-shm 2>/dev/null || true
+	@echo ""
+	@echo "=== tool-output cache ==="
+	@du -sh ~/.local/share/opencode/tool-output/ 2>/dev/null || true
+	@echo "  count: $$(ls ~/.local/share/opencode/tool-output/ 2>/dev/null | wc -l | tr -d ' ') files"
+	@echo ""
+	@echo "=== opencode logs ==="
+	@du -sh ~/.local/share/opencode/log/ 2>/dev/null || true
+	@echo "  count: $$(ls ~/.local/share/opencode/log/ 2>/dev/null | wc -l | tr -d ' ') files"
+	@echo ""
+	@echo "=== opencode config ==="
+	@du -sh ~/.config/opencode/ 2>/dev/null || true
+opencode-clean: ## Clean opencode's tool-output cache and vacuum the DB
+	@echo "=== cleaning opencode tool-output cache ==="
+	@rm -rf ~/.local/share/opencode/tool-output/* 2>/dev/null || true
+	@echo "Remaining: $$(ls ~/.local/share/opencode/tool-output/ 2>/dev/null | wc -l | tr -d ' ') files"
+	@echo ""
+	@echo "=== vacuuming opencode.db ==="
+	@sqlite3 ~/.local/share/opencode/opencode.db "PRAGMA wal_checkpoint(TRUNCATE); VACUUM;" 2>/dev/null || echo "  skipped (sqlite3 not available or DB locked)"
+	@du -sh ~/.local/share/opencode/opencode.db 2>/dev/null || true
+	@rm -f ~/.local/share/opencode/opencode.db-wal ~/.local/share/opencode/opencode.db-shm 2>/dev/null || true
+	@echo ""
+	@echo "=== cleaning opencode logs older than 7 days ==="
+	@find ~/.local/share/opencode/log/ -type f -mtime +7 -delete 2>/dev/null || true
+	@echo "Remaining logs: $$(ls ~/.local/share/opencode/log/ 2>/dev/null | wc -l | tr -d ' ')"
+	@echo ""
+	@echo "=== done ==="
+	@$(MAKE) --no-print-directory opencode-disk
+opencode-clean-hard: ## Aggressive opencode cleanup: delete all tool-output + old logs
+	@echo "=== AGGRESSIVE opencode cleanup ==="
+	@rm -rf ~/.local/share/opencode/tool-output/ 2>/dev/null || true
+	@mkdir -p ~/.local/share/opencode/tool-output
+	@find ~/.local/share/opencode/log/ -type f -mtime +1 -delete 2>/dev/null || true
+	@echo "=== done ==="
+	@$(MAKE) --no-print-directory opencode-disk
 
 tmp-gludd-worktree-usage:
 	@du -sh /tmp/gludd-worktrees /tmp/gludd-worktrees/* /tmp/gludd-worktrees/*/.venv /tmp/gludd-worktrees/*/.pytest_cache /tmp/gludd-worktrees/*/.mypy_cache /tmp/gludd-worktrees/*/.ruff_cache 2>/dev/null | sort -h | tail -40 || true
@@ -7720,6 +7812,19 @@ check-openrouter-key:
 	else \
 		echo "OPENROUTER_API_KEY: MISSING (set OPENROUTER_API_KEY env var or create $(openrouter-key-file))"; exit 1; \
 	fi
+
+diag-opencode-e2e-2test:
+	@export GLUDD_MAINTHREAD_STREAK_ENFORCE=0 GLUDD_FLOOR_ENFORCE=0 && bash /tmp/opencode-e2e-diag2.sh
+
+diag-opencode-raw-json-pure-no-enforce:
+	@echo "=== opencode --pure (enforcement disabled) ==="
+	@rm -f /tmp/gludd-raw-json-pure-noenf-*.log
+	@cd /Users/shawnwilson/gludd/tests/opencode_e2e/_test_project && GLUDD_MAINTHREAD_STREAK_ENFORCE=0 GLUDD_FLOOR_ENFORCE=0 GLUDD_SESSION_START_ENFORCE=0 GLUDD_MULTITASK_FLOOR_ENFORCE=0 printf 'Say hello and then exit.\n' | opencode run --format json --auto --pure --log-level ERROR --model deepseek/deepseek-v4-pro 2>/tmp/gludd-raw-json-pure-noenf-stderr.log > /tmp/gludd-raw-json-pure-noenf-stdout.log
+	@echo "EXIT: $$?"
+	@echo "--- STDOUT first 100 lines ---"
+	@head -100 /tmp/gludd-raw-json-pure-noenf-stdout.log 2>/dev/null || true
+	@echo "--- STDERR ---"
+	@head -20 /tmp/gludd-raw-json-pure-noenf-stderr.log 2>/dev/null || true
 
 .PHONY: compare-models
 compare-models:

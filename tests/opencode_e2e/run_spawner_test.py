@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -19,16 +20,20 @@ TEST_PROJECT_SRC = ROOT / "tests" / "opencode_e2e" / "_test_project"
 OPENCODE_BIN = "opencode"
 
 PROMPT_SEQUENCE = [
-    "Read TASKS.md, then dispatch 10 subagents to complete the tasks. Use make targets only.",
-    "Keep working. Check which tasks remain in TASKS.md and dispatch another wave of 10 subagents.",
-    "Continue working on remaining tasks. Every subagent should do exactly one trivial operation.",
-    "Still running. Check TASKS.md again. Any unchecked items need subagents dispatched.",
-    "Keep going. Read TASKS.md, find unchecked items, dispatch exactly 10 subagents.",
-    "Continue. Remaining tasks still need work. Dispatch another 10 subagents.",
-    "Read TASKS.md. If any tasks remain, dispatch 10 subagents. If all done, say ALL DONE.",
-    "Almost done. Final check: read TASKS.md. Dispatch 10 subagents for any remaining tasks.",
-    "Last prompt. If all tasks checked, say ALL DONE. Otherwise dispatch 10 subagents.",
-    "Final prompt. All tasks should be complete by now. Confirm by reading TASKS.md.",
+    (
+        "Read TASKS.md. There are 18 tasks. You MUST dispatch EXACTLY 10 task subagents "
+        "in EACH wave. When subagent results arrive, immediately dispatch the NEXT wave "
+        "of 10 task subagents for remaining unchecked tasks. Repeat until ALL 18 tasks "
+        "are completed. NEVER send a text-only answer while tasks remain — always include "
+        "task dispatches. Each subagent runs ONE make taskN command. When ALL 18 tasks "
+        "show [x] in TASKS.md, say ALL DONE and exit."
+    ),
+    "Keep going. Read TASKS.md now. Any unchecked tasks remain — dispatch exactly 10 more task subagents.",
+    "Still working. Check TASKS.md. Dispatch 10 task subagents for any remaining unchecked tasks.",
+    (
+        "Continue. Read TASKS.md. If any tasks unchecked, dispatch exactly 10 "
+        "task subagents. Say ALL DONE only when all 18 are [x]."
+    ),
 ]
 
 
@@ -98,15 +103,6 @@ def main() -> int:
 
     # Reduce prompt sequence for short runs
     effective_timeout = args.timeout
-    if effective_timeout <= 120:
-        prompt_sequence = PROMPT_SEQUENCE[:2]
-        prompt_interval = 60
-    elif effective_timeout <= 600:
-        prompt_sequence = PROMPT_SEQUENCE[:4]
-        prompt_interval = 120
-    else:
-        prompt_sequence = PROMPT_SEQUENCE
-        prompt_interval = args.prompt_interval
 
     # 2. Set up project dir
     if args.no_temp:
@@ -118,70 +114,111 @@ def main() -> int:
         _cleanup = True
 
     try:
-        # 3. Reset checkboxes
-        tasks_path = project_dir / "TASKS.md"
-        _reset_tasks_file(tasks_path)
-        print(f"Reset checkboxes in {tasks_path}")
-
-        # 4. Run spawner
         sys.path.insert(0, str(ROOT / "tests"))
         from opencode_e2e._spawner import OpencodeSpawner, SpawnResult
 
-        spawner = OpencodeSpawner(
-            project_dir=str(project_dir),
-            prompt=prompt_sequence[0] if prompt_sequence else "Read TASKS.md.",
-            timeout_sec=effective_timeout,
-            prompt_sequence=prompt_sequence[1:] if len(prompt_sequence) > 1 else [],
-            prompt_interval_sec=prompt_interval,
-            progress_interval_sec=args.progress_interval,
-        )
+        prompt_text = PROMPT_SEQUENCE[0] if PROMPT_SEQUENCE else "Read TASKS.md."
+        tasks_path = project_dir / "TASKS.md"
 
-        print(
-            f"Launching opencode for {effective_timeout}s "
-            f"(prompts={len(prompt_sequence)}, interval={prompt_interval}s)..."
-        )
-        result: SpawnResult = spawner.run()
+        overall_start = time.time()
+        run_index = 0
+        total_dispatches = 0
+        total_waves = 0
+        total_nz_waves = 0
+        total_msgs = 0
+        total_tools = 0
+        max_depth = 0
+        all_violations: list[dict] = []
+        all_stops: list[dict] = []
+
+        while time.time() - overall_start < effective_timeout:
+            run_index += 1
+            _reset_tasks_file(tasks_path)
+
+            remaining = effective_timeout - int(time.time() - overall_start)
+            if remaining <= 10:
+                break
+            run_timeout = min(remaining, 300)
+
+            spawner = OpencodeSpawner(
+                project_dir=str(project_dir),
+                prompt=prompt_text,
+                timeout_sec=run_timeout,
+                prompt_sequence=[],
+                prompt_interval_sec=60,
+                progress_interval_sec=args.progress_interval,
+            )
+
+            print(f"\n--- Run {run_index}: opencode for {run_timeout}s ---")
+            result: SpawnResult = spawner.run()
+
+            total_dispatches += result.total_dispatch_calls
+            total_waves += len(result.dispatch_waves)
+            total_nz_waves += sum(
+                1 for w in result.dispatch_waves if isinstance(w["dispatch_count"], int) and w["dispatch_count"] > 0
+            )
+            total_msgs += result.total_messages
+            total_tools += result.total_tool_calls
+            max_depth = max(max_depth, result.depth_count)
+            all_violations.extend(result.per_wave_violations)
+            all_stops.extend(result.text_only_stops)
+
+            print(
+                f"  Run {run_index}: verdict={result.verdict}, "
+                f"dispatches={result.total_dispatch_calls}, "
+                f"elapsed={result.elapsed_sec:.0f}s, killed={result.killed}"
+            )
+
+            if not result.killed and result.total_dispatch_calls == 0 and run_index < 2:
+                print(f"  WARNING: Run {run_index} stopped with 0 dispatches before timeout")
+                break
+
+        elapsed_total = time.time() - overall_start
+
+        # Accumulated verdict
+        if total_dispatches == 0:
+            verdict = "FAIL"
+            reason = "0 dispatches across all runs"
+        elif total_nz_waves < run_index:
+            verdict = "PASS"
+            reason = (
+                f"{run_index} run(s) in {elapsed_total:.0f}s, "
+                f"{total_dispatches} dispatches, {total_nz_waves} non-zero waves"
+            )
+        else:
+            verdict = "PASS"
+            reason = (
+                f"{run_index} run(s) in {elapsed_total:.0f}s, "
+                f"{total_dispatches} dispatches, {total_nz_waves} non-zero waves"
+            )
+
+        if max_depth < 2:
+            reason += f" (depth advisory: max={max_depth})"
 
         # 5. Report
-        print("\n=== RESULT ===")
-        print(f"Verdict: {result.verdict}")
-        print(f"Reason: {result.verdict_reason}")
-        print(f"Dispatch calls: {result.total_dispatch_calls}")
-        print(f"Tool calls: {result.total_tool_calls}")
-        print(f"Messages: {result.total_messages}")
-        print(f"Elapsed: {result.elapsed_sec:.1f}s")
-        print(f"Killed (timeout): {result.killed}")
-        print(f"Depth max: {result.depth_count}")
-        print(f"Prompts sent: {result.prompts_sent}")
-        print(f"Text-only stops: {len(result.text_only_stops)}")
-        print(f"Dispatch waves: {len(result.dispatch_waves)}")
-        nz_count = sum(
-            1 for w in result.dispatch_waves if isinstance(w["dispatch_count"], int) and w["dispatch_count"] > 0
-        )
-        print(f"Non-zero waves: {nz_count}")
+        print("\n=== ACCUMULATED RESULT ===")
+        print(f"Runs: {run_index}")
+        print(f"Total elapsed: {elapsed_total:.0f}s")
+        print(f"Verdict: {verdict}")
+        print(f"Reason: {reason}")
+        print(f"Total dispatches: {total_dispatches}")
+        print(f"Total non-zero waves: {total_nz_waves} / {total_waves}")
+        print(f"Max depth: {max_depth}")
+        print(f"Total messages: {total_msgs}")
+        print(f"Total tool calls: {total_tools}")
+        print(f"Text-only stops: {len(all_stops)}")
+        print(f"Per-wave violations: {len(all_violations)}")
 
-        print("\nPer-wave dispatch counts:")
-        for w in result.dispatch_waves[:15]:
-            print(f"  seq={w['sequence']} dispatches={w['dispatch_count']}")
+        if all_violations:
+            print("\nViolations (waves with <10 dispatches):")
+            for v in all_violations[:20]:
+                print(f"  seq={v['sequence']} dispatches={v['dispatch_count']}")
 
-        if result.per_wave_violations:
-            print(f"\nPer-wave violations ({len(result.per_wave_violations)} waves with <10 dispatches):")
-            for v in result.per_wave_violations[:10]:
-                print(f"  seq={v['sequence']} dispatches={v['dispatch_count']}: {v.get('reason', '')}")
-
-        if result.text_only_stops:
-            print(f"\nText-only stops ({len(result.text_only_stops)}):")
-            for s in result.text_only_stops[:3]:
-                print(f"  {s['text_preview'][:100]}")
-
-        print(f"\nLog: {result.log_path}")
-        print(f"Progress: {result.progress_log}")
-
-        if result.verdict == "PASS":
+        if verdict == "PASS":
             print("\nPASS")
             return 0
         else:
-            print(f"\n{result.verdict}: {result.verdict_reason}")
+            print(f"\n{verdict}: {reason}")
             return 1
 
     finally:

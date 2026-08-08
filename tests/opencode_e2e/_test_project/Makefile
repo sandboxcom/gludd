@@ -86,9 +86,13 @@ clean:
 help:
 	@echo "Targets: task1..task18, all, clean, help"
 
+task-done-%:
+	@mkdir -p output
+	@echo "task $* done" > output/task$*.txt
+
 ## Shim targets for enforcement plugin compatibility
 
-.PHONY: git-status git-log git-diff git-staged git-add git-add-all git-commit git-reset
+.PHONY: task-done-% git-status git-log git-diff git-staged git-add git-add-all git-commit git-reset
 .PHONY: git-stash git-stash-pop git-branch git-checkout git-merge git-rm git-mv
 .PHONY: git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom
 .PHONY: ship-commit batch-push verify-remote verify-state verify-release-completeness

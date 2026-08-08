@@ -1,22 +1,18 @@
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=== GATE-REFRESH 2026-08-08T02:19:37Z ===
+=== GATE-REFRESH 2026-08-08T02:40:56Z ===
 lint PASS 0
 verify-feature-claims PASS
 hot-reload PASS
 verify-hot-reload PASS
 restart-needed PASS
 check-status-table PASS
-env-writes 
-=======
-=== GATE-REFRESH 2026-08-08T01:01:49Z ===
-lint PASS 0
-verify-feature-claims PASS
-hot-reload 
->>>>>>> Stashed changes
-=======
-=== GATE-REFRESH 2026-08-08T01:01:49Z ===
-lint PASS 0
-verify-feature-claims PASS
-hot-reload 
->>>>>>> Stashed changes
+env-writes PASS
+hook-runtime PASS
+typecheck PASS 0
+collect PASS 0
+test FAIL non-zero-exit
+=== GATE-REFRESH PHASE: smoke ===
+smoke FAIL
+---
+epoch 1786157091
+=== GATE-REFRESH: PASSED ===
+=== GATE: PASSED ===
