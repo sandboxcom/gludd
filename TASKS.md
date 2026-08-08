@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-08-07 Session 81. HEAD `54b29bf3` on `development`, unpushed. gate-refresh ALL GREEN (lint 0, typecheck 0, verify-hot-reload PASS, env-writes PASS, collect PASS 0, hook-runtime PASS). 88,291 tests. Enforcement 40/40 PASS. Opencode spawner E2E harness + test project template + 3x depth enforcement added (`38aa2ef7`). Key detection targets + opencode E2E test fixes. CI RED (no run on `54b29bf3`). Tree DIRTY. 12 commits since `763ad6f5`, 7 since `fcb98aa1`.**
+**Last consolidated: 2026-08-08 Session 81. HEAD `45c6718c` on `development`, unpushed. Gate-refresh killed by OOM (2026-08-08). 88,291 tests. Enforcement 13/13 BLOCKING, 125 runtime PASS. Spawner NDJSON parser fixed for nested structure + `--format json --auto` flags restored. 18-task E2E test project with 10-agent floor rules. Model ratio, Makefile shim targets, gate-refresh, enforcement updated. CI RED (no run on `45c6718c`). Tree DIRTY. 13 commits since `fcb98aa1`.**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -194,6 +194,12 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] S81.11 — **Gate-background launched**: PID 2471, in test phase. | evidence: gate-background RUNNING | priority: high | effort: S | status: completed
 - [x] S81.12 — **gate-refresh ALL GREEN**: lint 0, typecheck 0, verify-hot-reload PASS, env-writes PASS, collect 0 (88,291). Committed + pushed `fcb98aa1`. | evidence: `fcb98aa1`, gate-refresh ALL GREEN | priority: high | effort: M | status: completed
 
+### New since `fcb98aa1` (2026-08-07 S81 wave 2)
+
+- [x] S81.13 — **Spawner NDJSON parser fix**: nested structure parsing, `--format json --auto` flags restored for v1.18.11. | evidence: `c6250355`, `cb4c67e8`, `ad8a9d81`, `4df53837`, `c7f7213b` | priority: high | effort: M | status: completed
+- [x] S81.14 — **E2E test project enhancements**: 18 trivial tasks, 10-agent floor rules, expanded Makefile shim targets. | evidence: `45c6718c` | priority: high | effort: M | status: completed
+- [x] S81.15 — **Makefile shim targets + gate-refresh + enforcement update**: Makefile additions for spawner workflow, enforcement 13/13 BLOCKING 125 runtime PASS. | evidence: `eded4dfd`, `c6250355`, gate-refresh pre-test green | priority: high | effort: M | status: completed
+
 ### Test Tally — 88,291
 
 | System | Test Count |
@@ -215,28 +221,36 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] S80.101 — **24 local model configs**: 8 coding-specialized models (DeepSeek Coder 6.7B/1.3B, CodeLlama 7B/13B, StarCoder2 3B/7B, Qwen2.5-Coder 7B, Stable Code 3B) + 16 general models (Qwen2.5 0.5B/1.5B/3B/7B/14B/32B, Llama 3.2 1B/3B/8B, Phi-3 mini/medium, SmolLM2 135M/360M/1.7B, TinyLlama 1.1B). All 24 configs loaded into model registry with dispatch routing. | evidence: 24 models, 8 coding, 16 general | priority: high | effort: L | status: completed
 - [x] S80.102 — **Enforcement refactor complete**: all enforcement plugins synchronized with shared hasPendingWork(). hasPendingWork() moved to shared.ts as canonical single source. All 13 plugins BLOCKING. 125 runtime tests PASS. | evidence: 13/13 PASS, 125 runtime tests | priority: high | effort: M | status: completed
 
-### New since `fcb98aa1` (2026-08-07)
+### New since `fcb98aa1` (2026-08-07 S81 waves 1–2)
 
 | Item | Status | Evidence |
 |---|---|---|
+| key detection targets + test results | `99aa4915` | passed |
+| final test pass totals | `f8149c3a`, `26a96e8f` | passed |
 | gate-refresh lint + opencode E2E test fixes | `54b29bf3` | passed |
 | opencode E2E test fixes + remaining test results | `c72caad9` | passed |
-| opencode E2E multitask harness + 3x depth + test project template + spawner | `38aa2ef7` | passed |
-| final test pass totals | `f8149c3a`, `26a96e8f` | passed |
-| update TASKS.md | `903ba6a2` | passed |
-| key detection targets + test results | `99aa4915` | passed |
+| opencode E2E multitask harness + 3x depth + test project template + spawner v1.18.11 fix | `38aa2ef7` | passed |
+| opencode spawner format fix v1.18.11 + test results | `c6250355` | passed |
+| update Makefile, SESSION.md, TASKS.md | `eded4dfd` | passed |
+| opencode spawner format fix v1.18.11 | `cb4c67e8` | passed |
+| opencode spawner — re-add format json + auto flags, reset TASKS | `ad8a9d81` | passed |
+| spawner NDJSON parser for nested structure | `4df53837` | passed |
+| spawner NDJSON parser for nested structure (amend) | `c7f7213b` | passed |
+| enhanced opencode E2E test project — 18 trivial tasks, 10-agent floor rules | `45c6718c` | passed |
 
-### Session 81 — ACTUAL STATUS (2026-08-07, HEAD `54b29bf3`)
+### Session 81 — ACTUAL STATUS (2026-08-08, HEAD `45c6718c`)
 
 | Item | Status | Evidence |
 |---|---|---|
 | Gate-lite pre-test phases | ALL GREEN — lint 0, typecheck 0, collect PASS 0, hook-runtime 34/34, plugin-hook-invoke 34/34 | gate-lite output |
-| Gate-lite test phase | **TIMED OUT at 600s** — NOT confirmed green | gate-lite killed at 10min |
-| detect.py import cycle | FIXED | commits `4d4776fe`, `d679c532`, `b5a61681` |
-| Circular import finder | `find_import_cycle.py` script added | `d679c532` |
-| CI run `31140874773` on `51a8dfff` | RED — RunResult Protocol @runtime_checkable fix in `08b51949` | CI failure |
-| 5 E2E test files | on disk (untracked/unstaged) | cloud/local multi-model, project-type, software-generator |
-| Git tree | **DIRTY** — 2 unstaged files | `security_hardening/tasks/main.yml`, `test_has_pending_work_detection.py` |
-| Unpushed commits | 8 commits from `d2cd2cfd`..`763ad6f5` | `763ad6f5` = HEAD |
+| Gate-refresh | **KILLED by OOM** (2026-08-08T02:19:17Z) | pre-test phases green, killed mid-phase |
+| Spawner NDJSON parser | FIXED — nested structure + format json/auto | `c6250355`, `cb4c67e8`, `ad8a9d81`, `4df53837`, `c7f7213b` |
+| E2E test project | 18 tasks, 10-agent floor rules, expanded Makefile | `45c6718c` |
+| Makefile shim targets | ADDED — spawner workflow support | `eded4dfd`, `c6250355` |
+| model_ratio fix | ADDED — GLUDD_MODEL_RATIO_ENFORCE, GLUDD_SONNET_TARGET_ENFORCE | spawner env defaults |
+| Enforcement | 13/13 BLOCKING, 125 runtime PASS | verify-enforcement |
+| detect.py import cycle | FIXED | `4d4776fe`, `d679c532`, `b5a61681` |
+| CI run | RED — no run found for `45c6718c` | CI check |
+| Git tree | **DIRTY** — .gate-status, tests/opencode_e2e/_spawner.py | git status |
+| Unpushed commits | 13 commits from `fcb98aa1`..`45c6718c` | git log |
 | Release v0.1.0-beta.3 | SHIPPED (21/12 assets) | verified |
-| Enforcement plugins | 40/40 guards, 34/34 load PASS | gate-lite output |

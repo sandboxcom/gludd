@@ -58,6 +58,8 @@ class ToolCallSnapshot:
     name: str
     timestamp: float = 0.0
     args: dict = field(default_factory=dict)
+    tool_use_id: str = ""
+    is_error: bool = False
 
 
 @dataclass
@@ -133,6 +135,8 @@ class OpencodeSpawner:
         self._env.setdefault("GLUDD_TASK_DEADLINE_BLOCK", "0")
         self._env.setdefault("GLUDD_MAKE_ENFORCE", "0")
         self._env.setdefault("GLUDD_VERIFIED_CLAIMS_ENFORCE", "0")
+        self._env.setdefault("GLUDD_MODEL_RATIO_ENFORCE", "0")
+        self._env.setdefault("GLUDD_SONNET_TARGET_ENFORCE", "0")
         self._env.setdefault("OPENCODE_DISABLE_CLAUDE_CODE", "0")
         os.makedirs(log_dir, exist_ok=True)
         self._log_dir = log_dir
@@ -181,6 +185,7 @@ class OpencodeSpawner:
         current = ResponseFrame(sequence=0, timestamp=time.time())
         in_assistant = False
         killed = False
+        errored_tool_ids: set[str] = set()
         t0 = time.time()
         stderr_lines: list[str] = []
         raw_stdout_lines: list[str] = []
@@ -330,6 +335,7 @@ class OpencodeSpawner:
                 if _is_json and STEP_FINISH_RE.search(stripped):
                     in_assistant = False
                     if current.tool_calls or current.text_content:
+                        self._correct_dispatch_count(current, errored_tool_ids)
                         with _lock:
                             frames.append(current)
                         current = ResponseFrame(sequence=len(frames), timestamp=time.time())
@@ -340,8 +346,12 @@ class OpencodeSpawner:
                     continue
 
                 if TOOL_RESULT_RE.search(stripped):
+                    tool_id, is_err = self._extract_tool_result(stripped)
+                    if is_err and tool_id:
+                        errored_tool_ids.add(tool_id)
                     in_assistant = False
                     if current.tool_calls or current.text_content:
+                        self._correct_dispatch_count(current, errored_tool_ids)
                         with _lock:
                             frames.append(current)
                         current = ResponseFrame(sequence=len(frames), timestamp=time.time())
@@ -373,6 +383,7 @@ class OpencodeSpawner:
             progress_thread.join(timeout=2)
 
         if in_assistant and (current.text_content or current.tool_calls):
+            self._correct_dispatch_count(current, errored_tool_ids)
             with _lock:
                 frames.append(current)
 
@@ -412,6 +423,14 @@ class OpencodeSpawner:
             part = data.get("part", {}) if isinstance(data.get("part"), dict) else {}
             state = part.get("state", {}) if isinstance(part, dict) else {}
             tc.name = str(data.get("tool") or part.get("tool") or data.get("name") or "unknown")
+            tc.tool_use_id = str(
+                data.get("id")
+                or part.get("id")
+                or state.get("id")
+                or data.get("tool_use_id")
+                or part.get("tool_use_id")
+                or ""
+            )
             raw_input = data.get("input") or state.get("input") or part.get("input")
             tc.args = raw_input if isinstance(raw_input, dict) else {}
         else:
@@ -432,6 +451,40 @@ class OpencodeSpawner:
             return ""
         part = data.get("part", {}) if isinstance(data.get("part"), dict) else {}
         return str(part.get("text", data.get("text", "")))
+
+    @staticmethod
+    def _extract_tool_result(line: str) -> tuple[str, bool]:
+        if not line.startswith("{"):
+            return "", False
+        try:
+            data = json.loads(line)
+        except json.JSONDecodeError:
+            return "", False
+        part = data.get("part", {}) if isinstance(data.get("part"), dict) else {}
+        state = part.get("state", {}) if isinstance(part, dict) else {}
+        result = part.get("result") or state.get("result") or data.get("result")
+        tool_use_id = str(
+            data.get("tool_use_id")
+            or part.get("tool_use_id")
+            or state.get("tool_use_id")
+            or (result.get("tool_use_id") if isinstance(result, dict) else "")
+            or ""
+        )
+        is_error = bool(
+            data.get("is_error")
+            or part.get("is_error")
+            or state.get("is_error")
+            or (result.get("is_error") if isinstance(result, dict) else False)
+        )
+        return tool_use_id, is_error
+
+    @staticmethod
+    def _correct_dispatch_count(frame: ResponseFrame, errored_ids: set[str]) -> None:
+        for tc in frame.tool_calls:
+            if tc.tool_use_id and tc.tool_use_id in errored_ids:
+                tc.is_error = True
+                if frame.dispatch_count > 0:
+                    frame.dispatch_count -= 1
 
     # ------------------------------------------------------------------
     # analysis

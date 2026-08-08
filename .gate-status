@@ -1,3 +1,22 @@
-=== GATE-REFRESH 2026-08-08T00:59:39Z ===
+<<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=== GATE-REFRESH 2026-08-08T02:19:37Z ===
 lint PASS 0
-verify-feature-claims 
+verify-feature-claims PASS
+hot-reload PASS
+verify-hot-reload PASS
+restart-needed PASS
+check-status-table PASS
+env-writes 
+=======
+=== GATE-REFRESH 2026-08-08T01:01:49Z ===
+lint PASS 0
+verify-feature-claims PASS
+hot-reload 
+>>>>>>> Stashed changes
+=======
+=== GATE-REFRESH 2026-08-08T01:01:49Z ===
+lint PASS 0
+verify-feature-claims PASS
+hot-reload 
+>>>>>>> Stashed changes

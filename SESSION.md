@@ -1,12 +1,19 @@
-## PRIMARY OBJECTIVE: IN PROGRESS — v0.1.0-beta.3 shipped. Session 81: Gate-refresh ALL GREEN (lint 0, typecheck 0, verify-hot-reload PASS, env-writes PASS, collect PASS 0, hook-runtime PASS). 88,291 tests. Enforcement 40/40 PASS. Opencode spawner E2E harness + test project template + 3x depth enforcement added. Key detection targets + opencode E2E test fixes. HEAD `54b29bf3` (7 commits past `fcb98aa1`), unpushed. CI RED (no run on `54b29bf3`). Tree DIRTY. Next: push + CI.
+## PRIMARY OBJECTIVE: IN PROGRESS — v0.1.0-beta.3 shipped. Session 81: HEAD `45c6718c` on `development` (13 commits past `fcb98aa1`). Gate-refresh killed by OOM (2026-08-08). Enforcement 13/13 BLOCKING, 125 runtime PASS. Opencode spawner E2E harness fixed: NDJSON parser for nested structure, re-added `--format json --auto` flags, 18-task test project with 10-agent floor rules. Model ratio, spawner test results, Makefile shim targets, gate-refresh, enforcement all updated. Tree DIRTY.
 
 ---
 
-## SESSION 81 — 2026-08-07 — HEAD `54b29bf3`: Gate-refresh ALL GREEN, spawner E2E harness, key detection targets, opencode E2E test fixes
+## SESSION 81 — 2026-08-07 — HEAD `45c6718c`: Gate-refresh ALL GREEN (pre-test), spawner E2E harness, key detection targets, opencode E2E test fixes
 
-### Recent Commits (HEAD `54b29bf3`, 7 since `fcb98aa1`)
+### Recent Commits (HEAD `45c6718c`, 13 since `fcb98aa1`)
 
 ```
+45c6718c feat: enhanced opencode E2E test project — 18 trivial tasks, 10-agent floor rules
+c7f7213b fix: spawner NDJSON parser for nested structure (amend)
+4df53837 fix: spawner NDJSON parser for nested structure
+ad8a9d81 fix: opencode spawner — re-add format json + auto flags, reset TASKS
+cb4c67e8 fix: opencode spawner format fix for v1.18.11
+eded4dfd chore: update Makefile, SESSION.md, TASKS.md
+c6250355 fix: opencode spawner format fix for v1.18.11 + test results
 54b29bf3 fix: gate-refresh lint + opencode E2E test fixes
 c72caad9 fix: opencode E2E test fixes + remaining test results
 38aa2ef7 feat: opencode E2E multitask test harness + 3x depth enforcement + test project template + spawner v1.18.11 fix
@@ -31,10 +38,11 @@ fcb98aa1 chore: fresh gate-status + all Session 80 deliverables
 
 ### Current State
 
-- **HEAD: `54b29bf3`** on `development`
-- **Tree: DIRTY** — .gate-status, Makefile, TASKS.md modified; _test_project plugins + agent + lib + output untracked
-- **CI: RED** — no run found for `54b29bf3`
-- **Enforcement: 40/40 PASS**
+- **HEAD: `45c6718c`** on `development`
+- **Tree: DIRTY** — .gate-status (~4% stale), tests/opencode_e2e/_spawner.py modified
+- **CI: RED** — no run found for `45c6718c`
+- **Enforcement: 13/13 BLOCKING, 125 runtime PASS**
+- **Gate-refresh: killed by OOM** (2026-08-08T02:19:17Z) — pre-test phases green (lint 0, verify-feature-claims PASS, hot-reload PASS), killed during phase chain
 - **Release v0.1.0-beta.3: SHIPPED**
 
 ## SESSION 80 — 2026-08-06 — HEAD `08b51949`: Gate-lite pre-test green (lint/typecheck/env-writes/hook-runtime/plugin-hook-invoke ALL PASS). Test phase timed out at 300s. Tree DIRTY (13 modified files). CI RED on `51a8dfff` fixed by `08b51949` (RunResult Protocol @runtime_checkable). Next: commit + push + CI re-trigger.
@@ -236,6 +244,6 @@ a33b2d78 feat: wave 14 — backup_restore deep + report_generation deep + molecu
 2. `make gate` full for fresh baseline
 3. Push any new commits: `make batch-push`
 
-- **Last Updated: 2026-08-07 — Session 81. HEAD `54b29bf3` on `development`, unpushed. Gate-refresh ALL GREEN (lint 0, typecheck 0, verify-hot-reload PASS, env-writes PASS, collect PASS 0, hook-runtime PASS). 88,291 tests. Enforcement 40/40 PASS. Opencode spawner E2E harness + test project template + 3x depth enforcement added (`38aa2ef7`). Key detection targets + opencode E2E test fixes. CI RED (no run on `54b29bf3`). Tree DIRTY. Release v0.1.0-beta.3 shipped.**
+- **Last Updated: 2026-08-08 — Session 81. HEAD `45c6718c` on `development`, unpushed. Gate-refresh killed by OOM (pre-test green). 88,291 tests. Enforcement 13/13 BLOCKING, 125 runtime PASS. Spawner NDJSON parser fixed (nested structure, `--format json --auto` flags restored). 18-task E2E test project with 10-agent floor rules. Model ratio, Makefile shim targets, gate-refresh, enforcement updated. CI RED (no run on `45c6718c`). Tree DIRTY. Release v0.1.0-beta.3 shipped.**
 
 (End of file)
