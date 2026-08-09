@@ -42,6 +42,7 @@ REQUIRED_CASCADE_EDGES = (
     ("event", "aggregate_id", "event_sequence"),
 )
 OPENCODE_EXECUTABLE_DELIMITERS = ("-", "_", " ", "(")
+SQLITE_HEARTBEAT_SECONDS = 5.0
 
 
 class MaintenanceError(RuntimeError):
@@ -198,7 +199,41 @@ def _translate_sqlite_error(exc: sqlite3.Error, *, partial: int = 0) -> Maintena
     return MaintenanceError(f"SQLite maintenance failed: {detail}{suffix}")
 
 
-def _connect(database: Path, config: MaintenanceConfig, deadline: float) -> sqlite3.Connection:
+def _install_progress_handler(
+    connection: sqlite3.Connection,
+    *,
+    deadline: float,
+    emit: Emit,
+    phase: str,
+    heartbeat_seconds: float = SQLITE_HEARTBEAT_SECONDS,
+) -> None:
+    """Bound SQLite work by time while making long-running phases observable."""
+
+    started = time.monotonic()
+    next_heartbeat = started + heartbeat_seconds
+
+    def progress() -> int:
+        nonlocal next_heartbeat
+        now = time.monotonic()
+        if now >= deadline:
+            return 1
+        if now >= next_heartbeat:
+            elapsed = max(int(now - started), 0)
+            emit(f"phase={phase}-heartbeat status=running elapsed_seconds={elapsed}")
+            next_heartbeat = now + heartbeat_seconds
+        return 0
+
+    connection.set_progress_handler(progress, 1_000)
+
+
+def _connect(
+    database: Path,
+    config: MaintenanceConfig,
+    deadline: float,
+    *,
+    emit: Emit = _print_progress,
+    phase: str = "database",
+) -> sqlite3.Connection:
     if not database.is_file():
         raise MaintenanceError(f"database does not exist: {database}")
     try:
@@ -214,9 +249,11 @@ def _connect(database: Path, config: MaintenanceConfig, deadline: float) -> sqli
         if foreign_keys is None or int(foreign_keys[0]) != 1:
             connection.close()
             raise MaintenanceError("could not enable SQLite foreign-key enforcement")
-        connection.set_progress_handler(
-            lambda: 1 if time.monotonic() >= deadline else 0,
-            1_000,
+        _install_progress_handler(
+            connection,
+            deadline=deadline,
+            emit=emit,
+            phase=phase,
         )
         return connection
     except sqlite3.Error as exc:
@@ -227,6 +264,9 @@ def _connect_read_only(
     database: Path,
     config: MaintenanceConfig,
     deadline: float,
+    *,
+    emit: Emit = _print_progress,
+    phase: str = "inspection",
 ) -> sqlite3.Connection:
     if not database.is_file():
         raise MaintenanceError(f"database does not exist: {database}")
@@ -239,9 +279,11 @@ def _connect_read_only(
         )
         connection.execute(f"PRAGMA busy_timeout={config.busy_timeout_ms}")
         connection.execute("PRAGMA query_only=ON")
-        connection.set_progress_handler(
-            lambda: 1 if time.monotonic() >= deadline else 0,
-            1_000,
+        _install_progress_handler(
+            connection,
+            deadline=deadline,
+            emit=emit,
+            phase=phase,
         )
         return connection
     except sqlite3.Error as exc:
@@ -342,7 +384,13 @@ def inspect_database(
         _directory_usage(data_directory / "tool-output", config, deadline, emit, "tool-output")
         _directory_usage(data_directory / "log", config, deadline, emit, "log")
         return
-    connection = _connect_read_only(database, config, deadline)
+    connection = _connect_read_only(
+        database,
+        config,
+        deadline,
+        emit=emit,
+        phase=report,
+    )
     try:
         tables = sorted(_table_names(connection))
         if report == "stats":
@@ -519,7 +567,13 @@ def prune_database(
         f"phase=plan cutoff_ms={cutoff_ms} batch_size={config.batch_size} "
         f"max_sessions={config.max_sessions} timeout_seconds={config.timeout_seconds:g}"
     )
-    connection = _connect(database, config, deadline)
+    connection = _connect(
+        database,
+        config,
+        deadline,
+        emit=emit,
+        phase="prune",
+    )
     sessions_removed = 0
     events_removed = 0
     sequences_removed = 0
@@ -644,7 +698,13 @@ def maintain_database(
     config.validate()
     _require_opencode_stopped(process_check, emit)
     deadline = _deadline if _deadline is not None else time.monotonic() + config.timeout_seconds
-    connection = _connect(database, config, deadline)
+    connection = _connect(
+        database,
+        config,
+        deadline,
+        emit=emit,
+        phase="maintenance",
+    )
     try:
         _require_opencode_stopped(process_check, emit)
         connection.execute("BEGIN IMMEDIATE")
@@ -904,7 +964,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         config.validate()
         database = resolve_database_path(args.db)
         data_directory = (
-            Path(args.data_dir).expanduser().resolve()
+            Path(args.data_dir).expanduser()
             if args.data_dir
             else database.parent
         )

@@ -41,6 +41,10 @@ session disappear or prevents OpenCode from starting.
    free space. When an independent backup is required and capacity permits it,
    use a SQLite-consistent backup mechanism; never make a raw copy of only the
    main file while OpenCode is running.
+6. Mutating targets refuse symlinked data, tool-output, or log roots so path
+   normalization cannot redirect deletion outside the intended data directory.
+   Long SQLite and file-cleanup phases emit periodic heartbeats and still stop
+   at their configured time or entry bound.
 
 ## Target selection
 
