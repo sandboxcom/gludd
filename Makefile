@@ -3155,6 +3155,9 @@ batch-push: check-clean-tree _no-bypass-guard _stash-before-push-guard _ci-resta
 	echo "$$COUNT unpushed commits, threshold met. Pushing..."; \
 	$(MAKE) git-push-sandboxcom
 
+force-batch-push:
+	@GLUDD_FORCE_PUSH=1 $(MAKE) batch-push
+
 # CI-aware push that waits for CI to go green before returning
 # Same as git-push-sandboxcom but waits for CI completion after push
 ci-push: pre-push-check _push-rate-guard

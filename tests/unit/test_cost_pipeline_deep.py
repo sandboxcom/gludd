@@ -545,7 +545,7 @@ class TestCostEstimationAccuracy:
 
     def test_should_defer_large_download_during_peak(self) -> None:
         noon = datetime.datetime(2026, 8, 4, 12, 0, 0, tzinfo=datetime.UTC)
-        result = should_defer_download(2.0, now=noon)
+        result = should_defer_download(11.0, now=noon)
         assert result["defer"] is True
         assert result["reason"] == "large_download_during_peak"
 
