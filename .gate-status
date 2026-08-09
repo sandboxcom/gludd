@@ -9,4 +9,4 @@ env-writes PASS
 hook-runtime PASS
 typecheck PASS 0
 collect PASS 0
-test 
+test
