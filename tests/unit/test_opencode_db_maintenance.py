@@ -699,3 +699,75 @@ def test_cli_delegates_clean_action(tmp_path: Path, monkeypatch: Any) -> None:
     monkeypatch.setattr(module, "run_cleanup", record_cleanup)
     assert module.main(["clean-hard", "--db", str(tmp_path / "db")]) == 0
     assert called == [True]
+
+
+def test_cli_preserves_symlinked_data_dir_for_mutation_guard(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    module = _load_maintenance()
+    real_data = tmp_path / "real-data"
+    real_data.mkdir()
+    linked_data = tmp_path / "linked-data"
+    linked_data.symlink_to(real_data, target_is_directory=True)
+    observed: list[Path] = []
+
+    def record_cleanup(
+        _database: Path,
+        data_directory: Path,
+        _config: Any,
+        **_kwargs: Any,
+    ) -> None:
+        observed.append(data_directory)
+
+    monkeypatch.setattr(module, "run_cleanup", record_cleanup)
+
+    assert (
+        module.main(
+            [
+                "clean",
+                "--db",
+                str(tmp_path / "db"),
+                "--data-dir",
+                str(linked_data),
+            ]
+        )
+        == 0
+    )
+    assert observed == [linked_data]
+    assert observed[0].is_symlink()
+
+
+def test_sqlite_progress_handler_emits_heartbeat_and_stops_at_deadline(
+    monkeypatch: Any,
+) -> None:
+    module = _load_maintenance()
+    callbacks: list[Any] = []
+    progress: list[str] = []
+    clock = {"now": 0.0}
+
+    class FakeConnection:
+        def set_progress_handler(self, callback: Any, _opcodes: int) -> None:
+            callbacks.append(callback)
+
+    monkeypatch.setattr(module.time, "monotonic", lambda: clock["now"])
+    module._install_progress_handler(
+        FakeConnection(),
+        deadline=12.0,
+        emit=progress.append,
+        phase="stats",
+        heartbeat_seconds=5.0,
+    )
+
+    callback = callbacks[0]
+    clock["now"] = 4.0
+    assert callback() == 0
+    assert progress == []
+    clock["now"] = 5.0
+    assert callback() == 0
+    assert progress == ["phase=stats-heartbeat status=running elapsed_seconds=5"]
+    clock["now"] = 10.0
+    assert callback() == 0
+    assert progress[-1].endswith("elapsed_seconds=10")
+    clock["now"] = 12.0
+    assert callback() == 1

@@ -628,7 +628,7 @@ class TestEventLoopSelfImproveTargetsProjectRepo:
         with patch.object(
             loop, "_resolve_repo_root", return_value="/checkouts/proj-ext"
         ) as mock_resolve, patch(
-            "general_ludd.event_loop.loop.SelfImprovementHarness"
+            "general_ludd.event_loop.loop_handlers.SelfImprovementHarness"
         ) as MockHarness:
             instance = MockHarness.return_value
             instance.run_gap_analysis.return_value = []
