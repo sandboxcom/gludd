@@ -5,6 +5,15 @@ REF ?=
 TARGET ?= master
 MYPY_MAX := 0
 OPENCODE_DB ?= ~/.local/share/opencode/opencode.db
+OPENCODE_DATA_DIR ?=
+OPENCODE_RETENTION_DAYS ?= 30
+OPENCODE_DB_BATCH_SIZE ?= 500
+OPENCODE_DB_MAX_SESSIONS ?= 50000
+OPENCODE_DB_TIMEOUT_SECONDS ?= 60
+OPENCODE_DB_BUSY_TIMEOUT_MS ?= 1000
+OPENCODE_DB_INCREMENTAL_PAGES ?= 1000
+OPENCODE_MAX_FILE_ENTRIES ?= 100000
+OPENCODE_MAINTENANCE_VALIDATE_ONLY ?= 0
 VERIFY_POLLS ?= 30
 GLUDD_TASK_TIMEOUT ?= 300
 TIMEOUT ?= 3600
@@ -424,6 +433,15 @@ help:
 	@echo "  tmp-gludd-clean-ci-shards  Remove stale generated CI shard scratch dirs"
 	@echo "  tmp-gludd-clean-ci-shards-now  Remove all inactive CI shard scratch dirs"
 	@echo "  clean-worktree-caches  Remove generated venv/test/tool caches from worktrees"
+	@echo ""
+	@echo "  --- OpenCode Database Maintenance ---"
+	@echo "  opencode-disk         Bounded data usage using the authoritative OpenCode DB path"
+	@echo "  opencode-clean        Offline bounded DB/cache cleanup; refuses while OpenCode runs"
+	@echo "  opencode-clean-hard   Offline aggressive cache/log cleanup; refuses while OpenCode runs"
+	@echo "  opencode-db-stats     Bounded read-only table counts"
+	@echo "  opencode-db-schema    Bounded read-only schema report"
+	@echo "  opencode-db-sample    Bounded read-only timestamp sample"
+	@echo "  opencode-db-prune     Offline bounded recursive session/event prune"
 	@echo ""
 	@echo "  --- Recovery ---"
 	@echo "  reap-orphan-pytest    Report stale orphan pytest trees (APPLY=1 to terminate)"
@@ -2273,125 +2291,68 @@ disk:
 	@du -sh /tmp/gludd-* 2>/dev/null | tail -5 || true
 tmp-gludd-usage:
 	@du -sh /tmp/gludd-* 2>/dev/null | sort -h | tail -40 || true
-opencode-disk: ## Show opencode's own data directories and their disk usage
-	@echo "=== opencode.db ==="
-	@du -sh ~/.local/share/opencode/opencode.db ~/.local/share/opencode/opencode.db-wal ~/.local/share/opencode/opencode.db-shm 2>/dev/null || true
-	@echo ""
-	@echo "=== tool-output cache ==="
-	@du -sh ~/.local/share/opencode/tool-output/ 2>/dev/null || true
-	@echo "  count: $$(ls ~/.local/share/opencode/tool-output/ 2>/dev/null | wc -l | tr -d ' ') files"
-	@echo ""
-	@echo "=== opencode logs ==="
-	@du -sh ~/.local/share/opencode/log/ 2>/dev/null || true
-	@echo "  count: $$(ls ~/.local/share/opencode/log/ 2>/dev/null | wc -l | tr -d ' ') files"
-	@echo ""
-	@echo "=== opencode config ==="
-	@du -sh ~/.config/opencode/ 2>/dev/null || true
-opencode-clean: ## Clean opencode's tool-output cache and vacuum the DB
-	@echo "=== cleaning opencode tool-output cache ==="
-	@rm -rf ~/.local/share/opencode/tool-output/* 2>/dev/null || true
-	@echo "Remaining: $$(ls ~/.local/share/opencode/tool-output/ 2>/dev/null | wc -l | tr -d ' ') files"
-	@echo ""
-	@echo "=== vacuuming opencode.db ==="
-	@$(MAKE) --no-print-directory _opencode-running-guard \
-		|| { echo "  SKIPPED: opencode appears to be running. VACUUM while opencode is active WILL crash it."; \
-		     echo "  Stop opencode first, or use FORCE=1 to vacuum anyway."; \
-		     exit 0; }
-	@sqlite3 ~/.local/share/opencode/opencode.db "PRAGMA wal_checkpoint(TRUNCATE); VACUUM;" 2>/dev/null || echo "  skipped (sqlite3 not available or DB locked)"
-	@du -sh ~/.local/share/opencode/opencode.db 2>/dev/null || true
-	@rm -f ~/.local/share/opencode/opencode.db-wal ~/.local/share/opencode/opencode.db-shm 2>/dev/null || true
-	@echo ""
-	@echo "=== cleaning opencode logs older than 7 days ==="
-	@find ~/.local/share/opencode/log/ -type f -mtime +7 -delete 2>/dev/null || true
-	@echo "Remaining logs: $$(ls ~/.local/share/opencode/log/ 2>/dev/null | wc -l | tr -d ' ')"
-	@echo ""
-	@echo "=== done ==="
-	@$(MAKE) --no-print-directory opencode-disk
+opencode-disk: ## Bounded OpenCode data usage (OPENCODE_DB, OPENCODE_DATA_DIR, OPENCODE_DB_TIMEOUT_SECONDS, OPENCODE_DB_BUSY_TIMEOUT_MS, OPENCODE_MAX_FILE_ENTRIES, OPENCODE_MAINTENANCE_VALIDATE_ONLY)
+	@$(SYSTEM_PYTHON) scripts/opencode_db_maintenance.py disk \
+		$(if $(filter command line environment,$(origin OPENCODE_DB)),--db "$(OPENCODE_DB)",) \
+		$(if $(strip $(OPENCODE_DATA_DIR)),--data-dir "$(OPENCODE_DATA_DIR)",) \
+		--timeout-seconds "$(OPENCODE_DB_TIMEOUT_SECONDS)" \
+		--busy-timeout-ms "$(OPENCODE_DB_BUSY_TIMEOUT_MS)" \
+		--max-file-entries "$(OPENCODE_MAX_FILE_ENTRIES)" \
+		$(if $(filter 1,$(OPENCODE_MAINTENANCE_VALIDATE_ONLY)),--validate-only,)
 
-_opencode-running-guard:
-	@if [ -n "$$FORCE" ]; then exit 0; fi
-	@if pgrep -q -f "[o]pencode" 2>/dev/null; then \
-		echo "  opencode process detected — VACUUM will lock its DB and crash it."; \
-		exit 1; \
-	fi
-	@echo "  opencode not running — safe to vacuum."
-opencode-clean-hard: ## Aggressive opencode cleanup: delete all tool-output + old logs
-	@echo "=== AGGRESSIVE opencode cleanup ==="
-	@rm -rf ~/.local/share/opencode/tool-output/ 2>/dev/null || true
-	@mkdir -p ~/.local/share/opencode/tool-output
-	@find ~/.local/share/opencode/log/ -type f -mtime +1 -delete 2>/dev/null || true
-	@echo "=== done ==="
-	@$(MAKE) --no-print-directory opencode-disk
+opencode-clean: ## Offline bounded OpenCode DB/cache cleanup (OPENCODE_DB, OPENCODE_DATA_DIR, OPENCODE_DB_TIMEOUT_SECONDS, OPENCODE_DB_BUSY_TIMEOUT_MS, OPENCODE_DB_INCREMENTAL_PAGES, OPENCODE_MAX_FILE_ENTRIES, OPENCODE_MAINTENANCE_VALIDATE_ONLY)
+	@$(SYSTEM_PYTHON) scripts/opencode_db_maintenance.py clean \
+		$(if $(filter command line environment,$(origin OPENCODE_DB)),--db "$(OPENCODE_DB)",) \
+		$(if $(strip $(OPENCODE_DATA_DIR)),--data-dir "$(OPENCODE_DATA_DIR)",) \
+		--timeout-seconds "$(OPENCODE_DB_TIMEOUT_SECONDS)" \
+		--busy-timeout-ms "$(OPENCODE_DB_BUSY_TIMEOUT_MS)" \
+		--incremental-pages "$(OPENCODE_DB_INCREMENTAL_PAGES)" \
+		--max-file-entries "$(OPENCODE_MAX_FILE_ENTRIES)" \
+		$(if $(filter 1,$(OPENCODE_MAINTENANCE_VALIDATE_ONLY)),--validate-only,)
 
-opencode-db-stats: ## Show opencode DB table sizes and row counts (read-only, safe while opencode runs)
-	@echo "=== opencode.db table stats ==="
-	@DB=~/.local/share/opencode/opencode.db; \
-	for table in $$(sqlite3 "$$DB" "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;" 2>/dev/null); do \
-		rows=$$(sqlite3 "$$DB" "SELECT COUNT(*) FROM [$$table];" 2>/dev/null); \
-		echo "  $$table: $$rows rows"; \
-	done
-	@echo ""
-	@echo "Total DB size: $$(du -sh ~/.local/share/opencode/opencode.db | cut -f1)"
+opencode-clean-hard: ## Offline aggressive cache/log cleanup (OPENCODE_DB, OPENCODE_DATA_DIR, OPENCODE_DB_TIMEOUT_SECONDS, OPENCODE_DB_BUSY_TIMEOUT_MS, OPENCODE_DB_INCREMENTAL_PAGES, OPENCODE_MAX_FILE_ENTRIES, OPENCODE_MAINTENANCE_VALIDATE_ONLY)
+	@$(SYSTEM_PYTHON) scripts/opencode_db_maintenance.py clean-hard \
+		$(if $(filter command line environment,$(origin OPENCODE_DB)),--db "$(OPENCODE_DB)",) \
+		$(if $(strip $(OPENCODE_DATA_DIR)),--data-dir "$(OPENCODE_DATA_DIR)",) \
+		--timeout-seconds "$(OPENCODE_DB_TIMEOUT_SECONDS)" \
+		--busy-timeout-ms "$(OPENCODE_DB_BUSY_TIMEOUT_MS)" \
+		--incremental-pages "$(OPENCODE_DB_INCREMENTAL_PAGES)" \
+		--max-file-entries "$(OPENCODE_MAX_FILE_ENTRIES)" \
+		$(if $(filter 1,$(OPENCODE_MAINTENANCE_VALIDATE_ONLY)),--validate-only,)
 
-opencode-db-schema: ## Show opencode DB schema (column names for each table)
-	@echo "=== opencode.db schema ==="
-	@DB=~/.local/share/opencode/opencode.db; \
-	for table in $$(sqlite3 "$$DB" "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;" 2>/dev/null); do \
-		echo "--- $$table ---"; \
-		sqlite3 "$$DB" "PRAGMA table_info([$$table]);" 2>/dev/null; \
-		echo ""; \
-	done
+opencode-db-stats: ## Bounded read-only OpenCode table counts (OPENCODE_DB, OPENCODE_DATA_DIR, OPENCODE_DB_TIMEOUT_SECONDS, OPENCODE_DB_BUSY_TIMEOUT_MS, OPENCODE_MAINTENANCE_VALIDATE_ONLY)
+	@$(SYSTEM_PYTHON) scripts/opencode_db_maintenance.py stats \
+		$(if $(filter command line environment,$(origin OPENCODE_DB)),--db "$(OPENCODE_DB)",) \
+		$(if $(strip $(OPENCODE_DATA_DIR)),--data-dir "$(OPENCODE_DATA_DIR)",) \
+		--timeout-seconds "$(OPENCODE_DB_TIMEOUT_SECONDS)" \
+		--busy-timeout-ms "$(OPENCODE_DB_BUSY_TIMEOUT_MS)" \
+		$(if $(filter 1,$(OPENCODE_MAINTENANCE_VALIDATE_ONLY)),--validate-only,)
 
-opencode-db-sample: ## Sample timestamps to determine epoch format (seconds vs ms)
-	@echo "=== opencode.db timestamp samples ==="
-	@DB=~/.local/share/opencode/opencode.db; \
-	echo "session time_created:"; \
-	sqlite3 "$$DB" "SELECT MIN(time_created) FROM session;" 2>/dev/null; \
-	sqlite3 "$$DB" "SELECT MAX(time_created) FROM session;" 2>/dev/null; \
-	echo "message time_created:"; \
-	sqlite3 "$$DB" "SELECT MIN(time_created) FROM message;" 2>/dev/null; \
-	sqlite3 "$$DB" "SELECT MAX(time_created) FROM message;" 2>/dev/null
+opencode-db-schema: ## Bounded read-only OpenCode schema (OPENCODE_DB, OPENCODE_DATA_DIR, OPENCODE_DB_TIMEOUT_SECONDS, OPENCODE_DB_BUSY_TIMEOUT_MS, OPENCODE_MAINTENANCE_VALIDATE_ONLY)
+	@$(SYSTEM_PYTHON) scripts/opencode_db_maintenance.py schema \
+		$(if $(filter command line environment,$(origin OPENCODE_DB)),--db "$(OPENCODE_DB)",) \
+		$(if $(strip $(OPENCODE_DATA_DIR)),--data-dir "$(OPENCODE_DATA_DIR)",) \
+		--timeout-seconds "$(OPENCODE_DB_TIMEOUT_SECONDS)" \
+		--busy-timeout-ms "$(OPENCODE_DB_BUSY_TIMEOUT_MS)" \
+		$(if $(filter 1,$(OPENCODE_MAINTENANCE_VALIDATE_ONLY)),--validate-only,)
 
-opencode-db-prune: ## Delete old sessions/messages/parts from opencode DB (keeps last 30 days). Safe while opencode runs.
-	@echo "=== pruning old opencode data ==="
-	@echo "Before: $$(du -sh ~/.local/share/opencode/opencode.db | cut -f1)"
-	@DB=~/.local/share/opencode/opencode.db; \
-	CUTOFF=$$(($$(date +%s)000 - 2592000000)); \
-	echo "Cutoff epoch ms: $$CUTOFF (30 days ago)"; \
-	event_before=$$(sqlite3 "$$DB" "SELECT COUNT(*) FROM event;" 2>/dev/null); \
-	msg_before=$$(sqlite3 "$$DB" "SELECT COUNT(*) FROM message;" 2>/dev/null); \
-	part_before=$$(sqlite3 "$$DB" "SELECT COUNT(*) FROM part;" 2>/dev/null); \
-	session_before=$$(sqlite3 "$$DB" "SELECT COUNT(*) FROM session;" 2>/dev/null); \
-	echo "  event: $$event_before rows"; \
-	echo "  message: $$msg_before rows"; \
-	echo "  part: $$part_before rows"; \
-	echo "  session: $$session_before rows"; \
-	echo ""; \
-	echo "Deleting old todos..."; \
-	sqlite3 "$$DB" "DELETE FROM todo WHERE time_created < $$CUTOFF;" 2>/dev/null || true; \
-	echo "Deleting old session_messages..."; \
-	sqlite3 "$$DB" "DELETE FROM session_message WHERE time_created < $$CUTOFF;" 2>/dev/null || true; \
-	echo "Deleting old parts..."; \
-	sqlite3 "$$DB" "DELETE FROM part WHERE time_created < $$CUTOFF;" 2>/dev/null || true; \
-	echo "Deleting old messages..."; \
-	sqlite3 "$$DB" "DELETE FROM message WHERE time_created < $$CUTOFF;" 2>/dev/null || true; \
-	echo "Deleting old sessions..."; \
-	sqlite3 "$$DB" "DELETE FROM session WHERE time_created < $$CUTOFF;" 2>/dev/null || true; \
-	echo "Checkpointing WAL..."; \
-	sqlite3 "$$DB" "PRAGMA wal_checkpoint(TRUNCATE);" 2>/dev/null || true; \
-	event_after=$$(sqlite3 "$$DB" "SELECT COUNT(*) FROM event;" 2>/dev/null); \
-	msg_after=$$(sqlite3 "$$DB" "SELECT COUNT(*) FROM message;" 2>/dev/null); \
-	part_after=$$(sqlite3 "$$DB" "SELECT COUNT(*) FROM part;" 2>/dev/null); \
-	session_after=$$(sqlite3 "$$DB" "SELECT COUNT(*) FROM session;" 2>/dev/null); \
-	echo ""; \
-	echo "After:"; \
-	echo "  event: $$event_after (removed $$((event_before - event_after)))"; \
-	echo "  message: $$msg_after (removed $$((msg_before - msg_after)))"; \
-	echo "  part: $$part_after (removed $$((part_before - part_after)))"; \
-	echo "  session: $$session_after (removed $$((session_before - session_after)))"; \
-	echo ""; \
-	echo "DB size: $$(du -sh ~/.local/share/opencode/opencode.db | cut -f1)"; \
-	echo "NOTE: DB file won't shrink until VACUUM runs with opencode STOPPED. Run: make opencode-clean after stopping opencode."
+opencode-db-sample: ## Bounded read-only OpenCode timestamp sample (OPENCODE_DB, OPENCODE_DATA_DIR, OPENCODE_DB_TIMEOUT_SECONDS, OPENCODE_DB_BUSY_TIMEOUT_MS, OPENCODE_MAINTENANCE_VALIDATE_ONLY)
+	@$(SYSTEM_PYTHON) scripts/opencode_db_maintenance.py sample \
+		$(if $(filter command line environment,$(origin OPENCODE_DB)),--db "$(OPENCODE_DB)",) \
+		$(if $(strip $(OPENCODE_DATA_DIR)),--data-dir "$(OPENCODE_DATA_DIR)",) \
+		--timeout-seconds "$(OPENCODE_DB_TIMEOUT_SECONDS)" \
+		--busy-timeout-ms "$(OPENCODE_DB_BUSY_TIMEOUT_MS)" \
+		$(if $(filter 1,$(OPENCODE_MAINTENANCE_VALIDATE_ONLY)),--validate-only,)
+
+opencode-db-prune: ## Offline bounded session-tree prune (OPENCODE_DB, OPENCODE_RETENTION_DAYS, OPENCODE_DB_BATCH_SIZE, OPENCODE_DB_MAX_SESSIONS, OPENCODE_DB_TIMEOUT_SECONDS, OPENCODE_DB_BUSY_TIMEOUT_MS, OPENCODE_MAINTENANCE_VALIDATE_ONLY)
+	@$(SYSTEM_PYTHON) scripts/opencode_db_maintenance.py prune \
+		$(if $(filter command line environment,$(origin OPENCODE_DB)),--db "$(OPENCODE_DB)",) \
+		--retention-days "$(OPENCODE_RETENTION_DAYS)" \
+		--batch-size "$(OPENCODE_DB_BATCH_SIZE)" \
+		--max-sessions "$(OPENCODE_DB_MAX_SESSIONS)" \
+		--timeout-seconds "$(OPENCODE_DB_TIMEOUT_SECONDS)" \
+		--busy-timeout-ms "$(OPENCODE_DB_BUSY_TIMEOUT_MS)" \
+		$(if $(filter 1,$(OPENCODE_MAINTENANCE_VALIDATE_ONLY)),--validate-only,)
 
 tmp-gludd-worktree-usage:
 	@du -sh /tmp/gludd-worktrees /tmp/gludd-worktrees/* /tmp/gludd-worktrees/*/.venv /tmp/gludd-worktrees/*/.pytest_cache /tmp/gludd-worktrees/*/.mypy_cache /tmp/gludd-worktrees/*/.ruff_cache 2>/dev/null | sort -h | tail -40 || true
@@ -7912,4 +7873,3 @@ diag-opencode-raw-json-pure-no-enforce:
 compare-models:
 	@echo "=== Multi-model comparison benchmark ==="
 	@$(UV) run python scripts/compare_models.py
-
