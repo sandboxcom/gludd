@@ -509,7 +509,13 @@ def test_file_mode_permissions_use_quoted_octal() -> None:
 
 def test_task_jinja_expressions_dont_rely_on_undefined_vars() -> None:
     """Jinja expressions for variables not guaranteed defined should
-    use the | default() filter (excluding ansible_* built-ins)."""
+    use the | default() filter (excluding ansible_* built-ins).
+
+    Variables defined in the role's defaults/main.yml or vars/main.yml
+    are considered guaranteed and do not require | default().
+    """
+    import yaml as _yaml
+
     task_files = _discover_task_files()
     assert len(task_files) > 0, "No task files found"
     violations: list[str] = []
@@ -528,19 +534,40 @@ def test_task_jinja_expressions_dont_rely_on_undefined_vars() -> None:
         "ca_bundle",
         "cache_dir",
     }
+    _role_defined_cache: dict[str, set[str]] = {}
+
+    def _role_defined_vars(tasks_dir: Path) -> set[str]:
+        key = str(tasks_dir)
+        if key in _role_defined_cache:
+            return _role_defined_cache[key]
+        defined: set[str] = set()
+        role_dir = tasks_dir.parent
+        for yf in ("defaults/main.yml", "vars/main.yml"):
+            yp = role_dir / yf
+            if yp.is_file():
+                try:
+                    data = _yaml.safe_load(yp.read_text(encoding="utf-8"))
+                    if isinstance(data, dict):
+                        defined.update(data.keys())
+                except Exception:
+                    pass
+        _role_defined_cache[key] = defined
+        return defined
+
     for tf in task_files:
         content = tf.read_text(encoding="utf-8")
+        role_defined = _role_defined_vars(tf.parent)
         for m in bare.finditer(content):
             vn = m.group(1)
-            if vn in safe:
+            if vn in safe or vn in role_defined:
                 continue
             violations.append(
                 f"{tf.relative_to(ROOT)}: '{{{{{vn}}}}}' used "
                 f"without | default() (line "
                 f"{content[: m.start()].count(chr(10)) + 1})"
             )
-    assert violations == [], f"{len(violations)} bare variable references:\n" + "\n".join(
-        f"  - {v}" for v in violations
+    assert violations == [], f"{len(violations)} truly-undefined variable reference(s):\n" + "\n".join(
+        f"  - {v}" for v in violations[:50]
     )
 
 

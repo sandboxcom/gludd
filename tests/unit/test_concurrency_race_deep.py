@@ -38,11 +38,8 @@ from general_ludd.process.registry import ProcessRegistry, ProcessRegistryError
 
 
 def _rlock_is_owned(rl: threading.RLock) -> bool:
-    """Portable check: a released RLock can be acquired non-blocking."""
-    acquired = rl.acquire(blocking=False)
-    if acquired:
-        rl.release()
-    return not acquired
+    """Return True if rl is held by the current thread."""
+    return getattr(rl, "_is_owned", lambda: False)()
 
 
 def _assert_no_cycles(graph: dict[str, list[str]], *, msg: str = "") -> None:

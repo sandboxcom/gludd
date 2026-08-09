@@ -119,9 +119,7 @@ def _destroy_instance(instance_id: str, deploy_dir: str) -> None:
         timeout=900,
     )
     if result.returncode != 0:
-        raise RuntimeError(
-            f"terraform destroy failed for {instance_id!r} with rc={result.returncode}"
-        )
+        raise RuntimeError(f"terraform destroy failed for {instance_id!r} with rc={result.returncode}")
     _DEPLOYED_INSTANCES.pop(instance_id, None)
 
 
@@ -206,9 +204,7 @@ class DeploymentManager:
     ) -> None:
         _install_signal_handlers()
         self._binary_resolver = binary_paths or BinaryPathResolver()
-        self._working_dir = working_dir or str(
-            project_state().temporary_directory("terraform", prefix="gludd-tf-")
-        )
+        self._working_dir = working_dir or str(project_state().temporary_directory("terraform", prefix="gludd-tf-"))
         # The dir the NEXT terraform invocation runs in. deploy()/destroy() point
         # this at the per-instance dir so one manager can hold many deployments.
         self._active_working_dir = self._working_dir
@@ -238,6 +234,13 @@ class DeploymentManager:
             )
         except Exception:
             logger.exception("Deployment event subscriber failed for %s", name)
+
+    def close(self) -> None:
+        if self._working_dir and os.path.isdir(self._working_dir):
+            import shutil
+
+            shutil.rmtree(self._working_dir, ignore_errors=True)
+            self._working_dir = ""
 
     @staticmethod
     def _estimate_elapsed_cost(config: ComputeConfig, elapsed_seconds: float) -> float:
