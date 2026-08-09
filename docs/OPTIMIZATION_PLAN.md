@@ -139,3 +139,12 @@ Estimated: 24% fewer `tool.execute.before` hooks, ~20% less startup time.
 
 Optimization log: `/tmp/gludd-optimization-log.jsonl`
 Review trigger: re-dispatch this task each session until gains plateau.
+
+## Database maintenance
+
+Database and session-storage optimization is operationally separate from prompt
+compaction. Use the
+[OpenCode database maintenance runbook](opencode-database-maintenance.md) for
+the guarded inspection, retention, offline compaction, and recovery sequence.
+The runbook also records the upstream OpenCode issues and user-forum evidence
+behind the fail-closed design.
