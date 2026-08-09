@@ -9,8 +9,8 @@ attack_vectors:
       example: "' UNION SELECT username, password FROM users--"
       severity: "critical"
       detection:
-        code: "UNION\s+(ALL\s+)?SELECT"
-        log: "(?i)union\s+(all\s+)?select"
+        code: 'UNION\s+(ALL\s+)?SELECT'
+        log: '(?i)union\s+(all\s+)?select'
 
     - id: "ERROR_BASED"
       name: "Error-based injection"

@@ -349,7 +349,7 @@ class TestAtomicityOfCompoundOperations:
             try:
                 pae.set_limit(f"model-{i}", float(100 + i))
                 status = pae.get_status()
-                raw = status.get(f"agent:model-{i}")
+                raw = status.get(f"model-{i}")
                 assert raw is not None
                 inner = cast("dict[str, object]", raw)
                 assert inner["limit"] == float(100 + i)

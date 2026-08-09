@@ -226,9 +226,7 @@ gdpr:
         - Erase data to comply with a legal obligation under EU or Member State law
         - Inform recipients to whom data has been disclosed of the erasure
         - Take reasonable steps, considering technology and cost, to inform other controllers
-        - Limitations: erasure does not apply when processing is necessary for freedom of expression,
-          compliance with a legal obligation, public interest in public health,
-          archiving in the public interest, or legal claims
+        - "Limitations: erasure does not apply when processing is necessary for freedom of expression, compliance with a legal obligation, public interest in public health, archiving in the public interest, or legal claims"
 
     - id: "Art.18"
       name: Right to Restriction of Processing

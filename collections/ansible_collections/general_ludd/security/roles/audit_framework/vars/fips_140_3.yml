@@ -59,10 +59,8 @@ fips_140_3:
         - Map each service to an authorized role
         - Authenticate an operator to a specific role
         - Level 2: Require role-based authentication with minimum effort to guess
-        - Level 3: Require identity-based authentication with 1-in-1,000,000
-          false acceptance rate; MFA required
-        - Level 4: Require identity-based authentication with 1-in-1,000,000
-          false acceptance rate; MFA using at least two independent factors
+        - "Level 3: Require identity-based authentication with 1-in-1,000,000 false acceptance rate; MFA required"
+        - "Level 4: Require identity-based authentication with 1-in-1,000,000 false acceptance rate; MFA using at least two independent factors"
 
     - id: "4"
       name: Finite State Model
