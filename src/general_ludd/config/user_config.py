@@ -390,6 +390,8 @@ class UserConfig(BaseSettings):
                 except (_json.JSONDecodeError, ValueError):
                     d[parts[-1]] = env_val
 
+        # Strip None values so YAML null (~) doesn't override field defaults
+        merged = {k: v for k, v in merged.items() if v is not None}
         return cls.model_validate(merged)
 
 
