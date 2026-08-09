@@ -24,7 +24,7 @@
               ParticleConfig, compute_cross_section, analyze_decay_chain, write_particle_result
           )
           config = ParticleConfig(
-              beam_energy_GeV={{ particle_beam_energy_GeV }},
+              beam_energy_GeV={{ particle_beam_energy_gev }},
               target="{{ particle_target }}",
               beam="{{ particle_beam }}",
               detector="{{ particle_detector }}",

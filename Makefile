@@ -14,6 +14,7 @@ OPENCODE_DB_BUSY_TIMEOUT_MS ?= 1000
 OPENCODE_DB_INCREMENTAL_PAGES ?= 1000
 OPENCODE_MAX_FILE_ENTRIES ?= 100000
 OPENCODE_MAINTENANCE_VALIDATE_ONLY ?= 0
+OPENCODE_MAINTENANCE_FORCE ?= 0
 VERIFY_POLLS ?= 30
 GLUDD_TASK_TIMEOUT ?= 300
 TIMEOUT ?= 3600
@@ -83,7 +84,7 @@ PYTEST_VERBOSITY ?= -v
 .PHONY: \
         init sync relock node-deps-sync node-deps-relock node-deps-audit install-pip lint lint-files lint-fix test test-unit test-unit-shards test-specific test-files test-count test-integration test-e2e \
          test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg test-bg-runner \
-         test-games game-audit gen-mcp-tools gen-mcp-tool-ref mcp-docs-check \
+         test-games test-multi-model-pipeline test-local-model-pipeline test-project-type-pipeline game-audit gen-mcp-tools gen-mcp-tool-ref mcp-docs-check \
         typecheck setup-dirs setup-venv clean healthcheck \
         bootstrap skeleton version check-uv check-pytest \
         ansible-syntax ansible-lint-playbooks ansible-collection-test playbook-list \
@@ -253,6 +254,9 @@ help:
 	@echo "  podman-project-up   Start an explicit project Podman machine and wait for readiness"
 	@echo "  podman-project-recreate  Recreate one gludd-namespaced Podman test machine"
 	@echo "  podman-project-delete  Delete one gludd-namespaced Podman machine with bounded progress"
+	@echo "  test-multi-model-pipeline  All multi-model pipeline E2E + integration tests"
+	@echo "  test-local-model-pipeline  Local model pipeline E2E tests"
+	@echo "  test-project-type-pipeline E2E: test_project_type_pipeline.py"
 	@echo "  test-opencode-e2e     .opencode/ plugin load+invocation tests"
 	@echo "  test-opencode-e2e-hour  1-hour E2E spawner test (TIMEOUT=3600)"
 	@echo "  test-specific         Single test (TESTFILE=path::TestClass::test_name)"
@@ -442,6 +446,7 @@ help:
 	@echo "  opencode-db-schema    Bounded read-only schema report"
 	@echo "  opencode-db-sample    Bounded read-only timestamp sample"
 	@echo "  opencode-db-prune     Offline bounded recursive session/event prune"
+	@echo "  opencode-db-vacuum-incremental  Safe PRAGMA incremental_vacuum (online)
 	@echo ""
 	@echo "  --- Recovery ---"
 	@echo "  reap-orphan-pytest    Report stale orphan pytest trees (APPLY=1 to terminate)"
@@ -1909,6 +1914,15 @@ test-e2e-multi-model:
 	 CI_GAME="$${CI_GAME:-}" \
 	 $(UV) run pytest tests/e2e/test_ci_multi_model_pipeline.py -v -s $(PYTEST_ARGS)
 
+test-multi-model-pipeline:
+	@$(UV) run pytest tests/e2e/test_ci_multi_model_pipeline.py tests/e2e/test_multi_model_game_gen.py tests/e2e/test_multi_model_game_pipeline.py tests/e2e/test_multi_model_pipeline_cloud.py tests/e2e/test_cloud_e2e_multi_model.py tests/integration/test_multi_model_pipeline_integration.py -v -s $(PYTEST_ARGS)
+
+test-local-model-pipeline:
+	@$(UV) run pytest tests/e2e/test_local_model_multi_pipeline.py tests/e2e/test_local_model_discovery_eval.py -v -s $(PYTEST_ARGS)
+
+test-project-type-pipeline:
+	@$(UV) run pytest tests/e2e/test_project_type_pipeline.py -v -s $(PYTEST_ARGS)
+
 .PHONY: test-llama-game-gen
 test-llama-game-gen: sync-llama-cpp
 	@echo "=== Llama-3.2-1B Game Gen Test ==="
@@ -2300,7 +2314,7 @@ opencode-disk: ## Bounded OpenCode data usage (OPENCODE_DB, OPENCODE_DATA_DIR, O
 		--max-file-entries "$(OPENCODE_MAX_FILE_ENTRIES)" \
 		$(if $(filter 1,$(OPENCODE_MAINTENANCE_VALIDATE_ONLY)),--validate-only,)
 
-opencode-clean: ## Offline bounded OpenCode DB/cache cleanup (OPENCODE_DB, OPENCODE_DATA_DIR, OPENCODE_DB_TIMEOUT_SECONDS, OPENCODE_DB_BUSY_TIMEOUT_MS, OPENCODE_DB_INCREMENTAL_PAGES, OPENCODE_MAX_FILE_ENTRIES, OPENCODE_MAINTENANCE_VALIDATE_ONLY)
+opencode-clean: ## Offline bounded OpenCode DB/cache cleanup (OPENCODE_DB, OPENCODE_DATA_DIR, OPENCODE_DB_TIMEOUT_SECONDS, OPENCODE_DB_BUSY_TIMEOUT_MS, OPENCODE_DB_INCREMENTAL_PAGES, OPENCODE_MAX_FILE_ENTRIES, OPENCODE_MAINTENANCE_VALIDATE_ONLY, OPENCODE_MAINTENANCE_FORCE)
 	@$(SYSTEM_PYTHON) scripts/opencode_db_maintenance.py clean \
 		$(if $(filter command line environment,$(origin OPENCODE_DB)),--db "$(OPENCODE_DB)",) \
 		$(if $(strip $(OPENCODE_DATA_DIR)),--data-dir "$(OPENCODE_DATA_DIR)",) \
@@ -2308,9 +2322,10 @@ opencode-clean: ## Offline bounded OpenCode DB/cache cleanup (OPENCODE_DB, OPENC
 		--busy-timeout-ms "$(OPENCODE_DB_BUSY_TIMEOUT_MS)" \
 		--incremental-pages "$(OPENCODE_DB_INCREMENTAL_PAGES)" \
 		--max-file-entries "$(OPENCODE_MAX_FILE_ENTRIES)" \
-		$(if $(filter 1,$(OPENCODE_MAINTENANCE_VALIDATE_ONLY)),--validate-only,)
+		$(if $(filter 1,$(OPENCODE_MAINTENANCE_VALIDATE_ONLY)),--validate-only,) \
+		$(if $(filter 1,$(OPENCODE_MAINTENANCE_FORCE)),--force,)
 
-opencode-clean-hard: ## Offline aggressive cache/log cleanup (OPENCODE_DB, OPENCODE_DATA_DIR, OPENCODE_DB_TIMEOUT_SECONDS, OPENCODE_DB_BUSY_TIMEOUT_MS, OPENCODE_DB_INCREMENTAL_PAGES, OPENCODE_MAX_FILE_ENTRIES, OPENCODE_MAINTENANCE_VALIDATE_ONLY)
+opencode-clean-hard: ## Offline aggressive cache/log cleanup (OPENCODE_DB, OPENCODE_DATA_DIR, OPENCODE_DB_TIMEOUT_SECONDS, OPENCODE_DB_BUSY_TIMEOUT_MS, OPENCODE_DB_INCREMENTAL_PAGES, OPENCODE_MAX_FILE_ENTRIES, OPENCODE_MAINTENANCE_VALIDATE_ONLY, OPENCODE_MAINTENANCE_FORCE)
 	@$(SYSTEM_PYTHON) scripts/opencode_db_maintenance.py clean-hard \
 		$(if $(filter command line environment,$(origin OPENCODE_DB)),--db "$(OPENCODE_DB)",) \
 		$(if $(strip $(OPENCODE_DATA_DIR)),--data-dir "$(OPENCODE_DATA_DIR)",) \
@@ -2318,7 +2333,8 @@ opencode-clean-hard: ## Offline aggressive cache/log cleanup (OPENCODE_DB, OPENC
 		--busy-timeout-ms "$(OPENCODE_DB_BUSY_TIMEOUT_MS)" \
 		--incremental-pages "$(OPENCODE_DB_INCREMENTAL_PAGES)" \
 		--max-file-entries "$(OPENCODE_MAX_FILE_ENTRIES)" \
-		$(if $(filter 1,$(OPENCODE_MAINTENANCE_VALIDATE_ONLY)),--validate-only,)
+		$(if $(filter 1,$(OPENCODE_MAINTENANCE_VALIDATE_ONLY)),--validate-only,) \
+		$(if $(filter 1,$(OPENCODE_MAINTENANCE_FORCE)),--force,)
 
 disk-user-caches: ## Show all user-cache directories accessible to this agent + their sizes
 	@echo "=== user cache footprint ==="
@@ -2373,7 +2389,14 @@ opencode-db-sample: ## Bounded read-only OpenCode timestamp sample (OPENCODE_DB,
 		--busy-timeout-ms "$(OPENCODE_DB_BUSY_TIMEOUT_MS)" \
 		$(if $(filter 1,$(OPENCODE_MAINTENANCE_VALIDATE_ONLY)),--validate-only,)
 
-opencode-db-prune: ## Offline bounded session-tree prune (OPENCODE_DB, OPENCODE_RETENTION_DAYS, OPENCODE_DB_BATCH_SIZE, OPENCODE_DB_MAX_SESSIONS, OPENCODE_DB_TIMEOUT_SECONDS, OPENCODE_DB_BUSY_TIMEOUT_MS, OPENCODE_MAINTENANCE_VALIDATE_ONLY)
+opencode-db-vacuum-incremental: ## Safe PRAGMA incremental_vacuum while OpenCode is running (OPENCODE_DB, OPENCODE_DB_TIMEOUT_SECONDS, OPENCODE_DB_BUSY_TIMEOUT_MS, OPENCODE_DB_INCREMENTAL_PAGES)
+	@$(SYSTEM_PYTHON) scripts/opencode_db_maintenance.py incremental-vacuum \
+		$(if $(filter command line environment,$(origin OPENCODE_DB)),--db "$(OPENCODE_DB)",) \
+		--timeout-seconds "$(OPENCODE_DB_TIMEOUT_SECONDS)" \
+		--busy-timeout-ms "$(OPENCODE_DB_BUSY_TIMEOUT_MS)" \
+		--incremental-pages "$(OPENCODE_DB_INCREMENTAL_PAGES)"
+
+opencode-db-prune: ## Offline bounded session-tree prune (OPENCODE_DB, OPENCODE_RETENTION_DAYS, OPENCODE_DB_BATCH_SIZE, OPENCODE_DB_MAX_SESSIONS, OPENCODE_DB_TIMEOUT_SECONDS, OPENCODE_DB_BUSY_TIMEOUT_MS, OPENCODE_MAINTENANCE_VALIDATE_ONLY, OPENCODE_MAINTENANCE_FORCE)
 	@$(SYSTEM_PYTHON) scripts/opencode_db_maintenance.py prune \
 		$(if $(filter command line environment,$(origin OPENCODE_DB)),--db "$(OPENCODE_DB)",) \
 		--retention-days "$(OPENCODE_RETENTION_DAYS)" \
@@ -2381,7 +2404,8 @@ opencode-db-prune: ## Offline bounded session-tree prune (OPENCODE_DB, OPENCODE_
 		--max-sessions "$(OPENCODE_DB_MAX_SESSIONS)" \
 		--timeout-seconds "$(OPENCODE_DB_TIMEOUT_SECONDS)" \
 		--busy-timeout-ms "$(OPENCODE_DB_BUSY_TIMEOUT_MS)" \
-		$(if $(filter 1,$(OPENCODE_MAINTENANCE_VALIDATE_ONLY)),--validate-only,)
+		$(if $(filter 1,$(OPENCODE_MAINTENANCE_VALIDATE_ONLY)),--validate-only,) \
+		$(if $(filter 1,$(OPENCODE_MAINTENANCE_FORCE)),--force,)
 
 tmp-gludd-worktree-usage:
 	@du -sh /tmp/gludd-worktrees /tmp/gludd-worktrees/* /tmp/gludd-worktrees/*/.venv /tmp/gludd-worktrees/*/.pytest_cache /tmp/gludd-worktrees/*/.mypy_cache /tmp/gludd-worktrees/*/.ruff_cache 2>/dev/null | sort -h | tail -40 || true

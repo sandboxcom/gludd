@@ -66,6 +66,7 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
             return True
         try:
             import httpx
+
             resp = httpx.get(f"{args.daemon_url}/healthz", timeout=1.0)
             return resp.status_code == 200
         except Exception:
@@ -97,9 +98,7 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
         # Fail closed on bad spawn args (out-of-range port, injection-y host,
         # bad worker count / log-level) before any subprocess is created.
         try:
-            validate_daemon_spawn_args(
-                host=_host, port=_port, workers=_workers, log_level=_log_level
-            )
+            validate_daemon_spawn_args(host=_host, port=_port, workers=_workers, log_level=_log_level)
         except ValueError as exc:
             status_msg = f"Start failed: invalid spawn args: {exc}"
             return
@@ -127,6 +126,7 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
                     return
                 try:
                     import httpx
+
                     resp = httpx.get(f"{args.daemon_url}/healthz", timeout=1.0)
                     if resp.status_code == 200:
                         alive = True
@@ -171,6 +171,7 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
 
     def build_controls_table() -> Any:
         import shutil as _shutil2
+
         _tw, _ = _shutil2.get_terminal_size((80, 24))
         sel_idx = tui_state.get("selected_main_idx", -1) if current_view == "main" else -1
         return h._build_controls_table(daemon_running, status_msg, term_width=_tw, selected_idx=sel_idx)
@@ -233,463 +234,516 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
                 Layout(h._wrap_table(build_daemon_table(term_width=left_width)), name="daemon"),
                 Layout(h._wrap_table(build_binary_table(info, term_width=left_width)), name="binaries"),
             )
-            if current_view == "config":
-                body["right"].split(
-                    Layout(h._wrap_table(build_config_table(info, term_width=right_width)), name="config"),
-                )
-            elif current_view == "models":
-                servers = model_mgr.list_servers()
-                _model_table = h._build_model_table(
-                    servers, downloaded_models,
-                    selected_idx=tui_state.get("selected_model_idx", 0),
-                    term_width=right_width,
-                )
-                body["right"].split(
-                    Layout(h._wrap_table(_model_table), name="models"),
-                )
-            elif current_view == "worktrees":
-                import os as _os
-                home = _os.path.expanduser("~")
-                wt_dirs = [
-                    d for d in _os.listdir(home)
-                    if _os.path.isdir(_os.path.join(home, d)) and not d.startswith(".")
-                ]
-                wt_entries = []
-                for d in sorted(wt_dirs)[:15]:
-                    full = _os.path.join(home, d)
-                    agents_path = _os.path.join(full, "AGENTS.md")
-                    is_worktree = _os.path.isfile(agents_path)
-                    status = "has AGENTS.md" if is_worktree else "directory"
-                    wt_entries.append((d, status))
-                _wt_table = h._build_worktrees_table(wt_entries, term_width=right_width)
-                body["right"].split(
-                    Layout(h._wrap_table(_wt_table), name="worktrees"),
-                )
-            elif current_view == "projects":
-                _proj_data: list[dict[str, Any]] = []
-                try:
-                    import httpx
-                    resp = httpx.get(f"{args.daemon_url}/admin/projects", timeout=3.0)
-                    if resp.status_code == 200:
-                        _proj_data = resp.json().get("projects", [])
-                except Exception:
-                    _proj_data = [
-                        {
-                            "project_id": "?",
-                            "name": "Daemon not running",
-                            "weight": 0,
-                            "dispatch_mode": "Start [s]",
-                        }
+            match current_view:
+                case "config":
+                    body["right"].split(
+                        Layout(h._wrap_table(build_config_table(info, term_width=right_width)), name="config"),
+                    )
+                case "models":
+                    servers = model_mgr.list_servers()
+                    _model_table = h._build_model_table(
+                        servers,
+                        downloaded_models,
+                        selected_idx=tui_state.get("selected_model_idx", 0),
+                        term_width=right_width,
+                    )
+                    body["right"].split(
+                        Layout(h._wrap_table(_model_table), name="models"),
+                    )
+                case "worktrees":
+                    import os as _os
+
+                    home = _os.path.expanduser("~")
+                    wt_dirs = [
+                        d for d in _os.listdir(home) if _os.path.isdir(_os.path.join(home, d)) and not d.startswith(".")
                     ]
-                tui_state["projects_data"] = _proj_data
-                _proj_sel = tui_state.get("selected_project_idx", 0)
-                _proj_table = h._build_projects_table(_proj_data, selected_idx=_proj_sel, term_width=right_width)
-                body["right"].split(
-                    Layout(h._wrap_table(_proj_table), name="projects"),
-                )
-            elif current_view == "todos":
-                _todos_data: list[dict[str, Any]] = []
-                try:
-                    import httpx
-                    resp = httpx.get(f"{args.daemon_url}/admin/todos", timeout=3.0)
-                    if resp.status_code == 200:
-                        _todos_data = resp.json().get("todos", [])
-                except Exception:
-                    pass
-                tui_state["todos_data"] = _todos_data
-                _todos_sel = tui_state.get("selected_todo_idx", 0)
-                body["right"].split(
-                    Layout(h._wrap_table(h._build_todos_table(_todos_data, selected_idx=_todos_sel)), name="todos"),
-                )
-            elif current_view == "hooks":
-                _hooks_data: list[dict[str, Any]] = []
-                try:
-                    import httpx
-                    resp = httpx.get(f"{args.daemon_url}/admin/hooks", timeout=3.0)
-                    if resp.status_code == 200:
-                        _hooks_data = resp.json().get("hooks", [])
-                except Exception:
-                    pass
-                tui_state["hooks_data"] = _hooks_data
-                _hooks_sel = tui_state.get("selected_hook_idx", 0)
-                body["right"].split(
-                    Layout(h._wrap_table(h._build_hooks_table(_hooks_data, selected_idx=_hooks_sel)), name="hooks"),
-                )
-            elif current_view == "workers":
-                _workers_data: list[dict[str, Any]] = []
-                try:
-                    import httpx
-                    resp = httpx.get(f"{args.daemon_url}/admin/workers", timeout=3.0)
-                    if resp.status_code == 200:
-                        _workers_data = resp.json().get("workers", [])
-                except Exception:
-                    pass
-                tui_state["workers_data"] = _workers_data
-                _workers_sel = tui_state.get("selected_worker_idx", 0)
-                _wt = h._build_workers_table(
-                    _workers_data, selected_idx=_workers_sel,
-                )
-                body["right"].split(
-                    Layout(h._wrap_table(_wt), name="workers"),
-                )
-            elif current_view == "metrics":
-                _cost_data: dict[str, Any] = {}
-                try:
-                    import httpx
-                    resp = httpx.get(f"{args.daemon_url}/admin/metrics/cost", timeout=3.0)
-                    if resp.status_code == 200:
-                        _cost_data = resp.json()
-                except Exception:
-                    pass
-                body["right"].split(
-                    Layout(h._wrap_table(h._build_metrics_table(_cost_data)), name="metrics"),
-                )
-            elif current_view == "agents":
-                _agents_data: list[dict[str, Any]] = []
-                try:
-                    import httpx
-                    resp = httpx.get(f"{args.daemon_url}/admin/agents", timeout=3.0)
-                    if resp.status_code == 200:
-                        _agents_data = resp.json().get("agents", [])
-                except Exception:
-                    pass
-                body["right"].split(
-                    Layout(h._wrap_table(h._build_agents_table(_agents_data)), name="agents"),
-                )
-            elif current_view == "integrity":
-                _int_changes: list[dict[str, Any]] = []
-                try:
-                    from general_ludd.integrity.scanner import FileIntegrityScanner as _FIS
-                    _scanner = _FIS()
-                    _paths = [info.get("config_dir", ""), info.get("filestore_root", "")]
-                    _paths = [p for p in _paths if p]
-                    _iresult: dict[str, Any] = _scanner.scan(_paths) if _paths else {"scanned": 0, "changes": []}
-                    _int_changes = _iresult.get("changes", [])
-                except Exception:
-                    _int_changes = [{"file": "Scan failed", "type": "error", "approved": False}]
-                _int_table = h._build_integrity_table(_int_changes, term_width=right_width)
-                body["right"].split(
-                    Layout(h._wrap_table(_int_table), name="integrity"),
-                )
-            elif current_view == "ansible":
-                _ans_results = tui_state.get("ansible_search_results", [])
-                _ans_table = h._build_ansible_table(_ans_results, term_width=right_width)
-                body["right"].split(
-                    Layout(h._wrap_table(_ans_table), name="ansible"),
-                )
-            elif current_view == "mcp":
-                _mcp_data: list[dict[str, Any]] = []
-                try:
-                    import httpx
-                    resp = httpx.get(f"{args.daemon_url}/admin/mcp/list", timeout=3.0)
-                    if resp.status_code == 200:
-                        _mcp_data = resp.json().get("servers", resp.json().get("results", []))
-                except Exception:
-                    pass
-                body["right"].split(
-                    Layout(h._wrap_table(h._build_mcp_table(_mcp_data, term_width=right_width)), name="mcp"),
-                )
-            elif current_view == "skills":
-                _skills_data: list[dict[str, Any]] = []
-                try:
-                    import httpx
-                    resp = httpx.get(f"{args.daemon_url}/admin/skills/catalog", timeout=3.0)
-                    if resp.status_code == 200:
-                        _skills_data = resp.json().get("skills", resp.json().get("results", []))
-                except Exception:
-                    pass
-                body["right"].split(
-                    Layout(h._wrap_table(h._build_skills_table(_skills_data, term_width=right_width)), name="skills"),
-                )
-            elif current_view == "compute":
-                _compute_data: list[dict[str, Any]] = []
-                try:
-                    import httpx
-                    resp = httpx.get(f"{args.daemon_url}/admin/compute/endpoints", timeout=3.0)
-                    if resp.status_code == 200:
-                        _compute_data = resp.json().get("endpoints", [])
-                except Exception:
-                    pass
-                body["right"].split(
-                    Layout(
-                        h._wrap_table(h._build_compute_table(
-                            _compute_data, term_width=right_width,
-                        )),
-                        name="compute",
-                    ),
-                )
-            elif current_view == "scores":
-                _scores_data: list[dict[str, Any]] = []
-                try:
-                    import httpx
-                    resp = httpx.get(f"{args.daemon_url}/admin/benchmark/scores", timeout=3.0)
-                    if resp.status_code == 200:
-                        _scores_data = resp.json().get("scores", resp.json().get("results", []))
-                except Exception:
-                    pass
-                body["right"].split(
-                    Layout(h._wrap_table(h._build_scores_table(_scores_data, term_width=right_width)), name="scores"),
-                )
-            elif current_view == "templates":
-                _templates_data: list[dict[str, Any]] = []
-                try:
-                    import httpx
-                    resp = httpx.get(f"{args.daemon_url}/admin/templates", timeout=3.0)
-                    if resp.status_code == 200:
-                        _templates_data = resp.json().get("templates", resp.json().get("profiles", []))
-                except Exception:
-                    pass
-                body["right"].split(
-                    Layout(
-                        h._wrap_table(h._build_templates_table(
-                            _templates_data, term_width=right_width,
-                        )),
-                        name="templates",
-                    ),
-                )
-            elif current_view == "quantization":
-                _quant_data: list[dict[str, Any]] = []
-                try:
-                    import httpx
-                    resp = httpx.get(f"{args.daemon_url}/admin/quantization", timeout=3.0)
-                    if resp.status_code == 200:
-                        _quant_data = resp.json().get("entries", resp.json().get("results", []))
-                except Exception:
-                    pass
-                body["right"].split(
-                    Layout(
-                        h._wrap_table(h._build_quantization_table(
-                            _quant_data, term_width=right_width,
-                        )),
-                        name="quantization",
-                    ),
-                )
-            elif current_view == "filestore":
-                _fs_data: list[dict[str, Any]] = []
-                try:
-                    import httpx
-                    resp = httpx.get(f"{args.daemon_url}/admin/filestore/list", timeout=3.0)
-                    if resp.status_code == 200:
-                        _fs_data = resp.json().get("files", resp.json().get("entries", []))
-                except Exception:
-                    pass
-                body["right"].split(
-                    Layout(h._wrap_table(h._build_filestore_table(_fs_data, term_width=right_width)), name="filestore"),
-                )
-            elif current_view == "deployments":
-                _deploy_data: list[dict[str, Any]] = []
-                try:
-                    import httpx
-                    resp = httpx.get(f"{args.daemon_url}/admin/deployments", timeout=3.0)
-                    if resp.status_code == 200:
-                        _deploy_data = resp.json().get("deployments", [])
-                except Exception:
-                    pass
-                body["right"].split(
-                    Layout(
-                        h._wrap_table(h._build_deployments_table(
-                            _deploy_data, term_width=right_width,
-                        )),
-                        name="deployments",
-                    ),
-                )
-            elif current_view == "leaderboard":
-                _lb_data: list[dict[str, Any]] = []
-                try:
-                    import httpx
-                    resp = httpx.get(f"{args.daemon_url}/admin/benchmark/leaderboard", timeout=3.0)
-                    if resp.status_code == 200:
-                        _lb_data = resp.json().get("leaderboard", resp.json().get("entries", []))
-                except Exception:
-                    pass
-                body["right"].split(
-                    Layout(
-                        h._wrap_table(h._build_leaderboard_table(
-                            _lb_data, term_width=right_width,
-                        )),
-                        name="leaderboard",
-                    ),
-                )
-            elif current_view == "playbooks":
-                _pb_data: list[dict[str, Any]] = []
-                try:
-                    import httpx
-                    resp = httpx.get(f"{args.daemon_url}/admin/playbooks", timeout=3.0)
-                    if resp.status_code == 200:
-                        _pb_data = resp.json().get("playbooks", resp.json().get("entries", []))
-                except Exception:
-                    pass
-                body["right"].split(
-                    Layout(h._wrap_table(h._build_playbooks_table(_pb_data, term_width=right_width)), name="playbooks"),
-                )
-            elif current_view == "slurm":
-                _slurm_data: list[dict[str, Any]] = []
-                try:
-                    import httpx
-                    resp = httpx.get(f"{args.daemon_url}/admin/slurm/jobs", timeout=3.0)
-                    if resp.status_code == 200:
-                        _slurm_data = resp.json().get("jobs", [])
-                except Exception:
-                    pass
-                body["right"].split(
-                    Layout(h._wrap_table(h._build_slurm_table(_slurm_data, term_width=right_width)), name="slurm"),
-                )
-            elif current_view == "health":
-                _health_data: dict[str, Any] = {}
-                try:
-                    import httpx
-                    resp = httpx.get(f"{args.daemon_url}/healthz", timeout=3.0)
-                    if resp.status_code == 200:
-                        _health_data = resp.json()
-                except Exception:
-                    pass
-                tui_state["health_data"] = _health_data
-                body["right"].split(
-                    Layout(h._wrap_table(h._build_health_table(_health_data, term_width=right_width)), name="health"),
-                )
-            elif current_view == "selftest":
-                _selftest_data: dict[str, Any] = tui_state.get("selftest_data", {})
-                body["right"].split(
-                    Layout(
-                        h._wrap_table(
-                            h._build_selftest_table(_selftest_data, term_width=right_width)
+                    wt_entries = []
+                    for d in sorted(wt_dirs)[:15]:
+                        full = _os.path.join(home, d)
+                        agents_path = _os.path.join(full, "AGENTS.md")
+                        is_worktree = _os.path.isfile(agents_path)
+                        status = "has AGENTS.md" if is_worktree else "directory"
+                        wt_entries.append((d, status))
+                    _wt_table = h._build_worktrees_table(wt_entries, term_width=right_width)
+                    body["right"].split(
+                        Layout(h._wrap_table(_wt_table), name="worktrees"),
+                    )
+                case "projects":
+                    _proj_data: list[dict[str, Any]] = []
+                    try:
+                        import httpx
+
+                        resp = httpx.get(f"{args.daemon_url}/admin/projects", timeout=3.0)
+                        if resp.status_code == 200:
+                            _proj_data = resp.json().get("projects", [])
+                    except Exception:
+                        _proj_data = [
+                            {
+                                "project_id": "?",
+                                "name": "Daemon not running",
+                                "weight": 0,
+                                "dispatch_mode": "Start [s]",
+                            }
+                        ]
+                    tui_state["projects_data"] = _proj_data
+                    _proj_sel = tui_state.get("selected_project_idx", 0)
+                    _proj_table = h._build_projects_table(_proj_data, selected_idx=_proj_sel, term_width=right_width)
+                    body["right"].split(
+                        Layout(h._wrap_table(_proj_table), name="projects"),
+                    )
+                case "todos":
+                    _todos_data: list[dict[str, Any]] = []
+                    try:
+                        import httpx
+
+                        resp = httpx.get(f"{args.daemon_url}/admin/todos", timeout=3.0)
+                        if resp.status_code == 200:
+                            _todos_data = resp.json().get("todos", [])
+                    except Exception:
+                        pass
+                    tui_state["todos_data"] = _todos_data
+                    _todos_sel = tui_state.get("selected_todo_idx", 0)
+                    body["right"].split(
+                        Layout(h._wrap_table(h._build_todos_table(_todos_data, selected_idx=_todos_sel)), name="todos"),
+                    )
+                case "hooks":
+                    _hooks_data: list[dict[str, Any]] = []
+                    try:
+                        import httpx
+
+                        resp = httpx.get(f"{args.daemon_url}/admin/hooks", timeout=3.0)
+                        if resp.status_code == 200:
+                            _hooks_data = resp.json().get("hooks", [])
+                    except Exception:
+                        pass
+                    tui_state["hooks_data"] = _hooks_data
+                    _hooks_sel = tui_state.get("selected_hook_idx", 0)
+                    body["right"].split(
+                        Layout(h._wrap_table(h._build_hooks_table(_hooks_data, selected_idx=_hooks_sel)), name="hooks"),
+                    )
+                case "workers":
+                    _workers_data: list[dict[str, Any]] = []
+                    try:
+                        import httpx
+
+                        resp = httpx.get(f"{args.daemon_url}/admin/workers", timeout=3.0)
+                        if resp.status_code == 200:
+                            _workers_data = resp.json().get("workers", [])
+                    except Exception:
+                        pass
+                    tui_state["workers_data"] = _workers_data
+                    _workers_sel = tui_state.get("selected_worker_idx", 0)
+                    _wt = h._build_workers_table(
+                        _workers_data,
+                        selected_idx=_workers_sel,
+                    )
+                    body["right"].split(
+                        Layout(h._wrap_table(_wt), name="workers"),
+                    )
+                case "metrics":
+                    _cost_data: dict[str, Any] = {}
+                    try:
+                        import httpx
+
+                        resp = httpx.get(f"{args.daemon_url}/admin/metrics/cost", timeout=3.0)
+                        if resp.status_code == 200:
+                            _cost_data = resp.json()
+                    except Exception:
+                        pass
+                    body["right"].split(
+                        Layout(h._wrap_table(h._build_metrics_table(_cost_data)), name="metrics"),
+                    )
+                case "agents":
+                    _agents_data: list[dict[str, Any]] = []
+                    try:
+                        import httpx
+
+                        resp = httpx.get(f"{args.daemon_url}/admin/agents", timeout=3.0)
+                        if resp.status_code == 200:
+                            _agents_data = resp.json().get("agents", [])
+                    except Exception:
+                        pass
+                    body["right"].split(
+                        Layout(h._wrap_table(h._build_agents_table(_agents_data)), name="agents"),
+                    )
+                case "integrity":
+                    _int_changes: list[dict[str, Any]] = []
+                    try:
+                        from general_ludd.integrity.scanner import FileIntegrityScanner as _FIS
+
+                        _scanner = _FIS()
+                        _paths = [info.get("config_dir", ""), info.get("filestore_root", "")]
+                        _paths = [p for p in _paths if p]
+                        _iresult: dict[str, Any] = _scanner.scan(_paths) if _paths else {"scanned": 0, "changes": []}
+                        _int_changes = _iresult.get("changes", [])
+                    except Exception:
+                        _int_changes = [{"file": "Scan failed", "type": "error", "approved": False}]
+                    _int_table = h._build_integrity_table(_int_changes, term_width=right_width)
+                    body["right"].split(
+                        Layout(h._wrap_table(_int_table), name="integrity"),
+                    )
+                case "ansible":
+                    _ans_results = tui_state.get("ansible_search_results", [])
+                    _ans_table = h._build_ansible_table(_ans_results, term_width=right_width)
+                    body["right"].split(
+                        Layout(h._wrap_table(_ans_table), name="ansible"),
+                    )
+                case "mcp":
+                    _mcp_data: list[dict[str, Any]] = []
+                    try:
+                        import httpx
+
+                        resp = httpx.get(f"{args.daemon_url}/admin/mcp/list", timeout=3.0)
+                        if resp.status_code == 200:
+                            _mcp_data = resp.json().get("servers", resp.json().get("results", []))
+                    except Exception:
+                        pass
+                    body["right"].split(
+                        Layout(h._wrap_table(h._build_mcp_table(_mcp_data, term_width=right_width)), name="mcp"),
+                    )
+                case "skills":
+                    _skills_data: list[dict[str, Any]] = []
+                    try:
+                        import httpx
+
+                        resp = httpx.get(f"{args.daemon_url}/admin/skills/catalog", timeout=3.0)
+                        if resp.status_code == 200:
+                            _skills_data = resp.json().get("skills", resp.json().get("results", []))
+                    except Exception:
+                        pass
+                    body["right"].split(
+                        Layout(
+                            h._wrap_table(h._build_skills_table(_skills_data, term_width=right_width)), name="skills"
                         ),
-                        name="selftest",
-                    ),
-                )
-            elif current_view == "version":
-                _ver_data = {
-                    "version": info.get("version", "?"),
-                    "python_version": info.get("python_version", "?"),
-                    "platform": info.get("platform", "?"),
-                }
-                body["right"].split(
-                    Layout(h._wrap_table(h._build_version_table(_ver_data, term_width=right_width)), name="version"),
-                )
-            elif current_view == "log-level":
-                _current_level = tui_state.get("current_log_level", "info")
-                body["right"].split(
-                    Layout(
-                        h._wrap_table(
-                            h._build_loglevel_table(_current_level, term_width=right_width)
+                    )
+                case "compute":
+                    _compute_data: list[dict[str, Any]] = []
+                    try:
+                        import httpx
+
+                        resp = httpx.get(f"{args.daemon_url}/admin/compute/endpoints", timeout=3.0)
+                        if resp.status_code == 200:
+                            _compute_data = resp.json().get("endpoints", [])
+                    except Exception:
+                        pass
+                    body["right"].split(
+                        Layout(
+                            h._wrap_table(
+                                h._build_compute_table(
+                                    _compute_data,
+                                    term_width=right_width,
+                                )
+                            ),
+                            name="compute",
                         ),
-                        name="log-level",
-                    ),
-                )
-            elif current_view == "discovered":
-                _disc_data: list[dict[str, Any]] = []
-                try:
-                    import httpx
-                    resp = httpx.get(f"{args.daemon_url}/admin/models/discovered", timeout=3.0)
-                    if resp.status_code == 200:
-                        _disc_data = resp.json().get("profiles", [])
-                except Exception:
-                    pass
-                tui_state["discovered_data"] = _disc_data
-                body["right"].split(
-                    Layout(
-                        h._wrap_table(
-                            h._build_discovered_table(_disc_data, term_width=right_width)
+                    )
+                case "scores":
+                    _scores_data: list[dict[str, Any]] = []
+                    try:
+                        import httpx
+
+                        resp = httpx.get(f"{args.daemon_url}/admin/benchmark/scores", timeout=3.0)
+                        if resp.status_code == 200:
+                            _scores_data = resp.json().get("scores", resp.json().get("results", []))
+                    except Exception:
+                        pass
+                    body["right"].split(
+                        Layout(
+                            h._wrap_table(h._build_scores_table(_scores_data, term_width=right_width)), name="scores"
                         ),
-                        name="discovered",
-                    ),
-                )
-            elif current_view == "code":
-                _code_data: list[dict[str, Any]] = tui_state.get("code_search_results", [])
-                body["right"].split(
-                    Layout(h._wrap_table(h._build_code_table(_code_data, term_width=right_width)), name="code"),
-                )
-            else:
-                body["right"].split(
-                    Layout(h._wrap_table(build_info_table(info, term_width=right_width)), name="info"),
-                )
-        if current_view == "edit":
-            header_text = "Config Editor \u2014 [c] exit  [q] quit"
-        elif current_view == "models":
-            if tui_state.get("input_mode") == "models_add":
-                _idx = tui_state.get("input_field_index", 0)
-                _fields = tui_state.get("input_fields", [])
-                _label = _fields[_idx]["label"] if _idx < len(_fields) else "?"
-                header_text = (
-                    f"Add Model \u2014 enter {_label}: "
-                    f"{tui_state.get('input_buffer', '')}_ "
-                    "\u2014 [Enter] next [Esc] cancel"
-                )
-            else:
-                header_text = "Model Services \u2014 [m] exit  [a]dd  [q] quit"
-        elif current_view == "worktrees":
-            header_text = "Projects & Worktrees \u2014 [w] exit  [q] quit"
-        elif current_view == "projects":
-            header_text = "Registered Projects \u2014 [p] exit  [a]dd  [d]elete  [q] quit"
-        elif current_view == "todos":
-            header_text = "Todos \u2014 [t] exit  [q] quit"
-        elif current_view == "hooks":
-            header_text = "Hooks \u2014 [h] exit  [q] quit"
-        elif current_view == "workers":
-            header_text = "Workers \u2014 [o] exit  [q] quit"
-        elif current_view == "metrics":
-            header_text = "Metrics \u2014 [x] exit  [q] quit"
-        elif current_view == "agents":
-            header_text = "Agents \u2014 [g] exit  [q] quit"
-        elif current_view == "integrity":
-            header_text = "Integrity \u2014 [i] exit  [q] quit"
-        elif current_view == "ansible":
-            if tui_state.get("input_mode") == "ansible_search":
-                header_text = f"Search Galaxy: {tui_state.get('input_buffer', '')}_ \u2014 [Enter] search [Esc] cancel"
-            else:
-                header_text = "Ansible Galaxy \u2014 [a] exit  [s]earch  [q] quit"
-        elif current_view == "mcp":
-            if tui_state.get("input_mode") == "mcp_search":
-                header_text = f"Search MCP: {tui_state.get('input_buffer', '')}_ \u2014 [Enter] search [Esc] cancel"
-            else:
-                header_text = "MCP Servers \u2014 [u] exit  [s]earch  [q] quit"
-        elif current_view == "skills":
-            if tui_state.get("input_mode") == "skills_search":
-                header_text = f"Search Skills: {tui_state.get('input_buffer', '')}_ \u2014 [Enter] search [Esc] cancel"
-            else:
-                header_text = "Skills \u2014 [j] exit  [s]earch  [i]nstall  [q] quit"
-        elif current_view == "compute":
-            if tui_state.get("input_mode") == "compute_register":
-                header_text = f"Register: {tui_state.get('input_buffer', '')}_ \u2014 [Enter] next [Esc] cancel"
-            else:
-                header_text = "Compute \u2014 [e] exit  [a]dd  [q] quit"
-        elif current_view == "scores":
-            header_text = "Scores \u2014 [b] exit  [q] quit"
-        elif current_view == "templates":
-            header_text = "Templates \u2014 [l] exit  [r]efresh  [q] quit"
-        elif current_view == "quantization":
-            header_text = "Quantization \u2014 [n] exit  [d]etect  [q] quit"
-        elif current_view == "filestore":
-            header_text = "Filestore \u2014 [f] exit  [q] quit"
-        elif current_view == "deployments":
-            header_text = "Deployments \u2014 [z] exit  [q] quit"
-        elif current_view == "leaderboard":
-            header_text = "Leaderboard \u2014 [y] exit  [q] quit"
-        elif current_view == "playbooks":
-            header_text = "Playbooks \u2014 [r]efresh  [P] exit  [q] quit"
-        elif current_view == "slurm":
-            header_text = "Slurm \u2014 [L] exit  [q] quit"
-        elif current_view == "health":
-            header_text = "Health \u2014 [r]efresh  [H] exit  [q] quit"
-        elif current_view == "selftest":
-            header_text = "Selftest \u2014 [r]un  [T] exit  [q] quit"
-        elif current_view == "version":
-            header_text = "Version \u2014 [0] exit  [q] quit"
-        elif current_view == "log-level":
-            header_text = "Log Level \u2014 [c]ycle  [1] exit  [q] quit"
-        elif current_view == "discovered":
-            header_text = "Discovered Models \u2014 [r]efresh  [D] exit  [q] quit"
-        elif current_view == "code":
-            if tui_state.get("input_mode") == "code_search":
-                header_text = f"Search code: {tui_state.get('input_buffer', '')}_ \u2014 [Enter] search [Esc] cancel"
-            elif tui_state.get("input_mode") == "code_graph":
-                header_text = f"Graph source: {tui_state.get('input_buffer', '')}_ \u2014 [Enter] graph [Esc] cancel"
-            else:
-                header_text = "Code Intel \u2014 [s]earch  [g]raph  [C] exit  [q] quit"
-        elif current_view == "config":
-            header_text = "TUI | s:k:p:i:r:q | v:main c:edit"
-        else:
-            header_text = "TUI | s:k:r:i:c:v | a:d:m:w:p:t:h:o:x:g | u:j:e:b:l:n:f:z:y:P"
+                    )
+                case "templates":
+                    _templates_data: list[dict[str, Any]] = []
+                    try:
+                        import httpx
+
+                        resp = httpx.get(f"{args.daemon_url}/admin/templates", timeout=3.0)
+                        if resp.status_code == 200:
+                            _templates_data = resp.json().get("templates", resp.json().get("profiles", []))
+                    except Exception:
+                        pass
+                    body["right"].split(
+                        Layout(
+                            h._wrap_table(
+                                h._build_templates_table(
+                                    _templates_data,
+                                    term_width=right_width,
+                                )
+                            ),
+                            name="templates",
+                        ),
+                    )
+                case "quantization":
+                    _quant_data: list[dict[str, Any]] = []
+                    try:
+                        import httpx
+
+                        resp = httpx.get(f"{args.daemon_url}/admin/quantization", timeout=3.0)
+                        if resp.status_code == 200:
+                            _quant_data = resp.json().get("entries", resp.json().get("results", []))
+                    except Exception:
+                        pass
+                    body["right"].split(
+                        Layout(
+                            h._wrap_table(
+                                h._build_quantization_table(
+                                    _quant_data,
+                                    term_width=right_width,
+                                )
+                            ),
+                            name="quantization",
+                        ),
+                    )
+                case "filestore":
+                    _fs_data: list[dict[str, Any]] = []
+                    try:
+                        import httpx
+
+                        resp = httpx.get(f"{args.daemon_url}/admin/filestore/list", timeout=3.0)
+                        if resp.status_code == 200:
+                            _fs_data = resp.json().get("files", resp.json().get("entries", []))
+                    except Exception:
+                        pass
+                    body["right"].split(
+                        Layout(
+                            h._wrap_table(h._build_filestore_table(_fs_data, term_width=right_width)), name="filestore"
+                        ),
+                    )
+                case "deployments":
+                    _deploy_data: list[dict[str, Any]] = []
+                    try:
+                        import httpx
+
+                        resp = httpx.get(f"{args.daemon_url}/admin/deployments", timeout=3.0)
+                        if resp.status_code == 200:
+                            _deploy_data = resp.json().get("deployments", [])
+                    except Exception:
+                        pass
+                    body["right"].split(
+                        Layout(
+                            h._wrap_table(
+                                h._build_deployments_table(
+                                    _deploy_data,
+                                    term_width=right_width,
+                                )
+                            ),
+                            name="deployments",
+                        ),
+                    )
+                case "leaderboard":
+                    _lb_data: list[dict[str, Any]] = []
+                    try:
+                        import httpx
+
+                        resp = httpx.get(f"{args.daemon_url}/admin/benchmark/leaderboard", timeout=3.0)
+                        if resp.status_code == 200:
+                            _lb_data = resp.json().get("leaderboard", resp.json().get("entries", []))
+                    except Exception:
+                        pass
+                    body["right"].split(
+                        Layout(
+                            h._wrap_table(
+                                h._build_leaderboard_table(
+                                    _lb_data,
+                                    term_width=right_width,
+                                )
+                            ),
+                            name="leaderboard",
+                        ),
+                    )
+                case "playbooks":
+                    _pb_data: list[dict[str, Any]] = []
+                    try:
+                        import httpx
+
+                        resp = httpx.get(f"{args.daemon_url}/admin/playbooks", timeout=3.0)
+                        if resp.status_code == 200:
+                            _pb_data = resp.json().get("playbooks", resp.json().get("entries", []))
+                    except Exception:
+                        pass
+                    body["right"].split(
+                        Layout(
+                            h._wrap_table(h._build_playbooks_table(_pb_data, term_width=right_width)), name="playbooks"
+                        ),
+                    )
+                case "slurm":
+                    _slurm_data: list[dict[str, Any]] = []
+                    try:
+                        import httpx
+
+                        resp = httpx.get(f"{args.daemon_url}/admin/slurm/jobs", timeout=3.0)
+                        if resp.status_code == 200:
+                            _slurm_data = resp.json().get("jobs", [])
+                    except Exception:
+                        pass
+                    body["right"].split(
+                        Layout(h._wrap_table(h._build_slurm_table(_slurm_data, term_width=right_width)), name="slurm"),
+                    )
+                case "health":
+                    _health_data: dict[str, Any] = {}
+                    try:
+                        import httpx
+
+                        resp = httpx.get(f"{args.daemon_url}/healthz", timeout=3.0)
+                        if resp.status_code == 200:
+                            _health_data = resp.json()
+                    except Exception:
+                        pass
+                    tui_state["health_data"] = _health_data
+                    body["right"].split(
+                        Layout(
+                            h._wrap_table(h._build_health_table(_health_data, term_width=right_width)), name="health"
+                        ),
+                    )
+                case "selftest":
+                    _selftest_data: dict[str, Any] = tui_state.get("selftest_data", {})
+                    body["right"].split(
+                        Layout(
+                            h._wrap_table(h._build_selftest_table(_selftest_data, term_width=right_width)),
+                            name="selftest",
+                        ),
+                    )
+                case "version":
+                    _ver_data = {
+                        "version": info.get("version", "?"),
+                        "python_version": info.get("python_version", "?"),
+                        "platform": info.get("platform", "?"),
+                    }
+                    body["right"].split(
+                        Layout(
+                            h._wrap_table(h._build_version_table(_ver_data, term_width=right_width)), name="version"
+                        ),
+                    )
+                case "log-level":
+                    _current_level = tui_state.get("current_log_level", "info")
+                    body["right"].split(
+                        Layout(
+                            h._wrap_table(h._build_loglevel_table(_current_level, term_width=right_width)),
+                            name="log-level",
+                        ),
+                    )
+                case "discovered":
+                    _disc_data: list[dict[str, Any]] = []
+                    try:
+                        import httpx
+
+                        resp = httpx.get(f"{args.daemon_url}/admin/models/discovered", timeout=3.0)
+                        if resp.status_code == 200:
+                            _disc_data = resp.json().get("profiles", [])
+                    except Exception:
+                        pass
+                    tui_state["discovered_data"] = _disc_data
+                    body["right"].split(
+                        Layout(
+                            h._wrap_table(h._build_discovered_table(_disc_data, term_width=right_width)),
+                            name="discovered",
+                        ),
+                    )
+                case "code":
+                    _code_data: list[dict[str, Any]] = tui_state.get("code_search_results", [])
+                    body["right"].split(
+                        Layout(h._wrap_table(h._build_code_table(_code_data, term_width=right_width)), name="code"),
+                    )
+                case _:
+                    body["right"].split(
+                        Layout(h._wrap_table(build_info_table(info, term_width=right_width)), name="info"),
+                    )
+        match current_view:
+            case "edit":
+                header_text = "Config Editor \u2014 [c] exit  [q] quit"
+            case "models":
+                if tui_state.get("input_mode") == "models_add":
+                    _idx = tui_state.get("input_field_index", 0)
+                    _fields = tui_state.get("input_fields", [])
+                    _label = _fields[_idx]["label"] if _idx < len(_fields) else "?"
+                    header_text = (
+                        f"Add Model \u2014 enter {_label}: "
+                        f"{tui_state.get('input_buffer', '')}_ "
+                        "\u2014 [Enter] next [Esc] cancel"
+                    )
+                else:
+                    header_text = "Model Services \u2014 [m] exit  [a]dd  [q] quit"
+            case "worktrees":
+                header_text = "Projects & Worktrees \u2014 [w] exit  [q] quit"
+            case "projects":
+                header_text = "Registered Projects \u2014 [p] exit  [a]dd  [d]elete  [q] quit"
+            case "todos":
+                header_text = "Todos \u2014 [t] exit  [q] quit"
+            case "hooks":
+                header_text = "Hooks \u2014 [h] exit  [q] quit"
+            case "workers":
+                header_text = "Workers \u2014 [o] exit  [q] quit"
+            case "metrics":
+                header_text = "Metrics \u2014 [x] exit  [q] quit"
+            case "agents":
+                header_text = "Agents \u2014 [g] exit  [q] quit"
+            case "integrity":
+                header_text = "Integrity \u2014 [i] exit  [q] quit"
+            case "ansible":
+                if tui_state.get("input_mode") == "ansible_search":
+                    header_text = (
+                        f"Search Galaxy: {tui_state.get('input_buffer', '')}_ \u2014 [Enter] search [Esc] cancel"
+                    )
+                else:
+                    header_text = "Ansible Galaxy \u2014 [a] exit  [s]earch  [q] quit"
+            case "mcp":
+                if tui_state.get("input_mode") == "mcp_search":
+                    header_text = f"Search MCP: {tui_state.get('input_buffer', '')}_ \u2014 [Enter] search [Esc] cancel"
+                else:
+                    header_text = "MCP Servers \u2014 [u] exit  [s]earch  [q] quit"
+            case "skills":
+                if tui_state.get("input_mode") == "skills_search":
+                    header_text = (
+                        f"Search Skills: {tui_state.get('input_buffer', '')}_ \u2014 [Enter] search [Esc] cancel"
+                    )
+                else:
+                    header_text = "Skills \u2014 [j] exit  [s]earch  [i]nstall  [q] quit"
+            case "compute":
+                if tui_state.get("input_mode") == "compute_register":
+                    header_text = f"Register: {tui_state.get('input_buffer', '')}_ \u2014 [Enter] next [Esc] cancel"
+                else:
+                    header_text = "Compute \u2014 [e] exit  [a]dd  [q] quit"
+            case "scores":
+                header_text = "Scores \u2014 [b] exit  [q] quit"
+            case "templates":
+                header_text = "Templates \u2014 [l] exit  [r]efresh  [q] quit"
+            case "quantization":
+                header_text = "Quantization \u2014 [n] exit  [d]etect  [q] quit"
+            case "filestore":
+                header_text = "Filestore \u2014 [f] exit  [q] quit"
+            case "deployments":
+                header_text = "Deployments \u2014 [z] exit  [q] quit"
+            case "leaderboard":
+                header_text = "Leaderboard \u2014 [y] exit  [q] quit"
+            case "playbooks":
+                header_text = "Playbooks \u2014 [r]efresh  [P] exit  [q] quit"
+            case "slurm":
+                header_text = "Slurm \u2014 [L] exit  [q] quit"
+            case "health":
+                header_text = "Health \u2014 [r]efresh  [H] exit  [q] quit"
+            case "selftest":
+                header_text = "Selftest \u2014 [r]un  [T] exit  [q] quit"
+            case "version":
+                header_text = "Version \u2014 [0] exit  [q] quit"
+            case "log-level":
+                header_text = "Log Level \u2014 [c]ycle  [1] exit  [q] quit"
+            case "discovered":
+                header_text = "Discovered Models \u2014 [r]efresh  [D] exit  [q] quit"
+            case "code":
+                if tui_state.get("input_mode") == "code_search":
+                    header_text = (
+                        f"Search code: {tui_state.get('input_buffer', '')}_ \u2014 [Enter] search [Esc] cancel"
+                    )
+                elif tui_state.get("input_mode") == "code_graph":
+                    header_text = (
+                        f"Graph source: {tui_state.get('input_buffer', '')}_ \u2014 [Enter] graph [Esc] cancel"
+                    )
+                else:
+                    header_text = "Code Intel \u2014 [s]earch  [g]raph  [C] exit  [q] quit"
+            case "config":
+                header_text = "TUI | s:k:p:i:r:q | v:main c:edit"
+            case _:
+                header_text = "TUI | s:k:r:i:c:v | a:d:m:w:p:t:h:o:x:g | u:j:e:b:l:n:f:z:y:P"
         _bc = render_breadcrumb(tui_state.get("breadcrumb", ["main"]))
         header_text = f"{_bc}  |  {status_msg}" if status_msg else _bc
         layout["header"].update(Panel(header_text, style="bold white on blue"))
@@ -699,10 +753,17 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
     def handle_key(info: dict[str, Any], ch: str) -> bool:
         nonlocal current_view, daemon_running, status_msg, config_nav, model_mgr
         if tui_state.get("input_mode") in (
-            "models_add", "models_search", "ansible_search",
-            "projects_add", "projects_set_weight",
-            "mcp_search", "skills_search", "compute_register",
-            "todos_add", "code_search", "code_graph",
+            "models_add",
+            "models_search",
+            "ansible_search",
+            "projects_add",
+            "projects_set_weight",
+            "mcp_search",
+            "skills_search",
+            "compute_register",
+            "todos_add",
+            "code_search",
+            "code_graph",
         ):
             tui_state["current_view"] = current_view
             tui_state["status_msg"] = status_msg
@@ -795,6 +856,7 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
                 push_breadcrumb(tui_state, "integrity")
                 try:
                     from general_ludd.integrity.scanner import FileIntegrityScanner
+
                     scanner = FileIntegrityScanner()
                     paths = [info.get("config_dir", ""), info.get("filestore_root", "")]
                     paths = [p for p in paths if p]
@@ -825,6 +887,7 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
                 import json as _json
 
                 import httpx
+
                 resp = httpx.post(
                     f"{args.daemon_url}/admin/projects",
                     content=_json.dumps({"name": "new-project", "weight": 10}),
@@ -843,18 +906,18 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
         if current_view == "projects" and ch == "d":
             try:
                 import httpx
+
                 resp = httpx.get(f"{args.daemon_url}/admin/projects", timeout=3.0)
                 if resp.status_code == 200:
                     projects = resp.json().get("projects", [])
                     if projects:
                         pid = projects[0].get("project_id", "")
                         resp2 = httpx.delete(
-                            f"{args.daemon_url}/admin/projects/{pid}", timeout=5.0,
+                            f"{args.daemon_url}/admin/projects/{pid}",
+                            timeout=5.0,
                         )
                         status_msg = (
-                            f"Removed {pid}"
-                            if resp2.status_code == 200
-                            else f"Remove failed: {resp2.status_code}"
+                            f"Removed {pid}" if resp2.status_code == 200 else f"Remove failed: {resp2.status_code}"
                         )
                     else:
                         status_msg = "No projects to remove"
@@ -941,14 +1004,50 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
         elif ch == "r":
             daemon_running = detect_daemon()
             status_msg = "Refreshed"
-        elif ch in (
-            "u", "j", "e", "b", "l", "n", "f", "z", "y", "P",
-            "R", "L", "H", "T", "0", "1", "D", "C",
-        ) or current_view in (
-            "todos", "workers", "models", "mcp", "skills", "compute",
-            "projects", "hooks", "integrity", "agents", "slurm",
-            "health", "selftest", "version", "log-level", "discovered", "code",
-        ) or ch in ("\x1b[B", "\x1b[A", "\r"):
+        elif (
+            ch
+            in (
+                "u",
+                "j",
+                "e",
+                "b",
+                "l",
+                "n",
+                "f",
+                "z",
+                "y",
+                "P",
+                "R",
+                "L",
+                "H",
+                "T",
+                "0",
+                "1",
+                "D",
+                "C",
+            )
+            or current_view
+            in (
+                "todos",
+                "workers",
+                "models",
+                "mcp",
+                "skills",
+                "compute",
+                "projects",
+                "hooks",
+                "integrity",
+                "agents",
+                "slurm",
+                "health",
+                "selftest",
+                "version",
+                "log-level",
+                "discovered",
+                "code",
+            )
+            or ch in ("\x1b[B", "\x1b[A", "\r")
+        ):
             tui_state["current_view"] = current_view
             tui_state["status_msg"] = status_msg
             tui_handler.handle_key(ch)
@@ -1007,6 +1106,7 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
                         elif not is_release and btn_code in (0, 1, 2, 32, 33, 34):
                             _mouse_dragging = True
                             import shutil as _shutil_mouse
+
                             tw, _th = _shutil_mouse.get_terminal_size((80, 24))
                             new_w = max(20, min(col, tw - 20))
                             tui_state["left_panel_width"] = new_w

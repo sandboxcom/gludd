@@ -141,12 +141,21 @@ def is_opencode_running(
     return False
 
 
-def _require_opencode_stopped(process_check: ProcessCheck, emit: Emit) -> None:
+def _require_opencode_stopped(
+    process_check: ProcessCheck,
+    emit: Emit,
+    *,
+    force: bool = False,
+) -> None:
     emit("phase=safety-check status=checking")
     if process_check():
-        raise OpenCodeRunningError(
-            "OpenCode is still running; stop every OpenCode process before cleanup"
-        )
+        if force:
+            emit(
+                "phase=safety-check status=force-override "
+                'warning="OpenCode appears to be running; --force bypasses the safety guard"'
+            )
+            return
+        raise OpenCodeRunningError("OpenCode is still running; stop every OpenCode process before cleanup")
     emit("phase=safety-check status=stopped")
 
 
@@ -295,17 +304,12 @@ def _quoted(identifier: str) -> str:
 
 
 def _table_names(connection: sqlite3.Connection) -> set[str]:
-    rows = connection.execute(
-        "SELECT name FROM sqlite_master WHERE type='table'"
-    ).fetchall()
+    rows = connection.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
     return {str(row[0]) for row in rows}
 
 
 def _columns(connection: sqlite3.Connection, table: str) -> set[str]:
-    return {
-        str(row[1])
-        for row in connection.execute(f"PRAGMA table_info({_quoted(table)})").fetchall()
-    }
+    return {str(row[1]) for row in connection.execute(f"PRAGMA table_info({_quoted(table)})").fetchall()}
 
 
 def _directory_usage(
@@ -326,13 +330,9 @@ def _directory_usage(
     stack = [directory]
     while stack:
         if entries >= config.max_file_entries:
-            raise MaintenanceError(
-                f"disk inspection reached {config.max_file_entries} entries"
-            )
+            raise MaintenanceError(f"disk inspection reached {config.max_file_entries} entries")
         if time.monotonic() >= deadline:
-            raise MaintenanceTimeoutError(
-                f"disk inspection timed out after {entries} entries"
-            )
+            raise MaintenanceTimeoutError(f"disk inspection timed out after {entries} entries")
         entry = stack.pop()
         entries += 1
         if entries % 1_000 == 0:
@@ -342,19 +342,13 @@ def _directory_usage(
         if entry.is_dir():
             for child in entry.iterdir():
                 if entries + len(stack) >= config.max_file_entries:
-                    raise MaintenanceError(
-                        f"disk inspection reached {config.max_file_entries} entries"
-                    )
+                    raise MaintenanceError(f"disk inspection reached {config.max_file_entries} entries")
                 if time.monotonic() >= deadline:
-                    raise MaintenanceTimeoutError(
-                        f"disk inspection timed out after {entries} entries"
-                    )
+                    raise MaintenanceTimeoutError(f"disk inspection timed out after {entries} entries")
                 stack.append(child)
         elif entry.is_file():
             total_bytes += entry.stat().st_size
-    emit(
-        f"phase=disk label={label} bytes={total_bytes} entries={max(entries - 1, 0)}"
-    )
+    emit(f"phase=disk label={label} bytes={total_bytes} entries={max(entries - 1, 0)}")
     return total_bytes, max(entries - 1, 0)
 
 
@@ -377,10 +371,7 @@ def inspect_database(
             (Path(f"{database}-shm"), "shm"),
         ):
             size = path.stat().st_size if path.is_file() else 0
-            emit(
-                f"phase=disk label={label} bytes={size} "
-                f"status={'present' if path.is_file() else 'absent'}"
-            )
+            emit(f"phase=disk label={label} bytes={size} status={'present' if path.is_file() else 'absent'}")
         _directory_usage(data_directory / "tool-output", config, deadline, emit, "tool-output")
         _directory_usage(data_directory / "log", config, deadline, emit, "log")
         return
@@ -395,9 +386,7 @@ def inspect_database(
         tables = sorted(_table_names(connection))
         if report == "stats":
             for table in tables:
-                row = connection.execute(
-                    f"SELECT COUNT(*) FROM {_quoted(table)}"
-                ).fetchone()
+                row = connection.execute(f"SELECT COUNT(*) FROM {_quoted(table)}").fetchone()
                 count = int(row[0]) if row else 0
                 emit(f"phase=stats table={table} rows={count}")
         elif report == "schema":
@@ -413,10 +402,7 @@ def inspect_database(
                     f"SELECT MIN(time_created), MAX(time_created) FROM {_quoted(table)}"
                 ).fetchone()
                 minimum, maximum = row if row else (None, None)
-                emit(
-                    f"phase=sample table={table} min_time_created={minimum} "
-                    f"max_time_created={maximum}"
-                )
+                emit(f"phase=sample table={table} min_time_created={minimum} max_time_created={maximum}")
         else:
             raise MaintenanceError(f"unknown inspection report: {report}")
     except sqlite3.Error as exc:
@@ -441,17 +427,13 @@ def _validate_prune_schema(
             raise SchemaError(f"{table} table has no aggregate_id column")
     foreign_keys_by_table: dict[str, list[tuple[object, ...]]] = {}
     for table in sorted(tables):
-        foreign_keys = connection.execute(
-            f"PRAGMA foreign_key_list({_quoted(table)})"
-        ).fetchall()
+        foreign_keys = connection.execute(f"PRAGMA foreign_key_list({_quoted(table)})").fetchall()
         foreign_keys_by_table[table] = foreign_keys
         for foreign_key in foreign_keys:
             referenced_table = str(foreign_key[2])
             on_delete = str(foreign_key[6]).upper()
             if referenced_table == "session" and on_delete != "CASCADE":
-                raise SchemaError(
-                    f"{table} references session without ON DELETE CASCADE"
-                )
+                raise SchemaError(f"{table} references session without ON DELETE CASCADE")
     for child, child_column, parent in REQUIRED_CASCADE_EDGES:
         if child not in tables:
             continue
@@ -463,10 +445,7 @@ def _validate_prune_schema(
             and str(foreign_key[6]).upper() == "CASCADE"
         ]
         if not matching_edges:
-            raise SchemaError(
-                f"{child}.{child_column} is missing required ON DELETE CASCADE "
-                f"to {parent}"
-            )
+            raise SchemaError(f"{child}.{child_column} is missing required ON DELETE CASCADE to {parent}")
     for table in PRUNE_TABLES:
         if table not in tables:
             emit(f"phase=skip table={table} reason=absent")
@@ -482,8 +461,7 @@ def _select_session_tree(
 ) -> list[str]:
     if not has_parent_id:
         rows = connection.execute(
-            "SELECT id FROM session WHERE time_created < ? "
-            "ORDER BY time_created, id LIMIT ?",
+            "SELECT id FROM session WHERE time_created < ? ORDER BY time_created, id LIMIT ?",
             (cutoff_ms, root_limit),
         ).fetchall()
         return [str(row[0]) for row in rows]
@@ -526,8 +504,7 @@ def _delete_ids(
     for chunk in _chunks(identifiers, chunk_size):
         placeholders = ",".join("?" for _item in chunk)
         cursor = connection.execute(
-            f"DELETE FROM {_quoted(table)} "
-            f"WHERE {_quoted(column)} IN ({placeholders})",
+            f"DELETE FROM {_quoted(table)} WHERE {_quoted(column)} IN ({placeholders})",
             tuple(chunk),
         )
         removed += max(cursor.rowcount, 0)
@@ -539,10 +516,7 @@ def _checkpoint_passive(connection: sqlite3.Connection, emit: Emit) -> None:
     if row is None:
         raise MaintenanceError("PASSIVE WAL checkpoint returned no status")
     busy, log_pages, checkpointed_pages = (int(value) for value in row[:3])
-    emit(
-        "phase=checkpoint mode=PASSIVE "
-        f"busy={busy} log_pages={log_pages} checkpointed_pages={checkpointed_pages}"
-    )
+    emit(f"phase=checkpoint mode=PASSIVE busy={busy} log_pages={log_pages} checkpointed_pages={checkpointed_pages}")
     if busy:
         raise DatabaseBusyError("PASSIVE WAL checkpoint reported a busy database")
 
@@ -554,15 +528,14 @@ def prune_database(
     now_ms: int | None = None,
     process_check: ProcessCheck = is_opencode_running,
     emit: Emit = _print_progress,
+    force: bool = False,
 ) -> PruneResult:
     """Delete bounded expired session trees and their event aggregates."""
 
     config.validate()
-    _require_opencode_stopped(process_check, emit)
+    _require_opencode_stopped(process_check, emit, force=force)
     deadline = time.monotonic() + config.timeout_seconds
-    cutoff_ms = (now_ms if now_ms is not None else time.time_ns() // 1_000_000) - (
-        config.retention_days * 86_400_000
-    )
+    cutoff_ms = (now_ms if now_ms is not None else time.time_ns() // 1_000_000) - (config.retention_days * 86_400_000)
     emit(
         f"phase=plan cutoff_ms={cutoff_ms} batch_size={config.batch_size} "
         f"max_sessions={config.max_sessions} timeout_seconds={config.timeout_seconds:g}"
@@ -603,7 +576,7 @@ def prune_database(
                     f"tree_sessions={len(identifiers)} remaining={remaining}"
                 )
                 break
-            _require_opencode_stopped(process_check, emit)
+            _require_opencode_stopped(process_check, emit, force=force)
             try:
                 connection.execute("BEGIN IMMEDIATE")
                 removed_events = (
@@ -636,9 +609,7 @@ def prune_database(
                     config.batch_size,
                 )
                 if removed_sessions != len(identifiers):
-                    raise SchemaError(
-                        "session set changed during maintenance; transaction rolled back"
-                    )
+                    raise SchemaError("session set changed during maintenance; transaction rolled back")
                 connection.commit()
             except sqlite3.Error as exc:
                 connection.rollback()
@@ -692,11 +663,12 @@ def maintain_database(
     process_check: ProcessCheck = is_opencode_running,
     emit: Emit = _print_progress,
     _deadline: float | None = None,
+    force: bool = False,
 ) -> None:
     """Run bounded optimize/checkpoint work without full-file compaction."""
 
     config.validate()
-    _require_opencode_stopped(process_check, emit)
+    _require_opencode_stopped(process_check, emit, force=force)
     deadline = _deadline if _deadline is not None else time.monotonic() + config.timeout_seconds
     connection = _connect(
         database,
@@ -706,7 +678,7 @@ def maintain_database(
         phase="maintenance",
     )
     try:
-        _require_opencode_stopped(process_check, emit)
+        _require_opencode_stopped(process_check, emit, force=force)
         connection.execute("BEGIN IMMEDIATE")
         connection.execute("PRAGMA optimize")
         connection.commit()
@@ -715,27 +687,15 @@ def maintain_database(
         auto_vacuum = connection.execute("PRAGMA auto_vacuum").fetchone()
         auto_vacuum_mode = int(auto_vacuum[0]) if auto_vacuum else 0
         if auto_vacuum_mode == 2 and config.incremental_pages:
-            connection.execute(
-                f"PRAGMA incremental_vacuum({config.incremental_pages})"
-            )
-            emit(
-                "phase=compact mode=incremental status=complete "
-                f"max_pages={config.incremental_pages}"
-            )
+            connection.execute(f"PRAGMA incremental_vacuum({config.incremental_pages})")
+            emit(f"phase=compact mode=incremental status=complete max_pages={config.incremental_pages}")
         else:
-            reason = (
-                "page-budget-zero"
-                if auto_vacuum_mode == 2
-                else "auto-vacuum-not-incremental"
-            )
+            reason = "page-budget-zero" if auto_vacuum_mode == 2 else "auto-vacuum-not-incremental"
             emit(f"phase=compact mode=incremental status=skipped reason={reason}")
         free_pages = connection.execute("PRAGMA freelist_count").fetchone()
         page_size = connection.execute("PRAGMA page_size").fetchone()
         reusable = int(free_pages[0]) * int(page_size[0]) if free_pages and page_size else 0
-        emit(
-            "phase=compact mode=full status=disabled reason=headroom-unsafe "
-            f"reusable_bytes={reusable}"
-        )
+        emit(f"phase=compact mode=full status=disabled reason=headroom-unsafe reusable_bytes={reusable}")
     except sqlite3.Error as exc:
         connection.rollback()
         raise _translate_sqlite_error(exc) from exc
@@ -750,18 +710,16 @@ def _file_budget_checkpoint(
     deadline: float,
     process_check: ProcessCheck,
     emit: Emit,
+    force: bool = False,
 ) -> None:
     if scanned >= config.max_file_entries:
-        raise MaintenanceError(
-            f"file-entry limit reached after {scanned} entries; cleanup is partial"
-        )
+        raise MaintenanceError(f"file-entry limit reached after {scanned} entries; cleanup is partial")
     if time.monotonic() >= deadline:
-        raise MaintenanceTimeoutError(
-            f"file cleanup timed out after {scanned} entries; cleanup is partial"
-        )
+        raise MaintenanceTimeoutError(f"file cleanup timed out after {scanned} entries; cleanup is partial")
     if scanned % 100 == 0:
         emit(f"phase=file-clean-heartbeat entries_scanned={scanned}")
-        _require_opencode_stopped(process_check, emit)
+        if not force:
+            _require_opencode_stopped(process_check, emit)
 
 
 def _clear_directory(
@@ -770,6 +728,8 @@ def _clear_directory(
     deadline: float,
     process_check: ProcessCheck,
     emit: Emit,
+    *,
+    force: bool = False,
 ) -> tuple[int, int]:
     if not directory.exists():
         return 0, 0
@@ -785,6 +745,7 @@ def _clear_directory(
             deadline=deadline,
             process_check=process_check,
             emit=emit,
+            force=force,
         )
         scanned += 1
         stack.append((entry, False))
@@ -806,6 +767,7 @@ def _clear_directory(
                         deadline=deadline,
                         process_check=process_check,
                         emit=emit,
+                        force=force,
                     )
                     scanned += 1
                     stack.append((child, False))
@@ -822,6 +784,7 @@ def _clean_logs(
     emit: Emit,
     *,
     already_scanned: int,
+    force: bool = False,
 ) -> tuple[int, int]:
     if not directory.exists():
         return 0, 0
@@ -838,6 +801,7 @@ def _clean_logs(
             deadline=deadline,
             process_check=process_check,
             emit=emit,
+            force=force,
         )
         scanned += 1
         stack.append(entry)
@@ -853,6 +817,7 @@ def _clean_logs(
                     deadline=deadline,
                     process_check=process_check,
                     emit=emit,
+                    force=force,
                 )
                 scanned += 1
                 stack.append(child)
@@ -886,12 +851,13 @@ def run_cleanup(
     now_ms: int | None = None,
     process_check: ProcessCheck = is_opencode_running,
     emit: Emit = _print_progress,
+    force: bool = False,
 ) -> None:
     """Maintain the DB, then remove cache/log files after a final live guard."""
 
     config.validate()
     deadline = time.monotonic() + config.timeout_seconds
-    _require_opencode_stopped(process_check, emit)
+    _require_opencode_stopped(process_check, emit, force=force)
     data_directory = _validate_data_directory(data_directory)
     _validate_cleanup_roots(data_directory)
     maintain_database(
@@ -900,18 +866,18 @@ def run_cleanup(
         process_check=process_check,
         emit=emit,
         _deadline=deadline,
+        force=force,
     )
-    _require_opencode_stopped(process_check, emit)
+    _require_opencode_stopped(process_check, emit, force=force)
     cache_removed, cache_scanned = _clear_directory(
         data_directory / "tool-output",
         config,
         deadline,
         process_check,
         emit,
+        force=force,
     )
-    current_seconds = (
-        now_ms / 1_000 if now_ms is not None else time.time_ns() / 1_000_000_000
-    )
+    current_seconds = now_ms / 1_000 if now_ms is not None else time.time_ns() / 1_000_000_000
     log_days = 1 if hard else 7
     logs_removed, logs_scanned = _clean_logs(
         data_directory / "log",
@@ -922,6 +888,7 @@ def run_cleanup(
         process_check,
         emit,
         already_scanned=cache_scanned,
+        force=force,
     )
     emit(
         f"phase=file-clean cache_entries_removed={cache_removed} "
@@ -930,11 +897,52 @@ def run_cleanup(
     )
 
 
+def vacuum_incremental(
+    database: Path,
+    config: MaintenanceConfig,
+    *,
+    emit: Emit = _print_progress,
+) -> None:
+    """Run PRAGMA incremental_vacuum safely while OpenCode is running."""
+    config.validate()
+    deadline = time.monotonic() + config.timeout_seconds
+    emit(
+        f"phase=vacuum-incremental status=starting pages={config.incremental_pages} "
+        f"timeout_seconds={config.timeout_seconds:g}"
+    )
+    connection = _connect(
+        database,
+        config,
+        deadline,
+        emit=emit,
+        phase="vacuum-incremental",
+    )
+    try:
+        auto_vacuum = connection.execute("PRAGMA auto_vacuum").fetchone()
+        auto_vacuum_mode = int(auto_vacuum[0]) if auto_vacuum else 0
+        if auto_vacuum_mode != 2:
+            raise MaintenanceError(
+                f"auto_vacuum is not INCREMENTAL (mode={auto_vacuum_mode}); "
+                "incremental_vacuum requires PRAGMA auto_vacuum=INCREMENTAL"
+            )
+        if config.incremental_pages <= 0:
+            raise MaintenanceError("incremental_pages must be positive")
+        connection.execute(f"PRAGMA incremental_vacuum({config.incremental_pages})")
+        free_pages = connection.execute("PRAGMA freelist_count").fetchone()
+        page_size = connection.execute("PRAGMA page_size").fetchone()
+        remaining_bytes = int(free_pages[0]) * int(page_size[0]) if free_pages and page_size else 0
+        emit(f"phase=vacuum-incremental status=complete remaining_free_bytes={remaining_bytes}")
+    except sqlite3.Error as exc:
+        raise _translate_sqlite_error(exc) from exc
+    finally:
+        connection.close()
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "action",
-        choices=("clean", "clean-hard", "prune", "disk", "stats", "schema", "sample"),
+        choices=("clean", "clean-hard", "prune", "disk", "stats", "schema", "sample", "incremental-vacuum"),
     )
     parser.add_argument("--db")
     parser.add_argument("--data-dir")
@@ -946,6 +954,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--incremental-pages", type=int, default=1_000)
     parser.add_argument("--max-file-entries", type=int, default=100_000)
     parser.add_argument("--validate-only", action="store_true")
+    parser.add_argument("--force", action="store_true")
     return parser
 
 
@@ -963,28 +972,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         config.validate()
         database = resolve_database_path(args.db)
-        data_directory = (
-            Path(args.data_dir).expanduser()
-            if args.data_dir
-            else database.parent
-        )
+        data_directory = Path(args.data_dir).expanduser() if args.data_dir else database.parent
         if args.validate_only:
             _validate_data_directory(data_directory)
-            _print_progress(
-                f"phase=validate status=ok action={args.action} db={database} "
-                f"data_dir={data_directory}"
-            )
+            _print_progress(f"phase=validate status=ok action={args.action} db={database} data_dir={data_directory}")
             return 0
         if args.action in {"disk", "stats", "schema", "sample"}:
             inspect_database(database, data_directory, args.action, config)
+        elif args.action == "incremental-vacuum":
+            vacuum_incremental(database, config)
         elif args.action == "prune":
-            prune_database(database, config)
+            prune_database(database, config, force=args.force)
         else:
             run_cleanup(
                 database,
                 data_directory,
                 config,
                 hard=args.action == "clean-hard",
+                force=args.force,
             )
         return 0
     except OpenCodeRunningError as exc:

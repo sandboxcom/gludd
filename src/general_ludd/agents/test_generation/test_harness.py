@@ -1,4 +1,4 @@
-"""TestHarnessRunner — runs generated pytest files in a subprocess.
+"""HarnessRunner — runs generated pytest files in a subprocess.
 
 Captures stdout/stderr/returncode with a configurable timeout.
 Provides the execution layer for generated E2E tests.
@@ -23,7 +23,7 @@ class TestResult:
         self.stderr = stderr
 
 
-class TestHarnessRunner:
+class HarnessRunner:
     def __init__(
         self,
         *,
@@ -60,4 +60,4 @@ class TestHarnessRunner:
             )
 
 
-__all__ = ["TestHarnessRunner", "TestResult"]
+__all__ = ["HarnessRunner", "TestResult"]

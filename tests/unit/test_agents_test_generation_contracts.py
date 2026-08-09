@@ -3,10 +3,10 @@
 from general_ludd.agents.test_generation.contracts import (
     PIPELINE_STAGES,
     PipelineStage,
-    TestGenerator,
-    TestHarness,
+    GeneratorConfig,
+    GenerationHarness,
     TestReport,
-    TestSpec,
+    GenerationSpec,
 )
 
 
@@ -26,13 +26,13 @@ class TestGenerationContracts:
         assert PIPELINE_STAGES[0] == PipelineStage.ANALYZE
 
     def test_test_spec(self):
-        spec = TestSpec(target_module="general_ludd.foo")
+        spec = GenerationSpec(target_module="general_ludd.foo")
         assert spec.target_module == "general_ludd.foo"
         assert spec.coverage_threshold == 85.0
         assert spec.output_dir == "tests/e2e"
 
     def test_test_harness(self):
-        harness = TestHarness()
+        harness = GenerationHarness()
         assert harness.pytest_args == ["-v"]
         assert harness.timeout_seconds == 300
 
@@ -43,8 +43,8 @@ class TestGenerationContracts:
         assert report.generated_files == []
 
     def test_test_generator(self):
-        spec = TestSpec(target_module="general_ludd.bar")
-        harness = TestHarness(timeout_seconds=120)
-        gen = TestGenerator(spec=spec, harness=harness)
+        spec = GenerationSpec(target_module="general_ludd.bar")
+        harness = GenerationHarness(timeout_seconds=120)
+        gen = GeneratorConfig(spec=spec, harness=harness)
         assert gen.harness.timeout_seconds == 120
         assert len(gen.pipeline_stages) == 5

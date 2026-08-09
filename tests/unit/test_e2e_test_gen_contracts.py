@@ -1,6 +1,6 @@
 """TDD contracts for end-to-end test generation.
 
-Defines the expected shape of TestSpec, TestGenerator, TestHarness, and
+Defines the expected shape of GenerationSpec, GeneratorConfig, GenerationHarness, and
 TestReport before the implementation exists.  All tests should FAIL on first
 run (red phase), then PASS after ``contracts.py`` is written.
 """
@@ -10,93 +10,93 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-# ── TestSpec ─────────────────────────────────────────────────────────────────
+# ── GenerationSpec ─────────────────────────────────────────────────────────────────
 
 
-class TestTestSpecContracts:
+class TestGenerationSpecContracts:
     def test_spec_requires_target_module(self):
-        from general_ludd.agents.test_generation.contracts import TestSpec
+        from general_ludd.agents.test_generation.contracts import GenerationSpec
 
-        spec = TestSpec(target_module="src/example.py")
+        spec = GenerationSpec(target_module="src/example.py")
         assert spec.target_module == "src/example.py"
 
     def test_spec_defaults(self):
-        from general_ludd.agents.test_generation.contracts import TestSpec
+        from general_ludd.agents.test_generation.contracts import GenerationSpec
 
-        spec = TestSpec(target_module="src/example.py")
+        spec = GenerationSpec(target_module="src/example.py")
         assert spec.coverage_threshold == 85.0
         assert spec.output_dir == "tests/e2e"
         assert spec.scenario_catalog == "default"
         assert spec.include_patterns == []
 
     def test_spec_rejects_empty_target_module(self):
-        from general_ludd.agents.test_generation.contracts import TestSpec
+        from general_ludd.agents.test_generation.contracts import GenerationSpec
 
         with pytest.raises(ValidationError):
-            TestSpec(target_module="")
+            GenerationSpec(target_module="")
 
     def test_spec_coverage_threshold_bounded_0_100(self):
-        from general_ludd.agents.test_generation.contracts import TestSpec
+        from general_ludd.agents.test_generation.contracts import GenerationSpec
 
-        TestSpec(target_module="src/x.py", coverage_threshold=0.0)
-        TestSpec(target_module="src/x.py", coverage_threshold=100.0)
+        GenerationSpec(target_module="src/x.py", coverage_threshold=0.0)
+        GenerationSpec(target_module="src/x.py", coverage_threshold=100.0)
         with pytest.raises(ValidationError):
-            TestSpec(target_module="src/x.py", coverage_threshold=-1.0)
+            GenerationSpec(target_module="src/x.py", coverage_threshold=-1.0)
         with pytest.raises(ValidationError):
-            TestSpec(target_module="src/x.py", coverage_threshold=100.1)
+            GenerationSpec(target_module="src/x.py", coverage_threshold=100.1)
 
     def test_spec_include_patterns_is_list(self):
-        from general_ludd.agents.test_generation.contracts import TestSpec
+        from general_ludd.agents.test_generation.contracts import GenerationSpec
 
-        spec = TestSpec(target_module="src/x.py", include_patterns=["test_*.py"])
+        spec = GenerationSpec(target_module="src/x.py", include_patterns=["test_*.py"])
         assert spec.include_patterns == ["test_*.py"]
 
     def test_spec_extra_fields_forbidden(self):
-        from general_ludd.agents.test_generation.contracts import TestSpec
+        from general_ludd.agents.test_generation.contracts import GenerationSpec
 
         with pytest.raises(ValidationError):
-            TestSpec(target_module="src/x.py", unknown_field=True)
+            GenerationSpec(target_module="src/x.py", unknown_field=True)
 
 
-# ── TestHarness ──────────────────────────────────────────────────────────────
+# ── GenerationHarness ──────────────────────────────────────────────────────────────
 
 
-class TestTestHarnessContracts:
+class TestGenerationHarnessContracts:
     def test_harness_defaults(self):
-        from general_ludd.agents.test_generation.contracts import TestHarness
+        from general_ludd.agents.test_generation.contracts import GenerationHarness
 
-        h = TestHarness()
+        h = GenerationHarness()
         assert h.pytest_args == ["-v"]
         assert h.fixtures == []
         assert h.timeout_seconds == 300
         assert h.coverage_config == {"branch": True, "source": []}
 
     def test_harness_custom_pytest_args(self):
-        from general_ludd.agents.test_generation.contracts import TestHarness
+        from general_ludd.agents.test_generation.contracts import GenerationHarness
 
-        h = TestHarness(pytest_args=["-v", "--tb=short", "-x"])
+        h = GenerationHarness(pytest_args=["-v", "--tb=short", "-x"])
         assert h.pytest_args == ["-v", "--tb=short", "-x"]
 
     def test_harness_custom_fixtures(self):
-        from general_ludd.agents.test_generation.contracts import TestHarness
+        from general_ludd.agents.test_generation.contracts import GenerationHarness
 
-        h = TestHarness(fixtures=["TestClient", "_run_cli"])
+        h = GenerationHarness(fixtures=["TestClient", "_run_cli"])
         assert h.fixtures == ["TestClient", "_run_cli"]
 
     def test_harness_timeout_positive(self):
-        from general_ludd.agents.test_generation.contracts import TestHarness
+        from general_ludd.agents.test_generation.contracts import GenerationHarness
 
-        TestHarness(timeout_seconds=1)
+        GenerationHarness(timeout_seconds=1)
         with pytest.raises(ValidationError):
-            TestHarness(timeout_seconds=0)
+            GenerationHarness(timeout_seconds=0)
         with pytest.raises(ValidationError):
-            TestHarness(timeout_seconds=-5)
+            GenerationHarness(timeout_seconds=-5)
 
     def test_harness_extra_fields_forbidden(self):
-        from general_ludd.agents.test_generation.contracts import TestHarness
+        from general_ludd.agents.test_generation.contracts import GenerationHarness
 
         with pytest.raises(ValidationError):
-            TestHarness(unknown=True)
+            GenerationHarness(unknown=True)
 
 
 # ── TestReport ───────────────────────────────────────────────────────────────
@@ -163,34 +163,34 @@ class TestTestReportContracts:
         assert report.errors == ["Timeout"]
 
 
-# ── TestGenerator ────────────────────────────────────────────────────────────
+# ── GeneratorConfig ────────────────────────────────────────────────────────────
 
 
-class TestTestGeneratorContracts:
+class TestGeneratorConfigContracts:
     def test_generator_requires_spec_and_harness(self):
         from general_ludd.agents.test_generation.contracts import (
-            TestGenerator,
-            TestHarness,
-            TestSpec,
+            GeneratorConfig,
+            GenerationHarness,
+            GenerationSpec,
         )
 
-        spec = TestSpec(target_module="src/example.py")
-        harness = TestHarness()
-        gen = TestGenerator(spec=spec, harness=harness)
+        spec = GenerationSpec(target_module="src/example.py")
+        harness = GenerationHarness()
+        gen = GeneratorConfig(spec=spec, harness=harness)
         assert gen.spec == spec
         assert gen.harness == harness
 
     def test_generator_pipeline_stages_enum(self):
         from general_ludd.agents.test_generation.contracts import (
             PipelineStage,
-            TestGenerator,
-            TestHarness,
-            TestSpec,
+            GeneratorConfig,
+            GenerationHarness,
+            GenerationSpec,
         )
 
-        spec = TestSpec(target_module="src/example.py")
-        harness = TestHarness()
-        gen = TestGenerator(spec=spec, harness=harness)
+        spec = GenerationSpec(target_module="src/example.py")
+        harness = GenerationHarness()
+        gen = GeneratorConfig(spec=spec, harness=harness)
         assert gen.pipeline_stages == [
             PipelineStage.ANALYZE,
             PipelineStage.GENERATE,
@@ -201,27 +201,27 @@ class TestTestGeneratorContracts:
 
     def test_generator_extra_fields_forbidden(self):
         from general_ludd.agents.test_generation.contracts import (
-            TestGenerator,
-            TestHarness,
-            TestSpec,
+            GeneratorConfig,
+            GenerationHarness,
+            GenerationSpec,
         )
 
-        spec = TestSpec(target_module="src/example.py")
-        harness = TestHarness()
+        spec = GenerationSpec(target_module="src/example.py")
+        harness = GenerationHarness()
         with pytest.raises(ValidationError):
-            TestGenerator(spec=spec, harness=harness, unknown=True)
+            GeneratorConfig(spec=spec, harness=harness, unknown=True)
 
     def test_generator_optional_pipeline_stages(self):
         from general_ludd.agents.test_generation.contracts import (
             PipelineStage,
-            TestGenerator,
-            TestHarness,
-            TestSpec,
+            GeneratorConfig,
+            GenerationHarness,
+            GenerationSpec,
         )
 
-        spec = TestSpec(target_module="src/example.py")
-        harness = TestHarness()
-        gen = TestGenerator(
+        spec = GenerationSpec(target_module="src/example.py")
+        harness = GenerationHarness()
+        gen = GeneratorConfig(
             spec=spec,
             harness=harness,
             pipeline_stages=[PipelineStage.ANALYZE, PipelineStage.GENERATE],

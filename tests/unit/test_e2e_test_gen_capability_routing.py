@@ -5,40 +5,40 @@ from __future__ import annotations
 from pathlib import Path
 
 from general_ludd.agents.test_generation.contracts import (
-    TestHarness,
+    GenerationHarness,
     TestReport,
-    TestSpec,
+    GenerationSpec,
 )
-from general_ludd.agents.test_generation.test_generator import TestGeneratorImpl
-from general_ludd.agents.test_generation.test_harness import TestHarnessRunner
+from general_ludd.agents.test_generation.test_generator import GeneratorImpl
+from general_ludd.agents.test_generation.test_harness import HarnessRunner
 from general_ludd.agents.test_generation.test_reporter import TestReporter
 from general_ludd.sandbox.contracts import IsolationLevel, SandboxConfig
 
 
 class TestE2EThroughRouter:
     def test_generator_accepts_sandbox_config(self) -> None:
-        spec = TestSpec(target_module="general_ludd.foo")
+        spec = GenerationSpec(target_module="general_ludd.foo")
         config = SandboxConfig(backend="process", isolation=IsolationLevel.NONE)
-        gen = TestGeneratorImpl(spec=spec, harness=TestHarness(), sandbox_config=config)
+        gen = GeneratorImpl(spec=spec, harness=GenerationHarness(), sandbox_config=config)
         assert gen.sandbox_config is config
 
     def test_generator_defaults_to_none_isolation(self) -> None:
-        spec = TestSpec(target_module="general_ludd.foo")
-        gen = TestGeneratorImpl(spec=spec, harness=TestHarness())
+        spec = GenerationSpec(target_module="general_ludd.foo")
+        gen = GeneratorImpl(spec=spec, harness=GenerationHarness())
         assert gen.sandbox_config is not None
         assert gen.sandbox_config.isolation == IsolationLevel.NONE
         assert gen.sandbox_config.backend == "process"
 
     def test_end_to_end_generate_and_run(self, tmp_path: Path) -> None:
-        spec = TestSpec(
+        spec = GenerationSpec(
             target_module="general_ludd.e2e_demo",
             output_dir=str(tmp_path),
         )
-        generator = TestGeneratorImpl(spec=spec, harness=TestHarness())
+        generator = GeneratorImpl(spec=spec, harness=GenerationHarness())
         output_files = generator.generate()
         assert len(output_files) > 0
 
-        runner = TestHarnessRunner()
+        runner = HarnessRunner()
         result = runner.execute(test_dir=str(tmp_path))
         assert result is not None
 
@@ -52,14 +52,14 @@ class TestE2EThroughRouter:
         assert report.verdict in ("pass", "fail", "error", "partial")
 
     def test_report_contains_generated_files(self, tmp_path: Path) -> None:
-        spec = TestSpec(
+        spec = GenerationSpec(
             target_module="general_ludd.e2e_demo",
             output_dir=str(tmp_path),
         )
-        generator = TestGeneratorImpl(spec=spec, harness=TestHarness())
+        generator = GeneratorImpl(spec=spec, harness=GenerationHarness())
         output_files = generator.generate()
 
-        runner = TestHarnessRunner()
+        runner = HarnessRunner()
         result = runner.execute(test_dir=str(tmp_path))
 
         report = TestReporter.score(

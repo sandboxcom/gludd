@@ -1,5 +1,5 @@
 ---
-particle_beam_energy_GeV: 13.6
+particle_beam_energy_gev: 13.6
 particle_target: "proton"
 particle_beam: "proton"
 particle_detector: "generic_4pi"

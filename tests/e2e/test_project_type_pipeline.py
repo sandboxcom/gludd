@@ -234,7 +234,6 @@ def _check_cli_tool(code: str, tmp_dir: Path) -> dict[str, Any]:
     results["ac"]["has_argparse_or_click"] = "argparse" in code or "click" in code
     results["ac"]["has_sys_exit"] = "sys.exit" in code
 
-    # Subprocess test: --help must work
     mod_path = tmp_dir / "_gen_cli.py"
     import subprocess
 
@@ -273,7 +272,6 @@ def _check_scraper(code: str, tmp_dir: Path) -> dict[str, Any]:
     results["ac"]["has_main_function"] = hasattr(mod, "main") and callable(mod.main)
     results["ac"]["ast_valid"] = _ast_parseable(code)
 
-    # Subprocess test: --help must work
     mod_path = tmp_dir / "_gen_scraper.py"
     import subprocess
 
@@ -351,6 +349,46 @@ PROJECT_TYPES = [
 # ---------------------------------------------------------------------------
 
 
+class TestProjectTypeSmoke:
+    """Smoke tests that do not need an API key."""
+
+    def test_project_types_loadable(self) -> None:
+        pt = get_project_type("cli_tool")
+        assert pt.type_id == "cli_tool"
+        assert pt.default_entry_point == "cli.py"
+        assert len(pt.validation_rules) >= 4
+        assert "{context}" in pt.prompt_template_planner
+        assert "{context}" in pt.prompt_template_coder
+
+    def test_scraper_validation_rules(self) -> None:
+        pt = get_project_type("scraper")
+        assert pt.validation_rules == [
+            "ast_valid",
+            "importable",
+            "has_http_client_import",
+            "has_html_parsing",
+            "has_output_writing",
+            "has_error_handling",
+        ]
+
+    def test_api_server_validation_rules(self) -> None:
+        pt = get_project_type("api_server")
+        assert pt.validation_rules == [
+            "ast_valid",
+            "importable",
+            "has_fastapi_app",
+            "has_at_least_one_route",
+            "has_startup_event",
+            "has_shutdown_event",
+            "has_error_handlers",
+        ]
+
+    def test_prompt_builder_renders(self) -> None:
+        prompt = _build_prompt("cli_tool", "Build a todo CLI.")
+        assert "cli_tool" in prompt.lower() or "CLI Tool" in prompt
+        assert len(prompt) > 200
+
+
 @pytest.mark.skipif(not _DEEPSEEK_KEY or not _HAS_LANGCHAIN_OPENAI, reason=_LIVE_SKIP_REASON)
 class TestProjectTypePipeline:
     """Build + verify projects via DeepSeek API using the planner→coder→reviewer flow."""
@@ -380,7 +418,7 @@ class TestProjectTypePipeline:
     # ---- cli_tool ----
 
     @pytest.mark.skipif(
-        _SMOKE_TYPE and _SMOKE_TYPE != "cli_tool",
+        _SMOKE_TYPE != "" and _SMOKE_TYPE != "cli_tool",
         reason=f"PT_TYPE={_SMOKE_TYPE}, skipping cli_tool",
     )
     def test_build_cli_tool(self, gateway, tmp_path):
@@ -389,7 +427,7 @@ class TestProjectTypePipeline:
     # ---- scraper ----
 
     @pytest.mark.skipif(
-        _SMOKE_TYPE and _SMOKE_TYPE != "scraper",
+        _SMOKE_TYPE != "" and _SMOKE_TYPE != "scraper",
         reason=f"PT_TYPE={_SMOKE_TYPE}, skipping scraper",
     )
     def test_build_scraper(self, gateway, tmp_path):
@@ -398,47 +436,11 @@ class TestProjectTypePipeline:
     # ---- api_server ----
 
     @pytest.mark.skipif(
-        _SMOKE_TYPE and _SMOKE_TYPE != "api_server",
+        _SMOKE_TYPE != "" and _SMOKE_TYPE != "api_server",
         reason=f"PT_TYPE={_SMOKE_TYPE}, skipping api_server",
     )
     def test_build_api_server(self, gateway, tmp_path):
         self._build_and_verify(gateway, tmp_path, "api_server")
-
-    # ---- smoke test (no live API) ----
-
-    def test_smoke(self, tmp_path):
-        """Smoke: verify project type definitions are loadable and prompts render."""
-        pt = get_project_type("cli_tool")
-        assert pt.type_id == "cli_tool"
-        assert pt.default_entry_point == "cli.py"
-        assert len(pt.validation_rules) >= 4
-        assert "{context}" in pt.prompt_template_planner
-        assert "{context}" in pt.prompt_template_coder
-
-        pt2 = get_project_type("scraper")
-        assert pt2.validation_rules == [
-            "ast_valid",
-            "importable",
-            "has_http_client_import",
-            "has_html_parsing",
-            "has_output_writing",
-            "has_error_handling",
-        ]
-
-        pt3 = get_project_type("api_server")
-        assert pt3.validation_rules == [
-            "ast_valid",
-            "importable",
-            "has_fastapi_app",
-            "has_at_least_one_route",
-            "has_startup_event",
-            "has_shutdown_event",
-            "has_error_handlers",
-        ]
-
-        prompt = _build_prompt("cli_tool", "Build a todo CLI.")
-        assert "cli_tool" in prompt.lower() or "CLI Tool" in prompt
-        assert len(prompt) > 200
 
     # ---- Shared build + verify ----
 

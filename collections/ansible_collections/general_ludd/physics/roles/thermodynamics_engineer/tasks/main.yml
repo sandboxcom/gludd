@@ -27,8 +27,8 @@
           config = ThermoConfig(
               substance="{{ thermo_substance }}",
               mass_kg={{ thermo_mass_kg }},
-              initial_temp_C={{ thermo_initial_temp_C }},
-              final_temp_C={{ thermo_final_temp_C }},
+              initial_temp_C={{ thermo_initial_temp_c }},
+              final_temp_C={{ thermo_final_temp_c }},
               pressure_atm={{ thermo_pressure_atm }},
           )
           result = {

@@ -4,8 +4,8 @@ Formalises the data contracts for the five-role pipeline:
   analyze_code_paths -> generate_scenarios -> validate_scenarios
   -> write_e2e_tests -> verify_coverage.
 
-Defines TestSpec (what to test), TestHarness (execution environment),
-TestReport (structured output), TestGenerator (pipeline configuration),
+Defines GenerationSpec (what to test), GenerationHarness (execution environment),
+TestReport (structured output), GeneratorConfig (pipeline configuration),
 and PipelineStage (ordered pipeline stages).
 """
 
@@ -48,7 +48,7 @@ PIPELINE_STAGES: list[PipelineStage] = [
 # ---------------------------------------------------------------------------
 
 
-class TestSpec(BaseModel):
+class GenerationSpec(BaseModel):
     """Specification of what module to test and how."""
 
     model_config = ConfigDict(extra="forbid")
@@ -65,7 +65,7 @@ class TestSpec(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class TestHarness(BaseModel):
+class GenerationHarness(BaseModel):
     """Execution environment for running generated tests."""
 
     model_config = ConfigDict(extra="forbid")
@@ -103,15 +103,15 @@ class TestReport(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class TestGenerator(BaseModel):
+class GeneratorConfig(BaseModel):
     """Configuration for an E2E test generation pipeline run.
 
-    Binds a TestSpec (what to test) with a TestHarness (how to run)
+    Binds a GenerationSpec (what to test) with a GenerationHarness (how to run)
     and an optional pipeline stage selection.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    spec: TestSpec
-    harness: TestHarness
+    spec: GenerationSpec
+    harness: GenerationHarness
     pipeline_stages: list[PipelineStage] = Field(default_factory=lambda: list(PIPELINE_STAGES))

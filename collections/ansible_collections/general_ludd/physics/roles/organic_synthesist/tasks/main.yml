@@ -28,7 +28,7 @@
               starting_material="{{ synth_starting_material }}",
               solvent="{{ synth_solvent }}",
               catalyst="{{ synth_catalyst }}",
-              temperature_C={{ synth_temperature_C }},
+              temperature_C={{ synth_temperature_c }},
               reaction_time_min={{ synth_reaction_time_min }},
           )
           molecule = lookup_molecule(config.target_molecule)
