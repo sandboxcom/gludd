@@ -448,6 +448,7 @@ help:
 	@echo "  opencode-db-prune     Offline bounded recursive session/event prune"
 	@echo "  opencode-db-vacuum-incremental  Safe PRAGMA incremental_vacuum (online)"
 	@echo "  opencode-db-vacuum-full        Full VACUUM (needs OPENCODE_MAINTENANCE_FORCE=1 while online)"
+	@echo "  opencode-db-compact     Aggressive prune then compact via sqlite3 backup API (OPENCODE_RETENTION_DAYS, OPENCODE_MAINTENANCE_FORCE)"
 	@echo ""
 	@echo "  --- Recovery ---"
 	@echo "  reap-orphan-pytest    Report stale orphan pytest trees (APPLY=1 to terminate)"
@@ -2418,6 +2419,14 @@ opencode-db-vacuum-incremental: ## Safe PRAGMA incremental_vacuum while OpenCode
 opencode-db-vacuum-full: ## Full VACUUM to reclaim disk space — refuses while OpenCode runs unless OPENCODE_MAINTENANCE_FORCE=1 (OPENCODE_DB, OPENCODE_DB_TIMEOUT_SECONDS, OPENCODE_DB_BUSY_TIMEOUT_MS, OPENCODE_MAINTENANCE_FORCE)
 	@$(SYSTEM_PYTHON) scripts/opencode_db_maintenance.py vacuum-full \
 		$(if $(filter command line environment,$(origin OPENCODE_DB)),--db "$(OPENCODE_DB)",) \
+		--timeout-seconds "$(OPENCODE_DB_TIMEOUT_SECONDS)" \
+		--busy-timeout-ms "$(OPENCODE_DB_BUSY_TIMEOUT_MS)" \
+		$(if $(filter 1,$(OPENCODE_MAINTENANCE_FORCE)),--force,)
+
+opencode-db-compact: ## Aggressive prune then compact via sqlite3 backup API — refuses while OpenCode runs unless OPENCODE_MAINTENANCE_FORCE=1 (OPENCODE_DB, OPENCODE_RETENTION_DAYS, OPENCODE_DB_TIMEOUT_SECONDS, OPENCODE_DB_BUSY_TIMEOUT_MS, OPENCODE_MAINTENANCE_FORCE)
+	@PYTHONUNBUFFERED=1 $(SYSTEM_PYTHON) scripts/opencode_db_maintenance.py compact \
+		$(if $(filter command line environment,$(origin OPENCODE_DB)),--db "$(OPENCODE_DB)",) \
+		--retention-days "$(OPENCODE_RETENTION_DAYS)" \
 		--timeout-seconds "$(OPENCODE_DB_TIMEOUT_SECONDS)" \
 		--busy-timeout-ms "$(OPENCODE_DB_BUSY_TIMEOUT_MS)" \
 		$(if $(filter 1,$(OPENCODE_MAINTENANCE_FORCE)),--force,)

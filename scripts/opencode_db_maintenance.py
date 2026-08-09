@@ -976,6 +976,80 @@ def vacuum_full(
         connection.close()
 
 
+def compact_via_backup(
+    database: Path,
+    config: MaintenanceConfig,
+    *,
+    process_check: ProcessCheck = is_opencode_running,
+    emit: Emit = _print_progress,
+    force: bool = False,
+    output: Path | None = None,
+) -> int:
+    """Prune aggressively then compact via sqlite3 backup API (online-safe).
+
+    Unlike VACUUM, the backup API uses shared locks and runs while OpenCode
+    is active.  It copies only **used** pages, so the output file is naturally
+    defragmented.  The caller is responsible for atomically swapping the
+    compacted file into place while OpenCode is briefly stopped.
+    """
+    config.validate()
+    _require_opencode_stopped(process_check, emit, force=force)
+    size_before = database.stat().st_size if database.is_file() else 0
+    emit(f"phase=compact status=starting size_before={size_before}")
+
+    # Step 1 — aggressive prune
+    prune_config = MaintenanceConfig(
+        retention_days=config.retention_days,
+        batch_size=config.batch_size,
+        max_sessions=1_000_000,
+        timeout_seconds=config.timeout_seconds,
+        busy_timeout_ms=config.busy_timeout_ms,
+        incremental_pages=0,
+        max_file_entries=config.max_file_entries,
+    )
+    result = prune_database(database, prune_config, process_check=process_check, emit=emit, force=force)
+    emit(
+        f"phase=compact status=pruned "
+        f"sessions={result.sessions_removed} events={result.events_removed} "
+        f"sequences={result.event_sequences_removed} limit_reached={result.limit_reached}"
+    )
+
+    # Step 2 — force WAL checkpoint to flush to main DB
+    deadline = time.monotonic() + config.timeout_seconds
+    conn = _connect(database, config, deadline, emit=emit, phase="compact")
+    try:
+        _checkpoint_passive(conn, emit)
+    finally:
+        conn.close()
+
+    # Step 3 — backup API: copies only used pages, works with shared locks
+    output_path = output if output else database.with_suffix(database.suffix + ".compact")
+    emit(f"phase=compact status=backing-up output={output_path}")
+    try:
+        src = sqlite3.connect(
+            f"{database.resolve().as_uri()}?mode=ro",
+            uri=True,
+            timeout=config.busy_timeout_ms / 1_000,
+        )
+        src.execute(f"PRAGMA busy_timeout={config.busy_timeout_ms}")
+        dst = sqlite3.connect(str(output_path))
+        dst.execute(f"PRAGMA busy_timeout={config.busy_timeout_ms}")
+        src.backup(dst, pages=100, sleep=0.05)
+        src.close()
+        dst.close()
+    except sqlite3.Error as exc:
+        raise _translate_sqlite_error(exc) from exc
+
+    size_after = output_path.stat().st_size
+    freed = size_before - size_after
+    emit(
+        f"phase=compact status=complete "
+        f"size_before={size_before} size_after={size_after} freed={freed} "
+        f"output={output_path}"
+    )
+    return freed
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -984,6 +1058,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "clean",
             "clean-hard",
             "prune",
+            "compact",
             "disk",
             "stats",
             "schema",
@@ -1031,6 +1106,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             vacuum_incremental(database, config)
         elif args.action == "vacuum-full":
             vacuum_full(database, config, force=args.force)
+        elif args.action == "compact":
+            compact_via_backup(database, config, force=args.force)
         elif args.action == "prune":
             prune_database(database, config, force=args.force)
         else:
