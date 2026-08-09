@@ -349,8 +349,8 @@ class TestTTLEnforcement:
 class TestAccessAudit:
     def test_scope_hash_deterministic(self):
         pipeline = StsAuditPipeline(MagicMock())
-        h1 = pipeline._scope_hash(["read", "write", "delete"])
-        h2 = pipeline._scope_hash(["delete", "read", "write"])
+        h1 = pipeline._scope_hash(["read", "update", "delete"])
+        h2 = pipeline._scope_hash(["delete", "read", "update"])
         assert h1 == h2
 
     def test_scope_hash_none_produces_empty(self):
@@ -432,7 +432,7 @@ class TestScopeNarrowing:
         parent = OpenBaoPathScope(
             mount="secret",
             paths=("team/apps/*",),
-            capabilities=frozenset({"read", "write"}),
+            capabilities=frozenset({"read", "update"}),
         )
         child = OpenBaoPathScope(
             mount="secret",
@@ -458,7 +458,7 @@ class TestScopeNarrowing:
         parent = OpenBaoPathScope(
             mount="secret",
             paths=("dev/*",),
-            capabilities=frozenset({"read", "write"}),
+            capabilities=frozenset({"read", "update"}),
         )
         child = OpenBaoPathScope(
             mount="secret",
@@ -473,8 +473,8 @@ class TestScopeNarrowing:
     def test_capability_narrowing_validates_subset(self):
         assert (
             CapabilityNarrowing.validate_narrowing(
-                parent_actions={"read", "write", "delete"},
-                child_actions={"read", "write"},
+                parent_actions={"read", "update", "delete"},
+                child_actions={"read", "update"},
             )
             is True
         )
@@ -571,7 +571,7 @@ class TestTokenRotatorEdgeCases:
         with pytest.raises(TokenRotationError, match="No token record"):
             await rotator.rotate("agent-nonexistent")
 
-    def test_rotate_revoked_token_fails(self):
+    async def test_rotate_revoked_token_fails(self):
         from general_ludd.db.models import AgentTokenModel
 
         record = AgentTokenModel(
@@ -589,7 +589,8 @@ class TestTokenRotatorEdgeCases:
             token_store=store,
         )
         with pytest.raises(TokenRotationError, match="revoked"):
-            rotator.rotate("agent-dead")
+            await rotator.rotate("agent-dead")
+        assert True
 
     def test_policy_name_for_agent_consistent(self):
         name1 = policy_name_for_agent("agent-001")
