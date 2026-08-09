@@ -136,7 +136,7 @@ def test_query_powershell_list_normalizes_two_events() -> None:
     assert first["source"] == "wineventlog:System"
     assert first["kind"] == "logs"
     assert first["level_or_status"] == "Error"
-    assert first["message"] == "The service terminated unexpectedly."
+    assert first["message"] == "7034: The service terminated unexpectedly."
     assert first["value"] == 7034.0
     assert first["labels"]["provider"] == "Service Control Manager"
     assert first["labels"]["id"] == "7034"

@@ -24,13 +24,20 @@ _SHELL_METACHARS: frozenset[str] = frozenset(";&|`$<>(){}[]!*?#~\n\r\t \"'")
 
 _DEFAULT_TIMEOUT = 30.0
 
-_VALID_TARGETS = frozenset({
-    "status", "computer_status",
-    "preferences", "mp_preference",
-    "threats", "threat_detection",
-    "scan", "start_scan",
-    "exclusions", "get_exclusions",
-})
+_VALID_TARGETS = frozenset(
+    {
+        "status",
+        "computer_status",
+        "preferences",
+        "mp_preference",
+        "threats",
+        "threat_detection",
+        "scan",
+        "start_scan",
+        "exclusions",
+        "get_exclusions",
+    }
+)
 
 _VALID_SCAN_TYPES = frozenset({"QuickScan", "FullScan"})
 
@@ -73,7 +80,10 @@ def _default_runner(argv: list[str]) -> tuple[int, str, str]:
 def _ps_command(cmdlet: str) -> list[str]:
     """Build a PowerShell argv for a cmdlet piped to ConvertTo-Json."""
     return [
-        "powershell", "-NoProfile", "-NonInteractive", "-Command",
+        "powershell",
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
         f"{cmdlet} | ConvertTo-Json -Depth 5",
     ]
 
@@ -101,7 +111,7 @@ def _run(runner: Runner, argv: list[str]) -> tuple[int, str, str]:
     try:
         result = runner(argv)
     except Exception as exc:
-        return 127, "", str(exc)
+        return 127, "", f"{type(exc).__name__}: {exc}"
     if isinstance(result, str):
         return 0, result, ""
     if isinstance(result, tuple) and len(result) == 3:
@@ -163,7 +173,10 @@ class WindowsDefenderConnector:
         Never raises — all exceptions are caught.
         """
         argv = [
-            "powershell", "-NoProfile", "-NonInteractive", "-Command",
+            "powershell",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
             "Get-MpComputerStatus | Select-Object AntivirusEnabled,AMServiceEnabled,"
             "AntispywareEnabled,RealTimeProtectionEnabled | ConvertTo-Json",
         ]
@@ -209,9 +222,7 @@ class WindowsDefenderConnector:
         _validate_arg(target_raw, field="target")
 
         if target_raw not in _VALID_TARGETS:
-            raise ValueError(
-                f"unknown target {target_raw!r}; valid: {sorted(_VALID_TARGETS)}"
-            )
+            raise ValueError(f"unknown target {target_raw!r}; valid: {sorted(_VALID_TARGETS)}")
 
         if target_raw in ("status", "computer_status"):
             return self._run_get_mp_computer_status()
@@ -234,9 +245,7 @@ class WindowsDefenderConnector:
             return []
         return self._normalize_computer_status(out, "Get-MpComputerStatus")
 
-    def _normalize_computer_status(
-        self, stdout: str, command: str
-    ) -> list[dict[str, Any]]:
+    def _normalize_computer_status(self, stdout: str, command: str) -> list[dict[str, Any]]:
         ts = time.time()
         items = _parse_json_stdout(stdout)
         return [
@@ -260,9 +269,7 @@ class WindowsDefenderConnector:
             return []
         return self._normalize_preferences(out, "Get-MpPreference")
 
-    def _normalize_preferences(
-        self, stdout: str, command: str
-    ) -> list[dict[str, Any]]:
+    def _normalize_preferences(self, stdout: str, command: str) -> list[dict[str, Any]]:
         ts = time.time()
         items = _parse_json_stdout(stdout)
         return [
@@ -289,9 +296,7 @@ class WindowsDefenderConnector:
             return []
         return self._normalize_threats(out, "Get-MpThreatDetection")
 
-    def _normalize_threats(
-        self, stdout: str, command: str
-    ) -> list[dict[str, Any]]:
+    def _normalize_threats(self, stdout: str, command: str) -> list[dict[str, Any]]:
         ts = time.time()
         items = _parse_json_stdout(stdout)
         results: list[dict[str, Any]] = []
@@ -317,28 +322,26 @@ class WindowsDefenderConnector:
     def _run_start_mp_scan(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
         allow_mutate = spec.get("allow_mutate")
         if not isinstance(allow_mutate, bool):
-            raise ValueError(
-                f"allow_mutate must be a bool, got {type(allow_mutate).__name__}"
-            )
+            raise ValueError(f"allow_mutate must be a bool, got {type(allow_mutate).__name__}")
         if allow_mutate is not True:
             ts = time.time()
-            return [{
-                "ts": ts,
-                "source": self.name,
-                "kind": self.KIND,
-                "level_or_status": "blocked",
-                "message": "Start-MpScan requires spec['allow_mutate'] == True",
-                "value": None,
-                "labels": {"allow_mutate": allow_mutate},
-                "raw": None,
-            }]
+            return [
+                {
+                    "ts": ts,
+                    "source": self.name,
+                    "kind": self.KIND,
+                    "level_or_status": "blocked",
+                    "message": "Start-MpScan requires spec['allow_mutate'] == True",
+                    "value": None,
+                    "labels": {"allow_mutate": allow_mutate},
+                    "raw": None,
+                }
+            ]
 
         scan_type = str(spec.get("scan_type", "QuickScan"))
         _validate_arg(scan_type, field="scan_type")
         if scan_type not in _VALID_SCAN_TYPES:
-            raise ValueError(
-                f"scan_type must be one of {sorted(_VALID_SCAN_TYPES)}, got {scan_type!r}"
-            )
+            raise ValueError(f"scan_type must be one of {sorted(_VALID_SCAN_TYPES)}, got {scan_type!r}")
 
         argv = _ps_command(f"Start-MpScan -ScanType {scan_type}")
         rc, out, _err = _run(self._runner, argv)
@@ -364,7 +367,10 @@ class WindowsDefenderConnector:
 
     def _run_get_exclusions(self) -> list[dict[str, Any]]:
         argv = [
-            "powershell", "-NoProfile", "-NonInteractive", "-Command",
+            "powershell",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
             "Get-MpPreference | Select-Object ExclusionPath,ExclusionExtension,"
             "ExclusionProcess | ConvertTo-Json -Depth 5",
         ]
@@ -373,9 +379,7 @@ class WindowsDefenderConnector:
             return []
         return self._normalize_exclusions(out, "Get-MpPreference | Select-Object ExclusionPath,...")
 
-    def _normalize_exclusions(
-        self, stdout: str, command: str
-    ) -> list[dict[str, Any]]:
+    def _normalize_exclusions(self, stdout: str, command: str) -> list[dict[str, Any]]:
         ts = time.time()
         items = _parse_json_stdout(stdout)
         results: list[dict[str, Any]] = []
