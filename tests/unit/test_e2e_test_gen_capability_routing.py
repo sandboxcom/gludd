@@ -6,8 +6,8 @@ from pathlib import Path
 
 from general_ludd.agents.test_generation.contracts import (
     GenerationHarness,
-    TestReport,
     GenerationSpec,
+    TestReport,
 )
 from general_ludd.agents.test_generation.test_generator import GeneratorImpl
 from general_ludd.agents.test_generation.test_harness import HarnessRunner

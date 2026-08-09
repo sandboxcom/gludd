@@ -2,11 +2,11 @@
 
 from general_ludd.agents.test_generation.contracts import (
     PIPELINE_STAGES,
-    PipelineStage,
-    GeneratorConfig,
     GenerationHarness,
-    TestReport,
     GenerationSpec,
+    GeneratorConfig,
+    PipelineStage,
+    TestReport,
 )
 
 

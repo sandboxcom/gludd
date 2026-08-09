@@ -169,9 +169,9 @@ class TestTestReportContracts:
 class TestGeneratorConfigContracts:
     def test_generator_requires_spec_and_harness(self):
         from general_ludd.agents.test_generation.contracts import (
-            GeneratorConfig,
             GenerationHarness,
             GenerationSpec,
+            GeneratorConfig,
         )
 
         spec = GenerationSpec(target_module="src/example.py")
@@ -182,10 +182,10 @@ class TestGeneratorConfigContracts:
 
     def test_generator_pipeline_stages_enum(self):
         from general_ludd.agents.test_generation.contracts import (
-            PipelineStage,
-            GeneratorConfig,
             GenerationHarness,
             GenerationSpec,
+            GeneratorConfig,
+            PipelineStage,
         )
 
         spec = GenerationSpec(target_module="src/example.py")
@@ -201,9 +201,9 @@ class TestGeneratorConfigContracts:
 
     def test_generator_extra_fields_forbidden(self):
         from general_ludd.agents.test_generation.contracts import (
-            GeneratorConfig,
             GenerationHarness,
             GenerationSpec,
+            GeneratorConfig,
         )
 
         spec = GenerationSpec(target_module="src/example.py")
@@ -213,10 +213,10 @@ class TestGeneratorConfigContracts:
 
     def test_generator_optional_pipeline_stages(self):
         from general_ludd.agents.test_generation.contracts import (
-            PipelineStage,
-            GeneratorConfig,
             GenerationHarness,
             GenerationSpec,
+            GeneratorConfig,
+            PipelineStage,
         )
 
         spec = GenerationSpec(target_module="src/example.py")
