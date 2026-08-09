@@ -120,7 +120,7 @@ class TestCrossConversationTTL:
     def test_evict_removes_from_ephemeral_and_ttl(self) -> None:
         store = CrossConversationStore()
         store.put("ek", {"v": 1})
-        store._evict("default:ek", ("default",), "ek")
+        store._evict("default:ek", ("default",), "ek", None)
         assert store.get("ek") is None
 
 

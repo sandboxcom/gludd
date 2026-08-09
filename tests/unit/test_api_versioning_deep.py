@@ -23,6 +23,8 @@ from packaging.version import Version as PackVersion
 from general_ludd import __version__
 from general_ludd.materials.core import SCHEMA_VERSION as MATERIALS_SCHEMA_VERSION
 
+pytestmark = pytest.mark.xdist_group("api_versioning_deep")
+
 PROJECT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 PYPROJECT = os.path.join(PROJECT_ROOT, "pyproject.toml")
 
