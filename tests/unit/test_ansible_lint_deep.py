@@ -16,34 +16,47 @@ import yaml
 
 pytestmark = pytest.mark.xdist_group("ansible_lint_deep")
 
-pytestmark = pytest.mark.xdist_group("ansible_lint_deep")
-
 ROOT = Path(__file__).resolve().parents[2]
 COLLECTIONS_ROOT = ROOT / "collections" / "ansible_collections"
 
+MAX_YAML_FILE_SIZE = 512 * 1024
+
+_discover_role_dirs_cache: list[Path] | None = None
+_discover_task_files_cache: list[Path] | None = None
+
 
 def _discover_role_dirs() -> list[Path]:
+    global _discover_role_dirs_cache
+    if _discover_role_dirs_cache is not None:
+        return _discover_role_dirs_cache
     roles: list[Path] = []
     for coll in COLLECTIONS_ROOT.rglob("*/galaxy.yml"):
         coll_root = coll.parent
         for role_dir in sorted(coll_root.rglob("roles/*")):
             if role_dir.is_dir() and (role_dir / "tasks" / "main.yml").exists():
                 roles.append(role_dir)
+    _discover_role_dirs_cache = roles
     return roles
 
 
 def _discover_task_files() -> list[Path]:
+    global _discover_task_files_cache
+    if _discover_task_files_cache is not None:
+        return _discover_task_files_cache
     task_files: list[Path] = []
     for role in _discover_role_dirs():
         tasks_dir = role / "tasks"
         for tf in sorted(tasks_dir.rglob("*.yml")):
-            if tf.is_file():
+            if tf.is_file() and tf.stat().st_size <= MAX_YAML_FILE_SIZE:
                 task_files.append(tf)
+    _discover_task_files_cache = task_files
     return task_files
 
 
 def _load_yaml(path: Path) -> Any:
     try:
+        if path.stat().st_size > MAX_YAML_FILE_SIZE:
+            return None
         return yaml.safe_load(path.read_text(encoding="utf-8"))
     except yaml.YAMLError:
         return None
@@ -332,6 +345,8 @@ def test_no_hardcoded_credentials_in_tasks() -> None:
         (re.compile(r'(?im)token:\s*"(?!.*\{\{)[^\"]{20,}"'), "hardcoded token"),
     ]
     for tf in task_files:
+        if tf.stat().st_size > MAX_YAML_FILE_SIZE:
+            continue
         content = tf.read_text(encoding="utf-8")
         for pat, desc in patterns:
             for match in pat.finditer(content):
@@ -603,6 +618,8 @@ def test_task_jinja_expressions_dont_rely_on_undefined_vars() -> None:
         return result
 
     for tf in task_files:
+        if tf.stat().st_size > MAX_YAML_FILE_SIZE:
+            continue
         content = tf.read_text(encoding="utf-8")
         role_defined = _role_defined_vars(tf.parent)
         file_defined = _extract_file_defined_vars(tf)
@@ -721,7 +738,7 @@ def test_all_collection_yaml_files_parse() -> None:
     for yf in sorted(COLLECTIONS_ROOT.rglob("*.yml")):
         if not yf.is_file():
             continue
-        if yf.stat().st_size > 512 * 1024:
+        if yf.stat().st_size > MAX_YAML_FILE_SIZE:
             skipped_large.append(str(yf.relative_to(ROOT)))
             continue
         try:

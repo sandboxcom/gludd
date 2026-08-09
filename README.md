@@ -33,7 +33,7 @@ idempotent, and can fan out to subagents via the same API.
 
 ## Current Stability
 
-This project is **beta-quality software** on its third beta release. The daemon boots,
+This project is **beta-quality software** on its fourth beta release. The daemon boots,
 the event loop ticks, the database layer works, and the model gateway can call real APIs.
 Subsystems are wired and exercised end-to-end through CI; 400+ tasks tracked in TASKS.md
 are at 99.5% completion. **Suitable for evaluation and non-critical automation.** Expect
@@ -61,9 +61,9 @@ make typecheck       # current mypy error count (gate enforces ≤ MYPY_MAX, see
 Known-failing tests are tracked as strict xfail entries in `config/ratchet.yml` (the file
 may only shrink). The gate passes only when `make test` exits 0.
 
-**Status as of v0.1.0-beta.3 — 2026-07-30**
+**Status as of v0.1.0-beta.4 — 2026-08-09**
 
-Version: `v0.1.0-beta.3` — release binaries (Linux x86_64, macOS arm64, Windows x86_64, and
+Version: `v0.1.0-beta.4` — release binaries (Linux x86_64, macOS arm64, Windows x86_64, and
 more) are built as CI artifacts on every push to master, but a GitHub Release is only cut
 when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is gated on
 `startsWith(github.ref, 'refs/tags/v')`).

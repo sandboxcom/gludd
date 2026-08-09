@@ -2,6 +2,28 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/); this project adheres to semantic versioning.
 
+## [0.1.0-beta.4] — 2026-08-09
+
+### Added
+- Multi-source model download system: 5-source fallback chain (Ollama → S3 mirror → HuggingFace → direct URL → local path) with retry + exponential backoff (`cloud/model_sources.py`, `cloud/model_pipeline.py`)
+- 24 local model configs: 8 coding-specialized (Qwen Coder 0.5B–3B, DeepSeek Coder 1.3B, StarCoder2 3B, CodeLlama 7B, Phi-3-mini 4K, SmolLM2 1.7B) + 16 general (Qwen2.5 0.5B–7B, Llama 3.2 1B/3B, Gemma 2 2B, Mistral 7B, Phi-2, Phi-3.5-mini, OLMoE 1B-7B, InternLM3 8B, StableLM 3B, SmolLM2 135M/360M, TinyLlama 1.1B) (`local_model/_local_model_configs.py`)
+- Quantization ladder: GGUF Q4/Q5/Q8 with per-level quality assessment (severe/moderate/slight impact) (`models/quantization.py`)
+- Local model health check: warm-start at daemon boot, `/api/health` endpoint includes local model status (`health/local_model_check.py`)
+- Ollama health check + URL reachability probing as part of source-chain resolution
+
+### Fixed
+- gate-lite: per-agent envelope key prefix normalization, YAML parse crash guards for large files and config cascade quotes, cost_pipeline assertion
+- gate-lite: `src.general_ludd` → `general_ludd` import path normalization with uv.lock refresh
+- event_log message assertion + ansible_lint_deep xdist serialization to prevent worker crashes
+- windows_defender error formatting + event_log message normalization
+- YAML parse: strip None values in `from_yaml` before `model_validate`
+- Missing dev dependencies added to `dependency-groups.dev` in pyproject.toml
+- Deep test files updated: debounce, minhash, packet filter, sliding window
+
+### Changed
+- 5 CI-smoke-safe local models flagged (Qwen 0.5B, SmolLM2 135M/360M, TinyLlama 1.1B, Phi-2) for lightweight CI model download tests
+- `model_sources.py`: `ALTERNATIVE_SOURCES` dict maps every local model to its multi-source download config with env-var-overridable S3 mirror URLs
+
 ## [0.1.0-beta.3] — 2026-07-26
 
 ### Added
