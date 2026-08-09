@@ -34,6 +34,10 @@ class E2EModelEntry:
             repo=self.repo,
             filename=self.filename,
             context_size=self.context_size,
+            size_mb=self.size_mb,
+            category=self.category,
+            ci_safe=self.ci_safe,
+            aliases=self.aliases,
         )
 
 
