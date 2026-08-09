@@ -140,7 +140,7 @@ class TestPeakOffPeakBoundary:
     def test_peak_pricing_schedule_matching_tier_returns_first_match(self) -> None:
         sched = PeakPricingSchedule()
         sched.add_tier(RateTier("m", "p", 1.0, "peak", frozenset({0, 1, 2, 3, 4}), 9, 17))
-        sched.add_tier(RateTier("m", "p", 0.5, "off-peak", frozenset({0, 1, 2, 3, 4}), 0, 24))
+        sched.add_tier(RateTier("m", "p", 0.5, "off-peak", frozenset({0, 1, 2, 3, 4}), 0, 23))
         monday_noon = datetime.datetime(2026, 8, 10, 12, 0, tzinfo=datetime.UTC)
         tier = sched.matching_tier("m", "p", monday_noon)
         assert tier is not None

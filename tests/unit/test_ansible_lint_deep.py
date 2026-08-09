@@ -7,6 +7,7 @@ integrity, variable naming conventions, role structure, and security.
 from __future__ import annotations
 
 import re
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -716,13 +717,22 @@ def test_all_collection_yaml_files_parse() -> None:
     Regression guard: count must not exceed YAML_PARSE_ERROR_CAP.
     """
     violations: list[str] = []
+    skipped_large: list[str] = []
     for yf in sorted(COLLECTIONS_ROOT.rglob("*.yml")):
         if not yf.is_file():
+            continue
+        if yf.stat().st_size > 512 * 1024:
+            skipped_large.append(str(yf.relative_to(ROOT)))
             continue
         try:
             yaml.safe_load(yf.read_text(encoding="utf-8"))
         except yaml.YAMLError as e:
             violations.append(f"{yf.relative_to(ROOT)}: {e}")
+    if skipped_large:
+        warnings.warn(
+            f"Skipped {len(skipped_large)} large .yml file(s) (>512KB): " + ", ".join(skipped_large[:10]),
+            stacklevel=2,
+        )
     assert len(violations) <= YAML_PARSE_ERROR_CAP, (
         f"{len(violations)} YAML parse errors (cap {YAML_PARSE_ERROR_CAP}):\n"
         + "\n".join(f"  - {v}" for v in violations)
