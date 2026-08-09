@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+
 from general_ludd.network.sliding_window import (
     FixedWindow,
     SlidingLog,

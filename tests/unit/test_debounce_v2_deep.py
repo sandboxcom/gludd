@@ -6,6 +6,7 @@ import asyncio
 from typing import Any
 
 import pytest
+
 from general_ludd.util.debounce_v2 import AsyncDebounceV2, DebounceV2
 
 # ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+
 from general_ludd.network.packet_filter import (
     BinaryNode,
     BoolNode,
