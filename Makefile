@@ -446,7 +446,8 @@ help:
 	@echo "  opencode-db-schema    Bounded read-only schema report"
 	@echo "  opencode-db-sample    Bounded read-only timestamp sample"
 	@echo "  opencode-db-prune     Offline bounded recursive session/event prune"
-	@echo "  opencode-db-vacuum-incremental  Safe PRAGMA incremental_vacuum (online)
+	@echo "  opencode-db-vacuum-incremental  Safe PRAGMA incremental_vacuum (online)"
+	@echo "  opencode-db-vacuum-full        Full VACUUM (needs OPENCODE_MAINTENANCE_FORCE=1 while online)"
 	@echo ""
 	@echo "  --- Recovery ---"
 	@echo "  reap-orphan-pytest    Report stale orphan pytest trees (APPLY=1 to terminate)"
@@ -2303,6 +2304,24 @@ disk:
 	@du -sh infra/terraform/.plugin-cache infra/terraform/* 2>/dev/null | sort -h | tail -20 || true
 	@echo "--- gludd scratch + worktree footprint ---"
 	@du -sh /tmp/gludd-* 2>/dev/null | tail -5 || true
+cache-disk: ## Show cache directory sizes (uv, huggingface, pip, npm)
+	@echo "--- cache directories ---"
+	@for d in ~/.cache/uv ~/.cache/huggingface ~/.cache/pip ~/.cache/claude ~/.cache/pre-commit ~/.cache/gh ~/.cache/opencode ~/Library/Caches/pip ~/.npm/_cacache; do \
+		if [ -d "$$d" ]; then du -sh "$$d" 2>/dev/null; fi; \
+	done
+	@echo "--- uv cache detail ---"
+	@du -sh ~/.cache/uv/*/ 2>/dev/null | sort -h | tail -10 || true
+
+cache-clean: ## Clean uv, huggingface, and npm caches to free disk space
+	@echo "--- cleaning uv cache ---"
+	@rm -rf ~/.cache/uv/.gitignore ~/.cache/uv/.lock ~/.cache/uv/CACHEDIR.TAG ~/.cache/uv/archive-v0 ~/.cache/uv/builds-v0 ~/.cache/uv/interpreter-v4 ~/.cache/uv/sdists-v9 ~/.cache/uv/simple-v21 ~/.cache/uv/wheels-v6 2>/dev/null; echo "uv cache directories cleaned"
+	@echo "--- cleaning huggingface cache ---"
+	@rm -rf ~/.cache/huggingface/hub ~/.cache/huggingface/xet 2>/dev/null; echo "huggingface cache cleaned"
+	@echo "--- cleaning npm cache ---"
+	@npm cache clean --force 2>/dev/null && echo "npm cache cleaned" || echo "npm cache clean skipped"
+	@echo "--- after cleanup ---"
+	@$(MAKE) --no-print-directory cache-disk
+
 tmp-gludd-usage:
 	@du -sh /tmp/gludd-* 2>/dev/null | sort -h | tail -40 || true
 opencode-disk: ## Bounded OpenCode data usage (OPENCODE_DB, OPENCODE_DATA_DIR, OPENCODE_DB_TIMEOUT_SECONDS, OPENCODE_DB_BUSY_TIMEOUT_MS, OPENCODE_MAX_FILE_ENTRIES, OPENCODE_MAINTENANCE_VALIDATE_ONLY)
@@ -2395,6 +2414,13 @@ opencode-db-vacuum-incremental: ## Safe PRAGMA incremental_vacuum while OpenCode
 		--timeout-seconds "$(OPENCODE_DB_TIMEOUT_SECONDS)" \
 		--busy-timeout-ms "$(OPENCODE_DB_BUSY_TIMEOUT_MS)" \
 		--incremental-pages "$(OPENCODE_DB_INCREMENTAL_PAGES)"
+
+opencode-db-vacuum-full: ## Full VACUUM to reclaim disk space — refuses while OpenCode runs unless OPENCODE_MAINTENANCE_FORCE=1 (OPENCODE_DB, OPENCODE_DB_TIMEOUT_SECONDS, OPENCODE_DB_BUSY_TIMEOUT_MS, OPENCODE_MAINTENANCE_FORCE)
+	@$(SYSTEM_PYTHON) scripts/opencode_db_maintenance.py vacuum-full \
+		$(if $(filter command line environment,$(origin OPENCODE_DB)),--db "$(OPENCODE_DB)",) \
+		--timeout-seconds "$(OPENCODE_DB_TIMEOUT_SECONDS)" \
+		--busy-timeout-ms "$(OPENCODE_DB_BUSY_TIMEOUT_MS)" \
+		$(if $(filter 1,$(OPENCODE_MAINTENANCE_FORCE)),--force,)
 
 opencode-db-prune: ## Offline bounded session-tree prune (OPENCODE_DB, OPENCODE_RETENTION_DAYS, OPENCODE_DB_BATCH_SIZE, OPENCODE_DB_MAX_SESSIONS, OPENCODE_DB_TIMEOUT_SECONDS, OPENCODE_DB_BUSY_TIMEOUT_MS, OPENCODE_MAINTENANCE_VALIDATE_ONLY, OPENCODE_MAINTENANCE_FORCE)
 	@$(SYSTEM_PYTHON) scripts/opencode_db_maintenance.py prune \

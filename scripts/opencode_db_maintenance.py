@@ -938,11 +938,59 @@ def vacuum_incremental(
         connection.close()
 
 
+def vacuum_full(
+    database: Path,
+    config: MaintenanceConfig,
+    *,
+    process_check: ProcessCheck = is_opencode_running,
+    emit: Emit = _print_progress,
+    force: bool = False,
+    into: str | None = None,
+) -> None:
+    """Run full VACUUM to reclaim disk space. Requires exclusive lock."""
+    config.validate()
+    _require_opencode_stopped(process_check, emit, force=force)
+    deadline = time.monotonic() + config.timeout_seconds
+    size_before = database.stat().st_size if database.is_file() else 0
+    emit(f"phase=vacuum-full status=starting size_bytes={size_before} timeout_seconds={config.timeout_seconds}")
+    connection = _connect(
+        database,
+        config,
+        deadline,
+        emit=emit,
+        phase="vacuum-full",
+    )
+    try:
+        if into:
+            connection.execute(f"VACUUM INTO '{into}'")
+            emit(f"phase=vacuum-full status=complete into={into}")
+        else:
+            connection.execute("VACUUM")
+            size_after = database.stat().st_size if database.is_file() else 0
+            emit(
+                f"phase=vacuum-full status=complete size_before={size_before} size_after={size_after} freed={size_before - size_after}"
+            )
+    except sqlite3.Error as exc:
+        raise _translate_sqlite_error(exc) from exc
+    finally:
+        connection.close()
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "action",
-        choices=("clean", "clean-hard", "prune", "disk", "stats", "schema", "sample", "incremental-vacuum"),
+        choices=(
+            "clean",
+            "clean-hard",
+            "prune",
+            "disk",
+            "stats",
+            "schema",
+            "sample",
+            "incremental-vacuum",
+            "vacuum-full",
+        ),
     )
     parser.add_argument("--db")
     parser.add_argument("--data-dir")
@@ -981,6 +1029,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             inspect_database(database, data_directory, args.action, config)
         elif args.action == "incremental-vacuum":
             vacuum_incremental(database, config)
+        elif args.action == "vacuum-full":
+            vacuum_full(database, config, force=args.force)
         elif args.action == "prune":
             prune_database(database, config, force=args.force)
         else:
