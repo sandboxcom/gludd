@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from general_ludd.ansible.unsafe import has_wrap_var, wrap_extravars, wrap_unsafe
-
 import pytest
+
+from general_ludd.ansible.unsafe import has_wrap_var, wrap_extravars, wrap_unsafe
 
 pytestmark = pytest.mark.xdist_group("ansible_unsafe")
 
