@@ -609,7 +609,7 @@ class TestTokenRotatorEdgeCases:
 
 class TestSecretsUnavailableError:
     def test_unavailable_error_raises_properly(self):
-        with pytest.raises(SecretsUnavailableError, match="unavailable"):
+        with pytest.raises(SecretsUnavailableError, match="sealed"):
             raise SecretsUnavailableError("backend is sealed")
 
     def test_unavailable_error_from_read_secret_without_connection(self):

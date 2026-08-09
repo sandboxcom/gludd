@@ -11,6 +11,8 @@ from general_ludd.ansible.templating import (
     TemplateRenderError,
 )
 
+pytestmark = pytest.mark.xdist_group("ansible_templating")
+
 
 class TestTemplateRenderError:
     def test_is_exception(self):
@@ -43,9 +45,7 @@ class TestAnsibleTemplaterRenderSandboxed:
 
     def test_multiple_variables(self):
         t = AnsibleTemplater()
-        result = t.render_sandboxed(
-            "{{ greeting }} {{ name }}", greeting="Hi", name="Alice"
-        )
+        result = t.render_sandboxed("{{ greeting }} {{ name }}", greeting="Hi", name="Alice")
         assert "Hi Alice" in result or "Hi" in result
 
     def test_extra_vars_available(self):
@@ -102,9 +102,7 @@ class TestAnsibleTemplaterRenderSandboxed:
 
 class TestAnsibleTemplaterRender:
     def test_delegates_to_core_runner(self):
-        with patch.object(
-            AnsibleTemplater, "render", return_value="rendered"
-        ) as mock_render:
+        with patch.object(AnsibleTemplater, "render", return_value="rendered") as mock_render:
             t = AnsibleTemplater()
             mock_render(t, "{{ x }}", x=1)
             mock_render.assert_called_once_with(t, "{{ x }}", x=1)
@@ -121,9 +119,7 @@ class TestAnsibleTemplaterResolveFact:
         t._runner.resolve_variable.return_value = "resolved_value"
         result = t.resolve_fact("ansible_os_family")
         assert result == "resolved_value"
-        t._runner.resolve_variable.assert_called_once_with(
-            "ansible_os_family", host="localhost"
-        )
+        t._runner.resolve_variable.assert_called_once_with("ansible_os_family", host="localhost")
 
     def test_default_host(self):
         t = AnsibleTemplater()
@@ -135,6 +131,4 @@ class TestAnsibleTemplaterResolveFact:
         t = AnsibleTemplater()
         t._runner = MagicMock()
         t.resolve_fact("some_fact", host="db-server")
-        t._runner.resolve_variable.assert_called_once_with(
-            "some_fact", host="db-server"
-        )
+        t._runner.resolve_variable.assert_called_once_with("some_fact", host="db-server")
