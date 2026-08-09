@@ -4,6 +4,8 @@ driver:
 platforms: []
 provisioner:
   name: ansible
+  env:
+    ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_PROJECT_DIRECTORY}/collections"
   playbooks:
     converge: default/converge.yml
     verify: default/verify.yml
