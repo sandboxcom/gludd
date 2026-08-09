@@ -793,7 +793,7 @@ class TestPathValidation:
         mgr = SecretsManager()
         mock_client = MagicMock()
         mgr._client = mock_client
-        with pytest.raises(ValueError, match="traversal"):
+        with pytest.raises(ValueError, match=r"\.\..*segments are not permitted"):
             mgr.list_secrets("dev/..")
 
 
