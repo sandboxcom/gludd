@@ -62,6 +62,7 @@ class TestConsensusReviewWiring:
 
         todo_repo = AsyncMock()
         session = AsyncMock()
+        session.add = MagicMock()
         session.flush = AsyncMock()
         db_result = MagicMock()
         db_result.scalars.return_value.all.return_value = []
@@ -77,11 +78,12 @@ class TestConsensusReviewWiring:
 
         tr = _make_tr()
 
-        with patch(
-            "general_ludd.event_loop.loop.asyncio.to_thread", _fake_to_thread()
-        ), patch(
-            "general_ludd.review.decision_applier.apply_decision",
-            new_callable=AsyncMock,
+        with (
+            patch("general_ludd.event_loop.loop.asyncio.to_thread", _fake_to_thread()),
+            patch(
+                "general_ludd.review.decision_applier.apply_decision",
+                new_callable=AsyncMock,
+            ),
         ):
             await loop._review_in_process(tr)
 
@@ -101,6 +103,7 @@ class TestConsensusReviewWiring:
 
         todo_repo = AsyncMock()
         session = AsyncMock()
+        session.add = MagicMock()
         session.flush = AsyncMock()
         db_result = MagicMock()
         db_result.scalars.return_value.all.return_value = []
@@ -116,11 +119,12 @@ class TestConsensusReviewWiring:
 
         tr = _make_tr()
 
-        with patch(
-            "general_ludd.event_loop.loop.asyncio.to_thread", _fake_to_thread()
-        ), patch(
-            "general_ludd.review.decision_applier.apply_decision",
-            new_callable=AsyncMock,
+        with (
+            patch("general_ludd.event_loop.loop.asyncio.to_thread", _fake_to_thread()),
+            patch(
+                "general_ludd.review.decision_applier.apply_decision",
+                new_callable=AsyncMock,
+            ),
         ):
             await loop._review_in_process(tr)
 
@@ -136,6 +140,7 @@ class TestConsensusReviewWiring:
 
         todo_repo = AsyncMock()
         session = AsyncMock()
+        session.add = MagicMock()
         session.flush = AsyncMock()
         db_result = MagicMock()
         db_result.scalars.return_value.all.return_value = []
@@ -151,11 +156,12 @@ class TestConsensusReviewWiring:
 
         tr = _make_tr()
 
-        with patch(
-            "general_ludd.event_loop.loop.asyncio.to_thread", _fake_to_thread()
-        ), patch(
-            "general_ludd.review.decision_applier.apply_decision",
-            new_callable=AsyncMock,
+        with (
+            patch("general_ludd.event_loop.loop.asyncio.to_thread", _fake_to_thread()),
+            patch(
+                "general_ludd.review.decision_applier.apply_decision",
+                new_callable=AsyncMock,
+            ),
         ):
             await loop._review_in_process(tr)
 
@@ -167,6 +173,7 @@ class TestConsensusReviewWiring:
         _review_in_process asserts (must raise AssertionError)."""
         todo_repo = AsyncMock()
         session = AsyncMock()
+        session.add = MagicMock()
 
         loop = EventLoop(
             reviewer=None,
@@ -190,6 +197,7 @@ class TestConsensusReviewWiring:
 
         todo_repo = AsyncMock()
         session = AsyncMock()
+        session.add = MagicMock()
         session.flush = AsyncMock()
         db_result = MagicMock()
         db_result.scalars.return_value.all.return_value = []
@@ -217,11 +225,12 @@ class TestConsensusReviewWiring:
 
         cast(Any, loop)._review_in_process = _tracking_review
 
-        with patch(
-            "general_ludd.event_loop.loop.asyncio.to_thread", _fake_to_thread()
-        ), patch(
-            "general_ludd.review.decision_applier.apply_decision",
-            new_callable=AsyncMock,
+        with (
+            patch("general_ludd.event_loop.loop.asyncio.to_thread", _fake_to_thread()),
+            patch(
+                "general_ludd.review.decision_applier.apply_decision",
+                new_callable=AsyncMock,
+            ),
         ):
             await loop._dispatch_review_job(tr)
 
@@ -233,6 +242,7 @@ class TestConsensusReviewWiring:
         """_dispatch_review_job falls through to playbook/HTTP dispatch when
         neither reviewer nor consensus_reviewer is available."""
         session = AsyncMock()
+        session.add = MagicMock()
         session.flush = AsyncMock()
         db_result = MagicMock()
         db_result.scalars.return_value.all.return_value = []
@@ -266,6 +276,7 @@ class TestConsensusReviewWiring:
         """_dispatch_review_job does NOT enter in-process review when
         consensus is disabled and no standard reviewer is wired."""
         session = AsyncMock()
+        session.add = MagicMock()
 
         consensus_reviewer = MagicMock()
 
@@ -300,6 +311,7 @@ class TestConsensusReviewWiring:
 
         todo_repo = AsyncMock()
         session = AsyncMock()
+        session.add = MagicMock()
         session.flush = AsyncMock()
         db_result = MagicMock()
         db_result.scalars.return_value.all.return_value = []
@@ -321,11 +333,12 @@ class TestConsensusReviewWiring:
             playbook="bug_fix.yml",
         )
 
-        with patch(
-            "general_ludd.event_loop.loop.asyncio.to_thread", _fake_to_thread()
-        ), patch(
-            "general_ludd.review.decision_applier.apply_decision",
-            new_callable=AsyncMock,
+        with (
+            patch("general_ludd.event_loop.loop.asyncio.to_thread", _fake_to_thread()),
+            patch(
+                "general_ludd.review.decision_applier.apply_decision",
+                new_callable=AsyncMock,
+            ),
         ):
             await loop._review_in_process(tr)
 
@@ -347,6 +360,7 @@ class TestConsensusReviewWiring:
 
         todo_repo = AsyncMock()
         session = AsyncMock()
+        session.add = MagicMock()
         session.flush = AsyncMock()
         db_result = MagicMock()
         db_result.scalars.return_value.all.return_value = []
@@ -362,11 +376,12 @@ class TestConsensusReviewWiring:
 
         tr = _make_tr()
 
-        with patch(
-            "general_ludd.event_loop.loop.asyncio.to_thread", _fake_to_thread()
-        ), patch(
-            "general_ludd.review.decision_applier.apply_decision",
-            new_callable=AsyncMock,
+        with (
+            patch("general_ludd.event_loop.loop.asyncio.to_thread", _fake_to_thread()),
+            patch(
+                "general_ludd.review.decision_applier.apply_decision",
+                new_callable=AsyncMock,
+            ),
         ):
             await loop._review_in_process(tr)
 
