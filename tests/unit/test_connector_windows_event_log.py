@@ -158,7 +158,7 @@ def test_query_powershell_single_object_normalizes() -> None:
     # ISO-8601 TimeCreated parsed.
     assert rec["ts"] is not None
     assert rec["level_or_status"] == "Information"
-    assert rec["message"] == "Started."
+    assert rec["message"] == "1: Started."
     assert rec["labels"]["channel"] == "Application"
 
 

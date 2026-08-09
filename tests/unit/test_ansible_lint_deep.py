@@ -10,7 +10,10 @@ import re
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
+
+pytestmark = pytest.mark.xdist_group("ansible_lint_deep")
 
 ROOT = Path(__file__).resolve().parents[2]
 COLLECTIONS_ROOT = ROOT / "collections" / "ansible_collections"
