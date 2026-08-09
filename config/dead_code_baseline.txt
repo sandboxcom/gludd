@@ -50,12 +50,12 @@ src/general_ludd/agents/task_decomposer.py:ManagerAgent
 src/general_ludd/agents/task_decomposer.py:RoleGoalBackstory
 src/general_ludd/agents/task_decomposer.py:TaskDecomposer
 src/general_ludd/agents/test_generation/code_path_analyzer.py:CodePathAnalyzer
+src/general_ludd/agents/test_generation/contracts.py:GeneratorConfig
 src/general_ludd/agents/test_generation/contracts.py:PipelineStage
-src/general_ludd/agents/test_generation/contracts.py:TestGenerator
 src/general_ludd/agents/test_generation/scenario_generator.py:ScenarioGenerator
 src/general_ludd/agents/test_generation/scenario_generator.py:ScenarioStep
-src/general_ludd/agents/test_generation/test_generator.py:TestGeneratorImpl
-src/general_ludd/agents/test_generation/test_harness.py:TestHarnessRunner
+src/general_ludd/agents/test_generation/test_generator.py:GeneratorImpl
+src/general_ludd/agents/test_generation/test_harness.py:HarnessRunner
 src/general_ludd/agents/test_generation/test_harness.py:TestResult
 src/general_ludd/agents/test_generation/test_reporter.py:TestReporter
 src/general_ludd/agents/test_generation/validator.py:ScenarioValidator
@@ -667,8 +667,6 @@ src/general_ludd/cloud/model_pipeline.py:PipelineResult
 src/general_ludd/cloud/model_pipeline.py:PipelineStep
 src/general_ludd/cloud/model_sources.py:DownloadError
 src/general_ludd/cloud/model_sources.py:DownloadedFile
-src/general_ludd/cloud/model_sources.py:ModelSource
-src/general_ludd/cloud/model_sources.py:download_with_fallback
 src/general_ludd/cloud/model_sources.py:resolve_source_chain
 src/general_ludd/cloud/multi_model_game_pipeline.py:DesignSpec
 src/general_ludd/cloud/multi_model_game_pipeline.py:ReviewResult
@@ -1770,7 +1768,6 @@ src/general_ludd/secrets/openbao_scope.py:OpenBaoScopeDenied
 src/general_ludd/secrets/openbao_scope.py:OpenBaoTTLCap
 src/general_ludd/secrets/openbao_scope.py:validate_openbao_path
 src/general_ludd/security/adversarial_detector.py:AdversarialPattern
-src/general_ludd/security/adversarial_detector.py:Category
 src/general_ludd/security/auth.py:AuthPosture
 src/general_ludd/security/capability_lattice.py:RoleCapabilities
 src/general_ludd/security/capability_lattice.py:capabilities_for
