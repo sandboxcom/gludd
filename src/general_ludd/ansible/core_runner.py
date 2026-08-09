@@ -92,10 +92,7 @@ def _timeout_child_entry(
         try:
             applied = runner._seccomp_filter.apply()
             if not applied:
-                logger.warning(
-                    "seccomp filter not applied (fail-open); playbook "
-                    "child runs without syscall filtering"
-                )
+                logger.warning("seccomp filter not applied (fail-open); playbook child runs without syscall filtering")
         except Exception:
             logger.warning(
                 "seccomp filter apply raised; continuing unfiltered",
@@ -111,6 +108,7 @@ def _timeout_child_entry(
         queue.put(("ok", _json_safe(result.model_dump())))
     except BaseException as exc:  # report SystemExit and executor failures too
         queue.put(("err", f"{type(exc).__name__}: {exc}"))
+
 
 try:
     from ansible.parsing.dataloader import DataLoader
@@ -150,57 +148,71 @@ class _EventCollectorCallback(CallbackBase):
         self._host_stats: dict[str, Any] = {}
 
     def v2_runner_on_start(self, host: Any, task: Any) -> None:
-        self._events.append({
-            "event": "runner_on_start",
-            "host": str(host),
-            "task": str(task),
-        })
+        self._events.append(
+            {
+                "event": "runner_on_start",
+                "host": str(host),
+                "task": str(task),
+            }
+        )
 
     def v2_runner_on_ok(self, result: Any) -> None:
-        self._events.append({
-            "event": "runner_on_ok",
-            "host": str(result._host),
-            "task": str(result._task),
-            "result": result._result,
-        })
+        self._events.append(
+            {
+                "event": "runner_on_ok",
+                "host": str(result._host),
+                "task": str(result._task),
+                "result": result._result,
+            }
+        )
 
     def v2_runner_on_failed(self, result: Any, ignore_errors: bool = False) -> None:
-        self._events.append({
-            "event": "runner_on_failed",
-            "host": str(result._host),
-            "task": str(result._task),
-            "result": result._result,
-            "ignore_errors": ignore_errors,
-        })
+        self._events.append(
+            {
+                "event": "runner_on_failed",
+                "host": str(result._host),
+                "task": str(result._task),
+                "result": result._result,
+                "ignore_errors": ignore_errors,
+            }
+        )
 
     def v2_runner_on_skipped(self, result: Any) -> None:
-        self._events.append({
-            "event": "runner_on_skipped",
-            "host": str(result._host),
-            "task": str(result._task),
-        })
+        self._events.append(
+            {
+                "event": "runner_on_skipped",
+                "host": str(result._host),
+                "task": str(result._task),
+            }
+        )
 
     def v2_runner_on_unreachable(self, result: Any) -> None:
-        self._events.append({
-            "event": "runner_on_unreachable",
-            "host": str(result._host),
-            "task": str(result._task),
-        })
+        self._events.append(
+            {
+                "event": "runner_on_unreachable",
+                "host": str(result._host),
+                "task": str(result._task),
+            }
+        )
 
     def v2_playbook_on_start(self, playbook: Any) -> None:
-        self._events.append({
-            "event": "playbook_on_start",
-            "playbook": str(playbook),
-        })
+        self._events.append(
+            {
+                "event": "playbook_on_start",
+                "playbook": str(playbook),
+            }
+        )
 
     def v2_playbook_on_stats(self, stats: Any) -> None:
         self._host_stats = {}
         for host, host_stats in stats.processed.items():
             self._host_stats[str(host)] = host_stats
-        self._events.append({
-            "event": "playbook_on_stats",
-            "stats": self._host_stats,
-        })
+        self._events.append(
+            {
+                "event": "playbook_on_stats",
+                "stats": self._host_stats,
+            }
+        )
 
 
 class AnsibleOptions:
@@ -275,6 +287,13 @@ class CoreAnsibleRunner:
         self._seccomp_filter = seccomp_filter
         self._collected_events: list[dict[str, Any]] = []
 
+    def close(self) -> None:
+        if self._private_data_dir and os.path.isdir(self._private_data_dir):
+            import shutil
+
+            shutil.rmtree(self._private_data_dir, ignore_errors=True)
+            self._private_data_dir = ""
+
     def run_playbook(
         self,
         playbook_path: str,
@@ -315,10 +334,7 @@ class CoreAnsibleRunner:
                 return AnsibleResult(
                     status="failed",
                     rc=1,
-                    error=(
-                        "network policy denied outbound HTTP request(s): "
-                        + "; ".join(violations)
-                    ),
+                    error=("network policy denied outbound HTTP request(s): " + "; ".join(violations)),
                 )
 
         # HIGH (unwrapped extravars): wrap EVERY untrusted extra-var value
@@ -426,8 +442,7 @@ class CoreAnsibleRunner:
                 status="failed",
                 rc=1,
                 error=(
-                    "no thread-safe multiprocessing start method is available "
-                    f"for the playbook timeout worker: {exc}"
+                    f"no thread-safe multiprocessing start method is available for the playbook timeout worker: {exc}"
                 ),
             )
 
@@ -448,10 +463,7 @@ class CoreAnsibleRunner:
             return AnsibleResult(
                 status="failed",
                 rc=1,
-                error=(
-                    f"unable to start {start_method} playbook timeout worker: "
-                    f"{type(exc).__name__}: {exc}"
-                ),
+                error=(f"unable to start {start_method} playbook timeout worker: {type(exc).__name__}: {exc}"),
             )
 
         # Track this child (and its setsid process group) in the managed-process
@@ -480,9 +492,7 @@ class CoreAnsibleRunner:
                 # Deadline blown — kill the child and (best-effort) its worker
                 # tree, then hard-kill if it ignores SIGTERM.
                 self._terminate_tree(proc)
-                logger.error(
-                    "Playbook exceeded wall-clock timeout of %.1fs; killed", timeout
-                )
+                logger.error("Playbook exceeded wall-clock timeout of %.1fs; killed", timeout)
                 return AnsibleResult(
                     status="failed",
                     rc=_TIMEOUT_RC,
@@ -544,54 +554,56 @@ class CoreAnsibleRunner:
     # Env vars whose values are NOT secrets and are safe to pass through to the
     # playbook subprocess.  Anything not on this list (ZAI_API_KEY, GLUDD_PSK,
     # AWS_*, OPENAI_*, DATABASE_URL, …) is stripped before pb_exec.run().
-    _PLAYBOOK_ENV_ALLOWLIST: frozenset[str] = frozenset({
-        "PATH",
-        "HOME",
-        "USER",
-        "LOGNAME",
-        "SHELL",
-        "LANG",
-        "LC_ALL",
-        "LC_CTYPE",
-        "TMPDIR",
-        "TEMP",
-        "TMP",
-        # Gludd runner configuration (not secrets — callers use these to tune
-        # playbook behaviour at the process level; GLUDD_PSK / ZAI_API_KEY /
-        # AWS_* are intentionally absent and must stay absent).
-        "GLUDD_PLAYBOOK_TIMEOUT",
-        # Ansible configuration (not secrets)
-        "ANSIBLE_CONFIG",
-        "ANSIBLE_ROLES_PATH",
-        "ANSIBLE_COLLECTIONS_PATHS",
-        "ANSIBLE_COLLECTIONS_PATH",
-        "ANSIBLE_LIBRARY",
-        "ANSIBLE_MODULE_UTILS",
-        "ANSIBLE_FILTER_PLUGINS",
-        "ANSIBLE_CALLBACK_PLUGINS",
-        "ANSIBLE_LOOKUP_PLUGINS",
-        "ANSIBLE_STRATEGY_PLUGINS",
-        "ANSIBLE_CACHE_PLUGINS",
-        "ANSIBLE_CONNECTION_PLUGINS",
-        "ANSIBLE_VARS_PLUGINS",
-        "ANSIBLE_HOST_KEY_CHECKING",
-        "ANSIBLE_STDOUT_CALLBACK",
-        "ANSIBLE_RETRY_FILES_ENABLED",
-        "ANSIBLE_FORCE_COLOR",
-        "ANSIBLE_NOCOLOR",
-        "ANSIBLE_VERBOSITY",
-        # Python runtime (needed by ansible-core modules)
-        "PYTHONPATH",
-        "PYTHONDONTWRITEBYTECODE",
-        "VIRTUAL_ENV",
-        # SSH (connection metadata only — no keys)
-        "SSH_AUTH_SOCK",
-        "SSH_AGENT_PID",
-        # Display / terminal (needed by some callbacks)
-        "TERM",
-        "COLUMNS",
-        "LINES",
-    })
+    _PLAYBOOK_ENV_ALLOWLIST: frozenset[str] = frozenset(
+        {
+            "PATH",
+            "HOME",
+            "USER",
+            "LOGNAME",
+            "SHELL",
+            "LANG",
+            "LC_ALL",
+            "LC_CTYPE",
+            "TMPDIR",
+            "TEMP",
+            "TMP",
+            # Gludd runner configuration (not secrets — callers use these to tune
+            # playbook behaviour at the process level; GLUDD_PSK / ZAI_API_KEY /
+            # AWS_* are intentionally absent and must stay absent).
+            "GLUDD_PLAYBOOK_TIMEOUT",
+            # Ansible configuration (not secrets)
+            "ANSIBLE_CONFIG",
+            "ANSIBLE_ROLES_PATH",
+            "ANSIBLE_COLLECTIONS_PATHS",
+            "ANSIBLE_COLLECTIONS_PATH",
+            "ANSIBLE_LIBRARY",
+            "ANSIBLE_MODULE_UTILS",
+            "ANSIBLE_FILTER_PLUGINS",
+            "ANSIBLE_CALLBACK_PLUGINS",
+            "ANSIBLE_LOOKUP_PLUGINS",
+            "ANSIBLE_STRATEGY_PLUGINS",
+            "ANSIBLE_CACHE_PLUGINS",
+            "ANSIBLE_CONNECTION_PLUGINS",
+            "ANSIBLE_VARS_PLUGINS",
+            "ANSIBLE_HOST_KEY_CHECKING",
+            "ANSIBLE_STDOUT_CALLBACK",
+            "ANSIBLE_RETRY_FILES_ENABLED",
+            "ANSIBLE_FORCE_COLOR",
+            "ANSIBLE_NOCOLOR",
+            "ANSIBLE_VERBOSITY",
+            # Python runtime (needed by ansible-core modules)
+            "PYTHONPATH",
+            "PYTHONDONTWRITEBYTECODE",
+            "VIRTUAL_ENV",
+            # SSH (connection metadata only — no keys)
+            "SSH_AUTH_SOCK",
+            "SSH_AGENT_PID",
+            # Display / terminal (needed by some callbacks)
+            "TERM",
+            "COLUMNS",
+            "LINES",
+        }
+    )
 
     def _execute_with_runner(
         self,
@@ -850,10 +862,7 @@ class CoreAnsibleRunner:
         # (e.g. ansible-specific vars passed from runner.py) and is merged in
         # AFTER the allowlist so it cannot re-introduce stripped secrets unless
         # the caller explicitly opts in.
-        scrubbed_env: dict[str, str] = {
-            k: v for k, v in os.environ.items()
-            if k in self._PLAYBOOK_ENV_ALLOWLIST
-        }
+        scrubbed_env: dict[str, str] = {k: v for k, v in os.environ.items() if k in self._PLAYBOOK_ENV_ALLOWLIST}
         if extra_env:
             scrubbed_env.update(extra_env)
 
@@ -896,9 +905,7 @@ class CoreAnsibleRunner:
         # to scanning the host_stats for failures/unreachable as a second
         # signal (covers executors that return 0 while reporting failures).
         failed_count = (
-            stats.get("failures", 0)
-            + stats.get("failed", 0)
-            + stats.get("unreachable", 0)
+            stats.get("failures", 0) + stats.get("failed", 0) + stats.get("unreachable", 0)
             if isinstance(stats, dict)
             else 0
         )
@@ -970,11 +977,31 @@ class CoreAnsibleRunner:
         extravars: dict[str, Any] | None = None,
     ) -> list[dict[str, str]]:
         _NON_MODULE_KEYS = {
-            "name", "when", "loop", "with_items", "with_dict", "register",
-            "become", "become_user", "delegate_to", "ignore_errors",
-            "notify", "tags", "vars", "block", "rescue", "always",
-            "args", "changed_when", "failed_when", "retries", "delay", "until",
-            "run_once", "local_action", "delegate_facts",
+            "name",
+            "when",
+            "loop",
+            "with_items",
+            "with_dict",
+            "register",
+            "become",
+            "become_user",
+            "delegate_to",
+            "ignore_errors",
+            "notify",
+            "tags",
+            "vars",
+            "block",
+            "rescue",
+            "always",
+            "args",
+            "changed_when",
+            "failed_when",
+            "retries",
+            "delay",
+            "until",
+            "run_once",
+            "local_action",
+            "delegate_facts",
         }
 
         try:
@@ -997,11 +1024,13 @@ class CoreAnsibleRunner:
                     if key not in _NON_MODULE_KEYS:
                         module = key
                         break
-                tasks.append({
-                    "name": task_name,
-                    "module": module,
-                    "hosts": str(play_hosts),
-                })
+                tasks.append(
+                    {
+                        "name": task_name,
+                        "module": module,
+                        "hosts": str(play_hosts),
+                    }
+                )
         return tasks
 
     def validate_playbook_syntax(self, playbook_path: str) -> list[str]:

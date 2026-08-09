@@ -2380,7 +2380,29 @@ clean-gh-run-logs: ## Delete all cached GitHub Actions run log zip files
 	echo "  after:  $$after_files files ($$after_size)"
 	@echo "=== done ==="
 
-clean-all-caches: clean-tmp clean-hf-cache clean-gh-run-logs clean-worktree-venvs ## Clean all caches: tmp, HF, GH run logs, worktree venvs
+audit-home-tmp: ## Show ~/tmp directory summary (read-only)
+	@echo "=== ~/tmp audit ==="
+	@echo "total_size=$$(du -sh /Users/shawnwilson/tmp 2>/dev/null | cut -f1)"
+	@echo "--- gludd-owned temp patterns (count + size) ---"
+	@for prefix in gl-runner gl-runner-iso gludd-tf gludd-llama-stderr gludd-qwen gludd-render gludd-collections gludd-sandbox lsmt_ _MEI; do \
+		cnt=$$(find /Users/shawnwilson/tmp -maxdepth 1 -name "$${prefix}*" 2>/dev/null | wc -l | tr -d ' '); \
+		if [ "$$cnt" != "0" ]; then \
+			sz=$$(du -sch /Users/shawnwilson/tmp/$${prefix}* 2>/dev/null | tail -1 | awk '{print $$1}'); \
+			echo "  $${prefix}* count=$$cnt size=$$sz"; \
+		fi; \
+	done
+	@echo "--- other patterns (count) ---"
+	@for pat in 'terraform-provider*' 'tmp*.whl' 'Gm*' '__pycache__'; do \
+		cnt=$$(find /Users/shawnwilson/tmp -maxdepth 1 -name "$$pat" 2>/dev/null | wc -l | tr -d ' '); \
+		[ "$$cnt" != "0" ] && echo "  $$pat count=$$cnt"; \
+	done
+	@echo "pytest_subdirs=$$(find /Users/shawnwilson/tmp/pytest-of-shawnwilson -maxdepth 1 -name 'pytest-*' 2>/dev/null | wc -l | tr -d ' ')"
+	@echo "=== done ==="
+
+cleanup-stale-tmp: ## Remove stale gludd-owned temp dirs/files from ~/tmp (APPLY=1 to execute, default dry-run)
+	@$(SYSTEM_PYTHON) scripts/cleanup_stale_tmp.py $$([ "$(APPLY)" = "1" ] && echo "--apply") --min-age-seconds 3600
+
+clean-all-caches: clean-tmp clean-hf-cache clean-gh-run-logs clean-worktree-venvs cleanup-stale-tmp ## Clean all caches: tmp, HF, GH run logs, worktree venvs, stale tmp entries
 	@echo "=== all caches cleaned ==="
 	@$(MAKE) --no-print-directory disk
 	@$(MAKE) --no-print-directory disk-user-caches
@@ -2424,12 +2446,47 @@ opencode-db-vacuum-full: ## Full VACUUM to reclaim disk space — refuses while 
 		$(if $(filter 1,$(OPENCODE_MAINTENANCE_FORCE)),--force,)
 
 opencode-db-compact: ## Aggressive prune then compact via sqlite3 backup API — refuses while OpenCode runs unless OPENCODE_MAINTENANCE_FORCE=1 (OPENCODE_DB, OPENCODE_RETENTION_DAYS, OPENCODE_DB_TIMEOUT_SECONDS, OPENCODE_DB_BUSY_TIMEOUT_MS, OPENCODE_MAINTENANCE_FORCE)
-	@PYTHONUNBUFFERED=1 $(SYSTEM_PYTHON) scripts/opencode_db_maintenance.py compact \
+	@$(SYSTEM_PYTHON) scripts/opencode_db_maintenance.py compact \
 		$(if $(filter command line environment,$(origin OPENCODE_DB)),--db "$(OPENCODE_DB)",) \
 		--retention-days "$(OPENCODE_RETENTION_DAYS)" \
+		--batch-size "$(OPENCODE_DB_BATCH_SIZE)" \
 		--timeout-seconds "$(OPENCODE_DB_TIMEOUT_SECONDS)" \
 		--busy-timeout-ms "$(OPENCODE_DB_BUSY_TIMEOUT_MS)" \
 		$(if $(filter 1,$(OPENCODE_MAINTENANCE_FORCE)),--force,)
+
+opencode-clean-compact: ## Delete stale .compact backup files from the OpenCode data directory (safe: only removes backups, never the live DB)
+	@DATA_DIR="$${OPENCODE_DATA_DIR:-$${HOME}/.local/share/opencode}"; \
+	DB="$${OPENCODE_DB:-$${HOME}/.local/share/opencode/opencode.db}"; \
+	for suffix in .compact .compact-journal .compact-wal .compact-shm; do \
+		f="$${DB}$${suffix}"; \
+		if [ -f "$$f" ]; then \
+			sz=$$(du -sh "$$f" 2>/dev/null | cut -f1); \
+			echo "phase=clean-compact file=$$f size=$$sz status=removing"; \
+			rm -f "$$f"; \
+		fi; \
+	done; \
+	echo "phase=clean-compact status=done"
+
+opencode-db-backup: ## Fast sqlite3 backup — copies only used pages (online-safe). Output to OPENCODE_DB_BACKUP_OUTPUT (default: <db>.compact)
+	@$(SYSTEM_PYTHON) -c '\
+import sqlite3, os, sys, time; \
+db = os.environ.get("OPENCODE_DB", os.path.expanduser("~/.local/share/opencode/opencode.db")); \
+out = os.environ.get("OPENCODE_DB_BACKUP_OUTPUT", db + ".compact"); \
+bt = int(os.environ.get("OPENCODE_DB_BUSY_TIMEOUT_MS", "5000")); \
+ts = int(os.environ.get("OPENCODE_DB_TIMEOUT_SECONDS", "600")); \
+print(f"phase=backup status=starting db={db} output={out}", flush=True); \
+t0 = time.monotonic(); \
+src = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=bt/1000); \
+src.execute(f"PRAGMA busy_timeout={bt}"); \
+dst = sqlite3.connect(out); \
+dst.execute(f"PRAGMA busy_timeout={bt}"); \
+dst.execute("PRAGMA journal_mode=OFF"); \
+src.backup(dst, pages=100, sleep=0.05); \
+src.close(); dst.close(); \
+sz = os.path.getsize(out); \
+elapsed = time.monotonic() - t0; \
+print(f"phase=backup status=complete size={sz} elapsed_s={elapsed:.1f}", flush=True); \
+'
 
 opencode-db-prune: ## Offline bounded session-tree prune (OPENCODE_DB, OPENCODE_RETENTION_DAYS, OPENCODE_DB_BATCH_SIZE, OPENCODE_DB_MAX_SESSIONS, OPENCODE_DB_TIMEOUT_SECONDS, OPENCODE_DB_BUSY_TIMEOUT_MS, OPENCODE_MAINTENANCE_VALIDATE_ONLY, OPENCODE_MAINTENANCE_FORCE)
 	@$(SYSTEM_PYTHON) scripts/opencode_db_maintenance.py prune \

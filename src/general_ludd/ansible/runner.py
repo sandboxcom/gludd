@@ -117,17 +117,12 @@ def _normalize_role_output(role: str, raw: dict[str, Any]) -> dict[str, Any]:
             fname = Path(str(raw.get("file", ""))).stem
             raw.setdefault("font_name", fname or fmt.upper())
         else:
-            raw.setdefault(
-                "error", f"Unrecognized font format: {fmt}"
-            )
+            raw.setdefault("error", f"Unrecognized font format: {fmt}")
     elif role == "homoglyph_scan":
         findings = raw.get("findings", [])
         if not isinstance(findings, list):
             findings = []
-        confusables = [
-            f for f in findings
-            if isinstance(f, dict) and f.get("type") == "confusable"
-        ]
+        confusables = [f for f in findings if isinstance(f, dict) and f.get("type") == "confusable"]
         raw["confusable_count"] = len(confusables)
         raw["confusables"] = confusables
     elif role == "locale_format":
@@ -145,20 +140,12 @@ def _normalize_role_output(role: str, raw: dict[str, Any]) -> dict[str, Any]:
         words = raw.get("words", [])
         if not isinstance(words, list):
             words = []
-        ipa_parts = [
-            str(w.get("transcription", ""))
-            for w in words
-            if isinstance(w, dict)
-        ]
+        ipa_parts = [str(w.get("transcription", "")) for w in words if isinstance(w, dict)]
         raw["ipa"] = " ".join(ipa_parts)
     elif role == "unicode_analyze":
         raw["character_count"] = raw.get("input_length", 0)
         codepoints = raw.get("codepoints", [])
-        if (
-            isinstance(codepoints, list)
-            and codepoints
-            and isinstance(codepoints[0], dict)
-        ):
+        if isinstance(codepoints, list) and codepoints and isinstance(codepoints[0], dict):
             first = codepoints[0]
             raw.setdefault("codepoint", first.get("codepoint"))
             raw.setdefault("name", first.get("name"))
@@ -183,9 +170,7 @@ class AnsibleRunnerAdapter:
         self._playbooks_dir = playbooks_dir
         self._event_bus = event_bus
         self._default_env: dict[str, str] = default_env or {}
-        self._project_root: Path | None = (
-            Path(project_root) if project_root else None
-        )
+        self._project_root: Path | None = Path(project_root) if project_root else None
         self._collections_env: dict[str, str] = {}
         self._version_activation_roots: list[Path] = []
         self._version_cleanup_dirs: list[Path] = []
@@ -196,6 +181,16 @@ class AnsibleRunnerAdapter:
         )
         if playbooks_dir:
             self._scan_playbook_dir(playbooks_dir)
+
+    def close(self) -> None:
+        """Remove the private-data temp directory created by this adapter.
+
+        Safe to call multiple times; subsequent calls are no-ops.
+        After close(), the adapter should be discarded.
+        """
+        if self.private_data_dir and os.path.isdir(self.private_data_dir):
+            shutil.rmtree(self.private_data_dir, ignore_errors=True)
+            self.private_data_dir = ""
 
     def set_project_root(self, project_root: str | Path | None) -> None:
         """Update the active project root and re-resolve the collections env.
@@ -218,9 +213,7 @@ class AnsibleRunnerAdapter:
         entries = resolve_collections_paths(project_root=self._project_root)
         self._collections_env = to_ansible_env(entries)
         if entries:
-            rendered = ", ".join(
-                f"{e.source}:{e.path}" for e in entries
-            )
+            rendered = ", ".join(f"{e.source}:{e.path}" for e in entries)
             logger.info(
                 "Resolved ansible collections search path (precedence high→low): %s",
                 rendered,
@@ -240,12 +233,8 @@ class AnsibleRunnerAdapter:
                     base = entry.path
                     break
         if base is None:
-            raise FileNotFoundError(
-                f"No collections directory found for {namespace}.{collection}"
-            )
-        root, cleanup = activate_collection_version(
-            base, namespace=namespace, collection=collection, version=version
-        )
+            raise FileNotFoundError(f"No collections directory found for {namespace}.{collection}")
+        root, cleanup = activate_collection_version(base, namespace=namespace, collection=collection, version=version)
         if cleanup is not None and cleanup not in self._version_cleanup_dirs:
             self._version_cleanup_dirs.append(cleanup)
         self._version_activation_roots.append(root)
@@ -382,10 +371,7 @@ class AnsibleRunnerAdapter:
         if not script_path.is_file():
             return {"error": f"Role script not found: {script_path}"}
 
-        extra = {
-            k: v for k, v in task_args.items()
-            if k not in ("collection", "role")
-        }
+        extra = {k: v for k, v in task_args.items() if k not in ("collection", "role")}
         cli_args = _convert_role_args(role, extra)
         repo_root = Path(__file__).resolve().parent.parent.parent.parent
         cmd = [sys.executable, str(script_path), *cli_args]
@@ -397,9 +383,7 @@ class AnsibleRunnerAdapter:
                 stderr=asyncio.subprocess.PIPE,
                 cwd=str(repo_root),
             )
-            stdout_b, stderr_b = await asyncio.wait_for(
-                proc.communicate(), timeout=30.0
-            )
+            stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=30.0)
             stdout_text = stdout_b.decode("utf-8", errors="replace").strip()
             stderr_text = stderr_b.decode("utf-8", errors="replace").strip()
 
