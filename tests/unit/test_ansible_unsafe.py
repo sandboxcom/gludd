@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from general_ludd.ansible.unsafe import has_wrap_var, wrap_extravars, wrap_unsafe
 
+import pytest
+
+pytestmark = pytest.mark.xdist_group("ansible_unsafe")
+
 
 class TestWrapUnsafe:
     def test_string_is_wrapped(self):

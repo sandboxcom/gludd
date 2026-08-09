@@ -781,7 +781,7 @@ class TestPathValidation:
         mgr = SecretsManager()
         mock_client = MagicMock()
         mgr._client = mock_client
-        with pytest.raises(ValueError, match="traversal"):
+        with pytest.raises(ValueError, match=r"\.\..*segments are not permitted"):
             mgr.read_secret("../escape")
 
     def test_write_secret_rejects_invalid_chars(self):
