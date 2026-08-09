@@ -73,7 +73,7 @@ def _validate_host(host: str, *, allow_nonloopback: bool = False) -> str:
     """
     if not isinstance(host, str) or not host:
         raise ValueError("host must be a non-empty string")
-    if _has_shell_metachars(host) or not _HOST_RE.match(host):
+    if _has_shell_metachars(host) or (not _HOST_RE.match(host) and host not in _LOOPBACK_HOSTS):
         raise ValueError(f"invalid host: {host!r}")
     if not allow_nonloopback and host not in _LOOPBACK_HOSTS:
         raise ValueError(
@@ -405,13 +405,13 @@ class LocalInferenceManager:
         stderr_tail = ""
         if server.stderr_path is not None:
             stderr_tail = await _read_stderr(server.stderr_path)
-        raise RuntimeError(
+        msg = (
             f"Local inference server {server.server_id!r} did not become ready "
             f"within {server.config.startup_timeout}s (health URL: {health_url})."
-            f"\nstderr tail:\n{stderr_tail}"
-            if stderr_tail
-            else ""
         )
+        if stderr_tail:
+            msg += f"\nstderr tail:\n{stderr_tail}"
+        raise RuntimeError(msg)
 
     async def _start_slurm_server(self, server: LocalServer) -> LocalServer:
         adapter = SlurmAdapter()
@@ -503,7 +503,7 @@ class LocalInferenceManager:
                 if server.pid is not None:
                     with contextlib.suppress(ProcessLookupError):
                         os.kill(server.pid, signal.SIGKILL)
-        elif server.pid is not None:
+        elif server.pid is not None and server.status != "stopped":
             with contextlib.suppress(ProcessLookupError):
                 os.kill(server.pid, signal.SIGTERM)
 

@@ -182,9 +182,10 @@ class TestDeadlockDetection:
         wd.start_sweeper(interval_s=0.1)
         assert wd._sweeper is not None
         assert wd._sweeper.is_alive()
+        sweeper = wd._sweeper
         wd.stop_sweeper()
         assert wd._stop.is_set()
-        assert not wd._sweeper.is_alive()
+        assert not sweeper.is_alive()
 
     def test_stall_watchdog_double_start_is_idempotent(self):
         """start_sweeper is idempotent when already running."""

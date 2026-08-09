@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from general_ludd.cloud.model_sources import ModelSource
     from general_ludd.small_models.model_hash_db import ModelHashDB
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,19 @@ class DownloadProgress:
         if self.total_bytes <= 0:
             return 0.0
         return min(100.0, (self.downloaded_bytes / self.total_bytes) * 100.0)
+
+
+def _map_model_source_to_download_source(source: ModelSource) -> DownloadSource:
+    from general_ludd.cloud.model_sources import ModelSource
+
+    _MAP = {
+        ModelSource.HUGGINGFACE: DownloadSource.HUGGINGFACE,
+        ModelSource.OLLAMA: DownloadSource.OLLAMA,
+        ModelSource.DIRECT_URL: DownloadSource.HUGGINGFACE,
+        ModelSource.LOCAL_PATH: DownloadSource.CACHE,
+        ModelSource.S3_MIRROR: DownloadSource.HUGGINGFACE,
+    }
+    return _MAP[source]
 
 
 class ModelDownloader:
@@ -222,6 +236,54 @@ class ModelDownloader:
         )
         return downloaded
 
+    def download_multi_source(
+        self,
+        model_id: str,
+        filename: str | None = None,
+        order: list[str] | None = None,
+        retries: int = 1,
+    ) -> DownloadedModel | None:
+        from general_ludd.cloud.model_sources import (
+            ModelSource,
+            download_with_fallback,
+        )
+        from general_ludd.local_model._local_model_configs import _LOCAL_MODELS
+
+        config = next((c for c in _LOCAL_MODELS if c.name == model_id), None)
+        if config is None:
+            return None
+
+        source_order: list[ModelSource] | None = None
+        if order:
+            source_map = {s.value: s for s in ModelSource}
+            source_order = []
+            for s in order:
+                mapped = source_map.get(s)
+                if mapped is not None:
+                    source_order.append(mapped)
+
+        try:
+            result = download_with_fallback(
+                config=config,
+                order=source_order,
+                cache_dir=self.cache_dir,
+                retries=retries,
+                timeout=self.timeout,
+            )
+            downloaded_source = _map_model_source_to_download_source(result.source)
+            downloaded = DownloadedModel(
+                model_id=model_id,
+                local_path=result.local_path,
+                source=downloaded_source,
+                filename=filename or config.filename,
+                size_bytes=result.size_bytes,
+                downloaded_at=result.downloaded_at,
+            )
+            self._downloaded[model_id] = downloaded
+            return downloaded
+        except Exception:
+            return None
+
     def download(
         self,
         model_id: str,
@@ -229,6 +291,7 @@ class ModelDownloader:
         revision: str | None = None,
         force: bool = False,
         verify_hash: bool = True,
+        order: list[str] | None = None,
     ) -> DownloadedModel:
         from general_ludd.small_models.cost import should_defer_download
 
@@ -240,6 +303,22 @@ class ModelDownloader:
                 model_id,
                 defer_info.get("next_off_peak", {}),
             )
+
+        multi_result = self.download_multi_source(
+            model_id=model_id,
+            filename=filename,
+            order=order,
+        )
+        if multi_result is not None:
+            if verify_hash and self._hash_db is not None:
+                from general_ludd.small_models.model_hash_db import ModelIntegrityError
+
+                try:
+                    self._hash_db.verify_download(model_id, multi_result.local_path)
+                except ModelIntegrityError:
+                    self._downloaded.pop(model_id, None)
+                    raise
+            return multi_result
 
         if filename and filename.lower().endswith(".gguf"):
             result = self.download_gguf(model_id=model_id, filename=filename, revision=revision)

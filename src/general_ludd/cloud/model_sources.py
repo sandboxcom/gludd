@@ -54,6 +54,11 @@ ALTERNATIVE_SOURCES: dict[str, dict[ModelSource, object]] = {
             "filename": "Qwen2.5-0.5B-Instruct-Q4_K_M.gguf",
         },
         ModelSource.OLLAMA: "qwen2.5:0.5b",
+        ModelSource.DIRECT_URL: "https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf",
+        ModelSource.S3_MIRROR: os.environ.get(
+            "GLUDD_S3_QWEN_05B_URL",
+            "https://gludd-models.s3.us-east-1.amazonaws.com/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf",
+        ),
     },
     "tinyllama-1.1b": {
         ModelSource.HUGGINGFACE: {
@@ -61,6 +66,7 @@ ALTERNATIVE_SOURCES: dict[str, dict[ModelSource, object]] = {
             "filename": "TinyLlama-1.1B-Chat-v1.0-Q4_K_M.gguf",
         },
         ModelSource.OLLAMA: "tinyllama:latest",
+        ModelSource.DIRECT_URL: "https://huggingface.co/bartowski/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/TinyLlama-1.1B-Chat-v1.0-Q4_K_M.gguf",
     },
     "smollm2-135m": {
         ModelSource.HUGGINGFACE: {
@@ -68,6 +74,10 @@ ALTERNATIVE_SOURCES: dict[str, dict[ModelSource, object]] = {
             "filename": "SmolLM2-135M-Instruct-Q4_K_M.gguf",
         },
         ModelSource.OLLAMA: "smollm2:135m",
+        ModelSource.S3_MIRROR: os.environ.get(
+            "GLUDD_S3_SMOLLM2_135M_URL",
+            "https://gludd-models.s3.us-east-1.amazonaws.com/SmolLM2-135M-Instruct-Q4_K_M.gguf",
+        ),
     },
     "smollm2-360m": {
         ModelSource.HUGGINGFACE: {
@@ -219,6 +229,7 @@ ALTERNATIVE_SOURCES: dict[str, dict[ModelSource, object]] = {
 
 _DEFAULT_SOURCE_ORDER: list[ModelSource] = [
     ModelSource.OLLAMA,
+    ModelSource.S3_MIRROR,
     ModelSource.HUGGINGFACE,
     ModelSource.DIRECT_URL,
 ]

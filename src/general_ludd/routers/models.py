@@ -1028,8 +1028,8 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         source = str(body.get("source") or "huggingface")
         if not model_id:
             raise HTTPException(status_code=422, detail="model_id required")
-        if source not in ("huggingface", "ollama", "local"):
-            raise HTTPException(status_code=422, detail="source must be huggingface, ollama, or local")
+        if source not in ("huggingface", "ollama", "local", "multi"):
+            raise HTTPException(status_code=422, detail="source must be huggingface, ollama, local, or multi")
 
         filename = str(body.get("filename", "")) or None
         revision = str(body.get("revision", "")) or None
@@ -1044,6 +1044,17 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 local_path=model_path,
                 source=DownloadSource.CACHE,
                 size_bytes=size_bytes,
+            )
+        elif source == "multi":
+            order_raw = body.get("order")
+            order: list[str] | None = None
+            if isinstance(order_raw, list):
+                order = [str(o) for o in order_raw]
+            downloaded = downloader.download(
+                model_id=model_id,
+                filename=filename,
+                revision=revision,
+                order=order,
             )
         elif source == "ollama":
             downloaded = downloader.pull_ollama(model_id=model_id, revision=revision)

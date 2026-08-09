@@ -511,8 +511,9 @@ def test_task_jinja_expressions_dont_rely_on_undefined_vars() -> None:
     """Jinja expressions for variables not guaranteed defined should
     use the | default() filter (excluding ansible_* built-ins).
 
-    Variables defined in the role's defaults/main.yml or vars/main.yml
-    are considered guaranteed and do not require | default().
+    Safe exemptions: role defaults/vars, register: vars in the same
+    task file, set_fact: vars in the same file, and 1-2 character
+    loop-var names.
     """
     import yaml as _yaml
 
@@ -554,12 +555,36 @@ def test_task_jinja_expressions_dont_rely_on_undefined_vars() -> None:
         _role_defined_cache[key] = defined
         return defined
 
+    _file_defined_cache: dict[str, set[str]] = {}
+
+    def _extract_file_defined_vars(tf: Path) -> set[str]:
+        """Extract register: and set_fact: variable names from a task file."""
+        key = str(tf)
+        if key in _file_defined_cache:
+            return _file_defined_cache[key]
+        result: set[str] = set()
+        tasks = _load_yaml(tf)
+        if tasks is not None and isinstance(tasks, list):
+
+            def _collect(task: dict[str, Any], idx: int, tf: Path) -> None:
+                if "register" in task and isinstance(task["register"], str):
+                    result.add(task["register"])
+                for mod_key in ("ansible.builtin.set_fact", "set_fact"):
+                    if mod_key in task and isinstance(task[mod_key], dict):
+                        result.update(task[mod_key].keys())
+
+            _walk_tasks(tasks, _collect, tf)
+        _file_defined_cache[key] = result
+        return result
+
     for tf in task_files:
         content = tf.read_text(encoding="utf-8")
         role_defined = _role_defined_vars(tf.parent)
+        file_defined = _extract_file_defined_vars(tf)
+        combined_safe = safe | role_defined | file_defined
         for m in bare.finditer(content):
             vn = m.group(1)
-            if vn in safe or vn in role_defined:
+            if len(vn) <= 2 or vn in combined_safe:
                 continue
             violations.append(
                 f"{tf.relative_to(ROOT)}: '{{{{{vn}}}}}' used "

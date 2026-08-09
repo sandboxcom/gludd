@@ -60,6 +60,27 @@ class TestAlternativeSources:
                     f"Ollama entry for {name} should be a plain model name"
                 )
 
+    def test_qwen_has_direct_url_and_s3_mirror(self):
+        sources = ALTERNATIVE_SOURCES["qwen-0.5b"]
+        assert ModelSource.DIRECT_URL in sources
+        assert ModelSource.S3_MIRROR in sources
+        assert isinstance(sources[ModelSource.DIRECT_URL], str)
+        assert "huggingface.co" in str(sources[ModelSource.DIRECT_URL])
+        assert isinstance(sources[ModelSource.S3_MIRROR], str)
+        assert "s3" in str(sources[ModelSource.S3_MIRROR])
+
+    def test_smollm2_has_s3_mirror(self):
+        sources = ALTERNATIVE_SOURCES["smollm2-135m"]
+        assert ModelSource.S3_MIRROR in sources
+        assert isinstance(sources[ModelSource.S3_MIRROR], str)
+        assert "s3" in str(sources[ModelSource.S3_MIRROR])
+
+    def test_tinyllama_has_direct_url(self):
+        sources = ALTERNATIVE_SOURCES["tinyllama-1.1b"]
+        assert ModelSource.DIRECT_URL in sources
+        assert isinstance(sources[ModelSource.DIRECT_URL], str)
+        assert ".gguf" in str(sources[ModelSource.DIRECT_URL])
+
 
 class TestResolveSourceChain:
     def test_default_order_is_ollama_first(self):
@@ -167,6 +188,34 @@ class TestDownloadWithFallback:
         mock_hf.return_value = DownloadedFile(local_path="/tmp/model.gguf", source=ModelSource.HUGGINGFACE)
         result = download_with_fallback(cfg, retries=2)
         assert result.source == ModelSource.HUGGINGFACE
+
+    @patch("general_ludd.cloud.model_sources._download_from_direct_url")
+    def test_resolves_s3_mirror_via_direct_url(self, mock_url):
+        cfg = _make_config()
+        mock_url.return_value = DownloadedFile(
+            local_path="/tmp/s3-model.gguf",
+            source=ModelSource.S3_MIRROR,
+        )
+        result = download_with_fallback(
+            cfg,
+            order=[ModelSource.S3_MIRROR],
+        )
+        assert result.source == ModelSource.S3_MIRROR
+        assert mock_url.call_count == 1
+
+    @patch("general_ludd.cloud.model_sources._download_from_direct_url")
+    def test_resolves_direct_url_in_chain(self, mock_url):
+        cfg = _make_config(name="qwen-0.5b")
+        mock_url.return_value = DownloadedFile(
+            local_path="/tmp/url-model.gguf",
+            source=ModelSource.DIRECT_URL,
+        )
+        result = download_with_fallback(
+            cfg,
+            order=[ModelSource.DIRECT_URL],
+        )
+        assert result.source == ModelSource.DIRECT_URL
+        assert mock_url.call_count == 1
 
 
 class TestBackwardCompat:
