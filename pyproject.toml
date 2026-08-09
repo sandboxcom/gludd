@@ -296,5 +296,9 @@ dev = [
     "deptry>=0.1.0-beta.2",
     "molecule>=0.1.0-beta.2",
     "ansible-lint>=0.1.0-beta.2",
+    "pytest-ansible>=0.1.0-beta.2",
+    "ansible-dev-tools>=0.1.0-beta.2",
+    "pip>=0.1.0-beta.2",
+    "setuptools>=83.0.0",
     "hypothesis>=6.0.0",
 ]
