@@ -2320,6 +2320,35 @@ opencode-clean-hard: ## Offline aggressive cache/log cleanup (OPENCODE_DB, OPENC
 		--max-file-entries "$(OPENCODE_MAX_FILE_ENTRIES)" \
 		$(if $(filter 1,$(OPENCODE_MAINTENANCE_VALIDATE_ONLY)),--validate-only,)
 
+disk-user-caches: ## Show all user-cache directories accessible to this agent + their sizes
+	@echo "=== user cache footprint ==="
+	@for d in ~/.cache/huggingface ~/.cache/gh ~/.cache/uv ~/.cache/pip ~/.cache/opencode ~/.cache/claude ~/.cache/pre-commit ~/.cache/gludd ~/.cache/general-ludd; do \
+		if [ -d "$$d" ]; then \
+			printf "%-50s %s\n" "$$d:" "$$(du -sh "$$d" 2>/dev/null | cut -f1)"; \
+		fi; \
+	done
+	@echo ""
+	@echo "=== gh run-log zips ==="
+	@gh_logs=$$(find ~/.cache/gh -name 'run-log-*.zip' 2>/dev/null | wc -l | tr -d ' '); \
+	echo "  count: $$gh_logs files"; \
+	echo "  total: $$(du -sh ~/.cache/gh 2>/dev/null | cut -f1)"
+
+clean-gh-run-logs: ## Delete all cached GitHub Actions run log zip files
+	@echo "=== cleaning GH run logs ==="
+	@before_files=$$(find ~/.cache/gh -name 'run-log-*.zip' 2>/dev/null | wc -l | tr -d ' '); \
+	before_size=$$(du -sh ~/.cache/gh 2>/dev/null | cut -f1); \
+	echo "  before: $$before_files files ($$before_size)"
+	@find ~/.cache/gh -name 'run-log-*.zip' -delete 2>/dev/null || true
+	@after_size=$$(du -sh ~/.cache/gh 2>/dev/null | cut -f1); \
+	after_files=$$(find ~/.cache/gh -name 'run-log-*.zip' 2>/dev/null | wc -l | tr -d ' '); \
+	echo "  after:  $$after_files files ($$after_size)"
+	@echo "=== done ==="
+
+clean-all-caches: clean-tmp clean-hf-cache clean-gh-run-logs clean-worktree-venvs ## Clean all caches: tmp, HF, GH run logs, worktree venvs
+	@echo "=== all caches cleaned ==="
+	@$(MAKE) --no-print-directory disk
+	@$(MAKE) --no-print-directory disk-user-caches
+
 opencode-db-stats: ## Bounded read-only OpenCode table counts (OPENCODE_DB, OPENCODE_DATA_DIR, OPENCODE_DB_TIMEOUT_SECONDS, OPENCODE_DB_BUSY_TIMEOUT_MS, OPENCODE_MAINTENANCE_VALIDATE_ONLY)
 	@$(SYSTEM_PYTHON) scripts/opencode_db_maintenance.py stats \
 		$(if $(filter command line environment,$(origin OPENCODE_DB)),--db "$(OPENCODE_DB)",) \
