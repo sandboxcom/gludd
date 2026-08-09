@@ -136,6 +136,7 @@ function writeState(s: MultitaskState): void {
 function hasPendingWork(): boolean {
   try {
     const root = getProjectRoot()
+    const now = Date.now()
 
     const tasksPath = path.join(root, "TASKS.md")
     if (hasTasksMdPendingWork(tasksPath)) return true
@@ -162,7 +163,24 @@ function hasPendingWork(): boolean {
     if (fs.existsSync(gatePath)) {
       const content = fs.readFileSync(gatePath, "utf8")
       if (/=== GATE:\s*FAILED/.test(content)) return true
-      if (/test REQUIRED/.test(content) || /smoke REQUIRED/.test(content)) return true
+      for (const line of content.split("\n")) {
+        if (line.startsWith("===")) continue
+        if (/^(lint |typecheck |collect |test |smoke |env-writes |dead-code |hook-runtime |verify-enforcement |coverage-gaps |check-duplicate-targets )/.test(line)) {
+          if (/FAIL/.test(line)) return true
+        }
+      }
+    }
+
+    const gateLitePath = path.join(root, ".gate-lite-status")
+    if (fs.existsSync(gateLitePath)) {
+      const content = fs.readFileSync(gateLitePath, "utf8")
+      if (/=== GATE-LITE:\s*FAILED/.test(content)) return true
+      for (const line of content.split("\n")) {
+        if (line.startsWith("===")) continue
+        if (/^(lint |typecheck |collect |test |smoke |env-writes |dead-code |hook-runtime |coverage-gaps |tdd-compliance |plugin-hook-invoke |skills-frontmatter |lint-specs |spec-enforcement-coverage )/.test(line)) {
+          if (/FAIL/.test(line)) return true
+        }
+      }
     }
 
     const ciCachePath = process.env.GLUDD_CI_CACHE_PATH || "/tmp/gludd-watchdog-ci.json"
@@ -171,7 +189,19 @@ function hasPendingWork(): boolean {
       const rawLastCheck: number = ciData.last_ci_check || 0
       const lastCheck: number = rawLastCheck < 1e11 ? rawLastCheck * 1000 : rawLastCheck
       const lastStatus = ciData.last_ci_status || ""
-      if (Date.now() - lastCheck < 600_000 && lastStatus && lastStatus !== "SUCCESS") return true
+      if (now - lastCheck < 600_000 && lastStatus && lastStatus !== "SUCCESS") return true
+    }
+
+    const stopStatePath = process.env.GLUDD_STOP_STATE_PATH || "/tmp/gludd-stop-state.json"
+    if (fs.existsSync(stopStatePath)) {
+      const state = JSON.parse(fs.readFileSync(stopStatePath, "utf8"))
+      if (state.hasPendingWork) return true
+    }
+
+    const releasePath = process.env.GLUDD_RELEASE_COMPLETENESS_FILE || "/tmp/gludd-release-completeness.json"
+    if (fs.existsSync(releasePath)) {
+      const rd = JSON.parse(fs.readFileSync(releasePath, "utf8"))
+      if (now - (rd.ts || 0) < 300_000 && rd.incomplete) return true
     }
 
     try {

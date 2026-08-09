@@ -634,6 +634,22 @@ function hasRealPendingWork(): WorkState {
     }
   } catch {}
 
+  try {
+    const gateLitePath = path.join(root, ".gate-lite-status")
+    if (fs.existsSync(gateLitePath)) {
+      const content = fs.readFileSync(gateLitePath, "utf8")
+      if (/=== GATE-LITE:\s*FAILED/.test(content)) {
+        gateStatusRed = true
+      }
+      for (const line of content.split("\n")) {
+        if (line.startsWith("===")) continue
+        if (/^(lint |typecheck |collect |test |smoke |env-writes |dead-code |hook-runtime |coverage-gaps |tdd-compliance |plugin-hook-invoke |skills-frontmatter |lint-specs |spec-enforcement-coverage )/.test(line)) {
+          if (/FAIL/.test(line)) { gateStatusRed = true; break }
+        }
+      }
+    }
+  } catch {}
+
   let ciVerdictPendingOrRed = false
   let ciVerdictUnknown = false
   try {

@@ -187,10 +187,29 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
       const gatePath = path.join(getProjectRoot(), ".gate-status")
       if (fs.existsSync(gatePath)) {
         const content = fs.readFileSync(gatePath, "utf8")
+        if (/=== GATE:\s*FAILED/.test(content)) return true
         for (const line of content.split("\n")) {
           if (line.startsWith("===")) continue
           if (/FAIL/.test(line) || /RUNNING/i.test(line) || /incomplete/i.test(line)) return true
         }
+      }
+    } catch {}
+    try {
+      const gateLitePath = path.join(getProjectRoot(), ".gate-lite-status")
+      if (fs.existsSync(gateLitePath)) {
+        const content = fs.readFileSync(gateLitePath, "utf8")
+        if (/=== GATE-LITE:\s*FAILED/.test(content)) return true
+        for (const line of content.split("\n")) {
+          if (line.startsWith("===")) continue
+          if (/FAIL/.test(line)) return true
+        }
+      }
+    } catch {}
+    try {
+      const releasePath = process.env.GLUDD_RELEASE_COMPLETENESS_FILE || "/tmp/gludd-release-completeness.json"
+      if (fs.existsSync(releasePath)) {
+        const rd = JSON.parse(fs.readFileSync(releasePath, "utf8"))
+        if (Date.now() - (rd.ts || 0) < 300_000 && rd.incomplete) return true
       }
     } catch {}
     try {
