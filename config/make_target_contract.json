@@ -88,6 +88,90 @@
       "behavior": "make grep Q=GAME_E2E SEARCH_PATH=docs"
     },
     {
+      "name": "opencode-disk",
+      "make_variables": [
+        "OPENCODE_DB",
+        "OPENCODE_DATA_DIR",
+        "OPENCODE_DB_TIMEOUT_SECONDS",
+        "OPENCODE_DB_BUSY_TIMEOUT_MS",
+        "OPENCODE_MAX_FILE_ENTRIES",
+        "OPENCODE_MAINTENANCE_VALIDATE_ONLY"
+      ],
+      "behavior": "make opencode-disk OPENCODE_DB=/tmp/gludd-opencode-contract/opencode.db OPENCODE_DATA_DIR=/tmp/gludd-opencode-contract OPENCODE_DB_TIMEOUT_SECONDS=2 OPENCODE_DB_BUSY_TIMEOUT_MS=20 OPENCODE_MAX_FILE_ENTRIES=10 OPENCODE_MAINTENANCE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "opencode-clean",
+      "make_variables": [
+        "OPENCODE_DB",
+        "OPENCODE_DATA_DIR",
+        "OPENCODE_DB_TIMEOUT_SECONDS",
+        "OPENCODE_DB_BUSY_TIMEOUT_MS",
+        "OPENCODE_DB_INCREMENTAL_PAGES",
+        "OPENCODE_MAX_FILE_ENTRIES",
+        "OPENCODE_MAINTENANCE_VALIDATE_ONLY"
+      ],
+      "behavior": "make opencode-clean OPENCODE_DB=/tmp/gludd-opencode-contract/opencode.db OPENCODE_DATA_DIR=/tmp/gludd-opencode-contract OPENCODE_DB_TIMEOUT_SECONDS=2 OPENCODE_DB_BUSY_TIMEOUT_MS=20 OPENCODE_DB_INCREMENTAL_PAGES=2 OPENCODE_MAX_FILE_ENTRIES=10 OPENCODE_MAINTENANCE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "opencode-clean-hard",
+      "make_variables": [
+        "OPENCODE_DB",
+        "OPENCODE_DATA_DIR",
+        "OPENCODE_DB_TIMEOUT_SECONDS",
+        "OPENCODE_DB_BUSY_TIMEOUT_MS",
+        "OPENCODE_DB_INCREMENTAL_PAGES",
+        "OPENCODE_MAX_FILE_ENTRIES",
+        "OPENCODE_MAINTENANCE_VALIDATE_ONLY"
+      ],
+      "behavior": "make opencode-clean-hard OPENCODE_DB=/tmp/gludd-opencode-contract/opencode.db OPENCODE_DATA_DIR=/tmp/gludd-opencode-contract OPENCODE_DB_TIMEOUT_SECONDS=2 OPENCODE_DB_BUSY_TIMEOUT_MS=20 OPENCODE_DB_INCREMENTAL_PAGES=2 OPENCODE_MAX_FILE_ENTRIES=10 OPENCODE_MAINTENANCE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "opencode-db-stats",
+      "make_variables": [
+        "OPENCODE_DB",
+        "OPENCODE_DATA_DIR",
+        "OPENCODE_DB_TIMEOUT_SECONDS",
+        "OPENCODE_DB_BUSY_TIMEOUT_MS",
+        "OPENCODE_MAINTENANCE_VALIDATE_ONLY"
+      ],
+      "behavior": "make opencode-db-stats OPENCODE_DB=/tmp/gludd-opencode-contract/opencode.db OPENCODE_DATA_DIR=/tmp/gludd-opencode-contract OPENCODE_DB_TIMEOUT_SECONDS=2 OPENCODE_DB_BUSY_TIMEOUT_MS=20 OPENCODE_MAINTENANCE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "opencode-db-schema",
+      "make_variables": [
+        "OPENCODE_DB",
+        "OPENCODE_DATA_DIR",
+        "OPENCODE_DB_TIMEOUT_SECONDS",
+        "OPENCODE_DB_BUSY_TIMEOUT_MS",
+        "OPENCODE_MAINTENANCE_VALIDATE_ONLY"
+      ],
+      "behavior": "make opencode-db-schema OPENCODE_DB=/tmp/gludd-opencode-contract/opencode.db OPENCODE_DATA_DIR=/tmp/gludd-opencode-contract OPENCODE_DB_TIMEOUT_SECONDS=2 OPENCODE_DB_BUSY_TIMEOUT_MS=20 OPENCODE_MAINTENANCE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "opencode-db-sample",
+      "make_variables": [
+        "OPENCODE_DB",
+        "OPENCODE_DATA_DIR",
+        "OPENCODE_DB_TIMEOUT_SECONDS",
+        "OPENCODE_DB_BUSY_TIMEOUT_MS",
+        "OPENCODE_MAINTENANCE_VALIDATE_ONLY"
+      ],
+      "behavior": "make opencode-db-sample OPENCODE_DB=/tmp/gludd-opencode-contract/opencode.db OPENCODE_DATA_DIR=/tmp/gludd-opencode-contract OPENCODE_DB_TIMEOUT_SECONDS=2 OPENCODE_DB_BUSY_TIMEOUT_MS=20 OPENCODE_MAINTENANCE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "opencode-db-prune",
+      "make_variables": [
+        "OPENCODE_DB",
+        "OPENCODE_RETENTION_DAYS",
+        "OPENCODE_DB_BATCH_SIZE",
+        "OPENCODE_DB_MAX_SESSIONS",
+        "OPENCODE_DB_TIMEOUT_SECONDS",
+        "OPENCODE_DB_BUSY_TIMEOUT_MS",
+        "OPENCODE_MAINTENANCE_VALIDATE_ONLY"
+      ],
+      "behavior": "make opencode-db-prune OPENCODE_DB=/tmp/gludd-opencode-contract/opencode.db OPENCODE_RETENTION_DAYS=30 OPENCODE_DB_BATCH_SIZE=10 OPENCODE_DB_MAX_SESSIONS=100 OPENCODE_DB_TIMEOUT_SECONDS=2 OPENCODE_DB_BUSY_TIMEOUT_MS=20 OPENCODE_MAINTENANCE_VALIDATE_ONLY=1"
+    },
+    {
       "name": "disk-reclaim",
       "make_variables": ["GLUDD_DISK_THRESHOLD"],
       "behavior": "make disk-reclaim GLUDD_DISK_THRESHOLD=101"

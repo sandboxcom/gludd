@@ -254,3 +254,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | Git tree | **DIRTY** — .gate-status, tests/opencode_e2e/_spawner.py | git status |
 | Unpushed commits | 13 commits from `fcb98aa1`..`45c6718c` | git log |
 | Release v0.1.0-beta.3 | SHIPPED (21/12 assets) | verified |
+
+### Session 82 — OpenCode Database Cleanup Safety (2026-08-08)
+
+- [x] S82.0 — **Make OpenCode cleanup fail-safe and bounded**: replace the multi-shell guard/VACUUM recipes with one offline maintenance process; resolve the authoritative channel-aware DB path; recursively prune expired session trees and their event aggregates; require known FK cascades; use bounded batches, time/lock/file limits, progress heartbeats, PASSIVE checkpoints, and incremental vacuum only when already enabled; refuse live OpenCode processes and symlinked cleanup roots; never unlink SQLite sidecars. | evidence: 43 focused tests PASS; maintenance script 85.93% coverage; lint PASS; test-count 88,464/88,465 with 0 collection errors; Makefile syntax 11/11 PASS; duplicate targets 0; make-target contract PASS (52 targets); 7/7 validate-only behavioral examples PASS | priority: high | effort: M | status: completed
