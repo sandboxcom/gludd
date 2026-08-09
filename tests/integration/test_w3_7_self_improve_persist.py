@@ -46,7 +46,7 @@ class TestSelfImprovePersistence:
              "work_type": "test", "priority": "high"},
         ]
 
-        import general_ludd.event_loop.loop as loop_mod
+        import general_ludd.event_loop.loop_handlers as handlers_mod
         import general_ludd.self_improve.harness as harness_mod
 
         fake_harness = MagicMock()
@@ -55,7 +55,7 @@ class TestSelfImprovePersistence:
         monkeypatch.setattr(
             harness_mod, "SelfImprovementHarness", lambda *a, **k: fake_harness
         )
-        monkeypatch.setattr(loop_mod, "SelfImprovementHarness", lambda *a, **k: fake_harness)
+        monkeypatch.setattr(handlers_mod, "SelfImprovementHarness", lambda *a, **k: fake_harness)
 
         # interval=1 → runs every tick.
         loop = EventLoop(session=factory, self_improve_interval=1)
@@ -93,14 +93,14 @@ class TestSelfImprovePersistence:
              "work_type": "test", "priority": "high"},
         ]
 
-        import general_ludd.event_loop.loop as loop_mod
+        import general_ludd.event_loop.loop_handlers as handlers_mod
         import general_ludd.self_improve.harness as harness_mod
 
         fake_harness = MagicMock()
         fake_harness.run_gap_analysis.return_value = fake_findings
         fake_harness.generate_fix_todos.return_value = fake_todos
         monkeypatch.setattr(harness_mod, "SelfImprovementHarness", lambda *a, **k: fake_harness)
-        monkeypatch.setattr(loop_mod, "SelfImprovementHarness", lambda *a, **k: fake_harness)
+        monkeypatch.setattr(handlers_mod, "SelfImprovementHarness", lambda *a, **k: fake_harness)
 
         loop = EventLoop(
             session=factory,
@@ -134,14 +134,14 @@ class TestSelfImprovePersistence:
              "work_type": "test", "priority": "high"},
         ]
 
-        import general_ludd.event_loop.loop as loop_mod
+        import general_ludd.event_loop.loop_handlers as handlers_mod
         import general_ludd.self_improve.harness as harness_mod
 
         fake_harness = MagicMock()
         fake_harness.run_gap_analysis.return_value = fake_findings
         fake_harness.generate_fix_todos.return_value = fake_todos
         monkeypatch.setattr(harness_mod, "SelfImprovementHarness", lambda *a, **k: fake_harness)
-        monkeypatch.setattr(loop_mod, "SelfImprovementHarness", lambda *a, **k: fake_harness)
+        monkeypatch.setattr(handlers_mod, "SelfImprovementHarness", lambda *a, **k: fake_harness)
 
         loop = EventLoop(session=factory, self_improve_interval=1)
         # The tick selects ONE project; pin it to proj-A.
@@ -179,14 +179,14 @@ class TestSelfImprovePersistence:
              "priority": "high"} for i in range(3)
         ]
 
-        import general_ludd.event_loop.loop as loop_mod
+        import general_ludd.event_loop.loop_handlers as handlers_mod
         import general_ludd.self_improve.harness as harness_mod
 
         fake_harness = MagicMock()
         fake_harness.run_gap_analysis.return_value = fake_findings
         fake_harness.generate_fix_todos.return_value = fake_todos
         monkeypatch.setattr(harness_mod, "SelfImprovementHarness", lambda *a, **k: fake_harness)
-        monkeypatch.setattr(loop_mod, "SelfImprovementHarness", lambda *a, **k: fake_harness)
+        monkeypatch.setattr(handlers_mod, "SelfImprovementHarness", lambda *a, **k: fake_harness)
 
         # max_open=2 → each project may have at most 2 open self-improve todos.
         loop = EventLoop(

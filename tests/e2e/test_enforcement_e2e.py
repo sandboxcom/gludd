@@ -41,6 +41,7 @@ PLUGIN_REGISTRATION_ORDER = [
     "enforce-stop.ts",
     "enforce-deadline.ts",
     "enforce-enhancement-ratio.ts",
+    "enforce-additive-task.ts",
     "enforce-clean-tree.ts",
     "enforce-commit-lock.ts",
     "enforce-verified-claims.ts",

@@ -262,7 +262,7 @@ class TestEventLoopGatewayWiring:
         loop._total_ticks = 1
 
         with patch(
-            "general_ludd.event_loop.loop.SelfImprovementHarness"
+            "general_ludd.event_loop.loop_handlers.SelfImprovementHarness"
         ) as MockHarness:
             instance = MockHarness.return_value
             instance.run_gap_analysis.return_value = []
@@ -285,7 +285,7 @@ class TestEventLoopGatewayWiring:
         loop._total_ticks = 1
 
         with patch(
-            "general_ludd.event_loop.loop.SelfImprovementHarness"
+            "general_ludd.event_loop.loop_handlers.SelfImprovementHarness"
         ) as MockHarness:
             instance = MockHarness.return_value
             instance.run_gap_analysis.return_value = []
