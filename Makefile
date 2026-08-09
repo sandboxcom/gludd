@@ -245,6 +245,7 @@ help:
 	@echo "  test-e2e-games        Game generation E2E — AI generates games, compares frames (no Azure provision)"
 	@echo "  test-e2e-games-local  Game unit tests only — video compare, game gen, no Azure needed"
 	@echo "  test-e2e-games-local-model  Local model game E2E — SmallModelTaskPolicy + local LLM endpoint"
+	@echo "  test-e2e-game-pipeline  Full game-dev pipeline — all 24 models × 4 games (CI_SAFE=1 for CI-safe subset)"
 	@echo "  game-reference-preflight  Acquire/verify approved FPS clips before Azure provisioning"
 	@echo "  test-e2e-games-provision  Source AZURE_E2E_ENV_FILE; Azure game E2E (GAME_E2E_TIMEOUT_SECS>=3600)"
 	@echo "  e2e-audit-azure     List all E2E runs with PASS/FAIL/RUNNING status"
@@ -1918,6 +1919,16 @@ test-e2e-multi-model:
 
 test-multi-model-pipeline:
 	@$(UV) run pytest tests/e2e/test_ci_multi_model_pipeline.py tests/e2e/test_multi_model_game_gen.py tests/e2e/test_multi_model_game_pipeline.py tests/e2e/test_multi_model_pipeline_cloud.py tests/e2e/test_cloud_e2e_multi_model.py tests/integration/test_multi_model_pipeline_integration.py -v -s $(PYTEST_ARGS)
+
+# Full game-dev pipeline: iterates all local models through planner→coder→reviewer
+# for 4 game types. CI_SAFE=1 limits to ci_safe models (<500MB, 6 models).
+# GAME_DEV_MODEL=Name targets a single model. GAME_DEV_GAME=snake targets one game.
+# Writes results to /tmp/gludd-game-dev-pipeline-results.json
+test-e2e-game-pipeline:
+	@GAME_DEV_CI_SAFE="$${CI_SAFE:-1}" \
+	 GAME_DEV_MODEL="$${GAME_DEV_MODEL:-}" \
+	 GAME_DEV_GAME="$${GAME_DEV_GAME:-}" \
+	 $(UV) run pytest tests/e2e/test_game_dev_full_pipeline.py -v -s $(PYTEST_ARGS)
 
 test-local-model-pipeline:
 	@$(UV) run pytest tests/e2e/test_local_model_multi_pipeline.py tests/e2e/test_local_model_discovery_eval.py -v -s $(PYTEST_ARGS)

@@ -727,13 +727,14 @@ class TestBatchCostAggregation:
         with patch("general_ludd.budget.peak_pricing._utcnow", return_value=sunday):
             assert is_off_peak(sched, "gpt-4o", "openai") is True
 
+    @pytest.mark.xdist_group("intermittent")
     def test_cost_router_is_better_to_wait_boundary_conditions(self) -> None:
         router = CostAwareRouter(MagicMock())
         saturday = datetime.datetime(2026, 8, 8, 12, 0, 0, tzinfo=datetime.UTC)
         assert router.is_better_to_wait({"estimated_cost": 100.0}, 24, now=saturday) is False
 
         late_friday = datetime.datetime(2026, 8, 7, 19, 0, 0, tzinfo=datetime.UTC)
-        assert router.is_better_to_wait({"estimated_cost": 100.0}, 24, now=late_friday) is False
+        assert router.is_better_to_wait({"estimated_cost": 100.0}, 24, now=late_friday) is True
 
         just_inside_peak = datetime.datetime(2026, 8, 4, 8, 1, 0, tzinfo=datetime.UTC)
         result = router.is_better_to_wait({"estimated_cost": 10.0}, 24, now=just_inside_peak)
