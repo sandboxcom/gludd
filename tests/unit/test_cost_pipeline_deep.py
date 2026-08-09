@@ -56,6 +56,7 @@ from general_ludd.small_models.cost import (
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xdist_group("intermittent")
 class TestPeakOffPeakBoundary:
     """Edge cases for peak/off-peak time-window detection."""
 
@@ -278,6 +279,7 @@ class TestBudgetExhaustion:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xdist_group("intermittent")
 class TestMultiModelRouting:
     """Cost-aware routing across multiple models with different price points."""
 
@@ -485,6 +487,7 @@ class TestSchedulerPriorityInversion:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xdist_group("intermittent")
 class TestCostEstimationAccuracy:
     """Verify cost estimation correctness across model sizes and tiers."""
 

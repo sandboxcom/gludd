@@ -58,7 +58,7 @@ def _load_yaml(path: Path) -> Any:
         if path.stat().st_size > MAX_YAML_FILE_SIZE:
             return None
         return yaml.safe_load(path.read_text(encoding="utf-8"))
-    except yaml.YAMLError:
+    except Exception:
         return None
 
 

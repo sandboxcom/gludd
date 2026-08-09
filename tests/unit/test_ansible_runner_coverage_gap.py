@@ -33,6 +33,8 @@ from general_ludd.ansible.runner import (
     _normalize_role_output,
 )
 
+pytestmark = pytest.mark.xdist_group("ansible_runner_coverage_gap")
+
 # ---------------------------------------------------------------------------
 # _json_safe coverage
 # ---------------------------------------------------------------------------

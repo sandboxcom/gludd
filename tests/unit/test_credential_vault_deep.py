@@ -30,6 +30,7 @@ from general_ludd.secrets.openbao_scope import (
     validate_openbao_path,
     validate_openbao_policy_name,
 )
+from general_ludd.security.permissions import Capability, PermissionSpec
 from general_ludd.sts.audit import StsAuditPipeline
 from general_ludd.sts.narrowing import (
     CapabilityNarrowing,
@@ -186,7 +187,18 @@ class TestSecretPermissionDenial:
         assert "test/*" in str(err)
 
     def test_enforce_permission_denied_without_spec(self):
-        mgr = SecretsManager(config=OpenBaoConfig())
+        spec = PermissionSpec(
+            agent_type="test",
+            capabilities=[
+                Capability(
+                    resource="secret:openbao",
+                    actions=["read"],
+                    constraints={"openbao_paths": ["dev/*"]},
+                )
+            ],
+        )
+        mgr = SecretsManager(config=OpenBaoConfig(), permission_spec=spec)
+        assert mgr._permission_spec is spec
         with pytest.raises(SecretPermissionDeniedError, match="secret permission denied"):
             mgr._enforce_permission("prod/key", action="read")
 
