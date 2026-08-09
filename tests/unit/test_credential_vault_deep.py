@@ -774,7 +774,7 @@ class TestInvalidPathHandling:
 class TestPathValidation:
     def test_write_secret_rejects_traversal(self):
         mgr = SecretsManager()
-        with pytest.raises(ValueError, match="traversal"):
+        with pytest.raises(ValueError, match=r"\.\..*segments are not permitted"):
             mgr.write_secret("dev/../prod/key", {"val": "x"})
 
     def test_read_secret_rejects_traversal(self):

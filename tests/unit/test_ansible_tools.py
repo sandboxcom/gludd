@@ -9,6 +9,10 @@ import textwrap
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+pytestmark = pytest.mark.xdist_group("ansible_tools")
+
 _COLLECTIONS_ROOT = str(Path(__file__).resolve().parents[2] / "collections")
 if _COLLECTIONS_ROOT not in sys.path:
     sys.path.insert(0, _COLLECTIONS_ROOT)
