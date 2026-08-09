@@ -583,7 +583,11 @@ class TestUtilityEdges:
         ]
         result = _extract_tool_calls(msg)
         assert result is not None
-        assert result[0]["function"]["name"] == "search"
+        assert result[0] == {
+            "id": "call_1",
+            "type": "function",
+            "function": {"name": "search", "arguments": '{"q": "x"}'},
+        }
 
     def test_extract_tool_calls_with_function_key(self) -> None:
         msg = MagicMock()

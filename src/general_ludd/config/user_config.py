@@ -363,19 +363,33 @@ class UserConfig(BaseSettings):
         # pydantic-settings normal mechanism.
         # Strategy: construct with yaml data as _defaults_, then let
         # pydantic-settings env source override.
+        import json as _json
         import os
 
         merged: dict[str, Any] = dict(data)
-        for field_name in cls.model_fields:
-            env_key = f"GLUDD_{field_name.upper()}"
-            if env_key in os.environ:
-                import json as _json
 
-                raw = os.environ[env_key]
+        prefix = "GLUDD_"
+        for env_key, env_val in os.environ.items():
+            if not env_key.startswith(prefix):
+                continue
+            key = env_key[len(prefix) :]
+            parts = key.lower().split("__")
+            if len(parts) == 1 and parts[0] in cls.model_fields:
                 try:
-                    merged[field_name] = _json.loads(raw)
+                    merged[parts[0]] = _json.loads(env_val)
                 except (_json.JSONDecodeError, ValueError):
-                    merged[field_name] = raw
+                    merged[parts[0]] = env_val
+            elif len(parts) >= 2:
+                d = merged
+                for segment in parts[:-1]:
+                    if segment not in d or not isinstance(d[segment], dict):
+                        d[segment] = {}
+                    d = d[segment]
+                try:
+                    d[parts[-1]] = _json.loads(env_val)
+                except (_json.JSONDecodeError, ValueError):
+                    d[parts[-1]] = env_val
+
         return cls.model_validate(merged)
 
 

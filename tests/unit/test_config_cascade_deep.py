@@ -251,7 +251,7 @@ class TestEnvVarOverride:
         assert cfg.budget == {"max_usd": 500, "warn_percent": 80}
 
     def test_top_level_raw_string_from_env(self) -> None:
-        with mock.patch.dict(os.environ, {"GLUDD_ORNITH_BINARY_PATH": '"custom-ornith"'}):
+        with mock.patch.dict(os.environ, {"GLUDD_ORNITH_BINARY_PATH": "custom-ornith"}):
             cfg = UserConfig()
         assert cfg.ornith_binary_path == "custom-ornith"
 

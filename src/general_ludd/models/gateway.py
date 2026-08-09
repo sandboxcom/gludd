@@ -818,6 +818,8 @@ class _LimitedChatModel:
         inner = self._inner
         if hasattr(inner, "bind_tools"):
             inner = inner.bind_tools(tools)
+            if inner is self._inner:
+                return self
         return _LimitedChatModel(
             inner,
             profile=self._profile,
@@ -1663,7 +1665,7 @@ class ModelGateway:
         encoding = metadata.get("content_encoding") or metadata.get("content-encoding")
         headers = metadata.get("headers")
         if not encoding and isinstance(headers, dict):
-            encoding = headers.get("content-encoding") or headers.get("Content-Encoding")
+            encoding = headers.get("content-encoding")
         return str(encoding or "").strip().lower()
 
     @staticmethod
