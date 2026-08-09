@@ -432,7 +432,7 @@ class TestScopeNarrowing:
         parent = OpenBaoPathScope(
             mount="secret",
             paths=("team/apps/*",),
-            capabilities=frozenset({"read", "write"}),
+            capabilities=frozenset({"read", "update"}),
         )
         child = OpenBaoPathScope(
             mount="secret",
