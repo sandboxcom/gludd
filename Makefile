@@ -3050,8 +3050,8 @@ _push-rate-guard:
 	fi
 	@# Check if CI is currently in-flight on the target branch.
 	@# Uses ci_push_guard.py (branch-level active-run check, not commit-specific)
-	@# PUSH_BRANCH overrides the branch to check (default: master).
-	@PUSH_BRANCH=$${PUSH_BRANCH:-master}; \
+	@# PUSH_BRANCH overrides the branch to check (default: current branch).
+	@PUSH_BRANCH=$${PUSH_BRANCH:-$$(git branch --show-current)}; \
 	$(PYTHON) scripts/ci_push_guard.py "$$PUSH_BRANCH" || { \
 		echo "Push blocked while CI is active on $$PUSH_BRANCH; wait for CI to complete."; \
 		exit 1; \
@@ -3084,8 +3084,9 @@ master-force-push:
 	@echo "Master branch force-pushed and verified"
 
 git-push-sandboxcom: check-clean-tree _test-disabled-guard _push-rate-guard _stash-before-push-guard _ci-restart-cap _pull-before-push-guard _ci-verdict-history-guard _pre-commit-stash-audit
-	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
-	@echo "Pushed to sandboxcom/gludd"
+	@BRANCH=$$(git branch --show-current); \
+	GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push -u sandboxcom HEAD:$$BRANCH
+	@echo "Pushed $$(git branch --show-current) to sandboxcom/gludd"
 
 push-dev: check-clean-tree ci-busy-check _stash-before-push-guard _ci-restart-cap _pull-before-push-guard
 	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push sandboxcom development
@@ -3103,8 +3104,9 @@ push-dev-nv: check-clean-tree _push-rate-guard
 # and CI is the gate. The _push-rate-guard (CI-pending / cooldown / thrash)
 # is STILL enforced. Mirrors commit-no-verify for the push side.
 git-push-sandboxcom-nv: check-clean-tree _push-rate-guard _stash-before-push-guard _ci-restart-cap _pull-before-push-guard _ci-verdict-history-guard
-	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom master
-	@echo "Pushed to sandboxcom/gludd (--no-verify)"
+	@BRANCH=$$(git branch --show-current); \
+	GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom HEAD:$$BRANCH
+	@echo "Pushed $$(git branch --show-current) to sandboxcom/gludd (--no-verify)"
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
 
 # Push only the committed HEAD for the current branch. This is for CI candidate
