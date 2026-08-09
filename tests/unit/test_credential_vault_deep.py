@@ -1,24 +1,22 @@
-"""Deep tests for credential vault, OpenBao scope, and token rotation.
+"""Deep credential vault and secret rotation tests.
 
-Covers: credential paths, TTL caps, scope validation, token rotation
-edge cases, and secrets-unavailable error propagation.
+Covers: secret rotation lifecycle, credential caching/redaction, TTL
+enforcement, access audit pipeline, scope narrowing, and secret versioning.
 """
 
 from __future__ import annotations
 
-import secrets as crypto_secrets
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import hvac
 import pytest
 
-from general_ludd.audit.audit_logger import AuditLogger
-from general_ludd.secrets.credential_vault import (
-    ConfigStoreError,
-    CredentialVault,
-    RootSealHoldError,
-    RootSealIntegration,
-    RootSealState,
+from general_ludd.secrets.config import OpenBaoConfig
+from general_ludd.secrets.manager import (
+    AppRoleCreds,
+    SecretAlias,
+    SecretPermissionDeniedError,
     SecretsManager,
     SecretsUnavailableError,
 )
@@ -32,301 +30,527 @@ from general_ludd.secrets.openbao_scope import (
     validate_openbao_path,
     validate_openbao_policy_name,
 )
-from general_ludd.secrets.token_rotator import (
-    TokenRotationError,
-    TokenRotator,
-)
 from general_ludd.security.permissions import Capability, PermissionSpec
 from general_ludd.sts.audit import StsAuditPipeline
+from general_ludd.sts.narrowing import (
+    CapabilityNarrowing,
+    OpenBaoPolicyRenderer,
+    PolicyFragment,
+)
+from general_ludd.sts.rotator import TokenRotationError, TokenRotator
 
-# ── Helpers ──────────────────────────────────────────────────────────────
-
-
-def _build_vault_with_seal(
-    seal_state: RootSealState = RootSealState.UNINITIALIZED,
-) -> CredentialVault:
-    seal = MagicMock(spec=RootSealIntegration)
-    seal.state = seal_state
-    return CredentialVault(
-        secrets_manager=MagicMock(spec=SecretsManager),
-        audit_logger=MagicMock(spec=AuditLogger),
-        sts_pipeline=MagicMock(spec=StsAuditPipeline),
-        root_seal=seal,
-    )
+# ── Secret Rotation Lifecycle ────────────────────────────────────────────
 
 
-# ── CredentialVault ──────────────────────────────────────────────────────
+class TestSecretRotationLifecycle:
+    def test_rotate_approle_secret_id_mints_fresh_and_destroys_old(self):
+        mgr = SecretsManager()
+        mock_client = MagicMock()
+        mgr._client = mock_client
+
+        resp1 = {"data": {"secret_id": "sid-001", "secret_id_accessor": "acc-a"}}
+        resp2 = {"data": {"secret_id": "sid-002", "secret_id_accessor": "acc-b"}}
+        mock_client.auth.approle.generate_secret_id.side_effect = [resp1, resp2]
+
+        first = mgr._generate_secret_id("agent-x")
+        assert first == "sid-001"
+        assert mgr._secret_id_accessors["agent-x"] == ["acc-a"]
+
+        fresh = mgr.rotate_approle_secret_id("agent-x")
+        assert fresh == "sid-002"
+        mock_client.auth.approle.destroy_secret_id_accessor.assert_called_once_with("agent-x", "acc-a")
+        assert mgr._secret_id_accessors["agent-x"] == ["acc-b"]
+
+    def test_rotate_approle_secret_id_requires_connection(self):
+        mgr = SecretsManager()
+        with pytest.raises(RuntimeError, match="Not connected"):
+            mgr.rotate_approle_secret_id("agent-y")
+
+    def test_rotation_destroys_multiple_prior_accessors(self):
+        mgr = SecretsManager()
+        mock_client = MagicMock()
+        mgr._client = mock_client
+
+        resp1 = {"data": {"secret_id": "sid-a", "secret_id_accessor": "acc-1"}}
+        resp2 = {"data": {"secret_id": "sid-b", "secret_id_accessor": "acc-2"}}
+        resp3 = {"data": {"secret_id": "sid-c", "secret_id_accessor": "acc-3"}}
+        mock_client.auth.approle.generate_secret_id.side_effect = [
+            resp1,
+            resp2,
+            resp3,
+        ]
+
+        mgr._generate_secret_id("role-multi")
+        mgr._generate_secret_id("role-multi")
+        mgr.rotate_approle_secret_id("role-multi")
+
+        assert mock_client.auth.approle.destroy_secret_id_accessor.call_count == 2
+
+    def test_rotation_logs_warning_when_destroy_fails(self, caplog):
+        import logging
+
+        mgr = SecretsManager()
+        mock_client = MagicMock()
+        mgr._client = mock_client
+
+        resp1 = {"data": {"secret_id": "sid-1", "secret_id_accessor": "acc-old"}}
+        resp2 = {"data": {"secret_id": "sid-2", "secret_id_accessor": "acc-new"}}
+        mock_client.auth.approle.generate_secret_id.side_effect = [resp1, resp2]
+        mock_client.auth.approle.destroy_secret_id_accessor.side_effect = RuntimeError("backend gone")
+
+        mgr._generate_secret_id("role-flaky")
+        with caplog.at_level(logging.WARNING):
+            fresh = mgr.rotate_approle_secret_id("role-flaky")
+
+        assert fresh == "sid-2"
+        assert "Failed to destroy old secret_id accessor" in caplog.text
 
 
-class TestCredentialVault:
-    def test_vault_rejects_operation_when_sealed(self):
-        vault = _build_vault_with_seal(RootSealState.SEALED)
-        with pytest.raises(RootSealHoldError, match="sealed"):
-            vault.issue_credential(
-                agent_id="agent-001",
-                caps=frozenset([Capability.PERMISSION_READ]),
-            )
+# ── Credential Caching & Redaction ───────────────────────────────────────
 
-    def test_vault_rejects_operation_when_uninitialized(self):
-        vault = _build_vault_with_seal(RootSealState.UNINITIALIZED)
-        with pytest.raises(RootSealHoldError, match="uninitialized"):
-            vault.issue_credential(
-                agent_id="agent-001",
-                caps=frozenset([Capability.PERMISSION_READ]),
-            )
 
-    def test_vault_allows_operation_when_unsealed(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.issue_credential = MagicMock(return_value=MagicMock(token="tok-xyz"))
-        result = vault.issue_credential(
-            agent_id="agent-001",
-            caps=frozenset([Capability.PERMISSION_READ]),
+class TestCredentialCaching:
+    def test_track_secret_value_adds_to_known_set(self):
+        mgr = SecretsManager()
+        assert len(mgr._known_secret_values) == 0
+        mgr._track_secret_value("s.a-very-long-secret-token-abc")
+        assert "s.a-very-long-secret-token-abc" in mgr._known_secret_values
+
+    def test_track_secret_value_ignores_short_values(self):
+        mgr = SecretsManager()
+        mgr._track_secret_value("ab")
+        mgr._track_secret_value("12345")
+        assert len(mgr._known_secret_values) == 0
+
+    def test_track_secret_value_caps_at_max(self):
+        mgr = SecretsManager()
+        for i in range(mgr._MAX_TRACKED_SECRETS + 20):
+            mgr._track_secret_value(f"secret-value-{i:08d}")
+        assert len(mgr._known_secret_values) == mgr._MAX_TRACKED_SECRETS
+
+    def test_track_secret_dict_adds_all_values(self):
+        mgr = SecretsManager()
+        mgr._track_secret_dict(
+            {
+                "token": "abcdef123456",
+                "apikey": "sk-1234567890abc",
+            }
         )
-        assert result is not None
+        assert "abcdef123456" in mgr._known_secret_values
+        assert "sk-1234567890abc" in mgr._known_secret_values
 
-    def test_vault_unseal_via_root_seal(self):
-        vault = _build_vault_with_seal(RootSealState.SEALED)
-        vault.root_seal.unseal = MagicMock()
-        vault.unseal(key_shards=["shard-1", "shard-2"])
-        vault.root_seal.unseal.assert_called_once_with(key_shards=["shard-1", "shard-2"])
+    def test_sanitize_error_exact_match_redaction(self):
+        mgr = SecretsManager()
+        mgr._track_secret_value("deadbeef12345678")
+        exc = RuntimeError("auth failed: deadbeef12345678 was rejected")
+        result = mgr._sanitize_error(exc)
+        assert "deadbeef12345678" not in result
+        assert "REDACTED" in result
 
-    def test_vault_config_store_error_wraps_inner(self):
-        inner = ValueError("missing field")
-        err = ConfigStoreError("bad config", inner)
-        assert "bad config" in str(err)
-        assert err.__cause__ is inner
+    def test_approle_creds_repr_hides_secret_id(self):
+        creds = AppRoleCreds(role_id="role-abc", secret_id="secret-xyz")
+        assert "role-abc" in repr(creds)
+        assert "secret-xyz" not in repr(creds)
 
+    def test_bootstrap_result_repr_hides_tokens(self):
+        result = SecretsManager()
+        br = result.bootstrap_local()
+        r = repr(br)
+        assert "initialized=True" in r or "True" in r
+        assert br.token not in r
 
-# ── RootSealState ────────────────────────────────────────────────────────
-
-
-class TestRootSealState:
-    def test_states_are_distinct(self):
-        states = {
-            RootSealState.UNINITIALIZED,
-            RootSealState.SEALED,
-            RootSealState.UNSEALED,
+    def test_read_secret_tracks_known_values(self):
+        mgr = SecretsManager()
+        mock_client = MagicMock()
+        mgr._client = mock_client
+        mock_client.secrets.kv.v2.read_secret_version.return_value = {
+            "data": {"data": {"db_pass": "supersecretdb", "host": "localhost"}},
         }
-        assert len(states) == 3
+        mgr.read_secret("db/creds")
+        assert "supersecretdb" in mgr._known_secret_values
 
 
-# ── Credential Paths ─────────────────────────────────────────────────────
+# ── Secret Permission Denial ─────────────────────────────────────────────
 
 
-class TestCredentialPaths:
-    def test_agent_credential_path_format(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        path = vault._agent_credential_path("agent-042")
-        assert path.startswith("gludd/creds/")
-        assert "agent-042" in path
-
-    def test_agent_credential_path_is_deterministic(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        a = vault._agent_credential_path("agent-042")
-        b = vault._agent_credential_path("agent-042")
-        assert a == b
-
-    def test_agent_credential_path_differs_per_agent(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        a = vault._agent_credential_path("agent-001")
-        b = vault._agent_credential_path("agent-002")
-        assert a != b
-
-
-# ── SecretsManager ────────────────────────────────────────────────────────
-
-
-class TestSecretsManager:
-    def test_connect_sets_connected_flag(self):
-        mgr = SecretsManager()
-        mgr.connect()
-        assert mgr.connected is True
-
-    def test_read_secret_requires_connection(self):
-        mgr = SecretsManager()
-        with pytest.raises(SecretsUnavailableError, match="not connected"):
-            mgr.read_secret("any/path")
-
-    def test_read_secret_returns_mocked_value_when_connected(self):
-        mgr = SecretsManager()
-        mgr.connect()
-        value = mgr.read_secret("some/path")
-        assert isinstance(value, str)
-
-    def test_write_secret_requires_connection(self):
-        mgr = SecretsManager()
-        with pytest.raises(SecretsUnavailableError, match="not connected"):
-            mgr.write_secret("some/path", {"key": "val"})
-
-    def test_write_secret_works_when_connected(self):
-        mgr = SecretsManager()
-        mgr.connect()
-        mgr.write_secret("some/path", {"key": "val"})
-
-    def test_connect_external_rejects_plaintext(self):
-        from general_ludd.secrets.openbao_scope import OpenBaoConfig
-
-        cfg = OpenBaoConfig(
-            mode="external",
-            external_url="http://bao.example.com:8200",
-            external_token="s.token",
+class TestSecretPermissionDenial:
+    def test_permission_denied_error_carries_sanitized_patterns(self):
+        err = SecretPermissionDeniedError(
+            path="prod/keys/signing",
+            action="read",
+            agent_type="subagent",
+            allowed_patterns=["dev/*", "test/*"],
         )
-        mgr = SecretsManager(config=cfg)
-        with pytest.raises(SecretsUnavailableError, match="https://"):
-            mgr.connect()
+        assert "prod/keys/signing" in str(err)
+        assert "subagent" in str(err)
+        assert "dev/*" in str(err)
+        assert "test/*" in str(err)
 
-
-# ── OpenBao Path Scope ───────────────────────────────────────────────────
-
-
-class TestOpenBaoPathScope:
-    def test_allow_exact_prefix(self):
-        scope = OpenBaoPathScope(allowed_paths=["gludd/creds"], denied_paths=[])
-        req = OpenBaoScopeRequest(path="gludd/creds/agent-001/token")
-        assert scope.allows(req)
-
-    def test_deny_denied_prefix(self):
-        scope = OpenBaoPathScope(allowed_paths=["gludd/creds"], denied_paths=["gludd/creds/root"])
-        req = OpenBaoScopeRequest(path="gludd/creds/root/unseal")
-        assert not scope.allows(req)
-
-    def test_allowed_over_denied_on_exact_match(self):
-        scope = OpenBaoPathScope(allowed_paths=["gludd/creds/root"], denied_paths=["gludd/creds"])
-        req = OpenBaoScopeRequest(path="gludd/creds/root/unseal")
-        assert scope.allows(req)
-
-    def test_no_allowed_paths_denies_everything(self):
-        scope = OpenBaoPathScope(allowed_paths=[], denied_paths=[])
-        req = OpenBaoScopeRequest(path="gludd/creds/agent-001/token")
-        assert not scope.allows(req)
-
-    def test_wildcard_allowed_covers_any(self):
-        scope = OpenBaoPathScope(allowed_paths=["*"], denied_paths=[])
-        req = OpenBaoScopeRequest(path="anything/at/all")
-        assert scope.allows(req)
-
-    def test_deny_wins_over_wildcard_allow(self):
-        scope = OpenBaoPathScope(allowed_paths=["*"], denied_paths=["sys", "admin"])
-        req_sys = OpenBaoScopeRequest(path="sys/seal-status")
-        req_ok = OpenBaoScopeRequest(path="gludd/creds/agent-001")
-        assert not scope.allows(req_sys)
-        assert scope.allows(req_ok)
-
-    def test_valid_path_against_openbao_paths(self):
-        scope = OpenBaoPathScope(allowed_paths=["gludd/creds"], denied_paths=[])
-        req = OpenBaoScopeRequest(path="gludd/creds/agent-042/token")
-        assert scope.allows(req)
-
-    def test_permission_scope_restricts_capabilities(self):
-        perm = PermissionSpec(
-            principals=["agent-001"],
-            role_name="agent-agent-001",
-            allowed_hosts=["*"],
-            caps=frozenset([Capability.PERMISSION_READ]),
+    def test_enforce_permission_denied_without_spec(self):
+        spec = PermissionSpec(
+            agent_type="test",
+            capabilities=[
+                Capability(
+                    resource="secret:openbao",
+                    actions=["read"],
+                    constraints={"openbao_paths": ["dev/*"]},
+                )
+            ],
         )
-        scope = OpenBaoPathScope.from_permission(
-            perm,
-            allowed_paths=["gludd/creds"],
-            denied_paths=["gludd/creds/root"],
+        mgr = SecretsManager(config=OpenBaoConfig(), permission_spec=spec)
+        assert mgr._permission_spec is spec
+        with pytest.raises(SecretPermissionDeniedError, match="secret permission denied"):
+            mgr._enforce_permission("prod/key", action="read")
+
+    def test_enforce_permission_noop_with_none_spec(self):
+        mgr = SecretsManager(config=OpenBaoConfig(), permission_spec=None)
+        result = mgr._enforce_permission("any/path", action="read")
+        assert result is None
+
+
+# ── TTL Enforcement ──────────────────────────────────────────────────────
+
+
+class TestTTLEnforcement:
+    def test_openbao_config_ttl_defaults(self):
+        cfg = OpenBaoConfig()
+        assert cfg.approle_secret_id_ttl_seconds == 600
+        assert cfg.approle_token_ttl_seconds == 3_600
+        assert cfg.approle_token_max_ttl_seconds == 3_600
+        assert cfg.approle_secret_id_num_uses == 1
+
+    def test_openbao_config_enforces_ttl_ordering(self):
+        with pytest.raises(ValueError, match="TTL must not exceed"):
+            OpenBaoConfig(
+                approle_token_ttl_seconds=7_200,
+                approle_token_max_ttl_seconds=3_600,
+            )
+
+    def test_ttl_config_lower_bounds(self):
+        with pytest.raises(ValueError):
+            OpenBaoConfig(approle_secret_id_ttl_seconds=10)
+
+    def test_ttl_config_upper_bounds(self):
+        with pytest.raises(ValueError):
+            OpenBaoConfig(approle_token_ttl_seconds=90_000)
+
+    def test_openbao_setup_approle_passes_ttl_from_config(self):
+        mgr = SecretsManager(
+            config=OpenBaoConfig(
+                approle_secret_id_ttl_seconds=300,
+                approle_secret_id_num_uses=2,
+                approle_token_ttl_seconds=1_800,
+                approle_token_max_ttl_seconds=3_600,
+                approle_token_num_uses=64,
+            ),
         )
-        assert scope.allows(OpenBaoScopeRequest(path="gludd/creds/agent-001"))
+        mock_client = MagicMock()
+        mgr._client = mock_client
+        mock_client.auth.approle.read_role_id.return_value = {
+            "data": {"role_id": "role-001"},
+        }
 
+        with patch.object(mgr, "_generate_secret_id", return_value="sid-001"):
+            mgr.setup_approle("test-role")
 
-# ── Scope Denied Error ───────────────────────────────────────────────────
+        call_kwargs = mock_client.auth.approle.create_role.call_args[1]
+        assert call_kwargs["secret_id_ttl"] == 300
+        assert call_kwargs["secret_id_num_uses"] == 2
+        assert call_kwargs["token_ttl"] == 1_800
+        assert call_kwargs["token_num_uses"] == 64
 
-
-class TestOpenBaoScopeDenied:
-    def test_denied_error_contains_path(self):
-        err = OpenBaoScopeDenied("sys/seal-status")
-        assert "sys/seal-status" in str(err)
-
-    def test_denied_error_is_value_error(self):
-        err = OpenBaoScopeDenied("sys/admin")
-        assert isinstance(err, ValueError)
-
-
-# ── TTL Caps ─────────────────────────────────────────────────────────────
-
-
-class TestOpenBaoTTLCap:
-    def test_default_ttl_is_max(self):
+    def test_openbao_ttl_cap_defaults(self):
         cap = OpenBaoTTLCap()
-        assert cap.compute(999999) == 999999
+        assert cap.max_ttl_seconds == 900
+        assert cap.max_uses == 100
 
-    def test_agent_ttl_is_sane(self):
-        cap = OpenBaoTTLCap(max_agent_ttl=3600)
-        assert cap.compute(3600) == 3600
-        assert cap.compute(7200) == 3600
+    def test_openbao_ttl_cap_applies_ceiling(self):
+        cap = OpenBaoTTLCap(max_ttl_seconds=300, max_uses=10)
+        result = cap.apply(requested_ttl_seconds=500, requested_uses=50)
+        assert result["ttl_seconds"] == 300
+        assert result["uses"] == 10
+        assert "capped" in str(result["reason"])
 
-    def test_child_ttl_not_longer_than_parent(self):
-        cap = OpenBaoTTLCap(max_agent_ttl=3600, max_child_ttl=900)
-        assert cap.compute(900) == 900
-        assert cap.compute(1800) == 900
+    def test_openbao_ttl_cap_passes_under_limit(self):
+        cap = OpenBaoTTLCap(max_ttl_seconds=900, max_uses=100)
+        result = cap.apply(requested_ttl_seconds=60, requested_uses=5)
+        assert result["ttl_seconds"] == 60
+        assert result["uses"] == 5
+        assert result["reason"] == "ok"
 
-    def test_human_ttl_is_low(self):
-        cap = OpenBaoTTLCap(max_human_ttl=300)
-        assert cap.compute(600) == 300
+    def test_openbao_ttl_cap_clamps_negative_to_zero(self):
+        cap = OpenBaoTTLCap(max_ttl_seconds=900, max_uses=100)
+        result = cap.apply(requested_ttl_seconds=-10, requested_uses=-5)
+        assert result["ttl_seconds"] == 0
+        assert result["uses"] == 1
 
-    def test_ttl_zero_means_no_override(self):
-        cap = OpenBaoTTLCap(max_agent_ttl=0)
-        assert cap.compute(7200) == 7200
+    def test_openbao_ttl_cap_constructor_rejects_invalid(self):
+        with pytest.raises(ValueError, match="positive"):
+            OpenBaoTTLCap(max_ttl_seconds=0)
+        with pytest.raises(ValueError, match="positive"):
+            OpenBaoTTLCap(max_uses=0)
+
+    def test_token_rotator_needs_rotation_within_window(self):
+        rotator = TokenRotator(
+            secrets_manager=MagicMock(),
+            token_store=MagicMock(),
+            rotation_window_seconds=600,
+        )
+        now = datetime(2026, 8, 1, 12, 0, 0, tzinfo=UTC)
+        assert (
+            rotator.needs_rotation(
+                expires_at=now + timedelta(seconds=300),
+                now=now,
+            )
+            is True
+        )
+
+    def test_token_rotator_needs_rotation_outside_window(self):
+        rotator = TokenRotator(
+            secrets_manager=MagicMock(),
+            token_store=MagicMock(),
+            rotation_window_seconds=600,
+        )
+        now = datetime(2026, 8, 1, 12, 0, 0, tzinfo=UTC)
+        assert (
+            rotator.needs_rotation(
+                expires_at=now + timedelta(seconds=900),
+                now=now,
+            )
+            is False
+        )
+
+    def test_token_rotator_needs_rotation_when_expired(self):
+        rotator = TokenRotator(
+            secrets_manager=MagicMock(),
+            token_store=MagicMock(),
+            rotation_window_seconds=600,
+        )
+        now = datetime(2026, 8, 1, 12, 0, 0, tzinfo=UTC)
+        assert (
+            rotator.needs_rotation(
+                expires_at=now - timedelta(seconds=1),
+                now=now,
+            )
+            is True
+        )
+
+    def test_token_rotator_needs_rotation_none_never(self):
+        rotator = TokenRotator(
+            secrets_manager=MagicMock(),
+            token_store=MagicMock(),
+        )
+        assert rotator.needs_rotation(expires_at=None) is False
 
 
-# ── Validate Mount ───────────────────────────────────────────────────────
+# ── Access Audit Pipeline ────────────────────────────────────────────────
 
 
-class TestValidateOpenBaoMount:
-    def test_valid_mount_name_accepted(self):
-        validate_openbao_mount("gludd")
+class TestAccessAudit:
+    def test_scope_hash_deterministic(self):
+        pipeline = StsAuditPipeline(MagicMock())
+        h1 = pipeline._scope_hash(["read", "write", "delete"])
+        h2 = pipeline._scope_hash(["delete", "read", "write"])
+        assert h1 == h2
 
-    def test_empty_mount_rejected(self):
+    def test_scope_hash_none_produces_empty(self):
+        pipeline = StsAuditPipeline(MagicMock())
+        assert pipeline._scope_hash(None) == ""
+
+    def test_event_dict_shape(self):
+        pipeline = StsAuditPipeline(MagicMock())
+        event = pipeline._event_dict(
+            action="mint",
+            agent_id="agent-007",
+            parent_agent_id="root",
+            scope_hash="abc123",
+        )
+        assert event["action"] == "mint"
+        assert event["agent_id"] == "agent-007"
+        assert event["parent_agent_id"] == "root"
+        assert event["scope_hash"] == "abc123"
+        assert "timestamp" in event
+
+    def test_policy_fragment_frozen(self):
+        pf = PolicyFragment(
+            path="secret/*",
+            capabilities=frozenset({"read", "list"}),
+        )
+        assert pf.path == "secret/*"
+        assert "read" in pf.capabilities
+        assert hash(pf) is not None
+
+
+# ── Scope Narrowing ──────────────────────────────────────────────────────
+
+
+class TestScopeNarrowing:
+    def test_openbao_path_scope_intersection_same_mount_capability(self):
+        parent = OpenBaoPathScope(
+            mount="secret",
+            paths=("dev/*", "staging/*"),
+            capabilities=frozenset({"read", "update", "delete"}),
+        )
+        child = OpenBaoPathScope(
+            mount="secret",
+            paths=("dev/*",),
+            capabilities=frozenset({"read", "list"}),
+        )
+        result = parent.intersect(child)
+        assert result.capabilities == frozenset({"read"})
+        assert result.paths == ("dev/*",)
+
+    def test_openbao_path_scope_intersection_mount_mismatch(self):
+        parent = OpenBaoPathScope(
+            mount="secret",
+            paths=("dev/*",),
+            capabilities=frozenset({"read"}),
+        )
+        child = OpenBaoPathScope(
+            mount="kv",
+            paths=("dev/*",),
+            capabilities=frozenset({"read"}),
+        )
+        with pytest.raises(OpenBaoScopeDenied, match="mount"):
+            parent.intersect(child)
+
+    def test_openbao_path_scope_intersection_no_common_path(self):
+        parent = OpenBaoPathScope(
+            mount="secret",
+            paths=("prod/*",),
+            capabilities=frozenset({"read"}),
+        )
+        child = OpenBaoPathScope(
+            mount="secret",
+            paths=("dev/*",),
+            capabilities=frozenset({"read"}),
+        )
+        with pytest.raises(OpenBaoScopeDenied, match="no common path"):
+            parent.intersect(child)
+
+    def test_openbao_path_scope_intersection_subtree_widens_parent(self):
+        parent = OpenBaoPathScope(
+            mount="secret",
+            paths=("team/apps/*",),
+            capabilities=frozenset({"read", "write"}),
+        )
+        child = OpenBaoPathScope(
+            mount="secret",
+            paths=("team/apps/frontend",),
+            capabilities=frozenset({"read"}),
+        )
+        result = parent.intersect(child)
+        assert "team/apps/frontend" in result.paths
+
+    def test_openbao_path_scope_render_policy(self):
+        scope = OpenBaoPathScope(
+            mount="secret",
+            paths=("dev/db",),
+            capabilities=frozenset({"read", "list"}),
+        )
+        hcl = scope.render_policy("test-policy")
+        assert "Gludd scoped policy" in hcl
+        assert "secret/dev/db" in hcl
+        assert "read" in hcl
+        assert "list" in hcl
+
+    def test_openbao_scope_request_grant_delegates(self):
+        parent = OpenBaoPathScope(
+            mount="secret",
+            paths=("dev/*",),
+            capabilities=frozenset({"read", "write"}),
+        )
+        child = OpenBaoPathScope(
+            mount="secret",
+            paths=("dev/db",),
+            capabilities=frozenset({"read"}),
+        )
+        request = OpenBaoScopeRequest(parent=parent, requested=child)
+        granted = request.grant()
+        assert granted.capabilities == frozenset({"read"})
+        assert "dev/db" in granted.paths
+
+    def test_capability_narrowing_validates_subset(self):
+        assert (
+            CapabilityNarrowing.validate_narrowing(
+                parent_actions={"read", "write", "delete"},
+                child_actions={"read", "write"},
+            )
+            is True
+        )
+
+    def test_capability_narrowing_rejects_escalation(self):
+        assert (
+            CapabilityNarrowing.validate_narrowing(
+                parent_actions={"read"},
+                child_actions={"read", "delete"},
+            )
+            is False
+        )
+
+    def test_openbao_policy_renderer_empty_actions(self):
+        result = OpenBaoPolicyRenderer.render([])
+        assert result == ""
+
+
+# ── Secret Alias Validation ──────────────────────────────────────────────
+
+
+class TestSecretAliasValidation:
+    def test_secret_alias_path_traversal_rejected(self):
+        with pytest.raises(ValueError, match="traversal"):
+            SecretAlias(alias="bad", path="dev/../prod/key")
+
+    def test_secret_alias_null_byte_rejected(self):
+        with pytest.raises(ValueError, match="null"):
+            SecretAlias(alias="bad", path="dev/key\x00extra")
+
+    def test_secret_alias_empty_path_rejected(self):
+        with pytest.raises(ValueError, match="empty"):
+            SecretAlias(alias="bad", path="")
+
+    def test_secret_alias_tilde_rejected(self):
+        with pytest.raises(ValueError, match="tilde"):
+            SecretAlias(alias="bad", path="~/key")
+
+    def test_secret_alias_mount_traversal_rejected(self):
+        with pytest.raises(ValueError, match="traversal"):
+            SecretAlias(alias="bad", path="dev/key", mount="secret/../auth")
+
+    def test_secret_alias_valid(self):
+        alias = SecretAlias(alias="db", path="db/credentials", mount="secret")
+        assert alias.alias == "db"
+        assert alias.path == "db/credentials"
+        assert alias.mount == "secret"
+
+
+# ── OpenBao Path/Mount Validation ────────────────────────────────────────
+
+
+class TestOpenBaoValidation:
+    def test_validate_openbao_mount_rejects_reserved(self):
         with pytest.raises(ValueError):
-            validate_openbao_mount("")
+            validate_openbao_mount("auth")
 
-    @pytest.mark.parametrize("bad", ["../", "/etc", "mount with spaces"])
-    def test_invalid_chars_rejected(self, bad):
+    def test_validate_openbao_mount_rejects_absolute(self):
         with pytest.raises(ValueError):
-            validate_openbao_mount(bad)
+            validate_openbao_mount("/secret")
 
+    def test_validate_openbao_mount_accepts_nested(self):
+        result = validate_openbao_mount("secret/team-a")
+        assert result == "secret/team-a"
 
-# ── Validate Path ────────────────────────────────────────────────────────
-
-
-class TestValidateOpenBaoPath:
-    def test_valid_path_accepted(self):
-        validate_openbao_path("gludd/creds/agent-001")
-
-    def test_empty_path_rejected(self):
+    def test_validate_openbao_path_rejects_interior_wildcard(self):
         with pytest.raises(ValueError):
-            validate_openbao_path("")
+            validate_openbao_path("dev/*/db", allow_terminal_wildcard=True)
 
-    def test_path_traversal_rejected(self):
-        with pytest.raises(ValueError):
-            validate_openbao_path("../etc/passwd")
+    def test_validate_openbao_path_accepts_terminal_wildcard(self):
+        result = validate_openbao_path("dev/*", allow_terminal_wildcard=True)
+        assert result == "dev/*"
 
-    def test_path_with_slash_prefix_rejected(self):
-        with pytest.raises(ValueError):
-            validate_openbao_path("/absolute/path")
-
-    def test_path_length_limit(self):
-        with pytest.raises(ValueError):
-            validate_openbao_path("a" * 4097)
-
-
-# ── Policy Name Validation ───────────────────────────────────────────────
-
-
-class TestValidateOpenBaoPolicyName:
-    def test_valid_policy_name_accepted(self):
-        validate_openbao_policy_name("gludd-agent-agent-001")
-
-    def test_policy_name_with_slashes_rejected(self):
-        with pytest.raises(ValueError):
-            validate_openbao_policy_name("gludd/evil")
-
-    def test_policy_name_too_long_rejected(self):
-        with pytest.raises(ValueError):
-            validate_openbao_policy_name("g" * 513)
+    def test_validate_openbao_policy_name(self):
+        result = validate_openbao_policy_name("agent-policy-001")
+        assert result == "agent-policy-001"
 
     def test_validate_openbao_policy_name_rejects_empty(self):
         with pytest.raises(ValueError):
@@ -393,8 +617,6 @@ class TestSecretsUnavailableError:
             mgr.read_secret("any/path")
 
     def test_connect_external_rejects_plaintext(self):
-        from general_ludd.secrets.openbao_scope import OpenBaoConfig
-
         cfg = OpenBaoConfig(
             mode="external",
             external_url="http://bao.example.com:8200",
@@ -405,518 +627,229 @@ class TestSecretsUnavailableError:
             mgr.connect()
 
 
-# ── Escrow ───────────────────────────────────────────────────────────────
+# ── SetupAppRole with Scoped Policy ──────────────────────────────────────
 
 
-class TestCredentialEscrow:
-    def test_vault_accepts_retrievable_escrow(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.write_secret = MagicMock()
-        vault.secrets_manager.read_secret = MagicMock(return_value='{"tokens": ["t1", "t2"]}')
-        vault.store_escrow(
-            agent_id="agent-001",
-            key="api-key",
-            value=crypto_secrets.token_hex(32),
-            ttl_seconds=3600,
-        )
-        result = vault.retrieve_escrow("agent-001", "api-key")
-        assert result is not None
-        vault.secrets_manager.write_secret.assert_called_once()
+class TestSetupApproleScoped:
+    def test_scoped_role_creates_and_deletes_policy_on_failure(self):
+        mgr = SecretsManager()
+        mock_client = MagicMock()
+        mgr._client = mock_client
+        mock_client.auth.approle.create_role.side_effect = RuntimeError("boom")
 
-    def test_vault_escrow_rejects_empty_key(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        with pytest.raises(ValueError, match="key"):
-            vault.store_escrow(
-                agent_id="agent-001",
-                key="",
-                value="secret",
+        with pytest.raises(RuntimeError, match="boom"):
+            mgr.setup_approle(
+                "scoped-role",
+                policy_name="agent-policy-42",
+                policy_hcl='path "secret/*" { capabilities = ["read"] }',
             )
 
-    def test_vault_escrow_rejects_empty_value(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        with pytest.raises(ValueError, match="value"):
-            vault.store_escrow(
-                agent_id="agent-001",
-                key="api-key",
-                value="",
+        mock_client.sys.delete_policy.assert_called_once_with(
+            name="agent-policy-42",
+        )
+
+    def test_setup_approle_scoped_suppresses_default_policy(self):
+        mgr = SecretsManager()
+        mock_client = MagicMock()
+        mgr._client = mock_client
+        mock_client.auth.approle.read_role_id.return_value = {
+            "data": {"role_id": "role-scoped"},
+        }
+
+        with patch.object(mgr, "_generate_secret_id", return_value="sid-scoped"):
+            mgr.setup_approle(
+                "scoped-role",
+                policy_name="agent-policy-99",
+                policy_hcl='path "secret/dev/*" { capabilities = ["read"] }',
             )
 
-    def test_vault_escrow_rejects_empty_agent_id(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        with pytest.raises(ValueError, match="agent_id"):
-            vault.store_escrow(
-                agent_id="",
-                key="api-key",
-                value="secret",
-            )
+        call_kwargs = mock_client.auth.approle.create_role.call_args[1]
+        assert call_kwargs["token_policies"] == ["agent-policy-99"]
+        assert call_kwargs["token_no_default_policy"] is True
 
-    def test_vault_escrow_sealed(self):
-        vault = _build_vault_with_seal(RootSealState.SEALED)
-        with pytest.raises(RootSealHoldError, match="sealed"):
-            vault.store_escrow(
-                agent_id="agent-001",
-                key="api-key",
-                value="secret",
-            )
+    def test_setup_approle_rejects_unbalanced_policy_args(self):
+        mgr = SecretsManager()
+        mock_client = MagicMock()
+        mgr._client = mock_client
+        with pytest.raises(ValueError, match="together"):
+            mgr.setup_approle("role-x", policy_name="p", policy_hcl=None)
+        with pytest.raises(ValueError, match="together"):
+            mgr.setup_approle("role-x", policy_name=None, policy_hcl="some hcl")
 
-    def test_vault_retrieve_escrow_requires_connection(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.read_secret = MagicMock(side_effect=SecretsUnavailableError("no connection"))
-        with pytest.raises(SecretsUnavailableError, match="no connection"):
-            vault.retrieve_escrow("agent-001", "api-key")
-
-    def test_vault_escrow_silently_overwrites_existing(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.write_secret = MagicMock()
-        vault.secrets_manager.read_secret = MagicMock(return_value='{"keys": {"api-key": "old-value"}}')
-        vault.store_escrow("agent-001", "api-key", "new-value")
-        vault.store_escrow("agent-001", "api-key", "newer-value")
-        assert vault.secrets_manager.write_secret.call_count == 2
-
-
-# ── Credential Issuance ──────────────────────────────────────────────────
-
-
-class TestCredentialIssuance:
-    def test_issue_credential_creates_token(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.issue_credential = MagicMock(return_value=MagicMock(token="tok-xyz"))
-        result = vault.issue_credential(
-            agent_id="agent-001",
-            caps=frozenset([Capability.PERMISSION_READ]),
-        )
-        assert result.token == "tok-xyz"
-
-    def test_issue_credential_rejects_empty_caps(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        with pytest.raises(ValueError, match="capabilities"):
-            vault.issue_credential(
-                agent_id="agent-001",
-                caps=frozenset(),
-            )
-
-    def test_issue_credential_stores_audit_record(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.issue_credential = MagicMock(return_value=MagicMock(token="tok-xyz"))
-        vault.issue_credential(
-            agent_id="agent-001",
-            caps=frozenset([Capability.PERMISSION_READ]),
-        )
-        vault.audit_logger.record.assert_called_once()
-
-
-# ── Revocation ───────────────────────────────────────────────────────────
-
-
-class TestRevocation:
-    def test_revoke_credential_makes_audit_entry(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.revoke_credential = MagicMock()
-        vault.revoke_credential(token_id="tok-001", reason="key rotation")
-        vault.audit_logger.record.assert_called_once()
-
-    def test_revoke_credential_requires_token_id(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        with pytest.raises(ValueError, match="token_id"):
-            vault.revoke_credential(token_id="", reason="expired")
-
-    def test_revoke_credential_sealed(self):
-        vault = _build_vault_with_seal(RootSealState.SEALED)
-        with pytest.raises(RootSealHoldError, match="sealed"):
-            vault.revoke_credential(token_id="tok-001", reason="rotated")
-
-
-# ── Agent Credential Lifecycle ───────────────────────────────────────────
-
-
-class TestAgentCredentialLifecycle:
-    def test_full_lifecycle_issue_read_revoke(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.issue_credential = MagicMock(
-            side_effect=[
-                MagicMock(token="tok-001", lease_duration=3600),
-                MagicMock(token="tok-002", lease_duration=3600),
-            ]
-        )
-        vault.secrets_manager.revoke_credential = MagicMock()
-
-        cred1 = vault.issue_credential(
-            agent_id="agent-001",
-            caps=frozenset([Capability.PERMISSION_READ]),
-        )
-        assert cred1.token == "tok-001"
-
-        cred2 = vault.issue_credential(
-            agent_id="agent-002",
-            caps=frozenset([Capability.PERMISSION_READ, Capability.PERMISSION_WRITE]),
-        )
-        assert cred2.token == "tok-002"
-
-        vault.revoke_credential(token_id="tok-001", reason="completed")
-        vault.revoke_credential(token_id="tok-002", reason="completed")
-        assert vault.secrets_manager.revoke_credential.call_count == 2
-
-    def test_rotation_issues_new_credential(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.issue_credential = MagicMock(return_value=MagicMock(token="tok-new", lease_duration=3600))
-        vault.secrets_manager.revoke_credential = MagicMock()
-
-        new_cred = vault.rotate_credential(
-            agent_id="agent-001",
-            old_token_id="tok-old",
-            caps=frozenset([Capability.PERMISSION_READ]),
-        )
-        assert new_cred.token == "tok-new"
-        vault.secrets_manager.revoke_credential.assert_called_once_with("tok-old")
-
-    def test_rotation_sealed_rejected(self):
-        vault = _build_vault_with_seal(RootSealState.SEALED)
-        with pytest.raises(RootSealHoldError, match="sealed"):
-            vault.rotate_credential(
-                agent_id="agent-001",
-                old_token_id="tok-old",
-                caps=frozenset([Capability.PERMISSION_READ]),
+    def test_setup_approle_rejects_oversized_hcl(self):
+        mgr = SecretsManager()
+        mock_client = MagicMock()
+        mgr._client = mock_client
+        with pytest.raises(ValueError, match="65536"):
+            mgr.setup_approle(
+                "role-x",
+                policy_name="p",
+                policy_hcl="x" * 70_000,
             )
 
 
-# ── Credential Renewal ───────────────────────────────────────────────────
-
-
-class TestCredentialRenewal:
-    def test_renew_extends_lease(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.renew_credential = MagicMock(return_value=MagicMock(lease_duration=7200))
-        result = vault.renew_credential(token_id="tok-001")
-        assert result.lease_duration == 7200
-
-    def test_renew_sealed(self):
-        vault = _build_vault_with_seal(RootSealState.SEALED)
-        with pytest.raises(RootSealHoldError, match="sealed"):
-            vault.renew_credential(token_id="tok-001")
-
-    def test_renew_without_token_id(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        with pytest.raises(ValueError, match="token_id"):
-            vault.renew_credential(token_id="")
-
-
-# ── Config Store ─────────────────────────────────────────────────────────
-
-
-class TestConfigStore:
-    def test_read_credential_config_returns_dict(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.read_secret = MagicMock(return_value='{"ttl": 3600}')
-        config = vault.read_credential_config("agent-001")
-        assert isinstance(config, dict)
-        assert config["ttl"] == 3600
-
-    def test_write_credential_config_stores_json(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.write_secret = MagicMock()
-        vault.write_credential_config("agent-001", {"ttl": 3600})
-        vault.secrets_manager.write_secret.assert_called_once()
-
-    def test_read_credential_config_invalid_json(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.read_secret = MagicMock(return_value="not valid json {{")
-        with pytest.raises(ConfigStoreError, match="JSON"):
-            vault.read_credential_config("agent-001")
-
-
-# ── Parent Credential Verification ───────────────────────────────────────
-
-
-class TestParentCredentialVerification:
-    def test_verify_parent_credential_ok_when_unsealed(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.verify_credential = MagicMock(return_value=True)
-        assert vault.verify_parent_credential("parent-tok") is True
-
-    def test_verify_parent_credential_sealed(self):
-        vault = _build_vault_with_seal(RootSealState.SEALED)
-        with pytest.raises(RootSealHoldError, match="sealed"):
-            vault.verify_parent_credential("parent-tok")
-
-    def test_verify_parent_credential_returns_false_for_bad_token(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.verify_credential = MagicMock(return_value=False)
-        assert vault.verify_parent_credential("invalid-tok") is False
-
-
-# ── Max Credentials Guard ────────────────────────────────────────────────
-
-
-class TestMaxCredentialsGuard:
-    def test_max_credentials_guard_blocks_issue(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.count_credentials = MagicMock(return_value=1000)
-        with pytest.raises(ConfigStoreError, match="max"):
-            vault.issue_credential(
-                agent_id="agent-001",
-                caps=frozenset([Capability.PERMISSION_READ]),
-            )
-
-    def test_max_credentials_guard_allows_below_limit(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.count_credentials = MagicMock(return_value=5)
-        vault.secrets_manager.issue_credential = MagicMock(return_value=MagicMock(token="tok-xyz"))
-        result = vault.issue_credential(
-            agent_id="agent-001",
-            caps=frozenset([Capability.PERMISSION_READ]),
-        )
-        assert result is not None
-
-
-# ── Backend Health ───────────────────────────────────────────────────────
-
-
-class TestBackendHealth:
-    def test_backend_health_check_when_unsealed(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.health_check = MagicMock(return_value={"initialized": True, "sealed": False})
-        health = vault.health_check()
-        assert health["sealed"] is False
-
-    def test_backend_health_check_returns_init_status(self):
-        vault = _build_vault_with_seal(RootSealState.UNINITIALIZED)
-        vault.secrets_manager.health_check = MagicMock(return_value={"initialized": False, "sealed": True})
-        health = vault.health_check()
-        assert health["initialized"] is False
-
-    def test_backend_health_check_returns_sealed_when_sealed(self):
-        vault = _build_vault_with_seal(RootSealState.SEALED)
-        vault.secrets_manager.health_check = MagicMock(return_value={"initialized": True, "sealed": True})
-        health = vault.health_check()
-        assert health["sealed"] is True
-
-
-# ── Concurrency Safety ───────────────────────────────────────────────────
-
-
-class TestConcurrencySafety:
-    async def test_concurrent_escrow_operations_no_deadlock(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.write_secret = MagicMock()
-
-        async def store_one(idx: int):
-            vault.store_escrow(
-                agent_id=f"agent-{idx:03d}",
-                key=f"key-{idx}",
-                value=crypto_secrets.token_hex(16),
-            )
-
-        import asyncio
-
-        tasks = [asyncio.create_task(store_one(i)) for i in range(32)]
-        await asyncio.gather(*tasks)
-
-        assert vault.secrets_manager.write_secret.call_count == 32
-
-
-# ── Agent Multi-Cluster Token Isolation ──────────────────────────────────
-
-
-class TestMultiClusterTokenIsolation:
-    def test_agents_in_different_clusters_get_distinct_paths(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        path_a = vault._agent_credential_path("agent-001", cluster="us-east")
-        path_b = vault._agent_credential_path("agent-001", cluster="eu-west")
-        assert path_a != path_b
-
-    def test_same_agent_same_cluster_consistent_path(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        a = vault._agent_credential_path("agent-001", cluster="us-east")
-        b = vault._agent_credential_path("agent-001", cluster="us-east")
-        assert a == b
-
-    def test_cluster_token_isolation_in_issue(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.issue_credential = MagicMock(return_value=MagicMock(token="tok-east"))
-        cred = vault.issue_credential(
-            agent_id="agent-001",
-            caps=frozenset([Capability.PERMISSION_READ]),
-            cluster="us-east",
-        )
-        assert cred.token == "tok-east"
-
-
-# ── Audit Integrity ──────────────────────────────────────────────────────
-
-
-class TestAuditIntegrity:
-    def test_audit_record_includes_agent_id_and_caps(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.issue_credential = MagicMock(return_value=MagicMock(token="tok-xyz"))
-        vault.issue_credential(
-            agent_id="agent-042",
-            caps=frozenset([Capability.PERMISSION_READ]),
-        )
-        call_args = vault.audit_logger.record.call_args[0][0]
-        assert call_args["agent_id"] == "agent-042"
-        assert "PERMISSION_READ" in call_args["caps"]
-
-    def test_audit_record_includes_cluster_when_provided(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.issue_credential = MagicMock(return_value=MagicMock(token="tok-east"))
-        vault.issue_credential(
-            agent_id="agent-001",
-            caps=frozenset([Capability.PERMISSION_READ]),
-            cluster="us-east",
-        )
-        call_args = vault.audit_logger.record.call_args[0][0]
-        assert call_args.get("cluster") == "us-east"
-
-    def test_revoke_audit_record_includes_reason_and_timestamp(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.revoke_credential = MagicMock()
-        vault.revoke_credential(token_id="tok-001", reason="key rotation")
-        call_args = vault.audit_logger.record.call_args[0][0]
-        assert call_args["token_id"] == "tok-001"
-        assert call_args["reason"] == "key rotation"
-
-
-# ── Event Emission ───────────────────────────────────────────────────────
-
-
-class TestEventEmission:
-    def test_issue_emits_credential_issued_event(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.issue_credential = MagicMock(return_value=MagicMock(token="tok-xyz", lease_duration=3600))
-        vault.issue_credential(
-            agent_id="agent-001",
-            caps=frozenset([Capability.PERMISSION_READ]),
-        )
-        vault.audit_logger.record.assert_called()
-
-    def test_revoke_emits_credential_revoked_event(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.revoke_credential = MagicMock()
-        vault.revoke_credential(token_id="tok-001", reason="expired")
-        vault.audit_logger.record.assert_called()
-
-
-# ── Decryption ───────────────────────────────────────────────────────────
-
-
-class TestDecryption:
-    def test_decrypt_value_roundtrips(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.decrypt = MagicMock(return_value=b"plaintext-data")
-        result = vault.decrypt_value("gludd/encrypted/key-001")
-        assert result == b"plaintext-data"
-
-    def test_decrypt_value_sealed(self):
-        vault = _build_vault_with_seal(RootSealState.SEALED)
-        with pytest.raises(RootSealHoldError, match="sealed"):
-            vault.decrypt_value("gludd/encrypted/key-001")
-
-    def test_decrypt_value_empty_key(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        with pytest.raises(ValueError, match="key"):
-            vault.decrypt_value("")
-
-
-# ── Encrypt ──────────────────────────────────────────────────────────────
-
-
-class TestEncrypt:
-    def test_encrypt_value_stores_ciphertext(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.encrypt = MagicMock(return_value="vault:v1:abc123cipher")
-        result = vault.encrypt_value(
-            key="gludd/encrypted/key-001",
-            plaintext=b"secret-data",
-        )
-        assert result == "vault:v1:abc123cipher"
-
-    def test_encrypt_value_sealed(self):
-        vault = _build_vault_with_seal(RootSealState.SEALED)
-        with pytest.raises(RootSealHoldError, match="sealed"):
-            vault.encrypt_value(
-                key="gludd/encrypted/key-001",
-                plaintext=b"secret-data",
-            )
-
-    def test_encrypt_value_empty_key(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        with pytest.raises(ValueError, match="key"):
-            vault.encrypt_value(key="", plaintext=b"data")
-
-    def test_encrypt_value_empty_plaintext(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        with pytest.raises(ValueError, match="plaintext"):
-            vault.encrypt_value(key="some/key", plaintext=b"")
-
-
-# ── Stale Credential Reaping ─────────────────────────────────────────────
-
-
-class TestStaleCredentialReaping:
-    def test_reap_stale_credentials_removes_expired(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.list_credentials = MagicMock(return_value=["tok-old", "tok-new"])
-        vault.secrets_manager.revoke_credential = MagicMock()
-        vault.reap_stale_credentials(before=datetime.now(UTC))
-        assert vault.secrets_manager.revoke_credential.call_count == 2
-
-    def test_reap_stale_credentials_no_expired(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.list_credentials = MagicMock(return_value=[])
-        vault.secrets_manager.revoke_credential = MagicMock()
-        vault.reap_stale_credentials(before=datetime.now(UTC))
-        vault.secrets_manager.revoke_credential.assert_not_called()
-
-
-# ── Lease Expiry Forecaster ──────────────────────────────────────────────
-
-
-class TestLeaseExpiryForecaster:
-    def test_forecast_returns_earliest_expiry(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.forecast_expiry = MagicMock(return_value=datetime.now(UTC) + timedelta(hours=1))
-        result = vault.forecast_next_expiry()
-        assert isinstance(result, datetime)
-
-    def test_forecast_no_active_leases(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.forecast_expiry = MagicMock(return_value=None)
-        result = vault.forecast_next_expiry()
+# ── Secret Versioning (KV v2) ────────────────────────────────────────────
+
+
+class TestSecretVersioning:
+    def test_read_secret_returns_none_when_data_missing(self):
+        mgr = SecretsManager()
+        mock_client = MagicMock()
+        mgr._client = mock_client
+        mock_client.secrets.kv.v2.read_secret_version.return_value = {
+            "data": {},
+        }
+        result = mgr.read_secret("missing/data/key")
         assert result is None
 
-
-# ── Immutable Error ──────────────────────────────────────────────────────
-
-
-class TestImmutableError:
-    def test_immutable_error_stores_message_and_context(self):
-        from general_ludd.secrets.credential_vault import (
-            ImmutableCredentialError,
+    def test_delete_secret_deletes_all_versions(self):
+        mgr = SecretsManager()
+        mock_client = MagicMock()
+        mgr._client = mock_client
+        mgr.delete_secret("obsolete/path")
+        mock_client.secrets.kv.v2.delete_metadata_and_all_versions.assert_called_once_with(
+            path="obsolete/path",
+            mount_point="secret",
         )
 
-        err = ImmutableCredentialError(
-            "credential is frozen",
-            context={"token_id": "tok-001"},
+    def test_write_secret_tracks_values_then_writes(self):
+        mgr = SecretsManager()
+        mock_client = MagicMock()
+        mgr._client = mock_client
+        mgr.write_secret("team-a/config", {"key": "abcdefgh12345678"})
+        assert "abcdefgh12345678" in mgr._known_secret_values
+        mock_client.secrets.kv.v2.create_or_update_secret.assert_called_once()
+
+    def test_list_secrets_returns_empty_on_missing_prefix(self):
+        mgr = SecretsManager()
+        mock_client = MagicMock()
+        mgr._client = mock_client
+        mock_client.secrets.kv.v2.list_metadata.side_effect = mgr._client.secrets.kv.v2.list_metadata
+        import hvac
+
+        mock_client.secrets.kv.v2.list_metadata.side_effect = hvac.exceptions.InvalidPath(message="no such prefix")
+        result = mgr.list_secrets("nonexistent/prefix")
+        assert result == []
+
+    def test_list_secrets_returns_keys(self):
+        mgr = SecretsManager()
+        mock_client = MagicMock()
+        mgr._client = mock_client
+        mock_client.secrets.kv.v2.list_metadata.return_value = {
+            "data": {"keys": ["db", "api", "cache"]},
+        }
+        result = mgr.list_secrets("team-a")
+        assert result == ["db", "api", "cache"]
+
+
+# ── InvalidPath Handling (genuine not-found) ─────────────────────────────
+
+
+class TestInvalidPathHandling:
+    def test_read_secret_returns_none_on_invalid_path(self):
+        mgr = SecretsManager()
+        mock_client = MagicMock()
+        mgr._client = mock_client
+        import hvac
+
+        mock_client.secrets.kv.v2.read_secret_version.side_effect = hvac.exceptions.InvalidPath(
+            message="no secret at path"
         )
-        assert err.context == {"token_id": "tok-001"}
-        assert "frozen" in str(err)
+        result = mgr.read_secret("no/such/path")
+        assert result is None
+
+    def test_read_secret_reraises_on_non_404_errors(self):
+        mgr = SecretsManager()
+        mock_client = MagicMock()
+        mgr._client = mock_client
+        mock_client.secrets.kv.v2.read_secret_version.side_effect = hvac.exceptions.Forbidden(message="not authorized")
+        with pytest.raises(SecretsUnavailableError, match="unavailable"):
+            mgr.read_secret("forbidden/path")
 
 
-# ── Bulk Revocation ──────────────────────────────────────────────────────
+# ── Path Validation ──────────────────────────────────────────────────────
 
 
-class TestBulkRevocation:
-    def test_bulk_revoke_removes_all_listed(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.revoke_credential = MagicMock()
-        vault.bulk_revoke_credentials(
-            token_ids=["tok-001", "tok-002", "tok-003"],
-            reason="mass rotation",
+class TestPathValidation:
+    def test_write_secret_rejects_traversal(self):
+        mgr = SecretsManager()
+        with pytest.raises(ValueError, match="traversal"):
+            mgr.write_secret("dev/../prod/key", {"val": "x"})
+
+    def test_read_secret_rejects_traversal(self):
+        mgr = SecretsManager()
+        mock_client = MagicMock()
+        mgr._client = mock_client
+        with pytest.raises(ValueError, match="traversal"):
+            mgr.read_secret("../escape")
+
+    def test_write_secret_rejects_invalid_chars(self):
+        mgr = SecretsManager()
+        with pytest.raises(ValueError, match="invalid"):
+            mgr.write_secret("path;with;semicolons", {"val": "x"})
+
+    def test_list_secrets_rejects_traversal(self):
+        mgr = SecretsManager()
+        mock_client = MagicMock()
+        mgr._client = mock_client
+        with pytest.raises(ValueError, match="traversal"):
+            mgr.list_secrets("dev/..")
+
+
+# ── OpenBaoScopeEvidence ─────────────────────────────────────────────────
+
+
+class TestOpenBaoScopeEvidence:
+    def test_evidence_carries_structure(self):
+        scope = OpenBaoPathScope(
+            mount="secret",
+            paths=("dev/db",),
+            capabilities=frozenset({"read"}),
         )
-        assert vault.secrets_manager.revoke_credential.call_count == 3
+        evidence = scope.evidence(
+            event_type="scope_granted",
+            subject_id="agent-42",
+        )
+        d = evidence.as_dict()
+        assert d["event_type"] == "scope_granted"
+        assert d["path_count"] == 1
+        assert "read" in d["capabilities"]
+        assert d["subject_hash"]
+        assert d["scope_hash"]
 
-    def test_bulk_revoke_empty_list(self):
-        vault = _build_vault_with_seal(RootSealState.UNSEALED)
-        vault.secrets_manager.revoke_credential = MagicMock()
-        vault.bulk_revoke_credentials(token_ids=[], reason="no-op")
-        vault.secrets_manager.revoke_credential.assert_not_called()
+    def test_evidence_hides_subject_id(self):
+        scope = OpenBaoPathScope(
+            mount="secret",
+            paths=("dev/*",),
+            capabilities=frozenset({"read"}),
+        )
+        evidence = scope.evidence(
+            event_type="scope_granted",
+            subject_id="sensitive-agent-id-007",
+        )
+        d = evidence.as_dict()
+        assert "sensitive-agent-id-007" not in str(d)
+        assert "sensitive-agent-id-007" not in d["subject_hash"]
+
+
+# ── OpenBaoConfig Validation ─────────────────────────────────────────────
+
+
+class TestOpenBaoConfigValidation:
+    def test_kv_mount_validated_against_openbao_rules(self):
+        with pytest.raises(ValueError):
+            OpenBaoConfig(kv_mount="/absolute/mount")
+
+    def test_serialized_token_always_redacted(self):
+        cfg = OpenBaoConfig(
+            mode="external",
+            external_url="https://bao.example.com:8200",
+            external_token="s.actually-secret-token-value",
+        )
+        dumped = cfg.model_dump()
+        assert dumped["external_token"] != "s.actually-secret-token-value"
+        assert "REDACTED" in str(dumped["external_token"])
+
+    def test_mode_must_be_valid(self):
+        with pytest.raises(ValueError):
+            OpenBaoConfig(mode="bogus")
