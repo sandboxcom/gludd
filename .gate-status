@@ -16,3 +16,4 @@ smoke FAIL
 epoch 1786157091
 === GATE-REFRESH: PASSED ===
 === GATE: PASSED ===
+FAIL non-zero-exit
