@@ -32,8 +32,8 @@ attack_vectors:
       example: "' AND (SELECT SUBSTRING(password,1,1) FROM users LIMIT 1)='a"
       severity: "critical"
       detection:
-        code: "SUBSTRING|MID\(|ascii\("
-        log: "(?i)(and\s+\d+=\d+|or\s+\d+=\d+|1=1|SUBSTRING|MID\(|ASCII\()"
+        code: 'SUBSTRING|MID\(|ascii\('
+        log: '(?i)(and\s+\d+=\d+|or\s+\d+=\d+|1=1|SUBSTRING|MID\(|ASCII\()'
 
     - id: "BLIND_TIME"
       name: "Time-based blind injection"
@@ -46,8 +46,8 @@ attack_vectors:
         mssql: "WAITFOR DELAY, WAITFOR TIME"
         oracle: "DBMS_LOCK.SLEEP()"
       detection:
-        code: "sleep\(|benchmark\(|pg_sleep|WAITFOR DELAY|DBMS_LOCK"
-        log: "(?i)(sleep\(\d+\)|benchmark\(\d+|WAITFOR DELAY|pg_sleep|DBMS_LOCK)"
+        code: 'sleep\(|benchmark\(|pg_sleep|WAITFOR DELAY|DBMS_LOCK'
+        log: '(?i)(sleep\(\d+\)|benchmark\(\d+|WAITFOR DELAY|pg_sleep|DBMS_LOCK)'
 
     - id: "STACKED_QUERIES"
       name: "Stacked queries"
@@ -55,8 +55,8 @@ attack_vectors:
       example: "'; DROP TABLE users; SELECT * FROM data WHERE '1'='1"
       severity: "critical"
       detection:
-        code: ";\s*(DROP|INSERT|UPDATE|DELETE|ALTER|CREATE|EXEC)"
-        log: "(?i);\s*(drop|insert|update|delete|alter|create|exec|truncate|grant)"
+        code: ';\s*(DROP|INSERT|UPDATE|DELETE|ALTER|CREATE|EXEC)'
+        log: '(?i);\s*(drop|insert|update|delete|alter|create|exec|truncate|grant)'
 
     - id: "OUT_OF_BAND"
       name: "Out-of-band injection"
@@ -70,7 +70,7 @@ attack_vectors:
         postgresql: "COPY ... TO PROGRAM"
       detection:
         code: "xp_dirtree|xp_fileexist|LOAD_FILE|OUTFILE|UTL_HTTP|COPY.*PROGRAM"
-        log: "(?i)(xp_dirtree|LOAD_FILE|INTO OUTFILE|UTL_HTTP\.REQUEST|COPY.*PROGRAM)"
+        log: '(?i)(xp_dirtree|LOAD_FILE|INTO OUTFILE|UTL_HTTP\.REQUEST|COPY.*PROGRAM)'
 
   advanced:
     - id: "SECOND_ORDER"
@@ -98,13 +98,13 @@ attack_vectors:
       severity: "high"
       detection:
         code: "No direct code pattern — log-level detection"
-        log: "(?i)(0x[0-9a-f]{6,}|%27|%22|CHAR\(\d|CONCAT\(0x|\\\u0027|/*!|UNHEX\()"
+        log: '(?i)(0x[0-9a-f]{6,}|%27|%22|CHAR\(\d|CONCAT\(0x|\\\u0027|/*!|UNHEX\()'
 
   nosql:
     - id: "NOSQL_INJECTION"
       name: "NoSQL injection"
       description: "Injection in MongoDB, Redis, CouchDB queries"
-      example: '{"$gt": ""}, {"$ne": null}, {"$where": "this.password == '\''admin'\''"}'
+      example: '{"$gt": ""}, {"$ne": null}, {"$where": "this.password == ''admin''"}'
       severity: "critical"
       detection:
         code: '\$gt"|\$ne"|\$where"|\$regex"|\$exists"'

@@ -285,10 +285,8 @@ gdpr:
       requirements:
         - Do not subject data subjects to decisions based solely on automated processing
           that produce legal or similarly significant effects
-        - Exceptions: when the decision is necessary for a contract, authorized by law,
-          or based on explicit consent
-        - When using exceptions, implement safeguards: human intervention, ability to
-          express point of view, ability to contest the decision
+        - Exceptions: when the decision is necessary for a contract, authorized by law, or based on explicit consent
+        - When using exceptions, implement safeguards: human intervention, ability to express point of view, ability to contest the decision
         - Profiling of special categories of data (Art 9) is prohibited unless
           explicit consent or substantial public interest
         - Provide meaningful information about the logic involved in automated decisions
@@ -304,13 +302,10 @@ gdpr:
       severity: high
       requirements:
         - Transfer data to third countries only if adequacy decision exists (Art 45)
-        - Without adequacy decision, implement appropriate safeguards (Art 46):
-          standard contractual clauses (SCCs), binding corporate rules (BCRs),
-          approved codes of conduct, approved certification mechanisms
+        - Without adequacy decision, implement appropriate safeguards (Art 46): standard contractual clauses (SCCs), binding corporate rules (BCRs), approved codes of conduct, approved certification mechanisms
         - Document transfer impact assessment for each transfer
         - For US transfers: ensure Data Privacy Framework (DPF) certification exists
         - Review adequacy decisions and safeguards periodically
         - Inform data subjects of international data transfers and safeguards
-        - Use derogations (Art 49) only as exceptions: explicit consent, contract necessity,
-          important reasons of public interest, legal claims, vital interests
+        - Use derogations (Art 49) only as exceptions: explicit consent, contract necessity, important reasons of public interest, legal claims, vital interests
         - Assess lawfulness of transfers in light of relevant case law (Schrems II, etc.)
