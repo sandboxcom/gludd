@@ -6,7 +6,7 @@ import asyncio
 from typing import Any
 
 import pytest
-from src.general_ludd.util.debounce_v2 import AsyncDebounceV2, DebounceV2
+from general_ludd.util.debounce_v2 import AsyncDebounceV2, DebounceV2
 
 # ---------------------------------------------------------------------------
 # Simulated clock

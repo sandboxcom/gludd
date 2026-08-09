@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from src.general_ludd.network.packet_filter import (
+from general_ludd.network.packet_filter import (
     BinaryNode,
     BoolNode,
     MatchNode,

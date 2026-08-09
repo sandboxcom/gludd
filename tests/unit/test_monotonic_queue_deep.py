@@ -9,7 +9,7 @@ interleaved push/pop patterns.
 
 from __future__ import annotations
 
-from src.general_ludd.algorithms.monotonic_queue import (
+from general_ludd.algorithms.monotonic_queue import (
     MaxQueue,
     MinQueue,
     MonotonicQueue,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from src.general_ludd.network.sliding_window import (
+from general_ludd.network.sliding_window import (
     FixedWindow,
     SlidingLog,
     SmoothedRate,

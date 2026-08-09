@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from src.general_ludd.probabilistic.minhash import LSH, MinHash, _murmur64
+from general_ludd.probabilistic.minhash import LSH, MinHash, _murmur64
 
 
 def _tokenize(text: str) -> list[str]:
