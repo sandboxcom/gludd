@@ -186,7 +186,7 @@ def test_query_wevtutil_normalizes() -> None:
     rec = records[0]
     assert rec["ts"] is not None
     assert rec["level_or_status"] == "Error"  # mapped from Level=2
-    assert rec["message"] == "Disk error."
+    assert rec["message"] == "51: Disk error."
     assert rec["value"] == 51.0
     assert rec["labels"]["provider"] == "disk"
     assert rec["labels"]["channel"] == "System"
