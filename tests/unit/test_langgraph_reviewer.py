@@ -1,336 +1,700 @@
-"""Unit tests for LangGraphReflexiveReviewer."""
+"""Tests for LangGraphReflexiveReviewer — self-reflective review loop.
+
+Covers: graph construction, routing, draft/revise nodes, evidence gathering,
+JSON parsing, fallback behavior, and model validation.
+"""
 
 from __future__ import annotations
 
 import json
 from unittest.mock import MagicMock
 
-from general_ludd.review.langgraph_reviewer import LangGraphReflexiveReviewer
+import pytest
+
+from general_ludd.review.langgraph_reviewer import (
+    LangGraphReflexiveReviewer,
+    ReviewerState,
+    ReviewWithReflection,
+)
 from general_ludd.schemas.task_decision import TaskDecision
 from general_ludd.schemas.task_return import TaskReturn
 
 
-def _make_task_return(
-    return_id: str = "R1",
-    todo_id: str = "T1",
-    result_summary: str = "All tests passed.",
-    exit_code: int = 0,
-    playbook: str = "implementation.yml",
-) -> TaskReturn:
-    return TaskReturn(
-        return_id=return_id,
-        todo_id=todo_id,
-        job_id=f"JOB-{return_id}",
-        playbook=playbook,
-        queue="model",
-        work_type="code",
-        exit_code=exit_code,
-        result_summary=result_summary,
+def _make_task_return(**overrides: object) -> TaskReturn:
+    defaults: dict[str, object] = {
+        "return_id": "RET-001",
+        "todo_id": "TODO-001",
+        "job_id": "JOB-001",
+        "playbook": "test_playbook",
+        "queue": "core",
+        "result_summary": "All tests passed",
+        "exit_code": 0,
+        "artifacts": ["logs.txt", "coverage.xml"],
+    }
+    defaults.update(overrides)
+    return TaskReturn(**defaults)  # type: ignore[arg-type]
+
+
+def _make_review_json(
+    decision: str = "complete",
+    confidence: float = 0.95,
+    reflection: str = "Looks good",
+    missing_evidence: list[str] | None = None,
+) -> str:
+    return json.dumps(
+        {
+            "decision": decision,
+            "confidence": confidence,
+            "audit_notes": ["Test output verified"],
+            "evidence_refs": ["test:unit"],
+            "reflection": reflection,
+            "missing_evidence": missing_evidence or [],
+            "todo_updates": {},
+            "child_todos": [],
+            "validation_requests": [],
+            "git_requests": [],
+            "policy_flags": [],
+        }
     )
 
 
-def _high_confidence_response(decision: str = "complete") -> str:
-    """Return JSON for a high-confidence review."""
-    return json.dumps({
-        "decision": decision,
-        "confidence": 0.95,
-        "audit_notes": ["Tests pass", "Coverage adequate"],
-        "evidence_refs": ["coverage.xml", "test_output.log"],
-        "reflection": "All evidence is consistent, no gaps.",
-        "missing_evidence": [],
-        "todo_updates": {},
-        "child_todos": [],
-        "validation_requests": [],
-        "git_requests": [],
-        "policy_flags": [],
-    })
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
-def _low_confidence_then_high() -> tuple[str, str, str]:
-    """Low confidence first, then evidence gather, then high confidence revise."""
-    draft = json.dumps({
-        "decision": "needs_more_work",
-        "confidence": 0.45,
-        "audit_notes": ["Test output unclear"],
-        "evidence_refs": [],
-        "reflection": "Cannot verify test results without seeing the output file.",
-        "missing_evidence": ["test_output.log", "coverage report"],
-        "todo_updates": {},
-        "child_todos": [],
-        "validation_requests": [],
-        "git_requests": [],
-        "policy_flags": [],
-    })
-    revise = json.dumps({
-        "decision": "complete",
-        "confidence": 0.92,
-        "audit_notes": ["Found test_output.log — all tests pass", "coverage report shows 85%"],
-        "evidence_refs": ["test_output.log", "coverage.xml"],
-        "reflection": "Evidence now supports completion. Confidence increased.",
-        "missing_evidence": [],
-        "todo_updates": {},
-        "child_todos": [],
-        "validation_requests": [],
-        "git_requests": [],
-        "policy_flags": [],
-    })
-    return draft, "", revise
+class TestReviewWithReflectionModel:
+    def test_construct_with_minimal_fields(self):
+        r = ReviewWithReflection(decision="complete", confidence=0.9)
+        assert r.decision == "complete"
+        assert r.confidence == 0.9
+        assert r.reflection == ""
+        assert r.missing_evidence == []
+
+    def test_construct_with_all_fields(self):
+        r = ReviewWithReflection(
+            decision="needs_more_work",
+            confidence=0.5,
+            audit_notes=["Missing tests"],
+            evidence_refs=["file:tests.py"],
+            reflection="Uncertain about coverage",
+            missing_evidence=["test:missing"],
+            todo_updates={"status": "in_progress"},
+            child_todos=[{"id": "C1"}],
+            validation_requests=["check lint"],
+            git_requests=["commit"],
+            policy_flags=["review"],
+        )
+        assert r.decision == "needs_more_work"
+        assert r.audit_notes == ["Missing tests"]
+        assert r.todo_updates == {"status": "in_progress"}
+        assert len(r.child_todos) == 1
+
+    def test_confidence_clamped_to_range(self):
+        with pytest.raises(ValueError):
+            ReviewWithReflection(decision="complete", confidence=1.5)
+        with pytest.raises(ValueError):
+            ReviewWithReflection(decision="complete", confidence=-0.1)
 
 
-# ── Tests ───────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Constructor
+# ---------------------------------------------------------------------------
 
 
-class TestLangGraphReflexiveReviewer:
-    """Tests for the langgraph-based reflexive reviewer."""
+class TestConstructor:
+    def test_default_values(self):
+        call_model = MagicMock()
+        reviewer = LangGraphReflexiveReviewer(call_model)
+        assert reviewer._max_iterations == 3
+        assert reviewer._confidence_threshold == 0.8
+        assert reviewer._graph is not None
 
-    def test_high_confidence_single_pass(self) -> None:
-        """Mock model returns structured review with high confidence → single pass."""
-        call_model = MagicMock(return_value=_high_confidence_response("complete"))
-
+    def test_custom_thresholds(self):
+        call_model = MagicMock()
         reviewer = LangGraphReflexiveReviewer(
             call_model,
-            max_iterations=3,
-            confidence_threshold=0.8,
+            max_iterations=5,
+            confidence_threshold=0.9,
         )
-        tr = _make_task_return()
-        decision = reviewer.review_return(tr, [], ["test_output.log", "coverage.xml"])
+        assert reviewer._max_iterations == 5
+        assert reviewer._confidence_threshold == 0.9
 
-        assert isinstance(decision, TaskDecision)
-        assert decision.decision == "complete"
-        assert decision.confidence == 0.95
-        assert any("[reflexive-review]" in n for n in decision.audit_notes)
-        assert call_model.call_count == 1
 
-    def test_high_confidence_decision_needs_more_work(self) -> None:
-        """High confidence for a non-complete decision still exits after one pass."""
-        call_model = MagicMock(return_value=_high_confidence_response("needs_more_work"))
+# ---------------------------------------------------------------------------
+# Graph Construction
+# ---------------------------------------------------------------------------
 
-        reviewer = LangGraphReflexiveReviewer(call_model, max_iterations=3, confidence_threshold=0.8)
-        tr = _make_task_return()
-        decision = reviewer.review_return(tr, [], [])
 
-        assert decision.decision == "needs_more_work"
-        assert decision.confidence == 0.95
-        assert call_model.call_count == 1
+class TestGraphConstruction:
+    def test_graph_has_required_nodes(self):
+        reviewer = LangGraphReflexiveReviewer(MagicMock())
+        graph = reviewer._build_graph()
+        nodes = graph.get_graph().nodes
+        assert "draft_review" in nodes
+        assert "evidence_gather" in nodes
+        assert "revise_review" in nodes
 
-    def test_low_confidence_iterates_through_evidence_and_revise(self) -> None:
-        """Low confidence first → evidence gather → revise with high confidence."""
-        draft, _, revise = _low_confidence_then_high()
-        call_model = MagicMock(side_effect=[draft, revise])
+    def test_graph_compiles_without_error(self):
+        reviewer = LangGraphReflexiveReviewer(MagicMock())
+        graph = reviewer._graph
+        assert graph is not None
 
-        reviewer = LangGraphReflexiveReviewer(call_model, max_iterations=3, confidence_threshold=0.8)
-        tr = _make_task_return()
-        decision = reviewer.review_return(tr, [], ["test_output.log", "coverage.xml"])
 
-        assert decision.decision == "complete"
-        assert decision.confidence == 0.92
-        assert call_model.call_count >= 2  # draft + at least one revise
+# ---------------------------------------------------------------------------
+# Routing: _should_continue
+# ---------------------------------------------------------------------------
 
-    def test_confidence_threshold_gating(self) -> None:
-        """A review with confidence below threshold but above some lower bound iterates."""
-        below_threshold = json.dumps({
-            "decision": "complete",
-            "confidence": 0.65,
-            "audit_notes": ["Mostly confident"],
-            "evidence_refs": [],
-            "reflection": "Could use more evidence.",
-            "missing_evidence": ["test_output.log"],
-        })
-        above_threshold = json.dumps({
-            "decision": "complete",
-            "confidence": 0.90,
-            "audit_notes": ["Confirmed"],
-            "evidence_refs": ["test_output.log"],
-            "reflection": "All good now.",
+
+class TestShouldContinue:
+    def test_returns_end_when_final_decision_set(self):
+        reviewer = LangGraphReflexiveReviewer(MagicMock())
+        state: ReviewerState = {
+            "final_decision": TaskDecision(
+                return_id="R1",
+                matched_todo_id="T1",
+                decision="complete",
+                confidence=0.9,
+            ),
+        }
+        result = reviewer._should_continue(state)
+        assert result == "END" or result == "__end__"
+
+    def test_returns_end_when_max_iterations_reached(self):
+        reviewer = LangGraphReflexiveReviewer(MagicMock(), max_iterations=3)
+        state: ReviewerState = {"iteration": 3, "max_iterations": 3}
+        result = reviewer._should_continue(state)
+        assert result == "END" or result == "__end__"
+
+    def test_returns_evidence_gather_when_not_done(self):
+        reviewer = LangGraphReflexiveReviewer(MagicMock(), max_iterations=3)
+        state: ReviewerState = {"iteration": 1, "max_iterations": 3}
+        result = reviewer._should_continue(state)
+        assert result == "evidence_gather"
+
+
+# ---------------------------------------------------------------------------
+# _draft_review node
+# ---------------------------------------------------------------------------
+
+
+class TestDraftReview:
+    def test_high_confidence_sets_final_decision(self):
+        call_model = MagicMock(return_value=_make_review_json(confidence=0.95))
+        reviewer = LangGraphReflexiveReviewer(call_model)
+        state: ReviewerState = {
+            "messages": [],
+            "task_return_id": "R1",
+            "todo_id": "T1",
+            "iteration": 0,
+            "max_iterations": 3,
+            "confidence_threshold": 0.8,
+            "final_decision": None,
+            "reflection_notes": [],
             "missing_evidence": [],
-        })
-        call_model = MagicMock(side_effect=[below_threshold, above_threshold])
+            "result_summary": "tests passed",
+            "playbook": "test",
+            "exit_code": 0,
+            "candidate_todos": [],
+            "artifacts": [],
+        }
+        result = reviewer._draft_review(state)
+        assert result.get("final_decision") is not None
+        assert result.get("iteration") == 1
+        assert len(result.get("reflection_notes") or []) >= 1
 
-        reviewer = LangGraphReflexiveReviewer(call_model, max_iterations=3, confidence_threshold=0.8)
-        tr = _make_task_return()
-        decision = reviewer.review_return(tr, [], ["test_output.log"])
+    def test_low_confidence_does_not_set_final_decision(self):
+        call_model = MagicMock(return_value=_make_review_json(confidence=0.5))
+        reviewer = LangGraphReflexiveReviewer(call_model)
+        state: ReviewerState = {
+            "messages": [],
+            "task_return_id": "R1",
+            "todo_id": "T1",
+            "iteration": 0,
+            "max_iterations": 3,
+            "confidence_threshold": 0.8,
+            "final_decision": None,
+            "reflection_notes": [],
+            "missing_evidence": [],
+            "result_summary": "tests passed",
+            "playbook": "test",
+            "exit_code": 0,
+            "candidate_todos": [],
+            "artifacts": [],
+        }
+        result = reviewer._draft_review(state)
+        assert result.get("final_decision") is None
+        assert result.get("iteration") == 1
 
-        assert decision.decision == "complete"
-        assert decision.confidence == 0.90
-        assert call_model.call_count >= 2
+    def test_max_iterations_reached_sets_fallback(self):
+        call_model = MagicMock(return_value=_make_review_json(confidence=0.3))
+        reviewer = LangGraphReflexiveReviewer(call_model, max_iterations=1)
+        state: ReviewerState = {
+            "messages": [],
+            "task_return_id": "R1",
+            "todo_id": "T1",
+            "iteration": 0,
+            "max_iterations": 1,
+            "confidence_threshold": 0.8,
+            "final_decision": None,
+            "reflection_notes": [],
+            "missing_evidence": [],
+            "result_summary": "tests passed",
+            "playbook": "test",
+            "exit_code": 0,
+            "candidate_todos": [],
+            "artifacts": [],
+        }
+        result = reviewer._draft_review(state)
+        assert result.get("final_decision") is not None
 
-    def test_max_iterations_cap(self) -> None:
-        """After max_iterations, accept the final output regardless of confidence."""
-        low = json.dumps({
-            "decision": "needs_more_work",
-            "confidence": 0.30,
-            "audit_notes": ["Still unclear"],
-            "evidence_refs": [],
-            "reflection": "Not enough data.",
-            "missing_evidence": ["more_data"],
-        })
-        call_model = MagicMock(return_value=low)
+    def test_parse_failure_at_max_iterations_sets_fallback(self):
+        call_model = MagicMock(return_value="not valid json at all {{{")
+        reviewer = LangGraphReflexiveReviewer(call_model, max_iterations=1)
+        state: ReviewerState = {
+            "messages": [],
+            "task_return_id": "R1",
+            "todo_id": "T1",
+            "iteration": 0,
+            "max_iterations": 1,
+            "confidence_threshold": 0.8,
+            "final_decision": None,
+            "reflection_notes": [],
+            "missing_evidence": [],
+            "result_summary": "tests passed",
+            "playbook": "test",
+            "exit_code": 0,
+            "candidate_todos": [],
+            "artifacts": [],
+        }
+        result = reviewer._draft_review(state)
+        assert result.get("final_decision") is not None
+        decision = result.get("final_decision")
+        assert decision is not None and decision.decision == "manual_hold"
 
-        reviewer = LangGraphReflexiveReviewer(call_model, max_iterations=2, confidence_threshold=0.8)
-        tr = _make_task_return()
-        decision = reviewer.review_return(tr, [], [])
+    def test_parse_failure_below_max_does_not_set_decision(self):
+        call_model = MagicMock(return_value="garbage {{{")
+        reviewer = LangGraphReflexiveReviewer(call_model, max_iterations=3)
+        state: ReviewerState = {
+            "messages": [],
+            "task_return_id": "R1",
+            "todo_id": "T1",
+            "iteration": 0,
+            "max_iterations": 3,
+            "confidence_threshold": 0.8,
+            "final_decision": None,
+            "reflection_notes": [],
+            "missing_evidence": [],
+            "result_summary": "tests passed",
+            "playbook": "test",
+            "exit_code": 0,
+            "candidate_todos": [],
+            "artifacts": [],
+        }
+        result = reviewer._draft_review(state)
+        assert result.get("final_decision") is None
+        assert "Model output could not be parsed" in (result.get("reflection_notes") or [])
 
-        assert decision.decision == "needs_more_work"
-        assert decision.confidence == 0.30
-        assert call_model.call_count <= 2 + 1  # max_iterations drafts/revises
-
-    def test_persistently_low_confidence_exhausts_iterations(self) -> None:
-        """When all iterations produce low confidence, accept the final output."""
-        low = json.dumps({
-            "decision": "needs_more_work",
-            "confidence": 0.25,
-            "audit_notes": ["Insufficient evidence"],
-            "evidence_refs": [],
-            "reflection": "Critical files missing.",
-            "missing_evidence": ["coverage.xml", "lint_output.log"],
-        })
-        call_model = MagicMock(return_value=low)
-
-        reviewer = LangGraphReflexiveReviewer(call_model, max_iterations=3, confidence_threshold=0.8)
-        tr = _make_task_return()
-        decision = reviewer.review_return(tr, [], [])
-
-        assert decision is not None
-        assert decision.decision == "needs_more_work"
-        assert "reflexive-review" in " ".join(decision.audit_notes)
-
-    def test_model_call_failure_produces_fallback(self) -> None:
-        """When every model call returns None, produce a manual_hold fallback."""
+    def test_null_model_output(self):
         call_model = MagicMock(return_value=None)
+        reviewer = LangGraphReflexiveReviewer(call_model, max_iterations=3)
+        state: ReviewerState = {
+            "messages": [],
+            "task_return_id": "R1",
+            "todo_id": "T1",
+            "iteration": 0,
+            "max_iterations": 3,
+            "confidence_threshold": 0.8,
+            "final_decision": None,
+            "reflection_notes": [],
+            "missing_evidence": [],
+            "result_summary": "tests passed",
+            "playbook": "test",
+            "exit_code": 0,
+            "candidate_todos": [],
+            "artifacts": [],
+        }
+        result = reviewer._draft_review(state)
+        assert result.get("final_decision") is None
 
-        reviewer = LangGraphReflexiveReviewer(call_model, max_iterations=2, confidence_threshold=0.8)
-        tr = _make_task_return()
-        decision = reviewer.review_return(tr, [], [])
 
+# ---------------------------------------------------------------------------
+# _evidence_gather node
+# ---------------------------------------------------------------------------
+
+
+class TestEvidenceGather:
+    def test_no_missing_evidence_adds_note(self):
+        reviewer = LangGraphReflexiveReviewer(MagicMock())
+        state: ReviewerState = {
+            "messages": [],
+            "reflection_notes": [],
+            "missing_evidence": [],
+            "artifacts": ["coverage.xml"],
+        }
+        result = reviewer._evidence_gather(state)
+        assert any("no specific evidence" in n for n in (result.get("reflection_notes") or []))
+
+    def test_found_evidence(self):
+        reviewer = LangGraphReflexiveReviewer(MagicMock())
+        state: ReviewerState = {
+            "messages": [],
+            "reflection_notes": [],
+            "missing_evidence": ["coverage.xml", "lint.log"],
+            "artifacts": ["coverage.xml", "logs.txt"],
+        }
+        result = reviewer._evidence_gather(state)
+        notes = result.get("reflection_notes") or []
+        assert any("[found]" in n for n in notes)
+        assert any("[missing]" in n for n in notes)
+        assert any("coverage.xml" in n for n in notes)
+        assert any("lint.log" in n for n in notes)
+
+    def test_all_evidence_missing(self):
+        reviewer = LangGraphReflexiveReviewer(MagicMock())
+        state: ReviewerState = {
+            "messages": [],
+            "reflection_notes": [],
+            "missing_evidence": ["nonexistent.log"],
+            "artifacts": ["other.txt"],
+        }
+        result = reviewer._evidence_gather(state)
+        notes = result.get("reflection_notes") or []
+        assert any("[missing]" in n for n in notes)
+
+    def test_all_evidence_found(self):
+        reviewer = LangGraphReflexiveReviewer(MagicMock())
+        state: ReviewerState = {
+            "messages": [],
+            "reflection_notes": [],
+            "missing_evidence": ["coverage.xml"],
+            "artifacts": ["coverage.xml"],
+        }
+        result = reviewer._evidence_gather(state)
+        notes = result.get("reflection_notes") or []
+        assert any("[found]" in n for n in notes)
+
+    def test_case_insensitive_matching(self):
+        reviewer = LangGraphReflexiveReviewer(MagicMock())
+        state: ReviewerState = {
+            "messages": [],
+            "reflection_notes": [],
+            "missing_evidence": ["Coverage.XML"],
+            "artifacts": ["coverage.xml"],
+        }
+        result = reviewer._evidence_gather(state)
+        notes = result.get("reflection_notes") or []
+        assert any("[found]" in n for n in notes)
+
+
+# ---------------------------------------------------------------------------
+# _revise_review node
+# ---------------------------------------------------------------------------
+
+
+class TestReviseReview:
+    def test_high_confidence_sets_final_decision(self):
+        call_model = MagicMock(return_value=_make_review_json(confidence=0.85))
+        reviewer = LangGraphReflexiveReviewer(call_model)
+        state: ReviewerState = {
+            "messages": [],
+            "task_return_id": "R1",
+            "todo_id": "T1",
+            "iteration": 1,
+            "max_iterations": 3,
+            "confidence_threshold": 0.8,
+            "final_decision": None,
+            "reflection_notes": [],
+            "missing_evidence": [],
+            "result_summary": "tests passed",
+            "playbook": "test",
+            "exit_code": 0,
+            "candidate_todos": [],
+            "artifacts": [],
+        }
+        result = reviewer._revise_review(state)
+        assert result.get("final_decision") is not None
+        assert result.get("iteration") == 2
+
+    def test_parse_failure_at_max_iterations_sets_fallback(self):
+        call_model = MagicMock(return_value="garbage")
+        reviewer = LangGraphReflexiveReviewer(call_model, max_iterations=2)
+        state: ReviewerState = {
+            "messages": [],
+            "task_return_id": "R1",
+            "todo_id": "T1",
+            "iteration": 1,
+            "max_iterations": 2,
+            "confidence_threshold": 0.8,
+            "final_decision": None,
+            "reflection_notes": [],
+            "missing_evidence": [],
+            "result_summary": "tests passed",
+            "playbook": "test",
+            "exit_code": 0,
+            "candidate_todos": [],
+            "artifacts": [],
+        }
+        result = reviewer._revise_review(state)
+        assert result.get("final_decision") is not None
+        decision = result.get("final_decision")
+        assert decision is not None and decision.decision == "manual_hold"
+
+
+# ---------------------------------------------------------------------------
+# _parse_reflection
+# ---------------------------------------------------------------------------
+
+
+class TestParseReflection:
+    def test_parses_valid_json(self):
+        reviewer = LangGraphReflexiveReviewer(MagicMock())
+        json_str = _make_review_json(decision="complete", confidence=0.9)
+        state: ReviewerState = {}
+        result = reviewer._parse_reflection(json_str, state)
+        assert result is not None
+        assert result.decision == "complete"
+        assert result.confidence == 0.9
+
+    def test_parses_json_with_markdown_fence(self):
+        reviewer = LangGraphReflexiveReviewer(MagicMock())
+        raw = "```json\n" + _make_review_json(decision="failed", confidence=0.7) + "\n```"
+        state: ReviewerState = {}
+        result = reviewer._parse_reflection(raw, state)
+        assert result is not None
+        assert result.decision == "failed"
+
+    def test_returns_none_for_invalid_json(self):
+        reviewer = LangGraphReflexiveReviewer(MagicMock())
+        state: ReviewerState = {}
+        result = reviewer._parse_reflection("not json at all", state)
+        assert result is None
+
+    def test_returns_none_for_null_input(self):
+        reviewer = LangGraphReflexiveReviewer(MagicMock())
+        state: ReviewerState = {}
+        result = reviewer._parse_reflection(None, state)
+        assert result is None
+
+    def test_returns_none_for_empty_string(self):
+        reviewer = LangGraphReflexiveReviewer(MagicMock())
+        state: ReviewerState = {}
+        result = reviewer._parse_reflection("", state)
+        assert result is None
+
+    def test_missing_required_fields_returns_none(self):
+        reviewer = LangGraphReflexiveReviewer(MagicMock())
+        state: ReviewerState = {}
+        result = reviewer._parse_reflection('{"extra": "field"}', state)
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# _extract_json
+# ---------------------------------------------------------------------------
+
+
+class TestExtractJson:
+    def test_extracts_plain_json(self):
+        raw = '{"key": "value"}'
+        result = LangGraphReflexiveReviewer._extract_json(raw)
+        assert "key" in result
+
+    def test_extracts_json_from_markdown_fence(self):
+        raw = '```json\n{"key": "value"}\n```'
+        result = LangGraphReflexiveReviewer._extract_json(raw)
+        assert "key" in result
+
+    def test_extracts_json_with_leading_text(self):
+        raw = 'Here is the output: {"key": "value"} thanks'
+        result = LangGraphReflexiveReviewer._extract_json(raw)
+        data = json.loads(result)
+        assert data["key"] == "value"
+
+    def test_handles_no_braces_text(self):
+        raw = "plain text no json"
+        result = LangGraphReflexiveReviewer._extract_json(raw)
+        assert result == "plain text no json"
+
+
+# ---------------------------------------------------------------------------
+# _to_task_decision
+# ---------------------------------------------------------------------------
+
+
+class TestToTaskDecision:
+    def test_constructs_task_decision_with_all_fields(self):
+        reviewer = LangGraphReflexiveReviewer(MagicMock())
+        review = ReviewWithReflection(
+            decision="complete",
+            confidence=0.95,
+            audit_notes=["Test passed"],
+            evidence_refs=["commit:abc123"],
+            reflection="Looks correct",
+            missing_evidence=[],
+            todo_updates={"foo": "bar"},
+            child_todos=[{"id": "C1"}],
+            validation_requests=["lint"],
+            git_requests=["push"],
+            policy_flags=["review"],
+        )
+        state: ReviewerState = {
+            "task_return_id": "RET-001",
+            "todo_id": "TODO-001",
+        }
+        decision = reviewer._to_task_decision(review, state, 2)
+        assert decision.return_id == "RET-001"
+        assert decision.decision == "complete"
+        assert decision.confidence == 0.95
+        assert "commit:abc123" in decision.evidence_refs
+        assert any("iter=2" in n for n in decision.audit_notes)
+        assert any("reflection" in n.lower() for n in decision.audit_notes)
+        assert decision.todo_updates == {"foo": "bar"}
+        assert decision.child_todos == [{"id": "C1"}]
+        assert decision.validation_requests == ["lint"]
+        assert decision.git_requests == ["push"]
+        assert decision.policy_flags == ["review"]
+
+
+# ---------------------------------------------------------------------------
+# Fallback Decisions
+# ---------------------------------------------------------------------------
+
+
+class TestFallbackDecisions:
+    def test_make_fallback_decision_for_state(self):
+        reviewer = LangGraphReflexiveReviewer(MagicMock())
+        state: ReviewerState = {
+            "task_return_id": "RET-FB",
+            "todo_id": "TODO-FB",
+            "iteration": 3,
+            "reflection_notes": ["Parse failed"],
+        }
+        decision = reviewer._make_fallback_decision_for_state(state)
         assert decision.decision == "manual_hold"
         assert decision.confidence == 0.0
+        assert decision.return_id == "RET-FB"
+        assert decision.matched_todo_id == "TODO-FB"
+        assert any("Parse failed" in n for n in decision.audit_notes)
+        assert any("Fallback after" in n for n in decision.audit_notes)
 
-    def test_graph_exception_triggers_fallback(self) -> None:
-        """Exceptions during graph invoke produce a manual_hold fallback."""
-        call_model = MagicMock(side_effect=RuntimeError("model unavailable"))
+    def test_make_fallback_decision_from_task_return(self):
+        reviewer = LangGraphReflexiveReviewer(MagicMock())
+        tr = _make_task_return(return_id="RET-FB2", todo_id="TODO-FB2")
+        decision = reviewer._make_fallback_decision(tr)
+        assert decision.decision == "manual_hold"
+        assert decision.confidence == 0.0
+        assert decision.return_id == "RET-FB2"
+        assert decision.matched_todo_id == "TODO-FB2"
 
-        reviewer = LangGraphReflexiveReviewer(call_model, max_iterations=2, confidence_threshold=0.8)
+
+# ---------------------------------------------------------------------------
+# review_return integration
+# ---------------------------------------------------------------------------
+
+
+class TestReviewReturn:
+    def test_successful_review_returns_decision(self):
+        call_model = MagicMock(
+            return_value=_make_review_json(
+                decision="complete",
+                confidence=0.95,
+            )
+        )
+        reviewer = LangGraphReflexiveReviewer(call_model)
         tr = _make_task_return()
         decision = reviewer.review_return(tr, [], [])
+        assert isinstance(decision, TaskDecision)
+        assert decision.decision == "complete"
 
+    def test_graph_failure_returns_fallback(self):
+        call_model = MagicMock(side_effect=RuntimeError("Model unavailable"))
+        reviewer = LangGraphReflexiveReviewer(call_model)
+        tr = _make_task_return()
+        decision = reviewer.review_return(tr, [], [])
+        assert isinstance(decision, TaskDecision)
         assert decision.decision == "manual_hold"
-        assert any("Reflexive review graph error" in n for n in decision.audit_notes)
+        assert decision.confidence == 0.0
+        assert any("Model unavailable" in n for n in decision.audit_notes)
 
-    def test_review_return_includes_task_context(self) -> None:
-        """The draft prompt includes playbook, exit_code, and result_summary."""
-        call_model = MagicMock(return_value=_high_confidence_response("complete"))
+    def test_review_with_candidate_todos_and_artifacts(self):
+        call_model = MagicMock(
+            return_value=_make_review_json(
+                decision="needs_more_work",
+                confidence=0.5,
+            )
+        )
+        reviewer = LangGraphReflexiveReviewer(call_model)
+        tr = _make_task_return()
+        decision = reviewer.review_return(
+            tr,
+            candidate_todos=[{"id": "TODO-999"}],
+            artifacts=["report.json"],
+        )
+        assert isinstance(decision, TaskDecision)
+        assert decision.decision == "needs_more_work"
 
-        reviewer = LangGraphReflexiveReviewer(call_model, max_iterations=2, confidence_threshold=0.8)
-        tr = _make_task_return(
-            result_summary="Fixed the bug.",
+    def test_null_result_summary_handled(self):
+        call_model = MagicMock(return_value=_make_review_json(confidence=0.85))
+        reviewer = LangGraphReflexiveReviewer(call_model)
+        tr = TaskReturn(
+            return_id="R-NULL",
+            todo_id="T-NULL",
+            job_id="J001",
+            playbook="test",
+            queue="core",
+            result_summary="(none)",
             exit_code=0,
-            playbook="bug_fix.yml",
+            artifacts=[],
         )
-        reviewer.review_return(tr, [], [])
+        decision = reviewer.review_return(tr, [], [])
+        assert isinstance(decision, TaskDecision)
 
-        prompt = call_model.call_args_list[0].args[0]
-        assert "bug_fix.yml" in prompt
-        assert "Fixed the bug." in prompt
-
-    def test_all_fields_preserved_in_task_decision(self) -> None:
-        """All fields from ReviewWithReflection propagate to TaskDecision."""
-        full = json.dumps({
-            "decision": "complete",
-            "confidence": 0.88,
-            "audit_notes": ["note 1", "note 2"],
-            "evidence_refs": ["artifact_a", "artifact_b"],
-            "reflection": "Thorough review.",
-            "missing_evidence": [],
-            "todo_updates": {"status": "done"},
-            "child_todos": [{"title": "follow-up"}],
-            "validation_requests": ["validate_security"],
-            "git_requests": ["create_branch"],
-            "policy_flags": ["security_ok"],
-        })
-        call_model = MagicMock(return_value=full)
-
-        reviewer = LangGraphReflexiveReviewer(call_model, max_iterations=2, confidence_threshold=0.8)
+    def test_graph_invoke_returns_no_final_decision(self):
+        call_model = MagicMock(return_value=_make_review_json(confidence=0.3))
+        reviewer = LangGraphReflexiveReviewer(call_model, max_iterations=1)
         tr = _make_task_return()
         decision = reviewer.review_return(tr, [], [])
-
-        assert decision.decision == "complete"
-        assert decision.confidence == 0.88
-        assert decision.todo_updates == {"status": "done"}
-        assert decision.child_todos == [{"title": "follow-up"}]
-        assert decision.validation_requests == ["validate_security"]
-        assert decision.git_requests == ["create_branch"]
-        assert decision.policy_flags == ["security_ok"]
-
-    def test_long_result_summary_not_crashing(self) -> None:
-        """A result_summary longer than 3000 chars does not crash."""
-        long_summary = "x" * 10000
-        call_model = MagicMock(return_value=_high_confidence_response("complete"))
-
-        reviewer = LangGraphReflexiveReviewer(call_model, max_iterations=2, confidence_threshold=0.8)
-        tr = _make_task_return(result_summary=long_summary)
-        decision = reviewer.review_return(tr, [], [])
-
-        assert decision.decision == "complete"
-        call_model.assert_called()
-        prompt = call_model.call_args_list[0].args[0]
-        assert long_summary[:3000] in prompt
-
-    def test_invalid_model_json_is_handled(self) -> None:
-        """When the model returns invalid JSON, the reviewer handles it gracefully."""
-        call_model = MagicMock(return_value="not valid json at all {{{{{")
-
-        reviewer = LangGraphReflexiveReviewer(call_model, max_iterations=2, confidence_threshold=0.8)
-        tr = _make_task_return()
-        decision = reviewer.review_return(tr, [], [])
-
-        assert decision is not None
+        assert isinstance(decision, TaskDecision)
         assert decision.decision == "manual_hold"
 
-    def test_json_with_fence_trimmed(self) -> None:
-        """Model output inside markdown code fences is parsed correctly."""
-        raw = (
-            "```json\n"
-            + json.dumps({
-                "decision": "complete",
-                "confidence": 0.91,
-                "audit_notes": ["good"],
-                "reflection": "fine",
-                "missing_evidence": [],
-            })
-            + "\n```"
-        )
-        call_model = MagicMock(return_value=raw)
 
-        reviewer = LangGraphReflexiveReviewer(call_model, max_iterations=2, confidence_threshold=0.8)
-        tr = _make_task_return()
-        decision = reviewer.review_return(tr, [], [])
+# ---------------------------------------------------------------------------
+# Prompt Builders
+# ---------------------------------------------------------------------------
 
-        assert decision.decision == "complete"
-        assert decision.confidence == 0.91
 
-    def test_evidence_gather_finds_artifacts(self) -> None:
-        """When missing_evidence items match existing artifacts, they are marked found."""
-        draft = json.dumps({
-            "decision": "needs_more_work",
-            "confidence": 0.40,
-            "audit_notes": ["unclear"],
-            "evidence_refs": [],
-            "reflection": "Need to see test output.",
-            "missing_evidence": ["test_output.log", "lint_results.txt"],
-        })
-        revise = json.dumps({
-            "decision": "complete",
-            "confidence": 0.85,
-            "audit_notes": ["tests pass, lint clean"],
-            "evidence_refs": ["test_output.log", "lint_results.txt"],
-            "reflection": "Evidence gathered, confidence raised.",
-            "missing_evidence": [],
-        })
-        call_model = MagicMock(side_effect=[draft, revise])
+class TestPromptBuilders:
+    def test_draft_prompt_includes_key_fields(self):
+        reviewer = LangGraphReflexiveReviewer(MagicMock())
+        state: ReviewerState = {
+            "task_return_id": "RET-P",
+            "todo_id": "TODO-P",
+            "result_summary": "Some output",
+            "playbook": "test_playbook",
+            "exit_code": 0,
+        }
+        prompt = reviewer._build_draft_prompt(state)
+        assert "RET-P" in prompt
+        assert "TODO-P" in prompt
+        assert "test_playbook" in prompt
+        assert "Some output" in prompt
+        assert "INITIAL DRAFT" in prompt
 
-        reviewer = LangGraphReflexiveReviewer(call_model, max_iterations=3, confidence_threshold=0.8)
-        tr = _make_task_return()
-        decision = reviewer.review_return(tr, [], ["test_output.log", "lint_results.txt"])
-
-        assert decision.decision == "complete"
-        assert call_model.call_count >= 2
+    def test_revise_prompt_includes_prior_reflections(self):
+        reviewer = LangGraphReflexiveReviewer(MagicMock())
+        state: ReviewerState = {
+            "task_return_id": "RET-P",
+            "todo_id": "TODO-P",
+            "result_summary": "Some output",
+            "playbook": "test_playbook",
+            "exit_code": 0,
+            "reflection_notes": ["prior note 1", "prior note 2"],
+            "missing_evidence": ["evidence_a.log"],
+            "artifacts": ["artifact_1.txt"],
+        }
+        prompt = reviewer._build_revise_prompt(state)
+        assert "prior note 1" in prompt
+        assert "evidence_a.log" in prompt
+        assert "artifact_1.txt" in prompt
+        assert "REVISED review" in prompt
