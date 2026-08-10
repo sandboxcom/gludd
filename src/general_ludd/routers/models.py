@@ -12,6 +12,16 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
+from general_ludd.cloud.model_sources import (
+    DownloadedFile as CloudDownloadedFile,
+)
+from general_ludd.cloud.model_sources import (
+    DownloadError as ModelSourceDownloadError,
+)
+from general_ludd.cloud.model_sources import (
+    ModelSource,
+    download_with_fallback,
+)
 from general_ludd.code_intelligence.callgraph import CallGraph
 from general_ludd.code_intelligence.complexity_scorer import CodeComplexityScorer
 from general_ludd.code_intelligence.extractor import ASTBlockExtractor
@@ -25,6 +35,7 @@ from general_ludd.daemon import (
 from general_ludd.db.repository import BenchmarkRepository
 from general_ludd.hardware.survey import HardwareInventory
 from general_ludd.infra.local_inference import LocalInferenceManager, LocalServerConfig
+from general_ludd.local_model._local_model_configs import _LOCAL_MODELS
 from general_ludd.models.auto_configurator import AutoConfigurator, ModelPrioritizer
 from general_ludd.models.gateway import ModelGateway, ModelResponse
 from general_ludd.models.langgraph_gateway import LangGraphGateway
@@ -1025,16 +1036,83 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     async def admin_models_local_download(request: Request) -> dict[str, object]:
         body = await _parse_request_body(request)
         model_id = str(body.get("model_id") or "")
-        source = str(body.get("source") or "huggingface")
+        source = request.query_params.get("source") or str(body.get("source") or "huggingface")
         if not model_id:
             raise HTTPException(status_code=422, detail="model_id required")
-        if source not in ("huggingface", "ollama", "local", "multi"):
-            raise HTTPException(status_code=422, detail="source must be huggingface, ollama, local, or multi")
+
+        valid_model_sources = {s.value for s in ModelSource}
+        valid_legacy_sources = {"huggingface", "ollama", "local", "multi"}
+        all_valid = valid_model_sources | valid_legacy_sources
+        if source not in all_valid:
+            raise HTTPException(
+                status_code=422,
+                detail=f"source must be one of {sorted(all_valid)}",
+            )
 
         filename = str(body.get("filename", "")) or None
         revision = str(body.get("revision", "")) or None
-
         downloader: ModelDownloader = request.app.state._model_downloader
+
+        if source in valid_model_sources:
+            config = next(
+                (c for c in _LOCAL_MODELS if c.name == model_id),
+                None,
+            )
+            if config is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Model {model_id!r} not found in local model registry",
+                )
+
+            source_order_raw = body.get("order")
+            source_order: list[ModelSource] | None = None
+            if isinstance(source_order_raw, list):
+                source_map = {s.value: s for s in ModelSource}
+                source_order = []
+                for s in source_order_raw:
+                    mapped = source_map.get(str(s))
+                    if mapped is not None:
+                        source_order.append(mapped)
+
+            if source_order is None:
+                source_order = [ModelSource(source)]
+
+            try:
+                result: CloudDownloadedFile = download_with_fallback(
+                    config=config,
+                    order=source_order,
+                    cache_dir=downloader.cache_dir,
+                    timeout=downloader.timeout,
+                )
+            except ModelSourceDownloadError as exc:
+                raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+            store = cast(dict[str, LocalServerConfig], request.app.state._sm_server_store)
+            key = f"{result.source.value}/{model_id}"
+            store[key] = LocalServerConfig(
+                engine=cast(str, body.get("engine", "llamacpp")),
+                model_path=result.local_path,
+                model_name=model_id,
+                host=cast(str, body.get("host", "localhost")),
+                port=cast(int, body.get("port", 8000)),
+                gpu_layers=cast(int, body.get("gpu_layers", -1)),
+                context_size=cast(int, body.get("context_size", 4096)),
+            )
+            logger.info(
+                "model downloaded via %s: %s -> %s (%.1f MB)",
+                result.source.value,
+                key,
+                result.local_path,
+                result.size_bytes / 1e6,
+            )
+            return {
+                "downloaded": True,
+                "model_id": model_id,
+                "source": result.source.value,
+                "profile_key": key,
+                "local_path": result.local_path,
+                "size_bytes": result.size_bytes,
+            }
 
         if source == "local":
             model_path = str(body.get("model_path", f"./models/{model_id}"))
