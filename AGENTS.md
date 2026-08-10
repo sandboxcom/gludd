@@ -772,6 +772,47 @@ in code — they must be tracked, root-caused, and fixed before moving on.
 - `.opencode/plugin/enforce-make.ts` — `session.idle` hook detects stop patterns (note: `chat.response.transform` surface was replaced by `session.idle` + `text.complete` per Q3.12)
 - `BUGS.md` — persistent bug tracking for process failures
 
+## CRITICAL: Mechanical Stop Prevention (10-Signal Binary Latch)
+
+**The enforcement plugins use a BINARY LATCH to detect pending work.** Any single
+signal triggers `hasRealPendingWork() = true`, which mechanically blanks ALL
+text-only responses. No scoring, no threshold, no way to "check enough boxes."
+
+### The signals (any one true === pending work)
+
+| Signal | Source |
+|---|---|
+| tasksMdUnchecked | `- [ ]` items in TASKS.md |
+| tasksMdUnverified | `- [x]` items lacking evidence (commit hash, test count, CI) |
+| ratchetEntries | `config/ratchet.yml` non-empty |
+| gateStatusRed | `.gate-status` shows FAIL |
+| gateLiteTestFailed | gate-lite test phase had failures |
+| ciVerdictPendingOrRed | CI in_progress, queued, failure, or cancelled |
+| ciNeverRunOnHead | No CI run for current HEAD SHA |
+| releaseIncomplete | Release tag without full artifacts |
+| pushBlocked | Last push blocked with fixable reason |
+| uncommittedChanges | `git status --porcelain` non-empty |
+
+### What is blocked
+
+- ALL text-only responses (0 tool calls) when ANY signal true
+- Text summaries after subagent results arrive
+- Text after git-shipping targets
+- Under-floor dispatch waves (<10 dispatches with pending work)
+
+### What is allowed
+
+- Responses with >=10 task/agent/workflow dispatches
+- Text-only when ALL 10 signals false
+
+### Enforcement layers
+
+1. `enforce-stop.ts` binary-latch `hasRealPendingWork()` 
+2. `enforce-multitask.ts` dispatch-count `text.complete` hook
+3. `enforce-delegate.ts` post-ship continuation detector
+4. `/tmp/gludd-push-state.json` — written by all push guardrails
+5. `tests/unit/test_enforce_stop_behavior.py` — 12 runtime tests
+
 ## CRITICAL: Task Completion Policy
 
 **You MUST complete ALL requested work before stopping. No exceptions.**
