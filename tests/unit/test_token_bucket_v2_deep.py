@@ -502,3 +502,353 @@ class TestEdgeCases:
         assert lim.allow(3.0, group="all") is True
         assert lim.allow(3.0, group="all") is True
         assert lim.allow(3.0, group="all") is False
+
+
+# ── deep edge cases ───────────────────────────────────────────────────────────
+
+
+class TestBucketConfigDeepEdge:
+    def test_negative_capacity_raises(self) -> None:
+        with pytest.raises(ValueError, match="capacity must be > 0"):
+            BucketConfig(capacity=-5.0, rate=1.0)
+
+    def test_rate_exactly_zero_valid(self) -> None:
+        cfg = BucketConfig(capacity=10.0, rate=0.0)
+        assert cfg.rate == 0.0
+
+    def test_burst_exactly_one_valid(self) -> None:
+        cfg = BucketConfig(capacity=10.0, rate=2.0, burst_multiplier=1.0)
+        assert cfg.burst_multiplier == 1.0
+
+    def test_very_large_values(self) -> None:
+        cfg = BucketConfig(capacity=1_000_000.0, rate=500_000.0, burst_multiplier=100.0)
+        b = Bucket("x", cfg)
+        assert b.effective_capacity == 100_000_000.0
+
+
+class TestBucketStateDeepEdge:
+    def test_deepcopy_independent(self) -> None:
+        import copy
+
+        s1 = BucketState(tokens=7.0, last_refill=1234.5)
+        s2 = copy.deepcopy(s1)
+        assert s2.tokens == 7.0
+        assert s2.last_refill == 1234.5
+        s2.tokens = 99.0
+        assert s1.tokens == 7.0
+
+    def test_two_states_different_timestamps(self) -> None:
+        s1 = BucketState(tokens=1.0)
+        s2 = BucketState(tokens=2.0)
+        assert s1.last_refill <= s2.last_refill
+
+
+class TestBucketDeepEdge:
+    def test_clock_goes_backwards_refill_noop(self) -> None:
+        clock, store = _fake_clock(10.0)
+        b = Bucket("a", BucketConfig(capacity=10.0, rate=2.0), clock=clock)
+        b.consume(5.0, auto_refill=False)
+        store[0] = 5.0
+        b.refill()
+        assert b.tokens == 5.0
+
+    def test_consume_zero_tokens(self) -> None:
+        clock, _s = _fake_clock(0)
+        b = Bucket("a", BucketConfig(capacity=5.0, rate=1.0), clock=clock)
+        assert b.consume(0.0) is True
+        assert b.tokens == 5.0
+
+    def test_consume_zero_does_refill(self) -> None:
+        clock, store = _fake_clock(0)
+        cfg = BucketConfig(capacity=10.0, rate=2.0, burst_multiplier=3.0)
+        b = Bucket("a", cfg, clock=clock)
+        b.consume(10.0, auto_refill=False)
+        _advance(store, 100.0)
+        b.consume(0.0, auto_refill=True)
+        assert b.tokens == 30.0
+
+    def test_consume_exact_effective_capacity(self) -> None:
+        clock, store = _fake_clock(0)
+        cfg = BucketConfig(capacity=5.0, rate=1.0, burst_multiplier=3.0)
+        b = Bucket("a", cfg, clock=clock)
+        _advance(store, 100.0)
+        b.refill()
+        assert b.tokens == 15.0
+        assert b.consume(15.0, auto_refill=False) is True
+        assert b.tokens == 0.0
+
+    def test_refill_very_large_elapsed(self) -> None:
+        clock, store = _fake_clock(0)
+        cfg = BucketConfig(capacity=10.0, rate=1.0, burst_multiplier=5.0)
+        b = Bucket("a", cfg, clock=clock)
+        b.consume(10.0, auto_refill=False)
+        _advance(store, 999_999.0)
+        b.refill()
+        assert b.tokens == 50.0
+
+    def test_float_precision_very_small_tokens(self) -> None:
+        clock, _s = _fake_clock(0)
+        b = Bucket("a", BucketConfig(capacity=1e-9, rate=0.0), clock=clock)
+        assert b.consume(5e-10, auto_refill=False) is True
+        assert b.consume(5e-10, auto_refill=False) is True
+        assert b.consume(1e-10, auto_refill=False) is False
+
+    def test_float_precision_very_small_rate(self) -> None:
+        clock, store = _fake_clock(0)
+        b = Bucket("a", BucketConfig(capacity=1.0, rate=1e-9), clock=clock)
+        b.consume(1.0, auto_refill=False)
+        _advance(store, 1e8)
+        b.refill()
+        assert b.tokens == pytest.approx(0.1, rel=1e-6)
+
+    def test_concurrent_consume_with_refill(self) -> None:
+        clock, store = _fake_clock(0)
+        b = Bucket("a", BucketConfig(capacity=10.0, rate=100.0), clock=clock)
+        b.consume(10.0, auto_refill=False)
+        _advance(store, 1.0)
+        errors: list[Exception] = []
+
+        def worker() -> None:
+            try:
+                b.consume(1.0, auto_refill=True)
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker) for _ in range(20)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert len(errors) == 0
+        assert b.tokens >= 0.0
+
+    def test_reset_preserves_effective_capacity(self) -> None:
+        clock, _s = _fake_clock(0)
+        cfg = BucketConfig(capacity=5.0, rate=1.0, burst_multiplier=2.0)
+        b = Bucket("a", cfg, clock=clock)
+        b.consume(10.0, auto_refill=False)
+        b.reset()
+        assert b.tokens == 5.0
+        assert b.effective_capacity == 10.0
+
+    def test_last_refill_monotonic(self) -> None:
+        clock, store = _fake_clock(0)
+        b = Bucket("a", BucketConfig(capacity=10.0, rate=1.0), clock=clock)
+        ts1 = b.last_refill
+        _advance(store, 1.0)
+        b.refill()
+        assert b.last_refill > ts1
+
+
+class TestBucketGroupDeepEdge:
+    def test_overflow_exact_boundary_refill(self) -> None:
+        clock, store = _fake_clock(0)
+        a = Bucket("a", BucketConfig(capacity=10.0, rate=10.0), clock=clock)
+        b = Bucket("b", BucketConfig(capacity=10.0, rate=10.0), clock=clock)
+        a.consume(10.0, auto_refill=False)
+        b.consume(10.0, auto_refill=False)
+        _advance(store, 0.5)
+        g = BucketGroup("g", [a, b], overflow=True)
+        assert g.consume(5.0, auto_refill=True) is True
+        assert a.tokens == 0.0
+
+    def test_overflow_auto_refill_false_skips(self) -> None:
+        clock, store = _fake_clock(0)
+        a = Bucket("a", BucketConfig(capacity=0.1, rate=10.0), clock=clock)
+        b = Bucket("b", BucketConfig(capacity=100.0, rate=0.0), clock=clock)
+        a.consume(0.1, auto_refill=False)
+        g = BucketGroup("g", [a, b], overflow=True)
+        _advance(store, 1.0)
+        assert g.consume(5.0, auto_refill=False) is True
+        assert a.tokens == 0.0
+        assert b.tokens == 95.0
+
+    def test_overflow_all_empty_no_refill_fallback(self) -> None:
+        clock, _s = _fake_clock(0)
+        a = Bucket("a", BucketConfig(capacity=0.01, rate=0.0), clock=clock)
+        b = Bucket("b", BucketConfig(capacity=0.01, rate=0.0), clock=clock)
+        a.consume(0.01, auto_refill=False)
+        b.consume(0.01, auto_refill=False)
+        g = BucketGroup("g", [a, b], overflow=True)
+        assert g.consume(1.0, auto_refill=False) is False
+
+    def test_and_gate_rollback_restores_refill_timestamp(self) -> None:
+        clock, store = _fake_clock(0)
+        a = Bucket("a", BucketConfig(capacity=10.0, rate=1.0), clock=clock)
+        b = Bucket("b", BucketConfig(capacity=2.0, rate=1.0), clock=clock)
+        ts_a_before = a.last_refill
+        ts_b_before = b.last_refill
+        _advance(store, 5.0)
+        g = BucketGroup("g", [a, b], overflow=False)
+        assert g.consume(5.0, auto_refill=True) is False
+        assert a.tokens == 10.0
+        assert b.tokens == 2.0
+        assert a.last_refill == ts_a_before
+        assert b.last_refill == ts_b_before
+
+    def test_and_gate_auto_refill_false_no_refill(self) -> None:
+        clock, store = _fake_clock(0)
+        a = Bucket("a", BucketConfig(capacity=3.0, rate=10.0), clock=clock)
+        b = Bucket("b", BucketConfig(capacity=3.0, rate=10.0), clock=clock)
+        a.consume(3.0, auto_refill=False)
+        b.consume(3.0, auto_refill=False)
+        _advance(store, 1.0)
+        g = BucketGroup("g", [a, b], overflow=False)
+        assert g.consume(1.0, auto_refill=False) is False
+        assert a.tokens == 0.0
+        assert b.tokens == 0.0
+
+    def test_empty_group_overflow(self) -> None:
+        g = BucketGroup("g", [], overflow=True)
+        assert g.consume(1.0) is False
+
+    def test_getitem_negative_index(self) -> None:
+        clock, _s = _fake_clock(0)
+        a = Bucket("a", BucketConfig(capacity=1.0, rate=0.0), clock=clock)
+        b = Bucket("b", BucketConfig(capacity=2.0, rate=0.0), clock=clock)
+        g = BucketGroup("g", [a, b])
+        assert g[-1].name == "b"
+        assert g[-2].name == "a"
+
+    def test_getitem_out_of_range_raises(self) -> None:
+        clock, _s = _fake_clock(0)
+        a = Bucket("a", BucketConfig(capacity=1.0, rate=0.0), clock=clock)
+        g = BucketGroup("g", [a])
+        with pytest.raises(IndexError):
+            g[5]
+
+    def test_and_gate_three_buckets_middle_insufficient(self) -> None:
+        clock, _s = _fake_clock(0)
+        a = Bucket("a", BucketConfig(capacity=10.0, rate=0.0), clock=clock)
+        b = Bucket("b", BucketConfig(capacity=1.0, rate=0.0), clock=clock)
+        c = Bucket("c", BucketConfig(capacity=10.0, rate=0.0), clock=clock)
+        g = BucketGroup("g", [a, b, c], overflow=False)
+        assert g.consume(5.0, auto_refill=False) is False
+        assert a.tokens == 10.0
+        assert b.tokens == 1.0
+        assert c.tokens == 10.0
+
+    def test_overflow_single_bucket_sufficient_no_fallthrough(self) -> None:
+        clock, _s = _fake_clock(0)
+        a = Bucket("a", BucketConfig(capacity=100.0, rate=0.0), clock=clock)
+        b = Bucket("b", BucketConfig(capacity=100.0, rate=0.0), clock=clock)
+        g = BucketGroup("g", [a, b], overflow=True)
+        assert g.consume(10.0, auto_refill=False) is True
+        assert a.tokens == 90.0
+        assert b.tokens == 100.0
+
+
+class TestLimiterV2DeepEdge:
+    def test_allow_non_existent_group_raises(self) -> None:
+        lim = LimiterV2()
+        with pytest.raises(KeyError):
+            lim.allow(1.0, group="nonexistent")
+
+    def test_create_group_missing_bucket_raises(self) -> None:
+        lim = LimiterV2()
+        with pytest.raises(KeyError):
+            lim.create_group("g", ["no_such_bucket"])
+
+    def test_allow_no_buckets_no_default(self) -> None:
+        lim = LimiterV2()
+        assert lim.allow(1.0) is True
+
+    def test_allow_no_buckets_with_nonexistent_default(self) -> None:
+        lim = LimiterV2()
+        lim.default_group = "ghost"
+        with pytest.raises(KeyError):
+            lim.allow(1.0)
+
+    def test_allow_with_group_and_auto_refill_false(self) -> None:
+        clock, store = _fake_clock(0)
+        a = Bucket("a", BucketConfig(capacity=3.0, rate=10.0), clock=clock)
+        lim = LimiterV2(buckets={"a": a})
+        a.consume(3.0, auto_refill=False)
+        _advance(store, 1.0)
+        lim.create_group("g", ["a"], overflow=False)
+        assert lim.allow(1.0, group="g", auto_refill=False) is False
+
+    def test_snapshot_after_consume_independence(self) -> None:
+        lim = LimiterV2()
+        lim.register("a", BucketConfig(capacity=10.0, rate=0.0))
+        lim.allow(3.0)
+        snap = lim.snapshot()
+        assert snap["a"].tokens == 7.0
+        lim.allow(2.0)
+        assert snap["a"].tokens == 7.0
+
+    def test_refill_all_different_rates(self) -> None:
+        clock, store = _fake_clock(0)
+        a = Bucket("a", BucketConfig(capacity=5.0, rate=1.0), clock=clock)
+        b = Bucket("b", BucketConfig(capacity=5.0, rate=3.0), clock=clock)
+        lim = LimiterV2(buckets={"a": a, "b": b})
+        a.consume(5.0, auto_refill=False)
+        b.consume(5.0, auto_refill=False)
+        _advance(store, 2.0)
+        lim.refill_all()
+        assert a.tokens == 2.0
+        assert b.tokens == 5.0
+
+    def test_reset_all_preserves_config(self) -> None:
+        lim = LimiterV2()
+        lim.register("a", BucketConfig(capacity=7.0, rate=0.0))
+        lim.register("b", BucketConfig(capacity=3.0, rate=0.0))
+        lim.buckets["a"].consume(7.0, auto_refill=False)
+        lim.buckets["b"].consume(2.0, auto_refill=False)
+        lim.reset_all()
+        assert lim.buckets["a"].tokens == 7.0
+        assert lim.buckets["b"].tokens == 3.0
+
+    def test_allow_default_group_implicit_and_gate(self) -> None:
+        lim = LimiterV2()
+        lim.register("a", BucketConfig(capacity=10.0, rate=0.0))
+        lim.register("b", BucketConfig(capacity=4.0, rate=0.0))
+        lim.create_group("g", ["a", "b"], overflow=False)
+        lim.default_group = "g"
+        assert lim.allow(5.0) is False
+        assert lim.allow(3.0) is True
+
+    def test_allow_default_group_implicit_overflow(self) -> None:
+        lim = LimiterV2()
+        lim.register("pri", BucketConfig(capacity=2.0, rate=0.0))
+        lim.register("sec", BucketConfig(capacity=10.0, rate=0.0))
+        lim.create_group("tier", ["pri", "sec"], overflow=True)
+        lim.default_group = "tier"
+        assert lim.allow(5.0) is True
+        assert lim.buckets["pri"].tokens == 2.0
+        assert lim.buckets["sec"].tokens == 5.0
+
+
+class TestOverflowRefillEdge:
+    def test_first_bucket_refills_to_exact(self) -> None:
+        clock, store = _fake_clock(0)
+        a = Bucket("a", BucketConfig(capacity=10.0, rate=10.0), clock=clock)
+        b = Bucket("b", BucketConfig(capacity=100.0, rate=0.0), clock=clock)
+        a.consume(10.0, auto_refill=False)
+        _advance(store, 0.5)
+        g = BucketGroup("g", [a, b], overflow=True)
+        assert g.consume(5.0, auto_refill=True) is True
+        assert a.tokens == 0.0
+        assert b.tokens == 100.0
+
+    def test_second_bucket_refills_after_first_empty(self) -> None:
+        clock_a, _store_a = _fake_clock(0)
+        clock_b, store_b = _fake_clock(0)
+        a = Bucket("a", BucketConfig(capacity=10.0, rate=0.0), clock=clock_a)
+        b = Bucket("b", BucketConfig(capacity=10.0, rate=5.0), clock=clock_b)
+        a.consume(10.0, auto_refill=False)
+        b.consume(10.0, auto_refill=False)
+        _advance(store_b, 1.0)
+        g = BucketGroup("g", [a, b], overflow=True)
+        assert g.consume(3.0, auto_refill=True) is True
+        assert a.tokens == 0.0
+        assert b.tokens == 2.0
+
+    def test_overflow_no_refill_seq_fail(self) -> None:
+        clock, _s = _fake_clock(0)
+        a = Bucket("a", BucketConfig(capacity=2.0, rate=0.0), clock=clock)
+        b = Bucket("b", BucketConfig(capacity=2.0, rate=0.0), clock=clock)
+        g = BucketGroup("g", [a, b], overflow=True)
+        assert g.consume(5.0, auto_refill=False) is False
+        assert a.tokens == 2.0
+        assert b.tokens == 2.0
