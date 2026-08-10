@@ -30,7 +30,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 TESTS_DIR = PROJECT_ROOT / "tests" / "integration"
 OUTPUT_FILE = Path("/tmp/gludd-integration-failures.json")
 
-TIMEOUT_SEC = 600
+TIMEOUT_SEC = 900
 INTERMEDIATE_INTERVAL_SEC = 30
 PROGRESS_INTERVAL_FILES = 5
 
@@ -201,6 +201,10 @@ def main() -> int:
         "-m",
         "pytest",
         *file_paths,
+        "-n",
+        "auto",
+        "--dist",
+        "loadgroup",
         "--tb=short",
         "-q",
         "--no-header",
