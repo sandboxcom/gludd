@@ -2124,7 +2124,7 @@ Before merging any branch into a shared branch, the gate MUST be green on the so
 
 ### M04 — Merge is atomic
 A merge MUST commit all resolved files in a single merge commit — partial merges are forbidden.
-**Enforcement:** Makefile `git-merge MSG=` with `--no-ff` (atomic merge, no partial commits)
+**Enforcement:** Makefile `git-merge` MSG= with `--no-ff` (atomic merge, no partial commits)
 **Test:** `test_m04_merge_is_atomic`
 
 ### M05 — Agent-merge runs on main checkout
@@ -3046,7 +3046,7 @@ No env var (`SKIP_GATE=1`, `GATE=0`, etc.) MUST allow entirely skipping the gate
 
 ### Q29 — Gate-required label on all commit targets
 Every commit target in the Makefile MUST have a comment noting it requires `_gate-fresh-check`.
-**Enforcement:** Makefile audit by `tests/unit/test_commit_gate_freshness.py` structural check
+**Enforcement:** Makefile `_gate-fresh-check` verified by `tests/unit/test_commit_gate_freshness.py`
 **Test:** `test_q29_gate_required_label_on_commit_targets`
 
 ### Q30 — Gate status is the single source of truth
@@ -3299,7 +3299,7 @@ Dead-code check, wiring audit, migration audit, test-level audit — each MUST h
 
 ### A18 — Audit results are logged with timestamp
 Every audit run MUST log its results with a timestamp to `.gate-logs/audit-<ts>.log`.
-**Enforcement:** Makefile audit targets write results to `.gate-logs/audit-<ts>.log` with timestamp
+**Enforcement:** Makefile `security-audit` writes results to `.gate-logs/security-audit-<ts>.log` with timestamp
 **Test:** `test_a18_audit_results_logged_with_timestamp`
 
 ### A19 — No unverified claims in commit messages
@@ -3960,7 +3960,7 @@ The plugin manifest (coverage table in this doc) MUST be updated when plugins ar
 
 ### Z27 — Enforcement applies equally to all models
 Enforcement plugins MUST NOT have model-specific bypasses — same rules for sonnet, opus, haiku, deepseek.
-**Enforcement:** plugin logic is model-agnostic
+**Enforcement:** `enforce-floor.ts`, `enforce-make.ts`, `enforce-stop.ts`, `enforce-multitask.ts` — all model-agnostic
 **Test:** `test_z27_enforcement_applies_to_all_models`
 
 ### Z28 — Zero known enforcement gaps at session end
