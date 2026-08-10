@@ -5,6 +5,7 @@ TDD: Tests for endpoints with zero daemon.py coverage.
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -93,12 +94,15 @@ class TestRealDaemonEndpoints:
     def test_filestore_bootstrap_codebase_memory(self, mock_download, client):
         # Generic KNOWN_VERSIONS dispatch: codebase-memory-mcp installs via download().
         mock_download.return_value = True
-        with patch(
-            "general_ludd.filestore.bootstrap.BinaryBootstrapper.is_platform_available",
-            return_value=True,
-        ), patch(
-            "general_ludd.filestore.bootstrap.BinaryBootstrapper.get_binary_path",
-            return_value="/store/binaries/codebase-memory-mcp",
+        with (
+            patch(
+                "general_ludd.filestore.bootstrap.BinaryBootstrapper.is_platform_available",
+                return_value=True,
+            ),
+            patch(
+                "general_ludd.filestore.bootstrap.BinaryBootstrapper.get_binary_path",
+                return_value="/store/binaries/codebase-memory-mcp",
+            ),
         ):
             resp = client.post(
                 "/admin/filestore/bootstrap",
@@ -115,13 +119,16 @@ class TestRealDaemonEndpoints:
     def test_filestore_bootstrap_platform_unavailable(self, client):
         # A known binary with no asset for this platform/arch fails gracefully,
         # without attempting a download.
-        with patch(
-            "general_ludd.filestore.bootstrap.BinaryBootstrapper.is_platform_available",
-            return_value=False,
-        ), patch(
-            "general_ludd.filestore.bootstrap.BinaryBootstrapper.download",
-            new_callable=AsyncMock,
-        ) as mock_download:
+        with (
+            patch(
+                "general_ludd.filestore.bootstrap.BinaryBootstrapper.is_platform_available",
+                return_value=False,
+            ),
+            patch(
+                "general_ludd.filestore.bootstrap.BinaryBootstrapper.download",
+                new_callable=AsyncMock,
+            ) as mock_download,
+        ):
             resp = client.post(
                 "/admin/filestore/bootstrap",
                 params={"binary": "codebase-memory-mcp"},
@@ -142,18 +149,20 @@ class TestRealDaemonEndpoints:
 
     @patch("general_ludd.integrity.scanner.FileIntegrityScanner.scan")
     def test_integrity_scan_with_paths(self, mock_scan, client, tmp_path):
+        import tempfile
+        import uuid
+
         mock_scan.return_value = {"scanned": 5, "changes": []}
-        # Scan a per-test directory the test itself created under tmp_path (which
-        # lives inside the system temp root, an allowed scan root). Using this
-        # isolated subtree instead of gettempdir() ROOT keeps concurrent xdist
-        # workers from observing each other's popen-gwN basetemp dirs. Literal
-        # "/tmp" is not the temp dir on macOS and is refused by path confinement.
-        scan_dir = tmp_path / "integrity-scan-root"
-        scan_dir.mkdir()
-        resp = client.post("/admin/integrity/scan", json={"paths": [str(scan_dir)]})
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "scanned" in data
+        scan_dir = Path(tempfile.gettempdir()) / f"integrity-scan-{uuid.uuid4().hex[:8]}"
+        scan_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            resp = client.post("/admin/integrity/scan", json={"paths": [str(scan_dir)]})
+            assert resp.status_code == 200
+            data = resp.json()
+            assert "scanned" in data
+        finally:
+            if scan_dir.exists():
+                scan_dir.rmdir()
 
     @patch("general_ludd.integrity.scanner.FileIntegrityScanner.scan")
     def test_integrity_scan_default_paths(self, mock_scan, client):
@@ -178,31 +187,40 @@ class TestRealDaemonEndpoints:
             "timestamp": "2026-01-01T00:00:00",
             "status": "approved",
         }
-        resp = client.post("/admin/integrity/approve", json={
-            "path": "test.yaml",
-            "reason": "verified",
-            "signer": "admin",
-        })
+        resp = client.post(
+            "/admin/integrity/approve",
+            json={
+                "path": "test.yaml",
+                "reason": "verified",
+                "signer": "admin",
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data.get("signature") is not None
 
     def test_integrity_reject(self, client):
-        resp = client.post("/admin/integrity/reject", json={
-            "path": "bad.yaml",
-            "reason": "unauthorized",
-            "signer": "admin",
-        })
+        resp = client.post(
+            "/admin/integrity/reject",
+            json={
+                "path": "bad.yaml",
+                "reason": "unauthorized",
+                "signer": "admin",
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "rejected"
 
     def test_integrity_log(self, client):
-        client.post("/admin/integrity/reject", json={
-            "path": "x.yaml",
-            "reason": "test",
-            "signer": "admin",
-        })
+        client.post(
+            "/admin/integrity/reject",
+            json={
+                "path": "x.yaml",
+                "reason": "test",
+                "signer": "admin",
+            },
+        )
         resp = client.get("/admin/integrity/log")
         assert resp.status_code == 200
         data = resp.json()
