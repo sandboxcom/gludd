@@ -1,4 +1,37 @@
-## PRIMARY OBJECTIVE: IN PROGRESS — v0.1.0-beta.3 shipped. Session 81: HEAD `45c6718c` on `development` (13 commits past `fcb98aa1`). Gate-refresh killed by OOM (2026-08-08). Enforcement 13/13 BLOCKING, 125 runtime PASS. Opencode spawner E2E harness fixed: NDJSON parser for nested structure, re-added `--format json --auto` flags, 18-task test project with 10-agent floor rules. Model ratio, spawner test results, Makefile shim targets, gate-refresh, enforcement all updated. Tree DIRTY. Gate-background RUNNING (pid=4431). Lint PASS 0, typecheck PASS 0 (1161 source files). Preparing batch-push with 5+ unpushed commits.
+## PRIMARY OBJECTIVE: IN PROGRESS — v0.1.0-beta.3 shipped. Session 82: HEAD `eca67d49` on `development`. OpenCode DB cleanup safety (maintenance script, symlink/PID guards, incremental vacuum). Gate drift repairs (molecule scenario registration, self-improve monkeypatches, enforcement fixture sync). Tree CLEAN. Enforcement 13/13 BLOCKING, 125 runtime PASS. Lint PASS 0. 10 commits from `d4c84303`..`eca67d49`. CI unknown.
+
+---
+
+## SESSION 82 — 2026-08-08 — HEAD `eca67d49`: OpenCode DB cleanup safety + gate drift repairs
+
+### Key Accomplishments
+
+- **S82.0 — OpenCode DB cleanup safety**: Replaced multi-shell guard/VACUUM recipes with offline maintenance process. Resolved authoritative channel-aware DB path. Recursive stale session tree pruning with FK cascades. Bounded batches, time/lock/file limits, progress heartbeats, PASSIVE checkpoints, incremental vacuum. 43 focused tests PASS (85.93% coverage). Makefile syntax 11/11, duplicate targets 0, make-target contract PASS (52 targets).
+- **S82.1 — Post-merge maintenance observability + symlink gaps**: Preserved raw CLI data-directory paths until mutation guard validates. Five-second SQLite phase heartbeats. 45 focused tests PASS (86.30% coverage).
+- **S82.2 — Gate drift repairs**: Registered non-conventional `local_game_gen` Molecule scenario. Retargeted self-improvement harness monkeypatches to extracted `loop_handlers` module. Synchronized enforcement registration-order fixture with `opencode.json`. 79 passed, 1 skipped, 1 expected xfail.
+
+### Current State
+
+- **HEAD: `eca67d49`** on `development`
+- **Tree: CLEAN** — only `.coverage.*` temp file
+- **CI: unknown** — not checked this session
+- **Enforcement: 13/13 BLOCKING, 125 runtime PASS**
+- **Release v0.1.0-beta.3: SHIPPED**
+
+### Recent Commits (HEAD `eca67d49`, 10 from `d4c84303`)
+
+```
+eca67d49 fix: test_opencode_plugin_ports structural assertions for new plugin hooks
+51d9d12b enhancement: E2E local model serving tests
+e4db73d2 fix: update function-length baseline from 146 to 147
+2c99f9fc fix: update test_shutdown_nonexistent_server to expect 200 instead of 404
+d80a8e5e fix: local_model get_model type narrowing for globals lookup
+b7cb324d enhancement: E2E tests for model download, serve, and local/cloud routing
+60ee18f2 enhancement: model scoring module with cost-aware and hardware-aware ranking (29 tests)
+59e95be2 feat: wire multi-source model download into daemon /admin/models/download
+1cd0f73b feat: local_model public API with list_models and get_model
+d4c84303 fix: 4 spec enforcement texts — M04 MSG= outside backticks, Q29 gate-fresh-check ref, A18 security-audit target, Z27 plugin refs
+```
 
 ---
 
@@ -244,6 +277,6 @@ a33b2d78 feat: wave 14 — backup_restore deep + report_generation deep + molecu
 2. `make gate` full for fresh baseline
 3. Push any new commits: `make batch-push`
 
-- **Last Updated: 2026-08-08 — Session 81. HEAD `45c6718c` on `development`, unpushed. Gate-refresh killed by OOM (pre-test green). 88,291 tests. Enforcement 13/13 BLOCKING, 125 runtime PASS. Spawner NDJSON parser fixed (nested structure, `--format json --auto` flags restored). 18-task E2E test project with 10-agent floor rules. Model ratio, Makefile shim targets, gate-refresh, enforcement updated. CI RED (no run on `45c6718c`). Tree DIRTY. Release v0.1.0-beta.3 shipped.**
+- **Last Updated: 2026-08-10 — Session 82. HEAD `eca67d49` on `development`. Tree CLEAN. OpenCode DB cleanup safety + gate drift repairs complete (S82.0–S82.2). 10 commits from `d4c84303`..`eca67d49`. Lint PASS 0. Enforcement 13/13 BLOCKING, 125 runtime PASS. Release v0.1.0-beta.3 shipped.**
 
 (End of file)

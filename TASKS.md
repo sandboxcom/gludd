@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-08-08 Session 81. HEAD `45c6718c` on `development`, unpushed. Gate-refresh killed by OOM (2026-08-08). 88,291 tests. Enforcement 13/13 BLOCKING, 125 runtime PASS. Spawner NDJSON parser fixed for nested structure + `--format json --auto` flags restored. 18-task E2E test project with 10-agent floor rules. Model ratio, Makefile shim targets, gate-refresh, enforcement updated. CI RED (no run on `45c6718c`). Tree DIRTY. 13 commits since `fcb98aa1`.**
+**Last consolidated: 2026-08-10 Session 82. HEAD `eca67d49` on `development`. Tree CLEAN. OpenCode DB cleanup safety + gate drift repairs complete (S82.0–S82.2). 10 commits from `d4c84303`..`eca67d49`. Lint PASS 0. Enforcement 13/13 BLOCKING, 125 runtime PASS. Release v0.1.0-beta.3 shipped.**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
