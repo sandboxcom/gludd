@@ -587,7 +587,7 @@ async function handleTextComplete(_input: unknown, output: unknown): Promise<unk
         text: [
           "ZERO-DISPATCH TEXT BLOCKED — 0 subagent dispatches in this message.",
           "The configured minimum requires " + String(MIN_DISPATCHES) + " per wave.",
-          "Dispatch a full wave with task/agent/workflow before sending text.",
+          "MUST DISPATCH a full wave with task/agent/workflow before sending text.",
           "Your text has been blanked.",
           "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
         ].join("\n"),
@@ -595,24 +595,16 @@ async function handleTextComplete(_input: unknown, output: unknown): Promise<unk
     }
     handleMessageBoundary(_state)
     if (currentDispatchCount < MIN_DISPATCHES) {
-      const underWarning = [
-        "UNDER-FLOOR WARNING: only " + String(currentDispatchCount) + " dispatch(es) in this message.",
-        "The configured minimum requires " + String(MIN_DISPATCHES) + " per wave.",
-      ].join("\n")
-      const mt1Escalation = _state.underFloorCount >= 3
-        ? "\n" + [
-            "CONFIGURED MINIMUM: " + String(_state.underFloorCount) + " consecutive waves with fewer than " + String(MIN_DISPATCHES) + " dispatches.",
-            "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
-          ].join("\n")
-        : ""
-      const fullWarning = underWarning + mt1Escalation
-      const wrappedOutput = typeof output === "string"
-        ? fullWarning + "\n\n" + output
-        : (output as any)?.text
-          ? { ...(output as any), text: fullWarning + "\n\n" + String((output as any).text) }
-          : output
       writeState(_state)
-      return wrappedOutput
+      return {
+        text: [
+          "THIN WAVE BLOCKED — only " + String(currentDispatchCount) + " dispatch(es) in this message.",
+          "The configured minimum requires " + String(MIN_DISPATCHES) + " per wave.",
+          "MUST DISPATCH a full wave with task/agent/workflow before sending text.",
+          "Your text has been blanked.",
+          "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+        ].join("\n"),
+      }
     }
     const warnings: string[] = []
     if (_state.underFloorCount >= 3) {
