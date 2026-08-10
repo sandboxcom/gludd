@@ -32,14 +32,18 @@ from general_ludd.models.gateway import (
     ModelGateway,
     ModelPausedError,
     ModelProfile,
+    ModelResponse,
     PayloadLimitError,
     SSRFRejectionError,
     StreamLimitError,
+    _attach_correlation_id,
     _coerce_token_count,
     _extract_retry_after_seconds,
     _extract_tool_calls,
+    _is_healthy_with_timeout,
     _LimitedChatModel,
     _positive_profile_limit,
+    _redact_url_in_exception,
     _RequestPayloadBudget,
 )
 
@@ -1716,3 +1720,216 @@ class TestPeakOffPeakBilling:
         inp, out = ModelProfile.seed_token_rates_from_catalog("openai", "gpt-4o", catalog)
         assert inp == 0.005
         assert out == 0.015
+
+
+# ---------------------------------------------------------------------------
+# _attach_correlation_id
+# ---------------------------------------------------------------------------
+
+
+class TestAttachCorrelationId:
+    def test_stamps_correlation_id_when_provided(self) -> None:
+        resp = ModelResponse(content="hi")
+        assert resp.correlation_id is None
+        result = _attach_correlation_id(resp, "req-abc-123")
+        assert result is resp
+        assert resp.correlation_id == "req-abc-123"
+
+    def test_noop_when_correlation_id_is_none(self) -> None:
+        resp = ModelResponse(content="hi")
+        result = _attach_correlation_id(resp, None)
+        assert result is resp
+        assert resp.correlation_id is None
+
+    def test_noop_when_correlation_id_is_empty_string(self) -> None:
+        resp = ModelResponse(content="hi")
+        result = _attach_correlation_id(resp, "")
+        assert result is resp
+        assert resp.correlation_id == ""
+
+    def test_overwrites_existing_correlation_id(self) -> None:
+        resp = ModelResponse(content="hi", correlation_id="old-id")
+        result = _attach_correlation_id(resp, "new-id")
+        assert result is resp
+        assert resp.correlation_id == "new-id"
+
+
+# ---------------------------------------------------------------------------
+# _redact_url_in_exception
+# ---------------------------------------------------------------------------
+
+
+class TestRedactUrlInException:
+    def test_redacts_url_in_single_string_arg(self) -> None:
+        exc = ValueError("failed: https://proxy.internal/v1/chat")
+        _redact_url_in_exception(exc, "https://proxy.internal/v1/chat")
+        assert "[REDACTED_URL]" in exc.args[0]
+        assert "https://proxy.internal/v1/chat" not in exc.args[0]
+
+    def test_redacts_url_in_multiple_string_args(self) -> None:
+        exc = ConnectionError(
+            "connect to https://x.invalid/v1",
+            "retry https://x.invalid/v1 again",
+        )
+        _redact_url_in_exception(exc, "https://x.invalid/v1")
+        assert "https://x.invalid/v1" not in exc.args[0]
+        assert "https://x.invalid/v1" not in exc.args[1]
+        assert "[REDACTED_URL]" in exc.args[0]
+        assert "[REDACTED_URL]" in exc.args[1]
+
+    def test_preserves_non_string_args(self) -> None:
+        exc = ConnectionError("bad host https://h.invalid", 503)
+        _redact_url_in_exception(exc, "https://h.invalid")
+        assert exc.args[0] == "bad host [REDACTED_URL]"
+        assert exc.args[1] == 503
+
+    def test_noop_on_empty_url(self) -> None:
+        exc = ValueError("message unchanged")
+        orig_args = exc.args
+        _redact_url_in_exception(exc, "")
+        assert exc.args == orig_args
+
+    def test_noop_when_url_not_present_in_args(self) -> None:
+        exc = ValueError("nothing to redact here")
+        _redact_url_in_exception(exc, "https://other.invalid")
+        assert exc.args[0] == "nothing to redact here"
+
+    def test_survives_non_iterable_args(self) -> None:
+        class _WeirdExc(Exception):
+            @property
+            def args(self) -> object:
+                return None
+
+        exc = _WeirdExc()
+        # should not raise — except Exception catches TypeError
+        _redact_url_in_exception(exc, "https://x.invalid")
+        assert True
+
+
+# ---------------------------------------------------------------------------
+# _is_healthy_with_timeout
+# ---------------------------------------------------------------------------
+
+
+class _StubHealthTracker:
+    def __init__(self, healthy: bool = True) -> None:
+        self._healthy = healthy
+        self._call_count = 0
+
+    def is_healthy(self, model_id: str, *, admit_probe: bool = False) -> bool:
+        self._call_count += 1
+        return self._healthy
+
+    def record_success(self, model_id: str) -> None:
+        pass
+
+    def record_event(self, event: object) -> None:
+        pass
+
+
+class _SlowHealthTracker:
+    def is_healthy(self, model_id: str, *, admit_probe: bool = False) -> bool:
+        time.sleep(10.0)
+        return True
+
+    def record_success(self, model_id: str) -> None:
+        pass
+
+    def record_event(self, event: object) -> None:
+        pass
+
+
+class _FailingHealthTracker:
+    def is_healthy(self, model_id: str, *, admit_probe: bool = False) -> bool:
+        raise RuntimeError("boom")
+
+    def record_success(self, model_id: str) -> None:
+        pass
+
+    def record_event(self, event: object) -> None:
+        pass
+
+
+class TestIsHealthyWithTimeout:
+    def test_returns_true_when_tracker_reports_healthy(self) -> None:
+        tracker = _StubHealthTracker(healthy=True)
+        result = _is_healthy_with_timeout(tracker, "p1", timeout=2.0)
+        assert result is True
+
+    def test_returns_false_when_tracker_reports_unhealthy(self) -> None:
+        tracker = _StubHealthTracker(healthy=False)
+        result = _is_healthy_with_timeout(tracker, "p2", timeout=2.0)
+        assert result is False
+
+    def test_returns_false_on_timeout(self) -> None:
+        tracker = _SlowHealthTracker()
+        result = _is_healthy_with_timeout(tracker, "p3", timeout=0.01)
+        assert result is False
+
+    def test_returns_false_when_tracker_raises(self) -> None:
+        tracker = _FailingHealthTracker()
+        result = _is_healthy_with_timeout(tracker, "p4", timeout=2.0)
+        assert result is False
+
+    def test_default_timeout_is_five_seconds(self) -> None:
+        import inspect
+
+        sig = inspect.signature(_is_healthy_with_timeout)
+        assert sig.parameters["timeout"].default == 5.0
+
+
+# ---------------------------------------------------------------------------
+# ModelResponse
+# ---------------------------------------------------------------------------
+
+
+class TestModelResponseDefaults:
+    def test_default_content_is_empty_string(self) -> None:
+        class _DefaultModelResponse:
+            content: str
+
+        resp = ModelResponse(content="")
+        assert resp.content == ""
+
+    def test_default_usage_metadata_is_empty_dict(self) -> None:
+        resp = ModelResponse(content="x")
+        assert resp.usage_metadata == {}
+
+    def test_default_cost_estimate_is_zero(self) -> None:
+        resp = ModelResponse(content="x")
+        assert resp.cost_estimate == 0.0
+
+    def test_default_model_name_is_empty_string(self) -> None:
+        resp = ModelResponse(content="x")
+        assert resp.model_name == ""
+
+    def test_default_raw_response_is_none(self) -> None:
+        resp = ModelResponse(content="x")
+        assert resp.raw_response is None
+
+    def test_default_tool_calls_is_none(self) -> None:
+        resp = ModelResponse(content="x")
+        assert resp.tool_calls is None
+
+    def test_default_correlation_id_is_none(self) -> None:
+        resp = ModelResponse(content="x")
+        assert resp.correlation_id is None
+
+    def test_all_fields_settable_via_constructor(self) -> None:
+        resp = ModelResponse(
+            content="hello",
+            usage_metadata={"input_tokens": 10, "output_tokens": 5},
+            cost_estimate=0.001,
+            model_name="gpt-4",
+            raw_response=None,
+            tool_calls=[{"id": "t1", "type": "function", "function": {"name": "f", "arguments": "{}"}}],
+            correlation_id="cid-1",
+        )
+        assert resp.content == "hello"
+        assert resp.usage_metadata["input_tokens"] == 10
+        assert resp.cost_estimate == 0.001
+        assert resp.model_name == "gpt-4"
+        assert resp.tool_calls is not None
+        assert len(resp.tool_calls) == 1
+        assert resp.tool_calls[0]["id"] == "t1"
+        assert resp.correlation_id == "cid-1"
