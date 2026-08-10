@@ -67,7 +67,7 @@ def _parse_semver_dict(v: str) -> dict[str, object]:
     }
 
 
-def _version_sort_key(v: str) -> tuple[int, int, int, int, tuple[int, ...]]:
+def _version_sort_key(v: str) -> tuple[int, int, int, int, tuple[tuple[int, int, str], ...] | tuple[()]]:
     parsed = _parse_semver_dict(v)
     if not parsed:
         return (0, 0, 0, 1, ())
@@ -76,12 +76,12 @@ def _version_sort_key(v: str) -> tuple[int, int, int, int, tuple[int, ...]]:
     patch = cast(int, parsed["patch"])
     prerelease = cast(str, parsed["prerelease"])
     if prerelease:
-        parts: list[int] = []
+        parts: list[tuple[int, int, str]] = []
         for p in prerelease.split("."):
-            try:
-                parts.append(int(p))
-            except ValueError:
-                parts.append(0)
+            if p.isdigit():
+                parts.append((0, int(p), ""))
+            else:
+                parts.append((1, 0, p))
         pre_tuple = tuple(parts)
         is_prerelease = 0
     else:

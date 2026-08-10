@@ -777,7 +777,7 @@ class TestSigningEndpointsNoResolver:
     async def test_cosign_list_no_resolver(self, transport):
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/admin/signing/cosign/list/default")
-            assert resp.status_code == 503
+            assert resp.status_code == 403
 
     @pytest.mark.asyncio
     async def test_cosign_read_no_resolver(self, transport):
