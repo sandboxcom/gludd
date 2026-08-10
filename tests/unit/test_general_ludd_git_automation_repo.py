@@ -236,11 +236,11 @@ def test_state_branch_matches_empty_patterns() -> None:
 
 
 def test_state_branch_entries_parses_output() -> None:
-    output = "feature/foo abc123def\nbugfix/bar 456789abc\n"
+    output = "feature/foo aaaaaa111\nbugfix/bar bbbbbb222\n"
     entries = GitAutomation._state_branch_entries(output)
     assert len(entries) == 2
-    assert entries[0] == {"branch": "feature/foo", "head": "abc123def"}
-    assert entries[1] == {"branch": "bugfix/bar", "head": "456789abc"}
+    assert entries[0] == {"branch": "feature/foo", "head": "aaaaaa111"}
+    assert entries[1] == {"branch": "bugfix/bar", "head": "bbbbbb222"}
 
 
 def test_state_branch_entries_skips_malformed() -> None:
