@@ -144,7 +144,7 @@ def main() -> int:
 
     if uncovered:
         print(f"\n{len(uncovered)} specs lack enforcement:")
-        for s in uncovered[:20]:
+        for s in uncovered:
             enf = s["enforcement"][:80] if s["enforcement"] else "(empty)"
             print(f"  {s['id']}: {enf}")
 

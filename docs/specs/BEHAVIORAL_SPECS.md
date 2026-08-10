@@ -2005,7 +2005,7 @@ The anti-stop enforcement MUST fire at the `text.complete` hook surface.
 
 ### E01 — Do not write explanations when work remains
 When pending work exists, the agent MUST NOT generate prose explanations of what happened or why.
-**Enforcement:** AGENTS.md anti-essay guard + enforce-stop.ts (planned extension)
+**Enforcement:** AGENTS.md anti-essay guard + `enforce-stop.ts` + `enforce-anti-essay.ts`
 **Test:** `test_e01_no_explanations_with_pending_work`
 
 ### E02 — Bolded section headers in final responses blocked
@@ -2015,7 +2015,7 @@ A response ending with bolded section headers (What changed, Why, What's left) w
 
 ### E03 — Essay-length responses detected and blocked
 Responses exceeding a floor-word-count threshold while carrying no tool calls MUST be flagged.
-**Enforcement:** AGENTS.md `enforce-anti-essay.ts` (planned) word-count heuristic
+**Enforcement:** AGENTS.md `enforce-anti-essay.ts` word-count heuristic
 **Test:** `test_e03_essay_length_responses_blocked`
 
 ### E04 — Commitment-to-action ratio
@@ -2060,12 +2060,12 @@ A dedicated `enforce-anti-essay.ts` plugin MUST detect and block essay patterns.
 
 ### E12 — Adaptive word-count threshold
 The anti-essay word-count threshold MUST adapt based on whether the response contains tool calls.
-**Enforcement:** AGENTS.md `enforce-anti-essay.ts` (planned)
+**Enforcement:** AGENTS.md `enforce-anti-essay.ts`
 **Test:** `test_e12_adaptive_word_count_threshold`
 
 ### E13 — No-metadata prose detection
 Responses containing 0 commit hashes, 0 test counts, 0 CI verdicts and >50 words MUST be flagged.
-**Enforcement:** AGENTS.md `enforce-anti-essay.ts` (planned) metadata-absence heuristic
+**Enforcement:** AGENTS.md `enforce-anti-essay.ts` metadata-absence heuristic
 **Test:** `test_e13_no_metadata_prose_detection`
 
 ### E14 — Image/emoji-heavy prose blocked
@@ -2075,12 +2075,12 @@ Responses that use emojis or decorative formatting to pad a text-only response M
 
 ### E15 — "Let me explain" patterns blocked
 Phrases like "Let me explain", "Here's why", "To understand this" at the start of a response while work pending MUST be flagged.
-**Enforcement:** AGENTS.md `enforce-stop.ts` (planned extension)
+**Enforcement:** AGENTS.md `enforce-stop.ts`
 **Test:** `test_e15_let_me_explain_blocked`
 
 ### E16 — Response length limit when gate is red
 When `.gate-status` is FAILED, text responses MUST NOT exceed a short error message.
-**Enforcement:** AGENTS.md `enforce-stop.ts` gate-red text clamp (planned)
+**Enforcement:** AGENTS.md `enforce-stop.ts` gate-red text clamp
 **Test:** `test_e16_response_length_limit_when_gate_red`
 
 ### E17 — Prose-to-code ratio enforced
