@@ -2118,3 +2118,254 @@ def test_search_multi_one_corpus_survives_when_others_absent(
     assert "skills" in body["corpora_searched"]
     for r in body["results"]:
         assert r["metadata"]["corpus"] == "skills"
+
+
+# --- _method_of / _embedding_method helper tests ------------------------------
+
+
+def test_method_of_hash_embedder() -> None:
+    from general_ludd.routers.embeddings import _method_of
+    from general_ludd.skills.embeddings import HashEmbedder
+
+    assert _method_of(HashEmbedder()) == "hash"
+
+
+def test_method_of_openai_embedder(monkeypatch: pytest.MonkeyPatch) -> None:
+    from general_ludd.routers.embeddings import _method_of
+    from general_ludd.skills.embeddings import OpenAIEmbedder
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-key")
+    assert _method_of(OpenAIEmbedder()) == "openai"
+
+
+def test_method_of_none_returns_hash() -> None:
+    from general_ludd.routers.embeddings import _method_of
+
+    assert _method_of(None) == "hash"
+
+
+def test_embedding_method_hash_store() -> None:
+    from unittest.mock import MagicMock
+
+    from general_ludd.routers.embeddings import _embedding_method
+    from general_ludd.skills.embeddings import HashEmbedder
+
+    store = MagicMock()
+    store._embedder = HashEmbedder()
+    assert _embedding_method(store) == "hash"
+
+
+def test_embedding_method_openai_store(monkeypatch: pytest.MonkeyPatch) -> None:
+    from unittest.mock import MagicMock
+
+    from general_ludd.routers.embeddings import _embedding_method
+    from general_ludd.skills.embeddings import OpenAIEmbedder
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-key")
+    store = MagicMock()
+    store._embedder = OpenAIEmbedder()
+    assert _embedding_method(store) == "openai"
+
+
+def test_embedding_method_no_embedder_attr_returns_hash() -> None:
+    from unittest.mock import MagicMock
+
+    from general_ludd.routers.embeddings import _embedding_method
+
+    store = MagicMock(spec=[])  # no _embedder attribute
+    assert _embedding_method(store) == "hash"
+
+
+# --- _compare embedder construction failure path ------------------------------
+
+
+def test_compare_embedder_construction_failure_degrades_to_200(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _compare_client(monkeypatch)
+
+    def _raises() -> object:
+        raise RuntimeError("embedder construction exploded")
+
+    monkeypatch.setattr(embeddings, "_select_default_embedder", _raises)
+    resp = client.post("/api/embeddings/compare", json={"text_a": "x", "text_b": "y"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["similarity"] is None
+    assert body["matrix"] is None
+    assert body["embedding_method"] == "hash"
+
+
+def test_compare_batch_embedder_construction_failure_degrades_to_200(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _compare_client(monkeypatch)
+
+    def _raises() -> object:
+        raise RuntimeError("embedder construction exploded")
+
+    monkeypatch.setattr(embeddings, "_select_default_embedder", _raises)
+    resp = client.post("/api/embeddings/compare", json={"texts": ["a", "b", "c"]})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["similarity"] is None
+    assert body["matrix"] is None  # early return before knowing batch vs pairwise
+    assert body["embedding_method"] == "hash"
+
+
+# --- _event_details_summary edge cases ---------------------------------------
+
+
+def test_event_details_summary_none_input() -> None:
+    from general_ludd.routers.embeddings import _event_details_summary
+
+    assert _event_details_summary(None) == ""
+
+
+def test_event_details_summary_non_string_input() -> None:
+    from general_ludd.routers.embeddings import _event_details_summary
+
+    assert _event_details_summary(42) == ""
+
+
+def test_event_details_summary_non_dict_json() -> None:
+    from general_ludd.routers.embeddings import _event_details_summary
+
+    assert _event_details_summary("[1, 2, 3]") == ""
+
+
+def test_event_details_summary_bool_values() -> None:
+    import json as _json
+
+    from general_ludd.routers.embeddings import _event_details_summary
+
+    summary = _event_details_summary(_json.dumps({"flag_a": True, "flag_b": False}))
+    assert "flag_a=True" in summary
+    assert "flag_b=False" in summary
+
+
+def test_event_details_summary_nested_objects() -> None:
+    import json as _json
+
+    from general_ludd.routers.embeddings import _event_details_summary
+
+    summary = _event_details_summary(_json.dumps({"nested": {"inner": "value"}, "list": [1, 2, 3]}))
+    assert "nested=" in summary
+    assert "list=" in summary
+
+
+def test_event_details_summary_none_values_skipped() -> None:
+    import json as _json
+
+    from general_ludd.routers.embeddings import _event_details_summary
+
+    summary = _event_details_summary(_json.dumps({"present": "yes", "absent": None, "also_here": "ok"}))
+    assert "present=yes" in summary
+    assert "also_here=ok" in summary
+    assert "absent" not in summary
+
+
+def test_event_details_summary_empty_dict() -> None:
+    import json as _json
+
+    from general_ludd.routers.embeddings import _event_details_summary
+
+    assert _event_details_summary(_json.dumps({})) == ""
+
+
+def test_event_details_summary_int_and_float_values() -> None:
+    import json as _json
+
+    from general_ludd.routers.embeddings import _event_details_summary
+
+    summary = _event_details_summary(_json.dumps({"count": 42, "ratio": 3.14, "name": "test"}))
+    assert "count=42" in summary
+    assert "ratio=3.14" in summary
+    assert "name=test" in summary
+
+
+# --- _search handler per-corpus exception degradation ------------------------
+
+
+def test_search_task_types_exception_degradation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When _search_task_types raises, _search wraps it and returns 200."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    app = FastAPI()
+    app.state._session_factory = None
+    app.state._skill_registry = None
+    embeddings.register(app, {})
+    client = TestClient(app)
+
+    async def _boom_similar(*a: Any, **k: Any) -> object:
+        raise RuntimeError("task_types internal failure")
+
+    monkeypatch.setattr(embeddings, "_search_task_types", _boom_similar)
+    resp = client.post(
+        "/api/embeddings/search",
+        json={"text": "anything", "corpus": "task_types"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["corpus"] == "task_types"
+    assert body["embedding_method"] == "hash"
+
+
+def test_search_skills_registry_list_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the skill registry's list_skills() raises, skills search degrades."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    app = FastAPI()
+    app.state._session_factory = None
+
+    class _BoomRegistry:
+        def list_skills(self) -> list[object]:
+            raise RuntimeError("registry exploded")
+
+    app.state._skill_registry = _BoomRegistry()
+    embeddings.register(app, {})
+    client = TestClient(app)
+    resp = client.post(
+        "/api/embeddings/search",
+        json={"text": "anything", "corpus": "skills"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["corpus"] == "skills"
+    assert resp.json()["results"] == []
+
+
+# --- search-multi individual corpus exception in fan-out ---------------------
+
+
+def test_search_multi_one_corpus_raises_others_survive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When one corpus raises during multi-search fan-out, others still return results."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    app = FastAPI()
+    app.state._session_factory = None
+    app.state._skill_registry = _StubSearchMultiRegistry(
+        [_StubSearchMultiSkill("survivor", "the surviving corpus has data")]
+    )
+
+    _original_search_traces = embeddings._search_traces
+
+    def _boom_traces(*a: Any, **k: Any) -> object:
+        raise RuntimeError("traces exploded")
+
+    monkeypatch.setattr(embeddings, "_search_traces", _boom_traces)
+    embeddings.register(app, {})
+    client = TestClient(app)
+    resp = client.post(
+        "/api/embeddings/search-multi",
+        json={"text": "data", "corpora": ["skills", "traces"]},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "skills" in body["corpora_searched"]
+    assert "traces" not in body["corpora_searched"]
+    assert len(body["results"]) >= 1
+    for r in body["results"]:
+        assert r["metadata"]["corpus"] == "skills"
