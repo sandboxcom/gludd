@@ -48,6 +48,8 @@ ENFORCE_FLOOR = PLUGIN_DIR / "enforce-floor.ts"
 ENFORCE_DELEGATE = PLUGIN_DIR / "enforce-delegate.ts"
 ENFORCE_STOP = PLUGIN_DIR / "enforce-stop.ts"
 ENFORCE_SESSION_START = PLUGIN_DIR / "enforce-session-start.ts"
+ENFORCE_MAKE_IMPL = PLUGIN_DIR / "impl" / "enforce_make_impl.ts"
+ENFORCE_STOP_IMPL = PLUGIN_DIR / "impl" / "enforce_stop_impl.ts"
 
 
 def _plugin_list() -> list[str]:
@@ -103,18 +105,16 @@ class TestEnforceMakeGateConcurrency:
     """
 
     def test_gate_concurrency_check_present(self):
-        content = ENFORCE_MAKE.read_text()
-        # Either a comment describing the policy or the detection logic itself.
+        content = ENFORCE_MAKE.read_text() + ENFORCE_MAKE_IMPL.read_text()
         assert (
             "gate-concurrency" in content.lower()
             or "concurrent" in content.lower()
             or "basetemp" in content.lower()
             or "GATE CONCURRENCY" in content
-        ), "gate concurrency check missing from enforce-make.ts"
+        ), "gate concurrency check missing from enforce-make.ts + impl"
 
     def test_gate_concurrency_blocks_second_gate(self):
-        content = ENFORCE_MAKE.read_text()
-        # Must reference the make targets that invoke pytest.
+        content = ENFORCE_MAKE.read_text() + ENFORCE_MAKE_IMPL.read_text()
         assert "test-and-commit" in content or "make gate" in content or "qa" in content
 
 
@@ -127,20 +127,19 @@ class TestEnforceMakeGuardrailIntegrityAllHooks:
     """
 
     def test_guard_protects_claude_hooks_path(self):
-        content = ENFORCE_MAKE.read_text()
+        content = ENFORCE_MAKE.read_text() + ENFORCE_MAKE_IMPL.read_text()
         assert ".claude/hooks/" in content or "claude/hooks" in content, (
             "guardrail-integrity check must cover .claude/hooks/ path"
         )
 
     def test_guard_protects_opencode_plugin_path(self):
-        content = ENFORCE_MAKE.read_text()
+        content = ENFORCE_MAKE.read_text() + ENFORCE_MAKE_IMPL.read_text()
         assert ".opencode/plugin/" in content or "opencode/plugin" in content, (
             "guardrail-integrity check must cover .opencode/plugin/ path"
         )
 
     def test_guard_checks_enforcement_token_removal(self):
-        content = ENFORCE_MAKE.read_text()
-        # The set of tokens whose wholesale removal signals a defanged hook.
+        content = ENFORCE_MAKE.read_text() + ENFORCE_MAKE_IMPL.read_text()
         for token in ['"deny"', '"block"', "throw new Error"]:
             assert token in content, (
                 f"guardrail-integrity token {token!r} missing — edit-hook must "
@@ -178,9 +177,9 @@ class TestEnforceMakeAssertionCheckScopedToTestFiles:
     def _is_test_expr(self) -> str:
         import re
 
-        src = ENFORCE_MAKE.read_text()
+        src = ENFORCE_MAKE.read_text() + ENFORCE_MAKE_IMPL.read_text()
         m = re.search(r"const isTest\s*=\s*([^\n]+)", src)
-        assert m, "isTest classification must exist in enforce-make.ts"
+        assert m, "isTest classification must exist in enforce-make.ts + impl"
         return m.group(1)
 
     def test_is_test_excludes_conftest(self):
@@ -213,9 +212,9 @@ class TestEnforceMakeTddCheckScopedToTestMethods:
     """
 
     def _tdd_block(self) -> str:
-        content = ENFORCE_MAKE.read_text()
+        content = ENFORCE_MAKE.read_text() + ENFORCE_MAKE_IMPL.read_text()
         idx = content.find("TDD QUALITY VIOLATION")
-        assert idx != -1, "TDD QUALITY VIOLATION throw must exist in enforce-make.ts"
+        assert idx != -1, "TDD QUALITY VIOLATION throw must exist in enforce-make.ts + impl"
         # Return the chars immediately preceding the throw to inspect its gate.
         return content[max(0, idx - 700) : idx]
 
@@ -246,35 +245,25 @@ class TestEnforceMakeForegroundBlock:
     """
 
     def test_gate_background_alternative_mentioned(self):
-        content = ENFORCE_MAKE.read_text()
-        assert "gate-background" in content, (
-            "enforce-make.ts must mention the 'gate-background' alternative when blocking bare 'make gate'"
-        )
+        content = ENFORCE_MAKE.read_text() + ENFORCE_MAKE_IMPL.read_text()
+        assert "gate-background" in content, "enforce-make.ts+impl must mention the 'gate-background' alternative"
 
     def test_bare_make_gate_blocked(self):
-        content = ENFORCE_MAKE.read_text()
-        # Must reference a bare 'make gate' pattern (not 'make gate-background').
-        # The block targets the long-running foreground command specifically.
-        assert "make gate" in content, "enforce-make.ts must reference 'make gate' for the foreground block"
+        content = ENFORCE_MAKE.read_text() + ENFORCE_MAKE_IMPL.read_text()
+        assert "make gate" in content, "enforce-make.ts+impl must reference 'make gate'"
 
     def test_make_lint_not_blocked(self):
-        content = ENFORCE_MAKE.read_text()
-        # Quick make targets must not be caught by the foreground block. The
-        # check must be narrow enough to exclude 'make lint'.
-        # We assert the block references 'gate' specifically (not bare 'make').
+        content = ENFORCE_MAKE.read_text() + ENFORCE_MAKE_IMPL.read_text()
         assert "gate" in content.lower()
 
     def test_make_typecheck_not_blocked(self):
-        content = ENFORCE_MAKE.read_text()
-        # Same reasoning as lint — typecheck is a quick make target.
+        content = ENFORCE_MAKE.read_text() + ENFORCE_MAKE_IMPL.read_text()
         assert "gate" in content.lower()
 
     def test_long_running_foreground_message_present(self):
-        content = ENFORCE_MAKE.read_text()
+        content = ENFORCE_MAKE.read_text() + ENFORCE_MAKE_IMPL.read_text()
         assert "Long-running foreground command" in content, (
-            "enforce-make.ts block message must mention "
-            "'Long-running foreground command' so the agent knows why the "
-            "bare 'make gate' was blocked"
+            "enforce-make.ts+impl block message must mention 'Long-running foreground command'"
         )
 
 
@@ -413,10 +402,7 @@ class TestNoWaitStopPort:
     """
 
     def test_deferral_patterns_present(self):
-        content = ENFORCE_STOP.read_text()
-        # Post-merge: enforce-stop.ts detects deferral via COMPLETION_VERBATIM
-        # and FUTURE_TENSE regexes, plus QUESTION_DENY_REASON directive.
-        # The classic deferral phrases are detected via these regexes.
+        content = ENFORCE_STOP.read_text() + ENFORCE_STOP_IMPL.read_text()
         assert (
             "shall" in content.lower()
             or "all done" in content.lower()
@@ -426,23 +412,17 @@ class TestNoWaitStopPort:
         )
 
     def test_enforce_env_var(self):
-        content = ENFORCE_STOP.read_text()
+        content = ENFORCE_STOP.read_text() + ENFORCE_STOP_IMPL.read_text()
         assert "GLUDD_STOP_ENFORCE" in content
 
     def test_blocking_default(self):
-        # The DEFAULT is ENFORCING (blocking). Post-merge, GLUDD_STOP_ENFORCE
-        # defaults to blocking via `!== "0"` comparison (line 6).
-        content = ENFORCE_STOP.read_text()
+        content = ENFORCE_STOP.read_text() + ENFORCE_STOP_IMPL.read_text()
         assert '!== "0"' in content or '"0"' in content, (
             "STOP_ENFORCE must default to blocking (GLUDD_STOP_ENFORCE !== '0')"
         )
 
     def test_constraint_as_stopsign(self):
-        # "Constraints Are To Engineer Around" policy — post-merge, constraint
-        # language is caught by the general stop-detection heuristics
-        # (COMPLETION_VERBATIM + FUTURE_TENSE) rather than specific
-        # constraint-as-stopsign pattern matching.
-        content = ENFORCE_STOP.read_text()
+        content = ENFORCE_STOP.read_text() + ENFORCE_STOP_IMPL.read_text()
         assert (
             "COMPLETION_VERBATIM" in content
             or "FUTURE_TENSE" in content
@@ -458,11 +438,11 @@ class TestMultitaskingBacklogPort:
     """
 
     def test_backlog_check_script_path(self):
-        content = ENFORCE_STOP.read_text()
+        content = ENFORCE_STOP.read_text() + ENFORCE_STOP_IMPL.read_text()
         assert "multitasking_backlog" in content or "backlog" in content.lower()
 
     def test_backlog_done_evidence_required(self):
-        content = ENFORCE_STOP.read_text()
+        content = ENFORCE_STOP.read_text() + ENFORCE_STOP_IMPL.read_text()
         assert "evidence" in content.lower() or "done" in content.lower()
 
 
@@ -474,7 +454,7 @@ class TestSessionStartOrchestratePort:
     """
 
     def test_orchestration_injection(self):
-        content = ENFORCE_STOP.read_text()
+        content = ENFORCE_STOP.read_text() + ENFORCE_STOP_IMPL.read_text()
         assert "orchestration" in content.lower() or "FLOOR" in content
 
     def test_floor_target_reference(self):
@@ -505,16 +485,15 @@ class TestNoBlockingQuestionsPort:
     """
 
     def test_question_tool_check(self):
-        content = ENFORCE_STOP.read_text()
+        content = ENFORCE_STOP.read_text() + ENFORCE_STOP_IMPL.read_text()
         assert '"question"' in content or "'question'" in content or "question" in content.lower()
 
     def test_deny_output(self):
-        content = ENFORCE_STOP.read_text()
+        content = ENFORCE_STOP.read_text() + ENFORCE_STOP_IMPL.read_text()
         assert "throw new Error" in content or "deny" in content.lower()
 
     def test_action_directive(self):
-        content = ENFORCE_STOP.read_text()
-        # Message must tell agent to default to action, not ask
+        content = ENFORCE_STOP.read_text() + ENFORCE_STOP_IMPL.read_text()
         assert "DEFAULT TO ACTION" in content or "default to action" in content.lower() or "proceed" in content.lower()
 
 
