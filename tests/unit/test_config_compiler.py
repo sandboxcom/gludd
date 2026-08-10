@@ -188,7 +188,7 @@ def test_compiled_config_metadata_no_secrets() -> None:
         profile="restricted",
         backend="gvisor",
         policy_hash="abcd1234",
-        _raw={"secrets": {"api_key": "test-key-not-a-real-secret"}},
+        _raw={"secrets": {"api_key": "placeholder-value-123"}},
     )
     meta = cfg.metadata()
     assert meta == {
