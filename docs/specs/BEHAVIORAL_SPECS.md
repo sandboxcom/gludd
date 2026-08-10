@@ -4214,7 +4214,7 @@ Any commit that lands without `_gate-fresh-check` MUST be detected and flagged a
 
 ### H47 — State-file integrity under failure
 If an enforcement state file (`/tmp/gludd-*.json`) is corrupt, the plugin MUST fail closed — not silently default to allow.
-**Enforcement:** `enforce-stop.ts` hasRealPendingWork() fail-closed on corrupt state; every `enforce-*.ts` plugin fail-open on exceptions, fail-closed for corrupt state
+**Enforcement:** `enforce-stop.ts` (via `impl/enforce_stop_impl.ts` `hasRealPendingWork()` try-catch fail-closed) + AGENTS.md "CRITICAL: Guardrail Integrity Policy" (all plugins fail-open on exceptions, fail-closed for corrupt state)
 **Test:** `test_h47_state_file_integrity_under_failure`
 
 ### H48 — Objective completion = stop enforcing objective
@@ -4239,17 +4239,17 @@ Code that has not passed `make gate-lite` locally MUST NOT be pushed to any shar
 
 ### H52 — Pre-push gate-lite is mandatory
 Before any push to master or development, `make gate-lite` MUST pass — minimum local validation.
-**Enforcement:** `make _gate-fresh-check` (prerequisite on all push targets in Makefile)
+**Enforcement:** `make _gate-fresh-check` (Makefile prerequisite on all push targets) + AGENTS.md "CRITICAL: No-Commit-Bypass Policy"
 **Test:** `test_h52_pre_push_gate_lite_mandatory`
 
 ### H53 — Gate-lite failure blocks push
 If `make gate-lite` fails, push is denied — no bypass, no "it's just a small change".
-**Enforcement:** `make _gate-fresh-check` (exit non-zero blocks all push targets)
+**Enforcement:** `make _gate-fresh-check` (Makefile; exit non-zero blocks all push targets) + AGENTS.md "CRITICAL: No-Commit-Bypass Policy"
 **Test:** `test_h53_gate_lite_failure_blocks_push`
 
 ### H54 — Never bypass gate-lite for push
 FORCE=1 MUST NOT bypass `make gate-lite` — it may bypass CI check but never local validation.
-**Enforcement:** `make _gate-fresh-check` (runs before FORCE=1 evaluation; FORCE bypasses CI but never gate-lite)
+**Enforcement:** `make _gate-fresh-check` (Makefile; runs before FORCE=1 evaluation; FORCE bypasses CI checks but never gate-lite) + AGENTS.md "CRITICAL: No-Commit-Bypass Policy"
 **Test:** `test_h54_never_bypass_gate_lite_for_push`
 
 ### H55 — Hard-break on write-to-wrong-branch
@@ -4623,7 +4623,7 @@ The same verification command run twice on the same state MUST produce the same 
 
 ### V28 — Verification commands are idempotent
 Running a verification command twice MUST NOT change state — `make verify-state`, `make gate-status`, `make ci-verdict-safe` are read-only.
-**Enforcement:** `make verify-state` + `make gate-status` + `make ci-verdict-safe` (all read-only; AGENTS.md "Verification Before Claim")
+**Enforcement:** `make verify-state` + `make gate-status` + `make ci-verdict-safe` (all read-only, no state mutation) + AGENTS.md "CRITICAL: Verification Before Claim (Anti-Lying Guardrails)"
 **Test:** `test_v28_verification_commands_are_idempotent`
 
 ### V29 — Human-in-the-loop verification for irreversible claims
@@ -4713,7 +4713,7 @@ Every verification MUST be runnable via `make <target>` — no "check GitHub rel
 
 ### V46 — Verification cadence: before every commit, push, merge, and release
 The 4 gating points (commit, push, merge, release) each MUST have a verification step — not skippable.
-**Enforcement:** `make _gate-fresh-check` (commit), `make ci-busy-check` + `make _pre-push-ci-verdict-guard` (push), `make _merge-strategy-guard` (merge), `make require-ci-green` (release)
+**Enforcement:** `make _gate-fresh-check` (commit gating) + `make ci-busy-check` & `make _pre-push-ci-verdict-guard` (push gating) + `make _merge-strategy-guard` (merge gating) + `make require-ci-green` (release gating) + AGENTS.md "CRITICAL: Verification Before Claim (Anti-Lying Guardrails)"
 **Test:** `test_v46_verification_cadence_4_gating_points`
 
 ### V47 — Failed verification MUST block the gated action
@@ -4723,12 +4723,12 @@ If `_gate-fresh-check` fails, the commit MUST be denied — a warning that still
 
 ### V48 — Verification output is structured for downstream consumption
 `make verify-state` and `make gate-status` output MUST be parseable by scripts, not just human-readable.
-**Enforcement:** `make verify-state` (structured `FIELD: value` output) + `make gate-status` (machine-parseable PASS/FAIL/RUNNING)
+**Enforcement:** `make verify-state` (structured `FIELD: value` output) + `make gate-status` (machine-parseable PASS/FAIL/RUNNING) + AGENTS.md "No Unseen Events (observability invariant)"
 **Test:** `test_v48_verification_output_structured`
 
 ### V49 — Verification history is preserved
 Each `make verify-state` run's output MUST be logged with timestamp to `.gate-logs/verify-<ts>.log`.
-**Enforcement:** `make verify-state` (appends to `.gate-logs/verify-<ts>.log`) + `scripts/check_worktree_health.py` (verification history audit)
+**Enforcement:** `make verify-state` (appends to `.gate-logs/verify-<ts>.log`) + `scripts/check_worktree_health.py` (verification history audit) + AGENTS.md "Verification Before Claim (Anti-Lying Guardrails)"
 **Test:** `test_v49_verification_history_preserved`
 
 ### V50 — Anomaly detection on verification data
@@ -4938,7 +4938,7 @@ Before fetching any URL, verify the domain is in the allowed set (github.com, py
 
 ### V91 — Tool-call verification: arguments within expected ranges
 Before executing a tool call, verify arguments are within expected bounds (file paths exist, numbers in range).
-**Enforcement:** `enforce-make.ts` tool.execute.before (validates bash commands) + `enforce-deletion-gate.ts` tool.execute.before (validates file paths exist) + `enforce-tdd.ts` tool.execute.before (validates test file exists)
+**Enforcement:** `enforce-make.ts` `tool.execute.before` (validates bash commands are make-only) + `enforce-deletion-gate.ts` `tool.execute.before` (validates file paths within allowed prefixes) + `enforce-tdd.ts` `tool.execute.before` (validates test file exists before src edit) + AGENTS.md "CRITICAL: No External File Access"
 **Test:** `test_v91_tool_call_verification_arguments_in_range`
 
 ### V92 — Post-merge verification: gate green after merge, not just before
