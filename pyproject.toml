@@ -173,6 +173,8 @@ select = ["E", "F", "I", "W", "UP", "B", "SIM", "RUF"]
 "src/general_ludd/language/transliteration.py" = ["RUF001"]
 "tests/unit/test_language_core.py" = ["RUF001"]
 "tests/unit/test_language_detection.py" = ["RUF001"]
+"tests/unit/test_language_transliteration.py" = ["RUF001"]
+"tests/unit/test_transliteration_deep.py" = ["RUF001"]
 "collections/ansible_collections/general_ludd/language/plugins/module_utils/core.py" = ["E402"]
 
 [tool.ruff.lint.isort]
