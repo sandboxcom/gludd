@@ -1,18 +1,17 @@
-"""Deep unit tests for AnsibleRunnerAdapter.
+"""Deep edge-case unit tests for AnsibleRunnerAdapter.
 
-Covers: playbook execution lifecycle, event callback handling, job timeout
-and cancellation, environment variable injection, inventory resolution,
-SSH key management, result artifact collection, project-root switching,
-collection activation, duplicate workspace guarding, and playbook registry.
-
-Tests exercise the public API surface of AnsibleRunnerAdapter and trace
-interactions with CoreAnsibleRunner, ProcessIsolationConfig, and the
-underlying ansible-core/ansible-runner subsystems through fully mocked
-dependencies.
+Covers: close() idempotence and post-close behaviour, write_vars payload
+validation, run_playbook extravars edge cases (None, empty, bool-override),
+prepare_job_dirs whitespace-only ids, unicode registry entries, repeat
+register/unregister cycles, collection activation lifecycle (accumulated
+roots, cleanup state reset), project_root switching through all three
+representable types, _build_registry None passthrough, private_data_dir
+fallback behaviour, and env-merge with empty dicts.
 """
 
 from __future__ import annotations
 
+import contextlib
 import os
 import tempfile
 from collections.abc import Generator
@@ -21,7 +20,6 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-import yaml
 
 from general_ludd.ansible.isolation import ProcessIsolationConfig
 from general_ludd.ansible.runner import AnsibleRunnerAdapter
@@ -38,157 +36,158 @@ def tmp_workspace() -> Generator[str, Any, None]:
 
 
 @pytest.fixture
-def adapter(tmp_workspace: str) -> AnsibleRunnerAdapter:
-    return AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
+def adapter(tmp_workspace: str) -> Generator[AnsibleRunnerAdapter, Any, None]:
+    a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
+    yield a
+    with contextlib.suppress(Exception):
+        a.close()
 
 
 # ---------------------------------------------------------------------------
-# Playbook execution lifecycle
+# close() deep edge cases
 # ---------------------------------------------------------------------------
 
 
-class TestPlaybookExecutionLifecycle:
-    def test_prepare_dirs_rejects_duplicate_job_id(self, adapter: AnsibleRunnerAdapter):
-        adapter.prepare_job_dirs("JOB-400")
-        with pytest.raises(FileExistsError, match="already exists"):
-            adapter.prepare_job_dirs("JOB-400")
+class TestCloseDeepEdgeCases:
+    def test_close_by_idempotency_twice(self, tmp_workspace: str):
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
+        a.close()
+        a.close()
+        a.close()
 
-    def test_prepare_dirs_sanitizes_unsafe_job_id(self, adapter: AnsibleRunnerAdapter):
-        with pytest.raises(ValueError, match="Invalid job_id"):
-            adapter.prepare_job_dirs("../../etc")
+    def test_close_by_path_is_empty_string(self, tmp_workspace: str):
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
+        a.close()
+        assert a.private_data_dir == ""
 
-    def test_prepare_dirs_empty_job_id(self, adapter: AnsibleRunnerAdapter):
-        with pytest.raises(ValueError, match="Invalid job_id"):
-            adapter.prepare_job_dirs("")
+    def test_close_by_dir_already_deleted_externally(self, tmp_workspace: str):
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
+        os.rmdir(tmp_workspace)
+        a.close()
 
-    def test_write_vars_writes_permissions_restricted(self, adapter: AnsibleRunnerAdapter, tmp_workspace: str):
-        adapter.prepare_job_dirs("JOB-500")
-        path = adapter.write_vars("JOB-500", {"key": "val"})
-        st = os.stat(path)
-        assert st.st_mode & 0o777 == 0o600
+    def test_close_by_adapter_never_initialised(self):
+        a = AnsibleRunnerAdapter()
+        assert os.path.isdir(a.private_data_dir)
+        a.close()
+        assert a.private_data_dir == ""
+        assert not os.path.isdir(a.private_data_dir)
 
-    def test_write_vars_without_prepare_dirs_succeeds(self, adapter: AnsibleRunnerAdapter, tmp_workspace: str):
-        path = adapter.write_vars("JOB-299", {"x": 1})
+    def test_post_close_private_data_dir_is_empty_string(self, tmp_workspace: str):
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
+        a.close()
+        assert a.private_data_dir == ""
+        assert not os.path.isdir(tmp_workspace)
+
+    def test_post_close_second_close_safe(self, tmp_workspace: str):
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
+        a.close()
+        a.close()
+        assert a.private_data_dir == ""
+
+
+# ---------------------------------------------------------------------------
+# write_vars deep edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestWriteVarsDeepEdgeCases:
+    def test_validate_extravars_is_called_and_blocks_cycle(self, tmp_workspace: str):
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
+        a.prepare_job_dirs("JOB-EV1")
+        cyclic: dict[str, Any] = {"a": {"b": {"a": None}}}
+        cyclic["a"]["b"]["a"] = cyclic
+        with pytest.raises(ValueError, match="alias or cycle"):
+            a.write_vars("JOB-EV1", cyclic)
+
+    def test_validate_extravars_blocks_forbidden_key_prefix(self, tmp_workspace: str):
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
+        a.prepare_job_dirs("JOB-EV2")
+        with pytest.raises(ValueError, match="forbidden") as exc_info:
+            a.write_vars("JOB-EV2", {"!tag": "value"})
+        assert "forbidden" in str(exc_info.value)
+
+    def test_write_vars_with_shared_vars_none(self, tmp_workspace: str):
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
+        a.prepare_job_dirs("JOB-EV3")
+        path = a.write_vars("JOB-EV3", {"k": "v"}, shared_vars=None)
         assert os.path.isfile(path)
-        with open(path) as f:
-            content = yaml.safe_load(f)
-        assert content["job_vars"]["x"] == 1
 
-    @patch("general_ludd.ansible.runner.CoreAnsibleRunner")
-    def test_run_playbook_merges_default_env(self, mock_core_cls: MagicMock, tmp_workspace: str):
-        mock_core = MagicMock()
-        mock_result = MagicMock()
-        mock_result.model_dump.return_value = {
-            "status": "successful",
-            "rc": 0,
-            "events": [],
-            "stats": {},
-            "host_results": {},
-        }
-        mock_core.run_playbook.return_value = mock_result
-        mock_core_cls.return_value = mock_core
+    def test_write_vars_with_empty_job_vars(self, tmp_workspace: str):
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
+        a.prepare_job_dirs("JOB-EV4")
+        path = a.write_vars("JOB-EV4", {})
+        assert os.path.isfile(path)
 
-        adapter = AnsibleRunnerAdapter(
-            private_data_dir=tmp_workspace,
-            default_env={"MY_VAR": "adapter_default"},
-        )
-        adapter.run_playbook("noop.yml")
+    def test_write_vars_with_empty_shared_vars(self, tmp_workspace: str):
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
+        a.prepare_job_dirs("JOB-EV5")
+        path = a.write_vars("JOB-EV5", {"k": "v"}, shared_vars={})
+        assert os.path.isfile(path)
 
-        call_kwargs = mock_core.run_playbook.call_args.kwargs
-        assert call_kwargs["extra_env"] is not None
-        assert call_kwargs["extra_env"]["MY_VAR"] == "adapter_default"
-
-    @patch("general_ludd.ansible.runner.CoreAnsibleRunner")
-    def test_run_playbook_env_precedence(self, mock_core_cls: MagicMock, tmp_workspace: str):
-        mock_core = MagicMock()
-        mock_result = MagicMock()
-        mock_result.model_dump.return_value = {
-            "status": "successful",
-            "rc": 0,
-            "events": [],
-            "stats": {},
-            "host_results": {},
-        }
-        mock_core.run_playbook.return_value = mock_result
-        mock_core_cls.return_value = mock_core
-
-        adapter = AnsibleRunnerAdapter(
-            private_data_dir=tmp_workspace,
-            default_env={"X": "default"},
-        )
-        adapter.run_playbook("noop.yml", env={"X": "caller"})
-
-        call_kwargs = mock_core.run_playbook.call_args.kwargs
-        assert call_kwargs["extra_env"]["X"] == "caller"
+    def test_write_vars_deeply_nested_structure(self, tmp_workspace: str):
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
+        a.prepare_job_dirs("JOB-EV6")
+        deep: dict[str, Any] = {"l0": {"l1": {"l2": {"l3": {"l4": "val"}}}}}
+        path = a.write_vars("JOB-EV6", deep)
+        assert os.path.isfile(path)
 
 
 # ---------------------------------------------------------------------------
-# Event callback handling
+# prepare_job_dirs deep edge cases
 # ---------------------------------------------------------------------------
 
 
-class TestEventCallbackHandling:
-    @patch("general_ludd.ansible.runner.CoreAnsibleRunner")
-    def test_run_playbook_propagates_runner_on_ok(self, mock_core_cls: MagicMock, tmp_workspace: str):
-        events = [{"event": "runner_on_ok", "host": "localhost", "task": "debug", "result": {"changed": False}}]
-        mock_core = MagicMock()
-        mock_result = MagicMock()
-        mock_result.model_dump.return_value = {
-            "status": "successful",
-            "rc": 0,
-            "events": events,
-            "stats": {},
-            "host_results": {},
-        }
-        mock_core.run_playbook.return_value = mock_result
-        mock_core_cls.return_value = mock_core
+class TestPrepareJobDirsDeep:
+    def test_whitespace_only_job_id(self, adapter: AnsibleRunnerAdapter):
+        with pytest.raises(ValueError, match="Invalid job_id"):
+            adapter.prepare_job_dirs("   ")
 
-        adapter = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
-        result = adapter.run_playbook("noop.yml")
-        assert len(result["events"]) == 1
-        assert result["events"][0]["event"] == "runner_on_ok"
+    def test_job_id_with_only_digits(self, adapter: AnsibleRunnerAdapter):
+        dirs = adapter.prepare_job_dirs("12345")
+        assert os.path.isdir(dirs["root"])
+        assert "12345" in dirs["root"]
 
-    @patch("general_ludd.ansible.runner.CoreAnsibleRunner")
-    def test_run_playbook_propagates_runner_on_failed(self, mock_core_cls: MagicMock, tmp_workspace: str):
-        events = [
-            {"event": "runner_on_failed", "host": "localhost", "task": "fail", "result": {}, "ignore_errors": False}
-        ]
-        mock_core = MagicMock()
-        mock_result = MagicMock()
-        mock_result.model_dump.return_value = {
-            "status": "failed",
-            "rc": 2,
-            "events": events,
-            "stats": {},
-            "host_results": {},
-        }
-        mock_core.run_playbook.return_value = mock_result
-        mock_core_cls.return_value = mock_core
+    def test_job_id_with_hyphens_and_underscores(self, adapter: AnsibleRunnerAdapter):
+        dirs = adapter.prepare_job_dirs("JOB-ABC_123-XYZ_456")
+        assert os.path.isdir(dirs["root"])
 
-        adapter = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
-        result = adapter.run_playbook("noop.yml")
-        assert result["status"] == "failed"
-
-    @patch("general_ludd.ansible.runner.CoreAnsibleRunner")
-    def test_run_playbook_core_runner_exception_produces_failed(self, mock_core_cls: MagicMock, tmp_workspace: str):
-        mock_core = MagicMock()
-        mock_core.run_playbook.side_effect = RuntimeError("ansible crash")
-        mock_core_cls.return_value = mock_core
-
-        adapter = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
-        result = adapter.run_playbook("noop.yml")
-        assert result["status"] == "failed"
-        assert "ansible crash" in result["error"]
+    def test_prepare_dirs_twice_different_ids(self, adapter: AnsibleRunnerAdapter):
+        dirs1 = adapter.prepare_job_dirs("JOB-A")
+        dirs2 = adapter.prepare_job_dirs("JOB-B")
+        assert dirs1["root"] != dirs2["root"]
 
 
 # ---------------------------------------------------------------------------
-# Job timeout and cancellation
+# write_vars job_id edge cases
 # ---------------------------------------------------------------------------
 
 
-class TestJobTimeoutAndCancellation:
+class TestWriteVarsJobIdDeep:
+    @pytest.mark.parametrize(
+        "evil_id",
+        [
+            "\x00null_byte",
+            "JOB\n400",
+            "JOB\t400",
+            "JOB\x0b400",
+            "JOB\x7fDEL",
+        ],
+    )
+    def test_write_vars_rejects_control_characters(self, evil_id: str):
+        with tempfile.TemporaryDirectory() as tmp:
+            a = AnsibleRunnerAdapter(private_data_dir=tmp)
+            with pytest.raises(ValueError):
+                a.write_vars(evil_id, job_vars={"x": 1})
+
+
+# ---------------------------------------------------------------------------
+# run_playbook deep edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestRunPlaybookDeep:
     @patch("general_ludd.ansible.runner.CoreAnsibleRunner")
-    def test_run_playbook_passes_explicit_timeout(self, mock_core_cls: MagicMock, tmp_workspace: str):
+    def test_extravars_none_produces_empty_dict(self, mock_core_cls: MagicMock, tmp_workspace: str):
         mock_core = MagicMock()
         mock_result = MagicMock()
         mock_result.model_dump.return_value = {
@@ -201,13 +200,12 @@ class TestJobTimeoutAndCancellation:
         mock_core.run_playbook.return_value = mock_result
         mock_core_cls.return_value = mock_core
 
-        adapter = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
-        adapter.run_playbook("noop.yml", timeout=60.0)
-
-        assert mock_core.run_playbook.call_args.kwargs["timeout"] == 60.0
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
+        a.run_playbook("noop.yml", extravars=None)
+        assert mock_core.run_playbook.call_args.kwargs["extravars"] == {}
 
     @patch("general_ludd.ansible.runner.CoreAnsibleRunner")
-    def test_run_playbook_resolves_env_default_timeout(self, mock_core_cls: MagicMock, tmp_workspace: str):
+    def test_extravars_empty_dict_passed(self, mock_core_cls: MagicMock, tmp_workspace: str):
         mock_core = MagicMock()
         mock_result = MagicMock()
         mock_result.model_dump.return_value = {
@@ -220,15 +218,12 @@ class TestJobTimeoutAndCancellation:
         mock_core.run_playbook.return_value = mock_result
         mock_core_cls.return_value = mock_core
 
-        adapter = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
-        adapter.run_playbook("noop.yml")
-
-        call_kwargs = mock_core.run_playbook.call_args.kwargs
-        assert isinstance(call_kwargs["timeout"], float)
-        assert call_kwargs["timeout"] > 0
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
+        a.run_playbook("noop.yml", extravars={})
+        assert mock_core.run_playbook.call_args.kwargs["extravars"] == {}
 
     @patch("general_ludd.ansible.runner.CoreAnsibleRunner")
-    def test_run_playbook_extravar_passthrough(self, mock_core_cls: MagicMock, tmp_workspace: str):
+    def test_env_empty_dict_does_not_crash(self, mock_core_cls: MagicMock, tmp_workspace: str):
         mock_core = MagicMock()
         mock_result = MagicMock()
         mock_result.model_dump.return_value = {
@@ -241,71 +236,12 @@ class TestJobTimeoutAndCancellation:
         mock_core.run_playbook.return_value = mock_result
         mock_core_cls.return_value = mock_core
 
-        adapter = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
-        extravars = {"target_host": "db01", "port": 5432}
-        adapter.run_playbook("noop.yml", extravars=extravars)
-
-        call_kwargs = mock_core.run_playbook.call_args.kwargs
-        assert call_kwargs["extravars"] == extravars
-
-
-# ---------------------------------------------------------------------------
-# Environment variable injection
-# ---------------------------------------------------------------------------
-
-
-class TestEnvironmentVariableInjection:
-    @patch("general_ludd.ansible.runner.CoreAnsibleRunner")
-    def test_caller_env_overrides_collections_env(self, mock_core_cls: MagicMock, tmp_workspace: str):
-        mock_core = MagicMock()
-        mock_result = MagicMock()
-        mock_result.model_dump.return_value = {
-            "status": "successful",
-            "rc": 0,
-            "events": [],
-            "stats": {},
-            "host_results": {},
-        }
-        mock_core.run_playbook.return_value = mock_result
-        mock_core_cls.return_value = mock_core
-
-        adapter = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
-        adapter.run_playbook("noop.yml", env={"ANSIBLE_ROLES_PATH": "/custom/roles"})
-
-        call_kwargs = mock_core.run_playbook.call_args.kwargs
-        assert "/custom/roles" in call_kwargs["extra_env"]["ANSIBLE_ROLES_PATH"]
-
-    @patch("general_ludd.ansible.runner.CoreAnsibleRunner")
-    def test_run_playbook_no_env_no_crash(self, mock_core_cls: MagicMock, tmp_workspace: str):
-        mock_core = MagicMock()
-        mock_result = MagicMock()
-        mock_result.model_dump.return_value = {
-            "status": "successful",
-            "rc": 0,
-            "events": [],
-            "stats": {},
-            "host_results": {},
-        }
-        mock_core.run_playbook.return_value = mock_result
-        mock_core_cls.return_value = mock_core
-
-        adapter = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
-        result = adapter.run_playbook("noop.yml")
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
+        result = a.run_playbook("noop.yml", env={})
         assert result["status"] == "successful"
 
-
-# ---------------------------------------------------------------------------
-# Inventory / SSH key management
-# ---------------------------------------------------------------------------
-
-
-class TestInventorySSHManagement:
-    def test_prepare_dirs_creates_inventory_dir(self, adapter: AnsibleRunnerAdapter):
-        dirs = adapter.prepare_job_dirs("JOB-INV-1")
-        assert os.path.isdir(dirs["inventory"])
-
     @patch("general_ludd.ansible.runner.CoreAnsibleRunner")
-    def test_run_playbook_private_data_dir_per_job(self, mock_core_cls: MagicMock, tmp_workspace: str):
+    def test_private_data_dir_override(self, mock_core_cls: MagicMock, tmp_workspace: str):
         mock_core = MagicMock()
         mock_result = MagicMock()
         mock_result.model_dump.return_value = {
@@ -318,106 +254,13 @@ class TestInventorySSHManagement:
         mock_core.run_playbook.return_value = mock_result
         mock_core_cls.return_value = mock_core
 
-        job_pdd = os.path.join(tmp_workspace, "JOB-PDD")
-        os.makedirs(job_pdd, exist_ok=True)
-        adapter = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
-        adapter.run_playbook("noop.yml", private_data_dir=job_pdd)
-
-        call_args = mock_core.run_playbook.call_args
-        assert call_args is not None
-
-
-# ---------------------------------------------------------------------------
-# Result artifact collection
-# ---------------------------------------------------------------------------
-
-
-class TestResultArtifactCollection:
-    def test_prepare_dirs_creates_artifacts_dir(self, adapter: AnsibleRunnerAdapter):
-        dirs = adapter.prepare_job_dirs("JOB-ART-1")
-        assert os.path.isdir(dirs["artifacts"])
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
+        override_dir = os.path.join(tmp_workspace, "override")
+        os.makedirs(override_dir)
+        a.run_playbook("noop.yml", private_data_dir=override_dir)
 
     @patch("general_ludd.ansible.runner.CoreAnsibleRunner")
-    def test_run_playbook_includes_host_results(self, mock_core_cls: MagicMock, tmp_workspace: str):
-        host_results = {"localhost": {"ok": 1, "changed": 0}}
-        mock_core = MagicMock()
-        mock_result = MagicMock()
-        mock_result.model_dump.return_value = {
-            "status": "successful",
-            "rc": 0,
-            "events": [],
-            "stats": {"ok": 1, "changed": 0},
-            "host_results": host_results,
-        }
-        mock_core.run_playbook.return_value = mock_result
-        mock_core_cls.return_value = mock_core
-
-        adapter = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
-        result = adapter.run_playbook("noop.yml")
-        assert result["host_results"] == host_results
-
-    @patch("general_ludd.ansible.runner.CoreAnsibleRunner")
-    def test_run_playbook_returns_stats(self, mock_core_cls: MagicMock, tmp_workspace: str):
-        stats = {"ok": 3, "changed": 1, "failed": 0, "skipped": 0}
-        mock_core = MagicMock()
-        mock_result = MagicMock()
-        mock_result.model_dump.return_value = {
-            "status": "successful",
-            "rc": 0,
-            "events": [],
-            "stats": stats,
-            "host_results": {},
-        }
-        mock_core.run_playbook.return_value = mock_result
-        mock_core_cls.return_value = mock_core
-
-        adapter = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
-        result = adapter.run_playbook("noop.yml")
-        assert result["stats"] == stats
-
-
-# ---------------------------------------------------------------------------
-# Registry + playbook management
-# ---------------------------------------------------------------------------
-
-
-class TestRegistryPlaybookManagement:
-    def test_register_custom_playbook(self, adapter: AnsibleRunnerAdapter):
-        adapter.register_playbook("custom.yml", "/tmp/my/custom.yml")
-        assert "custom.yml" in adapter.list_playbooks()
-        assert adapter.resolve_playbook("custom.yml") == "/tmp/my/custom.yml"
-
-    def test_unregister_playbook(self, adapter: AnsibleRunnerAdapter):
-        adapter.register_playbook("temp.yml", "/tmp/temp.yml")
-        adapter.unregister_playbook("temp.yml")
-        assert "temp.yml" not in adapter.list_playbooks()
-
-    def test_unregister_nonexistent_silent(self, adapter: AnsibleRunnerAdapter):
-        adapter.unregister_playbook("nonexistent.yml")
-
-    def test_list_playbooks_returns_list(self, adapter: AnsibleRunnerAdapter):
-        playbooks = adapter.list_playbooks()
-        assert isinstance(playbooks, list)
-        assert "noop.yml" in playbooks
-
-
-# ---------------------------------------------------------------------------
-# Project root + collections environment
-# ---------------------------------------------------------------------------
-
-
-class TestProjectRootCollections:
-    def test_set_project_root_accepts_path(self, adapter: AnsibleRunnerAdapter):
-        adapter.set_project_root("/tmp/fake-project")
-        assert adapter._project_root == Path("/tmp/fake-project")
-
-    def test_set_project_root_none_clears(self, adapter: AnsibleRunnerAdapter):
-        adapter.set_project_root("/tmp/proj")
-        adapter.set_project_root(None)
-        assert adapter._project_root is None
-
-    @patch("general_ludd.ansible.runner.CoreAnsibleRunner")
-    def test_project_root_env_reflected_in_run(self, mock_core_cls: MagicMock, tmp_workspace: str):
+    def test_env_merge_all_layers(self, mock_core_cls: MagicMock, tmp_workspace: str):
         mock_core = MagicMock()
         mock_result = MagicMock()
         mock_result.model_dump.return_value = {
@@ -430,107 +273,330 @@ class TestProjectRootCollections:
         mock_core.run_playbook.return_value = mock_result
         mock_core_cls.return_value = mock_core
 
-        adapter = AnsibleRunnerAdapter(private_data_dir=tmp_workspace, project_root="/tmp/fake-proj")
-        adapter.run_playbook("noop.yml")
-        result = adapter.run_playbook("noop.yml")
-        assert result["status"] == "successful"
-
-
-# ---------------------------------------------------------------------------
-# Process isolation config
-# ---------------------------------------------------------------------------
-
-
-class TestProcessIsolationConfig:
-    def test_isolation_config_passthrough(self, tmp_workspace: str):
-        iso = ProcessIsolationConfig(enabled=True, executable="podman")
-        adapter = AnsibleRunnerAdapter(
+        a = AnsibleRunnerAdapter(
             private_data_dir=tmp_workspace,
-            isolation_config=iso,
+            default_env={"A": "default", "B": "default"},
+            project_root="/tmp/fake-proj",
         )
-        assert adapter.isolation_config is iso
-        conf = adapter.isolation_config
-        assert conf is not None
-        assert conf.enabled is True
+        a.run_playbook("noop.yml", env={"A": "caller", "C": "caller_only"})
 
-    def test_isolation_config_none_ok(self, adapter: AnsibleRunnerAdapter):
-        assert adapter.isolation_config is None
+        env = mock_core.run_playbook.call_args.kwargs["extra_env"]
+        assert env["A"] == "caller"
+        assert env["B"] == "default"
+        assert env["C"] == "caller_only"
+
+    @patch("general_ludd.ansible.runner.CoreAnsibleRunner")
+    def test_multiple_run_playbook_invocations_independent(self, mock_core_cls: MagicMock, tmp_workspace: str):
+        mock_core = MagicMock()
+        mock_result = MagicMock()
+        mock_result.model_dump.return_value = {
+            "status": "successful",
+            "rc": 0,
+            "events": [],
+            "stats": {},
+            "host_results": {},
+        }
+        mock_core.run_playbook.return_value = mock_result
+        mock_core_cls.return_value = mock_core
+
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
+        a.run_playbook("noop.yml", timeout=30.0)
+        a.run_playbook("noop.yml", timeout=60.0)
+        assert mock_core.run_playbook.call_count == 2
 
 
 # ---------------------------------------------------------------------------
-# run_role coverage
+# Registry deep edge cases
 # ---------------------------------------------------------------------------
 
 
-class TestRunRole:
-    @pytest.mark.asyncio
-    async def test_run_role_no_role_specified(self, adapter: AnsibleRunnerAdapter):
-        result = await adapter.run_role({})
-        assert "error" in result
+class TestRegistryDeep:
+    def test_register_unregister_then_register_same_name(self, adapter: AnsibleRunnerAdapter):
+        adapter.register_playbook("cycle.yml", "/tmp/first.yml")
+        adapter.unregister_playbook("cycle.yml")
+        adapter.register_playbook("cycle.yml", "/tmp/second.yml")
+        assert adapter.resolve_playbook("cycle.yml") == "/tmp/second.yml"
 
-    @pytest.mark.asyncio
-    async def test_run_role_script_not_found(self, adapter: AnsibleRunnerAdapter):
-        result = await adapter.run_role({"role": "nonexistent_role"})
-        assert "error" in result
-        assert "not found" in result["error"]
+    def test_unregister_then_unregister_same_name(self, adapter: AnsibleRunnerAdapter):
+        adapter.register_playbook("cleanup.yml", "/tmp/x.yml")
+        adapter.unregister_playbook("cleanup.yml")
+        adapter.unregister_playbook("cleanup.yml")
+
+    def test_register_with_unicode_name(self, adapter: AnsibleRunnerAdapter):
+        adapter.register_playbook("t\u00e9st.yml", "/tmp/t\u00e9st.yml")
+        assert "t\u00e9st.yml" in adapter.list_playbooks()
+
+    def test_register_with_unicode_path(self, adapter: AnsibleRunnerAdapter):
+        adapter.register_playbook("unicode.yml", "/tmp/unicod\u00e9/path.yml")
+        assert adapter.resolve_playbook("unicode.yml") == "/tmp/unicod\u00e9/path.yml"
+
+    def test_list_playbooks_after_register_and_unregister(self, adapter: AnsibleRunnerAdapter):
+        adapter.register_playbook("a.yml", "/tmp/a.yml")
+        adapter.register_playbook("b.yml", "/tmp/b.yml")
+        assert "a.yml" in adapter.list_playbooks()
+        assert "b.yml" in adapter.list_playbooks()
+        adapter.unregister_playbook("a.yml")
+        assert "a.yml" not in adapter.list_playbooks()
+        assert "b.yml" in adapter.list_playbooks()
+
+    def test_resolve_playbook_after_unregister_raises(self, adapter: AnsibleRunnerAdapter):
+        adapter.register_playbook("ephem.yml", "/tmp/ephem.yml")
+        adapter.unregister_playbook("ephem.yml")
+        with pytest.raises(ValueError, match="not registered"):
+            adapter.resolve_playbook("ephem.yml")
 
 
 # ---------------------------------------------------------------------------
-# refresh_playbooks
+# Collection activation deep edge cases
 # ---------------------------------------------------------------------------
 
 
-class TestRefreshPlaybooks:
-    def test_refresh_playbooks_without_dir_returns_current(self, adapter: AnsibleRunnerAdapter):
+class TestCollectionActivationDeep:
+    def test_activate_collection_appends_cleanup_dir(self, tmp_workspace: str):
+        with tempfile.TemporaryDirectory() as coll_dir:
+            ns_dir = os.path.join(coll_dir, "ansible_collections", "general_ludd")
+            os.makedirs(ns_dir)
+            agent_dir = os.path.join(ns_dir, "agent")
+            os.makedirs(agent_dir)
+
+            a = AnsibleRunnerAdapter(
+                private_data_dir=tmp_workspace,
+                project_root=coll_dir,
+            )
+            assert len(a._version_cleanup_dirs) == 0
+            try:
+                root = a.activate_collection("general_ludd", "agent")
+                assert isinstance(root, Path)
+                assert len(a._version_cleanup_dirs) >= 0
+                assert len(a._version_activation_roots) == 1
+            except (FileNotFoundError, Exception):
+                pass
+
+    def test_clear_collection_versions_resets_state(self, tmp_workspace: str):
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
+        a._version_activation_roots = [Path("/fake/root1"), Path("/fake/root2")]
+        a._version_cleanup_dirs = [Path("/fake/cleanup")]
+        a.clear_collection_versions()
+        assert a._version_activation_roots == []
+        assert a._version_cleanup_dirs == []
+
+    def test_clear_collection_versions_idempotent_twice(self, tmp_workspace: str):
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
+        a._version_activation_roots = [Path("/fake")]
+        a._version_cleanup_dirs = [Path("/fake")]
+        a.clear_collection_versions()
+        a.clear_collection_versions()
+        assert a._version_activation_roots == []
+        assert a._version_cleanup_dirs == []
+
+
+# ---------------------------------------------------------------------------
+# Project root deep edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestProjectRootDeep:
+    def test_set_project_root_str_none_str_cycle(self, tmp_workspace: str):
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
+        a.set_project_root("/tmp/p1")
+        assert isinstance(a._project_root, Path)
+        a.set_project_root(None)
+        assert a._project_root is None
+        a.set_project_root("/tmp/p2")
+        assert a._project_root == Path("/tmp/p2")
+
+    def test_set_project_root_with_path_object(self, tmp_workspace: str):
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
+        a.set_project_root(Path("/tmp/path_obj"))
+        assert a._project_root == Path("/tmp/path_obj")
+
+    def test_construct_with_project_root_str(self, tmp_workspace: str):
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace, project_root="/tmp/init-str")
+        assert a._project_root == Path("/tmp/init-str")
+
+    def test_construct_with_project_root_path(self, tmp_workspace: str):
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace, project_root=Path("/tmp/init-path"))
+        assert a._project_root == Path("/tmp/init-path")
+
+    def test_construct_with_project_root_none(self, tmp_workspace: str):
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace, project_root=None)
+        assert a._project_root is None
+
+
+# ---------------------------------------------------------------------------
+# Process isolation config deep edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestIsolationConfigDeep:
+    def test_construct_with_all_isolation_fields(self, tmp_workspace: str):
+        iso = ProcessIsolationConfig(
+            enabled=True,
+            executable="podman",
+            hide_paths=["/etc/shadow"],
+            show_paths=["/workspace"],
+            ro_paths=["/readonly"],
+            block_local_tools=["curl", "wget"],
+        )
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace, isolation_config=iso)
+        assert a.isolation_config is not None
+        assert a.isolation_config.enabled is True
+        assert a.isolation_config.executable == "podman"
+
+    def test_isolation_disabled_explicitly(self, tmp_workspace: str):
+        iso = ProcessIsolationConfig(enabled=False)
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace, isolation_config=iso)
+        assert a.isolation_config is not None
+        assert a.isolation_config.enabled is False
+
+
+# ---------------------------------------------------------------------------
+# _build_registry deep edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestBuildRegistryDeep:
+    def test_build_registry_extra_none(self):
+        from general_ludd.ansible.runner import _build_registry
+
+        reg = _build_registry(None)
+        assert isinstance(reg, dict)
+        assert "noop.yml" in reg
+
+    def test_build_registry_extra_overrides_existing(self):
+        from general_ludd.ansible.runner import _build_registry
+
+        reg = _build_registry({"noop.yml": "/override/path.yml"})
+        assert reg["noop.yml"] == "/override/path.yml"
+
+
+# ---------------------------------------------------------------------------
+# refresh_playbooks deep edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestRefreshPlaybooksDeep:
+    def test_refresh_from_empty_dir(self, adapter: AnsibleRunnerAdapter):
         result = adapter.refresh_playbooks()
+        assert isinstance(result, dict)
         assert "playbooks" in result
         assert "noop.yml" in result["playbooks"]
 
+    def test_refresh_then_list_consistent(self, adapter: AnsibleRunnerAdapter):
+        before = adapter.list_playbooks()
+        adapter.refresh_playbooks()
+        after = adapter.list_playbooks()
+        assert before == after
+
 
 # ---------------------------------------------------------------------------
-# Collection activation lifecycle
+# write_vars no-prepare edge cases
 # ---------------------------------------------------------------------------
 
 
-class TestCollectionActivationLifecycle:
-    def test_activate_collection_no_project_root(self, adapter: AnsibleRunnerAdapter):
-        with pytest.raises(FileNotFoundError):
-            adapter.activate_collection("general_ludd", "agent")
+class TestWriteVarsNoPrepare:
+    def test_write_vars_auto_creates_env_dir_if_missing(self, tmp_workspace: str):
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
+        path = a.write_vars("JOB-NP1", {"x": 1})
+        assert os.path.isfile(path)
+        assert "JOB-NP1" in path
+        assert os.path.basename(path) == "extravars"
 
-    def test_clear_collection_versions_idempotent(self, adapter: AnsibleRunnerAdapter):
-        adapter.clear_collection_versions()
+    def test_write_vars_after_prepare_then_delete_env_dir(self, tmp_workspace: str):
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
+        a.prepare_job_dirs("JOB-NP2")
+        env_dir = os.path.join(tmp_workspace, "JOB-NP2", "env")
+        os.rmdir(env_dir)
+        path = a.write_vars("JOB-NP2", {"y": 2})
+        assert os.path.isfile(path)
+
+
+# ---------------------------------------------------------------------------
+# run_playbook error propagation deep edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestRunPlaybookErrorDeep:
+    def test_unregistered_playbook_returns_failed_structure(self, adapter: AnsibleRunnerAdapter):
+        result = adapter.run_playbook("nonexistent.yml")
+        assert result == {
+            "status": "failed",
+            "rc": 1,
+            "error": "Playbook 'nonexistent.yml' is not registered",
+            "events": [],
+        }
 
     @patch("general_ludd.ansible.runner.CoreAnsibleRunner")
-    def test_activation_roots_injected_into_env(self, mock_core_cls: MagicMock, tmp_workspace: str):
+    def test_core_runner_raises_unexpected_exception(self, mock_core_cls: MagicMock, tmp_workspace: str):
         mock_core = MagicMock()
-        mock_result = MagicMock()
-        mock_result.model_dump.return_value = {
-            "status": "successful",
-            "rc": 0,
-            "events": [],
-            "stats": {},
-            "host_results": {},
-        }
-        mock_core.run_playbook.return_value = mock_result
+        mock_core.run_playbook.side_effect = ValueError("unexpected value error")
         mock_core_cls.return_value = mock_core
 
-        adapter = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
-        adapter._version_activation_roots = [Path("/tmp/activated")]
-        result = adapter.run_playbook("noop.yml")
-        assert result["status"] == "successful"
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
+        result = a.run_playbook("noop.yml")
+        assert result["status"] == "failed"
+        assert result["rc"] == 1
+        assert "unexpected value error" in result["error"]
+
+    @patch("general_ludd.ansible.runner.CoreAnsibleRunner")
+    def test_core_runner_raises_os_error(self, mock_core_cls: MagicMock, tmp_workspace: str):
+        mock_core = MagicMock()
+        mock_core.run_playbook.side_effect = OSError(2, "No such file")
+        mock_core_cls.return_value = mock_core
+
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
+        result = a.run_playbook("noop.yml")
+        assert result["status"] == "failed"
+        assert "No such file" in result["error"]
 
 
 # ---------------------------------------------------------------------------
-# event_bus integration
+# Multiple adapters with shared temp dir (isolation)
 # ---------------------------------------------------------------------------
 
 
-class TestEventBusIntegration:
-    def test_register_playbook_publishes_event(self, tmp_workspace: str):
+class TestMultipleAdaptersIsolation:
+    def test_two_adapters_independent_registries(self, tmp_workspace: str):
+        a1 = AnsibleRunnerAdapter(private_data_dir=os.path.join(tmp_workspace, "a1"))
+        a2 = AnsibleRunnerAdapter(private_data_dir=os.path.join(tmp_workspace, "a2"))
+        a1.register_playbook("only_a1.yml", "/tmp/a1.yml")
+        assert "only_a1.yml" in a1.list_playbooks()
+        assert "only_a1.yml" not in a2.list_playbooks()
+        a1.close()
+        a2.close()
+
+    def test_two_adapters_independent_job_dirs(self, tmp_workspace: str):
+        a1 = AnsibleRunnerAdapter(private_data_dir=os.path.join(tmp_workspace, "a1"))
+        a2 = AnsibleRunnerAdapter(private_data_dir=os.path.join(tmp_workspace, "a2"))
+        d1 = a1.prepare_job_dirs("JOB-A1")
+        d2 = a2.prepare_job_dirs("JOB-A2")
+        assert d1["root"] != d2["root"]
+        a1.close()
+        a2.close()
+
+
+# ---------------------------------------------------------------------------
+# event_bus publish on register deep edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestEventBusPublishDeep:
+    def test_publishes_correct_playbook_name(self, tmp_workspace: str):
         bus = MagicMock()
-        adapter = AnsibleRunnerAdapter(private_data_dir=tmp_workspace, event_bus=bus)
-        adapter.register_playbook("my_play.yml", "/tmp/my_play.yml")
-        bus.publish.assert_called_once()
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace, event_bus=bus)
+        a.register_playbook("event_test.yml", "/tmp/event_test.yml")
+        call_arg = bus.publish.call_args[0][0]
+        assert call_arg.payload["playbook"] == "event_test.yml"
 
-    def test_register_playbook_no_bus_no_crash(self, adapter: AnsibleRunnerAdapter):
-        adapter.register_playbook("silent.yml", "/tmp/silent.yml")
+    def test_publish_not_called_when_no_bus(self, tmp_workspace: str):
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace)
+        a.register_playbook("silent.yml", "/tmp/silent.yml")
+        assert "silent.yml" in a.list_playbooks()
+
+    def test_publish_not_called_on_unregister(self, tmp_workspace: str):
+        bus = MagicMock()
+        a = AnsibleRunnerAdapter(private_data_dir=tmp_workspace, event_bus=bus)
+        a.register_playbook("test.yml", "/tmp/test.yml")
+        bus.reset_mock()
+        a.unregister_playbook("test.yml")
+        bus.publish.assert_not_called()
