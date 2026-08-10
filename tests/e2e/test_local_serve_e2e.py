@@ -32,8 +32,9 @@ _CI_SAFE_MODELS = list_models(ci_safe=True)
 
 def _has_llama_cpp() -> bool:
     try:
-        import llama_cpp  # noqa: F401
+        import llama_cpp
 
+        _ = llama_cpp
         return True
     except ImportError:
         return False
