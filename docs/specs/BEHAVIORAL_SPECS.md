@@ -1221,7 +1221,7 @@ Every commit-shaped target MUST enforce `.gate-status` freshness and green statu
 
 ### P19 — No-verify bypass never the default
 `--no-verify` and `COMMIT_THRESHOLD=1` MUST NOT be the default behavior of any target.
-**Enforcement:** Makefile defaults
+**Enforcement:** AGENTS.md "No-Commit-Bypass Policy" + Makefile `_gate-fresh-check` on all commit targets
 **Test:** `test_p19_no_verify_never_default`
 
 ### P20 — CI-green required before release cut
@@ -1236,7 +1236,7 @@ Every push MUST be logged with timestamp, target branch, SHA, and CI state at pu
 
 ### P22 — Push guard is not circumventable
 No make target or agent behavior MUST provide a backdoor around the push guard.
-**Enforcement:** Makefile audit — all push paths go through `_push-rate-guard`
+**Enforcement:** Makefile `_push-rate-guard` + `scripts/ci_push_guard.py` + `enforce-batch-push.ts` BLOCKING
 **Test:** `test_p22_push_guard_not_circumventable`
 
 ### P23 — Deploy-and-forget pattern for CI-triggering pushes
@@ -1266,7 +1266,7 @@ CI MUST be checked at natural breaks (subagent result ingestion), not continuous
 
 ### P28 — Push cannot shortcut CI-in-flight check
 No push target (even with FORCE=1) MUST bypass the CI-in-flight check.
-**Enforcement:** Makefile all push paths include `_push-rate-guard`
+**Enforcement:** Makefile `_push-rate-guard` CI-in-flight prerequisite + `enforce-batch-push.ts` BLOCKING
 **Test:** `test_p28_no_shortcut_ci_in_flight_check`
 
 ### P29 — Push timing is recorded
@@ -1688,7 +1688,7 @@ A `.gate-status` file older than the last source edit MUST NOT be used as eviden
 
 ### T25 — Background gate must report phases
 When `make gate-background` runs, it MUST emit per-phase markers to the log.
-**Enforcement:** Makefile gate-background phase markers
+**Enforcement:** Makefile `gate-background` target + `gate-status-check` phase markers (`=== GATE PHASE:`) 
 **Test:** `test_t25_background_gate_phase_markers`
 
 ### T26 — Gate failure must surface log
@@ -1713,7 +1713,7 @@ Every test file in `tests/` MUST be importable — no syntax errors, no missing 
 
 ### T30 — collect-check is gate prerequisite
 `make collect-check` MUST be a prerequisite of `make gate` and all commit targets.
-**Enforcement:** Makefile gate target prerequisites
+**Enforcement:** Makefile `gate` target `_collect-guard` prerequisite
 **Test:** `test_t30_collect_check_gate_prerequisite`
 
 ---
@@ -1996,7 +1996,7 @@ The anti-stop enforcement MUST fire at the `text.complete` hook surface.
 
 ### S25 — No write in system prompt from stop plugin
 `enforce-stop.ts` MUST NOT use `system.transform` for injecting stop directives — use text.complete instead.
-**Enforcement:** plugin hook registration audit
+**Enforcement:** AGENTS.md "Plugin Hook Invocation Validation" + `make verify-plugin-manifest`
 **Test:** `test_s25_stop_plugin_no_system_transform`
 
 ---
@@ -2119,12 +2119,12 @@ All merges to shared branches MUST use `--no-ff` to preserve branch topology.
 
 ### M03 — Pre-merge gate must be green
 Before merging any branch into a shared branch, the gate MUST be green on the source branch.
-**Enforcement:** Makefile merge targets check gate
+**Enforcement:** Makefile `gated-merge` + `development-merge-to-master` gate prerequisites
 **Test:** `test_m03_pre_merge_gate_green`
 
 ### M04 — Merge is atomic
 A merge MUST commit all resolved files in a single merge commit — partial merges are forbidden.
-**Enforcement:** Makefile merge targets
+**Enforcement:** Makefile `git-merge MSG=` with `--no-ff` (atomic merge, no partial commits)
 **Test:** `test_m04_merge_is_atomic`
 
 ### M05 — Agent-merge runs on main checkout
@@ -2199,7 +2199,7 @@ Merge commit messages MUST follow the pattern `Merge branch '<source>' into <tar
 
 ### M19 — Release-promote is ff-only merge into master
 `make release-promote TAG=<tag>` MUST use ff-only merge to advance master.
-**Enforcement:** Makefile `release-promote` fail-closed guard **Test:** `test_m19_release_promote_ff_only_merge`
+**Enforcement:** Makefile `release-promote` target + `scripts/check_green_branch_guard.py` (fail-closed: exit 1)
 **Test:** `test_m19_release_promote_ff_only_merge`
 
 ### M20 — Backport merge follows cherry-pick discipline
@@ -2743,7 +2743,7 @@ Every CI-triggering push MUST be logged with timestamp, SHA, and branch in a sta
 
 ### F30 — No push gate circumvention possible
 No make target or env var combination MUST allow bypassing the CI push guard entirely.
-**Enforcement:** Makefile all push paths through `_push-rate-guard`
+**Enforcement:** Makefile `_push-rate-guard` + `enforce-batch-push.ts` BLOCKING (no raw git push)
 **Test:** `test_f30_no_push_gate_circumvention`
 
 ---
@@ -2971,17 +2971,17 @@ The coverage `--fail-under` threshold in `pyproject.toml` MUST NOT be lowered to
 
 ### Q14 — Hook runtime tests run in gate
 `make test-hook-runtime` MUST be a gate prerequisite for any changes to `.opencode/plugin/`.
-**Enforcement:** Makefile gate prerequisites conditional on plugin changes
+**Enforcement:** Makefile `gate` target + `check-plugin-hook-invoke` prerequisite
 **Test:** `test_q14_hook_runtime_tests_in_gate`
 
 ### Q15 — Node-v26 compat check in gate
 `make check-node-v26-compat` MUST pass as part of `make gate` when plugin files changed.
-**Enforcement:** Makefile gate includes `check-node-v26-compat`
+**Enforcement:** Makefile `gate` target + `scripts/check_node_v26_compat.py`
 **Test:** `test_q15_node_v26_compat_in_gate`
 
 ### Q16 — Duplicate target check in gate
 `make check-duplicate-targets` MUST pass as part of `make gate` to prevent Makefile target conflicts.
-**Enforcement:** Makefile gate includes `check-duplicate-targets`
+**Enforcement:** Makefile `gate` target + `scripts/check_duplicate_targets.py`
 **Test:** `test_q16_duplicate_target_check_in_gate`
 
 ### Q17 — Secrets scan in gate audit
@@ -3041,12 +3041,12 @@ Each gate phase MUST report elapsed time for performance tracking.
 
 ### Q28 — Gate must not be skipped via env var
 No env var (`SKIP_GATE=1`, `GATE=0`, etc.) MUST allow entirely skipping the gate for commits.
-**Enforcement:** Makefile gate prerequisites — no env-var bypass
+**Enforcement:** Makefile `_gate-fresh-check` (no `SKIP_GATE` env var; must run gate before commit)
 **Test:** `test_q28_gate_not_skippable_via_env`
 
 ### Q29 — Gate-required label on all commit targets
 Every commit target in the Makefile MUST have a comment noting it requires `_gate-fresh-check`.
-**Enforcement:** Makefile audit via `tests/unit/test_commit_gate_freshness.py`
+**Enforcement:** Makefile audit by `tests/unit/test_commit_gate_freshness.py` structural check
 **Test:** `test_q29_gate_required_label_on_commit_targets`
 
 ### Q30 — Gate status is the single source of truth
@@ -3294,12 +3294,12 @@ An audit that produces a gap list without fixing the gaps is NOT a completed aud
 
 ### A17 — Each audit category has a make target
 Dead-code check, wiring audit, migration audit, test-level audit — each MUST have a dedicated make target.
-**Enforcement:** Makefile audit targets
+**Enforcement:** Makefile `audit-coverage` + `audit-spec-entry` + `audit-dead-code` + `audit-coverage` targets
 **Test:** `test_a17_audit_category_has_make_target`
 
 ### A18 — Audit results are logged with timestamp
 Every audit run MUST log its results with a timestamp to `.gate-logs/audit-<ts>.log`.
-**Enforcement:** Makefile audit targets write logs
+**Enforcement:** Makefile audit targets write results to `.gate-logs/audit-<ts>.log` with timestamp
 **Test:** `test_a18_audit_results_logged_with_timestamp`
 
 ### A19 — No unverified claims in commit messages
@@ -3816,7 +3816,7 @@ At least half of every dispatch wave MUST be project enhancements, not just bug 
 
 ### U29 — Todowrite tracks all user asks
 When user raises ≥3 distinct asks, a `todowrite` list MUST be maintained tracking every ask.
-**Enforcement:** AGENTS.md Todowrite discipline
+**Enforcement:** AGENTS.md "Todowrite discipline (mandatory for >=3-ask sessions)" section
 **Test:** `test_u29_todowrite_tracks_all_user_asks`
 
 ### U30 — Completion evidence matches user's success criteria
@@ -4214,7 +4214,7 @@ Any commit that lands without `_gate-fresh-check` MUST be detected and flagged a
 
 ### H47 — State-file integrity under failure
 If an enforcement state file (`/tmp/gludd-*.json`) is corrupt, the plugin MUST fail closed — not silently default to allow.
-**Enforcement:** plugin fail-open for exceptions, fail-closed for corrupt state
+**Enforcement:** `enforce-stop.ts` hasRealPendingWork() fail-closed on corrupt state; every `enforce-*.ts` plugin fail-open on exceptions, fail-closed for corrupt state
 **Test:** `test_h47_state_file_integrity_under_failure`
 
 ### H48 — Objective completion = stop enforcing objective
@@ -4239,17 +4239,17 @@ Code that has not passed `make gate-lite` locally MUST NOT be pushed to any shar
 
 ### H52 — Pre-push gate-lite is mandatory
 Before any push to master or development, `make gate-lite` MUST pass — minimum local validation.
-**Enforcement:** Makefile push targets include gate-lite as prerequisite
+**Enforcement:** `make _gate-fresh-check` (prerequisite on all push targets in Makefile)
 **Test:** `test_h52_pre_push_gate_lite_mandatory`
 
 ### H53 — Gate-lite failure blocks push
 If `make gate-lite` fails, push is denied — no bypass, no "it's just a small change".
-**Enforcement:** Makefile gate-lite as push-target prerequisite
+**Enforcement:** `make _gate-fresh-check` (exit non-zero blocks all push targets)
 **Test:** `test_h53_gate_lite_failure_blocks_push`
 
 ### H54 — Never bypass gate-lite for push
 FORCE=1 MUST NOT bypass `make gate-lite` — it may bypass CI check but never local validation.
-**Enforcement:** Makefile push targets: gate-lite check before force bypass
+**Enforcement:** `make _gate-fresh-check` (runs before FORCE=1 evaluation; FORCE bypasses CI but never gate-lite)
 **Test:** `test_h54_never_bypass_gate_lite_for_push`
 
 ### H55 — Hard-break on write-to-wrong-branch
@@ -4623,7 +4623,7 @@ The same verification command run twice on the same state MUST produce the same 
 
 ### V28 — Verification commands are idempotent
 Running a verification command twice MUST NOT change state — `make verify-state`, `make gate-status`, `make ci-verdict-safe` are read-only.
-**Enforcement:** Makefile read-only enforcement for verification targets
+**Enforcement:** `make verify-state` + `make gate-status` + `make ci-verdict-safe` (all read-only; AGENTS.md "Verification Before Claim")
 **Test:** `test_v28_verification_commands_are_idempotent`
 
 ### V29 — Human-in-the-loop verification for irreversible claims
@@ -4713,7 +4713,7 @@ Every verification MUST be runnable via `make <target>` — no "check GitHub rel
 
 ### V46 — Verification cadence: before every commit, push, merge, and release
 The 4 gating points (commit, push, merge, release) each MUST have a verification step — not skippable.
-**Enforcement:** Makefile all commit/push/merge/release targets include prerequisite checks
+**Enforcement:** `make _gate-fresh-check` (commit), `make ci-busy-check` + `make _pre-push-ci-verdict-guard` (push), `make _merge-strategy-guard` (merge), `make require-ci-green` (release)
 **Test:** `test_v46_verification_cadence_4_gating_points`
 
 ### V47 — Failed verification MUST block the gated action
@@ -4723,12 +4723,12 @@ If `_gate-fresh-check` fails, the commit MUST be denied — a warning that still
 
 ### V48 — Verification output is structured for downstream consumption
 `make verify-state` and `make gate-status` output MUST be parseable by scripts, not just human-readable.
-**Enforcement:** Makefile structured output format
+**Enforcement:** `make verify-state` (structured `FIELD: value` output) + `make gate-status` (machine-parseable PASS/FAIL/RUNNING)
 **Test:** `test_v48_verification_output_structured`
 
 ### V49 — Verification history is preserved
 Each `make verify-state` run's output MUST be logged with timestamp to `.gate-logs/verify-<ts>.log`.
-**Enforcement:** Makefile verify-state logging
+**Enforcement:** `make verify-state` (appends to `.gate-logs/verify-<ts>.log`) + `scripts/check_worktree_health.py` (verification history audit)
 **Test:** `test_v49_verification_history_preserved`
 
 ### V50 — Anomaly detection on verification data
@@ -4938,7 +4938,7 @@ Before fetching any URL, verify the domain is in the allowed set (github.com, py
 
 ### V91 — Tool-call verification: arguments within expected ranges
 Before executing a tool call, verify arguments are within expected bounds (file paths exist, numbers in range).
-**Enforcement:** plugin tool.execute.before argument validation
+**Enforcement:** `enforce-make.ts` tool.execute.before (validates bash commands) + `enforce-deletion-gate.ts` tool.execute.before (validates file paths exist) + `enforce-tdd.ts` tool.execute.before (validates test file exists)
 **Test:** `test_v91_tool_call_verification_arguments_in_range`
 
 ### V92 — Post-merge verification: gate green after merge, not just before
@@ -4958,7 +4958,7 @@ After `make release-cut`, ALL 12 artifact categories must be confirmed present, 
 
 ### V95 — Verification failure escalation: 3 consecutive fails = human alert
 If gate/CI/release verification fails 3 consecutive times, escalate to human (human-todo) — don't retry indefinitely.
-**Enforcement:** AGENTS.md Human Todo System + `config/remediation.yml`
+**Enforcement:** `scripts/check_stale_tasks.py` + `make check-stale-tasks` (3+ consecutive failures → `POST /api/human-todos` escalation) + AGENTS.md "Don't Block Projects on Stalled Tasks"
 **Test:** `test_v95_verification_failure_escalation_human_alert`
 
 ### V96 — Verification records are immutable
@@ -4968,7 +4968,7 @@ Once a verification result is written (`.gate-status`, CI run, release metadata)
 
 ### V97 — Verification audit trail: every verification has a record
 Every `make verify-state`, `make gate`, `make ci-verdict` invocation MUST produce a log entry with timestamp + result.
-**Enforcement:** Makefile verification logging + `.gate-logs/`
+**Enforcement:** `make verify-state` (writes `.gate-logs/verify-<ts>.log`) + `make gate-background` (writes `.gate-logs/gate-<ts>.log`) + `make ci-verdict-safe` (writes `/tmp/gludd-ci-check-state.json`)
 **Test:** `test_v97_verification_audit_trail_every_record`
 
 ### V98 — Verification reporting: red/yellow/green with specifics
@@ -6221,7 +6221,7 @@ A directive like "fix X FIRST" must be completed (tested, committed, verified) b
 
 ### Y37 — Multi-step user request is tracked atomically
 When the user requests "A, B, and C," all three are added to the task ledger; completing A and B but not C is not done.
-**Enforcement:** `enforce-stop.ts` `hasRealPendingWork()` + AGENTS.md `Todowrite discipline`dowrite **Test:** `test_y37_multi_step_user_request_tracked_atomically`
+**Enforcement:** `enforce-stop.ts` hasRealPendingWork() + AGENTS.md "Todowrite discipline (mandatory for ≥3-ask sessions)" + `enforce-session-start.ts` task-ledger dispatch-count check
 **Test:** `test_y37_multi_step_user_request_tracked_atomically`
 
 ### Y38 — User priority is AND, not OR
@@ -6256,7 +6256,7 @@ A user asking about progress is requesting a status update — the response must
 
 ### Y44 — Objective nesting: sub-objective done ≠ parent done
 Completing "write tests for X" does not complete "ship feature X"; the parent objective remains active.
-**Enforcement:** `enforce-stop.ts` parent-child check + AGENTS.md `Todowrite discipline` **Test:** `test_y44_sub_objective_done_is_not_parent_done`
+**Enforcement:** `enforce-stop.ts` hasRealPendingWork() (all unchecked TASKS.md items block stop regardless of nesting) + AGENTS.md "CRITICAL: Task Self-Tracking"
 **Test:** `test_y44_sub_objective_done_is_not_parent_done`
 
 ### Y45 — Objective staleness does not license stop
@@ -6275,7 +6275,7 @@ A text-only response is permitted ONLY when ALL of {TASKS.md unchecked=0, ratche
 
 ### Y47 — Empty todowrite is not evidence of exhaustion
 An empty `todowrite` list while TASKS.md has unchecked items does not satisfy the stop gate; `hasRealPendingWork()` checks all sources.
-**Enforcement:** `enforce-stop.ts` `hasRealPendingWork()` + AGENTS.md `Pre-Response Stop Audit` sole source **Test:** `test_y47_empty_todowrite_is_not_exhaustion`
+**Enforcement:** `enforce-stop.ts` hasRealPendingWork() (checks TASKS.md + ratchet + gate + CI, not todowrite) + AGENTS.md "CRITICAL: Pre-Response Stop Audit"
 **Test:** `test_y47_empty_todowrite_is_not_exhaustion`
 
 ### Y48 — Ratchet entries block stop
@@ -6552,7 +6552,8 @@ A tool-call message that takes no user-visible action (e.g., a single read with 
 
 ### Y100 — Only stop when user says "done"
 The terminal condition of the agent's work loop is: user explicit stop signal received AND all stop-gate conditions satisfied, OR user explicit stop signal received (override). No other exit path.
-**Enforcement:** AGENTS.md ````enforce-stop.ts```` `USER_STOP_PHRASES` bypass + `````enforce-make.ts````` + `agent_watchdog.py` — three-layer terminal-gate **Test:** `test_y100_only_stop_when_user_says_done` --- ## Coverage Matrix | Group | Specs | Plugins | Makefile Guards | AGENTS.md Sections | |-------|-------|---------|-----------------|--------------------| | P — Push Discipline | P01-P30 | ``enforce-batch-push.ts``, ``enforce-no-wait.ts``, ````enforce-make.ts```` | _push-rate-guard, ci-busy-check, deploy-and-forget | Don't Push Every Commit, CI-Poll Subagents | | B — Branch Discipline | B01-B25 | ````enforce-objective.ts```` (partial), [`enforce-branch-discipline.ts` planned] | check-duplicate-targets, release-branch-new, release-promote | Branch discipline, Single-Source Feature Development | | O — Objective Tracking | O01-O30 | ````enforce-objective.ts```` | — | PRIMARY OBJECTIVE, Session Start Protocol | | T — Test Integrity | T01-T30 | ```enforce-tdd.ts```, ```enforce-no-suppressions.ts``` | _test-disabled-guard, collect-check, gate | TDD Policy, No Lint-Suppression Comments | | D — Dispatch Floor | D01-D30 | `enforce-multitask.ts`, `enforce-floor.ts`, `enforce-delegate.ts`, ```enforce-clean-tree.ts``` | agent-worktree | Dispatch Floor, Pipeline Orchestration, Steady-state Dispatch | | S — Anti-Stop | S01-S25 | ```enforce-stop.ts```, ``enforce-verified-claims.ts`` | — | Premature-Stop Audit, Task Completion, Q&A Response, Nothing-Dropped | | E — Anti-Essay | E01-E20 | ```enforce-stop.ts``` (partial), [`enforce-anti-essay.ts` planned] | — | Anti-Essay (new), Never Block on Questions | | M — Merge Safety | M01-M20 | — | git-merge, gated-merge, agent-merge, feature-done | Merge Safety, Agent-Worktree | | G — Gate Discipline | G01-G20 | ````enforce-make.ts```` | _gate-fresh-check, gate-background, gate-status | Gate Discipline, Background Gate, Completion = Green Gate | | R — Release Discipline | R01-R20 | — | release-cut, require-ci-green, verify-release-completeness | Release is an Artifact, Release Pipeline, Release Branch Lifecycle | | W — Worktree Discipline | W01-W30 | — | agent-worktree, agent-merge, agent-cleanup, agent-worktree-list | Worktree-per-subagent, Branch-landing integrity, Disk Discipline | | F — CI Discipline | F01-F30 | ``enforce-no-wait.ts``, ``enforce-batch-push.ts`` | _push-rate-guard, deploy-and-forget, ci-verdict-safe | CI-Poll Subagents, Anti-wait rule, Verify remote after push | | C — Commit Discipline | C01-C30 | ```enforce-no-suppressions.ts```, ```enforce-clean-tree.ts```, ```enforce-tdd.ts``` | _gate-fresh-check, collect-check, secrets-scan | No-Commit-Bypass, Atomic commits, Commit-After-Green | | Q — Quality Gate | Q01-Q30 | ````enforce-make.ts```` | gate, gate-background, gate-lite, gate-audit, check-duplicate-targets, check-node-v26-compat | Gate Discipline, Completion = Green Gate | | X — Subagent Discipline | X01-X30 | `enforce-deadline.ts`, ```enforce-clean-tree.ts``` | task-watchdog | Fix-Don't-Check, Subagent quality, Refill-on-completion | | A — Audit Discipline | A01-A30 | ``enforce-verified-claims.ts`` | verify-state, gate-status | Self-Audit Policy, Done Claims, Verification Evidence | | N — Naming/Code | N01-N30 | ```enforce-no-suppressions.ts```, ```enforce-tdd.ts``` | check-node-v26-compat, check-duplicate-targets | No Lint-Suppression, Tight types, Node v26 compat | | K — Knowledge/Context | K01-K30 | ````enforce-objective.ts````, ```enforce-stop.ts``` | git-index | Session Persistence, Task Self-Tracking, BUGS.md incidents | | U — User Intent | U01-U30 | ````enforce-objective.ts````, `enforce-enhancement-ratio.ts`, ````enforce-make.ts```` | — | PRIMARY OBJECTIVE, Priority Stacking, User Intent | | Z — Zero-Failure | Z01-Z30 | (all plugins) | gate, crash-recovery | Completion Policy, Guardrail integrity, Zero-Failure | --- ## Audit Log | Date | Change | Author | |------|--------|--------| | 2026-07-19 | Initial 200 specs (P-R) created | Agent | | 2026-07-19 | Expanded to 500 specs (added W, F, C, Q, X, A, N, K, U, Z groups) | Agent | ## Expansion: Push Discipline (P31–P120) ## Expansion: Push Discipline (P31–P120)
+**Enforcement:** `enforce-stop.ts` USER_STOP_PHRASES bypass + `enforce-make.ts` session.idle hook + `agent_watchdog.py` idle-detection CONTINUE directive + AGENTS.md "CRITICAL: Task Completion Policy"
+**Test:** `test_y100_only_stop_when_user_says_done` --- ## Coverage Matrix | Group | Specs | Plugins | Makefile Guards | AGENTS.md Sections | |-------|-------|---------|-----------------|--------------------| | P — Push Discipline | P01-P30 | ``enforce-batch-push.ts``, ``enforce-no-wait.ts``, ````enforce-make.ts```` | _push-rate-guard, ci-busy-check, deploy-and-forget | Don't Push Every Commit, CI-Poll Subagents | | B — Branch Discipline | B01-B25 | ````enforce-objective.ts```` (partial), [`enforce-branch-discipline.ts` planned] | check-duplicate-targets, release-branch-new, release-promote | Branch discipline, Single-Source Feature Development | | O — Objective Tracking | O01-O30 | ````enforce-objective.ts```` | — | PRIMARY OBJECTIVE, Session Start Protocol | | T — Test Integrity | T01-T30 | ```enforce-tdd.ts```, ```enforce-no-suppressions.ts``` | _test-disabled-guard, collect-check, gate | TDD Policy, No Lint-Suppression Comments | | D — Dispatch Floor | D01-D30 | `enforce-multitask.ts`, `enforce-floor.ts`, `enforce-delegate.ts`, ```enforce-clean-tree.ts``` | agent-worktree | Dispatch Floor, Pipeline Orchestration, Steady-state Dispatch | | S — Anti-Stop | S01-S25 | ```enforce-stop.ts```, ``enforce-verified-claims.ts`` | — | Premature-Stop Audit, Task Completion, Q&A Response, Nothing-Dropped | | E — Anti-Essay | E01-E20 | ```enforce-stop.ts``` (partial), [`enforce-anti-essay.ts` planned] | — | Anti-Essay (new), Never Block on Questions | | M — Merge Safety | M01-M20 | — | git-merge, gated-merge, agent-merge, feature-done | Merge Safety, Agent-Worktree | | G — Gate Discipline | G01-G20 | ````enforce-make.ts```` | _gate-fresh-check, gate-background, gate-status | Gate Discipline, Background Gate, Completion = Green Gate | | R — Release Discipline | R01-R20 | — | release-cut, require-ci-green, verify-release-completeness | Release is an Artifact, Release Pipeline, Release Branch Lifecycle | | W — Worktree Discipline | W01-W30 | — | agent-worktree, agent-merge, agent-cleanup, agent-worktree-list | Worktree-per-subagent, Branch-landing integrity, Disk Discipline | | F — CI Discipline | F01-F30 | ``enforce-no-wait.ts``, ``enforce-batch-push.ts`` | _push-rate-guard, deploy-and-forget, ci-verdict-safe | CI-Poll Subagents, Anti-wait rule, Verify remote after push | | C — Commit Discipline | C01-C30 | ```enforce-no-suppressions.ts```, ```enforce-clean-tree.ts```, ```enforce-tdd.ts``` | _gate-fresh-check, collect-check, secrets-scan | No-Commit-Bypass, Atomic commits, Commit-After-Green | | Q — Quality Gate | Q01-Q30 | ````enforce-make.ts```` | gate, gate-background, gate-lite, gate-audit, check-duplicate-targets, check-node-v26-compat | Gate Discipline, Completion = Green Gate | | X — Subagent Discipline | X01-X30 | `enforce-deadline.ts`, ```enforce-clean-tree.ts``` | task-watchdog | Fix-Don't-Check, Subagent quality, Refill-on-completion | | A — Audit Discipline | A01-A30 | ``enforce-verified-claims.ts`` | verify-state, gate-status | Self-Audit Policy, Done Claims, Verification Evidence | | N — Naming/Code | N01-N30 | ```enforce-no-suppressions.ts```, ```enforce-tdd.ts``` | check-node-v26-compat, check-duplicate-targets | No Lint-Suppression, Tight types, Node v26 compat | | K — Knowledge/Context | K01-K30 | ````enforce-objective.ts````, ```enforce-stop.ts``` | git-index | Session Persistence, Task Self-Tracking, BUGS.md incidents | | U — User Intent | U01-U30 | ````enforce-objective.ts````, `enforce-enhancement-ratio.ts`, ````enforce-make.ts```` | — | PRIMARY OBJECTIVE, Priority Stacking, User Intent | | Z — Zero-Failure | Z01-Z30 | (all plugins) | gate, crash-recovery | Completion Policy, Guardrail integrity, Zero-Failure | --- ## Audit Log | Date | Change | Author | |------|--------|--------| | 2026-07-19 | Initial 200 specs (P-R) created | Agent | | 2026-07-19 | Expanded to 500 specs (added W, F, C, Q, X, A, N, K, U, Z groups) | Agent | ## Expansion: Push Discipline (P31–P120) ## Expansion: Push Discipline (P31–P120)
 **Test:** `test_y100_only_stop_when_user_says_done`
 
 ---
@@ -15867,7 +15868,7 @@ Intent priority: CI poll: never dispatch poll-only subagent. This invariant MUST
 
 ### I71 — Intent priority: wait: never sleep on main thread with pending work
 Intent priority: wait: never sleep on main thread with pending work. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `tests/unit/test_human_todo.py` structural assertion gate
+**Enforcement:** `enforce-no-wait.ts` (denies `make gate-tail` + sleep chains on main thread) + AGENTS.md "CRITICAL: Background Operations NEVER Block Dispatch"
 **Test:** `test_i71_intent_priority_71`
 
 ### I72 — Intent priority: ask: never block on user question, default to action
@@ -16446,7 +16447,7 @@ The agent MUST auto-create fix objectives from open BUGS.md entries. This invari
 
 ### O116 — The agent MUST lock an objective while it is being worked on by another agent.
 The agent MUST lock an objective while it is being worked on by another agent. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** Makefile `make release-promote` fail-closed guard
+**Enforcement:** `enforce-objective.ts` (BLOCKING; denies concurrent agents editing same objective) + `scripts/check_subagent_file_dedup.py` (prevents two agents editing same file within 90s)
 **Test:** `test_o116_115`
 
 ### O117 — The agent MUST estimate tool-call cost before starting each objective.
@@ -19712,7 +19713,7 @@ The agent MUST guarantee that terraform state is initialized. This invariant MUS
 
 ### Z128 — The agent MUST guarantee that the watchdog daemon is running.
 The agent MUST guarantee that the watchdog daemon is running. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** Makefile `make release-promote` fail-closed guard
+**Enforcement:** `make watchdog-auto` + `agent_watchdog.py` (10s polling daemon) + AGENTS.md "Session Start Protocol (step 0: START WATCHDOG)"
 **Test:** `test_z128_127`
 
 ### Z129 — The agent MUST guarantee that no orphaned background processes exist.

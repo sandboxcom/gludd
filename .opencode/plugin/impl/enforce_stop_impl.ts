@@ -486,6 +486,7 @@ interface PendingWorkSignals {
   ciNeverRunOnHead: boolean
   uncommittedChanges: boolean
   tasksMdUnverified: boolean
+  ratchetHasEntries: boolean
 }
 
 // Fixable push-block reasons — these indicate real pending work (not
@@ -820,6 +821,7 @@ function hasRealPendingWork(): WorkState {
     tasksMdUnchecked, bugsOpen, repoPending, multitaskingBacklogOpen, underFloor,
     coverageIncomplete, fullE2eIncomplete,
     pushBlocked, gateLiteTestFailed, ciNeverRunOnHead, uncommittedChanges, tasksMdUnverified,
+    ratchetHasEntries: ratchetEntries > 0,
   }
   const hasPendingWork = computeHealthScore(signals)
   const hasLocalWork = hasPendingWork
