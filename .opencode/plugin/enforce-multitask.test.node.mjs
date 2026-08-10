@@ -36,6 +36,7 @@ const EXTRA_DIRS = []
 const REAL_STATE_FILE = '/tmp/gludd-multitask-state.json'
 // The path the plugin SHOULD honor for isolation (asserted in T10).
 const ENV_STATE_FILE = '/tmp/gludd-test-multitask-state.json'
+const ENV_DISPATCH_COUNT_FILE = '/tmp/gludd-test-multitask-dispatch-count.json'
 
 // The factory's tool.execute.before delegates through loadHotModule(): if a
 // hot module exists it would shadow the code under test. Park it.
@@ -212,6 +213,8 @@ function cleanup() {
   try { fs.rmSync(OUTFILE_WIN, { force: true }) } catch {}
   try { fs.rmSync(ENV_STATE_FILE, { force: true }) } catch {}
   try { fs.rmSync(REAL_STATE_FILE, { force: true }) } catch {}
+  try { fs.rmSync(ENV_DISPATCH_COUNT_FILE, { force: true }) } catch {}
+  try { fs.rmSync('/tmp/gludd-test-multitask-dispatch-count.json', { force: true }) } catch {}
   try { fs.rmSync('/tmp/gludd-test-multitask-alive.json', { force: true }) } catch {}
   try { fs.rmSync(TASKS_DIR, { recursive: true, force: true }) } catch {}
   for (const d of EXTRA_DIRS) {
@@ -283,6 +286,27 @@ describe('enforce-multitask', { concurrency: 1 }, () => {
     it('T9: pending-work gate tested via behavior (deny on pending work)', async () => {
       const instance = await mod.default({})
       assert.strictEqual(typeof instance['tool.execute.before'], 'function')
+    })
+
+    // TDD-FAIL: the dispatch-count file is hardcoded to
+    // /tmp/gludd-multitask-dispatch-count.json, so tests share mutable
+    // state with any LIVE opencode session. GLUDD_MULTITASK_DISPATCH_COUNT_FILE
+    // must be honored for test isolation.
+    it('T10b: dispatch count file honors GLUDD_MULTITASK_DISPATCH_COUNT_FILE env override (behavioral)', async () => {
+      const { hook, tc } = await freshPlugin()
+      // Dispatch 1 agent — the dispatch count file should be written to the
+      // isolated path, not the hardcoded default.
+      await dispatchN(hook, 1)
+      // After dispatch, the isolated file must exist (dispatch increments it)
+      assert.ok(
+        fs.existsSync(ENV_DISPATCH_COUNT_FILE),
+        'isolated dispatch-count file must exist after a dispatch',
+      )
+      // The live-session default path must NOT have been touched
+      assert.ok(
+        !fs.existsSync('/tmp/gludd-multitask-dispatch-count.json'),
+        'live-session dispatch-count file must NOT be created by tests',
+      )
     })
 
     // TDD-FAIL: the state path is hardcoded to /tmp/gludd-multitask-state.json,

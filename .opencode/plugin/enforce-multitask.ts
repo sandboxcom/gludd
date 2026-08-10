@@ -37,7 +37,7 @@ import {
   readDispatchOutcomes,
   writeDispatchOutcomes,
 } from "../lib/shared.ts"
-const MULTITASK_DISPATCH_COUNT_FILE = "/tmp/gludd-multitask-dispatch-count.json"
+const MULTITASK_DISPATCH_COUNT_FILE = process.env.GLUDD_MULTITASK_DISPATCH_COUNT_FILE || "/tmp/gludd-multitask-dispatch-count.json"
 
 interface DispatchCountFile {
   count: number
