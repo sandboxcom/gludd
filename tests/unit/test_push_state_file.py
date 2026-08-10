@@ -118,7 +118,7 @@ class TestPushStateFileWrittenOnBlock:
         assert block is not None
         assert block["reason"] == "ci-restart-cap"
         assert block["branch"] == "development"
-        assert block["commit_sha"] == "abc123def456"
+        assert block["commit_sha"] == "test-commit-sha-not-real"
         assert block["current_count"] == 3
         assert block["max_allowed"] == 3
         assert "BLOCKED" in block["message"]
