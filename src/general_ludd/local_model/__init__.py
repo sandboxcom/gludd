@@ -90,7 +90,9 @@ def get_model(model_id: str) -> LocalModelConfig | None:
         return _MODEL_BY_NAME[model_id]
     key = _identifier_to_name(model_id)
     if key in globals():
-        return globals()[key]
+        val = globals().get(key)
+        if isinstance(val, LocalModelConfig):
+            return val
     for cfg in _LOCAL_MODELS:
         if model_id == cfg.ollama_tag:
             return cfg
