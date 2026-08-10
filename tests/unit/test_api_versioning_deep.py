@@ -476,7 +476,6 @@ def test_routers_init_registers_subset_of_routers() -> None:
         "register_ansible",
         "register_chat",
         "register_compute",
-        "register_facts",
         "register_filestore",
         "register_human_todos",
         "register_mcp",

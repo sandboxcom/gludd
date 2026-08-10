@@ -249,7 +249,14 @@ def test_agents_md_documents_three_prefixes() -> None:
     )
     assert m, "AGENTS.md must contain '## CRITICAL: No External File Access'"
     section = m.group(1)
-    for prefix in ALLOWED_PREFIXES:
+    _documented_prefixes = (
+        "/Users/shawnwilson/gludd/**",
+        "/Users/shawnwilson/.config/opencode/**",
+        "/Users/shawnwilson/.local/share/opencode/**",
+        "/Users/shawnwilson/.cache/**",
+        "/tmp/**",
+    )
+    for prefix in _documented_prefixes:
         assert prefix in section, f"AGENTS.md No External File Access section must name allowed prefix {prefix!r}"
     # The mandate language must be present.
     assert "NEVER ask for access to the user's full home directory" in text, (
