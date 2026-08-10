@@ -1688,7 +1688,7 @@ A `.gate-status` file older than the last source edit MUST NOT be used as eviden
 
 ### T25 — Background gate must report phases
 When `make gate-background` runs, it MUST emit per-phase markers to the log.
-**Enforcement:** Makefile `gate-background` target + `gate-status-check` phase markers (`=== GATE PHASE:`) 
+**Enforcement:** Makefile `gate-background` target + `gate-status-check` phase markers (`=== GATE PHASE:`)
 **Test:** `test_t25_background_gate_phase_markers`
 
 ### T26 — Gate failure must surface log
