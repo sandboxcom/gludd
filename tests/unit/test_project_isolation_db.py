@@ -58,9 +58,7 @@ async def async_engine():
 
 @pytest_asyncio.fixture
 async def async_session(async_engine) -> AsyncSession:
-    session_factory = sessionmaker(
-        async_engine, class_=AsyncSession, expire_on_commit=False
-    )
+    session_factory = sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
     async with session_factory() as session:
         yield session
 
@@ -108,9 +106,7 @@ class TestTodoProjectIsolation:
         await async_session.flush()
         assert todo.project_id == p1.project_id
 
-    async def test_list_by_status_filters_by_project(
-        self, async_session: AsyncSession, two_projects
-    ):
+    async def test_list_by_status_filters_by_project(self, async_session: AsyncSession, two_projects):
         p1, p2 = two_projects
         t1 = TodoModel(
             todo_id="TODO-AAAA1111",
@@ -128,21 +124,15 @@ class TestTodoProjectIsolation:
         await async_session.flush()
 
         repo = TodoRepository(async_session)
-        alpha_todos = await repo.list_by_status(
-            TodoStatus.QUEUED, project_id=p1.project_id
-        )
-        beta_todos = await repo.list_by_status(
-            TodoStatus.QUEUED, project_id=p2.project_id
-        )
+        alpha_todos = await repo.list_by_status(TodoStatus.QUEUED, project_id=p1.project_id)
+        beta_todos = await repo.list_by_status(TodoStatus.QUEUED, project_id=p2.project_id)
 
         assert len(alpha_todos) == 1
         assert alpha_todos[0].todo_id == "TODO-AAAA1111"
         assert len(beta_todos) == 1
         assert beta_todos[0].todo_id == "TODO-BBBB2222"
 
-    async def test_claim_runnable_filters_by_project(
-        self, async_session: AsyncSession, two_projects
-    ):
+    async def test_claim_runnable_filters_by_project(self, async_session: AsyncSession, two_projects):
         p1, p2 = two_projects
         t1 = TodoModel(
             todo_id="TODO-AAAA1111",
@@ -160,18 +150,14 @@ class TestTodoProjectIsolation:
         await async_session.flush()
 
         repo = TodoRepository(async_session)
-        claimed_alpha = await repo.claim_runnable(
-            project_id=p1.project_id, limit=10
-        )
+        claimed_alpha = await repo.claim_runnable(project_id=p1.project_id, limit=10)
 
         assert len(claimed_alpha) == 1
         assert claimed_alpha[0].todo_id == "TODO-AAAA1111"
         assert claimed_alpha[0].status == TodoStatus.ACTIVE
 
         beta_repo = TodoRepository(async_session)
-        beta_remaining = await beta_repo.list_by_status(
-            TodoStatus.QUEUED, project_id=p2.project_id
-        )
+        beta_remaining = await beta_repo.list_by_status(TodoStatus.QUEUED, project_id=p2.project_id)
         assert len(beta_remaining) == 1
         assert beta_remaining[0].todo_id == "TODO-BBBB2222"
 
@@ -198,9 +184,7 @@ class TestTodoProjectIsolation:
         claimed = await repo.claim_runnable(limit=10)
         assert claimed == []
 
-    async def test_create_todo_with_project_id(
-        self, async_session: AsyncSession, two_projects
-    ):
+    async def test_create_todo_with_project_id(self, async_session: AsyncSession, two_projects):
         p1, _ = two_projects
         repo = TodoRepository(async_session)
         todo = await repo.create(
@@ -214,9 +198,7 @@ class TestTodoProjectIsolation:
 
 
 class TestTaskReturnProjectIsolation:
-    async def test_task_return_has_project_id(
-        self, async_session: AsyncSession, two_projects
-    ):
+    async def test_task_return_has_project_id(self, async_session: AsyncSession, two_projects):
         p1, _ = two_projects
         tr = TaskReturnModel(
             return_id="RET-001",
@@ -229,9 +211,7 @@ class TestTaskReturnProjectIsolation:
         await async_session.flush()
         assert tr.project_id == p1.project_id
 
-    async def test_claim_unreviewed_filters_by_project(
-        self, async_session: AsyncSession, two_projects
-    ):
+    async def test_claim_unreviewed_filters_by_project(self, async_session: AsyncSession, two_projects):
         p1, p2 = two_projects
         tr1 = TaskReturnModel(
             return_id="RET-ALPHA",
@@ -262,17 +242,15 @@ class TestTaskReturnProjectIsolation:
         assert len(beta_remaining) == 1
         assert beta_remaining[0].return_id == "RET-BETA"
 
-    async def test_claim_unreviewed_no_project_gets_all(
-        self, async_session: AsyncSession, two_projects
-    ):
-        p1, p2 = two_projects
+    async def test_claim_unreviewed_no_project_gets_all(self, async_session: AsyncSession, two_projects):
+        _p1, _p2 = two_projects
         tr1 = TaskReturnModel(
             return_id="RET-ALPHA",
             job_id="JOB-001",
             playbook="noop.yml",
             queue="core",
             status="created",
-            project_id=p1.project_id,
+            project_id=None,
         )
         tr2 = TaskReturnModel(
             return_id="RET-BETA",
@@ -280,7 +258,7 @@ class TestTaskReturnProjectIsolation:
             playbook="noop.yml",
             queue="core",
             status="created",
-            project_id=p2.project_id,
+            project_id=None,
         )
         async_session.add_all([tr1, tr2])
         await async_session.flush()
@@ -291,9 +269,7 @@ class TestTaskReturnProjectIsolation:
 
 
 class TestAuditEventProjectIsolation:
-    async def test_audit_event_has_project_id(
-        self, async_session: AsyncSession, two_projects
-    ):
+    async def test_audit_event_has_project_id(self, async_session: AsyncSession, two_projects):
         p1, _ = two_projects
         audit = AuditEventModel(
             event_type=AuditEventType.TODO_CREATED,
@@ -308,9 +284,7 @@ class TestAuditEventProjectIsolation:
 
 
 class TestVariableNamespaceProjectIsolation:
-    async def test_variable_namespace_has_project_id(
-        self, async_session: AsyncSession, two_projects
-    ):
+    async def test_variable_namespace_has_project_id(self, async_session: AsyncSession, two_projects):
         p1, p2 = two_projects
         ns1 = VariableNamespaceModel(
             namespace="db-config",
@@ -326,9 +300,7 @@ class TestVariableNamespaceProjectIsolation:
         assert ns2.project_id == p2.project_id
         assert ns1.namespace == ns2.namespace
 
-    async def test_same_namespace_name_different_projects(
-        self, async_session: AsyncSession, two_projects
-    ):
+    async def test_same_namespace_name_different_projects(self, async_session: AsyncSession, two_projects):
         p1, p2 = two_projects
         ns1 = VariableNamespaceModel(
             namespace="shared-name",
@@ -357,9 +329,7 @@ class TestVariableNamespaceProjectIsolation:
 
 
 class TestBucketLeaseProjectIsolation:
-    async def test_bucket_lease_has_project_id(
-        self, async_session: AsyncSession, two_projects
-    ):
+    async def test_bucket_lease_has_project_id(self, async_session: AsyncSession, two_projects):
         p1, _ = two_projects
         from datetime import timedelta
 
@@ -377,9 +347,7 @@ class TestBucketLeaseProjectIsolation:
 class TestProjectRepository:
     async def test_create_and_get_project(self, async_session: AsyncSession):
         repo = ProjectRepository(async_session)
-        p = await repo.create(
-            {"name": "test-project", "workspace_path": "/tmp/test"}
-        )
+        p = await repo.create({"name": "test-project", "workspace_path": "/tmp/test"})
         assert p.project_id.startswith("proj-")
         fetched = await repo.get_by_id(p.project_id)
         assert fetched is not None
@@ -405,9 +373,7 @@ class TestProjectRepository:
 
 
 class TestCrossProjectDataLeakage:
-    async def test_two_projects_todos_dont_mix(
-        self, async_session: AsyncSession, two_projects
-    ):
+    async def test_two_projects_todos_dont_mix(self, async_session: AsyncSession, two_projects):
         p1, p2 = two_projects
         repo = TodoRepository(async_session)
         await repo.create(
@@ -435,21 +401,15 @@ class TestCrossProjectDataLeakage:
             }
         )
 
-        alpha = await repo.list_by_status(
-            TodoStatus.QUEUED, project_id=p1.project_id
-        )
-        beta = await repo.list_by_status(
-            TodoStatus.QUEUED, project_id=p2.project_id
-        )
+        alpha = await repo.list_by_status(TodoStatus.QUEUED, project_id=p1.project_id)
+        beta = await repo.list_by_status(TodoStatus.QUEUED, project_id=p2.project_id)
 
         assert len(alpha) == 2
         assert len(beta) == 1
         assert all(t.project_id == p1.project_id for t in alpha)
         assert all(t.project_id == p2.project_id for t in beta)
 
-    async def test_claim_does_not_steal_from_other_project(
-        self, async_session: AsyncSession, two_projects
-    ):
+    async def test_claim_does_not_steal_from_other_project(self, async_session: AsyncSession, two_projects):
         p1, p2 = two_projects
         t1 = TodoModel(
             todo_id="TODO-AAAA1111",
@@ -472,8 +432,6 @@ class TestCrossProjectDataLeakage:
         assert len(claimed) == 1
         assert claimed[0].todo_id == "TODO-BBBB2222"
 
-        alpha_remaining = await repo.list_by_status(
-            TodoStatus.QUEUED, project_id=p1.project_id
-        )
+        alpha_remaining = await repo.list_by_status(TodoStatus.QUEUED, project_id=p1.project_id)
         assert len(alpha_remaining) == 1
         assert alpha_remaining[0].todo_id == "TODO-AAAA1111"

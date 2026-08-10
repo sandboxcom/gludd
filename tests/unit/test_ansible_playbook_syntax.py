@@ -20,6 +20,8 @@ from general_ludd.ansible.manifest import (
 from general_ludd.ansible.templating import AnsibleTemplater, TemplateRenderError
 from general_ludd.ansible.unsafe import has_wrap_var, wrap_extravars, wrap_unsafe
 
+pytestmark = pytest.mark.xdist_group("ansible-playbook-syntax")
+
 
 class TestFQCNPattern:
     def test_fqcn_pattern_matches_valid(self):
@@ -68,14 +70,16 @@ class TestModuleExtraction:
 class TestManifestGeneration:
     def test_generate_manifest_parses_playbook(self, tmp_path: Path):
         playbook = tmp_path / "test.yml"
-        playbook.write_text(yaml.dump([
-            {
-                "hosts": "all",
-                "tasks": [
-                    {"ansible.builtin.shell": "echo hello", "name": "greet", "tags": ["setup"]}
+        playbook.write_text(
+            yaml.dump(
+                [
+                    {
+                        "hosts": "all",
+                        "tasks": [{"ansible.builtin.shell": "echo hello", "name": "greet", "tags": ["setup"]}],
+                    }
                 ]
-            }
-        ]))
+            )
+        )
         manifest = generate_manifest(str(playbook))
         assert "ansible.builtin.shell" in manifest.modules
         assert "setup" in manifest.tags
@@ -89,23 +93,18 @@ class TestManifestGeneration:
 
     def test_generate_manifest_extracts_collections(self, tmp_path: Path):
         playbook = tmp_path / "with_collections.yml"
-        playbook.write_text(yaml.dump([
-            {
-                "hosts": "all",
-                "collections": ["community.general", "ansible.posix"],
-                "tasks": []
-            }
-        ]))
+        playbook.write_text(
+            yaml.dump([{"hosts": "all", "collections": ["community.general", "ansible.posix"], "tasks": []}])
+        )
         manifest = generate_manifest(str(playbook))
         assert "community.general" in manifest.collections
         assert "ansible.posix" in manifest.collections
 
     def test_generate_manifest_ignores_non_dict_plays(self, tmp_path: Path):
         playbook = tmp_path / "bad.yml"
-        playbook.write_text(yaml.dump([
-            "not-a-dict",
-            {"hosts": "all", "tasks": [{"ansible.builtin.debug": {"msg": "hi"}}]}
-        ]))
+        playbook.write_text(
+            yaml.dump(["not-a-dict", {"hosts": "all", "tasks": [{"ansible.builtin.debug": {"msg": "hi"}}]}])
+        )
         manifest = generate_manifest(str(playbook))
         assert "ansible.builtin.debug" in manifest.modules
 

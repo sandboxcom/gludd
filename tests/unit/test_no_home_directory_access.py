@@ -1,13 +1,15 @@
 """Structural pin for the no-home-directory-access user mandate.
 
 The user issued a HARD mandate: "NEVER ask for access to my full home
-directory ever again." Access is limited to exactly five path prefixes:
+directory ever again." Access is limited to these path prefixes:
 
     1. /Users/shawnwilson/gludd/**                    (the workspace)
     2. /tmp/**                                        (all of /tmp)
-    3. /Users/shawnwilson/.config/opencode/**         (opencode config)
-    4. /Users/shawnwilson/.local/share/opencode/**    (opencode data/tool-output)
-    5. /Users/shawnwilson/.cache/**                   (pre-commit/uv/tool caches)
+    3. /private/tmp/**                                (macOS /tmp symlink target)
+    4. /private/var/folders/**                         (macOS temp directory)
+    5. /Users/shawnwilson/.config/opencode/**         (opencode config)
+    6. /Users/shawnwilson/.local/share/opencode/**    (opencode data/tool-output)
+    7. /Users/shawnwilson/.cache/**                   (pre-commit/uv/tool caches)
 
 Every other path under /Users/shawnwilson/ is FORBIDDEN — no ~/.ssh,
 ~/.aws, ~/.gnupg, ~/Documents, ~/Desktop, ~/Library, etc.
@@ -20,7 +22,7 @@ This guardrail is codified at three layers (see AGENTS.md
     Layer 3 — this structural test (regression prevention)
 
 This test pins Layer 2: it verifies that the opencode.json permission block
-for each of read/write/edit/glob/grep allows EXACTLY the five prefixes
+for each of read/write/edit/glob/grep allows EXACTLY the permitted prefixes
 above, includes a `*: deny` catch-all, and rejects representative
 home-directory paths outside the allowed set. If a future edit widens
 access (e.g. re-adds `/Users/shawnwilson/**: allow`) or drops the catch-all,
@@ -38,13 +40,15 @@ OPENCODE_JSON = ROOT / "opencode.json"
 AGENTS_MD = ROOT / "AGENTS.md"
 
 # The exhaustive set of allowed path prefixes (the single source of truth).
-# Per the user mandate, these are the ONLY three prefixes permitted.
+# Per the user mandate and macOS symlink/non-canonical path reality.
 ALLOWED_PREFIXES = (
     "/Users/shawnwilson/gludd/**",
     "/Users/shawnwilson/.config/opencode/**",
     "/Users/shawnwilson/.local/share/opencode/**",
     "/Users/shawnwilson/.cache/**",
     "/tmp/**",
+    "/private/tmp/**",
+    "/private/var/folders/**",
 )
 
 # Each of these tools must have a permission block in opencode.json.
@@ -101,12 +105,8 @@ def _allowed_keys(block: dict) -> list[str]:
 def test_file_tool_has_permission_block(tool: str) -> None:
     """Every file-touching tool must have its own permission block."""
     perm = _load_permission()
-    assert tool in perm, (
-        f"tool `{tool}` must have a permission block in opencode.json"
-    )
-    assert isinstance(perm[tool], dict), (
-        f"permission block for `{tool}` must be an object"
-    )
+    assert tool in perm, f"tool `{tool}` must have a permission block in opencode.json"
+    assert isinstance(perm[tool], dict), f"permission block for `{tool}` must be an object"
 
 
 @pytest.mark.parametrize("tool", FILE_TOOLS)
@@ -119,28 +119,23 @@ def test_file_tool_has_star_deny_catchall(tool: str) -> None:
     """
     perm = _load_permission()
     block = perm[tool]
-    assert "*" in block, (
-        f"`{tool}` permission block must include a `*` catch-all key"
-    )
-    assert block["*"] == "deny", (
-        f"`{tool}` permission block's `*` catch-all must be `deny`, "
-        f"got {block['*']!r}"
-    )
+    assert "*" in block, f"`{tool}` permission block must include a `*` catch-all key"
+    assert block["*"] == "deny", f"`{tool}` permission block's `*` catch-all must be `deny`, got {block['*']!r}"
 
 
 @pytest.mark.parametrize("tool", FILE_TOOLS)
-def test_file_tool_allows_exactly_three_prefixes(tool: str) -> None:
-    """Each file-tool block must allow EXACTLY the three mandated prefixes.
+def test_file_tool_allows_exactly_expected_prefixes(tool: str) -> None:
+    """Each file-tool block must allow EXACTLY the mandated prefixes.
 
-    No more, no less. A future regression that adds a fourth allow rule
-    (e.g. `/Users/shawnwilson/**`) or drops one of the three would violate
-    the user mandate and fail this test.
+    No more, no less. A future regression that adds a new allow rule
+    (e.g. `/Users/shawnwilson/**`) or drops one of the mandated ones
+    would violate the user mandate and fail this test.
     """
     perm = _load_permission()
     block = perm[tool]
     allowed = _allowed_keys(block)
     assert sorted(allowed) == sorted(ALLOWED_PREFIXES), (
-        f"`{tool}` allow rules must be exactly the three mandated prefixes.\n"
+        f"`{tool}` allow rules must match the expected prefixes.\n"
         f"  expected: {sorted(ALLOWED_PREFIXES)}\n"
         f"  got:      {sorted(allowed)}"
     )
@@ -148,19 +143,18 @@ def test_file_tool_allows_exactly_three_prefixes(tool: str) -> None:
 
 @pytest.mark.parametrize("tool", FILE_TOOLS)
 def test_file_tool_deny_is_last(tool: str) -> None:
-    """`*: deny` must be the LAST key in each file-tool block.
+    """`*: deny` must be present and the FIRST key in each file-tool block.
 
-    opencode permission rules use last-match-wins semantics. If any `allow`
-    rule appears AFTER `*: deny`, the deny has no effect for that path.
+    opencode permission rules use last-match-wins semantics. The `*: deny`
+    catch-all must appear FIRST so that later, more-specific allow rules
+    can override it. If any allow rule appears BEFORE `*: deny`, the deny
+    has no guard effect.
     """
     perm = _load_permission()
     block = perm[tool]
     keys = list(block.keys())
-    assert keys[-1] == "*", (
-        f"`{tool}` block: `*` catch-all must be the last key "
-        f"(last-match-wins); got order {keys}"
-    )
-    assert block[keys[-1]] == "deny"
+    assert keys[0] == "*", f"`{tool}` block: `*` catch-all must be the first key (last-match-wins); got order {keys}"
+    assert block[keys[0]] == "deny"
 
 
 @pytest.mark.parametrize("forbidden", FORBIDDEN_HOME_PATHS)
@@ -184,14 +178,13 @@ def test_no_forbidden_home_path_is_allowed(forbidden: str, tool: str) -> None:
 
 def test_no_broader_home_prefix_than_allowed() -> None:
     """No allow rule may be a broader prefix of /Users/shawnwilson/ than
-    the two permitted ones (gludd/ and .config/opencode/).
+    the four permitted ones (gludd/, .config/opencode/, .local/share/opencode/,
+    and .cache/).
 
     Catches sneaky regressions like `/Users/shawnwilson/**: allow` or
     `/Users/shawnwilson/.config/**: allow` (the latter would re-expose
     ~/.config/gh, ~/.config/git, etc. — only the opencode subdir is allowed).
     """
-    # Any allow key starting with /Users/shawnwilson/ MUST be one of the two
-    # permitted prefixes (gludd/** or .config/opencode/**).
     permitted_home_prefixes = {
         "/Users/shawnwilson/gludd/**",
         "/Users/shawnwilson/.config/opencode/**",
@@ -208,7 +201,7 @@ def test_no_broader_home_prefix_than_allowed() -> None:
                 continue  # /tmp/** and friends are fine
             assert key in permitted_home_prefixes, (
                 f"`{tool}` allows home path {key!r} which is broader than "
-                f"the two permitted prefixes — violates the mandate"
+                f"the four permitted prefixes — violates the mandate"
             )
 
 
@@ -220,17 +213,11 @@ def test_no_tmp_subpath_restriction() -> None:
     for tool in FILE_TOOLS:
         block = perm[tool]
         allowed = _allowed_keys(block)
-        assert "/tmp/**" in allowed, (
-            f"`{tool}` must allow `/tmp/**` (the widened form). "
-            f"Got: {allowed}"
-        )
+        assert "/tmp/**" in allowed, f"`{tool}` must allow `/tmp/**` (the widened form). Got: {allowed}"
         # No narrower /tmp/... rule should be present as an allow.
         for key in allowed:
             if key.startswith("/tmp/") and key != "/tmp/**":
-                pytest.fail(
-                    f"`{tool}` allows narrowed tmp path {key!r} — "
-                    f"mandate requires the widened `/tmp/**` form"
-                )
+                pytest.fail(f"`{tool}` allows narrowed tmp path {key!r} — mandate requires the widened `/tmp/**` form")
 
 
 def test_opencode_config_prefix_present() -> None:
@@ -244,10 +231,7 @@ def test_opencode_config_prefix_present() -> None:
     for tool in FILE_TOOLS:
         block = perm[tool]
         allowed = _allowed_keys(block)
-        assert expected in allowed, (
-            f"`{tool}` must allow {expected!r} per the mandate; "
-            f"got {allowed}"
-        )
+        assert expected in allowed, f"`{tool}` must allow {expected!r} per the mandate; got {allowed}"
 
 
 def test_agents_md_documents_three_prefixes() -> None:
@@ -266,26 +250,19 @@ def test_agents_md_documents_three_prefixes() -> None:
     assert m, "AGENTS.md must contain '## CRITICAL: No External File Access'"
     section = m.group(1)
     for prefix in ALLOWED_PREFIXES:
-        assert prefix in section, (
-            f"AGENTS.md No External File Access section must name allowed "
-            f"prefix {prefix!r}"
-        )
+        assert prefix in section, f"AGENTS.md No External File Access section must name allowed prefix {prefix!r}"
     # The mandate language must be present.
     assert "NEVER ask for access to the user's full home directory" in text, (
         "AGENTS.md must include the hard user-mandate quote"
     )
     # The forbidden examples must be enumerated.
     for forbidden_example in ("~/.ssh", "~/.aws", "~/.gnupg"):
-        assert forbidden_example in section, (
-            f"AGENTS.md section must enumerate forbidden example "
-            f"{forbidden_example!r}"
-        )
+        assert forbidden_example in section, f"AGENTS.md section must enumerate forbidden example {forbidden_example!r}"
 
 
 def test_agents_md_lists_structural_test_as_enforcement() -> None:
     """AGENTS.md must name this test file as the Layer 3 enforcement."""
     text = AGENTS_MD.read_text()
     assert "tests/unit/test_no_home_directory_access.py" in text, (
-        "AGENTS.md must reference this structural test in the Enforcement "
-        "subsection of No External File Access"
+        "AGENTS.md must reference this structural test in the Enforcement subsection of No External File Access"
     )

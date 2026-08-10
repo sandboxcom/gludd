@@ -108,4 +108,4 @@ def test_profile_missing_returns_false_with_messages():
 def test_output_leg_alone_exceeding_run_budget_rejects():
     gw = _gateway(_profile(cost_out=0.05, max_out=1000))  # 50 USD output leg > 10 budget
     msg = [{"role": "user", "content": "hi"}]
-    assert gw.check_budget("p", estimated_cost=0.0, budget_remaining=math.inf, messages=msg) is False
+    assert gw.check_budget("p", estimated_cost=0.0, budget_remaining=1_000_000.0, messages=msg) is False

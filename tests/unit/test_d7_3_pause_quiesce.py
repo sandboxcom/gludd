@@ -19,6 +19,7 @@ from general_ludd.routers.pause import register
 # Durable MAC key — restart survival
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class TestDurableMacKey:
     def test_two_stores_same_durable_key_verify(self, tmp_path):
         base_dir = str(tmp_path / "hibernate")
@@ -50,6 +51,7 @@ class TestDurableMacKey:
 
         bad_store = HibernationStore(base_dir=base_dir)  # random ephemeral key
         from general_ludd.agents.hibernation import IntegrityError
+
         with pytest.raises(IntegrityError):
             bad_store.hydrate(handle_a)
 
@@ -57,6 +59,7 @@ class TestDurableMacKey:
 # ═══════════════════════════════════════════════════════════════════════════
 # Unconditional quiesce — bypasses should_dehydrate
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 class MockDispatcher:
     def __init__(self, tasks):
@@ -70,8 +73,9 @@ class MockDispatcher:
 
 
 class MockTask:
-    def __init__(self, task_id, agent_name, project_id, description="", prompt="",
-                 parent_task_id=None, invoker_name=""):
+    def __init__(
+        self, task_id, agent_name, project_id, description="", prompt="", parent_task_id=None, invoker_name=""
+    ):
         self.task_id = task_id
         self.agent_name = agent_name
         self.project_id = project_id
@@ -102,7 +106,9 @@ class TestUnconditionalQuiesce:
 
         pc = PauseController()
         result = await pc.quiesce_project(
-            "proj-1", dispatcher=dispatcher, hibernation=controller,
+            "proj-1",
+            dispatcher=dispatcher,
+            hibernation=controller,
         )
         handles, _status, _errors = result
 
@@ -129,7 +135,9 @@ class TestUnconditionalQuiesce:
 
         pc = PauseController()
         handles, _, _ = await pc.quiesce_project(
-            "proj-1", dispatcher=dispatcher, hibernation=controller,
+            "proj-1",
+            dispatcher=dispatcher,
+            hibernation=controller,
         )
 
         restored = store.hydrate(handles[0])
@@ -147,7 +155,9 @@ class TestUnconditionalQuiesce:
 
         pc = PauseController()
         handles, _status, _errors = await pc.quiesce_project(
-            "proj-1", dispatcher=dispatcher, hibernation=controller,
+            "proj-1",
+            dispatcher=dispatcher,
+            hibernation=controller,
         )
 
         assert handles == []
@@ -158,6 +168,7 @@ class TestUnconditionalQuiesce:
 # ═══════════════════════════════════════════════════════════════════════════
 # Quiesce status and errors on PauseRecord
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 class TestQuiesceStatus:
     def test_pause_record_defaults(self):
@@ -193,7 +204,8 @@ class TestQuiesceStatus:
         store_a = PauseStore(base_dir=str(tmp_path / "pause_store"))
         pc_a = PauseController(store=store_a)
         pc_a.pause(
-            "project", "proj-1",
+            "project",
+            "proj-1",
             quiesce_status="degraded",
             quiesce_errors=["err1"],
             agent_handles=[{"task_id": "t1", "path": "/tmp/x", "checksum": "abc", "size_bytes": 100}],
@@ -219,14 +231,17 @@ class TestQuiesceStatus:
 # Router-level: rehydrate-on-resume
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 class StubDispatcher:
     """Captures dispatched tasks for assertion."""
+
     def __init__(self):
         self.dispatched: list = []
 
     async def dispatch_one(self, task):
         self.dispatched.append(task)
         from general_ludd.agents.dispatcher import AgentTaskResult
+
         return AgentTaskResult(
             task_id=task.task_id,
             agent_name=task.agent_name,
@@ -239,6 +254,29 @@ class StubDispatcher:
 
     async def quiesce_project(self, project_id):
         return []
+
+    async def resume_project(self, project_id, rehydrated_snapshots):
+        from general_ludd.agents.dispatcher import AgentTask
+        from general_ludd.agents.hibernation import AgentEnvironmentSnapshot
+
+        re_enqueued = []
+        for snap in rehydrated_snapshots:
+            if not isinstance(snap, AgentEnvironmentSnapshot):
+                continue
+            task = AgentTask(
+                task_id=snap.task_id,
+                agent_name=snap.agent_name,
+                description=snap.scratch.get("description", ""),
+                prompt=snap.scratch.get("prompt", ""),
+                parent_task_id=snap.parent_task_id,
+                invoker_name=snap.invoker_name,
+                project_id=project_id,
+                depth=snap.depth,
+                messages=list(snap.messages),
+            )
+            await self.dispatch_one(task)
+            re_enqueued.append(task)
+        return re_enqueued
 
 
 @pytest.fixture
@@ -264,6 +302,7 @@ def app_with_resume(tmp_path):
 @pytest.fixture
 def client(app_with_resume):
     from fastapi.testclient import TestClient
+
     return TestClient(app_with_resume)
 
 
@@ -327,12 +366,14 @@ class TestRehydrateOnResume:
             "project",
             "proj-bad",
             quiesce_status="clean",
-            agent_handles=[{
-                "task_id": "bad-agent",
-                "path": "/nonexistent/file.json",
-                "checksum": "deadbeef",
-                "size_bytes": 0,
-            }],
+            agent_handles=[
+                {
+                    "task_id": "bad-agent",
+                    "path": "/nonexistent/file.json",
+                    "checksum": "deadbeef",
+                    "size_bytes": 0,
+                }
+            ],
         )
 
         resp = client.post("/api/resume/project", json={"target_id": "proj-bad"})

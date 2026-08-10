@@ -70,10 +70,7 @@ def test_gate_checks_tracked_paths_before_platform_fanout() -> None:
 
     assert "_check-windows-tracked-paths" in gate_line
     assert check_match is not None
-    assert (
-        "test_tracked_paths_are_windows_checkout_compatible"
-        in check_match.group("body")
-    )
+    assert "test_tracked_paths_are_windows_checkout_compatible" in check_match.group("body")
 
 
 @pytest.fixture(scope="module")
@@ -109,18 +106,14 @@ class TestSpecPlatformCompatibility:
             # Allow the regex escapes only inside string literals that are
             # clearly NOT path-like (heuristic: no drive letter, no separator
             # following).
-            assert "\\" not in stripped, (
-                f"line {lineno}: backslash in spec (Windows-incompatible): {line!r}"
-            )
+            assert "\\" not in stripped, f"line {lineno}: backslash in spec (Windows-incompatible): {line!r}"
             # Absolute POSIX paths inside datas/hiddenimports would break the
             # relocatable build on Windows. The spec's own data entries MUST
             # be relative (e.g. 'config', 'templates').
             # Match '/foo' or '/usr/...' but NOT an inline comment that starts
             # with '#/...' (those are filtered above).
             absolute_match = re.search(r"(?<![\w/'\"])/(?:usr|etc|opt|var|home|bin|tmp)(?:/|\b)", stripped)
-            assert absolute_match is None, (
-                f"line {lineno}: absolute POSIX path in spec breaks Windows: {line!r}"
-            )
+            assert absolute_match is None, f"line {lineno}: absolute POSIX path in spec breaks Windows: {line!r}"
 
     def test_no_macos_incompatible_flags(self, spec_text: str):
         """Spec doesn't use PyInstaller flags unavailable on macOS.
@@ -169,8 +162,7 @@ class TestSpecPlatformCompatibility:
         # ansible core MUST NOT be excluded.
         for forbidden_exclude in ("'ansible'", '"ansible"', "'ansible.$'"):
             assert forbidden_exclude not in excludes_body, (
-                f"ansible core must NOT be excluded (gludd uses the executor API): "
-                f"found {forbidden_exclude!r}"
+                f"ansible core must NOT be excluded (gludd uses the executor API): found {forbidden_exclude!r}"
             )
 
         # And the spec must positively list the ansible executor modules as
@@ -192,31 +184,19 @@ class TestSpecPlatformCompatibility:
         # The spec has both a module-level `datas = [...]` and an inline
         # `datas=[...]` inside Analysis. Check the module-level one — that's
         # what _ansible_datas gets appended to.
-        module_datas_match = re.search(
-            r"^datas\s*=\s*\[(.*?)\]", spec_text, re.DOTALL | re.MULTILINE
-        )
+        module_datas_match = re.search(r"^datas\s*=\s*\[(.*?)\]", spec_text, re.DOTALL | re.MULTILINE)
         assert module_datas_match, "Spec must define a module-level datas= list"
         module_datas = module_datas_match.group(1)
 
         # Each tuple's first element is the source path. It must be relative.
         # Pattern: ('SOURCE', 'DEST')
         tuple_matches = re.findall(r"\(\s*['\"]([^'\"]+)['\"]\s*,\s*['\"]([^'\"]+)['\"]\s*\)", module_datas)
-        assert tuple_matches, (
-            "Expected at least one (source, dest) tuple in module datas= list"
-        )
+        assert tuple_matches, "Expected at least one (source, dest) tuple in module datas= list"
         for src, dest in tuple_matches:
-            assert not src.startswith(("/", "~")), (
-                f"datas source must be relative (not absolute): {src!r}"
-            )
-            assert not re.match(r"^[A-Za-z]:", src), (
-                f"datas source must not be a Windows drive path: {src!r}"
-            )
-            assert not dest.startswith(("/", "~")), (
-                f"datas dest must be relative (not absolute): {dest!r}"
-            )
-            assert not re.match(r"^[A-Za-z]:", dest), (
-                f"datas dest must not be a Windows drive path: {dest!r}"
-            )
+            assert not src.startswith(("/", "~")), f"datas source must be relative (not absolute): {src!r}"
+            assert not re.match(r"^[A-Za-z]:", src), f"datas source must not be a Windows drive path: {src!r}"
+            assert not dest.startswith(("/", "~")), f"datas dest must be relative (not absolute): {dest!r}"
+            assert not re.match(r"^[A-Za-z]:", dest), f"datas dest must not be a Windows drive path: {dest!r}"
 
     def test_no_hardcoded_os_paths(self, spec_text: str):
         """No hardcoded /usr/, /etc/, or C:\\ paths in the spec.
@@ -233,9 +213,7 @@ class TestSpecPlatformCompatibility:
                 f"line {lineno}: hardcoded POSIX path in spec: {line!r}"
             )
             # C:\ or D:\ on Windows.
-            assert not re.search(r"[A-Za-z]:\\\\", stripped), (
-                f"line {lineno}: hardcoded Windows path in spec: {line!r}"
-            )
+            assert not re.search(r"[A-Za-z]:\\\\", stripped), f"line {lineno}: hardcoded Windows path in spec: {line!r}"
             # /Users/... on macOS.
             assert not re.search(r"(?<![\w/])/Users/", stripped), (
                 f"line {lineno}: hardcoded macOS /Users/ path in spec: {line!r}"
@@ -246,49 +224,36 @@ class TestBuildYmlPlatformCoverage:
     """Verify build.yml builds for all target platforms with smoke tests."""
 
     EXPECTED_BUILD_JOBS = ("linux", "macos", "windows", "termux")
+    # Windows job is intentionally fail-closed (no continue-on-error).
+    # Only these jobs are expected to be non-blocking.
+    NON_BLOCKING_BUILD_JOBS = ("linux", "macos", "termux")
 
     def test_linux_job_exists(self, build_yml_text: str):
         """Linux x86_64 build job exists."""
-        assert re.search(r"^  linux\s*:", build_yml_text, re.MULTILINE), (
-            "build.yml must define a 'linux:' build job"
-        )
-        assert "runs-on: ubuntu-latest" in build_yml_text, (
-            "linux job must run on ubuntu-latest"
-        )
+        assert re.search(r"^  linux\s*:", build_yml_text, re.MULTILINE), "build.yml must define a 'linux:' build job"
+        assert "runs-on: ubuntu-latest" in build_yml_text, "linux job must run on ubuntu-latest"
         # Linux x86_64 produces a tarball + .deb + .rpm.
-        assert "linux-x86_64.tar.gz" in build_yml_text, (
-            "linux job must produce a linux-x86_64 tarball artifact"
-        )
+        assert "linux-x86_64.tar.gz" in build_yml_text, "linux job must produce a linux-x86_64 tarball artifact"
 
     def test_macos_job_exists(self, build_yml_text: str):
         """macOS arm64 build job exists."""
-        assert re.search(r"^  macos\s*:", build_yml_text, re.MULTILINE), (
-            "build.yml must define a 'macos:' build job"
-        )
-        assert "runs-on: macos-latest" in build_yml_text, (
-            "macos job must run on macos-latest"
-        )
+        assert re.search(r"^  macos\s*:", build_yml_text, re.MULTILINE), "build.yml must define a 'macos:' build job"
+        assert "runs-on: macos-latest" in build_yml_text, "macos job must run on macos-latest"
         # macOS arm64 produces a tarball + .dmg.
-        assert "macos-arm64.tar.gz" in build_yml_text, (
-            "macos job must produce a macos-arm64 tarball artifact"
-        )
+        assert "macos-arm64.tar.gz" in build_yml_text, "macos job must produce a macos-arm64 tarball artifact"
 
     def test_windows_job_exists(self, build_yml_text: str):
         """Windows x86_64 build job exists with UTF-8 locale fix."""
         assert re.search(r"^  windows\s*:", build_yml_text, re.MULTILINE), (
             "build.yml must define a 'windows:' build job"
         )
-        assert "runs-on: windows-latest" in build_yml_text, (
-            "windows job must run on windows-latest"
-        )
+        assert "runs-on: windows-2022" in build_yml_text, "windows job must run on windows-2022"
         # Windows job MUST set PYTHONUTF8=1 to work around the cp1252 locale
         # issue that breaks ansible.cli at pyinstaller build time.
         assert re.search(r"PYTHONUTF8\s*:\s*[\"']1[\"']", build_yml_text), (
             "windows job MUST set PYTHONUTF8=1 — ansible requires UTF-8 on Windows"
         )
-        assert "windows-x86_64.zip" in build_yml_text, (
-            "windows job must produce a windows-x86_64 zip artifact"
-        )
+        assert "windows-x86_64.zip" in build_yml_text, "windows job must produce a windows-x86_64 zip artifact"
 
     def test_termux_job_exists(self, build_yml_text: str):
         """Termux (Linux aarch64) build job exists."""
@@ -296,12 +261,8 @@ class TestBuildYmlPlatformCoverage:
             "build.yml must define a 'termux:' build job (Linux aarch64)"
         )
         # Termux runs on ARM to produce the aarch64 build.
-        assert "ubuntu-24.04-arm" in build_yml_text, (
-            "termux job must run on ubuntu-24.04-arm for the aarch64 build"
-        )
-        assert "linux-aarch64.tar.gz" in build_yml_text, (
-            "termux job must produce a linux-aarch64 tarball artifact"
-        )
+        assert "ubuntu-24.04-arm" in build_yml_text, "termux job must run on ubuntu-24.04-arm for the aarch64 build"
+        assert "linux-aarch64.tar.gz" in build_yml_text, "termux job must produce a linux-aarch64 tarball artifact"
 
     def test_each_job_has_smoke_test(self, build_yml_text: str):
         """Each build job has a post-build smoke test step.
@@ -315,9 +276,7 @@ class TestBuildYmlPlatformCoverage:
         assert "Post-deploy smoke test" in build_yml_text, (
             "build.yml must have a 'Post-deploy smoke test' step that runs the built binary"
         )
-        assert "gludd version" in build_yml_text, (
-            "smoke test must run 'gludd version' to verify the binary executes"
-        )
+        assert "gludd version" in build_yml_text, "smoke test must run 'gludd version' to verify the binary executes"
         assert "gludd --help" in build_yml_text, (
             "smoke test must run 'gludd --help' to verify the binary's CLI is wired"
         )
@@ -351,9 +310,7 @@ class TestBuildYmlPlatformCoverage:
             "gludd-windows-x86_64",
             "gludd-linux-aarch64",
         ):
-            assert platform_pattern in build_yml_text, (
-                f"build.yml must upload an artifact named {platform_pattern!r}"
-            )
+            assert platform_pattern in build_yml_text, f"build.yml must upload an artifact named {platform_pattern!r}"
 
     def test_continue_on_error_is_true(self, build_yml_text: str):
         """Build jobs have continue-on-error: true (non-blocking).
@@ -366,7 +323,7 @@ class TestBuildYmlPlatformCoverage:
         # For each platform build job, assert that continue-on-error: true
         # appears in the job body. We split the YAML into per-job chunks at
         # top-level two-space-indented keys.
-        for job_name in self.EXPECTED_BUILD_JOBS:
+        for job_name in self.NON_BLOCKING_BUILD_JOBS:
             job_body = self._extract_job_body(build_yml_text, job_name)
             assert job_body is not None, f"could not extract job body for {job_name!r}"
             assert re.search(r"continue-on-error\s*:\s*true", job_body), (

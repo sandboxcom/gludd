@@ -1442,14 +1442,26 @@ gate-lite: _dead-code-baseline-refresh check-opencode-integrity verify-opencode-
 	@# 2 workers (not 8) avoids the local OOM; -x fails fast; unique basetemp
 	@# prevents collision with any in-flight full gate; output is tee'd to a
 	@# log so a failure surfaces its cause (No Unseen Events).
+	@# test_ansible_lint_deep.py excluded from parallel run (xdist worker crash).
 	@BT=$$(mktemp -d /tmp/gludd-gate-lite-XXXXXX); \
-	if $(UV) run python -m pytest tests/unit -q --no-header -x --basetemp="$$BT" -n 2 --maxprocesses=2 > /tmp/gludd-gate-lite-test.log 2>&1; then \
+	if $(UV) run python -m pytest tests/unit -q --no-header -x --basetemp="$$BT" -n 2 --maxprocesses=2 --ignore=tests/unit/test_ansible_lint_deep.py > /tmp/gludd-gate-lite-test.log 2>&1; then \
 		echo "PASS 0" >> .gate-lite-status; \
 	else \
 		echo "FAIL non-zero-exit" >> .gate-lite-status; \
 		touch .gate-lite-failed; \
 		echo "[gate-lite] test FAILED — tail of /tmp/gludd-gate-lite-test.log:"; \
 		tail -30 /tmp/gludd-gate-lite-test.log; \
+	fi; \
+	rm -rf "$$BT"
+	@printf "test-ansible-lint-deep " >> .gate-lite-status
+	@BT=$$(mktemp -d /tmp/gludd-gate-lite-XXXXXX); \
+	if $(UV) run python -m pytest tests/unit/test_ansible_lint_deep.py -q --no-header -x --basetemp="$$BT" -p no:xdist > /tmp/gludd-gate-lite-ald.log 2>&1; then \
+		echo "PASS" >> .gate-lite-status; \
+	else \
+		echo "FAIL" >> .gate-lite-status; \
+		touch .gate-lite-failed; \
+		echo "[gate-lite] test-ansible-lint-deep FAILED — tail:"; \
+		tail -30 /tmp/gludd-gate-lite-ald.log; \
 	fi; \
 	rm -rf "$$BT"
 	@echo "=== GATE-LITE PHASE: smoke ==="

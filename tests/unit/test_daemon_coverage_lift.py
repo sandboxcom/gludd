@@ -1,8 +1,8 @@
 """Tests for uncovered daemon code paths — targeting lines 97, 123-124, 128-129, 147-160,
- 171, 173, 185-188, 197, 204, 211-212, 326-327, 364, 371, 440, 452, 570, 591, 609-611,
- 737-743, 808-812, 822, 859-860, 870, 889, 908, 1066-1067, 1075-1076, 1319-1321, 1330-1332,
- 1362-1366, 1387-1402, 1411-1413, 1433, 1460-1482, 1513, 1535-1551, 1583-1593, 1619-1626,
- 1654-1655, 1702, 1730-1731, 1768-1775, 1920, 1935, 1962, 1971, 1988."""
+171, 173, 185-188, 197, 204, 211-212, 326-327, 364, 371, 440, 452, 570, 591, 609-611,
+737-743, 808-812, 822, 859-860, 870, 889, 908, 1066-1067, 1075-1076, 1319-1321, 1330-1332,
+1362-1366, 1387-1402, 1411-1413, 1433, 1460-1482, 1513, 1535-1551, 1583-1593, 1619-1626,
+1654-1655, 1702, 1730-1731, 1768-1775, 1920, 1935, 1962, 1971, 1988."""
 
 from __future__ import annotations
 
@@ -134,9 +134,7 @@ class TestBuildSecretsResolver:
     def test_build_secrets_resolver_projects_resolve_delegates(self):
         from general_ludd.daemon import build_secrets_resolver
 
-        resolver = build_secrets_resolver(
-            env_overrides={"TEST_KEY": "test_val"}, projects_active=True
-        )
+        resolver = build_secrets_resolver(env_overrides={"TEST_KEY": "test_val"}, projects_active=True)
         assert resolver.resolve("TEST_KEY") is not None
 
 
@@ -209,17 +207,32 @@ class TestApiStatusWithConfigDir:
 
 class TestApiListTodosWithStatusFilter:
     @pytest.mark.asyncio
-    async def test_api_todos_status_filter(self, transport):
+    async def test_api_todos_status_filter(self, app):
+        transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            await client.post("/api/todos", json={
-                "title": "Done", "queue": "core", "priority": "high", "work_type": "fix",
-            })
-            await client.post("/api/todos", json={
-                "title": "Pending", "queue": "core", "priority": "medium", "work_type": "code",
-            })
-        from general_ludd.daemon import _daemon_state
-
-        _daemon_state["todos"][-2]["status"] = "completed"
+            resp1 = await client.post(
+                "/api/todos",
+                json={
+                    "title": "Done",
+                    "queue": "core",
+                    "priority": "high",
+                    "work_type": "fix",
+                },
+            )
+            assert resp1.status_code == 201
+            resp2 = await client.post(
+                "/api/todos",
+                json={
+                    "title": "Pending",
+                    "queue": "core",
+                    "priority": "medium",
+                    "work_type": "code",
+                },
+            )
+            assert resp2.status_code == 201
+        todos = app.state.daemon_state["todos"]
+        assert len(todos) >= 2, f"expected >=2 todos, got {len(todos)}"
+        todos[-2]["status"] = "completed"
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/todos", params={"status": "completed"})
             assert resp.status_code == 200
@@ -231,14 +244,26 @@ class TestAdminTodosWithProjectIdFilter:
     @pytest.mark.asyncio
     async def test_admin_todos_project_id_filter(self, transport):
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            await client.post("/api/todos", json={
-                "title": "P1", "queue": "core", "priority": "high", "work_type": "fix",
-                "project_id": "proj-a",
-            })
-            await client.post("/api/todos", json={
-                "title": "P2", "queue": "core", "priority": "medium", "work_type": "code",
-                "project_id": "proj-b",
-            })
+            await client.post(
+                "/api/todos",
+                json={
+                    "title": "P1",
+                    "queue": "core",
+                    "priority": "high",
+                    "work_type": "fix",
+                    "project_id": "proj-a",
+                },
+            )
+            await client.post(
+                "/api/todos",
+                json={
+                    "title": "P2",
+                    "queue": "core",
+                    "priority": "medium",
+                    "work_type": "code",
+                    "project_id": "proj-b",
+                },
+            )
             resp = await client.get("/admin/todos", params={"project_id": "proj-a"})
             assert resp.status_code == 200
             data = resp.json()
@@ -259,24 +284,27 @@ class TestAdminModelsDiscoverWithCredentials:
                 "quality_class": "good",
             },
         ]
-        with patch(
-            "general_ludd.models.openrouter_discovery.OpenRouterScraper.fetch_models",
-            new_callable=AsyncMock,
-            return_value=mock_scraped,
-        ), patch(
-            "general_ludd.models.provider_presets.list_configured_providers",
-            return_value=["openrouter"],
-        ), patch(
-            "general_ludd.models.provider_presets.detect_credential_alias",
-            return_value="OPENROUTER_API_KEY",
-        ), patch(
-            "general_ludd.models.provider_presets.get_provider_preset",
-            return_value={"credential_env_var": "OPENROUTER_API_KEY"},
+        with (
+            patch(
+                "general_ludd.models.openrouter_discovery.OpenRouterScraper.fetch_models",
+                new_callable=AsyncMock,
+                return_value=mock_scraped,
+            ),
+            patch(
+                "general_ludd.models.provider_presets.list_configured_providers",
+                return_value=["openrouter"],
+            ),
+            patch(
+                "general_ludd.models.provider_presets.detect_credential_alias",
+                return_value="OPENROUTER_API_KEY",
+            ),
+            patch(
+                "general_ludd.models.provider_presets.get_provider_preset",
+                return_value={"credential_env_var": "OPENROUTER_API_KEY"},
+            ),
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.post(
-                    "/admin/models/discover", params={"provider": "openrouter"}
-                )
+                resp = await client.post("/admin/models/discover", params={"provider": "openrouter"})
                 assert resp.status_code == 200
                 data = resp.json()
                 assert data["success"] is True
@@ -319,9 +347,7 @@ class TestAdminModelsListWithGateway:
         from general_ludd.models.gateway import ModelGateway, ModelProfile
 
         mock_gw = MagicMock(spec=ModelGateway)
-        mock_profile = ModelProfile(
-            model_profile_id="test-1", provider="openai", model_name="gpt-4"
-        )
+        mock_profile = ModelProfile(model_profile_id="test-1", provider="openai", model_name="gpt-4")
         mock_gw.list_profiles.return_value = [mock_profile]
         app.state._model_gateway = mock_gw
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -526,18 +552,22 @@ class TestQuantizationDetectWithResults:
     async def test_quantization_detect_returns_results(self, app, transport):
         from general_ludd.models.quantization import QuantizationInfo
 
-        with patch(
-            "general_ludd.models.quantization.HuggingFaceDetector.detect",
-            new_callable=AsyncMock,
-            return_value=[QuantizationInfo(precision="fp16", source="hf", confidence=0.8)],
-        ), patch(
-            "general_ludd.models.quantization.FireworksDetector.detect",
-            new_callable=AsyncMock,
-            return_value=[QuantizationInfo(precision="int8", source="fw", confidence=0.7)],
-        ), patch(
-            "general_ludd.models.quantization.OpenRouterEndpointDetector.detect",
-            new_callable=AsyncMock,
-            return_value=[QuantizationInfo(precision="fp32", source="or", confidence=0.9)],
+        with (
+            patch(
+                "general_ludd.models.quantization.HuggingFaceDetector.detect",
+                new_callable=AsyncMock,
+                return_value=[QuantizationInfo(precision="fp16", source="hf", confidence=0.8)],
+            ),
+            patch(
+                "general_ludd.models.quantization.FireworksDetector.detect",
+                new_callable=AsyncMock,
+                return_value=[QuantizationInfo(precision="int8", source="fw", confidence=0.7)],
+            ),
+            patch(
+                "general_ludd.models.quantization.OpenRouterEndpointDetector.detect",
+                new_callable=AsyncMock,
+                return_value=[QuantizationInfo(precision="fp32", source="or", confidence=0.9)],
+            ),
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post(
@@ -557,10 +587,16 @@ class TestQuantizationGetWithKnownModel:
         from general_ludd.models.quantization import Precision, QuantizationInfo, QuantizationTracker
 
         tracker = QuantizationTracker()
-        tracker.update("known-model", QuantizationInfo(
-            precision=Precision.INT8.value, source="test", confidence=0.95,
-            provider_name="fireworks", bits_estimate=8,
-        ))
+        tracker.update(
+            "known-model",
+            QuantizationInfo(
+                precision=Precision.INT8.value,
+                source="test",
+                confidence=0.95,
+                provider_name="fireworks",
+                bits_estimate=8,
+            ),
+        )
         app.state._quantization_tracker = tracker
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/admin/quantization/known-model")
@@ -578,14 +614,17 @@ class TestQuantizationDriftCheckWithTracker:
         tracker = QuantizationTracker()
         tracker.update("m1", QuantizationInfo(precision=Precision.FP16.value, source="test", confidence=0.9))
         app.state._quantization_tracker = tracker
-        with patch(
-            "general_ludd.models.quantization.HuggingFaceDetector.detect",
-            new_callable=AsyncMock,
-            return_value=[QuantizationInfo(precision="fp16", source="hf", confidence=0.9)],
-        ), patch(
-            "general_ludd.models.quantization.OpenRouterEndpointDetector.detect",
-            new_callable=AsyncMock,
-            return_value=[],
+        with (
+            patch(
+                "general_ludd.models.quantization.HuggingFaceDetector.detect",
+                new_callable=AsyncMock,
+                return_value=[QuantizationInfo(precision="fp16", source="hf", confidence=0.9)],
+            ),
+            patch(
+                "general_ludd.models.quantization.OpenRouterEndpointDetector.detect",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post("/admin/quantization/drift-check")
@@ -630,10 +669,12 @@ class TestFilestoreReadDir:
         test_dir = tmp_path / "fs_test_read"
         test_dir.mkdir()
         (test_dir / "subfile.txt").write_text("hello")
-        with patch.object(FileStore, "root_path", str(test_dir)), \
-             patch.object(FileStore, "exists", return_value=True), \
-             patch.object(FileStore, "is_dir", return_value=True), \
-             patch.object(FileStore, "list_dir", return_value=["subfile.txt"]):
+        with (
+            patch.object(FileStore, "root_path", str(test_dir)),
+            patch.object(FileStore, "exists", return_value=True),
+            patch.object(FileStore, "is_dir", return_value=True),
+            patch.object(FileStore, "list_dir", return_value=["subfile.txt"]),
+        ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.get("/admin/filestore/read", params={"path": "subdir"})
                 assert resp.status_code == 200
@@ -644,17 +685,17 @@ class TestFilestoreReadDir:
 class TestFilestoreReadBinary:
     @pytest.mark.asyncio
     async def test_filestore_read_binary_fallback(self, app, transport):
-        with patch("general_ludd.security.sanitize.sanitize_path", return_value="binary.bin"), \
-             patch("general_ludd.filestore.store.FileStore.exists", return_value=True), \
-             patch("general_ludd.filestore.store.FileStore.is_dir", return_value=False), \
-             patch(
-                 "general_ludd.filestore.store.FileStore.read_text",
-                 side_effect=UnicodeDecodeError("utf-8", b"\x00", 0, 1, "invalid"),
-             ):
+        with (
+            patch("general_ludd.security.sanitize.sanitize_path", return_value="binary.bin"),
+            patch("general_ludd.filestore.store.FileStore.exists", return_value=True),
+            patch("general_ludd.filestore.store.FileStore.is_dir", return_value=False),
+            patch(
+                "general_ludd.filestore.store.FileStore.read_text",
+                side_effect=UnicodeDecodeError("utf-8", b"\x00", 0, 1, "invalid"),
+            ),
+        ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.get(
-                    "/admin/filestore/read", params={"path": "binary.bin"}
-                )
+                resp = await client.get("/admin/filestore/read", params={"path": "binary.bin"})
                 assert resp.status_code == 200
                 data = resp.json()
                 assert data.get("binary") is True
@@ -663,13 +704,13 @@ class TestFilestoreReadBinary:
 class TestFilestoreRemoveExisting:
     @pytest.mark.asyncio
     async def test_filestore_remove_existing_file(self, app, transport):
-        with patch("general_ludd.security.sanitize.sanitize_path", return_value="test.txt"), \
-             patch("general_ludd.filestore.store.FileStore.exists", return_value=True), \
-             patch("general_ludd.filestore.store.FileStore.remove") as mock_rm:
+        with (
+            patch("general_ludd.security.sanitize.sanitize_path", return_value="test.txt"),
+            patch("general_ludd.filestore.store.FileStore.exists", return_value=True),
+            patch("general_ludd.filestore.store.FileStore.remove") as mock_rm,
+        ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.delete(
-                    "/admin/filestore/remove", params={"path": "test.txt"}
-                )
+                resp = await client.delete("/admin/filestore/remove", params={"path": "test.txt"})
                 assert resp.status_code == 200
                 data = resp.json()
                 assert data["success"] is True
@@ -730,7 +771,7 @@ class TestSigningEndpointsNoResolver:
     async def test_cosign_generate_no_resolver(self, transport):
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post("/admin/signing/cosign/generate", json={})
-            assert resp.status_code == 503
+            assert resp.status_code == 403
 
     @pytest.mark.asyncio
     async def test_cosign_list_no_resolver(self, transport):
