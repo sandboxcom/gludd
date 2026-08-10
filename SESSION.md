@@ -1,4 +1,4 @@
-## PRIMARY OBJECTIVE: IN PROGRESS — v0.1.0-beta.3 shipped. Session 82: HEAD `eca67d49` on `development`. OpenCode DB cleanup safety (maintenance script, symlink/PID guards, incremental vacuum). Gate drift repairs (molecule scenario registration, self-improve monkeypatches, enforcement fixture sync). Tree CLEAN. Enforcement 13/13 BLOCKING, 125 runtime PASS. Lint PASS 0. 10 commits from `d4c84303`..`eca67d49`. CI unknown.
+## PRIMARY OBJECTIVE: IN PROGRESS — v0.1.0-beta.3 shipped. Session 82: HEAD `6c0e4f06` on `development`. 2 dispatch waves completed (+490 tests: 145 wave 1 + 345 wave 2). OpenCode DB cleanup safety + gate drift repairs + model test coverage deep-dives. Gate-background running PID 42003. Tree CLEAN. Enforcement 13/13 BLOCKING, 125 runtime PASS. Lint PASS 0. 12 commits from `d4c84303`..`6c0e4f06`. CI unknown.
 
 ---
 
@@ -9,18 +9,24 @@
 - **S82.0 — OpenCode DB cleanup safety**: Replaced multi-shell guard/VACUUM recipes with offline maintenance process. Resolved authoritative channel-aware DB path. Recursive stale session tree pruning with FK cascades. Bounded batches, time/lock/file limits, progress heartbeats, PASSIVE checkpoints, incremental vacuum. 43 focused tests PASS (85.93% coverage). Makefile syntax 11/11, duplicate targets 0, make-target contract PASS (52 targets).
 - **S82.1 — Post-merge maintenance observability + symlink gaps**: Preserved raw CLI data-directory paths until mutation guard validates. Five-second SQLite phase heartbeats. 45 focused tests PASS (86.30% coverage).
 - **S82.2 — Gate drift repairs**: Registered non-conventional `local_game_gen` Molecule scenario. Retargeted self-improvement harness monkeypatches to extracted `loop_handlers` module. Synchronized enforcement registration-order fixture with `opencode.json`. 79 passed, 1 skipped, 1 expected xfail.
+- **S82.3 — Wave 1 (+145 tests)**: `f1539afb`. Model scoring deep tests (70), local_model API integration tests (30), model serve edge cases E2E tests (45). Updated SESSION.md/TASKS.md for wave 1.
+- **S82.4 — Wave 2 (+345 tests)**: `6c0e4f06`. +314 tests for 5 untested small_models modules (zdd_rollout 65, hf_auth 50, lm_eval_runner 54, eval_harness 58, oidc 56). +31 download integration tests. +304-line multi-model pipeline architecture doc.
 
 ### Current State
 
-- **HEAD: `eca67d49`** on `development`
-- **Tree: CLEAN** — only `.coverage.*` temp file
+- **HEAD: `6c0e4f06`** on `development`
+- **Tree: CLEAN** — all changes committed
+- **Gate-background: RUNNING** — PID 42003
 - **CI: unknown** — not checked this session
 - **Enforcement: 13/13 BLOCKING, 125 runtime PASS**
+- **Test baseline: 88,291 → 88,781** (+490 this session)
 - **Release v0.1.0-beta.3: SHIPPED**
 
-### Recent Commits (HEAD `eca67d49`, 10 from `d4c84303`)
+### Recent Commits (HEAD `6c0e4f06`, 12 from `d4c84303`)
 
 ```
+6c0e4f06 enhancement: +314 tests for 5 untested small_models modules (zdd_rollout 65, hf_auth 50, lm_eval_runner 54, eval_harness 58, oidc 56); +31 download integration tests; +304-line multi-model pipeline architecture doc
+f1539afb enhancement: +145 tests — model_scoring deep (70), local_model API integration (30), model serve edge cases E2E (45); update SESSION.md/TASKS.md for wave 1
 eca67d49 fix: test_opencode_plugin_ports structural assertions for new plugin hooks
 51d9d12b enhancement: E2E local model serving tests
 e4db73d2 fix: update function-length baseline from 146 to 147
@@ -277,6 +283,6 @@ a33b2d78 feat: wave 14 — backup_restore deep + report_generation deep + molecu
 2. `make gate` full for fresh baseline
 3. Push any new commits: `make batch-push`
 
-- **Last Updated: 2026-08-10 — Session 82. HEAD `eca67d49` on `development`. Tree CLEAN. OpenCode DB cleanup safety + gate drift repairs complete (S82.0–S82.2). 10 commits from `d4c84303`..`eca67d49`. Lint PASS 0. Enforcement 13/13 BLOCKING, 125 runtime PASS. Release v0.1.0-beta.3 shipped.**
+- **Last Updated: 2026-08-10 — Session 82. HEAD `6c0e4f06` on `development`. Tree CLEAN. 2 waves completed (+490 tests: 145 wave 1 + 345 wave 2). OpenCode DB cleanup safety + gate drift repairs (S82.0–S82.2). Model test coverage deep-dives (S82.3–S82.4). 12 commits from `d4c84303`..`6c0e4f06`. Gate-background RUNNING PID 42003. Lint PASS 0. Enforcement 13/13 BLOCKING, 125 runtime PASS. Release v0.1.0-beta.3 shipped.**
 
 (End of file)
