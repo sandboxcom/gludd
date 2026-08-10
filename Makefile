@@ -900,6 +900,13 @@ check-spec-enforcement-coverage:
 fix-spec-enforcement:
 	@$(UV) run python3 scripts/fix_spec_enforcement_format.py
 
+# Check hex values of backticks/quotes in failing spec enforcement lines
+check-spec-bytes:
+	@$(UV) run python3 /tmp/gludd-check-backticks.py
+
+check-spec-debug:
+	@$(UV) run python3 /tmp/gludd-debug-enf2.py
+
 # AA058 — check-structural-test-fragility: identifies tests that read source
 # files as plaintext, flagging them for migration to behavioral tests.
 check-structural-test-fragility:

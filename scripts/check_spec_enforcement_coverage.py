@@ -60,6 +60,11 @@ def _parse_specs() -> list[dict]:
             current["behavior"] = line.replace("**Behavior:**", "").strip()
             continue
 
+        if line.startswith("**Test:**"):
+            in_enforcement = False
+            in_behavior = False
+            continue
+
         if in_enforcement and line.strip():
             current["enforcement"] += " " + line.strip()
 
@@ -75,7 +80,7 @@ def _parse_specs() -> list[dict]:
 def _has_template_filler(enforcement: str) -> bool:
     """Check if enforcement text is template filler, not real code."""
     filler_patterns = [
-        r"(planned|TODO|TBD|not yet|future|upcoming)",
+        r"\b(planned|TODO|TBD|not yet|future|upcoming)\b",
         r"^\s*$",
     ]
     return any(re.search(p, enforcement, re.IGNORECASE) for p in filler_patterns)
