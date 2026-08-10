@@ -268,6 +268,7 @@ function writeTextOnlyState(state: TextOnlyState): void {
 
 function textHasResultMarkers(text: string): { found: boolean; count: number } {
   const markers = [
+    "<task_result>",
     "task result",
     "task_result",
     "subagent result",
@@ -1264,7 +1265,8 @@ const defaultImpl: HotModule = {
       writeTextOnlyState(textOnly)
     }
 
-    if (isTextOnly && (postResultsState.lastTurnHadResults || postResultsState.lastTurnHadWave) && !hasWorkArtifact) {
+    // ── SUBAGENT-RESULTS INGESTION GUARD (>=3 <task_result> markers) ───────
+    if (isTextOnly && postResultsState.lastResultCount >= WAVE_RESULT_THRESHOLD && !hasWorkArtifact) {
       recordBlock("after-results-text-only")
       logFalseDoneBlock("after-results-text-only", text)
       recordBlankedResponse("after-results-text-only", text)
@@ -1273,11 +1275,25 @@ const defaultImpl: HotModule = {
 
       return {
         text: [
-          "POST-RESULTS TEXT-ONLY BLOCK",
-          "RESUME WORK: dispatch subagents immediately.",
-          `Previous turn had ${postResultsState.lastResultCount} result marker(s)` +
-          `${postResultsState.lastTurnHadWave ? " from a result wave" : ""}.`,
-          "Do not summarize after receiving results while work remains.",
+          "RESULTS INGESTION PROTOCOL: " + String(postResultsState.lastResultCount) + " subagent results arrived.",
+          "Codify results (commit/tick TASKS.md), then dispatch next wave.",
+          "Text-only after results is a stop.",
+        ].join("\n"),
+      }
+    }
+
+    // ── POST-SHIP CONTINUATION GUARD ──────────────────────────────────────
+    if (isTextOnly && postResultsState.lastToolWasShipping && workState.hasPendingWork) {
+      recordBlock("post-ship-text-only")
+      logFalseDoneBlock("post-ship-text-only", text)
+      recordBlankedResponse("post-ship-text-only", text)
+      writePersistBlock(true, "post-ship-text-only")
+      updateSharedStreak("text-only", "enforce-stop")
+
+      return {
+        text: [
+          "POST-SHIP CONTINUATION: after shipping, continue to next pending item.",
+          "Text-only after commit/push is a stop.",
         ].join("\n"),
       }
     }
@@ -1663,6 +1679,14 @@ const defaultImpl: HotModule = {
           if (repoPending) extraReasons.push("repo dirty")
           throw new Error(stopLikeDenyMessage(taskMd, ratchetCount, extraReasons))
         }
+      }
+      // Track shipping targets for post-ship continuation guard
+      if (GIT_SHIPPING_TARGETS_RE.test(command)) {
+        const prs = readPostResultsState()
+        prs.lastToolWasShipping = true
+        prs.lastShippingToolName = command.match(GIT_SHIPPING_TARGETS_RE)?.[1] || command
+        prs.ts = Date.now()
+        writePostResultsState(prs)
       }
     }
 
