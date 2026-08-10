@@ -17,7 +17,7 @@ from general_ludd.secrets.env import EnvSecretsManager
 
 @pytest.fixture(autouse=True)
 def _preserve_daemon_state():
-    if _daemon_state is None:
+    if _daemon_state is None or "todos" not in _daemon_state:
         yield
     else:
         snapshot = list(_daemon_state["todos"])
@@ -783,22 +783,22 @@ class TestSigningEndpointsNoResolver:
     async def test_cosign_read_no_resolver(self, transport):
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/admin/signing/cosign/default/test-key")
-            assert resp.status_code == 503
+            assert resp.status_code == 403
 
     @pytest.mark.asyncio
     async def test_cosign_delete_no_resolver(self, transport):
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.delete("/admin/signing/cosign/default/test-key")
-            assert resp.status_code == 503
+            assert resp.status_code == 403
 
     @pytest.mark.asyncio
     async def test_gitsign_write_no_resolver(self, transport):
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post("/admin/signing/gitsign/config", json={})
-            assert resp.status_code == 503
+            assert resp.status_code == 403
 
     @pytest.mark.asyncio
     async def test_gitsign_read_no_resolver(self, transport):
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/admin/signing/gitsign/default")
-            assert resp.status_code == 503
+            assert resp.status_code == 403

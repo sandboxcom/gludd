@@ -107,7 +107,7 @@ class TestPushStateFileWrittenOnBlock:
             reason="ci-restart-cap",
             message="BLOCKED: 3 CI restarts this session. Max is 3.",
             branch="development",
-            commit_sha="abc123def456",
+            commit_sha="abc123def456",  # pragma: allowlist secret
             current_count=3,
             max_allowed=3,
         )
@@ -132,7 +132,7 @@ class TestPushStateFileWrittenOnBlock:
             reason="push-rate-cooldown",
             message="BLOCKED: last push was 15 seconds ago (cooldown: 300s).",
             branch="master",
-            commit_sha="def789abc123",
+            commit_sha="def789abc123",  # pragma: allowlist secret
             cooldown_secs=300,
             elapsed_secs=15,
         )

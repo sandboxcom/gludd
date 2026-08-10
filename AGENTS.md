@@ -807,7 +807,7 @@ text-only responses. No scoring, no threshold, no way to "check enough boxes."
 
 ### Enforcement layers
 
-1. `enforce-stop.ts` binary-latch `hasRealPendingWork()` 
+1. `enforce-stop.ts` binary-latch `hasRealPendingWork()`
 2. `enforce-multitask.ts` dispatch-count `text.complete` hook
 3. `enforce-delegate.ts` post-ship continuation detector
 4. `/tmp/gludd-push-state.json` — written by all push guardrails

@@ -8,4 +8,5 @@ verify-enforcement PASS
 coverage-gaps PASS
 typecheck PASS 0
 collect PASS 0
-test 
+test
+FAIL non-zero-exit
