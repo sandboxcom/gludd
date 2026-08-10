@@ -4958,7 +4958,7 @@ After `make release-cut`, ALL 12 artifact categories must be confirmed present, 
 
 ### V95 — Verification failure escalation: 3 consecutive fails = human alert
 If gate/CI/release verification fails 3 consecutive times, escalate to human (human-todo) — don't retry indefinitely.
-**Enforcement:** `scripts/check_stale_tasks.py` + `make check-stale-tasks` (3+ consecutive failures → `POST /api/human-todos` escalation) + AGENTS.md "Don't Block Projects on Stalled Tasks"
+**Enforcement:** `make check-stale-tasks` + `scripts/check_stale_tasks.py` + AGENTS.md "Don't Block Projects on Stalled Tasks" section (escalation via `POST /api/human-todos` after 3+ consecutive failures)
 **Test:** `test_v95_verification_failure_escalation_human_alert`
 
 ### V96 — Verification records are immutable
@@ -4968,7 +4968,7 @@ Once a verification result is written (`.gate-status`, CI run, release metadata)
 
 ### V97 — Verification audit trail: every verification has a record
 Every `make verify-state`, `make gate`, `make ci-verdict` invocation MUST produce a log entry with timestamp + result.
-**Enforcement:** `make verify-state` (writes `.gate-logs/verify-<ts>.log`) + `make gate-background` (writes `.gate-logs/gate-<ts>.log`) + `make ci-verdict-safe` (writes `/tmp/gludd-ci-check-state.json`)
+**Enforcement:** `make verify-state` + `make gate-background` (writes `.gate-logs/gate-<ts>.log`) + `make ci-verdict-safe` (writes `/tmp/gludd-ci-check-state.json`) + AGENTS.md "Observable Verification Evidence" section
 **Test:** `test_v97_verification_audit_trail_every_record`
 
 ### V98 — Verification reporting: red/yellow/green with specifics
@@ -6221,7 +6221,7 @@ A directive like "fix X FIRST" must be completed (tested, committed, verified) b
 
 ### Y37 — Multi-step user request is tracked atomically
 When the user requests "A, B, and C," all three are added to the task ledger; completing A and B but not C is not done.
-**Enforcement:** `enforce-stop.ts` hasRealPendingWork() + AGENTS.md "Todowrite discipline (mandatory for ≥3-ask sessions)" + `enforce-session-start.ts` task-ledger dispatch-count check
+**Enforcement:** `enforce-stop.ts` hasRealPendingWork() (checks all TASKS.md unchecked items, not just todowrite) + AGENTS.md "Todowrite discipline (mandatory for ≥3-ask sessions)" section + `enforce-session-start.ts`
 **Test:** `test_y37_multi_step_user_request_tracked_atomically`
 
 ### Y38 — User priority is AND, not OR
@@ -6256,7 +6256,7 @@ A user asking about progress is requesting a status update — the response must
 
 ### Y44 — Objective nesting: sub-objective done ≠ parent done
 Completing "write tests for X" does not complete "ship feature X"; the parent objective remains active.
-**Enforcement:** `enforce-stop.ts` hasRealPendingWork() (all unchecked TASKS.md items block stop regardless of nesting) + AGENTS.md "CRITICAL: Task Self-Tracking"
+**Enforcement:** `enforce-stop.ts` hasRealPendingWork() (all unchecked TASKS.md items block stop regardless of nesting depth) + AGENTS.md "CRITICAL: Task Self-Tracking (Anti-Forgetting)" section
 **Test:** `test_y44_sub_objective_done_is_not_parent_done`
 
 ### Y45 — Objective staleness does not license stop
@@ -6275,7 +6275,7 @@ A text-only response is permitted ONLY when ALL of {TASKS.md unchecked=0, ratche
 
 ### Y47 — Empty todowrite is not evidence of exhaustion
 An empty `todowrite` list while TASKS.md has unchecked items does not satisfy the stop gate; `hasRealPendingWork()` checks all sources.
-**Enforcement:** `enforce-stop.ts` hasRealPendingWork() (checks TASKS.md + ratchet + gate + CI, not todowrite) + AGENTS.md "CRITICAL: Pre-Response Stop Audit"
+**Enforcement:** `enforce-stop.ts` hasRealPendingWork() (binary latch: 10 signals including TASKS.md + ratchet.yml + gate + CI, ignores todowrite) + AGENTS.md "CRITICAL: Mechanical Stop Prevention (10-Signal Binary Latch)" section
 **Test:** `test_y47_empty_todowrite_is_not_exhaustion`
 
 ### Y48 — Ratchet entries block stop
@@ -6552,11 +6552,12 @@ A tool-call message that takes no user-visible action (e.g., a single read with 
 
 ### Y100 — Only stop when user says "done"
 The terminal condition of the agent's work loop is: user explicit stop signal received AND all stop-gate conditions satisfied, OR user explicit stop signal received (override). No other exit path.
-**Enforcement:** `enforce-stop.ts` USER_STOP_PHRASES bypass + `enforce-make.ts` session.idle hook + `agent_watchdog.py` idle-detection CONTINUE directive + AGENTS.md "CRITICAL: Task Completion Policy"
-**Test:** `test_y100_only_stop_when_user_says_done` --- ## Coverage Matrix | Group | Specs | Plugins | Makefile Guards | AGENTS.md Sections | |-------|-------|---------|-----------------|--------------------| | P — Push Discipline | P01-P30 | ``enforce-batch-push.ts``, ``enforce-no-wait.ts``, ````enforce-make.ts```` | _push-rate-guard, ci-busy-check, deploy-and-forget | Don't Push Every Commit, CI-Poll Subagents | | B — Branch Discipline | B01-B25 | ````enforce-objective.ts```` (partial), [`enforce-branch-discipline.ts` planned] | check-duplicate-targets, release-branch-new, release-promote | Branch discipline, Single-Source Feature Development | | O — Objective Tracking | O01-O30 | ````enforce-objective.ts```` | — | PRIMARY OBJECTIVE, Session Start Protocol | | T — Test Integrity | T01-T30 | ```enforce-tdd.ts```, ```enforce-no-suppressions.ts``` | _test-disabled-guard, collect-check, gate | TDD Policy, No Lint-Suppression Comments | | D — Dispatch Floor | D01-D30 | `enforce-multitask.ts`, `enforce-floor.ts`, `enforce-delegate.ts`, ```enforce-clean-tree.ts``` | agent-worktree | Dispatch Floor, Pipeline Orchestration, Steady-state Dispatch | | S — Anti-Stop | S01-S25 | ```enforce-stop.ts```, ``enforce-verified-claims.ts`` | — | Premature-Stop Audit, Task Completion, Q&A Response, Nothing-Dropped | | E — Anti-Essay | E01-E20 | ```enforce-stop.ts``` (partial), [`enforce-anti-essay.ts` planned] | — | Anti-Essay (new), Never Block on Questions | | M — Merge Safety | M01-M20 | — | git-merge, gated-merge, agent-merge, feature-done | Merge Safety, Agent-Worktree | | G — Gate Discipline | G01-G20 | ````enforce-make.ts```` | _gate-fresh-check, gate-background, gate-status | Gate Discipline, Background Gate, Completion = Green Gate | | R — Release Discipline | R01-R20 | — | release-cut, require-ci-green, verify-release-completeness | Release is an Artifact, Release Pipeline, Release Branch Lifecycle | | W — Worktree Discipline | W01-W30 | — | agent-worktree, agent-merge, agent-cleanup, agent-worktree-list | Worktree-per-subagent, Branch-landing integrity, Disk Discipline | | F — CI Discipline | F01-F30 | ``enforce-no-wait.ts``, ``enforce-batch-push.ts`` | _push-rate-guard, deploy-and-forget, ci-verdict-safe | CI-Poll Subagents, Anti-wait rule, Verify remote after push | | C — Commit Discipline | C01-C30 | ```enforce-no-suppressions.ts```, ```enforce-clean-tree.ts```, ```enforce-tdd.ts``` | _gate-fresh-check, collect-check, secrets-scan | No-Commit-Bypass, Atomic commits, Commit-After-Green | | Q — Quality Gate | Q01-Q30 | ````enforce-make.ts```` | gate, gate-background, gate-lite, gate-audit, check-duplicate-targets, check-node-v26-compat | Gate Discipline, Completion = Green Gate | | X — Subagent Discipline | X01-X30 | `enforce-deadline.ts`, ```enforce-clean-tree.ts``` | task-watchdog | Fix-Don't-Check, Subagent quality, Refill-on-completion | | A — Audit Discipline | A01-A30 | ``enforce-verified-claims.ts`` | verify-state, gate-status | Self-Audit Policy, Done Claims, Verification Evidence | | N — Naming/Code | N01-N30 | ```enforce-no-suppressions.ts```, ```enforce-tdd.ts``` | check-node-v26-compat, check-duplicate-targets | No Lint-Suppression, Tight types, Node v26 compat | | K — Knowledge/Context | K01-K30 | ````enforce-objective.ts````, ```enforce-stop.ts``` | git-index | Session Persistence, Task Self-Tracking, BUGS.md incidents | | U — User Intent | U01-U30 | ````enforce-objective.ts````, `enforce-enhancement-ratio.ts`, ````enforce-make.ts```` | — | PRIMARY OBJECTIVE, Priority Stacking, User Intent | | Z — Zero-Failure | Z01-Z30 | (all plugins) | gate, crash-recovery | Completion Policy, Guardrail integrity, Zero-Failure | --- ## Audit Log | Date | Change | Author | |------|--------|--------| | 2026-07-19 | Initial 200 specs (P-R) created | Agent | | 2026-07-19 | Expanded to 500 specs (added W, F, C, Q, X, A, N, K, U, Z groups) | Agent | ## Expansion: Push Discipline (P31–P120) ## Expansion: Push Discipline (P31–P120)
+**Enforcement:** `enforce-stop.ts` + `enforce-make.ts` + `scripts/agent_watchdog.py` (idle-detection CONTINUE directive) + AGENTS.md "CRITICAL: Task Completion Policy" section
 **Test:** `test_y100_only_stop_when_user_says_done`
 
 ---
+
+
 
 ## Coverage Matrix
 
@@ -15868,7 +15869,7 @@ Intent priority: CI poll: never dispatch poll-only subagent. This invariant MUST
 
 ### I71 — Intent priority: wait: never sleep on main thread with pending work
 Intent priority: wait: never sleep on main thread with pending work. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** `enforce-no-wait.ts` (denies `make gate-tail` + sleep chains on main thread) + AGENTS.md "CRITICAL: Background Operations NEVER Block Dispatch"
+**Enforcement:** `enforce-no-wait.ts` (denies `make gate-tail` + sleep chains on main thread) + AGENTS.md "CRITICAL: Background Operations NEVER Block Dispatch (anti-wait rule)" section + `enforce-make.ts` (denies foreground long-running operations on main thread)
 **Test:** `test_i71_intent_priority_71`
 
 ### I72 — Intent priority: ask: never block on user question, default to action
@@ -16447,7 +16448,7 @@ The agent MUST auto-create fix objectives from open BUGS.md entries. This invari
 
 ### O116 — The agent MUST lock an objective while it is being worked on by another agent.
 The agent MUST lock an objective while it is being worked on by another agent. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** `enforce-objective.ts` (BLOCKING; denies concurrent agents editing same objective) + `scripts/check_subagent_file_dedup.py` (prevents two agents editing same file within 90s)
+**Enforcement:** `enforce-objective.ts` (BLOCKING: denies concurrent agents editing same objective) + `scripts/check_subagent_file_dedup.py` (prevents two agents editing same file within 90s) + AGENTS.md "CRITICAL: Pipeline Orchestration Model" section
 **Test:** `test_o116_115`
 
 ### O117 — The agent MUST estimate tool-call cost before starting each objective.
@@ -19713,7 +19714,7 @@ The agent MUST guarantee that terraform state is initialized. This invariant MUS
 
 ### Z128 — The agent MUST guarantee that the watchdog daemon is running.
 The agent MUST guarantee that the watchdog daemon is running. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** `make watchdog-auto` + `agent_watchdog.py` (10s polling daemon) + AGENTS.md "Session Start Protocol (step 0: START WATCHDOG)"
+**Enforcement:** `make watchdog-auto` + `scripts/agent_watchdog.py` (10s polling daemon, detects idle sessions, injects CONTINUE directives) + AGENTS.md "Session Start Protocol" section (step 0: START WATCHDOG)
 **Test:** `test_z128_127`
 
 ### Z129 — The agent MUST guarantee that no orphaned background processes exist.
