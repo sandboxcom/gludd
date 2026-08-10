@@ -98,10 +98,10 @@ def _blocked_at(block: dict) -> float:
 class TestPushStateFileWrittenOnBlock:
     """Each guardrail must write /tmp/gludd-push-state.json when it blocks."""
 
-    def test_ci_restart_cap_writes_push_state_on_block(self, tmp_path: Path):
+    def test_ci_restart_cap_writes_push_state_on_block(self, monkeypatch, tmp_path: Path):
         """Simulate _ci-restart-cap block; verify file written with correct reason."""
         state_file = tmp_path / "push-state.json"
-        os.environ["GLUDD_PUSH_STATE_FILE"] = str(state_file)
+        monkeypatch.setenv("GLUDD_PUSH_STATE_FILE", str(state_file))
 
         path = record_push_block(
             reason="ci-restart-cap",
@@ -118,15 +118,15 @@ class TestPushStateFileWrittenOnBlock:
         assert block is not None
         assert block["reason"] == "ci-restart-cap"
         assert block["branch"] == "development"
-        assert block["commit_sha"] == "commit-sha-placeholder"
+        assert block["commit_sha"] == "abc123def456"
         assert block["current_count"] == 3
         assert block["max_allowed"] == 3
         assert "BLOCKED" in block["message"]
 
-    def test_push_rate_guard_writes_push_state_on_block(self, tmp_path: Path):
+    def test_push_rate_guard_writes_push_state_on_block(self, monkeypatch, tmp_path: Path):
         """Simulate cooldown block; verify file written with correct reason."""
         state_file = tmp_path / "push-state.json"
-        os.environ["GLUDD_PUSH_STATE_FILE"] = str(state_file)
+        monkeypatch.setenv("GLUDD_PUSH_STATE_FILE", str(state_file))
 
         record_push_block(
             reason="push-rate-cooldown",
@@ -144,10 +144,10 @@ class TestPushStateFileWrittenOnBlock:
         assert block["cooldown_secs"] == 300
         assert block["elapsed_secs"] == 15
 
-    def test_force_push_rate_guard_writes_push_state_on_block(self, tmp_path: Path):
+    def test_force_push_rate_guard_writes_push_state_on_block(self, monkeypatch, tmp_path: Path):
         """Simulate force-push rate block; verify file written with correct reason."""
         state_file = tmp_path / "push-state.json"
-        os.environ["GLUDD_PUSH_STATE_FILE"] = str(state_file)
+        monkeypatch.setenv("GLUDD_PUSH_STATE_FILE", str(state_file))
 
         record_push_block(
             reason="force-push-rate",
@@ -167,10 +167,10 @@ class TestPushStateFileWrittenOnBlock:
         assert block["max_bypasses"] == 5
         assert block["window_hours"] == 12
 
-    def test_stash_before_push_writes_push_state_on_block(self, tmp_path: Path):
+    def test_stash_before_push_writes_push_state_on_block(self, monkeypatch, tmp_path: Path):
         """Simulate stash-leak block; verify file written with correct reason."""
         state_file = tmp_path / "push-state.json"
-        os.environ["GLUDD_PUSH_STATE_FILE"] = str(state_file)
+        monkeypatch.setenv("GLUDD_PUSH_STATE_FILE", str(state_file))
 
         record_push_block(
             reason="stash-before-push",
@@ -192,10 +192,10 @@ class TestPushStateFileWrittenOnBlock:
 class TestPushStateNotWrittenOnSuccess:
     """Successful pushes must NOT leave a stale state file."""
 
-    def test_push_state_not_written_on_success(self, tmp_path: Path):
+    def test_push_state_not_written_on_success(self, monkeypatch, tmp_path: Path):
         """Simulate successful push; verify file not written (or cleared if existed)."""
         state_file = tmp_path / "push-state.json"
-        os.environ["GLUDD_PUSH_STATE_FILE"] = str(state_file)
+        monkeypatch.setenv("GLUDD_PUSH_STATE_FILE", str(state_file))
 
         # Pre-condition: a previous block was recorded
         record_push_block(
@@ -211,10 +211,10 @@ class TestPushStateNotWrittenOnSuccess:
         assert not state_file.exists()
         assert load_push_state() is None
 
-    def test_push_state_not_written_when_no_block(self, tmp_path: Path):
+    def test_push_state_not_written_when_no_block(self, monkeypatch, tmp_path: Path):
         """No block means no state file (nominal path)."""
         state_file = tmp_path / "push-state.json"
-        os.environ["GLUDD_PUSH_STATE_FILE"] = str(state_file)
+        monkeypatch.setenv("GLUDD_PUSH_STATE_FILE", str(state_file))
 
         # Sanity: no state file exists
         if state_file.exists():
@@ -227,9 +227,9 @@ class TestPushStateNotWrittenOnSuccess:
 class TestPushStateValidJson:
     """The written file must be valid, parseable JSON."""
 
-    def test_push_state_valid_json(self, tmp_path: Path):
+    def test_push_state_valid_json(self, monkeypatch, tmp_path: Path):
         state_file = tmp_path / "push-state.json"
-        os.environ["GLUDD_PUSH_STATE_FILE"] = str(state_file)
+        monkeypatch.setenv("GLUDD_PUSH_STATE_FILE", str(state_file))
 
         record_push_block(
             reason="push-rate-cooldown",
@@ -257,9 +257,9 @@ class TestPushStateValidJson:
 class TestPushStateRequiredFields:
     """The file must contain all required fields."""
 
-    def test_push_state_contains_required_fields(self, tmp_path: Path):
+    def test_push_state_contains_required_fields(self, monkeypatch, tmp_path: Path):
         state_file = tmp_path / "push-state.json"
-        os.environ["GLUDD_PUSH_STATE_FILE"] = str(state_file)
+        monkeypatch.setenv("GLUDD_PUSH_STATE_FILE", str(state_file))
 
         record_push_block(
             reason="ci-restart-cap",
@@ -276,10 +276,10 @@ class TestPushStateRequiredFields:
 
         assert isinstance(block["blocked_at"], (int, float))
 
-    def test_push_state_timestamp_is_recent(self, tmp_path: Path):
+    def test_push_state_timestamp_is_recent(self, monkeypatch, tmp_path: Path):
         """blocked_at must be within 5 seconds of now."""
         state_file = tmp_path / "push-state.json"
-        os.environ["GLUDD_PUSH_STATE_FILE"] = str(state_file)
+        monkeypatch.setenv("GLUDD_PUSH_STATE_FILE", str(state_file))
 
         before = time.time()
         record_push_block(
@@ -294,10 +294,10 @@ class TestPushStateRequiredFields:
         ts = _blocked_at(block)
         assert before - 1 <= ts <= after + 1, f"blocked_at={ts} not within [{before - 1}, {after + 1}]"
 
-    def test_push_state_reason_is_known_value(self, tmp_path: Path):
+    def test_push_state_reason_is_known_value(self, monkeypatch, tmp_path: Path):
         """reason must be one of the four guardrail identifiers."""
         state_file = tmp_path / "push-state.json"
-        os.environ["GLUDD_PUSH_STATE_FILE"] = str(state_file)
+        monkeypatch.setenv("GLUDD_PUSH_STATE_FILE", str(state_file))
 
         for reason in (
             "ci-restart-cap",
@@ -319,10 +319,10 @@ class TestPushStateRequiredFields:
 class TestPushStateAtomicWrite:
     """The file must be written via temp + rename to prevent partial reads."""
 
-    def test_push_state_atomic_write(self, tmp_path: Path):
+    def test_push_state_atomic_write(self, monkeypatch, tmp_path: Path):
         """Write goes through a .tmp file, not directly to the state path."""
         state_file = tmp_path / "push-state.json"
-        os.environ["GLUDD_PUSH_STATE_FILE"] = str(state_file)
+        monkeypatch.setenv("GLUDD_PUSH_STATE_FILE", str(state_file))
 
         # Snapshot directory contents before write
         pre_files = set(tmp_path.iterdir())
@@ -345,10 +345,10 @@ class TestPushStateAtomicWrite:
         assert block is not None
         assert block["reason"] == "push-rate-cooldown"
 
-    def test_push_state_atomic_does_not_truncate_on_crash_sim(self, tmp_path: Path):
+    def test_push_state_atomic_does_not_truncate_on_crash_sim(self, monkeypatch, tmp_path: Path):
         """Simulate crash mid-write: stale .tmp must not corrupt existing state."""
         state_file = tmp_path / "push-state.json"
-        os.environ["GLUDD_PUSH_STATE_FILE"] = str(state_file)
+        monkeypatch.setenv("GLUDD_PUSH_STATE_FILE", str(state_file))
 
         # Write initial valid state
         record_push_block(

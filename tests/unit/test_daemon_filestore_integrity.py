@@ -149,11 +149,10 @@ class TestRealDaemonEndpoints:
 
     @patch("general_ludd.integrity.scanner.FileIntegrityScanner.scan")
     def test_integrity_scan_with_paths(self, mock_scan, client, tmp_path):
-        import tempfile
         import uuid
 
         mock_scan.return_value = {"scanned": 5, "changes": []}
-        scan_dir = Path(tempfile.gettempdir()) / f"integrity-scan-{uuid.uuid4().hex[:8]}"
+        scan_dir = Path("/Users/shawnwilson/gludd") / ".integrity-tests" / f"scan-{uuid.uuid4().hex[:8]}"
         scan_dir.mkdir(parents=True, exist_ok=True)
         try:
             resp = client.post("/admin/integrity/scan", json={"paths": [str(scan_dir)]})
