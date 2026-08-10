@@ -3395,3 +3395,5 @@ token accounting in hooks, so a true token-ratio hook is not feasible.  The
 enforceable proxy is the existing `model_utilization` `PreToolUse` hook
 (sonnet : non-sonnet dispatch-count ratio ≥ 10:1), which indirectly drives
 sonnet token dominance — plus the terse-main-thread discipline above.
+
+<!-- session: 2026-08-09 -->
