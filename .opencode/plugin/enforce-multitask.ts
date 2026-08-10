@@ -37,6 +37,24 @@ import {
   readDispatchOutcomes,
   writeDispatchOutcomes,
 } from "../lib/shared.ts"
+const MULTITASK_DISPATCH_COUNT_FILE = "/tmp/gludd-multitask-dispatch-count.json"
+
+interface DispatchCountFile {
+  count: number
+  ts: number
+}
+
+function readAndClearDispatchCountFile(): number {
+  const data = readJsonFile<DispatchCountFile>(MULTITASK_DISPATCH_COUNT_FILE, { count: 0, ts: 0 })
+  writeJsonFile(MULTITASK_DISPATCH_COUNT_FILE, { count: 0, ts: Date.now() })
+  return typeof data.count === "number" ? data.count : 0
+}
+
+function incrementDispatchCountFile(): void {
+  const data = readJsonFile<DispatchCountFile>(MULTITASK_DISPATCH_COUNT_FILE, { count: 0, ts: 0 })
+  writeJsonFile(MULTITASK_DISPATCH_COUNT_FILE, { count: data.count + 1, ts: Date.now() })
+}
+
 const FLOOR_ENFORCE = process.env.GLUDD_MULTITASK_FLOOR_ENFORCE !== "0"
 const DIVERSITY_ENFORCE = process.env.GLUDD_MULTITASK_DIVERSITY_ENFORCE !== "0"
 // MIN_DISPATCHES is resolved by multitask_config.ts from env vars with a
@@ -338,6 +356,7 @@ const defaultImpl: HotModule = {
         }
         _state.thisMessageDispatches++
         _state.sessionDispatchTotal++
+        incrementDispatchCountFile()
         _state.estimatedInFlight++
         _state.lastDispatchTs = now
         // --- Topic diversity check ---
@@ -524,6 +543,7 @@ const defaultImpl: HotModule = {
 async function handleTextComplete(_input: unknown, output: unknown): Promise<unknown> {
     const tx = typeof output === "string" ? output : (output as any)?.text ? String((output as any).text) : ""
     if (isSubagent()) { return output }
+    const currentDispatchCount = readAndClearDispatchCountFile()
     if (!FLOOR_ENFORCE) { return undefined }
     const text = tx
     if (!text || text.trim().length === 0) { return output }
@@ -554,42 +574,50 @@ async function handleTextComplete(_input: unknown, output: unknown): Promise<unk
     // This is the canonical boundary signal — text.complete fires at the
     // end of every assistant response.
     decrementPressureReleaseTurns()
-    const _tef = REQUIRED_DISPATCHES > 0
-      ? getPressureReleaseFloor(REQUIRED_DISPATCHES)
-      : 0
-    const everDispatched = _state.sessionDispatchTotal > 0 || _state.thisMessageDispatches > 0
-    if (REQUIRED_DISPATCHES > 0 && _state.thisMessageDispatches < _tef && everDispatched) {
-      const dispatched = _state.thisMessageDispatches
+    const hasWork = hasPendingWork()
+    if (!hasWork) {
       handleMessageBoundary(_state)
-      // MT.1: escalate when under-floor waves keep happening
-      const mt1Escalation = _state.underFloorCount >= 3
-        ? [
-            "",
-            "⛔ CONFIGURED MINIMUM: fewer than " + String(_tef) + " dispatches for " + String(_state.underFloorCount) + " consecutive waves.",
-            "This minimum was explicitly configured; the absolute ceiling remains " + String(MAX_DISPATCHES) + ".",
-          ].join("\n")
-        : ""
+      writeState(_state)
+      return output
+    }
+    if (currentDispatchCount === 0) {
+      handleMessageBoundary(_state)
       writeState(_state)
       return {
         text: [
-          "THIN WAVE BLOCKED",
-          "MUST DISPATCH a full wave before sending summary text.",
-          `This message had only ${dispatched} dispatch(es).`,
-          `The configured minimum requires ${_tef} per wave.`,
-          "Your text has been blanked. Re-send after satisfying the configured minimum.",
-          mt1Escalation,
+          "ZERO-DISPATCH TEXT BLOCKED — 0 subagent dispatches in this message.",
+          "The configured minimum requires " + String(MIN_DISPATCHES) + " per wave.",
+          "Dispatch a full wave with task/agent/workflow before sending text.",
+          "Your text has been blanked.",
           "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
         ].join("\n"),
       }
     }
     handleMessageBoundary(_state)
-    // MT.1: escalate when under-floor waves keep happening — inject into
-    // non-blocked output so the agent sees it even on full-wave responses.
+    if (currentDispatchCount < MIN_DISPATCHES) {
+      const underWarning = [
+        "UNDER-FLOOR WARNING: only " + String(currentDispatchCount) + " dispatch(es) in this message.",
+        "The configured minimum requires " + String(MIN_DISPATCHES) + " per wave.",
+      ].join("\n")
+      const mt1Escalation = _state.underFloorCount >= 3
+        ? "\n" + [
+            "CONFIGURED MINIMUM: " + String(_state.underFloorCount) + " consecutive waves with fewer than " + String(MIN_DISPATCHES) + " dispatches.",
+            "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+          ].join("\n")
+        : ""
+      const fullWarning = underWarning + mt1Escalation
+      const wrappedOutput = typeof output === "string"
+        ? fullWarning + "\n\n" + output
+        : (output as any)?.text
+          ? { ...(output as any), text: fullWarning + "\n\n" + String((output as any).text) }
+          : output
+      writeState(_state)
+      return wrappedOutput
+    }
     const warnings: string[] = []
-    if (REQUIRED_DISPATCHES > 0 && _state.underFloorCount >= 3) {
+    if (_state.underFloorCount >= 3) {
       warnings.push([
-        "⛔ CONFIGURED MINIMUM: " + String(_state.underFloorCount) + " consecutive waves with fewer than " + String(REQUIRED_DISPATCHES) + " dispatches.",
-        "Only the explicit minimum is enforced; never pad a wave to ten.",
+        "CONFIGURED MINIMUM: " + String(_state.underFloorCount) + " consecutive waves with fewer than " + String(MIN_DISPATCHES) + " dispatches.",
         "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
       ].join("\n"))
     }

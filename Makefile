@@ -3075,8 +3075,9 @@ _push-rate-guard:
 	@# Uses ci_push_guard.py (branch-level active-run check, not commit-specific)
 	@# PUSH_BRANCH overrides the branch to check (default: current branch).
 	@PUSH_BRANCH=$${PUSH_BRANCH:-$$(git branch --show-current)}; \
-	$(PYTHON) scripts/ci_push_guard.py "$$PUSH_BRANCH" || { \
+		$(PYTHON) scripts/ci_push_guard.py "$$PUSH_BRANCH" || { \
 		echo "Push blocked while CI is active on $$PUSH_BRANCH; wait for CI to complete."; \
+		echo '{"last_push_blocked":true,"block_reason":"_push-rate-guard:ci-active","epoch":'$$(date +%s)'}' > /tmp/gludd-push-state.json; \
 		exit 1; \
 	}
 	@# Check push cooldown (minimum interval between pushes)
@@ -3087,6 +3088,7 @@ _push-rate-guard:
 		if [ "$$ELAPSED" -lt "$(PUSH_COOLDOWN_SECS)" ] && [ "$$GLUDD_FORCE_PUSH" != "1" ]; then \
 			echo "BLOCKED: last push was $$ELAPSED seconds ago (cooldown: $(PUSH_COOLDOWN_SECS)s)."; \
 			echo "Batch commits locally. Use GLUDD_FORCE_PUSH=1 to override."; \
+			echo '{"last_push_blocked":true,"block_reason":"_push-rate-guard:cooldown","cooldown_elapsed":'$$ELAPSED',"cooldown_required":$(PUSH_COOLDOWN_SECS),"epoch":'$$(date +%s)'}' > /tmp/gludd-push-state.json; \
 			exit 1; \
 		fi; \
 	fi
@@ -3095,6 +3097,7 @@ _push-rate-guard:
 	if [ "$$CANCELLED" -ge "$(MAX_CANCELLED_RUNS)" ] && [ "$$GLUDD_FORCE_PUSH" != "1" ]; then \
 		echo "BLOCKED: $$CANCELLED CI runs cancelled in last 2h (max $(MAX_CANCELLED_RUNS))."; \
 		echo "Run 'make gate-background' locally instead. Use GLUDD_FORCE_PUSH=1 to override."; \
+		echo '{"last_push_blocked":true,"block_reason":"_push-rate-guard:cancelled-runs","cancelled_count":'$$CANCELLED',"max_allowed":$(MAX_CANCELLED_RUNS),"epoch":'$$(date +%s)'}' > /tmp/gludd-push-state.json; \
 		exit 1; \
 	fi
 
@@ -4301,7 +4304,7 @@ scan-secrets:
 # ── Secrets management targets ──
 # secrets-scan: scan for secrets without modifying files (checks against baseline)
 secrets-scan:
-	@TMP=$$(mktemp /tmp/gludd-secrets-baseline.XXXXXX); cp .secrets.baseline "$$TMP"; echo "[secrets-scan] scanning temporary baseline copy $$TMP"; $(UV) run detect-secrets scan --baseline "$$TMP" $(ARGS); RC=$$?; rm -f "$$TMP"; exit $$RC
+	@TMP=$$(mktemp /tmp/gludd-secrets-baseline.XXXXXX); cp .secrets.baseline "$$TMP"; echo "[secrets-scan] scanning temporary baseline copy $$TMP"; $(UV) run detect-secrets scan --baseline "$$TMP" $(ARGS); RC=$$?; rm -f "$$TMP"; if [ $$RC -ne 0 ]; then echo '{"last_push_blocked":true,"block_reason":"secrets-scan:secrets-found","epoch":'$$(date +%s)'}' > /tmp/gludd-push-state.json; fi; exit $$RC
 
 # secrets-scrub: find and scrub secrets from the codebase (interactive audit)
 secrets-scrub:
@@ -5185,6 +5188,7 @@ _pre-commit-stage-guard:
 	else \
 		echo "BLOCKED: no staged changes. Stage files with 'make git-add FILES=...' before committing."; \
 		echo "Use FORCE=1 to bypass (e.g. for amend-only operations)."; \
+		echo '{"last_push_blocked":true,"block_reason":"_pre-commit-stage-guard:no-staged-changes","epoch":'$$(date +%s)'}' > /tmp/gludd-push-state.json; \
 		exit 1; \
 	fi
 
@@ -5218,6 +5222,7 @@ _stash-leak-guard:
 			echo "STASH-LEAK BLOCKED: $$STASH_COUNT stash entries exist — pre-commit hooks stashed changes without popping."; \
 			echo "This caused merge conflicts (2026-07-28: engine.py + test_escalation_no_self_approve.py)."; \
 			echo "Run 'make git-stash-pop' to restore stashed work, then re-commit. See AA028."; \
+			echo '{"last_push_blocked":true,"block_reason":"_stash-leak-guard:stash-entries","stash_count":'$$STASH_COUNT',"epoch":'$$(date +%s)'}' > /tmp/gludd-push-state.json; \
 			exit 1; \
 		fi; \
 	fi
@@ -5233,6 +5238,7 @@ _stash-before-push-guard:
 		echo "Pre-commit hooks will stash these, and the push may proceed with un-linted code."; \
 		echo "Commit or revert changes before pushing. See AA022."; \
 		if [ "$$FORCE" != "1" ]; then \
+			echo '{"last_push_blocked":true,"block_reason":"_stash-before-push-guard:unstaged-changes","epoch":'$$(date +%s)'}' > /tmp/gludd-push-state.json; \
 			exit 1; \
 		fi; \
 		echo "FORCE=1 bypass active."; \
@@ -5253,12 +5259,14 @@ _ci-restart-cap:
 			echo "BLOCKED: $$CI_RESTART_COUNT CI restarts this session. Max is 3."; \
 			echo "Wait for CI to report GREEN or RED, then fix ALL failures in ONE commit."; \
 			echo "Use FORCE=1 to bypass (emergency only). See AA023."; \
+			echo '{"last_push_blocked":true,"block_reason":"_ci-restart-cap:limit","restart_count":'$$CI_RESTART_COUNT',"max_allowed":3,"epoch":'$$(date +%s)'}' > /tmp/gludd-push-state.json; \
 			exit 1; \
 		fi; \
 	else \
 		CI_NEW=$$((CI_RESTART_COUNT + 1)); \
 		echo "$$CI_NEW" > /tmp/gludd-ci-restart-count; \
 		echo "CI-RESTART-CAP: restart $$CI_NEW/3 recorded."; \
+		echo '{"last_push_blocked":false,"ci_restart_count":'$$CI_NEW',"max_allowed":3,"epoch":'$$(date +%s)'}' > /tmp/gludd-push-state.json; \
 	fi
 	@echo "_ci-restart-cap: PASS"
 
@@ -5281,6 +5289,7 @@ _commit-lint-guard:
 		exit 0; \
 	else \
 		echo "_commit-lint-guard: FAIL — lint errors in staged files. Fix before committing."; \
+		echo '{"last_push_blocked":true,"block_reason":"_commit-lint-guard:lint-errors","epoch":'$$(date +%s)'}' > /tmp/gludd-push-state.json; \
 		exit 1; \
 	fi
 

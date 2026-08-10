@@ -233,6 +233,8 @@ interface PostResultsState {
   lastTurnHadResults: boolean
   lastTurnHadWave: boolean
   lastResultCount: number
+  lastToolWasShipping: boolean
+  lastShippingToolName: string
   ts: number
 }
 
@@ -246,6 +248,8 @@ function readPostResultsState(): PostResultsState {
     lastTurnHadResults: false,
     lastTurnHadWave: false,
     lastResultCount: 0,
+    lastToolWasShipping: false,
+    lastShippingToolName: "",
     ts: 0,
   })
 }
@@ -461,12 +465,10 @@ function incrementTextCompleteCount(): void {
   } catch {}
 }
 
-// ── Health score computation ────────────────────────────────────────────────
-// Extracted from hasRealPendingWork() so the liveness checker can pin the
-// function shape AND so unit tests can verify scoring in isolation. Each
-// signal subtracts a fixed weight; floor is 0.
+// ── Pending-work signals (binary latch — no weights, no thresholds) ─────────
+// Each signal is a boolean. If ANY signal is true, work is pending.
 
-function computeHealthScore(state: {
+interface PendingWorkSignals {
   gateStatusRed: boolean
   gateStale: boolean
   ciVerdictPendingOrRed: boolean
@@ -476,26 +478,30 @@ function computeHealthScore(state: {
   repoPending: boolean
   multitaskingBacklogOpen: boolean
   underFloor: boolean
-}): number {
-  let score = 100
-  if (state.gateStatusRed) score -= 30
-  if (state.gateStale) score -= 10
-  if (state.ciVerdictPendingOrRed) score -= 20
-  if (state.ciVerdictUnknown) score -= 10
-  if (state.tasksMdUnchecked) score -= 10
-  if (state.bugsOpen) score -= 10
-  if (state.repoPending) score -= 5
-  if (state.multitaskingBacklogOpen) score -= 5
-  if (state.underFloor) score -= 5
-  return score < 0 ? 0 : score
+  coverageIncomplete: boolean
+  fullE2eIncomplete: boolean
+  pushBlocked: boolean
+  gateLiteTestFailed: boolean
+  ciNeverRunOnHead: boolean
+  uncommittedChanges: boolean
+  tasksMdUnverified: boolean
+}
+
+// Fixable push-block reasons — these indicate real pending work (not
+// external/rate-limiting reasons like "cooldown" or "rate-limited").
+const FIXABLE_PUSH_BLOCK_REASONS = new Set([
+  "ci-pending", "ci-red", "ci-failure", "gate-red", "gate-failure",
+  "dirty-tree", "uncommitted-changes", "lint-failure", "typecheck-failure",
+  "test-failure", "collect-failure", "tdd-compliance", "no-verify-required",
+])
+
+function computeHealthScore(signals: PendingWorkSignals): boolean {
+  return Object.values(signals).some((v) => v === true)
 }
 
 // ── WORK-STATE CHECKERS (filesystem, no tоdowrite dependency) ───────────────
 
 interface WorkState {
-  /** Quality evidence gaps remain blockers even when task ledgers are clean. */
-  coverageIncomplete?: boolean
-  fullE2eIncomplete?: boolean
   tasksMdUnchecked: boolean
   tasksMdUncheckedCount: number
   ratchetEntries: number
@@ -503,8 +509,8 @@ interface WorkState {
   gateStatusMissing: boolean
   gateStale: boolean
   gateStatusRed: boolean
-  coverageIncomplete?: boolean
-  fullE2eIncomplete?: boolean
+  coverageIncomplete: boolean
+  fullE2eIncomplete: boolean
   ciVerdictPendingOrRed: boolean
   ciVerdictUnknown: boolean
   releaseIncomplete: boolean
@@ -514,9 +520,14 @@ interface WorkState {
   backlogOpen: boolean
   backlogItems: number
   underFloor: boolean
+  pushBlocked: boolean
+  gateLiteTestFailed: boolean
+  ciNeverRunOnHead: boolean
+  uncommittedChanges: boolean
+  tasksMdUnverified: boolean
   hasPendingWork: boolean
   hasLocalWork: boolean
-  healthScore: number
+  healthScore: boolean
   ts: number
 }
 
@@ -728,28 +739,98 @@ function hasRealPendingWork(): WorkState {
     }
   } catch {}
 
-  const hasLocalWork = tasksMdUnchecked || ratchetEntries > 0 || bugsOpen || gateStatusRed
-  const projectWorkOpen =
-    hasLocalWork ||
-    ciVerdictPendingOrRed ||
-    ciVerdictUnknown ||
-    releaseIncomplete ||
-    testFailures ||
-    repoPending ||
-    multitaskingBacklogOpen
-  const hasPendingWork = projectWorkOpen || underFloor
-  const healthScore = computeHealthScore({
+  // ── pushBlocked: fixable blocked pushes ──────────────────────────────────
+  let pushBlocked = false
+  try {
+    const pushStatePath = "/tmp/gludd-push-state.json"
+    if (fs.existsSync(pushStatePath)) {
+      const ps = JSON.parse(fs.readFileSync(pushStatePath, "utf8"))
+      if (ps.last_push_blocked) {
+        const reason = typeof ps.block_reason === "string" ? ps.block_reason : ""
+        if (FIXABLE_PUSH_BLOCK_REASONS.has(reason)) {
+          pushBlocked = true
+        }
+      }
+    }
+  } catch {}
+
+  // ── gateLiteTestFailed: /tmp/gludd-gate-lite-test.log FAILED markers ──────
+  let gateLiteTestFailed = false
+  try {
+    const gateLiteTestLogPath = "/tmp/gludd-gate-lite-test.log"
+    if (fs.existsSync(gateLiteTestLogPath)) {
+      const logContent = fs.readFileSync(gateLiteTestLogPath, "utf8")
+      if (/FAILED/i.test(logContent)) {
+        gateLiteTestFailed = true
+      }
+    }
+  } catch {}
+
+  // ── ciNeverRunOnHead: .ci-status missing for current HEAD ─────────────────
+  let ciNeverRunOnHead = false
+  try {
+    const ciStatusPath = path.join(root, ".ci-status")
+    if (fs.existsSync(ciStatusPath)) {
+      const ciStatusContent = fs.readFileSync(ciStatusPath, "utf8")
+      let headSha = ""
+      try {
+        headSha = execSync("git rev-parse HEAD", {
+          cwd: root, encoding: "utf8", timeout: 3000, stdio: ["pipe", "pipe", "pipe"],
+        }) as string
+        headSha = headSha.trim()
+      } catch {}
+      if (headSha && !ciStatusContent.includes(headSha)) {
+        ciNeverRunOnHead = true
+      }
+    }
+  } catch {}
+
+  // ── uncommittedChanges: git status --porcelain ────────────────────────────
+  let uncommittedChanges = false
+  try {
+    const porcelain = execSync("git status --porcelain", {
+      cwd: root, encoding: "utf8", timeout: 3000, stdio: ["pipe", "pipe", "pipe"],
+    }) as string
+    if (porcelain.trim().length > 0) {
+      uncommittedChanges = true
+    }
+  } catch {}
+
+  // ── tasksMdUnverified: [x] items without evidence ─────────────────────────
+  let tasksMdUnverified = false
+  try {
+    const tasksPath2 = path.join(root, "TASKS.md")
+    if (fs.existsSync(tasksPath2)) {
+      const tasksContent = fs.readFileSync(tasksPath2, "utf8")
+      const checkedLines = tasksContent.split("\n").filter(
+        (l: string) => /^[ \t]*[-*]\s*\[[xX]\]/.test(l),
+      )
+      const evidenceRe = /\b(?:[0-9a-f]*[a-f][0-9a-f]{6,39}|\d+\s+passed|CI\s+(?:GREEN|RED)|=== GATE(?:\s*|-LITE):\s*PASSED|VERIFIED\s+\w+@|conclusion:\s*success|All checks passed|Collection OK)\b/i
+      const unverifiedCount = checkedLines.filter((l: string) => !evidenceRe.test(l)).length
+      if (unverifiedCount > 0) {
+        tasksMdUnverified = true
+      }
+    }
+  } catch {}
+
+  // ── BINARY LATCH — any signal true = pending work ─────────────────────────
+  const signals: PendingWorkSignals = {
     gateStatusRed, gateStale, ciVerdictPendingOrRed, ciVerdictUnknown,
     tasksMdUnchecked, bugsOpen, repoPending, multitaskingBacklogOpen, underFloor,
-  })
+    coverageIncomplete, fullE2eIncomplete,
+    pushBlocked, gateLiteTestFailed, ciNeverRunOnHead, uncommittedChanges, tasksMdUnverified,
+  }
+  const hasPendingWork = computeHealthScore(signals)
+  const hasLocalWork = hasPendingWork
 
   const state: WorkState = {
     tasksMdUnchecked, tasksMdUncheckedCount, ratchetEntries, bugsOpen,
     gateStatusMissing, gateStale, gateStatusRed,
     ciVerdictPendingOrRed, ciVerdictUnknown, releaseIncomplete, testFailures, repoPending,
     multitaskingBacklogOpen, backlogOpen: multitaskingBacklogOpen, backlogItems, underFloor,
-    hasPendingWork, hasLocalWork, healthScore, ts: now,
     coverageIncomplete, fullE2eIncomplete,
+    pushBlocked, gateLiteTestFailed, ciNeverRunOnHead, uncommittedChanges, tasksMdUnverified,
+    hasPendingWork, hasLocalWork, healthScore: hasPendingWork, ts: now,
   }
 
   try {
@@ -795,6 +876,7 @@ const QUESTION_DENY_REASON = [
 const STOP_LIKE_TARGETS_RE = /^make\s+(git-commit|commit-no-verify|ship-commit|git-push-branch|git-push-branch-nv|git-push-sandboxcom|git-push-sandboxcom-main|git-push-master|git-tag-push|release-cut|release-promote|test-and-commit|repo-commit|feature-done|release-recut|release-branch-new|git-merge)(\s|$)/
 const COMMIT_TARGET_RE = /^make\s+(git-commit|commit-no-verify|git-commit-file|test-and-commit|repo-commit|feature-done|git-merge)(\s|$)/
 const PUSH_TARGET_RE = /^make\s+(git-push-branch|git-push-branch-nv|git-push-sandboxcom|git-push-sandboxcom-main|git-push-master|git-tag-push|release-cut|release-promote|ship-commit|release-recut|release-branch-new)(\s|$)/
+const GIT_SHIPPING_TARGETS_RE = /^make\s+(ship-commit|batch-push|git-push-sandboxcom|git-tag-push)(\s|$)/
 
 function issueStopChallenge(): string {
   const challenge_token = randomUUID().replace(/-/g, "").slice(0, 16)
@@ -987,7 +1069,7 @@ function blockMandatoryPendingText(
       `CI: ${workState.ciVerdictPendingOrRed ? "RED/PENDING" : workState.ciVerdictUnknown ? "UNKNOWN (cooldown)" : "N/A"}, ` +
       `release: ${workState.releaseIncomplete ? "INCOMPLETE" : "N/A"}, ` +
       `repo: ${workState.repoPending ? "DIRTY" : "clean"}.`,
-      `Health: ${workState.healthScore}/100.`,
+      `Any pending signal: ${workState.healthScore ? "YES" : "no"}.`,
       "",
       "You may NOT send a text-only response while work exists.",
       "The ONLY valid action is to DISPATCH SUBAGENTS via the Task tool,",
@@ -1041,7 +1123,7 @@ const defaultImpl: HotModule = {
           "══════════════════════════════════════════════════════════════",
           "",
           `PENDING WORK EXISTS: ${indicators.join(", ")}.`,
-          `Health score: ${workState.healthScore}/100.`,
+          `Any pending signal: ${workState.healthScore ? "YES" : "no"}.`,
           "",
           "⛔ ROOT-CAUSE-ONLY: Every fix must address the root cause, never the symptom.",
           "  - Guardrail errors? Fix the logic, don't disable the guardrail.",
