@@ -39,7 +39,7 @@ def _mock_cosign_key():
 
     return CosignKey(
         key_name="test-key",
-        private_key="PRIVATE-BASE64",
+        private_key="PRIVATE-BASE64",  # pragma: allowlist secret
         public_key="PUBLIC-BASE64",
         created_at="2026-01-01T00:00:00+00:00",
     )
@@ -249,7 +249,7 @@ class TestCosignGenerate:
                 json={"project_id": "p", "key_name": "k", "password": "s3cret"},
             )
         assert resp.status_code == 200
-        assert mock_gen.call_args.kwargs["password"] == "s3cret"
+        assert mock_gen.call_args.kwargs["password"] == "s3cret"  # pragma: allowlist secret
 
     def test_calls_generate_with_output_dir(self) -> None:
         app, _ = _make_app()

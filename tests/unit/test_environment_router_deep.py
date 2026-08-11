@@ -199,7 +199,7 @@ class TestModelsFacet:
             api_metered=True,
             credential_alias="sk-secret",  # MUST be absent
             api_base_alias="https://secret.invalid",  # MUST be absent
-            internal_secret="do-not-leak",  # MUST be absent
+            internal_secret="do-not-leak",  # pragma: allowlist secret
         )
         app = FastAPI()
         app.state._model_gateway = ModelsFacetTestGateway([p])
