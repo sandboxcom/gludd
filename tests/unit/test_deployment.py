@@ -49,6 +49,7 @@ class TestDeploymentManagerInit:
 
     def test_init_with_secrets_resolver(self):
         from general_ludd.secrets.env import EnvSecretsManager
+
         env_resolver = EnvSecretsManager(overrides={"TEST_KEY": "test-value"})
         mgr = DeploymentManager(secrets_resolver=env_resolver)
         assert mgr._secrets_resolver is env_resolver
@@ -66,14 +67,16 @@ class TestDeploymentManagerDeploy:
             returncode=0,
         )
         mock_proc_apply = _mock_subprocess(
-            stdout='Apply complete! Resources: 1 added, 0 changed, 0 destroyed.',
+            stdout="Apply complete! Resources: 1 added, 0 changed, 0 destroyed.",
             returncode=0,
         )
         mock_proc_output = _mock_subprocess(
-            stdout=json.dumps({
-                "instance_ip": {"value": "1.2.3.4"},
-                "endpoint_url": {"value": "http://1.2.3.4:8000/v1"},
-            }),
+            stdout=json.dumps(
+                {
+                    "instance_ip": {"value": "1.2.3.4"},
+                    "endpoint_url": {"value": "http://1.2.3.4:8000/v1"},
+                }
+            ),
             returncode=0,
         )
 
@@ -82,12 +85,14 @@ class TestDeploymentManagerDeploy:
         def next_proc(*a: object, **kw: object) -> object:
             return next(procs)
 
-        with patch(
-            "general_ludd.infra.deployment.asyncio.create_subprocess_exec",
-            side_effect=next_proc,
-        ) as mock_exec, \
-             patch("general_ludd.infra.deployment.os.makedirs"), \
-             patch("builtins.open", MagicMock()):
+        with (
+            patch(
+                "general_ludd.infra.deployment.asyncio.create_subprocess_exec",
+                side_effect=next_proc,
+            ) as mock_exec,
+            patch("general_ludd.infra.deployment.os.makedirs"),
+            patch("builtins.open", MagicMock()),
+        ):
             instance = await mgr.deploy(_make_config())
 
             assert mock_exec.call_count == 3
@@ -105,8 +110,10 @@ class TestDeploymentManagerDeploy:
         resolver = BinaryPathResolver(config=BinaryPaths())
         mgr = DeploymentManager(binary_paths=resolver, working_dir="/tmp/test-deploy")
 
-        with patch.object(resolver, "get_infra_binary", return_value="tofu"), \
-             patch.object(mgr, "_run_terraform", new_callable=AsyncMock) as mock_run:
+        with (
+            patch.object(resolver, "get_infra_binary", return_value="tofu"),
+            patch.object(mgr, "_run_terraform", new_callable=AsyncMock) as mock_run,
+        ):
             mock_run.return_value = {
                 "instance_ip": "10.0.0.1",
                 "endpoint_url": "http://10.0.0.1:8000/v1",
@@ -122,8 +129,10 @@ class TestDeploymentManagerDeploy:
         resolver = BinaryPathResolver(config=BinaryPaths())
         mgr = DeploymentManager(binary_paths=resolver, working_dir="/tmp/test-deploy")
 
-        with patch.object(resolver, "get_infra_binary", return_value="terraform"), \
-             patch.object(mgr, "_run_terraform", new_callable=AsyncMock) as mock_run:
+        with (
+            patch.object(resolver, "get_infra_binary", return_value="terraform"),
+            patch.object(mgr, "_run_terraform", new_callable=AsyncMock) as mock_run,
+        ):
             mock_run.return_value = {
                 "instance_ip": "10.0.0.1",
                 "endpoint_url": "http://10.0.0.1:8000/v1",
@@ -143,9 +152,7 @@ class TestDeploymentManagerDestroy:
         mgr = DeploymentManager(binary_paths=resolver, working_dir=str(tmp_path))
 
         with patch.object(mgr, "_run_terraform", new_callable=AsyncMock) as mock_run:
-            mock_run.return_value = {
-                "stdout": json.dumps({"instance_ip": {"value": "1.2.3.4"}})
-            }
+            mock_run.return_value = {"stdout": json.dumps({"instance_ip": {"value": "1.2.3.4"}})}
             instance = await mgr.deploy(_make_config())
             mock_run.reset_mock()
             await mgr.destroy(instance.instance_id)
@@ -158,8 +165,10 @@ class TestDeploymentManagerDestroy:
         resolver = BinaryPathResolver(config=BinaryPaths())
         mgr = DeploymentManager(binary_paths=resolver, working_dir=str(tmp_path))
 
-        with patch.object(resolver, "get_infra_binary", return_value="tofu"), \
-             patch("general_ludd.infra.deployment.asyncio.create_subprocess_exec") as mock_exec:
+        with (
+            patch.object(resolver, "get_infra_binary", return_value="tofu"),
+            patch("general_ludd.infra.deployment.asyncio.create_subprocess_exec") as mock_exec,
+        ):
             mock_exec.side_effect = lambda *a, **k: _mock_subprocess(
                 stdout=json.dumps({"instance_ip": {"value": "1.2.3.4"}}),
                 returncode=0,
@@ -168,7 +177,8 @@ class TestDeploymentManagerDestroy:
             mock_exec.reset_mock()
             mock_exec.side_effect = None
             mock_exec.return_value = _mock_subprocess(
-                stdout="Resources: 0 destroyed.", returncode=0,
+                stdout="Resources: 0 destroyed.",
+                returncode=0,
             )
             await mgr.destroy(instance.instance_id)
 
@@ -190,8 +200,10 @@ class TestDeploymentManagerRunTerraform:
         resolver = BinaryPathResolver(config=BinaryPaths(terraform="/usr/bin/terraform"))
         mgr = DeploymentManager(binary_paths=resolver, working_dir="/tmp/test")
 
-        with patch.object(resolver, "get_infra_binary", return_value="terraform"), \
-             patch("general_ludd.infra.deployment.asyncio.create_subprocess_exec") as mock_exec:
+        with (
+            patch.object(resolver, "get_infra_binary", return_value="terraform"),
+            patch("general_ludd.infra.deployment.asyncio.create_subprocess_exec") as mock_exec,
+        ):
             mock_proc = _mock_subprocess(stdout="success output", returncode=0)
             mock_exec.return_value = mock_proc
 
@@ -204,8 +216,10 @@ class TestDeploymentManagerRunTerraform:
         resolver = BinaryPathResolver(config=BinaryPaths(terraform="/usr/bin/terraform"))
         mgr = DeploymentManager(binary_paths=resolver, working_dir="/tmp/test")
 
-        with patch.object(resolver, "get_infra_binary", return_value="terraform"), \
-             patch("general_ludd.infra.deployment.asyncio.create_subprocess_exec") as mock_exec:
+        with (
+            patch.object(resolver, "get_infra_binary", return_value="terraform"),
+            patch("general_ludd.infra.deployment.asyncio.create_subprocess_exec") as mock_exec,
+        ):
             mock_proc = _mock_subprocess(stdout="", stderr="error!", returncode=1)
             mock_exec.return_value = mock_proc
 
@@ -216,10 +230,12 @@ class TestDeploymentManagerRunTerraform:
 class TestDeploymentManagerParseOutputs:
     def test_parse_outputs_extracts_ip_and_port(self):
         mgr = DeploymentManager()
-        output = json.dumps({
-            "instance_ip": {"value": "203.0.113.5"},
-            "endpoint_url": {"value": "http://203.0.113.5:8000/v1"},
-        })
+        output = json.dumps(
+            {
+                "instance_ip": {"value": "203.0.113.5"},
+                "endpoint_url": {"value": "http://203.0.113.5:8000/v1"},
+            }
+        )
         parsed = mgr._parse_outputs(output)
         assert parsed["instance_ip"] == "203.0.113.5"
         assert parsed["endpoint_url"] == "http://203.0.113.5:8000/v1"
@@ -307,11 +323,13 @@ class TestDeployEnvIsolation:
                 captured_envs.append(dict(env))
             return {"stdout": '{"instance_ip": {"value": "1.2.3.4"}}', "stderr": "", "returncode": 0}
 
-        with patch.object(mgr, "_run_terraform", side_effect=fake_run_terraform), \
-             patch("general_ludd.infra.deployment.os.makedirs"), \
-             patch("builtins.open", MagicMock()), \
-             patch.object(mgr, "_generator") as mock_gen, \
-             patch.object(mgr, "_save_registry"):
+        with (
+            patch.object(mgr, "_run_terraform", side_effect=fake_run_terraform),
+            patch("general_ludd.infra.deployment.os.makedirs"),
+            patch("builtins.open", MagicMock()),
+            patch.object(mgr, "_generator") as mock_gen,
+            patch.object(mgr, "_save_registry"),
+        ):
             mock_gen.generate.return_value = ""
 
             await asyncio.gather(mgr.deploy(config_a), mgr.deploy(config_b))
@@ -324,3 +342,375 @@ class TestDeployEnvIsolation:
         assert "cred-for-ALIAS_B" in creds
         # Global os.environ was never written to with the credential key.
         assert "TF_VAR_key" not in _os.environ
+
+
+class TestEstimateElapsedCost:
+    def test_azure_dedicated_vm(self):
+        config = ComputeConfig(
+            provider=ComputeProvider.AZURE,
+            gpu_type=GPUType.T4,
+            model_name="m",
+            region="eastus",
+            deploy_type="vm",
+            spot=False,
+        )
+        cost = DeploymentManager._estimate_elapsed_cost(config, 3600.0)
+        assert cost > 0.0
+
+    def test_azure_spot_vm(self):
+        config = ComputeConfig(
+            provider=ComputeProvider.AZURE,
+            gpu_type=GPUType.T4,
+            model_name="m",
+            region="eastus",
+            deploy_type="vm_spot",
+            spot=True,
+        )
+        cost = DeploymentManager._estimate_elapsed_cost(config, 3600.0)
+        assert cost > 0.0
+
+    def test_azure_containerapp(self):
+        config = ComputeConfig(
+            provider=ComputeProvider.AZURE,
+            gpu_type=GPUType.T4,
+            model_name="m",
+            region="eastus",
+            deploy_type="containerapp",
+            spot=False,
+        )
+        cost = DeploymentManager._estimate_elapsed_cost(config, 1800.0)
+        assert cost > 0.0
+
+    def test_non_azure_returns_zero(self):
+        for provider in (ComputeProvider.AWS, ComputeProvider.GCP):
+            config = ComputeConfig(
+                provider=provider,
+                gpu_type=GPUType.T4,
+                model_name="m",
+                region="us-east-1",
+                deploy_type="vm",
+            )
+            cost = DeploymentManager._estimate_elapsed_cost(config, 3600.0)
+            assert cost == 0.0
+
+    def test_zero_elapsed(self):
+        config = ComputeConfig(
+            provider=ComputeProvider.AZURE,
+            gpu_type=GPUType.T4,
+            model_name="m",
+            region="eastus",
+            deploy_type="vm",
+        )
+        cost = DeploymentManager._estimate_elapsed_cost(config, 0.0)
+        assert cost == 0.0
+
+    def test_negative_elapsed_clamped(self):
+        config = ComputeConfig(
+            provider=ComputeProvider.AZURE,
+            gpu_type=GPUType.T4,
+            model_name="m",
+            region="eastus",
+            deploy_type="vm",
+        )
+        cost = DeploymentManager._estimate_elapsed_cost(config, -100.0)
+        assert cost == 0.0
+
+    def test_multi_gpu_scales_linearly(self):
+        config_single = ComputeConfig(
+            provider=ComputeProvider.AZURE,
+            gpu_type=GPUType.T4,
+            model_name="m",
+            region="eastus",
+            deploy_type="vm",
+            gpu_count=1,
+        )
+        config_multi = ComputeConfig(
+            provider=ComputeProvider.AZURE,
+            gpu_type=GPUType.T4,
+            model_name="m",
+            region="eastus",
+            deploy_type="vm",
+            gpu_count=4,
+        )
+        single = DeploymentManager._estimate_elapsed_cost(config_single, 3600.0)
+        multi = DeploymentManager._estimate_elapsed_cost(config_multi, 3600.0)
+        assert multi == pytest.approx(single * 4, rel=0.01)
+
+
+class TestBuildAuthEnvEdgeCases:
+    def test_secrets_resolver_provides_value(self, tmp_path):
+        class Resolver:
+            def resolve(self, alias: str, project_id: str | None = None) -> str | None:
+                if alias == "MY_SECRET":
+                    return "resolved-secret"
+                return None
+
+        config = ComputeConfig(
+            provider=ComputeProvider.AWS,
+            gpu_type=GPUType.T4,
+            model_name="m",
+            region="us-east-1",
+            provider_auth_aliases={"TF_VAR_key": "MY_SECRET"},
+        )
+        mgr = DeploymentManager(working_dir=str(tmp_path), secrets_resolver=Resolver())
+        env = mgr._build_auth_env(config)
+        assert env["TF_VAR_key"] == "resolved-secret"
+
+    def test_secrets_resolver_returns_none_falls_back_to_osenviron(self, tmp_path, monkeypatch):
+        class NoneResolver:
+            def resolve(self, alias: str, project_id: str | None = None) -> str | None:
+                return None
+
+        monkeypatch.setenv("FALLBACK_ALIAS", "env-value")
+        config = ComputeConfig(
+            provider=ComputeProvider.AWS,
+            gpu_type=GPUType.T4,
+            model_name="m",
+            region="us-east-1",
+            provider_auth_aliases={"TF_VAR_key": "FALLBACK_ALIAS"},
+        )
+        mgr = DeploymentManager(working_dir=str(tmp_path), secrets_resolver=NoneResolver())
+        env = mgr._build_auth_env(config)
+        assert env["TF_VAR_key"] == "env-value"
+
+    def test_alias_not_found_raises(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("MISSING_ALIAS", raising=False)
+        config = ComputeConfig(
+            provider=ComputeProvider.AWS,
+            gpu_type=GPUType.T4,
+            model_name="m",
+            region="us-east-1",
+            provider_auth_aliases={"TF_VAR_key": "MISSING_ALIAS"},
+        )
+        mgr = DeploymentManager(working_dir=str(tmp_path))
+        with pytest.raises(RuntimeError, match="Could not resolve auth alias"):
+            mgr._build_auth_env(config)
+
+    def test_no_auth_aliases_returns_env_copy(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("KEEP_ME", "kept")
+        config = ComputeConfig(
+            provider=ComputeProvider.AWS,
+            gpu_type=GPUType.T4,
+            model_name="m",
+            region="us-east-1",
+            provider_auth_aliases={},
+        )
+        mgr = DeploymentManager(working_dir=str(tmp_path))
+        env = mgr._build_auth_env(config)
+        assert env["KEEP_ME"] == "kept"
+        assert "TF_VAR_key" not in env
+
+    def test_env_copy_is_independent_of_original(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SOURCE_KEY", "original-value")
+        config = ComputeConfig(
+            provider=ComputeProvider.AWS,
+            gpu_type=GPUType.T4,
+            model_name="m",
+            region="us-east-1",
+            provider_auth_aliases={"DEST_KEY": "SOURCE_KEY"},
+        )
+        mgr = DeploymentManager(working_dir=str(tmp_path))
+        env = mgr._build_auth_env(config)
+        assert env["DEST_KEY"] == "original-value"
+        env["DEST_KEY"] = "modified"
+        assert os.environ["SOURCE_KEY"] == "original-value"
+        assert "DEST_KEY" not in os.environ
+
+
+class TestClose:
+    def test_close_removes_working_dir(self, tmp_path):
+        work = tmp_path / "tf-work"
+        work.mkdir()
+        (work / "some-file").write_text("data")
+        mgr = DeploymentManager(working_dir=str(work))
+        assert work.exists()
+        mgr.close()
+        assert not work.exists()
+
+    def test_close_handles_missing_dir(self, tmp_path):
+        work = tmp_path / "nonexistent"
+        mgr = DeploymentManager(working_dir=str(work))
+        mgr.close()
+
+    def test_close_clears_working_dir_ref(self, tmp_path):
+        work = tmp_path / "tf-close"
+        work.mkdir()
+        mgr = DeploymentManager(working_dir=str(work))
+        mgr.close()
+        assert mgr._working_dir == ""
+
+
+class TestRegistryPersistence:
+    def test_save_and_load_registry_roundtrip(self, tmp_path):
+        from general_ludd.schemas.deployment import DeploymentRecord
+
+        mgr = DeploymentManager(working_dir=str(tmp_path))
+        record = DeploymentRecord(
+            instance_id="inst-1",
+            working_dir="/tmp/foo",
+            provider="aws",
+            model_name="m",
+            state="running",
+            ip_address="10.0.0.1",
+            endpoint_url="http://10.0.0.1:8000",
+        )
+        mgr._registry["inst-1"] = record
+        mgr._save_registry()
+        mgr2 = DeploymentManager(working_dir=str(tmp_path))
+        assert "inst-1" in mgr2._registry
+        loaded = mgr2._registry["inst-1"]
+        assert loaded.instance_id == "inst-1"
+        assert loaded.provider == "aws"
+        assert loaded.ip_address == "10.0.0.1"
+
+    def test_load_registry_missing_file(self, tmp_path):
+        mgr = DeploymentManager(working_dir=str(tmp_path))
+        assert mgr._registry == {}
+
+    def test_load_registry_corrupt_json(self, tmp_path):
+        work = tmp_path / "tf-reg"
+        work.mkdir()
+        (work / "deployments.json").write_text("{not valid json")
+        mgr = DeploymentManager(working_dir=str(work))
+        assert mgr._registry == {}
+
+    def test_get_deployment(self):
+        from general_ludd.schemas.deployment import DeploymentRecord
+
+        mgr = DeploymentManager()
+        record = DeploymentRecord(
+            instance_id="inst-1",
+            working_dir="/tmp/foo",
+            provider="aws",
+            model_name="m",
+            state="running",
+        )
+        mgr._registry["inst-1"] = record
+        assert mgr.get_deployment("inst-1") is record
+        assert mgr.get_deployment("nonexistent") is None
+
+    def test_list_deployments(self):
+        from general_ludd.schemas.deployment import DeploymentRecord
+
+        mgr = DeploymentManager()
+        r1 = DeploymentRecord(
+            instance_id="inst-1",
+            working_dir="/tmp/a",
+            provider="aws",
+            model_name="m1",
+            state="running",
+        )
+        r2 = DeploymentRecord(
+            instance_id="inst-2",
+            working_dir="/tmp/b",
+            provider="gcp",
+            model_name="m2",
+            state="stopped",
+        )
+        mgr._registry["inst-1"] = r1
+        mgr._registry["inst-2"] = r2
+        deployments = mgr.list_deployments()
+        assert len(deployments) == 2
+        assert {d.instance_id for d in deployments} == {"inst-1", "inst-2"}
+
+
+class TestPlan:
+    @pytest.mark.asyncio
+    async def test_plan_no_changes(self, tmp_path):
+        resolver = BinaryPathResolver(config=BinaryPaths())
+        mgr = DeploymentManager(binary_paths=resolver, working_dir=str(tmp_path))
+        with patch.object(mgr, "_run_terraform", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = {"stdout": "", "stderr": "", "returncode": 0}
+            with patch("general_ludd.infra.deployment.asyncio.create_subprocess_exec") as mock_exec:
+                proc = _mock_subprocess(stdout="No changes.", returncode=0)
+                mock_exec.return_value = proc
+                result = await mgr.plan(_make_config())
+                assert result["changes_present"] is False
+                assert result["returncode"] == 0
+
+    @pytest.mark.asyncio
+    async def test_plan_with_changes(self, tmp_path):
+        resolver = BinaryPathResolver(config=BinaryPaths())
+        mgr = DeploymentManager(binary_paths=resolver, working_dir=str(tmp_path))
+        with patch.object(mgr, "_run_terraform", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = {"stdout": "", "stderr": "", "returncode": 0}
+            with patch("general_ludd.infra.deployment.asyncio.create_subprocess_exec") as mock_exec:
+                proc = _mock_subprocess(stdout="Plan: 1 to add.", returncode=2)
+                mock_exec.return_value = proc
+                result = await mgr.plan(_make_config())
+                assert result["changes_present"] is True
+                assert result["returncode"] == 2
+
+    @pytest.mark.asyncio
+    async def test_plan_failure_raises(self, tmp_path):
+        resolver = BinaryPathResolver(config=BinaryPaths())
+        mgr = DeploymentManager(binary_paths=resolver, working_dir=str(tmp_path))
+        with patch.object(mgr, "_run_terraform", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = {"stdout": "", "stderr": "", "returncode": 0}
+            with patch("general_ludd.infra.deployment.asyncio.create_subprocess_exec") as mock_exec:
+                proc = _mock_subprocess(stdout="", stderr="Error: invalid config", returncode=1)
+                mock_exec.return_value = proc
+                with pytest.raises(RuntimeError, match="plan failed"):
+                    await mgr.plan(_make_config())
+
+
+class TestValidate:
+    @pytest.mark.asyncio
+    async def test_validate_runs_init_and_validate(self, tmp_path):
+        resolver = BinaryPathResolver(config=BinaryPaths())
+        mgr = DeploymentManager(binary_paths=resolver, working_dir=str(tmp_path))
+        with patch.object(mgr, "_run_terraform", new_callable=AsyncMock) as mock_run:
+            mock_run.side_effect = [
+                {"stdout": "Initialized", "stderr": "", "returncode": 0},
+                {"stdout": "Success!", "stderr": "", "returncode": 0},
+            ]
+            result = await mgr.validate(_make_config())
+            assert result == {"stdout": "Success!", "stderr": "", "returncode": 0}
+            assert mock_run.call_count == 2
+            calls = [c[0][0] for c in mock_run.call_args_list]
+            assert "init" in calls[0]
+            assert "validate" in calls[1]
+
+    @pytest.mark.asyncio
+    async def test_validate_failure_raises(self, tmp_path):
+        resolver = BinaryPathResolver(config=BinaryPaths())
+        mgr = DeploymentManager(binary_paths=resolver, working_dir=str(tmp_path))
+        with patch.object(mgr, "_run_terraform", new_callable=AsyncMock) as mock_run:
+            mock_run.side_effect = RuntimeError("validate: invalid configuration")
+            with pytest.raises(RuntimeError, match="validate"):
+                await mgr.validate(_make_config())
+
+
+class TestPublishEvent:
+    def test_publish_event_no_bus_silently_returns(self):
+        mgr = DeploymentManager()
+        mgr._publish_event("test_event", key="value")
+
+    def test_publish_event_error_swallowed(self):
+        class FailingBus:
+            def publish(self, event):
+                raise RuntimeError("bus down")
+
+        mgr = DeploymentManager(event_bus=FailingBus())
+        mgr._publish_event("test_event", key="value")
+
+    def test_publish_event_calls_bus(self):
+        events = []
+
+        class CapturingBus:
+            def publish(self, event):
+                events.append(event)
+
+        mgr = DeploymentManager(event_bus=CapturingBus())
+        mgr._publish_event("deployment.started", instance_id="abc")
+        assert len(events) == 1
+        assert events[0].name == "deployment.started"
+        assert events[0].payload["instance_id"] == "abc"
+        assert events[0].source == "terraform_deployment"
+
+
+class TestCleanupOrphanedInstances:
+    def test_cleanup_without_lifecycle_returns_zero(self):
+        mgr = DeploymentManager()
+        result = mgr.cleanup_orphaned_instances()
+        assert result == 0
