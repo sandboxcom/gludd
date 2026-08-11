@@ -574,12 +574,6 @@ async function handleTextComplete(_input: unknown, output: unknown): Promise<unk
     // This is the canonical boundary signal — text.complete fires at the
     // end of every assistant response.
     decrementPressureReleaseTurns()
-    const hasWork = hasPendingWork()
-    if (!hasWork) {
-      handleMessageBoundary(_state)
-      writeState(_state)
-      return output
-    }
     if (currentDispatchCount === 0) {
       handleMessageBoundary(_state)
       writeState(_state)
@@ -605,6 +599,11 @@ async function handleTextComplete(_input: unknown, output: unknown): Promise<unk
           "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
         ].join("\n"),
       }
+    }
+    const hasWork = hasPendingWork()
+    if (!hasWork) {
+      writeState(_state)
+      return output
     }
     const warnings: string[] = []
     if (_state.underFloorCount >= 3) {
