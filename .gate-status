@@ -1,12 +1,1 @@
-=== GATE 2026-08-10T00:23:17Z ===
-lint PASS 0
-dead-code PASS 0
-env-writes PASS
-hook-runtime PASS
-PASS
-verify-enforcement PASS
-coverage-gaps PASS
-typecheck PASS 0
-collect PASS 0
-test
-FAIL non-zero-exit
+RUNNING 1786485650 20133

@@ -1,7 +1,8 @@
 """Tests for ModelPipeline — generic multi-step LLM workflow.
 
 Covers: PipelineStep, StepResult, PipelineResult, ModelPipeline.run(),
-all TaskRole values, context passing, error handling, frozen dataclass.
+all TaskRole values, context passing, error handling, frozen dataclass,
+_safe_int, multiple {context} substitutions, edge cases.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from general_ludd.cloud.model_pipeline import (
     PipelineResult,
     PipelineStep,
     StepResult,
+    _safe_int,
 )
 from general_ludd.models.gateway import ModelGateway, ModelResponse
 from general_ludd.schemas.benchmark import TaskRole
@@ -485,3 +487,420 @@ class TestModelPipeline:
         assert result.step_count == 6
         assert result.success is True
         assert len({sr.role for sr in result.step_results}) == 6
+
+
+# ---------------------------------------------------------------------------
+# _safe_int — deep coverage
+# ---------------------------------------------------------------------------
+
+
+class TestSafeInt:
+    def test_positive_int(self):
+        assert _safe_int(5) == 5
+
+    def test_zero(self):
+        assert _safe_int(0) == 0
+
+    def test_negative_int_clamped_to_zero(self):
+        assert _safe_int(-1) == 0
+
+    def test_positive_float_truncated(self):
+        assert _safe_int(3.9) == 3
+
+    def test_negative_float_clamped(self):
+        assert _safe_int(-2.7) == 0
+
+    def test_zero_float(self):
+        assert _safe_int(0.0) == 0
+
+    def test_bool_true_returns_zero(self):
+        assert _safe_int(True) == 0
+
+    def test_bool_false_returns_zero(self):
+        assert _safe_int(False) == 0
+
+    def test_infinity_returns_zero(self):
+        assert _safe_int(float("inf")) == 0
+
+    def test_negative_infinity_returns_zero(self):
+        assert _safe_int(float("-inf")) == 0
+
+    def test_nan_returns_zero(self):
+        assert _safe_int(float("nan")) == 0
+
+    def test_none_returns_zero(self):
+        assert _safe_int(None) == 0
+
+    def test_string_returns_zero(self):
+        assert _safe_int("42") == 0
+
+    def test_list_returns_zero(self):
+        assert _safe_int([1, 2, 3]) == 0
+
+    def test_dict_returns_zero(self):
+        assert _safe_int({"a": 1}) == 0
+
+    def test_empty_string_returns_zero(self):
+        assert _safe_int("") == 0
+
+    def test_very_large_int(self):
+        assert _safe_int(10**9) == 10**9
+
+    def test_very_large_negative_clamped(self):
+        assert _safe_int(-(10**9)) == 0
+
+
+# ---------------------------------------------------------------------------
+# PipelineResult — deep edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineResultDeep:
+    def test_post_init_no_step_results_no_modify(self):
+        result = PipelineResult(
+            final_output="unused",
+            total_cost_usd=99.99,
+            total_input_tokens=999,
+            total_output_tokens=888,
+            total_elapsed_seconds=77.7,
+            success=True,
+        )
+        assert result.total_cost_usd == 99.99
+        assert result.total_input_tokens == 999
+        assert result.total_output_tokens == 888
+        assert result.total_elapsed_seconds == 77.7
+        assert result.success is True
+
+    def test_single_step_with_zero_values(self):
+        sr = StepResult(
+            role=TaskRole.CODER,
+            output="x",
+            input_tokens=0,
+            output_tokens=0,
+            cost_usd=0.0,
+            elapsed_seconds=0.0,
+            success=True,
+        )
+        result = PipelineResult(step_results=(sr,))
+        assert result.total_input_tokens == 0
+        assert result.total_output_tokens == 0
+        assert result.total_cost_usd == 0.0
+        assert result.total_elapsed_seconds == 0.0
+        assert result.success is True
+
+    def test_single_step_failure_aggregates_totals(self):
+        sr = StepResult(
+            role=TaskRole.CODER,
+            output="",
+            input_tokens=50,
+            output_tokens=0,
+            cost_usd=0.001,
+            elapsed_seconds=0.3,
+            success=False,
+            error="boom",
+        )
+        result = PipelineResult(step_results=(sr,))
+        assert result.total_input_tokens == 50
+        assert result.total_output_tokens == 0
+        assert result.total_cost_usd == 0.001
+        assert result.success is False
+
+    def test_many_steps_aggregated(self):
+        steps = tuple(
+            StepResult(
+                role=TaskRole.CODER,
+                output="x",
+                input_tokens=i,
+                output_tokens=i * 2,
+                cost_usd=i * 0.001,
+                elapsed_seconds=i * 0.1,
+                success=True,
+            )
+            for i in range(1, 11)
+        )
+        result = PipelineResult(step_results=steps)
+        assert result.step_count == 10
+        assert result.total_input_tokens == 55
+        assert result.total_output_tokens == 110
+        assert result.total_cost_usd == pytest.approx(0.055)
+        assert result.total_elapsed_seconds == pytest.approx(5.5)
+        assert result.success is True
+
+    def test_mixed_success_failure_midway(self):
+        steps = (
+            StepResult(
+                role=TaskRole.PLANNER,
+                output="p",
+                input_tokens=1,
+                output_tokens=1,
+                cost_usd=0.01,
+                elapsed_seconds=0.1,
+                success=True,
+            ),
+            StepResult(
+                role=TaskRole.CODER,
+                output="",
+                input_tokens=2,
+                output_tokens=0,
+                cost_usd=0.02,
+                elapsed_seconds=0.2,
+                success=False,
+                error="fail",
+            ),
+            StepResult(
+                role=TaskRole.REVIEWER,
+                output="",
+                input_tokens=3,
+                output_tokens=0,
+                cost_usd=0.03,
+                elapsed_seconds=0.3,
+                success=False,
+                error="skip",
+            ),
+        )
+        result = PipelineResult(step_results=steps)
+        assert result.step_count == 3
+        assert result.success is False
+        assert result.total_cost_usd == 0.06
+        assert result.total_input_tokens == 6
+
+    def test_step_count_property_matches(self):
+        steps = tuple(StepResult(role=TaskRole.CODER, success=True) for _ in range(5))
+        result = PipelineResult(step_results=steps)
+        assert result.step_count == 5
+
+
+# ---------------------------------------------------------------------------
+# ModelPipeline — deep edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestModelPipelineDeep:
+    def test_multiple_context_placeholders_replaced(self):
+        gw = _make_gateway(["done"])
+        step = PipelineStep(role=TaskRole.CODER, prompt_template="A: {context} B: {context} C: {context}")
+        pipeline = ModelPipeline(gateway=gw, model_id="test", steps=[step])
+        pipeline.run(initial_context="X")
+        messages = gw.call_model.call_args[0][1]
+        assert messages[-1]["content"] == "A: X B: X C: X"
+
+    def test_context_accumulates_with_newlines(self):
+        responses = ["first", "second"]
+        gw = _make_gateway(responses)
+        pipeline = ModelPipeline(
+            gateway=gw,
+            model_id="test",
+            steps=[
+                PipelineStep(role=TaskRole.PLANNER, prompt_template="{context}"),
+                PipelineStep(role=TaskRole.CODER, prompt_template="{context}"),
+            ],
+        )
+        result = pipeline.run(initial_context="init")
+        first_call = gw.call_model.call_args_list[0]
+        assert first_call[0][1][-1]["content"] == "init"
+        second_call = gw.call_model.call_args_list[1]
+        assert "\n\n" in second_call[0][1][-1]["content"]
+        assert "init" in second_call[0][1][-1]["content"]
+        assert "first" in second_call[0][1][-1]["content"]
+        assert result.final_output == "second"
+
+    def test_empty_initial_context_still_propagates_output(self):
+        gw = _make_gateway(["only output"])
+        pipeline = ModelPipeline(
+            gateway=gw,
+            model_id="test",
+            steps=[PipelineStep(role=TaskRole.CODER, prompt_template="{context}")],
+        )
+        result = pipeline.run(initial_context="")
+        assert result.final_output == "only output"
+
+    def test_first_step_output_empty_context_still_accumulates(self):
+        responses = ["", "second from empty"]
+        gw = _make_gateway(responses)
+        pipeline = ModelPipeline(
+            gateway=gw,
+            model_id="test",
+            steps=[
+                PipelineStep(role=TaskRole.PLANNER, prompt_template="{context}"),
+                PipelineStep(role=TaskRole.CODER, prompt_template="{context}"),
+            ],
+        )
+        result = pipeline.run(initial_context="start")
+        assert result.success is True
+        assert result.step_count == 2
+
+    def test_usage_metadata_missing_keys_defaults_zero(self):
+        gw = MagicMock(spec=ModelGateway)
+        gw.call_model.return_value = ModelResponse(
+            content="output",
+            usage_metadata={},
+            cost_estimate=0.01,
+            model_name="test",
+        )
+        pipeline = ModelPipeline(
+            gateway=gw,
+            model_id="test",
+            steps=[PipelineStep(role=TaskRole.CODER, prompt_template="x")],
+        )
+        result = pipeline.run(initial_context="")
+        assert result.step_results[0].input_tokens == 0
+        assert result.step_results[0].output_tokens == 0
+
+    def test_usage_metadata_string_token_values_coerced(self):
+        gw = MagicMock(spec=ModelGateway)
+        gw.call_model.return_value = ModelResponse(
+            content="out",
+            usage_metadata={"input_tokens": "100", "output_tokens": "50"},
+            cost_estimate=0.0,
+            model_name="test",
+        )
+        pipeline = ModelPipeline(
+            gateway=gw,
+            model_id="test",
+            steps=[PipelineStep(role=TaskRole.CODER, prompt_template="x")],
+        )
+        result = pipeline.run(initial_context="")
+        assert result.step_results[0].input_tokens == 0
+        assert result.step_results[0].output_tokens == 0
+
+    def test_negative_cost_estimate_preserved(self):
+        gw = MagicMock(spec=ModelGateway)
+        gw.call_model.return_value = ModelResponse(
+            content="out",
+            usage_metadata={"input_tokens": 10, "output_tokens": 5},
+            cost_estimate=-0.01,
+            model_name="test",
+        )
+        pipeline = ModelPipeline(
+            gateway=gw,
+            model_id="test",
+            steps=[PipelineStep(role=TaskRole.CODER, prompt_template="x")],
+        )
+        result = pipeline.run(initial_context="")
+        assert result.step_results[0].cost_usd == -0.01
+
+    def test_zero_cost_estimate(self):
+        gw = MagicMock(spec=ModelGateway)
+        gw.call_model.return_value = ModelResponse(
+            content="free",
+            usage_metadata={"input_tokens": 10, "output_tokens": 5},
+            cost_estimate=0.0,
+            model_name="free-model",
+        )
+        pipeline = ModelPipeline(
+            gateway=gw,
+            model_id="test",
+            steps=[PipelineStep(role=TaskRole.CODER, prompt_template="x")],
+        )
+        result = pipeline.run(initial_context="")
+        assert result.step_results[0].cost_usd == 0.0
+
+    def test_last_step_fails_no_final_output(self):
+        gw = MagicMock(spec=ModelGateway)
+        gw.call_model.side_effect = [
+            _make_response("first ok"),
+            RuntimeError("last step crash"),
+        ]
+        pipeline = ModelPipeline(
+            gateway=gw,
+            model_id="test",
+            steps=[
+                PipelineStep(role=TaskRole.PLANNER, prompt_template="plan"),
+                PipelineStep(role=TaskRole.CODER, prompt_template="code"),
+            ],
+        )
+        result = pipeline.run(initial_context="task")
+        assert result.final_output == ""
+        assert result.success is False
+
+    def test_elapsed_time_rounded_to_4_places(self):
+        gw = _make_gateway(["x"])
+        pipeline = ModelPipeline(
+            gateway=gw,
+            model_id="test",
+            steps=[PipelineStep(role=TaskRole.CODER, prompt_template="x")],
+        )
+        result = pipeline.run(initial_context="")
+        elapsed = result.step_results[0].elapsed_seconds
+        assert elapsed == round(elapsed, 4)
+
+    def test_system_prompt_appended_before_user_message(self):
+        gw = _make_gateway(["ok"])
+        pipeline = ModelPipeline(
+            gateway=gw,
+            model_id="test",
+            steps=[
+                PipelineStep(
+                    role=TaskRole.PLANNER,
+                    prompt_template="do {context}",
+                    system_prompt="sys msg",
+                )
+            ],
+        )
+        pipeline.run(initial_context="in")
+        messages = gw.call_model.call_args[0][1]
+        assert messages[0]["role"] == "system"
+        assert messages[1]["role"] == "user"
+
+    def test_gateway_call_model_receives_model_id(self):
+        gw = _make_gateway(["resp"])
+        pipeline = ModelPipeline(
+            gateway=gw,
+            model_id="special-model-id",
+            steps=[PipelineStep(role=TaskRole.CODER, prompt_template="x")],
+        )
+        pipeline.run(initial_context="")
+        call_args = gw.call_model.call_args
+        assert call_args[0][0] == "special-model-id"
+
+    def test_gateway_receives_estimated_cost_zero(self):
+        gw = _make_gateway(["resp"])
+        pipeline = ModelPipeline(
+            gateway=gw,
+            model_id="test",
+            steps=[PipelineStep(role=TaskRole.CODER, prompt_template="x")],
+        )
+        pipeline.run(initial_context="")
+        call_args = gw.call_model.call_args
+        assert call_args[0][2] == 0.0
+
+    def test_gateway_receives_infinite_budget(self):
+        gw = _make_gateway(["resp"])
+        pipeline = ModelPipeline(
+            gateway=gw,
+            model_id="test",
+            steps=[PipelineStep(role=TaskRole.CODER, prompt_template="x")],
+        )
+        pipeline.run(initial_context="")
+        call_args = gw.call_model.call_args
+        assert call_args[0][3] == float("inf")
+
+    def test_step_result_fields_are_independent(self):
+        sr = StepResult(
+            role=TaskRole.CODER,
+            output="data",
+            input_tokens=100,
+            output_tokens=50,
+            cost_usd=0.02,
+            elapsed_seconds=1.5,
+            success=True,
+            error="",
+        )
+        assert sr.role == TaskRole.CODER
+        assert sr.output == "data"
+        assert sr.input_tokens == 100
+        assert sr.output_tokens == 50
+        assert sr.cost_usd == 0.02
+        assert sr.elapsed_seconds == 1.5
+        assert sr.success is True
+        assert sr.error == ""
+
+    def test_pipeline_step_hash_consistent(self):
+        a = PipelineStep(role=TaskRole.CODER, prompt_template="x", system_prompt="s")
+        b = PipelineStep(role=TaskRole.CODER, prompt_template="x", system_prompt="s")
+        assert hash(a) == hash(b)
+
+    def test_pipeline_step_hash_differs_by_system_prompt(self):
+        a = PipelineStep(role=TaskRole.CODER, prompt_template="x", system_prompt="a")
+        b = PipelineStep(role=TaskRole.CODER, prompt_template="x", system_prompt="b")
+        assert hash(a) != hash(b)

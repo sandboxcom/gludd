@@ -160,3 +160,155 @@ class TestSensitivityAnalysis:
         a = sensitivity_analysis(candidates, varying_input="nominal_score", uncertainty_range=(0.0, 1.0), n_samples=9)
         b = sensitivity_analysis(candidates, varying_input="nominal_score", uncertainty_range=(0.0, 1.0), n_samples=9)
         assert a == b
+
+
+# ─── validate_against_experiment — deep edge cases ────────────────────────────
+
+
+class TestValidateAgainstExperimentDeep:
+    def test_non_numeric_simulation_fails_closed(self):
+        out = validate_against_experiment(["a", "b", "c"], [1.0, 2.0, 3.0], unit="MPa")
+        assert out["state"] == STATE_FAIL_CLOSED
+        assert out["n_points"] == 0
+        assert out["per_point_errors"] == []
+
+    def test_non_numeric_experiment_fails_closed(self):
+        out = validate_against_experiment([1.0, 2.0], [1.0, None], unit="MPa")
+        assert out["state"] == STATE_FAIL_CLOSED
+
+    def test_all_identical_values_no_outliers(self):
+        sim = [100.0, 100.0, 100.0, 100.0]
+        exp = [100.0, 100.0, 100.0, 100.0]
+        out = validate_against_experiment(sim, exp, unit="N")
+        assert out["state"] == STATE_OK
+        assert out["rms_error"] == pytest.approx(0.0)
+        assert out["outliers"] == []
+
+    def test_mad_zero_handled_gracefully(self):
+        sim = [10.0, 10.0, 10.0]
+        exp = [10.0, 11.0, 9.0]
+        out = validate_against_experiment(sim, exp, unit="mm")
+        assert out["n_points"] == 3
+
+    def test_custom_outlier_z_threshold_defaults_to_2_5(self):
+        sim = [100.0, 101.0, 102.0, 103.0, 200.0]
+        exp = [101.0, 102.0, 101.0, 105.0, 110.0]
+        out = validate_against_experiment(sim, exp, unit="MPa")
+        assert out["state"] == STATE_OUTLIERS
+        assert len(out["outliers"]) >= 1
+
+    def test_relaxed_z_threshold_hides_mild_outlier(self):
+        sim = [100.0, 100.0]
+        exp = [100.0, 110.0]
+        out = validate_against_experiment(sim, exp, unit="MPa", outlier_z_threshold=20.0)
+        assert out["state"] == STATE_OK
+
+    def test_tolerance_only_breach_flags_outlier(self):
+        sim = [100.0, 100.0]
+        exp = [100.0, 110.0]
+        out = validate_against_experiment(sim, exp, unit="MPa", tolerance=5.0, outlier_z_threshold=999.0)
+        assert out["state"] == STATE_OUTLIERS
+        assert any(o["reason"] == "tolerance" for o in out["outliers"])
+
+    def test_empty_unit_raises_value_error(self):
+        import pytest
+
+        with pytest.raises(ValueError):
+            validate_against_experiment([1.0], [1.0], unit="")
+        with pytest.raises(ValueError):
+            validate_against_experiment([1.0], [1.0], unit="   ")
+
+
+# ─── uncertainty_bounds — deep edge cases ─────────────────────────────────────
+
+
+class TestUncertaintyBoundsDeep:
+    def test_empty_uncertainties_returns_zero_band(self):
+        out = uncertainty_bounds(nominal=100.0, uncertainties=[], method="rss", unit="MPa")
+        assert out["state"] == STATE_OK
+        assert out["band"] == 0.0
+        assert out["upper"] == pytest.approx(100.0)
+        assert out["lower"] == pytest.approx(100.0)
+
+    def test_non_numeric_uncertainties_fails_closed(self):
+        out = uncertainty_bounds(nominal=100.0, uncertainties=[1.0, "nope"], method="rss", unit="MPa")
+        assert out["state"] == STATE_FAIL_CLOSED
+        assert out["band"] == 0.0
+
+    def test_infinite_uncertainty_fails_closed(self):
+        import math
+
+        out = uncertainty_bounds(nominal=100.0, uncertainties=[1.0, math.inf], method="rss", unit="MPa")
+        assert out["state"] == STATE_FAIL_CLOSED
+
+    def test_nan_uncertainty_fails_closed(self):
+        import math
+
+        out = uncertainty_bounds(nominal=100.0, uncertainties=[1.0, math.nan], method="rss", unit="MPa")
+        assert out["state"] == STATE_FAIL_CLOSED
+
+    def test_unknown_method_fails_closed(self):
+        out = uncertainty_bounds(nominal=100.0, uncertainties=[1.0, 2.0], method="monte_carlo", unit="MPa")
+        assert out["state"] == STATE_FAIL_CLOSED
+        assert "unknown method" in out["assumptions"][0]
+
+    def test_zero_nominal_with_uncertainties_still_ok(self):
+        out = uncertainty_bounds(nominal=0.0, uncertainties=[1.0, 2.0], method="rss", unit="N")
+        assert out["state"] == STATE_OK
+        assert out["band"] > 0.0
+        assert out["upper"] > 0.0 > out["lower"]
+
+    def test_worst_case_band_equals_sum_of_abs(self):
+        out = uncertainty_bounds(nominal=50.0, uncertainties=[3.0, 4.0, 1.0], method="worst_case", unit="mm")
+        assert out["band"] == pytest.approx(8.0)
+        assert out["upper"] == pytest.approx(58.0)
+        assert out["lower"] == pytest.approx(42.0)
+
+    def test_default_unit_is_empty_string(self):
+        out = uncertainty_bounds(nominal=10.0, uncertainties=[0.5], method="rss")
+        assert out["unit"] == ""
+
+
+# ─── sensitivity_analysis — deep edge cases ───────────────────────────────────
+
+
+class TestSensitivityAnalysisDeep:
+    def test_single_candidate_never_changes_rank(self):
+        candidates = [{"id": "A", "nominal_score": 100.0, "uncertainty": 10.0}]
+        out = sensitivity_analysis(candidates, varying_input="nominal_score", uncertainty_range=(0.0, 1.0), n_samples=5)
+        assert out["state"] == STATE_RANK_STABLE
+        assert out["nominal_ranking"] == ["A"]
+
+    def test_swapped_range_low_gt_high_is_normalized(self):
+        candidates = [
+            {"id": "A", "nominal_score": 100.0, "uncertainty": 5.0},
+            {"id": "B", "nominal_score": 98.0, "uncertainty": 1.0},
+        ]
+        out = sensitivity_analysis(
+            candidates, varying_input="nominal_score", uncertainty_range=(1.0, 0.0), n_samples=11
+        )
+        assert out["state"] in (STATE_RANK_CHANGED, STATE_RANK_STABLE)
+        assert len(out["sampled_rankings"]) == 11
+
+    def test_n_samples_zero_defaults_to_one(self):
+        candidates = [{"id": "A", "nominal_score": 100.0, "uncertainty": 5.0}]
+        out = sensitivity_analysis(candidates, varying_input="nominal_score", uncertainty_range=(0.0, 1.0), n_samples=0)
+        assert out["n_samples"] == 1
+        assert len(out["sampled_rankings"]) == 1
+
+    def test_no_uncertainty_field_defaults_to_zero(self):
+        candidates = [
+            {"id": "A", "nominal_score": 100.0},
+            {"id": "B", "nominal_score": 50.0},
+        ]
+        out = sensitivity_analysis(candidates, varying_input="nominal_score", uncertainty_range=(0.0, 1.0), n_samples=5)
+        assert all(r == ["A", "B"] for r in out["sampled_rankings"])
+
+    def test_identical_scores_stable_by_original_order(self):
+        candidates = [
+            {"id": "X", "nominal_score": 100.0, "uncertainty": 2.0},
+            {"id": "Y", "nominal_score": 100.0, "uncertainty": 2.0},
+        ]
+        out = sensitivity_analysis(candidates, varying_input="nominal_score", uncertainty_range=(0.0, 1.0), n_samples=5)
+        sampled = out["sampled_rankings"]
+        assert all(r == ["X", "Y"] for r in sampled), f"got {sampled}"
