@@ -2680,6 +2680,10 @@ git-rm-force:
 	@[ -n "$(FILES)" ] || { echo "Usage: make git-rm-force FILES='path ...'"; exit 1; }
 	@git rm -rf $(FILES) && echo "git-force-removed: $(FILES)"
 
+rm-files:
+	@[ -n "$(FILES)" ] || { echo "Usage: make rm-files FILES='path ...'"; exit 1; }
+	@rm -rf $(FILES) && echo "removed: $(FILES)"
+
 git-mv:
 	@[ -n "$(FROM)" ] && [ -n "$(TO)" ] || { echo "Usage: make git-mv FROM='old' TO='new'"; exit 1; }
 	@mkdir -p "$$(dirname "$(TO)")"
