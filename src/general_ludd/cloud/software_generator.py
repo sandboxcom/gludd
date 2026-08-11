@@ -12,6 +12,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
@@ -24,7 +25,7 @@ from general_ludd.cloud.project_types import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Mapping
 
     from general_ludd.models.gateway import ModelGateway
 

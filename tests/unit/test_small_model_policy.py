@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import re
+
 import pytest
 
 from general_ludd.routing_roles.small_model_policy import (
     _BOUNDED_IMPACTS,
+    _CHECK_RE,
+    _SHA256_RE,
     DEFAULT_TASK_CONTRACTS,
     FORBIDDEN_IMPACTS,
     CapabilityEvidence,
@@ -19,6 +25,11 @@ from general_ludd.routing_roles.small_model_policy import (
     SmallModelTaskSpec,
     TaskContract,
     TaskImpact,
+    _contract,
+    _require_digest,
+    _require_pattern,
+    _stable_digest,
+    _validate_checks,
 )
 from general_ludd.schemas.benchmark import TaskRole
 
@@ -26,8 +37,6 @@ _D = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
 
 def _digest_of(payload: dict) -> str:
-    import hashlib
-    import json
 
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
     return hashlib.sha256(encoded).hexdigest()
@@ -152,17 +161,20 @@ class TestTaskImpact:
         assert set(TaskImpact.__members__) == expected
 
     def test_forbidden_impacts_are_mutating(self):
-        assert frozenset(
-            {
-                TaskImpact.MUTATE_REPOSITORY,
-                TaskImpact.EXECUTE_COMMAND,
-                TaskImpact.NETWORK_WRITE,
-                TaskImpact.CREDENTIAL_ACCESS,
-                TaskImpact.DEPLOYMENT,
-                TaskImpact.RELEASE,
-                TaskImpact.SECURITY_DECISION,
-            }
-        ) == FORBIDDEN_IMPACTS
+        assert (
+            frozenset(
+                {
+                    TaskImpact.MUTATE_REPOSITORY,
+                    TaskImpact.EXECUTE_COMMAND,
+                    TaskImpact.NETWORK_WRITE,
+                    TaskImpact.CREDENTIAL_ACCESS,
+                    TaskImpact.DEPLOYMENT,
+                    TaskImpact.RELEASE,
+                    TaskImpact.SECURITY_DECISION,
+                }
+            )
+            == FORBIDDEN_IMPACTS
+        )
 
     def test_bounded_impacts_are_read_write(self):
         assert frozenset({TaskImpact.READ_SOURCE, TaskImpact.WRITE_ARTIFACT}) == _BOUNDED_IMPACTS
@@ -813,3 +825,187 @@ class TestSmallModelTaskSpecEdgeCases:
         s1 = _task_spec(impacts=frozenset({TaskImpact.READ_SOURCE}))
         s2 = _task_spec(impacts=frozenset({TaskImpact.WRITE_ARTIFACT}))
         assert s1.fingerprint != s2.fingerprint
+
+
+# ── _stable_digest (private helper) ─────────────────────────────────────────
+
+
+class TestStableDigest:
+    def test_same_payload_same_digest(self):
+        a = _stable_digest({"x": 1, "y": 2})
+        b = _stable_digest({"x": 1, "y": 2})
+        assert a == b
+
+    def test_different_payload_different_digest(self):
+        a = _stable_digest({"x": 1})
+        b = _stable_digest({"x": 2})
+        assert a != b
+
+    def test_key_order_independent(self):
+        a = _stable_digest({"a": 1, "b": 2})
+        b = _stable_digest({"b": 2, "a": 1})
+        assert a == b
+
+    def test_nested_structures(self):
+        a = _stable_digest({"parent": {"child": [1, 2, 3]}})
+        b = _stable_digest({"parent": {"child": [1, 2, 3]}})
+        assert a == b
+
+    def test_returns_64_char_hex(self):
+        d = _stable_digest({"key": "val"})
+        assert len(d) == 64
+        assert re.fullmatch(r"^[0-9a-f]{64}$", d)
+
+    def test_empty_payload(self):
+        d = _stable_digest({})
+        assert len(d) == 64
+
+    def test_bool_true_value(self):
+        a = _stable_digest({"flag": True})
+        b = _stable_digest({"flag": True})
+        assert a == b
+
+    def test_null_value(self):
+        a = _stable_digest({"key": None})
+        b = _stable_digest({"key": None})
+        assert a == b
+
+    def test_int_and_string_distinct(self):
+        a = _stable_digest({"v": "1"})
+        b = _stable_digest({"v": 1})
+        assert a != b
+
+    def test_list_vs_tuple_identical_json(self):
+        a = _stable_digest({"items": [1, 2, 3]})
+        b = _stable_digest({"items": (1, 2, 3)})
+        assert a == b
+
+
+# ── _require_pattern / _require_digest / _validate_checks (private) ─────────
+
+
+class TestRequirePattern:
+    def test_matching_value_passes(self):
+        _require_pattern("tag", "abc123", _CHECK_RE)
+
+    def test_non_matching_value_raises(self):
+        with pytest.raises(ValueError, match="invalid format"):
+            _require_pattern("tag", "HAS_UPPER", _CHECK_RE)
+
+    def test_empty_value_raises(self):
+        with pytest.raises(ValueError, match="invalid format"):
+            _require_pattern("tag", "", _CHECK_RE)
+
+    def test_non_string_raises(self):
+        with pytest.raises(ValueError, match="invalid format"):
+            _require_pattern("tag", 42, _CHECK_RE)
+
+    def test_none_raises(self):
+        with pytest.raises(ValueError, match="invalid format"):
+            _require_pattern("tag", None, _CHECK_RE)
+
+    def test_sha256_pattern_accepts_valid_digest(self):
+        valid = "a" * 64
+        _require_pattern("digest", valid, _SHA256_RE)
+
+    def test_sha256_pattern_rejects_uppercase(self):
+        with pytest.raises(ValueError, match="invalid format"):
+            _require_pattern("digest", "A" * 64, _SHA256_RE)
+
+    def test_sha256_pattern_rejects_short(self):
+        with pytest.raises(ValueError, match="invalid format"):
+            _require_pattern("digest", "a" * 63, _SHA256_RE)
+
+
+class TestRequireDigest:
+    def test_valid_sha256_passes(self):
+        _require_digest("digest", "a" * 64)
+
+    def test_invalid_digest_raises(self):
+        with pytest.raises(ValueError, match="must be a lowercase SHA-256"):
+            _require_digest("digest", "short")
+
+    def test_uppercase_sha256_raises(self):
+        with pytest.raises(ValueError, match="must be a lowercase SHA-256"):
+            _require_digest("digest", "A" * 64)
+
+    def test_wrong_length_raises(self):
+        with pytest.raises(ValueError, match="must be a lowercase SHA-256"):
+            _require_digest("digest", "a" * 65)
+
+    def test_non_string_raises(self):
+        with pytest.raises(ValueError, match="must be a lowercase SHA-256"):
+            _require_digest("digest", 123)
+
+    def test_none_raises(self):
+        with pytest.raises(ValueError, match="must be a lowercase SHA-256"):
+            _require_digest("digest", None)
+
+
+class TestValidateChecks:
+    def test_single_check_passes(self):
+        _validate_checks(["syntax_valid"])
+
+    def test_multiple_checks_pass(self):
+        _validate_checks(["syntax_valid", "import_ok", "run_without_crash"])
+
+    def test_empty_sequence_raises(self):
+        with pytest.raises(ValueError, match="must not be empty"):
+            _validate_checks([])
+
+    def test_empty_tuple_raises(self):
+        with pytest.raises(ValueError, match="must not be empty"):
+            _validate_checks(())
+
+    def test_invalid_check_name_raises(self):
+        with pytest.raises(ValueError, match="invalid format"):
+            _validate_checks(["ValidCheck"])
+
+    def test_check_with_special_chars_raises(self):
+        with pytest.raises(ValueError, match="invalid format"):
+            _validate_checks(["check@bad"])
+
+    def test_numeric_start_raises(self):
+        with pytest.raises(ValueError, match="invalid format"):
+            _validate_checks(["9invalid"])
+
+    def test_empty_check_name_raises(self):
+        with pytest.raises(ValueError, match="invalid format"):
+            _validate_checks([""])
+
+    def test_frozenset_works(self):
+        _validate_checks(frozenset(["chk_a", "chk_b"]))
+
+
+# ── _contract (private helper) ──────────────────────────────────────────────
+
+
+class TestContractHelper:
+    def test_creates_valid_contract(self):
+        c = _contract("coding", TaskRole.CODER, "syntax_valid", "import_ok")
+        assert c.task_kind == "coding"
+        assert c.allowed_roles == frozenset({TaskRole.CODER})
+        assert c.allowed_impacts == _BOUNDED_IMPACTS
+        assert c.required_acceptance_checks == frozenset({"syntax_valid", "import_ok"})
+
+    def test_always_uses_bounded_impacts(self):
+        c = _contract("documentation_draft", TaskRole.EDITOR, "facts_traceable")
+        assert c.allowed_impacts & FORBIDDEN_IMPACTS == frozenset()
+
+    def test_single_role(self):
+        c = _contract("format_normalization", TaskRole.EDITOR, "idempotent")
+        assert c.allowed_roles == frozenset({TaskRole.EDITOR})
+
+    def test_no_checks(self):
+        with pytest.raises(ValueError, match="must not be empty"):
+            _contract("coding", TaskRole.CODER)
+
+    def test_invalid_task_kind_raises(self):
+        with pytest.raises(ValueError, match="invalid format"):
+            _contract("99bad", TaskRole.CODER, "chk")
+
+    def test_bounded_impacts_invariant(self):
+        for kind in DEFAULT_TASK_CONTRACTS:
+            contract = DEFAULT_TASK_CONTRACTS[kind]
+            assert contract.allowed_impacts == _BOUNDED_IMPACTS
+            assert contract.allowed_impacts & FORBIDDEN_IMPACTS == frozenset()
