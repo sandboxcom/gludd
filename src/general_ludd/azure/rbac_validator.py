@@ -605,10 +605,12 @@ def validate_against_azure_schema(role_json: dict[str, Any]) -> tuple[bool, list
     actions = role_json.get("Actions", [])
     if not isinstance(actions, list):
         errors.append("Actions must be a list")
+        actions = []
 
     not_actions = role_json.get("NotActions", [])
     if not isinstance(not_actions, list):
         errors.append("NotActions must be a list")
+        not_actions = []
 
     scopes = role_json.get("AssignableScopes", [])
     if not isinstance(scopes, list) or not scopes:

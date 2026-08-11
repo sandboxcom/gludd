@@ -6,6 +6,8 @@ import os
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from general_ludd.tui.config_editor import (
     ConfigCategory,
     ConfigEditor,
@@ -428,3 +430,138 @@ class TestMenuItemIsMenu:
     def test_is_menu_false_with_empty_submenu(self):
         item = MenuItem(label="Field", key="field", value="hello", item_type="str", submenu=[])
         assert item.is_menu is False
+
+
+class TestMenuFieldsDeeper:
+    def test_handles_zero_int_value(self):
+        item = MenuItem(label="Count", key="count", value=0, item_type="int")
+        assert item.value == 0
+
+    def test_handles_empty_string_value(self):
+        item = MenuItem(label="Key", key="api_key", value="", item_type="str")
+        assert item.value == ""
+
+    def test_default_help_text_is_empty(self):
+        item = MenuItem(label="X", key="x")
+        assert item.help_text == ""
+
+    def test_default_overlay_path_is_empty(self):
+        item = MenuItem(label="X", key="x")
+        assert item.overlay_path == ""
+
+    def test_default_item_type_is_str(self):
+        item = MenuItem(label="X", key="x")
+        assert item.item_type == "str"
+
+
+class TestConfigEditorHandleInputKeyDeeper:
+    def test_backspace_on_empty_buffer_is_noop(self):
+        editor = ConfigEditor()
+        item = MenuItem(label="Name", key="name", value="", item_type="str")
+        editor.start_editing(item)
+        editor.handle_input_key("\x7f")
+        assert editor.input_buffer == ""
+
+    def test_backspace_on_single_char_empties_buffer(self):
+        editor = ConfigEditor()
+        item = MenuItem(label="Name", key="name", value="X", item_type="str")
+        editor.start_editing(item)
+        editor.handle_input_key("\x7f")
+        assert editor.input_buffer == ""
+
+    def test_escape_then_typing_is_ignored_after_cancel(self):
+        editor = ConfigEditor()
+        item = MenuItem(label="X", key="x", value="a", item_type="str")
+        editor.start_editing(item)
+        editor.handle_input_key("\x1b")
+        result = editor.handle_input_key("z")
+        assert result is None
+        assert editor.input_buffer == ""
+
+
+class TestConfigEditorSaveEditCoercionEdges:
+    def test_int_coercion_raises_on_non_numeric(self, tmp_path):
+        overlay = tmp_path / "cfg.yml"
+        editor = ConfigEditor()
+        item = MenuItem(label="Port", key="port", value=8000, item_type="int")
+        editor.start_editing(item, overlay_path=str(overlay))
+        editor.input_buffer = "not_a_number"
+        with pytest.raises(ValueError):
+            editor._save_edit()
+
+    def test_float_coercion_raises_on_non_numeric(self, tmp_path):
+        overlay = tmp_path / "cfg.yml"
+        editor = ConfigEditor()
+        item = MenuItem(label="Cost", key="cost", value=1.0, item_type="float")
+        editor.start_editing(item, overlay_path=str(overlay))
+        editor.input_buffer = "abc"
+        with pytest.raises(ValueError):
+            editor._save_edit()
+
+    def test_unknown_item_type_passthrough_as_str(self, tmp_path):
+        overlay = tmp_path / "cfg.yml"
+        editor = ConfigEditor()
+        item = MenuItem(label="X", key="x", value="v", item_type="list")
+        editor.start_editing(item, overlay_path=str(overlay))
+        editor.input_buffer = "[1, 2, 3]"
+        editor._save_edit()
+        assert item.value == "[1, 2, 3]"
+
+
+class TestConfigEditorReadYamlEdges:
+    def test_read_malformed_yaml_raises(self, tmp_path):
+        import yaml
+
+        p = tmp_path / "bad.yml"
+        p.write_text("key: value\n  bad indent: oops\n")
+        editor = ConfigEditor()
+        raised = False
+        try:
+            editor.read_yaml(str(p))
+        except yaml.YAMLError:
+            raised = True
+        assert raised, "Expected yaml.YAMLError for malformed indentation"
+
+    def test_read_empty_file_returns_empty_dict(self, tmp_path):
+        p = tmp_path / "empty.yml"
+        p.write_text("")
+        editor = ConfigEditor()
+        result = editor.read_yaml(str(p))
+        assert result == {}
+
+
+class TestConfigEditorWriteOverlayEdges:
+    def test_write_empty_dict_produces_empty_yaml(self, tmp_path):
+        overlay = tmp_path / "cfg.yml"
+        editor = ConfigEditor()
+        editor.write_overlay(str(overlay), {})
+        assert overlay.exists()
+        data = editor.read_yaml(str(overlay))
+        assert data == {}
+
+    def test_write_overlay_overwrites_existing_file(self, tmp_path):
+        overlay = tmp_path / "cfg.yml"
+        overlay.write_text("old: value\n")
+        editor = ConfigEditor()
+        editor.write_overlay(str(overlay), {"new": "data"})
+        data = editor.read_yaml(str(overlay))
+        assert data == {"new": "data"}
+        assert "old" not in data
+
+
+class TestConfigEditorCategoriesEdges:
+    def test_each_category_has_unique_overlay_path(self):
+        editor = ConfigEditor()
+        cats = editor.get_categories()
+        paths = [c.overlay_path for c in cats]
+        assert len(paths) == len(set(paths))
+
+
+class TestConfigEditorInputDisplayEdges:
+    def test_long_buffer_display_includes_cursor(self):
+        editor = ConfigEditor()
+        item = MenuItem(label="X", key="x", value="a" * 80, item_type="str")
+        editor.start_editing(item)
+        display = editor.get_input_display()
+        assert display.endswith("_")
+        assert display.startswith("a" * 80)

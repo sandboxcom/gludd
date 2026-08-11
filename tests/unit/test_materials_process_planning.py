@@ -9,7 +9,12 @@ from requirements to each process step (MATE-AT-005).
 
 from __future__ import annotations
 
+from general_ludd.materials.core import INSUFFICIENT_DATA
 from general_ludd.materials.process_planning import (
+    FINISHING_OPS,
+    FORMING_OPS,
+    JOINING_OPS,
+    MACHINING_OPS,
     ProcessStep,
     RouteCard,
     estimate_cost,
@@ -209,3 +214,308 @@ class TestTraceability:
             "yield_strength>=276MPa",
             "tolerance=IT8",
         ]
+
+
+# ---------------------------------------------------------------------------
+# Deep: ProcessStep default initialization
+# ---------------------------------------------------------------------------
+
+
+class TestProcessStepDefaults:
+    def test_default_equipment_class_empty_string(self) -> None:
+        step = ProcessStep(operation="milling")
+        assert step.equipment_class == ""
+        assert step.parameters == {}
+        assert step.inputs == []
+        assert step.outputs == []
+        assert step.quality_gate == {}
+        assert step.inspection == {}
+
+    def test_full_construction(self) -> None:
+        step = ProcessStep(
+            operation="forging",
+            equipment_class="hydraulic_forge_press",
+            parameters={"temp_C": 450},
+            inputs=["billet"],
+            outputs=["forged_blank"],
+            quality_gate={"criterion": "no cracks"},
+            inspection={"method": "UT"},
+        )
+        assert step.operation == "forging"
+        assert step.equipment_class == "hydraulic_forge_press"
+        assert step.parameters["temp_C"] == 450
+        assert step.inputs == ["billet"]
+        assert step.outputs == ["forged_blank"]
+
+
+# ---------------------------------------------------------------------------
+# Deep: RouteCard default initialization
+# ---------------------------------------------------------------------------
+
+
+class TestRouteCardDefaults:
+    def test_default_route_card_is_empty(self) -> None:
+        card = RouteCard()
+        assert card.steps == []
+        assert card.material_id == ""
+        assert card.quantity == 1
+        assert card.state == "ok"
+        assert card.reason == ""
+        assert card.sustainability == {}
+        assert card.traceability == {}
+        assert card.notes == {}
+
+    def test_route_id_is_generated(self) -> None:
+        card = RouteCard()
+        assert card.route_id.startswith("route-")
+        assert len(card.route_id) > 6
+
+    def test_route_ids_are_unique(self) -> None:
+        cards = [RouteCard() for _ in range(10)]
+        ids = {c.route_id for c in cards}
+        assert len(ids) == 10
+
+
+# ---------------------------------------------------------------------------
+# Deep: plan_manufacturing edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestPlanManufacturingEdgeCases:
+    def test_unknown_material_yields_insufficient_data(self) -> None:
+        route = plan_manufacturing(
+            material_id="unobtanium",
+            operations=["stamping", "drilling"],
+        )
+        assert route.state == INSUFFICIENT_DATA
+        assert "unknown material" in route.reason
+
+    def test_single_operation_route(self) -> None:
+        route = plan_manufacturing(
+            material_id="aisi_1045",
+            operations=["drilling"],
+        )
+        assert route.state == "ok"
+        assert len(route.steps) == 1
+        step = route.steps[0]
+        assert step.operation == "drilling"
+        assert step.equipment_class == "drill_press"
+        assert step.inputs
+        assert step.outputs
+
+    def test_operations_sorted_by_sequence_rank(self) -> None:
+        route = plan_manufacturing(
+            material_id="aisi_1045",
+            operations=["painting", "stamping", "drilling", "gmaw"],
+        )
+        ops = [s.operation for s in route.steps]
+        stamp_idx = ops.index("stamping")
+        gmaw_idx = ops.index("gmaw")
+        drill_idx = ops.index("drilling")
+        paint_idx = ops.index("painting")
+        assert stamp_idx < gmaw_idx < drill_idx < paint_idx
+
+    def test_unknown_operation_gets_general_equipment_and_default_rank(self) -> None:
+        route = plan_manufacturing(
+            material_id="aisi_1045",
+            operations=["unknown_op", "stamping"],
+        )
+        ops = [s.operation for s in route.steps]
+        assert ops[0] == "stamping"
+        assert ops[1] == "unknown_op"
+        unknown = route.steps[1]
+        assert unknown.equipment_class == "general_purpose"
+
+
+# ---------------------------------------------------------------------------
+# Deep: scale-up boundaries
+# ---------------------------------------------------------------------------
+
+
+class TestScaleUpBoundaries:
+    def test_prototype_volume_less_than_11(self) -> None:
+        for qty in (1, 5, 10):
+            route = plan_manufacturing(
+                material_id="aisi_1045",
+                operations=["stamping"],
+                quantity=qty,
+            )
+            assert "prototype" in route.notes["scale_up"].lower()
+
+    def test_pilot_volume_11_to_1000(self) -> None:
+        for qty in (11, 100, 1000):
+            route = plan_manufacturing(
+                material_id="aisi_1045",
+                operations=["stamping"],
+                quantity=qty,
+            )
+            if qty <= 10:
+                assert "prototype" in route.notes["scale_up"].lower()
+            elif qty <= 1000:
+                assert "pilot" in route.notes["scale_up"].lower() or "bridge" in route.notes["scale_up"].lower()
+
+    def test_production_volume_above_1000(self) -> None:
+        route = plan_manufacturing(
+            material_id="aa6061_t6",
+            operations=["forging"],
+            quantity=5000,
+        )
+        assert "production" in route.notes["scale_up"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Deep: estimate_cost / estimate_energy / plan_inspection insufficient_data routes
+# ---------------------------------------------------------------------------
+
+
+class TestInsufficientDataRoutes:
+    def test_estimate_cost_on_insufficient_data_route(self) -> None:
+        route = plan_manufacturing(material_id="aisi_1045", operations=[])
+        cost = estimate_cost(route)
+        assert cost["state"] == INSUFFICIENT_DATA
+        assert cost["total_usd"] == 0.0
+
+    def test_estimate_energy_on_insufficient_data_route(self) -> None:
+        route = plan_manufacturing(material_id="aisi_1045", operations=[])
+        energy = estimate_energy(route)
+        assert energy["state"] == INSUFFICIENT_DATA
+        assert energy["total_kwh"] == 0.0
+
+    def test_plan_inspection_on_insufficient_data_route(self) -> None:
+        route = plan_manufacturing(material_id="aisi_1045", operations=[])
+        plan = plan_inspection(route)
+        assert plan["state"] == INSUFFICIENT_DATA
+        assert plan["measurements"] == []
+
+
+# ---------------------------------------------------------------------------
+# Deep: estimate_cost with different materials
+# ---------------------------------------------------------------------------
+
+
+class TestCostByMaterial:
+    def test_aluminum_costs_more_than_steel_per_kg(self) -> None:
+        steel = plan_manufacturing(material_id="aisi_1045", operations=["stamping"])
+        alum = plan_manufacturing(material_id="aa6061_t6", operations=["stamping"])
+        steel_cost = estimate_cost(steel)
+        alum_cost = estimate_cost(alum)
+        assert alum_cost["material_usd"] > steel_cost["material_usd"]
+
+    def test_unknown_material_in_route_yields_zero_material_cost(self) -> None:
+        card = RouteCard(
+            steps=[ProcessStep(operation="drilling")],
+            material_id="nonexistent",
+            state="ok",
+            quantity=1,
+        )
+        cost = estimate_cost(card)
+        assert cost["state"] == "ok"
+        assert cost["material_usd"] == 0.0
+
+    def test_polymer_material_has_cost(self) -> None:
+        route = plan_manufacturing(material_id="pa66_gf30", operations=["injection_molding"], quantity=10)
+        cost = estimate_cost(route)
+        assert cost["total_usd"] > 0
+        assert cost["quantity"] == 10
+
+
+# ---------------------------------------------------------------------------
+# Deep: energy estimation — known vs default
+# ---------------------------------------------------------------------------
+
+
+class TestEnergyEdgeCases:
+    def test_unknown_operation_uses_default_energy(self) -> None:
+        card = RouteCard(
+            steps=[ProcessStep(operation="unknown_op")],
+            material_id="aisi_1045",
+            state="ok",
+        )
+        energy = estimate_energy(card)
+        assert energy["total_kwh"] > 0
+
+    def test_empty_operations_uses_default_scrap(self) -> None:
+        route = plan_manufacturing(material_id="aisi_1045", operations=["unknown_op"])
+        assert route.sustainability["scrap_rate_pct"] >= 0.0
+
+
+# ---------------------------------------------------------------------------
+# Deep: operation classification sets
+# ---------------------------------------------------------------------------
+
+
+class TestOperationClassificationSets:
+    def test_forming_includes_casting_and_additive(self) -> None:
+        assert "casting" in FORMING_OPS
+        assert "additive" in FORMING_OPS
+
+    def test_joining_includes_brazing_and_soldering(self) -> None:
+        assert "brazing" in JOINING_OPS
+        assert "soldering" in JOINING_OPS
+
+    def test_machining_includes_edm_and_waterjet(self) -> None:
+        assert "edm" in MACHINING_OPS
+        assert "waterjet" in MACHINING_OPS
+
+    def test_finishing_includes_anodizing_and_heat_treatment(self) -> None:
+        assert "anodizing" in FINISHING_OPS
+        assert "heat_treatment" in FINISHING_OPS
+
+
+# ---------------------------------------------------------------------------
+# Deep: finishing operation route
+# ---------------------------------------------------------------------------
+
+
+class TestFinishingOperationRoute:
+    def test_finishing_only_route(self) -> None:
+        route = plan_manufacturing(
+            material_id="aa6061_t6",
+            operations=["anodizing"],
+        )
+        assert route.state == "ok"
+        assert len(route.steps) == 1
+        step = route.steps[0]
+        assert "anodize" in step.equipment_class.lower()
+        assert "coating thickness" in step.quality_gate["criterion"].lower()
+        assert step.inputs
+        assert step.outputs
+
+    def test_finishing_step_has_inspection_method(self) -> None:
+        route = plan_manufacturing(
+            material_id="aa6061_t6",
+            operations=["anodizing", "plating"],
+        )
+        for step in route.steps:
+            assert step.inspection["method_ref"]
+
+
+# ---------------------------------------------------------------------------
+# Deep: inspection plan with multiple steps
+# ---------------------------------------------------------------------------
+
+
+class TestInspectionPlanMultiStep:
+    def test_three_step_route_has_5_measurements(self) -> None:
+        route = plan_manufacturing(
+            material_id="aisi_1045",
+            operations=["stamping", "drilling", "gmaw"],
+        )
+        plan = plan_inspection(route)
+        assert len(plan["measurements"]) == 5
+
+    def test_incoming_measurement_is_first(self) -> None:
+        route = plan_manufacturing(
+            material_id="aisi_1045",
+            operations=["stamping"],
+        )
+        plan = plan_inspection(route)
+        assert plan["measurements"][0]["stage"] == "incoming"
+
+    def test_final_measurement_is_last(self) -> None:
+        route = plan_manufacturing(
+            material_id="aisi_1045",
+            operations=["stamping"],
+        )
+        plan = plan_inspection(route)
+        assert plan["measurements"][-1]["stage"] == "final"

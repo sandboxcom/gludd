@@ -837,6 +837,144 @@ class TestValidateAgainstAzureSchemaDeep:
         )
         assert ok is True
 
+    def test_name_is_none_fails(self):
+        ok, messages = validate_against_azure_schema(
+            {
+                "Name": None,
+                "Description": "A role definition description that is long enough to pass",
+                "Actions": [],
+                "NotActions": [],
+                "AssignableScopes": ["/subscriptions/..."],
+            }
+        )
+        assert ok is False
+        assert any("Name must be" in m for m in messages)
+
+    def test_name_is_whitespace_only_fails(self):
+        ok, messages = validate_against_azure_schema(
+            {
+                "Name": "   \t  ",
+                "Description": "A role definition description that is long enough to pass",
+                "Actions": [],
+                "NotActions": [],
+                "AssignableScopes": ["/subscriptions/..."],
+            }
+        )
+        assert ok is False
+        assert any("Name must be" in m for m in messages)
+
+    def test_description_is_nonstring_fails(self):
+        ok, messages = validate_against_azure_schema(
+            {
+                "Name": "Test",
+                "Description": 12345,
+                "Actions": [],
+                "NotActions": [],
+                "AssignableScopes": ["/subscriptions/..."],
+            }
+        )
+        assert ok is False
+        assert any("Description must be" in m for m in messages)
+
+    def test_actions_list_contains_none_entry(self):
+        ok, messages = validate_against_azure_schema(
+            {
+                "Name": "Test",
+                "Description": "A role with a None action entry in the actions list ok",
+                "Actions": [None],
+                "NotActions": [],
+                "AssignableScopes": ["/subscriptions/..."],
+            }
+        )
+        assert ok is False
+        assert any("empty" in m for m in messages)
+
+    def test_not_actions_with_forbidden_suffix_caught(self):
+        ok, messages = validate_against_azure_schema(
+            {
+                "Name": "Test",
+                "Description": "A role with a forbidden suffix action in not-actions ok",
+                "Actions": [],
+                "NotActions": ["Microsoft.Storage/storageAccounts/list/action"],
+                "AssignableScopes": ["/subscriptions/..."],
+            }
+        )
+        assert ok is False
+        assert any("Invalid not-action" in m for m in messages)
+
+    def test_actions_is_none_rejected(self):
+        ok, messages = validate_against_azure_schema(
+            {
+                "Name": "Test",
+                "Description": "A role definition with actions explicitly set to None",
+                "Actions": None,
+                "NotActions": [],
+                "AssignableScopes": ["/subscriptions/..."],
+            }
+        )
+        assert ok is False
+        assert any("must be a list" in m for m in messages)
+
+    def test_combined_invalid_action_and_short_description(self):
+        ok, messages = validate_against_azure_schema(
+            {
+                "Name": "Test",
+                "Description": "short",
+                "Actions": ["bogus-action"],
+                "NotActions": [],
+                "AssignableScopes": ["/subscriptions/..."],
+            }
+        )
+        assert ok is False
+        assert any("Description" in m for m in messages)
+        assert any("Invalid action" in m for m in messages)
+
+    def test_security_denial_missing_when_ops_used(self):
+        ok, messages = validate_against_azure_schema(
+            {
+                "Name": "Dangerous Role",
+                "Description": "A role that uses security-critical ops without denying them",
+                "Actions": [
+                    "Microsoft.Compute/virtualMachines/runCommand/action",
+                    "Microsoft.Authorization/roleAssignments/write",
+                ],
+                "NotActions": [],
+                "AssignableScopes": ["/subscriptions/..."],
+            }
+        )
+        assert ok is False
+        assert any("missing security-critical denials" in m.lower() for m in messages)
+
+    def test_multiple_unknown_actions_generates_one_warning(self):
+        ok, messages = validate_against_azure_schema(
+            {
+                "Name": "Unknown Role",
+                "Description": "A role with multiple unknown provider actions to test ok",
+                "Actions": [
+                    "Microsoft.FakeProvider1/thing/read",
+                    "Microsoft.FakeProvider2/thing/write",
+                ],
+                "NotActions": [],
+                "AssignableScopes": ["/subscriptions/..."],
+            }
+        )
+        assert ok is True
+        warnings = [m for m in messages if m.startswith("WARNING:")]
+        assert len(warnings) == 1
+
+    def test_empty_string_action_entry_rejected(self):
+        ok, messages = validate_against_azure_schema(
+            {
+                "Name": "Test",
+                "Description": "A role definition that is long enough to pass validation",
+                "Actions": [""],
+                "NotActions": [],
+                "AssignableScopes": ["/subscriptions/..."],
+            }
+        )
+        assert ok is False
+        assert any("Invalid action" in m for m in messages)
+
 
 # ---------------------------------------------------------------------------
 # Deep: check_security_critical_denials edges

@@ -56,9 +56,7 @@ class TestWeightsFor:
         # Force the .get() fallback with a value not present in the map by
         # passing a custom default; every TaskType is mapped, so we verify the
         # default param is threaded through via the constant default too.
-        assert weights_for(TaskType.BUG_FIX, default=sentinel) == task_weights[
-            TaskType.BUG_FIX
-        ]
+        assert weights_for(TaskType.BUG_FIX, default=sentinel) == task_weights[TaskType.BUG_FIX]
 
     def test_default_param_is_module_constant(self):
         # weights_for's default arg is the shared _DEFAULT_WEIGHTS constant
@@ -118,28 +116,144 @@ class TestRoleWeightsProperties:
 class TestTaskRoleEnumExport:
     def test_exported_from_package_init(self):
         from general_ludd.routing_roles import TaskRole as TR
+
         assert TR is TaskRole
 
     def test_role_weights_exported_from_package_init(self):
         from general_ludd.routing_roles import RoleWeights as RW
+
         assert RW is RoleWeights
 
     def test_task_weights_exported_from_package_init(self):
         from general_ludd.routing_roles import task_weights as tw
+
         assert tw is task_weights
 
     def test_weights_for_exported_from_package_init(self):
         from general_ludd.routing_roles import weights_for as wf
+
         assert wf is weights_for
 
 
 class TestTaskTypeFromSchema:
     def test_task_type_enum_includes_all_weights(self):
         from general_ludd.schemas.benchmark import TaskType
+
         for tt in TaskType:
             assert tt in task_weights, f"{tt.name} missing from task_weights"
 
     def test_no_extra_types_in_weights(self):
         from general_ludd.schemas.benchmark import TaskType
+
         for tt_key in list(task_weights):
             assert tt_key in list(TaskType)
+
+
+class TestRoleWeightsNamedTuple:
+    def test_fields(self):
+        assert RoleWeights._fields == ("cost", "quality")
+
+    def test_asdict(self):
+        rw = RoleWeights(0.3, 0.7)
+        d = rw._asdict()
+        assert d == {"cost": 0.3, "quality": 0.7}
+        assert isinstance(d, dict)
+
+    def test_replace(self):
+        rw = RoleWeights(0.1, 0.9)
+        rw2 = rw._replace(cost=0.5)
+        assert rw2 == RoleWeights(0.5, 0.9)
+        assert rw != rw2
+        assert rw.cost == 0.1
+
+    def test_immutable_cost(self):
+        rw = RoleWeights(0.3, 0.7)
+        with pytest.raises(AttributeError):
+            rw.cost = 0.5  # type: ignore[misc]
+
+    def test_immutable_quality(self):
+        rw = RoleWeights(0.3, 0.7)
+        with pytest.raises(AttributeError):
+            rw.quality = 0.5  # type: ignore[misc]
+
+    def test_make(self):
+        rw = RoleWeights._make([0.25, 0.75])
+        assert rw == RoleWeights(0.25, 0.75)
+
+    def test_equality(self):
+        assert RoleWeights(0.2, 0.8) == RoleWeights(0.2, 0.8)
+        assert RoleWeights(0.2, 0.8) != RoleWeights(0.3, 0.7)
+
+    def test_hashable(self):
+        rw = RoleWeights(0.2, 0.8)
+        d = {rw: "test"}
+        assert d[RoleWeights(0.2, 0.8)] == "test"
+
+    def test_repr(self):
+        rw = RoleWeights(0.3, 0.7)
+        r = repr(rw)
+        assert "RoleWeights" in r
+        assert "0.3" in r
+        assert "0.7" in r
+
+    def test_isinstance_tuple(self):
+        rw = RoleWeights(0.2, 0.8)
+        assert isinstance(rw, tuple)
+
+    def test_indexing(self):
+        rw = RoleWeights(0.1, 0.9)
+        assert rw[0] == 0.1
+        assert rw[1] == 0.9
+        assert len(rw) == 2
+
+    def test_iter_unpacking(self):
+        rw = RoleWeights(0.6, 0.4)
+        cost, quality = rw
+        assert cost == 0.6
+        assert quality == 0.4
+
+
+class TestWeightsForEdgeCases:
+    def test_weights_for_returns_roleweights_instance(self):
+        w = weights_for(TaskType.BUG_FIX)
+        assert isinstance(w, RoleWeights)
+
+    def test_weights_for_all_tasktypes_match_direct_dict(self):
+        for tt in TaskType:
+            assert weights_for(tt) == task_weights[tt]
+
+    def test_default_fallback_not_triggered_for_known_types(self):
+        sentinel = RoleWeights(0.99, 0.01)
+        for tt in TaskType:
+            result = weights_for(tt, default=sentinel)
+            assert result == task_weights[tt]
+
+    def test_default_is_not_shared_mutable_state(self):
+        from general_ludd.routing_roles.weights import _DEFAULT_WEIGHTS
+
+        assert RoleWeights(0.2, 0.8) == _DEFAULT_WEIGHTS
+        assert type(_DEFAULT_WEIGHTS) is RoleWeights
+
+
+class TestModuleAssertions:
+    def test_coverage_assertion_holds(self):
+        assert set(task_weights) == set(TaskType)
+
+    def test_sum_to_one_assertion_holds(self):
+        for w in task_weights.values():
+            assert abs(w.cost + w.quality - 1.0) < 1e-9
+
+    def test_weights_dict_is_not_empty(self):
+        assert len(task_weights) == len(set(TaskType))
+
+    def test_all_weights_non_negative(self):
+        for tt in TaskType:
+            w = task_weights[tt]
+            assert w.cost >= 0.0, f"{tt.name} cost negative"
+            assert w.quality >= 0.0, f"{tt.name} quality negative"
+
+    def test_weights_are_deterministic(self):
+        for tt in TaskType:
+            w1 = weights_for(tt)
+            w2 = weights_for(tt)
+            assert w1 == w2
