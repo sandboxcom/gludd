@@ -7,6 +7,7 @@ import random
 
 import pytest
 
+from general_ludd.probabilistic.count_min_sketch import CountMinSketch
 from general_ludd.probabilistic.counting_bloom import CountingBloomFilter
 from general_ludd.probabilistic.hyperloglog import HyperLogLog
 from general_ludd.probabilistic.minhash import LSH, MinHash, _murmur64
@@ -904,3 +905,282 @@ class TestCentroid:
     def test_slots(self) -> None:
         c = Centroid(mean=1.0, weight=1.0)
         assert not hasattr(c, "__dict__")
+
+
+# ——— Count-Min Sketch ———————————————————————————————————————————————
+
+
+class TestCountMinSketchInit:
+    def test_default_construction(self) -> None:
+        cms = CountMinSketch(width=100, depth=5)
+        assert cms.width == 100
+        assert cms.depth == 5
+        assert cms.conservative is False
+
+    def test_conservative_construction(self) -> None:
+        cms = CountMinSketch(width=50, depth=3, conservative=True)
+        assert cms.conservative is True
+        assert cms.width == 50
+        assert cms.depth == 3
+
+    def test_width_zero_raises(self) -> None:
+        with pytest.raises(ValueError, match="width must be >= 1"):
+            CountMinSketch(width=0, depth=5)
+
+    def test_width_negative_raises(self) -> None:
+        with pytest.raises(ValueError, match="width must be >= 1"):
+            CountMinSketch(width=-1, depth=5)
+
+    def test_depth_zero_raises(self) -> None:
+        with pytest.raises(ValueError, match="depth must be >= 1"):
+            CountMinSketch(width=100, depth=0)
+
+    @pytest.mark.parametrize(
+        "epsilon,delta,expected_min_width,expected_min_depth",
+        [
+            (0.1, 0.1, 27, 3),
+            (0.01, 0.01, 271, 5),
+            (0.001, 0.001, 2718, 7),
+        ],
+    )
+    def test_from_epsilon_delta(
+        self, epsilon: float, delta: float, expected_min_width: int, expected_min_depth: int
+    ) -> None:
+        cms = CountMinSketch.from_epsilon_delta(epsilon, delta)
+        assert cms.width >= expected_min_width
+        assert cms.depth >= expected_min_depth
+
+    def test_from_epsilon_delta_invalid_epsilon(self) -> None:
+        with pytest.raises(ValueError, match="epsilon must be in"):
+            CountMinSketch.from_epsilon_delta(1.5, 0.1)
+        with pytest.raises(ValueError, match="epsilon must be in"):
+            CountMinSketch.from_epsilon_delta(0.0, 0.1)
+
+    def test_from_epsilon_delta_invalid_delta(self) -> None:
+        with pytest.raises(ValueError, match="delta must be in"):
+            CountMinSketch.from_epsilon_delta(0.1, 1.5)
+        with pytest.raises(ValueError, match="delta must be in"):
+            CountMinSketch.from_epsilon_delta(0.1, 0.0)
+
+
+class TestCountMinSketchAddEstimate:
+    def test_estimate_zero_when_empty(self) -> None:
+        cms = CountMinSketch(width=100, depth=5)
+        assert cms.estimate("anything") == 0
+        assert cms.estimate(b"bytes") == 0
+        assert cms.estimate(42) == 0
+
+    def test_add_and_estimate_single(self) -> None:
+        cms = CountMinSketch(width=1000, depth=5)
+        cms.add("hello", count=3)
+        assert cms.estimate("hello") == 3
+
+    def test_add_multiple_items(self) -> None:
+        cms = CountMinSketch(width=10000, depth=5)
+        items = {"alpha": 2, "beta": 5, "gamma": 1}
+        for item, cnt in items.items():
+            for _ in range(cnt):
+                cms.add(item)
+        for item, cnt in items.items():
+            assert cms.estimate(item) >= cnt
+
+    def test_add_negative_count_raises(self) -> None:
+        cms = CountMinSketch(width=100, depth=5)
+        with pytest.raises(ValueError, match="count must be >= 1"):
+            cms.add("x", count=-1)
+
+    def test_add_zero_count_raises(self) -> None:
+        cms = CountMinSketch(width=100, depth=5)
+        with pytest.raises(ValueError, match="count must be >= 1"):
+            cms.add("x", count=0)
+
+    def test_estimate_overcounts_never_under(self) -> None:
+        cms = CountMinSketch(width=5000, depth=10)
+        n = 500
+        for i in range(n):
+            for _ in range(i % 5 + 1):
+                cms.add(f"item_{i}")
+        for i in range(n):
+            true_count = i % 5 + 1
+            assert cms.estimate(f"item_{i}") >= true_count
+
+    def test_error_bound_statistical(self) -> None:
+        cms = CountMinSketch(width=5000, depth=5)
+        n = 1000
+        for i in range(n):
+            cnt = (i % 10) + 1
+            for _ in range(cnt):
+                cms.add(f"norm_{i}")
+        total_added = sum((i % 10) + 1 for i in range(n))
+        overcount_sum = 0
+        for i in range(n):
+            true_cnt = (i % 10) + 1
+            over = cms.estimate(f"norm_{i}") - true_cnt
+            overcount_sum += max(over, 0)
+        overcount_ratio = overcount_sum / total_added
+        assert overcount_ratio < 0.15
+
+    def test_conservative_update(self) -> None:
+        cms = CountMinSketch(width=1000, depth=5, conservative=True)
+        for _ in range(100):
+            cms.add("key")
+        est = cms.estimate("key")
+        assert 100 <= est <= 100 + 10
+
+
+class TestCountMinSketchHeavyHitters:
+    def test_no_candidates_returns_empty(self) -> None:
+        cms = CountMinSketch(width=100, depth=3)
+        cms.add("x", count=10)
+        assert cms.heavy_hitters(threshold=5, candidates=None) == []
+
+    def test_no_candidates_above_threshold(self) -> None:
+        cms = CountMinSketch(width=100, depth=3)
+        cms.add("a", count=2)
+        cms.add("b", count=2)
+        result = cms.heavy_hitters(threshold=10, candidates={"a", "b"})
+        assert result == []
+
+    def test_finds_heavy_hitters(self) -> None:
+        cms = CountMinSketch(width=10000, depth=5)
+        for _ in range(50):
+            cms.add("heavy")
+        for _ in range(3):
+            cms.add("light")
+        result = cms.heavy_hitters(threshold=40, candidates={"heavy", "light"})
+        assert len(result) == 1
+        assert result[0][0] == "heavy"
+
+    def test_descending_frequency_order(self) -> None:
+        cms = CountMinSketch(width=10000, depth=5)
+        for _ in range(30):
+            cms.add("mid")
+        for _ in range(60):
+            cms.add("top")
+        for _ in range(10):
+            cms.add("low")
+        result = cms.heavy_hitters(threshold=5, candidates={"low", "mid", "top"})
+        assert result[0][0] == "top"
+        assert result[1][0] == "mid"
+        assert result[2][0] == "low"
+
+    def test_threshold_zero_raises(self) -> None:
+        cms = CountMinSketch(width=100, depth=3)
+        with pytest.raises(ValueError, match="threshold must be >= 1"):
+            cms.heavy_hitters(threshold=0)
+
+
+class TestCountMinSketchMerge:
+    def test_merge_adds_counts(self) -> None:
+        a = CountMinSketch(width=5000, depth=5)
+        b = CountMinSketch(width=5000, depth=5)
+        for _ in range(10):
+            a.add("shared")
+        for _ in range(5):
+            b.add("shared")
+        for _ in range(20):
+            b.add("only_b")
+        a.merge(b)
+        assert a.estimate("shared") >= 15
+        assert a.estimate("only_b") >= 20
+
+    def test_merge_different_width_raises(self) -> None:
+        a = CountMinSketch(width=100, depth=5)
+        b = CountMinSketch(width=200, depth=5)
+        with pytest.raises(ValueError, match="different dimensions"):
+            a.merge(b)
+
+    def test_merge_different_depth_raises(self) -> None:
+        a = CountMinSketch(width=100, depth=5)
+        b = CountMinSketch(width=100, depth=3)
+        with pytest.raises(ValueError, match="different dimensions"):
+            a.merge(b)
+
+    def test_merge_empty_with_nonempty(self) -> None:
+        a = CountMinSketch(width=1000, depth=4)
+        b = CountMinSketch(width=1000, depth=4)
+        b.add("x", count=7)
+        a.merge(b)
+        assert a.estimate("x") == 7
+
+
+class TestCountMinSketchClear:
+    def test_clear_zeros_all_estimates(self) -> None:
+        cms = CountMinSketch(width=100, depth=3)
+        cms.add("a", count=5)
+        cms.add("b", count=3)
+        cms.clear()
+        assert cms.estimate("a") == 0
+        assert cms.estimate("b") == 0
+
+    def test_clear_then_reuse(self) -> None:
+        cms = CountMinSketch(width=1000, depth=3)
+        cms.add("x", count=10)
+        cms.clear()
+        cms.add("y", count=5)
+        assert cms.estimate("x") == 0
+        assert cms.estimate("y") == 5
+
+
+class TestCountMinSketchSerialization:
+    def test_roundtrip(self) -> None:
+        cms = CountMinSketch(width=200, depth=4)
+        cms.add("alpha", count=3)
+        cms.add("beta", count=7)
+        raw = cms.to_bytes()
+        restored = CountMinSketch.from_bytes(raw)
+        assert restored.width == cms.width
+        assert restored.depth == cms.depth
+        assert restored.conservative == cms.conservative
+        assert restored.estimate("alpha") == cms.estimate("alpha")
+        assert restored.estimate("beta") == cms.estimate("beta")
+
+    def test_roundtrip_conservative(self) -> None:
+        cms = CountMinSketch(width=200, depth=4, conservative=True)
+        cms.add("k", count=5)
+        restored = CountMinSketch.from_bytes(cms.to_bytes())
+        assert restored.conservative is True
+        assert restored.estimate("k") == 5
+
+    def test_empty_roundtrip(self) -> None:
+        cms = CountMinSketch(width=64, depth=3)
+        restored = CountMinSketch.from_bytes(cms.to_bytes())
+        assert restored.estimate("anything") == 0
+
+    def test_truncated_header_raises(self) -> None:
+        with pytest.raises(ValueError, match="truncated"):
+            CountMinSketch.from_bytes(b"\x00\x00")
+
+    def test_body_length_mismatch_raises(self) -> None:
+        cms = CountMinSketch(width=100, depth=5)
+        raw = cms.to_bytes()
+        with pytest.raises(ValueError, match="body length mismatch"):
+            CountMinSketch.from_bytes(raw[:20])
+
+
+class TestCountMinSketchEdgeCases:
+    def test_string_bytes_int_float_types(self) -> None:
+        cms = CountMinSketch(width=100, depth=3)
+        vals: list = ["str", b"bytes", 42, 3.14]
+        for val in vals:
+            cms.add(val)
+            assert cms.estimate(val) >= 1
+
+    def test_large_count_value(self) -> None:
+        cms = CountMinSketch(width=1000, depth=5)
+        cms.add("big", count=10000)
+        assert cms.estimate("big") >= 10000
+
+    def test_high_frequency_item_stable_over_rows(self) -> None:
+        cms = CountMinSketch(width=500, depth=10)
+        for _ in range(200):
+            cms.add("hot")
+        for i in range(500):
+            cms.add(f"cold_{i}")
+        assert cms.estimate("hot") == 200
+
+    def test_non_member_returns_zero(self) -> None:
+        cms = CountMinSketch(width=1000, depth=5)
+        for i in range(100):
+            cms.add(f"real_{i}")
+        assert cms.estimate("never_added") == 0

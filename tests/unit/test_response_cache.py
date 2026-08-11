@@ -207,3 +207,157 @@ class TestModelResponseCache:
             )
             resp = gw.call_model("test-p", _sample_messages())
             assert resp.content == "direct response"
+
+
+class TestModelResponseCacheDeep:
+    def test_close_releases_resources(self):
+        from general_ludd.models.response_cache import ModelResponseCache
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache = ModelResponseCache(cache_dir=tmpdir)
+            cache.set("k", _sample_response())
+            cache.close()
+
+    def test_get_non_dict_value_returns_none(self):
+        from diskcache import Cache
+
+        from general_ludd.models.response_cache import ModelResponseCache
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache = ModelResponseCache(cache_dir=tmpdir)
+            cache._cache = Cache(tmpdir)
+            cache._cache.set("string-val", "not a dict")
+            cache._cache.set("int-val", 42)
+            cache._cache.set("none-val", None)
+            assert cache.get("string-val") is None
+            assert cache.get("int-val") is None
+            assert cache.get("none-val") is None
+
+    def test_set_with_custom_expire(self):
+        from general_ludd.models.response_cache import ModelResponseCache
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache = ModelResponseCache(cache_dir=tmpdir)
+            response = _sample_response()
+            cache.set("short-ttl", response, expire=60)
+            result = cache.get("short-ttl")
+            assert result == response
+
+    def test_set_with_expire_none(self):
+        from general_ludd.models.response_cache import ModelResponseCache
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache = ModelResponseCache(cache_dir=tmpdir)
+            response = _sample_response()
+            cache.set("no-expire", response, expire=None)
+            result = cache.get("no-expire")
+            assert result == response
+
+    def test_set_uses_default_ttl(self):
+        from general_ludd.models.response_cache import (
+            DEFAULT_CACHE_TTL_SECONDS,
+            ModelResponseCache,
+        )
+
+        assert DEFAULT_CACHE_TTL_SECONDS == 3600
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache = ModelResponseCache(cache_dir=tmpdir)
+            response = _sample_response()
+            cache.set("default-ttl", response)
+            result = cache.get("default-ttl")
+            assert result == response
+
+    def test_cache_persists_across_close_reopen(self):
+        from general_ludd.models.response_cache import ModelResponseCache
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache1 = ModelResponseCache(cache_dir=tmpdir)
+            response = _sample_response()
+            cache1.set("persistent-key", response)
+            cache1.close()
+
+            cache2 = ModelResponseCache(cache_dir=tmpdir)
+            result = cache2.get("persistent-key")
+            assert result == response
+            cache2.close()
+
+    def test_multiple_entries_cached_independently(self):
+        from general_ludd.models.response_cache import ModelResponseCache
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache = ModelResponseCache(cache_dir=tmpdir)
+            r1 = {"content": "alpha", "model_name": "m1"}
+            r2 = {"content": "beta", "model_name": "m2"}
+            r3 = {"content": "gamma", "model_name": "m3"}
+            cache.set("a", r1)
+            cache.set("b", r2)
+            cache.set("c", r3)
+            assert cache.get("a") == r1
+            assert cache.get("b") == r2
+            assert cache.get("c") == r3
+
+    def test_invalidate_nonexistent_key_does_not_error(self):
+        from general_ludd.models.response_cache import ModelResponseCache
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache = ModelResponseCache(cache_dir=tmpdir)
+            cache.invalidate("never-set-key")
+
+    def test_clear_empty_cache_does_not_error(self):
+        from general_ludd.models.response_cache import ModelResponseCache
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache = ModelResponseCache(cache_dir=tmpdir)
+            cache.clear()
+            assert cache.get("any-key") is None
+
+    def test_cache_key_includes_model_name(self):
+        from general_ludd.models.response_cache import _make_cache_key
+
+        k1 = _make_cache_key("p1", _sample_messages(), model_name="gpt-4")
+        k2 = _make_cache_key("p1", _sample_messages(), model_name="gpt-3.5")
+        assert k1 != k2
+
+    def test_cache_key_differs_by_kwargs(self):
+        from general_ludd.models.response_cache import _make_cache_key
+
+        k1 = _make_cache_key("p1", _sample_messages(), temperature=0.0)
+        k2 = _make_cache_key("p1", _sample_messages(), temperature=1.0)
+        assert k1 != k2
+
+    def test_cache_key_with_model_name_none_vs_absent(self):
+        from general_ludd.models.response_cache import _make_cache_key
+
+        k_none = _make_cache_key("p1", _sample_messages(), model_name=None)
+        k_absent = _make_cache_key("p1", _sample_messages())
+        assert k_none == k_absent
+
+    def test_cache_key_ordering_independent(self):
+        from general_ludd.models.response_cache import _make_cache_key
+
+        k1 = _make_cache_key("p1", _sample_messages(), temperature=0.5, top_p=0.9)
+        k2 = _make_cache_key("p1", _sample_messages(), top_p=0.9, temperature=0.5)
+        assert k1 == k2
+
+    def test_default_cache_dir_expands_tilde(self):
+        from general_ludd.models.response_cache import (
+            DEFAULT_CACHE_DIR,
+            ModelResponseCache,
+        )
+
+        assert DEFAULT_CACHE_DIR.startswith("~")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache = ModelResponseCache(cache_dir=tmpdir)
+            response = _sample_response()
+            cache.set("k", response)
+            assert cache.get("k") == response
+
+    def test_cve_mitigation_dir_owner_only_on_reopen(self):
+        from general_ludd.models.response_cache import ModelResponseCache
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_path = os.path.join(tmpdir, "existing-cache")
+            os.makedirs(cache_path, mode=0o755)
+            ModelResponseCache(cache_dir=cache_path)
+            mode = stat.S_IMODE(os.stat(cache_path).st_mode)
+            assert mode & (stat.S_IRWXG | stat.S_IRWXO) == 0
