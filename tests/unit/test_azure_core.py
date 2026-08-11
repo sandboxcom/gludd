@@ -823,6 +823,237 @@ class TestOptimizeCostDeepEdgeCases:
 
 
 # ---------------------------------------------------------------------------
+# Additional deep edge-case tests for validate_rbac_role_definition
+# ---------------------------------------------------------------------------
+
+
+class TestValidateRbacDeepAdditional:
+    def test_mixed_valid_and_invalid_actions_reports_only_invalid(self):
+        result = validate_rbac_role_definition(
+            action_strings=[
+                "Microsoft.Compute/virtualMachines/read",
+                "bad-action",
+                "Microsoft.Network/virtualNetworks/read",
+            ],
+            not_actions=[],
+            assignable_scopes=["/subscriptions/sub-id"],
+        )
+        assert result["status"] == "invalid"
+        assert len(result["issues"]) == 1
+        assert "bad-action" in result["issues"][0]
+
+    def test_secret_read_action_flagged_as_invalid(self):
+        result = validate_rbac_role_definition(
+            action_strings=["Microsoft.KeyVault/vaults/secrets/read"],
+            not_actions=[],
+            assignable_scopes=["/subscriptions/sub-id"],
+        )
+        assert result["status"] == "invalid"
+
+    def test_only_whitespace_action_string_flagged(self):
+        result = validate_rbac_role_definition(
+            action_strings=["   "],
+            not_actions=[],
+            assignable_scopes=["/subscriptions/sub-id"],
+        )
+        assert result["status"] == "invalid"
+
+    def test_very_long_action_string_accepted(self):
+        long_path = "/".join(["segment" + str(i) for i in range(50)])
+        action = f"Microsoft.Compute/{long_path}/read"
+        result = validate_rbac_role_definition(
+            action_strings=[action],
+            not_actions=[],
+            assignable_scopes=["/subscriptions/sub-id"],
+        )
+        assert result["status"] == "valid"
+
+    def test_data_plane_action_start_action_validated(self):
+        result = validate_rbac_role_definition(
+            action_strings=["Microsoft.OperationalInsights/workspaces/query/action"],
+            not_actions=[],
+            assignable_scopes=["/subscriptions/sub-id"],
+        )
+        assert result["status"] == "valid"
+
+
+# ---------------------------------------------------------------------------
+# Additional deep edge-case tests for audit_iam_assignments
+# ---------------------------------------------------------------------------
+
+
+class TestAuditIamDeepAdditional:
+    def test_subscription_id_with_special_characters(self):
+        result = audit_iam_assignments("sub-id/extra+parts", "rg", "terraform_deploy")
+        assert result["status"] == "ok"
+        assert "/subscriptions/sub-id/extra+parts" in result["result"][0]["scope"]
+
+    def test_very_long_resource_group_name(self):
+        rg = "rg-" + "a" * 200
+        result = audit_iam_assignments("sub", rg, "runtime_execution")
+        assert result["status"] == "ok"
+        assert rg in result["result"][0]["scope"]
+
+    def test_nonexistent_persona_with_special_chars(self):
+        result = audit_iam_assignments("sub", "rg", "persona@fake#domain")
+        assert result["status"] == "error"
+        assert "Unknown persona" in result["warnings"][0]
+
+    def test_result_keys_present_for_all_personas(self):
+        for persona in ("terraform_deploy", "runtime_execution", "model_inference", "monitor"):
+            result = audit_iam_assignments("sub", "rg", persona)
+            for assignment in result["result"]:
+                for key in ("persona", "role_name", "scope", "is_builtin"):
+                    assert key in assignment, f"missing {key} for {persona}"
+
+    def test_assignment_objects_are_distinct(self):
+        result = audit_iam_assignments("sub", "rg", "terraform_deploy")
+        assignments = result["result"]
+        assert len(assignments) >= 2
+        assert assignments[0] is not assignments[1]
+
+
+# ---------------------------------------------------------------------------
+# Additional deep edge-case tests for design_azure_network
+# ---------------------------------------------------------------------------
+
+
+class TestDesignNetworkDeepAdditional:
+    def test_empty_app_name_does_not_crash(self):
+        result = design_azure_network("eastus", "")
+        assert result["status"] == "ok"
+        assert "-vnet-eastus" in result["result"]["vnet_name"]
+
+    def test_app_name_with_underscores(self):
+        result = design_azure_network("eastus", "my_app_prod")
+        assert result["result"]["vnet_name"] == "my_app_prod-vnet-eastus"
+
+    def test_gateway_subnet_has_correct_purpose(self):
+        result = design_azure_network("eastus", "app")
+        gateway = [s for s in result["result"]["subnets"] if s["name"].endswith("gateway-subnet")]
+        assert len(gateway) == 1
+        assert gateway[0]["purpose"] == "application_gateway"
+
+    def test_all_subnet_names_are_derived_from_app_name(self):
+        app = "my-service"
+        result = design_azure_network("eastus", app)
+        for subnet in result["result"]["subnets"]:
+            if subnet["purpose"] != "bastion":
+                assert app in subnet["name"], f"subnet {subnet['name']} missing app name"
+
+
+# ---------------------------------------------------------------------------
+# Additional deep edge-case tests for acr_registry_config
+# ---------------------------------------------------------------------------
+
+
+class TestAcrConfigDeepAdditional:
+    def test_empty_sku_is_rejected(self):
+        result = acr_registry_config("myacr", "", "eastus")
+        assert result["status"] == "error"
+
+    def test_sku_with_whitespace_is_rejected(self):
+        result = acr_registry_config("myacr", "Basic ", "eastus")
+        assert result["status"] == "error"
+
+    def test_empty_region_is_accepted(self):
+        result = acr_registry_config("myacr", "Basic", "")
+        assert result["status"] == "ok"
+        assert result["result"]["region"] == ""
+
+    def test_sku_mixed_case_is_rejected_exact_match_required(self):
+        for sku in ("basic", "BASIC", "premium", "standARD"):
+            result = acr_registry_config("myacr", sku, "eastus")
+            assert result["status"] == "error", f"sku {sku!r} should be rejected"
+
+
+# ---------------------------------------------------------------------------
+# Additional deep edge-case tests for container_app_config
+# ---------------------------------------------------------------------------
+
+
+class TestContainerAppConfigDeepAdditional:
+    def test_empty_model_name_produces_ca_prefix_only(self):
+        result = container_app_config("T4", "", "eastus")
+        assert result["status"] == "ok"
+        assert result["result"]["name"].startswith("ca-")
+
+    def test_empty_gpu_type_is_unknown(self):
+        result = container_app_config("", "model", "eastus")
+        assert result["status"] == "ok"
+        assert len(result["warnings"]) >= 1
+
+    def test_empty_region_is_accepted(self):
+        result = container_app_config("T4", "model", "")
+        assert result["status"] == "ok"
+        assert result["result"]["region"] == ""
+
+    def test_model_name_with_only_slash_produces_double_dash(self):
+        result = container_app_config("T4", "/", "eastus")
+        assert result["status"] == "ok"
+        assert "//" not in result["result"]["name"]
+
+
+# ---------------------------------------------------------------------------
+# Additional deep edge-case tests for optimize_cost
+# ---------------------------------------------------------------------------
+
+
+class TestOptimizeCostDeepAdditional:
+    def test_service_type_case_sensitive(self):
+        result = optimize_cost("Container_Apps", "eastus", "T4")
+        assert result["result"]["hourly_rate"] == 0.0
+        assert len(result["warnings"]) >= 1
+
+    def test_monthly_estimate_for_h100_matches_formula(self):
+        result = optimize_cost("container_apps", "eastus", "H100")
+        expected_monthly = result["result"]["hourly_rate"] * 730
+        assert result["result"]["monthly_estimate"] == pytest.approx(expected_monthly)
+
+    def test_gpu_price_monotonic_increases_with_tier(self):
+        prices = {}
+        for gpu in ("T4", "A10", "A100", "H100"):
+            result = optimize_cost("container_apps", "eastus", gpu)
+            prices[gpu] = result["result"]["hourly_rate"]
+        assert prices["T4"] < prices["A10"] < prices["A100"] < prices["H100"]
+
+
+# ---------------------------------------------------------------------------
+# Cross-cutting: __all__ completeness verification
+# ---------------------------------------------------------------------------
+
+
+class TestModuleExports:
+    def test_all_matches_imported_symbols(self):
+        from general_ludd.azure import core as azure_core
+
+        imported = {
+            "AZURE_EXPERT_ROLES",
+            "DeployStrategist",
+            "acr_registry_config",
+            "audit_iam_assignments",
+            "container_app_config",
+            "design_azure_network",
+            "get_deploy_strategist",
+            "inventory_resources",
+            "optimize_cost",
+            "query_log_analytics",
+            "validate_rbac_role_definition",
+        }
+        assert set(azure_core.__all__) == imported
+
+    def test_every_all_entry_is_callable_or_dict(self):
+        import general_ludd.azure.core as azure_core
+
+        for name in azure_core.__all__:
+            obj = getattr(azure_core, name, None)
+            assert obj is not None, f"__all__ entry {name} not found as attribute"
+            assert callable(obj) or isinstance(obj, (dict, type)), (
+                f"__all__ entry {name} is neither callable nor dict/type"
+            )
+
+
+# ---------------------------------------------------------------------------
 # Deep edge-case tests for get_deploy_strategist
 # ---------------------------------------------------------------------------
 

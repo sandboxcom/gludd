@@ -122,6 +122,218 @@ class TestInspectability:
         )
 
 
+class TestClassifyProcessEdgeCases:
+    def test_classify_is_case_insensitive(self):
+        adv = JoiningAdvisor()
+        assert adv.classify_process("GMAW")["category"] == "fusion"
+        assert adv.classify_process("BraZing")["category"] == "brazing"
+        assert adv.classify_process("FSW")["category"] == "solid_state"
+
+    def test_classify_strips_whitespace(self):
+        adv = JoiningAdvisor()
+        assert adv.classify_process("  tig  ")["category"] == "fusion"
+        assert adv.classify_process("\tbolted\n")["category"] == "mechanical"
+
+    def test_classify_returns_reason_for_unknown(self):
+        adv = JoiningAdvisor()
+        cls = adv.classify_process("magic_glue")
+        assert "reason" in cls
+        assert "magic_glue" in cls["reason"]
+
+
+class TestMissingMaterialHandling:
+    def test_missing_material_b_returns_insufficient_data(self):
+        adv = JoiningAdvisor()
+        result = adv.assess_compatibility("aisi_1045", "unobtanium", "gmaw")
+        assert result["state"] == "insufficient_data"
+        assert "unobtanium" in result["reason"]
+
+    def test_both_materials_missing_returns_insufficient_data(self):
+        adv = JoiningAdvisor()
+        result = adv.assess_compatibility("foo", "bar", "tig")
+        assert result["state"] == "insufficient_data"
+
+    def test_unknown_process_and_known_materials_returns_insufficient_data(self):
+        adv = JoiningAdvisor()
+        result = adv.assess_compatibility("aisi_1045", "aa6061_t6", "phaser_welding")
+        assert result["state"] == "insufficient_data"
+        assert result["category"] == "unknown"
+        assert result["compatible"] is False
+
+
+class TestNonFusionProcessAssessments:
+    def test_cold_welding_assessment(self):
+        adv = JoiningAdvisor()
+        result = adv.assess_compatibility("aisi_1045", "aisi_1045", "cold_welding")
+        assert result["category"] == "cold"
+        assert result["compatible"] is True
+        assert result["state"] == "candidate"
+        assert result["haz"]["present"] is False
+
+    def test_solid_state_welding_assessment(self):
+        adv = JoiningAdvisor()
+        result = adv.assess_compatibility("aisi_1045", "aa6061_t6", "fsw")
+        assert result["category"] == "solid_state"
+        assert "haz" in result
+        assert result["haz"]["present"] is False
+
+    def test_pressure_welding_assessment(self):
+        adv = JoiningAdvisor()
+        result = adv.assess_compatibility("aisi_1045", "aisi_1045", "spot_welding")
+        assert result["category"] == "pressure"
+        assert result["compatible"] is True
+
+    def test_mechanical_fastening_assessment(self):
+        adv = JoiningAdvisor()
+        result = adv.assess_compatibility("aisi_1045", "aa6061_t6", "riveting")
+        assert result["category"] == "mechanical"
+        assert result["compatible"] is True
+        assert result["haz"]["present"] is False
+
+    def test_brazing_assessment(self):
+        adv = JoiningAdvisor()
+        result = adv.assess_compatibility("aisi_1045", "aa6061_t6", "vacuum_brazing")
+        assert result["category"] == "brazing"
+        assert result["compatible"] is True
+
+    def test_soldering_assessment(self):
+        adv = JoiningAdvisor()
+        result = adv.assess_compatibility("aisi_1045", "aisi_1045", "wave_soldering")
+        assert result["category"] == "soldering"
+        assert result["compatible"] is True
+
+    def test_polymer_joining_assessment(self):
+        adv = JoiningAdvisor()
+        result = adv.assess_compatibility("abs", "abs", "hot_plate_welding")
+        assert result["category"] == "polymer"
+        assert result["compatible"] is True
+
+
+class TestGalvanicRiskEdgeCases:
+    def test_same_galvanic_bucket_no_flag(self):
+        adv = JoiningAdvisor()
+        result = adv.assess_compatibility("aisi_1045", "aisi_1045", "gmaw")
+        assert result.get("galvanic_risk") is False
+
+    def test_polymer_to_polymer_no_galvanic_flag(self):
+        adv = JoiningAdvisor()
+        result = adv.assess_compatibility("abs", "abs", "hot_plate_welding")
+        assert result.get("galvanic_risk") is False
+
+    def test_polymer_to_metal_no_galvanic_flag(self):
+        adv = JoiningAdvisor()
+        result = adv.assess_compatibility("abs", "aisi_1045", "adhesive_bonding")
+        assert result.get("galvanic_risk") is False
+
+
+class TestCTEMismatchEdgeCases:
+    def test_polymer_causes_high_cte_mismatch(self):
+        adv = JoiningAdvisor()
+        result = adv.assess_compatibility("abs", "aisi_1045", "adhesive_bonding")
+        risk_kinds = {r["kind"] for r in result.get("risks", [])}
+        assert "thermal_expansion_mismatch" in risk_kinds
+
+    def test_similar_cte_no_mismatch_flag(self):
+        adv = JoiningAdvisor()
+        result = adv.assess_compatibility("aisi_1045", "aisi_1045", "gmaw")
+        risk_kinds = {r["kind"] for r in result.get("risks", [])}
+        assert "thermal_expansion_mismatch" not in risk_kinds
+
+
+class TestIntermetallicEdgeCases:
+    def test_same_metal_class_no_intermetallic_flag(self):
+        adv = JoiningAdvisor()
+        result = adv.assess_compatibility("aisi_1045", "aisi_1045", "gmaw")
+        risk_kinds = {r["kind"] for r in result.get("risks", [])}
+        assert "intermetallic_formation" not in risk_kinds
+
+    def test_metal_to_polymer_no_intermetallic_flag(self):
+        adv = JoiningAdvisor()
+        result = adv.assess_compatibility("aisi_1045", "abs", "adhesive_bonding")
+        risk_kinds = {r["kind"] for r in result.get("risks", [])}
+        assert "intermetallic_formation" not in risk_kinds
+
+
+class TestThermosetRemeltAdditional:
+    def test_thermoset_material_b_fusion_rejected(self):
+        adv = JoiningAdvisor()
+        result = adv.assess_compatibility("aisi_1045", "epoxy_cast", "gmaw")
+        assert result["compatible"] is False
+        assert result["state"] == "rejected"
+        assert "thermoset" in result["reason"].lower()
+
+    def test_thermoplastic_fusion_not_rejected(self):
+        adv = JoiningAdvisor()
+        result = adv.assess_compatibility("abs", "abs", "laser_welding")
+        assert result["state"] != "rejected"
+
+
+class TestInspectabilityAllCategories:
+    def test_solid_state_inspectability(self):
+        adv = JoiningAdvisor()
+        result = adv.assess_compatibility("aisi_1045", "aa6061_t6", "fsw")
+        insp = result["inspectability"]
+        assert insp["difficulty"] == "medium"
+        assert "UT" in insp["methods"]
+
+    def test_cold_welding_inspectability(self):
+        adv = JoiningAdvisor()
+        result = adv.assess_compatibility("aisi_1045", "aisi_1045", "cold_welding")
+        insp = result["inspectability"]
+        assert insp["difficulty"] == "low"
+        assert "VT" in insp["methods"]
+
+    def test_pressure_welding_inspectability(self):
+        adv = JoiningAdvisor()
+        result = adv.assess_compatibility("aisi_1045", "aisi_1045", "spot_welding")
+        insp = result["inspectability"]
+        assert insp["difficulty"] == "medium"
+        assert "UT" in insp["methods"]
+
+    def test_polymer_inspectability(self):
+        adv = JoiningAdvisor()
+        result = adv.assess_compatibility("abs", "abs", "hot_plate_welding")
+        insp = result["inspectability"]
+        assert insp["difficulty"] == "low"
+        assert "leak_test" in insp["methods"]
+
+    def test_brazing_inspectability(self):
+        adv = JoiningAdvisor()
+        result = adv.assess_compatibility("aisi_1045", "aa6061_t6", "vacuum_brazing")
+        insp = result["inspectability"]
+        assert insp["difficulty"] == "medium"
+        assert "RT" in insp["methods"]
+
+    def test_soldering_inspectability(self):
+        adv = JoiningAdvisor()
+        result = adv.assess_compatibility("aisi_1045", "aisi_1045", "wave_soldering")
+        insp = result["inspectability"]
+        assert insp["difficulty"] == "low"
+        assert "X-ray" in insp["methods"]
+
+    def test_mechanical_inspectability(self):
+        adv = JoiningAdvisor()
+        result = adv.assess_compatibility("aisi_1045", "aa6061_t6", "riveting")
+        insp = result["inspectability"]
+        assert insp["difficulty"] == "low"
+        assert "torque_check" in insp["methods"]
+
+
+class TestSchemaVersionAndMetadata:
+    def test_result_includes_schema_version(self):
+        adv = JoiningAdvisor()
+        result = adv.assess_compatibility("aisi_1045", "aisi_1045", "gmaw")
+        assert "schema_version" in result
+        assert isinstance(result["schema_version"], int)
+
+    def test_result_includes_material_ids(self):
+        adv = JoiningAdvisor()
+        result = adv.assess_compatibility("aisi_1045", "aa6061_t6", "gmaw")
+        assert result["material_a"] == "aisi_1045"
+        assert result["material_b"] == "aa6061_t6"
+        assert result["process"] == "gmaw"
+
+
 class TestMachiningAdvisor:
     def test_datum_scheme_returned(self):
         adv = MachiningAdvisor()

@@ -429,3 +429,639 @@ class TestAzureGameRuntimePreflight:
         gw = runtime.start()
         assert gw == "gw"
         runtime.close()
+
+
+# ── AzureGameRuntime — _resolve_allowed_cidr ──────────────────────────────────
+
+
+class TestAzureGameRuntimeResolveAllowedCidr:
+    def test_explicit_cidr_returned(self) -> None:
+        runtime = AzureGameRuntime(environment={"AZURE_ALLOWED_CIDR": "192.168.0.0/16"})
+        assert runtime._resolve_allowed_cidr() == "192.168.0.0/16"
+        runtime.close()
+
+    def test_ipify_fallback_success(self) -> None:
+        mock_response = mock.MagicMock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {"ip": "203.0.113.42"}
+        with mock.patch("general_ludd.cloud.azure_game_runtime.httpx.get", return_value=mock_response):
+            runtime = AzureGameRuntime(environment={})
+            result = runtime._resolve_allowed_cidr()
+            assert result == "203.0.113.42/32"
+            runtime.close()
+
+    def test_ipify_http_error_raises(self) -> None:
+        import httpx
+
+        with mock.patch(
+            "general_ludd.cloud.azure_game_runtime.httpx.get",
+            side_effect=httpx.HTTPError("network down"),
+        ):
+            runtime = AzureGameRuntime(environment={})
+            with pytest.raises(RuntimeError, match="Unable to discover"):
+                runtime._resolve_allowed_cidr()
+            runtime.close()
+
+    def test_ipify_non_global_ip_raises(self) -> None:
+        mock_response = mock.MagicMock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {"ip": "10.0.0.1"}
+        with mock.patch("general_ludd.cloud.azure_game_runtime.httpx.get", return_value=mock_response):
+            runtime = AzureGameRuntime(environment={})
+            with pytest.raises(RuntimeError, match="non-global IPv4"):
+                runtime._resolve_allowed_cidr()
+            runtime.close()
+
+    def test_ipify_invalid_json_raises(self) -> None:
+        mock_response = mock.MagicMock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.side_effect = ValueError("bad json")
+        with mock.patch("general_ludd.cloud.azure_game_runtime.httpx.get", return_value=mock_response):
+            runtime = AzureGameRuntime(environment={})
+            with pytest.raises(RuntimeError, match="Unable to discover"):
+                runtime._resolve_allowed_cidr()
+            runtime.close()
+
+
+# ── AzureGameRuntime — _wait_until_ready ──────────────────────────────────────
+
+
+class TestAzureGameRuntimeWaitUntilReady:
+    def test_ready_on_first_attempt(self) -> None:
+        runtime = AzureGameRuntime(
+            environment={},
+        )
+        runtime._wait_until_ready("http://example.com")
+        runtime.close()
+
+    def test_ready_after_multiple_attempts(self) -> None:
+        probe_results = [False, False, True]
+        calls: list[str] = []
+
+        def staged_probe(endpoint: str) -> bool:
+            calls.append(endpoint)
+            return probe_results.pop(0)
+
+        runtime = AzureGameRuntime(
+            environment={
+                "AZURE_GAME_READY_ATTEMPTS": "5",
+                "AZURE_GAME_READY_INTERVAL_SECS": "0.001",
+            },
+            readiness_probe=staged_probe,
+            sleep=lambda _: None,
+        )
+        runtime._wait_until_ready("http://example.com")
+        assert len(calls) == 3
+        runtime.close()
+
+    def test_all_attempts_exhausted_raises(self) -> None:
+        runtime = AzureGameRuntime(
+            environment={
+                "AZURE_GAME_READY_ATTEMPTS": "3",
+                "AZURE_GAME_READY_INTERVAL_SECS": "0.001",
+            },
+            readiness_probe=lambda _: False,
+            sleep=lambda _: None,
+        )
+        with pytest.raises(RuntimeError, match="not ready after 3 attempts"):
+            runtime._wait_until_ready("http://example.com")
+        runtime.close()
+
+    def test_zero_interval_ok(self) -> None:
+        runtime = AzureGameRuntime(
+            environment={
+                "AZURE_GAME_READY_ATTEMPTS": "2",
+                "AZURE_GAME_READY_INTERVAL_SECS": "0",
+            },
+            readiness_probe=lambda _: False,
+            sleep=lambda _: None,
+        )
+        with pytest.raises(RuntimeError, match="not ready"):
+            runtime._wait_until_ready("http://example.com")
+        runtime.close()
+
+    def test_default_attempts_and_interval(self) -> None:
+        runtime = AzureGameRuntime(
+            environment={},
+            readiness_probe=lambda _: True,
+            sleep=lambda _: None,
+        )
+        runtime._wait_until_ready("http://example.com")
+        runtime.close()
+
+
+# ── AzureGameRuntime — _compute_config defaults ───────────────────────────────
+
+
+class TestAzureGameRuntimeComputeConfigDefaults:
+    def test_all_defaults(self) -> None:
+        runtime = AzureGameRuntime(environment={"AZURE_ALLOWED_CIDR": "10.0.0.0/8"})
+        config = runtime._compute_config()
+        assert config.model_name == "Qwen/Qwen2.5-0.5B-Instruct"
+        assert config.region == "eastus"
+        assert config.deploy_type == "containerapp"
+        assert config.max_cost_usd == 5.0
+        assert config.timeout_minutes == 30.0
+        assert config.disk_size_gb == 100
+        from general_ludd.infra.compute import GPUType, InferenceEngine
+
+        assert config.gpu_type == GPUType.A100_80
+        assert config.engine == InferenceEngine.VLLM
+        runtime.close()
+
+    def test_custom_region_and_deploy_type(self) -> None:
+        runtime = AzureGameRuntime(
+            environment={
+                "AZURE_ALLOWED_CIDR": "10.0.0.0/8",
+                "AZURE_REGION": "westeurope",
+                "AZURE_DEPLOY_TYPE": "vm",
+                "AZURE_DISK_SIZE_GB": "50",
+            }
+        )
+        config = runtime._compute_config()
+        assert config.region == "westeurope"
+        assert config.deploy_type == "vm"
+        assert config.disk_size_gb == 50
+        runtime.close()
+
+    def test_custom_max_spend_and_timeout(self) -> None:
+        runtime = AzureGameRuntime(
+            environment={
+                "AZURE_ALLOWED_CIDR": "10.0.0.0/8",
+                "GLUDD_E2E_MAX_SPEND_USD": "12.50",
+                "AZURE_TIMEOUT_MINUTES": "15",
+            }
+        )
+        config = runtime._compute_config()
+        assert config.max_cost_usd == 12.5
+        assert config.timeout_minutes == 15.0
+        runtime.close()
+
+    def test_gpu_type_normalization(self) -> None:
+        runtime = AzureGameRuntime(
+            environment={
+                "AZURE_ALLOWED_CIDR": "10.0.0.0/8",
+                "AZURE_GPU_TYPE": "a100-80",
+            }
+        )
+        config = runtime._compute_config()
+        from general_ludd.infra.compute import GPUType
+
+        assert config.gpu_type == GPUType.A100_80
+        runtime.close()
+
+    def test_engine_normalization(self) -> None:
+        runtime = AzureGameRuntime(
+            environment={
+                "AZURE_ALLOWED_CIDR": "10.0.0.0/8",
+                "AZURE_GPU_TYPE": "t4",
+                "AZURE_PROVISION_ENGINE": "vLLM",
+            }
+        )
+        config = runtime._compute_config()
+        from general_ludd.infra.compute import InferenceEngine
+
+        assert config.engine == InferenceEngine.VLLM
+        runtime.close()
+
+    def test_auth_aliases_empty_when_no_arm_vars(self) -> None:
+        runtime = AzureGameRuntime(
+            environment={
+                "AZURE_ALLOWED_CIDR": "10.0.0.0/8",
+            }
+        )
+        config = runtime._compute_config()
+        assert config.provider_auth_aliases is None
+        runtime.close()
+
+    def test_auth_aliases_populated_with_arm_vars(self) -> None:
+        runtime = AzureGameRuntime(
+            environment={
+                "AZURE_ALLOWED_CIDR": "10.0.0.0/8",
+                "ARM_CLIENT_ID": "cid",
+                "ARM_CLIENT_SECRET": "cs",
+                "ARM_TENANT_ID": "tid",
+                "ARM_SUBSCRIPTION_ID": "sid",
+            }
+        )
+        config = runtime._compute_config()
+        assert config.provider_auth_aliases is not None
+        assert config.provider_auth_aliases["ARM_CLIENT_ID"] == "ARM_CLIENT_ID"
+        assert config.provider_auth_aliases["ARM_CLIENT_SECRET"] == "ARM_CLIENT_SECRET"
+        runtime.close()
+
+
+# ── AzureGameRuntime — close destroys owned endpoint ──────────────────────────
+
+
+class TestAzureGameRuntimeCloseDestroy:
+    def test_close_destroys_owned_endpoint(self) -> None:
+        dm = FakeDeploymentController()
+
+        class FakeInstance:
+            instance_id = "inst-owned-1"
+            endpoint_url = "http://10.0.0.1:8000/v1"
+            ip_address = ""
+            port = 8000
+
+        dm.deploy_result = FakeInstance()
+        runtime = AzureGameRuntime(
+            environment={
+                "AZURE_PROVISION_E2E": "1",
+                "AZURE_ALLOWED_CIDR": "10.0.0.0/8",
+            },
+            deployment_manager=dm,
+            readiness_probe=lambda _: True,
+            sleep=lambda _: None,
+            preflight=lambda: None,
+        )
+        runtime.start()
+        assert runtime.owns_endpoint is True
+        runtime.close()
+        assert dm.destroyed == ["inst-owned-1"]
+        assert runtime.owns_endpoint is False
+
+    def test_close_only_destroys_once(self) -> None:
+        dm = FakeDeploymentController()
+
+        class FakeInstance:
+            instance_id = "inst-once"
+            endpoint_url = "http://10.0.0.2:8000/v1"
+            ip_address = ""
+            port = 8000
+
+        dm.deploy_result = FakeInstance()
+        runtime = AzureGameRuntime(
+            environment={
+                "AZURE_PROVISION_E2E": "1",
+                "AZURE_ALLOWED_CIDR": "10.0.0.0/8",
+            },
+            deployment_manager=dm,
+            readiness_probe=lambda _: True,
+            sleep=lambda _: None,
+            preflight=lambda: None,
+        )
+        runtime.start()
+        runtime.close()
+        runtime.close()
+        assert len(dm.destroyed) == 1
+
+    def test_destroy_failure_raises(self) -> None:
+        class BadController:
+            async def deploy(self, config: Any) -> Any:
+                class Instance:
+                    instance_id = "will-fail-destroy"
+                    endpoint_url = "http://x:8000/v1"
+                    ip_address = ""
+                    port = 8000
+
+                return Instance()
+
+            async def destroy(self, instance_id: str) -> None:
+                raise RuntimeError("destroy exploded")
+
+        runtime = AzureGameRuntime(
+            environment={
+                "AZURE_PROVISION_E2E": "1",
+                "AZURE_ALLOWED_CIDR": "10.0.0.0/8",
+            },
+            deployment_manager=BadController(),
+            readiness_probe=lambda _: True,
+            sleep=lambda _: None,
+            preflight=lambda: None,
+        )
+        runtime.start()
+        with pytest.raises(RuntimeError, match="destroy exploded"):
+            runtime.close()
+
+
+# ── AzureGameRuntime — start provisioning path ────────────────────────────────
+
+
+class TestAzureGameRuntimeStartProvision:
+    def test_start_provisions_when_flag_set(self) -> None:
+        dm = FakeDeploymentController()
+
+        class FakeInstance:
+            instance_id = "inst-provisioned"
+            endpoint_url = "http://10.0.0.3:8000/v1"
+            ip_address = ""
+            port = 8000
+
+        dm.deploy_result = FakeInstance()
+        runtime = AzureGameRuntime(
+            environment={
+                "AZURE_PROVISION_E2E": "1",
+                "AZURE_ALLOWED_CIDR": "10.0.0.0/8",
+            },
+            deployment_manager=dm,
+            readiness_probe=lambda _: True,
+            sleep=lambda _: None,
+            preflight=lambda: None,
+            gateway_factory=lambda ep: f"gw-{ep}",
+        )
+        gateway = runtime.start()
+        assert gateway == "gw-http://10.0.0.3:8000/v1"
+        assert runtime.owns_endpoint is True
+        assert runtime.endpoint_url == "http://10.0.0.3:8000/v1"
+        assert len(dm.deployed) == 1
+        runtime.close()
+        assert dm.destroyed == ["inst-provisioned"]
+
+    def test_provision_failure_closes_runtime(self) -> None:
+        class FailingController:
+            async def deploy(self, config: Any) -> Any:
+                raise RuntimeError("provision failed")
+
+            async def destroy(self, instance_id: str) -> None:
+                pass
+
+        runtime = AzureGameRuntime(
+            environment={
+                "AZURE_PROVISION_E2E": "1",
+                "AZURE_ALLOWED_CIDR": "10.0.0.0/8",
+            },
+            deployment_manager=FailingController(),
+            preflight=lambda: None,
+        )
+        with pytest.raises(RuntimeError, match="provision failed"):
+            runtime.start()
+        assert runtime._closed is True
+
+    def test_instance_no_endpoint_uses_ip_port(self) -> None:
+        dm = FakeDeploymentController()
+
+        class FakeInstance:
+            instance_id = "inst-ip-only"
+            endpoint_url = ""
+            ip_address = "10.0.0.99"
+            port = 8000
+
+        dm.deploy_result = FakeInstance()
+        runtime = AzureGameRuntime(
+            environment={
+                "AZURE_PROVISION_E2E": "1",
+                "AZURE_ALLOWED_CIDR": "10.0.0.0/8",
+            },
+            deployment_manager=dm,
+            readiness_probe=lambda _: True,
+            sleep=lambda _: None,
+            preflight=lambda: None,
+            gateway_factory=lambda ep: ep,
+        )
+        endpoint = runtime.start()
+        assert endpoint == "http://10.0.0.99:8000"
+        runtime.close()
+
+    def test_instance_no_endpoint_no_ip_raises(self) -> None:
+        dm = FakeDeploymentController()
+
+        class FakeInstance:
+            instance_id = "inst-no-endpoint"
+            endpoint_url = ""
+            ip_address = ""
+            port = 0
+
+        dm.deploy_result = FakeInstance()
+        runtime = AzureGameRuntime(
+            environment={
+                "AZURE_PROVISION_E2E": "1",
+                "AZURE_ALLOWED_CIDR": "10.0.0.0/8",
+            },
+            deployment_manager=dm,
+            preflight=lambda: None,
+        )
+        with pytest.raises(RuntimeError, match="without an inference endpoint"):
+            runtime.start()
+        runtime.close()
+
+
+# ── AzureGameRuntime — _publish ───────────────────────────────────────────────
+
+
+class TestAzureGameRuntimePublish:
+    def test_publish_sends_event_to_bus(self) -> None:
+        bus = EventBus()
+        received: list[dict[str, object]] = []
+
+        def listener(event: Any) -> None:
+            received.append(event.payload)
+
+        bus.subscribe("custom", listener)
+        runtime = AzureGameRuntime(environment={}, event_bus=bus)
+        runtime._publish("test_name", key="value", attempt=1)
+        runtime.close()
+        assert len(received) == 1
+        assert received[0]["name"] == "test_name"
+        assert received[0]["key"] == "value"
+        assert received[0]["attempt"] == 1
+
+    def test_publish_multiple_events(self) -> None:
+        bus = EventBus()
+        received: list[dict[str, object]] = []
+
+        def listener(event: Any) -> None:
+            received.append(event.payload)
+
+        bus.subscribe("custom", listener)
+        runtime = AzureGameRuntime(environment={}, event_bus=bus)
+        runtime._publish("a")
+        runtime._publish("b", count=5)
+        runtime.close()
+        assert len(received) == 2
+        assert received[0]["name"] == "a"
+        assert received[1]["name"] == "b"
+        assert received[1]["count"] == 5
+
+
+# ── AzureGameRuntime — _default_deployment_manager ────────────────────────────
+
+
+class TestAzureGameRuntimeDefaultDeploymentManager:
+    def test_uses_env_secrets_manager(self) -> None:
+        runtime = AzureGameRuntime(
+            environment={
+                "ARM_CLIENT_ID": "test-cid",
+                "ARM_CLIENT_SECRET": "test-cs",
+                "ARM_TENANT_ID": "test-tid",
+                "ARM_SUBSCRIPTION_ID": "test-sid",
+            }
+        )
+        dm = runtime._default_deployment_manager()
+        assert dm is not None
+        from general_ludd.infra.deployment import DeploymentManager
+
+        assert isinstance(dm, DeploymentManager)
+        runtime.close()
+
+    def test_event_bus_passed_to_manager(self) -> None:
+        bus = EventBus()
+        runtime = AzureGameRuntime(environment={}, event_bus=bus)
+        dm = runtime._default_deployment_manager()
+        assert dm._event_bus is bus
+        runtime.close()
+
+
+# ── AzureGameRuntime — _float_value / _int_value defaults ─────────────────────
+
+
+class TestAzureGameRuntimeNumericDefaults:
+    def test_float_value_uses_default_when_absent(self) -> None:
+        runtime = AzureGameRuntime(environment={})
+        assert runtime._float_value("MISSING", "2.5") == 2.5
+        runtime.close()
+
+    def test_int_value_uses_default_when_absent(self) -> None:
+        runtime = AzureGameRuntime(environment={})
+        assert runtime._int_value("MISSING", "99") == 99
+        runtime.close()
+
+    def test_float_value_strips_whitespace(self) -> None:
+        runtime = AzureGameRuntime(environment={"X": "  7.0  "})
+        assert runtime._float_value("X", "0") == 7.0
+        runtime.close()
+
+    def test_int_value_strips_whitespace(self) -> None:
+        runtime = AzureGameRuntime(environment={"Y": "  42  "})
+        assert runtime._int_value("Y", "0") == 42
+        runtime.close()
+
+
+# ── AzureGameRuntime — close unsubscribe ──────────────────────────────────────
+
+
+class TestAzureGameRuntimeCloseCleanup:
+    def test_close_unsubscribes_reporter(self) -> None:
+        bus = EventBus()
+        runtime = AzureGameRuntime(environment={}, event_bus=bus, event_reporter=lambda e: None)
+        assert runtime._reporter_subscription is not None
+        runtime.close()
+        assert runtime._reporter_subscription is None
+
+    def test_close_without_reporter_no_error(self) -> None:
+        runtime = AzureGameRuntime(environment={}, event_reporter=None)
+        runtime.close()
+
+    def test_close_publishes_destroy_events(self) -> None:
+        dm = FakeDeploymentController()
+
+        class FakeInstance:
+            instance_id = "inst-has-events"
+            endpoint_url = "http://10.0.0.4:8000/v1"
+            ip_address = ""
+            port = 8000
+
+        dm.deploy_result = FakeInstance()
+        events_received: list[str] = []
+
+        bus = EventBus()
+
+        def capture(event: Any) -> None:
+            events_received.append(str(event.payload.get("name", "")))
+
+        bus.subscribe("custom", capture)
+        runtime = AzureGameRuntime(
+            environment={
+                "AZURE_PROVISION_E2E": "1",
+                "AZURE_ALLOWED_CIDR": "10.0.0.0/8",
+            },
+            deployment_manager=dm,
+            event_bus=bus,
+            event_reporter=capture,
+            readiness_probe=lambda _: True,
+            sleep=lambda _: None,
+            preflight=lambda: None,
+        )
+        runtime.start()
+        events_received.clear()
+        runtime.close()
+        assert any("destroy_started" in e for e in events_received)
+        assert any("destroy_completed" in e for e in events_received)
+
+
+# ── AzureGameRuntime — context manager idle state ─────────────────────────────
+
+
+class TestAzureGameRuntimeContextManager:
+    def test_exit_closes_on_exception(self) -> None:
+        runtime = AzureGameRuntime(
+            environment={"AZURE_BASE_URL": "http://example.com/v1"},
+            readiness_probe=lambda _: True,
+            gateway_factory=lambda _: "gw",
+            preflight=lambda: None,
+        )
+        try:
+            with runtime as gw:
+                assert gw == "gw"
+                raise ValueError("inside block")
+        except ValueError:
+            pass
+        assert runtime._closed is True
+
+    def test_exit_closes_cleanly(self) -> None:
+        runtime = AzureGameRuntime(
+            environment={"AZURE_BASE_URL": "http://example.com/v1"},
+            readiness_probe=lambda _: True,
+            gateway_factory=lambda _: "gw",
+            preflight=lambda: None,
+        )
+        with runtime:
+            pass
+        assert runtime._closed is True
+
+
+# ── AzureGameRuntime — event payload edge cases ───────────────────────────────
+
+
+class TestAzureGameRuntimeEventPayload:
+    def test_publish_with_none_value(self) -> None:
+        bus = EventBus()
+        received: list[dict[str, object]] = []
+
+        def listener(event: Any) -> None:
+            received.append(event.payload)
+
+        bus.subscribe("custom", listener)
+        runtime = AzureGameRuntime(environment={}, event_bus=bus)
+        runtime._publish("test_none", value=None, count=0)
+        runtime.close()
+        assert received[0]["value"] is None
+        assert received[0]["count"] == 0
+
+    def test_deploy_event_payload(self) -> None:
+        dm = FakeDeploymentController()
+
+        class FakeInstance:
+            instance_id = "inst-event-payload"
+            endpoint_url = "http://10.0.0.5:8000/v1"
+            ip_address = ""
+            port = 8000
+
+        dm.deploy_result = FakeInstance()
+        bus = EventBus()
+        events: list[dict[str, object]] = []
+
+        def capture(event: Any) -> None:
+            events.append(event.payload)
+
+        bus.subscribe("custom", capture)
+        runtime = AzureGameRuntime(
+            environment={
+                "AZURE_PROVISION_E2E": "1",
+                "AZURE_ALLOWED_CIDR": "10.0.0.0/8",
+            },
+            deployment_manager=dm,
+            event_bus=bus,
+            event_reporter=capture,
+            readiness_probe=lambda _: True,
+            sleep=lambda _: None,
+            preflight=lambda: None,
+        )
+        runtime.start()
+        deploy_events = [e for e in events if "deploy" in str(e.get("name", ""))]
+        assert len(deploy_events) >= 2
+        deploy_started = deploy_events[0]
+        assert "gpu_type" in deploy_started
+        assert "model" in deploy_started
+        assert "region" in deploy_started
+        runtime.close()

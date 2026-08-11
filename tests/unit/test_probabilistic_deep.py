@@ -9,8 +9,11 @@ import pytest
 
 from general_ludd.probabilistic.count_min_sketch import CountMinSketch
 from general_ludd.probabilistic.counting_bloom import CountingBloomFilter
+from general_ludd.probabilistic.cuckoo_filter import CuckooFilter
 from general_ludd.probabilistic.hyperloglog import HyperLogLog
+from general_ludd.probabilistic.hyperloglog_v2 import HyperLogLogV2
 from general_ludd.probabilistic.minhash import LSH, MinHash, _murmur64
+from general_ludd.probabilistic.stable_bloom import StableBloomFilter
 from general_ludd.probabilistic.tdigest import (
     Centroid,
     TDigest,
@@ -1184,3 +1187,546 @@ class TestCountMinSketchEdgeCases:
         for i in range(100):
             cms.add(f"real_{i}")
         assert cms.estimate("never_added") == 0
+
+
+# ============================================================================
+# StableBloomFilter
+# ============================================================================
+
+
+class TestStableBloomInit:
+    def test_default_construction(self) -> None:
+        sbf = StableBloomFilter(capacity=1000)
+        assert sbf.capacity == 1000
+        assert sbf.error_rate == 0.01
+        assert sbf.counter_bits == 4
+
+    def test_custom_params(self) -> None:
+        sbf = StableBloomFilter(capacity=500, error_rate=0.05, counter_bits=8)
+        assert sbf.capacity == 500
+        assert sbf.error_rate == 0.05
+        assert sbf.counter_bits == 8
+
+    def test_invalid_capacity_raises(self) -> None:
+        with pytest.raises(ValueError):
+            StableBloomFilter(capacity=0)
+
+    def test_invalid_error_rate_raises(self) -> None:
+        with pytest.raises(ValueError):
+            StableBloomFilter(capacity=100, error_rate=0.0)
+        with pytest.raises(ValueError):
+            StableBloomFilter(capacity=100, error_rate=1.0)
+
+    def test_invalid_counter_bits_raises(self) -> None:
+        with pytest.raises(ValueError):
+            StableBloomFilter(capacity=100, counter_bits=0)
+        with pytest.raises(ValueError):
+            StableBloomFilter(capacity=100, counter_bits=17)
+
+    def test_properties_positive(self) -> None:
+        sbf = StableBloomFilter(capacity=1000)
+        assert sbf.slot_count > 0
+        assert sbf.hash_count >= 1
+        assert 0.0 < sbf.decay_probability <= 1.0
+
+
+class TestStableBloomAddCount:
+    def test_add_sets_min_count(self) -> None:
+        sbf = StableBloomFilter(capacity=1000)
+        sbf.add("hello")
+        assert sbf.contains("hello")
+        assert sbf.count("hello") >= 1
+
+    def test_empty_filter_contains_nothing(self) -> None:
+        sbf = StableBloomFilter(capacity=1000)
+        assert not sbf.contains("anything")
+
+    def test_multiple_items_positive(self) -> None:
+        sbf = StableBloomFilter(capacity=10000)
+        for i in range(200):
+            sbf.add(f"item_{i}")
+        for i in range(200):
+            assert sbf.contains(f"item_{i}")
+
+    def test_duplicate_add_increments_count(self) -> None:
+        sbf = StableBloomFilter(capacity=10000)
+        sbf.add("dup")
+        c1 = sbf.count("dup")
+        sbf.add("dup")
+        assert sbf.count("dup") >= c1
+
+    def test_string_bytes_int_float_types(self) -> None:
+        sbf = StableBloomFilter(capacity=1000)
+        sbf.add("str")
+        sbf.add(b"bytes")
+        sbf.add(42)
+        sbf.add(3.14)
+        assert sbf.contains("str")
+        assert sbf.contains(b"bytes")
+        assert sbf.contains(42)
+        assert sbf.contains(3.14)
+
+
+class TestStableBloomDecay:
+    def test_decay_all_reduces_counters(self) -> None:
+        sbf = StableBloomFilter(capacity=100, error_rate=0.01, counter_bits=4, seed=42)
+        for i in range(5):
+            sbf.add(f"item_{i}")
+        before = sbf.count("item_0")
+        sbf.decay_all(steps=100)
+        assert sbf.count("item_0") <= before
+
+    def test_saturated_fraction_positive(self) -> None:
+        sbf = StableBloomFilter(capacity=100, seed=42)
+        for i in range(50):
+            sbf.add(f"sat_{i}")
+        frac = sbf.saturated_fraction()
+        assert frac > 0.0
+
+    def test_estimated_count_positive(self) -> None:
+        sbf = StableBloomFilter(capacity=1000, seed=42)
+        for i in range(100):
+            sbf.add(f"est_{i}")
+        est = sbf.estimated_count()
+        assert est > 0
+
+    def test_estimated_count_zero_for_empty(self) -> None:
+        sbf = StableBloomFilter(capacity=1000)
+        assert sbf.estimated_count() == 0.0
+
+    def test_saturated_fraction_zero_for_empty(self) -> None:
+        sbf = StableBloomFilter(capacity=1000)
+        assert sbf.saturated_fraction() == 0.0
+
+
+class TestStableBloomSerialization:
+    def test_roundtrip_bytes(self) -> None:
+        sbf = StableBloomFilter(capacity=500, error_rate=0.02, counter_bits=6, seed=42)
+        for i in range(50):
+            sbf.add(f"rt_{i}")
+        raw = sbf.to_bytes()
+        restored = StableBloomFilter.from_bytes(raw)
+        assert restored.capacity == sbf.capacity
+        assert restored.error_rate == sbf.error_rate
+        assert restored.counter_bits == sbf.counter_bits
+        for i in range(50):
+            assert restored.contains(f"rt_{i}")
+
+    def test_empty_roundtrip(self) -> None:
+        sbf = StableBloomFilter(capacity=100, error_rate=0.05)
+        raw = sbf.to_bytes()
+        restored = StableBloomFilter.from_bytes(raw)
+        assert restored.estimated_count() == 0.0
+        assert not restored.contains("nothing")
+
+    def test_from_bytes_truncated_raises(self) -> None:
+        with pytest.raises(ValueError):
+            StableBloomFilter.from_bytes(b"\x00\x00\x00\x00")
+
+
+class TestStableBloomEdgeCases:
+    def test_seed_determinism(self) -> None:
+        a = StableBloomFilter(capacity=500, seed=42)
+        b = StableBloomFilter(capacity=500, seed=42)
+        for i in range(30):
+            a.add(f"det_{i}")
+            b.add(f"det_{i}")
+        assert a.to_bytes() == b.to_bytes()
+
+    def test_different_seeds_diverge_decay(self) -> None:
+        a = StableBloomFilter(capacity=100, error_rate=0.05, counter_bits=4, seed=42)
+        b = StableBloomFilter(capacity=100, error_rate=0.05, counter_bits=4, seed=99)
+        for i in range(10):
+            a.add(f"div_{i}")
+            b.add(f"div_{i}")
+        a.decay_all(steps=5)
+        b.decay_all(steps=5)
+        assert a.to_bytes() != b.to_bytes()
+
+
+# ============================================================================
+# CuckooFilter
+# ============================================================================
+
+
+class TestCuckooFilterInit:
+    def test_default_construction(self) -> None:
+        cf = CuckooFilter(capacity=1000)
+        assert cf.capacity == 1000
+        assert cf.error_rate == 0.01
+        assert cf.bucket_size == 4
+
+    def test_custom_params(self) -> None:
+        cf = CuckooFilter(capacity=500, error_rate=0.001, bucket_size=8)
+        assert cf.capacity == 500
+        assert cf.bucket_size == 8
+
+    def test_invalid_capacity_raises(self) -> None:
+        with pytest.raises(ValueError):
+            CuckooFilter(capacity=0)
+        with pytest.raises(ValueError):
+            CuckooFilter(capacity=-5)
+
+    def test_invalid_error_rate_raises(self) -> None:
+        with pytest.raises(ValueError):
+            CuckooFilter(capacity=100, error_rate=0.0)
+        with pytest.raises(ValueError):
+            CuckooFilter(capacity=100, error_rate=1.5)
+
+    def test_invalid_bucket_size_raises(self) -> None:
+        with pytest.raises(ValueError):
+            CuckooFilter(capacity=100, bucket_size=1)
+
+    def test_properties(self) -> None:
+        cf = CuckooFilter(capacity=1000)
+        assert cf.num_buckets >= 2
+        assert cf.fingerprint_bits >= 4
+        assert cf.size == 0
+
+
+class TestCuckooFilterAddContains:
+    def test_add_single_item(self) -> None:
+        cf = CuckooFilter(capacity=1000)
+        assert cf.add("hello")
+        assert cf.contains("hello")
+
+    def test_empty_filter_contains_nothing(self) -> None:
+        cf = CuckooFilter(capacity=1000)
+        assert not cf.contains("anything")
+
+    def test_add_many_within_capacity(self) -> None:
+        cf = CuckooFilter(capacity=2000)
+        added = 0
+        for i in range(500):
+            if cf.add(f"item_{i}"):
+                added += 1
+        assert added >= 400
+        assert cf.size == added
+
+    def test_duplicate_item_still_contains(self) -> None:
+        cf = CuckooFilter(capacity=1000)
+        assert cf.add("dup")
+        cf.add("dup")
+        assert cf.contains("dup")
+        assert cf.size >= 1
+
+    def test_string_bytes_int_types(self) -> None:
+        cf = CuckooFilter(capacity=1000)
+        cf.add("str")
+        cf.add(b"bytes")
+        cf.add(42)
+        assert cf.contains("str")
+        assert cf.contains(b"bytes")
+        assert cf.contains(42)
+
+
+class TestCuckooFilterRemove:
+    def test_remove_existing(self) -> None:
+        cf = CuckooFilter(capacity=1000)
+        cf.add("present")
+        assert cf.remove("present")
+        assert not cf.contains("present")
+
+    def test_remove_missing(self) -> None:
+        cf = CuckooFilter(capacity=1000)
+        cf.add("present")
+        assert not cf.remove("absent")
+
+    def test_remove_decrements_size(self) -> None:
+        cf = CuckooFilter(capacity=1000)
+        cf.add("x")
+        cf.add("y")
+        before = cf.size
+        cf.remove("x")
+        assert cf.size == before - 1
+
+    def test_add_remove_add_cycle(self) -> None:
+        cf = CuckooFilter(capacity=1000)
+        cf.add("cycle")
+        cf.remove("cycle")
+        assert cf.add("cycle")
+        assert cf.contains("cycle")
+
+
+class TestCuckooFilterLoadFactor:
+    def test_empty_load_factor(self) -> None:
+        cf = CuckooFilter(capacity=1000)
+        assert cf.load_factor() == 0.0
+
+    def test_load_factor_grows(self) -> None:
+        cf = CuckooFilter(capacity=1000)
+        for i in range(100):
+            cf.add(f"lf_{i}")
+        lf = cf.load_factor()
+        assert lf > 0.0
+
+
+class TestCuckooFilterSerialization:
+    def test_roundtrip_bytes(self) -> None:
+        cf = CuckooFilter(capacity=500, error_rate=0.01, bucket_size=4, seed=42)
+        for i in range(50):
+            cf.add(f"rt_{i}")
+        raw = cf.to_bytes()
+        restored = CuckooFilter.from_bytes(raw)
+        assert restored.capacity == cf.capacity
+        assert restored.bucket_size == cf.bucket_size
+        assert restored.size == cf.size
+        for i in range(50):
+            assert restored.contains(f"rt_{i}")
+
+    def test_empty_roundtrip(self) -> None:
+        cf = CuckooFilter(capacity=200)
+        raw = cf.to_bytes()
+        restored = CuckooFilter.from_bytes(raw)
+        assert restored.size == 0
+        assert not restored.contains("nothing")
+
+    def test_from_bytes_truncated_raises(self) -> None:
+        with pytest.raises(ValueError):
+            CuckooFilter.from_bytes(b"\x00\x00")
+
+
+class TestCuckooFilterEdgeCases:
+    def test_seed_determinism(self) -> None:
+        a = CuckooFilter(capacity=500, seed=42)
+        b = CuckooFilter(capacity=500, seed=42)
+        for i in range(40):
+            a.add(f"det_{i}")
+            b.add(f"det_{i}")
+        assert a.to_bytes() == b.to_bytes()
+
+    def test_load_factor_never_exceeds_one(self) -> None:
+        cf = CuckooFilter(capacity=100)
+        for i in range(500):
+            cf.add(f"max_{i}")
+        assert cf.load_factor() <= 1.0
+
+    def test_size_after_many_inserts_is_nonzero(self) -> None:
+        cf = CuckooFilter(capacity=500)
+        for i in range(100):
+            cf.add(f"count_{i}")
+        assert cf.size > 0
+
+
+# ============================================================================
+# HyperLogLogV2
+# ============================================================================
+
+
+class TestHyperLogLogV2Init:
+    def test_default_construction(self) -> None:
+        hll = HyperLogLogV2()
+        assert hll.precision == 14
+        assert hll.register_count > 0
+        assert hll.is_sparse is True
+
+    def test_custom_precision(self) -> None:
+        for p in (4, 8, 12, 16, 18):
+            hll = HyperLogLogV2(precision=p)
+            assert hll.precision == p
+            assert hll.register_count == (1 << p)
+
+    def test_invalid_precision_raises(self) -> None:
+        with pytest.raises(ValueError):
+            HyperLogLogV2(precision=3)
+        with pytest.raises(ValueError):
+            HyperLogLogV2(precision=19)
+
+    def test_initially_sparse(self) -> None:
+        hll = HyperLogLogV2(precision=10)
+        assert hll.is_sparse
+
+
+class TestHyperLogLogV2AddCount:
+    def test_empty_returns_zero(self) -> None:
+        hll = HyperLogLogV2(precision=8)
+        assert hll.count() == 0
+
+    def test_single_item_sparse(self) -> None:
+        hll = HyperLogLogV2(precision=8)
+        hll.add("one")
+        c = hll.count()
+        assert 0 < c <= 5
+
+    def test_small_sparse(self) -> None:
+        hll = HyperLogLogV2(precision=10)
+        for i in range(50):
+            hll.add(f"item_{i}")
+        assert hll.is_sparse
+        est = hll.count()
+        assert 30 <= est <= 100
+
+    def test_sparse_to_dense_transition(self) -> None:
+        hll = HyperLogLogV2(precision=10)
+        for i in range(5000):
+            hll.add(f"trans_{i}")
+        assert not hll.is_sparse
+        est = hll.count()
+        assert est > 0
+
+    def test_duplicate_items_no_change(self) -> None:
+        hll = HyperLogLogV2(precision=8)
+        for _ in range(10):
+            hll.add("same")
+        c1 = hll.count()
+        for _ in range(10):
+            hll.add("same")
+        assert hll.count() == c1
+
+    def test_string_bytes_int_types(self) -> None:
+        hll = HyperLogLogV2(precision=10)
+        hll.add("str")
+        hll.add(b"bytes")
+        hll.add(42)
+        hll.add(3.14)
+        assert hll.count() > 0
+
+    def test_large_dense_estimate_reasonable(self) -> None:
+        hll = HyperLogLogV2(precision=12)
+        for i in range(100000):
+            hll.add(f"big_{i}")
+        est = hll.count()
+        assert 90000 <= est <= 110000
+
+    def test_precision_six_works(self) -> None:
+        hll = HyperLogLogV2(precision=6)
+        hll.add("p6")
+        assert hll.count() > 0
+
+
+class TestHyperLogLogV2Merge:
+    def test_merge_sparse_sparse(self) -> None:
+        a = HyperLogLogV2(precision=10)
+        b = HyperLogLogV2(precision=10)
+        for i in range(30):
+            a.add(f"a_{i}")
+        for i in range(30, 60):
+            b.add(f"b_{i}")
+        a.merge(b)
+        est = a.count()
+        assert 40 <= est <= 80
+
+    def test_merge_sparse_same_items(self) -> None:
+        a = HyperLogLogV2(precision=10)
+        b = HyperLogLogV2(precision=10)
+        for i in range(30):
+            a.add(f"shared_{i}")
+            b.add(f"shared_{i}")
+        a.merge(b)
+        est = a.count()
+        assert 20 <= est <= 50
+
+    def test_merge_dense_dense(self) -> None:
+        a = HyperLogLogV2(precision=10)
+        b = HyperLogLogV2(precision=10)
+        for i in range(5000):
+            a.add(f"dense_a_{i}")
+        for i in range(5000, 10000):
+            b.add(f"dense_b_{i}")
+        assert not a.is_sparse
+        assert not b.is_sparse
+        a.merge(b)
+        est = a.count()
+        assert est > 5000
+
+    def test_merge_sparse_into_dense(self) -> None:
+        a = HyperLogLogV2(precision=10)
+        b = HyperLogLogV2(precision=10)
+        for i in range(5000):
+            a.add(f"d_a_{i}")
+        for i in range(10000, 10030):
+            b.add(f"s_b_{i}")
+        assert not a.is_sparse
+        assert b.is_sparse
+        before = a.count()
+        a.merge(b)
+        assert a.count() >= before
+
+    def test_merge_different_precision_raises(self) -> None:
+        a = HyperLogLogV2(precision=8)
+        b = HyperLogLogV2(precision=10)
+        with pytest.raises(ValueError):
+            a.merge(b)
+
+
+class TestHyperLogLogV2ErrorBound:
+    def test_error_bound_positive(self) -> None:
+        hll = HyperLogLogV2(precision=14)
+        assert 0.0 < hll.error_bound() < 1.0
+
+    def test_error_bound_decreases_with_precision(self) -> None:
+        low = HyperLogLogV2(precision=4).error_bound()
+        high = HyperLogLogV2(precision=14).error_bound()
+        assert high < low
+
+
+class TestHyperLogLogV2Serialization:
+    def test_roundtrip_sparse(self) -> None:
+        hll = HyperLogLogV2(precision=10)
+        for i in range(30):
+            hll.add(f"spr_{i}")
+        assert hll.is_sparse
+        raw = hll.to_bytes()
+        restored = HyperLogLogV2.from_bytes(raw)
+        assert restored.precision == hll.precision
+        assert restored.is_sparse
+        assert abs(restored.count() - hll.count()) <= 2
+
+    def test_roundtrip_dense(self) -> None:
+        hll = HyperLogLogV2(precision=10)
+        for i in range(5000):
+            hll.add(f"den_{i}")
+        assert not hll.is_sparse
+        raw = hll.to_bytes()
+        restored = HyperLogLogV2.from_bytes(raw)
+        assert restored.precision == hll.precision
+        assert abs(restored.count() - hll.count()) <= 2
+
+    def test_empty_roundtrip(self) -> None:
+        hll = HyperLogLogV2(precision=8)
+        raw = hll.to_bytes()
+        restored = HyperLogLogV2.from_bytes(raw)
+        assert restored.count() == 0
+
+    def test_from_bytes_truncated_raises(self) -> None:
+        with pytest.raises(ValueError):
+            HyperLogLogV2.from_bytes(b"\x00\x00\x00")
+
+
+class TestHyperLogLogV2EdgeCases:
+    def test_merge_empty_into_populated(self) -> None:
+        a = HyperLogLogV2(precision=10)
+        b = HyperLogLogV2(precision=10)
+        for i in range(50):
+            a.add(f"pop_{i}")
+        before = a.count()
+        a.merge(b)
+        assert a.count() == before
+
+    def test_merge_populated_into_empty(self) -> None:
+        a = HyperLogLogV2(precision=10)
+        b = HyperLogLogV2(precision=10)
+        for i in range(50):
+            b.add(f"into_{i}")
+        a.merge(b)
+        assert abs(a.count() - b.count()) <= 2
+
+    def test_bias_correction_at_small_cardinality(self) -> None:
+        hll = HyperLogLogV2(precision=6)
+        hll.add("x")
+        hll.add("y")
+        hll.add("z")
+        c = hll.count()
+        assert 0 <= c <= 10
+
+    def test_sparse_transition_in_merge(self) -> None:
+        a = HyperLogLogV2(precision=10)
+        for i in range(50):
+            a.add(f"pre_{i}")
+        assert a.is_sparse
+        b = HyperLogLogV2(precision=10)
+        for i in range(50, 200):
+            b.add(f"post_{i}")
+        a.merge(b)
+        est = a.count()
+        assert est > 100
