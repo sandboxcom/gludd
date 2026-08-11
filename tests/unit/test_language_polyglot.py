@@ -12,6 +12,7 @@ the module exists and exposes:
   report mismatches that would break tooling (UTF-8 vs UTF-16, mixed BOMs,
   declared-vs-actual encoding drift).
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -250,3 +251,439 @@ class TestEncodingConflictReport:
         report = encoding_conflict_report([tmp_path / "a.py", tmp_path / "b.py"])
         assert "UTF-8" in report["encodings_present"]
         assert "UTF-16-LE" in report["encodings_present"]
+
+
+# ── internal helpers ────────────────────────────────────────────────────────
+
+
+class TestShebangLanguage:
+    def test_python3_shebang(self) -> None:
+        from general_ludd.language.polyglot import _shebang_language
+
+        assert _shebang_language("#!/usr/bin/env python3") == "python"
+
+    def test_bash_shebang(self) -> None:
+        from general_ludd.language.polyglot import _shebang_language
+
+        assert _shebang_language("#!/bin/bash") == "shell"
+
+    def test_node_shebang(self) -> None:
+        from general_ludd.language.polyglot import _shebang_language
+
+        assert _shebang_language("#!/usr/bin/env node") == "javascript"
+
+    def test_no_shebang_returns_none(self) -> None:
+        from general_ludd.language.polyglot import _shebang_language
+
+        assert _shebang_language("import sys") is None
+
+    def test_empty_line(self) -> None:
+        from general_ludd.language.polyglot import _shebang_language
+
+        assert _shebang_language("") is None
+
+    def test_ruby_shebang(self) -> None:
+        from general_ludd.language.polyglot import _shebang_language
+
+        assert _shebang_language("#!/usr/bin/ruby") == "ruby"
+
+    def test_perl_shebang(self) -> None:
+        from general_ludd.language.polyglot import _shebang_language
+
+        assert _shebang_language("#!/usr/bin/perl -w") == "perl"
+
+
+class TestIsBlank:
+    def test_blank_lines(self) -> None:
+        from general_ludd.language.polyglot import _is_blank
+
+        assert _is_blank("") is True
+        assert _is_blank("   ") is True
+        assert _is_blank("\t") is True
+        assert _is_blank("  \n") is True
+
+    def test_non_blank(self) -> None:
+        from general_ludd.language.polyglot import _is_blank
+
+        assert _is_blank("x") is False
+        assert _is_blank("  x") is False
+
+
+class TestIsComment:
+    def test_hash_comment(self) -> None:
+        from general_ludd.language.polyglot import _is_comment
+
+        assert _is_comment("# comment", "#") is True
+        assert _is_comment("x = 1", "#") is False
+
+    def test_double_slash_comment(self) -> None:
+        from general_ludd.language.polyglot import _is_comment
+
+        assert _is_comment("// comment", "//") is True
+        assert _is_comment("x = 1", "//") is False
+
+    def test_multi_style_comment(self) -> None:
+        from general_ludd.language.polyglot import _is_comment
+
+        assert _is_comment("// single", ["//", "/*"]) is True
+        assert _is_comment("/* block", ["//", "/*"]) is True
+        assert _is_comment("code here", ["//", "/*"]) is False
+
+    def test_none_style_always_false(self) -> None:
+        from general_ludd.language.polyglot import _is_comment
+
+        assert _is_comment("// comment", None) is False
+        assert _is_comment("# comment", None) is False
+
+
+class TestLanguageForExtension:
+    def test_known_extensions(self) -> None:
+        from general_ludd.language.polyglot import _language_for_extension
+
+        assert _language_for_extension(".py") == "python"
+        assert _language_for_extension(".go") == "go"
+        assert _language_for_extension(".rs") == "rust"
+        assert _language_for_extension(".js") == "javascript"
+        assert _language_for_extension(".tsx") == "typescript"
+
+    def test_case_insensitive_fallback(self) -> None:
+        from general_ludd.language.polyglot import _language_for_extension
+
+        assert _language_for_extension(".PY") == "python"
+        assert _language_for_extension(".Go") == "go"
+
+    def test_unknown_extension_returns_none(self) -> None:
+        from general_ludd.language.polyglot import _language_for_extension
+
+        assert _language_for_extension(".garbage") is None
+        assert _language_for_extension("") is None
+
+    def test_unique_r_lower_and_upper(self) -> None:
+        from general_ludd.language.polyglot import _language_for_extension
+
+        assert _language_for_extension(".r") == "r"
+        assert _language_for_extension(".R") == "r"
+
+
+class TestSniffBOM:
+    def test_utf8_bom_detected(self) -> None:
+        from general_ludd.language.polyglot import _sniff_bom
+
+        bom, size = _sniff_bom(b"\xef\xbb\xbfhello")
+        assert bom == "UTF-8"
+        assert size == 3
+
+    def test_utf16_le_bom(self) -> None:
+        from general_ludd.language.polyglot import _sniff_bom
+
+        bom, size = _sniff_bom(b"\xff\xfehello")
+        assert bom == "UTF-16-LE"
+        assert size == 2
+
+    def test_no_bom(self) -> None:
+        from general_ludd.language.polyglot import _sniff_bom
+
+        bom, size = _sniff_bom(b"hello")
+        assert bom is None
+        assert size == 0
+
+    def test_utf32_le_bom_matched_before_utf16_prefix(self) -> None:
+        from general_ludd.language.polyglot import _sniff_bom
+
+        bom, size = _sniff_bom(b"\xff\xfe\x00\x00data")
+        assert bom == "UTF-32-LE"
+        assert size == 4
+
+    def test_short_input(self) -> None:
+        from general_ludd.language.polyglot import _sniff_bom
+
+        bom, size = _sniff_bom(b"ab")
+        assert bom is None
+        assert size == 0
+
+
+class TestSeverityFor:
+    def test_low(self) -> None:
+        from general_ludd.language.polyglot import _severity_for
+
+        assert _severity_for(0) == "low"
+        assert _severity_for(1) == "low"
+
+    def test_medium(self) -> None:
+        from general_ludd.language.polyglot import _severity_for
+
+        assert _severity_for(2) == "medium"
+        assert _severity_for(4) == "medium"
+
+    def test_high(self) -> None:
+        from general_ludd.language.polyglot import _severity_for
+
+        assert _severity_for(5) == "high"
+        assert _severity_for(100) == "high"
+
+
+# ── classify_files_by_structure ─────────────────────────────────────────────
+
+
+class TestClassifyFilesByStructure:
+    def test_python_script_with_shebang(self, tmp_path: Path) -> None:
+        from general_ludd.language.polyglot import classify_files_by_structure
+
+        f = tmp_path / "runner"  # no extension
+        f.write_text("#!/usr/bin/env python3\nprint('hello')\n", encoding="utf-8")
+        results = classify_files_by_structure([f])
+
+        assert len(results) == 1
+        assert results[0]["detected_language"] == "python"
+        assert results[0]["language_from_extension"] is None
+        assert not results[0]["extension_match"]
+        assert "shebang" in results[0]["markers"]
+
+    def test_go_package_declaration(self, tmp_path: Path) -> None:
+        from general_ludd.language.polyglot import classify_files_by_structure
+
+        f = tmp_path / "main.go"
+        f.write_text("package main\n\nfunc main() {}\n", encoding="utf-8")
+        results = classify_files_by_structure([f])
+
+        assert len(results) == 1
+        assert "package_declaration" in results[0]["markers"]
+        assert results[0]["detected_language"] == "go"
+
+    def test_extension_match_when_consistent(self, tmp_path: Path) -> None:
+        from general_ludd.language.polyglot import classify_files_by_structure
+
+        f = tmp_path / "script.py"
+        f.write_text("#!/usr/bin/env python3\nprint('hello')\n", encoding="utf-8")
+        results = classify_files_by_structure([f])
+
+        assert results[0]["detected_language"] == "python"
+        assert results[0]["language_from_extension"] == "python"
+        assert results[0]["extension_match"] is True
+
+    def test_elixir_module_detection(self, tmp_path: Path) -> None:
+        from general_ludd.language.polyglot import classify_files_by_structure
+
+        f = tmp_path / "server.ex"
+        f.write_text("defmodule MyServer do\n  use GenServer\nend\n", encoding="utf-8")
+        results = classify_files_by_structure([f])
+
+        assert results[0]["detected_language"] == "elixir"
+        assert "elixir_module" in results[0]["markers"]
+
+    def test_empty_file_list(self) -> None:
+        from general_ludd.language.polyglot import classify_files_by_structure
+
+        assert classify_files_by_structure([]) == []
+
+    def test_nonexistent_file_skipped(self, tmp_path: Path) -> None:
+        from general_ludd.language.polyglot import classify_files_by_structure
+
+        assert classify_files_by_structure([tmp_path / "missing.sh"]) == []
+
+    def test_file_with_extension_but_no_markers(self, tmp_path: Path) -> None:
+        from general_ludd.language.polyglot import classify_files_by_structure
+
+        f = tmp_path / "plain.py"
+        f.write_text("print('hello')\n", encoding="utf-8")
+        results = classify_files_by_structure([f])
+
+        assert results[0]["detected_language"] == "python"
+        assert results[0]["markers"] == []
+
+
+# ── analyze_code_density ────────────────────────────────────────────────────
+
+
+class TestAnalyzeCodeDensity:
+    def test_python_file_counts(self, tmp_path: Path) -> None:
+        from general_ludd.language.polyglot import analyze_code_density
+
+        f = tmp_path / "test.py"
+        f.write_text(
+            "# comment line\ndef hello():\n    return 'world'\n\n# another comment\nx = 1\n",
+            encoding="utf-8",
+        )
+        results = analyze_code_density([f])
+
+        assert len(results) == 1
+        assert results[0]["language"] == "python"
+        assert results[0]["total_lines"] == 6
+        assert results[0]["comment_lines"] == 2
+        assert results[0]["code_lines"] == 3  # "def hello", "return 'world'", "x = 1"
+        assert results[0]["blank_lines"] == 1  # single "\n" line
+
+    def test_javascript_with_block_comment(self, tmp_path: Path) -> None:
+        from general_ludd.language.polyglot import analyze_code_density
+
+        f = tmp_path / "test.js"
+        f.write_text(
+            "/* block start\n   still comment\n   end block */\nvar x = 1;\n// line comment\nx++;\n",
+            encoding="utf-8",
+        )
+        results = analyze_code_density([f])
+
+        assert len(results) == 1
+        assert results[0]["language"] == "javascript"
+        assert results[0]["comment_lines"] == 4  # 3 block + 1 line
+        assert results[0]["code_lines"] == 2
+
+    def test_go_file(self, tmp_path: Path) -> None:
+        from general_ludd.language.polyglot import analyze_code_density
+
+        f = tmp_path / "main.go"
+        f.write_text(
+            'package main\n\n// main is the entry point\nfunc main() {\n    println("hello")\n}\n',
+            encoding="utf-8",
+        )
+        results = analyze_code_density([f])
+
+        assert len(results) == 1
+        assert results[0]["language"] == "go"
+        assert results[0]["comment_lines"] == 1
+        assert results[0]["blank_lines"] == 1
+
+    def test_unknown_language_labeled_unknown(self, tmp_path: Path) -> None:
+        from general_ludd.language.polyglot import analyze_code_density
+
+        f = tmp_path / "data.xyz"
+        f.write_text("line1\nline2\nline3\n", encoding="utf-8")
+        results = analyze_code_density([f])
+
+        assert results[0]["language"] == "unknown"
+        assert results[0]["comment_lines"] == 0
+
+    def test_empty_file(self, tmp_path: Path) -> None:
+        from general_ludd.language.polyglot import analyze_code_density
+
+        f = tmp_path / "empty.py"
+        f.write_text("", encoding="utf-8")
+        results = analyze_code_density([f])
+
+        assert results[0]["total_lines"] == 0
+        assert results[0]["code_lines"] == 0
+
+    def test_binary_file_skipped(self, tmp_path: Path) -> None:
+        from general_ludd.language.polyglot import analyze_code_density
+
+        f = tmp_path / "data.bin"
+        f.write_bytes(b"\x00\x01\x02\xff\xfe")
+        results = analyze_code_density([f])
+
+        assert results == []
+
+    def test_shebang_counted_as_code(self, tmp_path: Path) -> None:
+        from general_ludd.language.polyglot import analyze_code_density
+
+        f = tmp_path / "run.sh"
+        f.write_text(
+            "#!/bin/bash\n# a comment\necho hello\n",
+            encoding="utf-8",
+        )
+        results = analyze_code_density([f])
+
+        assert results[0]["language"] == "shell"
+        assert results[0]["code_lines"] == 1  # echo (shebang matches hash comment)
+        assert results[0]["comment_lines"] == 2  # #!/bin/bash + # a comment
+
+
+# ── detect_language_markers ─────────────────────────────────────────────────
+
+
+class TestDetectLanguageMarkers:
+    def test_shebang_marker(self) -> None:
+        from general_ludd.language.polyglot import detect_language_markers
+
+        markers = detect_language_markers("#!/usr/bin/env python3\nprint('hello')")
+        assert "shebang" in markers
+        assert markers["shebang"] == "python"
+
+    def test_encoding_cookie(self) -> None:
+        from general_ludd.language.polyglot import detect_language_markers
+
+        markers = detect_language_markers("# -*- coding: utf-8 -*-\nprint('hello')")
+        assert "encoding_cookie" in markers
+        assert markers["encoding_cookie"] == "utf-8"
+
+    def test_go_package(self) -> None:
+        from general_ludd.language.polyglot import detect_language_markers
+
+        markers = detect_language_markers('package main\n\nimport "fmt"')
+        assert "package_declaration" in markers
+        assert markers["package_declaration"] == "go"
+
+    def test_html_doctype(self) -> None:
+        from general_ludd.language.polyglot import detect_language_markers
+
+        markers = detect_language_markers('<!DOCTYPE html>\n<html lang="en">')
+        assert "doctype" in markers
+        assert markers["doctype"] == "html"
+
+    def test_xml_declaration(self) -> None:
+        from general_ludd.language.polyglot import detect_language_markers
+
+        markers = detect_language_markers('<?xml version="1.0" encoding="UTF-8"?>\n<root/>')
+        assert "xml_declaration" in markers
+        assert markers["xml_declaration"] == "xml"
+
+    def test_multiple_markers(self) -> None:
+        from general_ludd.language.polyglot import detect_language_markers
+
+        markers = detect_language_markers("#!/usr/bin/env python3\n# coding: utf-8\n")
+        assert "shebang" in markers
+        assert "encoding_cookie" in markers
+
+    def test_empty_text(self) -> None:
+        from general_ludd.language.polyglot import detect_language_markers
+
+        assert detect_language_markers("") == {}
+
+    def test_no_markers(self) -> None:
+        from general_ludd.language.polyglot import detect_language_markers
+
+        markers = detect_language_markers("def hello():\n    return 'world'\n")
+        assert markers == {}
+
+
+# ── _EXTENSION_MAP integrity ────────────────────────────────────────────────
+
+
+class TestExtensionMapIntegrity:
+    def test_extension_map_non_empty(self) -> None:
+        from general_ludd.language.polyglot import _EXTENSION_MAP
+
+        assert len(_EXTENSION_MAP) > 0
+
+    def test_all_extensions_start_with_dot(self) -> None:
+        from general_ludd.language.polyglot import _EXTENSION_MAP
+
+        for ext in _EXTENSION_MAP:
+            assert ext.startswith("."), f"Extension {ext!r} does not start with dot"
+
+    def test_no_duplicate_language_mappings(self) -> None:
+        from general_ludd.language.polyglot import _EXTENSION_MAP
+
+        seen: dict[str, str] = {}
+        for ext, lang in _EXTENSION_MAP.items():
+            if lang in seen:
+                pass
+            seen[lang] = ext
+
+
+class TestMarkerMapIntegrity:
+    def test_marker_map_non_empty(self) -> None:
+        from general_ludd.language.polyglot import _MARKER_MAP
+
+        assert len(_MARKER_MAP) > 0
+
+
+class TestCommentStylesIntegrity:
+    def test_all_styles_non_empty(self) -> None:
+        from general_ludd.language.polyglot import _COMMENT_STYLES
+
+        assert len(_COMMENT_STYLES) > 0
+        for lang, style in _COMMENT_STYLES.items():
+            if isinstance(style, str):
+                assert len(style) > 0, f"{lang} comment style is empty"
+            else:
+                assert len(style) > 0, f"{lang} comment style list is empty"
