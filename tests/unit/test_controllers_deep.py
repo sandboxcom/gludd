@@ -568,6 +568,131 @@ class TestAllocateBuckets:
         result = allocate_buckets(pid, [], queues)
         assert result["ansible"] == 5
 
+    def test_empty_queues_returns_empty_dict(self):
+        pid = ControllerOutputs(
+            desired_total_active_buckets=3,
+            desired_active_buckets_by_queue={"ansible": 2},
+            throttle_reasons=[],
+        )
+        result = allocate_buckets(pid, [], [])
+        assert result == {}
+
+    def test_empty_pid_buckets_falls_back_to_soft_caps(self):
+        pid = ControllerOutputs(
+            desired_total_active_buckets=0,
+            desired_active_buckets_by_queue={},
+            throttle_reasons=[],
+        )
+        queues = [
+            Queue(queue_name="ansible", resource_profile="local_heavy", soft_cap=4, hard_cap=10),
+            Queue(queue_name="model", resource_profile="ai_heavy", soft_cap=6, hard_cap=20),
+        ]
+        result = allocate_buckets(pid, [], queues)
+        assert result == {"ansible": 4, "model": 6}
+
+    def test_rule_action_on_unknown_queue_no_effect(self):
+        pid = ControllerOutputs(
+            desired_total_active_buckets=3,
+            desired_active_buckets_by_queue={"ansible": 5},
+            throttle_reasons=[],
+        )
+        queues = [
+            Queue(queue_name="ansible", resource_profile="local_heavy", soft_cap=5, hard_cap=10),
+        ]
+        actions = [
+            RuleAction(rule_id="r1", action_type="reduce_buckets", params={"queue": "nonexistent", "reduction": 3})
+        ]
+        result = allocate_buckets(pid, actions, queues)
+        assert result["ansible"] == 5
+
+    def test_multiple_rule_actions_on_same_queue(self):
+        pid = ControllerOutputs(
+            desired_total_active_buckets=3,
+            desired_active_buckets_by_queue={"ansible": 10},
+            throttle_reasons=[],
+        )
+        queues = [
+            Queue(queue_name="ansible", resource_profile="local_heavy", soft_cap=5, hard_cap=20),
+        ]
+        actions = [
+            RuleAction(rule_id="r1", action_type="reduce_buckets", params={"queue": "ansible", "reduction": 2}),
+            RuleAction(rule_id="r2", action_type="reduce_buckets", params={"queue": "ansible", "reduction": 3}),
+        ]
+        result = allocate_buckets(pid, actions, queues)
+        assert result["ansible"] == 5
+
+    def test_rule_action_non_reduce_type_ignored(self):
+        pid = ControllerOutputs(
+            desired_total_active_buckets=3,
+            desired_active_buckets_by_queue={"ansible": 5},
+            throttle_reasons=[],
+        )
+        queues = [
+            Queue(queue_name="ansible", resource_profile="local_heavy", soft_cap=5, hard_cap=10),
+        ]
+        actions = [
+            RuleAction(rule_id="r1", action_type="increase_buckets", params={"queue": "ansible", "amount": 10}),
+            RuleAction(rule_id="r2", action_type="pause", params={"queue": "ansible"}),
+        ]
+        result = allocate_buckets(pid, actions, queues)
+        assert result["ansible"] == 5
+
+    def test_hard_cap_applied_after_rules(self):
+        pid = ControllerOutputs(
+            desired_total_active_buckets=3,
+            desired_active_buckets_by_queue={"ansible": 8},
+            throttle_reasons=[],
+        )
+        queues = [
+            Queue(queue_name="ansible", resource_profile="local_heavy", soft_cap=5, hard_cap=6),
+        ]
+        actions = [RuleAction(rule_id="r1", action_type="reduce_buckets", params={"queue": "ansible", "reduction": 1})]
+        result = allocate_buckets(pid, actions, queues)
+        assert result["ansible"] == 6
+
+    def test_rule_reduction_defaults_when_params_missing(self):
+        pid = ControllerOutputs(
+            desired_total_active_buckets=3,
+            desired_active_buckets_by_queue={"ansible": 5},
+            throttle_reasons=[],
+        )
+        queues = [
+            Queue(queue_name="ansible", resource_profile="local_heavy", soft_cap=5, hard_cap=10),
+        ]
+        actions = [
+            RuleAction(rule_id="r1", action_type="reduce_buckets", params={"queue": "ansible"}),
+            RuleAction(rule_id="r2", action_type="reduce_buckets", params={"queue": "ansible", "reduction": 1}),
+        ]
+        result = allocate_buckets(pid, actions, queues)
+        assert result["ansible"] == 3
+
+    def test_mixed_pid_and_soft_cap_per_queue(self):
+        pid = ControllerOutputs(
+            desired_total_active_buckets=5,
+            desired_active_buckets_by_queue={"ansible": 3},
+            throttle_reasons=[],
+        )
+        queues = [
+            Queue(queue_name="ansible", resource_profile="local_heavy", soft_cap=5, hard_cap=10),
+            Queue(queue_name="model", resource_profile="ai_heavy", soft_cap=7, hard_cap=20),
+        ]
+        result = allocate_buckets(pid, [], queues)
+        assert result["ansible"] == 3
+        assert result["model"] == 7
+
+    def test_rule_reduction_zero_no_change(self):
+        pid = ControllerOutputs(
+            desired_total_active_buckets=3,
+            desired_active_buckets_by_queue={"ansible": 5},
+            throttle_reasons=[],
+        )
+        queues = [
+            Queue(queue_name="ansible", resource_profile="local_heavy", soft_cap=5, hard_cap=10),
+        ]
+        actions = [RuleAction(rule_id="r1", action_type="reduce_buckets", params={"queue": "ansible", "reduction": 0})]
+        result = allocate_buckets(pid, actions, queues)
+        assert result["ansible"] == 5
+
 
 # ── PauseRecord round-trip ─────────────────────────────────────────────
 

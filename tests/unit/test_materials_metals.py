@@ -37,6 +37,17 @@ class TestAlloyConditionTemper:
         info = advisor.describe_condition("unobtanium_alloy")
         assert info["state"] == "insufficient_data"
 
+    def test_non_metal_material_condition_fail_closed(self, advisor: MetalFormingAdvisor) -> None:
+        info = advisor.describe_condition("pa66_gf30")
+        assert info["state"] == "insufficient_data"
+        assert "non-metal" in info["reason"].lower()
+
+    def test_condition_designation_included(self, advisor: MetalFormingAdvisor) -> None:
+        info = advisor.describe_condition("aa6061_t6")
+        assert info["designation"]
+        assert info["base_alloy_family"] == "non_ferrous_aluminum"
+        assert info["state"] == "ok"
+
 
 # ---------------------------------------------------------------------------
 # Formability assessment
@@ -56,6 +67,21 @@ class TestFormability:
     def test_unknown_operation_fail_closed(self, advisor: MetalFormingAdvisor) -> None:
         result = advisor.assess_formability("aa6061_t6", "teleportation")
         assert result["state"] == "insufficient_data"
+
+    def test_non_metal_material_formability_fail_closed(self, advisor: MetalFormingAdvisor) -> None:
+        result = advisor.assess_formability("pa66_gf30", "bending")
+        assert result["state"] == "insufficient_data"
+        assert result["formability_rating"] is None
+
+    def test_formability_fallback_unrated_operation(self, advisor: MetalFormingAdvisor) -> None:
+        result = advisor.assess_formability("aa6061_t6", "rolling")
+        assert result["formability_rating"] in ("poor", "fair", "good", "excellent")
+        assert result["temper"] is not None
+
+    def test_formability_includes_annealing_note(self, advisor: MetalFormingAdvisor) -> None:
+        result = advisor.assess_formability("aa6061_t6", "bending")
+        assert "note" in result
+        assert "annealing" in result["note"].lower()
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +105,22 @@ class TestSpringback:
         assert "compensation_strategy" in result
         assert len(result["compensation_strategy"]) > 0
 
+    def test_non_metal_material_springback_fail_closed(self, advisor: MetalFormingAdvisor) -> None:
+        result = advisor.estimate_springback("pa66_gf30", "bending")
+        assert result["state"] == "insufficient_data"
+        assert result["springback_pct"] is None
+
+    def test_springback_generic_fallback_for_unlisted_operation(self, advisor: MetalFormingAdvisor) -> None:
+        result = advisor.estimate_springback("aa6061_t6", "drawing")
+        assert result["springback_pct"] == 0.5
+        assert result["unit"] == "percent"
+
+    def test_springback_generic_value_material_specific_compensation(self, advisor: MetalFormingAdvisor) -> None:
+        result = advisor.estimate_springback("aa6061_t6", "drawing")
+        assert result["springback_pct"] == 0.5
+        assert "compensation_strategy" in result
+        assert any("overbend" in s.lower() for s in result["compensation_strategy"])
+
 
 # ---------------------------------------------------------------------------
 # Heat treatment recommendations
@@ -99,6 +141,16 @@ class TestHeatTreatment:
         result = advisor.recommend_heat_treatment("unobtanium", "forging")
         assert result["state"] == "insufficient_data"
 
+    def test_non_metal_material_heat_treat_fail_closed(self, advisor: MetalFormingAdvisor) -> None:
+        result = advisor.recommend_heat_treatment("pa66_gf30", "forging")
+        assert result["state"] == "insufficient_data"
+
+    def test_heat_treatment_generic_fallback_unlisted_operation(self, advisor: MetalFormingAdvisor) -> None:
+        result = advisor.recommend_heat_treatment("aa6061_t6", "stamping")
+        assert result["required"] is False
+        assert "stress-relief" in result["steps"][0].lower()
+        assert "generic" in result["reason"].lower()
+
 
 # ---------------------------------------------------------------------------
 # Hot tearing risk
@@ -118,3 +170,16 @@ class TestHotTearingRisk:
         result = advisor.hot_tearing_risk("aa6061_t6")
         assert "mitigation" in result
         assert len(result["mitigation"]) > 0
+
+    def test_non_metal_material_hot_tearing_fail_closed(self, advisor: MetalFormingAdvisor) -> None:
+        result = advisor.hot_tearing_risk("pa66_gf30")
+        assert result["state"] == "insufficient_data"
+        assert result["risk_level"] is None
+
+    def test_unknown_material_hot_tearing_fail_closed(self, advisor: MetalFormingAdvisor) -> None:
+        result = advisor.hot_tearing_risk("unobtanium")
+        assert result["state"] == "insufficient_data"
+
+    def test_hot_tearing_designation_included(self, advisor: MetalFormingAdvisor) -> None:
+        result = advisor.hot_tearing_risk("aa6061_t6")
+        assert result["designation"]

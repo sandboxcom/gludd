@@ -193,3 +193,130 @@ class TestGenerateNsgRules:
         rules.append({"name": "synthetic"})
         assert len(generate_nsg_rules()) == len(nd._NSG_WEB_RULES)
         assert len(original) == len(nd._NSG_WEB_RULES)
+
+
+# ---------------------------------------------------------------------------
+# Deep tests: design_vnet edge cases not covered above
+# ---------------------------------------------------------------------------
+
+
+class TestDesignVnetDeep:
+    def test_invalid_cidr_raises(self):
+        with pytest.raises((ipaddress.AddressValueError, ValueError)):
+            design_vnet("bad", "not-a-valid-cidr")
+
+    def test_negative_num_subnets_returns_empty(self):
+        design = design_vnet("neg", num_subnets=-5)
+        assert design.subnets == []
+
+    def test_boundary_exactly_available_subnets(self):
+        """A /20 yields exactly 16 /24 subnets."""
+        design = design_vnet("bound", "10.0.0.0/20", num_subnets=16)
+        assert len(design.subnets) == 16
+
+    def test_subnet_cidrs_are_strings_not_ipaddress_objects(self):
+        design = design_vnet("types", num_subnets=2)
+        for s in design.subnets:
+            assert isinstance(s["cidr"], str)
+
+    def test_very_long_vnet_name_preserved(self):
+        name = "a" * 255
+        design = design_vnet(name)
+        assert design.vnet_name == name
+        assert len(design.vnet_name) == 255
+
+    def test_unicode_vnet_name(self):
+        design = design_vnet("vnet-\u00e9\u00e0")
+        assert design.vnet_name == "vnet-\u00e9\u00e0"
+
+    def test_returns_new_network_design_each_call(self):
+        a = design_vnet("a")
+        b = design_vnet("b")
+        assert a is not b
+        assert a.vnet_name != b.vnet_name
+
+    def test_subnet_list_is_independent_copy(self):
+        design = design_vnet("copy-test", num_subnets=2)
+        design.subnets.append({"name": "extra", "purpose": "test", "cidr": "10.0.99.0/24"})
+        fresh = design_vnet("copy-test", num_subnets=2)
+        assert len(fresh.subnets) == 2
+
+    def test_slash_8_yields_65536_possible_subnets(self):
+        """A /8 subnetted to /24 yields 2^16 = 65536 subnets — verify bound."""
+        design = design_vnet("huge", "10.0.0.0/8", num_subnets=256)
+        assert len(design.subnets) == 256
+
+    def test_single_host_cidr_yields_one_subnet_with_host_prefix(self):
+        """A /32 yields itself as a single subnet (no further subdivision)."""
+        design = design_vnet("host", "10.0.0.1/32", num_subnets=10)
+        assert len(design.subnets) == 1
+        assert design.subnets[0]["cidr"] == "10.0.0.1/32"
+
+    def test_slash_25_raises_on_subnet_request(self):
+        """A /25 cannot be split into /24; ipaddress raises ValueError."""
+        with pytest.raises(ValueError, match="new prefix must be longer"):
+            design_vnet("tight25", "10.0.0.0/25", num_subnets=10)
+
+
+# ---------------------------------------------------------------------------
+# Deep tests: generate_nsg_rules detailed structure
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateNsgRulesDeep:
+    def test_rules_are_ordered_by_priority_ascending(self):
+        rules = generate_nsg_rules()
+        priorities = [int(r["priority"]) for r in rules]
+        assert priorities == sorted(priorities)
+
+    def test_no_empty_or_whitespace_only_rule_names(self):
+        for rule in generate_nsg_rules():
+            assert rule["name"].strip(), f"empty name in rule {rule}"
+
+    def test_all_protocols_are_valid(self):
+        valid = {"Tcp", "Udp", "*", "Icmp", "Ah", "Esp"}
+        for rule in generate_nsg_rules():
+            assert rule["protocol"] in valid, f"invalid protocol in {rule['name']}"
+
+    def test_all_priorities_are_numeric_strings(self):
+        for rule in generate_nsg_rules():
+            int(rule["priority"])
+
+    def test_all_source_ports_are_wildcard_or_valid(self):
+        for rule in generate_nsg_rules():
+            assert rule["source_port"] == "*" or rule["source_port"].isdigit()
+
+    def test_all_destination_ports_are_wildcard_or_valid(self):
+        for rule in generate_nsg_rules():
+            assert rule["destination_port"] == "*" or rule["destination_port"].isdigit()
+
+    def test_deny_rule_priority_is_highest(self):
+        rules = generate_nsg_rules()
+        deny = next(r for r in rules if r["name"] == "DenyAllInbound")
+        max_prio = max(int(r["priority"]) for r in rules)
+        assert int(deny["priority"]) == max_prio
+
+    def test_allow_rules_have_internet_source(self):
+        for rule in generate_nsg_rules():
+            if rule["access"] == "Allow":
+                assert rule["source"] == "Internet" or rule["source"] == "*", (
+                    f"Allow rule '{rule['name']}' has unexpected source: {rule['source']}"
+                )
+
+    def test_no_rule_has_both_allow_and_deny(self):
+        for rule in generate_nsg_rules():
+            assert rule["access"] in ("Allow", "Deny")
+
+    def test_rule_directions_are_valid(self):
+        for rule in generate_nsg_rules():
+            assert rule["direction"] in ("Inbound", "Outbound")
+
+    def test_generated_rules_are_consistent_across_calls(self):
+        first = generate_nsg_rules()
+        second = generate_nsg_rules()
+        assert first == second
+
+    def test_each_rule_is_serializable_dict(self):
+        import json
+
+        json.dumps(generate_nsg_rules())
