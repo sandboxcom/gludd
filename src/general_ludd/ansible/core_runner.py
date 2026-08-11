@@ -452,12 +452,12 @@ class CoreAnsibleRunner:
         # processes, and a daemonic parent cannot have children (Python forbids
         # it), which would silently no-op the play. We instead kill the whole
         # process GROUP on timeout to reap any worker children too.
-        proc = ctx.Process(
-            target=_timeout_child_entry,
-            args=(self, queue, exec_kwargs),
-            daemon=False,
-        )
         try:
+            proc = ctx.Process(
+                target=_timeout_child_entry,
+                args=(self, queue, exec_kwargs),
+                daemon=False,
+            )
             proc.start()
         except Exception as exc:
             return AnsibleResult(

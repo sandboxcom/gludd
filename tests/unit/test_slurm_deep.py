@@ -840,18 +840,22 @@ class TestRemoteSubmit:
         mock_resp = MagicMock(spec=httpx.Response)
         mock_resp.status_code = 200
         mock_resp.json.return_value = {}
-        with patch.object(adapter, "_request", return_value=mock_resp):
-            with pytest.raises(RuntimeError, match="Could not parse job_id"):
-                adapter._remote_submit("echo hi")
+        with (
+            patch.object(adapter, "_request", return_value=mock_resp),
+            pytest.raises(RuntimeError, match="Could not parse job_id"),
+        ):
+            adapter._remote_submit("echo hi")
 
     def test_non_200_raises(self):
         adapter = SlurmAdapter(api_url="http://slurm:6820")
         mock_resp = MagicMock(spec=httpx.Response)
         mock_resp.status_code = 500
         mock_resp.text = "internal error"
-        with patch.object(adapter, "_request", return_value=mock_resp):
-            with pytest.raises(RuntimeError, match="Slurm REST submit failed"):
-                adapter._remote_submit("echo hi")
+        with (
+            patch.object(adapter, "_request", return_value=mock_resp),
+            pytest.raises(RuntimeError, match="Slurm REST submit failed"),
+        ):
+            adapter._remote_submit("echo hi")
 
 
 # ========================================================================== #
@@ -894,9 +898,11 @@ class TestRemoteStatus:
         mock_resp = MagicMock(spec=httpx.Response)
         mock_resp.status_code = 503
         mock_resp.text = "overloaded"
-        with patch.object(adapter, "_request", return_value=mock_resp):
-            with pytest.raises(RuntimeError, match="Slurm REST status failed"):
-                adapter._remote_status("42")
+        with (
+            patch.object(adapter, "_request", return_value=mock_resp),
+            pytest.raises(RuntimeError, match="Slurm REST status failed"),
+        ):
+            adapter._remote_status("42")
 
 
 # ========================================================================== #
@@ -924,9 +930,11 @@ class TestRemoteCancel:
         mock_resp = MagicMock(spec=httpx.Response)
         mock_resp.status_code = 500
         mock_resp.text = "internal error"
-        with patch.object(adapter, "_request", return_value=mock_resp):
-            with pytest.raises(RuntimeError, match="Slurm REST cancel failed"):
-                adapter._remote_cancel("42")
+        with (
+            patch.object(adapter, "_request", return_value=mock_resp),
+            pytest.raises(RuntimeError, match="Slurm REST cancel failed"),
+        ):
+            adapter._remote_cancel("42")
 
 
 # ========================================================================== #
@@ -1004,9 +1012,11 @@ class TestRemoteListJobs:
         mock_resp = MagicMock(spec=httpx.Response)
         mock_resp.status_code = 500
         mock_resp.text = "error"
-        with patch.object(adapter, "_request", return_value=mock_resp):
-            with pytest.raises(RuntimeError, match="Slurm REST list failed"):
-                adapter._remote_list_jobs()
+        with (
+            patch.object(adapter, "_request", return_value=mock_resp),
+            pytest.raises(RuntimeError, match="Slurm REST list failed"),
+        ):
+            adapter._remote_list_jobs()
 
 
 # ========================================================================== #
