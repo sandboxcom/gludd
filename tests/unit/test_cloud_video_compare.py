@@ -436,3 +436,417 @@ class TestCompareGameplayToReference:
             assert result.cache_status == "missing"
             assert result.passed is False
             assert result.reference_frame_count == 0
+
+
+# ── Deep numerical edge cases ──────────────────────────────────────────────
+
+
+class TestSSIMDeepEdgeCases:
+    def test_identical_random_frames(self):
+        rng = np.random.RandomState(42)
+        a = rng.randint(0, 256, (64, 48, 3), dtype=np.uint8)
+        b = a.copy()
+        assert compute_ssim(a, b) == 1.0
+
+    def test_single_pixel_frame(self):
+        a = np.array([[[128, 128, 128]]], dtype=np.uint8)
+        b = np.array([[[128, 128, 128]]], dtype=np.uint8)
+        s = compute_ssim(a, b)
+        assert s == 1.0
+
+    def test_single_pixel_different(self):
+        a = np.array([[[0, 0, 0]]], dtype=np.uint8)
+        b = np.array([[[255, 255, 255]]], dtype=np.uint8)
+        s = compute_ssim(a, b)
+        assert 0.0 <= s < 0.1
+
+    def test_4d_tensor_identical(self):
+        a = np.full((2, 2, 2, 3), 128, dtype=np.uint8)
+        b = np.full((2, 2, 2, 3), 128, dtype=np.uint8)
+        s = compute_ssim(a, b)
+        assert 0.0 <= s <= 1.0
+
+    def test_non_contiguous_array(self):
+        a = np.full((80, 60, 3), 128, dtype=np.uint8)[::2, ::2, :]
+        b = np.full((40, 30, 3), 128, dtype=np.uint8)
+        s = compute_ssim(a, b)
+        assert 0.0 <= s <= 1.0
+
+    def test_large_frame_dissimilar(self):
+        a = np.full((256, 256, 3), 0, dtype=np.uint8)
+        b = np.full((256, 256, 3), 255, dtype=np.uint8)
+        s = compute_ssim(a, b)
+        assert s < 0.05
+
+    def test_zero_value_frames(self):
+        a = np.zeros((32, 32, 3), dtype=np.uint8)
+        b = np.zeros((32, 32, 3), dtype=np.uint8)
+        assert compute_ssim(a, b) == 1.0
+
+    def test_max_value_frames(self):
+        a = np.full((32, 32, 3), 255, dtype=np.uint8)
+        b = np.full((32, 32, 3), 255, dtype=np.uint8)
+        assert compute_ssim(a, b) == 1.0
+
+    def test_different_dtype(self):
+        a = np.full((40, 30, 3), 128, dtype=np.uint8)
+        b = np.full((40, 30, 3), 128, dtype=np.int32)
+        s = compute_ssim(a, b)
+        assert 0.0 <= s <= 1.0
+
+    def test_float_input(self):
+        a = np.full((32, 24, 3), 0.5, dtype=np.float32)
+        b = np.full((32, 24, 3), 0.5, dtype=np.float32)
+        s = compute_ssim(a, b)
+        assert 0.0 <= s <= 1.0
+
+    def test_monotonic_similarity(self):
+        base = np.full((40, 30, 3), 128, dtype=np.uint8)
+        s1 = compute_ssim(base, np.full((40, 30, 3), 128, dtype=np.uint8))
+        s2 = compute_ssim(base, np.full((40, 30, 3), 130, dtype=np.uint8))
+        s3 = compute_ssim(base, np.full((40, 30, 3), 140, dtype=np.uint8))
+        s4 = compute_ssim(base, np.full((40, 30, 3), 200, dtype=np.uint8))
+        assert s1 >= s2 >= s3 >= s4
+
+
+class TestMotionCorrelationDeep:
+    def test_exact_linear_increasing(self):
+        a = [float(i) for i in range(20)]
+        b = [float(i) for i in range(20)]
+        corr = motion_correlation(a, b)
+        assert 0.99 <= corr <= 1.0
+
+    def test_exact_linear_decreasing_vs_increasing(self):
+        a = [float(i) for i in range(20)]
+        b = [float(20 - i) for i in range(20)]
+        corr = motion_correlation(a, b)
+        assert -1.0 <= corr <= -0.99
+
+    def test_large_value_range(self):
+        a = [0.0, 1000.0, 2000.0, 3000.0, 4000.0]
+        b = [0.0, 1000.0, 2000.0, 3000.0, 4000.0]
+        corr = motion_correlation(a, b)
+        assert corr >= 0.999
+
+    def test_small_floating_point_variation(self):
+        a = [0.0001, 0.0002, 0.0003, 0.0004, 0.0005]
+        b = [0.0001, 0.0002, 0.0003, 0.0004, 0.0005]
+        corr = motion_correlation(a, b)
+        assert 0.99 <= corr <= 1.0
+
+    def test_negative_values(self):
+        a = [-5.0, -3.0, -1.0, 1.0, 3.0, 5.0]
+        b = [-5.0, -3.0, -1.0, 1.0, 3.0, 5.0]
+        corr = motion_correlation(a, b)
+        assert 0.99 <= corr <= 1.0
+
+    def test_identical_value_then_spike(self):
+        a = [1.0, 1.0, 1.0, 1.0, 100.0]
+        b = [1.0, 1.0, 1.0, 1.0, 100.0]
+        corr = motion_correlation(a, b)
+        assert 0.99 <= corr <= 1.0
+
+    def test_near_constant_with_noise(self):
+        rng = np.random.RandomState(99)
+        a = [3.0 + rng.uniform(-0.001, 0.001) for _ in range(10)]
+        b = [3.0 + rng.uniform(-0.001, 0.001) for _ in range(10)]
+        corr = motion_correlation(a, b)
+        assert isinstance(corr, float)
+        assert -1.0 <= corr <= 1.0
+
+    def test_different_lengths_long_first(self):
+        a = [float(i) for i in range(100)]
+        b = [float(i) for i in range(5)]
+        corr = motion_correlation(a, b)
+        assert isinstance(corr, float)
+
+    def test_single_element_list(self):
+        assert motion_correlation([0.5], [0.5]) == 0.0
+
+    def test_nan_in_signal(self):
+        a = [1.0, 2.0, float("nan"), 4.0, 5.0]
+        b = [1.0, 2.0, 3.0, 4.0, 5.0]
+        corr = motion_correlation(a, b)
+        assert isinstance(corr, float)
+
+    def test_infinite_value(self):
+        a = [1.0, 2.0, float("inf")]
+        b = [1.0, 2.0, 3.0]
+        corr = motion_correlation(a, b)
+        assert isinstance(corr, float)
+
+
+class TestGlobalSSIMDeep:
+    def test_channel_wise_identical(self):
+        a = np.full((32, 32, 3), 100.0, dtype=np.float64)
+        b = np.full((32, 32, 3), 100.0, dtype=np.float64)
+        s = _global_ssim(a, b)
+        assert 0.99 <= s <= 1.0
+
+    def test_one_channel_off(self):
+        a = np.full((32, 32, 3), 100.0, dtype=np.float64)
+        b = np.full((32, 32, 3), 100.0, dtype=np.float64)
+        b[:, :, 0] = 200.0
+        s = _global_ssim(a, b)
+        assert 0.0 <= s < 1.0
+
+    def test_all_channels_off(self):
+        a = np.full((32, 32, 3), 100.0, dtype=np.float64)
+        b = np.full((32, 32, 3), 200.0, dtype=np.float64)
+        s = _global_ssim(a, b)
+        assert 0.0 <= s < 1.0
+
+    def test_grayscale_frame(self):
+        a = np.full((40, 30), 128.0, dtype=np.float64)
+        b = np.full((40, 30), 128.0, dtype=np.float64)
+        s = _global_ssim(a, b)
+        assert 0.99 <= s <= 1.0
+
+    def test_boundary_values(self):
+        a = np.zeros((16, 16, 3), dtype=np.float64)
+        b = np.full((16, 16, 3), 255.0, dtype=np.float64)
+        s = _global_ssim(a, b)
+        assert 0.0 <= s <= 1.0
+
+    def test_single_pixel(self):
+        a = np.array([[[128.0, 128.0, 128.0]]], dtype=np.float64)
+        b = np.array([[[128.0, 128.0, 128.0]]], dtype=np.float64)
+        s = _global_ssim(a, b)
+        assert 0.99 <= s <= 1.0
+
+
+class TestAveragePoolDeep:
+    def test_factor_4(self):
+        frame = np.random.rand(64, 80, 3).astype(np.float64)
+        result = _average_pool_for_ssim(frame, 4)
+        assert result.shape == (16, 20, 3)
+
+    def test_factor_larger_than_dims(self):
+        frame = np.random.rand(20, 30, 3).astype(np.float64)
+        result = _average_pool_for_ssim(frame, 50)
+        assert result.shape[0] <= 20
+        assert result.shape[1] <= 30
+
+    def test_non_divisible_dimensions(self):
+        frame = np.random.rand(31, 47, 3).astype(np.float64)
+        result = _average_pool_for_ssim(frame, 3)
+        assert result.shape[0] == 10
+        assert result.shape[1] == 15
+
+    def test_pooling_preserves_range(self):
+        frame = np.full((32, 48, 3), 0.5, dtype=np.float64)
+        result = _average_pool_for_ssim(frame, 2)
+        assert np.allclose(result, 0.5)
+
+    def test_negative_pool_factor(self):
+        frame = np.random.rand(24, 36, 3).astype(np.float64)
+        result = _average_pool_for_ssim(frame, -1)
+        assert np.allclose(result, frame)
+
+
+class TestDownloadYoutubeVideoDeep:
+    def test_clip_start_seconds_negative_raises(self):
+        from general_ludd.cloud.video_compare import download_youtube_video
+
+        with patch("general_ludd.cloud.video_compare.yt_dlp"), pytest.raises(ValueError, match="non-negative"):
+            download_youtube_video("https://youtube.com?v=x", "/tmp", clip_start_seconds=-1.0)
+
+    def test_clip_duration_seconds_zero_raises(self):
+        from general_ludd.cloud.video_compare import download_youtube_video
+
+        with patch("general_ludd.cloud.video_compare.yt_dlp"), pytest.raises(ValueError, match="positive"):
+            download_youtube_video(
+                "https://youtube.com?v=x",
+                "/tmp",
+                clip_start_seconds=0.0,
+                clip_duration_seconds=0.0,
+            )
+
+    def test_clip_duration_seconds_negative_raises(self):
+        from general_ludd.cloud.video_compare import download_youtube_video
+
+        with patch("general_ludd.cloud.video_compare.yt_dlp"), pytest.raises(ValueError, match="positive"):
+            download_youtube_video(
+                "https://youtube.com?v=x",
+                "/tmp",
+                clip_start_seconds=0.0,
+                clip_duration_seconds=-5.0,
+            )
+
+    def test_valid_clip_params_ok(self):
+        from general_ludd.cloud.video_compare import download_youtube_video
+
+        mock_ytdlp = MagicMock()
+        mock_ydl = MagicMock()
+        mock_ydl.extract_info.return_value = {
+            "requested_downloads": [{"format_id": "mp4", "ext": "mp4"}],
+            "format_id": "mp4",
+            "ext": "mp4",
+            "vcodec": "h264",
+            "duration": 60.0,
+        }
+        mock_ytdlp.YoutubeDL.return_value.__enter__.return_value = mock_ydl
+        mock_ytdlp.utils.download_range_func = lambda a, b: "range_func_result"
+
+        with (
+            patch("general_ludd.cloud.video_compare.yt_dlp", mock_ytdlp),
+            patch("pathlib.Path.mkdir"),
+            patch("os.path.exists", return_value=True),
+        ):
+            result = download_youtube_video(
+                "https://youtube.com?v=x",
+                "/tmp/test.mp4",
+                clip_start_seconds=0.0,
+                clip_duration_seconds=10.0,
+            )
+            assert result.endswith(".mp4")
+
+    def test_metadata_sink_receives_fields(self):
+        from general_ludd.cloud.video_compare import download_youtube_video
+
+        mock_ytdlp = MagicMock()
+        mock_ydl = MagicMock()
+        mock_ydl.extract_info.return_value = {
+            "requested_downloads": [{"format_id": "mp4", "ext": "mp4", "vcodec": "h264", "fps": 30.0}],
+            "duration": 120.0,
+            "uploader": "test-channel",
+            "channel": "test-channel",
+        }
+        mock_ytdlp.YoutubeDL.return_value.__enter__.return_value = mock_ydl
+        metadata = {}
+
+        with (
+            patch("general_ludd.cloud.video_compare.yt_dlp", mock_ytdlp),
+            patch("pathlib.Path.mkdir"),
+            patch("os.path.exists", return_value=True),
+        ):
+            download_youtube_video(
+                "https://youtube.com?v=x",
+                "/tmp/test.mp4",
+                metadata_sink=metadata.update,
+            )
+            assert "format_id" in metadata
+            assert "container" in metadata
+
+    def test_no_requested_downloads_falls_back_to_info(self):
+        from general_ludd.cloud.video_compare import download_youtube_video
+
+        mock_ytdlp = MagicMock()
+        mock_ydl = MagicMock()
+        mock_ydl.extract_info.return_value = {
+            "format_id": "mp4",
+            "ext": "mp4",
+            "vcodec": "h264",
+            "pix_fmt": "yuv420p",
+            "duration": 30.0,
+        }
+        mock_ytdlp.YoutubeDL.return_value.__enter__.return_value = mock_ydl
+        metadata = {}
+
+        with (
+            patch("general_ludd.cloud.video_compare.yt_dlp", mock_ytdlp),
+            patch("pathlib.Path.mkdir"),
+            patch("os.path.exists", return_value=True),
+        ):
+            download_youtube_video(
+                "https://youtube.com?v=x",
+                "/tmp/test.mp4",
+                metadata_sink=metadata.update,
+            )
+            assert metadata["format_id"] == "mp4"
+
+    def test_download_failure_raises_runtime_error(self):
+        from general_ludd.cloud.video_compare import download_youtube_video
+
+        mock_ytdlp = MagicMock()
+        mock_ytdlp.YoutubeDL.side_effect = RuntimeError("network down")
+
+        with (
+            patch("general_ludd.cloud.video_compare.yt_dlp", mock_ytdlp),
+            patch("pathlib.Path.mkdir"),
+            pytest.raises(RuntimeError, match="Failed to download"),
+        ):
+            download_youtube_video("https://youtube.com?v=x", "/tmp/test.mp4")
+
+    def test_progress_sink_receives_fields(self):
+        from general_ludd.cloud.video_compare import download_youtube_video
+
+        mock_ytdlp = MagicMock()
+        mock_ydl = MagicMock()
+        mock_ydl.extract_info.return_value = {
+            "requested_downloads": [{"format_id": "mp4", "ext": "mp4"}],
+        }
+
+        progress_records = []
+        mock_ytdlp.YoutubeDL.return_value.__enter__.return_value = mock_ydl
+
+        with (
+            patch("general_ludd.cloud.video_compare.yt_dlp", mock_ytdlp),
+            patch("pathlib.Path.mkdir"),
+            patch("os.path.exists", return_value=True),
+        ):
+            download_youtube_video(
+                "https://youtube.com?v=x",
+                "/tmp/test.mp4",
+                progress_sink=progress_records.append,
+            )
+            extracted_opts = mock_ytdlp.YoutubeDL.call_args[0][0]
+            assert "progress_hooks" in extracted_opts
+
+    def test_output_path_directory_format(self):
+        from general_ludd.cloud.video_compare import download_youtube_video
+
+        mock_ytdlp = MagicMock()
+        mock_ydl = MagicMock()
+        mock_ydl.extract_info.return_value = {
+            "requested_downloads": [{"format_id": "mp4", "ext": "mp4"}],
+        }
+        mock_ytdlp.YoutubeDL.return_value.__enter__.return_value = mock_ydl
+
+        with (
+            patch("general_ludd.cloud.video_compare.yt_dlp", mock_ytdlp),
+            patch("pathlib.Path.mkdir"),
+            patch("os.path.exists", return_value=True),
+        ):
+            result = download_youtube_video("https://youtube.com?v=x", "/tmp/dir/")
+            assert result.endswith(".mp4")
+
+
+class TestReferenceVideoSpecDeep:
+    def test_all_registered_specs_have_positive_duration(self):
+        for name, spec in REFERENCE_VIDEO_SPECS.items():
+            assert spec.clip_duration_seconds > 0, f"{name} has non-positive duration"
+
+    def test_all_registered_specs_have_positive_frame_count(self):
+        for name, spec in REFERENCE_VIDEO_SPECS.items():
+            assert spec.sample_frame_count > 0, f"{name} has non-positive frame count"
+
+    def test_all_registered_specs_have_positive_interval(self):
+        for name, spec in REFERENCE_VIDEO_SPECS.items():
+            assert spec.sample_interval_seconds > 0, f"{name} has non-positive interval"
+
+    def test_all_registered_specs_have_threshold_in_range(self):
+        for name, spec in REFERENCE_VIDEO_SPECS.items():
+            assert 0.0 < spec.comparison_threshold < 1.0, f"{name} threshold out of range"
+
+    def test_all_registered_specs_have_non_empty_video_id(self):
+        for name, spec in REFERENCE_VIDEO_SPECS.items():
+            assert len(spec.video_id) > 0, f"{name} has empty video_id"
+
+
+class TestEnsureModulesDeep:
+    def test_ensure_yt_dlp_missing_with_module_present(self):
+        from general_ludd.cloud.video_compare import _ensure_yt_dlp
+
+        mock_mod = MagicMock()
+        with patch("general_ludd.cloud.video_compare.yt_dlp", mock_mod):
+            result = _ensure_yt_dlp()
+            assert result is mock_mod
+
+    def test_ensure_cv2_missing_with_module_present(self):
+        from general_ludd.cloud.video_compare import _ensure_cv2
+
+        mock_mod = MagicMock()
+        with patch("general_ludd.cloud.video_compare.cv2", mock_mod):
+            result = _ensure_cv2()
+            assert result is mock_mod
