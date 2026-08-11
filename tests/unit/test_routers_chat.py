@@ -391,7 +391,7 @@ class TestValidateConfig:
             "system_prompt": "Be helpful",
             "eval_mode": True,
             "api_base_url": "https://api.example.com",
-            "api_key": "sk-test",
+            "api_key": "placeholder-test-key",  # pragma: allowlist secret
             "project_dir": "/tmp/proj",
             "history_file": "/tmp/hist.jsonl",
             "save_interval": 10,
