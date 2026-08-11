@@ -58,27 +58,27 @@ def generate_manifest(playbook_path: str) -> ActionManifest:
         if not isinstance(play, dict):
             continue
 
-        for role_entry in play.get("roles", []):
+        for role_entry in play.get("roles", []) if isinstance(play.get("roles"), list) else []:
             if isinstance(role_entry, str):
                 roles.append(role_entry)
             elif isinstance(role_entry, dict) and "role" in role_entry:
                 roles.append(role_entry["role"])
 
-        for tag in play.get("tags", []):
+        for tag in play.get("tags", []) if isinstance(play.get("tags"), list) else []:
             if tag not in tags:
                 tags.append(tag)
 
-        for task in play.get("tasks", []):
+        for task in play.get("tasks", []) if isinstance(play.get("tasks"), list) else []:
             if not isinstance(task, dict):
                 continue
             for mod in _extract_modules_from_task(task):
                 if mod not in modules:
                     modules.append(mod)
-            for tag in task.get("tags", []):
+            for tag in task.get("tags", []) if isinstance(task.get("tags"), list) else []:
                 if tag not in tags:
                     tags.append(tag)
 
-        for collection in play.get("collections", []):
+        for collection in play.get("collections", []) if isinstance(play.get("collections"), list) else []:
             if collection not in collections:
                 collections.append(collection)
 

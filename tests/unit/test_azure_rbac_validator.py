@@ -612,3 +612,345 @@ class TestCrossReferenceConsistency:
 
     def test_security_critical_ops_count_is_eight(self):
         assert len(SECURITY_CRITICAL_OPS) == 8
+
+
+# ---------------------------------------------------------------------------
+# Deep: _lazy_provider_map behaviour
+# ---------------------------------------------------------------------------
+
+
+class TestLazyProviderMap:
+    def test_returns_dict_with_all_provider_operation_keys(self):
+        from general_ludd.azure.rbac_validator import _lazy_provider_map
+
+        result = _lazy_provider_map()
+        assert set(result.keys()) == set(PROVIDER_OPERATIONS.keys()), (
+            f"keys mismatch: {set(result.keys()) ^ set(PROVIDER_OPERATIONS.keys())}"
+        )
+
+    def test_idempotent_same_reference(self):
+        from general_ludd.azure.rbac_validator import _lazy_provider_map
+
+        a = _lazy_provider_map()
+        b = _lazy_provider_map()
+        assert a is b
+
+    def test_every_value_is_nonempty_list_of_strings(self):
+        from general_ludd.azure.rbac_validator import _lazy_provider_map
+
+        for provider, actions in _lazy_provider_map().items():
+            assert isinstance(actions, list), f"{provider} value is {type(actions)}"
+            assert len(actions) > 0, f"{provider} has zero actions"
+            assert all(isinstance(a, str) for a in actions), f"{provider} has non-str action"
+
+    def test_all_lazy_actions_are_in_known_set(self):
+        from general_ludd.azure.rbac_validator import _lazy_provider_map
+
+        flat_known = frozenset(a for ops in PROVIDER_OPERATIONS.values() for a in ops)
+        for provider, actions in _lazy_provider_map().items():
+            for action in actions:
+                assert action in flat_known, f"{provider} action {action!r} not in flat known set"
+
+
+# ---------------------------------------------------------------------------
+# Deep: generate_role_definition edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateRoleDefinitionDeep:
+    def test_duplicate_providers_deduplicate_actions(self):
+        role = generate_role_definition(
+            "Dedup Role",
+            "A role definition with deduplication test that is at least twenty",
+            ["Microsoft.Compute", "Microsoft.Compute"],
+        )
+        assert role["Actions"] == sorted(set(role["Actions"])), "duplicate provider produced duplicate actions"
+
+    def test_all_providers_produces_large_role(self):
+        all_providers = sorted(PROVIDER_OPERATIONS.keys())
+        role = generate_role_definition(
+            "Full Catalog Role",
+            "A comprehensive role covering every known provider namespace ok",
+            all_providers,
+        )
+        assert len(role["Actions"]) > 50
+        assert role["DataActions"] == []
+        assert role["NotDataActions"] == []
+
+    def test_actions_always_sorted_lexicographically(self):
+        role = generate_role_definition(
+            "Sorted Check",
+            "Checking that actions are always sorted lexicographically ok",
+            ["Microsoft.Network", "Microsoft.Compute"],
+        )
+        assert role["Actions"] == sorted(role["Actions"])
+
+    def test_not_actions_always_sorted(self):
+        role = generate_role_definition(
+            "NotActions Sort",
+            "Verifying that not-actions are always sorted lexicographically",
+            ["Microsoft.Compute"],
+        )
+        assert role["NotActions"] == sorted(role["NotActions"])
+
+    def test_provider_with_only_security_ops_produces_empty_actions(self):
+        role = generate_role_definition(
+            "Auth Only",
+            "Authorization provider whose actions are all security-critical ok",
+            ["Microsoft.Authorization"],
+        )
+        assert "Microsoft.Authorization/roleAssignments/read" in role["Actions"]
+        assert "Microsoft.Authorization/roleAssignments/write" in role["NotActions"]
+        assert "Microsoft.Authorization/roleAssignments/delete" in role["NotActions"]
+
+    def test_capsule_shape_present(self):
+        role = generate_role_definition(
+            "Shape Test",
+            "Verifying the complete output shape is always returned fully ok",
+            ["Microsoft.Resources"],
+        )
+        for key in (
+            "Name",
+            "Description",
+            "Actions",
+            "NotActions",
+            "AssignableScopes",
+            "DataActions",
+            "NotDataActions",
+        ):
+            assert key in role, f"missing key: {key}"
+
+    def test_default_scope_contains_subscription_placeholder(self):
+        role = generate_role_definition(
+            "Scope Check",
+            "Verifying that the default scope has subscription placeholder",
+            ["Microsoft.Resources"],
+        )
+        assert "{subscription_id}" in role["AssignableScopes"][0]
+
+    def test_unknown_provider_mixed_with_known_raises(self):
+        raised = False
+        try:
+            generate_role_definition(
+                "Mixed Bad",
+                "Mixing a known provider with an unknown one that fails ok",
+                ["Microsoft.Compute", "Microsoft.FakeProvider"],
+            )
+        except KeyError:
+            raised = True
+        assert raised is True, "expected KeyError for unknown provider"
+
+
+# ---------------------------------------------------------------------------
+# Deep: validate_against_azure_schema edges
+# ---------------------------------------------------------------------------
+
+
+class TestValidateAgainstAzureSchemaDeep:
+    def test_description_exactly_twenty_chars_passes(self):
+        ok, messages = validate_against_azure_schema(
+            {
+                "Name": "Test",
+                "Description": "ABCDEFGHIJKLMNOPQRST",
+                "Actions": [],
+                "NotActions": [],
+                "AssignableScopes": ["/subscriptions/..."],
+            }
+        )
+        assert ok is True, f"20-char description should pass: {messages}"
+
+    def test_description_nineteen_chars_fails(self):
+        ok, messages = validate_against_azure_schema(
+            {
+                "Name": "Test",
+                "Description": "ABCDEFGHIJKLMNOPQRS",
+                "Actions": [],
+                "NotActions": [],
+                "AssignableScopes": ["/subscriptions/..."],
+            }
+        )
+        assert ok is False
+        assert any("Description" in m for m in messages)
+
+    def test_large_action_list_validates_each(self):
+        role = generate_role_definition(
+            "Large Role",
+            "A role definition with large actions list for stress testing now",
+            ["Microsoft.Compute", "Microsoft.Network", "Microsoft.Storage", "Microsoft.App"],
+        )
+        ok, messages = validate_against_azure_schema(role)
+        assert ok is True, f"large role failed: {messages}"
+
+    def test_multiple_missing_fields_reports_first(self):
+        ok, messages = validate_against_azure_schema({"Actions": []})
+        assert ok is False
+        assert len(messages) >= 1
+        assert any("Missing required field" in m for m in messages)
+
+    def test_name_with_unicode_passes(self):
+        ok, _messages = validate_against_azure_schema(
+            {
+                "Name": "R\u00f4le-Custom",
+                "Description": "A role definition with unicode characters in name at least twenty chars",
+                "Actions": [],
+                "NotActions": [],
+                "AssignableScopes": ["/subscriptions/..."],
+            }
+        )
+        assert ok is True
+
+    def test_description_nineteen_nonwhitespace_chars_fails(self):
+        ok, messages = validate_against_azure_schema(
+            {
+                "Name": "Test",
+                "Description": "ABCDEFGHIJKLMNOPQRS",
+                "Actions": [],
+                "NotActions": [],
+                "AssignableScopes": ["/subscriptions/..."],
+            }
+        )
+        assert ok is False
+        assert any("Description" in m for m in messages)
+
+    def test_data_actions_field_present_but_not_validated_as_list(self):
+        ok, _messages = validate_against_azure_schema(
+            {
+                "Name": "Test",
+                "Description": "A role with DataActions field present for testing at least twenty chars",
+                "Actions": [],
+                "NotActions": [],
+                "AssignableScopes": ["/subscriptions/..."],
+                "DataActions": "not-a-list",
+            }
+        )
+        assert ok is True
+
+    def test_assignable_scopes_with_multiple_entries_passes(self):
+        ok, _messages = validate_against_azure_schema(
+            {
+                "Name": "Multi Scope",
+                "Description": "A role definition with multiple assignable scopes tested ok",
+                "Actions": [],
+                "NotActions": [],
+                "AssignableScopes": ["/subscriptions/a", "/subscriptions/b"],
+            }
+        )
+        assert ok is True
+
+
+# ---------------------------------------------------------------------------
+# Deep: check_security_critical_denials edges
+# ---------------------------------------------------------------------------
+
+
+class TestCheckSecurityCriticalDenialsDeep:
+    def test_none_actions_param_checks_all_eight(self):
+        missing = check_security_critical_denials([], actions=None)
+        assert len(missing) == 8
+
+    def test_explicit_empty_list_actions_checks_nothing(self):
+        missing = check_security_critical_denials([], actions=[])
+        assert missing == []
+
+    def test_partial_not_actions_still_reports_missing(self):
+        not_actions = ["Microsoft.Compute/virtualMachines/runCommand/action"]
+        missing = check_security_critical_denials(not_actions)
+        assert len(missing) == 7
+        assert "Microsoft.Compute/virtualMachines/runCommand/action" not in missing
+
+    def test_extra_unknown_not_actions_ignored(self):
+        not_actions = [*sorted(SECURITY_CRITICAL_OPS), "Microsoft.Fake/something/read"]
+        missing = check_security_critical_denials(not_actions)
+        assert missing == []
+
+    def test_all_security_critical_ops_in_output_when_empty_not_actions(self):
+        missing = check_security_critical_denials([])
+        assert frozenset(missing) == SECURITY_CRITICAL_OPS
+
+
+# ---------------------------------------------------------------------------
+# Deep: validate_action_string additional edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestValidateActionStringDeep:
+    def test_exceptionally_long_action_string_validates(self):
+        path_segments = "/".join(["segment" + str(i) for i in range(100)])
+        action = f"Microsoft.Provider/{path_segments}/read"
+        ok, _msg = validate_action_string(action)
+        assert ok is True
+
+    def test_trailing_slash_in_action_rejected(self):
+        ok, _msg = validate_action_string("Microsoft.Compute/virtualMachines/read/")
+        assert ok is False
+
+    def test_double_slash_rejected(self):
+        ok, _msg = validate_action_string("Microsoft.Compute//virtualMachines/read")
+        assert ok is False
+
+    def test_verb_not_in_allowed_set_rejected(self):
+        ok, _msg = validate_action_string("Microsoft.Compute/virtualMachines/execute")
+        assert ok is False
+        assert "malformed" in _msg
+
+    def test_provider_missing_dot_rejected(self):
+        ok, _msg = validate_action_string("MicrosoftCompute/virtualMachines/read")
+        assert ok is False
+        assert "malformed" in _msg
+
+    def test_forbidden_suffix_list_action_rejected_exact_message(self):
+        ok, msg = validate_action_string("Microsoft.Storage/storageAccounts/list/action")
+        assert ok is False
+        assert "forbidden suffix" in msg
+
+    def test_forbidden_suffix_listkeys_action_rejected_exact_message(self):
+        ok, msg = validate_action_string("Microsoft.Storage/storageAccounts/listkeys/action")
+        assert ok is False
+        assert "forbidden suffix" in msg
+
+    def test_every_forbidden_suffix_matches_itself(self):
+        for suffix in ("/list/action", "/listkeys/action"):
+            action = f"Microsoft.Test/resource{suffix}"
+            ok, msg = validate_action_string(action)
+            assert ok is False, f"should reject suffix {suffix}"
+            assert "forbidden suffix" in msg
+
+    def test_already_valid_action_with_list_payload_name_passes(self):
+        """'listSubnets' in resource path is not a /list/action suffix."""
+        ok, _msg = validate_action_string("Microsoft.Network/virtualNetworks/listSubnets/read")
+        assert ok is True
+
+
+# ---------------------------------------------------------------------------
+# Deep: generate_role_definition stress and invariants
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateRoleDefinitionStress:
+    def test_hundred_repeated_providers_produces_same_result_as_one(self):
+        role_many = generate_role_definition(
+            "Many Dups",
+            "A role definition with many duplicate provider namespaces test ok",
+            ["Microsoft.Resources"] * 100,
+        )
+        role_one = generate_role_definition(
+            "One Ref",
+            "A reference role definition with a single provider namespace ok",
+            ["Microsoft.Resources"],
+        )
+        assert role_many["Actions"] == role_one["Actions"]
+        assert role_many["NotActions"] == role_one["NotActions"]
+
+    def test_twenty_providers_all_distinct(self):
+        all_providers = sorted(PROVIDER_OPERATIONS.keys())
+        assert len(all_providers) >= 15, f"need >=15 providers, got {len(all_providers)}"
+        role = generate_role_definition(
+            "All Providers",
+            "A role definition that includes every single known provider namespace",
+            all_providers,
+        )
+        total_known = sum(len(ops) for ops in PROVIDER_OPERATIONS.values())
+        sec_ops = len(SECURITY_CRITICAL_OPS & frozenset(a for ops in PROVIDER_OPERATIONS.values() for a in ops))
+        expected_max = total_known - sec_ops
+        assert len(role["Actions"]) <= expected_max
+        assert len(role["NotActions"]) == sec_ops
