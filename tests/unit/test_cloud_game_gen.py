@@ -26,9 +26,11 @@ from general_ludd.cloud.game_gen import (
 
 class TestRequirePygame:
     def test_raises_when_pygame_not_available(self):
-        with mock.patch("general_ludd.cloud.game_gen.pygame", None):
-            with pytest.raises(ImportError, match="pygame is required"):
-                game_gen_module._require_pygame()
+        with (
+            mock.patch("general_ludd.cloud.game_gen.pygame", None),
+            pytest.raises(ImportError, match="pygame is required"),
+        ):
+            game_gen_module._require_pygame()
 
     def test_returns_pygame_when_available(self):
         fake_module = mock.MagicMock()
@@ -334,9 +336,11 @@ class TestRunGameHeadless:
         game_file = tmp_path / "test_game.py"
         game_file.write_text("import pygame\n")
 
-        with mock.patch("general_ludd.cloud.game_gen.pygame", None):
-            with pytest.raises(ImportError, match="pygame is required"):
-                run_game_headless(game_file)
+        with (
+            mock.patch("general_ludd.cloud.game_gen.pygame", None),
+            pytest.raises(ImportError, match="pygame is required"),
+        ):
+            run_game_headless(game_file)
 
     def test_captures_frames_via_flip(self, tmp_path):
         game_file = tmp_path / "test_game.py"
@@ -372,10 +376,12 @@ class TestRunGameHeadless:
         mock_spec = mock.MagicMock()
         mock_spec.loader = mock_loader
 
-        with mock.patch("general_ludd.cloud.game_gen._require_pygame", return_value=fake_pygame):
-            with mock.patch("importlib.util.spec_from_file_location", return_value=mock_spec):
-                with mock.patch("importlib.util.module_from_spec", return_value=mock.MagicMock()):
-                    frames = run_game_headless(game_file, num_frames=5)
+        with (
+            mock.patch("general_ludd.cloud.game_gen._require_pygame", return_value=fake_pygame),
+            mock.patch("importlib.util.spec_from_file_location", return_value=mock_spec),
+            mock.patch("importlib.util.module_from_spec", return_value=mock.MagicMock()),
+        ):
+            frames = run_game_headless(game_file, num_frames=5)
 
         assert isinstance(frames, list)
 
@@ -509,11 +515,12 @@ class TestRunGameHeadless:
         fake_pygame = mock.MagicMock()
         fake_pygame.display.set_mode.return_value = mock.MagicMock()
 
-        with mock.patch("general_ludd.cloud.game_gen._require_pygame", return_value=fake_pygame):
-            with mock.patch("importlib.util.spec_from_file_location", return_value=None):
-                with pytest.raises(ImportError, match="Cannot load module"):
-                    _ = run_game_headless(bad_path, num_frames=1)
-                    raise AssertionError("should have raised")
+        with (
+            mock.patch("general_ludd.cloud.game_gen._require_pygame", return_value=fake_pygame),
+            mock.patch("importlib.util.spec_from_file_location", return_value=None),
+            pytest.raises(ImportError, match="Cannot load module"),
+        ):
+            _ = run_game_headless(bad_path, num_frames=1)
 
     def test_patches_display_update_and_flip(self, tmp_path):
         game_file = tmp_path / "test_game.py"

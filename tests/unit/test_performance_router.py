@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from general_ludd.models.performance_router import (
     DEFAULT_STRATEGIES,
@@ -68,7 +71,6 @@ class TestModelPerformanceRouter:
         assert router.get_strategy("unknown") == "balanced"
 
     def test_set_invalid_strategy_raises(self) -> None:
-        import pytest
 
         router = ModelPerformanceRouter()
         with pytest.raises(ValueError, match="Unknown strategy"):
@@ -126,3 +128,254 @@ class TestModelPerformanceRouter:
         router = ModelPerformanceRouter()
         router.set_strategy("bug_fix", "cheapest")
         assert router.get_strategy("feature") == "balanced"
+
+
+class TestModelPerformanceRouterDeep:
+    """Repository-interaction paths for select_model and get_rankings."""
+
+    @staticmethod
+    def _mock_repo(**overrides: object) -> object:
+        repo = MagicMock()
+        repo.get_best_model = AsyncMock(return_value=overrides.get("best_model"))
+        repo.get_ranking = AsyncMock(return_value=overrides.get("ranking", []))
+        return repo
+
+    def test_select_model_with_repo_returns_historical_best(self) -> None:
+        repo = self._mock_repo(
+            best_model={
+                "service": "openai",
+                "model_name": "gpt-4o",
+                "composite_score": 0.92,
+            }
+        )
+        router = ModelPerformanceRouter(perf_repo=repo)
+        router.set_strategy("bug_fix", "balanced")
+        result = asyncio.run(router.select_model("bug_fix"))
+        assert result["fallback"] is False
+        assert result["reason"] == "historical_best"
+        assert result["model_name"] == "gpt-4o"
+        assert result["score"] == 0.92
+        assert result["strategy"] == "balanced"
+        repo.get_best_model.assert_awaited_once()
+
+    def test_select_model_cheapest_prefer_cost(self) -> None:
+        repo = self._mock_repo(
+            best_model={
+                "service": "openai",
+                "model_name": "gpt-4o-mini",
+                "composite_score": 0.85,
+            }
+        )
+        router = ModelPerformanceRouter(perf_repo=repo)
+        result = asyncio.run(router.select_model("bug_fix", strategy="cheapest"))
+        assert result["fallback"] is False
+        assert result["model_name"] == "gpt-4o-mini"
+        repo.get_best_model.assert_awaited_once_with("bug_fix", min_calls=3, prefer_cost=True)
+
+    def test_select_model_best_none_falls_to_ranking(self) -> None:
+        repo = self._mock_repo(
+            best_model=None,
+            ranking=[
+                {
+                    "service": "anthropic",
+                    "model_name": "claude-haiku",
+                    "success_rate": 0.95,
+                    "avg_latency_ms": 200.0,
+                    "avg_cost_usd": 0.001,
+                    "sample_count": 50,
+                }
+            ],
+        )
+        router = ModelPerformanceRouter(perf_repo=repo)
+        result = asyncio.run(router.select_model("bug_fix"))
+        assert result["fallback"] is False
+        assert result["reason"] == "strategy_ranked"
+        assert result["model_name"] == "claude-haiku"
+        assert result["service"] == "anthropic"
+
+    def test_select_model_best_none_and_empty_ranking_falls_back(self) -> None:
+        repo = self._mock_repo(best_model=None, ranking=[])
+        router = ModelPerformanceRouter(perf_repo=repo)
+        result = asyncio.run(router.select_model("bug_fix"))
+        assert result["fallback"] is True
+        assert result["reason"] == "no_historical_data"
+
+    def test_select_model_repo_get_best_throws_falls_through(self) -> None:
+        from unittest.mock import AsyncMock
+
+        repo = AsyncMock()
+        repo.get_best_model = AsyncMock(side_effect=RuntimeError("db down"))
+        repo.get_ranking = AsyncMock(
+            return_value=[
+                {
+                    "service": "openai",
+                    "model_name": "gpt-4o",
+                    "success_rate": 0.99,
+                    "avg_latency_ms": 300.0,
+                    "avg_cost_usd": 0.01,
+                    "sample_count": 100,
+                }
+            ]
+        )
+        router = ModelPerformanceRouter(perf_repo=repo)
+        result = asyncio.run(router.select_model("bug_fix"))
+        assert result["fallback"] is False
+        assert result["reason"] == "strategy_ranked"
+
+    def test_select_model_complete_failure_falls_back(self) -> None:
+        from unittest.mock import AsyncMock
+
+        repo = AsyncMock()
+        repo.get_best_model = AsyncMock(side_effect=RuntimeError("boom"))
+        repo.get_ranking = AsyncMock(side_effect=RuntimeError("boom again"))
+        router = ModelPerformanceRouter(perf_repo=repo)
+        result = asyncio.run(router.select_model("bug_fix"))
+        assert result["fallback"] is True
+        assert result["reason"] == "no_historical_data"
+
+    def test_select_model_fallback_no_slash(self) -> None:
+        router = ModelPerformanceRouter()
+        result = asyncio.run(router.select_model("bug_fix", fallback="just-model-name"))
+        assert result["service"] == "openai"
+        assert result["model_name"] == "just-model-name"
+
+    def test_get_rankings_with_repo_computes_scores(self) -> None:
+        repo = self._mock_repo(
+            ranking=[
+                {
+                    "service": "openai",
+                    "model_name": "gpt-4o",
+                    "success_rate": 0.98,
+                    "avg_latency_ms": 400.0,
+                    "avg_cost_usd": 0.01,
+                    "sample_count": 200,
+                },
+                {
+                    "service": "openai",
+                    "model_name": "gpt-3.5",
+                    "success_rate": 0.85,
+                    "avg_latency_ms": 150.0,
+                    "avg_cost_usd": 0.001,
+                    "sample_count": 500,
+                },
+            ]
+        )
+        router = ModelPerformanceRouter(perf_repo=repo)
+        router.set_strategy("bug_fix", "balanced")
+        ranked = asyncio.run(router.get_rankings("bug_fix"))
+        assert len(ranked) == 2
+        assert all("score" in r for r in ranked)
+        assert all("strategy" in r for r in ranked)
+        assert ranked[0]["score"] >= ranked[1]["score"]
+
+    def test_get_rankings_quality_strategy_ranks_by_success(self) -> None:
+        repo = self._mock_repo(
+            ranking=[
+                {
+                    "service": "a",
+                    "model_name": "low-success",
+                    "success_rate": 0.60,
+                    "avg_latency_ms": 10.0,
+                    "avg_cost_usd": 0.001,
+                    "sample_count": 10,
+                },
+                {
+                    "service": "b",
+                    "model_name": "high-success",
+                    "success_rate": 1.0,
+                    "avg_latency_ms": 1000.0,
+                    "avg_cost_usd": 1.0,
+                    "sample_count": 10,
+                },
+            ]
+        )
+        router = ModelPerformanceRouter(perf_repo=repo)
+        ranked = asyncio.run(router.get_rankings("bug_fix", strategy="quality"))
+        assert ranked[0]["model_name"] == "high-success"
+        assert ranked[0]["strategy"] == "quality"
+
+    def test_get_rankings_cheapest_strategy_ranks_by_cost(self) -> None:
+        repo = self._mock_repo(
+            ranking=[
+                {
+                    "service": "a",
+                    "model_name": "expensive",
+                    "success_rate": 1.0,
+                    "avg_latency_ms": 10.0,
+                    "avg_cost_usd": 1.0,
+                    "sample_count": 10,
+                },
+                {
+                    "service": "b",
+                    "model_name": "cheap",
+                    "success_rate": 0.01,
+                    "avg_latency_ms": 1000.0,
+                    "avg_cost_usd": 0.0,
+                    "sample_count": 10,
+                },
+            ]
+        )
+        router = ModelPerformanceRouter(perf_repo=repo)
+        ranked = asyncio.run(router.get_rankings("bug_fix", strategy="cheapest"))
+        assert ranked[0]["model_name"] == "cheap"
+        assert ranked[0]["strategy"] == "cheapest"
+
+    def test_get_rankings_fastest_strategy_ranks_by_latency(self) -> None:
+        repo = self._mock_repo(
+            ranking=[
+                {
+                    "service": "a",
+                    "model_name": "slow",
+                    "success_rate": 1.0,
+                    "avg_latency_ms": 5000.0,
+                    "avg_cost_usd": 0.0,
+                    "sample_count": 10,
+                },
+                {
+                    "service": "b",
+                    "model_name": "fast",
+                    "success_rate": 0.01,
+                    "avg_latency_ms": 1.0,
+                    "avg_cost_usd": 1.0,
+                    "sample_count": 10,
+                },
+            ]
+        )
+        router = ModelPerformanceRouter(perf_repo=repo)
+        ranked = asyncio.run(router.get_rankings("bug_fix", strategy="fastest"))
+        assert ranked[0]["model_name"] == "fast"
+        assert ranked[0]["strategy"] == "fastest"
+
+    def test_get_rankings_repo_throws_returns_empty(self) -> None:
+        from unittest.mock import AsyncMock
+
+        repo = AsyncMock()
+        repo.get_ranking = AsyncMock(side_effect=RuntimeError("db down"))
+        router = ModelPerformanceRouter(perf_repo=repo)
+        ranked = asyncio.run(router.get_rankings("bug_fix"))
+        assert ranked == []
+
+    def test_get_rankings_repo_returns_empty(self) -> None:
+        repo = self._mock_repo(ranking=[])
+        router = ModelPerformanceRouter(perf_repo=repo)
+        ranked = asyncio.run(router.get_rankings("bug_fix"))
+        assert ranked == []
+
+    def test_get_rankings_with_strategy_from_registry(self) -> None:
+        repo = self._mock_repo(
+            ranking=[
+                {
+                    "service": "a",
+                    "model_name": "m",
+                    "success_rate": 1.0,
+                    "avg_latency_ms": 100.0,
+                    "avg_cost_usd": 0.01,
+                    "sample_count": 10,
+                }
+            ]
+        )
+        router = ModelPerformanceRouter(perf_repo=repo)
+        router.set_strategy("bug_fix", "quality")
+        ranked = asyncio.run(router.get_rankings("bug_fix"))
+        assert len(ranked) == 1
+        assert ranked[0]["strategy"] == "quality"

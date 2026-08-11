@@ -8,10 +8,18 @@ import pytest
 
 from general_ludd.cloud.project_types import (
     PROJECT_TYPE_REGISTRY,
+    VALID_PROJECT_TYPES,
+    VALIDATION_RULES,
+    ProjectSpec,
     ProjectType,
+    _check_importable,
+    _validate_rule,
     available_type_ids,
     get_project_type,
     register_project_type,
+    resolve_model_profile,
+    validate_project_against_rules,
+    validate_project_type,
 )
 
 
@@ -175,3 +183,523 @@ class TestRegisterProjectType:
         register_project_type(overwrite)
         assert PROJECT_TYPE_REGISTRY["game"] is overwrite
         PROJECT_TYPE_REGISTRY["game"] = original
+
+
+# ── ProjectSpec ────────────────────────────────────────────────────────────────
+
+
+class TestProjectSpec:
+    def test_default_construction(self):
+        spec = ProjectSpec(project_type="game")
+        assert spec.project_type == "game"
+        assert spec.name == ""
+        assert spec.description == ""
+        assert spec.prompt_template == ""
+
+    def test_role_defaults_from_game_type(self):
+        spec = ProjectSpec(project_type="game")
+        assert len(spec.roles) == 3
+        assert "planner" in [r.value for r in spec.roles]
+
+    def test_role_defaults_from_web_type(self):
+        spec = ProjectSpec(project_type="web")
+        assert len(spec.roles) == 2
+        assert "coder" in [r.value for r in spec.roles]
+
+    def test_role_defaults_from_cli_type(self):
+        spec = ProjectSpec(project_type="cli")
+        assert len(spec.roles) == 2
+
+    def test_role_defaults_from_library_type(self):
+        spec = ProjectSpec(project_type="library")
+        assert len(spec.roles) == 1
+        assert "coder" in [r.value for r in spec.roles]
+
+    def test_role_defaults_for_unknown_type_are_empty(self):
+        spec = ProjectSpec(project_type="nonexistent")
+        assert spec.roles == ()
+
+    def test_explicit_roles_override_defaults(self):
+        custom_roles = (object(),)
+        spec = ProjectSpec(project_type="game", roles=custom_roles)
+        assert spec.roles is custom_roles
+
+    def test_tech_stack_defaults_from_game(self):
+        spec = ProjectSpec(project_type="game")
+        assert spec.tech_stack == ("pygame", "python")
+
+    def test_tech_stack_defaults_from_web(self):
+        spec = ProjectSpec(project_type="web")
+        assert spec.tech_stack == ("html", "css", "javascript")
+
+    def test_explicit_tech_stack_overrides_defaults(self):
+        custom = ("rust", "wasm")
+        spec = ProjectSpec(project_type="game", tech_stack=custom)
+        assert spec.tech_stack == custom
+
+    def test_empty_tuple_triggers_defaults(self):
+        spec = ProjectSpec(project_type="game", tech_stack=())
+        assert spec.tech_stack == ("pygame", "python")
+
+    def test_non_empty_tech_stack_stays(self):
+        spec = ProjectSpec(project_type="game", tech_stack=("rust",))
+        assert spec.tech_stack == ("rust",)
+
+    def test_all_fields_explicit(self):
+        from general_ludd.schemas.benchmark import TaskRole
+
+        spec = ProjectSpec(
+            project_type="custom",
+            name="My Project",
+            description="A custom project",
+            prompt_template="Build {name}",
+            roles=(TaskRole.CODER, TaskRole.REVIEWER),
+            tech_stack=("python", "fastapi"),
+        )
+        assert spec.name == "My Project"
+        assert spec.description == "A custom project"
+        assert spec.prompt_template == "Build {name}"
+        assert spec.roles == (TaskRole.CODER, TaskRole.REVIEWER)
+        assert spec.tech_stack == ("python", "fastapi")
+
+    def test_equality_same_fields(self):
+        a = ProjectSpec(project_type="game")
+        b = ProjectSpec(project_type="game")
+        assert a == b
+
+    def test_equality_different_type(self):
+        a = ProjectSpec(project_type="game")
+        b = ProjectSpec(project_type="web")
+        assert a != b
+
+    def test_equality_different_name(self):
+        a = ProjectSpec(project_type="game", name="A")
+        b = ProjectSpec(project_type="game", name="B")
+        assert a != b
+
+
+# ── ValidateProjectAgainstRules ────────────────────────────────────────────────
+
+
+class TestValidateProjectAgainstRules:
+    def test_empty_rules_passes(self):
+        pt = ProjectType(
+            type_id="test",
+            display_name="Test",
+            default_entry_point="test.py",
+            validation_rules=[],
+        )
+        assert validate_project_against_rules("x = 1", pt) is True
+
+    def test_ast_valid_with_valid_code(self):
+        pt = ProjectType(
+            type_id="test",
+            display_name="Test",
+            default_entry_point="test.py",
+            validation_rules=["ast_valid"],
+        )
+        assert validate_project_against_rules("x = 1\ny = 2\n", pt) is True
+
+    def test_ast_valid_with_syntax_error(self):
+        pt = ProjectType(
+            type_id="test",
+            display_name="Test",
+            default_entry_point="test.py",
+            validation_rules=["ast_valid"],
+        )
+        assert validate_project_against_rules("x =", pt) is False
+
+    def test_no_syntax_errors_with_valid_code(self):
+        pt = ProjectType(
+            type_id="test",
+            display_name="Test",
+            default_entry_point="test.py",
+            validation_rules=["no_syntax_errors"],
+        )
+        assert validate_project_against_rules("def f(): pass\n", pt) is True
+
+    def test_no_syntax_errors_with_invalid_code(self):
+        pt = ProjectType(
+            type_id="test",
+            display_name="Test",
+            default_entry_point="test.py",
+            validation_rules=["no_syntax_errors"],
+        )
+        assert validate_project_against_rules("def f(", pt) is False
+
+    def test_has_entry_point_non_empty(self):
+        pt = ProjectType(
+            type_id="test",
+            display_name="Test",
+            default_entry_point="test.py",
+            validation_rules=["has_entry_point"],
+        )
+        assert validate_project_against_rules("print('hello')", pt) is True
+
+    def test_has_entry_point_empty(self):
+        pt = ProjectType(
+            type_id="test",
+            display_name="Test",
+            default_entry_point="test.py",
+            validation_rules=["has_entry_point"],
+        )
+        assert validate_project_against_rules("", pt) is False
+
+    def test_has_entry_point_whitespace_only(self):
+        pt = ProjectType(
+            type_id="test",
+            display_name="Test",
+            default_entry_point="test.py",
+            validation_rules=["has_entry_point"],
+        )
+        assert validate_project_against_rules("   \n  ", pt) is False
+
+    def test_importable_with_valid_module(self):
+        pt = ProjectType(
+            type_id="test",
+            display_name="Test",
+            default_entry_point="test.py",
+            validation_rules=["importable"],
+        )
+        assert validate_project_against_rules("def hello(): return 'world'\n", pt) is True
+
+    def test_importable_with_invalid_module(self):
+        pt = ProjectType(
+            type_id="test",
+            display_name="Test",
+            default_entry_point="test.py",
+            validation_rules=["importable"],
+        )
+        assert validate_project_against_rules("raise RuntimeError('boom')\n", pt) is False
+
+    def test_unknown_rule_name_passes(self):
+        pt = ProjectType(
+            type_id="test",
+            display_name="Test",
+            default_entry_point="test.py",
+            validation_rules=["some_future_rule"],
+        )
+        assert validate_project_against_rules("anything", pt) is True
+
+    def test_mixed_rules_all_pass(self):
+        pt = ProjectType(
+            type_id="test",
+            display_name="Test",
+            default_entry_point="test.py",
+            validation_rules=["ast_valid", "has_entry_point", "no_syntax_errors"],
+        )
+        assert validate_project_against_rules("x = 42\n", pt) is True
+
+    def test_mixed_rules_one_fails(self):
+        pt = ProjectType(
+            type_id="test",
+            display_name="Test",
+            default_entry_point="test.py",
+            validation_rules=["ast_valid", "has_entry_point", "no_syntax_errors"],
+        )
+        assert validate_project_against_rules("", pt) is False
+
+    def test_all_registered_types_have_good_code(self):
+        """Every registered type's prompt_template_coder is not code to validate,
+        but the validation rules should produce valid/invalid results deterministically."""
+        for _type_id, pt in PROJECT_TYPE_REGISTRY.items():
+            assert isinstance(pt.validation_rules, list)
+            has_valid = validate_project_against_rules("x = 1", pt)
+            has_invalid = validate_project_against_rules("", pt)
+            assert isinstance(has_valid, bool)
+            assert isinstance(has_invalid, bool)
+
+
+# ── _validate_rule ─────────────────────────────────────────────────────────────
+
+
+class TestValidateRule:
+    def test_ast_valid_true(self):
+        pt = ProjectType(type_id="t", display_name="T", default_entry_point="t.py")
+        assert _validate_rule("x = 1", "ast_valid", pt) is True
+
+    def test_ast_valid_false(self):
+        pt = ProjectType(type_id="t", display_name="T", default_entry_point="t.py")
+        assert _validate_rule("x =", "ast_valid", pt) is False
+
+    def test_no_syntax_errors_true(self):
+        pt = ProjectType(type_id="t", display_name="T", default_entry_point="t.py")
+        assert _validate_rule("pass", "no_syntax_errors", pt) is True
+
+    def test_no_syntax_errors_false(self):
+        pt = ProjectType(type_id="t", display_name="T", default_entry_point="t.py")
+        assert _validate_rule("break", "no_syntax_errors", pt) is False
+
+    def test_has_entry_point_true(self):
+        pt = ProjectType(type_id="t", display_name="T", default_entry_point="t.py")
+        assert _validate_rule("x", "has_entry_point", pt) is True
+
+    def test_has_entry_point_false(self):
+        pt = ProjectType(type_id="t", display_name="T", default_entry_point="t.py")
+        assert _validate_rule("", "has_entry_point", pt) is False
+
+    def test_unknown_rule_true(self):
+        pt = ProjectType(type_id="t", display_name="T", default_entry_point="t.py")
+        assert _validate_rule("anything", "nonexistent_rule", pt) is True
+
+
+# ── _check_importable ──────────────────────────────────────────────────────────
+
+
+class TestCheckImportable:
+    def test_valid_code_returns_true(self):
+        assert _check_importable("def f(): return 42\n") is True
+
+    def test_syntax_error_returns_false(self):
+        assert _check_importable("def f(:") is False
+
+    def test_import_error_returns_false(self):
+        assert _check_importable("import nonexistent_module_xyz_12345\n") is False
+
+    def test_empty_code_returns_true(self):
+        assert _check_importable("") is True
+
+
+# ── resolve_model_profile ─────────────────────────────────────────────────────
+
+
+class TestResolveModelProfile:
+    def test_game_profile(self):
+        profile = resolve_model_profile("game")
+        assert profile == {"planner": "reasoning", "coder": "coding", "reviewer": "reasoning"}
+
+    def test_web_profile(self):
+        profile = resolve_model_profile("web")
+        assert profile == {"planner": "reasoning", "coder": "coding"}
+
+    def test_cli_profile(self):
+        profile = resolve_model_profile("cli")
+        assert profile == {"planner": "reasoning", "coder": "coding", "reviewer": "reasoning"}
+
+    def test_library_profile(self):
+        profile = resolve_model_profile("library")
+        assert profile == {"coder": "coding"}
+
+    def test_unknown_type_returns_empty(self):
+        profile = resolve_model_profile("nonexistent")
+        assert profile == {}
+
+
+# ── validate_project_type ──────────────────────────────────────────────────────
+
+
+class TestValidateProjectType:
+    def test_valid_type_does_not_raise(self):
+        validate_project_type("game")
+
+    def test_valid_cli_type(self):
+        validate_project_type("cli")
+
+    def test_valid_web_type(self):
+        validate_project_type("web")
+
+    def test_valid_library_type(self):
+        validate_project_type("library")
+
+    def test_invalid_type_raises(self):
+        with pytest.raises(ValueError, match="Unknown project type"):
+            validate_project_type("nonexistent")
+
+    def test_none_raises(self):
+        with pytest.raises(ValueError, match="Unknown project type"):
+            validate_project_type(None)
+
+    def test_empty_string_raises(self):
+        with pytest.raises(ValueError, match="Unknown project type"):
+            validate_project_type("")
+
+    def test_case_sensitive(self):
+        with pytest.raises(ValueError, match="Unknown project type"):
+            validate_project_type("Game")
+
+
+# ── VALID_PROJECT_TYPES ────────────────────────────────────────────────────────
+
+
+class TestValidProjectTypes:
+    def test_is_tuple(self):
+        assert isinstance(VALID_PROJECT_TYPES, tuple)
+
+    def test_contains_expected_types(self):
+        assert "game" in VALID_PROJECT_TYPES
+        assert "web" in VALID_PROJECT_TYPES
+        assert "cli" in VALID_PROJECT_TYPES
+        assert "library" in VALID_PROJECT_TYPES
+
+    def test_all_members_are_strings(self):
+        for v in VALID_PROJECT_TYPES:
+            assert isinstance(v, str)
+
+
+# ── VALIDATION_RULES ───────────────────────────────────────────────────────────
+
+
+class TestValidationRules:
+    def test_is_dict(self):
+        assert isinstance(VALIDATION_RULES, dict)
+
+    def test_game_has_required_imports(self):
+        assert "required_imports" in VALIDATION_RULES["game"]
+        assert "pygame" in VALIDATION_RULES["game"]["required_imports"]
+
+    def test_web_has_required_elements(self):
+        assert "required_elements" in VALIDATION_RULES["web"]
+        assert "html" in VALIDATION_RULES["web"]["required_elements"]
+
+    def test_cli_has_exit_codes(self):
+        assert "exit_codes" in VALIDATION_RULES["cli"]
+        assert VALIDATION_RULES["cli"]["exit_codes"] == [0, 1, 2]
+
+    def test_library_requires_public_api(self):
+        assert VALIDATION_RULES["library"]["require_public_api"] is True
+
+
+# ── ProjectType validate callable field ────────────────────────────────────────
+
+
+class TestProjectTypeValidateCallable:
+    def test_can_attach_callable(self):
+        pt = ProjectType(
+            type_id="validated",
+            display_name="Validated",
+            default_entry_point="v.py",
+            validate=lambda code: "error" not in code,
+        )
+        assert pt.validate is not None
+        assert callable(pt.validate)
+
+    def test_validate_defaults_to_none(self):
+        pt = ProjectType(type_id="x", display_name="X", default_entry_point="x.py")
+        assert pt.validate is None
+
+    def test_custom_validate_applied(self):
+        pt = ProjectType(
+            type_id="custom_validator",
+            display_name="CV",
+            default_entry_point="cv.py",
+            validate=lambda code: len(code) > 0,
+        )
+        assert pt.validate("hello") is True
+        assert pt.validate("") is False
+
+    def test_validate_can_raise(self):
+        def strict_validate(code):
+            if not code.strip():
+                raise ValueError("empty")
+            return True
+
+        pt = ProjectType(
+            type_id="strict",
+            display_name="Strict",
+            default_entry_point="s.py",
+            validate=strict_validate,
+        )
+        assert pt.validate("ok") is True
+        with pytest.raises(ValueError, match="empty"):
+            pt.validate("   ")
+
+
+# ── _BASE_DEFINITIONS integrity ────────────────────────────────────────────────
+
+
+class TestBaseDefinitionsIntegrity:
+    def test_game_definition_completeness(self):
+        from general_ludd.cloud.project_types import _BASE_DEFINITIONS
+
+        game = _BASE_DEFINITIONS["game"]
+        required = [
+            "type_id",
+            "display_name",
+            "description",
+            "output_extension",
+            "required_imports",
+            "default_entry_point",
+            "output_structure",
+            "validation_rules",
+            "prompt_template_planner",
+            "prompt_template_coder",
+            "acceptance_criteria",
+            "suggested_model_roles",
+            "token_budget_estimate",
+        ]
+        for key in required:
+            assert key in game, f"Missing key {key} in game definition"
+
+    def test_game_prompt_contains_pygame(self):
+        from general_ludd.cloud.project_types import _BASE_DEFINITIONS
+
+        coder = _BASE_DEFINITIONS["game"]["prompt_template_coder"]
+        assert "pygame" in coder.lower()
+        assert "game.py" in coder
+
+    def test_website_definition_has_three_output_files(self):
+        from general_ludd.cloud.project_types import _BASE_DEFINITIONS
+
+        website = _BASE_DEFINITIONS["website"]
+        assert len(website["output_structure"]) == 3
+        assert "index.html" in website["output_structure"]
+        assert "style.css" in website["output_structure"]
+        assert "script.js" in website["output_structure"]
+
+    def test_kernel_module_has_makefile(self):
+        from general_ludd.cloud.project_types import _BASE_DEFINITIONS
+
+        km = _BASE_DEFINITIONS["kernel_module"]
+        assert "Makefile" in km["output_structure"]
+        assert "obj-m" in km["prompt_template_coder"]
+
+    def test_desktop_app_uses_tkinter(self):
+        from general_ludd.cloud.project_types import _BASE_DEFINITIONS
+
+        da = _BASE_DEFINITIONS["desktop_app"]
+        assert "tkinter" in da["prompt_template_coder"].lower()
+
+    def test_data_pipeline_has_pandas(self):
+        from general_ludd.cloud.project_types import _BASE_DEFINITIONS
+
+        dp = _BASE_DEFINITIONS["data_pipeline"]
+        assert dp["required_imports"] == ["pandas"]
+        rules = dp["validation_rules"]
+        assert any("extract" in r for r in rules)
+        assert any("transform" in r for r in rules)
+        assert any("load" in r for r in rules)
+
+    def test_api_server_has_health_check(self):
+        from general_ludd.cloud.project_types import _BASE_DEFINITIONS
+
+        api = _BASE_DEFINITIONS["api_server"]
+        assert "health" in api["prompt_template_coder"].lower()
+        assert "cors" in api["prompt_template_coder"].lower()
+
+    def test_word_processor_has_file_io(self):
+        from general_ludd.cloud.project_types import _BASE_DEFINITIONS
+
+        wp = _BASE_DEFINITIONS["word_processor"]
+        assert "has_file_io" in wp["validation_rules"]
+
+    def test_scraper_has_requirements_txt(self):
+        from general_ludd.cloud.project_types import _BASE_DEFINITIONS
+
+        sc = _BASE_DEFINITIONS["scraper"]
+        assert "requirements.txt" in sc["output_structure"]
+        assert "beautifulsoup4" in sc["required_imports"]
+
+    def test_chatbot_has_exit_command(self):
+        from general_ludd.cloud.project_types import _BASE_DEFINITIONS
+
+        cb = _BASE_DEFINITIONS["chatbot"]
+        assert "has_exit_command" in cb["validation_rules"]
+        assert "/exit" in cb["prompt_template_coder"]
+
+    def test_test_suite_uses_pytest(self):
+        from general_ludd.cloud.project_types import _BASE_DEFINITIONS
+
+        ts = _BASE_DEFINITIONS["test_suite"]
+        assert "test_main.py" in ts["default_entry_point"]
+        assert "conftest.py" in ts["output_structure"]
+        assert "pytest" in ts["prompt_template_coder"].lower()

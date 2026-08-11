@@ -2609,3 +2609,232 @@ class TestTDigestDeepInternals:
         td = TDigest(compression=100.0)
         td.add(0.0)
         assert td.cdf(50.0) == 1.0
+
+
+# ============================================================================
+# LSH — Deep Internals
+# ============================================================================
+
+
+class TestLSHDeepInternals:
+    def test_items_dict_after_insert(self) -> None:
+        lsh = LSH(num_perm=128)
+        mh = MinHash(num_perm=128)
+        mh.update("data")
+        lsh.insert("key1", mh)
+        assert "key1" in lsh._items
+        assert lsh._items["key1"] is mh
+
+    def test_items_dict_after_remove(self) -> None:
+        lsh = LSH(num_perm=128)
+        mh = MinHash(num_perm=128)
+        mh.update("x")
+        lsh.insert("k", mh)
+        lsh.remove("k")
+        assert "k" not in lsh._items
+
+    def test_buckets_populated_after_insert(self) -> None:
+        lsh = LSH(num_perm=128, bands=8)
+        mh = MinHash(num_perm=128)
+        mh.update("hello")
+        lsh.insert("item_a", mh)
+        assert len(lsh._buckets) >= 1
+        for bucket_entries in lsh._buckets.values():
+            assert any(k == "item_a" for k, _ in bucket_entries)
+
+    def test_buckets_cleaned_on_remove(self) -> None:
+        lsh = LSH(num_perm=128, bands=4)
+        mh = MinHash(num_perm=128)
+        mh.update("solo")
+        lsh.insert("solo_key", mh)
+        lsh.remove("solo_key")
+        assert len(lsh._buckets) == 0
+
+    def test_bucket_key_determinism(self) -> None:
+        lsh = LSH(num_perm=128, bands=8)
+        mh_a = MinHash(num_perm=128)
+        mh_b = MinHash(num_perm=128)
+        mh_a.update("x")
+        mh_b.update("x")
+        lsh.insert("a", mh_a)
+        original_keys = set(lsh._buckets.keys())
+        lsh.insert("b", mh_b)
+        new_keys = set(lsh._buckets.keys())
+        assert original_keys == new_keys
+
+    def test_insert_duplicate_key_overwrites(self) -> None:
+        lsh = LSH(num_perm=128)
+        mh1 = MinHash(num_perm=128)
+        mh2 = MinHash(num_perm=128)
+        mh1.update("old")
+        mh2.update("new")
+        lsh.insert("dup", mh1)
+        lsh.insert("dup", mh2)
+        assert lsh._items["dup"] is mh2
+
+    def test_query_empty_lsh(self) -> None:
+        lsh = LSH(num_perm=128)
+        mh = MinHash(num_perm=128)
+        mh.update("nothing")
+        assert lsh.query(mh) == []
+
+    def test_query_returns_sorted_unique(self) -> None:
+        lsh = LSH(num_perm=128, bands=8)
+        mh = MinHash(num_perm=128)
+        mh.update("shared")
+        lsh.insert("zeta", mh)
+        lsh.insert("alpha", mh)
+        lsh.insert("gamma", mh)
+        result = lsh.query(mh)
+        assert result == sorted(set(result))
+        assert len(result) == 3
+
+    def test_multiple_items_same_bucket(self) -> None:
+        lsh = LSH(num_perm=128, bands=16)
+        mh = MinHash(num_perm=128)
+        mh.update("common")
+        for i in range(5):
+            lsh.insert(f"bucket_{i}", mh)
+        candidates = lsh.query(mh)
+        assert len(candidates) == 5
+
+    def test_bands_one(self) -> None:
+        lsh = LSH(num_perm=128, bands=1)
+        mh = MinHash(num_perm=128)
+        mh.update("single_band")
+        lsh.insert("sb", mh)
+        assert lsh.bands == 1
+        assert lsh.rows == 128
+        assert lsh.query(mh) == ["sb"]
+
+    def test_bands_equals_num_perm(self) -> None:
+        lsh = LSH(num_perm=64, bands=64)
+        mh = MinHash(num_perm=64)
+        mh.update("thin")
+        lsh.insert("t", mh)
+        assert lsh.rows == 1
+        candidates = lsh.query(mh)
+        assert "t" in candidates
+
+    def test_item_count_tracks_inserts_and_removes(self) -> None:
+        lsh = LSH(num_perm=128)
+        mh = MinHash(num_perm=128)
+        mh.update("count")
+        assert lsh.item_count == 0
+        lsh.insert("c1", mh)
+        assert lsh.item_count == 1
+        lsh.insert("c2", mh)
+        assert lsh.item_count == 2
+        lsh.remove("c1")
+        assert lsh.item_count == 1
+
+    def test_remove_cleans_only_target_key(self) -> None:
+        lsh = LSH(num_perm=128, bands=8)
+        mh_a = MinHash(num_perm=128)
+        mh_b = MinHash(num_perm=128)
+        mh_a.update("target")
+        mh_b.update("target")
+        lsh.insert("keep", mh_a)
+        lsh.insert("drop", mh_b)
+        lsh.remove("drop")
+        assert "keep" in lsh._items
+        assert "drop" not in lsh._items
+        assert "keep" in lsh.query(mh_a)
+
+    def test_properties_consistent_after_operations(self) -> None:
+        lsh = LSH(num_perm=128, bands=16)
+        assert lsh.num_perm == 128
+        assert lsh.bands == 16
+        assert lsh.rows == 8
+        mh = MinHash(num_perm=128)
+        mh.update("prop")
+        lsh.insert("p", mh)
+        assert lsh.num_perm == 128
+        assert lsh.bands == 16
+        assert lsh.rows == 8
+        lsh.remove("p")
+        assert lsh.num_perm == 128
+
+    def test_similarity_threshold_at_various_bands(self) -> None:
+        for bands in (1, 2, 4, 8, 16, 32):
+            num_perm = bands * 8
+            lsh = LSH(num_perm=num_perm, bands=bands)
+            t = lsh.similarity_threshold()
+            expected = (1.0 / bands) ** (1.0 / lsh.rows)
+            assert t == pytest.approx(expected)
+            assert 0.0 < t <= 1.0
+
+    def test_query_after_remove_empty_index(self) -> None:
+        lsh = LSH(num_perm=128)
+        mh = MinHash(num_perm=128)
+        mh.update("gone")
+        lsh.insert("transient", mh)
+        lsh.remove("transient")
+        assert lsh.query(mh) == []
+        assert lsh.item_count == 0
+
+    def test_remove_middle_of_three(self) -> None:
+        lsh = LSH(num_perm=128, bands=8)
+        mh = MinHash(num_perm=128)
+        mh.update("mid")
+        lsh.insert("a", mh)
+        lsh.insert("b", mh)
+        lsh.insert("c", mh)
+        lsh.remove("b")
+        assert lsh.item_count == 2
+        result = lsh.query(mh)
+        assert result == ["a", "c"]
+
+    def test_bucket_entries_per_band(self) -> None:
+        lsh = LSH(num_perm=128, bands=16)
+        mh = MinHash(num_perm=128)
+        mh.update("per_band")
+        lsh.insert("pb", mh)
+        bands_with_entry = set()
+        for bucket_entries in lsh._buckets.values():
+            for _, band in bucket_entries:
+                bands_with_entry.add(band)
+        assert len(bands_with_entry) == 16
+
+    def test_long_key_handling(self) -> None:
+        lsh = LSH(num_perm=128)
+        mh = MinHash(num_perm=128)
+        mh.update("x")
+        long_key = "k" * 1024
+        lsh.insert(long_key, mh)
+        assert lsh.item_count == 1
+        assert long_key in lsh.query(mh)
+
+    def test_insert_same_minhash_many_keys(self) -> None:
+        lsh = LSH(num_perm=128, bands=8)
+        mh = MinHash(num_perm=128)
+        mh.update("fixed")
+        for i in range(20):
+            lsh.insert(f"k{i}", mh)
+        assert lsh.item_count == 20
+        result = lsh.query(mh)
+        assert len(result) == 20
+
+    def test_bucket_keys_are_positive(self) -> None:
+        lsh = LSH(num_perm=128)
+        mh = MinHash(num_perm=128)
+        mh.update("pos")
+        lsh.insert("pos_key", mh)
+        for bucket_key in lsh._buckets:
+            assert bucket_key >= 0
+
+    def test_query_after_three_way_merge(self) -> None:
+        lsh = LSH(num_perm=256)
+        mh_a = MinHash(num_perm=256)
+        mh_b = MinHash(num_perm=256)
+        mh_c = MinHash(num_perm=256)
+        mh_a.add_many(range(100))
+        mh_b.add_many(range(50, 150))
+        mh_c.add_many(range(100, 200))
+        lsh.insert("A", mh_a)
+        lsh.insert("B", mh_b)
+        lsh.insert("C", mh_c)
+        q = MinHash(num_perm=256)
+        q.add_many(range(80, 120))
+        candidates = lsh.query(q)
+        assert len(candidates) >= 1

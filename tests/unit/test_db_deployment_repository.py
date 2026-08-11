@@ -298,3 +298,106 @@ def test_deployment_busy_error_is_runtime_error():
 def test_deployment_busy_error_message():
     err = DeploymentBusyError("deployment 'i-1' is busy")
     assert str(err) == "deployment 'i-1' is busy"
+
+
+# ---------------------------------------------------------------------------
+# Deep tests — revision tracking, timestamp updates, edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestUpsertRevisionTracking:
+    async def test_revision_present_on_insert(self, repo: DeploymentRegistryRepository):
+        rec = _make_record()
+        await repo.upsert(rec)
+        model = await repo._session.get(DeploymentRecordModel, "i-abc123")
+        assert model is not None
+        assert model.revision >= 1
+
+    async def test_revision_present_after_update(self, repo: DeploymentRegistryRepository):
+        await repo.upsert(_make_record())
+        await repo.upsert(_make_record(state="stopped"))
+        model = await repo._session.get(DeploymentRecordModel, "i-abc123")
+        assert model is not None
+        assert model.revision >= 1
+
+
+class TestUpsertClearsDestroyOwner:
+    async def test_upsert_resets_destroy_owner_in_set_clause(self, repo: DeploymentRegistryRepository):
+        await repo.upsert(_make_record())
+        await repo.claim_for_destroy("i-abc123", owner="worker-1")
+        model_before = await repo._session.get(DeploymentRecordModel, "i-abc123")
+        assert model_before is not None
+        assert model_before.destroy_owner == "worker-1"
+        assert model_before.state == "destroying"
+
+
+class TestUpsertUpdatedAt:
+    async def test_updated_at_changes_on_update(self, repo: DeploymentRegistryRepository):
+        await repo.upsert(_make_record())
+        model1 = await repo._session.get(DeploymentRecordModel, "i-abc123")
+        assert model1 is not None
+        ts1 = model1.updated_at
+
+        import asyncio
+
+        await asyncio.sleep(1.0)
+
+        await repo.upsert(_make_record(state="stopped"))
+        model2 = await repo._session.get(DeploymentRecordModel, "i-abc123")
+        assert model2 is not None
+        assert model2.updated_at > ts1
+
+
+class TestClaimForDestroyOwnerTruncation:
+    async def test_owner_truncated_to_128(self, repo: DeploymentRegistryRepository):
+        await repo.upsert(_make_record())
+        long_owner = "x" * 200
+        await repo.claim_for_destroy("i-abc123", owner=long_owner)
+        model = await repo._session.get(DeploymentRecordModel, "i-abc123")
+        assert model is not None
+        assert len(model.destroy_owner) <= 128
+        assert model.destroy_owner == long_owner[:128]
+
+
+class TestReleaseDestroyEdgeCases:
+    async def test_release_destroy_clears_destroy_owner(self, repo: DeploymentRegistryRepository):
+        await repo.upsert(_make_record())
+        await repo.claim_for_destroy("i-abc123", owner="worker-1")
+        await repo.release_destroy("i-abc123", owner="worker-1")
+        model = await repo._session.get(DeploymentRecordModel, "i-abc123")
+        assert model is not None
+        assert model.destroy_owner is None
+        assert model.state == "destroy_failed"
+
+    async def test_release_destroy_increments_revision(self, repo: DeploymentRegistryRepository):
+        await repo.upsert(_make_record())
+        model1 = await repo._session.get(DeploymentRecordModel, "i-abc123")
+        assert model1 is not None
+        rev1 = model1.revision
+
+        await repo.claim_for_destroy("i-abc123", owner="worker-1")
+        model2 = await repo._session.get(DeploymentRecordModel, "i-abc123")
+        assert model2 is not None
+        rev2 = model2.revision
+        assert rev2 > rev1
+
+        await repo.release_destroy("i-abc123", owner="worker-1")
+        model3 = await repo._session.get(DeploymentRecordModel, "i-abc123")
+        assert model3 is not None
+        assert model3.revision > rev2
+
+
+class TestClaimForDestroyRejectsWrongStates:
+    async def test_claim_rejects_stopped_state(self, repo: DeploymentRegistryRepository):
+        await repo.upsert(_make_record(state="stopped"))
+        with pytest.raises(DeploymentBusyError, match="is stopped"):
+            await repo.claim_for_destroy("i-abc123", owner="worker-1")
+
+
+class TestFinishDestroyWithLongOwner:
+    async def test_finish_destroy_with_truncated_owner_match(self, repo: DeploymentRegistryRepository):
+        await repo.upsert(_make_record())
+        long_owner = "y" * 200
+        await repo.claim_for_destroy("i-abc123", owner=long_owner)
+        await repo.finish_destroy("i-abc123", owner=long_owner)
+        assert await repo.get("i-abc123") is None

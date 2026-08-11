@@ -320,3 +320,98 @@ class TestGenerateNsgRulesDeep:
         import json
 
         json.dumps(generate_nsg_rules())
+
+
+# ---------------------------------------------------------------------------
+# Additional deep tests: design_vnet ipaddress edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestDesignVnetAddressSpaceEdges:
+    def test_slash_18_yields_64_subnets(self):
+        design = design_vnet("a18", "10.0.0.0/18", num_subnets=100)
+        assert len(design.subnets) == 64
+
+    def test_slash_17_yields_128_subnets(self):
+        design = design_vnet("a17", "10.0.0.0/17", num_subnets=128)
+        assert len(design.subnets) == 128
+
+    def test_slash_22_yields_four_subnets(self):
+        design = design_vnet("a22", "10.0.0.0/22", num_subnets=10)
+        assert len(design.subnets) == 4
+
+    def test_slash_23_yields_two_subnets(self):
+        design = design_vnet("a23", "10.0.0.0/23", num_subnets=10)
+        assert len(design.subnets) == 2
+
+    def test_slash_24_yields_only_self(self):
+        design = design_vnet("a24", "10.0.0.0/24", num_subnets=10)
+        assert len(design.subnets) == 1
+        assert design.subnets[0]["cidr"] == "10.0.0.0/24"
+
+    def test_fresh_iterator_per_call(self):
+        a = design_vnet("first", "10.0.0.0/16", num_subnets=3)
+        b = design_vnet("second", "10.0.0.0/16", num_subnets=3)
+        assert a.subnets[0]["cidr"] == b.subnets[0]["cidr"]
+        assert a.subnets[1]["cidr"] == b.subnets[1]["cidr"]
+
+    def test_nsg_rules_always_same_reference_per_call(self):
+        a = design_vnet("a")
+        b = design_vnet("b")
+        assert a.nsg_rules == b.nsg_rules
+
+    def test_subnet_count_zero_still_produces_nsg_rules(self):
+        design = design_vnet("empty", num_subnets=0)
+        assert design.subnets == []
+        assert len(design.nsg_rules) >= 1
+
+    def test_num_subnets_clamped_at_available_count(self):
+        design = design_vnet("tight", "10.0.0.0/20", num_subnets=2000)
+        assert len(design.subnets) == 16
+
+    def test_subnet_purpose_corresponds_to_default_index(self):
+        defaults = nd._SUBNET_DEFAULTS
+        design = design_vnet("purpose-test", num_subnets=len(defaults))
+        for idx, s in enumerate(design.subnets):
+            assert s["purpose"] == defaults[idx][1]
+
+    def test_subnet_prefix_constant_is_24(self):
+        assert nd._SUBNET_PREFIX == 24
+
+    def test_defaults_tuple_has_six_entries(self):
+        assert len(nd._SUBNET_DEFAULTS) == 6
+
+
+# ---------------------------------------------------------------------------
+# Additional deep tests: generate_nsg_rules protocol/source invariants
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateNsgRulesProtocolEdges:
+    def test_internet_source_rules_are_inbound(self):
+        for rule in generate_nsg_rules():
+            if rule.get("source") == "Internet":
+                assert rule["direction"] == "Inbound", rule["name"]
+
+    def test_wildcard_source_rules_are_either_direction(self):
+        for rule in generate_nsg_rules():
+            if rule.get("source") == "*":
+                assert rule["direction"] in ("Inbound", "Outbound")
+
+    def test_no_rule_has_missing_access_key(self):
+        for rule in generate_nsg_rules():
+            assert "access" in rule
+
+    def test_allow_rules_use_tcp_protocol(self):
+        for rule in generate_nsg_rules():
+            if rule["access"] == "Allow":
+                assert rule["protocol"] in ("Tcp", "*"), (
+                    f"Allow rule '{rule['name']}' must use Tcp or *, got {rule['protocol']}"
+                )
+
+    def test_inbound_rules_have_outbound_counterpart_or_are_alone(self):
+        rules = generate_nsg_rules()
+        inbound = [r for r in rules if r["direction"] == "Inbound"]
+        outbound = [r for r in rules if r["direction"] == "Outbound"]
+        assert len(inbound) >= 1
+        assert len(inbound) + len(outbound) == len(rules)
