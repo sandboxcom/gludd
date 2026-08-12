@@ -1022,8 +1022,9 @@ class BenchmarkRepository:
         task_type: str | None = None,
         project_id: str | None = None,
         task_role: str | None = None,
+        skill_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Aggregate benchmark scores grouped by prompt/model/task (+ project + role).
+        """Aggregate scores by prompt/model/task, project, role, and skill.
 
         ``project_id`` is the project-hierarchy phase-3 axis: when None (the
         default and every legacy caller's behaviour) the scores are GLOBAL —
@@ -1038,6 +1039,10 @@ class BenchmarkRepository:
         reviewer, editor, compactor, enumerator), enabling per-role quality
         comparisons. When provided, results are filtered to that role.
         ``task_role`` is included as a group-by key and returned in every row.
+
+        ``skill_id`` is an optional filter and an unconditional group key. NULL
+        therefore keeps legacy results distinct from skill-attributed results,
+        while callers can request a single skill's model usefulness history.
         """
 
         async def _do(session: AsyncSession) -> list[dict[str, Any]]:
@@ -1050,6 +1055,7 @@ class BenchmarkRepository:
                     BenchmarkResultModel.task_type,
                     BenchmarkResultModel.project_id,
                     BenchmarkResultModel.task_role,
+                    BenchmarkResultModel.skill_id,
                     func.avg(BenchmarkResultModel.completion_score).label("avg_completion"),
                     func.avg(BenchmarkResultModel.code_quality_score).label("avg_quality"),
                     func.avg(BenchmarkResultModel.instruction_adherence_score).label("avg_instruction"),
@@ -1070,6 +1076,7 @@ class BenchmarkRepository:
                     BenchmarkResultModel.task_type,
                     BenchmarkResultModel.project_id,
                     BenchmarkResultModel.task_role,
+                    BenchmarkResultModel.skill_id,
                 )
             )
             if task_type is not None:
@@ -1078,6 +1085,8 @@ class BenchmarkRepository:
                 stmt = stmt.where(BenchmarkResultModel.project_id == project_id)
             if task_role is not None:
                 stmt = stmt.where(BenchmarkResultModel.task_role == task_role)
+            if skill_id is not None:
+                stmt = stmt.where(BenchmarkResultModel.skill_id == skill_id)
             result = await session.execute(stmt)
             rows = result.all()
             return [
@@ -1087,6 +1096,7 @@ class BenchmarkRepository:
                     "task_type": r.task_type,
                     "project_id": r.project_id,
                     "task_role": r.task_role,
+                    "skill_id": r.skill_id,
                     "avg_completion": r.avg_completion,
                     "avg_quality": r.avg_quality,
                     "avg_instruction": r.avg_instruction,

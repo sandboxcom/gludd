@@ -890,6 +890,9 @@ class BenchmarkResultModel(Base):
     )
     model_profile_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     task_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    # NULL preserves legacy/global benchmark history. A populated value lets
+    # usefulness comparisons distinguish the same model across skill contexts.
+    skill_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     task_description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     completion_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     code_quality_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
@@ -912,6 +915,7 @@ class BenchmarkResultModel(Base):
         # filters and groups on (project_id, task_type) when borrowing is on.
         Index("ix_benchmark_project_task", "project_id", "task_type"),
         Index("ix_benchmark_task_role", "task_role"),
+        Index("ix_benchmark_skill_model", "skill_id", "model_profile_id"),
     )
 
 
