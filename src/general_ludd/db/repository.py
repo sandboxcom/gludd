@@ -179,7 +179,8 @@ def _is_locked_error(exc: OperationalError) -> bool:
     simply affecting zero rows. That is a *lost race*, not a real fault: the
     losing claimer should skip the row, exactly as it would on rowcount == 0.
     """
-    msg = str(getattr(exc, "orig", exc)).lower()
+    original = getattr(exc, "orig", None)
+    msg = str(original if original is not None else exc).lower()
     return "database is locked" in msg or "database table is locked" in msg
 
 
