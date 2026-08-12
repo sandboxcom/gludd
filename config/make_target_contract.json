@@ -370,6 +370,16 @@
       "make_variables": [],
       "environment_variables": ["GLUDD_MIN_DISPATCHES"],
       "behavior": "make check-plugin-liveness GLUDD_MIN_DISPATCHES=10"
+    },
+    {
+      "name": "resolve-development-conflicts",
+      "make_variables": ["MERGE_SOURCE", "APPLY"],
+      "behavior": "make resolve-development-conflicts MERGE_SOURCE=master APPLY=0"
+    },
+    {
+      "name": "git-patch-equivalence",
+      "make_variables": ["PATCH_UPSTREAM", "PATCH_HEAD", "PATCH_LIMIT"],
+      "behavior": "make git-patch-equivalence PATCH_UPSTREAM=development PATCH_HEAD=master PATCH_LIMIT=3"
     }
   ]
 }

@@ -47,3 +47,52 @@ def test_azure_and_runpod_wrappers_use_declared_variables() -> None:
         payload = json.loads(result.stdout.strip().splitlines()[-1])
         assert payload["ok"] is True
         assert payload["mode"] == "dry-run"
+
+
+def test_development_conflict_recovery_is_tracked_and_dry_runnable() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    assert "resolve-development-conflicts:" in makefile
+    assert 'APPLY="$(APPLY)"' in makefile
+    assert 'MERGE_SOURCE="$(MERGE_SOURCE)"' in makefile
+    assert "diff --name-only --diff-filter=U" in makefile
+
+    result = subprocess.run(
+        [
+            "make",
+            "resolve-development-conflicts",
+            "MERGE_SOURCE=master",
+            "APPLY=0",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "DRY RUN" in result.stdout
+
+
+def test_patch_equivalence_target_uses_git_cherry() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    assert "git-patch-equivalence:" in makefile
+    assert 'PATCH_UPSTREAM="$(PATCH_UPSTREAM)"' in makefile
+    assert 'PATCH_HEAD="$(PATCH_HEAD)"' in makefile
+    assert 'PATCH_LIMIT="$(PATCH_LIMIT)"' in makefile
+    assert "git cherry" in makefile
+
+    result = subprocess.run(
+        [
+            "make",
+            "git-patch-equivalence",
+            "PATCH_UPSTREAM=development",
+            "PATCH_HEAD=master",
+            "PATCH_LIMIT=3",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "patch-equivalent" in result.stdout
+    assert "unique" in result.stdout
