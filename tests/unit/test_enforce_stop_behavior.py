@@ -439,10 +439,10 @@ def test_results_ingestion_blocks_text(hook_plugin_env: HookEnv):
             f"Reason must be 'after-results-text-only'; got: {pb.get('reason')}"
         )
     else:
-        block_text = parsed.get("text", "")
-        assert "POST-RESULTS" in block_text.upper() or "RESUME WORK" in block_text.upper(), (
-            f"Results-ingestion: post-results block must fire. raw={raw[:300]}"
-        )
+        block_text = parsed.get("text", "").upper()
+        assert "RESULTS INGESTION PROTOCOL: 5 SUBAGENT RESULTS ARRIVED." in block_text
+        assert "CODIFY RESULTS" in block_text
+        assert "TEXT-ONLY AFTER RESULTS IS A STOP." in block_text
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

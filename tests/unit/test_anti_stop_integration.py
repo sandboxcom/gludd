@@ -24,6 +24,16 @@ def hook_plugin_env(tmp_path: Path):
     yield from hook_plugin_env_impl(tmp_path)
 
 
+def test_hook_plugin_env_uses_per_test_hot_module_prefix(
+    hook_plugin_env: HookEnv,
+) -> None:
+    """Hook tests must never load a live session's global hot module."""
+    prefix = Path(hook_plugin_env.env["GLUDD_HOT_MODULE_PREFIX"])
+
+    assert prefix.parent == hook_plugin_env.cwd
+    assert prefix.name == "gludd-hot-"
+
+
 def _invoke_text_complete(
     env: HookEnv,
     text: str,
@@ -100,7 +110,7 @@ class TestTextOnlyBlockedWhenRatchetEntries:
 class TestTextOnlyAllowedWhenNoPendingWork:
     def test_allowed(self, hook_plugin_env: HookEnv):
         cwd = hook_plugin_env.cwd
-        (cwd / "TASKS.md").write_text("- [x] Everything done\n")
+        (cwd / "TASKS.md").write_text("- [x] Everything done — 1 passed\n")
         (cwd / ".gate-status").write_text("=== GATE: PASSED ===\nlint PASS\ntypecheck PASS\ncollect PASS\ntest PASS\n")
 
         _parsed, raw, stderr, rc = _invoke_text_complete(
