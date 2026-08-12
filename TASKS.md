@@ -6,6 +6,16 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 ---
 
+## Session 83 — beta4 branch reconciliation and release (2026-08-12)
+
+- [ ] S83.0 — **Tracked development conflict recovery target**: replace the temporary bootstrap Makefile with a repository-owned, dry-runnable `resolve-development-conflicts` target, target-contract entry, help text, and structural/behavioral test. | evidence: failing-first focused test; focused test PASS; contract PASS 53; duplicate targets PASS 988; help PASS 921; full gate pending | priority: high | effort: S | status: in_progress
+- [ ] S83.1 — **CI enforcement runtime isolation**: namespace the multitask dispatch-count sidecar with `GLUDD_MULTITASK_STATE_FILE` so isolated runs cannot consume stale counts from another run. | evidence: CI run 31545342612 and local runtime test reproduce thin-wave false negative; runtime verification pending | priority: high | effort: S | status: in_progress
+- [ ] S83.2 — **Patch-equivalence integration inventory**: add a tracked Git-native Make target that separates already-applied patches from genuinely unique branch work before conflict resolution. | evidence: failing-first focused test; implementation verification pending | priority: high | effort: S | status: in_progress
+- [ ] S83.3 — **Restore missing alloy-selector implementation**: implement the committed test contract for environment/temperature/cost screening, composition tolerance, ranking, comparison, and fail-closed selection. | evidence: `c2fea3d2`; 130 tests PASS; module coverage 97.60%; lint/typecheck PASS; full gate pending | priority: high | effort: M | status: in_progress
+- [ ] S83.4 — **Run-replay forensics gap specification**: specify versioned replay bundles, simulation-safe replay, ZDD rollout/rollback, observability, security, compatibility, and coverage based on long-lived user reports. | evidence: isolated worktree deliverable; 4 focused tests PASS; spec lint 220/0; merge pending | priority: high | effort: M | status: in_progress
+
+---
+
 ## Session 79 — Crypto Library Refactor + Behavioral Guardrails (2026-08-05, 86,428 tests)
 
 ### Crypto Refactor — 8/12 files COMPLETE
