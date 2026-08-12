@@ -197,7 +197,8 @@ class TestRenderSchemaError:
                 },
             ],
         )
-        assert '{"type":"integer"}' in html
+        assert "{&#34;type&#34;:&#34;integer&#34;}" in html
+        assert '{"type":"integer"}' not in html
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -713,7 +714,8 @@ class TestRendererExceptionSafety:
         client = TestClient(app)
         resp = client.get("/render/crash")
         assert resp.status_code == 500
-        assert "Internal Server Error" in resp.text or "Renderer" in resp.text
+        assert "Renderer failed" in resp.text
+        assert "unexpected runner crash" not in resp.text
 
 
 class TestRenderByNameHtmlContentType:

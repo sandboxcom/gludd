@@ -271,6 +271,19 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                     stderr=exc.stderr,
                 ),
             )
+        except Exception:
+            # Keep unexpected runner internals in the operator log. Rendering
+            # exception text into this public endpoint would turn stack and
+            # backend details into an unauthenticated disclosure surface.
+            logger.exception("renderer %s crashed unexpectedly", name)
+            return HTMLResponse(
+                status_code=500,
+                content=render_error(
+                    title="Renderer failed",
+                    name=name,
+                    detail="An unexpected renderer error occurred.",
+                ),
+            )
 
         if result.schema is not None:
             html = render_schema_page(
