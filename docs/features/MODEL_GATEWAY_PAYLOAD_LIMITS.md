@@ -220,6 +220,13 @@ which preserves the project's zero-downtime profile-update path.
   attempt and, after the configured retries, advances to the fallback exactly
   once instead of treating retry exhaustion as total provider exhaustion:
   [openai-python issue #2828](https://github.com/openai/openai-python/issues/2828).
+- A long-lived Python help discussion warns that SQLite connections are not
+  guaranteed to be reclaimed promptly and may accumulate or emit
+  `ResourceWarning` when callers rely on reference collection. Gludd's response
+  cache therefore exposes deterministic context-manager ownership, makes
+  `close()` idempotent, and retains finalization only as a last-resort safety
+  net for legacy callers:
+  [Python.org SQLite connection discussion](https://discuss.python.org/t/sqlite3-connection-and-general-concepts/41663).
 
 ## Verification
 

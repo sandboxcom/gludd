@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import os
+from types import TracebackType
 from typing import Any, cast
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,25 @@ class ModelResponseCache:
         with contextlib.suppress(OSError):
             os.chmod(path, 0o700)
         self._cache: Any = Cache(path)
+        self._closed = False
+
+    def __enter__(self) -> ModelResponseCache:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self.close()
+
+    def __del__(self) -> None:
+        # A context manager is the deterministic ownership path.  Keep this
+        # narrow fallback so a forgotten close cannot leave diskcache's SQLite
+        # connection to emit an unraisable ResourceWarning during GC.
+        with contextlib.suppress(Exception):
+            self.close()
 
     def get(self, cache_key: str) -> dict[str, object] | None:
         result: object = self._cache.get(cache_key)
@@ -76,4 +96,7 @@ class ModelResponseCache:
         self._cache.clear()
 
     def close(self) -> None:
+        if getattr(self, "_closed", True):
+            return
         self._cache.close()
+        self._closed = True
