@@ -4,6 +4,7 @@ import asyncio
 import tempfile
 from unittest.mock import MagicMock, patch
 
+from general_ludd.controllers.spend_limiter import SpendLimiter
 from general_ludd.execution.engine import ExecutionEngine
 from general_ludd.schemas.job import JobSpec
 
@@ -63,6 +64,114 @@ class TestRecordMetricsGap30:
         assert usage[model_id].success_rate == 0.5
         # The failing call must have landed in the per-model failure ring.
         assert len(collector.get_recent_failures(model_id)) == 1
+
+
+class TestSpendLimiterDispatch:
+    @staticmethod
+    def _job() -> JobSpec:
+        return JobSpec(
+            job_id="JOB-SPEND-1",
+            todo_id="TODO-SPEND-1",
+            playbook="code",
+            queue="core",
+            work_type="code",
+            prompt_text="Generate one small change",
+            project_id="project-spend",
+        )
+
+    @staticmethod
+    def _gateway(*, cost_estimate: object = 0.03) -> MagicMock:
+        gateway = MagicMock()
+        gateway.get_profile.return_value = MagicMock(
+            model_name="test-model",
+            max_input_tokens=1_000,
+            max_output_tokens=1_000,
+        )
+        gateway.call_model.return_value = MagicMock(
+            content="",
+            cost_estimate=cost_estimate,
+        )
+        return gateway
+
+    def test_configured_spend_limit_fails_closed_when_projection_is_unknown(self) -> None:
+        limiter = SpendLimiter(limit_usd=1.0, window_seconds=3_600)
+        gateway = self._gateway()
+        gateway.get_profile.return_value = None
+        engine = ExecutionEngine(
+            model_gateway=gateway,
+            workspace_path=tempfile.mkdtemp(),
+            spend_limiter=limiter,
+        )
+
+        result = asyncio.run(engine.execute_async(self._job()))
+
+        assert result.exit_code == 1
+        assert result.result_summary.startswith("Spend check failed:")
+        gateway.call_model.assert_not_called()
+
+    def test_successful_call_commits_reservation_at_actual_cost(self) -> None:
+        limiter = SpendLimiter(limit_usd=1.0, window_seconds=3_600)
+        gateway = self._gateway(cost_estimate=0.03)
+        engine = ExecutionEngine(
+            model_gateway=gateway,
+            workspace_path=tempfile.mkdtemp(),
+            spend_limiter=limiter,
+        )
+
+        with patch.object(limiter, "token_cost_usd", return_value=0.05):
+            asyncio.run(engine.execute_async(self._job()))
+
+        assert abs(limiter.window_spend() - 0.03) < 1e-9
+        assert [record[2] for record in limiter.unflushed_records()] == [0.03]
+        gateway.call_model.assert_called_once()
+
+    def test_missing_actual_cost_keeps_conservative_reservation(self) -> None:
+        limiter = SpendLimiter(limit_usd=1.0, window_seconds=3_600)
+        gateway = self._gateway(cost_estimate=None)
+        engine = ExecutionEngine(
+            model_gateway=gateway,
+            workspace_path=tempfile.mkdtemp(),
+            spend_limiter=limiter,
+        )
+
+        with patch.object(limiter, "token_cost_usd", return_value=0.05):
+            asyncio.run(engine.execute_async(self._job()))
+
+        assert abs(limiter.window_spend() - 0.05) < 1e-9
+
+    def test_reservation_error_fails_closed(self) -> None:
+        limiter = MagicMock()
+        limiter.cap_configured = True
+        limiter.token_cost_usd.return_value = 0.05
+        limiter.reserve.side_effect = RuntimeError("limiter unavailable")
+        gateway = self._gateway()
+        engine = ExecutionEngine(
+            model_gateway=gateway,
+            workspace_path=tempfile.mkdtemp(),
+            spend_limiter=limiter,
+        )
+
+        result = asyncio.run(engine.execute_async(self._job()))
+
+        assert result.exit_code == 1
+        assert "reservation failed" in result.result_summary
+        gateway.call_model.assert_not_called()
+
+    def test_failed_model_call_releases_reservation(self) -> None:
+        limiter = SpendLimiter(limit_usd=1.0, window_seconds=3_600)
+        gateway = self._gateway()
+        gateway.call_model.side_effect = RuntimeError("gateway unavailable")
+        engine = ExecutionEngine(
+            model_gateway=gateway,
+            workspace_path=tempfile.mkdtemp(),
+            spend_limiter=limiter,
+        )
+
+        with patch.object(limiter, "token_cost_usd", return_value=0.05):
+            result = asyncio.run(engine.execute_async(self._job()))
+
+        assert result.exit_code == 1
+        assert limiter.window_spend() == 0.0
 
 
 class TestExecutionEngine:

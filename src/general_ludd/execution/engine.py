@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import math
 import os
 import re
 import subprocess
@@ -12,6 +13,7 @@ import uuid
 from typing import Any, cast
 
 from general_ludd.agents.behavior import AgentBehavior, BehaviorRenderer
+from general_ludd.controllers.spend_limiter import SpendLimiter
 from general_ludd.git_automation.repo import GitAutomation
 from general_ludd.project_runner import (
     ProjectCommandRunner,
@@ -291,6 +293,7 @@ class ExecutionEngine:
         behavior: AgentBehavior | None = None,
         searcher: Any = None,
         sandbox_enforcer: Any = None,
+        spend_limiter: SpendLimiter | None = None,
     ) -> None:
         self._model_gateway = model_gateway
         workspace = (
@@ -305,6 +308,7 @@ class ExecutionEngine:
         self._behavior = behavior
         self._searcher = searcher
         self._sandbox_enforcer = sandbox_enforcer
+        self._spend_limiter = spend_limiter
         self._sandbox_verified = False
         self._background_tasks: set[asyncio.Task[Any]] = set()
         self._commit_lock: asyncio.Lock = asyncio.Lock()
@@ -372,15 +376,17 @@ class ExecutionEngine:
             proj_in = 1000
             proj_out = 0
 
-        guard_cost = getattr(self._budget_guard, "token_cost_usd", None)
-        if callable(guard_cost):
-            try:
-                return float(guard_cost(model, proj_in, proj_out))
-            except Exception:
-                logger.debug(
-                    "_projected_cost: guard.token_cost_usd raised; falling back to static table",
-                    exc_info=True,
-                )
+        cost_sources = (self._spend_limiter, self._budget_guard)
+        for cost_source in cost_sources:
+            source_cost = getattr(cost_source, "token_cost_usd", None)
+            if callable(source_cost):
+                try:
+                    return float(source_cost(model, proj_in, proj_out))
+                except Exception:
+                    logger.debug(
+                        "_projected_cost: configured token_cost_usd raised; trying fallback",
+                        exc_info=True,
+                    )
         try:
             from general_ludd.infra.pricing import token_cost_usd as _static
 
@@ -393,6 +399,111 @@ class ExecutionEngine:
             )
 
         return (proj_in + proj_out) / 1000.0 * _UNKNOWN_MODEL_COST_PER_1K
+
+    def _spend_reserve(self, projected_cost_usd: float | None) -> tuple[str | None, str | None]:
+        """Atomically reserve projected spend; return ``(token, denial)``.
+
+        A configured cap fails closed when projection, limiter state, or the
+        reservation operation is not trustworthy. An uncapped limiter records
+        actual usage after the call without reserving.
+        """
+        limiter = self._spend_limiter
+        if limiter is None:
+            return None, None
+        try:
+            cap_configured = limiter.cap_configured
+        except Exception:
+            logger.warning("SpendLimiter cap state unavailable", exc_info=True)
+            return None, "spend limiter state unavailable"
+        if not cap_configured:
+            return None, None
+        if (
+            not isinstance(projected_cost_usd, (int, float))
+            or not math.isfinite(projected_cost_usd)
+            or projected_cost_usd <= 0
+        ):
+            return None, "projected spend is unknown under a configured cap"
+        try:
+            token = limiter.reserve(float(projected_cost_usd))
+        except Exception:
+            logger.warning("SpendLimiter reservation failed", exc_info=True)
+            return None, "spend reservation failed"
+        if not isinstance(token, str) or not token:
+            try:
+                remaining = limiter.remaining()
+            except Exception:
+                return None, "spend limit exceeded"
+            return None, f"spend limit exceeded: remaining=${remaining:.6f}"
+        return token, None
+
+    def _spend_record_actual(
+        self,
+        actual_cost_usd: object,
+        *,
+        reservation_token: str | None,
+        projected_cost_usd: float | None,
+        model: str | None,
+        project_id: str | None,
+    ) -> None:
+        """Commit actual spend, conservatively retaining the projection.
+
+        Records remain unflushed on the shared limiter so the daemon's single
+        EventLoop watermark writer persists them exactly once.
+        """
+        limiter = self._spend_limiter
+        if limiter is None:
+            return
+        try:
+            actual = float(cast(Any, actual_cost_usd))
+        except (TypeError, ValueError):
+            actual = math.nan
+        if not math.isfinite(actual) or actual < 0:
+            if (
+                isinstance(projected_cost_usd, (int, float))
+                and math.isfinite(projected_cost_usd)
+                and projected_cost_usd > 0
+            ):
+                actual = float(projected_cost_usd)
+                logger.warning("Model cost unavailable; retaining projected spend reservation")
+            else:
+                logger.warning("Model cost unavailable and no safe projection exists; skipping record")
+                return
+        if reservation_token is not None:
+            try:
+                committed = limiter.commit(
+                    reservation_token,
+                    actual,
+                    kind="token",
+                    model=model,
+                    project_id=project_id,
+                )
+            except Exception:
+                logger.error(
+                    "SpendLimiter commit failed; projected reservation remains charged",
+                    exc_info=True,
+                )
+                return
+            if not committed:
+                logger.error("SpendLimiter rejected an active reservation commit")
+            return
+        try:
+            limiter.record(
+                actual,
+                kind="token",
+                model=model,
+                project_id=project_id,
+            )
+        except Exception:
+            logger.error("SpendLimiter actual-cost record failed", exc_info=True)
+
+    def _spend_release(self, reservation_token: str | None) -> None:
+        if self._spend_limiter is None or reservation_token is None:
+            return
+        try:
+            if not self._spend_limiter.release(reservation_token):
+                logger.error("SpendLimiter rejected reservation release")
+        except Exception:
+            logger.error("SpendLimiter reservation release failed", exc_info=True)
 
     def _budget_pre_check(self, guard: Any, projected_cost: float | None = None) -> str | None:
         """Run budget pre-check; return denial string or None (allowed).
@@ -543,7 +654,8 @@ class ExecutionEngine:
         )
         user_prompt = _build_user_prompt(job)
 
-        denial = self._budget_pre_check(self._budget_guard)
+        projected_cost = self._projected_cost()
+        denial = self._budget_pre_check(self._budget_guard, projected_cost)
         if denial is not None:
             return TaskReturn(
                 return_id=return_id,
@@ -553,6 +665,18 @@ class ExecutionEngine:
                 queue=job.queue or "core",
                 exit_code=1,
                 result_summary=f"Budget check failed: {denial}",
+            )
+
+        reservation_token, spend_denial = self._spend_reserve(projected_cost)
+        if spend_denial is not None:
+            return TaskReturn(
+                return_id=return_id,
+                todo_id=job.todo_id,
+                job_id=job.job_id,
+                playbook=job.playbook or "code",
+                queue=job.queue or "core",
+                exit_code=1,
+                result_summary=f"Spend check failed: {spend_denial}",
             )
 
         try:
@@ -567,9 +691,22 @@ class ExecutionEngine:
                 messages=messages,
                 work_type=job.work_type or "code",
             )
+            try:
+                actual_cost: object = getattr(response, "cost_estimate", None)
+            except Exception:
+                actual_cost = None
+            self._spend_record_actual(
+                actual_cost,
+                reservation_token=reservation_token,
+                projected_cost_usd=projected_cost,
+                model=profile_id,
+                project_id=getattr(job, "project_id", None),
+            )
+            reservation_token = None
             model_output = getattr(response, "content", "") or str(response)
             self._record_metrics(job, success=True, tokens=len(model_output) // 4)
         except Exception as exc:
+            self._spend_release(reservation_token)
             self._record_metrics(job, success=False)
             return TaskReturn(
                 return_id=return_id,

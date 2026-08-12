@@ -559,7 +559,13 @@ class TestExtendedSubsystemsWiring:
         # Build a minimal UserConfig-like object with a non-zero daily_limit so
         # _parse_budget_config / the budget_guard construction branch fires.
         mock_uc = MagicMock()
-        mock_uc.budget = {"daily_limit": 10.0, "per_task_limit": 1.0, "timeout_seconds": 3600.0}
+        mock_uc.budget = {
+            "daily_limit": 10.0,
+            "per_task_limit": 1.0,
+            "timeout_seconds": 3600.0,
+            "spend_window_usd": 2.0,
+            "spend_window_seconds": 3_600.0,
+        }
         mock_uc.database = {}
         mock_uc.self_improve = {}
         # A real loopback network block prevents ambient settings or MagicMock's
@@ -632,6 +638,13 @@ class TestExtendedSubsystemsWiring:
                 )
                 assert gateway._health_tracker is app.state._health_tracker, (
                     "ModelGateway must share the daemon's pre-created health tracker"
+                )
+                spend_limiter = app.state._spend_limiter
+                execution_engine = app.state._execution_engine
+                assert spend_limiter is not None
+                assert execution_engine._spend_limiter is spend_limiter, (
+                    "ExecutionEngine must share the daemon's rehydrated SpendLimiter; "
+                    "a separate or absent limiter bypasses the live rolling cap"
                 )
 
     @pytest.mark.asyncio
