@@ -120,6 +120,31 @@ model_profiles = [seed_profile_rates(_coerce(p)) for p in (list(model_profiles) 
 
 ---
 
+## Billing-clock determinism — one rate snapshot per call
+
+Peak/off-peak billing is intentionally time-dependent, but a completed call must
+use one UTC timestamp for its multiplier, rate label, and savings ledger. The
+gateway therefore accepts an optional `billing_clock` and samples it once in the
+shared billing helper used by buffered and streaming responses. Production keeps
+the live UTC clock; tests and replay tools pin a timestamp instead of depending
+on the hour at which CI happens to run.
+
+This guards two practical failure modes: a test that changes expected cost at
+09:00/17:00 UTC, and a call finishing on that boundary being charged with one
+rate while being labelled or recorded with another. Exact integration assertions
+pin an off-peak Sunday while preserving the production calculation and the
+`0.75` expectation.
+
+A long-lived practitioner report, [LiteLLM issue #4965](https://github.com/BerriAI/litellm/issues/4965),
+documents inconsistent LLM cost results between streaming and non-streaming
+paths even when usage appears equivalent, plus custom rates not being honored
+uniformly. The operational lesson applied here is to keep both gateway paths on
+one billing primitive and make every policy input—including time—explicit and
+replayable. The rate-boundary unit tests and the two integration suites are the
+regression proof.
+
+---
+
 ## REFUTED — Do NOT rebuild the daemon reserve path
 
 `daemon.py:2056-2114` `_gateway_executor` is **already correct** and tested

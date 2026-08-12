@@ -28,11 +28,14 @@ Features under test:
 from __future__ import annotations
 
 import asyncio
+import datetime
 from typing import Any, ClassVar, cast
 
 import pytest
 
 from general_ludd.models.gateway import ModelGateway, ModelProfile
+
+_OFF_PEAK_NOW = datetime.datetime(2026, 8, 9, 12, tzinfo=datetime.UTC)
 
 # --------------------------------------------------------------------------- #
 # Fakes that sit BELOW the seams of the code under test.
@@ -112,7 +115,8 @@ def _make_profile() -> ModelProfile:
     """A profile with NON-ZERO per-token costs so cost must be > 0 if billed.
 
     100 input * 0.001 + 50 output * 0.002 = 0.1 + 0.1 = 0.2 USD base cost.
-    The gateway applies current_rate_multiplier() (0.75 off-peak at test time).
+    The gateway applies current_rate_multiplier() (0.75 at the fixture-pinned
+    off-peak timestamp).
     """
     return ModelProfile(
         model_profile_id="default",
@@ -128,7 +132,7 @@ def _make_profile() -> ModelProfile:
 EXPECTED_INPUT_TOKENS = 100
 EXPECTED_OUTPUT_TOKENS = 50
 EXPECTED_BASE_COST = 100 * 0.001 + 50 * 0.002  # == 0.2
-# Gateway applies current_rate_multiplier() — off-peak discount 0.75 at test time.
+# Gateway applies current_rate_multiplier() at the fixture-pinned off-peak time.
 EXPECTED_COST = EXPECTED_BASE_COST * 0.75  # == 0.15
 
 
@@ -155,6 +159,7 @@ class TestCAT12CostTracking:
             budget_guard=budget,
             metrics_collector=metrics,
             metrics_agent_id="agent-under-test",
+            billing_clock=lambda: _OFF_PEAK_NOW,
         )
         return gw, budget, metrics
 

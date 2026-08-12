@@ -41,6 +41,7 @@ values whenever the catalog has pricing data for the provider+model combo.
 
 from __future__ import annotations
 
+import datetime
 from typing import cast
 from unittest.mock import MagicMock, patch
 
@@ -51,6 +52,8 @@ from general_ludd.controllers.budget_manager import BudgetManager
 from general_ludd.daemon_wiring import make_spend_guarded_executor
 from general_ludd.models.gateway import ModelGateway, ModelProfile
 from general_ludd.models.provider_registry import ProviderRegistry
+
+_OFF_PEAK_NOW = datetime.datetime(2026, 8, 9, 12, tzinfo=datetime.UTC)
 
 # ---------------------------------------------------------------------------
 # Helpers — build a gateway whose provider returns a KNOWN usage payload, so
@@ -92,6 +95,7 @@ def _make_gateway(
         profiles=[profile],
         provider_registry=reg,
         budget_guard=budget_guard,
+        billing_clock=lambda: _OFF_PEAK_NOW,
     )
 
     FakeChatModel = MagicMock()
@@ -243,7 +247,8 @@ class TestGuardBlocksWhenRealCostReachesIt:
             input_tokens=1000,
             output_tokens=1000,
         )
-        # cost per call = (1000*0.00003 + 1000*0.00006) * 0.75 = 0.0675 USD
+        # At the fixture-pinned off-peak time, cost per call is
+        # (1000*0.00003 + 1000*0.00006) * 0.75 = 0.0675 USD.
 
         with patches[0], patches[1]:
             resp = gw.call_model("default", [{"role": "user", "content": "hi"}])
@@ -384,6 +389,7 @@ class TestModelProfileRatesNonzeroByDefault:
             profiles=[profile],
             provider_registry=reg,
             budget_guard=guard,
+            billing_clock=lambda: _OFF_PEAK_NOW,
         )
 
         FakeChatModel = MagicMock()
