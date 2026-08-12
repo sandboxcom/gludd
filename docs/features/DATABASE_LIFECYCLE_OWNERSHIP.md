@@ -30,6 +30,14 @@ Gunicorn worker.
 - [SQLAlchemy discussion #10857](https://github.com/sqlalchemy/sqlalchemy/discussions/10857)
   documents async test teardown with `await engine.dispose()` and discusses
   xdist workers starting with independent, empty engine pools.
+- [SQLAlchemy discussion #5903](https://github.com/sqlalchemy/sqlalchemy/discussions/5903)
+  records a long-lived practitioner report that conflict-update upserts skip
+  Python-side `Column.onupdate` values. The maintainer-confirmed workaround is
+  why Gludd supplies `updated_at` explicitly in each conflict-update set.
+- [SQLAlchemy discussion #11791](https://github.com/sqlalchemy/sqlalchemy/discussions/11791)
+  traces an apparently stale timestamp to the ORM identity map returning the
+  already-loaded value. Gludd refreshes the row returned from deployment upsert
+  before exposing its timestamp and revision to callers.
 - [aiosqlite issue #259](https://github.com/omnilib/aiosqlite/issues/259), open
   since 2023, tracks connections that survive cancelled async work. This is why
   Gludd drains tracked tasks before disposing the engine instead of assuming
