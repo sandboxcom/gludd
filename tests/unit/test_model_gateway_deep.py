@@ -1616,6 +1616,36 @@ class TestCostBreakdownByProvider:
 
 
 class TestPeakOffPeakBilling:
+    def test_gateway_billing_uses_one_injected_clock_snapshot(self) -> None:
+        off_peak_time = datetime.datetime(2026, 8, 3, 22, 0, 0, tzinfo=datetime.UTC)
+        calls = 0
+
+        def clock() -> datetime.datetime:
+            nonlocal calls
+            calls += 1
+            if calls > 1:
+                raise AssertionError("billing clock sampled more than once")
+            return off_peak_time
+
+        gateway = ModelGateway(billing_clock=clock)
+
+        effective_cost, rate_label, multiplier = gateway._apply_billing_rate(0.2)
+
+        assert calls == 1
+        assert effective_cost == pytest.approx(0.15)
+        assert rate_label == "off-peak"
+        assert multiplier == 0.75
+
+    def test_gateway_billing_clock_preserves_peak_rate(self) -> None:
+        peak_time = datetime.datetime(2026, 8, 3, 12, 0, 0, tzinfo=datetime.UTC)
+        gateway = ModelGateway(billing_clock=lambda: peak_time)
+
+        effective_cost, rate_label, multiplier = gateway._apply_billing_rate(0.2)
+
+        assert effective_cost == pytest.approx(0.2)
+        assert rate_label == "peak"
+        assert multiplier == 1.0
+
     def test_peak_pricing_schedule_lookup_builtins_present(self) -> None:
         from general_ludd.budget.peak_pricing import default_schedule, get_current_rate
 
