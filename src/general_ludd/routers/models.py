@@ -1053,16 +1053,19 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         revision = str(body.get("revision", "")) or None
         downloader: ModelDownloader = request.app.state._model_downloader
 
-        if source in valid_model_sources:
-            config = next(
-                (c for c in _LOCAL_MODELS if c.name == model_id),
-                None,
+        config = next((c for c in _LOCAL_MODELS if c.name == model_id), None)
+        registry_bound_sources = valid_model_sources - {"huggingface", "ollama"}
+        if source in registry_bound_sources and config is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Model {model_id!r} not found in local model registry",
             )
-            if config is None:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Model {model_id!r} not found in local model registry",
-                )
+
+        # URL, filesystem, and mirror sources are resolved exclusively from the
+        # trusted registry above.  Hugging Face also supports registered aliases,
+        # while direct Hugging Face repository IDs and Ollama tags use the fixed
+        # provider transports below and do not expose registry-controlled paths.
+        if config is not None and source in registry_bound_sources | {"huggingface"}:
 
             source_order_raw = body.get("order")
             source_order: list[ModelSource] | None = None
