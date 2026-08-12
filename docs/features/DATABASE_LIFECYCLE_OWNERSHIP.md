@@ -21,12 +21,25 @@ Each application instance closes only resources it created; it does not use a
 process-global session closer that could disrupt another in-process app or
 Gunicorn worker.
 
+## Tick ownership contract
+
+Only one `EventLoop.tick()` may run on an `EventLoop` instance at a time. The
+daemon's `run_forever()` task and an administrative/manual tick share an async
+lock. This keeps tick-scoped repository references and their `AsyncSession`
+owners together until commit and close complete. A second caller waits for the
+first complete tick; it never shares or replaces the active session.
+
 ## Operator and upstream evidence
 
 - [SQLAlchemy discussion #12152](https://github.com/sqlalchemy/sqlalchemy/discussions/12152)
   records an ASGI operator hitting cross-loop connection failures. A SQLAlchemy
   maintainer recommends creating and releasing database resources in the ASGI
   lifespan, with a separate engine per event loop.
+- [SQLAlchemy issue #9973](https://github.com/sqlalchemy/sqlalchemy/issues/9973)
+  reproduces the same `IllegalStateChangeError` raised when `close()` overlaps
+  `_connection_for_bind()` and records the maintainer guidance that a Session
+  is stateful and unsafe for concurrent asyncio calls. Gludd serializes whole
+  ticks because their repositories are tick-scoped instance state.
 - [SQLAlchemy discussion #10857](https://github.com/sqlalchemy/sqlalchemy/discussions/10857)
   documents async test teardown with `await engine.dispose()` and discusses
   xdist workers starting with independent, empty engine pools.

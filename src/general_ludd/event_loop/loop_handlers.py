@@ -12,6 +12,7 @@ import logging
 import time
 from typing import Any
 
+from general_ludd.db.task_decisions_retention import cleanup_old_task_decisions
 from general_ludd.self_improve.harness import SelfImprovementHarness
 
 logger = logging.getLogger(__name__)
@@ -443,8 +444,6 @@ class EventLoopHandlers:
         if interval <= 0 or self._total_ticks % interval != 0:
             return
         try:
-            from general_ludd.db.task_decisions_retention import cleanup_old_task_decisions
-
             deleted = await cleanup_old_task_decisions(
                 self._active_session,
                 retention_days=int(self.config.get("task_decisions_retention_days", 365)),

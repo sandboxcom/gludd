@@ -1,5 +1,6 @@
 """Unit tests for event loop."""
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -537,6 +538,33 @@ class TestEventLoop:
         assert result["phases_completed"] == len(PHASE_ORDER)
 
     @pytest.mark.asyncio
+    async def test_event_loop_serializes_concurrent_ticks(self):
+        loop, _ = _make_loop()
+        active = 0
+        peak_active = 0
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        async def blocking_phases():
+            nonlocal active, peak_active
+            active += 1
+            peak_active = max(peak_active, active)
+            entered.set()
+            await release.wait()
+            active -= 1
+
+        loop._run_phases = blocking_phases  # type: ignore[method-assign]
+        first = asyncio.create_task(loop.tick())
+        await entered.wait()
+        second = asyncio.create_task(loop.tick())
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+        assert peak_active == 1
+        release.set()
+        await asyncio.gather(first, second)
+
+    @pytest.mark.asyncio
     async def test_run_forever_can_be_stopped(self):
         loop, mocks = _make_loop()
         mocks["todo_repo"].claim_runnable.return_value = []
@@ -597,6 +625,7 @@ class TestEventLoop:
 
         todo_repo = AsyncMock()
         session = AsyncMock()
+        session.add = MagicMock()
         session.flush = AsyncMock()
         db_result = MagicMock()
         db_result.scalars.return_value.all.return_value = []
