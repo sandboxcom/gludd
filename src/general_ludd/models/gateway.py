@@ -2274,7 +2274,9 @@ class ModelGateway:
         policy = TimeoutRetryPolicy(
             max_retries=max_retries,
             base_backoff_seconds=base_backoff_seconds,
-            failover_after_retries=profile.max_failover_retries,
+            # ``max_failover_retries`` counts retries after the initial stream
+            # attempt. TimeoutRetryPolicy's threshold counts total attempts.
+            failover_after_retries=profile.max_failover_retries + 1,
         )
 
         # Primary already unhealthy → skip straight to fallbacks.
