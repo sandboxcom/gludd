@@ -214,6 +214,12 @@ which preserves the project's zero-downtime profile-update path.
   fire. This is why Gludd enforces its own monotonic absolute stream lifetime in
   addition to transport read timeouts, including after the iterator's last item:
   [openai-python issue #399](https://github.com/openai/openai-python/issues/399).
+- An OpenAI Python practitioner reports intermittent streamed-response
+  disconnects surfaced as `httpx.ReadError`, `ReadTimeout`, and
+  `RemoteProtocolError`. Gludd therefore restarts a failed stream as a fresh
+  attempt and, after the configured retries, advances to the fallback exactly
+  once instead of treating retry exhaustion as total provider exhaustion:
+  [openai-python issue #2828](https://github.com/openai/openai-python/issues/2828).
 
 ## Verification
 

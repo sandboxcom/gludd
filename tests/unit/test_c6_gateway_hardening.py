@@ -67,6 +67,7 @@ class TestCallerKwargsCannotOverrideValidatedBaseUrl:
             provider_package="langchain-openai",
             provider_class_hint="ChatOpenAI",
             model_name="gpt-4",
+            api_metered=False,
             credential_alias="openai_key",
             api_base_alias="openai_base",
             run_budget_usd=100.0,
@@ -132,6 +133,7 @@ class TestGatewayHasRequestTimeout:
             provider_package="langchain-openai",
             provider_class_hint="ChatOpenAI",
             model_name="gpt-4",
+            api_metered=False,
             run_budget_usd=100.0,
         )
         gw = ModelGateway(profiles=[profile], provider_registry=reg)
@@ -184,6 +186,7 @@ class TestSSrfErrorDoesNotLeakResolvedUrl:
             provider_package="langchain-openai",
             provider_class_hint="ChatOpenAI",
             model_name="gpt-4",
+            api_metered=False,
             api_base_alias="ssrf_alias",
             run_budget_usd=100.0,
         )
