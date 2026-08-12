@@ -58,6 +58,20 @@ UTF-8, UTF-16 (LE/BE), UTF-32, surrogate pairs, normalization forms (NFC, NFD,
 NFKC, NFKD), Unicode planes (BMP, SIP, SMP, SSP, SPUA), Unicode version history,
 Unicode Consortium working groups.
 
+Plane classification follows the 17 fixed 65,536-code-point planes, independently
+of whether a character is currently assigned or rendered. In particular,
+U+DFFFF is in unassigned plane 13, while U+E0000 starts the Supplementary
+Special-purpose Plane; neither belongs to the BMP. This is pinned to the Unicode
+16 [allocation model](https://www.unicode.org/versions/Unicode16.0.0/core-spec/chapter-2/).
+
+The distinction has user-visible consequences. A Noto CJK practitioner report
+for [U+32C3C](https://github.com/notofonts/noto-cjk/issues/319) identifies the
+code point as Tertiary Ideographic Plane data while documenting missing-glyph
+rendering across major platforms. Gludd must keep code-point plane identity
+separate from font coverage: an unsupported glyph remains in its standard plane
+and must not be relabeled BMP or unassigned merely because a renderer shows a
+tofu box.
+
 ### 4.2 Byte Order Marks (BOM)
 FEFF (UTF-16 BE), FFFE (UTF-16 LE), EF BB BF (UTF-8), 0000FEFF (UTF-32 BE),
 FFFE0000 (UTF-32 LE). Detection, stripping, adding. When BOMs are required vs
