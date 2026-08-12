@@ -748,6 +748,15 @@ def _psk_admin_default_spec() -> PermissionSpec:
     )
 
 
+def psk_admin_default_spec() -> PermissionSpec:
+    """Return the canonical PSK administrator permission spec.
+
+    This public spelling preserves the existing fail-closed spec verbatim;
+    callers no longer need to import the private compatibility name.
+    """
+    return _psk_admin_default_spec()
+
+
 __all__ = [
     "Capability",
     "PermissionDeniedError",
@@ -758,4 +767,5 @@ __all__ = [
     "check_capability",
     "default_human_spec",
     "default_spec",
+    "psk_admin_default_spec",
 ]
