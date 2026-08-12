@@ -16,17 +16,25 @@ from general_ludd.routers.account import (
     DeleteRequest,
     register,
 )
+from general_ludd.security.permissions import Capability, PermissionSpec
 
 
-def _bypass_auth(app: FastAPI) -> None:
-    """Override RequireCapability dependency to skip auth checks in tests."""
+def _authorize_admin(app: FastAPI) -> None:
+    """Attach a real admin capability so endpoint tests exercise the guard."""
+    spec = PermissionSpec(
+        agent_type="test-admin",
+        capabilities=[
+            Capability(
+                resource="admin:account",
+                actions=["backup", "delete", "create", "cleanup"],
+            )
+        ],
+    )
 
-    async def _allow(_request: Request) -> None:
-        return None
-
-    from general_ludd.security.capability_guard import RequireCapability
-
-    app.dependency_overrides[RequireCapability.__call__] = lambda: _allow
+    @app.middleware("http")
+    async def _attach_auth_spec(request: Request, call_next: Any) -> Any:
+        request.state.auth_spec = spec
+        return await call_next(request)
 
 
 # ── Request model validation ────────────────────────────────────────────────
@@ -99,7 +107,7 @@ class TestAccountBackup:
     @pytest.fixture
     def client_no_db(self) -> TestClient:
         app: FastAPI = FastAPI()
-        _bypass_auth(app)
+        _authorize_admin(app)
         with patch("general_ludd.routers.account._get_session_factory", return_value=None):
             register(app, {})
         return TestClient(app)
@@ -112,10 +120,10 @@ class TestAccountBackup:
     @pytest.fixture
     def client_with_db(self) -> TestClient:
         app: FastAPI = FastAPI()
-        _bypass_auth(app)
+        _authorize_admin(app)
         mock_factory: MagicMock = MagicMock()
-        with patch("general_ludd.routers.account._get_session_factory", return_value=mock_factory):
-            register(app, {})
+        app.state._session_factory = mock_factory
+        register(app, {})
         return TestClient(app)
 
     def test_backup_value_error_422(self, client_with_db: TestClient) -> None:
@@ -140,38 +148,54 @@ class TestAccountDelete:
     @pytest.fixture
     def client_with_db(self) -> TestClient:
         app: FastAPI = FastAPI()
-        _bypass_auth(app)
+        _authorize_admin(app)
         mock_factory: MagicMock = MagicMock()
-        with patch("general_ludd.routers.account._get_session_factory", return_value=mock_factory):
-            register(app, {})
+        app.state._session_factory = mock_factory
+        register(app, {})
         return TestClient(app)
 
     def test_delete_requires_confirm(self, client_with_db: TestClient) -> None:
-        resp: Any = client_with_db.delete("/api/account", json={"user_id": "u1", "confirm": False})
+        resp: Any = client_with_db.request(
+            "DELETE",
+            "/api/account",
+            json={"user_id": "u1", "confirm": False},
+        )
         assert resp.status_code == 400
         assert "confirm=true is required" in resp.json()["detail"]
 
     def test_delete_no_database_503(self) -> None:
         app: FastAPI = FastAPI()
-        _bypass_auth(app)
+        _authorize_admin(app)
         with patch("general_ludd.routers.account._get_session_factory", return_value=None):
             register(app, {})
         client: TestClient = TestClient(app)
-        resp: Any = client.delete("/api/account", json={"user_id": "u1", "confirm": True})
+        resp: Any = client.request(
+            "DELETE",
+            "/api/account",
+            json={"user_id": "u1", "confirm": True},
+        )
         assert resp.status_code == 503
         assert "No database available" in resp.json()["detail"]
 
     def test_delete_value_error_422(self, client_with_db: TestClient) -> None:
         with patch("general_ludd.routers.account._delete_user_data") as mock_del:
             mock_del.side_effect = ValueError("user not found")
-            resp: Any = client_with_db.delete("/api/account", json={"user_id": "noone", "confirm": True})
+            resp: Any = client_with_db.request(
+                "DELETE",
+                "/api/account",
+                json={"user_id": "noone", "confirm": True},
+            )
         assert resp.status_code == 422
         assert "user not found" in resp.json()["detail"]
 
     def test_delete_generic_exception_500(self, client_with_db: TestClient) -> None:
         with patch("general_ludd.routers.account._delete_user_data") as mock_del:
             mock_del.side_effect = RuntimeError("borked")
-            resp: Any = client_with_db.delete("/api/account", json={"user_id": "u1", "confirm": True})
+            resp: Any = client_with_db.request(
+                "DELETE",
+                "/api/account",
+                json={"user_id": "u1", "confirm": True},
+            )
         assert resp.status_code == 500
         assert "delete failed" in resp.json()["detail"]
 
@@ -215,7 +239,7 @@ class TestAccountCreate:
     @pytest.fixture
     def client(self) -> TestClient:
         app: FastAPI = FastAPI()
-        _bypass_auth(app)
+        _authorize_admin(app)
         register(app, {})
         return TestClient(app)
 
@@ -237,7 +261,7 @@ class TestAccountCreate:
 
     def test_create_no_manager_wired_503(self) -> None:
         app: FastAPI = FastAPI()
-        _bypass_auth(app)
+        _authorize_admin(app)
         register(app, {})
         client: TestClient = TestClient(app)
         resp: Any = client.post(
@@ -301,7 +325,7 @@ class TestAccountCleanup:
     @pytest.fixture
     def client(self) -> TestClient:
         app: FastAPI = FastAPI()
-        _bypass_auth(app)
+        _authorize_admin(app)
         register(app, {})
         return TestClient(app)
 
