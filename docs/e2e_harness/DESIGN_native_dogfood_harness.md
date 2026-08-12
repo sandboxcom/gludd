@@ -330,6 +330,12 @@ the site test can drive it with the already-present `httpx`/`starlette`
 TestClient — no extra deps, no real port needed (though §8.4 also offers a real
 HTTP variant).
 
+The reconciled beta4 harness sends this contract as one acceptance-rich todo.
+That preserves the complete generated-site assertion while bounding live-model
+cost and avoiding ordering failures between four independently dispatched
+tasks. Splitting the contract into several todos remains a future scheduler
+stress case, not a prerequisite for proving the greenfield lifecycle.
+
 ### 8.3 Run
 - Same patched-dispatch tick loop as §7, but iterate: for each seeded todo, run
   tick (dispatch) → review → tick (reconcile), or run `run_forever` for a bounded
@@ -405,6 +411,44 @@ while the offline path still runs.
   site-test runner, CRUD assertions, teardown — using the deterministic mock
   artifact. This guarantees the harness itself is green in CI without secrets and
   without tokens; the live run only swaps the two gateway calls.
+
+### 10.1 Practitioner evidence and beta4 reconciliation
+
+Long-lived upstream reports reinforce keeping the default proof deterministic
+and making the optional live boundary explicit:
+
+- [HTTPX discussion #2056](https://github.com/encode/httpx/discussions/2056)
+  records intermittent `RemoteProtocolError` failures in CI across years of
+  follow-up. The default site gate therefore uses an in-process ASGI transport,
+  not a socket or external network whose connection lifecycle can flake.
+- [openai-python issue #557](https://github.com/openai/openai-python/issues/557)
+  documents credentials and base URLs being captured before later environment
+  changes were visible. The live case builds a gateway from explicitly loaded
+  credentials and skips only that case when the credential is absent; the
+  offline lifecycle never depends on mutable ambient configuration.
+- [Starlette issue #2524](https://github.com/Kludex/starlette/issues/2524)
+  tracks `TestClient` compatibility drift after an HTTPX deprecation. The
+  generated-app contract stays behind `_site.py` and is exercised against the
+  repository's pinned Starlette/HTTPX pair so dependency changes fail one
+  focused compatibility gate.
+- [pytest issue #2239](https://github.com/pytest-dev/pytest/issues/2239)
+  shows the long-running CI ambiguity around an empty collected suite. The
+  credential-free scenario is consequently a real always-collected test, while
+  only the live credential variant may skip.
+
+The reconciled implementation uses current async engine and task-return APIs,
+passes artifact evidence through review, reconciles the todo to `complete`,
+requires a real `gludd/*` branch and commit, fails closed on every HTML/CRUD
+assertion, and removes the workspace during teardown. Dispatch and reconcile
+ticks have 30-second bounds. Offline and live runs traverse the same lifecycle;
+offline review is deterministic, while live mode uses the configured gateway
+for generation and review. Focused CI verification is:
+
+```console
+make test-files GLUDD_XDIST=0 TESTFILES='tests/e2e/dogfood/test_dogfood_todo_site.py'
+```
+
+Without a ZAI credential this runs seven cases and skips only the live case.
 
 ---
 

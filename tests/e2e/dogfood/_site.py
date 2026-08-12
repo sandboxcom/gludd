@@ -1,10 +1,76 @@
 """Site-test helpers: import-and-drive a generated FastAPI todo app."""
+
 from __future__ import annotations
 
 import importlib.util
 import sys
 from pathlib import Path
 from typing import Any
+
+OFFLINE_SCAFFOLD_APP = '''\
+"""Deterministic offline artifact for the greenfield dogfood harness."""
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
+
+app = FastAPI()
+_store: dict[int, dict[str, Any]] = {}
+_next_id = 1
+
+
+@app.get("/", response_class=HTMLResponse)
+async def index() -> str:
+    items = "".join(
+        f'<li id="todo-{todo["id"]}">{todo["title"]}</li>'
+        for todo in _store.values()
+    )
+    return (
+        "<html><body><h1>Todo List</h1>"
+        f'<ul id="todo-list">{items}</ul>'
+        '<form id="add-form"><input name="title"><button>Add</button></form>'
+        "</body></html>"
+    )
+
+
+@app.get("/api/todos")
+async def list_todos() -> list[dict[str, Any]]:
+    return list(_store.values())
+
+
+@app.post("/api/todos", status_code=201)
+async def create_todo(body: dict[str, Any]) -> dict[str, Any]:
+    global _next_id
+    todo = {"id": _next_id, "title": body.get("title", ""), "done": False}
+    _store[_next_id] = todo
+    _next_id += 1
+    return todo
+
+
+@app.put("/api/todos/{todo_id}")
+async def update_todo(todo_id: int, body: dict[str, Any]) -> dict[str, Any]:
+    if todo_id not in _store:
+        raise HTTPException(status_code=404, detail="not found")
+    _store[todo_id].update(body)
+    return _store[todo_id]
+
+
+@app.delete("/api/todos/{todo_id}")
+async def delete_todo(todo_id: int) -> dict[str, Any]:
+    if todo_id not in _store:
+        raise HTTPException(status_code=404, detail="not found")
+    return _store.pop(todo_id)
+'''
+
+
+def write_offline_scaffold(workspace: Path) -> None:
+    """Write a known-good artifact without using credentials or network I/O."""
+    app_dir = workspace / "app"
+    app_dir.mkdir(parents=True, exist_ok=True)
+    (app_dir / "__init__.py").write_text("", encoding="utf-8")
+    (app_dir / "main.py").write_text(OFFLINE_SCAFFOLD_APP, encoding="utf-8")
 
 
 def load_app_from_workspace(workspace: Path, entrypoint: str = "app/main.py") -> Any:
@@ -39,13 +105,13 @@ def load_app_from_workspace(workspace: Path, entrypoint: str = "app/main.py") ->
     return None
 
 
-def run_site_crud_tests(workspace: Path) -> dict[str, bool]:
+def run_site_crud_tests(workspace: Path) -> dict[str, bool | str]:
     """Run CRUD round-trip against the generated site using starlette TestClient.
 
     Returns a dict of {test_name: passed}.
     Skips gracefully if starlette or the app is not importable.
     """
-    results: dict[str, bool] = {}
+    results: dict[str, bool | str] = {}
     try:
         from starlette.testclient import TestClient
     except ImportError:
@@ -62,6 +128,7 @@ def run_site_crud_tests(workspace: Path) -> dict[str, bool]:
             # GET / -> 200
             r = client.get("/")
             results["root_200"] = r.status_code == 200
+            results["root_html"] = "<html" in r.text.lower()
 
             # POST /api/todos -> creates a todo
             r = client.post("/api/todos", json={"title": "buy milk"})
@@ -81,16 +148,43 @@ def run_site_crud_tests(workspace: Path) -> dict[str, bool]:
                 )
 
             # PUT /api/todos/{id} -> mark done
-            if todo_id:
+            if todo_id is not None:
                 r = client.put(f"/api/todos/{todo_id}", json={"done": True})
                 results["update_todo"] = r.status_code in (200, 204)
+                results["update_done"] = (
+                    r.status_code == 200 and r.json().get("done") is True
+                )
 
             # DELETE /api/todos/{id}
-            if todo_id:
+            if todo_id is not None:
                 r = client.delete(f"/api/todos/{todo_id}")
                 results["delete_todo"] = r.status_code in (200, 204)
+                r = client.get("/api/todos")
+                remaining = r.json() if r.status_code == 200 else []
+                results["deleted_absent"] = all(
+                    item.get("id") != todo_id for item in remaining
+                )
     except Exception as exc:
         results["crud_exception"] = False
         results["crud_error"] = str(exc)
 
     return results
+
+
+def run_site_tests(workspace: Path) -> None:
+    """Fail closed unless the generated site completes the full CRUD contract."""
+    results = run_site_crud_tests(workspace)
+    required = (
+        "app_importable",
+        "root_200",
+        "root_html",
+        "create_todo",
+        "list_todos",
+        "list_contains_buy_milk",
+        "update_todo",
+        "update_done",
+        "delete_todo",
+        "deleted_absent",
+    )
+    failures = [name for name in required if results.get(name) is not True]
+    assert not failures, f"generated todo site failed checks {failures}: {results}"
