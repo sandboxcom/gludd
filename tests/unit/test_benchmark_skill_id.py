@@ -1,4 +1,8 @@
-"""Regression tests for the benchmark skill dimension (P3 reconciliation)."""
+"""Regression tests for the benchmark skill dimension.
+
+These pin the current-schema reconciliation of the historical P3 commit
+``c1ce7481``; its obsolete revision 002 is intentionally superseded by 041.
+"""
 
 from __future__ import annotations
 
