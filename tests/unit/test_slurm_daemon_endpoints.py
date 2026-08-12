@@ -167,7 +167,9 @@ class TestSlurmJobCancelEndpoint:
 class TestSlurmJobsListEndpoint:
     def test_jobs_list_returns_empty(self):
         client = TestClient(_make_test_app())
-        resp = client.get("/admin/slurm/jobs")
+        mock_result = MagicMock(returncode=0, stdout="", stderr="")
+        with patch("general_ludd.infra.slurm.subprocess.run", return_value=mock_result):
+            resp = client.get("/admin/slurm/jobs")
         assert resp.status_code == 200
         assert "jobs" in resp.json()
 
@@ -344,7 +346,8 @@ class TestSlurmJobsListDeep:
         with patch("general_ludd.infra.slurm.subprocess.run", side_effect=RuntimeError("sacct died")):
             resp = client.get("/admin/slurm/jobs")
         assert resp.status_code == 500
-        assert "sacct died" in resp.json()["detail"]
+        assert resp.json()["detail"] == "Slurm jobs request failed"
+        assert "sacct died" not in resp.text
 
     def test_list_offloads_to_thread(self):
         client = TestClient(_make_test_app())
@@ -385,14 +388,15 @@ class TestSlurmCancelDeep:
         assert resp.status_code == 200
         assert seen["thread"] is not main_thread
 
-    def test_cancel_runtime_error_returns_500(self):
+    def test_cancel_invalid_job_id_returns_422(self):
         client = TestClient(_make_test_app())
         mock_result = MagicMock()
         mock_result.returncode = 1
         mock_result.stderr = "scancel: Invalid job id"
         with patch("general_ludd.infra.slurm.subprocess.run", return_value=mock_result):
             resp = client.delete("/admin/slurm/jobs/bad!id")
-        assert resp.status_code == 500
+        assert resp.status_code == 422
+        assert "invalid Slurm job id" in resp.json()["detail"]
 
 
 class TestSlurmSubmitEdgeCases:
@@ -463,6 +467,17 @@ class TestSlurmSubmitEdgeCases:
         with patch("general_ludd.infra.slurm.subprocess.run", return_value=mock_result):
             resp = client.post("/admin/slurm/submit", json={"command": "echo hi"})
         assert resp.status_code == 500
+
+    def test_submit_invalid_option_returns_422(self):
+        client = TestClient(_make_test_app())
+
+        resp = client.post(
+            "/admin/slurm/submit",
+            json={"command": "true", "job_name": "bad\n#SBATCH --uid=root"},
+        )
+
+        assert resp.status_code == 422
+        assert "invalid Slurm job_name" in resp.json()["detail"]
 
 
 class TestSlurmRemoteAdapterRouting:
@@ -550,6 +565,8 @@ class TestSlurmStatusAdapterFailure:
             client = TestClient(app)
             resp = client.get("/admin/slurm/status")
         assert resp.status_code == 500
+        assert resp.json()["detail"] == "Slurm status request failed"
+        assert "slurmctld unreachable" not in resp.text
 
     def test_status_slurm_connection_error_from_adapter(self):
         from general_ludd.infra.slurm import SlurmAdapter, SlurmConnectionError
@@ -558,7 +575,8 @@ class TestSlurmStatusAdapterFailure:
         with patch.object(SlurmAdapter, "available", side_effect=SlurmConnectionError("unreachable")):
             client = TestClient(app)
             resp = client.get("/admin/slurm/status")
-        assert resp.status_code == 500
+        assert resp.status_code == 503
+        assert resp.json()["detail"] == "Slurm controller is unavailable"
 
 
 class TestSlurmJobStatusDeep:
@@ -572,6 +590,8 @@ class TestSlurmJobStatusDeep:
             client = TestClient(app)
             resp = client.get("/admin/slurm/jobs/12345")
         assert resp.status_code == 500
+        assert resp.json()["detail"] == "Slurm job status request failed"
+        assert "sacct failed" not in resp.text
 
     def test_status_slurm_connection_error_from_adapter(self):
         from general_ludd.infra.slurm import SlurmAdapter, SlurmConnectionError
@@ -580,7 +600,8 @@ class TestSlurmJobStatusDeep:
         with patch.object(SlurmAdapter, "status", side_effect=SlurmConnectionError("unreachable")):
             client = TestClient(app)
             resp = client.get("/admin/slurm/jobs/12345")
-        assert resp.status_code == 500
+        assert resp.status_code == 503
+        assert resp.json()["detail"] == "Slurm controller is unavailable"
 
     def test_status_unknown_job_returns_200(self):
         """sacct returns empty → UNKNOWN state, endpoint returns 200 (not 404)."""
@@ -589,8 +610,16 @@ class TestSlurmJobStatusDeep:
         mock_result.returncode = 0
         mock_result.stdout = ""
         with patch("general_ludd.infra.slurm.subprocess.run", return_value=mock_result):
-            resp = client.get("/admin/slurm/jobs/nonexistent")
+            resp = client.get("/admin/slurm/jobs/999999")
         assert resp.status_code == 200
+
+    def test_status_invalid_job_id_returns_422(self):
+        client = TestClient(_make_test_app())
+
+        resp = client.get("/admin/slurm/jobs/not-a-job")
+
+        assert resp.status_code == 422
+        assert "invalid Slurm job id" in resp.json()["detail"]
 
 
 class TestSlurmAdapterPerRequestIsolation:

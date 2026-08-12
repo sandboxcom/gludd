@@ -58,7 +58,7 @@ link** — each surface validates even though the next layer would also catch it
 | `git worktree add/remove/list` | `src/general_ludd/worktree/core.py` | `validate_branch_name()` (leading `-`, ref metachars, `..`, leading `/`, `.lock`) + `confine_worktree_path()` (realpath under allowed base); `build_worktree_*_argv()` emit list-form with `--`; reclaim fails closed | `tests/unit/test_worktree_core.py` |
 | `git` history intel (`git -C <repo> ...`) | `src/general_ludd/code_intelligence/git_intel.py` | `_validate_token()` (leading `-` + metachars) on caller refs; repo realpath-confined; refs placed after `--` | `tests/unit/test_git_intel.py` |
 | `git push` + `gh pr create` | `src/general_ludd/git_automation/pr_delivery.py` | `_validate_ref()` (leading `-` + `_SAFE_REF` charset) on branch/remote names, fail closed | `tests/unit/test_pr_delivery.py` |
-| Slurm `sbatch`/`sacct`/`scancel` | `src/general_ludd/infra/slurm.py` | `_require_job_id` (numeric), `_require_name`/`_require_time`/`_require_extra_arg` (no leading dash / newline that could inject a `#SBATCH` directive); `--` before script; `--jobs=<id>` binds id to flag | `tests/unit/test_slurm.py` |
+| Slurm `sbatch`/`sacct`/`scancel` | `src/general_ludd/infra/slurm.py`, `src/general_ludd/routers/slurm.py` | `_require_job_id` (numeric), `_require_name`/`_require_time`/`_require_extra_arg` (no leading dash / newline that could inject a `#SBATCH` directive); `--` before script; `--jobs=<id>` binds id to flag; router maps invalid input to 422, unavailable Slurm to 503, and unexpected failures to a sanitized 500 | `tests/unit/test_slurm.py`, `tests/unit/test_slurm_deep.py`, `tests/unit/test_slurm_daemon_endpoints.py` |
 | Local inference engines (vllm / llama.cpp / slurm `--wrap`) | `src/general_ludd/infra/local_inference.py` | `_validate_model`/`_validate_host`/`_validate_port`/`_validate_extra_args` reject leading-dash + shell metachars before argv (and before the `--wrap` shell string) | `tests/unit/test_local_inference.py` |
 | `uv`/`pip` package install | `src/general_ludd/dependency/manager.py` | `_validate_package_spec()` (PEP 508-ish, no leading `-`, no metachars/whitespace/paths); `--` before the spec | `tests/unit/test_dependency_manager.py` |
 | `ansible-galaxy` search/install | `src/general_ludd/ansible/galaxy.py` | `_validate_galaxy_type`/`_validate_name_spec`/`_validate_search_query` (namespace.name form, no leading `-`); `--` before positional | `tests/unit/test_galaxy.py` |
@@ -69,6 +69,19 @@ link** — each surface validates even though the next layer would also catch it
 | Dogfood smoke-task → `ansible-playbook` | `src/general_ludd/dogfood/runner.py` | `_validate_task_name()` (no path sep / `..` / leading `-` / metachars) before `playbooks/<task>.yml` | `tests/unit/test_dogfood_runner.py` |
 | A/B candidate execution | `src/general_ludd/abtest/runner.py` | crash-isolated fresh-interpreter child; success requires exit 0 **and** an unforgeable parent-generated `secrets.token_hex` nonce written to a parent-controlled result file; fails closed otherwise; bounded output | `tests/unit/test_abtest_runner.py` |
 | `make test` (engine test gate) | `src/general_ludd/execution/engine.py` | `_run_tests()` runs in its own process group (`start_new_session=True`) and `os.killpg`s the whole group on a 120s timeout so no recipe grandchild leaks | `tests/unit/test_execution_engine.py` |
+
+#### Practitioner evidence for Slurm/API error boundaries
+
+- A long-lived [slurm-users report about slurmrestd authentication](https://lists.schedmd.com/pipermail/slurm-users/2023-June/010148.html)
+  shows an operator receiving a generic HTTP 500 when the service works for the
+  Slurm user but fails for an ordinary user. That ambiguity is why Gludd keeps
+  caller errors (422), deployment/controller availability (503), and internal
+  adapter failures (sanitized 500) distinct.
+- A [FastAPI practitioner discussion on generic exception handling](https://github.com/fastapi/fastapi/discussions/9478)
+  documents exceptions escaping tests unless the application deliberately
+  installs or exercises the intended boundary. Gludd therefore catches adapter
+  failures inside each Slurm route and tests the real HTTP response, while logs
+  retain diagnostic detail that the response does not expose.
 
 ### SSRF guards
 

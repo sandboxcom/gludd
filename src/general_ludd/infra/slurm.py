@@ -668,10 +668,16 @@ class SlurmAdapter:
                 text=True,
                 timeout=30,
             )
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            return []
+        except FileNotFoundError as exc:
+            raise SlurmNotInstalledError("squeue not found on PATH") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise SlurmConnectionError(
+                f"squeue timed out after {exc.timeout}s"
+            ) from exc
         if result.returncode != 0:
-            return []
+            raise RuntimeError(
+                f"squeue failed (rc={result.returncode}): {result.stderr.strip()}"
+            )
         jobs: list[SlurmJobInfo] = []
         for line in result.stdout.strip().splitlines():
             parts = line.strip().split("|")
