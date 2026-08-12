@@ -122,19 +122,16 @@ def test_multitask_min_dispatches_hardcoded_10():
     assert val == 10, f"multitask_config.ts MIN_DISPATCHES default fallback is {val}, expected 10."
 
 
-def test_multitask_required_dispatches_is_opt_in():
-    """No mandatory batch minimum applies unless a minimum env var is set.
-
-    The legacy minimum env vars still opt into enforcement, preserving
-    configurability for operators who want a strict minimum.
-    """
+def test_multitask_required_dispatches_uses_hard_default():
+    """The default minimum is mandatory; an explicit zero disables it."""
     src = _read(MULTITASK_TS)
-    assert "HAS_CONFIGURED_MIN_DISPATCHES" in src
     assert re.search(
-        r"REQUIRED_DISPATCHES\s*=\s*HAS_CONFIGURED_MIN_DISPATCHES\s*\?",
+        r"REQUIRED_DISPATCHES\s*=\s*Math\.max\(0,\s*Math\.min\(MAX_DISPATCHES,"
+        r"[\s\S]*?MIN_DISPATCHES",
         src,
     )
-    assert re.search(r":\s*0\s*$", src, re.MULTILINE)
+    assert "REQUIRED_DISPATCHES > 0" in src
+    assert "Set GLUDD_MIN_DISPATCHES=0 to disable" in src
 
 
 def test_multitask_required_minimum_is_clamped_to_ceiling():

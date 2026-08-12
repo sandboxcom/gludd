@@ -51,6 +51,45 @@ PROJECT_IMPL = [
 ]
 
 
+def _isolated_plugin_env(project_root: Path) -> dict[str, str]:
+    """Return a subprocess env that cannot load live-session hot modules."""
+    env = os.environ.copy()
+    env["GLUDD_HOT_MODULE_PREFIX"] = str(
+        project_root / f"gludd-test-hot-{os.getpid()}-{time.time_ns()}-"
+    )
+    return env
+
+
+def _isolated_state_path(project_root: Path, name: str) -> Path:
+    """Return a unique state path owned by this temporary project."""
+    return project_root / f"gludd-{name}-{os.getpid()}-{time.time_ns()}.json"
+
+
+def _multitask_state(**overrides: object) -> dict[str, object]:
+    """Return a complete persisted state matching the plugin contract."""
+    now = int(time.time() * 1000)
+    state: dict[str, object] = {
+        "pid": os.getpid(),
+        "thisMessageDispatches": 0,
+        "prevMessageDispatches": 0,
+        "zeroStreak": 0,
+        "estimatedInFlight": 0,
+        "lastTs": now,
+        "lastToolCallTs": now,
+        "waveHistory": [],
+        "consecutiveNonDispatch": 0,
+        "consecutiveNonDispatchStartTs": 0,
+        "sawNonDispatchSinceDispatch": False,
+        "underFloorCount": 0,
+        "lastDispatchTs": now,
+        "singleDispatchWaves": 0,
+        "sessionDispatchTotal": 0,
+        "waveTopicCounts": {},
+    }
+    state.update(overrides)
+    return state
+
+
 def _invoke_multitask_hook(
     project_root: Path,
     tool: str,
@@ -84,14 +123,15 @@ if (result) {{
         f.write(script)
         script_path = f.name
 
-    env = os.environ.copy()
+    state_path = _isolated_state_path(project_root, "multitask")
+    env = _isolated_plugin_env(project_root)
     env["OPENCODE_SUBAGENT"] = "1" if subagent else "0"
     if not enforce:
         env["GLUDD_MULTITASK_FLOOR_ENFORCE"] = "0"
     else:
         env.pop("GLUDD_MULTITASK_FLOOR_ENFORCE", None)
     env["GLUDD_MIN_DISPATCHES"] = str(min_dispatches)
-    env["GLUDD_MULTITASK_STATE_FILE"] = f"/tmp/gludd-e2e-multitask-{os.getpid()}.json"
+    env["GLUDD_MULTITASK_STATE_FILE"] = str(state_path)
     if disengaged:
         env["GLUDD_DISENGAGE_NEXT_PATH"] = "/tmp/gludd-e2e-disengage-next.json"
 
@@ -115,6 +155,7 @@ if (result) {{
             return {"text": stdout}
     finally:
         Path(script_path).unlink(missing_ok=True)
+        state_path.unlink(missing_ok=True)
     return None
 
 
@@ -149,13 +190,14 @@ if (result) {{
         f.write(script)
         script_path = f.name
 
-    env = os.environ.copy()
+    state_path = _isolated_state_path(project_root, "session")
+    env = _isolated_plugin_env(project_root)
     env["OPENCODE_SUBAGENT"] = "1" if subagent else "0"
     if not enforce:
         env["GLUDD_SESSION_START_ENFORCE"] = "0"
     else:
         env.pop("GLUDD_SESSION_START_ENFORCE", None)
-    env["GLUDD_SESSION_STATE"] = f"/tmp/gludd-e2e-session-{os.getpid()}.json"
+    env["GLUDD_SESSION_STATE"] = str(state_path)
     env["GLUDD_SESSION_START_MIN_DISPATCHES"] = "10"
     cwd = str(project_root)
 
@@ -179,6 +221,7 @@ if (result) {{
             return None
     finally:
         Path(script_path).unlink(missing_ok=True)
+        state_path.unlink(missing_ok=True)
 
 
 def _invoke_depth_hook(
@@ -213,7 +256,7 @@ if (result) {{
         f.write(script)
         script_path = f.name
 
-    env = os.environ.copy()
+    env = _isolated_plugin_env(project_root)
     env["OPENCODE_DEPTH"] = str(depth)
     env["OPENCODE_SUBAGENT"] = "0" if depth == 0 else "1"
     if not enforce:
@@ -277,9 +320,9 @@ if (result && typeof result === "object" && result.text) {{
         f.write(script)
         script_path = f.name
 
-    env = os.environ.copy()
+    env = _isolated_plugin_env(project_root)
     env["OPENCODE_SUBAGENT"] = "1" if subagent else "0"
-    env["GLUDD_PROJECT_ROOT"] = str(ROOT)
+    env["GLUDD_PROJECT_ROOT"] = str(project_root)
 
     try:
         proc = subprocess.run(
@@ -455,27 +498,13 @@ class TestMultitaskFloorEnforcement:
 
     def test_text_complete_blocks_thin_wave(self, temp_project):
         """text.complete returns BLOCKED when wave is below floor."""
-        state_file = f"/tmp/gludd-e2e-multitask-{os.getpid()}.json"
+        state_file = str(_isolated_state_path(temp_project, "thin-wave"))
         Path(state_file).write_text(
             json.dumps(
-                {
-                    "pid": os.getpid(),
-                    "thisMessageDispatches": 3,
-                    "prevMessageDispatches": 0,
-                    "zeroStreak": 0,
-                    "estimatedInFlight": 0,
-                    "lastTs": int(time.time() * 1000),
-                    "lastToolCallTs": int(time.time() * 1000),
-                    "waveHistory": [],
-                    "consecutiveNonDispatch": 0,
-                    "consecutiveNonDispatchStartTs": 0,
-                    "sawNonDispatchSinceDispatch": False,
-                    "underFloorCount": 0,
-                    "lastDispatchTs": int(time.time() * 1000),
-                    "singleDispatchWaves": 0,
-                    "sessionDispatchTotal": 3,
-                    "waveTopicCounts": {},
-                }
+                _multitask_state(
+                    thisMessageDispatches=3,
+                    sessionDispatchTotal=3,
+                )
             )
         )
         plugin_path = temp_project / ".opencode" / "plugin" / "enforce-multitask.ts"
@@ -501,7 +530,7 @@ if (result && typeof result === "object") {{
             f.write(script)
             sp = f.name
         try:
-            env = os.environ.copy()
+            env = _isolated_plugin_env(temp_project)
             env["OPENCODE_SUBAGENT"] = "0"
             env["GLUDD_MULTITASK_STATE_FILE"] = state_file
             env["GLUDD_MIN_DISPATCHES"] = "10"
@@ -515,6 +544,7 @@ if (result && typeof result === "object") {{
                 cwd=str(temp_project),
                 env=env,
             )
+            assert proc.returncode == 0, proc.stderr
             stdout = proc.stdout.strip()
             assert "BLOCKED" in stdout or "THIN" in stdout, (
                 f"Expected block for thin wave (3 dispatches), got: {stdout}"
@@ -619,16 +649,9 @@ class TestFullWaveSimulation:
 
     def test_wave_dispatches_tracked(self, temp_project):
         """Multiple dispatches increment the counter."""
-        state_file = f"/tmp/gludd-e2e-multitask-{os.getpid()}.json"
+        state_file = str(_isolated_state_path(temp_project, "dispatch-wave"))
         Path(state_file).write_text(
-            json.dumps(
-                {
-                    "pid": os.getpid(),
-                    "thisMessageDispatches": 0,
-                    "sessionDispatchTotal": 0,
-                    "lastDispatchTs": int(time.time() * 1000),
-                }
-            )
+            json.dumps(_multitask_state())
         )
 
         plugin_path = temp_project / ".opencode" / "plugin" / "enforce-multitask.ts"
@@ -653,7 +676,7 @@ process.stdout.write(JSON.stringify(out));
             f.write(script)
             sp = f.name
         try:
-            env = os.environ.copy()
+            env = _isolated_plugin_env(temp_project)
             env["OPENCODE_SUBAGENT"] = "0"
             env["GLUDD_MULTITASK_STATE_FILE"] = state_file
             env["GLUDD_MIN_DISPATCHES"] = "10"
@@ -676,7 +699,7 @@ process.stdout.write(JSON.stringify(out));
 
     def test_ceiling_blocks_11th_dispatch(self, temp_project):
         """11th dispatch in a wave is denied."""
-        state_file = f"/tmp/gludd-e2e-multitask-{os.getpid()}.json"
+        state_file = str(_isolated_state_path(temp_project, "ceiling"))
         plugin_path = temp_project / ".opencode" / "plugin" / "enforce-multitask.ts"
         script = f"""
 import * as fs from "node:fs";
@@ -700,7 +723,7 @@ if (result) {{
             f.write(script)
             sp = f.name
         try:
-            env = os.environ.copy()
+            env = _isolated_plugin_env(temp_project)
             env["OPENCODE_SUBAGENT"] = "0"
             env["GLUDD_MULTITASK_STATE_FILE"] = state_file
             env["GLUDD_MIN_DISPATCHES"] = "10"
@@ -722,9 +745,23 @@ if (result) {{
             Path(sp).unlink(missing_ok=True)
             Path(state_file).unlink(missing_ok=True)
 
-    def test_zero_dispatch_streak_escalates(self, temp_project):
+    def test_zero_dispatch_streak_escalates(self, temp_project, monkeypatch):
         """3+ consecutive zero-dispatch messages trigger under-floor escalation."""
-        state_file = f"/tmp/gludd-e2e-multitask-{os.getpid()}.json"
+        ambient_hot_prefix = temp_project / "ambient-hot-"
+        Path(f"{ambient_hot_prefix}multitask.js").write_text(
+            'module.exports = {"experimental.text.complete": async (_input, output) => output};\n'
+        )
+        monkeypatch.setenv("GLUDD_HOT_MODULE_PREFIX", str(ambient_hot_prefix))
+        state_file = str(_isolated_state_path(temp_project, "zero-streak"))
+        Path(state_file).write_text(
+            json.dumps(
+                _multitask_state(
+                    sessionDispatchTotal=10,
+                    zeroStreak=3,
+                    underFloorCount=3,
+                )
+            )
+        )
         plugin_path = temp_project / ".opencode" / "plugin" / "enforce-multitask.ts"
         script = f"""
 import * as fs from "node:fs";
@@ -758,7 +795,7 @@ if (result && typeof result === "object" && result.text) {{
             f.write(script)
             sp = f.name
         try:
-            env = os.environ.copy()
+            env = _isolated_plugin_env(temp_project)
             env["OPENCODE_SUBAGENT"] = "0"
             env["GLUDD_MULTITASK_STATE_FILE"] = state_file
             env["GLUDD_MIN_DISPATCHES"] = "10"
@@ -772,6 +809,7 @@ if (result && typeof result === "object" && result.text) {{
                 cwd=str(temp_project),
                 env=env,
             )
+            assert proc.returncode == 0, proc.stderr
             stdout = proc.stdout.strip()
             assert "BLOCKED" in stdout.upper() or "CONFIGURED MINIMUM" in stdout.upper() or "THIN" in stdout.upper(), (
                 f"Expected under-floor escalation, got: {stdout[:500]}"
