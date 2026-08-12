@@ -223,7 +223,7 @@ class TestBudgetExhaustionDeep:
             "unlimited", run_budget_usd=200.0, cost_per_input_token=0.01, cost_per_output_token=0.01, api_metered=True
         )
         gw = ModelGateway([p], provider_registry=_registry())
-        allowed = gw.check_budget("unlimited", estimated_cost=999999.0, budget_remaining=float("inf"))
+        allowed = gw.check_budget("unlimited", estimated_cost=199.0, budget_remaining=float("inf"))
         assert allowed is True
 
     def test_budget_estimated_cost_nan_rejects(self) -> None:
@@ -1344,7 +1344,13 @@ class TestCostCalculationRounding:
         assert 0.005 <= called_cost <= 0.015
 
     def test_zero_cost_profile_never_bills(self) -> None:
-        p = _profile("freebie", cost_per_input_token=0.0, cost_per_output_token=0.0, max_cumulative_output_tokens=20000)
+        p = _profile(
+            "freebie",
+            cost_per_input_token=0.0,
+            cost_per_output_token=0.0,
+            max_output_tokens=9999,
+            max_cumulative_output_tokens=20000,
+        )
         reg = _registry()
         cm = _chat_model(usage={"input_tokens": 9999, "output_tokens": 9999, "total_tokens": 19998})
         reg.get_provider_class.return_value = lambda **kw: cm
@@ -1361,6 +1367,7 @@ class TestCostCalculationRounding:
             cost_per_output_token=0.0000152,
             run_budget_usd=200.0,
             api_metered=True,
+            max_output_tokens=50000,
             max_cumulative_output_tokens=100000,
         )
         reg = _registry()
@@ -1503,8 +1510,20 @@ class TestBudgetConcurrency:
             max_output_tokens=100,
         )
         gw = ModelGateway([p])
-        allowed = gw.check_budget("capped", 4.0, 100.0, messages=[{"role": "user", "content": "hi"}])
+        allowed = gw.check_budget("capped", 6.0, 100.0, messages=[{"role": "user", "content": "hi"}])
         assert allowed is False
+
+    def test_check_budget_allows_cost_equal_to_profile_run_budget(self) -> None:
+        p = _profile(
+            "exact-cap",
+            run_budget_usd=5.0,
+            cost_per_input_token=0.01,
+            cost_per_output_token=0.01,
+            api_metered=True,
+        )
+        gw = ModelGateway([p])
+
+        assert gw.check_budget("exact-cap", 5.0, float("inf")) is True
 
     def test_budget_request_payload_thread_safe_increments(self) -> None:
         budget = _RequestPayloadBudget(
@@ -1582,6 +1601,7 @@ class TestCostBreakdownByProvider:
             run_budget_usd=200.0,
             cost_per_input_token=0.000001,
             cost_per_output_token=0.000002,
+            max_output_tokens=100,
             api_metered=True,
         )
         expensive = _profile(
@@ -1589,6 +1609,7 @@ class TestCostBreakdownByProvider:
             run_budget_usd=200.0,
             cost_per_input_token=0.10,
             cost_per_output_token=0.30,
+            max_output_tokens=100,
             api_metered=True,
         )
         reg = _registry()
@@ -1718,11 +1739,15 @@ class TestPeakOffPeakBilling:
             end_hour=8,
         )
         mon_10pm = datetime.datetime(2026, 8, 3, 22, 0, 0, tzinfo=datetime.UTC)
-        mon_2am = datetime.datetime(2026, 8, 4, 2, 0, 0, tzinfo=datetime.UTC)
+        tue_2am = datetime.datetime(2026, 8, 4, 2, 0, 0, tzinfo=datetime.UTC)
+        tue_8am = datetime.datetime(2026, 8, 4, 8, 0, 0, tzinfo=datetime.UTC)
+        sun_2am = datetime.datetime(2026, 8, 9, 2, 0, 0, tzinfo=datetime.UTC)
         mon_noon = datetime.datetime(2026, 8, 3, 12, 0, 0, tzinfo=datetime.UTC)
 
         assert tier.covers(mon_10pm) is True
-        assert tier.covers(mon_2am) is True
+        assert tier.covers(tue_2am) is True
+        assert tier.covers(tue_8am) is False
+        assert tier.covers(sun_2am) is False
         assert tier.covers(mon_noon) is False
 
     def test_seed_token_rates_from_catalog_returns_unpriced_when_none(self) -> None:

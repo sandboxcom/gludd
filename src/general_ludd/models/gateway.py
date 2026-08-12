@@ -818,8 +818,6 @@ class _LimitedChatModel:
         inner = self._inner
         if hasattr(inner, "bind_tools"):
             inner = inner.bind_tools(tools)
-            if inner is self._inner:
-                return self
         return _LimitedChatModel(
             inner,
             profile=self._profile,
@@ -1488,12 +1486,10 @@ class ModelGateway:
         # clamped here. A non-finite estimated_cost (NaN OR Inf) is treated as
         # float("inf") so it can never slip under any finite cap — a NaN/Inf cost
         # must REJECT, not pass.
-        if math.isinf(budget_remaining):
-            return True
         if math.isnan(budget_remaining):
             budget_remaining = 0.0
         if not math.isfinite(estimated_cost):
-            estimated_cost = float("inf")
+            return False
         # D-21: do NOT trust the caller-provided estimated_cost. Re-estimate
         # server-side from the actual messages + the profile's price rates, and
         # use the MAX of (caller claim, server estimate) for the budget decision
@@ -1513,9 +1509,10 @@ class ModelGateway:
             effective_cost = max(estimated_cost, server_cost)
         else:
             effective_cost = estimated_cost
-        if effective_cost > budget_remaining:
-            return False
-        return not (profile.api_metered and effective_cost > profile.run_budget_usd)
+        effective_budget = budget_remaining
+        if profile.api_metered:
+            effective_budget = min(effective_budget, profile.run_budget_usd)
+        return effective_cost <= effective_budget
 
     @staticmethod
     def estimate_cost(
@@ -1953,16 +1950,8 @@ class ModelGateway:
                 now = time.monotonic()
                 elapsed = now - started_at
                 idle_elapsed = now - last_chunk_at
-                if elapsed > stream_seconds:
-                    raise StreamLimitError(
-                        profile_id=profile_id,
-                        stage="response",
-                        dimension="duration_seconds",
-                        actual=max(stream_seconds + 1, math.ceil(elapsed)),
-                        limit=stream_seconds,
-                        source="provider",
-                        count_source="monotonic_clock",
-                    )
+                # When both limits expire at the same chunk boundary, report
+                # the inter-chunk idle breach: it is the more specific cause.
                 if idle_elapsed > idle_seconds:
                     raise StreamLimitError(
                         profile_id=profile_id,
@@ -1970,6 +1959,16 @@ class ModelGateway:
                         dimension="idle_seconds",
                         actual=max(idle_seconds + 1, math.ceil(idle_elapsed)),
                         limit=idle_seconds,
+                        source="provider",
+                        count_source="monotonic_clock",
+                    )
+                if elapsed > stream_seconds:
+                    raise StreamLimitError(
+                        profile_id=profile_id,
+                        stage="response",
+                        dimension="duration_seconds",
+                        actual=max(stream_seconds + 1, math.ceil(elapsed)),
+                        limit=stream_seconds,
                         source="provider",
                         count_source="monotonic_clock",
                     )
@@ -2097,6 +2096,17 @@ class ModelGateway:
                 total_tool_calls = next_tool_calls
                 full_content.append(chunk_content)
                 yield chunk
+            elapsed = time.monotonic() - started_at
+            if elapsed > stream_seconds:
+                raise StreamLimitError(
+                    profile_id=profile_id,
+                    stage="response",
+                    dimension="duration_seconds",
+                    actual=max(stream_seconds + 1, math.ceil(elapsed)),
+                    limit=stream_seconds,
+                    source="provider",
+                    count_source="monotonic_clock",
+                )
             completed = True
         except PayloadLimitError:
             raise
