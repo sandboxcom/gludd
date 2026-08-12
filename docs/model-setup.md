@@ -165,6 +165,16 @@ gludd models download "TheBloke/Llama-2-7B-GGUF" --filename "llama-2-7b.Q4_K_M.g
 gludd local-serve --engine llamacpp --model ~/.cache/general-ludd/models/llama-2-7b.Q4_K_M.gguf --port 8001
 ```
 
+`gludd local-serve` calls the canonical daemon endpoint
+`POST /admin/models/local/serve`. The CLI contract test asserts the complete URL,
+so a renamed server route cannot silently leave the client on a stale path.
+
+Practitioner evidence: FastAPI users have reported long-lived failures where an
+application's effective route prefix and generated client-facing URL diverged
+([fastapi/fastapi#829](https://github.com/fastapi/fastapi/issues/829)). Gludd
+therefore treats the registered router path as the single source of truth and
+pins the CLI to it with an end-to-end contract test.
+
 ### 4. Add as Model Profile
 
 ```bash
