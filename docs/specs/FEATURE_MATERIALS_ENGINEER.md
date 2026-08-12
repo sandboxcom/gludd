@@ -477,6 +477,25 @@ when available, material/process/equipment context, symptom, confirmed cause or
 uncertainty, mitigation, and limits. Anecdotes SHALL inform failure cases, not
 become property data.
 
+### 11.1 Practitioner evidence: booleans admitted as engineering numbers
+
+- **Requirements:** MATE-SAFE-003, MATE-SAFE-006, and MATE-AT-006.
+- **Report and observation dates:** the Stack Overflow question
+  [“Why is bool a subclass of int?”](https://stackoverflow.com/questions/8169001/why-is-bool-a-subclass-of-int)
+  was opened 2011-11-17, remained active through 2018-01-23, and was reviewed
+  for this feature on 2026-08-12.
+- **Context and symptom:** a Python user found that an `isinstance(value, int)`
+  branch serialized a boolean as an integer. The same long-lived language
+  behavior can silently admit `True` as `1` and `False` as `0` into stress,
+  load, geometry, or property calculations.
+- **Cause and mitigation:** Python deliberately defines `bool` as a subclass of
+  `int` for backward compatibility. Materials numerical boundaries therefore
+  SHALL reject booleans explicitly before accepting `int`/`float`, reject
+  non-finite values, and preserve `fail_closed` precedence for invalid loads.
+- **Limits:** the report demonstrates the type-system hazard, not an observed
+  materials failure and not a source of property data. Tests remain the
+  evidence that each engineering calculation boundary enforces the mitigation.
+
 ## 12. Implementation layout
 
 ```text
