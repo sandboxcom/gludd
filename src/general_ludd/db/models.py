@@ -727,6 +727,9 @@ class AzureCostOutboxEventModel(Base):
 
 class FeatureStatus(enum.StrEnum):
     REQUESTED = "requested"
+    # Compatibility alias: old clients called the initial requested state
+    # ``planned``. Persist the canonical value for mixed-version workers.
+    PLANNED = "requested"
     IN_PROGRESS = "in_progress"
     IMPLEMENTED = "implemented"
     VERIFIED = "verified"
