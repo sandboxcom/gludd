@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextlib
 from collections.abc import AsyncGenerator, Callable, Generator
 from datetime import UTC, datetime, timedelta
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 from sqlalchemy import select
 from sqlalchemy.engine import CursorResult
@@ -1310,6 +1310,7 @@ class ProjectRelationshipRepository:
 
     # The owning project may declare at most one of these relation types.
     _SINGLETON_RELATIONS: frozenset[str] = frozenset({RelationType.PARENT.value})
+    _LEGACY_LOCATION_KINDS: ClassVar[dict[str, str]] = {"path": LocationKind.DIRECTORY.value}
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -1323,6 +1324,10 @@ class ProjectRelationshipRepository:
         removed (replace-on-second-parent), so a project never carries two parents.
         Re-declaring the SAME edge tuple updates it in place (no duplicate row).
         """
+        data = dict(data)
+        raw_location_kind = str(data.get("location_kind", ""))
+        data["location_kind"] = self._LEGACY_LOCATION_KINDS.get(raw_location_kind, raw_location_kind)
+
         project_id = data.get("project_id", "")
         relation_type = str(data.get("relation_type", ""))
         location_kind = str(data.get("location_kind", ""))
