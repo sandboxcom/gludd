@@ -38,3 +38,23 @@ searching traceback prose:
 `tests/unit/test_check_integration_health.py` covers six-entry xdist summary
 accounting, file grouping, class and parametrized node IDs, live/summary
 deduplication, and reason enrichment without launching integration tests.
+
+## Orphaned collection cleanup
+
+`make reap-orphan-pytest` is dry-run by default. With `APPLY=1`, it selects only
+old, orphaned pytest trees proven to belong to this checkout, walks descendants
+leaf-first across process-group boundaries, sends `SIGTERM`, waits for the
+bounded grace interval, escalates survivors to `SIGKILL`, and then verifies that
+no selected PID remains. A nonzero survivor count is an error; cleanup must not
+claim success while a collection worker still holds the shared lock.
+
+This escalation is grounded in long-lived practitioner reports rather than a
+project-specific assumption. [pytest-timeout issue #159](https://github.com/pytest-dev/pytest-timeout/issues/159)
+documents pytest termination leaving child processes orphaned, and the
+[2018 subprocess cleanup report](https://stackoverflow.com/questions/52476265/killing-shell-true-process-results-in-resourcewarning-subprocess-is-still-runni)
+shows that sending a kill signal alone is not proof that the process lifecycle
+has finished. The Gludd reaper therefore couples bounded escalation with an
+explicit liveness check and keeps its existing project-ownership guards.
+
+`tests/unit/test_orphan_pytest_reaper.py` pins selection safety, leaf-first
+termination, TERM-resistant escalation, and post-kill survivor verification.

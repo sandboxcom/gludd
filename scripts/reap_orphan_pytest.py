@@ -9,6 +9,7 @@ import os
 import re
 import signal
 import subprocess
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -220,6 +221,23 @@ def descendant_records(
     return selected
 
 
+def _alive_pids(pids: set[int]) -> set[int]:
+    """Return the subset of positive PIDs that still exist."""
+    alive: set[int] = set()
+    for pid in pids:
+        if pid <= 0:
+            continue
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            continue
+        except PermissionError:
+            alive.add(pid)
+        else:
+            alive.add(pid)
+    return alive
+
+
 def _records(project_root: Path) -> list[ProcessRecord]:
     output = subprocess.run(
         ["ps", "-axo", "pid=,ppid=,pgid=,etime=,command="],
@@ -271,9 +289,25 @@ def reap(project_root: Path, *, min_age_seconds: int, apply: bool) -> int:
         action = "REAP" if apply else "WOULD-REAP"
         print(f"{action} pid={record.pid} age={record.elapsed_seconds}s command={record.command}")
         if apply:
-            for process in descendant_records(record, records):
+            tree = descendant_records(record, records)
+            tree_pids = {process.pid for process in tree}
+            for process in tree:
                 with contextlib.suppress(OSError, ProcessLookupError):
                     os.kill(process.pid, signal.SIGTERM)
+            time.sleep(float(os.environ.get("GLUDD_ORPHAN_PYTEST_GRACE_SECONDS", "1")))
+            resistant = _alive_pids(tree_pids)
+            for process in tree:
+                if process.pid not in resistant:
+                    continue
+                with contextlib.suppress(OSError, ProcessLookupError):
+                    os.kill(process.pid, signal.SIGKILL)
+            print(f"orphan-pytest escalated={len(resistant)}")
+            if resistant:
+                time.sleep(0.1)
+            survivors = _alive_pids(resistant)
+            print(f"orphan-pytest survivors={len(survivors)}")
+            if survivors:
+                return 1
     print(f"orphan-pytest candidates={len(candidates)} apply={apply}")
     return 0
 
