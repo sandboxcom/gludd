@@ -33,6 +33,15 @@ def make_spec(
     )
 
 
+def file_cap(actions: list[str], path_prefix: str = "/repo/") -> Capability:
+    """Return a structurally valid file capability for delegation tests."""
+    return Capability(
+        resource="file:repo",
+        actions=actions,
+        constraints={"path_prefix": path_prefix},
+    )
+
+
 class TestSTSRegistry:
     def test_issue_and_resolve(self) -> None:
         registry = STSRegistry()
@@ -123,8 +132,8 @@ class TestStsIssuer:
     def issuer_spec(self) -> PermissionSpec:
         return make_spec(
             capabilities=[
-                Capability(resource="files/*", actions=["read"]),
-                Capability(resource="files/*", actions=["write"]),
+                file_cap(["read"]),
+                file_cap(["write"]),
             ],
             max_sts_ttl_seconds=3600,
         )
@@ -135,7 +144,7 @@ class TestStsIssuer:
 
     def test_issue_token(self, issuer: StsIssuer, issuer_spec: PermissionSpec) -> None:
         subject_spec = make_spec(
-            capabilities=[Capability(resource="files/*", actions=["read"])],
+            capabilities=[file_cap(["read"], "/repo/work/")],
             max_sts_ttl_seconds=3600,
         )
         token = issuer.issue(
@@ -164,9 +173,41 @@ class TestStsIssuer:
                 ttl_seconds=600,
             )
 
+    def test_issue_uses_matching_grant_when_resource_is_repeated(
+        self, issuer: StsIssuer
+    ) -> None:
+        """A later, narrower matching grant must not be hidden by the first one."""
+        issuer_spec = make_spec(
+            capabilities=[
+                Capability(
+                    resource="file:repo",
+                    actions=["read"],
+                    constraints={"path_prefix": "/repo/"},
+                ),
+                Capability(
+                    resource="file:repo",
+                    actions=["write"],
+                    constraints={"path_prefix": "/repo/"},
+                ),
+            ]
+        )
+        subject_spec = make_spec(
+            capabilities=[
+                Capability(
+                    resource="file:repo",
+                    actions=["write"],
+                    constraints={"path_prefix": "/repo/work/"},
+                )
+            ]
+        )
+
+        token = issuer.issue(issuer_spec, subject_spec, "issuer", "subject", 60)
+
+        assert token.spec == subject_spec
+
     def test_ttl_clamped(self, issuer: StsIssuer, issuer_spec: PermissionSpec) -> None:
         subject_spec = make_spec(
-            capabilities=[Capability(resource="files/*", actions=["read"])],
+            capabilities=[file_cap(["read"], "/repo/work/")],
             max_sts_ttl_seconds=3600,
         )
         token = issuer.issue(
@@ -180,45 +221,49 @@ class TestStsIssuer:
 
     def test_validate_valid_token(self, issuer: StsIssuer, issuer_spec: PermissionSpec) -> None:
         subject_spec = make_spec(
-            capabilities=[Capability(resource="files/*", actions=["read"])],
+            capabilities=[file_cap(["read"], "/repo/work/")],
             max_sts_ttl_seconds=3600,
         )
         token = issuer.issue(issuer_spec, subject_spec, "i", "s", 600)
-        assert issuer.validate(token, Capability(resource="files/a", actions=["read"]))
+        assert issuer.validate(token, Capability(resource="file:repo", actions=["read"]))
 
     def test_validate_missing_capability(self, issuer: StsIssuer, issuer_spec: PermissionSpec) -> None:
         subject_spec = make_spec(
-            capabilities=[Capability(resource="files/*", actions=["read"])],
+            capabilities=[file_cap(["read"], "/repo/work/")],
             max_sts_ttl_seconds=3600,
         )
         token = issuer.issue(issuer_spec, subject_spec, "i", "s", 600)
-        assert not issuer.validate(token, Capability(resource="files/a", actions=["write"]))
+        assert not issuer.validate(token, Capability(resource="file:repo", actions=["write"]))
 
     def test_validate_expired_token(self, issuer_spec: PermissionSpec) -> None:
         clock = MagicMock(return_value=100.0)
         issuer = StsIssuer(clock=clock)
         subject_spec = make_spec(
-            capabilities=[Capability(resource="files/*", actions=["read"])],
+            capabilities=[file_cap(["read"], "/repo/work/")],
             max_sts_ttl_seconds=3600,
         )
         token = issuer.issue(issuer_spec, subject_spec, "i", "s", 60)
-        assert issuer.validate(token, Capability(resource="files/a", actions=["read"]))
+        assert issuer.validate(token, Capability(resource="file:repo", actions=["read"]))
         clock.return_value = 200.0
-        assert not issuer.validate(token, Capability(resource="files/a", actions=["read"]))
+        assert not issuer.validate(token, Capability(resource="file:repo", actions=["read"]))
 
     def test_validate_denied_action(self, issuer: StsIssuer, issuer_spec: PermissionSpec) -> None:
+        issuer_spec = make_spec(
+            capabilities=[file_cap(["read", "write", "delete"])],
+            max_sts_ttl_seconds=3600,
+        )
         subject_spec = make_spec(
-            capabilities=[Capability(resource="files/*", actions=["read", "delete"])],
-            denied=[Capability(resource="files/*", actions=["delete"])],
+            capabilities=[file_cap(["read", "delete"], "/repo/work/")],
+            denied=[file_cap(["delete"], "/repo/work/")],
             max_sts_ttl_seconds=3600,
         )
         token = issuer.issue(issuer_spec, subject_spec, "i", "s", 600)
-        assert not issuer.validate(token, Capability(resource="files/a", actions=["delete"]))
+        assert not issuer.validate(token, Capability(resource="file:repo", actions=["delete"]))
 
     def test_record_use(self, issuer: StsIssuer, issuer_spec: PermissionSpec) -> None:
         token = issuer.issue(
             issuer_spec,
-            make_spec(capabilities=[Capability("*", ["r"])]),
+            make_spec(capabilities=[file_cap(["read"], "/repo/work/")]),
             "i",
             "s",
             600,
@@ -236,7 +281,7 @@ class TestStsIssuer:
     def test_get_token(self, issuer: StsIssuer, issuer_spec: PermissionSpec) -> None:
         token = issuer.issue(
             issuer_spec,
-            make_spec(capabilities=[Capability("*", ["r"])]),
+            make_spec(capabilities=[file_cap(["read"], "/repo/work/")]),
             "i",
             "s",
             600,
@@ -248,7 +293,7 @@ class TestStsIssuer:
         issuer = StsIssuer(clock=clock)
         token = issuer.issue(
             issuer_spec,
-            make_spec(capabilities=[Capability("*", ["r"])]),
+            make_spec(capabilities=[file_cap(["read"], "/repo/work/")]),
             "i",
             "s",
             60,
@@ -257,7 +302,7 @@ class TestStsIssuer:
         assert issuer.get_token(token.token_id) is None
 
     def test_list_active(self, issuer: StsIssuer, issuer_spec: PermissionSpec) -> None:
-        subject_spec = make_spec(capabilities=[Capability("*", ["r"])])
+        subject_spec = make_spec(capabilities=[file_cap(["read"], "/repo/work/")])
         issuer.issue(issuer_spec, subject_spec, "i", "s1", 600)
         issuer.issue(issuer_spec, subject_spec, "i", "s2", 600)
         active = issuer.list_active()
@@ -266,7 +311,7 @@ class TestStsIssuer:
     def test_list_active_evicts_expired(self) -> None:
         clock = MagicMock(return_value=100.0)
         issuer = StsIssuer(clock=clock)
-        spec = make_spec(capabilities=[Capability("*", ["r"])])
+        spec = make_spec(capabilities=[file_cap(["read"])])
         issuer.issue(spec, spec, "i", "s1", 30)
         issuer.issue(spec, spec, "i", "s2", 100)
         clock.return_value = 150.0
@@ -276,7 +321,7 @@ class TestStsIssuer:
     def test_revoke(self, issuer: StsIssuer, issuer_spec: PermissionSpec) -> None:
         token = issuer.issue(
             issuer_spec,
-            make_spec(capabilities=[Capability("*", ["r"])]),
+            make_spec(capabilities=[file_cap(["read"], "/repo/work/")]),
             "i",
             "s",
             600,

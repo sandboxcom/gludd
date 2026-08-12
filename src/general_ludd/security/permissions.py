@@ -437,6 +437,9 @@ class PermissionSpecParser:
     @staticmethod
     def is_subset(requested: PermissionSpec, issuer: PermissionSpec) -> bool:
         for r in requested.capabilities:
+            family = PermissionSpecParser._family(r.resource)
+            if family is None:
+                return False
             # An unscoped denial blocks delegation of that action entirely. A
             # path/host-scoped carve-out may travel with a broader capability:
             # StsIssuer merges the denial into the child token, where runtime
@@ -451,19 +454,23 @@ class PermissionSpecParser:
                     for d in issuer.denied
                 ):
                     return False
-            issuer_cap = next(
-                (c for c in issuer.capabilities if c.resource == r.resource),
-                None,
-            )
-            if issuer_cap is None:
-                return False
-            if not set(r.actions).issubset(set(issuer_cap.actions)):
-                return False
-            family = PermissionSpecParser._family(r.resource)
-            if family is None:
-                return False
-            if not PermissionSpecParser._constraints_narrower(r.constraints, issuer_cap.constraints, family):
-                return False
+                # A spec may represent grants for the same resource in
+                # separate entries (for example read and write scopes). Match
+                # each requested action against a capability that both grants
+                # that action and dominates the requested constraints. Looking
+                # only at the first resource match incorrectly denies valid
+                # narrow delegations and makes list ordering security-relevant.
+                if not any(
+                    c.resource == r.resource
+                    and action in c.actions
+                    and PermissionSpecParser._constraints_narrower(
+                        r.constraints,
+                        c.constraints,
+                        family,
+                    )
+                    for c in issuer.capabilities
+                ):
+                    return False
         return True
 
     @staticmethod

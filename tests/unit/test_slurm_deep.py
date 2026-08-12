@@ -19,6 +19,7 @@ from general_ludd.infra.slurm import (
     SlurmJobInfo,
     SlurmJobMonitor,
     SlurmJobState,
+    SlurmNotInstalledError,
     _parse_elapsed,
     _require_extra_arg,
     _require_job_id,
@@ -657,22 +658,33 @@ class TestLocalListJobs:
         with patch("general_ludd.infra.slurm.subprocess.run", return_value=mock_result):
             assert adapter._local_list_jobs() == []
 
-    def test_file_not_found_returns_empty(self, adapter):
-        with patch("general_ludd.infra.slurm.subprocess.run", side_effect=FileNotFoundError):
-            assert adapter._local_list_jobs() == []
-
-    def test_timeout_returns_empty(self, adapter):
-        with patch(
-            "general_ludd.infra.slurm.subprocess.run", side_effect=subprocess.TimeoutExpired(cmd=["squeue"], timeout=30)
+    def test_file_not_found_reports_not_installed(self, adapter):
+        with (
+            patch("general_ludd.infra.slurm.subprocess.run", side_effect=FileNotFoundError),
+            pytest.raises(SlurmNotInstalledError, match="squeue not found"),
         ):
-            assert adapter._local_list_jobs() == []
+            adapter._local_list_jobs()
 
-    def test_nonzero_returncode_returns_empty(self, adapter):
+    def test_timeout_reports_controller_unavailable(self, adapter):
+        with (
+            patch(
+                "general_ludd.infra.slurm.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(cmd=["squeue"], timeout=30),
+            ),
+            pytest.raises(SlurmConnectionError, match="timed out"),
+        ):
+            adapter._local_list_jobs()
+
+    def test_nonzero_returncode_reports_failure(self, adapter):
         mock_result = MagicMock()
         mock_result.returncode = 1
         mock_result.stdout = ""
-        with patch("general_ludd.infra.slurm.subprocess.run", return_value=mock_result):
-            assert adapter._local_list_jobs() == []
+        mock_result.stderr = "scheduler error"
+        with (
+            patch("general_ludd.infra.slurm.subprocess.run", return_value=mock_result),
+            pytest.raises(RuntimeError, match="scheduler error"),
+        ):
+            adapter._local_list_jobs()
 
     def test_partial_pipe_line_skipped(self, adapter):
         mock_result = MagicMock()
