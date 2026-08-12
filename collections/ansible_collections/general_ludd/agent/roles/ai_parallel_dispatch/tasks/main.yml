@@ -118,5 +118,5 @@
 
 # ---- Optional handler/flush_handlers demonstration variant -------------------
 - name: Run handler + flush_handlers variant (demonstration)
-  ansible.builtin.include_tasks: flush_handlers_variant.yml
+  ansible.builtin.include_tasks: handler_barrier.yml
   when: enable_handler_variant | bool

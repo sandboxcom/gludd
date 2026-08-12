@@ -1,5 +1,5 @@
 ---
-# flush_handlers_variant.yml — the handler + `meta: flush_handlers` join variant.
+# handler_barrier.yml — the handler + `meta: flush_handlers` join variant.
 #
 # Flow:
 #   1. Reset the promise ledger file.
@@ -12,9 +12,10 @@
 #      ids (same await mechanics as the primary path).
 #
 # See handlers/main.yml header for why this is weaker than tasks/main.yml for
-# result collection. This variant exists because the user explicitly asked about
-# the handler/flush_handlers approach; async (tasks/main.yml) is the recommended
-# default.
+# result collection (no required-subset early return, no concurrency cap — flush
+# drains ALL notified handlers, sequentially). This variant exists because the
+# handler/flush_handlers approach was explicitly requested; the async path in
+# tasks/main.yml is the recommended default for real fan-out.
 
 - name: Reset handler promise ledger
   ansible.builtin.copy:
