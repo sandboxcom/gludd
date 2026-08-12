@@ -242,6 +242,30 @@ downgrades are forbidden. The BLAKE2b migration, cached-ranking impact, ZDD
 procedure, and CPython FIPS operator evidence are recorded in
 [`retrieval-hash-migration.md`](../security/retrieval-hash-migration.md).
 
+#### 6.2.1 Probabilistic sketch compatibility
+
+MinHash comparison, merge, and LSH lookup require the same permutation count and
+seed. A different seed defines a different hash domain; comparing signatures
+position-by-position would return a plausible but meaningless score, so the
+runtime fails closed. Serialization preserves both fields. Input normalization
+remains salt-free at its public boundary, while the stable domain salt is applied
+inside hashing so persisted signatures retain their established values.
+
+LSH uses exact-band lookup first. If no full band matches, a one-row multi-probe
+checks indexed signatures for at least one shared permutation. This fallback is
+deliberately recall-oriented and returns candidates, not a similarity verdict;
+callers must apply the MinHash estimate or an exact comparison afterward.
+
+This compatibility rule responds to a durable upstream practitioner failure:
+datasketch [issue #18](https://github.com/ekzhu/datasketch/issues/18), opened in
+2017, reported that serialization dropped the hash implementation and restored a
+different default. The resulting sketches appeared valid but no longer belonged
+to the same comparison domain. A later
+[hash-width discussion](https://github.com/ekzhu/datasketch/issues/212) likewise
+shows that memory optimizations can change persisted hash semantics. Gludd
+therefore treats hash-domain metadata as correctness data, not an optimization
+detail.
+
 ### 6.3 Reasoning and verification
 
 The expert uses a plan/act/observe/verify state machine with typed, bounded

@@ -106,7 +106,7 @@ class MinHash:
         return self._seed
 
     def update(self, item: Any) -> None:
-        raw = self._item_to_bytes(item)
+        raw = self._DEFAULT_SALT + self._item_to_bytes(item)
         for i in range(self._num_perm):
             h = _murmur64(raw, self._seed + i * 5897)
             if h < self._signature[i]:
@@ -119,6 +119,8 @@ class MinHash:
     def jaccard(self, other: MinHash) -> float:
         if self._num_perm != other._num_perm:
             raise ValueError(f"incompatible MinHash sizes: {self._num_perm} vs {other._num_perm}")
+        if self._seed != other._seed:
+            raise ValueError(f"incompatible MinHash seeds differ: {self._seed} vs {other._seed}")
         s1 = self._signature
         s2 = other._signature
         matches = sum(1 for a, b in zip(s1, s2, strict=False) if a == b)
@@ -127,6 +129,8 @@ class MinHash:
     def merge(self, other: MinHash) -> MinHash:
         if self._num_perm != other._num_perm:
             raise ValueError(f"incompatible MinHash sizes: {self._num_perm} vs {other._num_perm}")
+        if self._seed != other._seed:
+            raise ValueError(f"incompatible MinHash seeds differ: {self._seed} vs {other._seed}")
         merged = MinHash(self._num_perm, self._seed)
         for i in range(self._num_perm):
             merged._signature[i] = min(self._signature[i], other._signature[i])
@@ -152,8 +156,8 @@ class MinHash:
 
     def _item_to_bytes(self, item: Any) -> bytes:
         if isinstance(item, bytes):
-            return self._DEFAULT_SALT + item
-        return self._DEFAULT_SALT + str(item).encode("utf-8", errors="replace")
+            return item
+        return str(item).encode("utf-8", errors="replace")
 
     def __len__(self) -> int:
         return self._num_perm
@@ -180,6 +184,7 @@ class LSH:
         self._rows: int = num_perm // bands
         self._buckets: dict[int, list[tuple[str, int]]] = {}
         self._items: dict[str, MinHash] = {}
+        self._seed: int | None = None
 
     @property
     def num_perm(self) -> int:
@@ -200,6 +205,9 @@ class LSH:
     def insert(self, key: str, mh: MinHash) -> None:
         if mh.num_perm != self._num_perm:
             raise ValueError(f"MinHash num_perm {mh.num_perm} != LSH num_perm {self._num_perm}")
+        self._validate_seed(mh)
+        if self._seed is None:
+            self._seed = mh.seed
         sig = mh.signature
         for band in range(self._bands):
             start = band * self._rows
@@ -212,6 +220,7 @@ class LSH:
     def query(self, mh: MinHash) -> list[str]:
         if mh.num_perm != self._num_perm:
             raise ValueError(f"MinHash num_perm {mh.num_perm} != LSH num_perm {self._num_perm}")
+        self._validate_seed(mh)
         sig = mh.signature
         candidates: set[str] = set()
         for band in range(self._bands):
@@ -221,7 +230,19 @@ class LSH:
             bucket = struct.unpack_from("<Q", h)[0] & 0x7FFFFFFFFFFFFFFF
             for key, _ in self._buckets.get(bucket, []):
                 candidates.add(key)
+        if not candidates:
+            # A deterministic one-row multi-probe protects recall near band
+            # boundaries while preserving the exact-band fast path.
+            candidates.update(
+                key
+                for key, indexed in self._items.items()
+                if any(a == b for a, b in zip(sig, indexed.signature, strict=True))
+            )
         return sorted(candidates)
+
+    def _validate_seed(self, mh: MinHash) -> None:
+        if self._seed is not None and mh.seed != self._seed:
+            raise ValueError(f"incompatible MinHash seeds differ: {self._seed} vs {mh.seed}")
 
     def remove(self, key: str) -> None:
         if key not in self._items:
@@ -237,6 +258,8 @@ class LSH:
                 self._buckets[bucket] = [(k, b) for k, b in self._buckets[bucket] if k != key]
                 if not self._buckets[bucket]:
                     del self._buckets[bucket]
+        if not self._items:
+            self._seed = None
 
     def similarity_threshold(self) -> float:
         return float((1.0 / self._bands) ** (1.0 / self._rows))

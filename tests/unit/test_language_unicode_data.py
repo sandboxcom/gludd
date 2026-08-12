@@ -490,5 +490,6 @@ class TestPlaneOfBoundaryProximity:
         assert plane_of(0x3FFFF) == "TIP"
         assert plane_of(0x40000) == "UNASSIGNED"
 
-    def test_plane_boundary_df000_to_e000(self):
-        assert plane_of(0xDFFFF) == "BMP"
+    def test_plane_boundary_dffff_to_e0000(self):
+        assert plane_of(0xDFFFF) == "UNASSIGNED"
+        assert plane_of(0xE0000) == "SSP"
