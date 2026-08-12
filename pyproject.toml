@@ -253,6 +253,7 @@ markers = [
     "azure_provision: full Azure GPU VM/Container App provisioning E2E — opt-in, costly, manual",
     "hook_live: exercises a real opencode CLI against the .opencode/plugin/*.ts hooks; excluded from the default run (`-m \"not hook_live\"` in addopts) — run via `make test-hooks-live` or `-m hook_live`",
     "slow: tests that are known to take longer than normal (network, model inference, large fixtures)",
+    "network: tests that require explicit external network access",
     "local_model: tests that require a locally running model endpoint",
 ]
 filterwarnings = [
