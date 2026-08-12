@@ -20,6 +20,7 @@ async def record_job_benchmark(
     cost_usd: float = 0.0,
     test_exit_code: int | None = None,
     test_summary: str | None = None,
+    skill_id: str | None = None,
 ) -> None:
     if recorder is None or recorder._repo is None:
         return
@@ -30,8 +31,7 @@ async def record_job_benchmark(
     else:
         code_quality_score = 0.5
     with contextlib.suppress(Exception):
-        await recorder._repo.record_result(
-            data={
+        data = {
                 "model_profile_id": model_profile or "unknown",
                 "prompt_profile_id": prompt_profile,
                 "task_type": work_type,
@@ -47,7 +47,11 @@ async def record_job_benchmark(
                 "error_message": "" if success else "Job failed",
                 "raw_output": "",
             }
-        )
+        # Preserve the exact legacy payload when the caller has no resolved
+        # skill; the nullable ORM column supplies NULL in that case.
+        if skill_id is not None:
+            data["skill_id"] = skill_id
+        await recorder._repo.record_result(data=data)
         if test_summary:
             logger.info(
                 "Benchmark recorded: model=%s task=%s success=%s quality_score=%.2f (exit_code=%s)",
