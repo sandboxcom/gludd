@@ -97,7 +97,7 @@ PYTEST_VERBOSITY ?= -v
         agent-worktree agent-worktree-base agent-merge agent-cleanup agent-worktree-list \
         agent-worktree-dev agent-merge-dev \
         test-self-improve test-self-improve-all \
-         development-push development-merge-to-master development-start development-status require-sandboxcom-ssh-key \
+         development-push development-merge-forward development-merge-to-master development-start development-status require-sandboxcom-ssh-key \
         git-commit-no-verify git-amend-msg \
 _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
         release-worktree-guard status-claim-guard workflow-state workflow-gate commit-ready gha-ready merge-ready ship-commit-files remove-workspace-file-b64 \
@@ -335,6 +335,7 @@ help:
 	@echo "  agent-worktree-dev BRANCH=<name>  Isolated git worktree from development branch"
 	@echo "  agent-merge-dev BRANCH=<name>     Merge a subagent worktree branch into development"
 	@echo "  development-push             Push the development branch to remote"
+	@echo "  development-merge-forward SOURCE=<ref> MODE=content|ancestry-only APPLY=0|1  Transactional reconciliation into development (dry-run default)"
 	@echo "  development-merge-to-master  Merge development into master (release prep; CI-green required)"
 	@echo "  development-start            Create development branch from master if it doesn't exist"
 	@echo "  development-status           Show commits on development not yet on master"
@@ -4958,6 +4959,53 @@ development-force-push:
 	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push --force --no-verify -u sandboxcom development
 	@$(MAKE) verify-remote BRANCH=development SHA=$$(git rev-parse development)
 	@echo "Development branch force-pushed and verified"
+
+# Reconcile a branch into development while retaining a merge parent. MODE is
+# required so an ancestry-only (-s ours) decision remains visible and auditable.
+# APPLY defaults to 0; APPLY=1 is fail-closed outside a clean development tree.
+# Usage: make development-merge-forward SOURCE=<ref> MODE=content|ancestry-only APPLY=0|1
+development-merge-forward:
+	@SOURCE_VALUE='$(SOURCE)'; MODE_VALUE='$(MODE)'; APPLY_VALUE='$(APPLY)'; \
+	if [ -z "$$APPLY_VALUE" ]; then APPLY_VALUE=0; fi; \
+	if [ -z "$$SOURCE_VALUE" ]; then echo "Usage: make development-merge-forward SOURCE=<ref> MODE=content|ancestry-only APPLY=0|1"; exit 2; fi; \
+	case "$$MODE_VALUE" in content|ancestry-only) ;; *) echo "MODE must be explicitly set to content or ancestry-only"; exit 2 ;; esac; \
+	case "$$APPLY_VALUE" in 0|1) ;; *) echo "APPLY must be 0 or 1"; exit 2 ;; esac; \
+	if ! SOURCE_SHA=$$(git rev-parse --verify "$${SOURCE_VALUE}^{commit}" 2>/dev/null); then echo "Invalid SOURCE ref: $$SOURCE_VALUE"; exit 2; fi; \
+	if [ "$$MODE_VALUE" = ancestry-only ]; then \
+		case "$$SOURCE_VALUE" in master|refs/heads/master|*/master) echo "ancestry-only mode is forbidden for master"; exit 2 ;; esac; \
+		echo "WARNING: mode=ancestry-only strategy=ours records ancestry while preserving development content"; \
+	fi; \
+	if [ "$$APPLY_VALUE" = 0 ]; then \
+		echo "MERGE_FORWARD_DRY_RUN source=$$SOURCE_VALUE mode=$$MODE_VALUE apply=0 sha=$$SOURCE_SHA"; \
+		echo "no repository changes were made"; \
+		exit 0; \
+	fi; \
+	CURRENT_BRANCH="$$(git branch --show-current)"; \
+	if [ "$$CURRENT_BRANCH" != "development" ]; then echo "APPLY=1 requires current branch development (found: $$CURRENT_BRANCH)"; exit 2; fi; \
+	if [ -n "$$(git status --porcelain)" ]; then echo "APPLY=1 requires a clean development worktree"; exit 2; fi; \
+	MERGE_STARTED=1; \
+	abort_merge() { if [ "$$MERGE_STARTED" -eq 1 ]; then git merge --abort >/dev/null 2>&1 || true; fi; }; \
+	trap abort_merge EXIT HUP INT TERM; \
+	if [ "$$MODE_VALUE" = content ]; then \
+		if ! git merge --no-ff --no-commit -X ours "$$SOURCE_SHA"; then \
+			echo "Structural conflict while merging $$SOURCE_VALUE; aborting transaction"; \
+			git diff --name-only --diff-filter=U; \
+			exit 1; \
+		fi; \
+	else \
+		if ! git merge --no-ff -s ours --no-commit "$$SOURCE_SHA"; then echo "Ancestry-only merge failed; aborting transaction"; exit 1; fi; \
+	fi; \
+	if ! git rev-parse --verify -q MERGE_HEAD >/dev/null; then \
+		MERGE_STARTED=0; trap - EXIT HUP INT TERM; \
+		echo "MERGE_FORWARD_NOOP source=$$SOURCE_VALUE is already an ancestor of development"; \
+		exit 0; \
+	fi; \
+	UNMERGED="$$(git diff --name-only --diff-filter=U)"; \
+	if [ -n "$$UNMERGED" ]; then echo "Structural conflict remains; aborting transaction"; echo "$$UNMERGED"; exit 1; fi; \
+	if ! $(MAKE) --no-print-directory collect-check; then echo "Collection check failed; aborting transaction"; exit 1; fi; \
+	if ! git commit -m "merge-forward: MODE=$$MODE_VALUE SOURCE=$$SOURCE_VALUE SHA=$$SOURCE_SHA into development"; then echo "Merge commit failed; aborting transaction"; exit 1; fi; \
+	MERGE_STARTED=0; trap - EXIT HUP INT TERM; \
+	echo "MERGE_FORWARD_APPLIED source=$$SOURCE_VALUE mode=$$MODE_VALUE sha=$$SOURCE_SHA"
 
 
 # Merge development into master for release prep.

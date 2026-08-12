@@ -346,6 +346,11 @@
       "behavior": "make active-work-status"
     },
     {
+      "name": "development-merge-forward",
+      "make_variables": ["SOURCE", "MODE", "APPLY"],
+      "behavior": "make development-merge-forward SOURCE=HEAD MODE=content APPLY=0"
+    },
+    {
       "name": "release-view",
       "make_variables": ["TAG"],
       "behavior": "make release-view TAG=v0.1.0-beta.2"
