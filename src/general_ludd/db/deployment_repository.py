@@ -84,6 +84,10 @@ class DeploymentRegistryRepository:
             raise DeploymentBusyError(
                 f"deployment {record.instance_id!r} is destroying; upsert cannot replace its owner"
             )
+        # INSERT .. RETURNING can resolve to an already-loaded identity-map
+        # instance. Refresh it so callers observe the timestamp and revision
+        # written by this atomic upsert rather than stale in-session state.
+        await self._session.refresh(row)
         return _as_record(row)
 
     async def get(self, instance_id: str) -> DeploymentRecord | None:

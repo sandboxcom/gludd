@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextlib
 from collections.abc import AsyncGenerator, Callable, Generator
 from datetime import UTC, datetime, timedelta
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 from sqlalchemy import select
 from sqlalchemy.engine import CursorResult
@@ -179,7 +179,8 @@ def _is_locked_error(exc: OperationalError) -> bool:
     simply affecting zero rows. That is a *lost race*, not a real fault: the
     losing claimer should skip the row, exactly as it would on rowcount == 0.
     """
-    msg = str(getattr(exc, "orig", exc)).lower()
+    original = getattr(exc, "orig", None)
+    msg = str(original if original is not None else exc).lower()
     return "database is locked" in msg or "database table is locked" in msg
 
 
@@ -1309,6 +1310,7 @@ class ProjectRelationshipRepository:
 
     # The owning project may declare at most one of these relation types.
     _SINGLETON_RELATIONS: frozenset[str] = frozenset({RelationType.PARENT.value})
+    _LEGACY_LOCATION_KINDS: ClassVar[dict[str, str]] = {"path": LocationKind.DIRECTORY.value}
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -1322,6 +1324,10 @@ class ProjectRelationshipRepository:
         removed (replace-on-second-parent), so a project never carries two parents.
         Re-declaring the SAME edge tuple updates it in place (no duplicate row).
         """
+        data = dict(data)
+        raw_location_kind = str(data.get("location_kind", ""))
+        data["location_kind"] = self._LEGACY_LOCATION_KINDS.get(raw_location_kind, raw_location_kind)
+
         project_id = data.get("project_id", "")
         relation_type = str(data.get("relation_type", ""))
         location_kind = str(data.get("location_kind", ""))
@@ -2813,7 +2819,9 @@ class MemoryRepository:
             MemoryRecordModel.key == key,
             MemoryRecordModel.namespace == namespace,
         )
-        if project_id is not None:
+        if project_id is None:
+            stmt = stmt.where(MemoryRecordModel.project_id.is_(None))
+        else:
             stmt = stmt.where(MemoryRecordModel.project_id == project_id)
         result = await session.execute(stmt)
         row = result.scalar_one_or_none()
