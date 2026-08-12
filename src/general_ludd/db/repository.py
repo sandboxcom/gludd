@@ -2819,7 +2819,9 @@ class MemoryRepository:
             MemoryRecordModel.key == key,
             MemoryRecordModel.namespace == namespace,
         )
-        if project_id is not None:
+        if project_id is None:
+            stmt = stmt.where(MemoryRecordModel.project_id.is_(None))
+        else:
             stmt = stmt.where(MemoryRecordModel.project_id == project_id)
         result = await session.execute(stmt)
         row = result.scalar_one_or_none()
