@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from typing import cast
 
 from fastapi import FastAPI, HTTPException
 
-from general_ludd.infra.slurm import SlurmAdapter, SlurmNotInstalledError
+from general_ludd.infra.slurm import (
+    SlurmAdapter,
+    SlurmConnectionError,
+    SlurmNotInstalledError,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def _resolve_slurm_creds(app: FastAPI) -> tuple[str | None, str | None]:
@@ -31,6 +38,24 @@ def _make_adapter(app: FastAPI) -> SlurmAdapter:
     return SlurmAdapter(api_url=api_url, auth_token=auth_token)
 
 
+def _slurm_http_error(operation: str, exc: Exception) -> HTTPException:
+    """Map adapter failures to stable HTTP responses without leaking internals."""
+    if isinstance(exc, ValueError):
+        return HTTPException(status_code=422, detail=str(exc))
+    if isinstance(exc, SlurmNotInstalledError):
+        return HTTPException(status_code=503, detail="Slurm is not installed")
+    if isinstance(exc, SlurmConnectionError):
+        return HTTPException(
+            status_code=503,
+            detail="Slurm controller is unavailable",
+        )
+    logger.exception("Slurm %s request failed", operation)
+    return HTTPException(
+        status_code=500,
+        detail=f"Slurm {operation} request failed",
+    )
+
+
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.get("/admin/slurm/status")
@@ -39,8 +64,8 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         try:
             available = await asyncio.to_thread(adapter.available)
             return {"available": available}
-        except SlurmNotInstalledError:
-            raise HTTPException(status_code=503, detail="Slurm is not installed") from None
+        except Exception as exc:
+            raise _slurm_http_error("status", exc) from exc
 
     @app.post("/admin/slurm/submit")
     async def admin_slurm_submit(req: dict[str, object]) -> dict[str, object]:
@@ -64,10 +89,8 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 qos=cast(str | None, req.get("qos")),
             )
             return {"job_id": job_id}
-        except SlurmNotInstalledError:
-            raise HTTPException(status_code=503, detail="Slurm is not installed") from None
-        except RuntimeError as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        except Exception as exc:
+            raise _slurm_http_error("submit", exc) from exc
 
     @app.get("/admin/slurm/jobs/{job_id}")
     async def admin_slurm_job_status(job_id: str) -> dict[str, object]:
@@ -79,8 +102,8 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 "state": info.state.value,
                 "exit_code": info.exit_code,
             }
-        except SlurmNotInstalledError:
-            raise HTTPException(status_code=503, detail="Slurm is not installed") from None
+        except Exception as exc:
+            raise _slurm_http_error("job status", exc) from exc
 
     @app.delete("/admin/slurm/jobs/{job_id}")
     async def admin_slurm_job_cancel(job_id: str) -> dict[str, object]:
@@ -88,10 +111,8 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         try:
             await asyncio.to_thread(adapter.cancel, job_id)
             return {"cancelled": job_id}
-        except SlurmNotInstalledError:
-            raise HTTPException(status_code=503, detail="Slurm is not installed") from None
-        except RuntimeError as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        except Exception as exc:
+            raise _slurm_http_error("cancel", exc) from exc
 
     @app.get("/admin/slurm/jobs")
     async def admin_slurm_jobs_list() -> dict[str, object]:
@@ -104,10 +125,8 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                     for j in jobs
                 ],
             }
-        except SlurmNotInstalledError:
-            raise HTTPException(status_code=503, detail="Slurm is not installed") from None
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"Could not list jobs: {exc}") from exc
+            raise _slurm_http_error("jobs", exc) from exc
 
     @app.get("/admin/slurm/jobs/{job_id}/cost")
     async def admin_slurm_job_cost(job_id: str) -> dict[str, object]:
@@ -121,5 +140,5 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                     "state": info.state.value,
                 },
             }
-        except SlurmNotInstalledError:
-            raise HTTPException(status_code=503, detail="Slurm is not installed") from None
+        except Exception as exc:
+            raise _slurm_http_error("job cost", exc) from exc

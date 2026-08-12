@@ -408,6 +408,10 @@ def hook_plugin_env_impl(tmp_path: Path):
     # checkout when a clean fixture intentionally has no TASKS.md, making
     # otherwise isolated hook tests inherit real pending work.
     env["GLUDD_PROJECT_ROOT"] = str(tmp_path)
+    # Never let a hook test import /tmp/gludd-hot-*.js from a live OpenCode
+    # session.  The tmp_path fixture is function-scoped, so this prefix is
+    # isolated per test while still exercising the normal fallback path.
+    env["GLUDD_HOT_MODULE_PREFIX"] = str(tmp_path / "gludd-hot-")
     for var in STATE_FILE_ENV_VARS:
         env[var] = str(tmp_path / f"{var.lower()}.json")
     # Blanket disk-safety overrides — bypass the real disk_usage subprocess

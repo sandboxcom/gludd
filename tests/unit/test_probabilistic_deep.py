@@ -2432,12 +2432,13 @@ class TestMinHashInternals:
         mh.add_many(["a", "b", "c", "d", "e"])
         assert mh.jaccard(mh) == pytest.approx(1.0)
 
-    def test_jaccard_different_seeds_compatible(self) -> None:
+    def test_jaccard_different_seeds_rejected_for_large_sketches(self) -> None:
         a = MinHash(num_perm=256, seed=1)
         b = MinHash(num_perm=256, seed=2)
         a.update("x")
         b.update("x")
-        assert a.jaccard(b) == pytest.approx(1.0, abs=0.1)
+        with pytest.raises(ValueError, match="seeds differ"):
+            a.jaccard(b)
 
     def test_merge_different_seeds_raises(self) -> None:
         a = MinHash(num_perm=64, seed=0)
@@ -2617,6 +2618,29 @@ class TestTDigestDeepInternals:
 
 
 class TestLSHDeepInternals:
+    def test_insert_rejects_minhash_from_different_seed_domain(self) -> None:
+        lsh = LSH(num_perm=128)
+        lsh.insert("seed-one", MinHash(num_perm=128, seed=1))
+
+        with pytest.raises(ValueError, match="seeds differ"):
+            lsh.insert("seed-two", MinHash(num_perm=128, seed=2))
+
+    def test_query_rejects_minhash_from_different_seed_domain(self) -> None:
+        lsh = LSH(num_perm=128)
+        lsh.insert("seed-one", MinHash(num_perm=128, seed=1))
+
+        with pytest.raises(ValueError, match="seeds differ"):
+            lsh.query(MinHash(num_perm=128, seed=2))
+
+    def test_empty_index_can_adopt_a_new_seed_domain(self) -> None:
+        lsh = LSH(num_perm=128)
+        lsh.insert("seed-one", MinHash(num_perm=128, seed=1))
+        lsh.remove("seed-one")
+
+        replacement = MinHash(num_perm=128, seed=2)
+        lsh.insert("seed-two", replacement)
+        assert lsh.query(replacement) == ["seed-two"]
+
     def test_items_dict_after_insert(self) -> None:
         lsh = LSH(num_perm=128)
         mh = MinHash(num_perm=128)

@@ -818,8 +818,6 @@ class _LimitedChatModel:
         inner = self._inner
         if hasattr(inner, "bind_tools"):
             inner = inner.bind_tools(tools)
-            if inner is self._inner:
-                return self
         return _LimitedChatModel(
             inner,
             profile=self._profile,
@@ -853,6 +851,7 @@ class ModelGateway:
         max_fallback_depth: int = 3,
         request_token_counter: Callable[[ModelProfile, list[dict[str, str]]], int] | None = None,
         stream_wire_byte_counter: Callable[[object], int] | None = None,
+        billing_clock: Callable[[], datetime.datetime] | None = None,
     ) -> None:
         self._profiles: dict[str, ModelProfile] = {}
         if profiles:
@@ -877,6 +876,7 @@ class ModelGateway:
         self._max_fallback_depth = max_fallback_depth
         self._request_token_counter = request_token_counter
         self._stream_wire_byte_counter = stream_wire_byte_counter
+        self._billing_clock = billing_clock or (lambda: datetime.datetime.now(datetime.UTC))
         # Gateway-wide failover event log (not tied to any single profile's
         # own chain config): every hop walked by _walk_fallbacks is recorded
         # here for audit/debugging, independent of whether a metrics collector
@@ -907,6 +907,28 @@ class ModelGateway:
         self._cache_key_locks: dict[str, threading.Lock] = {}
         self._cache_key_lock_refs: dict[str, int] = {}
         self._cache_key_locks_guard = threading.Lock()
+
+    def _apply_billing_rate(self, base_cost: float) -> tuple[float, str, float]:
+        """Apply one peak-pricing snapshot to a completed model call.
+
+        Sampling the injectable clock once keeps the charged multiplier, rate
+        label, and savings ledger consistent even when a call completes on a
+        peak-window boundary. The production default remains the current UTC
+        wall clock; tests and replay tools can provide a deterministic clock.
+        """
+        from general_ludd.budget.peak_pricing import (
+            PeakPricingTracker,
+            current_rate_multiplier,
+            is_peak,
+        )
+
+        now = self._billing_clock()
+        peak = is_peak(now)
+        multiplier = current_rate_multiplier(now)
+        effective_cost = base_cost * multiplier
+        if not peak:
+            PeakPricingTracker.singleton().record_call(base_cost, effective_cost)
+        return effective_cost, "peak" if peak else "off-peak", multiplier
 
     def _cache_key_lock(self, cache_key: str) -> threading.Lock:
         """Return the process-local single-flight lock for a cache key.
@@ -1464,12 +1486,10 @@ class ModelGateway:
         # clamped here. A non-finite estimated_cost (NaN OR Inf) is treated as
         # float("inf") so it can never slip under any finite cap — a NaN/Inf cost
         # must REJECT, not pass.
-        if math.isinf(budget_remaining):
-            return True
         if math.isnan(budget_remaining):
             budget_remaining = 0.0
         if not math.isfinite(estimated_cost):
-            estimated_cost = float("inf")
+            return False
         # D-21: do NOT trust the caller-provided estimated_cost. Re-estimate
         # server-side from the actual messages + the profile's price rates, and
         # use the MAX of (caller claim, server estimate) for the budget decision
@@ -1489,9 +1509,10 @@ class ModelGateway:
             effective_cost = max(estimated_cost, server_cost)
         else:
             effective_cost = estimated_cost
-        if effective_cost > budget_remaining:
-            return False
-        return not (profile.api_metered and effective_cost > profile.run_budget_usd)
+        effective_budget = budget_remaining
+        if profile.api_metered:
+            effective_budget = min(effective_budget, profile.run_budget_usd)
+        return effective_cost <= effective_budget
 
     @staticmethod
     def estimate_cost(
@@ -1929,16 +1950,8 @@ class ModelGateway:
                 now = time.monotonic()
                 elapsed = now - started_at
                 idle_elapsed = now - last_chunk_at
-                if elapsed > stream_seconds:
-                    raise StreamLimitError(
-                        profile_id=profile_id,
-                        stage="response",
-                        dimension="duration_seconds",
-                        actual=max(stream_seconds + 1, math.ceil(elapsed)),
-                        limit=stream_seconds,
-                        source="provider",
-                        count_source="monotonic_clock",
-                    )
+                # When both limits expire at the same chunk boundary, report
+                # the inter-chunk idle breach: it is the more specific cause.
                 if idle_elapsed > idle_seconds:
                     raise StreamLimitError(
                         profile_id=profile_id,
@@ -1946,6 +1959,16 @@ class ModelGateway:
                         dimension="idle_seconds",
                         actual=max(idle_seconds + 1, math.ceil(idle_elapsed)),
                         limit=idle_seconds,
+                        source="provider",
+                        count_source="monotonic_clock",
+                    )
+                if elapsed > stream_seconds:
+                    raise StreamLimitError(
+                        profile_id=profile_id,
+                        stage="response",
+                        dimension="duration_seconds",
+                        actual=max(stream_seconds + 1, math.ceil(elapsed)),
+                        limit=stream_seconds,
                         source="provider",
                         count_source="monotonic_clock",
                     )
@@ -2073,6 +2096,17 @@ class ModelGateway:
                 total_tool_calls = next_tool_calls
                 full_content.append(chunk_content)
                 yield chunk
+            elapsed = time.monotonic() - started_at
+            if elapsed > stream_seconds:
+                raise StreamLimitError(
+                    profile_id=profile_id,
+                    stage="response",
+                    dimension="duration_seconds",
+                    actual=max(stream_seconds + 1, math.ceil(elapsed)),
+                    limit=stream_seconds,
+                    source="provider",
+                    count_source="monotonic_clock",
+                )
             completed = True
         except PayloadLimitError:
             raise
@@ -2119,18 +2153,7 @@ class ModelGateway:
         )
         base_cost = input_tokens * profile.cost_per_input_token + output_tokens * profile.cost_per_output_token
 
-        from general_ludd.budget.peak_pricing import (
-            PeakPricingTracker,
-            current_rate_multiplier,
-            is_peak,
-        )
-
-        "peak" if is_peak() else "off-peak"
-        multiplier = current_rate_multiplier()
-        effective_cost = base_cost * multiplier
-
-        if not is_peak():
-            PeakPricingTracker.singleton().record_call(base_cost, effective_cost)
+        effective_cost, _rate_info, _multiplier = self._apply_billing_rate(base_cost)
 
         cost = effective_cost
         if self._budget_guard is not None:
@@ -2251,7 +2274,9 @@ class ModelGateway:
         policy = TimeoutRetryPolicy(
             max_retries=max_retries,
             base_backoff_seconds=base_backoff_seconds,
-            failover_after_retries=profile.max_failover_retries,
+            # ``max_failover_retries`` counts retries after the initial stream
+            # attempt. TimeoutRetryPolicy's threshold counts total attempts.
+            failover_after_retries=profile.max_failover_retries + 1,
         )
 
         # Primary already unhealthy → skip straight to fallbacks.
@@ -2832,18 +2857,7 @@ class ModelGateway:
         output_tokens = _coerce_token_count(usage.get("output_tokens", usage.get("completion_tokens", 0)))
         base_cost = input_tokens * profile.cost_per_input_token + output_tokens * profile.cost_per_output_token
 
-        from general_ludd.budget.peak_pricing import (
-            PeakPricingTracker,
-            current_rate_multiplier,
-            is_peak,
-        )
-
-        rate_info = "peak" if is_peak() else "off-peak"
-        multiplier = current_rate_multiplier()
-        effective_cost = base_cost * multiplier
-
-        if not is_peak():
-            PeakPricingTracker.singleton().record_call(base_cost, effective_cost)
+        effective_cost, rate_info, multiplier = self._apply_billing_rate(base_cost)
 
         cost = effective_cost
 

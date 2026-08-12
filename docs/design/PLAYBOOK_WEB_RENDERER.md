@@ -516,7 +516,9 @@ async def run_renderer(app: FastAPI, spec: RendererSpec) -> RenderDocument:
   zero exit / missing `render.json` / shape validation failure → `500` +
   error section with stdout/stderr tail (operator-only — see §8). Path B
   schema validation failure → `422` + `schema_error.html.j2`. Registry miss
-  → `404`.
+  → `404`. Any other runner exception is logged with its internal context and
+  becomes a generic `500` page; exception text never crosses the public HTTP
+  boundary.
 
 ---
 
@@ -533,7 +535,17 @@ async def run_renderer(app: FastAPI, spec: RendererSpec) -> RenderDocument:
 | **Resource limits** | Per-renderer timeout (default 30s). Max output size: runner reads at most `GLUDD_RENDER_MAX_BYTES` (default 1 MiB) from `render.json`; larger → `RendererFailure`. |
 | **SSRF inside playbooks** | `gludd_facts` module already targets the daemon's own URL only. Any playbook making outbound calls is the operator's responsibility — same posture as existing playbooks. |
 | **Companion schema is operator-curated** | `<name>.schema.json` lives alongside the playbook in `playbooks/renderers/` or `<config_dir>/renderers/` — the same directories the registry already scans. Never user-uploadable. Same trust boundary as the playbook. |
-| **Schema-driven rendering autoescape** | All values rendered through `schema_page.html.j2` are autoescaped (Jinja2 default). Schema-side strings (`title`, `description`, `enum` labels) are also escaped for defense-in-depth — operator-curated but never trusted as raw HTML. |
+| **Schema-driven rendering autoescape** | All values rendered through `schema_page.html.j2` are autoescaped (Jinja2 default), including schema snippets embedded in validation errors. Schema-side strings (`title`, `description`, `enum` labels) are also escaped for defense-in-depth — operator-curated but never trusted as raw HTML. |
+| **Unexpected runner failure** | The public endpoint returns only a generic `500` error page. The original exception and stack remain in the operator log, preventing unauthenticated disclosure of backend paths, commands, or credentials. |
+
+### Practitioner evidence
+
+A [FastAPI practitioner discussion about generic exception handling](https://github.com/fastapi/fastapi/discussions/9478)
+shows the failure mode this boundary guards against: without an explicit handler,
+an unexpected application exception can escape the route instead of producing the
+intended HTTP response. The renderer therefore catches unexpected runner failures
+at its HTTP boundary, logs the internal exception, and regression-tests both the
+sanitized response and the absence of the exception text.
 
 ---
 

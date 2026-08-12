@@ -100,7 +100,7 @@ class HyperLogLogV2:
 
         if self.is_sparse:
             self._sparse_list.append((idx, rho))
-            if len(self._sparse_list) > self._sparse_max_entries():
+            if self._sparse_register_count() > self._sparse_max_entries():
                 self._transition_to_dense()
         else:
             regs = self._registers
@@ -110,7 +110,12 @@ class HyperLogLogV2:
 
     def count(self) -> int:
         raw = self._raw_estimate()
-        return int(self._apply_bias_correction(raw))
+        registers = self._registers
+        used_linear_counting = self.is_sparse or (
+            registers is not None and 0 in registers and raw <= (5.0 / 2.0) * self._m
+        )
+        corrected = raw if used_linear_counting else self._apply_bias_correction(raw)
+        return max(0, int(corrected))
 
     def merge(self, other: HyperLogLogV2) -> None:
         if self._precision != other._precision:
@@ -118,7 +123,7 @@ class HyperLogLogV2:
 
         if self.is_sparse and other.is_sparse:
             combined = self._sparse_list + other._sparse_list
-            if len(combined) > self._sparse_max_entries():
+            if len({idx for idx, _rho in combined}) > self._sparse_max_entries():
                 self._transition_to_dense()
                 regs_a = self._registers
                 assert regs_a is not None
@@ -238,10 +243,14 @@ class HyperLogLogV2:
         bias = bias_data[bias_index]
         if bias == 0.0:
             return raw_e
-        return raw_e - bias
+        return max(0.0, raw_e - bias)
 
     def _sparse_max_entries(self) -> int:
         return max(1, int(self._m * self._SPARSE_THRESHOLD_FACTOR))
+
+    def _sparse_register_count(self) -> int:
+        """Return occupied registers, excluding duplicate observations."""
+        return len({idx for idx, _rho in self._sparse_list})
 
     def _rho(self, w: int) -> int:
         bits = 64 - self._precision

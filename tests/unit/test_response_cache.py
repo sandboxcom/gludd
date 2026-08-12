@@ -127,8 +127,10 @@ class TestModelResponseCache:
         from general_ludd.models.gateway import ModelGateway
         from general_ludd.models.response_cache import ModelResponseCache
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            cache = ModelResponseCache(cache_dir=tmpdir)
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            ModelResponseCache(cache_dir=tmpdir) as cache,
+        ):
             profile = _make_profile("test-profile")
 
             mock_response = MagicMock()
@@ -210,6 +212,21 @@ class TestModelResponseCache:
 
 
 class TestModelResponseCacheDeep:
+    def test_context_manager_closes_backend_once(self):
+        from general_ludd.models.response_cache import ModelResponseCache
+
+        backend = MagicMock()
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            patch("diskcache.Cache", return_value=backend),
+            ModelResponseCache(cache_dir=tmpdir) as cache,
+        ):
+            assert cache._cache is backend
+
+        cache.close()
+
+        backend.close.assert_called_once_with()
+
     def test_close_releases_resources(self):
         from general_ludd.models.response_cache import ModelResponseCache
 
@@ -219,13 +236,10 @@ class TestModelResponseCacheDeep:
             cache.close()
 
     def test_get_non_dict_value_returns_none(self):
-        from diskcache import Cache
-
         from general_ludd.models.response_cache import ModelResponseCache
 
         with tempfile.TemporaryDirectory() as tmpdir:
             cache = ModelResponseCache(cache_dir=tmpdir)
-            cache._cache = Cache(tmpdir)
             cache._cache.set("string-val", "not a dict")
             cache._cache.set("int-val", 42)
             cache._cache.set("none-val", None)

@@ -125,6 +125,29 @@ file, eliminating the `exists()`/`read_bytes()` time-of-check/time-of-use
 window. Other I/O failures remain visible rather than being silently converted
 to absence.
 
+### Hot-module and hook-harness isolation
+
+Every hook-harness invocation must override all state it can read, not only the
+state the individual assertion expects to touch. In particular, post-results,
+text-only, release, watchdog-CI, and false-done state are per-test paths. A live
+session's `lastToolWasShipping=true` must never turn a pending-work assertion
+into a post-ship response.
+
+Hot-module tests likewise build, scan, load, and remove only files under a
+PID-namespaced `GLUDD_HOT_MODULE_PREFIX`. They never scan the machine-global
+`/tmp/gludd-hot-*.js` set. Read-only Make-prefix tests use a non-test target;
+invoking `make test-count` from inside pytest correctly exercises the independent
+concurrency guard and is not an allow-list probe.
+
+This is a durable parallel-test failure class. The seven-year-old
+[pytest race report #5524](https://github.com/pytest-dev/pytest/issues/5524)
+documents concurrent workers colliding while creating shared base temporary
+state. The pytest-xdist maintainer's explanation in
+[xdist discussion #981](https://github.com/pytest-dev/pytest-xdist/issues/981)
+confirms that an `xdist_group` exists to force resource-sharing tests onto one
+worker. Gludd uses both controls: namespace independent artifacts, and serialize
+only genuinely shared compatibility paths.
+
 ## Project-ledger root isolation
 
 Enforcement is also a filesystem trust boundary. A previous fallback in

@@ -157,7 +157,12 @@ class SoftwareGenerator:
         decision = task_policy.authorize(
             task, cast(ModelIdentity, model_identity), cast(Sequence["CapabilityEvidence"], evidence)
         )
-        if decision.action is not DispatchAction.LOCAL:
+        action = decision.action
+        # Older policy adapters represented LOCAL as integer 1.  Accept only
+        # that exact legacy value (never arbitrary truthy values); every other
+        # unknown action remains fail-closed.
+        legacy_local = isinstance(action, int) and not isinstance(action, bool) and action == 1
+        if action is not DispatchAction.LOCAL and not legacy_local:
             raise PermissionError(
                 f"SmallModelTaskPolicy denied {spec.project_type} dispatch for {spec.name}: {decision.reason}"
             )

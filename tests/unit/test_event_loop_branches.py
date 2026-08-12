@@ -246,7 +246,7 @@ class TestPhasePurgeOldTaskDecisions:
         }
         loop._total_ticks = 100
         with patch(
-            "general_ludd.event_loop.loop.cleanup_old_task_decisions",
+            "general_ludd.event_loop.loop_handlers.cleanup_old_task_decisions",
             new=AsyncMock(return_value=5),
         ):
             await loop._phase_purge_old_task_decisions()
@@ -274,7 +274,7 @@ class TestPhasePurgeOldTaskDecisions:
         loop.config = {"task_decisions_retention_interval_ticks": "1"}
         loop._total_ticks = 1
         with patch(
-            "general_ludd.event_loop.loop.cleanup_old_task_decisions",
+            "general_ludd.event_loop.loop_handlers.cleanup_old_task_decisions",
             new=AsyncMock(side_effect=RuntimeError("db error")),
         ):
             await loop._phase_purge_old_task_decisions()

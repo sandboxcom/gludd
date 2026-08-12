@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import os
+import signal
 from pathlib import Path
 
+import pytest
 import scripts.reap_orphan_pytest as reaper
 from scripts.reap_orphan_pytest import (
     ProcessRecord,
@@ -76,7 +78,9 @@ def test_descendants_are_selected_leaf_first_across_process_groups() -> None:
 
 
 def test_reap_terminates_each_descendant_not_only_the_root_group(
-    monkeypatch, tmp_path, capsys
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     root = tmp_path / "checkout"
     root.mkdir()
@@ -89,12 +93,54 @@ def test_reap_terminates_each_descendant_not_only_the_root_group(
     terminated: list[int] = []
     monkeypatch.setattr(reaper, "_records", lambda _root: records)
     monkeypatch.setattr(reaper, "owner_pids", lambda _root: set())
-    monkeypatch.setattr(reaper.os, "kill", lambda pid, _signal: terminated.append(pid))
+    monkeypatch.setattr(reaper, "_alive_pids", lambda _pids: set())
+    monkeypatch.setattr("scripts.reap_orphan_pytest.time.sleep", lambda _seconds: None)
+    monkeypatch.setattr(
+        "scripts.reap_orphan_pytest.os.kill",
+        lambda pid, _signal: terminated.append(pid),
+    )
 
     assert reaper.reap(root, min_age_seconds=1800, apply=True) == 0
 
     assert terminated == [13, 12, 11, 10]
     assert "orphan-pytest candidates=1 apply=True" in capsys.readouterr().out
+
+
+def test_reap_escalates_term_resistant_descendant_and_verifies_exit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A stale collection worker that ignores SIGTERM must not survive cleanup."""
+    root = tmp_path / "checkout"
+    root.mkdir()
+    records = [
+        ProcessRecord(20, 1, 1900, f"{root}/.venv/bin/python -m pytest tests/ --co -q", 20),
+        ProcessRecord(21, 20, 1890, f"{root}/.venv/bin/python -m pytest tests/ --co -q", 20),
+    ]
+    sent: list[tuple[int, int]] = []
+    alive_checks = iter(({20, 21}, set()))
+
+    monkeypatch.setattr(reaper, "_records", lambda _root: records)
+    monkeypatch.setattr(reaper, "owner_pids", lambda _root: set())
+    monkeypatch.setattr(reaper, "_alive_pids", lambda _pids: next(alive_checks))
+    monkeypatch.setattr("scripts.reap_orphan_pytest.time.sleep", lambda _seconds: None)
+    monkeypatch.setattr(
+        "scripts.reap_orphan_pytest.os.kill",
+        lambda pid, sig: sent.append((pid, sig)),
+    )
+
+    assert reaper.reap(root, min_age_seconds=1800, apply=True) == 0
+
+    assert sent == [
+        (21, signal.SIGTERM),
+        (20, signal.SIGTERM),
+        (21, signal.SIGKILL),
+        (20, signal.SIGKILL),
+    ]
+    output = capsys.readouterr().out
+    assert "orphan-pytest escalated=2" in output
+    assert "orphan-pytest survivors=0" in output
 
 
 def test_reaper_preserves_orphans_while_live_gate_owner_exists() -> None:
@@ -152,7 +198,9 @@ def test_reaper_selects_old_unrelated_tree_with_recent_live_gate() -> None:
     assert [record.pid for record in selected] == [11]
 
 
-def test_owner_claims_are_scoped_to_gate_state_and_resource_namespace(tmp_path, monkeypatch) -> None:
+def test_owner_claims_are_scoped_to_gate_state_and_resource_namespace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     root = tmp_path / "checkout"
     root.mkdir()
     resource_root = tmp_path / "resources"

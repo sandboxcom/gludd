@@ -139,7 +139,10 @@ Duration and idle checks use a monotonic clock at chunk boundaries. The provider
 constructor also receives a read timeout equal to the stricter duration/idle
 limit, so a provider that stops yielding cannot hold the caller indefinitely
 between boundary checks. The adapter does not log upstream chunks or include them
-in `StreamLimitError`; its diagnostics remain bounded scalar fields.
+in `StreamLimitError`; its diagnostics remain bounded scalar fields. Idle is the
+more specific diagnosis when both deadlines expire at a chunk boundary, while an
+absolute-duration check after clean iterator exhaustion catches a provider that
+returns its last chunk only after the overall deadline.
 
 Request-wide exhaustion raises `CumulativePayloadLimitError`, a typed subclass of
 `PayloadLimitError`, with the same payload-free bounded scalar fields and
@@ -206,6 +209,24 @@ which preserves the project's zero-downtime profile-update path.
   Gludd exposes generator close as that cancellation boundary and guarantees the
   provider iterator is closed from `finally`:
   [openai-python issue #969](https://github.com/openai/openai-python/issues/969).
+- A long-lived OpenAI Python practitioner report describes streaming failures at
+  a repeatable five-minute boundary while a longer non-streaming timeout did not
+  fire. This is why Gludd enforces its own monotonic absolute stream lifetime in
+  addition to transport read timeouts, including after the iterator's last item:
+  [openai-python issue #399](https://github.com/openai/openai-python/issues/399).
+- An OpenAI Python practitioner reports intermittent streamed-response
+  disconnects surfaced as `httpx.ReadError`, `ReadTimeout`, and
+  `RemoteProtocolError`. Gludd therefore restarts a failed stream as a fresh
+  attempt and, after the configured retries, advances to the fallback exactly
+  once instead of treating retry exhaustion as total provider exhaustion:
+  [openai-python issue #2828](https://github.com/openai/openai-python/issues/2828).
+- A long-lived Python help discussion warns that SQLite connections are not
+  guaranteed to be reclaimed promptly and may accumulate or emit
+  `ResourceWarning` when callers rely on reference collection. Gludd's response
+  cache therefore exposes deterministic context-manager ownership, makes
+  `close()` idempotent, and retains finalization only as a last-resort safety
+  net for legacy callers:
+  [Python.org SQLite connection discussion](https://discuss.python.org/t/sqlite3-connection-and-general-concepts/41663).
 
 ## Verification
 

@@ -8,7 +8,9 @@ unknown image types.
 
 from __future__ import annotations
 
+import errno
 import json
+import shutil
 from pathlib import Path
 from unittest import mock
 
@@ -192,6 +194,48 @@ def test_build_rootfs_with_custom_manifest(_isolate_cache_dir, tmp_path):
     dest = tmp_path / "custom-output"
     built = build_rootfs(str(dest), manifest=manifest)
     assert built.manifest_hash == manifest.content_hash()
+
+
+def test_build_rootfs_replaces_shared_destination_without_rmtree(
+    _isolate_cache_dir, tmp_path
+):
+    dest = tmp_path / "shared-output"
+    dest.mkdir()
+    (dest / "stale").write_text("old image")
+    real_rmtree = shutil.rmtree
+
+    def _reject_live_destination_rmtree(path, *args, **kwargs):
+        if Path(path) == dest:
+            raise OSError(errno.ENOTEMPTY, "shared destination changed during cleanup")
+        return real_rmtree(path, *args, **kwargs)
+
+    with mock.patch.object(shutil, "rmtree", side_effect=_reject_live_destination_rmtree):
+        built = build_rootfs(dest)
+
+    assert built.path == dest
+    assert (dest / "rootfs.ext4").is_file()
+    assert not (dest / "stale").exists()
+
+
+def test_build_rootfs_publishes_when_shared_destination_disappears(
+    _isolate_cache_dir, tmp_path
+):
+    dest = tmp_path / "shared-output"
+    dest.mkdir()
+    (dest / "stale").write_text("old image")
+    real_replace = Path.replace
+
+    def _remove_destination_before_displacement(path: Path, target: Path):
+        if path == dest:
+            shutil.rmtree(dest)
+            raise FileNotFoundError(dest)
+        return real_replace(path, target)
+
+    with mock.patch.object(Path, "replace", _remove_destination_before_displacement):
+        built = build_rootfs(dest)
+
+    assert built.path == dest
+    assert (dest / "rootfs.ext4").is_file()
 
 
 def test_build_rootfs_unknown_type_raises(_isolate_cache_dir, tmp_path):

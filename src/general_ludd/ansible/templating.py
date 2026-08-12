@@ -74,26 +74,51 @@ class AnsibleTemplater:
         - Every variable value is wrapped Ansible-unsafe so a payload smuggled
           through a *value* (e.g. ``{"x": "{{ 7*7 }}"}``) is emitted literally.
         """
-        from jinja2 import meta
+        from jinja2 import meta, nodes
         from jinja2.exceptions import SecurityError, TemplateError
         from jinja2.sandbox import SandboxedEnvironment
 
         try:
-            merged = self._merged_vars(kwargs)
-            # Wrap values unsafe: a value that itself contains Jinja must render
-            # literally, never be re-evaluated.
-            safe_vars = {k: wrap_unsafe(v) for k, v in merged.items()}
-
             env = SandboxedEnvironment(autoescape=False)
             # Strip the global namespace so range/dict/lipsum/cycler and any
             # other callable cannot be reached from inside the template.
             env.globals.clear()
+            # The network-facing renderer deliberately exposes no filters.
+            # Even Jinja's normally-safe string helpers are an unnecessary
+            # attribute/call surface for untrusted template bodies.
+            env.filters.clear()
             parsed = env.parse(template)
-            missing = meta.find_undeclared_variables(parsed) - set(safe_vars)
+            referenced = meta.find_undeclared_variables(parsed)
+
+            # SandboxedEnvironment permits ordinary attributes such as
+            # ``str.upper`` by default.  This boundary permits data values and
+            # basic expressions only, so reject attribute nodes before Jinja
+            # can turn an unsafe lookup into a silent Undefined value.  Keep
+            # Jinja's literal ``none.attr`` compatibility: it cannot expose an
+            # attacker-controlled object and historically renders as empty.
+            unsafe_attributes = [
+                node
+                for node in parsed.find_all(nodes.Getattr)
+                if not (isinstance(node.node, nodes.Const) and node.node.value is None)
+            ]
+            names = {node.name for node in parsed.find_all(nodes.Name)}
+            if unsafe_attributes or "self" in names:
+                raise TemplateRenderError("template rejected: SecurityError")
+
+            # A literal-only template has no access to extra vars.  Avoid
+            # inspecting (or rejecting) unused caller data in that case; any
+            # variable that the template can reach is still validated below.
+            merged = self._merged_vars(kwargs) if referenced else {}
+            missing = referenced - set(merged)
             if missing:
                 raise TemplateRenderError("template rejected: UndefinedError")
+            # Wrap values unsafe: a value that itself contains Jinja must render
+            # literally, never be re-evaluated.
+            safe_vars = {k: wrap_unsafe(v) for k, v in merged.items()}
             compiled = env.from_string(template)
             return compiled.render(safe_vars)
+        except TemplateRenderError:
+            raise
         except ExtraVarsValidationError as exc:
             raise TemplateRenderError(
                 "template rejected: ExtraVarsValidationError"

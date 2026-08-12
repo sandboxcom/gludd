@@ -727,6 +727,9 @@ class AzureCostOutboxEventModel(Base):
 
 class FeatureStatus(enum.StrEnum):
     REQUESTED = "requested"
+    # Compatibility alias: old clients called the initial requested state
+    # ``planned``. Persist the canonical value for mixed-version workers.
+    PLANNED = "requested"
     IN_PROGRESS = "in_progress"
     IMPLEMENTED = "implemented"
     VERIFIED = "verified"
@@ -781,7 +784,7 @@ class PromptProfileModel(Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
     source: Mapped[str] = mapped_column(String(64), nullable=False)
     source_url: Mapped[str] = mapped_column(String(512), nullable=False, default="")
-    prompt_text: Mapped[str] = mapped_column(Text, nullable=False)
+    prompt_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
     task_types: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     tags: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     version: Mapped[str] = mapped_column(String(32), nullable=False, default="latest")

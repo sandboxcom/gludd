@@ -521,7 +521,9 @@ class TestLocalServeE2E:
                 ["local-serve", "--model", "llama-7b"], capsys,
             )
         assert code == 0
-        assert "/admin/local-inference/start" in mock_post.call_args[0][0]
+        assert mock_post.call_args[0][0] == (
+            "http://localhost:8000/admin/models/local/serve"
+        )
         body = mock_post.call_args[1]["json"]
         assert body["model_name"] == "llama-7b"
         assert "local-0" in out

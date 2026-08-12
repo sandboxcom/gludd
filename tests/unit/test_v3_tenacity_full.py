@@ -59,6 +59,7 @@ class TestTenacityReplacement:
             provider_class_hint="COAI",
             model_name="gt",
             enabled=True,
+            api_metered=False,
         )
         gateway = ModelGateway(profiles=[profile])
         mock_response = ModelResponse(content="tenacity result")

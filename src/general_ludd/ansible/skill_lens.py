@@ -108,17 +108,25 @@ def _score_relevance(task_description: str, section_text: str) -> float:
     if not task_description or not section_text:
         return 0.0
 
-    task_tokens = _tokenize(task_description)
-    section_tokens = _tokenize(section_text)
+    # Keep exact short words (for example ``go``) while excluding the one- and
+    # two-character synthetic fragments produced by subword decomposition.
+    # Those fragments made unrelated text overlap on letters such as ``a`` or
+    # suffixes such as ``on``.
+    task_words = set(re.findall(r"[a-z0-9_]+", task_description.lower()))
+    section_words = set(re.findall(r"[a-z0-9_]+", section_text.lower()))
+    task_tokens = task_words | {token for token in _tokenize(task_description) if len(token) >= 3}
+    section_tokens = section_words | {token for token in _tokenize(section_text) if len(token) >= 3}
 
     if not task_tokens:
         return 0.0
 
     matches = task_tokens & section_tokens
+    if not matches:
+        return 0.0
     raw = len(matches) / len(task_tokens)
 
     section_lower = section_text.lower()
-    dense_matches = sum(section_lower.count(t) for t in task_tokens)
+    dense_matches = sum(section_lower.count(token) for token in matches)
     density = min(dense_matches / max(len(task_tokens), 1), 2.0) / 2.0
 
     return 0.5 * raw + 0.5 * density

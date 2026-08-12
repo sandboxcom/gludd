@@ -52,7 +52,7 @@ override SYSTEM_PYTHON := /usr/bin/python3
 _NO_UV_SYNC_GOALS := \
     worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
     release-worktree-guard status-claim-guard workflow-state workflow-gate commit-ready gha-ready merge-ready \
-    git-where repo-status git-status git-remote-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom verify-remote \
+    git-where repo-status git-status git-remote-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom verify-remote git-patch-equivalence \
     git-branch git-checkout git-add git-merge git-merge-nc git-merge-abort git-rebase-abort git-rebase-continue git-rebase-skip \
     git-cherry-pick git-cherry-pick-list git-cherry-pick-continue git-cherry-pick-skip git-cherry-pick-abort \
     ci-remotes ci-diff-since-remote ci-head-compare ci-remote-head-guard ci-trigger ci-shards-log-context \
@@ -90,7 +90,7 @@ PYTEST_VERBOSITY ?= -v
         ansible-syntax ansible-lint-playbooks ansible-collection-test playbook-list \
         git-status git-init git-add git-commit git-log git-diff git-reset \
         git-branch git-checkout git-merge git-staged git-stash git-stash-pop \
-        git-merge-abort git-rebase-abort git-rebase-continue git-rebase-skip git-reset-hard git-cherry-pick git-cherry-pick-list \
+        git-merge-abort resolve-development-conflicts git-rebase-abort git-rebase-continue git-rebase-skip git-reset-hard git-cherry-pick git-cherry-pick-list \
         submodule-init submodule-update submodule-status submodule-pin \
         repo-status repo-diff repo-staged repo-log \
         feature-start feature-done test-and-commit preflight \
@@ -119,7 +119,7 @@ _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-wor
          secrets-scrub secrets-scan secrets-baseline security-audit clean-artifacts health-check \
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
         git-add-all help grep scan-secrets-fresh untrack \
-         git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count check-git-hygiene \
+         git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count git-patch-equivalence check-git-hygiene \
         molecule-clean plan ps-gludd kill-stale reap-stale-collection-locks reap-orphan-pytest kill-gate-force \
         gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
         repo-visibility \
@@ -234,6 +234,7 @@ help:
 	@echo "  test-unit             Unit tests only"
 	@echo "  test-unit-shards      Unit tests in bounded serial shards (SHARDS=12 SHARD=1)"
 	@echo "  test-integration      Integration tests"
+	@echo "  integration-health   Run the observable integration gate with isolated temp paths"
 	@echo "  test-e2e              End-to-end tests"
 	@echo "  test-e2e-azure        Azure E2E — env-pointer (CI-friendly)"
 	@echo "  test-e2e-azure-provision  Azure full-provision E2E (opt-in, costly)"
@@ -303,6 +304,7 @@ help:
 	@echo "  git-diff              Show diff stats"
 	@echo "  git-staged            Show staged changes"
 	@echo "  git-log               Show recent commits"
+	@echo "  git-patch-equivalence PATCH_UPSTREAM=<ref> PATCH_HEAD=<ref> PATCH_LIMIT=<n>  Compare patch identity"
 	@echo "  git-add FILES='...'   Stage specific files"
 	@echo "  git-add-all           Stage all changes"
 	@echo "  git-commit MSG='...'  Commit staged changes"
@@ -310,6 +312,7 @@ help:
 	@echo "  git-branch MSG='...'  Create branch"
 	@echo "  git-checkout MSG='...' Switch branch"
 	@echo "  git-merge MSG='...'   Merge branch with --no-ff"
+	@echo "  resolve-development-conflicts MERGE_SOURCE=<branch> APPLY=0|1  Preserve development on conflicts"
 	@echo "  git-rebase-abort      Abort an in-progress rebase"
 	@echo "  git-rebase-continue   Continue after resolving rebase conflicts"
 	@echo "  git-rebase-skip       Skip duplicate/current rebase commit"
@@ -2706,6 +2709,18 @@ git-revlist-count:
 	@echo "commits B is ahead of A (A..B, should be >0):"; git rev-list --count $(A)..$(B)
 	@echo "--- commits unique to A (would be lost on ff) ---"; git log --oneline $(B)..$(A) || true
 
+# Read-only patch-equivalence inventory using Git's stable patch-id logic.
+# '-' means the head-side patch already exists upstream under another commit;
+# '+' means it is genuinely absent and needs semantic integration review.
+git-patch-equivalence:
+	@PATCH_UPSTREAM="$(PATCH_UPSTREAM)"; PATCH_HEAD="$(PATCH_HEAD)"; PATCH_LIMIT="$(PATCH_LIMIT)"; \
+	[ -n "$$PATCH_UPSTREAM" ] && [ -n "$$PATCH_HEAD" ] && [ -n "$$PATCH_LIMIT" ] || { echo "Usage: make git-patch-equivalence PATCH_UPSTREAM=development PATCH_HEAD=master PATCH_LIMIT=20"; exit 2; }; \
+	case "$$PATCH_LIMIT" in *[!0-9]*|'') echo "PATCH_LIMIT must be a non-negative integer"; exit 2;; esac; \
+	PATCH_EQ=$$(git cherry "$$PATCH_UPSTREAM" "$$PATCH_HEAD" | awk '$$1 == "-" { count++ } END { print count + 0 }'); \
+	UNIQUE=$$(git cherry "$$PATCH_UPSTREAM" "$$PATCH_HEAD" | awk '$$1 == "+" { count++ } END { print count + 0 }'); \
+	echo "patch-equivalent=$$PATCH_EQ unique=$$UNIQUE upstream=$$PATCH_UPSTREAM head=$$PATCH_HEAD"; \
+	if [ "$$PATCH_LIMIT" -gt 0 ]; then git cherry -v "$$PATCH_UPSTREAM" "$$PATCH_HEAD" | sed -n "1,$${PATCH_LIMIT}p"; fi
+
 # Read-only: show a commit's parent SHA + the files it touched (rebase planning).
 # Usage: make git-show-commit C=<sha>
 git-show-commit:
@@ -2889,6 +2904,37 @@ git-lock-clean:
 git-resolve-ours:
 	@[ -n "$(FILES)" ] || { echo "Usage: make git-resolve-ours FILES='path'"; exit 1; }
 	@git checkout --ours -- $(FILES) && git add $(FILES) && echo "resolved (ours): $(FILES)"
+
+# Reconcile a historical merge into development without an untracked rescue
+# Makefile. Conflicting paths preserve development when stage 2 exists; files
+# introduced only by the merge source preserve that incoming version. Git's
+# clean auto-merges remain untouched. APPLY=0 is the required behavioral smoke.
+resolve-development-conflicts:
+	@MERGE_SOURCE="$(MERGE_SOURCE)"; APPLY="$(APPLY)"; \
+	[ -n "$$MERGE_SOURCE" ] || { echo "Usage: make resolve-development-conflicts MERGE_SOURCE=master APPLY=0|1"; exit 2; }; \
+	case "$$APPLY" in 0|1) ;; *) echo "APPLY must be 0 or 1"; exit 2;; esac; \
+	BRANCH=$$(git branch --show-current); \
+	[ "$$BRANCH" = "development" ] || { echo "Refusing conflict resolution on branch $$BRANCH; expected development"; exit 1; }; \
+	COUNT=$$(git diff --name-only --diff-filter=U | wc -l | tr -d ' '); \
+	if [ "$$APPLY" = "0" ]; then \
+		echo "DRY RUN: $$COUNT unresolved path(s) for $$MERGE_SOURCE -> development"; \
+		exit 0; \
+	fi; \
+	MERGE_HEAD_SHA=$$(git rev-parse -q --verify MERGE_HEAD 2>/dev/null) || { echo "No merge is in progress"; exit 1; }; \
+	SOURCE_SHA=$$(git rev-parse "$$MERGE_SOURCE^{commit}") || exit 1; \
+	[ "$$MERGE_HEAD_SHA" = "$$SOURCE_SHA" ] || { echo "MERGE_HEAD $$MERGE_HEAD_SHA does not match $$MERGE_SOURCE $$SOURCE_SHA"; exit 1; }; \
+	git diff --name-only --diff-filter=U | while IFS= read -r path; do \
+		if git ls-files -u -- "$$path" | awk '$$3 == 2 { found=1 } END { exit !found }'; then \
+			git checkout --ours -- "$$path"; SIDE=development; \
+		else \
+			git checkout --theirs -- "$$path"; SIDE="$$MERGE_SOURCE"; \
+		fi; \
+		git add -- "$$path" || exit 1; \
+		echo "resolved $$path ($$SIDE)"; \
+	done; \
+	REMAINING=$$(git diff --name-only --diff-filter=U | wc -l | tr -d ' '); \
+	[ "$$REMAINING" = "0" ] || { echo "$$REMAINING unresolved path(s) remain"; exit 1; }; \
+	echo "Resolved $$COUNT conflict(s); non-conflicting $$MERGE_SOURCE changes preserved."
 
 repo-add-all:
 	@git add -A
@@ -5669,7 +5715,10 @@ check-coverage-missing:
 	@$(UV) run python scripts/check_coverage_missing.py
 
 integration-health:
-	@$(UV) run python scripts/check_integration_health.py
+	@PROJECT_NAMESPACE="$$($(PYTHON) scripts/resource_arbiter.py namespace)"; \
+	PROJECT_KEY="$$($(PYTHON) -c 'import hashlib, sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest()[:8])' "$$PROJECT_NAMESPACE")"; \
+	BT="/tmp/gi-$$PROJECT_KEY-$$$$"; rm -rf "$$BT"; trap 'rm -rf "$$BT"' EXIT; \
+	PYTEST_ADDOPTS="$${PYTEST_ADDOPTS:-} --basetemp=$$BT" $(UV) run python scripts/check_integration_health.py
 
 integration-health-watch:
 	@while true; do \

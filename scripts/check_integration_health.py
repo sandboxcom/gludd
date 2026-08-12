@@ -34,24 +34,11 @@ TIMEOUT_SEC = 900
 INTERMEDIATE_INTERVAL_SEC = 30
 PROGRESS_INTERVAL_FILES = 5
 
-FAILURE_RE = re.compile(
-    r"^(FAILED\s+.*?\n.*?test_.*?\n(?:.*?\n)*?E\s+.*)",
+XDIST_FAILURE_RE = re.compile(
+    r"^(?:\[[^\]\n]*\]\s+)*FAILED\s+"
+    r"(?P<test>\S+?\.py(?:::\S+)*)"
+    r"(?:\s+-\s+(?P<reason>.*))?\s*$",
     re.MULTILINE,
-)
-
-FAILURE_LINE_RE = re.compile(
-    r"^FAILED\s+(\S+)::(\S+):(\d+):\s+(.*)",
-    re.MULTILINE,
-)
-
-SHORT_FAILURE_RE = re.compile(
-    r"^FAILED\s+(\S+)\s*$",
-    re.MULTILINE,
-)
-
-TB_FAILURE_RE = re.compile(
-    r"^FAILED\s+(\S+).*?\n(.*?Error.*)",
-    re.MULTILINE | re.DOTALL,
 )
 
 FILE_ERROR_RE = re.compile(
@@ -79,29 +66,7 @@ def _find_integration_test_files() -> list[Path]:
 
 
 def _parse_failures(output: str) -> list[dict]:
-    failures: list[dict] = []
-
-    for match in TB_FAILURE_RE.finditer(output):
-        block = output[match.start() : match.end()]
-        failures.append(
-            {
-                "raw": block.strip(),
-                "test": match.group(1),
-            }
-        )
-
-    if not failures:
-        parsed = _parse_short_summary_failures(output)
-        failures.extend(parsed)
-
-    if not failures:
-        for match in FILE_ERROR_RE.finditer(output):
-            failures.append(
-                {
-                    "raw": f"ERROR {match.group(1)} (collection or import error)",
-                    "test": match.group(1),
-                }
-            )
+    failures = _parse_short_summary_failures(output)
 
     if not failures:
         for match in COLLECT_ERROR_RE.finditer(output):
@@ -112,43 +77,42 @@ def _parse_failures(output: str) -> list[dict]:
                 }
             )
 
+    if not failures:
+        for match in FILE_ERROR_RE.finditer(output):
+            failures.append(
+                {
+                    "raw": f"ERROR {match.group(1)} (collection or import error)",
+                    "test": match.group(1),
+                }
+            )
+
     for f in failures:
-        line_match = FAILURE_LINE_RE.search(f.get("raw", ""))
-        if line_match:
-            f["file"] = line_match.group(1)
-            f["line"] = line_match.group(3)
-            f["reason"] = line_match.group(4)
-        else:
-            f["file"] = ""
-            f["line"] = ""
-            f["reason"] = ""
+        test = str(f.get("test", ""))
+        f.setdefault("file", test.split("::", 1)[0] if test else "")
+        f.setdefault("line", "")
+        f.setdefault("reason", "")
 
     return failures
 
 
 def _parse_short_summary_failures(output: str) -> list[dict]:
-    failures: list[dict] = []
-    in_failures_section = False
+    failures_by_test: dict[str, dict] = {}
 
-    for line in output.split("\n"):
-        if line.startswith("FAILURES") or line.startswith("== FAILURES =="):
-            in_failures_section = True
-            continue
-        if (in_failures_section and line.startswith("==")) or (
-            in_failures_section and line.startswith("short test summary")
-        ):
-            break
-        if in_failures_section and line.strip().startswith("FAILED"):
-            match = SHORT_FAILURE_RE.match(line.strip())
-            if match:
-                failures.append(
-                    {
-                        "raw": line.strip(),
-                        "test": match.group(1),
-                    }
-                )
+    for match in XDIST_FAILURE_RE.finditer(output):
+        test = match.group("test")
+        reason = (match.group("reason") or "").strip()
+        failure = {
+            "raw": match.group(0).strip(),
+            "test": test,
+            "file": test.split("::", 1)[0],
+            "line": "",
+            "reason": reason,
+        }
+        previous = failures_by_test.get(test)
+        if previous is None or (reason and len(reason) > len(previous["reason"])):
+            failures_by_test[test] = failure
 
-    return failures
+    return list(failures_by_test.values())
 
 
 def _write_output(data: dict) -> None:

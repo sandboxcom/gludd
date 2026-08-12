@@ -46,7 +46,11 @@ New module: `src/general_ludd/security/sandboxes/vm/`
   via Firecracker REST API.
 - `gvisor_backend.py` — `GvisorBackend(SandboxBackend)`: runs `runsc run` with OCI bundle.
 - `image_builder.py` — builds rootfs image (Alpine + gludd + deps). Cached at
-  `~/.cache/gludd/sandbox/`.
+  `~/.cache/gludd/sandbox/`. Publication stages a complete tree beside the
+  destination, then holds a destination-derived cross-process `FileLock` while
+  displacing the prior tree and atomically renaming the stage. A destination
+  removed by an external cleanup between observation and displacement is benign;
+  any later publication failure restores a tree this process actually displaced.
 - `agent_executor.py` — binary inside microVM: receives SandboxTarget over
   virtio-vsock, executes command, returns ProcessResult.
 
@@ -93,3 +97,15 @@ Python: `aiohttp` (existing), `pyroute2` (tap device setup).
 - Bench: 100-agent dispatch loop — Firecracker vs Landlock
 - Integration: daemon → FirecrackerBackend → execute → verify → release
 - Regression: existing Landlock/bubblewrap backends still pass
+
+## 8. Atomic publication evidence
+
+Directory publication needs synchronization in addition to rename semantics.
+The long-lived Stack Overflow discussion
+[“os.link() vs. os.rename() vs. os.replace() for writing atomic files”](https://stackoverflow.com/questions/60369291/os-link-vs-os-rename-vs-os-replace-for-writing-atomic-write-files-what)
+records that another process can still invalidate an unsynchronized temporary
+path and recommends an explicit lock. The older
+[atomic file replacement discussion](https://stackoverflow.com/questions/7645338/how-to-do-atomic-file-replacement)
+supports staging on the same filesystem followed by `os.replace`. Gludd combines
+those mechanisms and bounds lock acquisition to 30 seconds; it never deletes a
+live destination recursively.

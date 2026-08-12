@@ -212,6 +212,8 @@ def test_fallback_after_primary_stream_fails_all_retries() -> None:
     )
     result = list(chunks)
     assert result[0].content == "from fallback"
+    assert primary_fail.stream.call_count == 3
+    assert fallback_succeed.stream.call_count == 1
 
 
 # ---------------------------------------------------------------------------

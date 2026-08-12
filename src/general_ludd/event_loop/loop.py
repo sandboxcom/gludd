@@ -430,6 +430,11 @@ class EventLoop(EventLoopHandlers):
         self._mcp_tool_registry = mcp_tool_registry
         self._running = False
         self._wake_event = asyncio.Event()
+        # A manual wake/tick can overlap the daemon's run_forever task.  The
+        # loop stores tick-scoped repositories on ``self``, so overlapping
+        # ticks would otherwise replace one another's AsyncSession owners and
+        # close a session while it is still provisioning a connection.
+        self._tick_lock = asyncio.Lock()
         self._total_ticks = 0
         self._tick_state: dict[str, Any] = {}
         self._active_traces: dict[str, Any] = {}
@@ -741,6 +746,11 @@ class EventLoop(EventLoopHandlers):
             logger.warning("Stuck-todo reaper failed: %s", exc)
 
     async def tick(self) -> dict[str, Any]:
+        """Run one complete tick with exclusive ownership of tick state."""
+        async with self._tick_lock:
+            return await self._tick_once()
+
+    async def _tick_once(self) -> dict[str, Any]:
         self._tick_state = {}
         self._total_ticks += 1
         tick_id = f"tick_{self._total_ticks}"

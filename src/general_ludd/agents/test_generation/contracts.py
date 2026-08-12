@@ -84,6 +84,9 @@ class GenerationHarness(BaseModel):
 class TestReport(BaseModel):
     """Structured report from a test generation pipeline run."""
 
+    # This public domain model is imported by test modules.  Pytest otherwise
+    # mistakes its ``Test*`` name for a test class and emits a collection warning.
+    __test__ = False
     model_config = ConfigDict(extra="forbid")
 
     verdict: str = Field(

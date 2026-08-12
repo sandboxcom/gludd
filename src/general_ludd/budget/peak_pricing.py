@@ -77,12 +77,14 @@ class RateTier:
         return NotImplemented
 
     def covers(self, dt: datetime.datetime) -> bool:
-        if dt.weekday() not in self.days:
-            return False
         hour = dt.hour
         if self.start_hour <= self.end_hour:
-            return self.start_hour <= hour < self.end_hour
-        return hour >= self.start_hour or hour < self.end_hour
+            return dt.weekday() in self.days and self.start_hour <= hour < self.end_hour
+        if hour >= self.start_hour:
+            return dt.weekday() in self.days
+        if hour < self.end_hour:
+            return (dt.weekday() - 1) % 7 in self.days
+        return False
 
 
 @dataclass

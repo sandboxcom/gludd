@@ -31,6 +31,7 @@ BUILD_SCRIPT = ROOT / "scripts" / "build_hot_modules.js"
 MAKEFILE = ROOT / "Makefile"
 HOT_PROXY_PREFIX = f"/tmp/gludd-hot-{os.getpid()}-hot-reload-proxy-"
 HOT_PROXY_REAL_PREFIX = f"/tmp/gludd-hot-{os.getpid()}-hot-reload-proxy-real-"
+HOT_PROXY_TMP_PREFIX = f"/tmp/gludd-hot-{os.getpid()}-hot-reload-proxy-tmp-"
 
 pytestmark = pytest.mark.xdist_group("hot_reload_proxy")
 
@@ -218,7 +219,7 @@ class TestHotModuleOverridesDefault:
             + f"const mod = loadHotModule({json.dumps(name)}, defaults)\n"
             + "console.log(JSON.stringify(Object.keys(mod)))\n"
         )
-        tmp = Path("/tmp/_test_hot_reload_proxy.ts")
+        tmp = Path(f"{HOT_PROXY_TMP_PREFIX}load.ts")
         tmp.write_text(code)
         try:
             env = os.environ.copy()
@@ -254,7 +255,7 @@ class TestHotModuleOverridesDefault:
             with contextlib.suppress(FileNotFoundError):
                 os.remove(f"{TestHotModuleOverridesDefault.HOT_PREFIX}{n}.js")
         with contextlib.suppress(FileNotFoundError):
-            os.remove("/tmp/_test_hot_reload_proxy.ts")
+            os.remove(f"{HOT_PROXY_TMP_PREFIX}load.ts")
 
     def test_defaults_returned_when_no_hot_module(self):
         result = self._call_load_hot_module(
@@ -377,16 +378,21 @@ class TestRealPluginHotModules:
             subprocess.run(
                 ["node", str(BUILD_SCRIPT)],
                 cwd=str(ROOT), capture_output=True, text=True, timeout=30,
+                env={**os.environ, "GLUDD_HOT_MODULE_PREFIX": HOT_PROXY_REAL_PREFIX},
                 check=True,
             )
 
             # Find any built hot module
-            built = sorted(Path("/tmp").glob("gludd-hot-*.js"))
+            built = sorted(
+                Path("/tmp").glob(f"{Path(HOT_PROXY_REAL_PREFIX).name}*.js")
+            )
             if not built:
                 pytest.skip("No hot modules built")
 
             for hot_file in built[:3]:  # test up to 3
-                name = hot_file.name.removeprefix("gludd-hot-").removesuffix(".js")
+                name = hot_file.name.removeprefix(
+                    Path(HOT_PROXY_REAL_PREFIX).name
+                ).removesuffix(".js")
                 code = (
                     "import { loadHotModule, type HotModule } from "
                     + json.dumps(str(HOT_RELOAD_TS))
@@ -397,11 +403,12 @@ class TestRealPluginHotModules:
                     + "console.log('keys=' + JSON.stringify(keys));\n"
                     + "console.log('count=' + keys.length);\n"
                 )
-                tmp = Path("/tmp/_test_real_load.ts")
+                tmp = Path(f"{HOT_PROXY_TMP_PREFIX}real-load.ts")
                 tmp.write_text(code)
                 try:
                     env = os.environ.copy()
                     env["OPENCODE_SUBAGENT"] = ""
+                    env["GLUDD_HOT_MODULE_PREFIX"] = HOT_PROXY_REAL_PREFIX
                     proc = subprocess.run(
                         ["node", "--experimental-strip-types", str(tmp)],
                         capture_output=True, text=True, timeout=15,
@@ -432,7 +439,7 @@ class TestRealPluginHotModules:
             + "const keys = Object.keys(mod);\n"
             + "console.log('has_tc=' + keys.includes('text.complete'));\n"
         )
-        tmp = Path("/tmp/_test_fallback.ts")
+        tmp = Path(f"{HOT_PROXY_TMP_PREFIX}fallback.ts")
         tmp.write_text(code)
         try:
             env = os.environ.copy()
@@ -466,9 +473,12 @@ class TestHotReloadSystemIssues:
             subprocess.run(
                 ["node", str(BUILD_SCRIPT)],
                 cwd=str(ROOT), capture_output=True, text=True, timeout=30,
+                env={**os.environ, "GLUDD_HOT_MODULE_PREFIX": HOT_PROXY_PREFIX},
             )
             broken = []
-            for f in sorted(Path("/tmp").glob("gludd-hot-*.js")):
+            for f in sorted(
+                Path("/tmp").glob(f"{Path(HOT_PROXY_PREFIX).name}*.js")
+            ):
                 proc = subprocess.run(
                     ["node", "--check", str(f)],
                     capture_output=True, text=True, timeout=10,

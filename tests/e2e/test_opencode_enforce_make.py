@@ -87,7 +87,10 @@ class TestOpencodeEnforceMake:
     """The loaded source plugin must block non-make bash commands."""
 
     def test_known_make_target_allowed(self, hook_plugin_env: HookEnv):
-        result = _run_enforce_make(hook_plugin_env, "make test-count")
+        # This assertion runs inside pytest, so a nested test target is correctly
+        # rejected by the gate-concurrency guard.  Use a read-only Make target to
+        # isolate the command-prefix contract under test.
+        result = _run_enforce_make(hook_plugin_env, "make help")
         assert result.returncode == 0, result.stderr
         assert not _has_block_phrase(result.stdout + result.stderr)
 

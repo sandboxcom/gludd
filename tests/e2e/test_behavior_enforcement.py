@@ -127,6 +127,13 @@ def _env_stop(tmp_path: Path) -> dict:
         "GLUDD_STOP_TOOL_COUNTS_FILE": str(tmp_path / "counts.json"),
         "GLUDD_BLOCK_COUNTER_FILE": str(tmp_path / "blockcnt.json"),
         "GLUDD_BLOCK_REASON_FILE": str(tmp_path / "blockreason.json"),
+        "GLUDD_FALSE_DONE_BLOCKS_FILE": str(tmp_path / "false-done.json"),
+        "GLUDD_FORCE_DISPATCH_PATH": str(tmp_path / "force-dispatch.json"),
+        "GLUDD_RELEASE_COMPLETENESS_FILE": str(tmp_path / "release.json"),
+        "GLUDD_LAST_TEST_RESULT_FILE": str(tmp_path / "last-test.json"),
+        "GLUDD_POST_RESULTS_STATE_FILE": str(tmp_path / "post-results.json"),
+        "GLUDD_TEXT_ONLY_STATE_FILE": str(tmp_path / "text-only.json"),
+        "GLUDD_WATCHDOG_CI_FILE": str(tmp_path / "watchdog-ci.json"),
     }
 
 

@@ -801,10 +801,10 @@ def test_post_results_text_only_block_fires_after_subagent_results(
                 f"Reason must be 'after-results-text-only'; got: {pb}"
             )
         else:
-            block_text = parsed.get("text", "")
-            assert "POST-RESULTS" in block_text.upper() or "RESUME WORK" in block_text.upper(), (
-                f"Post-results block must fire. raw output: {raw[:300]}"
-            )
+            block_text = parsed.get("text", "").upper()
+            assert "RESULTS INGESTION PROTOCOL: 7 SUBAGENT RESULTS ARRIVED." in block_text
+            assert "CODIFY RESULTS" in block_text
+            assert "TEXT-ONLY AFTER RESULTS IS A STOP." in block_text
     finally:
         if _old_ci is not None:
             ci_path.write_bytes(_old_ci)

@@ -22,6 +22,8 @@ STATE_FAIL = "fail"
 STATE_INSUFFICIENT = "insufficient_data"
 STATE_FAIL_CLOSED = "fail_closed"
 
+_THERMAL_LINEAR_MODEL_MAX_ABS_DELTA_T_K = 10_000.0
+
 
 def _extract_capacity(prop: dict[str, Any]) -> float | None:
     """Return the numeric capacity from a property record (handles both
@@ -29,8 +31,13 @@ def _extract_capacity(prop: dict[str, Any]) -> float | None:
     v = prop.get("value")
     if v is None:
         v = prop.get("value_or_range")
-    if isinstance(v, (int, float)):
-        return float(v)
+    # ``bool`` is an ``int`` subclass in Python, but accepting True as 1 MPa
+    # would turn a schema/type error into a plausible-looking calculation.
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return None
+    numeric = float(v)
+    if math.isfinite(numeric):
+        return numeric
     return None
 
 
@@ -41,6 +48,8 @@ def _stress_check(
     equation_id: str,
     extra_inputs: dict[str, Any] | None = None,
     assumptions: list[str] | None = None,
+    *,
+    allow_zero_applied: bool = False,
 ) -> dict[str, Any]:
     """Core (capacity - applied) / applied margin computation shared by the
     direct-stress checks (tension, compression, shear, bending extreme fiber).
@@ -48,7 +57,9 @@ def _stress_check(
     Returns a verdict dict with margin, state, capacity, applied, unit,
     uncertainty, equation_id, inputs, and assumptions. Returns state
     ``insufficient_data`` when capacity is missing/non-numeric and
-    ``fail_closed`` when the applied load is non-positive.
+    ``fail_closed`` when the applied load is invalid or non-positive. A caller
+    may explicitly allow zero for a load case where zero is a valid result
+    (for example, zero temperature change).
     """
     capacity = _extract_capacity(capacity_prop)
     unit = capacity_prop.get("unit", "MPa")
@@ -74,6 +85,30 @@ def _stress_check(
         "uncertainty": uncertainty,
     }
 
+    applied_is_finite = (
+        not isinstance(applied_MPa, bool)
+        and isinstance(applied_MPa, (int, float))
+        and math.isfinite(float(applied_MPa))
+    )
+    applied_is_admissible = applied_is_finite and (
+        applied_MPa > 0 or (allow_zero_applied and applied_MPa == 0)
+    )
+
+    # Invalid loading is the stronger safety signal and therefore takes
+    # precedence over an unavailable capacity. This preserves fail-closed
+    # behavior when more than one input is bad.
+    if not applied_is_admissible:
+        base.update(
+            {
+                "margin": None,
+                "state": STATE_FAIL_CLOSED,
+                "reason": "applied stress must be a finite, non-boolean positive number",
+                "capacity": capacity,
+                "applied": applied_MPa,
+            }
+        )
+        return base
+
     if capacity is None or capacity <= 0:
         base.update(
             {
@@ -86,12 +121,12 @@ def _stress_check(
         )
         return base
 
-    if not isinstance(applied_MPa, (int, float)) or applied_MPa <= 0:
+    if applied_MPa == 0:
         base.update(
             {
                 "margin": None,
-                "state": STATE_FAIL_CLOSED,
-                "reason": "applied stress must be a positive number",
+                "state": STATE_PASS,
+                "reason": "zero applied stress",
                 "capacity": capacity,
                 "applied": applied_MPa,
             }
@@ -157,7 +192,12 @@ def check_bending(
 
     Units: M in N*mm, c in mm, I in mm^4 → sigma in MPa (= N/mm^2).
     """
-    if I_mm4 <= 0 or c_mm <= 0:
+    geometry_values = (applied_moment_Nmm, c_mm, I_mm4)
+    geometry_is_valid = all(
+        not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(float(value))
+        for value in geometry_values
+    )
+    if not geometry_is_valid or I_mm4 <= 0 or c_mm <= 0:
         return _stress_check(
             capacity_prop,
             0.0,
@@ -302,7 +342,24 @@ def check_thermal_stress(
             "uniform temperature change",
             "mechanical properties constant over delta_T range",
         ],
+        allow_zero_applied=True,
     )
+    if (
+        not isinstance(delta_T_K, bool)
+        and isinstance(delta_T_K, (int, float))
+        and math.isfinite(float(delta_T_K))
+        and abs(delta_T_K) > _THERMAL_LINEAR_MODEL_MAX_ABS_DELTA_T_K
+    ):
+        result.update(
+            {
+                "margin": None,
+                "state": STATE_FAIL,
+                "reason": "temperature change exceeds the constant-property linear model applicability limit",
+            }
+        )
+        result["assumptions"].append(
+            f"linear thermal-stress model limited to |delta_T| <= {_THERMAL_LINEAR_MODEL_MAX_ABS_DELTA_T_K:g} K"
+        )
     return result
 
 
@@ -330,18 +387,25 @@ def check_fatigue_sn(
     equation_id = "fatigue: basquin S-N (10^3..10^6 log-log)"
     assumptions: list[str] = []
     uncertainty_fraction = 0.05
+    endurance_was_estimated = S_e_MPa is None
 
     if S_e_MPa is None:
         S_e_MPa = 0.5 * S_ut_MPa
         assumptions.append(f"endurance limit estimated as 0.5*S_ut={S_e_MPa:.1f} MPa (steel baseline)")
         uncertainty_fraction = 0.15
 
-    if cycles >= 1_000_000:
-        allowable = S_e_MPa
-        n_label = "N >= 10^6 (endurance regime)"
-    elif cycles <= 1_000:
+    if cycles <= 1_000:
         allowable = 0.9 * S_ut_MPa
         n_label = "N <= 10^3 (LCF cutoff at 0.9*S_ut)"
+    elif not endurance_was_estimated:
+        # A supplied endurance value is higher-tier evidence than the generic
+        # two-point curve. Apply it conservatively throughout the HCF regime
+        # instead of interpolating a value that exceeds the measured limit.
+        allowable = S_e_MPa
+        n_label = "N > 10^3 (measured endurance limit, conservative HCF regime)"
+    elif cycles >= 1_000_000:
+        allowable = S_e_MPa
+        n_label = "N >= 10^6 (endurance regime)"
     else:
         log_n = math.log10(cycles)
         log_s_hi = math.log10(0.9 * S_ut_MPa)
@@ -350,7 +414,19 @@ def check_fatigue_sn(
         allowable = 10.0**log_s
         n_label = f"N={cycles} (finite-life Basquin interpolation)"
 
-    uncertainty = allowable * uncertainty_fraction
+    applied_is_finite = (
+        not isinstance(applied_amplitude_MPa, bool)
+        and isinstance(applied_amplitude_MPa, (int, float))
+        and math.isfinite(float(applied_amplitude_MPa))
+    )
+    if endurance_was_estimated:
+        # Keep the baseline uncertainty tied to the inferred strength while
+        # widening it when the decision-driving amplitude is larger.
+        applied_basis = float(applied_amplitude_MPa) if applied_is_finite else 0.0
+        uncertainty_basis = max(0.5 * allowable, applied_basis)
+    else:
+        uncertainty_basis = allowable
+    uncertainty = uncertainty_basis * uncertainty_fraction
 
     inputs: dict[str, Any] = {
         "S_ut": {"value": S_ut_MPa, "unit": "MPa"},
@@ -364,7 +440,10 @@ def check_fatigue_sn(
         "allowable_strength": {"value": allowable, "unit": "MPa"},
     }
 
-    if not isinstance(applied_amplitude_MPa, (int, float)) or applied_amplitude_MPa <= 0:
+    if (
+        not applied_is_finite
+        or applied_amplitude_MPa <= 0
+    ):
         return {
             "failure_mode": "fatigue_failure",
             "margin": None,
@@ -376,7 +455,7 @@ def check_fatigue_sn(
             "uncertainty": uncertainty,
             "equation_id": equation_id,
             "inputs": inputs,
-            "assumptions": [*assumptions, n_label, "fully reversed loading (mean stress = 0)"],
+            "assumptions": [*assumptions, "fully reversed loading (mean stress = 0)", n_label],
         }
 
     margin = (allowable - applied_amplitude_MPa) / applied_amplitude_MPa
@@ -391,7 +470,7 @@ def check_fatigue_sn(
         "uncertainty": uncertainty,
         "equation_id": equation_id,
         "inputs": inputs,
-        "assumptions": [*assumptions, n_label, "fully reversed loading (mean stress = 0)"],
+        "assumptions": [*assumptions, "fully reversed loading (mean stress = 0)", n_label],
     }
 
 
