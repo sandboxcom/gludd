@@ -82,6 +82,11 @@ link** — each surface validates even though the next layer would also catch it
   installs or exercises the intended boundary. Gludd therefore catches adapter
   failures inside each Slurm route and tests the real HTTP response, while logs
   retain diagnostic detail that the response does not expose.
+- CPython's long-running [subprocess shell-security discussion](https://github.com/python/cpython/issues/114539)
+  includes a concrete report that `shell=True` does not make untrusted arguments
+  safe. Gludd's adversarial detector consequently treats the argument order as
+  irrelevant: it flags a supported `subprocess` call whenever both a
+  user-controlled value and `shell=True` occur in the same call.
 
 ### SSRF guards
 

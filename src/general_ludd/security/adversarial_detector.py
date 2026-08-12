@@ -202,8 +202,10 @@ BACKDOOR_PATTERNS: list[AdversarialPattern] = [
         severity=Severity.CRITICAL,
         description="subprocess with shell=True on user-controllable input",
         pattern=re.compile(
-            r'subprocess\.(?:run|Popen|call|check_output|check_call)\s*\(\s*[^)]*'
-            r'shell\s*=\s*True.*(?:input|request|user|data|body|params|json|query|form)',
+            r'subprocess\.(?:run|Popen|call|check_output|check_call)\s*\('
+            r'(?=[^)]*\bshell\s*=\s*True)'
+            r'(?=[^)]*\b(?:input|request|user|data|body|params|json|query|form)\b)'
+            r'[^)]*\)',
             re.IGNORECASE | re.DOTALL,
         ),
         remediation="Use shell=False with list-based args; never shell=True on untrusted input",
