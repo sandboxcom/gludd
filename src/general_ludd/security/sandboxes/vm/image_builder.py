@@ -18,6 +18,7 @@ import logging
 import os
 import shutil
 import struct
+import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -337,9 +338,24 @@ def build_rootfs(
         )
 
     if dest.resolve() != built.path.resolve():
-        if dest.exists():
-            shutil.rmtree(dest)
-        shutil.copytree(built.path, dest, symlinks=True)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        stage = Path(tempfile.mkdtemp(prefix=f".{dest.name}.stage-", dir=dest.parent))
+        try:
+            shutil.copytree(built.path, stage, dirs_exist_ok=True, symlinks=True)
+            displaced: Path | None = None
+            if dest.exists():
+                displaced = dest.with_name(f".{dest.name}.old-{os.getpid()}-{time.time_ns()}")
+                dest.replace(displaced)
+            try:
+                stage.replace(dest)
+            except BaseException:
+                if displaced is not None and displaced.exists() and not dest.exists():
+                    displaced.replace(dest)
+                raise
+            if displaced is not None:
+                shutil.rmtree(displaced, ignore_errors=True)
+        finally:
+            shutil.rmtree(stage, ignore_errors=True)
 
     return BuiltImage(
         path=dest,
