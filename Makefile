@@ -234,6 +234,7 @@ help:
 	@echo "  test-unit             Unit tests only"
 	@echo "  test-unit-shards      Unit tests in bounded serial shards (SHARDS=12 SHARD=1)"
 	@echo "  test-integration      Integration tests"
+	@echo "  integration-health   Run the observable integration gate with isolated temp paths"
 	@echo "  test-e2e              End-to-end tests"
 	@echo "  test-e2e-azure        Azure E2E — env-pointer (CI-friendly)"
 	@echo "  test-e2e-azure-provision  Azure full-provision E2E (opt-in, costly)"
@@ -5666,7 +5667,10 @@ check-coverage-missing:
 	@$(UV) run python scripts/check_coverage_missing.py
 
 integration-health:
-	@$(UV) run python scripts/check_integration_health.py
+	@PROJECT_NAMESPACE="$$($(PYTHON) scripts/resource_arbiter.py namespace)"; \
+	PROJECT_KEY="$$($(PYTHON) -c 'import hashlib, sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest()[:8])' "$$PROJECT_NAMESPACE")"; \
+	BT="/tmp/gi-$$PROJECT_KEY-$$$$"; rm -rf "$$BT"; trap 'rm -rf "$$BT"' EXIT; \
+	PYTEST_ADDOPTS="$${PYTEST_ADDOPTS:-} --basetemp=$$BT" $(UV) run python scripts/check_integration_health.py
 
 integration-health-watch:
 	@while true; do \
