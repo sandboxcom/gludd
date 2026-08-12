@@ -53,6 +53,7 @@ dependencies = [
     "fs>=0.1.0-beta.2",
     "rich>=13.0.0",
     "diskcache>=0.1.0-beta.2",
+    "filelock>=3.13.0",
     "defusedxml>=0.7.1,<1",
     "prompt_toolkit>=3.0.0",
     "pycryptodome>=3.20.0",

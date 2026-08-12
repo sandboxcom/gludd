@@ -24,6 +24,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from filelock import FileLock
+
 logger = logging.getLogger(__name__)
 
 CACHE_DIR = Path.home() / ".cache" / "gludd" / "sandbox"
@@ -343,15 +345,28 @@ def build_rootfs(
         try:
             shutil.copytree(built.path, stage, dirs_exist_ok=True, symlinks=True)
             displaced: Path | None = None
-            if dest.exists():
-                displaced = dest.with_name(f".{dest.name}.old-{os.getpid()}-{time.time_ns()}")
-                dest.replace(displaced)
-            try:
-                stage.replace(dest)
-            except BaseException:
-                if displaced is not None and displaced.exists() and not dest.exists():
-                    displaced.replace(dest)
-                raise
+            publish_lock = FileLock(
+                str(dest.with_name(f".{dest.name}.publish.lock")), timeout=30
+            )
+            with publish_lock:
+                if dest.exists():
+                    candidate = dest.with_name(
+                        f".{dest.name}.old-{os.getpid()}-{time.time_ns()}"
+                    )
+                    try:
+                        dest.replace(candidate)
+                    except FileNotFoundError:
+                        # An external cleanup may remove the shared destination
+                        # between the existence check and the atomic rename.
+                        pass
+                    else:
+                        displaced = candidate
+                try:
+                    stage.replace(dest)
+                except BaseException:
+                    if displaced is not None and displaced.exists() and not dest.exists():
+                        displaced.replace(dest)
+                    raise
             if displaced is not None:
                 shutil.rmtree(displaced, ignore_errors=True)
         finally:

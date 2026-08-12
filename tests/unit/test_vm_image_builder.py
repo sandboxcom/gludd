@@ -217,6 +217,27 @@ def test_build_rootfs_replaces_shared_destination_without_rmtree(
     assert not (dest / "stale").exists()
 
 
+def test_build_rootfs_publishes_when_shared_destination_disappears(
+    _isolate_cache_dir, tmp_path
+):
+    dest = tmp_path / "shared-output"
+    dest.mkdir()
+    (dest / "stale").write_text("old image")
+    real_replace = Path.replace
+
+    def _remove_destination_before_displacement(path: Path, target: Path):
+        if path == dest:
+            shutil.rmtree(dest)
+            raise FileNotFoundError(dest)
+        return real_replace(path, target)
+
+    with mock.patch.object(Path, "replace", _remove_destination_before_displacement):
+        built = build_rootfs(dest)
+
+    assert built.path == dest
+    assert (dest / "rootfs.ext4").is_file()
+
+
 def test_build_rootfs_unknown_type_raises(_isolate_cache_dir, tmp_path):
     with pytest.raises(ValueError, match="Unknown image_type"):
         build_rootfs(str(tmp_path / "bad"), image_type="docker")
