@@ -12,6 +12,11 @@
       "behavior": "make test-files TESTFILES=tests/unit/test_make_target_contract.py PYTEST_ARGS=-q"
     },
     {
+      "name": "integration-health",
+      "make_variables": [],
+      "behavior": "make integration-health"
+    },
+    {
       "name": "molecule-test",
       "make_variables": ["SCENARIO"],
       "behavior": "make molecule-test SCENARIO=test_gludd_observe"
