@@ -159,6 +159,20 @@ gludd models search "llama gguf" --limit 10
 gludd models download "TheBloke/Llama-2-7B-GGUF" --filename "llama-2-7b.Q4_K_M.gguf"
 ```
 
+The default model cache is `~/.cache/general-ludd/models`. If that implicit
+home-backed path is unavailable—for example, a daemon service account has no
+writable home—startup falls back to the owner-only, project-namespaced Gludd
+state directory. Set `GLUDD_MODEL_DIR` when an operator-managed location is
+required; an explicit but unwritable location remains a hard error instead of
+silently redirecting model data.
+
+This distinction follows long-lived practitioner reports that a home cache is
+often unsuitable on clusters and cloud hosts, while cache placement must remain
+an operator decision ([huggingface_hub#1738](https://github.com/huggingface/huggingface_hub/issues/1738),
+[huggingface_hub#2117](https://github.com/huggingface/huggingface_hub/issues/2117)).
+Gludd therefore provides a secure fallback only for its implicit default and
+never overrides an explicit cache choice.
+
 ### 3. Start Local Server
 
 ```bash

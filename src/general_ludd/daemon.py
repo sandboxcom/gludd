@@ -310,6 +310,7 @@ def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
         "mcp_servers": {},
         "task_definitions": [],
         "model_profiles": [],
+        "connectors": [],
         "rules": [],
         "project_gludd_dir": find_project_gludd_dir(),
         "remediation_config": None,
@@ -346,6 +347,16 @@ def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
         except Exception as exc:
             logger.warning("Project config overlay failed validation: %s", exc)
 
+    def _surface_user_config() -> None:
+        """Expose list-valued user settings to startup consumers."""
+        user_config = cfg.get("user_config")
+        if user_config is None:
+            cfg["rules"] = []
+            cfg["connectors"] = []
+            return
+        cfg["rules"] = list(getattr(user_config, "rules", []) or [])
+        cfg["connectors"] = list(getattr(user_config, "connectors", []) or [])
+
     if config_dir is None:
         home = os.environ.get("HOME", os.path.expanduser("~"))
         candidates = [
@@ -360,12 +371,14 @@ def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
         else:
             logger.info("No config directory found; daemon running unconfigured")
             _apply_project_overlay()
+            _surface_user_config()
             return cfg
 
     cdir = Path(config_dir)
     if not cdir.is_dir():
         logger.info("Config directory %s does not exist; daemon running unconfigured", config_dir)
         _apply_project_overlay()
+        _surface_user_config()
         return cfg
 
     mr_path = cdir / "model_routing.yml"
@@ -431,12 +444,26 @@ def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
     # Apply project overlay (.gludd/general-ludd.yml) BEFORE extracting rules so
     # any rules defined in the project overlay are captured in cfg["rules"].
     _apply_project_overlay()
+    _surface_user_config()
 
-    # Surface the rules engine: copy UserConfig.rules into startup_config so the
-    # EventLoop (which reads startup_config["rules"]) receives operator rules.
-    uc_loaded = cfg.get("user_config")
-    if uc_loaded is not None:
-        cfg["rules"] = list(getattr(uc_loaded, "rules", []) or [])
+    # A dedicated connector inventory takes precedence over embedded user
+    # configuration. Invalid content is ignored without losing the safe empty
+    # default or a valid embedded connector list.
+    connectors_path = cdir / "connectors.yml"
+    if connectors_path.exists():
+        try:
+            with open(connectors_path) as connector_file:
+                connector_data = yaml.safe_load(connector_file) or {}
+            file_connectors = connector_data.get("connectors") or []
+            if isinstance(file_connectors, list) and file_connectors:
+                cfg["connectors"] = file_connectors
+                logger.info(
+                    "Loaded %d connector(s) from %s",
+                    len(file_connectors),
+                    connectors_path,
+                )
+        except Exception as exc:
+            logger.warning("Failed to load connectors config %s: %s", connectors_path, exc)
 
     return cfg
 
@@ -3739,8 +3766,11 @@ def create_daemon_app(
 
     from general_ludd.routers.observe import wire_observability
 
-    _uc = (getattr(app.state, "_startup_config", {}) or {}).get("user_config")
-    _connector_cfg = getattr(_uc, "connectors", None) if _uc else None
+    startup_config = getattr(app.state, "_startup_config", {}) or {}
+    _connector_cfg = list(startup_config.get("connectors") or []) or None
+    if _connector_cfg is None:
+        _uc = startup_config.get("user_config")
+        _connector_cfg = list(getattr(_uc, "connectors", None) or []) or None
     wire_observability(app, daemon_state, _connector_cfg)
 
     @app.get(

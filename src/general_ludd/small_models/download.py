@@ -9,6 +9,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from general_ludd.security.state import project_state
+
 if TYPE_CHECKING:
     from general_ludd.cloud.model_sources import ModelSource
     from general_ludd.small_models.model_hash_db import ModelHashDB
@@ -78,8 +80,17 @@ class ModelDownloader:
         hash_db: ModelHashDB | None = None,
         oidc_auth: object | None = None,
     ) -> None:
-        self.cache_dir = cache_dir or DEFAULT_CACHE_DIR
-        Path(self.cache_dir).mkdir(parents=True, exist_ok=True)
+        explicit_cache = cache_dir or os.environ.get("GLUDD_MODEL_DIR")
+        self.cache_dir = explicit_cache or DEFAULT_CACHE_DIR
+        try:
+            Path(self.cache_dir).mkdir(parents=True, exist_ok=True)
+        except OSError:
+            if explicit_cache is not None:
+                raise
+            # Service accounts and isolated tests may intentionally have no
+            # writable home directory. Keep startup available without sharing a
+            # global temp path by falling back to the secure project namespace.
+            self.cache_dir = str(project_state().directory("models"))
         self.hf_token = hf_token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
         self._oidc_auth = oidc_auth
         self.timeout = timeout if timeout is not None else DEFAULT_DOWNLOAD_TIMEOUT

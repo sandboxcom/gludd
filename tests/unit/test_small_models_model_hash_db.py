@@ -314,6 +314,25 @@ class TestModelDownloaderHashIntegration:
 
 
 class TestModelDownloaderResilience:
+    def test_default_cache_falls_back_to_project_namespace(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        import general_ludd.small_models.download as download_module
+
+        blocker = tmp_path / "not-a-directory"
+        blocker.write_text("blocked")
+        unavailable = blocker / "models"
+        monkeypatch.setattr(download_module, "DEFAULT_CACHE_DIR", str(unavailable))
+        monkeypatch.delenv("GLUDD_MODEL_DIR", raising=False)
+        monkeypatch.delenv("GLUDD_MODELS_DIR", raising=False)
+        monkeypatch.setenv("GLUDD_STATE_DIR", str(tmp_path / "state"))
+
+        downloader = ModelDownloader()
+
+        assert downloader.cache_dir != str(unavailable)
+        assert Path(downloader.cache_dir).name == "models"
+        assert Path(downloader.cache_dir).is_dir()
+
     def test_download_exception_from_hf_propagates(self):
 
         with tempfile.TemporaryDirectory() as tmpdir:
