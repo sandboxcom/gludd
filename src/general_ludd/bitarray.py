@@ -49,8 +49,7 @@ class BitArray:
         inst._bits = bytearray(byte_count)
         for i, ch in enumerate(s):
             if ch == "1":
-                bit_pos = inst._size - 1 - i
-                inst._bits[bit_pos >> 3] |= 1 << (bit_pos & 7)
+                inst._bits[i >> 3] |= 1 << (i & 7)
         return inst
 
     def __len__(self) -> int:

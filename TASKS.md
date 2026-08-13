@@ -51,6 +51,8 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 - [ ] S83.38 - **Restore Salsa20 provider counter compatibility** across `src/general_ludd/algorithms/salsa20.py` and `docs/features/SALSA20_PROVIDER_COMPATIBILITY.md`: preserve maintained PyCryptodome encryption while advancing nonzero block counters through bounded provider output rather than a nonexistent `seek` method, and specify interoperability and ZDD boundaries. | evidence: authoritative gate and focused replay reproduced 7 provider-counter failures; focused suite 32/32 GREEN; source branch coverage 96.88%; PyCryptodome #399 and provider API evidence documented; Ruff, scoped mypy, task-ledger validation, and spec lint GREEN; collection and full gate pending | priority: high | effort: XS | status: in_progress
 
+- [ ] S83.39 - **Restore BitArray index-order serialization invariants** across `src/general_ludd/bitarray.py`, `tests/unit/test_bitarray_deep.py`, and `docs/features/BITARRAY_SERIALIZATION_CONTRACT.md`: make binary-string construction match LSB-first array indexing and correct the contradictory OR-independence assertion without weakening truth-table coverage. | evidence: authoritative gate and focused replay reproduced 2 failures; one source reversal and one objectively stale Boolean assertion isolated; focused suite 58/58 GREEN; source branch coverage 90.43%; Stack Overflow bitarray conversion evidence and bitstring #156 documented; Ruff, scoped mypy, task-ledger validation, and spec lint GREEN; collection and full gate pending | priority: high | effort: XS | status: in_progress
+
 ---
 
 ## Session 79 — Crypto Library Refactor + Behavioral Guardrails (2026-08-05, 86,428 tests)

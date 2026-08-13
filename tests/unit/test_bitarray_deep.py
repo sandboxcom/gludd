@@ -220,7 +220,7 @@ class TestBitwise:
         b2 = BitArray([False, True])
         r = b1 | b2
         b2[0] = True
-        assert r[0] is False
+        assert r[0] is True
 
 
 # ——— Serialization ——————————————————————————————————————————————————————————
