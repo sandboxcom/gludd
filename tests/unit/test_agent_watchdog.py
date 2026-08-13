@@ -569,6 +569,28 @@ def _setup_no_reset(monkeypatch, tmp_path):
 def test_watchdog_detects_push_stalled_via_ps(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     _setup_no_reset(monkeypatch, tmp_path)
 
+    multitask_state = tmp_path / "multitask-state.json"
+    multitask_state.write_text(
+        json.dumps(
+            {
+                "thisMessageDispatches": 0,
+                "zeroStreak": 1,
+                "estimatedInFlight": 0,
+            }
+        )
+    )
+    monkeypatch.setattr(aw, "MULTITASK_STATE_FILE", str(multitask_state))
+
+    tasks_md = tmp_path / "TASKS.md"
+    tasks_md.write_text("- [ ] preserve the stalled-push directive\n")
+    monkeypatch.setattr(aw, "_TASKS_MD", tasks_md)
+    ratchet_yml = tmp_path / "ratchet.yml"
+    ratchet_yml.write_text("# empty\n")
+    monkeypatch.setattr(aw, "_RATCHET_YML", ratchet_yml)
+    gate_status = tmp_path / ".gate-status"
+    gate_status.write_text("lint PASS 0\n")
+    monkeypatch.setattr(aw, "_GATE_STATUS", gate_status)
+
     logs: list[str] = []
     monkeypatch.setattr(aw, "_log", lambda msg: logs.append(msg))
 
@@ -593,6 +615,7 @@ def test_watchdog_detects_push_stalled_via_ps(tmp_path: Path, monkeypatch: pytes
     check_and_reset()
 
     assert any("PUSH STALLED" in msg for msg in logs), f"logs: {logs}"
+    assert any("UNDER-FLOOR DETECTED" in msg for msg in logs), f"logs: {logs}"
     assert directive_p.exists()
     assert "PUSH STALLED" in directive_p.read_text()
 

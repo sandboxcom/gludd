@@ -50,29 +50,172 @@ from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TypedDict
 
-try:
-    from scripts.resource_arbiter import project_namespace, resource_path
-except ImportError:  # pragma: no cover - direct execution from scripts/
-    from resource_arbiter import project_namespace, resource_path
+if __package__ in {None, ""}:  # Direct script execution requires the project root.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-try:
-    from statistics import mean, stdev
-except ImportError:
+from scripts.resource_arbiter import project_namespace, resource_path
 
-    def _simple_mean(values):
-        if not values:
-            return 0.0
-        return sum(values) / len(values)
 
-    def _simple_stdev(values):
-        if len(values) < 2:
-            return 0.0
-        m = _simple_mean(values)
-        return (sum((x - m) ** 2 for x in values) / (len(values) - 1)) ** 0.5
+class DeadlineRecord(TypedDict):
+    """Normalized task deadline consumed by anomaly checks."""
 
-    mean = _simple_mean
-    stdev = _simple_stdev
+    id: str
+    task_id: str
+    type: str
+    description: str
+    dispatched_at: float
+    start_ts: float
+    elapsed: float
+
+
+class DurationFinding(TypedDict, total=False):
+    """Duration anomaly evidence emitted by watchdog checks."""
+
+    id: str
+    task_id: str
+    type: str
+    description: str
+    elapsed_s: float
+    elapsed_seconds: float
+    elapsed_minutes: float
+    dispatched_at: float
+    expected_s: int
+    median_seconds: float
+    ratio: float
+    hard_timeout: bool
+    rolling_avg_s: float | None
+    threshold_3x_s: float | None
+    reason: str
+
+
+class TaskSeenRecord(TypedDict):
+    """Historical state for one observed task."""
+
+    dispatched_at: float
+    type: str
+    seen_at: float
+
+
+class TaskHistory(TypedDict):
+    """Persisted rolling task-duration history."""
+
+    durations: dict[str, list[float]]
+    last_seen: dict[str, TaskSeenRecord]
+
+
+class TaskTimingRecord(TypedDict):
+    """Persisted rolling timing for one named operation."""
+
+    average_duration_seconds: float
+    count: int
+
+
+class DurationStatsRecord(TypedDict):
+    """Persisted duration statistics for one tracked task name."""
+
+    last_duration: float
+    avg_duration: float
+    count: int
+
+
+class TaskStateRecord(TypedDict, total=False):
+    """Normalized running-task state used by the timing monitor."""
+
+    name: str
+    started: float
+    ended: float
+    pid: int
+
+
+class OperationTiming(TypedDict):
+    """Persisted state for one monitored operation."""
+
+    started_at: float
+    last_check: float
+    duration: float
+    status: str
+
+
+class AnomalyFindings(TypedDict, total=False):
+    """Structured findings returned by the task anomaly check."""
+
+    tasks: list[DurationFinding]
+    anomalies: list[DurationFinding]
+    stalled: list[DurationFinding]
+    ts: str
+    escalated: bool
+
+
+class ReleaseData(TypedDict, total=False):
+    """Normalized GitHub release metadata."""
+
+    isDraft: bool
+    isPrerelease: bool
+    assetCount: int
+    publishedAt: str
+    url: str
+    _error: str
+
+
+class ContinueDirective(TypedDict):
+    """Machine-readable watchdog continuation request."""
+
+    action: str
+    pending_items: list[str]
+    required_tool: str
+    dispatch_count: int
+    dispatch_commands: list[dict[str, object]]
+    message: str
+    stop_count: int
+    source: str
+    ts: str
+
+
+def _as_record(value: object) -> dict[str, object] | None:
+    """Return a string-keyed view of a decoded JSON object."""
+    if not isinstance(value, dict):
+        return None
+    return {key: item for key, item in value.items() if isinstance(key, str)}
+
+
+def _read_json_record(path: Path) -> dict[str, object]:
+    """Read one JSON object, returning an empty record on invalid input."""
+    try:
+        value: object = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError, TypeError):
+        return {}
+    return _as_record(value) or {}
+
+
+def _as_float(value: object, default: float = 0.0) -> float:
+    """Convert a JSON scalar to float without accepting containers."""
+    if not isinstance(value, (int, float, str)):
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
+
+
+def _as_int(value: object, default: int = 0) -> int:
+    """Convert a JSON scalar to int without accepting containers."""
+    if not isinstance(value, (int, float, str)):
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+def _as_text(value: object, default: str = "") -> str:
+    """Return text for a decoded scalar while rejecting containers."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (int, float, bool)):
+        return str(value)
+    return default
 
 # -- Classification API -------------------------------------------------------
 
@@ -175,6 +318,14 @@ PURE_IDLE_DIRECTIVE = "/tmp/gludd-continue.txt"
 HEARTBEAT_FILE = "/tmp/gludd-watchdog-heartbeat.json"
 HEARTBEAT_VERBOSE = os.environ.get("GLUDD_WATCHDOG_VERBOSE", "0") == "1"
 
+_PLAIN_DIRECTIVE_PRIORITIES: dict[str, int] = {
+    "UNDER-FLOOR DETECTED": 10,
+    "WATCHDOG CONTINUE DIRECTIVE": 20,
+    "TASK ANOMALY": 30,
+    "CI STALLED": 40,
+    "PUSH STALLED": 50,
+}
+
 _CHECK_COOLDOWN_FILE = "/tmp/gludd-watchdog-check-cooldowns.json"
 _CHECK_COOLDOWN_SECS = 60
 
@@ -262,7 +413,9 @@ def _rotate_watchdog_logs() -> None:
                 log_path.write_bytes(tail)
                 new_sz = log_path.stat().st_size
                 _log(
-                    f"LOG ROTATION: {name} {sz / (1024 * 1024):.1f}MB → {new_sz / (1024 * 1024):.1f}MB (threshold {WATCHDOG_LOG_ROTATION_MB}MB)"
+                    f"LOG ROTATION: {name} {sz / (1024 * 1024):.1f}MB → "
+                    f"{new_sz / (1024 * 1024):.1f}MB "
+                    f"(threshold {WATCHDOG_LOG_ROTATION_MB}MB)"
                 )
             except Exception:
                 pass
@@ -379,10 +532,13 @@ def _version_key(version: str) -> tuple[tuple[int, ...], str]:
     return numbers, suffix
 
 
-def _owner_is_alive(owner: dict) -> bool:
+def _owner_is_alive(owner: dict[str, object]) -> bool:
+    raw_pid = owner.get("pid", 0)
+    if not isinstance(raw_pid, (int, float, str)):
+        return False
     try:
-        pid = int(owner.get("pid", 0))
-    except (TypeError, ValueError):
+        pid = int(raw_pid)
+    except ValueError:
         return False
     if pid <= 0:
         return False
@@ -400,10 +556,10 @@ def _owner_is_alive(owner: dict) -> bool:
     return not (recorded and current and str(recorded) != str(current))
 
 
-def _read_lock_owner(path: Path) -> dict | None:
+def _read_lock_owner(path: Path) -> dict[str, object] | None:
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-        return value if isinstance(value, dict) else None
+        value: object = json.loads(path.read_text(encoding="utf-8"))
+        return _as_record(value)
     except (OSError, json.JSONDecodeError, TypeError):
         return None
 
@@ -466,7 +622,9 @@ def acquire_watchdog_lock(
                     PermissionError,
                     OSError,
                 ):
-                    os.kill(int(previous["pid"]), signal.SIGTERM)
+                    previous_pid = _as_int(previous.get("pid"), -1)
+                    if previous_pid > 0:
+                        os.kill(previous_pid, signal.SIGTERM)
                 _unlink_if_token_matches(path, str(previous.get("token", "")))
                 continue
             _unlink_if_token_matches(path, str(previous.get("token", "")))
@@ -512,6 +670,9 @@ def stop_watchdog(*, lock_path: Path | str | None = None) -> bool:
     if not _owner_is_alive(owner):
         _unlink_if_token_matches(path, str(owner.get("token", "")))
         return False
+    owner_pid = _as_int(owner.get("pid"), -1)
+    if owner_pid <= 0:
+        return False
     with suppress(
         KeyError,
         TypeError,
@@ -520,7 +681,7 @@ def stop_watchdog(*, lock_path: Path | str | None = None) -> bool:
         PermissionError,
         OSError,
     ):
-        os.kill(int(owner["pid"]), signal.SIGTERM)
+        os.kill(owner_pid, signal.SIGTERM)
         return True
     return False
 
@@ -558,10 +719,7 @@ def _max_out_false_done() -> None:
             except Exception:
                 count = 0
         mtime_age = _streak_mtime_age_seconds()
-        if mtime_age is not None and mtime_age < PURE_IDLE_SECS:
-            count = 0
-        else:
-            count = (count % 100) + 1
+        count = 0 if mtime_age is not None and mtime_age < PURE_IDLE_SECS else count % 100 + 1
         p.write_text(json.dumps({"count": count, "ts": time.time()}))
     except Exception:
         pass
@@ -594,20 +752,24 @@ DEFAULT_ANOMALY_MULTIPLIER = 5.0
 ANOMALY_DIRECTIVE = "/tmp/gludd-continue.txt"
 
 
-def _read_deadlines() -> list[dict]:
+def _read_deadlines() -> list[DeadlineRecord]:
     try:
         p = Path(TASK_DEADLINES_FILE)
         if not p.exists():
             return []
-        data = json.loads(p.read_text())
-        entries = data.get("tasks", data) if isinstance(data, dict) else data
+        decoded: object = json.loads(p.read_text())
+        data = _as_record(decoded)
+        entries = data.get("tasks", data) if data is not None else decoded
         if not isinstance(entries, list):
             return []
         now = time.time()
-        result: list[dict] = []
-        for entry in entries:
-            task_id = entry.get("task_id", entry.get("id", "?"))
-            start_ts = float(entry.get("dispatched_at", entry.get("start_ts", entry.get("start", 0))))
+        result: list[DeadlineRecord] = []
+        for raw_entry in entries:
+            entry = _as_record(raw_entry)
+            if entry is None:
+                continue
+            task_id = _as_text(entry.get("task_id", entry.get("id", "?")), "?")
+            start_ts = _as_float(entry.get("dispatched_at", entry.get("start_ts", entry.get("start", 0))))
             if start_ts <= 0:
                 continue
             elapsed = now - start_ts
@@ -615,8 +777,8 @@ def _read_deadlines() -> list[dict]:
                 {
                     "id": task_id,
                     "task_id": task_id,
-                    "type": entry.get("type", _guess_task_type(str(task_id))),
-                    "description": entry.get("description", str(task_id)),
+                    "type": _as_text(entry.get("type"), _guess_task_type(task_id)),
+                    "description": _as_text(entry.get("description"), task_id),
                     "dispatched_at": start_ts,
                     "start_ts": start_ts,
                     "elapsed": elapsed,
@@ -628,11 +790,11 @@ def _read_deadlines() -> list[dict]:
 
 
 def _detect_stalled_tasks(
-    deadlines: list[dict],
+    deadlines: list[DeadlineRecord],
     max_minutes: float = DEFAULT_STALL_MINUTES,
-) -> list[dict]:
+) -> list[DurationFinding]:
     max_seconds = max_minutes * 60.0
-    stalled: list[dict] = []
+    stalled: list[DurationFinding] = []
     for d in deadlines:
         if d["elapsed"] > max_seconds:
             stalled.append(
@@ -646,22 +808,23 @@ def _detect_stalled_tasks(
 
 
 def _detect_anomalies(
-    deadlines: list[dict],
+    deadlines: list[DeadlineRecord],
     multiplier: float = DEFAULT_ANOMALY_MULTIPLIER,
-) -> list[dict]:
+) -> list[DurationFinding]:
     if len(deadlines) < 3:
         return []
     elapsed_values = sorted(d["elapsed"] for d in deadlines if d["elapsed"] > 0)
     if not elapsed_values:
         return []
     n = len(elapsed_values)
-    if n % 2 == 0:
-        median = (elapsed_values[n // 2 - 1] + elapsed_values[n // 2]) / 2.0
-    else:
-        median = elapsed_values[n // 2]
+    median = (
+        (elapsed_values[n // 2 - 1] + elapsed_values[n // 2]) / 2.0
+        if n % 2 == 0
+        else elapsed_values[n // 2]
+    )
     if median <= 0:
         return []
-    anomalies: list[dict] = []
+    anomalies: list[DurationFinding] = []
     for d in deadlines:
         if d["elapsed"] > median * multiplier:
             anomalies.append(
@@ -676,43 +839,69 @@ def _detect_anomalies(
     return anomalies
 
 
-def _read_task_history() -> dict:
+def _read_task_history() -> TaskHistory:
+    empty: TaskHistory = {"durations": {}, "last_seen": {}}
     try:
         p = Path(TASK_HISTORY_FILE)
         if not p.exists():
-            return {"durations": {}, "last_seen": {}}
-        return json.loads(p.read_text())
+            return empty
+        raw: object = json.loads(p.read_text())
     except Exception:
-        return {"durations": {}, "last_seen": {}}
+        return empty
+
+    record = _as_record(raw)
+    if record is None:
+        return empty
+
+    durations: dict[str, list[float]] = {}
+    raw_durations = _as_record(record.get("durations")) or {}
+    for task_type, values in raw_durations.items():
+        if isinstance(values, list):
+            durations[task_type] = [
+                _as_float(value)
+                for value in values
+                if isinstance(value, (int, float, str))
+            ]
+
+    last_seen: dict[str, TaskSeenRecord] = {}
+    raw_last_seen = _as_record(record.get("last_seen")) or {}
+    for task_id, value in raw_last_seen.items():
+        seen = _as_record(value)
+        if seen is None:
+            continue
+        last_seen[task_id] = {
+            "dispatched_at": _as_float(seen.get("dispatched_at")),
+            "type": _as_text(seen.get("type"), "unknown"),
+            "seen_at": _as_float(seen.get("seen_at")),
+        }
+    return {"durations": durations, "last_seen": last_seen}
 
 
-def _write_task_history(history: dict) -> None:
-    try:
+def _write_task_history(history: TaskHistory) -> None:
+    with suppress(Exception):
         Path(TASK_HISTORY_FILE).write_text(json.dumps(history, indent=2))
-    except Exception:
-        pass
 
 
-def _rolling_avg_by_type(history: dict, task_type: str) -> float | None:
-    durations = history.get("durations", {}).get(task_type, [])
+def _rolling_avg_by_type(history: TaskHistory, task_type: str) -> float | None:
+    durations = history["durations"].get(task_type, [])
     if not durations:
         return None
     recent = durations[-MAX_HISTORY_PER_TYPE:]
     return sum(recent) / len(recent)
 
 
-def _update_task_history(deadlines: list[dict]) -> None:
+def _update_task_history(deadlines: list[DeadlineRecord]) -> None:
     history = _read_task_history()
     now = time.time()
     current_ids = {d.get("id", d.get("task_id", "")) for d in deadlines}
 
-    last_seen = history.get("last_seen", {})
-    durations_by_type: dict[str, list[float]] = history.get("durations", {})
+    last_seen = history["last_seen"]
+    durations_by_type = history["durations"]
 
     for task_id, seen_info in list(last_seen.items()):
         if task_id not in current_ids:
-            dispatched_at = seen_info.get("dispatched_at", 0)
-            task_type = seen_info.get("type", "unknown")
+            dispatched_at = seen_info["dispatched_at"]
+            task_type = seen_info["type"]
             if dispatched_at > 0:
                 duration = now - dispatched_at
                 if task_type not in durations_by_type:
@@ -723,11 +912,11 @@ def _update_task_history(deadlines: list[dict]) -> None:
             del last_seen[task_id]
 
     for d in deadlines:
-        task_id = d.get("id", d.get("task_id", ""))
+        task_id = d["id"] or d["task_id"]
         if task_id and task_id not in last_seen:
             last_seen[task_id] = {
-                "dispatched_at": d.get("dispatched_at", d.get("start_ts", 0)),
-                "type": d.get("type", "unknown"),
+                "dispatched_at": d["dispatched_at"],
+                "type": d["type"],
                 "seen_at": now,
             }
 
@@ -737,19 +926,19 @@ def _update_task_history(deadlines: list[dict]) -> None:
 
 
 def _detect_history_anomalies(
-    deadlines: list[dict],
+    deadlines: list[DeadlineRecord],
     timeout_secs: float = 300.0,
     multiplier: float = 3.0,
-) -> list[dict]:
+) -> list[DurationFinding]:
     history = _read_task_history()
-    anomalies: list[dict] = []
+    anomalies: list[DurationFinding] = []
 
     for d in deadlines:
-        elapsed = d.get("elapsed", 0)
-        task_id = d.get("id", d.get("task_id", "?"))
-        task_type = d.get("type", "unknown")
-        description = d.get("description", task_id)
-        dispatched_at = d.get("dispatched_at", d.get("start_ts", 0))
+        elapsed = d["elapsed"]
+        task_id = d["id"] or d["task_id"]
+        task_type = d["type"]
+        description = d["description"]
+        dispatched_at = d["dispatched_at"]
 
         if elapsed <= 0:
             continue
@@ -759,7 +948,7 @@ def _detect_history_anomalies(
         history_anomaly = rolling_avg is not None and elapsed > rolling_avg * multiplier
 
         if hard_timeout or history_anomaly:
-            entry = {
+            entry: DurationFinding = {
                 "id": task_id,
                 "type": task_type,
                 "description": description,
@@ -859,11 +1048,11 @@ def _ci_pending_for_too_long_minutes() -> float | None:
         p = Path(CI_CACHE_FILE)
         if not p.exists():
             return None
-        data = json.loads(p.read_text())
-        last_check = data.get("last_ci_check", 0)
+        data = _read_json_record(p)
+        last_check = _as_float(data.get("last_ci_check"))
         if last_check > 0 and (time.time() - last_check) > 300:
             return 0.0
-        first_seen = data.get("pending_first_seen", 0)
+        first_seen = _as_float(data.get("pending_first_seen"))
         if first_seen <= 0:
             return None
         return (time.time() - first_seen) / 60.0
@@ -937,15 +1126,6 @@ def _read_anomaly_counts() -> dict[str, int]:
         return counts
     except Exception:
         return {}
-
-
-def _increment_anomaly_count(key: str, counts: dict[str, int] | None = None) -> int:
-    if counts is None:
-        counts = _read_anomaly_counts()
-    new_val = counts.get(key, 0) + 1
-    counts[key] = new_val
-    Path(ANOMALY_COUNT_FILE).write_text(json.dumps(counts))
-    return new_val
 
 
 def check_running_tasks() -> None:
@@ -1049,8 +1229,8 @@ def _should_check_ci() -> bool:
     try:
         p = Path(CI_CACHE_FILE)
         if p.exists():
-            data = json.loads(p.read_text())
-            last_check = float(data.get("last_ci_check", 0))
+            data = _read_json_record(p)
+            last_check = _as_float(data.get("last_ci_check"))
             if time.time() - last_check < CI_CHECK_INTERVAL:
                 return False
     except Exception:
@@ -1058,12 +1238,12 @@ def _should_check_ci() -> bool:
     return True
 
 
-def _update_ci_cache(**kwargs) -> None:  # type: ignore[no-untyped-def]
+def _update_ci_cache(**kwargs: object) -> None:
     p = Path(CI_CACHE_FILE)
-    existing: dict = {}
+    existing: dict[str, object] = {}
     try:
         if p.exists():
-            existing = json.loads(p.read_text())
+            existing = _read_json_record(p)
     except Exception:
         pass
     existing.update(kwargs)
@@ -1092,16 +1272,16 @@ def _check_ci_stall() -> None:
         status = status_match.group(1) if status_match else "UNKNOWN"
         run_id = run_id_match.group(1) if run_id_match else None
 
-        ci_data: dict = {}
+        ci_data: dict[str, object] = {}
         try:
             p = Path(CI_CACHE_FILE)
             if p.exists():
-                ci_data = json.loads(p.read_text())
+                ci_data = _read_json_record(p)
         except Exception:
             pass
 
         last_run_id = ci_data.get("last_ci_run_id")
-        first_seen = ci_data.get("pending_first_seen", 0)
+        first_seen = _as_float(ci_data.get("pending_first_seen"))
 
         if status.upper() == "FAILURE":
             if run_id and run_id != last_run_id:
@@ -1156,17 +1336,13 @@ def _check_gate_background() -> None:
 
         if elapsed > GATE_MAX_RUNTIME_SECS:
             _log(f"GATE STALLED: background gate pid={pid_str} running {elapsed:.0f}s (>1h) - auto-killing")
-            try:
+            with suppress(Exception):
                 _GATE_STATUS.write_text("GATE_TIMEOUT\n=== GATE: ABORTED (watchdog timeout) ===\n")
-            except Exception:
-                pass
             try:
                 os.kill(pid, signal.SIGTERM)
                 time.sleep(10)
-                try:
+                with suppress(ProcessLookupError):
                     os.kill(pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
                 GATE_PID_FILE.unlink(missing_ok=True)
                 _log(f"GATE KILLED: pid={pid_str} after {elapsed:.0f}s")
             except Exception as exc:
@@ -1218,16 +1394,25 @@ def _check_push_health() -> None:
 
 def track_task_duration(task_name: str, duration_seconds: float) -> None:
     p = Path(DURATIONS_FILE)
-    data: dict = {}
+    data: dict[str, DurationStatsRecord] = {}
     try:
         if p.exists():
-            data = json.loads(p.read_text())
+            raw = _read_json_record(p)
+            for name, value in raw.items():
+                raw_entry = _as_record(value)
+                if raw_entry is None:
+                    continue
+                data[name] = {
+                    "last_duration": _as_float(raw_entry.get("last_duration")),
+                    "avg_duration": _as_float(raw_entry.get("avg_duration")),
+                    "count": _as_int(raw_entry.get("count")),
+                }
     except Exception:
         pass
 
-    entry = data.get(task_name, {"last_duration": 0, "avg_duration": 0, "count": 0})
-    count = entry.get("count", 0) + 1
-    avg = entry.get("avg_duration", 0.0)
+    stats = data.get(task_name, {"last_duration": 0.0, "avg_duration": 0.0, "count": 0})
+    count = stats["count"] + 1
+    avg = stats["avg_duration"]
     new_avg = (avg * (count - 1) + duration_seconds) / count
 
     data[task_name] = {
@@ -1256,12 +1441,13 @@ def _write_last_flag_time(ts: float) -> None:
     Path(LAST_FLAG_FILE).write_text(json.dumps({"last_flag_ts": ts}))
 
 
-def _read_check_cooldowns() -> dict:
+def _read_check_cooldowns() -> dict[str, float]:
     try:
         p = Path(_CHECK_COOLDOWN_FILE)
         if not p.exists():
             return {}
-        return json.loads(p.read_text())
+        raw = _read_json_record(p)
+        return {name: _as_float(value) for name, value in raw.items()}
     except Exception:
         return {}
 
@@ -1299,6 +1485,38 @@ def _parse_etime_to_seconds(etime: str) -> float:
         return 0
 
 
+def _plain_directive_priority(text: str) -> int:
+    """Return the highest known operational priority present in a directive."""
+    return max(
+        (
+            priority
+            for marker, priority in _PLAIN_DIRECTIVE_PRIORITIES.items()
+            if marker in text
+        ),
+        default=0,
+    )
+
+
+def _write_prioritized_plain_directive(directive: str) -> bool:
+    """Write a directive unless a higher-priority signal is already visible."""
+    path = Path(PURE_IDLE_DIRECTIVE)
+    try:
+        existing = path.read_text() if path.exists() else ""
+        existing_priority = _plain_directive_priority(existing)
+        directive_priority = _plain_directive_priority(directive)
+        if existing_priority > directive_priority:
+            _log(
+                "DIRECTIVE PRESERVED: existing priority "
+                f"{existing_priority} exceeds candidate priority {directive_priority}"
+            )
+            return False
+        path.write_text(directive)
+        return True
+    except Exception as exc:
+        _log(f"ERROR writing prioritized directive: {exc}")
+        return False
+
+
 def _check_push_stalled() -> None:
     if not _should_run_check("push_stall"):
         return
@@ -1310,7 +1528,7 @@ def _check_push_stalled() -> None:
                 if lock_age > 60:
                     _log(f"PUSH STALLED: .git/push.lock exists for {lock_age:.0f}s")
                     directive = f"[{_now()}] PUSH STALLED: push.lock present >60s\n"
-                    Path(PURE_IDLE_DIRECTIVE).write_text(directive)
+                    _write_prioritized_plain_directive(directive)
             except Exception:
                 pass
 
@@ -1329,7 +1547,7 @@ def _check_push_stalled() -> None:
                     if elapsed > 60:
                         _log(f"PUSH STALLED: git push process running {elapsed:.0f}s")
                         directive = f"[{_now()}] PUSH STALLED: git push running >60s\n"
-                        Path(PURE_IDLE_DIRECTIVE).write_text(directive)
+                        _write_prioritized_plain_directive(directive)
     except Exception as e:
         _log(f"push stall check error: {e}")
     finally:
@@ -1347,7 +1565,7 @@ def _check_task_anomaly_300s() -> None:
                 task_id = d.get("task_id", "?")
                 _log(f"TASK ANOMALY: task {task_id} running >5min ({elapsed:.0f}s)")
                 directive = f"[{_now()}] TASK ANOMALY: task {task_id} running >5min\n"
-                Path(PURE_IDLE_DIRECTIVE).write_text(directive)
+                _write_prioritized_plain_directive(directive)
     except Exception as e:
         _log(f"task anomaly check error: {e}")
     finally:
@@ -1378,7 +1596,7 @@ def _check_ci_pending_stall() -> None:
                 if age > 1800:
                     _log(f"CI STALLED: run on {head[:8]} pending >30min (created {created})")
                     directive = f"[{_now()}] CI STALLED: pending >30min\n"
-                    Path(PURE_IDLE_DIRECTIVE).write_text(directive)
+                    _write_prioritized_plain_directive(directive)
     except Exception as e:
         _log(f"ci stall check error: {e}")
     finally:
@@ -1388,11 +1606,8 @@ def _check_ci_pending_stall() -> None:
 # -- Task anomaly detection --------------------------------------------------
 
 
-def _read_task_deadlines() -> dict:
-    try:
-        return json.loads(Path(TASK_DEADLINES_FILE).read_text())
-    except Exception:
-        return {}
+def _read_task_deadlines() -> dict[str, object]:
+    return _read_json_record(Path(TASK_DEADLINES_FILE))
 
 
 def _find_expected_duration(command: str) -> int | None:
@@ -1418,7 +1633,7 @@ def _find_expected_duration(command: str) -> int | None:
     return None
 
 
-def _load_stalled_tasks() -> set:
+def _load_stalled_tasks() -> set[str]:
     try:
         p = Path(STALLED_TASKS_FILE)
         if not p.exists():
@@ -1452,45 +1667,71 @@ def kill_stalled_task(pid: int) -> None:
 # -- Task timing anomaly detection --------------------------------------------
 
 
-def _read_task_timings() -> dict:
+def _read_task_timings() -> dict[str, TaskTimingRecord]:
     try:
         p = Path(TASK_TIMING_FILE)
         if not p.exists():
             return {}
-        return json.loads(p.read_text())
+        raw = _read_json_record(p)
+        timings: dict[str, TaskTimingRecord] = {}
+        for task_name, value in raw.items():
+            entry = _as_record(value)
+            if entry is None:
+                continue
+            timings[task_name] = {
+                "average_duration_seconds": _as_float(entry.get("average_duration_seconds")),
+                "count": _as_int(entry.get("count")),
+            }
+        return timings
     except Exception:
         return {}
 
 
-def _write_task_timings(data: dict) -> None:
+def _write_task_timings(data: dict[str, TaskTimingRecord]) -> None:
     Path(TASK_TIMING_FILE).write_text(json.dumps(data))
 
 
-def _read_task_state() -> list:
+def _normalize_task_state(value: object) -> TaskStateRecord | None:
+    record = _as_record(value)
+    if record is None or "name" not in record or "started" not in record:
+        return None
+    state: TaskStateRecord = {
+        "name": _as_text(record["name"], "unknown"),
+        "started": _as_float(record["started"]),
+    }
+    if "ended" in record:
+        state["ended"] = _as_float(record["ended"])
+    if "pid" in record:
+        state["pid"] = _as_int(record["pid"])
+    return state
+
+
+def _read_task_state() -> list[TaskStateRecord]:
     try:
         p = Path(TASK_STATE_FILE)
         if not p.exists():
             return []
-        data = json.loads(p.read_text())
-        if isinstance(data, dict) and "name" in data and "started" in data and "ended" not in data:
-            return [data]
+        data: object = json.loads(p.read_text())
+        state = _normalize_task_state(data)
+        if state is not None and "ended" not in state:
+            return [state]
         return []
     except Exception:
         return []
 
 
-def _write_task_state(data: list) -> None:
+def _write_task_state(data: list[TaskStateRecord]) -> None:
     Path(TASK_STATE_SNAPSHOT).write_text(json.dumps(data))
 
 
-def _read_previous_state() -> list:
+def _read_previous_state() -> list[TaskStateRecord]:
     try:
         p = Path(TASK_STATE_SNAPSHOT)
         if not p.exists():
             return []
-        data = json.loads(p.read_text())
+        data: object = json.loads(p.read_text())
         if isinstance(data, list):
-            return data
+            return [state for item in data if (state := _normalize_task_state(item)) is not None]
         return []
     except Exception:
         return []
@@ -1500,8 +1741,8 @@ def _update_timing(task_name: str, duration_secs: float) -> None:
     timings = _read_task_timings()
     if task_name in timings:
         entry = timings[task_name]
-        old_avg = entry.get("average_duration_seconds", duration_secs)
-        old_count = entry.get("count", 0)
+        old_avg = entry["average_duration_seconds"]
+        old_count = entry["count"]
         new_count = old_count + 1
         new_avg = (old_avg * old_count + duration_secs) / new_count
         entry["average_duration_seconds"] = new_avg
@@ -1517,10 +1758,8 @@ def _flag_anomaly(task_name: str, expected_secs: float, actual_secs: float) -> N
     directive_p = Path("/tmp/gludd-continue.txt")
     existing = ""
     if directive_p.exists():
-        try:
+        with suppress(Exception):
             existing = directive_p.read_text()
-        except Exception:
-            pass
     directive_p.write_text(
         (
             existing
@@ -1557,14 +1796,14 @@ def check_task_timings() -> None:
     for task in previous:
         name = task.get("name")
         if name in completed_names:
-            started = task.get("started", 0)
+            started = task.get("started", 0.0)
             if started > 0:
                 duration = now - started
-                _update_timing(name, duration)
+                _update_timing(name or "unknown", duration)
 
     for task in running:
         name = task.get("name", "unknown")
-        started = task.get("started", 0)
+        started = task.get("started", 0.0)
         pid = task.get("pid")
         if started <= 0:
             continue
@@ -1576,7 +1815,7 @@ def check_task_timings() -> None:
 
         timings = _read_task_timings()
         if name in timings:
-            avg = timings[name].get("average_duration_seconds", 0)
+            avg = timings[name]["average_duration_seconds"]
             if avg > 0 and elapsed > avg * ANOMALY_MULTIPLIER:
                 _flag_anomaly(name, avg, elapsed)
 
@@ -1688,7 +1927,7 @@ EX_ANOMALIES_FILE = os.environ.get("GLUDD_TASK_ANOMALIES", "/tmp/gludd-task-anom
 EX_STALLED_TASKS_FILE = os.environ.get("GLUDD_STALLED_TASKS", "/tmp/gludd-stalled-tasks.txt")
 
 
-def check_task_anomalies() -> dict:
+def check_task_anomalies() -> AnomalyFindings:
     """Read task deadlines, detect duration anomalies against EXPECTED_DURATIONS.
 
     Supports two file formats:
@@ -1699,25 +1938,26 @@ def check_task_anomalies() -> dict:
     Returns findings dict for integration by check_and_reset().
     """
     global _alerted_anomalies
-    findings: dict = {"tasks": [], "anomalies": [], "stalled": [], "ts": _now()}
+    findings: AnomalyFindings = {"tasks": [], "anomalies": [], "stalled": [], "ts": _now()}
 
     dl_path = Path(TASK_DEADLINES_FILE)
     if dl_path.exists():
         try:
-            raw = json.loads(dl_path.read_text())
-            if isinstance(raw, dict):
+            decoded: object = json.loads(dl_path.read_text())
+            raw = _as_record(decoded)
+            if raw is not None:
                 now_epoch = time.time()
                 stalled_set = _load_stalled_tasks()
 
                 for task_id, value in raw.items():
                     if isinstance(value, (int, float)):
-                        start_ts = value / 1000.0 if value > 1e11 else value
+                        start_ts = float(value / 1000.0 if value > 1e11 else value)
                         command = ""
-                    elif isinstance(value, dict):
-                        start_ts = value.get("start_ts", 0)
+                    elif (details := _as_record(value)) is not None:
+                        start_ts = _as_float(details.get("start_ts"))
                         if not start_ts:
                             continue
-                        command = value.get("command", "")
+                        command = _as_text(details.get("command"))
                     else:
                         continue
 
@@ -1732,7 +1972,7 @@ def check_task_anomalies() -> dict:
                     if expected is None:
                         continue
 
-                    entry: dict = {
+                    entry: DurationFinding = {
                         "task_id": task_id,
                         "elapsed_s": round(elapsed, 1),
                         "expected_s": expected,
@@ -1750,10 +1990,8 @@ def check_task_anomalies() -> dict:
                             _log(f"TASK ANOMALY: {task_id} ({command}) running {elapsed:.0f}s (expected {expected}s)")
                             _alerted_anomalies[task_id] = now_epoch
 
-                try:
+                with suppress(Exception):
                     Path(EX_ANOMALIES_FILE).write_text(json.dumps(findings, indent=2))
-                except Exception:
-                    pass
         except Exception:
             pass
 
@@ -1777,8 +2015,10 @@ def check_task_anomalies() -> dict:
 
     # Detect push stalled
     for t in findings.get("tasks", []):
-        if "push" in t.get("task_id", "").lower() and t.get("elapsed_s", 0) > 60:
-            _log(f"PUSH STALLED — possible network issue: {t['task_id']} elapsed={t['elapsed_s']:.0f}s")
+        task_id = t.get("task_id", "")
+        elapsed_s = t.get("elapsed_s", 0.0)
+        if "push" in task_id.lower() and elapsed_s > 60:
+            _log(f"PUSH STALLED — possible network issue: {task_id} elapsed={elapsed_s:.0f}s")
 
     for a in findings.get("anomalies", []):
         task_id = a.get("task_id", "unknown")
@@ -1805,21 +2045,31 @@ TIMING_ANOMALY_MULTIPLIER = 2.0
 STALLED_PUSH_SECS = 60
 
 
-def _read_timing_data() -> dict:
+def _read_timing_data() -> dict[str, OperationTiming]:
     try:
         p = Path(TIMING_DATA_FILE)
         if not p.exists():
             return {}
-        return json.loads(p.read_text())
+        raw = _read_json_record(p)
+        timing: dict[str, OperationTiming] = {}
+        for operation, value in raw.items():
+            entry = _as_record(value)
+            if entry is None:
+                continue
+            timing[operation] = {
+                "started_at": _as_float(entry.get("started_at")),
+                "last_check": _as_float(entry.get("last_check")),
+                "duration": _as_float(entry.get("duration")),
+                "status": _as_text(entry.get("status")),
+            }
+        return timing
     except Exception:
         return {}
 
 
-def _write_timing_data(data: dict) -> None:
-    try:
+def _write_timing_data(data: dict[str, OperationTiming]) -> None:
+    with suppress(Exception):
         Path(TIMING_DATA_FILE).write_text(json.dumps(data))
-    except Exception:
-        pass
 
 
 def _detect_operations() -> dict[str, float]:
@@ -1841,9 +2091,8 @@ def _detect_operations() -> dict[str, float]:
                 continue
             try:
                 mtime = entry.stat().st_mtime
-                if now - mtime < EXPECTED_DURATIONS["subagent-task"]:
-                    if oldest is None or mtime < oldest:
-                        oldest = mtime
+                if now - mtime < EXPECTED_DURATIONS["subagent-task"] and (oldest is None or mtime < oldest):
+                    oldest = mtime
             except Exception:
                 continue
         if oldest is not None:
@@ -2091,17 +2340,13 @@ def _check_plugin_hashes() -> None:
         current = {}
         if plugin_dir.is_dir():
             for f in sorted(plugin_dir.glob("*.ts")):
-                try:
+                with suppress(Exception):
                     current[f.name] = hashlib.sha256(f.read_bytes()).hexdigest()
-                except Exception:
-                    pass
         plugins_dir = _WORKSPACE / ".opencode" / "plugins"
         if plugins_dir.is_dir():
             for f in sorted(plugins_dir.glob("*.ts")):
-                try:
+                with suppress(Exception):
                     current[f"plugins/{f.name}"] = hashlib.sha256(f.read_bytes()).hexdigest()
-                except Exception:
-                    pass
 
         stored = {}
         if manifest.is_file():
@@ -2137,7 +2382,7 @@ def _check_plugin_hashes() -> None:
         reason = " | ".join(details) if details else "plugin hashes changed"
         _write_disengage_signal(minutes=60, reason=f"plugin_version_mismatch: {reason}")
 
-        try:
+        with suppress(Exception):
             Path(BLOCK_COUNTER_FILE).write_text(
                 json.dumps(
                     {
@@ -2148,8 +2393,6 @@ def _check_plugin_hashes() -> None:
                     }
                 )
             )
-        except Exception:
-            pass
 
         _log(f"PLUGIN VERSION CHANGED: {reason} — disengage signal written")
     except Exception:
@@ -2161,8 +2404,8 @@ def _is_disengage_active() -> bool:
         p = Path(DISENGAGE_FILE)
         if not p.exists():
             return False
-        data = json.loads(p.read_text())
-        return data.get("disengage_until", 0) > time.time() * 1000
+        data = _read_json_record(p)
+        return _as_float(data.get("disengage_until")) > time.time() * 1000
     except Exception:
         return False
 
@@ -2198,12 +2441,12 @@ def _auto_reengage_enforcement(mtime_age: float | None) -> None:
     """
     # ── Read block-counter.json for disengageUntil ──
     block_disengage_active = False
-    block_file_age_s = 0
+    block_file_age_s = 0.0
     try:
         bp = Path(BLOCK_COUNTER_FILE)
         if bp.exists():
-            block_data = json.loads(bp.read_text())
-            du = block_data.get("disengageUntil", 0)
+            block_data = _read_json_record(bp)
+            du = _as_float(block_data.get("disengageUntil"))
             if du > (time.time() * 1000):
                 block_disengage_active = True
             block_file_age_s = time.time() - bp.stat().st_mtime
@@ -2213,18 +2456,7 @@ def _auto_reengage_enforcement(mtime_age: float | None) -> None:
     if not _is_disengage_active() and not block_disengage_active:
         return
 
-    now_ms = int(time.time() * 1000)
     p = Path(DISENGAGE_FILE)
-    disengage_until = 0
-    try:
-        if p.exists():
-            data = json.loads(p.read_text())
-            disengage_until = data.get("disengage_until", 0)
-    except Exception:
-        pass
-
-    disengage_age_ms = now_ms - disengage_until  # negative = still active (until > now)
-    disengage_ahead_ms = disengage_until - now_ms  # positive = time remaining
 
     try:
         file_age_ms = (time.time() - p.stat().st_mtime) * 1000 if p.exists() else 0
@@ -2253,25 +2485,32 @@ def _auto_reengage_enforcement(mtime_age: float | None) -> None:
         # else: push done but CI still pending/red and within 5min cap — leave disengaged
 
     # Rule 2: disengage >2 min + agent active — re-engage regardless of push state
-    if not should_reengage and agent_active:
-        if effective_age_ms > AUTO_REENGAGE_DISENGAGE_AGE_SECS * 1000:
-            should_reengage = True
-            reason = (
-                f"disengage >{AUTO_REENGAGE_DISENGAGE_AGE_SECS}s, agent active "
-                f"(mtime_age={mtime_age:.0f}s, ci={'pending/red' if ci_pending else 'green'}, "
-                f"push={'running' if push_running else 'done'})"
-            )
+    if (
+        not should_reengage
+        and agent_active
+        and effective_age_ms > AUTO_REENGAGE_DISENGAGE_AGE_SECS * 1000
+    ):
+        should_reengage = True
+        reason = (
+            f"disengage >{AUTO_REENGAGE_DISENGAGE_AGE_SECS}s, agent active "
+            f"(mtime_age={mtime_age:.0f}s, ci={'pending/red' if ci_pending else 'green'}, "
+            f"push={'running' if push_running else 'done'})"
+        )
 
     # Rule 3: 5-minute hard cap — regardless of push state or agent activity
     if not should_reengage and effective_age_ms > DISENGAGE_MAX_SECS_CI_NOT_GREEN * 1000:
         should_reengage = True
-        reason = f"disengage_cap: {DISENGAGE_MAX_SECS_CI_NOT_GREEN}s max (ci={'pending/red' if ci_pending else 'green'}, agent={'active' if agent_active else 'idle'})"
+        reason = (
+            f"disengage_cap: {DISENGAGE_MAX_SECS_CI_NOT_GREEN}s max "
+            f"(ci={'pending/red' if ci_pending else 'green'}, "
+            f"agent={'active' if agent_active else 'idle'})"
+        )
 
     if not should_reengage:
         return
 
     # -- Re-engage: clear block counter and disengage file --
-    try:
+    with suppress(Exception):
         Path(BLOCK_COUNTER_FILE).write_text(
             json.dumps(
                 {
@@ -2282,8 +2521,6 @@ def _auto_reengage_enforcement(mtime_age: float | None) -> None:
                 }
             )
         )
-    except Exception:
-        pass
 
     try:
         if p.exists():
@@ -2357,8 +2594,8 @@ def _write_continue_directive(
         "======================================================================\n"
     )
     try:
-        Path(PURE_IDLE_DIRECTIVE).write_text(txt)
-        _log(f"loud directive written to {PURE_IDLE_DIRECTIVE}")
+        if _write_prioritized_plain_directive(txt):
+            _log(f"loud directive written to {PURE_IDLE_DIRECTIVE}")
     except Exception as e:
         _log(f"ERROR writing plain-text directive: {e}")
 
@@ -2373,7 +2610,7 @@ def _build_continue_directive(
     ci_run_id: str | None = None,
     work_hint: str = "",
     extra_message: str = "",
-) -> dict:
+) -> ContinueDirective:
     pending_items: list[str] = []
     if tasks_unchecked:
         pending_items.append("TASKS.md has unchecked items")
@@ -2388,7 +2625,7 @@ def _build_continue_directive(
     # Build SPECIFIC dispatch commands from TASKS.md unchecked items,
     # ratchet entries, and gate status — so the CONTINUE directive lists
     # exact tasks to dispatch, not a generic "do work" nudge.
-    dispatch_commands: list[dict] = []
+    dispatch_commands: list[dict[str, object]] = []
     task_index = 1
     if tasks_unchecked and _TASKS_MD.exists():
         try:
@@ -2475,10 +2712,8 @@ def _liveness_startup_in_backoff() -> bool:
 
 
 def _liveness_write_backoff_ts() -> None:
-    try:
+    with suppress(Exception):
         Path(LIVENESS_STARTUP_BACKOFF_FILE).write_text(json.dumps({"last_check_ts": time.time()}))
-    except Exception:
-        pass
 
 
 def _check_plugin_liveness_on_startup() -> None:
@@ -2573,14 +2808,14 @@ def _check_force_dispatch() -> bool:
             p.unlink(missing_ok=True)
             return False
 
-        data = json.loads(p.read_text())
-        level = data.get("level", 3)
+        data = _read_json_record(p)
+        level = _as_int(data.get("level"), 3)
 
         tasks_unchecked = _tasks_md_has_unchecked()
         ratchet_count = _ratchet_has_entries()
         gate_red = _gate_status_is_red()
 
-        dispatch_commands: list[dict] = []
+        dispatch_commands: list[dict[str, object]] = []
         task_index = 1
 
         if tasks_unchecked and _TASKS_MD.exists():
@@ -2644,12 +2879,12 @@ def _check_force_dispatch() -> bool:
         return False
 
 
-def _read_multitask_state() -> dict:
+def _read_multitask_state() -> dict[str, object]:
     try:
         p = Path(MULTITASK_STATE_FILE)
         if not p.exists():
             return {}
-        return json.loads(p.read_text())
+        return _read_json_record(p)
     except Exception:
         return {}
 
@@ -2659,14 +2894,15 @@ def _check_under_floor_dispatch() -> None:
     if not state:
         return
 
-    dispatch_count = int(state.get("thisMessageDispatches", 0))
-    zero_streak = int(state.get("zeroStreak", 0))
-    estimated_in_flight = int(state.get("estimatedInFlight", 0))
+    dispatch_count = _as_int(state.get("thisMessageDispatches"))
+    zero_streak = _as_int(state.get("zeroStreak"))
+    estimated_in_flight = _as_int(state.get("estimatedInFlight"))
 
     if dispatch_count >= 10:
         if zero_streak > 0:
             _log(
-                f"DISPATCH OK: {dispatch_count} dispatches this wave, {estimated_in_flight} estimated in flight — floor satisfied"
+                f"DISPATCH OK: {dispatch_count} dispatches this wave, "
+                f"{estimated_in_flight} estimated in flight — floor satisfied"
             )
         return
 
@@ -2685,7 +2921,7 @@ def _check_under_floor_dispatch() -> None:
             f"Floor is 10. pending work exists. Dispatch {10 - dispatch_count} more subagents NOW.\n"
             f"zero_streak={zero_streak}, estimated_in_flight={estimated_in_flight}\n"
         )
-        Path(PURE_IDLE_DIRECTIVE).write_text(directive)
+        _write_prioritized_plain_directive(directive)
     elif pipeline_dry and zero_streak > 0:
         _log(
             f"UNDER-FLOOR DETECTED: pipeline dry — zero dispatch streak={zero_streak}, "
@@ -2696,13 +2932,13 @@ def _check_under_floor_dispatch() -> None:
             f"Estimated in flight: {estimated_in_flight}. Floor is 10. pending work exists.\n"
             f"DISPATCH A FULL WAVE OF 10 SUBAGENTS NOW.\n"
         )
-        Path(PURE_IDLE_DIRECTIVE).write_text(directive)
+        _write_prioritized_plain_directive(directive)
 
 
 SecretsCheck = Callable[[], dict[str, object] | None]
 
 
-def check_and_reset(*, secrets_check: SecretsCheck | None = None) -> dict:
+def check_and_reset(*, secrets_check: SecretsCheck | None = None) -> dict[str, object]:
     """Run one watchdog cycle.
 
     ``secrets_check`` is an explicit dependency seam for deterministic unit
@@ -2710,9 +2946,10 @@ def check_and_reset(*, secrets_check: SecretsCheck | None = None) -> dict:
     repository-wide scan.
     """
     global _POLL_CYCLE_COUNT
-    result = {
+    streak = _read_streak()
+    result: dict[str, object] = {
         "ts": _now(),
-        "streak": _read_streak(),
+        "streak": streak,
         "pending_todos": [],
         "reset_applied": False,
         "hibernating": HIBERNATION_MARKER.exists(),
@@ -2721,8 +2958,6 @@ def check_and_reset(*, secrets_check: SecretsCheck | None = None) -> dict:
 
     pending = _pending_todos()
     result["pending_todos"] = pending
-
-    streak = result["streak"]
 
     reset_needed = False
     reason = ""
@@ -2755,7 +2990,7 @@ def check_and_reset(*, secrets_check: SecretsCheck | None = None) -> dict:
     mtime_age = _streak_mtime_age_seconds()
 
     # ── HEARTBEAT: write every poll cycle so operator can see watchdog is alive ──
-    try:
+    with suppress(Exception):
         Path(HEARTBEAT_FILE).write_text(
             json.dumps(
                 {
@@ -2776,8 +3011,6 @@ def check_and_reset(*, secrets_check: SecretsCheck | None = None) -> dict:
                 indent=2,
             )
         )
-    except Exception:
-        pass
 
     if mtime_age is not None and mtime_age < PURE_IDLE_SECS:
         _write_watchdog_activity()
@@ -2810,7 +3043,10 @@ def check_and_reset(*, secrets_check: SecretsCheck | None = None) -> dict:
             work_sources.append("local")
         if ci_pending:
             work_sources.append(f"CI (run {ci_run_id})")
-        reason = f"STOP DETECTED: agent idle with pending work ({', '.join(work_sources)}) — {mtime_age:.0f}s since last tool (threshold={idle_threshold}s)"
+        reason = (
+            f"STOP DETECTED: agent idle with pending work ({', '.join(work_sources)}) — "
+            f"{mtime_age:.0f}s since last tool (threshold={idle_threshold}s)"
+        )
         result["stop_detected"] = True
         _log(reason)
 
@@ -2886,7 +3122,10 @@ def check_and_reset(*, secrets_check: SecretsCheck | None = None) -> dict:
             gate_red=gate_red,
             ci_pending=ci_pending,
             ci_run_id=ci_run_id,
-            work_hint="Agent has streak but mtime is stale — likely grinding in a loop. Dispatch subagents to break out.",
+            work_hint=(
+                "Agent has streak but mtime is stale — likely grinding in a loop. "
+                "Dispatch subagents to break out."
+            ),
             extra_message=extra_message,
         )
 
@@ -2954,10 +3193,8 @@ def check_and_reset(*, secrets_check: SecretsCheck | None = None) -> dict:
     history_anomalies = _detect_history_anomalies(deadlines)
     if history_anomalies:
         result["history_anomalies"] = history_anomalies
-        try:
+        with suppress(Exception):
             Path(TASK_ANOMALIES_FILE).write_text(json.dumps({"ts": _now(), "anomalies": history_anomalies}, indent=2))
-        except Exception:
-            pass
         for a in history_anomalies:
             rolling_info = f", rolling_avg={a['rolling_avg_s']}s" if a.get("rolling_avg_s") else ""
             _log(
@@ -2982,8 +3219,7 @@ def check_and_reset(*, secrets_check: SecretsCheck | None = None) -> dict:
         for op in timing_anomalies:
             expected = EXPECTED_DURATIONS.get(op, 300)
             timing = _read_timing_data()
-            entry = timing.get(op, {})
-            actual = entry.get("duration", 0)
+            actual = timing[op]["duration"] if op in timing else 0.0
             anchored_messages.append(
                 f"\u26d4 TIMING ANOMALY: {op} running for {actual:.0f}s "
                 f"(expected {expected}s). Check for network issues."
@@ -3009,17 +3245,16 @@ def check_and_reset(*, secrets_check: SecretsCheck | None = None) -> dict:
         result["reset_applied"] = True
 
         # If the stop was NOT detected by our new logic, check and write directive
-        if not result.get("stop_detected"):
-            if check_agent_stalled():
-                _write_continue_directive(
-                    work_sources=["agent_stalled"],
-                    stop_count=_read_stop_count(),
-                    tasks_unchecked=tasks_unchecked,
-                    ratchet_count=ratchet_count,
-                    gate_red=gate_red,
-                    ci_pending=False,
-                    extra_message=f"agent stalled on stop enforcement, pending={len(pending)} todos",
-                )
+        if not result.get("stop_detected") and check_agent_stalled():
+            _write_continue_directive(
+                work_sources=["agent_stalled"],
+                stop_count=_read_stop_count(),
+                tasks_unchecked=tasks_unchecked,
+                ratchet_count=ratchet_count,
+                gate_red=gate_red,
+                ci_pending=False,
+                extra_message=f"agent stalled on stop enforcement, pending={len(pending)} todos",
+            )
 
         if pending:
             _log(f"UNJAMMED: {reason}, pending={len(pending)} todos: {pending[:3]}")
@@ -3076,12 +3311,14 @@ def check_and_reset(*, secrets_check: SecretsCheck | None = None) -> dict:
     ci_true_stall = _detect_ci_true_stall()
     if ci_loop:
         _log(
-            f"CI LOOP DETECTED: >{CI_LOOP_THRESHOLD_PUSHES} pushes in <{CI_LOOP_THRESHOLD_MINUTES}min while CI pending. STOP PUSHING."
+            f"CI LOOP DETECTED: >{CI_LOOP_THRESHOLD_PUSHES} pushes in "
+            f"<{CI_LOOP_THRESHOLD_MINUTES}min while CI pending. STOP PUSHING."
         )
         _write_disengage_signal(minutes=10, reason="ci_loop")
     if ci_true_stall:
         _log(
-            f"CI TRUE STALL: pending >{CI_TRUE_STALL_MINUTES}min with no pushes for {CI_TRUE_STALL_NO_PUSH_MINUTES}min. CI may be broken."
+            f"CI TRUE STALL: pending >{CI_TRUE_STALL_MINUTES}min with no pushes for "
+            f"{CI_TRUE_STALL_NO_PUSH_MINUTES}min. CI may be broken."
         )
 
     # ── Under-floor dispatch detection ────────────────────────────────────
@@ -3118,7 +3355,7 @@ def check_and_reset(*, secrets_check: SecretsCheck | None = None) -> dict:
         repo_pending=False,
         agent_active=agent_active,
         ci_run_id=ci_run_id,
-        stop_detected=result.get("stop_detected", False),
+        stop_detected=bool(result.get("stop_detected", False)),
     )
     _clear_disengage_signal()
     _auto_reengage_enforcement(mtime_age)
@@ -3178,7 +3415,7 @@ def _get_tags_with_commits() -> list[tuple[str, str]]:
         return []
 
 
-def _gh_release_exists(tag: str) -> tuple[bool, dict]:
+def _gh_release_exists(tag: str) -> tuple[bool, ReleaseData]:
     """Check if a GitHub Release exists for the given tag.
 
     Returns (exists, release_data). release_data contains keys:
@@ -3193,14 +3430,18 @@ def _gh_release_exists(tag: str) -> tuple[bool, dict]:
         )
         if result.returncode != 0:
             return False, {}
-        data = json.loads(result.stdout)
-        asset_count = len(data.get("assets", []))
+        decoded: object = json.loads(result.stdout)
+        data = _as_record(decoded)
+        if data is None:
+            return False, {"_error": "invalid response"}
+        assets = data.get("assets", [])
+        asset_count = len(assets) if isinstance(assets, list) else 0
         return True, {
-            "isDraft": data.get("isDraft", True),
-            "isPrerelease": data.get("isPrerelease", False),
+            "isDraft": bool(data.get("isDraft", True)),
+            "isPrerelease": bool(data.get("isPrerelease", False)),
             "assetCount": asset_count,
-            "publishedAt": data.get("publishedAt", ""),
-            "url": data.get("url", ""),
+            "publishedAt": _as_text(data.get("publishedAt")),
+            "url": _as_text(data.get("url")),
         }
     except subprocess.TimeoutExpired:
         return False, {"_error": "timeout"}
@@ -3208,7 +3449,7 @@ def _gh_release_exists(tag: str) -> tuple[bool, dict]:
         return False, {"_error": str(e)}
 
 
-def _check_ci_red_after_tag_push() -> dict | None:
+def _check_ci_red_after_tag_push() -> dict[str, object] | None:
     """Detect when a tag push exists but CI is red (release blocked).
 
     If a recent tag has a CI run that is FAILURE, the release pipeline is
@@ -3244,8 +3485,9 @@ def _check_ci_red_after_tag_push() -> dict | None:
         if not result.stdout.strip():
             return None
 
-        data = json.loads(result.stdout)
-        if not isinstance(data, dict):
+        decoded: object = json.loads(result.stdout)
+        data = _as_record(decoded)
+        if data is None:
             return None
 
         conclusion = data.get("conclusion", "")
@@ -3271,7 +3513,7 @@ def _check_ci_red_after_tag_push() -> dict | None:
     return None
 
 
-def _check_release_completeness() -> dict | None:
+def _check_release_completeness() -> dict[str, object] | None:
     """Verify that the latest tag has a complete GitHub Release with expected artifacts.
 
     Writes to /tmp/gludd-release-completeness.json for enforce-stop.ts consumption.
@@ -3369,7 +3611,7 @@ def _check_release_completeness() -> dict | None:
         return None
 
 
-def _check_secrets_committed() -> dict | None:
+def _check_secrets_committed() -> dict[str, object] | None:
     """Periodically scan for secrets committed to tracked files.
 
     Runs `make secrets-scan` which checks against `.secrets.baseline`.
@@ -3421,7 +3663,7 @@ def _check_secrets_committed() -> dict | None:
         return None
 
 
-def _check_stale_release() -> dict | None:
+def _check_stale_release() -> dict[str, object] | None:
     """Detect tags that exist but have no GitHub Release after a timeout.
 
     A tag pushed more than STALE_RELEASE_MINUTES ago that still has no
@@ -3445,7 +3687,7 @@ def _check_stale_release() -> dict | None:
             )
             return None
 
-        stale_findings: list[dict] = []
+        stale_findings: list[dict[str, object]] = []
         now = time.time()
 
         for tag, sha in tag_commits:
