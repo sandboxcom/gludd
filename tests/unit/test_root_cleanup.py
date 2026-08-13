@@ -63,6 +63,12 @@ def test_hot_reload_node_dependencies_are_locked_and_installed_in_ci() -> None:
     assert workflow.index(sync) < workflow.index("make hot-reload-plugins")
 
 
+def test_node_package_manager_is_exactly_pinned() -> None:
+    """Node installs must not silently select a host-global npm major."""
+    manifest = json.loads((ROOT / ".opencode" / "package.json").read_text(encoding="utf-8"))
+    assert manifest["packageManager"] == "npm@12.0.2"
+
+
 def test_security_audit_covers_locked_node_dependencies() -> None:
     """The comprehensive audit must include the Node plugin/build supply chain."""
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
