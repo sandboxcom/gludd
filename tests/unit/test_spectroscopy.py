@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import pytest
-from src.general_ludd.chemistry.spectroscopy import SUPPORTED_KINDS, SpectraAnalyzer
+
+from general_ludd.chemistry.spectroscopy import SUPPORTED_KINDS, SpectraAnalyzer
 
 
 class TestSupportedKinds:

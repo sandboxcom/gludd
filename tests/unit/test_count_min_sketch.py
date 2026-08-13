@@ -3,7 +3,8 @@
 import struct
 
 import pytest
-from src.general_ludd.probabilistic.count_min_sketch import CountMinSketch
+
+from general_ludd.probabilistic.count_min_sketch import CountMinSketch
 
 
 class TestCountMinSketchInit:

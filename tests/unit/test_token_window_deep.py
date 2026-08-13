@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.general_ludd.agents.token_window import TokenWindowManager
+from general_ludd.agents.token_window import TokenWindowManager
 
 
 class TestEstimateTokens:

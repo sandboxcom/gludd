@@ -5,7 +5,8 @@ from __future__ import annotations
 import struct
 
 import pytest
-from src.general_ludd.probabilistic.counting_bloom import CountingBloomFilter
+
+from general_ludd.probabilistic.counting_bloom import CountingBloomFilter
 
 
 class TestConstruction:

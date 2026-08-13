@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.general_ludd.language.homoglyph_data import (
+from general_ludd.language.homoglyph_data import (
     _BIDI_OVERRIDE_CODEPOINTS,
     _INVISIBLE_SET,
     _SKELETON_MAP,

@@ -113,6 +113,8 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 - [ ] S83.69 - **Align the legacy terminal-normalization test with the implemented capable-terminal contract** across tests/unit/test_config_gaps.py and docs/features/MAKE_TERM_PROPAGATION.md: reject the obsolete unconditional TERM=dumb assertion and pin fallback promotion plus caller preservation. | evidence: expanded mypy-config replay reproduced the stale assertion while S83.53 and the Makefile both require xterm-256color only for empty/unknown/dumb inputs; the repaired conformance node and complete 10-test Make syntax suite are green under strict warnings, Ruff and Markdown are green, and the existing Cursor/CLI/prompt-toolkit practitioner evidence plus ZDD/resource boundaries remain documented; collection and gate replay pending | priority: high | effort: XS | status: in_progress
 
+- [ ] S83.70 - **Import the installed package rather than a duplicate src namespace in tests** across the seven remaining unit files, the config guard, and docs/features/TEST_SRC_LAYOUT_IMPORTS.md: preserve test behavior while making editable-install, wheel, and isolated CI module identity agree. | evidence: expanded config replay identified seven from/import src.general_ludd offenders; after import-only repairs the seven complete suites plus fail-closed repository guard are 427/427 green under strict warnings, the standalone guard remains green, and Ruff/Markdown are green; setuptools discussion #3872 practitioner evidence plus ZDD/supply-chain/resource boundaries are documented; collection and gate replay pending | priority: high | effort: XS | status: in_progress
+
 ---
 
 ## Session 79 — Crypto Library Refactor + Behavioral Guardrails (2026-08-05, 86,428 tests)

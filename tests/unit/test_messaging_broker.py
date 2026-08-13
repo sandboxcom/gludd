@@ -7,7 +7,8 @@ import os
 import tempfile
 
 import pytest
-import src.general_ludd.messaging.broker as _mod
+
+import general_ludd.messaging.broker as _mod
 
 # ---------------------------------------------------------------------------
 # _topic_pattern_to_regex tests

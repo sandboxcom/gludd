@@ -5,7 +5,8 @@ from __future__ import annotations
 import math
 
 import pytest
-from src.general_ludd.probabilistic.cuckoo_filter import CuckooFilter
+
+from general_ludd.probabilistic.cuckoo_filter import CuckooFilter
 
 
 class TestCuckooFilterInit:
