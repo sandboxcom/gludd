@@ -58,7 +58,12 @@ def test_langsmith_kept():
 
 
 def test_httpx2_kept_for_starlette_testclient():
-    deps = _load_deps()
-    assert "httpx2" in deps, "httpx2 is required by Starlette TestClient"
-    assert deps["httpx2"].startswith("httpx2>=2.0.0")
+    data = tomllib.loads(PYPROJECT.read_text())
+    groups = (
+        data["project"]["optional-dependencies"]["dev"],
+        data["dependency-groups"]["dev"],
+    )
+    for requirements in groups:
+        assert "httpx2>=2.7.0" in requirements
+    assert "httpx2" not in _load_deps(), "TestClient backend is development-only"
     assert not _has_imports("httpx2"), "no httpx2 imports should exist in src/"

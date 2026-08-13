@@ -12,6 +12,9 @@ import re
 import tomllib
 from pathlib import Path
 
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
+
 ROOT = Path(__file__).parent.parent.parent
 PYPROJECT = ROOT / "pyproject.toml"
 
@@ -23,21 +26,22 @@ def _load() -> dict:
 def _all_dep_names(section: list[str] | None) -> set[str]:
     if not section:
         return set()
-    names: set[str] = set()
-    for spec in section:
-        name = (
-            spec.split("==")[0]
-            .split(">=")[0]
-            .split("<=")[0]
-            .split("!=")[0]
-            .split("~=")[0]
-            .split("<")[0]
-            .split(">")[0]
-            .split("[")[0]
-            .strip()
+    return {
+        canonicalize_name(Requirement(spec).name)
+        for spec in section
+    }
+
+
+def _all_dep_keys(section: list[str]) -> set[tuple[str, str]]:
+    """Treat Python-marker splits as distinct, intentional requirements."""
+    return {
+        (
+            canonicalize_name(requirement.name),
+            str(requirement.marker or ""),
         )
-        names.add(name.lower())
-    return names
+        for spec in section
+        if (requirement := Requirement(spec))
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -90,8 +94,10 @@ def test_requires_python_is_valid_specifier():
 
 def test_no_duplicate_core_deps():
     deps = _load()["project"]["dependencies"]
-    names = _all_dep_names(deps)
-    assert len(names) == len(deps), f"Duplicate in core deps: {len(deps)} specs → {len(names)} names"
+    keys = _all_dep_keys(deps)
+    assert len(keys) == len(deps), (
+        f"Duplicate in core deps: {len(deps)} specs → {len(keys)} name/marker pairs"
+    )
 
 
 def test_no_duplicate_optional_deps():

@@ -34,123 +34,9 @@ def _load_pyproject() -> dict:
 
 
 def _load_uvlock() -> dict:
-    with open(UV_LOCK, encoding="utf-8") as f:
-        raw = f.read()
-    return _parse_toml_like(raw)
-
-
-def _parse_toml_like(raw: str) -> dict:
-    """Parse a uv.lock-style TOML into a minimal nested dict.
-
-    Handles top-level keys, [sections], and [[arrays-of-tables]].
-    """
-    result: dict = {}
-    current_table = result
-    array_context: str | None = None
-    array_buf: list[dict] = []
-
-    for line in raw.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-
-        m = re.match(r"^\[\[([^\]]+)\]\]$", stripped)
-        if m:
-            if array_context and array_buf:
-                _store_array(result, array_context, array_buf)
-            array_context = m.group(1)
-            array_buf = [{}]
-            current_table = array_buf[-1]
-            continue
-
-        m = re.match(r"^\[([^\]]+)\]$", stripped)
-        if m:
-            if array_context and array_buf:
-                _store_array(result, array_context, array_buf)
-            array_context = None
-            array_buf = []
-            parts = m.group(1).split(".")
-            table = result
-            for part in parts:
-                part = part.strip()
-                if part not in table or not isinstance(table.get(part), dict):
-                    table[part] = {}
-                table = table[part]
-            current_table = table
-            continue
-
-        m = re.match(r"^([\w][\w.-]*)\s*=\s*(.+)$", stripped)
-        if m:
-            key = m.group(1)
-            value = m.group(2)
-            parsed = _parse_value(value)
-            current_table[key] = parsed
-
-    if array_context and array_buf:
-        _store_array(result, array_context, array_buf)
-
-    return result
-
-
-def _store_array(root: dict, key: str, buf: list[dict]) -> None:
-    if key not in root:
-        root[key] = []
-    root[key].extend(buf)
-
-
-def _parse_value(raw: str):
-    raw = raw.strip()
-    if raw.startswith('"') and raw.endswith('"'):
-        return raw[1:-1]
-    if raw.startswith("'") and raw.endswith("'"):
-        return raw[1:-1]
-    if raw == "true":
-        return True
-    if raw == "false":
-        return False
-    if re.match(r"^\[.*\]$", raw):
-        items = _split_list(raw[1:-1])
-        result = []
-        for item in items:
-            result.append(_parse_value(item))
-        return result
-    if re.match(r"^\{.*\}$", raw):
-        items = _split_list(raw[1:-1])
-        result = {}
-        for item in items:
-            k, v = item.split("=", 1)
-            result[k.strip()] = _parse_value(v.strip())
-        return result
-    try:
-        return int(raw)
-    except ValueError:
-        pass
-    try:
-        return float(raw)
-    except ValueError:
-        pass
-    return raw
-
-
-def _split_list(s: str) -> list[str]:
-    items: list[str] = []
-    depth = 0
-    current: list[str] = []
-    for ch in s:
-        if ch in ("[", "{", "("):
-            depth += 1
-            current.append(ch)
-        elif ch in ("]", "}", ")"):
-            depth -= 1
-            current.append(ch)
-        elif ch == "," and depth == 0:
-            items.append("".join(current).strip())
-            current = []
-        else:
-            current.append(ch)
-    if current:
-        items.append("".join(current).strip())
-    return items
+    """Load the standards-compliant TOML lockfile without a shadow parser."""
+    with open(UV_LOCK, "rb") as f:
+        return tomllib.load(f)
 
 
 PEP440_RE = re.compile(
@@ -343,18 +229,15 @@ def test_uv_lock_staleness_signals() -> None:
 
 
 def test_uv_lock_package_sources_are_registry_or_workspace() -> None:
-    text = _read(UV_LOCK)
-    entries = text.split("[[package]]")
-    for i, entry in enumerate(entries[1:], start=2):
-        source_match = re.search(r"source\s*=\s*\{([^}]+)\}", entry)
-        if source_match:
-            source_body = source_match.group(1)
-            key_match = re.match(r"\s*(\w+)\s*=", source_body)
-            if key_match:
-                stype = key_match.group(1)
-                assert stype in ("registry", "workspace", "path"), (
-                    f"uv.lock package #{i} has disallowed source type '{stype}'"
-                )
+    for package in _load_uvlock()["package"]:
+        source = package.get("source", {})
+        source_types = set(source)
+        assert source_types <= {"registry", "workspace", "path", "editable"}, (
+            f"{package['name']} has disallowed source fields {sorted(source_types)}"
+        )
+        if "editable" in source:
+            assert package["name"] == "general-ludd-agent"
+            assert source["editable"] == "."
 
 
 # ── extras validity ────────────────────────────────────────────────────────

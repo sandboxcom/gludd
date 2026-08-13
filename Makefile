@@ -173,6 +173,7 @@ help:
 	@echo "  --- Setup ---"
 	@echo "  init                  Set up project (dirs + deps)"
 	@echo "  sync                  Sync uv dependencies"
+	@echo "  sync-llama-cpp        Sync locked local-inference extra (SYNC_LLAMA_CPP_VALIDATE_ONLY=0|1)"
 	@echo "  node-deps-sync        Install locked Node deps (NODE_DEPS_VALIDATE_ONLY, NODE_DEPS_NPM_USERCONFIG, NODE_DEPS_NPM_CACHE, NODE_DEPS_NPM_REGISTRY)"
 	@echo "  node-deps-relock      Regenerate Node lock (NODE_DEPS_VALIDATE_ONLY, NODE_DEPS_NPM_USERCONFIG, NODE_DEPS_NPM_CACHE, NODE_DEPS_NPM_REGISTRY)"
 	@echo "  node-deps-audit       Audit locked Node deps (plus NODE_DEPS_AUDIT_LEVEL=low|moderate|high|critical)"
@@ -618,8 +619,10 @@ sync:
 sync-local-inference:
 	@$(UV) sync --locked --extra local-inference
 
+SYNC_LLAMA_CPP_VALIDATE_ONLY ?= 0
 sync-llama-cpp:
-	@$(UV) pip install "llama-cpp-python[server]>=0.1.0-beta.2"
+	@case "$(SYNC_LLAMA_CPP_VALIDATE_ONLY)" in 0|1) ;; *) echo "SYNC_LLAMA_CPP_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@$(UV) sync --locked --extra local-inference $(if $(filter 1,$(SYNC_LLAMA_CPP_VALIDATE_ONLY)),--dry-run,)
 
 sync-models:
 	@$(PYTHON) scripts/sync_local_models.py

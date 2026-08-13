@@ -20,6 +20,7 @@ import tomllib
 from collections import deque
 
 import pytest
+from packaging.utils import canonicalize_name
 
 PROJECT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 PYPROJECT = os.path.join(PROJECT_ROOT, "pyproject.toml")
@@ -39,46 +40,21 @@ def _load_pyproject() -> dict:
 
 
 def _parse_uvlock_packages(raw: str) -> list[dict]:
-    """Parse uv.lock [[package]] entries into list of {name, version, deps}."""
-    packages: list[dict] = []
-    current: dict | None = None
-
-    for line in raw.splitlines():
-        stripped = line.strip()
-
-        if stripped == "[[package]]":
-            if current is not None:
-                packages.append(current)
-            current = {"name": "", "version": "", "dependencies": []}
-
-        elif current is not None:
-            m = re.match(r'^name\s*=\s*"([^"]+)"$', stripped)
-            if m:
-                current["name"] = m.group(1)
-                continue
-
-            m = re.match(r'^version\s*=\s*"([^"]+)"$', stripped)
-            if m:
-                current["version"] = m.group(1)
-                continue
-
-            m = re.match(r"^dependencies\s*=\s*\[$", stripped)
-            if m:
-                continue
-
-            if stripped == "]":
-                continue
-
-            m = re.match(r'^\{\s*name\s*=\s*"([^"]+)"', stripped)
-            if m:
-                dep_name = m.group(1)
-                if current is not None and "dependencies" in current:
-                    current["dependencies"].append(dep_name)
-
-    if current is not None:
-        packages.append(current)
-
-    return packages
+    """Parse uv.lock with TOML semantics and normalize dependency names."""
+    parsed = tomllib.loads(raw)
+    return [
+        {
+            "name": canonicalize_name(package["name"]),
+            "version": package["version"],
+            "dependencies": [
+                canonicalize_name(
+                    dependency["name"] if isinstance(dependency, dict) else dependency
+                )
+                for dependency in package.get("dependencies", [])
+            ],
+        }
+        for package in parsed["package"]
+    ]
 
 
 def _build_dep_graph(packages: list[dict]) -> dict[str, set[str]]:
@@ -129,7 +105,7 @@ def _package_info(name: str) -> dict | None:
         from importlib.metadata import metadata
 
         meta = metadata(name)
-        license_val = meta.get("License") or meta.get("License-Expression") or ""
+        license_val = meta.get("License-Expression") or meta.get("License") or ""
         classifiers = meta.get_all("Classifier") or []
         return {
             "name": name,
@@ -157,7 +133,7 @@ def _get_license(name: str) -> str | None:
 
 
 def _normalize_name(name: str) -> str:
-    return _NORMALIZE_MAP.get(name, name)
+    return canonicalize_name(_NORMALIZE_MAP.get(name, name))
 
 
 def _license_is_gpl(license_str: str | None) -> bool:
@@ -180,7 +156,7 @@ def _license_is_gpl(license_str: str | None) -> bool:
 
 
 def _license_is_lgpl(license_str: str | None) -> bool:
-    if license_str is None:
+    if license_str is None or len(license_str) > 500:
         return False
     upper = license_str.upper()
     return "LGPL" in upper

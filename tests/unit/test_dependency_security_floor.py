@@ -42,7 +42,7 @@ def test_ansible_core_excludes_argument_injection_releases() -> None:
         for requirement in requirements
     )
     assert any(
-        requirement.specifier.contains("2.21.1")
+        requirement.specifier.contains("2.21.2")
         and not requirement.specifier.contains("2.21.0")
         for requirement in requirements
     )

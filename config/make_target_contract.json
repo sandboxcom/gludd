@@ -52,6 +52,11 @@
       "behavior": "make molecule-reset SCENARIO=default"
     },
     {
+      "name": "sync-llama-cpp",
+      "make_variables": ["SYNC_LLAMA_CPP_VALIDATE_ONLY"],
+      "behavior": "make sync-llama-cpp SYNC_LLAMA_CPP_VALIDATE_ONLY=1"
+    },
+    {
       "name": "node-deps-sync",
       "make_variables": ["NODE_DEPS_VALIDATE_ONLY", "NODE_DEPS_NPM_USERCONFIG", "NODE_DEPS_NPM_CACHE", "NODE_DEPS_NPM_REGISTRY"],
       "behavior": "make node-deps-sync NODE_DEPS_VALIDATE_ONLY=1 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org"

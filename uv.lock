@@ -208,21 +208,6 @@ wheels = [
 ]
 
 [[package]]
-name = "ansible-builder"
-version = "3.1.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "bindep" },
-    { name = "jsonschema" },
-    { name = "packaging" },
-    { name = "pyyaml" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/fe/6b/0525894e5dd510c3a67da0b8819209333ca939cfa94b7f0d3ef041a628ec/ansible_builder-3.1.1.tar.gz", hash = "sha256:9d88bc15acc7d31056d0c51914a6102dac8e5ad73f9f2d35ba98378c89714ed2", size = 109392, upload-time = "2025-10-27T18:51:54.755Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a5/d0/e4a46f92084fcd6a94ca038645b1580316d3a6e0a8be28709bc4e00367cd/ansible_builder-3.1.1-py3-none-any.whl", hash = "sha256:a8246022edb92ca27ea95e87c7af30bcb2752f108dcc75fbf96e77196dff1072", size = 46517, upload-time = "2025-10-27T18:51:53.702Z" },
-]
-
-[[package]]
 name = "ansible-compat"
 version = "26.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -296,56 +281,6 @@ wheels = [
 ]
 
 [[package]]
-name = "ansible-creator"
-version = "26.4.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "jinja2" },
-    { name = "pyyaml" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/29/43/b6d5e389fb41f689459fd0d148c6f4f7e7bc3c30f1d8ec9e3386415973e8/ansible_creator-26.4.3.tar.gz", hash = "sha256:db8a33fa765f5a3cb4f17ac6856a2e9e93b2434a7ecf5cbbdd495d96b0ec71d1", size = 9856828, upload-time = "2026-04-30T03:29:40.095Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/8d/41/46a9ffd096d08cb6bf874ad39ebc4ac7f70def1ce93231b794fdde5455ec/ansible_creator-26.4.3-py3-none-any.whl", hash = "sha256:21c5229a03beb3cfaa7d6ff1dd5a6c2945c475f8d664fad31ac6234d29e21173", size = 130614, upload-time = "2026-04-30T03:29:38.33Z" },
-]
-
-[[package]]
-name = "ansible-dev-environment"
-version = "26.4.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "ansible-builder" },
-    { name = "bindep" },
-    { name = "pyyaml" },
-    { name = "subprocess-tee" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/25/9f/2fdc5648cf4f99d8ebf815c55c9f0f8b5cca35b3d30c5a96b0ec11ed88d4/ansible_dev_environment-26.4.0.tar.gz", hash = "sha256:03f53108b7b81d8d31914f9bf49d1b06d291b6135e0a81675f2515e8ea70493e", size = 222830, upload-time = "2026-04-01T14:45:07.59Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a4/b3/5aa5ca6634f57bbdc770d250c126058587c2f0b84b8b85d9ec0734fcef68/ansible_dev_environment-26.4.0-py3-none-any.whl", hash = "sha256:d2b95fbd00c32f1a9f95e7b33aaf351cd3681a7a6986a9dadedaaf94d3ec9c48", size = 55769, upload-time = "2026-04-01T14:45:06.365Z" },
-]
-
-[[package]]
-name = "ansible-dev-tools"
-version = "26.4.6"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "ansible-builder" },
-    { name = "ansible-compat" },
-    { name = "ansible-creator" },
-    { name = "ansible-dev-environment" },
-    { name = "ansible-lint" },
-    { name = "ansible-navigator" },
-    { name = "ansible-sign" },
-    { name = "molecule" },
-    { name = "pytest-ansible" },
-    { name = "setuptools" },
-    { name = "tox-ansible" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/a9/dd/331c75a7320ad8eba7274f4466843ecb46a445c6d271154eef851b15e9a3/ansible_dev_tools-26.4.6.tar.gz", hash = "sha256:353930fe0a82f745ec39ff3ba5d154a8042b15755143412327f421604580059d", size = 1054932, upload-time = "2026-04-30T03:55:34.979Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/20/87/9a6dae450dc5fa182832fa1166f05e5b781989c95f8c685bb82ece98f4b2/ansible_dev_tools-26.4.6-py3-none-any.whl", hash = "sha256:6610c59cd85f150ada1fe954200c73fd0baa573efb493cbaa09d8a53f6abfcde", size = 50110, upload-time = "2026-04-30T03:55:33.414Z" },
-]
-
-[[package]]
 name = "ansible-lint"
 version = "26.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -375,26 +310,6 @@ wheels = [
 ]
 
 [[package]]
-name = "ansible-navigator"
-version = "26.4.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "ansible-builder" },
-    { name = "ansible-lint" },
-    { name = "ansible-runner" },
-    { name = "jinja2" },
-    { name = "jsonschema" },
-    { name = "onigurumacffi" },
-    { name = "pyyaml" },
-    { name = "setuptools" },
-    { name = "tzdata" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/28/75/1d3a5f9d20ef9fa12f6d0a83e8055f38e586944e260ff40c9b157f195e77/ansible_navigator-26.4.0.tar.gz", hash = "sha256:1690c55b236796ddbcc001ba3a0263c2f2be50c0840f21f83fd7d0fade49f054", size = 394410, upload-time = "2026-04-06T09:02:09.763Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/01/b6/4d8a944e3db20d745bb96227f366d507709ed7095bffd15a5104d2a52d0b/ansible_navigator-26.4.0-py3-none-any.whl", hash = "sha256:62bdf3fc1b3c06a11201e915bbd98dbe7469b1f1f4bfc50c638aa92485368ff1", size = 304806, upload-time = "2026-04-06T09:02:08.105Z" },
-]
-
-[[package]]
 name = "ansible-runner"
 version = "2.4.3"
 source = { registry = "https://pypi.org/simple" }
@@ -407,19 +322,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/68/4f/62222b42b52cc771db51ccc77ffac19cc5f0196ff61de7c93585845a819b/ansible_runner-2.4.3.tar.gz", hash = "sha256:5f3025529bb968fdc3b627457dd8d418dbf9d53bc73735d50e69c28544d53031", size = 154148, upload-time = "2026-03-16T18:42:14.861Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e3/89/fa7f81db6134caa455c9351373ee934b5fdeed212eb939d6c42d80d683d7/ansible_runner-2.4.3-py3-none-any.whl", hash = "sha256:cdac6daa151a50084ffda710e769db23fa975fc0507796191d7708831b286e37", size = 80257, upload-time = "2026-03-16T18:42:13.72Z" },
-]
-
-[[package]]
-name = "ansible-sign"
-version = "0.1.5"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "distlib" },
-    { name = "python-gnupg" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/e3/30/bbd2646e67625151e60ed4f3411252df48a0af23b44a1bcd1228ca98afc3/ansible_sign-0.1.5.tar.gz", hash = "sha256:d1c9b5ef4329501615b18fe2bf035f63a429f7c05e653d32ac59fc01892eaf74", size = 106439, upload-time = "2026-02-25T11:40:28.195Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/98/44/d277d8b2d42b301e134fdc5e324147096af594fa759e1301163e410e4f17/ansible_sign-0.1.5-py3-none-any.whl", hash = "sha256:ef3f263dc5e55bba53c1c0548ee8858715c088bb8e93bdec7076b517905a03af", size = 17093, upload-time = "2026-02-25T11:40:27.144Z" },
 ]
 
 [[package]]
@@ -747,21 +649,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/54/79/875f9558179573d40a9cc743038ac2bf67dfb79cecb1e8b5d70e88c94c3d/bcrypt-5.0.0-pp311-pypy311_pp73-manylinux_2_28_x86_64.whl", hash = "sha256:046ad6db88edb3c5ece4369af997938fb1c19d6a699b9c1b27b0db432faae4c4", size = 273791, upload-time = "2025-09-25T19:50:39.913Z" },
     { url = "https://files.pythonhosted.org/packages/bc/fe/975adb8c216174bf70fc17535f75e85ac06ed5252ea077be10d9cff5ce24/bcrypt-5.0.0-pp311-pypy311_pp73-manylinux_2_34_aarch64.whl", hash = "sha256:dcd58e2b3a908b5ecc9b9df2f0085592506ac2d5110786018ee5e160f28e0911", size = 270746, upload-time = "2025-09-25T19:50:43.306Z" },
     { url = "https://files.pythonhosted.org/packages/e4/f8/972c96f5a2b6c4b3deca57009d93e946bbdbe2241dca9806d502f29dd3ee/bcrypt-5.0.0-pp311-pypy311_pp73-manylinux_2_34_x86_64.whl", hash = "sha256:6b8f520b61e8781efee73cba14e3e8c9556ccfb375623f4f97429544734545b4", size = 273375, upload-time = "2025-09-25T19:50:45.43Z" },
-]
-
-[[package]]
-name = "bindep"
-version = "2.14.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "distro" },
-    { name = "packaging" },
-    { name = "parsley" },
-    { name = "pbr" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/be/c2/a549e0286fd2711e401dc240184fb89c06e2ff1642fb7c6cac7a95fe0c8c/bindep-2.14.0.tar.gz", hash = "sha256:0c804c7e48dd17db24cb39121ade7171f684fb463c8aa01d0338cd11d254364a", size = 44234, upload-time = "2026-03-19T14:58:49.961Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/6e/50/b102034fbff7f86dc1120ba72309c12a9a4937e02b941e7c7a301879dc0f/bindep-2.14.0-py3-none-any.whl", hash = "sha256:235181c6f79f3a3edb831a6ae55f61185bc1de0f7761904d906507e9a5d801c9", size = 35171, upload-time = "2026-03-19T14:58:48.621Z" },
 ]
 
 [[package]]
@@ -1969,7 +1856,6 @@ dependencies = [
     { name = "fs" },
     { name = "gunicorn" },
     { name = "httpx" },
-    { name = "httpx2" },
     { name = "huggingface-hub" },
     { name = "hvac" },
     { name = "jinja2" },
@@ -2026,11 +1912,11 @@ cuda-inference = [
 ]
 dev = [
     { name = "aiosqlite" },
-    { name = "ansible-dev-tools" },
     { name = "ansible-lint" },
     { name = "bandit" },
     { name = "cyclonedx-py" },
     { name = "greenlet" },
+    { name = "httpx2" },
     { name = "hypothesis" },
     { name = "molecule" },
     { name = "molecule-plugins", extra = ["docker"] },
@@ -2089,13 +1975,13 @@ observability = [
 [package.dev-dependencies]
 dev = [
     { name = "aiosqlite" },
-    { name = "ansible-dev-tools" },
     { name = "ansible-lint" },
     { name = "bandit" },
     { name = "cyclonedx-py" },
     { name = "deptry" },
     { name = "detect-secrets" },
     { name = "greenlet" },
+    { name = "httpx2" },
     { name = "hypothesis" },
     { name = "molecule" },
     { name = "molecule-plugins", extra = ["docker"] },
@@ -2120,116 +2006,114 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aiosqlite", specifier = ">=0.1.0b2" },
-    { name = "aiosqlite", marker = "extra == 'dev'", specifier = ">=0.1.0b2" },
-    { name = "alembic", specifier = ">=0.1.0b2" },
+    { name = "aiosqlite", specifier = ">=0.20.0" },
+    { name = "aiosqlite", marker = "extra == 'dev'", specifier = ">=0.20.0" },
+    { name = "alembic", specifier = ">=1.14.0" },
     { name = "ansible-core", marker = "python_full_version < '3.12'", specifier = ">=2.19.11,<2.20" },
     { name = "ansible-core", marker = "python_full_version >= '3.12'", specifier = ">=2.21.2,<2.22" },
-    { name = "ansible-dev-tools", marker = "extra == 'dev'", specifier = ">=0.1.0b2" },
-    { name = "ansible-lint", marker = "extra == 'dev'", specifier = ">=0.1.0b2" },
-    { name = "ansible-runner", specifier = ">=0.1.0b2" },
+    { name = "ansible-lint", marker = "extra == 'dev'", specifier = ">=24.0.0" },
+    { name = "ansible-runner", specifier = ">=2.4.0" },
     { name = "argon2-cffi", specifier = ">=23.1.0" },
-    { name = "azure-identity", marker = "extra == 'azure'", specifier = ">=0.1.0b2" },
+    { name = "azure-identity", marker = "extra == 'azure'", specifier = ">=1.16.0" },
     { name = "azure-identity", marker = "extra == 'e2e-all'", specifier = ">=1.16.0" },
-    { name = "azure-mgmt-authorization", marker = "extra == 'azure'", specifier = ">=0.1.0b2" },
+    { name = "azure-mgmt-authorization", marker = "extra == 'azure'", specifier = ">=4.0.0" },
     { name = "azure-mgmt-authorization", marker = "extra == 'e2e-all'", specifier = ">=4.0.0" },
-    { name = "azure-mgmt-compute", marker = "extra == 'azure'", specifier = ">=0.1.0b2" },
+    { name = "azure-mgmt-compute", marker = "extra == 'azure'", specifier = ">=31.0.0" },
     { name = "azure-mgmt-compute", marker = "extra == 'e2e-all'", specifier = ">=31.0.0" },
     { name = "azure-mgmt-costmanagement", marker = "extra == 'azure'", specifier = "==5.0.0b1" },
     { name = "azure-mgmt-costmanagement", marker = "extra == 'e2e-all'", specifier = "==5.0.0b1" },
-    { name = "azure-mgmt-resource", marker = "extra == 'azure'", specifier = ">=0.1.0b2" },
+    { name = "azure-mgmt-resource", marker = "extra == 'azure'", specifier = ">=23.0.0" },
     { name = "azure-mgmt-resource", marker = "extra == 'e2e-all'", specifier = ">=23.0.0" },
-    { name = "bandit", marker = "extra == 'dev'", specifier = ">=0.1.0b2" },
+    { name = "bandit", marker = "extra == 'dev'", specifier = ">=1.8.0" },
     { name = "bcrypt", specifier = ">=4.0.0" },
     { name = "blake3", specifier = ">=1.0.0" },
-    { name = "boto3", marker = "extra == 'aws'", specifier = ">=0.1.0b2" },
-    { name = "croniter", specifier = ">=0.1.0b2" },
+    { name = "boto3", marker = "extra == 'aws'", specifier = ">=1.34.0" },
+    { name = "croniter", specifier = ">=2.0.0" },
     { name = "cryptography", specifier = ">=49.0.0,<51" },
-    { name = "cyclonedx-py", marker = "extra == 'dev'", specifier = ">=0.1.0b2" },
+    { name = "cyclonedx-py", marker = "extra == 'dev'", specifier = ">=0.7.0" },
     { name = "defusedxml", specifier = ">=0.7.1,<1" },
     { name = "diskcache", specifier = ">=5.6.3,<6" },
-    { name = "fastapi", specifier = ">=0.1.0b2" },
+    { name = "fastapi", specifier = ">=0.115.0" },
     { name = "filelock", specifier = ">=3.13.0" },
-    { name = "fs", specifier = ">=0.1.0b2" },
-    { name = "google-api-python-client", marker = "extra == 'gcp'", specifier = ">=0.1.0b2" },
-    { name = "google-auth", marker = "extra == 'gcp'", specifier = ">=0.1.0b2" },
-    { name = "google-cloud-core", marker = "extra == 'gcp'", specifier = ">=0.1.0b2" },
-    { name = "greenlet", marker = "extra == 'dev'", specifier = ">=0.1.0b2" },
-    { name = "gunicorn", specifier = ">=0.1.0b2" },
-    { name = "httpx", specifier = ">=0.1.0b2" },
-    { name = "httpx2", specifier = ">=2.0.0" },
-    { name = "huggingface-hub", specifier = ">=0.1.0b2" },
-    { name = "hvac", specifier = ">=0.1.0b2" },
+    { name = "fs", specifier = ">=2.4.0" },
+    { name = "google-api-python-client", marker = "extra == 'gcp'", specifier = ">=2.100.0" },
+    { name = "google-auth", marker = "extra == 'gcp'", specifier = ">=2.25.0" },
+    { name = "google-cloud-core", marker = "extra == 'gcp'", specifier = ">=2.3.0" },
+    { name = "greenlet", marker = "extra == 'dev'", specifier = ">=3.0.0" },
+    { name = "gunicorn", specifier = ">=23.0.0" },
+    { name = "httpx", specifier = ">=0.28.0" },
+    { name = "httpx2", marker = "extra == 'dev'", specifier = ">=2.7.0" },
+    { name = "huggingface-hub", specifier = ">=0.28.0" },
+    { name = "hvac", specifier = ">=2.3.0" },
     { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.0.0" },
-    { name = "jinja2", specifier = ">=0.1.0b2" },
+    { name = "jinja2", specifier = ">=3.1.0" },
     { name = "jsonschema", specifier = ">=4.21" },
     { name = "langchain-openai", specifier = ">=0.3.0" },
     { name = "langchain-openai", marker = "extra == 'e2e-all'", specifier = ">=0.3.0" },
-    { name = "langgraph", specifier = ">=0.1.0b2" },
-    { name = "langsmith", specifier = ">=0.1.0b2" },
-    { name = "llama-cpp-python", extras = ["server"], marker = "extra == 'local-inference'", specifier = ">=0.1.0b2" },
-    { name = "molecule", marker = "extra == 'dev'", specifier = ">=0.1.0b2" },
+    { name = "langgraph", specifier = ">=0.2.0" },
+    { name = "langsmith", specifier = ">=0.8.18" },
+    { name = "llama-cpp-python", extras = ["server"], marker = "extra == 'local-inference'", specifier = ">=0.3.0" },
+    { name = "molecule", marker = "extra == 'dev'", specifier = ">=24.0.0" },
     { name = "molecule-plugins", extras = ["docker"], marker = "extra == 'dev'", specifier = ">=25.8.12" },
-    { name = "msgpack", specifier = ">=0.1.0b2" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=0.1.0b2" },
+    { name = "msgpack", specifier = ">=1.2.1" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.13.0" },
     { name = "numpy", specifier = ">=1.26.0" },
     { name = "opencv-python-headless", marker = "extra == 'e2e-all'", specifier = ">=4.9.0,<4.13" },
     { name = "opencv-python-headless", marker = "extra == 'game-e2e'", specifier = ">=4.9.0,<4.13" },
-    { name = "opentelemetry-api", marker = "extra == 'observability'", specifier = ">=0.1.0b2" },
-    { name = "opentelemetry-exporter-otlp-proto-grpc", marker = "extra == 'observability'", specifier = ">=0.1.0b2" },
-    { name = "opentelemetry-sdk", marker = "extra == 'observability'", specifier = ">=0.1.0b2" },
+    { name = "opentelemetry-api", marker = "extra == 'observability'", specifier = ">=1.20.0" },
+    { name = "opentelemetry-exporter-otlp-proto-grpc", marker = "extra == 'observability'", specifier = ">=1.20.0" },
+    { name = "opentelemetry-sdk", marker = "extra == 'observability'", specifier = ">=1.20.0" },
     { name = "pillow", marker = "extra == 'e2e-all'", specifier = ">=12.3.0" },
     { name = "pillow", marker = "extra == 'game-e2e'", specifier = ">=12.3.0" },
-    { name = "pip", marker = "extra == 'dev'", specifier = ">=0.1.0b2" },
-    { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=0.1.0b2" },
+    { name = "pip", marker = "extra == 'dev'", specifier = ">=26.1.2" },
+    { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=0.3.0" },
     { name = "pqcrypto", specifier = ">=0.4.0,<1" },
-    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=0.1.0b2" },
-    { name = "prometheus-client", specifier = ">=0.1.0b2" },
+    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.0.0" },
+    { name = "prometheus-client", specifier = ">=0.21.0" },
     { name = "prompt-toolkit", specifier = ">=3.0.0" },
-    { name = "psutil", specifier = ">=0.1.0b2" },
-    { name = "psycopg", extras = ["binary"], specifier = ">=0.1.0b2" },
+    { name = "psutil", specifier = ">=6.0.0" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.2.0" },
     { name = "pycryptodome", specifier = ">=3.20.0" },
-    { name = "pydantic", specifier = ">=0.1.0b2" },
-    { name = "pydantic-settings", specifier = ">=0.1.0b2" },
+    { name = "pydantic", specifier = ">=2.10.0" },
+    { name = "pydantic-settings", specifier = ">=2.14.2" },
     { name = "pygame", marker = "extra == 'e2e-all'", specifier = ">=2.5.0" },
     { name = "pygame", marker = "extra == 'game-e2e'", specifier = ">=2.5.0" },
     { name = "pygments", specifier = ">=2.0.0" },
-    { name = "pyinstaller", marker = "extra == 'dev'", specifier = ">=0.1.0b2" },
+    { name = "pyinstaller", marker = "extra == 'dev'", specifier = ">=6.0.0" },
     { name = "pyspx", specifier = ">=0.1.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=0.1.0b2" },
-    { name = "pytest-ansible", marker = "extra == 'dev'", specifier = ">=0.1.0b2" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.1.0b2" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=0.1.0b2" },
-    { name = "pytest-timeout", marker = "extra == 'dev'", specifier = ">=0.1.0b2" },
-    { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=0.1.0b2" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
+    { name = "pytest-ansible", marker = "extra == 'dev'", specifier = ">=24.0.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.25.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
+    { name = "pytest-timeout", marker = "extra == 'dev'", specifier = ">=2.3.0" },
+    { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.5.0" },
     { name = "pywavelets", specifier = ">=1.4" },
-    { name = "pyyaml", specifier = ">=0.1.0b2" },
+    { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "rapidfuzz", specifier = ">=3.0.0" },
-    { name = "requests", specifier = ">=0.1.0b2" },
+    { name = "requests", specifier = ">=2.32.0" },
     { name = "rich", specifier = ">=13.0.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0b2" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
     { name = "safehttpx", specifier = ">=0.1.7,<0.2" },
     { name = "scikit-image", marker = "extra == 'e2e-all'", specifier = ">=0.22.0" },
     { name = "scikit-image", marker = "extra == 'game-e2e'", specifier = ">=0.22.0" },
-    { name = "scipy", specifier = ">=1.10.0" },
     { name = "scipy", specifier = ">=1.11.0" },
     { name = "setuptools", marker = "extra == 'dev'", specifier = ">=83.0.0" },
-    { name = "shamir", specifier = ">=0.1.0b2" },
-    { name = "sqlalchemy", specifier = ">=0.1.0b2" },
+    { name = "shamir", specifier = ">=17.12.0" },
+    { name = "sqlalchemy", specifier = ">=2.0.0" },
     { name = "srptools", specifier = ">=1.0.0" },
-    { name = "starlette", specifier = ">=0.1.0b2" },
-    { name = "structlog", specifier = ">=0.1.0b2" },
-    { name = "tenacity", specifier = ">=0.1.0b2" },
+    { name = "starlette", specifier = ">=1.3.1" },
+    { name = "structlog", specifier = ">=24.0.0" },
+    { name = "tenacity", specifier = ">=9.0.0" },
     { name = "torch", marker = "extra == 'cuda-inference'", specifier = ">=2.6.0" },
-    { name = "tree-sitter", specifier = ">=0.1.0b2" },
-    { name = "tree-sitter-python", specifier = ">=0.1.0b2" },
+    { name = "tree-sitter", specifier = ">=0.24.0" },
+    { name = "tree-sitter-python", specifier = ">=0.23.0" },
     { name = "types-defusedxml", marker = "extra == 'dev'", specifier = ">=0.7.0.20240218" },
     { name = "types-gunicorn", marker = "extra == 'dev'", specifier = ">=26.0.0.20260518" },
-    { name = "types-psutil", marker = "extra == 'dev'", specifier = ">=0.1.0b2" },
-    { name = "types-requests", marker = "extra == 'dev'", specifier = ">=0.1.0b2" },
-    { name = "uvicorn-worker", specifier = ">=0.1.0b2" },
-    { name = "vllm", marker = "extra == 'cuda-inference'", specifier = ">=0.1.0b2" },
-    { name = "watchdog", specifier = ">=0.1.0b2" },
+    { name = "types-psutil", marker = "extra == 'dev'", specifier = ">=6.0.0" },
+    { name = "types-requests", marker = "extra == 'dev'", specifier = ">=2.32.0" },
+    { name = "uvicorn-worker", specifier = ">=0.3.0" },
+    { name = "vllm", marker = "extra == 'cuda-inference'", specifier = ">=0.6.0" },
+    { name = "watchdog", specifier = ">=6.0.0" },
     { name = "yt-dlp", marker = "extra == 'e2e-all'", specifier = ">=2025.1.15" },
     { name = "yt-dlp", marker = "extra == 'game-e2e'", specifier = ">=2025.1.15" },
 ]
@@ -2237,34 +2121,34 @@ provides-extras = ["dev", "local-inference", "cuda-inference", "aws", "gcp", "az
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "aiosqlite", specifier = ">=0.1.0b2" },
-    { name = "ansible-dev-tools", specifier = ">=0.1.0b2" },
-    { name = "ansible-lint", specifier = ">=0.1.0b2" },
-    { name = "bandit", specifier = ">=0.1.0b2" },
-    { name = "cyclonedx-py", specifier = ">=0.1.0b2" },
-    { name = "deptry", specifier = ">=0.1.0b2" },
-    { name = "detect-secrets", specifier = ">=0.1.0b2" },
-    { name = "greenlet", specifier = ">=0.1.0b2" },
+    { name = "aiosqlite", specifier = ">=0.20.0" },
+    { name = "ansible-lint", specifier = ">=24.0.0" },
+    { name = "bandit", specifier = ">=1.8.0" },
+    { name = "cyclonedx-py", specifier = ">=0.7.0" },
+    { name = "deptry", specifier = ">=0.20.0" },
+    { name = "detect-secrets", specifier = ">=1.5.0" },
+    { name = "greenlet", specifier = ">=3.0.0" },
+    { name = "httpx2", specifier = ">=2.7.0" },
     { name = "hypothesis", specifier = ">=6.0.0" },
-    { name = "molecule", specifier = ">=0.1.0b2" },
+    { name = "molecule", specifier = ">=24.0.0" },
     { name = "molecule-plugins", extras = ["docker"], specifier = ">=25.8.12" },
-    { name = "mypy", specifier = ">=0.1.0b2" },
-    { name = "pip", specifier = ">=0.1.0b2" },
-    { name = "pip-audit", specifier = ">=0.1.0b2" },
-    { name = "pre-commit", specifier = ">=0.1.0b2" },
-    { name = "pyinstaller", specifier = ">=0.1.0b2" },
-    { name = "pytest", specifier = ">=0.1.0b2" },
-    { name = "pytest-ansible", specifier = ">=0.1.0b2" },
-    { name = "pytest-asyncio", specifier = ">=0.1.0b2" },
-    { name = "pytest-cov", specifier = ">=0.1.0b2" },
-    { name = "pytest-timeout", specifier = ">=0.1.0b2" },
-    { name = "pytest-xdist", specifier = ">=0.1.0b2" },
-    { name = "ruff", specifier = ">=0.1.0b2" },
+    { name = "mypy", specifier = ">=1.13.0" },
+    { name = "pip", specifier = ">=26.1.2" },
+    { name = "pip-audit", specifier = ">=0.3.0" },
+    { name = "pre-commit", specifier = ">=4.0.0" },
+    { name = "pyinstaller", specifier = ">=6.0.0" },
+    { name = "pytest", specifier = ">=8.0.0" },
+    { name = "pytest-ansible", specifier = ">=24.0.0" },
+    { name = "pytest-asyncio", specifier = ">=0.25.0" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
+    { name = "pytest-timeout", specifier = ">=2.3.0" },
+    { name = "pytest-xdist", specifier = ">=3.5.0" },
+    { name = "ruff", specifier = ">=0.8.0" },
     { name = "setuptools", specifier = ">=83.0.0" },
     { name = "types-defusedxml", specifier = ">=0.7.0.20240218" },
     { name = "types-gunicorn", specifier = ">=26.0.0.20260518" },
-    { name = "types-psutil", specifier = ">=0.1.0b2" },
-    { name = "types-requests", specifier = ">=0.1.0b2" },
+    { name = "types-psutil", specifier = ">=6.0.0" },
+    { name = "types-requests", specifier = ">=2.32.0" },
 ]
 
 [[package]]
@@ -4190,23 +4074,6 @@ wheels = [
 ]
 
 [[package]]
-name = "onigurumacffi"
-version = "1.5.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "cffi" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/b5/e9/fab7102ca135470374f81e74e9944c9f58f2bae905df2c045ac0f30838fd/onigurumacffi-1.5.0.tar.gz", hash = "sha256:d4fa9bee44a6d38a98b2237c67d9acdf27ed0c32d6c218125fe46681a5edea4d", size = 5582, upload-time = "2026-01-25T23:08:44.446Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/8b/f9/2717b5a52032b74e0f53022941baf24dc50ecc99fb31da5621b88882ce64/onigurumacffi-1.5.0-cp310-abi3-macosx_15_0_arm64.whl", hash = "sha256:6dda67bcbfe5ec8f819506befaa8542f7bc4dd89304dfae31810bf4f15dc2205", size = 224764, upload-time = "2026-01-25T23:12:43.084Z" },
-    { url = "https://files.pythonhosted.org/packages/e0/c1/e211c1f803c4b1315a8e2b017c7257ce5a7b11543ad63f3b7d19696c845f/onigurumacffi-1.5.0-cp310-abi3-macosx_15_0_x86_64.whl", hash = "sha256:3aabcd932605f0a385c612ff22daa97acfa57e78add53bb4a173f281a3b9cf1f", size = 235989, upload-time = "2026-01-25T23:12:44.643Z" },
-    { url = "https://files.pythonhosted.org/packages/21/16/df7857783279384c910ac6c5272699a226fcec9dc8969b4fe230069d2f99/onigurumacffi-1.5.0-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:d2e195b0255f88616af19021ebd6344a00d5a0df01a78c8c43729cf0b9c9fb9c", size = 605635, upload-time = "2026-01-25T23:12:46.256Z" },
-    { url = "https://files.pythonhosted.org/packages/e2/7c/fda92bcc28c6ef05d6ce4cfd0f85e7a70e6fa9ea3a23fb7fe1b4cf6ef092/onigurumacffi-1.5.0-cp310-abi3-win32.whl", hash = "sha256:995a3a0d932df3995f6e9b081c4c5881ed6bc19c53d9c24d64a51eb21f46989c", size = 178808, upload-time = "2026-01-25T23:12:47.658Z" },
-    { url = "https://files.pythonhosted.org/packages/a3/67/6461766dc7e7baea1b02df2c081ac7efcde3edf9cb74a80f570a7dc0566b/onigurumacffi-1.5.0-cp310-abi3-win_amd64.whl", hash = "sha256:862795245ac165913f146e81d18e5419c91f98f50a5eccba02e1ba6d781e8e26", size = 193354, upload-time = "2026-01-25T23:12:49.074Z" },
-    { url = "https://files.pythonhosted.org/packages/30/1b/e801d3a6ebf5adec84ec8f6df19944177e42635174a28164f20157f4ad6b/onigurumacffi-1.5.0-pp311-pypy311_pp73-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:a1f39d9edccc63010ee7667b6e8c029e856031adfac3f0581efe4cb71a1083ff", size = 585092, upload-time = "2026-01-25T23:12:50.801Z" },
-]
-
-[[package]]
 name = "openai"
 version = "2.48.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4551,15 +4418,6 @@ wheels = [
 ]
 
 [[package]]
-name = "parsley"
-version = "1.3"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/06/52/cac2f9e78c26cff8bb518bdb4f2b5a0c7058dec7a62087ed48fe87478ef0/Parsley-1.3.tar.gz", hash = "sha256:9444278d47161d5f2be76a767809a3cbe6db4db822f46a4fd7481d4057208d41", size = 99616, upload-time = "2015-09-09T02:53:04.899Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/2b/d6/4fed8d65e28a970e1c5cb33ce9c7e22e3de745e1b2ae37af051ef16aea3b/Parsley-1.3-py2.py3-none-any.whl", hash = "sha256:c3bc417b8c7e3a96c87c0f2f751bfd784ed5156ffccebe2f84330df5685f8dc3", size = 88932, upload-time = "2015-09-09T02:53:09.977Z" },
-]
-
-[[package]]
 name = "partial-json-parser"
 version = "0.2.1.1.post7"
 source = { registry = "https://pypi.org/simple" }
@@ -4575,18 +4433,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/fa/36/e27608899f9b8d4dff0617b2d9ab17ca5608956ca44461ac14ac48b44015/pathspec-1.0.4.tar.gz", hash = "sha256:0210e2ae8a21a9137c0d470578cb0e595af87edaa6ebf12ff176f14a02e0e645", size = 131200, upload-time = "2026-01-27T03:59:46.938Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ef/3c/2c197d226f9ea224a9ab8d197933f9da0ae0aac5b6e0f884e2b8d9c8e9f7/pathspec-1.0.4-py3-none-any.whl", hash = "sha256:fb6ae2fd4e7c921a165808a552060e722767cfa526f99ca5156ed2ce45a5c723", size = 55206, upload-time = "2026-01-27T03:59:45.137Z" },
-]
-
-[[package]]
-name = "pbr"
-version = "7.0.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "setuptools" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/5e/ab/1de9a4f730edde1bdbbc2b8d19f8fa326f036b4f18b2f72cfbea7dc53c26/pbr-7.0.3.tar.gz", hash = "sha256:b46004ec30a5324672683ec848aed9e8fc500b0d261d40a3229c2d2bbfcedc29", size = 135625, upload-time = "2025-11-03T17:04:56.274Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c0/db/61efa0d08a99f897ef98256b03e563092d36cc38dc4ebe4a85020fe40b31/pbr-7.0.3-py2.py3-none-any.whl", hash = "sha256:ff223894eb1cd271a98076b13d3badff3bb36c424074d26334cd25aebeecea6b", size = 131898, upload-time = "2025-11-03T17:04:54.875Z" },
 ]
 
 [[package]]
@@ -5453,18 +5299,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pyproject-api"
-version = "1.10.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "packaging" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/62/62/0fe346fe380b1aafaf819c8cb195d3241bb4f355f908e6339814131a830b/pyproject_api-1.10.1.tar.gz", hash = "sha256:c2b2726bd7aa9217b6c50b621fef5b2ae5def4d55b779c9e0694c15e0a8517ba", size = 23477, upload-time = "2026-05-28T14:22:14.049Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/79/d7/29e1e5e882f79133631f7bcace42d23db493f616463c157a1ab614bf69dd/pyproject_api-1.10.1-py3-none-any.whl", hash = "sha256:fa9e6f66c35b5017e909825d8f2b5d5482ea699d7be809d21c03bd1f7317f36a", size = 12992, upload-time = "2026-05-28T14:22:12.711Z" },
-]
-
-[[package]]
 name = "pyspx"
 version = "0.5.0"
 source = { registry = "https://pypi.org/simple" }
@@ -5607,15 +5441,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/82/ed/0301aeeac3e5353ef3d94b6ec08bbcabd04a72018415dcb29e588514bba8/python_dotenv-1.2.2.tar.gz", hash = "sha256:2c371a91fbd7ba082c2c1dc1f8bf89ca22564a087c2c287cd9b662adde799cf3", size = 50135, upload-time = "2026-03-01T16:00:26.196Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0b/d7/1959b9648791274998a9c3526f6d0ec8fd2233e4d4acce81bbae76b44b2a/python_dotenv-1.2.2-py3-none-any.whl", hash = "sha256:1d8214789a24de455a8b8bd8ae6fe3c6b69a5e3d64aa8a8e5d68e694bbcb285a", size = 22101, upload-time = "2026-03-01T16:00:25.09Z" },
-]
-
-[[package]]
-name = "python-gnupg"
-version = "0.5.6"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/98/2c/6cd2c7cff4bdbb434be5429ef6b8e96ee6b50155551361f30a1bb2ea3c1d/python_gnupg-0.5.6.tar.gz", hash = "sha256:5743e96212d38923fc19083812dc127907e44dbd3bcf0db4d657e291d3c21eac", size = 66825, upload-time = "2025-12-31T17:19:33.19Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/d2/ab/0ea9de971caf3cd2e268d2b05dfe9883b21cfe686a59249bd2dccb4bae33/python_gnupg-0.5.6-py2.py3-none-any.whl", hash = "sha256:b5050a55663d8ab9fcc8d97556d229af337a87a3ebebd7054cbd8b7e2043394a", size = 22082, upload-time = "2025-12-31T17:16:22.743Z" },
 ]
 
 [[package]]
@@ -7349,43 +7174,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/cb/4c/99880813aa50e64447fb1c4c6c804a793d2d78f7f7c53e99ddee7fa175fa/torchvision-0.21.0-cp313-cp313-manylinux1_x86_64.whl", hash = "sha256:084ac3f5a1f50c70d630a488d19bf62f323018eae1b1c1232f2b7047d3a7b76d", size = 7238714, upload-time = "2025-01-29T16:28:25.658Z" },
     { url = "https://files.pythonhosted.org/packages/0b/2d/3c3ee10608310a395594aac7da8640372ed79c6585910ccae6919658dcdc/torchvision-0.21.0-cp313-cp313-manylinux_2_28_aarch64.whl", hash = "sha256:5045a3a5f21ec3eea6962fa5f2fa2d4283f854caec25ada493fcf4aab2925467", size = 2281252, upload-time = "2025-01-29T16:28:40.687Z" },
     { url = "https://files.pythonhosted.org/packages/ed/b4/fc60e3bc003879d3de842baea258fffc3586f4b49cd435a5ba1e09c33315/torchvision-0.21.0-cp313-cp313-win_amd64.whl", hash = "sha256:9147f5e096a9270684e3befdee350f3cacafd48e0c54ab195f45790a9c146d67", size = 1560519, upload-time = "2025-01-29T16:28:22.527Z" },
-]
-
-[[package]]
-name = "tox"
-version = "4.55.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "cachetools" },
-    { name = "colorama" },
-    { name = "filelock" },
-    { name = "packaging" },
-    { name = "platformdirs" },
-    { name = "pluggy" },
-    { name = "pyproject-api" },
-    { name = "python-discovery" },
-    { name = "tomli-w" },
-    { name = "virtualenv" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/bb/6a/d5807709acd62487b425f147c225cb75c2c22251cac6e51943b07d573636/tox-4.55.0.tar.gz", hash = "sha256:7ede1e1e70f8fe984f7985d7ca58a1e1c15fe9f8715897e38accc607c8de9f70", size = 279415, upload-time = "2026-05-28T05:16:08.099Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/11/77/513bb4464c776eb523696285352b8ef98d8d8228dada6e591b0981f5b8e8/tox-4.55.0-py3-none-any.whl", hash = "sha256:83603a222e7e2ffbeb9e92ed6516e31a0ce355b37aea13c82a2c5344274a9391", size = 214789, upload-time = "2026-05-28T05:16:06.431Z" },
-]
-
-[[package]]
-name = "tox-ansible"
-version = "26.3.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pytest" },
-    { name = "pytest-ansible" },
-    { name = "pytest-xdist" },
-    { name = "pyyaml" },
-    { name = "tox" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/08/2a/63a0921f170a1438d8055d6f8fde4c9785d4a6fa3998590a6a394f13e102/tox_ansible-26.3.0.tar.gz", hash = "sha256:0c036cc5148a2907d62f725caebbcb5fe302b449fbfe7001ce28728d652d710f", size = 169317, upload-time = "2026-03-05T13:20:38.703Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/8a/b2/56e135570184d21c6528e5259514e45dfe34b1ed2db18a27e218bc183d50/tox_ansible-26.3.0-py3-none-any.whl", hash = "sha256:cc0e556869ca11557c7b49d58e8b15be09ef761033cc6cdd5312f2e5bf10d1fb", size = 11316, upload-time = "2026-03-05T13:20:37.547Z" },
 ]
 
 [[package]]

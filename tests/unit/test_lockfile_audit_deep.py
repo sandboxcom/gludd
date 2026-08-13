@@ -260,8 +260,8 @@ class TestPinnedConcreteVersions:
             parts = v.split(".")
             first = parts[0].lstrip("v")
             assert first.isdigit(), f"{pkg['name']} version '{v}' doesn't start with digit"
-            if len(parts) == 1 and v.isdigit() and len(v) >= 6:
-                continue  # calver singletons like 20260315 are valid
+            if len(parts) == 1 and v.isdigit():
+                continue  # PEP 440 permits integer releases such as pywin32 312.
             assert len(parts) >= 2, f"{pkg['name']} version '{v}' doesn't look like semver/calver"
 
     def test_no_dev_pre_release_versions_for_core_deps(self, lock_packages: list[dict[str, object]]) -> None:
