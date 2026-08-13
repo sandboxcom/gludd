@@ -29,28 +29,27 @@ class BarrierBroken(Exception):
 
 
 class Barrier:
-    """An async barrier that blocks N waiters until all have arrived.
+    """An async cyclic barrier with synchronous abort and reset controls.
 
-    After N waiters call ``wait()``, all N are unblocked simultaneously
-    and the barrier resets for the next phase. If a waiter times out or
-    ``abort()`` is called, the barrier enters a *broken* state — subsequent
-    ``wait()`` calls raise :class:`BarrierBroken` until ``reset()`` is called.
-
-    Supports both ``async with barrier:`` (context manager) and explicit
-    ``await barrier.wait()``.
+    Each generation has distinct filling and draining phases. A task cannot
+    enter the next generation until every task from the released generation
+    has left, matching the lifecycle of :class:`asyncio.Barrier` while
+    preserving this project's synchronous ``abort()`` and ``reset()`` API.
     """
 
     def __init__(self, parties: int, *, default_timeout: float | None = None) -> None:
         if parties < 0:
             raise ValueError("parties must be >= 0")
-        self._parties: int = parties
-        self._default_timeout: float | None = default_timeout
-        self._waiters: int = 0
-        self._broken: bool = False
+        self._parties = parties
+        self._default_timeout = default_timeout
+        self._waiters = 0
+        self._broken = False
         self._exception: BaseException | None = None
-        self._event: asyncio.Event = asyncio.Event()
-        self._cond: asyncio.Condition = asyncio.Condition()
-        self._generation: int = 0
+        self._event = asyncio.Event()
+        self._drained = asyncio.Event()
+        self._drained.set()
+        self._draining = False
+        self._generation = 0
         if parties == 0:
             self._event.set()
 
@@ -68,55 +67,66 @@ class Barrier:
 
     async def wait(self, *, timeout: float | None = None) -> None:
         effective_timeout = timeout if timeout is not None else self._default_timeout
-        if self._broken:
-            raise BarrierBroken("Barrier is broken and cannot be waited on") from self._exception
+        try:
+            if effective_timeout is None:
+                await self._wait_for_generation()
+            else:
+                async with asyncio.timeout(effective_timeout):
+                    await self._wait_for_generation()
+        except TimeoutError as exc:
+            timeout_error = BarrierTimeout(
+                f"Barrier wait timed out after {effective_timeout}s"
+            )
+            self._set_broken(timeout_error)
+            raise timeout_error from exc
+        except asyncio.CancelledError:
+            self._set_broken(asyncio.CancelledError("Barrier waiter cancelled"))
+            raise
 
+    async def _wait_for_generation(self) -> None:
+        while self._draining and not self._broken:
+            await self._drained.wait()
+
+        self._raise_if_broken()
         if self._parties == 0:
             return
 
-        if self._event.is_set():
-            return
-
+        event = self._event
         self._waiters += 1
-        generation = self._generation
-
         try:
-            if self._waiters >= self._parties:
+            if self._waiters == self._parties:
+                self._draining = True
+                self._drained.clear()
                 self._release_all()
-                return
+            await event.wait()
+            self._raise_if_broken()
+        finally:
+            self._waiters -= 1
+            if self._draining and self._waiters == 0:
+                if not self._broken:
+                    self._generation += 1
+                    self._event = asyncio.Event()
+                self._draining = False
+                self._drained.set()
 
-            if effective_timeout is not None:
-                try:
-                    await asyncio.wait_for(self._event.wait(), timeout=effective_timeout)
-                except TimeoutError:
-                    self._set_broken(BarrierTimeout(f"Barrier wait timed out after {effective_timeout}s"))
-                    raise
-
-                if self._generation == generation:
-                    return
-            else:
-                await self._event.wait()
-                if self._generation == generation:
-                    return
-
-        except asyncio.CancelledError:
-            if not self._broken:
-                self._set_broken(asyncio.CancelledError("Barrier waiter cancelled"))
-            raise
+    def _raise_if_broken(self) -> None:
+        if not self._broken:
+            return
+        if isinstance(self._exception, BarrierAborted):
+            raise BarrierAborted(str(self._exception)) from self._exception
+        raise BarrierBroken("Barrier is broken and cannot be waited on") from self._exception
 
     def abort(self) -> None:
-        if self._waiters > 0 or not self._broken:
-            self._set_broken(BarrierAborted("Barrier aborted"))
-            if self._parties == 0:
-                self._broken = True
+        self._set_broken(BarrierAborted("Barrier aborted"))
 
     def reset(self) -> None:
         if self._waiters > 0:
             raise RuntimeError("Cannot reset barrier with active waiters")
         self._broken = False
         self._exception = None
-        self._event.clear()
-        self._waiters = 0
+        self._event = asyncio.Event()
+        self._drained.set()
+        self._draining = False
         self._generation += 1
         if self._parties == 0:
             self._event.set()
@@ -130,6 +140,7 @@ class Barrier:
         self._broken = True
         self._exception = exc
         self._event.set()
+        self._drained.set()
 
     async def __aenter__(self) -> Barrier:
         await self.wait()
@@ -190,10 +201,16 @@ class WaitGroup:
         effective_timeout = timeout if timeout is not None else self._default_timeout
         if self._counter == 0:
             return
-        if effective_timeout is not None:
-            await asyncio.wait_for(self._event.wait(), timeout=effective_timeout)
-        else:
+        if effective_timeout is None:
             await self._event.wait()
+            return
+        try:
+            async with asyncio.timeout(effective_timeout):
+                await self._event.wait()
+        except TimeoutError as exc:
+            raise BarrierTimeout(
+                f"WaitGroup wait timed out after {effective_timeout}s"
+            ) from exc
 
     def __repr__(self) -> str:
         return f"WaitGroup(counter={self._counter}, default_timeout={self._default_timeout})"
