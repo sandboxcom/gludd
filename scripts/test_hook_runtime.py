@@ -1698,7 +1698,7 @@ const r1 = await plugin['experimental.text.complete'](undefined, {{text: 'wave 1
 const r2 = await plugin['experimental.text.complete'](undefined, {{text: 'wave 2 text (zero dispatch)'}})
 const wave1Blocked = r1 !== null && r1 !== undefined && (r1.text || '').includes('THIN WAVE')
 const wave2Blocked = r2 !== null && r2 !== undefined && (r2.text || '').includes('THIN WAVE')
-const wave2ZeroBlocked = r2 !== null && r2 !== undefined && (r2.text || '').includes('MUST DISPATCH')
+const wave2ZeroBlocked = r2 !== null && r2 !== undefined && (r2.text || '').includes('ZERO-DISPATCH TEXT BLOCKED')
 console.log(JSON.stringify({{
     wave1Blocked,
     wave2Blocked,

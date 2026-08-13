@@ -112,6 +112,16 @@ All three fix vectors confirmed present and active in
 | `handleMessageBoundary()` via text.complete | `enforce-multitask.ts:194, :538, :560` | Canonical boundary signal at `text.complete` end — resets `thisMessageDispatches`. Time-gap heuristic kept as FALLBACK only, gated behind flag to prevent double-processing (`:270-287`). |
 | Under-floor hard block (2026-07-15) | `enforce-multitask.ts:421-422` | Block fires IMMEDIATELY when <10 dispatches in current message — does NOT wait for message boundary. Closes "dispatch 1 then grind" bypass. |
 
+### Practitioner evidence: explicit turn boundaries
+
+OpenCode users have reported that existing hooks do not provide a reliable signal
+for the end of an assistant turn, motivating a dedicated turn-completed event
+([anomalyco/opencode#23503](https://github.com/anomalyco/opencode/issues/23503)).
+Gludd therefore treats `experimental.text.complete` as its canonical available
+message boundary and pins the user-visible block kind for a zero-dispatch wave as
+`ZERO-DISPATCH TEXT BLOCKED`; the runtime test must assert that current contract,
+not the retired `MUST DISPATCH` wording.
+
 ### Runtime verification
 
 ```
