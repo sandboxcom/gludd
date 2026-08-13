@@ -266,6 +266,33 @@ shows that memory optimizations can change persisted hash semantics. Gludd
 therefore treats hash-domain metadata as correctness data, not an optimization
 detail.
 
+#### 6.2.2 T-Digest accuracy and merge invariants
+
+T-Digest centroids remain sorted and preserve total weight across incremental
+updates, serialization, and merges. A candidate centroid may be absorbed only
+when its cumulative quantile interval satisfies `k(q1) - k(q0) <= 1` for the
+configured compression. The minimum and maximum centroids remain singletons so
+tail queries and disjoint-range merges cannot average away observed extrema.
+Higher compression must retain at least as much deterministic resolution while
+the centroid count remains bounded by `2 * compression + 10`.
+
+Quantiles interpolate between centroid mid-ranks, rather than treating a
+centroid's full weight as located at the preceding boundary. CDF estimates use
+the same mid-ranks, stay within `[0, 1]`, and are monotonic; a single-centroid
+point mass has CDF `0.5` at its mean. The binary and pickle layouts do not change,
+so these numerical corrections can roll through a mixed-version deployment
+without rewriting stored digests.
+
+This contract addresses a long-lived practitioner concern recorded in Presto
+[issue #12929](https://github.com/prestodb/presto/issues/12929), opened in 2019:
+operators explicitly asked how compression affects median accuracy and whether
+merging small splits degrades results. The upstream t-digest project likewise
+documents that user reports of subtle misbehavior drove stricter size invariants,
+stable ordering, and improved interpolation in its
+[reference implementation](https://github.com/tdunning/t-digest). Gludd pins
+those properties with ordered, random, repeated-value, and disjoint-merge tests
+rather than relying on a single distribution benchmark.
+
 ### 6.3 Reasoning and verification
 
 The expert uses a plan/act/observe/verify state machine with typed, bounded
