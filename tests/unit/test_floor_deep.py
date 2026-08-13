@@ -3,59 +3,35 @@ env var handling, properties, and boundary edge cases."""
 
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from general_ludd.controllers.floor import FloorController
 
-
-def _restore_env(key: str, prev: str | None) -> None:
-    if prev is None:
-        os.environ.pop(key, None)
-    else:
-        os.environ[key] = prev
-
-
 # ── __init__: floor resolution priority ──────────────────────────────────
 
 
-def test_init_default_floor_is_5() -> None:
-    prev = os.environ.pop("FLOOR", None)
-    try:
-        fc = FloorController()
-        assert fc.floor == 5
-    finally:
-        _restore_env("FLOOR", prev)
+def test_init_default_floor_is_5(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("FLOOR", raising=False)
+    fc = FloorController()
+    assert fc.floor == 5
 
 
-def test_init_explicit_floor_overrides_default() -> None:
-    prev = os.environ.pop("FLOOR", None)
-    try:
-        fc = FloorController(floor=12)
-        assert fc.floor == 12
-    finally:
-        _restore_env("FLOOR", prev)
+def test_init_explicit_floor_overrides_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("FLOOR", raising=False)
+    fc = FloorController(floor=12)
+    assert fc.floor == 12
 
 
-def test_init_env_var_floor_overrides_default() -> None:
-    prev = os.environ.get("FLOOR")
-    os.environ["FLOOR"] = "8"
-    try:
-        fc = FloorController()
-        assert fc.floor == 8
-    finally:
-        _restore_env("FLOOR", prev)
+def test_init_env_var_floor_overrides_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FLOOR", "8")
+    fc = FloorController()
+    assert fc.floor == 8
 
 
-def test_init_explicit_floor_wins_over_env_var() -> None:
-    prev = os.environ.get("FLOOR")
-    os.environ["FLOOR"] = "4"
-    try:
-        fc = FloorController(floor=7)
-        assert fc.floor == 7
-    finally:
-        _restore_env("FLOOR", prev)
+def test_init_explicit_floor_wins_over_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FLOOR", "4")
+    fc = FloorController(floor=7)
+    assert fc.floor == 7
 
 
 def test_init_floor_zero_is_allowed() -> None:
@@ -276,8 +252,10 @@ def test_floor_history_timestamp_is_isoformat() -> None:
     )
     entry = fc.floor_history[0]
     assert "timestamp" in entry
-    assert "T" in entry["timestamp"]
-    assert entry["timestamp"].endswith("+00:00") or entry["timestamp"].endswith("Z")
+    timestamp = entry["timestamp"]
+    assert isinstance(timestamp, str)
+    assert "T" in timestamp
+    assert timestamp.endswith("+00:00") or timestamp.endswith("Z")
 
 
 def test_floor_history_has_all_metric_keys() -> None:
