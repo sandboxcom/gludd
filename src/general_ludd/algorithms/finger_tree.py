@@ -162,28 +162,19 @@ def _preorder_flatten(node: Node2[Any] | Node3[Any], out: list[Any]) -> None:
 
 
 def _nodes_of(prefix: list[Any], suffix: list[Any]) -> list[Any]:
-    all_items = list(prefix) + list(suffix)
+    all_items = [*prefix, *suffix]
     result: list[Any] = []
     i = 0
-    n = len(all_items)
-    while i < n:
-        remaining = n - i
-        if remaining >= 3:
-            result.append(Node3(all_items[i], all_items[i + 1], all_items[i + 2]))
-            i += 3
-        elif remaining == 2:
+    while i < len(all_items):
+        remaining = len(all_items) - i
+        if remaining in {2, 4}:
             result.append(Node2(all_items[i], all_items[i + 1]))
             i += 2
-        elif result:
-            prev = result.pop()
-            parts = [*prev.to_list(), all_items[i]]
-            if len(parts) >= 3:
-                result.append(Node3(parts[0], parts[1], parts[2]))
-            else:
-                result.append(Node2(parts[0], parts[1]))
-            i += 1
+        elif remaining >= 3:
+            result.append(Node3(all_items[i], all_items[i + 1], all_items[i + 2]))
+            i += 3
         else:
-            break
+            raise ValueError("finger-tree bridge cannot contain a singleton")
     return result
 
 
@@ -255,44 +246,31 @@ def _push_left_deep(
 
 
 def pop_left(z: FingerTree) -> tuple[Any, FingerTree]:
+    return _pop_left_atomic(z)
+
+
+def _pop_left_atomic(z: FingerTree) -> tuple[Any, FingerTree]:
     if isinstance(z, Empty):
         raise IndexError("pop from empty finger tree")
     if isinstance(z, Single):
         return z.v, Empty()
     if isinstance(z, Deep):
-        pf: list[Any] = z.prefix
-        first = pf[0]
-        val, extra = _deconstruct_first(first)
-        rest = pf[1:]
-        new_pf = extra + rest
-        if new_pf:
-            return val, Deep(new_pf, z.middle, z.suffix)
-        return val, _absorb_left(z.middle, z.suffix)
+        first = z.prefix[0]
+        rest = z.prefix[1:]
+        if rest:
+            return first, Deep(rest, z.middle, z.suffix)
+        return first, _absorb_left(z.middle, z.suffix)
     raise TypeError(f"Unexpected tree shape: {z!r}")
 
 
 def _absorb_left(m: Empty | Single[Any] | Deep[Any], suffix: list[Any]) -> FingerTree:
     if isinstance(m, Empty):
-        if not suffix:
-            return Empty()
-        if len(suffix) == 1:
-            return Single(suffix[0])
-        return Deep(suffix[:2], Empty(), suffix[2:])
-    if isinstance(m, Single):
-        parts = _digit_to_leaves([m.v]) + suffix
-        return _parts_to_tree(parts)
-    if isinstance(m, Deep):
-        if not m.prefix:
-            return _absorb_left(m.middle, suffix)
-        pf0 = m.prefix[0]
-        elements = _digit_to_leaves([pf0])
-        rest = m.prefix[1:]
-        if rest or not isinstance(m.middle, Empty):
-            new_mid = Deep(rest, m.middle, m.suffix)
-            return Deep(elements, new_mid, suffix)
-        leaves = _digit_to_leaves(m.suffix)
-        return _parts_to_tree(elements + leaves + suffix)
-    return Empty()
+        return _parts_to_tree(suffix)
+
+    node, new_middle = _pop_left_atomic(m)
+    if not isinstance(node, (Node2, Node3)):
+        raise TypeError(f"Unexpected middle element: {node!r}")
+    return Deep(node.to_list(), new_middle, suffix)
 
 
 def _parts_to_tree(parts: list[Any]) -> FingerTree:
@@ -367,44 +345,31 @@ def _push_right_deep(
 
 
 def pop_right(z: FingerTree) -> tuple[Any, FingerTree]:
+    return _pop_right_atomic(z)
+
+
+def _pop_right_atomic(z: FingerTree) -> tuple[Any, FingerTree]:
     if isinstance(z, Empty):
         raise IndexError("pop from empty finger tree")
     if isinstance(z, Single):
         return z.v, Empty()
     if isinstance(z, Deep):
-        sf: list[Any] = z.suffix
-        last = sf[-1]
-        val, extra = _deconstruct_last(last)
-        rest = sf[:-1]
-        new_sf = rest + extra
-        if new_sf:
-            return val, Deep(z.prefix, z.middle, new_sf)
-        return val, _absorb_right(z.prefix, z.middle)
+        last = z.suffix[-1]
+        rest = z.suffix[:-1]
+        if rest:
+            return last, Deep(z.prefix, z.middle, rest)
+        return last, _absorb_right(z.prefix, z.middle)
     raise TypeError(f"Unexpected tree shape: {z!r}")
 
 
 def _absorb_right(prefix: list[Any], m: Empty | Single[Any] | Deep[Any]) -> FingerTree:
     if isinstance(m, Empty):
-        if not prefix:
-            return Empty()
-        if len(prefix) == 1:
-            return Single(prefix[0])
-        return Deep(prefix[:-1], Empty(), [prefix[-1]])
-    if isinstance(m, Single):
-        parts = prefix + _digit_to_leaves([m.v])
-        return _parts_to_tree(parts)
-    if isinstance(m, Deep):
-        if not m.suffix:
-            return _absorb_right(prefix, m.middle)
-        sf0 = m.suffix[-1]
-        elements = _digit_to_leaves([sf0])
-        rest = m.suffix[:-1]
-        if rest or not isinstance(m.middle, Empty):
-            new_mid = Deep(m.prefix, m.middle, rest)
-            return Deep(prefix, new_mid, elements)
-        leaves = _digit_to_leaves(m.prefix)
-        return _parts_to_tree(prefix + leaves + elements)
-    return Empty()
+        return _parts_to_tree(prefix)
+
+    node, new_middle = _pop_right_atomic(m)
+    if not isinstance(node, (Node2, Node3)):
+        raise TypeError(f"Unexpected middle element: {node!r}")
+    return Deep(prefix, new_middle, node.to_list())
 
 
 def peek_right(z: FingerTree) -> Any:
