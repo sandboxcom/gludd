@@ -17,6 +17,11 @@
       "behavior": "make lint-markdown MARKDOWN_FILES=docs/features/XMSS_BACKEND_SAFETY.md MARKDOWNLINT_CONFIG=config/markdownlint-cli2.jsonc"
     },
     {
+      "name": "lint-docstrings",
+      "make_variables": ["DOCSTRING_FILES"],
+      "behavior": "make lint-docstrings DOCSTRING_FILES=src/general_ludd/security/xmss.py"
+    },
+    {
       "name": "integration-health",
       "make_variables": [],
       "behavior": "make integration-health"

@@ -27,6 +27,7 @@ NODE_DEPS_NPM_REGISTRY ?= https://registry.npmjs.org
 NODE_DEPS_AUDIT_LEVEL ?= moderate
 MARKDOWN_FILES ?=
 MARKDOWNLINT_CONFIG ?= config/markdownlint-cli2.jsonc
+DOCSTRING_FILES ?=
 GATE_REFRESH_VALIDATE_ONLY ?= 0
 DISK_MIN_FREE_GIB ?= 8
 # Make children emit deterministic, non-interactive logs even when the host's
@@ -39,7 +40,7 @@ SSH_KEY ?= $(HOME)/.ssh/sandboxcom_gludd_rsa
 _MULTIWORD_VALUE_GOALS := \
     copy-file feature-done feature-start git-add git-branch git-checkout git-cherry-pick-list \
     git-commit git-commit-file git-commit-files git-merge git-reset git-restore git-tag-move \
-    git-tag-push lint-files lint-fix-files lint-markdown release-cut release-deploy release-upload-assets \
+    git-tag-push lint-files lint-fix-files lint-markdown lint-docstrings release-cut release-deploy release-upload-assets \
     replace-all-text replace-lines replace-text search ship-commit test-and-commit test-ci-shards-parallel \
     test-ci-shards-parallel-bg test-files ci-shards-log-context
 _FIRST_MAKE_GOAL := $(firstword $(MAKECMDGOALS))
@@ -85,7 +86,7 @@ endif
 PYTEST_VERBOSITY ?= -v
 
 .PHONY: \
-        init sync relock node-deps-sync node-deps-relock node-deps-audit install-pip lint lint-files lint-markdown lint-fix test test-unit test-unit-shards test-specific test-files test-count test-integration test-e2e \
+        init sync relock node-deps-sync node-deps-relock node-deps-audit install-pip lint lint-files lint-markdown lint-docstrings lint-fix test test-unit test-unit-shards test-specific test-files test-count test-integration test-e2e \
          test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg test-bg-runner \
          test-games test-multi-model-pipeline test-local-model-pipeline test-project-type-pipeline game-audit gen-mcp-tools gen-mcp-tool-ref mcp-docs-check \
         typecheck setup-dirs setup-venv clean healthcheck \
@@ -102,7 +103,7 @@ PYTEST_VERBOSITY ?= -v
         test-self-improve test-self-improve-all \
          development-push development-merge-forward development-merge-to-master development-start development-status require-sandboxcom-ssh-key \
         git-commit-no-verify git-amend-msg \
-_commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
+_commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
         release-worktree-guard status-claim-guard workflow-state workflow-gate commit-ready gha-ready merge-ready ship-commit-files remove-workspace-file-b64 \
         molecule-version molecule-test molecule-test-all \
         collection-roles collection-modules molecule-scenarios \
@@ -184,6 +185,7 @@ help:
 	@echo "  lint                  Run ruff linter"
 	@echo "  lint-files            Run ruff linter on FILES only"
 	@echo "  lint-markdown         Run locked markdownlint-cli2 (MARKDOWN_FILES, MARKDOWNLINT_CONFIG)"
+	@echo "  lint-docstrings       Run locked Ruff docstring rules on DOCSTRING_FILES"
 	@echo "  lint-fix              Run ruff with auto-fix"
 	@echo "  lint-fix-files        Run ruff auto-fix on FILES only"
 	@echo "  typecheck             Run mypy"
@@ -676,6 +678,11 @@ lint:
 lint-files:
 	@[ -n "$$FILES" ] || { echo "Usage: make lint-files FILES=path"; exit 1; }
 	@$(UV) run ruff check $$FILES
+
+lint-docstrings:
+	@if [ -z "$(DOCSTRING_FILES)" ]; then 		echo "Usage: make lint-docstrings DOCSTRING_FILES='src/general_ludd/module.py'"; 		exit 2; 	fi
+	@for file in $(DOCSTRING_FILES); do 		case "$$file" in 			src/general_ludd/*.py) ;; 			*) echo "ERROR: lint-docstrings only accepts tracked Python files under src/general_ludd: $$file"; exit 2 ;; 		esac; 		if [ ! -f "$$file" ]; then echo "ERROR: docstring source file not found: $$file"; exit 2; fi; 		if ! git ls-files --error-unmatch "$$file" >/dev/null 2>&1; then 			echo "ERROR: docstring source file is not tracked: $$file"; 			exit 2; 		fi; 	done
+	@$(UV) run ruff check --select D --config pyproject.toml $(DOCSTRING_FILES)
 
 lint-markdown:
 	@if [ -z "$(MARKDOWN_FILES)" ] || [ -z "$(MARKDOWNLINT_CONFIG)" ]; then \
@@ -4649,7 +4656,7 @@ _commit-lock-acquire:
 	  fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)" 2>/dev/null || { \
 	    echo "COMMIT-LOCK: another commit is in flight. Retry serially." >&2; exit 1; }
 
-git-commit: _gate-fresh-check _commit-lock-acquire _commit-lint-guard _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard _pre-commit-spec-quality-guard
+git-commit: _gate-fresh-check _commit-lock-acquire _commit-lint-guard _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard _pre-commit-spec-quality-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit MSG='message'"; exit 1; fi
 	@echo "Running pre-commit collection check..."
 	@$(MAKE) --no-print-directory collect-check
@@ -4660,7 +4667,7 @@ git-commit: _gate-fresh-check _commit-lock-acquire _commit-lint-guard _pre-commi
 	@$(MAKE) --no-print-directory check-gate-fresh
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
-commit-no-verify: _gate-fresh-check _commit-lock-acquire _commit-lint-guard _pre-commit-stage-guard _edit-commit-atomicity-guard
+commit-no-verify: _gate-fresh-check _commit-lock-acquire _commit-lint-guard _commit-docstring-guard _pre-commit-stage-guard _edit-commit-atomicity-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make commit-no-verify MSG='message'"; exit 1; fi
 	@$(MAKE) --no-print-directory collect-check
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
@@ -4681,7 +4688,7 @@ git-amend-msg: _gate-fresh-check _commit-lock-acquire
 	@$(MAKE) --no-print-directory collect-check
 	@git commit --amend --no-verify -m "$(MSG)"
 
-repo-commit: _commit-lock-acquire _commit-lint-guard
+repo-commit: _commit-lock-acquire _commit-lint-guard _commit-docstring-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make repo-commit MSG='message'"; exit 1; fi
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
@@ -4692,7 +4699,7 @@ repo-commit: _commit-lock-acquire _commit-lint-guard
 # Allowlisted from the local _gate-fresh-check (CI is the gate for
 # subagent-dispatched pushes; see test_commit_gate_freshness.py ALLOWLIST_NO_GATE).
 PUSH ?= 0
-ship-commit: _commit-lock-acquire _commit-lint-guard _pre-commit-stage-guard _stash-leak-guard _push-parameter-audit _pre-commit-stash-audit _edit-commit-atomicity-guard
+ship-commit: _commit-lock-acquire _commit-lint-guard _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _push-parameter-audit _pre-commit-stash-audit _edit-commit-atomicity-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make ship-commit MSG='message'"; exit 1; fi
 	@echo "Running pre-commit collection check..."
 	@$(MAKE) --no-print-directory collect-check
@@ -5627,6 +5634,10 @@ _commit-lint-guard:
 		echo '{"last_push_blocked":true,"block_reason":"_commit-lint-guard:lint-errors","epoch":'$$(date +%s)'}' > /tmp/gludd-push-state.json; \
 		exit 1; \
 	fi
+
+# AB031 - progressively require maintained docstring rules on touched source.
+_commit-docstring-guard:
+	@STAGED_SRC_PY=$$(git diff --cached --name-only --diff-filter=ACM | grep '^src/general_ludd/.*\.py$$' || true); 	if [ -z "$$STAGED_SRC_PY" ]; then 		echo "_commit-docstring-guard: SKIP - no staged production Python files."; 		exit 0; 	fi; 	if $(MAKE) --no-print-directory lint-docstrings DOCSTRING_FILES="$$STAGED_SRC_PY"; then 		echo "_commit-docstring-guard: PASS"; 	else 		echo "_commit-docstring-guard: FAIL - add or repair Google-style docstrings in staged source files."; 		exit 1; 	fi
 
 # AA029 — _pull-before-push-guard: git fetch before push, block if remote ahead.
 # Agent pushed to master without pulling first, causing "failed to push refs".
