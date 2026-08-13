@@ -12,6 +12,11 @@
       "behavior": "make test-files TESTFILES=tests/unit/test_make_target_contract.py PYTEST_ARGS=-q"
     },
     {
+      "name": "typecheck-scope",
+      "make_variables": ["FILES"],
+      "behavior": "make typecheck-scope FILES=scripts/status_snapshot.py"
+    },
+    {
       "name": "lint-markdown",
       "make_variables": ["MARKDOWN_FILES", "MARKDOWNLINT_CONFIG"],
       "behavior": "make lint-markdown MARKDOWN_FILES=docs/features/XMSS_BACKEND_SAFETY.md MARKDOWNLINT_CONFIG=config/markdownlint-cli2.jsonc"

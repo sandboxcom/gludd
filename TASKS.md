@@ -109,6 +109,8 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 - [ ] S83.67 - **Replace stale README release and coverage numbers with live gate evidence** across README.md and docs/features/README_GATE_EVIDENCE_HYGIENE.md: keep the phase table useful without claiming a historical beta tag, shard count, or percentage as current truth. | evidence: TestReadmeNoHardcodedMetrics reproduced the stale coverage claim, then the live README drift node passed under strict warnings; README and feature-doc Markdown lint, task integrity, and task ledger are green; GitHub Community #52616 practitioner evidence plus ZDD/resource boundaries are documented; collection and gate replay pending | priority: high | effort: XS | status: in_progress
 
+- [ ] S83.68 - **Keep scoped mypy output actionable without weakening type errors** across Makefile, the target registry/contract tests, and docs/features/MYPY_SCOPED_CONFIG_SIGNAL.md: retain strict checking while disabling the global unused-override diagnostic only for explicit file subsets. | evidence: repeated typecheck-scope runs reproduced the pyproject.toml unused section(s) note despite zero type errors, and the new structural contract was captured failing-first; all 6 Make-target contract tests are green under strict warnings, the documented scoped example now reports only Success with all type errors still fail-closed, the 68-target registry/help/duplicate/parity checks and Markdown/Ruff checks are green; mypy #11401 practitioner evidence plus ZDD/resource boundaries are documented; collection and gate replay pending | priority: high | effort: XS | status: in_progress
+
 ---
 
 ## Session 79 — Crypto Library Refactor + Behavioral Guardrails (2026-08-05, 86,428 tests)

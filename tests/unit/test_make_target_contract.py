@@ -20,6 +20,26 @@ def test_make_target_contract_is_valid() -> None:
     assert errors == [], "\n".join(errors)
 
 
+def test_typecheck_scope_keeps_errors_but_drops_global_unused_override_noise() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    command = next(
+        line for line in makefile.splitlines()
+        if "run mypy" in line and "$(FILES)" in line
+    )
+
+    assert "--no-warn-unused-configs" in command
+    assert "--no-incremental" in command
+    assert "|| true" not in command
+
+    contract = load_contract(ROOT / "config/make_target_contract.json")
+    entry = next(
+        item for item in contract["targets"]
+        if item["name"] == "typecheck-scope"
+    )
+    assert entry["make_variables"] == ["FILES"]
+    assert entry["behavior"] == "make typecheck-scope FILES=scripts/status_snapshot.py"
+
+
 def test_contract_documents_prompting_rules() -> None:
     guidance = (ROOT / "docs/MAKE_TARGET_CONTRACT.md").read_text(encoding="utf-8")
     agent_rules = (ROOT / "AGENTS.md").read_text(encoding="utf-8")

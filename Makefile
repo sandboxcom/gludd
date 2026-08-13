@@ -192,6 +192,7 @@ help:
 	@echo "  lint-fix              Run ruff with auto-fix"
 	@echo "  lint-fix-files        Run ruff auto-fix on FILES only"
 	@echo "  typecheck             Run mypy"
+	@echo "  typecheck-scope       Run strict mypy on explicit FILES without unrelated override noise"
 	@echo "  check-types           Flag Any usage in Python annotations (tight types)"
 	@echo "  check-types-baseline  Same scan, tolerating config/type_any_baseline.txt"
 	@echo "  healthcheck           Verify imports work"
@@ -4103,9 +4104,9 @@ typecheck-all:
 # Scoped mypy on explicit files (bypasses tree-wide blockers like graylog.py).
 # Mirrors pyproject.toml [tool.mypy] strict config (picked up automatically).
 # Usage: make typecheck-scope FILES='src/a.py src/b.py'
-typecheck-scope:
+typecheck-scope: ## Run strict mypy on explicit FILES without unrelated override noise.
 	@if [ -z "$(FILES)" ]; then echo "Usage: make typecheck-scope FILES='src/a.py src/b.py'"; exit 2; fi
-	@MYPYPATH=src $(UV) run mypy --explicit-package-bases --no-incremental $(FILES)
+	@MYPYPATH=src $(UV) run mypy --explicit-package-bases --no-incremental --no-warn-unused-configs $(FILES)
 # Ansible/YAML lint (#36), fail-on-error (no `|| true`).
 yaml-lint:
 	@ANSIBLE_COLLECTIONS_PATH="$(CURDIR)/collections" $(UV) run ansible-lint playbooks collections/ansible_collections/general_ludd/agent/roles
