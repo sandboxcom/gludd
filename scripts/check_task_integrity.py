@@ -22,6 +22,7 @@ _TASK_RE = re.compile(r"^[ \t]*[-*]\s*\[([ xX])\]\s+(.+)$")
 _HEADING_RE = re.compile(r"^[ \t]*(#{1,6})\s+(.+?)\s*$")
 _ARCHIVE_RE = re.compile(r"\barchive(?:d)?\b", re.IGNORECASE)
 _ID_RE = re.compile(r"^(\S+)")
+_EMBEDDED_TASK_RE = re.compile(r"(?:^|\s)[-*]\s*\[[ xX]\]\s+")
 _WAVE_LABEL_RE = re.compile(
     r"^(Wave\s*\d+|Waves?\s*\d+([-\u2013]\d+)?|wave\s*\d+|Session\s*\d+|"
     r"\d{4}-\d{2}-\d{2}\s+(?:waves?\s*\d+|session\s*\d+)|"
@@ -66,6 +67,12 @@ def audit_content(content: str) -> tuple[list[str], int]:
 
     violations: list[str] = []
     items = _active_items(content)
+
+    for lineno, _checked, body in items:
+        if _EMBEDDED_TASK_RE.search(body):
+            violations.append(
+                f"line {lineno}: multiple checklist items must use separate physical lines"
+            )
 
     for lineno, checked, body in items:
         if not checked:

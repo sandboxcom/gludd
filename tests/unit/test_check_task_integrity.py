@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import importlib.util
+import importlib
 from pathlib import Path
 from types import ModuleType
 
@@ -13,12 +13,8 @@ SCRIPT = Path(__file__).parents[2] / "scripts" / "check_task_integrity.py"
 
 @pytest.fixture
 def checker() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("check_task_integrity_under_test", SCRIPT)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    module = importlib.import_module("scripts.check_task_integrity")
+    return importlib.reload(module)
 
 
 def test_archived_session_snapshots_are_not_revalidated(checker: ModuleType) -> None:
@@ -115,6 +111,23 @@ def test_nested_archived_sections_remain_outside_audit(checker: ModuleType) -> N
 
     assert violations == []
     assert item_count == 1
+
+
+def test_concatenated_checklist_items_on_one_line_are_rejected(
+    checker: ModuleType,
+) -> None:
+    content = (
+        "## Active\n"
+        "- [ ] CUR.1 - first | priority: high | effort: S | status: pending "
+        "- [ ] CUR.2 - second | priority: low | effort: XS | status: pending\n"
+    )
+
+    violations, item_count = checker.audit_content(content)
+
+    assert item_count == 1
+    assert violations == [
+        "line 2: multiple checklist items must use separate physical lines"
+    ]
 
 
 def test_main_reports_missing_valid_and_invalid_ledgers(

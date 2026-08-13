@@ -17,6 +17,8 @@ The active-ledger grammar is:
 
 - checklist markers may use `-` or `*`, and checked state accepts `x` or
   `X`;
+- each checklist item occupies one physical line, and an embedded second marker
+  is rejected instead of being absorbed into the first item's metadata;
 - an `Archived` heading excludes its complete Markdown subtree until a heading
   at the same or higher level begins a new section;
 - active priorities are `critical`, `high`, `medium`, or `low`;
@@ -37,7 +39,8 @@ The checker never renders Markdown, follows links, imports ledger content, or
 executes embedded text. Diagnostics retain source line numbers so a failing gate
 is actionable without copying the ledger to temporary scripts. Archived content
 is ignored only by explicit heading scope; malformed current content continues
-to fail closed.
+to fail closed. A joined checklist marker is diagnosed at the source line before
+its trailing fields can be mistaken for metadata of the preceding item.
 
 ## Zero-downtime adoption
 
@@ -55,11 +58,19 @@ checklist realities: practitioners use checklists for goals other than reaching
 100% completion, and both lowercase and uppercase checked markers are used
 interchangeably. That supports an explicit active/archive scope and syntax-level
 normalization instead of treating every historical checkbox as a current task:
-[GitHub Community discussion #4261](https://github.com/orgs/community/discussions/4261).
+
+- [GitHub Community discussion #4261](https://github.com/orgs/community/discussions/4261)
+
+A GitHub Community task-list report documents content after a line boundary
+being assigned to the wrong checklist item, causing task data to be lost or
+misattributed. The ledger checker therefore treats physical item boundaries as
+data-integrity boundaries and rejects a second marker on the same line:
+
+- [GitHub Community discussion #148714](https://github.com/orgs/community/discussions/148714)
 
 ## Verification
 
 The focused suite covers active/archive transitions, nested archived sections,
-accepted vocabulary, evidence failures, duplicate identifiers, invalid values,
-and all CLI outcomes. It passes 15 tests under strict warnings with 94% branch
-coverage for `scripts/check_task_integrity.py`.
+accepted vocabulary, evidence failures, duplicate identifiers, joined physical
+rows, invalid values, and all CLI outcomes. It passes 16 tests under strict
+warnings with 94.48% branch coverage for `scripts/check_task_integrity.py`.
