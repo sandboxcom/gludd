@@ -25,13 +25,15 @@ Reload router:
 from __future__ import annotations
 
 import hmac
-from typing import ClassVar
+from typing import Any, ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
+
+from general_ludd.security.permissions import Capability, PermissionSpec
 
 _PSK = "unit-test-psk-endpoints"
 _SIGNING_ADMIN_TOKEN = "unit-test-signing-admin"
@@ -1691,6 +1693,24 @@ def _app_with_selective_auth(
     return app
 
 
+def _authorize_account_admin(app: FastAPI) -> None:
+    """Attach the capability required by the account router's inner guard."""
+    spec = PermissionSpec(
+        agent_type="test-admin",
+        capabilities=[
+            Capability(
+                resource="admin:account",
+                actions=["backup", "delete", "create", "cleanup"],
+            )
+        ],
+    )
+
+    @app.middleware("http")
+    async def _attach_auth_spec(request: Request, call_next: Any) -> Any:
+        request.state.auth_spec = spec
+        return await call_next(request)
+
+
 def _build_account_app(*, with_manager: bool = True) -> FastAPI:
     import general_ludd.routers.account as account_router
 
@@ -1700,6 +1720,7 @@ def _build_account_app(*, with_manager: bool = True) -> FastAPI:
     if with_manager:
         app.state._ephemeral_account_manager = _make_ephemeral_account_manager()
     account_router.register(app, {})
+    _authorize_account_admin(app)
     return app
 
 
@@ -1722,22 +1743,26 @@ class TestAccountEndpoints:
             app.state._session_factory = _make_async_session_factory(session)
             app.state._ephemeral_account_manager = _make_ephemeral_account_manager()
 
-        return _app_with_selective_auth(
+        app = _app_with_selective_auth(
             account_router.register,
             public_get_paths=self._ACCOUNT_PUBLIC_PATHS,
             setup_state=_setup,
         )
+        _authorize_account_admin(app)
+        return app
 
     # ---- POST /api/account/backup ----
 
     def test_backup_happy_path(self) -> None:
         import general_ludd.routers.account as account_router
 
-        account_router._export_user_data = AsyncMock(
-            return_value={"user": "data", "todos": 3}
-        )
-        client = TestClient(_build_account_app())
-        resp = client.post("/api/account/backup", json={"user_id": "user-1"})
+        with patch.object(
+            account_router,
+            "_export_user_data",
+            new=AsyncMock(return_value={"user": "data", "todos": 3}),
+        ):
+            client = TestClient(_build_account_app())
+            resp = client.post("/api/account/backup", json={"user_id": "user-1"})
         assert resp.status_code == 200
         assert resp.json()["user"] == "data"
 
@@ -1751,15 +1776,17 @@ class TestAccountEndpoints:
     def test_delete_happy_path(self) -> None:
         import general_ludd.routers.account as account_router
 
-        account_router._delete_user_data = AsyncMock(
-            return_value={"deleted": 3, "todos": 2, "sessions": 1}
-        )
-        client = TestClient(_build_account_app())
-        resp = client.request(
-            "DELETE",
-            "/api/account",
-            json={"user_id": "user-1", "confirm": True},
-        )
+        with patch.object(
+            account_router,
+            "_delete_user_data",
+            new=AsyncMock(return_value={"deleted": 3, "todos": 2, "sessions": 1}),
+        ):
+            client = TestClient(_build_account_app())
+            resp = client.request(
+                "DELETE",
+                "/api/account",
+                json={"user_id": "user-1", "confirm": True},
+            )
         assert resp.status_code == 200
         assert resp.json()["deleted"] == 3
 
@@ -1784,14 +1811,20 @@ class TestAccountEndpoints:
     def test_policy_happy_path(self) -> None:
         import general_ludd.routers.account as account_router
 
-        account_router.get_policy_text = MagicMock(
-            return_value="Retain logs for 30 days."
-        )
-        account_router.build_deletion_notice = MagicMock(
-            return_value="Notice: deletion after 30d."
-        )
-        client = TestClient(_build_account_app())
-        resp = client.get("/api/account/policy", params={"service": "aws"})
+        with (
+            patch.object(
+                account_router,
+                "get_policy_text",
+                return_value="Retain logs for 30 days.",
+            ),
+            patch.object(
+                account_router,
+                "build_deletion_notice",
+                return_value="Notice: deletion after 30d.",
+            ),
+        ):
+            client = TestClient(_build_account_app())
+            resp = client.get("/api/account/policy", params={"service": "aws"})
         assert resp.status_code == 200
         data = resp.json()
         assert data["service"] == "aws"
@@ -1801,14 +1834,18 @@ class TestAccountEndpoints:
     def test_policy_unknown_service_returns_422(self) -> None:
         import general_ludd.routers.account as account_router
 
-        account_router.get_policy_text = MagicMock(
-            side_effect=ValueError("unknown service")
-        )
-        account_router.build_deletion_notice = MagicMock()
-        client = TestClient(_build_account_app())
-        resp = client.get(
-            "/api/account/policy", params={"service": "unknown-svc"}
-        )
+        with (
+            patch.object(
+                account_router,
+                "get_policy_text",
+                side_effect=ValueError("unknown service"),
+            ),
+            patch.object(account_router, "build_deletion_notice"),
+        ):
+            client = TestClient(_build_account_app())
+            resp = client.get(
+                "/api/account/policy", params={"service": "unknown-svc"}
+            )
         assert resp.status_code == 422
 
     # ---- POST /api/account/create ----
@@ -1848,10 +1885,16 @@ class TestAccountEndpoints:
     def test_public_policy_no_auth_returns_200(self) -> None:
         import general_ludd.routers.account as account_router
 
-        account_router.get_policy_text = MagicMock(return_value="policy text")
-        account_router.build_deletion_notice = MagicMock(return_value="notice")
-        client = TestClient(self._auth_app())
-        resp = client.get("/api/account/policy", params={"service": "aws"})
+        with (
+            patch.object(account_router, "get_policy_text", return_value="policy text"),
+            patch.object(
+                account_router,
+                "build_deletion_notice",
+                return_value="notice",
+            ),
+        ):
+            client = TestClient(self._auth_app())
+            resp = client.get("/api/account/policy", params={"service": "aws"})
         assert resp.status_code == 200
 
     @pytest.mark.parametrize("method,path,body", _ACCOUNT_WRITE_CASES)
@@ -1860,10 +1903,20 @@ class TestAccountEndpoints:
     ) -> None:
         import general_ludd.routers.account as account_router
 
-        account_router._export_user_data = AsyncMock(return_value={"ok": True})
-        account_router._delete_user_data = AsyncMock(return_value={"ok": True})
-        client = TestClient(self._auth_app())
-        resp = client.request(method, path, json=body)
+        with (
+            patch.object(
+                account_router,
+                "_export_user_data",
+                new=AsyncMock(return_value={"ok": True}),
+            ),
+            patch.object(
+                account_router,
+                "_delete_user_data",
+                new=AsyncMock(return_value={"ok": True}),
+            ),
+        ):
+            client = TestClient(self._auth_app())
+            resp = client.request(method, path, json=body)
         assert resp.status_code == 401
 
     @pytest.mark.parametrize("method,path,body", _ACCOUNT_WRITE_CASES)
@@ -1872,15 +1925,25 @@ class TestAccountEndpoints:
     ) -> None:
         import general_ludd.routers.account as account_router
 
-        account_router._export_user_data = AsyncMock(return_value={"ok": True})
-        account_router._delete_user_data = AsyncMock(return_value={"ok": True})
-        client = TestClient(self._auth_app())
-        resp = client.request(
-            method,
-            path,
-            json=body,
-            headers={"Authorization": f"Bearer {_PSK}"},
-        )
+        with (
+            patch.object(
+                account_router,
+                "_export_user_data",
+                new=AsyncMock(return_value={"ok": True}),
+            ),
+            patch.object(
+                account_router,
+                "_delete_user_data",
+                new=AsyncMock(return_value={"ok": True}),
+            ),
+        ):
+            client = TestClient(self._auth_app())
+            resp = client.request(
+                method,
+                path,
+                json=body,
+                headers={"Authorization": f"Bearer {_PSK}"},
+            )
         assert resp.status_code == 200
 
 
