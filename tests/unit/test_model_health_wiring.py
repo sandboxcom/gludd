@@ -20,80 +20,80 @@ class TestDaemonModelHealthEndpoint:
         from general_ludd.daemon import create_daemon_app
 
         app = create_daemon_app()
-        client = TestClient(app)
-        resp = client.get("/admin/models/health")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "health" in data
+        with TestClient(app) as client:
+            resp = client.get("/admin/models/health")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert "health" in data
 
     def test_get_models_health_with_profiles(self) -> None:
         from general_ludd.daemon import create_daemon_app
 
         app = create_daemon_app()
-        client = TestClient(app)
-        add_resp = client.post("/admin/models", json={
-            "model_id": "test-health-1",
-            "provider": "openai",
-            "model": "gpt-4",
-            "enabled": True,
-            "api_metered": True,
-            "cost_per_input_token": 0.00003,
-            "cost_per_output_token": 0.00006,
-        })
-        assert add_resp.status_code == 200
-        resp = client.get("/admin/models/health")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert len(data["health"]) >= 1
-        health = data["health"][0]
-        assert health["model_id"] == "test-health-1"
-        assert health["healthy"] is True
+        with TestClient(app) as client:
+            add_resp = client.post("/admin/models", json={
+                "model_id": "test-health-1",
+                "provider": "openai",
+                "model": "gpt-4",
+                "enabled": True,
+                "api_metered": True,
+                "cost_per_input_token": 0.00003,
+                "cost_per_output_token": 0.00006,
+            })
+            assert add_resp.status_code == 200
+            resp = client.get("/admin/models/health")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert len(data["health"]) >= 1
+            health = data["health"][0]
+            assert health["model_id"] == "test-health-1"
+            assert health["healthy"] is True
 
     def test_get_models_health_unhealthy_model(self) -> None:
         from general_ludd.daemon import create_daemon_app
 
         app = create_daemon_app()
-        client = TestClient(app)
-        add_resp = client.post("/admin/models", json={
-            "model_id": "sick-model",
-            "provider": "openai",
-            "model": "gpt-4",
-            "enabled": True,
-            "api_metered": True,
-            "cost_per_input_token": 0.00003,
-            "cost_per_output_token": 0.00006,
-        })
-        assert add_resp.status_code == 200
-        tracker = app.state._health_tracker
-        for _ in range(3):
-            tracker.record_event(TimeoutEvent(
-                model_id="sick-model",
-                kind=TimeoutKind.READ_TIMEOUT,
-                timestamp=time.monotonic(),
-                duration_s=30.0,
-            ))
-        resp = client.get("/admin/models/health")
-        assert resp.status_code == 200
-        data = resp.json()
-        sick = next(h for h in data["health"] if h["model_id"] == "sick-model")
-        assert sick["healthy"] is False
-        assert sick["consecutive_failures"] == 3
+        with TestClient(app) as client:
+            add_resp = client.post("/admin/models", json={
+                "model_id": "sick-model",
+                "provider": "openai",
+                "model": "gpt-4",
+                "enabled": True,
+                "api_metered": True,
+                "cost_per_input_token": 0.00003,
+                "cost_per_output_token": 0.00006,
+            })
+            assert add_resp.status_code == 200
+            tracker = app.state._health_tracker
+            for _ in range(3):
+                tracker.record_event(TimeoutEvent(
+                    model_id="sick-model",
+                    kind=TimeoutKind.READ_TIMEOUT,
+                    timestamp=time.monotonic(),
+                    duration_s=30.0,
+                ))
+            resp = client.get("/admin/models/health")
+            assert resp.status_code == 200
+            data = resp.json()
+            sick = next(h for h in data["health"] if h["model_id"] == "sick-model")
+            assert sick["healthy"] is False
+            assert sick["consecutive_failures"] == 3
 
     def test_add_metered_model_without_pricing_is_rejected(self) -> None:
         from general_ludd.daemon import create_daemon_app
 
-        client = TestClient(create_daemon_app())
-        resp = client.post(
-            "/admin/models",
-            json={
-                "model_id": "missing-pricing",
-                "provider": "openai",
-                "model": "gpt-4",
-                "api_metered": True,
-            },
-        )
-        assert resp.status_code == 422
-        assert "non-zero cost" in resp.json()["detail"]
+        with TestClient(create_daemon_app()) as client:
+            resp = client.post(
+                "/admin/models",
+                json={
+                    "model_id": "missing-pricing",
+                    "provider": "openai",
+                    "model": "gpt-4",
+                    "api_metered": True,
+                },
+            )
+            assert resp.status_code == 422
+            assert "non-zero cost" in resp.json()["detail"]
 
 
 class TestRouterHealthAwareRouting:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import datetime
 import json
 import logging
@@ -12,6 +13,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
+from types import TracebackType
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, cast
 
 import tenacity
@@ -238,6 +240,7 @@ class PayloadLimitError(Exception):
         source: PayloadSource,
         count_source: str,
     ) -> None:
+        """Create a bounded diagnostic without retaining rejected payload data."""
         self.profile_id = profile_id
         self.stage = stage
         self.dimension = dimension
@@ -274,6 +277,7 @@ class CallCancelledError(Exception):
     """
 
     def __init__(self, profile_id: str) -> None:
+        """Create a cancellation carrying only the affected profile identifier."""
         self.profile_id = profile_id
         super().__init__(f"call to profile={profile_id!r} cancelled before provider invocation")
 
@@ -434,6 +438,8 @@ class _RequestPayloadBudget:
 
 
 class ModelProfile(BaseModel):
+    """Validated provider, budget, payload, and fallback configuration."""
+
     model_profile_id: str
     role_names: list[str] = Field(default_factory=list)
     provider: str = "openai"
@@ -589,6 +595,8 @@ class ModelProfile(BaseModel):
 
 @dataclass
 class ModelResponse:
+    """Normalized provider response with usage, cost, and tool-call metadata."""
+
     content: str
     usage_metadata: dict[str, object] = field(default_factory=dict)
     cost_estimate: float = 0.0
@@ -647,7 +655,9 @@ def _redact_url_in_exception(exc: BaseException, url: str) -> None:
 
 
 def _enrich_all_down_message(exc: BaseException, attempts: list[dict[str, str]]) -> None:
-    """Rewrite ``exc``'s message in place to enumerate every attempted
+    """Enumerate attempted providers in an exception message.
+
+    Rewrite ``exc``'s message in place to enumerate every attempted
     provider profile and why each one failed — WITHOUT changing the
     exception's type. Callers that pattern-match on the concrete exception
     type (e.g. ``httpx.HTTPStatusError``) keep seeing exactly that type; only
@@ -830,6 +840,8 @@ class _LimitedChatModel:
 
 
 class ModelGateway:
+    """Route bounded model requests across providers with fail-closed controls."""
+
     def __init__(
         self,
         profiles: list[ModelProfile] | dict[str, ModelProfile] | None = None,
@@ -853,6 +865,7 @@ class ModelGateway:
         stream_wire_byte_counter: Callable[[object], int] | None = None,
         billing_clock: Callable[[], datetime.datetime] | None = None,
     ) -> None:
+        """Create a gateway and assume ownership of any injected response cache."""
         self._profiles: dict[str, ModelProfile] = {}
         if profiles:
             src = profiles.values() if isinstance(profiles, dict) else profiles
@@ -908,6 +921,24 @@ class ModelGateway:
         self._cache_key_locks: dict[str, threading.Lock] = {}
         self._cache_key_lock_refs: dict[str, int] = {}
         self._cache_key_locks_guard = threading.Lock()
+
+    def __enter__(self) -> ModelGateway:
+        """Return this gateway for deterministic context-managed ownership."""
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        """Release owned resources when leaving a managed gateway scope."""
+        self.close()
+
+    def __del__(self) -> None:
+        """Best-effort cleanup when a caller drops an unmanaged gateway."""
+        with contextlib.suppress(Exception):
+            self.close()
 
     def close(self) -> None:
         """Release resources owned by the gateway exactly once."""
@@ -971,6 +1002,7 @@ class ModelGateway:
                 self._cache_key_lock_refs[cache_key] = count
 
     def get_profile(self, profile_id: str) -> ModelProfile | None:
+        """Return one configured profile, or None when it is unknown."""
         return self._profiles.get(profile_id)
 
     @staticmethod
@@ -1473,6 +1505,7 @@ class ModelGateway:
         )
 
     def is_available(self, profile_id: str) -> bool:
+        """Return whether a known model profile is enabled for routing."""
         profile = self._profiles.get(profile_id)
         return profile is not None and profile.enabled
 
@@ -1485,6 +1518,7 @@ class ModelGateway:
         messages: list[dict[str, str]] | None = None,
         requested_max_output_tokens: int | None = None,
     ) -> bool:
+        """Fail closed unless the server-estimated call fits every budget."""
         profile = self._profiles.get(profile_id)
         if profile is None:
             return False
@@ -1571,6 +1605,7 @@ class ModelGateway:
         return approx_input_tokens * profile.cost_per_input_token + approx_output_tokens * profile.cost_per_output_token
 
     def list_profiles(self) -> list[ModelProfile]:
+        """Return the currently configured model profiles."""
         return list(self._profiles.values())
 
     def call_model(
@@ -1586,6 +1621,7 @@ class ModelGateway:
         _request_payload_budget: _RequestPayloadBudget | None = None,
         **kwargs: Any,
     ) -> ModelResponse:
+        """Invoke one profile after enforcing cancellation, payload, and budget limits."""
         if cancellation_event is not None and cancellation_event.is_set():
             raise CallCancelledError(profile_id)
 
@@ -3023,6 +3059,7 @@ class ModelGateway:
         cancellation_event: threading.Event | None = None,
         **kwargs: Any,
     ) -> Any:
+        """Call a profile through the bounded asynchronous retry policy."""
         if cancellation_event is not None and cancellation_event.is_set():
             raise CallCancelledError(profile_id)
         coro = self._call_model_with_retry_async(
@@ -3369,7 +3406,9 @@ class ModelGateway:
         messages: list[dict[str, str]],
         **kwargs: Any,
     ) -> ModelResponse:
-        """The bare fallback-exhaustion loop used to call call_model(fb_id) with no
+        """Call one fallback under its bounded concurrency semaphore.
+
+        The bare fallback-exhaustion loop used to call call_model(fb_id) with no
         is_healthy gate and never recorded the fallback's success or failure, so
         the breaker never tracked fallback health (Fix 3). call_model already
         records both failures (via record_timeout_on_failure on exception) AND
@@ -3436,7 +3475,9 @@ class ModelGateway:
         from_error: BaseException | None = None,
         **kwargs: Any,
     ) -> tuple[ModelResponse | None, BaseException | None, list[dict[str, str]]]:
-        """Try fallbacks in order, CASCADING into each attempted fallback's own
+        """Walk the bounded, cycle-safe fallback graph in configured order.
+
+        Try fallbacks in order, CASCADING into each attempted fallback's own
         configured ``fallback_profiles`` when it also fails, so a 3+ profile
         chain (primary -> secondary -> tertiary -> ...) is walked to full
         exhaustion rather than stopping after one hop. Skips circuit-open
@@ -3539,6 +3580,7 @@ class ModelGateway:
         profile_id: str,
         exc: BaseException,
     ) -> None:
+        """Classify a provider failure and record it in the health tracker."""
         import time as _time
 
         from general_ludd.models.timeout_detector import (
@@ -3565,6 +3607,7 @@ class ModelGateway:
         messages: list[dict[str, str]],
         **kwargs: Any,
     ) -> ModelResponse:
+        """Resolve a strict role mapping and call its healthy model profile."""
         if self._router is None:
             raise ValueError("No router configured")
         profile_id = self._router.resolve_role(role_name, strict=True)
@@ -3585,6 +3628,7 @@ class ModelGateway:
         messages: list[dict[str, str]],
         **kwargs: Any,
     ) -> ModelResponse:
+        """Resolve a configured pattern and call its healthy model profile."""
         if self._router is None:
             raise ValueError("No router configured")
         profile_id = self._router.resolve_pattern(pattern)
@@ -3630,6 +3674,7 @@ class ModelGateway:
         budget_remaining: float = float("inf"),
         **kwargs: Any,
     ) -> ModelResponse:
+        """Call a primary profile and walk its bounded fallback graph on failure."""
         profile = self._profiles.get(profile_id)
         fallback_ids: list[str] = list(fallback_profiles or [])
         if profile is None:
@@ -3781,6 +3826,7 @@ class ModelGateway:
         enabled: bool = True,
         **kwargs: Any,
     ) -> ModelProfile:
+        """Validate, register, and broadcast one model profile."""
         profile = ModelProfile(
             model_profile_id=model_id,
             provider=provider,
@@ -3802,6 +3848,7 @@ class ModelGateway:
         return profile
 
     def remove_profile(self, model_id: str) -> None:
+        """Remove and broadcast one model profile identifier."""
         self._profiles.pop(model_id, None)
         self._notify_profile_change(
             event=ModelRemovedEvent(model_id=model_id),

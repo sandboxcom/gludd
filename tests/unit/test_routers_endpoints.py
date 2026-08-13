@@ -438,9 +438,43 @@ class TestModelsEndpoints:
             app = FastAPI()
             app.state._model_gateway = None
             models_router.register(app, {})
-            client = TestClient(app)
-            resp = client.post("/admin/models/call", json={"prompt": "Hello"})
+            with TestClient(app) as client:
+                resp = client.post("/admin/models/call", json={"prompt": "Hello"})
             assert resp.status_code == 503
+
+        def test_fallback_gateway_closes_on_app_shutdown(self) -> None:
+            import general_ludd.routers.models as models_router
+
+            _mock_models_subsystems(models_router)
+            cache = MagicMock()
+            app = FastAPI()
+            app.state._model_gateway = None
+            with patch.object(
+                models_router,
+                "ModelResponseCache",
+                return_value=cache,
+            ):
+                models_router.register(app, {})
+                with TestClient(app) as client:
+                    resp = client.post("/admin/models/call", json={"prompt": "Hello"})
+                    assert resp.status_code == 503
+
+            cache.close.assert_called_once()
+
+        def test_injected_gateway_is_not_closed_by_router_shutdown(self) -> None:
+            import general_ludd.routers.models as models_router
+
+            _mock_models_subsystems(models_router)
+            gateway = MagicMock()
+            gateway.list_profiles.return_value = []
+            app = FastAPI()
+            app.state._model_gateway = gateway
+            models_router.register(app, {})
+            with TestClient(app) as client:
+                resp = client.get("/admin/models")
+                assert resp.status_code == 200
+
+            gateway.close.assert_not_called()
 
     class TestModelWorkflow:
         def test_workflow_with_messages_returns_result(self, models_client: TestClient) -> None:

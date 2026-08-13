@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import contextlib
 import datetime
+import gc
 import threading
 import time
 from collections.abc import Iterator
@@ -1997,5 +1998,22 @@ class TestGatewayResourceOwnership:
 
         gateway.close()
         gateway.close()
+
+        cache.close.assert_called_once()
+
+    def test_context_manager_releases_injected_response_cache(self) -> None:
+        cache = MagicMock()
+
+        with ModelGateway(response_cache=cache) as gateway:
+            assert gateway.get_profile("missing") is None
+
+        cache.close.assert_called_once()
+
+    def test_garbage_collection_releases_injected_response_cache(self) -> None:
+        cache = MagicMock()
+        gateway = ModelGateway(response_cache=cache)
+
+        del gateway
+        gc.collect()
 
         cache.close.assert_called_once()

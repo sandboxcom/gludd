@@ -1,3 +1,5 @@
+"""Administrative model, inference, and code-intelligence HTTP routes."""
+
 from __future__ import annotations
 
 import hashlib
@@ -145,6 +147,8 @@ class _ChatMessage(BaseModel):
 
 
 class ChatStreamRequest(BaseModel):
+    """Validated request body for the server-sent-event chat endpoint."""
+
     messages: list[_ChatMessage] = Field(min_length=1, max_length=256)
     model_profile_id: str = "default"
     max_tokens: int | None = Field(default=None, ge=1, le=1_000_000)
@@ -226,7 +230,35 @@ def _can_run_local(inventory: HardwareInventory | None, model_name: str) -> bool
     return gpu_vram >= required_vram or extra_ram >= required_vram
 
 
+def _track_router_owned_gateway(
+    app: FastAPI,
+    gateway: ModelGateway,
+) -> ModelGateway:
+    """Record a fallback gateway for deterministic application shutdown."""
+    owned: list[ModelGateway] = getattr(
+        app.state,
+        "_models_router_owned_gateways",
+        [],
+    )
+    owned.append(gateway)
+    app.state._models_router_owned_gateways = owned
+    app.state._model_gateway = gateway
+    return gateway
+
+
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+    """Register model routes and their application-owned resource lifecycle."""
+    if not getattr(app.state, "_models_router_shutdown_registered", False):
+        app.state._models_router_shutdown_registered = True
+        app.state._models_router_owned_gateways = []
+
+        async def _close_router_owned_gateways() -> None:
+            owned: list[ModelGateway] = app.state._models_router_owned_gateways
+            app.state._models_router_owned_gateways = []
+            for gateway in reversed(owned):
+                gateway.close()
+
+        app.router.add_event_handler("shutdown", _close_router_owned_gateways)
 
     if not hasattr(app.state, "_local_inference_manager"):
         app.state._local_inference_manager = LocalInferenceManager(
@@ -274,6 +306,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 health_tracker=app.state._health_tracker,
                 metrics_collector=metrics_collector,
             )
+            _track_router_owned_gateway(app, app.state._model_gateway)
         gateway: ModelGateway = app.state._model_gateway
         try:
             profile = gateway.add_profile(
@@ -707,7 +740,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 health_tracker=app.state._health_tracker,
                 metrics_collector=metrics_collector,
             )
-            app.state._model_gateway = gateway
+            _track_router_owned_gateway(app, gateway)
 
         # Adaptive routing if requested
         resolved_profile: str | None = model_profile_id
@@ -868,7 +901,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 health_tracker=app.state._health_tracker,
                 metrics_collector=metrics_collector,
             )
-            app.state._model_gateway = gateway
+            _track_router_owned_gateway(app, gateway)
 
         # call_model is synchronous on ModelGateway; LangGraphGateway invokes
         # call_model_fn as `await fn(profile_id=..., messages=...)`, so wrap the
@@ -966,7 +999,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 health_tracker=app.state._health_tracker,
                 metrics_collector=metrics_collector,
             )
-            app.state._model_gateway = gateway
+            _track_router_owned_gateway(app, gateway)
 
         available_profiles = gateway.list_profiles()
         if not available_profiles:
