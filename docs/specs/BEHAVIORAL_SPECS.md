@@ -268,10 +268,10 @@
 **Enforcement:** `make check-ratchet-staleness` target + `scripts/check_ratchet_staleness.py`
 **Behavior:** Ratchet entries sitting unaddressed for months become permanent noise. Each entry in `config/ratchet.yml` carries a `since:` field. Entries >30 days old without fix attempts are STALE. Non-zero exit if any entry exceeds threshold. Agent must fix the failure or document why it remains.
 
-### AB033 — dead-code-baseline-auto-refresh
+### AB033 — dead-code-baseline-read-only-integrity
 **Category:** Dead Code
-**Enforcement:** Makefile `_dead-code-baseline-refresh`
-**Behavior:** Dead-code baseline drifted stale: reported 1073 symbols when actual count was 0. The auto-refresh guard runs before `make check-dead-code`: if baseline mtime >24h old, regenerates it first. Prevents false-positive dead code reports from stale baselines.
+**Enforcement:** Makefile `_dead-code-baseline-refresh` + `scripts/check_dead_code.py --check-baseline-current`
+**Behavior:** A clean gate never mutates or auto-accepts tracked dead-code policy. Before the normal dead-code check, the guard computes the current exact symbol set and compares it with the reviewed baseline without writing. Added or stale entries are printed and fail closed. An operator must review the drift and explicitly run `make dead-code-baseline`; the following clean gate then proves exact parity.
 
 ### AB034 — commit-message-format-enforcement
 **Category:** Commit Discipline
@@ -5516,7 +5516,9 @@ When you discover a better way to work, codify it in AGENTS.md, a hook/plugin, a
 
 # Group L — Learning Discipline (L01–L100)
 
-> Theme: Every behavioral failure must produce a SPEC within the same session.
+## Theme
+
+> Every behavioral failure must produce a SPEC within the same session.
 > Every spec must have BLOCKING enforcement. TDD: spec → test → enforcement → verify.
 
 ---

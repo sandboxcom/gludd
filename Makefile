@@ -1151,18 +1151,10 @@ feature-spec-inventory:
 check-ratchet-staleness:
 	@$(UV) run python3 scripts/check_ratchet_staleness.py
 
-# AB033 — _dead-code-baseline-refresh: auto-regenerates dead-code baseline if
-# older than 24h before running check-dead-code. Prevents false positives.
+# AB033 — _dead-code-baseline-refresh: verify exact baseline parity without
+# mutating tracked policy. Baseline updates require an explicit reviewed target.
 _dead-code-baseline-refresh:
-	@if [ -f config/dead_code_baseline.txt ]; then \
-		NOW=$$(date +%s); \
-		MTIME=$$(stat -f %m config/dead_code_baseline.txt 2>/dev/null || echo 0); \
-		AGE=$$(( NOW - MTIME )); \
-		if [ "$$AGE" -gt 86400 ]; then \
-			echo "DEAD-CODE-BASELINE: stale ($$(( AGE / 3600 ))h old) — auto-regenerating..."; \
-			$(MAKE) --no-print-directory dead-code-baseline > /dev/null 2>&1 || true; \
-		fi; \
-	fi
+	@$(UV) run python scripts/check_dead_code.py --check-baseline-current
 	@echo "_dead-code-baseline-refresh: PASS"
 
 # AB034 — _commit-msg-format-guard: validates commit messages are ≥20 chars

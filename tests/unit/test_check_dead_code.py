@@ -255,6 +255,44 @@ class TestDirectCheckerContracts:
         assert CHECKER.main(["--repo-root", str(repo), "--quiet"]) == 0
         assert "0 new dead symbol" in capsys.readouterr().out
 
+    def test_baseline_read_and_write_modes_are_mutually_exclusive(self, tmp_path: Path):
+        repo = self._repo(tmp_path)
+        with pytest.raises(SystemExit) as raised:
+            CHECKER.main([
+                "--repo-root",
+                str(repo),
+                "--check-baseline-current",
+                "--update-baseline",
+            ])
+        assert raised.value.code == 2
+        assert not (repo / "config" / "dead_code_baseline.txt").exists()
+
+    def test_check_baseline_current_is_read_only_and_detects_drift(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        repo = self._repo(tmp_path)
+        baseline = repo / "config" / "dead_code_baseline.txt"
+
+        assert CHECKER.main(["--repo-root", str(repo), "--check-baseline-current"]) == 1
+        assert not baseline.exists()
+        assert "added=1" in capsys.readouterr().out
+
+        assert CHECKER.main(["--repo-root", str(repo), "--update-baseline"]) == 0
+        capsys.readouterr()
+        original = baseline.read_bytes()
+        assert CHECKER.main(["--repo-root", str(repo), "--check-baseline-current"]) == 0
+        assert baseline.read_bytes() == original
+        assert "current" in capsys.readouterr().out
+
+        library = repo / "src" / "general_ludd" / "library.py"
+        library.write_text(library.read_text().replace(
+            '__all__: tuple[str, ...] = ("exported_api",)',
+            '__all__: tuple[str, ...] = ("exported_api", "test_only_helper")',
+        ))
+        assert CHECKER.main(["--repo-root", str(repo), "--check-baseline-current"]) == 1
+        assert baseline.read_bytes() == original
+        assert "stale=1" in capsys.readouterr().out
+
     def test_static_export_parser_is_conservative(self, tmp_path: Path):
         static_file = tmp_path / "static.py"
         static_file.write_text('__all__: tuple[str, ...] = ("public",)\n')

@@ -1888,14 +1888,16 @@ class TestAB033DeadCodeBaselineRefresh:
     def test_guard_exists(self):
         assert guard_exists_in_makefile("_dead-code-baseline-refresh"), "AB033: _dead-code-baseline-refresh missing"
 
-    def test_guard_checks_mtime(self):
+    def test_guard_is_read_only_and_fail_closed(self):
         content = makefile_text()
         idx = content.find("_dead-code-baseline-refresh:")
         assert idx != -1
-        block = content[idx : idx + 500]
-        assert "MTIME" in block or "stat" in block or "mtime" in block.lower(), (
-            "AB033: _dead-code-baseline-refresh does not check mtime"
-        )
+        block = content[idx : content.find("# AB034", idx)]
+        assert "--check-baseline-current" in block
+        assert "$(MAKE) --no-print-directory dead-code-baseline" not in block
+        assert "--update-baseline" not in block
+        assert "|| true" not in block
+        assert "> /dev/null" not in block
 
 
 class TestAB034CommitMsgFormatGuard:

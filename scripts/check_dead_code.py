@@ -8,11 +8,11 @@ Classes/functions referenced ONLY in test files are flagged as dead unless the
 defining module explicitly registers them in a static ``__all__`` public API.
 
 Usage:
-    python3 scripts/check_dead_code.py [--json] [--quiet]
+    python3 scripts/check_dead_code.py [--json] [--quiet] [--check-baseline-current]
 
 Exit codes:
     0   No dead code found.
-    1   Dead code found.
+    1   Dead code or baseline drift found.
     2   Usage / internal error.
 """
 
@@ -356,10 +356,16 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Baseline allowlist file (default: config/dead_code_baseline.txt). "
         "Symbols in this file are excluded from the dead-code count.",
     )
-    parser.add_argument(
+    baseline_modes = parser.add_mutually_exclusive_group()
+    baseline_modes.add_argument(
         "--update-baseline",
         action="store_true",
         help="Write current dead symbols to the baseline file and exit 0.",
+    )
+    baseline_modes.add_argument(
+        "--check-baseline-current",
+        action="store_true",
+        help="Compare the tracked baseline with current dead symbols without writing.",
     )
     return parser
 
@@ -386,6 +392,21 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     baseline = _load_baseline(baseline_path)
+    if args.check_baseline_current:
+        current = {_baseline_key(item.symbol) for item in result.dead}
+        added = sorted(current - baseline)
+        stale = sorted(baseline - current)
+        if added or stale:
+            print(f"dead-code baseline drift: added={len(added)} stale={len(stale)}")
+            for entry in added:
+                print(f"  ADD {entry}")
+            for entry in stale:
+                print(f"  STALE {entry}")
+            print("Review the drift, then run: make dead-code-baseline")
+            return 1
+        print(f"dead-code baseline current: {len(current)} entries")
+        return 0
+
     new_dead = [d for d in result.dead if _baseline_key(d.symbol) not in baseline]
     baselined = len(result.dead) - len(new_dead)
 
