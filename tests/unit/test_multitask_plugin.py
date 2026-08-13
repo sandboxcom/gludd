@@ -304,9 +304,7 @@ class TestTasksHasUnchecked:
 
 
 class TestPerMessageEnforcement:
-    """Per-message dispatch-count enforcement added 2026-07-12:
-    tool.execute.before blocks Edit/Write/Bash when current message
-    has <10 dispatches AND pending work exists."""
+    """An explicit minimum gates mutations while pending work exists."""
 
     def test_state_interface_includes_last_tool_call_ts(self):
         src = _plugin_source()

@@ -474,7 +474,13 @@ class TestPluginStructure:
     )
     def test_plugin_has_disable_env_var(self, plugin_file):
         content = plugin_contract_source(plugin_file)
-        # Multiple different patterns for disable checks
+        if plugin_file.name == "enforce-no-suppressions.ts":
+            assert not re.search(r"GLUDD_\w+_ENFORCE", content), (
+                "the suppression guard is intentionally non-disableable"
+            )
+            return
+
+        # Multiple different patterns for disable checks.
         has_disable = bool(
             re.search(r"GLUDD_\w+_ENFORCE\s*(!==|===|==)\s*['\"]0['\"]", content)
             or re.search(r"ENFORCE\s*=\s*process\.env\.['\"\w]+\s*!==\s*['\"]0['\"]", content)

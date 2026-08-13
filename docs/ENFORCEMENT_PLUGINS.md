@@ -332,6 +332,13 @@ work, emergency hotfix), these mechanisms bypass enforcement.
 | enforce-verified-claims | `GLUDD_VERIFIED_CLAIMS_ENFORCE=0` |
 | enforce-no-suppressions | (none — hard-coded ON) |
 | enforce-multitask | `GLUDD_MULTITASK_FLOOR_ENFORCE=0` |
+
+The non-disableable suppression exception is grounded in practitioner reports:
+Pyflakes issue [#471](https://github.com/PyCQA/pyflakes/issues/471) describes
+file-level `noqa` blanket suppression hiding every diagnostic, while Ruff issue
+[#1149](https://github.com/astral-sh/ruff/issues/1149) records the tradeoff
+between per-line suppression and auditable baselines. Gludd therefore permits
+only narrow data-only paths, not a process-wide escape hatch.
 | enforce-no-wait | `GLUDD_NO_WAIT_ENFORCE=0` |
 | enforce-deletion-gate | threshold=0 (disable), or set `DELETION_REASON="reason"` to pass |
 | enforce-commit-lock | `GLUDD_COMMIT_LOCK_ENFORCE=0` |
