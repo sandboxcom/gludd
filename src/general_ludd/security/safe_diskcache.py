@@ -6,6 +6,7 @@ import importlib
 import os
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from types import TracebackType
 from typing import (
     TYPE_CHECKING,
     Never,
@@ -30,12 +31,29 @@ class SafeCache(Protocol):
     clear: Callable[..., int]
     close: Callable[[], None]
     iterkeys: Callable[..., Iterator[object]]
-    __iter__: Callable[[], Iterator[object]]
-    __contains__: Callable[[object], bool]
-    __getitem__: Callable[[object], object]
-    __setitem__: Callable[[object, object], None]
-    __enter__: Callable[[], SafeCache]
-    __exit__: Callable[..., None]
+
+    def __iter__(self) -> Iterator[object]:
+        """Iterate over cached keys."""
+
+    def __contains__(self, key: object) -> bool:
+        """Return whether a key exists in the cache."""
+
+    def __getitem__(self, key: object) -> object:
+        """Return the cached value for a key."""
+
+    def __setitem__(self, key: object, value: object) -> None:
+        """Store a value under a cache key."""
+
+    def __enter__(self) -> SafeCache:
+        """Enter the cache context and return this cache."""
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        """Close the cache when leaving its context."""
 
 
 class _MsgpackModule(Protocol):
@@ -131,9 +149,11 @@ class SafeMsgpackDisk(_DiskBase):
     """Serialize keys and values as non-executable MessagePack data."""
 
     def put(self, key: object) -> tuple[object, bool]:
+        """Encode a cache key as MessagePack before storing it."""
         return super().put(_pack(key))
 
     def get(self, key: object, raw: bool) -> object:
+        """Decode a raw MessagePack key and reject legacy pickle keys."""
         if not raw:
             raise UnsafeLegacyCacheError(
                 "refusing to deserialize a legacy pickled cache key"
@@ -151,6 +171,7 @@ class SafeMsgpackDisk(_DiskBase):
         read: bool,
         key: object = UNKNOWN,
     ) -> tuple[int, int, str | None, object]:
+        """Encode a non-file cache value with the safe serializer."""
         if read:
             raise TypeError("safe cache does not accept file-like values")
         return super().store(_pack(value), False, key=key)
@@ -162,6 +183,7 @@ class SafeMsgpackDisk(_DiskBase):
         value: object,
         read: bool,
     ) -> object:
+        """Decode a safe cache value without invoking pickle."""
         if mode == MODE_PICKLE:
             raise UnsafeLegacyCacheError(
                 "refusing to deserialize a legacy pickled cache value"
@@ -181,7 +203,6 @@ def open_safe_diskcache(
     **settings: object,
 ) -> SafeCache:
     """Open an owner-only, versioned cache that cannot read legacy pickles."""
-
     safe_dir = prepare_safe_cache_directory(cache_dir)
     return cast(
         SafeCache,
@@ -197,7 +218,6 @@ def prepare_safe_cache_directory(
     cache_dir: str | os.PathLike[str],
 ) -> Path:
     """Create the owner-only base and safe namespace without opening SQLite."""
-
     expanded = os.path.expandvars(os.path.expanduser(os.fspath(cache_dir)))
     base = Path(expanded)
     safe_dir = base / SAFE_CACHE_NAMESPACE

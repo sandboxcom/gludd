@@ -164,6 +164,21 @@ def test_safe_cache_directories_are_owner_only(tmp_path: Path) -> None:
         cache.close()
 
 
+def test_safe_cache_protocol_uses_bound_magic_methods() -> None:
+    """Operator and context-manager members must bind protocol self."""
+    from general_ludd.security.safe_diskcache import SafeCache
+
+    for name in (
+        "__iter__",
+        "__contains__",
+        "__getitem__",
+        "__setitem__",
+        "__enter__",
+        "__exit__",
+    ):
+        assert callable(SafeCache.__dict__.get(name)), name
+
+
 def test_application_has_no_direct_diskcache_construction() -> None:
     safe_module = ROOT / "src/general_ludd/security/safe_diskcache.py"
     offenders: list[str] = []
