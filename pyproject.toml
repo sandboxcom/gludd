@@ -22,6 +22,7 @@ dependencies = [
     "safehttpx>=0.1.7,<0.2",
     "pydantic>=2.10.0",
     "pydantic-settings>=2.14.2",
+    "annotated-types>=0.7.0",
     "sqlalchemy>=2.0.0",
     "cryptography>=49.0.0,<51",
     "pqcrypto>=0.4.0,<1",
@@ -29,7 +30,6 @@ dependencies = [
     "alembic>=1.14.0",
     "psycopg[binary]>=3.2.0",
     "aiosqlite>=0.20.0",
-    "structlog>=24.0.0",
     "prometheus-client>=0.21.0",
     "psutil>=6.0.0",
     "tenacity>=9.0.0",
@@ -47,7 +47,9 @@ dependencies = [
     "huggingface-hub>=0.28.0",
     "langgraph>=0.2.0",
     "langsmith>=0.8.18",
+    "langchain-core>=0.3.0",
     "langchain-openai>=0.3.0",
+    "openai>=1.0.0",
     "watchdog>=6.0.0",
     "fs>=2.4.0",
     "rich>=13.0.0",
@@ -118,6 +120,7 @@ azure = [
 observability = [
     "opentelemetry-api>=1.20.0",
     "opentelemetry-sdk>=1.20.0",
+    "opentelemetry-proto>=1.20.0",
     "opentelemetry-exporter-otlp-proto-grpc>=1.20.0",
 ]
 sandbox = [
@@ -126,14 +129,12 @@ game-e2e = [
     "pygame>=2.5.0",
     "scikit-image>=0.22.0",
     "opencv-python-headless>=4.9.0,<4.13",
-    "pillow>=12.3.0",
     "yt-dlp>=2025.1.15",
 ]
 e2e-all = [
     "pygame>=2.5.0",
     "scikit-image>=0.22.0",
     "opencv-python-headless>=4.9.0,<4.13",
-    "pillow>=12.3.0",
     "yt-dlp>=2025.1.15",
     "langchain-openai>=0.3.0",
     "azure-identity>=1.16.0",
@@ -141,6 +142,29 @@ e2e-all = [
     "azure-mgmt-compute>=31.0.0",
     "azure-mgmt-authorization>=4.0.0",
     "azure-mgmt-resource>=23.0.0",
+]
+mysql = [
+    "pymysql>=1.1.0",
+]
+vmware = [
+    "pyvmomi>=8.0.0",
+]
+networking = [
+    "scapy>=2.5.0",
+]
+hindsight = [
+    "hindsight-client>=0.8.4",
+]
+benchmark = [
+    "lm-eval>=0.4.12",
+]
+xml-security = [
+    "lxml>=5.0.0",
+    "xmlsec>=1.3.0",
+]
+platform-sandbox = [
+    "landlock>=1.0.0.dev5; sys_platform == 'linux'",
+    "pywin32>=306; sys_platform == 'win32'",
 ]
 
 [project.scripts]
@@ -279,6 +303,65 @@ exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",
     "raise NotImplementedError",
+]
+
+[tool.deptry]
+optional_dependencies_dev_groups = ["dev"]
+known_first_party = ["ansible_collections"]
+
+[tool.deptry.package_module_name_map]
+"annotated-types" = "annotated_types"
+"azure-identity" = "azure"
+"azure-mgmt-authorization" = "azure"
+"azure-mgmt-compute" = "azure"
+"azure-mgmt-costmanagement" = "azure"
+"azure-mgmt-resource" = "azure"
+"boto3" = "boto3"
+"google-api-python-client" = "googleapiclient"
+"google-auth" = "google"
+"google-cloud-core" = "google"
+"hindsight-client" = "hindsight_client"
+"landlock" = "landlock"
+"langchain-core" = "langchain_core"
+"langchain-openai" = "langchain_openai"
+"llama-cpp-python" = "llama_cpp"
+"lm-eval" = "lm_eval"
+"lxml" = "lxml"
+"opencv-python-headless" = "cv2"
+"openai" = "openai"
+"opentelemetry-api" = "opentelemetry"
+"opentelemetry-exporter-otlp-proto-grpc" = "opentelemetry"
+"opentelemetry-proto" = "opentelemetry"
+"opentelemetry-sdk" = "opentelemetry"
+"pillow" = "PIL"
+"pygame" = "pygame"
+"pymysql" = "pymysql"
+"pyvmomi" = ["pyVim", "pyVmomi"]
+"pywavelets" = "pywt"
+"pywin32" = ["win32", "win32security"]
+"scapy" = "scapy"
+"scikit-image" = "skimage"
+"torch" = "torch"
+"vllm" = "vllm"
+"xmlsec" = "xmlsec"
+"yt-dlp" = "yt_dlp"
+
+[tool.deptry.per_rule_ignores]
+DEP002 = [
+    "aiosqlite",
+    "boto3",
+    "gunicorn",
+    "langchain-openai",
+    "llama-cpp-python",
+    "msgpack",
+    "opentelemetry-api",
+    "opentelemetry-exporter-otlp-proto-grpc",
+    "opentelemetry-proto",
+    "opentelemetry-sdk",
+    "pqcrypto",
+    "torch",
+    "uvicorn-worker",
+    "vllm",
 ]
 
 [dependency-groups]

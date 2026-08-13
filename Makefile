@@ -174,6 +174,7 @@ help:
 	@echo "  init                  Set up project (dirs + deps)"
 	@echo "  sync                  Sync uv dependencies"
 	@echo "  sync-llama-cpp        Sync locked local-inference extra (SYNC_LLAMA_CPP_VALIDATE_ONLY=0|1)"
+	@echo "  deps-audit            Fail-closed Python dependency truth audit"
 	@echo "  node-deps-sync        Install locked Node deps (NODE_DEPS_VALIDATE_ONLY, NODE_DEPS_NPM_USERCONFIG, NODE_DEPS_NPM_CACHE, NODE_DEPS_NPM_REGISTRY)"
 	@echo "  node-deps-relock      Regenerate Node lock (NODE_DEPS_VALIDATE_ONLY, NODE_DEPS_NPM_USERCONFIG, NODE_DEPS_NPM_CACHE, NODE_DEPS_NPM_REGISTRY)"
 	@echo "  node-deps-audit       Audit locked Node deps (plus NODE_DEPS_AUDIT_LEVEL=low|moderate|high|critical)"
@@ -2996,9 +2997,9 @@ audit-schema:
 	@$(PYTHON) scripts/db_schema.py
 
 deps-audit:
-	@echo "=== Dependency Audit (deptry) ==="
-	@$(UV) run deptry src --ignore DEP004 || true
-	@echo "=== Audit Complete ==="
+	@echo "=== Dependency Audit (deptry, fail-closed) ==="
+	@$(UV) run deptry src
+	@echo "=== Dependency Audit PASS ==="
 
 repo-log:
 	@git log --oneline -10 || echo "No git history"

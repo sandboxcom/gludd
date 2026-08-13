@@ -52,6 +52,11 @@
       "behavior": "make molecule-reset SCENARIO=default"
     },
     {
+      "name": "deps-audit",
+      "make_variables": [],
+      "behavior": "make deps-audit"
+    },
+    {
       "name": "sync-llama-cpp",
       "make_variables": ["SYNC_LLAMA_CPP_VALIDATE_ONLY"],
       "behavior": "make sync-llama-cpp SYNC_LLAMA_CPP_VALIDATE_ONLY=1"
