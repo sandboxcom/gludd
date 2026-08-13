@@ -120,7 +120,7 @@ _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-wor
          secrets-scrub secrets-scan secrets-baseline security-audit clean-artifacts health-check \
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
         git-add-all help grep scan-secrets-fresh untrack \
-         git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count git-patch-equivalence branches-unmerged-development check-git-hygiene \
+         git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count git-patch-equivalence branches-unmerged-development check-git-hygiene cache-disk cache-clean disk-user-caches rm-files commit-and-ship commit-and-ship-push compute-model-hashes \
         molecule-clean plan ps-gludd kill-stale reap-stale-collection-locks reap-orphan-pytest kill-gate-force \
         gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
         repo-visibility \
@@ -211,6 +211,7 @@ help:
 	@echo "  codemod-lean-enforcement-plugins Extract bulky enforcement implementations from counted plugin entrypoints"
 	@echo "  check-no-prompt-prone-edit-tools  Enforce make-target-only edit workflow"
 	@echo "  feature-spec-inventory  Inventory all Gludd feature specs + OpenCode behavioral specs (FORMAT=human|json)"
+	@echo "  migrate-test-env-writes  Rewrite test environment mutations to the guarded helper"
 	@echo "  write-text-b64        Write FILE from base64 TEXT_B64 without shell quoting loss"
 	@echo "  replace-text-b64      Exact old/new base64 replacement via scripts/replace_text.py"
 	@echo "  mkdir-p               Create an allowed workspace or /tmp/gludd-* directory"
@@ -311,6 +312,9 @@ help:
 	@echo "  git-add FILES='...'   Stage specific files"
 	@echo "  git-add-all           Stage all changes"
 	@echo "  git-commit MSG='...'  Commit staged changes"
+	@echo "  commit-and-ship MSG='...'  Lint-fix, stage, and commit through the guarded shipping target"
+	@echo "  commit-and-ship-push MSG='...'  Commit, push development, and request the guarded CI verdict"
+	@echo "  rm-files FILES='...'  Remove only explicitly named workspace paths"
 	@echo "  git-reset FILES='...' Reset to ref (soft by default)"
 	@echo "  git-branch MSG='...'  Create branch"
 	@echo "  git-checkout MSG='...' Switch branch"
@@ -398,6 +402,14 @@ help:
 	@echo "  sandbox-state-dir         Print sandbox runtime-state directory"
 	@echo "  sandbox-state-list        List sandbox runtime-state contents"
 	@echo "  sandbox-state-clean       Clean sandbox runtime-state for current project"
+	@echo "  compute-model-hashes      Recompute the tracked model-artifact hash inventory"
+	@echo "  download-1.5b-model       Download the namespaced Qwen 1.5B test model"
+	@echo "  download-deepseek-1.3b    Download the namespaced DeepSeek 1.3B test model"
+	@echo "  benchmark-codegen-quality Compare local code-generation model quality"
+	@echo "  benchmark-local-model    Benchmark the configured local model"
+	@echo "  benchmark-models         Compare all configured local models"
+	@echo "  run-game-gen-1.5b        Run game generation with the namespaced Qwen 1.5B model"
+	@echo "  compare-models           Compare local and hosted model quality"
 	@echo ""
 	@echo "  --- Governance ---"
 	@echo "  test-governance       Run governance collection unit tests"
@@ -443,6 +455,9 @@ help:
 	@echo "  check-system-load     Read-only system load diagnostic (1m avg, CPU count, verdict)"
 	@echo "  disk                  Print disk usage + gludd footprint"
 	@echo "  disk-reclaim          Run bounded, heartbeat-emitting cache cleanup"
+	@echo "  cache-disk            Show bounded user-cache directory sizes"
+	@echo "  cache-clean           Remove the explicitly enumerated tool caches"
+	@echo "  disk-user-caches      Show accessible user-cache and data-root sizes"
 	@echo "  uv-cache-prune-status List uv cache-prune PID, parent, age, and command"
 	@echo "  tmp-gludd-usage       Print largest /tmp/gludd-* entries sorted by size"
 	@echo "  tmp-gludd-worktree-usage  Print largest generated entries under /tmp/gludd-worktrees"

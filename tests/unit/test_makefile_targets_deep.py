@@ -39,7 +39,7 @@ def _extract_target_defs(content: str) -> dict[str, int]:
     for i, raw in enumerate(content.split("\n"), 1):
         stripped = raw.strip()
         if stripped.startswith(".PHONY:"):
-            in_phony = True
+            in_phony = raw.rstrip("\n").endswith("\\")
             continue
         if in_phony:
             if not raw.rstrip("\n").endswith("\\"):
@@ -63,9 +63,9 @@ def _extract_phony_names(content: str) -> set[str]:
     for line in content.split("\n"):
         stripped = line.strip()
         if stripped.startswith(".PHONY:"):
-            in_phony = True
             tokens = stripped.split(":", 1)[1].split()
             names.update(t.rstrip("\\") for t in tokens if t.rstrip("\\"))
+            in_phony = line.rstrip("\n").endswith("\\")
             continue
         if in_phony:
             tokens = stripped.split()
@@ -122,6 +122,8 @@ def _extract_prereqs(content: str) -> dict[str, list[str]]:
     for name, lineno in targets.items():
         raw = lines[lineno - 1]
         after_colon = raw.split(":", 1)[1] if ":" in raw else ""
+        # GNU make ignores an unescaped # and the remainder of a rule line.
+        after_colon = after_colon.split("#", 1)[0]
         # Skip lines where the colon is followed by recipe syntax (inline or otherwise)
         if ";" in after_colon:
             after_colon = after_colon.split(";")[0]
@@ -153,7 +155,7 @@ def _extract_help_mapping(content: str) -> dict[str, str]:
                 if m:
                     text = m.group(1)
                     parts = text.split(None, 1)
-                    if len(parts) >= 1 and re.match(r"^[-a-zA-Z_][-a-zA-Z0-9_]*$", parts[0]):
+                    if len(parts) >= 1 and re.match(r"^[-a-zA-Z_][-a-zA-Z0-9_.]*$", parts[0]):
                         mapping[parts[0]] = parts[1] if len(parts) > 1 else ""
             elif not line.startswith("\t") and line.strip() != "":
                 break
