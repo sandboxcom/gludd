@@ -1387,6 +1387,7 @@ gate: _dead-code-baseline-refresh _check-windows-tracked-paths check-opencode-in
 	else \
 		echo "=== GATE: PASSED ==="; \
 		echo "=== GATE: PASSED ===" >> .gate-status; \
+		$(UV) run python scripts/gate_status_attestation.py sign .gate-status; \
 	fi
 
 # gate-lite: LOCAL validation without the full xdist test phase that OOMs on
@@ -2948,23 +2949,10 @@ commit-bootstrap: _gate-fresh-check _commit-lock-acquire
 # messages with angle-bracket emails). Enforces the SAME fresh+green gate guard
 # as `git-commit` (a bare `git commit -F` would otherwise bypass it). Usage:
 #   make git-commit-file FILE=/tmp/msg.txt
-git-commit-file: _commit-lock-acquire
+git-commit-file: _gate-fresh-check _commit-lock-acquire
 	@[ -n "$(FILE)" ] || { echo "Usage: make git-commit-file FILE=path"; exit 1; }
 	@echo "Running pre-commit collection check..."
 	@$(MAKE) --no-print-directory collect-check
-	@echo "Collection OK. Checking gate status..."
-	@if [ ! -f .gate-status ]; then echo "ERROR: .gate-status missing. Run 'make gate' first."; exit 1; fi
-	@for check in lint typecheck collect test smoke; do \
-		if ! grep -q "^$${check} PASS" .gate-status; then \
-			echo "ERROR: Gate $$check not PASS. Run 'make gate'."; exit 1; \
-		fi; \
-	done
-	@		EPOCH=$$(grep "^epoch " .gate-status | tail -1 | awk '{print $$2}'); \
-	NOW=$$(date +%s); \
-	AGE=$$((NOW - EPOCH)); \
-	if [ $$AGE -gt 1800 ]; then \
-		echo "ERROR: .gate-status is $$AGE seconds old (>30 min). Run 'make gate'."; exit 1; \
-	fi
 	@echo "Gate fresh and green. Committing (message file)..."
 	@git commit -F "$(FILE)"
 
@@ -4567,6 +4555,7 @@ git-commit: _gate-fresh-check _commit-lock-acquire _commit-lint-guard _pre-commi
 	@# pre-commit-directly: run pre-commit on staged-only, auto-stage fixes, commit -n.
 	@git diff --cached --name-only | xargs -r pre-commit run --files 2>/dev/null || true
 	@git diff --name-only | xargs -r git add 2>/dev/null || true
+	@$(MAKE) --no-print-directory check-gate-fresh
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
 commit-no-verify: _gate-fresh-check _commit-lock-acquire _commit-lint-guard _pre-commit-stage-guard _edit-commit-atomicity-guard
@@ -7864,7 +7853,7 @@ pipeline-health: pipeline-status
 	@true
 
 check-gate-fresh:
-	@echo run python scripts/gate_fresh_check.py check .gate-status
+	@$(UV) run python scripts/gate_status_attestation.py verify .gate-status
 
 check-version-consistency:
 	@$(UV) run python scripts/check_version_consistency.py
