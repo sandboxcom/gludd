@@ -1,0 +1,25 @@
+# Explicit public APIs used by downstream callers but not production modules.
+# Format: <source-path>:<top-level-symbol>
+# Entries are unique and checker-validated; stale or malformed keys fail closed.
+src/general_ludd/ag15_benchmarks/gaia.py:load_tasks
+src/general_ludd/ag15_benchmarks/gaia.py:score_result
+src/general_ludd/ag15_benchmarks/swe_bench.py:load_tasks
+src/general_ludd/ag15_benchmarks/swe_bench.py:score_result
+src/general_ludd/algorithms/aes_gcm.py:generate_nonce
+src/general_ludd/algorithms/aes_gcm.py:hash_key
+src/general_ludd/algorithms/aes_siv.py:hash_key
+src/general_ludd/algorithms/blake3.py:derive_key
+src/general_ludd/algorithms/chacha20.py:generate_nonce
+src/general_ludd/algorithms/closest_pair.py:closest_pair_sweep
+src/general_ludd/algorithms/diffie_hellman.py:derive_key
+src/general_ludd/algorithms/skip_list_v2.py:SkipList
+src/general_ludd/algorithms/stream_aead.py:generate_nonce
+src/general_ludd/ansible/skill_lens.py:clear_cache
+src/general_ludd/governance/loader.py:clear_cache
+src/general_ludd/infra/model_deploy.py:profile_from_search
+src/general_ludd/security/password_hash.py:derive_key
+src/general_ludd/security/vuln_scanner.py:findings_summary
+src/general_ludd/security/vuln_scanner.py:scan_checks_passes
+src/general_ludd/security/vuln_scanner.py:scan_files
+src/general_ludd/self_update/signing.py:load_public_key
+src/general_ludd/skip_list.py:SkipList

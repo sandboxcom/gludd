@@ -4,18 +4,37 @@ Proves the dead-code checker:
   - finds a class used only in tests
   - finds a function with zero references anywhere
   - does NOT flag a class imported in production code
+  - treats static __all__ and exact registry entries as public API registration
+  - rejects malformed, duplicate, and stale registry entries
   - exit-code contract (1 = dead code found, 0 = clean)
   - --json and --quiet output formats
 """
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 import sys
 from pathlib import Path
+from types import ModuleType
+
+import pytest
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "check_dead_code.py"
+
+
+def _load_checker() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("_check_dead_code_under_test", SCRIPT)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+CHECKER = _load_checker()
 
 
 def _run(*args: str, repo_root: Path | None = None) -> subprocess.CompletedProcess[str]:
@@ -142,6 +161,143 @@ class TestDeadCodeCheckExitCodes:
         data = json.loads(result.stdout)
         names = [d["name"] for d in data["dead"]]
         assert "Provider" not in names
+
+    def test_static_all_registers_only_named_public_api(self, tmp_path: Path):
+        src = tmp_path / "src" / "general_ludd"
+        tests = tmp_path / "tests"
+        src.mkdir(parents=True)
+        tests.mkdir()
+
+        (src / "__init__.py").write_text("")
+        (src / "library.py").write_text(
+            "def exported_api():\n"
+            "    return 1\n\n"
+            "def test_only_helper():\n"
+            "    return 2\n\n"
+            "__all__ = [\"exported_api\"]\n"
+        )
+        (tests / "test_library.py").write_text(
+            "from general_ludd.library import exported_api, test_only_helper\n"
+        )
+
+        result = _run("--json", repo_root=tmp_path)
+        assert result.returncode == 1
+        names = {item["name"] for item in json.loads(result.stdout)["dead"]}
+        assert "exported_api" not in names
+        assert "test_only_helper" in names
+
+    def test_static_registry_registers_exact_module_symbol(self, tmp_path: Path):
+        src = tmp_path / "src" / "general_ludd"
+        tests = tmp_path / "tests"
+        config = tmp_path / "config"
+        src.mkdir(parents=True)
+        tests.mkdir()
+        config.mkdir()
+
+        (src / "__init__.py").write_text("")
+        (src / "library.py").write_text(
+            "def exported_api():\n"
+            "    return 1\n\n"
+            "def test_only_helper():\n"
+            "    return 2\n"
+        )
+        (tests / "test_library.py").write_text(
+            "from general_ludd.library import exported_api, test_only_helper\n"
+        )
+        (config / "dead_code_public_api.txt").write_text(
+            "src/general_ludd/library.py:exported_api\n"
+        )
+
+        result = _run("--json", repo_root=tmp_path)
+        assert result.returncode == 1
+        names = {item["name"] for item in json.loads(result.stdout)["dead"]}
+        assert "exported_api" not in names
+        assert "test_only_helper" in names
+
+
+class TestDirectCheckerContracts:
+    def _repo(self, root: Path) -> Path:
+        src = root / "src" / "general_ludd"
+        tests = root / "tests"
+        src.mkdir(parents=True)
+        tests.mkdir()
+        (src / "__init__.py").write_text("")
+        (src / "library.py").write_text(
+            "def exported_api():\n"
+            "    return 1\n\n"
+            "def test_only_helper():\n"
+            "    return 2\n\n"
+            "__all__: tuple[str, ...] = (\"exported_api\",)\n"
+        )
+        (tests / "test_library.py").write_text(
+            "from general_ludd.library import exported_api, test_only_helper\n"
+        )
+        return root
+
+    def test_direct_run_and_format_contract(self, tmp_path: Path):
+        result = CHECKER.run(self._repo(tmp_path))
+        assert [item.symbol.name for item in result.dead] == ["test_only_helper"]
+        assert "Test-only (1)" in CHECKER.format_text(result)
+        assert json.loads(CHECKER.format_json(result))["dead_count"] == 1
+
+    def test_direct_main_update_baseline_and_quiet(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        repo = self._repo(tmp_path)
+        assert CHECKER.main(["--repo-root", str(repo), "--json"]) == 1
+        assert json.loads(capsys.readouterr().out)["new_dead_count"] == 1
+
+        assert CHECKER.main(["--repo-root", str(repo), "--update-baseline"]) == 0
+        baseline = repo / "config" / "dead_code_baseline.txt"
+        assert "test_only_helper" in baseline.read_text()
+        capsys.readouterr()
+
+        assert CHECKER.main(["--repo-root", str(repo), "--quiet"]) == 0
+        assert "0 new dead symbol" in capsys.readouterr().out
+
+    def test_static_export_parser_is_conservative(self, tmp_path: Path):
+        static_file = tmp_path / "static.py"
+        static_file.write_text('__all__: tuple[str, ...] = ("public",)\n')
+        assert CHECKER._declared_public_names(static_file) == {"public"}
+
+        mixed_file = tmp_path / "mixed.py"
+        mixed_file.write_text('__all__ = ["public", 3]\n')
+        assert CHECKER._declared_public_names(mixed_file) == set()
+
+        dynamic_file = tmp_path / "dynamic.py"
+        dynamic_file.write_text("__all__ = build_exports()\n")
+        assert CHECKER._declared_public_names(dynamic_file) == set()
+
+        invalid_file = tmp_path / "invalid.py"
+        invalid_file.write_text("def broken(:\n")
+        assert CHECKER._declared_public_names(invalid_file) == set()
+        assert CHECKER._declared_public_names(tmp_path / "missing.py") == set()
+
+    def test_missing_source_root_exits_two(self, tmp_path: Path):
+        with pytest.raises(SystemExit, match="2"):
+            CHECKER.run(tmp_path)
+
+    @pytest.mark.parametrize(
+        "registry",
+        [
+            "not-a-registry-key\n",
+            "src/general_ludd/library.py:missing_api\n",
+            (
+                "src/general_ludd/library.py:exported_api\n"
+                "src/general_ludd/library.py:exported_api\n"
+            ),
+        ],
+    )
+    def test_public_registry_rejects_invalid_or_stale_entries(
+        self, tmp_path: Path, registry: str
+    ):
+        repo = self._repo(tmp_path)
+        config = repo / "config"
+        config.mkdir()
+        (config / "dead_code_public_api.txt").write_text(registry)
+
+        with pytest.raises(SystemExit, match="2"):
+            CHECKER.run(repo)
 
 
 class TestJsonOutput:

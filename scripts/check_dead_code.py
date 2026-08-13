@@ -4,7 +4,8 @@ check_dead_code.py
 
 Mechanical dead-code detection: finds top-level classes/functions defined in
 src/general_ludd/ that are never referenced in any production (src/) file.
-Classes/functions referenced ONLY in test files are flagged as dead.
+Classes/functions referenced ONLY in test files are flagged as dead unless the
+defining module explicitly registers them in a static ``__all__`` public API.
 
 Usage:
     python3 scripts/check_dead_code.py [--json] [--quiet]
@@ -46,6 +47,52 @@ def _load_baseline(path: Path | None) -> set[str]:
         line = line.strip()
         if line and not line.startswith("#"):
             entries.add(line)
+    return entries
+
+
+def _load_public_api_registry(path: Path, valid_keys: set[str]) -> set[str]:
+    """Load exact public API keys, rejecting malformed, duplicate, or stale entries."""
+
+    if not path.is_file():
+        return set()
+
+    entries: set[str] = set()
+    for line_number, raw_line in enumerate(
+        path.read_text(encoding="utf-8").splitlines(), start=1
+    ):
+        entry = raw_line.strip()
+        if not entry or entry.startswith("#"):
+            continue
+
+        parts = entry.split(":")
+        valid_shape = (
+            len(parts) == 2
+            and parts[0].startswith("src/general_ludd/")
+            and parts[0].endswith(".py")
+            and parts[1].isidentifier()
+        )
+        if not valid_shape:
+            print(
+                f"ERROR: malformed public API registry entry {path}:{line_number}: "
+                f"{entry!r}",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        if entry in entries:
+            print(
+                f"ERROR: duplicate public API registry entry {path}:{line_number}: "
+                f"{entry}",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        if entry not in valid_keys:
+            print(
+                f"ERROR: stale public API registry entry {path}:{line_number}: "
+                f"{entry}",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        entries.add(entry)
     return entries
 
 
@@ -138,6 +185,42 @@ def _referenced_names(file_path: Path, name_set: set[str]) -> set[str]:
     return found
 
 
+def _declared_public_names(file_path: Path) -> set[str]:
+    """Return string names from a static top-level ``__all__`` declaration."""
+
+    try:
+        tree = ast.parse(file_path.read_text(encoding="utf-8"))
+    except (SyntaxError, UnicodeDecodeError, OSError):
+        return set()
+
+    exported: set[str] = set()
+    for node in ast.iter_child_nodes(tree):
+        value: ast.expr | None = None
+        if (
+            isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name) and target.id == "__all__"
+                for target in node.targets
+            )
+        ) or (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == "__all__"
+        ):
+            value = node.value
+        if value is None:
+            continue
+        try:
+            literal = ast.literal_eval(value)
+        except (ValueError, TypeError):
+            continue
+        if isinstance(literal, (list, tuple, set)) and all(
+            isinstance(name, str) for name in literal
+        ):
+            exported.update(literal)
+    return exported
+
+
 def _build_ref_map(symbols: list[Symbol], files: list[Path], repo_root: Path) -> dict[str, set[str]]:
     """For each symbol name, find which files reference it.
 
@@ -172,6 +255,15 @@ def run(repo_root: Path | None = None) -> ScanResult:
 
     all_src_files = sorted(f for f in (root / "src").rglob("*.py"))
     all_test_files = sorted(f for f in (root / "tests").rglob("*.py"))
+    public_names = {
+        str(file_path.relative_to(root)): _declared_public_names(file_path)
+        for file_path in py_files
+    }
+    valid_public_keys = {_baseline_key(symbol) for symbol in symbols}
+    registered_public_api = _load_public_api_registry(
+        root / "config" / "dead_code_public_api.txt",
+        valid_public_keys,
+    )
 
     src_refs = _build_ref_map(symbols, all_src_files, root)
     test_refs = _build_ref_map(symbols, all_test_files, root)
@@ -180,7 +272,11 @@ def run(repo_root: Path | None = None) -> ScanResult:
     for sym in symbols:
         srefs = src_refs.get(sym.name, set())
         trefs = test_refs.get(sym.name, set())
-        if not srefs:
+        is_public_api = (
+            sym.name in public_names.get(sym.file, set())
+            or _baseline_key(sym) in registered_public_api
+        )
+        if not srefs and not is_public_api:
             dead.append(
                 DeadSymbol(
                     symbol=sym,
