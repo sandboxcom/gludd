@@ -9,10 +9,12 @@ before their parent.
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import signal
 import subprocess
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -151,3 +153,58 @@ def terminate_tree(
             continue
         killed.append(process.pid)
     return killed
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Validate, preview, or apply identity-checked project-tree cleanup."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--root-pid", type=int, required=True)
+    parser.add_argument("--namespace", required=True)
+    parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--validate-only", action="store_true")
+    args = parser.parse_args(argv)
+
+    namespace = args.namespace.strip()
+    namespace_path = Path(namespace)
+    if args.root_pid <= 0 or not namespace_path.is_absolute() or namespace_path == Path("/"):
+        parser.error("root PID must be positive and namespace must be a non-root absolute path")
+    if args.validate_only:
+        print(
+            "PROCESS-CLEANUP-VALIDATION PASS "
+            f"pid={args.root_pid} namespace={namespace} apply={int(args.apply)}"
+        )
+        return 0
+
+    table = snapshot_processes()
+    root = table.get(args.root_pid)
+    if root is None:
+        print(f"process not found: pid={args.root_pid}", file=sys.stderr)
+        return 2
+    if not namespace_matches(root.command, namespace):
+        print(
+            "namespace mismatch: "
+            f"pid={args.root_pid} namespace={namespace} command={root.command}",
+            file=sys.stderr,
+        )
+        return 2
+
+    candidates = [
+        process.pid
+        for process in [*descendant_processes(table, args.root_pid), root]
+        if namespace_matches(process.command, namespace)
+    ]
+    if not args.apply:
+        print(
+            "PROCESS-CLEANUP-DRY-RUN "
+            f"pid={args.root_pid} namespace={namespace} candidates="
+            + ",".join(str(pid) for pid in candidates)
+        )
+        return 0
+
+    killed = terminate_tree(table, args.root_pid, namespace=namespace)
+    print("PROCESS-CLEANUP-APPLIED killed=" + ",".join(str(pid) for pid in killed))
+    return 0 if args.root_pid in killed else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

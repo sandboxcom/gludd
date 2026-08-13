@@ -386,6 +386,16 @@
       "behavior": "make active-work-status"
     },
     {
+      "name": "terminate-project-process-tree",
+      "make_variables": [
+        "PROCESS_ROOT_PID",
+        "PROCESS_NAMESPACE",
+        "PROCESS_CLEANUP_APPLY",
+        "PROCESS_CLEANUP_VALIDATE_ONLY"
+      ],
+      "behavior": "make terminate-project-process-tree PROCESS_ROOT_PID=1 PROCESS_NAMESPACE=/tmp/gludd-contract PROCESS_CLEANUP_APPLY=0 PROCESS_CLEANUP_VALIDATE_ONLY=1"
+    },
+    {
       "name": "status-snapshot",
       "make_variables": ["STATUS_SNAPSHOT_VALIDATE_ONLY"],
       "behavior": "make status-snapshot STATUS_SNAPSHOT_VALIDATE_ONLY=1"

@@ -127,7 +127,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
         git-add-all help grep scan-secrets-fresh untrack \
          git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count git-patch-equivalence branches-unmerged-development check-git-hygiene cache-disk cache-clean disk-user-caches rm-files commit-and-ship commit-and-ship-push compute-model-hashes \
-        molecule-clean plan ps-gludd kill-stale reap-stale-collection-locks reap-orphan-pytest kill-gate-force \
+        molecule-clean plan ps-gludd kill-stale terminate-project-process-tree reap-stale-collection-locks reap-orphan-pytest kill-gate-force \
         gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
         repo-visibility \
          watchdog-read watchdog-start watchdog-status watchdog-stop agent-watchdog-stop watchdog-log \
@@ -290,6 +290,7 @@ help:
 	@echo "  test-opa-policies     Execute Rego policy tests when opa is installed"
 	@echo "  check-make-target-contract  Validate target variables, help, and behavioral examples"
 	@echo "  active-work-status    Emit auditable PIDs, gate state, hashes, and open tasks"
+	@echo "  terminate-project-process-tree  Identity-check and preview/apply one project process tree"
 	@echo "  status-snapshot       Rewrite SESSION.md gate evidence (STATUS_SNAPSHOT_VALIDATE_ONLY=1 for read-only validation)"
 	@echo "  codex-stop-guard      Fail closed when tracked work remains; emit a Codex stop challenge token"
 	@echo "  codex-stop-confirm    Confirm a previously issued token before recording a valid stop"
@@ -7944,6 +7945,14 @@ show-lines:
 
 ps:
 	@/bin/ps -ax -o pid=,ppid=,command= | /usr/bin/grep '/Users/shawnwilson/gludd\|make search\|grep -R' | /usr/bin/grep -v '/usr/bin/grep' || echo "No matching project processes"
+
+PROCESS_ROOT_PID ?=
+PROCESS_NAMESPACE ?=
+PROCESS_CLEANUP_APPLY ?= 0
+PROCESS_CLEANUP_VALIDATE_ONLY ?= 0
+terminate-project-process-tree: ## Safely preview or terminate one namespaced project process tree.
+	@[ -n "$(PROCESS_ROOT_PID)" ] && [ -n "$(PROCESS_NAMESPACE)" ] || { echo "Usage: make terminate-project-process-tree PROCESS_ROOT_PID=pid PROCESS_NAMESPACE=/absolute/project/path [PROCESS_CLEANUP_APPLY=1] [PROCESS_CLEANUP_VALIDATE_ONLY=1]"; exit 2; }
+	@$(UV) run python scripts/process_cleanup.py --root-pid "$(PROCESS_ROOT_PID)" --namespace "$(PROCESS_NAMESPACE)" $(if $(filter 1,$(PROCESS_CLEANUP_APPLY)),--apply,) $(if $(filter 1,$(PROCESS_CLEANUP_VALIDATE_ONLY)),--validate-only,)
 
 kill-project-pid:
 	@[ -n "$(PID)" ] || { echo "Usage: make kill-project-pid PID=pid"; exit 1; }
