@@ -1563,6 +1563,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         model_gateway = None
         deployment_health_router = None
+        semantic_searcher = None
         if model_profiles:
             _resolved_profiles = [
                 p if isinstance(p, ModelProfile) else ModelProfile(**p)
@@ -1592,14 +1593,6 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
             semantic_searcher = SemanticSearcher()
             app.state._semantic_searcher = semantic_searcher
-            execution_engine = ExecutionEngine(
-                model_gateway=model_gateway,
-                benchmark_recorder=None,
-                metrics_collector=ext.get("metrics_collector"),
-                budget_guard=budget_guard,
-                searcher=semantic_searcher,
-            )
-            app.state._execution_engine = execution_engine
 
             eval_harness = EvalHarness(
                 model="sonnet",
@@ -1935,6 +1928,20 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     window_seconds=spend_window_seconds,
                 )
         app.state._spend_limiter = spend_limiter
+
+        # Construct only after the rolling limiter has been restored. This
+        # guarantees the engine shares the live daemon limiter before its first
+        # dispatch and leaves EventLoop as the single spend-record DB writer.
+        if model_gateway is not None and semantic_searcher is not None:
+            execution_engine = ExecutionEngine(
+                model_gateway=model_gateway,
+                benchmark_recorder=None,
+                metrics_collector=ext.get("metrics_collector"),
+                budget_guard=budget_guard,
+                searcher=semantic_searcher,
+                spend_limiter=spend_limiter,
+            )
+            app.state._execution_engine = execution_engine
 
         # Prepaid service credit tracker — queries DeepSeek / OpenAI / Z.AI /
         # OpenRouter balance APIs on the EventLoop's periodic
