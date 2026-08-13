@@ -7,12 +7,20 @@ boundary values, and edge cases.  Uses TestClient with a mocked MakeRunner.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 from unittest import mock
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+
+@pytest.fixture(autouse=True)
+def _stop_started_patches() -> Iterator[None]:
+    """Keep the helper's started MakeRunner patch local to each test."""
+    yield
+    mock.patch.stopall()
 
 
 @pytest.fixture
@@ -69,13 +77,13 @@ def _install_mock(result: dict[str, Any]) -> mock.MagicMock:
 
 class TestRouteRegistration:
     def test_post_admin_make_route_exists(self, app: FastAPI) -> None:
-        routes = {r.path for r in app.routes}
+        routes = {getattr(route, "path", None) for route in app.routes}
         assert "/admin/make" in routes
 
     def test_post_admin_make_methods(self, app: FastAPI) -> None:
         for route in app.routes:
-            if route.path == "/admin/make":
-                assert "POST" in route.methods
+            if getattr(route, "path", None) == "/admin/make":
+                assert "POST" in getattr(route, "methods", set())
                 return
         pytest.fail("Route /admin/make not found")
 
@@ -295,7 +303,7 @@ class TestStreamPath:
     def test_stream_callback_collects_phases(self, client: TestClient) -> None:
         mock_cls = _install_mock(_make_result(phases=["lint", "typecheck", "test"]))
 
-        def side_effect(target, *args, **kwargs):
+        def side_effect(target: str, *args: object, **kwargs: Any) -> Any:
             cb = kwargs.get("stream_callback")
             if cb:
                 for p in ["lint", "typecheck", "test"]:
@@ -403,7 +411,7 @@ class TestStructuralProperties:
         app = FastAPI()
         state: dict[str, Any] = {}
         register(app, state)
-        assert "/admin/make" in {r.path for r in app.routes}
+        assert "/admin/make" in {getattr(route, "path", None) for route in app.routes}
 
     def test_module_docstring(self) -> None:
         import general_ludd.routers.make as mod

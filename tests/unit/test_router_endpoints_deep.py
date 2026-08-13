@@ -402,9 +402,9 @@ def make_client(make_app: FastAPI) -> TestClient:
 
 
 class TestMakeEndpoints:
-    def test_make_missing_target_crashes_with_keyerror(self, make_client: TestClient) -> None:
-        with pytest.raises(KeyError):
-            make_client.post("/admin/make", json={})
+    def test_make_missing_target_returns_422(self, make_client: TestClient) -> None:
+        response = make_client.post("/admin/make", json={})
+        assert response.status_code == 422
 
     def test_make_with_target_returns_result(self, make_client: TestClient) -> None:
         resp = make_client.post("/admin/make", json={"target": "help"})
