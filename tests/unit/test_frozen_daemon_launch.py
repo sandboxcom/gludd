@@ -5,12 +5,14 @@ from __future__ import annotations
 import subprocess
 import sys
 
+import pytest
+
 from general_ludd import cli
 
 
-def test_frozen_daemon_command_reexecutes_the_bundle(monkeypatch) -> None:
-    monkeypatch.setattr(cli.sys, "frozen", True, raising=False)
-    monkeypatch.setattr(cli.sys, "executable", "/opt/gludd")
+def test_frozen_daemon_command_reexecutes_the_bundle(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", "/opt/gludd")
 
     command = cli._build_daemon_start_cmd(
         host="127.0.0.1",
@@ -23,13 +25,13 @@ def test_frozen_daemon_command_reexecutes_the_bundle(monkeypatch) -> None:
     assert command[-1] == "127.0.0.1:8765"
 
 
-def test_bundled_gunicorn_bootstrap_rewrites_argv(monkeypatch) -> None:
+def test_bundled_gunicorn_bootstrap_rewrites_argv(monkeypatch: pytest.MonkeyPatch) -> None:
     from gunicorn.app import wsgiapp
 
     observed: list[list[str]] = []
-    monkeypatch.setattr(cli.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(
-        cli.sys,
+        sys,
         "argv",
         [
             "/opt/gludd",
@@ -52,10 +54,10 @@ def test_bundled_gunicorn_bootstrap_rewrites_argv(monkeypatch) -> None:
     ]
 
 
-def test_source_runtime_does_not_accept_bundled_bootstrap(monkeypatch) -> None:
-    monkeypatch.delattr(cli.sys, "frozen", raising=False)
+def test_source_runtime_does_not_accept_bundled_bootstrap(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delattr(sys, "frozen", raising=False)
     monkeypatch.setattr(
-        cli.sys,
+        sys,
         "argv",
         ["/usr/bin/python", cli._BUNDLED_GUNICORN_FLAG],
     )
@@ -63,11 +65,13 @@ def test_source_runtime_does_not_accept_bundled_bootstrap(monkeypatch) -> None:
     assert cli._run_bundled_gunicorn_if_requested() is False
 
 
-def test_frozen_child_inherits_logs_but_source_child_stays_quiet(monkeypatch) -> None:
-    monkeypatch.setattr(cli.sys, "frozen", True, raising=False)
+def test_frozen_child_inherits_logs_but_source_child_stays_quiet(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
     assert cli._daemon_child_stdio() == (None, None)
 
-    monkeypatch.delattr(cli.sys, "frozen", raising=False)
+    monkeypatch.delattr(sys, "frozen", raising=False)
     assert cli._daemon_child_stdio() == (
         subprocess.DEVNULL,
         subprocess.DEVNULL,

@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from rich.table import Table
 
 _DAEMON_SHUTDOWN_TIMEOUT_SECONDS = 5.0
+_BUNDLED_GUNICORN_FLAG = "--_gludd-bundled-gunicorn"
 
 MAN_PAGE = """\
 NAME
@@ -1903,6 +1904,8 @@ def _cmd_smoke(args: argparse.Namespace) -> None:
 
 def main() -> None:
     """Parse process arguments and dispatch the selected CLI handler."""
+    if _run_bundled_gunicorn_if_requested():
+        return
     parser, subcommand_map = build_parser()
     args = parser.parse_args()
     if args.func is None:
@@ -1959,11 +1962,12 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
     )
     env = os.environ.copy()
     env.update(cmd_env)
+    child_stdout, child_stderr = _daemon_child_stdio()
     proc = subprocess.Popen(
         cmd,
         stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=child_stdout,
+        stderr=child_stderr,
         start_new_session=True,
         close_fds=True,
         env=env,
@@ -4301,6 +4305,29 @@ def _clamp_workers_for_sqlite(
     return max(1, workers)
 
 
+def _run_bundled_gunicorn_if_requested() -> bool:
+    """Run Gunicorn inside a frozen bundle when its private flag is present."""
+    if not bool(getattr(sys, "frozen", False)):
+        return False
+    if len(sys.argv) < 2 or sys.argv[1] != _BUNDLED_GUNICORN_FLAG:
+        return False
+
+    from gunicorn.app import wsgiapp
+
+    sys.argv = [sys.argv[0], *sys.argv[2:]]
+    wsgiapp.run()
+    return True
+
+
+def _daemon_child_stdio() -> tuple[int | None, int | None]:
+    """Return observable stdio for a frozen child and quiet source defaults."""
+    import subprocess
+
+    if bool(getattr(sys, "frozen", False)):
+        return None, None
+    return subprocess.DEVNULL, subprocess.DEVNULL
+
+
 def _build_daemon_start_cmd(
     host: str = "127.0.0.1",
     port: int = 8000,
@@ -4314,8 +4341,13 @@ def _build_daemon_start_cmd(
     safe_host = _validate_daemon_host(host)
     safe_port = _validate_daemon_port(port)
     workers = _clamp_workers_for_sqlite(workers)
+    launcher = (
+        [sys.executable, _BUNDLED_GUNICORN_FLAG]
+        if bool(getattr(sys, "frozen", False))
+        else ["gunicorn"]
+    )
     argv: list[str] = [
-        "gunicorn",
+        *launcher,
         "general_ludd.daemon:create_daemon_app()",
         "--worker-class",
         "uvicorn_worker.UvicornWorker",
