@@ -57,6 +57,11 @@
       "behavior": "make pip-audit-gate"
     },
     {
+      "name": "ansible-syntax",
+      "make_variables": [],
+      "behavior": "make ansible-syntax"
+    },
+    {
       "name": "provider-harness",
       "make_variables": ["PROVIDER", "LIVE"],
       "behavior": "make provider-harness PROVIDER=runpod LIVE=0"

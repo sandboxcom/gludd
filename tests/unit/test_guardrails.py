@@ -87,7 +87,9 @@ class TestMakefileTargets:
             ["make", "ansible-syntax"],
             capture_output=True, text=True, cwd=str(ROOT), timeout=300,
         )
-        assert result.returncode == 0, f"make ansible-syntax failed:\n{result.stderr}\n{result.stdout}"
+        output = f"{result.stdout}\n{result.stderr}"
+        assert result.returncode == 0, f"make ansible-syntax failed:\n{output}"
+        assert "[WARNING]" not in output, f"make ansible-syntax emitted warnings:\n{output}"
 
 
 class TestBashGuardrailConfig:
